@@ -10,6 +10,9 @@ pub struct Arrangement {
     pub selected: Option<Selection>,
     pub row_key: Option<String>,
     pub expanded: BTreeSet<String>,
+    /// Persisted migration marker: later intentional root collapses survive.
+    #[serde(default)]
+    pub nodes_layout: bool,
     pub filter: String,
     pub macros_open: bool,
     pub dock_side: DockSide,
@@ -23,6 +26,7 @@ impl Default for Arrangement {
             selected: None,
             row_key: None,
             expanded: BTreeSet::from(["nodes".into()]),
+            nodes_layout: true,
             filter: String::new(),
             macros_open: false,
             dock_side: DockSide::Auto,
@@ -38,6 +42,7 @@ impl Arrangement {
             selected: engine.ui.selected.clone(),
             row_key: engine.ui.row_key.clone(),
             expanded: engine.ui.expanded.clone(),
+            nodes_layout: true,
             filter: engine.ui.filter.clone(),
             macros_open: engine.ui.macros_open,
             dock_side: engine.ui.dock_side,
@@ -49,13 +54,20 @@ impl Arrangement {
     /// Apply only passive state: never call `select_row`, run a macro or issue
     /// a Bus call as a side effect of restoring a selection.
     pub fn apply(&self, engine: &mut Engine) {
-        engine.ui.expanded = self.expanded.clone();
+        engine.ui.expanded = self.expanded_keys();
         engine.ui.filter = self.filter.clone();
         engine.ui.macros_open = self.macros_open;
         engine.ui.dock_side = self.dock_side;
         engine.workshop.dock_open = self.dock_open;
         engine.workshop.paused = self.paused;
         engine.workshop.filter = self.traffic_filter.clone();
+    }
+    fn expanded_keys(&self) -> BTreeSet<String> {
+        let mut expanded = self.expanded.clone();
+        if !self.nodes_layout && !expanded.iter().any(|key| key.starts_with("nodes")) {
+            expanded.insert("nodes".into());
+        }
+        expanded
     }
 }
 
@@ -78,7 +90,7 @@ impl Pending {
             show_selection: false,
             done: false,
             selection_shown: false,
-            expanded: Some(saved.expanded.clone()),
+            expanded: Some(saved.expanded_keys()),
             seen: BTreeSet::new(),
         }
     }
@@ -177,6 +189,36 @@ fn reveal(rows: &[Row], key: &str, parents: &mut Vec<String>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn legacy_arrangement_opens_nodes_once_and_preserves_later_collapse() {
+        let old: Arrangement = serde_json::from_value(serde_json::json!({
+            "expanded":["node:alpha", "service:webd"]
+        }))
+        .unwrap();
+        assert!(!old.nodes_layout);
+        let mut engine = Engine::new(crate::label);
+        engine.take_effects();
+        old.apply(&mut engine);
+        let mut pending = Pending::new(&old);
+        pending.reconcile(&mut engine);
+        assert!(engine.ui.expanded.contains("nodes"));
+        assert!(engine.ui.expanded.contains("node:alpha"));
+        assert!(engine.take_effects().is_empty());
+        engine.ui.expanded.remove("nodes");
+        let saved = Arrangement::capture(&engine);
+        let saved: Arrangement =
+            serde_json::from_str(&serde_json::to_string(&saved).unwrap()).unwrap();
+        assert!(saved.nodes_layout);
+        saved.apply(&mut engine);
+        assert!(!engine.ui.expanded.contains("nodes"));
+        let existing: Arrangement =
+            serde_json::from_value(serde_json::json!({"expanded":["nodes:mesh"]})).unwrap();
+        existing.apply(&mut engine);
+        assert!(
+            !engine.ui.expanded.contains("nodes"),
+            "existing nodes layout is preserved"
+        );
+    }
     #[test]
     fn arrangement_restores_only_the_listed_fields() {
         let mut e = Engine::new(crate::label);

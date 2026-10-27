@@ -427,18 +427,30 @@ reports the ones in force.</p>
 its peers around an ellipse in Details. Selecting Mesh refreshes <code>noded.info</code>
 and <code>noded.peers</code>, and starts the same observation stream as Traffic's
 <strong>Observe traffic</strong> action if it is off. Reconnecting refreshes the nodes and
-starts a new stream. A refused stream shows the broker's reason in Details.</p>
+restarts observation only if it was enabled before disconnecting. Turning
+Observe off shows <strong>Observation stopped</strong> and a <strong>Start observation</strong> button;
+selecting Mesh again also starts it. A refused stream shows the broker's reason
+in Details. <strong>Observation subscribed</strong> reports the subscription state; the
+last-event age reports receipt time without claiming that a quiet stream is live.
+Traffic naming a peer absent from the map triggers a topology refresh, with
+at most one refresh in flight.</p>
 <p>Each spoke has separate outgoing and incoming curves. Their widths follow
 the last five minutes of messages. Dots show observed messages in their
 original order and spacing; replies launch after the request's travel time.
 Rejected and dropped messages use the theme's danger colour. Local messages
 make an expanding ring. Animation requests repaints only while moving, with
-one scheduled wake for a delayed dot; a quiet map does not repaint on a timer.</p>
+one scheduled wake for a delayed dot. A visible Mesh view also repaints once
+per second to update ages and window widths. It schedules no age repaint when
+hidden or when another row is selected, and this wake never polls the Bus.
+Typed tally summaries are cached by tally revision and wall-clock second;
+geometry is reused until the map rectangle, peers, font unit or theme changes.</p>
 <p>Hover or focus a node to read its counts since start, over one minute and
 five minutes, top services and commands, and its latest ping and age. The
 local node panel includes local service traffic and totals across mesh links.
-Every map node is keyboard focusable and labelled with its node name for
-screen readers and <code>workshop.ui.click {label:"beta"}</code>. Clicking a node selects
+Every map node is keyboard focusable and has a distinct accessible name, for
+example <code>beta · mesh peer</code> or <code>alpha · this node</code>. Use
+<code>workshop.ui.click {label:"beta · mesh peer"}</code> to click the map; tree nodes
+keep their plain names, such as <code>beta</code>. Clicking a map node selects
 its <code>node:&lt;name&gt;</code> tree row; clicking a spoke opens Traffic filtered to its peer.</p>
 <p><strong>Ping peers</strong> in Details or <strong>Bus → Ping peers</strong> (<code>mesh.ping</code>) pings each
 known peer once, sequentially, with a two-second deadline per peer. Nothing
@@ -457,8 +469,15 @@ commands accept every caller, local or mesh. Overlapping ping rounds return
 traffic that Workshop cannot see. Broker events with <code>peer</code> identify the link
 directly. Older events fall back to mesh addresses and reply correlation IDs;
 unidentifiable messages appear in the unnamed-node count. Workshop excludes
-its own observe, discovery and ping traffic from the tally. Pausing Traffic
+its own observe, discovery and ping traffic from the tally. Named peers outside
+the bounded map appear in unplaced-peer rows with their message counts;
+overflow beyond the bounded link tally joins the unnamed count. Future broker
+timestamps are clamped to receipt time for buckets; a clock step back discards
+buckets more than five seconds ahead. Pausing Traffic
 does not pause the map, and its counters are independent of Traffic's ring.</p>
+<p><code>workshop.tree</code> identifies the map with key <code>nodes:mesh</code> and kind <code>mesh_map</code>.
+The peers group retains key <code>mesh</code> and kind <code>peers</code>. Saved arrangements from
+before the Nodes root open that root once; later deliberate collapses survive.</p>
 <p>All retained state is bounded: 64 named traffic links plus an unknown link,
 40 distinct count keys plus an overflow key, 2,000 pending correlations,
 2,000 recent events over 15 seconds, and a five-minute second-bucket window

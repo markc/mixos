@@ -992,9 +992,18 @@ impl Engine {
                 self.connected = true;
                 self.refresh(None);
                 self.refresh_mesh();
-                self.ensure_observing();
+                if self.workshop.mesh.resume_observe {
+                    self.ensure_observing();
+                } else {
+                    self.workshop.mesh.set_observing(false, None);
+                }
             }
             Delivery::Disconnected => {
+                if self.connected {
+                    self.workshop.mesh.resume_observe = self.workshop.subscription.is_some()
+                        && (self.workshop.mesh.observe_ticket.is_none()
+                            || self.workshop.mesh.resume_observe);
+                }
                 self.connected = false;
                 self.workshop.subscription = None;
                 self.workshop.mesh.observe_ticket = None;
@@ -1310,7 +1319,7 @@ impl Engine {
             for row in rows {
                 let (kind, label) = match &row.kind {
                     RowKind::Nodes => ("nodes", engine.label("nodes-root")),
-                    RowKind::Mesh => ("mesh", engine.label("mesh-map")),
+                    RowKind::Mesh => ("mesh_map", engine.label("mesh-map")),
                     RowKind::MacroGroup(title) => ("macros", title.clone()),
                     RowKind::Macro { title, .. } => ("macro", title.clone()),
                     RowKind::Node(name) => ("node", engine.node_label(name)),

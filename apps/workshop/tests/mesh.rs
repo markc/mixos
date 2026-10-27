@@ -188,12 +188,127 @@ fn labelled_map_node_click_selects_its_tree_row() {
                 let events = view(ui, engine, &registry, &strings);
                 apply_ui(engine, &registry, events);
             },
-            fixture(),
+            {
+                let mut engine = fixture();
+                engine.ui.expanded.insert("nodes".into());
+                engine
+            },
         );
     h.run();
-    h.get_by_label("beta").click();
+    assert!(
+        h.query_by_label("beta").is_some(),
+        "tree keeps the plain node name"
+    );
+    h.get_by_role_and_label(
+        egui::accesskit::Role::Button,
+        &workshop::label_with("mesh-peer", &[("name", "beta")]),
+    )
+    .click();
     h.run();
     assert_eq!(h.state().ui.row_key.as_deref(), Some("node:beta"));
+}
+
+#[test]
+fn stopped_observation_offers_start_without_an_unavailable_reason() {
+    let registry = actions::registry();
+    let strings = strings();
+    let mut engine = fixture();
+    engine.workshop.subscription = None;
+    engine.workshop.mesh.set_observing(false, None);
+    let mut h = Harness::builder()
+        .with_context_setup(|ctx| toolkit::install(ctx, &Theme::embedded()))
+        .with_size(egui::vec2(1400.0, 1100.0))
+        .build_ui_state(
+            move |ui, engine: &mut Engine| {
+                let events = view(ui, engine, &registry, &strings);
+                apply_ui(engine, &registry, events);
+            },
+            engine,
+        );
+    h.run();
+    assert!(h.query_by_label(&label("mesh-observe-stopped")).is_some());
+    assert!(
+        h.query_by_label(&workshop::label_with(
+            "mesh-observe-unavailable",
+            &[("reason", &label("mesh-waiting"))]
+        ))
+        .is_none()
+    );
+    h.get_by_label(&label("mesh-observe-start")).click();
+    h.run();
+    assert!(h.state().workshop.mesh.observe_ticket.is_some());
+    assert!(h.state_mut().take_effects().iter().any(|e| matches!(e, Effect::Workshop { operation, args, .. } if operation == "observe" && args["on"] == true)));
+}
+
+#[test]
+fn named_unplaced_traffic_is_visible_beside_the_map() {
+    let mut engine = fixture();
+    engine.workshop.mesh.add_event_at(
+        &json!({"direction":"mesh_in","peer":"delta","ts":"1970-01-01T00:01:10.000Z"}),
+        clock(),
+    );
+    let h = status_harness(engine);
+    assert!(
+        h.query_by_label(&workshop::label_with(
+            "mesh-unplaced-peer",
+            &[("name", "delta"), ("out", "0"), ("in", "1")]
+        ))
+        .is_some()
+    );
+}
+
+#[test]
+fn visible_map_updates_ages_once_per_second_and_hidden_map_has_no_age_wake() {
+    let mut h = status_harness(fixture());
+    let delay = h.output().viewport_output[&egui::ViewportId::ROOT].repaint_delay;
+    assert!(delay > std::time::Duration::ZERO && delay <= std::time::Duration::from_secs(1));
+    h.input_mut()
+        .viewports
+        .get_mut(&egui::ViewportId::ROOT)
+        .unwrap()
+        .minimized = Some(true);
+    h.run();
+    assert_eq!(
+        h.output().viewport_output[&egui::ViewportId::ROOT].repaint_delay,
+        std::time::Duration::MAX
+    );
+
+    let mut engine = fixture();
+    engine.ui.row_key = None;
+    let h = status_harness(engine);
+    assert_eq!(
+        h.output().viewport_output[&egui::ViewportId::ROOT].repaint_delay,
+        std::time::Duration::MAX
+    );
+}
+
+#[test]
+fn quiet_map_refreshes_observe_and_ping_ages_after_clock_advances() {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NOW: AtomicU64 = AtomicU64::new(100_000);
+    fn dynamic_clock() -> u64 {
+        NOW.load(Ordering::Relaxed)
+    }
+    let mut engine = fixture();
+    engine.workshop.mesh.clock = dynamic_clock;
+    engine.workshop.mesh.add_event_at(
+        &json!({"direction":"mesh_in","peer":"gamma","ts":"1970-01-01T00:01:10.000Z"}),
+        clock(),
+    );
+    let mut h = status_harness(engine);
+    let name = workshop::label_with("mesh-peer", &[("name", "gamma")]);
+    h.get_by_role_and_label(egui::accesskit::Role::Button, &name)
+        .focus();
+    NOW.store(161_000, Ordering::Relaxed);
+    h.run();
+    assert!(
+        h.query_by_label(&workshop::label_with("mesh-last-observe", &[("age", "61")]))
+            .is_some()
+    );
+    assert!(
+        h.query_by_label(&workshop::label_with("mesh-ping-failed", &[("age", "66")]))
+            .is_some()
+    );
 }
 
 #[test]
@@ -208,7 +323,11 @@ fn hover_exposes_peer_counts_and_ping_age_without_animation() {
             let _ = view(ui, &engine, &registry, &strings);
         });
     h.run();
-    let at = h.get_by_label("gamma").rect().center();
+    let name = workshop::label_with("mesh-peer", &[("name", "gamma")]);
+    let at = h
+        .get_by_role_and_label(egui::accesskit::Role::Button, &name)
+        .rect()
+        .center();
     h.hover_at(at);
     h.run();
     assert!(
@@ -217,9 +336,13 @@ fn hover_exposes_peer_counts_and_ping_age_without_animation() {
     );
     assert!(h.query_by_label(&label("mesh-since-start")).is_some());
     h.hover_at(egui::pos2(0.0, 0.0));
-    h.get_by_label("gamma").focus();
+    h.get_by_role_and_label(egui::accesskit::Role::Button, &name)
+        .focus();
     h.run();
-    assert!(h.get_by_label("gamma").is_focused());
+    assert!(
+        h.get_by_role_and_label(egui::accesskit::Role::Button, &name)
+            .is_focused()
+    );
     assert!(
         h.query_by_label(&workshop::label_with("mesh-ping-failed", &[("age", "5")]))
             .is_some()

@@ -138,12 +138,65 @@ fn bump(counts: &mut Counts, key: &str) {
     *count = count.saturating_add(1);
 }
 fn top(counts: &Counts, limit: usize) -> Vec<Value> {
+    top_counts(counts, limit)
+        .into_iter()
+        .map(|(name, count)| json!({"name":name,"count":count}))
+        .collect()
+}
+fn top_counts(counts: &Counts, limit: usize) -> Vec<(String, u64)> {
     let mut rows: Vec<_> = counts.iter().collect();
     rows.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
     rows.into_iter()
         .take(limit)
-        .map(|(name, count)| json!({"name":name,"count":count}))
+        .map(|(name, count)| (name.clone(), *count))
         .collect()
+}
+
+/// Small typed renderer input. Recent animation headers stay in Mesh; the GUI
+/// caches this summary by revision and wall-clock second, never serialising it.
+/// Directional messages in [since start, last minute, last five minutes] order.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct LinkCounts {
+    pub out: [u64; 3],
+    pub input: [u64; 3],
+}
+impl LinkCounts {
+    fn add(&mut self, other: Self) {
+        for i in 0..3 {
+            self.out[i] = self.out[i].saturating_add(other.out[i]);
+            self.input[i] = self.input[i].saturating_add(other.input[i]);
+        }
+    }
+}
+#[derive(Clone, Debug, Default)]
+pub struct ViewStats {
+    pub services: Vec<(String, u64)>,
+    pub commands: Vec<(String, u64)>,
+}
+#[derive(Clone, Debug, Default)]
+pub struct ViewLink {
+    pub counts: LinkCounts,
+    pub stats: ViewStats,
+}
+#[derive(Clone, Debug)]
+pub struct ViewPing {
+    pub ok: bool,
+    pub ms: Option<u64>,
+    pub age_ms: u64,
+    pub failed: bool,
+}
+#[derive(Clone, Debug, Default)]
+pub struct MeshView {
+    pub links: BTreeMap<String, ViewLink>,
+    pub total: LinkCounts,
+    /// Same window order as LinkCounts.
+    pub local_counts: [u64; 3],
+    pub local_stats: ViewStats,
+    pub pings: BTreeMap<String, ViewPing>,
+    pub observing: bool,
+    pub observe_error: Option<String>,
+    pub last_event_age_ms: Option<u64>,
+    pub ring_dropped: u64,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -231,6 +284,9 @@ pub struct Mesh {
     pub(crate) ping_ticket: Option<u64>,
     pub(crate) nodes_ticket: Option<u64>,
     pub observe_ticket: Option<u64>,
+    pub(crate) resume_observe: bool,
+    pub(crate) topology_needed: bool,
+    revision: u64,
     #[serde(skip)]
     pub clock: fn() -> u64,
 }
@@ -265,17 +321,25 @@ impl Mesh {
             ping_ticket: None,
             nodes_ticket: None,
             observe_ticket: None,
+            resume_observe: false,
+            topology_needed: false,
+            revision: 0,
             clock,
         }
     }
     pub fn now(&self) -> u64 {
         (self.clock)()
     }
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
     pub fn set_observing(&mut self, on: bool, error: Option<&str>) {
+        self.revision = self.revision.wrapping_add(1);
         self.observing = on;
         self.observe_error = if on { None } else { error.map(text) };
     }
     pub fn set_nodes(&mut self, info: &Value, peers: &Value) {
+        self.revision = self.revision.wrapping_add(1);
         if let Some(name) = info["name"].as_str().or_else(|| info["node"].as_str()) {
             self.self_name = text(name);
         }
@@ -326,6 +390,7 @@ impl Mesh {
     /// Retain only known peers and the fields shown by the map. Missing results
     /// preserve the previous ping, with its own completion time.
     pub fn set_probe(&mut self, results: &Value, now: u64) {
+        self.revision = self.revision.wrapping_add(1);
         self.probe_at_ms = Some(now);
         for node in self.nodes.iter().filter(|n| !n.local) {
             if let Some(result) = results.get(&node.name).filter(|r| r.is_object()) {
@@ -359,9 +424,11 @@ impl Mesh {
         let now = self.now();
         self.prune(now);
         self.add_event_at(event, now);
-        self.prune(now);
     }
+    /// Oracle add-then-prune surface. Production ingestion prunes once before
+    /// this step, so expired correlations and clock-step buckets cannot survive.
     pub fn add_event_at(&mut self, event: &Value, now: u64) {
+        self.revision = self.revision.wrapping_add(1);
         self.last_observe_ms = Some(now);
         self.seen = self.seen.saturating_add(1);
         self.ring_dropped = self
@@ -377,7 +444,7 @@ impl Mesh {
         if !matches!(dir, "local" | "mesh_out" | "mesh_in") {
             return;
         }
-        let t = event["ts"].as_str().and_then(ts_ms).unwrap_or(now);
+        let t = event["ts"].as_str().and_then(ts_ms).unwrap_or(now).min(now);
         let size = event["size"].as_u64().unwrap_or(0);
         let command = text(event["command"].as_str().unwrap_or(UNKNOWN));
         let outcome = event["outcome"].as_str().unwrap_or("");
@@ -424,6 +491,9 @@ impl Mesh {
                     })
                     .unwrap_or(UNKNOWN),
             );
+            if peer != UNKNOWN && !self.nodes.iter().any(|n| n.name == peer) {
+                self.topology_needed = true;
+            }
             if !self.links.contains_key(&peer) && self.links.len() >= MAX_LINKS {
                 peer = UNKNOWN.into();
             }
@@ -488,9 +558,12 @@ impl Mesh {
         self.bound();
     }
     pub fn prune(&mut self, now: u64) {
+        self.revision = self.revision.wrapping_add(1);
         self.recent.retain(|r| now.saturating_sub(r.t) <= RECENT_MS);
-        self.buckets
-            .retain(|second, _| *second >= (now / 1000).saturating_sub(WINDOW_S));
+        self.buckets.retain(|second, _| {
+            *second >= (now / 1000).saturating_sub(WINDOW_S)
+                && *second <= (now / 1000).saturating_add(5)
+        });
         self.pending
             .retain(|_, p| now.saturating_sub(p.t) <= PENDING_MS);
         self.bound();
@@ -522,6 +595,76 @@ impl Mesh {
                 sum.saturating_add(*counts.get(key).unwrap_or(&0))
             })
     }
+    fn window_at(&self, key: &str, from_ms: u64, now: u64) -> u64 {
+        self.buckets
+            .range(from_ms / 1000..=(now / 1000).saturating_add(5))
+            .fold(0_u64, |sum, (_, counts)| {
+                sum.saturating_add(*counts.get(key).unwrap_or(&0))
+            })
+    }
+    pub fn view_at(&self, now: u64) -> MeshView {
+        let m1 = now.saturating_sub(60_000);
+        let m5 = now.saturating_sub(WINDOW_S * 1000);
+        let mut view = MeshView {
+            local_counts: [
+                self.local.msgs,
+                self.window_at("local", m1, now),
+                self.window_at("local", m5, now),
+            ],
+            local_stats: ViewStats {
+                services: top_counts(&self.local.services, 6),
+                commands: top_counts(&self.local.commands, 5),
+            },
+            observing: self.observing,
+            observe_error: self.observe_error.clone(),
+            last_event_age_ms: self.last_observe_ms.map(|last| now.saturating_sub(last)),
+            ring_dropped: self.ring_dropped,
+            ..Default::default()
+        };
+        for (peer, link) in &self.links {
+            let out = format!("out:{peer}");
+            let input = format!("in:{peer}");
+            let counts = LinkCounts {
+                out: [
+                    link.out_msgs,
+                    self.window_at(&out, m1, now),
+                    self.window_at(&out, m5, now),
+                ],
+                input: [
+                    link.in_msgs,
+                    self.window_at(&input, m1, now),
+                    self.window_at(&input, m5, now),
+                ],
+            };
+            view.total.add(counts);
+            view.links.insert(
+                peer.clone(),
+                ViewLink {
+                    counts,
+                    stats: ViewStats {
+                        services: top_counts(&link.services, 6),
+                        commands: top_counts(&link.commands, 5),
+                    },
+                },
+            );
+        }
+        view.pings = self
+            .pings
+            .iter()
+            .map(|(name, ping)| {
+                (
+                    name.clone(),
+                    ViewPing {
+                        ok: ping.ok,
+                        ms: ping.ms,
+                        age_ms: now.saturating_sub(ping.at_ms),
+                        failed: self.ping_failed(name),
+                    },
+                )
+            })
+            .collect();
+        view
+    }
     pub fn snapshot(&self) -> Value {
         self.snapshot_at(self.now())
     }
@@ -531,8 +674,8 @@ impl Mesh {
         let links: Vec<_> = self.links.iter().map(|(peer, link)| json!({
             "a":self.self_name,"b":peer,"out_msgs":link.out_msgs,"out_bytes":link.out_bytes,
             "in_msgs":link.in_msgs,"in_bytes":link.in_bytes,
-            "out_1m":self.window(&format!("out:{peer}"),m1),"in_1m":self.window(&format!("in:{peer}"),m1),
-            "out_5m":self.window(&format!("out:{peer}"),m5),"in_5m":self.window(&format!("in:{peer}"),m5),
+            "out_1m":self.window_at(&format!("out:{peer}"),m1,now),"in_1m":self.window_at(&format!("in:{peer}"),m1,now),
+            "out_5m":self.window_at(&format!("out:{peer}"),m5,now),"in_5m":self.window_at(&format!("in:{peer}"),m5,now),
             "rejected":link.rejected,"dropped":link.dropped,"top_commands":top(&link.commands,5),
             "top_services":top(&link.services,6),"last_at":link.last_ms.map(iso_ms),
         })).collect();
@@ -567,8 +710,8 @@ impl Mesh {
                 "last_event_age_ms":self.last_observe_ms.map(|last| now.saturating_sub(last)),
                 "ring_dropped":self.ring_dropped,"recent_capped":self.recent_capped},
             "nodes_error":self.nodes_error,"links":links,
-            "local":{"msgs":self.local.msgs,"bytes":self.local.bytes,"msgs_1m":self.window("local",m1),
-                "msgs_5m":self.window("local",m5),"rejected":self.local.rejected,"dropped":self.local.dropped,
+            "local":{"msgs":self.local.msgs,"bytes":self.local.bytes,"msgs_1m":self.window_at("local",m1,now),
+                "msgs_5m":self.window_at("local",m5,now),"rejected":self.local.rejected,"dropped":self.local.dropped,
                 "top_services":top(&self.local.services,6),"top_commands":top(&self.local.commands,5),
                 "last_at":self.local.last_ms.map(iso_ms)},
             "probe":{"at":self.probe_at_ms.map(iso_ms),"results":results,"running":self.ping_ticket.is_some()},"recent":recent})
@@ -600,10 +743,13 @@ impl crate::Engine {
             && self.workshop.mesh.nodes.iter().any(|node| !node.local)
     }
     pub fn mesh_ping(&mut self) -> Result<Value, (&'static str, String)> {
+        if self.quitting {
+            return Err(("BUSY", "Workshop is closing".into()));
+        }
         if !self.connected {
             return Err(("DISCONNECTED", self.text("disconnected")));
         }
-        if self.quitting || self.workshop.mesh.ping_ticket.is_some() {
+        if self.workshop.mesh.ping_ticket.is_some() {
             return Err(("BUSY", self.text("mesh-ping-busy")));
         }
         let peers: Vec<_> = self
@@ -699,6 +845,205 @@ mod tests {
     }
     fn state() -> Mesh {
         Mesh::new("alpha", "observer", clock)
+    }
+    #[test]
+    fn typed_view_matches_bus_windows_and_ages_without_recent_json() {
+        let mut mesh = state();
+        nodes(&mut mesh);
+        let before = mesh.revision();
+        mesh.add_event_at(
+            &json!({"direction":"mesh_in","peer":"beta","command":"noded.info"}),
+            base(),
+        );
+        mesh.add_event_at(
+            &json!({"direction":"local","to":"webd","command":"webd.info"}),
+            base(),
+        );
+        mesh.set_probe(&json!({"beta":{"ok":true,"ms":3}}), base());
+        assert!(mesh.revision() > before);
+        for age in [0, 61_000, 301_000] {
+            let view = mesh.view_at(base() + age);
+            let json = mesh.snapshot_at(base() + age);
+            let link = json["links"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|l| l["b"] == "beta")
+                .unwrap();
+            for (i, field) in ["in_msgs", "in_1m", "in_5m"].iter().enumerate() {
+                assert_eq!(
+                    view.links["beta"].counts.input[i],
+                    link[*field].as_u64().unwrap()
+                );
+            }
+            assert_eq!(
+                view.local_counts[1],
+                json["local"]["msgs_1m"].as_u64().unwrap()
+            );
+            assert_eq!(view.last_event_age_ms, Some(age));
+            assert_eq!(view.pings["beta"].age_ms, age);
+            assert_eq!(view.total.input, view.links["beta"].counts.input);
+        }
+    }
+
+    #[test]
+    fn future_events_clamp_and_clock_step_back_prunes_future_buckets() {
+        let mut mesh = state();
+        mesh.add_event_at(
+            &json!({"direction":"mesh_out","peer":"beta","ts":iso_ms(base() + 3_600_000)}),
+            base(),
+        );
+        assert_eq!(
+            mesh.buckets.keys().copied().collect::<Vec<_>>(),
+            [base() / 1000]
+        );
+        assert_eq!(mesh.recent.back().unwrap().t, base());
+        mesh.add_event_at(
+            &json!({"direction":"mesh_in","peer":"beta"}),
+            base() + 10_000,
+        );
+        // A read also ignores far-future buckets before the next ingestion.
+        assert_eq!(mesh.snapshot_at(base())["links"][0]["in_5m"], 0);
+        mesh.clock = base;
+        mesh.add_event(&json!({"direction":"local","from":"observer"}));
+        assert_eq!(mesh.buckets.len(), 1);
+        assert_eq!(mesh.view_at(base()).links["beta"].counts.input[2], 0);
+        assert_eq!(
+            mesh.links["beta"].in_msgs, 1,
+            "totals survive clock changes"
+        );
+        // The tolerated boundary is inclusive; seconds beyond it are removed.
+        mesh.buckets.insert(base() / 1000 + 5, Counts::new());
+        mesh.buckets.insert(base() / 1000 + 6, Counts::new());
+        mesh.prune(base());
+        assert!(mesh.buckets.contains_key(&(base() / 1000 + 5)));
+        assert!(!mesh.buckets.contains_key(&(base() / 1000 + 6)));
+    }
+
+    #[test]
+    fn joining_peer_refreshes_once_in_flight_and_map_kind_is_distinct() {
+        let mut engine = crate::Engine::new(str::to_owned);
+        engine.take_effects();
+        nodes(&mut engine.workshop.mesh);
+        engine.workshop.subscription = Some("live".into());
+        for _ in 0..3 {
+            engine.workshop_command(
+                0,
+                "noded.observe.event",
+                &json!({"subscription_id":"live","direction":"mesh_in","peer":"delta"}),
+            );
+        }
+        let effects = engine.take_effects();
+        assert_eq!(effects.iter().filter(|e| matches!(e, crate::Effect::Workshop { operation, .. } if operation == "mesh.nodes")).count(), 1);
+        let ticket = engine.workshop.mesh.nodes_ticket.unwrap();
+        engine.mesh_completed(
+            ticket,
+            "mesh.nodes",
+            &json!({}),
+            &json!({"info":{"name":"alpha"},"peers":{"peers":[{"name":"delta"}]}}),
+        );
+        engine.workshop_command(
+            0,
+            "noded.observe.event",
+            &json!({"subscription_id":"live","direction":"mesh_in","peer":"delta"}),
+        );
+        assert!(engine.take_effects().is_empty());
+        assert_eq!(engine.workshop.mesh.links["delta"].in_msgs, 4);
+        engine.ui.expanded.insert("nodes".into());
+        let rows = engine.rows();
+        assert_eq!(
+            rows.iter().find(|r| r["key"] == "nodes:mesh").unwrap()["kind"],
+            "mesh_map"
+        );
+        assert_eq!(
+            rows.iter().find(|r| r["key"] == "mesh").unwrap()["kind"],
+            "peers"
+        );
+    }
+
+    #[test]
+    fn traffic_beyond_topology_and_link_caps_survives_as_unplaced_counts() {
+        let mut mesh = state();
+        let peers: Vec<_> = (0..MAX_LINKS + 2)
+            .map(|i| json!({"name":format!("peer-{i:02}")}))
+            .collect();
+        mesh.set_nodes(&json!({"name":"alpha"}), &json!({"peers":peers}));
+        assert_eq!(mesh.nodes.len(), MAX_LINKS + 1);
+        let missing = format!("peer-{:02}", MAX_LINKS);
+        mesh.add_event_at(&json!({"direction":"mesh_in","peer":missing}), base());
+        assert_eq!(mesh.view_at(base()).links[&missing].counts.input[0], 1);
+        assert!(!mesh.nodes.iter().any(|n| n.name == missing));
+        for i in 0..MAX_LINKS + 2 {
+            mesh.add_event_at(
+                &json!({"direction":"mesh_in","peer":format!("peer-{i:02}")}),
+                base(),
+            );
+        }
+        let view = mesh.view_at(base());
+        assert_eq!(view.total.input[0], MAX_LINKS as u64 + 3);
+        assert!(view.links[UNKNOWN].counts.input[0] > 0);
+        let unplaced: u64 = view
+            .links
+            .iter()
+            .filter(|(name, _)| !mesh.nodes.iter().any(|n| n.name == **name))
+            .map(|(_, l)| l.counts.input[0])
+            .sum();
+        assert!(unplaced >= 3);
+    }
+
+    #[test]
+    fn reconnect_resumes_only_previously_enabled_observation_and_closing_ping_refuses() {
+        for on in [false, true] {
+            let mut engine = crate::Engine::new(str::to_owned);
+            engine.take_effects();
+            if on {
+                engine.workshop.subscription = Some("live".into());
+                engine.workshop.mesh.set_observing(true, None);
+            }
+            engine.delivery(crate::bus::Delivery::Disconnected);
+            engine.delivery(crate::bus::Delivery::Disconnected);
+            engine.delivery(crate::bus::Delivery::Connected);
+            let effects = engine.take_effects();
+            assert_eq!(effects.iter().any(|e| matches!(e, crate::Effect::Workshop { operation, .. } if operation == "observe")), on);
+            if !on {
+                assert!(engine.workshop.mesh.observe_error.is_none());
+            }
+        }
+        let mut engine = crate::Engine::new(str::to_owned);
+        engine.take_effects();
+        engine.quitting = true;
+        engine.workshop.mesh.ping_ticket = Some(1);
+        assert_eq!(
+            engine.mesh_ping().unwrap_err(),
+            ("BUSY", "Workshop is closing".into())
+        );
+    }
+
+    #[test]
+    fn concurrent_observe_commands_return_busy_and_explicit_stop_survives_reconnect() {
+        let mut engine = crate::Engine::new(str::to_owned);
+        engine.take_effects();
+        engine.command(1, "workshop.observe", r#"{"on":true}"#);
+        engine.take_effects();
+        engine.command(2, "workshop.observe", r#"{"on":false}"#);
+        assert!(
+            matches!(&engine.take_effects()[..], [crate::Effect::Reply { id:2, rc:10, body }] if body["error_code"] == "BUSY")
+        );
+        let ticket = engine.workshop.mesh.observe_ticket.unwrap();
+        engine.mesh_completed(
+            ticket,
+            "observe",
+            &json!({"on":true}),
+            &json!({"subscription_id":"live"}),
+        );
+        engine.command(3, "workshop.observe", r#"{"on":false}"#);
+        engine.take_effects();
+        // Disconnect while the stop is in flight also respects that intent.
+        engine.delivery(crate::bus::Delivery::Disconnected);
+        engine.delivery(crate::bus::Delivery::Connected);
+        assert!(!engine.take_effects().iter().any(
+            |e| matches!(e, crate::Effect::Workshop { operation, .. } if operation == "observe")
+        ));
     }
     #[test]
     fn custom_observer_excludes_from_and_to_in_every_direction_but_counts_stream_health() {
@@ -1299,7 +1644,11 @@ mod tests {
                 base(),
             );
         }
-        assert_eq!(st.buckets.len(), 301);
+        assert_eq!(
+            st.buckets.len(),
+            1,
+            "future timestamps share the current second"
+        );
         st.set_probe(&json!({"beta":{"ok":false,"rc":10}}), base() + 1_000_000);
         st.add_event_at(
             &json!({"direction":"mesh_out","peer":"beta"}),
@@ -1496,6 +1845,8 @@ mod tests {
         }
         assert!(calls.is_empty());
         assert_eq!(engine.workshop.mesh.pings.len(), 2);
+        engine.workshop.subscription = Some("live".into());
+        engine.workshop.mesh.set_observing(true, None);
         engine.delivery(crate::bus::Delivery::Disconnected);
         engine.delivery(crate::bus::Delivery::Connected);
         let ticket = engine.workshop.mesh.observe_ticket.unwrap();

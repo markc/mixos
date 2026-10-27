@@ -435,7 +435,12 @@ impl Engine {
         match operation {
             "mesh.nodes" => self.workshop.mesh.nodes_ticket = Some(ticket),
             "mesh.ping" => self.workshop.mesh.ping_ticket = Some(ticket),
-            "observe" => self.workshop.mesh.observe_ticket = Some(ticket),
+            "observe" => {
+                self.workshop.mesh.observe_ticket = Some(ticket);
+                if let Some(on) = args["on"].as_bool() {
+                    self.workshop.mesh.resume_observe = on;
+                }
+            }
             _ => {}
         }
         self.push_workshop(Effect::Workshop {
@@ -493,6 +498,9 @@ impl Engine {
                     })
             {
                 self.workshop.observe(args.clone());
+                if std::mem::take(&mut self.workshop.mesh.topology_needed) {
+                    self.refresh_mesh();
+                }
             } else {
                 self.workshop.ignored_observations =
                     self.workshop.ignored_observations.saturating_add(1);

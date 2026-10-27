@@ -36363,20 +36363,32 @@ Select **Nodes → Mesh** (`nodes:mesh`) to draw this node in the centre and
 its peers around an ellipse in Details. Selecting Mesh refreshes `noded.info`
 and `noded.peers`, and starts the same observation stream as Traffic's
 **Observe traffic** action if it is off. Reconnecting refreshes the nodes and
-starts a new stream. A refused stream shows the broker's reason in Details.
+restarts observation only if it was enabled before disconnecting. Turning
+Observe off shows **Observation stopped** and a **Start observation** button;
+selecting Mesh again also starts it. A refused stream shows the broker's reason
+in Details. **Observation subscribed** reports the subscription state; the
+last-event age reports receipt time without claiming that a quiet stream is live.
+Traffic naming a peer absent from the map triggers a topology refresh, with
+at most one refresh in flight.
 
 Each spoke has separate outgoing and incoming curves. Their widths follow
 the last five minutes of messages. Dots show observed messages in their
 original order and spacing; replies launch after the request's travel time.
 Rejected and dropped messages use the theme's danger colour. Local messages
 make an expanding ring. Animation requests repaints only while moving, with
-one scheduled wake for a delayed dot; a quiet map does not repaint on a timer.
+one scheduled wake for a delayed dot. A visible Mesh view also repaints once
+per second to update ages and window widths. It schedules no age repaint when
+hidden or when another row is selected, and this wake never polls the Bus.
+Typed tally summaries are cached by tally revision and wall-clock second;
+geometry is reused until the map rectangle, peers, font unit or theme changes.
 
 Hover or focus a node to read its counts since start, over one minute and
 five minutes, top services and commands, and its latest ping and age. The
 local node panel includes local service traffic and totals across mesh links.
-Every map node is keyboard focusable and labelled with its node name for
-screen readers and `workshop.ui.click {label:"beta"}`. Clicking a node selects
+Every map node is keyboard focusable and has a distinct accessible name, for
+example `beta · mesh peer` or `alpha · this node`. Use
+`workshop.ui.click {label:"beta · mesh peer"}` to click the map; tree nodes
+keep their plain names, such as `beta`. Clicking a map node selects
 its `node:<name>` tree row; clicking a spoke opens Traffic filtered to its peer.
 
 **Ping peers** in Details or **Bus → Ping peers** (`mesh.ping`) pings each
@@ -36398,8 +36410,16 @@ Only this node's broker is observed. Dashed links between peers represent
 traffic that Workshop cannot see. Broker events with `peer` identify the link
 directly. Older events fall back to mesh addresses and reply correlation IDs;
 unidentifiable messages appear in the unnamed-node count. Workshop excludes
-its own observe, discovery and ping traffic from the tally. Pausing Traffic
+its own observe, discovery and ping traffic from the tally. Named peers outside
+the bounded map appear in unplaced-peer rows with their message counts;
+overflow beyond the bounded link tally joins the unnamed count. Future broker
+timestamps are clamped to receipt time for buckets; a clock step back discards
+buckets more than five seconds ahead. Pausing Traffic
 does not pause the map, and its counters are independent of Traffic's ring.
+
+`workshop.tree` identifies the map with key `nodes:mesh` and kind `mesh_map`.
+The peers group retains key `mesh` and kind `peers`. Saved arrangements from
+before the Nodes root open that root once; later deliberate collapses survive.
 
 All retained state is bounded: 64 named traffic links plus an unknown link,
 40 distinct count keys plus an overflow key, 2,000 pending correlations,

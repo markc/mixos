@@ -392,19 +392,6 @@ fn tree_row(ui: &mut Ui, engine: &Engine, row: &Row, events: &mut Vec<UiEvent>) 
         }
         let selected = engine.ui.row_key.as_deref() == Some(row.key.as_str());
         let response = toolkit::selectable(ui, selected, text);
-        if let RowKind::Node(name) = &row.kind {
-            // Keep the map's bare node name unambiguous for ui.click. The
-            // tree has its own accessible name while displaying the same text.
-            let tree_name = label_with("mesh-tree-node", &[("name", name)]);
-            response.widget_info(|| {
-                egui::WidgetInfo::selected(
-                    egui::Role::Button,
-                    ui.is_enabled(),
-                    selected,
-                    &tree_name,
-                )
-            });
-        }
         if selected
             && ui.ctx().data_mut(|d| {
                 let key = egui::Id::unique("workshop-restore-selection");

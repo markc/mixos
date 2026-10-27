@@ -144,7 +144,8 @@ fn mesh_window() -> Harness<'static, Window> {
 #[test]
 fn mesh_node_is_clickable_by_its_accessible_name_over_the_bus() {
     let mut h = mesh_window();
-    ok(&mut h, 1, "workshop.ui.click", json!({"label":"beta"}));
+    let name = workshop::label_with("mesh-peer", &[("name", "beta")]);
+    ok(&mut h, 1, "workshop.ui.click", json!({"label":name}));
     assert_eq!(h.state().engine.ui.row_key.as_deref(), Some("node:beta"));
 }
 
