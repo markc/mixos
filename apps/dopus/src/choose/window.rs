@@ -24,6 +24,7 @@ pub struct Window {
     pub choices: BTreeMap<String, String>,
     pub replace: Option<Acceptance>,
     pub message: Option<String>,
+    pub executed: Vec<serde_json::Value>,
     events: mpsc::Receiver<CoreEvent>,
     end: Option<End>,
 }
@@ -48,7 +49,7 @@ impl Window {
         Self {
             id: id.into(), caller: caller.into(), choices: request.choice_defaults(),
             request, app: App::new(core), ready: false, ending: false,
-            original_name: (name.clone(), raw), name, replace: None, message: None, events, end: None,
+            original_name: (name.clone(), raw), name, replace: None, message: None, executed: Vec::new(), events, end: None,
         }
     }
 
@@ -172,6 +173,9 @@ impl Window {
             }
             Mode::Save => {
                 let raw: &[u8] = if self.name == self.original_name.0 { &self.original_name.1 } else { self.name.as_bytes() };
+                if dopus_core::chooser::validate_name(raw).is_err() {
+                    self.message = Some(label("chooser-invalid-name")); return;
+                }
                 let name = self.request.save_name(raw);
                 if dopus_core::chooser::validate_name(&name).is_err() {
                     self.message = Some(label("chooser-invalid-name")); return;
@@ -180,6 +184,7 @@ impl Window {
             }
             Mode::SaveFiles => self.request.files.iter().map(|name| folder.join(std::ffi::OsString::from_vec(name.clone()))).collect(),
         };
+        if self.request.mode == Mode::Save && paths[0].is_dir() { self.navigate(paths[0].clone()); return; }
         if !folder.is_dir() || paths.iter().any(|p| dopus_core::chooser::file_uri(p.as_os_str().as_bytes()).is_err()) {
             self.message = Some(label("chooser-folder-missing")); return;
         }
@@ -280,6 +285,12 @@ impl Window {
         }
         self.apply(events, &registry);
         if let Some(id) = clicked { let _ = registry.execute(id, self, Origin::Menu); }
+        let (runs, _) = registry.take_executed();
+        self.executed.extend(runs.iter().map(|run| {
+            let mut body = toolkit::executed::Executed::body(run);
+            body["viewport"] = serde_json::json!(self.id);
+            body
+        }));
         if let Some(deadline) = self.app.core.next_deadline() { ctx.request_repaint_after(deadline.saturating_duration_since(Instant::now())); }
     }
 }

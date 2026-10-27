@@ -20,7 +20,12 @@ pub(super) struct DriveRequest {
 pub(super) struct DriveHost {
     pub ctx: egui::Context,
     pub requests: mpsc::Sender<DriveRequest>,
-    pub answers: tokio::sync::mpsc::UnboundedReceiver<drive::Answer>,
+    pub answers: tokio::sync::mpsc::UnboundedReceiver<Report>,
+}
+
+pub(super) enum Report {
+    Drive(drive::Answer),
+    Executed(Vec<Value>),
 }
 
 struct NativePresenter {
@@ -65,7 +70,7 @@ struct Shell {
     windows: Windows,
     events: tokio::sync::mpsc::UnboundedSender<Presentation>,
     requests: mpsc::Receiver<DriveRequest>,
-    answers: tokio::sync::mpsc::UnboundedSender<drive::Answer>,
+    answers: tokio::sync::mpsc::UnboundedSender<Report>,
 }
 
 /// A missing viewport is only unambiguous with exactly one open chooser.
@@ -83,13 +88,13 @@ fn target(windows: &Windows, mut args: Value) -> Result<Value, &'static str> {
 
 impl eframe::App for Shell {
     fn logic(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
-        for answer in drive::logic(ctx) { let _ = self.answers.send(answer); }
+        for answer in drive::logic(ctx) { let _ = self.answers.send(Report::Drive(answer)); }
         while let Ok(request) = self.requests.try_recv() {
             let answer = match target(&self.windows, request.args) {
                 Ok(args) => drive::request(ctx, request.id, &request.command, &args),
                 Err(message) => Some(drive::Answer { id: request.id, rc: 10, body: json!({"error_code":"ARGUMENT","message":message}) }),
             };
-            if let Some(answer) = answer { let _ = self.answers.send(answer); }
+            if let Some(answer) = answer { let _ = self.answers.send(Report::Drive(answer)); }
         }
         let windows: Vec<_> = self.windows.lock().unwrap().values().cloned().collect();
         for window in windows {
@@ -114,11 +119,13 @@ impl eframe::App for Shell {
                 .with_inner_size([820.0, 600.0]).with_min_inner_size([520.0, 360.0]);
             let events = self.events.clone();
             let root = self.ctx.clone();
+            let reports = self.answers.clone();
             let weak = Arc::downgrade(&window);
             self.ctx.show_viewport_deferred(viewport(&id), builder, move |ui, _| {
                 if let Some(window) = weak.upgrade() {
                     let mut window = window.lock().unwrap();
                     window.show(ui);
+                    if !window.executed.is_empty() { let _ = reports.send(Report::Executed(std::mem::take(&mut window.executed))); }
                     if let Some(end) = window.take_end() {
                         let _ = events.send(Presentation { request: window.id.clone(), end });
                         root.request_repaint_of(egui::ViewportId::ROOT);
@@ -129,7 +136,7 @@ impl eframe::App for Shell {
     }
 
     fn on_exit(&mut self) {
-        for answer in drive::finish(&self.ctx) { let _ = self.answers.send(answer); }
+        for answer in drive::finish(&self.ctx) { let _ = self.answers.send(Report::Drive(answer)); }
     }
 }
 
