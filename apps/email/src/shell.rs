@@ -1649,6 +1649,8 @@ impl Shell {
                 for field in ["compose", "confirm", "status"] { info[field] = view[field].clone(); }
             }
             info["window"] = target.as_ref().map(|w| json!(w.lock().unwrap().name)).unwrap_or(Value::Null);
+            info["owner_closing"] = json!(self.composers.owner_closing);
+            info["quitting"] = json!(self.composers.quitting);
             info["compose_windows"] = Value::Array(self.composers.windows.values().map(|w| {
                 let w = w.lock().unwrap();
                 json!({"window":w.name,"root":w.viewport == egui::ViewportId::ROOT,"compose":w.view.info()["compose"]})

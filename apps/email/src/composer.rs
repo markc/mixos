@@ -241,12 +241,12 @@ pub fn view(ui: &mut egui::Ui, state: &State, registry: &Registry<State>, palett
         .into_iter().map(|(id,o)| UiEvent::Command(id,o)).collect();
     events.extend(crate::actions::shortcuts(&ctx,state,registry).into_iter().map(|id| UiEvent::Command(id,Origin::Shortcut)));
     egui::CentralPanel::default().show(ui, |ui| {
-        if state.status == crate::label("compose-owner-wait") { ui.label(&state.status); }
+        if state.compose.is_some() && state.status == crate::label("compose-owner-wait") { ui.label(&state.status); }
         if let Some(compose) = &state.compose {
             ui.push_id(ctx.viewport_id(),|ui| crate::view::compose::form(ui,compose,state,palette,&mut events));
         } else {
             ui.label(if state.status.is_empty() { crate::label("no-accounts-body") } else { state.status.clone() });
-            if ui.add(toolkit::button::PushButton::secondary(crate::label("open-settings"))).clicked() {
+            if state.status != crate::label("compose-owner-wait") && ui.add(toolkit::button::PushButton::secondary(crate::label("open-settings"))).clicked() {
                 events.push(UiEvent::Command("file.accounts", Origin::Menu));
             }
         }
