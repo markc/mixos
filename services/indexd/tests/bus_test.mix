@@ -40,31 +40,39 @@ check(ok("indexd.index_file", {path:"/srv/project/empty.md",content:""}).section
 check(ok("indexd.delete", {ids:[$old,$new]}).deleted == 2, "delete")
 $observed = []
 for $row in [
-  {text:"alpha",domain:"mixos",observer:"cmm_cargo_clippy"},
-  {text:"beta",domain:"other",observer:"cmm_cargo_clippy"},
-  {text:"changed",domain:"mixos",observer:"other_observer"}
+  {text:"alpha",domain:"cosmix",observer:"cmm_cargo_clippy"},
+  {text:"beta",domain:"mixos",observer:"cmm_cargo_clippy"},
+  {text:"changed",domain:"cosmix",observer:"other_observer"},
+  {text:"retained",domain:"cosmix",observer:"cmm_cargo_clippy"}
 ]
   $metadata = json_encode({observer:$row.observer,domain:$row.domain,tool:"cargo clippy",observed_at:"2026-05-01"})
   $stored = ok("indexd.store", {texts:[$row.text],source:"observation",metadata:[$metadata]})
   push($observed, $stored.ids[0])
 end
-$purge = {filter:[
+$doc_meta = json_encode({path:"/srv/project/cmm.md",domain:"cosmix",observer:"cmm_cargo_clippy"})
+$doc = ok("indexd.store", {texts:["alpha"],source:"doc",metadata:[$doc_meta]}).ids[0]
+-- IDs come only from the observation source. Include wrong-domain/observer
+-- IDs to prove filters constrain IDs; omit a match to prove IDs constrain filters.
+$purge = {ids:[$observed[0],$observed[1],$observed[2]],filter:[
   {field:"observer",op:"eq",value:"cmm_cargo_clippy"},
-  {field:"domain",op:"eq",value:"mixos"}
+  {field:"domain",op:"eq",value:"cosmix"}
 ]}
 check(ok("indexd.delete", $purge).deleted == 1, "observer/domain purge")
 check(ok("indexd.delete", $purge).deleted == 0, "purge is repeatable")
 $remaining = ok("indexd.list", {source:"observation",limit:10}).items
-check(len($remaining) == 2, "purge preserves other observers and domains")
+check(len($remaining) == 3, "purge preserves other observers, domains and unselected IDs")
 for $row in $remaining
   check($row.id != $observed[0], "purged chunk absent from durable list")
 end
+$docs = ok("indexd.list", {source:"doc",limit:10}).items
+check(len($docs) == 1 and $docs[0].id == $doc, "non-observation with same observer/domain survives")
 $matches = ok("indexd.search", {query:"query",source:"observation",limit:10}).results
-check(len($matches) == 2, "purge updates in-memory search")
+check(len($matches) == 3, "purge updates in-memory search")
 for $row in $matches
   check($row.id != $observed[0], "purged chunk absent from search")
 end
-check(ok("indexd.delete", {ids:$observed}).deleted == 2, "observation fixture cleanup")
+check(ok("indexd.delete", {ids:$observed}).deleted == 3, "observation fixture cleanup")
+check(ok("indexd.delete", {ids:[$doc]}).deleted == 1, "document fixture cleanup")
 $bad = call("indexd.store", {texts:["x"],metadata:[{}]})
 check($bad.rc == 10 and type($bad.body.error) == "string", "error rc and JSON body")
 $mismatch = call("indexd.stats", {action:"search"})

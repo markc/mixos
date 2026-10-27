@@ -97,6 +97,13 @@ source comments, observations and scripts, grouped by source. It applies
 source trust weights and journal age limits. `index_workspace` indexes workspace
 content. `knowledge_digest {}` returns global index statistics under
 `statistics` and bounded staleness samples under `stale`, including legacy rows.
+It explicitly queries chunks never retrieved for 90 days, low-value chunks
+retrieved more than 3 times, and chunks dormant for 180 days, with 5 samples per
+bucket. If the stale query fails, statistics remain available, `stale` is `null`
+and `stale_error` contains the failure message (otherwise it is `null`). The
+optional `domain` argument is recognised but any non-null value is refused
+before connecting: indexd's stats and stale APIs cannot filter by domain.
+Omit `domain` for a global digest; it is never silently ignored or inferred.
 These tools send `indexd.<action>` requests to the configured indexd transport.
 An absent backend returns an explicit tool error. Settings are MixOS strict-data
 files: `knowledge.conf.mix` and `domains.conf.mix`.
@@ -107,6 +114,17 @@ without aliases. `context_search` neither queries skills nor returns a `skills`
 group. Existing stored skills remain untouched; these retired tool names must
 not be reused. The server no longer instructs clients to capture, refine or
 rate knowledge after tasks.
+
+At deployment, remove `trust_weight_graduated` and `trust_weight_skill` from
+`knowledge.conf.mix`, along with any old `skills` or `llm` sections there.
+Remove the retired `skills.conf.mix` and `llm.conf.mix` files from the MCP
+configuration directory (`$MIXOS_ETC`, normally `~/.config/mixos`). They are
+no longer read or generated. No compatibility aliases are provided.
+The `config::store::load_service` loader tolerates unknown keys for
+`KnowledgeSettings`: the retired keys are ignored, not rejected. A fixture test
+exercises its directory-explicit core with those keys and invalid retired files,
+and verifies that generated defaults omit them. Existing config files are not
+rewritten; the coordinator removes the obsolete entries at deployment.
 
 The optional `docs_feedback`, `journal_feedback` and `memory_feedback` tools
 remain because indexd consumes their scores when ranking search results and

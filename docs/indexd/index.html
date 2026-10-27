@@ -297,29 +297,41 @@ source policy requires metadata fields <code>observer</code>, <code>tool</code>,
 There is no remaining observation writer in this repository; the source type
 remains readable for the legacy corpus. <code>context_search</code> continues to return
 these rows in its <code>observations</code> group until an operator purges them.</p>
-<p>The existing <code>indexd.delete</code> command supports exact metadata predicates for
-observer and domain. For the <code>mixos</code> domain, the exact Bus call is:</p>
-<pre><code class="language-mix">send indexd indexd.delete body='{"filter":[{"field":"observer","op":"eq","value":"cmm_cargo_clippy"},{"field":"domain","op":"eq","value":"mixos"}]}'
+<p>Purge through <code>indexd.list</code> and <code>indexd.delete</code>, using IDs from the observation
+source together with exact observer/domain predicates. The retired CMM clippy
+observations use domain <code>cosmix</code>; inspect the metadata and choose the actual
+domain for each purge, including any other legacy domains.</p>
+<p>First collect <strong>all pages</strong> of observation rows before deleting anything:</p>
+<pre><code class="language-mix">send indexd indexd.list body='{"source":"observation","limit":1000,"offset":0}'
 print($reply)
 </code></pre>
-<p>The same call through mixos-mcp is:</p>
-<pre><code class="language-json">{"to":"indexd","command":"indexd.delete","args":"{\"filter\":[{\"field\":\"observer\",\"op\":\"eq\",\"value\":\"cmm_cargo_clippy\"},{\"field\":\"domain\",\"op\":\"eq\",\"value\":\"mixos\"}]}"}
+<p>Increase <code>offset</code> by the number of returned items until all <code>total</code> rows are
+collected. Verify each row has <code>source: "observation"</code>; its <code>metadata</code> is a JSON
+string containing the observer and domain. Collect their IDs. If the list fails
+or there are no IDs, stop: an empty <code>ids</code> array would leave only the metadata
+predicates, which could match other source types. Do not delete between list
+pages, because shifting offsets can skip rows.</p>
+<p>For example, <strong>replace <code>101</code> and <code>102</code> below with IDs from that listing</strong>. Both
+the non-empty ID set and the metadata predicates constrain this deletion:</p>
+<pre><code class="language-mix">send indexd indexd.delete body='{"ids":[101,102],"filter":[{"field":"observer","op":"eq","value":"cmm_cargo_clippy"},{"field":"domain","op":"eq","value":"cosmix"}]}'
+print($reply)
+</code></pre>
+<p>The same delete through mixos-mcp keeps <code>args</code> as a JSON string:</p>
+<pre><code class="language-json">{"to":"indexd","command":"indexd.delete","args":"{\"ids\":[101,102],\"filter\":[{\"field\":\"observer\",\"op\":\"eq\",\"value\":\"cmm_cargo_clippy\"},{\"field\":\"domain\",\"op\":\"eq\",\"value\":\"cosmix\"}]}"}
 </code></pre>
 <p>Pass that object to <code>bus_call</code> (<code>mcp__mixos__bus_call</code> in Claude Code), with
 <code>to</code> set to the indexd Bus address reachable from the caller. <code>bus_call</code> uses
 the Bus connection; it does not use the knowledge tools' configured SSH bridge.
-The reply contains <code>deleted</code>. Other observers and domains survive, and repeating
-the deletion returns zero once matching rows are gone. These are operator calls;
-the retirement change does not execute them or change stored data.</p>
+The reply contains <code>deleted</code>. Other observers, domains and IDs survive. The
+Bus fixture test proves the IDs and filters are intersected, and that a
+non-observation row with the same observer/domain survives when it is outside
+the observation ID set. Repeating the same deletion returns zero once matching
+rows are gone. These are operator calls; the retirement change does not execute
+them or change stored data.</p>
 <p><code>filter.field</code> always names a metadata field: <code>source</code> is a separate column,
-so a filter on <code>source</code> does <strong>not</strong> select the row's source type. To restrict
-deletion to observations as well, first enumerate <code>indexd.list</code> with
-<code>{"source":"observation","limit":1000,"offset":0}</code>, advancing <code>offset</code> until
-all pages are collected. Then pass the selected IDs together with the observer
-and domain predicates to <code>indexd.delete</code>. IDs and predicates are intersected;
-collect pages before deleting so offset shifts cannot skip rows. No new command
-or database access is needed. The existing delete updates <code>chunks</code>, <code>vec_chunks</code>
-and the in-memory index together.</p>
+so a filter on <code>source</code> does <strong>not</strong> select the row's source type. This is why
+the observation ID set is required above. The existing delete updates <code>chunks</code>,
+<code>vec_chunks</code> and the in-memory index together.</p>
 <h2 id="cli-and-bridge">CLI and bridge</h2>
 <p><code>indexd -c &lt;config&gt;/indexd/config.conf.mix call indexd.stats</code> opens the
 configured engine in-process and prints one JSON reply, with exit status 0

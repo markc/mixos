@@ -341,6 +341,22 @@ async fn stdio_tools_use_the_real_fixture_bus_and_reconnect_without_replay() {
             .unwrap(),
     );
     assert!(native["stdout"].as_str().unwrap().contains("Email"));
+    for domain in ["cosmix", "mixos", "", "all"] {
+        let refused = service
+            .call_tool(call("knowledge_digest", json!({"domain":domain})))
+            .await
+            .unwrap();
+        assert!(refused.is_error.unwrap_or(false), "{refused:?}");
+        let message = &refused.content[0].as_text().unwrap().text;
+        assert!(
+            message.contains("cannot scope statistics to domain"),
+            "{message}"
+        );
+        assert!(
+            message.contains("Omit domain for global statistics"),
+            "{message}"
+        );
+    }
     let absent = service
         .call_tool(call("context_search", json!({"query":"fixture"})))
         .await
@@ -366,6 +382,8 @@ async fn stdio_tools_use_the_real_fixture_bus_and_reconnect_without_replay() {
     let index_paths = stored_paths.clone();
     let deleted_ids = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     let index_deleted = deleted_ids.clone();
+    let stale_fails = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let index_stale_fails = stale_fails.clone();
     let index = NodedClient::connect("knowledge-fixture", &broker.url)
         .await
         .unwrap();
@@ -435,7 +453,21 @@ async fn stdio_tools_use_the_real_fixture_bus_and_reconnect_without_replay() {
                     );
                     (0, json!({"results":[]}))
                 }
-                "indexd.stale" => (0, json!({"total_chunks":2107})),
+                "indexd.stale" => {
+                    assert_eq!(
+                        request,
+                        json!({
+                            "action":"stale", "never_retrieved_age_days":90,
+                            "low_value_min_retrievals":3, "long_dormant_days":180,
+                            "per_bucket_limit":5
+                        })
+                    );
+                    if index_stale_fails.load(std::sync::atomic::Ordering::SeqCst) {
+                        (10, json!({"error":"fixture stale failure"}))
+                    } else {
+                        (0, json!({"total_chunks":2107}))
+                    }
+                }
                 "indexd.feedback" => (0, json!({"updated":1})),
                 _ => panic!("unexpected index request: {}", command.command),
             };
@@ -453,6 +485,18 @@ async fn stdio_tools_use_the_real_fixture_bus_and_reconnect_without_replay() {
     );
     assert_eq!(digest["result"]["statistics"]["total_vectors"], 2107);
     assert!(digest["result"].get("skills").is_none());
+    assert_eq!(digest["result"]["stale"]["total_chunks"], 2107);
+    assert!(digest["result"]["stale_error"].is_null());
+    stale_fails.store(true, std::sync::atomic::Ordering::SeqCst);
+    let degraded = result(
+        service
+            .call_tool(call("knowledge_digest", json!({})))
+            .await
+            .unwrap(),
+    );
+    assert_eq!(degraded["result"]["statistics"]["total_vectors"], 2107);
+    assert!(degraded["result"]["stale"].is_null());
+    assert_eq!(degraded["result"]["stale_error"], "fixture stale failure");
     let search = result(
         service
             .call_tool(call(

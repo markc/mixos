@@ -316,6 +316,13 @@ source comments, observations and scripts, grouped by source. It applies
 source trust weights and journal age limits. <code>index_workspace</code> indexes workspace
 content. <code>knowledge_digest {}</code> returns global index statistics under
 <code>statistics</code> and bounded staleness samples under <code>stale</code>, including legacy rows.
+It explicitly queries chunks never retrieved for 90 days, low-value chunks
+retrieved more than 3 times, and chunks dormant for 180 days, with 5 samples per
+bucket. If the stale query fails, statistics remain available, <code>stale</code> is <code>null</code>
+and <code>stale_error</code> contains the failure message (otherwise it is <code>null</code>). The
+optional <code>domain</code> argument is recognised but any non-null value is refused
+before connecting: indexd's stats and stale APIs cannot filter by domain.
+Omit <code>domain</code> for a global digest; it is never silently ignored or inferred.
 These tools send <code>indexd.&lt;action&gt;</code> requests to the configured indexd transport.
 An absent backend returns an explicit tool error. Settings are MixOS strict-data
 files: <code>knowledge.conf.mix</code> and <code>domains.conf.mix</code>.</p>
@@ -325,6 +332,16 @@ without aliases. <code>context_search</code> neither queries skills nor returns 
 group. Existing stored skills remain untouched; these retired tool names must
 not be reused. The server no longer instructs clients to capture, refine or
 rate knowledge after tasks.</p>
+<p>At deployment, remove <code>trust_weight_graduated</code> and <code>trust_weight_skill</code> from
+<code>knowledge.conf.mix</code>, along with any old <code>skills</code> or <code>llm</code> sections there.
+Remove the retired <code>skills.conf.mix</code> and <code>llm.conf.mix</code> files from the MCP
+configuration directory (<code>$MIXOS_ETC</code>, normally <code>~/.config/mixos</code>). They are
+no longer read or generated. No compatibility aliases are provided.
+The <code>config::store::load_service</code> loader tolerates unknown keys for
+<code>KnowledgeSettings</code>: the retired keys are ignored, not rejected. A fixture test
+exercises its directory-explicit core with those keys and invalid retired files,
+and verifies that generated defaults omit them. Existing config files are not
+rewritten; the coordinator removes the obsolete entries at deployment.</p>
 <p>The optional <code>docs_feedback</code>, <code>journal_feedback</code> and <code>memory_feedback</code> tools
 remain because indexd consumes their scores when ranking search results and
 selecting low-value staleness candidates. <code>journal_supersede</code> hides an obsolete

@@ -186,6 +186,60 @@ mod tests {
     }
 
     #[test]
+    fn knowledge_loader_tolerates_retired_keys_and_ignores_retired_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let content = r#"
+indexd: {target: "knowledge-fixture"}
+trust_weight_doc: 0.12
+trust_weight_graduated: 0.06
+trust_weight_skill: 0.03
+skills: {min_confidence: 0.3, max_skills: 3}
+llm: {default: "retired", backends: {retired: {provider: "ollama"}}}
+"#;
+        std::fs::write(dir.path().join("knowledge.conf.mix"), content).unwrap();
+        // Invalid files prove that loading knowledge does not consult these.
+        for name in ["skills.conf.mix", "llm.conf.mix"] {
+            std::fs::write(dir.path().join(name), "this is not strict-data config {").unwrap();
+        }
+        // load_service delegates to this directory-explicit core. Avoid process
+        // env changes: the shared paths resolver caches configuration locations.
+        let loaded =
+            config::store::load_service_in::<KnowledgeSettings>(dir.path(), "knowledge").unwrap();
+        assert_eq!(loaded.indexd.target, "knowledge-fixture");
+        assert_eq!(loaded.trust_weight_doc, 0.12);
+        let saved = serde_json::to_value(&loaded).unwrap();
+        for key in [
+            "trust_weight_graduated",
+            "trust_weight_skill",
+            "skills",
+            "llm",
+        ] {
+            assert!(saved.get(key).is_none(), "retired key {key} retained");
+        }
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("knowledge.conf.mix")).unwrap(),
+            content
+        );
+        let defaults = tempfile::tempdir().unwrap();
+        config::store::load_service_in::<KnowledgeSettings>(defaults.path(), "knowledge").unwrap();
+        let generated =
+            std::fs::read_to_string(defaults.path().join("knowledge.conf.mix")).unwrap();
+        for key in [
+            "trust_weight_graduated",
+            "trust_weight_skill",
+            "skills",
+            "llm",
+        ] {
+            assert!(
+                !generated.contains(key),
+                "default config still contains {key}"
+            );
+        }
+        assert!(!defaults.path().join("skills.conf.mix").exists());
+        assert!(!defaults.path().join("llm.conf.mix").exists());
+    }
+
+    #[test]
     fn knowledge_transport_defaults_and_partial_config() {
         let dir = tempfile::tempdir().unwrap();
         let absent =

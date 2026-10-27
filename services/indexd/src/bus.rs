@@ -245,7 +245,12 @@ mod tests {
         let engine = Arc::new(Engine::open(config).unwrap());
         {
             let mut guard = engine.state.lock().await;
-            for (text, value) in [("alpha", 0.0), ("beta", 0.5), ("changed", 0.2)] {
+            for (text, value) in [
+                ("alpha", 0.0),
+                ("beta", 0.5),
+                ("changed", 0.2),
+                ("retained", 0.3),
+            ] {
                 guard.embed_cache.store(
                     text,
                     "search_document: ",

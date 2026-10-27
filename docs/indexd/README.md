@@ -74,36 +74,53 @@ There is no remaining observation writer in this repository; the source type
 remains readable for the legacy corpus. `context_search` continues to return
 these rows in its `observations` group until an operator purges them.
 
-The existing `indexd.delete` command supports exact metadata predicates for
-observer and domain. For the `mixos` domain, the exact Bus call is:
+Purge through `indexd.list` and `indexd.delete`, using IDs from the observation
+source together with exact observer/domain predicates. The retired CMM clippy
+observations use domain `cosmix`; inspect the metadata and choose the actual
+domain for each purge, including any other legacy domains.
+
+First collect **all pages** of observation rows before deleting anything:
 
 ```mix
-send indexd indexd.delete body='{"filter":[{"field":"observer","op":"eq","value":"cmm_cargo_clippy"},{"field":"domain","op":"eq","value":"mixos"}]}'
+send indexd indexd.list body='{"source":"observation","limit":1000,"offset":0}'
 print($reply)
 ```
 
-The same call through mixos-mcp is:
+Increase `offset` by the number of returned items until all `total` rows are
+collected. Verify each row has `source: "observation"`; its `metadata` is a JSON
+string containing the observer and domain. Collect their IDs. If the list fails
+or there are no IDs, stop: an empty `ids` array would leave only the metadata
+predicates, which could match other source types. Do not delete between list
+pages, because shifting offsets can skip rows.
+
+For example, **replace `101` and `102` below with IDs from that listing**. Both
+the non-empty ID set and the metadata predicates constrain this deletion:
+
+```mix
+send indexd indexd.delete body='{"ids":[101,102],"filter":[{"field":"observer","op":"eq","value":"cmm_cargo_clippy"},{"field":"domain","op":"eq","value":"cosmix"}]}'
+print($reply)
+```
+
+The same delete through mixos-mcp keeps `args` as a JSON string:
 
 ```json
-{"to":"indexd","command":"indexd.delete","args":"{\"filter\":[{\"field\":\"observer\",\"op\":\"eq\",\"value\":\"cmm_cargo_clippy\"},{\"field\":\"domain\",\"op\":\"eq\",\"value\":\"mixos\"}]}"}
+{"to":"indexd","command":"indexd.delete","args":"{\"ids\":[101,102],\"filter\":[{\"field\":\"observer\",\"op\":\"eq\",\"value\":\"cmm_cargo_clippy\"},{\"field\":\"domain\",\"op\":\"eq\",\"value\":\"cosmix\"}]}"}
 ```
 
 Pass that object to `bus_call` (`mcp__mixos__bus_call` in Claude Code), with
 `to` set to the indexd Bus address reachable from the caller. `bus_call` uses
 the Bus connection; it does not use the knowledge tools' configured SSH bridge.
-The reply contains `deleted`. Other observers and domains survive, and repeating
-the deletion returns zero once matching rows are gone. These are operator calls;
-the retirement change does not execute them or change stored data.
+The reply contains `deleted`. Other observers, domains and IDs survive. The
+Bus fixture test proves the IDs and filters are intersected, and that a
+non-observation row with the same observer/domain survives when it is outside
+the observation ID set. Repeating the same deletion returns zero once matching
+rows are gone. These are operator calls; the retirement change does not execute
+them or change stored data.
 
 `filter.field` always names a metadata field: `source` is a separate column,
-so a filter on `source` does **not** select the row's source type. To restrict
-deletion to observations as well, first enumerate `indexd.list` with
-`{"source":"observation","limit":1000,"offset":0}`, advancing `offset` until
-all pages are collected. Then pass the selected IDs together with the observer
-and domain predicates to `indexd.delete`. IDs and predicates are intersected;
-collect pages before deleting so offset shifts cannot skip rows. No new command
-or database access is needed. The existing delete updates `chunks`, `vec_chunks`
-and the in-memory index together.
+so a filter on `source` does **not** select the row's source type. This is why
+the observation ID set is required above. The existing delete updates `chunks`,
+`vec_chunks` and the in-memory index together.
 
 ## CLI and bridge
 

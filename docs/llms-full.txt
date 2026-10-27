@@ -9322,36 +9322,53 @@ There is no remaining observation writer in this repository; the source type
 remains readable for the legacy corpus. `context_search` continues to return
 these rows in its `observations` group until an operator purges them.
 
-The existing `indexd.delete` command supports exact metadata predicates for
-observer and domain. For the `mixos` domain, the exact Bus call is:
+Purge through `indexd.list` and `indexd.delete`, using IDs from the observation
+source together with exact observer/domain predicates. The retired CMM clippy
+observations use domain `cosmix`; inspect the metadata and choose the actual
+domain for each purge, including any other legacy domains.
+
+First collect **all pages** of observation rows before deleting anything:
 
 ```mix
-send indexd indexd.delete body='{"filter":[{"field":"observer","op":"eq","value":"cmm_cargo_clippy"},{"field":"domain","op":"eq","value":"mixos"}]}'
+send indexd indexd.list body='{"source":"observation","limit":1000,"offset":0}'
 print($reply)
 ```
 
-The same call through mixos-mcp is:
+Increase `offset` by the number of returned items until all `total` rows are
+collected. Verify each row has `source: "observation"`; its `metadata` is a JSON
+string containing the observer and domain. Collect their IDs. If the list fails
+or there are no IDs, stop: an empty `ids` array would leave only the metadata
+predicates, which could match other source types. Do not delete between list
+pages, because shifting offsets can skip rows.
+
+For example, **replace `101` and `102` below with IDs from that listing**. Both
+the non-empty ID set and the metadata predicates constrain this deletion:
+
+```mix
+send indexd indexd.delete body='{"ids":[101,102],"filter":[{"field":"observer","op":"eq","value":"cmm_cargo_clippy"},{"field":"domain","op":"eq","value":"cosmix"}]}'
+print($reply)
+```
+
+The same delete through mixos-mcp keeps `args` as a JSON string:
 
 ```json
-{"to":"indexd","command":"indexd.delete","args":"{\"filter\":[{\"field\":\"observer\",\"op\":\"eq\",\"value\":\"cmm_cargo_clippy\"},{\"field\":\"domain\",\"op\":\"eq\",\"value\":\"mixos\"}]}"}
+{"to":"indexd","command":"indexd.delete","args":"{\"ids\":[101,102],\"filter\":[{\"field\":\"observer\",\"op\":\"eq\",\"value\":\"cmm_cargo_clippy\"},{\"field\":\"domain\",\"op\":\"eq\",\"value\":\"cosmix\"}]}"}
 ```
 
 Pass that object to `bus_call` (`mcp__mixos__bus_call` in Claude Code), with
 `to` set to the indexd Bus address reachable from the caller. `bus_call` uses
 the Bus connection; it does not use the knowledge tools' configured SSH bridge.
-The reply contains `deleted`. Other observers and domains survive, and repeating
-the deletion returns zero once matching rows are gone. These are operator calls;
-the retirement change does not execute them or change stored data.
+The reply contains `deleted`. Other observers, domains and IDs survive. The
+Bus fixture test proves the IDs and filters are intersected, and that a
+non-observation row with the same observer/domain survives when it is outside
+the observation ID set. Repeating the same deletion returns zero once matching
+rows are gone. These are operator calls; the retirement change does not execute
+them or change stored data.
 
 `filter.field` always names a metadata field: `source` is a separate column,
-so a filter on `source` does **not** select the row's source type. To restrict
-deletion to observations as well, first enumerate `indexd.list` with
-`{"source":"observation","limit":1000,"offset":0}`, advancing `offset` until
-all pages are collected. Then pass the selected IDs together with the observer
-and domain predicates to `indexd.delete`. IDs and predicates are intersected;
-collect pages before deleting so offset shifts cannot skip rows. No new command
-or database access is needed. The existing delete updates `chunks`, `vec_chunks`
-and the in-memory index together.
+so a filter on `source` does **not** select the row's source type. This is why
+the observation ID set is required above. The existing delete updates `chunks`,
+`vec_chunks` and the in-memory index together.
 
 ## CLI and bridge
 
@@ -32506,6 +32523,13 @@ source comments, observations and scripts, grouped by source. It applies
 source trust weights and journal age limits. `index_workspace` indexes workspace
 content. `knowledge_digest {}` returns global index statistics under
 `statistics` and bounded staleness samples under `stale`, including legacy rows.
+It explicitly queries chunks never retrieved for 90 days, low-value chunks
+retrieved more than 3 times, and chunks dormant for 180 days, with 5 samples per
+bucket. If the stale query fails, statistics remain available, `stale` is `null`
+and `stale_error` contains the failure message (otherwise it is `null`). The
+optional `domain` argument is recognised but any non-null value is refused
+before connecting: indexd's stats and stale APIs cannot filter by domain.
+Omit `domain` for a global digest; it is never silently ignored or inferred.
 These tools send `indexd.<action>` requests to the configured indexd transport.
 An absent backend returns an explicit tool error. Settings are MixOS strict-data
 files: `knowledge.conf.mix` and `domains.conf.mix`.
@@ -32516,6 +32540,17 @@ without aliases. `context_search` neither queries skills nor returns a `skills`
 group. Existing stored skills remain untouched; these retired tool names must
 not be reused. The server no longer instructs clients to capture, refine or
 rate knowledge after tasks.
+
+At deployment, remove `trust_weight_graduated` and `trust_weight_skill` from
+`knowledge.conf.mix`, along with any old `skills` or `llm` sections there.
+Remove the retired `skills.conf.mix` and `llm.conf.mix` files from the MCP
+configuration directory (`$MIXOS_ETC`, normally `~/.config/mixos`). They are
+no longer read or generated. No compatibility aliases are provided.
+The `config::store::load_service` loader tolerates unknown keys for
+`KnowledgeSettings`: the retired keys are ignored, not rejected. A fixture test
+exercises its directory-explicit core with those keys and invalid retired files,
+and verifies that generated defaults omit them. Existing config files are not
+rewritten; the coordinator removes the obsolete entries at deployment.
 
 The optional `docs_feedback`, `journal_feedback` and `memory_feedback` tools
 remain because indexd consumes their scores when ranking search results and
@@ -37728,6 +37763,19 @@ native-session handoff bytes retain the frozen compatibility contract.
   queries skills; the digest reports index statistics and staleness samples.
   Optional feedback remains consumed by indexd search ranking. Stored data is
   unchanged; the indexd manual documents filtered CMM observation deletion.
+- Deployment cleanup: remove `trust_weight_graduated`, `trust_weight_skill`
+  and any old `skills`/`llm` sections from `knowledge.conf.mix`; remove the
+  unused `skills.conf.mix` and `llm.conf.mix` files from the MCP config directory.
+  The config loader tolerates these unknown keys, but they have no effect and
+  no compatibility aliases. Generated defaults omit them; existing files are
+  not rewritten. A fixture test covers the loader and obsolete files.
+- Preserve digest statistics if the stale query fails, returning `stale: null`
+  and `stale_error`. Query explicit thresholds of 90 days, 3 retrievals,
+  180 dormant days and 5 samples per bucket. Refuse non-null `domain` arguments
+  because indexd cannot scope its stats or stale queries.
+- Scope the documented observation purge to IDs listed from `observation`, with
+  observer/domain filters and the legacy `cosmix` domain. The Bus test proves
+  intersection semantics and preservation of a matching non-observation row.
 - Replace the unserved application action/control tools with `app_actions`
   and `app_execute`, using the application's registry Bus commands. Forward optional
   command parameters unchanged and preserve application error messages.

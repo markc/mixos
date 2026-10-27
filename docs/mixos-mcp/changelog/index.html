@@ -244,6 +244,19 @@ including LLM refinement and writes to <code>CLAUDE.md</code>. Context search no
 queries skills; the digest reports index statistics and staleness samples.
 Optional feedback remains consumed by indexd search ranking. Stored data is
 unchanged; the indexd manual documents filtered CMM observation deletion.</li>
+<li>Deployment cleanup: remove <code>trust_weight_graduated</code>, <code>trust_weight_skill</code>
+and any old <code>skills</code>/<code>llm</code> sections from <code>knowledge.conf.mix</code>; remove the
+unused <code>skills.conf.mix</code> and <code>llm.conf.mix</code> files from the MCP config directory.
+The config loader tolerates these unknown keys, but they have no effect and
+no compatibility aliases. Generated defaults omit them; existing files are
+not rewritten. A fixture test covers the loader and obsolete files.</li>
+<li>Preserve digest statistics if the stale query fails, returning <code>stale: null</code>
+and <code>stale_error</code>. Query explicit thresholds of 90 days, 3 retrievals,
+180 dormant days and 5 samples per bucket. Refuse non-null <code>domain</code> arguments
+because indexd cannot scope its stats or stale queries.</li>
+<li>Scope the documented observation purge to IDs listed from <code>observation</code>, with
+observer/domain filters and the legacy <code>cosmix</code> domain. The Bus test proves
+intersection semantics and preservation of a matching non-observation row.</li>
 <li>Replace the unserved application action/control tools with <code>app_actions</code>
 and <code>app_execute</code>, using the application's registry Bus commands. Forward optional
 command parameters unchanged and preserve application error messages.</li>

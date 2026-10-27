@@ -766,6 +766,14 @@ struct JournalSupersedeParams {
     reason: String,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct KnowledgeDigestParams {
+    /// Domain-scoped digests are unsupported by indexd; omit this argument.
+    #[serde(default)]
+    domain: Option<String>,
+}
+
 // --- Mix execution params ---
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -1684,8 +1692,17 @@ impl MixosMcp {
 
     /// Knowledge base health: source counts and bounded staleness samples.
     /// Statistics include all stored sources, including legacy corpus rows.
+    /// Omit domain: indexd cannot scope these queries. Stale-query failures
+    /// preserve statistics and return stale: null with a stale_error message.
     #[tool]
-    async fn knowledge_digest(&self) -> String {
+    async fn knowledge_digest(&self, Parameters(p): Parameters<KnowledgeDigestParams>) -> String {
+        if let Some(domain) = p.domain {
+            return format!(
+                "ERROR: knowledge_digest cannot scope statistics to domain {domain:?}: \
+                 indexd.stats and indexd.stale do not support domain filtering. \
+                 Omit domain for global statistics."
+            );
+        }
         let mut indexd = match self.indexd().await {
             Ok(c) => c,
             Err(e) => return format!("ERROR: {e}"),
@@ -1697,16 +1714,21 @@ impl MixosMcp {
             Ok(stats) => stats,
             Err(e) => return format!("ERROR getting stats: {e}"),
         };
-        let stale = match indexd
+        let (stale, stale_error) = match indexd
             .raw_request(&serde_json::json!({
-                "action": "stale", "per_bucket_limit": 5
+                "action": "stale",
+                "never_retrieved_age_days": 90,
+                "low_value_min_retrievals": 3,
+                "long_dormant_days": 180,
+                "per_bucket_limit": 5
             }))
             .await
         {
-            Ok(stale) => stale,
-            Err(e) => return format!("ERROR getting stale chunks: {e}"),
+            Ok(stale) => (stale, None),
+            Err(e) => (serde_json::Value::Null, Some(e.to_string())),
         };
-        serde_json::json!({"statistics": stats, "stale": stale}).to_string()
+        serde_json::json!({"statistics": stats, "stale": stale, "stale_error": stale_error})
+            .to_string()
     }
 
     // ---- Mix execution tool ----
