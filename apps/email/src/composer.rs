@@ -99,10 +99,11 @@ impl Windows {
         } else { ViewportId::from_hash_of((APP, &name)) };
         let mut view = context(state);
         swap(state, &mut view);
+        let had_compose = view.compose.is_some();
         self.windows.insert(name.clone(), Arc::new(Mutex::new(Window {
             name, viewport, view, pending: Vec::new(), draft_due: None,
             focused: Some(std::time::Instant::now()), palette,
-            had_compose: false, closed: false,
+            had_compose, closed: false,
             keymap: self.keymap.clone(),
         })));
     }
@@ -176,6 +177,9 @@ impl Windows {
 impl Window {
     fn show(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
+        if self.had_compose && self.view.compose.is_none() && !self.view.documents.opening() {
+            self.view.status = crate::label("compose-owner-wait");
+        }
         if self.viewport == ViewportId::ROOT {
             let _ = toolkit::saved::secondary::builder(&ctx, APP, &self.name, egui::ViewportBuilder::default());
         }

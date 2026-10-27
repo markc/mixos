@@ -383,7 +383,9 @@ a named window owned by the app handling the request. Omission selects the
 app's root. A named root is also supported. Menu models, navigation, search
 and popup state belong to their viewport; opening one window's menu never
 opens or replaces another's. An unknown name is refused with `NOT_FOUND`,
-and a non-string name with `ARGUMENT`.
+and a non-string name with `ARGUMENT`. Named windows draw their menus in
+their own chrome, including with server decorations: the compositor-hosted
+menu protocol addresses only the root service and has no viewport field.
 
 Names become available on the first native child
 pass; an embedded editor has no separately drivable viewport. Closing one

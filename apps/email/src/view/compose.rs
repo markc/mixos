@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! The compose dialog: a modal over the whole window with the address
-//! fields, the subject, the body, and Send/Cancel. Send runs the state's
-//! recipe (create in Drafts, submit, file in Sent); a failure keeps the
-//! dialog open with the error so nothing typed is lost.
+//! The composer form and its draft/document confirmation questions.
+//! Send uses the shared engine; failures keep the draft and its error visible.
 //!
 //! What is typed is kept as a local draft. Cancel, Escape or closing the
 //! window over a draft with something in it asks first, keeping the draft
@@ -36,15 +34,15 @@ pub fn confirm(ui: &mut Ui, state: &State, events: &mut Vec<UiEvent>) {
         Confirm::Quit => (
             "confirm-quit-draft",
             "quit-draft-title",
-            "keep-draft-quit",
-            "discard-draft-quit",
+            "keep-draft",
+            "discard-draft",
         ),
     };
     let id = egui::Id::unique((ui.ctx().viewport_id(), key));
     let choices = vec![
         Choice::new(crate::label(keep), dialog::Role::Default),
         Choice::new(crate::label(discard), dialog::Role::Other),
-        Choice::new(crate::label("keep-editing"), dialog::Role::Cancel),
+        Choice::new(crate::label(if asked == Confirm::Quit { "cancel" } else { "keep-editing" }), dialog::Role::Cancel),
     ];
     let shown = dialog::Dialog::new(id, crate::label(title))
         .buttons(choices)
@@ -127,7 +125,7 @@ pub fn restore(ui: &mut Ui, state: &State, events: &mut Vec<UiEvent>) {
     }
 }
 
-/// The compose dialog, when a draft is open.
+/// The compose window, when a draft is open.
 pub fn body_focused(ctx: &egui::Context) -> bool {
     body_id(ctx)
         .is_some_and(|id| ctx.memory(|m| m.has_focus(id)))

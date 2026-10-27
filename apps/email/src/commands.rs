@@ -306,13 +306,13 @@ pub const COMMANDS: &[Command] = &[
         "email.reply",
         false,
         r#"{"account":"optional account id","id":"email id","all":"optional bool","quote":"optional bool (absent: email.compose.quote_on_reply)"}"#,
-        "Open the compose dialog replying to an email",
+        "Open the compose window replying to an email",
     ),
     command_spec(
         "email.forward",
         false,
         r#"{"account":"optional account id","id":"email id","to":"optional addresses"}"#,
-        "Open the compose dialog forwarding an email",
+        "Open the compose window forwarding an email",
     ),
     command_spec(
         "email.attachments",

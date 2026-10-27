@@ -655,7 +655,7 @@ pub fn shortcuts(
     state: &State,
     registry: &Registry<State>,
 ) -> Vec<&'static str> {
-    if state.attachment_chooser.is_some() || state.documents.modal() {
+    if state.attachment_chooser.is_some() || state.documents.modal() || state.confirm.is_some() || state.identity_editor.is_some() {
         Vec::new()
     } else if state.compose.is_some() && crate::view::compose::body_focused(ctx) {
         ["compose.new", "compose.close", "file.quit", "compose.open", "compose.save_as", "compose.attach"]

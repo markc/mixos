@@ -1637,7 +1637,11 @@ impl Shell {
             return;
         }
         if command_name == "email.info" && args.is_some() {
-            let mut info = if let Some(window) = &target { window.lock().unwrap().view.info() } else { self.state.info() };
+            let mut info = self.state.info();
+            if let Some(window) = &target {
+                let view = window.lock().unwrap().view.info();
+                for field in ["compose", "confirm", "status"] { info[field] = view[field].clone(); }
+            }
             info["window"] = target.as_ref().map(|w| json!(w.lock().unwrap().name)).unwrap_or(Value::Null);
             info["compose_windows"] = Value::Array(self.composers.windows.values().map(|w| {
                 let w = w.lock().unwrap();

@@ -515,7 +515,7 @@ impl std::fmt::Debug for Body {
     }
 }
 
-/// A compose dialog in flight.
+/// A compose window in flight.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ComposeState {
     /// The account it sends from.
@@ -4007,7 +4007,7 @@ impl State {
         }
     }
 
-    /// Open a kept draft in the compose dialog, as it was typed. Its
+    /// Open a kept draft in the compose window, as it was typed. Its
     /// account, when it is gone, becomes the default one (with its From).
     fn open_saved(&mut self, saved: SavedDraft) -> bool {
         // A draft whose account is gone is sent from that account's current
@@ -5531,7 +5531,7 @@ impl State {
         }
     }
 
-    /// Open a compose dialog from `account` (the default From when `None`)
+    /// Open a compose window from `account` (the default From when `None`)
     /// with `draft`'s fields; the account's address and signature fill in.
     pub fn open_compose(&mut self, account: Option<&str>, mut draft: Composed) -> bool {
         let Some(account) = account
@@ -6462,7 +6462,7 @@ impl State {
         }
     }
 
-    /// Open a compose dialog.
+    /// Open a compose window.
     pub fn compose(&mut self) {
         self.apply_ui(crate::view::UiEvent::Compose);
     }
@@ -7127,7 +7127,7 @@ pub(crate) mod tests {
         let mut state = connected();
         state.account_mut("a").unwrap().mail.open = Some(unread_email("E1"));
         state.apply_ui(UiEvent::Reply);
-        let compose = state.compose.clone().expect("a compose dialog");
+        let compose = state.compose.clone().expect("a compose window");
         let reply = compose.reply.clone().expect("a quoted reply");
         assert_eq!(reply.position, Position::Above);
         let typed = format!("Thanks!{}", compose.body.contents());
@@ -7201,7 +7201,7 @@ pub(crate) mod tests {
         let mut state = connected();
         state.account_mut("a").unwrap().mail.open = Some(unread_email("E1"));
         state.apply_ui(UiEvent::Reply);
-        let compose = state.compose.clone().expect("a compose dialog");
+        let compose = state.compose.clone().expect("a compose window");
         assert_eq!(
             compose.draft.to,
             [EmailAddress {

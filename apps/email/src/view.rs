@@ -60,7 +60,7 @@ pub enum UiEvent {
     ContactFilter(String, String),
     Compose,
     Reply,
-    /// The compose dialog's From account.
+    /// The compose window's From account.
     ComposeAccount(String),
     ComposeField(crate::state::ComposeField, String),
     ComposeEdit(editor::Event),

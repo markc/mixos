@@ -32,8 +32,8 @@ The window chrome holds **File** (New, Open…, Save As…, Send, Close, Quit),
 **Edit** (body Undo, Redo, Cut, Copy, Paste), **Attachments** (Attach files…,
 Remove all attachments) and **View** (theme). Ctrl+N opens another composer;
 Ctrl+W closes this one. Close asks **Keep Draft / Discard / Keep Editing**
-when there is content. Ctrl+Q asks about each draft in turn; Keep Editing
-cancels the quit. Drafts already kept or discarded during that quit remain
+when there is content. Ctrl+Q asks Keep Draft / Discard / Cancel for each
+draft in turn; Cancel stops the quit. Drafts already kept or discarded during that quit remain
 closed. Unsaved drafts are also autosaved in the private draft store.
 
 `email --compose` starts with a composer as the root window, without a
