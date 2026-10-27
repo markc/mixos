@@ -1378,9 +1378,11 @@ fn hovering_an_inline_image_keeps_the_reader_context_menu_open() {
     let image = email::label_with("preview-image", &[("name", "preview.png")]);
     let image_at = h.get_by_label(&image).rect().center();
     let reply_alls = h.query_all_by_label(&label("reply-all")).count();
-    // Keep the popup to the right of the small image, so the hover reaches
-    // the image's layer rather than a menu row covering it.
-    let at = h.get_by_label(PLAIN).rect().right_center() - egui::vec2(1.0, 0.0);
+    // Open the menu at the text's centre: the popup hangs right of that
+    // point, clear of the small image at the left edge, so the hover below
+    // reaches the image rather than a menu row covering it.
+    let at = h.get_by_label(PLAIN).rect().center();
+    assert!(at.x > h.get_by_label(&image).rect().right());
     h.hover_at(at);
     h.run();
     for pressed in [true, false] {
@@ -1391,6 +1393,7 @@ fn hovering_an_inline_image_keeps_the_reader_context_menu_open() {
             modifiers: egui::Modifiers::NONE,
         });
     }
+    h.run();
     h.run();
     assert_eq!(
         h.query_all_by_label(&label("reply-all")).count(),
