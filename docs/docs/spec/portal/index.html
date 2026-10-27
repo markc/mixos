@@ -216,6 +216,7 @@
                         <a href="#commands">Commands</a>
                         <a href="#compatibility">Compatibility</a>
                         <a href="#screencast">ScreenCast</a>
+                        <a href="#filechooser">FileChooser</a>
                         <a href="#deferred">Deferred</a>
                     </nav>
                 </div>
@@ -353,9 +354,13 @@ local-only (<code>broker_origin</code> must be <code>local</code>, else rc 13 <c
 <code>portald.screencast.pending</code> (query), <code>portald.screencast.answer {request, allow}</code> (input), <code>portald.screencast.grant {app?, count?, ttl_ms?}</code> (intent),
 <code>portald.screencast.revoke {id?}</code> (intent). Registered in
 <code>docs/docs/spec/bus/commands.conf.mix</code>.</p>
+<h2 id="filechooser">FileChooser</h2>
+<p>Status: draft, not served. The interface, its mapping onto the Bus command
+<code>files.choose</code> and the Request lifecycle are specified in
+<a href="/docs/spec/files/#d-bus-orgfreedesktopportalfilechooser">../files/README.md</a>.</p>
 <h2 id="deferred">Deferred</h2>
 <ul>
-<li>The FileChooser interface.</li>
+<li>FileChooser for sandboxed callers (document export and access grants).</li>
 <li>ScreenCast: window sources, several streams, restore
 tokens, DMA-BUF frames and a permission-limited remote.</li>
 <li>Accent as a settings field. The current projection carries the design's

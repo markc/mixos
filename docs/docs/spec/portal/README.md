@@ -129,9 +129,15 @@ allow}` (input), `portald.screencast.grant {app?, count?, ttl_ms?}` (intent),
 `portald.screencast.revoke {id?}` (intent). Registered in
 `docs/docs/spec/bus/commands.conf.mix`.
 
+## FileChooser
+
+Status: draft, not served. The interface, its mapping onto the Bus command
+`files.choose` and the Request lifecycle are specified in
+[../files/README.md](../files/README.md#d-bus-orgfreedesktopportalfilechooser).
+
 ## Deferred
 
-- The FileChooser interface.
+- FileChooser for sandboxed callers (document export and access grants).
 - ScreenCast: window sources, several streams, restore
   tokens, DMA-BUF frames and a permission-limited remote.
 - Accent as a settings field. The current projection carries the design's
