@@ -101,7 +101,7 @@ impl eframe::App for Shell {
         }
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui, _: &mut eframe::Frame) {
+    fn ui(&mut self, _ui: &mut egui::Ui, _: &mut eframe::Frame) {
         let windows: Vec<_> = self.windows.lock().unwrap().values().cloned().collect();
         for window in windows {
             let (id, title) = {

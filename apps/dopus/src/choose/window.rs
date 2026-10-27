@@ -57,10 +57,12 @@ impl Window {
         let (tx, rx) = mpsc::channel();
         let source = std::mem::replace(&mut self.events, rx);
         let ctx = ctx.clone();
+        let viewport = egui::ViewportId::from_hash_of(("files", &self.id));
         std::thread::Builder::new().name("files-listing".into()).spawn(move || {
             while let Ok(event) = source.recv() {
                 if tx.send(event).is_err() { break; }
                 ctx.request_repaint_of(egui::ViewportId::ROOT);
+                ctx.request_repaint_of(viewport);
             }
         })?;
         Ok(())
@@ -212,13 +214,13 @@ impl Window {
         for (id, origin) in toolkit::titlebar::show_bar(ui, &self.request.title, Some(toolkit::Icon::Folder), &registry, self, &crate::strings(), &[]) {
             events.push(UiEvent::Command(id, origin));
         }
-        egui::TopBottomPanel::top("files-identity").show_inside(ui, |ui| {
+        egui::Panel::top("files-identity").show(ui, |ui| {
             if !is_portald(&self.caller) { ui.label(label_with("chooser-caller", &[("caller", &self.caller)])); }
             if let Some(claim) = &self.request.on_behalf_of {
                 ui.weak(label_with("chooser-claim", &[("app", claim), ("caller", &self.caller)]));
             }
         });
-        egui::TopBottomPanel::bottom("files-controls").show_inside(ui, |ui| {
+        egui::Panel::bottom("files-controls").show(ui, |ui| {
             ui.add_enabled_ui(self.ready && !self.ending && self.replace.is_none(), |ui| {
                 if self.request.mode == Mode::Save {
                     ui.horizontal(|ui| {
@@ -260,16 +262,16 @@ impl Window {
                 });
             });
         });
-        egui::SidePanel::left("files-places").default_width(self.app.core.sidebar(dopus_core::config::Sidebar::Places).width).show_inside(ui, |ui| {
+        egui::Panel::left("files-places").default_size(ui.available_width() * self.app.core.sidebar(dopus_core::config::Sidebar::Places).width).show(ui, |ui| {
             ui.heading(label("places"));
             ui.add_enabled_ui(self.ready && !self.ending && self.replace.is_none(), |ui| crate::view::places_panel(ui, &self.app, &mut events));
         });
-        egui::CentralPanel::default().show_inside(ui, |ui| {
+        egui::CentralPanel::default().show(ui, |ui| {
             ui.add_enabled_ui(self.ready && !self.ending && self.replace.is_none(), |ui| crate::view::chooser_pane(ui, &self.app, &crate::actions::registry(), &mut events));
         });
         if let Some(accept) = &self.replace {
             let names = accept.paths.iter().filter(|p| path(p).symlink_metadata().is_ok()).map(|p| dopus_core::sanitise_display_path(&path(p))).collect::<Vec<_>>().join("\n");
-            let shown = toolkit::dialog::Dialog::new(egui::Id::new("files-replace"), label("chooser-replace-title"))
+            let shown = toolkit::dialog::Dialog::new(egui::Id::unique("files-replace"), label("chooser-replace-title"))
                 .buttons(vec![
                     toolkit::dialog::Choice::new(label("chooser-replace"), toolkit::dialog::Role::Default),
                     toolkit::dialog::Choice::new(label("cancel"), toolkit::dialog::Role::Cancel),
@@ -313,3 +315,6 @@ fn registry() -> Registry<Window> {
     for id in ["nav.parent"] { registry.add_shortcuts(id, crate::keymap::defaults_for(id).into_iter().skip(1)); }
     registry
 }
+
+#[cfg(test)]
+mod tests;

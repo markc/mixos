@@ -3,6 +3,7 @@
 //! Chooser-only Bus host and secondary native viewports. No twin-pane commands.
 
 mod presenter;
+mod placement;
 pub mod window;
 
 use std::collections::BTreeMap;
@@ -225,12 +226,15 @@ fn run_host(url: &str, mut presenter: impl Presenter, mut events: tokio::sync::m
         let start = Instant::now();
         let epoch = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64;
         let mut events_open = true;
+        let mut placement = placement::Placement::new();
+        if driver.is_some() { let _ = client.subscribe_topic(&placement.topic()).await; }
         let mut drive_id = 0u64;
         let mut pending = BTreeMap::new();
         loop {
             tokio::select! {
                 cmd = incoming.recv() => {
                     let Some(cmd) = cmd else { return Err("files Bus closed".into()); };
+                    if cmd.topic() == Some(placement.topic().as_str()) { placement.changed(&client).await; continue; }
                     if cmd.topic().is_some() || cmd.command.is_empty() { continue; }
                     citizen::debug::received(SERVICE, &cmd.command);
                     if let Some(command) = cmd.command.strip_prefix("files.").filter(|c| toolkit::drive::COMMANDS.contains(c)) {
@@ -247,7 +251,10 @@ fn run_host(url: &str, mut presenter: impl Presenter, mut events: tokio::sync::m
                         continue;
                     }
                     let now = epoch.saturating_add(start.elapsed().as_millis() as u64);
+                    let position = if cmd.command == "files.choose" && driver.is_some() { placement.capture(&client).await } else { None };
                     let answer = dispatch(&mut engine, &mut presenter, &cmd.command, &cmd.body, &citizen::caller_key(&cmd), now);
+                    if let Some(id) = &answer.enable { placement.opened(id.clone(), position); }
+                    if let Some(outcome) = &answer.outcome { placement.closed(&outcome.request); }
                     citizen::debug::answered(SERVICE, &cmd.command, answer.rc);
                     let (rc, body) = (answer.rc, answer.body.to_string());
                     let sent = async { matches!(tokio::time::timeout(Duration::from_secs(2), client.respond(&cmd, rc, &body)).await, Ok(Ok(()))) };
@@ -262,6 +269,7 @@ fn run_host(url: &str, mut presenter: impl Presenter, mut events: tokio::sync::m
                 }
                 event = events.recv(), if events_open => {
                     if let Some(event) = event {
+                        placement.closed(&event.request);
                         let now = epoch.saturating_add(start.elapsed().as_millis() as u64);
                         match engine.end(&event.request, event.end, now, &mut presenter) {
                             Ok(Some(outcome)) => publish(&client, outcome).await,
