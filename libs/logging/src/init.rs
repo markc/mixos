@@ -229,8 +229,8 @@ pub(crate) fn init_inner(
     } else {
         opts.log_stderr.unwrap_or(TriState::Auto) == TriState::Auto
     };
-    let journald_layer =
-        journald_on.then(|| crate::journal::LazyJournal::new(&defaults.identity, journal_fallback));
+    let journald_layer = journald_on.then(|| crate::journal::LazyJournal::new(&defaults.identity,
+        journal_fallback.then(|| make_fmt_layer(format, ansi_on, std::io::stderr as fn() -> std::io::Stderr))));
     let journald_active = journald_layer.is_some();
 
     // Auto uses stderr when journald was not requested. A first-event

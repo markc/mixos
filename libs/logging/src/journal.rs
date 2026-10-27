@@ -8,9 +8,9 @@ use tracing::{
 };
 use tracing_subscriber::{Layer, layer::Context, registry::LookupSpan};
 
-pub(crate) struct LazyJournal {
+pub(crate) struct LazyJournal<S: Subscriber> {
     identity: String,
-    fallback: bool,
+    fallback: Option<Box<dyn Layer<S> + Send + Sync>>,
     // Serialises first-use span replay with record/event callbacks. No worker.
     sink: Mutex<Option<Result<tracing_journald::Layer, std::io::Error>>>,
 }
@@ -68,8 +68,8 @@ impl Visit for SpanFields {
     }
 }
 
-impl LazyJournal {
-    pub(crate) fn new(identity: &str, fallback: bool) -> Self {
+impl<S: Subscriber> LazyJournal<S> {
+    pub(crate) fn new(identity: &str, fallback: Option<Box<dyn Layer<S> + Send + Sync>>) -> Self {
         Self {
             identity: identity.into(),
             fallback,
@@ -77,10 +77,13 @@ impl LazyJournal {
         }
     }
 }
-impl<S> Layer<S> for LazyJournal
+impl<S> Layer<S> for LazyJournal<S>
 where
     S: Subscriber + for<'a> LookupSpan<'a>,
 {
+    fn on_layer(&mut self, subscriber: &mut S) {
+        if let Some(fallback) = &mut self.fallback { fallback.on_layer(subscriber); }
+    }
     fn on_new_span(&self, attrs: &Attributes<'_>, id: &Id, ctx: Context<'_, S>) {
         let mut fields = SpanFields::default();
         attrs.record(&mut fields);
@@ -100,8 +103,14 @@ where
         }
         drop(extensions);
         drop(span);
-        if installed && let Some(Ok(sink)) = sink.as_ref() {
-            sink.on_record(id, values, ctx);
+        if installed {
+            match sink.as_ref() {
+                Some(Ok(sink)) => sink.on_record(id, values, ctx),
+                Some(Err(_)) => {
+                    if let Some(fallback) = &self.fallback { fallback.on_record(id, values, ctx); }
+                }
+                None => {}
+            }
         }
     }
     fn on_event(&self, event: &Event<'_>, ctx: Context<'_, S>) {
@@ -111,8 +120,13 @@ where
                 .map(|layer| layer.with_syslog_identifier(self.identity.clone()))
                 .inspect_err(|error| eprintln!("logging: journald sink disabled: {error}"))
         });
-        match sink {
-            Ok(sink) => {
+        let sink: &dyn Layer<S> = match sink {
+            Ok(sink) => sink,
+            Err(_) => match &self.fallback {
+                Some(fallback) => fallback.as_ref(),
+                None => return,
+            },
+        };
                 // Spans may predate the first event. Replay their retained
                 // fields before upstream's layer looks them up; no socket is
                 // needed for span creation or recording.
@@ -145,26 +159,50 @@ where
                     sink.on_new_span(&attrs, &span.id(), ctx.clone());
                 }
                 sink.on_event(event, ctx);
-            }
-            Err(_) if self.fallback => {
-                use std::io::Write;
-                struct Stderr<'a>(&'a mut std::io::StderrLock<'static>);
-                impl Visit for Stderr<'_> {
-                    fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
-                        let _ = write!(self.0, " {}={value:?}", field.name());
-                    }
-                }
-                let mut stderr = std::io::stderr().lock();
-                let _ = write!(
-                    stderr,
-                    "{} {}",
-                    event.metadata().level(),
-                    event.metadata().target()
-                );
-                event.record(&mut Stderr(&mut stderr));
-                let _ = writeln!(stderr);
-            }
-            Err(_) => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use std::sync::Arc;
+    use tracing_subscriber::prelude::*;
+
+    struct Writer(Arc<Mutex<Vec<u8>>>);
+    impl Write for Writer {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
         }
+        fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+    }
+
+    #[test]
+    fn failed_journal_preserves_json_and_spans_created_before_first_event() {
+        let bytes = Arc::new(Mutex::new(Vec::new()));
+        let captured = bytes.clone();
+        let fallback = tracing_subscriber::fmt::layer().json().with_writer(move || Writer(captured.clone()));
+        let layer = LazyJournal::new("fixture", Some(Box::new(fallback)));
+        // Force an unavailable journal without depending on the host's systemd.
+        *layer.sink.lock().unwrap() = Some(Err(std::io::Error::from(std::io::ErrorKind::NotFound)));
+        let subscriber = tracing_subscriber::registry().with(layer);
+        tracing::subscriber::with_default(subscriber, || {
+            let span = tracing::info_span!("startup", generation = 1, phase = tracing::field::Empty);
+            let _entered = span.enter();
+            span.record("phase", "before");
+            tracing::warn!(command = "fixture.drive", "first event");
+            span.record("phase", "after");
+            tracing::warn!(success = true, "second event");
+        });
+        let output = bytes.lock().unwrap();
+        let text = std::str::from_utf8(&output).unwrap();
+        let lines: Vec<serde_json::Value> = text.lines().map(|line| serde_json::from_str(line).unwrap()).collect();
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0]["fields"]["command"], "fixture.drive");
+        assert_eq!(lines[0]["span"]["generation"], 1);
+        assert_eq!(lines[0]["span"]["phase"], "before");
+        assert_eq!(lines[1]["span"]["phase"], "after");
+        assert_eq!(lines[1]["fields"]["success"], true);
     }
 }
