@@ -246,7 +246,8 @@ pub fn parse_args(s: Option<&str>) -> Option<Json> {
 ///
 /// A change the cap suppresses is not dropped: it arms a trailing emit
 /// for that path, fired once the cap interval expires, so the last value
-/// of a burst always reaches watchers.
+/// of a burst always reaches watchers. Registry changes also invalidate
+/// snapshots read mid-burst, even when the burst returns to its first value.
 pub struct ChangeBus {
     me: Weak<ChangeBus>,
     broker: Arc<SubscriptionBroker>,
@@ -426,7 +427,9 @@ impl ChangeBus {
                 Some(t) => t.old,
                 None => old,
             };
-            if old == new {
+            // A registry snapshot read during the burst may contain an
+            // intermediate value, even if the final value equals `old`.
+            if old == new && !path.as_str().starts_with("services.") {
                 continue;
             }
             last_emit.insert(path.as_str().to_string(), now);
@@ -453,8 +456,9 @@ impl ChangeBus {
 
     /// Fire the trailer for `key` if it is still the one this timer armed.
     /// A normal emit that got there first removed it; a later re-arm
-    /// carries a different generation. A burst that reverted to the value
-    /// watchers already hold emits nothing.
+    /// carries a different generation. Registry watchers may have subscribed
+    /// and read a snapshot mid-burst, so even a reverted services.* burst
+    /// must invalidate their snapshot. Other reverted paths emit nothing.
     async fn fire_trailer(&self, key: &str, generation: u64) {
         let mut last_emit = self.last_emit.lock().await;
         let mut trailing = self.trailing.lock().await;
@@ -465,7 +469,7 @@ impl ChangeBus {
             return;
         };
         drop(trailing);
-        if t.old == t.new {
+        if t.old == t.new && !t.path.as_str().starts_with("services.") {
             return;
         }
         last_emit.insert(key.to_string(), Instant::now());
@@ -480,6 +484,14 @@ impl ChangeBus {
         new: &PropValue,
         cause: &str,
     ) {
+        if path.as_str().starts_with("services.") {
+            tracing::debug!(
+                %path,
+                cause,
+                reverted = old == new,
+                "publishing registry invalidation"
+            );
+        }
         let event = props::publish::build_props_changed_message(path, old, new, cause);
 
         match self
@@ -612,6 +624,55 @@ mod tests {
         bus.observe(&snap("debug"), "t").await;
         assert_eq!(next_event(&mut rx).await, None);
         assert!(bus.trailing.lock().await.is_empty());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn registry_reverted_burst_invalidates_snapshot_read_by_late_subscriber() {
+        for normal_emit_wins in [false, true] {
+            let (bus, mut original) = setup().await;
+            let mut stable = snap("info");
+            stable.services_registered = vec!["shell".into()];
+            bus.observe(&stable, "register:shell").await;
+            assert_eq!(next_event(&mut original).await.unwrap().0, "services.count");
+            assert_eq!(
+                next_event(&mut original).await.unwrap().0,
+                "services.registered"
+            );
+
+            // prefs arrives inside the cap. A new host subscribes then reads
+            // that intermediate registry before the deferred events fire.
+            let mut intermediate = snap("info");
+            intermediate.services_registered = vec!["prefs".into(), "shell".into()];
+            bus.observe(&intermediate, "register:prefs").await;
+            let (tx, mut late) = mpsc::channel(8);
+            bus.broker
+                .subscribe_topic(PROPS_CHANGED_TOPIC, "restarted-shell", tx)
+                .await;
+            assert_eq!(*bus.last.lock().await, Some(intermediate.snapshot_value()));
+            assert!(late.try_recv().is_err());
+
+            // Cover both the timer and an observe that beats its timer after
+            // the cap expires. In either case old == new after coalescing.
+            if normal_emit_wins {
+                let mut stamps = bus.last_emit.lock().await;
+                for path in ["services.count", "services.registered"] {
+                    stamps.insert(path.into(), Instant::now() - CHANGE_CAP_INTERVAL);
+                }
+            }
+            bus.observe(&stable, "disconnect:prefs").await;
+            let mut events = std::collections::BTreeMap::new();
+            for _ in 0..2 {
+                let (path, old, new) = next_event(&mut late)
+                    .await
+                    .expect("departure must invalidate the intermediate registry snapshot");
+                assert_eq!(old, new, "this regression requires a reverted burst");
+                events.insert(path, new);
+            }
+            assert_eq!(events["services.count"], serde_json::json!(1));
+            assert_eq!(events["services.registered"], serde_json::json!(["shell"]));
+            assert_eq!(next_event(&mut late).await, None);
+            assert!(bus.trailing.lock().await.is_empty());
+        }
     }
 
     #[tokio::test(start_paused = true)]

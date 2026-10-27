@@ -89,7 +89,7 @@ pub enum Inbound {
     /// terminally. Scene RPCs are unavailable; settings resources remain active.
     Refused(String),
     Request(Request),
-    /// The broker's full set of registered services, from a snapshot or diff.
+    /// The broker's full set of registered services from a fresh snapshot.
     Live(BTreeSet<String>),
 }
 
@@ -499,25 +499,28 @@ impl Delivery {
 pub enum Route {
     Describe,
     Scene(SceneCommand),
-    Live(BTreeSet<String>),
+    /// A verified registry invalidation; only a fresh read supplies names.
+    Live,
     /// A registry claim not from the local broker; dropped, logged.
     Forged,
     /// A request for a command this host does not serve.
     Unknown,
     /// A topic delivery or a reply: nothing to answer.
-    Ignore,
+    Ignore(&'static str),
 }
 
 /// Route one incoming frame for the host registered as `service`.
 pub fn route(service: &str, command: &IncomingCommand) -> Route {
     // Production topic publications may omit `from`: the publisher identity
     // is stamped by noded as broker_service (as on the main comp Bus port).
-    if (command.from == "noded" || command.header("broker_service") == Some("noded"))
-        && command.topic() == Some(REGISTRY_TOPIC)
-    {
+    if command.topic() == Some(REGISTRY_TOPIC) {
+        if command.from != "noded" && command.header("broker_service") != Some("noded") {
+            return Route::Ignore("missing_broker_identity");
+        }
         if !from_local_broker(command) {
             tracing::warn!(
                 from = %command.from,
+                path = ?command.header("path"),
                 broker_service = ?command.header("broker_service"),
                 broker_origin = ?command.header("broker_origin"),
                 reason = "non_local_broker_origin",
@@ -525,29 +528,39 @@ pub fn route(service: &str, command: &IncomingCommand) -> Route {
             );
             return Route::Forged;
         }
-        return serde_json::from_str::<Value>(&command.body)
-            .ok()
-            .filter(|body| body["path"] == "services.registered")
-            .and_then(|body| {
-                body["new"]
-                    .as_array()?
-                    .iter()
-                    .map(|name| name.as_str().map(str::to_owned))
-                    .collect::<Option<BTreeSet<String>>>()
-            })
-            .map_or(Route::Ignore, |services| {
-                tracing::debug!(
-                    count = services.len(),
-                    generation = command.generation,
-                    from = %command.from,
-                    broker_service = ?command.header("broker_service"),
-                    "scene host registry Route::Live"
-                );
-                Route::Live(services)
-            });
+        // noded supplies a path header. Keep the body fallback for older
+        // publishers, but never require a list-valued diff: services.count
+        // and every other services.* change invalidate the same registry.
+        let body;
+        let path = if let Some(path) = command.header("path") {
+            path
+        } else {
+            body = match serde_json::from_str::<Value>(&command.body) {
+                Ok(body) => body,
+                Err(_) => return Route::Ignore("invalid_payload_json"),
+            };
+            match body.get("path").and_then(Value::as_str) {
+                Some(path) => path,
+                None => return Route::Ignore("missing_or_invalid_path"),
+            }
+        };
+        if !path.starts_with("services.") {
+            return Route::Ignore("unrelated_property_path");
+        }
+        tracing::debug!(
+            path,
+            generation = command.generation,
+            from = %command.from,
+            broker_service = ?command.header("broker_service"),
+            "scene host registry Route::Live"
+        );
+        return Route::Live;
     }
-    if command.is_topic_delivery() || command.command.is_empty() {
-        return Route::Ignore;
+    if command.is_topic_delivery() {
+        return Route::Ignore("unrelated_topic");
+    }
+    if command.command.is_empty() {
+        return Route::Ignore("empty_command");
     }
     if matches!(command.command.as_str(), "HELP" | "app.describe") {
         return Route::Describe;
@@ -555,7 +568,7 @@ pub fn route(service: &str, command: &IncomingCommand) -> Route {
     match SceneCommand::parse(service, &command.command) {
         Some(kind) => Route::Scene(kind),
         None if command.id.is_some() => Route::Unknown,
-        None => Route::Ignore,
+        None => Route::Ignore("unknown_command_without_id"),
     }
 }
 
@@ -869,16 +882,17 @@ async fn serve(
                             let routed = route(service, &command);
                             if command.topic() == Some(REGISTRY_TOPIC) {
                                 let (kind, reason) = match &routed {
-                                    Route::Live(_) => ("Live", "verified_broker_registered_services"),
+                                    Route::Live => ("Live", "verified_broker_services_change"),
                                     Route::Forged => ("Forged", "non_local_broker_origin"),
-                                    _ => ("Ignore", "missing_broker_identity_or_unrelated_or_invalid_payload"),
+                                    Route::Ignore(reason) => ("Ignore", *reason),
+                                    _ => ("Ignore", "not_registry_change"),
                                 };
                                 registry_mailbox.record(format!(
-                                    "Route::{kind} topic={REGISTRY_TOPIC} command={:?} from={:?} broker_service={:?} broker_origin={:?} generation={} reason={reason}",
-                                    command.command, command.from, command.header("broker_service"), command.header("broker_origin"), command.generation
+                                    "Route::{kind} topic={REGISTRY_TOPIC} path={:?} command={:?} from={:?} broker_service={:?} broker_origin={:?} generation={} reason={reason}",
+                                    command.header("path"), command.command, command.from, command.header("broker_service"), command.header("broker_origin"), command.generation
                                 ));
                             }
-                            if let Route::Live(_) = routed {
+                            if let Route::Live = routed {
                                 let live = settings::native::live_generation(client);
                                 if live == Some(command.generation) {
                                     // A buffered diff can predate a just-completed
@@ -1130,11 +1144,9 @@ fn admit(
                 return Some((command, 11, body));
             }
         }
-        Route::Live(live) => {
-            if !delivery.send(Inbound::Live(live)) {
-                tracing::warn!("scene host: registry update dropped, engine queue full");
-            }
-        }
+        // `serve` handles invalidations with a generation-fenced registry
+        // read. A diff must never become an engine snapshot directly.
+        Route::Live => {}
         Route::Forged => {
             tracing::warn!(from = %command.from, "scene host: ignoring a registry claim not from the local broker")
         }
@@ -1146,7 +1158,7 @@ fn admit(
                 json!({"error_code":"UNKNOWN_COMMAND","message":message}),
             ));
         }
-        Route::Ignore => {}
+        Route::Ignore(_) => {}
     }
     None
 }
@@ -1220,7 +1232,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn registry_burst_keeps_inflight_read_and_converges_with_one_followup() {
+    fn services_count_only_burst_keeps_inflight_read_and_converges_with_one_followup() {
         use std::future::Future;
         use std::task::{Context, Poll, Waker};
 
@@ -1252,7 +1264,24 @@ mod tests {
         );
         for next in 1..=100 {
             revision.store(next, Ordering::SeqCst);
-            registry.request(|| panic!("churn must not replace an in-flight read"));
+            let event = incoming(
+                "",
+                "props.changed",
+                None,
+                &[
+                    ("topic", REGISTRY_TOPIC),
+                    ("broker_service", "noded"),
+                    ("broker_origin", "local"),
+                    ("path", "services.count"),
+                ],
+                &format!(r#"{{"path":"services.count","new":{next}}}"#),
+            );
+            match route("shell", &event) {
+                Route::Live => {
+                    registry.request(|| panic!("churn must not replace an in-flight read"));
+                }
+                other => panic!("a count-only change must invalidate the registry: {other:?}"),
+            }
         }
         assert_eq!(starts.load(Ordering::SeqCst), 1);
         assert!(!finish.is_closed(), "the original read was cancelled");
@@ -1362,6 +1391,13 @@ mod tests {
             match tokio::time::timeout_at(deadline, wake.recv()).await {
                 Ok(Some(())) => port.registry.record("test received wake"),
                 outcome => {
+                    // Distinguish a missed invalidation from a citizen whose
+                    // socket/name is still alive at the broker.
+                    let broker_registry = if let Some(client) = port.client.get() {
+                        registry_read(Arc::clone(client), Duration::ZERO, port.registry.clone()).await
+                    } else {
+                        None
+                    };
                     let lifecycle = port
                         .client
                         .get()
@@ -1375,7 +1411,8 @@ mod tests {
                     panic!(
                         "menu registry did not converge: phase={phase} expected_prefs={has_app} \
                          wake={outcome:?} lifecycle={lifecycle:?} live_generation={:?} \
-                         pending_mailbox=(generation,count,prefs)={mailbox:?}\n\
+                         pending_mailbox=(generation,count,prefs)={mailbox:?} \
+                         broker_registry={broker_registry:?}\n\
                          last {REGISTRY_HISTORY} registry events:\n{}",
                         port.settings_generation(),
                         port.registry.history()
@@ -2077,7 +2114,7 @@ mod tests {
     }
 
     #[test]
-    fn frames_route_to_commands_registry_sets_or_nothing() {
+    fn frames_route_to_commands_registry_invalidations_or_nothing() {
         let load = incoming(
             "loader",
             "shell.scene.load",
@@ -2089,7 +2126,10 @@ mod tests {
         let unknown = incoming("loader", "shell.no.such.kind", Some("2"), &[], "{}");
         assert_eq!(route("shell", &unknown), Route::Unknown);
         let fire_and_forget = incoming("loader", "shell.no.such.kind", None, &[], "{}");
-        assert_eq!(route("shell", &fire_and_forget), Route::Ignore);
+        assert_eq!(
+            route("shell", &fire_and_forget),
+            Route::Ignore("unknown_command_without_id")
+        );
         let registry = r#"{"path":"services.registered","new":["comp","scenes"]}"#;
         let live = incoming(
             "noded",
@@ -2098,10 +2138,7 @@ mod tests {
             &[("topic", REGISTRY_TOPIC), ("broker_origin", "local")],
             registry,
         );
-        assert_eq!(
-            route("shell", &live),
-            Route::Live(BTreeSet::from(["comp".to_string(), "scenes".to_string()]))
-        );
+        assert_eq!(route("shell", &live), Route::Live);
         let mut stamped = incoming(
             "",
             "props.changed",
@@ -2118,7 +2155,10 @@ mod tests {
         stamped
             .headers
             .insert("broker_service".into(), "other".into());
-        assert_eq!(route("shell", &stamped), Route::Ignore);
+        assert_eq!(
+            route("shell", &stamped),
+            Route::Ignore("missing_broker_identity")
+        );
         let forged = incoming(
             "noded",
             "",
@@ -2134,7 +2174,49 @@ mod tests {
             &[("topic", REGISTRY_TOPIC)],
             r#"{"path":"x","new":[]}"#,
         );
-        assert_eq!(route("shell", &other_path), Route::Ignore);
+        assert_eq!(
+            route("shell", &other_path),
+            Route::Ignore("unrelated_property_path")
+        );
+        let mut count = incoming(
+            "",
+            "props.changed",
+            None,
+            &[
+                ("topic", REGISTRY_TOPIC),
+                ("broker_service", "noded"),
+                ("broker_origin", "local"),
+                ("path", "services.count"),
+            ],
+            r#"{"path":"services.count","old":2,"new":1}"#,
+        );
+        assert_eq!(route("shell", &count), Route::Live);
+        count.body.clear();
+        assert_eq!(
+            route("shell", &count),
+            Route::Live,
+            "the trusted path header suffices"
+        );
+        count.headers.insert("broker_origin".into(), "mesh".into());
+        assert_eq!(
+            route("shell", &count),
+            Route::Forged,
+            "check origin before the path"
+        );
+        count.headers.insert("broker_origin".into(), "local".into());
+        count.headers.remove("path");
+        assert_eq!(route("shell", &count), Route::Ignore("invalid_payload_json"));
+        count.body = "{}".into();
+        assert_eq!(
+            route("shell", &count),
+            Route::Ignore("missing_or_invalid_path")
+        );
+        count.body = r#"{"path":"services.count","new":1}"#.into();
+        assert_eq!(
+            route("shell", &count),
+            Route::Live,
+            "body path fallback accepts counts"
+        );
         let delivery = incoming(
             "x",
             "shell.scene.load",
@@ -2144,7 +2226,7 @@ mod tests {
         );
         assert_eq!(
             route("shell", &delivery),
-            Route::Ignore,
+            Route::Ignore("unrelated_topic"),
             "a topic delivery is never a request"
         );
     }
