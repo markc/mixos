@@ -9740,6 +9740,7 @@ version = "0.1.2"
 dependencies = [
  "comp-model",
  "decor",
+ "design",
  "dispatcher",
  "image",
  "libc",

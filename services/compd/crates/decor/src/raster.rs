@@ -187,13 +187,17 @@ fn glyph(p: (f32, f32), rect: Rect, button: CaptionButton, ratio: f32, scale: f3
 
 /// Where the title mask goes inside the titlebar (physical px, top-left).
 pub fn title_origin(
-    theme: &DecoTheme,
+    _theme: &DecoTheme,
     layout: &ChromeLayout,
     mask: &TextMask,
     scale: f32,
 ) -> (i32, i32) {
     let slot = layout.title_slot;
-    let x = (slot.x + slot.w * 0.5) * scale - mask.width as f32 * 0.5;
+    let left = (slot.x * scale).ceil();
+    let right = ((slot.x + slot.w) * scale).floor() - mask.width as f32;
+    let x = ((slot.x + slot.w * 0.5) * scale - mask.width as f32 * 0.5)
+        .round()
+        .clamp(left, right.max(left));
     let y = (layout.titlebar.y + layout.titlebar.h * 0.5) * scale - mask.height as f32 * 0.5;
     (x.round() as i32, y.round() as i32)
 }
@@ -360,12 +364,20 @@ pub fn titlebar(
     if let Some(mask) = title {
         let (ox, oy) = title_origin(theme, layout, mask, scale);
         let colour = theme.title_text(focus);
+        let slot_start = (layout.title_slot.x * scale).ceil() as i32;
         let slot_end = ((layout.title_slot.x + layout.title_slot.w) * scale).floor() as i32;
         for my in 0..mask.height {
             for mx in 0..mask.width {
                 let a = mask.at(mx, my);
                 let (x, y) = (ox + mx as i32, oy + my as i32);
-                if a == 0 || x < 0 || y < 0 || x >= w as i32 || y >= h as i32 || x >= slot_end {
+                if a == 0
+                    || x < slot_start
+                    || x < 0
+                    || y < 0
+                    || x >= w as i32
+                    || y >= h as i32
+                    || x >= slot_end
+                {
                     continue;
                 }
                 img.over(x as u32, y as u32, premul(colour, a as f32 / 255.0));
@@ -559,13 +571,17 @@ mod tests {
     #[test]
     fn the_title_lands_in_its_slot_in_the_title_colour() {
         let theme = presets::resolve(ChromeStyle::Win11, Scheme::Ocean, Mode::Light);
-        let s = state();
+        let s = ChromeState {
+            title: "Demo".into(),
+            ..state()
+        };
         let layout = s.layout(&theme);
         let mask = TextMask {
             width: 4,
             height: 2,
             alpha: vec![255; 8],
         };
+        assert!(layout.title_slot.w >= mask.width as f32);
         let img = titlebar(&theme, &layout, &s, 1.0, Some(&mask));
         let (ox, oy) = title_origin(&theme, &layout, &mask, 1.0);
         assert!(ox as f32 >= layout.title_slot.x);
@@ -574,6 +590,36 @@ mod tests {
             close(px, premul(theme.colors.title_text_focused, 1.0)),
             "{px:?}"
         );
+    }
+
+    #[test]
+    fn an_oversized_title_mask_stays_inside_its_fractional_slot() {
+        let theme = mac();
+        let s = state();
+        let mut layout = s.layout(&theme);
+        layout.title_slot.x = 30.25;
+        layout.title_slot.w = 2.5;
+        for scale in [1.0, 1.5, 2.0] {
+            let mask = TextMask {
+                width: 8,
+                height: 2,
+                alpha: vec![255; 16],
+            };
+            let before = titlebar(&theme, &layout, &s, scale, None);
+            let after = titlebar(&theme, &layout, &s, scale, Some(&mask));
+            let left = (layout.title_slot.x * scale).ceil() as u32;
+            let right = ((layout.title_slot.x + layout.title_slot.w) * scale).floor() as u32;
+            let mut changed = 0;
+            for y in 0..after.height {
+                for x in 0..after.width {
+                    if after.at(x, y) != before.at(x, y) {
+                        assert!(x >= left && x < right);
+                        changed += 1;
+                    }
+                }
+            }
+            assert!(changed > 0);
+        }
     }
 
     #[test]

@@ -595,6 +595,71 @@ fn tile(
 }
 
 #[test]
+fn tiled_title_bands_keep_square_corners_and_action_hit_targets() {
+    use decor::layout::{CaptionButton, ChromePart, vec2};
+    use world::comp::TileSlot;
+
+    let mut h = Harness::new();
+    let (surface, _, top) = h.mapped_toplevel(640, 480);
+    let (id, window) = window(&h, &surface);
+    top.set_app_id("dev.mixos.testkit".into());
+    let mut theme = decor::ChromeTheme::from_source(decor::ChromeStyle::Mac, None);
+    theme.band.place = design::ActionsPlace::Titlebar;
+    theme.menu_style = design::MenuStyle::Titlebar;
+    decor::window::install(theme.clone());
+    window.toplevel().unwrap().with_pending_state(|state| {
+        state.decoration_mode = Some(DecorationMode::ServerSide);
+    });
+    window.toplevel().unwrap().send_configure();
+    h.roundtrip();
+    h.client.commit(&surface);
+    h.roundtrip();
+    decor::window::menu_services(std::collections::BTreeSet::from(["testkit".into()]));
+    assert!(decor::window::update_actions(
+        "testkit",
+        serde_json::from_value(serde_json::json!({
+            "revision": 7,
+            "items": [{
+                "command": "file.save", "icon": "save", "tooltip": "Save",
+                "enabled": true, "toggled": false
+            }]
+        }))
+        .unwrap(),
+    ));
+    for tiled in [TileSlot::Left, TileSlot::BottomRight] {
+        assert!(tile(&mut h, id, &window, tiled).windows);
+        h.roundtrip();
+        assert!(decor::window::constrained(&window));
+        let size = slot::decided_size(&window).unwrap();
+        let layout = decor::window::layout(&window, vec2(size.w as f32, size.h as f32)).unwrap();
+        assert_eq!(layout.action_buttons.len(), 1);
+        let (index, rect) = layout.action_buttons[0];
+        let extents = decor::window::extents(&window).unwrap();
+        let point = (
+            (rect.center().x - extents.left) as f64,
+            (rect.center().y - extents.top) as f64,
+        );
+        let hit = decor::window::hit(&window, point, size).unwrap();
+        assert_eq!(hit.part, ChromePart::Button(CaptionButton::Action(7, index)));
+        assert_eq!(decor::seat::press(&window, hit, point, 100), None);
+        assert_eq!(
+            decor::seat::release(Some((&window, hit))).unwrap().1,
+            decor::Intent::Action { revision: 7, index },
+        );
+        let state = decor::ChromeState {
+            content_size: (size.w, size.h),
+            maximized: decor::window::constrained(&window),
+            actions: decor::window::actions(&window),
+            ..Default::default()
+        };
+        let image = decor::raster::titlebar(&theme.deco, &layout, &state, 1.0, None);
+        assert!(image.at(0, 0)[3] > 0.9);
+    }
+    decor::seat::forget(&window);
+    decor::window::menu_services(Default::default());
+}
+
+#[test]
 fn tiled_maximised_and_unmaximised_restore_the_pre_tile_floating_geometry() {
     use world::comp::{Placement, TileSlot};
     let mut h = Harness::new();

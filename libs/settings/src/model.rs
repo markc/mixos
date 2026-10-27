@@ -506,6 +506,27 @@ impl Snapshot {
     }
 }
 
+pub(crate) fn default_title_align() -> String {
+    design::TitleAlign::default().name().into()
+}
+pub(crate) fn is_default_title_align(value: &str) -> bool {
+    value == design::TitleAlign::default().name()
+}
+
+pub(crate) fn default_actions_align() -> String {
+    design::ActionsAlign::default().name().into()
+}
+pub(crate) fn is_default_actions_align(value: &str) -> bool {
+    value == design::ActionsAlign::default().name()
+}
+
+pub(crate) fn default_actions_place() -> String {
+    design::ActionsPlace::default().name().into()
+}
+pub(crate) fn is_default_actions_place(value: &str) -> bool {
+    value == design::ActionsPlace::default().name()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -548,25 +569,4 @@ mod tests {
             9007199254740993
         );
     }
-}
-
-pub(crate) fn default_title_align() -> String {
-    design::TitleAlign::default().name().into()
-}
-pub(crate) fn is_default_title_align(value: &str) -> bool {
-    value == design::TitleAlign::default().name()
-}
-
-pub(crate) fn default_actions_align() -> String {
-    design::ActionsAlign::default().name().into()
-}
-pub(crate) fn is_default_actions_align(value: &str) -> bool {
-    value == design::ActionsAlign::default().name()
-}
-
-pub(crate) fn default_actions_place() -> String {
-    design::ActionsPlace::default().name().into()
-}
-pub(crate) fn is_default_actions_place(value: &str) -> bool {
-    value == design::ActionsPlace::default().name()
 }

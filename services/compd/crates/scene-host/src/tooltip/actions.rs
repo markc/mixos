@@ -24,7 +24,7 @@ impl Actions {
         let target = decor::seat::action_tip().filter(|_| !suppressed);
         let output = state.inner.current_output();
         let space = &state.inner.space_state().state;
-        let output_rect = space.output_geometry(&output)?;
+        let output_rect = space.output_geometry(output)?;
         let had_target = target.is_some();
         let candidate = target.and_then(|(window, rect, text, key, pressed)| {
             let loc = space.element_location(&window)?;

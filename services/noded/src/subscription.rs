@@ -2467,43 +2467,44 @@ command: maild.props.records.changed
     }
 
     #[tokio::test]
-    async fn reserved_pointer_publish_stamps_owner_for_live_and_retained_delivery() {
-        let broker = SubscriptionBroker::new();
-        let (pub_tx, _pub_rx) = mpsc::channel::<String>(16);
-        let (live_tx, mut live_rx) = mpsc::channel::<String>(16);
-        broker
-            .subscribe_topic("comp.pointer.changed", "live", live_tx)
-            .await;
-        let mut hostile = BusMessage::new();
-        hostile.set("command", "pointer.changed");
-        hostile.set("broker_service", "forged");
-        hostile.set("Broker_Service", "also-forged");
-        broker
-            .publish_with_origin(
-                "comp.pointer.changed",
-                &hostile.to_wire(),
-                "comp",
-                pub_tx,
-                BrokerOrigin::Local,
-                true,
-            )
-            .await
-            .unwrap();
-        let live = bus::parse(&drain(&mut live_rx, 1).await.remove(0)).unwrap();
-        assert_eq!(live.get(BROKER_SERVICE_HEADER), Some("comp"));
-        assert_eq!(
-            live.headers
-                .keys()
-                .filter(|k| k.eq_ignore_ascii_case(BROKER_SERVICE_HEADER))
-                .count(),
-            1
-        );
-        let (replay_tx, mut replay_rx) = mpsc::channel::<String>(16);
-        broker
-            .subscribe_topic("comp.pointer.changed", "replay", replay_tx)
-            .await;
-        let replay = bus::parse(&drain(&mut replay_rx, 1).await.remove(0)).unwrap();
-        assert_eq!(replay.get(BROKER_SERVICE_HEADER), Some("comp"));
+    async fn reserved_public_publish_stamps_owner_for_live_and_retained_delivery() {
+        for (topic, owner) in [
+            ("comp.pointer.changed", "comp"),
+            ("prefs.ui.titlebar.changed", "prefs"),
+        ] {
+            let broker = SubscriptionBroker::new();
+            let (pub_tx, _pub_rx) = mpsc::channel::<String>(16);
+            let (live_tx, mut live_rx) = mpsc::channel::<String>(16);
+            broker.subscribe_topic(topic, "live", live_tx).await;
+            let mut hostile = BusMessage::new();
+            hostile.set("command", topic);
+            hostile.set("broker_service", "forged");
+            hostile.set("Broker_Service", "also-forged");
+            broker
+                .publish_with_origin(
+                    topic,
+                    &hostile.to_wire(),
+                    owner,
+                    pub_tx,
+                    BrokerOrigin::Local,
+                    true,
+                )
+                .await
+                .unwrap();
+            let live = bus::parse(&drain(&mut live_rx, 1).await.remove(0)).unwrap();
+            assert_eq!(live.get(BROKER_SERVICE_HEADER), Some(owner));
+            assert_eq!(
+                live.headers
+                    .keys()
+                    .filter(|k| k.eq_ignore_ascii_case(BROKER_SERVICE_HEADER))
+                    .count(),
+                1
+            );
+            let (replay_tx, mut replay_rx) = mpsc::channel::<String>(16);
+            broker.subscribe_topic(topic, "replay", replay_tx).await;
+            let replay = bus::parse(&drain(&mut replay_rx, 1).await.remove(0)).unwrap();
+            assert_eq!(replay.get(BROKER_SERVICE_HEADER), Some(owner));
+        }
     }
 
     #[tokio::test]

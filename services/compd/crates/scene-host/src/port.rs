@@ -621,17 +621,25 @@ async fn titlebar_read(
     service: String,
     epoch: u64,
     subscribe: bool,
+    diagnostics: RegistryMailbox,
 ) -> (u64, u64, String, Value, bool) {
     let generation = client.connection_generation();
-    let subscribed = !subscribe
-        || matches!(
-            tokio::time::timeout(
-                SEND_TIMEOUT,
-                client.subscribe_topic(&format!("{service}.ui.titlebar.changed")),
-            )
-            .await,
-            Ok(Ok(()))
-        );
+    diagnostics.record(format!(
+        "titlebar read service={service} epoch={epoch} generation={generation} subscribe={subscribe}"
+    ));
+    let subscribed = if subscribe {
+        let result = tokio::time::timeout(
+            SEND_TIMEOUT,
+            client.subscribe_topic(&format!("{service}.ui.titlebar.changed")),
+        )
+        .await;
+        diagnostics.record(format!(
+            "titlebar subscribe service={service} result={result:?}"
+        ));
+        matches!(result, Ok(Ok(())))
+    } else {
+        true
+    };
     let form = if subscribed {
         match tokio::time::timeout(
             EVENT_TIMEOUT,
@@ -639,8 +647,21 @@ async fn titlebar_read(
         )
         .await
         {
-            Ok(Ok(body)) => body,
-            _ => Value::Null,
+            Ok(Ok(body)) => {
+                diagnostics.record(format!(
+                    "titlebar form service={service} hosted={} revision={} items={}",
+                    body["hosted"],
+                    body["bar"]["revision"],
+                    body["bar"]["items"].as_array().map_or(0, Vec::len)
+                ));
+                body
+            }
+            result => {
+                diagnostics.record(format!(
+                    "titlebar form service={service} failed={result:?}"
+                ));
+                Value::Null
+            }
         }
     } else {
         Value::Null
@@ -961,8 +982,15 @@ async fn serve(
             command = incoming.recv(), if incoming_open && replies.len() < INBOUND_CAPACITY => {
                 match command {
                     Some(BoundedIncomingEvent::Command(command)) => {
-                        if let Some(service) = titlebar_change(&command, &titlebars) {
-                            if settings::native::live_generation(client) == Some(command.generation) {
+                        if command.topic().is_some_and(|topic| topic.ends_with(".ui.titlebar.changed")) {
+                            let service = titlebar_change(&command, &titlebars);
+                            let live = settings::native::live_generation(client);
+                            registry_mailbox.record(format!(
+                                "titlebar change topic={:?} owner={:?} origin={:?} accepted={} generation={} live={live:?}",
+                                command.topic(), command.header("broker_service"), command.header("broker_origin"),
+                                service.is_some() && live == Some(command.generation), command.generation
+                            ));
+                            if let Some(service) = service && live == Some(command.generation) {
                                 dirty_titlebars.insert(service.to_owned());
                             }
                         } else if let Some(wake) = lane.delivery(&command) {
@@ -1019,6 +1047,7 @@ async fn serve(
             Some(message) = outbound.recv(), if sends.is_empty() => {
                 match message {
                     Outbound::Titlebars(services) => {
+                        registry_mailbox.record(format!("titlebar targets={services:?}"));
                         if titlebars.is_empty() {
                             titlebar_tick.reset();
                         }
@@ -1052,7 +1081,7 @@ async fn serve(
                     dirty_titlebars.remove(&service);
                     pending_titlebars.insert(service.clone());
                     let subscribe = !subscribed_titlebars.contains(&service);
-                    bars.spawn(titlebar_read(Arc::clone(client), service, titlebar_epoch, subscribe));
+                    bars.spawn(titlebar_read(Arc::clone(client), service, titlebar_epoch, subscribe, registry_mailbox.clone()));
                 }
             }
             Some(result) = bars.join_next(), if !bars.is_empty() => {
@@ -1690,23 +1719,52 @@ mod tests {
             port: &Port,
             wake: &mut tokio_mpsc::UnboundedReceiver<()>,
             revision: u64,
+            reads: &AtomicUsize,
+            phase: &str,
         ) {
-            tokio::time::timeout(Duration::from_secs(10), async {
-                loop {
-                    while let Some(message) = port.try_recv() {
-                        if let Inbound::Titlebar { service, form, .. } = message {
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+            let mut last = None;
+            port.registry
+                .record(format!("test titlebar phase={phase} revision={revision}"));
+            loop {
+                while let Some(message) = port.try_recv() {
+                    port.registry.record(format!("test received {message:?}"));
+                    match message {
+                        Inbound::Titlebar { service, form, .. } => {
                             assert_eq!(service, "prefs");
                             if form["bar"]["revision"] == revision {
                                 assert_eq!(form["bar"]["items"][0]["command"], "file.save");
                                 return;
                             }
+                            last = Some(form);
                         }
+                        Inbound::Refused(reason) => panic!(
+                            "titlebar phase={phase}: scene host refused: {reason}\n{}",
+                            port.registry.history()
+                        ),
+                        _ => {}
                     }
-                    wake.recv().await.unwrap();
                 }
-            })
-            .await
-            .unwrap();
+                match tokio::time::timeout_at(deadline, wake.recv()).await {
+                    Ok(Some(())) => port.registry.record("test received titlebar wake"),
+                    outcome => {
+                        let broker_registry = if let Some(client) = port.client.get() {
+                            registry_read(Arc::clone(client), Duration::ZERO, port.registry.clone())
+                                .await
+                        } else {
+                            None
+                        };
+                        let lifecycle = port
+                            .client
+                            .get()
+                            .map(|client| (client.state(), client.connection_generation()));
+                        panic!(
+                            "titlebar phase={phase} revision={revision}: {outcome:?}; reads={} lifecycle={lifecycle:?} targets={:?} last={last:?} broker={broker_registry:?}\n{}",
+                            reads.load(Ordering::SeqCst), port.titlebars, port.registry.history()
+                        );
+                    }
+                }
+            }
         }
 
         let url = std::env::var("MIXOS_NODED_URL").unwrap();
@@ -1745,7 +1803,7 @@ mod tests {
         let (mut port, mut wake) = menu_registry_port(&url, cache.path());
         wait_menu_registry(&port, &mut wake, true, "action-app-first").await;
         port.titlebar_services(vec!["prefs".into()]);
-        wait_bar(&port, &mut wake, 7).await;
+        wait_bar(&port, &mut wake, 7, &reads, "registration").await;
         tokio::time::sleep(Duration::from_millis(750)).await;
         assert_eq!(
             reads.load(Ordering::SeqCst),
@@ -1757,7 +1815,7 @@ mod tests {
             .connect()
             .await
             .unwrap();
-        let _ = changed(&other, 8).await;
+        assert_ne!(changed(&other, 8).await, 0, "the broker reserves the publisher");
         tokio::time::sleep(Duration::from_millis(300)).await;
         assert_eq!(
             reads.load(Ordering::SeqCst),
@@ -1766,7 +1824,7 @@ mod tests {
         );
         revision.store(8, Ordering::SeqCst);
         assert_eq!(changed(&app, 8).await, 0);
-        wait_bar(&port, &mut wake, 8).await;
+        wait_bar(&port, &mut wake, 8, &reads, "change").await;
         assert_eq!(reads.load(Ordering::SeqCst), 2);
 
         assert!(port.emit("prefs", "prefs.execute", json!({"id":"file.save"})));

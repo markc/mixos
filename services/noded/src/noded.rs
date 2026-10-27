@@ -4449,7 +4449,7 @@ async fn handle_noded_command(
                 resp.set("command", "topic.publish");
                 resp.set(
                     "error",
-                    "topic_reserved: only the registered owning service may publish to reserved pointer, props, audit or settings snapshot topics",
+                    "topic_reserved: only the registered owning service may publish to reserved pointer, titlebar, props, audit or settings snapshot topics",
                 );
                 let _ = tx.try_send(resp.to_wire());
                 return;

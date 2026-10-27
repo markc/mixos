@@ -33,9 +33,20 @@ fn harness() -> Harness<'static> {
     let mut harness = Harness::builder()
         .with_size(egui::vec2(640.0, 200.0))
         .build_ui(move |ui| {
-            let _ = titlebar::show(ui, "Demo", Some(Icon::Server), &registry, &(), &strings);
-            egui::CentralPanel::default().show(ui, |_| {});
-            titlebar::edges(ui);
+            // build_ui adds an outer frame; window chrome uses the viewport root.
+            let viewport = ui.ctx().content_rect();
+            let mut root = ui.new_child(egui::UiBuilder::new().max_rect(viewport));
+            root.set_clip_rect(viewport);
+            let _ = titlebar::show(
+                &mut root,
+                "Demo",
+                Some(Icon::Server),
+                &registry,
+                &(),
+                &strings,
+            );
+            egui::CentralPanel::default().show(&mut root, |_| {});
+            titlebar::edges(&mut root);
         });
     toolkit::install(&harness.ctx, &Theme::embedded());
     harness.run();

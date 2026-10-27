@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! Broker reservation of property (SPEC 12 §15.5) and pointer event topics.
+//! Broker reservation of property (SPEC 12 §15.5), pointer and titlebar event topics.
 //!
 //! The property substrate publishes record/audit events on
 //! per-service topics, but those topics are not free for any peer to
@@ -12,9 +12,9 @@
 //!   from the owning service
 //!   (`<svc>` of the topic prefix) — anyone else faking publishes
 //!   would let one daemon spoof another's audit stream.
-//! - `<svc>.pointer.changed` has the same owner-only publication rule and
-//!   remains publicly subscribable. Reserved public event deliveries carry
-//!   the broker-authenticated owning service in `broker_service`.
+//! - `<svc>.pointer.changed` and `<svc>.ui.titlebar.changed` have the same
+//!   owner-only publication rule and remain publicly subscribable. Reserved public
+//!   event deliveries carry the broker-authenticated owning service in `broker_service`.
 //! - Direct `topic.subscribe` to the private records/audit topics is refused
 //!   from **every** peer including the owning service itself. Subscribers go
 //!   through the higher-level `<svc>.props.watch` /
@@ -42,6 +42,7 @@
 /// must go through [`reserved_owner`].
 const PRIVATE_SUFFIXES: &[&str] = &[".props.records.changed", ".props.audit"];
 const PUBLIC_CHANGED_SUFFIX: &str = ".props.changed";
+const TITLEBAR_CHANGED_SUFFIX: &str = ".ui.titlebar.changed";
 
 /// If `name` is a reserved property-substrate topic, return the
 /// owning service's name (the prefix before the matched suffix).
@@ -61,8 +62,8 @@ pub(crate) fn reserved_owner(name: &str) -> Option<&str> {
     None
 }
 
-/// Owner of any property or pointer event topic whose publisher is authoritative. The
-/// flat `<svc>.props.changed` topic remains directly subscribable; only its
+/// Owner of any property, pointer or titlebar event topic whose publisher is
+/// authoritative. The flat `<svc>.props.changed` topic remains directly subscribable; only its
 /// publish side is reserved. Record/audit topics retain their stricter grant
 /// rules through [`reserved_owner`].
 pub(crate) fn publisher_owner(name: &str) -> Option<&str> {
@@ -70,6 +71,10 @@ pub(crate) fn publisher_owner(name: &str) -> Option<&str> {
         return Some("settingsd");
     }
     reserved_owner(name)
+        .or_else(|| {
+            name.strip_suffix(TITLEBAR_CHANGED_SUFFIX)
+                .filter(|owner| !owner.is_empty())
+        })
         .or_else(|| {
             name.strip_suffix(".pointer.changed")
                 .filter(|owner| !owner.is_empty())
@@ -173,7 +178,10 @@ pub(crate) fn visible_in_list(name: &str, peer_id: &str) -> bool {
 /// reserved path with a parseable inner, returns the re-serialised
 /// canonical wire bytes.
 pub(crate) fn canonicalize_reserved_inner(topic: &str, inner_wire: &str) -> Option<String> {
-    if !settings_topic(topic) {
+    let titlebar = topic
+        .strip_suffix(TITLEBAR_CHANGED_SUFFIX)
+        .is_some_and(|owner| !owner.is_empty());
+    if !settings_topic(topic) && !titlebar {
         reserved_owner(topic)?;
     }
     let mut inner = match bus::wire::parse(inner_wire) {
@@ -259,6 +267,28 @@ mod tests {
         assert!(may_publish("comp.pointer.changed", "comp"));
         assert!(!may_publish("comp.pointer.changed", "wallpaper"));
         assert!(!may_publish("comp.pointer.changed", "anon-42"));
+    }
+
+    #[test]
+    fn titlebar_changes_are_publicly_subscribable_but_owner_published() {
+        for (topic, owner) in [
+            ("prefs.ui.titlebar.changed", "prefs"),
+            ("editor.test.ui.titlebar.changed", "editor.test"),
+        ] {
+            assert_eq!(publisher_owner(topic), Some(owner));
+            assert_eq!(reserved_owner(topic), None);
+            assert!(may_subscribe(topic));
+            assert!(may_publish(topic, owner));
+            assert!(!may_publish(topic, "other"));
+            assert!(!may_publish(topic, "anon-42"));
+            let hostile = "---\ncommand: delete\nfrom: forged\nto: victim\n---\n{}";
+            let safe = bus::parse(&canonicalize_reserved_inner(topic, hostile).unwrap()).unwrap();
+            assert_eq!(safe.get("command"), Some(topic));
+            assert_eq!(safe.get("from"), None);
+            assert_eq!(safe.get("to"), None);
+        }
+        assert_eq!(publisher_owner(".ui.titlebar.changed"), None);
+        assert!(canonicalize_reserved_inner(".ui.titlebar.changed", "---\n---\n{}").is_none());
     }
 
     #[test]

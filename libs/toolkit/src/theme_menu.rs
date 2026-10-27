@@ -11,12 +11,12 @@
 //! | | Session theme (the scheme follows the session) | `view.theme.session` |
 //! | modes | Light, Dark, Session mode (follows the session) | `view.mode.light`, `view.mode.dark`, `view.mode.session` |
 //! | styles | Scheme's own style, Plain, Pro, Studio and Classic style, Session style (follows the session) | `view.style.own`, `view.style.<style>`, `view.style.session` |
-//! | framing | Automatic title bar, App title bar (CSD), System title bar (SSD), Captions left, Captions right | `view.decorations.auto`, `view.decorations.csd`, `view.decorations.ssd`, `view.captions.left`, `view.captions.right` |
+//! | framing | Automatic title bar, App title bar (CSD), System title bar (SSD), Style default captions, Captions left, centre and right | `view.decorations.auto`, `view.decorations.csd`, `view.decorations.ssd`, `view.captions.auto`, `view.captions.left`, `view.captions.center`, `view.captions.right` |
 //!
 //! The app keeps the [`Choice`], `None` on an axis following the session,
 //! and installs [`crate::Theme::with_choice`] when it changes. The framing
 //! group has no session row: with no choice on the axis, its defaults tick
-//! (CSD, captions right). Labels come
+//! (automatic title bar, style default captions). Labels come
 //! from the toolkit's own catalogue.
 
 use crate::action::{Place, Registry};
@@ -233,7 +233,7 @@ impl<S: 'static> Registry<S> {
                 move |s| get(s).decorations.unwrap_or_default() == decorations,
             );
         }
-        for side in [CaptionSide::Left, CaptionSide::Right] {
+        for side in CaptionSide::ALL {
             self.add_choice(
                 place(captions_id(side), captions_label(side), 5),
                 move |s| {
@@ -331,7 +331,9 @@ mod tests {
                 Some("Automatic title bar"),
                 Some("App title bar (CSD)"),
                 Some("System title bar (SSD)"),
+                Some("Style default captions"),
                 Some("Captions left"),
+                Some("Captions centre"),
                 Some("Captions right"),
             ]
         );
@@ -346,7 +348,7 @@ mod tests {
                 "Session mode",
                 "Session style",
                 "Automatic title bar",
-                "Captions right"
+                "Style default captions"
             ]
         );
     }
