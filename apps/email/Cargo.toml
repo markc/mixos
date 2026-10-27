@@ -22,6 +22,7 @@ mod_module_files = "deny"
 
 [dependencies]
 jmap = { path = "crates/jmap" }
+maildoc = { path = "../../libs/maildoc" }
 buildinfo.workspace = true
 # The Bus connection: theme-follow topics and single-instance activation.
 bus.workspace = true

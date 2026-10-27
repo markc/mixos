@@ -156,13 +156,13 @@ pub fn dialog(
     // The body can be resized; egui keeps the size for this id while the
     // app runs, so the window opens at the size it was last left at.
     let shown = dialog::Dialog::new(id, crate::label("compose-title"))
-        .enabled(state.attachment_chooser.is_none())
+        .enabled(state.attachment_chooser.is_none() && !state.documents.modal())
         .buttons(choices)
         .resizable(egui::vec2(720.0, 560.0), egui::vec2(480.0, 320.0))
         .show(ui.ctx(), |ui| {
             events.extend(
                 commands
-                    .menu_bar_for(ui, state, strings, &["compose-attachments-menu"])
+                    .menu_bar_for(ui, state, strings, &["compose-file-menu", "compose-attachments-menu"])
                     .into_iter()
                     .map(|(id, origin)| UiEvent::Command(id, origin)),
             );
@@ -174,6 +174,17 @@ pub fn dialog(
     } else if shown.chosen.is_some() || shown.dismissed {
         dialog::Dialog::reset(ui.ctx(), id);
         events.push(UiEvent::CloseCompose);
+    }
+    if state.documents.replace.is_some() {
+        let id = egui::Id::unique("compose-document-replace");
+        let shown = dialog::Dialog::new(id, crate::label("document-replace-title"))
+            .buttons(vec![Choice::new(crate::label("document-replace"), dialog::Role::Default),
+                Choice::new(crate::label("cancel"), dialog::Role::Cancel)])
+            .show(ui.ctx(), |ui| { ui.label(crate::label("document-replace-body")); });
+        if shown.chosen.is_some() || shown.dismissed {
+            dialog::Dialog::reset(ui.ctx(), id);
+            events.push(UiEvent::DocumentReplace(shown.chosen == Some(0)));
+        }
     }
 }
 

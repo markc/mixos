@@ -33,6 +33,7 @@ use toolkit::datatable;
 /// One interaction from this frame.
 #[derive(Clone, Debug, PartialEq)]
 pub enum UiEvent {
+    DocumentReplace(bool),
     Command(&'static str, Origin),
     CloseMacros,
     /// Switch the centre pane's surface.

@@ -86,6 +86,7 @@ pub struct AttachmentDone {
 /// What finished off the UI thread. Completions carry their result; the
 /// shell resolves the Look pair itself (theme-follow, below).
 pub enum Event {
+    MailDocument(u64, crate::documents::Answer),
     /// A received image downloaded and decoded on the effects runtime.
     Preview(u64, Result<egui::ColorImage, String>),
     ComposeAttachments(
@@ -560,6 +561,7 @@ enum Closing {
 fn closing(event: &Event) -> Closing {
     match event {
         Event::Connected(..)
+        | Event::MailDocument(..)
         | Event::ComposeAttachments(..)
         | Event::Account(..)
         | Event::Settled(..)
@@ -859,6 +861,11 @@ impl Shell {
     /// Perform one unit of work on the effects runtime.
     fn perform(&mut self, work: Work) {
         match work {
+            Work::MailDocument(work) => self.spawn(async move {
+                let (ticket, answer) = tokio::task::spawn_blocking(move || work.perform())
+                    .await.expect("mail document worker panicked");
+                Event::MailDocument(ticket, answer)
+            }),
             Work::InspectComposeAttachments(inspection) => {
                 self.spawn(inspect_compose_attachments(inspection));
             }
@@ -1787,6 +1794,7 @@ impl Shell {
         );
         let origin = driven_origin(ui.ctx(), &self.drive_callers);
         apply_ui_events(&mut self.state, &self.commands, events, origin);
+        self.state.document_chooser_ui(ui.ctx());
         if self.state.compose.is_none() {
             self.state.attachment_chooser = None;
             self.state.attachment_notice = None;
@@ -1805,7 +1813,7 @@ impl Shell {
                 self.state.attachment_notice = Some(message);
             }
         }
-        if self.state.compose.is_some() {
+        {
             let dropped = ui.ctx().input(|input| input.raw.dropped_files.clone());
             if !dropped.is_empty() {
                 ui.ctx().request_repaint();
@@ -1821,11 +1829,7 @@ impl Shell {
                     errors.push(label("compose-drop-no-path"));
                 }
             }
-            if !paths.is_empty()
-                && let Err((_, message)) = self.state.add_compose_attachments(&paths)
-            {
-                errors.push(message);
-            }
+            if !paths.is_empty() { self.state.drop_files(paths); }
             if !errors.is_empty() {
                 self.state.attachment_notice = Some(errors.join("\n"));
             }

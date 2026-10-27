@@ -44,6 +44,7 @@ pub struct SavedDraft {
     /// Paths only; attachment contents are read when sending, never saved here.
     pub attachments: Vec<PathBuf>,
     pub in_reply_to: Option<String>,
+    pub references: Vec<String>,
     /// The sender identity it was typed under, and that identity's display
     /// name and Reply-To, so a restored draft sends as it was. Empty for a
     /// draft kept before identities existed.

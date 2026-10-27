@@ -888,6 +888,7 @@ impl ComposeState {
             body: self.body.contents(),
             attachments: self.draft.attachments.clone(),
             in_reply_to: self.draft.in_reply_to.clone(),
+            references: self.draft.references.clone(),
             identity: self.identity.clone(),
             from_name: self.draft.from_name.clone(),
             reply_to: self.draft.reply_to.clone(),
@@ -1514,6 +1515,19 @@ pub struct Reply {
 
 /// Refusal codes (`error_code`), rc 10.
 pub mod code {
+    pub const DOCUMENT_TOO_LARGE: &str = "DOCUMENT_TOO_LARGE";
+    pub const DOCUMENT_CARRIAGE_RETURN: &str = "DOCUMENT_CARRIAGE_RETURN";
+    pub const DOCUMENT_FRAMING: &str = "DOCUMENT_FRAMING";
+    pub const DOCUMENT_HEADER_NOT_ALLOWED: &str = "DOCUMENT_HEADER_NOT_ALLOWED";
+    pub const DOCUMENT_MALFORMED_HEADER: &str = "DOCUMENT_MALFORMED_HEADER";
+    pub const DOCUMENT_DUPLICATE_HEADER: &str = "DOCUMENT_DUPLICATE_HEADER";
+    pub const DOCUMENT_EMPTY_VALUE: &str = "DOCUMENT_EMPTY_VALUE";
+    pub const DOCUMENT_INVALID_VALUE: &str = "DOCUMENT_INVALID_VALUE";
+    pub const DOCUMENT_PATH: &str = "DOCUMENT_PATH";
+    pub const DOCUMENT_IO: &str = "DOCUMENT_IO";
+    pub const DOCUMENT_ENCODING: &str = "DOCUMENT_ENCODING";
+    pub const DOCUMENT_INLINE: &str = "DOCUMENT_INLINE";
+    pub const IDENTITY_MISMATCH: &str = "IDENTITY_MISMATCH";
     pub const ATTACHMENT_RELATIVE: &str = "ATTACHMENT_RELATIVE";
     pub const ATTACHMENT_NOT_FILE: &str = "ATTACHMENT_NOT_FILE";
     pub const ATTACHMENT_UNREADABLE: &str = "ATTACHMENT_UNREADABLE";
@@ -1712,6 +1726,7 @@ pub struct State {
     migrated: bool,
     pub compose: Option<ComposeState>,
     pub attachment_chooser: Option<toolkit::file_chooser::FileChooser>,
+    pub documents: crate::documents::DocumentState,
     pub attachment_notice: Option<String>,
     last_attachment_directory: Option<std::path::PathBuf>,
     /// The identities dialog, while open.
@@ -1795,6 +1810,7 @@ impl State {
             migrated: false,
             compose: None,
             attachment_chooser: None,
+            documents: crate::documents::DocumentState::default(),
             attachment_notice: None,
             last_attachment_directory: None,
             identity_editor: None,
@@ -1950,7 +1966,7 @@ impl State {
         self.queue(work);
     }
 
-    fn ticket(&mut self) -> u64 {
+    pub(crate) fn ticket(&mut self) -> u64 {
         self.next_ticket += 1;
         self.next_ticket
     }
@@ -2901,6 +2917,7 @@ impl State {
                 self.refresh_previews();
                 self.previews.complete(ticket, result);
             }
+            Event::MailDocument(ticket, answer) => self.document_done(ticket, answer),
             Event::ComposeAttachments(inspection, result) => {
                 self.compose_attachments_inspected(inspection, result);
             }
@@ -3965,6 +3982,7 @@ impl State {
             body: saved.body,
             attachments: saved.attachments,
             in_reply_to: saved.in_reply_to,
+            references: saved.references,
             ..Composed::default()
         };
         let mut compose = ComposeState::new(&account, draft);
@@ -5853,6 +5871,7 @@ impl State {
                     compose.suggest = None;
                 }
             }
+            UiEvent::DocumentReplace(replace) => self.confirm_document_replace(replace),
             UiEvent::CloseCompose => self.close_compose(),
             UiEvent::CancelFetch => self.cancel_fetch(),
             UiEvent::ConfirmDraft(choice) => self.confirm_draft(choice),
@@ -6217,6 +6236,12 @@ impl State {
 
     /// Send the open compose, when its recipients and attachments are valid.
     pub fn send_compose(&mut self) {
+        if let Some(compose) = &self.compose
+            && let Err((_, message)) = crate::documents::identity(self, &compose.account,
+                Some(&compose.draft.from), compose.draft.reply_to.as_deref()) {
+            if let Some(compose) = &mut self.compose { compose.error = Some(message); }
+            return;
+        }
         if self
             .compose
             .as_ref()

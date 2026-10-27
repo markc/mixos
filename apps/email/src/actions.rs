@@ -116,6 +116,8 @@ const fn key(modifiers: Modifiers, key: Key) -> Option<KeyboardShortcut> {
 
 fn compose_attachable(state: &State) -> bool {
     state.compose.as_ref().is_some_and(|compose| !compose.busy)
+        && !state.documents.modal() && !state.documents.opening()
+        && state.attachment_chooser.is_none()
 }
 
 fn compose_attached(state: &State) -> bool {
@@ -129,7 +131,17 @@ fn compose_attached(state: &State) -> bool {
 /// The registry: every command, its menu, its shortcut and its guard.
 pub fn registry() -> Registry<State> {
     let mut r = Registry::new();
+    r.dialog_menu("compose-file-menu");
     r.dialog_menu("compose-attachments-menu");
+    r.add(Action {
+        id: "compose.open", label: "document-open", menu: Some("compose-file-menu"), submenu: None,
+        group: 0, shortcut: key(Modifiers::COMMAND, Key::O), icon: Some(Icon::FolderOpen),
+        enabled: compose_attachable, run: State::open_document,
+    }).add(Action {
+        id: "compose.save_as", label: "document-save-as", menu: Some("compose-file-menu"), submenu: None,
+        group: 0, shortcut: key(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::S), icon: Some(Icon::Save),
+        enabled: compose_attachable, run: State::save_document_as,
+    });
     r.add(Action {
         id: "compose.attach",
         label: "compose-attach",
@@ -597,19 +609,13 @@ pub fn shortcuts(
     state: &State,
     registry: &Registry<State>,
 ) -> Vec<&'static str> {
-    if state.attachment_chooser.is_some() {
+    if state.attachment_chooser.is_some() || state.documents.modal() {
         Vec::new()
     } else if state.compose.is_some() && crate::view::compose::body_focused(ctx) {
-        if compose_attachable(state)
-            && registry
-                .shortcuts_of("compose.attach")
-                .iter()
-                .any(|shortcut| ctx.input_mut(|input| input.consume_shortcut(shortcut)))
-        {
-            vec!["compose.attach"]
-        } else {
-            Vec::new()
-        }
+        ["compose.open", "compose.save_as", "compose.attach"].into_iter()
+            .filter(|id| compose_attachable(state) && registry.shortcuts_of(id).iter()
+                .any(|shortcut| ctx.input_mut(|input| input.consume_shortcut(shortcut))))
+            .collect()
     } else {
         registry.shortcuts(ctx, state)
     }

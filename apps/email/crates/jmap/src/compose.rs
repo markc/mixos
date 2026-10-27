@@ -50,6 +50,8 @@ pub struct Composed {
     /// The message being replied to, as `Email.messageId` gives it
     /// (bracketed). Sent as `In-Reply-To`/`References`.
     pub in_reply_to: Option<String>,
+    /// Ordered thread ancestors; falls back to In-Reply-To when empty.
+    pub references: Vec<String>,
     /// The display name in From, when the sender identity has one. Empty:
     /// the From is the address alone, as before identities.
     pub from_name: String,
@@ -231,8 +233,14 @@ fn render_mime(composed: &Composed, message_id: &str, parts: &[String]) -> Vec<u
         // The id came from the server, not the person: sanitise it like the rest.
         let wrapped = one_wrap(&clean(reply_to));
         header(&mut mime, "In-Reply-To", &wrapped);
-        header(&mut mime, "References", &wrapped);
     }
+    let references = if composed.references.is_empty() {
+        composed.in_reply_to.iter().collect::<Vec<_>>()
+    } else {
+        composed.references.iter().collect::<Vec<_>>()
+    };
+    header(&mut mime, "References", &references.into_iter()
+        .map(|id| one_wrap(&clean(id))).collect::<Vec<_>>().join(" "));
     mime.push_str("MIME-Version: 1.0\r\n");
     if !parts.is_empty() {
         let text = text_part(&composed.body);
@@ -589,6 +597,9 @@ fn fingerprint(composed: &Composed, parts: &[String]) -> String {
     feed(&composed.subject);
     feed(&composed.body);
     feed(composed.in_reply_to.as_deref().unwrap_or(""));
+    for reference in &composed.references {
+        feed(reference);
+    }
     for (path, part) in composed.attachments.iter().zip(parts) {
         feed(&path.to_string_lossy());
         feed(part);
@@ -1288,6 +1299,7 @@ mod tests {
             body: "Noon?".into(),
             attachments: Vec::new(),
             in_reply_to: Some("<m1@example.invalid>".into()),
+            references: Vec::new(),
             from_name: String::new(),
             reply_to: None,
         }

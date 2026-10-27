@@ -24,7 +24,16 @@ static NEXT_ID: AtomicU64 = AtomicU64::new(0);
 #[derive(Debug, PartialEq, Eq)]
 pub enum Outcome {
     Picked(Vec<PathBuf>),
+    Save { path: PathBuf, replace: bool },
     Cancelled,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum Mode {
+    #[default]
+    Multiple,
+    Single,
+    Save,
 }
 
 #[derive(Clone, Debug)]
@@ -45,11 +54,13 @@ struct Listing {
 enum Request {
     Open(PathBuf),
     Pick(Vec<PathBuf>),
+    Save(PathBuf),
 }
 
 enum Answer {
     Listed(Listing),
     Picked(Vec<PathBuf>),
+    Save(PathBuf, bool),
 }
 
 #[derive(Default)]
@@ -106,6 +117,9 @@ pub struct FileChooser {
     id: Id,
     title: String,
     confirm: String,
+    mode: Mode,
+    name: String,
+    replace: Option<PathBuf>,
     directory: PathBuf,
     path: String,
     browsing: Option<PathBuf>,
@@ -134,6 +148,9 @@ impl FileChooser {
             )),
             title: title.into(),
             confirm: confirm.into(),
+            mode: Mode::Multiple,
+            name: String::new(),
+            replace: None,
             path: directory.display().to_string(),
             browsing: None,
             directory,
@@ -149,6 +166,25 @@ impl FileChooser {
         }
     }
 
+    /// Choose exactly one existing file.
+    pub fn single(start: impl Into<PathBuf>, title: impl Into<String>, confirm: impl Into<String>) -> Self {
+        Self { mode: Mode::Single, ..Self::new(start, title, confirm) }
+    }
+
+    /// Choose a destination; no file is written by the chooser. A replacement
+    /// is returned only after the person explicitly accepts its question.
+    pub fn save(start: impl Into<PathBuf>, title: impl Into<String>, confirm: impl Into<String>) -> Self {
+        Self { mode: Mode::Save, ..Self::new(start, title, confirm) }
+    }
+
+    pub fn directory(&self) -> &Path { &self.directory }
+
+    fn can_confirm(&self) -> bool {
+        self.pending.is_none() && if self.mode == Mode::Save {
+            save_path(&self.directory, &self.name).is_ok()
+        } else { !self.selection.files.is_empty() }
+    }
+
     /// Show above the current modal; return once the person picks or cancels.
     pub fn show(&mut self, ctx: &Context) -> Option<Outcome> {
         if !self.started {
@@ -162,8 +198,20 @@ impl FileChooser {
                     self.pending = None;
                     match answer {
                         Ok(Answer::Picked(paths)) => {
+                            if self.mode == Mode::Save {
+                                if let Some(path) = paths.first() {
+                                    self.name = path.file_name().unwrap_or_default().to_string_lossy().into_owned();
+                                    self.open(ctx, path.parent().unwrap_or(&self.directory).to_owned());
+                                }
+                                return None;
+                            }
                             Dialog::reset(ctx, self.id);
                             return Some(Outcome::Picked(paths));
+                        }
+                        Ok(Answer::Save(path, true)) => self.replace = Some(path),
+                        Ok(Answer::Save(path, false)) => {
+                            Dialog::reset(ctx, self.id);
+                            return Some(Outcome::Save { path, replace: false });
                         }
                         Ok(Answer::Listed(listing)) => {
                             self.browsing = None;
@@ -194,10 +242,11 @@ impl FileChooser {
         ctx.move_to_top(layer);
         let choices = vec![
             Choice::new(&self.confirm, Role::Default)
-                .enabled(self.pending.is_none() && !self.selection.files.is_empty()),
+                .enabled(self.can_confirm()),
             Choice::new(own("file-chooser-cancel"), Role::Cancel),
         ];
         let shown = Dialog::new(self.id, &self.title)
+            .enabled(self.replace.is_none())
             .resizable(
                 ctx.content_rect().size() * 0.7,
                 ctx.content_rect().size() * 0.4,
@@ -210,6 +259,21 @@ impl FileChooser {
         }
         if shown.chosen == Some(0) {
             self.pick(ctx);
+        }
+        if let Some(path) = self.replace.clone() {
+            let id = self.id.with("replace");
+            let shown = Dialog::new(id, own("file-chooser-replace-title"))
+                .buttons(vec![Choice::new(own("file-chooser-replace"), Role::Default),
+                    Choice::new(own("file-chooser-cancel"), Role::Cancel)])
+                .show(ctx, |ui| { ui.label(own_with("file-chooser-replace-body", &[("path", &path.display().to_string())])); });
+            if shown.chosen.is_some() || shown.dismissed {
+                Dialog::reset(ctx, id);
+                self.replace = None;
+                if shown.chosen == Some(0) {
+                    Dialog::reset(ctx, self.id);
+                    return Some(Outcome::Save { path, replace: true });
+                }
+            }
         }
         None
     }
@@ -237,6 +301,9 @@ impl FileChooser {
         );
         if submit {
             self.open(&ctx, resolve_path(&self.directory, &self.path, &home()));
+        }
+        if self.mode == Mode::Save {
+            ui.add(field::text_edit(&mut self.name, &own("file-chooser-name"), ui.available_width()).id(self.id.with("name")));
         }
         ui.horizontal(|ui| {
             if ui
@@ -282,7 +349,7 @@ impl FileChooser {
         let mut go_up = false;
         if list_keys {
             ui.input_mut(|i| {
-                if i.consume_key(Modifiers::COMMAND, Key::A) {
+                if i.consume_key(Modifiers::COMMAND, Key::A) && self.mode == Mode::Multiple {
                     self.selection.all(&self.entries);
                 }
                 let shift = i.modifiers.shift;
@@ -300,7 +367,7 @@ impl FileChooser {
                         None if down => 0,
                         None => self.entries.len() - 1,
                     };
-                    self.selection.click(at, false, shift, &self.entries);
+                    self.selection.click(at, false, shift && self.mode == Mode::Multiple, &self.entries);
                     self.scroll_to_cursor = true;
                 }
                 activate = i.consume_key(Modifiers::NONE, Key::Enter);
@@ -407,10 +474,14 @@ impl FileChooser {
         if let Some((at, modifiers)) = clicked {
             self.selection.click(
                 at,
-                modifiers.command || modifiers.ctrl,
-                modifiers.shift,
+                self.mode == Mode::Multiple && (modifiers.command || modifiers.ctrl),
+                self.mode == Mode::Multiple && modifiers.shift,
                 &self.entries,
             );
+        }
+        if self.mode == Mode::Save && let Some(at) = self.selection.cursor
+            && !self.entries[at].directory && (clicked.is_some() || self.scroll_to_cursor) {
+            self.name = self.entries[at].name.clone();
         }
         if go_up {
             self.up(&ctx);
@@ -418,6 +489,7 @@ impl FileChooser {
             if self.entries[at].directory {
                 self.open(&ctx, self.entries[at].path.clone());
             } else {
+                if self.mode == Mode::Save { self.name = self.entries[at].name.clone(); }
                 if self.selection.files.is_empty() {
                     self.selection.click(at, false, false, &self.entries);
                 }
@@ -445,6 +517,13 @@ impl FileChooser {
     }
 
     fn pick(&mut self, ctx: &Context) {
+        if self.mode == Mode::Save {
+            match save_path(&self.directory, &self.name) {
+                Ok(path) => self.request(ctx, Request::Save(path)),
+                Err(error) => self.error = Some(error),
+            }
+            return;
+        }
         let paths = self.selection.paths(&self.entries);
         if !paths.is_empty() {
             self.request(ctx, Request::Pick(paths));
@@ -468,6 +547,7 @@ impl FileChooser {
                 let answer = match request {
                     Request::Open(path) => open_path(path, hidden),
                     Request::Pick(paths) => check_files(paths).map(Answer::Picked),
+                    Request::Save(path) => check_save(path),
                 };
                 let _ = tx.send(answer);
                 WORKERS.fetch_sub(1, Ordering::SeqCst);
@@ -481,6 +561,42 @@ impl FileChooser {
             }
         }
     }
+}
+
+fn save_path(directory: &Path, name: &str) -> Result<PathBuf, String> {
+    if name.trim().is_empty() || name == "." || name == ".." || name.contains(['/', '\0']) {
+        return Err(own("file-chooser-name-required"));
+    }
+    Ok(directory.join(name))
+}
+
+fn check_save(path: PathBuf) -> Result<Answer, String> {
+    match std::fs::metadata(&path) {
+        Ok(meta) if meta.is_file() => Ok(Answer::Save(path, true)),
+        Ok(_) => Err(own("file-chooser-name-required")),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Answer::Save(path, false)),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+/// Resolve XDG's Documents folder on a worker, since user-dirs.dirs is a file.
+pub fn documents() -> PathBuf {
+    let home = home();
+    if let Some(path) = std::env::var_os("XDG_DOCUMENTS_DIR").map(PathBuf::from).filter(|p| p.is_absolute()) {
+        return path;
+    }
+    let config = std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from)
+        .filter(|p| p.is_absolute()).unwrap_or_else(|| home.join(".config"));
+    if let Ok(text) = std::fs::read_to_string(config.join("user-dirs.dirs")) {
+        for line in text.lines() {
+            if let Some(value) = line.trim().strip_prefix("XDG_DOCUMENTS_DIR=") {
+                let value = value.trim().trim_matches('"').replace("$HOME", &home.to_string_lossy());
+                let path = PathBuf::from(value);
+                if path.is_absolute() { return path; }
+            }
+        }
+    }
+    home
 }
 
 /// The user's home; no stat is needed on the UI thread.

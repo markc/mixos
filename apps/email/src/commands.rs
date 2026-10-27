@@ -1016,6 +1016,18 @@ fn dispatch(
     let query = |state: &mut State, account: String, query: Query| {
         state.query(account, id, query, Then::Answer);
     };
+    if matches!(command_name, "email.compose" | "email.send") && args.get("document").is_some() {
+        if ["to", "cc", "bcc", "from", "from_name", "reply_to", "subject", "body", "attachments", "in_reply_to", "references"]
+            .iter().any(|key| args.get(key).is_some()) {
+            return Err(Bad(code::DOCUMENT_INLINE, crate::label("document-inline")));
+        }
+        let send = command_name == "email.send";
+        let account = if send { connected(state, args)? } else { account(state, args)? };
+        if !send && state.compose.is_some() { return Err(Bad(code::BUSY, crate::label("compose-open"))); }
+        let path = std::path::PathBuf::from(required(args, "document")?);
+        state.read_document(account, path, Some(id), send, false).map_err(|(c, m)| Bad(c, m))?;
+        return Ok(());
+    }
     match command_name {
         "HELP" => state.reply(id, 0, describe()["commands"].clone()),
         "app.describe" => state.reply(id, 0, describe()),
@@ -1295,9 +1307,12 @@ fn dispatch(
             if to.is_empty() {
                 return Err(invalid("to is required"));
             }
-            let from = state.account(&account).map(|v| v.entry.email.clone()).unwrap_or_default();
+            let reply_to = text(args, "reply_to")?.filter(|v| !v.trim().is_empty());
+            let from = text(args, "from")?;
+            let sender = crate::documents::identity(state, &account, from.as_deref(), reply_to.as_deref())
+                .map_err(|(c, m)| Bad(c, m))?;
             let draft = Composed {
-                from,
+                from: sender.address,
                 to,
                 cc: addresses(args, "cc")?,
                 bcc: addresses(args, "bcc")?,
@@ -1305,15 +1320,17 @@ fn dispatch(
                 body: text(args, "body")?.unwrap_or_default(),
                 attachments: attachment_paths(args)?,
                 in_reply_to: text(args, "in_reply_to")?,
-                from_name: String::new(),
-                reply_to: None,
+                references: list(args, "references")?.unwrap_or_default().iter()
+                    .flat_map(|v| v.split_whitespace().map(str::to_owned)).collect(),
+                from_name: sender.name,
+                reply_to,
             };
             validate_message(state, &account, &draft)?;
             state.write_server(account, Some(id), Write::Send { draft });
         }
         "email.compose" => {
             let account = account(state, args)?;
-            if state.compose.is_some() {
+            if state.compose.is_some() || state.documents.opening() {
                 return Err(Bad(code::BUSY, crate::label("compose-open")));
             }
             let draft = Composed {

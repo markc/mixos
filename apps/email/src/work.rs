@@ -100,6 +100,7 @@ impl std::fmt::Debug for Login {
 /// One unit of background work.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Work {
+    MailDocument(crate::documents::DocumentWork),
     /// One slot covering both the capped blob download and blocking decode.
     Preview {
         account: String,
@@ -316,6 +317,7 @@ impl Work {
             | Work::Preview { account, .. }
             | Work::Suggest { account, .. } => Some(account),
             Work::Settings { .. }
+            | Work::MailDocument(_)
             | Work::InspectComposeAttachments(_)
             | Work::WriteDeadline { .. }
             | Work::ReadSettings
