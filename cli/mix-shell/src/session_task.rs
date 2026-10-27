@@ -56,21 +56,28 @@ pub(crate) const TASKS: usize = 4;
 /// Settled Unknown reports can precede kernel cleanup. Keep native resources
 /// bounded independently of the result store until their creator thread exits.
 static SUPERVISORS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-struct SupervisorPermit;
+/// One supervisor slot, returned to the count it came from when dropped.
+struct SupervisorPermit(&'static std::sync::atomic::AtomicUsize);
 impl SupervisorPermit {
     fn reserve() -> Result<Self, SpawnFailed> {
+        Self::reserve_in(&SUPERVISORS)
+    }
+
+    /// A slot from `count`: the shell's own, or a test's private count, so
+    /// a capacity test never races other tests' native tasks.
+    fn reserve_in(count: &'static std::sync::atomic::AtomicUsize) -> Result<Self, SpawnFailed> {
         use std::sync::atomic::Ordering;
-        SUPERVISORS
+        count
             .fetch_update(Ordering::AcqRel, Ordering::Acquire, |active| {
                 (active < TASKS).then_some(active + 1)
             })
-            .map(|_| Self)
+            .map(|_| Self(count))
             .map_err(|_| SpawnFailed::resources("native task cleanup slots are occupied".into()))
     }
 }
 impl Drop for SupervisorPermit {
     fn drop(&mut self) {
-        SUPERVISORS.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
+        self.0.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
     }
 }
 /// Per-stream capture cap. With the 64 KiB result cap this keeps a full settled
@@ -1380,7 +1387,10 @@ mod tests {
         // SAFETY: parent uniquely owns this fresh pipe descriptor.
         let release = unsafe { OwnedFd::from_raw_fd(pipe[1]) };
         register_group(pid);
-        let permit = SupervisorPermit::reserve().unwrap_or_else(|_| panic!("native slot"));
+        // A private count: other tests run native tasks at the same time
+        // and take slots from the shell's own SUPERVISORS.
+        static OWN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let permit = SupervisorPermit::reserve_in(&OWN).unwrap_or_else(|_| panic!("native slot"));
         let (published, report_rx) = mpsc::channel();
         let supervisor = std::thread::spawn(move || {
             let _permit = permit;
@@ -1409,10 +1419,12 @@ mod tests {
         assert_eq!(unsafe { libc::kill(pid, 0) }, 0, "child is still live");
         assert!(groups().contains(&pid), "cleanup remains owned");
         let other_slots: Vec<_> = (1..TASKS)
-            .map(|_| SupervisorPermit::reserve().unwrap_or_else(|_| panic!("remaining slot")))
+            .map(|_| {
+                SupervisorPermit::reserve_in(&OWN).unwrap_or_else(|_| panic!("remaining slot"))
+            })
             .collect();
         assert_eq!(
-            SupervisorPermit::reserve().err().unwrap().code,
+            SupervisorPermit::reserve_in(&OWN).err().unwrap().code,
             "RESOURCE_LIMIT"
         );
         drop(other_slots);
@@ -1420,7 +1432,7 @@ mod tests {
         drop(release);
         supervisor.join().unwrap();
         assert!(!groups().contains(&pid));
-        assert_eq!(SUPERVISORS.load(std::sync::atomic::Ordering::Acquire), 0);
+        assert_eq!(OWN.load(std::sync::atomic::Ordering::Acquire), 0);
         let mut status = 0;
         assert_eq!(
             unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) },

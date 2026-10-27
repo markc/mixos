@@ -440,20 +440,37 @@ async fn test_serve_socket_lifecycle() {
             .unwrap();
     }
 
+    // `on my.frame async` handlers run concurrently (docs/mix/serve.md:
+    // "async handlers use the existing concurrent scheduling"), so acks and
+    // traces may finish in any order: each frame is acked and traced once.
+    let mut want: Vec<String> = (0..20).map(|i| format!("idx:{i}")).collect();
+    want.sort();
     let mut reader = tokio::io::BufReader::new(&mut sub_stream);
-    for i in 0..20 {
+    let mut acks = Vec::new();
+    for _ in 0..20 {
         let mut line = String::new();
         tokio::time::timeout(HARD, reader.read_line(&mut line))
             .await
             .expect("ack read timeout")
             .unwrap();
-        assert_eq!(line.trim(), format!("ack:idx:{i}"));
+        acks.push(
+            line.trim()
+                .strip_prefix("ack:")
+                .expect("an ack line")
+                .to_string(),
+        );
     }
+    acks.sort();
+    assert_eq!(acks, want, "every frame acked exactly once");
 
     let traces = wait_lines(&dir, "frame", 20, HARD).await;
-    for (i, trace) in traces.iter().enumerate().take(20) {
-        assert_eq!(trace.fields["d"].as_str().unwrap(), format!("idx:{i}"));
-    }
+    let mut traced: Vec<String> = traces
+        .iter()
+        .take(20)
+        .map(|t| t.fields["d"].as_str().unwrap().to_string())
+        .collect();
+    traced.sort();
+    assert_eq!(traced, want, "every frame traced exactly once");
 
     call(&c1, "RELOAD", json!({})).await.unwrap();
 
