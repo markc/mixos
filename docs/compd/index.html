@@ -293,9 +293,15 @@ does nothing. Up from floating selects the top half. Arrows never untile.</p>
 <p>Super+PageUp toggles maximise; Super+PageDown minimises. Super+Backspace
 restores the focused window: leave fullscreen first, otherwise return tiled
 or maximised placement to its saved floating geometry, then raise and focus.
-<code>comp.window.restore</code> uses the same precedence; <code>activate:false</code> preserves
-focus. <code>comp.window.unmaximize</code> also restores tiled placement to floating.
-Minimise alone preserves placement and floating geometry.</p>
+Agents use <code>comp.window.unfullscreen</code> or
+<code>comp.window.place_as {id, generation, placement: "floating"}</code> for those
+state changes, followed by <code>comp.window.focus {id, generation, raise: true}</code>.
+<code>comp.window.unmaximize</code> also restores tiled placement to floating.</p>
+<p><code>comp.window.restore {id, generation, activate?}</code> only un-minimises: it
+preserves fullscreen, placement and saved floating geometry. Activation
+defaults to true; <code>activate:false</code> preserves focus. Omitting the target, as
+Super+Shift+M does, restores the most recently minimised window first.
+Minimise alone also preserves placement and floating geometry.</p>
 <p><code>windows.s&lt;ID&gt;.placement</code> reports <code>floating</code>, <code>maximized</code> or the slot name;
 <code>maximized</code> agrees with it. <code>float_geometry</code> is null before the first
 constrained placement, then <code>{x,y,w,h,output}</code> in global logical content

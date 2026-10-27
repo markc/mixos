@@ -629,47 +629,10 @@ fn focus_keyboard(lp: &mut Loop, id: SurfaceId) {
 /// `comp.window.restore` of one window: activated (the default), or only
 /// restored without moving focus (`activate: false`).
 fn restore(lp: &mut Loop, id: u64, generation: u64, activate: bool) -> ControlReply {
-    let (sid, window) = match motion_window(lp, id, generation) {
-        Ok(target) => target,
-        Err(reply) => return reply,
-    };
-    let Some(owner) = lp.inner.world_of_window(&window) else {
-        return ControlReply::refused("unknown_window", serde_json::json!({"id":id}));
-    };
-    let (comp, space) = lp.inner.comp_space_of_mut(owner);
-    let changed = match crate::geometry::restore_placement(comp, space, sid, &window) {
-        crate::geometry::RestoreChange::Fullscreen => {
-            if let Err(reply) =
-                window_state(lp, id, generation, WindowState::Fullscreen, false, None)
-            {
-                return reply;
-            }
-            true
-        }
-        crate::geometry::RestoreChange::Placement(change) => {
-            if change.windows {
-                lp.state.schedule_redraw(RedrawReason::WindowState);
-                crate::input::retarget_pointer(lp);
-            }
-            change.windows
-        }
-    };
     match policy::window::restore(&mut lp.inner.comp.registry, id, generation, activate) {
         Ok((reply, effects)) => {
-            let activates = effects
-                .iter()
-                .any(|effect| matches!(effect, Effect::Restore(_)));
             execute(lp, effects);
-            if activate && !activates {
-                execute(lp, vec![Effect::Restore(sid)]);
-            }
-            let mut body = reply.wire_json();
-            if changed {
-                body["changed"] = Value::Bool(true);
-            }
-            body["placement"] = Value::String(lp.inner.comp.placement(sid).name().into());
-            body["maximized"] = Value::Bool(lp.inner.comp.placement(sid).maximized());
-            ControlReply::Body(body)
+            reply
         }
         Err(reply) => reply,
     }
@@ -1762,8 +1725,7 @@ pub fn apply_bindings(lp: &mut Loop) {
                 }
             }
             BindingAction::ToggleMaximizeFocused
-            | BindingAction::MinimizeFocused
-            | BindingAction::RestoreFocused => {
+            | BindingAction::MinimizeFocused => {
                 if let Some((id, generation)) = focused_window(lp) {
                     let op = match action {
                         BindingAction::ToggleMaximizeFocused => WindowOp::PlaceAs {
@@ -1777,12 +1739,25 @@ pub fn apply_bindings(lp: &mut Loop) {
                             output: None,
                         },
                         BindingAction::MinimizeFocused => WindowOp::Minimize { id, generation },
-                        _ => WindowOp::Restore {
-                            target: Some((id, generation)),
-                            activate: true,
-                        },
+                        _ => unreachable!(),
                     };
                     let _ = window(lp, &op);
+                }
+            }
+            BindingAction::RestoreFocused => {
+                if let Some((id, generation)) = focused_window(lp) {
+                    let Some(target) = window_of(lp, SurfaceId(id)) else {
+                        continue;
+                    };
+                    if let Some(op) = crate::geometry::restore_focused_op(
+                        &lp.inner.comp,
+                        SurfaceId(id),
+                        generation,
+                        &target,
+                    ) {
+                        let _ = window(lp, &op);
+                    }
+                    let _ = window(lp, &WindowOp::Focus { id, generation, raise: true });
                 }
             }
             BindingAction::RequestCloseFocused => {

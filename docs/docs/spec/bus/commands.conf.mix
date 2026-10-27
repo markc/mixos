@@ -512,7 +512,7 @@
     {name:"comp.window.fullscreen", owner:"compd", version:"0.1.11", status:"accepted", class:"intent", schema:"pending"},
     {name:"comp.window.unfullscreen", owner:"compd", version:"0.1.11", status:"accepted", class:"intent", schema:"pending"},
     {name:"comp.window.minimize", owner:"compd", version:"0.1.11", status:"accepted", class:"intent", schema:"pending"},
-    {name:"comp.window.restore", owner:"compd", version:"0.2.0", status:"accepted", class:"intent", schema:"pending"},
+    {name:"comp.window.restore", owner:"compd", version:"0.1.12", status:"accepted", class:"intent", schema:"pending"},
     {name:"comp.window.focus", owner:"compd", version:"0.1.11", status:"accepted", class:"intent", schema:"pending"},
     {name:"comp.window.raise", owner:"compd", version:"0.1.11", status:"accepted", class:"intent", schema:"pending"},
     {name:"comp.window.close", owner:"compd", version:"0.1.11", status:"accepted", class:"intent", schema:"pending"},

@@ -45,6 +45,22 @@ fn command(h: &mut Harness, window: &Window, name: &str, body: Value) -> Value {
         Err((_, body)) => return serde_json::from_str(&body).unwrap(),
         _ => panic!("not a window operation: {name}"),
     };
+    operation(h, window, op)
+}
+
+fn operation(h: &mut Harness, window: &Window, op: WindowOp) -> Value {
+    use dispatcher::wire::trait_::wire_trait::WireTrait;
+    if let WindowOp::State {
+        state: comp_model::request::WindowState::Fullscreen,
+        enabled,
+        ..
+    } = op
+    {
+        h.wire.inner.fullscreen_request(window.clone(), enabled);
+        h.service_lifecycle();
+        h.roundtrip();
+        return json!({});
+    }
     let host = &mut h.wire.inner;
     let reply = match op {
         WindowOp::PlaceAs {
@@ -76,9 +92,135 @@ fn command(h: &mut Harness, window: &Window, name: &str, body: Value) -> Value {
         WindowOp::TilesGet { output, workspace } => {
             geometry::tiles_get(&host.comp, &host.space.state, output.as_deref(), workspace)
         }
+        WindowOp::Minimize { id, generation } => {
+            let (reply, effects) =
+                policy::window::set_minimized(&mut host.comp.registry, id, generation, true)
+                    .unwrap();
+            assert!(effects.contains(&policy::Effect::Minimize(SurfaceId(id))));
+            host.comp.note_minimized(SurfaceId(id), true);
+            reply
+        }
+        WindowOp::Restore { target, activate } => {
+            let (id, generation) = target.unwrap_or_else(|| {
+                let id = host.comp.lifo_restore_candidate().unwrap();
+                (id.0, host.comp.registry.get(id).unwrap().generation())
+            });
+            let (reply, effects) =
+                policy::window::restore(&mut host.comp.registry, id, generation, activate).unwrap();
+            for effect in effects {
+                match effect {
+                    policy::Effect::Restore(id) | policy::Effect::Unminimize(id) => {
+                        host.comp.note_minimized(id, false);
+                    }
+                    policy::Effect::MarkDirty { .. } => {}
+                    _ => panic!("unexpected un-minimise effect: {effect:?}"),
+                }
+            }
+            reply
+        }
         _ => panic!("unexpected operation: {op:?}"),
     };
     reply.wire_json()
+}
+
+fn restore_focused(h: &mut Harness, id: SurfaceId, generation: u64, window: &Window) {
+    if let Some(op) = geometry::restore_focused_op(h.comp(), id, generation, window) {
+        operation(h, window, op);
+    }
+}
+
+#[test]
+fn bus_restore_only_unminimises_constrained_and_fullscreen_windows() {
+    use dispatcher::wire::trait_::wire_trait::WireTrait;
+    for placement in ["maximized", "tiled"] {
+        for fullscreen in [false, true] {
+            for activate in [false, true] {
+                let (mut h, id, generation, window, _, _) = fixture();
+                let target = json!({"id":id.0,"generation":generation});
+                let mut placement_args = json!({"id":id.0,"generation":generation,"placement":placement});
+                if placement == "tiled" {
+                    placement_args["slot"] = json!("left");
+                }
+                command(
+                    &mut h,
+                    &window,
+                    "comp.window.place_as",
+                    placement_args,
+                );
+                if fullscreen {
+                    h.wire.inner.fullscreen_request(window.clone(), true);
+                    h.service_lifecycle();
+                    h.roundtrip();
+                }
+                let before = h.comp().placement(id);
+                let float = h.comp().float_geometry(id);
+                let location = h.wire.inner.space.state.element_location(&window);
+                let size = slot::decided_size(&window);
+                h.comp().take_placement_events();
+                command(&mut h, &window, "comp.window.minimize", target.clone());
+                assert!(h.comp().hidden_id(id));
+                let reply = command(
+                    &mut h,
+                    &window,
+                    "comp.window.restore",
+                    json!({"id":id.0,"generation":generation,"activate":activate}),
+                );
+                assert_eq!(reply["changed"], true);
+                assert_eq!(reply["minimized"], false);
+                assert!(!h.comp().hidden_id(id));
+                assert_eq!(h.comp().placement(id), before);
+                assert_eq!(h.comp().float_geometry(id), float);
+                assert_eq!(window.is_fullscreen(), fullscreen);
+                assert_eq!(h.wire.inner.space.state.element_location(&window), location);
+                assert_eq!(slot::decided_size(&window), size);
+                assert!(h.comp().take_placement_events().is_empty());
+                let again = command(&mut h, &window, "comp.window.restore", target);
+                assert_eq!(again["changed"], false);
+                assert_eq!(h.comp().placement(id), before);
+            }
+        }
+    }
+}
+
+#[test]
+fn super_shift_m_keeps_lifo_order_and_constrained_placement() {
+    let (mut h, a, generation, first, surface, _) = fixture();
+    command(
+        &mut h,
+        &first,
+        "comp.window.place_as",
+        json!({"id":a.0,"generation":generation,"placement":"maximized"}),
+    );
+    let (second_surface, _, _) = h.mapped_toplevel(320, 240);
+    let b = h.comp().registry.id_for_handle(&h.handle_of(&second_surface)).unwrap();
+    let generation_b = h.comp().registry.get(b).unwrap().generation();
+    let second = h.wire.inner.space.state.elements().find(|w| **w != first).unwrap().clone();
+    command(
+        &mut h,
+        &second,
+        "comp.window.place_as",
+        json!({"id":b.0,"generation":generation_b,"placement":"tiled","slot":"right"}),
+    );
+    let before = [h.comp().placement(a), h.comp().placement(b)];
+    for (id, generation, window) in [(a, generation, &first), (b, generation_b, &second)] {
+        command(&mut h, window, "comp.window.minimize", json!({"id":id.0,"generation":generation}));
+    }
+    h.wire.inner.comp.bindings.ensure("headless");
+    h.focus_keyboard(&surface);
+    for (expected, window) in [(b, &second), (a, &first)] {
+        h.key(125 + 8, true, false); // Left Super
+        h.key(42 + 8, true, false); // Left Shift
+        assert!(h.key(50 + 8, true, false)); // M
+        assert!(h.key(50 + 8, false, false));
+        h.key(42 + 8, false, false);
+        h.key(125 + 8, false, false);
+        assert_eq!(h.wire.inner.comp.bindings.take_pending(), [BindingAction::RestoreMostRecentlyMinimized]);
+        let reply = command(&mut h, window, "comp.window.restore", json!({}));
+        assert_eq!(reply["id"], expected.0);
+        assert!(!h.comp().hidden_id(expected));
+        assert_eq!([h.comp().placement(a), h.comp().placement(b)], before);
+    }
+    assert!(h.comp().lifo_restore_candidate().is_none());
 }
 
 #[test]
@@ -329,7 +471,9 @@ fn real_super_key_injection_tiles_then_restores_and_toggles_maximize() {
                 );
             }
             BindingAction::RestoreFocused => {
-                geometry::restore_placement(&mut host.comp, &mut host.space.state, id, &window);
+                if let Some(op) = geometry::restore_focused_op(&host.comp, id, generation, &window) {
+                    operation(&mut h, &window, op);
+                }
             }
             BindingAction::ToggleMaximizeFocused => {
                 let enabled = !host.comp.placement(id).maximized();
@@ -349,6 +493,7 @@ fn real_super_key_injection_tiles_then_restores_and_toggles_maximize() {
             }
             _ => panic!("unexpected binding"),
         }
+        let host = &h.wire.inner;
         assert_eq!(host.comp.placement(id).name(), expected);
         if expected == "floating" {
             assert_eq!(
@@ -373,20 +518,15 @@ fn restore_exits_fullscreen_before_untiling_and_unmaximize_keeps_the_float() {
     let saved = h.comp().float_geometry(id);
     h.wire.inner.fullscreen_request(window.clone(), true);
     h.service_lifecycle();
-    let host = &mut h.wire.inner;
-    assert_eq!(
-        geometry::restore_placement(&mut host.comp, &mut host.space.state, id, &window),
-        geometry::RestoreChange::Fullscreen
-    );
-    assert_eq!(host.comp.placement(id).name(), "bottom_right");
-    host.fullscreen_request(window.clone(), false);
-    h.service_lifecycle();
-    h.roundtrip();
-    let host = &mut h.wire.inner;
     assert!(matches!(
-        geometry::restore_placement(&mut host.comp, &mut host.space.state, id, &window),
-        geometry::RestoreChange::Placement(_)
+        geometry::restore_focused_op(h.comp(), id, generation, &window),
+        Some(WindowOp::State { state: comp_model::request::WindowState::Fullscreen, enabled: false, .. })
     ));
+    restore_focused(&mut h, id, generation, &window);
+    assert!(!window.is_fullscreen());
+    assert_eq!(h.comp().placement(id).name(), "bottom_right");
+    restore_focused(&mut h, id, generation, &window);
+    let host = &mut h.wire.inner;
     assert_eq!(host.comp.placement(id), Placement::Floating);
     assert_eq!(host.comp.float_geometry(id), saved);
     assert_eq!(
@@ -395,10 +535,12 @@ fn restore_exits_fullscreen_before_untiling_and_unmaximize_keeps_the_float() {
     );
     geometry::set_maximized(&mut host.comp, &mut host.space.state, id, &window, true);
     geometry::set_maximized(&mut host.comp, &mut host.space.state, id, &window, false);
-    assert!(matches!(
-        geometry::restore_placement(&mut host.comp, &mut host.space.state, id, &window),
-        geometry::RestoreChange::Placement(geometry::GeometryChange { windows: false, .. })
-    ));
+    assert!(geometry::restore_focused_op(&host.comp, id, generation, &window).is_none());
     assert_eq!(host.comp.float_geometry(id), saved);
+    assert_eq!(slot::decided_size(&window), Some((640, 480).into()));
+    geometry::set_maximized(&mut host.comp, &mut host.space.state, id, &window, true);
+    restore_focused(&mut h, id, generation, &window);
+    assert_eq!(h.comp().placement(id), Placement::Floating);
+    assert_eq!(h.comp().float_geometry(id), saved);
     assert_eq!(slot::decided_size(&window), Some((640, 480).into()));
 }

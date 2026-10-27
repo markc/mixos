@@ -238,29 +238,33 @@ pub struct GeometryChange {
     pub windows: bool,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RestoreChange {
-    /// The owning lifecycle executor must leave fullscreen; placement survives.
-    Fullscreen,
-    Placement(GeometryChange),
-}
-
-/// Restore precedence is shared with fixtures: fullscreen exits alone; a
-/// subsequent restore returns constrained placement to saved floating geometry.
-pub fn restore_placement(
-    comp: &mut CompState,
-    space: &mut Space<Window>,
+/// Super+Backspace leaves fullscreen first, otherwise restores floating
+/// placement through the ordinary placement executor. The caller then raises
+/// and focuses. This is independent of the Bus restore's un-minimise operation.
+pub fn restore_focused_op(
+    comp: &CompState,
     id: SurfaceId,
+    generation: u64,
     window: &Window,
-) -> RestoreChange {
+) -> Option<comp_model::request::WindowOp> {
+    use comp_model::request::{PlacementKind, WindowOp, WindowState};
     if fullscreen_owns(window) {
-        return RestoreChange::Fullscreen;
-    }
-    if comp.placement(id).constrained() {
-        finish_interactive(comp, id);
-        RestoreChange::Placement(set_placement(comp, space, id, window, Placement::Floating))
+        Some(WindowOp::State {
+            id: id.0,
+            generation,
+            state: WindowState::Fullscreen,
+            enabled: false,
+            output: None,
+        })
+    } else if comp.placement(id).constrained() {
+        Some(WindowOp::PlaceAs {
+            id: id.0,
+            generation,
+            placement: PlacementKind::Floating,
+            output: None,
+        })
     } else {
-        RestoreChange::Placement(GeometryChange::default())
+        None
     }
 }
 
