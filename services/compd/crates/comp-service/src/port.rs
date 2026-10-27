@@ -85,7 +85,11 @@ pub fn manifest() -> Vec<bus::CommandDescriptor> {
     .chain(catalogue::all_commands().map(|name| {
         CommandDescriptor::new(
             name,
-            if name == "comp.debug.set" { &["level?", "on?"] } else { &[] },
+            if name == "comp.debug.set" {
+                &["level?", "on?"]
+            } else {
+                &[]
+            },
             &format!("Compositor {}", name.trim_start_matches("comp.")),
             catalogue::read_only(name),
         )
@@ -1426,8 +1430,11 @@ fn dispatch_incoming(
         Request::Debug => {
             let (rc, body) = logging::debug::request("comp", &command.command, &command.body)
                 .expect("classified debug command");
-            queue_reply(reply_sender, reply_timeouts,
-                PendingReply::new(command, (rc, Arc::from(body.to_string()))));
+            queue_reply(
+                reply_sender,
+                reply_timeouts,
+                PendingReply::new(command, (rc, Arc::from(body.to_string()))),
+            );
         }
         Request::Ping => {
             queue_reply(

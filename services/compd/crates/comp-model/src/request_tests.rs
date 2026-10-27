@@ -1852,7 +1852,10 @@ fn debug_commands_are_live_direct_requests_under_literal_names() {
     for name in ["comp.debug", "comp.debug.set"] {
         // Body validation belongs to the shared logging controller, which
         // receives the original bytes, including a malformed envelope.
-        assert!(matches!(classify(name, &Value::Null, true), Ok(Request::Debug)));
+        assert!(matches!(
+            classify(name, &Value::Null, true),
+            Ok(Request::Debug)
+        ));
     }
     assert!(crate::catalogue::read_only("comp.debug"));
     assert!(!crate::catalogue::read_only("comp.debug.set"));

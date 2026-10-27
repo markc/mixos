@@ -74,7 +74,11 @@ pub fn manifest(service: &str) -> Vec<::bus::CommandDescriptor> {
     entries.extend(citizen::debug::describe(service).into_iter().map(|value| {
         ::bus::CommandDescriptor::new(
             value["name"].as_str().unwrap(),
-            if value["read_only"] == true { &[] } else { &["level?", "on?"] },
+            if value["read_only"] == true {
+                &[]
+            } else {
+                &["level?", "on?"]
+            },
             value["description"].as_str().unwrap(),
             value["read_only"].as_bool().unwrap(),
         )
