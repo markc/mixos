@@ -261,6 +261,8 @@ async fn vacation_suppresses_lists_autoresponses_bcc_and_offsite_policy() -> Res
     f.deliver(MESSAGE, false, false).await?;
     for header in [
         "Auto-Submitted: auto-replied\r\n",
+        "Auto-Submitted: no\r\nAuto-Submitted: auto-replied\r\n",
+        "Precedence: normal\r\nPrecedence: bulk\r\n",
         "List-Id: list.example.org\r\n",
         "Precedence: bulk\r\n",
     ] {

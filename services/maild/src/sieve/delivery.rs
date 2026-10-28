@@ -228,20 +228,20 @@ async fn vacation_reply(db: &Db, ms: &Arc<SqliteMailStore>, delivery: &Delivery<
     let sender_part = delivery.from.split('@').next().unwrap_or("").to_ascii_lowercase();
     if ["mailer-daemon","postmaster","owner-"].iter().any(|s| sender_part.starts_with(s)) || sender_part.ends_with("-request") { return Ok(()); }
     for name in ["Auto-Submitted","List-Id","List-Post","List-Help","List-Unsubscribe"] {
-        if let Some(value) = message.header(name) {
+        for value in message.header_values(name) {
             if name != "Auto-Submitted" || !value.as_text().unwrap_or("").trim().eq_ignore_ascii_case("no") { return Ok(()); }
         }
     }
-    if message.header("Precedence").and_then(|h| h.as_text()).is_some_and(|v| ["bulk","list","junk"].iter().any(|p| v.eq_ignore_ascii_case(p))) { return Ok(()); }
+    if message.header_values("Precedence").any(|h| h.as_text().is_some_and(|v| ["bulk","list","junk"].iter().any(|p| v.trim().eq_ignore_ascii_case(p)))) { return Ok(()); }
     // Never respond to a Bcc-only recipient. :addresses adds recognised
     // recipient identities; it does not authorise sender spoofing.
     let mut addresses = vacation.addresses.clone(); addresses.push(delivery.account.email.clone());
     let addressed = [message.to(),message.cc()].into_iter().flatten().flat_map(|a| a.iter()).filter_map(|a| a.address()).any(|a| addresses.iter().any(|v| v.eq_ignore_ascii_case(a)));
     if !addressed { return Ok(()); }
     if !store::reply_due(db,delivery.account.id,delivery.from,&vacation.handle,vacation.days).await? { return Ok(()); }
-    let subject = vacation.subject.as_deref().unwrap_or("Auto: Out of Office");
+    let subject = crate::smtp::inbound::header_value_safe(vacation.subject.as_deref().unwrap_or("Auto: Out of Office"));
     let mut builder = mail_builder::MessageBuilder::new()
-        .from(delivery.account.email.as_str()).to(delivery.from).subject(subject)
+        .from(delivery.account.email.as_str()).to(delivery.from).subject(subject.as_str())
         .header("Auto-Submitted",mail_builder::headers::raw::Raw::new("auto-replied"))
         .text_body(vacation.reason.as_str());
     if let Some(id) = message.message_id() { builder = builder.in_reply_to(id); }
