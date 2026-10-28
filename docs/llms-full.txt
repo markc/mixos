@@ -11343,6 +11343,8 @@ A sender/response-handle stamp and its native queue row commit in one mail.db
 transaction, permitting one reply per interval across concurrent deliveries and
 restarts. Handles are stored as fixed-size hashes. Tracking retains at most
 10,000 pairs per account and drops stamps past the maximum 31-day interval.
+At capacity, new pairs receive no automatic reply until space expires; live
+suppression records are preserved so existing senders cannot receive repeats.
 Replies use a null reverse path,
 `Auto-Submitted: auto-replied`, and the native outbound queue. Its worker
 selects the account domain's DKIM signer; absent signing configuration retains

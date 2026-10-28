@@ -118,8 +118,11 @@ async fn vacation_stamp_quota_expiration_and_fixed_size_handles() -> Result<()> 
     let (tmp,db) = fixture().await?;
     let mds = mds::SqliteCasMds::open(tmp.path().join("mds"))?;
     let hash = mds::Mds::put_blob(&mds,b"reply")?;
-    db.conn.lock().unwrap().execute_batch("WITH RECURSIVE n(x) AS (SELECT 0 UNION ALL SELECT x+1 FROM n WHERE x<10004) INSERT INTO sieve_replies(account_id,sender,handle,sent_at) SELECT 1,'sender-'||x,'old',unixepoch()-1 FROM n;")?;
     assert!(store::queue_reply(&db,1,"Sender@example.org",&"handle".repeat(10000),7,hash).await?);
+    db.conn.lock().unwrap().execute_batch("WITH RECURSIVE n(x) AS (SELECT 0 UNION ALL SELECT x+1 FROM n WHERE x<9998) INSERT INTO sieve_replies(account_id,sender,handle,sent_at) SELECT 1,'sender-'||x,'old',unixepoch()-1 FROM n;")?;
+    assert!(!store::queue_reply(&db,1,"NewSender@example.org","new",7,hash).await?);
+    assert!(!store::reply_due(&db,1,"NewSender@example.org","new",7).await?);
+    assert!(!store::queue_reply(&db,1,"Sender@example.org",&"handle".repeat(10000),7,hash).await?);
     {
         let conn = db.conn.lock().unwrap();
         assert_eq!(conn.query_row("SELECT count(*) FROM sieve_replies",[],|r| r.get::<_,i64>(0))?,store::MAX_REPLY_STAMPS as i64);
