@@ -124,7 +124,7 @@ impl Fixture {
         let response = self.client.post(format!("{}/jmap", self.url))
             .basic_auth("alice@example.com", Some("password"))
             .header("Content-Type", "application/json")
-            .body(json!({"using": ["urn:ietf:params:jmap:core", "urn:ietf:params:jmap:mail", "urn:ietf:params:jmap:submission"], "methodCalls": calls}).to_string())
+            .body(json!({"using": ["urn:ietf:params:jmap:core", "urn:ietf:params:jmap:mail", "urn:ietf:params:jmap:submission"], "createdIds": {}, "methodCalls": calls}).to_string())
             .send().await.unwrap().error_for_status().unwrap();
         serde_json::from_str(&response.text().await.unwrap()).unwrap()
     }
@@ -359,15 +359,44 @@ async fn email_import_quota_is_atomic_and_does_not_count_upload_staging() {
     let f = Fixture::new().await;
     let a = f.upload("quota-a").await;
     let b = f.upload("quota-b").await;
-    let maild::mailstore::BlobRefLookup::Found(hash) = f.built.app_state.mailstore.resolve_blob_ref(1, maild::mailstore::BlobId(a.parse().unwrap())).unwrap() else { panic!("uploaded blob missing"); };
+    let maild::mailstore::BlobRefLookup::Found(hash) = f
+        .built
+        .app_state
+        .mailstore
+        .resolve_blob_ref(1, maild::mailstore::BlobId(a.parse().unwrap()))
+        .unwrap()
+    else {
+        panic!("uploaded blob missing");
+    };
     let size = f.built.app_state.mailstore.read_blob(hash).unwrap().len();
-    f.built.app_state.db.conn.lock().unwrap().execute("UPDATE accounts SET quota = ?1 WHERE id = 1", [size as i64]).unwrap();
-    let args = |blob: &str| json!({"emails": {"a": {"blobId": blob, "mailboxIds": {&f.inbox: true}}}});
-    let (first, second) = tokio::join!(f.call("Email/import", args(&a)), f.call("Email/import", args(&b)));
-    let (created, refused) = if first["created"].is_null() { (second, first) } else { (first, second) };
+    f.built
+        .app_state
+        .db
+        .conn
+        .lock()
+        .unwrap()
+        .execute("UPDATE accounts SET quota = ?1 WHERE id = 1", [size as i64])
+        .unwrap();
+    let args =
+        |blob: &str| json!({"emails": {"a": {"blobId": blob, "mailboxIds": {&f.inbox: true}}}});
+    let (first, second) = tokio::join!(
+        f.call("Email/import", args(&a)),
+        f.call("Email/import", args(&b))
+    );
+    let (created, refused) = if first["created"].is_null() {
+        (second, first)
+    } else {
+        (first, second)
+    };
     assert!(created["created"]["a"]["id"].is_string(), "{created}");
     assert_eq!(refused["notCreated"]["a"]["type"], "overQuota", "{refused}");
-    assert_eq!(f.call("Email/query", json!({})).await["ids"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        f.call("Email/query", json!({})).await["ids"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
 }
 
 #[tokio::test]
@@ -375,25 +404,82 @@ async fn email_import_eai_and_foreign_blobs() {
     let f = Fixture::new().await;
     let raw = "From: Δοκιμή <δοκιμή@example.org>\r\nTo: recipient@example.net\r\nSubject: Unicode café\r\n\r\nΚαλημέρα\r\n";
     let blob = f.upload_message(raw).await;
-    let response = f.call("Email/import", json!({"emails": {"a": {"blobId": blob, "mailboxIds": {&f.inbox: true}}}})).await;
+    let response = f
+        .call(
+            "Email/import",
+            json!({"emails": {"a": {"blobId": blob, "mailboxIds": {&f.inbox: true}}}}),
+        )
+        .await;
     let created = &response["created"]["a"];
     assert_eq!(created["size"], raw.len());
     let email = f.get(&created["id"]).await;
     assert_eq!(email["subject"], "Unicode café");
-    let download = f.client.get(format!("{}/jmap/blob/{}", f.url, created["blobId"].as_str().unwrap()))
-        .basic_auth("alice@example.com", Some("password")).send().await.unwrap().error_for_status().unwrap().text().await.unwrap();
+    let download = f
+        .client
+        .get(format!(
+            "{}/jmap/blob/{}",
+            f.url,
+            created["blobId"].as_str().unwrap()
+        ))
+        .basic_auth("alice@example.com", Some("password"))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
     assert_eq!(download, raw);
     let ms = &f.built.app_state.mailstore;
     ms.ensure_account_set(2).unwrap();
     let bytes = b"From: foreign@example.org\r\nSubject: foreign\r\n\r\nprivate";
     let hash = ms.put_blob(bytes).unwrap();
-    let alias = ms.create_blob_ref(2, hash, bytes.len() as u64, chrono::Utc::now().timestamp_millis() + 3_600_000).unwrap();
+    let alias = ms
+        .create_blob_ref(
+            2,
+            hash,
+            bytes.len() as u64,
+            chrono::Utc::now().timestamp_millis() + 3_600_000,
+        )
+        .unwrap();
     for id in [alias.0.to_string(), mds::blob::hex(&hash)] {
-        let response = f.call("Email/import", json!({"emails": {"a": {"blobId": id, "mailboxIds": {&f.inbox: true}}}})).await;
-        assert_eq!(response["notCreated"]["a"]["type"], "invalidProperties", "{response}");
+        let response = f
+            .call(
+                "Email/import",
+                json!({"emails": {"a": {"blobId": id, "mailboxIds": {&f.inbox: true}}}}),
+            )
+            .await;
+        assert_eq!(
+            response["notCreated"]["a"]["type"], "invalidProperties",
+            "{response}"
+        );
         assert_eq!(response["oldState"], response["newState"]);
     }
     let empty = f.upload_message("").await;
-    let invalid = f.call("Email/import", json!({"emails": {"a": {"blobId": empty, "mailboxIds": {&f.inbox: true}}}})).await;
+    let invalid = f
+        .call(
+            "Email/import",
+            json!({"emails": {"a": {"blobId": empty, "mailboxIds": {&f.inbox: true}}}}),
+        )
+        .await;
     assert_eq!(invalid["notCreated"]["a"]["type"], "invalidEmail");
+}
+
+#[tokio::test]
+async fn email_import_and_submission_resolve_creation_ids_in_one_request() {
+    let f = Fixture::new().await;
+    let blob = f.upload("chain").await;
+    let identities = f.call("Identity/get", json!({})).await;
+    let response = f.request(json!([
+        ["Mailbox/set", {"accountId": "1", "create": {"box": {"name": "Imported"}}}, "m"],
+        ["Email/import", {"accountId": "1", "emails": {"draft": {"blobId": blob, "mailboxIds": {"#box": true}, "keywords": {"$draft": true}}}}, "i"],
+        ["EmailSubmission/set", {"accountId": "1", "create": {"sent": {"emailId": "#draft", "identityId": identities["list"][0]["id"],
+            "envelope": {"mailFrom": {"email": "alice@example.com"}, "rcptTo": [{"email": "recipient@example.net"}]}}}}, "s"]
+    ])).await;
+    let calls = &response["methodResponses"];
+    assert!(calls[1][1]["created"]["draft"]["id"].is_string(), "{response}");
+    assert!(calls[2][1]["created"]["sent"]["id"].is_string(), "{response}");
+    assert_eq!(response["createdIds"]["draft"], calls[1][1]["created"]["draft"]["id"]);
+    assert_eq!(response["createdIds"]["box"], calls[0][1]["created"]["box"]["id"]);
 }

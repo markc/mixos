@@ -5469,10 +5469,11 @@ impl SqliteMailStore {
             if quota > 0 {
                 // Count each live email once regardless of its memberships;
                 // temporary upload items have no envelope and consume no mail quota.
-                let used: u64 = tx.tx().query_row(
+                let used: i64 = tx.tx().query_row(
                     "SELECT COALESCE(SUM(i.size_bytes), 0) FROM item i JOIN mail_envelopes e ON e.item_id = i.id WHERE EXISTS (SELECT 1 FROM membership m WHERE m.item_id = i.id)",
                     [], |row| row.get(0),
                 ).map_err(|e| mds::Error::Other(e.to_string()))?;
+                let used = u64::try_from(used).map_err(|_| mds::Error::Other("negative mail storage size".into()))?;
                 if used.saturating_add(blob_size) > quota {
                     return Err(mds::Error::Other("overQuota: account mail quota exceeded".into()));
                 }
@@ -5622,7 +5623,9 @@ impl SqliteMailStore {
                 Err(anyhow!("mailbox not found: {cid}", cid = mailboxes[0].0))
             }
             Err(mds::Error::Other(s))
-                if s.starts_with("mailbox not found") || s.starts_with("alreadyExists:") || s.starts_with("overQuota:") =>
+                if s.starts_with("mailbox not found")
+                    || s.starts_with("alreadyExists:")
+                    || s.starts_with("overQuota:") =>
             {
                 Err(anyhow!(s))
             }

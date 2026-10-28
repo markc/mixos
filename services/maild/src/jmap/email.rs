@@ -30,7 +30,7 @@ use crate::mailstore::{
 /// that have not yet migrated to the mds `mail_envelopes` sidecar
 /// project as `null` / `false`:
 ///
-/// - `threadId`, `inReplyTo`, `cc`, `preview`, `hasAttachment`,
+/// - `inReplyTo`, `preview`,
 ///   `spamScore`, `spamVerdict` — these lived only on the legacy
 ///   `db::email` row and have no counterpart in `mail_envelopes`
 ///   v1.2.
@@ -46,11 +46,10 @@ use crate::mailstore::{
 /// (`mds/src/container.rs:2248`). The two id spaces are
 /// disjoint; no row is ever looked up by the wrong id.
 ///
-/// The proper fix is substrate-shaping work: extend
-/// `mail_envelopes` to carry the missing fields and add a reverse
-/// `thread_for_email` MailStore method. That work is tracked as
-/// in
-/// (Email-side substrate task). Until then this projection
+/// The remaining fix is substrate work: extend `mail_envelopes` to carry
+/// the missing fields. `Email/get` fills `threadId` from the account-scoped
+/// `thread_for_email` lookup and attachment metadata from bounded MIME inspection.
+/// Until the remaining fields migrate, this projection
 /// preserves the wire keys so JMAP clients do not see fields
 /// silently disappear; the values fill in once the substrate
 /// catches up.
@@ -129,7 +128,7 @@ fn record_to_jmap(r: &EmailRecord) -> serde_json::Value {
     serde_json::json!({
         "id": r.id.0.to_string(),
         "blobId": mds::blob::hex(&r.blob_hash),
-        // Substrate-pending — see fn doc.
+        // Email/get fills this from the account-scoped thread sidecar.
         "threadId": serde_json::Value::Null,
         "size": r.size_bytes,
         "receivedAt": received_at,
@@ -2308,9 +2307,13 @@ async fn create_from_blob(
     // hash) to land them in the MDS CAS.
     let pre_hash: Option<BlobHash> = alias_hash;
     let quota = if reject_duplicate {
-        db::account::get_by_id(&db.conn, account_id).await?
-            .map(|account| account.quota.max(0) as u64).unwrap_or(0)
-    } else { 0 };
+        db::account::get_by_id(&db.conn, account_id)
+            .await?
+            .map(|account| account.quota.max(0) as u64)
+            .unwrap_or(0)
+    } else {
+        0
+    };
     let item_id = tokio::task::spawn_blocking(move || -> Result<ItemId> {
         // Step 1: ensure the bytes are present in MDS CAS. For the
         // alias path, `resolve_blob_ref` already proved the CAS row

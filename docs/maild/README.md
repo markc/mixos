@@ -159,6 +159,10 @@ response was incorrect.
 
 Submit the returned email id with `EmailSubmission/set`. This works without
 maild's legacy top-level `blobId` extension on `Email/set create`. The Email
+creation id can also be referenced as `#draft` by submission in the same
+request; mailbox creation ids resolve in import's `mailboxIds`. An optional
+request `createdIds` map seeds these references and is returned with the new ids.
+The Email
 app still uses that extension: it should upload, import into Drafts with
 `$draft`, then submit the created id (and handle import errors, including
 `alreadyExists`). This branch does not change the app. Broader existing JMAP

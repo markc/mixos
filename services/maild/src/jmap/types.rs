@@ -13,6 +13,8 @@ pub struct JmapRequest {
     pub using: Vec<String>,
     #[serde(rename = "methodCalls")]
     pub method_calls: Vec<MethodCall>,
+    #[serde(rename = "createdIds", default)]
+    pub created_ids: Option<HashMap<String, String>>,
 }
 
 /// A single method invocation: [name, arguments, call_id].
@@ -26,6 +28,8 @@ pub struct JmapResponse {
     pub method_responses: Vec<MethodResponse>,
     #[serde(rename = "sessionState")]
     pub session_state: String,
+    #[serde(rename = "createdIds", skip_serializing_if = "Option::is_none")]
+    pub created_ids: Option<HashMap<String, String>>,
 }
 
 /// A single method response: [name, response, call_id].

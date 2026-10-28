@@ -155,6 +155,8 @@ pub async fn api(
     state.jmap_activity.touch(account_id);
 
     let mut responses = Vec::new();
+    let return_created_ids = request.created_ids.is_some();
+    let mut created_ids = request.created_ids.clone().unwrap_or_default();
 
     for MethodCall(method, args, call_id) in &request.method_calls {
         // RFC 8620 §3.7: resolve `#`-prefixed ResultReferences against the
@@ -174,6 +176,7 @@ pub async fn api(
             continue;
         }
 
+        references::resolve_mail_creation_references(method, &mut resolved_args, &created_ids);
         let result = dispatch(
             &state.db,
             &state.mailstore,
@@ -188,6 +191,13 @@ pub async fn api(
 
         match result {
             Ok(value) => {
+                if let Some(created) = value.get("created").and_then(serde_json::Value::as_object) {
+                    for (creation_id, object) in created {
+                        if let Some(id) = object.get("id").and_then(serde_json::Value::as_str) {
+                            created_ids.insert(creation_id.clone(), id.to_owned());
+                        }
+                    }
+                }
                 // Emit state change for mutating methods.
                 //
                 // Phase 6 (JMAP→MDS migration): the `Email` state-token
@@ -263,6 +273,7 @@ pub async fn api(
     let resp = JmapResponse {
         method_responses: responses,
         session_state: "0".into(),
+        created_ids: return_created_ids.then_some(created_ids),
     };
 
     Json(resp).into_response()

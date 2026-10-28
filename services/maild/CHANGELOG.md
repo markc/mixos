@@ -28,6 +28,8 @@
   references, Received date defaults, thread ids and atomic duplicate rejection
   (`alreadyExists` with `existingId`), and transactional mail quota checks.
   Test upload/import/submission together.
+- Resolve mail creation references across a JMAP request, including mailbox
+  creation, import and submission, and preserve the optional `createdIds` map.
 - Correct the manual and test guide to describe the packaged maild binary.
 
 - IMAP `SEARCH` and `UID SEARCH` implement the header, date and text keys:
