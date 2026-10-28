@@ -87,6 +87,7 @@ impl Fixture {
                 sender_verified: true,
                 spam: false,
                 smtp_reject: smtp,
+                routing: None,
             },
         )
         .await
@@ -390,6 +391,10 @@ async fn outbound_failure_after_keep_does_not_request_duplicate_delivery() -> Re
     f.script(r#"require "vacation"; vacation "Away";"#).await?;
     assert!(f.deliver(MESSAGE, true, false).await?.is_some());
     assert_eq!(f.count("Inbox"), 2);
+    assert_eq!(f.db.conn.lock().unwrap().query_row("SELECT count(*) FROM sieve_replies",[],|r| r.get::<_,i64>(0))?,0);
+    f.db.conn.lock().unwrap().execute_batch("DROP TRIGGER fail_sieve_queue;")?;
+    f.deliver(MESSAGE,true,false).await?;
+    assert_eq!(maild::smtp::queue::list(&f.db.conn,10).await?.len(),1);
     Ok(())
 }
 #[test]

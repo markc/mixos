@@ -664,6 +664,9 @@ pub async fn deliver(
             spam_verdict.as_deref().unwrap_or("UNKNOWN"),
             spam_score.unwrap_or(0.0),
         );
+        let routing = crate::sieve::delivery::Routing {
+            state, ingress, verify:&verify_result, raw_data:data, remote_ip,
+        };
         let create_outcome = crate::sieve::delivery::deliver(
             &state.db,
             &state.mailstore,
@@ -679,6 +682,7 @@ pub async fn deliver(
                     || vacation_sender_verified(&verify_result, mail_from),
                 spam: spam_verdict.as_deref() == Some("SPAM"),
                 smtp_reject: rcpt_to.len() == 1 && vtoken_ctx.is_none(),
+                routing: Some(&routing),
             },
         )
         .await;
@@ -994,6 +998,38 @@ fn vacation_sender_verified(verify_result: &VerifyResult, mail_from: &str) -> bo
 }
 
 #[allow(clippy::too_many_arguments)]
+/// Reapply the destination's native classifier and global routing for an SMTP
+/// local redirect, using the original verified ingress rather than its headers.
+pub(crate) async fn route_sieve_redirect(
+    routing: &crate::sieve::delivery::Routing<'_>,
+    account: &db::account::Account,
+    from: &str,
+    to: &str,
+    data: &[u8],
+) -> Result<(mds::ContainerId,Vec<u8>,bool)> {
+    let state = routing.state;
+    let (verdict,score) = if account.spam_enabled {
+        match classify_inbound(state,account,from,&[to.to_string()],routing.remote_ip,
+            routing.raw_data,routing.verify,routing.ingress.is_local_auth()).await {
+            Ok((verdict,score,_)) => (Some(verdict),Some(score)),
+            Err(error) => { tracing::warn!(%error,account=account.id,"redirect classification failed"); (None,None) }
+        }
+    } else { (None,None) };
+    let message = MessageParser::default().parse(data).ok_or_else(|| anyhow::anyhow!("redirect message parse error"))?;
+    let filter = run_inbound_filter(&state.config,from,to,message.subject().unwrap_or(""),
+        &render_header_from(&message),verdict.as_deref().unwrap_or("HAM"),score.unwrap_or(0.0),
+        false,"","",message.attachment_count() as i64,routing.raw_data.len() as i64).await;
+    let spam = verdict.as_deref() == Some("SPAM");
+    let ms = state.mailstore.clone(); let id = account.id;
+    let target = tokio::task::spawn_blocking(move || -> Result<_> {
+        if let Some(name) = filter {
+            if let Some(target) = ms.mailbox_by_name(id,&name)? { return Ok(target); }
+        } else if spam && let Some(target) = ms.mailbox_by_role(id,MailboxRole::Junk)? { return Ok(target); }
+        ms.mailbox_by_role(id,MailboxRole::Inbox)?.ok_or_else(|| anyhow::anyhow!("redirect recipient has no Inbox"))
+    }).await??;
+    Ok((target,crate::sieve::delivery::stamp_spam(data,verdict.as_deref().unwrap_or("UNKNOWN"),score.unwrap_or(0.0)),spam))
+}
+
 async fn legacy_vacation(
     db: &crate::db::Db,
     account: i32,

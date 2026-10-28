@@ -243,6 +243,7 @@ async fn create_submission(
                         sender_verified: true,
                         spam: false,
                         smtp_reject: false,
+                        routing: None,
                     },
                 )
                 .await

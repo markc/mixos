@@ -255,9 +255,28 @@ pub async fn reply_due(
     days: u32,
 ) -> Result<bool> {
     let sender = sender.to_ascii_lowercase();
-    let handle = handle.to_string();
+    let handle = blake3::hash(handle.as_bytes()).to_hex().to_string();
     access(db, move |conn| {
-        // One atomic compare-and-stamp across concurrent deliveries and restarts.
-        Ok(conn.execute("INSERT INTO sieve_replies(account_id,sender,handle,sent_at) VALUES(?1,?2,?3,unixepoch()) ON CONFLICT(account_id,sender,handle) DO UPDATE SET sent_at=unixepoch() WHERE sent_at<=unixepoch()-?4",params![account,sender,handle,i64::from(days)*86400])? > 0)
+        // Advisory check avoids building a reply/blob for already-suppressed
+        // senders. queue_reply repeats it atomically with the queue insert.
+        Ok(conn.query_row("SELECT NOT EXISTS(SELECT 1 FROM sieve_replies WHERE account_id=?1 AND sender=?2 AND handle=?3 AND sent_at>unixepoch()-?4)",params![account,sender,handle,i64::from(days.clamp(1,31))*86400],|r| r.get(0))?)
+    }).await
+}
+
+pub const MAX_REPLY_STAMPS: usize = 10_000;
+
+pub async fn queue_reply(db: &Db, account: i32, sender: &str, handle: &str, days: u32, hash: mds::BlobHash) -> Result<bool> {
+    let recipient = sender.to_string();
+    let sender = sender.to_ascii_lowercase();
+    let handle = blake3::hash(handle.as_bytes()).to_hex().to_string();
+    access(db, move |conn| {
+        let tx = conn.transaction()?;
+        tx.execute("DELETE FROM sieve_replies WHERE account_id=?1 AND sent_at<=unixepoch()-31*86400",[account])?;
+        let due = tx.execute("INSERT INTO sieve_replies(account_id,sender,handle,sent_at) VALUES(?1,?2,?3,unixepoch()) ON CONFLICT(account_id,sender,handle) DO UPDATE SET sent_at=unixepoch() WHERE sent_at<=unixepoch()-?4",params![account,sender,handle,i64::from(days.clamp(1,31))*86400])? > 0;
+        let queued = if due { Some(crate::smtp::queue::enqueue_on(&tx,"",std::slice::from_ref(&recipient),hash)?) } else { None };
+        tx.execute("DELETE FROM sieve_replies WHERE account_id=?1 AND rowid NOT IN (SELECT rowid FROM sieve_replies WHERE account_id=?1 ORDER BY sent_at DESC,rowid DESC LIMIT ?2)",params![account,MAX_REPLY_STAMPS as i64])?;
+        tx.commit()?;
+        if let Some(queue_id) = queued { tracing::info!(queue_id,account,"Sieve vacation reply queued"); }
+        Ok(due)
     }).await
 }

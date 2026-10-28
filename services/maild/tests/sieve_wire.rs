@@ -56,7 +56,7 @@ async fn starttls_upload_activate_then_real_smtp_delivery_and_rejection() -> Res
     let filter_path = tmp.path().join("inbound.mix");
     std::fs::write(
         &filter_path,
-        "-- SPDX-License-Identifier: MIT OR Apache-2.0\nreturn \"Global\"\n",
+        "-- SPDX-License-Identifier: MIT OR Apache-2.0\nif $TO == \"alice@example.com\" then\n  if $SPAM_VERDICT == \"SPAM\" then return \"RecipientPolicy\" end\n  return \"WrongVerdict\"\nend\nreturn \"Global\"\n",
     )?;
     let mut cfg = Config {
         hostname: "mail.example.com".into(),
@@ -92,6 +92,12 @@ async fn starttls_upload_activate_then_real_smtp_delivery_and_rejection() -> Res
     let account = db::account::get_by_email(&db.conn, "bob@example.com")
         .await?
         .unwrap();
+    db.conn.lock().unwrap().execute("INSERT INTO accounts(email,password,spam_enabled,spam_threshold) VALUES('alice@example.com','unused',1,0)",[])?;
+    let alice = db::account::get_by_email(&db.conn,"alice@example.com").await?.unwrap();
+    let alice_inbox = ms.create_mailbox(alice.id,"Inbox",None,mds::ContainerAttrs { special_use:Some("\\Inbox".into()),subscribed:true,extra:serde_json::json!({}) })?;
+    let alice_target = ms.create_mailbox(alice.id,"RecipientPolicy",None,mds::ContainerAttrs { special_use:None,subscribed:false,extra:serde_json::json!({}) })?;
+    store::put(db,alice.id,"spam-check",r#"if header :is "X-Mixos-Spam-Verdict" "SPAM" { keep; } else { discard; }"#,None).await?;
+    store::activate(db,alice.id,"spam-check").await?;
     ms.create_mailbox(
         account.id,
         "Inbox",
@@ -239,6 +245,11 @@ async fn starttls_upload_activate_then_real_smtp_delivery_and_rejection() -> Res
             .is_empty()
     );
     assert_ne!(messages[0].keywords.0 & mds::Flags::SEEN, 0);
+    let redirect = r#"redirect "alice@example.com";"#;
+    assert!(send(&mut io,&format!("PUTSCRIPT \"renamed\" {{{}+}}\r\n{redirect}\r\n",redirect.len())).await?.starts_with("OK"));
+    assert!(message(&mut smtp).await?.starts_with("250"));
+    assert_eq!(ms.list_emails_in_mailbox(alice.id,alice_target,ListOpts::default())?.len(),1);
+    assert!(ms.list_emails_in_mailbox(alice.id,alice_inbox,ListOpts::default())?.is_empty());
     assert!(
         send(
             &mut io,

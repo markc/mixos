@@ -11318,7 +11318,8 @@ missing destinations and refused redirects cancel the plan and keep the message.
 Limits: 64 KiB per script, 10,000 evaluation/matching/allocation steps, 64
 filing/redirect actions, 1 MiB of variables and four redirects. Matching charges
 for scanned bytes as well as instructions. Local redirects run the destination's
-script; the four-hop header also bounds remote loops. A forged high hop count
+script; SMTP redirects also rerun the destination's classifier and global filter
+using the original verified ingress. The four-hop header also bounds remote loops. A forged high hop count
 can suppress forwarding but never grants extra hops.
 
 `reject`/`ereject` return SMTP `550 5.7.1` after DATA for a single normal
@@ -11337,8 +11338,11 @@ Vacation supports `:days` (1..31, default 7), `:addresses`, `:subject`, `:from`
 additional To/Cc recipient identities; it does not authorise sender spoofing.
 Replies require verified ingress and a recognised To/Cc identity. Spam, null
 senders, self-mail, list/bulk mail and automatic responses receive no reply.
-A durable atomic sender/response-handle stamp permits one reply per interval
-across concurrent deliveries and restarts. Replies use a null reverse path,
+A sender/response-handle stamp and its native queue row commit in one mail.db
+transaction, permitting one reply per interval across concurrent deliveries and
+restarts. Handles are stored as fixed-size hashes. Tracking retains at most
+10,000 pairs per account and drops stamps past the maximum 31-day interval.
+Replies use a null reverse path,
 `Auto-Submitted: auto-replied`, and the native outbound queue. Its worker
 selects the account domain's DKIM signer; absent signing configuration retains
 the existing unsigned behaviour. An active Sieve script takes ownership of

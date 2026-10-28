@@ -41,6 +41,16 @@ impl std::fmt::Display for Rejected {
 }
 impl std::error::Error for Rejected {}
 
+/// Original verified SMTP context, retained across local redirects so recipient
+/// policy is rerun without treating stored Authentication-Results as evidence.
+pub struct Routing<'a> {
+    pub state: &'a crate::smtp::SmtpState,
+    pub ingress: &'a crate::smtp::inbound::IngressAuth,
+    pub verify: &'a maild_auth::VerifyResult,
+    pub raw_data: &'a [u8],
+    pub remote_ip: std::net::IpAddr,
+}
+
 pub struct Delivery<'a> {
     pub account: &'a db::account::Account,
     pub from: &'a str,
@@ -54,6 +64,7 @@ pub struct Delivery<'a> {
     pub sender_verified: bool,
     pub spam: bool,
     pub smtp_reject: bool,
+    pub routing: Option<&'a Routing<'a>>,
 }
 
 fn flags(raw: &[String]) -> Result<(Flags, Tags)> {
@@ -293,6 +304,9 @@ async fn deliver_inner(
                     let inbox = ms
                         .mailbox_by_role(account.id, MailboxRole::Inbox)?
                         .ok_or_else(|| anyhow::anyhow!("redirect recipient has no Inbox"))?;
+                    let (target, routed_data, spam) = if let Some(routing) = delivery.routing {
+                        crate::smtp::inbound::route_sieve_redirect(routing,&account,delivery.from,&destination,&bytes).await?
+                    } else { (inbox,bytes.clone(),delivery.spam) };
                     Box::pin(deliver_inner(
                         db,
                         ms,
@@ -300,13 +314,14 @@ async fn deliver_inner(
                             account: &account,
                             from: delivery.from,
                             to: &destination,
-                            data: &bytes,
-                            default_mailbox: inbox,
+                            data: &routed_data,
+                            default_mailbox: target,
                             default_tags: Tags::new(),
                             external_domains: delivery.external_domains,
                             sender_verified: delivery.sender_verified,
-                            spam: delivery.spam,
+                            spam,
                             smtp_reject: false,
+                            routing: delivery.routing,
                         },
                         remaining,
                     ))
@@ -636,5 +651,8 @@ async fn vacation_reply(
     }
     // Null reverse path prevents replies to this automatic response; From
     // identifies the account for the normal queue worker's DKIM selection.
-    enqueue(db, ms, "", delivery.from, &bytes).await
+    let ms = ms.clone();
+    let hash = tokio::task::spawn_blocking(move || ms.mds().put_blob(&bytes)).await??;
+    store::queue_reply(db,delivery.account.id,delivery.from,&vacation.handle,vacation.days,hash).await?;
+    Ok(())
 }

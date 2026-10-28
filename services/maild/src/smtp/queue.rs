@@ -70,17 +70,12 @@ pub async fn enqueue(
 ) -> Result<i64> {
     let conn = conn.clone();
     let from_addr = from_addr.to_string();
-    let to_addrs_json = serde_json::to_string(to_addrs)?;
-    let blob_hash_hex = mds::blob::hex(&blob_hash);
+    let to_addrs = to_addrs.to_vec();
     tokio::task::spawn_blocking(move || {
         let conn = conn
             .lock()
             .map_err(|e| anyhow::anyhow!("lock error: {e}"))?;
-        conn.execute(
-            "INSERT INTO smtp_queue (from_addr, to_addrs, blob_hash) VALUES (?1, ?2, ?3)",
-            params![from_addr, to_addrs_json, blob_hash_hex],
-        )?;
-        let id = conn.last_insert_rowid();
+        let id = enqueue_on(&conn,&from_addr,&to_addrs,blob_hash)?;
         // Key values inline: the journald sink emits structured fields
         // as journal FIELDS, invisible in default `journalctl` output.
         tracing::info!(
@@ -92,6 +87,14 @@ pub async fn enqueue(
         Ok(id)
     })
     .await?
+}
+
+/// Native queue insert for callers that must atomically commit related mail.db
+/// state. The caller owns the transaction and reports success after commit.
+pub(crate) fn enqueue_on(conn: &Connection, from: &str, to: &[String], hash: BlobHash) -> Result<i64> {
+    conn.execute("INSERT INTO smtp_queue (from_addr,to_addrs,blob_hash) VALUES(?1,?2,?3)",
+        params![from,serde_json::to_string(to)?,mds::blob::hex(&hash)])?;
+    Ok(conn.last_insert_rowid())
 }
 
 /// Fetch messages ready for delivery (next_retry <= now, attempts < 10).
