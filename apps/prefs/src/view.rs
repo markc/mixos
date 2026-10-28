@@ -223,10 +223,13 @@ pub fn view(
                 }
                 Section::Software => applications(ui, engine, commands, strings, &mut events),
                 section => {
+                    let width = ui.available_width();
                     ScrollArea::both()
                         .id_salt(section.name())
                         .auto_shrink(false)
-                        .show(ui, |ui| match section {
+                        .show(ui, |ui| {
+                            ui.set_max_width(width);
+                            match section {
                             Section::Appearance => {
                                 appearance(ui, engine, commands, strings, &mut events)
                             }
@@ -253,6 +256,7 @@ pub fn view(
                                 email::section(ui, engine, commands, strings, &mut events)
                             }
                             _ => unreachable!(),
+                            }
                         });
                 }
             }

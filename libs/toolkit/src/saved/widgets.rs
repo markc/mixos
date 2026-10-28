@@ -94,12 +94,12 @@ pub fn panel<R>(
     // changes, retaining the saved share when a window or adjacent dock resizes.
     ui.ctx().data_mut(|d| {
         let key = egui::Id::unique(("saved-panel-extent", name));
-        if d.get_temp::<f32>(key)
-            .is_some_and(|old| (old - extent).abs() > 0.5)
+        if d.get_temp::<(f32, bool)>(key)
+            .is_some_and(|(old, axis)| (old - extent).abs() > 0.5 || axis != horizontal)
         {
             d.remove::<egui::containers::panel::PanelState>(panel_id);
         }
-        d.insert_temp(key, extent);
+        d.insert_temp(key, (extent, horizontal));
     });
     let shown = panel
         .resizable(true)

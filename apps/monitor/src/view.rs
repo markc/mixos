@@ -528,7 +528,9 @@ fn performance(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
     egui::CentralPanel::default()
         .frame(bars::dock_frame(ui.ctx()))
         .show(ui, |ui| {
+            let width = ui.available_width();
             let output = ScrollArea::both().auto_shrink(false).show(ui, |ui| {
+                ui.set_max_width(width);
                 let key = engine.ui.section.as_str();
                 if key == "cpu" {
                     cpu(ui, engine, s);
