@@ -170,7 +170,7 @@ pub(super) fn validate_segment(seg: &str) -> Result<(), String> {
         return Err("empty mailbox path segment".to_string());
     }
     if !crate::imap::mailbox_name::is_net_unicode(seg) {
-        return Err("mailbox name must be Net-Unicode (NFC)".into());
+        return Err("mailbox name must be Net-Unicode (NFC, no controls or noncharacters)".into());
     }
     for b in seg.bytes() {
         if b < 0x20 || b == 0x7f {

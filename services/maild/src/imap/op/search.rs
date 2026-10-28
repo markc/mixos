@@ -235,10 +235,22 @@ pub fn parse_args_for_session(args: &str, mode: SearchMode, _utf8: bool) -> Resu
 
 /// Recognise SAVE before parsing criteria, so a failed SAVE never retains `$`.
 pub fn requests_save(args: &str) -> bool {
-    let Some((keyword, tail)) = args.trim_start().split_once(char::is_whitespace) else { return false; };
-    if !keyword.eq_ignore_ascii_case("RETURN") { return false; }
-    let Some(options) = tail.trim_start().strip_prefix('(').and_then(|s| s.split_once(')').map(|p| p.0)) else { return false; };
-    options.split_ascii_whitespace().any(|option| option.eq_ignore_ascii_case("SAVE"))
+    let Some((keyword, tail)) = args.trim_start().split_once(char::is_whitespace) else {
+        return false;
+    };
+    if !keyword.eq_ignore_ascii_case("RETURN") {
+        return false;
+    }
+    let Some(options) = tail
+        .trim_start()
+        .strip_prefix('(')
+        .and_then(|s| s.split_once(')').map(|p| p.0))
+    else {
+        return false;
+    };
+    options
+        .split_ascii_whitespace()
+        .any(|option| option.eq_ignore_ascii_case("SAVE"))
 }
 
 fn tokenize(s: &str) -> Result<Vec<String>, String> {
@@ -852,7 +864,9 @@ pub async fn handle_extended(
             return tagged(tag, Status::No, Some(&e), "unsupported search charset");
         }
         Err(e) => {
-            if requests_save(args) { saved.clear(); }
+            if requests_save(args) {
+                saved.clear();
+            }
             return tagged(tag, Status::Bad, None, &e);
         }
     };

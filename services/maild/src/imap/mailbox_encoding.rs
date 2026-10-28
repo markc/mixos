@@ -28,7 +28,8 @@ pub fn decode(name: &str) -> Result<String, String> {
                 .chunks_exact(2)
                 .map(|b| u16::from_be_bytes([b[0], b[1]]))
                 .collect();
-            let decoded = String::from_utf16(&units).map_err(|_| "invalid modified UTF-7 UTF-16")?;
+            let decoded =
+                String::from_utf16(&units).map_err(|_| "invalid modified UTF-7 UTF-16")?;
             if decoded.chars().any(|c| (' '..='~').contains(&c)) {
                 return Err("non-canonical modified UTF-7: printable ASCII must be direct".into());
             }

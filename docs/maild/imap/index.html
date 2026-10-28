@@ -239,7 +239,11 @@
 <p>maild serves IMAP over implicit TLS. Sessions start in IMAP4rev1 compatibility
 mode; <code>ENABLE IMAP4rev2</code> switches to rev2 responses and UTF-8 mailbox names.
 <code>ENABLE UTF8=ACCEPT</code> enables UTF-8 while retaining rev1 SEARCH responses.
-Rev1 mailbox names use modified UTF-7, including <code>&amp;-</code> for a literal ampersand.</p>
+Rev1 mailbox names use modified UTF-7, including <code>&amp;-</code> for a literal ampersand.
+Non-canonical shifts, including shifted printable ASCII, fail with BAD. CREATE,
+RENAME and subscriptions share Net-Unicode character validation, including C1
+control rejection. Explicit <code>CHARSET US-ASCII</code> and <code>CHARSET UTF-8</code> work in every
+SEARCH mode.</p>
 <h2 id="commands-and-extensions">Commands and extensions</h2>
 <table><thead><tr><th>Surface</th><th>Behaviour</th><th>Wire coverage in <code>services/maild/tests/imap_rev2.rs</code></th></tr></thead><tbody>
 <tr><td>MIME FETCH</td><td>Stored encoded content, nested part paths, MIME and forwarded-message selectors, PEEK and octet partials; numbering follows BODYSTRUCTURE</td><td><code>thunderbird_mime_parts_on_demand_and_structure_agree</code></td></tr>
@@ -258,7 +262,19 @@ Rev1 mailbox names use modified UTF-7, including <code>&amp;-</code> for a liter
 <tr><td>Notifications</td><td>Preserve client MSNs until expunges can be reported; announce observed additions; IDLE reports flags with UIDs</td><td><code>pending_expunge_preserves_msns_until_a_permitted_command</code>, existing <code>imap_phase5_idle</code> tests</td></tr>
 <tr><td>Subscriptions</td><td>Names survive RENAME and DELETE; LIST SUBSCRIBED identifies absent mailboxes</td><td><code>subscriptions_survive_rename_and_delete_and_absent_names_can_be_removed</code></td></tr>
 <tr><td>Shutdown</td><td>Finish the current response, send BYE, flush and release connection slots</td><td><code>shutdown_sends_bye_during_idle_and_releases_account_slot</code></td></tr>
+<tr><td>Selected read cost</td><td>Cheap native mailbox change tokens avoid unchanged snapshots; FETCH resolves only requested UIDs through the membership index</td><td><code>ten_thousand_messages_use_indexed_fetch_and_single_idle_membership_reads</code></td></tr>
+<tr><td>RENAME notifications</td><td>Emit exact mailbox identities and descendants with OLDNAME; wildcard characters in names remain literal</td><td><code>rev2_rename_reports_exact_ids_and_old_names_including_descendants</code></td></tr>
 </tbody></table>
+<p>The selected-read cost test uses 10,000 messages and 1,000 single-message FETCHes,
+counting native store calls. It also checks 100 IDLE flag events without relisting
+the mailbox and one catch-up diff for an unknown UID. Ordinary notifications use
+the mailbox's native change counter, including flag changes and removals.</p>
+<p>SAVE failures clear <code>$</code>, including grammar errors. Successful DELETE of the
+selected mailbox returns to authenticated state, with CLOSED in rev2. Missing
+subscription rows carry both NonExistent and Noselect; subscription-only children
+use CHILDINFO without changing a live mailbox's HasChildren attribute. The empty
+LIST pattern remains a delimiter probe when RETURN options are present, and
+LIST-STATUS APPENDLIMIT uses the session configuration.</p>
 <p>SEARCH scans decoded MIME content without making whole-message lowercased
 copies. Its substring matcher uses linear work and memory proportional to the
 needle. Content-dependent searches refuse messages above the 64 MiB work limit
@@ -273,7 +289,10 @@ IMAP strings; BINARY returns the original decoded octets. Unsupported binary
 encodings or NUL in message headers fail with UNKNOWN-CTE. UTF8=ACCEPT also
 supports the <code>UTF8 (~{N}...)</code> APPEND form.
 Embedded-message reparsing shares a 64-level budget across binary APPEND
-normalisation (<code>binary_append_bounds_reparsed_message_nesting</code>).</p>
+normalisation (<code>binary_append_bounds_reparsed_message_nesting</code>).
+BINARY accepts both padded and unpadded MIME base64. RFC822 and RFC822.TEXT set
+Seen; RFC822.HEADER and read-only FETCHes do not. RENAME INBOX retains each
+membership's flags and user keywords.</p>
 <p>Capabilities come from an implementation allowlist. Operator overrides can
 select a subset but cannot add unimplemented extensions. APPENDLIMIT always
 comes from <code>imap_max_literal_bytes</code>. LITERAL+ permits non-synchronising literals
@@ -308,7 +327,7 @@ mistaken for a remaining protocol limit.</p>
 <p>The audit also checked server requirements beyond the refusal strings:</p>
 <table><thead><tr><th>Requirement group</th><th>Finding and resolution</th></tr></thead><tbody>
 <tr><td>Sections 4, 5.1 and Appendix A: strings and names</td><td>Added UTF-8 negotiation, modified UTF-7 compatibility, NFC validation and literal-kind tracking</td></tr>
-<tr><td>Sections 2.3.1.1 and 6.3.4: recreated mailbox identity</td><td>Persistent UIDVALIDITY high-water mark for new mailboxes; atomically migrate legacy millisecond values before authentication. Existing legacy mailboxes require one cache resync, preventing later RENAME onto a deleted name from reusing a cached identity. <code>uidvalidity_does_not_repeat_on_rapid_or_legacy_mailbox_recreation</code> and <code>legacy_identities_migrate_before_login_and_cannot_collide_after_rename</code> cover both paths</td></tr>
+<tr><td>Sections 2.3.1.1 and 6.3.4: recreated mailbox identity</td><td>Persistent UIDVALIDITY high-water mark for new mailboxes, seeded from current wire identities and time. Legacy millisecond values convert to their existing seconds value, preserving client caches. RENAME allocates a fresh value only for a renamed mailbox whose identity collides with another live mailbox or a recorded deleted destination name. <code>legacy_identities_migrate_before_login_and_cannot_collide_after_rename</code> and <code>rename_repairs_only_colliding_live_or_deleted_name_identities</code> cover both paths</td></tr>
 <tr><td>Sections 5.2 and 7.5.1: mailbox updates and MSN stability</td><td>Added command-time refresh and preserved views while expunge notifications are prohibited</td></tr>
 <tr><td>Sections 6.3.2–6.3.3: selection data and read-only flags</td><td>Accurate LIST attributes and OLDNAME in rev2; CLOSED boundaries on reselection, including failed SELECT; RECENT/UNSEEN in rev1; empty PERMANENTFLAGS for EXAMINE. Covered by <code>rev2_reselection_marks_the_closed_boundary_including_failure</code> and <code>examine_fetch_and_close_unselect_have_distinct_effects</code></td></tr>
 <tr><td>Section 6.3.4: existing mailbox creation</td><td>Corrected old idempotent CREATE INBOX and CREATE existing/ behaviour to NO</td></tr>
@@ -324,8 +343,8 @@ UNSELECT, literal abuse caps and the existing MOVE/UIDPLUS behaviours retain
 their original regression suites. The release tests are necessary evidence;
 this document does not claim certification by every mail client.</p>
 <p>CONDSTORE, QRESYNC, MODSEQ, UNCHANGEDSINCE and STATUS HIGHESTMODSEQ are integration
-hooks for <code>work/maild-imap-ext</code>. ENABLE ignores those names and returns an empty
-ENABLED list until that complete implementation lands. STARTTLS remains refused
+hooks for <code>work/maild-imap-ext</code>. ENABLE ignores those names and omits an empty
+ENABLED response until that complete implementation lands. STARTTLS remains refused
 under the implicit TLS policy.</p>
 <p>Protocol references: <a href="https://www.rfc-editor.org/rfc/rfc9051">RFC 9051</a>,
 <a href="https://www.rfc-editor.org/rfc/rfc3516">BINARY</a>,

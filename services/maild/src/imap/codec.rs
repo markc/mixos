@@ -773,7 +773,11 @@ fn has_unsupported_literal(line: &[u8]) -> bool {
 #[test]
 fn quoted_braces_are_not_unconsumed_literal_markers() {
     assert!(!has_unsupported_literal(b"a CREATE \"{1}"));
-    assert!(strip_trailing_literal_marker(b"a CREATE \"{1}").unwrap().is_none());
+    assert!(
+        strip_trailing_literal_marker(b"a CREATE \"{1}")
+            .unwrap()
+            .is_none()
+    );
     assert!(parse_line(b"a CREATE \"{1}\"").is_ok());
     assert!(has_unsupported_literal(b"a CREATE {1}"));
 }

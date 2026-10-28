@@ -497,7 +497,11 @@ impl Session {
                         enabled.sort_unstable();
                         enabled.dedup();
                         if !enabled.is_empty() {
-                            writer.write_all(format!("* ENABLED {}\r\n", enabled.join(" ")).as_bytes()).await?;
+                            writer
+                                .write_all(
+                                    format!("* ENABLED {}\r\n", enabled.join(" ")).as_bytes(),
+                                )
+                                .await?;
                         }
                         writer
                             .write_all(
@@ -886,17 +890,25 @@ impl Session {
                             .await?;
                     } else {
                         let deleting_selected = command_name == "DELETE"
-                            && self.state.selected().is_some_and(|sm| op::delete::parse_args(&parsed.args).is_ok_and(|name| {
-                                name == sm.name
-                                    || (name.eq_ignore_ascii_case("INBOX") && sm.name == "INBOX")
-                            }));
+                            && self.state.selected().is_some_and(|sm| {
+                                op::delete::parse_args(&parsed.args).is_ok_and(|name| {
+                                    name == sm.name
+                                        || (name.eq_ignore_ascii_case("INBOX")
+                                            && sm.name == "INBOX")
+                                })
+                            });
                         let aid = self
                             .account_id
                             .expect("authenticated session must have account_id");
                         let rename_before = if command_name == "RENAME" {
                             let store = self.mailstore.clone();
-                            Some(tokio::task::spawn_blocking(move || store.list_mailboxes(aid)).await??)
-                        } else { None };
+                            Some(
+                                tokio::task::spawn_blocking(move || store.list_mailboxes(aid))
+                                    .await??,
+                            )
+                        } else {
+                            None
+                        };
                         let resp = match command_name {
                             "CREATE" => {
                                 op::create::handle(
@@ -951,31 +963,76 @@ impl Session {
                             self.view_version = None;
                             self.pending_expunge = false;
                             self.saved_search.clear();
-                            if self.rev2 { writer.write_all(b"* OK [CLOSED] selected mailbox deleted\r\n").await?; }
+                            if self.rev2 {
+                                writer
+                                    .write_all(b"* OK [CLOSED] selected mailbox deleted\r\n")
+                                    .await?;
+                            }
                         }
                         if command_name == "RENAME"
                             && resp.starts_with(&format!("{} OK", parsed.tag))
                         {
                             let names = op::rename::parse_args(&parsed.args)
                                 .expect("successful RENAME has valid arguments");
-                            let before = crate::imap::mailbox_name::encode_all(rename_before.as_ref().unwrap());
+                            let before = crate::imap::mailbox_name::encode_all(
+                                rename_before.as_ref().unwrap(),
+                            );
+                            let mut renamed_ids = std::collections::HashSet::new();
+                            if let crate::imap::mailbox_name::ResolveResult::Found(root) =
+                                crate::imap::mailbox_name::resolve(&names.old_name, rename_before.as_ref().unwrap())
+                            {
+                                renamed_ids.insert(root);
+                                loop {
+                                    let previous = renamed_ids.len();
+                                    for mailbox in rename_before.as_ref().unwrap() {
+                                        if mailbox.parent.is_some_and(|parent| renamed_ids.contains(&parent)) {
+                                            renamed_ids.insert(mailbox.id);
+                                        }
+                                    }
+                                    if renamed_ids.len() == previous { break; }
+                                }
+                            }
                             let store = self.mailstore.clone();
-                            let after = tokio::task::spawn_blocking(move || store.list_mailboxes(aid)).await??;
+                            let after =
+                                tokio::task::spawn_blocking(move || store.list_mailboxes(aid))
+                                    .await??;
                             let after = crate::imap::mailbox_name::encode_all(&after);
                             if let Some(sm) = self.state.selected_mut()
-                                && let Some(mailbox) = after.mailboxes.iter().find(|mailbox| mailbox.id == sm.container_id)
-                            { sm.name = mailbox.wire_name.clone(); }
+                                && let Some(mailbox) = after
+                                    .mailboxes
+                                    .iter()
+                                    .find(|mailbox| mailbox.id == sm.container_id)
+                            {
+                                sm.name = mailbox.wire_name.clone();
+                            }
                             if self.state.selected().is_some() {
                                 self.refresh_view(writer, true).await?;
                             }
                             if self.rev2 {
                                 for mailbox in &after.mailboxes {
-                                    let old = before.mailboxes.iter().find(|old| old.id == mailbox.id && old.wire_name != mailbox.wire_name)
+                                    let old = before
+                                        .mailboxes
+                                        .iter()
+                                        .find(|old| {
+                                            old.id == mailbox.id
+                                                && renamed_ids.contains(&old.id)
+                                                && old.wire_name != mailbox.wire_name
+                                        })
                                         .map(|old| old.wire_name.as_str())
-                                        .or_else(|| (names.old_name.eq_ignore_ascii_case("INBOX") && mailbox.wire_name == crate::imap::mailbox_name::fold_inbox_prefix(&names.new_name)).then_some("INBOX"));
+                                        .or_else(|| {
+                                            (names.old_name.eq_ignore_ascii_case("INBOX")
+                                                && mailbox.wire_name
+                                                    == crate::imap::mailbox_name::fold_inbox_prefix(
+                                                        &names.new_name,
+                                                    ))
+                                            .then_some("INBOX")
+                                        });
                                     if let Some(old) = old {
-                                        let mut attrs = crate::imap::mailbox_name::format_attrs(mailbox);
-                                        if mailbox.is_subscribed { attrs.push_str(" \\Subscribed"); }
+                                        let mut attrs =
+                                            crate::imap::mailbox_name::format_attrs(mailbox);
+                                        if mailbox.is_subscribed {
+                                            attrs.push_str(" \\Subscribed");
+                                        }
                                         writer.write_all(format!("* LIST ({attrs}) \"/\" {} (\"OLDNAME\" ({}))\r\n",
                                             crate::imap::mailbox_name::quote_mailbox(&mailbox.wire_name),
                                             crate::imap::mailbox_name::quote_mailbox(old)).as_bytes()).await?;
@@ -1448,7 +1505,12 @@ impl Session {
                                                     Some(&sm.view_uids),
                                                 )
                                                 .await;
-                                                self.write_mutation_outcome(writer, &outcome.wire, &outcome.expunged_uids).await?;
+                                                self.write_mutation_outcome(
+                                                    writer,
+                                                    &outcome.wire,
+                                                    &outcome.expunged_uids,
+                                                )
+                                                .await?;
                                                 // Prune the session's view UID
                                                 // list in lockstep with the
                                                 // EXPUNGE lines the handler
@@ -1535,7 +1597,12 @@ impl Session {
                                                 Some(&sm.view_uids),
                                             )
                                             .await;
-                                            self.write_mutation_outcome(writer, &outcome.wire, &outcome.expunged_uids).await?;
+                                            self.write_mutation_outcome(
+                                                writer,
+                                                &outcome.wire,
+                                                &outcome.expunged_uids,
+                                            )
+                                            .await?;
                                             if !outcome.expunged_uids.is_empty()
                                                 && let Some(sm) = self.state.selected_mut()
                                             {
@@ -1651,19 +1718,26 @@ impl Session {
     }
 
     async fn write_mutation_outcome<W: AsyncWrite + Unpin>(
-        &mut self, writer: &mut W, wire: &str, expunged: &[u64],
+        &mut self,
+        writer: &mut W,
+        wire: &str,
+        expunged: &[u64],
     ) -> Result<()> {
         let wire = wire.trim_end_matches("\r\n");
         let completion = if let Some((prefix, completion)) = wire.rsplit_once("\r\n") {
             writer.write_all(prefix.as_bytes()).await?;
             writer.write_all(b"\r\n").await?;
             completion
-        } else { wire };
+        } else {
+            wire
+        };
         if let Some(sm) = self.state.selected_mut() {
             sm.view_uids.retain(|uid| !expunged.contains(uid));
         }
         self.refresh_view(writer, true).await?;
-        writer.write_all(format!("{completion}\r\n").as_bytes()).await?;
+        writer
+            .write_all(format!("{completion}\r\n").as_bytes())
+            .await?;
         Ok(())
     }
 
@@ -1676,8 +1750,13 @@ impl Session {
         let container = sm.container_id;
         let aid = self.account_id.unwrap();
         let version_store = self.mailstore.clone();
-        let version = tokio::task::spawn_blocking(move || version_store.imap_mailbox_version(aid, container)).await??;
-        if version.is_some() && version == self.view_version && (!allow_expunge || !self.pending_expunge) {
+        let version =
+            tokio::task::spawn_blocking(move || version_store.imap_mailbox_version(aid, container))
+                .await??;
+        if version.is_some()
+            && version == self.view_version
+            && (!allow_expunge || !self.pending_expunge)
+        {
             return Ok(());
         }
         let store = self.mailstore.clone();
@@ -1698,10 +1777,19 @@ impl Session {
         if let Some((validity, _)) = version
             && validity != sm.uid_validity
         {
-            writer.write_all(format!("* OK [UIDVALIDITY {validity}] mailbox identity changed\r\n").as_bytes()).await?;
+            writer
+                .write_all(
+                    format!("* OK [UIDVALIDITY {validity}] mailbox identity changed\r\n")
+                        .as_bytes(),
+                )
+                .await?;
             sm.uid_validity = validity;
         }
-        self.pending_expunge = !allow_expunge && sm.view_uids.iter().any(|uid| fresh.binary_search(uid).is_err());
+        self.pending_expunge = !allow_expunge
+            && sm
+                .view_uids
+                .iter()
+                .any(|uid| fresh.binary_search(uid).is_err());
         if allow_expunge {
             for line in op::idle::diff_lines(&sm.view_uids, &fresh) {
                 writer.write_all(line.as_bytes()).await?;

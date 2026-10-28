@@ -34,8 +34,16 @@ generated: by docs/_build/gen-site.mix from services/maild/CHANGELOG.md; do not 
   moves messages while preserving INBOX; subscriptions survive rename/delete.
   Correct CLOSE, EXAMINE, sequence-number notifications and shutdown BYE.
 - Allocate new mailbox UIDVALIDITY values with a durable high-water mark so
-  rapid delete/recreate cannot reuse a message identity. Migrate legacy mailbox
-  values once before authentication, preventing collisions when names are reused.
+  rapid delete/recreate cannot reuse a message identity. Convert legacy mailbox
+  values to their existing wire seconds without invalidating client caches;
+  repair only renamed identities that collide with live or deleted-name values.
+- Avoid full-folder reads for unchanged selected sessions and indexed FETCH
+  requests. IDLE flag notifications read one membership, with a catch-up diff
+  only for an unknown UID.
+- Report exact RENAME descendants with OLDNAME, accept explicit UTF-8/ASCII
+  SEARCH charsets in every mode, clear failed SAVE state, and deselect a deleted
+  selected mailbox. Reject non-canonical UTF-7 and C1 mailbox controls; correct
+  subscription child attributes, delimiter probes and unpadded BINARY decoding.
 - Bound SEARCH content work and match without whole-message lowercase copies.
   Keep CONDSTORE/QRESYNC gated on the separate extension implementation.
 - IMAP `SEARCH` and `UID SEARCH` implement the header, date and text keys:

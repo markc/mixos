@@ -741,11 +741,16 @@ pub async fn handle_with_access(
     // resolver semantics); pass 0 — the sub-zero `checked_sub` in
     // `resolve_uid` clamps to `Some(0)`.
     let resolved: Vec<Resolved> = if let Some(view) = view {
-        handles.iter().filter_map(|handle| {
-            view.binary_search(&handle.uid).ok().map(|index| Resolved {
-                msn: (index + 1) as u32, uid: handle.uid, item_id: handle.id,
+        handles
+            .iter()
+            .filter_map(|handle| {
+                view.binary_search(&handle.uid).ok().map(|index| Resolved {
+                    msn: (index + 1) as u32,
+                    uid: handle.uid,
+                    item_id: handle.id,
+                })
             })
-        }).collect()
+            .collect()
     } else {
         let map = SequenceMap::from_entries(handles.iter().map(|h| (h.uid, h.id)));
         match req.mode {
@@ -1793,10 +1798,7 @@ fn binary_bytes(
             base64::engine::general_purpose::GeneralPurposeConfig::new()
                 .with_decode_padding_mode(base64::engine::DecodePaddingMode::Indifferent),
         );
-        return decoder
-            .decode(compact)
-            .map(finish)
-            .map_err(|_| ());
+        return decoder.decode(compact).map(finish).map_err(|_| ());
     }
     if cte.eq_ignore_ascii_case("quoted-printable") {
         let mut out = Vec::with_capacity(data.len());

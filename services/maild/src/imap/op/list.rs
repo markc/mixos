@@ -171,9 +171,10 @@ pub(crate) fn subscription_view(
         }
     }
     for enc in &mut set.mailboxes {
-        enc.has_children |= enc.id.0.is_nil() && subscriptions
-            .iter()
-            .any(|name| name.starts_with(&format!("{}/", enc.wire_name)));
+        enc.has_children |= enc.id.0.is_nil()
+            && subscriptions
+                .iter()
+                .any(|name| name.starts_with(&format!("{}/", enc.wire_name)));
     }
     set
 }
@@ -185,6 +186,7 @@ struct ExtendedArgs {
     selection: Vec<String>,
     returns: Vec<String>,
     status: Option<String>,
+    pattern_list: bool,
 }
 
 fn option_list(s: &str) -> Result<(&str, &str), String> {
@@ -222,7 +224,8 @@ fn parse_extended(args: &str) -> Result<ExtendedArgs, String> {
     let (reference, tail) = take_mailbox_token(rest)?;
     rest = tail.trim_start();
     let mut patterns = Vec::new();
-    if rest.starts_with('(') {
+    let pattern_list = rest.starts_with('(');
+    if pattern_list {
         rest = &rest[1..];
         loop {
             rest = rest.trim_start();
@@ -301,6 +304,7 @@ fn parse_extended(args: &str) -> Result<ExtendedArgs, String> {
         selection,
         returns,
         status,
+        pattern_list,
     })
 }
 
@@ -339,7 +343,7 @@ pub async fn handle_with_limit(
     };
     // Hierarchy-delimiter probe: `LIST "" ""` per RFC 9051 §6.3.9
     // returns one row carrying the root delimiter and `\Noselect`.
-    if parsed.patterns.len() == 1 && parsed.patterns[0].is_empty() {
+    if !parsed.pattern_list && parsed.patterns.len() == 1 && parsed.patterns[0].is_empty() {
         let mut out = "* LIST (\\Noselect) \"/\" \"\"\r\n".to_string();
         out.push_str(&tagged(tag, Status::Ok, None, "LIST completed"));
         return out;
