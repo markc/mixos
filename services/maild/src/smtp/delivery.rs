@@ -1895,6 +1895,25 @@ mod rcpt_rejection_tests {
     use super::*;
 
     #[tokio::test]
+    async fn round2_literal_connections_use_ipv4_ipv6_and_source_bind() -> Result<()> {
+        use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        for ip in [IpAddr::V4(Ipv4Addr::LOCALHOST), IpAddr::V6(Ipv6Addr::LOCALHOST)] {
+            for bind in [Vec::new(), vec![ip]] {
+                let listener = tokio::net::TcpListener::bind(SocketAddr::new(ip, 0)).await?;
+                let mut client = connect_smtp(&ip.to_string(), listener.local_addr()?.port(), &bind).await?;
+                let (mut peer, _) = listener.accept().await?;
+                client.write_all(b"EHLO client.example.org\r\n").await?;
+                let mut bytes = [0; 25];
+                peer.read_exact(&mut bytes[..25]).await?;
+                assert_eq!(&bytes, b"EHLO client.example.org\r\n");
+                assert_eq!(client.local_addr()?.ip(), ip);
+            }
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn smtputf8_and_8bitmime_outbound_wire_negotiation() {
         use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
         let mime_header = "MIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=x\r\n\r\n--x\r\nContent-Type: text/plain\r\nContent-Disposition: inline; filename=\"café.txt\"\r\n\r\nbody\r\n--x--\r\n";
