@@ -50,6 +50,26 @@ pub fn dns_domain(domain: &str) -> Option<String> {
     Some(name)
 }
 
+/// U-label and A-label domains identify the same mailbox. Keep the original
+/// spelling first so stored addresses and message envelopes are never rewritten.
+pub fn mailbox_addresses(addr: &str) -> Vec<String> {
+    let mut addresses = vec![addr.to_string()];
+    if let Some((local, domain)) = addr.rsplit_once('@')
+        && let Some(ascii) = dns_domain(domain)
+    {
+        let unicode = hickory_resolver::Name::from_ascii(&ascii)
+            .map(|name| name.to_utf8())
+            .unwrap_or_else(|_| ascii.clone());
+        for domain in [ascii, unicode] {
+            let candidate = format!("{local}@{domain}");
+            if !addresses.contains(&candidate) {
+                addresses.push(candidate);
+            }
+        }
+    }
+    addresses
+}
+
 pub fn utf8_headers(data: &[u8]) -> bool {
     let end = data
         .windows(4)

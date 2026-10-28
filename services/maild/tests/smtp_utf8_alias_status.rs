@@ -304,7 +304,19 @@ async fn utf8_inbound_and_authenticated_submission_store_mail() -> Result<()> {
     .await?;
     command(&mut io, "RCPT TO:<alice@example.com>", "250").await?;
     command(&mut io, "RSET", "250").await?;
+    command(&mut io, "MAIL FROM:<élise@xn--fsqu00a.example.com> SMTPUTF8", "250").await?;
+    command(&mut io, "RSET", "250").await?;
     command(&mut io, "MAIL FROM:<élise@例子.example.com>", "553").await?;
+    send(&built, "élise@xn--fsqu00a.example.com").await?;
+    assert_eq!(inbox_count(&built, id)?, 3);
+    let ascii_domain = account(&built, "marie@xn--fsqu00a.example.com").await?;
+    send(&built, "marie@例子.example.com").await?;
+    assert_eq!(inbox_count(&built, ascii_domain)?, 1);
+    alias(&built, "postmaster@例子.example.com", &["élise@xn--fsqu00a.example.com"], Version::zero()).await?;
+    send(&built, "postmaster@xn--fsqu00a.example.com").await?;
+    assert_eq!(inbox_count(&built, id)?, 4);
+    assert!(maild::props::aliases::sender_authorized(&built.app_state.aliases_runtime,
+        "postmaster@xn--fsqu00a.example.com", address).await);
     Ok(())
 }
 
