@@ -83,6 +83,10 @@ pub struct MailState {
     pub show_bcc: bool,
     pub show_reply_to: bool,
     pub(crate) saved: MailDocument,
+    pub(crate) saved_headers: Headers,
+    pub(crate) saved_body: String,
+    pub(crate) saving_body: Option<String>,
+    pub(crate) dirty_body: std::cell::Cell<Option<(u64, bool)>>,
     pub(crate) disk: String,
     pub(crate) undo: Vec<Headers>,
     pub(crate) redo: Vec<Headers>,
@@ -91,7 +95,7 @@ pub struct MailState {
 
 impl MailState {
     pub fn new(document: MailDocument, disk: String) -> Self {
-        Self { headers: Headers::of(&document), sending: false, saving: false, notice: None,
+        Self { headers: Headers::of(&document), saved_headers: Headers::of(&document), saved_body: document.body.clone(), saving_body: None, dirty_body: std::cell::Cell::new(None), sending: false, saving: false, notice: None,
             show_cc: !document.cc.is_empty(), show_bcc: !document.bcc.is_empty(),
             show_reply_to: document.reply_to.is_some(), saved: document, disk,
             undo: Vec::new(), redo: Vec::new(), seeding: true }

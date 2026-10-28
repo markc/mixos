@@ -5,8 +5,14 @@ use crate::mail::{Headers, Kind, MailState};
 impl Tab {
     pub fn dirty(&self) -> bool {
         if let Some(mail) = &self.mail {
-            let body = self.mirror.as_ref().map(|m| text_string(m.text())).unwrap_or_else(|| mail.saved.body.clone());
-            mail.headers.document(body.replace("\r\n", "\n").trim_end().to_owned()) != mail.saved
+            if mail.headers != mail.saved_headers { return true; }
+            let Some(mirror) = &self.mirror else { return false; };
+            if let Some((generation, dirty)) = mail.dirty_body.get() && generation == mirror.view_gen() {
+                return dirty;
+            }
+            let dirty = text_string(mirror.text()) != mail.saved_body;
+            mail.dirty_body.set(Some((mirror.view_gen(), dirty)));
+            dirty
         } else {
             self.mirror.as_ref().is_some_and(|m| m.meta().dirty)
         }
@@ -94,7 +100,8 @@ impl Controller {
         if mail.sending || mail.saving { return Err("a mail save or Send is already in flight".into()); }
         if !matches!(m.phase(), Phase::Live) { return Err("the body buffer is reconnecting".into()); }
         let idle = m.is_idle();
-        let document = mail.headers.document(text_string(m.text()).replace("\r\n", "\n").trim_end().to_owned());
+        let body = text_string(m.text());
+        let document = mail.headers.document(body.replace("\r\n", "\n").trim_end().to_owned());
         let text = match maildoc::write(&document) {
             Ok(text) => text,
             Err(error) => { let message = error.to_string(); mail.notice = Some(message.clone()); return Err(message); }
@@ -103,6 +110,7 @@ impl Controller {
         let path = std::path::absolute(&path).map_err(|e| e.to_string())?.to_string_lossy().into_owned();
         let expected = (t.path.as_deref() == Some(&path)).then(|| mail.disk.clone());
         mail.saving = true;
+        mail.saving_body = Some(body);
         mail.sending = send;
         mail.notice = send.then(|| "Sending…".to_owned());
         let command = self.op_cmd.take();
@@ -119,6 +127,9 @@ impl Controller {
         match result {
             Ok(()) => {
                 mail.saved = maildoc::parse(&text).expect("validated save");
+                mail.saved_headers = mail.headers.clone();
+                mail.saved_body = mail.saving_body.take().expect("save body captured");
+                mail.dirty_body.set(None);
                 mail.disk = text;
                 t.path = Some(path.clone());
                 if send { fx.push(Effect::SendMail { tab, path, command }); }
@@ -130,6 +141,7 @@ impl Controller {
             }
             Err(message) => {
                 mail.sending = false;
+                mail.saving_body = None;
                 mail.notice = Some(message.clone());
                 Self::mail_answer(command, Err(message), &mut fx);
                 if let Some(x) = self.x.get_mut(&tab) { x.close_after_save = None; }
@@ -337,6 +349,19 @@ mod tests {
         assert_eq!(mail.headers.subject, "Hello");
         assert_eq!(mail.headers.to, "carol@example.org");
         execute(&mut c, tab, "edit.undo");
+        assert!(!c.tab(tab).unwrap().dirty());
+    }
+
+    #[test]
+    fn whitespace_only_header_edits_are_dirty_until_saved() {
+        let (mut c, _, tab) = opened(LETTER);
+        let mut headers = c.tab(tab).unwrap().mail.as_ref().unwrap().headers.clone();
+        headers.to.push(' ');
+        c.edit_headers(tab, headers).unwrap();
+        assert!(c.tab(tab).unwrap().dirty());
+        let fx = execute(&mut c, tab, "file.save");
+        let Effect::SaveMail { path, text, send, command, .. } = fx.into_iter().find(|e| matches!(e, Effect::SaveMail { .. })).unwrap() else { unreachable!() };
+        c.on_mail_saved(tab, path, text, send, command, Ok(()));
         assert!(!c.tab(tab).unwrap().dirty());
     }
 }
