@@ -1035,6 +1035,8 @@ mod tests {
     struct Desk {
         service: Arc<Service>,
         reader: Driver,
+        provider: Driver,
+        provider_data: Arc<Mutex<[Option<Selection>; 2]>>,
         events: tokio::sync::mpsc::Receiver<Event>,
         changes: tokio::sync::mpsc::Receiver<(bool, Vec<String>)>,
         tasks: Vec<tokio::task::JoinHandle<()>>,
@@ -1045,6 +1047,7 @@ mod tests {
         fn drop(&mut self) {
             self.service.driver.stop();
             self.reader.stop();
+            self.provider.stop();
             for task in &self.tasks {
                 task.abort();
             }
@@ -1061,7 +1064,7 @@ mod tests {
             let server = std::thread::spawn(move || {
                 let mut harness = testkit::Harness::new();
                 ready
-                    .send((harness.connect_external(), harness.connect_external()))
+                    .send((harness.connect_external(), harness.connect_external(), harness.connect_external()))
                     .unwrap();
                 while matches!(
                     stopped.try_recv(),
@@ -1071,7 +1074,7 @@ mod tests {
                     std::thread::sleep(Duration::from_millis(1));
                 }
             });
-            let (owner, reader) = connections.recv_timeout(Duration::from_secs(5)).unwrap();
+            let (owner, reader, provider) = connections.recv_timeout(Duration::from_secs(5)).unwrap();
             let (driver, mut events) = Driver::start_connection(
                 wayland_client::Connection::from_socket(owner).unwrap(),
                 None,
@@ -1082,6 +1085,27 @@ mod tests {
                 None,
             )
             .unwrap();
+            let (provider, mut offered) = Driver::start_connection(
+                wayland_client::Connection::from_socket(provider).unwrap(),
+                None,
+            ).unwrap();
+            // A real external owner keeps serving every offered MIME after
+            // the initial classification, including later lazy hint reads.
+            let provider_data: Arc<Mutex<[Option<Selection>; 2]>> = Arc::new(Mutex::new([None, None]));
+            let available = provider_data.clone();
+            let provide = tokio::spawn(async move {
+                while let Some(event) = offered.recv().await {
+                    match event {
+                        Event::Send { stamp, primary, mime, fd } => {
+                            let bytes = available.lock().await[usize::from(primary)].as_ref()
+                                .filter(|s| s.stamp == stamp).and_then(|s| s.data.get(&mime)).cloned();
+                            if let Some(bytes) = bytes { let _ = crate::wayland::write_fd(fd, &bytes).await; }
+                        }
+                        Event::Failed(error) => panic!("{error}"),
+                        _ => {}
+                    }
+                }
+            });
             let client = Arc::new(
                 SupervisedClient::connect_options(&format!("clipd-{session}"), url)
                     .bounded_incoming(64)
@@ -1156,15 +1180,15 @@ mod tests {
                             mime,
                             fd,
                         } => {
-                            let selection = owner.state.lock().await.selections
-                                [usize::from(primary)]
-                            .clone()
-                            .filter(|s| s.stamp == stamp);
-                            if let Some(s) = selection
-                                && let Ok(bytes) = owner.bytes(&s, &mime, primary).await
-                            {
-                                let _ = crate::wayland::write_fd(fd, &bytes).await;
-                            }
+                            let owner = owner.clone();
+                            classifiers.spawn(async move {
+                                let selection = owner.state.lock().await.selections
+                                    [usize::from(primary)].clone().filter(|s| s.stamp == stamp);
+                                if let Some(s) = selection
+                                    && let Ok(bytes) = owner.bytes(&s, &mime, primary).await {
+                                    let _ = crate::wayland::write_fd(fd, &bytes).await;
+                                }
+                            });
                         }
                         Event::Failed(error) => panic!("{error}"),
                     }
@@ -1173,31 +1197,23 @@ mod tests {
             Self {
                 service,
                 reader,
+                provider,
+                provider_data,
                 events: observed,
                 changes,
-                tasks: vec![calls, sends],
+                tasks: vec![calls, sends, provide],
                 stop,
                 server: Some(server),
             }
         }
         async fn copy_external(&mut self, selection: Selection, primary: bool) {
-            self.reader.set(&selection, primary, false).await.unwrap();
+            self.provider_data.lock().await[usize::from(primary)] = Some(selection.clone());
+            self.provider.set(&selection, primary, false).await.unwrap();
             let marker = selection.stamp.marker();
             tokio::time::timeout(Duration::from_secs(5), async {
                 loop {
-                    tokio::select! {
-                        event = self.events.recv() => match event.expect("external clipboard connection closed") {
-                            Event::Send { stamp, mime, fd, .. } if stamp == selection.stamp => {
-                                if let Some(bytes) = selection.data.get(&mime) { crate::wayland::write_fd(fd, bytes).await.unwrap(); }
-                            }
-                            Event::Failed(error) => panic!("{error}"),
-                            _ => {}
-                        },
-                        update = self.changes.recv() => {
-                            let (got_primary, types) = update.expect("selection observer closed");
-                            if got_primary == primary && types.contains(&marker) { break; }
-                        }
-                    }
+                    let (got_primary, types) = self.changes.recv().await.expect("selection observer closed");
+                    if got_primary == primary && types.contains(&marker) { break; }
                 }
             }).await.unwrap();
         }

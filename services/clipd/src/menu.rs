@@ -94,8 +94,7 @@ impl Picker {
                     .take(160)
                     .map(|c| if c.is_control() { ' ' } else { c })
                     .collect();
-                if ui
-                    .selectable_label(self.state.selected == Some(n), preview)
+                if toolkit::selectable(ui, self.state.selected == Some(n), preview)
                     .on_hover_text(self.strings.get("pick"))
                     .clicked()
                 {

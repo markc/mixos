@@ -555,7 +555,7 @@ macro_rules! dispatch_control {
         }
         impl Dispatch<$source, SourceData> for State {
             fn event(state: &mut Self, source: &$source, event: $se::Event, data: &SourceData, _: &Connection, _: &QueueHandle<Self>) {
-                match event { $se::Event::Send { mime_type, fd } => state.send(data, mime_type, fd), $se::Event::Cancelled => { if source.is_alive() { source.destroy(); } }, _ => {} }
+                match event { $se::Event::Send { mime_type, fd } => state.send(data, mime_type, fd), $se::Event::Cancelled if source.is_alive() => source.destroy(), _ => {} }
             }
         }
     }
