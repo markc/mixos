@@ -26,6 +26,31 @@ generated: by docs/_build/gen-site.mix from services/maild/CHANGELOG.md; do not 
   and account authentication, plus `maild.sieve.list/get/put/activate` Bus
   commands. SMTP's classifier and global Mix filter precede account Sieve;
   daemon-generated spam headers are available to scripts.
+- Adopt named systemd TCP sockets for SMTP, implicit TLS submission, IMAPS
+  and JMAP/DAV, retaining config binds without socket activation. Ship opt-in
+  socket templates without active addresses. Retain the interim bind capability
+  until each host explicitly enables sockets for all privileged listeners.
+- Clear activation environment variables before starting runtime threads.
+- Keep Email/import, blob creation and batched Email/get thread reads off the
+  async executor; missing legacy thread rows project null. Accept null receivedAt
+  as the import default. Map invalid MIME in Email/set create to
+  invalidProperties on blobId.
+- Resolve creation references at implemented /set Id fields and update/destroy
+  targets, including dependent mailbox creates. Apply submission success actions
+  through the implicit Email/set response, suppressing the legacy automatic
+  Sent move when the client supplies those actions.
+- Resolve all configured paths, including TLS and DKIM identities, through
+  the shared `mixos:` resolver; accept `database` as a `database_path` alias.
+- Replace five JMAP placeholders with authenticated HTTP contracts. Correct
+  `Email/import` (RFC 8621 §4.8) state preconditions, validation, CAS blob
+  references, Received date defaults, thread ids and atomic duplicate rejection
+  (`alreadyExists` with `existingId`), and transactional mail quota checks.
+  Test upload/import/submission together. Unexpected storage errors return
+  `serverFail` and roll back the entry, rather than blaming client arguments.
+  Parser unwinds return `invalidEmail` without dropping the HTTP request.
+- Resolve mail creation references across a JMAP request, including mailbox
+  creation, import and submission, and preserve the optional `createdIds` map.
+- Correct the manual and test guide to describe the packaged maild binary.
 
 - IMAP `SEARCH` and `UID SEARCH` implement the header, date and text keys:
   `FROM`, `TO`, `CC`, `BCC`, `SUBJECT`, `HEADER`, `BODY`, `TEXT`, `BEFORE`,

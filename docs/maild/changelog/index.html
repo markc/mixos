@@ -263,6 +263,47 @@ commands. SMTP's classifier and global Mix filter precede account Sieve;
 daemon-generated spam headers are available to scripts.</p>
 </li>
 <li>
+<p>Adopt named systemd TCP sockets for SMTP, implicit TLS submission, IMAPS
+and JMAP/DAV, retaining config binds without socket activation. Ship opt-in
+socket templates without active addresses. Retain the interim bind capability
+until each host explicitly enables sockets for all privileged listeners.</p>
+</li>
+<li>
+<p>Clear activation environment variables before starting runtime threads.</p>
+</li>
+<li>
+<p>Keep Email/import, blob creation and batched Email/get thread reads off the
+async executor; missing legacy thread rows project null. Accept null receivedAt
+as the import default. Map invalid MIME in Email/set create to
+invalidProperties on blobId.</p>
+</li>
+<li>
+<p>Resolve creation references at implemented /set Id fields and update/destroy
+targets, including dependent mailbox creates. Apply submission success actions
+through the implicit Email/set response, suppressing the legacy automatic
+Sent move when the client supplies those actions.</p>
+</li>
+<li>
+<p>Resolve all configured paths, including TLS and DKIM identities, through
+the shared <code>mixos:</code> resolver; accept <code>database</code> as a <code>database_path</code> alias.</p>
+</li>
+<li>
+<p>Replace five JMAP placeholders with authenticated HTTP contracts. Correct
+<code>Email/import</code> (RFC 8621 §4.8) state preconditions, validation, CAS blob
+references, Received date defaults, thread ids and atomic duplicate rejection
+(<code>alreadyExists</code> with <code>existingId</code>), and transactional mail quota checks.
+Test upload/import/submission together. Unexpected storage errors return
+<code>serverFail</code> and roll back the entry, rather than blaming client arguments.
+Parser unwinds return <code>invalidEmail</code> without dropping the HTTP request.</p>
+</li>
+<li>
+<p>Resolve mail creation references across a JMAP request, including mailbox
+creation, import and submission, and preserve the optional <code>createdIds</code> map.</p>
+</li>
+<li>
+<p>Correct the manual and test guide to describe the packaged maild binary.</p>
+</li>
+<li>
 <p>IMAP <code>SEARCH</code> and <code>UID SEARCH</code> implement the header, date and text keys:
 <code>FROM</code>, <code>TO</code>, <code>CC</code>, <code>BCC</code>, <code>SUBJECT</code>, <code>HEADER</code>, <code>BODY</code>, <code>TEXT</code>, <code>BEFORE</code>,
 <code>ON</code>, <code>SINCE</code>, <code>SENTBEFORE</code>, <code>SENTON</code> and <code>SENTSINCE</code>. They were refused
