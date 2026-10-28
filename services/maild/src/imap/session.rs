@@ -893,7 +893,8 @@ impl Session {
                             .account_id
                             .expect("authenticated session must have account_id");
                         let rename_before = if command_name == "RENAME"
-                            || (command_name == "DELETE" && self.state.selected().is_some()) {
+                            || (command_name == "DELETE" && self.state.selected().is_some())
+                        {
                             let store = self.mailstore.clone();
                             Some(
                                 tokio::task::spawn_blocking(move || store.list_mailboxes(aid))

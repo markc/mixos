@@ -1914,16 +1914,38 @@ async fn rename_repairs_only_colliding_live_or_deleted_name_identities() -> Resu
     let patched = ms.create_mailbox(1, "Patched", None, attrs_for(None, false))?;
     let peer = ms.create_mailbox(1, "Peer", None, attrs_for(None, false))?;
     mds.with_set_tx(&set, |tx| {
-        tx.tx().execute("UPDATE container SET seq_validity = 44444 WHERE id IN (?1, ?2)", params![patched.0.to_string(), peer.0.to_string()])
+        tx.tx()
+            .execute(
+                "UPDATE container SET seq_validity = 44444 WHERE id IN (?1, ?2)",
+                params![patched.0.to_string(), peer.0.to_string()],
+            )
             .map_err(|error| mds::Error::Other(error.to_string()))?;
         Ok(())
     })?;
     ms.update_mailbox(1, patched, Some("PatchedNew"), None, None, None, None)?;
     let records = ms.list_mailboxes(1)?;
-    let changed = records.iter().find(|row| row.id == patched).unwrap().uid_validity;
-    assert_ne!(changed, 44444, "native mailbox patches must protect IMAP identities too");
-    assert_eq!(records.iter().find(|row| row.id == peer).unwrap().uid_validity, 44444);
-    assert!(command(&mut r, &mut w, "s", "STATUS PatchedNew (UIDVALIDITY)").await?.contains(&format!("UIDVALIDITY {changed}")));
+    let changed = records
+        .iter()
+        .find(|row| row.id == patched)
+        .unwrap()
+        .uid_validity;
+    assert_ne!(
+        changed, 44444,
+        "native mailbox patches must protect IMAP identities too"
+    );
+    assert_eq!(
+        records
+            .iter()
+            .find(|row| row.id == peer)
+            .unwrap()
+            .uid_validity,
+        44444
+    );
+    assert!(
+        command(&mut r, &mut w, "s", "STATUS PatchedNew (UIDVALIDITY)")
+            .await?
+            .contains(&format!("UIDVALIDITY {changed}"))
+    );
     Ok(())
 }
 
@@ -2093,8 +2115,14 @@ async fn save_failures_delete_selection_and_empty_enable_do_not_leave_stale_stat
     command(&mut r, &mut w, "c", "CREATE LegacyDisposable").await?;
     command(&mut r, &mut w, "s", "SELECT LegacyDisposable").await?;
     let deleted = command(&mut r, &mut w, "d", "DELETE LegacyDisposable").await?;
-    assert!(deleted.contains("d OK") && !deleted.contains("CLOSED"), "{deleted}");
-    assert_eq!(command(&mut r, &mut w, "n", "NOOP").await?, "n OK NOOP completed\r\n");
+    assert!(
+        deleted.contains("d OK") && !deleted.contains("CLOSED"),
+        "{deleted}"
+    );
+    assert_eq!(
+        command(&mut r, &mut w, "n", "NOOP").await?,
+        "n OK NOOP completed\r\n"
+    );
     assert_eq!(
         command(&mut r, &mut w, "e", "ENABLE CONDSTORE QRESYNC UNKNOWN").await?,
         "e OK ENABLE completed\r\n"
