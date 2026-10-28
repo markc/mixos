@@ -11,6 +11,16 @@ use std::os::unix::process::CommandExt;
 use std::process::{Child, Command};
 use std::time::{Duration, Instant};
 
+// openpty has no atomic CLOEXEC variant. Exclude every sibling fixture fork
+// until its original descriptors have closed; like the other PTY suites,
+// retain the lock for the complete fixture lifetime.
+static FIXTURE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+fn fixture_guard() -> std::sync::MutexGuard<'static, ()> {
+    FIXTURE_LOCK
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+}
+
 struct Shell {
     child: Child,
     master: Option<File>,
@@ -154,6 +164,7 @@ impl Shell {
 
 #[test]
 fn closing_master_exits_with_and_without_inherited_hup_ignore() {
+    let _fixture = fixture_guard();
     for editor in ["owned", "rustyline"] {
         for ignore_hup in [false, true] {
             let mut shell = Shell::new(ignore_hup, true, editor);
@@ -170,6 +181,7 @@ fn closing_master_exits_with_and_without_inherited_hup_ignore() {
 
 #[test]
 fn terminal_loss_without_job_control_exits() {
+    let _fixture = fixture_guard();
     // No controlling tty: no controller or HUP handler. The editor must
     // distinguish a disconnected terminal from temporary foreground loss.
     let mut shell = Shell::new(true, false, "owned");
@@ -180,6 +192,7 @@ fn terminal_loss_without_job_control_exits() {
 
 #[test]
 fn plain_eof_exits_zero() {
+    let _fixture = fixture_guard();
     let mut shell = Shell::new(false, true, "owned");
     shell.prompt();
     shell.master.as_mut().unwrap().write_all(b"\x04").unwrap();
@@ -188,6 +201,7 @@ fn plain_eof_exits_zero() {
 
 #[test]
 fn fixture_job() {
+    let _fixture = fixture_guard();
     let Some(report) = std::env::var_os("TERMINAL_JOB_REPORT") else {
         return;
     };
@@ -199,6 +213,7 @@ fn fixture_job() {
 
 #[test]
 fn terminal_hangup_also_hangs_up_background_job_groups() {
+    let _fixture = fixture_guard();
     let mut shell = Shell::new(true, true, "owned");
     shell.prompt();
     let child = shell.job(true);
@@ -212,6 +227,7 @@ fn terminal_hangup_also_hangs_up_background_job_groups() {
 
 #[test]
 fn terminal_hangup_while_waiting_for_a_foreground_job_exits_129() {
+    let _fixture = fixture_guard();
     let mut shell = Shell::new(true, true, "owned");
     shell.prompt();
     let child = shell.job(false);
@@ -222,6 +238,7 @@ fn terminal_hangup_while_waiting_for_a_foreground_job_exits_129() {
 
 #[test]
 fn fixture_drop_kills_grandchildren_in_other_job_groups() {
+    let _fixture = fixture_guard();
     let mut shell = Shell::new(false, true, "owned");
     shell.prompt();
     let child = shell.job(true);
@@ -240,6 +257,7 @@ fn fixture_drop_kills_grandchildren_in_other_job_groups() {
 
 #[test]
 fn fixture_parent() {
+    let _fixture = fixture_guard();
     let Some(report) = std::env::var_os("TERMINAL_PARENT_REPORT") else {
         return;
     };
@@ -265,6 +283,7 @@ fn fixture_parent() {
 
 #[test]
 fn killed_test_runner_cannot_orphan_a_stopped_shell() {
+    let _fixture = fixture_guard();
     let home = tempfile::tempdir().unwrap();
     let report = home.path().join("child-pid");
     let mut command = Command::new(std::env::current_exe().unwrap());
