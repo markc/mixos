@@ -29,11 +29,18 @@ pub fn run(args: Args) -> anyhow::Result<()> {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .with_writer(std::io::stderr)
         .try_init();
-    let url = args.bus.unwrap_or_else(bus::client_helpers::resolve_noded_url);
-    if args.menu { return menu::run(url); }
+    let url = args
+        .bus
+        .unwrap_or_else(bus::client_helpers::resolve_noded_url);
+    if args.menu {
+        return menu::run(url);
+    }
     let session = model::session(&args.session)?;
     let (settings, key) = service::Settings::load(args.settings.as_deref(), &session)?;
-    let runtime = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build()?;
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()?;
     let result = runtime.block_on(service::run(session, url, settings, key, args.seat));
     runtime.shutdown_timeout(std::time::Duration::from_secs(2));
     result

@@ -1403,6 +1403,7 @@ dependencies = [
  "egui",
  "egui_kittest",
  "libc",
+ "paths",
  "rand 0.8.8",
  "schemars",
  "serde",
@@ -1419,6 +1420,7 @@ dependencies = [
  "wayland-client",
  "wayland-protocols",
  "wayland-protocols-wlr",
+ "zbus",
 ]
 
 [[package]]

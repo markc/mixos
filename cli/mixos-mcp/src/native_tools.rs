@@ -142,9 +142,15 @@ impl MixosMcp {
         args: Value,
     ) -> Result<Json<NativeObservation>, String> {
         exact_target(&service, "service")?;
-        let request_cap = if command == "clipboard.set" { 6 * 1024 * 1024 + 4096 } else { 16_384 };
+        let request_cap = if command == "clipboard.set" {
+            6 * 1024 * 1024 + 4096
+        } else {
+            16_384
+        };
         if serde_json::to_vec(&args).map_err(|e| e.to_string())?.len() > request_cap {
-            return Err(format!("native request exceeds {request_cap} bytes; nothing was sent"));
+            return Err(format!(
+                "native request exceeds {request_cap} bytes; nothing was sent"
+            ));
         }
         let noded = self.noded().await?;
         // One attempt only. A lost reply does not establish that work stopped.
@@ -162,7 +168,11 @@ impl MixosMcp {
                 ));
             }
         };
-        let response_cap = if command == "clipboard.get" { 6 * 1024 * 1024 + 4096 } else { 1024 * 1024 };
+        let response_cap = if command == "clipboard.get" {
+            6 * 1024 * 1024 + 4096
+        } else {
+            1024 * 1024
+        };
         if serde_json::to_vec(&result)
             .map_err(|e| e.to_string())?
             .len()
@@ -182,16 +192,33 @@ impl MixosMcp {
 impl MixosMcp {
     /// Read the local session clipboard. Binary data is base64; large data
     /// includes next_offset/eof. Remote sessions must use clipboard.push.
-    #[tool(annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true))]
-    async fn clipboard_get(&self, Parameters(p): Parameters<ClipboardGet>) -> Result<Json<NativeObservation>, String> {
+    #[tool(annotations(
+        read_only_hint = true,
+        destructive_hint = false,
+        idempotent_hint = true
+    ))]
+    async fn clipboard_get(
+        &self,
+        Parameters(p): Parameters<ClipboardGet>,
+    ) -> Result<Json<NativeObservation>, String> {
         let mut args = json!({"primary": p.primary, "offset": p.offset});
-        if let Some(mime) = p.mime { args["mime"] = json!(mime); }
-        self.native_observation("clipd".into(), "clipboard.get", args).await
+        if let Some(mime) = p.mime {
+            args["mime"] = json!(mime);
+        }
+        self.native_observation("clipd".into(), "clipboard.get", args)
+            .await
     }
 
     /// Set UTF-8 text on the local session clipboard without keyboard focus.
-    #[tool(annotations(read_only_hint = false, destructive_hint = false, idempotent_hint = false))]
-    async fn clipboard_set(&self, Parameters(p): Parameters<ClipboardSet>) -> Result<Json<NativeObservation>, String> {
+    #[tool(annotations(
+        read_only_hint = false,
+        destructive_hint = false,
+        idempotent_hint = false
+    ))]
+    async fn clipboard_set(
+        &self,
+        Parameters(p): Parameters<ClipboardSet>,
+    ) -> Result<Json<NativeObservation>, String> {
         self.native_observation("clipd".into(), "clipboard.set", json!({"mime": p.mime.unwrap_or_else(|| "text/plain;charset=utf-8".into()), "data": p.text, "primary": p.primary, "sensitive": p.sensitive})).await
     }
 

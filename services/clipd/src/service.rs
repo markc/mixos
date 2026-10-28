@@ -64,7 +64,7 @@ impl Default for Settings {
 impl Settings {
     pub fn load(path: Option<&Path>, own_session: &str) -> Result<(Self, Option<[u8; 32]>)> {
         let settings: Self = match path {
-            Some(path) => { ensure!(std::fs::metadata(path)?.len() <= 65536, "SETTINGS: file exceeds 64 KiB"); serde_json::from_value(strict::parse_file(path)?)? },
+            Some(path) => { ensure!(std::fs::metadata(path)?.len() <= 65536, "SETTINGS: file exceeds 64 KiB"); strict::from_file(path)? },
             None => Self::default(),
         };
         ensure!(settings.schema == 1 && settings.eager_text_bytes <= TEXT_CAP, "SETTINGS: unsupported schema or text cap above 1 MiB");
