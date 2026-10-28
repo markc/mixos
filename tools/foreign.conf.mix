@@ -1,0 +1,20 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- foreign.conf.mix — policy for crates that compile foreign (C, C++, assembly)
+-- code. Read by tools/foreign_gate.mix.
+--
+-- allow: accepted foreign code. Each entry gives a reason and an exit path.
+--        Adding one is the project lead's call.
+-- debt:  foreign code present today that must go. The gate fails on any
+--        foreign crate in neither list, so this list only shrinks.
+-- strict: crates whose closure may reach `allow` entries only (the `mix`
+--        shell runs as the login shell of every server).
+foreign: {
+  allow: {
+    "libsqlite3-sys": {reason: "SQLite; no pure-Rust equivalent yet",
+      exit: "the planned Rust SQLite rewrite"},
+    "ring": {reason: "TLS crypto primitives (rustls); audited C and assembly",
+      exit: "a pure-Rust rustls crypto provider when one is mature"}
+  },
+  debt: {},
+  strict: ["mix", "mix-shell"]
+}

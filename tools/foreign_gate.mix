@@ -1,0 +1,137 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- foreign_gate.mix — which crates compile foreign (C, C++, assembly) code.
+-- version: 0.1.0
+--
+-- A package "builds foreign code" when it has a build-dependency on a native
+-- build helper (cc, cmake, bindgen, pkg-config, system-deps, vcpkg, nasm-rs).
+-- A `links` key without such a helper is metadata only (rayon-core sets one)
+-- and is not counted.
+--
+-- Policy: tools/foreign.conf.mix.
+--   1. Every foreign package in the locked workspace resolve is listed in
+--      `allow` (accepted, with a reason and an exit path) or `debt` (present
+--      today, to be removed). A new foreign crate fails the gate.
+--   2. The `strict` crates (the `mix` shell and its library) may reach only
+--      `allow` entries in their normal and build closure, in both the default
+--      and --all-features modes.
+--   3. A `debt` entry no longer in the resolve is reported, so the list only
+--      shrinks.
+--
+-- Usage: mix tools/foreign_gate.mix [--list] [--locked] [--offline]
+-- --list prints every foreign package and which strict crates reach it, then
+-- exits 0. Run from the repo root. Exit 0 clean, 1 a violation, 2 setup failed.
+
+$root = dirname(dirname(realpath($0)))
+$policy_path = $root .. "/tools/foreign.conf.mix"
+$pass = []
+$list = false
+for each $a in args()
+  if $a == "--locked" or $a == "--offline" then
+    push($pass, $a)
+  elif $a == "--list" then
+    $list = true
+  else
+    eprint("foreign_gate: unknown argument " .. $a)
+    exit(2)
+  end
+end
+
+$policy = load_data($policy_path).foreign
+$allow = $policy.allow ?? {}
+$debt = $policy.debt ?? {}
+$strict = $policy.strict ?? []
+$HELPERS = ["cc", "cmake", "bindgen", "pkg-config", "system-deps", "vcpkg", "nasm-rs"]
+
+$meta = run_argv(concat(["cargo", "metadata", "--format-version", "1", "--manifest-path", $root .. "/Cargo.toml"], $pass), {timeout: 900, max_output: 268435456})
+if not $meta.ok then
+  eprint("foreign_gate: cargo metadata failed\n" .. $meta.stderr)
+  exit(2)
+end
+$doc = json_parse($meta.stdout)
+
+-- Only packages in the resolve count; metadata also lists unused optional ones.
+$resolved = {}
+for each $node in $doc.resolve.nodes
+  $resolved[$node.id] = true
+end
+$foreign = {}
+for each $p in $doc.packages
+  if $resolved[$p.id] != true then
+    continue
+  end
+  for each $dep in $p.dependencies
+    if $dep.kind == "build" and contains($HELPERS, $dep.name) then
+      $foreign[$p.name] = $dep.name
+    end
+  end
+end
+
+$members = map(filter($doc.packages, fn($p) = contains($doc.workspace_members, $p.id)), fn($p) = $p.name)
+
+fn closure($crate, $mode)
+  $argv = concat(["cargo", "tree", "-p", $crate, "-e", "normal,build", "--prefix", "none", "-f", "{p}",
+    "--manifest-path", $root .. "/Cargo.toml"], $mode, $pass)
+  $r = run_argv($argv, {timeout: 900, max_output: 268435456})
+  if not $r.ok then
+    eprint("foreign_gate: cargo tree -p " .. $crate .. " failed\n" .. $r.stderr)
+    exit(2)
+  end
+  $names = {}
+  for each $line in split($r.stdout, "\n")
+    $n = trim($line)
+    if $n != "" then
+      $names[split($n, " ")[0]] = true
+    end
+  end
+  return $names
+end
+
+$fail = []
+$reach = {}
+for each $c in $strict
+  if not contains($members, $c) then
+    push($fail, "strict crate " .. $c .. " is not a workspace member")
+    continue
+  end
+  for each $mode in [[], ["--all-features"]]
+    $label = len($mode) == 0 ? "default" : "all-features"
+    $names = closure($c, $mode)
+    for each $f in keys($foreign)
+      if $names[$f] == true then
+        $reach[$f] = ($reach[$f] ?? "") .. " " .. $c .. "(" .. $label .. ")"
+        if $allow[$f] == nil then
+          push($fail, "strict " .. $c .. " (" .. $label .. ") reaches foreign " .. $f .. " (not in allow)")
+        end
+      end
+    end
+  end
+end
+
+if $list then
+  for each $f in sort(keys($foreign))
+    $status = $allow[$f] != nil ? "allow" : ($debt[$f] != nil ? "debt" : "UNLISTED")
+    print($f .. "  via " .. $foreign[$f] .. "  " .. $status .. "  strict:" .. ($reach[$f] ?? " none"))
+  end
+  exit(0)
+end
+
+for each $f in sort(keys($foreign))
+  if $allow[$f] == nil and $debt[$f] == nil then
+    push($fail, "foreign crate " .. $f .. " (builds with " .. $foreign[$f] .. ") is in neither allow nor debt")
+  end
+end
+for each $f in sort(keys($debt))
+  if $foreign[$f] == nil then
+    print("note: debt entry " .. $f .. " is gone from the resolve; remove it from tools/foreign.conf.mix")
+  end
+end
+
+if len($fail) > 0 then
+  for each $f in $fail
+    print("FAIL " .. $f)
+  end
+  exit(1)
+end
+print("foreign_gate: " .. to_string(len(keys($foreign))) .. " foreign crate(s), all listed; strict " ..
+  join($strict, ", ") .. " clean")
