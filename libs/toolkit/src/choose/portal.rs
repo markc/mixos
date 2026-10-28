@@ -132,7 +132,14 @@ pub(super) async fn session(
     request: &Request,
     cancel: &mut watch::Receiver<bool>,
 ) -> Result<Option<Outcome>> {
-    session_inner(connection, request, cancel, #[cfg(test)] 0).await
+    session_inner(
+        connection,
+        request,
+        cancel,
+        #[cfg(test)]
+        0,
+    )
+    .await
 }
 
 async fn session_inner(
@@ -285,8 +292,15 @@ pub(super) async fn close(connection: &Connection, owner: &str, path: &str) -> R
     .await?;
     match reply {
         Ok(_) => Ok(()),
-        Err(zbus::Error::MethodError(name, _, _)) if matches!(name.as_str(),
-            "org.freedesktop.DBus.Error.UnknownObject" | "org.freedesktop.DBus.Error.UnknownMethod") => Ok(()),
+        Err(zbus::Error::MethodError(name, _, _))
+            if matches!(
+                name.as_str(),
+                "org.freedesktop.DBus.Error.UnknownObject"
+                    | "org.freedesktop.DBus.Error.UnknownMethod"
+            ) =>
+        {
+            Ok(())
+        }
         Err(error) => Err(error.into()),
     }
 }
@@ -316,14 +330,23 @@ pub(super) fn decode(request: &Request, code: u32, values: &Options) -> Result<O
         let (name, _) = WireFilter::try_from(current.try_clone()?)?;
         // GTK and KDE may normalise the tuple's entries. The displayed name
         // identifies the offered filter; retain its original contract shape.
-        let selected = request.filters.iter().chain(request.current_filter.iter())
-            .find(|filter| filter.name == name).context("portal returned an unknown filter name")?;
+        let selected = request
+            .filters
+            .iter()
+            .chain(request.current_filter.iter())
+            .find(|filter| filter.name == name)
+            .context("portal returned an unknown filter name")?;
         value["current_filter"] = serde_json::to_value(selected)?;
     }
     Ok(decode_outcome(request, &value))
 }
 
 #[cfg(test)]
-pub(super) async fn session_broken_stream(connection: &Connection, request: &Request, cancel: &mut watch::Receiver<bool>, breaks: u8) -> Result<Option<Outcome>> {
+pub(super) async fn session_broken_stream(
+    connection: &Connection,
+    request: &Request,
+    cancel: &mut watch::Receiver<bool>,
+    breaks: u8,
+) -> Result<Option<Outcome>> {
     session_inner(connection, request, cancel, breaks).await
 }

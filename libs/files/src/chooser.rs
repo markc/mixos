@@ -472,11 +472,16 @@ impl Request {
         }
         // Public fields may have been changed since parse(). Validate the wire
         // shape again, including names, filters, choices and the total size.
-        Self::parse(&body.to_string(), &Defaults {
-            open_title: self.title.clone(), save_title: self.title.clone(),
-            save_files_title: self.title.clone(), open_accept: self.accept_label.clone(),
-            save_accept: self.accept_label.clone(),
-        })?;
+        Self::parse(
+            &body.to_string(),
+            &Defaults {
+                open_title: self.title.clone(),
+                save_title: self.title.clone(),
+                save_files_title: self.title.clone(),
+                open_accept: self.accept_label.clone(),
+                save_accept: self.accept_label.clone(),
+            },
+        )?;
         Ok(body)
     }
 

@@ -36,7 +36,10 @@ fn edited_locations_are_refused_without_panicking_in_body() {
     let mut req = Request::parse("{}", &defaults()).unwrap();
     req.current_folder = Some(b"relative\0".to_vec());
     let result = std::panic::catch_unwind(|| req.body());
-    assert!(result.is_ok(), "a public Request edit must not kill its worker");
+    assert!(
+        result.is_ok(),
+        "a public Request edit must not kill its worker"
+    );
     assert!(result.unwrap().is_err());
 }
 

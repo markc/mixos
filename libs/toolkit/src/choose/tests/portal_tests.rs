@@ -49,6 +49,12 @@ impl RequestObject {
     }
 }
 
+struct RequestWithoutClose;
+#[zbus::interface(name = "org.freedesktop.portal.Request")]
+impl RequestWithoutClose {
+    fn ping(&self) -> bool { true }
+}
+
 struct Call {
     method: &'static str,
     options: Options,
@@ -456,6 +462,9 @@ async fn portal_recovery_close_of_an_ended_request_falls_through() {
 async fn portal_close_unknown_method_is_an_acknowledged_end() {
     let (_process, address) = dbus();
     let (server, _, _) = serve(&address, None).await;
+    let path = "/org/freedesktop/portal/desktop/request/ended";
+    server.object_server().at(path, RequestWithoutClose).await.unwrap();
     let client = connection(&address).await;
-    assert!(portal::close(&client, server.unique_name().unwrap().as_str(), PATH).await.is_ok());
+    let result = portal::close(&client, server.unique_name().unwrap().as_str(), path).await;
+    assert!(result.is_ok(), "{result:?}");
 }
