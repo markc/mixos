@@ -18,6 +18,7 @@ pub fn strip(ui: &mut egui::Ui, app: &App, events: &mut Vec<UiEvent>) {
                 ("mail-subject", &mut headers.subject, true),
             ] {
                 if !shown { continue; }
+                let field_id = egui::Id::unique((ui.ctx().viewport_id(), "ced.mail.field", tab.id, key));
                 form::row(ui, &label(key), column, |ui, labelled| {
                     if key == "mail-to" {
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -25,10 +26,10 @@ pub fn strip(ui: &mut egui::Ui, app: &App, events: &mut Vec<UiEvent>) {
                                 if ui.add(toolkit::button::IconButton::new(icon).size(toolkit::field::height_of(ui.ctx())).selected(selected).tooltip(label(&format!("mail-show-{field}")))).clicked() { events.push(UiEvent::MailRow(tab.id, field)); }
                             }
                             let width = ui.available_width();
-                            form::text(ui, ui.id().with(key), labelled, buffer, width);
+                            form::text(ui, field_id, labelled, buffer, width);
                         });
                     } else {
-                        form::text(ui, ui.id().with(key), labelled, buffer, ui.available_width());
+                        form::text(ui, field_id, labelled, buffer, ui.available_width());
                     }
                 });
             }
@@ -51,7 +52,11 @@ pub fn strip(ui: &mut egui::Ui, app: &App, events: &mut Vec<UiEvent>) {
         });
     });
     if headers != before { events.push(UiEvent::MailHeaders(tab.id, headers)); }
-    if let Some(notice) = &mail.notice { ui.weak(if mail.sending { label("mail-sending") } else { notice.clone() }); }
+    if let Some(notice) = &mail.notice {
+        ui.weak(if mail.sending { label("mail-sending") } else {
+            match notice.as_str() { "Sent" => label("mail-sent"), "Saved" => label("mail-saved"), _ => notice.clone() }
+        });
+    }
 }
 
 pub fn chooser(ctx: &egui::Context, app: &mut App, events: &mut Vec<UiEvent>) {

@@ -152,3 +152,5 @@ mail-show-cc = Show Cc
 mail-show-bcc = Show Bcc
 mail-show-reply-to = Show Reply-To
 mail-sending = Sending…
+mail-sent = Sent
+mail-saved = Saved

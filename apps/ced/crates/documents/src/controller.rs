@@ -3028,6 +3028,9 @@ impl Controller {
     }
 
     fn tab_name(&self, t: &Tab) -> String {
+        if t.mail.is_some() && let Some(path) = &t.path {
+            return path.rsplit('/').next().unwrap_or(path).to_owned();
+        }
         t.mirror
             .as_ref()
             .and_then(|m| m.meta().name.clone())

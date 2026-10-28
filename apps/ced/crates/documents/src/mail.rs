@@ -18,9 +18,12 @@ pub fn classify(text: &str) -> Kind {
     let Some(rest) = text.strip_prefix("---\n").or_else(|| text.strip_prefix("---\r\n")) else {
         return Kind::Text;
     };
-    let names: Vec<_> = rest.lines().take_while(|line| *line != "---")
+    let lines: Vec<_> = rest.lines().take_while(|line| *line != "---").collect();
+    let names: Vec<_> = lines.iter().copied()
         .filter_map(|line| line.split_once(':').map(|(name, _)| name.trim())).collect();
-    if names.iter().any(|name| name.starts_with("mail-")) || names.is_empty() && rest.starts_with("---") {
+    let mail = lines.iter().any(|line| line.trim_start().starts_with("mail-"));
+    let empty = lines.iter().all(|line| line.is_empty()) && rest.lines().any(|line| line == "---");
+    if mail || empty {
         match maildoc::parse(text) {
             Ok(doc) => Kind::Mail(doc),
             Err(error) => Kind::Refused(error.to_string()),
@@ -102,6 +105,8 @@ mod tests {
     #[test]
     fn classifier_observes_fences_and_header_names() {
         assert!(matches!(classify("hello\nmail-to: a@example.org"), Kind::Text));
+        assert!(matches!(classify("---\nThis is a rule above prose, not front matter."), Kind::Text));
+        assert!(matches!(classify("---\n\n---\nBody"), Kind::Mail(_)));
         assert!(matches!(classify("---\ntitle: Notes\n---\ntext"), Kind::Text));
         assert!(matches!(classify("---\nto: edit\ncommand: edit.info\n---\n"), Kind::BusMessage));
         assert!(matches!(classify("---\nmail-to: a@example.org\n---\nBody"), Kind::Mail(_)));
