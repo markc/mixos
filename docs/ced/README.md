@@ -133,7 +133,8 @@ deleted file is recreated. Body dirty checks use the same LF and trailing
 whitespace normalisation as the writer. A lost scratch is seeded from the
 live mirror text, retaining unsaved body edits. A detached copy remains
 available separately. Session mail tabs retain their path, body recovery id
-and header state. After a crash or restart they reattach the body by recovery
+and header state. Session files use private (0600) atomic replacements.
+After a crash or restart they reattach the body by recovery
 id, preserving unsaved edits; if editd no longer has it, Ced reopens the file.
 Mail bodies belonging to session tabs are excluded from the Recovered prompt.
 Save As retains the mail kind. Reload from Disk requires closing and reopening

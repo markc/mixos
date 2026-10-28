@@ -69,23 +69,12 @@ pub fn load(path: &std::path::Path) -> Session {
 /// Write atomically: a sibling temp file, fsync, rename over, fsync the
 /// directory. The parent directory is created if missing.
 pub fn save(path: &std::path::Path, session: &Session) -> std::io::Result<()> {
-    use std::io::Write;
     let dir = path
         .parent()
         .ok_or_else(|| std::io::Error::other("session path has no parent"))?;
     std::fs::create_dir_all(dir)?;
-    let tmp = dir.join(format!(".session.json.{}.tmp", std::process::id()));
     let body = serde_json::to_vec_pretty(session).map_err(std::io::Error::other)?;
-    {
-        let mut f = std::fs::File::create(&tmp)?;
-        f.write_all(&body)?;
-        f.sync_all()?;
-    }
-    if let Err(e) = std::fs::rename(&tmp, path) {
-        let _ = std::fs::remove_file(&tmp);
-        return Err(e);
-    }
-    std::fs::File::open(dir)?.sync_all()
+    config::atomic::replace(path, &body).map_err(std::io::Error::other)
 }
 
 /// Session writes off the UI thread: [`save`] fsyncs twice (~5 ms, over the
@@ -181,6 +170,40 @@ impl SessionWriter {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn mail_session_replacement_is_private_and_does_not_reuse_old_temporaries() {
+        use std::io::Read;
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("session.json");
+        let legacy = dir.path().join(format!(".session.json.{}.tmp", std::process::id()));
+        std::fs::write(&legacy, "public placeholder").unwrap();
+        std::fs::set_permissions(&legacy, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let mut held = std::fs::File::open(&legacy).unwrap();
+        let disk = "---\nmail-to: bob@example.org\n---\nPrivate body";
+        let session = Session {
+            active: Some(0),
+            tabs: vec![SessionTab {
+                path: Some("/home/user/letter.md".into()),
+                recovery_id: Some("5f0c2a9e1b7d4c33".into()),
+                mail: Some(MailSession {
+                    disk: disk.into(),
+                    headers: crate::mail::Headers::of(&maildoc::parse(disk).unwrap()),
+                }),
+                caret: 0,
+                first_line: 1,
+            }],
+            ..Session::default()
+        };
+        save(&path, &session).unwrap();
+        let mut untouched = String::new();
+        held.read_to_string(&mut untouched).unwrap();
+        assert_eq!(untouched, "public placeholder");
+        assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+        assert_eq!(load(&path), session);
+    }
 
     #[test]
     fn bounded_writer_receipt_reports_success_failure_and_unavailable_queue() {
