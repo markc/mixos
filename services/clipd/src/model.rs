@@ -135,6 +135,7 @@ pub struct Selection {
 
 impl Selection {
     pub fn owned(stamp: Stamp, mime: String, data: Vec<u8>, sensitive: bool) -> Self {
+        let sensitive = sensitive || (mime.eq_ignore_ascii_case(SECRET_HINT) && sensitive_hint(&data));
         let mut items = BTreeMap::from([(mime.clone(), Arc::new(data))]);
         let mut types = vec![mime];
         if sensitive {
@@ -278,6 +279,9 @@ mod tests {
         assert!(!sensitive_hint(b"public"));
         let hint_only = Selection::owned(Stamp::new("vt1"), SECRET_HINT.into(), b"secret".to_vec(), true);
         assert_eq!(hint_only.mime_types, vec![SECRET_HINT]);
+        let implicit = Selection::owned(Stamp::new("vt1"), SECRET_HINT.into(), b"secret".to_vec(), false);
+        assert!(implicit.sensitive);
+        assert!(implicit.can_export(true).is_err());
     }
     #[test]
     fn history_is_a_deduplicated_fifty_entry_text_ring() {
