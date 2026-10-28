@@ -863,9 +863,8 @@ impl CompState {
         }
     }
 
-    pub fn tile_split(&mut self, output: &str, workspace: u32) -> TileSplit {
-        *self
-            .tile_splits
+    pub fn tile_split(&mut self, output: &str, workspace: u32) -> &mut TileSplit {
+        self.tile_splits
             .entry((output.to_owned(), workspace))
             .or_default()
     }

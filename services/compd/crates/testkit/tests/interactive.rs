@@ -26,6 +26,195 @@ const BTN_LEFT: u32 = 0x110;
 const PRIMARY: usize = 0;
 const AGENT: usize = 1;
 
+fn ms(value: u64) -> std::time::Duration {
+    std::time::Duration::from_millis(value)
+}
+
+fn set_tiling(h: &mut Harness, leaf: &str, value: serde_json::Value) {
+    let path = format!("tiling.{leaf}");
+    assert!(comp_model::observation::validate_set_request(&path, &value).is_ok());
+    let reply = policy_host::tiling::set(&mut h.wire.inner.comp, &path, &value).wire_json();
+    assert_eq!(reply["persisted"], true, "{reply}");
+}
+
+#[test]
+fn preview_clock_grows_eases_and_retargets_from_the_current_rectangle() {
+    use smithay::utils::Rectangle;
+    let mut h = Harness::new();
+    let (surface, _, _) = h.mapped_toplevel(640, 480);
+    let (_, window) = window(&h, &surface);
+    begin_move(&mut h, &window);
+    motion(&mut h, (0.0, 540.0));
+    apply(&mut h, &window);
+    let from = Rectangle::new(h.wire.inner.space.state.element_location(&window).unwrap(), (640, 480).into());
+    let rect = |h: &Harness| h.comp().drag.as_ref().unwrap().preview_rectangle.unwrap();
+    assert_eq!(rect(&h), from, "t=0 is the current window frame");
+    let target = Rectangle::new((0, 0).into(), (960, 1080).into());
+    let halfway = |a: Rectangle<i32, smithay::utils::Logical>, b: Rectangle<i32, smithay::utils::Logical>| {
+        let axis = |a: i32, b: i32| (f64::from(a) + f64::from(b - a) * 0.875).round() as i32;
+        Rectangle::new((axis(a.loc.x, b.loc.x), axis(a.loc.y, b.loc.y)).into(),
+            (axis(a.size.w, b.size.w), axis(a.size.h, b.size.h)).into())
+    };
+    assert!(h.advance_time(ms(90)));
+    let mid = rect(&h);
+    assert_eq!(mid, halfway(from, target));
+    motion(&mut h, (1919.0, 0.0));
+    apply(&mut h, &window);
+    assert_eq!(rect(&h), mid, "retarget does not jump back to the window");
+    let right = Rectangle::new((960, 0).into(), (960, 540).into());
+    h.advance_time(ms(90));
+    assert_eq!(rect(&h), halfway(mid, right));
+    h.advance_time(ms(90));
+    assert_eq!(rect(&h), right);
+    assert!(policy_host::tiling::deadline(h.comp()).is_none());
+    assert!(!h.advance_time(ms(10_000)), "static preview owes no more frames");
+    let_go(&mut h);
+    apply(&mut h, &window);
+    assert!(h.comp().drag.is_none());
+    assert!(policy_host::tiling::deadline(h.comp()).is_none());
+}
+
+#[test]
+fn show_delay_gates_preview_and_release_and_restarts_for_each_zone() {
+    for elapsed in [99, 100] {
+        let mut h = Harness::new();
+        let (surface, _, _) = h.mapped_toplevel(640, 480);
+        let (id, window) = window(&h, &surface);
+        set_tiling(&mut h, "preview_delay_ms", serde_json::json!(100));
+        begin_move(&mut h, &window);
+        motion(&mut h, (0.0, 540.0));
+        apply(&mut h, &window);
+        assert!(preview(&h).is_empty());
+        h.advance_time(ms(80));
+        motion(&mut h, (1919.0, 540.0));
+        apply(&mut h, &window);
+        h.advance_time(ms(elapsed));
+        assert_eq!(!preview(&h).is_empty(), elapsed == 100);
+        let_go(&mut h);
+        apply(&mut h, &window);
+        assert_eq!(h.comp().placement(id).name(), if elapsed == 100 { "right" } else { "floating" });
+    }
+}
+
+#[test]
+fn shared_edge_dwell_uses_two_outputs_restarts_and_outer_edges_remain_immediate() {
+    for point in [(1919.0, 540.0), (1920.0, 540.0)] {
+        for elapsed in [249, 250] {
+            let mut h = Harness::two_outputs();
+            let (surface, _, _) = h.mapped_toplevel(640, 480);
+            let (id, window) = window(&h, &surface);
+            begin_move(&mut h, &window);
+            motion(&mut h, point);
+            apply(&mut h, &window);
+            assert!(h.comp().drag.as_ref().unwrap().armed.is_none());
+            assert!(preview(&h).is_empty());
+            h.advance_time(ms(elapsed));
+            assert_eq!(h.comp().drag.as_ref().unwrap().armed.is_some(), elapsed == 250);
+            let_go(&mut h);
+            apply(&mut h, &window);
+            assert_eq!(h.comp().placement(id).constrained(), elapsed == 250);
+        }
+    }
+    let mut h = Harness::two_outputs();
+    let (surface, _, _) = h.mapped_toplevel(640, 480);
+    let (_, window) = window(&h, &surface);
+    begin_move(&mut h, &window);
+    motion(&mut h, (1919.0, 540.0));
+    apply(&mut h, &window);
+    h.advance_time(ms(200));
+    motion(&mut h, (1919.0, 50.0)); // right half -> upper right quarter
+    apply(&mut h, &window);
+    h.advance_time(ms(249));
+    assert!(preview(&h).is_empty());
+    h.advance_time(ms(1));
+    assert_eq!(h.comp().drag.as_ref().unwrap().armed.as_ref().unwrap().placement.name(), "top_right");
+    for point in [(0.0, 540.0), (3839.0, 540.0)] {
+        motion(&mut h, point);
+        apply(&mut h, &window);
+        assert!(h.comp().drag.as_ref().unwrap().armed.is_some(), "outer {point:?}");
+    }
+}
+
+#[test]
+fn shared_dwell_then_show_delay_are_both_required_without_more_motion() {
+    let mut h = Harness::two_outputs();
+    let (surface, _, _) = h.mapped_toplevel(640, 480);
+    let (_, window) = window(&h, &surface);
+    set_tiling(&mut h, "preview_delay_ms", serde_json::json!(100));
+    begin_move(&mut h, &window);
+    motion(&mut h, (1919.0, 540.0));
+    apply(&mut h, &window);
+    h.advance_time(ms(349));
+    assert!(preview(&h).is_empty());
+    assert!(h.advance_time(ms(1)));
+    assert_eq!(preview(&h).len(), 5);
+}
+
+#[test]
+fn tiling_props_apply_on_the_next_motion_and_persist() {
+    use serde_json::json;
+    for (leaf, value, at, expected) in [
+        ("edge_tiling", json!(false), (0.0, 540.0), None),
+        ("top_maximize", json!(false), (960.0, 0.0), None),
+        ("corner_ratio", json!(0.5), (0.0, 400.0), Some("top_left")),
+        ("side_band_px", json!(100), (80.0, 540.0), Some("left")),
+        ("top_band_px", json!(100), (960.0, 80.0), Some("maximized")),
+        ("shared_edge_dwell_ms", json!(0), (1919.0, 540.0), Some("right")),
+        ("preview_delay_ms", json!(100), (0.0, 540.0), None),
+        ("preview_animation_ms", json!(0), (0.0, 540.0), Some("left")),
+    ] {
+        let mut h = Harness::two_outputs();
+        let (surface, _, _) = h.mapped_toplevel(640, 480);
+        let (_, window) = window(&h, &surface);
+        begin_move(&mut h, &window);
+        set_tiling(&mut h, leaf, value.clone());
+        motion(&mut h, at);
+        apply(&mut h, &window);
+        assert_eq!(h.comp().drag.as_ref().unwrap().armed.as_ref().map(|a| a.placement.name()), expected, "{leaf}");
+        let saved = model::environment::preference::base::load();
+        assert_eq!(serde_json::to_value(comp_model::tiling::TilingConfig::from_saved(&saved.tiling)).unwrap()[leaf], value);
+        if leaf == "preview_animation_ms" {
+            assert_eq!(h.comp().drag.as_ref().unwrap().preview_rectangle, Some(smithay::utils::Rectangle::new((0, 0).into(), (960, 1080).into())));
+            assert!(policy_host::tiling::deadline(h.comp()).is_none());
+        }
+        if leaf == "preview_delay_ms" {
+            h.advance_time(ms(100));
+            assert!(h.comp().drag.as_ref().unwrap().armed.is_some());
+        }
+        let_go(&mut h);
+        apply(&mut h, &window);
+    }
+}
+
+#[test]
+fn preview_wakeup_is_removed_on_idle_and_never_polls() {
+    use smithay::reexports::calloop::EventLoop;
+    use policy_host::tiling::Wakeup;
+    let mut event_loop = EventLoop::<usize>::try_new().unwrap();
+    let handle = event_loop.handle();
+    let mut wakeup = Wakeup::default();
+    let mut calls = 0;
+    wakeup.rearm(&handle, None, |calls| *calls += 1);
+    for _ in 0..100 {
+        event_loop.dispatch(Some(ms(0)), &mut calls).unwrap();
+    }
+    assert!(!wakeup.armed());
+    assert_eq!(calls, 0);
+    wakeup.rearm(&handle, Some(std::time::Instant::now()), |calls| *calls += 1);
+    event_loop.dispatch(Some(ms(0)), &mut calls).unwrap();
+    assert_eq!(calls, 1, "one shot fires once");
+    assert!(!wakeup.armed());
+    wakeup.rearm(&handle, Some(std::time::Instant::now()), |calls| *calls += 1);
+    wakeup.rearm(&handle, None, |calls| *calls += 1);
+    for _ in 0..100 {
+        event_loop.dispatch(Some(ms(0)), &mut calls).unwrap();
+    }
+    assert_eq!(calls, 1, "a removed timer cannot wake an idle compositor");
+    let mut h = Harness::new();
+    assert!(policy_host::tiling::deadline(h.comp()).is_none());
+    assert!(!h.advance_time(ms(10_000)));
+}
+
 /// Move the server's primary pointer to `location` (grab-routed while a grab
 /// holds the pointer) and let the drain run.
 fn motion(h: &mut Harness, location: (f64, f64)) {
@@ -591,6 +780,7 @@ fn preview_changes_rectangle_hides_and_reuses_ids() {
     begin_move(&mut h, &window);
     motion(&mut h, (0.0, 540.0));
     apply(&mut h, &window);
+    h.advance_time(std::time::Duration::from_millis(180));
     let left = preview(&h);
     assert_eq!(
         left[4].geometry(1.0.into()),
@@ -599,6 +789,7 @@ fn preview_changes_rectangle_hides_and_reuses_ids() {
     assert_eq!(left[4].alpha(), world::comp::tiling::PREVIEW_ALPHA);
     motion(&mut h, (1919.0, 0.0));
     apply(&mut h, &window);
+    h.advance_time(std::time::Duration::from_millis(180));
     let right = preview(&h);
     assert_eq!(
         right[4].geometry(1.0.into()),

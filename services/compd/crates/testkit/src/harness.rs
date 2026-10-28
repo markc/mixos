@@ -26,6 +26,7 @@ use crate::host::TestHost;
 const ROUNDTRIP_PUMPS: usize = 64;
 
 pub struct Harness {
+    pub clock: world::comp::clock::ManualClock,
     event_loop: EventLoop<'static, Wire<TestHost>>,
     display: Display<Dispatch>,
     /// compd's engine: the real `Dispatch` in `wire.state`, the test host in
@@ -46,7 +47,9 @@ impl Harness {
             EventLoop::try_new().expect("calloop event loop");
         let display: Display<Dispatch> = Display::new().expect("wayland display");
         let mut display_handle = display.handle();
-        let host = TestHost::new(display_handle.clone());
+        let mut host = TestHost::new(display_handle.clone());
+        let clock = world::comp::clock::ManualClock::default();
+        host.comp.clock = world::comp::clock::Clock::Manual(clock.clone());
         // The fake output as a `wl_output` clients can name (screencopy captures
         // one), and wlr-screencopy itself — advertised here as a backend would.
         host.output.create_global::<Dispatch>(&display_handle);
@@ -64,6 +67,7 @@ impl Harness {
             .expect("insert the test client");
         let client = TestClient::new(client_end);
         let mut harness = Self {
+            clock,
             event_loop,
             display,
             wire,
@@ -76,6 +80,34 @@ impl Harness {
         harness.client.bind_globals();
         harness.roundtrip();
         harness
+    }
+
+    /// Two adjacent logical outputs, also mapped into the dormant world.
+    pub fn two_outputs() -> Self {
+        use smithay::output::{Output, PhysicalProperties, Subpixel};
+        let mut h = Self::new();
+        let output = Output::new("testkit-1".into(), PhysicalProperties {
+            size: (0, 0).into(), subpixel: Subpixel::Unknown,
+            make: "testkit".into(), model: "headless".into(), serial_number: "testkit-1".into(),
+        });
+        output.change_current_state(h.wire.inner.output.current_mode(), None, None, Some((1920, 0).into()));
+        output.create_global::<Dispatch>(&h.display.handle());
+        h.wire.inner.space.state.map_output(&output, (1920, 0));
+        h.wire.inner.other_space.state.map_output(&output, (1920, 0));
+        h.roundtrip();
+        h
+    }
+
+    /// Advance policy time without sleeping, input, frames or a renderer.
+    /// Returns whether the production drag state requests a preview repaint.
+    pub fn advance_time(&mut self, duration: Duration) -> bool {
+        self.clock.advance(duration);
+        let now = self.clock.now();
+        self.wire.inner.comp.drag.as_mut().is_some_and(|drag| drag.tick(now))
+    }
+
+    pub fn loop_handle(&self) -> smithay::reexports::calloop::LoopHandle<'static, Wire<TestHost>> {
+        self.event_loop.handle()
     }
 
     /// One loop iteration as compd's `main` runs it: client writes land, the

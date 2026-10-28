@@ -381,6 +381,47 @@ fn corner_hold_property_is_absent_from_snapshot_and_schema() {
 }
 
 #[test]
+fn tiling_props_read_describe_validate_and_diff_through_the_props_model() {
+    use crate::observation::{PendingPropChanges, validate_set_request};
+    let mut snapshot = fixture();
+    let original = snapshot.clone();
+    for (leaf, default, low, high, invalid) in [
+        ("edge_tiling", json!(true), json!(false), json!(true), json!(1)),
+        ("top_maximize", json!(true), json!(false), json!(true), json!("true")),
+        ("corner_ratio", json!(0.25), json!(0.05), json!(0.5), json!(0.51)),
+        ("side_band_px", json!(20), json!(1), json!(200), json!(0)),
+        ("top_band_px", json!(5), json!(1), json!(200), json!(201)),
+        ("shared_edge_dwell_ms", json!(250), json!(0), json!(2000), json!(2001)),
+        ("preview_delay_ms", json!(0), json!(0), json!(2000), json!(-1)),
+        ("preview_animation_ms", json!(180), json!(0), json!(1000), json!(1001)),
+    ] {
+        let path = format!("tiling.{leaf}");
+        assert_eq!(original.select(&["tiling", leaf]), Some(default));
+        let description: Value = serde_json::from_str(&describe(&snapshot, &PropPath::new(&path).unwrap()).unwrap()).unwrap();
+        assert_eq!(description["mutable"], true);
+        assert_eq!(description["persistence"], "file");
+        for value in [low, high.clone()] {
+            assert!(validate_set_request(&path, &value).is_ok(), "{path}={value}");
+            snapshot.tiling.set(&path, &value).unwrap();
+            assert_eq!(snapshot.select(&["tiling", leaf]), Some(value));
+        }
+        assert!(validate_set_request(&path, &invalid).is_err());
+        assert!(snapshot.tiling.set(&path, &invalid).is_err());
+        assert_eq!(snapshot.select(&["tiling", leaf]), Some(high));
+    }
+    assert!(validate_set_request("tiling.unknown", &json!(true)).is_err());
+    assert!(snapshot.select(&["tiling", "unknown"]).is_none());
+    for leaf in ["side_band_px", "top_band_px", "shared_edge_dwell_ms", "preview_delay_ms", "preview_animation_ms"] {
+        for value in [json!(1.5), json!(null), json!("1"), json!(false)] {
+            assert!(validate_set_request(&format!("tiling.{leaf}"), &value).is_err());
+        }
+    }
+    let mut pending = PendingPropChanges::default();
+    crate::diff::collect_snapshot_diff(&original, &snapshot, "props.set", &mut pending);
+    assert!(!pending.is_empty());
+}
+
+#[test]
 fn mutable_descriptors_match_the_writable_leaves() {
     let snapshot = fixture();
     let mutable = DESCRIPTORS
