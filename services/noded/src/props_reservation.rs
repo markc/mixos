@@ -67,6 +67,9 @@ pub(crate) fn reserved_owner(name: &str) -> Option<&str> {
 /// publish side is reserved. Record/audit topics retain their stricter grant
 /// rules through [`reserved_owner`].
 pub(crate) fn publisher_owner(name: &str) -> Option<&str> {
+    // files outcomes are public but authoritative: only the chooser provider
+    // may publish them (file chooser contract, Outcome).
+    if name == "files.chosen" { return Some("files"); }
     if settings_topic(name) {
         return Some("settingsd");
     }
@@ -398,6 +401,16 @@ mod tests {
         msg.set("command", "user.evt");
         msg.body = r#"{"x":1}"#.to_string();
         assert!(canonicalize_reserved_inner("maild.heartbeat", &msg.to_wire()).is_none());
+    }
+
+    #[test]
+    fn files_outcomes_are_public_but_only_files_may_publish() {
+        assert_eq!(publisher_owner("files.chosen"), Some("files"));
+        assert!(may_publish("files.chosen", "files"));
+        assert!(!may_publish("files.chosen", "portald"));
+        assert!(!may_publish("files.chosen", "other"));
+        assert!(may_subscribe("files.chosen"));
+        assert_eq!(publisher_owner("files.chosen.other"), None);
     }
 
     #[test]

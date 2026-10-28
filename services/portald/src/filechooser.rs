@@ -6,7 +6,7 @@ pub mod mapping;
 use crate::portal::{OBJECT_PATH, PortalError};
 use crate::screencast::{handle, request};
 use bus::PortReply;
-use bus::native_client::{BoundedIncomingEvent, IncomingCommand, SupervisedClient};
+use bus::native_client::{BoundedIncomingEvent, SupervisedClient};
 use lifecycle::{Event, Phase, State};
 use mapping::Options;
 use serde_json::{Value as Json, json};

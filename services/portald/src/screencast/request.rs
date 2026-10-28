@@ -19,6 +19,31 @@ pub const CANCELLED: u32 = 1;
 /// The request ended some other way: no source, capture failure.
 pub const FAILED: u32 = 2;
 
+#[derive(Debug)]
+pub enum CloseError { Fdo(fdo::Error), NotAllowed }
+
+impl From<zbus::Error> for CloseError {
+    fn from(error: zbus::Error) -> Self { Self::Fdo(error.into()) }
+}
+
+impl zbus::DBusError for CloseError {
+    fn name(&self) -> zbus::names::ErrorName<'_> {
+        match self {
+            Self::Fdo(error) => zbus::DBusError::name(error),
+            Self::NotAllowed => zbus::names::ErrorName::try_from("org.freedesktop.portal.Error.NotAllowed").expect("constant"),
+        }
+    }
+    fn description(&self) -> Option<&str> {
+        match self { Self::Fdo(error) => zbus::DBusError::description(error), Self::NotAllowed => Some("not the owner of this request") }
+    }
+    fn create_reply(&self, header: &Header<'_>) -> zbus::Result<zbus::Message> {
+        match self {
+            Self::Fdo(error) => zbus::DBusError::create_reply(error, header),
+            Self::NotAllowed => zbus::Message::error(header, self.name())?.build(&self.description().unwrap_or_default()),
+        }
+    }
+}
+
 pub struct Request {
     owner: String,
     chooser: Option<(crate::filechooser::Bridge, u64)>,
@@ -45,26 +70,22 @@ impl Request {
         #[zbus(header)] header: Header<'_>,
         #[zbus(object_server)] server: &ObjectServer,
         #[zbus(connection)] connection: &Connection,
-    ) -> fdo::Result<()> {
+    ) -> Result<(), CloseError> {
         let sender = header.sender().map(|name| name.as_str()).unwrap_or("");
         if self.chooser.is_some() && sender != self.owner {
-            return Err(fdo::Error::ZBus(zbus::Error::MethodError(
-                zbus::names::OwnedErrorName::try_from("org.freedesktop.portal.Error.NotAllowed").expect("constant error name"),
-                Some("not the owner of this request".into()),
-                zbus::Message::method_return(&header).build(&())?,
-            )));
+            return Err(CloseError::NotAllowed);
         }
         if sender != self.owner {
-            return Err(fdo::Error::AccessDenied(
+            return Err(CloseError::Fdo(fdo::Error::AccessDenied(
                 "not the owner of this request".into(),
-            ));
+            )));
         }
         if let Some((bridge, id)) = &self.chooser {
             bridge.close(connection, *id).await;
             return Ok(());
         }
         let Some(path) = header.path() else {
-            return Err(fdo::Error::Failed("no object path".into()));
+            return Err(CloseError::Fdo(fdo::Error::Failed("no object path".into())));
         };
         server.remove::<Request, _>(path.to_owned()).await?;
         Ok(())

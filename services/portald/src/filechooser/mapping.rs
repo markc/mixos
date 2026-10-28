@@ -211,3 +211,113 @@ pub fn outcome(value: &Json, had_choices: bool) -> (u32, Results) {
     }
     (code, results)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn put(options: &mut Options, key: &str, value: Value<'_>) {
+        options.insert(key.into(), OwnedValue::try_from(value).unwrap());
+    }
+
+    #[test]
+    fn maps_every_option_and_round_trips_filters_and_choices() {
+        let mut options = Options::new();
+        put(&mut options, "handle_token", Value::from("token"));
+        put(&mut options, "accept_label", Value::from("_Choose"));
+        put(&mut options, "modal", Value::from(true));
+        put(&mut options, "multiple", Value::from(true));
+        put(&mut options, "directory", Value::from(true));
+        let filter: Filter = ("Images".into(), vec![(0, "*.png".into()), (1, "image/jpeg".into())]);
+        put(&mut options, "filters", Value::from(vec![filter.clone()]));
+        put(&mut options, "current_filter", Value::from(filter.clone()));
+        let choices: Vec<Choice> = vec![
+            ("encoding".into(), "Encoding".into(), vec![("utf8".into(), "UTF-8".into())], "".into()),
+            ("check".into(), "Check".into(), vec![], "true".into()),
+        ];
+        put(&mut options, "choices", Value::from(choices));
+        put(&mut options, "current_folder", Value::from(b"/tmp/\xff\0".to_vec()));
+        put(&mut options, "ignored", Value::from(42u32));
+        let body = map("open", "wayland:parent", "Title", &options).unwrap();
+        assert_eq!(body["mode"], "open");
+        assert_eq!(body["parent_window"], "wayland:parent");
+        assert_eq!(body["title"], "Title");
+        assert_eq!(body["accept_label"], "Choose");
+        assert_eq!(body["multiple"], true);
+        assert_eq!(body["directory"], true);
+        assert_eq!(body["current_folder"], "file:///tmp/%FF");
+        assert!(body.get("modal").is_none());
+        assert!(body.get("handle_token").is_none());
+        assert!(body.get("ignored").is_none());
+        assert!(body["choices"][0].get("default").is_none());
+        assert_eq!(body["choices"][1]["default"], "true");
+        let event = json!({"response":0, "uris":["file:///tmp/%FF"], "choices":{"encoding":"utf8","check":"true"}, "current_filter":body["current_filter"]});
+        let (code, mut results) = outcome(&event, true);
+        assert_eq!(code, 0);
+        assert_eq!(Filter::try_from(OwnedValue::try_from(results.remove("current_filter").unwrap()).unwrap()).unwrap(), filter);
+        let returned = Vec::<(String, String)>::try_from(OwnedValue::try_from(results.remove("choices").unwrap()).unwrap()).unwrap();
+        assert_eq!(returned, vec![("check".into(),"true".into()),("encoding".into(),"utf8".into())]);
+        assert_eq!(Vec::<String>::try_from(OwnedValue::try_from(results.remove("uris").unwrap()).unwrap()).unwrap(), vec!["file:///tmp/%FF"]);
+        for response in [1, 2] {
+            let (code, results) = outcome(&json!({"response":response,"uris":["secret"]}), true);
+            assert_eq!(code, response); assert!(results.is_empty());
+        }
+    }
+
+    #[test]
+    fn save_paths_and_save_files_keep_exact_bytes_and_mode_rules() {
+        let mut options = Options::new();
+        put(&mut options, "current_file", Value::from(b"/tmp/\xfe\0".to_vec()));
+        put(&mut options, "current_name", Value::from("draft.txt"));
+        put(&mut options, "multiple", Value::from(true));
+        put(&mut options, "directory", Value::from(false));
+        let save = map("save", "", "", &options).unwrap();
+        assert_eq!(save["current_file"], "file:///tmp/%FE");
+        assert_eq!(save["current_name"], "draft.txt");
+        for key in ["title", "multiple", "directory"] { assert!(save.get(key).is_none()); }
+        put(&mut options, "filters", Value::from(vec![("Text".to_owned(), vec![(0u32, "*.txt".to_owned())])]));
+        put(&mut options, "files", Value::from(vec![b"/folder/\xff\0".to_vec(), b"\xff\0".to_vec(), b"..\0".to_vec(), b"ok\0".to_vec()]));
+        let save = map("save_files", "x11:aa", "", &options).unwrap();
+        assert_eq!(save["files"], json!([{"bytes":"%FF"}, "ok"]));
+        for key in ["filters", "current_file", "current_name", "multiple", "directory"] { assert!(save.get(key).is_none()); }
+    }
+
+    #[test]
+    fn refuses_only_wrong_types_nul_and_no_usable_files() {
+        for key in ["accept_label", "modal", "multiple", "directory", "filters", "current_filter", "choices", "current_folder", "current_file", "current_name", "files"] {
+            let mut options = Options::new(); put(&mut options, key, Value::from(99u32));
+            assert!(map("open", "", "", &options).is_err(), "{key}");
+        }
+        for value in [b"/tmp".to_vec(), b"/tmp\0x\0".to_vec(), vec![]] {
+            let mut options = Options::new(); put(&mut options, "current_file", Value::from(value));
+            assert!(map("open", "", "", &options).is_err());
+        }
+        assert!(map("save_files", "", "", &Options::new()).is_err());
+        let mut options = Options::new();
+        put(&mut options, "files", Value::from(vec![b"..\0".to_vec(), b"/\0".to_vec()]));
+        assert!(map("save_files", "", "", &options).is_err());
+    }
+
+    #[test]
+    fn lenient_lists_defaults_limits_and_standalone_filter() {
+        let mut options = Options::new();
+        put(&mut options, "accept_label", Value::from(""));
+        put(&mut options, "current_folder", Value::from(b"relative\0".to_vec()));
+        put(&mut options, "current_name", Value::from("a/b"));
+        put(&mut options, "filters", Value::from(Vec::<Filter>::new()));
+        let mut patterns = vec![(0, "*.txt".to_owned()); 300];
+        patterns.push((0, "x".repeat(257)));
+        patterns.push((2, "unknown".into()));
+        put(&mut options, "current_filter", Value::from(("é".repeat(100), patterns)));
+        let choice: Choice = ("id".into(), "Label".into(), vec![], "".into());
+        put(&mut options, "choices", Value::from(vec![choice.clone(), choice]));
+        let body = map("save", "", &"é".repeat(200), &options).unwrap();
+        for key in ["accept_label", "current_folder", "current_name"] { assert!(body.get(key).is_none()); }
+        assert_eq!(body["title"].as_str().unwrap().len(), 256);
+        assert_eq!(body["filters"], json!([]));
+        assert_eq!(body["current_filter"]["name"].as_str().unwrap().len(), 128);
+        assert_eq!(body["current_filter"]["patterns"].as_array().unwrap().len(), 300);
+        assert_eq!(body["choices"].as_array().unwrap().len(), 1);
+        assert!(body["choices"][0].get("default").is_none());
+    }
+}
