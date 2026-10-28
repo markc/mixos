@@ -178,7 +178,9 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("session.json");
-        let legacy = dir.path().join(format!(".session.json.{}.tmp", std::process::id()));
+        let legacy = dir
+            .path()
+            .join(format!(".session.json.{}.tmp", std::process::id()));
         std::fs::write(&legacy, "public placeholder").unwrap();
         std::fs::set_permissions(&legacy, std::fs::Permissions::from_mode(0o644)).unwrap();
         let mut held = std::fs::File::open(&legacy).unwrap();
@@ -201,7 +203,10 @@ mod tests {
         let mut untouched = String::new();
         held.read_to_string(&mut untouched).unwrap();
         assert_eq!(untouched, "public placeholder");
-        assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
         assert_eq!(load(&path), session);
     }
 
