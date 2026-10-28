@@ -9880,7 +9880,15 @@ mod imap_search {
         add_item_in(&mds, &set, trash, BOB);
         let store: Arc<dyn MailStore> = Arc::new(store);
 
-        let resp = handle("a1", "FROM alice", TEST_ACCOUNT, trash, store.clone(), SearchMode::Msn).await;
+        let resp = handle(
+            "a1",
+            "FROM alice",
+            TEST_ACCOUNT,
+            trash,
+            store.clone(),
+            SearchMode::Msn,
+        )
+        .await;
         assert_eq!(resp, "* SEARCH 1\r\na1 OK SEARCH completed\r\n");
         let resp = handle(
             "a2",
@@ -9898,10 +9906,26 @@ mod imap_search {
         std::fs::remove_file(mds::blob::blob_path(&dir.path().join("blobs"), &hash)).unwrap();
 
         // A metadata-only search never touches the blob.
-        let resp = handle("a3", "ALL", TEST_ACCOUNT, trash, store.clone(), SearchMode::Msn).await;
+        let resp = handle(
+            "a3",
+            "ALL",
+            TEST_ACCOUNT,
+            trash,
+            store.clone(),
+            SearchMode::Msn,
+        )
+        .await;
         assert_eq!(resp, "* SEARCH 1 2\r\na3 OK SEARCH completed\r\n");
         // A content search must not report a partial answer as complete.
-        let resp = handle("a4", "NOT FROM alice", TEST_ACCOUNT, trash, store, SearchMode::Msn).await;
+        let resp = handle(
+            "a4",
+            "NOT FROM alice",
+            TEST_ACCOUNT,
+            trash,
+            store,
+            SearchMode::Msn,
+        )
+        .await;
         assert!(resp.starts_with("a4 NO [UNAVAILABLE]"), "{resp}");
     }
 }

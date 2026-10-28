@@ -556,7 +556,10 @@ impl Doc {
     fn text_has(&self, needle: &str) -> bool {
         self.body.contains(needle)
             || self.header_block.contains(needle)
-            || self.headers.iter().any(|(_, _, decoded)| decoded.contains(needle))
+            || self
+                .headers
+                .iter()
+                .any(|(_, _, decoded)| decoded.contains(needle))
     }
 }
 
@@ -765,7 +768,12 @@ pub async fn handle(
         Ok(Err(_)) => {
             // Logged per message in `collect_hits`. UNAVAILABLE: a
             // storage fault the client may retry, not a protocol bug.
-            return tagged(tag, Status::No, Some("UNAVAILABLE"), "search failed: message unreadable");
+            return tagged(
+                tag,
+                Status::No,
+                Some("UNAVAILABLE"),
+                "search failed: message unreadable",
+            );
         }
         Err(e) => {
             tracing::warn!(error = %e, "SEARCH evaluation panicked");
@@ -1031,13 +1039,30 @@ The quarterly Invoice is attached.\r\n";
     #[test]
     fn parse_dates() {
         let d = NaiveDate::from_ymd_opt(2026, 2, 1).unwrap();
-        assert_eq!(parse_args("SINCE 1-Feb-2026", SearchMode::Msn).unwrap().crit, Crit::Since(d));
         assert_eq!(
-            parse_args("BEFORE \"01-feb-2026\"", SearchMode::Msn).unwrap().crit,
+            parse_args("SINCE 1-Feb-2026", SearchMode::Msn)
+                .unwrap()
+                .crit,
+            Crit::Since(d)
+        );
+        assert_eq!(
+            parse_args("BEFORE \"01-feb-2026\"", SearchMode::Msn)
+                .unwrap()
+                .crit,
             Crit::Before(d)
         );
-        assert_eq!(parse_args("SENTON 1-FEB-2026", SearchMode::Msn).unwrap().crit, Crit::SentOn(d));
-        for bad in ["SINCE 2026-02-01", "SINCE 31-Feb-2026", "SINCE 1-Febr-2026", "ON"] {
+        assert_eq!(
+            parse_args("SENTON 1-FEB-2026", SearchMode::Msn)
+                .unwrap()
+                .crit,
+            Crit::SentOn(d)
+        );
+        for bad in [
+            "SINCE 2026-02-01",
+            "SINCE 31-Feb-2026",
+            "SINCE 1-Febr-2026",
+            "ON",
+        ] {
             assert!(parse_args(bad, SearchMode::Msn).is_err(), "{bad}");
         }
     }
@@ -1137,7 +1162,11 @@ forwardedterm inside\r\n\
         let not_body = Crit::Not(Box::new(Crit::Body("forwardedterm".into())));
         assert!(!matches_raw(&not_body, &h, raw));
         // The outer From: is still only the outer sender.
-        assert!(!matches_raw(&Crit::Header("from".into(), "dana".into()), &h, raw));
+        assert!(!matches_raw(
+            &Crit::Header("from".into(), "dana".into()),
+            &h,
+            raw
+        ));
     }
 
     #[test]
@@ -1165,10 +1194,14 @@ forwardedterm inside\r\n\
     fn eval_short_circuits_without_blob() {
         let deleted = make_handle(1, Flags::DELETED, 100);
         let live = make_handle(2, 0, 100);
-        let crit = parse_args("UNDELETED FROM alice", SearchMode::Uid).unwrap().crit;
+        let crit = parse_args("UNDELETED FROM alice", SearchMode::Uid)
+            .unwrap()
+            .crit;
         assert_eq!(eval(&crit, 1, &deleted, 2, 2, None), Some(false));
         assert_eq!(eval(&crit, 2, &live, 2, 2, None), None);
-        let crit = parse_args("OR ALL FROM alice", SearchMode::Uid).unwrap().crit;
+        let crit = parse_args("OR ALL FROM alice", SearchMode::Uid)
+            .unwrap()
+            .crit;
         assert_eq!(eval(&crit, 2, &live, 2, 2, None), Some(true));
         let crit = parse_args("NOT FROM alice", SearchMode::Uid).unwrap().crit;
         assert_eq!(eval(&crit, 2, &live, 2, 2, None), None);

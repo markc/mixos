@@ -718,9 +718,14 @@ async fn search_header_and_body_criteria_over_the_wire() -> Result<()> {
 
     w.write_all(b"a03 SEARCH SUBJECT hello\r\n").await?;
     let lines = read_until_tagged(&mut reader, "a03").await?;
-    assert_eq!(lines, ["* SEARCH 1", "a03 OK SEARCH completed"], "{lines:?}");
+    assert_eq!(
+        lines,
+        ["* SEARCH 1", "a03 OK SEARCH completed"],
+        "{lines:?}"
+    );
 
-    w.write_all(b"a04 SEARCH OR FROM \"bob\" BODY invoice\r\n").await?;
+    w.write_all(b"a04 SEARCH OR FROM \"bob\" BODY invoice\r\n")
+        .await?;
     let lines = read_until_tagged(&mut reader, "a04").await?;
     assert_eq!(lines[0], "* SEARCH 1 2", "{lines:?}");
 
@@ -730,7 +735,11 @@ async fn search_header_and_body_criteria_over_the_wire() -> Result<()> {
     )
     .await?;
     let lines = read_until_tagged(&mut reader, "a05").await?;
-    assert_eq!(lines, ["* SEARCH 1", "a05 OK SEARCH completed"], "{lines:?}");
+    assert_eq!(
+        lines,
+        ["* SEARCH 1", "a05 OK SEARCH completed"],
+        "{lines:?}"
+    );
     Ok(())
 }
 

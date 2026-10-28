@@ -446,8 +446,9 @@ where
         if !multi {
             return Err(ReadCommandError::MalformedLiteral {
                 line,
-                reason: "data after literal body; mid-command literals not supported for this command"
-                    .to_string(),
+                reason:
+                    "data after literal body; mid-command literals not supported for this command"
+                        .to_string(),
             });
         }
         match strip_trailing_literal_marker(&trailing) {
@@ -462,9 +463,13 @@ where
                 used += text.len() as u64;
                 let cap = max_literal.saturating_sub(used);
                 let refusal = if continuation.len() + 1 >= MAX_MULTI_LITERALS {
-                    Some(format!("more than {MAX_MULTI_LITERALS} literals in one command"))
+                    Some(format!(
+                        "more than {MAX_MULTI_LITERALS} literals in one command"
+                    ))
                 } else if next.declared > cap {
-                    Some(format!("literals exceed {max_literal} bytes in one command"))
+                    Some(format!(
+                        "literals exceed {max_literal} bytes in one command"
+                    ))
                 } else {
                     None
                 };
