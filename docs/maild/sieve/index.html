@@ -331,7 +331,8 @@ Passwords use the shared account verifier. PLAIN authorisation identity must
 be empty or equal the login identity. Only the authenticated account's scripts
 are accessible. Uploads accept quoted strings and non-synchronising octet
 literals (<code>{N+}</code>). Malformed/oversized frames close the session. Limits: 128
-connections, 180-second command timeout, 30-second TLS/authentication timeout,
+connections, 180-second pre-authentication and 30-minute authenticated command
+timeouts, 30-second TLS/authentication timeout,
 three failed logins. STARTTLS discards buffered plaintext commands.</p>
 <h2 id="bus-editing-and-versions">Bus editing and versions</h2>
 <p>Like maild's existing operator commands, broker callers select an account;

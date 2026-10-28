@@ -279,7 +279,8 @@ pub async fn session<S: AsyncRead + AsyncWrite + Unpin>(
     let mut failures = 0;
     write(&mut io, &capabilities(secure)).await?;
     loop {
-        let command = tokio::time::timeout(Duration::from_secs(180), command(&mut io)).await;
+        let idle = if account.is_some() { 1800 } else { 180 };
+        let command = tokio::time::timeout(Duration::from_secs(idle), command(&mut io)).await;
         let args = match command {
             Ok(Ok(Some(args))) if !args.is_empty() => args,
             Ok(Ok(None)) => return Ok(None),

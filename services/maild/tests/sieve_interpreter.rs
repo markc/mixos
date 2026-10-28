@@ -160,6 +160,14 @@ fn vacation_options_and_reject_actions() {
     }
 }
 #[test]
+fn vacation_response_identity_precedes_variable_expansion() {
+    let source = r#"require ["vacation","variables"]; if header :matches "Subject" "*" { vacation :subject "Reply: ${1}" "Away"; }"#;
+    let script = compile(source).unwrap();
+    let a = script.evaluate(Context {data:b"Subject: first\r\n\r\nbody",from:"a",to:"b"}).unwrap().vacation.unwrap();
+    let b = script.evaluate(Context {data:b"Subject: second\r\n\r\nbody",from:"a",to:"b"}).unwrap().vacation.unwrap();
+    assert_ne!(a.subject,b.subject); assert_eq!(a.handle,b.handle);
+}
+#[test]
 fn comments_multiline_and_dot_unstuffing() {
     let plan = evaluate(
         "require \"vacation\"; /* comment */ # line\nvacation text:\r\n..dot\r\nhello\r\n.\r\n;\n",

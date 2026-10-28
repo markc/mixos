@@ -566,6 +566,7 @@ pub struct Plan {
     pub redirects: Vec<String>,
     pub vacation: Option<Vacation>,
     pub reject: Option<String>,
+    pub extended_reject: bool,
     pub discarded: bool,
 }
 pub struct Context<'a> {
@@ -833,9 +834,10 @@ impl Eval<'_> {
                 let subject = args.tag("subject").map(|s| self.expand(s)).transpose()?;
                 let from = args.tag("from").map(|s| self.expand(s)).transpose()?;
                 let handle = if let Some(handle) = args.tag("handle") {
-                    self.expand(handle)?
+                    handle.to_string()
                 } else {
-                    blake3::hash(format!("{subject:?}{from:?}{reason}").as_bytes())
+                    // RFC 5230 response identity uses the unexpanded arguments.
+                    blake3::hash(format!("{:?}{:?}{}",args.tag("subject"),args.tag("from"),args.value(0)).as_bytes())
                         .to_hex()
                         .to_string()
                 };
@@ -855,6 +857,7 @@ impl Eval<'_> {
             }
             "reject" | "ereject" => {
                 self.plan.reject = Some(self.expand(args.value(0))?);
+                self.plan.extended_reject = name == "ereject";
                 self.implicit_keep = false;
             }
             _ => unreachable!(),

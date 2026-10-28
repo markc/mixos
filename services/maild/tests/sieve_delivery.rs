@@ -290,6 +290,9 @@ async fn reject_uses_smtp_when_possible_else_null_sender_dsn() -> Result<()> {
     let queued = maild::smtp::queue::list(&f.db.conn, 10).await?;
     assert_eq!(queued.len(), 1);
     assert_eq!(queued[0].from_addr, "");
+    let bytes = f.ms.mds().get_blob(&queued[0].blob_hash.unwrap())?;
+    assert!(String::from_utf8_lossy(&bytes).contains("Action: failed"));
+    assert!(String::from_utf8_lossy(&bytes).contains("report-type=delivery-status"));
     Ok(())
 }
 #[tokio::test]
@@ -307,6 +310,20 @@ async fn native_submission_runs_recipient_sieve() -> Result<()> {
     assert_eq!(result.0, 0, "{}", result.1);
     assert_eq!(f.count("FromSubmission"), 1);
     assert_eq!(f.count("Inbox"), 0);
+    Ok(())
+}
+#[tokio::test]
+async fn unicode_ereject_uses_ascii_smtp_and_reject_preserves_reason_in_dsn() -> Result<()> {
+    let f = Fixture::new().await?;
+    f.script("require \"ereject\"; ereject \"Denied café\";").await?;
+    let error = f.deliver(MESSAGE,false,true).await.unwrap_err();
+    assert!(error.downcast_ref::<delivery::Rejected>().unwrap().0.is_ascii());
+    f.script("require \"reject\"; reject \"Denied café\";").await?;
+    assert!(f.deliver(MESSAGE,false,true).await?.is_none());
+    let queued = maild::smtp::queue::list(&f.db.conn,10).await?;
+    assert_eq!(queued.len(),1);
+    let bytes = f.ms.mds().get_blob(&queued[0].blob_hash.unwrap())?;
+    assert!(String::from_utf8_lossy(&bytes).contains("Denied café"));
     Ok(())
 }
 #[test]

@@ -3,6 +3,7 @@
 use anyhow::{Result, ensure};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
+use unicode_normalization::UnicodeNormalization;
 
 use super::{MAX_SCRIPT_BYTES, MAX_SCRIPTS, compile};
 use crate::db::Db;
@@ -51,8 +52,9 @@ pub struct StoredScript {
 
 pub fn validate_name(name: &str) -> Result<()> {
     ensure!(
-        !name.is_empty() && name.len() <= 128 && !name.chars().any(char::is_control),
-        "invalid script name (1..128 bytes, no controls)"
+        !name.is_empty() && name.chars().count() <= 128 && name.nfc().eq(name.chars())
+            && !name.chars().any(|c| c.is_control() || matches!(c, '\u{2028}' | '\u{2029}') || (0xfdd0..=0xfdef).contains(&(c as u32)) || c as u32 & 0xffff >= 0xfffe),
+        "invalid script name (1..128 Unicode characters, NFC, no controls or separators)"
     );
     Ok(())
 }

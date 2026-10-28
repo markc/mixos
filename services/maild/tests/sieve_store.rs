@@ -79,6 +79,17 @@ async fn quota_and_history_retention() -> Result<()> {
     Ok(())
 }
 #[tokio::test]
+async fn script_names_accept_128_unicode_characters_and_reject_separators() -> Result<()> {
+    let (_tmp,db) = fixture().await?;
+    let name = "é".repeat(128);
+    store::put(&db,1,&name,"keep;",None).await?;
+    assert_eq!(store::get(&db,1,&name).await?.name,name);
+    for name in ["x\u{2028}y".to_string(),"e\u{301}".to_string(),"é".repeat(129)] {
+        assert!(store::put(&db,1,&name,"keep;",None).await.is_err());
+    }
+    Ok(())
+}
+#[tokio::test]
 async fn bus_commands_use_shared_compiler_and_store() -> Result<()> {
     let (_tmp, db) = fixture().await?;
     let mut cmd = ::bus::IncomingCommand { generation:0,from:"operator".into(),command:"maild.sieve.put".into(),id:None,args:serde_json::Value::Null,headers:Default::default(),body:json!({"account":"bob@example.com","name":"main","source":"discard;","expected_version":0}).to_string() };

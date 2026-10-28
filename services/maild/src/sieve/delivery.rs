@@ -100,8 +100,8 @@ async fn deliver_inner(db: &Db, ms: &Arc<SqliteMailStore>, delivery: Delivery<'_
         }
     };
     if let Some(reason) = &plan.reject {
-        if delivery.smtp_reject {
-            let mut reason: String = reason.chars().filter(|c| !c.is_control()).collect();
+        if delivery.smtp_reject && (reason.is_ascii() || plan.extended_reject) {
+            let mut reason: String = if reason.is_ascii() { reason.chars().filter(|c| !c.is_control()).collect() } else { "Message refused by recipient filter".into() };
             let mut end = reason.len().min(400);
             while !reason.is_char_boundary(end) { end -= 1; }
             reason.truncate(end);
@@ -109,9 +109,10 @@ async fn deliver_inner(db: &Db, ms: &Arc<SqliteMailStore>, delivery: Delivery<'_
         }
         if delivery.sender_verified && !delivery.from.is_empty() {
             let domain = delivery.account.email.rsplit_once('@').map(|(_,d)| d).unwrap_or("example.com");
-            let bytes = crate::smtp::bounce::generate_ndr(domain,delivery.from,&[delivery.to.to_string()],reason)?;
+            let bytes = rejection_report(domain,delivery.from,delivery.to,reason);
             enqueue(db,ms,"",delivery.from,&bytes).await?;
         }
+        else { tracing::info!(account=delivery.account.id,"Sieve rejection DSN suppressed: null or unverified sender"); }
         return Ok(None);
     }
     // Resolve *all* filing destinations before putting the first message.
@@ -164,6 +165,17 @@ async fn deliver_inner(db: &Db, ms: &Arc<SqliteMailStore>, delivery: Delivery<'_
     }
     if let Some(vacation) = plan.vacation { vacation_reply(db,ms,&delivery,&vacation,external).await?; }
     Ok(first)
+}
+
+fn rejection_report(domain: &str, sender: &str, recipient: &str, reason: &str) -> Vec<u8> {
+    let safe = crate::smtp::inbound::header_value_safe;
+    let domain = safe(domain); let sender = safe(sender); let recipient = safe(recipient);
+    let boundary = format!("sieve-{}",uuid::Uuid::new_v4());
+    let reason = reason.replace("\r\n","\n").replace('\r',"\n").replace('\n',"\r\n");
+    let date = chrono::Utc::now().to_rfc2822();
+    // RFC 3464 multipart/report: readable reason and machine-readable status.
+    // Do not attach the original message or reflect its headers.
+    format!("From: <postmaster@{domain}>\r\nTo: <{sender}>\r\nDate: {date}\r\nMessage-ID: <{boundary}@{domain}>\r\nSubject: Message refused by recipient filter\r\nAuto-Submitted: auto-generated\r\nMIME-Version: 1.0\r\nContent-Type: multipart/report; report-type=delivery-status; boundary=\"{boundary}\"\r\n\r\n--{boundary}\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\nThe recipient's mail filter refused your message.\r\n\r\n{reason}\r\n\r\n--{boundary}\r\nContent-Type: message/delivery-status\r\n\r\nReporting-MTA: dns; {domain}\r\n\r\nFinal-Recipient: rfc822; {recipient}\r\nAction: failed\r\nStatus: 5.7.1\r\n\r\n--{boundary}--\r\n").into_bytes()
 }
 
 fn redirect_depth(data: &[u8]) -> usize {
@@ -227,7 +239,7 @@ async fn vacation_reply(db: &Db, ms: &Arc<SqliteMailStore>, delivery: &Delivery<
     if !sender_local && !external { return Ok(()); }
     let sender_part = delivery.from.split('@').next().unwrap_or("").to_ascii_lowercase();
     if ["mailer-daemon","postmaster","owner-"].iter().any(|s| sender_part.starts_with(s)) || sender_part.ends_with("-request") { return Ok(()); }
-    for name in ["Auto-Submitted","List-Id","List-Post","List-Help","List-Unsubscribe"] {
+    for name in ["Auto-Submitted","List-Id","List-Post","List-Help","List-Unsubscribe","List-Subscribe","List-Owner","List-Archive"] {
         for value in message.header_values(name) {
             if name != "Auto-Submitted" || !value.as_text().unwrap_or("").trim().eq_ignore_ascii_case("no") { return Ok(()); }
         }
