@@ -272,7 +272,10 @@ impl Widget for ValueField<'_> {
                 .max(unit_galley.as_ref().map_or(0.0, |g| g.size().y));
             let min_height =
                 text_height + f32::from(field.padding.top) + f32::from(field.padding.bottom);
-            (width.max(min_width.ceil()), field.height.max(min_height.ceil()))
+            (
+                width.max(min_width.ceil()),
+                field.height.max(min_height.ceil()),
+            )
         };
         // One id for the resting box and its editor, as egui's DragValue
         // has: the field edits while it has keyboard focus.
@@ -543,17 +546,27 @@ mod tests {
     #[test]
     fn default_interface_size_keeps_authored_field_geometry() {
         let base = crate::Theme::embedded();
-        let ui_size = design::active_typography(Some(base.typography()), design::TypographyRole::Ui).font_size as f32;
+        let ui_size = design::active_typography(Some(base.typography()), design::TypographyRole::Ui)
+            .font_size as f32;
         for size in [None, Some(ui_size)] {
             let ctx = egui::Context::default();
             let theme = crate::Theme::embedded()
-                .with_overlay(crate::theme::Overlay { size, ..Default::default() })
+                .with_overlay(crate::theme::Overlay {
+                    size,
+                    ..Default::default()
+                })
                 .unwrap();
             assert_eq!(theme.interface_size_scale(), 1.0);
             crate::install(&ctx, &theme);
             let mut value = 18.0;
             let mut output = ctx.run_ui(Default::default(), |ui| {
-                let rect = ui.add(ValueField::new(&mut value, 9.0..=18.0).unit("px").width(74.0)).rect;
+                let rect = ui
+                    .add(
+                        ValueField::new(&mut value, 9.0..=18.0)
+                            .unit("px")
+                            .width(74.0),
+                    )
+                    .rect;
                 assert_eq!(rect.size(), vec2(74.0, Style::of(ui.ctx()).height));
             });
             output.textures_delta.clear();

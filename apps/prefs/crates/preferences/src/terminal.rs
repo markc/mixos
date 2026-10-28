@@ -213,9 +213,21 @@ mod tests {
                 json!("xterm"),
             ),
         ];
-        let expected: std::collections::BTreeSet<_> = settings::describe()["fields"].as_object().unwrap().keys()
-            .filter(|path| path.starts_with("terminal.")).cloned().collect();
-        assert_eq!(cases.iter().map(|(_, path, _)| (*path).to_owned()).collect::<std::collections::BTreeSet<_>>(), expected, "every described terminal control must be exercised");
+        let expected: std::collections::BTreeSet<_> = settings::describe()["fields"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .filter(|path| path.starts_with("terminal."))
+            .cloned()
+            .collect();
+        assert_eq!(
+            cases
+                .iter()
+                .map(|(_, path, _)| (*path).to_owned())
+                .collect::<std::collections::BTreeSet<_>>(),
+            expected,
+            "every described terminal control must be exercised"
+        );
         for (setting, path, value) in cases {
             assert_eq!(setting.edit(), Edit::Set(path, value.clone()), "{path}");
             let next = settings::resolve::patch(

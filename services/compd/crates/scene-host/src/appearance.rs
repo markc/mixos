@@ -88,7 +88,10 @@ fn theme_of(snapshot: &Snapshot) -> Result<Theme, Diagnostic> {
         }
         None => Theme::for_context(context),
     };
-    let theme = overlay_or_design(theme, Overlay::from_appearance(&snapshot.desktop.appearance));
+    let theme = overlay_or_design(
+        theme,
+        Overlay::from_appearance(&snapshot.desktop.appearance),
+    );
     Ok(theme
         .framed(decorations, captions)
         .with_menus(
@@ -109,7 +112,9 @@ fn overlay_or_design(theme: Theme, overlay: Overlay) -> Theme {
         Ok(overlaid) => overlaid,
         Err(error) => {
             static WARN: std::sync::Once = std::sync::Once::new();
-            WARN.call_once(|| tracing::warn!(%error, "scene host: ignoring invalid appearance overlay"));
+            WARN.call_once(
+                || tracing::warn!(%error, "scene host: ignoring invalid appearance overlay"),
+            );
             theme
         }
     }
@@ -249,9 +254,15 @@ mod tests {
 
     #[test]
     fn invalid_overlay_keeps_the_selected_design() {
-        let theme = Theme::for_context(DesignContext { mode: Mode::Light, ..Default::default() });
+        let theme = Theme::for_context(DesignContext {
+            mode: Mode::Light,
+            ..Default::default()
+        });
         let overlay = Overlay {
-            chrome: std::collections::BTreeMap::from([("unknown-role".into(), design::family::style::StyleColour([0; 4]))]),
+            chrome: std::collections::BTreeMap::from([(
+                "unknown-role".into(),
+                design::family::style::StyleColour([0; 4]),
+            )]),
             ..Default::default()
         };
         assert!(theme.clone().with_overlay(overlay.clone()).is_err());
