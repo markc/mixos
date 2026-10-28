@@ -341,6 +341,18 @@ async fn vacation_mime_entity_preserves_body_and_refuses_envelope_header_injecti
     assert_eq!(maild::smtp::queue::list(&f.db.conn,10).await?.len(),1);
     Ok(())
 }
+#[tokio::test]
+async fn outbound_failure_after_keep_does_not_request_duplicate_delivery() -> Result<()> {
+    let f = Fixture::new().await?;
+    f.db.conn.lock().unwrap().execute_batch("CREATE TRIGGER fail_sieve_queue BEFORE INSERT ON smtp_queue BEGIN SELECT RAISE(FAIL, 'injected queue failure'); END;")?;
+    f.script(r#"require "copy"; redirect :copy "outside@example.org";"#).await?;
+    assert!(f.deliver(MESSAGE,true,false).await?.is_some()); assert_eq!(f.count("Inbox"),1);
+    f.script(r#"redirect "outside@example.org";"#).await?;
+    assert!(f.deliver(MESSAGE,true,false).await.is_err()); assert_eq!(f.count("Inbox"),1);
+    f.script(r#"require "vacation"; vacation "Away";"#).await?;
+    assert!(f.deliver(MESSAGE,true,false).await?.is_some()); assert_eq!(f.count("Inbox"),2);
+    Ok(())
+}
 #[test]
 fn daemon_spam_verdict_replaces_forged_headers() {
     let bytes = delivery::stamp_spam(

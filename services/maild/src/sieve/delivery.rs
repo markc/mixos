@@ -147,23 +147,40 @@ async fn deliver_inner(db: &Db, ms: &Arc<SqliteMailStore>, delivery: Delivery<'_
             let message = MessageParser::default().parse(&data).ok_or_else(|| anyhow::anyhow!("parse message"))?;
             let hash = ms.mds().put_blob(&data)?;
             Ok(ms.create_email(id,target,hash,crate::jmap::email::build_envelope(&message),&crate::jmap::email::extract_in_reply_to(&message),flags,tags,chrono::Utc::now().timestamp_millis())?.0)
-        }).await??;
-        first.get_or_insert(item);
+        }).await?;
+        match item {
+            Ok(item) => { first.get_or_insert(item); }
+            Err(error) if first.is_some() => tracing::warn!(%error,"Sieve filing failed after another filing committed; accepting partial delivery"),
+            Err(error) => return Err(error),
+        }
     }
     if !plan.redirects.is_empty() {
         *remaining -= plan.redirects.len();
+        let mut handled = first.is_some() || plan.discarded;
         for (destination,local) in redirects {
             let depth = redirect_depth(delivery.data);
             if depth >= super::MAX_REDIRECTS { tracing::warn!("Sieve redirect loop suppressed"); continue; }
             let mut bytes = format!("X-Mixos-Sieve-Hop: {}\r\n",depth + 1).into_bytes();
             bytes.extend_from_slice(delivery.data);
+            let result = async {
             if let Some(account) = local {
                 let inbox = ms.mailbox_by_role(account.id,MailboxRole::Inbox)?.ok_or_else(|| anyhow::anyhow!("redirect recipient has no Inbox"))?;
                 Box::pin(deliver_inner(db,ms,Delivery { account:&account,from:delivery.from,to:&destination,data:&bytes,default_mailbox:inbox,default_tags:Tags::new(),external_domains:delivery.external_domains,sender_verified:delivery.sender_verified,spam:delivery.spam,smtp_reject:false },remaining)).await?;
             } else { enqueue(db,ms,delivery.from,&destination,&bytes).await?; }
+            Ok::<(),anyhow::Error>(())
+            }.await;
+            match result {
+                Ok(()) => handled = true,
+                Err(error) if handled => tracing::warn!(%error,"Sieve redirect failed after another action committed; accepting partial delivery"),
+                Err(error) => return Err(error),
+            }
         }
     }
-    if let Some(vacation) = plan.vacation { vacation_reply(db,ms,&delivery,&vacation,external).await?; }
+    if let Some(vacation) = plan.vacation {
+        if let Err(error) = vacation_reply(db,ms,&delivery,&vacation,external).await {
+            tracing::warn!(%error,"Sieve vacation reply failed; retaining original delivery outcome");
+        }
+    }
     Ok(first)
 }
 
