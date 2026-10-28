@@ -324,9 +324,15 @@ mod tests {
     #[test]
     fn compiled_backends_follow_the_features() {
         let backends = compiled_backends();
-        assert_eq!(backends.contains(&"native"), cfg!(feature = "backend-native"));
+        assert_eq!(
+            backends.contains(&"native"),
+            cfg!(feature = "backend-native")
+        );
         assert_eq!(backends.contains(&"winit"), cfg!(feature = "backend-winit"));
-        assert_eq!(backends.contains(&"headless"), cfg!(feature = "backend-headless"));
+        assert_eq!(
+            backends.contains(&"headless"),
+            cfg!(feature = "backend-headless")
+        );
     }
 
     #[test]
