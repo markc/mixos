@@ -438,6 +438,15 @@ impl Shell {
         });
         let now = self.app.now;
         if text.is_some() || until <= now {
+            if text.is_none() {
+                // The platform sends no paste when the clipboard holds no text,
+                // so the deadline passing usually means just that: say so.
+                eprintln!("ced: warning: paste got no text from the clipboard in {PASTE_WAIT} s");
+                self.app.status = Some((
+                    crate::label("paste-nothing"),
+                    now + crate::app::STATUS_SECONDS,
+                ));
+            }
             self.asked = None;
             if let Some(intent) = self.pastes.pop_front() {
                 let fx = self.app.ctl.on_paste(intent, text);

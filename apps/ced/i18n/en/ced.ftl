@@ -22,6 +22,7 @@ edit-undo-any = Undo Anyone's Last
 edit-cut = Cut
 edit-copy = Copy
 edit-paste = Paste
+paste-nothing = Nothing to paste: the clipboard has no text
 edit-select-all = Select All
 edit-duplicate-line = Duplicate Line
 edit-delete-line = Delete Line

@@ -8816,6 +8816,7 @@ design. Terminal colours are not a setting: they follow the session theme.
 | `terminal.focus.ring` | `neutral` or `accent` | `accent` |
 | `terminal.focus.strength` | number 0–1, used with `accent` | 0.25 |
 | `terminal.mouse.copy_on_select` | boolean | false |
+| `terminal.clipboard.osc52_read` | boolean: answer OSC 52 clipboard queries (writes are always allowed) | false |
 | `terminal.env.term` | `[a-z0-9-]{1,64}`; new tabs and panes | `xterm-256color` |
 
 Apply and reset take each path, or `terminal` for the whole group. The
@@ -36918,6 +36919,12 @@ Shift+Insert. Font: Ctrl+plus/minus/0 and Ctrl+wheel. History:
 Shift+PageUp/PageDown/Home/End. Alt is Meta (ESC before the key; Alt+cursor
 keys send xterm's CSI 1;3 sequences). Right-hand modifier chords are the
 person's own on MixOS and are not bound.
+
+Programs can set the clipboard with OSC 52 (vim, tmux, a remote shell over
+ssh): up to 1 MiB, `c` for the clipboard and `p`/`s` for the primary
+selection. Reading it back (an OSC 52 query) is refused unless
+`terminal.clipboard.osc52_read` is on. A copy made while the window does not
+have the keyboard is not taken, and Term says so.
 
 ## Building and testing
 

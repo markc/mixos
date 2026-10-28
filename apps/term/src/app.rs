@@ -129,6 +129,8 @@ pub struct App {
     scroll_speed: f32,
     /// A finished mouse selection is copied to the clipboard as well.
     pub(crate) copy_on_select: bool,
+    /// Answer OSC 52 clipboard queries (`terminal.clipboard.osc52_read`).
+    pub(crate) osc52_read: bool,
     /// The focused pane's ring, and how much of the accent it takes.
     pub focus_ring: (FocusRing, f32),
     /// The cursor blinks while the window has the keyboard.
@@ -209,6 +211,7 @@ impl App {
             face_failed: None,
             scroll_speed: input::DEFAULT_SCROLL_SPEED,
             copy_on_select: false,
+            osc52_read: false,
             focus_ring: {
                 let focus = TerminalSettings::default().focus;
                 (focus.ring, focus.strength as f32)
@@ -379,6 +382,7 @@ impl App {
         self.blink = terminal.cursor.blink;
         self.focus_ring = (terminal.focus.ring, terminal.focus.strength as f32);
         self.copy_on_select = terminal.mouse.copy_on_select;
+        self.osc52_read = terminal.clipboard.osc52_read;
         self.scroll_speed = terminal.scroll.speed as f32;
         let mut tabs = self.tabs.lock().expect("tabs");
         let mut next = tabs.settings().clone();

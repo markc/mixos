@@ -532,6 +532,7 @@ design. Terminal colours are not a setting: they follow the session theme.</p>
 <tr><td><code>terminal.focus.ring</code></td><td><code>neutral</code> or <code>accent</code></td><td><code>accent</code></td></tr>
 <tr><td><code>terminal.focus.strength</code></td><td>number 0–1, used with <code>accent</code></td><td>0.25</td></tr>
 <tr><td><code>terminal.mouse.copy_on_select</code></td><td>boolean</td><td>false</td></tr>
+<tr><td><code>terminal.clipboard.osc52_read</code></td><td>boolean: answer OSC 52 clipboard queries (writes are always allowed)</td><td>false</td></tr>
 <tr><td><code>terminal.env.term</code></td><td><code>[a-z0-9-]{1,64}</code>; new tabs and panes</td><td><code>xterm-256color</code></td></tr>
 </tbody></table>
 <p>Apply and reset take each path, or <code>terminal</code> for the whole group. The

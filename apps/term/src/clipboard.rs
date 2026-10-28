@@ -9,7 +9,7 @@
 //! over channels, so no clipboard transfer can ever block a frame. One read
 //! is outstanding at a time: another while it runs is refused at once.
 
-use crate::selection::{Answer, ReadError, Request};
+use crate::selection::{Answer, ReadError, Request, WRITE_ANSWER};
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
 
@@ -121,6 +121,11 @@ impl Clipboard {
     pub fn take(&mut self) -> Vec<Pasted> {
         let mut out = std::mem::take(&mut self.refused);
         while let Ok(answer) = self.rx.try_recv() {
+            // A refused copy: not a read, so it ends no pending one.
+            if answer.id == WRITE_ANSWER {
+                out.push((WRITE_ANSWER, answer.result));
+                continue;
+            }
             match self.pending {
                 Some((id, pane)) if id == answer.id => {
                     self.pending = None;
@@ -179,5 +184,31 @@ mod tests {
         assert_eq!(clipboard.take(), vec![(7, Ok("text".into()))]);
         clipboard.read(9, false);
         assert!(clipboard.take().is_empty(), "a new read may start");
+    }
+
+    /// A copy the worker refused (no keyboard focus) is reported, not
+    /// dropped, and does not end the read in flight.
+    #[test]
+    fn a_refused_copy_is_reported_without_ending_a_read() {
+        let (worker, _requests) = sctk::reexports::calloop::channel::channel();
+        let (mut clipboard, answers) = Clipboard::with_worker(worker);
+        clipboard.read(7, false);
+        answers
+            .send(Answer {
+                id: WRITE_ANSWER,
+                result: Err(ReadError::NoFocus),
+            })
+            .unwrap();
+        assert_eq!(
+            clipboard.take(),
+            vec![(WRITE_ANSWER, Err(ReadError::NoFocus))]
+        );
+        answers
+            .send(Answer {
+                id: 1,
+                result: Ok("text".into()),
+            })
+            .unwrap();
+        assert_eq!(clipboard.take(), vec![(7, Ok("text".into()))]);
     }
 }

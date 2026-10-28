@@ -80,6 +80,12 @@ Shift+PageUp/PageDown/Home/End. Alt is Meta (ESC before the key; Alt+cursor
 keys send xterm's CSI 1;3 sequences). Right-hand modifier chords are the
 person's own on MixOS and are not bound.
 
+Programs can set the clipboard with OSC 52 (vim, tmux, a remote shell over
+ssh): up to 1 MiB, `c` for the clipboard and `p`/`s` for the primary
+selection. Reading it back (an OSC 52 query) is refused unless
+`terminal.clipboard.osc52_read` is on. A copy made while the window does not
+have the keyboard is not taken, and Term says so.
+
 ## Building and testing
 
 On an authorised build worker at a pushed commit:

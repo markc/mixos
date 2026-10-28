@@ -118,7 +118,12 @@ pub struct Shell {
     font: Persistence,
     /// Names each write for settingsd's receipts: this process and a count.
     font_ops: (String, u64),
+    /// OSC 52 queries waiting for the clipboard: the pane and how to answer.
+    osc52_loads: HashMap<u64, Osc52Reply>,
 }
+
+/// How an OSC 52 query wants the clipboard written back (rio's formatter).
+type Osc52Reply = std::sync::Arc<dyn Fn(&str) -> String + Send + Sync>;
 
 impl Shell {
     pub fn new(
@@ -156,6 +161,7 @@ impl Shell {
             focus: egui::Id::unique("term.panes"),
             font: Persistence::default(),
             font_ops: (operation_prefix(), 0),
+            osc52_loads: HashMap::new(),
         }
     }
 
@@ -224,8 +230,16 @@ impl Shell {
                 Delivery::FontDue => self.font_event(FontEvent::TimerFired),
             }
         }
+        self.osc52();
         for (pane, read) in self.clipboard.take() {
             use crate::selection::ReadError;
+            // An OSC 52 query is answered to its program, never pasted.
+            if let Some(reply) = self.osc52_loads.remove(&pane) {
+                if let Ok(text) = &read {
+                    self.osc52_answer(pane, &reply, text);
+                }
+                continue;
+            }
             let notice = match read {
                 Ok(text) => {
                     self.app.paste(pane, Some(text));
@@ -236,6 +250,7 @@ impl Shell {
                 Err(ReadError::TooLarge) => crate::label("paste-too-large"),
                 Err(ReadError::TimedOut) => crate::label("paste-timed-out"),
                 Err(ReadError::Busy) => crate::label("paste-busy"),
+                Err(ReadError::NoFocus) => crate::label("copy-needs-focus"),
                 Err(ReadError::Failed(error)) => {
                     eprintln!("term: paste: {error}");
                     crate::label("paste-failed")
@@ -244,6 +259,45 @@ impl Shell {
             self.app.paste_notice = Some(notice);
         }
         self.release();
+    }
+
+    /// Carry out the OSC 52 requests programs made: a write sets the
+    /// clipboard (or the primary selection); a query, allowed only by
+    /// `terminal.clipboard.osc52_read`, reads it for that pane.
+    fn osc52(&mut self) {
+        let panes: Vec<u64> = {
+            let tabs = self.app.tabs.lock().expect("tabs");
+            tabs.control_panes().iter().map(|p| p.id).collect()
+        };
+        for pane in panes {
+            let terminal = self.app.tabs.lock().expect("tabs").pane_by_id(pane);
+            let Some(terminal) = terminal else { continue };
+            let requests = {
+                let terminal = terminal.lock().expect("terminal");
+                terminal.set_osc52_read(self.app.osc52_read);
+                terminal.take_clipboard_requests()
+            };
+            for request in requests {
+                match request {
+                    term_core::terminal::ClipboardRequest::Store { primary, text } => {
+                        self.clipboard.write(&self.ctx, text, primary)
+                    }
+                    term_core::terminal::ClipboardRequest::Load { primary, reply } => {
+                        self.osc52_loads.insert(pane, reply);
+                        self.clipboard.read(pane, primary);
+                    }
+                }
+            }
+        }
+    }
+
+    fn osc52_answer(&self, pane: u64, reply: &Osc52Reply, text: &str) {
+        let terminal = self.app.tabs.lock().expect("tabs").pane_by_id(pane);
+        if let Some(terminal) = terminal
+            && let Err(error) = terminal.lock().expect("terminal").clipboard_reply(&**reply, text)
+        {
+            eprintln!("term: OSC 52 reply failed: {error}");
+        }
     }
 
     /// Run held Bus commands in order. Drive commands that only join the drive

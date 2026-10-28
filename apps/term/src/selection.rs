@@ -89,8 +89,15 @@ pub enum ReadError {
     TimedOut,
     /// Nothing to read: no selection, no text type, no focus.
     Empty,
+    /// A copy was not taken: no seat has this window's keyboard, so the
+    /// compositor would refuse it. Answered with [`WRITE_ANSWER`].
+    NoFocus,
     Failed(String),
 }
+
+/// The [`Answer`] id of a refused copy. Read ids start at 1, so it never
+/// names a read.
+pub const WRITE_ANSWER: u64 = 0;
 
 /// The outcome of read `id`.
 #[derive(Debug)]
@@ -420,6 +427,14 @@ impl Selection {
 
     fn write(&mut self, text: String, primary: bool) {
         let Some(seat) = self.seat() else {
+            // No keyboard focus: the compositor would refuse the selection. Say
+            // so rather than drop it silently; a refused copy (not a primary
+            // selection, which every unfocused drag would refuse) is shown.
+            let what = if primary { "primary selection" } else { "copy" };
+            eprintln!("term: warning: {what} not taken: the window does not have the keyboard");
+            if !primary {
+                self.reads.answer(WRITE_ANSWER, Err(ReadError::NoFocus));
+            }
             return;
         };
         let serial = seat.serial;

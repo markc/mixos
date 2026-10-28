@@ -104,8 +104,61 @@ pub struct Listener {
     pub quit: Arc<AtomicBool>,
     title: Arc<Mutex<String>>,
     title_changed: Arc<OnceLock<Arc<tokio::sync::Notify>>>,
+    clipboard: Arc<ClipboardQueue>,
 }
+
+/// The most OSC 52 text one write may carry: 1 MiB. A larger write is
+/// refused (logged), so a program cannot fill the clipboard without bound.
+pub const OSC52_LIMIT: usize = 1 << 20;
+/// The most clipboard requests a pane holds before the window takes them.
+const CLIPBOARD_QUEUE: usize = 16;
+
+/// A clipboard request a program made with OSC 52, for the window to carry out.
+#[derive(Clone)]
+pub enum ClipboardRequest {
+    /// Set the clipboard (`primary`: the primary selection) to `text`.
+    Store { primary: bool, text: String },
+    /// Answer with the clipboard: write `reply(text)` back to the program
+    /// ([`Terminal::clipboard_reply`]). Only queued while reads are allowed.
+    Load {
+        primary: bool,
+        reply: Arc<dyn Fn(&str) -> String + Send + Sync>,
+    },
+}
+
+impl std::fmt::Debug for ClipboardRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Store { primary, text } => f
+                .debug_struct("Store")
+                .field("primary", primary)
+                .field("bytes", &text.len())
+                .finish(),
+            Self::Load { primary, .. } => {
+                f.debug_struct("Load").field("primary", primary).finish()
+            }
+        }
+    }
+}
+
+/// OSC 52 requests waiting for the window, and whether reads are allowed.
+#[derive(Default)]
+struct ClipboardQueue {
+    requests: Mutex<std::collections::VecDeque<ClipboardRequest>>,
+    read_allowed: AtomicBool,
+}
+
 impl Listener {
+    /// Queue an OSC 52 request (oldest dropped past [`CLIPBOARD_QUEUE`]).
+    fn clipboard(&self, request: ClipboardRequest) {
+        let mut requests = self.clipboard.requests.lock().unwrap();
+        if requests.len() >= CLIPBOARD_QUEUE {
+            requests.pop_front();
+        }
+        requests.push_back(request);
+        drop(requests);
+        self.wake();
+    }
     /// Call only after dropping the writes lock: the parser takes grid then
     /// writes when answering VT queries. A weak link avoids a grid/listener cycle.
     fn follow_input(&self) {
@@ -357,6 +410,29 @@ impl EventListener for Listener {
             // re-decide the mouse-cursor shape on every scroll and
             // mouse-mode DECSET, and this frontend has no host cursor.
             RioEvent::MouseCursorDirty => {}
+            // OSC 52 write: always allowed, within OSC52_LIMIT.
+            RioEvent::ClipboardStore(kind, text) => {
+                if text.len() > OSC52_LIMIT {
+                    eprintln!(
+                        "term: warning: OSC 52 clipboard write of {} bytes refused (limit {OSC52_LIMIT})",
+                        text.len()
+                    );
+                } else {
+                    let primary = kind == rio_vt::clipboard::ClipboardType::Selection;
+                    self.clipboard(ClipboardRequest::Store { primary, text });
+                }
+            }
+            // OSC 52 query: answered only when the setting allows reads.
+            RioEvent::ClipboardLoad(_, kind, reply) => {
+                if self.clipboard.read_allowed.load(Ordering::Acquire) {
+                    let primary = kind == rio_vt::clipboard::ClipboardType::Selection;
+                    self.clipboard(ClipboardRequest::Load { primary, reply });
+                } else {
+                    eprintln!(
+                        "term: OSC 52 clipboard query refused (terminal.clipboard.osc52_read is off)"
+                    );
+                }
+            }
             other => eprintln!("{}", dropped_event(&other)),
         }
     }
@@ -766,6 +842,7 @@ impl Terminal {
             quit: Arc::new(AtomicBool::new(false)),
             title: Arc::new(Mutex::new(String::new())),
             title_changed: Arc::new(OnceLock::new()),
+            clipboard: Arc::default(),
         };
         let mut grid = Crosswords::new(
             CrosswordsSize::new(cols, rows),
@@ -887,6 +964,7 @@ impl Terminal {
             quit: Arc::new(AtomicBool::new(false)),
             title: Arc::new(Mutex::new(String::new())),
             title_changed: Arc::new(OnceLock::new()),
+            clipboard: Arc::default(),
         };
         let grid = Arc::new(FairMutex::new(Crosswords::new(
             CrosswordsSize::new(80, 24),
@@ -1107,6 +1185,36 @@ impl Terminal {
     /// One seat event, including a whole IME commit, occupies one FIFO entry.
     pub fn keys(&self, keys: &[Key], at: Instant) -> Result<(), String> {
         self.listener.keys(keys, at)
+    }
+
+    /// The OSC 52 requests programs made since the last call, oldest first.
+    pub fn take_clipboard_requests(&self) -> Vec<ClipboardRequest> {
+        self.listener
+            .clipboard
+            .requests
+            .lock()
+            .unwrap()
+            .drain(..)
+            .collect()
+    }
+
+    /// Allow (or refuse) OSC 52 clipboard queries: the
+    /// `terminal.clipboard.osc52_read` setting. Writes are always allowed.
+    pub fn set_osc52_read(&self, allowed: bool) {
+        self.listener
+            .clipboard
+            .read_allowed
+            .store(allowed, Ordering::Release);
+    }
+
+    /// Answer an OSC 52 query: `reply` formats the clipboard `text` as the
+    /// escape sequence the program asked for, written back to its PTY.
+    pub fn clipboard_reply(
+        &self,
+        reply: &(dyn Fn(&str) -> String + Send + Sync),
+        text: &str,
+    ) -> Result<(), String> {
+        self.listener.write(reply(text).into_bytes(), None)
     }
 
     pub fn alternate_screen(&self) -> bool {
@@ -1575,6 +1683,7 @@ mod tests {
             quit: Arc::new(AtomicBool::new(false)),
             title: Arc::new(Mutex::new(String::new())),
             title_changed: Arc::new(OnceLock::new()),
+            clipboard: Arc::default(),
         };
         let grid = Arc::new(FairMutex::new(Crosswords::new(
             CrosswordsSize::new(80, 24),
@@ -1681,6 +1790,7 @@ mod tests {
                 quit: Arc::new(AtomicBool::new(false)),
                 title: Arc::new(Mutex::new(String::new())),
                 title_changed: Arc::new(OnceLock::new()),
+                clipboard: Arc::default(),
             };
             let grid = Arc::new(FairMutex::new(Crosswords::new(
                 CrosswordsSize::new(80, 24),
@@ -2093,5 +2203,46 @@ mod tests {
             !message.contains("Discriminant"),
             "names, not shifted indices"
         );
+    }
+
+    /// OSC 52 writes reach the window (clipboard and primary); queries are
+    /// refused until the setting allows them, then answered in the form asked.
+    #[test]
+    fn osc52_writes_reach_the_window_and_queries_need_the_setting() {
+        let t = Terminal::from_test_vt(80, 24, b"\x1b]52;c;aGVsbG8=\x07\x1b]52;p;d29ybGQ=\x07");
+        match &t.take_clipboard_requests()[..] {
+            [
+                ClipboardRequest::Store { primary: false, text: a },
+                ClipboardRequest::Store { primary: true, text: b },
+            ] => {
+                assert_eq!(a, "hello");
+                assert_eq!(b, "world");
+            }
+            other => panic!("{other:?}"),
+        }
+        let feed = |bytes: &[u8]| {
+            rio_vt::performer::handler::Processor::default().advance(&mut *t.grid.lock(), bytes)
+        };
+        feed(b"\x1b]52;c;?\x07");
+        assert!(t.take_clipboard_requests().is_empty(), "queries are off by default");
+        t.set_osc52_read(true);
+        feed(b"\x1b]52;c;?\x07");
+        match &t.take_clipboard_requests()[..] {
+            [ClipboardRequest::Load { primary: false, reply }] => {
+                assert_eq!(reply("hi"), "\x1b]52;c;aGk=\x07");
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    /// A write past OSC52_LIMIT is refused rather than queued.
+    #[test]
+    fn an_oversized_osc52_write_is_refused() {
+        let groups = OSC52_LIMIT / 3 + 1;
+        let mut bytes = b"\x1b]52;c;".to_vec();
+        bytes.extend(std::iter::repeat_n(*b"QUFB", groups).flatten());
+        bytes.push(0x07);
+        let t = Terminal::from_test_vt(80, 24, &bytes);
+        assert!(t.take_clipboard_requests().is_empty());
     }
 }

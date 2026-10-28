@@ -59,6 +59,8 @@ pub struct Terminal {
     #[serde(skip_serializing_if = "is_default")]
     pub mouse: Mouse,
     #[serde(skip_serializing_if = "is_default")]
+    pub clipboard: Clipboard,
+    #[serde(skip_serializing_if = "is_default")]
     pub env: Env,
 }
 
@@ -73,6 +75,7 @@ impl Default for Terminal {
             cursor: Cursor::default(),
             focus: Focus::default(),
             mouse: Mouse::default(),
+            clipboard: Clipboard::default(),
             env: Env::default(),
         }
     }
@@ -231,6 +234,15 @@ pub struct Mouse {
     pub copy_on_select: bool,
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Clipboard {
+    /// Answer OSC 52 clipboard queries: a program in the terminal (or on a
+    /// remote host over ssh) may read the clipboard. Off by default; OSC 52
+    /// writes (setting the clipboard) are always allowed.
+    pub osc52_read: bool,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Env {
@@ -341,6 +353,7 @@ pub fn describe() -> Value {
         "terminal.focus.ring": {"type":"string", "enum":["neutral","accent"], "default":"accent"},
         "terminal.focus.strength": {"type":"number", "minimum":0.0, "maximum":1.0, "default":0.25, "used_when":"terminal.focus.ring is accent"},
         "terminal.mouse.copy_on_select": {"type":"boolean", "default":false},
+        "terminal.clipboard.osc52_read": {"type":"boolean", "default":false},
         "terminal.env.term": {"type":"string", "pattern":"[a-z0-9-]{1,64}", "default":"xterm-256color", "applies":"to tabs and panes opened afterwards"}
     })
 }
@@ -404,6 +417,10 @@ pub(crate) fn set(
         ["mouse", "copy_on_select"] => {
             terminal.mouse.copy_on_select =
                 value.map_or(Ok(defaults.mouse.copy_on_select), |v| typed(path, v))?
+        }
+        ["clipboard", "osc52_read"] => {
+            terminal.clipboard.osc52_read =
+                value.map_or(Ok(defaults.clipboard.osc52_read), |v| typed(path, v))?
         }
         ["env", "term"] => {
             terminal.env.term = value.map_or(Ok(defaults.env.term), |v| typed(path, v))?
@@ -478,6 +495,7 @@ mod tests {
         );
         assert_eq!((t.focus.ring, t.focus.strength), (FocusRing::Accent, 0.25));
         assert!(!t.mouse.copy_on_select);
+        assert!(!t.clipboard.osc52_read);
         assert_eq!(t.env.term, "xterm-256color");
         validate(&t).unwrap();
         // Written out in full, every default reads back as the default and
@@ -485,7 +503,8 @@ mod tests {
         let full = json!({"font":{"family":null,"size":t.font.size,"weight":400},
             "padding":8,"scrollback":{"lines":1000},"scroll":{"speed":40},"border":{"width":1},
             "cursor":{"shape":"underline","blink":false},"focus":{"ring":"accent","strength":0.25},
-            "mouse":{"copy_on_select":false},"env":{"term":"xterm-256color"}});
+            "mouse":{"copy_on_select":false},"clipboard":{"osc52_read":false},
+            "env":{"term":"xterm-256color"}});
         let read: Terminal = serde_json::from_value(full).unwrap();
         assert_eq!(read, t);
         assert_eq!(serde_json::to_value(&read).unwrap(), json!({}));

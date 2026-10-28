@@ -1778,6 +1778,52 @@ mod tests {
         );
     }
 
+    /// While a widget has the keyboard (a text field or the editor), the
+    /// clipboard events are its own: bound commands neither fire nor take
+    /// them, so Copy, Cut and Paste reach the focused widget.
+    #[test]
+    fn a_focused_widget_keeps_the_clipboard_events() {
+        let mut r: Registry<Counter> = Registry::new();
+        r.add(Action {
+            id: "copy",
+            label: "x",
+            menu: None,
+            submenu: None,
+            group: 0,
+            shortcut: Some(KeyboardShortcut::new(Modifiers::COMMAND, Key::C)),
+            icon: None,
+            enabled: always,
+            run: |_| {},
+        });
+        let ctx = egui::Context::default();
+        let field = egui::Id::new("field");
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            ui.memory_mut(|m| m.request_focus(field));
+        });
+        output.textures_delta.clear();
+        let mut fired = Vec::new();
+        let mut kept = Vec::new();
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                events: vec![
+                    egui::Event::ModifiersChanged(Modifiers::COMMAND),
+                    egui::Event::Copy,
+                    egui::Event::Paste("p".into()),
+                ],
+                ..Default::default()
+            },
+            |ui| {
+                ui.memory_mut(|m| m.request_focus(field));
+                fired = r.shortcuts(ui.ctx(), &Counter::default());
+                kept = ui.input(|i| i.events.clone());
+            },
+        );
+        output.textures_delta.clear();
+        assert!(fired.is_empty(), "{fired:?}");
+        assert!(kept.contains(&egui::Event::Copy));
+        assert!(kept.contains(&egui::Event::Paste("p".into())));
+    }
+
     fn fired_key(
         r: &Registry<Counter>,
         s: &Counter,

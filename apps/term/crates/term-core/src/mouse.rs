@@ -209,6 +209,7 @@ mod tests {
             quit: Arc::new(AtomicBool::new(false)),
             title: Arc::new(Mutex::new(String::new())),
             title_changed: Arc::new(OnceLock::new()),
+            clipboard: Arc::default(),
         };
         let mut grid = Crosswords::new(
             CrosswordsSize::new(80, 24),

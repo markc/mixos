@@ -318,6 +318,7 @@ fn describe_lists_every_terminal_field_and_the_summary_carries_them() {
         "terminal.focus.ring",
         "terminal.focus.strength",
         "terminal.mouse.copy_on_select",
+        "terminal.clipboard.osc52_read",
         "terminal.env.term",
     ] {
         assert!(described["fields"].get(path).is_some(), "{path}");
