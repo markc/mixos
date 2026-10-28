@@ -376,9 +376,13 @@ try
       need(not contains(read_file($path), "@{"), "shipped unit/desktop contains an unrendered placeholder: " .. $path)
     end
   end
-  for $owner in ["notifyd", "releasesd"]
+  for $owner in ["clipd", "notifyd", "releasesd"]
     need(contains(read_file($package_root .. "/share/" .. $owner .. "/units/" .. $owner .. "@.service"), "ExecStart=" .. $package_root .. "/bin/mix"), "component's shipped unit copy was not rendered")
   end
+  need(is_file($package_root .. "/lib/clipd/clipd.mix") and
+    is_file($package_root .. "/lib/clipd/lib/clipboard.mix") and
+    contains(read_file($package_root .. "/share/clipd/units/clipd.service"), "ExecStart=" .. $package_root .. "/bin/mix"),
+    "clipboard scripts or rendered store unit missing")
   need($both_record.entrance.sysroot == "mixos:prefix/.layout-root" and len($both_record.entrance.files) == 2 and
     read_link($entry_stage .. "/usr/local/bin/mix") == $package_root .. "/bin/mix" and read_file($entry_stage .. "/etc/shells") == "/usr/local/bin/mix\n", "host entrance was not journaled or applied")
   for $file in $both_record.files
