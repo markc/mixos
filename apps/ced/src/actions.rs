@@ -171,7 +171,17 @@ pub fn registry() -> Registry<App> {
         HelpKeys => "help.keys", "help-keys", "help", 0;
         HelpAbout => "help.about", "help-about", "help", 1;
     }
-    r.add(Action { id: "mail.headers", label: "mail-headers", menu: None, submenu: None, group: 0, shortcut: None, icon: None, enabled: |a: &App| a.enabled(ActionId::MailHeaders), run: |a: &mut App| a.action(ActionId::MailHeaders) });
+    r.add(Action {
+        id: "mail.headers",
+        label: "mail-headers",
+        menu: None,
+        submenu: None,
+        group: 0,
+        shortcut: None,
+        icon: None,
+        enabled: |a: &App| a.enabled(ActionId::MailHeaders),
+        run: |a: &mut App| a.action(ActionId::MailHeaders),
+    });
     toggles! { r;
         EditOverwrite => "edit.overwrite", "edit-overwrite", "edit", 3;
         ViewWhitespace => "view.whitespace", "view-whitespace", "view", 1;

@@ -271,7 +271,7 @@ mod tests {
         let Effect::SaveMail { path, text, send, command, .. } = fx.into_iter().find(|e| matches!(e, Effect::SaveMail { .. })).unwrap() else { unreachable!() };
         assert!(send);
         assert!(matches!(execute(&mut c, tab, "file.send").as_slice(), [Effect::Respond { rc: 10, .. }]));
-        let fx = c.on_mail_saved(tab, path, text, send, command, Ok(()));
+        let fx = c.on_mail_saved(tab, path, text, send, command.clone(), Ok(()));
         assert_eq!(fx.iter().filter(|e| matches!(e, Effect::SendMail { .. })).count(), 1);
         assert!(!c.can_send(tab));
         assert!(!execute(&mut c, tab, "file.send").iter().any(|e| matches!(e, Effect::SaveMail { .. } | Effect::SendMail { .. })));

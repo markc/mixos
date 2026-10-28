@@ -1341,7 +1341,9 @@ mod tests {
             a.dialog = dialog;
             let actions = bus(&mut a, &mut service, "ced.actions", json!({})).1;
             for row in actions["actions"].as_array().unwrap() {
-                if !row["id"].as_str().unwrap().starts_with("view.markdown.") && !matches!(row["id"].as_str().unwrap(), "file.send" | "mail.headers") {
+                if !row["id"].as_str().unwrap().starts_with("view.markdown.")
+                    && !matches!(row["id"].as_str().unwrap(), "file.send" | "mail.headers")
+                {
                     assert_eq!(row["enabled"], true, "{}", row["id"]);
                 }
             }

@@ -70,8 +70,19 @@ pub fn help(window: bool) -> Vec<::bus::CommandDescriptor> {
 /// Everything the Bus thread delivers.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Delivery {
-    MailSaved { tab: u64, path: String, text: String, send: bool, command: Option<(u64, String)>, result: Result<(), String> },
-    MailSent { tab: u64, command: Option<(u64, String)>, result: Result<String, String> },
+    MailSaved {
+        tab: u64,
+        path: String,
+        text: String,
+        send: bool,
+        command: Option<(u64, String)>,
+        result: Result<(), String>,
+    },
+    MailSent {
+        tab: u64,
+        command: Option<(u64, String)>,
+        result: Result<String, String>,
+    },
     NotificationFailed {
         text: String,
     },
@@ -235,7 +246,9 @@ impl BusHandle {
 pub fn is_bus(effect: &Effect) -> bool {
     matches!(
         effect,
-        Effect::SaveMail { .. } | Effect::SendMail { .. } | Effect::Notify { .. }
+        Effect::SaveMail { .. }
+            | Effect::SendMail { .. }
+            | Effect::Notify { .. }
             | Effect::Send { .. }
             | Effect::Respond { .. }
             | Effect::Timer { .. }

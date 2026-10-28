@@ -315,7 +315,15 @@ fn attachment_chip(
     } else {
         text
     };
-    if toolkit::header_form::attachment_chip(ui, (index, &attachment.path), &attachment.path, &text, bad, icon, &crate::label_with("compose-attachment-remove", &[("name", &attachment.label)])) {
+    if toolkit::header_form::attachment_chip(
+        ui,
+        (index, &attachment.path),
+        &attachment.path,
+        &text,
+        bad,
+        icon,
+        &crate::label_with("compose-attachment-remove", &[("name", &attachment.label)]),
+    ) {
         events.push(UiEvent::ComposeAttachmentRemove(attachment.path.clone()));
     }
 }
@@ -375,7 +383,15 @@ pub fn form(
     }
     // The label column fits the widest label any row can have, so opening
     // a row never moves the fields sideways.
-    let column = toolkit::header_form::column(ui, [ComposeField::To].into_iter().chain(ComposeField::OPTIONAL).chain([ComposeField::Subject]).map(|f| crate::label(row_label(f))).chain([crate::label("from"), crate::label("compose-attachments")]));
+    let column = toolkit::header_form::column(
+        ui,
+        [ComposeField::To]
+            .into_iter()
+            .chain(ComposeField::OPTIONAL)
+            .chain([ComposeField::Subject])
+            .map(|f| crate::label(row_label(f)))
+            .chain([crate::label("from"), crate::label("compose-attachments")]),
+    );
     let attachment_width = (form_width - column - GAP).max(0.0);
     let icon = field::height_of(ui.ctx());
     // While a send is in flight every field is read-only: the dialog shows
@@ -487,7 +503,13 @@ pub fn form(
         row(ui, &crate::label("subject"), column, |ui, label| {
             let mut buffer = compose.draft.subject.clone();
             let width = ui.available_width();
-            let response = toolkit::header_form::text(ui, egui::Id::unique((ui.ctx().viewport_id(), "compose-subject")), label, &mut buffer, width);
+            let response = toolkit::header_form::text(
+                ui,
+                egui::Id::unique((ui.ctx().viewport_id(), "compose-subject")),
+                label,
+                &mut buffer,
+                width,
+            );
             if response.changed() {
                 events.push(UiEvent::ComposeField(ComposeField::Subject, buffer));
             }

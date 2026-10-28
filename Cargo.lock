@@ -1204,6 +1204,7 @@ dependencies = [
  "egui",
  "egui_kittest",
  "futures",
+ "maildoc",
  "mix",
  "serde",
  "serde_json",
@@ -2289,6 +2290,7 @@ dependencies = [
  "config",
  "edit",
  "editor-model",
+ "maildoc",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -2475,7 +2477,7 @@ dependencies = [
 
 [[package]]
 name = "editd"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "blake3",

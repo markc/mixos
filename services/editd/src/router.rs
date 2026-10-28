@@ -1712,7 +1712,11 @@ impl Editd {
         let router_tx = self.router_tx.clone();
         Box::pin(async move {
             if req.path.is_some() && req.text.is_some() {
-                return render(&refusal(ErrorCode::InvalidArgument, Some(reason::BAD_ARGS), "edit.open text is only valid without path"));
+                return render(&refusal(
+                    ErrorCode::InvalidArgument,
+                    Some(reason::BAD_ARGS),
+                    "edit.open text is only valid without path",
+                ));
             }
             let (canonical, size) = match req.path.clone() {
                 None => (None, None),

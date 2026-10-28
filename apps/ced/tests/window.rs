@@ -306,14 +306,21 @@ fn an_empty_window_pro_light() {
 fn mail_document_header_strip_pro_light() {
     use egui_kittest::kittest::Queryable;
     let text = "---\nmail-attachments: [\"/home/user/report.pdf\"]\nmail-from: ann@example.org\nmail-in-reply-to: <original@example.org>\nmail-references: <original@example.org>\nmail-subject: The report\nmail-to: bob@example.org\n---\nHi Bob,\n\nHere is the report.";
-    let (mut h, _) = window(theme(Scheme::Pro, Mode::Light), &[("/home/user/letter.md", text)], egui::vec2(820.0, 580.0));
+    let (mut h, _) = window(
+        theme(Scheme::Pro, Mode::Light),
+        &[("/home/user/letter.md", text)],
+        egui::vec2(820.0, 580.0),
+    );
     h.run_steps(12);
     let app = &h.state().shell.as_ref().unwrap().app;
     let tab = &app.ctl.tabs()[0];
     assert!(tab.mail.is_some());
     assert!(!tab.dirty());
     assert!(app.enabled(documents::actions::ActionId::FileSend));
-    assert!(h.query_all_by_label("Subject").any(|node| node.rect().is_positive()));
+    assert!(
+        h.query_all_by_label("Subject")
+            .any(|node| node.rect().is_positive())
+    );
     h.snapshot("mail_document_header_strip_pro_light");
 }
 

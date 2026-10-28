@@ -190,7 +190,9 @@ fn same_shape(v: &Value, name: &str) {
 async fn scratch_initial_text_has_no_undo_entry_and_never_reads_a_path() {
     let h = start();
     let text = "\u{FEFF}Body\nwith two lines";
-    let opened = h.ok("edit.open", json!({"text":text,"language":"markdown"})).await;
+    let opened = h
+        .ok("edit.open", json!({"text":text,"language":"markdown"}))
+        .await;
     let buffer = opened["buffer"].as_str().unwrap();
     assert_eq!(opened["rev"], 0);
     assert_eq!(opened["language"], "markdown");
@@ -200,14 +202,19 @@ async fn scratch_initial_text_has_no_undo_entry_and_never_reads_a_path() {
     assert_eq!(undone.1["reason"], "nothing_to_undo");
     assert_eq!(h.text(buffer).await, text);
     let path = h.file("keep.md", "keep");
-    let refused = h.call("edit.open", json!({"path":path,"text":"overwrite"})).await;
+    let refused = h
+        .call("edit.open", json!({"path":path,"text":"overwrite"}))
+        .await;
     assert_eq!(refused.0, 10);
     assert_eq!(std::fs::read_to_string(path).unwrap(), "keep");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn initial_scratch_text_counts_against_the_native_byte_budget() {
-    let h = start_with(Config { budget_cap: 3, ..config() });
+    let h = start_with(Config {
+        budget_cap: 3,
+        ..config()
+    });
     let refused = h.call("edit.open", json!({"text":"four"})).await;
     assert_eq!(refused.0, 10);
     assert_eq!(refused.1["reason"], "budget");

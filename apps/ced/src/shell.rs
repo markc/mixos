@@ -231,11 +231,25 @@ impl Shell {
     fn pump(&mut self) {
         while let Some(delivery) = self.transport.poll() {
             match delivery {
-                Delivery::MailSaved { tab, path, text, send, command, result } => {
-                    let fx = self.app.ctl.on_mail_saved(tab, path, text, send, command, result);
+                Delivery::MailSaved {
+                    tab,
+                    path,
+                    text,
+                    send,
+                    command,
+                    result,
+                } => {
+                    let fx = self
+                        .app
+                        .ctl
+                        .on_mail_saved(tab, path, text, send, command, result);
                     self.app.absorb(fx);
                 }
-                Delivery::MailSent { tab, command, result } => {
+                Delivery::MailSent {
+                    tab,
+                    command,
+                    result,
+                } => {
                     let fx = self.app.ctl.on_mail_sent(tab, command, result);
                     self.app.absorb(fx);
                 }

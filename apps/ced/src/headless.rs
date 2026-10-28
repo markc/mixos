@@ -103,8 +103,19 @@ pub fn run(service: &str, url: &str, config: Config, paths: &[String]) -> Result
                 return Err("the Bus thread ended".to_owned());
             };
             work = match delivery {
-                Delivery::MailSaved { tab, path, text, send, command, result } => ctl.on_mail_saved(tab, path, text, send, command, result),
-                Delivery::MailSent { tab, command, result } => ctl.on_mail_sent(tab, command, result),
+                Delivery::MailSaved {
+                    tab,
+                    path,
+                    text,
+                    send,
+                    command,
+                    result,
+                } => ctl.on_mail_saved(tab, path, text, send, command, result),
+                Delivery::MailSent {
+                    tab,
+                    command,
+                    result,
+                } => ctl.on_mail_sent(tab, command, result),
                 Delivery::Incoming(i) => ctl.on_incoming(i),
                 Delivery::Command(c) if c.command == "HELP" => vec![Effect::Respond {
                     id: c.id,
