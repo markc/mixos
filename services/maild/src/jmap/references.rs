@@ -35,17 +35,25 @@ pub fn resolve_mail_creation_references(
         if let Some(create) = args.get_mut("create").and_then(Value::as_object_mut) {
             for entry in create.values_mut() {
                 if let Some(value) = entry.get_mut("emailId")
-                    && let Some(id) = value.as_str().and_then(|s| s.strip_prefix('#')).and_then(|key| ids.get(key))
+                    && let Some(id) = value
+                        .as_str()
+                        .and_then(|s| s.strip_prefix('#'))
+                        .and_then(|key| ids.get(key))
                 {
                     *value = id.clone().into();
                 }
             }
         }
     } else if method == "Email/import" || method == "Email/set" {
-        let key = if method == "Email/import" { "emails" } else { "create" };
+        let key = if method == "Email/import" {
+            "emails"
+        } else {
+            "create"
+        };
         if let Some(entries) = args.get_mut(key).and_then(Value::as_object_mut) {
             for entry in entries.values_mut() {
-                if let Some(mailboxes) = entry.get_mut("mailboxIds").and_then(Value::as_object_mut) {
+                if let Some(mailboxes) = entry.get_mut("mailboxIds").and_then(Value::as_object_mut)
+                {
                     let keys: Vec<_> = mailboxes.keys().cloned().collect();
                     for key in keys {
                         if let Some(id) = key.strip_prefix('#').and_then(|key| ids.get(key))

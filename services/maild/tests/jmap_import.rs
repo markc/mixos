@@ -478,8 +478,20 @@ async fn email_import_and_submission_resolve_creation_ids_in_one_request() {
             "envelope": {"mailFrom": {"email": "alice@example.com"}, "rcptTo": [{"email": "recipient@example.net"}]}}}}, "s"]
     ])).await;
     let calls = &response["methodResponses"];
-    assert!(calls[1][1]["created"]["draft"]["id"].is_string(), "{response}");
-    assert!(calls[2][1]["created"]["sent"]["id"].is_string(), "{response}");
-    assert_eq!(response["createdIds"]["draft"], calls[1][1]["created"]["draft"]["id"]);
-    assert_eq!(response["createdIds"]["box"], calls[0][1]["created"]["box"]["id"]);
+    assert!(
+        calls[1][1]["created"]["draft"]["id"].is_string(),
+        "{response}"
+    );
+    assert!(
+        calls[2][1]["created"]["sent"]["id"].is_string(),
+        "{response}"
+    );
+    assert_eq!(
+        response["createdIds"]["draft"],
+        calls[1][1]["created"]["draft"]["id"]
+    );
+    assert_eq!(
+        response["createdIds"]["box"],
+        calls[0][1]["created"]["box"]["id"]
+    );
 }

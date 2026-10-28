@@ -37,6 +37,8 @@ requirement was stronger than the RFC. The import test checks RFC 8621 §4.8's
 successful-create response for a duplicate. The same suite tests import state
 preconditions, Received date defaults, partial failure, account-owned CAS ids,
 concurrent duplicate rejection, thread properties and upload/import/submission.
+It also covers transactional quota enforcement, EAI byte preservation, foreign
+blob refusal and mailbox/import/submission creation references in one request.
 
 `config_paths.rs` checks every configured path through both loaders and
 rejects logical root escapes. `socket_activation.rs` passes actual listening
