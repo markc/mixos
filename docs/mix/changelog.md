@@ -61,6 +61,11 @@ generated: by docs/_build/gen-site.mix from libs/mix/CHANGELOG.md; do not edit
 
 ### Fixed
 
+- A TCP source or listener that closes on its own (send timeout, overflow, peer
+  close, error) is unsubscribed before its terminal event is published, so a
+  script that sees the terminal can watch the same key again at once. The
+  release gate's `stalled_send_expiry_answers_queued_and_cancelled_calls` failed
+  intermittently under load on this ordering.
 - `reply(map)` and `reply(rc, map)` send the map (or a list, number or bool)
   as compact JSON in its own key order, so the caller's `send` gets a map in
   `$result`. They used to send Mix display text (`{ok: true}`), which no

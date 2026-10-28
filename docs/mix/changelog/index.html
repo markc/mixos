@@ -320,6 +320,13 @@ scenes found no live script affected.</li>
 <h3 id="fixed">Fixed</h3>
 <ul>
 <li>
+<p>A TCP source or listener that closes on its own (send timeout, overflow, peer
+close, error) is unsubscribed before its terminal event is published, so a
+script that sees the terminal can watch the same key again at once. The
+release gate's <code>stalled_send_expiry_answers_queued_and_cancelled_calls</code> failed
+intermittently under load on this ordering.</p>
+</li>
+<li>
 <p><code>reply(map)</code> and <code>reply(rc, map)</code> send the map (or a list, number or bool)
 as compact JSON in its own key order, so the caller's <code>send</code> gets a map in
 <code>$result</code>. They used to send Mix display text (<code>{ok: true}</code>), which no

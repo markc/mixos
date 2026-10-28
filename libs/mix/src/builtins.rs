@@ -26733,8 +26733,10 @@ pub(crate) mod socket_sources {
                     };
                     drop(listener);
                     if let Some(closed) = closed {
-                        queue.socket_closed(&id, closed);
+                        // Unmark before publishing: a script that sees the
+                        // terminal may at once watch the same key again.
                         unmark_subscribed(key);
+                        queue.socket_closed(&id, closed);
                     }
                     worker_completed.store(true, Ordering::Release);
                 });
@@ -27036,6 +27038,9 @@ pub(crate) mod socket_sources {
                             // the socket and publish exactly one terminal
                             // event — frames are never silently dropped.
                             drop(wire);
+                            // Unmark before publishing: a script that sees
+                            // the terminal may at once watch the key again.
+                            unmark_subscribed(key);
                             queue.socket_closed(
                                 &worker_id,
                                 serde_json::json!({
@@ -27043,15 +27048,14 @@ pub(crate) mod socket_sources {
                                     "message": "the socket frame queue exceeded its byte or frame bound; the connection was closed",
                                 }),
                             );
-                            unmark_subscribed(key);
                         }
                         Terminal::Reason(reason) => {
                             drop(wire);
+                            unmark_subscribed(key);
                             queue.socket_closed(
                                 &worker_id,
                                 serde_json::json!({ "reason": reason }),
                             );
-                            unmark_subscribed(key);
                         }
                     }
                     // Publish-then-complete: a prune site that sees this
