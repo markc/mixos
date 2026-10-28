@@ -73,7 +73,9 @@ pub struct Ticket {
 
 impl std::ops::Deref for Ticket {
     type Target = OwnedObjectPath;
-    fn deref(&self) -> &Self::Target { &self.path }
+    fn deref(&self) -> &Self::Target {
+        &self.path
+    }
 }
 
 impl Request {
@@ -120,7 +122,9 @@ impl Request {
             return Err(CloseError::Fdo(fdo::Error::Failed("no object path".into())));
         };
         let mut ended = self.ended.lock().await;
-        if *ended { return Ok(()); }
+        if *ended {
+            return Ok(());
+        }
         *ended = true;
         server.remove::<Request, _>(path.to_owned()).await?;
         Ok(())
@@ -141,12 +145,11 @@ pub async fn export(
     owner: &str,
 ) -> zbus::Result<Ticket> {
     let request = Request::new(owner);
-    let ticket = Ticket { path: path.clone(), ended: request.ended.clone() };
-    if !connection
-        .object_server()
-        .at(path.clone(), request)
-        .await?
-    {
+    let ticket = Ticket {
+        path: path.clone(),
+        ended: request.ended.clone(),
+    };
+    if !connection.object_server().at(path.clone(), request).await? {
         return Err(zbus::Error::Failure(format!(
             "request {path} already exists"
         )));
@@ -156,11 +159,12 @@ pub async fn export(
 
 /// Whether the request is still exported, i.e. its owner has not closed it.
 pub async fn live(connection: &Connection, ticket: &Ticket) -> bool {
-    !*ticket.ended.lock().await && connection
-        .object_server()
-        .interface::<_, Request>(ticket.path.clone())
-        .await
-        .is_ok()
+    !*ticket.ended.lock().await
+        && connection
+            .object_server()
+            .interface::<_, Request>(ticket.path.clone())
+            .await
+            .is_ok()
 }
 
 /// Answers the request and removes it. Returns false when the owner had

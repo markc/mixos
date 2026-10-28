@@ -218,13 +218,7 @@ impl ScreenCast {
         tracing::info!(%owner, %session, "screencast session created");
         let mut results = HashMap::new();
         results.insert("session_handle", Value::from(session.as_str().to_owned()));
-        respond_later(
-            connection,
-            ticket,
-            owner,
-            request::SUCCESS,
-            results,
-        );
+        respond_later(connection, ticket, owner, request::SUCCESS, results);
         Ok(request)
     }
 
@@ -263,13 +257,7 @@ impl ScreenCast {
             Ok(())
         })?;
         let ticket = request::export(connection, &request, &owner).await?;
-        respond_later(
-            connection,
-            ticket,
-            owner,
-            request::SUCCESS,
-            HashMap::new(),
-        );
+        respond_later(connection, ticket, owner, request::SUCCESS, HashMap::new());
         Ok(request)
     }
 

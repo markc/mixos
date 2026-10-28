@@ -29,8 +29,16 @@ async fn shared_request_export_cannot_answer_a_reused_path_or_answer_twice() {
     let name = owner.unique_name().unwrap().as_str();
     let path = handle::request_path(name, "reuse").unwrap();
     let old = request::export(&server, &path, name).await.unwrap();
-    owner.call_method(Some(server.unique_name().unwrap().as_str()), path.as_str(),
-        Some("org.freedesktop.portal.Request"), "Close", &()).await.unwrap();
+    owner
+        .call_method(
+            Some(server.unique_name().unwrap().as_str()),
+            path.as_str(),
+            Some("org.freedesktop.portal.Request"),
+            "Close",
+            &(),
+        )
+        .await
+        .unwrap();
     let new = request::export(&server, &path, name).await.unwrap();
     let mut stream = responses(&owner, path.as_str()).await;
     assert!(!request::respond(&server, &old, name, 2, HashMap::new()).await);
@@ -41,7 +49,11 @@ async fn shared_request_export_cannot_answer_a_reused_path_or_answer_twice() {
     );
     assert_ne!(a, b);
     assert_eq!(next_response(&mut stream).await.0, 0);
-    assert!(tokio::time::timeout(Duration::from_millis(100), stream.next()).await.is_err());
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), stream.next())
+            .await
+            .is_err()
+    );
 }
 
 struct PrivateBus {

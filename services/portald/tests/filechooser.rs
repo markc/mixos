@@ -299,7 +299,15 @@ async fn portal_native_stack_mapping_lifecycle_and_loss() {
     drop(listener);
     let mut broker = test_broker::Broker::with_tcp_port(port);
     let mut provider = Provider::start(&broker.url).await;
-    provider.client.call("files", "files.choose", json!({"correlation":"/org/freedesktop/portal/desktop/request/old/startup"})).await.unwrap();
+    provider
+        .client
+        .call(
+            "files",
+            "files.choose",
+            json!({"correlation":"/org/freedesktop/portal/desktop/request/old/startup"}),
+        )
+        .await
+        .unwrap();
     let stale = provider.chosen().await.0;
     let (native, incoming) = portald::service::connect(&broker.url).unwrap();
     let bridge = portald::filechooser::Bridge::new(native.clone());
@@ -365,11 +373,22 @@ async fn portal_native_stack_mapping_lifecycle_and_loss() {
         let mut stream = responses(&caller, "same").await;
         let mut options = Options::new();
         if mode == "open" {
-            options.insert("current_folder".into(), OwnedValue::try_from(Value::from(b"/tmp/\xff\0".to_vec())).unwrap());
-            let filter: portald::filechooser::mapping::Filter = ("Text".into(), vec![(0, "*.txt".into())]);
-            options.insert("current_filter".into(), OwnedValue::try_from(Value::from(filter)).unwrap());
-            let choices: Vec<portald::filechooser::mapping::Choice> = vec![("check".into(), "Check".into(), vec![], "".into())];
-            options.insert("choices".into(), OwnedValue::try_from(Value::from(choices)).unwrap());
+            options.insert(
+                "current_folder".into(),
+                OwnedValue::try_from(Value::from(b"/tmp/\xff\0".to_vec())).unwrap(),
+            );
+            let filter: portald::filechooser::mapping::Filter =
+                ("Text".into(), vec![(0, "*.txt".into())]);
+            options.insert(
+                "current_filter".into(),
+                OwnedValue::try_from(Value::from(filter)).unwrap(),
+            );
+            let choices: Vec<portald::filechooser::mapping::Choice> =
+                vec![("check".into(), "Check".into(), vec![], "".into())];
+            options.insert(
+                "choices".into(),
+                OwnedValue::try_from(Value::from(choices)).unwrap(),
+            );
         }
         if mode == "save_files" {
             options.insert(
@@ -389,15 +408,23 @@ async fn portal_native_stack_mapping_lifecycle_and_loss() {
                 .starts_with(caller.unique_name().unwrap().as_str())
         );
         provider.control.send(Control::Finish(id, 0, true)).unwrap();
-        let results = tokio::time::timeout(Duration::from_secs(2), response(&mut stream, 0)).await.expect("files.chosen must answer without waiting for polling");
+        let results = tokio::time::timeout(Duration::from_secs(2), response(&mut stream, 0))
+            .await
+            .expect("files.chosen must answer without waiting for polling");
         assert_eq!(
             Vec::<String>::try_from(results["uris"].try_clone().unwrap()).unwrap(),
             vec!["file:///tmp/%FF"]
         );
         if mode == "open" {
             assert_eq!(body["current_folder"], "file:///tmp/%FF");
-            assert_eq!(Vec::<(String, String)>::try_from(results["choices"].try_clone().unwrap()).unwrap(), vec![("check".into(), "true".into())]);
-            let filter = portald::filechooser::mapping::Filter::try_from(results["current_filter"].try_clone().unwrap()).unwrap();
+            assert_eq!(
+                Vec::<(String, String)>::try_from(results["choices"].try_clone().unwrap()).unwrap(),
+                vec![("check".into(), "true".into())]
+            );
+            let filter = portald::filechooser::mapping::Filter::try_from(
+                results["current_filter"].try_clone().unwrap(),
+            )
+            .unwrap();
             assert_eq!(filter, ("Text".into(), vec![(0, "*.txt".into())]));
         }
         quiet(&mut stream).await;
@@ -418,7 +445,9 @@ async fn portal_native_stack_mapping_lifecycle_and_loss() {
         if accept == "early" {
             provider.chosen().await;
         }
-        tokio::time::timeout(Duration::from_secs(2), response(&mut stream, code)).await.expect("early/refused choose must answer promptly");
+        tokio::time::timeout(Duration::from_secs(2), response(&mut stream, code))
+            .await
+            .expect("early/refused choose must answer promptly");
         quiet(&mut stream).await;
     }
 
@@ -493,15 +522,22 @@ async fn portal_native_stack_mapping_lifecycle_and_loss() {
     // Disconnecting a persistent D-Bus caller cancels its native window.
     // Keep a reused token open across a closing sweep of the older send.
     let mut stream = responses(&caller, "swept_reuse").await;
-    begin(&caller, "OpenFile", "swept_reuse", label("hold")).await.unwrap();
+    begin(&caller, "OpenFile", "swept_reuse", label("hold"))
+        .await
+        .unwrap();
     let old = provider.chosen().await.0;
     close(&caller, &path(&caller, "swept_reuse")).await.unwrap();
-    begin(&caller, "OpenFile", "swept_reuse", Options::new()).await.unwrap();
+    begin(&caller, "OpenFile", "swept_reuse", Options::new())
+        .await
+        .unwrap();
     let new = provider.chosen().await.0;
     provider.cancelled(&old).await;
     provider.control.send(Control::Release).unwrap();
     provider.cancelled(&old).await;
-    provider.control.send(Control::Finish(new, 0, true)).unwrap();
+    provider
+        .control
+        .send(Control::Finish(new, 0, true))
+        .unwrap();
     response(&mut stream, 0).await;
     quiet(&mut stream).await;
 
@@ -514,7 +550,9 @@ async fn portal_native_stack_mapping_lifecycle_and_loss() {
     provider.cancelled(&id).await;
 
     let leaving = connection(address.trim()).await;
-    begin(&leaving, "OpenFile", "leave_sending", label("hold")).await.unwrap();
+    begin(&leaving, "OpenFile", "leave_sending", label("hold"))
+        .await
+        .unwrap();
     let id = provider.chosen().await.0;
     leaving.close().await.unwrap();
     provider.control.send(Control::Release).unwrap();
@@ -552,7 +590,9 @@ async fn portal_native_stack_mapping_lifecycle_and_loss() {
     // Losing the native Bus is final for the old Request. A reconnect
     // resubscribes and clears its leftover chooser before accepting new ones.
     let mut stream = responses(&caller, "bus_loss").await;
-    begin(&caller, "OpenFile", "bus_loss", Options::new()).await.unwrap();
+    begin(&caller, "OpenFile", "bus_loss", Options::new())
+        .await
+        .unwrap();
     let id = provider.chosen().await.0;
     broker.bounce();
     response(&mut stream, 2).await;
@@ -562,14 +602,22 @@ async fn portal_native_stack_mapping_lifecycle_and_loss() {
     tokio::time::timeout(WAIT, async {
         loop {
             let mut stream = responses(&caller, "after_reconnect").await;
-            begin(&caller, "OpenFile", "after_reconnect", label("early")).await.unwrap();
+            begin(&caller, "OpenFile", "after_reconnect", label("early"))
+                .await
+                .unwrap();
             let message = stream.next().await.unwrap().unwrap();
-            let (code, _): (u32, HashMap<String, OwnedValue>) = message.body().deserialize().unwrap();
-            if code == 0 { provider.chosen().await; break; }
+            let (code, _): (u32, HashMap<String, OwnedValue>) =
+                message.body().deserialize().unwrap();
+            if code == 0 {
+                provider.chosen().await;
+                break;
+            }
             assert_eq!(code, 2);
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
-    }).await.unwrap();
+    })
+    .await
+    .unwrap();
 
     // Incarnation changes fail all requests from the old provider.
     let mut stream = responses(&caller, "loss").await;
@@ -580,7 +628,9 @@ async fn portal_native_stack_mapping_lifecycle_and_loss() {
     provider.control.send(Control::Incarnation).unwrap();
     response(&mut stream, 2).await;
     let mut stream = responses(&caller, "killed").await;
-    begin(&caller, "OpenFile", "killed", Options::new()).await.unwrap();
+    begin(&caller, "OpenFile", "killed", Options::new())
+        .await
+        .unwrap();
     provider.chosen().await;
     provider.client.close().await;
     response(&mut stream, 2).await;

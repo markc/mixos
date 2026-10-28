@@ -136,7 +136,9 @@ impl Bridge {
             self.cancel(cancel, registry.generation);
         }
         if let Some(response) = effects.response {
-            if let Some(reply_sent) = entry.reply_sent.take() { let _ = reply_sent.await; }
+            if let Some(reply_sent) = entry.reply_sent.take() {
+                let _ = reply_sent.await;
+            }
             let (code, results) = mapping::outcome(&response, entry.choices);
             request::emit(connection, &entry.path, &entry.owner, code, results).await;
         }
@@ -251,7 +253,9 @@ impl Bridge {
         body["on_behalf_of"] = json!(mapping::cut(&format!("{owner} {app}"), 128));
         let generation = {
             let registry = self.registry.lock().await;
-            if !registry.entries.contains_key(&id) { return; }
+            if !registry.entries.contains_key(&id) {
+                return;
+            }
             registry.generation
         };
         if generation.is_none() || generation != settings::native::live_generation(&self.client) {
@@ -356,7 +360,9 @@ impl Bridge {
                     // arrive. Defer that sweep while a newer send is pending,
                     // and never cancel the id of another live Request.
                     if registry.entries.iter().any(|(other, entry)| {
-                        *other != id && entry.path.as_str() == path && entry.state.phase == Phase::Sending
+                        *other != id
+                            && entry.path.as_str() == path
+                            && entry.state.phase == Phase::Sending
                     }) {
                         continue;
                     }
@@ -377,13 +383,19 @@ impl Bridge {
         }
         // A missed burst must not cost one timeout per dialog or delay the
         // next five-second liveness check. Native result reads run together.
-        let results = futures_util::future::join_all(missing.iter().map(|request| {
-            self.call("files.choose.result", json!({"request": request}))
-        })).await;
+        let results = futures_util::future::join_all(
+            missing
+                .iter()
+                .map(|request| self.call("files.choose.result", json!({"request": request}))),
+        )
+        .await;
         for (request, result) in missing.into_iter().zip(results) {
-            let value = result.filter(|v| v["state"] == "done").map(|v| v["outcome"].clone())
+            let value = result
+                .filter(|v| v["state"] == "done")
+                .map(|v| v["outcome"].clone())
                 .unwrap_or_else(|| json!({"request":request, "response":2}));
-            self.outcome(connection, generation.unwrap_or_default(), value).await;
+            self.outcome(connection, generation.unwrap_or_default(), value)
+                .await;
         }
     }
 

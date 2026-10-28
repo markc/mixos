@@ -274,7 +274,9 @@ pub fn map(mode: &str, parent: &str, title: &str, options: &Options) -> Result<J
         let mut seen = HashSet::new();
         let mut names = Vec::new();
         let files = files.unwrap_or_default();
-        if files.len() > 256 { adjusted("files"); }
+        if files.len() > 256 {
+            adjusted("files");
+        }
         for value in files.into_iter().take(256) {
             let tail = value.rsplit(|&b| b == b'/').next().unwrap_or_default();
             if tail != value {
@@ -302,17 +304,43 @@ pub fn map(mode: &str, parent: &str, title: &str, options: &Options) -> Result<J
     // Reserve space for correlation and on_behalf_of, added by the caller.
     // Large legal filter lists can otherwise exceed the native 256 KiB body.
     while serde_json::to_vec(&body).expect("JSON").len() > 250 * 1024 {
-        if let Some(filters) = body.get_mut("filters").and_then(Json::as_array_mut).filter(|v| !v.is_empty()) {
+        if let Some(filters) = body
+            .get_mut("filters")
+            .and_then(Json::as_array_mut)
+            .filter(|v| !v.is_empty())
+        {
             filters.pop();
             adjusted("filters");
-        } else if let Some(values) = body.get_mut("choices").and_then(Json::as_array_mut).filter(|v| !v.is_empty()) {
-            values.pop(); adjusted("choices");
-        } else if let Some(values) = body.get_mut("current_filter").and_then(|v| v.get_mut("patterns")).and_then(Json::as_array_mut).filter(|v| v.len() > 1) {
-            values.pop(); adjusted("current_filter");
-        } else if let Some(values) = body.get_mut("current_filter").and_then(|v| v.get_mut("mime_types")).and_then(Json::as_array_mut).filter(|v| v.len() > 1) {
-            values.pop(); adjusted("current_filter");
-        } else if let Some(values) = body.get_mut("files").and_then(Json::as_array_mut).filter(|v| v.len() > 1) {
-            values.pop(); adjusted("files");
+        } else if let Some(values) = body
+            .get_mut("choices")
+            .and_then(Json::as_array_mut)
+            .filter(|v| !v.is_empty())
+        {
+            values.pop();
+            adjusted("choices");
+        } else if let Some(values) = body
+            .get_mut("current_filter")
+            .and_then(|v| v.get_mut("patterns"))
+            .and_then(Json::as_array_mut)
+            .filter(|v| v.len() > 1)
+        {
+            values.pop();
+            adjusted("current_filter");
+        } else if let Some(values) = body
+            .get_mut("current_filter")
+            .and_then(|v| v.get_mut("mime_types"))
+            .and_then(Json::as_array_mut)
+            .filter(|v| v.len() > 1)
+        {
+            values.pop();
+            adjusted("current_filter");
+        } else if let Some(values) = body
+            .get_mut("files")
+            .and_then(Json::as_array_mut)
+            .filter(|v| v.len() > 1)
+        {
+            values.pop();
+            adjusted("files");
         } else {
             // One bounded name/filter entry and the fixed fields always fit.
             unreachable!("normalised FileChooser body exceeds budget");
@@ -566,13 +594,27 @@ mod tests {
     #[test]
     fn combined_native_body_budget_keeps_first_entries_without_inventing_fields() {
         let mut options = Options::new();
-        let files: Vec<Vec<u8>> = (0..256).map(|i| {
-            let mut bytes = vec![0xff; 250];
-            bytes.extend(format!("{i:03}").as_bytes()); bytes.push(0); bytes
-        }).collect();
+        let files: Vec<Vec<u8>> = (0..256)
+            .map(|i| {
+                let mut bytes = vec![0xff; 250];
+                bytes.extend(format!("{i:03}").as_bytes());
+                bytes.push(0);
+                bytes
+            })
+            .collect();
         put(&mut options, "files", Value::from(files));
-        let choices: Vec<Choice> = (0..16).map(|i| (format!("choice{i}"), "\"".repeat(128),
-            (0..32).map(|n| (format!("option{n}"), "\"".repeat(128))).collect(), "".into())).collect();
+        let choices: Vec<Choice> = (0..16)
+            .map(|i| {
+                (
+                    format!("choice{i}"),
+                    "\"".repeat(128),
+                    (0..32)
+                        .map(|n| (format!("option{n}"), "\"".repeat(128)))
+                        .collect(),
+                    "".into(),
+                )
+            })
+            .collect();
         put(&mut options, "choices", Value::from(choices));
         let body = map("save_files", "", "", &options).unwrap();
         assert!(serde_json::to_vec(&body).unwrap().len() <= 250 * 1024);
