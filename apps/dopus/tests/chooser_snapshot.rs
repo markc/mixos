@@ -122,11 +122,17 @@ fn snapshot_at(kind: &str, mode: Mode, minimum: bool) {
             egui::Vec2::from(toolkit::window::MIN_SIZE),
         );
         if kind != "replace" {
-            assert!(bounds.contains_rect(harness.get_by_label("Cancel").rect()));
+            let cancel = harness.get_by_label("Cancel").rect();
+            assert!(bounds.contains_rect(cancel));
+            let row = harness.get_by_role_and_label(egui::accesskit::Role::Button, "Documents").rect();
+            assert!(bounds.contains_rect(row));
+            assert!(row.bottom() <= cancel.top());
         }
         if kind == "save" {
             let name = harness.get_by_role_and_label(egui::accesskit::Role::TextInput, "File name");
             assert!(bounds.contains_rect(name.rect()));
+            let row = harness.get_by_role_and_label(egui::accesskit::Role::Button, "Documents").rect();
+            assert!(row.bottom() <= name.rect().top());
         }
     }
     harness.snapshot(format!(

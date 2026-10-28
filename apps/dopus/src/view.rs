@@ -664,9 +664,17 @@ fn pane_body(
         width >= NAME_MIN + widths.size,
         width >= NAME_MIN + widths.size + widths.modified,
     );
-    header(ui, app, pane, (widths, show_size, show_modified), events);
+    // A short chooser needs browsing space before column headings or counts.
+    let compact_chooser = chooser && ui.ctx().content_rect().height() < 320.0;
+    if !compact_chooser {
+        header(ui, app, pane, (widths, show_size, show_modified), events);
+    }
     let row_h = (ui.text_style_height(&TextStyle::Body) + 6.0).round();
-    let footer_h = ui.text_style_height(&TextStyle::Small) + 6.0;
+    let footer_h = if compact_chooser {
+        0.0
+    } else {
+        ui.text_style_height(&TextStyle::Small) + 6.0
+    };
     let list_h = (ui.available_height() - footer_h).max(row_h);
     // The pane's background, registered before the rows so they sit on top
     // of it: a click on the empty part activates the pane, a drop there
@@ -712,14 +720,16 @@ fn pane_body(
             }
         });
     }
-    ui.horizontal(|ui| {
-        ui.add_space(6.0);
-        ui.small(if chooser {
-            app.core.visible_summary(pane)
-        } else {
-            model.footer_summary()
+    if !compact_chooser {
+        ui.horizontal(|ui| {
+            ui.add_space(6.0);
+            ui.small(if chooser {
+                app.core.visible_summary(pane)
+            } else {
+                model.footer_summary()
+            });
         });
-    });
+    }
 }
 
 /// A pane's top row: the path in a text field (the sidebar toggles live in
