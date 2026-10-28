@@ -119,8 +119,16 @@ impl Drag {
             self.disarm();
             return before.is_some();
         };
-        let current = self.animation.as_ref().map(|a| a.rectangle(now)).unwrap_or(frame);
-        if self.pending.as_ref().is_none_or(|p| p.candidate != candidate) {
+        let current = self
+            .animation
+            .as_ref()
+            .map(|a| a.rectangle(now))
+            .unwrap_or(frame);
+        if self
+            .pending
+            .as_ref()
+            .is_none_or(|p| p.candidate != candidate)
+        {
             let follow_frame = self.animation.is_none();
             self.disarm();
             self.pending = Some(Pending {
@@ -136,10 +144,14 @@ impl Drag {
         if self.armed.is_none() && pending.follow_frame {
             pending.from = frame;
         }
-        pending.ready = pending.since + Duration::from_millis(
-            if pending.candidate.shared { config.shared_edge_dwell_ms } else { 0 }
-                + config.preview_delay_ms,
-        );
+        pending.ready = pending.since
+            + Duration::from_millis(
+                if pending.candidate.shared {
+                    config.shared_edge_dwell_ms
+                } else {
+                    0
+                } + config.preview_delay_ms,
+            );
         let duration = Duration::from_millis(config.preview_animation_ms);
         if pending.duration != duration
             && let Some(animation) = self.animation.as_mut()

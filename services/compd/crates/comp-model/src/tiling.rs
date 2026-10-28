@@ -84,14 +84,22 @@ impl TilingConfig {
         match leaf {
             "edge_tiling" => self.edge_tiling = boolean()?,
             "top_maximize" => self.top_maximize = boolean()?,
-            "corner_ratio" => self.corner_ratio = value.as_f64()
-                .filter(|v| v.is_finite() && (0.05..=0.5).contains(v))
-                .ok_or_else(|| invalid_value(path, "finite number", "0.05..=0.5"))?,
+            "corner_ratio" => {
+                self.corner_ratio = value
+                    .as_f64()
+                    .filter(|v| v.is_finite() && (0.05..=0.5).contains(v))
+                    .ok_or_else(|| invalid_value(path, "finite number", "0.05..=0.5"))?
+            }
             "side_band_px" | "top_band_px" => {
-                let number = value.as_f64().filter(|v| v.is_finite() && (1.0..=200.0).contains(v))
+                let number = value
+                    .as_f64()
+                    .filter(|v| v.is_finite() && (1.0..=200.0).contains(v))
                     .ok_or_else(|| invalid_value(path, "finite number", "1..=200"))?;
-                if leaf == "side_band_px" { self.side_band_px = number; }
-                else { self.top_band_px = number; }
+                if leaf == "side_band_px" {
+                    self.side_band_px = number;
+                } else {
+                    self.top_band_px = number;
+                }
             }
             "shared_edge_dwell_ms" => self.shared_edge_dwell_ms = integer(0, 2000, "0..=2000")?,
             "preview_delay_ms" => self.preview_delay_ms = integer(0, 2000, "0..=2000")?,

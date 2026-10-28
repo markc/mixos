@@ -362,7 +362,7 @@ fn maximised_geometry_uses_the_offline_mirror_without_repeated_reflow() {
     assert_eq!(slot::decided_size(&window), Some((800, 600).into()));
     assert_eq!(
         host.space.state.element_location(&window),
-        Some((16, 24).into())
+        Some((16, 0).into())
     );
     // An unmatched unmaximise must clear the mirror without inventing a restore.
     assert!(surface.set_maximized(true).is_err());

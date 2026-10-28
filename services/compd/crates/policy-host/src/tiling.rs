@@ -12,7 +12,9 @@ use world::state::Loop;
 pub use world::comp::clock::{Clock, ManualClock};
 
 pub fn service(lp: &mut Loop) {
-    let Some(drag) = lp.inner.comp.drag.as_mut() else { return };
+    let Some(drag) = lp.inner.comp.drag.as_mut() else {
+        return;
+    };
     if drag.tick(lp.inner.comp.clock.now()) {
         lp.state.schedule_redraw(RedrawReason::WindowState);
     }

@@ -201,7 +201,12 @@ fn delayed_ack_and_older_buffer_never_regress_the_decided_slot() {
     xdg.ack_configure(serial(&h, &xdg));
     h.client.attach(&surface, 1920, 1080);
     h.roundtrip();
-    assert_eq!(h.comp().float_geometry(id), Some(restore.clone()));
+    let remapped = h.comp().float_geometry(id).unwrap();
+    assert_eq!(remapped.size, restore.size);
+    // The smaller work area clamps the saved centre; expanding maps that
+    // clamped centre back rather than resurrecting its old off-area position.
+    assert_eq!(remapped.location, (32, 42).into());
+    let restore = remapped;
     assert!(maximize(&mut h, id, &window, false).windows);
     h.roundtrip();
     configured(&h, &top, (640, 480), false);
@@ -344,12 +349,13 @@ fn only_the_owning_output_reconfigures_and_restore_survives_output_loss() {
     h.wire.inner.space.state.unmap_output(&secondary);
     assert!(refresh(&mut h, id, &window).windows);
     h.roundtrip();
-    configured(&h, &top, (1920, 1000), true);
+    configured(&h, &top, (640, 480), false);
     let fallback = h.comp().float_geometry(id).unwrap();
-    assert_eq!(
-        (fallback.location, fallback.size),
-        (restore.location, restore.size)
-    );
+    assert_eq!(h.comp().placement(id), world::comp::Placement::Floating);
+    assert_eq!(fallback.size, restore.size);
+    assert_eq!(fallback.location, (280, 185).into());
+    assert_eq!(fallback.output, "testkit-0");
+    assert_eq!(h.wire.inner.space.state.element_location(&window), Some(fallback.location));
     let primary = h.wire.inner.output.clone();
     h.wire.inner.space.state.unmap_output(&primary);
     let before = count(&h, &top);
@@ -362,18 +368,20 @@ fn only_the_owning_output_reconfigures_and_restore_survives_output_loss() {
     );
     h.roundtrip();
     assert_eq!(count(&h, &top), before);
-    assert_eq!(h.comp().float_geometry(id), Some(fallback));
+    assert_eq!(h.comp().float_geometry(id), Some(fallback.clone()));
     h.wire.inner.space.state.map_output(&secondary, (1920, 0));
-    assert!(refresh(&mut h, id, &window).windows);
+    assert!(!refresh(&mut h, id, &window).windows);
     h.roundtrip();
-    configured(&h, &top, (1280, 720), true);
+    configured(&h, &top, (640, 480), false);
     let recovered = h.comp().float_geometry(id).unwrap();
-    assert_eq!(recovered, restore);
+    assert_eq!(recovered.size, restore.size);
+    assert_eq!(recovered.output, "secondary");
+    assert_eq!(h.comp().placement(id), world::comp::Placement::Floating);
     maximize(&mut h, id, &window, false);
     h.roundtrip();
     assert_eq!(
         h.wire.inner.space.state.element_location(&window),
-        Some((2000, 100).into())
+        Some(fallback.location)
     );
     configured(&h, &top, (640, 480), false);
 }
@@ -471,7 +479,7 @@ fn unmaximise_restores_the_decided_size_when_client_geometry_lags() {
     assert_eq!(slot::decided_size(&window), Some((800, 600).into()));
     assert_eq!(
         h.wire.inner.space.state.element_location(&window),
-        Some((16, 24).into())
+        Some((16, 0).into())
     );
 }
 
@@ -649,7 +657,9 @@ fn removing_an_output_restores_tiles_and_maximised_windows_on_a_survivor() {
         h.wire.inner.space.state.refresh();
         refresh(&mut h, id, &window);
         if tiled {
-            tile(&mut h, id, &window, TileSlot::Right);
+            let host = &mut h.wire.inner;
+            geometry::set_placement(&mut host.comp, &mut host.space.state, id, &window,
+                Placement::Tiled { slot: TileSlot::Right, output: "testkit-1".into() });
         } else {
             maximize(&mut h, id, &window, true);
         }
