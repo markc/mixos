@@ -557,17 +557,6 @@ pub async fn identity_get(
     };
     let mut addresses = std::collections::BTreeSet::new();
     for record in snapshot.value {
-        let target = record
-            .value
-            .as_object()
-            .and_then(|value| value.get("target"))
-            .and_then(|value| match value {
-                ::props::value::PropValue::String(target) => Some(target.as_str()),
-                _ => None,
-            });
-        if !target.is_some_and(|target| crate::props::aliases::canon(target) == account) {
-            continue;
-        }
         let address = crate::props::aliases::canon(&record.key.key);
         if address != account
             && crate::props::aliases::sender_authorized(aliases_runtime, &address, &account).await

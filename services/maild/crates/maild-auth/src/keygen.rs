@@ -248,9 +248,8 @@ mod tests {
         )));
         let parsed = AuthenticatedMessage::parse(message).unwrap();
         let auth = MessageAuthenticator::new_cloudflare().unwrap();
-        let outcomes = tokio_test_block_on(
-            auth.verify_dkim(Parameters::new(&parsed).with_txt_cache(&cache)),
-        );
+        let outcomes =
+            tokio_test_block_on(auth.verify_dkim(Parameters::new(&parsed).with_txt_cache(&cache)));
         assert_eq!(outcomes.len(), 1);
         assert_eq!(outcomes[0].result(), &DkimResult::Pass);
     }

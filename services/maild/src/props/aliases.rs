@@ -131,10 +131,12 @@ impl AliasesHooks {
             let key = RecordKey::collection(crate::props::accounts::namespace_name(), email);
             match self.accounts_runtime.store().get(&key).await {
                 Ok(_) => return Ok(true),
-                Err(::props::store::StoreError::NotFound) => {},
-                Err(e) => return Err(HookError::hook(format!(
-                    "aliases->accounts cross-namespace read failed: {e}"
-                ))),
+                Err(::props::store::StoreError::NotFound) => {}
+                Err(e) => {
+                    return Err(HookError::hook(format!(
+                        "aliases->accounts cross-namespace read failed: {e}"
+                    )));
+                }
             }
         }
         Ok(false)
@@ -367,7 +369,12 @@ async fn lookup_targets(runtime: &Arc<Runtime>, addr: &str) -> Result<Option<Vec
     if !enabled {
         return Ok(None);
     }
-    Ok(Some(targets_from_value(&snap.value.value)?))
+    Ok(Some(
+        targets_from_value(&snap.value.value)?
+            .into_iter()
+            .map(|target| canon(&target))
+            .collect(),
+    ))
 }
 
 /// Mailboxes win, then exact aliases, then the domain catch-all. All targets
@@ -391,12 +398,11 @@ pub async fn recipient_accounts(
     let mut accounts = Vec::new();
     if let Some(targets) = targets {
         for target in targets {
-            let account = mailbox_account(conn, &target).await?
-                .ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "alias target {target} is no longer a local mailbox; forwarding refused"
-                    )
-                })?;
+            let account = mailbox_account(conn, &target).await?.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "alias target {target} is no longer a local mailbox; forwarding refused"
+                )
+            })?;
             if !accounts
                 .iter()
                 .any(|existing: &crate::db::account::Account| existing.id == account.id)
@@ -788,8 +794,14 @@ mod tests {
     async fn reconcile_diagnostic_checks_every_fanout_target() {
         let (aliases, accounts) = fixture_full(&["admin@example.com", "boss@example.com"]).await;
         let body = PropValue::Object(BTreeMap::from([
-            ("address".into(), PropValue::String("team@example.com".into())),
-            ("target".into(), PropValue::String("admin@example.com".into())),
+            (
+                "address".into(),
+                PropValue::String("team@example.com".into()),
+            ),
+            (
+                "target".into(),
+                PropValue::String("admin@example.com".into()),
+            ),
             (
                 "targets".into(),
                 PropValue::List(vec![
@@ -812,7 +824,8 @@ mod tests {
             )
             .await
             .unwrap();
-        let key = RecordKey::collection(crate::props::accounts::namespace_name(), "boss@example.com");
+        let key =
+            RecordKey::collection(crate::props::accounts::namespace_name(), "boss@example.com");
         let version = accounts.store().get(&key).await.unwrap().value.version;
         accounts
             .delete(
