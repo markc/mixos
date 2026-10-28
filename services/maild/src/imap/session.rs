@@ -607,6 +607,9 @@ impl Session {
                         // so a failed reselect leaves the session
                         // in a no-selection state, not stuck on the
                         // old mailbox.
+                        if self.rev2 && self.state.selected().is_some() {
+                            writer.write_all(b"* OK [CLOSED] previous mailbox closed\r\n").await?;
+                        }
                         self.state = State::Authenticated;
                         self.saved_search.clear();
                         let aid = self

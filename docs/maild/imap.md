@@ -84,7 +84,7 @@ The audit also checked server requirements beyond the refusal strings:
 | Sections 4, 5.1 and Appendix A: strings and names | Added UTF-8 negotiation, modified UTF-7 compatibility, NFC validation and literal-kind tracking |
 | Sections 2.3.1.1 and 6.3.4: recreated mailbox identity | Replace seconds-based allocation for new mailboxes with a persistent UIDVALIDITY high-water mark; existing identities remain unchanged. `uidvalidity_does_not_repeat_on_rapid_or_legacy_mailbox_recreation` covers both rapid recreation and legacy values |
 | Sections 5.2 and 7.5.1: mailbox updates and MSN stability | Added command-time refresh and preserved views while expunge notifications are prohibited |
-| Sections 6.3.2–6.3.3: selection data and read-only flags | Accurate LIST attributes and OLDNAME in rev2; RECENT/UNSEEN in rev1; empty PERMANENTFLAGS for EXAMINE |
+| Sections 6.3.2–6.3.3: selection data and read-only flags | Accurate LIST attributes and OLDNAME in rev2; CLOSED boundaries on reselection, including failed SELECT; RECENT/UNSEEN in rev1; empty PERMANENTFLAGS for EXAMINE. Covered by `rev2_reselection_marks_the_closed_boundary_including_failure` and `examine_fetch_and_close_unselect_have_distinct_effects` |
 | Section 6.3.4: existing mailbox creation | Corrected old idempotent CREATE INBOX and CREATE existing/ behaviour to NO |
 | Sections 6.3.5–6.3.8: mailbox lifecycle | DELETE removes memberships atomically, protects children and INBOX; subscription names persist |
 | Sections 6.3.12 and 6.4.7: mutation failure | Added atomic MULTIAPPEND and COPY, including UID allocation rollback |

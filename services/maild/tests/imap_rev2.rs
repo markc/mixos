@@ -1330,6 +1330,28 @@ async fn repeated_content_searches_share_a_per_message_work_budget() -> Result<(
 }
 
 #[tokio::test]
+async fn rev2_reselection_marks_the_closed_boundary_including_failure() -> Result<()> {
+    let (_tmp, db, _mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
+    let (client, _) = spawn_session(db.clone(), ms.clone(), ImapConfig::default()).await;
+    let (mut r, mut w) = login(client).await?;
+    command(&mut r, &mut w, "e", "ENABLE IMAP4rev2").await?;
+    let initial = command(&mut r, &mut w, "s", "SELECT INBOX").await?;
+    assert!(!initial.contains("[CLOSED]"), "{initial}");
+    let reselected = command(&mut r, &mut w, "x", "EXAMINE Archive").await?;
+    assert!(reselected.starts_with("* OK [CLOSED]"), "{reselected}");
+    assert!(reselected.contains("x OK [READ-ONLY]"), "{reselected}");
+    let failed = command(&mut r, &mut w, "f", "SELECT NoSuchMailbox").await?;
+    assert!(failed.starts_with("* OK [CLOSED]"), "{failed}");
+    assert!(failed.contains("f NO [NONEXISTENT]"), "{failed}");
+    assert!(command(&mut r, &mut w, "b", "FETCH 1 FLAGS").await?.contains("b BAD"));
+    let (mut legacy_r, mut legacy_w) = selected(ms, db).await?;
+    let legacy = command(&mut legacy_r, &mut legacy_w, "l", "SELECT Archive").await?;
+    assert!(!legacy.contains("[CLOSED]"), "{legacy}");
+    assert!(legacy.contains("* 0 RECENT"), "{legacy}");
+    Ok(())
+}
+
+#[tokio::test]
 async fn capabilities_match_after_login_and_enable_and_zero_arg_commands_validate() -> Result<()> {
     let (_tmp, db, _mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
     let (client, _) = spawn_session(db, ms, ImapConfig::default()).await;
