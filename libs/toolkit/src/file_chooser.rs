@@ -284,6 +284,7 @@ impl FileChooser {
         if !self.started {
             self.started = true;
             crate::menu::close(ctx);
+            egui::Popup::close_all(ctx);
             self.open(ctx, self.directory.clone());
         }
         if let Some(rx) = &self.pending {

@@ -109,6 +109,7 @@ struct Fake {
     state: Arc<AtomicUsize>,
     requests: Arc<Mutex<Vec<serde_json::Value>>>,
     started: tokio::sync::mpsc::UnboundedReceiver<()>,
+    queried: Arc<tokio::sync::Notify>,
 }
 
 impl Fake {
@@ -124,6 +125,8 @@ impl Fake {
         let state = Arc::new(AtomicUsize::new(state));
         let requests = Arc::new(Mutex::new(Vec::new()));
         let (tx, started) = tokio::sync::mpsc::unbounded_channel();
+        let queried = Arc::new(tokio::sync::Notify::new());
+        let q = queried.clone();
         let (p, o, c, s, r) = (client.clone(), opened.clone(), closed.clone(), state.clone(), requests.clone());
         let task = tokio::spawn(async move {
             while let Some(command) = incoming.recv().await {
@@ -146,12 +149,12 @@ impl Fake {
                     "files.choose.cancel" => { c.fetch_add(1, Ordering::SeqCst); r.lock().unwrap().clear(); json!({}) }
                     "files.choose.result" if mode == 5 => json!({"state":"done","outcome":{"request":"0123456789abcdef-1","response":1,"reason":"caller"}}),
                     "files.choose.result" if mode == 6 => json!({"state":"done","outcome":{"request":"0123456789abcdef-1","response":0,"uris":[]}}),
-                    _ => json!({"state":"open"}),
+                    _ => { q.notify_one(); json!({"state":"open"}) },
                 };
                 p.respond(&command, rc, &value.to_string()).await.unwrap();
             }
         });
-        Self { client, task, opened, closed, state, requests, started }
+        Self { client, task, opened, closed, state, requests, started, queried }
     }
 
     async fn stop(&self) { self.task.abort(); self.client.close().await; }
@@ -172,6 +175,9 @@ async fn real_noded_provider_and_broker_loss_open_the_next_tier_once_within_fift
             cascade(native::attempt_at(&req, &mut cancel, &url), async { Some(Outcome::Cancelled) }, cascade_cancel, &emitter).await;
         });
         tokio::time::timeout(Duration::from_secs(5), fake.started.recv()).await.unwrap().unwrap();
+        if !sending {
+            tokio::time::timeout(Duration::from_secs(5), fake.queried.notified()).await.unwrap();
+        }
         match loss {
             0 => fake.stop().await,
             1 => broker.stop(),
