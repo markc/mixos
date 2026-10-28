@@ -157,6 +157,11 @@ async fn unsupported_flags_are_ignored_without_changing_filing() -> Result<()> {
     let record = f.ms.get_email(f.account.id, id)?;
     assert_eq!(record.keywords.0, Flags::SEEN);
     assert_eq!(record.tags, Tags::from(vec!["project".into()]));
+    let keywords = (0..70).map(|n|format!("tag{n}")).collect::<Vec<_>>().join(" ");
+    f.script(&format!(r#"require ["imap4flags","fileinto"]; setflag "{keywords}"; fileinto "FlagTest";"#)).await?;
+    let id = f.deliver(MESSAGE,false,false).await?.unwrap();
+    assert_eq!(f.count("Inbox"),0);
+    assert_eq!(f.ms.get_email(f.account.id,id)?.tags.len(),maild::keyword::MAX_KEYWORDS_PER_MESSAGE);
     Ok(())
 }
 #[tokio::test]

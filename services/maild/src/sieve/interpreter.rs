@@ -868,7 +868,6 @@ impl Eval<'_> {
                     if name != "removeflag" {
                         target.push(flag);
                     }
-                    ensure!(target.len() <= crate::keyword::MAX_KEYWORDS_PER_MESSAGE + 5, "flag count limit");
                 }
                 if let Some(variable) = variable {
                     self.set_variable(variable, target.join(" "))?;
