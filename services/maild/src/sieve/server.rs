@@ -191,7 +191,7 @@ async fn command<S: AsyncRead + Unpin>(io: &mut BufReader<S>) -> Result<Option<V
                 .parse::<usize>()?;
             if result
                 .first()
-                .is_some_and(|verb: &String| verb.eq_ignore_ascii_case("PUTSCRIPT"))
+                .is_some_and(|keyword: &String| keyword.eq_ignore_ascii_case("PUTSCRIPT"))
                 && result.len() == 2
                 && n > MAX_SCRIPT_BYTES
             {
@@ -314,17 +314,17 @@ pub async fn session<S: AsyncRead + AsyncWrite + Unpin>(
                 return Ok(None);
             }
         };
-        let verb = args[0].to_ascii_uppercase();
+        let keyword = args[0].to_ascii_uppercase();
         let args = &args[1..];
-        if verb == "LOGOUT" && args.is_empty() {
+        if keyword == "LOGOUT" && args.is_empty() {
             write(&mut io, "OK \"Logout\"\r\n").await?;
             return Ok(None);
         }
-        if verb == "CAPABILITY" && args.is_empty() {
+        if keyword == "CAPABILITY" && args.is_empty() {
             write(&mut io, &capabilities(secure)).await?;
             continue;
         }
-        if verb == "NOOP" && args.len() <= 1 {
+        if keyword == "NOOP" && args.len() <= 1 {
             write(
                 &mut io,
                 &args
@@ -335,7 +335,7 @@ pub async fn session<S: AsyncRead + AsyncWrite + Unpin>(
             .await?;
             continue;
         }
-        if verb == "STARTTLS" {
+        if keyword == "STARTTLS" {
             if !secure && account.is_none() && args.is_empty() {
                 write(&mut io, "OK \"Begin TLS negotiation\"\r\n").await?;
                 return Ok(Some(io.into_inner()));
@@ -347,7 +347,7 @@ pub async fn session<S: AsyncRead + AsyncWrite + Unpin>(
             write(&mut io, "NO (ENCRYPT-NEEDED) \"Use STARTTLS\"\r\n").await?;
             continue;
         }
-        if verb == "AUTHENTICATE" {
+        if keyword == "AUTHENTICATE" {
             if account.is_some() {
                 write(&mut io, "NO \"Already authenticated\"\r\n").await?;
                 continue;
@@ -375,7 +375,7 @@ pub async fn session<S: AsyncRead + AsyncWrite + Unpin>(
             write(&mut io, "NO \"Authenticate first\"\r\n").await?;
             continue;
         };
-        let response = execute(db, id, &verb, args).await;
+        let response = execute(db, id, &keyword, args).await;
         match response {
             Ok(response) => write(&mut io, &response).await?,
             Err(error) => {
@@ -397,8 +397,8 @@ pub async fn session<S: AsyncRead + AsyncWrite + Unpin>(
     }
 }
 
-async fn execute(db: &Db, account: i32, verb: &str, args: &[String]) -> Result<String> {
-    let arity = match verb {
+async fn execute(db: &Db, account: i32, keyword: &str, args: &[String]) -> Result<String> {
+    let arity = match keyword {
         "LISTSCRIPTS" => 0,
         "GETSCRIPT" | "CHECKSCRIPT" | "SETACTIVE" | "DELETESCRIPT" => 1,
         "PUTSCRIPT" | "RENAMESCRIPT" | "HAVESPACE" => 2,
@@ -406,12 +406,12 @@ async fn execute(db: &Db, account: i32, verb: &str, args: &[String]) -> Result<S
     };
     ensure!(args.len() == arity, "wrong argument count");
     let mut response = String::new();
-    let warning = if let Some(source) = match verb {
+    let warning = if let Some(source) = match keyword {
         "PUTSCRIPT" => Some(&args[1]),
         "CHECKSCRIPT" => Some(&args[0]),
         _ => None,
     } {
-        if verb == "PUTSCRIPT" {
+        if keyword == "PUTSCRIPT" {
             ensure!(
                 source.len() <= MAX_SCRIPT_BYTES,
                 "QUOTA/MAXSIZE: script exceeds size limit"
@@ -423,7 +423,7 @@ async fn execute(db: &Db, account: i32, verb: &str, args: &[String]) -> Result<S
     } else {
         false
     };
-    match verb {
+    match keyword {
         "LISTSCRIPTS" => {
             for entry in store::list(db, account).await? {
                 response.push_str(&format!(
