@@ -3519,6 +3519,7 @@ mod tests {
         let db = Db {
             conn: Arc::new(Mutex::new(conn)),
             migration: Arc::new(tokio::sync::Semaphore::new(1)),
+            sieve_external_domains: Arc::new(Vec::new()),
             blob_dir: tmp_blob.path().to_path_buf(),
         };
 

@@ -539,6 +539,7 @@ mod tests {
         let db_handle = db::Db {
             conn: Arc::new(Mutex::new(conn)),
             migration: Arc::new(tokio::sync::Semaphore::new(1)),
+            sieve_external_domains: Arc::new(Vec::new()),
             blob_dir: tmp.path().to_path_buf(),
         };
         (overrides_runtime, db_handle, tmp)

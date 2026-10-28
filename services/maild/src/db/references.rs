@@ -129,6 +129,7 @@ mod tests {
             conn: Arc::new(Mutex::new(conn)),
             blob_dir: Default::default(),
             migration: Arc::new(tokio::sync::Semaphore::new(1)),
+            sieve_external_domains: Arc::new(Vec::new()),
         };
         let key = Key {
             account: 1,
@@ -168,6 +169,7 @@ mod tests {
         let db = Db {
             conn: Arc::new(Mutex::new(conn)),
             migration: Arc::new(tokio::sync::Semaphore::new(1)),
+            sieve_external_domains: Arc::new(Vec::new()),
             blob_dir: Default::default(),
         };
         let mut key = Key {
