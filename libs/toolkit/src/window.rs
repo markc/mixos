@@ -9,7 +9,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn every_app_uses_the_shared_quarter_tile_minimum() {
+    fn app_minima_fit_a_quarter_tile() {
         let viewport = crate::titlebar::viewport("dev.mixos.example", "Example");
         assert_eq!(viewport.min_inner_size, Some(egui::Vec2::from(MIN_SIZE)));
         let minimum = viewport.min_inner_size.unwrap();
@@ -23,12 +23,13 @@ mod tests {
             include_str!("../../../apps/monitor/src/main.rs"),
             include_str!("../../../apps/prefs/src/main.rs"),
             include_str!("../../../apps/screenshot/src/main.rs"),
-            include_str!("../../../apps/term/src/main.rs"),
             include_str!("../../../apps/workshop/src/main.rs"),
             include_str!("../../../apps/email/src/composer.rs"),
         ] {
             assert!(source.contains("titlebar::viewport("));
             assert!(!source.contains(".with_min_inner_size("));
         }
+        let term = include_str!("../../../apps/term/src/main.rs");
+        assert!(term.contains(".with_min_inner_size(term::MIN_SIZE)"));
     }
 }

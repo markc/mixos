@@ -29,6 +29,7 @@ use toolkit::Theme;
 /// events, so the test asserts on real state transitions.
 struct Window {
     state: State,
+    drawn_splits: Option<[f32; 2]>,
     /// Every event the view reported, in order.
     seen: Vec<UiEvent>,
 }
@@ -203,6 +204,7 @@ fn harness_with(state: State, theme: &Theme) -> Harness<'static, Window> {
         .with_size(egui::vec2(1180.0, 760.0))
         .build_ui_state(
             move |ui, window: &mut Window| {
+                let total = ui.available_width();
                 let palette =
                     editor::Palette::from_theme(if window.state.settings.composer.light {
                         toolkit::content::light_theme()
@@ -214,6 +216,14 @@ fn harness_with(state: State, theme: &Theme) -> Harness<'static, Window> {
                 } else {
                     view(ui, &window.state, &registry, &strings, &palette)
                 };
+                window.drawn_splits = egui::containers::panel::PanelState::load(
+                    ui.ctx(), ui.scope_id().with_salt("places"),
+                ).zip(egui::containers::panel::PanelState::load(
+                    ui.ctx(), ui.scope_id().with_salt("reader"),
+                )).map(|(places, reader)| [
+                    places.size().x / total,
+                    reader.size().x / (total - places.size().x),
+                ]);
                 for event in events {
                     window.seen.push(event.clone());
                     if let UiEvent::Command(id, origin) = event {
@@ -225,6 +235,7 @@ fn harness_with(state: State, theme: &Theme) -> Harness<'static, Window> {
             },
             Window {
                 state,
+                drawn_splits: None,
                 seen: Vec::new(),
             },
         );
@@ -350,6 +361,33 @@ fn minimum_window_renders() {
     h.snapshot("minimum_window_reader");
     snapshots.extend_harness(&mut h);
     snapshots.unwrap();
+}
+
+#[test]
+fn saved_split_shares_survive_narrow_resizes() {
+    let mut state = fixture();
+    state.ui.places = 0.40;
+    state.ui.reader = 0.80;
+    let mut h = harness(state);
+    for size in [
+        [1180.0, 760.0],
+        [700.0, 400.0], // Compact three-pane clamps.
+        toolkit::window::MIN_SIZE, // Single-pane layout.
+        [1180.0, 760.0],
+    ] {
+        h.set_size(egui::Vec2::from(size));
+        h.run_steps(4);
+        assert_eq!(h.state().state.ui.places, 0.40);
+        assert_eq!(h.state().state.ui.reader, 0.80);
+        if size[0] == 1180.0 {
+            let [places, reader] = h.state().drawn_splits.expect("both panels drawn");
+            assert!((places - 0.40).abs() < 0.005, "Places: {places}");
+            assert!((reader - 0.80).abs() < 0.005, "Reader: {reader}");
+        }
+    }
+    assert!(!h.state().seen.iter().any(|e| matches!(
+        e, UiEvent::SplitPlaces(_) | UiEvent::SplitReader(_)
+    )));
 }
 
 #[test]

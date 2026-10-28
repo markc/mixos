@@ -145,8 +145,8 @@ fn two_tabs_and_a_split_studio_dark() {
     harness.run_steps(2);
     harness.get_by_label("Zoom is not saved");
     harness.snapshot("unsaved_zoom_studio_dark");
-    // Exercise the real GPU grid and split layout at the shared minimum.
-    harness.set_size(egui::Vec2::from(toolkit::window::MIN_SIZE));
+    // Exercise the real GPU grid and split layout at Term's smaller minimum.
+    harness.set_size(egui::Vec2::from(term::MIN_SIZE));
     harness.run_steps(4);
     harness.snapshot("minimum_window");
     harness.set_size(egui::vec2(820.0, 420.0));

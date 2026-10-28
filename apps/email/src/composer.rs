@@ -1030,6 +1030,60 @@ mod tests {
     }
 
     #[test]
+    fn minimum_composer_send_and_menus_are_reachable() {
+        use egui_kittest::kittest::{NodeT, Queryable};
+        let (mut state, _, theme, _) = fixture(true);
+        state.compose();
+        state.apply_ui(UiEvent::ComposeField(
+            crate::state::ComposeField::To, "bob@example.invalid".into(),
+        ));
+        let builder = toolkit::titlebar::viewport(
+            "dev.mixos.email.compose-1", &crate::label("compose-title"),
+        );
+        assert_eq!(builder.min_inner_size, Some(egui::Vec2::from(toolkit::window::MIN_SIZE)));
+        let palette = editor::Palette::from_theme(&theme);
+        let mut h = egui_kittest::Harness::builder()
+            .with_size(builder.min_inner_size.unwrap())
+            .build_ui_state(move |ui, seen: &mut Vec<UiEvent>| {
+                toolkit::drive::register_viewport(ui.ctx(), ViewportId::ROOT, "compose-1", ViewportId::ROOT);
+                seen.extend(view(ui, &state, &registry(), &palette));
+            }, Vec::new());
+        toolkit::install(&h.ctx, &theme);
+        toolkit::drive::install(&h.ctx, APP);
+        h.run_steps(4);
+        h.snapshot("minimum_composer");
+        let bounds = egui::Rect::from_min_size(egui::Pos2::ZERO, toolkit::window::MIN_SIZE.into());
+        assert!(bounds.contains_rect(h.get_by_label("Send").rect()));
+        assert!(!h.get_by_label("Send").accesskit_node().is_disabled());
+        h.get_by_label("Send").click();
+        h.run_steps(2);
+        assert!(h.state().contains(&UiEvent::Command("mail.send", Origin::Menu)));
+
+        let menus = ["File", "Edit", "Attachments", "View"];
+        for title in menus {
+            h.get_by_label("Menus").click();
+            h.run_steps(2);
+            h.get_by_label(title).click();
+            h.run_steps(2);
+            assert!(toolkit::menu::current(&h.ctx).unwrap().path.iter().flatten().any(|p| p == title));
+            toolkit::menu::close(&h.ctx);
+            h.run_steps(2);
+        }
+        // The shell strips `email.` before passing Bus drive requests here.
+        let listed = toolkit::drive::request(&h.ctx, 1, "ui.menu.list", &serde_json::json!({"viewport":"compose-1"})).unwrap();
+        assert_eq!(listed.rc, 0, "{:?}", listed.body);
+        assert_eq!(listed.body["menus"].as_array().unwrap().iter().map(|m| m["title"].as_str().unwrap()).collect::<Vec<_>>(), menus);
+        for title in menus {
+            let opened = toolkit::drive::request(&h.ctx, 2, "ui.menu.open", &serde_json::json!({"viewport":"compose-1", "path":[title]})).unwrap();
+            assert_eq!(opened.rc, 0, "{:?}", opened.body);
+            h.run_steps(2);
+            assert!(toolkit::menu::current(&h.ctx).unwrap().path.iter().flatten().any(|p| p == title));
+            toolkit::menu::close(&h.ctx);
+            h.run_steps(2);
+        }
+    }
+
+    #[test]
     fn composers_own_one_complete_frame_under_both_decoration_preferences() {
         for decorations in [design::Decorations::Client, design::Decorations::Server] {
             for standalone in [false, true] {

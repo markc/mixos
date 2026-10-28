@@ -355,27 +355,36 @@ fn window(
             });
         return;
     }
-    let left = egui::Panel::left("places")
+    // Compact panel sizes are transient. Keep their egui memory separate too,
+    // so returning to a normal window restores the user's saved layout.
+    let narrow = total < 820.0;
+    let mut places = egui::Panel::left(if narrow { "places_narrow" } else { "places" })
         .resizable(true)
-        .default_size(total * state.ui.places)
-        .size_range(total * 0.12..=total * 0.35)
+        .default_size(total * state.ui.places);
+    if narrow {
+        places = places.size_range(total * 0.12..=total * 0.35);
+    }
+    let left = places
         .frame(pane_frame(ui.ctx(), state.pane == Pane::Tree))
         .show(ui, |ui| tree::show(ui, state, events));
     let split = left.response.rect.width() / total.max(1.0);
-    if (split - state.ui.places).abs() > 0.005 {
+    if !narrow && (split - state.ui.places).abs() > 0.005 {
         events.push(UiEvent::SplitPlaces(split));
     }
     let ready = state.current().filter(|v| v.phase == Phase::Ready);
     if let Some(view) = ready {
         let remaining = ui.available_width();
-        let right = egui::Panel::right("reader")
+        let mut reader_panel = egui::Panel::right(if narrow { "reader_narrow" } else { "reader" })
             .resizable(true)
-            .default_size(remaining * state.ui.reader)
-            .size_range(remaining * 0.2..=remaining * 0.7)
+            .default_size(remaining * state.ui.reader);
+        if narrow {
+            reader_panel = reader_panel.size_range(remaining * 0.2..=remaining * 0.7);
+        }
+        let right = reader_panel
             .frame(pane_frame(ui.ctx(), state.pane == Pane::Reader))
             .show(ui, |ui| reader(ui, state, view, commands, strings, events));
         let split = right.response.rect.width() / remaining.max(1.0);
-        if (split - state.ui.reader).abs() > 0.005 {
+        if !narrow && (split - state.ui.reader).abs() > 0.005 {
             events.push(UiEvent::SplitReader(split));
         }
     }

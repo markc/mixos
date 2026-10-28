@@ -36,6 +36,10 @@ use toolkit::Strings;
 /// The Wayland app id and desktop file name.
 pub const APP_ID: &str = "dev.mixos.term";
 
+/// A terminal works smaller: toolkit's MIN_SIZE is a ceiling for the
+/// declared minimum, not a floor.
+pub const MIN_SIZE: [f32; 2] = [320.0, 200.0];
+
 /// The English catalogue.
 pub const CATALOGUE: &str = include_str!("../i18n/en/term.ftl");
 

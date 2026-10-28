@@ -5,6 +5,8 @@
 - Follow session font size and weight with a custom design package, keeping
   the theme file design beneath profile framing, menus and title band.
 - Use the shared 360×240 logical minimum for mailbox and composer windows. Select one pane at a time in narrow tiles; scroll composer fields and allow a one-row editor.
+- Preserve saved Places and Reader shares at normal widths and across narrow resizes; compact split clamps never save over the user's layout.
+- Cover Send, folded composer menus and their Bus drive paths at the minimum window size, with an offscreen snapshot.
 
 ## Unreleased
 
