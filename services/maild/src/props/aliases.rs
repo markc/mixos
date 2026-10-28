@@ -470,12 +470,9 @@ async fn compute_alias_conflicts(
         if account_row_exists(accounts_runtime, &key).await {
             shadows.push(key.clone());
         }
-        if let PropValue::Object(m) = &record.value
-            && let Some(PropValue::String(t)) = m.get("target")
-        {
-            let target = canon(t);
+        for target in targets_from_value(&record.value)? {
             if !account_row_exists(accounts_runtime, &target).await {
-                dangling.push((key, target));
+                dangling.push((key.clone(), target));
             }
         }
     }
@@ -757,6 +754,56 @@ mod tests {
             "shadow detected"
         );
         assert!(dangling.is_empty(), "target admin@ is still a real account");
+    }
+
+    #[tokio::test]
+    async fn reconcile_diagnostic_checks_every_fanout_target() {
+        let (aliases, accounts) = fixture_full(&["admin@example.com", "boss@example.com"]).await;
+        let body = PropValue::Object(BTreeMap::from([
+            ("address".into(), PropValue::String("team@example.com".into())),
+            ("target".into(), PropValue::String("admin@example.com".into())),
+            (
+                "targets".into(),
+                PropValue::List(vec![
+                    PropValue::String("admin@example.com".into()),
+                    PropValue::String("boss@example.com".into()),
+                ]),
+            ),
+        ]));
+        aliases
+            .set(
+                RecordKey::collection(namespace_name(), "team@example.com"),
+                body,
+                SetOpts {
+                    expected_version: Some(Version::zero()),
+                    merge: MergeMode::Replace,
+                    actor: Actor::service("test").unwrap(),
+                    cause: None,
+                    ts_ms: 0,
+                },
+            )
+            .await
+            .unwrap();
+        let key = RecordKey::collection(crate::props::accounts::namespace_name(), "boss@example.com");
+        let version = accounts.store().get(&key).await.unwrap().value.version;
+        accounts
+            .delete(
+                key,
+                ::props::DeleteOpts {
+                    expected_version: Some(version),
+                    actor: Actor::service("test").unwrap(),
+                    cause: None,
+                    ts_ms: 0,
+                },
+            )
+            .await
+            .unwrap();
+        let (shadows, dangling) = compute_alias_conflicts(&aliases, &accounts).await.unwrap();
+        assert!(shadows.is_empty());
+        assert_eq!(
+            dangling,
+            vec![("team@example.com".into(), "boss@example.com".into())]
+        );
     }
 
     async fn set_alias(

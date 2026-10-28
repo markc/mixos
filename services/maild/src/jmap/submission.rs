@@ -206,12 +206,8 @@ async fn create_submission(
         if !recipients_seen.insert(addr) {
             continue;
         }
-        // Phase 1 aliases: resolve the recipient through `maild.aliases`
-        // BEFORE the local-vs-remote classification, so a JMAP client
-        // sending to a local alias delivers locally to the alias target
-        // instead of being queued outbound. The original `addr` is kept
-        // for the envelope/logs; only the account lookup follows the
-        // alias.
+        // Share SMTP's mailbox/exact/catch-all precedence and local-only
+        // fan-out. Keep the original recipient in the submission receipt.
         let accounts =
             crate::props::aliases::recipient_accounts(aliases_runtime, &db.conn, addr).await?;
         if accounts.is_empty() {

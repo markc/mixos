@@ -212,6 +212,49 @@ mod tests {
     use crate::signer::{MailAuthSigner, Signer};
     use crate::types::{Canon, DkimSignerConfig, Domain, HeaderSpec, default_signed_headers};
 
+    /// Satisfy the verifier's real DNS lookup with the exact printed record.
+    /// Any cache miss would be a test failure; no resolver traffic is needed.
+    struct PublishedKey(mail_auth::Txt);
+
+    impl mail_auth::ResolverCache<String, mail_auth::Txt> for PublishedKey {
+        fn get<Q>(&self, _: &Q) -> Option<mail_auth::Txt>
+        where
+            String: std::borrow::Borrow<Q>,
+            Q: std::hash::Hash + Eq + ?Sized,
+        {
+            Some(self.0.clone())
+        }
+
+        fn remove<Q>(&self, _: &Q) -> Option<mail_auth::Txt>
+        where
+            String: std::borrow::Borrow<Q>,
+            Q: std::hash::Hash + Eq + ?Sized,
+        {
+            None
+        }
+
+        fn insert(&self, _: String, _: mail_auth::Txt, _: std::time::Instant) {
+            panic!("published record must satisfy the DNS lookup");
+        }
+    }
+
+    fn verify_printed_record(txt: &str, message: &[u8]) {
+        use mail_auth::{
+            AuthenticatedMessage, DkimResult, MessageAuthenticator, Parameters,
+            common::{parse::TxtRecordParser, verify::DomainKey},
+        };
+        let cache = PublishedKey(mail_auth::Txt::DomainKey(std::sync::Arc::new(
+            DomainKey::parse(txt.as_bytes()).unwrap(),
+        )));
+        let parsed = AuthenticatedMessage::parse(message).unwrap();
+        let auth = MessageAuthenticator::new_cloudflare().unwrap();
+        let outcomes = tokio_test_block_on(
+            auth.verify_dkim(Parameters::new(&parsed).with_txt_cache(&cache)),
+        );
+        assert_eq!(outcomes.len(), 1);
+        assert_eq!(outcomes[0].result(), &DkimResult::Pass);
+    }
+
     #[test]
     fn printed_rsa_spki_parses_independently_and_verifies_generated_signature() {
         use base64::{Engine, engine::general_purpose::STANDARD};
@@ -279,6 +322,7 @@ mod tests {
         tokio_test_block_on(signer.sign_dkim(&mut msg, &Domain::new("example.org")))
             .expect("sign with generated rsa key");
         assert!(msg.starts_with(b"DKIM-Signature: "));
+        verify_printed_record(&mat.dns_txt_record, &msg);
     }
 
     #[test]
@@ -314,6 +358,7 @@ mod tests {
         tokio_test_block_on(signer.sign_dkim(&mut msg, &Domain::new("example.org")))
             .expect("sign with generated ed25519 key");
         assert!(msg.starts_with(b"DKIM-Signature: "));
+        verify_printed_record(&mat.dns_txt_record, &msg);
     }
 
     #[test]
