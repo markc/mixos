@@ -232,8 +232,7 @@ impl eframe::App for Shell {
             // starts every one centred on its parent's output or the focused one.
             let builder =
                 toolkit::titlebar::viewport(&format!("dev.mixos.dopus.choose.{id}"), &title)
-                    .with_inner_size([820.0, 600.0])
-                    .with_min_inner_size([520.0, 360.0]);
+                    .with_inner_size([820.0, 600.0]);
             let events = self.events.clone();
             let root = self.ctx.clone();
             let reports = self.answers.clone();

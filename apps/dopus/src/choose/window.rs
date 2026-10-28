@@ -455,7 +455,7 @@ impl Window {
                 });
             });
         });
-        let max_form = ctx.content_rect().height()
+        let mut max_form = ctx.content_rect().height()
             * toolkit::chrome::Chrome::of(&ctx)
                 .style
                 .dialog_resize_max_share as f32
@@ -465,6 +465,10 @@ impl Window {
             + self.request.choices.len()
             + 2 * usize::from(self.message.is_some());
         let row_height = toolkit::field::height_of(&ctx) + ui.spacing().item_spacing.y;
+        if ctx.content_rect().height() < 320.0 {
+            // Scroll caller options one row at a time, keeping room to browse.
+            max_form = max_form.min(row_height);
+        }
         let form_height =
             (form_rows as f32 * row_height + 2.0 * ui.spacing().item_spacing.y).min(max_form);
         if form_rows > 0 {
@@ -643,8 +647,11 @@ impl Window {
             .fold(0.0_f32, f32::max)
             + 2.0 * ui.spacing().interact_size.x
             + 2.0 * ui.spacing().item_spacing.x;
-        egui::Panel::left("files-places")
-            .default_size(places_width)
+        let mut places = egui::Panel::left("files-places").default_size(places_width);
+        if ctx.content_rect().width() < 640.0 {
+            places = places.size_range(0.0..=ctx.content_rect().width() * 0.35);
+        }
+        places
             .show(ui, |ui| {
                 ui.heading(label("places"));
                 ui.add_enabled_ui(self.ready && !self.ending && self.replace.is_none(), |ui| {

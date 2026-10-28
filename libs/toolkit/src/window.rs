@@ -18,6 +18,7 @@ mod tests {
         for source in [
             include_str!("../../../apps/ced/src/main.rs"),
             include_str!("../../../apps/dopus/src/main.rs"),
+            include_str!("../../../apps/dopus/src/choose/presenter.rs"),
             include_str!("../../../apps/email/src/lib.rs"),
             include_str!("../../../apps/monitor/src/main.rs"),
             include_str!("../../../apps/prefs/src/main.rs"),
