@@ -280,7 +280,8 @@ address lookup folds ASCII case as for existing mailboxes. Invalid UTF-8
 commands and UTF-8 addresses/headers without the parameter are refused.
 Configure hosted internationalised domains in <code>maild.domains</code> using their DNS
 A-label (for example <code>xn--fsqu00a.example.com</code>); the RCPT gate converts the
-envelope's U-label for that authoritative lookup.</p>
+envelope's U-label for that authoritative lookup.
+Mailbox lookup accepts either the U-label or A-label spelling of its domain.</p>
 <p>Outbound delivery detects non-ASCII envelope addresses and headers, checks the
 peer's EHLO capabilities (again after STARTTLS), and requests <code>SMTPUTF8</code> when
 needed. Eight-bit content requires <code>8BITMIME</code> and requests <code>BODY=8BITMIME</code>.

@@ -127,15 +127,17 @@ impl AliasesHooks {
 
     /// True if `email` (canonical) has a live `maild.accounts` row.
     async fn account_exists(&self, email: &str) -> Result<bool, HookError> {
-        let key =
-            RecordKey::collection(crate::props::accounts::namespace_name(), email.to_string());
-        match self.accounts_runtime.store().get(&key).await {
-            Ok(_) => Ok(true),
-            Err(::props::store::StoreError::NotFound) => Ok(false),
-            Err(e) => Err(HookError::hook(format!(
-                "aliases->accounts cross-namespace read failed: {e}"
-            ))),
+        for email in crate::smtp::envelope::mailbox_addresses(email) {
+            let key = RecordKey::collection(crate::props::accounts::namespace_name(), email);
+            match self.accounts_runtime.store().get(&key).await {
+                Ok(_) => return Ok(true),
+                Err(::props::store::StoreError::NotFound) => {},
+                Err(e) => return Err(HookError::hook(format!(
+                    "aliases->accounts cross-namespace read failed: {e}"
+                ))),
+            }
         }
+        Ok(false)
     }
 
     fn validate_email_shape(field: &str, s: &str) -> Result<(), HookError> {
@@ -335,6 +337,15 @@ fn targets_from_value(value: &PropValue) -> Result<Vec<String>> {
 
 /// Exact alias lookup only: catch-alls never grant a sender identity.
 async fn resolve_targets(runtime: &Arc<Runtime>, addr: &str) -> Result<Option<Vec<String>>> {
+    for addr in crate::smtp::envelope::mailbox_addresses(&canon(addr)) {
+        if let Some(targets) = lookup_targets(runtime, &addr).await? {
+            return Ok(Some(targets));
+        }
+    }
+    Ok(None)
+}
+
+async fn lookup_targets(runtime: &Arc<Runtime>, addr: &str) -> Result<Option<Vec<String>>> {
     let key = RecordKey::collection(namespace_name(), canon(addr));
     // `store().get()` yields a snapshot whose `.value` is the `Record`;
     // the record's own `.value` is the `PropValue` body. NotFound is a
@@ -367,7 +378,7 @@ pub async fn recipient_accounts(
     addr: &str,
 ) -> Result<Vec<crate::db::account::Account>> {
     let addr = canon(addr);
-    if let Some(account) = crate::db::account::get_by_email(conn, &addr).await? {
+    if let Some(account) = mailbox_account(conn, &addr).await? {
         return Ok(vec![account]);
     }
     let targets = match resolve_targets(runtime, &addr).await? {
@@ -380,8 +391,7 @@ pub async fn recipient_accounts(
     let mut accounts = Vec::new();
     if let Some(targets) = targets {
         for target in targets {
-            let account = crate::db::account::get_by_email(conn, &target)
-                .await?
+            let account = mailbox_account(conn, &target).await?
                 .ok_or_else(|| {
                     anyhow::anyhow!(
                         "alias target {target} is no longer a local mailbox; forwarding refused"
@@ -396,6 +406,18 @@ pub async fn recipient_accounts(
         }
     }
     Ok(accounts)
+}
+
+async fn mailbox_account(
+    conn: &Arc<std::sync::Mutex<rusqlite::Connection>>,
+    addr: &str,
+) -> Result<Option<crate::db::account::Account>> {
+    for mailbox in crate::smtp::envelope::mailbox_addresses(addr) {
+        if let Some(account) = crate::db::account::get_by_email(conn, &mailbox).await? {
+            return Ok(Some(account));
+        }
+    }
+    Ok(None)
 }
 
 /// Rewrite-before-lookup helper for the inbound recipient sites: the
@@ -419,20 +441,26 @@ pub async fn resolve_recipient(runtime: &Arc<Runtime>, addr: &str) -> Result<Str
 pub async fn sender_authorized(runtime: &Arc<Runtime>, from: &str, authed: &str) -> bool {
     let from_c = canon(from);
     let authed_c = canon(authed);
-    if from_c == authed_c {
+    if crate::smtp::envelope::mailbox_addresses(&from_c).contains(&authed_c) {
         return true;
     }
     if from_c.starts_with('@') {
         return false;
     }
-    matches!(resolve_targets(runtime, &from_c).await, Ok(Some(targets)) if targets.contains(&authed_c))
+    matches!(resolve_targets(runtime, &from_c).await, Ok(Some(targets))
+        if targets.iter().any(|target| crate::smtp::envelope::mailbox_addresses(target).contains(&authed_c)))
 }
 
 /// True if `email` (canonical) has a `maild.accounts` row. Best-effort:
 /// a transient read error returns `false` (used only by the diagnostic).
 async fn account_row_exists(accounts_runtime: &Arc<Runtime>, email: &str) -> bool {
-    let key = RecordKey::collection(crate::props::accounts::namespace_name(), email.to_string());
-    accounts_runtime.store().get(&key).await.is_ok()
+    for email in crate::smtp::envelope::mailbox_addresses(email) {
+        let key = RecordKey::collection(crate::props::accounts::namespace_name(), email);
+        if accounts_runtime.store().get(&key).await.is_ok() {
+            return true;
+        }
+    }
+    false
 }
 
 /// Startup reconciliation diagnostic for the account/alias disjointness
