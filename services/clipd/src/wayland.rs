@@ -31,14 +31,14 @@ impl Offer {
 }
 
 pub enum Event {
-    Selection { primary: bool, offer: Option<Offer>, types: Vec<String> },
+    Selection { primary: bool, offer: Option<Offer>, types: Vec<String>, sequence: u64 },
     Send { stamp: Stamp, primary: bool, mime: String, fd: OwnedFd },
     Failed(String),
 }
 
 enum Command {
     Read { offer: Offer, mime: String, fd: OwnedFd },
-    Set { stamp: Stamp, types: Vec<String>, primary: bool, clear: bool, reply: oneshot::Sender<Result<()>> },
+    Set { stamp: Stamp, types: Vec<String>, primary: bool, clear: bool, reply: oneshot::Sender<Result<u64>> },
     Stop,
 }
 
@@ -67,7 +67,7 @@ impl Driver {
             let result = (|| -> Result<()> {
                 let (globals, mut queue) = registry_queue_init::<State>(&connection)?;
                 let qh = queue.handle();
-                let mut state = State { events: events.clone(), selected: [None, None], seats: Vec::new(), finished: false, source: [None, None] };
+                let mut state = State { events: events.clone(), selected: [None, None], seats: Vec::new(), finished: false, source: [None, None], sequence: 0 };
                 for global in globals.contents().clone_list().iter().filter(|g| g.interface == "wl_seat") {
                     let seat = globals.registry().bind::<WlSeat, _, _>(global.name, global.version.min(7), &qh, ());
                     state.seats.push((seat, String::new()));
@@ -84,7 +84,7 @@ impl Driver {
                     let d = m.get_data_device(&seat, &qh, ());
                     (Manager::Wlr(m), Device::Wlr(d), "wlr-data-control-v1")
                 };
-                connection.flush()?;
+                queue.roundtrip(&mut state)?;
                 let _ = ready.send(Ok(protocol));
                 loop {
                     queue.dispatch_pending(&mut state)?;
@@ -114,7 +114,10 @@ impl Driver {
                                 // on replacement even if cancellation has not arrived yet.
                                 if let Some(old) = state.source[index].take() { old.destroy(); }
                                 state.source[index] = source;
-                                let _ = reply.send(connection.flush().map_err(Into::into));
+                                // Fence all selection events through the compositor's
+                                // application of this set before acknowledging it.
+                                let applied = queue.roundtrip(&mut state).map(|_| state.sequence).map_err(Into::into);
+                                let _ = reply.send(applied);
                             }
                         }
                     }
@@ -138,7 +141,7 @@ impl Driver {
                 let _ = events.blocking_send(Event::Failed(message));
             }
         })?;
-        let protocol = wait.recv()??;
+        let protocol = wait.recv_timeout(std::time::Duration::from_secs(5))??;
         Ok((Self { commands, wake: Arc::new(Mutex::new(wake)), protocol }, received))
     }
 
@@ -151,11 +154,10 @@ impl Driver {
         }
     }
 
-    pub async fn set(&self, selection: &crate::model::Selection, primary: bool, clear: bool) -> Result<()> {
+    pub async fn set(&self, selection: &crate::model::Selection, primary: bool, clear: bool) -> Result<u64> {
         let (reply, wait) = oneshot::channel();
         self.submit(Command::Set { stamp: selection.stamp.clone(), types: selection.mime_types.clone(), primary, clear, reply })?;
-        tokio::time::timeout(std::time::Duration::from_secs(3), wait).await???;
-        Ok(())
+        tokio::time::timeout(std::time::Duration::from_secs(3), wait).await??
     }
 
     pub async fn read(&self, offer: Offer, mime: String, cap: usize) -> Result<Vec<u8>> {
@@ -239,6 +241,7 @@ struct State {
     seats: Vec<(WlSeat, String)>,
     finished: bool,
     source: [Option<Source>; 2],
+    sequence: u64,
 }
 impl State {
     fn selection(&mut self, primary: bool, offer: Option<Offer>) {
@@ -246,9 +249,10 @@ impl State {
         if let Some(old) = self.selected[index].take() { old.destroy(); }
         let types = offer.as_ref().map(Offer::types).unwrap_or_default();
         self.selected[index] = offer.clone();
+        self.sequence += 1;
         // A full event queue is fatal: silently dropping a selection would leave
         // stale content visible on the Bus. systemd restarts the connection.
-        if self.events.try_send(Event::Selection { primary, offer, types }).is_err() { self.finished = true; }
+        if self.events.try_send(Event::Selection { primary, offer, types, sequence: self.sequence }).is_err() { self.finished = true; }
     }
     fn send(&mut self, data: &SourceData, mime: String, fd: OwnedFd) {
         let _ = self.events.try_send(Event::Send { stamp: data.stamp.clone(), primary: data.primary, mime, fd });

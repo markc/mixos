@@ -69,14 +69,15 @@ fetch a transfer without this host/user credential. Transfer requests and
 replies use authenticated encryption over the existing Bus, bind destination
 and command, expire after 30 seconds and reject replayed nonces.
 
-Small, complete text-only offers travel eagerly, capped at 1 MiB total by
-default. Mixed MIME offers, larger text and images are lazy: the target
-advertises the complete original list and reads 64 KiB Bus chunks only when
-a client requests that MIME. Both ends must allow `images:true` for images.
-The original source generation must still exist. A replaced selection,
+Cached small text travels eagerly, capped at 1 MiB total by default. The
+target advertises the complete original list; uncached MIME types, larger
+text and images use 64 KiB Bus chunks only when a client requests that MIME.
+Both ends must allow `images:true` for images. The original source generation
+must still exist until that type is materialised; the target can then serve
+its bounded cache. A replaced selection,
 missing service, timeout or cap failure closes the paste fd cleanly and logs
 the failure. Imported lazy offers cannot be forwarded to a third session.
-Optional `follow:true` pushes locally observed changes to that peer; imported
+Optional `follow:true` pushes local changes to that peer; imported
 changes do not trigger follow. Nothing follows by default.
 
 `clipboard.receive` and `clipboard.fetch` are internal encrypted peer

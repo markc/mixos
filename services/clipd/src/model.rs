@@ -131,11 +131,13 @@ pub struct Clipboard {
     pub history: VecDeque<HistoryEntry>,
     seen: VecDeque<Stamp>,
     pub rotate: usize,
+    /// Wayland events at or before an acknowledged ownership change are stale.
+    pub observed: [u64; 2],
 }
 
 impl Clipboard {
     pub fn new(session: String) -> Self {
-        Self { session, selections: [None, None], history: VecDeque::new(), seen: VecDeque::new(), rotate: 0 }
+        Self { session, selections: [None, None], history: VecDeque::new(), seen: VecDeque::new(), rotate: 0, observed: [0, 0] }
     }
 
     pub fn is_echo(&self, stamp: &Stamp) -> bool {

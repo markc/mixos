@@ -172,7 +172,9 @@ impl Service {
         }
         let bytes = if let Some(remote) = &selection.remote {
             let mut bytes = Vec::new();
+            let started = std::time::Instant::now();
             loop {
+                ensure!(started.elapsed() < Duration::from_secs(30), "SOURCE_TIMEOUT: lazy clipboard deadline exceeded");
                 let part = self.peer_call(&remote.session, "clipboard.fetch", json!(Fetch { stamp: remote.stamp.clone(), mime: mime.into(), offset: bytes.len() })).await.map_err(|_| anyhow!("SOURCE_GONE: lazy clipboard source is unavailable"))?;
                 let chunk = B64.decode(part["data"].as_str().ok_or_else(|| anyhow!("SOURCE_GONE: malformed chunk"))?)?;
                 ensure!(chunk.len() <= CHUNK && bytes.len() + chunk.len() <= MAX_BYTES, "SIZE_CAP: remote clipboard exceeds limit");
@@ -198,7 +200,7 @@ impl Service {
         let _mutation = self.mutation.lock().await;
         let mut state = self.state.lock().await;
         if state.is_echo(&selection.stamp) { return Ok(false); }
-        self.driver.set(&selection, primary, clear).await?;
+        state.observed[usize::from(primary)] = self.driver.set(&selection, primary, clear).await?;
         state.adopt(primary, selection);
         if remember { state.remember(primary); }
         drop(state);
@@ -219,9 +221,11 @@ impl Service {
         }
     }
 
-    async fn begin_observe(&self, primary: bool, offer: Option<crate::wayland::Offer>, mut types: Vec<String>) -> Option<Selection> {
+    async fn begin_observe(&self, primary: bool, offer: Option<crate::wayland::Offer>, mut types: Vec<String>, sequence: u64) -> Option<Selection> {
         let _mutation = self.mutation.lock().await;
         let mut state = self.state.lock().await;
+        if sequence <= state.observed[usize::from(primary)] { return None; }
+        state.observed[usize::from(primary)] = sequence;
         if state.selections[usize::from(primary)].as_ref().is_some_and(|s| types.contains(&s.stamp.marker())) { return None; }
         types.retain(|m| !m.starts_with(MARKER));
         // Invalid or excessive lists are represented as a closed, sensitive
@@ -229,7 +233,8 @@ impl Service {
         let invalid = !types.is_empty() && validate_mimes(&types).is_err();
         if invalid { types.clear(); }
         let stamp = Stamp::new(&state.session);
-        let selection = Selection { stamp: stamp.clone(), sensitive: invalid || types.iter().any(|m| m == SECRET_HINT), mime_types: types, size: None, data: BTreeMap::new(), offer, remote: None };
+        let size = offer.is_none().then_some(0);
+        let selection = Selection { stamp: stamp.clone(), sensitive: invalid || types.iter().any(|m| m == SECRET_HINT), mime_types: types, size, data: BTreeMap::new(), offer, remote: None };
         state.adopt(primary, selection.clone());
         Some(selection)
     }
@@ -293,7 +298,7 @@ impl Service {
         let result = match command.command.as_str() {
             "clipboard.receive" => {
                 let r: Receive = serde_json::from_value(body)?;
-                validate_mimes(&r.mime_types)?;
+                if r.mime_types.is_empty() { ensure!(r.size == Some(0), "MIME: empty offer must describe a clear"); } else { validate_mimes(&r.mime_types)?; }
                 ensure!(r.stamp.origin_session == envelope.from_session && uuid::Uuid::parse_str(&r.stamp.generation).is_ok(), "SCOPE: invalid origin generation");
                 ensure!(!r.mime_types.iter().any(|m| m == SECRET_HINT), "SENSITIVE: hinted data cannot cross sessions");
                 let mut data = BTreeMap::new();
@@ -314,7 +319,8 @@ impl Service {
                 let s = Selection { stamp: r.stamp.clone(), mime_types: r.mime_types, sensitive: false, size: r.size, data, offer: None, remote: lazy.then(|| Remote { session: envelope.from_session.clone(), stamp: r.stamp }) };
                 ensure!(peer.images || !s.mime_types.iter().any(|m| m.starts_with("image/")), "IMAGES_DISABLED: receiving pair forbids images");
                 ensure!(s.size.is_none_or(|n| n <= MAX_BYTES), "SIZE_CAP: advertised size exceeds 64 MiB");
-                json!({"applied": self.set(s, false, false).await?, "lazy": lazy})
+                let clear = s.mime_types.is_empty();
+                json!({"applied": self.set(s, false, clear).await?, "lazy": lazy})
             }
             "clipboard.fetch" => {
                 let r: Fetch = serde_json::from_value(body)?;
@@ -337,7 +343,7 @@ impl Service {
             return if command.command == "clipboard.info" { Ok(json!({"session": self.state.lock().await.session, "protocol": self.driver.protocol, "service": "clipd", "history_limit": HISTORY_LEN, "eager_text_bytes": self.settings.eager_text_bytes, "max_bytes": MAX_BYTES, "peers": self.settings.peers})) } else { Ok(json!(manifest())) };
         }
         ensure!(command.header("broker_origin") == Some("local"), "SESSION_ONLY: use clipboard.push to share with another local session");
-        match command.command.as_str() {
+        let result = match command.command.as_str() {
             "clipboard.get" => {
                 let p: Get = serde_json::from_value(command.args.clone())?;
                 let s = self.state.lock().await.selections[usize::from(p.primary)].clone().ok_or_else(|| anyhow!("EMPTY: no selection"))?;
@@ -389,7 +395,13 @@ impl Service {
                 Ok(json!({"opened": true}))
             }
             _ => bail!("UNKNOWN_COMMAND: unsupported clipboard command"),
+        };
+        if result.is_ok() && matches!(command.command.as_str(), "clipboard.set" | "clipboard.clear" | "clipboard.pick" | "desktop.clipboard.rotate") {
+            for (peer, pair) in &self.settings.peers {
+                if pair.follow { if let Err(error) = self.push(peer).await { tracing::warn!(%error, "clipboard follow unavailable"); } }
+            }
         }
+        result
     }
 }
 
@@ -407,7 +419,7 @@ pub async fn run(session_name: String, url: String, settings: Settings, key: Opt
         tokio::select! {
             _ = sigterm.recv() => break Ok(()),
             _ = tokio::signal::ctrl_c() => break Ok(()),
-            done = tasks.join_next(), if !tasks.is_empty() => { if let Some(Err(error)) = done { tracing::warn!(%error, "clipboard task failed"); } },
+            done = tasks.join_next(), if !tasks.is_empty() => { if let Some(Err(error)) = done { if !error.is_cancelled() { tracing::warn!(%error, "clipboard task failed"); } } },
             event = incoming.recv() => match event {
                 Some(BoundedIncomingEvent::Command(command)) if !command.is_topic_delivery() => {
                     if let Ok(permit) = permits.clone().try_acquire_owned() {
@@ -424,10 +436,10 @@ pub async fn run(session_name: String, url: String, settings: Settings, key: Opt
                 None => break Err(anyhow!("Bus command receiver closed")),
             },
             event = events.recv() => match event {
-                Some(Event::Selection { primary, offer, types }) => {
+                Some(Event::Selection { primary, offer, types, sequence }) => {
                     // Adoption is ordered by the event loop. At most one
                     // classification per selection remains in flight.
-                    if let Some(selection) = service.begin_observe(primary, offer, types).await {
+                    if let Some(selection) = service.begin_observe(primary, offer, types, sequence).await {
                         if let Some(old) = observations[usize::from(primary)].take() { old.abort(); }
                         let service = service.clone();
                         observations[usize::from(primary)] = Some(tasks.spawn(async move { service.classify(primary, selection).await; }));
@@ -463,6 +475,98 @@ pub async fn run(session_name: String, url: String, settings: Settings, key: Opt
 #[cfg(test)]
 mod tests {
     use super::*;
+    struct Desk {
+        service: Arc<Service>,
+        reader: Driver,
+        events: tokio::sync::mpsc::Receiver<Event>,
+        tasks: Vec<tokio::task::JoinHandle<()>>,
+        stop: std::sync::mpsc::Sender<()>,
+        server: Option<std::thread::JoinHandle<()>>,
+    }
+    impl Drop for Desk {
+        fn drop(&mut self) {
+            self.service.driver.stop(); self.reader.stop();
+            for task in &self.tasks { task.abort(); }
+            let _ = self.stop.send(());
+            if let Some(server) = self.server.take() { let _ = server.join(); }
+        }
+    }
+    impl Desk {
+        async fn start(session: &str, peer: &str, url: &str) -> Self {
+            let (ready, connections) = std::sync::mpsc::sync_channel(1);
+            let (stop, stopped) = std::sync::mpsc::channel();
+            let server = std::thread::spawn(move || {
+                let mut harness = testkit::Harness::new();
+                ready.send((harness.connect_external(), harness.connect_external())).unwrap();
+                while matches!(stopped.try_recv(), Err(std::sync::mpsc::TryRecvError::Empty)) {
+                    harness.pump(); std::thread::sleep(Duration::from_millis(1));
+                }
+            });
+            let (owner, reader) = connections.recv_timeout(Duration::from_secs(5)).unwrap();
+            let (driver, mut events) = Driver::start_connection(wayland_client::Connection::from_socket(owner).unwrap(), None).unwrap();
+            let (reader, observed) = Driver::start_connection(wayland_client::Connection::from_socket(reader).unwrap(), None).unwrap();
+            let client = Arc::new(SupervisedClient::connect_options(&format!("clipd-{session}"), url).bounded_incoming(64).with_commands(manifest()).connect().await.unwrap());
+            let mut incoming = client.incoming_bounded().unwrap();
+            // Two real registered services on the test broker stand in for the
+            // two exact mesh routes; requests still traverse native noded.
+            let settings = Settings { peers: BTreeMap::from([(peer.into(), Peer { target: format!("clipd-{peer}"), images: true, follow: false })]), ..Default::default() };
+            let service = Arc::new(Service { state: Mutex::new(Clipboard::new(session.into())), driver, client, settings, key: Some([7; 32]), nonces: Mutex::new(VecDeque::new()), mutation: Mutex::new(()), reads: Mutex::new(()), url: url.into(), menu: std::sync::Mutex::new(None) });
+            let rpc = service.clone();
+            let calls = tokio::spawn(async move {
+                while let Some(BoundedIncomingEvent::Command(command)) = incoming.recv().await {
+                    let (rc, value) = match rpc.dispatch(&command).await { Ok(value) => (0, value), Err(error) => (10, json!({"error":error.to_string()})) };
+                    let _ = rpc.client.respond(&command, rc, &value.to_string()).await;
+                }
+            });
+            let owner = service.clone();
+            let sends = tokio::spawn(async move {
+                while let Some(event) = events.recv().await {
+                    if let Event::Send { stamp, primary, mime, fd } = event {
+                        let selection = owner.state.lock().await.selections[usize::from(primary)].clone().filter(|s| s.stamp == stamp);
+                        if let Some(s) = selection { if let Ok(bytes) = owner.bytes(&s, &mime, primary).await { let _ = crate::wayland::write_fd(fd, &bytes).await; } }
+                    }
+                }
+            });
+            Self { service, reader, events: observed, tasks: vec![calls, sends], stop, server: Some(server) }
+        }
+        async fn paste(&mut self, marker: &str, mime: &str) -> Vec<u8> {
+            let offer = tokio::time::timeout(Duration::from_secs(5), async {
+                loop { if let Some(Event::Selection { offer: Some(offer), types, primary: false, .. }) = self.events.recv().await { if types.iter().any(|t| t == marker) { break offer; } } }
+            }).await.unwrap();
+            self.reader.read(offer, mime.into(), MAX_BYTES).await.unwrap()
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn push_is_eager_for_text_lazy_for_images_and_closes_when_source_disappears() {
+        let broker = test_broker::Broker::start();
+        let source = Desk::start("vt1", "vt4", &broker.url).await;
+        let mut target = Desk::start("vt4", "vt1", &broker.url).await;
+        let text = Selection::owned(Stamp::new("vt1"), "text/plain".into(), b"eager text".to_vec(), false);
+        source.service.set(text.clone(), false, false).await.unwrap();
+        assert_eq!(source.service.push("vt4").await.unwrap()["lazy"], false);
+        assert_eq!(target.paste(&text.stamp.marker(), "text/plain").await, b"eager text");
+
+        let image = Selection::owned(Stamp::new("vt1"), "image/png".into(), vec![42; CHUNK * 2 + 13], false);
+        source.service.set(image.clone(), false, false).await.unwrap();
+        assert_eq!(source.service.push("vt4").await.unwrap()["lazy"], true);
+        assert!(target.service.state.lock().await.selections[0].as_ref().unwrap().data.is_empty());
+        assert_eq!(target.paste(&image.stamp.marker(), "image/png").await, vec![42; CHUNK * 2 + 13]);
+
+        let secret = Selection::owned(Stamp::new("vt1"), "text/plain".into(), b"secret".to_vec(), true);
+        source.service.set(secret, false, false).await.unwrap();
+        assert!(source.service.push("vt4").await.unwrap_err().to_string().contains("SENSITIVE"));
+        assert!(source.service.push("vt3").await.is_err());
+
+        let gone = Selection::owned(Stamp::new("vt1"), "image/png".into(), vec![7; CHUNK + 1], false);
+        source.service.set(gone.clone(), false, false).await.unwrap();
+        source.service.push("vt4").await.unwrap();
+        source.service.client.close().await;
+        let selection = target.service.state.lock().await.selections[0].clone().unwrap();
+        assert!(target.service.bytes(&selection, "image/png", false).await.unwrap_err().to_string().contains("SOURCE_GONE"));
+        assert!(target.paste(&gone.stamp.marker(), "image/png").await.is_empty());
+        target.service.client.close().await;
+    }
     #[test]
     fn scope_is_cryptographic_and_bound_to_destination_and_command() {
         let value = seal(&[7; 32], "vt1", "vt4", "clipboard.receive", json!({"data":"private"})).unwrap();

@@ -41,7 +41,7 @@ async fn ext_clipboard_and_primary_round_trip_without_focus() {
         let offer = tokio::time::timeout(Duration::from_secs(5), async {
             loop {
                 match events.recv().await.unwrap() {
-                    Event::Selection { primary: got, offer: Some(offer), types } if got == primary && types.contains(&selection.stamp.marker()) => break offer,
+                    Event::Selection { primary: got, offer: Some(offer), types, .. } if got == primary && types.contains(&selection.stamp.marker()) => break offer,
                     Event::Failed(error) => panic!("{error}"),
                     _ => {}
                 }
