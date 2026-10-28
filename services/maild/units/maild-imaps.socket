@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+[Unit]
+Description=MixOS implicit TLS IMAP socket
+Documentation=https://mixos.dev/maild/
+
+[Socket]
+ListenStream=127.0.0.1:993
+FreeBind=yes
+FileDescriptorName=imaps
+Service=maild.service
+
+[Install]
+WantedBy=sockets.target

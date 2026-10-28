@@ -266,7 +266,7 @@ pub fn inspect(
 // decoded messages, up to MAX_NESTED_ENCODED=3 (:17). Raw counts alone cannot
 // bound plain nesting hidden there: scan those buffers with shared counters
 // and a shared 2 * MAX_MESSAGE decoded-byte budget before the first parse.
-fn structure_preflight(data: &[u8]) -> Result<(), Error> {
+pub(crate) fn structure_preflight(data: &[u8]) -> Result<(), Error> {
     Preflight::default().scan(data, 0)
 }
 

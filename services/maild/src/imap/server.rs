@@ -42,7 +42,17 @@ pub async fn start(
     cfg: ImapConfig,
     slots: Arc<AccountSlots>,
 ) -> Result<ImapHandle> {
-    if cfg.listen_imaps.is_empty() {
+    start_with_listeners(db, mailstore, cfg, slots, Vec::new()).await
+}
+
+pub async fn start_with_listeners(
+    db: Db,
+    mailstore: Arc<dyn MailStore>,
+    cfg: ImapConfig,
+    slots: Arc<AccountSlots>,
+    inherited: Vec<TcpListener>,
+) -> Result<ImapHandle> {
+    if cfg.listen_imaps.is_empty() && inherited.is_empty() {
         return Ok(ImapHandle {
             imaps_addrs: Vec::new(),
         });
@@ -64,13 +74,8 @@ pub async fn start(
     // this listener maintains are the ones the stats command reads.
 
     let mut imaps_addrs: Vec<SocketAddr> = Vec::with_capacity(cfg.listen_imaps.len());
-    for addr in cfg.listen_imaps.clone() {
-        let listener = TcpListener::bind(&addr)
-            .await
-            .map_err(|e| anyhow::anyhow!("IMAPS bind {addr}: {e}"))?;
-        let bound = listener
-            .local_addr()
-            .map_err(|e| anyhow::anyhow!("IMAPS local_addr {addr}: {e}"))?;
+    for listener in crate::activation::listeners(inherited, &cfg.listen_imaps).await? {
+        let bound = listener.local_addr()?;
         imaps_addrs.push(bound);
         tracing::info!(addr = %bound, "IMAPS listening");
 

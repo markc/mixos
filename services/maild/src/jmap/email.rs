@@ -1295,6 +1295,8 @@ pub async fn set(
         tokio::task::spawn_blocking(move || ms.email_state(account_id)).await??
     };
 
+    check_if_in_state(&args, &old_state_seq.to_string())?;
+
     let mut created_map = std::collections::HashMap::new();
     let mut not_created = std::collections::HashMap::new();
     let mut updated_map = std::collections::HashMap::new();
@@ -2167,41 +2169,16 @@ fn canonical_retrain_stamp(item_id: ItemId) -> String {
     item_id.0.to_string()
 }
 
-/// Create an email item via the mds-backed MailStore. Used by
-/// `Email/set { create }` and `Email/import`.
-///
-/// Expected JMAP shape (RFC 8621 §4.5 / §4.6):
-///
-/// - `blobId` (required): a UUID returned by `/jmap/upload`.
-///   The upload mints a `MailStore::BlobId` alias (a
-///   per-account `blob_refs` row tied to a temp item in
-///   `__upload_staging__`), and this lookup resolves it via
-///   `MailStore::resolve_blob_ref` → `BlobHash`. Pre-migration
-///   `db::blob` UUIDs continue to resolve through the legacy
-///   `db::blob::load_for_account` fallback for the duration of the
-///   migration window. The CAS hex form (64 lowercase hex chars)
-///   that `record_to_jmap` emits is still rejected here — the
-///   round-trip "Email/get blobId → Email/set create blobId" is the
-///   client's responsibility for that case.
-/// - `mailboxIds` (required) — `Id[Boolean]` map of target containers.
-///   Empty surfaces `invalidProperties: mailboxIds` per RFC 8621 §4.6.
-/// - `keywords` (optional) — `Id[Boolean]` map. The four system
-///   `$`-keywords route to flag bits; every other name (incl. registry
-///   `$`-keywords) is normalised into `Tags`; a malformed name is rejected — see
-///   [`keywords_json_to_flags_and_tags`].
-/// - `receivedAt` (optional, Email/import only) — JMAP UTCDate string.
-///   When absent, `chrono::Utc::now().timestamp_millis()` is used.
-///
-/// Returns the freshly-allocated [`ItemId`]. Errors carry one of the
-/// classified prefixes (`invalidProperties:`, `blobNotFound:`,
-/// `mailbox not found`) that [`classify_create_error`] re-shapes into
-/// JMAP `SetError.type`.
+/// Import an account-owned RFC 5322 blob with atomic mailbox memberships.
+/// Email/set retains its legacy blobId creation extension; strict clients use
+/// Email/import (RFC 8621 §4.8). Each entry commits atomically; duplicate
+/// content is rejected with alreadyExists and the existing email id.
 async fn create_from_blob(
     db: &Db,
     mailstore: &Arc<SqliteMailStore>,
     account_id: i32,
     entry: &serde_json::Value,
-    idempotent: bool,
+    reject_duplicate: bool,
 ) -> Result<ItemId> {
     use mail_parser::MessageParser;
 
@@ -2209,10 +2186,6 @@ async fn create_from_blob(
         .get("blobId")
         .and_then(|v| v.as_str())
         .ok_or_else(|| anyhow::anyhow!("invalidProperties: blobId is required"))?;
-    let blob_id: Uuid = blob_id_str
-        .parse()
-        .map_err(|_| anyhow::anyhow!("invalidProperties: Invalid blobId"))?;
-
     let mailbox_ids_obj = entry
         .get("mailboxIds")
         .and_then(|v| v.as_object())
@@ -2240,61 +2213,33 @@ async fn create_from_blob(
         ));
     }
 
-    // Resolve the `blobId` to a `BlobHash` and load bytes from the
-    // MDS CAS. Two-tier lookup during the Task-3.3a migration window:
-    //
-    //   1. `MailStore::resolve_blob_ref(account, BlobId(uuid))` —
-    //      the post-3.3a path. The alias is account-scoped at the
-    //      `blob_refs` row level (`WHERE account_id = ?`), so a
-    //      caller cannot reference another account's `BlobId` (the
-    //      lookup returns "not found" rather than the foreign hash).
-    //   2. Legacy fallback to `db::blob::load_for_account` for
-    //      pre-migration `db::blob` UUIDs that still appear in
-    //      client state. Same `(blob_id, account_id)` gating; the
-    //      fallback collapses "foreign id" / "no such id" into a
-    //      uniform `blobNotFound` so we never confirm whether
-    //      someone else's blob exists.
-    //
-    // The fallback retires when (a) the `/download` gate moves to
-    // an mds-side ownership oracle (option (b) in the migration
-    // plan §3.3a) and (b) `db::blob` is fully retired in Phase 6.
-    let blob_id_alias = crate::mailstore::BlobId(blob_id);
-    let ms_for_resolve = mailstore.clone();
-    let resolved_hash = tokio::task::spawn_blocking(move || {
-        ms_for_resolve.resolve_blob_ref(account_id, blob_id_alias)
-    })
-    .await?;
-
-    use crate::mailstore::BlobRefLookup;
-    let resolved_lookup = resolved_hash
-        .map_err(|e| anyhow::anyhow!("serverFail: alias resolve internal error: {e}"))?;
-    let (blob_data, alias_hash) = match resolved_lookup {
-        BlobRefLookup::Found(hash) => {
-            let mds = mailstore.mds().clone();
-            let bytes = tokio::task::spawn_blocking(move || mds.get_blob(&hash))
-                .await?
-                .map_err(|e| anyhow::anyhow!("blobNotFound: {blob_id}: {e}"))?;
-            (bytes, Some(hash))
+    let known = mailstore.list_mailboxes(account_id)?;
+    if mailbox_ids.iter().any(|id| !known.iter().any(|m| m.id == *id)) {
+        anyhow::bail!("invalidProperties: mailboxIds contains an unknown mailbox");
+    }
+    let (blob_data, alias_hash) = if let Some(hash) = crate::mailstore::parse_hash(blob_id_str) {
+        if !super::hash_owned_by_account(db, mailstore, account_id, hash).await? {
+            anyhow::bail!("blobNotFound: {blob_id_str}");
         }
-        BlobRefLookup::NotFound => {
-            let bytes = db::blob::load_for_account(&db.conn, &db.blob_dir, account_id, blob_id)
-                .await?
-                .ok_or_else(|| anyhow::anyhow!("blobNotFound: {blob_id}"))?;
-            (bytes, None)
-        }
-        BlobRefLookup::Dangling => {
-            // Alias minted but its CAS bytes are gone. Real
-            // blobNotFound — MUST NOT fall back to legacy db::blob
-            // (the client got this BlobId from us, so the alias is
-            // authoritative for this account).
-            return Err(anyhow::anyhow!("blobNotFound: {blob_id}"));
+        (mailstore.read_blob(hash)?, Some(hash))
+    } else {
+        let blob_id = blob_id_str.parse::<Uuid>()
+            .map_err(|_| anyhow::anyhow!("invalidProperties: Invalid blobId"))?;
+        use crate::mailstore::{BlobId, BlobRefLookup};
+        match mailstore.resolve_blob_ref(account_id, BlobId(blob_id))? {
+            BlobRefLookup::Found(hash) => (mailstore.read_blob(hash)?, Some(hash)),
+            BlobRefLookup::NotFound => (
+                db::blob::load_for_account(&db.conn, &db.blob_dir, account_id, blob_id)
+                    .await?.ok_or_else(|| anyhow::anyhow!("blobNotFound: {blob_id}"))?, None),
+            BlobRefLookup::Dangling => anyhow::bail!("blobNotFound: {blob_id}"),
         }
     };
-
+    crate::attachments::structure_preflight(&blob_data)
+        .map_err(|e| anyhow::anyhow!("invalidEmail: {e}"))?;
     let parser = MessageParser::default();
     let message = parser
         .parse(&blob_data)
-        .ok_or_else(|| anyhow::anyhow!("invalidProperties: Failed to parse MIME message"))?;
+        .ok_or_else(|| anyhow::anyhow!("invalidEmail: Failed to parse MIME message"))?;
     let envelope = build_envelope(&message);
     let in_reply_to = extract_in_reply_to(&message);
 
@@ -2323,8 +2268,15 @@ async fn create_from_blob(
     };
 
     let received_at: i64 = match entry.get("receivedAt") {
-        Some(v) if !v.is_null() => parse_utcdate_ms(v, "receivedAt")?,
-        _ => chrono::Utc::now().timestamp_millis(),
+        Some(v) => {
+            let valid = v.as_str().is_some_and(|s| s.ends_with('Z'));
+            if !valid { anyhow::bail!("invalidProperties: receivedAt must be a UTCDate"); }
+            parse_utcdate_ms(v, "receivedAt")
+                .map_err(|e| anyhow::anyhow!("invalidProperties: receivedAt: {e}"))?
+        }
+        None => message.received().and_then(|r| r.date())
+            .map(|d| d.to_timestamp() * 1000)
+            .unwrap_or_else(|| chrono::Utc::now().timestamp_millis()),
     };
 
     let ms = mailstore.clone();
@@ -2349,50 +2301,11 @@ async fn create_from_blob(
             None => ms.mds().put_blob(&blob_data)?,
         };
 
-        // Step 2 (idempotent path only): if an existing email in the
-        // account already has this blob_hash AND the same set of
-        // mailbox memberships as requested, return its id rather
-        // than allocating a new one. Backs the JMAP `Email/import`
-        // idempotency contract — see
-        //  §3.5b. The check is
-        // gated on the `idempotent` flag so regular `Email/set
-        // create` keeps RFC-/legacy-default semantics where two
-        // `create` entries for the same blob produce two distinct
-        // emails.
-        //
-        // Atomicity scope: the find + create are split across two
-        // operations, so two concurrent `Email/import` calls with
-        // identical (blob_hash, mailbox-set) can both observe no
-        // existing item and both create. The pre-staged contract
-        // test `email_set_contract_import_is_idempotent_on_blob_hash`
-        // exercises sequential repeat-import (which this check
-        // covers); concurrent-import atomicity needs an
-        // `Mds::create_email_if_not_exists_by_blob_hash` substrate
-        // primitive that does the find + create inside one set
-        // transaction, and is tracked as a follow-up under Task
-        // 18d.
-        if idempotent {
-            let existing = ms.find_emails_by_blob_hash(account_id, &blob_hash)?;
-            let want: std::collections::HashSet<ContainerId> = mailboxes.iter().copied().collect();
-            for rec in existing {
-                let have: std::collections::HashSet<ContainerId> =
-                    rec.mailbox_ids.iter().copied().collect();
-                if have == want {
-                    // Match. Return the existing id; do not touch
-                    // its keywords or received_at — the contract is
-                    // "same blob into same mailbox returns same id",
-                    // which means a re-import is a no-op rather than
-                    // a re-write of the existing row's metadata.
-                    return Ok(rec.id);
-                }
-            }
-        }
-
         // Step 3: atomic create with N memberships in one
         // `with_set_tx`. The MembershipUid pairs are not surfaced to
         // JMAP today (RFC 8621 has no per-membership uid concept);
         // they're computed for IMAP / future use.
-        let (id, _uids) = ms.create_email_with_memberships(
+        let (id, _uids) = ms.create_with_memberships(
             account_id,
             &mailboxes,
             blob_hash,
@@ -2404,6 +2317,7 @@ async fn create_from_blob(
             // item in the same create transaction.
             initial_tags,
             received_at,
+            reject_duplicate,
         )?;
         Ok(id)
     })
@@ -2412,80 +2326,80 @@ async fn create_from_blob(
     Ok(item_id)
 }
 
-/// Email/import (RFC 8621 §4.6) — import raw RFC 5322 messages.
-///
-/// Migrated to the MailStore in. State tokens derive from
-/// [`MailStore::email_state`]; the legacy SQLite `changelog` table is
-/// no longer consulted for the `Email` type. Per-entry success
-/// tracking (`created` vs `notCreated`) honours JMAP §5.5 partial
-/// success — one bad entry never aborts the batch.
 pub async fn import(
-    _db: &Db,
+    db: &Db,
     mailstore: &Arc<SqliteMailStore>,
     account_id: i32,
     args: serde_json::Value,
 ) -> Result<serde_json::Value> {
-    let acct = account_id.to_string();
-
-    let old_state_seq = {
-        let ms = mailstore.clone();
-        tokio::task::spawn_blocking(move || ms.email_state(account_id)).await??
+    let invalid = |description: &str| JmapMethodError {
+        error_type: "invalidArguments".into(), description: Some(description.into()),
     };
-
-    let mut created_map = std::collections::HashMap::new();
-    let mut not_created = std::collections::HashMap::new();
-
-    if let Some(emails) = args.get("emails").and_then(|v| v.as_object()) {
-        for (client_id, entry) in emails {
-            // `Email/import` IS idempotent on (account, blob_hash,
-            // mailbox-set): re-importing the same blob into the same
-            // mailbox set returns the existing email id rather than
-            // allocating a new one. Maild promotes RFC 8621 §4.6's SHOULD to MUST
-            // for the same-blob-same-mailbox case.
-            match create_from_blob(_db, mailstore, account_id, entry, true).await {
-                Ok(item_id) => {
-                    // RFC 8621 §4.6: the import response carries the
-                    // imported email's id, blobId, threadId, and size.
-                    // `threadId` is substrate-pending and projects
-                    // as null; `size` is read back via MailStore for an
-                    // accurate post-write value.
-                    let ms = mailstore.clone();
-                    let size =
-                        tokio::task::spawn_blocking(move || ms.get_email(account_id, item_id))
-                            .await?
-                            .map(|r| r.size_bytes)
-                            .unwrap_or(0);
-                    created_map.insert(
-                        client_id.clone(),
-                        serde_json::json!({
-                            "id": item_id.0.to_string(),
-                            "blobId": entry.get("blobId").and_then(|v| v.as_str()).unwrap_or(""),
-                            "threadId": serde_json::Value::Null,
-                            "size": size,
-                        }),
-                    );
-                }
-                Err(e) => {
-                    not_created.insert(client_id.clone(), classify_create_error(&e));
-                }
+    let account = args.get("accountId").and_then(|v| v.as_str())
+        .ok_or_else(|| invalid("accountId must be an Id"))?;
+    if account != account_id.to_string() {
+        return Err(JmapMethodError { error_type: "accountNotFound".into(), description: None }.into());
+    }
+    let emails = args.get("emails").and_then(|v| v.as_object())
+        .ok_or_else(|| invalid("emails must be an object"))?;
+    let old_state = mailstore.email_state(account_id)?.to_string();
+    check_if_in_state(&args, &old_state)?;
+    let mut created = serde_json::Map::new();
+    let mut not_created = serde_json::Map::new();
+    for (creation_id, entry) in emails {
+        let result = create_from_blob(db, mailstore, account_id, entry, true).await;
+        match result {
+            Ok(id) => {
+                let record = mailstore.get_email(account_id, id)?;
+                let thread = mailstore.thread_for_email(account_id, id)?;
+                created.insert(creation_id.clone(), serde_json::json!({
+                    "id": id.0.to_string(), "blobId": mds::blob::hex(&record.blob_hash),
+                    "threadId": thread.0, "size": record.size_bytes,
+                }));
+            }
+            Err(error) => {
+                let msg = error.to_string();
+                let value = if let Some(id) = msg.strip_prefix("alreadyExists: ") {
+                    serde_json::json!({"type": "alreadyExists", "existingId": id})
+                } else if msg.starts_with("invalidEmail:") {
+                    serde_json::json!({"type": "invalidEmail", "description": msg})
+                } else {
+                    let mut value = serde_json::to_value(classify_create_error(&error))?;
+                    if msg.starts_with("blobNotFound:") || msg.starts_with("mailbox not found") {
+                        value["type"] = "invalidProperties".into();
+                    }
+                    if value["type"] == "invalidProperties" {
+                        for property in ["blobId", "mailboxIds", "keywords", "receivedAt"] {
+                            if msg.contains(property) || (property == "blobId" && msg.starts_with("blobNotFound:")) {
+                                value["properties"] = serde_json::json!([property]);
+                                break;
+                            }
+                        }
+                    }
+                    value
+                };
+                not_created.insert(creation_id.clone(), value);
             }
         }
     }
+    let new_state = mailstore.email_state(account_id)?.to_string();
+    Ok(serde_json::json!({
+        "accountId": account, "oldState": old_state, "newState": new_state,
+        "created": if created.is_empty() { serde_json::Value::Null } else { created.into() },
+        "notCreated": if not_created.is_empty() { serde_json::Value::Null } else { not_created.into() },
+    }))
+}
 
-    let new_state_seq = {
-        let ms = mailstore.clone();
-        tokio::task::spawn_blocking(move || ms.email_state(account_id)).await??
-    };
-
-    let resp = serde_json::json!({
-        "accountId": acct,
-        "oldState": old_state_seq.to_string(),
-        "newState": new_state_seq.to_string(),
-        "created": created_map,
-        "notCreated": not_created.into_iter().map(|(k, v)| (k, serde_json::to_value(v).unwrap())).collect::<std::collections::HashMap<_, _>>(),
-    });
-
-    Ok(resp)
+fn check_if_in_state(args: &serde_json::Value, state: &str) -> Result<()> {
+    if let Some(value) = args.get("ifInState").filter(|v| !v.is_null()) {
+        let expected = value.as_str().ok_or_else(|| JmapMethodError {
+            error_type: "invalidArguments".into(), description: Some("ifInState must be String|null".into()),
+        })?;
+        if expected != state {
+            return Err(JmapMethodError { error_type: "stateMismatch".into(), description: None }.into());
+        }
+    }
+    Ok(())
 }
 
 /// Wire-form name for a `serde_json::Value`, used in
@@ -3385,109 +3299,8 @@ mod tests {
         assert_eq!(kind, "invalidArguments");
     }
 
-    // ---------------------------------------------------------------
-    // Pre-staged contract tests for / 3.4 / 3.5 / 3.5b.
-    //
-    // These are `#[ignore]`'d stubs that document the JMAP semantics
-    // the MailStore-backed Email/set rewrite must honour. They exist
-    // so the substrate work can convert each into a
-    // real failing test before implementation, then green it.
-    //
-    // Run them explicitly with:
-    //   cargo test -p maild -- --ignored email_set_contract
-    //
-    // Until then they panic with the expected behaviour as the
-    // panic message — surfacing the contract in test output, not
-    // just in comments.
-    // ---------------------------------------------------------------
-
-    /// — `Email/set { create }` must accept multiple mailbox
-    /// memberships in a single call. JMAP `mailboxIds` is
-    /// `Id[Boolean]` (RFC 8621 §4.1.1) — a set of containers the
-    /// email belongs to, not a primary + extras. The current
-    /// `MailStore::create_email` accepts a single `ContainerId`
-    /// only; the migration must either extend the storage trait to
-    /// take `&[ContainerId]` or add a follow-up `set_memberships`
-    /// step that runs in the *same* `with_set_tx` so partial
-    /// failure cannot leave an email in only some of its requested
-    /// mailboxes.
-    #[test]
-    #[ignore = "inherited placeholder: needs executable multi-mailbox creation assertions"]
-    fn email_set_contract_create_honours_multi_mailbox_ids() {
-        panic!(
-            "Email/set create with `mailboxIds: {{ inboxId: true, archiveId: true }}` \
-             must materialise the email in BOTH mailboxes atomically. Failure mode \
-             to guard against: partial materialisation if the second membership write \
-             fails after the first commits."
-        );
-    }
-
-    /// — empty `mailboxIds: {}` must surface
-    /// `invalidProperties` per RFC 8621 §4.6 (an Email with zero
-    /// mailbox memberships is ill-formed under the JMAP data
-    /// model). The legacy SQL path silently accepted it.
-    #[test]
-    #[ignore = "inherited placeholder: needs executable empty mailboxIds rejection assertions"]
-    fn email_set_contract_create_rejects_empty_mailbox_ids() {
-        panic!(
-            "Email/set create with empty `mailboxIds` must enter `notCreated` with \
-             `invalidProperties` and the offending property name. Silent acceptance \
-             leaves orphaned emails in the substrate."
-        );
-    }
-
-    /// — partial success: one failing update among many
-    /// must not abort the whole batch. RFC 8620 §5.3 mandates
-    /// per-id success tracking via `updated` vs `notUpdated`. The
-    /// current handler short-circuits on the first error, dropping
-    /// later valid updates on the floor.
-    #[test]
-    #[ignore = "inherited placeholder: needs executable per-id partial update assertions"]
-    fn email_set_contract_update_partial_success_per_id() {
-        panic!(
-            "Three updates: id_a (valid), id_b (unknown id), id_c (valid). The response \
-             must include `updated: {{ id_a: null, id_c: null }}` and `notUpdated: {{ id_b: \
-             {{ type: \"notFound\" }} }}` — id_c must NOT be skipped because id_b failed."
-        );
-    }
-
-    /// — destroy ordering. RFC 8620 §5.3 specifies that
-    /// within a single `/set` call the server processes
-    /// `create → update → destroy`, and that destroy uses the
-    /// post-update mailbox memberships. A tx that destroys
-    /// before update commits would race against concurrent
-    /// readers and violate the changelog state-monotonicity
-    /// invariant relied on by `Email/changes`.
-    #[test]
-    #[ignore = "inherited placeholder: needs executable update-before-destroy ordering assertions"]
-    fn email_set_contract_destroy_runs_after_update_in_same_state_tx() {
-        panic!(
-            "An Email/set with both `update: {{ id: {{ keywords/$seen: true }} }}` and \
-             `destroy: [id]` must apply the keyword change AND destroy in one set-tx, \
-             with the destroy effective for any subsequent `Email/changes(sinceState)`. \
-             Two separate transactions break state-monotonicity."
-        );
-    }
-
-    /// — `Email/import` is distinct from `Email/set
-    /// create`: it takes a `blobId` + `receivedAt` + `mailboxIds` +
-    /// `keywords` and ingests an RFC 5322 blob already in
-    /// staging. Unlike create, import is the path mailing-list
-    /// servers and migration tools use, and it MUST be
-    /// idempotent on the same blob hash (re-import returns the
-    /// existing email id, not a duplicate row). This is the
-    /// substrate property that lets a mailbox replay against
-    /// the same staging directory without exploding.
-    #[test]
-    #[ignore = "inherited placeholder: needs executable blob import idempotence assertions"]
-    fn email_set_contract_import_is_idempotent_on_blob_hash() {
-        panic!(
-            "Email/import called twice with the same `blobId` and the same target \
-             mailbox must return the same email id and emit exactly one `created` \
-             row in the changelog. Second invocation MUST NOT create a duplicate \
-             item nor a second changelog entry."
-        );
-    }
+    // The five inherited Email/set contracts now run over HTTP in
+    // tests/jmap_import.rs, including RFC 8621 §4.8 duplicate rejection.
 
     /// — Multi-mailbox keyword updates must reject with
     /// `invalidPatch` rather than silently fan-out IMAP-only flags

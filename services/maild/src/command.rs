@@ -2270,6 +2270,8 @@ async fn async_main() -> Result<()> {
         }
     };
 
+    let cfg = cfg.resolve_paths()?;
+
     match cli.command {
         Command::Migrate => {
             let database = db::Db::connect(&cfg.database_path, &cfg.blob_dir).await?;
@@ -2408,7 +2410,8 @@ async fn async_main() -> Result<()> {
         },
 
         Command::Serve => {
-            let built = runtime::build_runtime(&cfg, runtime::RuntimeOpts::default()).await?;
+            let mut sockets = crate::activation::Sockets::from_env()?;
+            let built = runtime::build_runtime_with_sockets(&cfg, runtime::RuntimeOpts::default(), &mut sockets).await?;
             // Live `maild.log` watcher — swaps the EnvFilter on every
             // `props.set maild.log {...}`. Spawns a task on the live
             // tokio runtime; the `log_handle` was created above.
@@ -2419,15 +2422,20 @@ async fn async_main() -> Result<()> {
             for addr in &built.smtp_handle.smtps_addrs {
                 tracing::info!(addr = %addr, "SMTPS submission bound");
             }
-            let listener = tokio::net::TcpListener::bind(&cfg.listen).await?;
-            tracing::info!(addr = %cfg.listen, "maild JMAP listening");
+            let listeners = crate::activation::listeners(sockets.take("jmap"), std::slice::from_ref(&cfg.listen)).await?;
+            let mut servers = tokio::task::JoinSet::new();
+            for listener in listeners {
+            tracing::info!(addr = %listener.local_addr()?, "maild JMAP/DAV listening");
+            let app = built.router.clone();
+            let tls = match (&cfg.tls_cert, &cfg.tls_key) {
+                (Some(cert), Some(key)) => Some(::config::load_tls_config(cert, key)?),
+                _ => None,
+            };
+            servers.spawn(async move {
 
             // Use TLS if cert/key configured
-            if let (Some(cert_path), Some(key_path)) = (&cfg.tls_cert, &cfg.tls_key) {
-                let tls_acceptor = ::config::load_tls_config(cert_path, key_path)?;
+            if let Some(tls_acceptor) = tls {
                 tracing::info!("JMAP HTTPS enabled");
-                let app = built.router.clone();
-                let _keepalive = built;
                 loop {
                     let (stream, _peer) = listener.accept().await?;
                     let acceptor = tls_acceptor.clone();
@@ -2453,10 +2461,13 @@ async fn async_main() -> Result<()> {
                     });
                 }
             } else {
-                let router = built.router.clone();
-                let _keepalive = built;
-                axum::serve(listener, router).await?;
+                axum::serve(listener, app).await?;
             }
+            Ok::<(), anyhow::Error>(())
+            });
+            }
+            let _keepalive = built;
+            if let Some(result) = servers.join_next().await { result??; }
         }
     }
 

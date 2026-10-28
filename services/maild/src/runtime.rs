@@ -230,6 +230,14 @@ async fn preflight_opaque_namespace_clear(
 /// sequence in `main.rs::Command::Serve` 1:1 — see git history at
 /// commit prior to this extraction for the original implementation.
 pub async fn build_runtime(cfg: &Config, opts: RuntimeOpts) -> Result<BuiltMaild> {
+    build_runtime_with_sockets(cfg, opts, &mut crate::activation::Sockets::default()).await
+}
+
+pub async fn build_runtime_with_sockets(
+    cfg: &Config, opts: RuntimeOpts, sockets: &mut crate::activation::Sockets,
+) -> Result<BuiltMaild> {
+    let resolved = cfg.clone().resolve_paths()?;
+    let cfg = &resolved;
     if cfg
         .max_message_size
         .is_some_and(|size| size > crate::attachments::MAX_MESSAGE)
@@ -772,7 +780,7 @@ pub async fn build_runtime(cfg: &Config, opts: RuntimeOpts) -> Result<BuiltMaild
         disable_outbound_delivery: opts.disable_outbound_delivery,
         test_mx_overrides: opts.test_mx_overrides.clone(),
     };
-    let smtp_handle = smtp::start(
+    let smtp_handle = smtp::start_with_sockets(
         database.clone(),
         smtp_config,
         mail_auth.clone(),
@@ -785,6 +793,7 @@ pub async fn build_runtime(cfg: &Config, opts: RuntimeOpts) -> Result<BuiltMaild
         domains_runtime.clone(),
         aliases_runtime.clone(),
         vtoken_store.clone(),
+        sockets,
     )
     .await?;
 
@@ -798,7 +807,7 @@ pub async fn build_runtime(cfg: &Config, opts: RuntimeOpts) -> Result<BuiltMaild
     .await?;
     let imap_cfg = imap::ImapConfig::from_config(cfg, tls_slot, tls_config_cache);
     let imap_handle =
-        imap::start(database.clone(), mailstore.clone(), imap_cfg, imap_slots).await?;
+        imap::server::start_with_listeners(database.clone(), mailstore.clone(), imap_cfg, imap_slots, sockets.take("imaps")).await?;
 
     // State change broadcast channel for EventSource push.
     let (state_tx, _) = tokio::sync::broadcast::channel::<jmap::StateChange>(256);

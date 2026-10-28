@@ -15,7 +15,6 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use anyhow::Result;
-use tokio::net::TcpListener;
 
 use ::props::runtime::Runtime;
 use arc_swap::ArcSwap;
@@ -219,11 +218,34 @@ pub async fn start(
     aliases_runtime: Arc<Runtime>,
     vtoken_store: Arc<crate::vtoken::VtokenStore>,
 ) -> Result<SmtpHandle> {
+    start_with_sockets(db, config, mail_auth, rule_engine, rule_stats, classifier,
+        mailstore, verdict_tx, overrides_runtime, domains_runtime, aliases_runtime,
+        vtoken_store, &mut crate::activation::Sockets::default()).await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn start_with_sockets(
+    db: Db,
+    config: SmtpConfig,
+    mail_auth: Arc<MailAuthVerifier>,
+    rule_engine: Arc<DefaultRuleEngine>,
+    rule_stats: Arc<RuleStats>,
+    classifier: Arc<DefaultClassifier>,
+    mailstore: Arc<SqliteMailStore>,
+    verdict_tx: broadcast::Sender<VerdictEvent>,
+    overrides_runtime: Arc<Runtime>,
+    domains_runtime: Arc<Runtime>,
+    aliases_runtime: Arc<Runtime>,
+    vtoken_store: Arc<crate::vtoken::VtokenStore>,
+    sockets: &mut crate::activation::Sockets,
+) -> Result<SmtpHandle> {
+    let inbound = sockets.take("smtp");
+    let submissions = sockets.take("submissions");
     // SMTPS requires TLS material at startup; if `listen_smtps` is set
     // but the slot is empty, refuse to bind (matches pre-Phase-5
     // behaviour). Plaintext SMTP serves regardless — STARTTLS is
     // advertised only when the per-connection snapshot is non-empty.
-    if !config.listen_smtps.is_empty()
+    if (!config.listen_smtps.is_empty() || !submissions.is_empty())
         && current_tls_pair(&config.tls_slot, &config.tls_config_cache).is_none()
     {
         return Err(anyhow::anyhow!(
@@ -283,13 +305,8 @@ pub async fn start(
     // Start inbound listener (port 25) — plaintext with optional STARTTLS.
     // One listener+accept-loop per configured address so we can multi-home
     // (e.g. WG IP + LAN IP) without binding 0.0.0.0.
-    for addr in state.config.listen_inbound.clone() {
-        let listener = TcpListener::bind(&addr)
-            .await
-            .map_err(|e| anyhow::anyhow!("SMTP inbound bind {}: {}", addr, e))?;
-        let bound = listener
-            .local_addr()
-            .map_err(|e| anyhow::anyhow!("SMTP inbound local_addr {}: {}", addr, e))?;
+    for listener in crate::activation::listeners(inbound, &state.config.listen_inbound).await? {
+        let bound = listener.local_addr()?;
         inbound_addrs.push(bound);
         tracing::info!(addr = %bound, "SMTP inbound listening");
         let inbound_state = state.clone();
@@ -324,13 +341,8 @@ pub async fn start(
     }
 
     // Start SMTPS submission listener (port 465) — implicit TLS.
-    for addr in state.config.listen_smtps.clone() {
-        let listener = TcpListener::bind(&addr)
-            .await
-            .map_err(|e| anyhow::anyhow!("SMTPS bind {}: {}", addr, e))?;
-        let bound = listener
-            .local_addr()
-            .map_err(|e| anyhow::anyhow!("SMTPS local_addr {}: {}", addr, e))?;
+    for listener in crate::activation::listeners(submissions, &state.config.listen_smtps).await? {
+        let bound = listener.local_addr()?;
         smtps_addrs.push(bound);
         tracing::info!(addr = %bound, "SMTPS submission listening");
         let sub_state = state.clone();

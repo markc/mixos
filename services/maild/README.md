@@ -1,11 +1,10 @@
 # maild
 
 JMAP, SMTP, IMAP, CalDAV and CardDAV mail service, with private authentication,
-rule-engine, Bayesian and metadata-store crates. The system binary dispatches
-the installed `maild` symlink to this library's `main`; `src/main.rs` is the
-development binary.
+rule-engine and Bayesian crates, using the shared metadata store. Maild ships
+as its own binary; `src/main.rs` calls the library entry point.
 
-The server package carries `maild -> mix`, the template unit and sysusers
+The server package carries the `maild` binary, service/socket units and sysusers
 declaration under `share/maild/units`, and the patched parser's licences under
 `share/licenses/maild/mail-parser`. `maild@INSTANCE` requires the matching
 `noded@INSTANCE` and `<etc>/session/INSTANCE.env` broker configuration.

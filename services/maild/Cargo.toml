@@ -35,6 +35,7 @@ buildinfo.workspace = true
 davproto.workspace = true
 mix = { workspace = true, features = ["json", "serde"] }
 props = { workspace = true, features = ["store", "sqlite", "router"] }
+paths.workspace = true
 anyhow.workspace = true
 arc-swap.workspace = true
 async-stream.workspace = true

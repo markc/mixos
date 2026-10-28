@@ -1539,6 +1539,18 @@ pub struct SqliteMailStore {
 }
 
 impl SqliteMailStore {
+    /// The thread assigned in the email's create transaction, scoped to its
+    /// account. Used by Email/import's mandatory created properties.
+    pub fn thread_for_email(&self, account: AccountId, id: ItemId) -> Result<ThreadId> {
+        let set = account_id_to_setid(account);
+        self.mds.with_set_tx(&set, |tx| {
+            tx.tx().query_row(
+                "SELECT thread_id FROM mail_threads WHERE account_id = ?1 AND item_id = ?2",
+                params![account, id.0.to_string()], |row| row.get::<_, String>(0),
+            ).map(ThreadId).map_err(|e| mds::Error::Other(e.to_string()))
+        }).map_err(Into::into)
+    }
+
     pub fn new(mds: Arc<SqliteCasMds>) -> Self {
         Self { mds }
     }
@@ -3859,206 +3871,7 @@ impl MailStore for SqliteMailStore {
         initial_tags: Tags,
         received_at: i64,
     ) -> Result<(ItemId, Vec<MembershipUid>)> {
-        // Uniform initial user keywords for every membership of the
-        // fresh item (the v1.1 §3 "all memberships agree" invariant),
-        // applied atomically with the create. Empty for the common case.
-        let initial_tags: Vec<String> = initial_tags.into();
-        // Caller-side prevalidation for shape errors that have a
-        // friendlier surface than the underlying mds primitives'
-        // `Error::Other("add_item_with_memberships: …")` formatting.
-        // `add_item_with_memberships_in_tx` re-validates these inside
-        // the tx; this layer just reshapes the messages so JMAP
-        // handlers don't have to grep for "add_item_with_memberships:"
-        // sentinels. Both layers reject before any write.
-        if mailboxes.is_empty() {
-            return Err(anyhow!("mailboxes must be non-empty"));
-        }
-        {
-            let mut seen: std::collections::HashSet<ContainerId> =
-                std::collections::HashSet::with_capacity(mailboxes.len());
-            for cid in mailboxes.iter() {
-                if !seen.insert(*cid) {
-                    return Err(anyhow!(
-                        "duplicate mailbox in mailboxes slice: {cid}",
-                        cid = cid.0
-                    ));
-                }
-            }
-        }
-
-        let set = account_id_to_setid(account);
-        let to_json = serde_json::to_string(&envelope.to)
-            .map_err(|e| anyhow!("serialize envelope.to: {e}"))?;
-        let cc_json = serde_json::to_string(&envelope.cc)
-            .map_err(|e| anyhow!("serialize envelope.cc: {e}"))?;
-        let bcc_json = serde_json::to_string(&envelope.bcc)
-            .map_err(|e| anyhow!("serialize envelope.bcc: {e}"))?;
-        let reply_to_json = serde_json::to_string(&envelope.reply_to)
-            .map_err(|e| anyhow!("serialize envelope.reply_to: {e}"))?;
-        let memberships: Vec<(ContainerId, Flags)> = mailboxes
-            .iter()
-            .map(|cid| (*cid, initial_keywords))
-            .collect();
-        let in_reply_to: Vec<String> = in_reply_to.to_vec();
-
-        let mds = &self.mds;
-        let result = mds.with_set_tx(&set, |tx| {
-            // Mirror create_email's GC Pass 2 race-handling: capture
-            // blob_size inside the closure (so a Pass 2 that started
-            // after our entry serializes against the blobs_db UPSERT
-            // below), then re-stat after the writes to catch the case
-            // where Pass 2 ran in the gap.
-            let blob_size = mds.blob_size(&blob).map_err(|e| match e {
-                mds::Error::BlobNotFound(_) => mds::Error::BlobNotFound(blob::hex(&blob)),
-                other => other,
-            })?;
-
-            let (item_id, placements) = tx
-                .add_item_with_memberships(&blob, blob_size, &memberships, &initial_tags)
-                .map_err(|e| match e {
-                    mds::Error::ContainerNotFound(cid) => {
-                        mds::Error::Other(format!("mailbox not found: {cid}"))
-                    }
-                    other => other,
-                })?;
-
-            // Defensive re-stat after the writes. See create_email
-            // doc-comment for the GC Pass 2 race rationale.
-            if !mds.blob_exists(&blob)? {
-                return Err(mds::Error::BlobNotFound(blob::hex(&blob)));
-            }
-
-            // Override the auto-assigned `received_at` (now_ms) with
-            // the caller-supplied timestamp, matching create_email.
-            let updated = tx
-                .tx()
-                .execute(
-                    "UPDATE item SET received_at = ?1 WHERE id = ?2",
-                    params![received_at, item_id.0.to_string()],
-                )
-                .map_err(|e| mds::Error::Other(format!("update item.received_at: {e}")))?;
-            if updated != 1 {
-                return Err(mds::Error::Other(format!(
-                    "update item.received_at: expected 1 row, got {updated}"
-                )));
-            }
-
-            // Single envelope sidecar row per item, regardless of
-            // membership count. The envelope is item-scoped (RFC 5322
-            // headers don't differ per mailbox).
-            let normalized_subject = subject::normalize_subject(&envelope.subject);
-            let inserted = tx
-                .tx()
-                .execute(
-                    "INSERT INTO mail_envelopes \
-                     (item_id, from_addr, to_addrs, cc_addrs, bcc_addrs, \
-                      reply_to_addrs, subject, date_ts, message_id, \
-                      normalized_subject) \
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-                    params![
-                        item_id.0.to_string(),
-                        envelope.from,
-                        to_json,
-                        cc_json,
-                        bcc_json,
-                        reply_to_json,
-                        envelope.subject,
-                        envelope.date,
-                        envelope.message_id,
-                        normalized_subject,
-                    ],
-                )
-                .map_err(|e| mds::Error::Other(format!("insert mail_envelopes: {e}")))?;
-            if inserted != 1 {
-                return Err(mds::Error::Other(format!(
-                    "insert mail_envelopes: expected 1 row, got {inserted}"
-                )));
-            }
-
-            let thread_id =
-                find_or_new_thread_id_in_tx(tx, account, &in_reply_to, &envelope.subject)?;
-            let inserted = tx
-                .tx()
-                .execute(
-                    "INSERT INTO mail_threads (item_id, account_id, thread_id) \
-                     VALUES (?1, ?2, ?3)",
-                    params![item_id.0.to_string(), account, thread_id],
-                )
-                .map_err(|e| mds::Error::Other(format!("insert mail_threads: {e}")))?;
-            if inserted != 1 {
-                return Err(mds::Error::Other(format!(
-                    "insert mail_threads: expected 1 row, got {inserted}"
-                )));
-            }
-
-            // mail_search FTS5 projection — Phase 8e gate 2. Single row
-            // per item regardless of membership count; the projection
-            // is item-scoped (envelope + body bytes), not membership-
-            // scoped. See `create_email` above for the GC-race
-            // fallback rationale; same applies here.
-            let raw_body = mds.get_blob(&blob).unwrap_or_else(|e| {
-                warn!(
-                    item_id = %item_id.0,
-                    blob = %blob::hex(&blob),
-                    err = %e,
-                    "mail_search: blob load failed inside with_set_tx; indexing envelope only"
-                );
-                Vec::new()
-            });
-            let projection = build_search_projection(&envelope, &raw_body);
-            let inserted = tx
-                .tx()
-                .execute(
-                    "INSERT INTO mail_search \
-                     (item_id, account_id, headers, subject, body_text, normalized_addrs) \
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                    params![
-                        item_id.0.to_string(),
-                        account,
-                        projection.headers,
-                        projection.subject,
-                        projection.body_text,
-                        projection.normalized_addrs,
-                    ],
-                )
-                .map_err(|e| mds::Error::Other(format!("insert mail_search: {e}")))?;
-            if inserted != 1 {
-                return Err(mds::Error::Other(format!(
-                    "insert mail_search: expected 1 row, got {inserted}"
-                )));
-            }
-
-            // Read each dest container's seq_validity in the same tx
-            // that produced the membership rows, so the returned
-            // (uid, uid_validity) pair is read-consistent with the
-            // freshly-inserted membership.seq.
-            let mut uids: Vec<MembershipUid> = Vec::with_capacity(placements.len());
-            for p in placements.iter() {
-                let uid_validity = tx.container_seq_validity(&p.container)?;
-                uids.push(MembershipUid {
-                    container_id: p.container,
-                    uid: p.seq.0 as u64,
-                    uid_validity,
-                });
-            }
-
-            Ok((item_id, uids))
-        });
-
-        match result {
-            Ok(pair) => Ok(pair),
-            Err(mds::Error::BlobNotFound(hex)) => Err(anyhow!("blob not found: {hex}")),
-            Err(mds::Error::SetNotFound(_)) => {
-                // Surface the first mailbox in the slice as the
-                // representative not-found id, matching create_email's
-                // single-mailbox surface and giving the JMAP layer a
-                // concrete id to echo. We've already prevalidated
-                // non-empty above so [0] is safe.
-                Err(anyhow!("mailbox not found: {cid}", cid = mailboxes[0].0))
-            }
-            Err(mds::Error::Other(s)) if s.starts_with("mailbox not found") => Err(anyhow!(s)),
-            Err(other) => Err(anyhow!(other)),
-        }
+        self.create_with_memberships(account, mailboxes, blob, envelope, in_reply_to, initial_keywords, initial_tags, received_at, false)
     }
 
     fn add_memberships(
@@ -5561,4 +5374,230 @@ fn lookup_special_use_container(
     let uuid = Uuid::parse_str(&id_str)
         .map_err(|e| mds::Error::Other(format!("container.id {id_str:?} is not a UUID: {e}")))?;
     Ok(Some(ContainerId(uuid)))
+}
+
+impl SqliteMailStore {
+    pub fn create_with_memberships(
+        &self,
+        account: AccountId,
+        mailboxes: &[ContainerId],
+        blob: BlobHash,
+        envelope: EmailEnvelope,
+        in_reply_to: &[String],
+        initial_keywords: Flags,
+        initial_tags: Tags,
+        received_at: i64,
+        reject_duplicate: bool,
+    ) -> Result<(ItemId, Vec<MembershipUid>)> {
+        // Uniform initial user keywords for every membership of the
+        // fresh item (the v1.1 §3 "all memberships agree" invariant),
+        // applied atomically with the create. Empty for the common case.
+        let initial_tags: Vec<String> = initial_tags.into();
+        // Caller-side prevalidation for shape errors that have a
+        // friendlier surface than the underlying mds primitives'
+        // `Error::Other("add_item_with_memberships: …")` formatting.
+        // `add_item_with_memberships_in_tx` re-validates these inside
+        // the tx; this layer just reshapes the messages so JMAP
+        // handlers don't have to grep for "add_item_with_memberships:"
+        // sentinels. Both layers reject before any write.
+        if mailboxes.is_empty() {
+            return Err(anyhow!("mailboxes must be non-empty"));
+        }
+        {
+            let mut seen: std::collections::HashSet<ContainerId> =
+                std::collections::HashSet::with_capacity(mailboxes.len());
+            for cid in mailboxes.iter() {
+                if !seen.insert(*cid) {
+                    return Err(anyhow!(
+                        "duplicate mailbox in mailboxes slice: {cid}",
+                        cid = cid.0
+                    ));
+                }
+            }
+        }
+
+        let set = account_id_to_setid(account);
+        let to_json = serde_json::to_string(&envelope.to)
+            .map_err(|e| anyhow!("serialize envelope.to: {e}"))?;
+        let cc_json = serde_json::to_string(&envelope.cc)
+            .map_err(|e| anyhow!("serialize envelope.cc: {e}"))?;
+        let bcc_json = serde_json::to_string(&envelope.bcc)
+            .map_err(|e| anyhow!("serialize envelope.bcc: {e}"))?;
+        let reply_to_json = serde_json::to_string(&envelope.reply_to)
+            .map_err(|e| anyhow!("serialize envelope.reply_to: {e}"))?;
+        let memberships: Vec<(ContainerId, Flags)> = mailboxes
+            .iter()
+            .map(|cid| (*cid, initial_keywords))
+            .collect();
+        let in_reply_to: Vec<String> = in_reply_to.to_vec();
+
+        let mds = &self.mds;
+        let result = mds.with_set_tx(&set, |tx| {
+            if reject_duplicate {
+                let existing: Option<String> = tx.tx().query_row(
+                    "SELECT i.id FROM item i JOIN mail_envelopes e ON e.item_id = i.id WHERE i.blob_hash = ?1 AND EXISTS (SELECT 1 FROM membership m WHERE m.item_id = i.id) LIMIT 1",
+                    params![blob::hex(&blob)], |row| row.get(0),
+                ).optional().map_err(|e| mds::Error::Other(e.to_string()))?;
+                if let Some(id) = existing {
+                    return Err(mds::Error::Other(format!("alreadyExists: {id}")));
+                }
+            }
+            // Mirror create_email's GC Pass 2 race-handling: capture
+            // blob_size inside the closure (so a Pass 2 that started
+            // after our entry serializes against the blobs_db UPSERT
+            // below), then re-stat after the writes to catch the case
+            // where Pass 2 ran in the gap.
+            let blob_size = mds.blob_size(&blob).map_err(|e| match e {
+                mds::Error::BlobNotFound(_) => mds::Error::BlobNotFound(blob::hex(&blob)),
+                other => other,
+            })?;
+
+            let (item_id, placements) = tx
+                .add_item_with_memberships(&blob, blob_size, &memberships, &initial_tags)
+                .map_err(|e| match e {
+                    mds::Error::ContainerNotFound(cid) => {
+                        mds::Error::Other(format!("mailbox not found: {cid}"))
+                    }
+                    other => other,
+                })?;
+
+            // Defensive re-stat after the writes. See create_email
+            // doc-comment for the GC Pass 2 race rationale.
+            if !mds.blob_exists(&blob)? {
+                return Err(mds::Error::BlobNotFound(blob::hex(&blob)));
+            }
+
+            // Override the auto-assigned `received_at` (now_ms) with
+            // the caller-supplied timestamp, matching create_email.
+            let updated = tx
+                .tx()
+                .execute(
+                    "UPDATE item SET received_at = ?1 WHERE id = ?2",
+                    params![received_at, item_id.0.to_string()],
+                )
+                .map_err(|e| mds::Error::Other(format!("update item.received_at: {e}")))?;
+            if updated != 1 {
+                return Err(mds::Error::Other(format!(
+                    "update item.received_at: expected 1 row, got {updated}"
+                )));
+            }
+
+            // Single envelope sidecar row per item, regardless of
+            // membership count. The envelope is item-scoped (RFC 5322
+            // headers don't differ per mailbox).
+            let normalized_subject = subject::normalize_subject(&envelope.subject);
+            let inserted = tx
+                .tx()
+                .execute(
+                    "INSERT INTO mail_envelopes \
+                     (item_id, from_addr, to_addrs, cc_addrs, bcc_addrs, \
+                      reply_to_addrs, subject, date_ts, message_id, \
+                      normalized_subject) \
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                    params![
+                        item_id.0.to_string(),
+                        envelope.from,
+                        to_json,
+                        cc_json,
+                        bcc_json,
+                        reply_to_json,
+                        envelope.subject,
+                        envelope.date,
+                        envelope.message_id,
+                        normalized_subject,
+                    ],
+                )
+                .map_err(|e| mds::Error::Other(format!("insert mail_envelopes: {e}")))?;
+            if inserted != 1 {
+                return Err(mds::Error::Other(format!(
+                    "insert mail_envelopes: expected 1 row, got {inserted}"
+                )));
+            }
+
+            let thread_id =
+                find_or_new_thread_id_in_tx(tx, account, &in_reply_to, &envelope.subject)?;
+            let inserted = tx
+                .tx()
+                .execute(
+                    "INSERT INTO mail_threads (item_id, account_id, thread_id) \
+                     VALUES (?1, ?2, ?3)",
+                    params![item_id.0.to_string(), account, thread_id],
+                )
+                .map_err(|e| mds::Error::Other(format!("insert mail_threads: {e}")))?;
+            if inserted != 1 {
+                return Err(mds::Error::Other(format!(
+                    "insert mail_threads: expected 1 row, got {inserted}"
+                )));
+            }
+
+            // mail_search FTS5 projection — Phase 8e gate 2. Single row
+            // per item regardless of membership count; the projection
+            // is item-scoped (envelope + body bytes), not membership-
+            // scoped. See `create_email` above for the GC-race
+            // fallback rationale; same applies here.
+            let raw_body = mds.get_blob(&blob).unwrap_or_else(|e| {
+                warn!(
+                    item_id = %item_id.0,
+                    blob = %blob::hex(&blob),
+                    err = %e,
+                    "mail_search: blob load failed inside with_set_tx; indexing envelope only"
+                );
+                Vec::new()
+            });
+            let projection = build_search_projection(&envelope, &raw_body);
+            let inserted = tx
+                .tx()
+                .execute(
+                    "INSERT INTO mail_search \
+                     (item_id, account_id, headers, subject, body_text, normalized_addrs) \
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    params![
+                        item_id.0.to_string(),
+                        account,
+                        projection.headers,
+                        projection.subject,
+                        projection.body_text,
+                        projection.normalized_addrs,
+                    ],
+                )
+                .map_err(|e| mds::Error::Other(format!("insert mail_search: {e}")))?;
+            if inserted != 1 {
+                return Err(mds::Error::Other(format!(
+                    "insert mail_search: expected 1 row, got {inserted}"
+                )));
+            }
+
+            // Read each dest container's seq_validity in the same tx
+            // that produced the membership rows, so the returned
+            // (uid, uid_validity) pair is read-consistent with the
+            // freshly-inserted membership.seq.
+            let mut uids: Vec<MembershipUid> = Vec::with_capacity(placements.len());
+            for p in placements.iter() {
+                let uid_validity = tx.container_seq_validity(&p.container)?;
+                uids.push(MembershipUid {
+                    container_id: p.container,
+                    uid: p.seq.0 as u64,
+                    uid_validity,
+                });
+            }
+
+            Ok((item_id, uids))
+        });
+
+        match result {
+            Ok(pair) => Ok(pair),
+            Err(mds::Error::BlobNotFound(hex)) => Err(anyhow!("blob not found: {hex}")),
+            Err(mds::Error::SetNotFound(_)) => {
+                // Surface the first mailbox in the slice as the
+                // representative not-found id, matching create_email's
+                // single-mailbox surface and giving the JMAP layer a
+                // concrete id to echo. We've already prevalidated
+                // non-empty above so [0] is safe.
+                Err(anyhow!("mailbox not found: {cid}", cid = mailboxes[0].0))
+            }
+            Err(mds::Error::Other(s)) if s.starts_with("mailbox not found") || s.starts_with("alreadyExists:") => Err(anyhow!(s)),
+            Err(other) => Err(anyhow!(other)),
+        }
+    }
+
 }

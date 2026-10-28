@@ -1,8 +1,8 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
--- Run on a build worker after building the system binary. The other package
--- entries are fixtures; only the packaged maild personality is executed.
+-- Run on a build worker after building maild. The other package entries are
+-- fixtures; only the packaged standalone maild binary is executed.
 $root = dirname(dirname(dirname(dirname(realpath($0)))))
-if len(args()) != 1 then raise("USAGE", "package_test.mix PATH_TO_BUILT_SYSTEM_BINARY") end
+if len(args()) != 1 then raise("USAGE", "package_test.mix PATH_TO_BUILT_MAILD_BINARY") end
 $binary = realpath(args()[0])
 if $binary == nil then raise("MISSING_BINARY", args()[0]) end
 $mix_bin = realpath("/proc/self/exe")
@@ -10,26 +10,28 @@ $version = toml_parse(read_file($root .. "/Cargo.toml")).workspace.package.versi
 $case_dir = $root .. "/target/mixos/maild-package-" .. uuid()
 mkdir($case_dir .. "/bin", {parents:true})
 try
-  copy($binary, $case_dir .. "/bin/mix")
-  for $name in ["noded", "editd", "settingsd", "portald", "compd", "ced", "dopus", "prefs", "workshop", "monitor", "screenshot", "indexd"]
+  copy($binary, $case_dir .. "/bin/maild")
+  copy($mix_bin, $case_dir .. "/bin/mix")
+  for $name in ["mixos-mcp", "noded", "hostd", "monitord"]
     copy("/usr/bin/true", $case_dir .. "/bin/" .. $name)
   end
-  run_argv_must([$mix_bin, $root .. "/tools/package.mix", "--release", $version,
+  $commit = trim(run_argv_must(["git", "-C", $root, "rev-parse", "HEAD"]))
+  run_argv_must([$mix_bin, $root .. "/tools/package.mix", "--fixture-binaries", "--package", "server", "--commit", $commit, "--release", $version,
     "--bin-dir", $case_dir .. "/bin", "--out", $case_dir .. "/out"], {timeout:600})
   $top_name = "mixos-server-" .. $version .. "-linux-" .. platform().arch
   mkdir($case_dir .. "/extracted")
   run_argv_must(["tar", "-xzf", $case_dir .. "/out/" .. $top_name .. ".tar.gz",
     "-C", $case_dir .. "/extracted"], {timeout:600})
   $top = $case_dir .. "/extracted/" .. $top_name
-  if (not stat($top .. "/bin/maild", {follow_symlinks:false}).is_symlink or
-      read_link($top .. "/bin/maild") != "mix") then
-    raise("PACKAGE_PERSONALITY", "maild must be a relative symlink to mix")
+  if (stat($top .. "/bin/maild", {follow_symlinks:false}).is_symlink or
+      hash_file($top .. "/bin/maild", "sha256") != hash_file($binary, "sha256")) then
+    raise("PACKAGE_BINARY", "maild must ship as its own binary")
   end
   $identity = json_parse(run_argv_must([$top .. "/bin/maild", "--version", "--json"]))
   if $identity.component != "maild" or $identity.version != $version then
     raise("PACKAGE_IDENTITY", "packaged maild dispatched to the wrong component")
   end
-  for $name in ["maild@.service", "maild.service", "sysusers.conf"]
+  for $name in ["maild@.service", "maild.service", "maild-smtp.socket", "maild-submissions.socket", "maild-imaps.socket", "maild-jmap.socket", "sysusers.conf"]
     if (hash_file($root .. "/services/maild/units/" .. $name, "sha256") !=
         hash_file($top .. "/share/maild/units/" .. $name, "sha256")) then
       raise("PACKAGE_UNIT", $name .. " differs from its component source")
@@ -41,7 +43,7 @@ try
       raise("PACKAGE_LICENCE", $name .. " differs from upstream")
     end
   end
-  print("maild package: native personality, unit, sysusers and parser licences passed")
+  print("maild package: standalone binary, services, sockets, sysusers and parser licences passed")
 finally
   remove_dir($case_dir)
 end

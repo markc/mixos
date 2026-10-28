@@ -32,7 +32,7 @@ impl ListenSpec {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct Config {
     /// JMAP HTTP listen address
@@ -40,6 +40,7 @@ pub struct Config {
     /// Public base URL for JMAP
     pub base_url: String,
     /// SQLite database file path
+    #[serde(alias = "database")]
     pub database_path: String,
     /// Blob storage directory
     pub blob_dir: String,
@@ -432,13 +433,46 @@ impl From<&::config::node::NodeConfig> for Config {
 }
 
 impl Config {
+    /// Resolve logical paths once at the config boundary. Ordinary absolute
+    /// and relative paths retain their meaning; logical root escapes refuse.
+    pub fn resolve_paths(mut self) -> Result<Self> {
+        fn resolve(value: &mut String) -> Result<()> {
+            *value = paths::resolve(&*value)
+                .map_err(anyhow::Error::msg)?
+                .to_string_lossy()
+                .into_owned();
+            Ok(())
+        }
+        for value in [&mut self.database_path, &mut self.blob_dir, &mut self.mds_dir] {
+            resolve(value)?;
+        }
+        for value in [
+            &mut self.dkim_private_key, &mut self.tls_cert, &mut self.tls_key,
+            &mut self.inbound_filter, &mut self.spam_db_dir, &mut self.spam_baseline_db,
+            &mut self.rules_pack_path, &mut self.rule_stats_dir,
+        ].into_iter().flatten() {
+            resolve(value)?;
+        }
+        for value in [&mut self.tls_key_root, &mut self.dkim.key_root].into_iter().flatten() {
+            *value = paths::resolve(value.to_string_lossy()).map_err(anyhow::Error::msg)?;
+        }
+        for row in &mut self.dkim.domains {
+            row.key_path = paths::resolve(row.key_path.to_string_lossy()).map_err(anyhow::Error::msg)?;
+        }
+        for identity in &mut self.tls.identity {
+            resolve(&mut identity.cert)?;
+            resolve(&mut identity.key)?;
+        }
+        Ok(self)
+    }
+
     /// Load from an explicit `--config <path>` (`.conf.mix`).
     pub fn load(path: &str) -> Result<Self> {
         let config: Config = ::config::load_conf_mix_path(std::path::Path::new(path))?;
         config
             .validate_tls()
             .map_err(|e| anyhow::anyhow!("invalid tls.identity in config {path}: {e}"))?;
-        Ok(config)
+        config.resolve_paths()
     }
 
     /// Reject `[[tls.identity]]` rows whose required string fields
@@ -510,7 +544,7 @@ impl Config {
         config.validate_tls().map_err(|e| {
             anyhow::anyhow!("invalid tls.identity in config {}: {e}", path.display())
         })?;
-        Ok(Some(config))
+        Ok(Some(config.resolve_paths()?))
     }
 
     /// XDG user config path: `~/.config/mixos/jmap.conf.mix`.

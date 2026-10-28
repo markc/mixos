@@ -834,7 +834,7 @@ async fn legacy_migration_preserves_uuid_pins_and_queue_without_deleting() {
         &state.db,
         &state.mailstore,
         1,
-        json!({"emails": {"old": {"blobId": id.to_string(),
+        json!({"accountId": "1", "emails": {"old": {"blobId": id.to_string(),
             "mailboxIds": {(f.inbox.0.to_string()): true}}}}),
     )
     .await
@@ -1125,7 +1125,7 @@ async fn upload_without_legacy_write_downloads_and_imports() {
         &state.db,
         &state.mailstore,
         1,
-        json!({"emails": {"new": {"blobId": id,
+        json!({"accountId": "1", "emails": {"new": {"blobId": id,
             "mailboxIds": {(f.inbox.0.to_string()): true}}}}),
     )
     .await

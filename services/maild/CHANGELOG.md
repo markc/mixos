@@ -18,6 +18,16 @@
   and account authentication, plus `maild.sieve.list/get/put/activate` Bus
   commands. SMTP's classifier and global Mix filter precede account Sieve;
   daemon-generated spam headers are available to scripts.
+- Adopt named systemd TCP sockets for SMTP, implicit TLS submission, IMAPS
+  and JMAP/DAV, retaining config binds without socket activation. Ship opt-in
+  socket units and remove the services' bind capability.
+- Resolve all configured paths, including TLS and DKIM identities, through
+  the shared `mixos:` resolver; accept `database` as a `database_path` alias.
+- Replace five JMAP placeholders with authenticated HTTP contracts. Correct
+  `Email/import` (RFC 8621 §4.8) state preconditions, validation, CAS blob
+  references, Received date defaults, thread ids and atomic duplicate rejection
+  (`alreadyExists` with `existingId`). Test upload/import/submission together.
+- Correct the manual and test guide to describe the packaged maild binary.
 
 - IMAP `SEARCH` and `UID SEARCH` implement the header, date and text keys:
   `FROM`, `TO`, `CC`, `BCC`, `SUBJECT`, `HEADER`, `BODY`, `TEXT`, `BEFORE`,
