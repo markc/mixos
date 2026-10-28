@@ -154,16 +154,22 @@ pub async fn put(
         let old = read(&tx,account,&name)?;
         let current = old.as_ref().map(|s| s.version).unwrap_or(0);
         ensure!(expected_version.is_none_or(|v| v == current), "version conflict");
-        // History survives deletion/rename, so names can never reuse a version.
-        let highest: i64 = tx.query_row("SELECT COALESCE(max(version),0) FROM sieve_versions WHERE account_id=?1 AND name=?2", params![account,name], |r| r.get(0))?;
+        // Account-wide sequence remains monotonic when old names are pruned.
+        let highest: i64 = tx.query_row("SELECT COALESCE(max(version),0) FROM sieve_versions WHERE account_id=?1", [account], |r| r.get(0))?;
         let version = highest + 1;
         tx.execute("INSERT INTO sieve_scripts(account_id,name,version,source) VALUES(?1,?2,?3,?4) ON CONFLICT(account_id,name) DO UPDATE SET version=excluded.version,source=excluded.source", params![account,name,version,source])?;
         tx.execute("INSERT INTO sieve_versions(account_id,name,version,source) VALUES(?1,?2,?3,?4)",params![account,name,version,source])?;
-        // Retain sixteen revisions per name; quota bounds total live scripts.
-        tx.execute("DELETE FROM sieve_versions WHERE account_id=?1 AND name=?2 AND version<=?3",params![account,name,version.saturating_sub(16)])?;
+        prune(&tx,account,&name)?;
         tx.commit()?; Ok(version)
     }).await
 }
+fn prune(conn: &Connection, account: i32, name: &str) -> Result<()> {
+    conn.execute("DELETE FROM sieve_versions WHERE account_id=?1 AND name=?2 AND version NOT IN (SELECT version FROM sieve_versions WHERE account_id=?1 AND name=?2 ORDER BY version DESC LIMIT 16)",params![account,name])?;
+    // Churning deleted/renamed names cannot escape the storage quota.
+    conn.execute("DELETE FROM sieve_versions WHERE account_id=?1 AND version NOT IN (SELECT version FROM sieve_versions WHERE account_id=?1 ORDER BY version DESC LIMIT 512)",[account])?;
+    Ok(())
+}
+
 pub async fn activate(db: &Db, account: i32, name: &str) -> Result<()> {
     let name = name.to_string();
     access(db, move |conn| {
@@ -217,8 +223,8 @@ pub async fn rename(db: &Db, account: i32, old: &str, new: &str) -> Result<()> {
         let stored = read(&tx, account, &old)?
             .ok_or_else(|| anyhow::anyhow!("NONEXISTENT: script not found"))?;
         let version: i64 = tx.query_row(
-            "SELECT COALESCE(max(version),0)+1 FROM sieve_versions WHERE account_id=?1 AND name=?2",
-            params![account, new],
+            "SELECT COALESCE(max(version),0)+1 FROM sieve_versions WHERE account_id=?1",
+            [account],
             |r| r.get(0),
         )?;
         tx.execute(
@@ -229,6 +235,7 @@ pub async fn rename(db: &Db, account: i32, old: &str, new: &str) -> Result<()> {
             "INSERT INTO sieve_versions(account_id,name,version,source) VALUES(?1,?2,?3,?4)",
             params![account, new, version, stored.source],
         )?;
+        prune(&tx,account,&new)?;
         tx.commit()?;
         Ok(())
     })

@@ -137,7 +137,8 @@ ManageSieve instead enforces authenticated account isolation.
 
 Account identifiers are email addresses. PUT's optional version guard uses zero
 for a new script and refuses stale writes. Replacements preserve active state.
-`sieve_scripts` stores current source; `sieve_versions` retains the latest 16
-revisions per name. Versions are never reused after deletion. ManageSieve uses
+`sieve_scripts` stores current source; `sieve_versions` retains up to 16
+revisions per name and 512 per account, including deleted/renamed names.
+Versions increase across the account and are never reused after deletion. ManageSieve uses
 the RFC's last-writer-wins editing semantics. Account deletion cascades to all
 script/version/vacation-stamp rows.
