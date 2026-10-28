@@ -697,6 +697,9 @@ impl Controller {
                     {
                         let mut mail = crate::mail::MailState::new(document, saved.disk.clone());
                         mail.headers = saved.headers.clone();
+                        mail.show_cc = !mail.headers.cc.is_empty();
+                        mail.show_bcc = !mail.headers.bcc.is_empty();
+                        mail.show_reply_to = !mail.headers.reply_to.is_empty();
                         mail.seeding = false;
                         t.mail = Some(mail);
                         t.classified = true;

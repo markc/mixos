@@ -374,6 +374,7 @@ also opens as unchanged text, with maildoc's exact refusal beside it for repair.
 Mail tabs keep header edits in this process. Exit refuses while a mail tab
 is dirty or a save/Send is in flight; save or explicitly close the tab first.
 Mail scratch buffers, including those still seeding, are force-closed on exit.
+Unsaved headers still block Exit while the body is seeding.
 Ordinary unanswered edit requests do not consume the shutdown drain allowance;
 force-closes have a separate bounded wait, preserving time for deregistration,
 closing refusals and session persistence. A save waiting for body

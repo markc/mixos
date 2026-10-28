@@ -135,7 +135,11 @@ impl Controller {
         }
         self.tabs
             .iter()
-            .any(|tab| tab.mail.as_ref().is_some_and(|mail| !mail.seeding) && tab.dirty())
+            .any(|tab| {
+                tab.mail.as_ref().is_some_and(|mail| {
+                    mail.headers != mail.saved_headers || (!mail.seeding && tab.dirty())
+                })
+            })
             .then_some("save or close mail documents with unsaved changes before exiting")
     }
 
@@ -1273,7 +1277,20 @@ mod tests {
                 EditorMsg::Command(EditCommand::Insert("Unsaved ".into())),
             );
             settle(&mut c, &mut service, fx);
-            let session = c.session();
+            let mut headers = c
+                .tab(tab)
+                .unwrap()
+                .mail
+                .as_ref()
+                .unwrap()
+                .headers
+                .clone();
+            headers.cc = "carol@example.org".into();
+            headers.bcc = "dan@example.org".into();
+            headers.reply_to = "reply@example.org".into();
+            c.edit_headers(tab, headers).unwrap();
+            let session: Session =
+                serde_json::from_str(&serde_json::to_string(&c.session()).unwrap()).unwrap();
             assert_eq!(session.tabs[0].path.as_deref(), Some(PATH));
             assert!(session.tabs[0].recovery_id.is_some());
             if mode == 2 {
@@ -1288,6 +1305,11 @@ mod tests {
             let effects = settle(&mut restored, &mut service, fx);
             let tab = restored.tab(restored.active().unwrap()).unwrap();
             assert!(tab.mail.is_some());
+            let mail = tab.mail.as_ref().unwrap();
+            assert_eq!(mail.show_cc, retained);
+            assert_eq!(mail.show_bcc, retained);
+            assert_eq!(mail.show_reply_to, retained);
+            assert_eq!(mail.headers.cc, if retained { "carol@example.org" } else { "" });
             assert_eq!(tab.path.as_deref(), Some(PATH));
             assert_eq!(
                 text_string(tab.mirror.as_ref().unwrap().text()),
@@ -1326,6 +1348,19 @@ mod tests {
             .dirty_body
             .set(None);
         assert!(c.tab(tab).unwrap().dirty());
+        let mut headers = c
+            .tab(tab)
+            .unwrap()
+            .mail
+            .as_ref()
+            .unwrap()
+            .headers
+            .clone();
+        headers.subject = "Unsaved while seeding".into();
+        c.edit_headers(tab, headers).unwrap();
+        let refused = execute(&mut c, tab, "file.exit");
+        assert!(!refused.iter().any(|e| matches!(e, Effect::Quit)));
+        execute(&mut c, tab, "edit.undo");
         let fx = execute(&mut c, tab, "file.exit");
         assert!(fx.iter().any(|e| matches!(e, Effect::Send { out, .. } if out.command == "edit.close" && serde_json::from_str::<Value>(&out.body).unwrap() == json!({"buffer":buffer,"force":true,"origin":UI_ORIGIN}))));
         assert!(fx.iter().any(|e| matches!(e, Effect::Quit)));

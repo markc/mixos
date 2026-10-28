@@ -18,7 +18,7 @@ pub struct Session {
     pub recent: Vec<String>,
 }
 
-/// A path tab reattaches by `path`; a scratch tab by `recovery_id`.
+/// File tabs reopen by path; mail and scratch tabs also retain a body recovery id.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SessionTab {
     pub path: Option<String>,

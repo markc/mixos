@@ -5,7 +5,8 @@
 
 - Isolate ordinary edit requests from shutdown replies and bound force-close
   waits separately, leaving time to deregister, refuse callers and flush the
-  session. Close mail scratches even when quit overtakes their seeding.
+  session. Close mail scratches even when quit overtakes their seeding;
+  unsaved headers still refuse Exit during seeding.
 - Freeze body editing and show Sending… as soon as Send parks; parked Save
   still accepts typing. Undo and Redo explain that Save or Send is waiting for
   body edits while either is parked.
