@@ -41,9 +41,12 @@ $policy = load_data($policy_path).foreign
 $allow = $policy.allow ?? {}
 $debt = $policy.debt ?? {}
 $strict = $policy.strict ?? []
+-- MixOS ships Linux binaries only; other targets (android, haiku, macOS)
+-- never compile here.
+$TARGET = env("FOREIGN_GATE_TARGET", "x86_64-unknown-linux-gnu")
 $HELPERS = ["cc", "cmake", "bindgen", "pkg-config", "system-deps", "vcpkg", "nasm-rs"]
 
-$meta = run_argv(concat(["cargo", "metadata", "--format-version", "1", "--manifest-path", $root .. "/Cargo.toml"], $pass), {timeout: 900, max_output: 268435456})
+$meta = run_argv(concat(["cargo", "metadata", "--format-version", "1", "--filter-platform", $TARGET, "--manifest-path", $root .. "/Cargo.toml"], $pass), {timeout: 900, max_output: 268435456})
 if not $meta.ok then
   eprint("foreign_gate: cargo metadata failed\n" .. $meta.stderr)
   exit(2)
@@ -73,7 +76,7 @@ end
 $members = map(filter($doc.packages, fn($p) = contains($doc.workspace_members, $p.id)), fn($p) = $p.name)
 
 fn closure($crate, $mode)
-  $argv = concat(["cargo", "tree", "-p", $crate, "-e", "normal,build", "--prefix", "none", "-f", "{p}",
+  $argv = concat(["cargo", "tree", "-p", $crate, "-e", "normal,build", "--target", $TARGET, "--prefix", "none", "-f", "{p}",
     "--manifest-path", $root .. "/Cargo.toml"], $mode, $pass)
   $r = run_argv($argv, {timeout: 900, max_output: 268435456})
   if not $r.ok then
