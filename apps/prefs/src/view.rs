@@ -182,6 +182,7 @@ pub fn view(
                     &names,
                     Some(ui.available_width()),
                 )
+                .accessible_name(label("title"))
                 .changed()
                 {
                     events.push(UiEvent::Command(sections[selected].command, Origin::Ui));

@@ -449,6 +449,7 @@ fn performance(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
                 &names,
                 Some(ui.available_width()),
             )
+            .accessible_name(label("performance"))
             .changed()
             {
                 events.push(UiEvent::Section(keys[selected].clone()));

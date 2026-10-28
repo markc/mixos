@@ -188,6 +188,7 @@ fn minimum_window_renders() {
         let registry = actions::registry();
         let strings = strings();
         let mut h = Harness::builder()
+            .with_context_setup(|ctx| toolkit::install(ctx, &Theme::embedded()))
             .with_size(egui::Vec2::from(toolkit::window::MIN_SIZE))
             .build_ui(move |ui| {
                 let _ = view(ui, &engine, &registry, &strings);
