@@ -2210,6 +2210,9 @@ async fn create_from_blob(
         let uuid = k
             .parse::<Uuid>()
             .map_err(|_| anyhow::anyhow!("invalidProperties: Invalid mailboxIds entry: {k}"))?;
+        if mailbox_ids.contains(&ContainerId(uuid)) {
+            anyhow::bail!("invalidProperties: mailboxIds contains a duplicate mailbox");
+        }
         mailbox_ids.push(ContainerId(uuid));
     }
     if mailbox_ids.is_empty() {

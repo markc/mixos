@@ -291,10 +291,11 @@ async fn email_import_validation_state_and_partial_success() {
         "empty": {"blobId": blob, "mailboxIds": {}},
         "missing": {"blobId": uuid::Uuid::nil().to_string(), "mailboxIds": {&f.inbox: true}},
         "mailbox": {"blobId": blob, "mailboxIds": {uuid::Uuid::nil().to_string(): true}},
+        "duplicate": {"blobId": blob, "mailboxIds": {&f.inbox: true, f.inbox.replace('-', ""): true}},
         "keywords": {"blobId": blob, "mailboxIds": {&f.inbox: true}, "keywords": {"$seen": false}},
         "date": {"blobId": blob, "mailboxIds": {&f.inbox: true}, "receivedAt": "2024-01-01T10:00:00+10:00"}
     }})).await;
-    for key in ["empty", "missing", "mailbox", "keywords", "date"] {
+    for key in ["empty", "missing", "mailbox", "duplicate", "keywords", "date"] {
         assert_eq!(
             response["notCreated"][key]["type"], "invalidProperties",
             "{response}"
