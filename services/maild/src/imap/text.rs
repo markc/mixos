@@ -5,7 +5,11 @@
 /// KMP keeps work linear in the input and allocates only for the needle.
 /// `needle` has already been lowercased and CRLF-normalised by SEARCH.
 pub fn contains(haystack: &str, needle: &str) -> bool {
-    let pattern: Vec<char> = needle.chars().collect();
+    // Whole-string lowercasing uses the contextual final sigma, while the
+    // streaming iterator cannot know word boundaries. Both lowercase forms
+    // have the same uppercase identity and must compare equally.
+    let canonical = |c| if c == 'ς' { 'σ' } else { c };
+    let pattern: Vec<char> = needle.chars().map(canonical).collect();
     if pattern.is_empty() {
         return true;
     }
@@ -32,6 +36,7 @@ pub fn contains(haystack: &str, needle: &str) -> bool {
             c
         };
         for c in c.to_lowercase() {
+            let c = canonical(c);
             while j > 0 && c != pattern[j] {
                 j = prefix[j - 1];
             }

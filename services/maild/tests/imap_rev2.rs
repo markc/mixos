@@ -1314,6 +1314,21 @@ async fn search_work_limit_never_returns_a_truncated_match_set() -> Result<()> {
 }
 
 #[tokio::test]
+async fn streaming_search_preserves_contextual_unicode_case_matching() -> Result<()> {
+    let (_tmp, db, mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
+    for (n, body) in ["ΟΣ", "ος", "οσ"].iter().enumerate() {
+        let raw = format!("Subject: sigma\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n{body}");
+        insert_email(&ms, &mds, raw.as_bytes(), &format!("sigma{n}"), Flags(0), 1_700_000_000_000)?;
+    }
+    let (mut r, mut w) = selected(ms, db).await?;
+    for needle in ["ΟΣ", "ος", "οσ"] {
+        let result = command(&mut r, &mut w, "q", &format!("SEARCH CHARSET UTF-8 BODY \"{needle}\"")).await?;
+        assert!(result.contains("* SEARCH 1 2 3\r\n"), "{needle}: {result}");
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn repeated_content_searches_share_a_per_message_work_budget() -> Result<()> {
     let (_tmp, db, mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
     let mut raw = b"Subject: scan budget\r\n\r\n".to_vec();
