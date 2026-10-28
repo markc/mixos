@@ -166,8 +166,14 @@ async fn no_generation_reply_after_reattach_answers_once_and_unexports() {
     let (path, mut stream) = f.entry(Phase::Sending).await;
     // choose captured None during reconnect. attach installed the live
     // generation before reply could acquire the registry lock.
+    let captured = {
+        let mut registry = f.bridge.registry.lock().await;
+        registry.generation = None;
+        registry.generation
+    };
+    f.bridge.registry.lock().await.generation = settings::native::live_generation(&f.bridge.client);
     assert!(f.bridge.registry.lock().await.generation.is_some());
-    f.bridge.reply(&f.server, None, 1, None).await;
+    f.bridge.reply(&f.server, captured, 1, None).await;
     response(&mut stream).await;
     f.removed(&path).await;
     f.bridge.reply(&f.server, None, 1, None).await;
