@@ -265,11 +265,10 @@ fn decode_outcome(request: &Request, value: &serde_json::Value) -> Outcome {
             .iter()
             .map(|uri| location(&serde_json::json!(uri)).map_err(|e| anyhow::anyhow!(e.message)))
             .collect::<anyhow::Result<Vec<_>>>()?;
-        let choices: BTreeMap<String, String> = value
-            .get("choices")
-            .map(|v| serde_json::from_value(v.clone()))
-            .transpose()?
-            .unwrap_or_else(|| request.choice_defaults());
+        let mut choices = request.choice_defaults();
+        if let Some(values) = value.get("choices") {
+            choices.extend(serde_json::from_value::<BTreeMap<String, String>>(values.clone())?);
+        }
         let filter = value
             .get("current_filter")
             .map(Filter::parse)

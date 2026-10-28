@@ -103,7 +103,7 @@ async fn session(
             }
             _ = sweep.tick() => {
                 match call(client, "files.choose.result", json!({"request":id})).await {
-                    Some(PortReply::Ok { value, .. }) if value["state"] == "done" => return Some(decode_outcome(request, &value["outcome"])),
+                    Some(PortReply::Ok { value, .. }) if value["state"] == "done" && value["outcome"]["request"].as_str() == Some(&id) => return Some(decode_outcome(request, &value["outcome"])),
                     Some(PortReply::Ok { value, .. }) if value["state"] == "open" => failures = 0,
                     Some(PortReply::AppError { .. }) => {
                         // A provider can have restarted; Close is idempotent.
