@@ -195,8 +195,9 @@ mod tests {
             let coverage: u64 = output
                 .textures_delta
                 .set
-                .iter()
-                .map(|(_, delta)| {
+                .values()
+                .flatten()
+                .map(|delta| {
                     let egui::ImageData::Color(image) = &delta.image;
                     image
                         .pixels

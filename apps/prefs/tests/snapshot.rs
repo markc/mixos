@@ -85,6 +85,24 @@ fn text_and_fonts() {
 }
 
 #[test]
+fn interface_font_selected() {
+    let mut e = appearance_engine();
+    e.set_section(Section::TextAndFonts);
+    e.look.interface_font = Some(preferences::appearance::InterfaceFont {
+        weight: Some(700),
+        size: Some(18.0),
+    });
+    let theme = chrome(Scheme::Studio, Mode::Dark)
+        .with_overlay(toolkit::theme::Overlay {
+            weight: Some(700),
+            size: Some(18.0),
+            ..Default::default()
+        })
+        .unwrap();
+    draw_at_size(theme, "interface_font_selected", e, egui::vec2(1100.0, 1100.0));
+}
+
+#[test]
 fn interface_font_refusal() {
     let mut e = appearance_engine();
     e.set_section(Section::TextAndFonts);
