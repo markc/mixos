@@ -57,6 +57,9 @@ $allow = $policy.allow ?? {}
 $debt = $policy.debt ?? {}
 $strict = $policy.strict ?? []
 $forbid = $policy.strict_forbid ?? []
+-- Named, per-crate exceptions to the strict allowlist: decisions pending for
+-- the project lead, recorded so they cannot grow silently.
+$strict_exceptions = $policy.strict_exceptions ?? {}
 $forbid_so = $policy.strict_forbid_so ?? []
 -- MixOS ships Linux binaries only; other targets (android, haiku, macOS)
 -- never compile here.
@@ -129,7 +132,7 @@ for each $c in $strict
     for each $f in keys($foreign)
       if $names[$f] == true then
         $reach[$f] = ($reach[$f] ?? "") .. " " .. $c .. "(" .. $label .. ")"
-        if $allow[$f] == nil then
+        if $allow[$f] == nil and not contains($strict_exceptions[$c] ?? [], $f) then
           push($fail, "strict " .. $c .. " (" .. $label .. ") reaches foreign " .. $f .. " (not in allow)")
         end
       end
