@@ -189,8 +189,6 @@ struct TabX {
     /// Opaque session-only view hints supplied by the window.
     view_hints: HashMap<&'static str, &'static str>,
     recovery_id: Option<String>,
-    /// Body scratch to attach after restoring the mail file headers.
-    mail_recovery_id: Option<String>,
     /// `edit.open` answered (success or failure) at least once.
     opened: bool,
     /// Waiting for a reattach open/list.
@@ -648,6 +646,10 @@ impl Controller {
                 } else {
                     None
                 },
+                mail: t.mail.as_ref().map(|mail| crate::session::MailSession {
+                    disk: mail.disk.clone(),
+                    headers: mail.headers.clone(),
+                }),
                 caret: t.editor.sel.head,
                 first_line: t.editor.scroll.first_line.max(1),
             })
@@ -685,9 +687,17 @@ impl Controller {
                 let id = self.new_tab(st.path.clone());
                 if let Some(x) = self.x.get_mut(&id) {
                     x.recovery_id = st.recovery_id.clone();
-                    x.mail_recovery_id = st.path.as_ref().and(st.recovery_id.clone());
                 }
                 if let Some(t) = self.tab_mut(id) {
+                    if let Some(saved) = &st.mail
+                        && let Ok(document) = maildoc::parse(&saved.disk)
+                    {
+                        let mut mail = crate::mail::MailState::new(document, saved.disk.clone());
+                        mail.headers = saved.headers.clone();
+                        mail.seeding = false;
+                        t.mail = Some(mail);
+                        t.classified = true;
+                    }
                     t.editor.sel = Selection {
                         anchor: st.caret,
                         head: st.caret,
@@ -696,6 +706,7 @@ impl Controller {
                 }
                 ids.push(id);
                 match (&st.path, &st.recovery_id) {
+                    (Some(_), Some(_)) if self.tab(id).is_some_and(|t| t.mail.is_some()) => self.send_list(id, &mut fx),
                     (Some(p), _) => self.send_open(id, Some(p.clone()), false, &mut fx),
                     (None, Some(_)) => self.send_list(id, &mut fx),
                     (None, None) => self.send_open(id, None, false, &mut fx),
@@ -1620,6 +1631,12 @@ impl Controller {
             } else {
                 if let Some(x) = self.x.get_mut(&tab) {
                     x.reattaching = false;
+                }
+                if let Some(t) = self.tab_mut(tab)
+                    && t.mirror.is_none() && t.mail.is_some()
+                {
+                    t.mail = None;
+                    t.classified = false;
                 }
                 self.timer(DEADLINE_LONG_MS, TimerFor::Reattach(tab), fx);
             }

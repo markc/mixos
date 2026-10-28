@@ -240,6 +240,23 @@
 <h1 id="changelog">Changelog</h1>
 <h2 id="unreleased--2026-10-28">Unreleased — 2026-10-28</h2>
 <ul>
+<li></li>
+</ul>
+<p>+- Isolate ordinary edit requests from shutdown replies and bound force-close</p>
+<ul>
+<li>waits separately, leaving time to deregister, refuse callers and flush the</li>
+<li>session. Close mail scratches even when quit overtakes their seeding.
++- Freeze body editing and show Sending… as soon as Send parks; parked Save</li>
+<li>still accepts typing. Undo and Redo report busy while either is parked.
++- Reattach session mail bodies by recovery id with their header state, or</li>
+<li>reopen the file if the scratch is gone. Reseed from live text while keeping</li>
+<li>detached copies separate. Preserve the opened path after Save and compare</li>
+<li>canonical forms only for conflict checks, including relative Save As.
++- Keep save and parser refusal codes typed, skip unchanged header focus events,</li>
+<li>and defensively refuse a parked save whose tab disappeared. Verify Send</li>
+<li>timeout uncertainty through a delivered native Bus call.</li>
+</ul>
+<ul>
 <li>
 <p>Park save intent until the body pipeline drains; cancel parked saves on
 close, exit or reconnection. Same-frame header edits precede Save and Send.

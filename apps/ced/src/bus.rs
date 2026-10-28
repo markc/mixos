@@ -362,6 +362,7 @@ async fn run(
     let mut sends = tokio::task::JoinSet::new();
     let mut force_closes = tokio::task::JoinSet::new();
     let closing_mail = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let mail_buffers = Arc::new(std::sync::Mutex::new(std::collections::HashSet::<String>::new()));
     let mut next_command = 0u64;
     let mut macro_jobs = citizen::macros::Jobs::default();
     let mut session = None;
@@ -485,7 +486,11 @@ async fn run(
                         let args: serde_json::Value = serde_json::from_str(&request.body).unwrap_or_default();
                         let scratch_open = request.command == "edit.open" && args.get("text").is_some() && args.get("path").is_none();
                         let force_close = request.command == "edit.close" && args["force"] == true;
+                        if request.command == "edit.close" && let Some(buffer) = args["buffer"].as_str() {
+                            mail_buffers.lock().unwrap().remove(buffer);
+                        }
                         let closing = closing_mail.clone();
+                        let buffers = mail_buffers.clone();
                         let tasks = if scratch_open || force_close { &mut force_closes } else { &mut sends };
                         tasks.spawn(async move {
                             let deadline = tokio::time::Instant::now()
@@ -517,14 +522,19 @@ async fn run(
                             };
                             // A quit can overtake an open's reply, before the
                             // controller has a buffer id to close.
-                            if scratch_open && closing.load(std::sync::atomic::Ordering::SeqCst)
+                            if scratch_open
                                 && let Incoming::Reply { rc: 0..=9, body, .. } = &incoming
                                 && let Ok(value) = serde_json::from_str::<serde_json::Value>(body)
                                 && let Some(buffer) = value["buffer"].as_str()
                             {
-                                let body = serde_json::json!({"buffer":buffer,"force":true,"origin":"ced"}).to_string();
-                                c.call_with_headers_raw(EDIT, "edit.close", &BTreeMap::new(), &body).await
-                                    .map_err(|error| format!("mail scratch close: {error}"))?;
+                                if closing.load(std::sync::atomic::Ordering::SeqCst) {
+                                    let body = serde_json::json!({"buffer":buffer,"force":true,"origin":"ced"}).to_string();
+                                    c.call_with_headers_raw(EDIT, "edit.close", &BTreeMap::new(), &body).await
+                                        .map_err(|error| format!("mail scratch close: {error}"))?;
+                                } else {
+                                    buffers.lock().unwrap().insert(buffer.to_owned());
+                                    o.send(Delivery::Incoming(incoming));
+                                }
                             } else {
                                 o.send(Delivery::Incoming(incoming));
                             }
@@ -609,6 +619,18 @@ async fn run(
     let mut faults = Vec::new();
     closing_mail.store(true, std::sync::atomic::Ordering::SeqCst);
     sends.abort_all();
+    // Include opens whose replies have reached the host queue but whose
+    // mirrors have not yet been created by the controller.
+    let buffers: Vec<_> = mail_buffers.lock().unwrap().drain().collect();
+    for buffer in buffers {
+        let c = client.clone();
+        force_closes.spawn(async move {
+            let body = serde_json::json!({"buffer":buffer,"force":true,"origin":"ced"}).to_string();
+            c.call_with_headers_raw(EDIT, "edit.close", &BTreeMap::new(), &body).await
+                .map_err(|error| format!("mail scratch close: {error}"))?;
+            Ok(())
+        });
+    }
     // Force closes have a small, separate allowance. An unanswered edit
     // request must leave time for deregistration, refusals and persistence.
     let close_until = tokio::time::Instant::now() + Duration::from_millis(250);

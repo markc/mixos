@@ -23,10 +23,18 @@ pub struct Session {
 pub struct SessionTab {
     pub path: Option<String>,
     pub recovery_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mail: Option<MailSession>,
     /// View byte offset of the caret.
     pub caret: usize,
     /// 1-based first visible line.
     pub first_line: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MailSession {
+    pub disk: String,
+    pub headers: crate::mail::Headers,
 }
 
 impl Default for Session {
@@ -238,6 +246,7 @@ mod tests {
             tabs: vec![SessionTab {
                 path: Some("/tmp/x.mix".into()),
                 recovery_id: None,
+                mail: None,
                 caret: 3,
                 first_line: 1,
             }],

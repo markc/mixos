@@ -293,13 +293,7 @@ impl Controller {
                     Req::Discard,
                     fx,
                 );
-                if let Some(rid) = self.x.get_mut(&tab).and_then(|x| x.mail_recovery_id.take()) {
-                    self.x.get_mut(&tab).unwrap().recovery_id = Some(rid);
-                    self.tab_mut(tab).unwrap().mail.as_mut().unwrap().seeding = false;
-                    self.send_list(tab, fx);
-                } else {
-                    self.send_open(tab, None, false, fx);
-                }
+                self.send_open(tab, None, false, fx);
                 true
             }
             Kind::Refused(message) => {
@@ -406,7 +400,14 @@ impl Controller {
                 mail.disk = text;
                 t.path = Some(path.clone());
                 if send {
-                    fx.push(Effect::SendMail { tab, path, command });
+                    match std::path::absolute(&path) {
+                        Ok(path) => fx.push(Effect::SendMail { tab, path: path.to_string_lossy().into_owned(), command }),
+                        Err(error) => {
+                            mail.sending = false;
+                            mail.notice = Some(error.to_string());
+                            Self::mail_answer(command, Err(error.into()), &mut fx);
+                        }
+                    }
                 } else {
                     mail.notice = Some("Saved".into());
                     Self::mail_answer(command, Ok("Saved".into()), &mut fx);
@@ -1226,9 +1227,14 @@ mod tests {
 
     #[test]
     fn quit_force_closes_a_scratch_before_seeding_finishes() {
-        let (mut c, _, tab) = opened(LETTER);
-        let buffer = c.tab(tab).unwrap().mirror.as_ref().unwrap().buffer().to_owned();
+        let (mut c, mut service, tab) = opened(LETTER);
+        let answer = service.handle("local:ced", "edit.open", &json!({"text":"Body","origin":UI_ORIGIN}));
+        let open: wire::OpenReply = serde_json::from_value(answer.body).unwrap();
+        let buffer = open.buffer.clone();
+        c.tab_mut(tab).unwrap().mirror = Some(Mirror::bootstrap(&open).unwrap().0);
         c.tab_mut(tab).unwrap().mail.as_mut().unwrap().seeding = true;
+        c.tab_mut(tab).unwrap().mail.as_mut().unwrap().dirty_body.set(None);
+        assert!(c.tab(tab).unwrap().dirty());
         let fx = execute(&mut c, tab, "file.exit");
         assert!(fx.iter().any(|e| matches!(e, Effect::Send { out, .. } if out.command == "edit.close" && serde_json::from_str::<Value>(&out.body).unwrap() == json!({"buffer":buffer,"force":true,"origin":UI_ORIGIN}))));
         assert!(fx.iter().any(|e| matches!(e, Effect::Quit)));

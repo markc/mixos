@@ -344,7 +344,9 @@ Mix lexer. Without it, Mix buffers draw plain.</li>
 <h2 id="testing">Testing</h2>
 <p>Unit tests sit beside each module (<code>src/model/tests.rs</code>,
 <code>src/highlight/tests.rs</code>, <code>src/diag/tests.rs</code>). The mirror is tested end to
-end against <code>FakeEditd</code>:</p>
+end against <code>FakeEditd</code>. Like editd, the fake reports a nonempty
++pathless initial body as dirty until saved; disk-backed and empty buffers
++start clean:</p>
 <ul>
 <li><code>tests/fixture_server_side.rs</code> runs the server side of every scripted
 scenario in

@@ -207,6 +207,26 @@ mod tests {
     use super::*;
 
     #[test]
+    fn refusal_codes_come_from_variants_even_with_unrelated_wording() {
+        use maildoc::Refusal::*;
+        for refusal in [
+            TooLarge { bytes: 1 },
+            CarriageReturn,
+            Framing("disk full".into()),
+            HeaderNotAllowed("busy".into()),
+            MalformedHeader("saved".into()),
+            DuplicateHeader("internal".into()),
+            EmptyValue("conflict".into()),
+            InvalidValue { header: "io".into(), reason: "anything".into() },
+        ] {
+            assert_eq!(refusal_code(&refusal), "INVALID_ARGUMENT");
+            assert_eq!(SaveError::Document(refusal).code(), "INVALID_ARGUMENT");
+        }
+        assert_eq!(SaveError::Conflict("invalid address".into()).code(), "CONFLICT");
+        assert_eq!(SaveError::Internal("the mail document is busy".into()).code(), INTERNAL);
+    }
+
+    #[test]
     fn optional_headers_default_and_sender_addresses_are_trimmed() {
         let mut headers: Headers = serde_json::from_str(r#"{"to":"bob@example.org"}"#).unwrap();
         assert!(headers.cc.is_empty() && headers.attachments.is_empty());

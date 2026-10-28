@@ -21,8 +21,8 @@ pub fn save(path: &str, text: &str, expected: Option<&str>) -> Result<(), SaveEr
         }
     }
     let mut document = editor::local::Document::open_bytes(Path::new(path), text.as_bytes())
-        .map_err(SaveError::from)?;
-    document.save_as(path).map_err(SaveError::from)
+        .map_err(|e| SaveError::Internal(e.to_string()))?;
+    document.save_as(path).map_err(|e| SaveError::Internal(e.to_string()))
 }
 
 pub async fn send(client: &impl citizen::app::AppClient, path: &str) -> Result<String, Failure> {
