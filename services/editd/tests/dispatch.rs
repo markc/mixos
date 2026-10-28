@@ -228,6 +228,18 @@ async fn scratch_initial_text_has_no_undo_entry_and_never_reads_a_path() {
         false
     );
     assert_eq!(h.call("edit.close", json!({"buffer":buffer})).await.0, 0);
+    let scratch = h.ok("edit.open", json!({"text":"Mail body"})).await;
+    let scratch = scratch["buffer"].as_str().unwrap();
+    h.ok("edit.close", json!({"buffer":scratch,"force":true}))
+        .await;
+    let listed = h.ok("edit.list", json!({})).await;
+    assert!(
+        listed["buffers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|row| row["buffer"] != scratch)
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

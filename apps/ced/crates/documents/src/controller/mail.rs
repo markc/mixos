@@ -963,7 +963,7 @@ mod tests {
     #[test]
     fn clean_quit_force_closes_only_mail_scratch_buffers_before_quit() {
         for action in ["file.exit", "app.quit"] {
-            let (mut c, mut service, tab) = opened(LETTER);
+            let (mut c, _, tab) = opened(LETTER);
             let buffer = c
                 .tab(tab)
                 .unwrap()
@@ -984,8 +984,6 @@ mod tests {
             };
             let close = fx.iter().position(|e| matches!(e, Effect::Send { out, .. } if out.command == "edit.close" && serde_json::from_str::<Value>(&out.body).unwrap() == json!({"buffer":buffer,"force":true,"origin":UI_ORIGIN}))).unwrap();
             assert!(close < fx.iter().position(|e| matches!(e, Effect::Quit)).unwrap());
-            settle(&mut c, &mut service, fx);
-            assert!(!service.buffers().contains(&buffer));
         }
     }
 
