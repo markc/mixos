@@ -274,9 +274,9 @@ async fn simultaneous_and_busy(bus: Arc<SupervisedClient>) -> Result<()> {
         let reply = bus.call("files", "files.choose", json!({})).await?;
         ids.push(reply["request"].as_str().context("request id")?.to_owned());
     }
-    let busy = bus.call_typed("files", "files.choose", json!({})).await?;
+    let (rc, busy, _) = bus.call_with_headers_raw("files", "files.choose", &Default::default(), "{}").await?;
     ensure!(
-        matches!(busy, bus::PortReply::AppError { ref message, .. } if serde_json::from_str::<serde_json::Value>(message).is_ok_and(|v| v["error_code"] == "BUSY")),
+        rc >= 10 && serde_json::from_str::<serde_json::Value>(&busy)?["error_code"] == "BUSY",
         "real provider did not refuse BUSY: {busy:?}"
     );
     for id in ids {
