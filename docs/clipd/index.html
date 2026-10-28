@@ -251,7 +251,7 @@ scripts access the clipboard through the Bus-backed builtins below.</p>
 <tr><td><code>clipboard.get</code></td><td><code>{mime?, primary?, offset?}</code> → <code>{mime,data,encoding,size,offset,next_offset,eof,sensitive,stamp}</code></td></tr>
 <tr><td><code>clipboard.set</code></td><td><code>{mime,data,encoding?,primary?,sensitive?,stamp?}</code>; encoding is <code>utf8</code> (default) or <code>base64</code>, at most 1 MiB decoded</td></tr>
 <tr><td><code>clipboard.clear</code></td><td><code>{primary?}</code>; clears the selected clipboard</td></tr>
-<tr><td><code>clipboard.history</code></td><td><code>{}</code> → up to 50 text entries, newest first</td></tr>
+<tr><td><code>clipboard.history</code></td><td><code>{}</code> → up to 50 text previews, newest first, with original byte size and truncation flag</td></tr>
 <tr><td><code>clipboard.pick</code></td><td><code>{n}</code>; sets the zero-based history entry</td></tr>
 <tr><td><code>clipboard.info</code></td><td><code>{}</code> → session, protocol, caps and configured peers</td></tr>
 <tr><td><code>clipboard.push</code></td><td><code>{to:"vt4"}</code>; the equivalent <code>desk</code>-prefixed alias is also accepted</td></tr>
@@ -273,7 +273,9 @@ Materialisation is capped at 64 MiB with a five-second Wayland read deadline.</p
 <p>History is in memory and holds only valid UTF-8 text of at most 1 MiB per
 entry. <code>x-kde-passwordManagerHint</code> with value <code>secret</code>, unreadable hints and
 explicit <code>sensitive:true</code> sets never enter history or cross sessions.
-Content commands admit only broker-stamped local-session callers.</p>
+Content commands admit only broker-stamped local-session callers.
+History responses limit each preview to 512 characters to stay inside the
+Bus frame limit. Picking an entry restores its complete stored text.</p>
 <p>Mix provides <code>clip_get([mime])</code> (a UTF-8 string or binary bytes, at most 1 MiB)
 and <code>clip_set(text[, mime])</code>. Binary decoding uses Mix's crypto feature,
 included in the native shell. They use the local broker's <code>clipd</code>; failures raise.

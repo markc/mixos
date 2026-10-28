@@ -2116,7 +2116,7 @@ scripts access the clipboard through the Bus-backed builtins below.
 | `clipboard.get` | `{mime?, primary?, offset?}` → `{mime,data,encoding,size,offset,next_offset,eof,sensitive,stamp}` |
 | `clipboard.set` | `{mime,data,encoding?,primary?,sensitive?,stamp?}`; encoding is `utf8` (default) or `base64`, at most 1 MiB decoded |
 | `clipboard.clear` | `{primary?}`; clears the selected clipboard |
-| `clipboard.history` | `{}` → up to 50 text entries, newest first |
+| `clipboard.history` | `{}` → up to 50 text previews, newest first, with original byte size and truncation flag |
 | `clipboard.pick` | `{n}`; sets the zero-based history entry |
 | `clipboard.info` | `{}` → session, protocol, caps and configured peers |
 | `clipboard.push` | `{to:"vt4"}`; the equivalent `desk`-prefixed alias is also accepted |
@@ -2143,6 +2143,8 @@ History is in memory and holds only valid UTF-8 text of at most 1 MiB per
 entry. `x-kde-passwordManagerHint` with value `secret`, unreadable hints and
 explicit `sensitive:true` sets never enter history or cross sessions.
 Content commands admit only broker-stamped local-session callers.
+History responses limit each preview to 512 characters to stay inside the
+Bus frame limit. Picking an entry restores its complete stored text.
 
 Mix provides `clip_get([mime])` (a UTF-8 string or binary bytes, at most 1 MiB)
 and `clip_set(text[, mime])`. Binary decoding uses Mix's crypto feature,

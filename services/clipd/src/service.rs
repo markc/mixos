@@ -396,7 +396,7 @@ impl Service {
                 let s = Selection { stamp: Stamp::new(&own), mime_types: Vec::new(), sensitive: false, size: Some(0), data: BTreeMap::new(), offer: None, remote: None };
                 Ok(json!({"applied": self.set(s, p.primary, true).await?}))
             }
-            "clipboard.history" => Ok(json!(self.state.lock().await.history)),
+            "clipboard.history" => Ok(json!(self.state.lock().await.history_view())),
             "clipboard.pick" | "desktop.clipboard.rotate" => {
                 let mut state = self.state.lock().await;
                 let rotate = command.command == "desktop.clipboard.rotate";

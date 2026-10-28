@@ -9,6 +9,7 @@ pub const TEXT_CAP: usize = 1024 * 1024;
 pub const MAX_BYTES: usize = 64 * 1024 * 1024;
 pub const CHUNK: usize = 64 * 1024;
 pub const HISTORY_LEN: usize = 50;
+pub const HISTORY_PREVIEW_CHARS: usize = 512;
 pub const SECRET_HINT: &str = "x-kde-passwordManagerHint";
 pub const MARKER: &str = "application/x-mixos-clipboard-";
 
@@ -82,6 +83,16 @@ pub struct HistoryEntry {
     pub data: String,
 }
 
+/// Bounded wire view; pick always uses the complete entry held by the engine.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct HistoryPreview {
+    pub id: String,
+    pub mime: String,
+    pub data: String,
+    pub size: usize,
+    pub truncated: bool,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Remote {
@@ -148,6 +159,15 @@ impl Clipboard {
 
     pub fn is_echo(&self, stamp: &Stamp) -> bool {
         self.seen.contains(stamp) || self.selections.iter().flatten().any(|s| &s.stamp == stamp)
+    }
+
+    pub fn history_view(&self) -> Vec<HistoryPreview> {
+        self.history.iter().map(|entry| HistoryPreview {
+            id: entry.id.clone(), mime: entry.mime.clone(),
+            data: entry.data.chars().take(HISTORY_PREVIEW_CHARS).collect(),
+            size: entry.data.len(),
+            truncated: entry.data.chars().nth(HISTORY_PREVIEW_CHARS).is_some(),
+        }).collect()
     }
 
     pub fn adopt(&mut self, primary: bool, selection: Selection) -> bool {
@@ -236,5 +256,18 @@ mod tests {
         assert!(cached.cache("text/plain".into(), vec![0; MAX_BYTES + 1]).is_err());
         assert!(!cached.data.contains_key("text/plain"));
         assert!(session("other-node").is_err());
+    }
+
+    #[test]
+    fn history_wire_previews_are_bounded_without_truncating_stored_text() {
+        let mut c = Clipboard::new("vt1".into());
+        let original = "λ".repeat(600);
+        c.adopt(false, text(&c, original.clone(), false)); c.remember(false);
+        let rows = c.history_view();
+        assert_eq!(rows[0].data.chars().count(), HISTORY_PREVIEW_CHARS);
+        assert_eq!(rows[0].size, original.len());
+        assert!(rows[0].truncated);
+        assert_eq!(c.history[0].data, original);
+        assert!(serde_json::to_vec(&rows).unwrap().len() < 4096);
     }
 }
