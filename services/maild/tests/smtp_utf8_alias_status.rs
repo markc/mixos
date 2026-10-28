@@ -623,6 +623,7 @@ async fn legacy_queue_ids_migrate_and_second_message_transmits_without_retagging
         |r| r.get(0),
     )?;
     let original = wait_delivered(&built, first).await?;
+    wait_queue_empty(&built).await?;
     // Upgrade the legacy database after its last queue row has disappeared.
     built.app_state.db.migrate().await?;
     built.app_state.db.migrate().await?;
