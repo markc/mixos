@@ -126,11 +126,14 @@ mod tests {
     fn picker_snapshot() {
         let (_, received) = std::sync::mpsc::channel();
         let (send, _) = tokio::sync::mpsc::channel(1);
-        let mut state = super::State { ready: true, ..Default::default() };
-        state.rows = vec![super::HistoryEntry { id: "sample".into(), mime: "text/plain".into(), data: "A recent clipboard entry".into() }];
+        let state = super::State {
+            ready: true,
+            rows: vec![super::HistoryEntry { id: "sample".into(), mime: "text/plain".into(), data: "A recent clipboard entry".into() }],
+            ..Default::default()
+        };
         let mut picker = super::Picker { state, received, send, strings: toolkit::Strings::new(include_str!("../i18n/en/clipd.ftl")), registry: super::registry() };
         let mut harness = egui_kittest::Harness::builder().with_size(egui::vec2(520.0, 280.0)).wgpu().build_ui(move |ui| picker.draw(ui));
-        toolkit::install(&harness.ctx, &toolkit::Theme::load());
+        toolkit::install(&harness.ctx, &toolkit::Theme::embedded());
         harness.run();
         harness.snapshot("clipboard_history");
     }
