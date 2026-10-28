@@ -222,7 +222,7 @@ impl Clipboard {
 
     pub fn remember(&mut self, primary: bool) {
         let Some(s) = &self.selections[usize::from(primary)] else { return; };
-        if s.sensitive || s.remote.is_some() { return; }
+        if s.sensitive { return; }
         let Some(mime) = s.text_mime() else { return; };
         let Some(bytes) = s.data.get(&mime) else { return; };
         if bytes.len() > TEXT_CAP || bytes.is_empty() { return; }
@@ -316,6 +316,16 @@ mod tests {
         assert!(rows[0].truncated);
         assert_eq!(c.history[0].data, original);
         assert!(serde_json::to_vec(&rows).unwrap().len() < 4096);
+    }
+
+    #[test]
+    fn eager_text_enters_history_even_when_other_imported_mimes_are_lazy() {
+        let mut c = Clipboard::new("vt4".into());
+        let mut imported = Selection::owned(Stamp::new("vt1"), "text/plain".into(), b"imported text".to_vec(), false);
+        imported.mime_types.push("TEXT".into());
+        imported.remote = Some(Remote { session:"vt1".into(), stamp:imported.stamp.clone() });
+        c.adopt(false, imported); c.remember(false);
+        assert_eq!(c.history[0].data, "imported text");
     }
 
     #[test]
