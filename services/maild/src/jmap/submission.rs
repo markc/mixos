@@ -34,10 +34,19 @@ pub async fn set(
     // Handle create
     if let Some(create) = args.get("create").and_then(|v| v.as_object()) {
         for (client_id, obj) in create {
-            let legacy_sent_move = ["onSuccessUpdateEmail", "onSuccessDestroyEmail"].iter()
+            let legacy_sent_move = ["onSuccessUpdateEmail", "onSuccessDestroyEmail"]
+                .iter()
                 .all(|key| args.get(key).is_none_or(serde_json::Value::is_null));
-            let result =
-                create_submission(db, mailstore, aliases_runtime, account_id, obj, false, legacy_sent_move).await;
+            let result = create_submission(
+                db,
+                mailstore,
+                aliases_runtime,
+                account_id,
+                obj,
+                false,
+                legacy_sent_move,
+            )
+            .await;
             match result {
                 Ok(submission_id) => {
                     created_map.insert(
@@ -290,24 +299,26 @@ async fn create_submission(
     // `update_mailboxes` would silently overwrite that case; the
     // multi-mailbox migration moves under).
     if legacy_sent_move {
-    let ms = mailstore.clone();
-    let move_outcome = tokio::task::spawn_blocking(move || {
-        let sent_id = ms.mailbox_by_role(account_id, MailboxRole::Sent)?;
-        Ok::<_, anyhow::Error>(sent_id.map(|id| ms.move_email(account_id, ItemId(email_uuid), id)))
-    })
-    .await;
-    match move_outcome {
-        Ok(Ok(Some(Err(e)))) => {
-            tracing::warn!(error = %e, email_id = %email_uuid, "Sent-mailbox move skipped");
+        let ms = mailstore.clone();
+        let move_outcome = tokio::task::spawn_blocking(move || {
+            let sent_id = ms.mailbox_by_role(account_id, MailboxRole::Sent)?;
+            Ok::<_, anyhow::Error>(
+                sent_id.map(|id| ms.move_email(account_id, ItemId(email_uuid), id)),
+            )
+        })
+        .await;
+        match move_outcome {
+            Ok(Ok(Some(Err(e)))) => {
+                tracing::warn!(error = %e, email_id = %email_uuid, "Sent-mailbox move skipped");
+            }
+            Ok(Err(e)) => {
+                tracing::warn!(error = %e, email_id = %email_uuid, "Sent-mailbox lookup failed");
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, email_id = %email_uuid, "Sent-mailbox spawn_blocking failed");
+            }
+            Ok(Ok(None)) | Ok(Ok(Some(Ok(())))) => {}
         }
-        Ok(Err(e)) => {
-            tracing::warn!(error = %e, email_id = %email_uuid, "Sent-mailbox lookup failed");
-        }
-        Err(e) => {
-            tracing::warn!(error = %e, email_id = %email_uuid, "Sent-mailbox spawn_blocking failed");
-        }
-        Ok(Ok(None)) | Ok(Ok(Some(Ok(())))) => {}
-    }
     }
 
     // Persist submission record
