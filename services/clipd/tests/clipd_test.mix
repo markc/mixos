@@ -35,7 +35,11 @@ fn wait_ready($target)
 end
 fn eventually($f)
   for $i = 1 to 40
-    if $f() then return true end
+    try
+      if $f() then return true end
+    catch $m
+      -- Selection/event replies may still be absent during convergence.
+    end
     sleep(0.1)
   end
   return false
