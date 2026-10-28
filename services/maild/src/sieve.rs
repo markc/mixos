@@ -4,6 +4,7 @@
 
 pub mod delivery;
 mod interpreter;
+mod mailboxes;
 pub mod server;
 pub mod store;
 

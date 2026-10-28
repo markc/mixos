@@ -130,7 +130,7 @@ pub async fn plan(
     let account = delivery.account.id;
     tokio::task::spawn_blocking(move || {
         let script = compile(&script.source)?;
-        let paths = if script.needs_mailboxes() { mailbox_snapshot(&ms.list_mailboxes(account)?)? } else { Vec::new() };
+        let paths = if script.needs_mailboxes() { mailbox_snapshot(&super::mailboxes::load(&ms,account)?)? } else { Vec::new() };
         script.evaluate_with_mailboxes(
             Context {
                 data: &data,
@@ -144,14 +144,14 @@ pub async fn plan(
     .map(Some)
 }
 
-fn mailbox_snapshot(boxes: &[crate::mailstore::MailboxRecord]) -> Result<Vec<String>> {
+fn mailbox_snapshot(boxes: &[super::mailboxes::Mailbox]) -> Result<Vec<String>> {
     ensure!(boxes.len() <= super::MAX_STEPS,"mailbox snapshot count limit");
     let by_id: HashMap<_,_> = boxes.iter().map(|entry|(entry.id,entry)).collect();
     let mut steps = 0;
     let mut bytes = 0;
     let mut paths = Vec::new();
     for mailbox in boxes {
-        if !mailbox.my_rights.may_add_items { continue; }
+        if !mailbox.writable { continue; }
         let mut parts = Vec::new();
         let mut path_bytes = 0;
         let mut current = Some(mailbox);
@@ -159,7 +159,7 @@ fn mailbox_snapshot(boxes: &[crate::mailstore::MailboxRecord]) -> Result<Vec<Str
             steps += 1;
             ensure!(steps <= super::MAX_STEPS,"mailbox snapshot work limit");
             ensure!(parts.len() < boxes.len(),"mailbox parent cycle");
-            let name = if entry.role == Some(MailboxRole::Inbox) { "INBOX" } else { &entry.name };
+            let name = if entry.inbox { "INBOX" } else { &entry.name };
             path_bytes += name.len()+1;
             bytes += name.len()+1;
             ensure!(bytes <= 1024*1024,"mailbox snapshot allocation limit");
@@ -267,7 +267,7 @@ async fn deliver_inner(
     let resolved = tokio::task::spawn_blocking(move || -> Result<Vec<_>> {
         let mut resolved: Vec<(ContainerId, Flags, Tags)> = Vec::new();
         let mut resolver = if filings.iter().any(|filing|filing.mailbox.is_some()) {
-            Some(MailboxResolver::from_mailboxes(ms2.list_mailboxes(id)?)?)
+            Some(MailboxResolver::from_mailboxes(super::mailboxes::load(&ms2,id)?)?)
         } else { None };
         // Check every non-create destination before creating any folders.
         let planned: Vec<_> = filings.iter().filter(|filing|filing.create).filter_map(|filing|filing.mailbox.as_deref()).map(super::interpreter::mailbox_key).collect();
@@ -525,9 +525,9 @@ struct MailboxResolver {
     refreshed: bool,
 }
 impl MailboxResolver {
-    fn from_mailboxes(boxes: Vec<crate::mailstore::MailboxRecord>) -> Result<Self> {
+    fn from_mailboxes(boxes: Vec<super::mailboxes::Mailbox>) -> Result<Self> {
         ensure!(boxes.len() <= super::MAX_STEPS,"destination snapshot count limit");
-        let inbox = boxes.iter().find(|entry|entry.role == Some(MailboxRole::Inbox)).map(|entry|entry.id);
+        let inbox = boxes.iter().find(|entry|entry.inbox).map(|entry|entry.id);
         let mut children = HashMap::new();
         let mut bytes = 0;
         for entry in boxes {
@@ -557,7 +557,7 @@ impl MailboxResolver {
                         // changing namespace cannot force repeated full reloads.
                         ensure!(!self.refreshed,"destination namespace changed repeatedly");
                         self.refreshed = true;
-                        let fresh = ms.list_mailboxes(account)?;
+                        let fresh = super::mailboxes::load(ms,account)?;
                         self.steps += fresh.len();
                         ensure!(self.steps <= super::MAX_STEPS,"destination refresh work limit");
                         fresh.into_iter().find(|entry|entry.parent==parent && entry.name==name).map(|entry|entry.id).ok_or(error)?
@@ -581,7 +581,7 @@ mod tests {
         let tmp = tempfile::tempdir()?;
         let ms = SqliteMailStore::new(Arc::new(mds::SqliteCasMds::open(tmp.path())?));
         ms.create_mailbox(1,"Inbox",None,ContainerAttrs {special_use:Some("\\Inbox".into()),subscribed:true,extra:serde_json::json!({})})?;
-        let record = ms.list_mailboxes(1)?.into_iter().next().unwrap();
+        let record = super::super::mailboxes::load(&ms,1)?.into_iter().next().unwrap();
         assert!(MailboxResolver::from_mailboxes(vec![record.clone();super::super::MAX_STEPS+1]).is_err());
         let mut oversized = record;
         oversized.name = "x".repeat(1024*1024+1);

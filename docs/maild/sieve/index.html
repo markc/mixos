@@ -293,9 +293,10 @@ inbound classifier or global Mix filter.</p>
 missing destinations and refused redirects cancel the plan and keep the message.
 Limits: 64 KiB per script, 10,000 evaluation/matching/allocation steps, 64
 filing/redirect actions, 1 MiB of variables and four redirects. Matching charges
-for scanned bytes as well as instructions. Scripts using <code>mailboxexists</code> also
-have a 10,000-visit, 1 MiB mailbox-path snapshot budget; exhaustion keeps the
-message. Local redirects run the destination's
+for scanned bytes as well as instructions. Filing and <code>mailboxexists</code> read at
+most 10,000 metadata records and 1 MiB of names/attributes, omitting message
+counts. Their path processing also has a 10,000-visit, 1 MiB budget; exhaustion
+keeps the message. Local redirects run the destination's
 script; SMTP redirects also rerun the destination's classifier and global filter
 using the original verified ingress. The four-hop header also bounds remote loops. A forged high hop count
 can suppress forwarding but never grants extra hops.</p>
