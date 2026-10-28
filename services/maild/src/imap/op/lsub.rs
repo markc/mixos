@@ -35,14 +35,6 @@ pub async fn handle(
         Ok(p) => p,
         Err(e) => return tagged(tag, Status::Bad, None, &e),
     };
-    if !parsed.reference.is_empty() {
-        return tagged(
-            tag,
-            Status::Bad,
-            None,
-            "non-empty LSUB reference not supported in this phase",
-        );
-    }
     if !list::pattern_is_ascii_clean(&parsed.pattern) {
         return tagged(
             tag,
@@ -82,7 +74,7 @@ pub async fn handle(
         if !enc.is_subscribed {
             continue;
         }
-        if !matches_pattern(&enc.wire_name, &parsed.pattern) {
+        if !matches_pattern(&enc.wire_name, &list::canonical_pattern(&parsed.reference, &parsed.pattern)) {
             continue;
         }
         out.push_str(&render_mailbox_line("LSUB", enc));

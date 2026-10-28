@@ -163,117 +163,60 @@ fn parse_internaldate(s: &str) -> Result<i64, String> {
 /// runs against the freshest `list_mailboxes` snapshot — APPEND has
 /// no SELECTED-state pre-condition, just AUTHENTICATED.
 pub async fn handle(
-    tag: &str,
-    args: &str,
-    body: Vec<u8>,
-    account_id: AccountId,
-    store: Arc<dyn MailStore>,
+    tag: &str, args: &str, body: Vec<u8>, account_id: AccountId, store: Arc<dyn MailStore>,
 ) -> String {
-    let req = match parse_args(args) {
-        Ok(r) => r,
-        Err(e) => return tagged(tag, Status::Bad, None, &e),
-    };
+    handle_many(tag, vec![(args.to_string(), body)], account_id, store).await
+}
 
-    // Parse the message body in foreground — `mail_parser` is CPU-
-    // bound, but typical messages are < 1 MiB. spawn_blocking would
-    // pay a worker hop for sub-millisecond work; SMTP inbound uses
-    // foreground parsing for the same reason.
-    let parser = MessageParser::default();
-    let parsed = match parser.parse(&body) {
-        Some(m) => m,
-        None => return tagged(tag, Status::No, Some("PARSE"), "message body not parseable"),
-    };
-    let envelope = build_envelope(&parsed);
-    let in_reply_to = extract_in_reply_to(&parsed);
-    drop(parsed); // `parsed` borrows `body`; drop the borrow before move.
-
-    let received_at_ms = req
-        .received_at_ms
-        .unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
-
-    // Resolve mailbox via wire-name → ContainerId, on the freshest
-    // list_mailboxes snapshot.
-    let store_for_list = store.clone();
-    let records = match tokio::task::spawn_blocking(move || {
-        store_for_list.list_mailboxes(account_id)
-    })
-    .await
-    {
-        Ok(Ok(r)) => r,
-        Ok(Err(e)) => {
-            tracing::warn!(error = %e, "APPEND list_mailboxes failed");
-            return tagged(tag, Status::No, Some("SERVERBUG"), "APPEND failed");
+/// Parse every message before the first mutation; commit the complete batch in
+/// one native MailStore transaction (RFC 3502 all-or-nothing guarantee).
+pub async fn handle_many(
+    tag: &str, messages: Vec<(String, Vec<u8>)>, account_id: AccountId, store: Arc<dyn MailStore>,
+) -> String {
+    let mut prepared = Vec::with_capacity(messages.len());
+    let mut mailbox = None;
+    for (args, body) in messages {
+        let req = match parse_args(&args) {
+            Ok(r) => r,
+            Err(e) => return tagged(tag, Status::Bad, None, &e),
+        };
+        if mailbox.as_ref().is_some_and(|name| name != &req.mailbox) {
+            return tagged(tag, Status::Bad, None, "MULTIAPPEND has one destination mailbox");
         }
-        Err(e) => {
-            tracing::warn!(error = %e, "APPEND list_mailboxes spawn_blocking panicked");
-            return tagged(tag, Status::No, Some("SERVERBUG"), "APPEND failed");
+        mailbox = Some(req.mailbox);
+        if body.is_empty() { return tagged(tag, Status::No, None, "empty message"); }
+        let Some(parsed) = MessageParser::default().parse(&body) else {
+            return tagged(tag, Status::No, Some("PARSE"), "message body not parseable");
+        };
+        let envelope = build_envelope(&parsed);
+        let in_reply_to = extract_in_reply_to(&parsed);
+        prepared.push((body, envelope, in_reply_to, req.flags, req.tags, req.received_at_ms.unwrap_or_else(|| chrono::Utc::now().timestamp_millis())));
+    }
+    let Some(mailbox) = mailbox else { return tagged(tag, Status::Bad, None, "APPEND requires a message"); };
+    let outcome = tokio::task::spawn_blocking(move || {
+        let records = store.list_mailboxes(account_id)?;
+        let container_id = match resolve(&mailbox, &records) {
+            ResolveResult::Found(id) => id,
+            _ => anyhow::bail!("mailbox not found"),
+        };
+        let mut imports = Vec::with_capacity(prepared.len());
+        for (body, envelope, in_reply_to, flags, tags, received_at) in prepared {
+            imports.push(crate::mailstore::EmailImport {
+                blob: store.put_blob(&body)?, envelope, in_reply_to, flags, tags, received_at,
+            });
         }
-    };
-
-    let container_id = match resolve(&req.mailbox, &records) {
-        ResolveResult::Found(id) => id,
-        ResolveResult::NotFound => {
-            return tagged(tag, Status::No, Some("TRYCREATE"), "mailbox does not exist");
+        store.append_emails(account_id, container_id, imports)
+    }).await;
+    match outcome {
+        Ok(Ok(results)) if !results.is_empty() => {
+            let validity = wire_uidvalidity(results[0].1.uid_validity);
+            let uids: Vec<u64> = results.iter().map(|r| r.1.uid).collect();
+            let code = format!("APPENDUID {} {}", validity, super::copy::render_uid_set(&uids));
+            tagged(tag, Status::Ok, Some(&code), "APPEND completed")
         }
-        ResolveResult::Unrepresentable => {
-            return tagged(
-                tag,
-                Status::No,
-                Some("SERVERBUG"),
-                "mailbox name not representable over IMAP",
-            );
-        }
-    };
-
-    // Land bytes in CAS + create the email row inside one
-    // spawn_blocking, mirroring smtp::inbound's local-delivery shape.
-    let store_for_create = store.clone();
-    let body_for_create = body;
-    let flags = req.flags;
-    let tags = req.tags;
-    let create_outcome = tokio::task::spawn_blocking(move || {
-        let blob_hash = store_for_create.put_blob(&body_for_create)?;
-        store_for_create.create_email(
-            account_id,
-            container_id,
-            blob_hash,
-            envelope,
-            &in_reply_to,
-            flags,
-            // APPEND user keywords from the flag-list, persisted with the
-            // new item in the same create transaction.
-            tags,
-            received_at_ms,
-        )
-    })
-    .await;
-
-    let membership = match create_outcome {
-        Ok(Ok((_item, uid))) => uid,
-        Ok(Err(e)) => {
-            let msg = e.to_string();
-            // Substrate-level `mailbox not found` after we resolved
-            // would be a TOCTOU race against a DELETE in another
-            // session — surface as TRYCREATE rather than SERVERBUG so
-            // the client retries with CREATE.
-            if msg.starts_with("mailbox not found") {
-                return tagged(tag, Status::No, Some("TRYCREATE"), "mailbox does not exist");
-            }
-            tracing::warn!(error = %msg, "APPEND create_email failed");
-            return tagged(tag, Status::No, Some("SERVERBUG"), "APPEND failed");
-        }
-        Err(e) => {
-            tracing::warn!(error = %e, "APPEND spawn_blocking panicked");
-            return tagged(tag, Status::No, Some("SERVERBUG"), "APPEND failed");
-        }
-    };
-
-    let code = format!(
-        "APPENDUID {} {}",
-        wire_uidvalidity(membership.uid_validity),
-        membership.uid
-    );
-    tagged(tag, Status::Ok, Some(&code), "APPEND completed")
+        Ok(Err(e)) if e.to_string().starts_with("mailbox not found") => tagged(tag, Status::No, Some("TRYCREATE"), "mailbox does not exist"),
+        _ => tagged(tag, Status::No, Some("UNAVAILABLE"), "APPEND unavailable"),
+    }
 }
 
 #[cfg(test)]

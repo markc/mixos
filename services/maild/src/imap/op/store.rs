@@ -37,8 +37,8 @@
 //!
 //! Phase 4 ships the five RFC 9051 §2.3.2 system flags
 //! (`\Seen`, `\Flagged`, `\Answered`, `\Draft`, `\Deleted`). User
-//! keywords (`Tags` in the substrate) are deferred to a later task.
-//! `UNCHANGEDSINCE` (CONDSTORE) is deferred to Phase 6.
+//! keywords (`Tags` in the substrate) are stored per membership by
+//! `apply_op_tags`. `UNCHANGEDSINCE` is gated on the imap-ext CONDSTORE work.
 //!
 //! Unknown flag atoms are rejected as `BAD` rather than silently
 //! ignored: silently dropping a flag the client believes it stored is

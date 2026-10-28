@@ -275,9 +275,6 @@ fn walk_name(
         if cur.name.contains(HIERARCHY_DELIMITER) {
             return Err(OmissionReason::NameContainsDelimiter);
         }
-        if cur.name.contains('&') {
-            return Err(OmissionReason::NameContainsCharsetReserved);
-        }
         segments.push(&cur.name);
         match cur.parent {
             None => {
@@ -298,7 +295,7 @@ fn walk_name(
 }
 
 fn is_ascii_printable(s: &str) -> bool {
-    s.bytes().all(|b| (0x20..=0x7e).contains(&b))
+    s.chars().all(|c| !c.is_control())
 }
 
 /// Result of [`resolve`]: either the [`ContainerId`] the wire name

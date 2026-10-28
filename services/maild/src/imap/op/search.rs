@@ -110,6 +110,7 @@ enum Crit {
     /// and `NEW` (RFC 9051 §6.4.4 `NEW = RECENT UNSEEN`, which is
     /// empty whenever `RECENT` is empty).
     None,
+    Saved,
     /// All named bits in `flags` must be set on the message.
     FlagsSet(Flags),
     /// None of the named bits in `flags` may be set on the message.
@@ -288,6 +289,7 @@ fn parse_key(tokens: &[String], idx: usize) -> Result<(Crit, usize), String> {
         }
         ")" => Err("SEARCH stray closing paren".into()),
         "ALL" => Ok((Crit::All, idx + 1)),
+        "$" => Ok((Crit::Saved, idx + 1)),
         "ANSWERED" => Ok((Crit::FlagsSet(Flags(Flags::ANSWERED)), idx + 1)),
         "UNANSWERED" => Ok((Crit::FlagsClear(Flags(Flags::ANSWERED)), idx + 1)),
         "DELETED" => Ok((Crit::FlagsSet(Flags(Flags::DELETED)), idx + 1)),
@@ -329,6 +331,7 @@ fn parse_key(tokens: &[String], idx: usize) -> Result<(Crit, usize), String> {
             let set_tok = tokens
                 .get(idx + 1)
                 .ok_or_else(|| "SEARCH UID missing sequence-set".to_string())?;
+            if set_tok == "$" { return Ok((Crit::Saved, idx + 2)); }
             let set = SeqSet::parse(set_tok)
                 .map_err(|e| format!("SEARCH UID invalid sequence-set: {e}"))?;
             Ok((Crit::UidInSet(set), idx + 2))
@@ -631,6 +634,7 @@ fn eval(
     Some(match crit {
         Crit::All => true,
         Crit::None => false,
+        Crit::Saved => false,
         Crit::FlagsSet(f) => (handle.keywords.0 & f.0) == f.0,
         Crit::FlagsClear(f) => (handle.keywords.0 & f.0) == 0,
         Crit::TagSet(name) => handle.tags.contains(name),
@@ -739,10 +743,20 @@ pub async fn handle_extended(
     tag: &str, args: &str, account_id: AccountId, container: ContainerId,
     store: Arc<dyn MailStore>, mode: SearchMode, rev2: bool, saved: &mut Vec<u64>,
 ) -> String {
-    let req = match parse_args(args, mode) {
+    let mut req = match parse_args(args, mode) {
         Ok(r) => r,
         Err(e) => return tagged(tag, Status::Bad, None, &e),
     };
+    fn apply_saved(crit: &mut Crit, saved: &[u64]) {
+        match crit {
+            Crit::Saved => *crit = if saved.is_empty() { Crit::None } else { Crit::UidInSet(SeqSet::parse(&super::copy::render_uid_set(saved)).expect("saved UIDs are valid")) },
+            Crit::And(keys) => { for key in keys { apply_saved(key, saved); } }
+            Crit::Or(a, b) => { apply_saved(a, saved); apply_saved(b, saved); }
+            Crit::Not(key) => apply_saved(key, saved),
+            _ => {}
+        }
+    }
+    apply_saved(&mut req.crit, saved);
 
     let opts = ListOpts {
         sort_by: SortKey::Seq,

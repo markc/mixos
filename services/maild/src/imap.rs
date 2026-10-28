@@ -22,6 +22,7 @@ pub mod capabilities;
 pub mod codec;
 pub mod config;
 pub mod mailbox_name;
+pub mod mailbox_encoding;
 pub mod op;
 pub mod response;
 pub mod sasl;

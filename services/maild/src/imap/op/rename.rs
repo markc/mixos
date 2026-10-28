@@ -86,11 +86,6 @@ pub async fn handle(
         Err(e) => return tagged(tag, Status::Bad, None, &e),
     };
 
-    // INBOX rename is deferred to Phase 4.
-    if parsed.old_name.eq_ignore_ascii_case("INBOX") {
-        return tagged(tag, Status::No, Some("CANNOT"), "INBOX cannot be renamed");
-    }
-
     // A trailing delimiter on the destination is meaningless for
     // RENAME (no parent-ensure semantic exists here) — reject rather
     // than silently strip and risk a "what did you really mean"

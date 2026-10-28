@@ -343,6 +343,15 @@ pub struct EmailHandle {
 /// matches `mds::Mds` (which is also sync) and lets the
 /// adapter chain MDS + sidecar writes inside one rusqlite
 /// `Transaction` without crossing await points.
+/// One message prepared for an atomic IMAP MULTIAPPEND transaction.
+pub struct EmailImport {
+    pub blob: BlobHash,
+    pub envelope: EmailEnvelope,
+    pub in_reply_to: Vec<String>,
+    pub flags: Flags,
+    pub tags: Tags,
+    pub received_at: i64,
+}
 pub trait MailStore: Send + Sync {
     /// Stage an uploaded blob behind a JMAP `BlobId`.
     ///
@@ -1041,6 +1050,11 @@ pub trait MailStore: Send + Sync {
         received_at: i64,
     ) -> Result<(ItemId, MembershipUid)>;
 
+    /// Commit all message items, projections and memberships together. Backends
+    /// without an atomic implementation must refuse before writing anything.
+    fn append_emails(&self, _account: AccountId, _mailbox: ContainerId, _messages: Vec<EmailImport>) -> Result<Vec<(ItemId, MembershipUid)>> {
+        Err(anyhow!("atomic append unavailable"))
+    }
     /// Create an email item with N≥1 initial memberships in one
     /// `with_set_tx` scope. Multi-mailbox counterpart of
     /// [`MailStore::create_email`], used by JMAP `Email/set create`
@@ -2464,6 +2478,28 @@ impl MailStore for SqliteMailStore {
         // can't exist if the set doesn't.
         let set = account_id_to_setid(account);
         match self.mds.with_set_tx(&set, |tx| {
+            // RFC 9051 RENAME INBOX moves the current messages atomically;
+            // the INBOX identity, UIDNEXT and its children remain in place.
+            let role: Option<String> = tx.tx().query_row(
+                "SELECT json_extract(attrs, '$.special_use') FROM container WHERE id = ?1",
+                [id.0.to_string()], |row| row.get(0),
+            ).map_err(|e| mds::Error::Other(e.to_string()))?;
+            if role.as_deref() == Some("\\Inbox") {
+                let dest = tx.create_container_named(new_parent.as_ref(), new_name, &ContainerAttrs::default())?;
+                let items = {
+                    let mut statement = tx.tx().prepare("SELECT item_id FROM membership WHERE container_id = ?1 ORDER BY seq")
+                        .map_err(|e| mds::Error::Other(e.to_string()))?;
+                    statement.query_map([id.0.to_string()], |row| row.get::<_, String>(0))
+                        .map_err(|e| mds::Error::Other(e.to_string()))?
+                        .collect::<rusqlite::Result<Vec<_>>>()
+                        .map_err(|e| mds::Error::Other(e.to_string()))?
+                };
+                for item in items {
+                    let item = ItemId(uuid::Uuid::parse_str(&item).map_err(|e| mds::Error::Other(e.to_string()))?);
+                    tx.move_item(&item, &id, &dest, Flags(0))?;
+                }
+                return Ok(());
+            }
             tx.rename_container(&id, new_parent.as_ref(), new_name)
         }) {
             Ok(()) => Ok(()),
@@ -3654,23 +3690,37 @@ impl MailStore for SqliteMailStore {
         initial_tags: Tags,
         received_at: i64,
     ) -> Result<(ItemId, MembershipUid)> {
-        let set = account_id_to_setid(account);
-        // Initial user keywords applied to the new membership atomically
-        // with the create (mds `insert_membership` writes the tags column
-        // in the same tx). Empty for the common no-user-keyword create.
-        let initial_tags: Vec<String> = initial_tags.into();
-        let to_json = serde_json::to_string(&envelope.to)
-            .map_err(|e| anyhow!("serialize envelope.to: {e}"))?;
-        let cc_json = serde_json::to_string(&envelope.cc)
-            .map_err(|e| anyhow!("serialize envelope.cc: {e}"))?;
-        let bcc_json = serde_json::to_string(&envelope.bcc)
-            .map_err(|e| anyhow!("serialize envelope.bcc: {e}"))?;
-        let reply_to_json = serde_json::to_string(&envelope.reply_to)
-            .map_err(|e| anyhow!("serialize envelope.reply_to: {e}"))?;
-        let in_reply_to: Vec<String> = in_reply_to.to_vec();
+        self.append_emails(account, mailbox, vec![EmailImport {
+            blob, envelope, in_reply_to: in_reply_to.to_vec(), flags: initial_keywords,
+            tags: initial_tags, received_at,
+        }])?.pop().ok_or_else(|| anyhow!("empty append result"))
+    }
 
+    fn append_emails(&self, account: AccountId, mailbox: ContainerId, messages: Vec<EmailImport>) -> Result<Vec<(ItemId, MembershipUid)>> {        let set = account_id_to_setid(account);
         let mds = &self.mds;
         let result = mds.with_set_tx(&set, |tx| {
+            let mut results = Vec::with_capacity(messages.len());
+            for message in &messages {
+                let blob = message.blob;
+                let envelope = &message.envelope;
+                let in_reply_to = &message.in_reply_to;
+                let initial_keywords = message.flags;
+                let initial_tags = &message.tags;
+                let received_at = message.received_at;        // Initial user keywords applied to the new membership atomically
+        // with the create (mds `insert_membership` writes the tags column
+        // in the same tx). Empty for the common no-user-keyword create.
+        let initial_tags: Vec<String> = initial_tags.clone().into();
+        let to_json = serde_json::to_string(&envelope.to)
+            .map_err(|e| mds::Error::Other(format!("serialize envelope.to: {e}")))?;
+        let cc_json = serde_json::to_string(&envelope.cc)
+            .map_err(|e| mds::Error::Other(format!("serialize envelope.cc: {e}")))?;
+        let bcc_json = serde_json::to_string(&envelope.bcc)
+            .map_err(|e| mds::Error::Other(format!("serialize envelope.bcc: {e}")))?;
+        let reply_to_json = serde_json::to_string(&envelope.reply_to)
+            .map_err(|e| mds::Error::Other(format!("serialize envelope.reply_to: {e}")))?;
+        let in_reply_to: Vec<String> = in_reply_to.to_vec();
+
+
             // `mds.blob_size` and `mds.blob_exists` (below) are pure
             // `fs::metadata` / `Path::exists` calls — they do **not**
             // re-enter the per-set `Mutex` that `with_set_tx` holds, so
@@ -3834,7 +3884,9 @@ impl MailStore for SqliteMailStore {
                 uid: placement.seq.0 as u64,
                 uid_validity,
             };
-            Ok((item_id, uid))
+            results.push((item_id, uid));
+            }
+            Ok(results)
         });
 
         match result {

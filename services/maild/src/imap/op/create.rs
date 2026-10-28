@@ -257,13 +257,10 @@ pub(super) fn validate_segment(seg: &str) -> Result<(), String> {
         return Err("empty mailbox path segment".to_string());
     }
     for b in seg.bytes() {
-        if !(0x20..=0x7e).contains(&b) {
+        if b < 0x20 || b == 0x7f {
             return Err(format!(
                 "non-ASCII or control byte 0x{b:02x} in mailbox name (UTF8=ACCEPT not advertised)"
             ));
-        }
-        if b == b'&' {
-            return Err("'&' is reserved as the IMAP4rev1 modified-UTF-7 introducer".to_string());
         }
     }
     if seg == UPLOAD_STAGING_NAME {

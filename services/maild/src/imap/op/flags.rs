@@ -68,8 +68,11 @@ pub fn parse_flag_token(tok: &str) -> Result<FlagToken, String> {
 pub fn parse_flag_list_inner(inner: &str) -> Result<(Flags, Tags), String> {
     let mut bits: u32 = 0;
     let mut tags = Tags::new();
-    for tok in inner.split_ascii_whitespace() {
-        match parse_flag_token(tok)? {
+    let mut rest = inner.trim_start();
+    while !rest.is_empty() {
+        let (tok, tail) = super::list::take_mailbox_token(rest)?;
+        rest = tail.trim_start();
+        match parse_flag_token(&tok)? {
             FlagToken::System(bit) => bits |= bit,
             FlagToken::User(name) => {
                 tags.insert(name);

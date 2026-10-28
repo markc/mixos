@@ -655,6 +655,14 @@ pub async fn handle(
     store: Arc<dyn MailStore>,
     mode: FetchMode,
 ) -> Vec<u8> {
+    handle_with_access(tag, args, account_id, container, store, mode, false).await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn handle_with_access(
+    tag: &str, args: &str, account_id: AccountId, container: ContainerId,
+    store: Arc<dyn MailStore>, mode: FetchMode, read_only: bool,
+) -> Vec<u8> {
     let req = match parse_args(args, mode) {
         Ok(r) => r,
         Err(e) => return tagged(tag, Status::Bad, None, &e).into_bytes(),
@@ -705,7 +713,7 @@ pub async fn handle(
     };
 
     let needs_body = req.atoms.iter().any(|a| a.needs_body());
-    let needs_seen = req.atoms.iter().any(|a| a.sets_seen());
+    let needs_seen = !read_only && req.atoms.iter().any(|a| a.sets_seen());
 
     let mut out: Vec<u8> = Vec::new();
     for r in &resolved {
@@ -744,6 +752,10 @@ pub async fn handle(
         } else {
             None
         };
+        if needs_body && body_bytes.is_none() {
+            out.extend_from_slice(tagged(tag, Status::No, Some("UNAVAILABLE"), "message unreadable").as_bytes());
+            return out;
+        }
 
         // Fail before changing flags or emitting a row when decoding fails.
         if req.atoms.iter().any(|a| matches!(a, FetchAtom::Binary { .. })) {
@@ -817,10 +829,14 @@ pub async fn handle(
             handle.clone()
         };
 
+        let mut atoms = req.atoms.clone();
+        if needs_seen && effective_handle.keywords != handle.keywords && !atoms.contains(&FetchAtom::Flags) {
+            atoms.push(FetchAtom::Flags);
+        }
         out.extend_from_slice(&render_fetch_row(
             r.msn,
             &effective_handle,
-            &req.atoms,
+            &atoms,
             body_bytes.as_deref(),
         ));
     }
@@ -1146,6 +1162,7 @@ const BODYSTRUCTURE_FALLBACK: &str =
 /// `offset_body` / `offset_end` indices index into `raw` and are
 /// used to compute `body-fld-octets` (encoded byte count) and
 /// `body-fld-lines` (LF count, for TEXT / MESSAGE/RFC822 only).
+#[cfg(test)]
 fn render_bodystructure(message: &mail_parser::Message<'_>, raw: &[u8]) -> String {
     let mut out = String::new();
     render_part(&mut out, message, 0, raw, true);

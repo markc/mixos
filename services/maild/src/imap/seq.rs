@@ -140,6 +140,9 @@ impl SeqSet {
     /// * Each `from:to` range has exactly one `:`. `1:2:3` is BAD.
     /// * A bare `:` or `:5` or `5:` is BAD.
     pub fn parse(input: &str) -> Result<Self, String> {
+        // Non-empty SEARCHRES values are expanded by the session. An
+        // unexpanded `$` denotes the empty saved result (RFC 5182).
+        if input == "$" { return Ok(Self { elements: Vec::new() }); }
         if input.is_empty() {
             return Err("sequence-set is empty".to_string());
         }

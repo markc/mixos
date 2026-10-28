@@ -141,7 +141,7 @@ pub fn parse_line(line: &[u8]) -> Result<Line> {
     // client expects to send NNN bytes of literal data on the next
     // line; Phase 1 has no command that should receive a literal.
     if has_unsupported_literal(line) {
-        return Err(anyhow!("literal not supported in this phase"));
+        return Err(anyhow!("unframed literal marker"));
     }
     let text = std::str::from_utf8(line).map_err(|_| anyhow!("non-UTF8 command line"))?;
 
@@ -392,7 +392,11 @@ where
                 return Err(io_to_err(e));
             }
             match read_line(reader).await {
-                Ok(_) => {}
+                Ok(tail) => {
+                    if matches!(strip_trailing_literal_marker(&tail), Ok(Some(_))) {
+                        return Err(ReadCommandError::FramingLost { line, reason: "refused command continues with another literal".into() });
+                    }
+                }
                 Err(ReadLineError::Eof) => return Err(ReadCommandError::Eof),
                 Err(ReadLineError::LineTooLong) => {
                     return Err(ReadCommandError::LineTooLong);
@@ -411,7 +415,8 @@ where
     }
 
     let multi = multi_literal(&line);
-    let max_literal = if multi {
+    let is_append = line.split(|b| *b == b' ').nth(1).is_some_and(|s| s.eq_ignore_ascii_case(b"APPEND"));
+    let max_literal = if multi && !is_append {
         max_literal.min(MAX_MULTI_LITERAL_BYTES)
     } else {
         max_literal
@@ -616,6 +621,15 @@ fn strip_trailing_literal_marker(line: &[u8]) -> Result<Option<(Vec<u8>, Literal
         return Ok(None);
     }
     let inner = &line[open + 1..close];
+    // Braces inside quoted strings are data, including a mailbox named "{1}".
+    let mut quoted = false;
+    let mut escaped = false;
+    for b in &line[..open] {
+        if escaped { escaped = false; }
+        else if *b == b'\\' && quoted { escaped = true; }
+        else if *b == b'"' { quoted = !quoted; }
+    }
+    if quoted { return Ok(None); }
     if inner.is_empty() {
         return Err("empty literal marker `{}`".to_string());
     }
@@ -636,7 +650,7 @@ fn strip_trailing_literal_marker(line: &[u8]) -> Result<Option<(Vec<u8>, Literal
         .map_err(|_| "literal size overflows u64".to_string())?;
     // Trim the marker plus a single whitespace gap so `parse_line`
     // sees a clean tail (e.g. `a001 APPEND INBOX {123}` → `a001 APPEND INBOX`).
-    let mut prefix_end = open;
+    let mut prefix_end = if open > 0 && line[open-1] == b'~' { open - 1 } else { open };
     while prefix_end > 0 && line[prefix_end - 1] == b' ' {
         prefix_end -= 1;
     }

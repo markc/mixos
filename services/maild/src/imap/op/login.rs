@@ -30,46 +30,9 @@ pub fn parse_args(args: &str) -> Result<(String, String)> {
 }
 
 fn take_astring(cursor: &mut &str) -> Result<String> {
-    let bytes = cursor.as_bytes();
-    if bytes.is_empty() {
-        return Err(anyhow!("missing argument"));
-    }
-    if bytes[0] == b'"' {
-        // Quoted string.
-        let mut out = String::new();
-        let mut i = 1;
-        while i < bytes.len() {
-            match bytes[i] {
-                b'"' => {
-                    *cursor = std::str::from_utf8(&bytes[i + 1..])
-                        .map_err(|_| anyhow!("non-UTF8 LOGIN argument"))?;
-                    return Ok(out);
-                }
-                b'\\' if i + 1 < bytes.len() => {
-                    out.push(bytes[i + 1] as char);
-                    i += 2;
-                }
-                b if b < 0x20 => return Err(anyhow!("control char in quoted string")),
-                _ => {
-                    out.push(bytes[i] as char);
-                    i += 1;
-                }
-            }
-        }
-        Err(anyhow!("unterminated quoted string"))
-    } else {
-        // Atom — read until whitespace.
-        let end = bytes
-            .iter()
-            .position(|b| matches!(*b, b' ' | b'\t'))
-            .unwrap_or(bytes.len());
-        let word = std::str::from_utf8(&bytes[..end])
-            .map_err(|_| anyhow!("non-UTF8 LOGIN argument"))?
-            .to_string();
-        *cursor =
-            std::str::from_utf8(&bytes[end..]).map_err(|_| anyhow!("non-UTF8 LOGIN argument"))?;
-        Ok(word)
-    }
+    let (value, rest) = super::list::take_mailbox_token(cursor).map_err(|e| anyhow!(e))?;
+    *cursor = rest;
+    Ok(value)
 }
 
 #[cfg(test)]

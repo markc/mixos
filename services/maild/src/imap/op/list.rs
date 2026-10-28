@@ -32,7 +32,7 @@
 
 use std::sync::Arc;
 
-use crate::imap::mailbox_name::{encode_all, matches_pattern, render_mailbox_line};
+use crate::imap::mailbox_name::{encode_all, matches_pattern, format_attrs, quote_mailbox};
 use crate::imap::response::{Status, tagged};
 use crate::mailstore::MailStore;
 
@@ -111,7 +111,7 @@ pub fn take_mailbox_token(s: &str) -> Result<(String, &str), String> {
         return Err("missing argument".to_string());
     }
     if bytes[0] == b'"' {
-        let mut out = String::new();
+        let mut out = Vec::new();
         let mut i = 1;
         while i < bytes.len() {
             let c = bytes[i];
@@ -124,12 +124,13 @@ pub fn take_mailbox_token(s: &str) -> Result<(String, &str), String> {
                 if nc != b'"' && nc != b'\\' {
                     return Err("invalid quoted-string escape".to_string());
                 }
-                out.push(nc as char);
+                out.push(nc);
                 i += 1;
             } else if c == b'"' {
-                return Ok((out, &s[i + 1..]));
+                return String::from_utf8(out).map(|out| (out, &s[i + 1..])).map_err(|_| "invalid UTF-8 string".into());
             } else {
-                out.push(c as char);
+                if c == 0 || c == b'\r' || c == b'\n' { return Err("control byte in mailbox string".into()); }
+                out.push(c);
                 i += 1;
             }
         }
@@ -148,7 +149,93 @@ pub fn take_mailbox_token(s: &str) -> Result<(String, &str), String> {
 /// might otherwise mis-frame their next command. Wildcards `*` and
 /// `%` are printable so they fall through the guard.
 pub fn pattern_is_ascii_clean(pattern: &str) -> bool {
-    pattern.bytes().all(|b| (0x20..=0x7e).contains(&b))
+    pattern.chars().all(|c| !c.is_control())
+}
+
+/// Resolve the reference name in our single personal namespace. A leading
+/// delimiter addresses the root; otherwise the pattern follows the reference.
+pub fn canonical_pattern(reference: &str, pattern: &str) -> String {
+    if let Some(root) = pattern.strip_prefix('/') { root.to_string() }
+    else { format!("{reference}{pattern}") }
+}
+
+#[derive(Debug)]
+struct ExtendedArgs {
+    reference: String,
+    patterns: Vec<String>,
+    selection: Vec<String>,
+    returns: Vec<String>,
+    status: Option<String>,
+}
+
+fn option_list(s: &str) -> Result<(&str, &str), String> {
+    let s = s.strip_prefix('(').ok_or("LIST options require parentheses")?;
+    let end = s.find(')').ok_or("LIST options missing closing paren")?;
+    Ok((&s[..end], s[end+1..].trim_start()))
+}
+
+fn parse_extended(args: &str) -> Result<ExtendedArgs, String> {
+    let mut rest = args.trim_start();
+    let mut selection = Vec::new();
+    if rest.starts_with('(') {
+        let (body, tail) = option_list(rest)?;
+        for option in body.split_ascii_whitespace() {
+            let option = option.to_ascii_uppercase();
+            if !["SUBSCRIBED", "REMOTE", "RECURSIVEMATCH", "SPECIAL-USE"].contains(&option.as_str()) { return Err(format!("unknown LIST selection option {option}")); }
+            selection.push(option);
+        }
+        rest = tail;
+    }
+    if selection.iter().any(|s| s == "RECURSIVEMATCH") && !selection.iter().any(|s| s == "SUBSCRIBED" || s == "SPECIAL-USE") {
+        return Err("RECURSIVEMATCH requires a substantive selection option".into());
+    }
+    let (reference, tail) = take_mailbox_token(rest)?;
+    rest = tail.trim_start();
+    let mut patterns = Vec::new();
+    if rest.starts_with('(') {
+        rest = &rest[1..];
+        loop {
+            rest = rest.trim_start();
+            if let Some(tail) = rest.strip_prefix(')') { rest = tail.trim_start(); break; }
+            let (pattern, tail) = if rest.starts_with('"') { take_mailbox_token(rest)? } else {
+                let end = rest.find(|c: char| c.is_ascii_whitespace() || c == ')').unwrap_or(rest.len());
+                if end == 0 || rest.is_empty() { return Err("LIST missing closing pattern paren".into()); }
+                (rest[..end].to_string(), &rest[end..])
+            };
+            patterns.push(pattern); rest = tail;
+        }
+        if patterns.is_empty() { return Err("LIST requires mailbox patterns".into()); }
+    } else {
+        let (pattern, tail) = take_mailbox_token(rest)?;
+        patterns.push(pattern); rest = tail.trim_start();
+    }
+    let mut returns = Vec::new();
+    let mut status = None;
+    if !rest.is_empty() {
+        let (keyword, tail) = rest.split_once(' ').ok_or("LIST expected RETURN options")?;
+        if !keyword.eq_ignore_ascii_case("RETURN") { return Err("LIST expected RETURN options".into()); }
+        rest = tail.trim_start().strip_prefix('(').ok_or("LIST RETURN requires parentheses")?;
+        loop {
+            rest = rest.trim_start();
+            if let Some(tail) = rest.strip_prefix(')') { rest = tail.trim(); break; }
+            let end = rest.find(|c: char| c.is_ascii_whitespace() || c == ')').unwrap_or(rest.len());
+            if end == 0 { return Err("LIST RETURN missing closing paren".into()); }
+            let option = rest[..end].to_ascii_uppercase();
+            rest = rest[end..].trim_start();
+            match option.as_str() {
+                "SUBSCRIBED" | "CHILDREN" | "SPECIAL-USE" => returns.push(option),
+                "STATUS" => {
+                    let (items, tail) = option_list(rest)?;
+                    super::status::parse_args(&format!("INBOX ({items})"))?;
+                    status = Some(items.to_string()); rest = tail;
+                }
+                _ => return Err(format!("unknown LIST return option {option}")),
+            }
+        }
+    }
+    if !rest.is_empty() { return Err("LIST trailing arguments".into()); }
+    if !pattern_is_ascii_clean(&reference) || patterns.iter().any(|p| !pattern_is_ascii_clean(p)) { return Err("control bytes in LIST name".into()); }
+    Ok(ExtendedArgs { reference, patterns, selection, returns, status })
 }
 
 /// Execute LIST for an authenticated session.
@@ -163,34 +250,23 @@ pub async fn handle(
     account_id: AccountId,
     store: Arc<dyn MailStore>,
 ) -> String {
-    let parsed = match parse_args(args) {
+    handle_with_limit(tag, args, account_id, store, crate::imap::config::ImapConfig::default().max_literal_bytes).await
+}
+
+pub async fn handle_with_limit(tag: &str, args: &str, account_id: AccountId, store: Arc<dyn MailStore>, append_limit: u64) -> String {
+    let parsed = match parse_extended(args) {
         Ok(p) => p,
         Err(e) => return tagged(tag, Status::Bad, None, &e),
     };
-    if !parsed.reference.is_empty() {
-        return tagged(
-            tag,
-            Status::Bad,
-            None,
-            "non-empty LIST reference not supported in this phase",
-        );
-    }
-    if !pattern_is_ascii_clean(&parsed.pattern) {
-        return tagged(
-            tag,
-            Status::Bad,
-            None,
-            "non-ASCII or control bytes in LIST pattern (UTF8=ACCEPT not advertised)",
-        );
-    }
     // Hierarchy-delimiter probe: `LIST "" ""` per RFC 9051 §6.3.9
     // returns one row carrying the root delimiter and `\Noselect`.
-    if parsed.pattern.is_empty() {
+    if parsed.patterns.len() == 1 && parsed.patterns[0].is_empty() {
         let mut out = "* LIST (\\Noselect) \"/\" \"\"\r\n".to_string();
         out.push_str(&tagged(tag, Status::Ok, None, "LIST completed"));
         return out;
     }
-    let records = match tokio::task::spawn_blocking(move || store.list_mailboxes(account_id)).await
+    let list_store = store.clone();
+    let records = match tokio::task::spawn_blocking(move || list_store.list_mailboxes(account_id)).await
     {
         Ok(Ok(r)) => r,
         Ok(Err(e)) => {
@@ -212,9 +288,25 @@ pub async fn handle(
         );
     }
     let mut out = String::new();
+    let selected = |enc: &crate::imap::mailbox_name::EncodedMailbox| {
+        (!parsed.selection.iter().any(|s| s == "SUBSCRIBED") || enc.is_subscribed)
+        && (!parsed.selection.iter().any(|s| s == "SPECIAL-USE") || enc.role.is_some())
+    };
+    let recursive = parsed.selection.iter().any(|s| s == "RECURSIVEMATCH");
     for enc in &set.mailboxes {
-        if matches_pattern(&enc.wire_name, &parsed.pattern) {
-            out.push_str(&render_mailbox_line("LIST", enc));
+        if !parsed.patterns.iter().any(|p| matches_pattern(&enc.wire_name, &canonical_pattern(&parsed.reference, p))) { continue; }
+        let child_match = recursive && set.mailboxes.iter().any(|child| child.wire_name.starts_with(&format!("{}/", enc.wire_name)) && selected(child));
+        if !selected(enc) && !child_match { continue; }
+        let mut attrs = format_attrs(enc);
+        if (parsed.returns.iter().any(|s| s == "SUBSCRIBED") || parsed.selection.iter().any(|s| s == "SUBSCRIBED")) && enc.is_subscribed { attrs.push_str(" \\Subscribed"); }
+        // With RECURSIVEMATCH, CHILDINFO describes the descendants that
+        // satisfied the selection even when the parent itself did not.
+        let childinfo = if child_match { format!(" (CHILDINFO ({}))", parsed.selection.iter().filter(|s| s.as_str() == "SUBSCRIBED" || s.as_str() == "SPECIAL-USE").map(|s| quote_mailbox(s)).collect::<Vec<_>>().join(" ")) } else { String::new() };
+        out.push_str(&format!("* LIST ({attrs}) \"/\" {}{childinfo}\r\n", quote_mailbox(&enc.wire_name)));
+        if let Some(items) = &parsed.status {
+            let status = super::status::handle_with_limit(tag, &format!("{} ({items})", quote_mailbox(&enc.wire_name)), account_id, store.clone(), append_limit).await;
+            let Some(line) = status.lines().find(|l| l.starts_with("* STATUS ")) else { return out + &tagged(tag, Status::No, Some("UNAVAILABLE"), "LIST STATUS unavailable"); };
+            out.push_str(line); out.push_str("\r\n");
         }
     }
     out.push_str(&tagged(tag, Status::Ok, None, "LIST completed"));
