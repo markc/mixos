@@ -179,72 +179,71 @@ fn toolbar_contents(
     strings: &Strings,
     events: &mut Vec<UiEvent>,
 ) {
-        for tab in Tab::ALL {
-            if toolkit::selectable(ui, engine.ui.tab == tab, label(tab.name())).clicked() {
-                events.push(UiEvent::Tab(tab));
+    for tab in Tab::ALL {
+        if toolkit::selectable(ui, engine.ui.tab == tab, label(tab.name())).clicked() {
+            events.push(UiEvent::Tab(tab));
+        }
+    }
+    bars::divider(ui, ui.available_height().min(18.0));
+    ui.add(icons::image_of(
+        ui.ctx(),
+        Icon::Server,
+        ICON,
+        ui.visuals().weak_text_color(),
+    ));
+    let mut options = vec![label("this-node")];
+    options.extend(engine.peers.iter().cloned());
+    if let Some(node) = &engine.ui.node
+        && !engine.peers.contains(node)
+    {
+        options.push(node.clone());
+    }
+    let mut chosen = engine
+        .ui
+        .node
+        .as_ref()
+        .and_then(|n| options.iter().skip(1).position(|o| o == n).map(|i| i + 1))
+        .unwrap_or(0);
+    let before = chosen;
+    let response = combo::show(ui, "node", &mut chosen, &options, Some(150.0));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, true, label("node")));
+    if chosen != before {
+        events.push(UiEvent::Node((chosen > 0).then(|| options[chosen].clone())));
+    }
+    if engine.ui.paused {
+        ui.label(RichText::new(label("paused")).color(ui.visuals().warn_fg_color));
+    }
+    if engine.ui.tab != Tab::Processes {
+        return;
+    }
+    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+        if let Some(command) = commands.get("process.end") {
+            let enabled = (command.enabled)(engine);
+            let mut tip = tooltip::for_command(ui.ctx(), command, strings);
+            if engine.ui.node.is_some() {
+                tip = label("not-local");
+            }
+            let response = ui
+                .add_enabled(enabled, PushButton::secondary(strings.get(command.label)))
+                .on_hover_text(tip.clone())
+                .on_disabled_hover_text(tip);
+            if response.clicked() {
+                events.push(UiEvent::Command(command.id, Origin::Ui));
             }
         }
-        bars::divider(ui, ui.available_height().min(18.0));
-        ui.add(icons::image_of(
-            ui.ctx(),
-            Icon::Server,
-            ICON,
-            ui.visuals().weak_text_color(),
-        ));
-        let mut options = vec![label("this-node")];
-        options.extend(engine.peers.iter().cloned());
-        if let Some(node) = &engine.ui.node
-            && !engine.peers.contains(node)
-        {
-            options.push(node.clone());
+        if toolkit::selectable(ui, engine.ui.tree, label("tree")).clicked() {
+            events.push(UiEvent::Command("view.tree", Origin::Ui));
         }
-        let mut chosen = engine
-            .ui
-            .node
-            .as_ref()
-            .and_then(|n| options.iter().skip(1).position(|o| o == n).map(|i| i + 1))
-            .unwrap_or(0);
-        let before = chosen;
-        let response = combo::show(ui, "node", &mut chosen, &options, Some(150.0));
-        response
-            .widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, true, label("node")));
-        if chosen != before {
-            events.push(UiEvent::Node((chosen > 0).then(|| options[chosen].clone())));
+        let mut filter = engine.ui.filter.clone();
+        let search = field::search(ui, &mut filter, &label("search"), 220.0);
+        if search.changed() {
+            events.push(UiEvent::Filter(filter));
         }
-        if engine.ui.paused {
-            ui.label(RichText::new(label("paused")).color(ui.visuals().warn_fg_color));
+        if engine.ui.focus_filter {
+            search.request_focus();
+            events.push(UiEvent::FilterFocused);
         }
-        if engine.ui.tab != Tab::Processes {
-            return;
-        }
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if let Some(command) = commands.get("process.end") {
-                let enabled = (command.enabled)(engine);
-                let mut tip = tooltip::for_command(ui.ctx(), command, strings);
-                if engine.ui.node.is_some() {
-                    tip = label("not-local");
-                }
-                let response = ui
-                    .add_enabled(enabled, PushButton::secondary(strings.get(command.label)))
-                    .on_hover_text(tip.clone())
-                    .on_disabled_hover_text(tip);
-                if response.clicked() {
-                    events.push(UiEvent::Command(command.id, Origin::Ui));
-                }
-            }
-            if toolkit::selectable(ui, engine.ui.tree, label("tree")).clicked() {
-                events.push(UiEvent::Command("view.tree", Origin::Ui));
-            }
-            let mut filter = engine.ui.filter.clone();
-            let search = field::search(ui, &mut filter, &label("search"), 220.0);
-            if search.changed() {
-                events.push(UiEvent::Filter(filter));
-            }
-            if engine.ui.focus_filter {
-                search.request_focus();
-                events.push(UiEvent::FilterFocused);
-            }
-        });
+    });
 }
 
 fn right(ui: &mut Ui, text: impl Into<RichText>) {
