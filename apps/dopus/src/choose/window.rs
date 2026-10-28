@@ -483,116 +483,111 @@ impl Window {
                             options = options.min_scrolled_height(0.0);
                         }
                         options.show(ui, |ui| {
-                                if self.request.mode == Mode::Save {
-                                    ui.horizontal(|ui| {
-                                        ui.label(label("chooser-name"));
-                                        let field = ui
-                                            .add(
-                                                egui::TextEdit::singleline(&mut self.name)
-                                                    .desired_width(f32::INFINITY),
-                                            )
-                                            .accessible_name(label("chooser-name"));
-                                        if self.focus_name && self.ready && !self.ending {
-                                            field.request_focus();
-                                            if let Some(mut state) =
-                                                egui::TextEdit::load_state(&ctx, field.id)
-                                            {
-                                                let end = self
-                                                    .name
-                                                    .rfind('.')
-                                                    .filter(|i| *i > 0)
-                                                    .map(|i| self.name[..i].chars().count())
-                                                    .unwrap_or_else(|| self.name.chars().count());
-                                                state.cursor.set_char_range(Some(
-                                                    egui::text::CCursorRange::two(
-                                                        egui::text::CCursor::new(0),
-                                                        egui::text::CCursor::new(end),
-                                                    ),
-                                                ));
-                                                state.store(&ctx, field.id);
-                                            }
-                                            self.focus_name = false;
-                                        }
-                                        if field.lost_focus()
-                                            && ui.input(|i| i.key_pressed(egui::Key::Enter))
-                                        {
-                                            clicked = Some("chooser.accept");
-                                        }
-                                    });
-                                }
-                                if self.request.mode == Mode::SaveFiles {
-                                    ui.label(label_with(
-                                        "chooser-file-names",
-                                        &[(
-                                            "names",
-                                            &self
-                                                .request
-                                                .files
-                                                .iter()
-                                                .map(|n| {
-                                                    dopus_core::sanitise_display_text(
-                                                        &String::from_utf8_lossy(n),
-                                                    )
-                                                })
-                                                .collect::<Vec<_>>()
-                                                .join(", "),
-                                        )],
-                                    ));
-                                }
-                                if self.request.filter_menu {
-                                    let mut current = self.request.current_filter.clone();
-                                    egui::ComboBox::from_id_salt("files-filter")
-                                        .selected_text(
-                                            current
-                                                .as_ref()
-                                                .map(|f| dopus_core::sanitise_display_text(&f.name))
-                                                .unwrap_or_default(),
+                            if self.request.mode == Mode::Save {
+                                ui.horizontal(|ui| {
+                                    ui.label(label("chooser-name"));
+                                    let field = ui
+                                        .add(
+                                            egui::TextEdit::singleline(&mut self.name)
+                                                .desired_width(f32::INFINITY),
                                         )
-                                        .show_ui(ui, |ui| {
-                                            for filter in &self.request.filters {
-                                                if toolkit::selectable(
-                                                    ui,
-                                                    current.as_ref() == Some(filter),
-                                                    dopus_core::sanitise_display_text(&filter.name),
-                                                )
-                                                .clicked()
-                                                {
-                                                    current = Some(filter.clone());
-                                                }
-                                            }
-                                        })
-                                        .response
-                                        .accessible_name(label("chooser-filter"));
-                                    if current != self.request.current_filter {
-                                        self.request.current_filter = current.clone();
-                                        self.app
-                                            .core
-                                            .set_chooser_filter(current, self.request.directory);
-                                    }
-                                }
-                                for choice in &self.request.choices {
-                                    let value =
-                                        self.choices.get_mut(&choice.id).expect("default choice");
-                                    if choice.options.is_empty() {
-                                        let mut checked = value == "true";
-                                        if ui
-                                            .checkbox(
-                                                &mut checked,
-                                                dopus_core::sanitise_display_text(&choice.label),
-                                            )
-                                            .changed()
+                                        .accessible_name(label("chooser-name"));
+                                    if self.focus_name && self.ready && !self.ending {
+                                        field.request_focus();
+                                        if let Some(mut state) =
+                                            egui::TextEdit::load_state(&ctx, field.id)
                                         {
-                                            *value = checked.to_string();
-                                        }
-                                    } else {
-                                        ui.horizontal(|ui| {
-                                            ui.label(dopus_core::sanitise_display_text(
-                                                &choice.label,
+                                            let end = self
+                                                .name
+                                                .rfind('.')
+                                                .filter(|i| *i > 0)
+                                                .map(|i| self.name[..i].chars().count())
+                                                .unwrap_or_else(|| self.name.chars().count());
+                                            state.cursor.set_char_range(Some(
+                                                egui::text::CCursorRange::two(
+                                                    egui::text::CCursor::new(0),
+                                                    egui::text::CCursor::new(end),
+                                                ),
                                             ));
-                                            egui::ComboBox::from_id_salt((
-                                                "files-choice",
-                                                &choice.id,
-                                            ))
+                                            state.store(&ctx, field.id);
+                                        }
+                                        self.focus_name = false;
+                                    }
+                                    if field.lost_focus()
+                                        && ui.input(|i| i.key_pressed(egui::Key::Enter))
+                                    {
+                                        clicked = Some("chooser.accept");
+                                    }
+                                });
+                            }
+                            if self.request.mode == Mode::SaveFiles {
+                                ui.label(label_with(
+                                    "chooser-file-names",
+                                    &[(
+                                        "names",
+                                        &self
+                                            .request
+                                            .files
+                                            .iter()
+                                            .map(|n| {
+                                                dopus_core::sanitise_display_text(
+                                                    &String::from_utf8_lossy(n),
+                                                )
+                                            })
+                                            .collect::<Vec<_>>()
+                                            .join(", "),
+                                    )],
+                                ));
+                            }
+                            if self.request.filter_menu {
+                                let mut current = self.request.current_filter.clone();
+                                egui::ComboBox::from_id_salt("files-filter")
+                                    .selected_text(
+                                        current
+                                            .as_ref()
+                                            .map(|f| dopus_core::sanitise_display_text(&f.name))
+                                            .unwrap_or_default(),
+                                    )
+                                    .show_ui(ui, |ui| {
+                                        for filter in &self.request.filters {
+                                            if toolkit::selectable(
+                                                ui,
+                                                current.as_ref() == Some(filter),
+                                                dopus_core::sanitise_display_text(&filter.name),
+                                            )
+                                            .clicked()
+                                            {
+                                                current = Some(filter.clone());
+                                            }
+                                        }
+                                    })
+                                    .response
+                                    .accessible_name(label("chooser-filter"));
+                                if current != self.request.current_filter {
+                                    self.request.current_filter = current.clone();
+                                    self.app
+                                        .core
+                                        .set_chooser_filter(current, self.request.directory);
+                                }
+                            }
+                            for choice in &self.request.choices {
+                                let value =
+                                    self.choices.get_mut(&choice.id).expect("default choice");
+                                if choice.options.is_empty() {
+                                    let mut checked = value == "true";
+                                    if ui
+                                        .checkbox(
+                                            &mut checked,
+                                            dopus_core::sanitise_display_text(&choice.label),
+                                        )
+                                        .changed()
+                                    {
+                                        *value = checked.to_string();
+                                    }
+                                } else {
+                                    ui.horizontal(|ui| {
+                                        ui.label(dopus_core::sanitise_display_text(&choice.label));
+                                        egui::ComboBox::from_id_salt(("files-choice", &choice.id))
                                             .selected_text(
                                                 choice
                                                     .options
@@ -622,13 +617,13 @@ impl Window {
                                             .accessible_name(dopus_core::sanitise_display_text(
                                                 &choice.label,
                                             ));
-                                        });
-                                    }
+                                    });
                                 }
-                                if let Some(message) = &self.message {
-                                    ui.label(message);
-                                }
-                            });
+                            }
+                            if let Some(message) = &self.message {
+                                ui.label(message);
+                            }
+                        });
                     });
                 });
         }

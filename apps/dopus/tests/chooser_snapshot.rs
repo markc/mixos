@@ -125,7 +125,8 @@ fn snapshot_at(kind: &str, mode: Mode, minimum: bool) {
             assert!(bounds.contains_rect(harness.get_by_label("Cancel").rect()));
         }
         if kind == "save" {
-            assert!(bounds.contains_rect(harness.get_by_label("File name").rect()));
+            let name = harness.get_by_role_and_label(egui::accesskit::Role::TextInput, "File name");
+            assert!(bounds.contains_rect(name.rect()));
         }
     }
     harness.snapshot(format!(
