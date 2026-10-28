@@ -43,6 +43,7 @@ use crate::editor::{EditorMsg, LayoutReport};
 use crate::session::{RECENT_MAX, Session, SessionTab};
 
 mod external;
+mod mail;
 mod ui;
 
 pub use ui::{MatchQuery, Prompt, RecoveredRow};
@@ -59,11 +60,15 @@ pub struct Tab {
     pub path: Option<String>,
     /// Detected once after Save As, until fresh metadata arrives.
     saved_language: Option<&'static str>,
+    pub mail: Option<crate::mail::MailState>,
+    pub document_notice: Option<String>,
+    classified: bool,
 }
 
 impl Tab {
     /// The saved detection during Save As, then the mirror's fresh metadata.
     pub fn language(&self) -> &str {
+        if self.mail.is_some() { return "markdown"; }
         let Some(m) = &self.mirror else {
             return "text";
         };
@@ -88,6 +93,8 @@ pub struct BusCommand {
 pub enum Effect {
     /// Post a window message on the Bus lane, falling back to the status line.
     Notify { text: String, level: Level },
+    SaveMail { tab: TabId, path: String, text: String, expected: Option<String>, send: bool, command: Option<(u64, String)> },
+    SendMail { tab: TabId, path: String, command: Option<(u64, String)> },
     /// Send a request; `req` correlates the eventual `Incoming::Reply`.
     Send { req: u64, out: Outgoing },
     /// Answer a `ced.*` Bus command.
@@ -956,6 +963,9 @@ impl Controller {
             highlight,
             diagnostics: Diagnostics::default(),
             saved_language: None,
+            mail: None,
+            document_notice: None,
+            classified: false,
             path,
         });
         self.x.insert(id, TabX::default());
@@ -1665,7 +1675,7 @@ impl Controller {
             }
         };
         if let Some(t) = self.tab_mut(tab) {
-            t.path.clone_from(&open.path);
+            if t.mail.is_none() { t.path.clone_from(&open.path); }
             t.saved_language = None;
         }
         if let Some(x) = self.x.get_mut(&tab) {
@@ -1681,7 +1691,7 @@ impl Controller {
             self.recent.truncate(RECENT_MAX);
         }
         self.drive(tab, step, fx);
-        self.send_saved(tab, fx);
+        if self.tab(tab).is_some_and(|t| t.mail.is_none()) { self.send_saved(tab, fx); }
         self.check_opens(fx);
         self.session_changed(fx);
     }
@@ -1836,7 +1846,7 @@ impl Controller {
         };
         let mut resynced = false;
         if let Some(m) = &t.mirror {
-            if m.meta().path != t.path {
+            if t.mail.is_none() && m.meta().path != t.path {
                 let mut first = String::new();
                 if let Some(range) = m.text().line_range(1) {
                     m.text().read(range, &mut first);
@@ -1858,6 +1868,7 @@ impl Controller {
             }
         }
         let is_mix = t.highlight.is_mix();
+        if self.detect_document(tab, fx) { return; }
         if !step.deltas.is_empty() {
             self.after_deltas(tab, &step.deltas, is_mix, fx);
         }
@@ -2048,6 +2059,7 @@ impl Controller {
         let Some(i) = self.tabs.iter().position(|t| t.id == tab) else {
             return Err(format!("no tab {tab}"));
         };
+        if self.tabs[i].mail.as_ref().is_some_and(|mail| mail.sending || mail.saving) { return Err("the mail document is busy".into()); }
         let cfg = self.edit_cfg(&self.tabs[i]);
         let t = &mut self.tabs[i];
         let Some(m) = t.mirror.as_mut() else {
@@ -2102,6 +2114,13 @@ impl Controller {
         intent: Intent,
         fx: &mut Vec<Effect>,
     ) -> Result<(), String> {
+        if self.tab(tab).is_some_and(|t| t.mail.is_some()) {
+            match &op {
+                ServerOp::Save { path, .. } => return self.save_mail(tab, path.clone(), false, fx),
+                ServerOp::Reload { .. } => return Err("close and reopen this mail document to reload it".into()),
+                _ => {}
+            }
+        }
         let Some(m) = self
             .tabs
             .iter_mut()
@@ -2267,6 +2286,11 @@ impl Controller {
                 self.active = Some(id);
                 Ok(Some(json!({"tab": id})))
             }
+            ActionId::FileSend => {
+                self.save_mail(need(tab)?, None, true, fx).map_err(conflict)?;
+                Ok(None)
+            }
+            ActionId::MailHeaders => Err((code::INVALID_ARGUMENT, "mail.headers needs {headers}".into())),
             ActionId::FileSave => {
                 let t = need(tab)?;
                 self.server_op(
@@ -2286,7 +2310,7 @@ impl Controller {
                     let dirty = self
                         .tab(t)
                         .and_then(|t| t.mirror.as_ref())
-                        .is_some_and(|m| m.meta().dirty && m.meta().path.is_some());
+                        .is_some_and(|m| m.meta().dirty && m.meta().path.is_some()) || self.tab(t).is_some_and(|t| t.mail.is_some() && t.dirty());
                     if dirty {
                         let _ = self.server_op(
                             t,
@@ -2322,6 +2346,15 @@ impl Controller {
             | ActionId::EditUndoAny
             | ActionId::EditUndoOther => {
                 let t = need(tab)?;
+                if let Some(mail) = self.tab_mut(t).and_then(|t| t.mail.as_mut()) {
+                    if mail.sending || mail.saving { return Err((code::CONFLICT, "the mail document is busy".into())); }
+                    let entry = if action == ActionId::EditRedo { mail.redo.pop() } else { mail.undo.pop() };
+                    if let Some(headers) = entry {
+                        let old = std::mem::replace(&mut mail.headers, headers);
+                        if action == ActionId::EditRedo { mail.undo.push(old); } else { mail.redo.push(old); }
+                        return Ok(None);
+                    }
+                }
                 let lane = match action {
                     ActionId::EditUndoAny => LaneArg::Any,
                     ActionId::EditUndoOther => {
@@ -2443,6 +2476,13 @@ impl Controller {
         intent: Intent,
         fx: &mut Vec<Effect>,
     ) {
+        let is_mail = self.tab(tab).is_some_and(|t| t.mail.is_some());
+        if is_mail && !force && self.tab(tab).is_some_and(Tab::dirty) {
+            fx.push(Effect::Prompt(Prompt::CloseDirty { tab, intent }));
+            if let Some((id, _)) = cmd { fx.push(Effect::Respond { id, rc: 10, body: refusal(code::CONFLICT, "mail document has unsaved changes", None) }); }
+            return;
+        }
+        let force = force || is_mail;
         let buffer = self
             .tab(tab)
             .and_then(|t| t.mirror.as_ref())
@@ -2737,6 +2777,7 @@ impl Controller {
                     action,
                     ActionId::FileSave
                         | ActionId::FileSaveAs
+                        | ActionId::FileSend
                         | ActionId::FileReload
                         | ActionId::FileClose
                         | ActionId::EditUndo
@@ -2780,12 +2821,12 @@ impl Controller {
                                 .map(str::to_string)
                                 .collect(),
                         },
-                        enabled: self.action_enabled.get(&a).copied().unwrap_or(!matches!(
+                        enabled: if a == ActionId::FileSend { self.active.is_some_and(|tab| self.can_send(tab)) } else { self.action_enabled.get(&a).copied().unwrap_or(!matches!(
                             a,
                             ActionId::ViewMarkdownSource
                                 | ActionId::ViewMarkdownSplit
                                 | ActionId::ViewMarkdownPreview
-                        )),
+                        )) },
                     })
                     .collect();
                 reply(fx, ok_body(&commands::ActionsReply { actions }));
@@ -2998,7 +3039,7 @@ impl Controller {
             language: t.language().into(),
             preview: self.view_hint(t.id, "preview").unwrap_or("source").into(),
             rev: m.map_or(0, Mirror::rev),
-            dirty: m.is_some_and(|m| m.meta().dirty),
+            dirty: t.dirty(),
             disk: m.map_or_else(|| "none".into(), |m| disk_str(m.meta().disk)),
             pending: m.map_or(0, Mirror::pending),
             conflicts: m.map_or(0, |m| m.conflicts().len()),

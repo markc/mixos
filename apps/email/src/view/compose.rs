@@ -202,9 +202,7 @@ fn recipients(
         });
     }
     let mut buffer = compose.recipients(field).to_owned();
-    let response = ui
-        .add(field::text_edit(&mut buffer, "", width).id(id))
-        .labelled_by(label);
+    let response = toolkit::header_form::text(ui, id, label, &mut buffer, width);
     if response.changed() {
         events.push(UiEvent::ComposeField(field, buffer));
     }
@@ -293,38 +291,7 @@ fn row_button(field: ComposeField) -> (toolkit::Icon, &'static str) {
     }
 }
 
-/// One form row as Thunderbird lays it out: the label outside the field,
-/// right-aligned in a column `column` wide, then `add` with the rest of the
-/// row and the label's id (for the field's accessible name).
-fn row<R>(ui: &mut Ui, text: &str, column: f32, add: impl FnOnce(&mut Ui, egui::Id) -> R) -> R {
-    row_of(ui, text, column, field::height_of(ui.ctx()), add)
-}
-
-/// [`row`] for a row `height` tall (the From row holds a push button,
-/// taller than a field): the label centres on the row's middle.
-fn row_of<R>(
-    ui: &mut Ui,
-    text: &str,
-    column: f32,
-    height: f32,
-    add: impl FnOnce(&mut Ui, egui::Id) -> R,
-) -> R {
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = GAP;
-        let label = ui
-            .allocate_ui_with_layout(
-                egui::vec2(column, height),
-                egui::Layout::right_to_left(egui::Align::Center),
-                |ui| {
-                    ui.set_min_width(column);
-                    ui.label(text)
-                },
-            )
-            .inner;
-        add(ui, label.id)
-    })
-    .inner
-}
+use toolkit::header_form::{row, row_of};
 
 /// One removable file chip. It draws only the state's last inspection.
 fn attachment_chip(
@@ -352,53 +319,9 @@ fn attachment_chip(
     } else {
         text
     };
-    // Decide wrapping before Frame::group consumes the row remainder. A
-    // long name gets the full row's label budget, rather than shrinking
-    // into the space left after the preceding chip.
-    let frame = egui::Frame::group(ui.style());
-    let margin = frame.total_margin().sum().x;
-    let spacing = ui.spacing().item_spacing.x;
-    let font = egui::TextStyle::Body.resolve(ui.style());
-    let minimum_label_width = font.size * 4.0;
-    let natural = ui
-        .painter()
-        .layout_no_wrap(text.clone(), font, ui.visuals().text_color())
-        .size();
-    let full_width = ui.max_rect().width();
-    let width = natural
-        .x
-        .min((full_width - icon - spacing - margin).max(0.0))
-        .max(minimum_label_width);
-    let outer_width = width + icon + spacing + margin;
-    // available_width() is the full row width in a wrapping layout. Scopes
-    // advance their already drawn rect without wrapping it, so wrap before
-    // push_id/Frame using the space left on this row instead.
-    let remaining_width = ui.available_size_before_wrap().x;
-    if outer_width > remaining_width && remaining_width < full_width {
-        ui.end_row();
+    if toolkit::header_form::attachment_chip(ui, (index, &attachment.path), &attachment.path, &text, bad, icon, &crate::label_with("compose-attachment-remove", &[("name", &attachment.label)])) {
+        events.push(UiEvent::ComposeAttachmentRemove(attachment.path.clone()));
     }
-    let height = icon.max(natural.y);
-    ui.push_id((index, &attachment.path), |ui| {
-        frame.show(ui, |ui| {
-            ui.horizontal(|ui| {
-                let mut text = egui::RichText::new(text);
-                if bad {
-                    text = text.color(ui.visuals().error_fg_color);
-                }
-                ui.add_sized([width, height], egui::Label::new(text).truncate())
-                    .on_hover_text(attachment.path.display().to_string());
-                let remove = toolkit::button::IconButton::new(toolkit::Icon::X)
-                    .size(icon)
-                    .tooltip(crate::label_with(
-                        "compose-attachment-remove",
-                        &[("name", &attachment.label)],
-                    ));
-                if ui.add(remove).clicked() {
-                    events.push(UiEvent::ComposeAttachmentRemove(attachment.path.clone()));
-                }
-            });
-        });
-    });
 }
 
 /// The dialog's fields. Each edit is one event; the state owns the draft.
@@ -456,21 +379,7 @@ pub fn form(
     }
     // The label column fits the widest label any row can have, so opening
     // a row never moves the fields sideways.
-    let font = egui::TextStyle::Body.resolve(ui.style());
-    let column = [ComposeField::To]
-        .into_iter()
-        .chain(ComposeField::OPTIONAL)
-        .chain([ComposeField::Subject])
-        .map(|f| crate::label(row_label(f)))
-        .chain([crate::label("from"), crate::label("compose-attachments")])
-        .map(|text| {
-            ui.painter()
-                .layout_no_wrap(text, font.clone(), egui::Color32::PLACEHOLDER)
-                .size()
-                .x
-        })
-        .fold(0.0_f32, f32::max)
-        .ceil();
+    let column = toolkit::header_form::column(ui, [ComposeField::To].into_iter().chain(ComposeField::OPTIONAL).chain([ComposeField::Subject]).map(|f| crate::label(row_label(f))).chain([crate::label("from"), crate::label("compose-attachments")]));
     let attachment_width = (form_width - column - GAP).max(0.0);
     let icon = field::height_of(ui.ctx());
     // While a send is in flight every field is read-only: the dialog shows

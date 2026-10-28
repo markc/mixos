@@ -204,6 +204,7 @@ pub struct App {
     pub config_path: Option<PathBuf>,
     pub ui: UiState,
     pub dialog: Option<Dialog>,
+    pub mail_chooser: Option<(TabId, toolkit::file_chooser::FileChooser)>,
     /// Prompts waiting for the open dialog to close.
     queued: VecDeque<Dialog>,
     recent_notices: HashMap<(Option<TabId>, String), f64>,
@@ -250,6 +251,7 @@ impl App {
             config_path: None,
             ui,
             dialog: None,
+            mail_chooser: None,
             queued: VecDeque::new(),
             recent_notices: HashMap::new(),
             status: None,
@@ -447,6 +449,8 @@ impl App {
         let live = mirror.is_some_and(|m| matches!(m.phase(), Phase::Live));
         let tab = self.active().is_some();
         match action {
+            FileSend => self.active().is_some_and(|tab| self.ctl.can_send(tab)),
+            MailHeaders => self.active_tab().is_some_and(|tab| tab.mail.is_some()),
             ViewMarkdownSource | ViewMarkdownSplit | ViewMarkdownPreview => {
                 self.active().is_some_and(|tab| self.markdown(tab))
             }

@@ -19,6 +19,8 @@ pub mod actions;
 pub mod app;
 pub mod bus;
 pub mod headless;
+mod mail;
+mod mail_view;
 pub mod shell;
 pub mod view;
 

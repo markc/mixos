@@ -231,6 +231,14 @@ impl Shell {
     fn pump(&mut self) {
         while let Some(delivery) = self.transport.poll() {
             match delivery {
+                Delivery::MailSaved { tab, path, text, send, command, result } => {
+                    let fx = self.app.ctl.on_mail_saved(tab, path, text, send, command, result);
+                    self.app.absorb(fx);
+                }
+                Delivery::MailSent { tab, command, result } => {
+                    let fx = self.app.ctl.on_mail_sent(tab, command, result);
+                    self.app.absorb(fx);
+                }
                 Delivery::NotificationFailed { text } => self.app.notification_failed(text),
                 Delivery::Incoming(Incoming::Topic { topic, .. }) if topic == self.look_topic => {
                     // A hint, never trusted: the look comes from the read.

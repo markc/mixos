@@ -29,6 +29,9 @@ use crate::{label, label_with};
 pub enum UiEvent {
     Command(&'static str, Origin),
     CloseMacros,
+    MailHeaders(TabId, documents::mail::Headers),
+    MailRow(TabId, &'static str),
+    MailAttach(TabId),
     SelectTab(TabId),
     CloseTab(TabId),
     Editor(TabId, editor::Event),
@@ -95,11 +98,13 @@ pub fn view(
             tabs(ui, app, &mut events);
             notices(ui, app, &mut events);
             find_bar(ui, app, &mut events);
+            crate::mail_view::strip(ui, app, &mut events);
             let shown = document(ui, app, palette, &mut events);
             app.editor_id = shown.map(|(id, _)| id);
             app.editor_held = shown.is_some_and(|(_, held)| held);
         });
     dialogs(ui.ctx(), app, commands, strings, &mut events);
+    crate::mail_view::chooser(ui.ctx(), app, &mut events);
     if toolkit::macros::show_app(ui.ctx(), "ced", app.ui.macros_open) {
         events.push(UiEvent::CloseMacros);
     }
@@ -127,6 +132,12 @@ pub fn record_noted(app: &mut App, commands: &Registry<App>) {
 fn apply_one(app: &mut App, commands: &Registry<App>, event: UiEvent) {
     {
         match event {
+            UiEvent::MailHeaders(tab, headers) => app.action_args(Some(tab), ActionId::MailHeaders, serde_json::json!({"headers":headers})),
+            UiEvent::MailRow(tab, field) => app.ctl.show_mail_row(tab, field),
+            UiEvent::MailAttach(tab) => {
+                let directory = app.ctl.tabs().iter().find(|t| t.id == tab).and_then(|t| t.path.as_deref()).and_then(|p| std::path::Path::new(p).parent()).unwrap_or(std::path::Path::new("/")).to_path_buf();
+                app.mail_chooser = Some((tab, toolkit::file_chooser::FileChooser::new(directory, label("mail-attach"), label("mail-attach"))));
+            }
             UiEvent::CloseMacros => app.ui.macros_open = false,
             UiEvent::Command(id, origin) => {
                 let _ = commands.execute(id, app, origin);
@@ -207,7 +218,7 @@ fn tabs(ui: &mut Ui, app: &App, events: &mut Vec<UiEvent>) {
                 title: name.clone(),
                 name,
                 meta,
-                dirty: mirror.is_some_and(|m| m.meta().dirty),
+                dirty: t.dirty(),
                 progress: opening.then_some(0.0),
                 marker: None,
             }
@@ -407,7 +418,7 @@ fn document(
         highlight: Some(&tab.highlight),
         diagnostics: tab.diagnostics.items(),
     };
-    let editable = app.dialog.is_none();
+    let editable = app.dialog.is_none() && tab.mail.as_ref().is_none_or(|mail| !mail.sending && !mail.saving);
     // The editor takes its own saved padding and light mode; the rest of the
     // window keeps the global look.
     let draw_editor = |ui: &mut Ui| {

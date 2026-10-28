@@ -59,6 +59,7 @@ pub mod field;
 pub mod file_chooser;
 pub mod fonts;
 pub mod graph;
+pub mod header_form;
 pub mod icons;
 pub mod keymap;
 #[cfg(feature = "layer")]

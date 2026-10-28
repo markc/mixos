@@ -70,6 +70,8 @@ pub fn help(window: bool) -> Vec<::bus::CommandDescriptor> {
 /// Everything the Bus thread delivers.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Delivery {
+    MailSaved { tab: u64, path: String, text: String, send: bool, command: Option<(u64, String)>, result: Result<(), String> },
+    MailSent { tab: u64, command: Option<(u64, String)>, result: Result<String, String> },
     NotificationFailed {
         text: String,
     },
@@ -233,7 +235,7 @@ impl BusHandle {
 pub fn is_bus(effect: &Effect) -> bool {
     matches!(
         effect,
-        Effect::Notify { .. }
+        Effect::SaveMail { .. } | Effect::SendMail { .. } | Effect::Notify { .. }
             | Effect::Send { .. }
             | Effect::Respond { .. }
             | Effect::Timer { .. }
@@ -439,6 +441,21 @@ async fn run(
                             if !matches!(result, Ok(Ok((0..=9, _, _)))) {
                                 o.send(Delivery::NotificationFailed { text });
                             }
+                        });
+                    }
+                    Effect::SaveMail { tab, path, text, expected, send, command } => {
+                        let o = out.clone();
+                        tokio::spawn(async move {
+                            let (p, t) = (path.clone(), text.clone());
+                            let result = tokio::task::spawn_blocking(move || crate::mail::save(&p, &t, expected.as_deref())).await.unwrap_or_else(|error| Err(error.to_string()));
+                            o.send(Delivery::MailSaved { tab, path, text, send, command, result });
+                        });
+                    }
+                    Effect::SendMail { tab, path, command } => {
+                        let (c, o) = (client.clone(), out.clone());
+                        tokio::spawn(async move {
+                            let result = crate::mail::send(c.as_ref(), &path).await;
+                            o.send(Delivery::MailSent { tab, command, result });
                         });
                     }
                     Effect::Send { req, out: request } => {

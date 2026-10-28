@@ -501,6 +501,13 @@ impl Controller {
                 let ids = self.open_many(&paths, None, fx);
                 Ok(Some(json!({"tabs": ids})))
             }
+            ActionId::MailHeaders => {
+                let t = need()?;
+                let headers = args.and_then(|v| v.get("headers")).cloned().ok_or((code::INVALID_ARGUMENT, "mail.headers needs {headers}".into()))?;
+                let headers = serde_json::from_value(headers).map_err(|e| (code::INVALID_ARGUMENT, format!("{e}")))?;
+                self.edit_headers(t, headers).map_err(|e| (code::CONFLICT, e))?;
+                Ok(None)
+            }
             ActionId::FileSave | ActionId::FileSaveAs => {
                 let t = need()?;
                 let path = arg_str("path");

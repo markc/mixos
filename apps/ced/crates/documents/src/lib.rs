@@ -21,4 +21,5 @@ pub mod controller;
 pub mod dirs;
 pub mod editor;
 pub mod keymap;
+pub mod mail;
 pub mod session;

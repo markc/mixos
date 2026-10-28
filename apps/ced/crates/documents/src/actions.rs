@@ -102,6 +102,8 @@ macro_rules! actions {
 actions! {
     FileNew => "file.new", "New", File;
     FileOpen => "file.open", "Open…", File;
+    FileSend => "file.send", "Send", File;
+    MailHeaders => "mail.headers", "Edit Mail Headers", File;
     FileSave => "file.save", "Save", File;
     FileSaveAs => "file.save_as", "Save As…", File;
     FileSaveAll => "file.save_all", "Save All", File;
