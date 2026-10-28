@@ -1,5 +1,5 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
--- Deterministic /proc fixtures: no worker processes are created or signalled.
+-- Deterministic /proc fixtures and opt-in live checks using owned sleepers.
 $o = require("../tools/lib/release_orphans.mix")
 $tmp = "/tmp/release-orphans-test-" .. uuid()
 mkdir($tmp .. "/checkout/target/debug", {parents: true})
@@ -60,30 +60,30 @@ try
   -- The live check runs on CBC, whose test orphans are adopted by PID 1.
   -- Some local agent supervisors are subreapers, so opt in explicitly.
   if env("MIXOS_RELEASE_ORPHAN_LIVE", "") == "1" then
-  -- Exercise actual reporting/cleanup too. The only signalled PIDs are
-  -- dedicated sleeper copies created by this test below its private root.
-  $other = $tmp .. "/other/target"
-  run_argv_must(["cp", which("sleep"), $target .. "/debug/sleeper"])
-  run_argv_must(["cp", which("sleep"), $other .. "/debug/sleeper"])
-  $existing = orphan($target .. "/debug/sleeper")
-  push($live, $existing)
-  $outside = orphan($other .. "/debug/sleeper")
-  push($live, $outside)
-  $before = $o.snapshot($target)
-  $leaked = orphan($target .. "/debug/sleeper")
-  push($live, $leaked)
-  $failed = false
-  try
-    $o.finish("fixture", $target, $before)
-  catch $message, $error
-    $failed = $error.code == "RELEASE_GATE" and contains($message, "fixture leaked 1 orphan processes")
-  end
-  check($failed, "a leaking stage fails with its orphan count")
-  $deadline = monotonic() + 5
-  while $o.same_orphan($leaked, $target) and monotonic() < $deadline sleep(0.01) end
-  check(not $o.same_orphan($leaked, $target), "new orphan was killed")
-  check($o.same_orphan($existing, $target), "existing orphan was not killed")
-  check($o.same_orphan($outside, $other), "other checkout was not killed")
+    -- Exercise actual reporting/cleanup too. The only signalled PIDs are
+    -- dedicated sleeper copies created by this test below its private root.
+    $other = $tmp .. "/other/target"
+    run_argv_must(["cp", which("sleep"), $target .. "/debug/sleeper"])
+    run_argv_must(["cp", which("sleep"), $other .. "/debug/sleeper"])
+    $existing = orphan($target .. "/debug/sleeper")
+    push($live, $existing)
+    $outside = orphan($other .. "/debug/sleeper")
+    push($live, $outside)
+    $before = $o.snapshot($target)
+    $leaked = orphan($target .. "/debug/sleeper")
+    push($live, $leaked)
+    $failed = false
+    try
+      $o.finish("fixture", $target, $before)
+    catch $message, $error
+      $failed = $error.code == "RELEASE_GATE" and contains($message, "fixture leaked 1 orphan processes")
+    end
+    check($failed, "a leaking stage fails with its orphan count")
+    $deadline = monotonic() + 5
+    while $o.same_orphan($leaked, $target) and monotonic() < $deadline sleep(0.01) end
+    check(not $o.same_orphan($leaked, $target), "new orphan was killed")
+    check($o.same_orphan($existing, $target), "existing orphan was not killed")
+    check($o.same_orphan($outside, $other), "other checkout was not killed")
   end
 finally
   for $item in $live

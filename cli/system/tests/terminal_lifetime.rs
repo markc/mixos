@@ -26,14 +26,35 @@ impl Drop for Shell {
 impl Shell {
     fn new(ignore_hup: bool, controlling: bool, editor: &str) -> Self {
         let home = tempfile::tempdir().unwrap();
-        fs::write(home.path().join(".mixrc"), "fn prompt()\nreturn \"LOSS> \"\nend\n").unwrap();
+        fs::write(
+            home.path().join(".mixrc"),
+            "fn prompt()\nreturn \"LOSS> \"\nend\n",
+        )
+        .unwrap();
         let (mut master, mut slave) = (-1, -1);
-        let size = libc::winsize { ws_row: 24, ws_col: 80, ws_xpixel: 0, ws_ypixel: 0 };
-        assert_eq!(unsafe {
-            libc::openpty(&mut master, &mut slave, std::ptr::null_mut(), std::ptr::null(), &size)
-        }, 0);
+        let size = libc::winsize {
+            ws_row: 24,
+            ws_col: 80,
+            ws_xpixel: 0,
+            ws_ypixel: 0,
+        };
+        assert_eq!(
+            unsafe {
+                libc::openpty(
+                    &mut master,
+                    &mut slave,
+                    std::ptr::null_mut(),
+                    std::ptr::null(),
+                    &size,
+                )
+            },
+            0
+        );
         for fd in [master, slave] {
-            assert_eq!(unsafe { libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) }, 0);
+            assert_eq!(
+                unsafe { libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) },
+                0
+            );
         }
         let master = unsafe { File::from_raw_fd(master) };
         let slave = unsafe { File::from_raw_fd(slave) };
@@ -48,20 +69,37 @@ impl Shell {
             .stderr(slave);
         unsafe {
             cmd.pre_exec(move || {
-                libc::signal(libc::SIGHUP, if ignore_hup { libc::SIG_IGN } else { libc::SIG_DFL });
+                libc::signal(
+                    libc::SIGHUP,
+                    if ignore_hup {
+                        libc::SIG_IGN
+                    } else {
+                        libc::SIG_DFL
+                    },
+                );
                 if libc::setsid() < 0 || (controlling && libc::ioctl(0, libc::TIOCSCTTY, 0) < 0) {
                     return Err(std::io::Error::last_os_error());
                 }
                 Ok(())
             });
         }
-        Self { child: cmd.spawn().unwrap(), master: Some(master), _home: home }
+        Self {
+            child: cmd.spawn().unwrap(),
+            master: Some(master),
+            _home: home,
+        }
     }
     fn wait(&mut self) -> std::process::ExitStatus {
         let deadline = Instant::now() + Duration::from_secs(5);
         loop {
-            if let Some(status) = self.child.try_wait().unwrap() { return status; }
-            assert!(Instant::now() < deadline, "shell {} survived terminal loss", self.child.id());
+            if let Some(status) = self.child.try_wait().unwrap() {
+                return status;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "shell {} survived terminal loss",
+                self.child.id()
+            );
             std::thread::sleep(Duration::from_millis(10));
         }
     }
@@ -71,8 +109,14 @@ impl Shell {
         let mut output = String::new();
         while !output.contains("LOSS> ") {
             assert!(Instant::now() < deadline, "prompt: {output:?}");
-            let mut fd = libc::pollfd { fd: master.as_raw_fd(), events: libc::POLLIN, revents: 0 };
-            if unsafe { libc::poll(&mut fd, 1, 50) } <= 0 { continue; }
+            let mut fd = libc::pollfd {
+                fd: master.as_raw_fd(),
+                events: libc::POLLIN,
+                revents: 0,
+            };
+            if unsafe { libc::poll(&mut fd, 1, 50) } <= 0 {
+                continue;
+            }
             let mut bytes = [0; 4096];
             let n = master.read(&mut bytes).unwrap();
             assert_ne!(n, 0);
@@ -84,13 +128,23 @@ impl Shell {
     }
     fn background_job(&mut self) -> i32 {
         let report = self._home.path().join("job-pid");
-        self.master.as_mut().unwrap().write_all(format!(
-            "TERMINAL_JOB_REPORT={} {} --exact fixture_job --nocapture &\n",
-            report.display(), std::env::current_exe().unwrap().display()
-        ).as_bytes()).unwrap();
+        self.master
+            .as_mut()
+            .unwrap()
+            .write_all(
+                format!(
+                    "TERMINAL_JOB_REPORT={} {} --exact fixture_job --nocapture &\n",
+                    report.display(),
+                    std::env::current_exe().unwrap().display()
+                )
+                .as_bytes(),
+            )
+            .unwrap();
         let deadline = Instant::now() + Duration::from_secs(5);
         loop {
-            if let Ok(pid) = fs::read_to_string(&report) { return pid.parse().unwrap(); }
+            if let Ok(pid) = fs::read_to_string(&report) {
+                return pid.parse().unwrap();
+            }
             assert!(Instant::now() < deadline, "background job did not start");
             std::thread::sleep(Duration::from_millis(10));
         }
@@ -104,7 +158,11 @@ fn closing_master_exits_with_and_without_inherited_hup_ignore() {
             let mut shell = Shell::new(ignore_hup, true, editor);
             shell.prompt();
             drop(shell.master.take());
-            assert_eq!(shell.wait().code(), Some(129), "{editor}, ignored={ignore_hup}");
+            assert_eq!(
+                shell.wait().code(),
+                Some(129),
+                "{editor}, ignored={ignore_hup}"
+            );
         }
     }
 }
@@ -129,9 +187,13 @@ fn plain_eof_exits_zero() {
 
 #[test]
 fn fixture_job() {
-    let Some(report) = std::env::var_os("TERMINAL_JOB_REPORT") else { return };
+    let Some(report) = std::env::var_os("TERMINAL_JOB_REPORT") else {
+        return;
+    };
     fs::write(report, std::process::id().to_string()).unwrap();
-    loop { std::thread::park(); }
+    loop {
+        std::thread::park();
+    }
 }
 
 #[test]
@@ -141,7 +203,10 @@ fn terminal_hangup_also_hangs_up_background_job_groups() {
     let child = shell.background_job();
     drop(shell.master.take());
     assert_eq!(shell.wait().code(), Some(129));
-    assert!(!std::path::Path::new(&format!("/proc/{child}")).exists(), "background job {child} outlived the shell");
+    assert!(
+        !std::path::Path::new(&format!("/proc/{child}")).exists(),
+        "background job {child} outlived the shell"
+    );
 }
 
 #[test]
@@ -154,24 +219,37 @@ fn fixture_drop_kills_grandchildren_in_other_job_groups() {
     drop(shell);
     let deadline = Instant::now() + Duration::from_secs(5);
     while std::path::Path::new(&format!("/proc/{child}/exe")).exists() {
-        assert!(Instant::now() < deadline, "fixture left background grandchild {child} alive");
+        assert!(
+            Instant::now() < deadline,
+            "fixture left background grandchild {child} alive"
+        );
         std::thread::sleep(Duration::from_millis(10));
     }
 }
 
 #[test]
 fn fixture_parent() {
-    let Some(report) = std::env::var_os("TERMINAL_PARENT_REPORT") else { return };
+    let Some(report) = std::env::var_os("TERMINAL_PARENT_REPORT") else {
+        return;
+    };
     let shell = Shell::new(true, false, "owned");
     // A stopped shell cannot notice terminal EOF or run a signal handler.
     // Its death therefore proves the kernel parent-death guard fired.
-    assert_eq!(unsafe { libc::kill(shell.child.id() as i32, libc::SIGSTOP) }, 0);
+    assert_eq!(
+        unsafe { libc::kill(shell.child.id() as i32, libc::SIGSTOP) },
+        0
+    );
     let mut status = 0;
-    assert_eq!(unsafe { libc::waitpid(shell.child.id() as i32, &mut status, libc::WUNTRACED) }, shell.child.id() as i32);
+    assert_eq!(
+        unsafe { libc::waitpid(shell.child.id() as i32, &mut status, libc::WUNTRACED) },
+        shell.child.id() as i32
+    );
     assert!(libc::WIFSTOPPED(status));
     fs::write(report, shell.child.id().to_string()).unwrap();
     // The outer test kills this process; normal return would run Shell::drop.
-    loop { std::thread::sleep(Duration::from_secs(60)); }
+    loop {
+        std::thread::sleep(Duration::from_secs(60));
+    }
 }
 
 #[test]
@@ -180,18 +258,27 @@ fn killed_test_runner_cannot_orphan_a_stopped_shell() {
     let report = home.path().join("child-pid");
     let mut command = Command::new(std::env::current_exe().unwrap());
     pty::guard(&mut command);
-    command.args(["--exact", "fixture_parent", "--nocapture"])
+    command
+        .args(["--exact", "fixture_parent", "--nocapture"])
         .env("TERMINAL_PARENT_REPORT", &report);
     unsafe {
         command.pre_exec(|| {
-            if libc::setsid() < 0 { return Err(std::io::Error::last_os_error()); }
+            if libc::setsid() < 0 {
+                return Err(std::io::Error::last_os_error());
+            }
             Ok(())
         });
     }
-    let mut runner = Shell { child: command.spawn().unwrap(), master: None, _home: home };
+    let mut runner = Shell {
+        child: command.spawn().unwrap(),
+        master: None,
+        _home: home,
+    };
     let deadline = Instant::now() + Duration::from_secs(5);
     let child: i32 = loop {
-        if let Ok(pid) = fs::read_to_string(&report) { break pid.parse().unwrap(); }
+        if let Ok(pid) = fs::read_to_string(&report) {
+            break pid.parse().unwrap();
+        }
         assert!(Instant::now() < deadline, "runner did not report its child");
         std::thread::sleep(Duration::from_millis(10));
     };
@@ -200,7 +287,13 @@ fn killed_test_runner_cannot_orphan_a_stopped_shell() {
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         let state = fs::read_to_string(format!("/proc/{child}/stat"));
-        if state.is_err() || state.as_ref().is_ok_and(|s| s.rsplit_once(") ").is_some_and(|(_, s)| s.starts_with('Z'))) { break; }
+        if state.is_err()
+            || state
+                .as_ref()
+                .is_ok_and(|s| s.rsplit_once(") ").is_some_and(|(_, s)| s.starts_with('Z')))
+        {
+            break;
+        }
         if Instant::now() >= deadline {
             pty::kill_session(child as u32);
             panic!("kernel parent-death guard left shell {child} alive");
