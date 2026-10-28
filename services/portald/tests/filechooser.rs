@@ -117,7 +117,7 @@ async fn quiet(stream: &mut MessageStream) {
 enum Control {
     Finish(String, u32, bool),
     Release,
-    Incarnation,
+    Incarnation(&'static str),
     Forget(String),
 }
 
@@ -225,7 +225,7 @@ impl Provider {
                             Some(Control::Release) => {
                                 for (command, reply) in held.drain(..) { c.respond(&command, 0, &reply.to_string()).await.unwrap(); }
                             }
-                            Some(Control::Incarnation) => { incarnation = "b"; open.clear(); done.clear(); }
+                            Some(Control::Incarnation(value)) => { incarnation = value; open.clear(); done.clear(); held.clear(); }
                             Some(Control::Forget(id)) => { open.remove(&id); done.remove(&id); }
                             None => break,
                         }
@@ -587,16 +587,16 @@ async fn portal_native_stack_mapping_lifecycle_and_loss() {
     provider.cancelled(&id).await;
     quiet(&mut stream).await;
 
-    // Losing the native Bus is final for the old Request. A reconnect
-    // resubscribes and clears its leftover chooser before accepting new ones.
+    // Losing the native Bus is final for the old Request. Real DOpus exits on
+    // its own Bus loss, so restart the stand-in's incarnation and windows too.
     let mut stream = responses(&caller, "bus_loss").await;
     begin(&caller, "OpenFile", "bus_loss", Options::new())
         .await
         .unwrap();
-    let id = provider.chosen().await.0;
+    provider.chosen().await;
     broker.bounce();
     response(&mut stream, 2).await;
-    provider.cancelled(&id).await;
+    provider.control.send(Control::Incarnation("r")).unwrap();
     // Calls during reconnect cleanup may fail with 2; admission resumes after
     // the previous portald's choosers have been cancelled.
     tokio::time::timeout(WAIT, async {
@@ -625,7 +625,7 @@ async fn portal_native_stack_mapping_lifecycle_and_loss() {
         .await
         .unwrap();
     provider.chosen().await;
-    provider.control.send(Control::Incarnation).unwrap();
+    provider.control.send(Control::Incarnation("b")).unwrap();
     response(&mut stream, 2).await;
     let mut stream = responses(&caller, "killed").await;
     begin(&caller, "OpenFile", "killed", Options::new())
