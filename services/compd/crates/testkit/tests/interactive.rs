@@ -37,6 +37,34 @@ fn set_tiling(h: &mut Harness, leaf: &str, value: serde_json::Value) {
     assert_eq!(reply["persisted"], true, "{reply}");
 }
 
+/// Paint the actual preview elements offscreen for visual QA, without a GPU.
+fn preview_snapshot(h: &Harness, label: &str) {
+    use smithay::backend::renderer::{Bind, Frame, Renderer, Color32F, pixman::PixmanRenderer, utils::draw_render_elements};
+    use smithay::reexports::pixman::{FormatCode, Image};
+    use smithay::utils::{Rectangle, Transform};
+    let mut renderer = PixmanRenderer::new().unwrap();
+    let mut target = Image::new(FormatCode::X8R8G8B8, 1920, 1080, true).unwrap();
+    let full = Rectangle::from_size((1920, 1080).into());
+    {
+        let mut framebuffer = renderer.bind(&mut target).unwrap();
+        let mut frame = renderer.render(&mut framebuffer, (1920, 1080).into(), Transform::Normal).unwrap();
+        frame.clear(Color32F::new(0.0, 0.0, 0.0, 1.0), &[full]).unwrap();
+        draw_render_elements::<PixmanRenderer, _, _>(&mut frame, 1.0, &preview(h), &[full]).unwrap();
+        frame.finish().unwrap().wait().unwrap();
+    }
+    let stride = target.stride() / 4;
+    // SAFETY: the owned pixman image holds stride * height u32 pixels.
+    let pixels = unsafe { std::slice::from_raw_parts(target.data(), stride * 1080) };
+    assert!(pixels.iter().any(|p| p & 0x00ff_ffff != 0), "visible preview pixels");
+    let png = image::RgbaImage::from_fn(1920, 1080, |x, y| {
+        let p = pixels[y as usize * stride + x as usize];
+        image::Rgba([(p >> 16) as u8, (p >> 8) as u8, p as u8, 255])
+    });
+    let dir = std::env::temp_dir().join("compd-tiling-stage4");
+    std::fs::create_dir_all(&dir).unwrap();
+    png.save(dir.join(format!("{label}.png"))).unwrap();
+}
+
 #[test]
 fn preview_clock_grows_eases_and_retargets_from_the_current_rectangle() {
     use smithay::utils::Rectangle;
@@ -49,6 +77,7 @@ fn preview_clock_grows_eases_and_retargets_from_the_current_rectangle() {
     let from = Rectangle::new(h.wire.inner.space.state.element_location(&window).unwrap(), (640, 480).into());
     let rect = |h: &Harness| h.comp().drag.as_ref().unwrap().preview_rectangle.unwrap();
     assert_eq!(rect(&h), from, "t=0 is the current window frame");
+    preview_snapshot(&h, "start");
     let target = Rectangle::new((0, 0).into(), (960, 1080).into());
     let halfway = |a: Rectangle<i32, smithay::utils::Logical>, b: Rectangle<i32, smithay::utils::Logical>| {
         let axis = |a: i32, b: i32| (f64::from(a) + f64::from(b - a) * 0.875).round() as i32;
@@ -58,14 +87,17 @@ fn preview_clock_grows_eases_and_retargets_from_the_current_rectangle() {
     assert!(h.advance_time(ms(90)));
     let mid = rect(&h);
     assert_eq!(mid, halfway(from, target));
+    preview_snapshot(&h, "mid");
     motion(&mut h, (1919.0, 0.0));
     apply(&mut h, &window);
     assert_eq!(rect(&h), mid, "retarget does not jump back to the window");
+    preview_snapshot(&h, "retarget");
     let right = Rectangle::new((960, 0).into(), (960, 540).into());
     h.advance_time(ms(90));
     assert_eq!(rect(&h), halfway(mid, right));
     h.advance_time(ms(90));
     assert_eq!(rect(&h), right);
+    preview_snapshot(&h, "end");
     assert!(policy_host::tiling::deadline(h.comp()).is_none());
     assert!(!h.advance_time(ms(10_000)), "static preview owes no more frames");
     let_go(&mut h);
