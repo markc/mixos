@@ -2,7 +2,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::{Result, bail, ensure};
-use mail_parser::{HeaderName, Message, MessageParser};
+use mail_parser::{HeaderName, Message, MessageParser, MimeHeaders, PartType};
 
 use super::{EXTENSIONS, MAX_ACTIONS, MAX_REDIRECTS, MAX_SCRIPT_BYTES, MAX_STEPS};
 
@@ -98,7 +98,7 @@ enum Test { Bool(bool), Not(Box<Test>), Group(bool, Vec<Test>), Match(String, Ar
 #[derive(Debug, Clone)]
 enum Statement { If(Vec<(Test, Vec<Statement>)>, Vec<Statement>), Action(String, Args) }
 #[derive(Debug, Clone)]
-pub struct Script { code: Vec<Statement> }
+pub struct Script { code: Vec<Statement>, variables: bool }
 
 struct Parser { tokens: Vec<Token>, p: usize, required: BTreeSet<String>, depth: usize }
 impl Parser {
@@ -172,6 +172,11 @@ impl Parser {
             if name == "size" {
                 match self.take()? { Token::Number(n) => args.values.push(vec![n.to_string()]), _ => bail!("size requires number") }
             } else { args.values.push(self.strings()?); }
+        }
+        if ["setflag","addflag","removeflag","hasflag"].contains(&name) && matches!(self.peek(),Some(Token::String(_) | Token::Punct('['))) {
+            self.need("variables")?;
+            args.values.push(self.strings()?);
+            if name != "hasflag" { ensure!(args.values[0].len() == 1,"flag variable must be one name"); }
         }
         for n in match name { "fileinto" | "redirect" | "vacation" | "reject" | "ereject" => vec![0], "set" => vec![0, 1], _ => Vec::new() } {
             ensure!(args.values[n].len() == 1, "{name} requires a single string");
@@ -253,7 +258,7 @@ pub fn compile(src: &str) -> Result<Script> {
     let mut parser = Parser { tokens: lex(src)?, p: 0, required: BTreeSet::new(), depth: 0 };
     let code = parser.code(true)?;
     ensure!(parser.p == parser.tokens.len(), "unexpected closing brace");
-    Ok(Script { code })
+    Ok(Script { code, variables: parser.required.contains("variables") })
 }
 
 /// A fileinto/keep snapshot: subsequent flag changes do not alter earlier actions.
@@ -272,12 +277,12 @@ pub struct Plan {
 pub struct Context<'a> { pub data: &'a [u8], pub from: &'a str, pub to: &'a str }
 struct Eval<'a> {
     context: Context<'a>, message: Message<'a>, plan: Plan, variables: BTreeMap<String, String>,
-    captures: Vec<String>, flags: Vec<String>, implicit_keep: bool, stopped: bool, steps: usize,
+    captures: Vec<String>, flags: Vec<String>, implicit_keep: bool, stopped: bool, steps: usize, variables_enabled: bool,
 }
 impl Script {
     pub fn evaluate(&self, context: Context<'_>) -> Result<Plan> {
         let message = MessageParser::default().parse(context.data).ok_or_else(|| anyhow::anyhow!("message parse error"))?;
-        let mut eval = Eval { context, message, plan: Plan::default(), variables: BTreeMap::new(), captures: Vec::new(), flags: Vec::new(), implicit_keep: true, stopped: false, steps: 0 };
+        let mut eval = Eval { context, message, plan: Plan::default(), variables: BTreeMap::new(), captures: Vec::new(), flags: Vec::new(), implicit_keep: true, stopped: false, steps: 0, variables_enabled: self.variables };
         eval.code(&self.code)?;
         if eval.implicit_keep { eval.plan.filings.push(Filing { flags: eval.flags, ..Filing::default() }); }
         ensure!(eval.plan.redirects.len() <= MAX_REDIRECTS, "redirect limit");
@@ -288,6 +293,7 @@ impl Script {
 impl Eval<'_> {
     fn step(&mut self) -> Result<()> { self.steps += 1; ensure!(self.steps <= MAX_STEPS, "instruction limit"); Ok(()) }
     fn expand(&self, value: &str) -> Result<String> {
+        if !self.variables_enabled { return Ok(value.to_string()); }
         let mut out = String::new(); let mut rest = value;
         while let Some(pos) = rest.find("${") {
             out.push_str(&rest[..pos]); let next = &rest[pos + 2..];
@@ -347,12 +353,15 @@ impl Eval<'_> {
                 self.variables.insert(key, value);
             }
             "setflag" | "addflag" | "removeflag" => {
-                let flags = self.expanded(&args.values[0])?;
-                if name == "setflag" { self.flags.clear(); }
+                let flags = self.expanded(args.values.last().unwrap())?;
+                let variable = if args.values.len() == 2 { Some(args.value(0).to_ascii_lowercase()) } else { None };
+                let mut target = if let Some(variable) = &variable { self.variables.get(variable).map(|s| s.split_whitespace().map(str::to_string).collect()).unwrap_or_default() } else { self.flags.clone() };
+                if name == "setflag" { target.clear(); }
                 for flag in flags.into_iter().flat_map(|s| s.split_whitespace().map(str::to_string).collect::<Vec<_>>()) {
-                    self.flags.retain(|f| !f.eq_ignore_ascii_case(&flag));
-                    if name != "removeflag" { self.flags.push(flag); }
+                    target.retain(|f: &String| !f.eq_ignore_ascii_case(&flag));
+                    if name != "removeflag" { target.push(flag); }
                 }
+                if let Some(variable) = variable { self.variables.insert(variable,target.join(" ")); } else { self.flags = target; }
             }
             "vacation" => {
                 ensure!(self.plan.vacation.is_none(), "multiple vacation actions");
@@ -413,13 +422,21 @@ impl Eval<'_> {
                                 let content_type = part.content_type().map(|ct| format!("{}/{}", ct.ctype(), ct.subtype().unwrap_or("plain"))).unwrap_or_else(|| "text/plain".into());
                                 let selected = args.tags.get("content").map(|types| types.iter().any(|t| t.is_empty() || content_type.eq_ignore_ascii_case(t) || content_type.split('/').next().is_some_and(|p| p.eq_ignore_ascii_case(t)))).unwrap_or_else(|| content_type.starts_with("text/"));
                                 if selected {
-                                    if let Some(text) = part.text_contents() { values.push(text.to_string()); }
+                                    if let Some(text) = part.text_contents() {
+                                        values.push(if !args.has("content") && matches!(&part.body,PartType::Html(_)) {
+                                            mail_parser::decoders::html::html_to_text(text)
+                                        } else { text.to_string() });
+                                    }
                                 }
                             }
                         }
                     }
                     "string" => values = names.clone(),
-                    "hasflag" => values = self.flags.clone(),
+                    "hasflag" => {
+                        values = if args.values.len() == 2 {
+                            names.iter().filter_map(|s| self.variables.get(&s.to_ascii_lowercase())).flat_map(|s| s.split_whitespace().map(str::to_string)).collect()
+                        } else { self.flags.clone() };
+                    }
                     _ => unreachable!(),
                 }
                 if name == "address" || name == "envelope" {
@@ -427,7 +444,7 @@ impl Eval<'_> {
                     else if args.has("domain") { values = values.into_iter().map(|s| s.rsplit_once('@').map(|(_,d)| d).unwrap_or("").to_string()).collect(); }
                 }
                 if args.has("count") { values = vec![values.len().to_string()]; }
-                let keys = self.expanded(if name == "body" || name == "hasflag" { &args.values[0] } else { &args.values[1] })?;
+                let keys = self.expanded(if name == "body" { &args.values[0] } else if name == "hasflag" { args.values.last().unwrap() } else { &args.values[1] })?;
                 for value in values {
                     for key in &keys {
                         self.step()?;
@@ -441,6 +458,7 @@ impl Eval<'_> {
     fn matches(&mut self, value: &str, key: &str, args: &Args) -> Result<bool> {
         let numeric = args.tag("comparator") == Some("i;ascii-numeric");
         let octet = args.tag("comparator") == Some("i;octet");
+        let original = value;
         let value = if octet || numeric { value.to_string() } else { value.to_ascii_lowercase() };
         let key = if octet || numeric { key.to_string() } else { key.to_ascii_lowercase() };
         if let Some(op) = args.tag("count").or(args.tag("value")) {
@@ -448,7 +466,7 @@ impl Eval<'_> {
             return Ok(match op { "gt" => order.is_gt(), "ge" => order.is_ge(), "lt" => order.is_lt(), "le" => order.is_le(), "eq" => order.is_eq(), "ne" => order.is_ne(), _ => unreachable!() });
         }
         if args.has("matches") {
-            if let Some(captures) = glob(&value, &key, &mut self.steps)? { self.captures = captures; return Ok(true); }
+            if let Some(captures) = glob(original, &key, !octet, &mut self.steps)? { self.captures = captures; return Ok(true); }
             Ok(false)
         } else if args.has("contains") { Ok(value.contains(&key)) }
         else if numeric { Ok(numeric_key(&value) == numeric_key(&key)) }
@@ -464,27 +482,35 @@ fn numeric_key(s: &str) -> (bool, usize, String) {
     (digits.is_empty(), significant.len(), significant)
 }
 
-fn glob(value: &str, pattern: &str, steps: &mut usize) -> Result<Option<Vec<String>>> {
+fn glob(value: &str, pattern: &str, casemap: bool, steps: &mut usize) -> Result<Option<Vec<String>>> {
     // Iterative bounded wildcard matcher. Backtracking consumes the same budget
     // as instructions; no recursive stack or exponential unbounded work.
+    ensure!(value.len() <= MAX_SCRIPT_BYTES,"wildcard input limit");
     let value: Vec<char> = value.chars().collect();
     let mut pattern_tokens = Vec::new(); let mut chars = pattern.chars();
     while let Some(c) = chars.next() { pattern_tokens.push(if c == '\\' { (chars.next().unwrap_or('\\'), false) } else { (c, c == '*' || c == '?') }); }
-    let mut stack = vec![(0, 0, vec![value.iter().collect::<String>()])];
+    let mut stack = vec![(0, 0, Vec::<(usize,usize)>::new())];
     while let Some((mut p, mut v, mut captures)) = stack.pop() {
         loop {
             *steps += 1; ensure!(*steps <= MAX_STEPS, "wildcard instruction limit");
-            if p == pattern_tokens.len() { if v == value.len() { return Ok(Some(captures)); } break; }
+            if p == pattern_tokens.len() { if v == value.len() {
+                let mut strings = vec![value.iter().collect()];
+                strings.extend(captures.into_iter().map(|(start,end)| value[start..end].iter().collect()));
+                return Ok(Some(strings));
+            } break; }
             let (c, wildcard) = pattern_tokens[p];
             if wildcard && c == '*' {
                 // Bounded pending alternatives as well as bounded work.
                 ensure!(stack.len() + value.len() - v < MAX_STEPS, "wildcard state limit");
-                for end in (v..=value.len()).rev() { let mut next = captures.clone(); next.push(value[v..end].iter().collect()); stack.push((p + 1, end, next)); }
+                for end in (v..=value.len()).rev() {
+                    *steps += captures.len() + 1; ensure!(*steps <= MAX_STEPS,"wildcard allocation limit");
+                    let mut next = captures.clone(); next.push((v,end)); stack.push((p + 1, end, next));
+                }
                 break;
             }
             if v == value.len() { break; }
-            if wildcard { captures.push(value[v].to_string()); }
-            else if c != value[v] { break; }
+            if wildcard { captures.push((v,v+1)); }
+            else if c != (if casemap { value[v].to_ascii_lowercase() } else { value[v] }) { break; }
             p += 1; v += 1;
         }
     }

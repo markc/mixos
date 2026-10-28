@@ -35,9 +35,9 @@ CREATE TABLE IF NOT EXISTS sieve_replies (
 "#;
 
 #[derive(Debug, Clone, Serialize)]
-pub struct Entry { pub name: String, pub version: u64, pub active: bool, pub size: usize }
+pub struct Entry { pub name: String, pub version: i64, pub active: bool, pub size: i64 }
 #[derive(Debug, Clone, Serialize)]
-pub struct StoredScript { pub name: String, pub version: u64, pub source: String, pub active: bool }
+pub struct StoredScript { pub name: String, pub version: i64, pub source: String, pub active: bool }
 
 pub fn validate_name(name: &str) -> Result<()> {
     ensure!(!name.is_empty() && name.len() <= 128 && !name.chars().any(char::is_control), "invalid script name (1..128 bytes, no controls)");
@@ -46,7 +46,10 @@ pub fn validate_name(name: &str) -> Result<()> {
 
 async fn access<T: Send + 'static>(db: &Db, f: impl FnOnce(&mut Connection) -> Result<T> + Send + 'static) -> Result<T> {
     let conn = db.conn.clone();
-    tokio::task::spawn_blocking(move || f(&mut conn.lock().map_err(|_| anyhow::anyhow!("sieve database lock poisoned"))?)).await?
+    tokio::task::spawn_blocking(move || {
+        let mut guard = conn.lock().map_err(|_| anyhow::anyhow!("sieve database lock poisoned"))?;
+        f(&mut guard)
+    }).await?
 }
 
 fn read(conn: &Connection, account: i32, name: &str) -> Result<Option<StoredScript>> {
@@ -75,12 +78,12 @@ pub async fn have_space(db: &Db, account: i32, name: &str, size: usize) -> Resul
     access(db, move |conn| quota(conn,account,&name)).await
 }
 fn quota(conn: &Connection, account: i32, name: &str) -> Result<()> {
-    let count: usize = conn.query_row("SELECT count(*) FROM sieve_scripts WHERE account_id=?1 AND name<>?2", params![account,name], |r| r.get(0))?;
-    ensure!(count < MAX_SCRIPTS, "QUOTA/MAXSCRIPTS: too many scripts"); Ok(())
+    let count: i64 = conn.query_row("SELECT count(*) FROM sieve_scripts WHERE account_id=?1 AND name<>?2", params![account,name], |r| r.get(0))?;
+    ensure!(count < MAX_SCRIPTS as i64, "QUOTA/MAXSCRIPTS: too many scripts"); Ok(())
 }
 /// The optional version is an optimistic concurrency guard for Bus editors.
 /// ManageSieve specifies last-writer-wins and passes None.
-pub async fn put(db: &Db, account: i32, name: &str, source: &str, expected_version: Option<u64>) -> Result<u64> {
+pub async fn put(db: &Db, account: i32, name: &str, source: &str, expected_version: Option<i64>) -> Result<i64> {
     validate_name(name)?;
     let name = name.to_string(); let source = source.to_string();
     access(db, move |conn| {
@@ -91,7 +94,7 @@ pub async fn put(db: &Db, account: i32, name: &str, source: &str, expected_versi
         let current = old.as_ref().map(|s| s.version).unwrap_or(0);
         ensure!(expected_version.is_none_or(|v| v == current), "version conflict");
         // History survives deletion/rename, so names can never reuse a version.
-        let highest: u64 = tx.query_row("SELECT COALESCE(max(version),0) FROM sieve_versions WHERE account_id=?1 AND name=?2", params![account,name], |r| r.get(0))?;
+        let highest: i64 = tx.query_row("SELECT COALESCE(max(version),0) FROM sieve_versions WHERE account_id=?1 AND name=?2", params![account,name], |r| r.get(0))?;
         let version = highest + 1;
         tx.execute("INSERT INTO sieve_scripts(account_id,name,version,source) VALUES(?1,?2,?3,?4) ON CONFLICT(account_id,name) DO UPDATE SET version=excluded.version,source=excluded.source", params![account,name,version,source])?;
         tx.execute("INSERT INTO sieve_versions(account_id,name,version,source) VALUES(?1,?2,?3,?4)",params![account,name,version,source])?;
@@ -126,7 +129,7 @@ pub async fn rename(db: &Db, account: i32, old: &str, new: &str) -> Result<()> {
         let tx = conn.transaction()?;
         ensure!(read(&tx,account,&new)?.is_none(), "ALREADYEXISTS: destination exists");
         let stored = read(&tx,account,&old)?.ok_or_else(|| anyhow::anyhow!("NONEXISTENT: script not found"))?;
-        let version: u64 = tx.query_row("SELECT COALESCE(max(version),0)+1 FROM sieve_versions WHERE account_id=?1 AND name=?2",params![account,new], |r| r.get(0))?;
+        let version: i64 = tx.query_row("SELECT COALESCE(max(version),0)+1 FROM sieve_versions WHERE account_id=?1 AND name=?2",params![account,new], |r| r.get(0))?;
         tx.execute("UPDATE sieve_scripts SET name=?3,version=?4 WHERE account_id=?1 AND name=?2",params![account,old,new,version])?;
         tx.execute("INSERT INTO sieve_versions(account_id,name,version,source) VALUES(?1,?2,?3,?4)",params![account,new,version,stored.source])?;
         tx.commit()?; Ok(())

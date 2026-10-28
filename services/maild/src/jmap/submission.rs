@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use super::types::*;
 use crate::db::{self, Db};
-use mds::{Flags, ItemId, Mds, Tags};
+use mds::{ItemId, Mds, Tags};
 
 use crate::mailstore::{MailStore, MailboxRole, SqliteMailStore};
 
@@ -222,48 +222,28 @@ async fn create_submission(
             // `build_envelope`) instead of just the recipient's own
             // address. This matches what an externally-delivered
             // copy of the same message would carry.
-            let rcpt_account_id = rcpt_account.id;
             let ms = mailstore.clone();
-            let received_at_ms = chrono::Utc::now().timestamp_millis();
-            let create_outcome = tokio::task::spawn_blocking(move || {
-                let data = ms.mds().get_blob(&blob_hash)?;
-                let inbox_id = ms
-                    .mailbox_by_role(rcpt_account_id, MailboxRole::Inbox)?
-                    .ok_or_else(|| anyhow::anyhow!("recipient {rcpt_account_id} has no Inbox"))?;
-                let parsed = mail_parser::MessageParser::default()
-                    .parse(data.as_slice())
-                    .ok_or_else(|| anyhow::anyhow!("failed to parse message for envelope"))?;
-                let envelope = super::email::build_envelope(&parsed);
-                let in_reply_to = super::email::extract_in_reply_to(&parsed);
-                ms.create_email(
-                    rcpt_account_id,
-                    inbox_id,
-                    blob_hash,
-                    envelope,
-                    &in_reply_to,
-                    Flags(0),
-                    // Local delivery copy carries no user keywords.
-                    Tags::new(),
-                    received_at_ms,
-                )
-            })
-            .await;
+            let data = tokio::task::spawn_blocking(move || ms.mds().get_blob(&blob_hash)).await??;
+            let inbox = mailstore.mailbox_by_role(rcpt_account.id, MailboxRole::Inbox)?
+                .ok_or_else(|| anyhow::anyhow!("recipient has no Inbox"))?;
+            let create_outcome = crate::sieve::delivery::deliver(db, mailstore,
+                crate::sieve::delivery::Delivery {
+                    account: &rcpt_account, from: &from_addr, to: addr, data: &data,
+                    default_mailbox: inbox, default_tags: Tags::new(),
+                    external_domains: &db.sieve_external_domains,
+                    sender_verified: true, spam: false, smtp_reject: false,
+                }).await;
             match create_outcome {
-                Ok(Ok(_)) => {
+                Ok(_) => {
                     tracing::info!(from = %from_addr, to = %addr, "Local delivery completed");
                 }
-                Ok(Err(e)) => {
+                Err(e) => {
                     if strict_local {
                         return Err(e);
                     }
                     tracing::warn!(error = %e, from = %from_addr, to = %addr, "Local delivery failed");
                 }
-                Err(e) => {
-                    if strict_local {
-                        return Err(e.into());
-                    }
-                    tracing::warn!(error = %e, from = %from_addr, to = %addr, "Local delivery spawn_blocking failed");
-                }
+
             }
         } else {
             remote_addrs.push(addr.clone());

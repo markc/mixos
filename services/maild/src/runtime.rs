@@ -245,7 +245,8 @@ pub async fn build_runtime(cfg: &Config, opts: RuntimeOpts) -> Result<BuiltMaild
     // time-since-Bus-registration.
     let started_at = std::time::Instant::now();
 
-    let database = db::Db::connect(&cfg.database_path, &cfg.blob_dir).await?;
+    let mut database = db::Db::connect(&cfg.database_path, &cfg.blob_dir).await?;
+    database.sieve_external_domains = Arc::new(cfg.sieve_external_domains.clone());
     database.migrate().await?;
 
     // Inbound DATA filter pipeline (auth → rules → bayesian).

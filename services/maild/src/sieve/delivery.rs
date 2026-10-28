@@ -4,7 +4,7 @@
 use std::sync::Arc;
 use anyhow::{Result, ensure};
 use mail_parser::MessageParser;
-use mds::{ContainerAttrs, ContainerId, Flags, ItemId, Tags};
+use mds::{ContainerAttrs, ContainerId, Flags, ItemId, Tags, Mds};
 use crate::{db::{self, Db}, mailstore::{MailStore, MailboxRole, SqliteMailStore}};
 use super::{Context, Plan, Vacation, compile, store};
 
@@ -112,7 +112,7 @@ pub async fn deliver(db: &Db, ms: &Arc<SqliteMailStore>, delivery: Delivery<'_>)
             let target = if let Some(name) = filing.mailbox {
                 if let Some(id) = ms2.mailbox_by_name(id,&name)? { id }
                 else if filing.create {
-                    match ms2.create_mailbox(id,&name,None,ContainerAttrs::default()) {
+                    match ms2.create_mailbox(id,&name,None,ContainerAttrs { special_use:None,subscribed:false,extra:serde_json::json!({}) }) {
                         Ok(id) => id,
                         Err(error) => ms2.mailbox_by_name(id,&name)?.ok_or(error)?,
                     }

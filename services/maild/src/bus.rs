@@ -28,6 +28,7 @@ pub mod rules;
 pub mod search;
 pub mod stats;
 pub mod submission;
+pub mod sieve;
 pub mod subscribe_granter;
 pub mod tls;
 pub mod verdict;
@@ -330,6 +331,10 @@ pub fn command_manifest() -> Vec<::bus::CommandDescriptor> {
             "Submit typed plain-text mail once through the existing mail pipeline",
             false,
         ),
+        CommandDescriptor::new("maild.sieve.list", &["account"], "List account Sieve scripts", true),
+        CommandDescriptor::new("maild.sieve.get", &["account", "name"], "Read an account Sieve script", true),
+        CommandDescriptor::new("maild.sieve.put", &["account", "name", "source", "expected_version"], "Compile and save a versioned Sieve script", false),
+        CommandDescriptor::new("maild.sieve.activate", &["account", "name"], "Activate or disable an account Sieve script", false),
         CommandDescriptor::new(
             "maild.props.get",
             &["namespace", "key"],
@@ -734,7 +739,9 @@ async fn dispatch_loop(
             discovery: client.as_ref(),
             max_message_size,
         };
-        let (rc, body) = if cmd.command == "maild.submit" {
+        let (rc, body) = if cmd.command.starts_with("maild.sieve.") {
+            sieve::dispatch(&cmd, &db).await
+        } else if cmd.command == "maild.submit" {
             submission::dispatch(&cmd, &db, &mailstore, &aliases_runtime, max_message_size).await
         } else if let Some(action) = cmd.command.strip_prefix("maild.rules.") {
             rules::dispatch(

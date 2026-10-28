@@ -115,6 +115,7 @@ pub struct Db {
     pub migration: Arc<tokio::sync::Semaphore>,
     pub conn: Arc<Mutex<Connection>>,
     pub blob_dir: std::path::PathBuf,
+    pub sieve_external_domains: Arc<Vec<String>>,
 }
 
 impl Db {
@@ -138,6 +139,7 @@ impl Db {
             conn: Arc::new(Mutex::new(conn)),
             migration: Arc::new(tokio::sync::Semaphore::new(1)),
             blob_dir,
+            sieve_external_domains: Arc::new(Vec::new()),
         })
     }
 

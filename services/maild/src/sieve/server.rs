@@ -48,7 +48,7 @@ pub async fn start(db: Db, cfg: &Config, slot: TlsSlot, cache: Arc<ServerConfigC
 fn quoted(value: &str) -> String {
     format!("\"{}\"",value.chars().filter(|c| !c.is_control()).collect::<String>().replace('\\',"\\\\").replace('"',"\\\""))
 }
-async fn write<S: AsyncWrite + Unpin>(io: &mut BufReader<S>, response: &str) -> Result<()> {
+async fn write<S: AsyncRead + AsyncWrite + Unpin>(io: &mut BufReader<S>, response: &str) -> Result<()> {
     io.get_mut().write_all(response.as_bytes()).await?; io.get_mut().flush().await?; Ok(())
 }
 fn capabilities(secure: bool) -> String {
