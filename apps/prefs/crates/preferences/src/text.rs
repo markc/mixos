@@ -254,6 +254,26 @@ mod tests {
     use super::*;
 
     #[test]
+    fn every_text_and_interface_path_is_accepted_by_settings() {
+        let mut edits = Vec::new();
+        for surface in Surface::ALL {
+            for setting in [Setting::Padding(surface, 16), Setting::Family(surface, None),
+                Setting::Size(surface, 16.0), Setting::Light(surface, true)] {
+                edits.push(setting.edit());
+            }
+        }
+        for edit in [InterfaceEdit::Weight(Some(700)), InterfaceEdit::Size(Some(16.0))] {
+            edits.push(edit.edit());
+        }
+        for edit in edits {
+            let next = settings::resolve::patch(&settings::Desktop::default(),
+                &std::collections::BTreeMap::from([(edit.path.clone(), edit.value)]), &[])
+                .unwrap_or_else(|error| panic!("{}: {error:?}", edit.path));
+            settings::resolve(&next).unwrap();
+        }
+    }
+
+    #[test]
     fn round2_composer_offers_only_the_monospace_family() {
         assert_eq!(Surface::EmailComposer.families(), &[MONO_FAMILY]);
         assert_eq!(

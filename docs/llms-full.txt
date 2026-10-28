@@ -38311,6 +38311,11 @@ written in Mix on `tcp_listen`.
   the tile and use the destination split. Apply geometry and configure when
   unmaximising during fullscreen exit-ack.
 
+- Apply session font weight and size to Quoin scenes and panels. Window titles
+  preserve the design's display weight offset, clamped to the bundled faces,
+  and scale with interface size and text scale. Load Inter Bold for titles.
+  Existing settings events rebuild and activate these resources together.
+
 - Exclude Email composer app IDs from hosted menus and action bars. Composers
   request client decorations and keep their own single complete title row.
 - Resolve other dotted app IDs to their first Bus service segment. Route titlebar
@@ -39440,6 +39445,10 @@ Use strict MixOS configuration and owned shutdown signalling.
 
 ## Unreleased — 2026-10-27
 
+- Offer Bold (700) alongside the bundled Light, Regular, Medium and SemiBold
+  interface faces. Test every settings path produced by the controls against
+  settingsd's setter and keep interface-font refusals visible after rereading.
+
 - Desktop > Windows offers registry-driven menu, title, Action Bar and window
   button alignment, plus Action Bar hosting in the title bar. Window buttons
   stay editable in CSD and SSD. All axes apply immediately and are described
@@ -39459,6 +39468,10 @@ Use strict MixOS configuration and owned shutdown signalling.
 > Mirrored from [`libs/settings/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/libs/settings/CHANGELOG.md), where releases update it. The component's page is [settings](README.md). This page describes the current `main` branch of MixOS.
 
 ## Unreleased
+
+`settings.apply` now stores `appearance.font_size`; null and reset restore the
+design size. Regression checks cover summary readback, bounds and every concrete
+schema path, plus the paths produced by Preferences' controls.
 
 Title band names add `appearance.title_align`, `appearance.actions_align` and
 `appearance.actions_place`. Menu and caption positions accept centre. Caption
@@ -39766,6 +39779,11 @@ their bytes.
 # Changelog
 
 ## Unreleased — 2026-10-28
+
+- Bundle the unmodified Inter 4.1 Bold (700) face under the existing SIL OFL
+  licence. Interface weights 300–700 select distinct faces; heading offsets
+  clamp to that range. Headless coverage tests require each weight to draw
+  more ink, and size tests check proportional styles without changing mono.
 
 - Allow a viewport to require its own complete client frame independently of
   the session decoration preference and later theme changes. Each viewport

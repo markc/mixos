@@ -81,6 +81,7 @@ fonts-weight-light = Light
 fonts-weight-regular = Regular
 fonts-weight-medium = Medium
 fonts-weight-semibold = SemiBold
+fonts-weight-bold = Bold
 fonts-size = Size
 font-weight-refused = Font weight is 100 to 900 in steps of 100.
 interface-size-refused = Font size is 9 to 18 pixels.

@@ -15,7 +15,7 @@ use design::{
 };
 use settings::{Diagnostic, Snapshot};
 use std::sync::Arc;
-use toolkit::theme::Theme;
+use toolkit::theme::{Overlay, Theme};
 
 /// The effective context the shell draws in.
 pub(crate) const CONTEXT: &str = "desktop";
@@ -77,6 +77,9 @@ fn theme_of(snapshot: &Snapshot) -> Result<Theme, Diagnostic> {
         }
         None => Theme::for_context(context),
     };
+    let theme = theme
+        .with_overlay(Overlay::from_appearance(&snapshot.desktop.appearance))
+        .map_err(|error| unsupported("appearance", &format!("Invalid overlay: {error:?}")))?;
     Ok(theme
         .framed(decorations, captions)
         .with_menus(
@@ -107,6 +110,13 @@ pub(crate) fn build(snapshot: &Snapshot) -> Result<Look, Diagnostic> {
         .map_or(1.0, |effective| effective.ui.text_scale as f32)
         .clamp(0.5, 3.0);
     let title = design::active_typography(Some(theme.typography()), TypographyRole::UiDisplay);
+    let title_weight = if theme.overlay().weight.is_some() {
+        toolkit::fonts::weights(&theme).1
+    } else {
+        title.weight
+    };
+    let ui = design::active_typography(Some(theme.typography()), TypographyRole::Ui);
+    let size_ratio = theme.overlay().size.map_or(1.0, |size| size / ui.font_size as f32);
     let family = match title.generic {
         TypographyGeneric::Monospace => DecoFontFamily::Monospace,
         _ if title.family.is_empty() || title.family == "Inter" => DecoFontFamily::SystemUi,
@@ -119,8 +129,8 @@ pub(crate) fn build(snapshot: &Snapshot) -> Result<Look, Diagnostic> {
                 style,
                 theme.dictionary(),
                 family.clone(),
-                DecoFontWeight(title.weight),
-                title.font_size as f32 * text_scale,
+                DecoFontWeight(title_weight),
+                title.font_size as f32 * size_ratio * text_scale,
             );
             chrome.menu_style = theme.menu_style();
             chrome.menu_side = theme.menu_side();
@@ -194,8 +204,13 @@ pub(crate) fn fixture(mode: &str, scale: f64) -> Arc<Look> {
     let mut desktop = settings::Desktop::default();
     desktop.appearance.mode = mode.into();
     desktop.ui.text_scale = scale;
+    Arc::new(build(&snapshot_of(desktop)).unwrap())
+}
+
+#[cfg(test)]
+fn snapshot_of(desktop: settings::Desktop) -> Snapshot {
     let effective = settings::resolve(&desktop).unwrap();
-    let snapshot = Snapshot {
+    Snapshot {
         schema: settings::SCHEMA,
         binding: settings::Binding {
             instance: "desktop".into(),
@@ -207,13 +222,55 @@ pub(crate) fn fixture(mode: &str, scale: f64) -> Arc<Look> {
         source_digest: settings::source_digest(settings::EMBEDDED_DEFAULT_SOURCE),
         desktop,
         effective,
-    };
-    Arc::new(build(&snapshot).unwrap())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn session_fonts_reach_scenes_titles_and_the_resource_change_plan() {
+        let initial = snapshot_of(settings::Desktop::default());
+        let plain = build(&initial).unwrap();
+        assert_eq!(plain.theme.overlay(), &Overlay::default());
+        let title = design::active_typography(Some(plain.theme.typography()), TypographyRole::UiDisplay);
+        for style in ChromeStyle::ALL {
+            let chrome = plain.chrome(style);
+            assert_eq!(chrome.deco.metrics.title_font_weight.0, title.weight);
+            assert_eq!(chrome.deco.metrics.title_size_px, title.font_size as f32);
+        }
+        let unscaled = egui::Context::default();
+        install(&unscaled, &plain.theme, plain.text_scale, false);
+        for weight in [300, 500, 700] {
+            let mut desktop = initial.desktop.clone();
+            desktop.appearance.font_weight = Some(weight);
+            desktop.appearance.font_size = Some(18.0);
+            desktop.ui.text_scale = 1.5;
+            let next = snapshot_of(desktop);
+            let changes = settings::domains::ChangePlan::between(Some(&initial), &next, CONTEXT, true);
+            assert!(changes.resources && changes.text && changes.layout && changes.paint);
+            let look = build(&next).unwrap();
+            assert_eq!(look.theme.overlay().weight, Some(weight));
+            assert_eq!(look.theme.overlay().size, Some(18.0));
+            let ctx = egui::Context::default();
+            install(&ctx, &look.theme, look.text_scale, false);
+            let ui = design::active_typography(Some(plain.theme.typography()), TypographyRole::Ui);
+            let ratio = 18.0 / ui.font_size as f32 * 1.5;
+            for text in [egui::TextStyle::Body, egui::TextStyle::Button, egui::TextStyle::Small, egui::TextStyle::Heading] {
+                assert!((ctx.global_style().text_styles[&text].size
+                    - unscaled.global_style().text_styles[&text].size * ratio).abs() < 0.001);
+            }
+            let _ = ctx.run(Default::default(), |ctx| ctx.fonts(|fonts| {
+                assert_eq!(fonts.definitions().families[&egui::FontFamily::Proportional][0], toolkit::fonts::inter_face(weight).0);
+            }));
+            for style in ChromeStyle::ALL {
+                let chrome = look.chrome(style);
+                assert_eq!(chrome.deco.metrics.title_font_weight.0, toolkit::fonts::weights(&look.theme).1);
+                assert!((chrome.deco.metrics.title_size_px - title.font_size as f32 * ratio).abs() < 0.001);
+            }
+        }
+    }
 
     #[test]
     fn the_look_follows_mode_and_text_scale() {

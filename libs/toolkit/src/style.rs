@@ -457,6 +457,24 @@ mod tests {
     }
 
     #[test]
+    fn interface_size_scales_proportional_styles_once_and_preserves_monospace() {
+        for scheme in [Scheme::Ocean, Scheme::Studio] {
+            let base = Theme::for_context(DesignContext { scheme, ..Default::default() });
+            let before = style(&base);
+            let ui = design::active_typography(Some(base.typography()), TypographyRole::Ui);
+            let sized = base.clone().with_overlay(crate::theme::Overlay {
+                size: Some(18.0), ..Default::default()
+            }).unwrap();
+            let after = style(&sized);
+            for (text, font) in &before.text_styles {
+                let ratio = if *text == TextStyle::Monospace { 1.0 } else { 18.0 / ui.font_size as f32 };
+                assert!((after.text_styles[text].size - font.size * ratio).abs() < 0.001);
+            }
+            assert_eq!(style(&base.clone().with_overlay(Default::default()).unwrap()).text_styles, before.text_styles);
+        }
+    }
+
+    #[test]
     fn mix_is_endpoint_exact() {
         let (a, b) = (Color32::from_gray(10), Color32::from_gray(250));
         assert_eq!(mix(a, b, 0.0), a);

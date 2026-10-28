@@ -582,6 +582,9 @@ fn set(desktop: &mut Desktop, path: &str, value: Option<Value>) -> Result<(), Di
         "appearance.font_weight" => {
             desktop.appearance.font_weight = typed(path, value.unwrap_or(Value::Null))?
         }
+        "appearance.font_size" => {
+            desktop.appearance.font_size = typed(path, value.unwrap_or(Value::Null))?
+        }
         "appearance.mono_family" => {
             desktop.appearance.mono_family = typed(path, value.unwrap_or(Value::Null))?
         }
@@ -690,6 +693,43 @@ fn set(desktop: &mut Desktop, path: &str, value: Option<Value>) -> Result<(), Di
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_concrete_schema_path_has_a_setter() {
+        for path in describe()["fields"].as_object().unwrap().keys() {
+            if !path.contains('<') {
+                let next = patch(&Desktop::default(), &BTreeMap::new(), &[path.clone()])
+                    .unwrap_or_else(|error| panic!("{path}: {error:?}"));
+                resolve(&next).unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn interface_size_is_patched_summarised_and_reset() {
+        let path = "appearance.font_size";
+        let initial = Desktop::default();
+        let sized = patch(&initial, &BTreeMap::from([(path.into(), json!(16.0))]), &[]).unwrap();
+        let snapshot = Snapshot {
+            schema: SCHEMA,
+            binding: Binding { instance: "example".into(), profile: "default".into() },
+            incarnation: "test".into(),
+            revision: Revision(2),
+            design_revision: Revision(1),
+            source_digest: source_digest(EMBEDDED_DEFAULT_SOURCE),
+            effective: resolve(&sized).unwrap(),
+            desktop: sized.clone(),
+        };
+        assert_eq!(Summary::of(&snapshot).appearance.font_size, Some(16.0));
+        assert_eq!(snapshot.effective["desktop"].font_size, Some(16.0));
+        assert_eq!(patch(&sized, &BTreeMap::new(), &[path.into()]).unwrap(), initial);
+        assert_eq!(patch(&sized, &BTreeMap::from([(path.into(), Value::Null)]), &[]).unwrap(), initial);
+        for size in [8.9, 18.1] {
+            let bad = patch(&initial, &BTreeMap::from([(path.into(), json!(size))]), &[]).unwrap();
+            assert_eq!(resolve(&bad).unwrap_err()[0].path, path);
+        }
+        assert!(patch(&initial, &BTreeMap::from([(path.into(), json!("large"))]), &[]).is_err());
+    }
     /// The premise of the shared compile: with the embedded source, every
     /// built-in app compiles to exactly what no app does.
     #[test]

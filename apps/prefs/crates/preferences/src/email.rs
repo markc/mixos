@@ -540,6 +540,28 @@ fn edit_between(old: &Email, new: &Email) -> BTreeMap<String, Value> {
     changes
 }
 
+#[cfg(test)]
+#[test]
+fn every_email_path_prefs_sends_has_a_settings_setter() {
+    let old = Email::default();
+    let mut next = old.clone();
+    next.accounts.push(AccountEntry {
+        id: "example".into(), name: "Example".into(), url: "https://mail.example.org".into(),
+        email: "user@example.org".into(), ca_path: None, enabled: true, signature: String::new(), identities: Vec::new()
+    });
+    next.default_account = Some("example".into());
+    next.mail.page_size = old.mail.page_size + 1;
+    next.mail.mark_read_on_open = !old.mail.mark_read_on_open;
+    next.mail.confirm_delete = !old.mail.confirm_delete;
+    next.mail.quote_on_reply = !old.mail.quote_on_reply;
+    next.mail.reply_position = if old.mail.reply_position == ReplyPosition::Above { ReplyPosition::Below } else { ReplyPosition::Above };
+    let changes = edit_between(&old, &next);
+    assert_eq!(changes.len(), 7);
+    let patched = settings::resolve::patch(&settings::Desktop::default(), &changes, &[]).unwrap();
+    settings::resolve(&patched).unwrap();
+    assert_eq!(patched.email, next);
+}
+
 /// `change` over `email` as settingsd holds it: the edit to send, checked
 /// by the settings crate's rules. `mint` gives a new account its id.
 pub fn plan(

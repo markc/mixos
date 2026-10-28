@@ -34,19 +34,24 @@ pub const HEADING: &str = "heading";
 /// The body weight of the chrome schemes: Inter Regular.
 pub const CHROME_WEIGHT: u16 = 400;
 
+/// Static Inter weights available to interface controls and title renderers.
+pub const INTER_WEIGHTS: &[u16] = &[300, 400, 500, 600, 700];
+
 const INTER_LIGHT: &[u8] = include_bytes!("../assets/fonts/Inter-Light.ttf");
 const INTER_REGULAR: &[u8] = include_bytes!("../assets/fonts/Inter-Regular.ttf");
 const INTER_MEDIUM: &[u8] = include_bytes!("../assets/fonts/Inter-Medium.ttf");
 const INTER_SEMIBOLD: &[u8] = include_bytes!("../assets/fonts/Inter-SemiBold.ttf");
+const INTER_BOLD: &[u8] = include_bytes!("../assets/fonts/Inter-Bold.ttf");
 
 /// The embedded static Inter face nearest `weight` (CSS numbers): 300, 400,
-/// 500 or 600, with lighter requests taking Light and heavier SemiBold.
+/// 500, 600 or 700, with lighter requests taking Light and heavier Bold.
 pub fn inter_face(weight: u16) -> (&'static str, &'static [u8]) {
     match weight {
         0..=349 => ("Inter-Light", INTER_LIGHT),
         350..=449 => ("Inter-Regular", INTER_REGULAR),
         450..=549 => ("Inter-Medium", INTER_MEDIUM),
-        _ => ("Inter-SemiBold", INTER_SEMIBOLD),
+        550..=649 => ("Inter-SemiBold", INTER_SEMIBOLD),
+        _ => ("Inter-Bold", INTER_BOLD),
     }
 }
 
@@ -56,8 +61,9 @@ pub fn mono_face() -> (&'static str, &'static [u8]) {
     assets::mixos::mono_face(400)
 }
 
-/// The font definitions for `theme`.
-pub fn definitions(theme: &Theme) -> FontDefinitions {
+/// Body and display weights, with the session override preserving the
+/// design's display offset and clamping it to the bundled range.
+pub fn weights(theme: &Theme) -> (u16, u16) {
     let typography = theme.typography();
     let mut ui = design::active_typography(Some(typography), TypographyRole::Ui).weight;
     let mut display = design::active_typography(Some(typography), TypographyRole::UiDisplay).weight;
@@ -71,9 +77,14 @@ pub fn definitions(theme: &Theme) -> FontDefinitions {
     if let Some(weight) = theme.overlay().weight {
         let offset = i32::from(display) - i32::from(ui);
         ui = weight;
-        display = (i32::from(weight) + offset).clamp(100, 900) as u16;
+        display = (i32::from(weight) + offset).clamp(300, 700) as u16;
     }
+    (ui, display)
+}
 
+/// The font definitions for `theme`.
+pub fn definitions(theme: &Theme) -> FontDefinitions {
+    let (ui, display) = weights(theme);
     let mut fonts = FontDefinitions::default();
     let mut add = |(name, bytes): (&'static str, &'static [u8])| {
         fonts
@@ -145,13 +156,52 @@ mod tests {
     use super::*;
 
     #[test]
+    fn offered_weights_install_distinct_faces_and_clamp_the_display_offset() {
+        let mut faces = std::collections::BTreeSet::new();
+        for &weight in INTER_WEIGHTS {
+            let theme = Theme::embedded().with_overlay(crate::theme::Overlay {
+                weight: Some(weight), ..Default::default()
+            }).unwrap();
+            let fonts = definitions(&theme);
+            assert!(faces.insert(fonts.families[&FontFamily::Proportional][0].clone()));
+            assert_eq!(weights(&theme).1, (weight + 200).min(700));
+        }
+    }
+
+    #[test]
+    fn heavier_faces_rasterise_with_strictly_more_coverage() {
+        let mut previous = 0;
+        for &weight in INTER_WEIGHTS {
+            let theme = Theme::embedded().with_overlay(crate::theme::Overlay {
+                weight: Some(weight), ..Default::default()
+            }).unwrap();
+            let ctx = egui::Context::default();
+            install(&ctx, &theme);
+            let output = ctx.run(egui::RawInput::default(), |ctx| {
+                ctx.fonts_mut(|fonts| {
+                    fonts.layout_no_wrap("MixOS Preferences Hamburgefonts 0123456789".into(),
+                        FontId::proportional(24.0), egui::Color32::WHITE);
+                });
+            });
+            let coverage: u64 = output.textures_delta.set.iter().map(|(_, delta)| {
+                let egui::ImageData::Color(image) = &delta.image;
+                image.pixels.iter().map(|pixel| u64::from(pixel.a())).sum::<u64>()
+            }).sum();
+            eprintln!("Inter {weight}: atlas coverage {coverage}");
+            assert!(coverage > previous, "weight {weight}: {coverage} <= {previous}");
+            previous = coverage;
+        }
+    }
+
+    #[test]
     fn weights_select_their_static_faces() {
         assert_eq!(inter_face(300).0, "Inter-Light");
         assert_eq!(inter_face(400).0, "Inter-Regular");
         assert_eq!(inter_face(500).0, "Inter-Medium");
         assert_eq!(inter_face(600).0, "Inter-SemiBold");
         assert_eq!(inter_face(200).0, "Inter-Light");
-        assert_eq!(inter_face(900).0, "Inter-SemiBold");
+        assert_eq!(inter_face(700).0, "Inter-Bold");
+        assert_eq!(inter_face(900).0, "Inter-Bold");
     }
 
     #[test]

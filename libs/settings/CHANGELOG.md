@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+`settings.apply` now stores `appearance.font_size`; null and reset restore the
+design size. Regression checks cover summary readback, bounds and every concrete
+schema path, plus the paths produced by Preferences' controls.
+
 Title band names add `appearance.title_align`, `appearance.actions_align` and
 `appearance.actions_place`. Menu and caption positions accept centre. Caption
 placement now defaults to `auto`: right in CSD and the style's own side in SSD.

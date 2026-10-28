@@ -729,6 +729,7 @@ fn interface_font_controls(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEven
                 (Some(400), label("fonts-weight-regular")),
                 (Some(500), label("fonts-weight-medium")),
                 (Some(600), label("fonts-weight-semibold")),
+                (Some(700), label("fonts-weight-bold")),
             ];
             if let Some(weight) = choices(ui, font.weight, &weights) {
                 events.push(UiEvent::Interface(InterfaceEdit::Weight(weight)));

@@ -22,6 +22,11 @@ generated: by docs/_build/gen-site.mix from services/compd/CHANGELOG.md; do not 
   the tile and use the destination split. Apply geometry and configure when
   unmaximising during fullscreen exit-ack.
 
+- Apply session font weight and size to Quoin scenes and panels. Window titles
+  preserve the design's display weight offset, clamped to the bundled faces,
+  and scale with interface size and text scale. Load Inter Bold for titles.
+  Existing settings events rebuild and activate these resources together.
+
 - Exclude Email composer app IDs from hosted menus and action bars. Composers
   request client decorations and keep their own single complete title row.
 - Resolve other dotted app IDs to their first Bus service segment. Route titlebar

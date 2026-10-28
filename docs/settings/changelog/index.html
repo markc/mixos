@@ -251,6 +251,9 @@
 <p>Mirrored from <a href="https://github.com/markc/mixos/blob/main/libs/settings/CHANGELOG.md"><code>libs/settings/CHANGELOG.md</code></a>, where releases update it. The component's page is <a href="/settings/">settings</a>. This page describes the current <code>main</code> branch of MixOS.</p>
 </blockquote>
 <h2 id="unreleased">Unreleased</h2>
+<p><code>settings.apply</code> now stores <code>appearance.font_size</code>; null and reset restore the
+design size. Regression checks cover summary readback, bounds and every concrete
+schema path, plus the paths produced by Preferences' controls.</p>
 <p>Title band names add <code>appearance.title_align</code>, <code>appearance.actions_align</code> and
 <code>appearance.actions_place</code>. Menu and caption positions accept centre. Caption
 placement now defaults to <code>auto</code>: right in CSD and the style's own side in SSD.

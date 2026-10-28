@@ -11,6 +11,11 @@ generated: by docs/_build/gen-site.mix from libs/toolkit/CHANGELOG.md; do not ed
 
 ## Unreleased — 2026-10-28
 
+- Bundle the unmodified Inter 4.1 Bold (700) face under the existing SIL OFL
+  licence. Interface weights 300–700 select distinct faces; heading offsets
+  clamp to that range. Headless coverage tests require each weight to draw
+  more ink, and size tests check proportional styles without changing mono.
+
 - Allow a viewport to require its own complete client frame independently of
   the session decoration preference and later theme changes. Each viewport
   remembers its own decoration request, so a client-framed child beside a

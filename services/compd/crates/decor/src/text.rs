@@ -70,7 +70,7 @@ fn font_system() -> &'static Mutex<FontSystem> {
     static FONTS: OnceLock<Mutex<FontSystem>> = OnceLock::new();
     FONTS.get_or_init(|| {
         let mut db = fontdb::Database::new();
-        for weight in [300, 400, 500, 600] {
+        for &weight in toolkit::fonts::INTER_WEIGHTS {
             db.load_font_data(toolkit::fonts::inter_face(weight).1.to_vec());
         }
         db.load_font_data(toolkit::fonts::mono_face().1.to_vec());
@@ -179,6 +179,19 @@ mod tests {
         let family = DecoFontFamily::SystemUi;
         assert_eq!(title_mask("   ", &family, 13.0, 400, 200.0, 1.0), None);
         assert_eq!(title_mask("Files", &family, 13.0, 400, 0.0, 1.0), None);
+    }
+
+    #[test]
+    fn every_offered_weight_draws_a_heavier_title() {
+        let mut previous = 0;
+        for &weight in toolkit::fonts::INTER_WEIGHTS {
+            let mask = title_mask("MixOS Preferences Hamburgefonts 0123456789",
+                &DecoFontFamily::SystemUi, 24.0, weight, 2000.0, 1.0).unwrap();
+            let coverage: u64 = mask.alpha.iter().map(|&a| u64::from(a)).sum();
+            eprintln!("Inter {weight}: title coverage {coverage}");
+            assert!(coverage > previous, "weight {weight}: {coverage} <= {previous}");
+            previous = coverage;
+        }
     }
 
     /// Whatever fonts the machine has, the mask never exceeds its width.

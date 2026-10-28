@@ -1819,6 +1819,21 @@ mod tests {
     }
 
     #[test]
+    fn every_appearance_path_prefs_sends_has_a_settings_setter() {
+        let base = Look::default();
+        let changed = base.with(&json!({"scheme":"forest", "style":"plain", "mode":"light",
+            "contrast":"high", "decorations":"ssd", "caption_side":"left", "window_style":"win11",
+            "menu_style":"button", "menu_side":"right", "title_align":"left",
+            "actions_align":"right", "actions_place":"titlebar", "font_family":"Inter",
+            "mono_family":"JetBrains Mono", "text_scale":1.5, "density":1.5, "reduced_motion":true
+        })).unwrap();
+        let changes = changed.changes(&base);
+        assert_eq!(changes.len(), 17, "every appearance axis differs");
+        let next = settings::resolve::patch(&settings::Desktop::default(), &changes, &[]).unwrap();
+        settings::resolve(&next).unwrap();
+    }
+
+    #[test]
     fn missing_settings_problem_clears_on_recovered_read() {
         let mut e = read();
         e.edit_terminal(crate::terminal::Setting::Padding(8));
@@ -1836,6 +1851,22 @@ mod tests {
         let ticket = settings_calls(&mut e)[0].0;
         e.settled(ticket, reply(0, snapshot_body("8", "studio", "dark")));
         assert!(e.look.problem.is_none());
+    }
+
+    #[test]
+    fn refused_interface_apply_stays_visible_after_the_followup_read() {
+        let mut e = read();
+        e.edit_interface_font(crate::text::InterfaceEdit::Size(Some(16.0)));
+        answer_next(&mut e, 10, json!({"status":"validation_failed", "diagnostics":[{
+            "path":"appearance.font_size", "code":"validation_failed", "message":"Unknown field or scope"
+        }]}));
+        let problem = e.look.problem.clone().expect("the refusal is displayed");
+        assert!(problem.contains("Unknown field or scope"));
+        assert_eq!(e.look.problem_source, Some(crate::Section::TextAndFonts));
+        answer_next(&mut e, 0, snapshot_body("7", "studio", "dark"));
+        assert_eq!(e.look.problem, Some(problem));
+        assert_eq!(e.look.interface_font.as_ref().unwrap().size, None);
+        assert!(e.failed);
     }
 
     #[test]

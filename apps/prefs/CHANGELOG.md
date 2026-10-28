@@ -3,6 +3,10 @@
 
 ## Unreleased — 2026-10-27
 
+- Offer Bold (700) alongside the bundled Light, Regular, Medium and SemiBold
+  interface faces. Test every settings path produced by the controls against
+  settingsd's setter and keep interface-font refusals visible after rereading.
+
 - Desktop > Windows offers registry-driven menu, title, Action Bar and window
   button alignment, plus Action Bar hosting in the title bar. Window buttons
   stay editable in CSD and SSD. All axes apply immediately and are described
