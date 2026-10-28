@@ -34,8 +34,22 @@ impl Fixture {
             tmp.path().join("mds"),
         )?)));
         for id in [1, 2] {
-            for (name,role) in [("Inbox","\\Inbox"),("Sent","\\Sent"),("Drafts","\\Drafts"),("Junk","\\Junk")] {
-                ms.create_mailbox(id,name,None,mds::ContainerAttrs { special_use:Some(role.into()),subscribed:true,extra:serde_json::json!({}) })?;
+            for (name, role) in [
+                ("Inbox", "\\Inbox"),
+                ("Sent", "\\Sent"),
+                ("Drafts", "\\Drafts"),
+                ("Junk", "\\Junk"),
+            ] {
+                ms.create_mailbox(
+                    id,
+                    name,
+                    None,
+                    mds::ContainerAttrs {
+                        special_use: Some(role.into()),
+                        subscribed: true,
+                        extra: serde_json::json!({}),
+                    },
+                )?;
             }
         }
         Ok(Self {
@@ -69,11 +83,7 @@ impl Fixture {
                     .mailbox_by_role(self.account.id, MailboxRole::Inbox)?
                     .unwrap(),
                 default_tags: Tags::new(),
-                external_domains: if external {
-                    &domains
-                } else {
-                    &[]
-                },
+                external_domains: if external { &domains } else { &[] },
                 sender_verified: true,
                 spam: false,
                 smtp_reject: smtp,
@@ -125,13 +135,26 @@ async fn refused_redirect_cancels_other_actions_and_keeps() -> Result<()> {
 #[tokio::test]
 async fn fileinto_nested_names_resolve_parent_and_inbox_role() -> Result<()> {
     let f = Fixture::new().await?;
-    f.script(r#"require ["fileinto","mailbox"]; fileinto :create "INBOX/Projects/Work";"#).await?;
-    f.deliver(MESSAGE,false,false).await?;
-    let inbox = f.ms.mailbox_by_role(f.account.id,MailboxRole::Inbox)?.unwrap();
+    f.script(r#"require ["fileinto","mailbox"]; fileinto :create "INBOX/Projects/Work";"#)
+        .await?;
+    f.deliver(MESSAGE, false, false).await?;
+    let inbox =
+        f.ms.mailbox_by_role(f.account.id, MailboxRole::Inbox)?
+            .unwrap();
     let boxes = f.ms.list_mailboxes(f.account.id)?;
-    let projects = boxes.iter().find(|m| m.parent == Some(inbox) && m.name == "Projects").unwrap();
-    let work = boxes.iter().find(|m| m.parent == Some(projects.id) && m.name == "Work").unwrap();
-    assert_eq!(f.ms.list_emails_in_mailbox(f.account.id,work.id,ListOpts::default())?.len(),1);
+    let projects = boxes
+        .iter()
+        .find(|m| m.parent == Some(inbox) && m.name == "Projects")
+        .unwrap();
+    let work = boxes
+        .iter()
+        .find(|m| m.parent == Some(projects.id) && m.name == "Work")
+        .unwrap();
+    assert_eq!(
+        f.ms.list_emails_in_mailbox(f.account.id, work.id, ListOpts::default())?
+            .len(),
+        1
+    );
     Ok(())
 }
 #[tokio::test]
@@ -315,13 +338,21 @@ async fn native_submission_runs_recipient_sieve() -> Result<()> {
 #[tokio::test]
 async fn unicode_ereject_uses_ascii_smtp_and_reject_preserves_reason_in_dsn() -> Result<()> {
     let f = Fixture::new().await?;
-    f.script("require \"ereject\"; ereject \"Denied café\";").await?;
-    let error = f.deliver(MESSAGE,false,true).await.unwrap_err();
-    assert!(error.downcast_ref::<delivery::Rejected>().unwrap().0.is_ascii());
-    f.script("require \"reject\"; reject \"Denied café\";").await?;
-    assert!(f.deliver(MESSAGE,false,true).await?.is_none());
-    let queued = maild::smtp::queue::list(&f.db.conn,10).await?;
-    assert_eq!(queued.len(),1);
+    f.script("require \"ereject\"; ereject \"Denied café\";")
+        .await?;
+    let error = f.deliver(MESSAGE, false, true).await.unwrap_err();
+    assert!(
+        error
+            .downcast_ref::<delivery::Rejected>()
+            .unwrap()
+            .0
+            .is_ascii()
+    );
+    f.script("require \"reject\"; reject \"Denied café\";")
+        .await?;
+    assert!(f.deliver(MESSAGE, false, true).await?.is_none());
+    let queued = maild::smtp::queue::list(&f.db.conn, 10).await?;
+    assert_eq!(queued.len(), 1);
     let bytes = f.ms.mds().get_blob(&queued[0].blob_hash.unwrap())?;
     assert!(String::from_utf8_lossy(&bytes).contains("Denied café"));
     Ok(())
@@ -330,27 +361,35 @@ async fn unicode_ereject_uses_ascii_smtp_and_reject_preserves_reason_in_dsn() ->
 async fn vacation_mime_entity_preserves_body_and_refuses_envelope_header_injection() -> Result<()> {
     let f = Fixture::new().await?;
     f.script("require \"vacation\"; vacation :mime text:\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<p>Away</p>\r\n.\r\n;").await?;
-    f.deliver(MESSAGE,true,false).await?;
-    let queued = maild::smtp::queue::list(&f.db.conn,10).await?; assert_eq!(queued.len(),1);
+    f.deliver(MESSAGE, true, false).await?;
+    let queued = maild::smtp::queue::list(&f.db.conn, 10).await?;
+    assert_eq!(queued.len(), 1);
     let bytes = f.ms.mds().get_blob(&queued[0].blob_hash.unwrap())?;
     let message = mail_parser::MessageParser::default().parse(&bytes).unwrap();
     assert!(message.body_html(0).unwrap().contains("<p>Away</p>"));
-    assert_eq!(message.from().unwrap().first().unwrap().address(),Some("bob@example.com"));
+    assert_eq!(
+        message.from().unwrap().first().unwrap().address(),
+        Some("bob@example.com")
+    );
     f.script("require \"vacation\"; vacation :mime text:\r\nFrom: forged@example.org\r\nContent-Type: text/plain\r\n\r\nInjected\r\n.\r\n;").await?;
-    f.deliver(MESSAGE,true,false).await?;
-    assert_eq!(maild::smtp::queue::list(&f.db.conn,10).await?.len(),1);
+    f.deliver(MESSAGE, true, false).await?;
+    assert_eq!(maild::smtp::queue::list(&f.db.conn, 10).await?.len(), 1);
     Ok(())
 }
 #[tokio::test]
 async fn outbound_failure_after_keep_does_not_request_duplicate_delivery() -> Result<()> {
     let f = Fixture::new().await?;
     f.db.conn.lock().unwrap().execute_batch("CREATE TRIGGER fail_sieve_queue BEFORE INSERT ON smtp_queue BEGIN SELECT RAISE(FAIL, 'injected queue failure'); END;")?;
-    f.script(r#"require "copy"; redirect :copy "outside@example.org";"#).await?;
-    assert!(f.deliver(MESSAGE,true,false).await?.is_some()); assert_eq!(f.count("Inbox"),1);
+    f.script(r#"require "copy"; redirect :copy "outside@example.org";"#)
+        .await?;
+    assert!(f.deliver(MESSAGE, true, false).await?.is_some());
+    assert_eq!(f.count("Inbox"), 1);
     f.script(r#"redirect "outside@example.org";"#).await?;
-    assert!(f.deliver(MESSAGE,true,false).await.is_err()); assert_eq!(f.count("Inbox"),1);
+    assert!(f.deliver(MESSAGE, true, false).await.is_err());
+    assert_eq!(f.count("Inbox"), 1);
     f.script(r#"require "vacation"; vacation "Away";"#).await?;
-    assert!(f.deliver(MESSAGE,true,false).await?.is_some()); assert_eq!(f.count("Inbox"),2);
+    assert!(f.deliver(MESSAGE, true, false).await?.is_some());
+    assert_eq!(f.count("Inbox"), 2);
     Ok(())
 }
 #[test]

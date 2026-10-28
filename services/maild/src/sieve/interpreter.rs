@@ -1000,8 +1000,8 @@ impl Eval<'_> {
                                         })
                                     })
                                     .unwrap_or_else(|| content_type.starts_with("text/"));
-                                if selected {
-                                    if let Some(text) = part.text_contents() {
+                                if selected
+                                    && let Some(text) = part.text_contents() {
                                         values.push(
                                             if !args.has("content")
                                                 && matches!(&part.body, PartType::Html(_))
@@ -1011,7 +1011,6 @@ impl Eval<'_> {
                                                 text.to_string()
                                             },
                                         );
-                                    }
                                 }
                             }
                         }

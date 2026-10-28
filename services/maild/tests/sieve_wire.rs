@@ -54,7 +54,10 @@ async fn starttls_upload_activate_then_real_smtp_delivery_and_rejection() -> Res
     std::fs::write(&cert_path, certified.cert.pem())?;
     std::fs::write(&key_path, certified.key_pair.serialize_pem())?;
     let filter_path = tmp.path().join("inbound.mix");
-    std::fs::write(&filter_path,"-- SPDX-License-Identifier: MIT OR Apache-2.0\nreturn \"Global\"\n")?;
+    std::fs::write(
+        &filter_path,
+        "-- SPDX-License-Identifier: MIT OR Apache-2.0\nreturn \"Global\"\n",
+    )?;
     let mut cfg = Config {
         hostname: "mail.example.com".into(),
         database_path: tmp.path().join("mail.db").display().to_string(),
@@ -89,8 +92,26 @@ async fn starttls_upload_activate_then_real_smtp_delivery_and_rejection() -> Res
     let account = db::account::get_by_email(&db.conn, "bob@example.com")
         .await?
         .unwrap();
-    ms.create_mailbox(account.id,"Inbox",None,mds::ContainerAttrs { special_use:Some("\\Inbox".into()),subscribed:true,extra:serde_json::json!({}) })?;
-    let global = ms.create_mailbox(account.id,"Global",None,mds::ContainerAttrs { special_use:None,subscribed:false,extra:serde_json::json!({}) })?;
+    ms.create_mailbox(
+        account.id,
+        "Inbox",
+        None,
+        mds::ContainerAttrs {
+            special_use: Some("\\Inbox".into()),
+            subscribed: true,
+            extra: serde_json::json!({}),
+        },
+    )?;
+    let global = ms.create_mailbox(
+        account.id,
+        "Global",
+        None,
+        mds::ContainerAttrs {
+            special_use: None,
+            subscribed: false,
+            extra: serde_json::json!({}),
+        },
+    )?;
 
     let mut roots = rustls::RootCertStore::empty();
     roots.add(certified.cert.der().clone())?;
@@ -213,7 +234,10 @@ async fn starttls_upload_activate_then_real_smtp_delivery_and_rejection() -> Res
     let projects = ms.mailbox_by_name(account.id, "Projects")?.unwrap();
     let messages = ms.list_emails_in_mailbox(account.id, projects, ListOpts::default())?;
     assert_eq!(messages.len(), 1);
-    assert!(ms.list_emails_in_mailbox(account.id,global,ListOpts::default())?.is_empty());
+    assert!(
+        ms.list_emails_in_mailbox(account.id, global, ListOpts::default())?
+            .is_empty()
+    );
     assert_ne!(messages[0].keywords.0 & mds::Flags::SEEN, 0);
     assert!(
         send(
@@ -226,7 +250,11 @@ async fn starttls_upload_activate_then_real_smtp_delivery_and_rejection() -> Res
     assert!(message(&mut smtp).await?.starts_with("550 5.7.1 Denied"));
     assert!(send(&mut io, "SETACTIVE \"\"\r\n").await?.starts_with("OK"));
     assert!(message(&mut smtp).await?.starts_with("250"));
-    assert_eq!(ms.list_emails_in_mailbox(account.id,global,ListOpts::default())?.len(),1);
+    assert_eq!(
+        ms.list_emails_in_mailbox(account.id, global, ListOpts::default())?
+            .len(),
+        1
+    );
     assert!(
         send(&mut io, "DELETESCRIPT \"renamed\"\r\n")
             .await?

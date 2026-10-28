@@ -223,18 +223,31 @@ async fn create_submission(
             // address. This matches what an externally-delivered
             // copy of the same message would carry.
             let create_outcome = async {
-            let ms = mailstore.clone();
-            let data = tokio::task::spawn_blocking(move || ms.mds().get_blob(&blob_hash)).await??;
-            let inbox = mailstore.mailbox_by_role(rcpt_account.id, MailboxRole::Inbox)?
-                .ok_or_else(|| anyhow::anyhow!("recipient has no Inbox"))?;
-            crate::sieve::delivery::deliver(db, mailstore,
-                crate::sieve::delivery::Delivery {
-                    account: &rcpt_account, from: &from_addr, to: addr, data: &data,
-                    default_mailbox: inbox, default_tags: Tags::new(),
-                    external_domains: &db.sieve_external_domains,
-                    sender_verified: true, spam: false, smtp_reject: false,
-                }).await
-            }.await;
+                let ms = mailstore.clone();
+                let data =
+                    tokio::task::spawn_blocking(move || ms.mds().get_blob(&blob_hash)).await??;
+                let inbox = mailstore
+                    .mailbox_by_role(rcpt_account.id, MailboxRole::Inbox)?
+                    .ok_or_else(|| anyhow::anyhow!("recipient has no Inbox"))?;
+                crate::sieve::delivery::deliver(
+                    db,
+                    mailstore,
+                    crate::sieve::delivery::Delivery {
+                        account: &rcpt_account,
+                        from: &from_addr,
+                        to: addr,
+                        data: &data,
+                        default_mailbox: inbox,
+                        default_tags: Tags::new(),
+                        external_domains: &db.sieve_external_domains,
+                        sender_verified: true,
+                        spam: false,
+                        smtp_reject: false,
+                    },
+                )
+                .await
+            }
+            .await;
             match create_outcome {
                 Ok(_) => {
                     tracing::info!(from = %from_addr, to = %addr, "Local delivery completed");
@@ -245,7 +258,6 @@ async fn create_submission(
                     }
                     tracing::warn!(error = %e, from = %from_addr, to = %addr, "Local delivery failed");
                 }
-
             }
         } else {
             remote_addrs.push(addr.clone());
