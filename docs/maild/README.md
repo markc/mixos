@@ -181,9 +181,12 @@ Duplicate content within an account is rejected atomically with
 through different upload aliases. It leaves existing metadata and memberships
 untouched, even when a retry requests different mailboxes or keywords. Maild
 does not add memberships as a side effect of this rejection: a failed import
-must remain safe to retry, and the client should explicitly patch
-`existingId` with `Email/set` to add mailboxes. This preserves the atomic
-duplicate/quota rules and avoids silently overwriting existing keyword state.
+must remain safe to retry. The current Email/set update path only supports
+single-mailbox moves; it cannot add memberships to a multi-mailbox email.
+Safe merging needs an atomic duplicate/membership operation with defined
+per-membership keyword handling, preserving IMAP-only flags and the existing
+quota rules. Until that operation exists, clients can use `existingId` for
+supported updates or moves, but membership union is unavailable.
 Missing or invalid blob, mailbox or keyword references produce
 `invalidProperties`; invalid MIME produces `invalidEmail`. Uploaded aliases
 and account-owned CAS blob ids are accepted, with account ownership checked.

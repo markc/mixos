@@ -55,7 +55,9 @@ optional batched thread reads, creation references throughout implemented
 SQLite statement tracing on a current-thread HTTP executor detects blocking
 storage calls in import, blob-based creation and Email/get. Duplicate imports
 into another mailbox set must leave memberships, keywords, dates and state
-unchanged; clients can explicitly patch the returned existingId instead.
+unchanged. The current update path supports single-mailbox moves, rather than
+membership union; that requires an atomic operation preserving per-membership
+keywords and IMAP-only flags.
 
 The `parser_nesting` suite directly exercises the vendored mail-parser 0.11.5
 without maild's MIME preflight. It must pass all three cases on a 2 MiB stack,
