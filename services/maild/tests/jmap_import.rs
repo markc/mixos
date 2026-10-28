@@ -584,7 +584,7 @@ async fn email_import_null_received_at_uses_received_header_or_server_time() {
     let f = Fixture::new().await;
     let header = f.upload("null-date").await;
     let no_header = f
-        .upload_message("From: alice@example.com\r\nSubject: no-received\r\n\r\nHello")
+        .upload_message("Date: Mon, 1 Jan 2024 00:00:00 +0000\r\nFrom: alice@example.com\r\nSubject: no-received\r\n\r\nHello")
         .await;
     let before = chrono::Utc::now().timestamp_millis();
     let response = f.call("Email/import", json!({"emails": {
@@ -623,7 +623,7 @@ unsafe extern "C" fn trace_statement(
     statement: *mut std::ffi::c_void,
     _: *mut std::ffi::c_void,
 ) -> i32 {
-    if kind == rusqlite::ffi::SQLITE_TRACE_STMT as u32 {
+    if kind == rusqlite::ffi::SQLITE_TRACE_STMT {
         // SAFETY: SQLite retains the live boxed context until SqlTrace drops;
         // STMT events provide a sqlite3_stmt valid for this callback.
         let context = unsafe { &*(context.cast::<TraceContext>()) };
@@ -658,7 +658,7 @@ impl SqlTrace {
                 let result = unsafe {
                     rusqlite::ffi::sqlite3_trace_v2(
                         conn.handle(),
-                        rusqlite::ffi::SQLITE_TRACE_STMT as u32,
+                        rusqlite::ffi::SQLITE_TRACE_STMT,
                         Some(trace_statement),
                         context as *mut std::ffi::c_void,
                     )
@@ -755,12 +755,9 @@ async fn email_get_batches_optional_threads_off_async_executor_without_writes() 
         })
         .unwrap();
     assert!(
-        ms.thread_for_email(
-            1,
-            mds::ItemId(b["id"].as_str().unwrap().parse().unwrap())
-        )
-        .unwrap()
-        .is_none()
+        ms.thread_for_email(1, mds::ItemId(b["id"].as_str().unwrap().parse().unwrap()))
+            .unwrap()
+            .is_none()
     );
     ms.mds()
         .with_set_read(&set, |conn| {
@@ -926,6 +923,7 @@ async fn submission_success_references_modify_only_the_successful_submissions_em
     );
     assert_eq!(calls[3][0], "Email/set", "{response}");
     assert_eq!(calls[3][2], "s");
+    assert!(calls[3][1]["updated"].as_object().is_some_and(|m| m.contains_key(response["createdIds"]["draft"].as_str().unwrap())), "{response}");
     let got = f.get(&response["createdIds"]["draft"]).await;
     assert_eq!(got["keywords"]["$seen"], true);
     assert!(got["keywords"]["$draft"].is_null());
