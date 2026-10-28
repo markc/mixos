@@ -2,7 +2,7 @@
 [Unit]
 Description=MixOS file chooser for session %i
 Wants=noded@%i.service
-After=noded@%i.service
+After=noded@%i.service noded.service
 PartOf=session@%i.target
 StartLimitIntervalSec=0
 
