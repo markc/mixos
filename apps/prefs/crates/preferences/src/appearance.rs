@@ -1821,12 +1821,26 @@ mod tests {
     #[test]
     fn every_appearance_path_prefs_sends_has_a_settings_setter() {
         let base = Look::default();
-        let changed = base.with(&json!({"scheme":"forest", "style":"plain", "mode":"light",
-            "contrast":"high", "decorations":"ssd", "caption_side":"left", "window_style":"win11",
-            "menu_style":"button", "menu_side":"right", "title_align":"left",
-            "actions_align":"left", "actions_place":"titlebar", "font_family":"Inter",
-            "mono_family":"JetBrains Mono", "text_scale":1.5, "density":1.5, "reduced_motion":true
-        })).unwrap();
+        // No default tail: adding a Look field must extend this fixture.
+        let changed = Look {
+            scheme: Scheme::Forest,
+            style: Some(Style::Plain),
+            mode: Mode::Light,
+            contrast: Contrast::High,
+            decorations: Decorations::Server,
+            captions: "left".into(),
+            window_style: "win11".into(),
+            menu_style: "button".into(),
+            menu_side: "right".into(),
+            title_align: "left".into(),
+            actions_align: "left".into(),
+            actions_place: "titlebar".into(),
+            font_family: Some("Inter".into()),
+            mono_family: Some("JetBrains Mono".into()),
+            text_scale: 1.5,
+            density: 1.5,
+            reduced_motion: true,
+        };
         let changes = changed.changes(&base);
         // The producer's serialised Look is the coverage authority. Adding an
         // axis requires a changed fixture and a settings setter, not a count.

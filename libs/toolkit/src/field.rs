@@ -254,24 +254,24 @@ impl Widget for ValueField<'_> {
                     + chrome.style.value_unit_gap as f32,
             )
         });
-        let number_size = ui
-            .painter()
-            .layout_no_wrap(format(*value, fine), number_font.clone(), p.text)
-            .size();
-        let min_width = number_size.x
-            + reserve
-            + f32::from(field.padding.left)
-            + f32::from(field.padding.right);
-        let text_height = number_size
-            .y
-            .max(unit_galley.as_ref().map_or(0.0, |g| g.size().y));
-        let min_height =
-            text_height + f32::from(field.padding.top) + f32::from(field.padding.bottom);
         let width = width.unwrap_or(chrome.style.value_width as f32);
         // Preserve every authored layout at the design's interface size.
         let (width, height) = if chrome.interface_size_scale == 1.0 {
             (width, field.height)
         } else {
+            let number_size = ui
+                .painter()
+                .layout_no_wrap(format(*value, fine), number_font.clone(), p.text)
+                .size();
+            let min_width = number_size.x
+                + reserve
+                + f32::from(field.padding.left)
+                + f32::from(field.padding.right);
+            let text_height = number_size
+                .y
+                .max(unit_galley.as_ref().map_or(0.0, |g| g.size().y));
+            let min_height =
+                text_height + f32::from(field.padding.top) + f32::from(field.padding.bottom);
             (width.max(min_width.ceil()), field.height.max(min_height.ceil()))
         };
         // One id for the resting box and its editor, as egui's DragValue
