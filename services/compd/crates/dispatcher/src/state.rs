@@ -557,8 +557,14 @@ impl Dispatch {
             // one at a time here, and each is admitted before the next is read, so
             // `used` is the running total. Passing the full budget instead would let
             // every remaining flavor buffer all of it before `admit` refused it.
-            let headroom = self.clipboard.capture.headroom(protocols::clipboard::policy::BUDGET);
-            if !matches!(protocols::clipboard::pump::pump(reader, headroom), protocols::clipboard::pump::Pump::Eof) {
+            let headroom = self
+                .clipboard
+                .capture
+                .headroom(protocols::clipboard::policy::BUDGET);
+            if !matches!(
+                protocols::clipboard::pump::pump(reader, headroom),
+                protocols::clipboard::pump::Pump::Eof
+            ) {
                 // Blocked means somebody else still holds the write end (a forked
                 // child); nothing more will arrive for us. Don't spin — drop it.
                 continue;
@@ -593,9 +599,9 @@ impl Dispatch {
         let Some(source) = source else {
             if self.mirrors_agent() {
                 trace!("agent-seat clipboard cleared; clearing its primary-seat mirror");
-                smithay::wayland::selection::data_device::clear_data_device_selection::<
-                    Dispatch,
-                >(&dh, &seat);
+                smithay::wayland::selection::data_device::clear_data_device_selection::<Dispatch>(
+                    &dh, &seat,
+                );
             }
             return;
         };

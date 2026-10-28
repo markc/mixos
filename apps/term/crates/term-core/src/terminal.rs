@@ -134,9 +134,7 @@ impl std::fmt::Debug for ClipboardRequest {
                 .field("primary", primary)
                 .field("bytes", &text.len())
                 .finish(),
-            Self::Load { primary, .. } => {
-                f.debug_struct("Load").field("primary", primary).finish()
-            }
+            Self::Load { primary, .. } => f.debug_struct("Load").field("primary", primary).finish(),
         }
     }
 }
@@ -2212,8 +2210,14 @@ mod tests {
         let t = Terminal::from_test_vt(80, 24, b"\x1b]52;c;aGVsbG8=\x07\x1b]52;p;d29ybGQ=\x07");
         match &t.take_clipboard_requests()[..] {
             [
-                ClipboardRequest::Store { primary: false, text: a },
-                ClipboardRequest::Store { primary: true, text: b },
+                ClipboardRequest::Store {
+                    primary: false,
+                    text: a,
+                },
+                ClipboardRequest::Store {
+                    primary: true,
+                    text: b,
+                },
             ] => {
                 assert_eq!(a, "hello");
                 assert_eq!(b, "world");
@@ -2224,11 +2228,19 @@ mod tests {
             rio_vt::performer::handler::Processor::default().advance(&mut *t.grid.lock(), bytes)
         };
         feed(b"\x1b]52;c;?\x07");
-        assert!(t.take_clipboard_requests().is_empty(), "queries are off by default");
+        assert!(
+            t.take_clipboard_requests().is_empty(),
+            "queries are off by default"
+        );
         t.set_osc52_read(true);
         feed(b"\x1b]52;c;?\x07");
         match &t.take_clipboard_requests()[..] {
-            [ClipboardRequest::Load { primary: false, reply }] => {
+            [
+                ClipboardRequest::Load {
+                    primary: false,
+                    reply,
+                },
+            ] => {
                 assert_eq!(reply("hi"), "\x1b]52;c;aGk=\x07");
             }
             other => panic!("{other:?}"),

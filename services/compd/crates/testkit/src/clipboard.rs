@@ -89,7 +89,11 @@ impl TestClient {
     /// The flavors of the clipboard currently offered on seat `seat`, if any.
     pub fn selection_mimes(&self, seat: usize) -> Option<Vec<String>> {
         let offer = self.state.clipboard.selections.get(&seat)?.as_ref()?;
-        self.state.clipboard.offer_mimes.get(&offer.id().protocol_id()).cloned()
+        self.state
+            .clipboard
+            .offer_mimes
+            .get(&offer.id().protocol_id())
+            .cloned()
     }
 
     /// Ask for the clipboard on seat `seat` as `mime`; pump, then poll the read.

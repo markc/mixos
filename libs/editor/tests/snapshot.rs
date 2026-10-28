@@ -647,7 +647,10 @@ fn settled_selections_become_the_primary_selection() {
     assert_eq!(settled(&h).len(), 1);
     key(&mut h, Key::End, Modifiers::SHIFT);
     h.run();
-    assert_eq!(settled(&h).last().map(String::as_str), Some("bravo charlie"));
+    assert_eq!(
+        settled(&h).last().map(String::as_str),
+        Some("bravo charlie")
+    );
 }
 
 /// Middle-click pastes the primary selection where it lands, even into an

@@ -294,7 +294,10 @@ impl Shell {
     fn osc52_answer(&self, pane: u64, reply: &Osc52Reply, text: &str) {
         let terminal = self.app.tabs.lock().expect("tabs").pane_by_id(pane);
         if let Some(terminal) = terminal
-            && let Err(error) = terminal.lock().expect("terminal").clipboard_reply(&**reply, text)
+            && let Err(error) = terminal
+                .lock()
+                .expect("terminal")
+                .clipboard_reply(&**reply, text)
         {
             eprintln!("term: OSC 52 reply failed: {error}");
         }

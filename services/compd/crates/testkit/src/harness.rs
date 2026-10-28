@@ -471,7 +471,11 @@ impl Harness {
             .seat
             .get_keyboard()
             .expect("the primary seat has a keyboard");
-        keyboard.set_focus(&mut self.wire.state, Some(server), SERIAL_COUNTER.next_serial());
+        keyboard.set_focus(
+            &mut self.wire.state,
+            Some(server),
+            SERIAL_COUNTER.next_serial(),
+        );
         self.roundtrip();
     }
 
@@ -492,7 +496,11 @@ impl Harness {
             .expect("compd has an agent seat")
             .get_keyboard()
             .expect("the agent seat has a keyboard");
-        keyboard.set_focus(&mut self.wire.state, Some(server), SERIAL_COUNTER.next_serial());
+        keyboard.set_focus(
+            &mut self.wire.state,
+            Some(server),
+            SERIAL_COUNTER.next_serial(),
+        );
         self.roundtrip();
     }
 

@@ -98,7 +98,8 @@ pub struct TestClient {
     files: Vec<File>,
     /// `wl_data_device_manager` and one data device per seat, once
     /// [`TestClient::bind_data_devices`] has run.
-    pub(crate) data_manager: Option<wayland_client::protocol::wl_data_device_manager::WlDataDeviceManager>,
+    pub(crate) data_manager:
+        Option<wayland_client::protocol::wl_data_device_manager::WlDataDeviceManager>,
     pub(crate) data_devices: Vec<wayland_client::protocol::wl_data_device::WlDataDevice>,
 }
 

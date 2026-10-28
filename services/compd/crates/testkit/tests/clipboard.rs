@@ -26,11 +26,19 @@ fn finish(h: &mut Harness, read: &mut ClipboardRead) -> Vec<u8> {
 
 /// The main client (copying) and one extra client (pasting), both with data
 /// devices on every seat; the paster has a surface the keyboard can focus.
-fn two_clients() -> (Harness, usize, wayland_client::protocol::wl_surface::WlSurface) {
+fn two_clients() -> (
+    Harness,
+    usize,
+    wayland_client::protocol::wl_surface::WlSurface,
+) {
     let mut h = Harness::new();
     h.client.bind_data_devices();
     h.roundtrip();
-    assert_eq!(h.client.seat_count(), 2, "the primary seat and the agent seat");
+    assert_eq!(
+        h.client.seat_count(),
+        2,
+        "the primary seat and the agent seat"
+    );
     let b = h.add_client();
     h.extra_clients[b].bind_data_devices();
     let surface = h.extra_clients[b].create_surface();
