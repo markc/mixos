@@ -714,7 +714,11 @@ pub async fn handle_with_access(
         if let Some((first, last)) = whole {
             list_store.imap_fetch_range(account_id, container, first, last)
         } else if let Some(wanted) = wanted {
-            list_store.imap_fetch_handles(account_id, container, &wanted)
+            let mut handles = Vec::new();
+            for (first, last) in crate::mailstore::imap_uid_ranges(&wanted) {
+                handles.extend(list_store.imap_fetch_range(account_id, container, first, last)?);
+            }
+            Ok(handles)
         } else {
             list_store.list_emails_in_mailbox(account_id, container, opts)
         }

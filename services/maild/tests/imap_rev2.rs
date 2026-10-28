@@ -2280,6 +2280,7 @@ mod cost_regressions {
             subscribe_mailbox(account: i32, mailbox: ContainerId) -> Result<broadcast::Receiver<ContainerEvent>>;
             prepare_imap_account(account: i32) -> Result<()>;
             imap_mailbox_version(account: i32, mailbox: ContainerId) -> Result<Option<(u64, u64)>>;
+            imap_fetch_handles(account: i32, mailbox: ContainerId, uids: &[u64]) -> Result<Vec<EmailHandle>>;
         }
 
         fn list_emails_in_mailbox(

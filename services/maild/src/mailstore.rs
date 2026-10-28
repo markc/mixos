@@ -345,6 +345,21 @@ pub struct EmailImport {
     pub tags: Tags,
     pub received_at: i64,
 }
+/// Coalesce sorted UIDs into inclusive, contiguous intervals.
+pub fn imap_uid_ranges(uids: &[u64]) -> Vec<(u64, u64)> {
+    let mut ranges = Vec::new();
+    let mut pending = uids;
+    while let Some(&first) = pending.first() {
+        let mut end = 1;
+        while end < pending.len() && pending[end - 1].checked_add(1) == Some(pending[end]) {
+            end += 1;
+        }
+        ranges.push((first, pending[end - 1]));
+        pending = &pending[end..];
+    }
+    ranges
+}
+
 /// MailStore behaviour required by maild's protocol adapters. Methods are
 /// synchronous; async callers use spawn_blocking. Native transactions commit
 /// MDS mutations and mail projections together.
@@ -371,14 +386,8 @@ pub trait MailStore: Send + Sync {
         uids: &[u64],
     ) -> Result<Vec<EmailHandle>> {
         let mut handles = Vec::new();
-        let mut pending = uids;
-        while let Some(&first) = pending.first() {
-            let mut end = 1;
-            while end < pending.len() && pending[end - 1].checked_add(1) == Some(pending[end]) {
-                end += 1;
-            }
-            handles.extend(self.imap_fetch_range(account, mailbox, first, pending[end - 1])?);
-            pending = &pending[end..];
+        for (first, last) in imap_uid_ranges(uids) {
+            handles.extend(self.imap_fetch_range(account, mailbox, first, last)?);
         }
         Ok(handles)
     }
