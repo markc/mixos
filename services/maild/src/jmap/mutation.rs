@@ -261,7 +261,9 @@ fn validate_arguments(method: &str, args: &Value) -> Result<()> {
                 .as_array()
                 .is_some_and(|entries| entries.iter().all(Value::is_string));
             if !valid {
-                return Err(invalid(format!("{property} must be an array of Id strings or null")).into());
+                return Err(
+                    invalid(format!("{property} must be an array of Id strings or null")).into(),
+                );
             }
         }
     }

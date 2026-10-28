@@ -950,41 +950,72 @@ async fn submission_success_references_modify_only_the_successful_submissions_em
 async fn round2_set_rejects_malformed_arguments_before_any_write() {
     let f = Fixture::new().await;
     let methods = [
-        "Email/set", "Mailbox/set", "EmailSubmission/set", "Calendar/set",
-        "CalendarEvent/set", "AddressBook/set", "Contact/set", "VacationResponse/set",
+        "Email/set",
+        "Mailbox/set",
+        "EmailSubmission/set",
+        "Calendar/set",
+        "CalendarEvent/set",
+        "AddressBook/set",
+        "Contact/set",
+        "VacationResponse/set",
     ];
     let invalid = [
-        json!({"create": "x"}), json!({"create": []}),
-        json!({"create": {"a": 42}}), json!({"update": "x"}),
-        json!({"update": []}), json!({"update": {"a": null}}),
-        json!({"destroy": "x"}), json!({"destroy": {}}),
-        json!({"destroy": [42]}), json!({"destroy": ["#missing", false]}),
+        json!({"create": "x"}),
+        json!({"create": []}),
+        json!({"create": {"a": 42}}),
+        json!({"update": "x"}),
+        json!({"update": []}),
+        json!({"update": {"a": null}}),
+        json!({"destroy": "x"}),
+        json!({"destroy": {}}),
+        json!({"destroy": [42]}),
+        json!({"destroy": ["#missing", false]}),
         json!({"ifInState": 42}),
     ];
     for method in methods {
         for mut args in invalid.clone() {
             args["accountId"] = "1".into();
             let response = f.request(json!([[method, args, "bad"]])).await;
-            assert_eq!(response["methodResponses"][0][0], "error", "{method}: {response}");
-            assert_eq!(response["methodResponses"][0][1]["type"], "invalidArguments", "{method}: {response}");
+            assert_eq!(
+                response["methodResponses"][0][0], "error",
+                "{method}: {response}"
+            );
+            assert_eq!(
+                response["methodResponses"][0][1]["type"], "invalidArguments",
+                "{method}: {response}"
+            );
         }
         // Omitted and explicitly null arguments both mean no operation.
-        f.call(method, json!({"create": null, "update": null, "destroy": null, "ifInState": null})).await;
+        f.call(
+            method,
+            json!({"create": null, "update": null, "destroy": null, "ifInState": null}),
+        )
+        .await;
     }
     for args in [
         json!({"onSuccessUpdateEmail": []}),
         json!({"onSuccessUpdateEmail": {"#a": 42}}),
         json!({"onSuccessDestroyEmail": [null]}),
     ] {
-        let response = f.request(json!([["EmailSubmission/set", args, "bad"]])).await;
+        let response = f
+            .request(json!([["EmailSubmission/set", args, "bad"]]))
+            .await;
         assert_eq!(response["methodResponses"][0][0], "error", "{response}");
-        assert_eq!(response["methodResponses"][0][1]["type"], "invalidArguments", "{response}");
+        assert_eq!(
+            response["methodResponses"][0][1]["type"], "invalidArguments",
+            "{response}"
+        );
     }
     let before = f.call("Mailbox/get", json!({})).await;
-    let response = f.request(json!([["Mailbox/set", {"accountId": "1",
+    let response = f
+        .request(json!([["Mailbox/set", {"accountId": "1",
         "create": {"must-not-run": {"name": "Malformed request"}}, "destroy": [42]
-    }, "mixed"]])).await;
-    assert_eq!(response["methodResponses"][0][1]["type"], "invalidArguments", "{response}");
+    }, "mixed"]]))
+        .await;
+    assert_eq!(
+        response["methodResponses"][0][1]["type"], "invalidArguments",
+        "{response}"
+    );
     assert_eq!(f.call("Mailbox/get", json!({})).await, before);
 }
 
@@ -1010,7 +1041,10 @@ async fn round2_submission_actions_ignore_ids_without_successful_operations() {
     assert_eq!(calls[2][2], "current");
     assert!(calls[2][1]["notUpdated"].is_null(), "{response}");
     assert!(calls[2][1]["notDestroyed"].is_null(), "{response}");
-    assert_eq!(calls[2][1]["updated"], json!({email.as_str().unwrap(): null}));
+    assert_eq!(
+        calls[2][1]["updated"],
+        json!({email.as_str().unwrap(): null})
+    );
     assert_eq!(f.get(&email).await["keywords"]["$seen"], true);
     assert!(f.get(&prior).await["keywords"]["$flagged"].is_null());
     let existing = &calls[0][1]["created"]["earlier"]["id"];
@@ -1019,7 +1053,11 @@ async fn round2_submission_actions_ignore_ids_without_successful_operations() {
         "onSuccessUpdateEmail": {existing.as_str().unwrap(): {"keywords/$flagged": true}, "#unknown": {}},
         "onSuccessDestroyEmail": [existing, "#unknown"]
     }, "ignored"]])).await;
-    assert_eq!(ignored["methodResponses"].as_array().unwrap().len(), 1, "{ignored}");
+    assert_eq!(
+        ignored["methodResponses"].as_array().unwrap().len(),
+        1,
+        "{ignored}"
+    );
     assert!(f.get(&prior).await["keywords"]["$flagged"].is_null());
 }
 
@@ -1028,41 +1066,104 @@ async fn round2_set_if_in_state_fences_every_stage_at_the_initial_state() {
     let f = Fixture::new().await;
     let email = f.import("state-existing").await["created"]["a"]["id"].clone();
     let blob = f.upload("state-create").await;
-    let calendar = f.call("Calendar/set", json!({"create": {"a": {"name": "Calendar"}}})).await["created"]["a"]["id"].clone();
-    let book = f.call("AddressBook/set", json!({"create": {"a": {"name": "Book"}}})).await["created"]["a"]["id"].clone();
+    let calendar = f
+        .call(
+            "Calendar/set",
+            json!({"create": {"a": {"name": "Calendar"}}}),
+        )
+        .await["created"]["a"]["id"]
+        .clone();
+    let book = f
+        .call(
+            "AddressBook/set",
+            json!({"create": {"a": {"name": "Book"}}}),
+        )
+        .await["created"]["a"]["id"]
+        .clone();
     let cases = [
-        ("Mailbox", json!({"create": {"a": {"name": "Must not create"}}, "update": {&f.inbox: {"name": "Must not update"}}, "destroy": [&f.archive]})),
-        ("Email", json!({"create": {"a": {"blobId": blob, "mailboxIds": {&f.inbox: true}}}, "update": {email.as_str().unwrap(): {"keywords/$seen": true}}, "destroy": [email]})),
-        ("Calendar", json!({"create": {"a": {"name": "Must not create"}}, "update": {calendar.as_str().unwrap(): {"name": "Must not update"}}, "destroy": [calendar]})),
-        ("CalendarEvent", json!({"create": {"a": {"calendarId": calendar, "title": "Must not create"}}})),
-        ("AddressBook", json!({"create": {"a": {"name": "Must not create"}}, "update": {book.as_str().unwrap(): {"name": "Must not update"}}, "destroy": [book]})),
-        ("Contact", json!({"create": {"a": {"addressBookId": book, "fullName": "Must not create"}}})),
-        ("VacationResponse", json!({"update": {"singleton": {"isEnabled": true, "textBody": "Must not update"}}})),
-        ("EmailSubmission", json!({"create": {"a": {"emailId": email}}, "onSuccessDestroyEmail": ["#a"]})),
+        (
+            "Mailbox",
+            json!({"create": {"a": {"name": "Must not create"}}, "update": {&f.inbox: {"name": "Must not update"}}, "destroy": [&f.archive]}),
+        ),
+        (
+            "Email",
+            json!({"create": {"a": {"blobId": blob, "mailboxIds": {&f.inbox: true}}}, "update": {email.as_str().unwrap(): {"keywords/$seen": true}}, "destroy": [email]}),
+        ),
+        (
+            "Calendar",
+            json!({"create": {"a": {"name": "Must not create"}}, "update": {calendar.as_str().unwrap(): {"name": "Must not update"}}, "destroy": [calendar]}),
+        ),
+        (
+            "CalendarEvent",
+            json!({"create": {"a": {"calendarId": calendar, "title": "Must not create"}}}),
+        ),
+        (
+            "AddressBook",
+            json!({"create": {"a": {"name": "Must not create"}}, "update": {book.as_str().unwrap(): {"name": "Must not update"}}, "destroy": [book]}),
+        ),
+        (
+            "Contact",
+            json!({"create": {"a": {"addressBookId": book, "fullName": "Must not create"}}}),
+        ),
+        (
+            "VacationResponse",
+            json!({"update": {"singleton": {"isEnabled": true, "textBody": "Must not update"}}}),
+        ),
+        (
+            "EmailSubmission",
+            json!({"create": {"a": {"emailId": email}}, "onSuccessDestroyEmail": ["#a"]}),
+        ),
     ];
     for (kind, mut args) in cases {
         let get = format!("{kind}/get");
         let before = f.call(&get, json!({})).await;
         args["accountId"] = "1".into();
         args["ifInState"] = "stale-state".into();
-        let response = f.request(json!([[format!("{kind}/set"), args, "stale"]])).await;
-        assert_eq!(response["methodResponses"].as_array().unwrap().len(), 1, "{response}");
-        assert_eq!(response["methodResponses"][0][0], "error", "{kind}: {response}");
-        assert_eq!(response["methodResponses"][0][1]["type"], "stateMismatch", "{kind}: {response}");
-        assert_eq!(f.call(&get, json!({})).await, before, "{kind} changed on stateMismatch");
+        let response = f
+            .request(json!([[format!("{kind}/set"), args, "stale"]]))
+            .await;
+        assert_eq!(
+            response["methodResponses"].as_array().unwrap().len(),
+            1,
+            "{response}"
+        );
+        assert_eq!(
+            response["methodResponses"][0][0], "error",
+            "{kind}: {response}"
+        );
+        assert_eq!(
+            response["methodResponses"][0][1]["type"], "stateMismatch",
+            "{kind}: {response}"
+        );
+        assert_eq!(
+            f.call(&get, json!({})).await,
+            before,
+            "{kind} changed on stateMismatch"
+        );
         assert_eq!(response["createdIds"], json!({}), "{response}");
     }
     // The matching guard is checked only at the start. The creates advance
     // state; update and destroy must still run against those created ids.
     let initial = f.call("Mailbox/get", json!({})).await["state"].clone();
-    let changed = f.call("Mailbox/set", json!({"ifInState": initial,
-        "create": {"keep": {"name": "Before"}, "remove": {"name": "Temporary"}},
-        "update": {"#keep": {"name": "After"}}, "destroy": ["#remove"]
-    })).await;
+    let changed = f
+        .call(
+            "Mailbox/set",
+            json!({"ifInState": initial,
+                "create": {"keep": {"name": "Before"}, "remove": {"name": "Temporary"}},
+                "update": {"#keep": {"name": "After"}}, "destroy": ["#remove"]
+            }),
+        )
+        .await;
     assert_eq!(changed["oldState"], initial);
     assert_ne!(changed["newState"], initial);
     let kept = &changed["created"]["keep"]["id"];
     assert_eq!(changed["updated"], json!({kept.as_str().unwrap(): null}));
-    assert_eq!(changed["destroyed"], json!([changed["created"]["remove"]["id"]]));
-    assert_eq!(f.call("Mailbox/get", json!({"ids": [kept]})).await["list"][0]["name"], "After");
+    assert_eq!(
+        changed["destroyed"],
+        json!([changed["created"]["remove"]["id"]])
+    );
+    assert_eq!(
+        f.call("Mailbox/get", json!({"ids": [kept]})).await["list"][0]["name"],
+        "After"
+    );
 }
