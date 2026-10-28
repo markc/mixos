@@ -317,6 +317,28 @@ fn mail_document_header_strip_pro_light() {
     h.snapshot("mail_document_header_strip_pro_light");
 }
 
+#[test]
+fn mail_field_typing_and_undo_use_the_tab_headers() {
+    use egui_kittest::kittest::{NodeT, Queryable};
+    let text = "---\nmail-subject: Original\nmail-to: bob@example.org\n---\nBody";
+    let (mut h, _) = window(theme(Scheme::Pro, Mode::Light), &[("/home/user/letter.md", text)], egui::vec2(820.0, 580.0));
+    h.run_steps(12);
+    h.query_all_by_label("Subject").find(|node| node.accesskit_node().role() == egui::accesskit::Role::TextInput).unwrap().click();
+    h.run_steps(2);
+    h.input_mut().events.push(Event::Key { key: Key::A, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::COMMAND });
+    h.run_steps(2);
+    h.input_mut().events.push(Event::Text("Changed".into()));
+    h.run_steps(4);
+    let app = &h.state().shell.as_ref().unwrap().app;
+    assert_eq!(app.active_tab().unwrap().mail.as_ref().unwrap().headers.subject, "Changed");
+    assert!(app.active_tab().unwrap().dirty());
+    h.input_mut().events.push(Event::Key { key: Key::Z, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::COMMAND });
+    h.run_steps(4);
+    let app = &h.state().shell.as_ref().unwrap().app;
+    assert_eq!(app.active_tab().unwrap().mail.as_ref().unwrap().headers.subject, "Original");
+    assert!(!app.active_tab().unwrap().dirty());
+}
+
 fn markdown_snapshot(scheme: Scheme, mode: Mode, action: documents::actions::ActionId, name: &str) {
     let (mut h, _) = window(
         theme(scheme, mode),

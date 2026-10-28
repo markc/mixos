@@ -2,6 +2,17 @@
 use crate::{app::App, label, view::UiEvent};
 use toolkit::header_form as form;
 
+fn field_id(ctx: &egui::Context, tab: u64, key: &str) -> egui::Id {
+    egui::Id::unique((ctx.viewport_id(), "ced.mail.field", tab, key))
+}
+
+pub fn header_focused(ctx: &egui::Context, app: &App) -> bool {
+    let Some(tab) = app.active_tab().filter(|tab| tab.mail.is_some()) else { return false; };
+    let focused = ctx.memory(|memory| memory.focused());
+    ["mail-from", "mail-to", "mail-cc", "mail-bcc", "mail-reply-to", "mail-subject"].iter()
+        .any(|key| focused == Some(field_id(ctx, tab.id, key)))
+}
+
 pub fn strip(ui: &mut egui::Ui, app: &App, events: &mut Vec<UiEvent>) {
     let Some(tab) = app.active_tab() else { return; };
     if let Some(notice) = &tab.document_notice { ui.weak(notice); }
@@ -18,7 +29,7 @@ pub fn strip(ui: &mut egui::Ui, app: &App, events: &mut Vec<UiEvent>) {
                 ("mail-subject", &mut headers.subject, true),
             ] {
                 if !shown { continue; }
-                let field_id = egui::Id::unique((ui.ctx().viewport_id(), "ced.mail.field", tab.id, key));
+                let field_id = field_id(ui.ctx(), tab.id, key);
                 form::row(ui, &label(key), column, |ui, labelled| {
                     if key == "mail-to" {
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

@@ -722,6 +722,18 @@ impl Shell {
         // Another text field has the keyboard: its keys are its own.
         let focused = ui.ctx().memory(|m| m.focused());
         let typing_elsewhere = focused.is_some() && focused != self.app.editor_id;
+        if typing_elsewhere && crate::mail_view::header_focused(ui.ctx(), &self.app) {
+            // The controller owns header undo steps. Consume those chords
+            // before TextEdit can run its separate internal undo history.
+            let mut events = Vec::new();
+            for (id, action) in [("edit.undo", documents::actions::ActionId::EditUndo), ("edit.redo", documents::actions::ActionId::EditRedo), ("file.save", documents::actions::ActionId::FileSave), ("file.save_as", documents::actions::ActionId::FileSaveAs), ("file.save_all", documents::actions::ActionId::FileSaveAll), ("file.send", documents::actions::ActionId::FileSend)] {
+                if self.app.enabled(action) && self.commands.shortcuts_of(id).iter().any(|shortcut| ui.input_mut(|input| input.consume_shortcut(shortcut))) {
+                    events.push(UiEvent::Command(id, toolkit::action::Origin::Shortcut));
+                }
+            }
+            crate::view::apply(&mut self.app, &self.commands, events);
+            self.perform();
+        }
         if !typing_elsewhere {
             self.split_input(ui.ctx());
             let fired = self.commands.shortcuts(ui.ctx(), &self.app);

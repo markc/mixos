@@ -132,7 +132,12 @@ pub fn record_noted(app: &mut App, commands: &Registry<App>) {
 fn apply_one(app: &mut App, commands: &Registry<App>, event: UiEvent) {
     {
         match event {
-            UiEvent::MailHeaders(tab, headers) => app.action_args(Some(tab), ActionId::MailHeaders, serde_json::json!({"headers":headers})),
+            UiEvent::MailHeaders(tab, headers) => {
+                if app.ctl.tabs().iter().find(|t| t.id == tab).and_then(|t| t.mail.as_ref()).is_some_and(|mail| !mail.sending && !mail.saving) {
+                    app.action_args(Some(tab), ActionId::MailHeaders, serde_json::json!({"headers":headers}));
+                    app.noted.push((ActionId::MailHeaders.id(), Origin::Ui));
+                }
+            }
             UiEvent::MailRow(tab, field) => app.ctl.show_mail_row(tab, field),
             UiEvent::MailAttach(tab) => {
                 let directory = app.ctl.tabs().iter().find(|t| t.id == tab).and_then(|t| t.path.as_deref()).and_then(|p| std::path::Path::new(p).parent()).unwrap_or(std::path::Path::new("/")).to_path_buf();

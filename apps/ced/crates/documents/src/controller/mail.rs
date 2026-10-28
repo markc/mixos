@@ -182,6 +182,10 @@ mod tests {
     const LETTER: &str = "---\nmail-from: ann@example.org\nmail-subject: Hello\nmail-to: bob@example.org\n---\nBody";
 
     fn settle(c: &mut Controller, service: &mut FakeEditd, fx: Vec<Effect>) -> Vec<Effect> {
+        settle_with_seed(c, service, fx, true)
+    }
+
+    fn settle_with_seed(c: &mut Controller, service: &mut FakeEditd, fx: Vec<Effect>, seed: bool) -> Vec<Effect> {
         let mut queue: VecDeque<_> = fx.into();
         let mut rest = Vec::new();
         let mut steps = 0;
@@ -189,7 +193,9 @@ mod tests {
             steps += 1;
             assert!(steps < 1000, "controller did not settle");
             if let Effect::Send { req, out } = effect {
-                let mut answer = service.handle("local:ced", &out.command, &serde_json::from_str(&out.body).unwrap());
+                let mut args: Value = serde_json::from_str(&out.body).unwrap();
+                if !seed && out.command == "edit.open" { args.as_object_mut().unwrap().remove("text"); }
+                let mut answer = service.handle("local:ced", &out.command, &args);
                 if out.command == "edit.close" { answer.rc = 0; answer.body = json!({}); }
                 queue.extend(c.on_incoming(Incoming::Reply { req, rc: answer.rc, body: answer.body.to_string() }));
                 for event in service.take_events() {
@@ -363,5 +369,19 @@ mod tests {
         let Effect::SaveMail { path, text, send, command, .. } = fx.into_iter().find(|e| matches!(e, Effect::SaveMail { .. })).unwrap() else { unreachable!() };
         c.on_mail_saved(tab, path, text, send, command, Ok(()));
         assert!(!c.tab(tab).unwrap().dirty());
+    }
+
+    #[test]
+    fn an_old_daemon_cannot_silently_drop_the_initial_mail_body() {
+        let mut c = Controller::new(Config::default(), 1, true);
+        let mut service = FakeEditd::new("0000e1e1");
+        service.create(Some(PATH), LETTER);
+        let fx = c.open_paths(&[PATH.into()], Intent::ui(0));
+        settle_with_seed(&mut c, &mut service, fx, false);
+        let tab = c.tab(c.active().unwrap()).unwrap();
+        assert!(tab.mail.is_none());
+        assert!(tab.document_notice.as_deref().unwrap().contains("editd 0.3.0"));
+        assert_eq!(text_string(tab.mirror.as_ref().unwrap().text()), LETTER);
+        assert!(!c.can_send(tab.id));
     }
 }

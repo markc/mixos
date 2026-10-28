@@ -2832,7 +2832,7 @@ impl Controller {
                                 .map(str::to_string)
                                 .collect(),
                         },
-                        enabled: if a == ActionId::FileSend { self.active.is_some_and(|tab| self.can_send(tab)) } else { self.action_enabled.get(&a).copied().unwrap_or(!matches!(
+                        enabled: if a == ActionId::FileSend { self.active.is_some_and(|tab| self.can_send(tab)) } else if a == ActionId::MailHeaders { self.active.and_then(|tab| self.tab(tab)).and_then(|tab| tab.mail.as_ref()).is_some_and(|mail| !mail.sending && !mail.saving) } else { self.action_enabled.get(&a).copied().unwrap_or(!matches!(
                             a,
                             ActionId::ViewMarkdownSource
                                 | ActionId::ViewMarkdownSplit
