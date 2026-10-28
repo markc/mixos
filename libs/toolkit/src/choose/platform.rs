@@ -35,11 +35,7 @@ pub(super) async fn attempt(request: &Request) -> Option<Outcome> {
     };
     Some(
         paths
-            .map(|paths| Outcome::Chosen {
-                paths: paths.into_iter().map(|p| p.path().to_owned()).collect(),
-                choices: request.choice_defaults(),
-                current_filter: None,
-            })
+            .map(|paths| platform_paths(request, paths.into_iter().map(|p| p.path().to_owned()).collect()))
             .unwrap_or(Outcome::Cancelled),
     )
 }
