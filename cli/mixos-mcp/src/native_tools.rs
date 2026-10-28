@@ -208,7 +208,8 @@ impl MixosMcp {
         let mut args = json!({"primary": p.primary.unwrap_or(false), "offset": p.offset});
         if let Some(selection) = p.selection {
             if !matches!(selection.as_str(), "clipboard" | "primary")
-                || p.primary.is_some_and(|primary| primary != (selection == "primary"))
+                || p.primary
+                    .is_some_and(|primary| primary != (selection == "primary"))
             {
                 return Err("invalid or conflicting clipboard selection".into());
             }
@@ -235,7 +236,8 @@ impl MixosMcp {
         let mut args = json!({"mime": p.mime.unwrap_or_else(|| "text/plain;charset=utf-8".into()), "data": p.text, "primary": p.primary.unwrap_or(false), "sensitive": p.sensitive});
         if let Some(selection) = p.selection {
             if !matches!(selection.as_str(), "clipboard" | "primary")
-                || p.primary.is_some_and(|primary| primary != (selection == "primary"))
+                || p.primary
+                    .is_some_and(|primary| primary != (selection == "primary"))
             {
                 return Err("invalid or conflicting clipboard selection".into());
             }

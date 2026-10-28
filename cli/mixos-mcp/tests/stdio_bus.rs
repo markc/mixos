@@ -80,8 +80,14 @@ async fn clipboard_tools_use_the_local_clipd_and_preserve_parameters() {
     assert_eq!(get["result"]["data"], "paste this");
     task.await.unwrap();
     for (name, args) in [
-        ("clipboard_get", json!({"selection":"primary", "primary":false})),
-        ("clipboard_set", json!({"text":"no send", "selection":"clipboard", "primary":true})),
+        (
+            "clipboard_get",
+            json!({"selection":"primary", "primary":false}),
+        ),
+        (
+            "clipboard_set",
+            json!({"text":"no send", "selection":"clipboard", "primary":true}),
+        ),
     ] {
         let refused = service.call_tool(request(name, args)).await.unwrap();
         assert_eq!(refused.is_error, Some(true));
