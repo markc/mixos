@@ -71,6 +71,7 @@ fn minimum_window_renders() {
         e.ui.dock_side = side;
         let mut h = sized_harness(e, egui::Vec2::from(toolkit::window::MIN_SIZE));
         h.run_steps(4);
+        h.snapshot(format!("minimum_window_{side:?}"));
     }
 }
 

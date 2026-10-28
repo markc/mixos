@@ -327,10 +327,11 @@ fn harness(state: State) -> Harness<'static, Window> {
 
 #[test]
 fn minimum_window_renders() {
-    for state in [fixture(), empty(), typing()] {
+    for (index, state) in [fixture(), empty(), typing()].into_iter().enumerate() {
         let mut h = harness(state);
         h.set_size(egui::Vec2::from(toolkit::window::MIN_SIZE));
         h.run_steps(4);
+        h.snapshot(format!("minimum_window_{index}"));
     }
     let mut h = harness(fixture());
     h.set_size(egui::Vec2::from(toolkit::window::MIN_SIZE));

@@ -1079,6 +1079,16 @@ mod tests {
     }
 
     #[test]
+    fn minimum_window_file_chooser_renders() {
+        let mut h = egui_kittest::Harness::builder()
+            .with_size(egui::Vec2::from(crate::window::MIN_SIZE))
+            .build_ui_state(|ui, chooser: &mut FileChooser| { chooser.show(ui.ctx()); }, save_fixture());
+        crate::install(&h.ctx, &crate::Theme::embedded());
+        h.run_steps(4);
+        h.snapshot("minimum_window_file_chooser");
+    }
+
+    #[test]
     fn save_existing_file_waits_for_replace_and_cancel_keeps_chooser() {
         use egui_kittest::kittest::Queryable;
         let mut h = egui_kittest::Harness::builder()

@@ -284,6 +284,7 @@ fn minimum_window_renders() {
         egui::Vec2::from(toolkit::window::MIN_SIZE),
     );
     h.run_steps(4);
+    h.snapshot("minimum_window");
 }
 
 #[test]

@@ -816,7 +816,7 @@ impl State {
         }
         if !output.is_empty() {
             egui::Panel::bottom("macro-output")
-                .exact_size(row_height * 6.0)
+                .exact_size((row_height * 6.0).min(ui.available_height() * 0.5))
                 .show(ui, |ui| {
                     if self.engine.runner_status() != Status::Running
                         && let Some(last) = &self.retained
@@ -1795,6 +1795,24 @@ mod tests {
         crate::install(&h.ctx, &crate::Theme::embedded());
         h.run_steps(40);
         h.snapshot("macros_editor");
+    }
+
+    #[test]
+    fn minimum_window_macro_editor_renders() {
+        let mut state = State::new("ced");
+        state.editor_open = true;
+        state.document = Some(editor::local::Document::new("print(1)\n", "text").unwrap());
+        state.retained = Some(Finished {
+            title: "Example".into(), output: "Hello\n".into(), status: "done".into(),
+        });
+        let mut h = egui_kittest::Harness::builder()
+            .with_size(egui::Vec2::from(crate::window::MIN_SIZE))
+            .build_ui_state(|ui, state: &mut State| {
+                state.editor_ui(ui, egui::ViewportId::ROOT, egui::ViewportId::ROOT);
+            }, state);
+        crate::install(&h.ctx, &crate::Theme::embedded());
+        h.run_steps(4);
+        h.snapshot("minimum_window_macro_editor");
     }
 
     #[test]

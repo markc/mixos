@@ -379,6 +379,7 @@ fn minimum_window_renders() {
             });
         toolkit::install(&h.ctx, &Theme::embedded());
         h.run_steps(4);
+        h.snapshot(format!("minimum_window_{}", section.name()));
     }
 }
 
