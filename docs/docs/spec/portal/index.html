@@ -11,7 +11,7 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/_web/brand/favicon-32-light.png?v=adbeaa7141" media="(prefers-color-scheme: light)">
     <link rel="icon" type="image/png" sizes="32x32" href="/_web/brand/favicon-32-dark.png?v=adbeaa7141" media="(prefers-color-scheme: dark)">
     <link rel="apple-touch-icon" sizes="180x180" href="/_web/brand/apple-touch-icon.png?v=edebfa3825">
-    <title>Portal contract: Settings and ScreenCast — MixOS</title>
+    <title>Portal contract: Settings, FileChooser and ScreenCast — MixOS</title>
     <link rel="canonical" href="https://mixos.dev/docs/spec/portal/">
     <link rel="alternate" type="text/markdown" href="/docs/spec/portal/README.md" title="Markdown source">
     <meta name="mixos-build" content="7af43e1ca197">
@@ -242,7 +242,7 @@
 <main id="content" tabindex="-1">
     <div id="doc-view" class="content-section">
         <article id="content-doc" class="prose" data-pagefind-body>
-<h1 id="portal-contract-settings-and-screencast">Portal contract: Settings and ScreenCast</h1>
+<h1 id="portal-contract-settings-filechooser-and-screencast">Portal contract: Settings, FileChooser and ScreenCast</h1>
 <p>Settings status: accepted, version 0.1.0 (ScreenCast is a draft, below). The cbc2 verification of <code>services/portald</code>
 passed on the commit that carries it (dcd2f1a). The commands and wire shapes below
 are fixed by the XDG portal specification.</p>
@@ -355,8 +355,11 @@ local-only (<code>broker_origin</code> must be <code>local</code>, else rc 13 <c
 <code>portald.screencast.revoke {id?}</code> (intent). Registered in
 <code>docs/docs/spec/bus/commands.conf.mix</code>.</p>
 <h2 id="filechooser">FileChooser</h2>
-<p>Status: draft, not served. The interface, its mapping onto the Bus command
-<code>files.choose</code> and the Request lifecycle are specified in
+<p>Status: draft, served at version 4 on the existing Desktop object. <code>OpenFile</code>,
+<code>SaveFile</code> and <code>SaveFiles</code> forward to the native <code>files</code> provider. Responses
+are addressed to the owner; Close and owner disconnect cancel without a
+Response. The interface, its lenient mapping onto the Bus command
+<code>files.choose</code>, byte paths, outcome recovery and four-state Request lifecycle are specified in
 <a href="/docs/spec/files/#d-bus-orgfreedesktopportalfilechooser">../files/README.md</a>.</p>
 <h2 id="deferred">Deferred</h2>
 <ul>

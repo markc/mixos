@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="How portald serves the XDG Settings and ScreenCast portals on the session bus, where the appearance values and screen frames come from, and how applications and agents use them.">
+    <meta name="description" content="How portald serves XDG Settings, FileChooser v4 and ScreenCast on the session bus, and how applications and agents use them.">
     <!-- Favicons from share/brand: the SVG follows the visitor's light/dark preference. -->
     <link rel="icon" href="/favicon.ico?v=400d5816f3" sizes="any">
     <link rel="icon" type="image/svg+xml" href="/_web/favicon.svg?v=4eb2d64677">
@@ -211,6 +211,7 @@
                         <a href="#where-the-values-come-from">Where the values come from</a>
                         <a href="#gtk-caption-settings">GTK caption settings</a>
                         <a href="#what-applications-see">What applications see</a>
+                        <a href="#file-chooser">File chooser</a>
                         <a href="#screen-sharing">Screen sharing</a>
                         <a href="#consent" class="toc-h3">Consent</a>
                         <a href="#startup-and-failure">Startup and failure</a>
@@ -246,7 +247,7 @@
 <p>Applications on MixOS ask the desktop for its appearance (dark or light mode,
 contrast and accent colour) through the XDG Settings portal, and for a screen
 to share through the XDG ScreenCast portal. <code>portald</code> is the MixOS
-implementation of both. It owns <code>org.freedesktop.portal.Desktop</code> on the session
+implementation of these interfaces and FileChooser version 4. It owns <code>org.freedesktop.portal.Desktop</code> on the session
 bus, answers the <code>org.freedesktop.appearance</code> namespace and, when started with
 <code>--screencast</code>, serves monitor sources from the compositor.</p>
 <p>Values come from the settings authority, <code>settingsd</code>. Portald exports derived
@@ -319,6 +320,35 @@ actually changed.</p>
 <pre><code class="language-sh">busctl --user call org.freedesktop.portal.Desktop /org/freedesktop/portal/desktop \
   org.freedesktop.portal.Settings ReadOne ss org.freedesktop.appearance color-scheme
 </code></pre>
+<h2 id="file-chooser">File chooser</h2>
+<p><code>org.freedesktop.portal.FileChooser</code>, version 4, is served on the same Desktop
+object by default. <code>OpenFile</code>, <code>SaveFile</code> and <code>SaveFiles</code> return a Request
+path and forward to <code>files.choose</code>, served by <code>dopus --choose-service</code> on
+the native Bus. rfd and other portal clients find the interface through the
+Desktop object's D-Bus introspection and <code>version</code> property.</p>
+<p>Filters, a standalone current filter, choices and byte-array paths follow the
+<a href="/docs/spec/files/">files contract</a>. Unknown options are ignored;
+validly typed options are adjusted to the native limits, with each adjustment
+logged. A known option with the wrong type, an invalid NUL terminator or
+SaveFiles without usable names returns <code>InvalidArgument</code> before exporting a
+Request. Paths become file URIs without a UTF-8 conversion. <code>on_behalf_of</code>
+names the D-Bus peer and its process as a claim, never as authority.</p>
+<p>Responses go only to the owner: 0 with URIs and applicable choices/filter,
+1 for person cancellation, 2 for refusal or failure. Owner Close and owner
+disconnect cancel the chooser without a Response. Non-owner Close is
+<code>org.freedesktop.portal.Error.NotAllowed</code>. An early outcome waits for its
+matching native request id. A native reply taking over five seconds fails
+the Request; a late chooser is cancelled. Reused handle tokens cannot consume
+an old chooser's outcome.</p>
+<p>The bridge subscribes before forwarding and resubscribes on native Bus
+reconnect. While Requests remain, it reads <code>files.choose.list</code> every five
+seconds. A vanished id is recovered through <code>files.choose.result</code>; an unknown
+id, list failure or changed incarnation ends the affected Request with 2.
+Startup and reconnect cancel old portal-correlated choosers before admitting
+new ones. This temporary polling is removed when noded has lifecycle topics.</p>
+<p>portald owns the portal frontend name itself. It is not an
+<code>org.freedesktop.impl.portal.*</code> backend for a second xdg-desktop-portal
+frontend, and it does not provide sandbox document export or access grants.</p>
 <h2 id="screen-sharing">Screen sharing</h2>
 <p>Interface <code>org.freedesktop.portal.ScreenCast</code>, version 5, on the same object.
 Video calls and browsers use it to share the screen: Zoom, Firefox and
@@ -450,6 +480,13 @@ while disconnected. It is registered in
 <pre><code class="language-text">cargo test --locked -p portald
 </code></pre>
 <p>Unit tests cover value mapping, iterative matching and acceptance.
+FileChooser mapping tests cover each option, non-UTF-8 byte paths, filters,
+choices and lenient limits. Lifecycle tests permute reply, outcome, Close,
+disconnect, provider loss and timeout, checking at most one Response and
+none after Close. <code>tests/filechooser.rs</code> runs a private session D-Bus, real
+noded and a scripted files provider with a persistent zbus caller. It checks
+all three methods, early outcomes, refusals, concurrent callers, ownership,
+Close during send/open, token reuse, missed outcomes, timeout and provider loss.
 <code>tests/portal.rs</code> runs a private <code>dbus-daemon</code> and checks version 2, Read
 and ReadOne nesting, empty and adversarial ReadAll filters, NotFound,
 changed-only signals, cache isolation and single ownership. It launches the
@@ -471,7 +508,6 @@ run by default; the build cluster needs <code>dbus-daemon</code> and the pinned 
 dependencies.</p>
 <h2 id="not-yet">Not yet</h2>
 <ul>
-<li>The FileChooser portal and its chooser application.</li>
 <li>A first-class accent field. Accent currently comes from the design's resolved
 accent, held in settingsd outside the sealed snapshot, and will move into the
 settings contract when that is decided.</li>

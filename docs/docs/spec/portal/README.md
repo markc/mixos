@@ -1,4 +1,4 @@
-# Portal contract: Settings and ScreenCast
+# Portal contract: Settings, FileChooser and ScreenCast
 
 Settings status: accepted, version 0.1.0 (ScreenCast is a draft, below). The cbc2 verification of `services/portald`
 passed on the commit that carries it (dcd2f1a). The commands and wire shapes below
@@ -131,8 +131,11 @@ allow}` (input), `portald.screencast.grant {app?, count?, ttl_ms?}` (intent),
 
 ## FileChooser
 
-Status: draft, not served. The interface, its mapping onto the Bus command
-`files.choose` and the Request lifecycle are specified in
+Status: draft, served at version 4 on the existing Desktop object. `OpenFile`,
+`SaveFile` and `SaveFiles` forward to the native `files` provider. Responses
+are addressed to the owner; Close and owner disconnect cancel without a
+Response. The interface, its lenient mapping onto the Bus command
+`files.choose`, byte paths, outcome recovery and four-state Request lifecycle are specified in
 [../files/README.md](../files/README.md#d-bus-orgfreedesktopportalfilechooser).
 
 ## Deferred

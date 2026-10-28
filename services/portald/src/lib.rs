@@ -2,7 +2,8 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The MixOS Settings portal: `org.freedesktop.portal.Desktop` on the session
 //! bus, serving the `org.freedesktop.appearance` namespace from settingsd and,
-//! with `--screencast`, `org.freedesktop.portal.ScreenCast` from compd.
+//! `org.freedesktop.portal.FileChooser` from files and, with `--screencast`,
+//! `org.freedesktop.portal.ScreenCast` from compd.
 pub mod appearance;
 pub mod cache;
 pub mod env;

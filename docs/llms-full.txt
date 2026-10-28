@@ -793,7 +793,7 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 | [noded](../noded/README.md) · [changelog](../noded/changelog.md) | service | unclassified | [`services/noded`](https://github.com/markc/mixos/tree/main/services/noded) | The MixOS Bus broker, which handles service registration, discovery, routing, subscriptions, authenticated local session grants and mesh peering between nodes. |
 | [notifyd](../notifyd/README.md) | service | unclassified | [`services/notifyd`](https://github.com/markc/mixos/tree/main/services/notifyd) | How notifyd keeps the desk's notifications, shows them as toasts and in the Notifications page, and tells an agent or app which button the human pressed. |
 | [paths](../paths/README.md) | lib | none (library) | [`libs/paths`](https://github.com/markc/mixos/tree/main/libs/paths) |  |
-| [portald](../portald/README.md) | service | unclassified | [`services/portald`](https://github.com/markc/mixos/tree/main/services/portald) | How portald serves the XDG Settings and ScreenCast portals on the session bus, where the appearance values and screen frames come from, and how applications and agents use them. |
+| [portald](../portald/README.md) | service | unclassified | [`services/portald`](https://github.com/markc/mixos/tree/main/services/portald) | How portald serves XDG Settings, FileChooser v4 and ScreenCast on the session bus, and how applications and agents use them. |
 | [prefs](../prefs/README.md) · [changelog](../prefs/changelog.md) | app | unclassified | [`apps/prefs`](https://github.com/markc/mixos/tree/main/apps/prefs) | Appearance, Text & Fonts, Windows, app preferences, Accessibility, and Software & Updates in one window. |
 | [props](../props/README.md) | lib | none (library) | [`libs/props`](https://github.com/markc/mixos/tree/main/libs/props) | Property read types, revisions, namespace storage and native Bus routing for MixOS services. |
 | [releasesd](../releasesd/README.md) | service | unclassified | [`services/releasesd`](https://github.com/markc/mixos/tree/main/services/releasesd) | How releasesd follows upstream application releases on GitHub and installs their Linux builds per user, verified, with rollback, from the command line or the Bus. |
@@ -7992,7 +7992,7 @@ as a shortcut around these boundaries.
 
 <!-- page: https://mixos.dev/docs/spec/portal/ (source: https://mixos.dev/docs/spec/portal/README.md) -->
 
-# Portal contract: Settings and ScreenCast
+# Portal contract: Settings, FileChooser and ScreenCast
 
 Settings status: accepted, version 0.1.0 (ScreenCast is a draft, below). The cbc2 verification of `services/portald`
 passed on the commit that carries it (dcd2f1a). The commands and wire shapes below
@@ -8125,8 +8125,11 @@ allow}` (input), `portald.screencast.grant {app?, count?, ttl_ms?}` (intent),
 
 ## FileChooser
 
-Status: draft, not served. The interface, its mapping onto the Bus command
-`files.choose` and the Request lifecycle are specified in
+Status: draft, served at version 4 on the existing Desktop object. `OpenFile`,
+`SaveFile` and `SaveFiles` forward to the native `files` provider. Responses
+are addressed to the owner; Close and owner disconnect cancel without a
+Response. The interface, its lenient mapping onto the Bus command
+`files.choose`, byte paths, outcome recovery and four-state Request lifecycle are specified in
 [../files/README.md](../files/README.md#d-bus-orgfreedesktopportalfilechooser).
 
 ## Deferred
@@ -34975,7 +34978,7 @@ path bytes. These Rust checks run on CBC, not on developer desktops.
 Applications on MixOS ask the desktop for its appearance (dark or light mode,
 contrast and accent colour) through the XDG Settings portal, and for a screen
 to share through the XDG ScreenCast portal. `portald` is the MixOS
-implementation of both. It owns `org.freedesktop.portal.Desktop` on the session
+implementation of these interfaces and FileChooser version 4. It owns `org.freedesktop.portal.Desktop` on the session
 bus, answers the `org.freedesktop.appearance` namespace and, when started with
 `--screencast`, serves monitor sources from the compositor.
 
@@ -35067,6 +35070,41 @@ Example, from a shell with `busctl`:
 busctl --user call org.freedesktop.portal.Desktop /org/freedesktop/portal/desktop \
   org.freedesktop.portal.Settings ReadOne ss org.freedesktop.appearance color-scheme
 ```
+
+## File chooser
+
+`org.freedesktop.portal.FileChooser`, version 4, is served on the same Desktop
+object by default. `OpenFile`, `SaveFile` and `SaveFiles` return a Request
+path and forward to `files.choose`, served by `dopus --choose-service` on
+the native Bus. rfd and other portal clients find the interface through the
+Desktop object's D-Bus introspection and `version` property.
+
+Filters, a standalone current filter, choices and byte-array paths follow the
+[files contract](../docs/spec/files/README.md). Unknown options are ignored;
+validly typed options are adjusted to the native limits, with each adjustment
+logged. A known option with the wrong type, an invalid NUL terminator or
+SaveFiles without usable names returns `InvalidArgument` before exporting a
+Request. Paths become file URIs without a UTF-8 conversion. `on_behalf_of`
+names the D-Bus peer and its process as a claim, never as authority.
+
+Responses go only to the owner: 0 with URIs and applicable choices/filter,
+1 for person cancellation, 2 for refusal or failure. Owner Close and owner
+disconnect cancel the chooser without a Response. Non-owner Close is
+`org.freedesktop.portal.Error.NotAllowed`. An early outcome waits for its
+matching native request id. A native reply taking over five seconds fails
+the Request; a late chooser is cancelled. Reused handle tokens cannot consume
+an old chooser's outcome.
+
+The bridge subscribes before forwarding and resubscribes on native Bus
+reconnect. While Requests remain, it reads `files.choose.list` every five
+seconds. A vanished id is recovered through `files.choose.result`; an unknown
+id, list failure or changed incarnation ends the affected Request with 2.
+Startup and reconnect cancel old portal-correlated choosers before admitting
+new ones. This temporary polling is removed when noded has lifecycle topics.
+
+portald owns the portal frontend name itself. It is not an
+`org.freedesktop.impl.portal.*` backend for a second xdg-desktop-portal
+frontend, and it does not provide sandbox document export or access grants.
 
 ## Screen sharing
 
@@ -35228,6 +35266,13 @@ cargo test --locked -p portald
 ```
 
 Unit tests cover value mapping, iterative matching and acceptance.
+FileChooser mapping tests cover each option, non-UTF-8 byte paths, filters,
+choices and lenient limits. Lifecycle tests permute reply, outcome, Close,
+disconnect, provider loss and timeout, checking at most one Response and
+none after Close. `tests/filechooser.rs` runs a private session D-Bus, real
+noded and a scripted files provider with a persistent zbus caller. It checks
+all three methods, early outcomes, refusals, concurrent callers, ownership,
+Close during send/open, token reuse, missed outcomes, timeout and provider loss.
 `tests/portal.rs` runs a private `dbus-daemon` and checks version 2, Read
 and ReadOne nesting, empty and adversarial ReadAll filters, NotFound,
 changed-only signals, cache isolation and single ownership. It launches the
@@ -35252,7 +35297,6 @@ dependencies.
 
 ## Not yet
 
-- The FileChooser portal and its chooser application.
 - A first-class accent field. Accent currently comes from the design's resolved
   accent, held in settingsd outside the sealed snapshot, and will move into the
   settings contract when that is decided.
@@ -40138,7 +40182,7 @@ yet. They are listed on both this page and the server page until they do.
 - [mixtrayd](../mixtrayd/README.md) (service)
 - [noded](../noded/README.md) (service): The MixOS Bus broker, which handles service registration, discovery, routing, subscriptions, authenticated local session grants and mesh peering between nodes.
 - [notifyd](../notifyd/README.md) (service): How notifyd keeps the desk's notifications, shows them as toasts and in the Notifications page, and tells an agent or app which button the human pressed.
-- [portald](../portald/README.md) (service): How portald serves the XDG Settings and ScreenCast portals on the session bus, where the appearance values and screen frames come from, and how applications and agents use them.
+- [portald](../portald/README.md) (service): How portald serves XDG Settings, FileChooser v4 and ScreenCast on the session bus, and how applications and agents use them.
 - [prefs](../prefs/README.md) (app): Appearance, Text & Fonts, Windows, app preferences, Accessibility, and Software & Updates in one window.
 - [releasesd](../releasesd/README.md) (service): How releasesd follows upstream application releases on GitHub and installs their Linux builds per user, verified, with rollback, from the command line or the Bus.
 - [screenshot](../screenshot/README.md) (app): MixOS's screenshot app — Print Screen for a region, Shift+Print for the screen, Alt+Print for a window; arrows, boxes, pens, highlighter, text, numbered markers, crop and redaction that stay…
@@ -40192,7 +40236,7 @@ yet. They are listed on both this page and the desktop page until they do.
 - [mixtrayd](../mixtrayd/README.md) (service)
 - [noded](../noded/README.md) (service): The MixOS Bus broker, which handles service registration, discovery, routing, subscriptions, authenticated local session grants and mesh peering between nodes.
 - [notifyd](../notifyd/README.md) (service): How notifyd keeps the desk's notifications, shows them as toasts and in the Notifications page, and tells an agent or app which button the human pressed.
-- [portald](../portald/README.md) (service): How portald serves the XDG Settings and ScreenCast portals on the session bus, where the appearance values and screen frames come from, and how applications and agents use them.
+- [portald](../portald/README.md) (service): How portald serves XDG Settings, FileChooser v4 and ScreenCast on the session bus, and how applications and agents use them.
 - [prefs](../prefs/README.md) (app): Appearance, Text & Fonts, Windows, app preferences, Accessibility, and Software & Updates in one window.
 - [releasesd](../releasesd/README.md) (service): How releasesd follows upstream application releases on GitHub and installs their Linux builds per user, verified, with rollback, from the command line or the Bus.
 - [screenshot](../screenshot/README.md) (app): MixOS's screenshot app — Print Screen for a region, Shift+Print for the screen, Alt+Print for a window; arrows, boxes, pens, highlighter, text, numbered markers, crop and redaction that stay…

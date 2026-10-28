@@ -282,7 +282,9 @@ impl Bridge {
                     }
                     self.registry.lock().await.incarnation = list["incarnation"].as_str().map(str::to_owned);
                 }
-                self.registry.lock().await.generation = Some(generation);
+                if settings::native::live_generation(&self.client) == Some(generation) {
+                    self.registry.lock().await.generation = Some(generation);
+                }
             }
             if !exported {
                 connection.object_server().at(OBJECT_PATH, FileChooser { bridge: self.clone() }).await?;

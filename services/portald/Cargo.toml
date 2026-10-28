@@ -7,7 +7,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false
-description = "XDG desktop portal on the session bus: Settings and ScreenCast"
+description = "XDG desktop portal on the session bus: Settings, FileChooser v4 and ScreenCast"
 
 [package.metadata.mixos]
 component = "portald"

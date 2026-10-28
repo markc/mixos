@@ -1,6 +1,6 @@
 ---
 title: The desktop portal
-description: How portald serves the XDG Settings and ScreenCast portals on the session bus, where the appearance values and screen frames come from, and how applications and agents use them.
+description: How portald serves XDG Settings, FileChooser v4 and ScreenCast on the session bus, and how applications and agents use them.
 ---
 
 # The desktop portal
@@ -8,7 +8,7 @@ description: How portald serves the XDG Settings and ScreenCast portals on the s
 Applications on MixOS ask the desktop for its appearance (dark or light mode,
 contrast and accent colour) through the XDG Settings portal, and for a screen
 to share through the XDG ScreenCast portal. `portald` is the MixOS
-implementation of both. It owns `org.freedesktop.portal.Desktop` on the session
+implementation of these interfaces and FileChooser version 4. It owns `org.freedesktop.portal.Desktop` on the session
 bus, answers the `org.freedesktop.appearance` namespace and, when started with
 `--screencast`, serves monitor sources from the compositor.
 
@@ -100,6 +100,41 @@ Example, from a shell with `busctl`:
 busctl --user call org.freedesktop.portal.Desktop /org/freedesktop/portal/desktop \
   org.freedesktop.portal.Settings ReadOne ss org.freedesktop.appearance color-scheme
 ```
+
+## File chooser
+
+`org.freedesktop.portal.FileChooser`, version 4, is served on the same Desktop
+object by default. `OpenFile`, `SaveFile` and `SaveFiles` return a Request
+path and forward to `files.choose`, served by `dopus --choose-service` on
+the native Bus. rfd and other portal clients find the interface through the
+Desktop object's D-Bus introspection and `version` property.
+
+Filters, a standalone current filter, choices and byte-array paths follow the
+[files contract](../docs/spec/files/README.md). Unknown options are ignored;
+validly typed options are adjusted to the native limits, with each adjustment
+logged. A known option with the wrong type, an invalid NUL terminator or
+SaveFiles without usable names returns `InvalidArgument` before exporting a
+Request. Paths become file URIs without a UTF-8 conversion. `on_behalf_of`
+names the D-Bus peer and its process as a claim, never as authority.
+
+Responses go only to the owner: 0 with URIs and applicable choices/filter,
+1 for person cancellation, 2 for refusal or failure. Owner Close and owner
+disconnect cancel the chooser without a Response. Non-owner Close is
+`org.freedesktop.portal.Error.NotAllowed`. An early outcome waits for its
+matching native request id. A native reply taking over five seconds fails
+the Request; a late chooser is cancelled. Reused handle tokens cannot consume
+an old chooser's outcome.
+
+The bridge subscribes before forwarding and resubscribes on native Bus
+reconnect. While Requests remain, it reads `files.choose.list` every five
+seconds. A vanished id is recovered through `files.choose.result`; an unknown
+id, list failure or changed incarnation ends the affected Request with 2.
+Startup and reconnect cancel old portal-correlated choosers before admitting
+new ones. This temporary polling is removed when noded has lifecycle topics.
+
+portald owns the portal frontend name itself. It is not an
+`org.freedesktop.impl.portal.*` backend for a second xdg-desktop-portal
+frontend, and it does not provide sandbox document export or access grants.
 
 ## Screen sharing
 
@@ -261,6 +296,13 @@ cargo test --locked -p portald
 ```
 
 Unit tests cover value mapping, iterative matching and acceptance.
+FileChooser mapping tests cover each option, non-UTF-8 byte paths, filters,
+choices and lenient limits. Lifecycle tests permute reply, outcome, Close,
+disconnect, provider loss and timeout, checking at most one Response and
+none after Close. `tests/filechooser.rs` runs a private session D-Bus, real
+noded and a scripted files provider with a persistent zbus caller. It checks
+all three methods, early outcomes, refusals, concurrent callers, ownership,
+Close during send/open, token reuse, missed outcomes, timeout and provider loss.
 `tests/portal.rs` runs a private `dbus-daemon` and checks version 2, Read
 and ReadOne nesting, empty and adversarial ReadAll filters, NotFound,
 changed-only signals, cache isolation and single ownership. It launches the
@@ -285,7 +327,6 @@ dependencies.
 
 ## Not yet
 
-- The FileChooser portal and its chooser application.
 - A first-class accent field. Accent currently comes from the design's resolved
   accent, held in settingsd outside the sealed snapshot, and will move into the
   settings contract when that is decided.

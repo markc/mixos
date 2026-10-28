@@ -45,7 +45,7 @@ yet. They are listed on both this page and the desktop page until they do.
 - [mixtrayd](../mixtrayd/README.md) (service)
 - [noded](../noded/README.md) (service): The MixOS Bus broker, which handles service registration, discovery, routing, subscriptions, authenticated local session grants and mesh peering between nodes.
 - [notifyd](../notifyd/README.md) (service): How notifyd keeps the desk's notifications, shows them as toasts and in the Notifications page, and tells an agent or app which button the human pressed.
-- [portald](../portald/README.md) (service): How portald serves the XDG Settings and ScreenCast portals on the session bus, where the appearance values and screen frames come from, and how applications and agents use them.
+- [portald](../portald/README.md) (service): How portald serves XDG Settings, FileChooser v4 and ScreenCast on the session bus, and how applications and agents use them.
 - [prefs](../prefs/README.md) (app): Appearance, Text & Fonts, Windows, app preferences, Accessibility, and Software & Updates in one window.
 - [releasesd](../releasesd/README.md) (service): How releasesd follows upstream application releases on GitHub and installs their Linux builds per user, verified, with rollback, from the command line or the Bus.
 - [screenshot](../screenshot/README.md) (app): MixOS's screenshot app — Print Screen for a region, Shift+Print for the screen, Alt+Print for a window; arrows, boxes, pens, highlighter, text, numbered markers, crop and redaction that stay…
