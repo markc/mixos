@@ -24,7 +24,8 @@
   Retry failed local targets without repeating successful fan-out deliveries;
   show each local target in submission status. Expire terminal receipts and
   EmailSubmission records after configurable `delivery_retention_days` (30 by default).
-- Derive BODY=8BITMIME from the body alone. Accept legacy raw eight-bit headers
+- Derive BODY=8BITMIME from the body alone, using the first LF or CRLF header
+  separator when identifying UTF-8 headers. Accept legacy raw eight-bit headers
   inbound and on submission; preserve transactions after rejected MAIL commands.
   Accept IPv4/IPv6 address literals syntactically. Skip dangling alias targets
   with an error log when healthy local targets remain, and check both IDN

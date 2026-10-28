@@ -293,6 +293,8 @@ discarded and never grant permission to use an envelope sender.</p>
 peer's EHLO capabilities (again after STARTTLS), and requests <code>SMTPUTF8</code> when
 needed, including UTF-8 MIME part headers. Only eight-bit bytes after the
 top-level header block require <code>8BITMIME</code> and request <code>BODY=8BITMIME</code>.
+The first LF or CRLF blank line ends that header block; later body paragraphs
+do not change whether its headers need SMTPUTF8.
 UTF-8 envelope addresses or headers with an ASCII body request SMTPUTF8 alone.
 ASCII mail does not request either extension. If a required extension is
 missing, maild records a permanent <code>5.6.7</code> (SMTPUTF8) or <code>5.6.3</code> (8BITMIME)

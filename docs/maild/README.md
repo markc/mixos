@@ -66,6 +66,8 @@ Outbound delivery detects non-ASCII envelope addresses and headers, checks the
 peer's EHLO capabilities (again after STARTTLS), and requests `SMTPUTF8` when
 needed, including UTF-8 MIME part headers. Only eight-bit bytes after the
 top-level header block require `8BITMIME` and request `BODY=8BITMIME`.
+The first LF or CRLF blank line ends that header block; later body paragraphs
+do not change whether its headers need SMTPUTF8.
 UTF-8 envelope addresses or headers with an ASCII body request SMTPUTF8 alone.
 ASCII mail does not request either extension. If a required extension is
 missing, maild records a permanent `5.6.7` (SMTPUTF8) or `5.6.3` (8BITMIME)

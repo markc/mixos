@@ -152,7 +152,9 @@ pub fn utf8_headers(data: &[u8]) -> bool {
     let end = data
         .windows(4)
         .position(|w| w == b"\r\n\r\n")
-        .or_else(|| data.windows(2).position(|w| w == b"\n\n"))
+        .into_iter()
+        .chain(data.windows(2).position(|w| w == b"\n\n"))
+        .min()
         .unwrap_or(data.len());
     if !data[..end].is_ascii() {
         return true;
