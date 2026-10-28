@@ -362,7 +362,7 @@ one lock, and a Request leaves the table only when it is ended.
 | State | Entered when | Close (owner) or owner leaves | Outcome for it arrives | `files.choose` answers | Bus or `files` lost |
 |---|---|---|---|---|---|
 | **sending** | the method returns the Request path, before `files.choose` is sent | to **closing** | parked by `correlation` until the reply | ok: to **open**, then apply a parked outcome whose `request` matches; refused: `Response` 2, ended; no reply in time: `Response` 2, to **closing** | `Response` 2, ended |
-| **open** | `files.choose` answered with a request id | send `files.choose.cancel`; ended, no `Response` | matched by `request`: `Response` as mapped, ended | — | `Response` 2, ended |
+| **open** | `files.choose` answered with a request id | send `files.choose.cancel`; ended, no `Response` | matched by `request`: `Response` as mapped, ended | — | cancel if the Bus is live; `Response` 2, ended |
 | **closing** | Close came while sending, or the reply timed out | — | dropped | ok: send `files.choose.cancel`, ended; refused: ended | ended |
 | **ended** | a `Response` was sent, or Close was handled | — | dropped | dropped | — |
 

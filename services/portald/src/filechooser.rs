@@ -125,29 +125,29 @@ impl Bridge {
         }
     }
 
-    fn cancel(&self, request: String, generation: Option<u64>) {
+    fn cancel(&self, request: String, generation: Option<u64>) -> Option<tokio::task::JoinHandle<()>> {
         if generation.is_none() || settings::native::live_generation(&self.client) != generation {
-            return;
+            return None;
         }
         self.cancels.lock().unwrap().entry(request.clone()).or_default();
-        self.retry_cancel(request);
+        self.retry_cancel(request)
     }
 
-    fn retry_cancel(&self, request: String) {
+    fn retry_cancel(&self, request: String) -> Option<tokio::task::JoinHandle<()>> {
         if settings::native::live_generation(&self.client).is_none() {
-            return;
+            return None;
         }
         {
             let mut pending = self.cancels.lock().unwrap();
-            let Some(cancel) = pending.get_mut(&request) else { return };
+            let Some(cancel) = pending.get_mut(&request) else { return None };
             if cancel.in_flight {
-                return;
+                return None;
             }
             cancel.in_flight = true;
             cancel.attempts += 1;
         }
         let this = self.clone();
-        tokio::spawn(async move {
+        Some(tokio::spawn(async move {
             // Unknown, expired and already ended requests acknowledge with rc 0.
             // Request ids include the incarnation, so retries across reconnects
             // cannot cancel a new chooser that happens to reuse a sequence.
@@ -163,7 +163,7 @@ impl Bridge {
                     cancel.in_flight = false;
                 }
             }
-        });
+        }))
     }
 
     // The lock covers transitions, signal enqueueing and object removal. Thus
@@ -175,7 +175,7 @@ impl Bridge {
         };
         let effects = entry.state.apply(event);
         if let Some(cancel) = effects.cancel {
-            self.cancel(cancel, registry.generation);
+            let _ = self.cancel(cancel, registry.generation);
         }
         if let Some(response) = effects.response {
             if let Some(reply_sent) = entry.reply_sent.take() {
@@ -287,7 +287,7 @@ impl Bridge {
         }
         if !registry.entries.contains_key(&id) {
             if let Some(request) = request {
-                self.cancel(request, generation);
+                let _ = self.cancel(request, generation);
             }
             return;
         }
@@ -359,7 +359,7 @@ impl Bridge {
     async fn poll(&self, connection: &Connection) {
         let pending: Vec<_> = self.cancels.lock().unwrap().keys().cloned().collect();
         for request in pending {
-            self.retry_cancel(request);
+            let _ = self.retry_cancel(request);
         }
         // A bounded NameOwnerChanged stream may overflow while apply holds the
         // registry lock. Reconcile independently of files liveness and results.
@@ -465,7 +465,7 @@ impl Bridge {
                                 matches!(&entry.state.phase, Phase::Open(live) if live == request)
                             })
                         {
-                            self.cancel(request.into(), generation);
+                            let _ = self.cancel(request.into(), generation);
                         }
                     }
                     self.apply(connection, &mut registry, id, Event::Sweep)
@@ -533,7 +533,9 @@ impl Bridge {
                                 s.starts_with(&format!("{}/", handle::REQUEST_ROOT))
                             }) && let Some(id) = entry["request"].as_str()
                             {
-                                self.cancel(id.into(), Some(generation));
+                                if let Some(attempt) = self.cancel(id.into(), Some(generation)) {
+                                    let _ = attempt.await;
+                                }
                             }
                         }
                     }
