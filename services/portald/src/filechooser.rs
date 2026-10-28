@@ -142,14 +142,10 @@ impl Bridge {
     }
 
     fn retry_cancel(&self, request: String) -> Option<tokio::task::JoinHandle<()>> {
-        if settings::native::live_generation(&self.client).is_none() {
-            return None;
-        }
+        settings::native::live_generation(&self.client)?;
         {
             let mut pending = self.cancels.lock().unwrap();
-            let Some(cancel) = pending.get_mut(&request) else {
-                return None;
-            };
+            let cancel = pending.get_mut(&request)?;
             if cancel.in_flight {
                 return None;
             }
@@ -555,10 +551,9 @@ impl Bridge {
                             if entry["correlation"].as_str().is_some_and(|s| {
                                 s.starts_with(&format!("{}/", handle::REQUEST_ROOT))
                             }) && let Some(id) = entry["request"].as_str()
+                                && let Some(attempt) = self.cancel(id.into(), Some(generation))
                             {
-                                if let Some(attempt) = self.cancel(id.into(), Some(generation)) {
-                                    let _ = attempt.await;
-                                }
+                                let _ = attempt.await;
                             }
                         }
                     }
