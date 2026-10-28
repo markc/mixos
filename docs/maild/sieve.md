@@ -84,7 +84,7 @@ those domains' Sieve vacation replies to non-local senders. This is operator
 configuration, never script data. Local destinations must be account addresses.
 
 Vacation supports `:days` (1..31, default 7), `:addresses`, `:subject`, `:from`
-and `:handle`. `:from` must be the account address. `:addresses` recognises
+`:handle` and `:mime` entities. `:from` must be the account address. `:addresses` recognises
 additional To/Cc recipient identities; it does not authorise sender spoofing.
 Replies require verified ingress and a recognised To/Cc identity. Spam, null
 senders, self-mail, list/bulk mail and automatic responses receive no reply.

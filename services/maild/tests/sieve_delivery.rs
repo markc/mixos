@@ -326,6 +326,21 @@ async fn unicode_ereject_uses_ascii_smtp_and_reject_preserves_reason_in_dsn() ->
     assert!(String::from_utf8_lossy(&bytes).contains("Denied café"));
     Ok(())
 }
+#[tokio::test]
+async fn vacation_mime_entity_preserves_body_and_refuses_envelope_header_injection() -> Result<()> {
+    let f = Fixture::new().await?;
+    f.script("require \"vacation\"; vacation :mime text:\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<p>Away</p>\r\n.\r\n;").await?;
+    f.deliver(MESSAGE,true,false).await?;
+    let queued = maild::smtp::queue::list(&f.db.conn,10).await?; assert_eq!(queued.len(),1);
+    let bytes = f.ms.mds().get_blob(&queued[0].blob_hash.unwrap())?;
+    let message = mail_parser::MessageParser::default().parse(&bytes).unwrap();
+    assert!(message.body_html(0).unwrap().contains("<p>Away</p>"));
+    assert_eq!(message.from().unwrap().first().unwrap().address(),Some("bob@example.com"));
+    f.script("require \"vacation\"; vacation :mime text:\r\nFrom: forged@example.org\r\nContent-Type: text/plain\r\n\r\nInjected\r\n.\r\n;").await?;
+    f.deliver(MESSAGE,true,false).await?;
+    assert_eq!(maild::smtp::queue::list(&f.db.conn,10).await?.len(),1);
+    Ok(())
+}
 #[test]
 fn daemon_spam_verdict_replaces_forged_headers() {
     let bytes = delivery::stamp_spam(

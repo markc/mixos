@@ -302,7 +302,7 @@ account domains allowed to redirect to non-local addresses. It also enables
 those domains' Sieve vacation replies to non-local senders. This is operator
 configuration, never script data. Local destinations must be account addresses.</p>
 <p>Vacation supports <code>:days</code> (1..31, default 7), <code>:addresses</code>, <code>:subject</code>, <code>:from</code>
-and <code>:handle</code>. <code>:from</code> must be the account address. <code>:addresses</code> recognises
+<code>:handle</code> and <code>:mime</code> entities. <code>:from</code> must be the account address. <code>:addresses</code> recognises
 additional To/Cc recipient identities; it does not authorise sender spoofing.
 Replies require verified ingress and a recognised To/Cc identity. Spam, null
 senders, self-mail, list/bulk mail and automatic responses receive no reply.

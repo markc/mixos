@@ -201,6 +201,11 @@ async fn validate(db: &Db, ms: &Arc<SqliteMailStore>, delivery: &Delivery<'_>, p
     }
     if let Some(vacation) = &plan.vacation {
         if let Some(from) = &vacation.from { address(from)?; ensure!(from.eq_ignore_ascii_case(&delivery.account.email), "vacation :from must be account address"); }
+        if vacation.mime {
+            let entity = MessageParser::default().parse(&vacation.reason).ok_or_else(|| anyhow::anyhow!("invalid vacation MIME entity"))?;
+            ensure!(vacation.reason.contains("\n\n") || vacation.reason.contains("\r\n\r\n"),"vacation MIME entity needs a header/body separator");
+            ensure!(entity.headers().iter().all(|h| h.name.as_str().to_ascii_lowercase().starts_with("content-")),"vacation MIME entity may contain only Content-* headers");
+        }
     }
     Ok(redirects)
 }
@@ -257,7 +262,22 @@ async fn vacation_reply(db: &Db, ms: &Arc<SqliteMailStore>, delivery: &Delivery<
         .header("Auto-Submitted",mail_builder::headers::raw::Raw::new("auto-replied"))
         .text_body(vacation.reason.as_str());
     if let Some(id) = message.message_id() { builder = builder.in_reply_to(id); }
-    let bytes = builder.write_to_vec()?;
+    let mut bytes = builder.write_to_vec()?;
+    if vacation.mime {
+        let message = MessageParser::default().parse(&bytes).ok_or_else(|| anyhow::anyhow!("vacation reply parse error"))?;
+        let mut mime_reply = Vec::new();
+        for header in message.headers() {
+            let name = header.name.as_str();
+            if name.eq_ignore_ascii_case("MIME-Version") || name.to_ascii_lowercase().starts_with("content-") { continue; }
+            mime_reply.extend_from_slice(&bytes[header.offset_field as usize..header.offset_end as usize]);
+            if !mime_reply.ends_with(b"\r\n") { mime_reply.extend_from_slice(b"\r\n"); }
+        }
+        mime_reply.extend_from_slice(b"MIME-Version: 1.0\r\n");
+        let entity = vacation.reason.replace("\r\n","\n").replace('\r',"\n").replace('\n',"\r\n");
+        mime_reply.extend_from_slice(entity.as_bytes());
+        if !mime_reply.ends_with(b"\r\n") { mime_reply.extend_from_slice(b"\r\n"); }
+        bytes = mime_reply;
+    }
     // Null reverse path prevents replies to this automatic response; From
     // identifies the account for the normal queue worker's DKIM selection.
     enqueue(db,ms,"",delivery.from,&bytes).await

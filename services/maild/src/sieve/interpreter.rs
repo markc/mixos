@@ -250,7 +250,7 @@ impl Parser {
                 &[],
             ),
             "setflag" | "addflag" | "removeflag" => (1, &[], &[]),
-            "vacation" => (1, &[], &["days", "addresses", "subject", "from", "handle"]),
+            "vacation" => (1, &["mime"], &["days", "addresses", "subject", "from", "handle"]),
             "reject" | "ereject" => (1, &[], &[]),
             "exists" => (1, &[], &[]),
             "size" => (1, &["over", "under"], &[]),
@@ -285,7 +285,7 @@ impl Parser {
             } else if valued.contains(&tag.as_str()) {
                 if tag == "days" || tag == "index" {
                     match self.take()? {
-                        Token::Number(n) if n > 0 => vec![n.to_string()],
+                        Token::Number(n) if n > 0 || tag == "days" => vec![n.to_string()],
                         _ => bail!("expected positive number"),
                     }
                 } else {
@@ -553,6 +553,7 @@ pub struct Filing {
 }
 #[derive(Debug, Clone, PartialEq)]
 pub struct Vacation {
+    pub mime: bool,
     pub days: u32,
     pub addresses: Vec<String>,
     pub subject: Option<String>,
@@ -837,12 +838,13 @@ impl Eval<'_> {
                     handle.to_string()
                 } else {
                     // RFC 5230 response identity uses the unexpanded arguments.
-                    blake3::hash(format!("{:?}{:?}{}",args.tag("subject"),args.tag("from"),args.value(0)).as_bytes())
+                    blake3::hash(format!("{:?}{:?}{}{}",args.tag("subject"),args.tag("from"),args.has("mime"),args.value(0)).as_bytes())
                         .to_hex()
                         .to_string()
                 };
                 self.plan.vacation = Some(Vacation {
-                    days: args.tag("days").unwrap_or("7").parse::<u32>()?.clamp(1, 31),
+                    mime: args.has("mime"),
+                    days: args.tag("days").unwrap_or("7").parse::<u64>()?.clamp(1, 31) as u32,
                     addresses: args
                         .tags
                         .get("addresses")
