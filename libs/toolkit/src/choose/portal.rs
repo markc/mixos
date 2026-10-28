@@ -121,7 +121,9 @@ pub(super) async fn attempt(
         .await
         .ok()?
         .ok()?;
-    session(&connection, request, cancel).await.unwrap_or_default()
+    session(&connection, request, cancel)
+        .await
+        .unwrap_or_default()
 }
 
 pub(super) async fn session(

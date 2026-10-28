@@ -8,34 +8,53 @@ type State = (FileChooser, Option<Outcome>);
 #[test]
 fn opening_from_a_still_recorded_menu_raises_above_the_parent_dialog() {
     let chooser = FileChooser::new("/home/user/Documents", "Attach files", "Attach");
-    let mut h = Harness::builder().with_size(egui::vec2(900.0, 700.0))
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(900.0, 700.0))
         .with_context_setup(|ctx| crate::install(ctx, &crate::Theme::embedded()))
-        .build_ui_state(|ui, state: &mut (FileChooser, bool)| {
-            let parent = Id::unique("compose-under-menu");
-            ui.ctx().move_to_top(egui::LayerId::new(egui::Order::Foreground, parent));
-            Dialog::new(parent, "Compose").enabled(!state.1).show(ui.ctx(), |ui| {
-                crate::menu::bar(ui, &[crate::menu::Menu {
-                    title: "Attachments".into(),
-                    entries: vec![crate::menu::Entry::Row(crate::menu::Row::command("attach", "Attach files", None, true))],
-                }]);
-                ui.label("Message body");
-            });
-            if state.1 {
-                // The menu was drawn earlier in the frame (Attachments), and
-                // egui still records its popup while the chooser is opening.
-                if !state.0.started {
-                    crate::menu::open_path(ui.ctx(), &["Attachments".into()]).unwrap();
-                    assert!(crate::menu::is_open(ui.ctx()));
-                    egui::Popup::open_id(ui.ctx(), Id::unique("attachments-menu"));
+        .build_ui_state(
+            |ui, state: &mut (FileChooser, bool)| {
+                let parent = Id::unique("compose-under-menu");
+                ui.ctx()
+                    .move_to_top(egui::LayerId::new(egui::Order::Foreground, parent));
+                Dialog::new(parent, "Compose")
+                    .enabled(!state.1)
+                    .show(ui.ctx(), |ui| {
+                        crate::menu::bar(
+                            ui,
+                            &[crate::menu::Menu {
+                                title: "Attachments".into(),
+                                entries: vec![crate::menu::Entry::Row(crate::menu::Row::command(
+                                    "attach",
+                                    "Attach files",
+                                    None,
+                                    true,
+                                ))],
+                            }],
+                        );
+                        ui.label("Message body");
+                    });
+                if state.1 {
+                    // The menu was drawn earlier in the frame (Attachments), and
+                    // egui still records its popup while the chooser is opening.
+                    if !state.0.started {
+                        crate::menu::open_path(ui.ctx(), &["Attachments".into()]).unwrap();
+                        assert!(crate::menu::is_open(ui.ctx()));
+                        egui::Popup::open_id(ui.ctx(), Id::unique("attachments-menu"));
+                    }
+                    state.0.show(ui.ctx());
                 }
-                state.0.show(ui.ctx());
-            }
-        }, (chooser, false));
+            },
+            (chooser, false),
+        );
     h.run_steps(3);
     h.state_mut().1 = true;
     h.run_steps(1);
     let chooser_layer = egui::LayerId::new(egui::Order::Foreground, h.state().0.id);
-    assert_eq!(h.ctx.memory(|m| m.areas().top_layer_id(egui::Order::Foreground)), Some(chooser_layer));
+    assert_eq!(
+        h.ctx
+            .memory(|m| m.areas().top_layer_id(egui::Order::Foreground)),
+        Some(chooser_layer)
+    );
     h.state_mut().0.pending = None;
     h.state_mut().0.browsing = None;
     h.state_mut().0.error = None;
