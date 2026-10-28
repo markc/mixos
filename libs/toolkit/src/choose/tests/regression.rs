@@ -7,9 +7,10 @@ use std::sync::{Arc, Mutex, atomic::AtomicUsize};
 fn worker_death_opens_fallback_and_keeps_the_request() {
     let req = request(r#"{"title":"Recover this request","mode":"save","current_name":"report","current_filter":{"name":"Text","patterns":["*.md"],"mime_types":[]}}"#).unwrap();
     let mut handle = choose(req);
-    let saved = handle.request.clone();
     handle.driver = Some(Box::new(|_, _, _| {}));
     let ctx = Context::default();
+    frame(&ctx, ViewportId::ROOT, &mut handle);
+    let saved = handle.request.clone();
     let until = std::time::Instant::now() + Duration::from_secs(5);
     while handle.tier() != Tier::InProcess && std::time::Instant::now() < until {
         assert!(frame(&ctx, ViewportId::ROOT, &mut handle).is_none());
@@ -31,15 +32,33 @@ fn worker_death_opens_fallback_and_keeps_the_request() {
 #[test]
 fn two_failed_tiers_open_the_in_process_chooser_with_the_same_request() {
     let mut handle = choose(request(r#"{"mode":"save_files","title":"Keep this title","files":["one.md","two.md"],"choices":[{"id":"check","label":"Check","options":[],"default":"true"}]}"#).unwrap());
-    let saved = handle.request.clone();
     assert!(
-        saved.correlation.is_some(),
+        handle.request.correlation.is_some(),
         "the same request must remain identifiable through the handoff"
     );
     handle.driver = Some(Box::new(|_, cancel, emitter| {
         runtime().block_on(cascade(async { None }, async { None }, cancel, &emitter));
     }));
+    #[cfg(all(target_os = "linux", feature = "portal"))]
+    let _private = {
+        let broker = test_broker::Broker::start();
+        let (process, address) = super::portal_tests::dbus();
+        let url = broker.url.clone();
+        handle.driver = Some(Box::new(move |req, cancel, emitter| {
+            runtime().block_on(async {
+                let client = super::portal_tests::connection(&address).await;
+                let mut bus_cancel = cancel.clone();
+                let mut portal_cancel = cancel.clone();
+                cascade(native::attempt_at(&req, &mut bus_cancel, &url), async {
+                    portal::session(&client, &req, &mut portal_cancel).await.unwrap()
+                }, cancel, &emitter).await;
+            });
+        }));
+        (broker, process)
+    };
     let ctx = Context::default();
+    frame(&ctx, ViewportId::ROOT, &mut handle);
+    let saved = handle.request.clone();
     let until = std::time::Instant::now() + Duration::from_secs(5);
     while handle.tier() != Tier::InProcess && std::time::Instant::now() < until {
         frame(&ctx, ViewportId::ROOT, &mut handle);
