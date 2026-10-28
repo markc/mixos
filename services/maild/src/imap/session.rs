@@ -2220,7 +2220,17 @@ impl Session {
             Ok(Ok(())) => {}
             result => {
                 tracing::warn!(?result, "IMAP account preparation failed");
-                writer.write_all(tagged(tag, Status::No, Some("UNAVAILABLE"), "mailbox identities unavailable").as_bytes()).await?;
+                writer
+                    .write_all(
+                        tagged(
+                            tag,
+                            Status::No,
+                            Some("UNAVAILABLE"),
+                            "mailbox identities unavailable",
+                        )
+                        .as_bytes(),
+                    )
+                    .await?;
                 return Ok(());
             }
         }

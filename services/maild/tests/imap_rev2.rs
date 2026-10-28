@@ -1553,24 +1553,53 @@ async fn legacy_identities_migrate_before_login_and_cannot_collide_after_rename(
     ms.create_mailbox(1, "Target", None, attrs_for(None, false))?;
     let legacy = chrono::Utc::now().timestamp();
     mds.with_set_tx(&maild::mailstore::account_id_to_setid(1), |tx| {
-        tx.tx().execute("UPDATE container SET seq_validity = ?1", [legacy * 1000])
+        tx.tx()
+            .execute("UPDATE container SET seq_validity = ?1", [legacy * 1000])
             .map_err(|e| mds::Error::Other(e.to_string()))?;
         Ok(())
     })?;
     let (client, _) = spawn_session(db.clone(), ms.clone(), ImapConfig::default()).await;
     let (mut r, mut w) = login(client).await?;
     let values = ms.list_mailboxes(1)?;
-    assert!(values.iter().all(|record| record.uid_validity > legacy as u64 && record.uid_validity <= u32::MAX as u64));
-    let source = values.iter().find(|record| record.name == "Source").unwrap().uid_validity;
-    let target = values.iter().find(|record| record.name == "Target").unwrap().uid_validity;
+    assert!(values.iter().all(
+        |record| record.uid_validity > legacy as u64 && record.uid_validity <= u32::MAX as u64
+    ));
+    let source = values
+        .iter()
+        .find(|record| record.name == "Source")
+        .unwrap()
+        .uid_validity;
+    let target = values
+        .iter()
+        .find(|record| record.name == "Target")
+        .unwrap()
+        .uid_validity;
     assert_ne!(source, target);
-    assert!(command(&mut r, &mut w, "d", "DELETE Target").await?.contains("d OK"));
-    assert!(command(&mut r, &mut w, "n", "RENAME Source Target").await?.contains("n OK"));
+    assert!(
+        command(&mut r, &mut w, "d", "DELETE Target")
+            .await?
+            .contains("d OK")
+    );
+    assert!(
+        command(&mut r, &mut w, "n", "RENAME Source Target")
+            .await?
+            .contains("n OK")
+    );
     let response = command(&mut r, &mut w, "s", "STATUS Target (UIDVALIDITY)").await?;
-    assert!(response.contains(&format!("UIDVALIDITY {source})")), "{response}");
+    assert!(
+        response.contains(&format!("UIDVALIDITY {source})")),
+        "{response}"
+    );
     let (client, _) = spawn_session(db, ms.clone(), ImapConfig::default()).await;
     let (_r2, _w2) = login(client).await?;
-    assert_eq!(ms.list_mailboxes(1)?.iter().find(|record| record.name == "Target").unwrap().uid_validity, source);
+    assert_eq!(
+        ms.list_mailboxes(1)?
+            .iter()
+            .find(|record| record.name == "Target")
+            .unwrap()
+            .uid_validity,
+        source
+    );
     Ok(())
 }
 
@@ -1593,15 +1622,24 @@ async fn failed_identity_migration_is_atomic_and_authentication_can_retry() -> R
     read_line(&mut r).await?;
     let response = command(&mut r, &mut w, "a", "LOGIN alice@example.com hunter2").await?;
     assert!(response.contains("a NO [UNAVAILABLE]"), "{response}");
-    assert!(ms.list_mailboxes(1)?.iter().all(|record| record.uid_validity == legacy as u64));
+    assert!(
+        ms.list_mailboxes(1)?
+            .iter()
+            .all(|record| record.uid_validity == legacy as u64)
+    );
     mds.with_set_tx(&set, |tx| {
-        tx.tx().execute_batch("DROP TRIGGER reject_identity")
+        tx.tx()
+            .execute_batch("DROP TRIGGER reject_identity")
             .map_err(|e| mds::Error::Other(e.to_string()))
     })?;
     let ir = base64::engine::general_purpose::STANDARD.encode(b"\0alice@example.com\0hunter2");
     let response = command(&mut r, &mut w, "b", &format!("AUTHENTICATE PLAIN {ir}")).await?;
     assert!(response.contains("b OK [CAPABILITY"), "{response}");
-    assert!(command(&mut r, &mut w, "s", "SELECT INBOX").await?.contains("s OK"));
+    assert!(
+        command(&mut r, &mut w, "s", "SELECT INBOX")
+            .await?
+            .contains("s OK")
+    );
     Ok(())
 }
 
