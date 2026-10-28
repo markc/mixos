@@ -19,8 +19,12 @@
     "sha256": "ad83108732f90d9eaabd0d24fb24715ada382bd27d96b5127912298077d29ce4"
   },
   "services/maild/units/maild.service": {
-    "reason": "make the default data dir @{var}/jmap a state directory under ProtectSystem=strict",
-    "sha256": "3b39b7af52c4f99c28789fbeb1153f3f79681f96ee4a0f335b6fd1e3e1b4fa89"
+    "reason": "keep @{var}/jmap writable and remove bind capabilities now that systemd supplies named listening sockets",
+    "sha256": "3408bf476ee6b77b3761481aa12ed9ae92cc2f76232d493f4cf5c93030b039d8"
+  },
+  "services/maild/units/maild@.service": {
+    "reason": "remove bind capabilities; named activation sockets or configured unprivileged listeners supply service ports",
+    "sha256": "f529e4c8226af3534b388bd5f0f81e9ef2a95d2a63e63c986228b438b3a03196"
   },
   "services/hostd/units/hostd.service": {
     "reason": "open host-local controls: remove standing grants and group access; retain sandbox and receipts",
