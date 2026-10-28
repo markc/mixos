@@ -126,7 +126,12 @@ async fn session(client: &SupervisedClient, request: &Request, body: Value, canc
                 match call(client, "files.choose.result", json!({"request":id})).await {
                     Some(PortReply::Ok { value, .. }) if value["state"] == "done" && value["outcome"]["request"].as_str() == Some(&id) => return outcome(request, &value["outcome"]),
                     Some(PortReply::AppError { .. }) => {
-                        if cancel_request(client, &id).await { return None; }
+                        return if recover_sending(client, &mut provider,
+                            request.correlation.as_deref().expect("set"), Some(&id)).await {
+                            None
+                        } else {
+                            Some(Outcome::Failed("could not confirm the native chooser ended".into()))
+                        };
                     }
                     _ => {}
                 }
