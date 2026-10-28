@@ -34,8 +34,10 @@ pub async fn set(
     // Handle create
     if let Some(create) = args.get("create").and_then(|v| v.as_object()) {
         for (client_id, obj) in create {
+            let legacy_sent_move = ["onSuccessUpdateEmail", "onSuccessDestroyEmail"].iter()
+                .all(|key| args.get(key).is_none_or(serde_json::Value::is_null));
             let result =
-                create_submission(db, mailstore, aliases_runtime, account_id, obj, false).await;
+                create_submission(db, mailstore, aliases_runtime, account_id, obj, false, legacy_sent_move).await;
             match result {
                 Ok(submission_id) => {
                     created_map.insert(
@@ -83,7 +85,7 @@ pub(crate) async fn create_submission_strict(
     account_id: i32,
     obj: &serde_json::Value,
 ) -> Result<Uuid> {
-    create_submission(db, mailstore, aliases_runtime, account_id, obj, true).await
+    create_submission(db, mailstore, aliases_runtime, account_id, obj, true, true).await
 }
 
 async fn create_submission(
@@ -93,6 +95,7 @@ async fn create_submission(
     account_id: i32,
     obj: &serde_json::Value,
     strict_local: bool,
+    legacy_sent_move: bool,
 ) -> Result<Uuid> {
     #[derive(Deserialize)]
     struct SubmissionCreate {
@@ -286,6 +289,7 @@ async fn create_submission(
     // `"ambiguous source"` for multi-mailbox emails — legacy
     // `update_mailboxes` would silently overwrite that case; the
     // multi-mailbox migration moves under).
+    if legacy_sent_move {
     let ms = mailstore.clone();
     let move_outcome = tokio::task::spawn_blocking(move || {
         let sent_id = ms.mailbox_by_role(account_id, MailboxRole::Sent)?;
@@ -303,6 +307,7 @@ async fn create_submission(
             tracing::warn!(error = %e, email_id = %email_uuid, "Sent-mailbox spawn_blocking failed");
         }
         Ok(Ok(None)) | Ok(Ok(Some(Ok(())))) => {}
+    }
     }
 
     // Persist submission record

@@ -90,6 +90,15 @@ pub(super) async fn call(
         }
         let mut call = base.clone();
         call["create"] = json!({&key: entry});
+        if method == "EmailSubmission/set" {
+            // Explicit client actions replace the legacy automatic Sent move.
+            // Keep the arguments visible to submission's single-entry handler.
+            for property in ["onSuccessUpdateEmail", "onSuccessDestroyEmail"] {
+                if let Some(value) = args.get(property) {
+                    call[property] = value.clone();
+                }
+            }
+        }
         let result = invoke(state, account, method, call).await?;
         if let Some(id) = result["created"][&key]["id"].as_str() {
             ids.insert(key.clone(), id.to_owned());

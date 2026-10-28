@@ -207,6 +207,8 @@ parents, ordering dependent creates within one call. Unresolvable references
 produce per-entry errors. Submission `onSuccessUpdateEmail` and
 `onSuccessDestroyEmail` refer to successful submission ids, including `#id`
 references, and return the implicit `Email/set` response with the same call id.
+Explicit success actions suppress the legacy automatic move to Sent, so the
+client's mailbox patch applies to the original draft memberships.
 An optional
 request `createdIds` map seeds these references and is returned with the new ids.
 The Email

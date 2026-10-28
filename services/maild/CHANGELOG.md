@@ -29,7 +29,8 @@
   invalidProperties on blobId.
 - Resolve creation references at implemented /set Id fields and update/destroy
   targets, including dependent mailbox creates. Apply submission success actions
-  through the implicit Email/set response.
+  through the implicit Email/set response, suppressing the legacy automatic
+  Sent move when the client supplies those actions.
 - Resolve all configured paths, including TLS and DKIM identities, through
   the shared `mixos:` resolver; accept `database` as a `database_path` alias.
 - Replace five JMAP placeholders with authenticated HTTP contracts. Correct

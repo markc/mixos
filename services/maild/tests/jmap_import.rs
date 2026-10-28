@@ -923,7 +923,12 @@ async fn submission_success_references_modify_only_the_successful_submissions_em
     );
     assert_eq!(calls[3][0], "Email/set", "{response}");
     assert_eq!(calls[3][2], "s");
-    assert!(calls[3][1]["updated"].as_object().is_some_and(|m| m.contains_key(response["createdIds"]["draft"].as_str().unwrap())), "{response}");
+    assert!(
+        calls[3][1]["updated"]
+            .as_object()
+            .is_some_and(|m| m.contains_key(response["createdIds"]["draft"].as_str().unwrap())),
+        "{response}"
+    );
     let got = f.get(&response["createdIds"]["draft"]).await;
     assert_eq!(got["keywords"]["$seen"], true);
     assert!(got["keywords"]["$draft"].is_null());
