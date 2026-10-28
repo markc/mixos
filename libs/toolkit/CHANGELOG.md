@@ -20,6 +20,7 @@
   fields and removable path chips shared by Email and ced. Caller-provided
   IDs keep field state scoped to each tab and viewport.
 - Share a 360×240 logical window minimum across app and secondary viewports. Restore secondary geometry only at creation; constrain and scroll small dialogs and saved docks.
+- Share a 360×240 logical window minimum across app and secondary viewports. Restore secondary geometry only at creation; constrain and scroll small dialogs and saved docks. Use the compact menu in narrow windows so menu titles cannot overlap the window controls.
 
 ## Unreleased — 2026-10-28
 

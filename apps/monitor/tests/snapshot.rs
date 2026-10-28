@@ -183,6 +183,7 @@ fn dark() -> Theme {
 
 #[test]
 fn minimum_window_renders() {
+    let mut snapshots = egui_kittest::SnapshotResults::new();
     for tab in [Tab::Processes, Tab::Performance] {
         let engine = engine(4, 40, tab);
         let registry = actions::registry();
@@ -196,7 +197,9 @@ fn minimum_window_renders() {
         toolkit::install(&h.ctx, &Theme::embedded());
         h.run_steps(4);
         h.snapshot(format!("minimum_window_{tab:?}"));
+        snapshots.extend_harness(&mut h);
     }
+    snapshots.unwrap();
 }
 
 fn light() -> Theme {

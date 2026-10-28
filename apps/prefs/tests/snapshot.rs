@@ -357,6 +357,7 @@ fn draw_at_size(theme: Theme, name: &str, engine: Engine, size: egui::Vec2) {
 
 #[test]
 fn minimum_window_renders() {
+    let mut snapshots = egui_kittest::SnapshotResults::new();
     for section in [
         Section::Appearance,
         Section::Software,
@@ -381,7 +382,9 @@ fn minimum_window_renders() {
         toolkit::install(&h.ctx, &Theme::embedded());
         h.run_steps(4);
         h.snapshot(format!("minimum_window_{}", section.name()));
+        snapshots.extend_harness(&mut h);
     }
+    snapshots.unwrap();
 }
 
 /// The default look: Studio Dark.

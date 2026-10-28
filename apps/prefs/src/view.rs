@@ -230,32 +230,34 @@ pub fn view(
                         .show(ui, |ui| {
                             ui.set_max_width(width);
                             match section {
-                            Section::Appearance => {
-                                appearance(ui, engine, commands, strings, &mut events)
-                            }
-                            Section::Terminal => {
-                                terminal(ui, engine, commands, strings, &mut events)
-                            }
-                            Section::Ced => text::section(
-                                ui,
-                                engine,
-                                &[preferences::text::Surface::CedEditor],
-                                &mut events,
-                            ),
-                            Section::Wallpapers => {
-                                wallpaper::controls(ui, engine, commands, strings, &mut events)
-                            }
-                            Section::TextAndFonts => {
-                                fonts(ui, engine, commands, strings, &mut events)
-                            }
-                            Section::Windows => windows(ui, engine, commands, strings, &mut events),
-                            Section::Accessibility => {
-                                motion(ui, engine, commands, strings, &mut events)
-                            }
-                            Section::Email => {
-                                email::section(ui, engine, commands, strings, &mut events)
-                            }
-                            _ => unreachable!(),
+                                Section::Appearance => {
+                                    appearance(ui, engine, commands, strings, &mut events)
+                                }
+                                Section::Terminal => {
+                                    terminal(ui, engine, commands, strings, &mut events)
+                                }
+                                Section::Ced => text::section(
+                                    ui,
+                                    engine,
+                                    &[preferences::text::Surface::CedEditor],
+                                    &mut events,
+                                ),
+                                Section::Wallpapers => {
+                                    wallpaper::controls(ui, engine, commands, strings, &mut events)
+                                }
+                                Section::TextAndFonts => {
+                                    fonts(ui, engine, commands, strings, &mut events)
+                                }
+                                Section::Windows => {
+                                    windows(ui, engine, commands, strings, &mut events)
+                                }
+                                Section::Accessibility => {
+                                    motion(ui, engine, commands, strings, &mut events)
+                                }
+                                Section::Email => {
+                                    email::section(ui, engine, commands, strings, &mut events)
+                                }
+                                _ => unreachable!(),
                             }
                         });
                 }

@@ -1803,13 +1803,18 @@ mod tests {
         state.editor_open = true;
         state.document = Some(editor::local::Document::new("print(1)\n", "text").unwrap());
         state.retained = Some(Finished {
-            title: "Example".into(), output: "Hello\n".into(), status: "done".into(),
+            title: "Example".into(),
+            output: "Hello\n".into(),
+            status: "done".into(),
         });
         let mut h = egui_kittest::Harness::builder()
             .with_size(egui::Vec2::from(crate::window::MIN_SIZE))
-            .build_ui_state(|ui, state: &mut State| {
-                state.editor_ui(ui, egui::ViewportId::ROOT, egui::ViewportId::ROOT);
-            }, state);
+            .build_ui_state(
+                |ui, state: &mut State| {
+                    state.editor_ui(ui, egui::ViewportId::ROOT, egui::ViewportId::ROOT);
+                },
+                state,
+            );
         crate::install(&h.ctx, &crate::Theme::embedded());
         h.run_steps(4);
         h.snapshot("minimum_window_macro_editor");

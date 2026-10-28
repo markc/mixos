@@ -1082,7 +1082,12 @@ mod tests {
     fn minimum_window_file_chooser_renders() {
         let mut h = egui_kittest::Harness::builder()
             .with_size(egui::Vec2::from(crate::window::MIN_SIZE))
-            .build_ui_state(|ui, chooser: &mut FileChooser| { chooser.show(ui.ctx()); }, save_fixture());
+            .build_ui_state(
+                |ui, chooser: &mut FileChooser| {
+                    chooser.show(ui.ctx());
+                },
+                save_fixture(),
+            );
         crate::install(&h.ctx, &crate::Theme::embedded());
         h.run_steps(4);
         h.snapshot("minimum_window_file_chooser");

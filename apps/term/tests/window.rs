@@ -149,6 +149,8 @@ fn two_tabs_and_a_split_studio_dark() {
     harness.set_size(egui::Vec2::from(toolkit::window::MIN_SIZE));
     harness.run_steps(4);
     harness.snapshot("minimum_window");
+    harness.set_size(egui::vec2(820.0, 420.0));
+    harness.run_steps(4);
     let zoom = harness.state().shell.as_ref().unwrap().app.font().current();
     harness.run_steps(2);
     assert_eq!(

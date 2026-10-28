@@ -120,6 +120,10 @@ pub fn panel<R>(
             let available = ui.available_size();
             egui::ScrollArea::both()
                 .id_salt(("saved-panel-content", name))
+                .min_scrolled_height(0.0)
+                .min_scrolled_width(0.0)
+                .max_height(available.y)
+                .max_width(available.x)
                 .auto_shrink(false)
                 .show(ui, |ui| {
                     ui.set_max_size(available);

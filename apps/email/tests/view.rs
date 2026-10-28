@@ -327,11 +327,13 @@ fn harness(state: State) -> Harness<'static, Window> {
 
 #[test]
 fn minimum_window_renders() {
+    let mut snapshots = egui_kittest::SnapshotResults::new();
     for (index, state) in [fixture(), empty(), typing()].into_iter().enumerate() {
         let mut h = harness(state);
         h.set_size(egui::Vec2::from(toolkit::window::MIN_SIZE));
         h.run_steps(4);
         h.snapshot(format!("minimum_window_{index}"));
+        snapshots.extend_harness(&mut h);
     }
     let mut h = harness(fixture());
     h.set_size(egui::Vec2::from(toolkit::window::MIN_SIZE));
@@ -342,6 +344,12 @@ fn minimum_window_renders() {
     h.get_by_label("List").click();
     h.run_steps(2);
     assert_eq!(h.state().state.pane, email::state::Pane::List);
+    h.get_by_label("Reader").click();
+    h.run_steps(4);
+    assert_eq!(h.state().state.pane, email::state::Pane::Reader);
+    h.snapshot("minimum_window_reader");
+    snapshots.extend_harness(&mut h);
+    snapshots.unwrap();
 }
 
 #[test]

@@ -62,6 +62,7 @@ fn sized_harness(engine: Engine, size: egui::Vec2) -> Harness<'static, Vec<UiEve
 
 #[test]
 fn minimum_window_renders() {
+    let mut snapshots = egui_kittest::SnapshotResults::new();
     for side in [
         inspector::DockSide::Auto,
         inspector::DockSide::Bottom,
@@ -72,7 +73,9 @@ fn minimum_window_renders() {
         let mut h = sized_harness(e, egui::Vec2::from(toolkit::window::MIN_SIZE));
         h.run_steps(4);
         h.snapshot(format!("minimum_window_{side:?}"));
+        snapshots.extend_harness(&mut h);
     }
+    snapshots.unwrap();
 }
 
 #[test]

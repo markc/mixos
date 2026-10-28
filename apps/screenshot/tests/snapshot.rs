@@ -174,18 +174,12 @@ fn chrome(scheme: Scheme, mode: Mode) -> Theme {
 
 #[test]
 fn minimum_window_renders() {
-    let app = annotated();
-    let registry = actions::registry();
-    let strings = strings();
-    let mut drag = Drag::default();
-    let mut h = Harness::builder()
-        .with_size(egui::Vec2::from(toolkit::window::MIN_SIZE))
-        .build_ui(move |ui| {
-            let _ = view(ui, &app, &registry, &strings, None, &mut drag);
-        });
-    toolkit::install(&h.ctx, &Theme::embedded());
-    h.run_steps(4);
-    h.snapshot("minimum_window");
+    window_sized(
+        Theme::embedded(),
+        "minimum_window",
+        annotated(),
+        egui::Vec2::from(toolkit::window::MIN_SIZE),
+    );
 }
 
 /// The default look with every kind of annotation and the arrow selected.
