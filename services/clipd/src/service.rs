@@ -645,13 +645,17 @@ mod tests {
         assert_eq!(source.service.push("vt4").await.unwrap()["lazy"], false);
         assert_eq!(target.paste(&text.stamp.marker(), "text/plain").await, b"eager text");
 
-        let image = Selection::owned(Stamp::new("vt1"), "image/png".into(), vec![42; CHUNK * 2 + 13], false);
+        let image_bytes: Vec<u8> = (0u8..=255).cycle().take(CHUNK * 2 + 13).collect();
+        let image = Selection::owned(Stamp::new("vt1"), "image/png".into(), image_bytes.clone(), false);
         source.service.set(image.clone(), false, false).await.unwrap();
         assert_eq!(source.service.push("vt4").await.unwrap()["lazy"], true);
         assert!(target.service.state.lock().await.selections[0].as_ref().unwrap().data.is_empty());
         let current = target.service.state.lock().await.selections[0].clone().unwrap();
         assert!(target.service.bytes_with_path(&current, "image/png", false, &["vt4".into()]).await.unwrap_err().to_string().contains("SOURCE_CYCLE"));
-        assert_eq!(target.paste(&image.stamp.marker(), "image/png").await, vec![42; CHUNK * 2 + 13]);
+        assert_eq!(target.paste(&image.stamp.marker(), "image/png").await, image_bytes);
+        let get = call(&source.service.client, "clipd-vt4", "clipboard.get", json!({"mime":"image/png"})).await.unwrap();
+        assert_eq!(get["encoding"], "base64");
+        assert_eq!(B64.decode(get["data"].as_str().unwrap()).unwrap(), image_bytes);
 
         let mut command = IncomingCommand { generation:0, from:"fixture".into(), command:"clipboard.receive".into(), id:None, args:seal(&[7;32], "vt1", "vt4", "clipboard.receive", json!(Receive { stamp:image.stamp.clone(), mime_types:image.mime_types.clone(), size:image.size, data:None })).unwrap(), body:String::new(), headers:BTreeMap::new() };
         assert!(target.service.dispatch(&command).await.is_ok());

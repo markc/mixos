@@ -27,13 +27,14 @@ impl BusHandler for ClipboardBus {
             }
             match command {
                 "clipboard.get" => {
-                    assert_eq!(body, serde_json::json!({"mime":"text/plain"}));
+                    let binary = body["mime"] == "application/octet-stream";
+                    if !binary { assert_eq!(body, serde_json::json!({"mime":"text/plain"})); }
                     Ok((
                         0,
                         Value::map(IndexMap::from([
-                            ("encoding".into(), Value::String("utf8".into())),
+                            ("encoding".into(), Value::String(if binary { "base64" } else { "utf8" }.into())),
                             ("eof".into(), Value::Bool(true)),
-                            ("data".into(), Value::String("clipboard text".into())),
+                            ("data".into(), Value::String(if binary { "AP8=" } else { "clipboard text" }.into())),
                         ])),
                     ))
                 }
@@ -57,6 +58,19 @@ impl BusHandler for ClipboardBus {
     fn next_incoming<'a>(&'a self) -> BusFuture<'a, Option<IncomingEvent>> {
         Box::pin(async { None })
     }
+}
+
+#[cfg(feature = "crypto")]
+#[tokio::test]
+async fn clipboard_get_preserves_binary_bytes() {
+    let source = "print(base64_encode(clip_get(\"application/octet-stream\")))\n";
+    let tokens = mix::lexer::Lexer::new(source).tokenize().unwrap();
+    let program = mix::parser::Parser::new(tokens, source).parse_program().unwrap();
+    let output = SharedBuf::new();
+    let mut eval = Evaluator::with_output(Box::new(output.clone()), Box::new(SharedBuf::new()));
+    eval.set_bus_handler(Rc::new(ClipboardBus { fail: false }));
+    eval.execute(&program).await.unwrap();
+    assert_eq!(output.to_string_lossy(), "AP8=\n");
 }
 
 #[tokio::test]
