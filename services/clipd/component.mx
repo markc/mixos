@@ -1,0 +1,12 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+{
+  schema: 1,
+  name: "clipd",
+  component: "clipd",
+  kind: "service",
+  layer: "desktop",
+  contract: "public",
+  version: "0.1.0",
+  program: "scripts/clipd.mix",
+  profiles: ["server", "desktop"]
+}

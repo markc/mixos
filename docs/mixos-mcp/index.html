@@ -288,10 +288,15 @@ reconnecting.</p>
 <li><code>log_tail</code>, <code>log_search</code></li>
 <li><code>app_describe</code>, <code>app_actions</code>, <code>app_execute</code></li>
 <li><code>desktop_windows</code>, <code>desktop_window_wait</code></li>
+<li><code>clipboard_get</code>, <code>clipboard_set</code></li>
 <li><code>context_search</code>, <code>index_workspace</code>, <code>knowledge_digest</code></li>
 <li><code>docs_feedback</code>, <code>journal_feedback</code>, <code>memory_feedback</code>, <code>journal_supersede</code></li>
 <li><code>mix_execute</code>, <code>mcp_status</code></li>
 </ul>
+<p><code>clipboard_get {mime?, primary?, offset?}</code> and
+<code>clipboard_set {text, mime?, primary?, sensitive?}</code> use the current session's
+<code>clipd</code> service. Reads return the encoding and chunk continuation fields.
+See <a href="/clipd/">clipd</a> for limits and cross-session push semantics.</p>
 <h3 id="application-commands">Application commands</h3>
 <p><code>app_describe {service}</code> calls <code>app.describe</code> on that Bus service.
 <code>app_actions {service}</code> calls <code>&lt;service&gt;.actions</code>. Its <code>result</code> contains

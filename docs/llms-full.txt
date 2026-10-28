@@ -759,6 +759,7 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 | [bus](../bus/README.md) | lib | none (library) | [`libs/bus`](https://github.com/markc/mixos/tree/main/libs/bus) | The Bus wire format and the broker client library, with a supervised connection to noded that survives broker restarts. |
 | [ced](../ced/README.md) · [changelog](../ced/changelog.md) | app | unclassified | [`apps/ced`](https://github.com/markc/mixos/tree/main/apps/ced) | The MixOS Editor, a desktop text editor over the edit Bus service, where people and agents edit the same document at once and see each other's carets, selections and changes live. |
 | [citizen](../citizen/README.md) · [changelog](../citizen/changelog.md) | lib | none (library) | [`libs/citizen`](https://github.com/markc/mixos/tree/main/libs/citizen) | An app's supervised native Bus connection, shared by the MixOS apps for registration, calls, replies, single-instance launch and window restore. |
+| [clipd](../clipd/README.md) · [changelog](../clipd/changelog.md) | service | server, desktop | [`services/clipd`](https://github.com/markc/mixos/tree/main/services/clipd) |  |
 | [compd](../compd/README.md) · [changelog](../compd/changelog.md) | service | unclassified | [`services/compd`](https://github.com/markc/mixos/tree/main/services/compd) | The MixOS Wayland compositor, which owns scanout, rendering, input and capture, and serves the comp Bus service with its workspaces, commands, topics and props tree. |
 | [config](../config/README.md) | lib | none (library) | [`libs/config`](https://github.com/markc/mixos/tree/main/libs/config) | Where MixOS keeps its files and how a conf.mix file is read, with one directory rule for every component and descriptor-safe atomic file helpers. |
 | [daemon](../daemon/README.md) | lib | none (library) | [`libs/daemon`](https://github.com/markc/mixos/tree/main/libs/daemon) | Shared HTTP host parsing, listener guards, TLS and ACME provisioning. |
@@ -875,6 +876,7 @@ checked separately by the layering gate.
 | [toolkit](https://github.com/markc/mixos/blob/main/libs/toolkit/Cargo.toml) | toolkit | lib | desktop | none | 0.1.2 |
 | [blobd](https://github.com/markc/mixos/blob/main/services/blobd/Cargo.toml) | blobd | service | core | none | 0.1.2 |
 | [bridged](https://github.com/markc/mixos/blob/main/services/bridged/component.mx) | bridged | service | desktop | public | 0.2.0 |
+| [clipd](https://github.com/markc/mixos/blob/main/services/clipd/component.mx) | clipd | service | desktop | public | 0.1.0 |
 | [compd](https://github.com/markc/mixos/blob/main/services/compd/Cargo.toml) | compd | service | desktop | public | 0.2.0 |
 | [comp-model](https://github.com/markc/mixos/blob/main/services/compd/crates/comp-model/Cargo.toml) | compd | service | desktop | none | 0.1.2 |
 | [comp-service](https://github.com/markc/mixos/blob/main/services/compd/crates/comp-service/Cargo.toml) | compd | service | desktop | none | 0.1.2 |
@@ -2168,6 +2170,153 @@ Promoted from Workshop's engine when Prefs became its second owner (see
 with `cargo test -p citizen`.
 
 The source is [`libs/citizen`](https://github.com/markc/mixos/tree/main/libs/citizen).
+
+---
+
+<!-- page: https://mixos.dev/clipd/ (source: https://mixos.dev/clipd/README.md) -->
+
+# clipd — clipboard service
+
+`mix --serve <prefix>/lib/clipd/clipd.mix --name clipd` runs a clipboard Bus
+citizen. There is no clipd Rust crate, GUI, Wayland dependency in Mix, or new
+transport. Store mode holds data in memory. Wayland mode uses the session's
+external `wl-paste` and `wl-copy` executables.
+
+This implementation is **not ready for live desktop acceptance**: wl-copy
+cannot advertise a remote lazy offer or run a fetch callback at paste time.
+Remote password offers and uncached remote types are refused in Wayland mode
+with `LAZY_WAYLAND_UNAVAILABLE`. They work lazily through the Bus in store mode.
+Local Wayland password sets are also refused because wl-copy spools stdin to a
+temporary file. Observing an existing password offer does not read its content.
+
+## Commands
+
+Requests are JSON objects. `selection` is `clipboard` (default) or `primary`.
+The Rust prototype's `primary:true|false` alias remains accepted; conflicting
+aliases are refused. Errors are rc 10 with `{error_code,message}`. Error messages
+and service logs never echo request contents.
+
+| Command | Request and reply |
+| --- | --- |
+| `clipboard.get` | `{selection?,mime?,offset?,node?}` → `{mime,data,encoding,size,offset,next_offset,eof,sensitive,stamp}` for text; a `blob` reference for binary/large data |
+| `clipboard.set` | `{selection?,mime?,data,encoding?,sensitive?,stamp?}` or `{selection?,mime,blob}` → `{applied,stamp?}` |
+| `clipboard.clear` | `{selection?}` → `{applied:true}` |
+| `clipboard.info` | Both selection metadata, node/session, history count, limits, peers and mode |
+| `clipboard.history` | Up to fifty text previews, newest first: `{id,mime,data,size,truncated}` |
+| `clipboard.pick` | `{index,expected_id?,selection?}`; `n` remains an alias for index |
+| `clipboard.push` | `{to,selection?}` pushes only to a configured peer key |
+| `clipboard.peers` | Configured peer map |
+| `desktop.clipboard.rotate` | Restore a history entry |
+| `desktop.clipboard.menu` | `PICKER_UNAVAILABLE`; use history and indexed pick |
+
+`clipboard.receive` and `clipboard.fetch` are member-only peer commands.
+`clipboard.observe` is a private local watcher callback with a per-process
+token. `clipboard.expire` and `clipboard.follow` are local continuations and
+refuse Bus dispatch.
+
+`clipboard.changed` contains metadata only:
+`{node,session,selection,primary,generation,origin_node,origin_session,mime_types,
+size,sensitive}`. A stamp is `{origin_node,origin_session,generation}`. UUIDs
+survive process restarts without reusing generations. The last 256 stamps and
+the current selection fence echoes, independently for both selections.
+
+Small text retains the prototype's UTF-8/base64 reply shape, including byte
+offsets and `eof`. Binary/large content uses blobd's existing reference and
+transfer lane: get returns `data:"",encoding:"base64",eof:false,blob:{...}`.
+Call `blob.fetch` and `blob.path` rather than advancing `next_offset` on a blob
+reply. Set binary data through `blob.put` followed by `clipboard.set {blob}`;
+inline non-text bytes are refused. This is a deliberate difference from the
+unmerged Rust prototype's binary Bus chunks, required by the blob-only rule.
+
+Mix's Bus-only builtins are `clip_get([selection,mime])` and
+`clip_set(text[,selection,mime])`. A sole MIME argument remains accepted.
+`clip_get` raises for a blob reference. The MCP tools are `clipboard_get` and
+`clipboard_set`, with optional `selection` and the legacy `primary` alias.
+
+## Configuration and membership
+
+`MIXOS_CLIPD_CONFIG` selects a schema-1 strict-data file; the default is
+`<etc>/clipboard.conf.mix`. Peer keys are exact node names. Nothing is sent
+outside this configured group. A graphical member has `follow:true`; server
+entries default to explicit push/pull. PRIMARY follow requires
+`follow_primary:true` at the source. Images are enabled for follow members and
+require `images:true` for servers.
+
+```mix
+{
+  schema: 1,
+  eager_text_bytes: 1048576,
+  history_cap: 50,
+  password_timeout: 45,
+  follow_primary: false,
+  peers: {
+    beta: {target:"clipd.beta.example.bus", follow:true},
+    archive: {target:"clipd.archive.example.bus", images:false}
+  }
+}
+```
+
+Configure reciprocal peers. Content APIs admit broker-stamped local callers
+and configured mesh peers. Membership comes from the broker's `broker_peer`
+stamp, never a body field or a client-supplied node claim. A bare service target
+also admits that broker-stamped local service, for co-located citizens and tests.
+Use native noded admission and the WireGuard mesh. Missing broker peer stamps
+fail closed. No scope keys or parallel encryption protocol are introduced.
+
+Follow forwards local changes once; imported changes are not re-exported.
+Password offers contain metadata only, retain their source and deadline, never
+enter history or blobd, are fetched on demand, and clear after 45 seconds by
+default. Store servers do not cache fetched secret bytes. Generation fences
+refuse stale lazy reads. Replaced or missing sources fail cleanly.
+
+## Session integration and external programs
+
+`MIXOS_CLIPD_MODE=auto|store|wayland` defaults to auto. No display selects store;
+a display selects Wayland and requires both external tools. Store mode makes
+no wl-clipboard calls. `MIXOS_CLIPD_SESSION` identifies the session. The node
+identity comes from the native node config. Optional config `seat` selects the
+Wayland seat through the tools' `--seat` option.
+
+The **desktop role** requires `wl-paste` and `wl-copy` from wl-clipboard in PATH;
+the **server role** needs neither. Both need Mix and noded; binary content also
+needs blobd. wl-clipboard is an external system package and is not bundled,
+compiled or linked into MixOS binaries.
+
+Two generation-owned `spawn(argv,{exit_event:true})` children run
+`wl-paste [--primary] --watch <prefix>/bin/mix watch.mix <selection>`. The callback
+does not read stdin: it sends a local Bus notification, then closes the pipe.
+The citizen lists types and reads bounded ordinary text. The KDE password hint
+is treated conservatively as sensitive whenever present. On-demand reads use
+`wl-paste --type MIME --no-newline`, with a five-second deadline and 64 MiB cap;
+a Mix pipeline helper preserves raw bytes without a temporary read file.
+
+Ordinary sets pass stdin to `wl-copy [--primary] --type MIME`, which forks and
+owns the selection. Clears use `wl-copy [--primary] --clear`. Own eager-text
+echoes are recognised by exact bytes, because wl-copy cannot add an arbitrary
+origin marker MIME. Large/binary ownership and multi-MIME preservation need
+further acceptance: the tool can supply one content payload plus text aliases.
+
+`clipd@.service` reads the graphical session environment; `clipd.service` is
+the server store unit. The component installer and release packages ship both
+units and scripts without enabling them. No desk is restarted by installation
+of this source change. inputd's existing target migration is a separate live
+integration step; this branch does not alter user keymaps.
+
+No generic Bus dialog/choice service exists in the current tree. Toolkit dialogs
+are window-local, and files' chooser is specific to files. A clipboard picker
+UI remains a follow-up; the service adds no GUI dependency.
+
+## Validation
+
+`mix services/clipd/tests/clipboard_test.mix` checks policy, history, stamps,
+byte offsets and broker membership. `mix services/clipd/tests/clipd_test.mix`
+runs two store citizens against an owned private noded and checks the public API,
+follow, lazy password fetch, no history, expiry and spoof refusal.
+
+Before merge: CBC tests for mix and mixos-mcp; a private headless Wayland test;
+then live VT1/VT3/VT4 and cross-node acceptance by the session owner. The lazy
+Wayland ownership limitation must be resolved or explicitly scoped before
+desktop rollout. No gold install, desk restart or merge is authorised here.
 
 ---
 
@@ -34029,9 +34178,15 @@ Each name below is exposed as `mcp__mixos__<name>` in Claude Code.
 - `log_tail`, `log_search`
 - `app_describe`, `app_actions`, `app_execute`
 - `desktop_windows`, `desktop_window_wait`
+- `clipboard_get`, `clipboard_set`
 - `context_search`, `index_workspace`, `knowledge_digest`
 - `docs_feedback`, `journal_feedback`, `memory_feedback`, `journal_supersede`
 - `mix_execute`, `mcp_status`
+
+`clipboard_get {mime?, primary?, offset?}` and
+`clipboard_set {text, mime?, primary?, sensitive?}` use the current session's
+`clipd` service. Reads return the encoding and chunk continuation fields.
+See [clipd](../clipd/README.md) for limits and cross-session push semantics.
 
 ### Application commands
 
@@ -38715,6 +38870,23 @@ written in Mix on `tcp_listen`.
 
 ---
 
+<!-- page: https://mixos.dev/clipd/changelog/ (source: https://mixos.dev/clipd/changelog.md) -->
+
+# Changelog
+
+> Mirrored from [`services/clipd/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/services/clipd/CHANGELOG.md), where releases update it. The component's page is [clipd](README.md). This page describes the current `main` branch of MixOS.
+
+## 0.1.0 — 2026-10-28
+
+- Replace the unmerged Rust prototype with a Mix `--serve` service.
+- Add headless storage, both selections, text history, indexed picking,
+  configured mesh follow and server push/pull, lazy password reads and expiry.
+- Use external wl-clipboard tools for graphical sessions. Lazy remote Wayland
+  ownership is unavailable and refused; see the manual before live acceptance.
+- Reuse Bus-only Mix builtins and native MCP clipboard tools.
+
+---
+
 <!-- page: https://mixos.dev/compd/changelog/ (source: https://mixos.dev/compd/changelog.md) -->
 
 # Changelog
@@ -40479,6 +40651,7 @@ On every MixOS system.
 
 ## Desktop components
 
+- [clipd](../clipd/README.md) (service)
 - [indexd](../indexd/README.md) (service): Local semantic search over the MixOS Bus, with an ssh bridge and an in-process CLI.
 - [monitor](../monitor/README.md) (app): Monitor is the MixOS task manager, showing the processes and performance that monitord reports for this node or any node on the mesh, with End task and Kill for this node's processes.
 
@@ -40531,6 +40704,7 @@ On every MixOS system.
 
 ## Server components
 
+- [clipd](../clipd/README.md) (service)
 - [dnsd](../dnsd/README.md) (service): authoritative mesh DNS for the zones in zones.mix
 - [maild](../maild/README.md) (service): JMAP, SMTP, IMAP and DAV mail service
 - [toolsd](../toolsd/README.md) (service): Runs the tools webd's admin panel queues (whois, dig, traceroute, shwho) as an unprivileged drain, outside webd's sandbox.

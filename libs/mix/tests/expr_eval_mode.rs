@@ -473,6 +473,8 @@ async fn pure_policy_denies_reserved_bus_builtins() {
     for src in [
         "port_exists(\"x\")\n",
         "bus_reconnect()\n",
+        "clip_get()\n",
+        "clip_set(\"text\")\n",
         "noded_register(\"x\")\n",
         "subscribe(\"topic\")\n",
         "unsubscribe(\"topic\")\n",

@@ -23,6 +23,7 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 | [bus](../bus/README.md) | lib | none (library) | [`libs/bus`](https://github.com/markc/mixos/tree/main/libs/bus) | The Bus wire format and the broker client library, with a supervised connection to noded that survives broker restarts. |
 | [ced](../ced/README.md) · [changelog](../ced/changelog.md) | app | unclassified | [`apps/ced`](https://github.com/markc/mixos/tree/main/apps/ced) | The MixOS Editor, a desktop text editor over the edit Bus service, where people and agents edit the same document at once and see each other's carets, selections and changes live. |
 | [citizen](../citizen/README.md) · [changelog](../citizen/changelog.md) | lib | none (library) | [`libs/citizen`](https://github.com/markc/mixos/tree/main/libs/citizen) | An app's supervised native Bus connection, shared by the MixOS apps for registration, calls, replies, single-instance launch and window restore. |
+| [clipd](../clipd/README.md) · [changelog](../clipd/changelog.md) | service | server, desktop | [`services/clipd`](https://github.com/markc/mixos/tree/main/services/clipd) |  |
 | [compd](../compd/README.md) · [changelog](../compd/changelog.md) | service | unclassified | [`services/compd`](https://github.com/markc/mixos/tree/main/services/compd) | The MixOS Wayland compositor, which owns scanout, rendering, input and capture, and serves the comp Bus service with its workspaces, commands, topics and props tree. |
 | [config](../config/README.md) | lib | none (library) | [`libs/config`](https://github.com/markc/mixos/tree/main/libs/config) | Where MixOS keeps its files and how a conf.mix file is read, with one directory rule for every component and descriptor-safe atomic file helpers. |
 | [daemon](../daemon/README.md) | lib | none (library) | [`libs/daemon`](https://github.com/markc/mixos/tree/main/libs/daemon) | Shared HTTP host parsing, listener guards, TLS and ACME provisioning. |
@@ -139,6 +140,7 @@ checked separately by the layering gate.
 | [toolkit](https://github.com/markc/mixos/blob/main/libs/toolkit/Cargo.toml) | toolkit | lib | desktop | none | 0.1.2 |
 | [blobd](https://github.com/markc/mixos/blob/main/services/blobd/Cargo.toml) | blobd | service | core | none | 0.1.2 |
 | [bridged](https://github.com/markc/mixos/blob/main/services/bridged/component.mx) | bridged | service | desktop | public | 0.2.0 |
+| [clipd](https://github.com/markc/mixos/blob/main/services/clipd/component.mx) | clipd | service | desktop | public | 0.1.0 |
 | [compd](https://github.com/markc/mixos/blob/main/services/compd/Cargo.toml) | compd | service | desktop | public | 0.2.0 |
 | [comp-model](https://github.com/markc/mixos/blob/main/services/compd/crates/comp-model/Cargo.toml) | compd | service | desktop | none | 0.1.2 |
 | [comp-service](https://github.com/markc/mixos/blob/main/services/compd/crates/comp-service/Cargo.toml) | compd | service | desktop | none | 0.1.2 |

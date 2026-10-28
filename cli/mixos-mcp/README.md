@@ -12,6 +12,11 @@ Application tools are `app_describe`, `app_actions` and `app_execute`.
 `app_execute {service, id, params?}` sends the command id and optional
 parameter object to the application's execute command.
 
+`clipboard_get {mime?, primary?, offset?}` reads the local session's `clipd`.
+`clipboard_set {text, mime?, primary?, sensitive?}` writes UTF-8 text there.
+See the [clipboard manual](../../docs/clipd/README.md) for size limits,
+binary encoding and explicit cross-session push.
+
 The skills loop is retired. At deployment, remove `trust_weight_graduated`,
 `trust_weight_skill` and any old `skills`/`llm` sections from `knowledge.conf.mix`,
 and remove the unused `skills.conf.mix` and `llm.conf.mix` files from the MCP

@@ -1,0 +1,104 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Run from checkout root: mix services/clipd/tests/clipd_test.mix
+-- Two real store citizens on a private broker exercise allowlisted transfer.
+$pb = require("../../../tests/lib/private_bus.mix")
+$here = dirname(realpath($0))
+$mix = mixos_path("prefix") .. "/bin/mix"
+$script = realpath($here .. "/../scripts/clipd.mix")
+$tmp = "/var/tmp/clipd-test-" .. uuid()
+$bus = nil
+$pids = []
+$checks = 0
+fn check($label, $ok)
+  if not $ok then raise("TEST", $label) end
+  print("PASS " .. $label)
+end
+fn call($target, $command, $b)
+  $wire = json_encode($b)
+  send $target $command body=$wire timeout=10
+  $v = $result
+  if type($v) == "string" then
+    try
+      $v = json_parse($v)
+    catch $m
+    end
+  end
+  return {rc: $rc, v: $v}
+end
+fn wait_ready($target)
+  for $i = 1 to 80
+    if call($target, "clipboard.info", {}).rc == 0 then return true end
+    sleep(0.1)
+  end
+  return false
+end
+fn eventually($f)
+  for $i = 1 to 40
+    if $f() then return true end
+    sleep(0.1)
+  end
+  return false
+end
+mkdir($tmp, {parents: true})
+try
+  $bus = $pb.start({dir: $tmp .. "/bus", name: "clipboard-test"})
+  $base = merge($pb.client_env($bus), {MIXOS_CLIPD_MODE: "store", MIX_STATS: "off", WAYLAND_DISPLAY: ""})
+  for $name in ["clipd", "peerclip"]
+    $target = if $name == "clipd" then "peerclip" else "clipd" end
+    -- Both citizens share this broker node, but have different session ids.
+    write_file($tmp .. "/" .. $name .. ".conf.mix", data_encode({schema: 1, password_timeout: 1,
+      peers: {"clipboard-test": {target: $target, follow: true}}}))
+    push($pids, spawn([$mix, "--serve", $script, "--name", $name], {detach: true,
+      env: merge($base, {MIXOS_CLIPD_CONFIG: $tmp .. "/" .. $name .. ".conf.mix", MIXOS_CLIPD_SESSION: $name}),
+      stdout: {file: $tmp .. "/" .. $name .. ".log"}, stderr: "stdout"}))
+  end
+  check("both store citizens ready", wait_ready("clipd") and wait_ready("peerclip"))
+  check("store mode", call("clipd", "clipboard.info", {}).v.mode == "store")
+  check("empty selection", call("clipd", "clipboard.get", {}).v.error_code == "EMPTY")
+  $set = call("clipd", "clipboard.set", {data: "hello\nλ"})
+  check("set replies applied", $set.rc == 0 and $set.v.applied)
+  $get = call("clipd", "clipboard.get", {})
+  check("get preserves exact UTF-8", $get.rc == 0 and $get.v.data == "hello\nλ" and $get.v.encoding == "utf8" and $get.v.eof)
+  check("clipboard follows to member", eventually(fn() = call("peerclip", "clipboard.get", {}).v.data == "hello\nλ"))
+  check("primary set", call("clipd", "clipboard.set", {selection: "primary", data: "primary"}).rc == 0)
+  check("primary alias reads separately", call("clipd", "clipboard.get", {primary: true}).v.data == "primary")
+  check("primary stays local by default", call("peerclip", "clipboard.get", {selection: "primary"}).rc != 0)
+  check("clipboard unaffected", call("clipd", "clipboard.get", {}).v.data == "hello\nλ")
+  check("non-member push refused", call("clipd", "clipboard.push", {to: "outsider"}).v.error_code == "ALLOWLIST")
+  check("receive cannot claim member identity", call("clipd", "clipboard.receive", {source: {node: "clipboard-test"}}).v.error_code == "ALLOWLIST")
+  check("private watcher cannot be spoofed", call("clipd", "clipboard.observe", {selection: "clipboard", token: "spoof"}).v.error_code == "ALLOWLIST")
+  for $i = 1 to 52
+    check("history set " .. to_string($i), call("clipd", "clipboard.set", {data: "row" .. to_string($i)}).rc == 0)
+  end
+  $history = call("clipd", "clipboard.history", {}).v
+  check("history capped at fifty", len($history) == 50 and $history[0].data == "row52")
+  check("stale index fence", call("clipd", "clipboard.pick", {index: 0, expected_id: "stale"}).v.error_code == "STALE_HISTORY")
+  check("pick index", call("clipd", "clipboard.pick", {index: 1, expected_id: $history[1].id}).rc == 0)
+  check("pick restores full data", call("clipd", "clipboard.get", {}).v.data == "row51")
+  check("picker gap explicit", call("clipd", "desktop.clipboard.menu", {}).v.error_code == "PICKER_UNAVAILABLE")
+  $stamp = call("clipd", "clipboard.get", {}).v.stamp
+  check("loop guard preserves selection", not call("clipd", "clipboard.set", {data: "echo", stamp: $stamp}).v.applied)
+  check("replay did not replace data", call("clipd", "clipboard.get", {}).v.data == "row51")
+  $before = call("clipd", "clipboard.history", {}).v
+  check("password set", call("clipd", "clipboard.set", {data: "do-not-record", sensitive: true}).rc == 0)
+  check("password follows lazily", eventually(fn() = call("peerclip", "clipboard.info", {}).v.clipboard.sensitive))
+  check("lazy password fetched only on get", call("peerclip", "clipboard.get", {}).v.data == "do-not-record")
+  check("password absent from source history", deep_eq($before, call("clipd", "clipboard.history", {}).v))
+  check("password absent from peer history", not contains(json_encode(call("peerclip", "clipboard.history", {}).v), "do-not-record"))
+  sleep(1.2)
+  check("password auto-cleared at source", call("clipd", "clipboard.get", {}).v.error_code == "EMPTY")
+  check("password auto-cleared at peer", call("peerclip", "clipboard.get", {}).v.error_code == "EMPTY")
+  check("clear primary", call("clipd", "clipboard.clear", {selection: "primary"}).rc == 0)
+  check("primary empty", call("clipd", "clipboard.get", {selection: "primary"}).v.error_code == "EMPTY")
+  check("both peers configured", len(call("clipd", "clipboard.peers", {}).v) == 1)
+  check("binary bytes require blobd", call("clipd", "clipboard.set", {mime: "image/png", data: "AA==", encoding: "base64"}).v.error_code == "BLOB_REQUIRED")
+  send clipd QUIT timeout=5
+  send peerclip QUIT timeout=5
+finally
+  for $pid in $pids
+    if process_alive($pid) then kill($pid, 15) end
+  end
+  if $bus != nil then $pb.stop($bus) end
+end
+print("PASS store service integration; logs: " .. $tmp)
