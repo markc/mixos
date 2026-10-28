@@ -124,14 +124,18 @@ fn snapshot_at(kind: &str, mode: Mode, minimum: bool) {
         if kind != "replace" {
             let cancel = harness.get_by_label("Cancel").rect();
             assert!(bounds.contains_rect(cancel));
-            let row = harness.get_by_role_and_label(egui::accesskit::Role::Button, "Documents").rect();
+            let row = harness
+                .get_by_role_and_label(egui::accesskit::Role::Button, "Documents")
+                .rect();
             assert!(bounds.contains_rect(row));
             assert!(row.bottom() <= cancel.top());
         }
         if kind == "save" {
             let name = harness.get_by_role_and_label(egui::accesskit::Role::TextInput, "File name");
             assert!(bounds.contains_rect(name.rect()));
-            let row = harness.get_by_role_and_label(egui::accesskit::Role::Button, "Documents").rect();
+            let row = harness
+                .get_by_role_and_label(egui::accesskit::Role::Button, "Documents")
+                .rect();
             assert!(row.bottom() <= name.rect().top());
         }
     }
