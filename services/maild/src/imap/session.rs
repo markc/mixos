@@ -164,6 +164,8 @@ where
             local: lip,
             rev2: false,
             utf8: false,
+            view_version: None,
+            pending_expunge: false,
             saved_search: Vec::new(),
             shutdown,
         };
@@ -233,6 +235,8 @@ struct Session {
     local: Option<SocketAddr>,
     rev2: bool,
     utf8: bool,
+    view_version: Option<(u64, u64)>,
+    pending_expunge: bool,
     saved_search: Vec<u64>,
     shutdown: Option<tokio::sync::watch::Receiver<bool>>,
 }
@@ -492,14 +496,9 @@ impl Session {
                         }
                         enabled.sort_unstable();
                         enabled.dedup();
-                        let suffix = if enabled.is_empty() {
-                            String::new()
-                        } else {
-                            format!(" {}", enabled.join(" "))
-                        };
-                        writer
-                            .write_all(format!("* ENABLED{suffix}\r\n").as_bytes())
-                            .await?;
+                        if !enabled.is_empty() {
+                            writer.write_all(format!("* ENABLED {}\r\n", enabled.join(" ")).as_bytes()).await?;
+                        }
                         writer
                             .write_all(
                                 tagged(&parsed.tag, Status::Ok, None, "ENABLE completed")
@@ -646,6 +645,8 @@ impl Session {
                             )
                             .await?;
                         if let Some(sm) = outcome.selected {
+                            self.view_version = Some((sm.uid_validity, sm.highest_mod_seq));
+                            self.pending_expunge = false;
                             self.state = State::Selected(sm);
                         }
                     }
@@ -884,30 +885,18 @@ impl Session {
                             )
                             .await?;
                     } else {
-                        if command_name == "DELETE"
-                            && let Some(sm) = self.state.selected()
-                            && op::delete::parse_args(&parsed.args).is_ok_and(|name| {
+                        let deleting_selected = command_name == "DELETE"
+                            && self.state.selected().is_some_and(|sm| op::delete::parse_args(&parsed.args).is_ok_and(|name| {
                                 name == sm.name
                                     || (name.eq_ignore_ascii_case("INBOX") && sm.name == "INBOX")
-                            })
-                        {
-                            writer
-                                .write_all(
-                                    tagged(
-                                        &parsed.tag,
-                                        Status::No,
-                                        Some("CANNOT"),
-                                        "UNSELECT the mailbox before deleting it",
-                                    )
-                                    .as_bytes(),
-                                )
-                                .await?;
-                            writer.flush().await?;
-                            continue;
-                        }
+                            }));
                         let aid = self
                             .account_id
                             .expect("authenticated session must have account_id");
+                        let rename_before = if command_name == "RENAME" {
+                            let store = self.mailstore.clone();
+                            Some(tokio::task::spawn_blocking(move || store.list_mailboxes(aid)).await??)
+                        } else { None };
                         let resp = match command_name {
                             "CREATE" => {
                                 op::create::handle(
@@ -957,48 +946,40 @@ impl Session {
                                 .await
                             }
                         };
+                        if deleting_selected && resp.starts_with(&format!("{} OK", parsed.tag)) {
+                            self.state = State::Authenticated;
+                            self.view_version = None;
+                            self.pending_expunge = false;
+                            self.saved_search.clear();
+                            if self.rev2 { writer.write_all(b"* OK [CLOSED] selected mailbox deleted\r\n").await?; }
+                        }
                         if command_name == "RENAME"
                             && resp.starts_with(&format!("{} OK", parsed.tag))
                         {
                             let names = op::rename::parse_args(&parsed.args)
                                 .expect("successful RENAME has valid arguments");
-                            if !names.old_name.eq_ignore_ascii_case("INBOX")
-                                && let Some(sm) = self.state.selected_mut()
-                            {
-                                if sm.name == names.old_name {
-                                    sm.name = names.new_name.clone();
-                                } else if sm.name.starts_with(&format!("{}/", names.old_name)) {
-                                    sm.name = format!(
-                                        "{}{}",
-                                        names.new_name,
-                                        &sm.name[names.old_name.len()..]
-                                    );
-                                }
-                            }
+                            let before = crate::imap::mailbox_name::encode_all(rename_before.as_ref().unwrap());
+                            let store = self.mailstore.clone();
+                            let after = tokio::task::spawn_blocking(move || store.list_mailboxes(aid)).await??;
+                            let after = crate::imap::mailbox_name::encode_all(&after);
+                            if let Some(sm) = self.state.selected_mut()
+                                && let Some(mailbox) = after.mailboxes.iter().find(|mailbox| mailbox.id == sm.container_id)
+                            { sm.name = mailbox.wire_name.clone(); }
                             if self.state.selected().is_some() {
                                 self.refresh_view(writer, true).await?;
                             }
                             if self.rev2 {
-                                let pattern = format!(
-                                    "\"\" ({} {}) RETURN (SUBSCRIBED CHILDREN)",
-                                    crate::imap::mailbox_name::quote_mailbox(&names.new_name),
-                                    crate::imap::mailbox_name::quote_mailbox(&format!(
-                                        "{}/*",
-                                        names.new_name
-                                    ))
-                                );
-                                let listing = op::list::handle_with_limit(
-                                    &parsed.tag,
-                                    &pattern,
-                                    aid,
-                                    self.mailstore.clone(),
-                                    self.cfg.max_literal_bytes,
-                                )
-                                .await;
-                                for line in
-                                    listing.lines().filter(|line| line.starts_with("* LIST "))
-                                {
-                                    writer.write_all(format!("{line}\r\n").as_bytes()).await?;
+                                for mailbox in &after.mailboxes {
+                                    let old = before.mailboxes.iter().find(|old| old.id == mailbox.id && old.wire_name != mailbox.wire_name)
+                                        .map(|old| old.wire_name.as_str())
+                                        .or_else(|| (names.old_name.eq_ignore_ascii_case("INBOX") && mailbox.wire_name == crate::imap::mailbox_name::fold_inbox_prefix(&names.new_name)).then_some("INBOX"));
+                                    if let Some(old) = old {
+                                        let mut attrs = crate::imap::mailbox_name::format_attrs(mailbox);
+                                        if mailbox.is_subscribed { attrs.push_str(" \\Subscribed"); }
+                                        writer.write_all(format!("* LIST ({attrs}) \"/\" {} (\"OLDNAME\" ({}))\r\n",
+                                            crate::imap::mailbox_name::quote_mailbox(&mailbox.wire_name),
+                                            crate::imap::mailbox_name::quote_mailbox(old)).as_bytes()).await?;
+                                    }
                                 }
                             }
                         }
@@ -1193,6 +1174,9 @@ impl Session {
                                             &args, mode, self.utf8,
                                         ) {
                                             Err(e) => {
+                                                if op::search::requests_save(&args) {
+                                                    self.saved_search.clear();
+                                                }
                                                 self.bad_commands += 1;
                                                 let resp =
                                                     tagged(&parsed.tag, Status::Bad, None, &e);
@@ -1381,6 +1365,7 @@ impl Session {
                                                     Some(&sm.view_uids),
                                                 )
                                                 .await;
+                                                self.refresh_view(writer, true).await?;
                                                 writer
                                                     .write_all(
                                                         crate::imap::mailbox_encoding::response(
@@ -1463,7 +1448,7 @@ impl Session {
                                                     Some(&sm.view_uids),
                                                 )
                                                 .await;
-                                                writer.write_all(outcome.wire.as_bytes()).await?;
+                                                self.write_mutation_outcome(writer, &outcome.wire, &outcome.expunged_uids).await?;
                                                 // Prune the session's view UID
                                                 // list in lockstep with the
                                                 // EXPUNGE lines the handler
@@ -1550,7 +1535,7 @@ impl Session {
                                                 Some(&sm.view_uids),
                                             )
                                             .await;
-                                            writer.write_all(outcome.wire.as_bytes()).await?;
+                                            self.write_mutation_outcome(writer, &outcome.wire, &outcome.expunged_uids).await?;
                                             if !outcome.expunged_uids.is_empty()
                                                 && let Some(sm) = self.state.selected_mut()
                                             {
@@ -1665,6 +1650,23 @@ impl Session {
         }
     }
 
+    async fn write_mutation_outcome<W: AsyncWrite + Unpin>(
+        &mut self, writer: &mut W, wire: &str, expunged: &[u64],
+    ) -> Result<()> {
+        let wire = wire.trim_end_matches("\r\n");
+        let completion = if let Some((prefix, completion)) = wire.rsplit_once("\r\n") {
+            writer.write_all(prefix.as_bytes()).await?;
+            writer.write_all(b"\r\n").await?;
+            completion
+        } else { wire };
+        if let Some(sm) = self.state.selected_mut() {
+            sm.view_uids.retain(|uid| !expunged.contains(uid));
+        }
+        self.refresh_view(writer, true).await?;
+        writer.write_all(format!("{completion}\r\n").as_bytes()).await?;
+        Ok(())
+    }
+
     async fn refresh_view<W: AsyncWrite + Unpin>(
         &mut self,
         writer: &mut W,
@@ -1673,6 +1675,11 @@ impl Session {
         let sm = self.state.selected().unwrap();
         let container = sm.container_id;
         let aid = self.account_id.unwrap();
+        let version_store = self.mailstore.clone();
+        let version = tokio::task::spawn_blocking(move || version_store.imap_mailbox_version(aid, container)).await??;
+        if version.is_some() && version == self.view_version && (!allow_expunge || !self.pending_expunge) {
+            return Ok(());
+        }
         let store = self.mailstore.clone();
         let handles = tokio::task::spawn_blocking(move || {
             store.list_emails_in_mailbox(
@@ -1688,6 +1695,13 @@ impl Session {
         .await??;
         let fresh: Vec<u64> = handles.iter().map(|h| h.uid).collect();
         let sm = self.state.selected_mut().unwrap();
+        if let Some((validity, _)) = version
+            && validity != sm.uid_validity
+        {
+            writer.write_all(format!("* OK [UIDVALIDITY {validity}] mailbox identity changed\r\n").as_bytes()).await?;
+            sm.uid_validity = validity;
+        }
+        self.pending_expunge = !allow_expunge && sm.view_uids.iter().any(|uid| fresh.binary_search(uid).is_err());
         if allow_expunge {
             for line in op::idle::diff_lines(&sm.view_uids, &fresh) {
                 writer.write_all(line.as_bytes()).await?;
@@ -1710,6 +1724,7 @@ impl Session {
         sm.exists = sm.view_uids.len() as u64;
         self.saved_search
             .retain(|uid| fresh.binary_search(uid).is_ok());
+        self.view_version = version;
         Ok(())
     }
 

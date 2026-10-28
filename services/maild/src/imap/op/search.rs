@@ -229,12 +229,16 @@ pub fn parse_args_for_dispatch(args: &str, mode: SearchMode) -> Result<(), Strin
     parse_args(args, mode).map(|_| ())
 }
 
-pub fn parse_args_for_session(args: &str, mode: SearchMode, utf8: bool) -> Result<(), String> {
-    let req = parse_args(args, mode)?;
-    if utf8 && req.charset.is_some() {
-        return Err("CHARSET is forbidden after enabling UTF-8".into());
-    }
-    Ok(())
+pub fn parse_args_for_session(args: &str, mode: SearchMode, _utf8: bool) -> Result<(), String> {
+    parse_args(args, mode).map(|_| ())
+}
+
+/// Recognise SAVE before parsing criteria, so a failed SAVE never retains `$`.
+pub fn requests_save(args: &str) -> bool {
+    let Some((keyword, tail)) = args.trim_start().split_once(char::is_whitespace) else { return false; };
+    if !keyword.eq_ignore_ascii_case("RETURN") { return false; }
+    let Some(options) = tail.trim_start().strip_prefix('(').and_then(|s| s.split_once(')').map(|p| p.0)) else { return false; };
+    options.split_ascii_whitespace().any(|option| option.eq_ignore_ascii_case("SAVE"))
 }
 
 fn tokenize(s: &str) -> Result<Vec<String>, String> {
@@ -838,7 +842,7 @@ pub async fn handle_extended(
     store: Arc<dyn MailStore>,
     mode: SearchMode,
     rev2: bool,
-    utf8: bool,
+    _utf8: bool,
     saved: &mut Vec<u64>,
     view: Option<&[u64]>,
 ) -> String {
@@ -847,7 +851,10 @@ pub async fn handle_extended(
         Err(e) if e.starts_with("BADCHARSET") => {
             return tagged(tag, Status::No, Some(&e), "unsupported search charset");
         }
-        Err(e) => return tagged(tag, Status::Bad, None, &e),
+        Err(e) => {
+            if requests_save(args) { saved.clear(); }
+            return tagged(tag, Status::Bad, None, &e);
+        }
     };
     fn apply_saved(crit: &mut Crit, saved: &[u64]) {
         match crit {
@@ -879,14 +886,6 @@ pub async fn handle_extended(
         .returns
         .as_ref()
         .is_some_and(|opts| opts.iter().any(|s| s == "SAVE"));
-    if utf8 && req.charset.is_some() {
-        return tagged(
-            tag,
-            Status::Bad,
-            None,
-            "CHARSET is forbidden after enabling UTF-8",
-        );
-    }
     // A syntactically valid SAVE that fails with NO resets the variable.
     // Copy its previous value into the AST before clearing it (SEARCH $ SAVE).
     if save {

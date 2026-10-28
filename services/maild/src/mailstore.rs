@@ -353,6 +353,22 @@ pub trait MailStore: Send + Sync {
     fn prepare_imap_account(&self, _account: AccountId) -> Result<()> {
         Ok(())
     }
+
+    /// Constant-cost change check. None requests the conservative snapshot path.
+    fn imap_mailbox_version(&self, _account: AccountId, _mailbox: ContainerId) -> Result<Option<(u64, u64)>> {
+        Ok(None)
+    }
+
+    /// Resolve only the requested UIDs; native storage uses the membership index.
+    fn imap_fetch_handles(&self, account: AccountId, mailbox: ContainerId, uids: &[u64]) -> Result<Vec<EmailHandle>> {
+        Ok(self.list_emails_in_mailbox(account, mailbox, ListOpts {sort_by: SortKey::Seq, limit: u32::MAX, offset: 0})?
+            .into_iter().filter(|handle| uids.binary_search(&handle.uid).is_ok()).collect())
+    }
+
+    fn imap_membership(&self, account: AccountId, mailbox: ContainerId, item: ItemId) -> Result<Option<EmailHandle>> {
+        Ok(self.list_emails_in_mailbox(account, mailbox, ListOpts {sort_by: SortKey::Seq, limit: u32::MAX, offset: 0})?
+            .into_iter().find(|handle| handle.id == item))
+    }
     /// IMAP RENAME INBOX moves messages rather than renaming the Inbox display
     /// name. Keep it separate from JMAP's generic rename_mailbox semantics.
     fn rename_inbox(
@@ -2286,27 +2302,45 @@ impl MailStore for SqliteMailStore {
     fn prepare_imap_account(&self, account: AccountId) -> Result<()> {
         let set = account_id_to_setid(account);
         match self.mds.with_set_tx(&set, |tx| {
-            let ids = {
-                let mut statement = tx.tx().prepare(
-                    "SELECT id FROM container WHERE seq_validity > 4294967295 AND name != ?1 ORDER BY id",
-                ).map_err(|e| mds::Error::Other(e.to_string()))?;
-                statement.query_map([UPLOAD_STAGING_NAME], |row| row.get::<_, String>(0))
-                    .map_err(|e| mds::Error::Other(e.to_string()))?
-                    .collect::<rusqlite::Result<Vec<_>>>()
-                    .map_err(|e| mds::Error::Other(e.to_string()))?
-            };
-            // Upgrade the entire account together. Legacy seconds-converted
-            // values can collide across names and later be reused by RENAME.
-            for id in ids {
-                let id = ContainerId(Uuid::parse_str(&id)
-                    .map_err(|e| mds::Error::Other(e.to_string()))?);
-                imap_allocate_uidvalidity(tx.tx(), &id)?;
-            }
+            imap_uidvalidity_high_water(tx.tx())?;
+            // Preserve exactly the identity already sent by wire_uidvalidity.
+            // Collisions matter when names are reused, and are repaired there.
+            tx.tx().execute(
+                "UPDATE container SET seq_validity = seq_validity / 1000 WHERE seq_validity > 4294967295 AND name != ?1",
+                [UPLOAD_STAGING_NAME],
+            ).map_err(|e| mds::Error::Other(e.to_string()))?;
             Ok(())
         }) {
             Ok(()) | Err(mds::Error::SetNotFound(_)) => Ok(()),
             Err(error) => Err(anyhow!(error)),
         }
+    }
+
+    fn imap_mailbox_version(&self, account: AccountId, mailbox: ContainerId) -> Result<Option<(u64, u64)>> {
+        let status = self.mds.container_status(&account_id_to_setid(account), &mailbox)?;
+        Ok(Some((status.seq_validity, status.change_seq.0)))
+    }
+
+    fn imap_fetch_handles(&self, account: AccountId, mailbox: ContainerId, uids: &[u64]) -> Result<Vec<EmailHandle>> {
+        self.mds.with_set_read(&account_id_to_setid(account), |conn| {
+            let mut handles = Vec::with_capacity(uids.len());
+            for uid in uids {
+                let seq = Seq(u32::try_from(*uid).map_err(|e| mds::Error::Other(e.to_string()))?);
+                handles.extend(mds::container::list_items(conn, &mailbox, SeqRange::Range(seq, seq))?
+                    .into_iter().map(imap_email_handle));
+            }
+            Ok(handles)
+        }).map_err(Into::into)
+    }
+
+    fn imap_membership(&self, account: AccountId, mailbox: ContainerId, item: ItemId) -> Result<Option<EmailHandle>> {
+        self.mds.with_set_read(&account_id_to_setid(account), |conn| {
+            match mds::container::fetch_item(conn, &item, &mailbox) {
+                Ok(record) => Ok(Some(imap_email_handle(record))),
+                Err(mds::Error::ItemNotFound(_)) => Ok(None),
+                Err(error) => Err(error),
+            }
+        }).map_err(Into::into)
     }
 
     fn rename_inbox(
@@ -2644,7 +2678,12 @@ impl MailStore for SqliteMailStore {
         let set = account_id_to_setid(account);
         match self.mds.with_set_tx(&set, |tx| {
             imap_preserve_subscriptions(tx.tx())?;
-            tx.rename_container(&id, new_parent.as_ref(), new_name)
+            let old_name = imap_name_in_connection(tx.tx(), &id)?;
+            tx.rename_container(&id, new_parent.as_ref(), new_name)?;
+            if imap_name_in_connection(tx.tx(), &id)? != old_name {
+                imap_repair_renamed_identities(tx.tx(), &id)?;
+            }
+            Ok(())
         }) {
             Ok(()) => Ok(()),
             Err(mds::Error::SetNotFound(_)) => Err(anyhow!("mailbox not found: {id}", id = id.0)),
@@ -2751,6 +2790,7 @@ impl MailStore for SqliteMailStore {
             }
             imap_preserve_subscriptions(tx.tx())?;
             imap_uidvalidity_high_water(tx.tx())?;
+            imap_record_deleted_identity(tx.tx(), &id)?;
             match on_emails {
                 DestroyPolicy::Reject => {
                     // Authoritative live count over `membership`, not
@@ -5781,6 +5821,21 @@ fn reap_mail_search_if_item_gone(
     Ok(())
 }
 
+/// Project an indexed native membership read without a second message query.
+fn imap_email_handle(record: mds::types::ItemRecord) -> EmailHandle {
+    EmailHandle {
+        id: record.id,
+        blob_hash: record.meta.blob_hash,
+        keywords: record.flags,
+        tags: record.tags.into(),
+        received_at: record.meta.received_at,
+        seq: record.seq,
+        uid: u64::from(record.seq.0),
+        mod_seq: record.change_seq.0,
+        size_bytes: record.meta.size_bytes,
+    }
+}
+
 /// Retain the greatest current or historical wire identity for this account.
 fn imap_uidvalidity_high_water(conn: &rusqlite::Connection) -> mds::Result<i64> {
     conn.execute_batch("CREATE TABLE IF NOT EXISTS mail_imap_uidvalidity (id INTEGER PRIMARY KEY CHECK(id = 1), value INTEGER NOT NULL)")
@@ -5807,8 +5862,8 @@ fn imap_uidvalidity_high_water(conn: &rusqlite::Connection) -> mds::Result<i64> 
 }
 
 /// New mailbox identities use a durable counter, including across deletion.
-/// Legacy epoch-millisecond identities migrate before IMAP authentication.
-/// This avoids collisions on recreation and renaming onto a previously used name.
+/// Legacy epoch-millisecond identities retain their seconds-converted wire value.
+/// RENAME repairs only identities that could collide under the destination name.
 fn imap_allocate_uidvalidity(conn: &rusqlite::Connection, id: &ContainerId) -> mds::Result<()> {
     let next = imap_uidvalidity_high_water(conn)?
         .checked_add(1)
@@ -5824,6 +5879,41 @@ fn imap_allocate_uidvalidity(conn: &rusqlite::Connection, id: &ContainerId) -> m
         params![next, id.0.to_string()],
     )
     .map_err(|e| mds::Error::Other(e.to_string()))?;
+    Ok(())
+}
+
+fn imap_identity_history(conn: &rusqlite::Connection) -> mds::Result<()> {
+    conn.execute_batch("CREATE TABLE IF NOT EXISTS mail_imap_deleted_identity (name TEXT NOT NULL, validity INTEGER NOT NULL, PRIMARY KEY(name, validity))")
+        .map_err(|error| mds::Error::Other(error.to_string()))
+}
+
+fn imap_record_deleted_identity(conn: &rusqlite::Connection, id: &ContainerId) -> mds::Result<()> {
+    imap_identity_history(conn)?;
+    let name = imap_name_in_connection(conn, id)?;
+    conn.execute("INSERT OR IGNORE INTO mail_imap_deleted_identity(name, validity) SELECT ?1, CASE WHEN seq_validity > 4294967295 THEN seq_validity / 1000 ELSE seq_validity END FROM container WHERE id = ?2", params![name, id.0.to_string()])
+        .map_err(|error| mds::Error::Other(error.to_string()))?;
+    Ok(())
+}
+
+fn imap_repair_renamed_identities(conn: &rusqlite::Connection, root: &ContainerId) -> mds::Result<()> {
+    imap_identity_history(conn)?;
+    let ids = {
+        let mut statement = conn.prepare("WITH RECURSIVE renamed(id) AS (SELECT ?1 UNION ALL SELECT c.id FROM container c JOIN renamed r ON c.parent_id = r.id) SELECT id FROM renamed")
+            .map_err(|error| mds::Error::Other(error.to_string()))?;
+        statement.query_map([root.0.to_string()], |row| row.get::<_, String>(0))
+            .map_err(|error| mds::Error::Other(error.to_string()))?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(|error| mds::Error::Other(error.to_string()))?
+    };
+    for id in ids {
+        let container = ContainerId(Uuid::parse_str(&id).map_err(|error| mds::Error::Other(error.to_string()))?);
+        let name = imap_name_in_connection(conn, &container)?;
+        let collision: bool = conn.query_row(
+            "WITH identity(value) AS (SELECT CASE WHEN seq_validity > 4294967295 THEN seq_validity / 1000 ELSE seq_validity END FROM container WHERE id = ?1) SELECT EXISTS(SELECT 1 FROM container c, identity i WHERE c.id != ?1 AND c.name != ?3 AND (CASE WHEN c.seq_validity > 4294967295 THEN c.seq_validity / 1000 ELSE c.seq_validity END) = i.value) OR EXISTS(SELECT 1 FROM mail_imap_deleted_identity h, identity i WHERE h.name = ?2 AND h.validity = i.value)",
+            params![id, name, UPLOAD_STAGING_NAME], |row| row.get(0),
+        ).map_err(|error| mds::Error::Other(error.to_string()))?;
+        if collision { imap_allocate_uidvalidity(conn, &container)?; }
+    }
     Ok(())
 }
 

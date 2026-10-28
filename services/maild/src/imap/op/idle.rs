@@ -436,17 +436,21 @@ where
                     Ok(ev) => {
                         if let ContainerEvent::FlagsChanged { item_id, .. } = &ev {
                             if let Some(sm) = selected.as_deref_mut() {
-                                let store = store.clone();
+                                let lookup_store = store.clone();
                                 let container = sm.container_id;
-                                match tokio::task::spawn_blocking(move || store.list_emails_in_mailbox(account_id, container, crate::mailstore::ListOpts { sort_by: crate::mailstore::SortKey::Seq, limit: u32::MAX, offset: 0 })).await {
-                                    Ok(Ok(handles)) => {
-                                        let uids: Vec<u64> = handles.iter().map(|h| h.uid).collect();
-                                        for line in diff_lines(&sm.view_uids, &uids) { writer.write_all(line.as_bytes()).await?; }
-                                        sm.view_uids = uids;
-                                        if let Some((i, h)) = handles.iter().enumerate().find(|(_, h)| h.id == *item_id) {
-                                            writer.write_all(format!("* {} FETCH (UID {} FLAGS {})\r\n", i+1, h.uid, super::flags::render_keywords(h.keywords, &h.tags)).as_bytes()).await?;
+                                let item = *item_id;
+                                match tokio::task::spawn_blocking(move || lookup_store.imap_membership(account_id, container, item)).await {
+                                    Ok(Ok(Some(handle))) => {
+                                        if sm.view_uids.binary_search(&handle.uid).is_err() {
+                                            let uids = snapshot_uids(store.clone(), account_id, container).await?;
+                                            for line in diff_lines(&sm.view_uids, &uids) { writer.write_all(line.as_bytes()).await?; }
+                                            sm.view_uids = uids;
+                                        }
+                                        if let Ok(index) = sm.view_uids.binary_search(&handle.uid) {
+                                            writer.write_all(format!("* {} FETCH (UID {} FLAGS {})\r\n", index + 1, handle.uid, super::flags::render_keywords(handle.keywords, &handle.tags)).as_bytes()).await?;
                                         }
                                     }
+                                    Ok(Ok(None)) => {},
                                     _ => writer.write_all(b"* NO [UNAVAILABLE] mailbox flag updates unavailable\r\n").await?,
                                 }
                                 writer.flush().await?;

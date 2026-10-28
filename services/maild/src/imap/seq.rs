@@ -85,6 +85,27 @@ pub struct SeqSet {
 }
 
 impl SeqSet {
+    /// Intersect a set with the established client view without copying or
+    /// scanning that view for a single-message FETCH.
+    pub fn select_uids(&self, view: &[u64], uid_mode: bool) -> Vec<u64> {
+        let mut selected = std::collections::BTreeSet::new();
+        for element in &self.elements {
+            let bounds = if uid_mode {
+                let (lo, hi) = element_endpoints_uid(element, view.last().copied().unwrap_or(0));
+                let start = view.partition_point(|uid| *uid < lo);
+                let end = view.partition_point(|uid| *uid <= hi);
+                Some((start, end))
+            } else {
+                element_endpoints_msn(element, view.len() as u32)
+                    .map(|(lo, hi)| ((lo - 1) as usize, hi as usize))
+            };
+            if let Some((start, end)) = bounds {
+                selected.extend(view[start..end].iter().copied());
+            }
+        }
+        selected.into_iter().collect()
+    }
+
     /// Borrow the parsed elements in wire order.
     pub fn elements(&self) -> &[Element] {
         &self.elements

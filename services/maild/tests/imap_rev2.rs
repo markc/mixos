@@ -1275,7 +1275,7 @@ async fn charset_errors_and_save_failure_have_correct_state() -> Result<()> {
     assert!(
         command(&mut r, &mut w, "q", "SEARCH CHARSET UTF-8 ALL")
             .await?
-            .contains("q BAD")
+            .contains("q OK")
     );
     Ok(())
 }
@@ -1566,9 +1566,7 @@ async fn legacy_identities_migrate_before_login_and_cannot_collide_after_rename(
     let (client, _) = spawn_session(db.clone(), ms.clone(), ImapConfig::default()).await;
     let (mut r, mut w) = login(client).await?;
     let values = ms.list_mailboxes(1)?;
-    assert!(values.iter().all(
-        |record| record.uid_validity > legacy as u64 && record.uid_validity <= u32::MAX as u64
-    ));
+    assert!(values.iter().all(|record| record.uid_validity == legacy as u64));
     let source = values
         .iter()
         .find(|record| record.name == "Source")
@@ -1579,7 +1577,9 @@ async fn legacy_identities_migrate_before_login_and_cannot_collide_after_rename(
         .find(|record| record.name == "Target")
         .unwrap()
         .uid_validity;
-    assert_ne!(source, target);
+    assert_eq!(source, target);
+    let before = command(&mut r, &mut w, "b", "STATUS Source (UIDVALIDITY)").await?;
+    assert!(before.contains(&format!("UIDVALIDITY {legacy})")), "{before}");
     assert!(
         command(&mut r, &mut w, "d", "DELETE Target")
             .await?
@@ -1591,10 +1591,11 @@ async fn legacy_identities_migrate_before_login_and_cannot_collide_after_rename(
             .contains("n OK")
     );
     let response = command(&mut r, &mut w, "s", "STATUS Target (UIDVALIDITY)").await?;
-    assert!(
-        response.contains(&format!("UIDVALIDITY {source})")),
-        "{response}"
-    );
+    let renamed = ms.list_mailboxes(1)?.into_iter().find(|record| record.name == "Target").unwrap().uid_validity;
+    assert!(renamed > source);
+    assert!(response.contains(&format!("UIDVALIDITY {renamed})")), "{response}");
+    assert!(ms.list_mailboxes(1)?.iter().filter(|record| record.name != "Target")
+        .all(|record| record.uid_validity == legacy as u64));
     let (client, _) = spawn_session(db, ms.clone(), ImapConfig::default()).await;
     let (_r2, _w2) = login(client).await?;
     assert_eq!(
@@ -1603,7 +1604,7 @@ async fn legacy_identities_migrate_before_login_and_cannot_collide_after_rename(
             .find(|record| record.name == "Target")
             .unwrap()
             .uid_validity,
-        source
+        renamed
     );
     Ok(())
 }
@@ -1793,4 +1794,278 @@ async fn fatal_selected_mailbox_loss_emits_bye() -> Result<()> {
         tokio::time::timeout(std::time::Duration::from_secs(5), read_line(&mut r)).await??;
     assert!(response.starts_with("* BYE [UNAVAILABLE]"), "{response}");
     Ok(())
+}
+
+#[tokio::test]
+async fn rename_repairs_only_colliding_live_or_deleted_name_identities() -> Result<()> {
+    let (_tmp, db, mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
+    let source = ms.create_mailbox(1, "Source", None, attrs_for(None, false))?;
+    let twin = ms.create_mailbox(1, "Twin", None, attrs_for(None, false))?;
+    let deleted = ms.create_mailbox(1, "Deleted", None, attrs_for(None, false))?;
+    let unique = ms.create_mailbox(1, "Unique", None, attrs_for(None, false))?;
+    let set = maild::mailstore::account_id_to_setid(1);
+    mds.with_set_tx(&set, |tx| {
+        for (id, value) in [(source, 12345), (twin, 12345), (deleted, 54321), (unique, 54321)] {
+            tx.tx().execute("UPDATE container SET seq_validity = ?1 WHERE id = ?2", params![value, id.0.to_string()])
+                .map_err(|error| mds::Error::Other(error.to_string()))?;
+        }
+        Ok(())
+    })?;
+    let (client, _) = spawn_session(db, ms.clone(), ImapConfig::default()).await;
+    let (mut r, mut w) = login(client).await?;
+    assert!(command(&mut r, &mut w, "r", "RENAME Source Safe").await?.contains("r OK"));
+    let records = ms.list_mailboxes(1)?;
+    assert_ne!(records.iter().find(|row| row.id == source).unwrap().uid_validity, 12345);
+    assert_eq!(records.iter().find(|row| row.id == twin).unwrap().uid_validity, 12345);
+    assert!(command(&mut r, &mut w, "d", "DELETE Deleted").await?.contains("d OK"));
+    assert!(command(&mut r, &mut w, "r", "RENAME Unique Deleted").await?.contains("r OK"));
+    assert_ne!(ms.list_mailboxes(1)?.iter().find(|row| row.id == unique).unwrap().uid_validity, 54321);
+    Ok(())
+}
+
+#[tokio::test]
+async fn rev2_rename_reports_exact_ids_and_old_names_including_descendants() -> Result<()> {
+    let (_tmp, db, _mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
+    let (client, _) = spawn_session(db, ms, ImapConfig::default()).await;
+    let (mut r, mut w) = login(client).await?;
+    for (tag, text) in [("c", "CREATE Foo/Child"), ("d", "CREATE Another"), ("e", "ENABLE IMAP4rev2")] {
+        assert!(command(&mut r, &mut w, tag, text).await?.contains(&format!("{tag} OK")));
+    }
+    let response = command(&mut r, &mut w, "n", "RENAME Foo \"A*\"").await?;
+    assert!(response.contains("\"A*\" (\"OLDNAME\" (\"Foo\"))"), "{response}");
+    assert!(response.contains("\"A*/Child\" (\"OLDNAME\" (\"Foo/Child\"))"), "{response}");
+    assert_eq!(response.matches("* LIST ").count(), 2, "{response}");
+    assert!(!response.contains("Another"), "{response}");
+    Ok(())
+}
+
+#[tokio::test]
+async fn aliases_set_seen_and_inbox_rename_preserves_membership_keywords() -> Result<()> {
+    let (_tmp, db, mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
+    insert_email(&ms, &mds, b"Subject: x\r\n\r\nbody", "x", Flags(0), 1_700_000_000_000)?;
+    let (mut r, mut w) = selected(ms, db).await?;
+    for (alias, seen) in [("RFC822.HEADER", false), ("RFC822", true), ("RFC822.TEXT", true)] {
+        command(&mut r, &mut w, "u", "STORE 1 -FLAGS.SILENT (\\Seen)").await?;
+        command(&mut r, &mut w, "f", &format!("FETCH 1 {alias}")).await?;
+        let flags = command(&mut r, &mut w, "g", "FETCH 1 FLAGS").await?;
+        assert_eq!(flags.contains("\\Seen"), seen, "{alias}: {flags}");
+    }
+    command(&mut r, &mut w, "u", "STORE 1 FLAGS.SILENT (\\Seen \\Flagged project)").await?;
+    command(&mut r, &mut w, "n", "RENAME INBOX Moved").await?;
+    command(&mut r, &mut w, "s", "SELECT Moved").await?;
+    let flags = command(&mut r, &mut w, "g", "FETCH 1 FLAGS").await?;
+    for flag in ["\\Seen", "\\Flagged", "project"] { assert!(flags.contains(flag), "{flags}"); }
+    Ok(())
+}
+
+#[tokio::test]
+async fn create_and_subscribe_reject_c1_and_utf7_command_injection() -> Result<()> {
+    let (_tmp, db, _mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
+    let (client, _) = spawn_session(db, ms.clone(), ImapConfig::default()).await;
+    let (mut r, mut w) = login(client).await?;
+    command(&mut r, &mut w, "c", "CREATE foo").await?;
+    for text in ["DELETE foo&ACA-", "CREATE &ACI-", "RENAME foo &ACo-"] {
+        let response = command(&mut r, &mut w, "b", text).await?;
+        assert!(response.contains("b BAD"), "{response}");
+    }
+    assert!(ms.list_mailboxes(1)?.iter().any(|row| row.name == "foo"));
+    command(&mut r, &mut w, "e", "ENABLE UTF8=ACCEPT").await?;
+    for control in ['\u{80}', '\u{85}', '\u{9f}'] {
+        for verb in ["CREATE", "SUBSCRIBE"] {
+            let response = command(&mut r, &mut w, "b", &format!("{verb} \"bad{control}name\"")).await?;
+            assert!(response.contains("b NO [CANNOT]"), "{response}");
+        }
+    }
+    assert!(!ms.imap_subscription_names(1)?.iter().any(|name| name.starts_with("bad")));
+    Ok(())
+}
+
+#[tokio::test]
+async fn subscription_children_probe_and_list_status_cap_have_correct_wire_forms() -> Result<()> {
+    let (_tmp, db, _mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
+    let mut cfg = ImapConfig::default();
+    cfg.max_literal_bytes = 42000;
+    let (client, _) = spawn_session(db, ms, cfg).await;
+    let (mut r, mut w) = login(client).await?;
+    command(&mut r, &mut w, "c", "CREATE Root").await?;
+    command(&mut r, &mut w, "u", "SUBSCRIBE Root/Ghost").await?;
+    let response = command(&mut r, &mut w, "l", "LIST (SUBSCRIBED RECURSIVEMATCH) \"\" Root RETURN (CHILDREN)").await?;
+    assert!(response.contains("\\HasNoChildren"), "{response}");
+    assert!(!response.contains("\\HasChildren"), "{response}");
+    assert!(response.contains("CHILDINFO (\"SUBSCRIBED\")"), "{response}");
+    let response = command(&mut r, &mut w, "l", "LIST (SUBSCRIBED) \"\" Root/Ghost").await?;
+    assert!(response.contains("\\NonExistent") && response.contains("\\Noselect"), "{response}");
+    let response = command(&mut r, &mut w, "l", "LIST \"\" \"\" RETURN (SPECIAL-USE)").await?;
+    assert_eq!(response, "* LIST (\\Noselect) \"/\" \"\"\r\nl OK LIST completed\r\n");
+    let response = command(&mut r, &mut w, "l", "LIST \"\" INBOX RETURN (STATUS (APPENDLIMIT))").await?;
+    assert!(response.contains("APPENDLIMIT 42000"), "{response}");
+    Ok(())
+}
+
+#[tokio::test]
+async fn save_failures_delete_selection_and_empty_enable_do_not_leave_stale_state() -> Result<()> {
+    let (_tmp, db, mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
+    insert_email(&ms, &mds, b"Subject: x\r\n\r\nbody", "x", Flags(0), 1_700_000_000_000)?;
+    let (mut r, mut w) = selected(ms.clone(), db).await?;
+    command(&mut r, &mut w, "q", "SEARCH RETURN (SAVE) ALL").await?;
+    assert!(command(&mut r, &mut w, "q", "SEARCH RETURN (SAVE) BOGUS").await?.contains("q BAD"));
+    assert_eq!(command(&mut r, &mut w, "f", "FETCH $ UID").await?, "f OK FETCH completed\r\n");
+    command(&mut r, &mut w, "u", "UNSELECT").await?;
+    assert_eq!(command(&mut r, &mut w, "e", "ENABLE CONDSTORE QRESYNC UNKNOWN").await?, "e OK ENABLE completed\r\n");
+    command(&mut r, &mut w, "e", "ENABLE IMAP4rev2").await?;
+    for charset in ["US-ASCII", "UTF-8"] {
+        command(&mut r, &mut w, "s", "SELECT INBOX").await?;
+        assert!(command(&mut r, &mut w, "q", &format!("SEARCH CHARSET {charset} ALL")).await?.contains("q OK"));
+        command(&mut r, &mut w, "u", "UNSELECT").await?;
+    }
+    command(&mut r, &mut w, "c", "CREATE Disposable").await?;
+    command(&mut r, &mut w, "s", "SELECT Disposable").await?;
+    let response = command(&mut r, &mut w, "d", "DELETE Disposable").await?;
+    assert!(response.contains("* OK [CLOSED]") && response.contains("d OK"), "{response}");
+    assert_eq!(command(&mut r, &mut w, "n", "NOOP").await?, "n OK NOOP completed\r\n");
+    assert!(command(&mut r, &mut w, "f", "FETCH 1 UID").await?.contains("f BAD"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn binary_accepts_unpadded_base64() -> Result<()> {
+    let (_tmp, db, mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
+    insert_email(&ms, &mds, b"Content-Type: application/octet-stream\r\nContent-Transfer-Encoding: base64\r\n\r\nYWI", "x", Flags(0), 1_700_000_000_000)?;
+    let (mut r, mut w) = selected(ms, db).await?;
+    let response = command(&mut r, &mut w, "f", "FETCH 1 (BINARY.PEEK[1] BINARY.SIZE[1])").await?;
+    assert!(response.contains("{2}\r\nab") && response.contains("BINARY.SIZE[1] 2"), "{response}");
+    Ok(())
+}
+
+mod cost_regressions {
+    use super::*;
+    use maild::mailstore::*;
+    use mds::{BlobHash, ContainerEvent, ContainerId, ItemId};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tokio::sync::broadcast;
+
+    struct CountedStore {
+        inner: Arc<dyn MailStore>,
+        lists: AtomicUsize,
+        fetches: AtomicUsize,
+        fetched_rows: AtomicUsize,
+        memberships: AtomicUsize,
+    }
+
+    // Forward the real native store, counting only the protocol read boundaries.
+    macro_rules! forward {
+        ($( $name:ident ($($arg:ident : $ty:ty),*) -> $result:ty; )*) => {
+            $(fn $name(&self, $($arg: $ty),*) -> $result { self.inner.$name($($arg),*) })*
+        };
+    }
+
+    impl MailStore for CountedStore {
+        forward! {
+            create_blob_ref(account: i32, hash: BlobHash, size: u64, expires_at: i64) -> Result<BlobId>;
+            resolve_blob_ref(account: i32, blob_id: BlobId) -> Result<BlobRefLookup>;
+            move_message(account: i32, item_id: ItemId, src: ContainerId, dest: ContainerId, flags: Flags, stamp_id: &str) -> Result<(MembershipUid, MembershipUid)>;
+            copy_message(account: i32, item_id: ItemId, src: ContainerId, dest: ContainerId, stamp_id: &str, read_only_src: bool) -> Result<MembershipUid>;
+            expunge_memberships(account: i32, mailbox: ContainerId, item_ids: &[ItemId]) -> Result<usize>;
+            list_mailboxes(account: i32) -> Result<Vec<MailboxRecord>>;
+            create_mailbox(account: i32, name: &str, parent: Option<ContainerId>, attrs: ContainerAttrs) -> Result<ContainerId>;
+            rename_mailbox(account: i32, id: ContainerId, name: &str, parent: Option<ContainerId>) -> Result<()>;
+            destroy_mailbox(account: i32, id: ContainerId, policy: DestroyPolicy) -> Result<()>;
+            update_mailbox(account: i32, id: ContainerId, name: Option<&str>, parent: Option<Option<ContainerId>>, role: Option<Option<MailboxRole>>, sort: Option<u32>, subscribed: Option<bool>) -> Result<()>;
+            query_emails(account: i32, filter: EmailQueryFilter, sort: EmailSort, opts: ListOpts) -> Result<Vec<ItemId>>;
+            query_emails_page(account: i32, filter: EmailQueryFilter, sort: EmailSort, opts: ListOpts) -> Result<(Vec<ItemId>, u64)>;
+            get_email(account: i32, id: ItemId) -> Result<EmailRecord>;
+            find_emails_by_blob_hash(account: i32, hash: &BlobHash) -> Result<Vec<EmailRecord>>;
+            read_blob(hash: BlobHash) -> Result<Vec<u8>>;
+            put_blob(blob: &[u8]) -> Result<BlobHash>;
+            create_email(account: i32, mailbox: ContainerId, blob: BlobHash, envelope: EmailEnvelope, reply: &[String], flags: Flags, tags: Tags, received: i64) -> Result<(ItemId, MembershipUid)>;
+            create_email_with_memberships(account: i32, mailboxes: &[ContainerId], blob: BlobHash, envelope: EmailEnvelope, reply: &[String], flags: Flags, tags: Tags, received: i64) -> Result<(ItemId, Vec<MembershipUid>)>;
+            add_memberships(account: i32, id: ItemId, mailboxes: &[ContainerId]) -> Result<Vec<MembershipUid>>;
+            set_keywords(account: i32, id: ItemId, flags: Flags, tags: Tags) -> Result<()>;
+            set_keywords_in_mailbox(account: i32, id: ItemId, mailbox: ContainerId, flags: Flags, tags: Tags) -> Result<()>;
+            add_flags_in_mailbox(account: i32, id: ItemId, mailbox: ContainerId, flags: Flags) -> Result<Flags>;
+            move_email(account: i32, id: ItemId, mailbox: ContainerId) -> Result<()>;
+            delete_email(account: i32, id: ItemId) -> Result<()>;
+            email_changes(account: i32, state: u64) -> Result<EmailChangeSet>;
+            email_state(account: i32) -> Result<u64>;
+            mailbox_state(account: i32) -> Result<String>;
+            mailbox_changes(account: i32, state: &str, max: usize) -> Result<MailboxChangeSet>;
+            list_thread(account: i32, id: ThreadId) -> Result<Vec<ItemId>>;
+            list_threads(account: i32, position: u64, limit: u64) -> Result<Vec<ThreadId>>;
+            subscribe_mailbox(account: i32, mailbox: ContainerId) -> Result<broadcast::Receiver<ContainerEvent>>;
+            prepare_imap_account(account: i32) -> Result<()>;
+            imap_mailbox_version(account: i32, mailbox: ContainerId) -> Result<Option<(u64, u64)>>;
+        }
+
+        fn list_emails_in_mailbox(&self, account: i32, mailbox: ContainerId, opts: ListOpts) -> Result<Vec<EmailHandle>> {
+            self.lists.fetch_add(1, Ordering::Relaxed);
+            self.inner.list_emails_in_mailbox(account, mailbox, opts)
+        }
+        fn imap_fetch_handles(&self, account: i32, mailbox: ContainerId, uids: &[u64]) -> Result<Vec<EmailHandle>> {
+            self.fetches.fetch_add(1, Ordering::Relaxed);
+            let handles = self.inner.imap_fetch_handles(account, mailbox, uids)?;
+            self.fetched_rows.fetch_add(handles.len(), Ordering::Relaxed);
+            Ok(handles)
+        }
+        fn imap_membership(&self, account: i32, mailbox: ContainerId, item: ItemId) -> Result<Option<EmailHandle>> {
+            self.memberships.fetch_add(1, Ordering::Relaxed);
+            self.inner.imap_membership(account, mailbox, item)
+        }
+    }
+
+    #[tokio::test]
+    async fn ten_thousand_messages_use_indexed_fetch_and_single_idle_membership_reads() -> Result<()> {
+        let (_tmp, db, mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
+        let inbox = ms.mailbox_by_role(1, MailboxRole::Inbox)?.unwrap();
+        let blob = ms.put_blob(b"Subject: cost\r\n\r\nbody")?;
+        let messages = (0..10000).map(|n| EmailImport {
+            blob,
+            envelope: EmailEnvelope { from: "ext@example.com".into(), to: vec!["alice@example.com".into()], cc: vec![], bcc: vec![], reply_to: vec![], subject: format!("cost {n}"), date: 1_700_000_000, message_id: None },
+            in_reply_to: vec![], flags: Flags(0), tags: Tags::new(), received_at: 1_700_000_000_000,
+        }).collect();
+        ms.append_emails(1, inbox, messages)?;
+        let counted = Arc::new(CountedStore { inner: ms.clone(), lists: AtomicUsize::new(0), fetches: AtomicUsize::new(0), fetched_rows: AtomicUsize::new(0), memberships: AtomicUsize::new(0) });
+        let store: Arc<dyn MailStore> = counted.clone();
+        let (mut r, mut w) = selected(store, db).await?;
+        let initial_lists = counted.lists.load(Ordering::Relaxed);
+        for _ in 0..1000 {
+            let response = command(&mut r, &mut w, "f", "FETCH 1 UID").await?;
+            assert!(response.contains("* 1 FETCH (UID 1)"), "{response}");
+        }
+        assert_eq!(counted.lists.load(Ordering::Relaxed), initial_lists, "unchanged FETCH must not rescan 10k handles");
+        assert_eq!(counted.fetches.load(Ordering::Relaxed), 1000);
+        assert_eq!(counted.fetched_rows.load(Ordering::Relaxed), 1000);
+        w.write_all(b"i IDLE\r\n").await?;
+        assert_eq!(read_line(&mut r).await?, "+ idling");
+        let idle_lists = counted.lists.load(Ordering::Relaxed);
+        let handle = ms.imap_fetch_handles(1, inbox, &[1])?.remove(0);
+        for n in 0..100 {
+            let flags = if n % 2 == 0 { Flags(Flags::FLAGGED) } else { Flags(0) };
+            ms.set_keywords_in_mailbox(1, handle.id, inbox, flags, Tags::new())?;
+            let response = tokio::time::timeout(std::time::Duration::from_secs(5), read_line(&mut r)).await??;
+            assert!(response.starts_with("* 1 FETCH (UID 1 FLAGS "), "{response}");
+        }
+        assert_eq!(counted.lists.load(Ordering::Relaxed), idle_lists, "IDLE flags must not rescan 10k handles");
+        assert_eq!(counted.memberships.load(Ordering::Relaxed), 100);
+
+        // Simulate an unobserved membership-sequence change, then a real flag
+        // notification. An unknown UID must trigger one catch-up diff.
+        let last = ms.imap_fetch_handles(1, inbox, &[10000])?.remove(0);
+        mds.with_set_tx(&account_id_to_setid(1), |tx| {
+            tx.tx().execute("UPDATE membership SET seq = 10001 WHERE item_id = ?1 AND container_id = ?2", params![last.id.0.to_string(), inbox.0.to_string()])
+                .map_err(|error| mds::Error::Other(error.to_string()))?;
+            Ok(())
+        })?;
+        ms.set_keywords_in_mailbox(1, last.id, inbox, Flags(Flags::FLAGGED), Tags::new())?;
+        let mut received = String::new();
+        loop {
+            let line = tokio::time::timeout(std::time::Duration::from_secs(5), read_line(&mut r)).await??;
+            received.push_str(&line);
+            if line.contains("FETCH (UID 10001 FLAGS") { break; }
+        }
+        assert!(received.contains("10000 EXPUNGE"), "{received}");
+        assert_eq!(counted.lists.load(Ordering::Relaxed), idle_lists + 1);
+        assert_eq!(counted.memberships.load(Ordering::Relaxed), 101);
+        assert!(String::from_utf8_lossy(&exchange(&mut r, &mut w, "i", b"DONE\r\n").await?).contains("i OK"));
+        Ok(())
+    }
 }

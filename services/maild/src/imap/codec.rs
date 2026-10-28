@@ -750,12 +750,32 @@ fn has_unsupported_literal(line: &[u8]) -> bool {
     if end == 0 || line[end - 1] != b'}' {
         return false;
     }
-    // Walk back to matching `{`.
+    // Braces inside a quoted string are data, not an unconsumed marker.
     let mut i = end - 1;
     while i > 0 && line[i] != b'{' {
         i -= 1;
     }
-    line[i] == b'{'
+    let mut quoted = false;
+    let mut escaped = false;
+    for byte in &line[..i] {
+        if escaped {
+            escaped = false;
+        } else if *byte == b'\\' && quoted {
+            escaped = true;
+        } else if *byte == b'"' {
+            quoted = !quoted;
+        }
+    }
+    line[i] == b'{' && !quoted
+}
+
+#[cfg(test)]
+#[test]
+fn quoted_braces_are_not_unconsumed_literal_markers() {
+    assert!(!has_unsupported_literal(b"a CREATE \"{1}"));
+    assert!(strip_trailing_literal_marker(b"a CREATE \"{1}").unwrap().is_none());
+    assert!(parse_line(b"a CREATE \"{1}\"").is_ok());
+    assert!(has_unsupported_literal(b"a CREATE {1}"));
 }
 
 pub(crate) fn is_valid_tag(tag: &str) -> bool {

@@ -707,8 +707,13 @@ pub async fn handle_with_access(
         offset: 0,
     };
     let list_store = store.clone();
+    let wanted = view.map(|uids| req.set.select_uids(uids, req.mode == FetchMode::Uid));
     let handles = match tokio::task::spawn_blocking(move || {
-        list_store.list_emails_in_mailbox(account_id, container, opts)
+        if let Some(wanted) = wanted {
+            list_store.imap_fetch_handles(account_id, container, &wanted)
+        } else {
+            list_store.list_emails_in_mailbox(account_id, container, opts)
+        }
     })
     .await
     {
@@ -727,7 +732,6 @@ pub async fn handle_with_access(
     // item_id → handle so per-row atom emission can read FLAGS /
     // SIZE / INTERNALDATE without a second mailstore round-trip.
     let by_id: HashMap<ItemId, EmailHandle> = handles.iter().map(|h| (h.id, h.clone())).collect();
-    let map = SequenceMap::from_entries(handles.iter().map(|h| (h.uid, h.id))).with_view(view);
 
     // UID FETCH `*` and `<n>:*` rely on UIDNEXT - 1 on an empty
     // mailbox. We don't have a fresh `MailboxRecord` here, but
@@ -736,9 +740,18 @@ pub async fn handle_with_access(
     // produces no rows regardless of the sentinel (see seq.rs
     // resolver semantics); pass 0 — the sub-zero `checked_sub` in
     // `resolve_uid` clamps to `Some(0)`.
-    let resolved: Vec<Resolved> = match req.mode {
-        FetchMode::Msn => map.resolve_msn(&req.set),
-        FetchMode::Uid => map.resolve_uid(&req.set, 0),
+    let resolved: Vec<Resolved> = if let Some(view) = view {
+        handles.iter().filter_map(|handle| {
+            view.binary_search(&handle.uid).ok().map(|index| Resolved {
+                msn: (index + 1) as u32, uid: handle.uid, item_id: handle.id,
+            })
+        }).collect()
+    } else {
+        let map = SequenceMap::from_entries(handles.iter().map(|h| (h.uid, h.id)));
+        match req.mode {
+            FetchMode::Msn => map.resolve_msn(&req.set),
+            FetchMode::Uid => map.resolve_uid(&req.set, 0),
+        }
     };
 
     let needs_body = req.atoms.iter().any(|a| a.needs_body());
@@ -1775,7 +1788,12 @@ fn binary_bytes(
             .copied()
             .filter(|b| !b.is_ascii_whitespace())
             .collect();
-        return base64::engine::general_purpose::STANDARD
+        let decoder = base64::engine::general_purpose::GeneralPurpose::new(
+            &base64::alphabet::STANDARD,
+            base64::engine::general_purpose::GeneralPurposeConfig::new()
+                .with_decode_padding_mode(base64::engine::DecodePaddingMode::Indifferent),
+        );
+        return decoder
             .decode(compact)
             .map(finish)
             .map_err(|_| ());

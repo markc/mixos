@@ -171,7 +171,7 @@ pub(crate) fn subscription_view(
         }
     }
     for enc in &mut set.mailboxes {
-        enc.has_children |= subscriptions
+        enc.has_children |= enc.id.0.is_nil() && subscriptions
             .iter()
             .any(|name| name.starts_with(&format!("{}/", enc.wire_name)));
     }
@@ -185,7 +185,6 @@ struct ExtendedArgs {
     selection: Vec<String>,
     returns: Vec<String>,
     status: Option<String>,
-    extended: bool,
 }
 
 fn option_list(s: &str) -> Result<(&str, &str), String> {
@@ -198,10 +197,8 @@ fn option_list(s: &str) -> Result<(&str, &str), String> {
 
 fn parse_extended(args: &str) -> Result<ExtendedArgs, String> {
     let mut rest = args.trim_start();
-    let mut extended = rest.starts_with('(');
     let mut selection = Vec::new();
     if rest.starts_with('(') {
-        extended = true;
         let (body, tail) = option_list(rest)?;
         for option in body.split_ascii_whitespace() {
             let option = option.to_ascii_uppercase();
@@ -226,7 +223,6 @@ fn parse_extended(args: &str) -> Result<ExtendedArgs, String> {
     rest = tail.trim_start();
     let mut patterns = Vec::new();
     if rest.starts_with('(') {
-        extended = true;
         rest = &rest[1..];
         loop {
             rest = rest.trim_start();
@@ -259,7 +255,6 @@ fn parse_extended(args: &str) -> Result<ExtendedArgs, String> {
     let mut returns = Vec::new();
     let mut status = None;
     if !rest.is_empty() {
-        extended = true;
         let (keyword, tail) = rest.split_once(' ').ok_or("LIST expected RETURN options")?;
         if !keyword.eq_ignore_ascii_case("RETURN") {
             return Err("LIST expected RETURN options".into());
@@ -306,7 +301,6 @@ fn parse_extended(args: &str) -> Result<ExtendedArgs, String> {
         selection,
         returns,
         status,
-        extended,
     })
 }
 
@@ -345,7 +339,7 @@ pub async fn handle_with_limit(
     };
     // Hierarchy-delimiter probe: `LIST "" ""` per RFC 9051 §6.3.9
     // returns one row carrying the root delimiter and `\Noselect`.
-    if !parsed.extended && parsed.patterns.len() == 1 && parsed.patterns[0].is_empty() {
+    if parsed.patterns.len() == 1 && parsed.patterns[0].is_empty() {
         let mut out = "* LIST (\\Noselect) \"/\" \"\"\r\n".to_string();
         out.push_str(&tagged(tag, Status::Ok, None, "LIST completed"));
         return out;
@@ -416,7 +410,7 @@ pub async fn handle_with_limit(
         }
         let mut attrs = format_attrs(enc);
         if missing {
-            attrs.push_str(" \\NonExistent");
+            attrs.push_str(" \\NonExistent \\Noselect");
         }
         if (parsed.returns.iter().any(|s| s == "SUBSCRIBED")
             || parsed.selection.iter().any(|s| s == "SUBSCRIBED"))

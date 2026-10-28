@@ -28,13 +28,18 @@ pub fn decode(name: &str) -> Result<String, String> {
                 .chunks_exact(2)
                 .map(|b| u16::from_be_bytes([b[0], b[1]]))
                 .collect();
-            result.push_str(
-                &String::from_utf16(&units).map_err(|_| "invalid modified UTF-7 UTF-16")?,
-            );
+            let decoded = String::from_utf16(&units).map_err(|_| "invalid modified UTF-7 UTF-16")?;
+            if decoded.chars().any(|c| (' '..='~').contains(&c)) {
+                return Err("non-canonical modified UTF-7: printable ASCII must be direct".into());
+            }
+            result.push_str(&decoded);
         }
         rest = &rest[close + 1..];
     }
     result.push_str(rest);
+    if encode(&result) != name {
+        return Err("non-canonical modified UTF-7".into());
+    }
     Ok(result)
 }
 
@@ -107,7 +112,11 @@ pub fn map_tokens(text: &str, encode_wire: bool) -> Result<String, String> {
             } else {
                 decode(&rest[..end])?
             };
-            out.push_str(&name);
+            if !encode_wire && name != rest[..end] {
+                out.push_str(&super::mailbox_name::quote_mailbox(&name));
+            } else {
+                out.push_str(&name);
+            }
             rest = &rest[end..];
         }
     }
