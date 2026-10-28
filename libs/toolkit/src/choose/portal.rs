@@ -72,8 +72,9 @@ pub(super) async fn session(connection: &Connection, request: &Request, cancel: 
     let owner = tokio::time::timeout(IO_BOUND, dbus.get_name_owner(DESKTOP.try_into()?)).await??;
     let proxy = tokio::time::timeout(IO_BOUND, zbus::Proxy::new(connection, owner.as_str(), PATH, INTERFACE)).await??;
     let version: u32 = tokio::time::timeout(IO_BOUND, proxy.get_property("version")).await??;
-    if version < 4 { return Ok(None); }
-    let token = format!("toolkit{}_{}", std::process::id(), SEQUENCE.fetch_add(1, Ordering::Relaxed));
+    let required = if request.mode == Mode::SaveFiles { 4 } else if request.directory { 3 } else { 1 };
+    if version < required { return Ok(None); }
+    let token = format!("toolkit{}", uuid::Uuid::now_v7().simple());
     let sender = connection.unique_name().context("session connection has no unique name")?.as_str().trim_start_matches(':').replace('.', "_");
     let predicted = format!("/org/freedesktop/portal/desktop/request/{sender}/{token}");
     // Include all paths from this captured owner: old implementations may return
@@ -98,8 +99,17 @@ pub(super) async fn session(connection: &Connection, request: &Request, cancel: 
             }
             return Ok(None);
         }
-    }?;
-    let actual: OwnedObjectPath = reply.body().deserialize()?;
+    };
+    let (actual, mut recovering): (OwnedObjectPath, bool) = match reply {
+        Ok(reply) => match reply.body().deserialize() {
+            Ok(actual) => (actual, false),
+            Err(_) => (predicted.try_into()?, true),
+        },
+        Err(zbus::Error::MethodError(_, _, _)) => return Ok(None),
+        // A lost acknowledgement may still have opened the predicted Request.
+        Err(_) => (predicted.try_into()?, true),
+    };
+    let mut responses_live = true;
     let mut sweep = tokio::time::interval(Duration::from_secs(5));
     sweep.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
@@ -108,15 +118,26 @@ pub(super) async fn session(connection: &Connection, request: &Request, cancel: 
                 let _ = close(connection, owner.as_str(), actual.as_str()).await;
                 return Ok(None);
             }
-            next = responses.next() => {
-                let Some(message) = next else { return Err(anyhow!("portal Response stream ended")); };
-                let message = message?;
+            next = responses.next(), if responses_live => {
+                let message = match next {
+                    Some(Ok(message)) => message,
+                    _ => {
+                        // A broken signal stream alone is not permission to
+                        // overlap the still open Request with another chooser.
+                        responses_live = false;
+                        recovering = true;
+                        continue;
+                    }
+                };
                 if message.header().path().is_none_or(|p| p.as_str() != actual.as_str()) { continue; }
                 let (code, values): (u32, Options) = message.body().deserialize()?;
                 // Every Response, including 2, ends the Request before fallback.
                 return Ok(Some(decode(request, code, &values)?));
             }
             _ = sweep.tick() => {
+                if recovering && close(connection, owner.as_str(), actual.as_str()).await.is_ok() {
+                    return Err(anyhow!("portal request cancelled after transport failure"));
+                }
                 match tokio::time::timeout(IO_BOUND, dbus.get_name_owner(DESKTOP.try_into()?)).await {
                     Ok(Ok(current)) if current == owner => {},
                     Ok(_) => return Err(anyhow!("portal owner lost")),

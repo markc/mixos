@@ -23,6 +23,7 @@ mod_module_files = "deny"
 files.workspace = true
 mimedb.workspace = true
 anyhow.workspace = true
+uuid.workspace = true
 icons.workspace = true
 logging.workspace = true
 paths = { path = "../../libs/paths" }
@@ -79,8 +80,8 @@ futures-util = { workspace = true, optional = true }
 rfd = { version = "=0.17.2", default-features = false }
 
 [dev-dependencies]
+test-broker = { path = "../test-broker" }
 anyhow.workspace = true
 libc.workspace = true
-uuid.workspace = true
 egui_kittest.workspace = true
 tempfile.workspace = true

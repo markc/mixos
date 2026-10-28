@@ -64,10 +64,14 @@ pub fn request(body: &str) -> Result<Request, Refusal> {
 pub fn choose(request: Request) -> Handle {
     let (cancel, _) = watch::channel(false);
     Handle { request, receiver: None, cancel, viewport: None, tier: Tier::Bus,
-        fallback: None, ended: false }
+        fallback: None, ended: false,
+        #[cfg(test)] driver: None,
+    }
 }
 
 pub struct Handle {
+    #[cfg(test)]
+    driver: Option<Box<dyn FnOnce(Request, watch::Receiver<bool>, Emitter) + Send>>,
     request: Request,
     receiver: Option<Receiver<Message>>,
     cancel: watch::Sender<bool>,
@@ -94,7 +98,11 @@ impl Handle {
             let emitter = Emitter { tx, ctx: ctx.clone(), viewport };
             let request = self.request.clone();
             let cancel = self.cancel.subscribe();
+            #[cfg(test)]
+            let driver = self.driver.take();
             if let Err(error) = std::thread::Builder::new().name("toolkit-choose".into()).spawn(move || {
+                #[cfg(test)]
+                if let Some(driver) = driver { driver(request, cancel, emitter); return; }
                 let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build();
                 match runtime {
                     Ok(runtime) => runtime.block_on(remote(request, cancel, &emitter)),
@@ -136,18 +144,30 @@ async fn cancelled(cancel: &mut watch::Receiver<bool>) {
     }
 }
 
-async fn remote(request: Request, mut cancel: watch::Receiver<bool>, emitter: &Emitter) {
+async fn remote(request: Request, cancel: watch::Receiver<bool>, emitter: &Emitter) {
+    let mut bus_cancel = cancel.clone();
+    let mut system_cancel = cancel.clone();
+    let bus = native::attempt(&request, &mut bus_cancel);
+    #[cfg(all(target_os = "linux", feature = "portal"))]
+    let system = portal::attempt(&request, &mut system_cancel);
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    let system = platform::attempt(&request);
+    #[cfg(not(any(all(target_os = "linux", feature = "portal"), target_os = "windows", target_os = "macos")))]
+    let system = async { let _ = &mut system_cancel; None };
+    cascade(bus, system, cancel, emitter).await;
+}
+
+async fn cascade(
+    bus: impl std::future::Future<Output = Option<Outcome>>,
+    system: impl std::future::Future<Output = Option<Outcome>>,
+    cancel: watch::Receiver<bool>, emitter: &Emitter,
+) {
     emitter.send(Message::Tier(Tier::Bus));
-    let outcome = native::attempt(&request, &mut cancel).await;
+    let outcome = bus.await;
     if *cancel.borrow() { return; }
     if final_outcome(&outcome) { emitter.send(Message::Answer(outcome.unwrap())); return; }
     emitter.send(Message::Tier(Tier::System));
-    #[cfg(all(target_os = "linux", feature = "portal"))]
-    let outcome = portal::attempt(&request, &mut cancel).await;
-    #[cfg(any(target_os = "windows", target_os = "macos"))]
-    let outcome = platform::attempt(&request).await;
-    #[cfg(not(any(all(target_os = "linux", feature = "portal"), target_os = "windows", target_os = "macos")))]
-    let outcome: Option<Outcome> = None;
+    let outcome = system.await;
     if *cancel.borrow() { return; }
     if final_outcome(&outcome) { emitter.send(Message::Answer(outcome.unwrap())); }
     else { emitter.send(Message::Fallback); }
