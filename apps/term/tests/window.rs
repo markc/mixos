@@ -36,6 +36,16 @@ const EDITOR: &str = "\x1b[7m  notes.md  \x1b[0m\r\n\
 - split panes \u{2502} tabs\r\n\
 - \u{2588}\u{2593}\u{2592}\u{2591} blocks, caf\u{e9}\r\n";
 
+#[test]
+fn declared_minimum_stays_at_320_by_200() {
+    let viewport = toolkit::titlebar::viewport(term::APP_ID, "Terminal")
+        .with_min_inner_size(term::MIN_SIZE);
+    assert_eq!(viewport.min_inner_size, Some(egui::vec2(320.0, 200.0)));
+    let minimum = viewport.min_inner_size.unwrap();
+    assert!(minimum.x <= toolkit::window::MIN_SIZE[0]);
+    assert!(minimum.y <= toolkit::window::MIN_SIZE[1]);
+}
+
 /// The window's state until its first frame builds the shell.
 struct Holder {
     start: Option<(Theme, App)>,

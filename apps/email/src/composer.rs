@@ -1057,7 +1057,7 @@ mod tests {
         assert!(!h.get_by_label("Send").accesskit_node().is_disabled());
         h.get_by_label("Send").click();
         h.run_steps(2);
-        assert!(h.state().contains(&UiEvent::Command("mail.send", Origin::Menu)));
+        assert!(h.state().contains(&UiEvent::Command("mail.send", Origin::Ui)));
 
         let menus = ["File", "Edit", "Attachments", "View"];
         for title in menus {
@@ -1065,7 +1065,7 @@ mod tests {
             h.run_steps(2);
             h.get_by_label(title).click();
             h.run_steps(2);
-            assert!(toolkit::menu::current(&h.ctx).unwrap().path.iter().flatten().any(|p| p == title));
+            assert_eq!(toolkit::menu::current(&h.ctx).unwrap().menu, title);
             toolkit::menu::close(&h.ctx);
             h.run_steps(2);
         }
@@ -1077,7 +1077,7 @@ mod tests {
             let opened = toolkit::drive::request(&h.ctx, 2, "ui.menu.open", &serde_json::json!({"viewport":"compose-1", "path":[title]})).unwrap();
             assert_eq!(opened.rc, 0, "{:?}", opened.body);
             h.run_steps(2);
-            assert!(toolkit::menu::current(&h.ctx).unwrap().path.iter().flatten().any(|p| p == title));
+            assert_eq!(toolkit::menu::current(&h.ctx).unwrap().menu, title);
             toolkit::menu::close(&h.ctx);
             h.run_steps(2);
         }

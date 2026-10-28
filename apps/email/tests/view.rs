@@ -217,13 +217,19 @@ fn harness_with(state: State, theme: &Theme) -> Harness<'static, Window> {
                     view(ui, &window.state, &registry, &strings, &palette)
                 };
                 window.drawn_splits = egui::containers::panel::PanelState::load(
-                    ui.ctx(), ui.scope_id().with_salt("places"),
-                ).zip(egui::containers::panel::PanelState::load(
-                    ui.ctx(), ui.scope_id().with_salt("reader"),
-                )).map(|(places, reader)| [
-                    places.size().x / total,
-                    reader.size().x / (total - places.size().x),
-                ]);
+                    ui.ctx(),
+                    ui.scope_id().with("places"),
+                )
+                .zip(egui::containers::panel::PanelState::load(
+                    ui.ctx(),
+                    ui.scope_id().with("reader"),
+                ))
+                .map(|(places, reader)| {
+                    [
+                        places.size().x / total,
+                        reader.size().x / (total - places.size().x),
+                    ]
+                });
                 for event in events {
                     window.seen.push(event.clone());
                     if let UiEvent::Command(id, origin) = event {
@@ -371,7 +377,7 @@ fn saved_split_shares_survive_narrow_resizes() {
     let mut h = harness(state);
     for size in [
         [1180.0, 760.0],
-        [700.0, 400.0], // Compact three-pane clamps.
+        [700.0, 400.0],            // Compact three-pane clamps.
         toolkit::window::MIN_SIZE, // Single-pane layout.
         [1180.0, 760.0],
     ] {
@@ -385,9 +391,12 @@ fn saved_split_shares_survive_narrow_resizes() {
             assert!((reader - 0.80).abs() < 0.005, "Reader: {reader}");
         }
     }
-    assert!(!h.state().seen.iter().any(|e| matches!(
-        e, UiEvent::SplitPlaces(_) | UiEvent::SplitReader(_)
-    )));
+    assert!(
+        !h.state()
+            .seen
+            .iter()
+            .any(|e| matches!(e, UiEvent::SplitPlaces(_) | UiEvent::SplitReader(_)))
+    );
 }
 
 #[test]
