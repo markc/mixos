@@ -368,6 +368,7 @@ Mail tabs keep header edits in this process. Exit refuses while a mail tab
 is dirty or a save/Send is in flight; save or explicitly close the tab first.
 Clean mail scratch buffers are force-closed on exit. A save waiting for body
 edits holds intent only: it assembles the latest body when the edits drain.
+Body typing continues while the save is parked and pauses during the file write.
 Close and Exit cancel that intent; reconnection cancels it with a notice.
 Same-frame header edits are applied before Save or Send. Header controls and
 Attach are disabled during save or Send. Non-UTF-8 attachment paths are refused.
