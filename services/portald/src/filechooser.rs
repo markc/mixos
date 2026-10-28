@@ -166,6 +166,20 @@ impl Bridge {
         registry.incarnation = None;
     }
 
+    /// A queued reply or publication can beat the state-watch arm after the
+    /// transport has already changed. Fence it at the transition, as the
+    /// Settings consumer does, so an old connection cannot finish a Request.
+    async fn fence(&self, connection: &Connection, registry: &mut Registry) -> bool {
+        if registry.generation.is_some()
+            && registry.generation != settings::native::live_generation(&self.client)
+        {
+            registry.generation = None;
+            self.lost(connection, registry).await;
+            return false;
+        }
+        true
+    }
+
     async fn owner_left(&self, connection: &Connection, owner: &str) {
         let mut registry = self.registry.lock().await;
         let ids: Vec<_> = registry
@@ -182,6 +196,9 @@ impl Bridge {
 
     async fn outcome(&self, connection: &Connection, generation: u64, value: Json) {
         let mut registry = self.registry.lock().await;
+        if !self.fence(connection, &mut registry).await {
+            return;
+        }
         if registry.generation != Some(generation) {
             return;
         }
@@ -213,6 +230,9 @@ impl Bridge {
             .and_then(|v| v["request"].as_str())
             .map(str::to_owned);
         let mut registry = self.registry.lock().await;
+        if !self.fence(connection, &mut registry).await {
+            return;
+        }
         if registry.generation != generation {
             return;
         }
@@ -573,6 +593,82 @@ impl FileChooser {
             bridge.choose(connection, id, body, owner).await;
         });
         Ok(response)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures_util::StreamExt;
+    use std::io::{BufRead, BufReader};
+    use std::process::{Child, Command, Stdio};
+    use zbus::{MatchRule, MessageStream};
+
+    struct Daemon(Child);
+    impl Drop for Daemon {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+
+    #[tokio::test]
+    async fn queued_reply_and_outcome_cannot_win_after_native_connection_loss() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut daemon = Daemon(
+            Command::new("dbus-daemon")
+                .args(["--session", "--nofork", "--nopidfile", "--print-address=1"])
+                .arg(format!("--address=unix:path={}/bus", dir.path().display()))
+                .stdout(Stdio::piped())
+                .spawn()
+                .unwrap(),
+        );
+        let mut address = String::new();
+        BufReader::new(daemon.0.stdout.take().unwrap())
+            .read_line(&mut address)
+            .unwrap();
+        let server = zbus::connection::Builder::address(address.trim())
+            .unwrap().build().await.unwrap();
+        let owner = zbus::connection::Builder::address(address.trim())
+            .unwrap().build().await.unwrap();
+        let broker = test_broker::Broker::start();
+        let client = Arc::new(SupervisedClient::connect_options("portal-fence-test", &broker.url)
+            .connect().await.unwrap());
+        let generation = settings::native::live_generation(&client).unwrap();
+        client.close().await;
+        let bridge = Bridge::new(client);
+        let owner_name = owner.unique_name().unwrap().as_str();
+        for reply in [false, true] {
+            let path = handle::request_path(owner_name, if reply { "reply" } else { "outcome" }).unwrap();
+            let value = json!({"request":"0000000000000001-1", "correlation":path.as_str(), "response":0, "uris":["file:///tmp/chosen"]});
+            let mut state = State::default();
+            if reply { state.apply(Event::Outcome(value.clone())); }
+            else { state.phase = Phase::Open("0000000000000001-1".into()); }
+            {
+                let mut registry = bridge.registry.lock().await;
+                registry.generation = Some(generation);
+                registry.entries.insert(1, Entry { path:path.clone(), owner:owner_name.into(), choices:false, state, reply_sent:None });
+            }
+            server.object_server().at(path.clone(), request::Request::filechooser(owner_name, bridge.clone(), 1)).await.unwrap();
+            let rule = MatchRule::builder().msg_type(zbus::message::Type::Signal)
+                .interface("org.freedesktop.portal.Request").unwrap().member("Response").unwrap()
+                .path(path).unwrap().build();
+            let mut signals = MessageStream::for_match_rule(rule, &owner, Some(4)).await.unwrap();
+            // Deliberately do not run the state watch: these completions were
+            // queued before it processed the already lost native connection.
+            if reply {
+                bridge.reply(&server, Some(generation), 1, Some(value.clone())).await;
+            } else {
+                bridge.outcome(&server, generation, value.clone()).await;
+            }
+            let message = tokio::time::timeout(Duration::from_secs(5), signals.next()).await.unwrap().unwrap().unwrap();
+            let (code, results): (u32, HashMap<String, zbus::zvariant::OwnedValue>) = message.body().deserialize().unwrap();
+            assert_eq!(code, 2);
+            assert!(results.is_empty());
+            assert!(bridge.registry.lock().await.entries.is_empty());
+            bridge.outcome(&server, generation, value).await;
+            assert!(tokio::time::timeout(Duration::from_millis(50), signals.next()).await.is_err());
+        }
     }
 }
 
