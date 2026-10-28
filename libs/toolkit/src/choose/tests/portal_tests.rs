@@ -52,7 +52,9 @@ impl RequestObject {
 struct RequestWithoutClose;
 #[zbus::interface(name = "org.freedesktop.portal.Request")]
 impl RequestWithoutClose {
-    fn ping(&self) -> bool { true }
+    fn ping(&self) -> bool {
+        true
+    }
 }
 
 struct Call {
@@ -88,7 +90,11 @@ impl Portal {
             .await
             .unwrap();
         if self.early == Some(99) {
-            connection.object_server().remove::<RequestObject, _>(path.as_str()).await.unwrap();
+            connection
+                .object_server()
+                .remove::<RequestObject, _>(path.as_str())
+                .await
+                .unwrap();
         } else if let Some(code) = self.early {
             emit(connection, &sender, &path, code).await;
         }
@@ -399,19 +405,31 @@ async fn portal_malformed_response_zero_is_final_in_the_handle() {
         runtime().block_on(async {
             let client = connection(&address).await;
             let mut system_cancel = cancel.clone();
-            cascade(async { None }, async {
-                portal::session(&client, &req, &mut system_cancel).await.unwrap()
-            }, cancel, &emitter).await;
+            cascade(
+                async { None },
+                async {
+                    portal::session(&client, &req, &mut system_cancel)
+                        .await
+                        .unwrap()
+                },
+                cancel,
+                &emitter,
+            )
+            .await;
         });
     }));
     let ctx = Context::default();
     let outcome = tokio::time::timeout(Duration::from_secs(10), async {
         loop {
-            if let Some(answer) = frame(&ctx, ViewportId::ROOT, &mut handle) { break answer; }
+            if let Some(answer) = frame(&ctx, ViewportId::ROOT, &mut handle) {
+                break answer;
+            }
             assert!(handle.fallback.is_none());
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
-    }).await.unwrap();
+    })
+    .await
+    .unwrap();
     assert!(matches!(outcome, Outcome::Failed(_)));
     assert_eq!(handle.tier(), Tier::System);
 }
@@ -420,11 +438,19 @@ async fn portal_malformed_response_zero_is_final_in_the_handle() {
 fn portal_selected_filter_is_matched_by_name_after_backend_normalisation() {
     let req = request(r#"{"filters":[{"name":"Text","patterns":["*.txt"],"mime_types":[]},{"name":"Images","patterns":["*.[pP][nN][gG]"],"mime_types":[]}]}"#).unwrap();
     let mut values = Options::new();
-    values.insert("uris".into(), OwnedValue::try_from(Value::from(vec!["file:///tmp/a.png"])).unwrap());
+    values.insert(
+        "uris".into(),
+        OwnedValue::try_from(Value::from(vec!["file:///tmp/a.png"])).unwrap(),
+    );
     // KDE normalises case-pair globs before returning the selected tuple.
     // This filter also differs from the request's initial current_filter.
-    values.insert("current_filter".into(), OwnedValue::try_from(Value::from(("Images", vec![(0u32, "*.png")]))).unwrap());
-    let Outcome::Chosen { current_filter, .. } = portal::decode(&req, 0, &values).unwrap() else { panic!() };
+    values.insert(
+        "current_filter".into(),
+        OwnedValue::try_from(Value::from(("Images", vec![(0u32, "*.png")]))).unwrap(),
+    );
+    let Outcome::Chosen { current_filter, .. } = portal::decode(&req, 0, &values).unwrap() else {
+        panic!()
+    };
     assert_eq!(current_filter, Some(req.filters[1].clone()));
 }
 
@@ -435,12 +461,23 @@ async fn portal_dead_response_stream_is_rebuilt_once_before_close_recovery() {
     let client = connection(&address).await;
     let (_tx, mut cancel) = watch::channel(false);
     let task = tokio::spawn(async move {
-        portal::session_broken_stream(&client, &request("{}").unwrap(), &mut cancel, 1).await.unwrap()
+        portal::session_broken_stream(&client, &request("{}").unwrap(), &mut cancel, 1)
+            .await
+            .unwrap()
     });
-    let call = tokio::time::timeout(Duration::from_secs(5), calls.recv()).await.unwrap().unwrap();
+    let call = tokio::time::timeout(Duration::from_secs(5), calls.recv())
+        .await
+        .unwrap()
+        .unwrap();
     tokio::time::sleep(Duration::from_millis(200)).await;
     emit(&server, &call.owner, &call.path, 1).await;
-    assert_eq!(tokio::time::timeout(Duration::from_secs(5), task).await.unwrap().unwrap(), Some(Outcome::Cancelled));
+    assert_eq!(
+        tokio::time::timeout(Duration::from_secs(5), task)
+            .await
+            .unwrap()
+            .unwrap(),
+        Some(Outcome::Cancelled)
+    );
     assert_eq!(closed.load(Ordering::SeqCst), 0);
 }
 
@@ -453,8 +490,17 @@ async fn portal_recovery_close_of_an_ended_request_falls_through() {
     let task = tokio::spawn(async move {
         portal::session_broken_stream(&client, &request("{}").unwrap(), &mut cancel, 2).await
     });
-    let _call = tokio::time::timeout(Duration::from_secs(5), calls.recv()).await.unwrap().unwrap();
-    assert!(tokio::time::timeout(Duration::from_secs(8), task).await.unwrap().unwrap().is_err());
+    let _call = tokio::time::timeout(Duration::from_secs(5), calls.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        tokio::time::timeout(Duration::from_secs(8), task)
+            .await
+            .unwrap()
+            .unwrap()
+            .is_err()
+    );
     assert_eq!(closed.load(Ordering::SeqCst), 0);
 }
 
@@ -463,7 +509,11 @@ async fn portal_close_unknown_method_is_an_acknowledged_end() {
     let (_process, address) = dbus();
     let (server, _, _) = serve(&address, None).await;
     let path = "/org/freedesktop/portal/desktop/request/ended";
-    server.object_server().at(path, RequestWithoutClose).await.unwrap();
+    server
+        .object_server()
+        .at(path, RequestWithoutClose)
+        .await
+        .unwrap();
     let client = connection(&address).await;
     let result = portal::close(&client, server.unique_name().unwrap().as_str(), path).await;
     assert!(result.is_ok(), "{result:?}");

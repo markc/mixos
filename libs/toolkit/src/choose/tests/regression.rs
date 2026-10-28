@@ -49,9 +49,17 @@ fn two_failed_tiers_open_the_in_process_chooser_with_the_same_request() {
                 let client = super::portal_tests::connection(&address).await;
                 let mut bus_cancel = cancel.clone();
                 let mut portal_cancel = cancel.clone();
-                cascade(native::attempt_at(&req, &mut bus_cancel, &url), async {
-                    portal::session(&client, &req, &mut portal_cancel).await.unwrap()
-                }, cancel, &emitter).await;
+                cascade(
+                    native::attempt_at(&req, &mut bus_cancel, &url),
+                    async {
+                        portal::session(&client, &req, &mut portal_cancel)
+                            .await
+                            .unwrap()
+                    },
+                    cancel,
+                    &emitter,
+                )
+                .await;
             });
         }));
         (broker, process)
@@ -107,7 +115,10 @@ fn app_id_is_forwarded() {
     }));
     frame(&ctx, child, &mut one);
     let forwarded = rx.recv_timeout(Duration::from_secs(5)).unwrap();
-    assert_eq!(forwarded.on_behalf_of, crate::titlebar::app_id().or_else(|| Some("dev.mixos.example".into())));
+    assert_eq!(
+        forwarded.on_behalf_of,
+        crate::titlebar::app_id().or_else(|| Some("dev.mixos.example".into()))
+    );
     assert_eq!(forwarded.correlation, one.request.correlation);
 }
 
@@ -380,8 +391,12 @@ async fn real_noded_missing_ack_id_recovers_by_correlation_without_guessing_call
     let broker = test_broker::Broker::start();
     let fake = Fake::start(&broker.url, 8).await;
     let (_tx, mut cancel) = watch::channel(false);
-    let result = tokio::time::timeout(Duration::from_secs(10),
-        native::attempt_at(&request("{}").unwrap(), &mut cancel, &broker.url)).await.unwrap();
+    let result = tokio::time::timeout(
+        Duration::from_secs(10),
+        native::attempt_at(&request("{}").unwrap(), &mut cancel, &broker.url),
+    )
+    .await
+    .unwrap();
     assert_eq!(result, None);
     assert_eq!(fake.opened.load(Ordering::SeqCst), 1);
     assert_eq!(fake.closed.load(Ordering::SeqCst), 1);
