@@ -611,8 +611,8 @@ fn page(
 
 impl Actor {
     fn dirty(&self) -> bool {
-        // A never-saved buffer at rev 0 is empty and unchanged: not dirty —
-        // unless it was restored from recovery files (ced E1 plan §5.2(3)).
+        // Only an empty, never-saved scratch at rev 0 is clean. Seeded text
+        // and recovered unsaved contents both need a save or forced close.
         self.buffer.is_dirty()
             && !(self.buffer.saved_rev().is_none()
                 && self.buffer.rev() == 0

@@ -371,7 +371,9 @@ edits holds intent only: it assembles the latest body when the edits drain.
 Close and Exit cancel that intent; reconnection cancels it with a notice.
 Same-frame header edits are applied before Save or Send. Header controls and
 Attach are disabled during save or Send. Non-UTF-8 attachment paths are refused.
-Optional header fields default when omitted by an agent.</p>
+Optional header fields default when omitted by an agent.
+Validation refusals use <code>INVALID_ARGUMENT</code>; busy or cancelled operations and
+disk conflicts use <code>CONFLICT</code>. File I/O failures use <code>INTERNAL</code>.</p>
 <p>Empty front matter is ordinary text. Only actual <code>mail-*</code> keys make a mail
 candidate; continuation lines do not. Mail with a UTF-8 BOM stays text and
 shows a notice explaining how to remove the BOM.</p>

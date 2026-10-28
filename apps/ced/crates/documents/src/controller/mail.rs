@@ -9,9 +9,16 @@ pub(super) struct SaveIntent {
 }
 
 pub(super) fn error_code(message: &str) -> &'static str {
-    if message.contains("busy") || message.contains("in flight") || message.contains("reconnecting") || message.contains("changed on disk") || message.contains("cancelled") {
+    if matches!(message, "the mail document is busy" | "a mail save or Send is already in flight" | "the body buffer is reconnecting")
+        || message.starts_with("the parked mail save was cancelled")
+        || message.starts_with("the mail document changed on disk;") {
         code::CONFLICT
-    } else { code::INVALID_ARGUMENT }
+    } else if message.starts_with("invalid ") || message.starts_with("mail document ")
+        || message.starts_with("empty mail-") || message.starts_with("malformed mail ")
+        || message.starts_with("header not allowed") || message.starts_with("duplicate mail ")
+        || matches!(message, "not a mail document" | "thread headers are read-only" | "path is not UTF-8" | "save the document to a file first" | "Send is only available on a mail document") {
+        code::INVALID_ARGUMENT
+    } else { code::INTERNAL }
 }
 
 fn canonical_body(body: &str) -> String {
@@ -38,6 +45,7 @@ impl Tab {
 impl Controller {
     pub(super) fn cancel_mail_save(&mut self, tab: TabId, notice: &str, fx: &mut Vec<Effect>) {
         if let Some(park) = self.x.get_mut(&tab).and_then(|x| x.mail_save.take()) {
+            self.x.get_mut(&tab).unwrap().close_after_save = None;
             if let Some(mail) = self.tab_mut(tab).and_then(|t| t.mail.as_mut()) {
                 mail.saving = false;
                 mail.sending = false;
@@ -449,6 +457,7 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let written = directory.path().join("letter.md");
         std::fs::write(&written, text).unwrap();
+        assert_eq!(std::fs::read(&written).unwrap(), maildoc::write(&original).unwrap().into_bytes());
         let text = std::fs::read_to_string(written).unwrap();
         let (reopened, _, tab) = opened(&text);
         assert_eq!(reopened.tab(tab).unwrap().mail.as_ref().unwrap().saved, original);
@@ -557,6 +566,7 @@ mod tests {
             c.on_editor(tab, EditorMsg::Command(EditCommand::Insert("Unsaved ".into())));
             execute(&mut c, tab, "file.send");
             assert!(c.x[&tab].mail_save.is_some());
+            c.x.get_mut(&tab).unwrap().close_after_save = Some(Intent::ui(tab));
             let fx = match action {
                 "app.quit" => c.on_bus_command(BusCommand { id:78, command:"app.quit".into(), body:"{}".into(), caller_key:"local:test".into() }),
                 "disconnect" => c.on_incoming(Incoming::Connection { up:false }),
@@ -564,6 +574,7 @@ mod tests {
                 _ => c.on_action(Some(tab), ActionId::from_id(action).unwrap(), Intent::ui(tab)),
             };
             assert!(c.x[&tab].mail_save.is_none(), "{action}");
+            assert!(c.x[&tab].close_after_save.is_none(), "{action}");
             let mail = c.tab(tab).unwrap().mail.as_ref().unwrap();
             assert!(!mail.saving && !mail.sending && mail.saving_body.is_none());
             assert!(mail.notice.as_deref().unwrap().contains("cancelled"));
@@ -648,8 +659,21 @@ mod tests {
 
     #[test]
     fn bom_mail_is_text_with_an_explanation() {
-        let (c, _, tab) = opened(&format!("\u{feff}{LETTER}"));
-        let t = c.tab(tab).unwrap();
+        // FakeEditd strips a file BOM but always reports bom:false. Supply
+        // the real daemon's open metadata before its snapshot arrives.
+        let mut c = Controller::new(Config::default(), 1, true);
+        let mut service = FakeEditd::new("0000e1e1");
+        service.create(Some(PATH), &format!("\u{feff}{LETTER}"));
+        let fx = c.open_paths(&[PATH.into()], Intent::ui(0));
+        for effect in fx {
+            if let Effect::Send { req, out } = effect {
+                let mut answer = service.handle("local:ced", &out.command, &serde_json::from_str(&out.body).unwrap());
+                answer.body["bom"] = json!(true);
+                let fx = c.on_incoming(Incoming::Reply { req, rc:answer.rc, body:answer.body.to_string() });
+                settle(&mut c, &mut service, fx);
+            }
+        }
+        let t = c.tab(c.active().unwrap()).unwrap();
         assert!(t.mail.is_none());
         assert!(t.document_notice.as_deref().unwrap().contains("BOM"));
     }
@@ -671,8 +695,9 @@ mod tests {
         assert!(execute(&mut c, tab, "file.send").iter().any(|e| matches!(e, Effect::Respond { body, .. } if serde_json::from_str::<Value>(body).unwrap()["error_code"] == code::INVALID_ARGUMENT)));
         let mut fx = Vec::new();
         Controller::mail_answer(Some((77,"file.send".into())), Err("invalid address".into()), &mut fx);
-        Controller::mail_answer(Some((78,"file.send".into())), Err("a save is in flight".into()), &mut fx);
+        Controller::mail_answer(Some((78,"file.send".into())), Err("a mail save or Send is already in flight".into()), &mut fx);
         assert!(fx.iter().any(|e| matches!(e, Effect::Respond { id:77, body, .. } if serde_json::from_str::<Value>(body).unwrap()["error_code"] == code::INVALID_ARGUMENT)));
         assert!(fx.iter().any(|e| matches!(e, Effect::Respond { id:78, body, .. } if serde_json::from_str::<Value>(body).unwrap()["error_code"] == code::CONFLICT)));
+        assert_eq!(error_code("disk full"), code::INTERNAL);
     }
 }

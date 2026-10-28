@@ -41,6 +41,7 @@ toolkit.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+citizen = { workspace = true, features = ["testing"] }
 test-broker = { path = "../../libs/test-broker" }
 tracing-subscriber.workspace = true
 design.workspace = true

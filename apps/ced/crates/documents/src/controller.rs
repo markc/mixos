@@ -731,7 +731,9 @@ impl Controller {
                     }
                     self.send_info(&mut fx);
                 } else {
-                    self.cancel_parked_mail_saves(&mut fx);
+                    for tab in self.tab_ids() {
+                        self.cancel_mail_save(tab, "the parked mail save was cancelled because the Bus connection was lost", &mut fx);
+                    }
                     let all: Vec<u64> = self.waiters.iter().map(|w| w.id).collect();
                     for w in all {
                         self.finish_waiter(
@@ -2350,7 +2352,7 @@ impl Controller {
                     intent,
                     fx,
                 )
-                .map_err(conflict)?;
+                .map_err(|e| (if self.tab(t).is_some_and(|t| t.mail.is_some()) { mail::error_code(&e) } else { code::CONFLICT }, e))?;
                 Ok(None)
             }
             ActionId::FileSaveAll => {

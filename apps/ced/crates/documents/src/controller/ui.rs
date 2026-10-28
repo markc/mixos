@@ -526,7 +526,7 @@ impl Controller {
                     intent,
                     fx,
                 )
-                .map_err(|e| (code::CONFLICT, e))?;
+                .map_err(|e| (if self.tab(t).is_some_and(|t| t.mail.is_some()) { super::mail::error_code(&e) } else { code::CONFLICT }, e))?;
                 Ok(None)
             }
             ActionId::FileClose => {

@@ -67,6 +67,7 @@ print(\"Hello\")
 /// clock until the test fires them. Session-look reads, their retries and
 /// subscriptions are recorded for the test to answer.
 struct Fake {
+    mail_saves: Rc<RefCell<Vec<String>>>,
     edit_available: Rc<Cell<bool>>,
     editd: Rc<RefCell<FakeEditd>>,
     queue: Rc<RefCell<VecDeque<Delivery>>>,
@@ -79,6 +80,7 @@ struct Fake {
 
 /// The test's side of the fake: the service, and its clock.
 struct Service {
+    mail_saves: Rc<RefCell<Vec<String>>>,
     edit_available: Rc<Cell<bool>>,
     editd: Rc<RefCell<FakeEditd>>,
     queue: Rc<RefCell<VecDeque<Delivery>>>,
@@ -119,6 +121,9 @@ impl Service {
 
 impl Transport for Fake {
     fn perform(&mut self, effect: &Effect) {
+        if let Effect::SaveMail { text, .. } = effect {
+            self.mail_saves.borrow_mut().push(text.clone());
+        }
         if let Effect::Timer { id, .. } = effect {
             self.timers.borrow_mut().push(*id);
         }
@@ -226,6 +231,7 @@ fn window_with_edit(
         })
         .collect();
     let service = Service {
+        mail_saves: Rc::default(),
         edit_available: Rc::new(Cell::new(available)),
         editd: editd.clone(),
         queue: Rc::default(),
@@ -236,6 +242,7 @@ fn window_with_edit(
         published: Rc::default(),
     };
     let transport = Box::new(Fake {
+        mail_saves: service.mail_saves.clone(),
         edit_available: service.edit_available.clone(),
         editd: editd.clone(),
         queue: service.queue.clone(),
@@ -289,6 +296,40 @@ fn two_documents_studio_dark() {
         "greet.mix is lexed before the snapshot"
     );
     h.snapshot("two_documents_studio_dark");
+}
+
+#[test]
+fn subject_typing_and_save_in_one_frame_save_the_displayed_value_in_both_orders() {
+    use egui_kittest::kittest::{NodeT, Queryable};
+    for shortcut_first in [false, true] {
+        let text = "---\nmail-subject: Original\nmail-to: bob@example.org\n---\nBody";
+        let (mut h, service) = window(
+            theme(Scheme::Pro, Mode::Light),
+            &[("/home/user/letter.md", text)],
+            egui::vec2(820.0, 580.0),
+        );
+        h.run_steps(12);
+        h.query_all_by_label("Subject")
+            .find(|node| node.accesskit_node().role() == egui::accesskit::Role::TextInput)
+            .unwrap()
+            .click();
+        h.run_steps(2);
+        h.input_mut().events.push(Event::Key {
+            key: Key::A, physical_key: None, pressed: true, repeat: false,
+            modifiers: Modifiers::COMMAND,
+        });
+        h.run_steps(2);
+        let mut events = vec![Event::Text("Same frame".into()), Event::Key {
+            key: Key::S, physical_key: None, pressed: true, repeat: false,
+            modifiers: Modifiers::COMMAND,
+        }];
+        if shortcut_first { events.reverse(); }
+        h.input_mut().events.extend(events);
+        h.run_steps(3);
+        let saved = service.mail_saves.borrow();
+        assert_eq!(saved.len(), 1);
+        assert_eq!(maildoc::parse(&saved[0]).unwrap().subject, "Same frame");
+    }
 }
 
 #[test]

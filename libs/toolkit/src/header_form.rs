@@ -1,18 +1,34 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Shared header rows and removable attachment chips. Callers own all state,
 //! labels, identities, completion lists and validation.
-use egui::Ui;
 use crate::field;
+use egui::Ui;
 /// Space between a row label and its field, and before caller-drawn buttons.
 pub const GAP: f32 = 8.0;
 
 pub fn column(ui: &Ui, labels: impl IntoIterator<Item = String>) -> f32 {
     let font = egui::TextStyle::Body.resolve(ui.style());
-    labels.into_iter().map(|text| ui.painter().layout_no_wrap(text, font.clone(), egui::Color32::PLACEHOLDER).size().x).fold(0.0_f32, f32::max).ceil()
+    labels
+        .into_iter()
+        .map(|text| {
+            ui.painter()
+                .layout_no_wrap(text, font.clone(), egui::Color32::PLACEHOLDER)
+                .size()
+                .x
+        })
+        .fold(0.0_f32, f32::max)
+        .ceil()
 }
 
-pub fn text(ui: &mut Ui, id: egui::Id, label: egui::Id, buffer: &mut String, width: f32) -> egui::Response {
-    ui.add(field::text_edit(buffer, "", width).id(id)).labelled_by(label)
+pub fn text(
+    ui: &mut Ui,
+    id: egui::Id,
+    label: egui::Id,
+    buffer: &mut String,
+    width: f32,
+) -> egui::Response {
+    ui.add(field::text_edit(buffer, "", width).id(id))
+        .labelled_by(label)
 }
 
 /// One form row as Thunderbird lays it out: the label outside the field,
@@ -48,7 +64,15 @@ pub fn row_of<R>(
     .inner
 }
 
-pub fn attachment_chip(ui: &mut Ui, key: impl std::hash::Hash + std::fmt::Debug, path: &std::path::Path, text: &str, bad: bool, icon: f32, remove_label: &str) -> bool {
+pub fn attachment_chip(
+    ui: &mut Ui,
+    key: impl std::hash::Hash + std::fmt::Debug,
+    path: &std::path::Path,
+    text: &str,
+    bad: bool,
+    icon: f32,
+    remove_label: &str,
+) -> bool {
     let text = text.to_owned();
     // Decide wrapping before Frame::group consumes the row remainder. A
     // long name gets the full row's label budget, rather than shrinking
@@ -97,4 +121,3 @@ pub fn attachment_chip(ui: &mut Ui, key: impl std::hash::Hash + std::fmt::Debug,
     });
     removed
 }
-

@@ -7,17 +7,47 @@ fn field_id(ctx: &egui::Context, tab: u64, key: &str) -> egui::Id {
 }
 
 pub fn header_focused(ctx: &egui::Context, app: &App) -> bool {
-    let Some(tab) = app.active_tab().filter(|tab| tab.mail.is_some()) else { return false; };
+    let Some(tab) = app.active_tab().filter(|tab| tab.mail.is_some()) else {
+        return false;
+    };
     let focused = ctx.memory(|memory| memory.focused());
-    ["mail-from", "mail-to", "mail-cc", "mail-bcc", "mail-reply-to", "mail-subject"].iter()
-        .any(|key| focused == Some(field_id(ctx, tab.id, key)))
+    [
+        "mail-from",
+        "mail-to",
+        "mail-cc",
+        "mail-bcc",
+        "mail-reply-to",
+        "mail-subject",
+    ]
+    .iter()
+    .any(|key| focused == Some(field_id(ctx, tab.id, key)))
 }
 
 pub fn strip(ui: &mut egui::Ui, app: &App, events: &mut Vec<UiEvent>) {
-    let Some(tab) = app.active_tab() else { return; };
-    if let Some(notice) = &tab.document_notice { ui.weak(notice); }
-    let Some(mail) = &tab.mail else { return; };
-    let column = form::column(ui, ["mail-from", "mail-to", "mail-cc", "mail-bcc", "mail-reply-to", "mail-subject", "mail-in-reply-to", "mail-references", "mail-attachments"].map(label));
+    let Some(tab) = app.active_tab() else {
+        return;
+    };
+    if let Some(notice) = &tab.document_notice {
+        ui.weak(notice);
+    }
+    let Some(mail) = &tab.mail else {
+        return;
+    };
+    let column = form::column(
+        ui,
+        [
+            "mail-from",
+            "mail-to",
+            "mail-cc",
+            "mail-bcc",
+            "mail-reply-to",
+            "mail-subject",
+            "mail-in-reply-to",
+            "mail-references",
+            "mail-attachments",
+        ]
+        .map(label),
+    );
     let mut headers = mail.headers.clone();
     let before = headers.clone();
     let mut committed = false;
@@ -27,21 +57,40 @@ pub fn strip(ui: &mut egui::Ui, app: &App, events: &mut Vec<UiEvent>) {
     ui.push_id((ui.ctx().viewport_id(), "ced.mail", tab.id), |ui| {
         ui.add_enabled_ui(!mail.sending && !mail.saving, |ui| {
             for (key, buffer, shown) in [
-                ("mail-from", &mut headers.from, true), ("mail-to", &mut headers.to, true),
-                ("mail-cc", &mut headers.cc, show_cc), ("mail-bcc", &mut headers.bcc, show_bcc),
+                ("mail-from", &mut headers.from, true),
+                ("mail-to", &mut headers.to, true),
+                ("mail-cc", &mut headers.cc, show_cc),
+                ("mail-bcc", &mut headers.bcc, show_bcc),
                 ("mail-reply-to", &mut headers.reply_to, show_reply_to),
                 ("mail-subject", &mut headers.subject, true),
             ] {
-                if !shown { continue; }
+                if !shown {
+                    continue;
+                }
                 let field_id = field_id(ui.ctx(), tab.id, key);
                 form::row(ui, &label(key), column, |ui, labelled| {
                     if key == "mail-to" {
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            for (field, icon, selected) in [("reply-to", toolkit::Icon::Reply, show_reply_to), ("bcc", toolkit::Icon::EyeOff, show_bcc), ("cc", toolkit::Icon::Copy, show_cc)] {
-                                if ui.add(toolkit::button::IconButton::new(icon).size(toolkit::field::height_of(ui.ctx())).selected(selected).tooltip(label(&format!("mail-show-{field}")))).clicked() { events.push(UiEvent::MailRow(tab.id, field)); }
+                            for (field, icon, selected) in [
+                                ("reply-to", toolkit::Icon::Reply, show_reply_to),
+                                ("bcc", toolkit::Icon::EyeOff, show_bcc),
+                                ("cc", toolkit::Icon::Copy, show_cc),
+                            ] {
+                                if ui
+                                    .add(
+                                        toolkit::button::IconButton::new(icon)
+                                            .size(toolkit::field::height_of(ui.ctx()))
+                                            .selected(selected)
+                                            .tooltip(label(&format!("mail-show-{field}"))),
+                                    )
+                                    .clicked()
+                                {
+                                    events.push(UiEvent::MailRow(tab.id, field));
+                                }
                             }
                             let width = ui.available_width();
-                            committed |= form::text(ui, field_id, labelled, buffer, width).lost_focus();
+                            committed |=
+                                form::text(ui, field_id, labelled, buffer, width).lost_focus();
                         });
                     } else {
                         let width = ui.available_width();
@@ -50,43 +99,80 @@ pub fn strip(ui: &mut egui::Ui, app: &App, events: &mut Vec<UiEvent>) {
                 });
             }
             if let Some(value) = &headers.in_reply_to {
-                form::row(ui, &label("mail-in-reply-to"), column, |ui, _| { ui.label(value); });
+                form::row(ui, &label("mail-in-reply-to"), column, |ui, _| {
+                    ui.label(value);
+                });
             }
             if !headers.references.is_empty() {
-                form::row(ui, &label("mail-references"), column, |ui, _| { ui.label(headers.references.join(" ")); });
+                form::row(ui, &label("mail-references"), column, |ui, _| {
+                    ui.label(headers.references.join(" "));
+                });
             }
             let mut remove = None;
             form::row(ui, &label("mail-attachments"), column, |ui, _| {
                 ui.horizontal_wrapped(|ui| {
-                    if ui.button(label("mail-attach")).clicked() { events.push(UiEvent::MailAttach(tab.id)); }
+                    if ui.button(label("mail-attach")).clicked() {
+                        events.push(UiEvent::MailAttach(tab.id));
+                    }
                     for (index, path) in headers.attachments.iter().enumerate() {
                         let icon = toolkit::field::height_of(ui.ctx());
-                        if form::attachment_chip(ui, index, path, &path.display().to_string(), false, icon, &label("mail-remove")) { remove = Some(index); }
+                        if form::attachment_chip(
+                            ui,
+                            index,
+                            path,
+                            &path.display().to_string(),
+                            false,
+                            icon,
+                            &label("mail-remove"),
+                        ) {
+                            remove = Some(index);
+                        }
                     }
                 });
             });
-            if let Some(index) = remove { headers.attachments.remove(index); committed = true; }
+            if let Some(index) = remove {
+                headers.attachments.remove(index);
+                committed = true;
+            }
         });
     });
-    if headers != before { events.push(UiEvent::MailHeaders(tab.id, headers)); }
-    if committed { events.push(UiEvent::MailCommit(tab.id)); }
+    if headers != before {
+        events.push(UiEvent::MailHeaders(tab.id, headers));
+    }
+    if committed {
+        events.push(UiEvent::MailCommit(tab.id));
+    }
     if let Some(notice) = &mail.notice {
-        ui.weak(if mail.sending { label("mail-sending") } else {
-            match notice.as_str() { "Sent" => label("mail-sent"), "Saved" => label("mail-saved"), _ => notice.clone() }
+        ui.weak(if mail.sending {
+            label("mail-sending")
+        } else {
+            match notice.as_str() {
+                "Sent" => label("mail-sent"),
+                "Saved" => label("mail-saved"),
+                _ => notice.clone(),
+            }
         });
     }
 }
 
 pub fn chooser(ctx: &egui::Context, app: &mut App, events: &mut Vec<UiEvent>) {
-    let Some((tab, chooser)) = &mut app.mail_chooser else { return; };
+    let Some((tab, chooser)) = &mut app.mail_chooser else {
+        return;
+    };
     if let Some(outcome) = chooser.show(ctx) {
         if let toolkit::file_chooser::Outcome::Picked(paths) = outcome
-            && let Some(mail) = app.ctl.tabs().iter().find(|t| t.id == *tab).and_then(|t| t.mail.as_ref()) {
-                let mut headers = mail.headers.clone();
-                headers.attachments.extend(paths);
-                events.push(UiEvent::MailHeaders(*tab, headers));
-                events.push(UiEvent::MailCommit(*tab));
-            }
+            && let Some(mail) = app
+                .ctl
+                .tabs()
+                .iter()
+                .find(|t| t.id == *tab)
+                .and_then(|t| t.mail.as_ref())
+        {
+            let mut headers = mail.headers.clone();
+            headers.attachments.extend(paths);
+            events.push(UiEvent::MailHeaders(*tab, headers));
+            events.push(UiEvent::MailCommit(*tab));
+        }
         app.mail_chooser = None;
     }
 }

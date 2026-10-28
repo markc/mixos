@@ -156,6 +156,8 @@ Close and Exit cancel that intent; reconnection cancels it with a notice.
 Same-frame header edits are applied before Save or Send. Header controls and
 Attach are disabled during save or Send. Non-UTF-8 attachment paths are refused.
 Optional header fields default when omitted by an agent.
+Validation refusals use `INVALID_ARGUMENT`; busy or cancelled operations and
+disk conflicts use `CONFLICT`. File I/O failures use `INTERNAL`.
 
 Empty front matter is ordinary text. Only actual `mail-*` keys make a mail
 candidate; continuation lines do not. Mail with a UTF-8 BOM stays text and

@@ -133,7 +133,15 @@ pub async fn call_app(
     body: Value,
     wait_limit: Duration,
 ) -> Result<Reply, AppCallError> {
-    call_app_with_limit(client, app_id, command, body, wait_limit, Duration::from_secs(30)).await
+    call_app_with_limit(
+        client,
+        app_id,
+        command,
+        body,
+        wait_limit,
+        Duration::from_secs(30),
+    )
+    .await
 }
 
 /// As `call_app`, with a separate deadline for each delivered command. The
@@ -177,18 +185,15 @@ pub async fn call_app_with_limit(
         if remaining.is_zero() {
             return Err(AppCallError::DidNotAppear);
         }
-        let reply = tokio::time::timeout(
-            limit,
-            client.app_call(service, command, &body, limit),
-        )
-        .await
-        .map_err(|_| {
-            AppCallError::Transport(CallError {
-                message: "app call timed out; outcome unknown".into(),
-                outcome_unknown: true,
-            })
-        })?
-        .map_err(AppCallError::Transport)?;
+        let reply = tokio::time::timeout(limit, client.app_call(service, command, &body, limit))
+            .await
+            .map_err(|_| {
+                AppCallError::Transport(CallError {
+                    message: "app call timed out; outcome unknown".into(),
+                    outcome_unknown: true,
+                })
+            })?
+            .map_err(AppCallError::Transport)?;
         if !missing(&reply, service) {
             return checked(reply);
         }

@@ -1,6 +1,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Temporary worker-only preparation; removed before the final source gate.
 $rc = 0
+$had_png = is_file("apps/ced/tests/snapshots/mail_document_header_strip_pro_light.png")
 try
   $r = run_argv(["cargo", "fmt", "--all"], {timeout: 300, stderr: "stdout"})
   print($r.stdout)
@@ -23,13 +24,16 @@ try
     $r = run_argv(["cargo", "test", "-p", "editd", "--test", "dispatch", "--no-fail-fast"], {timeout: 1800, stderr: "stdout"})
     print($r.stdout)
     if $r.exit_code != 0 then $rc = $r.exit_code ?? 124 end
+    $r = run_argv(["cargo", "test", "-p", "ced", "--test", "window", "--no-fail-fast"], {timeout: 1800, stderr: "stdout"})
+    print($r.stdout)
+    if $r.exit_code != 0 then $rc = $r.exit_code ?? 124 end
   end
 finally
   print("LOCK_PATCH_BEGIN")
   print(run_argv_must(["git", "diff", "--", "Cargo.lock"]))
   print("LOCK_PATCH_END")
   print(run_argv_must(["git", "checkout", "-q", "--", "."]))
-  if is_file("apps/ced/tests/snapshots/mail_document_header_strip_pro_light.png") then
+  if not $had_png and is_file("apps/ced/tests/snapshots/mail_document_header_strip_pro_light.png") then
     print(run_argv_must(["rm", "--", "apps/ced/tests/snapshots/mail_document_header_strip_pro_light.png"]))
   end
 end

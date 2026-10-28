@@ -25,11 +25,10 @@ pub fn classify(text: &str) -> Kind {
     let names: Vec<_> = lines
         .iter()
         .copied()
+        .filter(|line| !line.starts_with(char::is_whitespace))
         .filter_map(|line| line.split_once(':').map(|(name, _)| name.trim()))
         .collect();
-    let mail = lines.iter().filter(|line| !line.starts_with(char::is_whitespace))
-        .filter_map(|line| line.split_once(':'))
-        .any(|(key, _)| key.starts_with("mail-"));
+    let mail = names.iter().any(|name| name.starts_with("mail-"));
     let closed = rest.lines().any(|line| line == "---");
     if mail {
         match maildoc::parse(text) {

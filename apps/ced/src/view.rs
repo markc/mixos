@@ -954,7 +954,12 @@ mod tests {
         assert!(!app.enabled(ActionId::MailHeaders));
         super::apply(&mut app, &registry, vec![super::UiEvent::MailAttach(tab)]);
         assert!(app.mail_chooser.is_none());
-        let fx = app.ctl.on_mail_saved(tab, "/home/user/letter.md".into(), "".into(), true, None, Err("disk full".into()));
+        let fx = app.ctl.on_mail_saved(tab, "/home/user/letter.md".into(), "---\nmail-subject: Changed\nmail-to: bob@example.org\n---\nBody".into(), true, None, Ok(()));
+        app.absorb(fx);
+        assert!(!app.enabled(ActionId::MailHeaders), "Send still in flight after its save");
+        super::apply(&mut app, &registry, vec![super::UiEvent::MailAttach(tab)]);
+        assert!(app.mail_chooser.is_none());
+        let fx = app.ctl.on_mail_sent(tab, None, Err("server refused".into()));
         app.absorb(fx);
         assert!(app.enabled(ActionId::MailHeaders));
     }
