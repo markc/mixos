@@ -125,6 +125,7 @@ end
 fn commit_selection($which, $s, $follow, $apply)
   if $clip.is_echo($S, $which, $s.stamp) then return $S end
   if $apply then wl_apply($which, $s) end
+  $S.pending[$which] = nil
   $old = $S.selections[$which]
   $out = $clip.adopt($S, $which, $s, $C)
   if $old != nil and $old.blob != nil then
@@ -229,7 +230,12 @@ on clipboard.set desc "set {selection?,mime,data,encoding?,sensitive?,stamp?} or
       reply(0, json_encode({applied: true, stamp: $s.stamp}))
     end
   catch $m, $err
-    fail($err)
+    if $err.code == "BLOB_PENDING" then
+      $S.pending[$which] = {offer: $s, follow: true}
+      reply(0, json_encode({applied: false, pending: true, stamp: $s.stamp}))
+    else
+      fail($err)
+    end
   end
 end
 
@@ -251,6 +257,7 @@ on clipboard.info desc "selection metadata, mode, limits and configured members"
     reply(0, json_encode({node: $S.node, session: $S.session, mode: $mode, protocol: $mode,
       clipboard: $clip.metadata($S, "clipboard"), primary: $clip.metadata($S, "primary"),
       history: len($S.history), peers: $C.peers, text_cap: $clip.TEXT_CAP, max_bytes: $clip.MAX_BYTES,
+      pending: {clipboard: $S.pending.clipboard != nil, primary: $S.pending.primary != nil},
       lazy_wayland: false, picker: false}))
   catch $m, $err
     fail($err)
@@ -349,9 +356,49 @@ on clipboard.receive desc "member-only metadata/eager-text offer; origin stamp f
     end
     reply(0, json_encode({applied: $applied}))
   catch $m, $err
-    fail($err)
+    if $err.code == "BLOB_PENDING" then
+      $S.pending[$which] = {offer: $s, follow: false}
+      reply(0, json_encode({applied: false, pending: true, stamp: $s.stamp}))
+    else
+      fail($err)
+    end
   end
 end
+
+-- blob.fetch is asynchronous. Keep the old selection until blobd confirms
+-- verified local bytes, then resume on its native completion/pin event.
+-- A later set, clear or external copy cancels this selection's pending offer.
+fn resume_blob($which)
+  if ($event.headers ?? {}).broker_origin != "local" then return $S end
+  $pending = $S.pending[$which]
+  if $pending != nil and $pending.offer.blob.blob == body().blob then
+    try
+      return commit_selection($which, $pending.offer, $pending.follow, true)
+    catch $m, $err
+      eprint("clipd: pending blob unavailable (" .. $err.code .. ")")
+    end
+  end
+  return $S
+end
+
+on blob.fetched
+  if body().outcome == "ok" then
+    for $which in ["clipboard", "primary"]
+      $before = $S.pending[$which]
+      $S = resume_blob($which)
+      if $before != nil and $S.pending[$which] == nil then changed($which, $before.follow) end
+    end
+  end
+end
+on blob.pinned
+  for $which in ["clipboard", "primary"]
+    $before = $S.pending[$which]
+    $S = resume_blob($which)
+    if $before != nil and $S.pending[$which] == nil then changed($which, $before.follow) end
+  end
+end
+subscribe("blob.fetched")
+subscribe("blob.pinned")
 
 on clipboard.fetch async desc "member-only lazy read fenced by the original stamp"
   try

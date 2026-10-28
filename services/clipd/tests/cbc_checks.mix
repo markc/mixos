@@ -19,7 +19,7 @@ else
     ["cargo", "clippy", "-p", "mix", "-p", "mixos-mcp", "--all-targets", "--", "-D", "warnings"],
     ["cargo", "test", "-p", "mix", "-p", "mixos-mcp", "--no-fail-fast"],
     ["cargo", "clippy", "-p", "inputd", "--all-targets", "--", "-D", "warnings"],
-    ["cargo", "test", "-p", "inputd", "--lib"]
+    ["cargo", "test", "-p", "inputd"]
   ]
     print("CHECK " .. join($command, " "))
     $r = run_argv($command, {timeout: 3600, stdout: "inherit", stderr: "inherit"})

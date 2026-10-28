@@ -38,7 +38,7 @@ fn settings($raw)
 end
 
 fn new_state($node, $session)
-  return {node: $node, session: $session, selections: {clipboard: nil, primary: nil}, history: [], seen: [], rotate: 0}
+  return {node: $node, session: $session, selections: {clipboard: nil, primary: nil}, pending: {clipboard: nil, primary: nil}, history: [], seen: [], rotate: 0}
 end
 
 -- Only broker-stamped provenance decides membership. Payload node/from fields

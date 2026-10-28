@@ -280,6 +280,11 @@ Call <code>blob.fetch</code> and <code>blob.path</code> rather than advancing <c
 reply. Set binary data through <code>blob.put</code> followed by <code>clipboard.set {blob}</code>;
 inline non-text bytes are refused. This is a deliberate difference from the
 unmerged Rust prototype's binary Bus chunks, required by the blob-only rule.</p>
+<p>Wayland blob sets/imports whose bytes are not present return
+<code>{applied:false,pending:true,stamp}</code>. The existing selection stays usable while
+blobd fetches. Native <code>blob.fetched</code>/<code>blob.pinned</code> events resume ownership after
+verified bytes arrive. <code>clipboard.info.pending</code> reports each selection's wait;
+a later set, clear or external copy cancels the older pending offer.</p>
 <p>Mix's Bus-only builtins are <code>clip_get([selection,mime])</code> and
 <code>clip_set(text[,selection,mime])</code>. A sole MIME argument remains accepted.
 <code>clip_get</code> raises for a blob reference. The MCP tools are <code>clipboard_get</code> and

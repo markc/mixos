@@ -8,3 +8,5 @@
 - Use external wl-clipboard tools for graphical sessions. Lazy remote Wayland
   ownership is unavailable and refused; see the manual before live acceptance.
 - Reuse Bus-only Mix builtins and native MCP clipboard tools.
+- Resume pending Wayland blob ownership on blobd events; a newer copy or clear
+  fences late arrivals independently for both selections.

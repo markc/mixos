@@ -52,6 +52,12 @@ reply. Set binary data through `blob.put` followed by `clipboard.set {blob}`;
 inline non-text bytes are refused. This is a deliberate difference from the
 unmerged Rust prototype's binary Bus chunks, required by the blob-only rule.
 
+Wayland blob sets/imports whose bytes are not present return
+`{applied:false,pending:true,stamp}`. The existing selection stays usable while
+blobd fetches. Native `blob.fetched`/`blob.pinned` events resume ownership after
+verified bytes arrive. `clipboard.info.pending` reports each selection's wait;
+a later set, clear or external copy cancels the older pending offer.
+
 Mix's Bus-only builtins are `clip_get([selection,mime])` and
 `clip_set(text[,selection,mime])`. A sole MIME argument remains accepted.
 `clip_get` raises for a blob reference. The MCP tools are `clipboard_get` and
