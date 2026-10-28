@@ -300,20 +300,20 @@ fn normalise_binary_message_at_depth(raw: &[u8], depth: usize) -> Result<Vec<u8>
         if !data.contains(&0) {
             continue;
         }
+        let encoding = part.content_transfer_encoding().unwrap_or("7bit");
+        if !["7bit", "8bit", "binary"]
+            .iter()
+            .any(|s| s.eq_ignore_ascii_case(encoding))
+        {
+            return Err(());
+        }
         let (cte, data) = match &part.body {
             PartType::Multipart(_) => continue,
-            PartType::Message(inner) => (
+            PartType::Message(_) => (
                 "8bit",
-                normalise_binary_message_at_depth(inner.raw_message.as_ref(), depth + 1)?,
+                normalise_binary_message_at_depth(data, depth + 1)?,
             ),
             _ => {
-                let cte = part.content_transfer_encoding().unwrap_or("7bit");
-                if !["7bit", "8bit", "binary"]
-                    .iter()
-                    .any(|s| s.eq_ignore_ascii_case(cte))
-                {
-                    return Err(());
-                }
                 let encoded = base64::engine::general_purpose::STANDARD.encode(data);
                 let mut body = Vec::with_capacity(encoded.len() + encoded.len() / 38);
                 for (i, line) in encoded.as_bytes().chunks(76).enumerate() {
