@@ -33,7 +33,11 @@ fn call($command, $b)
 end
 fn eventually($f)
   for $i = 1 to 80
-    if $f() then return true end
+    try
+      if $f() then return true end
+    catch $m
+      -- Not-ready replies need not have the success fields yet.
+    end
     sleep(0.1)
   end
   return false
