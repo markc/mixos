@@ -53,7 +53,8 @@ fn interface_font_reaches_authored_panel_text_layout_and_scene_frame_titles() {
                     let label = text.galley.job.text.as_str();
                     let font = &text.galley.job.sections[0].format.font_id;
                     let expected = match label {
-                        "Body" => crate::appearance::ui_size(&look.theme, 1.0),
+                        // The scene schema supplies 13 px when omitted.
+                        "Body" => 13.0 * ratio,
                         "Clock" => 19.0 * ratio,
                         "Mono" => 13.0,
                         "Frame" => {
