@@ -747,7 +747,7 @@ impl Controller {
                 .collect();
             // Accepted diagnostic under the state lock: the launch caller
             // already reclaimed the terminal before entering abort cleanup.
-            eprintln!("mix: failed job {id} survived TERM/KILL grace: {survivors:?}");
+            let _ = writeln!(io::stderr(), "mix: failed job {id} survived TERM/KILL grace: {survivors:?}");
         }
     }
     fn launch_stopped(&self, id: usize) -> bool {
@@ -809,7 +809,7 @@ impl Drop for TerminalLease<'_> {
             foreground(self.controller.tty.as_raw_fd(), self.controller.shell_pgid)?;
             set_modes(self.controller.tty.as_raw_fd(), &self.saved)
         }) {
-            eprintln!("mix: terminal restore: {e}");
+            let _ = writeln!(io::stderr(), "mix: terminal restore: {e}");
         }
         if let Some(observer) = self.controller.foreground_observer.get() {
             observer(false);
