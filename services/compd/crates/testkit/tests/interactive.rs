@@ -339,7 +339,10 @@ fn delayed_preview_starts_at_the_latest_window_frame_in_the_same_zone() {
         (640, 480).into(),
     );
     h.advance_time(ms(100));
-    assert_eq!(h.comp().drag.as_ref().unwrap().preview_rectangle, Some(frame));
+    assert_eq!(
+        h.comp().drag.as_ref().unwrap().preview_rectangle,
+        Some(frame)
+    );
 }
 
 #[test]
