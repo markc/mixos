@@ -43,7 +43,6 @@ pub async fn set(
                 aliases_runtime,
                 account_id,
                 obj,
-                false,
                 legacy_sent_move,
             )
             .await;
@@ -94,7 +93,7 @@ pub(crate) async fn create_submission_strict(
     account_id: i32,
     obj: &serde_json::Value,
 ) -> Result<Uuid> {
-    create_submission(db, mailstore, aliases_runtime, account_id, obj, true, true).await
+    create_submission(db, mailstore, aliases_runtime, account_id, obj, true).await
 }
 
 async fn create_submission(
@@ -103,7 +102,6 @@ async fn create_submission(
     aliases_runtime: &Arc<::props::Runtime>,
     account_id: i32,
     obj: &serde_json::Value,
-    _strict_local: bool,
     legacy_sent_move: bool,
 ) -> Result<Uuid> {
     #[derive(Deserialize)]

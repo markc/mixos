@@ -698,7 +698,7 @@ async fn generate_bounce(state: &SmtpState, from: &str, to: &[String], error: &s
     Ok(())
 }
 
-/// Deliver a message to all recipients at a specific domain via MX lookup.
+/// Deliver to a DNS domain via MX lookup, or directly to an address literal.
 async fn deliver_to_domain(
     state: &SmtpState,
     resolver: &TokioResolver,
@@ -708,6 +708,10 @@ async fn deliver_to_domain(
     domain: &str,
     data: &[u8],
 ) -> Result<String> {
+    // RFC 5321 section 5.1: a literal is the destination host, not an MX
+    // lookup name. Bare IPs also let rustls verify IP subjectAltNames.
+    let literal_host = super::envelope::literal_ip(domain).map(|ip| ip.to_string());
+    let destination = literal_host.as_deref().unwrap_or(domain);
     // Test seam: `SmtpConfig::test_mx_overrides` short-circuits both
     // the MX lookup and the `host:port` resolution paths, dialing
     // the mapped `SocketAddr` directly. The rest of the wire flow
@@ -716,8 +720,11 @@ async fn deliver_to_domain(
     // the override does not duplicate SMTP transaction logic.
     // Production always leaves the map empty; see
     // `SmtpConfig::test_mx_overrides` for the contract.
-    if let Some(addr) = state.config.test_mx_overrides.get(domain).copied() {
-        return try_deliver_addr(addr, domain, helo_host, from, recipients, data).await;
+    if let Some(addr) = state.config.test_mx_overrides.get(destination).copied() {
+        return try_deliver_addr(addr, destination, helo_host, from, recipients, data).await;
+    }
+    if literal_host.is_some() {
+        return try_deliver(destination, 25, helo_host, from, recipients, data, &state.config.outbound_bind).await;
     }
 
     // MX lookup

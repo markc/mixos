@@ -56,6 +56,9 @@ SMTPUTF8 and preserve their bytes; outbound delivery derives the extensions
 it needs from the stored message. IPv4 and IPv6 address literals are accepted
 syntactically; recipient policy may still refuse them. A rejected MAIL command
 preserves the previously accepted envelope and recipients.
+Outbound delivery to IPv4 and IPv6 literals connects directly to port 25 without
+an MX lookup, using the normal TLS and source-address policy. This also applies
+to queued DSNs addressed to literal senders.
 Configure hosted internationalised domains in `maild.domains` using their DNS
 A-label (for example `xn--fsqu00a.example.com`); the RCPT gate converts the
 envelope's U-label for that authoritative lookup.
@@ -127,6 +130,8 @@ and EmailSubmission records expire together after `delivery_retention_days`
 submissions retain their complete status until delivery finishes. The worker
 sweeps retention on each queue pass and records expiry in the JMAP
 EmailSubmission change stream in the same transaction as deletion.
+The first sweep also removes pre-receipt EmailSubmission records older than the
+configured window; it does not fabricate outcomes for those older submissions.
 
 ## Local aliases
 

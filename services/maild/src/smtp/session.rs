@@ -491,7 +491,16 @@ where
                         let reason = e
                             .downcast_ref::<crate::sieve::delivery::Rejected>()
                             .unwrap();
-                        write_line(writer, &format!("550 5.7.1 {}", reason.0)).await?;
+                        let reply = format!("550 5.7.1 {}", reason.0);
+                        crate::maillog::smtp_reject(
+                            session.peer,
+                            "end-of-data",
+                            &reply,
+                            session.mail_from.as_deref(),
+                            session.rcpt_to.first().map(String::as_str),
+                            session.ehlo_host.as_deref(),
+                        );
+                        write_line(writer, &reply).await?;
                     }
                     Err(e) => {
                         tracing::error!(

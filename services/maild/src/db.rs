@@ -529,6 +529,7 @@ CREATE TABLE IF NOT EXISTS email_submissions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_submissions_account ON email_submissions (account_id);
+CREATE INDEX IF NOT EXISTS idx_submissions_created ON email_submissions (created_at);
 
 -- vacation_responses — JMAP VacationResponse (RFC 8621 §8)
 CREATE TABLE IF NOT EXISTS vacation_responses (
