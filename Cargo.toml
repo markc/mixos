@@ -49,7 +49,9 @@ anyhow = "1"
 axum = { version = "0.8", features = ["ws"] }
 arc-swap = "1"
 base64 = "0.22"
-blake3 = "1"
+# `pure`: Rust SIMD only, no C or assembly (tools/foreign.conf.mix). Same
+# hashes; only the AVX-512 path is lost.
+blake3 = { version = "1", features = ["pure"] }
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4", features = ["derive"] }
 ed25519-dalek = { version = "2", features = ["std", "rand_core"] }

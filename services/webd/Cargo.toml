@@ -129,7 +129,7 @@ async-trait = "0.1"
 # (media.rs): `blake3(bytes)` → a collision-resistant, unguessable on-disk
 # name (a 128-bit prefix is stored). Already in the
 # workspace graph via mixos-lib-mix's `crypto` feature, so no new build.
-blake3 = "1"
+blake3.workspace = true
 argon2 = "0.5"
 
 [dev-dependencies]
