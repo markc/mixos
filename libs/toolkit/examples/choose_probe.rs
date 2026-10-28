@@ -49,7 +49,7 @@ async fn drive(
         bus.call(
             "files",
             "files.ui.click",
-            json!({"viewport":id,"label":"Filter"}),
+            json!({"viewport":id,"label":"File type"}),
         )
         .await?;
         bus.call(
@@ -127,8 +127,11 @@ async fn main() -> Result<()> {
                     tokio::time::sleep(Duration::from_millis(10)).await;
                 }
             })
-            .await?;
-            driver.await??;
+            .await;
+            // Surface a failed drive command before a chooser deadline masks
+            // it. A drive error can otherwise leave the live window waiting.
+            tokio::time::timeout(WAIT, driver).await???;
+            let outcome = outcome?;
             ensure!(pending.tier() == Tier::Bus, "real provider was bypassed");
             if cancel {
                 ensure!(outcome == Outcome::Cancelled, "Cancel returned {outcome:?}");

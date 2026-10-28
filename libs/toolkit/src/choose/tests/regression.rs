@@ -87,7 +87,7 @@ fn edited_request_is_a_final_validation_error_without_a_worker() {
 }
 
 #[test]
-fn opening_viewport_app_id_is_forwarded_and_correlation_is_unique() {
+fn opening_viewport_app_id_is_forwarded() {
     let ctx = Context::default();
     ctx.set_embed_viewports(false);
     let child = ViewportId::from_hash_of("app-id-test");
@@ -99,9 +99,7 @@ fn opening_viewport_app_id_is_forwarded_and_correlation_is_unique() {
         );
     })
     .drop_without_applying_deltas();
-    let mut one = choose(request("{}").unwrap());
-    let two = choose(request("{}").unwrap());
-    assert_ne!(one.request.correlation, two.request.correlation);
+    let mut one = choose(request(r#"{"correlation":"app-id-test"}"#).unwrap());
     let (tx, rx) = mpsc::channel();
     one.driver = Some(Box::new(move |req, _, emitter| {
         tx.send(req).unwrap();
@@ -111,6 +109,14 @@ fn opening_viewport_app_id_is_forwarded_and_correlation_is_unique() {
     let forwarded = rx.recv_timeout(Duration::from_secs(5)).unwrap();
     assert_eq!(forwarded.on_behalf_of.as_deref(), Some("dev.mixos.example"));
     assert_eq!(forwarded.correlation, one.request.correlation);
+}
+
+#[test]
+fn absent_correlation_is_unique_per_handle() {
+    let one = choose(request("{}").unwrap());
+    let two = choose(request("{}").unwrap());
+    assert!(one.request.correlation.is_some());
+    assert_ne!(one.request.correlation, two.request.correlation);
 }
 
 #[test]
