@@ -532,6 +532,7 @@ mod tests {
         service: Arc<Service>,
         reader: Driver,
         events: tokio::sync::mpsc::Receiver<Event>,
+        changes: tokio::sync::mpsc::Receiver<(bool, Vec<String>)>,
         tasks: Vec<tokio::task::JoinHandle<()>>,
         stop: std::sync::mpsc::Sender<()>,
         server: Option<std::thread::JoinHandle<()>>,
@@ -572,15 +573,52 @@ mod tests {
                 }
             });
             let owner = service.clone();
+            let (changed, changes) = tokio::sync::mpsc::channel(16);
             let sends = tokio::spawn(async move {
+                let mut classifiers = tokio::task::JoinSet::new();
                 while let Some(event) = events.recv().await {
-                    if let Event::Send { stamp, primary, mime, fd } = event {
-                        let selection = owner.state.lock().await.selections[usize::from(primary)].clone().filter(|s| s.stamp == stamp);
-                        if let Some(s) = selection && let Ok(bytes) = owner.bytes(&s, &mime, primary).await { let _ = crate::wayland::write_fd(fd, &bytes).await; }
+                    match event {
+                        Event::Selection { primary, offer, types, sequence } => {
+                            let observed_types = types.clone();
+                            if let Some(selection) = owner.begin_observe(primary, offer, types, sequence).await {
+                                let owner = owner.clone();
+                                let changed = changed.clone();
+                                classifiers.spawn(async move {
+                                    owner.classify(primary, selection).await;
+                                    let _ = changed.send((primary, observed_types)).await;
+                                });
+                            }
+                        }
+                        Event::Send { stamp, primary, mime, fd } => {
+                            let selection = owner.state.lock().await.selections[usize::from(primary)].clone().filter(|s| s.stamp == stamp);
+                            if let Some(s) = selection && let Ok(bytes) = owner.bytes(&s, &mime, primary).await { let _ = crate::wayland::write_fd(fd, &bytes).await; }
+                        }
+                        Event::Failed(error) => panic!("{error}"),
                     }
                 }
             });
-            Self { service, reader, events: observed, tasks: vec![calls, sends], stop, server: Some(server) }
+            Self { service, reader, events: observed, changes, tasks: vec![calls, sends], stop, server: Some(server) }
+        }
+        async fn copy_external(&mut self, selection: Selection, primary: bool) {
+            self.reader.set(&selection, primary, false).await.unwrap();
+            let marker = selection.stamp.marker();
+            tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    tokio::select! {
+                        event = self.events.recv() => match event.expect("external clipboard connection closed") {
+                            Event::Send { stamp, mime, fd, .. } if stamp == selection.stamp => {
+                                if let Some(bytes) = selection.data.get(&mime) { crate::wayland::write_fd(fd, bytes).await.unwrap(); }
+                            }
+                            Event::Failed(error) => panic!("{error}"),
+                            _ => {}
+                        },
+                        update = self.changes.recv() => {
+                            let (got_primary, types) = update.expect("selection observer closed");
+                            if got_primary == primary && types.contains(&marker) { break; }
+                        }
+                    }
+                }
+            }).await.unwrap();
         }
         async fn paste(&mut self, marker: &str, mime: &str) -> Vec<u8> {
             let offer = tokio::time::timeout(Duration::from_secs(5), async {
@@ -636,6 +674,30 @@ mod tests {
         let selection = target.service.state.lock().await.selections[0].clone().unwrap();
         assert!(target.service.bytes(&selection, "image/png", false).await.unwrap_err().to_string().contains("SOURCE_GONE"));
         assert!(target.paste(&gone.stamp.marker(), "image/png").await.is_empty());
+        target.service.client.close().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn wayland_watcher_classifies_kde_hints_for_clipboard_and_primary() {
+        let broker = test_broker::Broker::start();
+        let mut source = Desk::start("vt1", "vt4", &broker.url).await;
+        let mut target = Desk::start("vt4", "vt1", &broker.url).await;
+        let mut public = Selection::owned(Stamp::new("vt1"), "text/plain".into(), b"public text".to_vec(), false);
+        public.mime_types.push(SECRET_HINT.into());
+        public.data.insert(SECRET_HINT.into(), Arc::new(b"public".to_vec()));
+        source.copy_external(public, false).await;
+        assert!(!source.service.state.lock().await.selections[0].as_ref().unwrap().sensitive);
+        assert_eq!(source.service.state.lock().await.history[0].data, "public text");
+        let stamp = source.service.state.lock().await.selections[0].as_ref().unwrap().stamp.clone();
+        source.service.push("vt4").await.unwrap();
+        assert_eq!(target.paste(&stamp.marker(), "text/plain").await, b"public text");
+        for primary in [false, true] {
+            source.copy_external(Selection::owned(Stamp::new("vt1"), "text/plain".into(), b"private text".to_vec(), true), primary).await;
+            assert!(source.service.state.lock().await.selections[usize::from(primary)].as_ref().unwrap().sensitive);
+            assert!(source.service.state.lock().await.history.iter().all(|e| e.data != "private text"));
+        }
+        assert!(source.service.push("vt4").await.unwrap_err().to_string().contains("SENSITIVE"));
+        source.service.client.close().await;
         target.service.client.close().await;
     }
     #[test]
