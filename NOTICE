@@ -5,6 +5,10 @@ Licensed MIT OR Apache-2.0 (LICENSE-MIT, LICENSE-APACHE).
 Incorporated and third-party code and assets are listed here as each component
 enters the tree. Per-file licensing is recorded in REUSE.toml.
 
+services/clipd/tests/snapshots/clipboard_history.png is an original MixOS
+test render, copyright 2026 Mark Constable, MIT OR Apache-2.0. Its glyphs use
+the toolkit fonts credited below.
+
 Third-party vendored code under vendor/ keeps its own licence files, and each
 directory records its upstream base and local patches (vendor/README.md).
 
