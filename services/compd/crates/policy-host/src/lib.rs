@@ -33,6 +33,7 @@ pub mod panel;
 pub mod project;
 pub mod region;
 pub mod truth;
+pub mod tiling;
 pub mod x11;
 pub mod xwayland;
 

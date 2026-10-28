@@ -116,6 +116,7 @@ pub struct CompSnapshot {
     pub decoration: DecorationSnapshot,
     pub bindings: BindingsSnapshot,
     pub input: InputSnapshot,
+    pub tiling: crate::tiling::TilingConfig,
     #[cfg(feature = "xwayland")]
     pub xwayland: XwaylandSnapshot,
     /// Observed linux-dmabuf import outcomes (volatile; filled only in read
@@ -589,6 +590,7 @@ impl CompSnapshot {
             "decoration" => self.decoration.select(tail),
             "bindings" => self.bindings.select(tail),
             "input" => self.input.select(tail),
+            "tiling" => select_serialised(&self.tiling, tail),
             #[cfg(feature = "xwayland")]
             "xwayland" => self.xwayland.select(tail),
             "dmabuf" => self.dmabuf.select(tail),
@@ -614,6 +616,7 @@ impl CompSnapshot {
             "decoration" => self.decoration.node_kind(tail),
             "bindings" => self.bindings.node_kind(tail),
             "input" => self.input.node_kind(tail),
+            "tiling" => serialised_node_kind(&self.tiling, tail),
             #[cfg(feature = "xwayland")]
             "xwayland" => self.xwayland.node_kind(tail),
             "dmabuf" => self.dmabuf.node_kind(tail),
@@ -1202,6 +1205,18 @@ pub struct DescribeEntry {
 }
 
 macro_rules! descriptor {
+    ($segments:expr, $ty:ident, $description:expr, persisted, range = $range:expr) => {
+        DescribeEntry {
+            persistence: Some("file"),
+            ..descriptor!($segments, $ty, $description, mutable, range = $range)
+        }
+    };
+    ($segments:expr, $ty:ident, $description:expr, persisted) => {
+        DescribeEntry {
+            persistence: Some("file"),
+            ..descriptor!($segments, $ty, $description, mutable)
+        }
+    };
     ($segments:expr, $ty:ident, $description:expr) => {
         DescribeEntry {
             pattern: $segments,
@@ -1879,6 +1894,14 @@ pub static DESCRIPTORS: &[DescribeEntry] = &[
         List,
         "The user's own user-key rows (keymap.v1, side-exact)"
     ),
+    descriptor!(&[L("tiling"), L("edge_tiling")], Bool, "Enable drag edge zones", persisted),
+    descriptor!(&[L("tiling"), L("top_maximize")], Bool, "Enable the top drag maximise zone", persisted),
+    descriptor!(&[L("tiling"), L("corner_ratio")], Number, "Fraction of each side band used by each corner", persisted, range = "0.05..=0.5"),
+    descriptor!(&[L("tiling"), L("side_band_px")], Number, "Side drag band in logical pixels", persisted, range = "1..=200"),
+    descriptor!(&[L("tiling"), L("top_band_px")], Number, "Top drag band in logical pixels", persisted, range = "1..=200"),
+    descriptor!(&[L("tiling"), L("shared_edge_dwell_ms")], Number, "Shared output edge dwell in milliseconds", persisted, range = "0..=2000"),
+    descriptor!(&[L("tiling"), L("preview_delay_ms")], Number, "Delay before showing and committing a drag zone", persisted, range = "0..=2000"),
+    descriptor!(&[L("tiling"), L("preview_animation_ms")], Number, "Preview growth duration in milliseconds", persisted, range = "0..=1000"),
     descriptor!(
         &[L("input"), L("corners"), L("holders")],
         Bool,

@@ -168,6 +168,7 @@ pub fn project(lp: &Loop, identity: Identity, scopes: &ReadScopes) -> CompSnapsh
     let stack = project_stack(lp, &placements);
     let counters = world::window::draw::occlude::record::counters();
     CompSnapshot {
+        tiling: lp.inner.comp.tiling,
         session: None,
         // The renderer's draw-time cull as the occlusion snapshot (record.rs).
         occlusion: OcclusionSnapshot {

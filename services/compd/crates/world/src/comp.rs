@@ -24,6 +24,7 @@ pub mod band;
 pub mod bindings;
 pub mod causes;
 pub mod corners;
+pub mod clock;
 pub mod fullscreen;
 pub mod geometry;
 pub mod injection;
@@ -190,6 +191,8 @@ pub struct CompState {
     /// The interactive move/resize in progress, if any.
     pub interactive: Option<Interactive>,
     pub drag: Option<tiling::Drag>,
+    pub clock: clock::Clock,
+    pub tiling: comp_model::tiling::TilingConfig,
     /// Escape's release remains consumed after the move has ended.
     pub drag_escape: Option<u32>,
     /// Hot corners: the detector, the owned presses and the topics they

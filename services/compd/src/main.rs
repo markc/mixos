@@ -621,6 +621,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Sampler::Drop closes its internal registration channel, which causes
     // the thread to exit cleanly when state's sampler field is dropped.
     info!("Event Loop start");
+    let mut tiling_wakeup = policy_host::tiling::Wakeup::default();
+    let tiling_handle = event_loop.handle();
     event_loop.run(None, &mut state, move |state| {
         // Apply the world effects this iteration's protocol handlers recorded
         // (map/commit/destroy/fullscreen/layer/dmabuf) — see SMITHAY_DECOUPLING.md.
@@ -712,6 +714,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             scenes.service(state);
         }
         comp::reconcile_scene_geometry(state);
+        policy_host::tiling::service(state);
+        tiling_wakeup.rearm(&tiling_handle, policy_host::tiling::deadline(&state.inner.comp), |_| {});
         // Deliver what this pass queued on world channels NOW, not at the next
         // frame's dispatch. Input systems announce effects on channels: an UI
         // button RELEASE goes canvas -> UI_BUTTON -> surface system -> registry,

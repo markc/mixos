@@ -154,6 +154,8 @@ pub struct DefaultMode {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Preference {
+    /// Persisted comp.props tiling leaves; the policy host validates each leaf.
+    pub tiling: serde_json::Map<String, serde_json::Value>,
     /// Pointer cursor speed multiplier on relative motion (`1.0` = unscaled). The
     /// same value gives the same logical speed at every output scale (compd
     /// multiplies the delta by the output's scale as well).
@@ -652,6 +654,7 @@ pub struct Ime {
 impl Default for Preference {
     fn default() -> Self {
         Self {
+            tiling: Default::default(),
             cursor_sensitivity: 1.0,
             input_natural_scroll: true,
             input_edge_pan: false,

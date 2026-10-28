@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! Immediate outer-edge move zones. No corner-detector state is read here.
+//! Timed edge move zones. No corner-detector state is read here.
+
+use std::time::{Duration, Instant};
+use comp_model::tiling::TilingConfig;
 
 use smithay::backend::renderer::element::{Id, Kind, solid::SolidColorRenderElement};
 use smithay::backend::renderer::utils::CommitCounter;
@@ -10,9 +13,6 @@ use smithay::utils::{Logical, Physical, Point, Rectangle};
 use super::{CompState, FloatGeometry, Placement, TileSlot, geometry};
 use crate::state::Loop;
 
-pub const SIDE_BAND: f64 = 20.0;
-pub const TOP_BAND: f64 = 5.0;
-pub const CORNER_RATIO: f64 = 0.25;
 pub const PREVIEW_ALPHA: f32 = 0.25;
 const OUTLINE_WIDTH: f64 = 2.0;
 
@@ -23,6 +23,43 @@ pub struct Armed {
     pub rectangle: Rectangle<i32, Logical>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct Candidate {
+    pub target: Armed,
+    pub shared: bool,
+}
+
+#[derive(Clone, Debug)]
+struct Pending {
+    candidate: Candidate,
+    since: Instant,
+    from: Rectangle<i32, Logical>,
+    ready: Instant,
+    duration: Duration,
+}
+
+#[derive(Clone, Debug)]
+struct Animation {
+    from: Rectangle<i32, Logical>,
+    to: Rectangle<i32, Logical>,
+    started: Instant,
+    duration: Duration,
+}
+
+impl Animation {
+    fn rectangle(&self, now: Instant) -> Rectangle<i32, Logical> {
+        let t = if self.duration.is_zero() { 1.0 } else {
+            (now.saturating_duration_since(self.started).as_secs_f64() / self.duration.as_secs_f64()).min(1.0)
+        };
+        let ease = 1.0 - (1.0 - t).powi(3);
+        let axis = |a, b| (f64::from(a) + f64::from(b - a) * ease).round() as i32;
+        Rectangle::new(
+            (axis(self.from.loc.x, self.to.loc.x), axis(self.from.loc.y, self.to.loc.y)).into(),
+            (axis(self.from.size.w, self.to.size.w), axis(self.from.size.h, self.to.size.h)).into(),
+        )
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Drag {
     pub placement: Placement,
@@ -31,6 +68,9 @@ pub struct Drag {
     pub start: Option<Rectangle<i32, Logical>>,
     pub start_output: Option<String>,
     pub armed: Option<Armed>,
+    pending: Option<Pending>,
+    animation: Option<Animation>,
+    pub preview_rectangle: Option<Rectangle<i32, Logical>>,
 }
 
 impl Drag {
@@ -41,7 +81,87 @@ impl Drag {
             start: None,
             start_output: None,
             armed: None,
+            pending: None,
+            animation: None,
+            preview_rectangle: None,
         }
+    }
+
+    pub fn disarm(&mut self) {
+        self.armed = None;
+        self.pending = None;
+        self.animation = None;
+        self.preview_rectangle = None;
+    }
+
+    pub fn sample(&mut self, candidate: Option<Candidate>, frame: Rectangle<i32, Logical>, config: TilingConfig, now: Instant) -> bool {
+        let before = self.preview_rectangle;
+        let Some(candidate) = candidate else {
+            self.disarm();
+            return before.is_some();
+        };
+        let current = self.animation.as_ref().map(|a| a.rectangle(now)).unwrap_or(frame);
+        if self.pending.as_ref().is_none_or(|p| p.candidate != candidate) {
+            self.disarm();
+            self.pending = Some(Pending {
+                candidate,
+                since: now,
+                from: current,
+                ready: now,
+                duration: Duration::ZERO,
+            });
+        }
+        let pending = self.pending.as_mut().expect("sampled zone");
+        pending.ready = pending.since + Duration::from_millis(
+            if pending.candidate.shared { config.shared_edge_dwell_ms } else { 0 }
+                + config.preview_delay_ms,
+        );
+        let duration = Duration::from_millis(config.preview_animation_ms);
+        if pending.duration != duration && let Some(animation) = self.animation.as_mut() {
+            animation.from = current;
+            animation.started = now;
+            animation.duration = duration;
+        }
+        pending.duration = duration;
+        self.tick(now);
+        before != self.preview_rectangle
+    }
+
+    /// A timer advances only the last sampled zone, never pointer or corner state.
+    pub fn tick(&mut self, now: Instant) -> bool {
+        let before = self.preview_rectangle;
+        if let Some(pending) = &self.pending {
+            if now < pending.ready {
+                self.armed = None;
+                self.animation = None;
+                self.preview_rectangle = None;
+                return before.is_some();
+            }
+            if self.armed.is_none() {
+                self.armed = Some(pending.candidate.target.clone());
+                self.animation = Some(Animation {
+                    from: pending.from,
+                    to: pending.candidate.target.rectangle,
+                    started: pending.ready,
+                    duration: pending.duration,
+                });
+            }
+        }
+        self.preview_rectangle = self.animation.as_ref().map(|a| a.rectangle(now));
+        before != self.preview_rectangle
+    }
+
+    pub fn next_deadline(&self, now: Instant) -> Option<Instant> {
+        let pending = self.pending.as_ref()?;
+        if self.armed.is_none() {
+            return Some(pending.ready);
+        }
+        let animation = self.animation.as_ref()?;
+        let end = animation.started + animation.duration;
+        (now < end).then(|| {
+            let step = now.saturating_duration_since(animation.started).as_millis() as u64 / 16 + 1;
+            (animation.started + Duration::from_millis(step * 16)).min(end)
+        })
     }
 }
 
@@ -79,38 +199,32 @@ impl InnerEdges {
 pub fn zone(
     area: Rectangle<i32, Logical>,
     pointer: Point<f64, Logical>,
-    inner: InnerEdges,
+    config: TilingConfig,
     resizable: bool,
     maximizable: bool,
     shift: bool,
 ) -> Option<Placement> {
-    if !resizable || shift || area.size.w <= 0 || area.size.h <= 0 {
+    if !config.edge_tiling || !resizable || shift || area.size.w <= 0 || area.size.h <= 0 {
         return None;
     }
     let (x, y) = (pointer.x, pointer.y);
     let (left, top) = (f64::from(area.loc.x), f64::from(area.loc.y));
     let (width, height) = (f64::from(area.size.w), f64::from(area.size.h));
-    let side = if x <= left + SIDE_BAND {
-        if inner.left {
-            return None;
-        }
+    let side = if x <= left + config.side_band_px as f64 {
         Some(false)
-    } else if x >= left + width - SIDE_BAND {
-        if inner.right {
-            return None;
-        }
+    } else if x >= left + width - config.side_band_px as f64 {
         Some(true)
     } else {
         None
     };
     if let Some(right) = side {
-        let slot = if y <= top + CORNER_RATIO * height {
+        let slot = if y <= top + config.corner_ratio * height {
             if right {
                 TileSlot::TopRight
             } else {
                 TileSlot::TopLeft
             }
-        } else if y >= top + height - CORNER_RATIO * height {
+        } else if y >= top + height - config.corner_ratio * height {
             if right {
                 TileSlot::BottomRight
             } else {
@@ -125,7 +239,7 @@ pub fn zone(
             slot,
             output: String::new(),
         })
-    } else if y <= top + TOP_BAND && maximizable && !inner.top {
+    } else if y <= top + config.top_band_px as f64 && maximizable && config.top_maximize {
         Some(Placement::Maximized {
             output: String::new(),
         })
@@ -141,7 +255,7 @@ pub fn armed(
     id: surfaces::SurfaceId,
     pointer: Point<f64, Logical>,
     shift: bool,
-) -> Option<Armed> {
+) -> Option<Candidate> {
     let output = space.outputs().find(|output| {
         space
             .output_geometry(output)
@@ -171,7 +285,13 @@ pub fn armed(
     let local = pointer - outer.loc.to_f64();
     let local_area = Rectangle::new(area.loc - outer.loc, area.size);
     let placement =
-        zone(local_area, local, inner, resizable, maximizable, shift)?.on_output(output.name());
+        zone(local_area, local, comp.tiling, resizable, maximizable, shift)?.on_output(output.name());
+    let shared = match &placement {
+        Placement::Tiled { slot: TileSlot::Left | TileSlot::TopLeft | TileSlot::BottomLeft, .. } => inner.left,
+        Placement::Tiled { .. } => inner.right,
+        Placement::Maximized { .. } => inner.top,
+        Placement::Floating => false,
+    };
     let rectangle = match &placement {
         Placement::Tiled { slot, output } => {
             let workspace = comp
@@ -183,10 +303,10 @@ pub fn armed(
         }
         _ => area,
     };
-    Some(Armed {
+    Some(Candidate { target: Armed {
         placement,
         rectangle,
-    })
+    }, shared })
 }
 
 /// xkb has already processed this key; both its edges are intercepted ahead of
@@ -306,7 +426,10 @@ pub fn preview(
         return Vec::new();
     };
     let scale = output.current_scale().fractional_scale();
-    let local = Rectangle::new(armed.rectangle.loc - outer.loc, armed.rectangle.size);
+    let Some(rectangle) = comp.drag.as_ref().and_then(|d| d.preview_rectangle) else {
+        return Vec::new();
+    };
+    let local = Rectangle::new(rectangle.loc - outer.loc, rectangle.size);
     elements(local.to_physical_precise_round(scale), scale)
 }
 
@@ -333,7 +456,7 @@ mod tests {
                 zone(
                     area(),
                     point.into(),
-                    InnerEdges::default(),
+                    TilingConfig::default(),
                     true,
                     true,
                     false
@@ -348,7 +471,7 @@ mod tests {
             zone(
                 area(),
                 (500.0, 35.0).into(),
-                InnerEdges::default(),
+                TilingConfig::default(),
                 true,
                 true,
                 false
@@ -365,7 +488,7 @@ mod tests {
                 zone(
                     area(),
                     point.into(),
-                    InnerEdges::default(),
+                    TilingConfig::default(),
                     true,
                     true,
                     false
@@ -376,15 +499,7 @@ mod tests {
     }
 
     #[test]
-    fn blocked_bands_do_not_fall_through_to_maximise() {
-        let inner = InnerEdges {
-            left: true,
-            right: true,
-            top: true,
-        };
-        for point in [(0.0, 0.0), (1040.0, 0.0), (500.0, 0.0)] {
-            assert_eq!(zone(area(), point.into(), inner, true, true, false), None);
-        }
+    fn shift_and_size_hints_disable_zones() {
         for (resize, max, shift) in [
             (false, true, false),
             (true, true, true),
@@ -394,7 +509,7 @@ mod tests {
                 zone(
                     area(),
                     (500.0, 0.0).into(),
-                    InnerEdges::default(),
+                    TilingConfig::default(),
                     resize,
                     max,
                     shift

@@ -425,7 +425,7 @@ fn transition(
         }
     }
     comp.set_placement(id, window, placement);
-    if fullscreen_owns(window) {
+    if fullscreen_owns(window) && window.fullscreen().is_some() {
         // Fullscreen retains the visible slot until exit. A transition back to
         // Floating changes where that exit must land, without moving it now.
         if restoring_float
@@ -587,6 +587,15 @@ pub fn refresh_usable(
         .collect();
     let changed = usable != comp.usable;
     if changed {
+        // Restore geometry retains its size. Map its centre between usable
+        // areas, including migration off a removed output, then clamp it.
+        for saved in comp.float_geometries.values_mut() {
+            let destination = usable.get_key_value(&saved.output).or_else(|| usable.first_key_value());
+            let Some((name, new)) = destination else { continue };
+            let old = comp.usable.get(&saved.output).copied().unwrap_or(*new);
+            saved.location = remap_float(saved, old, *new);
+            saved.output.clone_from(name);
+        }
         comp.usable = usable;
         comp.outputs_changed();
     }
@@ -614,7 +623,11 @@ pub fn refresh_usable(
             continue;
         };
         if placement.output() != Some(output.as_str()) {
-            comp.set_placement(*id, window, placement.clone().on_output(output.clone()));
+            // Output removal restores the saved float on a surviving display.
+            // Never silently transfer a constrained placement to that display.
+            set_placement(comp, space, *id, window, Placement::Floating);
+            change.windows = true;
+            continue;
         }
         let workspace = comp
             .registry
@@ -642,6 +655,16 @@ pub fn refresh_usable(
         }
     }
     change
+}
+
+fn remap_float(saved: &FloatGeometry, old: Rectangle<i32, Logical>, new: Rectangle<i32, Logical>) -> Point<i32, Logical> {
+    let axis = |position: i32, size: i32, old_start: i32, old_extent: i32, start: i32, extent: i32| {
+        let fraction = (f64::from(position - old_start) + f64::from(size) / 2.0) / f64::from(old_extent.max(1));
+        let mapped = (f64::from(start) + fraction * f64::from(extent) - f64::from(size) / 2.0).round() as i32;
+        mapped.clamp(start, start + (extent - size).max(0))
+    };
+    (axis(saved.location.x, saved.size.w, old.loc.x, old.size.w, new.loc.x, new.size.w),
+     axis(saved.location.y, saved.size.h, old.loc.y, old.size.h, new.loc.y, new.size.h)).into()
 }
 
 fn fullscreen_owns(window: &Window) -> bool {
@@ -699,7 +722,7 @@ pub fn finish_interactive(comp: &mut CompState, id: SurfaceId) -> bool {
     grab.ended = true;
     grab.updated = false;
     if let Some(drag) = comp.drag.as_mut() {
-        drag.armed = None;
+        drag.disarm();
     }
     true
 }
@@ -755,11 +778,19 @@ pub fn apply_interactive_at(
     // alone commits the last armed zone, without re-sampling modifiers.
     let sample = grab.updated || !grab.ended;
     let changed = move_window(comp, space, window, grab);
-    let before = drag.armed.clone();
+    let before = drag.preview_rectangle;
+    let now = comp.clock.now();
     if sample {
-        drag.armed = super::tiling::armed(comp, space, window, grab.id, pointer, shift);
+        let candidate = super::tiling::armed(comp, space, window, grab.id, pointer, shift);
+        let location = space.element_location(window).unwrap_or_default();
+        let size = slot::size_of(window).unwrap_or(window.geometry().size);
+        let frame = decor::window::parts(window, location, size)
+            .map(|parts| parts.frame.to_i32_round())
+            .unwrap_or_else(|| Rectangle::new(location, size));
+        drag.sample(candidate, frame, comp.tiling, now);
     }
-    let preview_changed = drag.armed != before;
+    drag.tick(now);
+    let preview_changed = drag.preview_rectangle != before;
     if grab.ended {
         if let Some(armed) = drag.armed {
             let saved = if drag.placement == Placement::Floating {

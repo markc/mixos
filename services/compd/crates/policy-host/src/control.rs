@@ -1073,6 +1073,12 @@ fn set_leaf(
     if path == HOST_PASSTHROUGH_PATH {
         return Some(set_host_passthrough(lp, path, value));
     }
+    if path.starts_with("tiling.") {
+        let reply = crate::tiling::set(&mut lp.inner.comp, path, value);
+        lp.inner.preference.tiling = serde_json::to_value(lp.inner.comp.tiling)
+            .expect("tiling config").as_object().expect("tiling object").clone();
+        return Some(reply);
+    }
     Some(set_corners(lp, path, value))
 }
 

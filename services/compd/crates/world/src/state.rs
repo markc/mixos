@@ -364,6 +364,7 @@ impl Orchestrator {
             // The workspace count and names saved by the workspace commands.
             comp: {
                 let mut comp = crate::comp::CompState::default();
+                comp.tiling = comp_model::tiling::TilingConfig::from_saved(&prefs.tiling);
                 comp.workspaces = policy::workspaces::WorkspaceState::from_saved(
                     prefs.workspaces_count,
                     &prefs.workspace_names,

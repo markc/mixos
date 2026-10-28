@@ -32,6 +32,7 @@ pub mod prop_path;
 pub mod reply;
 pub mod request;
 pub mod snapshot;
+pub mod tiling;
 
 pub use prop_path::PropPath;
 pub use reply::ControlReply;

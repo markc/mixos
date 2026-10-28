@@ -225,6 +225,7 @@ fn fixture() -> CompSnapshot {
         },
     );
     CompSnapshot {
+        tiling: Default::default(),
         session: None,
         occlusion: Default::default(),
         info: InfoSnapshot {
@@ -397,9 +398,9 @@ fn mutable_descriptors_match_the_writable_leaves() {
     // Chunk 19 adds the two affordance leaves, `input.corners.affordance`
     // and `input.corners.discovery`.
     #[cfg(feature = "xwayland")]
-    assert_eq!(mutable.len(), 16);
+    assert_eq!(mutable.len(), 24);
     #[cfg(not(feature = "xwayland"))]
-    assert_eq!(mutable.len(), 15);
+    assert_eq!(mutable.len(), 23);
     for path in [
         "input.corners.enabled",
         "input.corners.deadzone_px",
