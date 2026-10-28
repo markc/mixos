@@ -12,6 +12,14 @@ use std::time::{Duration, Instant};
 // Process-local diagnostic record, even when the tty cannot accept a warning.
 pub static OUTPUT_TEARS: AtomicUsize = AtomicUsize::new(0);
 
+/// HUP/ERR are reported even with no requested events. Foreground loss is
+/// temporary; a disconnected terminal is not, including with SIGHUP ignored.
+pub fn hung_up(fd: RawFd) -> bool {
+    let mut poll = libc::pollfd { fd, events: 0, revents: 0 };
+    (unsafe { libc::poll(&mut poll, 1, 0) }) > 0
+        && poll.revents & (libc::POLLHUP | libc::POLLERR | libc::POLLNVAL) != 0
+}
+
 pub struct Terminal {
     // The controller separately records job modes. The ordering contract is
     // editor restore before line return, controller foreground before re-entry.
@@ -149,7 +157,9 @@ impl Terminal {
         unsafe { libc::tcgetpgrp(self.fd()) == libc::getpgrp() }
     }
     fn require_foreground(&self) -> io::Result<()> {
-        if self.foreground() {
+        if hung_up(self.fd()) {
+            Err(io::Error::from_raw_os_error(libc::EIO))
+        } else if self.foreground() {
             Ok(())
         } else {
             Err(io::Error::new(

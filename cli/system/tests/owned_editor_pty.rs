@@ -7,6 +7,8 @@
 //! Nextest uses separate test processes (no shared mutex); its timeout budget
 //! still needs to allow setup plus the real editor fixture durations.
 #![cfg(target_os = "linux")]
+#[path = "support/pty.rs"]
+mod pty;
 #[allow(dead_code)]
 #[path = "../../mix-shell/src/editor.rs"]
 mod editor;
@@ -140,6 +142,7 @@ fn fixture_editor() {
             libc::signal(libc::SIGTTOU, libc::SIG_IGN);
         }
         let mut holder = Command::new("/bin/sleep");
+        pty::guard(&mut holder);
         holder.arg("10");
         unsafe {
             holder.pre_exec(|| {
@@ -408,6 +411,7 @@ fn stop_supervisor(original: libc::termios) {
         libc::signal(libc::SIGTTOU, libc::SIG_IGN);
     }
     let mut command = Command::new(env!("CARGO_BIN_EXE_mix"));
+    pty::guard(&mut command);
     unsafe {
         command.pre_exec(|| {
             if libc::setpgid(0, 0) < 0 {
@@ -666,6 +670,7 @@ impl Pty {
         } else {
             env!("CARGO_BIN_EXE_mix").into()
         });
+        pty::guard(&mut command);
         if let Some(scenario) = fixture {
             command
                 .args(["--exact", "fixture_editor", "--nocapture"])
@@ -766,6 +771,7 @@ impl Pty {
 }
 impl Drop for Pty {
     fn drop(&mut self) {
+        pty::kill_session(self.child.id());
         if self.child.try_wait().ok().flatten().is_none() {
             unsafe {
                 libc::kill(-(self.child.id() as i32), libc::SIGKILL);

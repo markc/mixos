@@ -163,21 +163,23 @@ impl Decoder {
 }
 
 /// A single indefinite poll, except while disambiguating an escape sequence.
-/// Suspended/idle owners pass no tty fd: even HUP cannot cause a tty read.
+/// Suspended/idle owners watch terminal loss without requesting input.
 pub fn wait(
-    tty: Option<RawFd>,
+    tty: RawFd,
+    editing: bool,
     control: RawFd,
     signal: RawFd,
     output: Option<RawFd>,
     timeout: i32,
 ) -> io::Result<[bool; 4]> {
     let mut fds =
-        [tty.unwrap_or(-1), control, signal, output.unwrap_or(-1)].map(|fd| libc::pollfd {
+        [tty, control, signal, output.unwrap_or(-1)].map(|fd| libc::pollfd {
             fd,
             events: libc::POLLIN,
             revents: 0,
         });
     fds[3].events = libc::POLLOUT;
+    if !editing { fds[0].events = 0; }
     let rc = unsafe { libc::poll(fds.as_mut_ptr(), fds.len() as _, timeout) };
     if rc < 0 {
         let error = io::Error::last_os_error();
@@ -185,6 +187,9 @@ pub fn wait(
             return Ok([false; 4]);
         }
         return Err(error);
+    }
+    if fds[0].revents & (libc::POLLHUP | libc::POLLERR | libc::POLLNVAL) != 0 {
+        return Err(io::Error::from_raw_os_error(libc::EIO));
     }
     Ok(fds.map(|fd| fd.revents != 0))
 }
@@ -202,6 +207,21 @@ pub fn read(fd: RawFd) -> io::Result<Option<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn suspended_owner_observes_hangup_without_reading_input() {
+        use std::fs::File;
+        use std::os::fd::{AsRawFd, FromRawFd};
+        use std::os::unix::net::UnixStream;
+        let (mut master, mut slave) = (-1, -1);
+        assert_eq!(unsafe { libc::openpty(&mut master, &mut slave, std::ptr::null_mut(), std::ptr::null(), std::ptr::null()) }, 0);
+        let master = unsafe { File::from_raw_fd(master) };
+        let slave = unsafe { File::from_raw_fd(slave) };
+        let (control, _control_peer) = UnixStream::pair().unwrap();
+        let (signal, _signal_peer) = UnixStream::pair().unwrap();
+        drop(master);
+        let error = wait(slave.as_raw_fd(), false, control.as_raw_fd(), signal.as_raw_fd(), None, 100).unwrap_err();
+        assert_eq!(error.raw_os_error(), Some(libc::EIO));
+    }
     fn decode(d: &mut Decoder, bytes: &[u8]) -> Vec<Key> {
         bytes.iter().filter_map(|b| d.feed(*b)).collect()
     }

@@ -1,0 +1,41 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Deterministic /proc fixtures: no worker processes are created or signalled.
+$o = require("../tools/lib/release_orphans.mix")
+$tmp = "/tmp/release-orphans-test-" .. uuid()
+mkdir($tmp .. "/checkout/target/debug", {parents: true})
+mkdir($tmp .. "/other/target/debug", {parents: true})
+write_file($tmp .. "/checkout/target/debug/mix", "")
+write_file($tmp .. "/other/target/debug/mix", "")
+
+fn process($id, $ppid, $start, $exe)
+  $base = $tmp .. "/proc/" .. $id
+  mkdir($base, {parents: true})
+  -- Embedded ')' and spaces exercise the real stat comm parsing rule.
+  write_file($base .. "/stat", $id .. " (test ) process) S " .. $ppid .. " 10 10 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 " .. $start .. " 0")
+  run_argv_must(["ln", "-s", $exe, $base .. "/exe"])
+end
+
+fn check($ok, $label)
+  if not $ok then raise("TEST", $label) end
+  print("PASS " .. $label)
+end
+
+try
+  $target = $tmp .. "/checkout/target"
+  process(101, 1, 11, $target .. "/debug/mix")
+  process(102, 2, 12, $target .. "/debug/mix")
+  process(103, 1, 13, $tmp .. "/other/target/debug/mix")
+  process(104, 1, 14, $tmp .. "/missing")
+  run_argv_must(["ln", "-s", $target, $tmp .. "/target-link"])
+  $before = $o.snapshot($tmp .. "/target-link", $tmp .. "/proc")
+  check(len($before) == 1 and $before[0].pid == 101, "only own checkout's canonical orphan is counted")
+  process(105, 1, 15, $target .. "/debug/mix")
+  $after = $o.snapshot($target, $tmp .. "/proc")
+  $new = $o.added($before, $after)
+  check(len($new) == 1 and $new[0].pid == 105, "existing orphan is excluded")
+  check(len($o.added($after, $after)) == 0, "unchanged stage has no new orphans")
+  check(len($o.added([{pid: 105, start: "old"}], $new)) == 1, "PID reuse uses kernel start time")
+  check(len($o.snapshot($tmp .. "/absent", $tmp .. "/proc")) == 0, "target absent before build is empty")
+finally
+  remove_dir($tmp)
+end

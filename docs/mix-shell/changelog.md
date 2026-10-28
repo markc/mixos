@@ -25,6 +25,14 @@ generated: by docs/_build/gen-site.mix from cli/mix-shell/CHANGELOG.md; do not e
 
 ### Fixed
 
+- Interactive shells exit with status 129 on terminal hangup or EIO, even
+  without job control or a delivered SIGHUP. Suspended editors keep watching
+  terminal loss, and shutdown hangs up managed job groups. Plain EOF still
+  exits normally. PTY fixtures use kernel parent-death guards and clean up
+  their whole session, including separate job-control groups.
+- The release gate detects and reaps newly orphaned executables from its own
+  checkout after each stage, fails the leaking stage, and excludes other
+  checkouts and existing orphans.
 - A foreground job stopped (^Z) just after its exec is now stopped, not
   reported as "job stopped before exec acknowledgement" and aborted. The
   launch checked for the stop before reading the exec acknowledgement that
