@@ -453,6 +453,9 @@ fn parse_keyword(tok: &str, negated: bool) -> Result<Crit, String> {
 struct Doc {
     /// `(lowercased name, lowercased raw value, lowercased decoded value)`.
     headers: Vec<(String, String, String)>,
+    /// The raw header block, lowercased, so `TEXT` can match across a
+    /// field name and its value (`TEXT "subject: invoice"`).
+    header_block: String,
     /// Decoded text body parts, lowercased.
     body: String,
     /// Day of the `Date:` header, if it parsed.
@@ -465,6 +468,7 @@ impl Doc {
             // Unparseable: no fields to match, body is the lossy bytes.
             return Doc {
                 headers: Vec::new(),
+                header_block: String::new(),
                 body: String::from_utf8_lossy(raw).to_lowercase(),
                 sent: None,
             };
@@ -484,12 +488,17 @@ impl Doc {
                 )
             })
             .collect();
+        let header_end = raw
+            .windows(4)
+            .position(|w| w == b"\r\n\r\n")
+            .or_else(|| raw.windows(2).position(|w| w == b"\n\n"))
+            .unwrap_or(raw.len());
+        let header_block = String::from_utf8_lossy(&raw[..header_end]).to_lowercase();
         // Every decoded text part, not just the preferred body list:
         // mail_parser keeps the plain and HTML halves of a
         // multipart/alternative in separate lists, and a term may sit
-        // only in the HTML one.
-        // A forwarded message/rfc822 is body content too: its headers
-        // and its own text parts. The parser already bounds nesting
+        // only in the HTML one. A forwarded message/rfc822 is body
+        // content too: its headers and its own text parts. The parser already bounds nesting
         // depth, and the walk is iterative.
         let mut body = String::new();
         let mut push = |text: &str| {
@@ -524,6 +533,7 @@ impl Doc {
             .and_then(|d| NaiveDate::from_ymd_opt(i32::from(d.year), d.month.into(), d.day.into()));
         Doc {
             headers,
+            header_block,
             body,
             sent,
         }
@@ -537,9 +547,8 @@ impl Doc {
 
     fn text_has(&self, needle: &str) -> bool {
         self.body.contains(needle)
-            || self.headers.iter().any(|(n, raw, decoded)| {
-                n.contains(needle) || raw.contains(needle) || decoded.contains(needle)
-            })
+            || self.header_block.contains(needle)
+            || self.headers.iter().any(|(_, _, decoded)| decoded.contains(needle))
     }
 }
 
@@ -1033,6 +1042,10 @@ The quarterly Invoice is attached.\r\n";
         assert!(matches_raw(&Crit::Text("alice".into()), &h, RAW));
         assert!(matches_raw(&Crit::Text("quarterly".into()), &h, RAW));
         assert!(!matches_raw(&Crit::Text("absent".into()), &h, RAW));
+        // A needle spanning a field name and its value.
+        assert!(matches_raw(&Crit::Text("x-ticket: t-42".into()), &h, RAW));
+        let not_text = Crit::Not(Box::new(Crit::Text("x-ticket: t-42".into())));
+        assert!(!matches_raw(&not_text, &h, RAW));
     }
 
     /// A term only in the HTML half of multipart/alternative is found.
