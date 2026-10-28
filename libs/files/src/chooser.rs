@@ -451,7 +451,10 @@ impl Request {
         } else {
             body["files"] = json!(self.files.iter().map(|n| wire_name(n)).collect::<Vec<_>>());
         }
-        for (key, value) in [("current_folder", &self.current_folder), ("current_file", &self.current_file)] {
+        for (key, value) in [
+            ("current_folder", &self.current_folder),
+            ("current_file", &self.current_file),
+        ] {
             if let Some(path) = value {
                 // Requests were validated at the boundary.
                 body[key] = json!(file_uri(path).expect("validated location"));
@@ -460,7 +463,10 @@ impl Request {
         if let Some(name) = &self.current_name {
             body["current_name"] = wire_name(name);
         }
-        for (key, value) in [("correlation", &self.correlation), ("on_behalf_of", &self.on_behalf_of)] {
+        for (key, value) in [
+            ("correlation", &self.correlation),
+            ("on_behalf_of", &self.on_behalf_of),
+        ] {
             if let Some(value) = value {
                 body[key] = json!(value);
             }

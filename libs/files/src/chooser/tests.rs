@@ -10,8 +10,8 @@ fn canonical_body_round_trips_all_modes_without_losing_bytes_or_defaults() {
             "current_filter":{"name":"Text","patterns":["*.md"],"mime_types":["text/*"]},
             "choices":[{"id":"check","label":"Check","options":[]}]}),
         json!({"mode":"save","current_file":"file:///tmp/%FF.md","accept_label":"_Write",
-            "filters":[{"name":"Text","patterns":["*.md"]}],
-            "current_filter":{"name":"Other","patterns":["*.txt"]}}),
+            "filters":[{"name":"Text","patterns":["*.md"],"mime_types":[]}],
+            "current_filter":{"name":"Other","patterns":["*.txt"],"mime_types":[]}}),
         json!({"mode":"save_files","current_folder":"file:///tmp/%FE",
             "files":["one.md",{"bytes":"%FF.md"}], "on_behalf_of":"test app"}),
     ] {

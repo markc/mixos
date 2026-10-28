@@ -51,13 +51,13 @@ pub mod content;
 pub mod datatable;
 /// Shared process-local logging and live debug controls.
 pub use logging::debug;
+pub mod choose;
 pub mod decorations;
 pub mod dialog;
 pub mod drive;
 pub mod executed;
 pub mod field;
 pub mod file_chooser;
-pub mod choose;
 pub use choose::choose;
 pub mod fonts;
 pub mod graph;

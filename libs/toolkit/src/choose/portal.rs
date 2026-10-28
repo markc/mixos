@@ -16,8 +16,15 @@ type Options = HashMap<String, OwnedValue>;
 type WireFilter = (String, Vec<(u32, String)>);
 
 fn filter(value: &Filter) -> WireFilter {
-    (value.name.clone(), value.patterns().iter().map(|p| (0, p.clone()))
-        .chain(value.mime_types.iter().map(|p| (1, p.clone()))).collect())
+    (
+        value.name.clone(),
+        value
+            .patterns()
+            .iter()
+            .map(|p| (0, p.clone()))
+            .chain(value.mime_types.iter().map(|p| (1, p.clone())))
+            .collect(),
+    )
 }
 
 fn put(options: &mut Options, key: &str, value: Value<'_>) -> Result<()> {
@@ -25,66 +32,161 @@ fn put(options: &mut Options, key: &str, value: Value<'_>) -> Result<()> {
     Ok(())
 }
 
-fn nul(bytes: &[u8]) -> Vec<u8> { let mut result = bytes.to_vec(); result.push(0); result }
+fn nul(bytes: &[u8]) -> Vec<u8> {
+    let mut result = bytes.to_vec();
+    result.push(0);
+    result
+}
 
 fn options(request: &Request, token: &str) -> Result<Options> {
     let mut options = Options::new();
     put(&mut options, "handle_token", Value::from(token))?;
-    put(&mut options, "accept_label", Value::from(request.accept_label.as_str()))?;
+    put(
+        &mut options,
+        "accept_label",
+        Value::from(request.accept_label.as_str()),
+    )?;
     if request.mode == Mode::Open {
         put(&mut options, "multiple", Value::from(request.multiple))?;
         put(&mut options, "directory", Value::from(request.directory))?;
     }
     if request.mode != Mode::SaveFiles {
-        if request.filter_menu { put(&mut options, "filters", Value::from(request.filters.iter().map(filter).collect::<Vec<_>>()))?; }
-        if let Some(current) = &request.current_filter { put(&mut options, "current_filter", Value::from(filter(current)))?; }
+        if request.filter_menu {
+            put(
+                &mut options,
+                "filters",
+                Value::from(request.filters.iter().map(filter).collect::<Vec<_>>()),
+            )?;
+        }
+        if let Some(current) = &request.current_filter {
+            put(&mut options, "current_filter", Value::from(filter(current)))?;
+        }
     } else {
-        put(&mut options, "files", Value::from(request.files.iter().map(|n| nul(n)).collect::<Vec<_>>()))?;
+        put(
+            &mut options,
+            "files",
+            Value::from(request.files.iter().map(|n| nul(n)).collect::<Vec<_>>()),
+        )?;
     }
-    let choices: Vec<_> = request.choices.iter().map(|c| (c.id.clone(), c.label.clone(),
-        c.options.iter().map(|o| (o.id.clone(), o.label.clone())).collect::<Vec<_>>(), c.default.clone())).collect();
-    if !choices.is_empty() { put(&mut options, "choices", Value::from(choices))?; }
-    if let Some(folder) = &request.current_folder { put(&mut options, "current_folder", Value::from(nul(folder)))?; }
-    if let Some(file) = &request.current_file { put(&mut options, "current_file", Value::from(nul(file)))?; }
+    let choices: Vec<_> = request
+        .choices
+        .iter()
+        .map(|c| {
+            (
+                c.id.clone(),
+                c.label.clone(),
+                c.options
+                    .iter()
+                    .map(|o| (o.id.clone(), o.label.clone()))
+                    .collect::<Vec<_>>(),
+                c.default.clone(),
+            )
+        })
+        .collect();
+    if !choices.is_empty() {
+        put(&mut options, "choices", Value::from(choices))?;
+    }
+    if let Some(folder) = &request.current_folder {
+        put(&mut options, "current_folder", Value::from(nul(folder)))?;
+    }
+    if let Some(file) = &request.current_file {
+        put(&mut options, "current_file", Value::from(nul(file)))?;
+    }
     if let Some(name) = &request.current_name {
-        if let Ok(name) = std::str::from_utf8(name) { put(&mut options, "current_name", Value::from(name))?; }
-        else {
+        if let Ok(name) = std::str::from_utf8(name) {
+            put(&mut options, "current_name", Value::from(name))?;
+        } else {
             // current_name is a D-Bus string; current_file is the byte-preserving
             // equivalent when a name is not UTF-8. Resolve its parent on this worker.
-            let folder = request.current_folder.as_deref().map(path_from_bytes).unwrap_or_else(crate::file_chooser::home);
-            put(&mut options, "current_file", Value::from(nul(&path_bytes(&folder.join(path_from_bytes(name))))))?;
+            let folder = request
+                .current_folder
+                .as_deref()
+                .map(path_from_bytes)
+                .unwrap_or_else(crate::file_chooser::home);
+            put(
+                &mut options,
+                "current_file",
+                Value::from(nul(&path_bytes(&folder.join(path_from_bytes(name))))),
+            )?;
         }
     }
     Ok(options)
 }
 
-pub(super) async fn attempt(request: &Request, cancel: &mut watch::Receiver<bool>) -> Option<Outcome> {
-    let connection = tokio::time::timeout(IO_BOUND, Connection::session()).await.ok()?.ok()?;
+pub(super) async fn attempt(
+    request: &Request,
+    cancel: &mut watch::Receiver<bool>,
+) -> Option<Outcome> {
+    let connection = tokio::time::timeout(IO_BOUND, Connection::session())
+        .await
+        .ok()?
+        .ok()?;
     match session(&connection, request, cancel).await {
         Ok(outcome) => outcome,
         Err(error) => Some(Outcome::Failed(error.to_string())),
     }
 }
 
-pub(super) async fn session(connection: &Connection, request: &Request, cancel: &mut watch::Receiver<bool>) -> Result<Option<Outcome>> {
+pub(super) async fn session(
+    connection: &Connection,
+    request: &Request,
+    cancel: &mut watch::Receiver<bool>,
+) -> Result<Option<Outcome>> {
     let dbus = tokio::time::timeout(IO_BOUND, zbus::fdo::DBusProxy::new(connection)).await??;
-    if !tokio::time::timeout(IO_BOUND, dbus.name_has_owner(DESKTOP.try_into()?)).await?? { return Ok(None); }
+    if !tokio::time::timeout(IO_BOUND, dbus.name_has_owner(DESKTOP.try_into()?)).await?? {
+        return Ok(None);
+    }
     let owner = tokio::time::timeout(IO_BOUND, dbus.get_name_owner(DESKTOP.try_into()?)).await??;
-    let proxy = tokio::time::timeout(IO_BOUND, zbus::Proxy::new(connection, owner.as_str(), PATH, INTERFACE)).await??;
+    let proxy = tokio::time::timeout(
+        IO_BOUND,
+        zbus::Proxy::new(connection, owner.as_str(), PATH, INTERFACE),
+    )
+    .await??;
     let version: u32 = tokio::time::timeout(IO_BOUND, proxy.get_property("version")).await??;
-    let required = if request.mode == Mode::SaveFiles { 4 } else if request.directory { 3 } else { 1 };
-    if version < required { return Ok(None); }
+    let required = if request.mode == Mode::SaveFiles {
+        4
+    } else if request.directory {
+        3
+    } else {
+        1
+    };
+    if version < required {
+        return Ok(None);
+    }
     let token = format!("toolkit{}", uuid::Uuid::now_v7().simple());
-    let sender = connection.unique_name().context("session connection has no unique name")?.as_str().trim_start_matches(':').replace('.', "_");
+    let sender = connection
+        .unique_name()
+        .context("session connection has no unique name")?
+        .as_str()
+        .trim_start_matches(':')
+        .replace('.', "_");
     let predicted = format!("/org/freedesktop/portal/desktop/request/{sender}/{token}");
     // Include all paths from this captured owner: old implementations may return
     // a different handle. Queuing before the call also retains an early Response.
-    let rule = MatchRule::builder().msg_type(zbus::message::Type::Signal)
-        .sender(owner.as_str())?.interface(REQUEST)?.member("Response")?.build();
-    let mut responses = tokio::time::timeout(IO_BOUND, MessageStream::for_match_rule(rule, connection, Some(8))).await??;
-    if *cancel.borrow() { return Ok(None); }
-    let method = match request.mode { Mode::Open => "OpenFile", Mode::Save => "SaveFile", Mode::SaveFiles => "SaveFiles" };
-    let args = (&request.parent_window, &request.title, options(request, &token)?);
+    let rule = MatchRule::builder()
+        .msg_type(zbus::message::Type::Signal)
+        .sender(owner.as_str())?
+        .interface(REQUEST)?
+        .member("Response")?
+        .build();
+    let mut responses = tokio::time::timeout(
+        IO_BOUND,
+        MessageStream::for_match_rule(rule, connection, Some(8)),
+    )
+    .await??;
+    if *cancel.borrow() {
+        return Ok(None);
+    }
+    let method = match request.mode {
+        Mode::Open => "OpenFile",
+        Mode::Save => "SaveFile",
+        Mode::SaveFiles => "SaveFiles",
+    };
+    let args = (
+        &request.parent_window,
+        &request.title,
+        options(request, &token)?,
+    );
     let call = connection.call_method(Some(owner.as_str()), PATH, Some(INTERFACE), method, &args);
     tokio::pin!(call);
     let reply = tokio::select! {
@@ -149,17 +251,34 @@ pub(super) async fn session(connection: &Connection, request: &Request, cancel: 
 }
 
 async fn close(connection: &Connection, owner: &str, path: &str) -> Result<()> {
-    tokio::time::timeout(IO_BOUND, connection.call_method(Some(owner), path, Some(REQUEST), "Close", &())).await??;
+    tokio::time::timeout(
+        IO_BOUND,
+        connection.call_method(Some(owner), path, Some(REQUEST), "Close", &()),
+    )
+    .await??;
     Ok(())
 }
 
 fn decode(request: &Request, code: u32, values: &Options) -> Result<Outcome> {
-    if code == 1 { return Ok(Outcome::Cancelled); }
-    if code != 0 { return Ok(Outcome::Failed(format!("portal Response {code}"))); }
+    if code == 1 {
+        return Ok(Outcome::Cancelled);
+    }
+    if code != 0 {
+        return Ok(Outcome::Failed(format!("portal Response {code}")));
+    }
     let mut value = serde_json::json!({"response":0});
-    value["uris"] = serde_json::json!(Vec::<String>::try_from(values.get("uris").context("portal omitted uris")?.try_clone()?)?);
+    value["uris"] = serde_json::json!(Vec::<String>::try_from(
+        values
+            .get("uris")
+            .context("portal omitted uris")?
+            .try_clone()?
+    )?);
     if let Some(choices) = values.get("choices") {
-        value["choices"] = serde_json::json!(Vec::<(String, String)>::try_from(choices.try_clone()?)?.into_iter().collect::<BTreeMap<_, _>>());
+        value["choices"] = serde_json::json!(
+            Vec::<(String, String)>::try_from(choices.try_clone()?)?
+                .into_iter()
+                .collect::<BTreeMap<_, _>>()
+        );
     }
     if let Some(current) = values.get("current_filter") {
         let (name, entries) = WireFilter::try_from(current.try_clone()?)?;

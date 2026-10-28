@@ -1,38 +1,73 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 use super::*;
-use bus::native_client::{BoundedIncomingEvent, SupervisedClient};
 use bus::PortReply;
+use bus::native_client::{BoundedIncomingEvent, SupervisedClient};
 use serde_json::{Value, json};
 
-pub(super) async fn attempt(request: &Request, cancel: &mut watch::Receiver<bool>) -> Option<Outcome> {
+pub(super) async fn attempt(
+    request: &Request,
+    cancel: &mut watch::Receiver<bool>,
+) -> Option<Outcome> {
     attempt_at(request, cancel, &bus::client_helpers::resolve_noded_url()).await
 }
 
 async fn call(client: &SupervisedClient, command: &str, body: Value) -> Option<PortReply> {
-    tokio::time::timeout(IO_BOUND, client.call_typed("files", command, body)).await.ok()?.ok()
+    tokio::time::timeout(IO_BOUND, client.call_typed("files", command, body))
+        .await
+        .ok()?
+        .ok()
 }
 
-pub(super) async fn attempt_at(request: &Request, cancel: &mut watch::Receiver<bool>, url: &str) -> Option<Outcome> {
-    let name = format!("toolkit-choose-{}-{}", std::process::id(), SEQUENCE.fetch_add(1, Ordering::Relaxed));
-    let client = SupervisedClient::connect_options(&name, url).bounded_incoming(64).start();
+pub(super) async fn attempt_at(
+    request: &Request,
+    cancel: &mut watch::Receiver<bool>,
+    url: &str,
+) -> Option<Outcome> {
+    let name = format!(
+        "toolkit-choose-{}-{}",
+        std::process::id(),
+        SEQUENCE.fetch_add(1, Ordering::Relaxed)
+    );
+    let client = SupervisedClient::connect_options(&name, url)
+        .bounded_incoming(64)
+        .start();
     let result = session(&client, &name, request, cancel).await;
     client.close().await;
     result
 }
 
-async fn session(client: &SupervisedClient, name: &str, request: &Request, cancel: &mut watch::Receiver<bool>) -> Option<Outcome> {
+async fn session(
+    client: &SupervisedClient,
+    name: &str,
+    request: &Request,
+    cancel: &mut watch::Receiver<bool>,
+) -> Option<Outcome> {
     let connected = tokio::time::timeout(IO_BOUND, async {
-        while !client.is_connected() { tokio::time::sleep(Duration::from_millis(10)).await; }
+        while !client.is_connected() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
     });
     tokio::select! { result = connected => { result.ok()?; }, _ = cancelled(cancel) => return None }
-    let services = tokio::time::timeout(IO_BOUND, client.list_services()).await.ok()?.ok()?;
-    if !services.iter().any(|s| s == "files") { return None; }
-    tokio::time::timeout(IO_BOUND, client.subscribe_topic("files.chosen")).await.ok()?.ok()?;
+    let services = tokio::time::timeout(IO_BOUND, client.list_services())
+        .await
+        .ok()?
+        .ok()?;
+    if !services.iter().any(|s| s == "files") {
+        return None;
+    }
+    tokio::time::timeout(IO_BOUND, client.subscribe_topic("files.chosen"))
+        .await
+        .ok()?
+        .ok()?;
     let mut incoming = client.incoming_bounded()?;
-    if *cancel.borrow() { return None; }
+    if *cancel.borrow() {
+        return None;
+    }
     // Do not abandon an in-flight intent on an observation deadline. A late
     // acknowledgement still owns a window and must be cancelled before fallback.
-    let reply = client.call_typed("files", "files.choose", request.body()).await;
+    let reply = client
+        .call_typed("files", "files.choose", request.body())
+        .await;
     let id = match reply {
         Ok(PortReply::Ok { value, .. }) => value["request"].as_str().map(str::to_owned),
         Ok(PortReply::AppError { .. }) => return None, // refusal opened no window
@@ -87,7 +122,12 @@ async fn session(client: &SupervisedClient, name: &str, request: &Request, cance
 
 async fn cancel_request(client: &SupervisedClient, id: &str) -> bool {
     for _ in 0..3 {
-        if matches!(call(client, "files.choose.cancel", json!({"request":id})).await, Some(PortReply::Ok { .. })) { return true; }
+        if matches!(
+            call(client, "files.choose.cancel", json!({"request":id})).await,
+            Some(PortReply::Ok { .. })
+        ) {
+            return true;
+        }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     false
@@ -97,17 +137,28 @@ async fn recover_sending(client: &SupervisedClient, name: &str, cancel: &watch::
     let caller = format!("local:{name}");
     let mut abandoned_attempts = 0;
     loop {
-        if let Some(PortReply::Ok { value, .. }) = call(client, "files.choose.list", json!({})).await
-            && let Some(requests) = value["requests"].as_array() {
+        if let Some(PortReply::Ok { value, .. }) =
+            call(client, "files.choose.list", json!({})).await
+            && let Some(requests) = value["requests"].as_array()
+        {
             let mut closed = true;
-            for request in requests.iter().filter(|r| r["caller"].as_str() == Some(&caller)) {
-                if let Some(id) = request["request"].as_str() { closed &= cancel_request(client, id).await; }
+            for request in requests
+                .iter()
+                .filter(|r| r["caller"].as_str() == Some(&caller))
+            {
+                if let Some(id) = request["request"].as_str() {
+                    closed &= cancel_request(client, id).await;
+                }
             }
-            if closed { return; }
+            if closed {
+                return;
+            }
         }
         if *cancel.borrow() {
             abandoned_attempts += 1;
-            if abandoned_attempts >= 3 { return; }
+            if abandoned_attempts >= 3 {
+                return;
+            }
         }
         tokio::time::sleep(Duration::from_secs(5)).await;
     }

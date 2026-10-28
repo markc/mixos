@@ -11,10 +11,10 @@ pub use files::chooser::{Choice, Defaults, Filter, Mode, OptionLabel, Refusal, R
 use tokio::sync::watch;
 
 mod native;
-#[cfg(all(target_os = "linux", feature = "portal"))]
-mod portal;
 #[cfg(any(target_os = "windows", target_os = "macos"))]
 mod platform;
+#[cfg(all(target_os = "linux", feature = "portal"))]
+mod portal;
 
 const IO_BOUND: Duration = Duration::from_secs(2);
 static SEQUENCE: AtomicU64 = AtomicU64::new(1);
@@ -32,9 +32,17 @@ pub enum Outcome {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Tier { Bus, System, InProcess }
+pub enum Tier {
+    Bus,
+    System,
+    InProcess,
+}
 
-enum Message { Tier(Tier), Answer(Outcome), Fallback }
+enum Message {
+    Tier(Tier),
+    Answer(Outcome),
+    Fallback,
+}
 
 #[derive(Clone)]
 struct Emitter {
@@ -45,27 +53,41 @@ struct Emitter {
 
 impl Emitter {
     fn send(&self, message: Message) {
-        if self.tx.send(message).is_ok() { self.ctx.request_repaint_of(self.viewport); }
+        if self.tx.send(message).is_ok() {
+            self.ctx.request_repaint_of(self.viewport);
+        }
     }
 }
 
 /// Parse the Bus request shape with toolkit's translated mode defaults.
 pub fn request(body: &str) -> Result<Request, Refusal> {
     use crate::strings::own;
-    Request::parse(body, &Defaults {
-        open_title: own("file-chooser-open"), save_title: own("file-chooser-save"),
-        save_files_title: own("file-chooser-save-files"),
-        open_accept: own("file-chooser-open"), save_accept: own("file-chooser-save"),
-    })
+    Request::parse(
+        body,
+        &Defaults {
+            open_title: own("file-chooser-open"),
+            save_title: own("file-chooser-save"),
+            save_files_title: own("file-chooser-save-files"),
+            open_accept: own("file-chooser-open"),
+            save_accept: own("file-chooser-save"),
+        },
+    )
 }
 
 /// Create a chooser. Poll it in the opening viewport's frame to bind and start
 /// it. Construction and polling never wait for I/O or join a worker.
 pub fn choose(request: Request) -> Handle {
     let (cancel, _) = watch::channel(false);
-    Handle { request, receiver: None, cancel, viewport: None, tier: Tier::Bus,
-        fallback: None, ended: false,
-        #[cfg(test)] driver: None,
+    Handle {
+        request,
+        receiver: None,
+        cancel,
+        viewport: None,
+        tier: Tier::Bus,
+        fallback: None,
+        ended: false,
+        #[cfg(test)]
+        driver: None,
     }
 }
 
@@ -82,33 +104,55 @@ pub struct Handle {
 }
 
 impl Handle {
-    pub fn viewport(&self) -> Option<ViewportId> { self.viewport }
-    pub fn tier(&self) -> Tier { self.tier }
+    pub fn viewport(&self) -> Option<ViewportId> {
+        self.viewport
+    }
+    pub fn tier(&self) -> Tier {
+        self.tier
+    }
 
     /// Returns the outcome once. The first poll captures the opening viewport;
     /// polling from another viewport neither draws nor consumes its answer.
     pub fn poll(&mut self, ctx: &Context) -> Option<Outcome> {
-        if self.ended { return None; }
-        if self.viewport.is_some_and(|id| id != ctx.viewport_id()) { return None; }
+        if self.ended {
+            return None;
+        }
+        if self.viewport.is_some_and(|id| id != ctx.viewport_id()) {
+            return None;
+        }
         if self.receiver.is_none() {
             let viewport = ctx.viewport_id();
             self.viewport = Some(viewport);
             let (tx, rx) = mpsc::channel();
             self.receiver = Some(rx);
-            let emitter = Emitter { tx, ctx: ctx.clone(), viewport };
+            let emitter = Emitter {
+                tx,
+                ctx: ctx.clone(),
+                viewport,
+            };
             let request = self.request.clone();
             let cancel = self.cancel.subscribe();
             #[cfg(test)]
             let driver = self.driver.take();
-            if let Err(error) = std::thread::Builder::new().name("toolkit-choose".into()).spawn(move || {
-                #[cfg(test)]
-                if let Some(driver) = driver { driver(request, cancel, emitter); return; }
-                let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build();
-                match runtime {
-                    Ok(runtime) => runtime.block_on(remote(request, cancel, &emitter)),
-                    Err(error) => emitter.send(Message::Answer(Outcome::Failed(error.to_string()))),
-                }
-            }) {
+            if let Err(error) = std::thread::Builder::new()
+                .name("toolkit-choose".into())
+                .spawn(move || {
+                    #[cfg(test)]
+                    if let Some(driver) = driver {
+                        driver(request, cancel, emitter);
+                        return;
+                    }
+                    let runtime = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build();
+                    match runtime {
+                        Ok(runtime) => runtime.block_on(remote(request, cancel, &emitter)),
+                        Err(error) => {
+                            emitter.send(Message::Answer(Outcome::Failed(error.to_string())))
+                        }
+                    }
+                })
+            {
                 self.ended = true;
                 return Some(Outcome::Failed(error.to_string()));
             }
@@ -116,10 +160,15 @@ impl Handle {
         while let Ok(message) = self.receiver.as_ref().expect("started").try_recv() {
             match message {
                 Message::Tier(tier) => self.tier = tier,
-                Message::Answer(outcome) => { self.ended = true; return Some(outcome); }
+                Message::Answer(outcome) => {
+                    self.ended = true;
+                    return Some(outcome);
+                }
                 Message::Fallback => {
                     self.tier = Tier::InProcess;
-                    self.fallback = Some(crate::file_chooser::FileChooser::from_request(self.request.clone()));
+                    self.fallback = Some(crate::file_chooser::FileChooser::from_request(
+                        self.request.clone(),
+                    ));
                 }
             }
         }
@@ -135,12 +184,16 @@ impl Handle {
 }
 
 impl Drop for Handle {
-    fn drop(&mut self) { let _ = self.cancel.send(true); }
+    fn drop(&mut self) {
+        let _ = self.cancel.send(true);
+    }
 }
 
 async fn cancelled(cancel: &mut watch::Receiver<bool>) {
     while !*cancel.borrow_and_update() {
-        if cancel.changed().await.is_err() { break; }
+        if cancel.changed().await.is_err() {
+            break;
+        }
     }
 }
 
@@ -152,25 +205,43 @@ async fn remote(request: Request, cancel: watch::Receiver<bool>, emitter: &Emitt
     let system = portal::attempt(&request, &mut system_cancel);
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     let system = platform::attempt(&request);
-    #[cfg(not(any(all(target_os = "linux", feature = "portal"), target_os = "windows", target_os = "macos")))]
-    let system = async { let _ = &mut system_cancel; None };
+    #[cfg(not(any(
+        all(target_os = "linux", feature = "portal"),
+        target_os = "windows",
+        target_os = "macos"
+    )))]
+    let system = async {
+        let _ = &mut system_cancel;
+        None
+    };
     cascade(bus, system, cancel, emitter).await;
 }
 
 async fn cascade(
     bus: impl std::future::Future<Output = Option<Outcome>>,
     system: impl std::future::Future<Output = Option<Outcome>>,
-    cancel: watch::Receiver<bool>, emitter: &Emitter,
+    cancel: watch::Receiver<bool>,
+    emitter: &Emitter,
 ) {
     emitter.send(Message::Tier(Tier::Bus));
     let outcome = bus.await;
-    if *cancel.borrow() { return; }
-    if final_outcome(&outcome) { emitter.send(Message::Answer(outcome.unwrap())); return; }
+    if *cancel.borrow() {
+        return;
+    }
+    if final_outcome(&outcome) {
+        emitter.send(Message::Answer(outcome.unwrap()));
+        return;
+    }
     emitter.send(Message::Tier(Tier::System));
     let outcome = system.await;
-    if *cancel.borrow() { return; }
-    if final_outcome(&outcome) { emitter.send(Message::Answer(outcome.unwrap())); }
-    else { emitter.send(Message::Fallback); }
+    if *cancel.borrow() {
+        return;
+    }
+    if final_outcome(&outcome) {
+        emitter.send(Message::Answer(outcome.unwrap()));
+    } else {
+        emitter.send(Message::Fallback);
+    }
 }
 
 fn final_outcome(outcome: &Option<Outcome>) -> bool {
@@ -182,16 +253,51 @@ fn decode_outcome(request: &Request, value: &serde_json::Value) -> Outcome {
     let parsed = || -> anyhow::Result<Outcome> {
         match value["response"].as_u64() {
             Some(1) => return Ok(Outcome::Cancelled),
-            Some(0) => {},
-            _ => return Ok(Outcome::Failed(value["message"].as_str().unwrap_or("chooser failed").into())),
+            Some(0) => {}
+            _ => {
+                return Ok(Outcome::Failed(
+                    value["message"].as_str().unwrap_or("chooser failed").into(),
+                ));
+            }
         }
         let uris: Vec<String> = serde_json::from_value(value["uris"].clone())?;
-        let paths = uris.iter().map(|uri| location(&serde_json::json!(uri)).map_err(|e| anyhow::anyhow!(e.message))).collect::<anyhow::Result<Vec<_>>>()?;
-        let choices: BTreeMap<String, String> = value.get("choices").map(|v| serde_json::from_value(v.clone())).transpose()?.unwrap_or_else(|| request.choice_defaults());
-        let filter = value.get("current_filter").map(Filter::parse).transpose().map_err(|e| anyhow::anyhow!(e.message))?.or_else(|| request.current_filter.clone());
-        let folder = paths.first().and_then(|path| path.iter().rposition(|&b| b == b'/').map(|i| if i == 0 { vec![b'/'] } else { path[..i].to_vec() }));
-        request.validate_acceptance(&Acceptance { paths: paths.clone(), folder, current_filter: filter.clone(), choices: choices.clone() }).map_err(|e| anyhow::anyhow!(e.message))?;
-        Ok(Outcome::Chosen { paths: paths.iter().map(|p| path_from_bytes(p)).collect(), choices, current_filter: filter })
+        let paths = uris
+            .iter()
+            .map(|uri| location(&serde_json::json!(uri)).map_err(|e| anyhow::anyhow!(e.message)))
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        let choices: BTreeMap<String, String> = value
+            .get("choices")
+            .map(|v| serde_json::from_value(v.clone()))
+            .transpose()?
+            .unwrap_or_else(|| request.choice_defaults());
+        let filter = value
+            .get("current_filter")
+            .map(Filter::parse)
+            .transpose()
+            .map_err(|e| anyhow::anyhow!(e.message))?
+            .or_else(|| request.current_filter.clone());
+        let folder = paths.first().and_then(|path| {
+            path.iter().rposition(|&b| b == b'/').map(|i| {
+                if i == 0 {
+                    vec![b'/']
+                } else {
+                    path[..i].to_vec()
+                }
+            })
+        });
+        request
+            .validate_acceptance(&Acceptance {
+                paths: paths.clone(),
+                folder,
+                current_filter: filter.clone(),
+                choices: choices.clone(),
+            })
+            .map_err(|e| anyhow::anyhow!(e.message))?;
+        Ok(Outcome::Chosen {
+            paths: paths.iter().map(|p| path_from_bytes(p)).collect(),
+            choices,
+            current_filter: filter,
+        })
     };
     parsed().unwrap_or_else(|e| Outcome::Failed(e.to_string()))
 }
@@ -207,9 +313,13 @@ pub(crate) fn path_bytes(path: &Path) -> Vec<u8> {
     path.as_os_str().as_bytes().to_vec()
 }
 #[cfg(not(unix))]
-pub(crate) fn path_from_bytes(bytes: &[u8]) -> PathBuf { String::from_utf8_lossy(bytes).as_ref().into() }
+pub(crate) fn path_from_bytes(bytes: &[u8]) -> PathBuf {
+    String::from_utf8_lossy(bytes).as_ref().into()
+}
 #[cfg(not(unix))]
-pub(crate) fn path_bytes(path: &Path) -> Vec<u8> { path.to_string_lossy().as_bytes().to_vec() }
+pub(crate) fn path_bytes(path: &Path) -> Vec<u8> {
+    path.to_string_lossy().as_bytes().to_vec()
+}
 
 #[cfg(test)]
 mod tests;
