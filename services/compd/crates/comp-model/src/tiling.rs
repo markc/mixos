@@ -12,8 +12,8 @@ pub struct TilingConfig {
     pub edge_tiling: bool,
     pub top_maximize: bool,
     pub corner_ratio: f64,
-    pub side_band_px: u64,
-    pub top_band_px: u64,
+    pub side_band_px: f64,
+    pub top_band_px: f64,
     pub shared_edge_dwell_ms: u64,
     pub preview_delay_ms: u64,
     pub preview_animation_ms: u64,
@@ -25,8 +25,8 @@ impl Default for TilingConfig {
             edge_tiling: true,
             top_maximize: true,
             corner_ratio: 0.25,
-            side_band_px: 20,
-            top_band_px: 5,
+            side_band_px: 20.0,
+            top_band_px: 5.0,
             shared_edge_dwell_ms: 250,
             preview_delay_ms: 0,
             preview_animation_ms: 180,
@@ -45,8 +45,8 @@ impl TilingConfig {
             "edge_tiling" => PropValue::Bool(self.edge_tiling),
             "top_maximize" => PropValue::Bool(self.top_maximize),
             "corner_ratio" => PropValue::F64(self.corner_ratio),
-            "side_band_px" => PropValue::U64(self.side_band_px),
-            "top_band_px" => PropValue::U64(self.top_band_px),
+            "side_band_px" => PropValue::F64(self.side_band_px),
+            "top_band_px" => PropValue::F64(self.top_band_px),
             "shared_edge_dwell_ms" => PropValue::U64(self.shared_edge_dwell_ms),
             "preview_delay_ms" => PropValue::U64(self.preview_delay_ms),
             "preview_animation_ms" => PropValue::U64(self.preview_animation_ms),
@@ -67,8 +67,12 @@ impl TilingConfig {
             "corner_ratio" => self.corner_ratio = value.as_f64()
                 .filter(|v| v.is_finite() && (0.05..=0.5).contains(v))
                 .ok_or_else(|| invalid_value(path, "finite number", "0.05..=0.5"))?,
-            "side_band_px" => self.side_band_px = integer(1, 200, "1..=200")?,
-            "top_band_px" => self.top_band_px = integer(1, 200, "1..=200")?,
+            "side_band_px" | "top_band_px" => {
+                let number = value.as_f64().filter(|v| v.is_finite() && (1.0..=200.0).contains(v))
+                    .ok_or_else(|| invalid_value(path, "finite number", "1..=200"))?;
+                if leaf == "side_band_px" { self.side_band_px = number; }
+                else { self.top_band_px = number; }
+            }
             "shared_edge_dwell_ms" => self.shared_edge_dwell_ms = integer(0, 2000, "0..=2000")?,
             "preview_delay_ms" => self.preview_delay_ms = integer(0, 2000, "0..=2000")?,
             "preview_animation_ms" => self.preview_animation_ms = integer(0, 1000, "0..=1000")?,

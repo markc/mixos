@@ -216,9 +216,9 @@ pub fn zone(
     let (x, y) = (pointer.x, pointer.y);
     let (left, top) = (f64::from(area.loc.x), f64::from(area.loc.y));
     let (width, height) = (f64::from(area.size.w), f64::from(area.size.h));
-    let side = if x <= left + config.side_band_px as f64 {
+    let side = if x <= left + config.side_band_px {
         Some(false)
-    } else if x >= left + width - config.side_band_px as f64 {
+    } else if x >= left + width - config.side_band_px {
         Some(true)
     } else {
         None
@@ -245,7 +245,7 @@ pub fn zone(
             slot,
             output: String::new(),
         })
-    } else if y <= top + config.top_band_px as f64 && maximizable && config.top_maximize {
+    } else if y <= top + config.top_band_px && maximizable && config.top_maximize {
         Some(Placement::Maximized {
             output: String::new(),
         })

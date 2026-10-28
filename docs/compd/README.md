@@ -63,8 +63,8 @@ Corner props remain runtime-only.
 | `edge_tiling` | `true` | bool; disables drag zones only |
 | `top_maximize` | `true` | bool |
 | `corner_ratio` | `0.25` | 0.05–0.5 |
-| `side_band_px` | `20` | integer 1–200 logical px |
-| `top_band_px` | `5` | integer 1–200 logical px |
+| `side_band_px` | `20` | finite 1–200 logical px |
+| `top_band_px` | `5` | finite 1–200 logical px |
 | `shared_edge_dwell_ms` | `250` | integer 0–2000 ms |
 | `preview_delay_ms` | `0` | integer 0–2000 ms |
 | `preview_animation_ms` | `180` | integer 0–1000 ms; zero snaps the preview |

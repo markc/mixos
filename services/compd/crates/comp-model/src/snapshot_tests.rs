@@ -389,8 +389,8 @@ fn tiling_props_read_describe_validate_and_diff_through_the_props_model() {
         ("edge_tiling", json!(true), json!(false), json!(true), json!(1)),
         ("top_maximize", json!(true), json!(false), json!(true), json!("true")),
         ("corner_ratio", json!(0.25), json!(0.05), json!(0.5), json!(0.51)),
-        ("side_band_px", json!(20), json!(1), json!(200), json!(0)),
-        ("top_band_px", json!(5), json!(1), json!(200), json!(201)),
+        ("side_band_px", json!(20.0), json!(1.0), json!(200.0), json!(0)),
+        ("top_band_px", json!(5.0), json!(1.0), json!(200.0), json!(201)),
         ("shared_edge_dwell_ms", json!(250), json!(0), json!(2000), json!(2001)),
         ("preview_delay_ms", json!(0), json!(0), json!(2000), json!(-1)),
         ("preview_animation_ms", json!(180), json!(0), json!(1000), json!(1001)),
@@ -411,7 +411,7 @@ fn tiling_props_read_describe_validate_and_diff_through_the_props_model() {
     }
     assert!(validate_set_request("tiling.unknown", &json!(true)).is_err());
     assert!(snapshot.select(&["tiling", "unknown"]).is_none());
-    for leaf in ["side_band_px", "top_band_px", "shared_edge_dwell_ms", "preview_delay_ms", "preview_animation_ms"] {
+    for leaf in ["shared_edge_dwell_ms", "preview_delay_ms", "preview_animation_ms"] {
         for value in [json!(1.5), json!(null), json!("1"), json!(false)] {
             assert!(validate_set_request(&format!("tiling.{leaf}"), &value).is_err());
         }
