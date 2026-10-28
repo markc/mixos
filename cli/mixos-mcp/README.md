@@ -12,8 +12,8 @@ Application tools are `app_describe`, `app_actions` and `app_execute`.
 `app_execute {service, id, params?}` sends the command id and optional
 parameter object to the application's execute command.
 
-`clipboard_get {mime?, primary?, offset?}` reads the local session's `clipd`.
-`clipboard_set {text, mime?, primary?, sensitive?}` writes UTF-8 text there.
+`clipboard_get {selection?, mime?, primary?, offset?}` reads the local `clipd`.
+`clipboard_set {text, selection?, mime?, primary?, sensitive?}` writes UTF-8 text.
 See the [clipboard manual](../../docs/clipd/README.md) for size limits,
 binary encoding and explicit cross-session push.
 

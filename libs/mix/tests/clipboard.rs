@@ -30,7 +30,10 @@ impl BusHandler for ClipboardBus {
                     let binary = body["mime"] == "application/octet-stream";
                     if !binary {
                         if body.get("selection").is_some() {
-                            assert_eq!(body, serde_json::json!({"selection":"primary", "mime":"text/plain"}));
+                            assert_eq!(
+                                body,
+                                serde_json::json!({"selection":"primary", "mime":"text/plain"})
+                            );
                         } else {
                             assert_eq!(body, serde_json::json!({"mime":"text/plain"}));
                         }
@@ -78,9 +81,10 @@ impl BusHandler for ClipboardBus {
 #[tokio::test]
 async fn clipboard_builtins_preserve_selection_and_legacy_mime_arguments() {
     let source = "print(clip_get(\"primary\", \"text/plain\"))\nprint(clip_set(\"text to copy\", \"primary\"))\nprint(clip_set(\"text to copy\", \"text/plain;charset=utf-8\"))\n";
-    let program = mix::parser::Parser::new(mix::lexer::Lexer::new(source).tokenize().unwrap(), source)
-        .parse_program()
-        .unwrap();
+    let program =
+        mix::parser::Parser::new(mix::lexer::Lexer::new(source).tokenize().unwrap(), source)
+            .parse_program()
+            .unwrap();
     let output = SharedBuf::new();
     let mut eval = Evaluator::with_output(Box::new(output.clone()), Box::new(SharedBuf::new()));
     eval.set_bus_handler(Rc::new(ClipboardBus { fail: false }));

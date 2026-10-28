@@ -194,8 +194,8 @@ impl MixosMcp {
 
 #[tool_router(router = native_tool_router, vis = "pub(crate)")]
 impl MixosMcp {
-    /// Read the local session clipboard. Binary data is base64; large data
-    /// includes next_offset/eof. Remote sessions must use clipboard.push.
+    /// Read the local clipboard or PRIMARY. Text has encoding/eof fields;
+    /// binary and large content returns a blobd reference.
     #[tool(annotations(
         read_only_hint = true,
         destructive_hint = false,
@@ -207,7 +207,9 @@ impl MixosMcp {
     ) -> Result<Json<NativeObservation>, String> {
         let mut args = json!({"primary": p.primary, "offset": p.offset});
         if let Some(selection) = p.selection {
-            if !matches!(selection.as_str(), "clipboard" | "primary") || (p.primary && selection != "primary") {
+            if !matches!(selection.as_str(), "clipboard" | "primary")
+                || (p.primary && selection != "primary")
+            {
                 return Err("invalid or conflicting clipboard selection".into());
             }
             args["primary"] = json!(selection == "primary");
@@ -232,13 +234,16 @@ impl MixosMcp {
     ) -> Result<Json<NativeObservation>, String> {
         let mut args = json!({"mime": p.mime.unwrap_or_else(|| "text/plain;charset=utf-8".into()), "data": p.text, "primary": p.primary, "sensitive": p.sensitive});
         if let Some(selection) = p.selection {
-            if !matches!(selection.as_str(), "clipboard" | "primary") || (p.primary && selection != "primary") {
+            if !matches!(selection.as_str(), "clipboard" | "primary")
+                || (p.primary && selection != "primary")
+            {
                 return Err("invalid or conflicting clipboard selection".into());
             }
             args["primary"] = json!(selection == "primary");
             args["selection"] = json!(selection);
         }
-        self.native_observation("clipd".into(), "clipboard.set", args).await
+        self.native_observation("clipd".into(), "clipboard.set", args)
+            .await
     }
 
     /// Describe one explicitly targeted application and its native commands.

@@ -34193,9 +34193,11 @@ Each name below is exposed as `mcp__mixos__<name>` in Claude Code.
 - `docs_feedback`, `journal_feedback`, `memory_feedback`, `journal_supersede`
 - `mix_execute`, `mcp_status`
 
-`clipboard_get {mime?, primary?, offset?}` and
-`clipboard_set {text, mime?, primary?, sensitive?}` use the current session's
-`clipd` service. Reads return the encoding and chunk continuation fields.
+`clipboard_get {selection?, mime?, primary?, offset?}` and
+`clipboard_set {text, selection?, mime?, primary?, sensitive?}` use the local
+`clipd`. Selection is `clipboard` or `primary`; `primary` remains an alias.
+Reads return encoding and continuation fields, or a blobd reference for
+binary/large content.
 See [clipd](../clipd/README.md) for limits and cross-session push semantics.
 
 ### Application commands
