@@ -608,7 +608,9 @@ impl Session {
                         // in a no-selection state, not stuck on the
                         // old mailbox.
                         if self.rev2 && self.state.selected().is_some() {
-                            writer.write_all(b"* OK [CLOSED] previous mailbox closed\r\n").await?;
+                            writer
+                                .write_all(b"* OK [CLOSED] previous mailbox closed\r\n")
+                                .await?;
                         }
                         self.state = State::Authenticated;
                         self.saved_search.clear();
@@ -2333,28 +2335,28 @@ fn frame_append(cmd: codec::Command, utf8: bool) -> Result<Vec<(String, Vec<u8>)
             wrapper = true;
         }
         match op::append::parse_args_for_dispatch(&line.args) {
-        Ok(()) => {
-            if !literal8 && literal.contains(&0) {
-                return Err("NUL in APPEND requires literal8".into());
+            Ok(()) => {
+                if !literal8 && literal.contains(&0) {
+                    return Err("NUL in APPEND requires literal8".into());
+                }
+                if base.is_none() {
+                    let (name, _) = op::list::take_mailbox_name(line.args.trim_start())?;
+                    base = Some(
+                        format!(
+                            "{} APPEND {}",
+                            line.tag,
+                            crate::imap::mailbox_name::quote_mailbox(&name)
+                        )
+                        .into_bytes(),
+                    );
+                }
+                messages.push((line.args, literal));
+                prefix = base.clone().unwrap();
             }
-            if base.is_none() {
-                let (name, _) = op::list::take_mailbox_name(line.args.trim_start())?;
-                base = Some(
-                    format!(
-                        "{} APPEND {}",
-                        line.tag,
-                        crate::imap::mailbox_name::quote_mailbox(&name)
-                    )
-                    .into_bytes(),
-                );
+            Err(_) if messages.is_empty() && line.args.trim().is_empty() => {
+                push_quoted(&mut prefix, &literal).map_err(str::to_string)?;
             }
-            messages.push((line.args, literal));
-            prefix = base.clone().unwrap();
-        }
-        Err(_) if messages.is_empty() && line.args.trim().is_empty() => {
-            push_quoted(&mut prefix, &literal).map_err(str::to_string)?;
-        }
-        Err(error) => return Err(error),
+            Err(error) => return Err(error),
         }
     }
     if wrapper {

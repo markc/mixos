@@ -760,9 +760,11 @@ fn has_unsupported_literal(line: &[u8]) -> bool {
 
 pub(crate) fn is_valid_tag(tag: &str) -> bool {
     // RFC 9051 tag = 1*<any ASTRING-CHAR except "+">.
-    !tag.is_empty() && tag.bytes().all(|c| {
-        c.is_ascii_graphic() && !matches!(c, b'+' | b'(' | b')' | b'{' | b'%' | b'*' | b'"' | b'\\')
-    })
+    !tag.is_empty()
+        && tag.bytes().all(|c| {
+            c.is_ascii_graphic()
+                && !matches!(c, b'+' | b'(' | b')' | b'{' | b'%' | b'*' | b'"' | b'\\')
+        })
 }
 
 #[cfg(test)]

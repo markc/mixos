@@ -1317,12 +1317,26 @@ async fn search_work_limit_never_returns_a_truncated_match_set() -> Result<()> {
 async fn streaming_search_preserves_contextual_unicode_case_matching() -> Result<()> {
     let (_tmp, db, mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
     for (n, body) in ["ΟΣ", "ος", "οσ"].iter().enumerate() {
-        let raw = format!("Subject: sigma\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n{body}");
-        insert_email(&ms, &mds, raw.as_bytes(), &format!("sigma{n}"), Flags(0), 1_700_000_000_000)?;
+        let raw =
+            format!("Subject: sigma\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n{body}");
+        insert_email(
+            &ms,
+            &mds,
+            raw.as_bytes(),
+            &format!("sigma{n}"),
+            Flags(0),
+            1_700_000_000_000,
+        )?;
     }
     let (mut r, mut w) = selected(ms, db).await?;
     for needle in ["ΟΣ", "ος", "οσ"] {
-        let result = command(&mut r, &mut w, "q", &format!("SEARCH CHARSET UTF-8 BODY \"{needle}\"")).await?;
+        let result = command(
+            &mut r,
+            &mut w,
+            "q",
+            &format!("SEARCH CHARSET UTF-8 BODY \"{needle}\""),
+        )
+        .await?;
         assert!(result.contains("* SEARCH 1 2 3\r\n"), "{needle}: {result}");
     }
     Ok(())
@@ -1335,12 +1349,22 @@ async fn repeated_content_searches_share_a_per_message_work_budget() -> Result<(
     raw.resize(1024 * 1024 + 64, b'x');
     insert_email(&ms, &mds, &raw, "budget", Flags(0), 1_700_000_000_000)?;
     let (mut r, mut w) = selected(ms, db).await?;
-    assert!(command(&mut r, &mut w, "s", "SEARCH BODY x").await?.contains("* SEARCH 1"));
-    let criteria = std::iter::repeat_n("NOT BODY absent", 257).collect::<Vec<_>>().join(" ");
+    assert!(
+        command(&mut r, &mut w, "s", "SEARCH BODY x")
+            .await?
+            .contains("* SEARCH 1")
+    );
+    let criteria = std::iter::repeat_n("NOT BODY absent", 257)
+        .collect::<Vec<_>>()
+        .join(" ");
     let result = command(&mut r, &mut w, "q", &format!("SEARCH {criteria}")).await?;
     assert!(result.contains("q NO [LIMIT]"), "{result}");
     assert!(!result.contains("* SEARCH"), "{result}");
-    assert!(command(&mut r, &mut w, "m", "SEARCH ALL").await?.contains("* SEARCH 1"));
+    assert!(
+        command(&mut r, &mut w, "m", "SEARCH ALL")
+            .await?
+            .contains("* SEARCH 1")
+    );
     Ok(())
 }
 
@@ -1358,7 +1382,11 @@ async fn rev2_reselection_marks_the_closed_boundary_including_failure() -> Resul
     let failed = command(&mut r, &mut w, "f", "SELECT NoSuchMailbox").await?;
     assert!(failed.starts_with("* OK [CLOSED]"), "{failed}");
     assert!(failed.contains("f NO [NONEXISTENT]"), "{failed}");
-    assert!(command(&mut r, &mut w, "b", "FETCH 1 FLAGS").await?.contains("b BAD"));
+    assert!(
+        command(&mut r, &mut w, "b", "FETCH 1 FLAGS")
+            .await?
+            .contains("b BAD")
+    );
     let (mut legacy_r, mut legacy_w) = selected(ms, db).await?;
     let legacy = command(&mut legacy_r, &mut legacy_w, "l", "SELECT Archive").await?;
     assert!(!legacy.contains("[CLOSED]"), "{legacy}");
@@ -1402,7 +1430,8 @@ async fn capabilities_match_after_login_and_enable_and_zero_arg_commands_validat
         );
     }
     for invalid_tag in ["bad\"tag", "bad\\tag", "bad(tag"] {
-        w.write_all(format!("{invalid_tag} NOOP\r\n").as_bytes()).await?;
+        w.write_all(format!("{invalid_tag} NOOP\r\n").as_bytes())
+            .await?;
         let response = read_line(&mut r).await?;
         assert!(response.starts_with("* BAD"), "{response}");
     }

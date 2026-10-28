@@ -1194,7 +1194,12 @@ async fn subscribe_nonexistent_retains_the_name() -> Result<()> {
     assert!(resp.starts_with("a02 OK"), "{resp}");
     w.write_all(b"a03 LSUB \"\" NoSuchFolder\r\n").await?;
     let lines = read_until_tagged(&mut reader, "a03").await?;
-    assert!(lines.iter().any(|line| line.starts_with("* LSUB") && line.contains("NoSuchFolder")), "{lines:?}");
+    assert!(
+        lines
+            .iter()
+            .any(|line| line.starts_with("* LSUB") && line.contains("NoSuchFolder")),
+        "{lines:?}"
+    );
     Ok(())
 }
 
