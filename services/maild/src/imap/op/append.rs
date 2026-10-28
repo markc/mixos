@@ -309,10 +309,7 @@ fn normalise_binary_message_at_depth(raw: &[u8], depth: usize) -> Result<Vec<u8>
         }
         let (cte, data) = match &part.body {
             PartType::Multipart(_) => continue,
-            PartType::Message(_) => (
-                "8bit",
-                normalise_binary_message_at_depth(data, depth + 1)?,
-            ),
+            PartType::Message(_) => ("8bit", normalise_binary_message_at_depth(data, depth + 1)?),
             _ => {
                 let encoded = base64::engine::general_purpose::STANDARD.encode(data);
                 let mut body = Vec::with_capacity(encoded.len() + encoded.len() / 38);

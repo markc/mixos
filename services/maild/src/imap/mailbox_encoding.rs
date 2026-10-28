@@ -70,7 +70,11 @@ pub fn encode(name: &str) -> String {
 /// mailbox uses modified UTF-7; keyword bytes must remain unchanged.
 pub fn decode_first_mailbox(text: &str) -> Result<String, String> {
     let (name, rest) = super::op::list::take_mailbox_name(text.trim_start())?;
-    Ok(format!("{}{}", super::mailbox_name::quote_mailbox(&decode(&name)?), rest))
+    Ok(format!(
+        "{}{}",
+        super::mailbox_name::quote_mailbox(&decode(&name)?),
+        rest
+    ))
 }
 
 /// Map a command's mailbox strings without changing its grammar. This is used

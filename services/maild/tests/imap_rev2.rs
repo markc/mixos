@@ -1719,16 +1719,24 @@ async fn uidvalidity_does_not_repeat_on_rapid_or_legacy_mailbox_recreation() -> 
 async fn binary_append_bounds_reparsed_message_nesting() -> Result<()> {
     let (_tmp, db, _mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
     let (mut r, mut w) = selected(ms.clone(), db).await?;
-    let mut raw = b"Content-Type: application/octet-stream\r\nContent-Transfer-Encoding: binary\r\n\r\na\0b".to_vec();
+    let mut raw =
+        b"Content-Type: application/octet-stream\r\nContent-Transfer-Encoding: binary\r\n\r\na\0b"
+            .to_vec();
     let mut shallow = b"Content-Type: message/rfc822\r\n\r\n".to_vec();
     shallow.extend_from_slice(&raw);
     let mut wire = format!("s APPEND INBOX ~{{{}+}}\r\n", shallow.len()).into_bytes();
     wire.extend_from_slice(&shallow);
     wire.extend_from_slice(b"\r\n");
     let response = exchange(&mut r, &mut w, "s", &wire).await?;
-    assert!(String::from_utf8_lossy(&response).contains("s OK [APPENDUID"), "{response:?}");
+    assert!(
+        String::from_utf8_lossy(&response).contains("s OK [APPENDUID"),
+        "{response:?}"
+    );
     let response = exchange(&mut r, &mut w, "f", b"f FETCH 1 BINARY.PEEK[1.1]\r\n").await?;
-    assert!(response.windows(9).any(|part| part == b"~{3}\r\na\0b"), "{response:?}");
+    assert!(
+        response.windows(9).any(|part| part == b"~{3}\r\na\0b"),
+        "{response:?}"
+    );
     for _ in 0..100 {
         let mut outer = b"Content-Type: message/rfc822\r\n\r\n".to_vec();
         outer.extend_from_slice(&raw);
@@ -1741,7 +1749,11 @@ async fn binary_append_bounds_reparsed_message_nesting() -> Result<()> {
     let response = String::from_utf8_lossy(&response);
     assert!(response.contains("a NO [UNKNOWN-CTE]"), "{response}");
     assert!(command(&mut r, &mut w, "n", "NOOP").await?.contains("n OK"));
-    let total: u64 = ms.list_mailboxes(1)?.iter().map(|mailbox| mailbox.total_emails).sum();
+    let total: u64 = ms
+        .list_mailboxes(1)?
+        .iter()
+        .map(|mailbox| mailbox.total_emails)
+        .sum();
     assert_eq!(total, 1);
     Ok(())
 }
