@@ -352,10 +352,8 @@ async fn run_child() -> Result<()> {
         refused.to_string().contains("off-site forwarding"),
         "non-local target error was unclear: {refused}"
     );
-    ensure!(
-        cli(&["bayesian", "stats", "999999"]).await.is_err(),
-        "Bayes stats accepted an unknown id"
-    );
+    let refusal = cli(&["bayesian", "stats", "999999"]).await.unwrap_err().to_string();
+    assert_eq!(refusal.trim(), "maild CLI failed: maild.bayesian.stats failed (rc=10): account not found");
     ensure!(
         !root.join("spam/999999").exists(),
         "Bayes stats created an unknown corpus directory"

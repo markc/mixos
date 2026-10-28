@@ -352,12 +352,8 @@ where
             let is_terminator = buf == b".\r\n" || (!session.require_auth && buf == b".\n");
             if is_terminator {
                 data_mode = false;
-                if !session.smtp_utf8 && super::envelope::utf8_headers(&data_buf) {
-                    write_line(writer, "550 5.6.7 UTF-8 headers require SMTPUTF8").await?;
-                    data_buf.clear();
-                    session.reset_transaction();
-                    continue;
-                }
+                // Accept raw eight-bit headers from legacy clients too. The
+                // outbound path derives SMTPUTF8 requirements from the bytes.
                 // A bad line earlier in this submission DATA → reject the
                 // whole message rather than deliver a smuggling-ambiguous
                 // one.
@@ -678,7 +674,6 @@ where
 
                 match from {
                     Some(addr) => {
-                        session.reset_transaction();
                         let parameters = mail_parameters(args);
                         let smtp_utf8 = parameters
                             .iter()
@@ -740,6 +735,7 @@ where
                             .await?;
                             continue;
                         }
+                        session.reset_transaction();
                         session.mail_from = Some(addr);
                         session.smtp_utf8 = smtp_utf8;
                         write_line(writer, "250 2.1.0 OK").await?;

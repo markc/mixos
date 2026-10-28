@@ -161,10 +161,11 @@ pub async fn status(cmd: &IncomingCommand, db: &Db) -> (u8, String) {
             let conn = conn.lock().map_err(|e| anyhow::anyhow!("database lock: {e}"))?;
             let id = request.id.to_string();
             ensure!(conn.query_row("SELECT 1 FROM email_submissions WHERE id=?1", [&id], |_| Ok(())).optional()?.is_some(), "submission not found");
-            let mut stmt = conn.prepare("SELECT recipient,status,last_reply,updated_at FROM smtp_delivery WHERE submission_id=?1 ORDER BY recipient")?;
+            let mut stmt = conn.prepare("SELECT recipient,status,last_reply,updated_at,CASE WHEN target='' THEN recipient ELSE target END FROM smtp_delivery WHERE submission_id=?1 ORDER BY recipient,target")?;
             let recipients = stmt.query_map([&id], |row| Ok(json!({
                 "recipient":row.get::<_,String>(0)?, "status":row.get::<_,String>(1)?,
-                "last_smtp_reply":row.get::<_,Option<String>>(2)?, "updated_at":row.get::<_,String>(3)?
+                "last_smtp_reply":row.get::<_,Option<String>>(2)?, "updated_at":row.get::<_,String>(3)?,
+                "target":row.get::<_,String>(4)?
             })))?.collect::<rusqlite::Result<Vec<_>>>()?;
             ensure!(!recipients.is_empty(), "delivery status unavailable for legacy submission");
             let confirmed = recipients.iter().all(|r| r["status"] == "delivered");

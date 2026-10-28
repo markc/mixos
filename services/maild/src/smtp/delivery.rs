@@ -366,10 +366,34 @@ pub async fn delivery_worker(state: Arc<SmtpState>) {
 
 /// Process all ready queue entries.
 async fn process_queue(state: &SmtpState, resolver: &TokioResolver) -> Result<usize> {
+    queue::sweep_receipts(&state.db.conn,state.config.delivery_retention_days).await?;
     let entries = queue::fetch_ready(&state.db.conn, 50).await?;
     let mut delivered = 0;
 
     for entry in entries {
+        if let Some(account_id) = entry.local_account_id {
+            let result = match entry.blob_hash {
+                Some(hash) => queue::deliver_local(&state.mailstore,account_id,hash).await,
+                None => Err(anyhow::anyhow!("local retry has no blob hash")),
+            };
+            match result {
+                Ok(()) => {
+                    queue::local_result(&state.db.conn,entry.id,"delivered","250 2.0.0 Local delivery completed").await?;
+                    queue::mark_delivered(&state.db.conn,entry.id).await?;
+                    delivered += 1;
+                }
+                Err(error) if entry.attempts >= 9 => {
+                    queue::mark_permanent_failure(&state.db.conn,entry.id,&error.to_string()).await?;
+                    if let Err(bounce_error) = generate_bounce(state,&entry.from_addr,&entry.to_addrs,&error.to_string()).await {
+                        tracing::error!(error=%bounce_error,"Failed to generate local retry exhaustion bounce");
+                    }
+                }
+                Err(error) => {
+                    queue::mark_failed(&state.db.conn,entry.id,&format!("451 4.3.0 Local delivery deferred: {error}")).await?;
+                }
+            }
+            continue;
+        }
         // : load via CAS (`mds.get_blob`) when `blob_hash` is
         // populated; fall back to the legacy `db::blob::load` path for
         // pre-migration in-flight rows that still carry only `blob_id`.
@@ -1014,7 +1038,7 @@ where
     use tokio::io::AsyncWriteExt;
 
     let utf8 = super::envelope::needs_smtputf8(from, recipients, data);
-    let eight_bit = utf8 || !data.is_ascii();
+    let eight_bit = super::envelope::eight_bit_body(data);
     if utf8 && !super::envelope::has_extension(ehlo, "SMTPUTF8") {
         return Err(PermanentFailure(format!(
             "550 5.6.7 {host} does not offer SMTPUTF8; message cannot be downgraded"
@@ -1839,7 +1863,7 @@ mod rcpt_rejection_tests {
                 "250-8BITMIME\r\n250 SMTPUTF8",
                 "élise@example.com",
                 "Subject: ASCII\r\n\r\nbody\r\n",
-                Some(" SMTPUTF8 BODY=8BITMIME"),
+                Some(" SMTPUTF8"),
             ),
             (
                 "250-8BITMIME\r\n250 SMTPUTF8",
@@ -1852,7 +1876,7 @@ mod rcpt_rejection_tests {
                 "250-8BITMIME\r\n250 SMTPUTF8",
                 "élise@example.com",
                 "Subject: café\r\n\r\nbody\r\n",
-                Some(" SMTPUTF8 BODY=8BITMIME"),
+                Some(" SMTPUTF8"),
             ),
             (
                 "250 8BITMIME",
@@ -1870,8 +1894,10 @@ mod rcpt_rejection_tests {
                 "250 SMTPUTF8",
                 "élise@example.com",
                 "Subject: café\r\n\r\nbody\r\n",
-                None,
+                Some(" SMTPUTF8"),
             ),
+            ("250 SMTPUTF8", "a@example.com", "Subject: café\r\n\r\ncafé\r\n", None),
+            ("250 SMTPUTF8", "a@example.com", "Subject: café\n\nASCII body\r\n\r\n", Some(" SMTPUTF8")),
             (
                 "250 ok",
                 "a@example.com",
