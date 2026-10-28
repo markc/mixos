@@ -138,7 +138,7 @@ impl Fixture {
 
     async fn upload(&self, subject: &str) -> String {
         let raw = format!(
-            "Received: from example.org by example.com; Mon, 1 Jan 2024 00:00:00 +0000\r\nFrom: alice@example.com\r\nTo: recipient@example.net\r\nSubject: {subject}\r\nMessage-ID: <{subject}@example.com>\r\n\r\nHello\r\n"
+            "Received: from example.org by example.com; Mon, 1 Jan 2024 00:00:00 +0000\r\nDate: Mon, 1 Jan 2024 00:00:00 +0000\r\nFrom: alice@example.com\r\nTo: recipient@example.net\r\nSubject: {subject}\r\nMessage-ID: <{subject}@example.com>\r\n\r\nHello\r\n"
         );
         self.upload_message(&raw).await
     }
