@@ -1109,7 +1109,9 @@ impl Eval<'_> {
                 for value in values {
                     for key in &keys {
                         self.step()?;
-                        if self.matches(&value, key, args)? {
+                        // RFC 5173 section 6: body tests do not set match
+                        // variables, even when using the :matches operator.
+                        if self.matches(&value, key, args, name != "body")? {
                             return Ok(true);
                         }
                     }
@@ -1128,7 +1130,7 @@ impl Eval<'_> {
         }
         Ok(values.into_values().collect())
     }
-    fn matches(&mut self, value: &str, key: &str, args: &Args) -> Result<bool> {
+    fn matches(&mut self, value: &str, key: &str, args: &Args, capture: bool) -> Result<bool> {
         // Charge for scanned bytes as well as VM instructions. Repeated body
         // comparisons cannot turn a short script into unbounded CPU work.
         self.steps += (value.len() + key.len()) / 1024;
@@ -1164,7 +1166,7 @@ impl Eval<'_> {
         }
         if args.has("matches") {
             if let Some(captures) = glob(original, &key, !octet, &mut self.steps)? {
-                self.captures = captures;
+                if capture { self.captures = captures; }
                 return Ok(true);
             }
             Ok(false)

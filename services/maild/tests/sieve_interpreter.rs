@@ -95,6 +95,11 @@ fn body_decodes_transfer_encoding_and_raw_preserves_it() {
     assert!(!matches(r#"body :content "image" :contains "Hello""#));
 }
 #[test]
+fn body_wildcards_preserve_earlier_match_variables() {
+    let plan = evaluate(r#"require ["variables","body","fileinto"]; if allof(header :matches "Subject" "* CASE",body :matches "Hello *") { fileinto "${1}"; }"#);
+    assert_eq!(plan.filings[0].mailbox.as_deref(),Some("Mixed"));
+}
+#[test]
 fn variables_expansion_modifiers_and_string_test() {
     let plan = evaluate(
         r#"require ["variables","fileinto"]; set :upper "folder" "mixed"; if string :is "${folder}" "MIXED" { fileinto "${folder}"; }"#,
