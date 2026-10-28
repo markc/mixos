@@ -716,7 +716,7 @@ pub(crate) mod tests {
         let loaded = load_str(&doc(&format!("{MENU_WITH},{NEXT_WITHOUT}")));
         let rows = loaded.rows;
         assert_eq!(rows.len(), 2);
-        assert_eq!(rows[0].service.as_deref(), Some("desktop-vt1"));
+        assert_eq!(rows[0].service.as_deref(), Some("clipd"));
         assert_eq!(rows[0].action.as_str(), "desktop.clipboard.menu");
         assert_eq!(rows[1].service, None, "pre-field files load unchanged");
         assert!(loaded.dropped.is_empty());
@@ -847,7 +847,7 @@ pub(crate) mod tests {
         assert_eq!(loaded.rows.len(), 5);
         assert_eq!(loaded.rows[0].action.as_str(), "user.f01");
         assert_eq!(loaded.rows[1].repeat, inputd_schema::RepeatPolicy::Allow);
-        assert_eq!(loaded.rows[2].service.as_deref(), Some("desktop-vt1"));
+        assert_eq!(loaded.rows[2].service.as_deref(), Some("clipd"));
         assert!(loaded.rows[3].passthrough);
         assert_eq!(loaded.rows[4].args, Some(serde_json::json!({"safe": true})));
         let dir = scratch("legacy-bytes");
@@ -855,7 +855,7 @@ pub(crate) mod tests {
         save(&path, &loaded.rows).unwrap();
         assert_eq!(
             std::fs::read_to_string(&path).unwrap(),
-            LEGACY_FILE.trim_end()
+            LEGACY_FILE.trim_end().replace("\"service\": \"desktop-vt1\"", "\"service\": \"clipd\"")
         );
         let _ = std::fs::remove_dir_all(&dir);
     }

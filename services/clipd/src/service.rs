@@ -138,6 +138,7 @@ pub struct Service {
     mutation: Mutex<()>,
     reads: Mutex<()>,
     pub url: String,
+    menu: std::sync::Mutex<Option<std::process::Child>>,
 }
 
 async fn call(client: &SupervisedClient, target: &str, command: &str, body: Value) -> Result<Value> {
@@ -190,12 +191,16 @@ impl Service {
     }
 
     pub async fn set(&self, selection: Selection, primary: bool, clear: bool) -> Result<bool> {
+        self.apply(selection, primary, clear, true).await
+    }
+
+    async fn apply(&self, selection: Selection, primary: bool, clear: bool, remember: bool) -> Result<bool> {
         let _mutation = self.mutation.lock().await;
         let mut state = self.state.lock().await;
         if state.is_echo(&selection.stamp) { return Ok(false); }
         self.driver.set(&selection, primary, clear).await?;
         state.adopt(primary, selection);
-        state.remember(primary);
+        if remember { state.remember(primary); }
         drop(state);
         self.changed(primary).await;
         Ok(true)
@@ -206,7 +211,7 @@ impl Service {
         let s = state.selections[usize::from(primary)].as_ref();
         let body = json!({"session": state.session, "generation": s.map(|s| &s.stamp.generation), "origin_session": s.map(|s| &s.stamp.origin_session), "mime_types": s.map(|s| &s.mime_types).cloned().unwrap_or_default(), "size": s.and_then(|s| s.size), "sensitive": s.is_some_and(|s| s.sensitive), "primary": primary});
         drop(state);
-        let mut event = bus::BusMessage::new().with_header("type", "event").with_header("topic", "clipboard.changed");
+        let mut event = bus::BusMessage::new().with_header("command", "clipboard.changed");
         event.body = serde_json::to_string(&body).unwrap_or_default();
         let headers = BTreeMap::from([("name".into(), "clipboard.changed".into())]);
         if let Err(error) = self.client.send_with_headers("noded", "topic.publish", &headers, &event.to_string()).await {
@@ -214,10 +219,10 @@ impl Service {
         }
     }
 
-    async fn observe(self: &Arc<Self>, primary: bool, offer: Option<crate::wayland::Offer>, mut types: Vec<String>) {
+    async fn begin_observe(&self, primary: bool, offer: Option<crate::wayland::Offer>, mut types: Vec<String>) -> Option<Selection> {
         let _mutation = self.mutation.lock().await;
         let mut state = self.state.lock().await;
-        if state.selections[usize::from(primary)].as_ref().is_some_and(|s| types.contains(&s.stamp.marker())) { return; }
+        if state.selections[usize::from(primary)].as_ref().is_some_and(|s| types.contains(&s.stamp.marker())) { return None; }
         types.retain(|m| !m.starts_with(MARKER));
         // Invalid or excessive lists are represented as a closed, sensitive
         // selection, rather than leaving the previous clipboard accessible.
@@ -226,14 +231,18 @@ impl Service {
         let stamp = Stamp::new(&state.session);
         let selection = Selection { stamp: stamp.clone(), sensitive: invalid || types.iter().any(|m| m == SECRET_HINT), mime_types: types, size: None, data: BTreeMap::new(), offer, remote: None };
         state.adopt(primary, selection.clone());
-        drop(state); drop(_mutation);
+        Some(selection)
+    }
+
+    async fn classify(self: &Arc<Self>, primary: bool, selection: Selection) {
+        let stamp = selection.stamp.clone();
         // Unknown hints fail closed. No bytes enter history until classification.
         let sensitive = if selection.mime_types.iter().any(|m| m == SECRET_HINT) {
             match selection.offer.clone() {
                 Some(offer) => self.driver.read(offer, SECRET_HINT.into(), 256).await.map_or(true, |v| v == b"secret"),
                 None => true,
             }
-        } else { invalid };
+        } else { selection.sensitive };
         let text = if !sensitive { if let (Some(mime), Some(offer)) = (selection.text_mime(), selection.offer.clone()) {
             self.driver.read(offer, mime.clone(), TEXT_CAP).await.ok().map(|data| (mime, data))
         } else { None } } else { None };
@@ -257,8 +266,14 @@ impl Service {
         s.can_export(pair.images)?;
         // Only complete text-only offers travel eagerly. Mixed offers preserve
         // their complete list and fetch every type lazily on paste.
-        let eager = s.mime_types.iter().all(|m| m.starts_with("text/") || ["UTF8_STRING", "STRING", "TEXT"].contains(&m.as_str())) && s.mime_types.iter().all(|m| s.data.contains_key(m)) && s.data.values().map(|v| v.len()).sum::<usize>() <= self.settings.eager_text_bytes;
-        let data = eager.then(|| s.data.iter().map(|(m, v)| (m.clone(), B64.encode(v.as_slice()))).collect());
+        let mut budget = self.settings.eager_text_bytes;
+        let eager: BTreeMap<_, _> = s.data.iter().filter_map(|(mime, bytes)| {
+            if (mime.starts_with("text/") || ["UTF8_STRING", "STRING", "TEXT"].contains(&mime.as_str())) && bytes.len() <= budget && std::str::from_utf8(bytes).is_ok() {
+                budget -= bytes.len();
+                Some((mime.clone(), B64.encode(bytes.as_slice())))
+            } else { None }
+        }).collect();
+        let data = (!eager.is_empty()).then_some(eager);
         self.peer_call(&to, "clipboard.receive", json!(Receive { stamp: s.stamp, mime_types: s.mime_types, size: s.size, data })).await
     }
 
@@ -283,7 +298,7 @@ impl Service {
                 ensure!(!r.mime_types.iter().any(|m| m == SECRET_HINT), "SENSITIVE: hinted data cannot cross sessions");
                 let mut data = BTreeMap::new();
                 if let Some(items) = r.data {
-                    ensure!(items.len() == r.mime_types.len(), "MIME: incomplete eager offer");
+                    ensure!(items.len() <= r.mime_types.len(), "MIME: excessive eager types");
                     let mut size = 0usize;
                     for (mime, encoded) in items {
                         ensure!(r.mime_types.contains(&mime), "MIME: unadvertised eager type");
@@ -295,7 +310,7 @@ impl Service {
                         data.insert(mime, Arc::new(bytes));
                     }
                 }
-                let lazy = data.is_empty();
+                let lazy = data.len() < r.mime_types.len();
                 let s = Selection { stamp: r.stamp.clone(), mime_types: r.mime_types, sensitive: false, size: r.size, data, offer: None, remote: lazy.then(|| Remote { session: envelope.from_session.clone(), stamp: r.stamp }) };
                 ensure!(peer.images || !s.mime_types.iter().any(|m| m.starts_with("image/")), "IMAGES_DISABLED: receiving pair forbids images");
                 ensure!(s.size.is_none_or(|n| n <= MAX_BYTES), "SIZE_CAP: advertised size exceeds 64 MiB");
@@ -354,20 +369,23 @@ impl Service {
             "clipboard.pick" | "desktop.clipboard.rotate" => {
                 let mut state = self.state.lock().await;
                 let rotate = command.command == "desktop.clipboard.rotate";
-                let n = if rotate { (state.rotate + 1) % state.history.len().max(1) } else { serde_json::from_value::<Pick>(command.args.clone())?.n };
+                let requested = if rotate { None } else { Some(serde_json::from_value::<Pick>(command.args.clone())?) };
+                let n = requested.as_ref().map_or_else(|| (state.rotate + 1) % state.history.len().max(1), |p| p.n);
                 let entry = state.history.get(n).cloned().ok_or_else(|| anyhow!("HISTORY: index out of range"))?;
+                ensure!(requested.as_ref().and_then(|p| p.expected_id.as_ref()).is_none_or(|id| id == &entry.id), "HISTORY_CHANGED: refresh the picker before choosing");
                 let selection = Selection::owned(Stamp::new(&state.session), entry.mime, entry.data.into_bytes(), false);
                 drop(state);
                 // Preserve ring order while rotating; choosing a row is explicit.
-                self.set(selection, false, false).await?;
+                self.apply(selection, false, false, false).await?;
                 state = self.state.lock().await;
                 state.rotate = if rotate { n } else { 0 };
                 Ok(json!({"picked": n}))
             }
             "clipboard.push" => self.push(&serde_json::from_value::<Push>(command.args.clone())?.to).await,
             "desktop.clipboard.menu" => {
-                let mut child = std::process::Command::new(std::env::current_exe()?).arg("--menu").arg("--bus").arg(&self.url).spawn()?;
-                std::thread::spawn(move || { let _ = child.wait(); });
+                let mut menu = self.menu.lock().unwrap();
+                if let Some(child) = menu.as_mut() { if child.try_wait()?.is_none() { return Ok(json!({"opened": false, "already_open": true})); } }
+                *menu = Some(std::process::Command::new(std::env::current_exe()?).arg("--menu").arg("--bus").arg(&self.url).spawn()?);
                 Ok(json!({"opened": true}))
             }
             _ => bail!("UNKNOWN_COMMAND: unsupported clipboard command"),
@@ -380,9 +398,10 @@ pub async fn run(session_name: String, url: String, settings: Settings, key: Opt
     let build = buildinfo::build_info!();
     let client = Arc::new(SupervisedClient::connect_options("clipd", &url).bounded_incoming(64).fatal_on_registration_rejection(true).with_commands(manifest()).with_provenance(bus::RegisterProvenance::from_parts(build.pkg, build.version, build.git_sha, build.git_dirty, build.build_time, buildinfo::now_rfc3339())).start());
     let mut incoming = client.incoming_bounded().ok_or_else(|| anyhow!("Bus receiver already taken"))?;
-    let service = Arc::new(Service { state: Mutex::new(Clipboard::new(session_name)), driver, client: client.clone(), settings, key, nonces: Mutex::new(VecDeque::new()), mutation: Mutex::new(()), reads: Mutex::new(()), url });
+    let service = Arc::new(Service { state: Mutex::new(Clipboard::new(session_name)), driver, client: client.clone(), settings, key, nonces: Mutex::new(VecDeque::new()), mutation: Mutex::new(()), reads: Mutex::new(()), url, menu: std::sync::Mutex::new(None) });
     let permits = Arc::new(Semaphore::new(16));
     let mut tasks = tokio::task::JoinSet::new();
+    let mut observations: [Option<tokio::task::AbortHandle>; 2] = [None, None];
     let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
     let result = loop {
         tokio::select! {
@@ -406,10 +425,13 @@ pub async fn run(session_name: String, url: String, settings: Settings, key: Opt
             },
             event = events.recv() => match event {
                 Some(Event::Selection { primary, offer, types }) => {
-                    // Adoption occurs before any I/O in observe. Process events
-                    // in order; generation fences discard stale completions.
-                    let service = service.clone();
-                    tasks.spawn(async move { service.observe(primary, offer, types).await; });
+                    // Adoption is ordered by the event loop. At most one
+                    // classification per selection remains in flight.
+                    if let Some(selection) = service.begin_observe(primary, offer, types).await {
+                        if let Some(old) = observations[usize::from(primary)].take() { old.abort(); }
+                        let service = service.clone();
+                        observations[usize::from(primary)] = Some(tasks.spawn(async move { service.classify(primary, selection).await; }));
+                    }
                 }
                 Some(Event::Send { stamp, primary, mime, fd }) => {
                     if let Ok(permit) = permits.clone().try_acquire_owned() {

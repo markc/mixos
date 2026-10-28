@@ -51,6 +51,12 @@ pub struct Driver {
 
 impl Driver {
     pub fn start(seat_name: Option<String>) -> Result<(Self, tokio::sync::mpsc::Receiver<Event>)> {
+        Self::start_connection(Connection::connect_to_env()?, seat_name)
+    }
+
+    /// The same production driver over an already connected Wayland socket.
+    /// The compd testkit uses this without changing process-wide environment.
+    pub fn start_connection(connection: Connection, seat_name: Option<String>) -> Result<(Self, tokio::sync::mpsc::Receiver<Event>)> {
         let (wake, mut wake_read) = UnixStream::pair()?;
         wake.set_nonblocking(true)?;
         wake_read.set_nonblocking(true)?;
@@ -59,7 +65,6 @@ impl Driver {
         let (ready, wait) = mpsc::sync_channel(1);
         std::thread::Builder::new().name("clipd-wayland".into()).spawn(move || {
             let result = (|| -> Result<()> {
-                let connection = Connection::connect_to_env()?;
                 let (globals, mut queue) = registry_queue_init::<State>(&connection)?;
                 let qh = queue.handle();
                 let mut state = State { events: events.clone(), selected: [None, None], seats: Vec::new(), finished: false, source: [None, None] };
@@ -165,7 +170,7 @@ impl Driver {
 fn pipe() -> Result<(OwnedFd, OwnedFd)> {
     let mut fds = [-1; 2];
     // SAFETY: pipe2 initialises both entries on success; OwnedFd takes each once.
-    if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC | libc::O_NONBLOCK) } != 0 { return Err(std::io::Error::last_os_error().into()); }
+    if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) } != 0 { return Err(std::io::Error::last_os_error().into()); }
     Ok(unsafe { (OwnedFd::from_raw_fd(fds[0]), OwnedFd::from_raw_fd(fds[1])) })
 }
 

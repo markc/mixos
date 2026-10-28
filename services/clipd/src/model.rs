@@ -56,9 +56,13 @@ pub struct Set {
 }
 fn utf8() -> String { "utf8".into() }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct Pick { pub n: usize }
+pub struct Pick {
+    pub n: usize,
+    /// A picker may fence an index against intervening history changes.
+    pub expected_id: Option<String>,
+}
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -66,6 +70,7 @@ pub struct Push { pub to: String }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct HistoryEntry {
+    pub id: String,
     pub mime: String,
     pub data: String,
 }
@@ -155,7 +160,7 @@ impl Clipboard {
         let Ok(text) = std::str::from_utf8(bytes) else { return; };
         if self.history.front().is_some_and(|e| e.data == text) { return; }
         self.history.retain(|e| e.data != text);
-        self.history.push_front(HistoryEntry { mime, data: text.into() });
+        self.history.push_front(HistoryEntry { id: uuid::Uuid::now_v7().to_string(), mime, data: text.into() });
         self.history.truncate(HISTORY_LEN);
     }
 }

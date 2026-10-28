@@ -37,6 +37,7 @@ pub struct Harness {
     pub client: TestClient,
     pub extra_clients: Vec<TestClient>,
     extra_server_clients: Vec<Client>,
+    external_server_clients: Vec<Client>,
 }
 
 impl Harness {
@@ -75,6 +76,7 @@ impl Harness {
             client,
             extra_clients: Vec::new(),
             extra_server_clients: Vec::new(),
+            external_server_clients: Vec::new(),
         };
         harness.roundtrip();
         harness.client.bind_globals();
@@ -152,6 +154,20 @@ impl Harness {
         for client in &mut self.extra_clients {
             client.read();
         }
+    }
+
+    /// Connect a production client whose event loop runs on another thread.
+    /// The caller pumps this harness while that client performs roundtrips.
+    pub fn connect_external(&mut self) -> UnixStream {
+        let (server, client) = UnixStream::pair().expect("external client socketpair");
+        self.external_server_clients.push(self.display.handle().insert_client(
+            server,
+            Arc::new(WaylandClientSession {
+                compositor_state: CompositorClientState::default(),
+                proprietary: false,
+            }),
+        ).expect("insert external production client"));
+        client
     }
 
     /// Connect another independent Wayland client and bind its globals.

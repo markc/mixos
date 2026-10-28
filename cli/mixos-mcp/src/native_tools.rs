@@ -142,7 +142,8 @@ impl MixosMcp {
         args: Value,
     ) -> Result<Json<NativeObservation>, String> {
         exact_target(&service, "service")?;
-        if serde_json::to_vec(&args).map_err(|e| e.to_string())?.len() > 16_384 {
+        let request_cap = if command == "clipboard.set" { 6 * 1024 * 1024 + 4096 } else { 16_384 };
+        if serde_json::to_vec(&args).map_err(|e| e.to_string())?.len() > request_cap {
             return Err("native desktop request exceeds 16384 bytes; nothing was sent".into());
         }
         let noded = self.noded().await?;
@@ -164,7 +165,7 @@ impl MixosMcp {
         if serde_json::to_vec(&result)
             .map_err(|e| e.to_string())?
             .len()
-            > 1024 * 1024
+            > if command == "clipboard.get" { 6 * 1024 * 1024 + 4096 } else { 1024 * 1024 }
         {
             return Err("native desktop response exceeds 1 MiB".into());
         }

@@ -19,6 +19,7 @@ contract = "public"
 mod_module_files = "deny"
 
 [dependencies]
+action.workspace = true
 anyhow.workspace = true
 base64.workspace = true
 buildinfo.workspace = true
@@ -31,6 +32,7 @@ libc.workspace = true
 rand.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+schemars.workspace = true
 strict.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "signal", "net", "io-util"] }
 toolkit.workspace = true
@@ -45,5 +47,7 @@ wayland-protocols-wlr = { version = "=0.3.12", features = ["client"] }
 buildinfo.workspace = true
 
 [dev-dependencies]
+egui_kittest.workspace = true
 tempfile.workspace = true
 test-broker = { path = "../../libs/test-broker" }
+testkit.workspace = true
