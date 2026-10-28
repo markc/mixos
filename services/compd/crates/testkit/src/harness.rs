@@ -458,6 +458,44 @@ impl Harness {
         serial
     }
 
+    /// Give the primary seat's keyboard to a surface of extra client `index`.
+    pub fn focus_keyboard_client(&mut self, index: usize, surface: &WlSurface) {
+        use smithay::utils::SERIAL_COUNTER;
+        let server: ServerSurface = self.extra_server_clients[index]
+            .object_from_protocol_id(&self.display.handle(), protocol_id(surface))
+            .expect("the server knows this client's surface");
+        let keyboard = self
+            .wire
+            .state
+            .seat
+            .seat
+            .get_keyboard()
+            .expect("the primary seat has a keyboard");
+        keyboard.set_focus(&mut self.wire.state, Some(server), SERIAL_COUNTER.next_serial());
+        self.roundtrip();
+    }
+
+    /// Give the AGENT seat's keyboard to `surface` (the main client) — what an
+    /// agent input lane would do. Nothing in compd routes this seat yet.
+    pub fn focus_agent_keyboard(&mut self, surface: &WlSurface) {
+        use smithay::utils::SERIAL_COUNTER;
+        let server: ServerSurface = self
+            .server_client
+            .object_from_protocol_id(&self.display.handle(), protocol_id(surface))
+            .expect("the server knows this surface");
+        let keyboard = self
+            .wire
+            .state
+            .seat
+            .agent
+            .as_ref()
+            .expect("compd has an agent seat")
+            .get_keyboard()
+            .expect("the agent seat has a keyboard");
+        keyboard.set_focus(&mut self.wire.state, Some(server), SERIAL_COUNTER.next_serial());
+        self.roundtrip();
+    }
+
     /// Give the primary seat's keyboard to `surface`.
     pub fn focus_keyboard(&mut self, surface: &WlSurface) {
         use smithay::utils::SERIAL_COUNTER;

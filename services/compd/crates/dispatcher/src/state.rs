@@ -525,6 +525,150 @@ impl Dispatch {
         }
     }
 
+    /// Finish the capture of a clipboard whose owner just went away: admit what the
+    /// worker finished, then drain each read still in flight to EOF in place. Safe
+    /// without blocking: the owner's exit closed every write end, so the pipes drain
+    /// straight to EOF (see `SelectionHandler::selection_source_destroyed`).
+    pub fn finish_capture(&mut self) {
+        // First, whatever the worker finished but the drain has not picked up yet.
+        let ready = self
+            .clipboard
+            .worker
+            .as_ref()
+            .map(|worker| worker.collect())
+            .unwrap_or_default();
+        for done in ready {
+            self.clipboard.capture.admit(
+                done.generation,
+                done.order,
+                done.mime,
+                done.bytes,
+                protocols::clipboard::policy::BUDGET,
+            );
+        }
+        let mut readers = self
+            .clipboard
+            .worker
+            .as_ref()
+            .map(|worker| worker.reclaim())
+            .unwrap_or_default();
+        for reader in readers.iter_mut() {
+            // What the budget has left, not the whole budget: flavors are finished
+            // one at a time here, and each is admitted before the next is read, so
+            // `used` is the running total. Passing the full budget instead would let
+            // every remaining flavor buffer all of it before `admit` refused it.
+            let headroom = self.clipboard.capture.headroom(protocols::clipboard::policy::BUDGET);
+            if !matches!(protocols::clipboard::pump::pump(reader, headroom), protocols::clipboard::pump::Pump::Eof) {
+                // Blocked means somebody else still holds the write end (a forked
+                // child); nothing more will arrive for us. Don't spin — drop it.
+                continue;
+            }
+            let bytes = std::mem::take(&mut reader.buffer);
+            self.clipboard.capture.admit(
+                reader.generation,
+                reader.order,
+                reader.mime.clone(),
+                bytes,
+                protocols::clipboard::policy::BUDGET,
+            );
+        }
+    }
+
+    /// A client set the clipboard on the AGENT seat. Nothing gives that seat keyboard
+    /// focus, so its selection would be offered to no one: install a compositor offer
+    /// on the primary seat with the same flavors, marked [`AGENT_SELECTION`]. A paste
+    /// against it is answered by the agent-seat client (`send_selection`), and the
+    /// capture snapshots that client so the copy survives it, exactly as an X11
+    /// owner is mirrored. A cleared agent selection clears the mirror, and only the
+    /// mirror: a primary-seat copy made since is left alone.
+    ///
+    /// [`AGENT_SELECTION`]: crate::state::xwm_impls::AGENT_SELECTION
+    pub fn mirror_agent_selection(
+        &mut self,
+        source: Option<smithay::wayland::selection::SelectionSource>,
+    ) {
+        use crate::state::xwm_impls::AGENT_SELECTION;
+        let dh = self.output.display_handle.clone();
+        let seat = self.seat.seat.clone();
+        let Some(source) = source else {
+            if self.mirrors_agent() {
+                trace!("agent-seat clipboard cleared; clearing its primary-seat mirror");
+                smithay::wayland::selection::data_device::clear_data_device_selection::<
+                    Dispatch,
+                >(&dh, &seat);
+            }
+            return;
+        };
+        let mime_types = source.mime_types();
+        // Invalidate FIRST, as every copy does, so a late capture of the previous
+        // clipboard cannot refill the slot.
+        let generation = self.clipboard.capture.arm(mime_types.len());
+        if let Some(worker) = self.clipboard.worker.as_ref() {
+            worker.arm(generation);
+        }
+        let ordered = protocols::clipboard::policy::ordered(&mime_types);
+        trace!(
+            "clipboard copy on the agent seat mirrored to the primary seat \
+             generation={generation} flavors={}",
+            mime_types.len()
+        );
+        smithay::wayland::selection::data_device::set_data_device_selection::<Dispatch>(
+            &dh,
+            &seat,
+            mime_types,
+            AGENT_SELECTION,
+        );
+        // Deferred like a wayland copy: smithay installs the agent-seat selection
+        // after this hook returns, and the capture reads it from there.
+        self.clipboard.pending_capture = Some((generation, ordered));
+    }
+
+    /// Whether the primary seat's offer is the mirror of an agent-seat clipboard.
+    pub fn mirrors_agent(&self) -> bool {
+        let held = smithay::wayland::selection::data_device::current_data_device_selection_userdata::<
+            Dispatch,
+        >(&self.seat.seat);
+        held.is_some_and(|user_data| *user_data == crate::state::xwm_impls::AGENT_SELECTION)
+    }
+
+    /// The agent-seat clipboard owner is gone (or cannot answer): replace the
+    /// primary seat's mirror with what was captured, in one transition, or clear
+    /// it. The agent twin of `retire_x11_selection`. Guarded on the primary seat
+    /// still holding the mirror, so a later primary-seat copy is never overwritten.
+    pub fn retire_agent_selection(&mut self) {
+        if !self.mirrors_agent() {
+            return;
+        }
+        let dh = self.output.display_handle.clone();
+        let seat = self.seat.seat.clone();
+        let mime_types = self.clipboard.capture.mime_types();
+        if mime_types.is_empty() {
+            trace!("agent-seat clipboard owner gone with nothing captured");
+            smithay::wayland::selection::data_device::clear_data_device_selection::<Dispatch>(
+                &dh, &seat,
+            );
+            return;
+        }
+        let generation = self.clipboard.capture.generation();
+        info!(
+            "clipboard persisted across agent-seat owner exit generation={generation} \
+             captured={} bytes={} mimes={mime_types:?}",
+            mime_types.len(),
+            self.clipboard.capture.used()
+        );
+        if let Some(xwm) = self.xwayland.xwm.as_mut()
+            && let Err(err) = xwm.new_selection(
+                smithay::wayland::selection::SelectionTarget::Clipboard,
+                Some(mime_types.clone()),
+            )
+        {
+            warn!("failed to claim the x11 selection for the persisted clipboard: {err:?}");
+        }
+        smithay::wayland::selection::data_device::set_data_device_selection::<Dispatch>(
+            &dh, &seat, mime_types, generation,
+        );
+    }
+
     /// The X11 clipboard owner is gone — hand over what we captured, or clear.
     ///
     /// The parity half of `SelectionHandler::selection_source_destroyed`, which is what
@@ -2008,7 +2152,7 @@ mod handler_impls {
             &mut self,
             ty: SelectionTarget,
             source: Option<SelectionSource>,
-            _seat: Seat<Self>,
+            seat: Seat<Self>,
         ) {
             // A wayland client took the clipboard: tell the X server there is a new
             // owner, so an X client that pastes asks US for the bytes (arriving back as
@@ -2021,6 +2165,12 @@ mod handler_impls {
                 }
             }
             if ty != SelectionTarget::Clipboard {
+                return;
+            }
+            // A copy on the AGENT seat: nothing focuses that seat, so its selection would
+            // be offered to nobody. Mirror it onto the primary seat instead.
+            if self.seat.agent.as_ref() == Some(&seat) {
+                self.mirror_agent_selection(source);
                 return;
             }
             // Invalidate FIRST: bump the generation and drop the head before a single
@@ -2051,9 +2201,17 @@ mod handler_impls {
         fn selection_source_destroyed(
             &mut self,
             ty: SelectionTarget,
-            _seat: &Seat<Self>,
+            seat: &Seat<Self>,
         ) -> Option<(Vec<String>, Self::SelectionUserData)> {
             if ty != SelectionTarget::Clipboard {
+                return None;
+            }
+            // The agent seat's owner went away: the copy users see is the primary
+            // seat's mirror, so that is what gets the persisted bytes. The agent seat
+            // itself keeps nothing (it is offered to no one).
+            if self.seat.agent.as_ref() == Some(seat) {
+                self.finish_capture();
+                self.retire_agent_selection();
                 return None;
             }
             // The owning client is gone and smithay is about to clear the clipboard.
@@ -2070,48 +2228,7 @@ mod handler_impls {
             // No redraw is scheduled: this runs inside `dispatch_clients`, and the
             // clipboard has no on-screen representation of its own.
             let generation = self.clipboard.capture.generation();
-            // First, whatever the worker finished but the drain has not picked up yet.
-            let ready = self
-                .clipboard
-                .worker
-                .as_ref()
-                .map(|worker| worker.collect())
-                .unwrap_or_default();
-            for done in ready {
-                self.clipboard.capture.admit(
-                    done.generation,
-                    done.order,
-                    done.mime,
-                    done.bytes,
-                    policy::BUDGET,
-                );
-            }
-            let mut readers = self
-                .clipboard
-                .worker
-                .as_ref()
-                .map(|worker| worker.reclaim())
-                .unwrap_or_default();
-            for reader in readers.iter_mut() {
-                // What the budget has left, not the whole budget: flavors are finished
-                // one at a time here, and each is admitted before the next is read, so
-                // `used` is the running total. Passing the full budget instead would let
-                // every remaining flavor buffer all of it before `admit` refused it.
-                let headroom = self.clipboard.capture.headroom(policy::BUDGET);
-                if !matches!(pump::pump(reader, headroom), pump::Pump::Eof) {
-                    // Blocked means somebody else still holds the write end (a forked
-                    // child); nothing more will arrive for us. Don't spin — drop it.
-                    continue;
-                }
-                let bytes = std::mem::take(&mut reader.buffer);
-                self.clipboard.capture.admit(
-                    reader.generation,
-                    reader.order,
-                    reader.mime.clone(),
-                    bytes,
-                    policy::BUDGET,
-                );
-            }
+            self.finish_capture();
 
             if self.clipboard.capture.is_empty() {
                 trace!("clipboard owner gone with nothing captured generation={generation}");
@@ -2140,6 +2257,24 @@ mod handler_impls {
             client: ClientId,
         ) {
             if ty != SelectionTarget::Clipboard {
+                return;
+            }
+            // The primary seat's mirror of an agent-seat clipboard: the agent-seat
+            // client still owns the bytes, so the pipe goes to it.
+            if *user_data == crate::state::xwm_impls::AGENT_SELECTION {
+                let sent = match self.seat.agent.clone() {
+                    Some(agent) => {
+                        smithay::wayland::selection::data_device::request_data_device_client_selection(
+                            &agent, mime_type, fd,
+                        )
+                        .map_err(|e| format!("{e:?}"))
+                    }
+                    None => Err("no agent seat".into()),
+                };
+                if let Err(err) = sent {
+                    warn!("agent-seat clipboard read failed: {err}; retiring the mirror");
+                    self.retire_agent_selection();
+                }
                 return;
             }
             // The clipboard is owned by an X client: the bytes live in the X server, not
@@ -2778,6 +2913,14 @@ pub mod xwm_impls {
     /// copy.
     pub const X11_SELECTION: u64 = u64::MAX;
 
+    /// The `SelectionUserData` of the primary seat's offer that mirrors a
+    /// clipboard a client set on the AGENT seat. A paste against it is answered by
+    /// that client through the agent seat (`request_data_device_client_selection`),
+    /// exactly as [`X11_SELECTION`] routes to the X server; the capture snapshots
+    /// the same client so the copy survives it (`retire_agent_selection`). Like
+    /// `X11_SELECTION`, no capture generation can reach it.
+    pub const AGENT_SELECTION: u64 = u64::MAX - 1;
+
     impl XWaylandShellHandler for Dispatch {
         fn xwayland_shell_state(&mut self) -> &mut XWaylandShellState {
             &mut self.xwayland.shell
@@ -3270,6 +3413,19 @@ pub mod xwm_impls {
                 // would ask the X server for bytes it is waiting on us for.
                 Some(X11_SELECTION) => {
                     warn!("xwayland asked us for the clipboard it owns itself; dropping the read");
+                }
+                // An X client pasting the mirror of an agent-seat clipboard: the
+                // agent-seat client answers, as for a wayland reader.
+                Some(AGENT_SELECTION) => {
+                    let sent = match self.seat.agent.clone() {
+                        Some(agent) => request_data_device_client_selection(&agent, mime_type, fd)
+                            .map_err(|e| format!("{e:?}")),
+                        None => Err("no agent seat".into()),
+                    };
+                    if let Err(err) = sent {
+                        warn!("xwayland read of the agent-seat clipboard failed: {err}");
+                        self.retire_agent_selection();
+                    }
                 }
                 // A persisted clipboard: queue it exactly as a wayland paste is queued.
                 // `serve` re-checks the generation and closes the pipe (an empty transfer)

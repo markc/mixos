@@ -25,7 +25,7 @@
 // this crate.
 
 use crate::state::Dispatch;
-use crate::state::xwm_impls::X11_SELECTION;
+use crate::state::xwm_impls::{AGENT_SELECTION, X11_SELECTION};
 use protocols::clipboard::policy;
 use protocols::clipboard::worker::Worker;
 use smithay::reexports::calloop::LoopHandle;
@@ -127,11 +127,14 @@ fn arm<W: 'static>(
     if state.clipboard.worker.is_none() {
         return;
     }
-    let x11_owned = {
-        let held = current_data_device_selection_userdata::<Dispatch>(&state.seat.seat);
-        held.is_some_and(|user_data| *user_data == X11_SELECTION)
+    let held = current_data_device_selection_userdata::<Dispatch>(&state.seat.seat).map(|u| *u);
+    let x11_owned = held == Some(X11_SELECTION);
+    // The primary seat's mirror of an agent-seat clipboard: the bytes are the
+    // agent-seat client's, so that is the seat the capture asks.
+    let seat = match (held, state.seat.agent.clone()) {
+        (Some(AGENT_SELECTION), Some(agent)) => agent,
+        _ => state.seat.seat.clone(),
     };
-    let seat = state.seat.seat.clone();
     // The requests are dispatched first and handed to the worker after, because asking
     // the X owner needs `&mut state` (the `X11Wm` lives there) while the worker is
     // reached through a shared borrow of the same state.

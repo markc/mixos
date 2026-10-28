@@ -26,6 +26,7 @@
 //! never leak into a test.
 
 pub mod client;
+pub mod clipboard;
 pub mod harness;
 pub mod host;
 

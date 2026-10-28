@@ -66,6 +66,8 @@ pub struct ClientState {
     /// Every `wl_keyboard.key` received after [`TestClient::bind_keyboards`]:
     /// `(evdev key, pressed)`.
     pub keys: Vec<(u32, bool)>,
+    /// Clipboard offers, selections and served pastes ([`crate::clipboard`]).
+    pub clipboard: crate::clipboard::ClipboardState,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -94,6 +96,10 @@ pub struct TestClient {
     screencopy: Option<ZwlrScreencopyManagerV1>,
     /// Pool backing files, held for the client's lifetime.
     files: Vec<File>,
+    /// `wl_data_device_manager` and one data device per seat, once
+    /// [`TestClient::bind_data_devices`] has run.
+    pub(crate) data_manager: Option<wayland_client::protocol::wl_data_device_manager::WlDataDeviceManager>,
+    pub(crate) data_devices: Vec<wayland_client::protocol::wl_data_device::WlDataDevice>,
 }
 
 impl TestClient {
@@ -120,6 +126,8 @@ impl TestClient {
             output: None,
             screencopy: None,
             files: Vec::new(),
+            data_manager: None,
+            data_devices: Vec::new(),
         }
     }
 
@@ -216,6 +224,19 @@ impl TestClient {
     /// The bound seat with this index (see [`ClientState::buttons`]).
     pub fn seat(&self, index: usize) -> &WlSeat {
         &self.seats[index].0
+    }
+
+    /// How many seats are bound (the primary seat, then the agent seat).
+    pub fn seat_count(&self) -> usize {
+        self.seats.len()
+    }
+
+    pub(crate) fn registry(&self) -> &WlRegistry {
+        &self.registry
+    }
+
+    pub(crate) fn qh(&self) -> &QueueHandle<ClientState> {
+        &self.qh
     }
 
     /// A `wl_keyboard` on every bound seat, recording keys in
@@ -385,7 +406,7 @@ impl TestClient {
     }
 }
 
-fn find_in(globals: &[(u32, String, u32)], interface: &str) -> (u32, u32) {
+pub(crate) fn find_in(globals: &[(u32, String, u32)], interface: &str) -> (u32, u32) {
     globals
         .iter()
         .find(|(_, name, _)| name == interface)
