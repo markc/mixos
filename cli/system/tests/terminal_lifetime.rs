@@ -81,6 +81,19 @@ impl Shell {
             }
         }
     }
+    fn background_job(&mut self) -> i32 {
+        let report = self._home.path().join("job-pid");
+        self.master.as_mut().unwrap().write_all(format!(
+            "TERMINAL_JOB_REPORT={} {} --exact fixture_job --nocapture &\n",
+            report.display(), std::env::current_exe().unwrap().display()
+        ).as_bytes()).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            if let Ok(pid) = fs::read_to_string(&report) { return pid.parse().unwrap(); }
+            assert!(Instant::now() < deadline, "background job did not start");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
 }
 
 #[test]
@@ -124,20 +137,25 @@ fn fixture_job() {
 fn terminal_hangup_also_hangs_up_background_job_groups() {
     let mut shell = Shell::new(true, true, "owned");
     shell.prompt();
-    let report = shell._home.path().join("job-pid");
-    shell.master.as_mut().unwrap().write_all(format!(
-        "TERMINAL_JOB_REPORT={} {} --exact fixture_job --nocapture &\n",
-        report.display(), std::env::current_exe().unwrap().display()
-    ).as_bytes()).unwrap();
-    let deadline = Instant::now() + Duration::from_secs(5);
-    let child: i32 = loop {
-        if let Ok(pid) = fs::read_to_string(&report) { break pid.parse().unwrap(); }
-        assert!(Instant::now() < deadline, "background job did not start");
-        std::thread::sleep(Duration::from_millis(10));
-    };
+    let child = shell.background_job();
     drop(shell.master.take());
     assert_eq!(shell.wait().code(), Some(129));
     assert!(!std::path::Path::new(&format!("/proc/{child}")).exists(), "background job {child} outlived the shell");
+}
+
+#[test]
+fn fixture_drop_kills_grandchildren_in_other_job_groups() {
+    let mut shell = Shell::new(false, true, "owned");
+    shell.prompt();
+    let child = shell.background_job();
+    assert_ne!(unsafe { libc::getpgid(child) }, shell.child.id() as i32);
+    assert_eq!(unsafe { libc::getsid(child) }, shell.child.id() as i32);
+    drop(shell);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while std::path::Path::new(&format!("/proc/{child}/exe")).exists() {
+        assert!(Instant::now() < deadline, "fixture left background grandchild {child} alive");
+        std::thread::sleep(Duration::from_millis(10));
+    }
 }
 
 #[test]
