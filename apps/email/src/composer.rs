@@ -1034,20 +1034,37 @@ mod tests {
         use egui_kittest::kittest::{NodeT, Queryable};
         let (mut state, _, theme, _) = fixture(true);
         state.compose();
-        state.apply_ui(UiEvent::ComposeField(
-            crate::state::ComposeField::To, "bob@example.invalid".into(),
-        ));
+        for (field, value) in [
+            (crate::state::ComposeField::To, "bob@example.invalid"),
+            (crate::state::ComposeField::Subject, "Lunch on Friday"),
+            (crate::state::ComposeField::Body, "Noon at the usual place?"),
+        ] {
+            state.apply_ui(UiEvent::ComposeField(field, value.into()));
+        }
+        assert!(state.compose_sendable());
         let builder = toolkit::titlebar::viewport(
-            "dev.mixos.email.compose-1", &crate::label("compose-title"),
+            "dev.mixos.email.compose-1",
+            &crate::label("compose-title"),
         );
-        assert_eq!(builder.min_inner_size, Some(egui::Vec2::from(toolkit::window::MIN_SIZE)));
+        assert_eq!(
+            builder.min_inner_size,
+            Some(egui::Vec2::from(toolkit::window::MIN_SIZE))
+        );
         let palette = editor::Palette::from_theme(&theme);
         let mut h = egui_kittest::Harness::builder()
             .with_size(builder.min_inner_size.unwrap())
-            .build_ui_state(move |ui, seen: &mut Vec<UiEvent>| {
-                toolkit::drive::register_viewport(ui.ctx(), ViewportId::ROOT, "compose-1", ViewportId::ROOT);
-                seen.extend(view(ui, &state, &registry(), &palette));
-            }, Vec::new());
+            .build_ui_state(
+                move |ui, seen: &mut Vec<UiEvent>| {
+                    toolkit::drive::register_viewport(
+                        ui.ctx(),
+                        ViewportId::ROOT,
+                        "compose-1",
+                        ViewportId::ROOT,
+                    );
+                    seen.extend(view(ui, &state, &registry(), &palette));
+                },
+                Vec::new(),
+            );
         toolkit::install(&h.ctx, &theme);
         toolkit::drive::install(&h.ctx, APP);
         h.run_steps(4);
@@ -1057,7 +1074,10 @@ mod tests {
         assert!(!h.get_by_label("Send").accesskit_node().is_disabled());
         h.get_by_label("Send").click();
         h.run_steps(2);
-        assert!(h.state().contains(&UiEvent::Command("mail.send", Origin::Ui)));
+        assert!(
+            h.state()
+                .contains(&UiEvent::Command("mail.send", Origin::Ui))
+        );
 
         let menus = ["File", "Edit", "Attachments", "View"];
         for title in menus {
@@ -1070,11 +1090,31 @@ mod tests {
             h.run_steps(2);
         }
         // The shell strips `email.` before passing Bus drive requests here.
-        let listed = toolkit::drive::request(&h.ctx, 1, "ui.menu.list", &serde_json::json!({"viewport":"compose-1"})).unwrap();
+        let listed = toolkit::drive::request(
+            &h.ctx,
+            1,
+            "ui.menu.list",
+            &serde_json::json!({"viewport":"compose-1"}),
+        )
+        .unwrap();
         assert_eq!(listed.rc, 0, "{:?}", listed.body);
-        assert_eq!(listed.body["menus"].as_array().unwrap().iter().map(|m| m["title"].as_str().unwrap()).collect::<Vec<_>>(), menus);
+        assert_eq!(
+            listed.body["menus"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|m| m["title"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            menus
+        );
         for title in menus {
-            let opened = toolkit::drive::request(&h.ctx, 2, "ui.menu.open", &serde_json::json!({"viewport":"compose-1", "path":[title]})).unwrap();
+            let opened = toolkit::drive::request(
+                &h.ctx,
+                2,
+                "ui.menu.open",
+                &serde_json::json!({"viewport":"compose-1", "path":[title]}),
+            )
+            .unwrap();
             assert_eq!(opened.rc, 0, "{:?}", opened.body);
             h.run_steps(2);
             assert_eq!(toolkit::menu::current(&h.ctx).unwrap().menu, title);
