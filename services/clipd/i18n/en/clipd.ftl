@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
 title = Clipboard history
+clipboard = Clipboard
 pick = Use this entry
 empty = No text in clipboard history
 loading = Loading clipboard history…

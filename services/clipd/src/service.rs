@@ -368,7 +368,7 @@ impl Service {
         ensure!(command.header("broker_origin") == Some("local"), "SESSION_ONLY: use clipboard.push to share with another local session");
         let result = match command.command.as_str() {
             "clipboard.get" => {
-                let p: Get = serde_json::from_value(command.args.clone())?;
+                let p: Get = if command.args.is_null() && command.body.is_empty() { Get::default() } else { serde_json::from_value(command.args.clone())? };
                 let s = self.state.lock().await.selections[usize::from(p.primary)].clone().ok_or_else(|| anyhow!("EMPTY: no selection"))?;
                 let mime = p.mime.or_else(|| s.text_mime()).or_else(|| s.mime_types.first().cloned()).ok_or_else(|| anyhow!("EMPTY: no offered types"))?;
                 let bytes = self.bytes(&s, &mime, p.primary).await?;
@@ -389,7 +389,7 @@ impl Service {
                 Ok(json!({"applied": self.set(Selection::owned(stamp, p.mime, data, sensitive), p.primary, false).await?}))
             }
             "clipboard.clear" => {
-                let p: Clear = serde_json::from_value(command.args.clone())?;
+                let p: Clear = if command.args.is_null() && command.body.is_empty() { Clear::default() } else { serde_json::from_value(command.args.clone())? };
                 let own = self.state.lock().await.session.clone();
                 let s = Selection { stamp: Stamp::new(&own), mime_types: Vec::new(), sensitive: false, size: Some(0), data: BTreeMap::new(), offer: None, remote: None };
                 Ok(json!({"applied": self.set(s, p.primary, true).await?}))

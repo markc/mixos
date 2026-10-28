@@ -160,13 +160,18 @@ impl Harness {
     /// The caller pumps this harness while that client performs roundtrips.
     pub fn connect_external(&mut self) -> UnixStream {
         let (server, client) = UnixStream::pair().expect("external client socketpair");
-        self.external_server_clients.push(self.display.handle().insert_client(
-            server,
-            Arc::new(WaylandClientSession {
-                compositor_state: CompositorClientState::default(),
-                proprietary: false,
-            }),
-        ).expect("insert external production client"));
+        self.external_server_clients.push(
+            self.display
+                .handle()
+                .insert_client(
+                    server,
+                    Arc::new(WaylandClientSession {
+                        compositor_state: CompositorClientState::default(),
+                        proprietary: false,
+                    }),
+                )
+                .expect("insert external production client"),
+        );
         client
     }
 

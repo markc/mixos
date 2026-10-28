@@ -107,9 +107,9 @@ pub fn run(url: String) -> Result<()> {
                         if let Some(params) = picked.take() {
                             journal.record("clipboard.pick", action::Origin::Ui, params, json!({"applied": true}));
                             for event in journal.take().0 {
-                                let mut frame = bus::BusMessage::new().with_header("command", "clipd.action.executed");
+                                let mut frame = bus::BusMessage::new().with_header("command", "clipd.command.executed");
                                 frame.body = event.body().to_string();
-                                let headers = std::collections::BTreeMap::from([("name".into(), "clipd.action.executed".into())]);
+                                let headers = std::collections::BTreeMap::from([("name".into(), "clipd.command.executed".into())]);
                                 let _ = client.send_with_headers("noded", "topic.publish", &headers, &frame.to_string()).await;
                             }
                         }

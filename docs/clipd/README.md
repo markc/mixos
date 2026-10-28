@@ -27,6 +27,10 @@ unknown; for text it is the cached text size. `stamp` is
 after a daemon restart. Replayed sets are ignored within the bounded loop
 guard. A Wayland marker identifies the service's own selection echoes.
 
+The desk history picker dispatches `clipboard.pick` through its command
+registry and publishes `clipd.command.executed` with the row index and
+invocation origin. These execution events contain no clipboard text.
+
 `clipboard.get` returns at most 1 MiB per call; continue with `next_offset`
 until `eof`. UTF-8 slices use `encoding:"utf8"`; arbitrary bytes, including
 a slice that cuts a multibyte character, use `encoding:"base64"`.

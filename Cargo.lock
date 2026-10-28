@@ -1389,6 +1389,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "clipd"
+version = "0.1.0"
+dependencies = [
+ "action",
+ "anyhow",
+ "base64 0.22.1",
+ "buildinfo",
+ "bus",
+ "chacha20poly1305",
+ "clap",
+ "eframe",
+ "egui",
+ "egui_kittest",
+ "libc",
+ "rand 0.8.8",
+ "schemars",
+ "serde",
+ "serde_json",
+ "strict",
+ "tempfile",
+ "test-broker",
+ "testkit",
+ "tokio",
+ "toolkit",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+ "wayland-client",
+ "wayland-protocols",
+ "wayland-protocols-wlr",
+]
+
+[[package]]
 name = "cmov"
 version = "0.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"

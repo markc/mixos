@@ -480,7 +480,10 @@ fn dropped_record(raw: &serde_json::Value, reason: &str) -> serde_json::Value {
 /// when the row was rewritten.
 fn migrate_legacy_clipboard_row(row: &mut PhysicalBinding) -> bool {
     if row.service.as_deref() == Some("desktop-vt1")
-        && matches!(row.action.as_str(), "desktop.clipboard.menu" | "desktop.clipboard.rotate")
+        && matches!(
+            row.action.as_str(),
+            "desktop.clipboard.menu" | "desktop.clipboard.rotate"
+        )
     {
         row.service = Some(LEGACY_CLIPBOARD_SERVICE.to_string());
         return true;
@@ -855,7 +858,9 @@ pub(crate) mod tests {
         save(&path, &loaded.rows).unwrap();
         assert_eq!(
             std::fs::read_to_string(&path).unwrap(),
-            LEGACY_FILE.trim_end().replace("\"service\": \"desktop-vt1\"", "\"service\": \"clipd\"")
+            LEGACY_FILE
+                .trim_end()
+                .replace("\"service\": \"desktop-vt1\"", "\"service\": \"clipd\"")
         );
         let _ = std::fs::remove_dir_all(&dir);
     }

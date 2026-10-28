@@ -258,6 +258,9 @@ unknown; for text it is the cached text size. <code>stamp</code> is
 <code>{origin_session,generation}</code>; generations are UUIDs and are never reused
 after a daemon restart. Replayed sets are ignored within the bounded loop
 guard. A Wayland marker identifies the service's own selection echoes.</p>
+<p>The desk history picker dispatches <code>clipboard.pick</code> through its command
+registry and publishes <code>clipd.command.executed</code> with the row index and
+invocation origin. These execution events contain no clipboard text.</p>
 <p><code>clipboard.get</code> returns at most 1 MiB per call; continue with <code>next_offset</code>
 until <code>eof</code>. UTF-8 slices use <code>encoding:"utf8"</code>; arbitrary bytes, including
 a slice that cuts a multibyte character, use <code>encoding:"base64"</code>.
