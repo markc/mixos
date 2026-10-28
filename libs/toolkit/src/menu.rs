@@ -1693,6 +1693,13 @@ fn render_picked(
         let bottom = screen.bottom() - metrics.edge_gap;
         // A level taller than the window below the bar scrolls.
         let tallest = (bottom - bar_bottom).max(metrics.menu_row_height + margin.sum().y);
+        // In a narrow folded menu, reserve room for parent and child side
+        // by side. An overlapping child can otherwise cover the parent row
+        // between pointer press and release and activate the wrong command.
+        let compact_width = (vertical && screen.width() < 640.0).then(|| {
+            ((screen.width() - 2.0 * metrics.edge_gap - metrics.submenu_gap) * 0.5).max(0.0)
+        });
+        let max_width = compact_width.map(|width| (width - margin.sum().x).max(0.0));
         let mut level = 0;
         while level < st.nav.levels() {
             let Some(entries) = st.nav.level(menus, level) else {
@@ -1703,8 +1710,12 @@ fn render_picked(
             } else {
                 0.0
             };
+            let min_width = min_width.min(max_width.unwrap_or(f32::INFINITY));
             let layout = Layout::new(ui, &chrome, entries, min_width);
-            let outer = layout.size + margin.sum();
+            let mut outer = layout.size + margin.sum();
+            if let Some(width) = compact_width {
+                outer.x = outer.x.min(width);
+            }
             if level == 0 {
                 let right = match st.popup_anchor {
                     Some(_) => st.popup_right,
@@ -1741,7 +1752,7 @@ fn render_picked(
             // a submenu entered by keyboard brings its parent row into view.
             let view = View {
                 max_height,
-                max_width: None,
+                max_width,
                 moved,
                 keyed: keyed && level <= st.nav.depth(),
                 deeper,
@@ -1807,6 +1818,9 @@ fn render_picked(
             });
             let mut child = child.unwrap_or(Vec2::ZERO);
             child.y = child.y.min(tallest);
+            if let Some(width) = compact_width {
+                child.x = child.x.min(width);
+            }
             let mut x = shown.frame.right() + metrics.submenu_gap;
             if x + child.x > screen.right() - metrics.edge_gap {
                 x = (shown.frame.left() - metrics.submenu_gap - child.x).max(screen.left());
