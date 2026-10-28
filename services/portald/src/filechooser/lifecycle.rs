@@ -191,7 +191,10 @@ mod tests {
             });
         }
         let mut state = State::default();
-        assert_eq!(state.apply(Event::Reply(None)).response.unwrap()["response"], 2);
+        assert_eq!(
+            state.apply(Event::Reply(None)).response.unwrap()["response"],
+            2
+        );
         assert!(state.apply(Event::Reply(None)).response.is_none());
     }
 

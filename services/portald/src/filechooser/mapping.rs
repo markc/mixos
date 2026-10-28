@@ -395,6 +395,22 @@ mod tests {
 
     #[test]
     fn empty_title_and_accept_label_select_defaults_without_warning() {
+        // Tracing's callsite interest cache is shared with parallel tests.
+        // Isolate the capture so both silence and the positive control are
+        // checked with one subscriber for the lifetime of the process.
+        const CAPTURE: &str = "MIXOS_FILECHOOSER_LOG_CAPTURE";
+        if std::env::var_os(CAPTURE).is_none() {
+            let status = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "filechooser::mapping::tests::empty_title_and_accept_label_select_defaults_without_warning",
+                ])
+                .env(CAPTURE, "1")
+                .status()
+                .unwrap();
+            assert!(status.success(), "isolated log capture failed");
+            return;
+        }
         #[derive(Clone, Default)]
         struct Log(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
         impl std::io::Write for Log {
@@ -402,12 +418,18 @@ mod tests {
                 self.0.lock().unwrap().extend_from_slice(bytes);
                 Ok(bytes.len())
             }
-            fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
         }
         let log = Log::default();
         let writer = log.clone();
-        let subscriber = tracing_subscriber::fmt().without_time().with_ansi(false)
-            .with_max_level(tracing::Level::WARN).with_writer(move || writer.clone()).finish();
+        let subscriber = tracing_subscriber::fmt()
+            .without_time()
+            .with_ansi(false)
+            .with_max_level(tracing::Level::WARN)
+            .with_writer(move || writer.clone())
+            .finish();
         let _guard = tracing::subscriber::set_default(subscriber);
         let mut options = Options::new();
         put(&mut options, "accept_label", Value::from(""));

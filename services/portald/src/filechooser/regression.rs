@@ -47,21 +47,47 @@ impl Drop for Fixture {
 impl Fixture {
     async fn new() -> Self {
         let dir = tempfile::tempdir().unwrap();
-        let mut daemon = Daemon(Command::new("dbus-daemon")
-            .args(["--session", "--nofork", "--nopidfile", "--print-address=1"])
-            .arg(format!("--address=unix:path={}/bus", dir.path().display()))
-            .stdout(Stdio::piped()).spawn().unwrap());
+        let mut daemon = Daemon(
+            Command::new("dbus-daemon")
+                .args(["--session", "--nofork", "--nopidfile", "--print-address=1"])
+                .arg(format!("--address=unix:path={}/bus", dir.path().display()))
+                .stdout(Stdio::piped())
+                .spawn()
+                .unwrap(),
+        );
         let mut address = String::new();
-        BufReader::new(daemon.0.stdout.take().unwrap()).read_line(&mut address).unwrap();
-        let server = zbus::connection::Builder::address(address.trim()).unwrap().build().await.unwrap();
-        let owner = zbus::connection::Builder::address(address.trim()).unwrap().build().await.unwrap();
+        BufReader::new(daemon.0.stdout.take().unwrap())
+            .read_line(&mut address)
+            .unwrap();
+        let server = zbus::connection::Builder::address(address.trim())
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+        let owner = zbus::connection::Builder::address(address.trim())
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
         let broker = test_broker::Broker::start();
-        let provider = Arc::new(SupervisedClient::connect_options("files", &broker.url)
-            .with_commands(["files.choose.list", "files.choose.cancel"].into_iter()
-                .map(|name| bus::CommandDescriptor::new(name, &[], "test", false)).collect())
-            .connect().await.unwrap());
-        let native = Arc::new(SupervisedClient::connect_options("portal-regression", &broker.url)
-            .connect().await.unwrap());
+        let provider = Arc::new(
+            SupervisedClient::connect_options("files", &broker.url)
+                .with_commands(
+                    ["files.choose.list", "files.choose.cancel"]
+                        .into_iter()
+                        .map(|name| bus::CommandDescriptor::new(name, &[], "test", false))
+                        .collect(),
+                )
+                .connect()
+                .await
+                .unwrap(),
+        );
+        let native = Arc::new(
+            SupervisedClient::connect_options("portal-regression", &broker.url)
+                .connect()
+                .await
+                .unwrap(),
+        );
         let bridge = Bridge::new(native);
         bridge.registry.lock().await.generation = settings::native::live_generation(&bridge.client);
         let lists = Arc::new(SyncMutex::new(VecDeque::new()));
@@ -73,27 +99,48 @@ impl Fixture {
             while let Some(command) = incoming.recv().await {
                 let answer = if command.command == "files.choose.cancel" {
                     let body: Json = serde_json::from_str(&command.body).unwrap();
-                    cancelled_tx.send(body["request"].as_str().unwrap().to_owned()).unwrap();
+                    cancelled_tx
+                        .send(body["request"].as_str().unwrap().to_owned())
+                        .unwrap();
                     c.lock().unwrap().pop_front().unwrap_or(Answer::Normal)
                 } else {
                     l.lock().unwrap().pop_front().unwrap_or(Answer::Normal)
                 };
                 let p = p.clone();
                 tokio::spawn(async move {
-                    if matches!(answer, Answer::Silent) { return; }
+                    if matches!(answer, Answer::Silent) {
+                        return;
+                    }
                     if matches!(answer, Answer::Slow) {
                         tokio::time::sleep(IO_TIMEOUT + Duration::from_millis(200)).await;
                     }
-                    let rc = if matches!(answer, Answer::Refuse) { 10 } else { 0 };
+                    let rc = if matches!(answer, Answer::Refuse) {
+                        10
+                    } else {
+                        0
+                    };
                     let value = if command.command == "files.choose.list" {
                         json!({"incarnation":"inc", "requests":[{"request":"inc-1"}]})
-                    } else { json!({}) };
+                    } else {
+                        json!({})
+                    };
                     let _ = p.respond(&command, rc, &value.to_string()).await;
                 });
             }
         });
-        Self { _daemon: daemon, _dir: dir, _broker: broker, server, owner, bridge, provider,
-            worker, lists, cancels, cancelled }
+        Self {
+            _daemon: daemon,
+            _dir: dir,
+            _broker: broker,
+            server,
+            owner,
+            bridge,
+            provider,
+            worker,
+            lists,
+            cancels,
+            cancelled,
+        }
     }
 
     async fn entry(&self, phase: Phase) -> (OwnedObjectPath, MessageStream) {
@@ -101,58 +148,147 @@ impl Fixture {
         let path = handle::request_path(owner, "regression").unwrap();
         let mut state = State::default();
         state.phase = phase;
-        self.bridge.registry.lock().await.entries.insert(1, Entry {
-            path: path.clone(), owner: owner.into(), choices: false, state, reply_sent: None,
-        });
-        self.server.object_server().at(path.clone(), request::Request::filechooser(owner, self.bridge.clone(), 1))
-            .await.unwrap();
-        let stream = MessageStream::for_match_rule(MatchRule::builder()
-            .msg_type(zbus::message::Type::Signal).interface("org.freedesktop.portal.Request").unwrap()
-            .member("Response").unwrap().path(path.clone()).unwrap().build(), &self.owner, Some(4))
-            .await.unwrap();
+        self.bridge.registry.lock().await.entries.insert(
+            1,
+            Entry {
+                path: path.clone(),
+                owner: owner.into(),
+                choices: false,
+                state,
+                reply_sent: None,
+            },
+        );
+        self.server
+            .object_server()
+            .at(
+                path.clone(),
+                request::Request::filechooser(owner, self.bridge.clone(), 1),
+            )
+            .await
+            .unwrap();
+        let stream = MessageStream::for_match_rule(
+            MatchRule::builder()
+                .msg_type(zbus::message::Type::Signal)
+                .interface("org.freedesktop.portal.Request")
+                .unwrap()
+                .member("Response")
+                .unwrap()
+                .path(path.clone())
+                .unwrap()
+                .build(),
+            &self.owner,
+            Some(4),
+        )
+        .await
+        .unwrap();
         (path, stream)
     }
 
     async fn removed(&self, path: &OwnedObjectPath) {
-        assert!(self.server.object_server().interface::<_, request::Request>(path.clone()).await.is_err());
+        assert!(
+            self.server
+                .object_server()
+                .interface::<_, request::Request>(path.clone())
+                .await
+                .is_err()
+        );
         assert!(self.bridge.registry.lock().await.entries.is_empty());
     }
 
     async fn cancelled(&mut self) {
-        assert_eq!(tokio::time::timeout(Duration::from_secs(3), self.cancelled.recv()).await.unwrap().unwrap(), "inc-1");
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(3), self.cancelled.recv())
+                .await
+                .unwrap()
+                .unwrap(),
+            "inc-1"
+        );
         tokio::time::timeout(Duration::from_secs(3), async {
             loop {
-                if self.bridge.cancels.lock().unwrap().values().all(|c| !c.in_flight) { break; }
+                if self
+                    .bridge
+                    .cancels
+                    .lock()
+                    .unwrap()
+                    .values()
+                    .all(|c| !c.in_flight)
+                {
+                    break;
+                }
                 tokio::time::sleep(Duration::from_millis(10)).await;
             }
-        }).await.unwrap();
+        })
+        .await
+        .unwrap();
     }
 }
 
 async fn response(stream: &mut MessageStream) {
-    let message = tokio::time::timeout(Duration::from_secs(3), stream.next()).await.unwrap().unwrap().unwrap();
-    let (code, results): (u32, HashMap<String, zbus::zvariant::OwnedValue>) = message.body().deserialize().unwrap();
+    let message = tokio::time::timeout(Duration::from_secs(3), stream.next())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    let (code, results): (u32, HashMap<String, zbus::zvariant::OwnedValue>) =
+        message.body().deserialize().unwrap();
     assert_eq!(code, 2);
     assert!(results.is_empty());
     quiet(stream).await;
 }
 
 async fn quiet(stream: &mut MessageStream) {
-    assert!(tokio::time::timeout(Duration::from_millis(50), stream.next()).await.is_err());
+    assert!(
+        tokio::time::timeout(Duration::from_millis(50), stream.next())
+            .await
+            .is_err()
+    );
 }
 
 #[tokio::test]
 async fn open_file_during_reconnect_answers_once_and_unexports() {
     let f = Fixture::new().await;
     f.bridge.registry.lock().await.generation = None;
-    f.server.object_server().at(OBJECT_PATH, FileChooser { bridge: f.bridge.clone() }).await.unwrap();
+    f.server
+        .object_server()
+        .at(
+            OBJECT_PATH,
+            FileChooser {
+                bridge: f.bridge.clone(),
+            },
+        )
+        .await
+        .unwrap();
     let path = handle::request_path(f.owner.unique_name().unwrap().as_str(), "reconnect").unwrap();
-    let mut stream = MessageStream::for_match_rule(MatchRule::builder()
-        .msg_type(zbus::message::Type::Signal).interface("org.freedesktop.portal.Request").unwrap()
-        .member("Response").unwrap().path(path.clone()).unwrap().build(), &f.owner, Some(4)).await.unwrap();
-    let options = Options::from([("handle_token".into(), zbus::zvariant::OwnedValue::from(zbus::zvariant::Str::from("reconnect")))]);
-    let reply = f.owner.call_method(Some(f.server.unique_name().unwrap().as_str()), OBJECT_PATH,
-        Some(INTERFACE), "OpenFile", &("", "", options)).await.unwrap();
+    let mut stream = MessageStream::for_match_rule(
+        MatchRule::builder()
+            .msg_type(zbus::message::Type::Signal)
+            .interface("org.freedesktop.portal.Request")
+            .unwrap()
+            .member("Response")
+            .unwrap()
+            .path(path.clone())
+            .unwrap()
+            .build(),
+        &f.owner,
+        Some(4),
+    )
+    .await
+    .unwrap();
+    let options = Options::from([(
+        "handle_token".into(),
+        zbus::zvariant::OwnedValue::from(zbus::zvariant::Str::from("reconnect")),
+    )]);
+    let reply = f
+        .owner
+        .call_method(
+            Some(f.server.unique_name().unwrap().as_str()),
+            OBJECT_PATH,
+            Some(INTERFACE),
+            "OpenFile",
+            &("", "", options),
+        )
+        .await
+        .unwrap();
     assert_eq!(reply.body().deserialize::<OwnedObjectPath>().unwrap(), path);
     response(&mut stream).await;
     f.bridge.registry.lock().await.generation = settings::native::live_generation(&f.bridge.client);
@@ -184,11 +320,17 @@ async fn no_generation_reply_after_reattach_answers_once_and_unexports() {
 async fn one_slow_list_recovers_and_resets_consecutive_failure_count() {
     let f = Fixture::new().await;
     let (_, mut stream) = f.entry(Phase::Open("inc-1".into())).await;
-    f.lists.lock().unwrap().extend([Answer::Slow, Answer::Normal, Answer::Refuse, Answer::Normal]);
+    f.lists
+        .lock()
+        .unwrap()
+        .extend([Answer::Slow, Answer::Normal, Answer::Refuse, Answer::Normal]);
     for _ in 0..4 {
         f.bridge.poll(&f.server).await;
         quiet(&mut stream).await;
-        assert_eq!(f.bridge.registry.lock().await.entries[&1].state.phase, Phase::Open("inc-1".into()));
+        assert_eq!(
+            f.bridge.registry.lock().await.entries[&1].state.phase,
+            Phase::Open("inc-1".into())
+        );
     }
 }
 
@@ -196,7 +338,10 @@ async fn one_slow_list_recovers_and_resets_consecutive_failure_count() {
 async fn persistent_list_loss_answers_once_and_cancels_live_provider() {
     let mut f = Fixture::new().await;
     let (path, mut stream) = f.entry(Phase::Open("inc-1".into())).await;
-    f.lists.lock().unwrap().extend([Answer::Refuse, Answer::Refuse]);
+    f.lists
+        .lock()
+        .unwrap()
+        .extend([Answer::Refuse, Answer::Refuse]);
     f.bridge.poll(&f.server).await;
     quiet(&mut stream).await;
     f.bridge.poll(&f.server).await;
@@ -239,7 +384,7 @@ async fn cancel_failure_and_timeout_retry_even_after_last_request_ends() {
 #[tokio::test]
 async fn cancel_retry_budget_is_bounded() {
     let mut f = Fixture::new().await;
-    f.entry(Phase::Open("inc-1".into())).await;
+    let _entry = f.entry(Phase::Open("inc-1".into())).await;
     f.cancels.lock().unwrap().extend([Answer::Refuse; 4]);
     f.bridge.close(&f.server, 1).await;
     f.cancelled().await;

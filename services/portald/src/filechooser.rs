@@ -125,11 +125,19 @@ impl Bridge {
         }
     }
 
-    fn cancel(&self, request: String, generation: Option<u64>) -> Option<tokio::task::JoinHandle<()>> {
+    fn cancel(
+        &self,
+        request: String,
+        generation: Option<u64>,
+    ) -> Option<tokio::task::JoinHandle<()>> {
         if generation.is_none() || settings::native::live_generation(&self.client) != generation {
             return None;
         }
-        self.cancels.lock().unwrap().entry(request.clone()).or_default();
+        self.cancels
+            .lock()
+            .unwrap()
+            .entry(request.clone())
+            .or_default();
         self.retry_cancel(request)
     }
 
@@ -139,7 +147,9 @@ impl Bridge {
         }
         {
             let mut pending = self.cancels.lock().unwrap();
-            let Some(cancel) = pending.get_mut(&request) else { return None };
+            let Some(cancel) = pending.get_mut(&request) else {
+                return None;
+            };
             if cancel.in_flight {
                 return None;
             }
@@ -151,7 +161,10 @@ impl Bridge {
             // Unknown, expired and already ended requests acknowledge with rc 0.
             // Request ids include the incarnation, so retries across reconnects
             // cannot cancel a new chooser that happens to reuse a sequence.
-            let acknowledged = this.call("files.choose.cancel", json!({"request":request})).await.is_some();
+            let acknowledged = this
+                .call("files.choose.cancel", json!({"request":request}))
+                .await
+                .is_some();
             let mut pending = this.cancels.lock().unwrap();
             if acknowledged {
                 pending.remove(&request);
@@ -276,7 +289,8 @@ impl Bridge {
         // No native call was made when choose captured no generation. Its
         // failure is final even if attach has since admitted a new generation.
         if generation.is_none() {
-            self.apply(connection, &mut registry, id, Event::Reply(None)).await;
+            self.apply(connection, &mut registry, id, Event::Reply(None))
+                .await;
             return;
         }
         if !self.fence(connection, &mut registry).await {
@@ -363,12 +377,21 @@ impl Bridge {
         }
         // A bounded NameOwnerChanged stream may overflow while apply holds the
         // registry lock. Reconcile independently of files liveness and results.
-        let owners: std::collections::HashSet<_> = self.registry.lock().await.entries.values()
-            .map(|e| e.owner.clone()).collect();
+        let owners: std::collections::HashSet<_> = self
+            .registry
+            .lock()
+            .await
+            .entries
+            .values()
+            .map(|e| e.owner.clone())
+            .collect();
         if let Ok(proxy) = zbus::fdo::DBusProxy::new(connection).await {
             for owner in owners {
                 if let Ok(name) = zbus::names::BusName::try_from(owner.clone())
-                    && matches!(tokio::time::timeout(IO_TIMEOUT, proxy.name_has_owner(name)).await, Ok(Ok(false)))
+                    && matches!(
+                        tokio::time::timeout(IO_TIMEOUT, proxy.name_has_owner(name)).await,
+                        Ok(Ok(false))
+                    )
                 {
                     self.owner_left(connection, &owner).await;
                 }
