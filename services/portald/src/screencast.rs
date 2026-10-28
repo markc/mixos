@@ -352,7 +352,7 @@ struct Target {
 }
 
 /// The caller's process id, for naming it in the prompt and matching grants.
-async fn caller_pid(connection: &Connection, owner: &str) -> Option<u32> {
+pub(crate) async fn caller_pid(connection: &Connection, owner: &str) -> Option<u32> {
     let proxy = zbus::fdo::DBusProxy::new(connection).await.ok()?;
     let name = zbus::names::BusName::try_from(owner.to_owned()).ok()?;
     proxy.get_connection_unix_process_id(name).await.ok()

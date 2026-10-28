@@ -21,13 +21,19 @@ pub const FAILED: u32 = 2;
 
 pub struct Request {
     owner: String,
+    chooser: Option<(crate::filechooser::Bridge, u64)>,
 }
 
 impl Request {
     pub fn new(owner: &str) -> Self {
         Self {
             owner: owner.to_owned(),
+            chooser: None,
         }
+    }
+
+    pub fn filechooser(owner: &str, bridge: crate::filechooser::Bridge, id: u64) -> Self {
+        Self { owner: owner.to_owned(), chooser: Some((bridge, id)) }
     }
 }
 
@@ -38,12 +44,24 @@ impl Request {
         &self,
         #[zbus(header)] header: Header<'_>,
         #[zbus(object_server)] server: &ObjectServer,
+        #[zbus(connection)] connection: &Connection,
     ) -> fdo::Result<()> {
         let sender = header.sender().map(|name| name.as_str()).unwrap_or("");
+        if self.chooser.is_some() && sender != self.owner {
+            return Err(fdo::Error::ZBus(zbus::Error::MethodError(
+                zbus::names::OwnedErrorName::try_from("org.freedesktop.portal.Error.NotAllowed").expect("constant error name"),
+                Some("not the owner of this request".into()),
+                zbus::Message::method_return(&header).build(&())?,
+            )));
+        }
         if sender != self.owner {
             return Err(fdo::Error::AccessDenied(
                 "not the owner of this request".into(),
             ));
+        }
+        if let Some((bridge, id)) = &self.chooser {
+            bridge.close(connection, *id).await;
+            return Ok(());
         }
         let Some(path) = header.path() else {
             return Err(fdo::Error::Failed("no object path".into()));
@@ -102,6 +120,17 @@ pub async fn respond(
     if !live(connection, path).await {
         return false;
     }
+    emit(connection, path, owner, code, results).await;
+    let _ = connection
+        .object_server()
+        .remove::<Request, _>(path.clone())
+        .await;
+    true
+}
+
+/// Shared addressed signal emission. The FileChooser registry serialises this
+/// with Close and retirement; ScreenCast retains its existing liveness check.
+pub async fn emit(connection: &Connection, path: &OwnedObjectPath, owner: &str, code: u32, results: HashMap<&str, Value<'_>>) {
     let emitted = async {
         let destination = BusName::try_from(owner.to_owned()).map_err(zbus::Error::from)?;
         let emitter = SignalEmitter::new(connection, path.clone())?.set_destination(destination);
@@ -111,9 +140,4 @@ pub async fn respond(
     if let Err(error) = emitted {
         tracing::warn!(%error, %path, "Response not emitted");
     }
-    let _ = connection
-        .object_server()
-        .remove::<Request, _>(path.clone())
-        .await;
-    true
 }

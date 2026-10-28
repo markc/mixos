@@ -237,6 +237,7 @@ fn spawn_portal(
     let shared = status::shared();
     let task = tokio::spawn(live::serve(
         Config {
+            filechooser: None,
             address: address.to_owned(),
             state_dir,
             binding: projection("a", 1, "dark").binding,
@@ -781,6 +782,7 @@ impl NativePortal {
         ));
         let live = tokio::spawn(live::serve(
             Config {
+            filechooser: None,
                 address: bus.address.clone(),
                 state_dir: None,
                 binding,

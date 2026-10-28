@@ -6,6 +6,7 @@
 pub mod appearance;
 pub mod cache;
 pub mod env;
+pub mod filechooser;
 pub mod gtk_settings;
 pub mod live;
 pub mod portal;
@@ -37,8 +38,12 @@ pub async fn run(
     let noded_url = bus::client_helpers::resolve_noded_url();
     let feed_status = status.clone();
     let feed_binding = binding.clone();
+    let (client, incoming) = service::connect(&noded_url)?;
+    screencast::consent::set_client(client.clone());
+    let chooser = filechooser::Bridge::new(client.clone());
+    let (outcomes, chooser_outcomes) = mpsc::channel(64);
     let feed = tokio::spawn(async move {
-        if let Err(error) = service::feed(feed_binding, noded_url, projections, feed_status).await {
+        if let Err(error) = service::run(feed_binding, client, filechooser::Source { incoming, outcomes }, projections, feed_status).await {
             tracing::warn!(%error, "settings source unavailable; serving last-good values");
         }
     });
@@ -52,6 +57,7 @@ pub async fn run(
             screencast,
             screencast_max_framerate,
             gtk_settings: gtk_settings::Exporter::new(config_home.as_deref(), home.as_deref()),
+            filechooser: Some((chooser, chooser_outcomes)),
         },
         received,
         status,

@@ -184,6 +184,7 @@ async fn screencast_contract() {
     let (_projections, received) = mpsc::channel(8);
     let portal = tokio::spawn(live::serve(
         Config {
+            filechooser: None,
             address: bus.address.clone(),
             state_dir: None,
             binding: Binding {

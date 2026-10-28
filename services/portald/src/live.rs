@@ -20,6 +20,7 @@ use zbus::fdo::{RequestNameFlags, RequestNameReply};
 use zbus::zvariant::Value;
 
 pub struct Config {
+    pub filechooser: Option<(crate::filechooser::Bridge, mpsc::Receiver<(u64, serde_json::Value)>)>,
     pub address: String,
     pub state_dir: Option<PathBuf>,
     pub binding: Binding,
@@ -143,7 +144,7 @@ fn adopt(
 }
 
 pub async fn serve(
-    config: Config,
+    mut config: Config,
     mut projections: mpsc::Receiver<AppearanceProjection>,
     status: Shared,
 ) -> anyhow::Result<()> {
@@ -189,6 +190,14 @@ pub async fn serve(
         _ => anyhow::bail!("{} is owned by another service", portal::BUS_NAME),
     }
     status::update(&status, |s| s.name_owned = true);
+    let chooser = config.filechooser.take().map(|(bridge, outcomes)| {
+        let connection = connection.clone();
+        tokio::spawn(async move {
+            if let Err(error) = bridge.attach(connection, outcomes).await {
+                tracing::error!(%error, "FileChooser bridge ended");
+            }
+        })
+    });
     tracing::info!(origin = ?state.origin(), screencast = ?config.screencast, "serving {}", portal::BUS_NAME);
     let owners = config.screencast.is_some().then(|| {
         let connection = connection.clone();
@@ -240,6 +249,7 @@ pub async fn serve(
         }
     }
     tracing::info!("portal stopping");
+    if let Some(chooser) = chooser { chooser.abort(); }
     if let Some(owners) = owners {
         owners.abort();
     }
@@ -275,6 +285,7 @@ mod tests {
     fn exports_caption_only_changes_but_never_stale_or_rejected_projections() {
         let dir = tempfile::tempdir().unwrap();
         let config = Config {
+            filechooser: None,
             address: String::new(),
             state_dir: Some(dir.path().join("state")),
             binding: projection("inc", 1, "dark").binding,
