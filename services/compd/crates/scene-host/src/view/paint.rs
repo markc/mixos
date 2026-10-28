@@ -468,7 +468,11 @@ fn paint_frame(
         pos2(rect.left() + 12.0, rect.center().y),
         Align2::LEFT_CENTER,
         title,
-        font(size, false, theme.overlay().weight.is_some() || display.weight >= 600),
+        font(
+            size,
+            false,
+            theme.overlay().weight.is_some() || display.weight >= 600,
+        ),
         colour(bar.foreground),
     );
     let Some(close) = scene

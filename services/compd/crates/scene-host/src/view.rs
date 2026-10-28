@@ -358,11 +358,12 @@ impl SceneUi {
         let theme = self.theme();
         let scale = self.text_scale();
         let role = |role| {
-            let scale = scale * if role == design::TypographyRole::Mono {
-                1.0
-            } else {
-                theme.interface_size_scale()
-            };
+            let scale = scale
+                * if role == design::TypographyRole::Mono {
+                    1.0
+                } else {
+                    theme.interface_size_scale()
+                };
             let record = design::active_typography(Some(theme.typography()), role);
             flex::TextStyle {
                 size: if record.font_size > 0.0 {

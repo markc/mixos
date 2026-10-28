@@ -394,7 +394,8 @@ mod tests {
         let look = crate::appearance::build(&crate::appearance::snapshot_of(desktop)).unwrap();
         assert!((ui_size(Some(&look), &look.theme) - 27.0).abs() < 0.001);
         let plain = crate::appearance::fixture("dark", 1.0);
-        let design = design::active_typography(Some(plain.theme.typography()), design::TypographyRole::Ui);
+        let design =
+            design::active_typography(Some(plain.theme.typography()), design::TypographyRole::Ui);
         assert_eq!(ui_size(None, &plain.theme), design.font_size as f32);
     }
 

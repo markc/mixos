@@ -39,9 +39,19 @@ fn interface_font_reaches_authored_panel_text_layout_and_scene_frame_titles() {
         let mut desktop = settings::Desktop::default();
         desktop.appearance.font_size = size;
         desktop.appearance.font_weight = size.map(|_| 300);
-        let look = Arc::new(crate::appearance::build(&crate::appearance::snapshot_of(desktop)).unwrap());
+        let look =
+            Arc::new(crate::appearance::build(&crate::appearance::snapshot_of(desktop)).unwrap());
         let ratio = look.theme.interface_size_scale();
-        let mut scene = SceneUi::with_look(content(source, Some(Frame { title: "Frame".into() }), true), look.clone());
+        let mut scene = SceneUi::with_look(
+            content(
+                source,
+                Some(Frame {
+                    title: "Frame".into(),
+                }),
+                true,
+            ),
+            look.clone(),
+        );
         let ctx = egui::Context::default();
         scene.setup(&ctx);
         let mut seen = std::collections::BTreeSet::new();
@@ -58,9 +68,15 @@ fn interface_font_reaches_authored_panel_text_layout_and_scene_frame_titles() {
                         "Clock" => 19.0 * ratio,
                         "Mono" => 13.0,
                         "Frame" => {
-                            let title = design::active_typography(Some(look.theme.typography()), design::TypographyRole::UiDisplay);
+                            let title = design::active_typography(
+                                Some(look.theme.typography()),
+                                design::TypographyRole::UiDisplay,
+                            );
                             if size.is_some() {
-                                assert_eq!(font.family, egui::FontFamily::Name(toolkit::fonts::HEADING.into()));
+                                assert_eq!(
+                                    font.family,
+                                    egui::FontFamily::Name(toolkit::fonts::HEADING.into())
+                                );
                             }
                             title.font_size as f32 * ratio
                         }

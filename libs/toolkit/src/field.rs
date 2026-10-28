@@ -265,9 +265,8 @@ impl Widget for ValueField<'_> {
         let text_height = number_size
             .y
             .max(unit_galley.as_ref().map_or(0.0, |g| g.size().y));
-        let min_height = text_height
-            + f32::from(field.padding.top)
-            + f32::from(field.padding.bottom);
+        let min_height =
+            text_height + f32::from(field.padding.top) + f32::from(field.padding.bottom);
         let width = width
             .unwrap_or(chrome.style.value_width as f32)
             .max(min_width.ceil());
