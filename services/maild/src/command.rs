@@ -897,7 +897,7 @@ async fn run_account_cli(action: AccountAction) -> Result<()> {
                 match serde_json::from_str::<serde_json::Value>(&body_str) {
                     Ok(mut resp) => {
                         let (id_rc, id_body, _) = client.call_with_headers_raw(
-                            "maild", "maild.stats.account", &BTreeMap::new(),
+                            "maild", "maild.accounts.lookup", &BTreeMap::new(),
                             &serde_json::json!({"email":email}).to_string(),
                         ).await?;
                         anyhow::ensure!(id_rc == 0, "account id lookup failed: {id_body}");

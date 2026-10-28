@@ -11,9 +11,17 @@ pub fn valid_address(addr: &str, null_ok: bool) -> bool {
             || ".!#$%&'*+-/=?^_`{|}~".contains(c))
         && !addr.chars().any(|c| c.is_control() || c.is_whitespace() || "<>\"()\\,;:".contains(c))
         && !local.starts_with('.') && !local.ends_with('.') && !local.contains("..")
-        && domain.split('.').all(|label| !label.is_empty() && label.len() <= 63
-            && !label.starts_with('-') && !label.ends_with('-')
-            && label.chars().all(|c| c.is_alphanumeric() || c == '-'))
+        && dns_domain(domain).is_some()
+}
+
+/// DNS and authoritative domain rows use IDNA A-labels; envelopes retain UTF-8.
+pub fn dns_domain(domain: &str) -> Option<String> {
+    if domain.starts_with('.') || domain.ends_with('.') { return None; }
+    let name = hickory_resolver::Name::from_utf8(domain).ok()?.to_ascii().to_ascii_lowercase();
+    if !name.split('.').all(|label| !label.is_empty() && label.len() <= 63
+        && !label.starts_with('-') && !label.ends_with('-')
+        && label.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')) { return None; }
+    Some(name)
 }
 
 pub fn utf8_headers(data: &[u8]) -> bool {

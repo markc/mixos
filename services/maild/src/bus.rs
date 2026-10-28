@@ -607,6 +607,7 @@ pub fn command_manifest() -> Vec<::bus::CommandDescriptor> {
         ),
         CommandDescriptor::new("maild.tls.reload", &[], "Reload mail TLS identities", false),
         CommandDescriptor::new("maild.dkim.check", &["domain"], "Check published DKIM against the private key", true),
+        CommandDescriptor::new("maild.accounts.lookup", &["email"], "Look up a numeric account id without opening its mail store", true),
     ]
 }
 

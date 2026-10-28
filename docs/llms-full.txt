@@ -11202,6 +11202,9 @@ or UTF-8 headers, adding `BODY=8BITMIME` for an eight-bit body. UTF-8 local
 parts and domains are stored without transliteration or Unicode normalisation;
 address lookup folds ASCII case as for existing mailboxes. Invalid UTF-8
 commands and UTF-8 addresses/headers without the parameter are refused.
+Configure hosted internationalised domains in `maild.domains` using their DNS
+A-label (for example `xn--fsqu00a.example.com`); the RCPT gate converts the
+envelope's U-label for that authoritative lookup.
 
 Outbound delivery detects non-ASCII envelope addresses and headers, checks the
 peer's EHLO capabilities (again after STARTTLS), and requests `SMTPUTF8` when
@@ -11277,7 +11280,9 @@ identity. Property records retain `target` as the first target for compatibility
 and add `targets` for the full list; an absent or empty list uses `target`.
 
 `maild account show alice@example.com` includes `account_id`, the numeric id
-accepted by Bayesian commands. `maild bayesian stats ID` refuses unknown ids
+accepted by Bayesian commands. The read-only `maild.accounts.lookup {email}`
+query supplies this identity without opening the account's mail store.
+`maild bayesian stats ID` refuses unknown ids
 and reads an existing corpus without creating a directory or `bayes.db`;
 an existing untrained account reports cold-start counts.
 

@@ -109,6 +109,14 @@ async fn utf8_inbound_and_authenticated_submission_store_mail() -> Result<()> {
     let address = "élise@例子.example.com";
     let id = account(&built,address).await?;
     account(&built,"alice@example.com").await?;
+    // A hosted IDN is configured using its DNS A-label. The envelope and
+    // mailbox retain the U-label and must pass the authoritative RCPT gate.
+    for domain in ["xn--fsqu00a.example.com","example.com"] {
+        built.app_state.domains_runtime.set(
+            RecordKey::collection(maild::props::domains::namespace_name(),domain),
+            maild::props::domains::defaults_value(domain),opts(Version::zero()),
+        ).await?;
+    }
     let mut io = BufReader::new(TcpStream::connect(built.smtp_handle.inbound_addrs[0]).await?);
     reply(&mut io).await?;
     let ehlo = command(&mut io,"EHLO sender.example.org","250").await?;
@@ -128,13 +136,18 @@ async fn utf8_inbound_and_authenticated_submission_store_mail() -> Result<()> {
     let bytes = ms.mds().get_blob(&stored[0].blob_hash)?;
     assert!(String::from_utf8_lossy(&bytes).contains("Subject: café"));
     assert!(String::from_utf8_lossy(&bytes).contains("UTF-8 body ✓"));
-    let (rc,body) = maild::bus::stats::dispatch("account", &bus_cmd("maild.stats.account",json!({"email":address})),
-        &built.app_state.db,&built.app_state.mailstore,&maild::bus::stats::StatsState {
-            slots:Arc::new(maild::imap::session::AccountSlots::default()),
-            jmap_activity:maild::bus::stats::JmapActivity::new(), started_at:std::time::Instant::now(),
-        }).await;
+    let (rc,body) = maild::bus::accounts::dispatch("lookup", &bus_cmd("maild.accounts.lookup",json!({"email":address})),
+        &built.app_state.db,&built.app_state.mailstore,&built.accounts_runtime()).await;
     ensure!(rc == 0,"stats: {body}");
     assert_eq!(serde_json::from_str::<Value>(&body)?["account_id"],id);
+    // A legacy row has no MDS account set; numeric inspection must still work.
+    built.app_state.db.conn.lock().unwrap().execute(
+        "INSERT INTO accounts(id,email,password) VALUES(100,'legacy@example.com','test-hash')",[],
+    )?;
+    let (rc,body) = maild::bus::accounts::dispatch("lookup", &bus_cmd("maild.accounts.lookup",json!({"email":"legacy@example.com"})),
+        &built.app_state.db,&built.app_state.mailstore,&built.accounts_runtime()).await;
+    ensure!(rc == 0,"legacy identity: {body}");
+    assert_eq!(serde_json::from_str::<Value>(&body)?["account_id"],100);
     let stream = tls.connect(rustls::pki_types::ServerName::try_from("localhost")?,
         TcpStream::connect(built.smtp_handle.smtps_addrs[0]).await?).await?;
     let mut io = BufReader::new(stream);
@@ -198,6 +211,47 @@ async fn aliases_resurrect_repoint_fanout_and_mailbox_precedence_on_wire() -> Re
 
 fn bus_cmd(command: &str, body: Value) -> IncomingCommand {
     IncomingCommand {generation:0,command:command.into(),from:"smtp-test".into(),id:None,args:Value::Null,headers:BTreeMap::new(),body:body.to_string()}
+}
+
+#[tokio::test(flavor="multi_thread", worker_threads=4)]
+async fn unsupported_smtputf8_peer_bounces_through_real_queue() -> Result<()> {
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let mx = listener.local_addr()?;
+    let peer = tokio::spawn(async move {
+        let (stream,_) = listener.accept().await.unwrap();
+        let mut io = BufReader::new(stream);
+        io.get_mut().write_all(b"220 mx.example.net\r\n").await.unwrap();
+        let mut line = String::new();
+        io.read_line(&mut line).await.unwrap();
+        assert!(line.starts_with("EHLO"));
+        io.get_mut().write_all(b"250-mx.example.net\r\n250 8BITMIME\r\n").await.unwrap();
+        line.clear();
+        assert_eq!(io.read_line(&mut line).await.unwrap(),0,"unsupported mail must not be offered");
+    });
+    let tmp = tempfile::tempdir()?;
+    let (built,_) = fixture(&tmp,Some(mx)).await?;
+    let sender = account(&built,"élise@example.com").await?;
+    let request = bus_cmd("maild.submit",json!({"operation_id":"no-utf8-1","account":"élise@example.com",
+        "to":["remote@remote.example.net"],"subject":"international sender","text":"body"}));
+    let db = &built.app_state.db;
+    let (rc,body) = maild::bus::submission::dispatch(&request,db,&built.app_state.mailstore,&built.app_state.aliases_runtime,1024*1024).await;
+    ensure!(rc == 0,"submit: {body}");
+    let receipt: Value = serde_json::from_str(&body)?;
+    let query = bus_cmd("maild.submission.status",json!({"id":receipt["submission_id"]}));
+    timeout(Duration::from_secs(45),peer).await??;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+    loop {
+        let status: Value = serde_json::from_str(&maild::bus::submission::status(&query,db).await.1)?;
+        if status["recipients"][0]["status"] == "bounced" && inbox_count(&built,sender)? == 1 {
+            assert!(status["recipients"][0]["last_smtp_reply"].as_str().unwrap().contains("5.6.7"));
+            assert_eq!(status["delivery_confirmed"],false);
+            break;
+        }
+        ensure!(tokio::time::Instant::now() < deadline,"missing bounce/DSN: {status}");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(maild::smtp::queue::list(&db.conn,10).await?.is_empty());
+    Ok(())
 }
 
 #[tokio::test(flavor="multi_thread", worker_threads=4)]
