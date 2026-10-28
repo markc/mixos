@@ -50,19 +50,22 @@ if not $meta.ok then
 end
 $doc = json_parse($meta.stdout)
 
--- Only packages in the resolve count; metadata also lists unused optional ones.
-$resolved = {}
-for each $node in $doc.resolve.nodes
-  $resolved[$node.id] = true
+-- Use the resolved graph, not the manifests: a manifest also lists optional
+-- build-dependencies that no enabled feature turns on (signal-hook's cc).
+$names_by_id = {}
+for each $p in $doc.packages
+  $names_by_id[$p.id] = $p.name
 end
 $foreign = {}
-for each $p in $doc.packages
-  if $resolved[$p.id] != true then
-    continue
-  end
-  for each $dep in $p.dependencies
-    if $dep.kind == "build" and contains($HELPERS, $dep.name) then
-      $foreign[$p.name] = $dep.name
+for each $node in $doc.resolve.nodes
+  for each $dep in $node.deps
+    $dep_name = $names_by_id[$dep.pkg]
+    if contains($HELPERS, $dep_name) then
+      for each $k in $dep.dep_kinds
+        if $k.kind == "build" then
+          $foreign[$names_by_id[$node.id]] = $dep_name
+        end
+      end
     end
   end
 end
