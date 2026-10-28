@@ -108,12 +108,16 @@ pub fn utf8_headers(data: &[u8]) -> bool {
     let mut pending = vec![&message];
     while let Some(message) = pending.pop() {
         for part in &message.parts {
-            if message.raw_message.get(part.offset_header as usize..part.offset_body as usize)
-                .is_some_and(|header| !header.is_ascii()) {
+            if message
+                .raw_message
+                .get(part.offset_header as usize..part.offset_body as usize)
+                .is_some_and(|header| !header.is_ascii())
+            {
                 return true;
             }
             if part.encoding == mail_parser::Encoding::None
-                && let mail_parser::PartType::Message(inner) = &part.body {
+                && let mail_parser::PartType::Message(inner) = &part.body
+            {
                 pending.push(inner);
             }
         }

@@ -922,10 +922,14 @@ async fn run_account_cli(action: AccountAction) -> Result<()> {
                 let code = parsed.get("error_code").and_then(|v| v.as_str());
                 if code == Some("not_found") {
                     // A legacy business row may predate property metadata.
-                    let (lookup_rc, lookup_body, _) = client.call_with_headers_raw(
-                        "maild", "maild.accounts.lookup", &BTreeMap::new(),
-                        &serde_json::json!({"email":email}).to_string(),
-                    ).await?;
+                    let (lookup_rc, lookup_body, _) = client
+                        .call_with_headers_raw(
+                            "maild",
+                            "maild.accounts.lookup",
+                            &BTreeMap::new(),
+                            &serde_json::json!({"email":email}).to_string(),
+                        )
+                        .await?;
                     let identity: serde_json::Value = serde_json::from_str(&lookup_body)?;
                     if lookup_rc == 0 {
                         println!("{}", serde_json::to_string_pretty(&identity)?);
