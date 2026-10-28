@@ -86,14 +86,29 @@ impl Harness {
     pub fn two_outputs() -> Self {
         use smithay::output::{Output, PhysicalProperties, Subpixel};
         let mut h = Self::new();
-        let output = Output::new("testkit-1".into(), PhysicalProperties {
-            size: (0, 0).into(), subpixel: Subpixel::Unknown,
-            make: "testkit".into(), model: "headless".into(), serial_number: "testkit-1".into(),
-        });
-        output.change_current_state(h.wire.inner.output.current_mode(), None, None, Some((1920, 0).into()));
+        let output = Output::new(
+            "testkit-1".into(),
+            PhysicalProperties {
+                size: (0, 0).into(),
+                subpixel: Subpixel::Unknown,
+                make: "testkit".into(),
+                model: "headless".into(),
+                serial_number: "testkit-1".into(),
+            },
+        );
+        output.change_current_state(
+            h.wire.inner.output.current_mode(),
+            None,
+            None,
+            Some((1920, 0).into()),
+        );
         output.create_global::<Dispatch>(&h.display.handle());
         h.wire.inner.space.state.map_output(&output, (1920, 0));
-        h.wire.inner.other_space.state.map_output(&output, (1920, 0));
+        h.wire
+            .inner
+            .other_space
+            .state
+            .map_output(&output, (1920, 0));
         h.roundtrip();
         h
     }
@@ -103,7 +118,12 @@ impl Harness {
     pub fn advance_time(&mut self, duration: Duration) -> bool {
         self.clock.advance(duration);
         let now = self.clock.now();
-        self.wire.inner.comp.drag.as_mut().is_some_and(|drag| drag.tick(now))
+        self.wire
+            .inner
+            .comp
+            .drag
+            .as_mut()
+            .is_some_and(|drag| drag.tick(now))
     }
 
     pub fn loop_handle(&self) -> smithay::reexports::calloop::LoopHandle<'static, Wire<TestHost>> {

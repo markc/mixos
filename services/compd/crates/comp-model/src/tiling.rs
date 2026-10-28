@@ -36,8 +36,14 @@ impl Default for TilingConfig {
 
 impl TilingConfig {
     pub const LEAVES: [&str; 8] = [
-        "edge_tiling", "top_maximize", "corner_ratio", "side_band_px", "top_band_px",
-        "shared_edge_dwell_ms", "preview_delay_ms", "preview_animation_ms",
+        "edge_tiling",
+        "top_maximize",
+        "corner_ratio",
+        "side_band_px",
+        "top_band_px",
+        "shared_edge_dwell_ms",
+        "preview_delay_ms",
+        "preview_animation_ms",
     ];
 
     pub fn value(self, leaf: &str) -> Option<PropValue> {
@@ -55,12 +61,26 @@ impl TilingConfig {
     }
 
     /// Validate before mutation, both at Bus admission and in the host.
-    pub fn set(&mut self, path: &str, value: &Value) -> Result<(PropValue, PropValue), SetValidationError> {
-        let leaf = path.strip_prefix("tiling.").ok_or(SetValidationError::UnknownPath)?;
+    pub fn set(
+        &mut self,
+        path: &str,
+        value: &Value,
+    ) -> Result<(PropValue, PropValue), SetValidationError> {
+        let leaf = path
+            .strip_prefix("tiling.")
+            .ok_or(SetValidationError::UnknownPath)?;
         let old = self.value(leaf).ok_or(SetValidationError::UnknownPath)?;
-        let boolean = || value.as_bool().ok_or_else(|| invalid_value(path, "bool", "true|false"));
-        let integer = |min, max, range| value.as_u64().filter(|v| (min..=max).contains(v))
-            .ok_or_else(|| invalid_value(path, "integer", range));
+        let boolean = || {
+            value
+                .as_bool()
+                .ok_or_else(|| invalid_value(path, "bool", "true|false"))
+        };
+        let integer = |min, max, range| {
+            value
+                .as_u64()
+                .filter(|v| (min..=max).contains(v))
+                .ok_or_else(|| invalid_value(path, "integer", range))
+        };
         match leaf {
             "edge_tiling" => self.edge_tiling = boolean()?,
             "top_maximize" => self.top_maximize = boolean()?,

@@ -23,8 +23,8 @@
 pub mod band;
 pub mod bindings;
 pub mod causes;
-pub mod corners;
 pub mod clock;
+pub mod corners;
 pub mod fullscreen;
 pub mod geometry;
 pub mod injection;

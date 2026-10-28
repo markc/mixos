@@ -43,7 +43,9 @@ fn set_tiling(h: &mut Harness, leaf: &str, value: serde_json::Value) {
 
 /// Paint the actual preview elements offscreen for visual QA, without a GPU.
 fn preview_snapshot(h: &Harness, label: &str) {
-    use smithay::backend::renderer::{Bind, Frame, Renderer, Color32F, pixman::PixmanRenderer, utils::draw_render_elements};
+    use smithay::backend::renderer::{
+        Bind, Color32F, Frame, Renderer, pixman::PixmanRenderer, utils::draw_render_elements,
+    };
     use smithay::reexports::pixman::{FormatCode, Image};
     use smithay::utils::{Rectangle, Transform};
     let mut renderer = PixmanRenderer::new().unwrap();
@@ -51,15 +53,23 @@ fn preview_snapshot(h: &Harness, label: &str) {
     let full = Rectangle::from_size((1920, 1080).into());
     {
         let mut framebuffer = renderer.bind(&mut target).unwrap();
-        let mut frame = renderer.render(&mut framebuffer, (1920, 1080).into(), Transform::Normal).unwrap();
-        frame.clear(Color32F::new(0.0, 0.0, 0.0, 1.0), &[full]).unwrap();
-        draw_render_elements::<PixmanRenderer, _, _>(&mut frame, 1.0, &preview(h), &[full]).unwrap();
+        let mut frame = renderer
+            .render(&mut framebuffer, (1920, 1080).into(), Transform::Normal)
+            .unwrap();
+        frame
+            .clear(Color32F::new(0.0, 0.0, 0.0, 1.0), &[full])
+            .unwrap();
+        draw_render_elements::<PixmanRenderer, _, _>(&mut frame, 1.0, &preview(h), &[full])
+            .unwrap();
         frame.finish().unwrap().wait().unwrap();
     }
     let stride = target.stride() / 4;
     // SAFETY: the owned pixman image holds stride * height u32 pixels.
     let pixels = unsafe { std::slice::from_raw_parts(target.data(), stride * 1080) };
-    assert!(pixels.iter().any(|p| p & 0x00ff_ffff != 0), "visible preview pixels");
+    assert!(
+        pixels.iter().any(|p| p & 0x00ff_ffff != 0),
+        "visible preview pixels"
+    );
     let png = image::RgbaImage::from_fn(1920, 1080, |x, y| {
         let p = pixels[y as usize * stride + x as usize];
         image::Rgba([(p >> 16) as u8, (p >> 8) as u8, p as u8, 255])
@@ -78,15 +88,21 @@ fn preview_clock_grows_eases_and_retargets_from_the_current_rectangle() {
     begin_move(&mut h, &window);
     motion(&mut h, (0.0, 540.0));
     apply(&mut h, &window);
-    let from = Rectangle::new(h.wire.inner.space.state.element_location(&window).unwrap(), (640, 480).into());
+    let from = Rectangle::new(
+        h.wire.inner.space.state.element_location(&window).unwrap(),
+        (640, 480).into(),
+    );
     let rect = |h: &Harness| h.comp().drag.as_ref().unwrap().preview_rectangle.unwrap();
     assert_eq!(rect(&h), from, "t=0 is the current window frame");
     preview_snapshot(&h, "start");
     let target = Rectangle::new((0, 0).into(), (960, 1080).into());
-    let halfway = |a: Rectangle<i32, smithay::utils::Logical>, b: Rectangle<i32, smithay::utils::Logical>| {
+    let halfway = |a: Rectangle<i32, smithay::utils::Logical>,
+                   b: Rectangle<i32, smithay::utils::Logical>| {
         let axis = |a: i32, b: i32| (f64::from(a) + f64::from(b - a) * 0.875).round() as i32;
-        Rectangle::new((axis(a.loc.x, b.loc.x), axis(a.loc.y, b.loc.y)).into(),
-            (axis(a.size.w, b.size.w), axis(a.size.h, b.size.h)).into())
+        Rectangle::new(
+            (axis(a.loc.x, b.loc.x), axis(a.loc.y, b.loc.y)).into(),
+            (axis(a.size.w, b.size.w), axis(a.size.h, b.size.h)).into(),
+        )
     };
     assert!(h.advance_time(ms(90)));
     let mid = rect(&h);
@@ -103,7 +119,10 @@ fn preview_clock_grows_eases_and_retargets_from_the_current_rectangle() {
     assert_eq!(rect(&h), right);
     preview_snapshot(&h, "end");
     assert!(policy_host::tiling::deadline(h.comp()).is_none());
-    assert!(!h.advance_time(ms(10_000)), "static preview owes no more frames");
+    assert!(
+        !h.advance_time(ms(10_000)),
+        "static preview owes no more frames"
+    );
     let_go(&mut h);
     apply(&mut h, &window);
     assert!(h.comp().drag.is_none());
@@ -128,7 +147,10 @@ fn show_delay_gates_preview_and_release_and_restarts_for_each_zone() {
         assert_eq!(!preview(&h).is_empty(), elapsed == 100);
         let_go(&mut h);
         apply(&mut h, &window);
-        assert_eq!(h.comp().placement(id).name(), if elapsed == 100 { "right" } else { "floating" });
+        assert_eq!(
+            h.comp().placement(id).name(),
+            if elapsed == 100 { "right" } else { "floating" }
+        );
     }
 }
 
@@ -145,7 +167,10 @@ fn shared_edge_dwell_uses_two_outputs_restarts_and_outer_edges_remain_immediate(
             assert!(h.comp().drag.as_ref().unwrap().armed.is_none());
             assert!(preview(&h).is_empty());
             h.advance_time(ms(elapsed));
-            assert_eq!(h.comp().drag.as_ref().unwrap().armed.is_some(), elapsed == 250);
+            assert_eq!(
+                h.comp().drag.as_ref().unwrap().armed.is_some(),
+                elapsed == 250
+            );
             let_go(&mut h);
             apply(&mut h, &window);
             assert_eq!(h.comp().placement(id).constrained(), elapsed == 250);
@@ -163,11 +188,25 @@ fn shared_edge_dwell_uses_two_outputs_restarts_and_outer_edges_remain_immediate(
     h.advance_time(ms(249));
     assert!(preview(&h).is_empty());
     h.advance_time(ms(1));
-    assert_eq!(h.comp().drag.as_ref().unwrap().armed.as_ref().unwrap().placement.name(), "top_right");
+    assert_eq!(
+        h.comp()
+            .drag
+            .as_ref()
+            .unwrap()
+            .armed
+            .as_ref()
+            .unwrap()
+            .placement
+            .name(),
+        "top_right"
+    );
     for point in [(0.0, 540.0), (3839.0, 540.0)] {
         motion(&mut h, point);
         apply(&mut h, &window);
-        assert!(h.comp().drag.as_ref().unwrap().armed.is_some(), "outer {point:?}");
+        assert!(
+            h.comp().drag.as_ref().unwrap().armed.is_some(),
+            "outer {point:?}"
+        );
     }
 }
 
@@ -231,7 +270,12 @@ fn tiling_props_apply_on_the_next_motion_and_persist() {
         ("corner_ratio", json!(0.5), (0.0, 400.0), Some("top_left")),
         ("side_band_px", json!(100), (80.0, 540.0), Some("left")),
         ("top_band_px", json!(100), (960.0, 80.0), Some("maximized")),
-        ("shared_edge_dwell_ms", json!(0), (1919.0, 540.0), Some("right")),
+        (
+            "shared_edge_dwell_ms",
+            json!(0),
+            (1919.0, 540.0),
+            Some("right"),
+        ),
         ("preview_delay_ms", json!(100), (0.0, 540.0), None),
         ("preview_animation_ms", json!(0), (0.0, 540.0), Some("left")),
     ] {
@@ -244,7 +288,13 @@ fn tiling_props_apply_on_the_next_motion_and_persist() {
         apply(&mut h, &window);
         assert_eq!(h.comp().drag.as_ref().unwrap().armed.as_ref().map(|a| a.placement.name()), expected, "{leaf}");
         if leaf == "preview_animation_ms" {
-            assert_eq!(h.comp().drag.as_ref().unwrap().preview_rectangle, Some(smithay::utils::Rectangle::new((0, 0).into(), (960, 1080).into())));
+            assert_eq!(
+                h.comp().drag.as_ref().unwrap().preview_rectangle,
+                Some(smithay::utils::Rectangle::new(
+                    (0, 0).into(),
+                    (960, 1080).into()
+                ))
+            );
             assert!(policy_host::tiling::deadline(h.comp()).is_none());
         }
         if leaf == "preview_delay_ms" {
@@ -258,8 +308,8 @@ fn tiling_props_apply_on_the_next_motion_and_persist() {
 
 #[test]
 fn preview_wakeup_is_removed_on_idle_and_never_polls() {
-    use smithay::reexports::calloop::EventLoop;
     use policy_host::tiling::Wakeup;
+    use smithay::reexports::calloop::EventLoop;
     let mut event_loop = EventLoop::<usize>::try_new().unwrap();
     let handle = event_loop.handle();
     let mut wakeup = Wakeup::default();
@@ -270,11 +320,15 @@ fn preview_wakeup_is_removed_on_idle_and_never_polls() {
     }
     assert!(!wakeup.armed());
     assert_eq!(calls, 0);
-    wakeup.rearm(&handle, Some(std::time::Instant::now()), |calls| *calls += 1);
+    wakeup.rearm(&handle, Some(std::time::Instant::now()), |calls| {
+        *calls += 1
+    });
     event_loop.dispatch(Some(ms(0)), &mut calls).unwrap();
     assert_eq!(calls, 1, "one shot fires once");
     assert!(!wakeup.armed());
-    wakeup.rearm(&handle, Some(std::time::Instant::now()), |calls| *calls += 1);
+    wakeup.rearm(&handle, Some(std::time::Instant::now()), |calls| {
+        *calls += 1
+    });
     wakeup.rearm(&handle, None, |calls| *calls += 1);
     for _ in 0..100 {
         event_loop.dispatch(Some(ms(0)), &mut calls).unwrap();

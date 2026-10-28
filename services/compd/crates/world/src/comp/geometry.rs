@@ -594,8 +594,12 @@ pub fn refresh_usable(
         // Restore geometry retains its size. Map its centre between usable
         // areas, including migration off a removed output, then clamp it.
         for saved in comp.float_geometries.values_mut() {
-            let destination = usable.get_key_value(&saved.output).or_else(|| usable.first_key_value());
-            let Some((name, new)) = destination else { continue };
+            let destination = usable
+                .get_key_value(&saved.output)
+                .or_else(|| usable.first_key_value());
+            let Some((name, new)) = destination else {
+                continue;
+            };
             let old = comp.usable.get(&saved.output).copied().unwrap_or(*new);
             if old != *new || name != &saved.output {
                 saved.location = remap_float(saved, old, *new);
@@ -663,14 +667,38 @@ pub fn refresh_usable(
     change
 }
 
-fn remap_float(saved: &FloatGeometry, old: Rectangle<i32, Logical>, new: Rectangle<i32, Logical>) -> Point<i32, Logical> {
-    let axis = |position: i32, size: i32, old_start: i32, old_extent: i32, start: i32, extent: i32| {
-        let fraction = (f64::from(position - old_start) + f64::from(size) / 2.0) / f64::from(old_extent.max(1));
-        let mapped = (f64::from(start) + fraction * f64::from(extent) - f64::from(size) / 2.0).round() as i32;
-        mapped.clamp(start, start + (extent - size).max(0))
-    };
-    (axis(saved.location.x, saved.size.w, old.loc.x, old.size.w, new.loc.x, new.size.w),
-     axis(saved.location.y, saved.size.h, old.loc.y, old.size.h, new.loc.y, new.size.h)).into()
+fn remap_float(
+    saved: &FloatGeometry,
+    old: Rectangle<i32, Logical>,
+    new: Rectangle<i32, Logical>,
+) -> Point<i32, Logical> {
+    let axis =
+        |position: i32, size: i32, old_start: i32, old_extent: i32, start: i32, extent: i32| {
+            let fraction = (f64::from(position - old_start) + f64::from(size) / 2.0)
+                / f64::from(old_extent.max(1));
+            let mapped = (f64::from(start) + fraction * f64::from(extent) - f64::from(size) / 2.0)
+                .round() as i32;
+            mapped.clamp(start, start + (extent - size).max(0))
+        };
+    (
+        axis(
+            saved.location.x,
+            saved.size.w,
+            old.loc.x,
+            old.size.w,
+            new.loc.x,
+            new.size.w,
+        ),
+        axis(
+            saved.location.y,
+            saved.size.h,
+            old.loc.y,
+            old.size.h,
+            new.loc.y,
+            new.size.h,
+        ),
+    )
+        .into()
 }
 
 fn fullscreen_owns(window: &Window) -> bool {

@@ -32,8 +32,8 @@ pub mod motion;
 pub mod panel;
 pub mod project;
 pub mod region;
-pub mod truth;
 pub mod tiling;
+pub mod truth;
 pub mod x11;
 pub mod xwayland;
 

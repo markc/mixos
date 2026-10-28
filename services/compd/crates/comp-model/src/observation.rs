@@ -1069,7 +1069,9 @@ pub fn validate_set_request(path: &str, value: &Value) -> Result<(), SetValidati
         None => {}
     }
     if path.starts_with("tiling.") {
-        return crate::tiling::TilingConfig::default().set(path, value).map(|_| ());
+        return crate::tiling::TilingConfig::default()
+            .set(path, value)
+            .map(|_| ());
     }
     validate_corner_value(path, value).map(|_| ())
 }

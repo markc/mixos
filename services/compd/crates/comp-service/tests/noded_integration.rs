@@ -37,7 +37,7 @@ impl CompEngine for Engine {
     fn snapshot(&mut self, _scopes: &ReadScopes) -> Option<CompSnapshot> {
         let context = &self.context;
         Some(CompSnapshot {
-        tiling: Default::default(),
+            tiling: Default::default(),
             session: None,
             occlusion: Default::default(),
             info: InfoSnapshot {

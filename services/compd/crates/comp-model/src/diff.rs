@@ -21,8 +21,13 @@ pub fn collect_snapshot_diff(
     pending: &mut PendingPropChanges,
 ) {
     for leaf in crate::tiling::TilingConfig::LEAVES {
-        queue_prop_change(pending, format!("tiling.{leaf}"),
-            old.tiling.value(leaf).expect("tiling leaf"), new.tiling.value(leaf).expect("tiling leaf"), cause);
+        queue_prop_change(
+            pending,
+            format!("tiling.{leaf}"),
+            old.tiling.value(leaf).expect("tiling leaf"),
+            new.tiling.value(leaf).expect("tiling leaf"),
+            cause,
+        );
     }
     let output_keys = old
         .outputs

@@ -2,8 +2,8 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Timed edge move zones. No corner-detector state is read here.
 
-use std::time::{Duration, Instant};
 use comp_model::tiling::TilingConfig;
+use std::time::{Duration, Instant};
 
 use smithay::backend::renderer::element::{Id, Kind, solid::SolidColorRenderElement};
 use smithay::backend::renderer::utils::CommitCounter;
@@ -49,14 +49,26 @@ struct Animation {
 
 impl Animation {
     fn rectangle(&self, now: Instant) -> Rectangle<i32, Logical> {
-        let t = if self.duration.is_zero() { 1.0 } else {
-            (now.saturating_duration_since(self.started).as_secs_f64() / self.duration.as_secs_f64()).min(1.0)
+        let t = if self.duration.is_zero() {
+            1.0
+        } else {
+            (now.saturating_duration_since(self.started).as_secs_f64()
+                / self.duration.as_secs_f64())
+            .min(1.0)
         };
         let ease = 1.0 - (1.0 - t).powi(3);
         let axis = |a, b| (f64::from(a) + f64::from(b - a) * ease).round() as i32;
         Rectangle::new(
-            (axis(self.from.loc.x, self.to.loc.x), axis(self.from.loc.y, self.to.loc.y)).into(),
-            (axis(self.from.size.w, self.to.size.w), axis(self.from.size.h, self.to.size.h)).into(),
+            (
+                axis(self.from.loc.x, self.to.loc.x),
+                axis(self.from.loc.y, self.to.loc.y),
+            )
+                .into(),
+            (
+                axis(self.from.size.w, self.to.size.w),
+                axis(self.from.size.h, self.to.size.h),
+            )
+                .into(),
         )
     }
 }
@@ -95,7 +107,13 @@ impl Drag {
         self.preview_rectangle = None;
     }
 
-    pub fn sample(&mut self, candidate: Option<Candidate>, frame: Rectangle<i32, Logical>, config: TilingConfig, now: Instant) -> bool {
+    pub fn sample(
+        &mut self,
+        candidate: Option<Candidate>,
+        frame: Rectangle<i32, Logical>,
+        config: TilingConfig,
+        now: Instant,
+    ) -> bool {
         let before = self.preview_rectangle;
         let Some(candidate) = candidate else {
             self.disarm();
@@ -123,7 +141,9 @@ impl Drag {
                 + config.preview_delay_ms,
         );
         let duration = Duration::from_millis(config.preview_animation_ms);
-        if pending.duration != duration && let Some(animation) = self.animation.as_mut() {
+        if pending.duration != duration
+            && let Some(animation) = self.animation.as_mut()
+        {
             animation.from = current;
             animation.started = now;
             animation.duration = duration;
@@ -290,10 +310,20 @@ pub fn armed(
         (max.0 <= 0 || max.0 >= content.size.w) && (max.1 <= 0 || max.1 >= content.size.h);
     let local = pointer - outer.loc.to_f64();
     let local_area = Rectangle::new(area.loc - outer.loc, area.size);
-    let placement =
-        zone(local_area, local, comp.tiling, resizable, maximizable, shift)?.on_output(output.name());
+    let placement = zone(
+        local_area,
+        local,
+        comp.tiling,
+        resizable,
+        maximizable,
+        shift,
+    )?
+    .on_output(output.name());
     let shared = match &placement {
-        Placement::Tiled { slot: TileSlot::Left | TileSlot::TopLeft | TileSlot::BottomLeft, .. } => inner.left,
+        Placement::Tiled {
+            slot: TileSlot::Left | TileSlot::TopLeft | TileSlot::BottomLeft,
+            ..
+        } => inner.left,
         Placement::Tiled { .. } => inner.right,
         Placement::Maximized { .. } => inner.top,
         Placement::Floating => false,
@@ -309,10 +339,13 @@ pub fn armed(
         }
         _ => area,
     };
-    Some(Candidate { target: Armed {
-        placement,
-        rectangle,
-    }, shared })
+    Some(Candidate {
+        target: Armed {
+            placement,
+            rectangle,
+        },
+        shared,
+    })
 }
 
 /// xkb has already processed this key; both its edges are intercepted ahead of

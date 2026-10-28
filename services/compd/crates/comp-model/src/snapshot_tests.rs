@@ -397,11 +397,16 @@ fn tiling_props_read_describe_validate_and_diff_through_the_props_model() {
     ] {
         let path = format!("tiling.{leaf}");
         assert_eq!(original.select(&["tiling", leaf]), Some(default));
-        let description: Value = serde_json::from_str(&describe(&snapshot, &PropPath::new(&path).unwrap()).unwrap()).unwrap();
+        let description: Value =
+            serde_json::from_str(&describe(&snapshot, &PropPath::new(&path).unwrap()).unwrap())
+                .unwrap();
         assert_eq!(description["mutable"], true);
         assert_eq!(description["persistence"], "file");
         for value in [low, high.clone()] {
-            assert!(validate_set_request(&path, &value).is_ok(), "{path}={value}");
+            assert!(
+                validate_set_request(&path, &value).is_ok(),
+                "{path}={value}"
+            );
             snapshot.tiling.set(&path, &value).unwrap();
             assert_eq!(snapshot.select(&["tiling", leaf]), Some(value));
         }

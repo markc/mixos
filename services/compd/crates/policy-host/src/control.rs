@@ -1076,7 +1076,10 @@ fn set_leaf(
     if path.starts_with("tiling.") {
         let reply = crate::tiling::set(&mut lp.inner.comp, path, value);
         lp.inner.preference.tiling = serde_json::to_value(lp.inner.comp.tiling)
-            .expect("tiling config").as_object().expect("tiling object").clone();
+            .expect("tiling config")
+            .as_object()
+            .expect("tiling object")
+            .clone();
         return Some(reply);
     }
     Some(set_corners(lp, path, value))

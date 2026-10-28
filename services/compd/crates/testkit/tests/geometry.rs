@@ -596,17 +596,30 @@ fn tile(
 
 #[test]
 fn usable_changes_refit_tiles_and_map_saved_float_centres_without_resizing() {
-    use world::comp::{TileSlot, Placement};
+    use world::comp::{Placement, TileSlot};
     let mut h = Harness::new();
     let (surface, _, _) = h.mapped_toplevel(640, 480);
     let (id, window) = window(&h, &surface);
-    h.wire.inner.space.state.map_element(window.clone(), (640, 300), false);
+    h.wire
+        .inner
+        .space
+        .state
+        .map_element(window.clone(), (640, 300), false);
     tile(&mut h, id, &window, TileSlot::BottomRight);
-    h.wire.inner.comp.reserved.insert("testkit-0".into(), Reserved {
-        left: 100, right: 100, top: 60, bottom: 120,
-    });
+    h.wire.inner.comp.reserved.insert(
+        "testkit-0".into(),
+        Reserved {
+            left: 100,
+            right: 100,
+            top: 60,
+            bottom: 120,
+        },
+    );
     assert!(refresh(&mut h, id, &window).windows);
-    assert_eq!(h.wire.inner.space.state.element_location(&window), Some((960, 510).into()));
+    assert_eq!(
+        h.wire.inner.space.state.element_location(&window),
+        Some((960, 510).into())
+    );
     assert_eq!(slot::decided_size(&window), Some((860, 450).into()));
     let saved = h.comp().float_geometry(id).unwrap();
     assert_eq!(saved.location, (640, 270).into());
@@ -614,7 +627,10 @@ fn usable_changes_refit_tiles_and_map_saved_float_centres_without_resizing() {
     assert_eq!(refresh(&mut h, id, &window), GeometryChange::default());
     maximize(&mut h, id, &window, false);
     assert_eq!(h.comp().placement(id), Placement::Floating);
-    assert_eq!(h.wire.inner.space.state.element_location(&window), Some(saved.location));
+    assert_eq!(
+        h.wire.inner.space.state.element_location(&window),
+        Some(saved.location)
+    );
     assert_eq!(slot::decided_size(&window), Some(saved.size));
 }
 
@@ -625,13 +641,28 @@ fn removing_an_output_restores_tiles_and_maximised_windows_on_a_survivor() {
         let mut h = Harness::two_outputs();
         let (surface, _, top) = h.mapped_toplevel(640, 480);
         let (id, window) = window(&h, &surface);
-        h.wire.inner.space.state.map_element(window.clone(), (2043, 87), false);
+        h.wire
+            .inner
+            .space
+            .state
+            .map_element(window.clone(), (2043, 87), false);
         h.wire.inner.space.state.refresh();
         refresh(&mut h, id, &window);
-        if tiled { tile(&mut h, id, &window, TileSlot::Right); }
-        else { maximize(&mut h, id, &window, true); }
+        if tiled {
+            tile(&mut h, id, &window, TileSlot::Right);
+        } else {
+            maximize(&mut h, id, &window, true);
+        }
         assert_eq!(h.comp().placement(id).output(), Some("testkit-1"));
-        let secondary = h.wire.inner.space.state.outputs().find(|o| o.name() == "testkit-1").unwrap().clone();
+        let secondary = h
+            .wire
+            .inner
+            .space
+            .state
+            .outputs()
+            .find(|o| o.name() == "testkit-1")
+            .unwrap()
+            .clone();
         h.wire.inner.space.state.unmap_output(&secondary);
         assert!(refresh(&mut h, id, &window).windows);
         assert_eq!(h.comp().placement(id), Placement::Floating);
@@ -639,7 +670,10 @@ fn removing_an_output_restores_tiles_and_maximised_windows_on_a_survivor() {
         assert_eq!(saved.output, "testkit-0");
         assert_eq!(saved.location, (123, 87).into());
         assert_eq!(saved.size, (640, 480).into());
-        assert_eq!(h.wire.inner.space.state.element_location(&window), Some(saved.location));
+        assert_eq!(
+            h.wire.inner.space.state.element_location(&window),
+            Some(saved.location)
+        );
         assert_eq!(slot::decided_size(&window), Some(saved.size));
         h.roundtrip();
         configured(&h, &top, (640, 480), false);
@@ -652,7 +686,10 @@ fn sending_a_tile_keeps_its_slot_and_uses_the_destination_workspace_split() {
     use policy::workspaces::{DefaultOutput, WorkspaceTarget};
     use world::comp::TileSlot;
     let mut h = Harness::new();
-    h.wire.inner.comp.default_output = Some(DefaultOutput { key: "o_testkit_0".into(), name: "testkit-0".into() });
+    h.wire.inner.comp.default_output = Some(DefaultOutput {
+        key: "o_testkit_0".into(),
+        name: "testkit-0".into(),
+    });
     let (surface, _, _) = h.mapped_toplevel(640, 480);
     let (id, window) = window(&h, &surface);
     tile(&mut h, id, &window, TileSlot::BottomRight);
@@ -661,18 +698,41 @@ fn sending_a_tile_keeps_its_slot_and_uses_the_destination_workspace_split() {
     *h.wire.inner.comp.tile_split("testkit-0", 2) = world::comp::TileSplit { x: 0.3, y: 0.7 };
     let comp = &mut h.wire.inner.comp;
     let output = comp.default_output.clone();
-    comp.workspaces.move_window(&mut comp.registry, output.as_ref(), id, WorkspaceTarget::Index(2), None).unwrap();
+    comp.workspaces
+        .move_window(
+            &mut comp.registry,
+            output.as_ref(),
+            id,
+            WorkspaceTarget::Index(2),
+            None,
+        )
+        .unwrap();
     assert!(h.comp().hidden_id(id));
     assert!(refresh(&mut h, id, &window).windows);
     assert_eq!(h.comp().placement(id), placement);
     assert_eq!(h.comp().float_geometry(id), saved);
-    assert_eq!(h.wire.inner.space.state.element_location(&window), Some((576, 756).into()));
+    assert_eq!(
+        h.wire.inner.space.state.element_location(&window),
+        Some((576, 756).into())
+    );
     assert_eq!(slot::decided_size(&window), Some((1344, 324).into()));
     let comp = &mut h.wire.inner.comp;
-    comp.workspaces.switch(&comp.registry, output.as_ref(), None, WorkspaceTarget::Index(2), false, None).unwrap();
+    comp.workspaces
+        .switch(
+            &comp.registry,
+            output.as_ref(),
+            None,
+            WorkspaceTarget::Index(2),
+            false,
+            None,
+        )
+        .unwrap();
     assert!(!h.comp().hidden_id(id));
     assert_eq!(refresh(&mut h, id, &window), GeometryChange::default());
-    assert_eq!(h.comp().tile_split_for("testkit-0", 1), world::comp::TileSplit::default());
+    assert_eq!(
+        h.comp().tile_split_for("testkit-0", 1),
+        world::comp::TileSplit::default()
+    );
 }
 
 #[test]
@@ -682,9 +742,16 @@ fn unmaximise_during_fullscreen_exit_ack_applies_geometry_and_a_configure() {
         let mut h = Harness::new();
         let (surface, xdg, top) = h.mapped_toplevel(640, 480);
         let (id, window) = window(&h, &surface);
-        h.wire.inner.space.state.map_element(window.clone(), (123, 87), false);
-        if tiled { tile(&mut h, id, &window, TileSlot::Left); }
-        else { maximize(&mut h, id, &window, true); }
+        h.wire
+            .inner
+            .space
+            .state
+            .map_element(window.clone(), (123, 87), false);
+        if tiled {
+            tile(&mut h, id, &window, TileSlot::Left);
+        } else {
+            maximize(&mut h, id, &window, true);
+        }
         let saved = h.comp().float_geometry(id).unwrap();
         fullscreen(&mut h, &window, true);
         h.roundtrip();
@@ -693,7 +760,12 @@ fn unmaximise_during_fullscreen_exit_ack_applies_geometry_and_a_configure() {
         h.client.state.hold_xdg_configures = true;
         fullscreen(&mut h, &window, false);
         assert!(window.fullscreen().is_none());
-        assert!(window.toplevel().unwrap().with_committed_state(|s| s.unwrap().states.contains(xdg_toplevel::State::Fullscreen)));
+        assert!(
+            window.toplevel().unwrap().with_committed_state(|s| s
+                .unwrap()
+                .states
+                .contains(smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::State::Fullscreen))
+        );
         h.roundtrip();
         let before = count(&h, &top);
         assert!(maximize(&mut h, id, &window, false).windows);
@@ -701,7 +773,10 @@ fn unmaximise_during_fullscreen_exit_ack_applies_geometry_and_a_configure() {
         assert_eq!(count(&h, &top), before + 1);
         configured(&h, &top, (640, 480), false);
         assert_eq!(h.comp().placement(id), Placement::Floating);
-        assert_eq!(h.wire.inner.space.state.element_location(&window), Some(saved.location));
+        assert_eq!(
+            h.wire.inner.space.state.element_location(&window),
+            Some(saved.location)
+        );
         assert_eq!(slot::decided_size(&window), Some(saved.size));
         xdg.ack_configure(serial(&h, &xdg));
         h.client.commit(&surface);

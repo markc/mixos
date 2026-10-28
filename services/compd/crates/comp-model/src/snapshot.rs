@@ -1894,14 +1894,60 @@ pub static DESCRIPTORS: &[DescribeEntry] = &[
         List,
         "The user's own user-key rows (keymap.v1, side-exact)"
     ),
-    descriptor!(&[L("tiling"), L("edge_tiling")], Bool, "Enable drag edge zones", persisted),
-    descriptor!(&[L("tiling"), L("top_maximize")], Bool, "Enable the top drag maximise zone", persisted),
-    descriptor!(&[L("tiling"), L("corner_ratio")], Number, "Fraction of each side band used by each corner", persisted, range = "0.05..=0.5"),
-    descriptor!(&[L("tiling"), L("side_band_px")], Number, "Side drag band in logical pixels", persisted, range = "1..=200"),
-    descriptor!(&[L("tiling"), L("top_band_px")], Number, "Top drag band in logical pixels", persisted, range = "1..=200"),
-    descriptor!(&[L("tiling"), L("shared_edge_dwell_ms")], Number, "Shared output edge dwell in milliseconds", persisted, range = "0..=2000"),
-    descriptor!(&[L("tiling"), L("preview_delay_ms")], Number, "Delay before showing and committing a drag zone", persisted, range = "0..=2000"),
-    descriptor!(&[L("tiling"), L("preview_animation_ms")], Number, "Preview growth duration in milliseconds", persisted, range = "0..=1000"),
+    descriptor!(
+        &[L("tiling"), L("edge_tiling")],
+        Bool,
+        "Enable drag edge zones",
+        persisted
+    ),
+    descriptor!(
+        &[L("tiling"), L("top_maximize")],
+        Bool,
+        "Enable the top drag maximise zone",
+        persisted
+    ),
+    descriptor!(
+        &[L("tiling"), L("corner_ratio")],
+        Number,
+        "Fraction of each side band used by each corner",
+        persisted,
+        range = "0.05..=0.5"
+    ),
+    descriptor!(
+        &[L("tiling"), L("side_band_px")],
+        Number,
+        "Side drag band in logical pixels",
+        persisted,
+        range = "1..=200"
+    ),
+    descriptor!(
+        &[L("tiling"), L("top_band_px")],
+        Number,
+        "Top drag band in logical pixels",
+        persisted,
+        range = "1..=200"
+    ),
+    descriptor!(
+        &[L("tiling"), L("shared_edge_dwell_ms")],
+        Number,
+        "Shared output edge dwell in milliseconds",
+        persisted,
+        range = "0..=2000"
+    ),
+    descriptor!(
+        &[L("tiling"), L("preview_delay_ms")],
+        Number,
+        "Delay before showing and committing a drag zone",
+        persisted,
+        range = "0..=2000"
+    ),
+    descriptor!(
+        &[L("tiling"), L("preview_animation_ms")],
+        Number,
+        "Preview growth duration in milliseconds",
+        persisted,
+        range = "0..=1000"
+    ),
     descriptor!(
         &[L("input"), L("corners"), L("holders")],
         Bool,
