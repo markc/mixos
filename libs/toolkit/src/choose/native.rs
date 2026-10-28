@@ -115,7 +115,9 @@ async fn session(client: &SupervisedClient, request: &Request, body: Value, canc
                     Snapshot::Lost => {
                         // One bounded best-effort cancel on loss. Fallback
                         // cannot depend on an unreachable files service.
-                        let _ = cancel_request(client, &id).await;
+                        if client.is_connected() {
+                            let _ = cancel_request(client, &id).await;
+                        }
                         return None;
                     }
                     Snapshot::Retry => continue,
