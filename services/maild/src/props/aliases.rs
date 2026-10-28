@@ -410,7 +410,10 @@ pub async fn recipient_accounts(
                 accounts.push(account);
             }
         }
-        anyhow::ensure!(!accounts.is_empty(), "alias {addr} has no remaining local targets; forwarding refused");
+        anyhow::ensure!(
+            !accounts.is_empty(),
+            "alias {addr} has no remaining local targets; forwarding refused"
+        );
     }
     Ok(accounts)
 }

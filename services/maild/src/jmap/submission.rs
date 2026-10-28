@@ -216,14 +216,16 @@ async fn create_submission(
     let mut routes = Vec::new();
     for addr in &to_addrs {
         if recipients_seen.insert(addr) {
-            let accounts = crate::props::aliases::recipient_accounts(aliases_runtime, &db.conn, addr).await?;
-            routes.push((addr.clone(),accounts));
+            let accounts =
+                crate::props::aliases::recipient_accounts(aliases_runtime, &db.conn, addr).await?;
+            routes.push((addr.clone(), accounts));
         }
     }
     // One physical copy per mailbox, with a visible outcome for each envelope
     // recipient/target pair. A failed target gets a durable local queue entry.
-    let mut local_outcomes = std::collections::BTreeMap::<i32,(Option<i64>,String,String)>::new();
-    for (addr,accounts) in routes {
+    let mut local_outcomes =
+        std::collections::BTreeMap::<i32, (Option<i64>, String, String)>::new();
+    for (addr, accounts) in routes {
         if accounts.is_empty() {
             remote_addrs.push(addr);
             continue;
@@ -232,26 +234,57 @@ async fn create_submission(
             let outcome = if let Some(outcome) = local_outcomes.get(&account.id) {
                 outcome.clone()
             } else {
-                let outcome = match crate::smtp::queue::deliver_local(mailstore,account.id,blob_hash).await {
-                    Ok(()) => (None,"delivered".to_string(),"250 2.0.0 Local delivery completed".to_string()),
+                let outcome = match crate::smtp::queue::deliver_local(
+                    mailstore, account.id, blob_hash,
+                )
+                .await
+                {
+                    Ok(()) => (
+                        None,
+                        "delivered".to_string(),
+                        "250 2.0.0 Local delivery completed".to_string(),
+                    ),
                     Err(error) => {
                         let reply = format!("451 4.3.0 Local delivery deferred: {error}");
                         tracing::error!(recipient=%addr,target=%account.email,error=%error,"Local delivery deferred for retry");
-                        let queue_id = crate::smtp::queue::enqueue_local(&db.conn,&from_addr,&addr,&account.email,
-                            account.id,blob_hash,submission_id,&reply).await?;
-                        (Some(queue_id),"deferred".to_string(),reply)
+                        let queue_id = crate::smtp::queue::enqueue_local(
+                            &db.conn,
+                            &from_addr,
+                            &addr,
+                            &account.email,
+                            account.id,
+                            blob_hash,
+                            submission_id,
+                            &reply,
+                        )
+                        .await?;
+                        (Some(queue_id), "deferred".to_string(), reply)
                     }
                 };
-                local_outcomes.insert(account.id,outcome.clone());
+                local_outcomes.insert(account.id, outcome.clone());
                 outcome
             };
-            crate::smtp::queue::record_local(&db.conn,submission_id,&addr,&account.email,
-                outcome.0,&outcome.1,&outcome.2).await?;
+            crate::smtp::queue::record_local(
+                &db.conn,
+                submission_id,
+                &addr,
+                &account.email,
+                outcome.0,
+                &outcome.1,
+                &outcome.2,
+            )
+            .await?;
         }
     }
     if !remote_addrs.is_empty() {
-        let queue_id = crate::smtp::queue::enqueue_submission(&db.conn,&from_addr,
-            &remote_addrs,blob_hash,submission_id).await?;
+        let queue_id = crate::smtp::queue::enqueue_submission(
+            &db.conn,
+            &from_addr,
+            &remote_addrs,
+            blob_hash,
+            submission_id,
+        )
+        .await?;
         tracing::info!(queue_id,from=%from_addr,to=?remote_addrs,"EmailSubmission queued for remote delivery");
     }
 

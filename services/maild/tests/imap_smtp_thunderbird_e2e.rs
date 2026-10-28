@@ -349,6 +349,7 @@ fn make_config(root: &std::path::Path, cert_path: &str, key_path: &str) -> Confi
         sieve_vacation_external: true,
         smtp_outbound_bind: Vec::new(),
         max_message_size: None,
+        delivery_retention_days: None,
         dkim_selector: None,
         dkim_private_key: None,
         dkim: Default::default(),

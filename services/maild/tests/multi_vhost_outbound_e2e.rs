@@ -576,6 +576,7 @@ fn make_outbound_config(root: &std::path::Path, dkim_domains: Vec<DkimDomainConf
         sieve_vacation_external: true,
         smtp_outbound_bind: Vec::new(),
         max_message_size: None,
+        delivery_retention_days: None,
         dkim_selector: None,
         dkim_private_key: None,
         dkim: DkimSubsection {
