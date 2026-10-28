@@ -16,8 +16,14 @@
 -- noded.peers response is deliberately a local-roster view, not a mesh-wide
 -- membership authority. Exit 0 iff there is no unexpected membership drift;
 -- pending joins are informational.
+--
+-- Retired (tombstoned) members are checked like every other member (a retired
+-- member still on the wire is STALE-ON-WIRE), but the "absent (expected)" row
+-- for each one is printed only with --retired: retired members are never shown
+-- unless asked for.
 
 $d = require("../_lib/deploy_lib.mix")
+$SHOW_RETIRED = contains(args(), "--retired")
 
 $CONF_PATH = $d.hub_root() .. "/_etc/mesh_reconcile.conf.mix"
 if not is_file($CONF_PATH) then
@@ -188,7 +194,9 @@ for each $name in $declared_names
   $have = $live_wg[$ip]
   if $member["status"] == "tombstoned" then
     if $have == nil then
-      print("  ok(tombstoned)   " .. rpad($name, 10) .. " " .. rpad($ip, 14) .. " absent (expected)")
+      if $SHOW_RETIRED then
+        print("  ok(tombstoned)   " .. rpad($name, 10) .. " " .. rpad($ip, 14) .. " absent (expected)")
+      end
     else
       print("  STALE-ON-WIRE    " .. rpad($name, 10) .. " " .. $ip .. " tombstoned but still a WG peer")
       $unexpected = $unexpected + 1

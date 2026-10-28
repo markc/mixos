@@ -33718,6 +33718,7 @@ reconnecting.
 Each name below is exposed as `mcp__mixos__<name>` in Claude Code.
 
 - `bus_call`, `bus_list_services`, `bus_node_info`, `bus_list_peers`, `noded_ping`
+  (`bus_list_peers` leaves retired mesh members out unless `include_retired: true`)
 - `term_list`, `term_snapshot`, `term_type`, `term_tab`, `term_pane`
 - `log_tail`, `log_search`
 - `app_describe`, `app_actions`, `app_execute`

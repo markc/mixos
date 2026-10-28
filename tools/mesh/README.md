@@ -31,6 +31,18 @@ tree does not ship active.
 - `_lib/deploy_lib.mix` the shared helpers: names, roots, roster, versions.
 - `_lib/mesh_lib.mix` the inventory validator, the zone and WireGuard generators, the write lock.
 
+## Retired members
+
+A retired member keeps its inventory entry for ever with `status:
+"tombstoned"`: its name, address and closed keys stay reserved, and
+validation, allocation, admission and drift checks keep seeing it. It is never
+**shown** unless asked for. `mesh -a` and `mesh -j` list active members only,
+and `mesh --retired` adds the retired ones. `mesh_reconcile` still reports a
+retired member that is on the wire (`STALE-ON-WIRE`), but prints the
+"absent (expected)" row only with `--retired`. Apps that read `noded.peers`
+(the Monitor, the tray, the MCP `bus_list_peers` tool) drop
+`routing_view` entries whose class is not `active-bus`.
+
 ## External binaries
 
 The tools call two binaries built by the project itself:

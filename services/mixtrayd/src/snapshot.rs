@@ -50,15 +50,30 @@ async fn tab_bus(client: &NodedClient) -> Value {
 }
 
 /// The peer list from `noded.peers`. The reply holds an `authority` record
-/// whose `routing_view` is the list; a bare list passes through unchanged.
+/// whose `routing_view` is the list; a bare list is taken as the list.
+/// The routing view lists every member, so retired (tombstoned) and
+/// transport-only members are dropped: the tray never shows them.
 pub fn peer_list(value: Value) -> Value {
-    if value.is_array() {
-        return value;
-    }
-    match value.pointer("/authority/routing_view") {
-        Some(view @ Value::Array(_)) => view.clone(),
-        _ => json!([]),
-    }
+    let list = if value.is_array() {
+        value
+    } else {
+        match value.pointer("/authority/routing_view") {
+            Some(view @ Value::Array(_)) => view.clone(),
+            _ => return json!([]),
+        }
+    };
+    let shown: Vec<Value> = list
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|peer| {
+            peer.get("class")
+                .and_then(Value::as_str)
+                .is_none_or(|class| class == "active-bus")
+        })
+        .cloned()
+        .collect();
+    Value::Array(shown)
 }
 
 /// MIX: the installed mix binary and its version. Scripts, runs and trash are
@@ -108,6 +123,23 @@ mod tests {
         assert_eq!(
             peer_list(reply),
             json!([{"name": "alpha"}, {"name": "beta"}])
+        );
+    }
+
+    #[test]
+    fn peer_list_leaves_out_retired_and_transport_only_members() {
+        let reply = json!({
+            "authority": {
+                "routing_view": [
+                    {"class": "active-bus", "name": "alpha"},
+                    {"class": "tombstoned", "name": "gamma"},
+                    {"class": "transport-only", "name": "delta"},
+                ],
+            },
+        });
+        assert_eq!(
+            peer_list(reply),
+            json!([{"class": "active-bus", "name": "alpha"}])
         );
     }
 

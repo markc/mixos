@@ -282,7 +282,8 @@ reconnecting.</p>
 <h2 id="tools">Tools</h2>
 <p>Each name below is exposed as <code>mcp__mixos__&lt;name&gt;</code> in Claude Code.</p>
 <ul>
-<li><code>bus_call</code>, <code>bus_list_services</code>, <code>bus_node_info</code>, <code>bus_list_peers</code>, <code>noded_ping</code></li>
+<li><code>bus_call</code>, <code>bus_list_services</code>, <code>bus_node_info</code>, <code>bus_list_peers</code>, <code>noded_ping</code>
+(<code>bus_list_peers</code> leaves retired mesh members out unless <code>include_retired: true</code>)</li>
 <li><code>term_list</code>, <code>term_snapshot</code>, <code>term_type</code>, <code>term_tab</code>, <code>term_pane</code></li>
 <li><code>log_tail</code>, <code>log_search</code></li>
 <li><code>app_describe</code>, <code>app_actions</code>, <code>app_execute</code></li>

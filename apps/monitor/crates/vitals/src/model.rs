@@ -375,6 +375,13 @@ pub fn peers(value: &Value) -> Vec<String> {
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
+        // The routing view lists every member, retired ones included. Retired
+        // (tombstoned) and transport-only members are never shown as nodes.
+        .filter(|v| {
+            v.get("class")
+                .and_then(Value::as_str)
+                .is_none_or(|class| class == "active-bus")
+        })
         .filter_map(|v| v.get("name")?.as_str())
         .filter(|name| Some(*name) != local && valid_node(name))
         .map(str::to_owned)
@@ -535,6 +542,20 @@ mod tests {
             ),
             vec!["beta"]
         );
+    }
+
+    #[test]
+    fn peers_leave_out_retired_and_transport_only_members() {
+        let reply = json!({
+            "node": "alpha",
+            "authority": {"routing_view": [
+                {"class": "active-bus", "name": "alpha"},
+                {"class": "active-bus", "name": "beta"},
+                {"class": "tombstoned", "name": "gamma"},
+                {"class": "transport-only", "name": "delta"}
+            ]}
+        });
+        assert_eq!(peers(&reply), vec!["beta"]);
     }
 
     #[test]

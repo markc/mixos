@@ -678,6 +678,30 @@ struct BusCallParams {
     args: Option<String>,
 }
 
+#[derive(Debug, Default, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct BusListPeersParams {
+    /// Also list retired (tombstoned) members in authority.routing_view.
+    /// Default false: retired members are never shown unless asked for.
+    #[serde(default)]
+    include_retired: Option<bool>,
+}
+
+/// Drop retired (tombstoned) members from a `noded.peers` reply's
+/// `authority.routing_view`. `peers[]` is already active-only; the routing
+/// view lists every member, retired ones included.
+fn hide_retired_peers(mut reply: serde_json::Value) -> serde_json::Value {
+    if let Some(view) = reply
+        .pointer_mut("/authority/routing_view")
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        view.retain(|member| {
+            member.get("class").and_then(serde_json::Value::as_str) != Some("tombstoned")
+        });
+    }
+    reply
+}
+
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct LogTailParams {
@@ -1114,9 +1138,10 @@ impl MixosMcp {
         }
     }
 
-    /// List all mesh peer nodes.
+    /// List the mesh peer nodes. Retired (tombstoned) members are left out
+    /// unless include_retired is true.
     #[tool]
-    async fn bus_list_peers(&self) -> String {
+    async fn bus_list_peers(&self, Parameters(p): Parameters<BusListPeersParams>) -> String {
         let noded = match self.noded().await {
             Ok(h) => h,
             Err(e) => return format!("ERROR: {e}"),
@@ -1125,7 +1150,14 @@ impl MixosMcp {
             .call("noded", "noded.peers", serde_json::Value::Null)
             .await
         {
-            Ok(val) => serde_json::to_string_pretty(&val).unwrap_or_else(|_| val.to_string()),
+            Ok(val) => {
+                let val = if p.include_retired.unwrap_or(false) {
+                    val
+                } else {
+                    hide_retired_peers(val)
+                };
+                serde_json::to_string_pretty(&val).unwrap_or_else(|_| val.to_string())
+            }
             Err(e) => format!("ERROR: {e}"),
         }
     }
@@ -3050,5 +3082,29 @@ mod tests {
         assert!(sb.starts_with('['), "lost opening bracket: {sb}");
         assert!(sb.ends_with("] is_error"), "lost is_error marker: {sb}");
         assert!(sb.contains('…'), "body not truncated: {sb}");
+    }
+
+    #[test]
+    fn bus_list_peers_hides_retired_members_by_default() {
+        let reply = serde_json::json!({
+            "node": "alpha",
+            "peers": [{"name": "beta"}],
+            "authority": {"routing_view": [
+                {"class": "active-bus", "name": "beta"},
+                {"class": "tombstoned", "name": "gamma"},
+                {"class": "transport-only", "name": "delta"}
+            ]}
+        });
+        let shown = super::hide_retired_peers(reply);
+        let names: Vec<&str> = shown["authority"]["routing_view"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| m["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(names, ["beta", "delta"]);
+        assert_eq!(shown["peers"], serde_json::json!([{"name": "beta"}]));
+        let params: super::BusListPeersParams = serde_json::from_str("{}").unwrap();
+        assert_eq!(params.include_retired, None);
     }
 }

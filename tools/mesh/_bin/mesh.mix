@@ -4,18 +4,24 @@
 --   mix _bin/mesh.mix             node names only (self first)
 --   mix _bin/mesh.mix -a|--all    trust identity and joined node table
 --   mix _bin/mesh.mix -j|--json   the same joined data as pretty JSON
+--   mix _bin/mesh.mix -a --retired  also list retired (tombstoned) members
 --
 -- The default view uses the broker's live transport snapshot. Detailed views
 -- join that snapshot to noded.inventory, the daemon's authenticated and
 -- freshness-checked public inventory summary, then probe each declared broker.
 -- This is read-only: it neither reads hub authoring state nor changes the mesh.
+--
+-- Retired (tombstoned) members stay in the inventory for ever (they reserve
+-- their name, address and closed keys) but are never shown unless asked for:
+-- the detailed views list active members only, and --retired adds the rest.
 
 $d = require("../_lib/deploy_lib.mix")
 $m = require("../_lib/mesh_lib.mix")
 
 $o = getopt(args(), {
   all:  {short: "a"},
-  json: {short: "j"}
+  json: {short: "j"},
+  retired: {}
 })
 if len($o["errors"]) > 0 or len($o["rest"]) > 0 then
   for each $e in $o["errors"]
@@ -24,11 +30,16 @@ if len($o["errors"]) > 0 or len($o["rest"]) > 0 then
   for each $arg in $o["rest"]
     print("ERROR: unexpected argument '" .. $arg .. "'")
   end
-  print("usage: mesh [-a|--all] [-j|--json]")
+  print("usage: mesh [-a|--all] [-j|--json] [--retired]")
   exit(2)
 end
 $all = $o["opts"]["all"]
 $json = $o["opts"]["json"]
+$retired = $o["opts"]["retired"]
+-- --retired only means something in a detailed view
+if $retired and not $json then
+  $all = true
+end
 
 -- noded.peers is the live transport view for self + peers.
 send noded noded.peers
@@ -79,6 +90,9 @@ $identity = {
   hash: $result["hash"]
 }
 $members = $result["members"]
+if not $retired then
+  $members = filter($members, fn($member) = $member["status"] == "active")
+end
 
 -- Join trust fields, transport fields, and a live reachability probe. A 2s
 -- timeout lets an offline node degrade to DOWN without hanging the report.
