@@ -141,7 +141,7 @@ impl Drag {
             });
         }
         let pending = self.pending.as_mut().expect("sampled zone");
-        if self.armed.is_none() && pending.follow_frame {
+        if pending.follow_frame {
             pending.from = frame;
         }
         pending.ready = pending.since

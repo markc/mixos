@@ -314,6 +314,16 @@ fn delayed_preview_starts_at_the_latest_window_frame_in_the_same_zone() {
         h.comp().drag.as_ref().unwrap().preview_rectangle,
         Some(frame)
     );
+    set_tiling(&mut h, "preview_delay_ms", serde_json::json!(200));
+    motion(&mut h, (0.0, 600.0));
+    apply(&mut h, &window);
+    assert!(preview(&h).is_empty());
+    let frame = smithay::utils::Rectangle::new(
+        h.wire.inner.space.state.element_location(&window).unwrap(),
+        (640, 480).into(),
+    );
+    h.advance_time(ms(100));
+    assert_eq!(h.comp().drag.as_ref().unwrap().preview_rectangle, Some(frame));
 }
 
 #[test]
