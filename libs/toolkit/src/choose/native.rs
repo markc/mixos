@@ -81,8 +81,11 @@ async fn session(client: &SupervisedClient, request: &Request, body: Value, canc
         _ => None,
     };
     let Some(id) = id else {
-        recover_sending(client, &mut provider, request.correlation.as_deref().expect("set"), None).await;
-        return None;
+        return if recover_sending(client, &mut provider, request.correlation.as_deref().expect("set"), None).await {
+            None
+        } else {
+            Some(Outcome::Failed("could not confirm the native chooser ended".into()))
+        };
     };
     let mut incoming_live = true;
     let mut sweep = tokio::time::interval(Duration::from_secs(5));
@@ -134,10 +137,11 @@ async fn cancel_request(client: &SupervisedClient, id: &str) -> bool {
     matches!(call(client, "files.choose.cancel", json!({"request":id})).await, Some(PortReply::Ok { .. }))
 }
 
-async fn recover_sending(client: &SupervisedClient, provider: &mut Provider, correlation: &str, id: Option<&str>) {
+async fn recover_sending(client: &SupervisedClient, provider: &mut Provider, correlation: &str, id: Option<&str>) -> bool {
+    let mut attempts = 0;
     loop {
         match provider.snapshot(client).await {
-            Snapshot::Lost => return,
+            Snapshot::Lost => return true,
             Snapshot::Live(value) => {
                 let mut closed = true;
                 for request in value["requests"].as_array().expect("checked").iter().filter(|r| {
@@ -147,7 +151,12 @@ async fn recover_sending(client: &SupervisedClient, provider: &mut Provider, cor
                         closed &= cancel_request(client, id).await;
                     } else { closed = false; }
                 }
-                if closed { return; }
+                if closed { return true; }
+                attempts += 1;
+                // A live provider that refuses Close cannot safely hand off.
+                // Report a final error instead of retrying forever or opening
+                // a second window over the first.
+                if attempts >= 3 { return false; }
             }
             Snapshot::Retry => {}
         }
