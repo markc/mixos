@@ -59,8 +59,14 @@ $names_by_id = {}
 for each $p in $doc.packages
   $names_by_id[$p.id] = $p.name
 end
+$pure_when = $policy.pure_when ?? {}
 $foreign = {}
 for each $node in $doc.resolve.nodes
+  -- Some crates always declare cc but skip it under a feature (blake3 `pure`).
+  $pf = $pure_when[$names_by_id[$node.id]]
+  if $pf != nil and contains($node.features, $pf) then
+    continue
+  end
   for each $dep in $node.deps
     $dep_name = $names_by_id[$dep.pkg]
     if contains($HELPERS, $dep_name) then
