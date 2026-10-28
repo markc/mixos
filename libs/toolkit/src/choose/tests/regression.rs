@@ -87,7 +87,7 @@ fn edited_request_is_a_final_validation_error_without_a_worker() {
 }
 
 #[test]
-fn opening_viewport_app_id_is_forwarded() {
+fn app_id_is_forwarded() {
     let ctx = Context::default();
     ctx.set_embed_viewports(false);
     let child = ViewportId::from_hash_of("app-id-test");
@@ -107,7 +107,7 @@ fn opening_viewport_app_id_is_forwarded() {
     }));
     frame(&ctx, child, &mut one);
     let forwarded = rx.recv_timeout(Duration::from_secs(5)).unwrap();
-    assert_eq!(forwarded.on_behalf_of.as_deref(), Some("dev.mixos.example"));
+    assert_eq!(forwarded.on_behalf_of, crate::titlebar::app_id().or_else(|| Some("dev.mixos.example".into())));
     assert_eq!(forwarded.correlation, one.request.correlation);
 }
 

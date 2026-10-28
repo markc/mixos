@@ -137,12 +137,13 @@ impl Handle {
         if self.receiver.is_none() {
             let viewport = ctx.viewport_id();
             self.viewport = Some(viewport);
-            // eframe keeps the app id in the viewport builder. Secondary
-            // viewports may omit it, in which case use the root app's id.
+            // Forward for the application, so separate compose windows share
+            // remembered folders. eframe may omit the native root builder
+            // from egui's state; toolkit's viewport helper retains that id.
             self.request.on_behalf_of = ctx
-                .viewport(|v| v.builder.app_id.clone())
-                .or_else(|| ctx.viewport_for(ViewportId::ROOT, |v| v.builder.app_id.clone()))
+                .viewport_for(ViewportId::ROOT, |v| v.builder.app_id.clone())
                 .or_else(crate::titlebar::app_id)
+                .or_else(|| ctx.viewport(|v| v.builder.app_id.clone()))
                 .or_else(|| self.request.on_behalf_of.clone());
             if let Err(error) = self.request.body() {
                 self.ended = true;
