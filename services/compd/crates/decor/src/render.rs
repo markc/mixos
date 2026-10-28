@@ -470,7 +470,7 @@ where
         let mask = crate::text::title_mask(
             &state.title,
             &deco.metrics.title_font_family,
-            deco.metrics.title_size_px,
+            deco.metrics.fitted_title_size(s),
             deco.metrics.title_font_weight.0,
             slot_w,
             s,

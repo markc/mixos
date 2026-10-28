@@ -12,8 +12,8 @@
 - Scale native button, link, tab, panel, dialog, title and value text metrics
   with the interface size. Apply the ratio once in chrome and pair text styles;
   keep independently sized monospace content and spacing unchanged.
-- Size numeric fields for their rendered number, unit and padding so larger
-  interface fonts keep every digit visible, including while editing.
+- Size numeric fields for their rendered number, unit and padding at changed
+  interface sizes. Preserve authored geometry and snapshots at scale 1.0.
 
 - Allow a viewport to require its own complete client frame independently of
   the session decoration preference and later theme changes. Each viewport

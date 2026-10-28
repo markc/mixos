@@ -246,6 +246,10 @@ interface faces. Test every settings path produced by the controls against
 settingsd's setter and keep interface-font refusals visible after rereading.</p>
 </li>
 <li>
+<p>Derive appearance setter coverage from the serialised Look and terminal
+coverage from the settings schema so new fields cannot evade the guards.</p>
+</li>
+<li>
 <p>Follow accepted interface font settings in Preferences itself, including
 font-only updates that leave the rest of the appearance unchanged.</p>
 </li>

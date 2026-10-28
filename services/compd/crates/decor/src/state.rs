@@ -56,7 +56,7 @@ impl ChromeState {
         let width = crate::text::title_width(
             &self.title,
             &m.title_font_family,
-            m.title_size_px,
+            m.fitted_title_size(1.0),
             m.title_font_weight.resolved().0,
         );
         ChromeLayout::compute_band(

@@ -422,6 +422,8 @@ impl Metrics {
 /// Everything the title bar and menus draw with.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Chrome {
+    /// Interface font ratio; at 1.0 controls retain their authored geometry.
+    pub interface_size_scale: f32,
     /// The forms the chrome takes (the theme's style).
     pub style: ResolvedStyle,
     pub palette: Palette,
@@ -470,6 +472,7 @@ impl Chrome {
             Metrics::of(&style)
         };
         Self {
+            interface_size_scale: theme.interface_size_scale(),
             style,
             palette,
             metrics,
@@ -501,6 +504,7 @@ impl Chrome {
                 .get_or_init(|| Theme::for_context(design::DesignContext::revision_one()).style());
             let style = ctx.global_style();
             Self {
+                interface_size_scale: 1.0,
                 style: tokens,
                 palette: Palette::from_visuals(&style.visuals),
                 metrics: Metrics::from_egui(&style, &tokens),

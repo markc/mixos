@@ -38315,6 +38315,10 @@ written in Mix on `tcp_listen`.
   preserve the design's display weight offset, clamped to the bundled faces,
   and scale with interface size and text scale. Load Inter Bold for titles.
   Existing settings events rebuild and activate these resources together.
+- Fit title glyphs within the fixed bar and its padding, including maximum
+  interface and accessibility sizes. Keep titles vertically centred without
+  changing frame extents. Invalid optional overlays warn once and fall back
+  to the selected design.
 - Install the shell's text scale through the shared theme so native controls
   follow it alongside egui text styles.
 - Apply interface size to scene layout and painting, corner menus, tooltip
@@ -39452,6 +39456,8 @@ Use strict MixOS configuration and owned shutdown signalling.
 - Offer Bold (700) alongside the bundled Light, Regular, Medium and SemiBold
   interface faces. Test every settings path produced by the controls against
   settingsd's setter and keep interface-font refusals visible after rereading.
+- Derive appearance setter coverage from the serialised Look and terminal
+  coverage from the settings schema so new fields cannot evade the guards.
 - Follow accepted interface font settings in Preferences itself, including
   font-only updates that leave the rest of the appearance unchanged.
 
@@ -39795,8 +39801,8 @@ their bytes.
 - Scale native button, link, tab, panel, dialog, title and value text metrics
   with the interface size. Apply the ratio once in chrome and pair text styles;
   keep independently sized monospace content and spacing unchanged.
-- Size numeric fields for their rendered number, unit and padding so larger
-  interface fonts keep every digit visible, including while editing.
+- Size numeric fields for their rendered number, unit and padding at changed
+  interface sizes. Preserve authored geometry and snapshots at scale 1.0.
 
 - Allow a viewport to require its own complete client frame independently of
   the session decoration preference and later theme changes. Each viewport

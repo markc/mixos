@@ -14,6 +14,8 @@ generated: by docs/_build/gen-site.mix from apps/prefs/CHANGELOG.md; do not edit
 - Offer Bold (700) alongside the bundled Light, Regular, Medium and SemiBold
   interface faces. Test every settings path produced by the controls against
   settingsd's setter and keep interface-font refusals visible after rereading.
+- Derive appearance setter coverage from the serialised Look and terminal
+  coverage from the settings schema so new fields cannot evade the guards.
 - Follow accepted interface font settings in Preferences itself, including
   font-only updates that leave the rest of the appearance unchanged.
 

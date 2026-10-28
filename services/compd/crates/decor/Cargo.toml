@@ -38,3 +38,6 @@ design = { workspace = true }
 config = { workspace = true }
 libc = { workspace = true }
 smithay = { workspace = true }
+
+[dev-dependencies]
+settings.workspace = true

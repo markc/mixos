@@ -88,9 +88,7 @@ fn theme_of(snapshot: &Snapshot) -> Result<Theme, Diagnostic> {
         }
         None => Theme::for_context(context),
     };
-    let theme = theme
-        .with_overlay(Overlay::from_appearance(&snapshot.desktop.appearance))
-        .map_err(|error| unsupported("appearance", &format!("Invalid overlay: {error:?}")))?;
+    let theme = overlay_or_design(theme, Overlay::from_appearance(&snapshot.desktop.appearance));
     Ok(theme
         .framed(decorations, captions)
         .with_menus(
@@ -103,6 +101,18 @@ fn theme_of(snapshot: &Snapshot) -> Result<Theme, Diagnostic> {
             &effective.actions_place,
             &effective.window_style,
         )))
+}
+
+/// An invalid optional overlay must never discard the accepted design.
+fn overlay_or_design(theme: Theme, overlay: Overlay) -> Theme {
+    match theme.clone().with_overlay(overlay) {
+        Ok(overlaid) => overlaid,
+        Err(error) => {
+            static WARN: std::sync::Once = std::sync::Once::new();
+            WARN.call_once(|| tracing::warn!(%error, "scene host: ignoring invalid appearance overlay"));
+            theme
+        }
+    }
 }
 
 /// Build the whole look from an accepted snapshot (on the worker).
@@ -236,6 +246,20 @@ pub(crate) fn snapshot_of(desktop: settings::Desktop) -> Snapshot {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn invalid_overlay_keeps_the_selected_design() {
+        let theme = Theme::for_context(DesignContext { mode: Mode::Light, ..Default::default() });
+        let overlay = Overlay {
+            chrome: std::collections::BTreeMap::from([("unknown-role".into(), design::family::style::StyleColour([0; 4]))]),
+            ..Default::default()
+        };
+        assert!(theme.clone().with_overlay(overlay.clone()).is_err());
+        let fallback = overlay_or_design(theme.clone(), overlay);
+        assert_eq!(fallback.context(), theme.context());
+        assert_eq!(fallback.dictionary(), theme.dictionary());
+        assert_eq!(fallback.overlay(), &Overlay::default());
+    }
 
     #[test]
     fn session_fonts_reach_scenes_titles_and_the_resource_change_plan() {

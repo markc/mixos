@@ -222,7 +222,7 @@ impl<'a> ValueField<'a> {
         self
     }
 
-    /// Minimum width; the field grows to fit its formatted value and unit.
+    /// Authored width; a non-default interface size may grow it to fit the text.
     pub fn width(mut self, width: f32) -> Self {
         self.width = Some(width);
         self
@@ -267,10 +267,13 @@ impl Widget for ValueField<'_> {
             .max(unit_galley.as_ref().map_or(0.0, |g| g.size().y));
         let min_height =
             text_height + f32::from(field.padding.top) + f32::from(field.padding.bottom);
-        let width = width
-            .unwrap_or(chrome.style.value_width as f32)
-            .max(min_width.ceil());
-        let height = field.height.max(min_height.ceil());
+        let width = width.unwrap_or(chrome.style.value_width as f32);
+        // Preserve every authored layout at the design's interface size.
+        let (width, height) = if chrome.interface_size_scale == 1.0 {
+            (width, field.height)
+        } else {
+            (width.max(min_width.ceil()), field.height.max(min_height.ceil()))
+        };
         // One id for the resting box and its editor, as egui's DragValue
         // has: the field edits while it has keyboard focus.
         let id = ui.next_auto_id();
@@ -536,6 +539,26 @@ pub fn value_width_of(ctx: &egui::Context) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_interface_size_keeps_authored_field_geometry() {
+        let base = crate::Theme::embedded();
+        let ui_size = design::active_typography(Some(base.typography()), design::TypographyRole::Ui).font_size as f32;
+        for size in [None, Some(ui_size)] {
+            let ctx = egui::Context::default();
+            let theme = crate::Theme::embedded()
+                .with_overlay(crate::theme::Overlay { size, ..Default::default() })
+                .unwrap();
+            assert_eq!(theme.interface_size_scale(), 1.0);
+            crate::install(&ctx, &theme);
+            let mut value = 18.0;
+            let mut output = ctx.run_ui(Default::default(), |ui| {
+                let rect = ui.add(ValueField::new(&mut value, 9.0..=18.0).unit("px").width(74.0)).rect;
+                assert_eq!(rect.size(), vec2(74.0, Style::of(ui.ctx()).height));
+            });
+            output.textures_delta.clear();
+        }
+    }
 
     #[test]
     fn value_field_keeps_the_number_and_unit_inside_at_the_largest_interface_font() {

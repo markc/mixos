@@ -274,6 +274,17 @@ pub struct DecoMetrics {
     pub shadow: ShadowSpec,
 }
 
+impl DecoMetrics {
+    /// Fit the title's 1.3-em line box inside the fixed bar. The vertical
+    /// inset is half the horizontal title padding, shared by every preset.
+    /// Round the available physical height down before shaping, whose line
+    /// height rounds up, so fractional output scales keep the padding too.
+    pub fn fitted_title_size(&self, scale: f32) -> f32 {
+        let room = ((self.titlebar_height - self.title_pad).max(0.0) * scale).floor();
+        self.title_size_px.min(room / (1.3 * scale))
+    }
+}
+
 /// Chrome surface colours (buttons live in `ButtonCluster`).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DecoColors {

@@ -26,6 +26,10 @@ generated: by docs/_build/gen-site.mix from services/compd/CHANGELOG.md; do not 
   preserve the design's display weight offset, clamped to the bundled faces,
   and scale with interface size and text scale. Load Inter Bold for titles.
   Existing settings events rebuild and activate these resources together.
+- Fit title glyphs within the fixed bar and its padding, including maximum
+  interface and accessibility sizes. Keep titles vertically centred without
+  changing frame extents. Invalid optional overlays warn once and fall back
+  to the selected design.
 - Install the shell's text scale through the shared theme so native controls
   follow it alongside egui text styles.
 - Apply interface size to scene layout and painting, corner menus, tooltip

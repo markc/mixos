@@ -507,6 +507,39 @@ mod tests {
     }
 
     #[test]
+    fn maximum_interface_title_fits_the_unchanged_bar_with_padding() {
+        let theme = toolkit::Theme::embedded();
+        let title = design::active_typography(Some(theme.typography()), design::TypographyRole::UiDisplay);
+        let ui = design::active_typography(Some(theme.typography()), design::TypographyRole::Ui);
+        // Include the largest accessibility scale as well as the font-size limit.
+        let size = title.font_size as f32 * settings::model::FONT_SIZE_MAX as f32 / ui.font_size as f32 * 3.0;
+        for style in crate::layout::ChromeStyle::ALL {
+            let plain = crate::theme::ChromeTheme::from_read(style, theme.dictionary(), crate::layout::DecoFontFamily::SystemUi, crate::layout::DecoFontWeight(700), title.font_size as f32);
+            let enlarged = crate::theme::ChromeTheme::from_read(style, theme.dictionary(), crate::layout::DecoFontFamily::SystemUi, crate::layout::DecoFontWeight(700), size);
+            let deco = enlarged.deco;
+            assert_eq!(deco.metrics.titlebar_height, plain.deco.metrics.titlebar_height);
+            assert_eq!(crate::layout::DecoExtents::of(&deco), crate::layout::DecoExtents::of(&plain.deco));
+            let mut state = state();
+            state.title = "Preferences ÅÉgjpq 0123456789".into();
+            let layout = state.layout(&deco);
+            assert_eq!(layout.titlebar.h, plain.deco.metrics.titlebar_height);
+            for scale in [1.0, 1.25, 1.5, 2.0, 3.0] {
+                let mask = crate::text::title_mask(&state.title, &deco.metrics.title_font_family, deco.metrics.fitted_title_size(scale), deco.metrics.title_font_weight.0, layout.title_slot.w * scale, scale).unwrap();
+                assert!(mask.alpha.iter().any(|&a| a > 0));
+                let (_, y) = title_origin(&deco, &layout, &mask, scale);
+                let padding = deco.metrics.title_pad * 0.5 * scale;
+                let top = layout.titlebar.y * scale + padding;
+                let bottom = (layout.titlebar.y + layout.titlebar.h) * scale - padding;
+                assert!(y as f32 >= top.floor(), "{style:?} at {scale}: top");
+                assert!((y as f32 + mask.height as f32) <= bottom.ceil(), "{style:?} at {scale}: bottom");
+                assert!((y as f32 + mask.height as f32 * 0.5 - (layout.titlebar.y + layout.titlebar.h * 0.5) * scale).abs() <= 0.5);
+                let image = titlebar(&deco, &layout, &state, scale, Some(&mask));
+                assert_eq!(image.height, ((layout.titlebar.y + plain.deco.metrics.titlebar_height) * scale).round() as u32);
+            }
+        }
+    }
+
+    #[test]
     fn the_titlebar_is_its_fill_and_the_top_corners_are_cut() {
         let theme = mac();
         let s = state();

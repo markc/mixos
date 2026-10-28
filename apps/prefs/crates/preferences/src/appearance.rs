@@ -1828,7 +1828,14 @@ mod tests {
             "mono_family":"JetBrains Mono", "text_scale":1.5, "density":1.5, "reduced_motion":true
         })).unwrap();
         let changes = changed.changes(&base);
-        assert_eq!(changes.len(), 17, "every appearance axis differs");
+        // The producer's serialised Look is the coverage authority. Adding an
+        // axis requires a changed fixture and a settings setter, not a count.
+        let serialised = serde_json::to_value(&changed).unwrap();
+        let expected: std::collections::BTreeSet<_> = serialised.as_object().unwrap().keys().map(|key| {
+            let group = if ["text_scale", "density", "reduced_motion"].contains(&key.as_str()) { "ui" } else { "appearance" };
+            format!("{group}.{key}")
+        }).collect();
+        assert_eq!(changes.keys().cloned().collect::<std::collections::BTreeSet<_>>(), expected, "every serialised appearance axis must be exercised");
         let next = settings::resolve::patch(&settings::Desktop::default(), &changes, &[]).unwrap();
         settings::resolve(&next).unwrap();
     }
