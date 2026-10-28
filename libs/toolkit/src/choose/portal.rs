@@ -121,10 +121,7 @@ pub(super) async fn attempt(
         .await
         .ok()?
         .ok()?;
-    match session(&connection, request, cancel).await {
-        Ok(outcome) => outcome,
-        Err(_) => None,
-    }
+    session(&connection, request, cancel).await.unwrap_or_default()
 }
 
 pub(super) async fn session(
