@@ -168,6 +168,14 @@ fn vacation_response_identity_precedes_variable_expansion() {
     assert_ne!(a.subject,b.subject); assert_eq!(a.handle,b.handle);
 }
 #[test]
+fn variable_invalid_references_ascii_modifiers_and_nongreedy_captures() {
+    let plan = evaluate(r#"require ["variables","fileinto"]; set "company" "ACME"; set :upper "name" "éclair"; fileinto "${BAD${company}|${}|${doh!}|${name}";"#);
+    assert_eq!(plan.filings[0].mailbox.as_deref(),Some("${BADACME|${}|${doh!}|éCLAIR"));
+    let script = compile(r#"require ["variables","fileinto"]; if header :matches "Subject" "* *" { fileinto "${1}|${2}"; }"#).unwrap();
+    let plan = script.evaluate(Context {data:b"Subject: one two three\r\n\r\nbody",from:"a",to:"b"}).unwrap();
+    assert_eq!(plan.filings[0].mailbox.as_deref(),Some("one|two three"));
+}
+#[test]
 fn comments_multiline_and_dot_unstuffing() {
     let plan = evaluate(
         "require \"vacation\"; /* comment */ # line\nvacation text:\r\n..dot\r\nhello\r\n.\r\n;\n",

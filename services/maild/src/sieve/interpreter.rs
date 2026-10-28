@@ -673,6 +673,14 @@ impl Eval<'_> {
             let next = &rest[pos + 2..];
             if let Some(end) = next.find('}') {
                 let key = &next[..end];
+                let identifier = |s: &str| !s.is_empty() && s.bytes().enumerate().all(|(i,b)| b.is_ascii_alphabetic() || b == b'_' || (i > 0 && b.is_ascii_digit()));
+                let number = !key.is_empty() && key.bytes().all(|b| b.is_ascii_digit());
+                if key.contains('.') && key.split('.').all(identifier) { bail!("unsupported variable namespace"); }
+                if !number && !identifier(key) {
+                    // Invalid references stay literal; resume inside them so a
+                    // nested valid reference still receives its one expansion.
+                    out.push_str("${"); rest = next; continue;
+                }
                 if let Ok(n) = key.parse::<usize>() {
                     out.push_str(self.captures.get(n).map(String::as_str).unwrap_or(""));
                 } else {
@@ -774,15 +782,15 @@ impl Eval<'_> {
                 let mut value = self.expand(args.value(1))?;
                 // RFC 5229 modifier precedence, independent of tag order.
                 if args.has("lower") {
-                    value = value.to_lowercase();
+                    value = value.to_ascii_lowercase();
                 } else if args.has("upper") {
-                    value = value.to_uppercase();
+                    value = value.to_ascii_uppercase();
                 }
                 if let Some(first) = value.chars().next() {
                     if args.has("lowerfirst") {
-                        value = first.to_lowercase().to_string() + &value[first.len_utf8()..];
+                        value = first.to_ascii_lowercase().to_string() + &value[first.len_utf8()..];
                     } else if args.has("upperfirst") {
-                        value = first.to_uppercase().to_string() + &value[first.len_utf8()..];
+                        value = first.to_ascii_uppercase().to_string() + &value[first.len_utf8()..];
                     }
                 }
                 if args.has("quotewildcard") {
