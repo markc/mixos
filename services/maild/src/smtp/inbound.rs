@@ -697,7 +697,11 @@ pub async fn deliver(
                 sender_verified: ingress.is_local_auth()
                     || vacation_sender_verified(&verify_result, mail_from),
                 spam: spam_verdict.as_deref() == Some("SPAM"),
-                smtp_reject: rcpt_to.len() == 1 && vtoken_ctx.is_none(),
+                // One RCPT can expand to several alias targets. Once a peer
+                // target has committed, reject only this target with a DSN.
+                smtp_reject: rcpt_to.len() == 1
+                    && local_recipients.len() == 1
+                    && vtoken_ctx.is_none(),
                 routing: Some(&routing),
             },
         )

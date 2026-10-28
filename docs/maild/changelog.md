@@ -10,6 +10,14 @@ generated: by docs/_build/gen-site.mix from services/maild/CHANGELOG.md; do not 
 
 ## Unreleased
 
+- Keep SMTP alias fan-out accepted when another target's Sieve script rejects;
+  send a DSN for that rejection instead of returning 550 after a committed copy.
+  Log single-target Sieve SMTP refusals through the normal rejection logger.
+- Deliver IPv4 and IPv6 address literals directly on port 25, including queued
+  DSNs, with the existing outbound TLS and source-address policy.
+- Index submission creation dates for retention sweeps. The first start with
+  receipt retention enabled also expires pre-receipt EmailSubmissions older
+  than the configured window (30 days by default).
 - Run account Sieve on initial local submission and local retries, and create
   delivery receipts atomically for Sieve-generated SMTP replies.
 - Fix Sieve attachment-independent header budgets, custom address fields,

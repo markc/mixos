@@ -20,16 +20,18 @@ pub fn valid_address(addr: &str, null_ok: bool) -> bool {
 }
 
 pub(super) fn address_literal(domain: &str) -> bool {
-    let Some(literal) = domain.strip_prefix('[').and_then(|s| s.strip_suffix(']')) else {
-        return false;
-    };
+    literal_ip(domain).is_some()
+}
+
+pub(super) fn literal_ip(domain: &str) -> Option<std::net::IpAddr> {
+    let literal = domain.strip_prefix('[')?.strip_suffix(']')?;
     if literal
         .get(..5)
         .is_some_and(|prefix| prefix.eq_ignore_ascii_case("IPv6:"))
     {
-        literal[5..].parse::<std::net::Ipv6Addr>().is_ok()
+        literal[5..].parse().ok().map(std::net::IpAddr::V6)
     } else {
-        literal.parse::<std::net::Ipv4Addr>().is_ok()
+        literal.parse().ok().map(std::net::IpAddr::V4)
     }
 }
 

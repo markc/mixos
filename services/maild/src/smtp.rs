@@ -103,6 +103,8 @@ pub struct SmtpConfig {
     /// the resolver/transport seam is replaced — so per-domain DKIM
     /// signing and per-domain HELO selection on `delivery_worker` are
     /// exercised end-to-end.
+    /// Address literals use their parsed bare IP as the map key, preserving
+    /// the production literal-routing decision before the transport seam.
     ///
     /// Operator-invisible: production config leaves this empty and
     /// the loader does not parse it from TOML. Populated only by
