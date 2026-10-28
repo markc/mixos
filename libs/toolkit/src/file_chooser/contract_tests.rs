@@ -223,10 +223,10 @@ fn directory_navigation_resolves_dot_components_on_the_worker() {
     let child = dir.path().join("child");
     std::fs::create_dir(&child).unwrap();
     let request = parse(json!({"directory":true}));
-    let Answer::Listed(listing) = open_filtered(child.join(".."), false, Some(&request)).unwrap()
-    else {
-        panic!("expected a folder listing")
-    };
-    assert_eq!(listing.directory, dir.path().canonicalize().unwrap());
-    assert!(!listing.directory.as_os_str().as_encoded_bytes().split(|&b| b == b'/').any(|part| part == b"." || part == b".."));
+    let paths = check_directories(vec![child.join("..")]).unwrap();
+    assert_eq!(paths, [dir.path().canonicalize().unwrap()]);
+    request.validate_acceptance(&files::chooser::Acceptance {
+        paths: paths.iter().map(|p| crate::choose::path_bytes(p)).collect(),
+        folder: None, current_filter: None, choices: Default::default(),
+    }).unwrap();
 }
