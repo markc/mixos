@@ -563,7 +563,9 @@ pub fn form(
                 ..editor::View::prose()
             };
             let row_height = (view.font_size.unwrap() * view.line_height).round();
-            let height = (row_height * 8.0).max(ui.available_height() - footer);
+            // Keep one editable row in a short tile; the form scrolls when
+            // recipients and attachments take the remaining height.
+            let height = row_height.max(ui.available_height() - footer);
             ui.allocate_ui(egui::vec2(ui.available_width(), height), |ui| {
                 let output = editor::show(
                     ui,

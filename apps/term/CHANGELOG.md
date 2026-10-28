@@ -4,6 +4,7 @@
 
 - Follow session font size and weight with a custom design package, keeping
   the theme file design beneath profile framing, menus and title band.
+- Use the shared 360×240 logical window minimum and exercise the GPU terminal split layout at that size.
 
 ## 0.4.0
 

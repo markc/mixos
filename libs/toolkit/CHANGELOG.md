@@ -19,6 +19,9 @@
 - Add `header_form`: measured label columns, caller-drawn rows, recipient/text
   fields and removable path chips shared by Email and ced. Caller-provided
   IDs keep field state scoped to each tab and viewport.
+- Share a 360×240 logical window minimum across app and secondary viewports. Restore secondary geometry only at creation; constrain and scroll small dialogs and saved docks.
+
+## Unreleased — 2026-10-28
 
 - Allow a viewport to require its own complete client frame independently of
   the session decoration preference and later theme changes. Each viewport

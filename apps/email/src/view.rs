@@ -318,9 +318,47 @@ fn window(
     let total = ui.available_width();
     let reader_shown = state.current().is_some_and(|v| v.phase == Phase::Ready);
     keyboard_panes(ui, state, reader_shown, events);
+    if total < 640.0 {
+        // Keep one useful pane in a narrow tile. Tab retains the same pane
+        // cycle; the selector also makes every pane reachable by pointer.
+        let mut pane = state.pane;
+        if pane == Pane::Reader && !reader_shown {
+            pane = Pane::List;
+        }
+        egui::Panel::top("compact-panes").show(ui, |ui| {
+            ui.horizontal(|ui| {
+                for (candidate, key) in [
+                    (Pane::Tree, "pane-places"),
+                    (Pane::List, "pane-list"),
+                    (Pane::Reader, "reader"),
+                ] {
+                    if candidate == Pane::Reader && !reader_shown {
+                        continue;
+                    }
+                    if toolkit::selectable(ui, pane == candidate, crate::label(key)).clicked() {
+                        pane = candidate;
+                        events.push(UiEvent::PaneFocused(pane));
+                    }
+                }
+            });
+        });
+        egui::CentralPanel::default()
+            .frame(pane_frame(ui.ctx(), true))
+            .show(ui, |ui| match (pane, state.current()) {
+                (Pane::Tree, _) => tree::show(ui, state, events),
+                (Pane::Reader, Some(view)) => reader(ui, state, view, commands, strings, events),
+                (_, Some(view)) if view.phase == Phase::Ready => {
+                    centre(ui, state, view, commands, strings, events)
+                }
+                (_, Some(view)) => account::pane(ui, view, events),
+                (_, None) => account::none(ui, events),
+            });
+        return;
+    }
     let left = egui::Panel::left("places")
         .resizable(true)
         .default_size(total * state.ui.places)
+        .size_range(total * 0.12..=total * 0.35)
         .frame(pane_frame(ui.ctx(), state.pane == Pane::Tree))
         .show(ui, |ui| tree::show(ui, state, events));
     let split = left.response.rect.width() / total.max(1.0);
@@ -333,6 +371,7 @@ fn window(
         let right = egui::Panel::right("reader")
             .resizable(true)
             .default_size(remaining * state.ui.reader)
+            .size_range(remaining * 0.2..=remaining * 0.7)
             .frame(pane_frame(ui.ctx(), state.pane == Pane::Reader))
             .show(ui, |ui| reader(ui, state, view, commands, strings, events));
         let split = right.response.rect.width() / remaining.max(1.0);

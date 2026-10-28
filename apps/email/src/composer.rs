@@ -256,8 +256,7 @@ impl Windows {
             )
             .with_title(format!("{} — {}", crate::label("compose-title"), name))
             .with_decorations(false)
-            .with_inner_size([900.0, 700.0])
-            .with_min_inner_size([640.0, 480.0]);
+            .with_inner_size([900.0, 700.0]);
             let builder = toolkit::saved::secondary::builder(&ctx, APP, &name, builder);
             let weak = Arc::downgrade(window);
             ctx.show_viewport_deferred(viewport, builder, move |ui, _| {
@@ -417,8 +416,10 @@ pub fn view(
             ui.label(&state.status);
         }
         if let Some(compose) = &state.compose {
-            ui.push_id(ctx.viewport_id(), |ui| {
-                crate::view::compose::form(ui, compose, state, palette, &mut events)
+            egui::ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
+                ui.push_id(ctx.viewport_id(), |ui| {
+                    crate::view::compose::form(ui, compose, state, palette, &mut events)
+                });
             });
         } else if state.documents.opening() {
             ui.weak(crate::label("loading"));

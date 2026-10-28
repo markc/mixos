@@ -157,7 +157,7 @@ pub fn view(
         ui.add(icons::image_of(ui.ctx(), icon, ICON, colour));
         ui.small(&engine.status);
     });
-    let window = ui.max_rect().size();
+    let window = ui.available_size();
     let side = engine.ui.dock_side.effective(window.x);
     if ui.ctx().data_mut(|d| {
         let key = egui::Id::unique("workshop-dock-viewport-width");
@@ -209,15 +209,17 @@ pub fn view(
             events.push(UiEvent::DockSize(side, size));
         }
     }
-    let total = ui.available_width();
+    let compact = window.x < 640.0;
+    let total = if compact { ui.available_height() } else { ui.available_width() };
     let (_, changed) = toolkit::saved::widgets::panel(
         ui,
         "services",
-        egui::Panel::left("services").frame(bars::dock_frame(ui.ctx())),
+        (if compact { egui::Panel::top("services") } else { egui::Panel::left("services") })
+            .frame(bars::dock_frame(ui.ctx())),
         total,
         engine.ui.split,
         inspector::engine::SERVICES_SPLIT,
-        true,
+        !compact,
         |ui| services(ui, engine, &mut events),
     );
     if let Some(split) = changed {

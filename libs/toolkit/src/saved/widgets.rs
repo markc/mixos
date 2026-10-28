@@ -111,7 +111,13 @@ pub fn panel<R>(
             } else {
                 ui.set_min_height(ui.available_height());
             }
-            body(ui)
+            // Content may be larger than a tile, but must not enlarge a dock
+            // or paint over its neighbour. Preserve access in both axes.
+            egui::ScrollArea::both()
+                .id_salt(("saved-panel-content", name))
+                .auto_shrink(false)
+                .show(ui, body)
+                .inner
         });
     let size = if horizontal {
         shown.response.rect.width()

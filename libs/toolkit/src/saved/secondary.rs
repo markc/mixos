@@ -4,7 +4,7 @@
 use super::{Frame, Store};
 use serde_json::Value;
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     path::PathBuf,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
@@ -17,6 +17,7 @@ struct Windows {
     workers: BTreeMap<String, CaptureSender>,
     captured: BTreeMap<String, (Instant, Frame, Option<egui::Rect>)>,
     viewports: BTreeMap<String, egui::ViewportId>,
+    initialised: BTreeSet<String>,
 }
 type Shared = Arc<Mutex<Windows>>;
 
@@ -77,6 +78,11 @@ pub fn builder(
     name: &str,
     builder: egui::ViewportBuilder,
 ) -> egui::ViewportBuilder {
+    let builder = if builder.min_inner_size.is_none() {
+        builder.with_min_inner_size(crate::window::MIN_SIZE)
+    } else {
+        builder
+    };
     if ctx.embed_viewports() {
         return builder;
     }
@@ -90,7 +96,16 @@ pub fn builder(
     {
         entry.insert(worker);
     }
-    frame.viewport(builder.with_app_id(app_id))
+    let mut builder = builder.with_app_id(app_id);
+    if windows.initialised.insert(name.into()) {
+        frame.viewport(builder)
+    } else {
+        // A compositor configure owns the live geometry. Replaying the
+        // captured size (or the caller's default) would fight edge tiling.
+        builder.inner_size = None;
+        builder.maximized = None;
+        builder
+    }
 }
 
 /// Called inside the child pass, including its closing pass. Portable saves
@@ -293,6 +308,7 @@ pub fn finish(ctx: &egui::Context, app: &str, name: &str) {
         return;
     };
     let mut windows = state.lock().unwrap_or_else(|e| e.into_inner());
+    windows.initialised.remove(name);
     if windows.captured.remove(name).is_none() && !windows.workers.contains_key(name) {
         return;
     }
@@ -310,6 +326,29 @@ pub fn finish(ctx: &egui::Context, app: &str, name: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn saved_size_is_initial_only_and_never_becomes_a_minimum() {
+        let ctx = egui::Context::default();
+        ctx.set_embed_viewports(false);
+        install(&ctx, "example", None, [("child".into(), Frame {
+            size: Some([900.0, 700.0]),
+            ..Default::default()
+        })].into());
+        let original = || egui::ViewportBuilder::default().with_inner_size([760.0, 560.0]);
+        let first = builder(&ctx, "example", "child", original());
+        assert_eq!(first.inner_size, Some(egui::vec2(900.0, 700.0)));
+        assert_eq!(first.min_inner_size, Some(egui::Vec2::from(crate::window::MIN_SIZE)));
+        let next = builder(&ctx, "example", "child", original());
+        assert_eq!(next.inner_size, None);
+        assert_eq!(next.maximized, None);
+        assert_eq!(next.min_inner_size, first.min_inner_size);
+        let mut live = first;
+        let (commands, _) = live.patch(next);
+        assert!(!commands.iter().any(|c| matches!(c, egui::ViewportCommand::InnerSize(_))));
+        finish(&ctx, "example", "child");
+        assert_eq!(builder(&ctx, "example", "child", original()).inner_size, Some(egui::vec2(900.0, 700.0)));
+    }
 
     #[test]
     fn capture_workers_have_distinct_stable_window_identities() {

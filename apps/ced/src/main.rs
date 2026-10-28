@@ -137,8 +137,7 @@ fn window(args: &Args, config: Config, paths: Vec<String>) -> Result<(), String>
     let options = eframe::NativeOptions {
         // Client-side decorations: the toolkit title bar is the window frame.
         viewport: toolkit::titlebar::viewport(APP_ID, &ced::label("title"))
-            .with_inner_size([1000.0, 720.0])
-            .with_min_inner_size([480.0, 320.0]),
+            .with_inner_size([1000.0, 720.0]),
         ..eframe::NativeOptions::default()
     };
     eframe::run_native(

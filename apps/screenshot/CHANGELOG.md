@@ -5,3 +5,5 @@
 
 - Follow session font size and weight with a custom design package, keeping
   the theme file design beneath profile framing, menus and title band.
+- Use the shared 360×240 logical window minimum so quarter tiles fit; cover annotation rendering at that size.
+

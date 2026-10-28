@@ -166,6 +166,18 @@ pub fn view(
             ));
         }
     });
+    if ui.available_width() < 640.0 {
+        egui::Panel::top("compact-editors").show(ui, |ui| {
+            let sections = engine.search("");
+            let names: Vec<_> = sections.iter().map(|s| label(s.title)).collect();
+            let mut selected = sections.iter().position(|s| s.section == engine.section()).unwrap_or(0);
+            ui.add_enabled_ui(engine.can_navigate(), |ui| {
+                if toolkit::combo::show(ui, "compact-section", &mut selected, &names, Some(ui.available_width())).changed() {
+                    events.push(UiEvent::Command(sections[selected].command, Origin::Ui));
+                }
+            });
+        });
+    } else {
     egui::Panel::left("editors")
         .resizable(true)
         .default_size(220.0)
@@ -173,6 +185,7 @@ pub fn view(
         .max_size(320.0)
         .frame(bars::dock_frame(ui.ctx()))
         .show(ui, |ui| editors(ui, engine, commands, &mut events));
+    }
     egui::CentralPanel::default()
         .frame(bars::dock_frame(ui.ctx()))
         .show(ui, |ui| {
@@ -191,7 +204,7 @@ pub fn view(
             match engine.section() {
                 Section::Software => applications(ui, engine, commands, strings, &mut events),
                 section => {
-                    ScrollArea::vertical()
+                    ScrollArea::both()
                         .id_salt(section.name())
                         .auto_shrink(false)
                         .show(ui, |ui| match section {

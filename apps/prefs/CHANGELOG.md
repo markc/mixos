@@ -1,6 +1,10 @@
 <!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
 # Changelog
 
+## Unreleased — 2026-10-28
+
+- Use the shared 360×240 logical window minimum. Replace the navigation sidebar with a section selector in narrow tiles and allow settings to scroll in both directions.
+
 ## Unreleased — 2026-10-27
 
 - Offer Bold (700) alongside the bundled Light, Regular, Medium and SemiBold

@@ -5,6 +5,7 @@
 
 - Follow session font size and weight with a custom design package, keeping
   the theme file design beneath profile framing, menus and title band.
+- Use the shared 360×240 logical window minimum. Lend sidebar space to file panes in narrow tiles and clip each pane to its own bounds.
 
 ## Unreleased — 2026-10-27
 

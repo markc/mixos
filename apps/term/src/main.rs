@@ -187,8 +187,7 @@ fn run(settings: config::Settings) -> Result<(), String> {
     let options = eframe::NativeOptions {
         // Client-side decorations: the toolkit title bar is the window frame.
         viewport: toolkit::titlebar::viewport(APP_ID, &label("title"))
-            .with_inner_size([900.0, 560.0])
-            .with_min_inner_size([320.0, 200.0]),
+            .with_inner_size([900.0, 560.0]),
         ..eframe::NativeOptions::default()
     };
     let notify = notify_enabled().then_some(notify_tx);

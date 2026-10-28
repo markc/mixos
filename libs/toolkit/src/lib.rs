@@ -83,6 +83,7 @@ pub mod titlebar;
 pub mod toggle;
 pub mod tooltip;
 pub mod ui_scale;
+pub mod window;
 
 pub use action::{Action, Registry};
 pub use button::selectable;

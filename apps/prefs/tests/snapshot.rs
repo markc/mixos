@@ -355,6 +355,21 @@ fn draw_at_size(theme: Theme, name: &str, engine: Engine, size: egui::Vec2) {
     harness.snapshot(name);
 }
 
+#[test]
+fn minimum_window_renders() {
+    for section in [Section::Appearance, Section::Software, Section::Email, Section::Terminal, Section::Ced, Section::TextAndFonts, Section::Windows, Section::Accessibility, Section::Wallpapers] {
+        let mut engine = appearance_engine();
+        engine.set_section(section);
+        let registry = actions::registry();
+        let strings = strings();
+        let mut h = Harness::builder()
+            .with_size(egui::Vec2::from(toolkit::window::MIN_SIZE))
+            .build_ui(move |ui| { let _ = view(ui, &engine, &registry, &strings); });
+        toolkit::install(&h.ctx, &Theme::embedded());
+        h.run_steps(4);
+    }
+}
+
 /// The default look: Studio Dark.
 #[test]
 fn software() {

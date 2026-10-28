@@ -25,6 +25,7 @@ fn label(key: &str) -> String {
 /// An undecorated window for a MixOS app: the title bar is drawn by [`show`].
 pub fn viewport(app_id: &str, title: &str) -> ViewportBuilder {
     ViewportBuilder::default()
+        .with_min_inner_size(crate::window::MIN_SIZE)
         .with_app_id(app_id)
         .with_title(title)
         .with_decorations(false)

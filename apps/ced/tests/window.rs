@@ -277,6 +277,16 @@ fn window_with_edit(
 }
 
 #[test]
+fn minimum_window_renders() {
+    let (mut h, _service) = window(
+        theme(Scheme::Studio, Mode::Dark),
+        &[("/home/user/notes.md", "# Notes\nSmall window\n")],
+        egui::Vec2::from(toolkit::window::MIN_SIZE),
+    );
+    h.run_steps(4);
+}
+
+#[test]
 fn two_documents_studio_dark() {
     let (mut h, service) = window(
         theme(Scheme::Studio, Mode::Dark),

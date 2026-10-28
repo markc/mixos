@@ -326,6 +326,24 @@ fn harness(state: State) -> Harness<'static, Window> {
 }
 
 #[test]
+fn minimum_window_renders() {
+    for state in [fixture(), empty(), typing()] {
+        let mut h = harness(state);
+        h.set_size(egui::Vec2::from(toolkit::window::MIN_SIZE));
+        h.run_steps(4);
+    }
+    let mut h = harness(fixture());
+    h.set_size(egui::Vec2::from(toolkit::window::MIN_SIZE));
+    h.run_steps(4);
+    h.get_by_label("Places").click();
+    h.run_steps(2);
+    assert_eq!(h.state().state.pane, email::state::Pane::Tree);
+    h.get_by_label("List").click();
+    h.run_steps(2);
+    assert_eq!(h.state().state.pane, email::state::Pane::List);
+}
+
+#[test]
 fn the_tree_draws_each_account_with_its_mailboxes_calendars_and_books() {
     let h = harness(fixture());
     // A selected row answers to two accessible nodes (the button and its

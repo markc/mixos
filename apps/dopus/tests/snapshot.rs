@@ -156,6 +156,18 @@ fn chrome(scheme: Scheme, mode: Mode) -> Theme {
     })
 }
 
+#[test]
+fn minimum_window_renders() {
+    let app = app(true);
+    let registry = actions::registry();
+    let strings = strings();
+    let mut h = Harness::builder()
+        .with_size(egui::Vec2::from(toolkit::window::MIN_SIZE))
+        .build_ui(move |ui| { let _ = view(ui, &app, &registry, &strings); });
+    toolkit::install(&h.ctx, &Theme::embedded());
+    h.run_steps(4);
+}
+
 /// The default look: Studio dark.
 #[test]
 fn window_studio_dark() {

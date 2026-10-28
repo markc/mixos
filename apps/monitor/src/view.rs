@@ -431,6 +431,16 @@ fn performance(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
         ui.centered_and_justified(|ui| ui.weak(label("no-readings")));
         return;
     };
+    if ui.available_width() < 640.0 {
+        egui::Panel::top("compact-sections").show(ui, |ui| {
+            let keys = model::sections(Some(s));
+            let names: Vec<_> = keys.iter().map(|key| section_text(s, key).map(|v| v.0).unwrap_or_default()).collect();
+            let mut selected = keys.iter().position(|key| *key == engine.ui.section).unwrap_or(0);
+            if toolkit::combo::show(ui, "compact-section", &mut selected, &names, Some(ui.available_width())).changed() {
+                events.push(UiEvent::Section(keys[selected].clone()));
+            }
+        });
+    } else {
     egui::Panel::left("sections")
         .resizable(false)
         .default_size(250.0)
@@ -499,10 +509,11 @@ fn performance(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
                 }
             });
         });
+    }
     egui::CentralPanel::default()
         .frame(bars::dock_frame(ui.ctx()))
         .show(ui, |ui| {
-            let output = ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
+            let output = ScrollArea::both().auto_shrink(false).show(ui, |ui| {
                 let key = engine.ui.section.as_str();
                 if key == "cpu" {
                     cpu(ui, engine, s);

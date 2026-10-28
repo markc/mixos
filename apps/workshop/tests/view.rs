@@ -61,6 +61,16 @@ fn sized_harness(engine: Engine, size: egui::Vec2) -> Harness<'static, Vec<UiEve
 }
 
 #[test]
+fn minimum_window_renders() {
+    for side in [inspector::DockSide::Auto, inspector::DockSide::Bottom, inspector::DockSide::Right] {
+        let mut e = engine(None);
+        e.ui.dock_side = side;
+        let mut h = sized_harness(e, egui::Vec2::from(toolkit::window::MIN_SIZE));
+        h.run_steps(4);
+    }
+}
+
+#[test]
 fn auto_dock_is_right_when_wide_and_bottom_when_narrow() {
     for (size, right) in [
         (egui::vec2(1920.0, 1080.0), true),

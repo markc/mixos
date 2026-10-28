@@ -133,8 +133,7 @@ fn window(args: &Args, dirs: Option<AppDirs>, paths: Vec<String>) -> Result<(), 
     let options = eframe::NativeOptions {
         // Client-side decorations: the toolkit title bar is the window frame.
         viewport: toolkit::titlebar::viewport(APP_ID, &label("title"))
-            .with_inner_size([980.0, 640.0])
-            .with_min_inner_size([420.0, 240.0]),
+            .with_inner_size([980.0, 640.0]),
         ..eframe::NativeOptions::default()
     };
     let service = args.service.clone();

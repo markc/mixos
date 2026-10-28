@@ -163,10 +163,16 @@ impl Dialog {
             enabled,
         } = self;
         let tokens = Chrome::of(ctx).style;
-        let width = width.unwrap_or(Rangef {
+        let mut width = width.unwrap_or(Rangef {
             min: tokens.dialog_min_width as f32,
             max: tokens.dialog_max_width as f32,
         });
+        let compact = ctx.content_rect().width() < 640.0 || ctx.content_rect().height() < 320.0;
+        if compact {
+            let available = (ctx.content_rect().width() - 32.0).max(0.0);
+            width.max = width.max.min(available);
+            width.min = width.min.min(width.max);
+        }
         let mut place: Placement = ctx.data(|d| d.get_temp(id)).unwrap_or_default();
         let mut area = Area::new(id)
             .accessible_name(title.clone())
@@ -225,16 +231,43 @@ impl Dialog {
                     crate::chrome::Chrome::of(ctx).style.dialog_below_rule as f32
                         - ui.spacing().item_spacing.y,
                 );
+                // Reserve the title, rules, buttons and modal margins before
+                // sizing the body. A small viewport must clamp both bounds:
+                // egui::Resize cannot accept a minimum above its maximum.
+                let body_max = if compact {
+                    let footer = tokens.dialog_above_buttons as f32
+                        + Chrome::of(ctx).metrics.push_height;
+                    let header = title.rect.height()
+                        + tokens.dialog_above_rule as f32
+                        + tokens.dialog_below_rule as f32;
+                    (ctx.content_rect().size() - egui::vec2(32.0, header + footer + 48.0))
+                        .max(Vec2::ZERO)
+                } else {
+                    Vec2::INFINITY
+                };
+                let body = |ui: &mut Ui| {
+                    if compact {
+                        egui::ScrollArea::both()
+                            .id_salt(id.with("compact-body"))
+                            .max_height(body_max.y)
+                            .auto_shrink(false)
+                            .show(ui, body)
+                            .inner
+                    } else {
+                        body(ui)
+                    }
+                };
                 let inner = match resize {
                     Some((default, min)) => {
                         // The body keeps the size the person left it at, up to
                         // most of the window; the buttons stay below it.
-                        let max = ui.ctx().content_rect().size()
-                            * crate::chrome::Chrome::of(ctx).style.dialog_resize_max_share as f32;
+                        let max = (ui.ctx().content_rect().size()
+                            * crate::chrome::Chrome::of(ctx).style.dialog_resize_max_share as f32)
+                            .min(body_max);
                         egui::Resize::default()
                             .id_salt(id.with("size"))
-                            .default_size(default)
-                            .min_size(min)
+                            .default_size(default.min(max))
+                            .min_size(min.min(max))
                             .max_size(max)
                             .show(ui, body)
                     }

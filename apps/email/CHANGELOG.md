@@ -4,6 +4,7 @@
 
 - Follow session font size and weight with a custom design package, keeping
   the theme file design beneath profile framing, menus and title band.
+- Use the shared 360×240 logical minimum for mailbox and composer windows. Select one pane at a time in narrow tiles; scroll composer fields and allow a one-row editor.
 
 ## Unreleased
 

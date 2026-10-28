@@ -367,7 +367,9 @@ pub fn view(ui: &mut Ui, app: &App, commands: &Registry<App>, strings: &Strings)
     });
     let total = ui.available_width();
     let places = app.core.sidebar(Sidebar::Places);
-    if places.open {
+    // Preserve sidebar choices while lending their space to the file panes
+    // in a narrow tile. Both sidebars return when the window grows.
+    if places.open && total >= 640.0 {
         let shown = egui::Panel::left("places")
             .resizable(true)
             .default_size(total * places.width)
@@ -385,7 +387,7 @@ pub fn view(ui: &mut Ui, app: &App, commands: &Registry<App>, strings: &Strings)
         );
     }
     let properties = app.core.sidebar(Sidebar::Properties);
-    if properties.open {
+    if properties.open && total >= 640.0 {
         let shown = egui::Panel::right("properties")
             .resizable(true)
             .default_size(total * properties.width)
@@ -595,6 +597,7 @@ fn panes(
         ui.scope_builder(
             UiBuilder::new().max_rect(rect).id_salt(pane.index()),
             |ui| {
+                ui.set_clip_rect(ui.clip_rect().intersect(rect));
                 pane_view(ui, app, commands, strings, pane, events);
             },
         );
