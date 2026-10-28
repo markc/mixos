@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 use super::*;
-use crate::mail::{Headers, Kind, MailState};
+use crate::mail::{Failure, Headers, Kind, MailState};
 
 pub(super) struct SaveIntent {
     path: String,
@@ -440,14 +440,16 @@ impl Controller {
         &mut self,
         tab: TabId,
         command: Option<(u64, String)>,
-        result: Result<String, String>,
+        result: Result<String, Failure>,
     ) -> Vec<Effect> {
+        let refusal_code = result.as_ref().err().map(|error| error.code.clone());
+        let result = result.map_err(|error| error.message);
         if let Some(mail) = self.tab_mut(tab).and_then(|t| t.mail.as_mut()) {
             mail.sending = false;
             mail.notice = Some(result.as_ref().unwrap_or_else(|message| message).clone());
         }
         let mut fx = Vec::new();
-        Self::mail_answer(command, result, &mut fx);
+        Self::mail_answer_with_code(command, result, refusal_code.as_deref().unwrap_or(code::INTERNAL), &mut fx);
         fx
     }
 
@@ -456,13 +458,23 @@ impl Controller {
         result: Result<String, String>,
         fx: &mut Vec<Effect>,
     ) {
+        let refusal_code = result.as_ref().err().map_or(code::INTERNAL, |message| error_code(message));
+        Self::mail_answer_with_code(command, result, refusal_code, fx);
+    }
+
+    fn mail_answer_with_code(
+        command: Option<(u64, String)>,
+        result: Result<String, String>,
+        refusal_code: &str,
+        fx: &mut Vec<Effect>,
+    ) {
         if let Some((id, action)) = command {
             let (rc, body) = match result {
                 Ok(message) => (
                     0,
                     json!({"id": action, "ok": true, "result": {"message": message}}).to_string(),
                 ),
-                Err(message) => (10, refusal(error_code(&message), message, None)),
+                Err(message) => (10, refusal(refusal_code, message, None)),
             };
             fx.push(Effect::Respond { id, rc, body });
         }
@@ -645,7 +657,8 @@ mod tests {
                 .any(|e| matches!(e, Effect::SaveMail { .. } | Effect::SendMail { .. }))
         );
         let message = "This sender is not one of your identities.";
-        let fx = c.on_mail_sent(tab, command, Err(message.into()));
+        let fx = c.on_mail_sent(tab, command, Err(Failure::new(code::INVALID_ARGUMENT, message)));
+        assert!(fx.iter().any(|effect| matches!(effect, Effect::Respond { body, .. } if serde_json::from_str::<Value>(body).unwrap()["error_code"] == code::INVALID_ARGUMENT)));
         assert_eq!(
             c.tab(tab).unwrap().mail.as_ref().unwrap().notice.as_deref(),
             Some(message)

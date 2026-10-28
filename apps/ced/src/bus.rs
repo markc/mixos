@@ -81,7 +81,7 @@ pub enum Delivery {
     MailSent {
         tab: u64,
         command: Option<(u64, String)>,
-        result: Result<String, String>,
+        result: Result<String, documents::mail::Failure>,
     },
     NotificationFailed {
         text: String,

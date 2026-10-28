@@ -1107,7 +1107,7 @@ mod tests {
         assert!(app.mail_chooser.is_none());
         let fx = app
             .ctl
-            .on_mail_sent(tab, None, Err("server refused".into()));
+            .on_mail_sent(tab, None, Err(documents::mail::Failure::new("INVALID_ARGUMENT", "server refused")));
         app.absorb(fx);
         assert!(app.enabled(ActionId::MailHeaders));
     }

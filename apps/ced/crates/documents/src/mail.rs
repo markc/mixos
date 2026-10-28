@@ -4,6 +4,18 @@ use maildoc::MailDocument;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Failure {
+    pub code: String,
+    pub message: String,
+}
+
+impl Failure {
+    pub fn new(code: impl Into<String>, message: impl Into<String>) -> Self {
+        Self { code: code.into(), message: message.into() }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum Kind {
     Text,

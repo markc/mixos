@@ -136,7 +136,8 @@ the mail tab, so it cannot silently replace separately edited headers.
 File ▸ Send saves first, then asks Email to send that absolute document path.
 The tab shows Sending… until Email replies. A second Send is refused while
 one is in flight. Each Email call has 120 seconds; the separate registration
-wait is 10 seconds. Email's refusal appears verbatim. An uncertain transport
+wait is 10 seconds. Email's refusal retains its code and message verbatim. An
+uncertain transport
 outcome says the mail may have been sent; ced never retries it. Opening a
 document never sends anything. Ced knows no accounts, JMAP or sending limits.
 

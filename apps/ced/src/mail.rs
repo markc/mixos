@@ -2,6 +2,7 @@
 //! File and application effects, called only from ced's Bus worker.
 use std::path::Path;
 use std::time::Duration;
+use documents::mail::Failure;
 
 pub fn save(path: &str, text: &str, expected: Option<&str>) -> Result<(), String> {
     // Validate before touching the destination. Use the native editor's
@@ -24,7 +25,7 @@ pub fn save(path: &str, text: &str, expected: Option<&str>) -> Result<(), String
     document.save_as(path).map_err(|e| e.to_string())
 }
 
-pub async fn send(client: &impl citizen::app::AppClient, path: &str) -> Result<String, String> {
+pub async fn send(client: &impl citizen::app::AppClient, path: &str) -> Result<String, Failure> {
     match citizen::call_app_with_limit(
         client,
         "dev.mixos.email",
@@ -43,18 +44,18 @@ pub async fn send(client: &impl citizen::app::AppClient, path: &str) -> Result<S
                 .unwrap_or("Sent")
                 .to_owned())
         }
-        Err(citizen::app::AppCallError::Refused { message, .. }) => Err(message),
+        Err(citizen::app::AppCallError::Refused { code, message, .. }) => Err(Failure::new(code, message)),
         Err(citizen::app::AppCallError::Transport(error)) if error.outcome_unknown => {
-            Err(format!("the mail may have been sent; {}", error.message))
+            Err(Failure::new("INTERNAL", format!("the mail may have been sent; {}", error.message)))
         }
         Err(citizen::app::AppCallError::Transport(error)) => {
-            Err(format!("could not contact Email: {}", error.message))
+            Err(Failure::new("INTERNAL", format!("could not contact Email: {}", error.message)))
         }
         Err(citizen::app::AppCallError::LaunchFailed(message)) => {
-            Err(format!("could not launch Email: {message}"))
+            Err(Failure::new("INTERNAL", format!("could not launch Email: {message}")))
         }
         Err(citizen::app::AppCallError::DidNotAppear) => {
-            Err("Email did not appear before the wait limit".into())
+            Err(Failure::new("INTERNAL", "Email did not appear before the wait limit"))
         }
     }
 }
@@ -69,12 +70,12 @@ mod tests {
         let message = "Choose an identity belonging to this account.";
         let client = Handle::scripted(vec![Ok(Reply {
             rc: 10,
-            body: serde_json::json!({"message":message}).to_string(),
+            body: serde_json::json!({"error_code":"INVALID_ARGUMENT","message":message}).to_string(),
             error: None,
         })]);
         assert_eq!(
             send(&client, "/home/user/letter.md").await.unwrap_err(),
-            message
+            Failure::new("INVALID_ARGUMENT", message)
         );
         let log = client.log();
         assert_eq!(log.len(), 1);
@@ -90,7 +91,7 @@ mod tests {
             outcome_unknown: true,
         })]);
         let error = send(&client, "/home/user/letter.md").await.unwrap_err();
-        assert!(error.contains("may have been sent"));
+        assert!(error.message.contains("may have been sent"));
         assert_eq!(client.log().len(), 1);
     }
 
@@ -110,7 +111,7 @@ mod tests {
                 Err(CallError::from("Bus request timed out"))
             }
         }
-        let message = send(&Deadline, "/home/user/letter.md").await.unwrap_err();
+        let message = send(&Deadline, "/home/user/letter.md").await.unwrap_err().message;
         assert!(message.contains("may have been sent"));
         assert!(!message.contains("could not contact Email"));
     }
@@ -151,6 +152,7 @@ mod tests {
             send(&client, "/home/user/letter.md")
                 .await
                 .unwrap_err()
+                .message
                 .contains("may have been sent")
         );
         assert_eq!(client.0.load(std::sync::atomic::Ordering::SeqCst), 3);

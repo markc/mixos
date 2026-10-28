@@ -14,7 +14,8 @@
   Trim sender addresses, default optional header arguments, protect relative
   paths against external edits and recreate externally deleted mail files.
 - Allow 120 seconds per Email send call, separate from its registration wait;
-  delivered-call timeouts remain uncertain and are never retried.
+  delivered-call timeouts remain uncertain and are never retried. Preserve
+  Email's refusal code together with its message.
 
 - Open mail documents as body-only editor tabs with shared header rows,
   optional recipients, read-only thread headers and attachment paths. Refused
