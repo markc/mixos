@@ -433,7 +433,10 @@ impl Service {
             }
             _ => bail!("UNKNOWN_COMMAND: unsupported clipboard command"),
         };
-        if result.is_ok() && matches!(command.command.as_str(), "clipboard.set" | "clipboard.clear" | "clipboard.pick" | "desktop.clipboard.rotate") {
+        if result.is_ok()
+            && command.args.get("primary").and_then(Value::as_bool) != Some(true)
+            && self.state.lock().await.selections[0].as_ref().is_some_and(|s| !s.sensitive)
+            && matches!(command.command.as_str(), "clipboard.set" | "clipboard.clear" | "clipboard.pick" | "desktop.clipboard.rotate") {
             for (peer, pair) in &self.settings.peers {
                 if pair.follow && let Err(error) = self.push(peer).await { tracing::warn!(%error, "clipboard follow unavailable"); }
             }
