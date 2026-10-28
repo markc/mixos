@@ -262,8 +262,11 @@ Rev1 mailbox names use modified UTF-7, including <code>&amp;-</code> for a liter
 <p>SEARCH scans decoded MIME content without making whole-message lowercased
 copies. Its substring matcher uses linear work and memory proportional to the
 needle. Content-dependent searches refuse messages above the 64 MiB work limit
-with <code>NO [LIMIT]</code>; they do not return incomplete matches. Metadata-only searches
-can still match these messages. Unreadable content produces <code>NO [UNAVAILABLE]</code>.</p>
+with <code>NO [LIMIT]</code>; they do not return incomplete matches. A query-weighted
+256 MiB scan budget also bounds repeated predicates against one message
+(<code>repeated_content_searches_share_a_per_message_work_budget</code>). Metadata-only
+searches can still match these messages. Unreadable content produces
+<code>NO [UNAVAILABLE]</code>.</p>
 <p>Binary APPEND preserves decoded body octets while storing NUL-bearing leaf
 parts with base64 transfer encoding. This keeps ordinary BODY responses valid
 IMAP strings; BINARY returns the original decoded octets. Unsupported binary

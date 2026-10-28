@@ -274,9 +274,8 @@ impl Session {
                 }
             };
 
-            // A SEARCH string sent as a literal (Thunderbird does this
-            // for non-ASCII text) rejoins the argument line as a
-            // quoted string, so `op::search` sees one flat line.
+            // Rejoin literal arguments as quoted tokens for command parsers.
+            // APPEND keeps message octets separate from its argument strings.
             if !is_append_line(&cmd.line)
                 && let Err(msg) = splice_literals(&mut cmd)
             {
@@ -360,7 +359,7 @@ impl Session {
                     Status::Bad,
                     None,
                     &format!(
-                        "{} does not accept literal arguments in this phase",
+                        "{} has an unconsumed literal argument",
                         parsed.command_upper
                     ),
                 );
@@ -1783,19 +1782,11 @@ impl Session {
         } else {
             self.cfg.max_literal_bytes.min(codec::MAX_LINE_BYTES as u64)
         };
-        // Refuse literals before the session is authenticated, and
-        // post-auth refuse them for any command that doesn't actually
-        // consume a literal body. With `LITERAL+` advertised in the
-        // greeting an unauthenticated peer — or an authenticated one
-        // issuing `CAPABILITY {N+}` etc. — could otherwise push
-        // `max_literal_bytes` (default 64 MiB) into RAM before any
-        // account-scoped cap applies. The only command in that legally
-        // takes a literal is APPEND, plus SEARCH for a trailing search
-        // string; later phases (AUTHENTICATE continuation, STORE flags via literal8) extend this
-        // allow-list as those surfaces land. Refused literals leave the
-        // stream in sync — sync form withholds the `+ Ready`
-        // continuation; non-sync form drains the body + trailing CRLF
-        // before responding.
+        // Before authentication, accept only the small literals needed by
+        // LOGIN, ID and AUTHENTICATE. Authenticated commands use general
+        // segmented framing with account-scoped literal and aggregate caps.
+        // Refusals withhold synchronising continuations or safely drain
+        // bounded non-synchronising input; lost framing closes the session.
         let authed = self.state.is_authenticated();
         let accept_literals = move |line: &[u8]| -> bool {
             let mut parts = line.splitn(3, |b| *b == b' ');
@@ -1829,9 +1820,7 @@ impl Session {
                 }
             }
         } else {
-            // Phase 1 has no post-auth idle command yet; rely on TCP
-            // keepalive / OS timeouts. Phase 5 (IDLE) wires explicit
-            // post-auth read timeouts.
+            // IDLE has its own keepalive loop; command reads use TCP liveness.
             fut.await
         };
         match result {
@@ -2341,7 +2330,8 @@ fn frame_append(cmd: codec::Command, utf8: bool) -> Result<Vec<(String, Vec<u8>)
             line.args = line.args.trim_end().to_string();
             wrapper = true;
         }
-        if op::append::parse_args_for_dispatch(&line.args).is_ok() {
+        match op::append::parse_args_for_dispatch(&line.args) {
+        Ok(()) => {
             if !literal8 && literal.contains(&0) {
                 return Err("NUL in APPEND requires literal8".into());
             }
@@ -2358,10 +2348,11 @@ fn frame_append(cmd: codec::Command, utf8: bool) -> Result<Vec<(String, Vec<u8>)
             }
             messages.push((line.args, literal));
             prefix = base.clone().unwrap();
-        } else if messages.is_empty() {
+        }
+        Err(_) if messages.is_empty() && line.args.trim().is_empty() => {
             push_quoted(&mut prefix, &literal).map_err(str::to_string)?;
-        } else {
-            return Err("invalid MULTIAPPEND flags or date".into());
+        }
+        Err(error) => return Err(error),
         }
     }
     if wrapper {
@@ -2398,7 +2389,7 @@ fn push_quoted(line: &mut Vec<u8>, lit: &[u8]) -> Result<(), &'static str> {
     // CR and LF are legal in a literal (a multi-line needle); NUL is not
     // (RFC 9051 CHAR8). The tokenizer keeps line breaks inside quotes.
     if text.contains('\0') {
-        return Err("SEARCH literal contains NUL");
+        return Err("literal argument contains NUL");
     }
     line.extend_from_slice(b" \"");
     for c in text.chars() {

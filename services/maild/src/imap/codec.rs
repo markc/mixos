@@ -97,10 +97,8 @@ pub fn parse_line(line: &[u8]) -> Result<Line> {
     if line.contains(&0u8) {
         return Err(anyhow!("NUL byte in command line"));
     }
-    // Reject IMAP literal indicators at this phase. A line whose
-    // last non-whitespace token is `{NNN}` or `{NNN+}` means the
-    // client expects to send NNN bytes of literal data on the next
-    // line; Phase 1 has no command that should receive a literal.
+    // Framing must consume literal markers before flat argument parsing.
+    // An outstanding marker here means the caller skipped that step.
     if has_unsupported_literal(line) {
         return Err(anyhow!("unframed literal marker"));
     }
@@ -174,7 +172,7 @@ pub enum ReadCommandError {
     Io(std::io::Error),
     /// Literal indicator was structurally malformed — non-numeric `N`,
     /// missing `}`, empty body, integer overflow, or content after the
-    /// literal body in a position we don't support in this phase. No
+    /// literal body when a caller requested single-literal framing. No
     /// continuation was issued; the read stream is in sync. Caller
     /// maps to `BAD <message>` and continues. `line` carries the
     /// command bytes preceding the bad marker so the dispatcher can

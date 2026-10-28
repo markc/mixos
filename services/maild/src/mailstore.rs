@@ -4014,7 +4014,7 @@ impl MailStore for SqliteMailStore {
                     );
                     Vec::new()
                 });
-                let projection = build_search_projection(&envelope, &raw_body);
+                let projection = build_search_projection(envelope, &raw_body);
                 let inserted = tx
                     .tx()
                     .execute(

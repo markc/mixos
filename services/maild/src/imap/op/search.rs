@@ -516,15 +516,14 @@ fn parse_keyword(tok: &str, negated: bool) -> Result<Crit, String> {
     })
 }
 
-/// The parts of a message that header, sent-date and body keys look
-/// at, extracted once per message and lowercased for matching.
+/// Content extracted once per message, retaining its original case.
 struct Doc {
-    /// `(lowercased name, lowercased raw value, lowercased decoded value)`.
+    /// `(lowercased name, raw value, decoded value)`.
     headers: Vec<(String, String, String)>,
-    /// The raw header block, lowercased, so `TEXT` can match across a
+    /// The raw header block, so `TEXT` can match across a
     /// field name and its value (`TEXT "subject: invoice"`).
     header_block: String,
-    /// Decoded text body parts, lowercased.
+    /// Decoded text body parts.
     body: String,
     /// Day of the `Date:` header, if it parsed.
     sent: Option<NaiveDate>,
@@ -533,6 +532,21 @@ struct Doc {
 /// Bound MIME parsing and decoding per message. Refuse the SEARCH rather than
 /// silently treating unscanned content as a non-match (especially under NOT).
 const MAX_SEARCH_MESSAGE_BYTES: usize = 64 * 1024 * 1024;
+const MAX_SEARCH_SCAN_BYTES: usize = 256 * 1024 * 1024;
+
+/// Bound repeated scans as well as MIME decoding. HEADER can examine both raw
+/// and decoded values; TEXT can examine the body and both header forms.
+fn content_scan_weight(crit: &Crit) -> usize {
+    match crit {
+        Crit::Body(_) => 1,
+        Crit::Header(_, _) => 2,
+        Crit::Text(_) => 3,
+        Crit::And(keys) => keys.iter().map(content_scan_weight).sum(),
+        Crit::Or(a, b) => content_scan_weight(a).saturating_add(content_scan_weight(b)),
+        Crit::Not(key) => content_scan_weight(key),
+        _ => 0,
+    }
+}
 
 impl Doc {
     fn from_raw(raw: &[u8]) -> Doc {
@@ -744,6 +758,7 @@ fn collect_hits(
 ) -> anyhow::Result<Vec<(u32, u64)>> {
     let exists = u32::try_from(view.map_or(handles.len(), <[u64]>::len)).unwrap_or(u32::MAX);
     let largest_uid = handles.last().map(|h| h.uid).unwrap_or(0);
+    let scan_weight = content_scan_weight(crit);
     let mut hits: Vec<(u32, u64)> = Vec::with_capacity(handles.len());
     for (idx, handle) in handles.iter().enumerate() {
         if cancel.load(Ordering::Relaxed) {
@@ -760,7 +775,10 @@ fn collect_hits(
         let hit = match eval(crit, msn, handle, exists, largest_uid, None) {
             Some(decided) => decided,
             None => {
-                if handle.size_bytes > MAX_SEARCH_MESSAGE_BYTES as u64 {
+                if handle.size_bytes > MAX_SEARCH_MESSAGE_BYTES as u64
+                    || handle.size_bytes.saturating_mul(scan_weight as u64)
+                        > MAX_SEARCH_SCAN_BYTES as u64
+                {
                     anyhow::bail!("SEARCH message work limit exceeded");
                 }
                 let raw = store.read_blob(handle.blob_hash).map_err(|e| {
@@ -771,7 +789,9 @@ fn collect_hits(
                     );
                     e
                 })?;
-                if raw.len() > MAX_SEARCH_MESSAGE_BYTES {
+                if raw.len() > MAX_SEARCH_MESSAGE_BYTES
+                    || raw.len().saturating_mul(scan_weight) > MAX_SEARCH_SCAN_BYTES
+                {
                     anyhow::bail!("SEARCH message work limit exceeded");
                 }
                 let doc = Doc::from_raw(&raw);

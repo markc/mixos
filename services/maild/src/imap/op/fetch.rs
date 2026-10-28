@@ -287,8 +287,7 @@ impl FetchAtom {
             }),
             "BODY" => Ok(Self::BodyBasic),
             "BODY.PEEK" => Err("FETCH atom BODY.PEEK requires a [section]".to_string()),
-            // The macros expand to atom lists, some of which include
-            // body atoms; defer until those atoms are wired.
+            // Macros expand before atom parsing and cannot appear in a list.
             "FAST" | "ALL" | "FULL" => Err(format!("FETCH macro {tok:?} must stand alone")),
             "MODSEQ" => Err(
                 "FETCH MODSEQ requires ENABLE CONDSTORE (not advertised in this phase)".to_string(),

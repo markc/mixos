@@ -1185,13 +1185,16 @@ async fn subscribe_inbox_returns_ok() -> Result<()> {
 }
 
 #[tokio::test]
-async fn subscribe_nonexistent_returns_nonexistent() -> Result<()> {
+async fn subscribe_nonexistent_retains_the_name() -> Result<()> {
     let (_tmp, db, ms) = make_db_with_tree("alice@example.com", "hunter2").await?;
     let (client, _join) = spawn_session(db, ms.clone(), ImapConfig::default()).await;
     let (mut reader, mut w) = login(client).await?;
     w.write_all(b"a02 SUBSCRIBE NoSuchFolder\r\n").await?;
     let resp = read_line(&mut reader).await?;
-    assert!(resp.starts_with("a02 NO [NONEXISTENT]"), "{resp}");
+    assert!(resp.starts_with("a02 OK"), "{resp}");
+    w.write_all(b"a03 LSUB \"\" NoSuchFolder\r\n").await?;
+    let lines = read_until_tagged(&mut reader, "a03").await?;
+    assert!(lines.iter().any(|line| line.starts_with("* LSUB") && line.contains("NoSuchFolder")), "{lines:?}");
     Ok(())
 }
 

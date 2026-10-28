@@ -678,7 +678,14 @@ async fn idle_flag_change_does_not_emit_modseq() -> Result<()> {
 
     // Clean DONE.
     w.write_all(b"DONE\r\n").await?;
-    let resp = timeout(Duration::from_secs(2), read_line(&mut reader)).await??;
-    assert!(resp.starts_with("a03 OK"), "expected tagged OK, got {resp}");
+    loop {
+        let resp = timeout(Duration::from_secs(2), read_line(&mut reader)).await??;
+        assert!(!resp.to_uppercase().contains("MODSEQ"), "{resp}");
+        if resp.starts_with("a03 ") {
+            assert!(resp.starts_with("a03 OK"), "expected tagged OK, got {resp}");
+            break;
+        }
+        assert!(resp.starts_with("* "), "unexpected IDLE response: {resp}");
+    }
     Ok(())
 }

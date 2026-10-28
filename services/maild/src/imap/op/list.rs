@@ -119,13 +119,8 @@ pub fn take_mailbox_token(s: &str) -> Result<(String, &str), String> {
     }
 }
 
-/// Reject patterns containing non-printable-ASCII or control bytes.
-/// The Phase 2 wire is ASCII-only (no UTF8=ACCEPT), so a pattern
-/// with non-ASCII or control bytes can never match a wire name the
-/// encoder will emit. Returning `BAD` instead of silently producing
-/// an empty result set keeps the protocol honest with clients that
-/// might otherwise mis-frame their next command. Wildcards `*` and
-/// `%` are printable so they fall through the guard.
+/// Reject control characters in decoded UTF-8 patterns. The session handles
+/// UTF-8 negotiation and modified UTF-7 before matching.
 pub fn pattern_is_ascii_clean(pattern: &str) -> bool {
     pattern.chars().all(|c| !c.is_control())
 }

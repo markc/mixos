@@ -197,7 +197,7 @@ pub async fn handle_many(
         }
         mailbox = Some(req.mailbox);
         if body.is_empty() {
-            return tagged(tag, Status::No, None, "empty message");
+            return tagged(tag, Status::No, Some("PARSE"), "empty message");
         }
         let body = if body.contains(&0) {
             match normalise_binary_message(&body) {

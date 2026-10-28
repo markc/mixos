@@ -11288,8 +11288,11 @@ Rev1 mailbox names use modified UTF-7, including `&-` for a literal ampersand.
 SEARCH scans decoded MIME content without making whole-message lowercased
 copies. Its substring matcher uses linear work and memory proportional to the
 needle. Content-dependent searches refuse messages above the 64 MiB work limit
-with `NO [LIMIT]`; they do not return incomplete matches. Metadata-only searches
-can still match these messages. Unreadable content produces `NO [UNAVAILABLE]`.
+with `NO [LIMIT]`; they do not return incomplete matches. A query-weighted
+256 MiB scan budget also bounds repeated predicates against one message
+(`repeated_content_searches_share_a_per_message_work_budget`). Metadata-only
+searches can still match these messages. Unreadable content produces
+`NO [UNAVAILABLE]`.
 
 Binary APPEND preserves decoded body octets while storing NUL-bearing leaf
 parts with base64 transfer encoding. This keeps ordinary BODY responses valid

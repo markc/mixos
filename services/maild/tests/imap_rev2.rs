@@ -1314,6 +1314,22 @@ async fn search_work_limit_never_returns_a_truncated_match_set() -> Result<()> {
 }
 
 #[tokio::test]
+async fn repeated_content_searches_share_a_per_message_work_budget() -> Result<()> {
+    let (_tmp, db, mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
+    let mut raw = b"Subject: scan budget\r\n\r\n".to_vec();
+    raw.resize(1024 * 1024 + 64, b'x');
+    insert_email(&ms, &mds, &raw, "budget", Flags(0), 1_700_000_000_000)?;
+    let (mut r, mut w) = selected(ms, db).await?;
+    assert!(command(&mut r, &mut w, "s", "SEARCH BODY x").await?.contains("* SEARCH 1"));
+    let criteria = std::iter::repeat_n("NOT BODY absent", 257).collect::<Vec<_>>().join(" ");
+    let result = command(&mut r, &mut w, "q", &format!("SEARCH {criteria}")).await?;
+    assert!(result.contains("q NO [LIMIT]"), "{result}");
+    assert!(!result.contains("* SEARCH"), "{result}");
+    assert!(command(&mut r, &mut w, "m", "SEARCH ALL").await?.contains("* SEARCH 1"));
+    Ok(())
+}
+
+#[tokio::test]
 async fn capabilities_match_after_login_and_enable_and_zero_arg_commands_validate() -> Result<()> {
     let (_tmp, db, _mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
     let (client, _) = spawn_session(db, ms, ImapConfig::default()).await;
