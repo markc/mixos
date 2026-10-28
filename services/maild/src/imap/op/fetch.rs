@@ -54,7 +54,7 @@ pub enum FetchAtom {
     /// — RFC 9051 §6.4.5 section addressing. scope: top-level
     /// `section-msgtext` (empty / HEADER / HEADER.FIELDS / HEADER.FIELDS.NOT
     /// / TEXT) plus optional `<offset.length>` partial. Part-by-part
-    /// addressing (`BODY[1.2.MIME]`) deferred to.
+    /// addressing follows the same child order as BODYSTRUCTURE.
     Body {
         section: BodySection,
         partial: Option<BodyPartial>,
@@ -75,7 +75,7 @@ pub enum FetchAtom {
 /// ```
 ///
 /// `BODY[]` (empty section) is the whole message. Part-addressed
-/// sections (`section-part`) defer to.
+/// sections carry a numeric path followed by an optional selector.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BodySection {
     /// `BODY[]` — entire RFC 5322 message including headers.
@@ -266,7 +266,7 @@ impl FetchAtom {
             // The macros expand to atom lists, some of which include
             // body atoms; defer until those atoms are wired.
             "FAST" | "ALL" | "FULL" => {
-                Err(format!("FETCH macro {tok:?} not implemented in this phase"))
+                Err(format!("FETCH macro {tok:?} must stand alone"))
             }
             "MODSEQ" => Err(
                 "FETCH MODSEQ requires ENABLE CONDSTORE (not advertised in this phase)".to_string(),
@@ -785,7 +785,8 @@ pub async fn handle_with_access(
                         item_id = %handle.id.0,
                         "FETCH \\Seen side-effect failed; emitting pre-FETCH flags"
                     );
-                    handle.clone()
+                    out.extend_from_slice(tagged(tag, Status::No, Some("UNAVAILABLE"), "cannot update Seen flag").as_bytes());
+                    return out;
                 }
                 Err(e) => {
                     tracing::warn!(
@@ -793,7 +794,8 @@ pub async fn handle_with_access(
                         item_id = %handle.id.0,
                         "FETCH \\Seen spawn_blocking panicked; emitting pre-FETCH flags"
                     );
-                    handle.clone()
+                    out.extend_from_slice(tagged(tag, Status::No, Some("UNAVAILABLE"), "cannot update Seen flag").as_bytes());
+                    return out;
                 }
             }
         } else {

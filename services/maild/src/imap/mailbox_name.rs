@@ -372,39 +372,28 @@ fn fold_inbox_prefix(pattern: &str) -> std::borrow::Cow<'_, str> {
 }
 
 fn match_at(name: &[u8], ni: usize, pat: &[u8], pi: usize) -> bool {
-    if pi == pat.len() {
-        return ni == name.len();
+    let name = &name[ni..];
+    let pat = &pat[pi..];
+    // A bounded dynamic-programming row avoids exponential backtracking on
+    // hostile patterns such as *a*a*a*a*a*b against a long run of 'a'.
+    let mut previous = vec![false; pat.len()+1];
+    let mut next = vec![false; pat.len()+1];
+    previous[0] = true;
+    for (j, token) in pat.iter().enumerate() {
+        previous[j+1] = previous[j] && matches!(token, b'*' | b'%');
     }
-    match pat[pi] {
-        b'*' => {
-            // Try matching `*` against 0..=remaining bytes of name.
-            for j in ni..=name.len() {
-                if match_at(name, j, pat, pi + 1) {
-                    return true;
-                }
-            }
-            false
+    for byte in name {
+        next[0] = false;
+        for (j, token) in pat.iter().enumerate() {
+            next[j+1] = match token {
+                b'*' => next[j] || previous[j+1],
+                b'%' => next[j] || (*byte != b'/' && previous[j+1]),
+                _ => *byte == *token && previous[j],
+            };
         }
-        b'%' => {
-            // `%` may consume any byte except the delimiter.
-            for j in ni..=name.len() {
-                if match_at(name, j, pat, pi + 1) {
-                    return true;
-                }
-                if j < name.len() && name[j] as char == HIERARCHY_DELIMITER {
-                    break;
-                }
-            }
-            false
-        }
-        b => {
-            if ni < name.len() && name[ni] == b {
-                match_at(name, ni + 1, pat, pi + 1)
-            } else {
-                false
-            }
-        }
+        std::mem::swap(&mut previous, &mut next);
     }
+    previous[pat.len()]
 }
 
 /// Quote a wire-name for a LIST / LSUB response.

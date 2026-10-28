@@ -1,23 +1,9 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! Per-connection IMAP session driver.
-//!
-//! Phase 1 dispatch: CAPABILITY / NOOP / LOGOUT / ID / LOGIN /
-//! AUTHENTICATE plus a hard `BAD` for the literal indicator and a
-//! `BAD command not implemented` for everything else.
-//!
-//! Authentication wiring goes through `crate::auth::basic::verify`
-//! (the same path SMTP submission uses), so bcrypt cost and the
-//! accounts table layout stay in lockstep across protocols.
-//! Per-account concurrency caps are enforced via [`AccountSlots`]
-//! handed in by the server module: the count is decremented after
-//! `Session::run` returns (both `Ok` and propagated `Err`). A panic
-//! inside `run` is *not* caught here, so a slot leak is possible
-//! against a panicking handler. Phase 1 has no `unwrap`/`expect` on
-//! the hot path and every awaited I/O returns `Result`, so the
-//! panic surface is narrow; if Phase 2+ widens it, switch the
-//! release to an async-drop guard rather than rely on this invariant.
+//! Stateful IMAP command dispatch. Preserve rev1 response forms until ENABLE
+//! IMAP4rev2, retain the selected mailbox's visible UID order, and keep saved
+//! search identities independent of changing message sequence numbers.
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -329,6 +315,14 @@ impl Session {
                     self.emit_bye(writer, "too many bad commands").await?;
                     return Ok(());
                 }
+                continue;
+            }
+
+            if matches!(parsed.command_upper.as_str(), "CAPABILITY" | "NOOP" | "LOGOUT" | "NAMESPACE") && !parsed.args.trim().is_empty() {
+                self.bad_commands += 1;
+                writer.write_all(tagged(&parsed.tag, Status::Bad, None, "command takes no arguments").as_bytes()).await?;
+                writer.flush().await?;
+                if self.over_bad_command_cap() { self.emit_bye(writer, "too many bad commands").await?; return Ok(()); }
                 continue;
             }
 
@@ -848,7 +842,7 @@ impl Session {
                                         // `op::search::handle` re-parses
                                         // on its own path; the second
                                         // parse is pure and trivial.
-                                        match op::search::parse_args_for_dispatch(&args, mode) {
+                                        match op::search::parse_args_for_session(&args, mode, self.utf8) {
                                             Err(e) => {
                                                 self.bad_commands += 1;
                                                 let resp =
@@ -864,6 +858,7 @@ impl Session {
                                                     self.mailstore.clone(),
                                                     mode,
                                                     self.rev2,
+                                                    self.utf8,
                                                     &mut self.saved_search,
                                                     Some(&sm.view_uids),
                                                 )
@@ -1631,7 +1626,12 @@ impl Session {
         reader: &mut BufReader<R>,
     ) -> Result<Option<String>> {
         let line_fut = codec::read_line(reader);
-        let line = match timeout(self.cfg.pre_auth_timeout, line_fut).await {
+        let mut shutdown = self.shutdown.clone();
+        let outcome = tokio::select! {
+            result = timeout(self.cfg.pre_auth_timeout, line_fut) => result,
+            _ = wait_shutdown(&mut shutdown) => return Ok(None),
+        };
+        let line = match outcome {
             Ok(Ok(v)) => v,
             Ok(Err(ReadLineError::Eof)) => return Ok(None),
             Ok(Err(ReadLineError::LineTooLong)) => {
@@ -1690,7 +1690,7 @@ impl Session {
                 let resp = tagged(
                     tag,
                     Status::No,
-                    Some("SERVERBUG"),
+                    Some("UNAVAILABLE"),
                     "authentication unavailable",
                 );
                 writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;

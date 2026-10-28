@@ -48,7 +48,7 @@
 
 use std::sync::Arc;
 
-use crate::imap::mailbox_name::{ResolveResult, resolve};
+use crate::imap::mailbox_name::{ResolveResult, encode_all, resolve};
 use crate::imap::op::list;
 use crate::imap::response::{Status, tagged, wire_uidvalidity};
 use crate::imap::state::SelectedMailbox;

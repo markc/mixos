@@ -2519,7 +2519,7 @@ impl MailStore for SqliteMailStore {
                 [id.0.to_string()], |row| row.get(0),
             ).map_err(|e| mds::Error::Other(e.to_string()))?;
             if role.as_deref() == Some("\\Inbox") {
-                let dest = tx.create_container_named(new_parent.as_ref(), new_name, &ContainerAttrs::default())?;
+                let dest = tx.create_container_named(new_parent.as_ref(), new_name, &jmap_attrs_for_create(None, 0, false))?;
                 let items = {
                     let mut statement = tx.tx().prepare("SELECT item_id FROM membership WHERE container_id = ?1 ORDER BY seq")
                         .map_err(|e| mds::Error::Other(e.to_string()))?;

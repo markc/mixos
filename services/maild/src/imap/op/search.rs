@@ -155,6 +155,7 @@ struct SearchReq {
     crit: Crit,
     mode: SearchMode,
     returns: Option<Vec<String>>,
+    charset: Option<String>,
 }
 
 /// Parse the argument portion of `SEARCH` / `UID SEARCH`.
@@ -181,10 +182,9 @@ fn parse_args(args: &str, mode: SearchMode) -> Result<SearchReq, String> {
         if opts.is_empty() { opts.push("ALL".into()); }
         returns = Some(opts);
     }
+    let mut charset = None;
     if idx + 1 < tokens.len() && tokens[idx].eq_ignore_ascii_case("CHARSET") {
-        if !["US-ASCII", "UTF-8"].iter().any(|s| tokens[idx+1].eq_ignore_ascii_case(s)) {
-            return Err("BADCHARSET (US-ASCII UTF-8)".into());
-        }
+        charset = Some(tokens[idx+1].clone());
         idx += 2;
     }
     let mut keys: Vec<Crit> = Vec::new();
@@ -201,13 +201,19 @@ fn parse_args(args: &str, mode: SearchMode) -> Result<SearchReq, String> {
     } else {
         Crit::And(keys)
     };
-    Ok(SearchReq { crit, mode, returns })
+    Ok(SearchReq { crit, mode, returns, charset })
 }
 
 /// Pre-validate `args` so grammar failures can bump the abuse-cap
 /// counter at the dispatch site.
 pub fn parse_args_for_dispatch(args: &str, mode: SearchMode) -> Result<(), String> {
     parse_args(args, mode).map(|_| ())
+}
+
+pub fn parse_args_for_session(args: &str, mode: SearchMode, utf8: bool) -> Result<(), String> {
+    let req = parse_args(args, mode)?;
+    if utf8 && req.charset.is_some() { return Err("CHARSET is forbidden after enabling UTF-8".into()); }
+    Ok(())
 }
 
 fn tokenize(s: &str) -> Result<Vec<String>, String> {
@@ -747,14 +753,14 @@ pub async fn handle(
     store: Arc<dyn MailStore>,
     mode: SearchMode,
 ) -> String {
-    handle_extended(tag, args, account_id, container, store, mode, false, &mut Vec::new(), None).await
+    handle_extended(tag, args, account_id, container, store, mode, false, false, &mut Vec::new(), None).await
 }
 
 /// Session SEARCH state: SAVE always stores UIDs, so expunges cannot retarget `$`.
 #[allow(clippy::too_many_arguments)]
 pub async fn handle_extended(
     tag: &str, args: &str, account_id: AccountId, container: ContainerId,
-    store: Arc<dyn MailStore>, mode: SearchMode, rev2: bool, saved: &mut Vec<u64>,
+    store: Arc<dyn MailStore>, mode: SearchMode, rev2: bool, utf8: bool, saved: &mut Vec<u64>,
     view: Option<&[u64]>,
 ) -> String {
     let mut req = match parse_args(args, mode) {
@@ -773,9 +779,13 @@ pub async fn handle_extended(
     }
     apply_saved(&mut req.crit, saved);
     let save = req.returns.as_ref().is_some_and(|opts| opts.iter().any(|s| s == "SAVE"));
+    if utf8 && req.charset.is_some() { return tagged(tag, Status::Bad, None, "CHARSET is forbidden after enabling UTF-8"); }
     // A syntactically valid SAVE that fails with NO resets the variable.
     // Copy its previous value into the AST before clearing it (SEARCH $ SAVE).
     if save { saved.clear(); }
+    if req.charset.as_ref().is_some_and(|charset| !["US-ASCII", "UTF-8"].iter().any(|s| charset.eq_ignore_ascii_case(s))) {
+        return tagged(tag, Status::No, Some("BADCHARSET (US-ASCII UTF-8)"), "unsupported search charset");
+    }
 
     let opts = ListOpts {
         sort_by: SortKey::Seq,
@@ -827,7 +837,10 @@ pub async fn handle_extended(
     .await
     {
         Ok(Ok(h)) => h,
-        Ok(Err(_)) => {
+        Ok(Err(e)) => {
+            if e.to_string().contains("work limit") {
+                return tagged(tag, Status::No, Some("LIMIT"), "SEARCH message exceeds content work limit");
+            }
             // Logged per message in `collect_hits`. UNAVAILABLE: a
             // storage fault the client may retry, not a protocol bug.
             return tagged(

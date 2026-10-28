@@ -278,8 +278,9 @@ pub async fn handle(tag: &str, args: &str, account_id: AccountId, store: Arc<dyn
     let mut records = match load_records(&store, account_id, tag).await {
         Ok(records) => records, Err(response) => return response,
     };
+    let existing = match resolve(name, &records) { ResolveResult::Found(id) => Some(id), _ => None };
     if let Some(role) = leaf_role
-        && other_role_holder_exists(&records, role, None) {
+        && other_role_holder_exists(&records, role, existing) {
         return tagged(tag, Status::No, Some("USEATTR"), "SPECIAL-USE attribute already in use");
     }
     let mut parent = None;

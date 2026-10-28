@@ -352,6 +352,9 @@ where R: AsyncRead + Unpin, W: AsyncWrite + Unpin,
             });
         }
         Err(e) => {
+            if raw.ends_with(b"+}") {
+                return Err(ReadCommandError::FramingLost { line: raw, reason: e });
+            }
             return Err(ReadCommandError::MalformedLiteral {
                 line: raw,
                 reason: e,
@@ -368,6 +371,9 @@ where R: AsyncRead + Unpin, W: AsyncWrite + Unpin,
     // this, since refusal is the stricter outcome.
     if !accept_literals(&line) {
         if marker.non_sync {
+            if marker.declared > drain_limit(max_literal) {
+                return Err(ReadCommandError::FramingLost { line, reason: "refused literal exceeds drain limit".into() });
+            }
             if let Err(e) = drain_n(reader, marker.declared).await {
                 return Err(io_to_err(e));
             }
@@ -480,7 +486,9 @@ where R: AsyncRead + Unpin, W: AsyncWrite + Unpin,
                     literal8: next.literal8,
                 });
             }
-            Err(reason) => return Err(ReadCommandError::MalformedLiteral { line, reason }),
+            Err(reason) => return Err(if trailing.ends_with(b"+}") {
+                ReadCommandError::FramingLost { line, reason }
+            } else { ReadCommandError::MalformedLiteral { line, reason } }),
         }
     }
 
@@ -512,6 +520,9 @@ where
     // Cap check.
     if marker.declared > max_literal {
         if marker.non_sync {
+            if marker.declared > drain_limit(max_literal) {
+                return Err(ReadCommandError::FramingLost { line, reason: "oversize literal exceeds drain limit".into() });
+            }
             // Client is already sending the body — drain to keep
             // sync, then consume the command-terminator CRLF that
             // follows. read_line errors here propagate as Io/Eof
@@ -640,6 +651,9 @@ fn strip_trailing_literal_marker(line: &[u8]) -> Result<Option<(Vec<u8>, Literal
     // Trim the marker plus a single whitespace gap so `parse_line`
     // sees a clean tail (e.g. `a001 APPEND INBOX {123}` → `a001 APPEND INBOX`).
     let mut prefix_end = if open > 0 && line[open-1] == b'~' { open - 1 } else { open };
+    if prefix_end > 0 && !matches!(line[prefix_end-1], b' ' | b'(') {
+        return Err("literal marker must start an argument".into());
+    }
     while prefix_end > 0 && line[prefix_end - 1] == b' ' {
         prefix_end -= 1;
     }
@@ -659,6 +673,10 @@ async fn drain_n<R: AsyncRead + Unpin>(reader: &mut BufReader<R>, n: u64) -> std
         remaining -= take as u64;
     }
     Ok(())
+}
+
+fn drain_limit(cap: u64) -> u64 {
+    cap.saturating_mul(2).clamp(MAX_MULTI_LITERAL_BYTES, 128 * 1024 * 1024)
 }
 
 fn io_to_err(e: std::io::Error) -> ReadCommandError {

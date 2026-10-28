@@ -14,19 +14,25 @@ pub const INITIAL: &[&str] = &[
 pub fn render(caps: &[&str]) -> String { caps.join(" ") }
 
 pub fn render_owned(caps: &[String]) -> String {
+    let literal_plus = caps.iter().any(|cap| cap.trim().eq_ignore_ascii_case("LITERAL+"));
     caps.iter().filter_map(|cap| {
         let cap = cap.trim();
-        if cap.eq_ignore_ascii_case("LITERAL-") { return Some("LITERAL-"); }
+        if cap.eq_ignore_ascii_case("LITERAL-") { return if literal_plus { None } else { Some("LITERAL-") }; }
         INITIAL.iter().find(|supported| supported.eq_ignore_ascii_case(cap)).copied()
     }).collect::<Vec<_>>().join(" ")
 }
 
 /// Use the configured literal cap on CAPABILITY, greeting and authentication.
 pub fn for_config(cfg: &super::config::ImapConfig) -> String {
-    let body = match cfg.advertise_capabilities.as_ref() {
+    let mut body = match cfg.advertise_capabilities.as_ref() {
         Some(caps) => render_owned(caps),
         None => render(INITIAL),
     };
+    for protocol in ["IMAP4rev2", "IMAP4rev1"] {
+        if !body.split_ascii_whitespace().any(|cap| cap == protocol) {
+            body = if body.is_empty() { protocol.to_string() } else { format!("{protocol} {body}") };
+        }
+    }
     format!("{body} APPENDLIMIT={}", cfg.max_literal_bytes)
 }
 

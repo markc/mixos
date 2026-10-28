@@ -67,6 +67,11 @@ pub async fn handle(
     let mut out = String::new();
     for enc in &set.mailboxes {
         if !enc.is_subscribed {
+            if parsed.pattern.contains('%')
+                && matches_pattern(&enc.wire_name, &list::canonical_pattern(&parsed.reference, &parsed.pattern))
+                && set.mailboxes.iter().any(|child| child.is_subscribed && child.wire_name.starts_with(&format!("{}/", enc.wire_name))) {
+                out.push_str(&format!("* LSUB (\\Noselect) \"/\" {}\r\n", crate::imap::mailbox_name::quote_mailbox(&enc.wire_name)));
+            }
             continue;
         }
         if !matches_pattern(&enc.wire_name, &list::canonical_pattern(&parsed.reference, &parsed.pattern)) {

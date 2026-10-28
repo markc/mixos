@@ -39,7 +39,7 @@ pub fn parse_args(args: &str) -> Result<Args, String> {
     let tail = tail.trim();
     if !tail.is_empty() {
         return Err(
-            "LIST extension parameters (RETURN/SELECT) not supported in this phase".to_string(),
+            "unexpected arguments after mailbox pattern".to_string(),
         );
     }
     Ok(Args { reference, pattern })
@@ -143,6 +143,13 @@ pub(crate) fn subscription_view(records: &[crate::mailstore::MailboxRecord], sub
         else {
             set.mailboxes.push(EncodedMailbox { id: mds::ContainerId(uuid::Uuid::nil()), wire_name: name.clone(), has_children: false, role: None, is_subscribed: true });
         }
+        let mut ancestor = name.as_str();
+        while let Some((parent, _)) = ancestor.rsplit_once('/') {
+            if !set.mailboxes.iter().any(|enc| enc.wire_name == parent) {
+                set.mailboxes.push(EncodedMailbox { id: mds::ContainerId(uuid::Uuid::nil()), wire_name: parent.to_string(), has_children: true, role: None, is_subscribed: false });
+            }
+            ancestor = parent;
+        }
     }
     for enc in &mut set.mailboxes {
         enc.has_children |= subscriptions.iter().any(|name| name.starts_with(&format!("{}/", enc.wire_name)));
@@ -166,6 +173,7 @@ struct ExtendedArgs {
     selection: Vec<String>,
     returns: Vec<String>,
     status: Option<String>,
+    extended: bool,
 }
 
 fn option_list(s: &str) -> Result<(&str, &str), String> {
@@ -176,13 +184,15 @@ fn option_list(s: &str) -> Result<(&str, &str), String> {
 
 fn parse_extended(args: &str) -> Result<ExtendedArgs, String> {
     let mut rest = args.trim_start();
+    let mut extended = rest.starts_with('(');
     let mut selection = Vec::new();
     if rest.starts_with('(') {
+        extended = true;
         let (body, tail) = option_list(rest)?;
         for option in body.split_ascii_whitespace() {
             let option = option.to_ascii_uppercase();
             if !["SUBSCRIBED", "REMOTE", "RECURSIVEMATCH", "SPECIAL-USE"].contains(&option.as_str()) { return Err(format!("unknown LIST selection option {option}")); }
-            selection.push(option);
+            if !selection.contains(&option) { selection.push(option); }
         }
         rest = tail;
     }
@@ -193,6 +203,7 @@ fn parse_extended(args: &str) -> Result<ExtendedArgs, String> {
     rest = tail.trim_start();
     let mut patterns = Vec::new();
     if rest.starts_with('(') {
+        extended = true;
         rest = &rest[1..];
         loop {
             rest = rest.trim_start();
@@ -212,6 +223,7 @@ fn parse_extended(args: &str) -> Result<ExtendedArgs, String> {
     let mut returns = Vec::new();
     let mut status = None;
     if !rest.is_empty() {
+        extended = true;
         let (keyword, tail) = rest.split_once(' ').ok_or("LIST expected RETURN options")?;
         if !keyword.eq_ignore_ascii_case("RETURN") { return Err("LIST expected RETURN options".into()); }
         rest = tail.trim_start().strip_prefix('(').ok_or("LIST RETURN requires parentheses")?;
@@ -235,7 +247,7 @@ fn parse_extended(args: &str) -> Result<ExtendedArgs, String> {
     }
     if !rest.is_empty() { return Err("LIST trailing arguments".into()); }
     if !pattern_is_ascii_clean(&reference) || patterns.iter().any(|p| !pattern_is_ascii_clean(p)) { return Err("control bytes in LIST name".into()); }
-    Ok(ExtendedArgs { reference, patterns, selection, returns, status })
+    Ok(ExtendedArgs { reference, patterns, selection, returns, status, extended })
 }
 
 /// Execute LIST for an authenticated session.
@@ -260,7 +272,7 @@ pub async fn handle_with_limit(tag: &str, args: &str, account_id: AccountId, sto
     };
     // Hierarchy-delimiter probe: `LIST "" ""` per RFC 9051 §6.3.9
     // returns one row carrying the root delimiter and `\Noselect`.
-    if parsed.patterns.len() == 1 && parsed.patterns[0].is_empty() {
+    if !parsed.extended && parsed.patterns.len() == 1 && parsed.patterns[0].is_empty() {
         let mut out = "* LIST (\\Noselect) \"/\" \"\"\r\n".to_string();
         out.push_str(&tagged(tag, Status::Ok, None, "LIST completed"));
         return out;
@@ -301,7 +313,7 @@ pub async fn handle_with_limit(tag: &str, args: &str, account_id: AccountId, sto
     for enc in &set.mailboxes {
         let missing = enc.id.0.is_nil();
         if missing && !parsed.selection.iter().any(|s| s == "SUBSCRIBED") { continue; }
-        if !parsed.patterns.iter().any(|p| matches_pattern(&enc.wire_name, &canonical_pattern(&parsed.reference, p))) { continue; }
+        if !parsed.patterns.iter().filter(|p| !p.is_empty()).any(|p| matches_pattern(&enc.wire_name, &canonical_pattern(&parsed.reference, p))) { continue; }
         let child_match = recursive && set.mailboxes.iter().any(|child| child.wire_name.starts_with(&format!("{}/", enc.wire_name)) && selected(child));
         if !selected(enc) && !child_match { continue; }
         let mut attrs = format_attrs(enc);
@@ -361,7 +373,7 @@ mod tests {
     #[test]
     fn parse_args_rejects_trailing_extension_parameters() {
         let e = parse_args(r#""" * RETURN (SUBSCRIBED)"#).unwrap_err();
-        assert!(e.contains("not supported"), "{e}");
+        assert!(e.contains("unexpected"), "{e}");
     }
 
     #[test]

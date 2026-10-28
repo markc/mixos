@@ -19,6 +19,14 @@
   commands. SMTP's classifier and global Mix filter precede account Sieve;
   daemon-generated spam headers are available to scripts.
 
+- Complete the IMAP core with MIME part FETCH, non-extensible BODY and macros,
+  BINARY decoding, ENABLE, ESEARCH/SEARCHRES, STATUS aggregates and APPENDLIMIT,
+  LIST-EXTENDED/LIST-STATUS and UTF-8/modified UTF-7 mailbox names.
+- Generalise literal framing and add atomic MULTIAPPEND and COPY. RENAME INBOX
+  moves messages while preserving INBOX; subscriptions survive rename/delete.
+  Correct CLOSE, EXAMINE, sequence-number notifications and shutdown BYE.
+- Bound SEARCH content work and match without whole-message lowercase copies.
+  Keep CONDSTORE/QRESYNC gated on the separate extension implementation.
 - IMAP `SEARCH` and `UID SEARCH` implement the header, date and text keys:
   `FROM`, `TO`, `CC`, `BCC`, `SUBJECT`, `HEADER`, `BODY`, `TEXT`, `BEFORE`,
   `ON`, `SINCE`, `SENTBEFORE`, `SENTON` and `SENTSINCE`. They were refused
@@ -30,8 +38,8 @@
 - `SEARCH` accepts string literals anywhere in the command, including several
   in one command (64 literals and 64 KiB at most). Past those limits a sync
   literal is refused; a non-sync one gets `BAD` and the connection closes, since
-  the rest of the command can no longer be framed. Other commands keep the
-  single trailing literal. `BODY` and `TEXT` also search forwarded
+  the rest of the command can no longer be framed. The same framing now serves
+  other command arguments and MULTIAPPEND. `BODY` and `TEXT` also search forwarded
   `message/rfc822` parts. A literal may carry a multi-line needle; CRLF and LF
   match alike. A content scan stops when the client disconnects.
 
