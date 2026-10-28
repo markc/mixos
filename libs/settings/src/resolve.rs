@@ -698,8 +698,12 @@ mod tests {
     fn every_concrete_schema_path_has_a_setter() {
         for path in describe()["fields"].as_object().unwrap().keys() {
             if !path.contains('<') {
-                let next = patch(&Desktop::default(), &BTreeMap::new(), &[path.clone()])
-                    .unwrap_or_else(|error| panic!("{path}: {error:?}"));
+                let next = patch(
+                    &Desktop::default(),
+                    &BTreeMap::new(),
+                    std::slice::from_ref(path),
+                )
+                .unwrap_or_else(|error| panic!("{path}: {error:?}"));
                 resolve(&next).unwrap();
             }
         }
