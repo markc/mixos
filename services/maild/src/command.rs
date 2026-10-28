@@ -2586,6 +2586,23 @@ mod cli_parser_tests {
         assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
     }
 
+    #[test]
+    fn alias_set_and_catchall_accept_multiple_targets() {
+        for verb in ["add","set"] {
+            let cli = parse(&["maild","alias",verb,"@example.com","alice@example.com","bob@example.com"]).unwrap();
+            match cli.command {
+                Command::Alias {action: AliasAction::Add {alias,target} | AliasAction::Set {alias,target}} => {
+                    assert_eq!(alias,"@example.com");
+                    assert_eq!(target,vec!["alice@example.com","bob@example.com"]);
+                }
+                _ => panic!("expected alias mutation"),
+            }
+        }
+        assert!(parse(&["maild","alias","set","sales@example.com"]).is_err());
+        assert!(matches!(parse(&["maild","dkim","check","example.com"]).unwrap().command,
+            Command::Dkim {action:DkimAction::Check {domain}} if domain == "example.com"));
+    }
+
     // --- dkim generate / rotate / retire ------------------------------
 
     #[test]

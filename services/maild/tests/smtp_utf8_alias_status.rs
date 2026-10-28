@@ -7,6 +7,7 @@ use base64::Engine;
 use bus::native_client::IncomingCommand;
 use maild::{config::{Config, ListenSpec}, runtime::{BuiltMaild, RuntimeOpts, build_runtime},
     mailstore::{ListOpts, MailStore, MailboxRole}};
+use mds::Mds;
 use props::{Actor, DeleteOpts, MergeMode, RecordKey, SetOpts, Version, value::PropValue};
 use serde_json::{Value, json};
 use tokio::{io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader}, net::{TcpListener, TcpStream}, time::timeout};
@@ -107,6 +108,7 @@ async fn utf8_inbound_and_authenticated_submission_store_mail() -> Result<()> {
     let (built,tls) = fixture(&tmp,None).await?;
     let address = "élise@例子.example.com";
     let id = account(&built,address).await?;
+    account(&built,"alice@example.com").await?;
     let mut io = BufReader::new(TcpStream::connect(built.smtp_handle.inbound_addrs[0]).await?);
     reply(&mut io).await?;
     let ehlo = command(&mut io,"EHLO sender.example.org","250").await?;
@@ -115,8 +117,24 @@ async fn utf8_inbound_and_authenticated_submission_store_mail() -> Result<()> {
     command(&mut io,"MAIL FROM:<sender@example.org> SMTPUTF8=yes","555").await?;
     command(&mut io,"MAIL FROM:<sender@example.org>","250").await?;
     command(&mut io,&format!("RCPT TO:<{address}>"),"553").await?;
+    command(&mut io,"RCPT TO:<alice@example.com>","250").await?;
+    command(&mut io,"DATA","354").await?;
+    command(&mut io,"From: sender@example.org\r\nSubject: café\r\n\r\nbody\r\n.","550").await?;
     send(&built,address).await?;
     assert_eq!(inbox_count(&built,id)?,1);
+    let ms = &built.app_state.mailstore;
+    let inbox = ms.mailbox_by_role(id,MailboxRole::Inbox)?.unwrap();
+    let stored = ms.list_emails_in_mailbox(id,inbox,ListOpts::default())?;
+    let bytes = ms.mds().get_blob(&stored[0].blob_hash)?;
+    assert!(String::from_utf8_lossy(&bytes).contains("Subject: café"));
+    assert!(String::from_utf8_lossy(&bytes).contains("UTF-8 body ✓"));
+    let (rc,body) = maild::bus::stats::dispatch("account", &bus_cmd("maild.stats.account",json!({"email":address})),
+        &built.app_state.db,&built.app_state.mailstore,&maild::bus::stats::StatsState {
+            slots:Arc::new(maild::imap::session::AccountSlots::default()),
+            jmap_activity:maild::bus::stats::JmapActivity::new(), started_at:std::time::Instant::now(),
+        }).await;
+    ensure!(rc == 0,"stats: {body}");
+    assert_eq!(serde_json::from_str::<Value>(&body)?["account_id"],id);
     let stream = tls.connect(rustls::pki_types::ServerName::try_from("localhost")?,
         TcpStream::connect(built.smtp_handle.smtps_addrs[0]).await?).await?;
     let mut io = BufReader::new(stream);
@@ -129,6 +147,10 @@ async fn utf8_inbound_and_authenticated_submission_store_mail() -> Result<()> {
     command(&mut io,"DATA","354").await?;
     command(&mut io,&format!("From: {address}\r\nTo: {address}\r\nSubject: UTF-8 ✓\r\n\r\ncafé\r\n."),"250").await?;
     assert_eq!(inbox_count(&built,id)?,2);
+    command(&mut io,"MAIL FROM:<élise@例子.example.com> SMTPUTF8","250").await?;
+    command(&mut io,"RCPT TO:<alice@example.com>","250").await?;
+    command(&mut io,"RSET","250").await?;
+    command(&mut io,"MAIL FROM:<élise@例子.example.com>","553").await?;
     Ok(())
 }
 
@@ -156,6 +178,21 @@ async fn aliases_resurrect_repoint_fanout_and_mailbox_precedence_on_wire() -> Re
     assert_eq!((inbox_count(&built,alice)?,inbox_count(&built,bob)?),(3,3));
     assert!(alias(&built,"outside@example.com", &["remote@example.net"],Version::zero()).await.unwrap_err().to_string().contains("off-site forwarding"));
     assert!(!maild::props::aliases::sender_authorized(rt,"missing@example.com","alice@example.com").await);
+    alias(&built,"team@example.com", &["alice@example.com","bob@example.com"],Version::zero()).await?;
+    assert!(maild::props::aliases::sender_authorized(rt,"team@example.com","alice@example.com").await);
+    assert!(maild::props::aliases::sender_authorized(rt,"team@example.com","bob@example.com").await);
+    let submission = bus_cmd("maild.submit",json!({"operation_id":"aliases-local-1","account":"alice@example.com",
+        "to":["team@example.com","bob@example.com"],"subject":"fanout","text":"local fanout"}));
+    let (rc,body) = maild::bus::submission::dispatch(&submission,&built.app_state.db,&built.app_state.mailstore,rt,1024*1024).await;
+    ensure!(rc == 0,"local fanout: {body}");
+    let receipt: Value = serde_json::from_str(&body)?;
+    let query = bus_cmd("maild.submission.status",json!({"id":receipt["submission_id"]}));
+    let (rc,body) = maild::bus::submission::status(&query,&built.app_state.db).await;
+    ensure!(rc == 0,"local status: {body}");
+    let status: Value = serde_json::from_str(&body)?;
+    assert_eq!(status["delivery_confirmed"],true);
+    assert_eq!(status["recipients"].as_array().unwrap().len(),2);
+    assert_eq!((inbox_count(&built,alice)?,inbox_count(&built,bob)?),(4,4));
     Ok(())
 }
 
@@ -167,7 +204,9 @@ fn bus_cmd(command: &str, body: Value) -> IncomingCommand {
 async fn submission_status_tracks_real_smtp_replies_and_terminal_receipts() -> Result<()> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let mx = listener.local_addr()?;
+    let (release, ready) = tokio::sync::oneshot::channel();
     let peer = tokio::spawn(async move {
+        ready.await.unwrap();
         let mut mails = Vec::new();
         for _ in 0..3 {
             let (stream,_) = listener.accept().await.unwrap();
@@ -203,6 +242,7 @@ async fn submission_status_tracks_real_smtp_replies_and_terminal_receipts() -> R
     let query = bus_cmd("maild.submission.status",json!({"id":receipt["submission_id"]}));
     let initial: Value = serde_json::from_str(&maild::bus::submission::status(&query,db).await.1)?;
     assert!(initial["recipients"].as_array().unwrap().iter().all(|r| r["status"] == "queued"));
+    release.send(()).unwrap();
     let mails = timeout(Duration::from_secs(45),peer).await??;
     assert_eq!(mails.len(),3);
     assert!(mails.iter().all(|mail| mail.contains("SMTPUTF8")));
@@ -221,8 +261,10 @@ async fn submission_status_tracks_real_smtp_replies_and_terminal_receipts() -> R
     assert!(results[1]["last_smtp_reply"].as_str().unwrap().contains("451 4.7.1"));
     assert!(results[2]["last_smtp_reply"].as_str().unwrap().contains("250 2.0.0 receiver stored"));
     assert_eq!(maild::smtp::queue::pending(&db.conn,1).await?,vec!["later@remote.example.net"]);
-    db.migrate().await?;
-    assert_eq!(serde_json::from_str::<Value>(&maild::bus::submission::status(&query,db).await.1)?,final_status);
+    let reopened = maild::db::Db::connect(tmp.path().join("mail.db").to_str().unwrap(),
+        tmp.path().join("blobs").to_str().unwrap()).await?;
+    reopened.migrate().await?;
+    assert_eq!(serde_json::from_str::<Value>(&maild::bus::submission::status(&query,&reopened).await.1)?,final_status);
     let wrong = bus_cmd("maild.submission.status",json!({"id":uuid::Uuid::new_v4()}));
     assert_eq!(maild::bus::submission::status(&wrong,db).await.0,10);
     Ok(())

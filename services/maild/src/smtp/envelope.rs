@@ -7,6 +7,8 @@ pub fn valid_address(addr: &str, null_ok: bool) -> bool {
     let Some((local, domain)) = addr.rsplit_once('@') else { return false; };
     !local.is_empty() && local.len() <= 64 && !domain.is_empty() && domain.len() <= 255
         && !local.contains('@')
+        && local.chars().all(|c| !c.is_ascii() || c.is_ascii_alphanumeric()
+            || ".!#$%&'*+-/=?^_`{|}~".contains(c))
         && !addr.chars().any(|c| c.is_control() || c.is_whitespace() || "<>\"()\\,;:".contains(c))
         && !local.starts_with('.') && !local.ends_with('.') && !local.contains("..")
         && domain.split('.').all(|label| !label.is_empty() && label.len() <= 63

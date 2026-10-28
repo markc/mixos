@@ -148,7 +148,7 @@ struct StatusRequest { id: uuid::Uuid }
 /// Durable queue outcomes, retained after delivery/bounce and across restarts.
 pub async fn status(cmd: &IncomingCommand, db: &Db) -> (u8, String) {
     let result = async {
-        ensure!(cmd.body.len() <= 4096, "status request exceeds byte bound");
+        ensure!(cmd.body.len() <= 4096 && cmd.header("args").is_none_or(|s| s.len() <= 4096), "status request exceeds byte bound");
         let request: StatusRequest = serde_json::from_value(
             super::try_resolve_args(cmd).map_err(anyhow::Error::msg)?)?;
         let conn = db.conn.clone();

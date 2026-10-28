@@ -125,16 +125,22 @@ async fn handle_check(cmd: &IncomingCommand, state: &DkimState) -> Result<JsonVa
     };
     let name = format!("{selector}._domainkey.{domain}.");
     let resolver = hickory_resolver::TokioResolver::builder_tokio()?.build();
-    let records = resolver.txt_lookup(&name).await?;
+    check_published(&resolver, &name, &pem).await?;
+    Ok(json!({"domain":domain,"selector":selector,"dns_name":name,"matches":true}))
+}
+
+async fn check_published(resolver: &hickory_resolver::TokioResolver, name: &str, pem: &[u8]) -> Result<()> {
+    let records = resolver.txt_lookup(name).await?;
     let records: Vec<String> = records.iter().map(|txt| {
         String::from_utf8(txt.txt_data().iter().flat_map(|part| part.iter().copied()).collect())
     }).collect::<std::result::Result<_, _>>()?;
-    let keys: Vec<_> = records.iter().filter(|txt| txt.trim_start().starts_with("v=DKIM1")).collect();
+    let keys: Vec<_> = records.iter().filter(|txt| txt.split(';')
+        .any(|tag| tag.trim().split_once('=').is_some_and(|(name,_)| name.trim() == "p"))).collect();
     if keys.len() != 1 { bail!("expected one DKIM TXT record at {name}, found {}", keys.len()); }
-    if !keygen::record_matches(&pem, keys[0])? {
+    if !keygen::record_matches(pem, keys[0])? {
         bail!("published DKIM record at {name} does not match the private key (RSA requires SPKI)");
     }
-    Ok(json!({"domain":domain,"selector":selector,"dns_name":name,"matches":true}))
+    Ok(())
 }
 
 /// Build a substrate audit-cause string that records both the command and
@@ -649,6 +655,34 @@ mod tests {
     use ::props::sqlite::SqliteStore;
     use rusqlite::Connection;
     use std::sync::Arc;
+
+    #[tokio::test]
+    async fn check_fetches_chunked_dns_txt_and_refuses_wrong_key() {
+        use hickory_resolver::{config::{NameServerConfig, Protocol, ResolverConfig}, name_server::TokioConnectionProvider,
+            proto::{op::{Message, MessageType}, rr::{RData, Record, rdata::TXT}}};
+        let material = keygen::generate(KeySpec::Rsa {bits:2048}).unwrap();
+        let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let addr = socket.local_addr().unwrap();
+        let txt = material.dns_txt_record.clone();
+        let server = tokio::spawn(async move {
+            let mut buf = [0u8;4096];
+            let (n,peer) = socket.recv_from(&mut buf).await.unwrap();
+            let query = Message::from_vec(&buf[..n]).unwrap();
+            assert_eq!(query.queries()[0].name().to_utf8(),"s2026a._domainkey.example.com.");
+            let mut answer = Message::new();
+            answer.set_id(query.id()).set_message_type(MessageType::Response).set_recursion_available(true);
+            answer.add_queries(query.queries().iter().cloned());
+            let parts = txt.as_bytes().chunks(200).map(|s| String::from_utf8(s.to_vec()).unwrap()).collect();
+            answer.add_answer(Record::from_rdata(query.queries()[0].name().clone(),300,RData::TXT(TXT::new(parts))));
+            socket.send_to(&answer.to_vec().unwrap(),peer).await.unwrap();
+        });
+        let config = ResolverConfig::from_parts(None,vec![],vec![NameServerConfig::new(addr,Protocol::Udp)]);
+        let resolver = hickory_resolver::TokioResolver::builder_with_config(config,TokioConnectionProvider::default()).build();
+        check_published(&resolver,"s2026a._domainkey.example.com.",material.private_pem.as_bytes()).await.unwrap();
+        server.await.unwrap();
+        let wrong = keygen::generate(KeySpec::Rsa {bits:2048}).unwrap();
+        assert!(check_published(&resolver,"s2026a._domainkey.example.com.",wrong.private_pem.as_bytes()).await.unwrap_err().to_string().contains("does not match"));
+    }
 
     fn fresh_state() -> (DkimState, tempfile::TempDir) {
         let tmp = tempfile::tempdir().expect("tempdir");

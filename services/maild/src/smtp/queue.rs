@@ -170,14 +170,25 @@ pub async fn mark_delivered(conn: &Arc<Mutex<Connection>>, id: i64) -> Result<()
 
 /// Mark a queue entry as failed — increment attempts, set next retry with backoff.
 pub async fn mark_failed(conn: &Arc<Mutex<Connection>>, id: i64, error: &str) -> Result<()> {
+    retry(conn, id, Some(error)).await
+}
+
+/// Schedule another pass without overwriting the individual SMTP replies.
+pub async fn retry_pending(conn: &Arc<Mutex<Connection>>, id: i64) -> Result<()> {
+    retry(conn, id, None).await
+}
+
+async fn retry(conn: &Arc<Mutex<Connection>>, id: i64, error: Option<&str>) -> Result<()> {
     let conn = conn.clone();
-    let error = error.to_string();
+    let error = error.map(str::to_string);
     tokio::task::spawn_blocking(move || {
         let conn = conn
             .lock()
             .map_err(|e| anyhow::anyhow!("lock error: {e}"))?;
         // Exponential backoff: multiply by power of 3
-        conn.execute("UPDATE smtp_delivery SET status='deferred',last_reply=COALESCE(last_reply,?2),updated_at=datetime('now') WHERE queue_id=?1 AND status IN ('queued','deferred')", params![id,error])?;
+        if let Some(error) = &error {
+            conn.execute("UPDATE smtp_delivery SET status='deferred',last_reply=?2,updated_at=datetime('now') WHERE queue_id=?1 AND status IN ('queued','deferred')", params![id,error])?;
+        }
         // SQLite doesn't have POWER, so we compute the interval in Rust
         let attempts: i32 = conn
             .query_row(
@@ -193,7 +204,7 @@ pub async fn mark_failed(conn: &Arc<Mutex<Connection>>, id: i64, error: &str) ->
              last_error = ?2, \
              next_retry = datetime('now', '+' || ?3 || ' minutes') \
              WHERE id = ?1",
-            params![id, error, backoff_minutes],
+            params![id, error.unwrap_or_else(|| "one or more recipients deferred".into()), backoff_minutes],
         )?;
         Ok(())
     })

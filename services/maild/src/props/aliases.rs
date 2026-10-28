@@ -1,37 +1,12 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! Property-store namespace `maild.aliases` — Phase 1
-//! local-target single-hop email aliases.
-//!
-//! A row maps an **alias address** (the key) to a **target** local
-//! account email, so mail addressed to the alias is delivered to the
-//! target's mailbox AND an authenticated account may submit `From:` the
-//! alias (the alias is an identity *of* the target). Both directions go
-//! through the single resolver [`resolve_alias`]; see the plan
-//!.
-//!
-//! ## Lifecycle
-//!
-//! `Simple` — no provisioning side-effects; the substrate commits the
-//! validated body into `__props_values` via [`JsonValuesMapping`].
-//!
-//! ## Canonical form
-//!
-//! [`canon`] (`trim` + ASCII-lowercase) is applied to the key, the body
-//! `target`, and **every** lookup, so the alias key and the recipient/
-//! sender comparison never disagree (SMTP lowercases addresses but
-//! `db::account::get_by_email` is an exact SQL match — this is the one
-//! contract that closes that gap).
-//!
-//! ## No-chaining invariant (Phase 1 cycle/chain foreclosure)
-//!
-//! `before_set` enforces that the set of alias **keys** and the set of
-//! alias **targets** stay **disjoint**: an address may be an alias key
-//! OR a target, never both. With that invariant no alias's target is
-//! itself an alias, so resolution is always single-hop and acyclic — no
-//! resolve-time hop cap is needed. Multi-hop (with a bounded cap) is a
-//! deferred Phase 2 item.
+//! Local aliases in `maild.aliases`. Targets are real accounts, so resolution
+//! is single-hop and cannot forward off-site. Legacy `target` stores the first
+//! target; `targets` optionally carries the full fan-out list. Delivery always
+//! checks real mailboxes before exact aliases and domain catch-alls. Catch-alls
+//! never grant a sender identity. Keys and targets fold ASCII case without
+//! normalising Unicode. Writes use the Simple property lifecycle and CAS.
 
 use std::sync::Arc;
 
@@ -288,38 +263,9 @@ impl HookHandler for AliasesHooks {
             }
             }
 
-            // No explicit no-chaining check is needed: the two account
-            // guards above (key ∉ accounts, target ∈ accounts) plus the
-            // reciprocal account-side guard (account ∉ alias keys) keep
-            // the alias-key and account sets disjoint, so a target (an
-            // account) can never be an alias key — no alias can point at
-            // another alias.
-            //
-            // KNOWN LIMITATION (accepted, Phase 1): these are
-            // read-then-commit cross-namespace checks, so they carry the
-            // substrate's project-wide hook-model TOCTOU — the SAME window
-            // `account_overrides` lives with against `accounts`. A
-            // *concurrent* `alias add a@` and `account add a@` could both
-            // pass before either commits, leaving `a@` as both an account
-            // AND an alias key. The blast radius in that state is a REAL
-            // shadow, not just a dangling alias: mail to `a@` resolves to
-            // the alias target, and that target can submit `From: a@`,
-            // while `a@` is also a live account. We accept it for Phase 1
-            // ONLY because reaching it needs two privileged mutations
-            // racing on the SAME address (a single operator running CLI
-            // commands sequentially never hits it; there is no external
-            // caller path), and resolution is single-hop so it can't loop
-            // or multi-hop. It is operator-CORRECTABLE but NOT
-            // self-healing: an account *update* skips this check
-            // (`ctx.old.is_some()`), so a dual-state persists until an
-            // operator removes/repoints the alias or deletes one side —
-            // which `reconcile_diagnostic` (run at startup) surfaces
-            // loudly so it can't sit silently across a restart. Atomic
-            // enforcement is a substrate-level concern (cross-namespace
-            // mutation serialization / DB-backed constraint, benefiting
-            // every namespace) and is deferred to that hardening; see the
-            // follow-up note in the plan. Cascade-on-account-delete is
-            // likewise deferred.
+            // Cross-namespace hooks can race with account creation/removal.
+            // Delivery checks mailboxes first and revalidates every target,
+            // so a raced row cannot shadow an account or forward off-site.
             Ok(())
         })
     }
