@@ -85,7 +85,9 @@ pub async fn handle(
         ResolveResult::Found(id) => id,
         ResolveResult::NotFound => {
             for segment in name.split('/') {
-                if let Err(e) = super::create::validate_segment(segment) { return tagged(tag, Status::No, Some("CANNOT"), &e); }
+                if let Err(e) = super::create::validate_segment(segment) {
+                    return tagged(tag, Status::No, Some("CANNOT"), &e);
+                }
             }
             return match tokio::task::spawn_blocking(move || {
                 store.imap_set_subscription(account_id, &name, subscribe)

@@ -162,7 +162,10 @@ type Writer = tokio::io::WriteHalf<tokio::io::DuplexStream>;
 /// Parse the wire fixture independently of the server's MIME parser and
 /// section selector, then compare reported part types and sizes with FETCH.
 #[derive(Debug)]
-enum StructureValue { Text(String), List(Vec<StructureValue>) }
+enum StructureValue {
+    Text(String),
+    List(Vec<StructureValue>),
+}
 
 fn structure_value(input: &mut &str) -> StructureValue {
     *input = input.trim_start();
@@ -171,7 +174,10 @@ fn structure_value(input: &mut &str) -> StructureValue {
         let mut fields = Vec::new();
         loop {
             *input = input.trim_start();
-            if let Some(tail) = input.strip_prefix(')') { *input = tail; return StructureValue::List(fields); }
+            if let Some(tail) = input.strip_prefix(')') {
+                *input = tail;
+                return StructureValue::List(fields);
+            }
             assert!(!input.is_empty(), "unterminated BODYSTRUCTURE");
             fields.push(structure_value(input));
         }
@@ -180,14 +186,23 @@ fn structure_value(input: &mut &str) -> StructureValue {
         let mut text = String::new();
         let mut escaped = false;
         for (i, c) in tail.char_indices() {
-            if escaped { text.push(c); escaped = false; }
-            else if c == '\\' { escaped = true; }
-            else if c == '"' { *input = &tail[i+1..]; return StructureValue::Text(text); }
-            else { text.push(c); }
+            if escaped {
+                text.push(c);
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == '"' {
+                *input = &tail[i + 1..];
+                return StructureValue::Text(text);
+            } else {
+                text.push(c);
+            }
         }
         panic!("unterminated BODYSTRUCTURE string");
     }
-    let end = input.find(|c: char| c.is_ascii_whitespace() || c == ')').unwrap_or(input.len());
+    let end = input
+        .find(|c: char| c.is_ascii_whitespace() || c == ')')
+        .unwrap_or(input.len());
     assert!(end != 0);
     let text = input[..end].to_string();
     *input = &input[end..];
@@ -195,20 +210,30 @@ fn structure_value(input: &mut &str) -> StructureValue {
 }
 
 fn structure_list(value: &StructureValue) -> &[StructureValue] {
-    match value { StructureValue::List(fields) => fields, _ => panic!("expected MIME structure: {value:?}") }
+    match value {
+        StructureValue::List(fields) => fields,
+        _ => panic!("expected MIME structure: {value:?}"),
+    }
 }
 
 fn structure_text(value: &StructureValue) -> &str {
-    match value { StructureValue::Text(text) => text, _ => panic!("expected MIME field: {value:?}") }
+    match value {
+        StructureValue::Text(text) => text,
+        _ => panic!("expected MIME field: {value:?}"),
+    }
 }
 
 fn reported_part<'a>(root: &'a StructureValue, path: &[usize]) -> &'a [StructureValue] {
     let fields = structure_list(root);
-    let Some((&number, rest)) = path.split_first() else { return fields; };
+    let Some((&number, rest)) = path.split_first() else {
+        return fields;
+    };
     if matches!(fields.first(), Some(StructureValue::List(_))) {
-        let child = &fields[number-1];
+        let child = &fields[number - 1];
         let child_fields = structure_list(child);
-        if rest.is_empty() { return child_fields; }
+        if rest.is_empty() {
+            return child_fields;
+        }
         if matches!(child_fields.first(), Some(StructureValue::Text(kind)) if kind == "MESSAGE") {
             return reported_part(&child_fields[8], rest);
         }
@@ -219,7 +244,15 @@ fn reported_part<'a>(root: &'a StructureValue, path: &[usize]) -> &'a [Structure
 }
 
 fn literal_length(response: &str) -> usize {
-    response.split_once('{').unwrap().1.split_once('}').unwrap().0.parse().unwrap()
+    response
+        .split_once('{')
+        .unwrap()
+        .1
+        .split_once('}')
+        .unwrap()
+        .0
+        .parse()
+        .unwrap()
 }
 
 /// Read literals by octet count so CRLF, NUL and tag-like body text cannot
@@ -330,7 +363,10 @@ async fn thunderbird_mime_parts_on_demand_and_structure_agree() -> Result<()> {
             response.contains(&format!("{{{}}}\r\n{expected})", expected.len())),
             "{section}: {response}"
         );
-        if section.bytes().all(|byte| byte.is_ascii_digit() || byte == b'.') {
+        if section
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || byte == b'.')
+        {
             let path: Vec<usize> = section.split('.').map(|n| n.parse().unwrap()).collect();
             let fields = reported_part(&parsed_structure, &path);
             let (kind, subtype, encoding) = match section {
@@ -342,11 +378,18 @@ async fn thunderbird_mime_parts_on_demand_and_structure_agree() -> Result<()> {
             assert_eq!(structure_text(&fields[0]), kind, "{section}");
             assert_eq!(structure_text(&fields[1]), subtype, "{section}");
             assert_eq!(structure_text(&fields[5]), encoding, "{section}");
-            assert_eq!(structure_text(&fields[6]).parse::<usize>()?, literal_length(&response), "{section}");
+            assert_eq!(
+                structure_text(&fields[6]).parse::<usize>()?,
+                literal_length(&response),
+                "{section}"
+            );
         }
     }
     let wrapper = command(&mut r, &mut w, "p", "FETCH 1 BODY.PEEK[3]").await?;
-    assert_eq!(structure_text(&reported_part(&parsed_structure, &[3])[6]).parse::<usize>()?, literal_length(&wrapper));
+    assert_eq!(
+        structure_text(&reported_part(&parsed_structure, &[3])[6]).parse::<usize>()?,
+        literal_length(&wrapper)
+    );
     let response = command(&mut r, &mut w, "h", "FETCH 1 (BODY.PEEK[3.HEADER] BODY.PEEK[3.TEXT] BODY.PEEK[3.HEADER.FIELDS.NOT (From Content-Type)] BODY.PEEK[1.HEADER])").await?;
     assert!(
         response.contains("Subject: Forwarded\r\n\r\n"),
@@ -1314,9 +1357,13 @@ async fn append_and_inbox_rename_report_observed_size_changes_before_completion(
     let (mut r, mut w) = selected(ms, db).await?;
     let raw = b"Subject: x\r\n\r\nbody";
     let mut wire = format!("a APPEND INBOX {{{}+}}\r\n", raw.len()).into_bytes();
-    wire.extend_from_slice(raw); wire.extend_from_slice(b"\r\n");
+    wire.extend_from_slice(raw);
+    wire.extend_from_slice(b"\r\n");
     let response = exchange(&mut r, &mut w, "a", &wire).await?;
-    assert!(response.starts_with(b"* 1 EXISTS\r\na OK [APPENDUID"), "{response:?}");
+    assert!(
+        response.starts_with(b"* 1 EXISTS\r\na OK [APPENDUID"),
+        "{response:?}"
+    );
     let response = command(&mut r, &mut w, "n", "RENAME INBOX Saved").await?;
     assert!(response.starts_with("* 1 EXPUNGE\r\nn OK"), "{response}");
     Ok(())
@@ -1325,32 +1372,59 @@ async fn append_and_inbox_rename_report_observed_size_changes_before_completion(
 #[tokio::test]
 async fn native_jmap_name_and_subscription_updates_keep_their_contracts() -> Result<()> {
     let (_tmp, db, mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
-    insert_email(&ms, &mds, b"Subject: x\r\n\r\nbody", "x", Flags(0), 1_700_000_000_000)?;
+    insert_email(
+        &ms,
+        &mds,
+        b"Subject: x\r\n\r\nbody",
+        "x",
+        Flags(0),
+        1_700_000_000_000,
+    )?;
     let inbox = ms.mailbox_by_role(1, MailboxRole::Inbox)?.unwrap();
     ms.rename_mailbox(1, inbox, "Display name", None)?;
-    let record = ms.list_mailboxes(1)?.into_iter().find(|r| r.id == inbox).unwrap();
+    let record = ms
+        .list_mailboxes(1)?
+        .into_iter()
+        .find(|r| r.id == inbox)
+        .unwrap();
     assert_eq!(record.name, "Display name");
     assert_eq!(record.total_emails, 1);
     let (mut r, mut w) = selected(ms.clone(), db).await?;
     command(&mut r, &mut w, "c", "CREATE Subscribed").await?;
     command(&mut r, &mut w, "s", "SUBSCRIBE Subscribed").await?;
-    let id = ms.list_mailboxes(1)?.into_iter().find(|r| r.name == "Subscribed").unwrap().id;
+    let id = ms
+        .list_mailboxes(1)?
+        .into_iter()
+        .find(|r| r.name == "Subscribed")
+        .unwrap()
+        .id;
     ms.update_mailbox(1, id, None, None, None, None, Some(false))?;
-    assert_eq!(command(&mut r, &mut w, "l", "LIST (SUBSCRIBED) \"\" Subscribed").await?, "l OK LIST completed\r\n");
+    assert_eq!(
+        command(&mut r, &mut w, "l", "LIST (SUBSCRIBED) \"\" Subscribed").await?,
+        "l OK LIST completed\r\n"
+    );
     Ok(())
 }
 
 #[tokio::test]
 async fn idle_reports_flag_changes_with_uids_without_modseq() -> Result<()> {
     let (_tmp, db, mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
-    insert_email(&ms, &mds, b"Subject: x\r\n\r\nbody", "x", Flags(0), 1_700_000_000_000)?;
+    insert_email(
+        &ms,
+        &mds,
+        b"Subject: x\r\n\r\nbody",
+        "x",
+        Flags(0),
+        1_700_000_000_000,
+    )?;
     let (mut r, mut w) = selected(ms.clone(), db).await?;
     let inbox = ms.mailbox_by_role(1, MailboxRole::Inbox)?.unwrap();
     let item = ms.list_emails_in_mailbox(1, inbox, maild::mailstore::ListOpts::default())?[0].id;
     w.write_all(b"i IDLE\r\n").await?;
     assert_eq!(read_line(&mut r).await?, "+ idling");
     ms.add_flags_in_mailbox(1, item, inbox, Flags(Flags::FLAGGED))?;
-    let response = tokio::time::timeout(std::time::Duration::from_secs(5), read_line(&mut r)).await??;
+    let response =
+        tokio::time::timeout(std::time::Duration::from_secs(5), read_line(&mut r)).await??;
     assert_eq!(response, "* 1 FETCH (UID 1 FLAGS (\\Flagged))");
     w.write_all(b"DONE\r\n").await?;
     assert!(read_line(&mut r).await?.starts_with("i OK"));
@@ -1360,12 +1434,24 @@ async fn idle_reports_flag_changes_with_uids_without_modseq() -> Result<()> {
 #[tokio::test]
 async fn unrepresentable_native_names_cannot_inject_subscription_responses() -> Result<()> {
     let (_tmp, db, _mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
-    let bad = ms.create_mailbox(1, "bad\r\n* CAPABILITY INJECTED", None, attrs_for(None, true))?;
+    let bad = ms.create_mailbox(
+        1,
+        "bad\r\n* CAPABILITY INJECTED",
+        None,
+        attrs_for(None, true),
+    )?;
     let (mut r, mut w) = selected(ms.clone(), db).await?;
     command(&mut r, &mut w, "c", "CREATE Safe").await?;
-    assert!(command(&mut r, &mut w, "n", "RENAME Safe SafeAgain").await?.contains("n OK"));
+    assert!(
+        command(&mut r, &mut w, "n", "RENAME Safe SafeAgain")
+            .await?
+            .contains("n OK")
+    );
     let response = command(&mut r, &mut w, "l", "LIST (SUBSCRIBED) \"\" *").await?;
-    assert!(!response.contains("INJECTED") && !response.contains("bad"), "{response}");
+    assert!(
+        !response.contains("INJECTED") && !response.contains("bad"),
+        "{response}"
+    );
     ms.update_mailbox(1, bad, None, None, None, None, Some(false))?;
     command(&mut r, &mut w, "s", "SUBSCRIBE inbox").await?;
     let response = command(&mut r, &mut w, "l", "LSUB \"\" *").await?;
@@ -1379,22 +1465,49 @@ async fn uidvalidity_does_not_repeat_on_rapid_or_legacy_mailbox_recreation() -> 
     let (_tmp, db, mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
     let (mut r, mut w) = selected(ms.clone(), db.clone()).await?;
     command(&mut r, &mut w, "c", "CREATE Identity").await?;
-    let id = ms.list_mailboxes(1)?.into_iter().find(|record| record.name == "Identity").unwrap().id;
+    let id = ms
+        .list_mailboxes(1)?
+        .into_iter()
+        .find(|record| record.name == "Identity")
+        .unwrap()
+        .id;
     // Model an existing legacy mailbox whose timestamp is ahead of the wall
     // clock; deletion must retain that high-water mark too.
     let legacy = (chrono::Utc::now().timestamp() + 3600) as u64;
     mds.with_set_tx(&maild::mailstore::account_id_to_setid(1), |tx| {
-        tx.tx().execute("UPDATE container SET seq_validity = ?1 WHERE id = ?2", params![legacy * 1000, id.0.to_string()])
+        tx.tx()
+            .execute(
+                "UPDATE container SET seq_validity = ?1 WHERE id = ?2",
+                params![legacy * 1000, id.0.to_string()],
+            )
             .map_err(|e| mds::Error::Other(e.to_string()))?;
         Ok(())
     })?;
     let mut previous = legacy;
     for _ in 0..3 {
-        assert!(command(&mut r, &mut w, "d", "DELETE Identity").await?.contains("d OK"));
-        assert!(command(&mut r, &mut w, "c", "CREATE Identity").await?.contains("c OK"));
+        assert!(
+            command(&mut r, &mut w, "d", "DELETE Identity")
+                .await?
+                .contains("d OK")
+        );
+        assert!(
+            command(&mut r, &mut w, "c", "CREATE Identity")
+                .await?
+                .contains("c OK")
+        );
         let response = command(&mut r, &mut w, "s", "STATUS Identity (UIDVALIDITY)").await?;
-        let value: u64 = response.split("UIDVALIDITY ").nth(1).unwrap().split(')').next().unwrap().parse()?;
-        assert!(value > previous && value <= u32::MAX as u64, "{previous} -> {response}");
+        let value: u64 = response
+            .split("UIDVALIDITY ")
+            .nth(1)
+            .unwrap()
+            .split(')')
+            .next()
+            .unwrap()
+            .parse()?;
+        assert!(
+            value > previous && value <= u32::MAX as u64,
+            "{previous} -> {response}"
+        );
         previous = value;
     }
     let (client, _) = spawn_session(db, ms, ImapConfig::default()).await;
@@ -1402,19 +1515,38 @@ async fn uidvalidity_does_not_repeat_on_rapid_or_legacy_mailbox_recreation() -> 
     command(&mut r2, &mut w2, "d", "DELETE Identity").await?;
     command(&mut r2, &mut w2, "c", "CREATE Identity").await?;
     let response = command(&mut r2, &mut w2, "s", "STATUS Identity (UIDVALIDITY)").await?;
-    let value: u64 = response.split("UIDVALIDITY ").nth(1).unwrap().split(')').next().unwrap().parse()?;
+    let value: u64 = response
+        .split("UIDVALIDITY ")
+        .nth(1)
+        .unwrap()
+        .split(')')
+        .next()
+        .unwrap()
+        .parse()?;
     assert!(value > previous, "{response}");
     Ok(())
 }
 
 #[tokio::test]
-async fn binary_quoted_printable_discards_transport_padding_and_keeps_encoded_spaces() -> Result<()> {
+async fn binary_quoted_printable_discards_transport_padding_and_keeps_encoded_spaces() -> Result<()>
+{
     let (_tmp, db, mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
     let raw = b"Content-Type: application/octet-stream\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n=41 \t\r\nline=20 \t\r\n=00";
     insert_email(&ms, &mds, raw, "qp", Flags(0), 1_700_000_000_000)?;
     let (mut r, mut w) = selected(ms, db).await?;
-    let result = exchange(&mut r, &mut w, "f", b"f FETCH 1 (BINARY.PEEK[1] BINARY.SIZE[1])\r\n").await?;
-    assert!(result.windows(b"~{11}\r\nA\r\nline \r\n\0 BINARY.SIZE[1] 11".len()).any(|part| part == b"~{11}\r\nA\r\nline \r\n\0 BINARY.SIZE[1] 11"), "{result:?}");
+    let result = exchange(
+        &mut r,
+        &mut w,
+        "f",
+        b"f FETCH 1 (BINARY.PEEK[1] BINARY.SIZE[1])\r\n",
+    )
+    .await?;
+    assert!(
+        result
+            .windows(b"~{11}\r\nA\r\nline \r\n\0 BINARY.SIZE[1] 11".len())
+            .any(|part| part == b"~{11}\r\nA\r\nline \r\n\0 BINARY.SIZE[1] 11"),
+        "{result:?}"
+    );
     Ok(())
 }
 
@@ -1426,7 +1558,8 @@ async fn fatal_selected_mailbox_loss_emits_bye() -> Result<()> {
     command(&mut r, &mut w, "s", "SELECT Temporary").await?;
     ms.destroy_mailbox(1, id, maild::mailstore::DestroyPolicy::Delete)?;
     w.write_all(b"n NOOP\r\n").await?;
-    let response = tokio::time::timeout(std::time::Duration::from_secs(5), read_line(&mut r)).await??;
+    let response =
+        tokio::time::timeout(std::time::Duration::from_secs(5), read_line(&mut r)).await??;
     assert!(response.starts_with("* BYE [UNAVAILABLE]"), "{response}");
     Ok(())
 }

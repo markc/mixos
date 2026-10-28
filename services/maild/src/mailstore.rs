@@ -351,7 +351,13 @@ pub struct EmailImport {
 pub trait MailStore: Send + Sync {
     /// IMAP RENAME INBOX moves messages rather than renaming the Inbox display
     /// name. Keep it separate from JMAP's generic rename_mailbox semantics.
-    fn rename_inbox(&self, _account: AccountId, _inbox: ContainerId, _name: &str, _parent: Option<ContainerId>) -> Result<()> {
+    fn rename_inbox(
+        &self,
+        _account: AccountId,
+        _inbox: ContainerId,
+        _name: &str,
+        _parent: Option<ContainerId>,
+    ) -> Result<()> {
         Err(anyhow!("atomic INBOX rename unavailable"))
     }
     /// IMAP subscriptions name mailboxes independently of their existence.
@@ -2273,42 +2279,67 @@ fn find_or_new_thread_id_in_tx(
 }
 
 impl MailStore for SqliteMailStore {
-    fn rename_inbox(&self, account: AccountId, inbox: ContainerId, name: &str, parent: Option<ContainerId>) -> Result<()> {
-        if name.is_empty() || name == UPLOAD_STAGING_NAME { return Err(anyhow!("mailbox invalid name")); }
+    fn rename_inbox(
+        &self,
+        account: AccountId,
+        inbox: ContainerId,
+        name: &str,
+        parent: Option<ContainerId>,
+    ) -> Result<()> {
+        if name.is_empty() || name == UPLOAD_STAGING_NAME {
+            return Err(anyhow!("mailbox invalid name"));
+        }
         let set = account_id_to_setid(account);
         let result = self.mds.with_set_tx(&set, |tx| {
-            let role: Option<Option<String>> = tx.tx().query_row(
-                "SELECT json_extract(attrs, '$.special_use') FROM container WHERE id = ?1",
-                [inbox.0.to_string()], |row| row.get(0),
-            ).optional().map_err(|e| mds::Error::Other(e.to_string()))?;
+            let role: Option<Option<String>> = tx
+                .tx()
+                .query_row(
+                    "SELECT json_extract(attrs, '$.special_use') FROM container WHERE id = ?1",
+                    [inbox.0.to_string()],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(|e| mds::Error::Other(e.to_string()))?;
             if role.flatten().as_deref() != Some(r"\Inbox") {
                 return Err(mds::Error::ContainerNotFound(inbox.0.to_string()));
             }
             imap_preserve_subscriptions(tx.tx())?;
-            let dest = tx.create_container_named(parent.as_ref(), name, &jmap_attrs_for_create(None, 0, false))?;
+            let dest = tx.create_container_named(
+                parent.as_ref(),
+                name,
+                &jmap_attrs_for_create(None, 0, false),
+            )?;
             imap_allocate_uidvalidity(tx.tx(), &dest)?;
             let items = {
-                let mut statement = tx.tx().prepare("SELECT item_id FROM membership WHERE container_id = ?1 ORDER BY seq")
+                let mut statement = tx
+                    .tx()
+                    .prepare("SELECT item_id FROM membership WHERE container_id = ?1 ORDER BY seq")
                     .map_err(|e| mds::Error::Other(e.to_string()))?;
-                statement.query_map([inbox.0.to_string()], |row| row.get::<_, String>(0))
+                statement
+                    .query_map([inbox.0.to_string()], |row| row.get::<_, String>(0))
                     .map_err(|e| mds::Error::Other(e.to_string()))?
                     .collect::<rusqlite::Result<Vec<_>>>()
                     .map_err(|e| mds::Error::Other(e.to_string()))?
             };
             for item in items {
-                let item = ItemId(uuid::Uuid::parse_str(&item).map_err(|e| mds::Error::Other(e.to_string()))?);
+                let item = ItemId(
+                    uuid::Uuid::parse_str(&item).map_err(|e| mds::Error::Other(e.to_string()))?,
+                );
                 tx.move_item(&item, &inbox, &dest, Flags(0))?;
             }
             Ok(())
         });
         match result {
             Ok(()) => Ok(()),
-            Err(mds::Error::ContainerAlreadyExists { .. }) => Err(anyhow!("mailbox already exists: {name}")),
-            Err(mds::Error::SetNotFound(_)) | Err(mds::Error::ContainerNotFound(_)) => Err(anyhow!("mailbox not found")),
+            Err(mds::Error::ContainerAlreadyExists { .. }) => {
+                Err(anyhow!("mailbox already exists: {name}"))
+            }
+            Err(mds::Error::SetNotFound(_)) | Err(mds::Error::ContainerNotFound(_)) => {
+                Err(anyhow!("mailbox not found"))
+            }
             Err(e) => Err(anyhow!(e)),
         }
     }
-
 
     fn imap_subscription_names(&self, account: AccountId) -> Result<Vec<String>> {
         let set = self.ensure_account_set(account)?;
@@ -2329,7 +2360,10 @@ impl MailStore for SqliteMailStore {
         name: &str,
         subscribed: bool,
     ) -> Result<()> {
-        if name.is_empty() || !crate::imap::mailbox_name::is_net_unicode(name) || name.split('/').any(str::is_empty) {
+        if name.is_empty()
+            || !crate::imap::mailbox_name::is_net_unicode(name)
+            || name.split('/').any(str::is_empty)
+        {
             return Err(anyhow!("mailbox invalid subscription name"));
         }
         let set = self.ensure_account_set(account)?;
@@ -5718,16 +5752,25 @@ fn reap_mail_search_if_item_gone(
 }
 
 /// Retain the greatest current or historical wire identity for this account.
-fn imap_uidvalidity_high_water(conn: &rusqlite::Connection) -> mds::Result<u64> {
+fn imap_uidvalidity_high_water(conn: &rusqlite::Connection) -> mds::Result<i64> {
     conn.execute_batch("CREATE TABLE IF NOT EXISTS mail_imap_uidvalidity (id INTEGER PRIMARY KEY CHECK(id = 1), value INTEGER NOT NULL)")
         .map_err(|e| mds::Error::Other(e.to_string()))?;
-    let previous: Option<u64> = conn.query_row("SELECT value FROM mail_imap_uidvalidity WHERE id = 1", [], |row| row.get(0))
-        .optional().map_err(|e| mds::Error::Other(e.to_string()))?;
-    let present: u64 = conn.query_row(
+    let previous: Option<i64> = conn
+        .query_row(
+            "SELECT value FROM mail_imap_uidvalidity WHERE id = 1",
+            [],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| mds::Error::Other(e.to_string()))?;
+    let present: i64 = conn.query_row(
         "SELECT COALESCE(MAX(CASE WHEN seq_validity > 4294967295 THEN seq_validity / 1000 ELSE seq_validity END), 0) FROM container",
         [], |row| row.get(0),
     ).map_err(|e| mds::Error::Other(e.to_string()))?;
-    let high = previous.unwrap_or(0).max(present).max(chrono::Utc::now().timestamp().max(1) as u64);
+    let high = previous
+        .unwrap_or(0)
+        .max(present)
+        .max(chrono::Utc::now().timestamp().max(1));
     conn.execute("INSERT INTO mail_imap_uidvalidity(id, value) VALUES (1, ?1) ON CONFLICT(id) DO UPDATE SET value = excluded.value", [high])
         .map_err(|e| mds::Error::Other(e.to_string()))?;
     Ok(high)
@@ -5737,12 +5780,20 @@ fn imap_uidvalidity_high_water(conn: &rusqlite::Connection) -> mds::Result<u64> 
 /// Legacy epoch-millisecond identities remain unchanged until their mailbox is
 /// destroyed. This avoids seconds-conversion collisions on rapid recreation.
 fn imap_allocate_uidvalidity(conn: &rusqlite::Connection, id: &ContainerId) -> mds::Result<()> {
-    let next = imap_uidvalidity_high_water(conn)?.checked_add(1).filter(|n| *n <= u32::MAX as u64)
+    let next = imap_uidvalidity_high_water(conn)?
+        .checked_add(1)
+        .filter(|n| *n <= i64::from(u32::MAX))
         .ok_or_else(|| mds::Error::Other("IMAP UIDVALIDITY space exhausted".into()))?;
-    conn.execute("UPDATE mail_imap_uidvalidity SET value = ?1 WHERE id = 1", [next])
-        .map_err(|e| mds::Error::Other(e.to_string()))?;
-    conn.execute("UPDATE container SET seq_validity = ?1 WHERE id = ?2", params![next, id.0.to_string()])
-        .map_err(|e| mds::Error::Other(e.to_string()))?;
+    conn.execute(
+        "UPDATE mail_imap_uidvalidity SET value = ?1 WHERE id = 1",
+        [next],
+    )
+    .map_err(|e| mds::Error::Other(e.to_string()))?;
+    conn.execute(
+        "UPDATE container SET seq_validity = ?1 WHERE id = ?2",
+        params![next, id.0.to_string()],
+    )
+    .map_err(|e| mds::Error::Other(e.to_string()))?;
     Ok(())
 }
 
@@ -5752,14 +5803,26 @@ fn imap_name_in_connection(conn: &rusqlite::Connection, id: &ContainerId) -> mds
     let mut parts = Vec::new();
     let mut seen = std::collections::HashSet::new();
     while let Some(id) = current {
-        if !seen.insert(id.clone()) { return Err(mds::Error::Other("mailbox not representable: parent cycle".into())); }
+        if !seen.insert(id.clone()) {
+            return Err(mds::Error::Other(
+                "mailbox not representable: parent cycle".into(),
+            ));
+        }
         let (name, parent, role): (String, Option<String>, Option<String>) = conn.query_row(
             "SELECT name, parent_id, json_extract(attrs, '$.special_use') FROM container WHERE id = ?1",
             [id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         ).map_err(|e| mds::Error::Other(e.to_string()))?;
-        if role.as_deref() == Some(r"\Inbox") { parts.push("INBOX".to_string()); break; }
-        if name.is_empty() || name.contains('/') || !crate::imap::mailbox_name::is_net_unicode(&name) {
-            return Err(mds::Error::Other("mailbox not representable over IMAP".into()));
+        if role.as_deref() == Some(r"\Inbox") {
+            parts.push("INBOX".to_string());
+            break;
+        }
+        if name.is_empty()
+            || name.contains('/')
+            || !crate::imap::mailbox_name::is_net_unicode(&name)
+        {
+            return Err(mds::Error::Other(
+                "mailbox not representable over IMAP".into(),
+            ));
         }
         parts.push(name);
         current = parent;
@@ -5770,23 +5833,35 @@ fn imap_name_in_connection(conn: &rusqlite::Connection, id: &ContainerId) -> mds
 
 /// Preserve subscription names in the same transaction as a rename/delete.
 fn imap_preserve_subscriptions(conn: &rusqlite::Connection) -> mds::Result<()> {
-    conn.execute_batch("CREATE TABLE IF NOT EXISTS mail_imap_subscriptions (name TEXT PRIMARY KEY NOT NULL)")
-        .map_err(|e| mds::Error::Other(e.to_string()))?;
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS mail_imap_subscriptions (name TEXT PRIMARY KEY NOT NULL)",
+    )
+    .map_err(|e| mds::Error::Other(e.to_string()))?;
     let ids = {
-        let mut statement = conn.prepare("SELECT id FROM container WHERE json_extract(attrs, '$.subscribed') = 1")
+        let mut statement = conn
+            .prepare("SELECT id FROM container WHERE json_extract(attrs, '$.subscribed') = 1")
             .map_err(|e| mds::Error::Other(e.to_string()))?;
-        statement.query_map([], |row| row.get::<_, String>(0)).map_err(|e| mds::Error::Other(e.to_string()))?
-            .collect::<rusqlite::Result<Vec<_>>>().map_err(|e| mds::Error::Other(e.to_string()))?
+        statement
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|e| mds::Error::Other(e.to_string()))?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(|e| mds::Error::Other(e.to_string()))?
     };
     for id in ids {
-        let id = ContainerId(uuid::Uuid::parse_str(&id).map_err(|e| mds::Error::Other(e.to_string()))?);
+        let id =
+            ContainerId(uuid::Uuid::parse_str(&id).map_err(|e| mds::Error::Other(e.to_string()))?);
         let name = match imap_name_in_connection(conn, &id) {
             Ok(name) => name,
-            Err(mds::Error::Other(message)) if message.starts_with("mailbox not representable") => continue,
+            Err(mds::Error::Other(message)) if message.starts_with("mailbox not representable") => {
+                continue;
+            }
             Err(e) => return Err(e),
         };
-        conn.execute("INSERT OR IGNORE INTO mail_imap_subscriptions(name) VALUES (?1)", [name])
-            .map_err(|e| mds::Error::Other(e.to_string()))?;
+        conn.execute(
+            "INSERT OR IGNORE INTO mail_imap_subscriptions(name) VALUES (?1)",
+            [name],
+        )
+        .map_err(|e| mds::Error::Other(e.to_string()))?;
     }
     Ok(())
 }

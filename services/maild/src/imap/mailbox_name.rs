@@ -265,10 +265,11 @@ fn walk_name(
 }
 
 pub(crate) fn is_net_unicode(s: &str) -> bool {
-    unicode_normalization::is_nfc(s) && s.chars().all(|c| {
-        let n = c as u32;
-        !c.is_control() && (n & 0xffff) < 0xfffe && !(0xfdd0..=0xfdef).contains(&n)
-    })
+    unicode_normalization::is_nfc(s)
+        && s.chars().all(|c| {
+            let n = c as u32;
+            !c.is_control() && (n & 0xffff) < 0xfffe && !(0xfdd0..=0xfdef).contains(&n)
+        })
 }
 
 /// Result of [`resolve`]: either the [`ContainerId`] the wire name

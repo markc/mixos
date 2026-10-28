@@ -265,11 +265,23 @@ pub async fn handle_with_view(
         Ok(Err(e)) => {
             let message = e.to_string();
             tracing::warn!(error = %e, "atomic IMAP COPY failed");
-            if message.contains("already in container") || message.contains("src and dest must differ") {
-                return tagged(tag, Status::No, Some("CANNOT"), "COPY destination already contains a requested message");
+            if message.contains("already in container")
+                || message.contains("src and dest must differ")
+            {
+                return tagged(
+                    tag,
+                    Status::No,
+                    Some("CANNOT"),
+                    "COPY destination already contains a requested message",
+                );
             }
             if message.starts_with("mailbox not found") {
-                return tagged(tag, Status::No, Some("TRYCREATE"), "destination mailbox does not exist");
+                return tagged(
+                    tag,
+                    Status::No,
+                    Some("TRYCREATE"),
+                    "destination mailbox does not exist",
+                );
             }
             return tagged(
                 tag,

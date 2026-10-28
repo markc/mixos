@@ -173,7 +173,9 @@ where
             // Tell a connected peer why this server-initiated close is fatal.
             // A broken transport may already be unwritable; retain the original
             // error for logging and still release the account slot below.
-            let _ = writer.write_all(b"* BYE [UNAVAILABLE] session cannot continue\r\n").await;
+            let _ = writer
+                .write_all(b"* BYE [UNAVAILABLE] session cannot continue\r\n")
+                .await;
             let _ = writer.flush().await;
         }
 
@@ -753,7 +755,9 @@ impl Session {
                                     self.mailstore.clone(),
                                 )
                                 .await;
-                                if resp.starts_with(&format!("{} OK", parsed.tag)) && self.state.selected().is_some() {
+                                if resp.starts_with(&format!("{} OK", parsed.tag))
+                                    && self.state.selected().is_some()
+                                {
                                     self.refresh_view(writer, true).await?;
                                 }
                                 writer
@@ -879,8 +883,22 @@ impl Session {
                     } else {
                         if command_name == "DELETE"
                             && let Some(sm) = self.state.selected()
-                            && op::delete::parse_args(&parsed.args).is_ok_and(|name| name == sm.name || (name.eq_ignore_ascii_case("INBOX") && sm.name == "INBOX")) {
-                            writer.write_all(tagged(&parsed.tag, Status::No, Some("CANNOT"), "UNSELECT the mailbox before deleting it").as_bytes()).await?;
+                            && op::delete::parse_args(&parsed.args).is_ok_and(|name| {
+                                name == sm.name
+                                    || (name.eq_ignore_ascii_case("INBOX") && sm.name == "INBOX")
+                            })
+                        {
+                            writer
+                                .write_all(
+                                    tagged(
+                                        &parsed.tag,
+                                        Status::No,
+                                        Some("CANNOT"),
+                                        "UNSELECT the mailbox before deleting it",
+                                    )
+                                    .as_bytes(),
+                                )
+                                .await?;
                             writer.flush().await?;
                             continue;
                         }
@@ -936,19 +954,47 @@ impl Session {
                                 .await
                             }
                         };
-                        if command_name == "RENAME" && resp.starts_with(&format!("{} OK", parsed.tag)) {
-                            let names = op::rename::parse_args(&parsed.args).expect("successful RENAME has valid arguments");
-                            if !names.old_name.eq_ignore_ascii_case("INBOX") && let Some(sm) = self.state.selected_mut() {
-                                if sm.name == names.old_name { sm.name = names.new_name.clone(); }
-                                else if sm.name.starts_with(&format!("{}/", names.old_name)) {
-                                    sm.name = format!("{}{}", names.new_name, &sm.name[names.old_name.len()..]);
+                        if command_name == "RENAME"
+                            && resp.starts_with(&format!("{} OK", parsed.tag))
+                        {
+                            let names = op::rename::parse_args(&parsed.args)
+                                .expect("successful RENAME has valid arguments");
+                            if !names.old_name.eq_ignore_ascii_case("INBOX")
+                                && let Some(sm) = self.state.selected_mut()
+                            {
+                                if sm.name == names.old_name {
+                                    sm.name = names.new_name.clone();
+                                } else if sm.name.starts_with(&format!("{}/", names.old_name)) {
+                                    sm.name = format!(
+                                        "{}{}",
+                                        names.new_name,
+                                        &sm.name[names.old_name.len()..]
+                                    );
                                 }
                             }
-                            if self.state.selected().is_some() { self.refresh_view(writer, true).await?; }
+                            if self.state.selected().is_some() {
+                                self.refresh_view(writer, true).await?;
+                            }
                             if self.rev2 {
-                                let pattern = format!("\"\" ({} {}) RETURN (SUBSCRIBED CHILDREN)", crate::imap::mailbox_name::quote_mailbox(&names.new_name), crate::imap::mailbox_name::quote_mailbox(&format!("{}/*", names.new_name)));
-                                let listing = op::list::handle_with_limit(&parsed.tag, &pattern, aid, self.mailstore.clone(), self.cfg.max_literal_bytes).await;
-                                for line in listing.lines().filter(|line| line.starts_with("* LIST ")) {
+                                let pattern = format!(
+                                    "\"\" ({} {}) RETURN (SUBSCRIBED CHILDREN)",
+                                    crate::imap::mailbox_name::quote_mailbox(&names.new_name),
+                                    crate::imap::mailbox_name::quote_mailbox(&format!(
+                                        "{}/*",
+                                        names.new_name
+                                    ))
+                                );
+                                let listing = op::list::handle_with_limit(
+                                    &parsed.tag,
+                                    &pattern,
+                                    aid,
+                                    self.mailstore.clone(),
+                                    self.cfg.max_literal_bytes,
+                                )
+                                .await;
+                                for line in
+                                    listing.lines().filter(|line| line.starts_with("* LIST "))
+                                {
                                     writer.write_all(format!("{line}\r\n").as_bytes()).await?;
                                 }
                             }

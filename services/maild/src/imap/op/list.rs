@@ -147,7 +147,9 @@ pub(crate) fn subscription_view(
     use crate::imap::mailbox_name::EncodedMailbox;
     let mut set = encode_all(records);
     for name in subscriptions {
-        if !crate::imap::mailbox_name::is_net_unicode(name) || name.split('/').any(str::is_empty) { continue; }
+        if !crate::imap::mailbox_name::is_net_unicode(name) || name.split('/').any(str::is_empty) {
+            continue;
+        }
         if let Some(enc) = set.mailboxes.iter_mut().find(|enc| enc.wire_name == *name) {
             enc.is_subscribed = true;
         } else {
