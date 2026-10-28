@@ -207,9 +207,25 @@ creation id can also be referenced as `#draft` by submission in the same
 request; mailbox creation ids resolve in import's `mailboxIds`. Implemented
 `/set` methods also resolve Id fields, update/destroy targets and mailbox
 parents, ordering dependent creates within one call. Unresolvable references
-produce per-entry errors. Submission `onSuccessUpdateEmail` and
-`onSuccessDestroyEmail` refer to successful submission ids, including `#id`
-references, and return the implicit `Email/set` response with the same call id.
+produce per-entry errors. Wrongly typed `create`, `update`, `destroy` or
+`ifInState` arguments instead fail the whole method with `invalidArguments`
+before any stage runs. A non-null `ifInState` must match the initial state;
+otherwise the whole call returns `stateMismatch` without running any mutation
+stage. Create, update and destroy stages run in that order. A `/set` is not one
+transaction across those stages; concurrent requests may change data between
+them, and a later per-entry failure does not roll back earlier successes.
+
+Submission `onSuccessUpdateEmail` and `onSuccessDestroyEmail` name submissions,
+including `#id` creation references. Under
+[RFC 8621 §7.5](https://www.rfc-editor.org/rfc/rfc8621.html#section-7.5),
+an action applies only when the corresponding submission operation succeeds
+in that invocation. An existing submission id without a successful operation,
+a reference from an earlier call, a failed creation or an unknown reference is
+ignored. Such entries do not produce errors in the implicit `Email/set`.
+Maild currently implements submission creation; submission updates and
+destruction remain unsupported and cannot trigger these actions. Successful
+actions return the implicit `Email/set` response with the same call id;
+any email patch errors name the actual Email id, never the submission reference.
 Explicit success actions suppress the legacy automatic move to Sent, so the
 client's mailbox patch applies to the original draft memberships.
 An optional

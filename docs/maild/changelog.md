@@ -10,6 +10,11 @@ generated: by docs/_build/gen-site.mix from services/maild/CHANGELOG.md; do not 
 
 ## Unreleased
 
+- Reject malformed JMAP `/set` arguments before any mutation stage. Enforce
+  `ifInState` against each method's initial state, aborting stale calls without
+  writes. Ignore submission email actions without a successful operation in
+  that call, rather than emitting implicit Email errors keyed by submission
+  references. Document stage ordering and the absence of a cross-stage transaction.
 - Fix Sieve attachment-independent header budgets, custom address fields,
   writable fileinto destinations, redirect-only loop suppression and private
   header removal on external redirects. Local submission stamps fresh spam

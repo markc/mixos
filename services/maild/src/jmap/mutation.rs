@@ -16,6 +16,7 @@ pub(super) async fn call(
         references::resolve_mail_creation_references(method, &mut args, ids);
         return Ok((invoke(state, account, method, args).await?, None));
     }
+    validate_arguments(method, &args)?;
     let creates = args
         .get("create")
         .and_then(Value::as_object)
@@ -46,9 +47,21 @@ pub(super) async fn call(
             })?
             .remove(key);
     }
-    // Validate the state once, before any writes. Each subsequent stage retains
-    // this oldState while the final stage supplies the resulting newState.
+    // Read the initial state before any mutation stage. Some handlers enforce
+    // ifInState themselves; enforce it here too for every implemented /set.
     let mut response = invoke(state, account, method, base.clone()).await?;
+    if let Some(expected) = args["ifInState"].as_str()
+        && response["oldState"].as_str() != Some(expected)
+    {
+        return Err(JmapMethodError {
+            error_type: "stateMismatch".into(),
+            description: None,
+        }
+        .into());
+    }
+    // Later stages retain the initial oldState and supply the final newState.
+    // This guard is a start-of-call precondition, not a transaction spanning
+    // stages: another request may write between them.
     base.as_object_mut().unwrap().remove("ifInState");
     let mut pending = creates;
     let mut submission_emails = HashMap::new();
@@ -133,7 +146,7 @@ pub(super) async fn call(
     }
     let mut resolved = Vec::new();
     for key in destroys {
-        let Some(key) = key.as_str() else { continue };
+        let key = key.as_str().expect("validated destroy id");
         if let Some(id) = resolve_id(key, ids) {
             resolved.push(Value::String(id));
         } else {
@@ -147,7 +160,9 @@ pub(super) async fn call(
     }
     let extra = if method == "EmailSubmission/set" {
         // RFC 8621 §7.5: these keys name submissions, not emails. Only a
-        // successful submission operation authorises changes to its email.
+        // successful submission operation in this call authorises changes to
+        // its email. A failed/unmatched action is ignored, including unresolved
+        // creation references; implicit Email/set errors must name Email ids.
         let mut email_args = json!({"accountId": account.to_string()});
         let mut update = Map::new();
         let mut destroy = Vec::new();
@@ -170,8 +185,6 @@ pub(super) async fn call(
                             ),
                         }
                     }
-                } else {
-                    failure(&mut errors, "notUpdated", key, "notFound", None);
                 }
             }
         }
@@ -181,8 +194,6 @@ pub(super) async fn call(
                     if let Some(email) = submission_emails.get(&id) {
                         destroy.push(email.clone());
                     }
-                } else {
-                    failure(&mut errors, "notDestroyed", key, "notFound", None);
                 }
             }
         }
@@ -216,6 +227,51 @@ pub(super) async fn call(
         None
     };
     Ok((response, extra))
+}
+
+/// RFC 8620 §§3.6.2/5.3: malformed method arguments fail the whole call,
+/// before extracting stages could turn a wrongly typed argument into a no-op.
+fn validate_arguments(method: &str, args: &Value) -> Result<()> {
+    let invalid = |description: String| JmapMethodError {
+        error_type: "invalidArguments".into(),
+        description: Some(description),
+    };
+    let args = args
+        .as_object()
+        .ok_or_else(|| invalid("arguments must be an object".into()))?;
+    for property in ["create", "update", "onSuccessUpdateEmail"] {
+        if property == "onSuccessUpdateEmail" && method != "EmailSubmission/set" {
+            continue;
+        }
+        if let Some(value) = args.get(property).filter(|value| !value.is_null()) {
+            let valid = value
+                .as_object()
+                .is_some_and(|entries| entries.values().all(Value::is_object));
+            if !valid {
+                return Err(invalid(format!("{property} must be a map of objects or null")).into());
+            }
+        }
+    }
+    for property in ["destroy", "onSuccessDestroyEmail"] {
+        if property == "onSuccessDestroyEmail" && method != "EmailSubmission/set" {
+            continue;
+        }
+        if let Some(value) = args.get(property).filter(|value| !value.is_null()) {
+            let valid = value
+                .as_array()
+                .is_some_and(|entries| entries.iter().all(Value::is_string));
+            if !valid {
+                return Err(invalid(format!("{property} must be an array of Id strings or null")).into());
+            }
+        }
+    }
+    if args
+        .get("ifInState")
+        .is_some_and(|value| !value.is_null() && !value.is_string())
+    {
+        return Err(invalid("ifInState must be a string or null".into()).into());
+    }
+    Ok(())
 }
 
 async fn invoke(state: &AppState, account: i32, method: &str, args: Value) -> Result<Value> {

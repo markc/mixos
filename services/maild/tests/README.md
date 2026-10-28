@@ -52,6 +52,10 @@ instance without enabling any address.
 The JMAP HTTP suite also covers null import dates, invalid-MIME SetErrors,
 optional batched thread reads, creation references throughout implemented
 /set methods, dependent mailbox creates and submission success actions.
+The `round2_*` HTTP regressions reject malformed stage/action arguments before
+writes, ignore submission actions without a successful operation in that call,
+and fence every implemented `/set` with its initial `ifInState`. A matching
+guard allows later update/destroy stages after creates have advanced state.
 SQLite statement tracing on a current-thread HTTP executor detects blocking
 storage calls in import, blob-based creation and Email/get. Duplicate imports
 into another mailbox set must leave memberships, keywords, dates and state

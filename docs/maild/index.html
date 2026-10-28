@@ -406,9 +406,24 @@ creation id can also be referenced as <code>#draft</code> by submission in the s
 request; mailbox creation ids resolve in import's <code>mailboxIds</code>. Implemented
 <code>/set</code> methods also resolve Id fields, update/destroy targets and mailbox
 parents, ordering dependent creates within one call. Unresolvable references
-produce per-entry errors. Submission <code>onSuccessUpdateEmail</code> and
-<code>onSuccessDestroyEmail</code> refer to successful submission ids, including <code>#id</code>
-references, and return the implicit <code>Email/set</code> response with the same call id.
+produce per-entry errors. Wrongly typed <code>create</code>, <code>update</code>, <code>destroy</code> or
+<code>ifInState</code> arguments instead fail the whole method with <code>invalidArguments</code>
+before any stage runs. A non-null <code>ifInState</code> must match the initial state;
+otherwise the whole call returns <code>stateMismatch</code> without running any mutation
+stage. Create, update and destroy stages run in that order. A <code>/set</code> is not one
+transaction across those stages; concurrent requests may change data between
+them, and a later per-entry failure does not roll back earlier successes.</p>
+<p>Submission <code>onSuccessUpdateEmail</code> and <code>onSuccessDestroyEmail</code> name submissions,
+including <code>#id</code> creation references. Under
+<a href="https://www.rfc-editor.org/rfc/rfc8621.html#section-7.5">RFC 8621 §7.5</a>,
+an action applies only when the corresponding submission operation succeeds
+in that invocation. An existing submission id without a successful operation,
+a reference from an earlier call, a failed creation or an unknown reference is
+ignored. Such entries do not produce errors in the implicit <code>Email/set</code>.
+Maild currently implements submission creation; submission updates and
+destruction remain unsupported and cannot trigger these actions. Successful
+actions return the implicit <code>Email/set</code> response with the same call id;
+any email patch errors name the actual Email id, never the submission reference.
 Explicit success actions suppress the legacy automatic move to Sent, so the
 client's mailbox patch applies to the original draft memberships.
 An optional
