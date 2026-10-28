@@ -40,7 +40,7 @@ pub(crate) struct ClipboardGet {
     /// MIME type; defaults to the preferred text type.
     mime: Option<String>,
     #[serde(default)]
-    primary: bool,
+    primary: Option<bool>,
     /// Byte offset for selections larger than 1 MiB.
     #[serde(default)]
     offset: usize,
@@ -54,7 +54,7 @@ pub(crate) struct ClipboardSet {
     text: String,
     mime: Option<String>,
     #[serde(default)]
-    primary: bool,
+    primary: Option<bool>,
     #[serde(default)]
     sensitive: bool,
 }
@@ -205,10 +205,10 @@ impl MixosMcp {
         &self,
         Parameters(p): Parameters<ClipboardGet>,
     ) -> Result<Json<NativeObservation>, String> {
-        let mut args = json!({"primary": p.primary, "offset": p.offset});
+        let mut args = json!({"primary": p.primary.unwrap_or(false), "offset": p.offset});
         if let Some(selection) = p.selection {
             if !matches!(selection.as_str(), "clipboard" | "primary")
-                || (p.primary && selection != "primary")
+                || p.primary.is_some_and(|primary| primary != (selection == "primary"))
             {
                 return Err("invalid or conflicting clipboard selection".into());
             }
@@ -232,10 +232,10 @@ impl MixosMcp {
         &self,
         Parameters(p): Parameters<ClipboardSet>,
     ) -> Result<Json<NativeObservation>, String> {
-        let mut args = json!({"mime": p.mime.unwrap_or_else(|| "text/plain;charset=utf-8".into()), "data": p.text, "primary": p.primary, "sensitive": p.sensitive});
+        let mut args = json!({"mime": p.mime.unwrap_or_else(|| "text/plain;charset=utf-8".into()), "data": p.text, "primary": p.primary.unwrap_or(false), "sensitive": p.sensitive});
         if let Some(selection) = p.selection {
             if !matches!(selection.as_str(), "clipboard" | "primary")
-                || (p.primary && selection != "primary")
+                || p.primary.is_some_and(|primary| primary != (selection == "primary"))
             {
                 return Err("invalid or conflicting clipboard selection".into());
             }

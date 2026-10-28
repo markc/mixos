@@ -13,9 +13,20 @@ if args()[0] == "fmt" then
     run_argv_must(["git", "checkout", "-q", "--", "."])
   end
 else
-  run_argv_must(["cargo", "fmt", "-p", "mix", "-p", "mixos-mcp", "-p", "inputd", "--", "--check"], {timeout: 120, stdout: "inherit", stderr: "inherit"})
-  run_argv_must(["cargo", "clippy", "-p", "mix", "-p", "mixos-mcp", "--all-targets", "--", "-D", "warnings"], {timeout: 3600, stdout: "inherit", stderr: "inherit"})
-  run_argv_must(["cargo", "test", "-p", "mix", "-p", "mixos-mcp"], {timeout: 3600, stdout: "inherit", stderr: "inherit"})
-  run_argv_must(["cargo", "clippy", "-p", "inputd", "--all-targets", "--", "-D", "warnings"], {timeout: 3600, stdout: "inherit", stderr: "inherit"})
-  run_argv_must(["cargo", "test", "-p", "inputd", "--lib"], {timeout: 3600, stdout: "inherit", stderr: "inherit"})
+  $failed = []
+  for $command in [
+    ["cargo", "fmt", "-p", "mix", "-p", "mixos-mcp", "-p", "inputd", "--", "--check"],
+    ["cargo", "clippy", "-p", "mix", "-p", "mixos-mcp", "--all-targets", "--", "-D", "warnings"],
+    ["cargo", "test", "-p", "mix", "-p", "mixos-mcp", "--no-fail-fast"],
+    ["cargo", "clippy", "-p", "inputd", "--all-targets", "--", "-D", "warnings"],
+    ["cargo", "test", "-p", "inputd", "--lib"]
+  ]
+    print("CHECK " .. join($command, " "))
+    $r = run_argv($command, {timeout: 3600, stdout: "inherit", stderr: "inherit"})
+    if not $r.ok then push($failed, join($command, " ")) end
+  end
+  if len($failed) > 0 then
+    print("FAILED: " .. join($failed, "; "))
+    exit(1)
+  end
 end
