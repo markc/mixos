@@ -562,9 +562,20 @@ async fn email_import_parser_panic_is_invalid_email_and_service_survives() {
 async fn email_set_invalid_mime_is_a_property_error() {
     let f = Fixture::new().await;
     let blob = f.upload_message("").await;
-    let response = f.call("Email/set", json!({"create": {"bad": {"blobId": blob, "mailboxIds": {&f.inbox: true}}}})).await;
-    assert_eq!(response["notCreated"]["bad"]["type"], "invalidProperties", "{response}");
-    assert_eq!(response["notCreated"]["bad"]["properties"], json!(["blobId"]));
+    let response = f
+        .call(
+            "Email/set",
+            json!({"create": {"bad": {"blobId": blob, "mailboxIds": {&f.inbox: true}}}}),
+        )
+        .await;
+    assert_eq!(
+        response["notCreated"]["bad"]["type"], "invalidProperties",
+        "{response}"
+    );
+    assert_eq!(
+        response["notCreated"]["bad"]["properties"],
+        json!(["blobId"])
+    );
     assert_eq!(response["oldState"], response["newState"]);
 }
 
@@ -572,18 +583,28 @@ async fn email_set_invalid_mime_is_a_property_error() {
 async fn email_import_null_received_at_uses_received_header_or_server_time() {
     let f = Fixture::new().await;
     let header = f.upload("null-date").await;
-    let no_header = f.upload_message("From: alice@example.com\r\nSubject: no-received\r\n\r\nHello").await;
+    let no_header = f
+        .upload_message("From: alice@example.com\r\nSubject: no-received\r\n\r\nHello")
+        .await;
     let before = chrono::Utc::now().timestamp_millis();
     let response = f.call("Email/import", json!({"emails": {
         "header": {"blobId": header, "mailboxIds": {&f.inbox: true}, "receivedAt": null},
         "clock": {"blobId": no_header, "mailboxIds": {&f.inbox: true}, "receivedAt": null},
         "offset": {"blobId": header, "mailboxIds": {&f.inbox: true}, "receivedAt": "2024-01-01T00:00:00+00:00"}
     }})).await;
-    assert_eq!(f.get(&response["created"]["header"]["id"]).await["receivedAt"], "2024-01-01T00:00:00.000Z");
+    assert_eq!(
+        f.get(&response["created"]["header"]["id"]).await["receivedAt"],
+        "2024-01-01T00:00:00.000Z"
+    );
     let clock = f.get(&response["created"]["clock"]["id"]).await;
-    let clock = chrono::DateTime::parse_from_rfc3339(clock["receivedAt"].as_str().unwrap()).unwrap().timestamp_millis();
+    let clock = chrono::DateTime::parse_from_rfc3339(clock["receivedAt"].as_str().unwrap())
+        .unwrap()
+        .timestamp_millis();
     assert!(clock >= before && clock <= chrono::Utc::now().timestamp_millis());
-    assert_eq!(response["notCreated"]["offset"]["type"], "invalidProperties");
+    assert_eq!(
+        response["notCreated"]["offset"]["type"],
+        "invalidProperties"
+    );
 }
 
 // Observe the real SQLite connection, including the executing OS thread. This
@@ -596,14 +617,21 @@ struct TraceContext {
     executor: std::thread::ThreadId,
     statements: std::sync::Mutex<Vec<(String, bool)>>,
 }
-unsafe extern "C" fn trace_statement(kind: u32, context: *mut std::ffi::c_void, statement: *mut std::ffi::c_void, _: *mut std::ffi::c_void) -> i32 {
+unsafe extern "C" fn trace_statement(
+    kind: u32,
+    context: *mut std::ffi::c_void,
+    statement: *mut std::ffi::c_void,
+    _: *mut std::ffi::c_void,
+) -> i32 {
     if kind == rusqlite::ffi::SQLITE_TRACE_STMT as u32 {
         // SAFETY: SQLite retains the live boxed context until SqlTrace drops;
         // STMT events provide a sqlite3_stmt valid for this callback.
         let context = unsafe { &*(context.cast::<TraceContext>()) };
         let sql = unsafe { rusqlite::ffi::sqlite3_sql(statement.cast()) };
         if !sql.is_null() {
-            let sql = unsafe { std::ffi::CStr::from_ptr(sql) }.to_string_lossy().into_owned();
+            let sql = unsafe { std::ffi::CStr::from_ptr(sql) }
+                .to_string_lossy()
+                .into_owned();
             if let Ok(mut statements) = context.statements.lock() {
                 statements.push((sql, std::thread::current().id() == context.executor));
             }
@@ -613,32 +641,60 @@ unsafe extern "C" fn trace_statement(kind: u32, context: *mut std::ffi::c_void, 
 }
 impl SqlTrace {
     fn new(f: &Fixture) -> Self {
-        let mut trace = Self { context: Box::new(TraceContext { executor: std::thread::current().id(), statements: Default::default() }), ms: f.built.app_state.mailstore.clone() };
+        let mut trace = Self {
+            context: Box::new(TraceContext {
+                executor: std::thread::current().id(),
+                statements: Default::default(),
+            }),
+            ms: f.built.app_state.mailstore.clone(),
+        };
         let context = (&mut *trace.context as *mut TraceContext) as usize;
-        trace.ms.mds().with_set_read(&maild::mailstore::account_id_to_setid(1), |conn| {
-            // SAFETY: the guard owns the context and removes the callback before
-            // freeing it. with_set_read serialises access to this connection.
-            let result = unsafe { rusqlite::ffi::sqlite3_trace_v2(conn.handle(), rusqlite::ffi::SQLITE_TRACE_STMT as u32, Some(trace_statement), context as *mut std::ffi::c_void) };
-            assert_eq!(result, rusqlite::ffi::SQLITE_OK);
-            Ok(())
-        }).unwrap();
+        trace
+            .ms
+            .mds()
+            .with_set_read(&maild::mailstore::account_id_to_setid(1), |conn| {
+                // SAFETY: the guard owns the context and removes the callback before
+                // freeing it. with_set_read serialises access to this connection.
+                let result = unsafe {
+                    rusqlite::ffi::sqlite3_trace_v2(
+                        conn.handle(),
+                        rusqlite::ffi::SQLITE_TRACE_STMT as u32,
+                        Some(trace_statement),
+                        context as *mut std::ffi::c_void,
+                    )
+                };
+                assert_eq!(result, rusqlite::ffi::SQLITE_OK);
+                Ok(())
+            })
+            .unwrap();
         trace
     }
     fn assert_off_executor(&self) {
         let statements = self.context.statements.lock().unwrap();
         assert!(!statements.is_empty());
-        let blocking = statements.iter().filter(|(_, on_executor)| *on_executor).collect::<Vec<_>>();
-        assert!(blocking.is_empty(), "SQLite executed on async executor: {blocking:?}");
+        let blocking = statements
+            .iter()
+            .filter(|(_, on_executor)| *on_executor)
+            .collect::<Vec<_>>();
+        assert!(
+            blocking.is_empty(),
+            "SQLite executed on async executor: {blocking:?}"
+        );
     }
 }
 impl Drop for SqlTrace {
     fn drop(&mut self) {
-        self.ms.mds().with_set_read(&maild::mailstore::account_id_to_setid(1), |conn| {
-            // SAFETY: removing the callback while holding the connection lock
-            // ensures no subsequent callback can use the context being freed.
-            unsafe { rusqlite::ffi::sqlite3_trace_v2(conn.handle(), 0, None, std::ptr::null_mut()); }
-            Ok(())
-        }).unwrap();
+        self.ms
+            .mds()
+            .with_set_read(&maild::mailstore::account_id_to_setid(1), |conn| {
+                // SAFETY: removing the callback while holding the connection lock
+                // ensures no subsequent callback can use the context being freed.
+                unsafe {
+                    rusqlite::ffi::sqlite3_trace_v2(conn.handle(), 0, None, std::ptr::null_mut());
+                }
+                Ok(())
+            })
+            .unwrap();
     }
 }
 
@@ -647,7 +703,12 @@ async fn email_import_storage_runs_off_async_executor() {
     let f = Fixture::new().await;
     let blob = f.upload("import-thread").await;
     let trace = SqlTrace::new(&f);
-    let response = f.call("Email/import", json!({"emails": {"a": {"blobId": blob, "mailboxIds": {&f.inbox: true}}}})).await;
+    let response = f
+        .call(
+            "Email/import",
+            json!({"emails": {"a": {"blobId": blob, "mailboxIds": {&f.inbox: true}}}}),
+        )
+        .await;
     assert!(response["created"]["a"]["id"].is_string(), "{response}");
     trace.assert_off_executor();
 }
@@ -657,7 +718,12 @@ async fn email_set_blob_storage_runs_off_async_executor() {
     let f = Fixture::new().await;
     let blob = f.upload("set-thread").await;
     let trace = SqlTrace::new(&f);
-    let response = f.call("Email/set", json!({"create": {"a": {"blobId": blob, "mailboxIds": {&f.inbox: true}}}})).await;
+    let response = f
+        .call(
+            "Email/set",
+            json!({"create": {"a": {"blobId": blob, "mailboxIds": {&f.inbox: true}}}}),
+        )
+        .await;
     assert!(response["created"]["a"]["id"].is_string(), "{response}");
     trace.assert_off_executor();
 }
@@ -669,22 +735,58 @@ async fn email_get_batches_optional_threads_off_async_executor_without_writes() 
     let b = f.import("thread-b").await["created"]["a"].clone();
     let ms = &f.built.app_state.mailstore;
     let set = maild::mailstore::account_id_to_setid(1);
-    ms.mds().with_set_tx(&set, |tx| {
-        tx.tx().execute("DELETE FROM mail_threads WHERE item_id = ?1", [b["id"].as_str().unwrap()]).map_err(|e| mds::Error::Other(e.to_string()))?;
-        Ok(())
-    }).unwrap();
+    ms.mds()
+        .with_set_tx(&set, |tx| {
+            tx.tx()
+                .execute(
+                    "DELETE FROM mail_threads WHERE item_id = ?1",
+                    [b["id"].as_str().unwrap()],
+                )
+                .map_err(|e| mds::Error::Other(e.to_string()))?;
+            Ok(())
+        })
+        .unwrap();
     // A plain reader succeeds on a query-only connection. BEGIN IMMEDIATE from
     // with_set_tx would fail here even if it contained only SELECT statements.
-    ms.mds().with_set_read(&set, |conn| { conn.execute_batch("PRAGMA query_only=ON").unwrap(); Ok(()) }).unwrap();
-    assert!(ms.thread_for_email(1, maild::mailstore::ItemId(b["id"].as_str().unwrap().parse().unwrap())).unwrap().is_none());
-    ms.mds().with_set_read(&set, |conn| { conn.execute_batch("PRAGMA query_only=OFF").unwrap(); Ok(()) }).unwrap();
+    ms.mds()
+        .with_set_read(&set, |conn| {
+            conn.execute_batch("PRAGMA query_only=ON").unwrap();
+            Ok(())
+        })
+        .unwrap();
+    assert!(
+        ms.thread_for_email(
+            1,
+            maild::mailstore::ItemId(b["id"].as_str().unwrap().parse().unwrap())
+        )
+        .unwrap()
+        .is_none()
+    );
+    ms.mds()
+        .with_set_read(&set, |conn| {
+            conn.execute_batch("PRAGMA query_only=OFF").unwrap();
+            Ok(())
+        })
+        .unwrap();
     let trace = SqlTrace::new(&f);
-    let response = f.call("Email/get", json!({"ids": [a["id"], b["id"]], "properties": ["id", "threadId"]})).await;
+    let response = f
+        .call(
+            "Email/get",
+            json!({"ids": [a["id"], b["id"]], "properties": ["id", "threadId"]}),
+        )
+        .await;
     assert_eq!(response["list"][0]["threadId"], a["threadId"]);
     assert!(response["list"][1]["threadId"].is_null(), "{response}");
     trace.assert_off_executor();
     let statements = trace.context.statements.lock().unwrap();
-    assert_eq!(statements.iter().filter(|(sql, _)| sql.contains("FROM mail_threads")).count(), 1, "{statements:?}");
+    assert_eq!(
+        statements
+            .iter()
+            .filter(|(sql, _)| sql.contains("FROM mail_threads"))
+            .count(),
+        1,
+        "{statements:?}"
+    );
 }
 
 #[tokio::test]
@@ -695,7 +797,10 @@ async fn duplicate_import_into_other_mailboxes_preserves_existing_email() {
     let before = f.get(id).await;
     let blob = f.upload("different-memberships").await;
     let response = f.call("Email/import", json!({"emails": {"b": {"blobId": blob, "mailboxIds": {&f.archive: true}, "keywords": {"$seen": true}, "receivedAt": "2025-01-01T00:00:00Z"}}})).await;
-    assert_eq!(response["notCreated"]["b"], json!({"type": "alreadyExists", "existingId": id}));
+    assert_eq!(
+        response["notCreated"]["b"],
+        json!({"type": "alreadyExists", "existingId": id})
+    );
     assert_eq!(response["oldState"], response["newState"]);
     assert_eq!(f.get(id).await, before);
 }
@@ -710,28 +815,41 @@ async fn creation_references_cover_same_call_parent_update_destroy_and_errors() 
             "z-parent": {"name": "Parent"}, "bad": {"name": "Bad", "parentId": "#absent"}
         }, "update": {"#a-child": {"name": "Renamed"}, "#absent": {"name": "No"}}, "destroy": ["#absent"]}, "m"],
         ["Email/set", {"accountId": "1", "create": {"email": {"blobId": blob, "mailboxIds": {"#a-child": true}}},
-            "update": {"#email": {"keywords/$seen": true}, "#absent": {"keywords/$seen": true}}, "destroy": ["#absent"]}, "e"],
-        ["Email/get", {"accountId": "1", "#ids": {"resultOf": "e", "name": "Email/set", "path": "/created/email/id"}}, "unused"]
+            "update": {"#email": {"keywords/$seen": true}, "#absent": {"keywords/$seen": true}}, "destroy": ["#absent"]}, "e"]
     ])).await;
     let calls = &response["methodResponses"];
     let child = &calls[0][1]["created"]["a-child"]["id"];
     assert!(child.is_string(), "{response}");
-    assert!(calls[0][1]["updated"][child.as_str().unwrap()].is_null());
-    assert_eq!(calls[0][1]["notCreated"]["bad"]["type"], "invalidProperties");
+    assert!(calls[0][1]["updated"].as_object().unwrap().contains_key(child.as_str().unwrap()));
+    assert_eq!(
+        calls[0][1]["notCreated"]["bad"]["type"],
+        "invalidProperties"
+    );
     assert_eq!(calls[0][1]["notUpdated"]["#absent"]["type"], "notFound");
     assert_eq!(calls[0][1]["notDestroyed"]["#absent"]["type"], "notFound");
     let id = &calls[1][1]["created"]["email"]["id"];
     assert_eq!(f.get(id).await["keywords"]["$seen"], true, "{response}");
     let boxes = f.call("Mailbox/get", json!({"ids": [child]})).await;
     assert_eq!(boxes["list"][0]["name"], "Renamed");
-    assert_eq!(boxes["list"][0]["parentId"], calls[0][1]["created"]["z-parent"]["id"]);
-    let destroyed = f.request(json!([
-        ["Email/set", {"accountId": "1", "destroy": ["#email"]}, "d"],
-    ])).await;
+    assert_eq!(
+        boxes["list"][0]["parentId"],
+        calls[0][1]["created"]["z-parent"]["id"]
+    );
+    let destroyed = f
+        .request(json!([
+            ["Email/set", {"accountId": "1", "destroy": ["#email"]}, "d"],
+        ]))
+        .await;
     // Creation ids are request-local: a later request must reject the old ref.
-    assert_eq!(destroyed["methodResponses"][0][1]["notDestroyed"]["#email"]["type"], "notFound");
+    assert_eq!(
+        destroyed["methodResponses"][0][1]["notDestroyed"]["#email"]["type"],
+        "notFound"
+    );
     let created_destroyed = f.request(json!([["Mailbox/set", {"accountId": "1", "create": {"temp": {"name": "Temporary"}}, "destroy": ["#temp"]}, "t"]])).await;
-    assert_eq!(created_destroyed["methodResponses"][0][1]["destroyed"], json!([created_destroyed["createdIds"]["temp"]]));
+    assert_eq!(
+        created_destroyed["methodResponses"][0][1]["destroyed"],
+        json!([created_destroyed["createdIds"]["temp"]])
+    );
 }
 
 #[tokio::test]
@@ -748,18 +866,38 @@ async fn creation_references_resolve_calendar_contact_and_all_set_target_ids() {
     ])).await;
     for (index, creation) in [(0, "cal"), (1, "ev"), (2, "book"), (3, "person")] {
         let call = &response["methodResponses"][index][1];
-        let id = call["created"][creation]["id"].as_str().unwrap_or_else(|| panic!("{response}"));
-        assert!(call["updated"].as_object().unwrap().contains_key(id), "{response}");
+        let id = call["created"][creation]["id"]
+            .as_str()
+            .unwrap_or_else(|| panic!("{response}"));
+        assert!(
+            call["updated"].as_object().unwrap().contains_key(id),
+            "{response}"
+        );
     }
-    assert_eq!(response["methodResponses"][1][1]["notCreated"]["bad-ev"]["properties"], json!(["calendarId"]));
-    assert_eq!(response["methodResponses"][3][1]["notCreated"]["bad-person"]["properties"], json!(["addressBookId"]));
+    assert_eq!(
+        response["methodResponses"][1][1]["notCreated"]["bad-ev"]["properties"],
+        json!(["calendarId"])
+    );
+    assert_eq!(
+        response["methodResponses"][3][1]["notCreated"]["bad-person"]["properties"],
+        json!(["addressBookId"])
+    );
     for index in [0, 4, 5] {
-        assert_eq!(response["methodResponses"][index][1]["notDestroyed"]["#absent"]["type"], "notFound");
+        assert_eq!(
+            response["methodResponses"][index][1]["notDestroyed"]["#absent"]["type"],
+            "notFound"
+        );
     }
     for (index, key) in [(4, "ev"), (5, "person")] {
-        assert_eq!(response["methodResponses"][index][1]["destroyed"], json!([response["createdIds"][key]]));
+        assert_eq!(
+            response["methodResponses"][index][1]["destroyed"],
+            json!([response["createdIds"][key]])
+        );
     }
-    assert_eq!(response["methodResponses"][6][1]["notUpdated"]["#absent"]["type"], "notFound");
+    assert_eq!(
+        response["methodResponses"][6][1]["notUpdated"]["#absent"]["type"],
+        "notFound"
+    );
 }
 
 #[tokio::test]
@@ -773,20 +911,29 @@ async fn submission_success_references_modify_only_the_successful_submissions_em
         ["EmailSubmission/set", {"accountId": "1", "create": {
             "sent": {"emailId": "#draft", "identityId": identities["list"][0]["id"]},
             "bad": {"emailId": "#absent"}
-        }, "onSuccessUpdateEmail": {"#sent": {"keywords/$draft": null, "keywords/$seen": true, "mailboxIds/#destination": true}}, "onSuccessDestroyEmail": ["#bad"]}, "s"]
+        }, "onSuccessUpdateEmail": {"#sent": {"keywords/$draft": null, "keywords/$seen": true, "mailboxIds/#destination": true, format!("mailboxIds/{}", f.inbox): null}}, "onSuccessDestroyEmail": ["#bad"]}, "s"]
     ])).await;
     let calls = &response["methodResponses"];
     assert_eq!(calls[2][0], "EmailSubmission/set", "{response}");
-    assert_eq!(calls[2][1]["notCreated"]["bad"]["type"], "invalidProperties");
+    assert_eq!(
+        calls[2][1]["notCreated"]["bad"]["type"],
+        "invalidProperties"
+    );
     assert_eq!(calls[3][0], "Email/set", "{response}");
     assert_eq!(calls[3][2], "s");
     let got = f.get(&response["createdIds"]["draft"]).await;
     assert_eq!(got["keywords"]["$seen"], true);
     assert!(got["keywords"]["$draft"].is_null());
-    assert_eq!(got["mailboxIds"][response["createdIds"]["destination"].as_str().unwrap()], true);
+    assert_eq!(
+        got["mailboxIds"][response["createdIds"]["destination"].as_str().unwrap()],
+        true
+    );
     let destroy = f.request(json!([
         ["EmailSubmission/set", {"accountId": "1", "create": {"sent": {"emailId": response["createdIds"]["draft"]}}, "onSuccessDestroyEmail": ["#sent"]}, "d"]
     ])).await;
     assert_eq!(destroy["methodResponses"][1][0], "Email/set", "{destroy}");
-    assert_eq!(destroy["methodResponses"][1][1]["destroyed"], json!([response["createdIds"]["draft"]]));
+    assert_eq!(
+        destroy["methodResponses"][1][1]["destroyed"],
+        json!([response["createdIds"]["draft"]])
+    );
 }

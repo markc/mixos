@@ -575,7 +575,10 @@ pub async fn get(
             })
         });
     let mut list = Vec::with_capacity(records.len());
-    let threads = if properties.as_ref().is_none_or(|p| p.iter().any(|p| p == "threadId")) {
+    let threads = if properties
+        .as_ref()
+        .is_none_or(|p| p.iter().any(|p| p == "threadId"))
+    {
         let ms = mailstore.clone();
         let ids = records.iter().map(|r| r.id).collect::<Vec<_>>();
         tokio::task::spawn_blocking(move || ms.threads_for_emails(account_id, &ids)).await??
@@ -2056,7 +2059,11 @@ pub async fn set(
     };
 
     let mut value = serde_json::to_value(resp)?;
-    value["notCreated"] = if not_created.is_empty() { serde_json::Value::Null } else { serde_json::to_value(not_created)? };
+    value["notCreated"] = if not_created.is_empty() {
+        serde_json::Value::Null
+    } else {
+        serde_json::to_value(not_created)?
+    };
     Ok(value)
 }
 
@@ -2097,7 +2104,7 @@ fn classify_create_error(e: &anyhow::Error) -> serde_json::Value {
         // for caller-shape problems we couldn't pin to a typed error.
         SetError {
             error_type: "invalidArguments".into(),
-            description: Some(msg),
+            description: Some(msg.clone()),
         }
     };
     let mut value = serde_json::to_value(error).expect("SetError is serialisable");
@@ -2252,7 +2259,10 @@ async fn create_from_blob(
             anyhow::bail!("blobNotFound: {blob_id_str}");
         }
         let ms = mailstore.clone();
-        (tokio::task::spawn_blocking(move || ms.read_blob(hash)).await??, Some(hash))
+        (
+            tokio::task::spawn_blocking(move || ms.read_blob(hash)).await??,
+            Some(hash),
+        )
     } else {
         let blob_id = blob_id_str
             .parse::<Uuid>()
@@ -2265,7 +2275,8 @@ async fn create_from_blob(
                 BlobRefLookup::NotFound => (None, None, false),
                 BlobRefLookup::Dangling => (None, None, true),
             })
-        }).await??;
+        })
+        .await??;
         match lookup {
             (Some(bytes), Some(hash), _) => (bytes, Some(hash)),
             (None, None, false) => (
@@ -2278,59 +2289,68 @@ async fn create_from_blob(
         }
     };
     let entry = entry.clone();
-    let (blob_data, envelope, in_reply_to, initial_keywords, initial_tags, received_at) = tokio::task::spawn_blocking(move || -> Result<_> {
-    crate::attachments::structure_preflight(&blob_data)
-        .map_err(|e| anyhow::anyhow!("invalidEmail: {e}"))?;
-    let parser = MessageParser::default();
-    let message =
-        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| parser.parse(&blob_data)))
-            .map_err(|_| anyhow::anyhow!("invalidEmail: MIME parser rejected the message"))?
-            .ok_or_else(|| anyhow::anyhow!("invalidEmail: Failed to parse MIME message"))?;
-    let envelope = build_envelope(&message);
-    let in_reply_to = extract_in_reply_to(&message);
+    let (blob_data, envelope, in_reply_to, initial_keywords, initial_tags, received_at) =
+        tokio::task::spawn_blocking(move || -> Result<_> {
+            crate::attachments::structure_preflight(&blob_data)
+                .map_err(|e| anyhow::anyhow!("invalidEmail: {e}"))?;
+            let parser = MessageParser::default();
+            let message =
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| parser.parse(&blob_data)))
+                    .map_err(|_| anyhow::anyhow!("invalidEmail: MIME parser rejected the message"))?
+                    .ok_or_else(|| anyhow::anyhow!("invalidEmail: Failed to parse MIME message"))?;
+            let envelope = build_envelope(&message);
+            let in_reply_to = extract_in_reply_to(&message);
 
-    // Strict: if `keywords` is present it must be an object whose
-    // every value is `true` (RFC 8621 §4.6). Silent degradation to
-    // an empty keyword set would let a malformed payload create the
-    // email with no keywords instead of rejecting the request. The
-    // split also rejects an unknown `$`-reserved keyword or a malformed
-    // user keyword (mapped to `invalidProperties`).
-    let (initial_keywords, initial_tags) = match entry.get("keywords") {
-        None => (Flags(0), Tags::new()),
-        Some(v) => {
-            let obj = v
-                .as_object()
-                .ok_or_else(|| anyhow::anyhow!("invalidProperties: keywords must be an object"))?;
-            for (k, val) in obj {
-                if val.as_bool() != Some(true) {
-                    return Err(anyhow::anyhow!(
-                        "invalidProperties: keywords entry {k} must map to true"
-                    ));
+            // Strict: if `keywords` is present it must be an object whose
+            // every value is `true` (RFC 8621 §4.6). Silent degradation to
+            // an empty keyword set would let a malformed payload create the
+            // email with no keywords instead of rejecting the request. The
+            // split also rejects an unknown `$`-reserved keyword or a malformed
+            // user keyword (mapped to `invalidProperties`).
+            let (initial_keywords, initial_tags) = match entry.get("keywords") {
+                None => (Flags(0), Tags::new()),
+                Some(v) => {
+                    let obj = v.as_object().ok_or_else(|| {
+                        anyhow::anyhow!("invalidProperties: keywords must be an object")
+                    })?;
+                    for (k, val) in obj {
+                        if val.as_bool() != Some(true) {
+                            return Err(anyhow::anyhow!(
+                                "invalidProperties: keywords entry {k} must map to true"
+                            ));
+                        }
+                    }
+                    keywords_json_to_flags_and_tags(v)
+                        .map_err(|e| anyhow::anyhow!("invalidProperties: {e}"))?
                 }
-            }
-            keywords_json_to_flags_and_tags(v)
-                .map_err(|e| anyhow::anyhow!("invalidProperties: {e}"))?
-        }
-    };
+            };
 
-    let received_at: i64 = match entry.get("receivedAt").filter(|v| !v.is_null()) {
-        Some(v) => {
-            let valid = v.as_str().is_some_and(|s| s.ends_with('Z'));
-            if !valid {
-                anyhow::bail!("invalidProperties: receivedAt must be a UTCDate");
-            }
-            parse_utcdate_ms(v, "receivedAt")
-                .map_err(|e| anyhow::anyhow!("invalidProperties: receivedAt: {e}"))?
-        }
-        None => message
-            .received()
-            .and_then(|r| r.date())
-            .map(|d| d.to_timestamp() * 1000)
-            .unwrap_or_else(|| chrono::Utc::now().timestamp_millis()),
-    };
-    drop(message);
-    Ok((blob_data, envelope, in_reply_to, initial_keywords, initial_tags, received_at))
-    }).await??;
+            let received_at: i64 = match entry.get("receivedAt").filter(|v| !v.is_null()) {
+                Some(v) => {
+                    let valid = v.as_str().is_some_and(|s| s.ends_with('Z'));
+                    if !valid {
+                        anyhow::bail!("invalidProperties: receivedAt must be a UTCDate");
+                    }
+                    parse_utcdate_ms(v, "receivedAt")
+                        .map_err(|e| anyhow::anyhow!("invalidProperties: receivedAt: {e}"))?
+                }
+                None => message
+                    .received()
+                    .and_then(|r| r.date())
+                    .map(|d| d.to_timestamp() * 1000)
+                    .unwrap_or_else(|| chrono::Utc::now().timestamp_millis()),
+            };
+            drop(message);
+            Ok((
+                blob_data,
+                envelope,
+                in_reply_to,
+                initial_keywords,
+                initial_tags,
+                received_at,
+            ))
+        })
+        .await??;
 
     let ms = mailstore.clone();
     let mailboxes = mailbox_ids;
@@ -2414,7 +2434,9 @@ pub async fn import(
         .and_then(|v| v.as_object())
         .ok_or_else(|| invalid("emails must be an object"))?;
     let ms = mailstore.clone();
-    let old_state = tokio::task::spawn_blocking(move || ms.email_state(account_id)).await??.to_string();
+    let old_state = tokio::task::spawn_blocking(move || ms.email_state(account_id))
+        .await??
+        .to_string();
     check_if_in_state(&args, &old_state)?;
     let mut created = serde_json::Map::new();
     let mut not_created = serde_json::Map::new();
@@ -2424,8 +2446,12 @@ pub async fn import(
             Ok(id) => {
                 let ms = mailstore.clone();
                 let (record, thread) = tokio::task::spawn_blocking(move || -> Result<_> {
-                    Ok((ms.get_email(account_id, id)?, ms.thread_for_email(account_id, id)?))
-                }).await??;
+                    Ok((
+                        ms.get_email(account_id, id)?,
+                        ms.thread_for_email(account_id, id)?,
+                    ))
+                })
+                .await??;
                 created.insert(
                     creation_id.clone(),
                     serde_json::json!({
@@ -2472,7 +2498,9 @@ pub async fn import(
         }
     }
     let ms = mailstore.clone();
-    let new_state = tokio::task::spawn_blocking(move || ms.email_state(account_id)).await??.to_string();
+    let new_state = tokio::task::spawn_blocking(move || ms.email_state(account_id))
+        .await??
+        .to_string();
     Ok(serde_json::json!({
         "accountId": account, "oldState": old_state, "newState": new_state,
         "created": if created.is_empty() { serde_json::Value::Null } else { created.into() },

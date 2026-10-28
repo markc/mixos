@@ -1543,12 +1543,17 @@ impl SqliteMailStore {
 
     /// One account-scoped read for an Email/get batch. Missing legacy sidecars
     /// are absent from the map; they must not prevent reading the email.
-    pub fn threads_for_emails(&self, account: AccountId, ids: &[ItemId]) -> Result<std::collections::HashMap<ItemId, ThreadId>> {
+    pub fn threads_for_emails(
+        &self,
+        account: AccountId,
+        ids: &[ItemId],
+    ) -> Result<std::collections::HashMap<ItemId, ThreadId>> {
         if ids.is_empty() {
             return Ok(std::collections::HashMap::new());
         }
         let set = account_id_to_setid(account);
-        let ids = serde_json::to_string(&ids.iter().map(|id| id.0.to_string()).collect::<Vec<_>>())?;
+        let ids =
+            serde_json::to_string(&ids.iter().map(|id| id.0.to_string()).collect::<Vec<_>>())?;
         self.mds
             .with_set_read(&set, |conn| {
                 let read = || -> rusqlite::Result<_> {

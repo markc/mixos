@@ -28,9 +28,7 @@ impl InheritedSockets {
             // SAFETY: the caller guarantees single-threaded startup.
             unsafe { std::env::remove_var(key) };
         }
-        if pid.ok().as_deref()
-            != Some(std::process::id().to_string().as_str())
-        {
+        if pid.ok().as_deref() != Some(std::process::id().to_string().as_str()) {
             return Ok(Self::default());
         }
         let count: i32 = count
@@ -114,11 +112,7 @@ impl InheritedSockets {
                 return Err(std::io::Error::last_os_error().into());
             }
             listener.set_nonblocking(true)?;
-            sockets
-                .0
-                .entry(name.to_owned())
-                .or_default()
-                .push(listener);
+            sockets.0.entry(name.to_owned()).or_default().push(listener);
         }
         Ok(sockets)
     }
@@ -128,7 +122,11 @@ impl InheritedSockets {
         let mut sockets = Sockets::default();
         for (name, listeners) in self.0 {
             for listener in listeners {
-                sockets.0.entry(name.clone()).or_default().push(TcpListener::from_std(listener)?);
+                sockets
+                    .0
+                    .entry(name.clone())
+                    .or_default()
+                    .push(TcpListener::from_std(listener)?);
             }
         }
         Ok(sockets)

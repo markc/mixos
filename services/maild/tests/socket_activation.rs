@@ -111,7 +111,10 @@ fn activation_child() {
     }
     let inherited = unsafe { maild::activation::InheritedSockets::from_env() };
     for key in ["LISTEN_PID", "LISTEN_FDS", "LISTEN_FDNAMES"] {
-        assert!(std::env::var_os(key).is_none(), "{key} leaked after adoption");
+        assert!(
+            std::env::var_os(key).is_none(),
+            "{key} leaked after adoption"
+        );
     }
     let inherited = inherited.unwrap();
     let runtime = tokio::runtime::Builder::new_current_thread()

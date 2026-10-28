@@ -177,7 +177,8 @@ pub async fn api(
             continue;
         }
 
-        let result = mutation::call(&state, account_id, method, resolved_args, &mut created_ids).await;
+        let result =
+            mutation::call(&state, account_id, method, resolved_args, &mut created_ids).await;
 
         match result {
             Ok((value, extra)) => {
