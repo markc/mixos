@@ -504,7 +504,7 @@ impl Controller {
             ActionId::MailHeaders => {
                 let t = need()?;
                 let headers = args.and_then(|v| v.get("headers")).cloned().ok_or((code::INVALID_ARGUMENT, "mail.headers needs {headers}".into()))?;
-                let headers = serde_json::from_value(headers).map_err(|e| (code::INVALID_ARGUMENT, format!("{e}")))?;
+                let headers = serde_json::from_value(headers).map_err(|e| (code::INVALID_ARGUMENT, e.to_string()))?;
                 self.edit_headers(t, headers).map_err(|e| (code::CONFLICT, e))?;
                 Ok(None)
             }
