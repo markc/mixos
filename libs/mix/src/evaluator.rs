@@ -14709,14 +14709,17 @@ impl Evaluator {
                         let mut params = IndexMap::new();
                         let command = if name == "clip_get" {
                             if let Some(first) = eval_args.first() {
-                                if matches!(first.to_mix_string().as_str(), "clipboard" | "primary") {
+                                if matches!(first.to_mix_string().as_str(), "clipboard" | "primary")
+                                {
                                     params.insert("selection".into(), first.clone());
                                     if let Some(mime) = eval_args.get(1) {
                                         params.insert("mime".into(), mime.clone());
                                     }
                                 } else {
                                     if eval_args.len() > 1 {
-                                        return Err(self.runtime_err("clip_get: expected selection before MIME"));
+                                        return Err(self.runtime_err(
+                                            "clip_get: expected selection before MIME",
+                                        ));
                                     }
                                     params.insert("mime".into(), first.clone());
                                 }
@@ -14726,11 +14729,13 @@ impl Evaluator {
                             params.insert("data".into(), eval_args[0].clone());
                             let mut mime_index = 1;
                             if let Some(first) = eval_args.get(1) {
-                                if matches!(first.to_mix_string().as_str(), "clipboard" | "primary") {
+                                if matches!(first.to_mix_string().as_str(), "clipboard" | "primary")
+                                {
                                     params.insert("selection".into(), first.clone());
                                     mime_index = 2;
                                 } else if eval_args.len() > 2 {
-                                    return Err(self.runtime_err("clip_set: expected selection before MIME"));
+                                    return Err(self
+                                        .runtime_err("clip_set: expected selection before MIME"));
                                 }
                             }
                             params.insert(
