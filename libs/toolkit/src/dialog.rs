@@ -250,7 +250,9 @@ impl Dialog {
                         egui::ScrollArea::both()
                             .id_salt(id.with("compact-body"))
                             .max_height(body_max.y)
-                            .auto_shrink(false)
+                            .min_scrolled_height(0.0)
+                            .min_scrolled_width(0.0)
+                            .auto_shrink(resize.is_none())
                             .show(ui, |ui| {
                                 ui.set_max_size(body_max);
                                 body(ui)

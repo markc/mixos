@@ -84,6 +84,10 @@ fn panel_with(theme: &Theme, name: &str, open: Option<&str>) {
     toolkit::install(&harness.ctx, theme);
     harness.run();
     if let Some(menu) = open {
+        harness
+            .get_by_label(&toolkit::strings::own("window-menu"))
+            .click();
+        harness.run();
         harness.get_by_label(menu).click();
         harness.run();
     }
