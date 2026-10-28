@@ -306,6 +306,8 @@ async fn stdio_tools_use_the_real_fixture_bus_and_reconnect_without_replay() {
             "bus_list_peers",
             "bus_list_services",
             "bus_node_info",
+            "clipboard_get",
+            "clipboard_set",
             "context_search",
             "desktop_window_wait",
             "desktop_windows",
