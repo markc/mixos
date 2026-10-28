@@ -488,19 +488,36 @@ impl Doc {
         // mail_parser keeps the plain and HTML halves of a
         // multipart/alternative in separate lists, and a term may sit
         // only in the HTML one.
+        // A forwarded message/rfc822 is body content too: its headers
+        // and its own text parts. The parser already bounds nesting
+        // depth, and the walk is iterative.
         let mut body = String::new();
-        for part in &message.parts {
-            let text = match &part.body {
-                mail_parser::PartType::Text(t) => t.to_lowercase(),
-                mail_parser::PartType::Html(h) => {
-                    mail_parser::decoders::html::html_to_text(h).to_lowercase()
-                }
-                _ => continue,
-            };
+        let mut push = |text: &str| {
             if !body.is_empty() {
                 body.push('\n');
             }
-            body.push_str(&text);
+            body.push_str(&text.to_lowercase());
+        };
+        let mut stack: Vec<&mail_parser::Message<'_>> = vec![&message];
+        while let Some(m) = stack.pop() {
+            for part in &m.parts {
+                match &part.body {
+                    mail_parser::PartType::Text(t) => push(t),
+                    mail_parser::PartType::Html(h) => {
+                        push(&mail_parser::decoders::html::html_to_text(h))
+                    }
+                    mail_parser::PartType::Message(inner) => {
+                        for (name, value) in inner.headers_raw() {
+                            push(&format!("{name}:{value}"));
+                        }
+                        for h in inner.headers() {
+                            push(&decoded_value(h.value()));
+                        }
+                        stack.push(inner);
+                    }
+                    _ => {}
+                }
+            }
         }
         let sent = message
             .date()
@@ -1039,6 +1056,37 @@ Content-Type: text/html\r\n\
         assert!(matches_raw(&Crit::Body("plain words".into()), &h, raw));
         assert!(matches_raw(&Crit::Body("htmlterm".into()), &h, raw));
         assert!(matches_raw(&Crit::Text("htmlterm".into()), &h, raw));
+    }
+
+    /// A forwarded message/rfc822 attachment's headers and text are
+    /// body content: found by BODY and TEXT, excluded by NOT BODY.
+    #[test]
+    fn matches_body_in_forwarded_message() {
+        let raw = b"From: a@example.com\r\n\
+Subject: Fwd\r\n\
+MIME-Version: 1.0\r\n\
+Content-Type: multipart/mixed; boundary=\"b\"\r\n\
+\r\n\
+--b\r\n\
+Content-Type: text/plain\r\n\
+\r\n\
+see below\r\n\
+--b\r\n\
+Content-Type: message/rfc822\r\n\
+\r\n\
+From: Dana <dana@example.org>\r\n\
+Subject: inner topic\r\n\
+\r\n\
+forwardedterm inside\r\n\
+--b--\r\n";
+        let h = make_handle(1, 0, 100);
+        assert!(matches_raw(&Crit::Body("forwardedterm".into()), &h, raw));
+        assert!(matches_raw(&Crit::Body("dana@example.org".into()), &h, raw));
+        assert!(matches_raw(&Crit::Text("inner topic".into()), &h, raw));
+        let not_body = Crit::Not(Box::new(Crit::Body("forwardedterm".into())));
+        assert!(!matches_raw(&not_body, &h, raw));
+        // The outer From: is still only the outer sender.
+        assert!(!matches_raw(&Crit::Header("from".into(), "dana".into()), &h, raw));
     }
 
     #[test]

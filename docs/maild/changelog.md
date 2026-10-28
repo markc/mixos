@@ -19,8 +19,11 @@ generated: by docs/_build/gen-site.mix from services/maild/CHANGELOG.md; do not 
   sequence keys leave undecided; an unreadable blob answers
   `NO [UNAVAILABLE]` rather than a partial result.
 - `SEARCH` accepts string literals anywhere in the command, including several
-  in one command (64 literals and 64 KiB at most). Other commands keep the
-  single trailing literal.
+  in one command (64 literals and 64 KiB at most). Past those limits a sync
+  literal is refused; a non-sync one gets `BAD` and the connection closes, since
+  the rest of the command can no longer be framed. Other commands keep the
+  single trailing literal. `BODY` and `TEXT` also search forwarded
+  `message/rfc822` parts.
 
 ## 0.1.1 — 2026-10-18
 

@@ -249,6 +249,11 @@ pub enum ReadCommandError {
         declared: u64,
         cap: u64,
     },
+    /// A multi-literal command was refused part-way with non-sync
+    /// bytes of unknown extent still to come, so the stream can't be
+    /// resynchronised. Caller answers `BAD` and closes the connection;
+    /// resuming would run the rest of the command's bytes as commands.
+    FramingLost { line: Vec<u8>, reason: String },
 }
 
 impl std::fmt::Display for ReadCommandError {
@@ -270,6 +275,7 @@ impl std::fmt::Display for ReadCommandError {
             Self::NonSyncLiteralRefused { declared, .. } => {
                 write!(f, "non-sync literal {declared} refused in current state")
             }
+            Self::FramingLost { reason, .. } => write!(f, "framing lost: {reason}"),
         }
     }
 }
@@ -410,6 +416,14 @@ where
     } else {
         max_literal
     };
+    // An over-cap non-sync literal in a multi-literal command can't be
+    // drained safely: whatever follows it may announce more literals.
+    if multi && marker.non_sync && marker.declared > max_literal {
+        return Err(ReadCommandError::FramingLost {
+            line,
+            reason: format!("literal {} exceeds cap {max_literal}", marker.declared),
+        });
+    }
     let body = read_literal_body(reader, writer, &line, marker, max_literal).await?;
     let mut used = body.len() as u64;
     let mut continuation: Vec<Segment> = Vec::new();
@@ -445,20 +459,26 @@ where
                 break;
             }
             Ok(Some((text, next))) => {
-                if continuation.len() + 1 >= MAX_MULTI_LITERALS {
-                    if next.non_sync {
-                        // Keep the stream in sync: swallow the body and
-                        // whatever remains of the command.
-                        drain_n(reader, next.declared).await.map_err(io_to_err)?;
-                        let _ = read_line(reader).await;
-                    }
-                    return Err(ReadCommandError::MalformedLiteral {
-                        line,
-                        reason: format!("more than {MAX_MULTI_LITERALS} literals in one command"),
-                    });
-                }
                 used += text.len() as u64;
                 let cap = max_literal.saturating_sub(used);
+                let refusal = if continuation.len() + 1 >= MAX_MULTI_LITERALS {
+                    Some(format!("more than {MAX_MULTI_LITERALS} literals in one command"))
+                } else if next.declared > cap {
+                    Some(format!("literals exceed {max_literal} bytes in one command"))
+                } else {
+                    None
+                };
+                if let Some(reason) = refusal {
+                    // A sync literal waits for our `+`, so withholding
+                    // it keeps the stream in sync. A non-sync one is
+                    // already arriving, with more of the command after
+                    // it: framing is lost.
+                    return Err(if next.non_sync {
+                        ReadCommandError::FramingLost { line, reason }
+                    } else {
+                        ReadCommandError::MalformedLiteral { line, reason }
+                    });
+                }
                 let lit = read_literal_body(reader, writer, &line, next, cap).await?;
                 used += lit.len() as u64;
                 continuation.push(Segment {

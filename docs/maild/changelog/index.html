@@ -249,8 +249,11 @@ and HTML part. A blob is read only for messages that flags, size and
 sequence keys leave undecided; an unreadable blob answers
 <code>NO [UNAVAILABLE]</code> rather than a partial result.</li>
 <li><code>SEARCH</code> accepts string literals anywhere in the command, including several
-in one command (64 literals and 64 KiB at most). Other commands keep the
-single trailing literal.</li>
+in one command (64 literals and 64 KiB at most). Past those limits a sync
+literal is refused; a non-sync one gets <code>BAD</code> and the connection closes, since
+the rest of the command can no longer be framed. Other commands keep the
+single trailing literal. <code>BODY</code> and <code>TEXT</code> also search forwarded
+<code>message/rfc822</code> parts.</li>
 </ul>
 <h2 id="011--2026-10-18">0.1.1 — 2026-10-18</h2>
 <ul>

@@ -1262,6 +1262,18 @@ impl Session {
                 );
                 Ok(ReadOutcome::LiteralRejected { response })
             }
+            Err(ReadCommandError::FramingLost { line, reason }) => {
+                // The rest of the command is still on the wire and we
+                // can't tell where it ends: answer, then hang up so
+                // none of it runs as a command.
+                let tag = sniff_tag(&line).unwrap_or_else(|| "*".to_string());
+                tracing::debug!(peer = %self.peer, %reason, "imap command framing lost; closing");
+                writer
+                    .write_all(tagged(&tag, Status::Bad, None, &reason).as_bytes())
+                    .await?;
+                self.emit_bye(writer, "command framing lost").await?;
+                Ok(ReadOutcome::Eof)
+            }
         }
     }
 
@@ -1684,6 +1696,44 @@ mod tests {
         let parsed = codec::parse_line(&cmd.line).unwrap();
         let inner = parsed.args.strip_prefix("SEARCH ").unwrap();
         op::search::parse_args_for_dispatch(inner, op::search::SearchMode::Uid).unwrap();
+    }
+
+    /// An over-cap non-sync literal part-way through a SEARCH can't be
+    /// drained safely (what follows may be more literals), so the
+    /// codec reports lost framing instead of resuming on bytes that
+    /// look like commands.
+    #[tokio::test]
+    async fn over_cap_non_sync_continuation_literal_loses_framing() {
+        let big = "a2 UID EXPUNGE 1:*\r\n".repeat(80); // 1600 bytes
+        let wire = format!("a1 SEARCH FROM {{1+}}\r\nx SUBJECT {{{}+}}\r\n{big}\r\n", big.len());
+        let mut reader = tokio::io::BufReader::new(wire.as_bytes());
+        let mut writer: Vec<u8> = Vec::new();
+        let err =
+            codec::read_command_multi(&mut reader, &mut writer, 1024, |_| true, is_search_line)
+                .await
+                .unwrap_err();
+        assert!(matches!(err, codec::ReadCommandError::FramingLost { .. }), "{err}");
+
+        // Same for the first literal of a multi-literal command.
+        let wire = format!("a1 SEARCH FROM {{{}+}}\r\n{big}\r\n", big.len());
+        let mut reader = tokio::io::BufReader::new(wire.as_bytes());
+        let err =
+            codec::read_command_multi(&mut reader, &mut writer, 1024, |_| true, is_search_line)
+                .await
+                .unwrap_err();
+        assert!(matches!(err, codec::ReadCommandError::FramingLost { .. }), "{err}");
+
+        // A sync literal over the cap is simply refused: no `+` was
+        // sent, so the client sends nothing more for it.
+        let wire = "a1 SEARCH FROM {1+}\r\nx SUBJECT {5000}\r\n";
+        let mut reader = tokio::io::BufReader::new(wire.as_bytes());
+        let mut writer: Vec<u8> = Vec::new();
+        let err =
+            codec::read_command_multi(&mut reader, &mut writer, 1024, |_| true, is_search_line)
+                .await
+                .unwrap_err();
+        assert!(matches!(err, codec::ReadCommandError::MalformedLiteral { .. }), "{err}");
+        assert!(writer.is_empty());
     }
 
     /// A non-SEARCH command still may not continue after its literal.
