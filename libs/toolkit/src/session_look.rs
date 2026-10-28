@@ -66,6 +66,8 @@ pub fn theme_or(appearance: &Appearance, session: &Theme) -> Theme {
                 design::MenuSide::resolve(&appearance.menu_side),
             )
             .with_band(band(appearance))
+            .with_overlay(Overlay::from_appearance(appearance))
+            .expect("appearance overlays contain only validated type and icon choices")
     })
 }
 
@@ -176,6 +178,20 @@ mod tests {
         ] {
             assert!(theme(&a).is_none(), "{a:?}");
             assert_eq!(theme_or(&a, &session).scheme(), Scheme::Ocean);
+        }
+    }
+
+    #[test]
+    fn font_choices_survive_an_unsupported_design() {
+        let session = Theme::embedded();
+        for mut appearance in [appearance("no-such-scheme"), Appearance {
+            source: Some("{}".into()), ..Appearance::default()
+        }] {
+            appearance.font_weight = Some(700);
+            appearance.font_size = Some(18.0);
+            let chosen = theme_or(&appearance, &session);
+            assert_eq!(chosen.overlay().weight, Some(700));
+            assert_eq!(chosen.overlay().size, Some(18.0));
         }
     }
 

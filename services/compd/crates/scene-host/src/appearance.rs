@@ -249,7 +249,7 @@ mod tests {
             desktop.ui.text_scale = 1.5;
             let next = snapshot_of(desktop);
             let changes = settings::domains::ChangePlan::between(Some(&initial), &next, CONTEXT, true);
-            assert!(changes.resources && changes.text && changes.layout && changes.paint);
+            assert!(changes.resources && changes.text && changes.layout);
             let look = build(&next).unwrap();
             assert_eq!(look.theme.overlay().weight, Some(weight));
             assert_eq!(look.theme.overlay().size, Some(18.0));

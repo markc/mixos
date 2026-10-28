@@ -1824,7 +1824,7 @@ mod tests {
         let changed = base.with(&json!({"scheme":"forest", "style":"plain", "mode":"light",
             "contrast":"high", "decorations":"ssd", "caption_side":"left", "window_style":"win11",
             "menu_style":"button", "menu_side":"right", "title_align":"left",
-            "actions_align":"right", "actions_place":"titlebar", "font_family":"Inter",
+            "actions_align":"left", "actions_place":"titlebar", "font_family":"Inter",
             "mono_family":"JetBrains Mono", "text_scale":1.5, "density":1.5, "reduced_motion":true
         })).unwrap();
         let changes = changed.changes(&base);

@@ -7,6 +7,8 @@
   licence. Interface weights 300–700 select distinct faces; heading offsets
   clamp to that range. Headless coverage tests require each weight to draw
   more ink, and size tests check proportional styles without changing mono.
+- Keep session font overrides when an app falls back from a custom or unknown
+  design to its installed theme.
 
 - Allow a viewport to require its own complete client frame independently of
   the session decoration preference and later theme changes. Each viewport

@@ -232,7 +232,18 @@ pub struct Shell {
 type Deliveries = futures::channel::mpsc::Receiver<Delivery>;
 
 /// The window's own theme choice and the look under it.
-type Installed = (toolkit::theme_menu::Choice, Option<Look>, bool);
+type Installed = (toolkit::theme_menu::Choice, Option<Look>, bool, Option<preferences::appearance::InterfaceFont>);
+
+fn interface_theme(theme: Theme, font: Option<&preferences::appearance::InterfaceFont>) -> Theme {
+    let Some(font) = font else { return theme; };
+    let selected = toolkit::theme::Overlay::from_appearance(&settings::Appearance {
+        font_weight: font.weight, font_size: font.size, ..Default::default()
+    });
+    let mut overlay = theme.overlay().clone();
+    overlay.weight = selected.weight;
+    overlay.size = selected.size;
+    theme.with_overlay(overlay).expect("the theme's style overlay is already valid")
+}
 
 fn locked(inbox: &Mutex<Deliveries>) -> std::sync::MutexGuard<'_, Deliveries> {
     inbox
@@ -297,7 +308,7 @@ impl Shell {
             exiting: false,
             held: VecDeque::new(),
             inbox,
-            installed: (toolkit::theme_menu::Choice::default(), None, false),
+            installed: (toolkit::theme_menu::Choice::default(), None, false, None),
         };
         shell.engine.session = (shell.theme.scheme(), shell.theme.mode());
         shell.engine.session_decorations = shell.theme.requested_decorations();
@@ -568,13 +579,14 @@ impl Shell {
             self.choice(),
             self.engine.look.shown(),
             self.engine.look.custom_source,
+            self.engine.look.interface_font.clone(),
         )
     }
 
     /// Install the base theme with the window's choice over it. Neither the
     /// session's theme file nor settingsd is written.
     fn install_theme(&mut self) {
-        let (choice, look, custom_source) = self.wanted();
+        let (choice, look, custom_source, font) = self.wanted();
         let base = match &look {
             Some(look) if !custom_source => Theme::for_context(look.context()),
             _ => self.theme.clone(),
@@ -606,6 +618,7 @@ impl Shell {
             }),
             None => base,
         };
+        let base = interface_theme(base, font.as_ref());
         let theme = match base.with_choice(&choice) {
             Ok(theme) => theme,
             Err(error) => {
@@ -617,7 +630,7 @@ impl Shell {
         toolkit::debug!(app = APP, "settings preview applied");
         self.engine.session = (base.scheme(), base.mode());
         self.engine.session_decorations = base.requested_decorations();
-        self.installed = (choice, look, custom_source);
+        self.installed = (choice, look, custom_source, font);
     }
 
     fn follow_theme(&mut self) {
@@ -693,6 +706,16 @@ impl eframe::App for Shell {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn preferences_draws_its_accepted_interface_font() {
+        let base = toolkit::Theme::embedded();
+        let font = preferences::appearance::InterfaceFont { weight: Some(700), size: Some(18.0) };
+        let chosen = super::interface_theme(base.clone(), Some(&font));
+        assert_eq!(chosen.overlay().weight, Some(700));
+        assert_eq!(chosen.overlay().size, Some(18.0));
+        assert_ne!(toolkit::style::style(&base).text_styles, toolkit::style::style(&chosen).text_styles);
+        assert_eq!(super::interface_theme(base.clone(), None), base);
+    }
     use super::*;
 
     fn engine() -> Engine {

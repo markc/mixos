@@ -6,6 +6,8 @@
 - Offer Bold (700) alongside the bundled Light, Regular, Medium and SemiBold
   interface faces. Test every settings path produced by the controls against
   settingsd's setter and keep interface-font refusals visible after rereading.
+- Follow accepted interface font settings in Preferences itself, including
+  font-only updates that leave the rest of the appearance unchanged.
 
 - Desktop > Windows offers registry-driven menu, title, Action Bar and window
   button alignment, plus Action Bar hosting in the title bar. Window buttons
