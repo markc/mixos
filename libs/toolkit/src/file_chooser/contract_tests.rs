@@ -88,7 +88,7 @@ fn email_save_suggested_name_appends_extension_and_round_trips_choices() {
     assert_eq!(h.state().0.name, "message");
     h.get_by_label("Read only").click();
     h.run();
-    h.get_by_label("UTF-8").click();
+    h.get_by_label("Encoding").click();
     h.run();
     h.get_by_label("UTF-16").click();
     h.run();
@@ -117,7 +117,8 @@ fn email_save_suggested_name_appends_extension_and_round_trips_choices() {
 
 #[test]
 fn directory_and_save_files_keep_exact_names_and_confirm_replacement_once() {
-    let dir = tempfile::tempdir().unwrap();
+    // The host's main filesystem can enforce UTF-8 names; tmpfs retains bytes.
+    let dir = tempfile::tempdir_in("/dev/shm").unwrap();
     let mut chooser = FileChooser::from_request(parse(
         json!({"directory":true,"current_folder":dir.path().to_str().unwrap()}),
     ));
@@ -159,7 +160,7 @@ fn directory_and_save_files_keep_exact_names_and_confirm_replacement_once() {
 
 #[test]
 fn typed_save_paths_navigate_and_current_file_bytes_survive() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir_in("/dev/shm").unwrap();
     std::fs::create_dir(dir.path().join("Reports")).unwrap();
     let request = parse(
         json!({"mode":"save","current_file":format!("file://{}/%FF.md", dir.path().display())}),
@@ -186,7 +187,7 @@ fn filter_menu_selects_inserted_current_filter_then_reloads() {
         "filters":[{"name":"Markdown","patterns":["*.md"],"mime_types":[]}],
         "current_filter":{"name":"Images","patterns":["*.png"],"mime_types":[]}}));
     let mut h = harness(FileChooser::from_request(request));
-    h.get_by_label("Images").click();
+    h.get_by_label("File type").click();
     h.run();
     h.get_by_label("Markdown").click();
     h.run();

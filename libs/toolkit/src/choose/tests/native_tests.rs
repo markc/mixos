@@ -22,7 +22,15 @@ async fn publish(client: &SupervisedClient, value: serde_json::Value) {
 async fn absent_noded_and_unregistered_files_skip_bus_without_caching() {
     let (_cancel_tx, mut cancel) = watch::channel(false);
     let req = request("{}").unwrap();
-    assert!(tokio::time::timeout(Duration::from_secs(8), native::attempt_at(&req, &mut cancel, "ws://127.0.0.1:1/ws")).await.expect("noded discovery exceeded its bound").is_none());
+    assert!(
+        tokio::time::timeout(
+            Duration::from_secs(8),
+            native::attempt_at(&req, &mut cancel, "ws://127.0.0.1:1/ws")
+        )
+        .await
+        .expect("noded discovery exceeded its bound")
+        .is_none()
+    );
     let broker = test_broker::Broker::start();
     assert!(
         native::attempt_at(&req, &mut cancel, &broker.url)

@@ -731,6 +731,7 @@ impl FileChooser {
                     .unwrap_or(0);
                 let labels: Vec<_> = request.filters.iter().map(|f| &f.name).collect();
                 if crate::combo::show(ui, self.id.with("filter"), &mut index, &labels, None)
+                    .accessible_name(own("file-chooser-filter"))
                     .changed()
                 {
                     request.current_filter = request.filters.get(index).cloned();
@@ -758,6 +759,7 @@ impl FileChooser {
                         .unwrap_or(0);
                     let labels: Vec<_> = choice.options.iter().map(|o| &o.label).collect();
                     if crate::combo::show(ui, self.id.with(&choice.id), &mut index, &labels, None)
+                        .accessible_name(&choice.label)
                         .changed()
                     {
                         *value = choice.options[index].id.clone();
