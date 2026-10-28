@@ -241,6 +241,12 @@
 <h2 id="030">0.3.0</h2>
 <ul>
 <li>
+<p><code>editd@.service</code> wants the session broker instead of requiring and binding
+to it, and also orders after the node's system broker. A session that uses
+the system broker, with <code>noded@N</code> masked, now starts editd. Before, every
+start job was refused.</p>
+</li>
+<li>
 <p>Non-empty seeded scratch buffers report <code>dirty: true</code> at revision zero and
 require a save or forced close. Empty scratch buffers remain clean.</p>
 </li>

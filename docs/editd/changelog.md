@@ -10,6 +10,11 @@ generated: by docs/_build/gen-site.mix from services/editd/CHANGELOG.md; do not 
 
 ## 0.3.0
 
+- `editd@.service` wants the session broker instead of requiring and binding
+  to it, and also orders after the node's system broker. A session that uses
+  the system broker, with `noded@N` masked, now starts editd. Before, every
+  start job was refused.
+
 - Non-empty seeded scratch buffers report `dirty: true` at revision zero and
   require a save or forced close. Empty scratch buffers remain clean.
 
