@@ -5924,7 +5924,7 @@ fn imap_uidvalidity_high_water(conn: &rusqlite::Connection) -> mds::Result<i64> 
 
 /// New mailbox identities use a durable counter, including across deletion.
 /// Legacy epoch-millisecond identities retain their seconds-converted wire value.
-/// RENAME repairs only identities that could collide under the destination name.
+/// RENAME repairs only identities shared with another live or retired mailbox.
 fn imap_allocate_uidvalidity(conn: &rusqlite::Connection, id: &ContainerId) -> mds::Result<()> {
     let next = imap_uidvalidity_high_water(conn)?
         .checked_add(1)
@@ -5944,13 +5944,15 @@ fn imap_allocate_uidvalidity(conn: &rusqlite::Connection, id: &ContainerId) -> m
 }
 
 fn imap_identity_history(conn: &rusqlite::Connection) -> mds::Result<()> {
-    conn.execute_batch("CREATE TABLE IF NOT EXISTS mail_imap_deleted_identity (name TEXT NOT NULL, validity INTEGER NOT NULL, PRIMARY KEY(name, validity))")
+    conn.execute_batch("CREATE TABLE IF NOT EXISTS mail_imap_deleted_identity (name TEXT NOT NULL, validity INTEGER NOT NULL, PRIMARY KEY(name, validity)); CREATE INDEX IF NOT EXISTS mail_imap_deleted_validity ON mail_imap_deleted_identity(validity)")
         .map_err(|error| mds::Error::Other(error.to_string()))
 }
 
 fn imap_record_deleted_identity(conn: &rusqlite::Connection, id: &ContainerId) -> mds::Result<()> {
     imap_identity_history(conn)?;
-    let Ok(name) = imap_name_in_connection(conn, id) else { return Ok(()); };
+    let Ok(name) = imap_name_in_connection(conn, id) else {
+        return Ok(());
+    };
     conn.execute("INSERT OR IGNORE INTO mail_imap_deleted_identity(name, validity) SELECT ?1, CASE WHEN seq_validity > 4294967295 THEN seq_validity / 1000 ELSE seq_validity END FROM container WHERE id = ?2", params![name, id.0.to_string()])
         .map_err(|error| mds::Error::Other(error.to_string()))?;
     Ok(())
@@ -5974,12 +5976,17 @@ fn imap_repair_renamed_identities(
         let container = ContainerId(
             Uuid::parse_str(&id).map_err(|error| mds::Error::Other(error.to_string()))?,
         );
-        let Ok(name) = imap_name_in_connection(conn, &container) else { continue; };
+        let Ok(_) = imap_name_in_connection(conn, &container) else {
+            continue;
+        };
         let collision: bool = conn.query_row(
-            "WITH identity(value) AS (SELECT CASE WHEN seq_validity > 4294967295 THEN seq_validity / 1000 ELSE seq_validity END FROM container WHERE id = ?1) SELECT EXISTS(SELECT 1 FROM container c, identity i WHERE c.id != ?1 AND c.name != ?3 AND (CASE WHEN c.seq_validity > 4294967295 THEN c.seq_validity / 1000 ELSE c.seq_validity END) = i.value) OR EXISTS(SELECT 1 FROM mail_imap_deleted_identity h, identity i WHERE h.name = ?2 AND h.validity = i.value)",
-            params![id, name, UPLOAD_STAGING_NAME], |row| row.get(0),
+            "WITH identity(value) AS (SELECT CASE WHEN seq_validity > 4294967295 THEN seq_validity / 1000 ELSE seq_validity END FROM container WHERE id = ?1) SELECT EXISTS(SELECT 1 FROM container c, identity i WHERE c.id != ?1 AND c.name != ?2 AND (CASE WHEN c.seq_validity > 4294967295 THEN c.seq_validity / 1000 ELSE c.seq_validity END) = i.value) OR EXISTS(SELECT 1 FROM mail_imap_deleted_identity h, identity i WHERE h.validity = i.value)",
+            params![id, UPLOAD_STAGING_NAME], |row| row.get(0),
         ).map_err(|error| mds::Error::Other(error.to_string()))?;
         if collision {
+            // The mailbox may have been cached under earlier names. Preserve
+            // the retired value before replacing it, not just on DELETE.
+            imap_record_deleted_identity(conn, &container)?;
             imap_allocate_uidvalidity(conn, &container)?;
         }
     }

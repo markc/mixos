@@ -697,10 +697,9 @@ pub async fn handle_with_access(
         Err(e) => return tagged(tag, Status::Bad, None, &e).into_bytes(),
     };
 
-    // Build the SequenceMap by listing every email in the container,
-    // sorted by `seq` (= UID = MSN ordering per RFC 9051 §2.3.1.1).
-    // Use a full snapshot — `limit: u32::MAX` — because FETCH must
-    // see the whole mailbox to honour `1:*` and msn references.
+    // Sessions resolve targets through their established UID view and fetch
+    // only those indexed memberships. Standalone callers without a view take
+    // the conservative full snapshot for MSN and '*' resolution.
     let opts = ListOpts {
         sort_by: SortKey::Seq,
         limit: u32::MAX,

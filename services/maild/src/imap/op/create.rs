@@ -172,13 +172,6 @@ pub(super) fn validate_segment(seg: &str) -> Result<(), String> {
     if !crate::imap::mailbox_name::is_net_unicode(seg) {
         return Err("mailbox name must be Net-Unicode (NFC, no controls or noncharacters)".into());
     }
-    for b in seg.bytes() {
-        if b < 0x20 || b == 0x7f {
-            return Err(format!(
-                "non-ASCII or control byte 0x{b:02x} in mailbox name (UTF8=ACCEPT not advertised)"
-            ));
-        }
-    }
     if seg == UPLOAD_STAGING_NAME {
         return Err(format!("{seg:?} is a reserved mailbox name"));
     }
@@ -566,6 +559,6 @@ mod tests {
     #[test]
     fn validate_segment_rejects_control_byte() {
         let e = validate_segment("foo\nbar").unwrap_err();
-        assert!(e.contains("non-ASCII"), "{e}");
+        assert!(e.contains("Net-Unicode"), "{e}");
     }
 }

@@ -1282,7 +1282,16 @@ async fn charset_errors_and_save_failure_have_correct_state() -> Result<()> {
     command(&mut r, &mut w, "e", "ENABLE UTF8=ACCEPT").await?;
     command(&mut r, &mut w, "s", "SELECT INBOX").await?;
     for charset in ["US-ASCII", "UTF-8"] {
-        assert!(command(&mut r, &mut w, "q", &format!("SEARCH CHARSET {charset} ALL")).await?.contains("q OK"));
+        assert!(
+            command(
+                &mut r,
+                &mut w,
+                "q",
+                &format!("SEARCH CHARSET {charset} ALL")
+            )
+            .await?
+            .contains("q OK")
+        );
     }
     Ok(())
 }
@@ -1870,6 +1879,9 @@ async fn rename_repairs_only_colliding_live_or_deleted_name_identities() -> Resu
             .uid_validity,
         12345
     );
+    assert!(command(&mut r, &mut w, "r", "RENAME Twin Elsewhere").await?.contains("r OK"));
+    assert_ne!(ms.list_mailboxes(1)?.iter().find(|row| row.id == twin).unwrap().uid_validity, 12345,
+        "an identity retired under another name must not be reused");
     assert!(
         command(&mut r, &mut w, "d", "DELETE Deleted")
             .await?
@@ -1989,7 +2001,10 @@ async fn create_and_subscribe_reject_c1_and_utf7_command_injection() -> Result<(
 #[tokio::test]
 async fn subscription_children_probe_and_list_status_cap_have_correct_wire_forms() -> Result<()> {
     let (_tmp, db, _mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
-    let cfg = ImapConfig { max_literal_bytes: 42000, ..ImapConfig::default() };
+    let cfg = ImapConfig {
+        max_literal_bytes: 42000,
+        ..ImapConfig::default()
+    };
     let (client, _) = spawn_session(db, ms, cfg).await;
     let (mut r, mut w) = login(client).await?;
     command(&mut r, &mut w, "c", "CREATE Root").await?;
@@ -2112,6 +2127,21 @@ async fn binary_accepts_unpadded_base64() -> Result<()> {
         response.contains("{2}\r\nab") && response.contains("BINARY.SIZE[1] 2"),
         "{response}"
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn canonical_utf7_atoms_preserve_leading_unicode_whitespace() -> Result<()> {
+    let (_tmp, db, _mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
+    let plain = ms.create_mailbox(1, "foo", None, attrs_for(None, false))?;
+    let spaced = ms.create_mailbox(1, "\u{a0}foo", None, attrs_for(None, false))?;
+    let (client, _) = spawn_session(db, ms.clone(), ImapConfig::default()).await;
+    let (mut r, mut w) = login(client).await?;
+    let response = command(&mut r, &mut w, "d", "DELETE &AKA-foo").await?;
+    assert!(response.contains("d OK"), "{response}");
+    let remaining = ms.list_mailboxes(1)?;
+    assert!(remaining.iter().any(|mailbox| mailbox.id == plain));
+    assert!(!remaining.iter().any(|mailbox| mailbox.id == spaced));
     Ok(())
 }
 
@@ -2245,7 +2275,11 @@ mod cost_regressions {
         for _ in 0..1000 {
             let response = command(&mut r, &mut w, "f", "FETCH 1 UID").await?;
             assert!(response.contains("* 1 FETCH (UID 1)"), "{response}");
-            assert_eq!(counted.lists.load(Ordering::Relaxed), initial_lists, "FETCH rescanned the folder");
+            assert_eq!(
+                counted.lists.load(Ordering::Relaxed),
+                initial_lists,
+                "FETCH rescanned the folder"
+            );
         }
         assert_eq!(
             counted.lists.load(Ordering::Relaxed),
@@ -2272,7 +2306,11 @@ mod cost_regressions {
                 response.starts_with("* 1 FETCH (UID 1 FLAGS "),
                 "{response}"
             );
-            assert_eq!(counted.lists.load(Ordering::Relaxed), idle_lists, "IDLE rescanned the folder for one flag update");
+            assert_eq!(
+                counted.lists.load(Ordering::Relaxed),
+                idle_lists,
+                "IDLE rescanned the folder for one flag update"
+            );
         }
         assert_eq!(
             counted.lists.load(Ordering::Relaxed),

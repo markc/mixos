@@ -979,17 +979,25 @@ impl Session {
                             );
                             let mut renamed_ids = std::collections::HashSet::new();
                             if let crate::imap::mailbox_name::ResolveResult::Found(root) =
-                                crate::imap::mailbox_name::resolve(&names.old_name, rename_before.as_ref().unwrap())
+                                crate::imap::mailbox_name::resolve(
+                                    &names.old_name,
+                                    rename_before.as_ref().unwrap(),
+                                )
                             {
                                 renamed_ids.insert(root);
                                 loop {
                                     let previous = renamed_ids.len();
                                     for mailbox in rename_before.as_ref().unwrap() {
-                                        if mailbox.parent.is_some_and(|parent| renamed_ids.contains(&parent)) {
+                                        if mailbox
+                                            .parent
+                                            .is_some_and(|parent| renamed_ids.contains(&parent))
+                                        {
                                             renamed_ids.insert(mailbox.id);
                                         }
                                     }
-                                    if renamed_ids.len() == previous { break; }
+                                    if renamed_ids.len() == previous {
+                                        break;
+                                    }
                                 }
                             }
                             let store = self.mailstore.clone();
