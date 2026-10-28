@@ -1,0 +1,221 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+use std::collections::{BTreeMap, VecDeque};
+use std::sync::Arc;
+
+use anyhow::{Result, bail, ensure};
+use serde::{Deserialize, Serialize};
+
+pub const TEXT_CAP: usize = 1024 * 1024;
+pub const MAX_BYTES: usize = 64 * 1024 * 1024;
+pub const CHUNK: usize = 64 * 1024;
+pub const HISTORY_LEN: usize = 50;
+pub const SECRET_HINT: &str = "x-kde-passwordManagerHint";
+pub const MARKER: &str = "application/x-mixos-clipboard-";
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Stamp {
+    pub origin_session: String,
+    /// UUIDs survive daemon restarts without reusing an origin's generation.
+    pub generation: String,
+}
+
+impl Stamp {
+    pub fn new(session: &str) -> Self {
+        Self { origin_session: session.into(), generation: uuid::Uuid::now_v7().to_string() }
+    }
+
+    pub fn marker(&self) -> String {
+        format!("{MARKER}{}-{}", self.origin_session, self.generation)
+    }
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Get {
+    pub mime: Option<String>,
+    #[serde(default)]
+    pub primary: bool,
+    #[serde(default)]
+    pub offset: usize,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Set {
+    pub mime: String,
+    pub data: String,
+    #[serde(default)]
+    pub primary: bool,
+    /// `utf8` (default) or `base64` for arbitrary bytes.
+    #[serde(default = "utf8")]
+    pub encoding: String,
+    #[serde(default)]
+    pub sensitive: bool,
+    pub stamp: Option<Stamp>,
+}
+fn utf8() -> String { "utf8".into() }
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Pick { pub n: usize }
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Push { pub to: String }
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct HistoryEntry {
+    pub mime: String,
+    pub data: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Remote {
+    pub session: String,
+    pub stamp: Stamp,
+}
+
+#[derive(Clone)]
+pub struct Selection {
+    pub stamp: Stamp,
+    pub mime_types: Vec<String>,
+    pub sensitive: bool,
+    pub size: Option<usize>,
+    pub data: BTreeMap<String, Arc<Vec<u8>>>,
+    pub offer: Option<crate::wayland::Offer>,
+    pub remote: Option<Remote>,
+}
+
+impl Selection {
+    pub fn owned(stamp: Stamp, mime: String, data: Vec<u8>, sensitive: bool) -> Self {
+        let mut items = BTreeMap::from([(mime.clone(), Arc::new(data))]);
+        let mut types = vec![mime];
+        if sensitive {
+            types.push(SECRET_HINT.into());
+            items.insert(SECRET_HINT.into(), Arc::new(b"secret".to_vec()));
+        }
+        Self { stamp, mime_types: types, sensitive, size: Some(items.values().map(|v| v.len()).sum()), data: items, offer: None, remote: None }
+    }
+
+    pub fn text_mime(&self) -> Option<String> {
+        ["text/plain;charset=utf-8", "text/plain", "UTF8_STRING", "TEXT", "STRING"]
+            .into_iter().find(|mime| self.mime_types.iter().any(|m| m == mime)).map(str::to_owned)
+    }
+
+    pub fn can_export(&self, images: bool) -> Result<()> {
+        ensure!(!self.sensitive, "SENSITIVE: selection cannot leave this session");
+        ensure!(images || !self.mime_types.iter().any(|m| m.starts_with("image/")), "IMAGES_DISABLED: enable images for this pair first");
+        ensure!(self.remote.is_none(), "REMOTE_SELECTION: copy locally before forwarding to another session");
+        Ok(())
+    }
+
+    pub fn cache(&mut self, mime: String, bytes: Vec<u8>) -> Result<Arc<Vec<u8>>> {
+        let used: usize = self.data.iter().filter(|(m, _)| **m != mime).map(|(_, b)| b.len()).sum();
+        ensure!(used.saturating_add(bytes.len()) <= MAX_BYTES, "SIZE_CAP: selection cache exceeds 64 MiB");
+        let bytes = Arc::new(bytes);
+        self.data.insert(mime, bytes.clone());
+        Ok(bytes)
+    }
+}
+
+pub struct Clipboard {
+    pub session: String,
+    pub selections: [Option<Selection>; 2],
+    pub history: VecDeque<HistoryEntry>,
+    seen: VecDeque<Stamp>,
+    pub rotate: usize,
+}
+
+impl Clipboard {
+    pub fn new(session: String) -> Self {
+        Self { session, selections: [None, None], history: VecDeque::new(), seen: VecDeque::new(), rotate: 0 }
+    }
+
+    pub fn is_echo(&self, stamp: &Stamp) -> bool {
+        self.seen.contains(stamp)
+    }
+
+    pub fn adopt(&mut self, primary: bool, selection: Selection) -> bool {
+        if self.is_echo(&selection.stamp) { return false; }
+        self.seen.push_back(selection.stamp.clone());
+        if self.seen.len() > 256 { self.seen.pop_front(); }
+        self.selections[usize::from(primary)] = Some(selection);
+        self.rotate = 0;
+        true
+    }
+
+    pub fn remember(&mut self, primary: bool) {
+        let Some(s) = &self.selections[usize::from(primary)] else { return; };
+        if s.sensitive || s.remote.is_some() { return; }
+        let Some(mime) = s.text_mime() else { return; };
+        let Some(bytes) = s.data.get(&mime) else { return; };
+        if bytes.len() > TEXT_CAP || bytes.is_empty() { return; }
+        let Ok(text) = std::str::from_utf8(bytes) else { return; };
+        if self.history.front().is_some_and(|e| e.data == text) { return; }
+        self.history.retain(|e| e.data != text);
+        self.history.push_front(HistoryEntry { mime, data: text.into() });
+        self.history.truncate(HISTORY_LEN);
+    }
+}
+
+pub fn session(value: &str) -> Result<String> {
+    let number = value.strip_prefix("vt").or_else(|| value.strip_prefix("desk")).unwrap_or("");
+    if ["1", "3", "4"].contains(&number) { Ok(format!("vt{number}")) } else { bail!("SESSION: expected vt1, vt3, vt4 or the corresponding desk-prefixed alias") }
+}
+
+pub fn validate_mimes(types: &[String]) -> Result<()> {
+    ensure!(!types.is_empty() && types.len() <= 128, "MIME: expected 1..=128 types");
+    for mime in types {
+        ensure!(!mime.is_empty() && mime.len() <= 255 && !mime.chars().any(char::is_control) && !mime.starts_with(MARKER), "MIME: invalid or reserved type");
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn text(c: &Clipboard, data: String, sensitive: bool) -> Selection {
+        Selection::owned(Stamp::new(&c.session), "text/plain".into(), data.into_bytes(), sensitive)
+    }
+    #[test]
+    fn loops_are_ignored_and_generations_survive_restarts() {
+        let mut c = Clipboard::new("vt1".into());
+        let s = text(&c, "one".into(), false);
+        assert!(c.adopt(false, s.clone()));
+        assert!(!c.adopt(false, s.clone()));
+        assert!(c.adopt(false, text(&c, "two".into(), false)));
+        assert!(!c.adopt(false, s));
+        assert_ne!(Stamp::new("vt1"), Stamp::new("vt1"));
+    }
+    #[test]
+    fn secrets_never_enter_history_or_exports() {
+        let mut c = Clipboard::new("vt1".into());
+        let s = text(&c, "password".into(), true);
+        assert!(s.can_export(true).is_err());
+        assert_eq!(s.data[SECRET_HINT].as_slice(), b"secret");
+        c.adopt(false, s); c.remember(false);
+        assert!(c.history.is_empty());
+    }
+    #[test]
+    fn history_is_a_deduplicated_fifty_entry_text_ring() {
+        let mut c = Clipboard::new("vt1".into());
+        for n in 0..55 { c.adopt(false, text(&c, n.to_string(), false)); c.remember(false); }
+        assert_eq!(c.history.len(), HISTORY_LEN);
+        assert_eq!(c.history.back().unwrap().data, "5");
+        c.adopt(false, text(&c, "54".into(), false)); c.remember(false);
+        assert_eq!(c.history.len(), HISTORY_LEN);
+        c.adopt(false, Selection::owned(Stamp::new("vt1"), "image/png".into(), vec![0], false)); c.remember(false);
+        assert_eq!(c.history.front().unwrap().data, "54");
+    }
+    #[test]
+    fn caps_and_image_pair_policy_are_enforced() {
+        let mut c = Clipboard::new("vt1".into());
+        c.adopt(false, text(&c, "x".repeat(TEXT_CAP + 1), false)); c.remember(false);
+        assert!(c.history.is_empty());
+        let s = Selection::owned(Stamp::new("vt1"), "image/png".into(), vec![0], false);
+        assert!(s.can_export(false).is_err()); assert!(s.can_export(true).is_ok());
+        assert!(session("other-node").is_err());
+    }
+}

@@ -1,0 +1,49 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+[package]
+name = "clipd"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "Session clipboard and explicit same-host clipboard transfers over the Bus"
+
+[package.metadata.mixos]
+component = "clipd"
+kind = "service"
+layer = "desktop"
+contract = "public"
+
+[lints.clippy]
+mod_module_files = "deny"
+
+[dependencies]
+anyhow.workspace = true
+base64.workspace = true
+buildinfo.workspace = true
+bus = { workspace = true, features = ["native"] }
+clap.workspace = true
+chacha20poly1305 = "=0.10.1"
+egui.workspace = true
+eframe.workspace = true
+libc.workspace = true
+rand.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+strict.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "signal", "net", "io-util"] }
+toolkit.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+uuid.workspace = true
+wayland-client = "=0.31.15"
+wayland-protocols = { version = "=0.32.13", features = ["client", "staging"] }
+wayland-protocols-wlr = { version = "=0.3.12", features = ["client"] }
+
+[build-dependencies]
+buildinfo.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+test-broker = { path = "../../libs/test-broker" }

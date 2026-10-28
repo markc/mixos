@@ -88,12 +88,12 @@ pub struct Loaded {
 }
 
 /// The exact action prefix the pre-`service` defaults on the first live host
-/// wrote for the clipboard rows. Those rows never worked (the citizen is
-/// registered `desktop-vt1` and answers `desktop.clipboard.*`); on load they
+/// wrote for the clipboard rows. Those rows never worked; clipd now answers
+/// `desktop.clipboard.*` on the session's broker. On load they
 /// are rewritten to an explicit target. Deliberately narrow — a generic
 /// "split `<svc>.<command>`" would re-route rows that are valid today.
 const LEGACY_CLIPBOARD_PREFIX: &str = "desktop-vt1.desktop.clipboard.";
-const LEGACY_CLIPBOARD_SERVICE: &str = "desktop-vt1";
+const LEGACY_CLIPBOARD_SERVICE: &str = "clipd";
 
 /// Why a keymap document did not load.
 #[derive(Debug)]
@@ -479,6 +479,12 @@ fn dropped_record(raw: &serde_json::Value, reason: &str) -> serde_json::Value {
 /// [`LEGACY_CLIPBOARD_PREFIX`]) to target the citizen explicitly. Returns true
 /// when the row was rewritten.
 fn migrate_legacy_clipboard_row(row: &mut PhysicalBinding) -> bool {
+    if row.service.as_deref() == Some("desktop-vt1")
+        && matches!(row.action.as_str(), "desktop.clipboard.menu" | "desktop.clipboard.rotate")
+    {
+        row.service = Some(LEGACY_CLIPBOARD_SERVICE.to_string());
+        return true;
+    }
     if row.service.is_some() {
         return false;
     }
@@ -786,8 +792,8 @@ pub(crate) mod tests {
         assert_eq!(
             got,
             vec![
-                (108, Some("desktop-vt1"), "desktop.clipboard.menu"),
-                (103, Some("desktop-vt1"), "desktop.clipboard.rotate"),
+                (108, Some("clipd"), "desktop.clipboard.menu"),
+                (103, Some("clipd"), "desktop.clipboard.rotate"),
             ]
         );
     }

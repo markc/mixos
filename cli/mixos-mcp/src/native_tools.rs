@@ -34,6 +34,29 @@ pub(crate) struct ServiceTarget {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+pub(crate) struct ClipboardGet {
+    /// MIME type; defaults to the preferred text type.
+    mime: Option<String>,
+    #[serde(default)]
+    primary: bool,
+    /// Byte offset for selections larger than 1 MiB.
+    #[serde(default)]
+    offset: usize,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ClipboardSet {
+    text: String,
+    mime: Option<String>,
+    #[serde(default)]
+    primary: bool,
+    #[serde(default)]
+    sensitive: bool,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct CommandInvocation {
     /// Bus service name, for example "workshop".
     service: String,
@@ -155,6 +178,21 @@ impl MixosMcp {
 
 #[tool_router(router = native_tool_router, vis = "pub(crate)")]
 impl MixosMcp {
+    /// Read the local session clipboard. Binary data is base64; large data
+    /// includes next_offset/eof. Remote sessions must use clipboard.push.
+    #[tool(annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true))]
+    async fn clipboard_get(&self, Parameters(p): Parameters<ClipboardGet>) -> Result<Json<NativeObservation>, String> {
+        let mut args = json!({"primary": p.primary, "offset": p.offset});
+        if let Some(mime) = p.mime { args["mime"] = json!(mime); }
+        self.native_observation("clipd".into(), "clipboard.get", args).await
+    }
+
+    /// Set UTF-8 text on the local session clipboard without keyboard focus.
+    #[tool(annotations(read_only_hint = false, destructive_hint = false, idempotent_hint = false))]
+    async fn clipboard_set(&self, Parameters(p): Parameters<ClipboardSet>) -> Result<Json<NativeObservation>, String> {
+        self.native_observation("clipd".into(), "clipboard.set", json!({"mime": p.mime.unwrap_or_else(|| "text/plain;charset=utf-8".into()), "data": p.text, "primary": p.primary, "sensitive": p.sensitive})).await
+    }
+
     /// Describe one explicitly targeted application and its native commands.
     #[tool(annotations(
         read_only_hint = true,

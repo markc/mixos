@@ -40,6 +40,17 @@
 {
   schema: 5,
   commands: [
+    {name:"clipboard.get", owner:"clipd", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
+    {name:"clipboard.set", owner:"clipd", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
+    {name:"clipboard.clear", owner:"clipd", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
+    {name:"clipboard.history", owner:"clipd", version:"0.1.0", status:"accepted", class:"query", schema:"none"},
+    {name:"clipboard.pick", owner:"clipd", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
+    {name:"clipboard.info", owner:"clipd", version:"0.1.0", status:"accepted", class:"query", schema:"none"},
+    {name:"clipboard.push", owner:"clipd", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
+    {name:"clipboard.receive", owner:"clipd", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
+    {name:"clipboard.fetch", owner:"clipd", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
+    {name:"desktop.clipboard.menu", owner:"clipd", version:"0.1.0", status:"accepted", class:"intent", schema:"none"},
+    {name:"desktop.clipboard.rotate", owner:"clipd", version:"0.1.0", status:"accepted", class:"intent", schema:"none"},
     {name:"shell.status", owner:"mix-shell", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
     {name:"shell.execute", owner:"mix-shell", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"shell.execute.result", owner:"mix-shell", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
