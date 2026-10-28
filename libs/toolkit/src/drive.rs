@@ -212,6 +212,9 @@ pub fn describe(app: &str) -> Vec<Value> {
         .collect()
 }
 
+/// Finished screenshots by request id, shared with the capture callback.
+type Screenshots = std::sync::Arc<std::sync::Mutex<Vec<(u64, std::sync::Arc<ColorImage>)>>>;
+
 /// Where captures go and how long screenshots and child requests may wait.
 #[derive(Clone, Debug)]
 pub struct Options {
@@ -717,7 +720,7 @@ pub struct Drive {
     requests: VecDeque<(u64, String, Value)>,
     passes: HashMap<std::thread::ThreadId, Vec<egui::ViewportId>>,
     deadlines: HashMap<u64, Instant>,
-    screenshots: std::sync::Arc<std::sync::Mutex<Vec<(u64, std::sync::Arc<ColorImage>)>>>,
+    screenshots: Screenshots,
     app: String,
     options: Options,
     tree: Option<TreeUpdate>,

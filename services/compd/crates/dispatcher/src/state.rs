@@ -1713,7 +1713,6 @@ mod handler_impls {
     use smithay::wayland::selection::{SelectionHandler, SelectionSource, SelectionTarget};
     use smithay::wayland::selection::data_device::{DataDeviceHandler, DataDeviceState, WaylandDndGrabHandler};
     use protocols::clipboard::policy;
-    use protocols::clipboard::pump;
     use smithay::wayland::shell::wlr_layer::{Layer, LayerSurface, WlrLayerShellHandler, WlrLayerShellState};
     use smithay::wayland::shell::xdg::{PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState};
     use smithay::wayland::shell::xdg::decoration::XdgDecorationHandler;
