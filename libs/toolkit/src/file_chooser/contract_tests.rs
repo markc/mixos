@@ -56,6 +56,8 @@ fn email_save_suggested_name_appends_extension_and_round_trips_choices() {
     h.get_by_label("Read only").click(); h.run();
     h.get_by_label("UTF-8").click(); h.run();
     h.get_by_label("UTF-16").click(); h.run();
+    h.state_mut().0.path = "/home/user/Documents".into();
+    h.run();
     h.snapshot("file_chooser_contract_save");
     h.get_by_label("Save").click(); settle(&mut h);
     let Some(Outcome::Save {path, ..}) = &h.state().1 else {panic!("not saved")};
@@ -98,4 +100,20 @@ fn typed_save_paths_navigate_and_current_file_bytes_survive() {
     assert_eq!(path.file_name().unwrap().as_encoded_bytes(), b"\xff.md");
     assert!(matches!(check_typed(dir.path().into(), "Reports/letter".into(), &request), Ok(Answer::Navigate(_, tail)) if tail == "letter"));
     assert!(check_typed(dir.path().into(), "missing/letter".into(), &request).is_err());
+}
+
+#[test]
+fn filter_menu_selects_inserted_current_filter_then_reloads() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("letter.md"), "").unwrap();
+    std::fs::write(dir.path().join("photo.png"), "").unwrap();
+    let request = parse(json!({"current_folder":dir.path().to_str().unwrap(),
+        "filters":[{"name":"Markdown","patterns":["*.md"]}],
+        "current_filter":{"name":"Images","patterns":["*.png"]}}));
+    let mut h = harness(FileChooser::from_request(request));
+    h.get_by_label("Images").click(); h.run();
+    h.get_by_label("Markdown").click(); h.run();
+    settle(&mut h);
+    assert_eq!(h.state().0.contract.as_ref().unwrap().current_filter.as_ref().unwrap().name, "Markdown");
+    assert_eq!(h.state().0.entries.iter().map(|e| e.name.as_str()).collect::<Vec<_>>(), ["letter.md"]);
 }
