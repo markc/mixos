@@ -55,6 +55,8 @@ Configure hosted internationalised domains in `maild.domains` using their DNS
 A-label (for example `xn--fsqu00a.example.com`); the RCPT gate converts the
 envelope's U-label for that authoritative lookup.
 Mailbox lookup accepts either the U-label or A-label spelling of its domain.
+Valid `AUTH=` trace parameters may accompany MAIL. These untrusted claims are
+discarded and never grant permission to use an envelope sender.
 
 Outbound delivery detects non-ASCII envelope addresses and headers, checks the
 peer's EHLO capabilities (again after STARTTLS), and requests `SMTPUTF8` when

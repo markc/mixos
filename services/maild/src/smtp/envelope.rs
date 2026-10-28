@@ -19,6 +19,35 @@ pub fn valid_address(addr: &str, null_ok: bool) -> bool {
         && dns_domain(domain).is_some()
 }
 
+/// RFC 4954 trace identities are xtext, not authority to send as that mailbox.
+/// Accept and discard them under the existing untrusted-client policy.
+pub fn valid_auth_parameter(parameter: &str) -> bool {
+    let Some((name, value)) = parameter.split_once('=') else {
+        return false;
+    };
+    if !name.eq_ignore_ascii_case("AUTH") {
+        return false;
+    }
+    let mut decoded = Vec::new();
+    let mut bytes = value.bytes();
+    while let Some(byte) = bytes.next() {
+        match byte {
+            b'+' => {
+                let high = bytes.next().and_then(|b| (b as char).to_digit(16));
+                let low = bytes.next().and_then(|b| (b as char).to_digit(16));
+                let (Some(high), Some(low)) = (high, low) else {
+                    return false;
+                };
+                decoded.push((high * 16 + low) as u8);
+            }
+            0x21..=0x7e if byte != b'=' => decoded.push(byte),
+            _ => return false,
+        }
+    }
+    std::str::from_utf8(&decoded)
+        .is_ok_and(|mailbox| mailbox == "<>" || valid_address(mailbox, false))
+}
+
 fn valid_local(local: &str) -> bool {
     if let Some(quoted) = local.strip_prefix('"').and_then(|s| s.strip_suffix('"')) {
         let mut escaped = false;

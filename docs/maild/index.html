@@ -284,7 +284,9 @@ commands and UTF-8 addresses/headers without the parameter are refused.
 Configure hosted internationalised domains in <code>maild.domains</code> using their DNS
 A-label (for example <code>xn--fsqu00a.example.com</code>); the RCPT gate converts the
 envelope's U-label for that authoritative lookup.
-Mailbox lookup accepts either the U-label or A-label spelling of its domain.</p>
+Mailbox lookup accepts either the U-label or A-label spelling of its domain.
+Valid <code>AUTH=</code> trace parameters may accompany MAIL. These untrusted claims are
+discarded and never grant permission to use an envelope sender.</p>
 <p>Outbound delivery detects non-ASCII envelope addresses and headers, checks the
 peer's EHLO capabilities (again after STARTTLS), and requests <code>SMTPUTF8</code> when
 needed, including UTF-8 MIME part headers. SMTPUTF8 and eight-bit content

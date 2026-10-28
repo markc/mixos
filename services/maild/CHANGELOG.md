@@ -51,6 +51,7 @@
 - Advertise SMTPUTF8 on inbound and submission, accept UTF-8 envelopes and
   headers, and negotiate SMTPUTF8 and BODY=8BITMIME on outbound delivery.
   Unsupported peers produce a permanent bounce; messages are not downgraded.
+  Preserve valid MAIL AUTH trace parameters alongside SMTPUTF8.
 - Generate RSA DKIM DNS keys as SubjectPublicKeyInfo, retain raw Ed25519 keys,
   and add `maild dkim check DOMAIN` to compare the published active key.
 - Add `maild.submission.status {id}` with durable per-recipient queue outcomes
