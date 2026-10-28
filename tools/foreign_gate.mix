@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
 -- foreign_gate.mix — which crates compile foreign (C, C++, assembly) code.
--- version: 0.1.0
+-- version: 0.2.0
 --
 -- A package "builds foreign code" when it has a build-dependency on a native
 -- build helper (cc, cmake, bindgen, pkg-config, system-deps, vcpkg, nasm-rs).
@@ -17,8 +17,14 @@
 --      and --all-features modes.
 --   3. A `debt` entry no longer in the resolve is reported, so the list only
 --      shrinks.
+--   4. The `strict` crates reach no desktop-only crate (`strict_forbid`,
+--      pure Rust included: egui, winit, wgpu, smithay, wayland-*, …).
+--   5. Each `--elf BIN` (a built strict binary) has no DT_NEEDED entry in
+--      `strict_forbid_so` (libwayland, libX11, libEGL, …). This catches what
+--      a per-package closure cannot: workspace feature unification.
+-- Ported from cosmix check-no-gui.mix and check-no-gui-elf.mix.
 --
--- Usage: mix tools/foreign_gate.mix [--list] [--locked] [--offline]
+-- Usage: mix tools/foreign_gate.mix [--list] [--locked] [--offline] [--elf BIN]...
 -- --list prints every foreign package and which strict crates reach it, then
 -- exits 0. Run from the repo root. Exit 0 clean, 1 a violation, 2 setup failed.
 
@@ -26,11 +32,19 @@ $root = dirname(dirname(realpath($0)))
 $policy_path = $root .. "/tools/foreign.conf.mix"
 $pass = []
 $list = false
-for each $a in args()
+$elf_bins = []
+$av = args()
+$i = 0
+while $i < len($av)
+  $a = $av[$i]
+  $i = $i + 1
   if $a == "--locked" or $a == "--offline" then
     push($pass, $a)
   elif $a == "--list" then
     $list = true
+  elif $a == "--elf" and $i < len($av) then
+    push($elf_bins, $av[$i])
+    $i = $i + 1
   else
     eprint("foreign_gate: unknown argument " .. $a)
     exit(2)
@@ -41,6 +55,8 @@ $policy = load_data($policy_path).foreign
 $allow = $policy.allow ?? {}
 $debt = $policy.debt ?? {}
 $strict = $policy.strict ?? []
+$forbid = $policy.strict_forbid ?? []
+$forbid_so = $policy.strict_forbid_so ?? []
 -- MixOS ships Linux binaries only; other targets (android, haiku, macOS)
 -- never compile here.
 $TARGET = env("FOREIGN_GATE_TARGET", "x86_64-unknown-linux-gnu")
@@ -115,6 +131,37 @@ for each $c in $strict
         if $allow[$f] == nil then
           push($fail, "strict " .. $c .. " (" .. $label .. ") reaches foreign " .. $f .. " (not in allow)")
         end
+      end
+    end
+    -- Tier 2: nothing desktop-only in the shell, even pure Rust.
+    for each $n in keys($names)
+      for each $p in $forbid
+        if $n == $p or (ends_with($p, "*") and starts_with($n, slice($p, 0, len($p) - 1))) then
+          push($fail, "strict " .. $c .. " (" .. $label .. ") reaches desktop-only " .. $n)
+        end
+      end
+    end
+  end
+end
+
+-- ELF layer: the BUILT binary needs no display, GPU, input or audio library.
+-- Catches what the per-package closure cannot see (workspace feature
+-- unification, a links= edge, a stray build script).
+for each $bin in $elf_bins
+  if not is_file($bin) then
+    eprint("foreign_gate: --elf " .. $bin .. " does not exist")
+    exit(2)
+  end
+  $re = run_argv(["readelf", "-d", "--wide", $bin], {timeout: 60})
+  if not $re.ok then
+    eprint("foreign_gate: readelf failed on " .. $bin .. "\n" .. $re.stderr)
+    exit(2)
+  end
+  for each $m in re_find($re.stdout, "\\(NEEDED\\)[^\\[]*\\[([^\\]]+)\\]")
+    $so = $m.groups[0]
+    for each $p in $forbid_so
+      if starts_with($so, $p) then
+        push($fail, "ELF " .. basename($bin) .. " needs " .. $so)
       end
     end
   end

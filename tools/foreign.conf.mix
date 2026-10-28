@@ -49,5 +49,14 @@ foreign: {
   -- Crates that always declare a native helper but compile no foreign code
   -- when this feature is on (their build script skips it).
   pure_when: {"blake3": "pure"},
-  strict: ["mix", "mix-shell"]
+  strict: ["mix", "mix-shell"],
+  -- Tier 2: desktop-only crates the shell must never reach, pure Rust or not.
+  -- A trailing * matches a prefix.
+  strict_forbid: ["egui*", "eframe", "epaint", "emath", "ecolor", "winit*", "wgpu*", "naga",
+    "glow", "glutin*", "smithay*", "wayland-*", "x11*", "xkbcommon*", "calloop-wayland-source",
+    "iced*", "bevy*", "vello*", "tiny-skia*", "softbuffer", "arboard", "accesskit*"],
+  -- Shared libraries a built strict binary must not need (DT_NEEDED prefix).
+  strict_forbid_so: ["libwayland", "libX", "libxcb", "libxkbcommon", "libEGL", "libGL",
+    "libvulkan", "libgbm", "libdrm", "libinput", "libudev", "libseat", "libpipewire",
+    "libpulse", "libasound", "libfontconfig", "libfreetype", "libdbus"]
 }
