@@ -169,31 +169,31 @@ pub(super) async fn call(
         let mut errors = json!({});
         if let Some(entries) = args.get("onSuccessUpdateEmail").and_then(Value::as_object) {
             for (key, patch) in entries {
-                if let Some(id) = resolve_id(key, ids) {
-                    if let Some(email) = submission_emails.get(&id).and_then(Value::as_str) {
-                        let mut patch = patch.clone();
-                        match record_references("Email/set", &mut patch, ids) {
-                            Ok(()) => {
-                                update.insert(email.to_owned(), patch);
-                            }
-                            Err(property) => failure(
-                                &mut errors,
-                                "notUpdated",
-                                email,
-                                "invalidProperties",
-                                Some(&property),
-                            ),
+                if let Some(id) = resolve_id(key, ids)
+                    && let Some(email) = submission_emails.get(&id).and_then(Value::as_str)
+                {
+                    let mut patch = patch.clone();
+                    match record_references("Email/set", &mut patch, ids) {
+                        Ok(()) => {
+                            update.insert(email.to_owned(), patch);
                         }
+                        Err(property) => failure(
+                            &mut errors,
+                            "notUpdated",
+                            email,
+                            "invalidProperties",
+                            Some(&property),
+                        ),
                     }
                 }
             }
         }
         if let Some(entries) = args.get("onSuccessDestroyEmail").and_then(Value::as_array) {
             for key in entries.iter().filter_map(Value::as_str) {
-                if let Some(id) = resolve_id(key, ids) {
-                    if let Some(email) = submission_emails.get(&id) {
-                        destroy.push(email.clone());
-                    }
+                if let Some(id) = resolve_id(key, ids)
+                    && let Some(email) = submission_emails.get(&id)
+                {
+                    destroy.push(email.clone());
                 }
             }
         }
