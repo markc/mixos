@@ -14,9 +14,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 use std::time::Duration;
-use tokio::sync::{Mutex, mpsc};
+use tokio::sync::{Mutex, mpsc, oneshot};
 use zbus::Connection;
 use zbus::message::Header;
+use zbus::object_server::ResponseDispatchNotifier;
 use zbus::zvariant::OwnedObjectPath;
 
 pub const INTERFACE: &str = "org.freedesktop.portal.FileChooser";
@@ -30,6 +31,7 @@ struct Entry {
     owner: String,
     choices: bool,
     state: State,
+    reply_sent: Option<oneshot::Receiver<()>>,
 }
 
 #[derive(Default)]
@@ -134,6 +136,7 @@ impl Bridge {
             self.cancel(cancel, registry.generation);
         }
         if let Some(response) = effects.response {
+            if let Some(reply_sent) = entry.reply_sent.take() { let _ = reply_sent.await; }
             let (code, results) = mapping::outcome(&response, entry.choices);
             request::emit(connection, &entry.path, &entry.owner, code, results).await;
         }
@@ -246,7 +249,11 @@ impl Bridge {
         )
         .unwrap_or_else(|| "unknown".into());
         body["on_behalf_of"] = json!(mapping::cut(&format!("{owner} {app}"), 128));
-        let generation = self.registry.lock().await.generation;
+        let generation = {
+            let registry = self.registry.lock().await;
+            if !registry.entries.contains_key(&id) { return; }
+            registry.generation
+        };
         if generation.is_none() || generation != settings::native::live_generation(&self.client) {
             self.reply(&connection, generation, id, None).await;
             return;
@@ -351,12 +358,23 @@ impl Bridge {
                     .get(&id)
                     .is_some_and(|e| e.state.phase == Phase::Closing)
                 {
+                    // A token can be reused immediately after Close. Its path
+                    // alone cannot distinguish two sends until both replies
+                    // arrive. Defer that sweep while a newer send is pending,
+                    // and never cancel the id of another live Request.
+                    if registry.entries.iter().any(|(other, entry)| {
+                        *other != id && entry.path.as_str() == path && entry.state.phase == Phase::Sending
+                    }) {
+                        continue;
+                    }
                     for request in open
                         .iter()
                         .filter(|v| v["correlation"].as_str() == Some(&path))
                     {
                         if let Some(request) = request["request"].as_str() {
-                            self.cancel(request.into(), generation);
+                            if !registry.entries.values().any(|entry| matches!(&entry.state.phase, Phase::Open(live) if live == request)) {
+                                self.cancel(request.into(), generation);
+                            }
                         }
                     }
                     self.apply(connection, &mut registry, id, Event::Sweep)
@@ -389,8 +407,9 @@ impl Bridge {
                 registry.generation = None;
                 drop(registry);
             }
+            let needs_subscription = self.registry.lock().await.generation.is_none();
             if let Some(generation) = generation
-                && self.registry.lock().await.generation.is_none()
+                && needs_subscription
                 && matches!(
                     tokio::time::timeout(IO_TIMEOUT, self.client.subscribe_topic("files.chosen"))
                         .await,
@@ -419,7 +438,7 @@ impl Bridge {
                     self.registry.lock().await.generation = Some(generation);
                 }
             }
-            if !exported {
+            if !exported && self.registry.lock().await.generation.is_some() {
                 connection
                     .object_server()
                     .at(
@@ -477,7 +496,7 @@ impl FileChooser {
         options: Options,
         header: Header<'_>,
         connection: &Connection,
-    ) -> Result<OwnedObjectPath, PortalError> {
+    ) -> Result<ResponseDispatchNotifier<OwnedObjectPath>, PortalError> {
         let owner = header
             .sender()
             .map(|s| s.as_str().to_owned())
@@ -503,6 +522,7 @@ impl FileChooser {
                 "handle_token already has a live Request".into(),
             ));
         }
+        let (sent, reply_sent) = oneshot::channel();
         registry.entries.insert(
             id,
             Entry {
@@ -510,16 +530,19 @@ impl FileChooser {
                 owner: owner.clone(),
                 choices: body["choices"].as_array().is_some_and(|v| !v.is_empty()),
                 state: State::default(),
+                reply_sent: Some(reply_sent),
             },
         );
         drop(registry);
         let bridge = self.bridge.clone();
         let connection = connection.clone();
+        let (response, dispatched) = ResponseDispatchNotifier::new(path);
         tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(5)).await;
+            dispatched.await;
+            let _ = sent.send(());
             bridge.choose(connection, id, body, owner).await;
         });
-        Ok(path)
+        Ok(response)
     }
 }
 
@@ -538,7 +561,7 @@ impl FileChooser {
         options: Options,
         #[zbus(header)] header: Header<'_>,
         #[zbus(connection)] connection: &Connection,
-    ) -> Result<OwnedObjectPath, PortalError> {
+    ) -> Result<ResponseDispatchNotifier<OwnedObjectPath>, PortalError> {
         self.begin("open", parent_window, title, options, header, connection)
             .await
     }
@@ -550,7 +573,7 @@ impl FileChooser {
         options: Options,
         #[zbus(header)] header: Header<'_>,
         #[zbus(connection)] connection: &Connection,
-    ) -> Result<OwnedObjectPath, PortalError> {
+    ) -> Result<ResponseDispatchNotifier<OwnedObjectPath>, PortalError> {
         self.begin("save", parent_window, title, options, header, connection)
             .await
     }
@@ -562,7 +585,7 @@ impl FileChooser {
         options: Options,
         #[zbus(header)] header: Header<'_>,
         #[zbus(connection)] connection: &Connection,
-    ) -> Result<OwnedObjectPath, PortalError> {
+    ) -> Result<ResponseDispatchNotifier<OwnedObjectPath>, PortalError> {
         self.begin(
             "save_files",
             parent_window,

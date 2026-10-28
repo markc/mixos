@@ -470,6 +470,20 @@ async fn portal_native_stack_mapping_lifecycle_and_loss() {
     }
 
     // Disconnecting a persistent D-Bus caller cancels its native window.
+    // Keep a reused token open across a closing sweep of the older send.
+    let mut stream = responses(&caller, "swept_reuse").await;
+    begin(&caller, "OpenFile", "swept_reuse", label("hold")).await.unwrap();
+    let old = provider.chosen().await.0;
+    close(&caller, &path(&caller, "swept_reuse")).await.unwrap();
+    begin(&caller, "OpenFile", "swept_reuse", Options::new()).await.unwrap();
+    let new = provider.chosen().await.0;
+    provider.cancelled(&old).await;
+    provider.control.send(Control::Release).unwrap();
+    provider.cancelled(&old).await;
+    provider.control.send(Control::Finish(new, 0, true)).unwrap();
+    response(&mut stream, 0).await;
+    quiet(&mut stream).await;
+
     let leaving = connection(address.trim()).await;
     begin(&leaving, "OpenFile", "leave", Options::new())
         .await

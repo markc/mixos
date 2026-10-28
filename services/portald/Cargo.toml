@@ -33,6 +33,7 @@ tracing-subscriber.workspace = true
 clap.workspace = true
 buildinfo.workspace = true
 futures-util.workspace = true
+glob.workspace = true
 libc.workspace = true
 # ScreenCast. The Wayland client crates are pinned to the versions already in
 # Cargo.lock (winit and compd testkit use the same ones). pipewire links the
