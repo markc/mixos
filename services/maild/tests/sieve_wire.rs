@@ -31,7 +31,7 @@ async fn starttls_upload_activate_then_real_smtp_delivery_and_rejection() -> Res
     let tmp = tempfile::tempdir()?;
     let certified = rcgen::generate_simple_self_signed(vec!["mail.example.com".into()])?;
     let cert_path = tmp.path().join("cert.pem"); let key_path = tmp.path().join("key.pem");
-    std::fs::write(&cert_path,certified.cert.pem())?; std::fs::write(&key_path,certified.signing_key.serialize_pem())?;
+    std::fs::write(&cert_path,certified.cert.pem())?; std::fs::write(&key_path,certified.key_pair.serialize_pem())?;
     let cfg = Config {
         hostname:"mail.example.com".into(),database_path:tmp.path().join("mail.db").display().to_string(),blob_dir:tmp.path().join("blobs").display().to_string(),mds_dir:tmp.path().join("mds").display().to_string(),
         spam_db_dir:Some(tmp.path().join("spam").display().to_string()),rule_stats_dir:Some(tmp.path().join("stats").display().to_string()),
