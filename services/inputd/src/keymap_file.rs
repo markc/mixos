@@ -88,12 +88,12 @@ pub struct Loaded {
 }
 
 /// The exact action prefix the pre-`service` defaults on the first live host
-/// wrote for the clipboard rows. Those rows never worked (the citizen is
-/// registered `desktop-vt1` and answers `desktop.clipboard.*`); on load they
+/// wrote for the clipboard rows. Those rows never worked; clipd now answers
+/// `desktop.clipboard.*` on the session's broker. On load they
 /// are rewritten to an explicit target. Deliberately narrow — a generic
 /// "split `<svc>.<command>`" would re-route rows that are valid today.
 const LEGACY_CLIPBOARD_PREFIX: &str = "desktop-vt1.desktop.clipboard.";
-const LEGACY_CLIPBOARD_SERVICE: &str = "desktop-vt1";
+const LEGACY_CLIPBOARD_SERVICE: &str = "clipd";
 
 /// Why a keymap document did not load.
 #[derive(Debug)]
@@ -479,6 +479,15 @@ fn dropped_record(raw: &serde_json::Value, reason: &str) -> serde_json::Value {
 /// [`LEGACY_CLIPBOARD_PREFIX`]) to target the citizen explicitly. Returns true
 /// when the row was rewritten.
 fn migrate_legacy_clipboard_row(row: &mut PhysicalBinding) -> bool {
+    if row.service.as_deref() == Some("desktop-vt1")
+        && matches!(
+            row.action.as_str(),
+            "desktop.clipboard.menu" | "desktop.clipboard.rotate"
+        )
+    {
+        row.service = Some(LEGACY_CLIPBOARD_SERVICE.to_string());
+        return true;
+    }
     if row.service.is_some() {
         return false;
     }
@@ -710,7 +719,7 @@ pub(crate) mod tests {
         let loaded = load_str(&doc(&format!("{MENU_WITH},{NEXT_WITHOUT}")));
         let rows = loaded.rows;
         assert_eq!(rows.len(), 2);
-        assert_eq!(rows[0].service.as_deref(), Some("desktop-vt1"));
+        assert_eq!(rows[0].service.as_deref(), Some("clipd"));
         assert_eq!(rows[0].action.as_str(), "desktop.clipboard.menu");
         assert_eq!(rows[1].service, None, "pre-field files load unchanged");
         assert!(loaded.dropped.is_empty());
@@ -786,8 +795,8 @@ pub(crate) mod tests {
         assert_eq!(
             got,
             vec![
-                (108, Some("desktop-vt1"), "desktop.clipboard.menu"),
-                (103, Some("desktop-vt1"), "desktop.clipboard.rotate"),
+                (108, Some("clipd"), "desktop.clipboard.menu"),
+                (103, Some("clipd"), "desktop.clipboard.rotate"),
             ]
         );
     }
@@ -835,13 +844,13 @@ pub(crate) mod tests {
     const LEGACY_FILE: &str = include_str!("../tests/fixtures/legacy-keymap.json");
 
     #[test]
-    fn a_legacy_keymap_file_loads_unchanged_and_saves_byte_for_byte() {
+    fn a_legacy_keymap_preserves_everything_except_the_retired_clipboard_target() {
         let loaded = parse(LEGACY_FILE, Path::new("t")).expect("legacy file parses");
         assert!(loaded.dropped.is_empty(), "{:?}", loaded.dropped);
         assert_eq!(loaded.rows.len(), 5);
         assert_eq!(loaded.rows[0].action.as_str(), "user.f01");
         assert_eq!(loaded.rows[1].repeat, inputd_schema::RepeatPolicy::Allow);
-        assert_eq!(loaded.rows[2].service.as_deref(), Some("desktop-vt1"));
+        assert_eq!(loaded.rows[2].service.as_deref(), Some("clipd"));
         assert!(loaded.rows[3].passthrough);
         assert_eq!(loaded.rows[4].args, Some(serde_json::json!({"safe": true})));
         let dir = scratch("legacy-bytes");
@@ -849,7 +858,9 @@ pub(crate) mod tests {
         save(&path, &loaded.rows).unwrap();
         assert_eq!(
             std::fs::read_to_string(&path).unwrap(),
-            LEGACY_FILE.trim_end()
+            LEGACY_FILE
+                .trim_end()
+                .replace("\"service\": \"desktop-vt1\"", "\"service\": \"clipd\"")
         );
         let _ = std::fs::remove_dir_all(&dir);
     }

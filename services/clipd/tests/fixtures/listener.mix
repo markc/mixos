@@ -1,0 +1,9 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+on clipboard.changed
+  append_file(env("CLIPBOARD_TEST_EVENTS"), json_encode($event.args) .. "\n")
+end
+subscribe("clipboard.changed")
+on listener.ready
+  reply(0, "{}")
+end

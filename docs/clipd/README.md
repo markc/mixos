@@ -35,7 +35,8 @@ and service logs never echo request contents.
 `clipboard.receive` and `clipboard.fetch` are member-only peer commands.
 `clipboard.observe` is a private local watcher callback with a per-process
 token. `clipboard.expire` and `clipboard.follow` are local continuations and
-refuse Bus dispatch.
+refuse Bus dispatch, as do `clipboard.cache` and `clipboard.unpin`, which own
+materialised blob references and release obsolete pins.
 
 `clipboard.changed` contains metadata only:
 `{node,session,selection,primary,generation,origin_node,origin_session,mime_types,
@@ -118,12 +119,14 @@ owns the selection. Clears use `wl-copy [--primary] --clear`. Own eager-text
 echoes are recognised by exact bytes, because wl-copy cannot add an arbitrary
 origin marker MIME. Large/binary ownership and multi-MIME preservation need
 further acceptance: the tool can supply one content payload plus text aliases.
+The constraint comes from [wl-copy's input and ownership path](https://github.com/bugaevc/wl-clipboard/blob/master/src/wl-copy.c).
 
 `clipd@.service` reads the graphical session environment; `clipd.service` is
 the server store unit. The component installer and release packages ship both
 units and scripts without enabling them. No desk is restarted by installation
-of this source change. inputd's existing target migration is a separate live
-integration step; this branch does not alter user keymaps.
+of this source change. inputd migrates only the two old clipboard menu/rotate
+targets from `desktop-vt1` to `clipd`, preserving custom targets and unrelated
+bindings. This source change does not rewrite a live keymap.
 
 No generic Bus dialog/choice service exists in the current tree. Toolkit dialogs
 are window-local, and files' chooser is specific to files. A clipboard picker
@@ -134,7 +137,14 @@ UI remains a follow-up; the service adds no GUI dependency.
 `mix services/clipd/tests/clipboard_test.mix` checks policy, history, stamps,
 byte offsets and broker membership. `mix services/clipd/tests/clipd_test.mix`
 runs two store citizens against an owned private noded and checks the public API,
-follow, lazy password fetch, no history, expiry and spoof refusal.
+follow, lazy password fetch, no history, expiry and spoof refusal. It also
+checks the runtime command list against the registry and uses a real private
+blobd for binary references and reads outside the Bus.
+
+`mix services/clipd/tests/wayland_test.mix` starts a private headless compd and
+checks both selections with the real wl-clipboard tools, own-set echo handling,
+password history exclusion and expiry. Set `MIXOS_TEST_COMPD` to a CBC-built
+binary. The test does not connect to a live desktop.
 
 Before merge: CBC tests for mix and mixos-mcp; a private headless Wayland test;
 then live VT1/VT3/VT4 and cross-node acceptance by the session owner. The lazy
