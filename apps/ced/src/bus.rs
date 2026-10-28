@@ -30,7 +30,7 @@ use ::bus::native_client::{
 };
 use documents::controller::{BusCommand, Effect};
 use documents::session::SessionWriter;
-use editor_model::types::{Incoming, ParsedBody};
+use editor_model::types::{Incoming, ParsedBody, UI_ORIGIN};
 use futures::FutureExt;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
 
@@ -528,7 +528,7 @@ async fn run(
                                 && let Some(buffer) = value["buffer"].as_str()
                             {
                                 if closing.load(std::sync::atomic::Ordering::SeqCst) {
-                                    let body = serde_json::json!({"buffer":buffer,"force":true,"origin":"ced"}).to_string();
+                                    let body = serde_json::json!({"buffer":buffer,"force":true,"origin":UI_ORIGIN}).to_string();
                                     c.call_with_headers_raw(EDIT, "edit.close", &BTreeMap::new(), &body).await
                                         .map_err(|error| format!("mail scratch close: {error}"))?;
                                 } else {
@@ -625,7 +625,7 @@ async fn run(
     for buffer in buffers {
         let c = client.clone();
         force_closes.spawn(async move {
-            let body = serde_json::json!({"buffer":buffer,"force":true,"origin":"ced"}).to_string();
+            let body = serde_json::json!({"buffer":buffer,"force":true,"origin":UI_ORIGIN}).to_string();
             c.call_with_headers_raw(EDIT, "edit.close", &BTreeMap::new(), &body).await
                 .map_err(|error| format!("mail scratch close: {error}"))?;
             Ok(())
@@ -807,6 +807,7 @@ mod tests {
         let body: serde_json::Value = serde_json::from_str(&close.body).unwrap();
         assert_eq!(body["buffer"], "seeding-body");
         assert_eq!(body["force"], true);
+        assert_eq!(body["origin"], UI_ORIGIN);
         edit.respond(&close, 0, "{}").await.unwrap();
         loop {
             if let Some(Delivery::Stopped { faults }) = tokio::time::timeout(Duration::from_secs(3), deliveries.next()).await.unwrap() {

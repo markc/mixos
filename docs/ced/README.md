@@ -139,7 +139,7 @@ live mirror text, retaining unsaved body edits. A detached copy remains
 Save As retains the mail kind. Reload from Disk requires closing and reopening
 the mail tab, so it cannot silently replace separately edited headers.
 
-File ▸ Send saves first, then asks Email to send the document path.
+File ▸ Send saves first, then asks Email to send the absolute document path.
 The tab shows Sending… until Email replies. A second Send is refused while
 one is in flight. Each Email call has 120 seconds; the separate registration
 wait is 10 seconds. Email's refusal retains its code and message verbatim. An

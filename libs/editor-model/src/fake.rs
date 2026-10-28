@@ -136,7 +136,7 @@ impl FakeEditd {
         &self.epoch
     }
 
-    /// A buffer holding `text`, clean at rev 0, optionally bound to `path`.
+    /// A buffer holding `text`, at rev 0, optionally bound to `path`.
     pub fn create(&mut self, path: Option<&str>, text: &str) -> String {
         let (mut buf, _) = Buffer::from_bytes(text.as_bytes()).expect("fixture text");
         if path.is_some() || text.is_empty() {

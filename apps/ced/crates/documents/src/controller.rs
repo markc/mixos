@@ -189,6 +189,8 @@ struct TabX {
     /// Opaque session-only view hints supplied by the window.
     view_hints: HashMap<&'static str, &'static str>,
     recovery_id: Option<String>,
+    /// The spelling used to open the file, retained for mail saves.
+    opened_path: Option<String>,
     /// `edit.open` answered (success or failure) at least once.
     opened: bool,
     /// Waiting for a reattach open/list.
@@ -1102,6 +1104,9 @@ impl Controller {
         if let Some(x) = self.x.get_mut(&tab) {
             x.open_error = None;
             x.reattaching = reattach;
+            if path.is_some() {
+                x.opened_path = path.clone();
+            }
         }
         let body = match &path {
             Some(p) => json!({"path": p, "origin": UI_ORIGIN}),
@@ -1728,7 +1733,7 @@ impl Controller {
             }
         };
         if let Some(t) = self.tab_mut(tab) {
-            if t.mail.is_none() && t.path.is_none() {
+            if t.mail.is_none() {
                 t.path.clone_from(&open.path);
             }
             t.saved_language = None;

@@ -285,8 +285,12 @@ impl Controller {
                 t.mirror = None;
                 // The file buffer's identity must never be persisted as the
                 // identity of its new body scratch.
-                if let Some(x) = self.x.get_mut(&tab) {
+                let opened_path = self.x.get_mut(&tab).and_then(|x| {
                     x.recovery_id = None;
+                    x.opened_path.clone()
+                });
+                if let Some(path) = opened_path {
+                    self.tab_mut(tab).unwrap().path = Some(path);
                 }
                 self.send(
                     Outgoing {
@@ -1306,5 +1310,28 @@ mod tests {
         let tab = restored.tab(restored.active().unwrap()).unwrap();
         assert!(tab.mail.is_some());
         assert_eq!(text_string(tab.mirror.as_ref().unwrap().text()), "Body");
+    }
+
+    #[test]
+    fn canonical_open_reply_does_not_replace_the_mail_path_spelling() {
+        let relative = "./letter.md";
+        let absolute = std::path::absolute(relative).unwrap().to_str().unwrap().to_owned();
+        let mut c = Controller::new(Config::default(), 1, true);
+        let mut service = FakeEditd::new("0000e1e1");
+        service.create(Some(&absolute), LETTER);
+        let mut queue: VecDeque<_> = c.open_paths(&[relative.into()], Intent::ui(0)).into();
+        while let Some(effect) = queue.pop_front() {
+            if let Effect::Send { req, out } = effect {
+                let mut args: Value = serde_json::from_str(&out.body).unwrap();
+                if args["path"] == relative {
+                    args["path"] = json!(absolute);
+                }
+                let answer = service.handle("local:ced", &out.command, &args);
+                queue.extend(c.on_incoming(Incoming::Reply { req, rc:answer.rc, body:answer.body.to_string() }));
+            }
+        }
+        let tab = c.active().unwrap();
+        assert_eq!(c.tab(tab).unwrap().path.as_deref(), Some(relative));
+        assert!(execute(&mut c, tab, "file.save").iter().any(|e| matches!(e, Effect::SaveMail { path, expected:Some(text), .. } if path == relative && text == LETTER)));
     }
 }
