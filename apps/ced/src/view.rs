@@ -134,6 +134,15 @@ fn apply_one(app: &mut App, commands: &Registry<App>, event: UiEvent) {
         match event {
             UiEvent::MailHeaders(tab, headers) => {
                 if app.ctl.tabs().iter().find(|t| t.id == tab).and_then(|t| t.mail.as_ref()).is_some_and(|mail| !mail.sending && !mail.saving) {
+                    let headers = match serde_json::to_value(&headers) {
+                        Ok(value) => value,
+                        Err(_) => {
+                            // The chooser can return a non-UTF-8 OS path. Let
+                            // the engine explain it rather than panic in JSON.
+                            let _ = app.ctl.edit_headers(tab, headers);
+                            return;
+                        }
+                    };
                     app.action_args(Some(tab), ActionId::MailHeaders, serde_json::json!({"headers":headers}));
                     app.noted.push((ActionId::MailHeaders.id(), Origin::Ui));
                 }

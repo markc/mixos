@@ -3,6 +3,7 @@
 //! labels, identities, completion lists and validation.
 use egui::Ui;
 use crate::field;
+/// Space between a row label and its field, and before caller-drawn buttons.
 pub const GAP: f32 = 8.0;
 
 pub fn column(ui: &Ui, labels: impl IntoIterator<Item = String>) -> f32 {

@@ -263,9 +263,6 @@ fn dropdown(
         });
 }
 
-/// The space between a row's label and its field, and between a field and
-/// the buttons after it.
-
 /// The space between the To row's Cc, Bcc and Reply-To buttons.
 const BUTTON_GAP: f32 = 2.0;
 

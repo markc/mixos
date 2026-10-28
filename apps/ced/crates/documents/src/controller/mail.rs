@@ -30,6 +30,11 @@ impl Controller {
     pub fn edit_headers(&mut self, tab: TabId, headers: Headers) -> Result<(), String> {
         let mail = self.tab_mut(tab).and_then(|t| t.mail.as_mut()).ok_or("not a mail document")?;
         if mail.sending || mail.saving { return Err("the mail document is busy".into()); }
+        if headers.attachments.iter().any(|path| path.to_str().is_none()) {
+            let message = maildoc::Refusal::InvalidValue { header: "mail-attachments".into(), reason: "path is not UTF-8".into() }.to_string();
+            mail.notice = Some(message.clone());
+            return Err(message);
+        }
         if headers.in_reply_to != mail.headers.in_reply_to || headers.references != mail.headers.references {
             return Err("thread headers are read-only".into());
         }
@@ -383,5 +388,19 @@ mod tests {
         assert!(tab.document_notice.as_deref().unwrap().contains("editd 0.3.0"));
         assert_eq!(text_string(tab.mirror.as_ref().unwrap().text()), LETTER);
         assert!(!c.can_send(tab.id));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unrepresentable_attachment_path_is_refused_without_poisoning_state() {
+        use std::os::unix::ffi::OsStringExt;
+        let (mut c, _, tab) = opened(LETTER);
+        let mut headers = c.tab(tab).unwrap().mail.as_ref().unwrap().headers.clone();
+        headers.attachments.push(std::ffi::OsString::from_vec(b"/tmp/report-\xff".to_vec()).into());
+        let expected = maildoc::write(&headers.document("Body".into())).unwrap_err().to_string();
+        assert_eq!(c.edit_headers(tab, headers).unwrap_err(), expected);
+        assert_eq!(c.tab(tab).unwrap().mail.as_ref().unwrap().notice.as_deref(), Some(expected.as_str()));
+        assert!(!c.tab(tab).unwrap().dirty());
+        assert!(serde_json::to_value(c.state_reply(tab, true).unwrap()).is_ok());
     }
 }
