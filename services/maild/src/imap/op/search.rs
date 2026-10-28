@@ -896,10 +896,6 @@ pub async fn handle_extended(
         }
     }
     apply_saved(&mut req.crit, previous_saved.as_deref().unwrap_or(saved));
-    let save = req
-        .returns
-        .as_ref()
-        .is_some_and(|opts| opts.iter().any(|s| s == "SAVE"));
     if req.charset.as_ref().is_some_and(|charset| {
         !["US-ASCII", "UTF-8"]
             .iter()

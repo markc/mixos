@@ -2401,10 +2401,15 @@ impl MailStore for SqliteMailStore {
     ) -> Result<Vec<EmailHandle>> {
         self.mds
             .with_set_read(&account_id_to_setid(account), |conn| {
-                let first = Seq(u32::try_from(first).map_err(|e| mds::Error::Other(e.to_string()))?);
+                let first =
+                    Seq(u32::try_from(first).map_err(|e| mds::Error::Other(e.to_string()))?);
                 let last = Seq(u32::try_from(last).map_err(|e| mds::Error::Other(e.to_string()))?);
-                Ok(mds::container::list_items(conn, &mailbox, SeqRange::Range(first, last))?
-                    .into_iter().map(imap_email_handle).collect())
+                Ok(
+                    mds::container::list_items(conn, &mailbox, SeqRange::Range(first, last))?
+                        .into_iter()
+                        .map(imap_email_handle)
+                        .collect(),
+                )
             })
             .map_err(Into::into)
     }

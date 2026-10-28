@@ -1299,18 +1299,46 @@ async fn charset_errors_and_save_failure_have_correct_state() -> Result<()> {
 #[tokio::test]
 async fn failed_save_no_and_bad_clear_dollar_in_both_search_modes() -> Result<()> {
     let (_tmp, db, mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
-    insert_email(&ms, &mds, b"Subject: saved\r\n\r\nbody", "saved", Flags(0), 1_700_000_000_000)?;
+    insert_email(
+        &ms,
+        &mds,
+        b"Subject: saved\r\n\r\nbody",
+        "saved",
+        Flags(0),
+        1_700_000_000_000,
+    )?;
     let (mut r, mut w) = selected(ms, db).await?;
     for mode in ["SEARCH", "UID SEARCH"] {
         for (suffix, status) in [("CHARSET UTF-16 ALL", "NO [BADCHARSET"), ("NOT", "BAD")] {
-            assert!(command(&mut r, &mut w, "s", &format!("{mode} RETURN (SAVE) ALL")).await?.contains("s OK"));
+            assert!(
+                command(&mut r, &mut w, "s", &format!("{mode} RETURN (SAVE) ALL"))
+                    .await?
+                    .contains("s OK")
+            );
             // Taking the saved variable before parsing must preserve its old
             // value while evaluating a successful SAVE of '$' itself.
-            assert!(command(&mut r, &mut w, "s", &format!("{mode} RETURN (SAVE) $")).await?.contains("s OK"));
-            assert!(command(&mut r, &mut w, "f", "UID FETCH $ UID").await?.contains("UID 1"));
-            let response = command(&mut r, &mut w, "s", &format!("{mode} RETURN (SAVE) {suffix}")).await?;
+            assert!(
+                command(&mut r, &mut w, "s", &format!("{mode} RETURN (SAVE) $"))
+                    .await?
+                    .contains("s OK")
+            );
+            assert!(
+                command(&mut r, &mut w, "f", "UID FETCH $ UID")
+                    .await?
+                    .contains("UID 1")
+            );
+            let response = command(
+                &mut r,
+                &mut w,
+                "s",
+                &format!("{mode} RETURN (SAVE) {suffix}"),
+            )
+            .await?;
             assert!(response.contains(&format!("s {status}")), "{response}");
-            assert_eq!(command(&mut r, &mut w, "f", "UID FETCH $ UID").await?, "f OK FETCH completed\r\n");
+            assert_eq!(
+                command(&mut r, &mut w, "f", "UID FETCH $ UID").await?,
+                "f OK UID FETCH completed\r\n"
+            );
         }
     }
     Ok(())
@@ -2358,15 +2386,27 @@ mod cost_regressions {
         let initial_lists = counted.lists.load(Ordering::Relaxed);
         let response = command(&mut r, &mut w, "f", "UID FETCH 1:* (FLAGS)").await?;
         assert_eq!(response.matches(" FETCH (").count(), 10000);
-        assert_eq!(counted.fetches.load(Ordering::Relaxed), 1, "folder open must be one native range scan");
+        assert_eq!(
+            counted.fetches.load(Ordering::Relaxed),
+            1,
+            "folder open must be one native range scan"
+        );
         assert_eq!(counted.fetched_rows.load(Ordering::Relaxed), 10000);
         let response = command(&mut r, &mut w, "f", "UID FETCH 1:3,9:10 (FLAGS)").await?;
         assert_eq!(response.matches(" FETCH (").count(), 5);
-        assert_eq!(counted.fetches.load(Ordering::Relaxed), 3, "two disjoint runs need two scans");
+        assert_eq!(
+            counted.fetches.load(Ordering::Relaxed),
+            3,
+            "two disjoint runs need two scans"
+        );
         let response = command(&mut r, &mut w, "f", "UID FETCH 1,10000 (FLAGS)").await?;
         assert_eq!(response.matches(" FETCH (").count(), 2);
         assert_eq!(counted.fetches.load(Ordering::Relaxed), 5);
-        assert_eq!(counted.fetched_rows.load(Ordering::Relaxed), 10007, "sparse FETCH must not read the intervening messages");
+        assert_eq!(
+            counted.fetched_rows.load(Ordering::Relaxed),
+            10007,
+            "sparse FETCH must not read the intervening messages"
+        );
         for _ in 0..1000 {
             let response = command(&mut r, &mut w, "f", "FETCH 1 UID").await?;
             assert!(response.contains("* 1 FETCH (UID 1)"), "{response}");
@@ -2428,8 +2468,12 @@ mod cost_regressions {
         })?;
         counted.fail_lists.store(true, Ordering::Relaxed);
         ms.set_keywords_in_mailbox(1, last.id, inbox, Flags(Flags::FLAGGED), Tags::new())?;
-        let unavailable = tokio::time::timeout(std::time::Duration::from_secs(5), read_line(&mut r)).await??;
-        assert!(unavailable.starts_with("* NO [UNAVAILABLE]"), "{unavailable}");
+        let unavailable =
+            tokio::time::timeout(std::time::Duration::from_secs(5), read_line(&mut r)).await??;
+        assert!(
+            unavailable.starts_with("* NO [UNAVAILABLE]"),
+            "{unavailable}"
+        );
         // The failed diff leaves the view intact. A later event retries it.
         ms.set_keywords_in_mailbox(1, last.id, inbox, Flags(0), Tags::new())?;
         let mut received = String::new();
@@ -2451,7 +2495,11 @@ mod cost_regressions {
         let before = counted.fetches.load(Ordering::Relaxed);
         let response = command(&mut r, &mut w, "f", "UID FETCH 1:* (FLAGS)").await?;
         assert_eq!(response.matches(" FETCH (").count(), 10000);
-        assert_eq!(counted.fetches.load(Ordering::Relaxed), before + 1, "UID holes must not split a whole-folder scan");
+        assert_eq!(
+            counted.fetches.load(Ordering::Relaxed),
+            before + 1,
+            "UID holes must not split a whole-folder scan"
+        );
         assert!(command(&mut r, &mut w, "n", "NOOP").await?.contains("n OK"));
         Ok(())
     }
