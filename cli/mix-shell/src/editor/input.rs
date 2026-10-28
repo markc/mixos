@@ -172,14 +172,15 @@ pub fn wait(
     output: Option<RawFd>,
     timeout: i32,
 ) -> io::Result<[bool; 4]> {
-    let mut fds =
-        [tty, control, signal, output.unwrap_or(-1)].map(|fd| libc::pollfd {
-            fd,
-            events: libc::POLLIN,
-            revents: 0,
-        });
+    let mut fds = [tty, control, signal, output.unwrap_or(-1)].map(|fd| libc::pollfd {
+        fd,
+        events: libc::POLLIN,
+        revents: 0,
+    });
     fds[3].events = libc::POLLOUT;
-    if !editing { fds[0].events = 0; }
+    if !editing {
+        fds[0].events = 0;
+    }
     let rc = unsafe { libc::poll(fds.as_mut_ptr(), fds.len() as _, timeout) };
     if rc < 0 {
         let error = io::Error::last_os_error();
@@ -213,13 +214,32 @@ mod tests {
         use std::os::fd::{AsRawFd, FromRawFd};
         use std::os::unix::net::UnixStream;
         let (mut master, mut slave) = (-1, -1);
-        assert_eq!(unsafe { libc::openpty(&mut master, &mut slave, std::ptr::null_mut(), std::ptr::null(), std::ptr::null()) }, 0);
+        assert_eq!(
+            unsafe {
+                libc::openpty(
+                    &mut master,
+                    &mut slave,
+                    std::ptr::null_mut(),
+                    std::ptr::null(),
+                    std::ptr::null(),
+                )
+            },
+            0
+        );
         let master = unsafe { File::from_raw_fd(master) };
         let slave = unsafe { File::from_raw_fd(slave) };
         let (control, _control_peer) = UnixStream::pair().unwrap();
         let (signal, _signal_peer) = UnixStream::pair().unwrap();
         drop(master);
-        let error = wait(slave.as_raw_fd(), false, control.as_raw_fd(), signal.as_raw_fd(), None, 100).unwrap_err();
+        let error = wait(
+            slave.as_raw_fd(),
+            false,
+            control.as_raw_fd(),
+            signal.as_raw_fd(),
+            None,
+            100,
+        )
+        .unwrap_err();
         assert_eq!(error.raw_os_error(), Some(libc::EIO));
     }
     fn decode(d: &mut Decoder, bytes: &[u8]) -> Vec<Key> {

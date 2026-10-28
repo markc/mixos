@@ -114,6 +114,33 @@ fn plain_eof_exits_zero() {
 }
 
 #[test]
+fn fixture_job() {
+    let Some(report) = std::env::var_os("TERMINAL_JOB_REPORT") else { return };
+    fs::write(report, std::process::id().to_string()).unwrap();
+    loop { std::thread::park(); }
+}
+
+#[test]
+fn terminal_hangup_also_hangs_up_background_job_groups() {
+    let mut shell = Shell::new(true, true, "owned");
+    shell.prompt();
+    let report = shell._home.path().join("job-pid");
+    shell.master.as_mut().unwrap().write_all(format!(
+        "TERMINAL_JOB_REPORT={} {} --exact fixture_job --nocapture &\n",
+        report.display(), std::env::current_exe().unwrap().display()
+    ).as_bytes()).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let child: i32 = loop {
+        if let Ok(pid) = fs::read_to_string(&report) { break pid.parse().unwrap(); }
+        assert!(Instant::now() < deadline, "background job did not start");
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    drop(shell.master.take());
+    assert_eq!(shell.wait().code(), Some(129));
+    assert!(!std::path::Path::new(&format!("/proc/{child}")).exists(), "background job {child} outlived the shell");
+}
+
+#[test]
 fn fixture_parent() {
     let Some(report) = std::env::var_os("TERMINAL_PARENT_REPORT") else { return };
     let shell = Shell::new(true, false, "owned");

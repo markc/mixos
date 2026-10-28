@@ -1196,7 +1196,12 @@ pub fn run_repl() -> i32 {
                 }
                 break;
             }
-            Err(ReadlineError::Io(e)) if matches!(e.raw_os_error(), Some(libc::EIO | libc::ENXIO | libc::ENOTTY)) => {
+            Err(ReadlineError::Io(e))
+                if matches!(
+                    e.raw_os_error(),
+                    Some(libc::EIO | libc::ENXIO | libc::ENOTTY)
+                ) =>
+            {
                 exit_code = 128 + libc::SIGHUP;
                 break;
             }

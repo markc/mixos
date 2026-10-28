@@ -26,7 +26,9 @@ fn command() -> Command {
     pty::guard(&mut command);
     unsafe {
         command.pre_exec(|| {
-            if libc::setsid() < 0 { return Err(std::io::Error::last_os_error()); }
+            if libc::setsid() < 0 {
+                return Err(std::io::Error::last_os_error());
+            }
             Ok(())
         });
     }
@@ -337,7 +339,10 @@ fn stdin_inherit_refuses_a_terminal_stdin() {
     };
     assert_eq!(rc, 0, "openpty");
     for fd in [master, slave] {
-        assert_eq!(unsafe { libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) }, 0);
+        assert_eq!(
+            unsafe { libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) },
+            0
+        );
     }
     // SAFETY: `slave` is a descriptor we own; Stdio takes ownership of it.
     let stdin = unsafe { Stdio::from(std::os::fd::OwnedFd::from_raw_fd(slave)) };

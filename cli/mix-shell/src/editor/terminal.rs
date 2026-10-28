@@ -15,7 +15,11 @@ pub static OUTPUT_TEARS: AtomicUsize = AtomicUsize::new(0);
 /// HUP/ERR are reported even with no requested events. Foreground loss is
 /// temporary; a disconnected terminal is not, including with SIGHUP ignored.
 pub fn hung_up(fd: RawFd) -> bool {
-    let mut poll = libc::pollfd { fd, events: 0, revents: 0 };
+    let mut poll = libc::pollfd {
+        fd,
+        events: 0,
+        revents: 0,
+    };
     (unsafe { libc::poll(&mut poll, 1, 0) }) > 0
         && poll.revents & (libc::POLLHUP | libc::POLLERR | libc::POLLNVAL) != 0
 }

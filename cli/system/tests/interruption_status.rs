@@ -15,7 +15,9 @@ fn command(home: &std::path::Path) -> Command {
     pty::guard(&mut cmd);
     unsafe {
         cmd.pre_exec(|| {
-            if libc::setsid() < 0 { return Err(std::io::Error::last_os_error()); }
+            if libc::setsid() < 0 {
+                return Err(std::io::Error::last_os_error());
+            }
             Ok(())
         });
     }
