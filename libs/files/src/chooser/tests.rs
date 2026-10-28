@@ -3,6 +3,24 @@
 
 use super::*;
 
+#[test]
+fn canonical_body_round_trips_all_modes_without_losing_bytes_or_defaults() {
+    for body in [
+        json!({"mode":"open","multiple":true,"directory":true,"correlation":"compose-3",
+            "current_filter":{"name":"Text","patterns":["*.md"],"mime_types":["text/*"]},
+            "choices":[{"id":"check","label":"Check","options":[]}]}),
+        json!({"mode":"save","current_file":"file:///tmp/%FF.md","accept_label":"_Write",
+            "filters":[{"name":"Text","patterns":["*.md"]}],
+            "current_filter":{"name":"Other","patterns":["*.txt"]}}),
+        json!({"mode":"save_files","current_folder":"file:///tmp/%FE",
+            "files":["one.md",{"bytes":"%FF.md"}], "on_behalf_of":"test app"}),
+    ] {
+        let request = Request::parse(&body.to_string(), &defaults()).unwrap();
+        let reparsed = Request::parse(&request.body().to_string(), &defaults()).unwrap();
+        assert_eq!(request, reparsed);
+    }
+}
+
 fn defaults() -> Defaults {
     Defaults {
         open_title: "Open".into(),

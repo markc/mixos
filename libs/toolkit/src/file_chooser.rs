@@ -295,11 +295,7 @@ impl FileChooser {
                         Ok(Answer::Picked(paths)) => {
                             if self.mode == Mode::Save {
                                 if let Some(path) = paths.first() {
-                                    self.name = path
-                                        .file_name()
-                                        .unwrap_or_default()
-                                        .to_string_lossy()
-                                        .into_owned();
+                                    self.use_name(path);
                                     self.open(
                                         ctx,
                                         path.parent().unwrap_or(&self.directory).to_owned(),
@@ -640,7 +636,7 @@ impl FileChooser {
             && !self.entries[at].directory
             && (clicked.is_some() || self.scroll_to_cursor)
         {
-            self.name = self.entries[at].name.clone();
+            self.use_name(&self.entries[at].path.clone());
         }
         self.scroll_to_cursor = false;
         if go_up {
@@ -650,7 +646,7 @@ impl FileChooser {
                 self.open(&ctx, self.entries[at].path.clone());
             } else {
                 if self.mode == Mode::Save {
-                    self.name = self.entries[at].name.clone();
+                    self.use_name(&self.entries[at].path.clone());
                 }
                 if self.selection.files.is_empty() {
                     self.selection.click(at, false, false, &self.entries);
@@ -666,6 +662,14 @@ impl FileChooser {
     fn up(&mut self, ctx: &Context) {
         if let Some(parent) = self.browsing.as_ref().unwrap_or(&self.directory).parent() {
             self.open(ctx, parent.to_owned());
+        }
+    }
+
+    fn use_name(&mut self, path: &Path) {
+        let name = path.file_name().unwrap_or_default();
+        self.name = name.to_string_lossy().into_owned();
+        if let Some(request) = &mut self.contract {
+            request.current_name = Some(crate::choose::path_bytes(Path::new(name)));
         }
     }
 

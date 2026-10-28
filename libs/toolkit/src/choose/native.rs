@@ -45,6 +45,7 @@ async fn session(client: &SupervisedClient, name: &str, request: &Request, cance
         return None;
     };
     let mut failures = 0;
+    let mut incoming_live = true;
     let mut sweep = tokio::time::interval(Duration::from_secs(5));
     sweep.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
@@ -53,7 +54,7 @@ async fn session(client: &SupervisedClient, name: &str, request: &Request, cance
                 cancel_request(client, &id).await;
                 return None;
             }
-            event = incoming.recv() => {
+            event = incoming.recv(), if incoming_live => {
                 match event {
                     Some(BoundedIncomingEvent::Command(event)) if event.topic() == Some("files.chosen") => {
                         if let Ok(value) = serde_json::from_str::<Value>(&event.body)
@@ -61,6 +62,7 @@ async fn session(client: &SupervisedClient, name: &str, request: &Request, cance
                             return Some(decode_outcome(request, &value));
                         }
                     }
+                    None => incoming_live = false,
                     _ => { /* The result query recovers overflow and missed publications. */ }
                 }
             }
