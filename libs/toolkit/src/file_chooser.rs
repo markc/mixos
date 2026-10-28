@@ -1080,6 +1080,7 @@ mod tests {
 
     #[test]
     fn minimum_window_file_chooser_renders() {
+        use egui_kittest::kittest::Queryable;
         let mut h = egui_kittest::Harness::builder()
             .with_size(egui::Vec2::from(crate::window::MIN_SIZE))
             .build_ui_state(
@@ -1091,6 +1092,16 @@ mod tests {
         crate::install(&h.ctx, &crate::Theme::embedded());
         h.run_steps(4);
         h.snapshot("minimum_window_file_chooser");
+        // A chooser already open during a quarter-tile configure must keep
+        // its confirmation buttons inside both reference work areas too.
+        for size in [egui::vec2(640.0, 320.0), egui::vec2(768.0, 392.0)] {
+            h.set_size(size);
+            h.run_steps(4);
+            let bounds = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+            for name in ["Save", "Cancel"] {
+                assert!(bounds.contains_rect(h.get_by_label(name).rect()));
+            }
+        }
     }
 
     #[test]

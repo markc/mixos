@@ -167,7 +167,7 @@ impl Dialog {
             min: tokens.dialog_min_width as f32,
             max: tokens.dialog_max_width as f32,
         });
-        let compact = ctx.content_rect().width() < 640.0 || ctx.content_rect().height() < 320.0;
+        let compact = ctx.content_rect().width() < 640.0 || ctx.content_rect().height() < 480.0;
         if compact {
             let available = (ctx.content_rect().width() - 32.0).max(0.0);
             width.max = width.max.min(available);
