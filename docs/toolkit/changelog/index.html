@@ -245,40 +245,29 @@
 <h1 id="changelog">Changelog</h1>
 <h2 id="unreleased--2026-10-28">Unreleased — 2026-10-28</h2>
 <ul>
+<li>Follow the summary custom-source flag explicitly, retaining the file design
+and its overlay while applying profile framing, menus, band and fonts.</li>
+<li>Bundle the unmodified Inter 4.1 Bold (700) face under the existing SIL OFL
+licence. Interface weights 300–700 select distinct faces; heading offsets
+clamp to that range. Headless coverage tests require each weight to draw
+more ink, and size tests check proportional styles without changing mono.</li>
+<li>Keep session font overrides when an app falls back from a custom or unknown
+design to its installed theme.</li>
+<li>Scale native button, link, tab, panel, dialog, title and value text metrics
+with the interface size. Apply the ratio once in chrome and pair text styles;
+keep independently sized monospace content and spacing unchanged.</li>
+<li>Size numeric fields for their rendered number, unit and padding at changed
+interface sizes. Preserve authored geometry and snapshots at scale 1.0.</li>
+<li>Add <code>header_form</code>: measured label columns, caller-drawn rows, recipient/text
+fields and removable path chips shared by Email and ced. Caller-provided
+IDs keep field state scoped to each tab and viewport.</li>
+<li>Share a 360×240 logical window minimum across app and secondary viewports. Restore secondary geometry only at creation; constrain and scroll small dialogs and saved docks.</li>
 <li>Share a 360×240 logical window minimum across app and secondary viewports. Restore secondary geometry only at creation; constrain and scroll small dialogs and saved docks. Use the compact menu in narrow windows so menu titles cannot overlap the window controls.</li>
 <li>Bound folded menu columns in narrow windows so a submenu cannot cover its parent row and turn a labelled menu click into a different command. Overflowing rows scroll within their column.</li>
 <li>Keep short folded menu frames at their measured row height when their width is bounded, rather than stretching them to the bottom of the window.</li>
 </ul>
 <h2 id="unreleased--2026-10-28-1">Unreleased — 2026-10-28</h2>
 <ul>
-<li>
-<p>Follow the summary custom-source flag explicitly, retaining the file design
-and its overlay while applying profile framing, menus, band and fonts.</p>
-</li>
-<li>
-<p>Bundle the unmodified Inter 4.1 Bold (700) face under the existing SIL OFL
-licence. Interface weights 300–700 select distinct faces; heading offsets
-clamp to that range. Headless coverage tests require each weight to draw
-more ink, and size tests check proportional styles without changing mono.</p>
-</li>
-<li>
-<p>Keep session font overrides when an app falls back from a custom or unknown
-design to its installed theme.</p>
-</li>
-<li>
-<p>Scale native button, link, tab, panel, dialog, title and value text metrics
-with the interface size. Apply the ratio once in chrome and pair text styles;
-keep independently sized monospace content and spacing unchanged.</p>
-</li>
-<li>
-<p>Size numeric fields for their rendered number, unit and padding at changed
-interface sizes. Preserve authored geometry and snapshots at scale 1.0.</p>
-</li>
-<li>
-<p>Add <code>header_form</code>: measured label columns, caller-drawn rows, recipient/text
-fields and removable path chips shared by Email and ced. Caller-provided
-IDs keep field state scoped to each tab and viewport.</p>
-</li>
 <li>
 <p>Allow a viewport to require its own complete client frame independently of
 the session decoration preference and later theme changes. Each viewport

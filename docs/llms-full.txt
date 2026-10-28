@@ -38678,6 +38678,8 @@ written in Mix on `tcp_listen`.
 - File Send and headless `ced.execute {id:"file.send"}` save first, then
   call Email with only the document path. Preserve refusals, report uncertain
   sends, refuse duplicate in-flight sends and never retry an uncertain call.
+- Use the shared 360×240 logical window minimum so quarter tiles can fit. Cover the editor at that size.
+- Use the shared 360×240 logical window minimum so quarter tiles can fit. Limit optional bottom docks to a share of the available height and cover both docks with the editor at that size.
 
 ---
 
@@ -38856,6 +38858,8 @@ written in Mix on `tcp_listen`.
 
 - Follow session font size and weight with a custom design package, keeping
   the theme file design beneath profile framing, menus and title band.
+- Use the shared 360×240 logical window minimum. Lend sidebar space to file panes in narrow tiles and clip each pane to its own bounds.
+- Apply the same minimum to native chooser windows; bound Places and scroll caller options without displacing the file list or confirmation buttons.
 
 ## Unreleased — 2026-10-27
 
@@ -38926,6 +38930,9 @@ the predecessor repository at revision
 
 - Follow session font size and weight with a custom design package, keeping
   the theme file design beneath profile framing, menus and title band.
+- Use the shared 360×240 logical minimum for mailbox and composer windows. Select one pane at a time in narrow tiles; scroll composer fields and allow a one-row editor.
+- Preserve saved Places and Reader shares at normal widths and across narrow resizes; compact split clamps never save over the user's layout.
+- Cover Send, folded composer menus and their Bus drive paths at the minimum window size, with an offscreen snapshot.
 
 ## Unreleased
 
@@ -39872,6 +39879,7 @@ native-session handoff bytes retain the frozen compatibility contract.
 
 - Follow session font size and weight with a custom design package, keeping
   the theme file design beneath profile framing, menus and title band.
+- Use the shared 360×240 logical window minimum. Replace the Performance sidebar with a section selector in narrow tiles and scroll oversized figures.
 
 ---
 
@@ -39933,6 +39941,10 @@ Use strict MixOS configuration and owned shutdown signalling.
 <!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
 # Changelog
 
+## Unreleased — 2026-10-28
+
+- Use the shared 360×240 logical window minimum. Replace the navigation sidebar with a section selector in narrow tiles and allow settings to scroll in both directions.
+
 ## Unreleased — 2026-10-27
 
 - Offer Bold (700) alongside the bundled Light, Regular, Medium and SemiBold
@@ -39966,6 +39978,7 @@ Use strict MixOS configuration and owned shutdown signalling.
 
 - Follow session font size and weight with a custom design package, keeping
   the theme file design beneath profile framing, menus and title band.
+- Use the shared 360×240 logical window minimum so quarter tiles fit; cover annotation rendering at that size.
 
 ---
 
@@ -40249,6 +40262,8 @@ until success. Inline capacity refusal has a distinct snapshot_too_large status.
 
 - Follow session font size and weight with a custom design package, keeping
   the theme file design beneath profile framing, menus and title band.
+- Use the shared 360×240 logical window minimum and exercise the GPU terminal split layout at that size.
+- Retain the terminal's 320×200 logical window minimum and exercise the GPU terminal split layout at that size.
 
 ## 0.4.0
 
@@ -40309,6 +40324,12 @@ their bytes.
 - Add `header_form`: measured label columns, caller-drawn rows, recipient/text
   fields and removable path chips shared by Email and ced. Caller-provided
   IDs keep field state scoped to each tab and viewport.
+- Share a 360×240 logical window minimum across app and secondary viewports. Restore secondary geometry only at creation; constrain and scroll small dialogs and saved docks.
+- Share a 360×240 logical window minimum across app and secondary viewports. Restore secondary geometry only at creation; constrain and scroll small dialogs and saved docks. Use the compact menu in narrow windows so menu titles cannot overlap the window controls.
+- Bound folded menu columns in narrow windows so a submenu cannot cover its parent row and turn a labelled menu click into a different command. Overflowing rows scroll within their column.
+- Keep short folded menu frames at their measured row height when their width is bounded, rather than stretching them to the bottom of the window.
+
+## Unreleased — 2026-10-28
 
 - Allow a viewport to require its own complete client frame independently of
   the session decoration preference and later theme changes. Each viewport
@@ -40423,6 +40444,7 @@ their bytes.
 
 - Follow session font size and weight with a custom design package, keeping
   the theme file design beneath profile framing, menus and title band.
+- Use the shared 360×240 logical window minimum. Stack the services pane in narrow tiles, size docks from remaining space, and scroll oversized dock content.
 
 ---
 
