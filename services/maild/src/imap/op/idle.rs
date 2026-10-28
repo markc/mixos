@@ -442,7 +442,15 @@ where
                                 match tokio::task::spawn_blocking(move || lookup_store.imap_membership(account_id, container, item)).await {
                                     Ok(Ok(Some(handle))) => {
                                         if sm.view_uids.binary_search(&handle.uid).is_err() {
-                                            let uids = snapshot_uids(store.clone(), account_id, container).await?;
+                                            let uids = match snapshot_uids(store.clone(), account_id, container).await {
+                                                Ok(uids) => uids,
+                                                Err(error) => {
+                                                    tracing::warn!(%error, "IDLE flag resynchronisation failed");
+                                                    writer.write_all(b"* NO [UNAVAILABLE] mailbox flag updates unavailable\r\n").await?;
+                                                    writer.flush().await?;
+                                                    continue;
+                                                }
+                                            };
                                             for line in diff_lines(&sm.view_uids, &uids) { writer.write_all(line.as_bytes()).await?; }
                                             sm.view_uids = uids;
                                         }

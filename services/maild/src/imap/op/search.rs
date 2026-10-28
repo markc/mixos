@@ -858,15 +858,15 @@ pub async fn handle_extended(
     saved: &mut Vec<u64>,
     view: Option<&[u64]>,
 ) -> String {
+    // Clear before any parser or execution error, retaining the old value for
+    // a successful SEARCH RETURN (SAVE) $ to reference.
+    let previous_saved = requests_save(args).then(|| std::mem::take(saved));
     let mut req = match parse_args(args, mode) {
         Ok(r) => r,
         Err(e) if e.starts_with("BADCHARSET") => {
             return tagged(tag, Status::No, Some(&e), "unsupported search charset");
         }
         Err(e) => {
-            if requests_save(args) {
-                saved.clear();
-            }
             return tagged(tag, Status::Bad, None, &e);
         }
     };
@@ -895,16 +895,11 @@ pub async fn handle_extended(
             _ => {}
         }
     }
-    apply_saved(&mut req.crit, saved);
+    apply_saved(&mut req.crit, previous_saved.as_deref().unwrap_or(saved));
     let save = req
         .returns
         .as_ref()
         .is_some_and(|opts| opts.iter().any(|s| s == "SAVE"));
-    // A syntactically valid SAVE that fails with NO resets the variable.
-    // Copy its previous value into the AST before clearing it (SEARCH $ SAVE).
-    if save {
-        saved.clear();
-    }
     if req.charset.as_ref().is_some_and(|charset| {
         !["US-ASCII", "UTF-8"]
             .iter()

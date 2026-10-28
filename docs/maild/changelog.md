@@ -10,6 +10,12 @@ generated: by docs/_build/gen-site.mix from services/maild/CHANGELOG.md; do not 
 
 ## Unreleased
 
+- Coalesce IMAP FETCH UID runs into indexed range scans, including one scan for
+  full-folder requests with UID holes. Preserve IDLE sessions after transient
+  resynchronisation failures and clear saved SEARCH results before error paths.
+- Cover cross-session IMAP visibility of JMAP, SMTP and Sieve changes, and Sieve
+  account-deletion cascades on both application and property-store connections.
+
 - Fix Sieve attachment-independent header budgets, custom address fields,
   writable fileinto destinations, redirect-only loop suppression and private
   header removal on external redirects. Local submission stamps fresh spam

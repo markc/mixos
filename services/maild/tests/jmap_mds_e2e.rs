@@ -25,6 +25,7 @@
 //! Run: `cargo test --release -p maild --test jmap_mds_e2e`.
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use ::props::record::{Actor, RecordKey, Version};
@@ -329,6 +330,143 @@ async fn jmap_mds_e2e_smoke() -> Result<()> {
     );
 
     let _ = initial_email_state;
+    Ok(())
+}
+
+type ImapReader = BufReader<tokio::io::ReadHalf<tokio::io::DuplexStream>>;
+type ImapWriter = tokio::io::WriteHalf<tokio::io::DuplexStream>;
+
+async fn visibility_imap(built: &maild::runtime::BuiltMaild) -> Result<(ImapReader, ImapWriter)> {
+    let (client, server) = tokio::io::duplex(64 * 1024);
+    let db = built.app_state.db.clone();
+    let store: Arc<dyn maild::mailstore::MailStore> = built.app_state.mailstore.clone();
+    tokio::spawn(async move {
+        maild::imap::session::handle_connection(server, "127.0.0.1:0".parse().unwrap(), None,
+            Arc::new(maild::imap::config::ImapConfig::default()), db, store,
+            maild::imap::session::AccountSlots::new(), "mail.example.com".into()).await
+    });
+    let (r, w) = tokio::io::split(client);
+    let mut r = BufReader::new(r);
+    let mut greeting = String::new();
+    r.read_line(&mut greeting).await?;
+    let mut wire = (r, w);
+    assert!(visibility_command(&mut wire, "l", "LOGIN alice@example.com hunter2").await?.contains("l OK"));
+    Ok(wire)
+}
+
+async fn visibility_command(wire: &mut (ImapReader, ImapWriter), tag: &str, command: &str) -> Result<String> {
+    wire.1.write_all(format!("{tag} {command}\r\n").as_bytes()).await?;
+    let mut response = String::new();
+    loop {
+        let mut line = String::new();
+        let n = tokio::time::timeout(Duration::from_secs(10), wire.0.read_line(&mut line)).await??;
+        anyhow::ensure!(n != 0, "IMAP connection closed: {response}");
+        let done = line.starts_with(&format!("{tag} "));
+        response.push_str(&line);
+        if done { return Ok(response); }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn selected_imap_view_observes_cross_session_jmap_smtp_and_sieve_changes() -> Result<()> {
+    use maild::mailstore::{MailStore, MailboxRole, ListOpts};
+    let tmp = TempDir::new()?;
+    let built = build_runtime(&make_config(tmp.path()), RuntimeOpts {
+        enable_bus: false, disable_outbound_delivery: true, ..Default::default()
+    }).await?;
+    create_account(&built, "alice@example.com", "hunter2").await?;
+    let ms = &built.app_state.mailstore;
+    let db = &built.app_state.db;
+    let mut writer = visibility_imap(&built).await?;
+    let message = "Subject: visibility\r\n\r\nbody";
+    for _ in 0..2 {
+        assert!(visibility_command(&mut writer, "a", &format!("APPEND INBOX {{{}+}}\r\n{message}", message.len())).await?.contains("a OK"));
+    }
+    let mut observer = visibility_imap(&built).await?;
+    assert!(visibility_command(&mut observer, "s", "SELECT INBOX").await?.contains("* 2 EXISTS"));
+    assert!(visibility_command(&mut observer, "f", "FETCH 1 UID").await?.contains("UID 1"));
+    assert!(visibility_command(&mut writer, "a", &format!("APPEND INBOX {{{}+}}\r\n{message}", message.len())).await?.contains("a OK"));
+    let mut expunger = visibility_imap(&built).await?;
+    visibility_command(&mut expunger, "s", "SELECT INBOX").await?;
+    visibility_command(&mut expunger, "d", "STORE 1 +FLAGS (\\Deleted)").await?;
+    assert!(visibility_command(&mut expunger, "x", "EXPUNGE").await?.contains("* 1 EXPUNGE"));
+    let response = visibility_command(&mut observer, "n", "NOOP").await?;
+    assert!(response.contains("* 1 EXPUNGE") && response.contains("* 2 EXISTS"), "{response}");
+    visibility_command(&mut observer, "f", "FETCH 1 UID").await?;
+    mail_send_raw(built.smtp_handle.inbound_addrs[0], "sender@example.org", "alice@example.com", "SMTP visibility", "body").await?;
+    let response = visibility_command(&mut observer, "n", "NOOP").await?;
+    assert!(response.contains("* 3 EXISTS"), "{response}");
+
+    // Use the real HTTP Email/set path to add a previously unselected
+    // membership, then destroy it, exercising additions and removals.
+    visibility_command(&mut writer, "c", "CREATE Other").await?;
+    visibility_command(&mut writer, "a", &format!("APPEND Other {{{}+}}\r\n{message}", message.len())).await?;
+    let other = ms.mailbox_by_name(1, "Other")?.unwrap();
+    let item = ms.list_emails_in_mailbox(1, other, ListOpts::default())?[0].id.0.to_string();
+    let inbox = ms.mailbox_by_role(1, MailboxRole::Inbox)?.unwrap().0.to_string();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let base = format!("http://{}", listener.local_addr()?);
+    let router = built.router.clone();
+    let http = tokio::spawn(async move { axum::serve(listener, router).await });
+    let client = reqwest::Client::builder().timeout(Duration::from_secs(10)).build()?;
+    visibility_command(&mut observer, "f", "FETCH 1 UID").await?;
+    let response = jmap_call(&client, &base, "alice@example.com", "hunter2", "Email/set",
+        json!({"accountId":"1","update":{(item.clone()):{"mailboxIds":{(inbox):true}}}})).await?;
+    assert!(response["updated"].get(&item).is_some(), "{response}");
+    let response = visibility_command(&mut observer, "n", "NOOP").await?;
+    assert!(response.contains("* 4 EXISTS"), "{response}");
+    visibility_command(&mut observer, "f", "FETCH 1 UID").await?;
+    let response = jmap_call(&client, &base, "alice@example.com", "hunter2", "Email/set",
+        json!({"accountId":"1","destroy":[item]})).await?;
+    assert_eq!(response["destroyed"].as_array().unwrap().len(), 1, "{response}");
+    let response = visibility_command(&mut observer, "n", "NOOP").await?;
+    assert!(response.contains("* 4 EXPUNGE"), "{response}");
+
+    visibility_command(&mut writer, "c", "CREATE Filed").await?;
+    visibility_command(&mut observer, "s", "SELECT Filed").await?;
+    visibility_command(&mut observer, "f", "FETCH 1 UID").await?;
+    maild::sieve::store::put(db, 1, "visibility", r#"require ["fileinto"]; fileinto "Filed";"#, None).await?;
+    maild::sieve::store::activate(db, 1, "visibility").await?;
+    mail_send_raw(built.smtp_handle.inbound_addrs[0], "sender@example.org", "alice@example.com", "Sieve visibility", "body").await?;
+    let response = visibility_command(&mut observer, "n", "NOOP").await?;
+    assert!(response.contains("* 1 EXISTS"), "{response}");
+    assert!(visibility_command(&mut observer, "f", "FETCH 1 UID").await?.contains("UID 1"));
+    assert!(visibility_command(&mut writer, "s", "STATUS INBOX (MESSAGES)").await?.contains("MESSAGES 3"));
+    http.abort();
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn account_deletion_cascades_sieve_rows_on_application_and_props_connections() -> Result<()> {
+    let tmp = TempDir::new()?;
+    let built = build_runtime(&make_config(tmp.path()), RuntimeOpts {
+        enable_bus: false, disable_outbound_delivery: true, ..Default::default()
+    }).await?;
+    create_account(&built, "alice@example.com", "hunter2").await?;
+    create_account(&built, "bob@example.com", "hunter2").await?;
+    let db = &built.app_state.db;
+    for account in [1, 2] {
+        maild::sieve::store::put(db, account, "main", "keep;", None).await?;
+        maild::sieve::store::activate(db, account, "main").await?;
+        db.conn.lock().unwrap().execute("INSERT INTO sieve_replies(account_id,sender,handle,sent_at) VALUES(?1,'sender@example.org','vacation',1)", [account])?;
+    }
+    {
+        let conn = db.conn.lock().unwrap();
+        assert_eq!(conn.query_row("PRAGMA foreign_keys", [], |r| r.get::<_,i64>(0))?, 1);
+        conn.execute("DELETE FROM accounts WHERE id=1", [])?;
+        for table in ["sieve_scripts", "sieve_versions", "sieve_replies"] {
+            assert_eq!(conn.query_row(&format!("SELECT count(*) FROM {table} WHERE account_id=1"), [], |r| r.get::<_,i64>(0))?, 0, "{table}");
+            assert_eq!(conn.query_row(&format!("SELECT count(*) FROM {table} WHERE account_id=2"), [], |r| r.get::<_,i64>(0))?, 1, "{table}");
+        }
+    }
+    // Account mutations in production use a second SQLite connection. Its
+    // foreign-key enforcement must cascade even though this reader stays open.
+    built.accounts_runtime().delete(RecordKey::collection(maild::props::accounts::namespace_name(), "bob@example.com"),
+        ::props::runtime::DeleteOpts { expected_version:None, actor:Actor::operator("cascade-test").expect("valid actor"), cause:None, ts_ms:0 }).await.map_err(|error| anyhow!("delete account: {error}"))?;
+    let conn = db.conn.lock().unwrap();
+    for table in ["sieve_scripts", "sieve_versions", "sieve_replies"] {
+        assert_eq!(conn.query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get::<_,i64>(0))?, 0, "{table}");
+    }
     Ok(())
 }
 

@@ -37,6 +37,19 @@ counting native store calls. It also checks 100 IDLE flag events without relisti
 the mailbox and one catch-up diff for an unknown UID. Ordinary notifications use
 the mailbox's native change counter, including flag changes and removals.
 
+Contiguous requested UID runs use one membership-index range scan each. Full-folder
+FETCH uses one scan even when expunges left UID holes. A transient IDLE snapshot
+failure produces UNAVAILABLE and preserves the session and its view for retry on
+the next event. The wire regression also counts full-folder and sparse FETCH
+scans and injects a failed IDLE catch-up before retrying it.
+
+`selected_imap_view_observes_cross_session_jmap_smtp_and_sieve_changes` selects a
+mailbox, performs unchanged FETCHes, then checks NOOP notifications after other
+IMAP sessions append and expunge, JMAP Email/set changes memberships, SMTP delivers
+mail, and Sieve files SMTP mail into the selected mailbox. Account deletion is
+also tested through the application and property-store SQLite connections: both
+enable foreign keys and cascade Sieve scripts, versions and vacation stamps.
+
 SAVE failures clear `$`, including grammar errors. Successful DELETE of the
 selected mailbox returns to authenticated state, with CLOSED in rev2. Missing
 subscription rows carry both NonExistent and Noselect; subscription-only children

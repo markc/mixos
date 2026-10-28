@@ -90,7 +90,8 @@ pub fn continuation(challenge_b64: &str) -> String {
 ///
 /// New mailboxes use a durable 32-bit allocation in MailStore. Values that fit
 /// in u32 pass through untouched. Account preparation migrates legacy mailbox
-/// identities before authentication completes, invalidating old caches once.
+/// identities before authentication completes, preserving their existing wire
+/// seconds value and client caches. RENAME repairs colliding identities only.
 /// The milliseconds conversion remains a compatibility fallback for direct
 /// handler callers. Every wire site (SELECT/EXAMINE, STATUS, APPENDUID, COPYUID)
 /// uses this helper.

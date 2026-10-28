@@ -363,12 +363,33 @@ pub trait MailStore: Send + Sync {
         Ok(None)
     }
 
-    /// Resolve only the requested UIDs; native storage uses the membership index.
+    /// Resolve sorted UIDs with one indexed scan per contiguous run.
     fn imap_fetch_handles(
         &self,
         account: AccountId,
         mailbox: ContainerId,
         uids: &[u64],
+    ) -> Result<Vec<EmailHandle>> {
+        let mut handles = Vec::new();
+        let mut pending = uids;
+        while let Some(&first) = pending.first() {
+            let mut end = 1;
+            while end < pending.len() && pending[end - 1].checked_add(1) == Some(pending[end]) {
+                end += 1;
+            }
+            handles.extend(self.imap_fetch_range(account, mailbox, first, pending[end - 1])?);
+            pending = &pending[end..];
+        }
+        Ok(handles)
+    }
+
+    /// Read a UID interval. Native storage performs one membership-index scan.
+    fn imap_fetch_range(
+        &self,
+        account: AccountId,
+        mailbox: ContainerId,
+        first: u64,
+        last: u64,
     ) -> Result<Vec<EmailHandle>> {
         Ok(self
             .list_emails_in_mailbox(
@@ -381,7 +402,7 @@ pub trait MailStore: Send + Sync {
                 },
             )?
             .into_iter()
-            .filter(|handle| uids.binary_search(&handle.uid).is_ok())
+            .filter(|handle| (first..=last).contains(&handle.uid))
             .collect())
     }
 
@@ -2362,25 +2383,19 @@ impl MailStore for SqliteMailStore {
         Ok(Some((status.seq_validity, status.change_seq.0)))
     }
 
-    fn imap_fetch_handles(
+    fn imap_fetch_range(
         &self,
         account: AccountId,
         mailbox: ContainerId,
-        uids: &[u64],
+        first: u64,
+        last: u64,
     ) -> Result<Vec<EmailHandle>> {
         self.mds
             .with_set_read(&account_id_to_setid(account), |conn| {
-                let mut handles = Vec::with_capacity(uids.len());
-                for uid in uids {
-                    let seq =
-                        Seq(u32::try_from(*uid).map_err(|e| mds::Error::Other(e.to_string()))?);
-                    handles.extend(
-                        mds::container::list_items(conn, &mailbox, SeqRange::Range(seq, seq))?
-                            .into_iter()
-                            .map(imap_email_handle),
-                    );
-                }
-                Ok(handles)
+                let first = Seq(u32::try_from(first).map_err(|e| mds::Error::Other(e.to_string()))?);
+                let last = Seq(u32::try_from(last).map_err(|e| mds::Error::Other(e.to_string()))?);
+                Ok(mds::container::list_items(conn, &mailbox, SeqRange::Range(first, last))?
+                    .into_iter().map(imap_email_handle).collect())
             })
             .map_err(Into::into)
     }

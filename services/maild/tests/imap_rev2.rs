@@ -1297,6 +1297,26 @@ async fn charset_errors_and_save_failure_have_correct_state() -> Result<()> {
 }
 
 #[tokio::test]
+async fn failed_save_no_and_bad_clear_dollar_in_both_search_modes() -> Result<()> {
+    let (_tmp, db, mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
+    insert_email(&ms, &mds, b"Subject: saved\r\n\r\nbody", "saved", Flags(0), 1_700_000_000_000)?;
+    let (mut r, mut w) = selected(ms, db).await?;
+    for mode in ["SEARCH", "UID SEARCH"] {
+        for (suffix, status) in [("CHARSET UTF-16 ALL", "NO [BADCHARSET"), ("NOT", "BAD")] {
+            assert!(command(&mut r, &mut w, "s", &format!("{mode} RETURN (SAVE) ALL")).await?.contains("s OK"));
+            // Taking the saved variable before parsing must preserve its old
+            // value while evaluating a successful SAVE of '$' itself.
+            assert!(command(&mut r, &mut w, "s", &format!("{mode} RETURN (SAVE) $")).await?.contains("s OK"));
+            assert!(command(&mut r, &mut w, "f", "UID FETCH $ UID").await?.contains("UID 1"));
+            let response = command(&mut r, &mut w, "s", &format!("{mode} RETURN (SAVE) {suffix}")).await?;
+            assert!(response.contains(&format!("s {status}")), "{response}");
+            assert_eq!(command(&mut r, &mut w, "f", "UID FETCH $ UID").await?, "f OK FETCH completed\r\n");
+        }
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn search_work_limit_never_returns_a_truncated_match_set() -> Result<()> {
     let (_tmp, db, mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
     insert_email(
@@ -2215,6 +2235,7 @@ mod cost_regressions {
         fetches: AtomicUsize,
         fetched_rows: AtomicUsize,
         memberships: AtomicUsize,
+        fail_lists: std::sync::atomic::AtomicBool,
     }
 
     // Forward the real native store, counting only the protocol read boundaries.
@@ -2268,16 +2289,20 @@ mod cost_regressions {
             opts: ListOpts,
         ) -> Result<Vec<EmailHandle>> {
             self.lists.fetch_add(1, Ordering::Relaxed);
+            if self.fail_lists.swap(false, Ordering::Relaxed) {
+                anyhow::bail!("injected transient snapshot failure");
+            }
             self.inner.list_emails_in_mailbox(account, mailbox, opts)
         }
-        fn imap_fetch_handles(
+        fn imap_fetch_range(
             &self,
             account: i32,
             mailbox: ContainerId,
-            uids: &[u64],
+            first: u64,
+            last: u64,
         ) -> Result<Vec<EmailHandle>> {
             self.fetches.fetch_add(1, Ordering::Relaxed);
-            let handles = self.inner.imap_fetch_handles(account, mailbox, uids)?;
+            let handles = self.inner.imap_fetch_range(account, mailbox, first, last)?;
             self.fetched_rows
                 .fetch_add(handles.len(), Ordering::Relaxed);
             Ok(handles)
@@ -2325,10 +2350,22 @@ mod cost_regressions {
             fetches: AtomicUsize::new(0),
             fetched_rows: AtomicUsize::new(0),
             memberships: AtomicUsize::new(0),
+            fail_lists: std::sync::atomic::AtomicBool::new(false),
         });
         let store: Arc<dyn MailStore> = counted.clone();
         let (mut r, mut w) = selected(store, db).await?;
         let initial_lists = counted.lists.load(Ordering::Relaxed);
+        let response = command(&mut r, &mut w, "f", "UID FETCH 1:* (FLAGS)").await?;
+        assert_eq!(response.matches(" FETCH (").count(), 10000);
+        assert_eq!(counted.fetches.load(Ordering::Relaxed), 1, "folder open must be one native range scan");
+        assert_eq!(counted.fetched_rows.load(Ordering::Relaxed), 10000);
+        let response = command(&mut r, &mut w, "f", "UID FETCH 1:3,9:10 (FLAGS)").await?;
+        assert_eq!(response.matches(" FETCH (").count(), 5);
+        assert_eq!(counted.fetches.load(Ordering::Relaxed), 3, "two disjoint runs need two scans");
+        let response = command(&mut r, &mut w, "f", "UID FETCH 1,10000 (FLAGS)").await?;
+        assert_eq!(response.matches(" FETCH (").count(), 2);
+        assert_eq!(counted.fetches.load(Ordering::Relaxed), 5);
+        assert_eq!(counted.fetched_rows.load(Ordering::Relaxed), 10007, "sparse FETCH must not read the intervening messages");
         for _ in 0..1000 {
             let response = command(&mut r, &mut w, "f", "FETCH 1 UID").await?;
             assert!(response.contains("* 1 FETCH (UID 1)"), "{response}");
@@ -2343,8 +2380,8 @@ mod cost_regressions {
             initial_lists,
             "unchanged FETCH must not rescan 10k handles"
         );
-        assert_eq!(counted.fetches.load(Ordering::Relaxed), 1000);
-        assert_eq!(counted.fetched_rows.load(Ordering::Relaxed), 1000);
+        assert_eq!(counted.fetches.load(Ordering::Relaxed), 1005);
+        assert_eq!(counted.fetched_rows.load(Ordering::Relaxed), 11007);
         w.write_all(b"i IDLE\r\n").await?;
         assert_eq!(read_line(&mut r).await?, "+ idling");
         let idle_lists = counted.lists.load(Ordering::Relaxed);
@@ -2388,7 +2425,12 @@ mod cost_regressions {
                 .map_err(|error| mds::Error::Other(error.to_string()))?;
             Ok(())
         })?;
+        counted.fail_lists.store(true, Ordering::Relaxed);
         ms.set_keywords_in_mailbox(1, last.id, inbox, Flags(Flags::FLAGGED), Tags::new())?;
+        let unavailable = tokio::time::timeout(std::time::Duration::from_secs(5), read_line(&mut r)).await??;
+        assert!(unavailable.starts_with("* NO [UNAVAILABLE]"), "{unavailable}");
+        // The failed diff leaves the view intact. A later event retries it.
+        ms.set_keywords_in_mailbox(1, last.id, inbox, Flags(0), Tags::new())?;
         let mut received = String::new();
         loop {
             let line = tokio::time::timeout(std::time::Duration::from_secs(5), read_line(&mut r))
@@ -2399,12 +2441,17 @@ mod cost_regressions {
             }
         }
         assert!(received.contains("10000 EXPUNGE"), "{received}");
-        assert_eq!(counted.lists.load(Ordering::Relaxed), idle_lists + 1);
-        assert_eq!(counted.memberships.load(Ordering::Relaxed), 101);
+        assert_eq!(counted.lists.load(Ordering::Relaxed), idle_lists + 2);
+        assert_eq!(counted.memberships.load(Ordering::Relaxed), 102);
         assert!(
             String::from_utf8_lossy(&exchange(&mut r, &mut w, "i", b"DONE\r\n").await?)
                 .contains("i OK")
         );
+        let before = counted.fetches.load(Ordering::Relaxed);
+        let response = command(&mut r, &mut w, "f", "UID FETCH 1:* (FLAGS)").await?;
+        assert_eq!(response.matches(" FETCH (").count(), 10000);
+        assert_eq!(counted.fetches.load(Ordering::Relaxed), before + 1, "UID holes must not split a whole-folder scan");
+        assert!(command(&mut r, &mut w, "n", "NOOP").await?.contains("n OK"));
         Ok(())
     }
 }

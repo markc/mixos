@@ -707,8 +707,13 @@ pub async fn handle_with_access(
     };
     let list_store = store.clone();
     let wanted = view.map(|uids| req.set.select_uids(uids, req.mode == FetchMode::Uid));
+    // A full-folder request is one scan even when expunges left UID holes.
+    let whole = wanted.as_ref().filter(|wanted| !wanted.is_empty() && Some(wanted.len()) == view.map(<[u64]>::len))
+        .map(|wanted| (wanted[0], wanted[wanted.len() - 1]));
     let handles = match tokio::task::spawn_blocking(move || {
-        if let Some(wanted) = wanted {
+        if let Some((first, last)) = whole {
+            list_store.imap_fetch_range(account_id, container, first, last)
+        } else if let Some(wanted) = wanted {
             list_store.imap_fetch_handles(account_id, container, &wanted)
         } else {
             list_store.list_emails_in_mailbox(account_id, container, opts)
