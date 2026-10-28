@@ -366,33 +366,55 @@ pub async fn delivery_worker(state: Arc<SmtpState>) {
 
 /// Process all ready queue entries.
 async fn process_queue(state: &SmtpState, resolver: &TokioResolver) -> Result<usize> {
-    queue::sweep_receipts(&state.db.conn,state.config.delivery_retention_days).await?;
+    queue::sweep_receipts(&state.db.conn, state.config.delivery_retention_days).await?;
     let entries = queue::fetch_ready(&state.db.conn, 50).await?;
     let mut delivered = 0;
 
     for entry in entries {
         if let Some(account_id) = entry.local_account_id {
             let result = match entry.blob_hash {
-                Some(hash) => match db::account::get_by_id(&state.db.conn,account_id).await? {
-                    Some(_) => queue::deliver_local(&state.mailstore,account_id,hash).await,
-                    None => Err(PermanentFailure("550 5.1.1 Local target account no longer exists".into()).into()),
+                Some(hash) => match db::account::get_by_id(&state.db.conn, account_id).await? {
+                    Some(_) => queue::deliver_local(&state.mailstore, account_id, hash).await,
+                    None => Err(PermanentFailure(
+                        "550 5.1.1 Local target account no longer exists".into(),
+                    )
+                    .into()),
                 },
                 None => Err(anyhow::anyhow!("local retry has no blob hash")),
             };
             match result {
                 Ok(()) => {
-                    queue::local_result(&state.db.conn,entry.id,"delivered","250 2.0.0 Local delivery completed").await?;
-                    queue::mark_delivered(&state.db.conn,entry.id).await?;
+                    queue::local_result(
+                        &state.db.conn,
+                        entry.id,
+                        "delivered",
+                        "250 2.0.0 Local delivery completed",
+                    )
+                    .await?;
+                    queue::mark_delivered(&state.db.conn, entry.id).await?;
                     delivered += 1;
                 }
                 Err(error) if is_permanent(&error) || entry.attempts >= 9 => {
-                    queue::mark_permanent_failure(&state.db.conn,entry.id,&error.to_string()).await?;
-                    if let Err(bounce_error) = generate_bounce(state,&entry.from_addr,&entry.to_addrs,&error.to_string()).await {
+                    queue::mark_permanent_failure(&state.db.conn, entry.id, &error.to_string())
+                        .await?;
+                    if let Err(bounce_error) = generate_bounce(
+                        state,
+                        &entry.from_addr,
+                        &entry.to_addrs,
+                        &error.to_string(),
+                    )
+                    .await
+                    {
                         tracing::error!(error=%bounce_error,"Failed to generate local retry exhaustion bounce");
                     }
                 }
                 Err(error) => {
-                    queue::mark_failed(&state.db.conn,entry.id,&format!("451 4.3.0 Local delivery deferred: {error}")).await?;
+                    queue::mark_failed(
+                        &state.db.conn,
+                        entry.id,
+                        &format!("451 4.3.0 Local delivery deferred: {error}"),
+                    )
+                    .await?;
                 }
             }
             continue;
@@ -1899,8 +1921,18 @@ mod rcpt_rejection_tests {
                 "Subject: café\r\n\r\nbody\r\n",
                 Some(" SMTPUTF8"),
             ),
-            ("250 SMTPUTF8", "a@example.com", "Subject: café\r\n\r\ncafé\r\n", None),
-            ("250 SMTPUTF8", "a@example.com", "Subject: café\n\nASCII body\r\n\r\n", Some(" SMTPUTF8")),
+            (
+                "250 SMTPUTF8",
+                "a@example.com",
+                "Subject: café\r\n\r\ncafé\r\n",
+                None,
+            ),
+            (
+                "250 SMTPUTF8",
+                "a@example.com",
+                "Subject: café\n\nASCII body\r\n\r\n",
+                Some(" SMTPUTF8"),
+            ),
             (
                 "250 ok",
                 "a@example.com",
