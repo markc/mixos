@@ -781,6 +781,43 @@ mod tests {
     use futures::StreamExt;
 
     #[tokio::test]
+    async fn quit_closes_a_seed_whose_reply_has_not_reached_the_controller() {
+        let broker = test_broker::Broker::start();
+        let edit = SupervisedClient::connect_options("edit", &broker.url)
+            .bounded_incoming(8).connect().await.unwrap();
+        let mut requests = edit.incoming_bounded().unwrap();
+        let (handle, mut deliveries) = spawn("ced-seeding-test", &broker.url, Arc::new(|| {})).unwrap();
+        handle.perform(&Effect::Send {
+            req: 1,
+            out: editor_model::types::Outgoing {
+                command: "edit.open".into(),
+                body: r#"{"text":"Body","language":"markdown"}"#.into(),
+                op_id: None, deadline_ms: 30_000,
+            },
+        });
+        let BoundedIncomingEvent::Command(open) = tokio::time::timeout(Duration::from_secs(1), requests.recv()).await.unwrap().unwrap() else { panic!("expected open"); };
+        edit.respond(&open, 0, r#"{"buffer":"seeding-body"}"#).await.unwrap();
+        // The host receives the open but deliberately does not create a mirror.
+        loop {
+            if matches!(tokio::time::timeout(Duration::from_secs(1), deliveries.next()).await.unwrap(), Some(Delivery::Incoming(Incoming::Reply { req:1, .. }))) { break; }
+        }
+        handle.shutdown(None);
+        let BoundedIncomingEvent::Command(close) = tokio::time::timeout(Duration::from_secs(1), requests.recv()).await.unwrap().unwrap() else { panic!("expected close"); };
+        assert_eq!(close.command, "edit.close");
+        let body: serde_json::Value = serde_json::from_str(&close.body).unwrap();
+        assert_eq!(body["buffer"], "seeding-body");
+        assert_eq!(body["force"], true);
+        edit.respond(&close, 0, "{}").await.unwrap();
+        loop {
+            if let Some(Delivery::Stopped { faults }) = tokio::time::timeout(Duration::from_secs(3), deliveries.next()).await.unwrap() {
+                assert!(faults.is_empty(), "{faults:?}");
+                break;
+            }
+        }
+        edit.close().await;
+    }
+
+    #[tokio::test]
     async fn quit_with_unanswered_edit_requests_deregisters_refuses_and_flushes() {
         let broker = test_broker::Broker::start();
         let edit = SupervisedClient::connect_options("edit", &broker.url)
