@@ -81,6 +81,7 @@ pub fn view(
         egui::Panel::bottom("problems")
             .resizable(true)
             .default_size(140.0)
+            .size_range(0.0..=ui.available_height() * 0.3)
             .frame(bars::dock_frame(ui.ctx()))
             .show(ui, |ui| problems(ui, app, &mut events));
     }
@@ -88,6 +89,7 @@ pub fn view(
         egui::Panel::bottom("output")
             .resizable(true)
             .default_size(120.0)
+            .size_range(0.0..=ui.available_height() * 0.3)
             .frame(bars::dock_frame(ui.ctx()))
             .show(ui, |ui| {
                 ui.weak(label("output-empty"));

@@ -113,6 +113,10 @@ pub fn panel<R>(
             }
             // Content may be larger than a tile, but must not enlarge a dock
             // or paint over its neighbour. Preserve access in both axes.
+            let viewport = ui.ctx().content_rect();
+            if viewport.width() >= 640.0 && viewport.height() >= 320.0 {
+                return body(ui);
+            }
             let available = ui.available_size();
             egui::ScrollArea::both()
                 .id_salt(("saved-panel-content", name))

@@ -213,6 +213,13 @@ pub fn view(
             }
             problem_feedback(ui, engine, &mut events);
             match engine.section() {
+                Section::Software if ui.available_width() < 640.0 => {
+                    let available = ui.available_size();
+                    ScrollArea::both().auto_shrink(false).show(ui, |ui| {
+                        ui.set_max_size(available);
+                        applications(ui, engine, commands, strings, &mut events)
+                    });
+                }
                 Section::Software => applications(ui, engine, commands, strings, &mut events),
                 section => {
                     ScrollArea::both()

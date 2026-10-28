@@ -12,7 +12,8 @@ mod tests {
     fn every_app_uses_the_shared_quarter_tile_minimum() {
         let viewport = crate::titlebar::viewport("dev.mixos.example", "Example");
         assert_eq!(viewport.min_inner_size, Some(egui::Vec2::from(MIN_SIZE)));
-        assert!(MIN_SIZE[0] <= 640.0 && MIN_SIZE[1] <= 320.0);
+        let minimum = viewport.min_inner_size.unwrap();
+        assert!(minimum.x <= 640.0 && minimum.y <= 320.0);
         // Guard the actual native builder call sites against app overrides.
         for source in [
             include_str!("../../../apps/ced/src/main.rs"),

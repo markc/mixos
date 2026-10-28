@@ -285,6 +285,13 @@ fn minimum_window_renders() {
     );
     h.run_steps(4);
     h.snapshot("minimum_window");
+    {
+        let app = &mut h.state_mut().shell.as_mut().unwrap().app;
+        app.ui.problems = true;
+        app.ui.output = true;
+    }
+    h.run_steps(4);
+    h.snapshot("minimum_window_docks");
 }
 
 #[test]
