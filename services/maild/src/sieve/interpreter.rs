@@ -585,6 +585,7 @@ struct Eval<'a> {
     steps: usize,
     variables_enabled: bool,
     text_headers: Vec<(String, String)>,
+    variable_bytes: usize,
 }
 impl Script {
     pub fn evaluate(&self, context: Context<'_>) -> Result<Plan> {
@@ -621,6 +622,7 @@ impl Script {
             steps: 0,
             variables_enabled: self.variables,
             text_headers,
+            variable_bytes: 0,
         };
         eval.code(&self.code)?;
         if eval.implicit_keep {
@@ -646,6 +648,13 @@ impl Script {
     }
 }
 impl Eval<'_> {
+    fn set_variable(&mut self, key: String, value: String) -> Result<()> {
+        let bytes = self.variable_bytes - self.variables.get(&key).map(String::len).unwrap_or(0) + value.len();
+        ensure!(bytes <= 1024 * 1024,"variable storage limit");
+        self.variables.insert(key,value);
+        self.variable_bytes = bytes;
+        Ok(())
+    }
     fn step(&mut self) -> Result<()> {
         self.steps += 1;
         ensure!(self.steps <= MAX_STEPS, "instruction limit");
@@ -783,7 +792,7 @@ impl Eval<'_> {
                 if args.has("length") {
                     value = value.chars().count().to_string();
                 }
-                self.variables.insert(key, value);
+                self.set_variable(key, value)?;
             }
             "setflag" | "addflag" | "removeflag" => {
                 let flags = self.expanded(args.values.last().unwrap())?;
@@ -813,7 +822,7 @@ impl Eval<'_> {
                     }
                 }
                 if let Some(variable) = variable {
-                    self.variables.insert(variable, target.join(" "));
+                    self.set_variable(variable, target.join(" "))?;
                 } else {
                     self.flags = target;
                 }
@@ -1044,6 +1053,10 @@ impl Eval<'_> {
         }
     }
     fn matches(&mut self, value: &str, key: &str, args: &Args) -> Result<bool> {
+        // Charge for scanned bytes as well as VM instructions. Repeated body
+        // comparisons cannot turn a short script into unbounded CPU work.
+        self.steps += (value.len() + key.len()) / 1024;
+        ensure!(self.steps <= MAX_STEPS,"string work limit");
         let numeric = args.tag("comparator") == Some("i;ascii-numeric");
         let octet = args.tag("comparator") == Some("i;octet");
         let original = value;

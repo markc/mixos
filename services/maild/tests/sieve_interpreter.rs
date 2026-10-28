@@ -214,3 +214,13 @@ fn script_depth_size_and_execution_limits() {
             .is_ok()
     );
 }
+#[test]
+fn string_work_and_variable_storage_are_bounded() {
+    let mut data = b"Subject: limits\r\n\r\n".to_vec(); data.extend(vec![b'x';1024*1024]);
+    let keys = (0..30).map(|n| format!("\"never{n}\"")).collect::<Vec<_>>().join(",");
+    let script = compile(&format!("require \"body\"; if body :contains [{keys}] {{ discard; }}")).unwrap();
+    assert!(script.evaluate(Context {data:&data,from:"a",to:"b"}).is_err());
+    let mut source = format!("require \"variables\"; set \"x\" \"{}\"; set \"x\" \"${{x}}${{x}}\";","a".repeat(30000));
+    for n in 0..20 { source.push_str(&format!("set \"v{n}\" \"${{x}}\";")); }
+    assert!(compile(&source).unwrap().evaluate(Context {data:MESSAGE,from:"a",to:"b"}).is_err());
+}
