@@ -5,7 +5,9 @@
 //! destination-addressed `Response`, then removed. `Close` from the owner
 //! removes it without a `Response`.
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::Mutex;
 use zbus::message::Header;
 use zbus::names::BusName;
 use zbus::object_server::{ObjectServer, SignalEmitter};
@@ -59,6 +61,19 @@ impl zbus::DBusError for CloseError {
 pub struct Request {
     owner: String,
     chooser: Option<(crate::filechooser::Bridge, u64)>,
+    ended: Arc<Mutex<bool>>,
+}
+
+/// One export, rather than an object path that can be reused after Close.
+#[derive(Clone)]
+pub struct Ticket {
+    path: OwnedObjectPath,
+    ended: Arc<Mutex<bool>>,
+}
+
+impl std::ops::Deref for Ticket {
+    type Target = OwnedObjectPath;
+    fn deref(&self) -> &Self::Target { &self.path }
 }
 
 impl Request {
@@ -66,6 +81,7 @@ impl Request {
         Self {
             owner: owner.to_owned(),
             chooser: None,
+            ended: Arc::default(),
         }
     }
 
@@ -73,6 +89,7 @@ impl Request {
         Self {
             owner: owner.to_owned(),
             chooser: Some((bridge, id)),
+            ended: Arc::default(),
         }
     }
 }
@@ -102,6 +119,9 @@ impl Request {
         let Some(path) = header.path() else {
             return Err(CloseError::Fdo(fdo::Error::Failed("no object path".into())));
         };
+        let mut ended = self.ended.lock().await;
+        if *ended { return Ok(()); }
+        *ended = true;
         server.remove::<Request, _>(path.to_owned()).await?;
         Ok(())
     }
@@ -119,24 +139,26 @@ pub async fn export(
     connection: &Connection,
     path: &OwnedObjectPath,
     owner: &str,
-) -> zbus::Result<()> {
+) -> zbus::Result<Ticket> {
+    let request = Request::new(owner);
+    let ticket = Ticket { path: path.clone(), ended: request.ended.clone() };
     if !connection
         .object_server()
-        .at(path.clone(), Request::new(owner))
+        .at(path.clone(), request)
         .await?
     {
         return Err(zbus::Error::Failure(format!(
             "request {path} already exists"
         )));
     }
-    Ok(())
+    Ok(ticket)
 }
 
 /// Whether the request is still exported, i.e. its owner has not closed it.
-pub async fn live(connection: &Connection, path: &OwnedObjectPath) -> bool {
-    connection
+pub async fn live(connection: &Connection, ticket: &Ticket) -> bool {
+    !*ticket.ended.lock().await && connection
         .object_server()
-        .interface::<_, Request>(path.clone())
+        .interface::<_, Request>(ticket.path.clone())
         .await
         .is_ok()
 }
@@ -145,7 +167,7 @@ pub async fn live(connection: &Connection, path: &OwnedObjectPath) -> bool {
 /// already closed it, so the caller can undo whatever it prepared.
 pub async fn respond(
     connection: &Connection,
-    path: &OwnedObjectPath,
+    ticket: &Ticket,
     owner: &str,
     code: u32,
     results: HashMap<&str, Value<'_>>,
@@ -153,13 +175,15 @@ pub async fn respond(
     // The method reply carrying `path` must reach the caller before the
     // signal; zbus sends it once the handler returns, so give it that turn.
     tokio::time::sleep(Duration::from_millis(5)).await;
-    if !live(connection, path).await {
+    let mut ended = ticket.ended.lock().await;
+    if *ended {
         return false;
     }
-    emit(connection, path, owner, code, results).await;
+    *ended = true;
+    emit(connection, &ticket.path, owner, code, results).await;
     let _ = connection
         .object_server()
-        .remove::<Request, _>(path.clone())
+        .remove::<Request, _>(ticket.path.clone())
         .await;
     true
 }

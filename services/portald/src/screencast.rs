@@ -85,7 +85,7 @@ impl ScreenCast {
     pub fn with_max_framerate(sessions: Sessions, max_framerate: MaxFramerate) -> Self {
         Self {
             sessions,
-            counter: Arc::new(AtomicU64::new(0)),
+            counter: handle::counter(),
             max_framerate,
         }
     }
@@ -130,14 +130,14 @@ fn check_session(
 
 fn respond_later(
     connection: &Connection,
-    path: OwnedObjectPath,
+    ticket: request::Ticket,
     owner: String,
     code: u32,
     results: HashMap<&'static str, Value<'static>>,
 ) {
     let connection = connection.clone();
     tokio::spawn(async move {
-        request::respond(&connection, &path, &owner, code, results).await;
+        request::respond(&connection, &ticket, &owner, code, results).await;
     });
 }
 
@@ -184,10 +184,13 @@ impl ScreenCast {
             )));
         }
         self.sessions.insert(session.as_str(), &owner);
-        if let Err(error) = request::export(connection, &request, &owner).await {
-            session::end(connection, &self.sessions, session.as_str(), false).await;
-            return Err(error.into());
-        }
+        let ticket = match request::export(connection, &request, &owner).await {
+            Ok(ticket) => ticket,
+            Err(error) => {
+                session::end(connection, &self.sessions, session.as_str(), false).await;
+                return Err(error.into());
+            }
+        };
         // The owner may have left before this call was dispatched, in which
         // case its NameOwnerChanged already went by: nothing would retire
         // the session.
@@ -217,7 +220,7 @@ impl ScreenCast {
         results.insert("session_handle", Value::from(session.as_str().to_owned()));
         respond_later(
             connection,
-            request.clone(),
+            ticket,
             owner,
             request::SUCCESS,
             results,
@@ -259,10 +262,10 @@ impl ScreenCast {
             state.cursor_mode = Some(cursor_mode);
             Ok(())
         })?;
-        request::export(connection, &request, &owner).await?;
+        let ticket = request::export(connection, &request, &owner).await?;
         respond_later(
             connection,
-            request.clone(),
+            ticket,
             owner,
             request::SUCCESS,
             HashMap::new(),
@@ -300,17 +303,20 @@ impl ScreenCast {
             epoch = state.epoch;
             Ok(())
         })?;
-        if let Err(error) = request::export(connection, &request, &owner).await {
-            set_starting(&self.sessions, session_handle.as_str(), epoch, false);
-            return Err(error.into());
-        }
+        let ticket = match request::export(connection, &request, &owner).await {
+            Ok(ticket) => ticket,
+            Err(error) => {
+                set_starting(&self.sessions, session_handle.as_str(), epoch, false);
+                return Err(error.into());
+            }
+        };
         tokio::spawn(start_cast(
             connection.clone(),
             self.sessions.clone(),
             Target {
                 session: session_handle,
                 epoch,
-                request: request.clone(),
+                request: ticket,
                 owner,
             },
             cursor_mode,
@@ -347,7 +353,7 @@ struct Target {
     session: OwnedObjectPath,
     /// The session's epoch when `Start` was accepted.
     epoch: u64,
-    request: OwnedObjectPath,
+    request: request::Ticket,
     owner: String,
 }
 

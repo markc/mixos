@@ -303,6 +303,17 @@ none after Close. `tests/filechooser.rs` runs a private session D-Bus, real
 noded and a scripted files provider with a persistent zbus caller. It checks
 all three methods, early outcomes, refusals, concurrent callers, ownership,
 Close during send/open, token reuse, missed outcomes, timeout and provider loss.
+The same test checks startup cleanup and native Bus loss/reconnect.
+
+`services/portald/tests/chooser_bus_test.mix` is a separate CBC acceptance
+test requiring Weston. It starts a private session D-Bus, noded, headless
+Weston, nested compd, portald and `dopus --choose-service`. Its persistent
+zbus probe drives each method's real viewport through `files.ui.*`, including
+save replacement and cancellation. The probe also opens, saves and cancels
+through rfd 0.17.2 (a dev dependency), with external fallbacks unavailable.
+Build on CBC with `cargo build -p portald -p dopus -p compd -p system --bins --examples`,
+then run `MIXOS_TEST_BIN=target/debug mix services/portald/tests/chooser_bus_test.mix`.
+It is excluded from `tools/mix_tests.mix`, which needs no headless host.
 `tests/portal.rs` runs a private `dbus-daemon` and checks version 2, Read
 and ReadOne nesting, empty and adversarial ReadAll filters, NotFound,
 changed-only signals, cache isolation and single ownership. It launches the

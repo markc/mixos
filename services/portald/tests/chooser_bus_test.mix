@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Real portal, chooser and viewport driving on private D-Bus/noded/compd.
 -- Needs CBC's headless weston host. Never touches a desktop, VT or service.
--- Build on CBC: cargo build -p portald --examples -p dopus -p compd -p system
+-- Build on CBC: cargo build -p portald -p dopus -p compd -p system --bins --examples
 -- MIXOS_TEST_BIN=<bin> mix services/portald/tests/chooser_bus_test.mix
 $n = require("../../../tests/desktop/nested_host_lib.mix")
 $root = dirname(dirname(dirname(dirname(realpath($0)))))

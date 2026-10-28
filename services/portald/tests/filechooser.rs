@@ -209,8 +209,14 @@ impl Provider {
                         match control {
                             Some(Control::Finish(id, response, emit)) => {
                                 let body = open.remove(&id).unwrap();
-                                let outcome = json!({"request":id,"correlation":body["correlation"],"response":response,
-                                    "uris":["file:///tmp/%FF"],"choices":{"check":"true"},"current_filter":{"name":"Text","patterns":["*.txt"],"mime_types":[]}});
+                                let mut outcome = json!({"request":id,"correlation":body["correlation"],"response":response});
+                                if response == 0 {
+                                    outcome["uris"] = json!(["file:///tmp/%FF"]);
+                                    if body["choices"].as_array().is_some_and(|v| !v.is_empty()) { outcome["choices"] = json!({"check":"true"}); }
+                                    if let Some(filter) = body.get("current_filter").or_else(|| body["filters"].as_array().and_then(|v| v.first())) {
+                                        outcome["current_filter"] = filter.clone();
+                                    }
+                                }
                                 if emit { publish(&c, &outcome).await; }
                                 done.insert(id, outcome);
                             }
@@ -356,6 +362,13 @@ async fn portal_native_stack_mapping_lifecycle_and_loss() {
     ] {
         let mut stream = responses(&caller, "same").await;
         let mut options = Options::new();
+        if mode == "open" {
+            options.insert("current_folder".into(), OwnedValue::try_from(Value::from(b"/tmp/\xff\0".to_vec())).unwrap());
+            let filter: portald::filechooser::mapping::Filter = ("Text".into(), vec![(0, "*.txt".into())]);
+            options.insert("current_filter".into(), OwnedValue::try_from(Value::from(filter)).unwrap());
+            let choices: Vec<portald::filechooser::mapping::Choice> = vec![("check".into(), "Check".into(), vec![], "".into())];
+            options.insert("choices".into(), OwnedValue::try_from(Value::from(choices)).unwrap());
+        }
         if mode == "save_files" {
             options.insert(
                 "files".into(),
@@ -374,11 +387,17 @@ async fn portal_native_stack_mapping_lifecycle_and_loss() {
                 .starts_with(caller.unique_name().unwrap().as_str())
         );
         provider.control.send(Control::Finish(id, 0, true)).unwrap();
-        let results = response(&mut stream, 0).await;
+        let results = tokio::time::timeout(Duration::from_secs(2), response(&mut stream, 0)).await.expect("files.chosen must answer without waiting for polling");
         assert_eq!(
             Vec::<String>::try_from(results["uris"].try_clone().unwrap()).unwrap(),
             vec!["file:///tmp/%FF"]
         );
+        if mode == "open" {
+            assert_eq!(body["current_folder"], "file:///tmp/%FF");
+            assert_eq!(Vec::<(String, String)>::try_from(results["choices"].try_clone().unwrap()).unwrap(), vec![("check".into(), "true".into())]);
+            let filter = portald::filechooser::mapping::Filter::try_from(results["current_filter"].try_clone().unwrap()).unwrap();
+            assert_eq!(filter, ("Text".into(), vec![(0, "*.txt".into())]));
+        }
         quiet(&mut stream).await;
     }
 
@@ -397,7 +416,7 @@ async fn portal_native_stack_mapping_lifecycle_and_loss() {
         if accept == "early" {
             provider.chosen().await;
         }
-        response(&mut stream, code).await;
+        tokio::time::timeout(Duration::from_secs(2), response(&mut stream, code)).await.expect("early/refused choose must answer promptly");
         quiet(&mut stream).await;
     }
 

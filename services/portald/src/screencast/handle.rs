@@ -6,10 +6,18 @@
 use crate::portal::PortalError;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, OnceLock};
 use zbus::zvariant::{OwnedObjectPath, OwnedValue};
 
 pub const REQUEST_ROOT: &str = "/org/freedesktop/portal/desktop/request";
 pub const SESSION_ROOT: &str = "/org/freedesktop/portal/desktop/session";
+
+/// All portal interfaces share the Request namespace. Generated tokens must
+/// not collide when the same caller invokes ScreenCast and FileChooser.
+pub fn counter() -> Arc<AtomicU64> {
+    static COUNTER: OnceLock<Arc<AtomicU64>> = OnceLock::new();
+    COUNTER.get_or_init(|| Arc::new(AtomicU64::new(0))).clone()
+}
 
 /// `:1.42` becomes `1_42`.
 pub fn sender_segment(unique: &str) -> String {

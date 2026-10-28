@@ -98,7 +98,7 @@ impl Bridge {
         Self {
             client,
             registry: Arc::default(),
-            counter: Arc::default(),
+            counter: handle::counter(),
         }
     }
 
@@ -334,20 +334,13 @@ impl Bridge {
             }
             registry.incarnation = Some(incarnation.into());
         }
+        let mut missing = Vec::new();
         for (id, path, request) in entries {
             if let Some(request) = request {
                 if open.iter().any(|v| v["request"] == request) {
                     continue;
                 }
-                let result = self
-                    .call("files.choose.result", json!({"request": request}))
-                    .await;
-                let value = result
-                    .filter(|v| v["state"] == "done")
-                    .map(|v| v["outcome"].clone())
-                    .unwrap_or_else(|| json!({"request":request, "response":2}));
-                self.outcome(connection, generation.unwrap_or_default(), value)
-                    .await;
+                missing.push(request);
             } else {
                 let mut registry = self.registry.lock().await;
                 if registry.generation != generation {
@@ -381,6 +374,16 @@ impl Bridge {
                         .await;
                 }
             }
+        }
+        // A missed burst must not cost one timeout per dialog or delay the
+        // next five-second liveness check. Native result reads run together.
+        let results = futures_util::future::join_all(missing.iter().map(|request| {
+            self.call("files.choose.result", json!({"request": request}))
+        })).await;
+        for (request, result) in missing.into_iter().zip(results) {
+            let value = result.filter(|v| v["state"] == "done").map(|v| v["outcome"].clone())
+                .unwrap_or_else(|| json!({"request":request, "response":2}));
+            self.outcome(connection, generation.unwrap_or_default(), value).await;
         }
     }
 
@@ -453,16 +456,29 @@ impl Bridge {
             tokio::select! {
                 _ = connection.closed() => { self.owner_shutdown(&connection).await; return Ok(()); }
                 change = owners.next() => {
-                    let Some(change) = change else { return Ok(()); };
+                    let Some(change) = change else { self.owner_shutdown(&connection).await; return Ok(()); };
                     if let Ok(args) = change.args()
                         && args.new_owner().is_none() && args.name().as_str().starts_with(':')
                     { self.owner_left(&connection, args.name().as_str()).await; }
                 }
                 value = outcomes.recv() => {
-                    let Some((generation, value)) = value else { return Ok(()); };
+                    let Some((generation, value)) = value else {
+                        let mut registry = self.registry.lock().await;
+                        registry.generation = None;
+                        self.lost(&connection, &mut registry).await;
+                        return Ok(());
+                    };
                     self.outcome(&connection, generation, value).await;
                 }
-                _ = lifecycle.changed() => { lifecycle.borrow_and_update(); }
+                changed = lifecycle.changed() => {
+                    if changed.is_err() {
+                        let mut registry = self.registry.lock().await;
+                        registry.generation = None;
+                        self.lost(&connection, &mut registry).await;
+                        return Ok(());
+                    }
+                    lifecycle.borrow_and_update();
+                }
                 _ = timer.tick() => { self.poll(&connection).await; }
             }
         }
