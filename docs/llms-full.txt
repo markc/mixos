@@ -2118,7 +2118,7 @@ scripts access the clipboard through the Bus-backed builtins below.
 | `clipboard.clear` | `{primary?}`; clears the selected clipboard |
 | `clipboard.history` | `{}` → up to 50 text previews, newest first, with original byte size and truncation flag |
 | `clipboard.pick` | `{n}`; sets the zero-based history entry |
-| `clipboard.info` | `{}` → session, protocol, caps and configured peers |
+| `clipboard.info` | `{}` → clipboard/PRIMARY metadata, history count, session, protocol, caps and configured peers |
 | `clipboard.push` | `{to:"vt4"}`; the equivalent `desk`-prefixed alias is also accepted |
 | `desktop.clipboard.menu` | Opens Klipper on Plasma, or the native history picker in a desk |
 | `desktop.clipboard.rotate` | Chooses the next history entry |

@@ -231,8 +231,7 @@ impl Service {
 
     async fn changed(&self, primary: bool) {
         let state = self.state.lock().await;
-        let s = state.selections[usize::from(primary)].as_ref();
-        let body = json!({"session": state.session, "generation": s.map(|s| &s.stamp.generation), "origin_session": s.map(|s| &s.stamp.origin_session), "mime_types": s.map(|s| &s.mime_types).cloned().unwrap_or_default(), "size": s.and_then(|s| s.size), "sensitive": s.is_some_and(|s| s.sensitive), "primary": primary});
+        let body = json!(state.metadata(primary));
         drop(state);
         let mut event = bus::BusMessage::new().with_header("command", "clipboard.changed");
         event.body = serde_json::to_string(&body).unwrap_or_default();
@@ -365,7 +364,10 @@ impl Service {
     pub async fn dispatch(&self, command: &IncomingCommand) -> Result<Value> {
         if ["clipboard.receive", "clipboard.fetch"].contains(&command.command.as_str()) { return self.remote(command).await; }
         if ["HELP", "app.describe", "clipboard.info"].contains(&command.command.as_str()) {
-            return if command.command == "clipboard.info" { Ok(json!({"session": self.state.lock().await.session, "protocol": self.driver.protocol, "service": "clipd", "history_limit": HISTORY_LEN, "eager_text_bytes": self.settings.eager_text_bytes, "max_bytes": MAX_BYTES, "peers": self.settings.peers})) } else { Ok(json!(manifest())) };
+            return if command.command == "clipboard.info" {
+                let state = self.state.lock().await;
+                Ok(json!({"session": state.session, "protocol": self.driver.protocol, "service": "clipd", "clipboard":state.metadata(false), "primary":state.metadata(true), "history_entries":state.history.len(), "history_limit": HISTORY_LEN, "eager_text_bytes": self.settings.eager_text_bytes, "max_bytes": MAX_BYTES, "peers": self.settings.peers}))
+            } else { Ok(json!(manifest())) };
         }
         ensure!(command.header("broker_origin") == Some("local"), "SESSION_ONLY: use clipboard.push to share with another local session");
         let result = match command.command.as_str() {

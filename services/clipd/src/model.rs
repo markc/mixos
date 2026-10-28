@@ -93,6 +93,18 @@ pub struct HistoryPreview {
     pub truncated: bool,
 }
 
+/// The only clipboard fields permitted in publications and status replies.
+#[derive(Clone, Debug, Serialize)]
+pub struct Metadata {
+    pub session: String,
+    pub generation: Option<String>,
+    pub origin_session: Option<String>,
+    pub mime_types: Vec<String>,
+    pub size: Option<usize>,
+    pub sensitive: bool,
+    pub primary: bool,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Remote {
@@ -168,6 +180,18 @@ impl Clipboard {
             size: entry.data.len(),
             truncated: entry.data.chars().nth(HISTORY_PREVIEW_CHARS).is_some(),
         }).collect()
+    }
+
+    pub fn metadata(&self, primary: bool) -> Metadata {
+        let selection = self.selections[usize::from(primary)].as_ref();
+        Metadata {
+            session: self.session.clone(),
+            generation: selection.map(|s| s.stamp.generation.clone()),
+            origin_session: selection.map(|s| s.stamp.origin_session.clone()),
+            mime_types: selection.map(|s| s.mime_types.clone()).unwrap_or_default(),
+            size: selection.and_then(|s| s.size),
+            sensitive: selection.is_some_and(|s| s.sensitive), primary,
+        }
     }
 
     pub fn adopt(&mut self, primary: bool, selection: Selection) -> bool {
@@ -269,5 +293,16 @@ mod tests {
         assert!(rows[0].truncated);
         assert_eq!(c.history[0].data, original);
         assert!(serde_json::to_vec(&rows).unwrap().len() < 4096);
+    }
+
+    #[test]
+    fn metadata_never_serialises_clipboard_contents() {
+        let mut c = Clipboard::new("vt1".into());
+        c.adopt(false, text(&c, "must-not-escape".into(), true));
+        let metadata = serde_json::to_value(c.metadata(false)).unwrap();
+        assert_eq!(metadata["sensitive"], true);
+        assert_eq!(metadata["primary"], false);
+        assert!(metadata.get("data").is_none());
+        assert!(!metadata.to_string().contains("must-not-escape"));
     }
 }
