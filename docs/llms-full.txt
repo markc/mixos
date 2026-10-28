@@ -7396,6 +7396,14 @@ agent --Bus files.choose--------------------------^                  |
 
 ## Provider
 
+Toolkit apps call `toolkit::choose(request)` and poll its handle in the
+opening viewport. It tries registered Bus `files` first, then the system
+chooser (direct FileChooser portal on Linux, rfd on Windows/macOS), then
+the in-process toolkit chooser. Each tier ends before the next starts;
+refusals and failures, including any portal Response 2, advance, while the
+person's Cancel is final. The handle sends the app's `correlation`, matches
+native outcomes by request id and recovers them with `files.choose.result`.
+
 The Bus service `files` is served by DOpus in chooser mode,
 `dopus --choose-service`, a session unit started with the desk. It has no main
 window. Each accepted `files.choose` opens one chooser window: a single DOpus
