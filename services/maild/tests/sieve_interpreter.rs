@@ -139,6 +139,13 @@ fn flag_updates_consume_work_budget() {
     assert!(compile(&source).unwrap().evaluate(Context {data:MESSAGE,from:"a",to:"b"}).is_err());
 }
 #[test]
+fn hasflag_splits_keys_and_counts_distinct_flags_per_variable() {
+    let plan = evaluate(r#"require ["imap4flags","variables","relational","comparator-i;ascii-numeric"]; set "a" "Seen seen Flagged"; set "b" "Seen"; if allof(hasflag "a" "missing SEEN",hasflag :count "eq" :comparator "i;ascii-numeric" ["a","b"] "3") { discard; }"#);
+    assert!(plan.filings.is_empty());
+    let plan = evaluate(r#"require "imap4flags"; setflag ["\\Recent","\\Unknown","bad(flag)","project"]; if hasflag "project" { keep; stop; } discard;"#);
+    assert_eq!(plan.filings[0].flags,vec!["project"]);
+}
+#[test]
 fn index_selects_first_and_last_header() {
     assert!(matches(r#"header :index 1 :is "X-Test" "first""#));
     assert!(matches(r#"header :index 1 :last :is "X-Test" "last""#));

@@ -83,17 +83,13 @@ fn flags(raw: &[String]) -> Result<(Flags, Tags)> {
         if let Some(bit) = bit {
             bits |= bit;
         } else {
-            ensure!(!word.starts_with('\\'), "unknown system flag");
-            let tag = crate::keyword::normalise_user_keyword(word)?;
-            if !tags.contains(&tag) {
+            if word.starts_with('\\') || !word.is_ascii() { continue; }
+            let Ok(tag) = crate::keyword::normalise_user_keyword(word) else { continue; };
+            if !tags.contains(&tag) && tags.len() < crate::keyword::MAX_KEYWORDS_PER_MESSAGE {
                 tags.push(tag);
             }
         }
     }
-    ensure!(
-        tags.len() <= crate::keyword::MAX_KEYWORDS_PER_MESSAGE,
-        "keyword limit"
-    );
     Ok((Flags(bits), Tags::from(tags)))
 }
 
@@ -249,9 +245,10 @@ async fn deliver_inner(
             };
             let (flags, tags) = flags(&filing.flags)?;
             if let Some((_, existing_flags, existing_tags)) = resolved.iter_mut().find(|(prior, _, _)| prior == &target) {
-                existing_flags.0 |= flags.0;
-                for tag in tags.iter() { existing_tags.insert(tag.clone()); }
-                ensure!(existing_tags.len() <= crate::keyword::MAX_KEYWORDS_PER_MESSAGE, "keyword limit");
+                // RFC 5232 section 2: the last flag list wins when duplicate
+                // deliveries to one mailbox are collapsed.
+                *existing_flags = flags;
+                *existing_tags = tags;
             } else {
                 resolved.push((target, flags, tags));
             }

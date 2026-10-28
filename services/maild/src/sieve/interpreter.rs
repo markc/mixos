@@ -835,10 +835,8 @@ impl Eval<'_> {
                     None
                 };
                 let mut target = if let Some(variable) = &variable {
-                    self.variables
-                        .get(variable)
-                        .map(|s| s.split_whitespace().map(str::to_string).collect())
-                        .unwrap_or_default()
+                    let raw = self.variables.get(variable).cloned().unwrap_or_default();
+                    self.flag_values(&[raw])?
                 } else {
                     self.flags.clone()
                 };
@@ -851,6 +849,7 @@ impl Eval<'_> {
                 {
                     self.steps += target.len() + 1;
                     ensure!(self.steps <= MAX_STEPS, "flag work limit");
+                    if !valid_flag(&flag) { continue; }
                     target.retain(|f: &String| !f.eq_ignore_ascii_case(&flag));
                     if name != "removeflag" {
                         target.push(flag);
@@ -1061,11 +1060,12 @@ impl Eval<'_> {
                     "string" => values = names.clone(),
                     "hasflag" => {
                         values = if args.values.len() == 2 {
-                            names
-                                .iter()
-                                .filter_map(|s| self.variables.get(&s.to_ascii_lowercase()))
-                                .flat_map(|s| s.split_whitespace().map(str::to_string))
-                                .collect()
+                            let mut flags = Vec::new();
+                            for name in &names {
+                                let raw = self.variables.get(&name.to_ascii_lowercase()).cloned().unwrap_or_default();
+                                flags.extend(self.flag_values(&[raw])?);
+                            }
+                            flags
                         } else {
                             self.flags.clone()
                         };
@@ -1091,13 +1091,16 @@ impl Eval<'_> {
                     }
                     values = vec![values.len().to_string()];
                 }
-                let keys = self.expanded(if name == "body" {
+                let mut keys = self.expanded(if name == "body" {
                     &args.values[0]
                 } else if name == "hasflag" {
                     args.values.last().unwrap()
                 } else {
                     &args.values[1]
                 })?;
+                if name == "hasflag" {
+                    keys = keys.iter().flat_map(|s| s.split_whitespace().map(str::to_string)).collect();
+                }
                 for value in values {
                     for key in &keys {
                         self.step()?;
@@ -1109,6 +1112,16 @@ impl Eval<'_> {
                 Ok(false)
             }
         }
+    }
+    fn flag_values(&mut self, raw: &[String]) -> Result<Vec<String>> {
+        let mut values = BTreeMap::new();
+        for flag in raw.iter().flat_map(|s| s.split_whitespace()) {
+            self.step()?;
+            if valid_flag(flag) {
+                values.insert(flag.to_ascii_lowercase(),flag.to_string());
+            }
+        }
+        Ok(values.into_values().collect())
     }
     fn matches(&mut self, value: &str, key: &str, args: &Args) -> Result<bool> {
         // Charge for scanned bytes as well as VM instructions. Repeated body
@@ -1166,6 +1179,14 @@ fn mailbox_key(path: &str) -> String {
         if rest.is_empty() { "INBOX".into() } else { format!("INBOX/{rest}") }
     } else {
         path.into()
+    }
+}
+
+fn valid_flag(flag: &str) -> bool {
+    if flag.starts_with('\\') {
+        ["\\seen","\\answered","\\flagged","\\deleted","\\draft"].contains(&flag.to_ascii_lowercase().as_str())
+    } else {
+        flag.is_ascii() && crate::keyword::normalise_user_keyword(flag).is_ok()
     }
 }
 

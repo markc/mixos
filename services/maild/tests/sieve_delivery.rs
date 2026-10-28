@@ -124,7 +124,7 @@ async fn fileinto_create_copy_and_flags_use_real_mailstore() -> Result<()> {
     Ok(())
 }
 #[tokio::test]
-async fn repeated_filings_merge_flags_and_keywords() -> Result<()> {
+async fn repeated_filings_use_last_flags_and_keywords() -> Result<()> {
     let f = Fixture::new().await?;
     f.script(r#"require ["imap4flags","fileinto"]; keep :flags ["\\Seen","first"]; fileinto :flags ["\\Flagged","second"] "INBOX";"#).await?;
     f.deliver(MESSAGE,false,false).await?;
@@ -132,9 +132,24 @@ async fn repeated_filings_merge_flags_and_keywords() -> Result<()> {
     let inbox = f.ms.mailbox_by_role(f.account.id,MailboxRole::Inbox)?.unwrap();
     let items = f.ms.list_emails_in_mailbox(f.account.id,inbox,ListOpts::default())?;
     let record = f.ms.get_email(f.account.id,items[0].id)?;
-    assert_eq!(record.keywords.0 & (Flags::SEEN | Flags::FLAGGED), Flags::SEEN | Flags::FLAGGED);
-    assert!(record.tags.contains("first"));
+    assert_eq!(record.keywords.0 & (Flags::SEEN | Flags::FLAGGED), Flags::FLAGGED);
+    assert!(!record.tags.contains("first"));
     assert!(record.tags.contains("second"));
+    f.script(r#"require ["imap4flags","fileinto"]; keep :flags "\\Seen"; fileinto "INBOX";"#).await?;
+    let id = f.deliver(MESSAGE,false,false).await?.unwrap();
+    assert_eq!(f.ms.get_email(f.account.id,id)?.keywords.0,0);
+    Ok(())
+}
+#[tokio::test]
+async fn unsupported_flags_are_ignored_without_changing_filing() -> Result<()> {
+    let f = Fixture::new().await?;
+    f.script(r#"require ["imap4flags","fileinto","mailbox"]; fileinto :create :flags ["\\Seen", "\\Recent", "\\Unknown", "bad(flag)", "project"] "FlagTest";"#).await?;
+    let id = f.deliver(MESSAGE,false,false).await?.unwrap();
+    assert_eq!(f.count("Inbox"),0);
+    assert_eq!(f.count("FlagTest"),1);
+    let record = f.ms.get_email(f.account.id,id)?;
+    assert_eq!(record.keywords.0,Flags::SEEN);
+    assert_eq!(record.tags,Tags::from(vec!["project".into()]));
     Ok(())
 }
 #[tokio::test]
