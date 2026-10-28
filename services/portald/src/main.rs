@@ -8,7 +8,7 @@ use std::path::PathBuf;
 #[command(
     name = "portald",
     version,
-    about = "XDG desktop portal on the session bus: Settings and ScreenCast"
+    about = "XDG desktop portal on the session bus: Settings, FileChooser v4 and ScreenCast"
 )]
 struct Cli {
     #[command(subcommand)]
