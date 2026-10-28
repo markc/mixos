@@ -28,7 +28,17 @@ impl Controller {
             return Err("thread headers are read-only".into());
         }
         if headers != mail.headers {
-            mail.undo.push(std::mem::replace(&mut mail.headers, headers));
+            // More than one field can change in a single UI frame or a Bus
+            // request. Keep each field individually undoable even then.
+            macro_rules! update {
+                ($($field:ident),*) => { $(
+                    if mail.headers.$field != headers.$field {
+                        mail.undo.push(mail.headers.clone());
+                        mail.headers.$field = headers.$field;
+                    }
+                )* };
+            }
+            update!(from, to, cc, bcc, reply_to, subject, attachments);
             mail.redo.clear();
         }
         Ok(())
@@ -303,5 +313,30 @@ mod tests {
         c.edit_headers(first, headers).unwrap();
         assert_eq!(c.tab(second).unwrap().mail.as_ref().unwrap().headers.subject, "Hello");
         assert!(!c.tab(second).unwrap().dirty());
+    }
+
+    #[test]
+    fn unchanged_open_save_and_reopen_is_an_equal_document() {
+        let (mut c, _, tab) = opened(LETTER);
+        let original = c.tab(tab).unwrap().mail.as_ref().unwrap().saved.clone();
+        let fx = execute(&mut c, tab, "file.save");
+        let text = fx.iter().find_map(|effect| match effect { Effect::SaveMail { text, .. } => Some(text), _ => None }).unwrap();
+        let (reopened, _, tab) = opened(text);
+        assert_eq!(reopened.tab(tab).unwrap().mail.as_ref().unwrap().saved, original);
+    }
+
+    #[test]
+    fn a_bulk_header_update_still_undoes_one_field_at_a_time() {
+        let (mut c, _, tab) = opened(LETTER);
+        let mut headers = c.tab(tab).unwrap().mail.as_ref().unwrap().headers.clone();
+        headers.to = "carol@example.org".into();
+        headers.subject = "Changed subject".into();
+        c.edit_headers(tab, headers).unwrap();
+        execute(&mut c, tab, "edit.undo");
+        let mail = c.tab(tab).unwrap().mail.as_ref().unwrap();
+        assert_eq!(mail.headers.subject, "Hello");
+        assert_eq!(mail.headers.to, "carol@example.org");
+        execute(&mut c, tab, "edit.undo");
+        assert!(!c.tab(tab).unwrap().dirty());
     }
 }

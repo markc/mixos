@@ -24,7 +24,8 @@ pub async fn send(client: &impl citizen::app::AppClient, path: &str) -> Result<S
         Err(citizen::app::AppCallError::Refused { message, .. }) => Err(message),
         Err(citizen::app::AppCallError::Transport(error)) if error.outcome_unknown => Err(format!("the mail may have been sent; {}", error.message)),
         Err(citizen::app::AppCallError::Transport(error)) => Err(format!("could not contact Email: {}", error.message)),
-        Err(error) => Err(error.to_string()),
+        Err(citizen::app::AppCallError::LaunchFailed(message)) => Err(format!("could not launch Email: {message}")),
+        Err(citizen::app::AppCallError::DidNotAppear) => Err("Email did not appear before the wait limit".into()),
     }
 }
 
