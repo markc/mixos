@@ -116,7 +116,8 @@ pub fn view(
 pub fn apply(app: &mut App, commands: &Registry<App>, events: Vec<UiEvent>) {
     // A header preview belongs to the frame that displayed it, regardless of
     // whether a menu/shortcut event was collected before or after the strip.
-    let (headers, events): (Vec<_>, Vec<_>) = events.into_iter()
+    let (headers, events): (Vec<_>, Vec<_>) = events
+        .into_iter()
         .partition(|e| matches!(e, UiEvent::MailHeaders(..)));
     let (closed, events): (Vec<_>, Vec<_>) = events
         .into_iter()
@@ -138,7 +139,14 @@ fn apply_one(app: &mut App, commands: &Registry<App>, event: UiEvent) {
     {
         match event {
             UiEvent::MailHeaders(tab, headers) => {
-                if app.ctl.tabs().iter().find(|t| t.id == tab).and_then(|t| t.mail.as_ref()).is_some_and(|mail| !mail.sending && !mail.saving) {
+                if app
+                    .ctl
+                    .tabs()
+                    .iter()
+                    .find(|t| t.id == tab)
+                    .and_then(|t| t.mail.as_ref())
+                    .is_some_and(|mail| !mail.sending && !mail.saving)
+                {
                     // Validate OS paths before any JSON hop can lose bytes.
                     let _ = app.ctl.preview_headers(tab, headers);
                 }
@@ -146,13 +154,39 @@ fn apply_one(app: &mut App, commands: &Registry<App>, event: UiEvent) {
             UiEvent::MailCommit(tab) => commit_mail_headers(app, tab),
             UiEvent::MailRow(tab, field) => app.ctl.show_mail_row(tab, field),
             UiEvent::MailAttach(tab) => {
-                if !app.ctl.tabs().iter().find(|t| t.id == tab).and_then(|t| t.mail.as_ref()).is_some_and(|mail| !mail.saving && !mail.sending) { return; }
-                let directory = app.ctl.tabs().iter().find(|t| t.id == tab).and_then(|t| t.path.as_deref()).and_then(|p| std::path::Path::new(p).parent()).unwrap_or(std::path::Path::new("/")).to_path_buf();
-                app.mail_chooser = Some((tab, toolkit::file_chooser::FileChooser::new(directory, label("mail-attach"), label("mail-attach"))));
+                if !app
+                    .ctl
+                    .tabs()
+                    .iter()
+                    .find(|t| t.id == tab)
+                    .and_then(|t| t.mail.as_ref())
+                    .is_some_and(|mail| !mail.saving && !mail.sending)
+                {
+                    return;
+                }
+                let directory = app
+                    .ctl
+                    .tabs()
+                    .iter()
+                    .find(|t| t.id == tab)
+                    .and_then(|t| t.path.as_deref())
+                    .and_then(|p| std::path::Path::new(p).parent())
+                    .unwrap_or(std::path::Path::new("/"))
+                    .to_path_buf();
+                app.mail_chooser = Some((
+                    tab,
+                    toolkit::file_chooser::FileChooser::new(
+                        directory,
+                        label("mail-attach"),
+                        label("mail-attach"),
+                    ),
+                ));
             }
             UiEvent::CloseMacros => app.ui.macros_open = false,
             UiEvent::Command(id, origin) => {
-                if let Some(tab) = app.active() { commit_mail_headers(app, tab); }
+                if let Some(tab) = app.active() {
+                    commit_mail_headers(app, tab);
+                }
                 let _ = commands.execute(id, app, origin);
             }
             UiEvent::SelectTab(tab) => {
@@ -193,9 +227,22 @@ fn apply_one(app: &mut App, commands: &Registry<App>, event: UiEvent) {
 
 fn commit_mail_headers(app: &mut App, tab: TabId) {
     if app.ctl.commit_headers(tab) {
-        let headers = &app.ctl.tabs().iter().find(|t| t.id == tab).unwrap().mail.as_ref().unwrap().headers;
+        let headers = &app
+            .ctl
+            .tabs()
+            .iter()
+            .find(|t| t.id == tab)
+            .unwrap()
+            .mail
+            .as_ref()
+            .unwrap()
+            .headers;
         let headers = serde_json::to_value(headers).expect("validated header paths");
-        app.action_args(Some(tab), ActionId::MailHeaders, serde_json::json!({"headers":headers}));
+        app.action_args(
+            Some(tab),
+            ActionId::MailHeaders,
+            serde_json::json!({"headers":headers}),
+        );
         app.noted.push((ActionId::MailHeaders.id(), Origin::Ui));
     }
 }
@@ -564,9 +611,11 @@ fn document(
 }
 
 fn body_editable(app: &App, tab: &Tab) -> bool {
-    app.dialog.is_none() && tab.mail.as_ref().is_none_or(|mail| {
-        (!mail.sending && !mail.saving) || app.ctl.mail_save_parked(tab.id)
-    })
+    app.dialog.is_none()
+        && tab
+            .mail
+            .as_ref()
+            .is_none_or(|mail| (!mail.sending && !mail.saving) || app.ctl.mail_save_parked(tab.id))
 }
 
 fn centred(ui: &mut Ui, text: &str) {
@@ -894,15 +943,26 @@ mod tests {
         let mut ctl = Controller::new(config.clone(), 1, true);
         let mut service = editor_model::fake::FakeEditd::new("0000e1e1");
         let path = "/home/user/letter.md";
-        service.create(Some(path), "---\nmail-subject: Original\nmail-to: bob@example.org\n---\nBody");
-        let mut queue: std::collections::VecDeque<_> = ctl.open_paths(&[path.into()], Intent::ui(0)).into();
+        service.create(
+            Some(path),
+            "---\nmail-subject: Original\nmail-to: bob@example.org\n---\nBody",
+        );
+        let mut queue: std::collections::VecDeque<_> =
+            ctl.open_paths(&[path.into()], Intent::ui(0)).into();
         while let Some(effect) = queue.pop_front() {
             if let Effect::Send { req, out } = effect {
                 let args = serde_json::from_str(&out.body).unwrap();
                 let answer = service.handle("local:ced", &out.command, &args);
-                queue.extend(ctl.on_incoming(Incoming::Reply { req, rc:answer.rc, body:answer.body.to_string() }));
+                queue.extend(ctl.on_incoming(Incoming::Reply {
+                    req,
+                    rc: answer.rc,
+                    body: answer.body.to_string(),
+                }));
                 for event in service.take_events() {
-                    queue.extend(ctl.on_incoming(Incoming::Topic { topic:"edit.changed".into(), body:serde_json::to_string(&event).unwrap() }));
+                    queue.extend(ctl.on_incoming(Incoming::Topic {
+                        topic: "edit.changed".into(),
+                        body: serde_json::to_string(&event).unwrap(),
+                    }));
                 }
             }
         }
@@ -914,9 +974,12 @@ mod tests {
     fn body_typing_is_allowed_while_a_save_is_parked_but_not_during_the_write() {
         use documents::actions::ActionId;
         let (mut app, tab) = mail_app();
-        let fx = app.ctl.on_editor(tab, documents::controller::EditorMsg::Command(
-            editor_model::model::EditCommand::Insert("First ".into()),
-        ));
+        let fx = app.ctl.on_editor(
+            tab,
+            documents::editor::EditorMsg::Command(editor_model::model::EditCommand::Insert(
+                "First ".into(),
+            )),
+        );
         app.absorb(fx);
         app.action(ActionId::FileSend);
         assert!(app.ctl.mail_save_parked(tab));
@@ -931,12 +994,30 @@ mod tests {
     fn ui_attachment_paths_are_checked_before_the_json_hop() {
         use std::os::unix::ffi::OsStringExt;
         let (mut app, tab) = mail_app();
-        let mut headers = app.active_tab().unwrap().mail.as_ref().unwrap().headers.clone();
-        headers.attachments.push(std::ffi::OsString::from_vec(b"/tmp/report-\xff".to_vec()).into());
-        let expected = maildoc::write(&headers.document("Body".into())).unwrap_err().to_string();
-        super::apply(&mut app, &crate::actions::registry(), vec![super::UiEvent::MailHeaders(tab, headers)]);
+        let mut headers = app
+            .active_tab()
+            .unwrap()
+            .mail
+            .as_ref()
+            .unwrap()
+            .headers
+            .clone();
+        headers
+            .attachments
+            .push(std::ffi::OsString::from_vec(b"/tmp/report-\xff".to_vec()).into());
+        let expected = maildoc::write(&headers.document("Body".into()))
+            .unwrap_err()
+            .to_string();
+        super::apply(
+            &mut app,
+            &crate::actions::registry(),
+            vec![super::UiEvent::MailHeaders(tab, headers)],
+        );
         let t = app.active_tab().unwrap();
-        assert_eq!(t.mail.as_ref().unwrap().notice.as_deref(), Some(expected.as_str()));
+        assert_eq!(
+            t.mail.as_ref().unwrap().notice.as_deref(),
+            Some(expected.as_str())
+        );
         assert!(t.mail.as_ref().unwrap().headers.attachments.is_empty());
         assert!(!t.dirty());
         assert!(app.effects.is_empty());
@@ -948,10 +1029,22 @@ mod tests {
         for action in ["file.save", "file.send"] {
             for command_first in [false, true] {
                 let (mut app, tab) = mail_app();
-                let mut headers = app.active_tab().unwrap().mail.as_ref().unwrap().headers.clone();
+                let mut headers = app
+                    .active_tab()
+                    .unwrap()
+                    .mail
+                    .as_ref()
+                    .unwrap()
+                    .headers
+                    .clone();
                 headers.subject = "Shown in this frame".into();
-                let mut events = vec![super::UiEvent::MailHeaders(tab, headers), super::UiEvent::Command(action, toolkit::action::Origin::Shortcut)];
-                if command_first { events.reverse(); }
+                let mut events = vec![
+                    super::UiEvent::MailHeaders(tab, headers),
+                    super::UiEvent::Command(action, toolkit::action::Origin::Shortcut),
+                ];
+                if command_first {
+                    events.reverse();
+                }
                 super::apply(&mut app, &crate::actions::registry(), events);
                 assert!(app.effects.iter().any(|e| matches!(e, Effect::SaveMail { text, .. } if maildoc::parse(text).unwrap().subject == "Shown in this frame")));
             }
@@ -964,24 +1057,51 @@ mod tests {
         let (mut app, tab) = mail_app();
         let registry = crate::actions::registry();
         for subject in ["C", "Ch", "Changed"] {
-            let mut headers = app.active_tab().unwrap().mail.as_ref().unwrap().headers.clone();
+            let mut headers = app
+                .active_tab()
+                .unwrap()
+                .mail
+                .as_ref()
+                .unwrap()
+                .headers
+                .clone();
             headers.subject = subject.into();
-            super::apply(&mut app, &registry, vec![super::UiEvent::MailHeaders(tab, headers)]);
+            super::apply(
+                &mut app,
+                &registry,
+                vec![super::UiEvent::MailHeaders(tab, headers)],
+            );
             assert!(app.effects.is_empty(), "previews execute no action");
             assert!(registry.take_executed().0.is_empty());
         }
         super::apply(&mut app, &registry, vec![super::UiEvent::MailCommit(tab)]);
-        assert_eq!(registry.take_executed().0.len(), 1, "commit executes mail.headers once");
+        assert_eq!(
+            registry.take_executed().0.len(),
+            1,
+            "commit executes mail.headers once"
+        );
         app.action(ActionId::FileSend);
         assert!(!app.enabled(ActionId::MailHeaders));
         super::apply(&mut app, &registry, vec![super::UiEvent::MailAttach(tab)]);
         assert!(app.mail_chooser.is_none());
-        let fx = app.ctl.on_mail_saved(tab, "/home/user/letter.md".into(), "---\nmail-subject: Changed\nmail-to: bob@example.org\n---\nBody".into(), true, None, Ok(()));
+        let fx = app.ctl.on_mail_saved(
+            tab,
+            "/home/user/letter.md".into(),
+            "---\nmail-subject: Changed\nmail-to: bob@example.org\n---\nBody".into(),
+            true,
+            None,
+            Ok(()),
+        );
         app.absorb(fx);
-        assert!(!app.enabled(ActionId::MailHeaders), "Send still in flight after its save");
+        assert!(
+            !app.enabled(ActionId::MailHeaders),
+            "Send still in flight after its save"
+        );
         super::apply(&mut app, &registry, vec![super::UiEvent::MailAttach(tab)]);
         assert!(app.mail_chooser.is_none());
-        let fx = app.ctl.on_mail_sent(tab, None, Err("server refused".into()));
+        let fx = app
+            .ctl
+            .on_mail_sent(tab, None, Err("server refused".into()));
         app.absorb(fx);
         assert!(app.enabled(ActionId::MailHeaders));
     }
