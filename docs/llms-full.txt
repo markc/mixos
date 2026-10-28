@@ -11277,7 +11277,8 @@ the enabled domain catch-all. All targets must still be real local accounts;
 removing one causes a retriable delivery failure rather than external
 forwarding. Multiple local targets receive a copy each. An exact alias grants
 its targets permission to send as that alias; a catch-all grants no sender
-identity. Property records retain `target` as the first target for compatibility
+identity. Reserved virtual-token recipients retain their existing routing.
+Property records retain `target` as the first target for compatibility
 and add `targets` for the full list; an absent or empty list uses `target`.
 
 `maild account show alice@example.com` includes `account_id`, the numeric id

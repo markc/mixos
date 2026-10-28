@@ -317,6 +317,9 @@ async fn utf8_inbound_and_authenticated_submission_store_mail() -> Result<()> {
     assert_eq!(inbox_count(&built, id)?, 4);
     assert!(maild::props::aliases::sender_authorized(&built.app_state.aliases_runtime,
         "postmaster@xn--fsqu00a.example.com", address).await);
+    let quoted = account(&built, "\"élise\"@example.com").await?;
+    send(&built, "\"élise\"@example.com").await?;
+    assert_eq!(inbox_count(&built, quoted)?, 1);
     Ok(())
 }
 
