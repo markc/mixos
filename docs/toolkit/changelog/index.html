@@ -264,6 +264,11 @@ keep independently sized monospace content and spacing unchanged.</p>
 interface sizes. Preserve authored geometry and snapshots at scale 1.0.</p>
 </li>
 <li>
+<p>Add <code>header_form</code>: measured label columns, caller-drawn rows, recipient/text
+fields and removable path chips shared by Email and ced. Caller-provided
+IDs keep field state scoped to each tab and viewport.</p>
+</li>
+<li>
 <p>Allow a viewport to require its own complete client frame independently of
 the session decoration preference and later theme changes. Each viewport
 remembers its own decoration request, so a client-framed child beside a

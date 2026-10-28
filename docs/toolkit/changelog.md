@@ -22,6 +22,9 @@ generated: by docs/_build/gen-site.mix from libs/toolkit/CHANGELOG.md; do not ed
   keep independently sized monospace content and spacing unchanged.
 - Size numeric fields for their rendered number, unit and padding at changed
   interface sizes. Preserve authored geometry and snapshots at scale 1.0.
+- Add `header_form`: measured label columns, caller-drawn rows, recipient/text
+  fields and removable path chips shared by Email and ced. Caller-provided
+  IDs keep field state scoped to each tab and viewport.
 
 - Allow a viewport to require its own complete client frame independently of
   the session decoration preference and later theme changes. Each viewport
