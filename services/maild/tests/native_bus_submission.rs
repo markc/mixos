@@ -108,8 +108,13 @@ async fn call(
 
 async fn cli(args: &[&str]) -> Result<String> {
     let args: Vec<String> = args.iter().map(|s| (*s).to_string()).collect();
+    let socket = Path::new(&std::env::var("MIXOS_NATIVE_MAIL_ROOT")?).join("broker.sock");
     tokio::task::spawn_blocking(move || {
-        let output = Command::new(env!("CARGO_BIN_EXE_maild")).args(args).output()?;
+        let output = Command::new(env!("CARGO_BIN_EXE_maild"))
+            .args(args)
+            .env("MIXOS_BUS_SOCKET", socket)
+            .env_remove("MIXOS_SESSION_FD")
+            .output()?;
         ensure!(output.status.success(), "maild CLI failed: {}", String::from_utf8_lossy(&output.stderr));
         Ok(String::from_utf8(output.stdout)?)
     }).await?
