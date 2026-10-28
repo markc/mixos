@@ -12,7 +12,7 @@ const DESKTOP: &str = "org.freedesktop.portal.Desktop";
 const PATH: &str = "/org/freedesktop/portal/desktop";
 const REQUEST: &str = "org.freedesktop.portal.Request";
 
-struct Process(Child);
+pub(super) struct Process(Child);
 impl Drop for Process {
     fn drop(&mut self) {
         let _ = self.0.kill();
@@ -20,7 +20,7 @@ impl Drop for Process {
     }
 }
 
-fn dbus() -> (Process, String) {
+pub(super) fn dbus() -> (Process, String) {
     let mut child = Command::new("dbus-daemon")
         .args(["--session", "--nofork", "--print-address=1"])
         .stdout(Stdio::piped())
@@ -33,7 +33,7 @@ fn dbus() -> (Process, String) {
     (Process(child), address.trim().into())
 }
 
-async fn connection(address: &str) -> Connection {
+pub(super) async fn connection(address: &str) -> Connection {
     zbus::connection::Builder::address(address)
         .unwrap()
         .build()
