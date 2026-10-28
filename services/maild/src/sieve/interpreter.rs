@@ -958,6 +958,7 @@ impl Eval<'_> {
                     return Ok(true);
                 }
                 let mut values = Vec::new();
+                let mut octets = Vec::new();
                 match name.as_str() {
                     "header" => {
                         for n in &names {
@@ -1023,11 +1024,10 @@ impl Eval<'_> {
                         }
                     }
                     "body" => {
+                        let content_types = args.tags.get("content").map(|types| self.expanded(types)).transpose()?;
                         if args.has("raw") {
                             let start = self.message.root_part().offset_body as usize;
-                            values.push(
-                                String::from_utf8_lossy(&self.context.data[start..]).into_owned(),
-                            );
+                            octets.push(self.context.data[start..].to_vec());
                         } else {
                             for part in &self.message.parts {
                                 let content_type = part
@@ -1040,9 +1040,8 @@ impl Eval<'_> {
                                         )
                                     })
                                     .unwrap_or_else(|| "text/plain".into());
-                                let selected = args
-                                    .tags
-                                    .get("content")
+                                let selected = content_types
+                                    .as_ref()
                                     .map(|types| {
                                         types.iter().any(|t| {
                                             t.is_empty()
@@ -1054,6 +1053,10 @@ impl Eval<'_> {
                                         })
                                     })
                                     .unwrap_or_else(|| content_type.starts_with("text/"));
+                                if selected && let PartType::Binary(bytes) | PartType::InlineBinary(bytes) = &part.body {
+                                    octets.push(bytes.to_vec());
+                                    continue;
+                                }
                                 if selected && let Some(text) = part.text_contents() {
                                     values.push(
                                         if !args.has("content")
@@ -1100,7 +1103,8 @@ impl Eval<'_> {
                     if name == "string" {
                         values.retain(|value| !value.is_empty());
                     }
-                    values = vec![values.len().to_string()];
+                    values = vec![(values.len()+octets.len()).to_string()];
+                    octets.clear();
                 }
                 let mut keys = self.expanded(if name == "body" {
                     &args.values[0]
@@ -1111,6 +1115,12 @@ impl Eval<'_> {
                 })?;
                 if name == "hasflag" {
                     keys = keys.iter().flat_map(|s| s.split_whitespace().map(str::to_string)).collect();
+                }
+                for value in octets {
+                    for key in &keys {
+                        self.step()?;
+                        if self.matches_octets(&value,key,args)? { return Ok(true); }
+                    }
                 }
                 for value in values {
                     for key in &keys {
@@ -1135,6 +1145,27 @@ impl Eval<'_> {
             }
         }
         Ok(values.into_values().collect())
+    }
+    fn matches_octets(&mut self, value: &[u8], key: &str, args: &Args) -> Result<bool> {
+        self.steps += (value.len()+key.len())/1024;
+        ensure!(self.steps <= MAX_STEPS,"string work limit");
+        let mut value = value.to_vec();
+        let mut key = key.as_bytes().to_vec();
+        let numeric = args.tag("comparator") == Some("i;ascii-numeric");
+        if !numeric && args.tag("comparator") != Some("i;octet") {
+            value.make_ascii_lowercase(); key.make_ascii_lowercase();
+        }
+        if let Some(op) = args.tag("count").or(args.tag("value")) {
+            let order = if numeric {
+                // Only the ASCII digit prefix participates in numeric comparison.
+                numeric_key(&String::from_utf8_lossy(&value)).cmp(&numeric_key(&String::from_utf8_lossy(&key)))
+            } else { value.cmp(&key) };
+            return Ok(match op { "gt"=>order.is_gt(),"ge"=>order.is_ge(),"lt"=>order.is_lt(),"le"=>order.is_le(),"eq"=>order.is_eq(),"ne"=>order.is_ne(),_=>unreachable!() });
+        }
+        if args.has("matches") { glob_octets(&value,&key,&mut self.steps) }
+        else if args.has("contains") { Ok(key.is_empty() || value.windows(key.len()).any(|part|part==key)) }
+        else if numeric { Ok(numeric_key(&String::from_utf8_lossy(&value)) == numeric_key(&String::from_utf8_lossy(&key))) }
+        else { Ok(value==key) }
     }
     fn matches(&mut self, value: &str, key: &str, args: &Args, capture: bool) -> Result<bool> {
         // Charge for scanned bytes as well as VM instructions. Repeated body
@@ -1209,6 +1240,37 @@ fn numeric_key(s: &str) -> (bool, usize, String) {
     let digits: String = s.chars().take_while(char::is_ascii_digit).collect();
     let significant = digits.trim_start_matches('0').to_string();
     (digits.is_empty(), significant.len(), significant)
+}
+
+/// Body octets have no capture side effects. Match byte units without a UTF-8
+/// conversion so invalid bytes and ASCII signatures retain their exact values.
+fn glob_octets(value: &[u8], pattern: &[u8], steps: &mut usize) -> Result<bool> {
+    ensure!(value.len() <= MAX_SCRIPT_BYTES,"wildcard input limit");
+    let mut tokens = Vec::new();
+    let mut bytes = pattern.iter().copied();
+    while let Some(byte) = bytes.next() {
+        tokens.push(if byte == b'\\' { (bytes.next().unwrap_or(b'\\'),false) } else { (byte,byte==b'*' || byte==b'?') });
+    }
+    let mut stack = vec![(0,0)];
+    while let Some((mut p,mut v)) = stack.pop() {
+        loop {
+            *steps += 1;
+            ensure!(*steps <= MAX_STEPS,"wildcard instruction limit");
+            if p == tokens.len() { if v == value.len() { return Ok(true); } break; }
+            let (byte,wildcard) = tokens[p];
+            if wildcard && byte==b'*' {
+                for end in (v..=value.len()).rev() {
+                    *steps += 1;
+                    ensure!(*steps <= MAX_STEPS,"wildcard allocation limit");
+                    stack.push((p+1,end));
+                }
+                break;
+            }
+            if v == value.len() || (!wildcard && byte != value[v]) { break; }
+            p += 1; v += 1;
+        }
+    }
+    Ok(false)
 }
 
 fn glob(

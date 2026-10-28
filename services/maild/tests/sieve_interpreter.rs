@@ -100,6 +100,16 @@ fn body_wildcards_preserve_earlier_match_variables() {
     assert_eq!(plan.filings[0].mailbox.as_deref(),Some("Mixed"));
 }
 #[test]
+fn body_content_selectors_expand_variables() {
+    assert!(evaluate(r#"require ["variables","body"]; set "type" "text/plain"; if body :content "${type}" :contains "Hello world" { discard; }"#).filings.is_empty());
+}
+#[test]
+fn body_content_matches_transfer_decoded_binary_octets() {
+    let script = compile(r#"require "body"; if allof(body :content "image/gif" :comparator "i;octet" :contains "GIF89a",body :content "" :comparator "i;octet" :matches "GIF89a?",not body :content "image/gif" :comparator "i;octet" :is "GIF89a�",body :raw :contains "R0lG") { discard; }"#).unwrap();
+    let data = b"Content-Type: image/gif\r\nContent-Transfer-Encoding: base64\r\n\r\nR0lGODlh/w==\r\n";
+    assert!(script.evaluate(Context{data,from:"a",to:"b"}).unwrap().filings.is_empty());
+}
+#[test]
 fn variables_expansion_modifiers_and_string_test() {
     let plan = evaluate(
         r#"require ["variables","fileinto"]; set :upper "folder" "mixed"; if string :is "${folder}" "MIXED" { fileinto "${folder}"; }"#,
