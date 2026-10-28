@@ -85,7 +85,7 @@ fn panel_with(theme: &Theme, name: &str, open: Option<&str>) {
     harness.run();
     if let Some(menu) = open {
         harness
-            .get_by_label(&toolkit::strings::own("window-menu"))
+            .get_by_label("Menus")
             .click();
         harness.run();
         harness.get_by_label(menu).click();
