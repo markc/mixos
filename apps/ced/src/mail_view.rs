@@ -43,7 +43,8 @@ pub fn strip(ui: &mut egui::Ui, app: &App, events: &mut Vec<UiEvent>) {
                             form::text(ui, field_id, labelled, buffer, width);
                         });
                     } else {
-                        form::text(ui, field_id, labelled, buffer, ui.available_width());
+                        let width = ui.available_width();
+                        form::text(ui, field_id, labelled, buffer, width);
                     }
                 });
             }
@@ -58,7 +59,8 @@ pub fn strip(ui: &mut egui::Ui, app: &App, events: &mut Vec<UiEvent>) {
                 ui.horizontal_wrapped(|ui| {
                     if ui.button(label("mail-attach")).clicked() { events.push(UiEvent::MailAttach(tab.id)); }
                     for (index, path) in headers.attachments.iter().enumerate() {
-                        if form::attachment_chip(ui, index, path, &path.display().to_string(), false, toolkit::field::height_of(ui.ctx()), &label("mail-remove")) { remove = Some(index); }
+                        let icon = toolkit::field::height_of(ui.ctx());
+                        if form::attachment_chip(ui, index, path, &path.display().to_string(), false, icon, &label("mail-remove")) { remove = Some(index); }
                     }
                 });
             });
