@@ -104,6 +104,9 @@ struct State {
     press: Option<(Pos2, u8)>,
     /// The last completed click: when, where, and its click count.
     last_click: Option<(f64, Pos2, u8)>,
+    /// The selection last offered as the primary selection (start, end),
+    /// so a settled selection is reported once, as egui's TextEdit does.
+    reported: Option<(usize, usize)>,
 }
 
 /// The measurement context for one frame.
@@ -283,6 +286,30 @@ impl Pane<'_, '_> {
         self.follow(&g, version);
         self.paint(&g, &font);
         self.output(&g);
+        self.report_selection();
+    }
+
+    /// Offer a settled, non-empty selection as the primary selection
+    /// (select-to-copy), once per selection and only after the pointer is
+    /// up, through the same output command egui's TextEdit uses; the
+    /// platform (egui-winit) writes it to the compositor.
+    fn report_selection(&mut self) {
+        if !self.response.has_focus() || self.ui.input(|i| i.pointer.any_down()) {
+            return;
+        }
+        let r = sel_range(self.doc.model.sel);
+        let now = (!r.is_empty()).then_some((r.start, r.end));
+        if now == self.st.reported {
+            return;
+        }
+        self.st.reported = now;
+        if now.is_some()
+            && let Some(s) = self.selected_text()
+        {
+            self.ui
+                .ctx()
+                .send_cmd(egui::OutputCommand::TextSelectionSettled(s));
+        }
     }
 
     fn switch_document(&mut self) {
@@ -473,13 +500,15 @@ impl Pane<'_, '_> {
         }
         match ev {
             egui::Event::Copy | egui::Event::Cut => true,
-            // A press hit-tests the text, which the commands may change.
+            // A press or a middle-click paste hit-tests the text, which the
+            // commands may change.
             egui::Event::PointerButton {
                 pos,
                 button: PointerButton::Primary,
                 pressed: true,
                 ..
-            } => self.ours(g, *pos),
+            }
+            | egui::Event::MiddleClickPaste { pos, .. } => self.ours(g, *pos),
             egui::Event::Key {
                 key,
                 pressed: true,
@@ -554,6 +583,20 @@ impl Pane<'_, '_> {
         self.st.drag_offset = Some(o);
     }
 
+    /// Paste `text` at the offset under `pos` (the primary selection on a
+    /// middle click), focusing the editor.
+    fn middle_paste(&mut self, g: &Geometry, pos: Pos2, text: String) {
+        self.response.request_focus();
+        let p = pos2(pos.x.max(g.text_rect().left()), pos.y);
+        let o = self.offset_at(g, p);
+        self.edit(EditCommand::Move {
+            to: Motion::To(o),
+            extend: false,
+        });
+        self.events.push(Event::Clipboard(Clipboard::Paste));
+        self.edit(EditCommand::Insert(text));
+    }
+
     fn release_at(&mut self, pos: Pos2) {
         if self.st.drag.take().is_some() {
             self.st.drag_offset = None;
@@ -604,6 +647,19 @@ impl Pane<'_, '_> {
                     self.press_at(g, pos, modifiers.shift);
                 } else if !pressed {
                     self.release_at(pos);
+                }
+                continue;
+            }
+            // Middle-click pastes the primary selection where it lands, as
+            // in egui's TextEdit; like a press, it needs no prior focus.
+            if let egui::Event::MiddleClickPaste { pos, text } = &ev {
+                let (pos, text) = (*pos, text.clone());
+                if self.ours(g, pos) && !self.view.read_only && !text.is_empty() {
+                    if self.needs_current_state(&ev, g) {
+                        self.hold(ev, events);
+                        return;
+                    }
+                    self.middle_paste(g, pos, text);
                 }
                 continue;
             }

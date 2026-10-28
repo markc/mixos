@@ -58,6 +58,25 @@ struct App {
     view: View,
 }
 
+/// Where the harness records selections offered as the primary selection.
+const SETTLED: &str = "test-editor-settled";
+
+fn settled(h: &Harness<'_, App>) -> Vec<String> {
+    h.ctx
+        .data(|d| d.get_temp::<Vec<String>>(egui::Id::new(SETTLED)))
+        .unwrap_or_default()
+}
+
+fn middle_click(h: &mut Harness<'_, App>, at: Pos2, text: &str) {
+    let input = h.input_mut();
+    input.events.push(Event::PointerMoved(at));
+    input.events.push(Event::MiddleClickPaste {
+        pos: at,
+        text: text.into(),
+    });
+    h.run();
+}
+
 fn harness(app: App, theme: &Theme, size: egui::Vec2) -> Harness<'static, App> {
     harness_with_missing_glyphs(app, theme, size, false)
 }
@@ -86,6 +105,22 @@ fn harness_with_missing_glyphs(
         |ui, app: &mut App| {
             let (palette, view) = (app.palette.clone(), app.view.clone());
             let output = app.doc.show(ui, &palette, &view);
+            // Record each selection offered as the primary selection.
+            let settled: Vec<String> = ui.ctx().output(|o| {
+                o.commands
+                    .iter()
+                    .filter_map(|c| match c {
+                        egui::OutputCommand::TextSelectionSettled(s) => Some(s.clone()),
+                        _ => None,
+                    })
+                    .collect()
+            });
+            if !settled.is_empty() {
+                ui.ctx().data_mut(|d| {
+                    d.get_temp_mut_or_default::<Vec<String>>(egui::Id::new(SETTLED))
+                        .extend(settled)
+                });
+            }
             for event in output.events {
                 if let editor::Event::Layout(layout) = event {
                     ui.ctx().data_mut(|d| {
@@ -583,4 +618,74 @@ fn read_only_views_ignore_typing() {
     key(&mut h, Key::Backspace, Modifiers::NONE);
     assert_eq!(h.state().doc.contents(), "fixed");
     assert_eq!(h.state().doc.selection().head, 5, "the caret still moves");
+}
+
+/// Select-to-copy: a settled selection (a double-clicked word, then a
+/// keyboard extension) is offered as the primary selection, once each.
+#[test]
+fn settled_selections_become_the_primary_selection() {
+    let theme = theme(Scheme::Studio, Mode::Dark);
+    let app = App {
+        doc: Document::new("alpha bravo charlie", "text").unwrap(),
+        palette: Palette::from_theme(&theme),
+        view: View {
+            line_numbers: false,
+            ..View::default()
+        },
+    };
+    let mut h = harness(app, &theme, egui::vec2(400.0, 200.0));
+    h.run();
+    let on_bravo = pos2(24.0 + 8.0 * 7.5, 15.0);
+    for pressed in [true, false, true, false] {
+        pointer(&mut h, on_bravo, Some(pressed));
+    }
+    h.run();
+    h.run();
+    assert_eq!(settled(&h), vec!["bravo".to_string()]);
+    // Nothing changes, nothing is offered again.
+    h.run_steps(5);
+    assert_eq!(settled(&h).len(), 1);
+    key(&mut h, Key::End, Modifiers::SHIFT);
+    h.run();
+    assert_eq!(settled(&h).last().map(String::as_str), Some("bravo charlie"));
+}
+
+/// Middle-click pastes the primary selection where it lands, even into an
+/// editor that did not have focus.
+#[test]
+fn middle_click_pastes_the_primary_selection_at_the_click() {
+    let theme = theme(Scheme::Studio, Mode::Dark);
+    let app = App {
+        doc: Document::new("alpha bravo", "text").unwrap(),
+        palette: Palette::from_theme(&theme),
+        view: View {
+            line_numbers: false,
+            ..View::default()
+        },
+    };
+    let mut h = harness(app, &theme, egui::vec2(400.0, 200.0));
+    h.run();
+    // The boundary before "bravo" (offset 6).
+    middle_click(&mut h, pos2(24.0 + 8.0 * 6.0, 15.0), "X ");
+    assert_eq!(h.state().doc.contents(), "alpha X bravo");
+    assert_eq!(h.state().doc.selection().head, "alpha X ".len());
+}
+
+/// A read-only view ignores a middle-click paste.
+#[test]
+fn read_only_views_ignore_middle_click_paste() {
+    let theme = theme(Scheme::Studio, Mode::Dark);
+    let app = App {
+        doc: Document::new("alpha bravo", "text").unwrap(),
+        palette: Palette::from_theme(&theme),
+        view: View {
+            line_numbers: false,
+            read_only: true,
+            ..View::default()
+        },
+    };
+    let mut h = harness(app, &theme, egui::vec2(400.0, 200.0));
+    h.run();
+    middle_click(&mut h, pos2(24.0 + 8.0 * 6.0, 15.0), "X ");
+    assert_eq!(h.state().doc.contents(), "alpha bravo");
 }

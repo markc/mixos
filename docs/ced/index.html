@@ -309,8 +309,9 @@ them before committing.</p>
 <li>Macros and the Output panel's content.</li>
 <li>Linting Mix files on save (the Problems panel shows diagnostics other
 tools send with <code>ced.diagnostics</code>).</li>
-<li>Paste from the menu asks the platform for the clipboard; the primary
-selection (middle click) is the compositor's, not ced's.</li>
+<li>Reading the primary selection over the Bus: it is answered as empty, since
+the toolkit cannot read it on demand. (In the window, selecting text offers
+it as the primary selection and middle-click pastes it where you click.)</li>
 </ul>
 <h2 id="macro-bus-commands">Macro Bus commands</h2>
 <p>The shared <a href="/macros/#bus-commands">macro Bus surface</a> uses this process's

@@ -378,15 +378,21 @@ impl Shell {
             for effect in std::mem::take(&mut self.app.effects) {
                 match effect {
                     Effect::ClipboardWrite { text, primary } => {
-                        // The primary selection is the compositor's; egui
-                        // writes the clipboard only.
-                        if !primary {
+                        if primary {
+                            // The same command a settled selection sends:
+                            // egui-winit writes it to the primary selection.
+                            self.ctx
+                                .send_cmd(egui::OutputCommand::TextSelectionSettled(text));
+                        } else {
                             self.ctx.copy_text(text);
                         }
                     }
                     Effect::ClipboardRead { primary, intent } => {
                         if primary {
-                            // Not ced's to read: answered as empty.
+                            // egui offers no on-demand read of the primary
+                            // selection (only middle-click delivers it, to
+                            // the editor under the pointer), so a Bus read
+                            // is answered as empty.
                             let fx = self.app.ctl.on_paste(intent, None);
                             self.app.absorb(fx);
                         } else {
