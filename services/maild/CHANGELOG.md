@@ -26,7 +26,8 @@
 - Replace five JMAP placeholders with authenticated HTTP contracts. Correct
   `Email/import` (RFC 8621 §4.8) state preconditions, validation, CAS blob
   references, Received date defaults, thread ids and atomic duplicate rejection
-  (`alreadyExists` with `existingId`). Test upload/import/submission together.
+  (`alreadyExists` with `existingId`), and transactional mail quota checks.
+  Test upload/import/submission together.
 - Correct the manual and test guide to describe the packaged maild binary.
 
 - IMAP `SEARCH` and `UID SEARCH` implement the header, date and text keys:

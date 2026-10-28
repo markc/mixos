@@ -140,12 +140,16 @@ impl Fixture {
         let raw = format!(
             "Received: from example.org by example.com; Mon, 1 Jan 2024 00:00:00 +0000\r\nFrom: alice@example.com\r\nTo: recipient@example.net\r\nSubject: {subject}\r\nMessage-ID: <{subject}@example.com>\r\n\r\nHello\r\n"
         );
+        self.upload_message(&raw).await
+    }
+
+    async fn upload_message(&self, raw: &str) -> String {
         let response = self
             .client
             .post(format!("{}/jmap/upload/1", self.url))
             .basic_auth("alice@example.com", Some("password"))
             .header("Content-Type", "message/rfc822")
-            .body(raw)
+            .body(raw.to_owned())
             .send()
             .await
             .unwrap()
@@ -364,4 +368,32 @@ async fn email_import_quota_is_atomic_and_does_not_count_upload_staging() {
     assert!(created["created"]["a"]["id"].is_string(), "{created}");
     assert_eq!(refused["notCreated"]["a"]["type"], "overQuota", "{refused}");
     assert_eq!(f.call("Email/query", json!({})).await["ids"].as_array().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn email_import_eai_and_foreign_blobs() {
+    let f = Fixture::new().await;
+    let raw = "From: Δοκιμή <δοκιμή@example.org>\r\nTo: recipient@example.net\r\nSubject: Unicode café\r\n\r\nΚαλημέρα\r\n";
+    let blob = f.upload_message(raw).await;
+    let response = f.call("Email/import", json!({"emails": {"a": {"blobId": blob, "mailboxIds": {&f.inbox: true}}}})).await;
+    let created = &response["created"]["a"];
+    assert_eq!(created["size"], raw.len());
+    let email = f.get(&created["id"]).await;
+    assert_eq!(email["subject"], "Unicode café");
+    let download = f.client.get(format!("{}/jmap/blob/{}", f.url, created["blobId"].as_str().unwrap()))
+        .basic_auth("alice@example.com", Some("password")).send().await.unwrap().error_for_status().unwrap().text().await.unwrap();
+    assert_eq!(download, raw);
+    let ms = &f.built.app_state.mailstore;
+    ms.ensure_account_set(2).unwrap();
+    let bytes = b"From: foreign@example.org\r\nSubject: foreign\r\n\r\nprivate";
+    let hash = ms.put_blob(bytes).unwrap();
+    let alias = ms.create_blob_ref(2, hash, bytes.len() as u64, chrono::Utc::now().timestamp_millis() + 3_600_000).unwrap();
+    for id in [alias.0.to_string(), mds::blob::hex(&hash)] {
+        let response = f.call("Email/import", json!({"emails": {"a": {"blobId": id, "mailboxIds": {&f.inbox: true}}}})).await;
+        assert_eq!(response["notCreated"]["a"]["type"], "invalidProperties", "{response}");
+        assert_eq!(response["oldState"], response["newState"]);
+    }
+    let empty = f.upload_message("").await;
+    let invalid = f.call("Email/import", json!({"emails": {"a": {"blobId": empty, "mailboxIds": {&f.inbox: true}}}})).await;
+    assert_eq!(invalid["notCreated"]["a"]["type"], "invalidEmail");
 }

@@ -151,6 +151,8 @@ through different upload aliases. It leaves existing metadata and memberships
 untouched. Missing or invalid blob, mailbox or keyword references produce
 `invalidProperties`; invalid MIME produces `invalidEmail`. Uploaded aliases
 and account-owned CAS blob ids are accepted, with account ownership checked.
+Positive account mail quotas are checked inside the creation transaction;
+concurrent imports cannot exceed them. Upload staging does not consume mail quota.
 These are the [RFC 8621 §4.8](https://www.rfc-editor.org/rfc/rfc8621.html#section-4.8)
 import semantics; the earlier placeholder's successful duplicate-create
 response was incorrect.
