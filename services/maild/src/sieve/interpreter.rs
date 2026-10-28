@@ -928,6 +928,12 @@ impl Eval<'_> {
                 Ok(*all)
             }
             Test::Match(name, args) => {
+                if ["header", "address", "exists", "body"].contains(&name.as_str()) {
+                    // Account for source scans and transforms even if the
+                    // resulting text is empty (for example, HTML comments).
+                    self.steps += self.context.data.len() / 1024;
+                    ensure!(self.steps <= MAX_STEPS, "message scan work limit");
+                }
                 if name == "size" {
                     let n: usize = args.value(0).parse()?;
                     return Ok(if args.has("over") {

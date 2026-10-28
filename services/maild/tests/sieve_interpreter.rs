@@ -331,3 +331,9 @@ fn string_work_and_variable_storage_are_bounded() {
             .is_err()
     );
 }
+#[test]
+fn body_transform_work_is_bounded_when_decoded_text_is_empty() {
+    let data = format!("Content-Type: text/html\r\n\r\n<!--{}-->", "x".repeat(1024*1024));
+    let source = format!("require \"body\"; {}", "if body :contains \"never\" { discard; }".repeat(30));
+    assert!(compile(&source).unwrap().evaluate(Context {data:data.as_bytes(),from:"a",to:"b"}).is_err());
+}
