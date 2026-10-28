@@ -163,17 +163,45 @@ fn vacation_options_and_reject_actions() {
 fn vacation_response_identity_precedes_variable_expansion() {
     let source = r#"require ["vacation","variables"]; if header :matches "Subject" "*" { vacation :subject "Reply: ${1}" "Away"; }"#;
     let script = compile(source).unwrap();
-    let a = script.evaluate(Context {data:b"Subject: first\r\n\r\nbody",from:"a",to:"b"}).unwrap().vacation.unwrap();
-    let b = script.evaluate(Context {data:b"Subject: second\r\n\r\nbody",from:"a",to:"b"}).unwrap().vacation.unwrap();
-    assert_ne!(a.subject,b.subject); assert_eq!(a.handle,b.handle);
+    let a = script
+        .evaluate(Context {
+            data: b"Subject: first\r\n\r\nbody",
+            from: "a",
+            to: "b",
+        })
+        .unwrap()
+        .vacation
+        .unwrap();
+    let b = script
+        .evaluate(Context {
+            data: b"Subject: second\r\n\r\nbody",
+            from: "a",
+            to: "b",
+        })
+        .unwrap()
+        .vacation
+        .unwrap();
+    assert_ne!(a.subject, b.subject);
+    assert_eq!(a.handle, b.handle);
 }
 #[test]
 fn variable_invalid_references_ascii_modifiers_and_nongreedy_captures() {
-    let plan = evaluate(r#"require ["variables","fileinto"]; set "company" "ACME"; set :upper "name" "éclair"; fileinto "${BAD${company}|${}|${doh!}|${name}";"#);
-    assert_eq!(plan.filings[0].mailbox.as_deref(),Some("${BADACME|${}|${doh!}|éCLAIR"));
+    let plan = evaluate(
+        r#"require ["variables","fileinto"]; set "company" "ACME"; set :upper "name" "éclair"; fileinto "${BAD${company}|${}|${doh!}|${name}";"#,
+    );
+    assert_eq!(
+        plan.filings[0].mailbox.as_deref(),
+        Some("${BADACME|${}|${doh!}|éCLAIR")
+    );
     let script = compile(r#"require ["variables","fileinto"]; if header :matches "Subject" "* *" { fileinto "${1}|${2}"; }"#).unwrap();
-    let plan = script.evaluate(Context {data:b"Subject: one two three\r\n\r\nbody",from:"a",to:"b"}).unwrap();
-    assert_eq!(plan.filings[0].mailbox.as_deref(),Some("one|two three"));
+    let plan = script
+        .evaluate(Context {
+            data: b"Subject: one two three\r\n\r\nbody",
+            from: "a",
+            to: "b",
+        })
+        .unwrap();
+    assert_eq!(plan.filings[0].mailbox.as_deref(), Some("one|two three"));
 }
 #[test]
 fn comments_multiline_and_dot_unstuffing() {
@@ -227,16 +255,45 @@ fn script_depth_size_and_execution_limits() {
                 from: "a",
                 to: "b"
             })
-        .is_err()
+            .is_err()
     );
 }
 #[test]
 fn string_work_and_variable_storage_are_bounded() {
-    let mut data = b"Subject: limits\r\n\r\n".to_vec(); data.extend(vec![b'x';1024*1024]);
-    let keys = (0..30).map(|n| format!("\"never{n}\"")).collect::<Vec<_>>().join(",");
-    let script = compile(&format!("require \"body\"; if body :contains [{keys}] {{ discard; }}")).unwrap();
-    assert!(script.evaluate(Context {data:&data,from:"a",to:"b"}).is_err());
-    let mut source = format!("require \"variables\"; set \"x\" \"{}\"; set \"x\" \"${{x}}${{x}}\";","a".repeat(30000));
-    for n in 0..20 { source.push_str(&format!("set \"v{n}\" \"${{x}}\";")); }
-    assert!(compile(&source).unwrap().evaluate(Context {data:MESSAGE,from:"a",to:"b"}).is_err());
+    let mut data = b"Subject: limits\r\n\r\n".to_vec();
+    data.extend(vec![b'x'; 1024 * 1024]);
+    let keys = (0..30)
+        .map(|n| format!("\"never{n}\""))
+        .collect::<Vec<_>>()
+        .join(",");
+    let script = compile(&format!(
+        "require \"body\"; if body :contains [{keys}] {{ discard; }}"
+    ))
+    .unwrap();
+    assert!(
+        script
+            .evaluate(Context {
+                data: &data,
+                from: "a",
+                to: "b"
+            })
+            .is_err()
+    );
+    let mut source = format!(
+        "require \"variables\"; set \"x\" \"{}\"; set \"x\" \"${{x}}${{x}}\";",
+        "a".repeat(30000)
+    );
+    for n in 0..20 {
+        source.push_str(&format!("set \"v{n}\" \"${{x}}\";"));
+    }
+    assert!(
+        compile(&source)
+            .unwrap()
+            .evaluate(Context {
+                data: MESSAGE,
+                from: "a",
+                to: "b"
+            })
+            .is_err()
+    );
 }

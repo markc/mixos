@@ -80,28 +80,37 @@ async fn quota_and_history_retention() -> Result<()> {
 }
 #[tokio::test]
 async fn script_names_accept_128_unicode_characters_and_reject_separators() -> Result<()> {
-    let (_tmp,db) = fixture().await?;
+    let (_tmp, db) = fixture().await?;
     let name = "é".repeat(128);
-    store::put(&db,1,&name,"keep;",None).await?;
-    assert_eq!(store::get(&db,1,&name).await?.name,name);
-    for name in ["x\u{2028}y".to_string(),"e\u{301}".to_string(),"é".repeat(129)] {
-        assert!(store::put(&db,1,&name,"keep;",None).await.is_err());
+    store::put(&db, 1, &name, "keep;", None).await?;
+    assert_eq!(store::get(&db, 1, &name).await?.name, name);
+    for name in [
+        "x\u{2028}y".to_string(),
+        "e\u{301}".to_string(),
+        "é".repeat(129),
+    ] {
+        assert!(store::put(&db, 1, &name, "keep;", None).await.is_err());
     }
     Ok(())
 }
 #[tokio::test]
 async fn deleted_name_churn_has_bounded_history_and_monotonic_versions() -> Result<()> {
-    let (_tmp,db) = fixture().await?;
+    let (_tmp, db) = fixture().await?;
     let mut previous = 0;
     for n in 0..520 {
         let name = format!("churn-{n}");
-        let version = store::put(&db,1,&name,"keep;",None).await?;
-        assert!(version > previous); previous = version;
-        store::delete(&db,1,&name).await?;
+        let version = store::put(&db, 1, &name, "keep;", None).await?;
+        assert!(version > previous);
+        previous = version;
+        store::delete(&db, 1, &name).await?;
     }
-    let count: i64 = db.conn.lock().unwrap().query_row("SELECT count(*) FROM sieve_versions WHERE account_id=1",[],|r| r.get(0))?;
-    assert_eq!(count,512);
-    assert!(store::put(&db,1,"churn-0","keep;",None).await? > previous);
+    let count: i64 = db.conn.lock().unwrap().query_row(
+        "SELECT count(*) FROM sieve_versions WHERE account_id=1",
+        [],
+        |r| r.get(0),
+    )?;
+    assert_eq!(count, 512);
+    assert!(store::put(&db, 1, "churn-0", "keep;", None).await? > previous);
     Ok(())
 }
 #[tokio::test]

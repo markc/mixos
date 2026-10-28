@@ -250,7 +250,11 @@ impl Parser {
                 &[],
             ),
             "setflag" | "addflag" | "removeflag" => (1, &[], &[]),
-            "vacation" => (1, &["mime"], &["days", "addresses", "subject", "from", "handle"]),
+            "vacation" => (
+                1,
+                &["mime"],
+                &["days", "addresses", "subject", "from", "handle"],
+            ),
             "reject" | "ereject" => (1, &[], &[]),
             "exists" => (1, &[], &[]),
             "size" => (1, &["over", "under"], &[]),
@@ -651,9 +655,10 @@ impl Script {
 }
 impl Eval<'_> {
     fn set_variable(&mut self, key: String, value: String) -> Result<()> {
-        let bytes = self.variable_bytes - self.variables.get(&key).map(String::len).unwrap_or(0) + value.len();
-        ensure!(bytes <= 1024 * 1024,"variable storage limit");
-        self.variables.insert(key,value);
+        let bytes = self.variable_bytes - self.variables.get(&key).map(String::len).unwrap_or(0)
+            + value.len();
+        ensure!(bytes <= 1024 * 1024, "variable storage limit");
+        self.variables.insert(key, value);
         self.variable_bytes = bytes;
         Ok(())
     }
@@ -673,13 +678,22 @@ impl Eval<'_> {
             let next = &rest[pos + 2..];
             if let Some(end) = next.find('}') {
                 let key = &next[..end];
-                let identifier = |s: &str| !s.is_empty() && s.bytes().enumerate().all(|(i,b)| b.is_ascii_alphabetic() || b == b'_' || (i > 0 && b.is_ascii_digit()));
+                let identifier = |s: &str| {
+                    !s.is_empty()
+                        && s.bytes().enumerate().all(|(i, b)| {
+                            b.is_ascii_alphabetic() || b == b'_' || (i > 0 && b.is_ascii_digit())
+                        })
+                };
                 let number = !key.is_empty() && key.bytes().all(|b| b.is_ascii_digit());
-                if key.contains('.') && key.split('.').all(identifier) { bail!("unsupported variable namespace"); }
+                if key.contains('.') && key.split('.').all(identifier) {
+                    bail!("unsupported variable namespace");
+                }
                 if !number && !identifier(key) {
                     // Invalid references stay literal; resume inside them so a
                     // nested valid reference still receives its one expansion.
-                    out.push_str("${"); rest = next; continue;
+                    out.push_str("${");
+                    rest = next;
+                    continue;
                 }
                 if let Ok(n) = key.parse::<usize>() {
                     out.push_str(self.captures.get(n).map(String::as_str).unwrap_or(""));
@@ -846,9 +860,18 @@ impl Eval<'_> {
                     handle.to_string()
                 } else {
                     // RFC 5230 response identity uses the unexpanded arguments.
-                    blake3::hash(format!("{:?}{:?}{}{}",args.tag("subject"),args.tag("from"),args.has("mime"),args.value(0)).as_bytes())
-                        .to_hex()
-                        .to_string()
+                    blake3::hash(
+                        format!(
+                            "{:?}{:?}{}{}",
+                            args.tag("subject"),
+                            args.tag("from"),
+                            args.has("mime"),
+                            args.value(0)
+                        )
+                        .as_bytes(),
+                    )
+                    .to_hex()
+                    .to_string()
                 };
                 self.plan.vacation = Some(Vacation {
                     mime: args.has("mime"),
@@ -1000,17 +1023,16 @@ impl Eval<'_> {
                                         })
                                     })
                                     .unwrap_or_else(|| content_type.starts_with("text/"));
-                                if selected
-                                    && let Some(text) = part.text_contents() {
-                                        values.push(
-                                            if !args.has("content")
-                                                && matches!(&part.body, PartType::Html(_))
-                                            {
-                                                mail_parser::decoders::html::html_to_text(text)
-                                            } else {
-                                                text.to_string()
-                                            },
-                                        );
+                                if selected && let Some(text) = part.text_contents() {
+                                    values.push(
+                                        if !args.has("content")
+                                            && matches!(&part.body, PartType::Html(_))
+                                        {
+                                            mail_parser::decoders::html::html_to_text(text)
+                                        } else {
+                                            text.to_string()
+                                        },
+                                    );
                                 }
                             }
                         }
@@ -1068,7 +1090,7 @@ impl Eval<'_> {
         // Charge for scanned bytes as well as VM instructions. Repeated body
         // comparisons cannot turn a short script into unbounded CPU work.
         self.steps += (value.len() + key.len()) / 1024;
-        ensure!(self.steps <= MAX_STEPS,"string work limit");
+        ensure!(self.steps <= MAX_STEPS, "string work limit");
         let numeric = args.tag("comparator") == Some("i;ascii-numeric");
         let octet = args.tag("comparator") == Some("i;octet");
         let original = value;

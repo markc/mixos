@@ -327,8 +327,9 @@ async fn deliver_inner(
         }
     }
     if let Some(vacation) = plan.vacation
-        && let Err(error) = vacation_reply(db, ms, &delivery, &vacation, external).await {
-            tracing::warn!(%error,"Sieve vacation reply failed; retaining original delivery outcome");
+        && let Err(error) = vacation_reply(db, ms, &delivery, &vacation, external).await
+    {
+        tracing::warn!(%error,"Sieve vacation reply failed; retaining original delivery outcome");
     }
     Ok(first)
 }

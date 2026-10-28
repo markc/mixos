@@ -52,8 +52,13 @@ pub struct StoredScript {
 
 pub fn validate_name(name: &str) -> Result<()> {
     ensure!(
-        !name.is_empty() && name.chars().count() <= 128 && name.nfc().eq(name.chars())
-            && !name.chars().any(|c| c.is_control() || matches!(c, '\u{2028}' | '\u{2029}') || (0xfdd0..=0xfdef).contains(&(c as u32)) || c as u32 & 0xffff >= 0xfffe),
+        !name.is_empty()
+            && name.chars().count() <= 128
+            && name.nfc().eq(name.chars())
+            && !name.chars().any(|c| c.is_control()
+                || matches!(c, '\u{2028}' | '\u{2029}')
+                || (0xfdd0..=0xfdef).contains(&(c as u32))
+                || c as u32 & 0xffff >= 0xfffe),
         "invalid script name (1..128 Unicode characters, NFC, no controls or separators)"
     );
     Ok(())
@@ -235,7 +240,7 @@ pub async fn rename(db: &Db, account: i32, old: &str, new: &str) -> Result<()> {
             "INSERT INTO sieve_versions(account_id,name,version,source) VALUES(?1,?2,?3,?4)",
             params![account, new, version, stored.source],
         )?;
-        prune(&tx,account,&new)?;
+        prune(&tx, account, &new)?;
         tx.commit()?;
         Ok(())
     })
