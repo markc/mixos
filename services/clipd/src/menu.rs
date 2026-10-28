@@ -67,12 +67,8 @@ impl Picker {
                 }
             }
         });
-        if let Some(pick) = choose {
-            if self.registry.execute("clipboard.pick", &mut self.state, json!(pick), action::Origin::Ui).is_err() { self.state.error = Some(self.strings.get("history-changed")); }
-        }
-        if let Some(pick) = self.state.pending.take() {
-            if self.send.try_send(pick).is_err() { self.state.error = Some(self.strings.get("busy")); }
-        }
+        if let Some(pick) = choose && self.registry.execute("clipboard.pick", &mut self.state, json!(pick), action::Origin::Ui).is_err() { self.state.error = Some(self.strings.get("history-changed")); }
+        if let Some(pick) = self.state.pending.take() && self.send.try_send(pick).is_err() { self.state.error = Some(self.strings.get("busy")); }
     }
 }
 
@@ -103,8 +99,7 @@ pub fn run(url: String) -> Result<()> {
                         Ok(_) => Err(strings.get("refused")),
                         Err(error) => Err(error.to_string()),
                     };
-                    if reply.is_ok() {
-                        if let Some(params) = picked.take() {
+                    if reply.is_ok() && let Some(params) = picked.take() {
                             journal.record("clipboard.pick", action::Origin::Ui, params, json!({"applied": true}));
                             for event in journal.take().0 {
                                 let mut frame = bus::BusMessage::new().with_header("command", "clipd.command.executed");
@@ -112,7 +107,6 @@ pub fn run(url: String) -> Result<()> {
                                 let headers = std::collections::BTreeMap::from([("name".into(), "clipd.command.executed".into())]);
                                 let _ = client.send_with_headers("noded", "topic.publish", &headers, &frame.to_string()).await;
                             }
-                        }
                     }
                     let _ = result.send(reply);
                     ctx.request_repaint();

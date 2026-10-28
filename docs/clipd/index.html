@@ -241,6 +241,11 @@ session's broker, under the name <code>clipd</code>. It connects using <code>WAY
 and <code>XDG_RUNTIME_DIR</code>, prefers ext-data-control-v1 and uses wlr data control
 v2 only when ext is absent. <code>--seat NAME</code> overrides the first non-agent seat.
 It watches both clipboard and PRIMARY without requiring keyboard focus.</p>
+<p>Mix has no native Wayland data-control binding or descriptor-passing primitive;
+this native protocol backend is a library with a <code>run(Args)</code> entry point and
+a thin executable wrapper, ready for the planned <code>mixosd</code> dispatcher. Its
+picker executable is located through the central MixOS path contract. Mix
+scripts access the clipboard through the Bus-backed builtins below.</p>
 <h2 id="commands-and-events">Commands and events</h2>
 <table><thead><tr><th>Command</th><th>Body and result</th></tr></thead><tbody>
 <tr><td><code>clipboard.get</code></td><td><code>{mime?, primary?, offset?}</code> → <code>{mime,data,encoding,size,offset,next_offset,eof,sensitive,stamp}</code></td></tr>

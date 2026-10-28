@@ -131,7 +131,15 @@ impl Driver {
                         if error.kind() == std::io::ErrorKind::Interrupted { continue; }
                         return Err(error.into());
                     }
-                    if fds[1].revents != 0 { let mut bytes = [0u8; 256]; while wake_read.read(&mut bytes).is_ok() {} }
+                    if fds[1].revents != 0 {
+                        let mut bytes = [0u8; 256];
+                        loop { match wake_read.read(&mut bytes) {
+                            Ok(0) => return Ok(()),
+                            Ok(_) => {},
+                            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => break,
+                            Err(error) => return Err(error.into()),
+                        } }
+                    }
                     if fds[0].revents != 0 { guard.read()?; } else { drop(guard); }
                 }
             })();
@@ -264,7 +272,7 @@ impl Dispatch<WlRegistry, GlobalListContents> for State {
 }
 impl Dispatch<WlSeat, ()> for State {
     fn event(state: &mut Self, seat: &WlSeat, event: wayland_client::protocol::wl_seat::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {
-        if let wayland_client::protocol::wl_seat::Event::Name { name } = event { if let Some((_, old)) = state.seats.iter_mut().find(|(s, _)| s == seat) { *old = name; } }
+        if let wayland_client::protocol::wl_seat::Event::Name { name } = event && let Some((_, old)) = state.seats.iter_mut().find(|(s, _)| s == seat) { *old = name; }
     }
 }
 macro_rules! dispatch_control {

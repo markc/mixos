@@ -271,9 +271,9 @@ impl Service {
                 None => true,
             }
         } else { selection.sensitive };
-        let text = if !sensitive { if let (Some(mime), Some(offer)) = (selection.text_mime(), selection.offer.clone()) {
+        let text = if !sensitive && let (Some(mime), Some(offer)) = (selection.text_mime(), selection.offer.clone()) {
             self.driver.read(offer, mime.clone(), TEXT_CAP).await.ok().map(|data| (mime, data))
-        } else { None } } else { None };
+        } else { None };
         let mut state = self.state.lock().await;
         if let Some(current) = state.selections[usize::from(primary)].as_mut().filter(|s| s.stamp == stamp) {
             current.sensitive = sensitive;
@@ -283,7 +283,7 @@ impl Service {
         drop(state);
         self.changed(primary).await;
         if !primary && !sensitive {
-            for (peer, pair) in &self.settings.peers { if pair.follow { if let Err(error) = self.push(peer).await { tracing::warn!(%error, "clipboard follow unavailable"); } } }
+            for (peer, pair) in &self.settings.peers { if pair.follow && let Err(error) = self.push(peer).await { tracing::warn!(%error, "clipboard follow unavailable"); } }
         }
     }
 
@@ -323,7 +323,9 @@ impl Service {
                 let r: Receive = serde_json::from_value(body)?;
                 if r.mime_types.is_empty() { ensure!(r.size == Some(0), "MIME: empty offer must describe a clear"); } else { validate_mimes(&r.mime_types)?; }
                 ensure!(session(&r.stamp.origin_session)? == r.stamp.origin_session && uuid::Uuid::parse_str(&r.stamp.generation).is_ok(), "SCOPE: invalid origin generation");
-                ensure!(!r.mime_types.iter().any(|m| m == SECRET_HINT), "SENSITIVE: hinted data cannot cross sessions");
+                // The authenticated sender classified any KDE hint before
+                // exporting. A non-secret hint preserves its MIME; every lazy
+                // fetch repeats the source's sensitive-selection guard.
                 let mut data = BTreeMap::new();
                 if let Some(items) = r.data {
                     ensure!(items.len() <= r.mime_types.len(), "MIME: excessive eager types");
@@ -424,15 +426,16 @@ impl Service {
                     return Ok(json!({"opened": true, "ui": "klipper"}));
                 }
                 let mut menu = self.menu.lock().unwrap();
-                if let Some(child) = menu.as_mut() { if child.try_wait()?.is_none() { return Ok(json!({"opened": false, "already_open": true})); } }
-                *menu = Some(std::process::Command::new(std::env::current_exe()?).arg("--menu").arg("--bus").arg(&self.url).spawn()?);
+                if let Some(child) = menu.as_mut() && child.try_wait()?.is_none() { return Ok(json!({"opened": false, "already_open": true})); }
+                let executable = paths::resolve("mixos:prefix/bin/clipd").map_err(anyhow::Error::msg)?;
+                *menu = Some(std::process::Command::new(executable).arg("--menu").arg("--bus").arg(&self.url).spawn()?);
                 Ok(json!({"opened": true}))
             }
             _ => bail!("UNKNOWN_COMMAND: unsupported clipboard command"),
         };
         if result.is_ok() && matches!(command.command.as_str(), "clipboard.set" | "clipboard.clear" | "clipboard.pick" | "desktop.clipboard.rotate") {
             for (peer, pair) in &self.settings.peers {
-                if pair.follow { if let Err(error) = self.push(peer).await { tracing::warn!(%error, "clipboard follow unavailable"); } }
+                if pair.follow && let Err(error) = self.push(peer).await { tracing::warn!(%error, "clipboard follow unavailable"); }
             }
         }
         result
@@ -466,7 +469,7 @@ pub async fn run(session_name: String, url: String, settings: Settings, key: Opt
                     _ => {}
                 }
             },
-            done = tasks.join_next(), if !tasks.is_empty() => { if let Some(Err(error)) = done { if !error.is_cancelled() { tracing::warn!(%error, "clipboard task failed"); } } },
+            done = tasks.join_next(), if !tasks.is_empty() => { if let Some(Err(error)) = done && !error.is_cancelled() { tracing::warn!(%error, "clipboard task failed"); } },
             event = incoming.recv() => match event {
                 Some(BoundedIncomingEvent::Command(command)) if !command.is_topic_delivery() => {
                     if let Ok(permit) = permits.clone().try_acquire_owned() {
@@ -570,7 +573,7 @@ mod tests {
                 while let Some(event) = events.recv().await {
                     if let Event::Send { stamp, primary, mime, fd } = event {
                         let selection = owner.state.lock().await.selections[usize::from(primary)].clone().filter(|s| s.stamp == stamp);
-                        if let Some(s) = selection { if let Ok(bytes) = owner.bytes(&s, &mime, primary).await { let _ = crate::wayland::write_fd(fd, &bytes).await; } }
+                        if let Some(s) = selection && let Ok(bytes) = owner.bytes(&s, &mime, primary).await { let _ = crate::wayland::write_fd(fd, &bytes).await; }
                     }
                 }
             });

@@ -6,6 +6,12 @@ and `XDG_RUNTIME_DIR`, prefers ext-data-control-v1 and uses wlr data control
 v2 only when ext is absent. `--seat NAME` overrides the first non-agent seat.
 It watches both clipboard and PRIMARY without requiring keyboard focus.
 
+Mix has no native Wayland data-control binding or descriptor-passing primitive;
+this native protocol backend is a library with a `run(Args)` entry point and
+a thin executable wrapper, ready for the planned `mixosd` dispatcher. Its
+picker executable is located through the central MixOS path contract. Mix
+scripts access the clipboard through the Bus-backed builtins below.
+
 ## Commands and events
 
 | Command | Body and result |
