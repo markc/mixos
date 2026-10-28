@@ -184,9 +184,13 @@ mod tests {
     #[test]
     fn font_choices_survive_an_unsupported_design() {
         let session = Theme::embedded();
-        for mut appearance in [appearance("no-such-scheme"), Appearance {
-            source: Some("{}".into()), ..Appearance::default()
-        }] {
+        for mut appearance in [
+            appearance("no-such-scheme"),
+            Appearance {
+                source: Some("{}".into()),
+                ..Appearance::default()
+            },
+        ] {
             appearance.font_weight = Some(700);
             appearance.font_size = Some(18.0);
             let chosen = theme_or(&appearance, &session);

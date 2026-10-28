@@ -89,14 +89,38 @@ fn interface_font_refusal() {
     let mut e = appearance_engine();
     e.set_section(Section::TextAndFonts);
     e.edit_interface_font(preferences::text::InterfaceEdit::Size(Some(16.0)));
-    let ticket = e.take_effects().into_iter().find_map(|effect| match effect {
-        Effect::Settings { ticket, .. } => Some(ticket), _ => None,
-    }).expect("the font apply");
-    e.settled(ticket, Ok(Reply { rc: 10, body: json!({"status":"validation_failed",
-        "diagnostics":[{"path":"appearance.font_size", "message":"Unknown field or scope"}]
-    }).to_string(), error: None }));
-    assert!(e.look.problem.as_ref().unwrap().contains("Unknown field or scope"));
-    draw_at_size(chrome(Scheme::Studio, Mode::Dark), "interface_font_refusal", e, egui::vec2(980.0, 960.0));
+    let ticket = e
+        .take_effects()
+        .into_iter()
+        .find_map(|effect| match effect {
+            Effect::Settings { ticket, .. } => Some(ticket),
+            _ => None,
+        })
+        .expect("the font apply");
+    e.settled(
+        ticket,
+        Ok(Reply {
+            rc: 10,
+            body: json!({"status":"validation_failed",
+                "diagnostics":[{"path":"appearance.font_size", "message":"Unknown field or scope"}]
+            })
+            .to_string(),
+            error: None,
+        }),
+    );
+    assert!(
+        e.look
+            .problem
+            .as_ref()
+            .unwrap()
+            .contains("Unknown field or scope")
+    );
+    draw_at_size(
+        chrome(Scheme::Studio, Mode::Dark),
+        "interface_font_refusal",
+        e,
+        egui::vec2(980.0, 960.0),
+    );
 }
 
 #[test]

@@ -163,7 +163,11 @@ mod tests {
     #[test]
     fn each_control_sends_its_own_path_and_value() {
         let cases = [
-            (Setting::Family(Some("JetBrains Mono".into())), "terminal.font.family", json!("JetBrains Mono")),
+            (
+                Setting::Family(Some("JetBrains Mono".into())),
+                "terminal.font.family",
+                json!("JetBrains Mono"),
+            ),
             (Setting::Size(14.5), "terminal.font.size", json!(14.5)),
             (Setting::Weight(700), "terminal.font.weight", json!(700)),
             (Setting::Padding(16), "terminal.padding", json!(16)),
@@ -211,8 +215,12 @@ mod tests {
         ];
         for (setting, path, value) in cases {
             assert_eq!(setting.edit(), Edit::Set(path, value.clone()), "{path}");
-            let next = settings::resolve::patch(&settings::Desktop::default(),
-                &std::collections::BTreeMap::from([(path.into(), value)]), &[]).unwrap();
+            let next = settings::resolve::patch(
+                &settings::Desktop::default(),
+                &std::collections::BTreeMap::from([(path.into(), value)]),
+                &[],
+            )
+            .unwrap();
             settings::resolve(&next).unwrap();
         }
     }

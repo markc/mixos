@@ -116,7 +116,10 @@ pub(crate) fn build(snapshot: &Snapshot) -> Result<Look, Diagnostic> {
         title.weight
     };
     let ui = design::active_typography(Some(theme.typography()), TypographyRole::Ui);
-    let size_ratio = theme.overlay().size.map_or(1.0, |size| size / ui.font_size as f32);
+    let size_ratio = theme
+        .overlay()
+        .size
+        .map_or(1.0, |size| size / ui.font_size as f32);
     let family = match title.generic {
         TypographyGeneric::Monospace => DecoFontFamily::Monospace,
         _ if title.family.is_empty() || title.family == "Inter" => DecoFontFamily::SystemUi,
@@ -234,7 +237,8 @@ mod tests {
         let initial = snapshot_of(settings::Desktop::default());
         let plain = build(&initial).unwrap();
         assert_eq!(plain.theme.overlay(), &Overlay::default());
-        let title = design::active_typography(Some(plain.theme.typography()), TypographyRole::UiDisplay);
+        let title =
+            design::active_typography(Some(plain.theme.typography()), TypographyRole::UiDisplay);
         for style in ChromeStyle::ALL {
             let chrome = plain.chrome(style);
             assert_eq!(chrome.deco.metrics.title_font_weight.0, title.weight);
@@ -248,7 +252,8 @@ mod tests {
             desktop.appearance.font_size = Some(18.0);
             desktop.ui.text_scale = 1.5;
             let next = snapshot_of(desktop);
-            let changes = settings::domains::ChangePlan::between(Some(&initial), &next, CONTEXT, true);
+            let changes =
+                settings::domains::ChangePlan::between(Some(&initial), &next, CONTEXT, true);
             assert!(changes.resources && changes.text && changes.layout);
             let look = build(&next).unwrap();
             assert_eq!(look.theme.overlay().weight, Some(weight));
@@ -257,17 +262,37 @@ mod tests {
             install(&ctx, &look.theme, look.text_scale, false);
             let ui = design::active_typography(Some(plain.theme.typography()), TypographyRole::Ui);
             let ratio = 18.0 / ui.font_size as f32 * 1.5;
-            for text in [egui::TextStyle::Body, egui::TextStyle::Button, egui::TextStyle::Small, egui::TextStyle::Heading] {
-                assert!((ctx.global_style().text_styles[&text].size
-                    - unscaled.global_style().text_styles[&text].size * ratio).abs() < 0.001);
+            for text in [
+                egui::TextStyle::Body,
+                egui::TextStyle::Button,
+                egui::TextStyle::Small,
+                egui::TextStyle::Heading,
+            ] {
+                assert!(
+                    (ctx.global_style().text_styles[&text].size
+                        - unscaled.global_style().text_styles[&text].size * ratio)
+                        .abs()
+                        < 0.001
+                );
             }
-            let _ = ctx.run_ui(Default::default(), |ui| ui.fonts(|fonts| {
-                assert_eq!(fonts.definitions().families[&egui::FontFamily::Proportional][0], toolkit::fonts::inter_face(weight).0);
-            }));
+            let _ = ctx.run_ui(Default::default(), |ui| {
+                ui.fonts(|fonts| {
+                    assert_eq!(
+                        fonts.definitions().families[&egui::FontFamily::Proportional][0],
+                        toolkit::fonts::inter_face(weight).0
+                    );
+                })
+            });
             for style in ChromeStyle::ALL {
                 let chrome = look.chrome(style);
-                assert_eq!(chrome.deco.metrics.title_font_weight.0, toolkit::fonts::weights(&look.theme).1);
-                assert!((chrome.deco.metrics.title_size_px - title.font_size as f32 * ratio).abs() < 0.001);
+                assert_eq!(
+                    chrome.deco.metrics.title_font_weight.0,
+                    toolkit::fonts::weights(&look.theme).1
+                );
+                assert!(
+                    (chrome.deco.metrics.title_size_px - title.font_size as f32 * ratio).abs()
+                        < 0.001
+                );
             }
         }
     }

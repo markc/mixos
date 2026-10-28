@@ -159,9 +159,12 @@ mod tests {
     fn offered_weights_install_distinct_faces_and_clamp_the_display_offset() {
         let mut faces = std::collections::BTreeSet::new();
         for &weight in INTER_WEIGHTS {
-            let theme = Theme::embedded().with_overlay(crate::theme::Overlay {
-                weight: Some(weight), ..Default::default()
-            }).unwrap();
+            let theme = Theme::embedded()
+                .with_overlay(crate::theme::Overlay {
+                    weight: Some(weight),
+                    ..Default::default()
+                })
+                .unwrap();
             let fonts = definitions(&theme);
             assert!(faces.insert(fonts.families[&FontFamily::Proportional][0].clone()));
             assert_eq!(weights(&theme).1, (weight + 200).min(700));
@@ -172,23 +175,41 @@ mod tests {
     fn heavier_faces_rasterise_with_strictly_more_coverage() {
         let mut previous = 0;
         for &weight in INTER_WEIGHTS {
-            let theme = Theme::embedded().with_overlay(crate::theme::Overlay {
-                weight: Some(weight), ..Default::default()
-            }).unwrap();
+            let theme = Theme::embedded()
+                .with_overlay(crate::theme::Overlay {
+                    weight: Some(weight),
+                    ..Default::default()
+                })
+                .unwrap();
             let ctx = egui::Context::default();
             install(&ctx, &theme);
             let output = ctx.run_ui(egui::RawInput::default(), |ui| {
                 ui.fonts_mut(|fonts| {
-                    let _ = fonts.layout_no_wrap("MixOS Preferences Hamburgefonts 0123456789".into(),
-                        FontId::proportional(24.0), egui::Color32::WHITE);
+                    let _ = fonts.layout_no_wrap(
+                        "MixOS Preferences Hamburgefonts 0123456789".into(),
+                        FontId::proportional(24.0),
+                        egui::Color32::WHITE,
+                    );
                 });
             });
-            let coverage: u64 = output.textures_delta.set.iter().map(|(_, delta)| {
-                let egui::ImageData::Color(image) = &delta.image;
-                image.pixels.iter().map(|pixel| u64::from(pixel.a())).sum::<u64>()
-            }).sum();
+            let coverage: u64 = output
+                .textures_delta
+                .set
+                .iter()
+                .map(|(_, delta)| {
+                    let egui::ImageData::Color(image) = &delta.image;
+                    image
+                        .pixels
+                        .iter()
+                        .map(|pixel| u64::from(pixel.a()))
+                        .sum::<u64>()
+                })
+                .sum();
             eprintln!("Inter {weight}: atlas coverage {coverage}");
-            assert!(coverage > previous, "weight {weight}: {coverage} <= {previous}");
+            assert!(
+                coverage > previous,
+                "weight {weight}: {coverage} <= {previous}"
+            );
             previous = coverage;
         }
     }

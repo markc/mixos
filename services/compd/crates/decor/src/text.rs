@@ -185,11 +185,21 @@ mod tests {
     fn every_offered_weight_draws_a_heavier_title() {
         let mut previous = 0;
         for &weight in toolkit::fonts::INTER_WEIGHTS {
-            let mask = title_mask("MixOS Preferences Hamburgefonts 0123456789",
-                &DecoFontFamily::SystemUi, 24.0, weight, 2000.0, 1.0).unwrap();
+            let mask = title_mask(
+                "MixOS Preferences Hamburgefonts 0123456789",
+                &DecoFontFamily::SystemUi,
+                24.0,
+                weight,
+                2000.0,
+                1.0,
+            )
+            .unwrap();
             let coverage: u64 = mask.alpha.iter().map(|&a| u64::from(a)).sum();
             eprintln!("Inter {weight}: title coverage {coverage}");
-            assert!(coverage > previous, "weight {weight}: {coverage} <= {previous}");
+            assert!(
+                coverage > previous,
+                "weight {weight}: {coverage} <= {previous}"
+            );
             previous = coverage;
         }
     }

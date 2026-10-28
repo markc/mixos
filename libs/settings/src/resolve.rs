@@ -712,7 +712,10 @@ mod tests {
         let sized = patch(&initial, &BTreeMap::from([(path.into(), json!(16.0))]), &[]).unwrap();
         let snapshot = Snapshot {
             schema: SCHEMA,
-            binding: Binding { instance: "example".into(), profile: "default".into() },
+            binding: Binding {
+                instance: "example".into(),
+                profile: "default".into(),
+            },
             incarnation: "test".into(),
             revision: Revision(2),
             design_revision: Revision(1),
@@ -722,13 +725,26 @@ mod tests {
         };
         assert_eq!(Summary::of(&snapshot).appearance.font_size, Some(16.0));
         assert_eq!(snapshot.effective["desktop"].font_size, Some(16.0));
-        assert_eq!(patch(&sized, &BTreeMap::new(), &[path.into()]).unwrap(), initial);
-        assert_eq!(patch(&sized, &BTreeMap::from([(path.into(), Value::Null)]), &[]).unwrap(), initial);
+        assert_eq!(
+            patch(&sized, &BTreeMap::new(), &[path.into()]).unwrap(),
+            initial
+        );
+        assert_eq!(
+            patch(&sized, &BTreeMap::from([(path.into(), Value::Null)]), &[]).unwrap(),
+            initial
+        );
         for size in [8.9, 18.1] {
             let bad = patch(&initial, &BTreeMap::from([(path.into(), json!(size))]), &[]).unwrap();
             assert_eq!(resolve(&bad).unwrap_err()[0].path, path);
         }
-        assert!(patch(&initial, &BTreeMap::from([(path.into(), json!("large"))]), &[]).is_err());
+        assert!(
+            patch(
+                &initial,
+                &BTreeMap::from([(path.into(), json!("large"))]),
+                &[]
+            )
+            .is_err()
+        );
     }
     /// The premise of the shared compile: with the embedded source, every
     /// built-in app compiles to exactly what no app does.

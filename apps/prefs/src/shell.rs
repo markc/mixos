@@ -232,17 +232,28 @@ pub struct Shell {
 type Deliveries = futures::channel::mpsc::Receiver<Delivery>;
 
 /// The window's own theme choice and the look under it.
-type Installed = (toolkit::theme_menu::Choice, Option<Look>, bool, Option<preferences::appearance::InterfaceFont>);
+type Installed = (
+    toolkit::theme_menu::Choice,
+    Option<Look>,
+    bool,
+    Option<preferences::appearance::InterfaceFont>,
+);
 
 fn interface_theme(theme: Theme, font: Option<&preferences::appearance::InterfaceFont>) -> Theme {
-    let Some(font) = font else { return theme; };
+    let Some(font) = font else {
+        return theme;
+    };
     let selected = toolkit::theme::Overlay::from_appearance(&settings::Appearance {
-        font_weight: font.weight, font_size: font.size, ..Default::default()
+        font_weight: font.weight,
+        font_size: font.size,
+        ..Default::default()
     });
     let mut overlay = theme.overlay().clone();
     overlay.weight = selected.weight;
     overlay.size = selected.size;
-    theme.with_overlay(overlay).expect("the theme's style overlay is already valid")
+    theme
+        .with_overlay(overlay)
+        .expect("the theme's style overlay is already valid")
 }
 
 fn locked(inbox: &Mutex<Deliveries>) -> std::sync::MutexGuard<'_, Deliveries> {
@@ -709,11 +720,17 @@ mod tests {
     #[test]
     fn preferences_draws_its_accepted_interface_font() {
         let base = toolkit::Theme::embedded();
-        let font = preferences::appearance::InterfaceFont { weight: Some(700), size: Some(18.0) };
+        let font = preferences::appearance::InterfaceFont {
+            weight: Some(700),
+            size: Some(18.0),
+        };
         let chosen = super::interface_theme(base.clone(), Some(&font));
         assert_eq!(chosen.overlay().weight, Some(700));
         assert_eq!(chosen.overlay().size, Some(18.0));
-        assert_ne!(toolkit::style::style(&base).text_styles, toolkit::style::style(&chosen).text_styles);
+        assert_ne!(
+            toolkit::style::style(&base).text_styles,
+            toolkit::style::style(&chosen).text_styles
+        );
         assert_eq!(super::interface_theme(base.clone(), None), base);
     }
     use super::*;

@@ -1857,9 +1857,13 @@ mod tests {
     fn refused_interface_apply_stays_visible_after_the_followup_read() {
         let mut e = read();
         e.edit_interface_font(crate::text::InterfaceEdit::Size(Some(16.0)));
-        answer_next(&mut e, 10, json!({"status":"validation_failed", "diagnostics":[{
-            "path":"appearance.font_size", "code":"validation_failed", "message":"Unknown field or scope"
-        }]}));
+        answer_next(
+            &mut e,
+            10,
+            json!({"status":"validation_failed", "diagnostics":[{
+                "path":"appearance.font_size", "code":"validation_failed", "message":"Unknown field or scope"
+            }]}),
+        );
         let problem = e.look.problem.clone().expect("the refusal is displayed");
         assert!(problem.contains("Unknown field or scope"));
         assert_eq!(e.look.problem_source, Some(crate::Section::TextAndFonts));
