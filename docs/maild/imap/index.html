@@ -271,7 +271,9 @@ searches can still match these messages. Unreadable content produces
 parts with base64 transfer encoding. This keeps ordinary BODY responses valid
 IMAP strings; BINARY returns the original decoded octets. Unsupported binary
 encodings or NUL in message headers fail with UNKNOWN-CTE. UTF8=ACCEPT also
-supports the <code>UTF8 (~{N}...)</code> APPEND form.</p>
+supports the <code>UTF8 (~{N}...)</code> APPEND form.
+Embedded-message reparsing shares a 64-level budget across binary APPEND
+normalisation (<code>binary_append_bounds_reparsed_message_nesting</code>).</p>
 <p>Capabilities come from an implementation allowlist. Operator overrides can
 select a subset but cannot add unimplemented extensions. APPENDLIMIT always
 comes from <code>imap_max_literal_bytes</code>. LITERAL+ permits non-synchronising literals

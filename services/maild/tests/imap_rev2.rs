@@ -1711,6 +1711,27 @@ async fn uidvalidity_does_not_repeat_on_rapid_or_legacy_mailbox_recreation() -> 
 }
 
 #[tokio::test]
+async fn binary_append_bounds_reparsed_message_nesting() -> Result<()> {
+    let (_tmp, db, _mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
+    let (mut r, mut w) = selected(ms.clone(), db).await?;
+    let mut raw = b"Content-Type: application/octet-stream\r\nContent-Transfer-Encoding: binary\r\n\r\na\0b".to_vec();
+    for _ in 0..100 {
+        let mut outer = b"Content-Type: message/rfc822\r\n\r\n".to_vec();
+        outer.extend_from_slice(&raw);
+        raw = outer;
+    }
+    let mut wire = format!("a APPEND INBOX ~{{{}+}}\r\n", raw.len()).into_bytes();
+    wire.extend_from_slice(&raw);
+    wire.extend_from_slice(b"\r\n");
+    let response = exchange(&mut r, &mut w, "a", &wire).await?;
+    let response = String::from_utf8_lossy(&response);
+    assert!(response.contains("a NO [UNKNOWN-CTE]"), "{response}");
+    assert!(command(&mut r, &mut w, "n", "NOOP").await?.contains("n OK"));
+    assert!(ms.list_mailboxes(1)?.iter().all(|mailbox| mailbox.total_emails == 0));
+    Ok(())
+}
+
+#[tokio::test]
 async fn binary_quoted_printable_discards_transport_padding_and_keeps_encoded_spaces() -> Result<()>
 {
     let (_tmp, db, mds, ms) = make_fixture("alice@example.com", "hunter2").await?;

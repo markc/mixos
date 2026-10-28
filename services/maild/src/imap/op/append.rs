@@ -272,10 +272,19 @@ pub async fn handle_many(
 /// permits changing the transfer encoding during binary APPEND. Encode raw
 /// binary leaf bodies without changing their decoded octets or other headers.
 fn normalise_binary_message(raw: &[u8]) -> Result<Vec<u8>, ()> {
+    normalise_binary_message_at_depth(raw, 0)
+}
+
+fn normalise_binary_message_at_depth(raw: &[u8], depth: usize) -> Result<Vec<u8>, ()> {
     use base64::Engine;
     use mail_parser::{MimeHeaders, PartType};
     if !raw.contains(&0) {
         return Ok(raw.to_vec());
+    }
+    // Reparsing an embedded message resets mail_parser's own nesting budget.
+    // Keep one budget across the complete APPEND normalisation.
+    if depth >= 64 {
+        return Err(());
     }
     let message = MessageParser::default().parse(raw).ok_or(())?;
     let mut replacements: Vec<(usize, usize, Vec<u8>)> = Vec::new();
@@ -295,7 +304,7 @@ fn normalise_binary_message(raw: &[u8]) -> Result<Vec<u8>, ()> {
             PartType::Multipart(_) => continue,
             PartType::Message(inner) => (
                 "8bit",
-                normalise_binary_message(inner.raw_message.as_ref())?,
+                normalise_binary_message_at_depth(inner.raw_message.as_ref(), depth + 1)?,
             ),
             _ => {
                 let cte = part.content_transfer_encoding().unwrap_or("7bit");

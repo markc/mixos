@@ -40,6 +40,8 @@ parts with base64 transfer encoding. This keeps ordinary BODY responses valid
 IMAP strings; BINARY returns the original decoded octets. Unsupported binary
 encodings or NUL in message headers fail with UNKNOWN-CTE. UTF8=ACCEPT also
 supports the `UTF8 (~{N}...)` APPEND form.
+Embedded-message reparsing shares a 64-level budget across binary APPEND
+normalisation (`binary_append_bounds_reparsed_message_nesting`).
 
 Capabilities come from an implementation allowlist. Operator overrides can
 select a subset but cannot add unimplemented extensions. APPENDLIMIT always
