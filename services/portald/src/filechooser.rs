@@ -596,6 +596,58 @@ impl FileChooser {
     }
 }
 
+#[zbus::interface(name = "org.freedesktop.portal.FileChooser")]
+impl FileChooser {
+    #[zbus(property, name = "version")]
+    fn version(&self) -> u32 {
+        VERSION
+    }
+
+    #[zbus(name = "OpenFile")]
+    async fn open_file(
+        &self,
+        parent_window: &str,
+        title: &str,
+        options: Options,
+        #[zbus(header)] header: Header<'_>,
+        #[zbus(connection)] connection: &Connection,
+    ) -> Result<ResponseDispatchNotifier<OwnedObjectPath>, PortalError> {
+        self.begin("open", parent_window, title, options, header, connection)
+            .await
+    }
+    #[zbus(name = "SaveFile")]
+    async fn save_file(
+        &self,
+        parent_window: &str,
+        title: &str,
+        options: Options,
+        #[zbus(header)] header: Header<'_>,
+        #[zbus(connection)] connection: &Connection,
+    ) -> Result<ResponseDispatchNotifier<OwnedObjectPath>, PortalError> {
+        self.begin("save", parent_window, title, options, header, connection)
+            .await
+    }
+    #[zbus(name = "SaveFiles")]
+    async fn save_files(
+        &self,
+        parent_window: &str,
+        title: &str,
+        options: Options,
+        #[zbus(header)] header: Header<'_>,
+        #[zbus(connection)] connection: &Connection,
+    ) -> Result<ResponseDispatchNotifier<OwnedObjectPath>, PortalError> {
+        self.begin(
+            "save_files",
+            parent_window,
+            title,
+            options,
+            header,
+            connection,
+        )
+        .await
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -672,54 +724,3 @@ mod tests {
     }
 }
 
-#[zbus::interface(name = "org.freedesktop.portal.FileChooser")]
-impl FileChooser {
-    #[zbus(property, name = "version")]
-    fn version(&self) -> u32 {
-        VERSION
-    }
-
-    #[zbus(name = "OpenFile")]
-    async fn open_file(
-        &self,
-        parent_window: &str,
-        title: &str,
-        options: Options,
-        #[zbus(header)] header: Header<'_>,
-        #[zbus(connection)] connection: &Connection,
-    ) -> Result<ResponseDispatchNotifier<OwnedObjectPath>, PortalError> {
-        self.begin("open", parent_window, title, options, header, connection)
-            .await
-    }
-    #[zbus(name = "SaveFile")]
-    async fn save_file(
-        &self,
-        parent_window: &str,
-        title: &str,
-        options: Options,
-        #[zbus(header)] header: Header<'_>,
-        #[zbus(connection)] connection: &Connection,
-    ) -> Result<ResponseDispatchNotifier<OwnedObjectPath>, PortalError> {
-        self.begin("save", parent_window, title, options, header, connection)
-            .await
-    }
-    #[zbus(name = "SaveFiles")]
-    async fn save_files(
-        &self,
-        parent_window: &str,
-        title: &str,
-        options: Options,
-        #[zbus(header)] header: Header<'_>,
-        #[zbus(connection)] connection: &Connection,
-    ) -> Result<ResponseDispatchNotifier<OwnedObjectPath>, PortalError> {
-        self.begin(
-            "save_files",
-            parent_window,
-            title,
-            options,
-            header,
-            connection,
-        )
-        .await
-    }
-}
