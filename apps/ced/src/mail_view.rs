@@ -20,12 +20,15 @@ pub fn strip(ui: &mut egui::Ui, app: &App, events: &mut Vec<UiEvent>) {
     let column = form::column(ui, ["mail-from", "mail-to", "mail-cc", "mail-bcc", "mail-reply-to", "mail-subject", "mail-in-reply-to", "mail-references", "mail-attachments"].map(label));
     let mut headers = mail.headers.clone();
     let before = headers.clone();
+    let show_cc = mail.show_cc || !headers.cc.is_empty();
+    let show_bcc = mail.show_bcc || !headers.bcc.is_empty();
+    let show_reply_to = mail.show_reply_to || !headers.reply_to.is_empty();
     ui.push_id((ui.ctx().viewport_id(), "ced.mail", tab.id), |ui| {
         ui.add_enabled_ui(!mail.sending && !mail.saving, |ui| {
             for (key, buffer, shown) in [
                 ("mail-from", &mut headers.from, true), ("mail-to", &mut headers.to, true),
-                ("mail-cc", &mut headers.cc, mail.show_cc), ("mail-bcc", &mut headers.bcc, mail.show_bcc),
-                ("mail-reply-to", &mut headers.reply_to, mail.show_reply_to),
+                ("mail-cc", &mut headers.cc, show_cc), ("mail-bcc", &mut headers.bcc, show_bcc),
+                ("mail-reply-to", &mut headers.reply_to, show_reply_to),
                 ("mail-subject", &mut headers.subject, true),
             ] {
                 if !shown { continue; }
@@ -33,7 +36,7 @@ pub fn strip(ui: &mut egui::Ui, app: &App, events: &mut Vec<UiEvent>) {
                 form::row(ui, &label(key), column, |ui, labelled| {
                     if key == "mail-to" {
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            for (field, icon, selected) in [("reply-to", toolkit::Icon::Reply, mail.show_reply_to), ("bcc", toolkit::Icon::EyeOff, mail.show_bcc), ("cc", toolkit::Icon::Copy, mail.show_cc)] {
+                            for (field, icon, selected) in [("reply-to", toolkit::Icon::Reply, show_reply_to), ("bcc", toolkit::Icon::EyeOff, show_bcc), ("cc", toolkit::Icon::Copy, show_cc)] {
                                 if ui.add(toolkit::button::IconButton::new(icon).size(toolkit::field::height_of(ui.ctx())).selected(selected).tooltip(label(&format!("mail-show-{field}")))).clicked() { events.push(UiEvent::MailRow(tab.id, field)); }
                             }
                             let width = ui.available_width();
