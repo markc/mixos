@@ -99,7 +99,12 @@ fn interface_font_selected() {
             ..Default::default()
         })
         .unwrap();
-    draw_at_size(theme, "interface_font_selected", e, egui::vec2(1100.0, 1100.0));
+    draw_at_size(
+        theme,
+        "interface_font_selected",
+        e,
+        egui::vec2(1100.0, 1100.0),
+    );
 }
 
 #[test]
