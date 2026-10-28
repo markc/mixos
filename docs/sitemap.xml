@@ -186,13 +186,16 @@
   <url><loc>https://mixos.dev/mix/changelog/</loc></url>
   <url><loc>https://mixos.dev/mix-shell/changelog/</loc></url>
   <url><loc>https://mixos.dev/mixos-mcp/changelog/</loc></url>
+  <url><loc>https://mixos.dev/monitor/changelog/</loc></url>
   <url><loc>https://mixos.dev/monitord/changelog/</loc></url>
   <url><loc>https://mixos.dev/noded/changelog/</loc></url>
   <url><loc>https://mixos.dev/prefs/changelog/</loc></url>
+  <url><loc>https://mixos.dev/screenshot/changelog/</loc></url>
   <url><loc>https://mixos.dev/settings/changelog/</loc></url>
   <url><loc>https://mixos.dev/settingsd/changelog/</loc></url>
   <url><loc>https://mixos.dev/term/changelog/</loc></url>
   <url><loc>https://mixos.dev/toolkit/changelog/</loc></url>
+  <url><loc>https://mixos.dev/workshop/changelog/</loc></url>
   <url><loc>https://mixos.dev/docs/desktop/</loc></url>
   <url><loc>https://mixos.dev/docs/server/</loc></url>
 </urlset>

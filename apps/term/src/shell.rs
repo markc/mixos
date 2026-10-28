@@ -97,6 +97,7 @@ pub struct Shell {
     theme: Theme,
     file_theme: Theme,
     look: Option<settings::Appearance>,
+    custom_source: bool,
     common_ui: settings::model::CommonUi,
     follower: settings::follow::Follower,
     look_topic: String,
@@ -139,6 +140,7 @@ impl Shell {
             file_theme: theme.clone(),
             theme,
             look: None,
+            custom_source: false,
             common_ui: settings::model::CommonUi::default(),
             follower: settings::follow::Follower::new(&hostname()),
             look_topic: settings::summary_topic(settings::follow::PROFILE),
@@ -377,7 +379,7 @@ impl Shell {
         self.base = self
             .look
             .as_ref()
-            .map(|look| toolkit::session_look::theme_or(look, &self.file_theme))
+            .map(|look| toolkit::session_look::follow(look, self.custom_source, &self.file_theme))
             .unwrap_or_else(|| self.file_theme.clone())
             .with_ui(self.common_ui.clone());
         self.installed = None;
@@ -417,7 +419,8 @@ impl Shell {
                 let family = terminal.font_family(&appearance).map(str::to_owned);
                 self.app
                     .apply_terminal(&terminal, family.as_deref(), self.font.pending.is_some());
-                self.look = (!custom_source).then_some(*appearance);
+                self.custom_source = custom_source;
+                self.look = Some(*appearance);
                 self.set_base();
             }
             Some(settings::follow::Followed::Missing) if self.look.is_some() => {

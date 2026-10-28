@@ -8,6 +8,11 @@ generated: by docs/_build/gen-site.mix from apps/term/CHANGELOG.md; do not edit
 
 > Mirrored from [`apps/term/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/apps/term/CHANGELOG.md), where releases update it. The component's page is [term](README.md). This page describes the current `main` branch of MixOS.
 
+## Unreleased — 2026-10-28
+
+- Follow session font size and weight with a custom design package, keeping
+  the theme file design beneath profile framing, menus and title band.
+
 ## 0.4.0
 
 The window is egui on wgpu, its grid drawn on the GPU by `term-render`.

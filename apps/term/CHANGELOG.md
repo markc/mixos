@@ -1,5 +1,10 @@
 # Terminal Bus contract
 
+## Unreleased — 2026-10-28
+
+- Follow session font size and weight with a custom design package, keeping
+  the theme file design beneath profile framing, menus and title band.
+
 ## 0.4.0
 
 The window is egui on wgpu, its grid drawn on the GPU by `term-render`.

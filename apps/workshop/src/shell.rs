@@ -215,6 +215,7 @@ pub struct Shell {
     file_theme: Theme,
     /// The session look settingsd holds, once read.
     look: Option<settings::Appearance>,
+    custom_source: bool,
     common_ui: settings::model::CommonUi,
     /// The profile's bindings for Workshop, as last applied.
     keymap: toolkit::keymap::Overrides,
@@ -350,6 +351,7 @@ impl Shell {
             inbox,
             installed: toolkit::theme_menu::Choice::default(),
             look: None,
+            custom_source: false,
             common_ui: settings::model::CommonUi::default(),
             keymap: toolkit::keymap::Overrides::new(),
             follower: settings::follow::Follower::new(&hostname()),
@@ -987,7 +989,7 @@ impl Shell {
     fn session_theme(&self) -> Theme {
         self.look
             .as_ref()
-            .map(|look| toolkit::session_look::theme_or(look, &self.file_theme))
+            .map(|look| toolkit::session_look::follow(look, self.custom_source, &self.file_theme))
             .unwrap_or_else(|| self.file_theme.clone())
             .with_ui(self.common_ui.clone())
     }
@@ -1007,6 +1009,11 @@ impl Shell {
     /// `None`; the window's own choice stays on top. `workshop.theme`
     /// reports it as the effective session at once.
     pub fn set_look(&mut self, look: Option<settings::Appearance>) {
+        self.follow_look(look, false);
+    }
+
+    fn follow_look(&mut self, look: Option<settings::Appearance>, custom_source: bool) {
+        self.custom_source = custom_source;
         self.look = look;
         self.theme = self.session_theme();
         self.install_theme();
@@ -1055,8 +1062,7 @@ impl Shell {
             .map(|r| (r.rc, r.body.as_str(), r.error.as_deref()));
         let (followed, next) = self.follower.answered(ticket, answer);
         match followed {
-            // A profile naming its own design source keeps the theme file,
-            // as `session_look` does for one it cannot draw.
+            // Keep the file design for a custom source, with profile choices on top.
             Some(settings::follow::Followed::Look {
                 appearance,
                 ui,
@@ -1066,7 +1072,7 @@ impl Shell {
             }) => {
                 toolkit::debug!(app = "workshop", "settings applied");
                 self.common_ui = ui;
-                self.set_look((!custom_source).then_some(*appearance));
+                self.follow_look(Some(*appearance), custom_source);
                 self.set_keymap(keymaps.get(APP).cloned().unwrap_or_default());
             }
             // settingsd gone: the look falls back to the theme file, but the
@@ -1242,6 +1248,82 @@ mod tests {
     use super::*;
     use inspector::model::Command;
     use inspector::{Selection, Snapshot};
+
+    #[test]
+    fn followed_custom_design_keeps_file_colours_and_installs_font_choices() {
+        let mut shell = test_shell();
+        shell.file_theme = Theme::for_context(design::DesignContext {
+            scheme: design::Scheme::Ocean,
+            mode: design::Mode::Light,
+            ..Default::default()
+        });
+        for (revision, custom_source) in [(10, true), (11, false), (12, true)] {
+            let appearance = settings::Appearance {
+                scheme: "forest".into(),
+                font_weight: Some(700),
+                font_size: Some(18.0),
+                decorations: "ssd".into(),
+                caption_side: "left".into(),
+                menu_style: "titlebar".into(),
+                menu_side: "right".into(),
+                window_style: "win11".into(),
+                ..Default::default()
+            };
+            let expected = if custom_source {
+                shell.file_theme.clone()
+            } else {
+                toolkit::session_look::theme(&appearance).unwrap()
+            };
+            let ticket = shell
+                .follower
+                .pending()
+                .unwrap_or_else(|| shell.follower.read().unwrap().ticket);
+            shell.looked(
+                ticket,
+                Ok(Reply {
+                    rc: 0,
+                    body: json!({"status":"current","summary":{
+                        "schema":1,"binding":shell.follower.binding(),
+                        "incarnation":"font-follow","revision":revision.to_string(),
+                        "design_revision":revision.to_string(),"source_digest":"d",
+                        "custom_source":custom_source,"appearance":appearance
+                    }})
+                    .to_string(),
+                    error: None,
+                }),
+            );
+            assert_eq!(shell.theme.dictionary(), expected.dictionary());
+            assert_eq!(shell.theme.scheme(), expected.scheme());
+            assert_eq!(shell.theme.mode(), expected.mode());
+            assert_eq!(shell.theme.overlay().weight, Some(700));
+            assert_eq!(shell.theme.overlay().size, Some(18.0));
+            assert_eq!(shell.theme.captions(), design::CaptionSide::Left);
+            assert_eq!(shell.theme.menu_style(), design::MenuStyle::Titlebar);
+            assert_eq!(shell.theme.menu_side(), design::MenuSide::Right);
+            assert_eq!(shell.theme.band(), toolkit::session_look::band(&appearance));
+            assert_eq!(
+                shell.theme.requested_decorations(),
+                design::RequestedDecorations::Server
+            );
+            assert_eq!(
+                shell.ctx.global_style().visuals.panel_fill,
+                toolkit::style::style(&expected).visuals.panel_fill
+            );
+            assert_eq!(
+                shell.ctx.global_style().text_styles[&egui::TextStyle::Body].size,
+                18.0
+            );
+            let _ = shell.ctx.run(Default::default(), |_| {});
+            assert_eq!(
+                shell.ctx.fonts(|fonts| {
+                    fonts.definitions().families[&egui::FontFamily::Proportional][0].clone()
+                }),
+                toolkit::fonts::inter_face(700).0
+            );
+            assert_eq!(shell.engine.session.scheme, expected.scheme());
+            assert_eq!(shell.engine.session.mode, expected.mode());
+        }
+    }
 
     fn test_shell() -> Shell {
         let (_, deliveries) = futures::channel::mpsc::channel(8);

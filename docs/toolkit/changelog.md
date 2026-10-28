@@ -11,6 +11,8 @@ generated: by docs/_build/gen-site.mix from libs/toolkit/CHANGELOG.md; do not ed
 
 ## Unreleased — 2026-10-28
 
+- Follow the summary custom-source flag explicitly, retaining the file design
+  and its overlay while applying profile framing, menus, band and fonts.
 - Bundle the unmodified Inter 4.1 Bold (700) face under the existing SIL OFL
   licence. Interface weights 300–700 select distinct faces; heading offsets
   clamp to that range. Headless coverage tests require each weight to draw

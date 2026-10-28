@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — 2026-10-28
+
+- Follow session font size and weight with a custom design package, keeping
+  the theme file design beneath profile framing, menus and title band.
+
 ## Unreleased
 
 - Share compose label sizing, rows, text fields and attachment chips with ced

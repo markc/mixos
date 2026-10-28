@@ -788,7 +788,7 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 | [mix-shell](../mix-shell/README.md) · [changelog](../mix-shell/changelog.md) | cli | unclassified | [`cli/mix-shell`](https://github.com/markc/mixos/tree/main/cli/mix-shell) | The Mix shell library, holding the interactive line editor, the command classifier, the native-session bootstrap and the Bus citizen runtime that the mix binary runs. |
 | [mixos-mcp](../mixos-mcp/README.md) · [changelog](../mixos-mcp/changelog.md) | cli | base | [`cli/mixos-mcp`](https://github.com/markc/mixos/tree/main/cli/mixos-mcp) | MCP stdio access to the native MixOS Bus. |
 | [mixtrayd](../mixtrayd/README.md) | service | unclassified | [`services/mixtrayd`](https://github.com/markc/mixos/tree/main/services/mixtrayd) |  |
-| [monitor](../monitor/README.md) | app | desktop | [`apps/monitor`](https://github.com/markc/mixos/tree/main/apps/monitor) | Monitor is the MixOS task manager, showing the processes and performance that monitord reports for this node or any node on the mesh, with End task and Kill for this node's processes. |
+| [monitor](../monitor/README.md) · [changelog](../monitor/changelog.md) | app | desktop | [`apps/monitor`](https://github.com/markc/mixos/tree/main/apps/monitor) | Monitor is the MixOS task manager, showing the processes and performance that monitord reports for this node or any node on the mesh, with End task and Kill for this node's processes. |
 | [monitord](../monitord/README.md) · [changelog](../monitord/changelog.md) | service | base | [`services/monitord`](https://github.com/markc/mixos/tree/main/services/monitord) | How monitord samples a host's CPU, memory, disks, network and processes, keeps history in memory and SQLite, and answers read commands on the Bus, so any node's load can be read from anywhere on the… |
 | [noded](../noded/README.md) · [changelog](../noded/changelog.md) | service | unclassified | [`services/noded`](https://github.com/markc/mixos/tree/main/services/noded) | The MixOS Bus broker, which handles service registration, discovery, routing, subscriptions, authenticated local session grants and mesh peering between nodes. |
 | [notifyd](../notifyd/README.md) | service | unclassified | [`services/notifyd`](https://github.com/markc/mixos/tree/main/services/notifyd) | How notifyd keeps the desk's notifications, shows them as toasts and in the Notifications page, and tells an agent or app which button the human pressed. |
@@ -798,7 +798,7 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 | [props](../props/README.md) | lib | none (library) | [`libs/props`](https://github.com/markc/mixos/tree/main/libs/props) | Property read types, revisions, namespace storage and native Bus routing for MixOS services. |
 | [releasesd](../releasesd/README.md) | service | unclassified | [`services/releasesd`](https://github.com/markc/mixos/tree/main/services/releasesd) | How releasesd follows upstream application releases on GitHub and installs their Linux builds per user, verified, with rollback, from the command line or the Bus. |
 | [scene](../scene/README.md) | lib | none (library) | [`libs/scene`](https://github.com/markc/mixos/tree/main/libs/scene) | The Mix Scenes document core, which parses, lints, resolves and diffs scene documents and their bindings without a renderer or interpreter. |
-| [screenshot](../screenshot/README.md) | app | unclassified | [`apps/screenshot`](https://github.com/markc/mixos/tree/main/apps/screenshot) | MixOS's screenshot app — Print Screen for a region, Shift+Print for the screen, Alt+Print for a window; arrows, boxes, pens, highlighter, text, numbered markers, crop and redaction that stay… |
+| [screenshot](../screenshot/README.md) · [changelog](../screenshot/changelog.md) | app | unclassified | [`apps/screenshot`](https://github.com/markc/mixos/tree/main/apps/screenshot) | MixOS's screenshot app — Print Screen for a region, Shift+Print for the screen, Alt+Print for a window; arrows, boxes, pens, highlighter, text, numbered markers, crop and redaction that stay… |
 | [settings](../settings/README.md) · [changelog](../settings/changelog.md) | lib | none (library) | [`libs/settings`](https://github.com/markc/mixos/tree/main/libs/settings) | Headless desktop settings types, validation, resolution and the shared consumer that apps and the compositor use to follow the settings authority. |
 | [settingsd](../settingsd/README.md) · [changelog](../settingsd/changelog.md) | service | unclassified | [`services/settingsd`](https://github.com/markc/mixos/tree/main/services/settingsd) | The headless desktop settings authority, the one writer for a session profile's settings, with durable receipts and retained change publication on the Bus. |
 | [strict](../strict/README.md) | lib | none (library) | [`libs/strict`](https://github.com/markc/mixos/tree/main/libs/strict) | The MixOS strict-data format, the grammar of conf.mix and data.mix files, loaded as data and never executed. |
@@ -810,7 +810,7 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 | [toolkit](../toolkit/README.md) · [changelog](../toolkit/changelog.md) | lib | none (library) | [`libs/toolkit`](https://github.com/markc/mixos/tree/main/libs/toolkit) | The shared shell for MixOS egui applications, giving every app the same theme, fonts, icons, title bar, menus, chrome components, command registry, Fluent strings and Bus drive commands. |
 | [toolsd](../toolsd/README.md) | service | server | [`services/toolsd`](https://github.com/markc/mixos/tree/main/services/toolsd) | Runs the tools webd's admin panel queues (whois, dig, traceroute, shwho) as an unprivileged drain, outside webd's sandbox. |
 | [webd](../webd/README.md) | service | server | [`services/webd`](https://github.com/markc/mixos/tree/main/services/webd) | Virtual hosts, CMS routes, embedded Mix handlers and ACME for the MixOS web service. |
-| [workshop](../workshop/README.md) | app | unclassified | [`apps/workshop`](https://github.com/markc/mixos/tree/main/apps/workshop) | Workshop is the MixOS desktop app that lists the services and commands on this node's Bus, shows each command's description and the mesh peers, and calls one command once with a JSON body. |
+| [workshop](../workshop/README.md) · [changelog](../workshop/changelog.md) | app | unclassified | [`apps/workshop`](https://github.com/markc/mixos/tree/main/apps/workshop) | Workshop is the MixOS desktop app that lists the services and commands on this node's Bus, shows each command's description and the mesh peers, and calls one command once with a JSON body. |
 
 ## Packages
 
@@ -38446,6 +38446,8 @@ written in Mix on `tcp_listen`.
 
 ## Unreleased — 2026-10-28
 
+- Follow session font size and weight with a custom design package, keeping
+  the theme file design beneath profile framing, menus and title band.
 - Isolate ordinary edit requests from shutdown replies and bound force-close
   waits separately, leaving time to deregister, refuse callers and flush the
   session. Close mail scratches even when quit overtakes their seeding;
@@ -38661,6 +38663,11 @@ written in Mix on `tcp_listen`.
 <!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
 # Changelog
 
+## Unreleased — 2026-10-28
+
+- Follow session font size and weight with a custom design package, keeping
+  the theme file design beneath profile framing, menus and title band.
+
 ## Unreleased — 2026-10-27
 
 - Fix chooser name-field Enter and initial selection, Escape precedence,
@@ -38725,6 +38732,11 @@ the predecessor repository at revision
 # Changelog
 
 > Mirrored from [`apps/email/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/apps/email/CHANGELOG.md), where releases update it. The component's page is [email](README.md). This page describes the current `main` branch of MixOS.
+
+## Unreleased — 2026-10-28
+
+- Follow session font size and weight with a custom design package, keeping
+  the theme file design beneath profile framing, menus and title band.
 
 ## Unreleased
 
@@ -39643,6 +39655,20 @@ native-session handoff bytes retain the frozen compatibility contract.
 
 ---
 
+<!-- page: https://mixos.dev/monitor/changelog/ (source: https://mixos.dev/monitor/changelog.md) -->
+
+> Mirrored from [`apps/monitor/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/apps/monitor/CHANGELOG.md), where releases update it. The component's page is [monitor](README.md). This page describes the current `main` branch of MixOS.
+
+<!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
+# Changelog
+
+## Unreleased — 2026-10-28
+
+- Follow session font size and weight with a custom design package, keeping
+  the theme file design beneath profile framing, menus and title band.
+
+---
+
 <!-- page: https://mixos.dev/monitord/changelog/ (source: https://mixos.dev/monitord/changelog.md) -->
 
 # monitord contract changes
@@ -39720,6 +39746,20 @@ Use strict MixOS configuration and owned shutdown signalling.
   helper. Keep passwords outside effect bodies until sending, preserve
   refusals, and return a failed password to its field. Account status reads
   and best-effort password removal do not launch Email.
+
+---
+
+<!-- page: https://mixos.dev/screenshot/changelog/ (source: https://mixos.dev/screenshot/changelog.md) -->
+
+> Mirrored from [`apps/screenshot/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/apps/screenshot/CHANGELOG.md), where releases update it. The component's page is [screenshot](README.md). This page describes the current `main` branch of MixOS.
+
+<!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
+# Changelog
+
+## Unreleased — 2026-10-28
+
+- Follow session font size and weight with a custom design package, keeping
+  the theme file design beneath profile framing, menus and title band.
 
 ---
 
@@ -39999,6 +40039,11 @@ until success. Inline capacity refusal has a distinct snapshot_too_large status.
 
 > Mirrored from [`apps/term/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/apps/term/CHANGELOG.md), where releases update it. The component's page is [term](README.md). This page describes the current `main` branch of MixOS.
 
+## Unreleased — 2026-10-28
+
+- Follow session font size and weight with a custom design package, keeping
+  the theme file design beneath profile framing, menus and title band.
+
 ## 0.4.0
 
 The window is egui on wgpu, its grid drawn on the GPU by `term-render`.
@@ -40042,6 +40087,8 @@ their bytes.
 
 ## Unreleased — 2026-10-28
 
+- Follow the summary custom-source flag explicitly, retaining the file design
+  and its overlay while applying profile framing, menus, band and fonts.
 - Bundle the unmodified Inter 4.1 Bold (700) face under the existing SIL OFL
   licence. Interface weights 300–700 select distinct faces; heading offsets
   clamp to that range. Headless coverage tests require each weight to draw
@@ -40156,6 +40203,20 @@ their bytes.
 - Map authorisation refusals to legacy `CommandError::Denied`.
 - Report stored shortcut and `more` chords in the keymaps grammar, with
   Ctrl, Alt, Shift modifier order, through both command adapters.
+
+---
+
+<!-- page: https://mixos.dev/workshop/changelog/ (source: https://mixos.dev/workshop/changelog.md) -->
+
+> Mirrored from [`apps/workshop/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/apps/workshop/CHANGELOG.md), where releases update it. The component's page is [workshop](README.md). This page describes the current `main` branch of MixOS.
+
+<!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
+# Changelog
+
+## Unreleased — 2026-10-28
+
+- Follow session font size and weight with a custom design package, keeping
+  the theme file design beneath profile framing, menus and title band.
 
 ---
 

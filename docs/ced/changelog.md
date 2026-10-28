@@ -11,6 +11,8 @@ generated: by docs/_build/gen-site.mix from apps/ced/CHANGELOG.md; do not edit
 
 ## Unreleased — 2026-10-28
 
+- Follow session font size and weight with a custom design package, keeping
+  the theme file design beneath profile framing, menus and title band.
 - Isolate ordinary edit requests from shutdown replies and bound force-close
   waits separately, leaving time to deregister, refuse callers and flush the
   session. Close mail scratches even when quit overtakes their seeding;

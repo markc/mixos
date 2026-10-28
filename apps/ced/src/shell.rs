@@ -142,6 +142,7 @@ pub struct Shell {
     file_theme: Theme,
     /// The session look settingsd holds, once read.
     look: Option<settings::Appearance>,
+    custom_source: bool,
     common_ui: settings::model::CommonUi,
     /// The profile's bindings for ced, as last applied.
     keymap: toolkit::keymap::Overrides,
@@ -191,6 +192,7 @@ impl Shell {
             file_theme: theme.clone(),
             theme,
             look: None,
+            custom_source: false,
             common_ui: settings::model::CommonUi::default(),
             keymap: toolkit::keymap::Overrides::new(),
             follower: settings::follow::Follower::new(&hostname()),
@@ -507,7 +509,7 @@ impl Shell {
         self.base = self
             .look
             .as_ref()
-            .map(|look| toolkit::session_look::theme_or(look, &self.file_theme))
+            .map(|look| toolkit::session_look::follow(look, self.custom_source, &self.file_theme))
             .unwrap_or_else(|| self.file_theme.clone())
             .with_ui(self.common_ui.clone());
         self.installed = None;
@@ -531,6 +533,11 @@ impl Shell {
     /// Show the session look `look` (settingsd's), or the theme file's with
     /// `None`; the window's own choice stays on top.
     pub fn set_look(&mut self, look: Option<settings::Appearance>) {
+        self.follow_look(look, false);
+    }
+
+    fn follow_look(&mut self, look: Option<settings::Appearance>, custom_source: bool) {
+        self.custom_source = custom_source;
         self.look = look;
         self.set_base();
     }
@@ -580,8 +587,7 @@ impl Shell {
             .map(|(rc, body, error)| (*rc, body.as_str(), error.as_deref()));
         let (followed, next) = self.follower.answered(ticket, answer);
         match followed {
-            // A profile naming its own design source keeps the theme file,
-            // as `session_look` does for one it cannot draw.
+            // Keep the file design for a custom source, with profile choices on top.
             Some(settings::follow::Followed::Look {
                 appearance,
                 ui,
@@ -592,7 +598,7 @@ impl Shell {
             }) => {
                 toolkit::debug!(app = "ced", "settings applied");
                 self.common_ui = ui;
-                self.set_look((!custom_source).then_some(*appearance));
+                self.follow_look(Some(*appearance), custom_source);
                 self.set_keymap(keymaps.get(APP).cloned().unwrap_or_default());
                 self.app.set_editor_style(ced.editor.clone());
                 self.palette = self.editor_palette();

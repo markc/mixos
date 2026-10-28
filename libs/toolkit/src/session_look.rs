@@ -8,7 +8,7 @@
 //! contrast, and the framing (decorations, caption side). When it names a
 //! design package of its own (`source`), or a name this build does not know,
 //! the app's session design stands. `theme_or` still applies the independent
-//! framing request, so a newer or custom desktop never breaks an older app.
+//! framing and font choices, so a newer or custom desktop never breaks an older app.
 use crate::theme::{Overlay, Theme};
 use design::{
     CaptionSide, Contrast, DesignContext, Mode, RequestedDecorations as Decorations, Scheme, Style,
@@ -51,7 +51,19 @@ pub fn theme(appearance: &Appearance) -> Option<Theme> {
 /// [`theme`], or the session's design with the profile's framing when the
 /// appearance cannot be drawn.
 pub fn theme_or(appearance: &Appearance, session: &Theme) -> Theme {
-    theme(appearance).unwrap_or_else(|| {
+    follow(appearance, false, session)
+}
+
+/// Follow a summary's appearance. Summaries omit the source itself, so the
+/// separate `custom_source` flag keeps the file's design while applying the
+/// profile's framing, menus, band and font choices.
+pub fn follow(appearance: &Appearance, custom_source: bool, session: &Theme) -> Theme {
+    let selected = if custom_source {
+        None
+    } else {
+        theme(appearance)
+    };
+    selected.unwrap_or_else(|| {
         // Framing is independent of the design package: an unsupported
         // source must still follow the session's requested decorations.
         let selected = Overlay::from_appearance(appearance);
@@ -206,6 +218,46 @@ mod tests {
             assert_eq!(chosen.overlay().weight, Some(700));
             assert_eq!(chosen.overlay().size, Some(18.0));
             assert!(chosen.overlay().reduced_motion);
+        }
+    }
+
+    #[test]
+    fn summary_source_flag_preserves_design_and_file_overlay() {
+        let session = Theme::for_context(DesignContext {
+            scheme: Scheme::Ocean,
+            mode: Mode::Light,
+            ..Default::default()
+        })
+        .with_overlay(Overlay {
+            reduced_motion: true,
+            stroke: Some(3.0),
+            ..Default::default()
+        })
+        .unwrap();
+        for (weight, size) in [(None, None), (Some(700), Some(18.0))] {
+            let appearance = Appearance {
+                scheme: "forest".into(),
+                font_weight: weight,
+                font_size: size,
+                ..Default::default()
+            };
+            for custom_source in [false, true] {
+                let chosen = follow(&appearance, custom_source, &session);
+                let expected = if custom_source {
+                    session.clone()
+                } else {
+                    theme(&appearance).unwrap()
+                };
+                assert_eq!(chosen.dictionary(), expected.dictionary());
+                assert_eq!(chosen.context(), expected.context());
+                assert_eq!(chosen.overlay().weight, weight);
+                assert_eq!(chosen.overlay().size, size.map(|v| v as f32));
+                assert_eq!(chosen.overlay().stroke, expected.overlay().stroke);
+                assert_eq!(
+                    chosen.overlay().reduced_motion,
+                    expected.overlay().reduced_motion
+                );
+            }
         }
     }
 

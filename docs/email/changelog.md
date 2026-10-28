@@ -8,6 +8,11 @@ generated: by docs/_build/gen-site.mix from apps/email/CHANGELOG.md; do not edit
 
 > Mirrored from [`apps/email/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/apps/email/CHANGELOG.md), where releases update it. The component's page is [email](README.md). This page describes the current `main` branch of MixOS.
 
+## Unreleased — 2026-10-28
+
+- Follow session font size and weight with a custom design package, keeping
+  the theme file design beneath profile framing, menus and title band.
+
 ## Unreleased
 
 - Share compose label sizing, rows, text fields and attachment chips with ced

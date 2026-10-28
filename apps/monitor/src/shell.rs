@@ -232,6 +232,7 @@ pub struct Shell {
     installed: toolkit::theme_menu::Choice,
     file_theme: Theme,
     look: Option<settings::Appearance>,
+    custom_source: bool,
     common_ui: settings::model::CommonUi,
     keymap: toolkit::keymap::Overrides,
     follower: settings::follow::Follower,
@@ -296,6 +297,7 @@ impl Shell {
             inbox,
             installed: toolkit::theme_menu::Choice::default(),
             look: None,
+            custom_source: false,
             common_ui: settings::model::CommonUi::default(),
             keymap: toolkit::keymap::Overrides::new(),
             follower: settings::follow::Follower::new(&hostname()),
@@ -504,7 +506,7 @@ impl Shell {
     fn session_theme(&self) -> Theme {
         self.look
             .as_ref()
-            .map(|look| toolkit::session_look::theme_or(look, &self.file_theme))
+            .map(|look| toolkit::session_look::follow(look, self.custom_source, &self.file_theme))
             .unwrap_or_else(|| self.file_theme.clone())
             .with_ui(self.common_ui.clone())
     }
@@ -520,6 +522,11 @@ impl Shell {
     }
 
     pub fn set_look(&mut self, look: Option<settings::Appearance>) {
+        self.follow_look(look, false);
+    }
+
+    fn follow_look(&mut self, look: Option<settings::Appearance>, custom_source: bool) {
+        self.custom_source = custom_source;
         self.look = look;
         self.theme = self.session_theme();
         self.install_theme();
@@ -570,7 +577,7 @@ impl Shell {
             }) => {
                 toolkit::debug!(app = "monitor", "settings applied");
                 self.common_ui = ui;
-                self.set_look((!custom_source).then_some(*appearance));
+                self.follow_look(Some(*appearance), custom_source);
                 self.set_keymap(keymaps.get(APP).cloned().unwrap_or_default());
             }
             Some(settings::follow::Followed::Missing) if self.look.is_some() => {
