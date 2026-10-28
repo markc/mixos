@@ -223,7 +223,7 @@ async fn create_submission(
                 outcome.clone()
             } else {
                 let outcome = match crate::smtp::queue::deliver_local(
-                    mailstore, account.id, blob_hash,
+                    db, mailstore, account.id, blob_hash, &from_addr, &addr,
                 )
                 .await
                 {

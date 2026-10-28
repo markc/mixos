@@ -379,7 +379,8 @@ async fn process_queue(state: &SmtpState, resolver: &TokioResolver) -> Result<us
             }
             let result = match entry.blob_hash {
                 Some(hash) => match db::account::get_by_id(&state.db.conn, account_id).await? {
-                    Some(_) => queue::deliver_local(&state.mailstore, account_id, hash).await,
+                    Some(_) => queue::deliver_local(&state.db, &state.mailstore, account_id, hash,
+                        &entry.from_addr, entry.to_addrs.first().map(String::as_str).unwrap_or("")).await,
                     None => Err(PermanentFailure(
                         "550 5.1.1 Local target account no longer exists".into(),
                     )

@@ -370,34 +370,36 @@ pub(crate) async fn record_local(
 
 /// The same local delivery operation serves initial submission and queue retries.
 pub(crate) async fn deliver_local(
+    db: &crate::db::Db,
     store: &Arc<crate::mailstore::SqliteMailStore>,
     account_id: i32,
     blob_hash: BlobHash,
+    from: &str,
+    to: &str,
 ) -> Result<()> {
     use crate::mailstore::{MailStore, MailboxRole};
-    use mds::{Flags, Mds, Tags};
-    let store = store.clone();
-    tokio::task::spawn_blocking(move || {
-        let data = store.mds().get_blob(&blob_hash)?;
-        let inbox = store
-            .mailbox_by_role(account_id, MailboxRole::Inbox)?
-            .ok_or_else(|| anyhow::anyhow!("recipient {account_id} has no Inbox"))?;
-        let parsed = mail_parser::MessageParser::default()
-            .parse(data.as_slice())
-            .ok_or_else(|| anyhow::anyhow!("failed to parse message for envelope"))?;
-        store.create_email(
-            account_id,
-            inbox,
-            blob_hash,
-            crate::jmap::email::build_envelope(&parsed),
-            &crate::jmap::email::extract_in_reply_to(&parsed),
-            Flags(0),
-            Tags::new(),
-            chrono::Utc::now().timestamp_millis(),
-        )?;
-        Ok(())
-    })
-    .await?
+    use mds::{Mds, Tags};
+    let account = crate::db::account::get_by_id(&db.conn, account_id).await?
+        .ok_or_else(|| anyhow::anyhow!("recipient {account_id} no longer exists"))?;
+    let ms = store.clone();
+    let data = tokio::task::spawn_blocking(move || ms.mds().get_blob(&blob_hash)).await??;
+    let data = crate::sieve::delivery::stamp_spam(&data, "UNKNOWN", 0.0);
+    let inbox = store.mailbox_by_role(account_id, MailboxRole::Inbox)?
+        .ok_or_else(|| anyhow::anyhow!("recipient {account_id} has no Inbox"))?;
+    crate::sieve::delivery::deliver(db, store, crate::sieve::delivery::Delivery {
+        account: &account,
+        from,
+        to,
+        data: &data,
+        default_mailbox: inbox,
+        default_tags: Tags::new(),
+        external_domains: &db.sieve_external_domains,
+        sender_verified: true,
+        spam: false,
+        smtp_reject: false,
+        routing: None,
+    }).await?;
+    Ok(())
 }
 
 pub(crate) async fn local_result(

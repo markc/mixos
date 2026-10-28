@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Run account Sieve on initial local submission and local retries, and create
+  delivery receipts atomically for Sieve-generated SMTP replies.
 - Fix Sieve attachment-independent header budgets, custom address fields,
   writable fileinto destinations, redirect-only loop suppression and private
   header removal on external redirects. Local submission stamps fresh spam
