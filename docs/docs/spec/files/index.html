@@ -278,8 +278,9 @@ matches native outcomes by request id and recovers them with
 <code>files.choose.result</code>. Lost acknowledgements are recovered by correlation
 in <code>files.choose.list</code>; any matching window is cancelled before fallback,
 even when <code>files.choose</code> returned an error after opening it.
-<code>on_behalf_of</code> is the opening viewport's app id, or the root app id when the
-secondary viewport has none.</p>
+<code>on_behalf_of</code> is the root app id, retained by toolkit's viewport builder
+when egui has no root metadata, so separate windows share remembered folders.
+The opening viewport's id is used only when no app id is available.</p>
 <p>Toolkit uses the same five-second liveness sweep described under Losing a
 party: <code>files</code> missing from service discovery, two consecutive list failures,
 or a changed incarnation ends the tier. A lost provider gets one bounded
