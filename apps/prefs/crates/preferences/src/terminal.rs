@@ -39,6 +39,7 @@ pub enum Setting {
     FocusRing(FocusRing),
     FocusStrength(f64),
     CopyOnSelect(bool),
+    Osc52Read(bool),
     Term(String),
 }
 
@@ -58,6 +59,7 @@ impl Setting {
             Setting::FocusRing(ring) => ("terminal.focus.ring", json!(ring)),
             Setting::FocusStrength(strength) => ("terminal.focus.strength", json!(strength)),
             Setting::CopyOnSelect(copy) => ("terminal.mouse.copy_on_select", json!(copy)),
+            Setting::Osc52Read(read) => ("terminal.clipboard.osc52_read", json!(read)),
             Setting::Term(term) => ("terminal.env.term", json!(term)),
         };
         Edit::Set(path, value)
@@ -205,6 +207,11 @@ mod tests {
             (
                 Setting::CopyOnSelect(true),
                 "terminal.mouse.copy_on_select",
+                json!(true),
+            ),
+            (
+                Setting::Osc52Read(true),
+                "terminal.clipboard.osc52_read",
                 json!(true),
             ),
             (

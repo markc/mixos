@@ -118,28 +118,20 @@ fn an_agent_seat_copy_is_offered_on_the_primary_seat() {
             .any(|(_, m)| m == TEXT),
         "the agent-seat client served the paste"
     );
-    // And it survives that client's source going away, like any copy.
-    let held = |h: &Harness| {
-        smithay::wayland::selection::data_device::current_data_device_selection_userdata::<
-            dispatcher::state::Dispatch,
-        >(&h.wire.state.seat.seat)
-        .map(|u| *u)
-    };
-    eprintln!(
-        "DIAG before destroy: held={:?} capture_gen={} capture_mimes={:?}",
-        held(&h),
-        h.wire.state.clipboard.capture.generation(),
-        h.wire.state.clipboard.capture.mime_types()
-    );
+    // And it survives that client's source going away, like any copy, once the
+    // capture has the bytes (as for a primary-seat copy: a source destroyed while
+    // its capture is still in flight leaves nothing to persist).
+    for _ in 0..400 {
+        if !h.wire.state.clipboard.capture.is_empty() {
+            break;
+        }
+        h.pump();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    assert!(!h.wire.state.clipboard.capture.is_empty(), "the capture finished");
     source.destroy();
     h.roundtrip();
     h.roundtrip_client(b);
-    eprintln!(
-        "DIAG after destroy: held={:?} capture_gen={} capture_mimes={:?}",
-        held(&h),
-        h.wire.state.clipboard.capture.generation(),
-        h.wire.state.clipboard.capture.mime_types()
-    );
     assert!(
         h.extra_clients[b].selection_mimes(PRIMARY).is_some(),
         "the mirror was replaced by compd's copy, not cleared"

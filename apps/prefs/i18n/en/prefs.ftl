@@ -169,6 +169,7 @@ terminal-focus-neutral = Neutral
 terminal-focus-accent = Accent
 terminal-focus-strength = Ring strength
 terminal-copy-on-select = Copy on select
+terminal-osc52-read = Let programs read the clipboard (OSC 52)
 terminal-term = TERM
 terminal-term-note = Applies to tabs and panes opened after this change.
 terminal-family-refused = A font family is a plain name of up to 128 bytes, with no control characters.

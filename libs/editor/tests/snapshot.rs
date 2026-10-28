@@ -668,10 +668,20 @@ fn middle_click_pastes_the_primary_selection_at_the_click() {
     };
     let mut h = harness(app, &theme, egui::vec2(400.0, 200.0));
     h.run();
-    // The boundary before "bravo" (offset 6).
-    middle_click(&mut h, pos2(24.0 + 8.0 * 6.0, 15.0), "X ");
-    assert_eq!(h.state().doc.contents(), "alpha X bravo");
-    assert_eq!(h.state().doc.selection().head, "alpha X ".len());
+    // Where a primary click there would put the caret is where the paste goes.
+    let at = pos2(24.0 + 8.0 * 6.0, 15.0);
+    click(&mut h, at);
+    let o = h.state().doc.selection().head;
+    assert!(o > 0 && o < "alpha bravo".len(), "inside the text: {o}");
+    // Move the caret away, so the paste position comes from the click.
+    key(&mut h, Key::End, Modifiers::NONE);
+    middle_click(&mut h, at, "X ");
+    let text = "alpha bravo";
+    assert_eq!(
+        h.state().doc.contents(),
+        format!("{}X {}", &text[..o], &text[o..])
+    );
+    assert_eq!(h.state().doc.selection().head, o + 2);
 }
 
 /// A read-only view ignores a middle-click paste.

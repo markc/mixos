@@ -1277,6 +1277,18 @@ fn terminal_controls(
         },
     );
 
+    row(
+        ui,
+        "terminal-osc52-read-row",
+        &label("terminal-osc52-read"),
+        |ui| {
+            let mut read = term.clipboard.osc52_read;
+            if toggle(ui, &mut read, "terminal-osc52-read") {
+                events.push(UiEvent::Terminal(Setting::Osc52Read(read)));
+            }
+        },
+    );
+
     group_heading(ui, "term-advanced", false);
     row(ui, "terminal-border-row", &label("terminal-border"), |ui| {
         let widths: Vec<(u32, String)> = (BORDER_WIDTH_MIN..=BORDER_WIDTH_MAX)
