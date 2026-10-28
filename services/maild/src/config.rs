@@ -69,6 +69,13 @@ pub struct Config {
     /// SMTPS submission listen address(es) (port 465, implicit TLS).
     /// Accepts a single string or an array of strings. None to disable.
     pub smtp_smtps: Option<ListenSpec>,
+    /// ManageSieve bind(s), normally port 4190. None disables the listener.
+    pub sieve_listen: Option<ListenSpec>,
+    /// False uses RFC 5804 STARTTLS. True selects implicit TLS.
+    pub sieve_implicit_tls: bool,
+    /// Account domains allowed to send Sieve redirects/automatic replies off-site.
+    /// Exact domain names; empty (default) denies all external destinations.
+    pub sieve_external_domains: Vec<String>,
     /// Local source address(es) to bind for OUTBOUND SMTP delivery
     /// connections, e.g. `["2001:db8::25"]`. At most one entry
     /// per family applies: dialling an IPv6 MX binds the v6 entry (if
@@ -289,6 +296,9 @@ impl Default for Config {
             tls: TlsConfig::default(),
             tls_key_root: None,
             imap_imaps: None,
+            sieve_listen: None,
+            sieve_implicit_tls: false,
+            sieve_external_domains: Vec::new(),
             imap_max_literal_bytes: None,
             imap_idle_status_interval_secs: None,
             imap_pre_auth_timeout_secs: None,

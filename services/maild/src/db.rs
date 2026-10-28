@@ -148,6 +148,7 @@ impl Db {
                 .lock()
                 .map_err(|e| anyhow::anyhow!("lock error: {e}"))?;
             conn.execute_batch(SCHEMA)?;
+            conn.execute_batch(crate::sieve::store::SCHEMA)?;
             // : smtp_queue.blob_hash column for CAS BlobHash
             // (hex-encoded). Pre-existing deploys have only blob_id;
             // ALTER TABLE ADD COLUMN with a duplicate-column tolerance

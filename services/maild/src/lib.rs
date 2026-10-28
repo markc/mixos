@@ -35,6 +35,7 @@ pub mod rule_stats;
 pub mod rule_stats_store;
 pub mod runtime;
 pub mod smtp;
+pub mod sieve;
 pub mod tls;
 pub mod vtoken;
 pub mod vtoken_secret;

@@ -85,6 +85,7 @@ pub struct SmtpConfig {
     pub tls_config_cache: Arc<ServerConfigCache>,
     /// Path to a Mix script for inbound mail routing (optional).
     pub inbound_filter: Option<String>,
+    pub sieve_external_domains: Vec<String>,
     /// Suppress the outbound delivery worker spawn. Integration tests
     /// that enqueue a message to a fake / RFC-2606 remote rely on this
     /// — without it, the worker reaches into real DNS/MX for the
@@ -126,6 +127,7 @@ impl Default for SmtpConfig {
             tls_slot: crate::tls::new_tls_slot(None),
             tls_config_cache: Arc::new(ServerConfigCache::new()),
             inbound_filter: None,
+            sieve_external_domains: Vec::new(),
             disable_outbound_delivery: false,
             test_mx_overrides: HashMap::new(),
         }

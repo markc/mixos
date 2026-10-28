@@ -96,6 +96,7 @@ pub struct BuiltMaild {
     /// IMAPS listener addresses (resolved after bind). Empty when
     /// IMAPS is not configured.
     pub imap_handle: imap::ImapHandle,
+    pub sieve_handle: crate::sieve::server::Handle,
     _expiry_handle: JoinHandle<()>,
     /// IMAP junk-boundary retrain drain worker — applies
     /// `mail_retrain_outbox` rows out-of-band so IMAP MOVE/COPY
@@ -764,6 +765,7 @@ pub async fn build_runtime(cfg: &Config, opts: RuntimeOpts) -> Result<BuiltMaild
         tls_slot: tls_slot.clone(),
         tls_config_cache: tls_config_cache.clone(),
         inbound_filter: cfg.inbound_filter.clone(),
+        sieve_external_domains: cfg.sieve_external_domains.clone(),
         disable_outbound_delivery: opts.disable_outbound_delivery,
         test_mx_overrides: opts.test_mx_overrides.clone(),
     };
@@ -784,6 +786,7 @@ pub async fn build_runtime(cfg: &Config, opts: RuntimeOpts) -> Result<BuiltMaild
     .await?;
 
     // IMAPS listener (Phase 1 — opt-in via `imap_imaps` TOML key).
+    let sieve_handle = crate::sieve::server::start(database.clone(), cfg, tls_slot.clone(), tls_config_cache.clone()).await?;
     let imap_cfg = imap::ImapConfig::from_config(cfg, tls_slot, tls_config_cache);
     let imap_handle =
         imap::start(database.clone(), mailstore.clone(), imap_cfg, imap_slots).await?;
@@ -868,6 +871,7 @@ pub async fn build_runtime(cfg: &Config, opts: RuntimeOpts) -> Result<BuiltMaild
         router,
         smtp_handle,
         imap_handle,
+        sieve_handle,
         _expiry_handle,
         _retrain_handle,
         _rule_stats_flush_handle,

@@ -479,6 +479,10 @@ where
                         );
                         write_line(writer, "250 2.0.0 Message accepted").await?;
                     }
+                    Err(e) if e.downcast_ref::<crate::sieve::delivery::Rejected>().is_some() => {
+                        let reason = e.downcast_ref::<crate::sieve::delivery::Rejected>().unwrap();
+                        write_line(writer, &format!("550 5.7.1 {}", reason.0)).await?;
+                    }
                     Err(e) => {
                         tracing::error!(
                             error = %e,

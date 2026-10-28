@@ -17,7 +17,7 @@ use maild_rules::{
     AcceptReason, AccountId, AccountOverrides, JunkReason, RuleContext, RuleEngine, RuleId,
     RuleVerdict, VerdictShape,
 };
-use mds::{Flags, Mds, Tags};
+use mds::{Mds, Tags};
 
 use super::SmtpState;
 use crate::bus::verdict::{self, VerdictEvent};
@@ -621,14 +621,6 @@ pub async fn deliver(
             }
         };
 
-        // Build envelope from the parsed message — same shape Email/set
-        // create writes (Phase 3) and the local-recipient delivery
-        // branch in submission.rs writes (Phase 4). `cc` is
-        // not carried in `EmailEnvelope` (substrate gap deferred); the
-        // raw RFC 5322 Cc: header is preserved in the blob bytes and
-        // re-parsed by clients on read.
-        let envelope = crate::jmap::email::build_envelope(&message);
-        let in_reply_to_vec = crate::jmap::email::extract_in_reply_to(&message);
         // SPAM verdict already routes to the Junk container above —
         // not also expressed as a `$junk` keyword in flags. Per RFC
         // 8621 §4.1.1, JMAP keywords are independent of the mailbox
@@ -637,7 +629,6 @@ pub async fn deliver(
         // `initial_keywords` empty matches what `db::email::create`
         // wrote in the legacy path (no keyword column was set on
         // SPAM-routed inbound mail).
-        let initial_keywords = Flags(0);
         // Content marker (§0.2 #5): stamped at ingest so the public renderer's
         // live predicate (`member of Posts AND has-marker AND NOT suppressed`)
         // gates on the daemon's own determination, not folder membership alone.
@@ -668,44 +659,23 @@ pub async fn deliver(
             }
             _ => Tags::new(),
         };
-        let received_at_ms = chrono::Utc::now().timestamp_millis();
-
-        // Land bytes in CAS + create email row in one spawn_blocking,
-        // matching the local-delivery shape in submission.rs. The
-        // returned ItemId is the per-delivery stamp_id for the verdict
-        // event below — built only after `create_email` returns Ok so
-        // the topic can never publish a row that didn't durably land.
-        let create_ms = state.mailstore.clone();
-        let create_data = augmented_data.clone();
-        let create_account_id = account.id;
-        let create_target = target_mailbox;
-        let create_outcome = tokio::task::spawn_blocking(move || {
-            let blob_hash = create_ms.mds().put_blob(&create_data)?;
-            create_ms.create_email(
-                create_account_id,
-                create_target,
-                blob_hash,
-                envelope,
-                &in_reply_to_vec,
-                initial_keywords,
-                initial_tags,
-                received_at_ms,
-            )
-        })
-        .await;
-        // Same best-effort rationale as `target_outcome` above:
-        // a single recipient's create_email failure no longer
-        // poisons the whole DATA, so already-queued remote rows
-        // and already-committed peer locals don't get duplicated
-        // on retry.
+        let sieve_data = crate::sieve::delivery::stamp_spam(&augmented_data,
+            spam_verdict.as_deref().unwrap_or("UNKNOWN"), spam_score.unwrap_or(0.0));
+        let create_outcome = crate::sieve::delivery::deliver(&state.db, &state.mailstore,
+            crate::sieve::delivery::Delivery {
+                account, from: mail_from, to: rcpt, data: &sieve_data,
+                default_mailbox: target_mailbox, default_tags: initial_tags,
+                external_domains: &state.config.sieve_external_domains,
+                sender_verified: ingress.is_local_auth() || vacation_sender_verified(&verify_result, mail_from),
+                spam: spam_verdict.as_deref() == Some("SPAM"),
+                smtp_reject: rcpt_to.len() == 1 && vtoken_ctx.is_none(),
+            }).await;
         let email_uuid = match create_outcome {
-            Ok(Ok((item_id, _uid))) => item_id.0,
-            Ok(Err(e)) => {
-                tracing::warn!(error = %e, to = %rcpt, "Local create_email failed; skipping recipient <{rcpt}>: {e}");
-                continue;
-            }
-            Err(e) => {
-                tracing::warn!(error = %e, to = %rcpt, "Local create_email spawn_blocking failed; skipping recipient <{rcpt}>: {e}");
+            Ok(Some(item)) => item.0,
+            Ok(None) => { accepted += 1; continue; }
+            Err(error) if error.downcast_ref::<crate::sieve::delivery::Rejected>().is_some() => return Err(error),
+            Err(error) => {
+                tracing::warn!(%error, to = %rcpt, "Local Sieve delivery failed");
                 continue;
             }
         };
