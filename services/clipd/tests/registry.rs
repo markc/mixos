@@ -5,6 +5,7 @@ fn described_commands_match_the_public_registry() {
         "../../../docs/docs/spec/bus/commands.conf.mix"
     ))
     .unwrap();
+    let registry = strict::to_json(&registry);
     let mut registered: Vec<_> = registry["commands"]
         .as_array()
         .unwrap()
