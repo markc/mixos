@@ -227,7 +227,10 @@ fn apply_one(app: &mut App, commands: &Registry<App>, event: UiEvent) {
 
 fn commit_mail_headers(app: &mut App, tab: TabId, field: Option<&str>) {
     if !app.ctl.tabs().iter().any(|t| {
-        t.id == tab && t.mail.as_ref().is_some_and(|mail| !mail.saving && !mail.sending)
+        t.id == tab
+            && t.mail
+                .as_ref()
+                .is_some_and(|mail| !mail.saving && !mail.sending)
     }) {
         return;
     }
@@ -1080,7 +1083,11 @@ mod tests {
             assert!(app.effects.is_empty(), "previews execute no action");
             assert!(registry.take_executed().0.is_empty());
         }
-        super::apply(&mut app, &registry, vec![super::UiEvent::MailCommit(tab, None)]);
+        super::apply(
+            &mut app,
+            &registry,
+            vec![super::UiEvent::MailCommit(tab, None)],
+        );
         assert_eq!(
             registry.take_executed().0.len(),
             1,
@@ -1105,9 +1112,14 @@ mod tests {
         );
         super::apply(&mut app, &registry, vec![super::UiEvent::MailAttach(tab)]);
         assert!(app.mail_chooser.is_none());
-        let fx = app
-            .ctl
-            .on_mail_sent(tab, None, Err(documents::mail::Failure::new("INVALID_ARGUMENT", "server refused")));
+        let fx = app.ctl.on_mail_sent(
+            tab,
+            None,
+            Err(documents::mail::Failure::new(
+                "INVALID_ARGUMENT",
+                "server refused",
+            )),
+        );
         app.absorb(fx);
         assert!(app.enabled(ActionId::MailHeaders));
     }
@@ -1116,17 +1128,43 @@ mod tests {
     fn committing_the_old_field_does_not_split_typing_in_the_new_field() {
         let (mut app, tab) = mail_app();
         let registry = crate::actions::registry();
-        let mut headers = app.active_tab().unwrap().mail.as_ref().unwrap().headers.clone();
+        let mut headers = app
+            .active_tab()
+            .unwrap()
+            .mail
+            .as_ref()
+            .unwrap()
+            .headers
+            .clone();
         headers.subject = "Changed".into();
-        super::apply(&mut app, &registry, vec![super::UiEvent::MailHeaders(tab, headers.clone())]);
+        super::apply(
+            &mut app,
+            &registry,
+            vec![super::UiEvent::MailHeaders(tab, headers.clone())],
+        );
         headers.to = "c".into();
-        super::apply(&mut app, &registry, vec![
-            super::UiEvent::MailHeaders(tab, headers.clone()),
-            super::UiEvent::MailCommit(tab, Some("subject")),
-        ]);
+        super::apply(
+            &mut app,
+            &registry,
+            vec![
+                super::UiEvent::MailHeaders(tab, headers.clone()),
+                super::UiEvent::MailCommit(tab, Some("subject")),
+            ],
+        );
         headers.to = "carol@example.org".into();
-        super::apply(&mut app, &registry, vec![super::UiEvent::MailHeaders(tab, headers)]);
-        super::apply(&mut app, &registry, vec![super::UiEvent::Command("edit.undo", toolkit::action::Origin::Shortcut)]);
+        super::apply(
+            &mut app,
+            &registry,
+            vec![super::UiEvent::MailHeaders(tab, headers)],
+        );
+        super::apply(
+            &mut app,
+            &registry,
+            vec![super::UiEvent::Command(
+                "edit.undo",
+                toolkit::action::Origin::Shortcut,
+            )],
+        );
         let headers = &app.active_tab().unwrap().mail.as_ref().unwrap().headers;
         assert_eq!(headers.to, "bob@example.org");
         assert_eq!(headers.subject, "Changed");

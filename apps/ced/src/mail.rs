@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! File and application effects, called only from ced's Bus worker.
+use documents::mail::Failure;
 use std::path::Path;
 use std::time::Duration;
-use documents::mail::Failure;
 
 pub fn save(path: &str, text: &str, expected: Option<&str>) -> Result<(), String> {
     // Validate before touching the destination. Use the native editor's
@@ -44,19 +44,27 @@ pub async fn send(client: &impl citizen::app::AppClient, path: &str) -> Result<S
                 .unwrap_or("Sent")
                 .to_owned())
         }
-        Err(citizen::app::AppCallError::Refused { code, message, .. }) => Err(Failure::new(code, message)),
+        Err(citizen::app::AppCallError::Refused { code, message, .. }) => {
+            Err(Failure::new(code, message))
+        }
         Err(citizen::app::AppCallError::Transport(error)) if error.outcome_unknown => {
-            Err(Failure::new("INTERNAL", format!("the mail may have been sent; {}", error.message)))
+            Err(Failure::new(
+                "INTERNAL",
+                format!("the mail may have been sent; {}", error.message),
+            ))
         }
-        Err(citizen::app::AppCallError::Transport(error)) => {
-            Err(Failure::new("INTERNAL", format!("could not contact Email: {}", error.message)))
-        }
-        Err(citizen::app::AppCallError::LaunchFailed(message)) => {
-            Err(Failure::new("INTERNAL", format!("could not launch Email: {message}")))
-        }
-        Err(citizen::app::AppCallError::DidNotAppear) => {
-            Err(Failure::new("INTERNAL", "Email did not appear before the wait limit"))
-        }
+        Err(citizen::app::AppCallError::Transport(error)) => Err(Failure::new(
+            "INTERNAL",
+            format!("could not contact Email: {}", error.message),
+        )),
+        Err(citizen::app::AppCallError::LaunchFailed(message)) => Err(Failure::new(
+            "INTERNAL",
+            format!("could not launch Email: {message}"),
+        )),
+        Err(citizen::app::AppCallError::DidNotAppear) => Err(Failure::new(
+            "INTERNAL",
+            "Email did not appear before the wait limit",
+        )),
     }
 }
 
@@ -70,7 +78,8 @@ mod tests {
         let message = "Choose an identity belonging to this account.";
         let client = Handle::scripted(vec![Ok(Reply {
             rc: 10,
-            body: serde_json::json!({"error_code":"INVALID_ARGUMENT","message":message}).to_string(),
+            body: serde_json::json!({"error_code":"INVALID_ARGUMENT","message":message})
+                .to_string(),
             error: None,
         })]);
         assert_eq!(
@@ -111,7 +120,10 @@ mod tests {
                 Err(CallError::from("Bus request timed out"))
             }
         }
-        let message = send(&Deadline, "/home/user/letter.md").await.unwrap_err().message;
+        let message = send(&Deadline, "/home/user/letter.md")
+            .await
+            .unwrap_err()
+            .message;
         assert!(message.contains("may have been sent"));
         assert!(!message.contains("could not contact Email"));
     }

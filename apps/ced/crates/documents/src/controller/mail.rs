@@ -449,7 +449,12 @@ impl Controller {
             mail.notice = Some(result.as_ref().unwrap_or_else(|message| message).clone());
         }
         let mut fx = Vec::new();
-        Self::mail_answer_with_code(command, result, refusal_code.as_deref().unwrap_or(code::INTERNAL), &mut fx);
+        Self::mail_answer_with_code(
+            command,
+            result,
+            refusal_code.as_deref().unwrap_or(code::INTERNAL),
+            &mut fx,
+        );
         fx
     }
 
@@ -458,7 +463,10 @@ impl Controller {
         result: Result<String, String>,
         fx: &mut Vec<Effect>,
     ) {
-        let refusal_code = result.as_ref().err().map_or(code::INTERNAL, |message| error_code(message));
+        let refusal_code = result
+            .as_ref()
+            .err()
+            .map_or(code::INTERNAL, |message| error_code(message));
         Self::mail_answer_with_code(command, result, refusal_code, fx);
     }
 
@@ -657,7 +665,11 @@ mod tests {
                 .any(|e| matches!(e, Effect::SaveMail { .. } | Effect::SendMail { .. }))
         );
         let message = "This sender is not one of your identities.";
-        let fx = c.on_mail_sent(tab, command, Err(Failure::new(code::INVALID_ARGUMENT, message)));
+        let fx = c.on_mail_sent(
+            tab,
+            command,
+            Err(Failure::new(code::INVALID_ARGUMENT, message)),
+        );
         assert!(fx.iter().any(|effect| matches!(effect, Effect::Respond { body, .. } if serde_json::from_str::<Value>(body).unwrap()["error_code"] == code::INVALID_ARGUMENT)));
         assert_eq!(
             c.tab(tab).unwrap().mail.as_ref().unwrap().notice.as_deref(),
