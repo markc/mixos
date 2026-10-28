@@ -54,6 +54,10 @@ pub fn theme_or(appearance: &Appearance, session: &Theme) -> Theme {
     theme(appearance).unwrap_or_else(|| {
         // Framing is independent of the design package: an unsupported
         // source must still follow the session's requested decorations.
+        let selected = Overlay::from_appearance(appearance);
+        let mut overlay = session.overlay().clone();
+        overlay.weight = selected.weight;
+        overlay.size = selected.size;
         session
             .clone()
             .framed(
@@ -66,8 +70,8 @@ pub fn theme_or(appearance: &Appearance, session: &Theme) -> Theme {
                 design::MenuSide::resolve(&appearance.menu_side),
             )
             .with_band(band(appearance))
-            .with_overlay(Overlay::from_appearance(appearance))
-            .expect("appearance overlays contain only validated type and icon choices")
+            .with_overlay(overlay)
+            .expect("the session's style overlay is already valid")
     })
 }
 
@@ -183,7 +187,12 @@ mod tests {
 
     #[test]
     fn font_choices_survive_an_unsupported_design() {
-        let session = Theme::embedded();
+        let session = Theme::embedded()
+            .with_overlay(Overlay {
+                reduced_motion: true,
+                ..Default::default()
+            })
+            .unwrap();
         for mut appearance in [
             appearance("no-such-scheme"),
             Appearance {
@@ -196,6 +205,7 @@ mod tests {
             let chosen = theme_or(&appearance, &session);
             assert_eq!(chosen.overlay().weight, Some(700));
             assert_eq!(chosen.overlay().size, Some(18.0));
+            assert!(chosen.overlay().reduced_motion);
         }
     }
 
