@@ -25,6 +25,7 @@
 //! | `--bus-service NAME` | the `comp` Bus service name (default `comp` on KMS, `comp-nested` nested, `comp-headless` headless) |
 //! | `--scene-service NAME` | the Mix Scenes host's fallback Bus name when `shell` is taken (overrides the `scene_service` preference; the host runs only with `scene_host` on) |
 //! | `--version`, `-V` / `--help`, `-h` | print and exit 0 |
+//! | `--backends` | print the backends compiled in (`native winit headless`), exit 0 |
 //! | `--chrome`, anything else | refused, exit 2 |
 
 use std::process::exit;
@@ -67,8 +68,24 @@ pub struct Cli {
 
 const USAGE: &str = "usage: compd [--nested | --kms | kms-live | --headless] [--socket NAME] \
 [--device PATH] [--connector NAME] [--size WxH] [--render-node PATH] [--scale S] [--kms-confirm] [--config-file PATH] \
-[--bus-service NAME] [--scene-service NAME] [--debug[=LEVEL]] [--version] [--help]\n\
+[--bus-service NAME] [--scene-service NAME] [--debug[=LEVEL]] [--backends] [--version] [--help]\n\
 Levels: off|error|warn|info|debug|trace (default warn; --debug means debug)";
+
+/// The backends this binary was built with, by their feature names without the
+/// `backend-` prefix. A KMS desk needs `native` (`--features backend-all`).
+pub fn compiled_backends() -> Vec<&'static str> {
+    let mut backends = Vec::new();
+    if cfg!(feature = "backend-native") {
+        backends.push("native");
+    }
+    if cfg!(feature = "backend-winit") {
+        backends.push("winit");
+    }
+    if cfg!(feature = "backend-headless") {
+        backends.push("headless");
+    }
+    backends
+}
 
 fn refuse(msg: &str) -> ! {
     eprintln!("compd: {msg}");
@@ -115,6 +132,11 @@ pub fn parse_from(args: impl Iterator<Item = String>, version: &str) -> Cli {
             // never rejects the flag.
             "--version" | "-V" => {
                 println!("{version}");
+                exit(0);
+            }
+            // Install checks: gold refuses a compd without `native` (KMS).
+            "--backends" => {
+                println!("{}", compiled_backends().join(" "));
                 exit(0);
             }
             "--nested" => set_backend(&mut cli, Backend::Nested),
@@ -298,6 +320,14 @@ pub const UNSUPPORTED_ENV: &[&str] = &[
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn compiled_backends_follow_the_features() {
+        let backends = compiled_backends();
+        assert_eq!(backends.contains(&"native"), cfg!(feature = "backend-native"));
+        assert_eq!(backends.contains(&"winit"), cfg!(feature = "backend-winit"));
+        assert_eq!(backends.contains(&"headless"), cfg!(feature = "backend-headless"));
+    }
 
     #[test]
     fn headless_flags_infer_backend_and_require_feature() {
