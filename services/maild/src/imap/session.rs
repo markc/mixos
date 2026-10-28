@@ -235,8 +235,9 @@ impl Session {
             // A SEARCH string sent as a literal (Thunderbird does this
             // for non-ASCII text) rejoins the argument line as a
             // quoted string, so `op::search` sees one flat line.
-            if is_search_line(&cmd.line) {
-                if let Err(msg) = splice_search_literal(&mut cmd) {
+            if is_search_line(&cmd.line)
+                && let Err(msg) = splice_search_literal(&mut cmd)
+            {
                     self.bad_commands += 1;
                     let tag = sniff_tag(&cmd.line).unwrap_or("*".to_string());
                     writer
@@ -248,7 +249,6 @@ impl Session {
                         return Ok(());
                     }
                     continue;
-                }
             }
 
             let parsed = match codec::parse_line(&cmd.line) {

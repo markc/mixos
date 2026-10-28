@@ -690,25 +690,47 @@ async fn search_implicit_and_combines_flag_predicates() -> Result<()> {
     Ok(())
 }
 
+/// Header and body criteria over the wire, including Thunderbird's
+/// non-ASCII shape: a compound search with two literals.
 #[tokio::test]
-async fn search_deferred_subject_criterion_returns_bad() -> Result<()> {
+async fn search_header_and_body_criteria_over_the_wire() -> Result<()> {
     let (_tmp, db, mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
-    insert_email(&ms, &mds, b"a", "msg1", Flags(0), 1_700_000_000_000)?;
+    insert_email(
+        &ms,
+        &mds,
+        b"From: Zo\xc3\xab <zoe@example.com>\r\nSubject: hello there\r\n\r\nquarterly invoice\r\n",
+        "msg1",
+        Flags(0),
+        1_700_000_000_000,
+    )?;
+    insert_email(
+        &ms,
+        &mds,
+        b"From: bob@example.net\r\nSubject: other\r\n\r\nnothing here\r\n",
+        "msg2",
+        Flags(0),
+        1_700_000_000_000,
+    )?;
     let (client, _join) = spawn_session(db, ms, ImapConfig::default()).await;
     let (mut reader, mut w) = login(client).await?;
     w.write_all(b"a02 SELECT INBOX\r\n").await?;
     let _ = read_until_tagged(&mut reader, "a02").await?;
 
-    // : header/body criteria deferred — must be BAD rather than
-    // silently treated as ALL (state-of-truth divergence trap).
     w.write_all(b"a03 SEARCH SUBJECT hello\r\n").await?;
     let lines = read_until_tagged(&mut reader, "a03").await?;
-    assert_eq!(lines.len(), 1, "{lines:?}");
-    assert!(
-        lines[0].starts_with("a03 BAD") && lines[0].to_lowercase().contains("deferred"),
-        "{}",
-        lines[0]
-    );
+    assert_eq!(lines, ["* SEARCH 1", "a03 OK SEARCH completed"], "{lines:?}");
+
+    w.write_all(b"a04 SEARCH OR FROM \"bob\" BODY invoice\r\n").await?;
+    let lines = read_until_tagged(&mut reader, "a04").await?;
+    assert_eq!(lines[0], "* SEARCH 1 2", "{lines:?}");
+
+    // Two non-sync literals, the second followed by more arguments.
+    w.write_all(
+        "a05 SEARCH CHARSET UTF-8 OR FROM {4+}\r\nZoë SUBJECT {4+}\r\nZoë UNDELETED\r\n".as_bytes(),
+    )
+    .await?;
+    let lines = read_until_tagged(&mut reader, "a05").await?;
+    assert_eq!(lines, ["* SEARCH 1", "a05 OK SEARCH completed"], "{lines:?}");
     Ok(())
 }
 
