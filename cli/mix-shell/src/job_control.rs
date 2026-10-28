@@ -385,7 +385,9 @@ impl Controller {
                         if let Some(shutdown) = shutdown
                             && let Err(e) = shutdown()
                         {
-                            eprintln!("mix: input shutdown: {e}");
+                            // The terminal may be gone. A diagnostic must not
+                            // panic the sole job reaper and strand shutdown.
+                            let _ = writeln!(io::stderr(), "mix: input shutdown: {e}");
                         }
                         close_jobs(&monitor);
                         let _ = foreground(monitor_tty.as_raw_fd(), shell_pgid);
@@ -902,7 +904,7 @@ fn close_jobs(shared: &Shared) {
             drop(s);
             let _ttou = TtouGuard::new();
             for (id, pgid) in survivors {
-                eprintln!("mix: job {} (pgid {}) survived HUP/CONT grace", id, pgid);
+                let _ = writeln!(io::stderr(), "mix: job {} (pgid {}) survived HUP/CONT grace", id, pgid);
             }
             shared.state.lock().unwrap().closed = true;
             shared.changed.notify_all();
