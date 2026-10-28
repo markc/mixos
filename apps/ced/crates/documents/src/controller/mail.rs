@@ -1277,14 +1277,7 @@ mod tests {
                 EditorMsg::Command(EditCommand::Insert("Unsaved ".into())),
             );
             settle(&mut c, &mut service, fx);
-            let mut headers = c
-                .tab(tab)
-                .unwrap()
-                .mail
-                .as_ref()
-                .unwrap()
-                .headers
-                .clone();
+            let mut headers = c.tab(tab).unwrap().mail.as_ref().unwrap().headers.clone();
             headers.cc = "carol@example.org".into();
             headers.bcc = "dan@example.org".into();
             headers.reply_to = "reply@example.org".into();
@@ -1309,7 +1302,10 @@ mod tests {
             assert_eq!(mail.show_cc, retained);
             assert_eq!(mail.show_bcc, retained);
             assert_eq!(mail.show_reply_to, retained);
-            assert_eq!(mail.headers.cc, if retained { "carol@example.org" } else { "" });
+            assert_eq!(
+                mail.headers.cc,
+                if retained { "carol@example.org" } else { "" }
+            );
             assert_eq!(tab.path.as_deref(), Some(PATH));
             assert_eq!(
                 text_string(tab.mirror.as_ref().unwrap().text()),
@@ -1348,14 +1344,7 @@ mod tests {
             .dirty_body
             .set(None);
         assert!(c.tab(tab).unwrap().dirty());
-        let mut headers = c
-            .tab(tab)
-            .unwrap()
-            .mail
-            .as_ref()
-            .unwrap()
-            .headers
-            .clone();
+        let mut headers = c.tab(tab).unwrap().mail.as_ref().unwrap().headers.clone();
         headers.subject = "Unsaved while seeding".into();
         c.edit_headers(tab, headers).unwrap();
         let refused = execute(&mut c, tab, "file.exit");
