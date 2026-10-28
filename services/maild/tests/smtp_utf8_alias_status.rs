@@ -416,17 +416,19 @@ async fn round2_literal_submission_and_sieve_dsns_transmit_without_mx_lookup() -
     }
     let messages = timeout(Duration::from_secs(70), peer).await???;
     for domain in ["[192.0.2.1]", "[IPv6:2001:db8::1]"] {
+        let recipient = format!("RCPT TO:<user@{domain}>");
         let submissions: Vec<_> = messages
             .iter()
-            .filter(|(e, _)| e.contains(&format!("RCPT TO:<user@{domain}>")))
+            .filter(|(e, _)| e.lines().any(|line| line.eq_ignore_ascii_case(&recipient)))
             .collect();
-        assert_eq!(submissions.len(), 1);
+        assert_eq!(submissions.len(), 1, "{messages:?}");
         assert!(submissions[0].1.contains("Literal submission"));
+        let recipient = format!("RCPT TO:<sender@{domain}>");
         let dsns: Vec<_> = messages
             .iter()
-            .filter(|(e, _)| e.contains(&format!("RCPT TO:<sender@{domain}>")))
+            .filter(|(e, _)| e.lines().any(|line| line.eq_ignore_ascii_case(&recipient)))
             .collect();
-        assert_eq!(dsns.len(), 1);
+        assert_eq!(dsns.len(), 1, "{messages:?}");
         assert!(
             dsns[0].0.contains("MAIL FROM:<>") && dsns[0].1.contains("Literal sender rejection")
         );

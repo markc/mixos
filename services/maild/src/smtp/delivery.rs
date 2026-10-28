@@ -724,7 +724,16 @@ async fn deliver_to_domain(
         return try_deliver_addr(addr, destination, helo_host, from, recipients, data).await;
     }
     if literal_host.is_some() {
-        return try_deliver(destination, 25, helo_host, from, recipients, data, &state.config.outbound_bind).await;
+        return try_deliver(
+            destination,
+            25,
+            helo_host,
+            from,
+            recipients,
+            data,
+            &state.config.outbound_bind,
+        )
+        .await;
     }
 
     // MX lookup
