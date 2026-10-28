@@ -467,7 +467,7 @@ impl Window {
         let row_height = toolkit::field::height_of(&ctx) + ui.spacing().item_spacing.y;
         if ctx.content_rect().height() < 320.0 {
             // Scroll caller options one row at a time, keeping room to browse.
-            max_form = max_form.min(row_height);
+            max_form = max_form.min(row_height + 2.0 * ui.spacing().item_spacing.y);
         }
         let form_height =
             (form_rows as f32 * row_height + 2.0 * ui.spacing().item_spacing.y).min(max_form);
@@ -476,10 +476,13 @@ impl Window {
                 .exact_size(form_height)
                 .show(ui, |ui| {
                     ui.add_enabled_ui(self.ready && !self.ending && self.replace.is_none(), |ui| {
-                        egui::ScrollArea::vertical()
+                        let mut options = egui::ScrollArea::vertical()
                             .id_salt("files-options")
-                            .max_height(ui.available_height())
-                            .show(ui, |ui| {
+                            .max_height(ui.available_height());
+                        if ctx.content_rect().height() < 320.0 {
+                            options = options.min_scrolled_height(0.0);
+                        }
+                        options.show(ui, |ui| {
                                 if self.request.mode == Mode::Save {
                                     ui.horizontal(|ui| {
                                         ui.label(label("chooser-name"));
@@ -651,13 +654,12 @@ impl Window {
         if ctx.content_rect().width() < 640.0 {
             places = places.size_range(0.0..=ctx.content_rect().width() * 0.35);
         }
-        places
-            .show(ui, |ui| {
-                ui.heading(label("places"));
-                ui.add_enabled_ui(self.ready && !self.ending && self.replace.is_none(), |ui| {
-                    crate::view::places_panel(ui, &self.app, &mut events)
-                });
+        places.show(ui, |ui| {
+            ui.heading(label("places"));
+            ui.add_enabled_ui(self.ready && !self.ending && self.replace.is_none(), |ui| {
+                crate::view::places_panel(ui, &self.app, &mut events)
             });
+        });
         egui::CentralPanel::default().show(ui, |ui| {
             ui.add_enabled_ui(self.ready && !self.ending && self.replace.is_none(), |ui| {
                 crate::view::chooser_pane(ui, &self.app, &crate::actions::registry(), &mut events)

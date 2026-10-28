@@ -117,9 +117,15 @@ fn snapshot_at(kind: &str, mode: Mode, minimum: bool) {
         for _ in 0..4 {
             harness.run();
         }
-        let bounds = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::Vec2::from(toolkit::window::MIN_SIZE));
+        let bounds = egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::Vec2::from(toolkit::window::MIN_SIZE),
+        );
         if kind != "replace" {
             assert!(bounds.contains_rect(harness.get_by_label("Cancel").rect()));
+        }
+        if kind == "save" {
+            assert!(bounds.contains_rect(harness.get_by_label("File name").rect()));
         }
     }
     harness.snapshot(format!(
@@ -130,13 +136,19 @@ fn snapshot_at(kind: &str, mode: Mode, minimum: bool) {
 }
 
 #[test]
-fn minimum_window_open() { snapshot_at("open", Mode::Dark, true); }
+fn minimum_window_open() {
+    snapshot_at("open", Mode::Dark, true);
+}
 
 #[test]
-fn minimum_window_save() { snapshot_at("save", Mode::Dark, true); }
+fn minimum_window_save() {
+    snapshot_at("save", Mode::Dark, true);
+}
 
 #[test]
-fn minimum_window_replace() { snapshot_at("replace", Mode::Dark, true); }
+fn minimum_window_replace() {
+    snapshot_at("replace", Mode::Dark, true);
+}
 
 macro_rules! snapshots {
     ($( $name:ident, $kind:literal, $mode:ident; )*) => { $(
