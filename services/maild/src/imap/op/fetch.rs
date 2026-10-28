@@ -1785,6 +1785,15 @@ fn binary_bytes(
         let mut out = Vec::with_capacity(data.len());
         let mut i = 0;
         while i < data.len() {
+            if matches!(data[i], b' ' | b'\t') {
+                let mut end = i + 1;
+                while end < data.len() && matches!(data[end], b' ' | b'\t') { end += 1; }
+                // MIME quoted-printable transport padding is not content.
+                if end == data.len() || matches!(data[end], b'\r' | b'\n') { i = end; continue; }
+                out.extend_from_slice(&data[i..end]);
+                i = end;
+                continue;
+            }
             if data[i] != b'=' {
                 out.push(data[i]);
                 i += 1;

@@ -169,6 +169,13 @@ where
         };
 
         let r = session.run(&mut reader, &mut writer).await;
+        if r.is_err() {
+            // Tell a connected peer why this server-initiated close is fatal.
+            // A broken transport may already be unwritable; retain the original
+            // error for logging and still release the account slot below.
+            let _ = writer.write_all(b"* BYE [UNAVAILABLE] session cannot continue\r\n").await;
+            let _ = writer.flush().await;
+        }
 
         // Release the slot on normal return and on `Err` propagation
         // from `run` (the `?` paths in the loop body still pass through
@@ -482,6 +489,7 @@ impl Session {
                                 _ => {}
                             }
                         }
+                        enabled.sort_unstable();
                         enabled.dedup();
                         let suffix = if enabled.is_empty() {
                             String::new()

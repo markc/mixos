@@ -32,6 +32,12 @@ needle. Content-dependent searches refuse messages above the 64 MiB work limit
 with `NO [LIMIT]`; they do not return incomplete matches. Metadata-only searches
 can still match these messages. Unreadable content produces `NO [UNAVAILABLE]`.
 
+Binary APPEND preserves decoded body octets while storing NUL-bearing leaf
+parts with base64 transfer encoding. This keeps ordinary BODY responses valid
+IMAP strings; BINARY returns the original decoded octets. Unsupported binary
+encodings or NUL in message headers fail with UNKNOWN-CTE. UTF8=ACCEPT also
+supports the `UTF8 (~{N}...)` APPEND form.
+
 Capabilities come from an implementation allowlist. Operator overrides can
 select a subset but cannot add unimplemented extensions. APPENDLIMIT always
 comes from `imap_max_literal_bytes`. LITERAL+ permits non-synchronising literals
@@ -39,6 +45,7 @@ up to the configured cap; a LITERAL- override limits non-synchronising literals
 to 4096 octets while permitting larger synchronising literals. Command-wide
 allocation and literal-count limits apply as well. Input that cannot be safely
 drained closes the connection instead of being interpreted as new commands.
+The two protocol capabilities remain present even with an operator override.
 
 ## Original refusal inventory
 
@@ -72,6 +79,7 @@ The audit also checked server requirements beyond the refusal strings:
 | Requirement group | Finding and resolution |
 |---|---|
 | Sections 4, 5.1 and Appendix A: strings and names | Added UTF-8 negotiation, modified UTF-7 compatibility, NFC validation and literal-kind tracking |
+| Sections 2.3.1.1 and 6.3.4: recreated mailbox identity | Replace seconds-based allocation for new mailboxes with a persistent UIDVALIDITY high-water mark; existing identities remain unchanged. `uidvalidity_does_not_repeat_on_rapid_or_legacy_mailbox_recreation` covers both rapid recreation and legacy values |
 | Sections 5.2 and 7.5.1: mailbox updates and MSN stability | Added command-time refresh and preserved views while expunge notifications are prohibited |
 | Sections 6.3.2–6.3.3: selection data and read-only flags | Accurate LIST attributes and OLDNAME in rev2; RECENT/UNSEEN in rev1; empty PERMANENTFLAGS for EXAMINE |
 | Section 6.3.4: existing mailbox creation | Corrected old idempotent CREATE INBOX and CREATE existing/ behaviour to NO |

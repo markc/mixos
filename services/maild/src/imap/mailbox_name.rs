@@ -239,7 +239,7 @@ fn walk_name(
             root_kind = RootKind::RoleInbox;
             break;
         }
-        if !is_ascii_printable(&cur.name) {
+        if !is_net_unicode(&cur.name) {
             return Err(OmissionReason::NonAsciiName);
         }
         if cur.name.contains(HIERARCHY_DELIMITER) {
@@ -264,8 +264,11 @@ fn walk_name(
     })
 }
 
-fn is_ascii_printable(s: &str) -> bool {
-    s.chars().all(|c| !c.is_control())
+pub(crate) fn is_net_unicode(s: &str) -> bool {
+    unicode_normalization::is_nfc(s) && s.chars().all(|c| {
+        let n = c as u32;
+        !c.is_control() && (n & 0xffff) < 0xfffe && !(0xfdd0..=0xfdef).contains(&n)
+    })
 }
 
 /// Result of [`resolve`]: either the [`ContainerId`] the wire name
@@ -295,6 +298,8 @@ pub enum ResolveResult {
 /// case-fold non-INBOX names — that would conflict with the
 /// non-negotiable "UIDVALIDITY identifies a mailbox" invariant.
 pub fn resolve(wire_name: &str, records: &[MailboxRecord]) -> ResolveResult {
+    let canonical = fold_inbox_prefix(wire_name);
+    let wire_name = canonical.as_ref();
     if wire_name.eq_ignore_ascii_case("INBOX") {
         for r in records {
             if r.role == Some(MailboxRole::Inbox) {
@@ -349,7 +354,7 @@ pub fn matches_pattern(wire_name: &str, pattern: &str) -> bool {
 /// insensitively *and* the boundary after it is end-of-pattern or
 /// the hierarchy delimiter — so `inboxes` (with a trailing `es`) is
 /// left untouched and treated as an unrelated user-named mailbox.
-fn fold_inbox_prefix(pattern: &str) -> std::borrow::Cow<'_, str> {
+pub(crate) fn fold_inbox_prefix(pattern: &str) -> std::borrow::Cow<'_, str> {
     let bytes = pattern.as_bytes();
     if bytes.len() < 5 {
         return std::borrow::Cow::Borrowed(pattern);

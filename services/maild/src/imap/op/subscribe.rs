@@ -54,7 +54,7 @@ pub async fn handle(
         "UNSUBSCRIBE"
     };
     let name = match parse_args(args) {
-        Ok(n) => n,
+        Ok(n) => crate::imap::mailbox_name::fold_inbox_prefix(&n).into_owned(),
         Err(e) => return tagged(tag, Status::Bad, None, &format!("{command} {e}")),
     };
 
@@ -84,6 +84,9 @@ pub async fn handle(
     let id = match resolve(&name, &records) {
         ResolveResult::Found(id) => id,
         ResolveResult::NotFound => {
+            for segment in name.split('/') {
+                if let Err(e) = super::create::validate_segment(segment) { return tagged(tag, Status::No, Some("CANNOT"), &e); }
+            }
             return match tokio::task::spawn_blocking(move || {
                 store.imap_set_subscription(account_id, &name, subscribe)
             })

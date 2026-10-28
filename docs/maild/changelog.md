@@ -33,6 +33,8 @@ generated: by docs/_build/gen-site.mix from services/maild/CHANGELOG.md; do not 
 - Generalise literal framing and add atomic MULTIAPPEND and COPY. RENAME INBOX
   moves messages while preserving INBOX; subscriptions survive rename/delete.
   Correct CLOSE, EXAMINE, sequence-number notifications and shutdown BYE.
+- Allocate new mailbox UIDVALIDITY values with a durable high-water mark so
+  rapid delete/recreate cannot reuse a message identity; preserve legacy values.
 - Bound SEARCH content work and match without whole-message lowercase copies.
   Keep CONDSTORE/QRESYNC gated on the separate extension implementation.
 - IMAP `SEARCH` and `UID SEARCH` implement the header, date and text keys:

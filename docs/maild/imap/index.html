@@ -264,13 +264,19 @@ copies. Its substring matcher uses linear work and memory proportional to the
 needle. Content-dependent searches refuse messages above the 64 MiB work limit
 with <code>NO [LIMIT]</code>; they do not return incomplete matches. Metadata-only searches
 can still match these messages. Unreadable content produces <code>NO [UNAVAILABLE]</code>.</p>
+<p>Binary APPEND preserves decoded body octets while storing NUL-bearing leaf
+parts with base64 transfer encoding. This keeps ordinary BODY responses valid
+IMAP strings; BINARY returns the original decoded octets. Unsupported binary
+encodings or NUL in message headers fail with UNKNOWN-CTE. UTF8=ACCEPT also
+supports the <code>UTF8 (~{N}...)</code> APPEND form.</p>
 <p>Capabilities come from an implementation allowlist. Operator overrides can
 select a subset but cannot add unimplemented extensions. APPENDLIMIT always
 comes from <code>imap_max_literal_bytes</code>. LITERAL+ permits non-synchronising literals
 up to the configured cap; a LITERAL- override limits non-synchronising literals
 to 4096 octets while permitting larger synchronising literals. Command-wide
 allocation and literal-count limits apply as well. Input that cannot be safely
-drained closes the connection instead of being interpreted as new commands.</p>
+drained closes the connection instead of being interpreted as new commands.
+The two protocol capabilities remain present even with an operator override.</p>
 <h2 id="original-refusal-inventory">Original refusal inventory</h2>
 <p>These are the refusal sites found before implementation. Comments and tests
 containing the same wording are included so an obsolete phase note cannot be
@@ -297,6 +303,7 @@ mistaken for a remaining protocol limit.</p>
 <p>The audit also checked server requirements beyond the refusal strings:</p>
 <table><thead><tr><th>Requirement group</th><th>Finding and resolution</th></tr></thead><tbody>
 <tr><td>Sections 4, 5.1 and Appendix A: strings and names</td><td>Added UTF-8 negotiation, modified UTF-7 compatibility, NFC validation and literal-kind tracking</td></tr>
+<tr><td>Sections 2.3.1.1 and 6.3.4: recreated mailbox identity</td><td>Replace seconds-based allocation for new mailboxes with a persistent UIDVALIDITY high-water mark; existing identities remain unchanged. <code>uidvalidity_does_not_repeat_on_rapid_or_legacy_mailbox_recreation</code> covers both rapid recreation and legacy values</td></tr>
 <tr><td>Sections 5.2 and 7.5.1: mailbox updates and MSN stability</td><td>Added command-time refresh and preserved views while expunge notifications are prohibited</td></tr>
 <tr><td>Sections 6.3.2–6.3.3: selection data and read-only flags</td><td>Accurate LIST attributes and OLDNAME in rev2; RECENT/UNSEEN in rev1; empty PERMANENTFLAGS for EXAMINE</td></tr>
 <tr><td>Section 6.3.4: existing mailbox creation</td><td>Corrected old idempotent CREATE INBOX and CREATE existing/ behaviour to NO</td></tr>

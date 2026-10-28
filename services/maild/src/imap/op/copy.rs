@@ -262,13 +262,25 @@ pub async fn handle_with_view(
     .await;
     let copied = match copied {
         Ok(Ok(copied)) => copied,
-        _ => {
+        Ok(Err(e)) => {
+            let message = e.to_string();
+            tracing::warn!(error = %e, "atomic IMAP COPY failed");
+            if message.contains("already in container") || message.contains("src and dest must differ") {
+                return tagged(tag, Status::No, Some("CANNOT"), "COPY destination already contains a requested message");
+            }
+            if message.starts_with("mailbox not found") {
+                return tagged(tag, Status::No, Some("TRYCREATE"), "destination mailbox does not exist");
+            }
             return tagged(
                 tag,
                 Status::No,
                 Some("UNAVAILABLE"),
                 "COPY failed; no messages copied",
             );
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "IMAP COPY task failed");
+            return tagged(tag, Status::No, Some("SERVERBUG"), "COPY task failed");
         }
     };
     let dest_uids: Vec<u64> = copied.iter().map(|u| u.uid).collect();

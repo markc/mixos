@@ -273,6 +273,10 @@ moves messages while preserving INBOX; subscriptions survive rename/delete.
 Correct CLOSE, EXAMINE, sequence-number notifications and shutdown BYE.</p>
 </li>
 <li>
+<p>Allocate new mailbox UIDVALIDITY values with a durable high-water mark so
+rapid delete/recreate cannot reuse a message identity; preserve legacy values.</p>
+</li>
+<li>
 <p>Bound SEARCH content work and match without whole-message lowercase copies.
 Keep CONDSTORE/QRESYNC gated on the separate extension implementation.</p>
 </li>

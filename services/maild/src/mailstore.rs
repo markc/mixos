@@ -2286,6 +2286,7 @@ impl MailStore for SqliteMailStore {
             }
             imap_preserve_subscriptions(tx.tx())?;
             let dest = tx.create_container_named(parent.as_ref(), name, &jmap_attrs_for_create(None, 0, false))?;
+            imap_allocate_uidvalidity(tx.tx(), &dest)?;
             let items = {
                 let mut statement = tx.tx().prepare("SELECT item_id FROM membership WHERE container_id = ?1 ORDER BY seq")
                     .map_err(|e| mds::Error::Other(e.to_string()))?;
@@ -2328,6 +2329,9 @@ impl MailStore for SqliteMailStore {
         name: &str,
         subscribed: bool,
     ) -> Result<()> {
+        if name.is_empty() || !crate::imap::mailbox_name::is_net_unicode(name) || name.split('/').any(str::is_empty) {
+            return Err(anyhow!("mailbox invalid subscription name"));
+        }
         let set = self.ensure_account_set(account)?;
         self.mds.with_set_tx(&set, |tx| {
             tx.tx().execute_batch("CREATE TABLE IF NOT EXISTS mail_imap_subscriptions (name TEXT PRIMARY KEY NOT NULL)")
@@ -2528,7 +2532,9 @@ impl MailStore for SqliteMailStore {
                     )));
                 }
             }
-            tx.create_container_named(parent.as_ref(), name, &attrs)
+            let id = tx.create_container_named(parent.as_ref(), name, &attrs)?;
+            imap_allocate_uidvalidity(tx.tx(), &id)?;
+            Ok(id)
         }) {
             Ok(id) => Ok(id),
             Err(mds::Error::ContainerNotFound(p)) => Err(anyhow!("mailbox parent not found: {p}")),
@@ -2680,6 +2686,7 @@ impl MailStore for SqliteMailStore {
                 )));
             }
             imap_preserve_subscriptions(tx.tx())?;
+            imap_uidvalidity_high_water(tx.tx())?;
             match on_emails {
                 DestroyPolicy::Reject => {
                     // Authoritative live count over `membership`, not
@@ -2880,11 +2887,16 @@ impl MailStore for SqliteMailStore {
             // surface change").
             if attrs_change_requested {
                 if is_subscribed == Some(false) {
-                    let name = imap_name_in_connection(tx.tx(), &id)?;
-                    tx.tx().execute_batch("CREATE TABLE IF NOT EXISTS mail_imap_subscriptions (name TEXT PRIMARY KEY NOT NULL)")
-                        .map_err(|e| mds::Error::Other(e.to_string()))?;
-                    tx.tx().execute("DELETE FROM mail_imap_subscriptions WHERE name = ?1", [name])
-                        .map_err(|e| mds::Error::Other(e.to_string()))?;
+                    match imap_name_in_connection(tx.tx(), &id) {
+                        Ok(name) => {
+                            tx.tx().execute_batch("CREATE TABLE IF NOT EXISTS mail_imap_subscriptions (name TEXT PRIMARY KEY NOT NULL)")
+                                .map_err(|e| mds::Error::Other(e.to_string()))?;
+                            tx.tx().execute("DELETE FROM mail_imap_subscriptions WHERE name = ?1", [name])
+                                .map_err(|e| mds::Error::Other(e.to_string()))?;
+                        }
+                        Err(mds::Error::Other(message)) if message.starts_with("mailbox not representable") => {},
+                        Err(e) => return Err(e),
+                    }
                 }
                 let mut attrs: ContainerAttrs = serde_json::from_str(&cur_attrs_raw)
                     .map_err(|e| mds::Error::Other(format!("decode container attrs: {e}")))?;
@@ -3140,7 +3152,7 @@ impl MailStore for SqliteMailStore {
             // row between IMAP snapshot and this tx must fail the
             // COPY, not mint a dest membership with the wrong flags.
             let placement = tx
-                .add_membership_from(&item_id, &src, &dest)
+                .add_membership_from(item_id, &src, &dest)
                 .map_err(|e| match e {
                     mds::Error::ItemNotFound(_) => mds::Error::Other(format!(
                         "email not found: {id}",
@@ -5705,18 +5717,50 @@ fn reap_mail_search_if_item_gone(
     Ok(())
 }
 
+/// Retain the greatest current or historical wire identity for this account.
+fn imap_uidvalidity_high_water(conn: &rusqlite::Connection) -> mds::Result<u64> {
+    conn.execute_batch("CREATE TABLE IF NOT EXISTS mail_imap_uidvalidity (id INTEGER PRIMARY KEY CHECK(id = 1), value INTEGER NOT NULL)")
+        .map_err(|e| mds::Error::Other(e.to_string()))?;
+    let previous: Option<u64> = conn.query_row("SELECT value FROM mail_imap_uidvalidity WHERE id = 1", [], |row| row.get(0))
+        .optional().map_err(|e| mds::Error::Other(e.to_string()))?;
+    let present: u64 = conn.query_row(
+        "SELECT COALESCE(MAX(CASE WHEN seq_validity > 4294967295 THEN seq_validity / 1000 ELSE seq_validity END), 0) FROM container",
+        [], |row| row.get(0),
+    ).map_err(|e| mds::Error::Other(e.to_string()))?;
+    let high = previous.unwrap_or(0).max(present).max(chrono::Utc::now().timestamp().max(1) as u64);
+    conn.execute("INSERT INTO mail_imap_uidvalidity(id, value) VALUES (1, ?1) ON CONFLICT(id) DO UPDATE SET value = excluded.value", [high])
+        .map_err(|e| mds::Error::Other(e.to_string()))?;
+    Ok(high)
+}
+
+/// New mailbox identities use a durable counter, including across deletion.
+/// Legacy epoch-millisecond identities remain unchanged until their mailbox is
+/// destroyed. This avoids seconds-conversion collisions on rapid recreation.
+fn imap_allocate_uidvalidity(conn: &rusqlite::Connection, id: &ContainerId) -> mds::Result<()> {
+    let next = imap_uidvalidity_high_water(conn)?.checked_add(1).filter(|n| *n <= u32::MAX as u64)
+        .ok_or_else(|| mds::Error::Other("IMAP UIDVALIDITY space exhausted".into()))?;
+    conn.execute("UPDATE mail_imap_uidvalidity SET value = ?1 WHERE id = 1", [next])
+        .map_err(|e| mds::Error::Other(e.to_string()))?;
+    conn.execute("UPDATE container SET seq_validity = ?1 WHERE id = ?2", params![next, id.0.to_string()])
+        .map_err(|e| mds::Error::Other(e.to_string()))?;
+    Ok(())
+}
+
 /// Canonical IMAP name inside an existing native transaction.
 fn imap_name_in_connection(conn: &rusqlite::Connection, id: &ContainerId) -> mds::Result<String> {
     let mut current = Some(id.0.to_string());
     let mut parts = Vec::new();
     let mut seen = std::collections::HashSet::new();
     while let Some(id) = current {
-        if !seen.insert(id.clone()) { return Err(mds::Error::Other("mailbox parent cycle".into())); }
+        if !seen.insert(id.clone()) { return Err(mds::Error::Other("mailbox not representable: parent cycle".into())); }
         let (name, parent, role): (String, Option<String>, Option<String>) = conn.query_row(
             "SELECT name, parent_id, json_extract(attrs, '$.special_use') FROM container WHERE id = ?1",
             [id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         ).map_err(|e| mds::Error::Other(e.to_string()))?;
         if role.as_deref() == Some(r"\Inbox") { parts.push("INBOX".to_string()); break; }
+        if name.is_empty() || name.contains('/') || !crate::imap::mailbox_name::is_net_unicode(&name) {
+            return Err(mds::Error::Other("mailbox not representable over IMAP".into()));
+        }
         parts.push(name);
         current = parent;
     }
@@ -5736,7 +5780,11 @@ fn imap_preserve_subscriptions(conn: &rusqlite::Connection) -> mds::Result<()> {
     };
     for id in ids {
         let id = ContainerId(uuid::Uuid::parse_str(&id).map_err(|e| mds::Error::Other(e.to_string()))?);
-        let name = imap_name_in_connection(conn, &id)?;
+        let name = match imap_name_in_connection(conn, &id) {
+            Ok(name) => name,
+            Err(mds::Error::Other(message)) if message.starts_with("mailbox not representable") => continue,
+            Err(e) => return Err(e),
+        };
         conn.execute("INSERT OR IGNORE INTO mail_imap_subscriptions(name) VALUES (?1)", [name])
             .map_err(|e| mds::Error::Other(e.to_string()))?;
     }
