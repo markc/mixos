@@ -3,8 +3,8 @@
 # Hashes cover the rendered bytes, checked by tests/layout_templates_test.mix.
 {
   "apps/dopus/units/files@.service": {
-    "reason": "add the chooser-only DOpus session unit template without enabling it",
-    "sha256": "944089cb16f45b63415524bde7b0ceb75de30c052d8554bf23e5882c9cce8e21"
+    "reason": "add the chooser-only DOpus session unit; want session noded and order after session and system noded",
+    "sha256": "74cde6399e8d2933eaf80cb2115907c901be3ae7821e25fd74c953864cc9a82f"
   },
   "services/editd/units/editd@.service": {
     "reason": "want the session broker instead of binding to it, so a session on the system broker (noded@N masked) starts editd",
