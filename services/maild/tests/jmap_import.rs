@@ -295,7 +295,14 @@ async fn email_import_validation_state_and_partial_success() {
         "keywords": {"blobId": blob, "mailboxIds": {&f.inbox: true}, "keywords": {"$seen": false}},
         "date": {"blobId": blob, "mailboxIds": {&f.inbox: true}, "receivedAt": "2024-01-01T10:00:00+10:00"}
     }})).await;
-    for key in ["empty", "missing", "mailbox", "duplicate", "keywords", "date"] {
+    for key in [
+        "empty",
+        "missing",
+        "mailbox",
+        "duplicate",
+        "keywords",
+        "date",
+    ] {
         assert_eq!(
             response["notCreated"][key]["type"], "invalidProperties",
             "{response}"
@@ -519,7 +526,10 @@ async fn email_import_storage_failure_is_server_fail_and_rolls_back() {
             json!({"emails": {"a": {"blobId": blob, "mailboxIds": {&f.inbox: true}}}}),
         )
         .await;
-    assert_eq!(response["notCreated"]["a"]["type"], "serverFail", "{response}");
+    assert_eq!(
+        response["notCreated"]["a"]["type"], "serverFail",
+        "{response}"
+    );
     assert!(response["created"].is_null());
     assert_eq!(response["oldState"], response["newState"]);
     assert_eq!(f.call("Email/query", json!({})).await["ids"], json!([]));
@@ -539,7 +549,10 @@ async fn email_import_parser_panic_is_invalid_email_and_service_survives() {
             json!({"emails": {"a": {"blobId": blob, "mailboxIds": {&f.inbox: true}}}}),
         )
         .await;
-    assert_eq!(response["notCreated"]["a"]["type"], "invalidEmail", "{response}");
+    assert_eq!(
+        response["notCreated"]["a"]["type"], "invalidEmail",
+        "{response}"
+    );
     assert!(response["created"].is_null());
     assert_eq!(response["oldState"], response["newState"]);
     assert!(f.import("after-parser-panic").await["created"]["a"]["id"].is_string());
