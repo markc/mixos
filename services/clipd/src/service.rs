@@ -23,7 +23,18 @@ pub const COMMANDS: &[(&str, bool)] = &[
 ];
 pub fn manifest() -> Vec<bus::CommandDescriptor> {
     std::iter::once(bus::CommandDescriptor::new("HELP", &[], "List clipboard commands", true))
-        .chain(COMMANDS.iter().map(|(name, read)| bus::CommandDescriptor::new(name, &[], name, *read))).collect()
+        .chain(COMMANDS.iter().map(|(name, read)| {
+            let args: &[&str] = match *name {
+                "clipboard.get" => &["mime?", "primary?", "offset?"],
+                "clipboard.set" => &["mime", "data", "encoding?", "primary?", "sensitive?", "stamp?"],
+                "clipboard.clear" => &["primary?"],
+                "clipboard.pick" => &["n", "expected_id?"],
+                "clipboard.push" => &["to"],
+                "clipboard.receive" | "clipboard.fetch" => &["from_session", "to_session", "expires", "nonce", "ciphertext"],
+                _ => &[],
+            };
+            bus::CommandDescriptor::new(name, args, name, *read)
+        })).collect()
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -81,7 +92,7 @@ impl Settings {
 
 /// Authenticated encryption keeps clipboard bytes confidential even if a
 /// configured Bus target is accidentally registered by a different principal.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Envelope {
     from_session: String,
@@ -124,6 +135,8 @@ pub struct Fetch {
     pub stamp: Stamp,
     pub mime: String,
     pub offset: usize,
+    #[serde(default)]
+    pub visited: Vec<String>,
 }
 
 pub struct Service {
@@ -160,6 +173,12 @@ impl Service {
     }
 
     async fn bytes(&self, selection: &Selection, mime: &str, primary: bool) -> Result<Arc<Vec<u8>>> {
+        self.bytes_with_path(selection, mime, primary, &[]).await
+    }
+
+    async fn bytes_with_path(&self, selection: &Selection, mime: &str, primary: bool, visited: &[String]) -> Result<Arc<Vec<u8>>> {
+        let own = self.state.lock().await.session.clone();
+        ensure!(visited.len() < 3 && !visited.contains(&own), "SOURCE_CYCLE: clipboard fetch returned to a visited session");
         ensure!(selection.mime_types.iter().any(|m| m == mime), "MIME: type is not offered");
         if let Some(bytes) = selection.data.get(mime) { return Ok(bytes.clone()); }
         // One materialisation at a time; recheck the live cache after acquiring.
@@ -172,10 +191,12 @@ impl Service {
         }
         let bytes = if let Some(remote) = &selection.remote {
             let mut bytes = Vec::new();
+            let mut path = visited.to_vec();
+            path.push(own);
             let started = std::time::Instant::now();
             loop {
                 ensure!(started.elapsed() < Duration::from_secs(30), "SOURCE_TIMEOUT: lazy clipboard deadline exceeded");
-                let part = self.peer_call(&remote.session, "clipboard.fetch", json!(Fetch { stamp: remote.stamp.clone(), mime: mime.into(), offset: bytes.len() })).await.map_err(|_| anyhow!("SOURCE_GONE: lazy clipboard source is unavailable"))?;
+                let part = self.peer_call(&remote.session, "clipboard.fetch", json!(Fetch { stamp: remote.stamp.clone(), mime: mime.into(), offset: bytes.len(), visited: path.clone() })).await.map_err(|_| anyhow!("SOURCE_GONE: lazy clipboard source is unavailable"))?;
                 let chunk = B64.decode(part["data"].as_str().ok_or_else(|| anyhow!("SOURCE_GONE: malformed chunk"))?)?;
                 ensure!(chunk.len() <= CHUNK && bytes.len() + chunk.len() <= MAX_BYTES, "SIZE_CAP: remote clipboard exceeds limit");
                 let eof = part["eof"].as_bool().ok_or_else(|| anyhow!("SOURCE_GONE: missing end marker"))?;
@@ -236,6 +257,8 @@ impl Service {
         let size = offer.is_none().then_some(0);
         let selection = Selection { stamp: stamp.clone(), sensitive: invalid || types.iter().any(|m| m == SECRET_HINT), mime_types: types, size, data: BTreeMap::new(), offer, remote: None };
         state.adopt(primary, selection.clone());
+        drop(state);
+        self.changed(primary).await;
         Some(selection)
     }
 
@@ -299,7 +322,7 @@ impl Service {
             "clipboard.receive" => {
                 let r: Receive = serde_json::from_value(body)?;
                 if r.mime_types.is_empty() { ensure!(r.size == Some(0), "MIME: empty offer must describe a clear"); } else { validate_mimes(&r.mime_types)?; }
-                ensure!(r.stamp.origin_session == envelope.from_session && uuid::Uuid::parse_str(&r.stamp.generation).is_ok(), "SCOPE: invalid origin generation");
+                ensure!(session(&r.stamp.origin_session)? == r.stamp.origin_session && uuid::Uuid::parse_str(&r.stamp.generation).is_ok(), "SCOPE: invalid origin generation");
                 ensure!(!r.mime_types.iter().any(|m| m == SECRET_HINT), "SENSITIVE: hinted data cannot cross sessions");
                 let mut data = BTreeMap::new();
                 if let Some(items) = r.data {
@@ -327,7 +350,7 @@ impl Service {
                 let s = self.state.lock().await.selections[0].clone().ok_or_else(|| anyhow!("SOURCE_GONE: selection cleared"))?;
                 ensure!(s.stamp == r.stamp, "SOURCE_GONE: source generation replaced");
                 s.can_export(peer.images)?;
-                let bytes = self.bytes(&s, &r.mime, false).await?;
+                let bytes = self.bytes_with_path(&s, &r.mime, false, &r.visited).await?;
                 ensure!(r.offset <= bytes.len(), "OFFSET: beyond selection");
                 let end = r.offset.saturating_add(CHUNK).min(bytes.len());
                 json!({"data": B64.encode(&bytes[r.offset..end]), "eof": end == bytes.len()})
@@ -366,7 +389,7 @@ impl Service {
                 Ok(json!({"applied": self.set(Selection::owned(stamp, p.mime, data, sensitive), p.primary, false).await?}))
             }
             "clipboard.clear" => {
-                let p: Get = serde_json::from_value(command.args.clone())?;
+                let p: Clear = serde_json::from_value(command.args.clone())?;
                 let own = self.state.lock().await.session.clone();
                 let s = Selection { stamp: Stamp::new(&own), mime_types: Vec::new(), sensitive: false, size: Some(0), data: BTreeMap::new(), offer: None, remote: None };
                 Ok(json!({"applied": self.set(s, p.primary, true).await?}))
@@ -389,6 +412,17 @@ impl Service {
             }
             "clipboard.push" => self.push(&serde_json::from_value::<Push>(command.args.clone())?.to).await,
             "desktop.clipboard.menu" => {
+                if self.state.lock().await.session == "vt1" {
+                    // Phase 2 keeps Plasma's existing history UI. Only this
+                    // presentation request uses Klipper's existing session API;
+                    // clipboard ownership and cross-VT data remain native Bus.
+                    tokio::time::timeout(Duration::from_secs(3), async {
+                        let connection = zbus::Connection::session().await?;
+                        let proxy = zbus::Proxy::new(&connection, "org.kde.klipper", "/klipper", "org.kde.klipper.klipper").await?;
+                        proxy.call::<_, _, ()>("showKlipperPopupMenu", &()).await
+                    }).await??;
+                    return Ok(json!({"opened": true, "ui": "klipper"}));
+                }
                 let mut menu = self.menu.lock().unwrap();
                 if let Some(child) = menu.as_mut() { if child.try_wait()?.is_none() { return Ok(json!({"opened": false, "already_open": true})); } }
                 *menu = Some(std::process::Command::new(std::env::current_exe()?).arg("--menu").arg("--bus").arg(&self.url).spawn()?);
@@ -414,11 +448,24 @@ pub async fn run(session_name: String, url: String, settings: Settings, key: Opt
     let permits = Arc::new(Semaphore::new(16));
     let mut tasks = tokio::task::JoinSet::new();
     let mut observations: [Option<tokio::task::AbortHandle>; 2] = [None, None];
+    let mut connection = client.subscribe_state();
     let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
     let result = loop {
         tokio::select! {
             _ = sigterm.recv() => break Ok(()),
             _ = tokio::signal::ctrl_c() => break Ok(()),
+            changed = connection.changed() => {
+                if changed.is_err() { break Err(anyhow!("Bus supervisor closed")); }
+                let state = *connection.borrow_and_update();
+                match state {
+                    bus::native_client::ConnState::Connected => {
+                        service.changed(false).await;
+                        service.changed(true).await;
+                    }
+                    bus::native_client::ConnState::Fatal => break Err(anyhow!("Bus registration rejected")),
+                    _ => {}
+                }
+            },
             done = tasks.join_next(), if !tasks.is_empty() => { if let Some(Err(error)) = done { if !error.is_cancelled() { tracing::warn!(%error, "clipboard task failed"); } } },
             event = incoming.recv() => match event {
                 Some(BoundedIncomingEvent::Command(command)) if !command.is_topic_delivery() => {
@@ -575,6 +622,28 @@ mod tests {
         assert!(open(&[8; 32], "vt4", "clipboard.receive", &envelope).is_err());
         assert!(open(&[7; 32], "vt3", "clipboard.receive", &envelope).is_err());
         assert!(open(&[7; 32], "vt4", "clipboard.fetch", &envelope).is_err());
+    }
+    #[test]
+    fn pair_settings_require_a_private_scope_key_and_bounded_caps() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("clipboard.conf.mix");
+        let key = dir.path().join("scope.key");
+        let mut settings = Settings { scope_key_file: Some(key.clone()), peers: BTreeMap::from([("vt4".into(), Peer { target:"clipd.alpha.example.bus".into(), images:false, follow:false })]), ..Default::default() };
+        std::fs::write(&path, serde_json::to_vec(&settings).unwrap()).unwrap();
+        assert!(Settings::load(Some(&path), "vt1").is_err());
+        std::fs::write(&key, [7;32]).unwrap();
+        std::fs::set_permissions(&key, std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(Settings::load(Some(&path), "vt1").is_err());
+        std::fs::set_permissions(&key, std::fs::Permissions::from_mode(0o600)).unwrap();
+        assert!(Settings::load(Some(&path), "vt1").is_ok());
+        settings.eager_text_bytes = TEXT_CAP + 1;
+        std::fs::write(&path, serde_json::to_vec(&settings).unwrap()).unwrap();
+        assert!(Settings::load(Some(&path), "vt1").is_err());
+        settings.eager_text_bytes = TEXT_CAP;
+        settings.peers.insert("remote-host".into(), Peer { target:"clipd.beta.example.bus".into(), images:true, follow:true });
+        std::fs::write(&path, serde_json::to_vec(&settings).unwrap()).unwrap();
+        assert!(Settings::load(Some(&path), "vt1").is_err());
     }
     #[tokio::test]
     async fn lazy_fetch_fails_cleanly_when_source_is_gone() {

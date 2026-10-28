@@ -14726,7 +14726,7 @@ impl Evaluator {
                             return Err(self.runtime_err(format!("{name}: clipboard unavailable (rc {rc}): {}", result.to_mix_string())));
                         }
                         if name == "clip_set" { return Ok(Value::Bool(true)); }
-                        let Value::Map(reply) = reply else {
+                        let Value::Map(reply) = &reply else {
                             return Err(self.runtime_err("clip_get: malformed clipboard reply"));
                         };
                         if reply.get("encoding") != Some(&Value::String("utf8".into())) || reply.get("eof") != Some(&Value::Bool(true)) {

@@ -12,7 +12,7 @@ pub const HISTORY_LEN: usize = 50;
 pub const SECRET_HINT: &str = "x-kde-passwordManagerHint";
 pub const MARKER: &str = "application/x-mixos-clipboard-";
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Stamp {
     pub origin_session: String,
@@ -30,7 +30,7 @@ impl Stamp {
     }
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Get {
     pub mime: Option<String>,
@@ -40,7 +40,7 @@ pub struct Get {
     pub offset: usize,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Set {
     pub mime: String,
@@ -56,6 +56,13 @@ pub struct Set {
 }
 fn utf8() -> String { "utf8".into() }
 
+#[derive(Clone, Debug, Default, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Clear {
+    #[serde(default)]
+    pub primary: bool,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Pick {
@@ -64,7 +71,7 @@ pub struct Pick {
     pub expected_id: Option<String>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Push { pub to: String }
 
@@ -112,7 +119,6 @@ impl Selection {
     pub fn can_export(&self, images: bool) -> Result<()> {
         ensure!(!self.sensitive, "SENSITIVE: selection cannot leave this session");
         ensure!(images || !self.mime_types.iter().any(|m| m.starts_with("image/")), "IMAGES_DISABLED: enable images for this pair first");
-        ensure!(self.remote.is_none(), "REMOTE_SELECTION: copy locally before forwarding to another session");
         Ok(())
     }
 
@@ -141,7 +147,7 @@ impl Clipboard {
     }
 
     pub fn is_echo(&self, stamp: &Stamp) -> bool {
-        self.seen.contains(stamp)
+        self.seen.contains(stamp) || self.selections.iter().flatten().any(|s| &s.stamp == stamp)
     }
 
     pub fn adopt(&mut self, primary: bool, selection: Selection) -> bool {
@@ -223,6 +229,9 @@ mod tests {
         assert!(c.history.is_empty());
         let s = Selection::owned(Stamp::new("vt1"), "image/png".into(), vec![0], false);
         assert!(s.can_export(false).is_err()); assert!(s.can_export(true).is_ok());
+        let mut cached = s;
+        assert!(cached.cache("text/plain".into(), vec![0; MAX_BYTES + 1]).is_err());
+        assert!(!cached.data.contains_key("text/plain"));
         assert!(session("other-node").is_err());
     }
 }

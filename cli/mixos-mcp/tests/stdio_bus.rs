@@ -6,6 +6,52 @@ use rmcp::{ServiceExt, model::CallToolRequestParams, transport::TokioChildProces
 use serde_json::{Value, json};
 use tokio::process::Command;
 
+#[tokio::test]
+async fn clipboard_tools_use_the_local_clipd_and_preserve_parameters() {
+    let broker = test_broker::Broker::start();
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("node.conf.mix");
+    std::fs::write(&config, "node: \"fixture\"\nnoded: {port: 4200}\n").unwrap();
+    let mut command = Command::new(env!("CARGO_BIN_EXE_mixos-mcp"));
+    command.env("MIXOS_NODED_URL", &broker.url)
+        .env("MIXOS_BUS_SOCKET", &broker.endpoint)
+        .env("MIXOS_BROKER_ACCOUNT", std::env::var("USER").unwrap())
+        .env("MIXOS_NODE_CONFIG", &config).env("MIXOS_ETC", dir.path())
+        .env("HOME", dir.path()).env("MIXOS_LOG", dir.path().join("logs"))
+        .current_dir(dir.path());
+    let service = ().serve(TokioChildProcess::new(command).unwrap()).await.unwrap();
+    let owner = NodedClient::connect("clipd", &broker.url).await.unwrap();
+    let mut incoming = owner.incoming_async().await.unwrap();
+    let task = tokio::spawn(async move {
+        for _ in 0..2 {
+            let command = incoming.recv().await.unwrap();
+            let args: Value = serde_json::from_str(&command.body).unwrap();
+            let reply = match command.command.as_str() {
+                "clipboard.set" => {
+                    assert_eq!(args, json!({"data":"copy\nthis", "mime":"text/plain;charset=utf-8", "primary":false, "sensitive":true}));
+                    json!({"applied":true})
+                }
+                "clipboard.get" => {
+                    assert_eq!(args, json!({"mime":"text/plain", "primary":true, "offset":3}));
+                    json!({"data":"paste this", "encoding":"utf8", "eof":true})
+                }
+                other => panic!("unexpected command {other}"),
+            };
+            owner.respond(&command, 0, &reply.to_string()).await.unwrap();
+        }
+        owner.close().await;
+    });
+    let request = |name, args: Value| CallToolRequestParams::new(name).with_arguments(args.as_object().unwrap().clone());
+    let set = result(service.call_tool(request("clipboard_set", json!({"text":"copy\nthis", "sensitive":true}))).await.unwrap());
+    assert_eq!(set["service"], "clipd");
+    assert_eq!(set["result"]["applied"], true);
+    let get = result(service.call_tool(request("clipboard_get", json!({"mime":"text/plain", "primary":true, "offset":3}))).await.unwrap());
+    assert_eq!(get["command"], "clipboard.get");
+    assert_eq!(get["result"]["data"], "paste this");
+    task.await.unwrap();
+    service.cancel().await.unwrap();
+}
+
 fn result(result: rmcp::model::CallToolResult) -> Value {
     assert!(!result.is_error.unwrap_or(false), "{result:?}");
     result.structured_content.unwrap()

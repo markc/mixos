@@ -250,7 +250,7 @@ It watches both clipboard and PRIMARY without requiring keyboard focus.</p>
 <tr><td><code>clipboard.pick</code></td><td><code>{n}</code>; sets the zero-based history entry</td></tr>
 <tr><td><code>clipboard.info</code></td><td><code>{}</code> → session, protocol, caps and configured peers</td></tr>
 <tr><td><code>clipboard.push</code></td><td><code>{to:"vt4"}</code>; the equivalent <code>desk</code>-prefixed alias is also accepted</td></tr>
-<tr><td><code>desktop.clipboard.menu</code></td><td>Opens the local native history picker</td></tr>
+<tr><td><code>desktop.clipboard.menu</code></td><td>Opens Klipper on Plasma, or the native history picker in a desk</td></tr>
 <tr><td><code>desktop.clipboard.rotate</code></td><td>Chooses the next history entry</td></tr>
 </tbody></table>
 <p><code>clipboard.changed</code> publishes <code>{session,generation,origin_session,mime_types, size,sensitive,primary}</code>. It contains <strong>metadata only</strong>. Size is null when
@@ -299,7 +299,8 @@ Both ends must allow <code>images:true</code> for images. The original source ge
 must still exist until that type is materialised; the target can then serve
 its bounded cache. A replaced selection,
 missing service, timeout or cap failure closes the paste fd cleanly and logs
-the failure. Imported lazy offers cannot be forwarded to a third session.
+the failure. Forwarded lazy offers retain their origin stamp; fetches carry
+a bounded session path and fail cleanly if a dependency cycle is detected.
 Optional <code>follow:true</code> pushes local changes to that peer; imported
 changes do not trigger follow. Nothing follows by default.</p>
 <p><code>clipboard.receive</code> and <code>clipboard.fetch</code> are internal encrypted peer
@@ -314,9 +315,9 @@ Use a service drop-in to add <code>--settings</code> for sharing. Units are temp
 <code>mix layout apply</code>; shipping them does not install or enable them.</p>
 <p>inputd migrates the existing Right Ctrl+Down/Up clipboard rows from the old
 <code>desktop-vt1</code> target to <code>clipd</code>, retaining their menu/rotate actions. Custom
-targets and unrelated user bindings are preserved. Klipper may continue
-running on Plasma; clipd does not replace its history or take ownership just
-to observe a selection.</p>
+targets and unrelated user bindings are preserved. Plasma keeps Klipper's
+history UI through its existing session API; desks use the native picker.
+clipd does not take ownership just to observe a selection.</p>
         </article>
         <p class="doc-source"><a href="/clipd/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>

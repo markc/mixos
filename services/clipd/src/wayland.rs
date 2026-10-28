@@ -255,6 +255,7 @@ impl State {
         if self.events.try_send(Event::Selection { primary, offer, types, sequence: self.sequence }).is_err() { self.finished = true; }
     }
     fn send(&mut self, data: &SourceData, mime: String, fd: OwnedFd) {
+        if mime == data.stamp.marker() { return; }
         let _ = self.events.try_send(Event::Send { stamp: data.stamp.clone(), primary: data.primary, mime, fd });
     }
 }

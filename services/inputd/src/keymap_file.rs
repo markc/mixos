@@ -841,7 +841,7 @@ pub(crate) mod tests {
     const LEGACY_FILE: &str = include_str!("../tests/fixtures/legacy-keymap.json");
 
     #[test]
-    fn a_legacy_keymap_file_loads_unchanged_and_saves_byte_for_byte() {
+    fn a_legacy_keymap_preserves_everything_except_the_retired_clipboard_target() {
         let loaded = parse(LEGACY_FILE, Path::new("t")).expect("legacy file parses");
         assert!(loaded.dropped.is_empty(), "{:?}", loaded.dropped);
         assert_eq!(loaded.rows.len(), 5);

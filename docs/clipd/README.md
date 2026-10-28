@@ -17,7 +17,7 @@ It watches both clipboard and PRIMARY without requiring keyboard focus.
 | `clipboard.pick` | `{n}`; sets the zero-based history entry |
 | `clipboard.info` | `{}` → session, protocol, caps and configured peers |
 | `clipboard.push` | `{to:"vt4"}`; the equivalent `desk`-prefixed alias is also accepted |
-| `desktop.clipboard.menu` | Opens the local native history picker |
+| `desktop.clipboard.menu` | Opens Klipper on Plasma, or the native history picker in a desk |
 | `desktop.clipboard.rotate` | Chooses the next history entry |
 
 `clipboard.changed` publishes `{session,generation,origin_session,mime_types,
@@ -76,7 +76,8 @@ Both ends must allow `images:true` for images. The original source generation
 must still exist until that type is materialised; the target can then serve
 its bounded cache. A replaced selection,
 missing service, timeout or cap failure closes the paste fd cleanly and logs
-the failure. Imported lazy offers cannot be forwarded to a third session.
+the failure. Forwarded lazy offers retain their origin stamp; fetches carry
+a bounded session path and fail cleanly if a dependency cycle is detected.
 Optional `follow:true` pushes local changes to that peer; imported
 changes do not trigger follow. Nothing follows by default.
 
@@ -95,6 +96,6 @@ Use a service drop-in to add `--settings` for sharing. Units are templates for
 
 inputd migrates the existing Right Ctrl+Down/Up clipboard rows from the old
 `desktop-vt1` target to `clipd`, retaining their menu/rotate actions. Custom
-targets and unrelated user bindings are preserved. Klipper may continue
-running on Plasma; clipd does not replace its history or take ownership just
-to observe a selection.
+targets and unrelated user bindings are preserved. Plasma keeps Klipper's
+history UI through its existing session API; desks use the native picker.
+clipd does not take ownership just to observe a selection.

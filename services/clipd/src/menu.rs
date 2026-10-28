@@ -37,7 +37,7 @@ fn registry() -> action::Registry<State> {
         class: action::Class::Intent,
         run: |state: &mut State, params| {
             let pick: Pick = serde_json::from_value(params.clone()).map_err(|e| action::Error::BadParams { id: "clipboard.pick", msg: e.to_string() })?;
-            if pick.n >= state.rows.len() { return Err(action::Error::Failed("History entry unavailable".into())); }
+            if pick.n >= state.rows.len() { return Err(action::Error::Failed("HISTORY_UNAVAILABLE".into())); }
             state.selected = Some(pick.n);
             state.pending = Some(pick);
             Ok(json!({"queued": true}))
@@ -68,7 +68,7 @@ impl Picker {
             }
         });
         if let Some(pick) = choose {
-            if let Err(error) = self.registry.execute("clipboard.pick", &mut self.state, json!(pick), action::Origin::Ui) { self.state.error = Some(error.to_string()); }
+            if self.registry.execute("clipboard.pick", &mut self.state, json!(pick), action::Origin::Ui).is_err() { self.state.error = Some(self.strings.get("history-changed")); }
         }
         if let Some(pick) = self.state.pending.take() {
             if self.send.try_send(pick).is_err() { self.state.error = Some(self.strings.get("busy")); }
@@ -88,6 +88,7 @@ pub fn run(url: String) -> Result<()> {
         std::thread::spawn(move || {
             let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().expect("picker runtime");
             runtime.block_on(async move {
+                let strings = toolkit::Strings::new(include_str!("../i18n/en/clipd.ftl"));
                 let client = match NodedClient::connect_anonymous(&url).await {
                     Ok(client) => client,
                     Err(error) => { let _ = result.send(Err(error.to_string())); ctx.request_repaint(); return; }
@@ -99,7 +100,7 @@ pub fn run(url: String) -> Result<()> {
                 loop {
                     let reply = match client.call_typed("clipd", command, args).await {
                         Ok(PortReply::Ok { rc: 0, value }) => Ok(value),
-                        Ok(_) => Err("Clipboard request refused; refresh history and try again".into()),
+                        Ok(_) => Err(strings.get("refused")),
                         Err(error) => Err(error.to_string()),
                     };
                     if reply.is_ok() {
