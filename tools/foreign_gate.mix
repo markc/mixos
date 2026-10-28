@@ -19,9 +19,10 @@
 --      shrinks.
 --   4. The `strict` crates reach no desktop-only crate (`strict_forbid`,
 --      pure Rust included: egui, winit, wgpu, smithay, wayland-*, …).
---   5. Each `--elf BIN` (a built strict binary) has no DT_NEEDED entry in
---      `strict_forbid_so` (libwayland, libX11, libEGL, …). This catches what
---      a per-package closure cannot: workspace feature unification.
+--   5. Each `--elf BIN` (a built strict binary) loads no library, direct or
+--      transitive (ldd), in `strict_forbid_so` (libwayland, libX11, libEGL,
+--      …). This catches what a per-package closure cannot: workspace feature
+--      unification.
 -- Ported from cosmix check-no-gui.mix and check-no-gui-elf.mix.
 --
 -- Usage: mix tools/foreign_gate.mix [--list] [--locked] [--offline] [--elf BIN]...
@@ -152,13 +153,16 @@ for each $bin in $elf_bins
     eprint("foreign_gate: --elf " .. $bin .. " does not exist")
     exit(2)
   end
-  $re = run_argv(["readelf", "-d", "--wide", $bin], {timeout: 60})
+  -- ldd, not readelf -d: a GUI library usually arrives through another
+  -- library (weston needs libwayland only via libweston). Only our own built
+  -- binaries are passed here, so running the loader on them is safe.
+  $re = run_argv(["ldd", $bin], {timeout: 60})
   if not $re.ok then
-    eprint("foreign_gate: readelf failed on " .. $bin .. "\n" .. $re.stderr)
+    eprint("foreign_gate: ldd failed on " .. $bin .. "\n" .. $re.stderr)
     exit(2)
   end
-  for each $m in re_find($re.stdout, "\\(NEEDED\\)[^\\[]*\\[([^\\]]+)\\]")
-    $so = $m.groups[0]
+  for each $m in re_find($re.stdout, "(?m)^\\s+(\\S+)")
+    $so = basename($m.groups[0])
     for each $p in $forbid_so
       if starts_with($so, $p) then
         push($fail, "ELF " .. basename($bin) .. " needs " .. $so)
