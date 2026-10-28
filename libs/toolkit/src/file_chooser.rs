@@ -392,30 +392,37 @@ impl FileChooser {
         if let Some(path) = self.replace.clone() {
             let id = self.id.with("replace");
             ctx.move_to_top(egui::LayerId::new(egui::Order::Foreground, id));
-            let shown = Dialog::new(id, own(if self.batch.is_some() { "file-chooser-replace-files-title" } else { "file-chooser-replace-title" }))
-                .buttons(vec![
-                    Choice::new(own("file-chooser-replace"), Role::Default),
-                    Choice::new(own("file-chooser-cancel"), Role::Cancel),
-                ])
-                .show(ctx, |ui| {
-                    ui.label(own_with(
-                        "file-chooser-replace-body",
-                        &[(
-                            "path",
-                            &self
-                                .batch
-                                .as_ref()
-                                .map(|paths| {
-                                    paths
-                                        .iter()
-                                        .map(|p| p.display().to_string())
-                                        .collect::<Vec<_>>()
-                                        .join("\n")
-                                })
-                                .unwrap_or_else(|| path.display().to_string()),
-                        )],
-                    ));
-                });
+            let shown = Dialog::new(
+                id,
+                own(if self.batch.is_some() {
+                    "file-chooser-replace-files-title"
+                } else {
+                    "file-chooser-replace-title"
+                }),
+            )
+            .buttons(vec![
+                Choice::new(own("file-chooser-replace"), Role::Default),
+                Choice::new(own("file-chooser-cancel"), Role::Cancel),
+            ])
+            .show(ctx, |ui| {
+                ui.label(own_with(
+                    "file-chooser-replace-body",
+                    &[(
+                        "path",
+                        &self
+                            .batch
+                            .as_ref()
+                            .map(|paths| {
+                                paths
+                                    .iter()
+                                    .map(|p| p.display().to_string())
+                                    .collect::<Vec<_>>()
+                                    .join("\n")
+                            })
+                            .unwrap_or_else(|| path.display().to_string()),
+                    )],
+                ));
+            });
             if shown.chosen.is_some() || shown.dismissed {
                 Dialog::reset(ctx, id);
                 self.replace = None;

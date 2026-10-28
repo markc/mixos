@@ -98,7 +98,7 @@ impl Portal {
 
 #[zbus::interface(name = "org.freedesktop.portal.FileChooser")]
 impl Portal {
-    #[zbus(property)]
+    #[zbus(property, name = "version")]
     fn version(&self) -> u32 {
         4
     }
