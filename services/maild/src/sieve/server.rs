@@ -105,8 +105,11 @@ async fn write<S: AsyncRead + AsyncWrite + Unpin>(
     io: &mut BufReader<S>,
     response: &str,
 ) -> Result<()> {
-    io.get_mut().write_all(response.as_bytes()).await?;
-    io.get_mut().flush().await?;
+    tokio::time::timeout(Duration::from_secs(30), async {
+        io.get_mut().write_all(response.as_bytes()).await?;
+        io.get_mut().flush().await
+    })
+    .await??;
     Ok(())
 }
 fn capabilities(secure: bool) -> String {

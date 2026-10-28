@@ -127,7 +127,7 @@ be empty or equal the login identity. Only the authenticated account's scripts
 are accessible. Uploads accept quoted strings and non-synchronising octet
 literals (`{N+}`). Malformed/oversized frames close the session. Limits: 128
 connections, 180-second pre-authentication and 30-minute authenticated command
-timeouts, 30-second TLS/authentication timeout,
+timeouts, 30-second TLS/authentication and response-write timeouts,
 three failed logins. STARTTLS discards buffered plaintext commands.
 
 ## Bus editing and versions

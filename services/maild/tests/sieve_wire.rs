@@ -358,6 +358,16 @@ async fn test_db() -> Result<(tempfile::TempDir, db::Db)> {
     Ok((tmp, db))
 }
 #[tokio::test]
+async fn stalled_response_closes_session_within_write_deadline() -> Result<()> {
+    let (_tmp, db) = test_db().await?;
+    // Keep the read side alive without draining it; the greeting cannot fit.
+    let (_client, stream) = tokio::io::duplex(1);
+    let task = tokio::spawn(async move { server::session(stream,&db,false).await });
+    let result = tokio::time::timeout(std::time::Duration::from_secs(35),task).await??;
+    assert!(result.is_err(),"stalled write must close the session");
+    Ok(())
+}
+#[tokio::test]
 async fn login_challenge_authzid_refusal_and_account_isolation() -> Result<()> {
     let (_tmp, db) = test_db().await?;
     let (client, stream) = tokio::io::duplex(128 * 1024);
