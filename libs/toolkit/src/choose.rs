@@ -267,7 +267,9 @@ fn decode_outcome(request: &Request, value: &serde_json::Value) -> Outcome {
             .collect::<anyhow::Result<Vec<_>>>()?;
         let mut choices = request.choice_defaults();
         if let Some(values) = value.get("choices") {
-            choices.extend(serde_json::from_value::<BTreeMap<String, String>>(values.clone())?);
+            choices.extend(serde_json::from_value::<BTreeMap<String, String>>(
+                values.clone(),
+            )?);
         }
         let filter = value
             .get("current_filter")

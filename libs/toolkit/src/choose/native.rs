@@ -32,7 +32,9 @@ pub(super) async fn attempt_at(
         .bounded_incoming(64)
         .start();
     let result = session(&client, &name, request, cancel).await;
-    client.close().await;
+    // A supervisor may still be inside its initial dial. Shutdown is signalled
+    // before close joins it; joining must not extend the discovery budget.
+    let _ = tokio::time::timeout(IO_BOUND, client.close()).await;
     result
 }
 
