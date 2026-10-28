@@ -4,6 +4,7 @@
 use anyhow::{Context, Result, bail};
 use std::collections::HashMap;
 use std::os::fd::{FromRawFd, OwnedFd};
+use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::net::TcpListener;
 
 #[derive(Default)]
@@ -27,6 +28,16 @@ impl Sockets {
         }
         if count == 0 {
             return Ok(Self::default());
+        }
+        static TAKEN: AtomicBool = AtomicBool::new(false);
+        if TAKEN.swap(true, Ordering::AcqRel) {
+            bail!("activation sockets already consumed");
+        }
+        for fd in 3..3 + count {
+            // SAFETY: fcntl only inspects the number and does not take ownership.
+            if unsafe { libc::fcntl(fd, libc::F_GETFD) } == -1 {
+                bail!("missing activation descriptor {fd}");
+            }
         }
         // Own every passed descriptor immediately, so error paths close them.
         let fds: Vec<OwnedFd> = (3..3 + count)

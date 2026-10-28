@@ -21,11 +21,22 @@ fn named_fd_adoption_and_fallback() {
             unsafe { OwnedFd::from_raw_fd(fd) }
         })
         .collect();
+    let dir = tempfile::tempdir().unwrap();
+    let unix = std::os::unix::net::UnixListener::bind(dir.path().join("socket")).unwrap();
+    let (connected, _peer) = std::os::unix::net::UnixStream::pair().unwrap();
+    let invalid: Vec<OwnedFd> = [unix.as_raw_fd(), connected.as_raw_fd()].into_iter().map(|raw| {
+        let fd = unsafe { libc::fcntl(raw, libc::F_DUPFD_CLOEXEC, 64) };
+        assert!(fd >= 64);
+        unsafe { OwnedFd::from_raw_fd(fd) }
+    }).collect();
     for (mode, expected) in [
         ("adopt", true),
+        ("runtime", true),
         ("wrong_pid", true),
         ("unknown", false),
         ("bad_count", false),
+        ("unix_listener", false),
+        ("not_listener", false),
     ] {
         let mut child = std::process::Command::new(std::env::current_exe().unwrap());
         child
@@ -50,7 +61,9 @@ fn named_fd_adoption_and_fallback() {
                     .collect::<Vec<_>>()
                     .join(","),
             );
-        let raw: Vec<_> = fds.iter().map(AsRawFd::as_raw_fd).collect();
+        let mut raw: Vec<_> = fds.iter().map(AsRawFd::as_raw_fd).collect();
+        if mode == "unix_listener" { raw[0] = invalid[0].as_raw_fd(); }
+        if mode == "not_listener" { raw[0] = invalid[1].as_raw_fd(); }
         unsafe {
             child.pre_exec(move || {
                 for (index, fd) in raw.iter().enumerate() {
@@ -102,6 +115,41 @@ fn activation_child() {
             .collect();
         if mode == "wrong_pid" {
             assert!(sockets.take("smtp").is_empty());
+            return;
+        }
+        assert!(maild::activation::Sockets::from_env().is_err());
+        if mode == "runtime" {
+            use maild::{config::{Config, ListenSpec}, runtime::{RuntimeOpts, build_runtime_with_sockets}};
+            let dir = tempfile::tempdir().unwrap();
+            let path = |name| dir.path().join(name).to_str().unwrap().to_owned();
+            let rcgen::CertifiedKey { cert, key_pair } = rcgen::generate_simple_self_signed(vec!["example.com".into()]).unwrap();
+            std::fs::write(path("cert.pem"), cert.pem()).unwrap();
+            std::fs::write(path("key.pem"), key_pair.serialize_pem()).unwrap();
+            let cfg = Config {
+                database_path: path("mail.db"), blob_dir: path("blobs"), mds_dir: path("mds"),
+                spam_db_dir: Some(path("spam")), rule_stats_dir: Some(path("rules")),
+                tls_cert: Some(path("cert.pem")), tls_key: Some(path("key.pem")),
+                smtp_inbound: Some(ListenSpec::Single("invalid-bind".into())),
+                smtp_smtps: Some(ListenSpec::Single("invalid-bind".into())),
+                imap_imaps: Some(ListenSpec::Single("invalid-bind".into())),
+                ..Default::default()
+            };
+            let built = build_runtime_with_sockets(&cfg, RuntimeOpts { enable_bus: false, disable_outbound_delivery: true, ..Default::default() }, &mut sockets).await.unwrap();
+            assert_eq!(built.smtp_handle.inbound_addrs.iter().map(ToString::to_string).collect::<Vec<_>>(), addresses[1..3]);
+            assert_eq!(built.smtp_handle.smtps_addrs[0].to_string(), addresses[3]);
+            assert_eq!(built.imap_handle.imaps_addrs[0].to_string(), addresses[4]);
+            use tokio::io::AsyncBufReadExt;
+            let stream = tokio::net::TcpStream::connect(&addresses[1]).await.unwrap();
+            let mut greeting = String::new();
+            tokio::time::timeout(std::time::Duration::from_secs(5), tokio::io::BufReader::new(stream).read_line(&mut greeting)).await.unwrap().unwrap();
+            assert!(greeting.starts_with("220 "), "{greeting}");
+            let listeners = maild::activation::listeners(sockets.take("jmap"), &["invalid-bind".into()]).await.unwrap();
+            let app = built.router.clone();
+            let listener = listeners.into_iter().next().unwrap();
+            let serve = tokio::spawn(async move { axum::serve(listener, app).await.unwrap(); });
+            let status = reqwest::get(format!("http://{}/.well-known/jmap", addresses[0])).await.unwrap().status();
+            assert_eq!(status, reqwest::StatusCode::UNAUTHORIZED);
+            serve.abort();
             return;
         }
         for (name, indices) in [

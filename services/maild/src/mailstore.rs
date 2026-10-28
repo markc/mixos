@@ -909,15 +909,11 @@ pub trait MailStore: Send + Sync {
     /// Return every email record in the account whose stored blob
     /// hash equals `blob_hash`. Order is unspecified.
     ///
-    /// Backs the JMAP `Email/import` idempotency contract (RFC 8621
-    /// §4.6 SHOULD, promoted to MUST in
-    ///  §3.5b): the JMAP layer
-    /// uses this primitive to decide whether to reuse an existing
-    /// email id rather than allocate a new one when the same blob is
-    /// re-imported into the same mailbox set. `find` rather than
-    /// `get`-singular because two distinct imports may legitimately
-    /// share a blob across different mailbox sets, and the caller
-    /// performs membership-equality filtering.
+    /// Read-only lookup for callers inspecting duplicate content. Email/import
+    /// uses the atomic check in `SqliteMailStore::create_with_memberships`
+    /// instead: RFC 8621 §4.8 requires alreadyExists with existingId when a
+    /// server forbids duplicates. This read alone cannot enforce that policy
+    /// against concurrent writers.
     ///
     /// Returns `Ok(vec![])` for an unprovisioned account
     /// (`SetNotFound`) — same observable shape as "this account has
