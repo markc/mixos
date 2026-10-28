@@ -3026,6 +3026,7 @@ impl MailStore for SqliteMailStore {
             // already-exists checks before the attrs UPDATE — no point
             // re-encoding attrs if the rename will fail.
             if rename_requested {
+                let old_wire_name = imap_name_in_connection(tx.tx(), &id).ok();
                 let target_name = new_name.unwrap_or(cur_name.as_str());
                 let target_parent: Option<ContainerId> = match new_parent {
                     Some(opt) => opt,
@@ -3037,6 +3038,10 @@ impl MailStore for SqliteMailStore {
                     },
                 };
                 tx.rename_container(&id, target_parent.as_ref(), target_name)?;
+                let current_wire_name = imap_name_in_connection(tx.tx(), &id).ok();
+                if current_wire_name.is_some() && current_wire_name != old_wire_name {
+                    imap_repair_renamed_identities(tx.tx(), &id)?;
+                }
             }
 
             // Attrs update. Decode the snapshot we already SELECTed,

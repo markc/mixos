@@ -889,18 +889,11 @@ impl Session {
                             )
                             .await?;
                     } else {
-                        let deleting_selected = command_name == "DELETE"
-                            && self.state.selected().is_some_and(|sm| {
-                                op::delete::parse_args(&parsed.args).is_ok_and(|name| {
-                                    name == sm.name
-                                        || (name.eq_ignore_ascii_case("INBOX")
-                                            && sm.name == "INBOX")
-                                })
-                            });
                         let aid = self
                             .account_id
                             .expect("authenticated session must have account_id");
-                        let rename_before = if command_name == "RENAME" {
+                        let rename_before = if command_name == "RENAME"
+                            || (command_name == "DELETE" && self.state.selected().is_some()) {
                             let store = self.mailstore.clone();
                             Some(
                                 tokio::task::spawn_blocking(move || store.list_mailboxes(aid))
@@ -909,6 +902,13 @@ impl Session {
                         } else {
                             None
                         };
+                        let deleting_selected = command_name == "DELETE"
+                            && self.state.selected().is_some_and(|sm| {
+                                op::delete::parse_args(&parsed.args).is_ok_and(|name| {
+                                    matches!(crate::imap::mailbox_name::resolve(&name, rename_before.as_deref().unwrap_or(&[])),
+                                        crate::imap::mailbox_name::ResolveResult::Found(id) if id == sm.container_id)
+                                })
+                            });
                         let resp = match command_name {
                             "CREATE" => {
                                 op::create::handle(
