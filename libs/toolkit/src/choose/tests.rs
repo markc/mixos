@@ -163,4 +163,8 @@ fn bus_outcome_refuses_shapes_not_offered() {
         decode_outcome(&request, &json!({"response":2})),
         Outcome::Failed(_)
     ));
+    assert!(matches!(
+        decode_outcome(&request, &json!({"response":1,"reason":"caller"})),
+        Outcome::Failed(_)
+    ));
 }
