@@ -7,6 +7,8 @@
   writes. Ignore submission email actions without a successful operation in
   that call, rather than emitting implicit Email errors keyed by submission
   references. Document stage ordering and the absence of a cross-stage transaction.
+- Run account Sieve on initial local submission and local retries, and create
+  delivery receipts atomically for Sieve-generated SMTP replies.
 - Fix Sieve attachment-independent header budgets, custom address fields,
   writable fileinto destinations, redirect-only loop suppression and private
   header removal on external redirects. Local submission stamps fresh spam

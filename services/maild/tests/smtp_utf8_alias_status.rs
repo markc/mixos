@@ -904,6 +904,75 @@ async fn local_fanout_defers_only_failed_targets_and_retries_without_duplicates(
     Ok(())
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn local_alias_retry_runs_sieve_and_transmits_vacation() -> Result<()> {
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let peer_addr = listener.local_addr()?;
+    let peer = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await?;
+        let mut io = BufReader::new(stream);
+        io.get_mut().write_all(b"220 mx.example.net\r\n").await?;
+        let mut data = false;
+        let mut message = String::new();
+        let mut envelope = String::new();
+        loop {
+            let mut line = String::new();
+            if io.read_line(&mut line).await? == 0 { break; }
+            let response = if data {
+                if line == ".\r\n" { data = false; "250 2.0.0 stored\r\n" }
+                else { message.push_str(&line); continue; }
+            } else if line.starts_with("EHLO") {
+                "250-mx.example.net\r\n250 8BITMIME\r\n"
+            } else if line.starts_with("DATA") {
+                data = true; "354 send\r\n"
+            } else if line.starts_with("QUIT") { break; }
+            else { envelope.push_str(&line); "250 ok\r\n" };
+            io.get_mut().write_all(response.as_bytes()).await?;
+        }
+        Ok::<_, anyhow::Error>((envelope, message))
+    });
+    let tmp = tempfile::tempdir()?;
+    let (built, _) = fixture(&tmp, Some(peer_addr)).await?;
+    account(&built, "alice@remote.example.net").await?;
+    let bob = account(&built, "bob@example.com").await?;
+    alias(&built, "team@example.com", &["bob@example.com"], Version::zero()).await?;
+    let db = &built.app_state.db;
+    maild::sieve::store::put(db, bob, "main",
+        r#"require ["fileinto","mailbox","vacation"]; fileinto :create "Filed"; vacation :days 1 :handle "receipt-integration" "Away";"#, None).await?;
+    maild::sieve::store::activate(db, bob, "main").await?;
+    let ms = &built.app_state.mailstore;
+    let inbox = ms.mailbox_by_role(bob, MailboxRole::Inbox)?.unwrap();
+    ms.update_mailbox(bob, inbox, None, None, Some(None), None, None)?;
+    let request = json!({"operation_id":"sieve-retry","account":"alice@remote.example.net",
+        "to":["team@example.com","bob@example.com"],"subject":"Sieve retry","text":"retry body"});
+    let first = submit_native(&built, request).await?;
+    let deferred = status(&built, first).await?;
+    let rows = deferred["recipients"].as_array().unwrap();
+    assert_eq!(rows.len(), 2);
+    assert!(rows.iter().all(|r| r["status"] == "deferred"));
+    ms.update_mailbox(bob, inbox, None, None, Some(Some(MailboxRole::Inbox)), None, None)?;
+    maild::smtp::queue::flush(&db.conn).await?;
+    wait_delivered(&built, first).await?;
+    let filed = ms.mailbox_by_name(bob, "Filed")?.expect("retry must run Sieve");
+    assert_eq!(ms.list_emails_in_mailbox(bob, filed, ListOpts::default())?.len(), 1);
+    assert_eq!(inbox_count(&built, bob)?, 0);
+    let (envelope, message) = timeout(Duration::from_secs(65), peer).await???;
+    assert!(envelope.contains("RCPT TO:<alice@remote.example.net>"), "{envelope}");
+    assert!(message.to_ascii_lowercase().contains("auto-submitted: auto-replied"), "{message}");
+    assert!(message.contains("Away"), "{message}");
+    wait_queue_empty(&built).await?;
+    let second = submit_native(&built, json!({"operation_id":"sieve-initial","account":"alice@remote.example.net",
+        "to":["team@example.com","bob@example.com"],"subject":"Sieve initial","text":"initial body"})).await?;
+    let rows = status(&built, second).await?;
+    let rows = rows["recipients"].as_array().unwrap();
+    assert_eq!(rows.len(), 2);
+    assert!(rows.iter().all(|r| r["status"] == "delivered"));
+    assert_eq!(ms.list_emails_in_mailbox(bob, filed, ListOpts::default())?.len(), 2);
+    assert_eq!(inbox_count(&built, bob)?, 0);
+    assert!(maild::smtp::queue::list(&db.conn, 10).await?.is_empty(), "vacation suppression must survive retry");
+    Ok(())
+}
+
 async fn wait_queue_empty(built: &BuiltMaild) -> Result<()> {
     timeout(Duration::from_secs(65), async {
         loop {
