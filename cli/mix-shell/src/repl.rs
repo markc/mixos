@@ -206,6 +206,9 @@ fn record_builtin(report: &mut Option<Report>, code: i32, what: &str) {
 
 /// Run the interactive REPL.
 pub fn run_repl() -> i32 {
+    // A closed input pipe also polls HUP, but is ordinary EOF. Remember the
+    // input type before terminal loss makes isatty itself fail with EIO.
+    let terminal_input = unsafe { libc::isatty(libc::STDIN_FILENO) } == 1;
     let _session_lifetime = crate::session_state::ShellLifetime;
     if crate::session_state::enabled() {
         mix::shell_observation::set_observer(|observation| {
@@ -1185,7 +1188,7 @@ pub fn run_repl() -> i32 {
                 }
             }
             Err(ReadlineError::Eof) => {
-                if crate::editor::terminal::hung_up(libc::STDIN_FILENO) {
+                if terminal_input && crate::editor::terminal::hung_up(libc::STDIN_FILENO) {
                     exit_code = 128 + libc::SIGHUP;
                 }
                 if !line_buf.is_empty() {

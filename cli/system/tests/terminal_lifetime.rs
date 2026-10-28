@@ -28,8 +28,9 @@ impl Shell {
         let home = tempfile::tempdir().unwrap();
         fs::write(home.path().join(".mixrc"), "fn prompt()\nreturn \"LOSS> \"\nend\n").unwrap();
         let (mut master, mut slave) = (-1, -1);
+        let size = libc::winsize { ws_row: 24, ws_col: 80, ws_xpixel: 0, ws_ypixel: 0 };
         assert_eq!(unsafe {
-            libc::openpty(&mut master, &mut slave, std::ptr::null_mut(), std::ptr::null(), std::ptr::null())
+            libc::openpty(&mut master, &mut slave, std::ptr::null_mut(), std::ptr::null(), &size)
         }, 0);
         for fd in [master, slave] {
             assert_eq!(unsafe { libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) }, 0);
