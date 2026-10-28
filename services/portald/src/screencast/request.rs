@@ -189,7 +189,7 @@ pub async fn respond(
 }
 
 /// Shared addressed signal emission. The FileChooser registry serialises this
-/// with Close and retirement; ScreenCast retains its existing liveness check.
+/// with Close and retirement; ScreenCast serialises its export ticket with Close.
 pub async fn emit(
     connection: &Connection,
     path: &OwnedObjectPath,

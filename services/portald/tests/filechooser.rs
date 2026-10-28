@@ -203,7 +203,9 @@ impl Provider {
                             }
                             _ => continue,
                         };
-                        c.respond(&command, rc, &answer.to_string()).await.unwrap();
+                        // The broker-loss case deliberately severs replies in
+                        // flight. The provider survives and re-registers.
+                        let _ = c.respond(&command, rc, &answer.to_string()).await;
                     }
                     control = controls.recv() => {
                         match control {
@@ -555,10 +557,19 @@ async fn portal_native_stack_mapping_lifecycle_and_loss() {
     broker.bounce();
     response(&mut stream, 2).await;
     provider.cancelled(&id).await;
-    let mut stream = responses(&caller, "after_reconnect").await;
-    begin(&caller, "OpenFile", "after_reconnect", label("early")).await.unwrap();
-    provider.chosen().await;
-    response(&mut stream, 0).await;
+    // Calls during reconnect cleanup may fail with 2; admission resumes after
+    // the previous portald's choosers have been cancelled.
+    tokio::time::timeout(WAIT, async {
+        loop {
+            let mut stream = responses(&caller, "after_reconnect").await;
+            begin(&caller, "OpenFile", "after_reconnect", label("early")).await.unwrap();
+            let message = stream.next().await.unwrap().unwrap();
+            let (code, _): (u32, HashMap<String, OwnedValue>) = message.body().deserialize().unwrap();
+            if code == 0 { provider.chosen().await; break; }
+            assert_eq!(code, 2);
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }).await.unwrap();
 
     // Incarnation changes fail all requests from the old provider.
     let mut stream = responses(&caller, "loss").await;

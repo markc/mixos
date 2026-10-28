@@ -36,7 +36,7 @@ fn label(value: &str, limit: usize, key: &str) -> Option<String> {
     Some(cut(value, limit))
 }
 
-// Conversion through serde retains the exact D-Bus signature check: e.g. a
+// Conversion through zvariant retains the exact D-Bus signature check: e.g. a
 // signed integer, or a string in place of ay, is never silently coerced.
 fn option<T>(options: &Options, key: &str) -> Result<Option<T>, PortalError>
 where

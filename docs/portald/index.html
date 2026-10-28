@@ -494,7 +494,7 @@ Weston, nested compd, portald and <code>dopus --choose-service</code>. Its persi
 zbus probe drives each method's real viewport through <code>files.ui.*</code>, including
 save replacement and cancellation. The probe also opens, saves and cancels
 through rfd 0.17.2 (a dev dependency), with external fallbacks unavailable.
-Build on CBC with <code>cargo build -p portald -p dopus -p compd -p system --bins --examples</code>,
+Build on CBC with <code>cargo build -p portald -p dopus -p compd -p noded -p system --bins --examples</code>,
 then run <code>MIXOS_TEST_BIN=target/debug mix services/portald/tests/chooser_bus_test.mix</code>.
 It is excluded from <code>tools/mix_tests.mix</code>, which needs no headless host.
 <code>tests/portal.rs</code> runs a private <code>dbus-daemon</code> and checks version 2, Read
