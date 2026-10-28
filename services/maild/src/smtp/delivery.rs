@@ -1898,10 +1898,14 @@ mod rcpt_rejection_tests {
     async fn round2_literal_connections_use_ipv4_ipv6_and_source_bind() -> Result<()> {
         use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
-        for ip in [IpAddr::V4(Ipv4Addr::LOCALHOST), IpAddr::V6(Ipv6Addr::LOCALHOST)] {
+        for ip in [
+            IpAddr::V4(Ipv4Addr::LOCALHOST),
+            IpAddr::V6(Ipv6Addr::LOCALHOST),
+        ] {
             for bind in [Vec::new(), vec![ip]] {
                 let listener = tokio::net::TcpListener::bind(SocketAddr::new(ip, 0)).await?;
-                let mut client = connect_smtp(&ip.to_string(), listener.local_addr()?.port(), &bind).await?;
+                let mut client =
+                    connect_smtp(&ip.to_string(), listener.local_addr()?.port(), &bind).await?;
                 let (mut peer, _) = listener.accept().await?;
                 client.write_all(b"EHLO client.example.org\r\n").await?;
                 let mut bytes = [0; 25];

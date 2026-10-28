@@ -23,7 +23,12 @@ async fn fixture(
     tmp: &tempfile::TempDir,
     mx: Option<std::net::SocketAddr>,
 ) -> Result<(BuiltMaild, tokio_rustls::TlsConnector)> {
-    fixture_with_overrides(tmp, mx.map(|addr| [("remote.example.net".into(), addr)].into()).unwrap_or_default()).await
+    fixture_with_overrides(
+        tmp,
+        mx.map(|addr| [("remote.example.net".into(), addr)].into())
+            .unwrap_or_default(),
+    )
+    .await
 }
 
 async fn fixture_with_overrides(
@@ -240,21 +245,41 @@ async fn round2_alias_fanout_reject_keeps_committed_copy_and_sends_one_dsn() -> 
     let (built, tls) = fixture_with_overrides(&tmp, mx).await?;
     let alice = account(&built, "alice@example.com").await?;
     let bob = account(&built, "bob@example.com").await?;
-    account(&built, "sender@example.com").await?;
-    alias(&built, "team@example.com", &["alice@example.com", "bob@example.com"], Version::zero()).await?;
-    maild::sieve::store::put(&built.app_state.db, bob, "reject", r#"require "reject"; reject "bob@example.com denied this message";"#, None).await?;
+    account(&built, "carol@example.com").await?;
+    alias(
+        &built,
+        "team@example.com",
+        &["alice@example.com", "bob@example.com"],
+        Version::zero(),
+    )
+    .await?;
+    maild::sieve::store::put(
+        &built.app_state.db,
+        bob,
+        "reject",
+        r#"require "reject"; reject "bob@example.com denied this message";"#,
+        None,
+    )
+    .await?;
     maild::sieve::store::activate(&built.app_state.db, bob, "reject").await?;
-    let mut io = authenticated(&built, &tls, "sender@example.com").await?;
-    command(&mut io, "MAIL FROM:<sender@example.com>", "250").await?;
+    let mut io = authenticated(&built, &tls, "carol@example.com").await?;
+    command(&mut io, "MAIL FROM:<carol@example.com>", "250").await?;
     command(&mut io, "RCPT TO:<team@example.com>", "250").await?;
     command(&mut io, "DATA", "354").await?;
-    command(&mut io, "From: sender@example.com\r\nTo: team@example.com\r\nSubject: fanout reject\r\n\r\nbody\r\n.", "250").await?;
+    command(&mut io, "From: carol@example.com\r\nTo: team@example.com\r\nSubject: fanout reject\r\n\r\nbody\r\n.", "250").await?;
     assert_eq!(inbox_count(&built, alice)?, 1);
     assert_eq!(inbox_count(&built, bob)?, 0);
     let messages = timeout(Duration::from_secs(70), peer).await???;
     assert_eq!(messages.len(), 1);
-    assert!(messages[0].0.contains("MAIL FROM:<>") && messages[0].0.contains("RCPT TO:<sender@example.com>"));
-    assert!(messages[0].1.contains("bob@example.com denied this message"));
+    assert!(
+        messages[0].0.contains("MAIL FROM:<>")
+            && messages[0].0.contains("RCPT TO:<carol@example.com>")
+    );
+    assert!(
+        messages[0]
+            .1
+            .contains("bob@example.com denied this message")
+    );
     assert!(messages[0].1.contains("Action: failed\r\nStatus: 5.7.1"));
     wait_queue_empty(&built).await?;
     assert_eq!(inbox_count(&built, alice)?, 1);
@@ -280,7 +305,9 @@ impl tracing::Subscriber for RejectLog {
         struct Message(String);
         impl tracing::field::Visit for Message {
             fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
-                if field.name() == "message" { self.0 = format!("{value:?}"); }
+                if field.name() == "message" {
+                    self.0 = format!("{value:?}");
+                }
             }
         }
         let mut message = Message(String::new());
@@ -295,18 +322,34 @@ async fn round2_sieve_single_target_550_is_logged_on_wire() -> Result<()> {
     tracing::subscriber::set_global_default(logs.clone())?;
     let tmp = tempfile::tempdir()?;
     let (built, tls) = fixture(&tmp, None).await?;
-    account(&built, "sender@example.com").await?;
+    account(&built, "carol@example.com").await?;
     let bob = account(&built, "bob@example.com").await?;
-    maild::sieve::store::put(&built.app_state.db, bob, "reject", r#"require "reject"; reject "Single-target refusal marker";"#, None).await?;
+    maild::sieve::store::put(
+        &built.app_state.db,
+        bob,
+        "reject",
+        r#"require "reject"; reject "Single-target refusal marker";"#,
+        None,
+    )
+    .await?;
     maild::sieve::store::activate(&built.app_state.db, bob, "reject").await?;
-    let mut io = authenticated(&built, &tls, "sender@example.com").await?;
-    command(&mut io, "MAIL FROM:<sender@example.com>", "250").await?;
+    let mut io = authenticated(&built, &tls, "carol@example.com").await?;
+    command(&mut io, "MAIL FROM:<carol@example.com>", "250").await?;
     command(&mut io, "RCPT TO:<bob@example.com>", "250").await?;
     command(&mut io, "DATA", "354").await?;
-    let response = command(&mut io, "From: sender@example.com\r\nSubject: rejected\r\n\r\nbody\r\n.", "550").await?;
+    let response = command(
+        &mut io,
+        "From: carol@example.com\r\nSubject: rejected\r\n\r\nbody\r\n.",
+        "550",
+    )
+    .await?;
     assert!(response.contains("Single-target refusal marker"));
     assert_eq!(inbox_count(&built, bob)?, 0);
-    assert!(logs.0.lock().unwrap().iter().any(|line| line.contains("NOQUEUE: reject: end-of-data") && line.contains("550 5.7.1 Single-target refusal marker") && line.contains("to=<bob@example.com>")));
+    assert!(logs.0.lock().unwrap().iter().any(
+        |line| line.contains("NOQUEUE: reject: end-of-data")
+            && line.contains("550 5.7.1 Single-target refusal marker")
+            && line.contains("to=<bob@example.com>")
+    ));
     Ok(())
 }
 
@@ -327,30 +370,66 @@ async fn round2_literal_submission_and_sieve_dsns_transmit_without_mx_lookup() -
         command(&mut io, &format!("RCPT TO:<user@{domain}>"), "250").await?;
     }
     command(&mut io, "DATA", "354").await?;
-    command(&mut io, "From: alice@example.com\r\nSubject: Literal submission\r\n\r\nbody\r\n.", "250").await?;
-    maild::sieve::store::put(&built.app_state.db, bob, "reject", r#"require "reject"; reject "Literal sender rejection";"#, None).await?;
+    command(
+        &mut io,
+        "From: alice@example.com\r\nSubject: Literal submission\r\n\r\nbody\r\n.",
+        "250",
+    )
+    .await?;
+    maild::sieve::store::put(
+        &built.app_state.db,
+        bob,
+        "reject",
+        r#"require "reject"; reject "Literal sender rejection";"#,
+        None,
+    )
+    .await?;
     maild::sieve::store::activate(&built.app_state.db, bob, "reject").await?;
-    let account = maild::db::account::get_by_id(&built.app_state.db.conn, bob).await?.unwrap();
+    let account = maild::db::account::get_by_id(&built.app_state.db.conn, bob)
+        .await?
+        .unwrap();
     for domain in ["[192.0.2.1]", "[IPv6:2001:db8::1]"] {
         // Authentication is already verified here; exercise the actual Sieve
         // DSN producer and its native queue, rather than enqueueing fake DSNs.
-        maild::sieve::delivery::deliver(&built.app_state.db, &built.app_state.mailstore, maild::sieve::delivery::Delivery {
-            account: &account,
-            from: &format!("sender@{domain}"), to: "bob@example.com",
-            data: b"From: sender@example.org\r\nSubject: DSN source\r\n\r\nbody\r\n",
-            default_mailbox: built.app_state.mailstore.mailbox_by_role(bob, MailboxRole::Inbox)?.unwrap(),
-            default_tags: mds::Tags::new(), external_domains: &[], sender_verified: true,
-            spam: false, smtp_reject: false, routing: None,
-        }).await?;
+        maild::sieve::delivery::deliver(
+            &built.app_state.db,
+            &built.app_state.mailstore,
+            maild::sieve::delivery::Delivery {
+                account: &account,
+                from: &format!("sender@{domain}"),
+                to: "bob@example.com",
+                data: b"From: sender@example.org\r\nSubject: DSN source\r\n\r\nbody\r\n",
+                default_mailbox: built
+                    .app_state
+                    .mailstore
+                    .mailbox_by_role(bob, MailboxRole::Inbox)?
+                    .unwrap(),
+                default_tags: mds::Tags::new(),
+                external_domains: &[],
+                sender_verified: true,
+                spam: false,
+                smtp_reject: false,
+                routing: None,
+            },
+        )
+        .await?;
     }
     let messages = timeout(Duration::from_secs(70), peer).await???;
     for domain in ["[192.0.2.1]", "[IPv6:2001:db8::1]"] {
-        let submissions: Vec<_> = messages.iter().filter(|(e, _)| e.contains(&format!("RCPT TO:<user@{domain}>"))).collect();
+        let submissions: Vec<_> = messages
+            .iter()
+            .filter(|(e, _)| e.contains(&format!("RCPT TO:<user@{domain}>")))
+            .collect();
         assert_eq!(submissions.len(), 1);
         assert!(submissions[0].1.contains("Literal submission"));
-        let dsns: Vec<_> = messages.iter().filter(|(e, _)| e.contains(&format!("RCPT TO:<sender@{domain}>"))).collect();
+        let dsns: Vec<_> = messages
+            .iter()
+            .filter(|(e, _)| e.contains(&format!("RCPT TO:<sender@{domain}>")))
+            .collect();
         assert_eq!(dsns.len(), 1);
-        assert!(dsns[0].0.contains("MAIL FROM:<>") && dsns[0].1.contains("Literal sender rejection"));
+        assert!(
+            dsns[0].0.contains("MAIL FROM:<>") && dsns[0].1.contains("Literal sender rejection")
+        );
     }
     wait_queue_empty(&built).await?;
     Ok(())
@@ -361,24 +440,45 @@ async fn round2_retention_uses_created_index_and_expires_pre_receipt_submissions
     let tmp = tempfile::tempdir()?;
     let (built, _) = fixture(&tmp, None).await?;
     let alice = account(&built, "alice@example.com").await?;
-    built.app_state.db.conn.lock().unwrap().execute_batch("DROP INDEX IF EXISTS idx_submissions_created")?;
+    built
+        .app_state
+        .db
+        .conn
+        .lock()
+        .unwrap()
+        .execute_batch("DROP INDEX IF EXISTS idx_submissions_created")?;
     built.app_state.db.migrate().await?;
     let old = uuid::Uuid::new_v4();
     let recent = uuid::Uuid::new_v4();
     {
         let conn = built.app_state.db.conn.lock().unwrap();
         let plan = conn.prepare("EXPLAIN QUERY PLAN SELECT id,account_id FROM email_submissions WHERE created_at < datetime('now','-30 days') AND undo_status='final' AND NOT EXISTS(SELECT 1 FROM smtp_delivery d WHERE d.submission_id=email_submissions.id) AND NOT EXISTS(SELECT 1 FROM smtp_queue q WHERE q.id=email_submissions.queue_id)")?.query_map([], |row| row.get::<_, String>(3))?.collect::<rusqlite::Result<Vec<_>>>()?;
-        assert!(plan.iter().any(|step| step.contains("SEARCH email_submissions USING INDEX idx_submissions_created")), "{plan:?}");
+        assert!(
+            plan.iter().any(|step| step
+                .contains("SEARCH email_submissions USING INDEX idx_submissions_created")),
+            "{plan:?}"
+        );
         for (id, days) in [(old, "-31 days"), (recent, "-29 days")] {
             conn.execute("INSERT INTO email_submissions(id,account_id,email_id,envelope_from,created_at) VALUES(?1,?2,?3,'alice@example.com',datetime('now',?4))", rusqlite::params![id.to_string(),alice,uuid::Uuid::new_v4().to_string(),days])?;
         }
     }
-    let before = maild::db::changelog::current_state(&built.app_state.db.conn, alice, "EmailSubmission").await?;
+    let before =
+        maild::db::changelog::current_state(&built.app_state.db.conn, alice, "EmailSubmission")
+            .await?;
     maild::smtp::queue::sweep_receipts(&built.app_state.db.conn, 30).await?;
-    let changes = maild::jmap::submission::changes(&built.app_state.db, alice, json!({"sinceState":before})).await?;
+    let changes =
+        maild::jmap::submission::changes(&built.app_state.db, alice, json!({"sinceState":before}))
+            .await?;
     assert_eq!(changes["destroyed"], json!([old]));
     let conn = built.app_state.db.conn.lock().unwrap();
-    assert_eq!(conn.query_row("SELECT COUNT(*) FROM email_submissions WHERE id=?1", [recent.to_string()], |row| row.get::<_,i64>(0))?, 1);
+    assert_eq!(
+        conn.query_row(
+            "SELECT COUNT(*) FROM email_submissions WHERE id=?1",
+            [recent.to_string()],
+            |row| row.get::<_, i64>(0)
+        )?,
+        1
+    );
     Ok(())
 }
 
