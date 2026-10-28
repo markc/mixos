@@ -240,21 +240,38 @@
 </blockquote>
 <h2 id="unreleased">Unreleased</h2>
 <ul>
-<li>IMAP <code>SEARCH</code> and <code>UID SEARCH</code> implement the header, date and text keys:
+<li>
+<p>Add per-account, versioned Sieve rules to SMTP and local submission delivery,
+with a bounded in-process interpreter, fileinto/create, flags, copy, body,
+variables, vacation, relational/index tests and reject/ereject. Script and
+policy errors keep the message. External redirects and automatic replies
+require an operator-enabled account domain; vacation suppression is durable.</p>
+</li>
+<li>
+<p>Add an opt-in RFC 5804 ManageSieve listener using the shared TLS identities
+and account authentication, plus <code>maild.sieve.list/get/put/activate</code> Bus
+commands. SMTP's classifier and global Mix filter precede account Sieve;
+daemon-generated spam headers are available to scripts.</p>
+</li>
+<li>
+<p>IMAP <code>SEARCH</code> and <code>UID SEARCH</code> implement the header, date and text keys:
 <code>FROM</code>, <code>TO</code>, <code>CC</code>, <code>BCC</code>, <code>SUBJECT</code>, <code>HEADER</code>, <code>BODY</code>, <code>TEXT</code>, <code>BEFORE</code>,
 <code>ON</code>, <code>SINCE</code>, <code>SENTBEFORE</code>, <code>SENTON</code> and <code>SENTSINCE</code>. They were refused
 as deferred, so Thunderbird quick filters failed on every folder. Header
 keys match the raw and RFC 2047 decoded field; <code>BODY</code> covers every text
 and HTML part. A blob is read only for messages that flags, size and
 sequence keys leave undecided; an unreadable blob answers
-<code>NO [UNAVAILABLE]</code> rather than a partial result.</li>
-<li><code>SEARCH</code> accepts string literals anywhere in the command, including several
+<code>NO [UNAVAILABLE]</code> rather than a partial result.</p>
+</li>
+<li>
+<p><code>SEARCH</code> accepts string literals anywhere in the command, including several
 in one command (64 literals and 64 KiB at most). Past those limits a sync
 literal is refused; a non-sync one gets <code>BAD</code> and the connection closes, since
 the rest of the command can no longer be framed. Other commands keep the
 single trailing literal. <code>BODY</code> and <code>TEXT</code> also search forwarded
 <code>message/rfc822</code> parts. A literal may carry a multi-line needle; CRLF and LF
-match alike. A content scan stops when the client disconnects.</li>
+match alike. A content scan stops when the client disconnects.</p>
+</li>
 </ul>
 <h2 id="011--2026-10-18">0.1.1 — 2026-10-18</h2>
 <ul>

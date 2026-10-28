@@ -86,7 +86,7 @@ async fn corrupt_script_and_missing_mailbox_fall_back_to_keep() -> Result<()> {
 #[tokio::test]
 async fn runtime_error_rolls_back_planned_redirect() -> Result<()> {
     let f = Fixture::new().await?;
-    f.script(r#"require "variables"; redirect "alice@example.com"; set "123invalid" "x";"#).await?;
+    f.script(r#"redirect "alice@example.com"; redirect "b@example.com"; redirect "c@example.com"; redirect "d@example.com"; redirect "e@example.com";"#).await?;
     f.deliver(MESSAGE,false,false).await?;
     assert_eq!(f.count("Inbox"),1);
     let inbox = f.ms.mailbox_by_role(2,MailboxRole::Inbox)?.unwrap();
@@ -133,6 +133,16 @@ async fn reject_uses_smtp_when_possible_else_null_sender_dsn() -> Result<()> {
     assert_eq!(f.count("Inbox"),0);
     let queued = maild::smtp::queue::list(&f.db.conn,10).await?;
     assert_eq!(queued.len(),1); assert_eq!(queued[0].from_addr,"");
+    Ok(())
+}
+#[tokio::test]
+async fn native_submission_runs_recipient_sieve() -> Result<()> {
+    let f = Fixture::new().await?;
+    f.script(r#"require ["fileinto","mailbox"]; fileinto :create "FromSubmission";"#).await?;
+    let aliases = Arc::new(::props::Runtime::new("maild",maild::props::aliases::spec(::props::Hooks::noop()),Arc::new(::props::MemoryStore::new("maild"))));
+    let cmd = ::bus::IncomingCommand { generation:0,from:"test".into(),command:"maild.submit".into(),id:None,args:serde_json::Value::Null,headers:Default::default(),body:serde_json::json!({"operation_id":"sieve-submission","account":"alice@example.com","to":["bob@example.com"],"subject":"local sieve","text":"hello"}).to_string() };
+    let result = maild::bus::submission::dispatch(&cmd,&f.db,&f.ms,&aliases,1024*1024).await;
+    assert_eq!(result.0,0,"{}",result.1); assert_eq!(f.count("FromSubmission"),1); assert_eq!(f.count("Inbox"),0);
     Ok(())
 }
 #[test]

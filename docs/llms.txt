@@ -103,6 +103,7 @@ One line per component with a page: kind, then install profiles. The
 - [macros](https://mixos.dev/macros/README.md): lib; profiles: none (library). Shared Mix macro discovery, user storage and background execution for every MixOS app.
   - [macros — changelog](https://mixos.dev/macros/changelog.md): Release notes of the macros component, mirrored from libs/macros/CHANGELOG.md.
 - [maild](https://mixos.dev/maild/README.md): service; profiles: server. JMAP, SMTP, IMAP and DAV mail service
+  - [Account Sieve and ManageSieve](https://mixos.dev/maild/sieve.md): Account delivery scripts, forwarding policy and TLS script editing
   - [maild — changelog](https://mixos.dev/maild/changelog.md): Release notes of the maild component, mirrored from services/maild/CHANGELOG.md.
 - [maildoc](https://mixos.dev/maildoc/README.md): lib; profiles: none (library). Inert Markdown mail documents using ABP framing, with a strict mail-header allowlist and no transport or file access.
   - [maildoc — changelog](https://mixos.dev/maildoc/changelog.md): Release notes of the maildoc component, mirrored from libs/maildoc/CHANGELOG.md.

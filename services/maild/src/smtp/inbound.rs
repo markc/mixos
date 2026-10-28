@@ -762,6 +762,7 @@ pub async fn deliver(
             && !mail_from.is_empty()
             && !is_auto_submitted(&message)
             && vacation_sender_verified(&verify_result, mail_from)
+            && matches!(crate::sieve::store::active(&state.db, account.id).await, Ok(None))
             && let Ok(Some(vr)) = db::vacation::is_active(&state.db.conn, account.id).await
             && matches!(
                 db::vacation::mark_reply_if_due(&state.db.conn, account.id, mail_from).await,

@@ -2,7 +2,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::{Result, bail, ensure};
-use mail_parser::{HeaderName, Message, MessageParser, MimeHeaders, PartType};
+use mail_parser::{Message, MessageParser, MimeHeaders, PartType};
 
 use super::{EXTENSIONS, MAX_ACTIONS, MAX_REDIRECTS, MAX_SCRIPT_BYTES, MAX_STEPS};
 
@@ -186,9 +186,15 @@ impl Parser {
         ensure!(["all", "localpart", "domain"].iter().filter(|t| args.has(t)).count() <= 1, "conflicting address parts");
         if !["address", "envelope"].contains(&name) { ensure!(!["all", "localpart", "domain"].iter().any(|t| args.has(t)), "address tag on non-address test"); }
         if args.has("last") { ensure!(args.has("index"), ":last requires :index"); }
+        if args.has("index") { ensure!(["header","address"].contains(&name),"index requires header or address"); }
         if name == "size" { ensure!(args.has("over") != args.has("under"), "size requires :over or :under"); }
         if name == "body" { ensure!(["raw", "text", "content"].iter().filter(|t| args.has(t)).count() <= 1, "conflicting body transforms"); }
         if args.has("count") { ensure!(args.tag("comparator") == Some("i;ascii-numeric"), ":count requires i;ascii-numeric"); }
+        if name == "set" {
+            let key = args.value(0);
+            ensure!(!key.is_empty() && key.bytes().enumerate().all(|(i,b)| b.is_ascii_alphabetic() || b == b'_' || (i > 0 && b.is_ascii_digit())),"invalid variable name");
+            ensure!(!(args.has("lower") && args.has("upper")) && !(args.has("lowerfirst") && args.has("upperfirst")),"conflicting variable modifiers");
+        }
         Ok(args)
     }
     fn test(&mut self) -> Result<Test> {
@@ -278,14 +284,19 @@ pub struct Context<'a> { pub data: &'a [u8], pub from: &'a str, pub to: &'a str 
 struct Eval<'a> {
     context: Context<'a>, message: Message<'a>, plan: Plan, variables: BTreeMap<String, String>,
     captures: Vec<String>, flags: Vec<String>, implicit_keep: bool, stopped: bool, steps: usize, variables_enabled: bool,
+    text_headers: Vec<(String,String)>,
 }
 impl Script {
     pub fn evaluate(&self, context: Context<'_>) -> Result<Plan> {
         let message = MessageParser::default().parse(context.data).ok_or_else(|| anyhow::anyhow!("message parse error"))?;
-        let mut eval = Eval { context, message, plan: Plan::default(), variables: BTreeMap::new(), captures: Vec::new(), flags: Vec::new(), implicit_keep: true, stopped: false, steps: 0, variables_enabled: self.variables };
+        let mut text_parser = MessageParser::new().default_header_text();
+        for header in message.headers() { text_parser = text_parser.header_text(header.name.as_str().to_string()); }
+        let text_headers = text_parser.parse_headers(context.data).map(|m| m.headers().iter().map(|h| (h.name.as_str().to_string(),h.value.as_text().unwrap_or("").to_string())).collect()).unwrap_or_default();
+        let mut eval = Eval { context, message, plan: Plan::default(), variables: BTreeMap::new(), captures: Vec::new(), flags: Vec::new(), implicit_keep: true, stopped: false, steps: 0, variables_enabled: self.variables, text_headers };
         eval.code(&self.code)?;
         if eval.implicit_keep { eval.plan.filings.push(Filing { flags: eval.flags, ..Filing::default() }); }
         ensure!(eval.plan.redirects.len() <= MAX_REDIRECTS, "redirect limit");
+        ensure!(eval.plan.filings.len() + eval.plan.redirects.len() <= MAX_ACTIONS,"action limit");
         ensure!(eval.plan.reject.is_none() || (eval.plan.filings.is_empty() && eval.plan.redirects.is_empty() && eval.plan.vacation.is_none() && !eval.plan.discarded), "reject conflicts with another action");
         Ok(eval.plan)
     }
@@ -393,9 +404,7 @@ impl Eval<'_> {
                 match name.as_str() {
                     "header" => {
                         for n in &names {
-                            let mut headers: Vec<String> = self.message.headers().iter().filter(|h| h.name.as_str().eq_ignore_ascii_case(n)).map(|h| {
-                                h.value.as_text().map(str::to_string).unwrap_or_else(|| String::from_utf8_lossy(&self.context.data[h.offset_start as usize..h.offset_end as usize]).trim().to_string())
-                            }).collect();
+                            let mut headers: Vec<String> = self.text_headers.iter().filter(|(name,_)| name.eq_ignore_ascii_case(n)).map(|(_,value)| value.clone()).collect();
                             if let Some(index) = args.tag("index") {
                                 let index = index.parse::<usize>()?;
                                 if args.has("last") { headers.reverse(); }
@@ -406,8 +415,11 @@ impl Eval<'_> {
                     "address" => {
                         for n in &names {
                             // Parse arbitrary address headers with the same MIME parser.
-                            let header = HeaderName::parse(n).ok_or_else(|| anyhow::anyhow!("invalid header name"))?;
-                            for value in self.message.header_values(header) {
+                            let mut headers: Vec<_> = self.message.headers().iter().filter(|h| h.name.as_str().eq_ignore_ascii_case(n)).collect();
+                            if args.has("last") { headers.reverse(); }
+                            if let Some(index) = args.tag("index") { headers = headers.into_iter().nth(index.parse::<usize>()? - 1).into_iter().collect(); }
+                            for header in headers {
+                                let value = &header.value;
                                 if let Some(addresses) = value.as_address() { values.extend(addresses.iter().filter_map(|a| a.address()).map(str::to_string)); }
                             }
                         }

@@ -95,7 +95,13 @@ pub async fn deliver(db: &Db, ms: &Arc<SqliteMailStore>, delivery: Delivery<'_>)
         }
     };
     if let Some(reason) = &plan.reject {
-        if delivery.smtp_reject { return Err(Rejected(crate::smtp::inbound::header_value_safe(reason)).into()); }
+        if delivery.smtp_reject {
+            let mut reason: String = reason.chars().filter(|c| !c.is_control()).collect();
+            let mut end = reason.len().min(400);
+            while !reason.is_char_boundary(end) { end -= 1; }
+            reason.truncate(end);
+            return Err(Rejected(reason).into());
+        }
         if delivery.sender_verified && !delivery.from.is_empty() {
             let domain = delivery.account.email.rsplit_once('@').map(|(_,d)| d).unwrap_or("example.com");
             let bytes = crate::smtp::bounce::generate_ndr(domain,delivery.from,&[delivery.to.to_string()],reason)?;
@@ -165,6 +171,7 @@ fn redirect_depth(data: &[u8]) -> usize {
 }
 async fn validate(db: &Db, ms: &Arc<SqliteMailStore>, delivery: &Delivery<'_>, plan: &Plan, external: bool) -> Result<Vec<(String,Option<db::account::Account>)>> {
     let mut redirects = Vec::new();
+    ensure!(plan.redirects.is_empty() || redirect_depth(delivery.data) < super::MAX_REDIRECTS,"redirect hop limit");
     for target in &plan.redirects {
         address(target)?;
         let local = db::account::get_by_email(&db.conn,&target.to_ascii_lowercase()).await?;

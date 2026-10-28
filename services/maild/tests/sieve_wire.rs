@@ -32,7 +32,7 @@ async fn starttls_upload_activate_then_real_smtp_delivery_and_rejection() -> Res
     let certified = rcgen::generate_simple_self_signed(vec!["mail.example.com".into()])?;
     let cert_path = tmp.path().join("cert.pem"); let key_path = tmp.path().join("key.pem");
     std::fs::write(&cert_path,certified.cert.pem())?; std::fs::write(&key_path,certified.key_pair.serialize_pem())?;
-    let cfg = Config {
+    let mut cfg = Config {
         hostname:"mail.example.com".into(),database_path:tmp.path().join("mail.db").display().to_string(),blob_dir:tmp.path().join("blobs").display().to_string(),mds_dir:tmp.path().join("mds").display().to_string(),
         spam_db_dir:Some(tmp.path().join("spam").display().to_string()),rule_stats_dir:Some(tmp.path().join("stats").display().to_string()),
         smtp_inbound:Some(ListenSpec::Single("127.0.0.1:0".into())),smtp_smtps:None,sieve_listen:Some(ListenSpec::Single("127.0.0.1:0".into())),tls_cert:Some(cert_path.display().to_string()),tls_key:Some(key_path.display().to_string()),..Config::default()
@@ -91,6 +91,16 @@ async fn starttls_upload_activate_then_real_smtp_delivery_and_rejection() -> Res
     assert!(message(&mut smtp).await?.starts_with("550 5.7.1 Denied"));
     assert!(send(&mut io,"SETACTIVE \"\"\r\n").await?.starts_with("OK"));
     assert!(send(&mut io,"DELETESCRIPT \"renamed\"\r\n").await?.starts_with("OK"));
+    assert!(send(&mut io,"LOGOUT\r\n").await?.starts_with("OK"));
+
+    // The same identity also serves the optional implicit TLS mode.
+    cfg.sieve_implicit_tls = true;
+    let resolver = maild::tls::SniCertResolver::from_config(&cfg.resolve_tls_identities(),cfg.strict_sni())?;
+    let handle = server::start(db.clone(),&cfg,maild::tls::new_tls_slot(Some(Arc::new(resolver))),Arc::new(maild::tls::ServerConfigCache::new())).await?;
+    let tcp = TcpStream::connect(handle.addrs[0]).await?;
+    let tls = connector.connect(rustls::pki_types::ServerName::try_from("mail.example.com")?,tcp).await?;
+    let mut io = BufReader::new(tls); assert!(response(&mut io).await?.contains("PLAIN LOGIN"));
+    assert!(send(&mut io,&auth).await?.starts_with("OK"));
     assert!(send(&mut io,"LOGOUT\r\n").await?.starts_with("OK"));
     Ok(())
 }

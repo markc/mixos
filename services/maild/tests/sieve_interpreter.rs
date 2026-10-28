@@ -84,6 +84,19 @@ fn index_selects_first_and_last_header() {
     assert!(!matches(r#"header :index 3 :is "X-Test" "last""#));
 }
 #[test]
+fn mime_header_unfolding_decoding_and_address_index() {
+    let data = b"From: a@example.org\r\nFrom: b@example.org\r\nX-Label: =?UTF-8?Q?caf=C3=A9?=\r\n\tshop\r\n\r\nbody";
+    let plan = compile(r#"require "index"; if allof (header :is "X-Label" "café shop", address :index 1 :last "From" "b@example.org") { discard; }"#).unwrap().evaluate(Context {data,from:"a",to:"b"}).unwrap();
+    assert!(plan.filings.is_empty());
+}
+#[test]
+fn named_flag_variables_and_literal_substitution_without_extension() {
+    let plan = evaluate(r#"require ["variables","imap4flags"]; setflag "myflags" "\\Seen"; addflag "myflags" "project"; if hasflag "myflags" "\\seen" { keep :flags "${myflags}"; stop; } discard;"#);
+    assert_eq!(plan.filings[0].flags,vec!["\\Seen project"]);
+    let plan = evaluate(r#"require "fileinto"; fileinto "${literal}";"#);
+    assert_eq!(plan.filings[0].mailbox.as_deref(),Some("${literal}"));
+}
+#[test]
 fn vacation_options_and_reject_actions() {
     let plan = evaluate(r#"require "vacation"; vacation :days 2 :addresses ["alias@example.com"] :subject "Away" :from "bob@example.com" "Back tomorrow";"#);
     let vacation = plan.vacation.unwrap(); assert_eq!(vacation.days,2); assert_eq!(vacation.subject.as_deref(),Some("Away")); assert_eq!(vacation.from.as_deref(),Some("bob@example.com")); assert_eq!(vacation.addresses,vec!["alias@example.com"]); assert_eq!(plan.filings.len(),1);

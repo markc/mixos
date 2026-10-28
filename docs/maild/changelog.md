@@ -10,6 +10,16 @@ generated: by docs/_build/gen-site.mix from services/maild/CHANGELOG.md; do not 
 
 ## Unreleased
 
+- Add per-account, versioned Sieve rules to SMTP and local submission delivery,
+  with a bounded in-process interpreter, fileinto/create, flags, copy, body,
+  variables, vacation, relational/index tests and reject/ereject. Script and
+  policy errors keep the message. External redirects and automatic replies
+  require an operator-enabled account domain; vacation suppression is durable.
+- Add an opt-in RFC 5804 ManageSieve listener using the shared TLS identities
+  and account authentication, plus `maild.sieve.list/get/put/activate` Bus
+  commands. SMTP's classifier and global Mix filter precede account Sieve;
+  daemon-generated spam headers are available to scripts.
+
 - IMAP `SEARCH` and `UID SEARCH` implement the header, date and text keys:
   `FROM`, `TO`, `CC`, `BCC`, `SUBJECT`, `HEADER`, `BODY`, `TEXT`, `BEFORE`,
   `ON`, `SINCE`, `SENTBEFORE`, `SENTON` and `SENTSINCE`. They were refused

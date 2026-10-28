@@ -9,6 +9,10 @@ Maild serves JMAP, SMTP, IMAP, CalDAV and CardDAV. Its library builds the
 same runtime for the daemon and integration tests. Private crates provide
 mail authentication, rules, Bayesian classification and metadata storage.
 
+Accounts can run [Sieve delivery scripts](sieve.md), managed through the Bus or
+the optional TLS ManageSieve listener on port 4190. Off-site redirects and
+automatic Sieve replies are disabled until the operator allows the account domain.
+
 ## Properties
 
 Maild uses the shared `props` library with its `store`, `sqlite` and `router`
