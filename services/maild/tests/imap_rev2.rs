@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! IMAP4rev2 conformance wire tests — FETCH / UID FETCH metadata atoms.
+//! IMAP4rev2 command, MIME, storage atomicity and compatibility wire tests.
 //!
 //! Uses the same in-process `handle_connection` harness as Phase 2
 //! (tokio duplex; no TLS). Each test provisions a fresh sqlite Db +
 //! MailStore + Mds, inserts known messages into INBOX, then drives
-//! the wire to assert FETCH responses match RFC 9051 §6.4.5 / §6.4.8
-//! shape for the metadata atoms (FLAGS, UID, RFC822.SIZE,
-//! INTERNALDATE).
+//! the real session wire, including literals and unsolicited responses.
 
 use std::sync::Arc;
 
@@ -1545,6 +1543,65 @@ async fn unrepresentable_native_names_cannot_inject_subscription_responses() -> 
     let response = command(&mut r, &mut w, "l", "LSUB \"\" *").await?;
     assert_eq!(response.matches("\"INBOX\"").count(), 1, "{response}");
     assert!(!response.contains("\"inbox\""), "{response}");
+    Ok(())
+}
+
+#[tokio::test]
+async fn legacy_identities_migrate_before_login_and_cannot_collide_after_rename() -> Result<()> {
+    let (_tmp, db, mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
+    ms.create_mailbox(1, "Source", None, attrs_for(None, false))?;
+    ms.create_mailbox(1, "Target", None, attrs_for(None, false))?;
+    let legacy = chrono::Utc::now().timestamp();
+    mds.with_set_tx(&maild::mailstore::account_id_to_setid(1), |tx| {
+        tx.tx().execute("UPDATE container SET seq_validity = ?1", [legacy * 1000])
+            .map_err(|e| mds::Error::Other(e.to_string()))?;
+        Ok(())
+    })?;
+    let (client, _) = spawn_session(db.clone(), ms.clone(), ImapConfig::default()).await;
+    let (mut r, mut w) = login(client).await?;
+    let values = ms.list_mailboxes(1)?;
+    assert!(values.iter().all(|record| record.uid_validity > legacy as u64 && record.uid_validity <= u32::MAX as u64));
+    let source = values.iter().find(|record| record.name == "Source").unwrap().uid_validity;
+    let target = values.iter().find(|record| record.name == "Target").unwrap().uid_validity;
+    assert_ne!(source, target);
+    assert!(command(&mut r, &mut w, "d", "DELETE Target").await?.contains("d OK"));
+    assert!(command(&mut r, &mut w, "n", "RENAME Source Target").await?.contains("n OK"));
+    let response = command(&mut r, &mut w, "s", "STATUS Target (UIDVALIDITY)").await?;
+    assert!(response.contains(&format!("UIDVALIDITY {source})")), "{response}");
+    let (client, _) = spawn_session(db, ms.clone(), ImapConfig::default()).await;
+    let (_r2, _w2) = login(client).await?;
+    assert_eq!(ms.list_mailboxes(1)?.iter().find(|record| record.name == "Target").unwrap().uid_validity, source);
+    Ok(())
+}
+
+#[tokio::test]
+async fn failed_identity_migration_is_atomic_and_authentication_can_retry() -> Result<()> {
+    use base64::Engine;
+    let (_tmp, db, mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
+    let set = maild::mailstore::account_id_to_setid(1);
+    let legacy = chrono::Utc::now().timestamp() * 1000;
+    mds.with_set_tx(&set, |tx| {
+        tx.tx().execute("UPDATE container SET seq_validity = ?1", [legacy])
+            .map_err(|e| mds::Error::Other(e.to_string()))?;
+        tx.tx().execute_batch("CREATE TRIGGER reject_identity BEFORE UPDATE OF seq_validity ON container WHEN OLD.id = (SELECT MAX(id) FROM container) BEGIN SELECT RAISE(ABORT, 'identity unavailable'); END;")
+            .map_err(|e| mds::Error::Other(e.to_string()))?;
+        Ok(())
+    })?;
+    let (client, _) = spawn_session(db, ms.clone(), ImapConfig::default()).await;
+    let (rr, mut w) = tokio::io::split(client);
+    let mut r = BufReader::new(rr);
+    read_line(&mut r).await?;
+    let response = command(&mut r, &mut w, "a", "LOGIN alice@example.com hunter2").await?;
+    assert!(response.contains("a NO [UNAVAILABLE]"), "{response}");
+    assert!(ms.list_mailboxes(1)?.iter().all(|record| record.uid_validity == legacy as u64));
+    mds.with_set_tx(&set, |tx| {
+        tx.tx().execute_batch("DROP TRIGGER reject_identity")
+            .map_err(|e| mds::Error::Other(e.to_string()))
+    })?;
+    let ir = base64::engine::general_purpose::STANDARD.encode(b"\0alice@example.com\0hunter2");
+    let response = command(&mut r, &mut w, "b", &format!("AUTHENTICATE PLAIN {ir}")).await?;
+    assert!(response.contains("b OK [CAPABILITY"), "{response}");
+    assert!(command(&mut r, &mut w, "s", "SELECT INBOX").await?.contains("s OK"));
     Ok(())
 }
 

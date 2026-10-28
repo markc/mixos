@@ -349,6 +349,10 @@ pub struct EmailImport {
 /// synchronous; async callers use spawn_blocking. Native transactions commit
 /// MDS mutations and mail projections together.
 pub trait MailStore: Send + Sync {
+    /// Prepare stable IMAP identities before exposing an authenticated session.
+    fn prepare_imap_account(&self, _account: AccountId) -> Result<()> {
+        Ok(())
+    }
     /// IMAP RENAME INBOX moves messages rather than renaming the Inbox display
     /// name. Keep it separate from JMAP's generic rename_mailbox semantics.
     fn rename_inbox(
@@ -2279,6 +2283,32 @@ fn find_or_new_thread_id_in_tx(
 }
 
 impl MailStore for SqliteMailStore {
+    fn prepare_imap_account(&self, account: AccountId) -> Result<()> {
+        let set = account_id_to_setid(account);
+        match self.mds.with_set_tx(&set, |tx| {
+            let ids = {
+                let mut statement = tx.tx().prepare(
+                    "SELECT id FROM container WHERE seq_validity > 4294967295 AND name != ?1 ORDER BY id",
+                ).map_err(|e| mds::Error::Other(e.to_string()))?;
+                statement.query_map([UPLOAD_STAGING_NAME], |row| row.get::<_, String>(0))
+                    .map_err(|e| mds::Error::Other(e.to_string()))?
+                    .collect::<rusqlite::Result<Vec<_>>>()
+                    .map_err(|e| mds::Error::Other(e.to_string()))?
+            };
+            // Upgrade the entire account together. Legacy seconds-converted
+            // values can collide across names and later be reused by RENAME.
+            for id in ids {
+                let id = ContainerId(Uuid::parse_str(&id)
+                    .map_err(|e| mds::Error::Other(e.to_string()))?);
+                imap_allocate_uidvalidity(tx.tx(), &id)?;
+            }
+            Ok(())
+        }) {
+            Ok(()) | Err(mds::Error::SetNotFound(_)) => Ok(()),
+            Err(error) => Err(anyhow!(error)),
+        }
+    }
+
     fn rename_inbox(
         &self,
         account: AccountId,
@@ -5777,8 +5807,8 @@ fn imap_uidvalidity_high_water(conn: &rusqlite::Connection) -> mds::Result<i64> 
 }
 
 /// New mailbox identities use a durable counter, including across deletion.
-/// Legacy epoch-millisecond identities remain unchanged until their mailbox is
-/// destroyed. This avoids seconds-conversion collisions on rapid recreation.
+/// Legacy epoch-millisecond identities migrate before IMAP authentication.
+/// This avoids collisions on recreation and renaming onto a previously used name.
 fn imap_allocate_uidvalidity(conn: &rusqlite::Connection, id: &ContainerId) -> mds::Result<()> {
     let next = imap_uidvalidity_high_water(conn)?
         .checked_add(1)

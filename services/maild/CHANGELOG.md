@@ -26,7 +26,8 @@
   moves messages while preserving INBOX; subscriptions survive rename/delete.
   Correct CLOSE, EXAMINE, sequence-number notifications and shutdown BYE.
 - Allocate new mailbox UIDVALIDITY values with a durable high-water mark so
-  rapid delete/recreate cannot reuse a message identity; preserve legacy values.
+  rapid delete/recreate cannot reuse a message identity. Migrate legacy mailbox
+  values once before authentication, preventing collisions when names are reused.
 - Bound SEARCH content work and match without whole-message lowercase copies.
   Keep CONDSTORE/QRESYNC gated on the separate extension implementation.
 - IMAP `SEARCH` and `UID SEARCH` implement the header, date and text keys:

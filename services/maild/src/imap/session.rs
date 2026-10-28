@@ -2215,6 +2215,16 @@ impl Session {
             }
         };
 
+        let store = self.mailstore.clone();
+        match tokio::task::spawn_blocking(move || store.prepare_imap_account(aid)).await {
+            Ok(Ok(())) => {}
+            result => {
+                tracing::warn!(?result, "IMAP account preparation failed");
+                writer.write_all(tagged(tag, Status::No, Some("UNAVAILABLE"), "mailbox identities unavailable").as_bytes()).await?;
+                return Ok(());
+            }
+        }
+
         // Reserve a per-account slot before flipping state. Failure
         // closes the connection with a polite `* BYE [INUSE]`.
         if !self

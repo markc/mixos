@@ -89,13 +89,11 @@ pub fn continuation(challenge_b64: &str) -> String {
 /// only survived because it is lenient.
 ///
 /// New mailboxes use a durable 32-bit allocation in MailStore. Values that fit
-/// in u32 pass through untouched; legacy values are taken as milliseconds and
-/// reduced to seconds, which is monotonic, stable for a given mailbox,
-/// and fits until 2106. It is a one-time cache invalidation for clients
-/// that stored the old 64-bit value — the correct thing to happen when
-/// UIDVALIDITY changes. Every IMAP wire site (SELECT/EXAMINE, STATUS,
-/// APPENDUID, COPYUID) MUST go through this; the storage value itself
-/// is untouched (it is also the Bus-visible `seq_validity`).
+/// in u32 pass through untouched. Account preparation migrates legacy mailbox
+/// identities before authentication completes, invalidating old caches once.
+/// The milliseconds conversion remains a compatibility fallback for direct
+/// handler callers. Every wire site (SELECT/EXAMINE, STATUS, APPENDUID, COPYUID)
+/// uses this helper.
 pub fn wire_uidvalidity(seq_validity: u64) -> u32 {
     if seq_validity <= u32::MAX as u64 {
         seq_validity as u32
