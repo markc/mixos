@@ -1489,7 +1489,12 @@ mod tests {
         let mut c = Controller::new(Config::default(), 1, true);
         let mut service = FakeEditd::new("0000e1e1");
         service.create(Some(&absolute), LETTER);
-        let mut queue: VecDeque<_> = c.open_paths(&[relative.into()], Intent::ui(0)).into();
+        let _ = c.open_paths(&[relative.into()], Intent::ui(0));
+        let tab = c.active().unwrap();
+        // A retry uses the normalised transport path, preserving the opened spelling.
+        let mut retry = Vec::new();
+        c.send_open(tab, Some(absolute.clone()), false, &mut retry);
+        let mut queue: VecDeque<_> = retry.into();
         while let Some(effect) = queue.pop_front() {
             if let Effect::Send { req, out } = effect {
                 let mut args: Value = serde_json::from_str(&out.body).unwrap();

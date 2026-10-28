@@ -1109,7 +1109,7 @@ impl Controller {
         if let Some(x) = self.x.get_mut(&tab) {
             x.open_error = None;
             x.reattaching = reattach;
-            if path.is_some() {
+            if path.is_some() && x.opened_path.is_none() {
                 x.opened_path = path.clone();
             }
         }
