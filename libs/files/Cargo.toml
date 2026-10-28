@@ -22,6 +22,7 @@ default = []
 sqlite = ["dep:rusqlite"]
 
 [dependencies]
+glob.workspace = true
 bus.workspace = true
 blake3.workspace = true
 uuid = { workspace = true, features = ["v4", "v7"] }
