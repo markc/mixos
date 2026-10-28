@@ -252,6 +252,9 @@ fn decode_outcome(request: &Request, value: &serde_json::Value) -> Outcome {
     use files::chooser::{Acceptance, location};
     let parsed = || -> anyhow::Result<Outcome> {
         match value["response"].as_u64() {
+            Some(1) if value["reason"] == "caller" => {
+                return Ok(Outcome::Failed("native chooser cancelled by caller".into()));
+            }
             Some(1) => return Ok(Outcome::Cancelled),
             Some(0) => {}
             _ => {
