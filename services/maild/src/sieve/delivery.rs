@@ -83,8 +83,12 @@ fn flags(raw: &[String]) -> Result<(Flags, Tags)> {
         if let Some(bit) = bit {
             bits |= bit;
         } else {
-            if word.starts_with('\\') || !word.is_ascii() { continue; }
-            let Ok(tag) = crate::keyword::normalise_user_keyword(word) else { continue; };
+            if word.starts_with('\\') || !word.is_ascii() {
+                continue;
+            }
+            let Ok(tag) = crate::keyword::normalise_user_keyword(word) else {
+                continue;
+            };
             if !tags.contains(&tag) && tags.len() < crate::keyword::MAX_KEYWORDS_PER_MESSAGE {
                 tags.push(tag);
             }
@@ -111,7 +115,11 @@ fn address(address: &str) -> Result<()> {
 
 /// Evaluate only. Exposed for delivery diagnostics and malformed stored-script
 /// recovery tests; the caller must still validate the action destinations.
-pub async fn plan(db: &Db, ms: &Arc<SqliteMailStore>, delivery: &Delivery<'_>) -> Result<Option<Plan>> {
+pub async fn plan(
+    db: &Db,
+    ms: &Arc<SqliteMailStore>,
+    delivery: &Delivery<'_>,
+) -> Result<Option<Plan>> {
     let Some(script) = store::active(db, delivery.account.id).await? else {
         return Ok(None);
     };
@@ -124,22 +132,39 @@ pub async fn plan(db: &Db, ms: &Arc<SqliteMailStore>, delivery: &Delivery<'_>) -
         let boxes = ms.list_mailboxes(account)?;
         let mut paths = Vec::new();
         for mailbox in &boxes {
-            if !mailbox.my_rights.may_add_items { continue; }
+            if !mailbox.my_rights.may_add_items {
+                continue;
+            }
             let mut parts = Vec::new();
             let mut current = Some(mailbox);
             while let Some(entry) = current {
                 ensure!(parts.len() < boxes.len(), "mailbox parent cycle");
-                parts.push(if entry.role == Some(MailboxRole::Inbox) { "INBOX".to_string() } else { entry.name.clone() });
-                current = entry.parent.map(|parent| boxes.iter().find(|entry| entry.id == parent).ok_or_else(||anyhow::anyhow!("missing mailbox parent"))).transpose()?;
+                parts.push(if entry.role == Some(MailboxRole::Inbox) {
+                    "INBOX".to_string()
+                } else {
+                    entry.name.clone()
+                });
+                current = entry
+                    .parent
+                    .map(|parent| {
+                        boxes
+                            .iter()
+                            .find(|entry| entry.id == parent)
+                            .ok_or_else(|| anyhow::anyhow!("missing mailbox parent"))
+                    })
+                    .transpose()?;
             }
             parts.reverse();
             paths.push(parts.join("/"));
         }
-        compile(&script.source)?.evaluate_with_mailboxes(Context {
-            data: &data,
-            from: &from,
-            to: &to,
-        }, &paths)
+        compile(&script.source)?.evaluate_with_mailboxes(
+            Context {
+                data: &data,
+                from: &from,
+                to: &to,
+            },
+            &paths,
+        )
     })
     .await?
     .map(Some)
@@ -244,7 +269,9 @@ async fn deliver_inner(
                 default
             };
             let (flags, tags) = flags(&filing.flags)?;
-            if let Some((_, existing_flags, existing_tags)) = resolved.iter_mut().find(|(prior, _, _)| prior == &target) {
+            if let Some((_, existing_flags, existing_tags)) =
+                resolved.iter_mut().find(|(prior, _, _)| prior == &target)
+            {
                 // RFC 5232 section 2: the last flag list wins when duplicate
                 // deliveries to one mailbox are collapsed.
                 *existing_flags = flags;
@@ -322,8 +349,17 @@ async fn deliver_inner(
                         .mailbox_by_role(account.id, MailboxRole::Inbox)?
                         .ok_or_else(|| anyhow::anyhow!("redirect recipient has no Inbox"))?;
                     let (target, routed_data, spam) = if let Some(routing) = delivery.routing {
-                        crate::smtp::inbound::route_sieve_redirect(routing,&account,delivery.from,&destination,&bytes).await?
-                    } else { (inbox,bytes.clone(),delivery.spam) };
+                        crate::smtp::inbound::route_sieve_redirect(
+                            routing,
+                            &account,
+                            delivery.from,
+                            &destination,
+                            &bytes,
+                        )
+                        .await?
+                    } else {
+                        (inbox, bytes.clone(), delivery.spam)
+                    };
                     Box::pin(deliver_inner(
                         db,
                         ms,
@@ -670,6 +706,14 @@ async fn vacation_reply(
     // identifies the account for the normal queue worker's DKIM selection.
     let ms = ms.clone();
     let hash = tokio::task::spawn_blocking(move || ms.mds().put_blob(&bytes)).await??;
-    store::queue_reply(db,delivery.account.id,delivery.from,&vacation.handle,vacation.days,hash).await?;
+    store::queue_reply(
+        db,
+        delivery.account.id,
+        delivery.from,
+        &vacation.handle,
+        vacation.days,
+        hash,
+    )
+    .await?;
     Ok(())
 }

@@ -127,44 +127,68 @@ async fn fileinto_create_copy_and_flags_use_real_mailstore() -> Result<()> {
 async fn repeated_filings_use_last_flags_and_keywords() -> Result<()> {
     let f = Fixture::new().await?;
     f.script(r#"require ["imap4flags","fileinto"]; keep :flags ["\\Seen","first"]; fileinto :flags ["\\Flagged","second"] "INBOX";"#).await?;
-    f.deliver(MESSAGE,false,false).await?;
-    assert_eq!(f.count("Inbox"),1);
-    let inbox = f.ms.mailbox_by_role(f.account.id,MailboxRole::Inbox)?.unwrap();
-    let items = f.ms.list_emails_in_mailbox(f.account.id,inbox,ListOpts::default())?;
-    let record = f.ms.get_email(f.account.id,items[0].id)?;
-    assert_eq!(record.keywords.0 & (Flags::SEEN | Flags::FLAGGED), Flags::FLAGGED);
+    f.deliver(MESSAGE, false, false).await?;
+    assert_eq!(f.count("Inbox"), 1);
+    let inbox =
+        f.ms.mailbox_by_role(f.account.id, MailboxRole::Inbox)?
+            .unwrap();
+    let items =
+        f.ms.list_emails_in_mailbox(f.account.id, inbox, ListOpts::default())?;
+    let record = f.ms.get_email(f.account.id, items[0].id)?;
+    assert_eq!(
+        record.keywords.0 & (Flags::SEEN | Flags::FLAGGED),
+        Flags::FLAGGED
+    );
     assert!(!record.tags.contains("first"));
     assert!(record.tags.contains("second"));
-    f.script(r#"require ["imap4flags","fileinto"]; keep :flags "\\Seen"; fileinto "INBOX";"#).await?;
-    let id = f.deliver(MESSAGE,false,false).await?.unwrap();
-    assert_eq!(f.ms.get_email(f.account.id,id)?.keywords.0,0);
+    f.script(r#"require ["imap4flags","fileinto"]; keep :flags "\\Seen"; fileinto "INBOX";"#)
+        .await?;
+    let id = f.deliver(MESSAGE, false, false).await?.unwrap();
+    assert_eq!(f.ms.get_email(f.account.id, id)?.keywords.0, 0);
     Ok(())
 }
 #[tokio::test]
 async fn unsupported_flags_are_ignored_without_changing_filing() -> Result<()> {
     let f = Fixture::new().await?;
     f.script(r#"require ["imap4flags","fileinto","mailbox"]; fileinto :create :flags ["\\Seen", "\\Recent", "\\Unknown", "bad(flag)", "project"] "FlagTest";"#).await?;
-    let id = f.deliver(MESSAGE,false,false).await?.unwrap();
-    assert_eq!(f.count("Inbox"),0);
-    assert_eq!(f.count("FlagTest"),1);
-    let record = f.ms.get_email(f.account.id,id)?;
-    assert_eq!(record.keywords.0,Flags::SEEN);
-    assert_eq!(record.tags,Tags::from(vec!["project".into()]));
+    let id = f.deliver(MESSAGE, false, false).await?.unwrap();
+    assert_eq!(f.count("Inbox"), 0);
+    assert_eq!(f.count("FlagTest"), 1);
+    let record = f.ms.get_email(f.account.id, id)?;
+    assert_eq!(record.keywords.0, Flags::SEEN);
+    assert_eq!(record.tags, Tags::from(vec!["project".into()]));
     Ok(())
 }
 #[tokio::test]
 async fn mailboxexists_resolves_nested_account_owned_writable_mailboxes() -> Result<()> {
     let f = Fixture::new().await?;
-    f.script(r#"require ["fileinto","mailbox"]; fileinto :create "INBOX/Projects";"#).await?;
-    f.deliver(MESSAGE,false,false).await?;
-    store::put(&f.db,2,"other",r#"require ["fileinto","mailbox"]; fileinto :create "OtherAccount";"#,None).await?;
-    store::activate(&f.db,2,"other").await?;
+    f.script(r#"require ["fileinto","mailbox"]; fileinto :create "INBOX/Projects";"#)
+        .await?;
+    f.deliver(MESSAGE, false, false).await?;
+    store::put(
+        &f.db,
+        2,
+        "other",
+        r#"require ["fileinto","mailbox"]; fileinto :create "OtherAccount";"#,
+        None,
+    )
+    .await?;
+    store::activate(&f.db, 2, "other").await?;
     f.script(r#"redirect "alice@example.com";"#).await?;
-    f.deliver(MESSAGE,false,false).await?;
-    f.ms.create_mailbox(f.account.id,"ReadOnly",None,mds::ContainerAttrs {special_use:None,subscribed:false,extra:serde_json::json!({"jmap_my_rights":{"may_add_items":false}})})?;
+    f.deliver(MESSAGE, false, false).await?;
+    f.ms.create_mailbox(
+        f.account.id,
+        "ReadOnly",
+        None,
+        mds::ContainerAttrs {
+            special_use: None,
+            subscribed: false,
+            extra: serde_json::json!({"jmap_my_rights":{"may_add_items":false}}),
+        },
+    )?;
     f.script(r#"require "mailbox"; if allof(mailboxexists ["inbox","INBOX/Projects"],not mailboxexists "OtherAccount",not mailboxexists "ReadOnly") { discard; }"#).await?;
-    assert!(f.deliver(MESSAGE,false,false).await?.is_none());
-    assert_eq!(f.count("Inbox"),0);
+    assert!(f.deliver(MESSAGE, false, false).await?.is_none());
+    assert_eq!(f.count("Inbox"), 0);
     Ok(())
 }
 #[tokio::test]
@@ -435,10 +459,20 @@ async fn outbound_failure_after_keep_does_not_request_duplicate_delivery() -> Re
     f.script(r#"require "vacation"; vacation "Away";"#).await?;
     assert!(f.deliver(MESSAGE, true, false).await?.is_some());
     assert_eq!(f.count("Inbox"), 2);
-    assert_eq!(f.db.conn.lock().unwrap().query_row("SELECT count(*) FROM sieve_replies",[],|r| r.get::<_,i64>(0))?,0);
-    f.db.conn.lock().unwrap().execute_batch("DROP TRIGGER fail_sieve_queue;")?;
-    f.deliver(MESSAGE,true,false).await?;
-    assert_eq!(maild::smtp::queue::list(&f.db.conn,10).await?.len(),1);
+    assert_eq!(
+        f.db.conn
+            .lock()
+            .unwrap()
+            .query_row("SELECT count(*) FROM sieve_replies", [], |r| r
+                .get::<_, i64>(0))?,
+        0
+    );
+    f.db.conn
+        .lock()
+        .unwrap()
+        .execute_batch("DROP TRIGGER fail_sieve_queue;")?;
+    f.deliver(MESSAGE, true, false).await?;
+    assert_eq!(maild::smtp::queue::list(&f.db.conn, 10).await?.len(), 1);
     Ok(())
 }
 #[test]

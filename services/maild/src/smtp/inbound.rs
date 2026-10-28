@@ -665,7 +665,11 @@ pub async fn deliver(
             spam_score.unwrap_or(0.0),
         );
         let routing = crate::sieve::delivery::Routing {
-            state, ingress, verify:&verify_result, raw_data:data, remote_ip,
+            state,
+            ingress,
+            verify: &verify_result,
+            raw_data: data,
+            remote_ip,
         };
         let create_outcome = crate::sieve::delivery::deliver(
             &state.db,
@@ -1006,28 +1010,72 @@ pub(crate) async fn route_sieve_redirect(
     from: &str,
     to: &str,
     data: &[u8],
-) -> Result<(mds::ContainerId,Vec<u8>,bool)> {
+) -> Result<(mds::ContainerId, Vec<u8>, bool)> {
     let state = routing.state;
-    let (verdict,score) = if account.spam_enabled {
-        match classify_inbound(state,account,from,&[to.to_string()],routing.remote_ip,
-            routing.raw_data,routing.verify,routing.ingress.is_local_auth()).await {
-            Ok((verdict,score,_)) => (Some(verdict),Some(score)),
-            Err(error) => { tracing::warn!(%error,account=account.id,"redirect classification failed"); (None,None) }
+    let (verdict, score) = if account.spam_enabled {
+        match classify_inbound(
+            state,
+            account,
+            from,
+            &[to.to_string()],
+            routing.remote_ip,
+            routing.raw_data,
+            routing.verify,
+            routing.ingress.is_local_auth(),
+        )
+        .await
+        {
+            Ok((verdict, score, _)) => (Some(verdict), Some(score)),
+            Err(error) => {
+                tracing::warn!(%error,account=account.id,"redirect classification failed");
+                (None, None)
+            }
         }
-    } else { (None,None) };
-    let message = MessageParser::default().parse(data).ok_or_else(|| anyhow::anyhow!("redirect message parse error"))?;
-    let filter = run_inbound_filter(&state.config,from,to,message.subject().unwrap_or(""),
-        &render_header_from(&message),verdict.as_deref().unwrap_or("HAM"),score.unwrap_or(0.0),
-        false,"","",message.attachment_count() as i64,routing.raw_data.len() as i64).await;
+    } else {
+        (None, None)
+    };
+    let message = MessageParser::default()
+        .parse(data)
+        .ok_or_else(|| anyhow::anyhow!("redirect message parse error"))?;
+    let filter = run_inbound_filter(
+        &state.config,
+        from,
+        to,
+        message.subject().unwrap_or(""),
+        &render_header_from(&message),
+        verdict.as_deref().unwrap_or("HAM"),
+        score.unwrap_or(0.0),
+        false,
+        "",
+        "",
+        message.attachment_count() as i64,
+        routing.raw_data.len() as i64,
+    )
+    .await;
     let spam = verdict.as_deref() == Some("SPAM");
-    let ms = state.mailstore.clone(); let id = account.id;
+    let ms = state.mailstore.clone();
+    let id = account.id;
     let target = tokio::task::spawn_blocking(move || -> Result<_> {
         if let Some(name) = filter {
-            if let Some(target) = ms.mailbox_by_name(id,&name)? { return Ok(target); }
-        } else if spam && let Some(target) = ms.mailbox_by_role(id,MailboxRole::Junk)? { return Ok(target); }
-        ms.mailbox_by_role(id,MailboxRole::Inbox)?.ok_or_else(|| anyhow::anyhow!("redirect recipient has no Inbox"))
-    }).await??;
-    Ok((target,crate::sieve::delivery::stamp_spam(data,verdict.as_deref().unwrap_or("UNKNOWN"),score.unwrap_or(0.0)),spam))
+            if let Some(target) = ms.mailbox_by_name(id, &name)? {
+                return Ok(target);
+            }
+        } else if spam && let Some(target) = ms.mailbox_by_role(id, MailboxRole::Junk)? {
+            return Ok(target);
+        }
+        ms.mailbox_by_role(id, MailboxRole::Inbox)?
+            .ok_or_else(|| anyhow::anyhow!("redirect recipient has no Inbox"))
+    })
+    .await??;
+    Ok((
+        target,
+        crate::sieve::delivery::stamp_spam(
+            data,
+            verdict.as_deref().unwrap_or("UNKNOWN"),
+            score.unwrap_or(0.0),
+        ),
+        spam,
+    ))
 }
 
 async fn legacy_vacation(

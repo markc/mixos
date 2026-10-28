@@ -265,7 +265,14 @@ pub async fn reply_due(
 
 pub const MAX_REPLY_STAMPS: usize = 10_000;
 
-pub async fn queue_reply(db: &Db, account: i32, sender: &str, handle: &str, days: u32, hash: mds::BlobHash) -> Result<bool> {
+pub async fn queue_reply(
+    db: &Db,
+    account: i32,
+    sender: &str,
+    handle: &str,
+    days: u32,
+    hash: mds::BlobHash,
+) -> Result<bool> {
     let recipient = sender.to_string();
     let sender = sender.to_ascii_lowercase();
     let handle = blake3::hash(handle.as_bytes()).to_hex().to_string();
@@ -273,8 +280,8 @@ pub async fn queue_reply(db: &Db, account: i32, sender: &str, handle: &str, days
         let tx = conn.transaction()?;
         tx.execute("DELETE FROM sieve_replies WHERE account_id=?1 AND sent_at<=unixepoch()-31*86400",[account])?;
         let known: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM sieve_replies WHERE account_id=?1 AND sender=?2 AND handle=?3)",params![account,sender,handle],|r|r.get(0))?;
-        let count: usize = tx.query_row("SELECT count(*) FROM sieve_replies WHERE account_id=?1",[account],|r|r.get(0))?;
-        if !known && count >= MAX_REPLY_STAMPS {
+        let count: i64 = tx.query_row("SELECT count(*) FROM sieve_replies WHERE account_id=?1",[account],|r|r.get(0))?;
+        if !known && count >= MAX_REPLY_STAMPS as i64 {
             // Never evict a live suppression stamp: that would permit repeated
             // replies inside the sender's interval. Suppress new pairs instead.
             tx.commit()?;

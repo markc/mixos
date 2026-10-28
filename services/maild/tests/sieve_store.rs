@@ -115,24 +115,61 @@ async fn deleted_name_churn_has_bounded_history_and_monotonic_versions() -> Resu
 }
 #[tokio::test]
 async fn vacation_stamp_quota_expiration_and_fixed_size_handles() -> Result<()> {
-    let (tmp,db) = fixture().await?;
+    let (tmp, db) = fixture().await?;
     let mds = mds::SqliteCasMds::open(tmp.path().join("mds"))?;
-    let hash = mds::Mds::put_blob(&mds,b"reply")?;
-    assert!(store::queue_reply(&db,1,"Sender@example.org",&"handle".repeat(10000),7,hash).await?);
+    let hash = mds::Mds::put_blob(&mds, b"reply")?;
+    assert!(
+        store::queue_reply(
+            &db,
+            1,
+            "Sender@example.org",
+            &"handle".repeat(10000),
+            7,
+            hash
+        )
+        .await?
+    );
     db.conn.lock().unwrap().execute_batch("WITH RECURSIVE n(x) AS (SELECT 0 UNION ALL SELECT x+1 FROM n WHERE x<9998) INSERT INTO sieve_replies(account_id,sender,handle,sent_at) SELECT 1,'sender-'||x,'old',unixepoch()-1 FROM n;")?;
-    assert!(!store::queue_reply(&db,1,"NewSender@example.org","new",7,hash).await?);
-    assert!(!store::reply_due(&db,1,"NewSender@example.org","new",7).await?);
-    assert!(!store::queue_reply(&db,1,"Sender@example.org",&"handle".repeat(10000),7,hash).await?);
+    assert!(!store::queue_reply(&db, 1, "NewSender@example.org", "new", 7, hash).await?);
+    assert!(!store::reply_due(&db, 1, "NewSender@example.org", "new", 7).await?);
+    assert!(
+        !store::queue_reply(
+            &db,
+            1,
+            "Sender@example.org",
+            &"handle".repeat(10000),
+            7,
+            hash
+        )
+        .await?
+    );
     {
         let conn = db.conn.lock().unwrap();
-        assert_eq!(conn.query_row("SELECT count(*) FROM sieve_replies",[],|r| r.get::<_,i64>(0))?,store::MAX_REPLY_STAMPS as i64);
-        assert!(conn.query_row("SELECT max(length(handle)) FROM sieve_replies",[],|r| r.get::<_,i64>(0))? <= 64);
-        conn.execute("UPDATE sieve_replies SET sent_at=unixepoch()-32*86400",[])?;
+        assert_eq!(
+            conn.query_row("SELECT count(*) FROM sieve_replies", [], |r| r
+                .get::<_, i64>(0))?,
+            store::MAX_REPLY_STAMPS as i64
+        );
+        assert!(
+            conn.query_row("SELECT max(length(handle)) FROM sieve_replies", [], |r| r
+                .get::<_, i64>(
+                0
+            ))? <= 64
+        );
+        conn.execute("UPDATE sieve_replies SET sent_at=unixepoch()-32*86400", [])?;
     }
-    assert!(store::queue_reply(&db,1,"Sender@example.org","new",7,hash).await?);
-    assert_eq!(db.conn.lock().unwrap().query_row("SELECT count(*) FROM sieve_replies",[],|r| r.get::<_,i64>(0))?,1);
-    let queued = maild::smtp::queue::list(&db.conn,10).await?;
-    assert_eq!(queued.len(),2); assert_eq!(queued[0].to_addrs,vec!["Sender@example.org"]);
+    assert!(store::queue_reply(&db, 1, "Sender@example.org", "new", 7, hash).await?);
+    assert_eq!(
+        db.conn
+            .lock()
+            .unwrap()
+            .query_row("SELECT count(*) FROM sieve_replies", [], |r| r
+                .get::<_, i64>(0))?,
+        1
+    );
+    let queued = maild::smtp::queue::list(&db.conn, 10).await?;
+    assert_eq!(queued.len(), 2);
+    assert_eq!(queued[0].to_addrs, vec!["Sender@example.org"]);
     Ok(())
 }
 #[tokio::test]
