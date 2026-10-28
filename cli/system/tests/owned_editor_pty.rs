@@ -7,11 +7,11 @@
 //! Nextest uses separate test processes (no shared mutex); its timeout budget
 //! still needs to allow setup plus the real editor fixture durations.
 #![cfg(target_os = "linux")]
-#[path = "support/pty.rs"]
-mod pty;
 #[allow(dead_code)]
 #[path = "../../mix-shell/src/editor.rs"]
 mod editor;
+#[path = "support/pty.rs"]
+mod pty;
 #[allow(dead_code)]
 #[path = "../../mix-shell/src/session_state.rs"]
 mod session_state;

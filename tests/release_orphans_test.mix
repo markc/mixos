@@ -11,7 +11,10 @@ fn process($id, $ppid, $start, $exe)
   $base = $tmp .. "/proc/" .. $id
   mkdir($base, {parents: true})
   -- Embedded ')' and spaces exercise the real stat comm parsing rule.
-  write_file($base .. "/stat", $id .. " (test ) process) S " .. $ppid .. " 10 10 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 " .. $start .. " 0")
+  $fields = ["S", to_string($ppid), "10", "10"]
+  for $i = 4 to 18 push($fields, "0") end
+  push($fields, to_string($start))
+  write_file($base .. "/stat", $id .. " (test ) process) " .. join($fields, " "))
   run_argv_must(["ln", "-s", $exe, $base .. "/exe"])
 end
 
@@ -28,7 +31,7 @@ try
   process(104, 1, 14, $tmp .. "/missing")
   run_argv_must(["ln", "-s", $target, $tmp .. "/target-link"])
   $before = $o.snapshot($tmp .. "/target-link", $tmp .. "/proc")
-  check(len($before) == 1 and $before[0].pid == 101, "only own checkout's canonical orphan is counted")
+  check(len($before) == 1 and $before[0].pid == 101 and $before[0].start == "11", "only own checkout's canonical orphan is counted")
   process(105, 1, 15, $target .. "/debug/mix")
   $after = $o.snapshot($target, $tmp .. "/proc")
   $new = $o.added($before, $after)
