@@ -167,7 +167,10 @@ mod tests {
             Kind::Text
         ));
         assert_eq!(classify("---\n\n---\nBody"), Kind::Text);
-        assert_eq!(classify("---\ntitle: Notes\n mail-to: bob@example.org\n---\nBody"), Kind::Text);
+        assert_eq!(
+            classify("---\ntitle: Notes\n mail-to: bob@example.org\n---\nBody"),
+            Kind::Text
+        );
         assert_eq!(classify("---\nmail-without-a-colon\n---\nBody"), Kind::Text);
         assert!(matches!(
             classify("---\ntitle: Notes\n---\ntext"),

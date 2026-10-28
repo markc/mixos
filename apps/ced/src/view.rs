@@ -440,7 +440,7 @@ fn document(
         highlight: Some(&tab.highlight),
         diagnostics: tab.diagnostics.items(),
     };
-    let editable = app.dialog.is_none() && tab.mail.as_ref().is_none_or(|mail| !mail.sending && !mail.saving);
+    let editable = body_editable(app, tab);
     // The editor takes its own saved padding and light mode; the rest of the
     // window keeps the global look.
     let draw_editor = |ui: &mut Ui| {
@@ -561,6 +561,12 @@ fn document(
         ));
     }
     shown
+}
+
+fn body_editable(app: &App, tab: &Tab) -> bool {
+    app.dialog.is_none() && tab.mail.as_ref().is_none_or(|mail| {
+        (!mail.sending && !mail.saving) || app.ctl.mail_save_parked(tab.id)
+    })
 }
 
 fn centred(ui: &mut Ui, text: &str) {
@@ -902,6 +908,22 @@ mod tests {
         }
         let tab = ctl.active().unwrap();
         (crate::app::App::new(ctl, config), tab)
+    }
+
+    #[test]
+    fn body_typing_is_allowed_while_a_save_is_parked_but_not_during_the_write() {
+        use documents::actions::ActionId;
+        let (mut app, tab) = mail_app();
+        let fx = app.ctl.on_editor(tab, documents::controller::EditorMsg::Command(
+            editor_model::model::EditCommand::Insert("First ".into()),
+        ));
+        app.absorb(fx);
+        app.action(ActionId::FileSend);
+        assert!(app.ctl.mail_save_parked(tab));
+        assert!(super::body_editable(&app, app.active_tab().unwrap()));
+        let (mut app, _) = mail_app();
+        app.action(ActionId::FileSend);
+        assert!(!super::body_editable(&app, app.active_tab().unwrap()));
     }
 
     #[cfg(unix)]

@@ -203,7 +203,10 @@ async fn scratch_initial_text_has_no_undo_entry_and_never_reads_a_path() {
     assert_eq!(opened["language"], "markdown");
     assert_eq!(h.text(buffer).await, text);
     let closed = h.call("edit.close", json!({"buffer":buffer})).await;
-    assert_eq!(closed.0, 10, "a seeded scratch must not close without consent");
+    assert_eq!(
+        closed.0, 10,
+        "a seeded scratch must not close without consent"
+    );
     let undone = h.call("edit.undo", json!({"buffer":buffer})).await;
     assert_eq!(undone.0, 10);
     assert_eq!(undone.1["reason"], "nothing_to_undo");
@@ -215,8 +218,12 @@ async fn scratch_initial_text_has_no_undo_entry_and_never_reads_a_path() {
     assert_eq!(refused.0, 10);
     assert_eq!(std::fs::read_to_string(path).unwrap(), "keep");
     let saved = h.file("seeded.md", "");
-    h.ok("edit.save", json!({"buffer":buffer,"path":saved})).await;
-    assert_eq!(h.ok("edit.props.get", json!({})).await["buffers"][buffer]["dirty"], false);
+    h.ok("edit.save", json!({"buffer":buffer,"path":saved,"force":true}))
+        .await;
+    assert_eq!(
+        h.ok("edit.props.get", json!({})).await["buffers"][buffer]["dirty"],
+        false
+    );
     assert_eq!(h.call("edit.close", json!({"buffer":buffer})).await.0, 0);
 }
 

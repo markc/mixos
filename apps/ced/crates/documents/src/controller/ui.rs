@@ -503,9 +503,14 @@ impl Controller {
             }
             ActionId::MailHeaders => {
                 let t = need()?;
-                let headers = args.and_then(|v| v.get("headers")).cloned().ok_or((code::INVALID_ARGUMENT, "mail.headers needs {headers}".into()))?;
-                let headers = serde_json::from_value(headers).map_err(|e| (code::INVALID_ARGUMENT, e.to_string()))?;
-                self.edit_headers(t, headers).map_err(|e| (super::mail::error_code(&e), e))?;
+                let headers = args.and_then(|v| v.get("headers")).cloned().ok_or((
+                    code::INVALID_ARGUMENT,
+                    "mail.headers needs {headers}".into(),
+                ))?;
+                let headers = serde_json::from_value(headers)
+                    .map_err(|e| (code::INVALID_ARGUMENT, e.to_string()))?;
+                self.edit_headers(t, headers)
+                    .map_err(|e| (super::mail::error_code(&e), e))?;
                 Ok(None)
             }
             ActionId::FileSave | ActionId::FileSaveAs => {
@@ -526,15 +531,37 @@ impl Controller {
                     intent,
                     fx,
                 )
-                .map_err(|e| (if self.tab(t).is_some_and(|t| t.mail.is_some()) { super::mail::error_code(&e) } else { code::CONFLICT }, e))?;
+                .map_err(|e| {
+                    (
+                        if self.tab(t).is_some_and(|t| t.mail.is_some()) {
+                            super::mail::error_code(&e)
+                        } else {
+                            code::CONFLICT
+                        },
+                        e,
+                    )
+                })?;
                 Ok(None)
             }
             ActionId::FileClose => {
                 let t = need()?;
                 self.cancel_mail_save(t, "the parked mail save was cancelled by Close", fx);
-                if let Some(tab) = self.tab(t) && let Some(mail) = &tab.mail {
-                    if mail.sending || mail.saving { return Err((code::CONFLICT, "wait for the mail save or Send to finish before closing".into())); }
-                    if matches!(intent.by, editor_model::types::Invoker::Bus { .. }) && tab.dirty() && !arg_bool("save") && !arg_bool("force") { return Err((code::CONFLICT, "mail document has unsaved changes".into())); }
+                if let Some(tab) = self.tab(t)
+                    && let Some(mail) = &tab.mail
+                {
+                    if mail.sending || mail.saving {
+                        return Err((
+                            code::CONFLICT,
+                            "wait for the mail save or Send to finish before closing".into(),
+                        ));
+                    }
+                    if matches!(intent.by, editor_model::types::Invoker::Bus { .. })
+                        && tab.dirty()
+                        && !arg_bool("save")
+                        && !arg_bool("force")
+                    {
+                        return Err((code::CONFLICT, "mail document has unsaved changes".into()));
+                    }
                 }
                 if arg_bool("save") {
                     if let Some(x) = self.x.get_mut(&t) {

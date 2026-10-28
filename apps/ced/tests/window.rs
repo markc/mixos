@@ -315,15 +315,26 @@ fn subject_typing_and_save_in_one_frame_save_the_displayed_value_in_both_orders(
             .click();
         h.run_steps(2);
         h.input_mut().events.push(Event::Key {
-            key: Key::A, physical_key: None, pressed: true, repeat: false,
+            key: Key::A,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
             modifiers: Modifiers::COMMAND,
         });
         h.run_steps(2);
-        let mut events = vec![Event::Text("Same frame".into()), Event::Key {
-            key: Key::S, physical_key: None, pressed: true, repeat: false,
-            modifiers: Modifiers::COMMAND,
-        }];
-        if shortcut_first { events.reverse(); }
+        let mut events = vec![
+            Event::Text("Same frame".into()),
+            Event::Key {
+                key: Key::S,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: Modifiers::COMMAND,
+            },
+        ];
+        if shortcut_first {
+            events.reverse();
+        }
         h.input_mut().events.extend(events);
         h.run_steps(3);
         let saved = service.mail_saves.borrow();
@@ -370,28 +381,79 @@ fn mail_document_header_strip_pro_light() {
 fn mail_field_typing_and_undo_use_the_tab_headers() {
     use egui_kittest::kittest::{NodeT, Queryable};
     let text = "---\nmail-subject: Original\nmail-to: bob@example.org\n---\nBody";
-    let (mut h, _) = window(theme(Scheme::Pro, Mode::Light), &[("/home/user/letter.md", text)], egui::vec2(820.0, 580.0));
+    let (mut h, _) = window(
+        theme(Scheme::Pro, Mode::Light),
+        &[("/home/user/letter.md", text)],
+        egui::vec2(820.0, 580.0),
+    );
     h.run_steps(12);
-    h.query_all_by_label("Subject").find(|node| node.accesskit_node().role() == egui::accesskit::Role::TextInput).unwrap().click();
+    h.query_all_by_label("Subject")
+        .find(|node| node.accesskit_node().role() == egui::accesskit::Role::TextInput)
+        .unwrap()
+        .click();
     h.run_steps(2);
-    h.input_mut().events.push(Event::Key { key: Key::A, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::COMMAND });
+    h.input_mut().events.push(Event::Key {
+        key: Key::A,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: Modifiers::COMMAND,
+    });
     h.run_steps(2);
     h.input_mut().events.push(Event::Text("Changed".into()));
     h.run_steps(4);
     let app = &h.state().shell.as_ref().unwrap().app;
-    assert_eq!(app.active_tab().unwrap().mail.as_ref().unwrap().headers.subject, "Changed");
+    assert_eq!(
+        app.active_tab()
+            .unwrap()
+            .mail
+            .as_ref()
+            .unwrap()
+            .headers
+            .subject,
+        "Changed"
+    );
     assert!(app.active_tab().unwrap().dirty());
-    h.input_mut().events.push(Event::Key { key: Key::Z, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::COMMAND });
+    h.input_mut().events.push(Event::Key {
+        key: Key::Z,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: Modifiers::COMMAND,
+    });
     h.run_steps(4);
     let app = &h.state().shell.as_ref().unwrap().app;
-    assert_eq!(app.active_tab().unwrap().mail.as_ref().unwrap().headers.subject, "Original");
+    assert_eq!(
+        app.active_tab()
+            .unwrap()
+            .mail
+            .as_ref()
+            .unwrap()
+            .headers
+            .subject,
+        "Original"
+    );
     assert!(!app.active_tab().unwrap().dirty());
     // A menu Undo after the shortcut must not undo an undo recorded by
     // TextEdit's separate history and bring "Changed" back again.
-    h.state_mut().shell.as_mut().unwrap().app.action(documents::actions::ActionId::EditUndo);
+    h.state_mut()
+        .shell
+        .as_mut()
+        .unwrap()
+        .app
+        .action(documents::actions::ActionId::EditUndo);
     h.run_steps(4);
     let app = &h.state().shell.as_ref().unwrap().app;
-    assert_eq!(app.active_tab().unwrap().mail.as_ref().unwrap().headers.subject, "Original");
+    assert_eq!(
+        app.active_tab()
+            .unwrap()
+            .mail
+            .as_ref()
+            .unwrap()
+            .headers
+            .subject,
+        "Original"
+    );
     assert!(!app.active_tab().unwrap().dirty());
 }
 

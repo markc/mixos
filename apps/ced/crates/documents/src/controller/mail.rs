@@ -43,6 +43,10 @@ impl Tab {
 }
 
 impl Controller {
+    pub fn mail_save_parked(&self, tab: TabId) -> bool {
+        self.x.get(&tab).is_some_and(|x| x.mail_save.is_some())
+    }
+
     pub(super) fn cancel_mail_save(&mut self, tab: TabId, notice: &str, fx: &mut Vec<Effect>) {
         if let Some(park) = self.x.get_mut(&tab).and_then(|x| x.mail_save.take()) {
             self.x.get_mut(&tab).unwrap().close_after_save = None;
@@ -553,9 +557,11 @@ mod tests {
         let (mut c, mut service, tab) = opened(LETTER);
         let mut fx = c.on_editor(tab, EditorMsg::Command(EditCommand::Insert("First ".into())));
         execute(&mut c, tab, "file.send");
+        assert!(c.mail_save_parked(tab));
         assert!(c.tab(tab).unwrap().mail.as_ref().unwrap().saving_body.is_none());
         fx.extend(c.on_editor(tab, EditorMsg::Command(EditCommand::Insert("Last ".into()))));
         let fx = settle(&mut c, &mut service, fx);
+        assert!(!c.mail_save_parked(tab));
         assert!(fx.iter().any(|e| matches!(e, Effect::SaveMail { text, .. } if maildoc::parse(text).unwrap().body == "First Last Body")));
     }
 

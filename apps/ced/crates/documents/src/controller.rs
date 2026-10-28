@@ -1092,8 +1092,13 @@ impl Controller {
             Some(p) => json!({"path": p, "origin": UI_ORIGIN}),
             None => match self.tab(tab).and_then(|t| t.mail.as_ref()) {
                 Some(mail) => {
-                    let text = self.tab(tab).and_then(|t| t.mirror.as_ref())
-                        .map(|m| m.detached_copy().map_or_else(|| text_string(m.text()), |copy| copy.text.clone()))
+                    let text = self
+                        .tab(tab)
+                        .and_then(|t| t.mirror.as_ref())
+                        .map(|m| {
+                            m.detached_copy()
+                                .map_or_else(|| text_string(m.text()), |copy| copy.text.clone())
+                        })
                         .unwrap_or_else(|| mail.saved.body.clone());
                     json!({"origin": UI_ORIGIN, "text": text, "language": "markdown"})
                 }
@@ -2026,7 +2031,11 @@ impl Controller {
             }
         }
         if !live {
-            self.cancel_mail_save(tab, "the parked mail save was cancelled because the body buffer is reconnecting", fx);
+            self.cancel_mail_save(
+                tab,
+                "the parked mail save was cancelled because the body buffer is reconnecting",
+                fx,
+            );
         }
         if idle {
             self.drain_mail_save(tab, fx);
@@ -2043,7 +2052,8 @@ impl Controller {
             let saved = self
                 .tab(tab)
                 .and_then(|t| t.mirror.as_ref())
-                .is_some_and(|m| !m.meta().dirty) && self.tab(tab).is_some_and(|t| t.mail.is_none());
+                .is_some_and(|m| !m.meta().dirty)
+                && self.tab(tab).is_some_and(|t| t.mail.is_none());
             if let Some(intent) = self
                 .x
                 .get_mut(&tab)
@@ -2101,6 +2111,7 @@ impl Controller {
             .mail
             .as_ref()
             .is_some_and(|mail| mail.sending || mail.saving)
+            && !self.mail_save_parked(tab)
         {
             return Err("the mail document is busy".into());
         }
@@ -2352,7 +2363,16 @@ impl Controller {
                     intent,
                     fx,
                 )
-                .map_err(|e| (if self.tab(t).is_some_and(|t| t.mail.is_some()) { mail::error_code(&e) } else { code::CONFLICT }, e))?;
+                .map_err(|e| {
+                    (
+                        if self.tab(t).is_some_and(|t| t.mail.is_some()) {
+                            mail::error_code(&e)
+                        } else {
+                            code::CONFLICT
+                        },
+                        e,
+                    )
+                })?;
                 Ok(None)
             }
             ActionId::FileSaveAll => {

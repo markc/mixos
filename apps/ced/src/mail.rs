@@ -98,7 +98,13 @@ mod tests {
     async fn send_has_a_full_two_minute_deadline_and_timeout_is_uncertain() {
         struct Deadline;
         impl citizen::app::AppClient for Deadline {
-            async fn app_call<'a>(&'a self, _service: &'a str, command: &'a str, _body: &'a serde_json::Value, limit: Duration) -> Result<Reply, CallError> {
+            async fn app_call<'a>(
+                &'a self,
+                _service: &'a str,
+                command: &'a str,
+                _body: &'a serde_json::Value,
+                limit: Duration,
+            ) -> Result<Reply, CallError> {
                 assert_eq!(command, "email.send");
                 assert_eq!(limit, Duration::from_secs(120));
                 Err(CallError::from("Bus request timed out"))
@@ -113,11 +119,24 @@ mod tests {
     async fn registration_wait_does_not_shorten_a_delivered_send() {
         struct Starting(std::sync::atomic::AtomicUsize);
         impl citizen::app::AppClient for Starting {
-            async fn app_call<'a>(&'a self, _service: &'a str, command: &'a str, _body: &'a serde_json::Value, limit: Duration) -> Result<Reply, CallError> {
+            async fn app_call<'a>(
+                &'a self,
+                _service: &'a str,
+                command: &'a str,
+                _body: &'a serde_json::Value,
+                limit: Duration,
+            ) -> Result<Reply, CallError> {
                 let n = self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 match n {
-                    0 => Ok(Reply { rc:10, error:Some("Service 'email' not found".into()), ..Reply::default() }),
-                    1 => { assert_eq!(command, "apps.launch"); Ok(Reply::default()) }
+                    0 => Ok(Reply {
+                        rc: 10,
+                        error: Some("Service 'email' not found".into()),
+                        ..Reply::default()
+                    }),
+                    1 => {
+                        assert_eq!(command, "apps.launch");
+                        Ok(Reply::default())
+                    }
                     2 => {
                         assert_eq!(command, "email.send");
                         assert_eq!(limit, Duration::from_secs(120));
@@ -128,7 +147,12 @@ mod tests {
             }
         }
         let client = Starting(std::sync::atomic::AtomicUsize::new(0));
-        assert!(send(&client, "/home/user/letter.md").await.unwrap_err().contains("may have been sent"));
+        assert!(
+            send(&client, "/home/user/letter.md")
+                .await
+                .unwrap_err()
+                .contains("may have been sent")
+        );
         assert_eq!(client.0.load(std::sync::atomic::Ordering::SeqCst), 3);
     }
 
