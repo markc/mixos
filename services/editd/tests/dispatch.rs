@@ -218,8 +218,11 @@ async fn scratch_initial_text_has_no_undo_entry_and_never_reads_a_path() {
     assert_eq!(refused.0, 10);
     assert_eq!(std::fs::read_to_string(path).unwrap(), "keep");
     let saved = h.file("seeded.md", "");
-    h.ok("edit.save", json!({"buffer":buffer,"path":saved,"force":true}))
-        .await;
+    h.ok(
+        "edit.save",
+        json!({"buffer":buffer,"path":saved,"force":true}),
+    )
+    .await;
     assert_eq!(
         h.ok("edit.props.get", json!({})).await["buffers"][buffer]["dirty"],
         false
