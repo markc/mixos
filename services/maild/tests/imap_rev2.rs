@@ -1340,6 +1340,31 @@ async fn failed_save_no_and_bad_clear_dollar_in_both_search_modes() -> Result<()
                 "f OK UID FETCH completed\r\n"
             );
         }
+        for returns in ["RETURN(SAVE)", "RETURN (\"SAVE\")"] {
+            command(&mut r, &mut w, "s", &format!("{mode} RETURN (SAVE) ALL")).await?;
+            assert!(
+                command(&mut r, &mut w, "s", &format!("{mode} {returns} $"))
+                    .await?
+                    .contains("s OK")
+            );
+            assert!(
+                command(&mut r, &mut w, "f", "UID FETCH $ UID")
+                    .await?
+                    .contains("UID 1")
+            );
+            let response = command(
+                &mut r,
+                &mut w,
+                "s",
+                &format!("{mode} {returns} CHARSET UTF-16 ALL"),
+            )
+            .await?;
+            assert!(response.contains("s NO [BADCHARSET"), "{response}");
+            assert_eq!(
+                command(&mut r, &mut w, "f", "UID FETCH $ UID").await?,
+                "f OK UID FETCH completed\r\n"
+            );
+        }
     }
     Ok(())
 }

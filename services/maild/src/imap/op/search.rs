@@ -860,7 +860,7 @@ pub async fn handle_extended(
 ) -> String {
     // Clear before any parser or execution error, retaining the old value for
     // a successful SEARCH RETURN (SAVE) $ to reference.
-    let previous_saved = requests_save(args).then(|| std::mem::take(saved));
+    let mut previous_saved = requests_save(args).then(|| std::mem::take(saved));
     let mut req = match parse_args(args, mode) {
         Ok(r) => r,
         Err(e) if e.starts_with("BADCHARSET") => {
@@ -870,6 +870,16 @@ pub async fn handle_extended(
             return tagged(tag, Status::Bad, None, &e);
         }
     };
+    // The tokenizer also accepts adjacent parentheses and quoted return
+    // options. Preserve SAVE's lifetime for those parsed forms too.
+    if previous_saved.is_none()
+        && req
+            .returns
+            .as_ref()
+            .is_some_and(|opts| opts.iter().any(|option| option == "SAVE"))
+    {
+        previous_saved = Some(std::mem::take(saved));
+    }
     fn apply_saved(crit: &mut Crit, saved: &[u64]) {
         match crit {
             Crit::Saved => {
