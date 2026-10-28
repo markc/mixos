@@ -183,7 +183,8 @@ struct Fake {
 
 impl Fake {
     // 0: open; 1: restart; 2: list fails; 3: lost ack; 4: error after open;
-    // 5: external caller cancelled; 6: malformed accepted answer.
+    // 5: external caller cancelled; 6: malformed accepted answer;
+    // 8: acknowledgement arrived without its request id.
     async fn start(url: &str, state: usize) -> Self {
         let client = Arc::new(
             SupervisedClient::connect_options("files", url)
@@ -229,6 +230,8 @@ impl Fake {
                         if mode == 4 {
                             rc = 10;
                             json!({"error_code":"BROKEN","message":"reply failed after opening"})
+                        } else if mode == 8 {
+                            json!({})
                         } else {
                             json!({"request":"0123456789abcdef-1"})
                         }
@@ -370,6 +373,20 @@ async fn real_noded_dropped_or_error_reply_cancels_our_correlation_before_fallba
         assert!(fake.requests.lock().unwrap().is_empty());
         fake.stop().await;
     }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn real_noded_missing_ack_id_recovers_by_correlation_without_guessing_caller() {
+    let broker = test_broker::Broker::start();
+    let fake = Fake::start(&broker.url, 8).await;
+    let (_tx, mut cancel) = watch::channel(false);
+    let result = tokio::time::timeout(Duration::from_secs(10),
+        native::attempt_at(&request("{}").unwrap(), &mut cancel, &broker.url)).await.unwrap();
+    assert_eq!(result, None);
+    assert_eq!(fake.opened.load(Ordering::SeqCst), 1);
+    assert_eq!(fake.closed.load(Ordering::SeqCst), 1);
+    assert!(fake.requests.lock().unwrap().is_empty());
+    fake.stop().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
