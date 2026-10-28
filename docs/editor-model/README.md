@@ -123,9 +123,9 @@ of a detached copy, staged over 1 MiB.
 
 Unit tests sit beside each module (`src/model/tests.rs`,
 `src/highlight/tests.rs`, `src/diag/tests.rs`). The mirror is tested end to
-end against `FakeEditd`. Like editd, the fake reports a nonempty
-+pathless initial body as dirty until saved; disk-backed and empty buffers
-+start clean:
+end against `FakeEditd`. Like editd, the fake reports pathless buffers,
+including empty scratches, as dirty until saved. Disk-backed buffers start
+clean:
 
 - `tests/fixture_server_side.rs` runs the server side of every scripted
   scenario in

@@ -26,7 +26,7 @@ fn initial_scratch_text_is_dirty_until_saved() {
     let list = service.handle("local:test", "edit.list", &serde_json::json!({}));
     let row = list.body["buffers"].as_array().unwrap().iter()
         .find(|row| row["buffer"] == empty.body["buffer"]).unwrap();
-    assert_eq!(row["dirty"], false);
+    assert_eq!(row["dirty"], true);
 }
 const CLIENT_ONLY: &[&str] = &[
     "local",

@@ -346,15 +346,15 @@ tab. Save and Save As assemble the document with <code>maildoc::write</code>: LF
 ends, sorted headers, omitted empty headers and canonical trailing body
 whitespace. An invalid field refuses the save without touching the file.
 A file changed on disk also refuses the save; use Save As or reopen it.
-+Saving keeps the path as opened, including relative paths and symlinks;
-+canonical paths are compared only to detect conflicting external edits. A
+Saving keeps the path as opened, including relative paths and symlinks;
+canonical paths are compared only to detect conflicting external edits. A
 deleted file is recreated. Body dirty checks use the same LF and trailing
 whitespace normalisation as the writer. A lost scratch is seeded from the
 live mirror text, retaining unsaved body edits. A detached copy remains
-+available separately. Session mail tabs retain their path, body recovery id
-+and header state. After a crash or restart they reattach the body by recovery
-+id, preserving unsaved edits; if editd no longer has it, Ced reopens the file.
-+Mail bodies belonging to session tabs are excluded from the Recovered prompt.
+available separately. Session mail tabs retain their path, body recovery id
+and header state. After a crash or restart they reattach the body by recovery
+id, preserving unsaved edits; if editd no longer has it, Ced reopens the file.
+Mail bodies belonging to session tabs are excluded from the Recovered prompt.
 Save As retains the mail kind. Reload from Disk requires closing and reopening
 the mail tab, so it cannot silently replace separately edited headers.</p>
 <p>File ▸ Send saves first, then asks Email to send the absolute document path.
@@ -374,14 +374,14 @@ also opens as unchanged text, with maildoc's exact refusal beside it for repair.
 Mail tabs keep header edits in this process. Exit refuses while a mail tab
 is dirty or a save/Send is in flight; save or explicitly close the tab first.
 Mail scratch buffers, including those still seeding, are force-closed on exit.
-+Ordinary unanswered edit requests do not consume the shutdown drain allowance;
-+force-closes have a separate bounded wait, preserving time for deregistration,
-+closing refusals and session persistence. A save waiting for body
+Ordinary unanswered edit requests do not consume the shutdown drain allowance;
+force-closes have a separate bounded wait, preserving time for deregistration,
+closing refusals and session persistence. A save waiting for body
 edits holds intent only: it assembles the latest body when the edits drain.
 Body typing continues while a plain Save is parked and pauses during the file
-+write. A parked Send immediately shows Sending… and freezes body edits, so
-+text typed after Send cannot join that message. Undo and Redo refuse with a
-+busy notice while either operation is parked.
+write. A parked Send immediately shows Sending… and freezes body edits, so
+text typed after Send cannot join that message. Undo and Redo refuse with a
+busy notice while either operation is parked.
 Close and Exit cancel that intent; reconnection cancels it with a notice.
 Same-frame header edits are applied before Save or Send. Header controls and
 Attach are disabled during save or Send. Non-UTF-8 attachment paths are refused.

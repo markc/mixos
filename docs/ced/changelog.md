@@ -10,19 +10,19 @@ generated: by docs/_build/gen-site.mix from apps/ced/CHANGELOG.md; do not edit
 # Changelog
 
 ## Unreleased — 2026-10-28
-+
-+- Isolate ordinary edit requests from shutdown replies and bound force-close
-+  waits separately, leaving time to deregister, refuse callers and flush the
-+  session. Close mail scratches even when quit overtakes their seeding.
-+- Freeze body editing and show Sending… as soon as Send parks; parked Save
-+  still accepts typing. Undo and Redo report busy while either is parked.
-+- Reattach session mail bodies by recovery id with their header state, or
-+  reopen the file if the scratch is gone. Reseed from live text while keeping
-+  detached copies separate. Preserve the opened path after Save and compare
-+  canonical forms only for conflict checks, including relative Save As.
-+- Keep save and parser refusal codes typed, skip unchanged header focus events,
-+  and defensively refuse a parked save whose tab disappeared. Verify Send
-+  timeout uncertainty through a delivered native Bus call.
+
+- Isolate ordinary edit requests from shutdown replies and bound force-close
+  waits separately, leaving time to deregister, refuse callers and flush the
+  session. Close mail scratches even when quit overtakes their seeding.
+- Freeze body editing and show Sending… as soon as Send parks; parked Save
+  still accepts typing. Undo and Redo report busy while either is parked.
+- Reattach session mail bodies by recovery id with their header state, or
+  reopen the file if the scratch is gone. Reseed from live text while keeping
+  detached copies separate. Preserve the opened path after Save and compare
+  canonical forms only for conflict checks, including relative Save As.
+- Keep save and parser refusal codes typed, skip unchanged header focus events,
+  and defensively refuse a parked save whose tab disappeared. Verify Send
+  timeout uncertainty through a delivered native Bus call.
 
 - Park save intent until the body pipeline drains; cancel parked saves on
   close, exit or reconnection. Same-frame header edits precede Save and Send.
