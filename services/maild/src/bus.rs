@@ -26,9 +26,9 @@ pub mod props_publisher;
 pub mod retention;
 pub mod rules;
 pub mod search;
+pub mod sieve;
 pub mod stats;
 pub mod submission;
-pub mod sieve;
 pub mod subscribe_granter;
 pub mod tls;
 pub mod verdict;
@@ -331,10 +331,30 @@ pub fn command_manifest() -> Vec<::bus::CommandDescriptor> {
             "Submit typed plain-text mail once through the existing mail pipeline",
             false,
         ),
-        CommandDescriptor::new("maild.sieve.list", &["account"], "List account Sieve scripts", true),
-        CommandDescriptor::new("maild.sieve.get", &["account", "name"], "Read an account Sieve script", true),
-        CommandDescriptor::new("maild.sieve.put", &["account", "name", "source", "expected_version"], "Compile and save a versioned Sieve script", false),
-        CommandDescriptor::new("maild.sieve.activate", &["account", "name"], "Activate or disable an account Sieve script", false),
+        CommandDescriptor::new(
+            "maild.sieve.list",
+            &["account"],
+            "List account Sieve scripts",
+            true,
+        ),
+        CommandDescriptor::new(
+            "maild.sieve.get",
+            &["account", "name"],
+            "Read an account Sieve script",
+            true,
+        ),
+        CommandDescriptor::new(
+            "maild.sieve.put",
+            &["account", "name", "source", "expected_version"],
+            "Compile and save a versioned Sieve script",
+            false,
+        ),
+        CommandDescriptor::new(
+            "maild.sieve.activate",
+            &["account", "name"],
+            "Activate or disable an account Sieve script",
+            false,
+        ),
         CommandDescriptor::new(
             "maild.props.get",
             &["namespace", "key"],

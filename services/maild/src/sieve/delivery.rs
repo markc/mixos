@@ -75,6 +75,11 @@ pub async fn plan(db: &Db, delivery: &Delivery<'_>) -> Result<Option<Plan>> {
 /// Return the first stored item for existing verdict/log events. None means the
 /// script handled the message without a local filing (discard/redirect/reject).
 pub async fn deliver(db: &Db, ms: &Arc<SqliteMailStore>, delivery: Delivery<'_>) -> Result<Option<ItemId>> {
+    let mut remaining = super::MAX_REDIRECTS;
+    deliver_inner(db,ms,delivery,&mut remaining).await
+}
+
+async fn deliver_inner(db: &Db, ms: &Arc<SqliteMailStore>, delivery: Delivery<'_>, remaining: &mut usize) -> Result<Option<ItemId>> {
     let selected = plan(db,&delivery).await;
     let mut plan = match selected {
         Ok(Some(plan)) => plan,
@@ -85,7 +90,7 @@ pub async fn deliver(db: &Db, ms: &Arc<SqliteMailStore>, delivery: Delivery<'_>)
         }
     };
     let external = delivery.account.email.rsplit_once('@').is_some_and(|(_,d)| delivery.external_domains.iter().any(|allowed| allowed.eq_ignore_ascii_case(d)));
-    let validation = validate(db,ms,&delivery,&plan,external).await;
+    let validation = validate(db,ms,&delivery,&plan,external,*remaining).await;
     let redirects = match validation {
         Ok(redirects) => redirects,
         Err(error) => {
@@ -116,13 +121,7 @@ pub async fn deliver(db: &Db, ms: &Arc<SqliteMailStore>, delivery: Delivery<'_>)
         let mut resolved = Vec::new();
         for filing in filings {
             let target = if let Some(name) = filing.mailbox {
-                if let Some(id) = ms2.mailbox_by_name(id,&name)? { id }
-                else if filing.create {
-                    match ms2.create_mailbox(id,&name,None,ContainerAttrs { special_use:None,subscribed:false,extra:serde_json::json!({}) }) {
-                        Ok(id) => id,
-                        Err(error) => ms2.mailbox_by_name(id,&name)?.ok_or(error)?,
-                    }
-                } else { anyhow::bail!("fileinto mailbox does not exist"); }
+                mailbox_target(&ms2,id,&name,filing.create)?
             } else { default };
             let (flags,tags) = flags(&filing.flags)?;
             if !resolved.iter().any(|(prior,_,_)| prior == &target) { resolved.push((target,flags,tags)); }
@@ -151,6 +150,7 @@ pub async fn deliver(db: &Db, ms: &Arc<SqliteMailStore>, delivery: Delivery<'_>)
         first.get_or_insert(item);
     }
     if !plan.redirects.is_empty() {
+        *remaining -= plan.redirects.len();
         for (destination,local) in redirects {
             let depth = redirect_depth(delivery.data);
             if depth >= super::MAX_REDIRECTS { tracing::warn!("Sieve redirect loop suppressed"); continue; }
@@ -158,7 +158,7 @@ pub async fn deliver(db: &Db, ms: &Arc<SqliteMailStore>, delivery: Delivery<'_>)
             bytes.extend_from_slice(delivery.data);
             if let Some(account) = local {
                 let inbox = ms.mailbox_by_role(account.id,MailboxRole::Inbox)?.ok_or_else(|| anyhow::anyhow!("redirect recipient has no Inbox"))?;
-                Box::pin(deliver(db,ms,Delivery { account:&account,from:delivery.from,to:&destination,data:&bytes,default_mailbox:inbox,default_tags:Tags::new(),external_domains:delivery.external_domains,sender_verified:delivery.sender_verified,spam:delivery.spam,smtp_reject:false })).await?;
+                Box::pin(deliver_inner(db,ms,Delivery { account:&account,from:delivery.from,to:&destination,data:&bytes,default_mailbox:inbox,default_tags:Tags::new(),external_domains:delivery.external_domains,sender_verified:delivery.sender_verified,spam:delivery.spam,smtp_reject:false },remaining)).await?;
             } else { enqueue(db,ms,delivery.from,&destination,&bytes).await?; }
         }
     }
@@ -169,9 +169,10 @@ pub async fn deliver(db: &Db, ms: &Arc<SqliteMailStore>, delivery: Delivery<'_>)
 fn redirect_depth(data: &[u8]) -> usize {
     MessageParser::default().parse(data).map(|m| m.headers().iter().filter(|h| h.name.as_str().eq_ignore_ascii_case("X-Mixos-Sieve-Hop")).filter_map(|h| h.value.as_text()?.trim().parse::<usize>().ok()).max().unwrap_or(0)).unwrap_or(0)
 }
-async fn validate(db: &Db, ms: &Arc<SqliteMailStore>, delivery: &Delivery<'_>, plan: &Plan, external: bool) -> Result<Vec<(String,Option<db::account::Account>)>> {
+async fn validate(db: &Db, ms: &Arc<SqliteMailStore>, delivery: &Delivery<'_>, plan: &Plan, external: bool, remaining: usize) -> Result<Vec<(String,Option<db::account::Account>)>> {
     let mut redirects = Vec::new();
     ensure!(plan.redirects.is_empty() || redirect_depth(delivery.data) < super::MAX_REDIRECTS,"redirect hop limit");
+    ensure!(plan.redirects.len() <= remaining,"local redirect budget exhausted");
     for target in &plan.redirects {
         address(target)?;
         let local = db::account::get_by_email(&db.conn,&target.to_ascii_lowercase()).await?;
@@ -182,13 +183,33 @@ async fn validate(db: &Db, ms: &Arc<SqliteMailStore>, delivery: &Delivery<'_>, p
         flags(&filing.flags)?;
         if let Some(name) = &filing.mailbox {
             ensure!(!name.is_empty() && name.len() <= 255 && !name.chars().any(char::is_control), "invalid mailbox name");
-            ensure!(filing.create || ms.mailbox_by_name(delivery.account.id,name)?.is_some(), "fileinto mailbox does not exist");
+            ensure!(name.split('/').all(|s| !s.is_empty() && s != "." && s != ".."),"invalid mailbox path");
+            if !filing.create { mailbox_target(ms,delivery.account.id,name,false)?; }
         }
     }
     if let Some(vacation) = &plan.vacation {
         if let Some(from) = &vacation.from { address(from)?; ensure!(from.eq_ignore_ascii_case(&delivery.account.email), "vacation :from must be account address"); }
     }
     Ok(redirects)
+}
+
+fn mailbox_target(ms: &SqliteMailStore, account: i32, path: &str, create: bool) -> Result<ContainerId> {
+    let mut parent = None;
+    for (index,name) in path.split('/').enumerate() {
+        let existing = if index == 0 && name.eq_ignore_ascii_case("INBOX") {
+            ms.mailbox_by_role(account,MailboxRole::Inbox)?
+        } else {
+            ms.list_mailboxes(account)?.iter().find(|m| m.parent == parent && m.name == name).map(|m| m.id)
+        };
+        parent = Some(if let Some(id) = existing { id } else {
+            ensure!(create,"fileinto mailbox does not exist");
+            match ms.create_mailbox(account,name,parent,ContainerAttrs { special_use:None,subscribed:false,extra:serde_json::json!({}) }) {
+                Ok(id) => id,
+                Err(error) => ms.list_mailboxes(account)?.iter().find(|m| m.parent == parent && m.name == name).map(|m| m.id).ok_or(error)?,
+            }
+        });
+    }
+    parent.ok_or_else(|| anyhow::anyhow!("empty mailbox path"))
 }
 
 async fn enqueue(db: &Db, ms: &Arc<SqliteMailStore>, from: &str, to: &str, bytes: &[u8]) -> Result<()> {

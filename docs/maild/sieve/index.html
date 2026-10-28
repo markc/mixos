@@ -265,7 +265,8 @@ if body :text :contains "release announcement" {
     fileinto :create :flags "\\Flagged" "Releases";
 }
 </code></pre>
-<p><code>fileinto</code> uses maild mailbox names. Missing destinations without <code>:create</code>
+<p><code>fileinto</code> uses slash-separated mailbox paths; <code>INBOX</code> resolves by role.
+<code>:create</code> creates missing parents. Missing destinations without <code>:create</code>
 keep the message at its default destination. Flags map to the same MDS flags
 and validated user keywords as IMAP/JMAP. File actions snapshot the current
 flags. <code>:copy</code> preserves implicit keep. Variables support substitution, wildcard

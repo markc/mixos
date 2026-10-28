@@ -787,7 +787,13 @@ pub async fn build_runtime(cfg: &Config, opts: RuntimeOpts) -> Result<BuiltMaild
     .await?;
 
     // IMAPS listener (Phase 1 — opt-in via `imap_imaps` TOML key).
-    let sieve_handle = crate::sieve::server::start(database.clone(), cfg, tls_slot.clone(), tls_config_cache.clone()).await?;
+    let sieve_handle = crate::sieve::server::start(
+        database.clone(),
+        cfg,
+        tls_slot.clone(),
+        tls_config_cache.clone(),
+    )
+    .await?;
     let imap_cfg = imap::ImapConfig::from_config(cfg, tls_slot, tls_config_cache);
     let imap_handle =
         imap::start(database.clone(), mailstore.clone(), imap_cfg, imap_slots).await?;

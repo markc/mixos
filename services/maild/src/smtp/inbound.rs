@@ -659,21 +659,42 @@ pub async fn deliver(
             }
             _ => Tags::new(),
         };
-        let sieve_data = crate::sieve::delivery::stamp_spam(&augmented_data,
-            spam_verdict.as_deref().unwrap_or("UNKNOWN"), spam_score.unwrap_or(0.0));
-        let create_outcome = crate::sieve::delivery::deliver(&state.db, &state.mailstore,
+        let sieve_data = crate::sieve::delivery::stamp_spam(
+            &augmented_data,
+            spam_verdict.as_deref().unwrap_or("UNKNOWN"),
+            spam_score.unwrap_or(0.0),
+        );
+        let create_outcome = crate::sieve::delivery::deliver(
+            &state.db,
+            &state.mailstore,
             crate::sieve::delivery::Delivery {
-                account, from: mail_from, to: rcpt, data: &sieve_data,
-                default_mailbox: target_mailbox, default_tags: initial_tags,
+                account,
+                from: mail_from,
+                to: rcpt,
+                data: &sieve_data,
+                default_mailbox: target_mailbox,
+                default_tags: initial_tags,
                 external_domains: &state.config.sieve_external_domains,
-                sender_verified: ingress.is_local_auth() || vacation_sender_verified(&verify_result, mail_from),
+                sender_verified: ingress.is_local_auth()
+                    || vacation_sender_verified(&verify_result, mail_from),
                 spam: spam_verdict.as_deref() == Some("SPAM"),
                 smtp_reject: rcpt_to.len() == 1 && vtoken_ctx.is_none(),
-            }).await;
+            },
+        )
+        .await;
         let email_uuid = match create_outcome {
             Ok(Some(item)) => item.0,
-            Ok(None) => { accepted += 1; continue; }
-            Err(error) if error.downcast_ref::<crate::sieve::delivery::Rejected>().is_some() => return Err(error),
+            Ok(None) => {
+                accepted += 1;
+                continue;
+            }
+            Err(error)
+                if error
+                    .downcast_ref::<crate::sieve::delivery::Rejected>()
+                    .is_some() =>
+            {
+                return Err(error);
+            }
             Err(error) => {
                 tracing::warn!(%error, to = %rcpt, "Local Sieve delivery failed");
                 continue;
@@ -762,7 +783,10 @@ pub async fn deliver(
             && !mail_from.is_empty()
             && !is_auto_submitted(&message)
             && vacation_sender_verified(&verify_result, mail_from)
-            && matches!(crate::sieve::store::active(&state.db, account.id).await, Ok(None))
+            && matches!(
+                crate::sieve::store::active(&state.db, account.id).await,
+                Ok(None)
+            )
             && let Ok(Some(vr)) = db::vacation::is_active(&state.db.conn, account.id).await
             && matches!(
                 db::vacation::mark_reply_if_due(&state.db.conn, account.id, mail_from).await,

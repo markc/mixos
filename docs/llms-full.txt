@@ -11289,7 +11289,8 @@ if body :text :contains "release announcement" {
 }
 ```
 
-`fileinto` uses maild mailbox names. Missing destinations without `:create`
+`fileinto` uses slash-separated mailbox paths; `INBOX` resolves by role.
+`:create` creates missing parents. Missing destinations without `:create`
 keep the message at its default destination. Flags map to the same MDS flags
 and validated user keywords as IMAP/JMAP. File actions snapshot the current
 flags. `:copy` preserves implicit keep. Variables support substitution, wildcard

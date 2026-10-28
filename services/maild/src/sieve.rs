@@ -2,8 +2,8 @@
 //! Account-owned Sieve. Compilation and evaluation have no I/O; delivery applies
 //! a fully validated action plan only after evaluation succeeds.
 
-mod interpreter;
 pub mod delivery;
+mod interpreter;
 pub mod server;
 pub mod store;
 
