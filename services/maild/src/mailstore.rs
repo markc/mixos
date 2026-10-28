@@ -3883,6 +3883,7 @@ impl MailStore for SqliteMailStore {
             initial_tags,
             received_at,
             false,
+            0,
         )
     }
 
@@ -5400,6 +5401,7 @@ impl SqliteMailStore {
         initial_tags: Tags,
         received_at: i64,
         reject_duplicate: bool,
+        quota: u64,
     ) -> Result<(ItemId, Vec<MembershipUid>)> {
         // Uniform initial user keywords for every membership of the
         // fresh item (the v1.1 §3 "all memberships agree" invariant),
@@ -5463,6 +5465,18 @@ impl SqliteMailStore {
                 mds::Error::BlobNotFound(_) => mds::Error::BlobNotFound(blob::hex(&blob)),
                 other => other,
             })?;
+
+            if quota > 0 {
+                // Count each live email once regardless of its memberships;
+                // temporary upload items have no envelope and consume no mail quota.
+                let used: u64 = tx.tx().query_row(
+                    "SELECT COALESCE(SUM(i.size_bytes), 0) FROM item i JOIN mail_envelopes e ON e.item_id = i.id WHERE EXISTS (SELECT 1 FROM membership m WHERE m.item_id = i.id)",
+                    [], |row| row.get(0),
+                ).map_err(|e| mds::Error::Other(e.to_string()))?;
+                if used.saturating_add(blob_size) > quota {
+                    return Err(mds::Error::Other("overQuota: account mail quota exceeded".into()));
+                }
+            }
 
             let (item_id, placements) = tx
                 .add_item_with_memberships(&blob, blob_size, &memberships, &initial_tags)
@@ -5608,7 +5622,7 @@ impl SqliteMailStore {
                 Err(anyhow!("mailbox not found: {cid}", cid = mailboxes[0].0))
             }
             Err(mds::Error::Other(s))
-                if s.starts_with("mailbox not found") || s.starts_with("alreadyExists:") =>
+                if s.starts_with("mailbox not found") || s.starts_with("alreadyExists:") || s.starts_with("overQuota:") =>
             {
                 Err(anyhow!(s))
             }

@@ -2307,6 +2307,10 @@ async fn create_from_blob(
     // doesn't return a hash, so we put_blob the bytes (idempotent on
     // hash) to land them in the MDS CAS.
     let pre_hash: Option<BlobHash> = alias_hash;
+    let quota = if reject_duplicate {
+        db::account::get_by_id(&db.conn, account_id).await?
+            .map(|account| account.quota.max(0) as u64).unwrap_or(0)
+    } else { 0 };
     let item_id = tokio::task::spawn_blocking(move || -> Result<ItemId> {
         // Step 1: ensure the bytes are present in MDS CAS. For the
         // alias path, `resolve_blob_ref` already proved the CAS row
@@ -2335,6 +2339,7 @@ async fn create_from_blob(
             initial_tags,
             received_at,
             reject_duplicate,
+            quota,
         )?;
         Ok(id)
     })
@@ -2390,6 +2395,8 @@ pub async fn import(
                 let msg = error.to_string();
                 let value = if let Some(id) = msg.strip_prefix("alreadyExists: ") {
                     serde_json::json!({"type": "alreadyExists", "existingId": id})
+                } else if msg.starts_with("overQuota:") {
+                    serde_json::json!({"type": "overQuota"})
                 } else if msg.starts_with("invalidEmail:") {
                     serde_json::json!({"type": "invalidEmail", "description": msg})
                 } else {

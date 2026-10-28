@@ -57,7 +57,7 @@ impl Fixture {
         let value = PropValue::Object(BTreeMap::from([
             (
                 "email".into(),
-                PropValue::String("sender@example.com".into()),
+                PropValue::String("alice@example.com".into()),
             ),
             (
                 "password".into(),
@@ -72,7 +72,7 @@ impl Fixture {
             .set(
                 RecordKey::collection(
                     maild::props::accounts::namespace_name(),
-                    "sender@example.com",
+                    "alice@example.com",
                 ),
                 value,
                 SetOpts {
@@ -122,7 +122,7 @@ impl Fixture {
 
     async fn request(&self, calls: Value) -> Value {
         let response = self.client.post(format!("{}/jmap", self.url))
-            .basic_auth("sender@example.com", Some("password"))
+            .basic_auth("alice@example.com", Some("password"))
             .header("Content-Type", "application/json")
             .body(json!({"using": ["urn:ietf:params:jmap:core", "urn:ietf:params:jmap:mail", "urn:ietf:params:jmap:submission"], "methodCalls": calls}).to_string())
             .send().await.unwrap().error_for_status().unwrap();
@@ -138,12 +138,12 @@ impl Fixture {
 
     async fn upload(&self, subject: &str) -> String {
         let raw = format!(
-            "Received: from example.org by example.com; Mon, 1 Jan 2024 00:00:00 +0000\r\nFrom: sender@example.com\r\nTo: recipient@example.net\r\nSubject: {subject}\r\nMessage-ID: <{subject}@example.com>\r\n\r\nHello\r\n"
+            "Received: from example.org by example.com; Mon, 1 Jan 2024 00:00:00 +0000\r\nFrom: alice@example.com\r\nTo: recipient@example.net\r\nSubject: {subject}\r\nMessage-ID: <{subject}@example.com>\r\n\r\nHello\r\n"
         );
         let response = self
             .client
             .post(format!("{}/jmap/upload/1", self.url))
-            .basic_auth("sender@example.com", Some("password"))
+            .basic_auth("alice@example.com", Some("password"))
             .header("Content-Type", "message/rfc822")
             .body(raw)
             .send()
@@ -345,7 +345,23 @@ async fn email_import_concurrent_duplicate_and_standard_submission() {
     let identities = f.call("Identity/get", json!({})).await;
     let submission = f.call("EmailSubmission/set", json!({"create": {"s": {
         "emailId": id, "identityId": identities["list"][0]["id"],
-        "envelope": {"mailFrom": {"email": "sender@example.com"}, "rcptTo": [{"email": "recipient@example.net"}]}
+        "envelope": {"mailFrom": {"email": "alice@example.com"}, "rcptTo": [{"email": "recipient@example.net"}]}
     }}})).await;
     assert!(submission["created"]["s"]["id"].is_string(), "{submission}");
+}
+
+#[tokio::test]
+async fn email_import_quota_is_atomic_and_does_not_count_upload_staging() {
+    let f = Fixture::new().await;
+    let a = f.upload("quota-a").await;
+    let b = f.upload("quota-b").await;
+    let maild::mailstore::BlobRefLookup::Found(hash) = f.built.app_state.mailstore.resolve_blob_ref(1, maild::mailstore::BlobId(a.parse().unwrap())).unwrap() else { panic!("uploaded blob missing"); };
+    let size = f.built.app_state.mailstore.read_blob(hash).unwrap().len();
+    f.built.app_state.db.conn.lock().unwrap().execute("UPDATE accounts SET quota = ?1 WHERE id = 1", [size as i64]).unwrap();
+    let args = |blob: &str| json!({"emails": {"a": {"blobId": blob, "mailboxIds": {&f.inbox: true}}}});
+    let (first, second) = tokio::join!(f.call("Email/import", args(&a)), f.call("Email/import", args(&b)));
+    let (created, refused) = if first["created"].is_null() { (second, first) } else { (first, second) };
+    assert!(created["created"]["a"]["id"].is_string(), "{created}");
+    assert_eq!(refused["notCreated"]["a"]["type"], "overQuota", "{refused}");
+    assert_eq!(f.call("Email/query", json!({})).await["ids"].as_array().unwrap().len(), 1);
 }
