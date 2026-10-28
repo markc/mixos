@@ -2039,7 +2039,7 @@ pub static DESCRIPTORS: &[DescribeEntry] = &[
          scale and pointer leave still pass) so injected input is not overwritten",
         mutable
     ),
-    // The one file-persisted leaf on this surface (see the resolver in
+    // The file-persisted Xwayland startup switch (see the resolver in
     // xwayland.rs for why startup-read + persistence:none would make the
     // leaf decorative). `persistence: "file"` overrides the mutable
     // macro-arm's "none".

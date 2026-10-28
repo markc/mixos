@@ -92,8 +92,14 @@ geometry and sends its own configure.
 Output placement, usable areas, adjacency and drag zones support multiple
 outputs; testkit covers two adjacent outputs. Workspace commands and visibility
 still follow the default output: independent workspace switching on another
-output is refused. The native cursor's configured crossing layout is separate
-from Space's output geometry. This tiling support does not make workspaces
+output is refused. Native hotplug maps outputs horizontally in logical Space
+coordinates across all spatial worlds. Each monitor views the same world
+through its own camera; surface output membership includes every mapped
+output, so an explicit placement target or drag pointer selects the monitor.
+The native cursor's configured crossing layout is separate from Space's
+output geometry. Dormant spatial worlds re-fit when hosted, without admitting
+their windows into the active Space. Native keeps a dark primary output anchor
+when every monitor disconnects. This tiling support does not make workspaces
 independent per monitor.
 
 `comp.window.maximize {id, generation, output?}` accepts an output key or

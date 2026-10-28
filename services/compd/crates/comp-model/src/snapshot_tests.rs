@@ -476,6 +476,9 @@ fn tiling_props_read_describe_validate_and_diff_through_the_props_model() {
     let mut pending = PendingPropChanges::default();
     crate::diff::collect_snapshot_diff(&original, &snapshot, "props.set", &mut pending);
     assert!(!pending.is_empty());
+    let saved = json!({"edge_tiling":false,"side_band_px":50.5,"preview_delay_ms":2001,"future_leaf":true});
+    assert_eq!(crate::tiling::TilingConfig::from_saved(saved.as_object().unwrap()),
+        crate::tiling::TilingConfig { edge_tiling:false, side_band_px:50.5, ..Default::default() });
 }
 
 #[test]
@@ -486,8 +489,8 @@ fn mutable_descriptors_match_the_writable_leaves() {
         .filter(|descriptor| descriptor.mutable)
         .collect::<Vec<_>>();
     // The corner leaves and the window band are process-lifetime
-    // (persistence "none"); `xwayland.enabled` is deliberately the
-    // surface's ONE file-persisted mutable leaf (startup-read — a
+    // (persistence "none"); `xwayland.enabled` is a
+    // file-persisted startup switch (startup-read — a
     // non-persisted startup switch would be unreachable from its own
     // surface).
     // 0.59.0 adds the four workspace leaves: the window's workspace,
@@ -495,6 +498,7 @@ fn mutable_descriptors_match_the_writable_leaves() {
     // output key.
     // Chunk 19 adds the two affordance leaves, `input.corners.affordance`
     // and `input.corners.discovery`.
+    // Tiling adds eight live, file-persisted leaves.
     #[cfg(feature = "xwayland")]
     assert_eq!(mutable.len(), 24);
     #[cfg(not(feature = "xwayland"))]
