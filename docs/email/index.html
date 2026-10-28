@@ -217,6 +217,7 @@
                         <a href="#how-it-talks-to-the-server">How it talks to the server</a>
                         <a href="#performance-workload">Performance workload</a>
                         <a href="#macro-bus-commands">Macro Bus commands</a>
+                        <a href="#editing-a-mail-document-in-ced">Editing a mail document in ced</a>
                     </nav>
                 </div>
             </div>
@@ -773,6 +774,16 @@ instance). Commands keep the app’s canonical prefix, such as <code>email.macro
 </tbody></table>
 <p>Logging: <code>--debug[=LEVEL]</code> and live Bus controls are described in
 <a href="/docs/dev/debugging/">live application logging</a>.</p>
+<h2 id="editing-a-mail-document-in-ced">Editing a mail document in ced</h2>
+<p><a href="/ced/#mail-documents">Ced</a> opens mail documents with editable
+headers and a body editor. Its File ▸ Send saves the document, then calls
+<code>email.send</code> with only its absolute <code>document</code> path. Email reads the file at
+request time and applies its own identity and mail validation. Ced displays
+Email's refusal verbatim and never retries an uncertain send. Ordinary Bus
+messages remain plain text in ced and belong to Workshop.</p>
+<p>Email and ced share toolkit's <code>header_form</code> label column, rows, address/text
+fields and attachment chips. Email retains its own identity selector,
+Identities… row, address completion and attachment inspection.</p>
         </article>
         <p class="doc-source"><a href="/email/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>

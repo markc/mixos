@@ -265,7 +265,6 @@ fn dropdown(
 
 /// The space between a row's label and its field, and between a field and
 /// the buttons after it.
-const GAP: f32 = 8.0;
 
 /// The space between the To row's Cc, Bcc and Reply-To buttons.
 const BUTTON_GAP: f32 = 2.0;
@@ -291,7 +290,7 @@ fn row_button(field: ComposeField) -> (toolkit::Icon, &'static str) {
     }
 }
 
-use toolkit::header_form::{row, row_of};
+use toolkit::header_form::{GAP, row, row_of};
 
 /// One removable file chip. It draws only the state's last inspection.
 fn attachment_chip(
@@ -491,14 +490,7 @@ pub fn form(
         row(ui, &crate::label("subject"), column, |ui, label| {
             let mut buffer = compose.draft.subject.clone();
             let width = ui.available_width();
-            let response = ui
-                .add(
-                    field::text_edit(&mut buffer, "", width).id(egui::Id::unique((
-                        ui.ctx().viewport_id(),
-                        "compose-subject",
-                    ))),
-                )
-                .labelled_by(label);
+            let response = toolkit::header_form::text(ui, egui::Id::unique((ui.ctx().viewport_id(), "compose-subject")), label, &mut buffer, width);
             if response.changed() {
                 events.push(UiEvent::ComposeField(ComposeField::Subject, buffer));
             }

@@ -71,6 +71,7 @@ One line per component with a page: kind, then install profiles. The
 - [buildinfo](https://mixos.dev/buildinfo/README.md): lib; profiles: none (library). Compile-time build provenance for MixOS binaries, and the --version contract every binary answers.
 - [bus](https://mixos.dev/bus/README.md): lib; profiles: none (library). The Bus wire format and the broker client library, with a supervised connection to noded that survives broker restarts.
 - [ced](https://mixos.dev/ced/README.md): app; profiles: unclassified. The MixOS Editor, a desktop text editor over the edit Bus service, where people and agents edit the same document at once and see each other's carets, selections and changes live.
+  - [ced — changelog](https://mixos.dev/ced/changelog.md): Release notes of the ced component, mirrored from apps/ced/CHANGELOG.md.
 - [citizen](https://mixos.dev/citizen/README.md): lib; profiles: none (library). An app's supervised native Bus connection, shared by the MixOS apps for registration, calls, replies, single-instance launch and window restore.
   - [citizen — changelog](https://mixos.dev/citizen/changelog.md): Release notes of the citizen component, mirrored from libs/citizen/CHANGELOG.md.
 - [compd](https://mixos.dev/compd/README.md): service; profiles: unclassified. The MixOS Wayland compositor, which owns scanout, rendering, input and capture, and serves the comp Bus service with its workspaces, commands, topics and props tree.

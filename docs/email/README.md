@@ -566,3 +566,16 @@ instance). Commands keep the app’s canonical prefix, such as `email.macros.run
 
 Logging: `--debug[=LEVEL]` and live Bus controls are described in
 [live application logging](../docs/dev/debugging.md).
+
+## Editing a mail document in ced
+
+[Ced](../ced/README.md#mail-documents) opens mail documents with editable
+headers and a body editor. Its File ▸ Send saves the document, then calls
+`email.send` with only its absolute `document` path. Email reads the file at
+request time and applies its own identity and mail validation. Ced displays
+Email's refusal verbatim and never retries an uncertain send. Ordinary Bus
+messages remain plain text in ced and belong to Workshop.
+
+Email and ced share toolkit's `header_form` label column, rows, address/text
+fields and attachment chips. Email retains its own identity selector,
+Identities… row, address completion and attachment inspection.

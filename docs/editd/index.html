@@ -265,6 +265,11 @@ service over a private native noded, rather than a substitute control
 socket.</p>
 <p>The source is
 <a href="https://github.com/markc/mixos/tree/main/services/editd"><code>services/editd</code></a>.</p>
+<p><code>edit.open {text: "initial body", language: "markdown"}</code> creates a scratch
+buffer at revision zero with no undo entry for its initial contents. <code>text</code>
+and <code>path</code> are mutually exclusive. Initial contents count against the same
+byte budget and text limits as file-backed buffers. This additive contract
+is available from editd 0.3.0.</p>
         </article>
         <p class="doc-source"><a href="/editd/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>

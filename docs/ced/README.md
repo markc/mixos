@@ -106,3 +106,39 @@ instance). Commands keep the app’s canonical prefix, such as `ced.macros.run`.
 
 Logging: `--debug[=LEVEL]` and live Bus controls are described in
 [live application logging](../docs/dev/debugging.md).
+
+## Mail documents
+
+Ced recognises an opening `---` block containing `mail-*` headers. Valid
+[mail documents](../maildoc/README.md) open with a compact header form above
+the body editor. From is a plain address; Email checks identities when you
+send. Cc, Bcc and Reply-To buttons reveal optional rows. Thread headers are
+read-only. Attach… chooses multiple paths; each attachment chip can be removed.
+Each header field change is one undo step. Header undo history is separate
+from the edit service's body history: Undo exhausts header edits first, then
+undoes body edits. Redo restores header edits before body edits.
+
+The native edit service holds the body in a scratch buffer, seeded at revision
+zero, so Undo cannot remove the initial body. Ced keeps the headers with the
+tab. Save and Save As assemble the document with `maildoc::write`: LF line
+ends, sorted headers, omitted empty headers and canonical trailing body
+whitespace. An invalid field refuses the save without touching the file.
+A file changed on disk also refuses the save; use Save As or reopen it.
+Save As retains the mail kind. Reload from Disk requires closing and reopening
+the mail tab, so it cannot silently replace separately edited headers.
+
+File ▸ Send saves first, then asks Email to send that absolute document path.
+The tab shows Sending… until Email replies. A second Send is refused while
+one is in flight. Email's refusal appears verbatim. An uncertain transport
+outcome says the mail may have been sent; ced never retries it. Opening a
+document never sends anything. Ced knows no accounts, JMAP or sending limits.
+
+Agents use `ced.execute {id:"file.send", params:{tab:1}}`; the reply waits for
+the save and Email's outcome. `ced.state` returns body text and, on mail tabs,
+`mail:{headers,sending,saving,notice}`. Update one field by changing the returned
+headers and calling `ced.execute {id:"mail.headers", params:{tab:1,
+args:{headers:HEADERS}}}`. Thread headers cannot be changed through that action.
+Send is unavailable on ordinary text and Bus-message documents (`to` plus
+`command`), which remain plain text for Workshop. A refused mail candidate
+also opens as unchanged text, with maildoc's exact refusal beside it for repair.
+Mail tabs keep header edits in this process; save before ending the session.

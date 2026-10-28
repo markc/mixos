@@ -99,6 +99,9 @@ pub struct EmptyReq {}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OpenReq {
+    /// Initial scratch contents; refused together with path. No undo entry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
     #[serde(default)]
     pub path: Option<String>,
     #[serde(default)]

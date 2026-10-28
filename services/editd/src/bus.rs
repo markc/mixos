@@ -14,7 +14,7 @@ use edit::wire::{COMMANDS, SERVICE};
 /// Declared args per command (the manifest's `args` column).
 fn command_args(command_name: &str) -> &'static [&'static str] {
     match command_name {
-        "edit.open" => &["path", "create", "language", "origin"],
+        "edit.open" => &["path", "create", "language", "origin", "text"],
         "edit.close" => &["buffer", "force", "origin", "op_id"],
         "edit.save" => &["buffer", "path", "expect_rev", "force", "origin", "op_id"],
         "edit.reload" => &["buffer", "force", "expect_rev", "origin", "op_id"],

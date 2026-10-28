@@ -43,3 +43,9 @@ socket.
 
 The source is
 [`services/editd`](https://github.com/markc/mixos/tree/main/services/editd).
+
+`edit.open {text: "initial body", language: "markdown"}` creates a scratch
+buffer at revision zero with no undo entry for its initial contents. `text`
+and `path` are mutually exclusive. Initial contents count against the same
+byte budget and text limits as file-backed buffers. This additive contract
+is available from editd 0.3.0.

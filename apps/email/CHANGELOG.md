@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Share compose label sizing, rows, text fields and attachment chips with ced
+  through toolkit::header_form, keeping Email's identity row and completions.
+
 - Give every composer one complete client title row under either session
   decoration preference; compd never supplies the mailbox menu or action bar.
 - Open a blank composer with its error after a failed document launch. Merge

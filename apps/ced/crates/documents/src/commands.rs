@@ -246,6 +246,10 @@ pub struct ConflictRow {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StateReply {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mail: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub document_notice: Option<String>,
     pub tab: u64,
     pub preview: String,
     pub buffer: Option<String>,

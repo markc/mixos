@@ -208,6 +208,7 @@
                 <div class="panel-title">On this page</div>
                 <div class="panel-content">
                     <nav id="toc-nav">
+                        <a href="#030">0.3.0</a>
                         <a href="#020">0.2.0</a>
                     </nav>
                 </div>
@@ -237,6 +238,12 @@
 <blockquote>
 <p>Mirrored from <a href="https://github.com/markc/mixos/blob/main/services/editd/CHANGELOG.md"><code>services/editd/CHANGELOG.md</code></a>, where releases update it. The component's page is <a href="/editd/">editd</a>. This page describes the current <code>main</code> branch of MixOS.</p>
 </blockquote>
+<h2 id="030">0.3.0</h2>
+<ul>
+<li><code>edit.open</code> accepts optional initial <code>text</code> for scratch buffers, without an
+initial undo entry. Refuse <code>text</code> with <code>path</code>, preserve the text including
+a leading BOM character, and admit its bytes through the shared budget.</li>
+</ul>
 <h2 id="020">0.2.0</h2>
 <p>Transplant the <code>edit.*</code> buffer contract and retained golden fixtures from
 the predecessor repository at revision

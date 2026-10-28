@@ -531,6 +531,10 @@ impl Controller {
             }
             ActionId::FileClose => {
                 let t = need()?;
+                if let Some(tab) = self.tab(t) && let Some(mail) = &tab.mail {
+                    if mail.sending || mail.saving { return Err((code::CONFLICT, "wait for the mail save or Send to finish before closing".into())); }
+                    if matches!(intent.by, editor_model::types::Invoker::Bus { .. }) && tab.dirty() && !arg_bool("save") && !arg_bool("force") { return Err((code::CONFLICT, "mail document has unsaved changes".into())); }
+                }
                 if arg_bool("save") {
                     if let Some(x) = self.x.get_mut(&t) {
                         x.close_after_save = Some(intent.clone());

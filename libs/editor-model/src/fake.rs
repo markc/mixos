@@ -772,6 +772,7 @@ impl FakeEditd {
 
     fn open(&mut self, args: &Value) -> Result<Value, wire::Refusal> {
         let r: wire::OpenReq = parse(args)?;
+        if r.path.is_some() && r.text.is_some() { return Err(refusal(ErrorCode::InvalidArgument, Some("bad_args"), "edit.open text is only valid without path")); }
         let found = r.path.as_ref().and_then(|p| {
             self.bufs
                 .iter()
@@ -781,7 +782,7 @@ impl FakeEditd {
         let (bid, reopened, created) = match found {
             Some(bid) => (bid, true, false),
             None if r.path.is_none() || r.create => {
-                (self.create(r.path.as_deref(), ""), false, r.path.is_some())
+                (self.create(r.path.as_deref(), r.text.as_deref().unwrap_or_default()), false, r.path.is_some())
             }
             None => {
                 return Err(refusal(

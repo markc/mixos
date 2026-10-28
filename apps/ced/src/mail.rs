@@ -50,4 +50,23 @@ mod tests {
         assert!(error.contains("may have been sent"));
         assert_eq!(client.log().len(), 1);
     }
+
+    #[test]
+    fn saves_round_trip_and_validation_or_disk_changes_leave_the_file_alone() {
+        let directory = std::env::temp_dir().join(format!("ced-mail-save-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("letter.md");
+        let path = path.to_str().unwrap();
+        let text = "---\nmail-to: bob@example.org\n---\nBody";
+        std::fs::write(path, text).unwrap();
+        save(path, text, Some(text)).unwrap();
+        assert_eq!(maildoc::parse(&std::fs::read_to_string(path).unwrap()).unwrap(), maildoc::parse(text).unwrap());
+        assert!(save(path, "---\nmail-to: invalid\n---\nBody", Some(text)).is_err());
+        assert_eq!(std::fs::read_to_string(path).unwrap(), text);
+        std::fs::write(path, "changed by another editor").unwrap();
+        assert!(save(path, text, Some(text)).is_err());
+        assert_eq!(std::fs::read_to_string(path).unwrap(), "changed by another editor");
+        std::fs::remove_file(path).unwrap();
+        std::fs::remove_dir(directory).unwrap();
+    }
 }

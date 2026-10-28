@@ -83,6 +83,7 @@ pub struct MailState {
     pub(crate) disk: String,
     pub(crate) undo: Vec<Headers>,
     pub(crate) redo: Vec<Headers>,
+    pub(crate) seeding: bool,
 }
 
 impl MailState {
@@ -90,7 +91,7 @@ impl MailState {
         Self { headers: Headers::of(&document), sending: false, saving: false, notice: None,
             show_cc: !document.cc.is_empty(), show_bcc: !document.bcc.is_empty(),
             show_reply_to: document.reply_to.is_some(), saved: document, disk,
-            undo: Vec::new(), redo: Vec::new() }
+            undo: Vec::new(), redo: Vec::new(), seeding: true }
     }
 }
 

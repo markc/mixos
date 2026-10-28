@@ -8,6 +8,12 @@ generated: by docs/_build/gen-site.mix from services/editd/CHANGELOG.md; do not 
 
 > Mirrored from [`services/editd/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/services/editd/CHANGELOG.md), where releases update it. The component's page is [editd](README.md). This page describes the current `main` branch of MixOS.
 
+## 0.3.0
+
+- `edit.open` accepts optional initial `text` for scratch buffers, without an
+  initial undo entry. Refuse `text` with `path`, preserve the text including
+  a leading BOM character, and admit its bytes through the shared budget.
+
 ## 0.2.0
 
 Transplant the `edit.*` buffer contract and retained golden fixtures from

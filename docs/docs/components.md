@@ -21,7 +21,7 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 | [bridged](../bridged/README.md) · [changelog](../bridged/changelog.md) | service | unclassified | [`services/bridged`](https://github.com/markc/mixos/tree/main/services/bridged) | How bridged puts an external application with a line-delimited JSON control channel on the Bus, one instance per application, and what that exposes. |
 | [buildinfo](../buildinfo/README.md) | lib | none (library) | [`libs/buildinfo`](https://github.com/markc/mixos/tree/main/libs/buildinfo) | Compile-time build provenance for MixOS binaries, and the --version contract every binary answers. |
 | [bus](../bus/README.md) | lib | none (library) | [`libs/bus`](https://github.com/markc/mixos/tree/main/libs/bus) | The Bus wire format and the broker client library, with a supervised connection to noded that survives broker restarts. |
-| [ced](../ced/README.md) | app | unclassified | [`apps/ced`](https://github.com/markc/mixos/tree/main/apps/ced) | The MixOS Editor, a desktop text editor over the edit Bus service, where people and agents edit the same document at once and see each other's carets, selections and changes live. |
+| [ced](../ced/README.md) · [changelog](../ced/changelog.md) | app | unclassified | [`apps/ced`](https://github.com/markc/mixos/tree/main/apps/ced) | The MixOS Editor, a desktop text editor over the edit Bus service, where people and agents edit the same document at once and see each other's carets, selections and changes live. |
 | [citizen](../citizen/README.md) · [changelog](../citizen/changelog.md) | lib | none (library) | [`libs/citizen`](https://github.com/markc/mixos/tree/main/libs/citizen) | An app's supervised native Bus connection, shared by the MixOS apps for registration, calls, replies, single-instance launch and window restore. |
 | [compd](../compd/README.md) · [changelog](../compd/changelog.md) | service | unclassified | [`services/compd`](https://github.com/markc/mixos/tree/main/services/compd) | The MixOS Wayland compositor, which owns scanout, rendering, input and capture, and serves the comp Bus service with its workspaces, commands, topics and props tree. |
 | [config](../config/README.md) | lib | none (library) | [`libs/config`](https://github.com/markc/mixos/tree/main/libs/config) | Where MixOS keeps its files and how a conf.mix file is read, with one directory rule for every component and descriptor-safe atomic file helpers. |
@@ -175,7 +175,7 @@ checked separately by the layering gate.
 | [x11-wm](https://github.com/markc/mixos/blob/main/services/compd/crates/x11-wm/Cargo.toml) | compd | service | desktop | none | 0.1.2 |
 | [dnsd](https://github.com/markc/mixos/blob/main/services/dnsd/Cargo.toml) | dnsd | service | core | public | 0.3.4 |
 | [dns-core](https://github.com/markc/mixos/blob/main/services/dnsd/crates/dns-core/Cargo.toml) | dnsd | service | core | none | 0.1.2 |
-| [editd](https://github.com/markc/mixos/blob/main/services/editd/Cargo.toml) | editd | service | core | public | 0.2.0 |
+| [editd](https://github.com/markc/mixos/blob/main/services/editd/Cargo.toml) | editd | service | core | public | 0.3.0 |
 | [hostd](https://github.com/markc/mixos/blob/main/services/hostd/Cargo.toml) | hostd | service | core | public | 0.1.0 |
 | [indexd](https://github.com/markc/mixos/blob/main/services/indexd/Cargo.toml) | indexd | service | core | public | 0.1.2 |
 | [inputd](https://github.com/markc/mixos/blob/main/services/inputd/Cargo.toml) | inputd | service | core | public | 0.5.0 |

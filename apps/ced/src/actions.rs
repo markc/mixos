@@ -132,7 +132,6 @@ pub fn registry() -> Registry<App> {
         FileNew => "file.new", "file-new", "file", 0;
         FileOpen => "file.open", "file-open", "file", 0;
         FileSend => "file.send", "file-send", "file", 1;
-        MailHeaders => "mail.headers", "mail-headers", "file", 1;
         FileSave => "file.save", "file-save", "file", 1;
         FileSaveAs => "file.save_as", "file-save-as", "file", 1;
         FileSaveAll => "file.save_all", "file-save-all", "file", 1;
@@ -172,6 +171,7 @@ pub fn registry() -> Registry<App> {
         HelpKeys => "help.keys", "help-keys", "help", 0;
         HelpAbout => "help.about", "help-about", "help", 1;
     }
+    r.add(Action { id: "mail.headers", label: "mail-headers", menu: None, submenu: None, group: 0, shortcut: None, icon: None, enabled: |a: &App| a.enabled(ActionId::MailHeaders), run: |a: &mut App| a.action(ActionId::MailHeaders) });
     toggles! { r;
         EditOverwrite => "edit.overwrite", "edit-overwrite", "edit", 3;
         ViewWhitespace => "view.whitespace", "view-whitespace", "view", 1;

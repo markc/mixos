@@ -184,6 +184,7 @@ pub enum ActorMsg {
 
 pub enum Init {
     Scratch {
+        text: String,
         language: Option<String>,
     },
     Load {
@@ -1867,8 +1868,9 @@ async fn init(a: &ActorInit) -> Result<(Actor, bool), Refusal> {
         held: a.leased,
     };
     let (buffer, meta, path, opened_as, base, disk, created, language) = match &a.init {
-        Init::Scratch { language } => {
-            let buffer = Buffer::new().map_err(|e| from_core(e, None))?;
+        Init::Scratch { language, text } => {
+            let bytes = if text.starts_with('\u{FEFF}') { format!("\u{FEFF}{text}").into_bytes() } else { text.as_bytes().to_vec() };
+            let (buffer, _) = Buffer::from_bytes(&bytes).map_err(|e| from_core(e, None))?;
             let language = language.clone().unwrap_or_else(|| "text".into());
             (
                 buffer,

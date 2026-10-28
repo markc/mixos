@@ -84,6 +84,7 @@ pub type Reply = (u8, String);
 
 /// A parked or in-flight `edit.open`, re-runnable as a fresh open.
 pub struct OpenWaiter {
+    pub text: Option<String>,
     pub caller: String,
     pub canonical: Option<PathBuf>,
     pub opened_as: Option<String>,
@@ -612,7 +613,13 @@ impl Router {
             let bid = self.buffer_id();
             self.buffer_count += 1;
             let language = w.language.clone();
-            self.spawn(bid, None, Init::Scratch { language }, 0, Some(w));
+            let text = w.text.clone().unwrap_or_default();
+            let size = text.len() as u64;
+            if !self.budget.try_lease(size) {
+                self.buffer_count = self.buffer_count.saturating_sub(1);
+                return send(w.reply, Err(crate::refusal::budget(size)));
+            }
+            self.spawn(bid, None, Init::Scratch { language, text }, size, Some(w));
             return;
         };
         match self.paths.get_mut(&path) {
@@ -1704,6 +1711,9 @@ impl Editd {
     fn open(&self, req: OpenReq, caller: Caller) -> ReplyFuture {
         let router_tx = self.router_tx.clone();
         Box::pin(async move {
+            if req.path.is_some() && req.text.is_some() {
+                return render(&refusal(ErrorCode::InvalidArgument, Some(reason::BAD_ARGS), "edit.open text is only valid without path"));
+            }
             let (canonical, size) = match req.path.clone() {
                 None => (None, None),
                 Some(path) => {
@@ -1730,6 +1740,7 @@ impl Editd {
             };
             let (tx, rx) = oneshot::channel();
             let waiter = OpenWaiter {
+                text: req.text,
                 caller: caller::holder_key(&caller.key),
                 canonical,
                 opened_as: req.path.clone(),
@@ -1848,6 +1859,7 @@ mod tests {
         // An open of A parks on the close.
         let (open_tx, open_rx) = oneshot::channel();
         router.open(OpenWaiter {
+            text: None,
             caller: "o".into(),
             canonical: Some(old.clone()),
             opened_as: None,

@@ -213,6 +213,7 @@ struct TabX {
     ext_due: bool,
     ext_live: bool,
     ext_dirty: bool,
+    mail_save: Option<Effect>,
 }
 
 /// What a request the controller sent is for.
@@ -1073,7 +1074,10 @@ impl Controller {
         }
         let body = match &path {
             Some(p) => json!({"path": p, "origin": UI_ORIGIN}),
-            None => json!({"origin": UI_ORIGIN}),
+            None => match self.tab(tab).and_then(|t| t.mail.as_ref()) {
+                Some(mail) => json!({"origin": UI_ORIGIN, "text": mail.saved.body, "language": "markdown"}),
+                None => json!({"origin": UI_ORIGIN}),
+            },
         };
         let out = Outgoing {
             command: "edit.open".into(),
@@ -1558,7 +1562,7 @@ impl Controller {
         {
             self.drive(tab, step, fx);
         }
-        let path = self.tab(tab).and_then(|t| t.path.clone());
+        let path = self.tab(tab).filter(|t| t.mail.is_none()).and_then(|t| t.path.clone());
         match path {
             Some(p) => self.send_open(tab, Some(p), true, fx),
             None => self.send_list(tab, fx),
@@ -1992,6 +1996,7 @@ impl Controller {
             }
         }
         if idle {
+            if let Some(save) = self.x.get_mut(&tab).and_then(|x| x.mail_save.take()) { fx.push(save); }
             if let Some(job) = self.x.get_mut(&tab).and_then(|x| x.find.take()) {
                 self.start_find(tab, job, fx);
             }
@@ -2476,6 +2481,12 @@ impl Controller {
         intent: Intent,
         fx: &mut Vec<Effect>,
     ) {
+        if self.tab(tab).and_then(|t| t.mail.as_ref()).is_some_and(|mail| mail.sending || mail.saving) {
+            let message = "wait for the mail save or Send to finish before closing";
+            fx.push(Effect::Notice { tab: Some(tab), notice: Notice::Message { level: Level::Warn, text: message.into() } });
+            if let Some((id, _)) = cmd { fx.push(Effect::Respond { id, rc: 10, body: refusal(code::CONFLICT, message, None) }); }
+            return;
+        }
         let is_mail = self.tab(tab).is_some_and(|t| t.mail.is_some());
         if is_mail && !force && self.tab(tab).is_some_and(Tab::dirty) {
             fx.push(Effect::Prompt(Prompt::CloseDirty { tab, intent }));
@@ -3115,6 +3126,8 @@ impl Controller {
                 })
                 .collect(),
             detached_copy: m.detached_copy().is_some(),
+            mail: t.mail.as_ref().map(|mail| json!({"headers":mail.headers,"sending":mail.sending,"saving":mail.saving,"notice":mail.notice})),
+            document_notice: t.document_notice.clone(),
             text: with_text.then_some(text),
         })
     }
