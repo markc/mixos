@@ -108,7 +108,7 @@ has `recipient`, `target`, `status` (`queued`, `delivered`, `deferred`, `bounced
 records one outcome for each local target, so partial fan-out success is
 visible. A temporary local failure is deferred onto the existing delivery
 queue; retries deliver only to the failed mailbox, without repeating successful
-copies. Remote delivery records the receiving
+copies, including recovery after a delivery receipt is committed. Remote delivery records the receiving
 server's end-of-DATA reply or its rejection/error. Delivered means the next
 server accepted responsibility, not that a person read the message.
 

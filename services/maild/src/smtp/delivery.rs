@@ -372,6 +372,11 @@ async fn process_queue(state: &SmtpState, resolver: &TokioResolver) -> Result<us
 
     for entry in entries {
         if let Some(account_id) = entry.local_account_id {
+            // Recover a crash after recording delivery but before retiring its payload.
+            if queue::pending(&state.db.conn, entry.id).await?.is_empty() {
+                queue::mark_delivered(&state.db.conn, entry.id).await?;
+                continue;
+            }
             let result = match entry.blob_hash {
                 Some(hash) => match db::account::get_by_id(&state.db.conn, account_id).await? {
                     Some(_) => queue::deliver_local(&state.mailstore, account_id, hash).await,

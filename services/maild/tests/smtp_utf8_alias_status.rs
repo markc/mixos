@@ -848,6 +848,18 @@ async fn local_fanout_defers_only_failed_targets_and_retries_without_duplicates(
         wait_delivered(&built, id).await?;
         assert_eq!(inbox_count(&built, alice)?, before_alice + 1);
         assert_eq!(inbox_count(&built, bob)?, if native { 1 } else { 2 });
+        if native {
+            // Recreate the durable state at a crash between the delivered receipt
+            // commit and queue removal, after a real successful worker delivery.
+            wait_queue_empty(&built).await?;
+            built.app_state.db.conn.lock().unwrap().execute(
+                "INSERT INTO smtp_queue(id,from_addr,to_addrs,blob_hash,local_account_id,attempts) VALUES(?1,?2,?3,?4,?5,?6)",
+                rusqlite::params![queued[0].id,queued[0].from_addr,serde_json::to_string(&queued[0].to_addrs)?,mds::blob::hex(&queued[0].blob_hash.unwrap()),bob,queued[0].attempts],
+            )?;
+            wait_queue_empty(&built).await?;
+            assert_eq!(inbox_count(&built, bob)?, 1, "a terminal local receipt must not be delivered twice after recovery");
+            assert_eq!(inbox_count(&built, alice)?, before_alice + 1);
+        }
     }
     // Deleting an account must not deliver a retry into its orphaned MDS set.
     ms.update_mailbox(bob, bob_inbox, None, None, Some(None), None, None)?;
@@ -885,6 +897,18 @@ async fn local_fanout_defers_only_failed_targets_and_retries_without_duplicates(
     })
     .await??;
     assert_eq!(inbox_count(&built, bob)?, 2);
+    Ok(())
+}
+
+async fn wait_queue_empty(built: &BuiltMaild) -> Result<()> {
+    timeout(Duration::from_secs(65), async {
+        loop {
+            if maild::smtp::queue::list(&built.app_state.db.conn, 10).await?.is_empty() {
+                return Ok::<_, anyhow::Error>(());
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    }).await??;
     Ok(())
 }
 
