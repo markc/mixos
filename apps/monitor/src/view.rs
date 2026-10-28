@@ -154,6 +154,31 @@ fn tool_bar(
     events: &mut Vec<UiEvent>,
 ) {
     bars::options(ui, |ui| {
+        if ui.available_width() < 640.0 {
+            ScrollArea::horizontal()
+                .min_scrolled_width(0.0)
+                .auto_shrink(false)
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        // Keep the existing controls and ordering reachable
+                        // by scrolling rather than overlapping the tab strip.
+                        ui.set_width(1040.0);
+                        toolbar_contents(ui, engine, commands, strings, events);
+                    });
+                });
+        } else {
+            toolbar_contents(ui, engine, commands, strings, events);
+        }
+    });
+}
+
+fn toolbar_contents(
+    ui: &mut Ui,
+    engine: &Engine,
+    commands: &Registry<Engine>,
+    strings: &Strings,
+    events: &mut Vec<UiEvent>,
+) {
         for tab in Tab::ALL {
             if toolkit::selectable(ui, engine.ui.tab == tab, label(tab.name())).clicked() {
                 events.push(UiEvent::Tab(tab));
@@ -220,7 +245,6 @@ fn tool_bar(
                 events.push(UiEvent::FilterFocused);
             }
         });
-    });
 }
 
 fn right(ui: &mut Ui, text: impl Into<RichText>) {
