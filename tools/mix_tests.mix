@@ -14,6 +14,9 @@
 -- runs only the scripts whose path contains it.
 --
 -- Not run here, and why:
+-- - libs/toolkit/tests/choose_bus_test.mix: needs headless weston and a
+--   private nested compd; build toolkit's choose_probe example first, then
+--   MIXOS_TEST_BIN=<bin> mix libs/toolkit/tests/choose_bus_test.mix.
 -- - services/compd/tests/scenes_mesh_test.mix: needs a live mesh route
 --   (SCENES_LOCAL_TARGET, SCENES_REMOTE_TARGET).
 -- - services/portald/tests/restart_recovery_test.mix: needs a systemd

@@ -3,16 +3,28 @@
 use super::*;
 
 pub(super) async fn attempt(request: &Request) -> Option<Outcome> {
-    if request.mode == Mode::SaveFiles { return None; }
+    if request.mode == Mode::SaveFiles {
+        return None;
+    }
     let request = request.clone();
     tokio::task::spawn_blocking(move || {
         let mut dialog = rfd::FileDialog::new().set_title(&request.title);
-        if let Some(folder) = &request.current_folder { dialog = dialog.set_directory(path_from_bytes(folder)); }
-        if let Some(name) = &request.current_name { dialog = dialog.set_file_name(String::from_utf8_lossy(name)); }
+        if let Some(folder) = &request.current_folder {
+            dialog = dialog.set_directory(path_from_bytes(folder));
+        }
+        if let Some(name) = &request.current_name {
+            dialog = dialog.set_file_name(String::from_utf8_lossy(name));
+        }
         for filter in &request.filters {
-            let extensions: Vec<_> = filter.patterns().iter().filter_map(|p| p.strip_prefix("*."))
-                .filter(|ext| !ext.contains(['*', '?', '[', ']', '/'])).collect();
-            if !extensions.is_empty() { dialog = dialog.add_filter(&filter.name, &extensions); }
+            let extensions: Vec<_> = filter
+                .patterns()
+                .iter()
+                .filter_map(|p| p.strip_prefix("*."))
+                .filter(|ext| !ext.contains(['*', '?', '[', ']', '/']))
+                .collect();
+            if !extensions.is_empty() {
+                dialog = dialog.add_filter(&filter.name, &extensions);
+            }
         }
         let paths = match (request.mode, request.directory, request.multiple) {
             (Mode::Save, _, _) => dialog.save_file().map(|p| vec![p]),
@@ -21,7 +33,14 @@ pub(super) async fn attempt(request: &Request) -> Option<Outcome> {
             (_, false, true) => dialog.pick_files(),
             _ => dialog.pick_file().map(|p| vec![p]),
         };
-        paths.map(|paths| Outcome::Chosen { paths, choices: request.choice_defaults(), current_filter: None })
+        paths
+            .map(|paths| Outcome::Chosen {
+                paths,
+                choices: request.choice_defaults(),
+                current_filter: None,
+            })
             .unwrap_or(Outcome::Cancelled)
-    }).await.ok()
+    })
+    .await
+    .ok()
 }

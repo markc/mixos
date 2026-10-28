@@ -88,8 +88,10 @@ impl Selection {
             if !ctrl {
                 self.files.clear();
             }
-            self.files
-                .extend((anchor.min(at)..=anchor.max(at)).filter(|&i| entries[i].directory == self.directories));
+            self.files.extend(
+                (anchor.min(at)..=anchor.max(at))
+                    .filter(|&i| entries[i].directory == self.directories),
+            );
             self.anchor = Some(anchor);
         } else {
             self.anchor = Some(at);
@@ -148,7 +150,10 @@ pub struct FileChooser {
 impl FileChooser {
     /// Full files.choose fallback; legacy constructors retain their behaviour.
     pub fn from_request(request: ChooseRequest) -> Self {
-        let folder = request.current_folder.as_deref().map(crate::choose::path_from_bytes)
+        let folder = request
+            .current_folder
+            .as_deref()
+            .map(crate::choose::path_from_bytes)
             .unwrap_or_else(home);
         let mut chooser = Self::new(folder, &request.title, &request.accept_label);
         chooser.mode = match request.mode {
@@ -156,8 +161,11 @@ impl FileChooser {
             ChooseMode::Open if request.multiple => Mode::Multiple,
             _ => Mode::Single,
         };
-        chooser.name = request.current_name.as_deref()
-            .map(|n| String::from_utf8_lossy(n).into_owned()).unwrap_or_default();
+        chooser.name = request
+            .current_name
+            .as_deref()
+            .map(|n| String::from_utf8_lossy(n).into_owned())
+            .unwrap_or_default();
         chooser.focus_name = request.mode == ChooseMode::Save;
         chooser.values = request.choice_defaults();
         chooser.selection.directories = request.directory;
@@ -248,7 +256,11 @@ impl FileChooser {
 
     fn can_confirm(&self) -> bool {
         self.pending.is_none()
-            && if self.contract.as_ref().is_some_and(|r| r.directory || r.mode == ChooseMode::SaveFiles) {
+            && if self
+                .contract
+                .as_ref()
+                .is_some_and(|r| r.directory || r.mode == ChooseMode::SaveFiles)
+            {
                 true
             } else if self.contract.is_some() && self.mode == Mode::Save {
                 !self.name.trim().is_empty()
@@ -286,7 +298,11 @@ impl FileChooser {
                             if replace {
                                 self.replace = paths.first().cloned();
                                 self.batch = Some(paths);
-                                ctx.memory_mut(|m| { if let Some(id) = m.focused() { m.surrender_focus(id); } });
+                                ctx.memory_mut(|m| {
+                                    if let Some(id) = m.focused() {
+                                        m.surrender_focus(id);
+                                    }
+                                });
                             } else {
                                 Dialog::reset(ctx, self.id);
                                 return Some(Outcome::Picked(paths));
@@ -384,7 +400,20 @@ impl FileChooser {
                 .show(ctx, |ui| {
                     ui.label(own_with(
                         "file-chooser-replace-body",
-                        &[("path", &self.batch.as_ref().map(|paths| paths.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join("\n")).unwrap_or_else(|| path.display().to_string()))],
+                        &[(
+                            "path",
+                            &self
+                                .batch
+                                .as_ref()
+                                .map(|paths| {
+                                    paths
+                                        .iter()
+                                        .map(|p| p.display().to_string())
+                                        .collect::<Vec<_>>()
+                                        .join("\n")
+                                })
+                                .unwrap_or_else(|| path.display().to_string()),
+                        )],
                     ));
                 });
             if shown.chosen.is_some() || shown.dismissed {
@@ -531,7 +560,14 @@ impl FileChooser {
         self.row_ids.clear();
         egui::ScrollArea::vertical()
             .id_salt(self.id.with("list"))
-            .max_height((ui.available_height() - field::height_of(ui.ctx()) * self.contract.as_ref().map_or(0.0, |r| (r.choices.len() + usize::from(r.filter_menu)) as f32 * 1.5)).max(field::height_of(ui.ctx())))
+            .max_height(
+                (ui.available_height()
+                    - field::height_of(ui.ctx())
+                        * self.contract.as_ref().map_or(0.0, |r| {
+                            (r.choices.len() + usize::from(r.filter_menu)) as f32 * 1.5
+                        }))
+                .max(field::height_of(ui.ctx())),
+            )
             .auto_shrink([false, false])
             .show(ui, |ui| {
                 for (at, entry) in self.entries.iter().enumerate() {
@@ -674,14 +710,22 @@ impl FileChooser {
     }
 
     fn options(&mut self, ui: &mut egui::Ui) {
-        let Some(request) = &mut self.contract else { return; };
+        let Some(request) = &mut self.contract else {
+            return;
+        };
         let mut changed = false;
         if request.filter_menu {
             ui.horizontal(|ui| {
                 ui.label(own("file-chooser-filter"));
-                let mut index = request.filters.iter().position(|f| Some(f) == request.current_filter.as_ref()).unwrap_or(0);
+                let mut index = request
+                    .filters
+                    .iter()
+                    .position(|f| Some(f) == request.current_filter.as_ref())
+                    .unwrap_or(0);
                 let labels: Vec<_> = request.filters.iter().map(|f| &f.name).collect();
-                if crate::combo::show(ui, self.id.with("filter"), &mut index, &labels, None).changed() {
+                if crate::combo::show(ui, self.id.with("filter"), &mut index, &labels, None)
+                    .changed()
+                {
                     request.current_filter = request.filters.get(index).cloned();
                     changed = true;
                 }
@@ -691,21 +735,32 @@ impl FileChooser {
             let value = self.values.get_mut(&choice.id).expect("choice default");
             if choice.options.is_empty() {
                 let mut checked = value == "true";
-                if ui.add(toggle::Checkbox::new(&mut checked, &choice.label)).changed() {
+                if ui
+                    .add(toggle::Checkbox::new(&mut checked, &choice.label))
+                    .changed()
+                {
                     *value = checked.to_string();
                 }
             } else {
                 ui.horizontal(|ui| {
                     ui.label(&choice.label);
-                    let mut index = choice.options.iter().position(|o| &o.id == value).unwrap_or(0);
+                    let mut index = choice
+                        .options
+                        .iter()
+                        .position(|o| &o.id == value)
+                        .unwrap_or(0);
                     let labels: Vec<_> = choice.options.iter().map(|o| &o.label).collect();
-                    if crate::combo::show(ui, self.id.with(&choice.id), &mut index, &labels, None).changed() {
+                    if crate::combo::show(ui, self.id.with(&choice.id), &mut index, &labels, None)
+                        .changed()
+                    {
                         *value = choice.options[index].id.clone();
                     }
                 });
             }
         }
-        if changed { self.open(ui.ctx(), self.directory.clone()); }
+        if changed {
+            self.open(ui.ctx(), self.directory.clone());
+        }
     }
 
     fn open(&mut self, ctx: &Context, path: PathBuf) {
@@ -721,17 +776,25 @@ impl FileChooser {
     fn pick(&mut self, ctx: &Context) {
         if let Some(request) = &self.contract {
             if request.mode == ChooseMode::SaveFiles {
-                self.request(ctx, Request::Batch(self.directory.clone(), request.files.clone()));
+                self.request(
+                    ctx,
+                    Request::Batch(self.directory.clone(), request.files.clone()),
+                );
                 return;
             }
             if request.directory {
                 let mut paths = self.selection.paths(&self.entries);
-                if paths.is_empty() { paths.push(self.directory.clone()); }
+                if paths.is_empty() {
+                    paths.push(self.directory.clone());
+                }
                 self.request(ctx, Request::Directories(paths));
                 return;
             }
             if request.mode == ChooseMode::Save {
-                self.request(ctx, Request::Typed(self.directory.clone(), self.name.clone(), request.clone()));
+                self.request(
+                    ctx,
+                    Request::Typed(self.directory.clone(), self.name.clone(), request.clone()),
+                );
                 return;
             }
         }
@@ -812,11 +875,18 @@ fn check_batch(folder: PathBuf, names: Vec<Vec<u8>>) -> Result<Answer, String> {
 
 fn check_typed(folder: PathBuf, text: String, request: &ChooseRequest) -> Result<Answer, String> {
     if let Some((parent, tail)) = text.rsplit_once('/') {
-        let directory = if parent.is_empty() { PathBuf::from("/") } else { folder.join(parent) };
+        let directory = if parent.is_empty() {
+            PathBuf::from("/")
+        } else {
+            folder.join(parent)
+        };
         check_directories(vec![directory.clone()])?;
         return Ok(Answer::Navigate(directory, tail.into()));
     }
-    let name = request.current_name.as_deref().filter(|n| String::from_utf8_lossy(n) == text)
+    let name = request
+        .current_name
+        .as_deref()
+        .filter(|n| String::from_utf8_lossy(n) == text)
         .unwrap_or(text.as_bytes());
     files::chooser::validate_name(name).map_err(|e| e.message)?;
     let name = request.save_name(name);
@@ -824,19 +894,35 @@ fn check_typed(folder: PathBuf, text: String, request: &ChooseRequest) -> Result
     check_save(folder.join(crate::choose::path_from_bytes(&name)))
 }
 
-fn open_filtered(path: PathBuf, hidden: bool, request: Option<&ChooseRequest>) -> Result<Answer, String> {
+fn open_filtered(
+    path: PathBuf,
+    hidden: bool,
+    request: Option<&ChooseRequest>,
+) -> Result<Answer, String> {
     let mut answer = open_path(path, hidden)?;
     if let (Answer::Picked(_), Some(request)) = (&answer, request)
-        && (request.directory || request.mode == ChooseMode::SaveFiles) {
+        && (request.directory || request.mode == ChooseMode::SaveFiles)
+    {
         return Err(own("file-chooser-folder-required"));
     }
     if let (Answer::Listed(listing), Some(request)) = (&mut answer, request) {
-        let db = request.current_filter.as_ref().filter(|f| !f.mime_types.is_empty()).map(|_| mimedb::Database::load());
+        let db = request
+            .current_filter
+            .as_ref()
+            .filter(|f| !f.mime_types.is_empty())
+            .map(|_| mimedb::Database::load());
         listing.entries.retain(|entry| {
-            if entry.directory { return true; }
-            if request.directory || request.mode == ChooseMode::SaveFiles { return false; }
+            if entry.directory {
+                return true;
+            }
+            if request.directory || request.mode == ChooseMode::SaveFiles {
+                return false;
+            }
             request.current_filter.as_ref().is_none_or(|filter| {
-                let mime = db.as_ref().map(|db| db.guess(Some(&entry.name), None).mime).unwrap_or_default();
+                let mime = db
+                    .as_ref()
+                    .map(|db| db.guess(Some(&entry.name), None).mime)
+                    .unwrap_or_default();
                 filter.matches(&entry.name, false, &mime)
             })
         });

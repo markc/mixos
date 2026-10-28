@@ -1,0 +1,44 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- CBC headless weston + private nested compd and noded; no desk or VT.
+$n = require("../../../tests/desktop/nested_host_lib.mix")
+$root = dirname(dirname(dirname(dirname(realpath($0)))))
+$bin = env("MIXOS_TEST_BIN", $root .. "/target/debug")
+for $name in ["mix", "noded", "compd", "dopus", "examples/choose_probe"]
+  if not is_file($bin .. "/" .. $name) then raise("CHOOSER_TEST", "missing binary " .. $name) end
+end
+$run = $n.new_run("/tmp/mixos-toolkit-chooser")
+$tmp = $run.path
+$broker = nil
+$session = nil
+$provider = nil
+$passed = false
+try
+  $broker = $n.private_bus({dir:$tmp .. "/broker", name:"toolkit-chooser", noded:$bin .. "/noded"})
+  mkdir($tmp .. "/home", {parents:true})
+  write_file($tmp .. "/home/notes.md", "original")
+  write_file($tmp .. "/settings.json", read_file($root .. "/tests/desktop/smoke-settings.json"))
+  $session = $n.start({bin:$bin .. "/compd", tag:"toolkit-chooser", run:$run, config:$tmp .. "/settings.json", software:true})
+  if not $n.wait_ready($session,40) then raise("CHOOSER_TEST", "nested compd did not start: " .. $session.log) end
+  $client = $n.client_env($session,{HOME:$tmp .. "/home", XDG_CONFIG_HOME:$tmp .. "/config", XDG_STATE_HOME:$tmp .. "/state",
+    MIXOS_APP_HOME:$tmp .. "/dopus", MIXOS_COMP_SERVICE:$session.service, WINIT_UNIX_BACKEND:"wayland", WGPU_BACKEND:"gl", LIBGL_ALWAYS_SOFTWARE:"1",
+    MESA_VK_WSI_PRESENT_MODE:"mailbox", MIXOS_NODED_URL:$broker.url})
+  $provider = spawn([$bin .. "/dopus", "--choose-service", "--noded-url", $broker.url],
+    {env:$client, stdout:{file:$tmp .. "/files.log"}, stderr:"stdout", detach:true})
+  $ready = false
+  for $i = 1 to 100
+    $r = $n.call("files","files.choose.list",{})
+    if $r.rc == 0 then $ready = true; break end
+    sleep(0.1)
+  end
+  if not $ready then raise("CHOOSER_TEST","files did not register: " .. $tmp .. "/files.log") end
+  $result = run_argv([$bin .. "/examples/choose_probe", $tmp .. "/home"], {env:$client,timeout:300,stderr:"stdout"})
+  print($result.stdout)
+  if $result.exit_code != 0 or $result.timed_out then raise("CHOOSER_TEST","probe failed; logs " .. $tmp) end
+  $passed = true
+  print("PASS toolkit::choose open, save and SaveFiles accept/cancel through real DOpus")
+finally
+  if $provider != nil and process_alive($provider) then kill($provider,15) end
+  if $session != nil then $n.stop($session) end
+  if $broker != nil and process_alive($broker.pid) then kill($broker.pid,15) end
+  $n.finish_run($run,$passed)
+end
