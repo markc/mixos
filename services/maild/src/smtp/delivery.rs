@@ -1927,6 +1927,12 @@ mod rcpt_rejection_tests {
             (
                 "250 8BITMIME",
                 "a@example.com",
+                "Subject: ASCII\n\ncafé\r\n\r\nASCII paragraph\r\n",
+                Some(" BODY=8BITMIME"),
+            ),
+            (
+                "250 8BITMIME",
+                "a@example.com",
                 "Subject: café\r\n\r\nbody\r\n",
                 None,
             ),
