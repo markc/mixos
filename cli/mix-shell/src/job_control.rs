@@ -904,7 +904,12 @@ fn close_jobs(shared: &Shared) {
             drop(s);
             let _ttou = TtouGuard::new();
             for (id, pgid) in survivors {
-                let _ = writeln!(io::stderr(), "mix: job {} (pgid {}) survived HUP/CONT grace", id, pgid);
+                let _ = writeln!(
+                    io::stderr(),
+                    "mix: job {} (pgid {}) survived HUP/CONT grace",
+                    id,
+                    pgid
+                );
             }
             shared.state.lock().unwrap().closed = true;
             shared.changed.notify_all();
