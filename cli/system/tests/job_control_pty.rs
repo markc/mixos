@@ -211,7 +211,6 @@ struct Pty {
     shell: Child,
     home: tempfile::TempDir,
     pending: String,
-    jobs: Vec<i32>,
 }
 impl Pty {
     fn new(args: &[&str], redirected: bool, controlling: bool) -> Self {
@@ -339,7 +338,6 @@ impl Pty {
             shell,
             home,
             pending: String::new(),
-            jobs: vec![],
         }
     }
     fn interactive() -> Self {
@@ -413,7 +411,6 @@ impl Pty {
             .split_whitespace()
             .map(|v| v.parse().unwrap())
             .collect::<Vec<_>>();
-        self.jobs.push(fields[0]);
         fields
     }
     fn exit(&mut self) {
@@ -464,13 +461,7 @@ impl Pty {
 }
 impl Drop for Pty {
     fn drop(&mut self) {
-        // Only fixture-owned IDs. Kill jobs before their session-leader shell.
-        for pid in &self.jobs {
-            unsafe {
-                libc::kill(-*pid, libc::SIGKILL);
-                libc::kill(*pid, libc::SIGKILL);
-            }
-        }
+        // Includes nested shells and every job-control group in this session.
         pty::kill_session(self.shell.id());
         let _ = self.shell.kill();
         let _ = self.shell.wait();
@@ -527,7 +518,6 @@ fn unmanaged_stream_stop_is_visible_to_outer_parent_and_resumes() {
     let pid_path = p.home.path().join("outer.child");
     wait_for(|| pid_path.exists());
     let nested: i32 = fs::read_to_string(pid_path).unwrap().parse().unwrap();
-    p.jobs.push(nested);
     let report = p.home.path().join("stream");
     p.send(&format!(
         "run_stream([\"{}\", \"--exact\", \"fixture_process\", \"--nocapture\"], {{env: {{P0J_MODE: \"hold\", P0J_REPORT: \"{}\"}}}})\n",
