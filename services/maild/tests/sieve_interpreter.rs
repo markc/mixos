@@ -249,6 +249,8 @@ fn invalid_scripts_are_rejected_at_upload_even_in_dead_branches() {
         "if header :is :contains \"Subject\" \"x\" { keep; }",
         "keep :unknown;",
         "if exists [] { keep; }",
+        "require \"comparator-i;ascii-numeric\"; if header :comparator \"i;ascii-numeric\" :contains \"X-Number\" \"1\" { keep; }",
+        "require \"comparator-i;ascii-numeric\"; if header :comparator \"i;ascii-numeric\" :matches \"X-Number\" \"*\" { keep; }",
     ] {
         assert!(compile(source).is_err(), "accepted {source}");
     }

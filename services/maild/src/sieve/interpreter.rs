@@ -367,6 +367,11 @@ impl Parser {
             .count();
         ensure!(match_count <= 1, "conflicting match types");
         ensure!(
+            args.tag("comparator") != Some("i;ascii-numeric")
+                || !(args.has("contains") || args.has("matches")),
+            "numeric comparator supports only equality and ordering"
+        );
+        ensure!(
             ["all", "localpart", "domain"]
                 .iter()
                 .filter(|t| args.has(t))
