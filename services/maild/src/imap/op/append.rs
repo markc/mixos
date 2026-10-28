@@ -3,10 +3,9 @@
 
 //! `APPEND` — RFC 9051 §6.3.12 / RFC 4315 (UIDPLUS APPENDUID).
 //!
-//! Phase 4 ships APPEND with a single trailing literal (sync or
-//! non-sync per RFC 7888 `LITERAL+`). The codec ([`crate::imap::codec`])
-//! has already consumed the literal body by the time this handler
-//! runs; we only see the parsed command line plus `literal: Vec<u8>`.
+//! The codec ([`crate::imap::codec`]) frames synchronising,
+//! non-synchronising and binary literals. The session separates argument
+//! strings from message octets and supplies one or more MULTIAPPEND entries.
 //!
 //! Wire grammar (after the command is stripped):
 //!
@@ -15,7 +14,7 @@
 //! mailbox     = atom / quoted-string
 //! date-time   = '"' DD "-" Mmm "-" YYYY SP HH ":" MM ":" SS SP ("+"/"-") ZHHMM '"'
 //! flag-list   = flag *(SP flag)
-//! flag        = "\Answered" / "\Flagged" / "\Deleted" / "\Seen" / "\Draft"
+//! flag        = system-flag / keyword
 //! ```
 //!
 //! The literal itself is stripped from the line by the codec, so the
@@ -30,7 +29,7 @@
 //! ```
 //!
 //! where `<uidvalidity>` and `<uid>` come from the [`MembershipUid`]
-//! returned by [`crate::mailstore::MailStore::create_email`] — both
+//! returned by [`crate::mailstore::MailStore::append_emails`] — both
 //! read inside the same `with_set_tx` that committed the membership,
 //! so an APPENDUID for a freshly-inserted membership cannot diverge
 //! from the actual stored row.
@@ -41,10 +40,9 @@
 //! |----------------------------------------|-------------------------------------------|
 //! | grammar parse                          | `BAD <reason>`                            |
 //! | mailbox does not exist                 | `NO [TRYCREATE] mailbox does not exist`   |
-//! | mailbox name unrepresentable           | `NO [SERVERBUG] mailbox not representable`|
 //! | mail_parser rejects the literal        | `NO [PARSE] message body not parseable`   |
-//! | substrate `blob not found`             | `NO [SERVERBUG] storage error`            |
-//! | substrate other error                  | `NO [SERVERBUG] APPEND failed`            |
+//! | unsupported binary representation      | `NO [UNKNOWN-CTE]`                       |
+//! | substrate error                        | `NO [UNAVAILABLE] APPEND unavailable`     |
 //!
 //! `TRYCREATE` is RFC 9051 §7.1's hint that the client should retry
 //! after `CREATE`-ing the mailbox; Thunderbird honours it on first-

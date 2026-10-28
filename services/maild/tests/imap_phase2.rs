@@ -371,7 +371,7 @@ async fn list_percent_excludes_nested_children() -> Result<()> {
 }
 
 #[tokio::test]
-async fn list_rejects_non_empty_reference() -> Result<()> {
+async fn list_accepts_non_empty_reference() -> Result<()> {
     let (_tmp, db, ms) = make_db_with_tree("alice@example.com", "hunter2").await?;
     let (client, _join) = spawn_session(db, ms, ImapConfig::default()).await;
     let (mut reader, mut w) = login(client).await?;
@@ -384,7 +384,7 @@ async fn list_rejects_non_empty_reference() -> Result<()> {
 }
 
 #[tokio::test]
-async fn list_rejects_return_extension() -> Result<()> {
+async fn list_accepts_return_subscribed() -> Result<()> {
     let (_tmp, db, ms) = make_db_with_tree("alice@example.com", "hunter2").await?;
     let (client, _join) = spawn_session(db, ms, ImapConfig::default()).await;
     let (mut reader, mut w) = login(client).await?;
@@ -854,7 +854,7 @@ async fn create_with_intermediate_segments_walks_top_down() -> Result<()> {
 }
 
 #[tokio::test]
-async fn create_inbox_is_idempotent_ok() -> Result<()> {
+async fn create_inbox_returns_alreadyexists() -> Result<()> {
     let (_tmp, db, ms) = make_db_with_tree("alice@example.com", "hunter2").await?;
     let (client, _join) = spawn_session(db, ms.clone(), ImapConfig::default()).await;
     let (mut reader, mut w) = login(client).await?;
@@ -869,11 +869,11 @@ async fn create_inbox_is_idempotent_ok() -> Result<()> {
 }
 
 #[tokio::test]
-async fn create_trailing_slash_is_idempotent_for_existing_parent() -> Result<()> {
+async fn create_existing_parent_with_trailing_slash_returns_alreadyexists() -> Result<()> {
     let (_tmp, db, ms) = make_db_with_tree("alice@example.com", "hunter2").await?;
     let (client, _join) = spawn_session(db, ms.clone(), ImapConfig::default()).await;
     let (mut reader, mut w) = login(client).await?;
-    // Folder1 is in the fixture; trailing slash MUST succeed.
+    // Folder1 exists; the trailing hierarchy declaration does not create a new mailbox.
     w.write_all(b"a02 CREATE Folder1/\r\n").await?;
     let resp = read_line(&mut reader).await?;
     assert!(resp.starts_with("a02 NO [ALREADYEXISTS]"), "{resp}");
@@ -1045,7 +1045,7 @@ async fn rename_user_mailbox_returns_ok() -> Result<()> {
 }
 
 #[tokio::test]
-async fn rename_inbox_is_rejected_with_cannot() -> Result<()> {
+async fn rename_inbox_preserves_the_inbox_role() -> Result<()> {
     let (_tmp, db, ms) = make_db_with_tree("alice@example.com", "hunter2").await?;
     let (client, _join) = spawn_session(db, ms.clone(), ImapConfig::default()).await;
     let (mut reader, mut w) = login(client).await?;

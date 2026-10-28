@@ -18,9 +18,9 @@
 //!
 //! ## Substrate primitive
 //!
-//! Per-item writes go through
-//! [`crate::mailstore::MailStore::copy_message`], which calls
-//! `SqliteSetTx::add_membership_from` inside one tx per item. Unlike
+//! The complete batch goes through
+//! [`crate::mailstore::MailStore::copy_messages`], which calls
+//! `SqliteSetTx::add_membership_from` inside one transaction. Unlike
 //! `add_membership` (which reads `(flags, tags)` from any existing
 //! membership via `ORDER BY container_id LIMIT 1`), the `_from`
 //! variant reads from the **specific** source mailbox — RFC 9051
@@ -37,14 +37,9 @@
 //! (read-only) so a read-only source has no side-channel effect on
 //! the classifier.
 //!
-//! Each `copy_message` is its own `with_set_tx`. A multi-message
-//! COPY is therefore NOT atomic across items — a power-loss between
-//! item #3 and #4 of a 10-message COPY leaves the first three
-//! visible in `dest`. This matches the existing STORE behaviour
-//! (per-item writes) and is consistent with how Thunderbird reads
-//! COPYUID after a partial failure (it re-runs `FETCH UID` on the
-//! dest). A future task can collapse this into a single
-//! `with_set_tx` once `add_membership` supports multi-item input.
+//! Memberships, UID allocation and retraining rows commit together.
+//! An unsuccessful COPY leaves the destination unchanged, including
+//! when a later item in the batch fails.
 //!
 //! ## Error mapping
 //!
@@ -53,8 +48,8 @@
 //! | grammar parse                          | `BAD <reason>`                            |
 //! | dest mailbox does not exist            | `NO [TRYCREATE] mailbox does not exist`   |
 //! | dest mailbox name unrepresentable      | `NO [SERVERBUG] mailbox not representable`|
-//! | dest == src                            | `NO COPY: src and dest must differ`       |
-//! | mid-copy substrate error               | `NO [SERVERBUG] COPY failed` (partial)    |
+//! | duplicate destination membership       | `NO [CANNOT] COPY cannot create duplicate membership` |
+//! | substrate error                        | `NO [UNAVAILABLE] COPY failed`           |
 //!
 //! On parse-success but zero resolved items (empty mailbox or a
 //! sequence-set that hits no live messages), emit

@@ -824,9 +824,8 @@ impl Session {
                         } else {
                             op::close::handle_unselect(&parsed.tag)
                         };
-                        // Phase 2: no \Deleted purge yet (Phase 4
-                        // ships STORE). Both commands simply drop the
-                        // selected mailbox.
+                        // CLOSE has completed any writable purge above;
+                        // UNSELECT only drops the selection.
                         self.state = State::Authenticated;
                         writer
                             .write_all(
@@ -2367,10 +2366,10 @@ fn frame_append(cmd: codec::Command, utf8: bool) -> Result<Vec<(String, Vec<u8>)
     Ok(messages)
 }
 
-/// Fold a SEARCH command's literals back into one line, each as a
+/// Fold command argument literals back into one line, each as a
 /// quoted string (`OR FROM {4}` `café` ` SUBJECT {4}` `café` →
-/// `OR FROM "café" SUBJECT "café"`), so `op::search` parses a flat
-/// line. The codec has already capped the total size
+/// `OR FROM "café" SUBJECT "café"`), so command parsers see flat
+/// arguments. The codec has already capped the total size
 /// ([`codec::MAX_MULTI_LITERAL_BYTES`]).
 fn splice_literals(cmd: &mut codec::Command) -> Result<(), &'static str> {
     let Some(first) = cmd.literal.take() else {
