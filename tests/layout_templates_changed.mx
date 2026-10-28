@@ -6,6 +6,10 @@
     "reason": "add the chooser-only DOpus session unit template without enabling it",
     "sha256": "944089cb16f45b63415524bde7b0ceb75de30c052d8554bf23e5882c9cce8e21"
   },
+  "services/editd/units/editd@.service": {
+    "reason": "want the session broker instead of binding to it, so a session on the system broker (noded@N masked) starts editd",
+    "sha256": "3fe74477b6f6fe69fbe1c02c00d42d610c06f843193251a80aba44c81c880b46"
+  },
   "services/dnsd/units/dnsd.service": {
     "reason": "read config from the etc root (@{etc}), not @{prefix}/etc",
     "sha256": "c152b5d329d5a62e21bdb65112863a0a55dc99a92dbe2444621d8c1585c5be11"
