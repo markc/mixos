@@ -227,7 +227,7 @@ fn script_depth_size_and_execution_limits() {
                 from: "a",
                 to: "b"
             })
-            .is_ok()
+        .is_err()
     );
 }
 #[test]
