@@ -54,3 +54,5 @@ generated: by docs/_build/gen-site.mix from apps/ced/CHANGELOG.md; do not edit
 - File Send and headless `ced.execute {id:"file.send"}` save first, then
   call Email with only the document path. Preserve refusals, report uncertain
   sends, refuse duplicate in-flight sends and never retry an uncertain call.
+- Use the shared 360×240 logical window minimum so quarter tiles can fit. Cover the editor at that size.
+- Use the shared 360×240 logical window minimum so quarter tiles can fit. Limit optional bottom docks to a share of the available height and cover both docks with the editor at that size.
