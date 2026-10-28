@@ -258,8 +258,13 @@ mod tests {
             let ratio = 18.0 / ui.font_size as f32 * 1.5;
             let before = toolkit::chrome::Chrome::of(&unscaled).style;
             let after = toolkit::chrome::Chrome::of(&ctx).style;
-            assert!((after.push_label_size - before.push_label_size * f64::from(ratio)).abs() < 0.001);
-            assert!((after.panel_section_size - before.panel_section_size * f64::from(ratio)).abs() < 0.001);
+            assert!(
+                (after.push_label_size - before.push_label_size * f64::from(ratio)).abs() < 0.001
+            );
+            assert!(
+                (after.panel_section_size - before.panel_section_size * f64::from(ratio)).abs()
+                    < 0.001
+            );
             for text in [
                 egui::TextStyle::Body,
                 egui::TextStyle::Button,

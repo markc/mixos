@@ -20,6 +20,8 @@ generated: by docs/_build/gen-site.mix from libs/toolkit/CHANGELOG.md; do not ed
 - Scale native button, link, tab, panel, dialog, title and value text metrics
   with the interface size. Apply the ratio once in chrome and pair text styles;
   keep independently sized monospace content and spacing unchanged.
+- Size numeric fields for their rendered number, unit and padding so larger
+  interface fonts keep every digit visible, including while editing.
 
 - Allow a viewport to require its own complete client frame independently of
   the session decoration preference and later theme changes. Each viewport

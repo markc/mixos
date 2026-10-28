@@ -222,6 +222,7 @@ impl<'a> ValueField<'a> {
         self
     }
 
+    /// Minimum width; the field grows to fit its formatted value and unit.
     pub fn width(mut self, width: f32) -> Self {
         self.width = Some(width);
         self
@@ -238,16 +239,43 @@ impl Widget for ValueField<'_> {
         } = self;
         let chrome = Chrome::of(ui.ctx());
         let field = Style::of(ui.ctx());
-        let width = width.unwrap_or(chrome.style.value_width as f32);
         let p = chrome.palette;
         let fine = range.end() - range.start() <= chrome.style.fine_span;
+        let number_font = FontId::new(chrome.style.value_number_size as f32, FontFamily::Monospace);
+        let unit_font = FontId::new(chrome.style.value_unit_size as f32, FontFamily::Monospace);
+        let unit_galley = unit.map(|u| {
+            ui.painter()
+                .layout_no_wrap(u.to_owned(), unit_font, p.text_faint)
+        });
+        let reserve = unit_galley.as_ref().map_or(0.0, |g| {
+            (chrome.style.value_unit_reserve as f32).max(
+                chrome.style.value_unit_inset as f32
+                    + g.size().x
+                    + chrome.style.value_unit_gap as f32,
+            )
+        });
+        let number_size = ui
+            .painter()
+            .layout_no_wrap(format(*value, fine), number_font.clone(), p.text)
+            .size();
+        let min_width = number_size.x
+            + reserve
+            + f32::from(field.padding.left)
+            + f32::from(field.padding.right);
+        let text_height = number_size
+            .y
+            .max(unit_galley.as_ref().map_or(0.0, |g| g.size().y));
+        let min_height = text_height
+            + f32::from(field.padding.top)
+            + f32::from(field.padding.bottom);
+        let width = width
+            .unwrap_or(chrome.style.value_width as f32)
+            .max(min_width.ceil());
+        let height = field.height.max(min_height.ceil());
         // One id for the resting box and its editor, as egui's DragValue
         // has: the field edits while it has keyboard focus.
         let id = ui.next_auto_id();
-        let (_, rect) = ui.allocate_space(vec2(
-            width,
-            crate::chrome::Chrome::of(ui.ctx()).style.field_height as f32,
-        ));
+        let (_, rect) = ui.allocate_space(vec2(width, height));
         let editing = ui.memory(|m| m.has_focus(id));
         let mut edit: Edit = ui.data(|d| d.get_temp(id)).unwrap_or_default();
         let before = *value;
@@ -290,27 +318,6 @@ impl Widget for ValueField<'_> {
             }
         }
 
-        let number_font = FontId::new(
-            crate::chrome::Chrome::of(ui.ctx()).style.value_number_size as f32,
-            FontFamily::Monospace,
-        );
-        let unit_font = FontId::new(
-            crate::chrome::Chrome::of(ui.ctx()).style.value_unit_size as f32,
-            FontFamily::Monospace,
-        );
-        let unit_galley = unit.map(|u| {
-            ui.painter()
-                .layout_no_wrap(u.to_owned(), unit_font, p.text_faint)
-        });
-        // The 16 pt reserve holds a one-character unit; a longer one ("px")
-        // widens it to keep crate::chrome::Chrome::of(ui.ctx()).style.value_unit_gap as f32 before the unit (undetermined, §5.4).
-        let reserve = unit_galley.as_ref().map_or(0.0, |g| {
-            (crate::chrome::Chrome::of(ui.ctx()).style.value_unit_reserve as f32).max(
-                crate::chrome::Chrome::of(ui.ctx()).style.value_unit_inset as f32
-                    + g.size().x
-                    + crate::chrome::Chrome::of(ui.ctx()).style.value_unit_gap as f32,
-            )
-        });
         let inner = Rect::from_min_max(rect.min, pos2(rect.right() - reserve, rect.bottom()));
         let painter = ui.painter_at(rect.expand(1.0));
         painter.rect_filled(rect, field.radius, p.field);
@@ -530,6 +537,43 @@ pub fn value_width_of(ctx: &egui::Context) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn value_field_keeps_the_number_and_unit_inside_at_the_largest_interface_font() {
+        for minimum in [None, Some(10.0)] {
+            let ctx = egui::Context::default();
+            let theme = crate::Theme::embedded()
+                .with_overlay(crate::theme::Overlay {
+                    size: Some(18.0),
+                    weight: Some(700),
+                    ..Default::default()
+                })
+                .unwrap();
+            crate::install(&ctx, &theme);
+            let mut rect = Rect::NOTHING;
+            let mut value = 18.0;
+            let mut output = ctx.run_ui(Default::default(), |ui| {
+                let mut field = ValueField::new(&mut value, 9.0..=18.0).unit("px");
+                if let Some(width) = minimum {
+                    field = field.width(width);
+                }
+                rect = ui.add(field).rect;
+            });
+            output.textures_delta.clear();
+            let mut labels = 0;
+            for clipped in &output.shapes {
+                if let egui::Shape::Text(text) = &clipped.shape
+                    && ["18.00", "px"].contains(&text.galley.job.text.as_str())
+                {
+                    labels += 1;
+                    let bounds = Rect::from_min_size(text.pos, text.galley.size());
+                    assert!(rect.contains_rect(bounds), "{bounds:?} outside {rect:?}");
+                    assert!(clipped.clip_rect.contains_rect(bounds));
+                }
+            }
+            assert_eq!(labels, 2);
+        }
+    }
 
     #[test]
     fn numbers_show_without_needless_decimals() {

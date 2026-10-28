@@ -473,7 +473,9 @@ impl Theme {
     /// The session's interface size relative to the design's own UI size.
     pub fn interface_size_scale(&self) -> f32 {
         let ui = design::active_typography(Some(self.typography()), design::TypographyRole::Ui);
-        self.overlay.size.map_or(1.0, |size| size / ui.font_size as f32)
+        self.overlay
+            .size
+            .map_or(1.0, |size| size / ui.font_size as f32)
     }
 
     /// Desktop accessibility and layout choices. Per-app overrides require
