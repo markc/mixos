@@ -157,7 +157,11 @@ pub fn view(
         ui.add(icons::image_of(ui.ctx(), icon, ICON, colour));
         ui.small(&engine.status);
     });
-    let window = ui.available_size();
+    let window = if ui.ctx().content_rect().width() < 640.0 {
+        ui.available_size()
+    } else {
+        ui.max_rect().size()
+    };
     let side = engine.ui.dock_side.effective(window.x);
     if ui.ctx().data_mut(|d| {
         let key = egui::Id::unique("workshop-dock-viewport-width");

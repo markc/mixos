@@ -224,11 +224,14 @@ pub fn view(
                 Section::Software => applications(ui, engine, commands, strings, &mut events),
                 section => {
                     let width = ui.available_width();
-                    ScrollArea::both()
+                    let compact = ui.ctx().content_rect().width() < 640.0;
+                    ScrollArea::new([compact, true])
                         .id_salt(section.name())
                         .auto_shrink(false)
                         .show(ui, |ui| {
-                            ui.set_max_width(width);
+                            if compact {
+                                ui.set_max_width(width);
+                            }
                             match section {
                                 Section::Appearance => {
                                     appearance(ui, engine, commands, strings, &mut events)
