@@ -105,7 +105,7 @@ pub(crate) fn enqueue_on(
     )?;
     let id = conn.last_insert_rowid();
     for recipient in to {
-        conn.execute("INSERT INTO smtp_delivery(queue_id,recipient) VALUES(?1,?2)", params![id, recipient])?;
+        conn.execute("INSERT OR IGNORE INTO smtp_delivery(queue_id,recipient) VALUES(?1,?2)", params![id, recipient])?;
     }
     Ok(id)
 }

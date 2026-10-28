@@ -280,7 +280,10 @@ keys, so existing files carrying removed operator lists continue to load.</p>
 or UTF-8 headers, adding <code>BODY=8BITMIME</code> for an eight-bit body. UTF-8 local
 parts and domains are stored without transliteration or Unicode normalisation;
 address lookup folds ASCII case as for existing mailboxes. Invalid UTF-8
-commands and UTF-8 addresses/headers without the parameter are refused.</p>
+commands and UTF-8 addresses/headers without the parameter are refused.
+Configure hosted internationalised domains in <code>maild.domains</code> using their DNS
+A-label (for example <code>xn--fsqu00a.example.com</code>); the RCPT gate converts the
+envelope's U-label for that authoritative lookup.</p>
 <p>Outbound delivery detects non-ASCII envelope addresses and headers, checks the
 peer's EHLO capabilities (again after STARTTLS), and requests <code>SMTPUTF8</code> when
 needed. Eight-bit content requires <code>8BITMIME</code> and requests <code>BODY=8BITMIME</code>.
@@ -340,7 +343,9 @@ its targets permission to send as that alias; a catch-all grants no sender
 identity. Property records retain <code>target</code> as the first target for compatibility
 and add <code>targets</code> for the full list; an absent or empty list uses <code>target</code>.</p>
 <p><code>maild account show alice@example.com</code> includes <code>account_id</code>, the numeric id
-accepted by Bayesian commands. <code>maild bayesian stats ID</code> refuses unknown ids
+accepted by Bayesian commands. The read-only <code>maild.accounts.lookup {email}</code>
+query supplies this identity without opening the account's mail store.
+<code>maild bayesian stats ID</code> refuses unknown ids
 and reads an existing corpus without creating a directory or <code>bayes.db</code>;
 an existing untrained account reports cold-start counts.</p>
 <h2 id="shared-libraries">Shared libraries</h2>
