@@ -90,6 +90,9 @@ impl State {
                 effects.response = Some(serde_json::json!({"response": 2}));
             }
             (_, Event::Lost) | (Phase::Sending | Phase::Closing, Event::Reply(None)) => {
+                if let Phase::Open(id) = &self.phase {
+                    effects.cancel = Some(id.clone());
+                }
                 self.phase = Phase::Ended;
                 if !self.answered {
                     effects.response = Some(serde_json::json!({"response": 2}));
@@ -161,6 +164,46 @@ mod tests {
                 assert_eq!(state.phase, Phase::Ended);
             });
         }
+    }
+
+    #[test]
+    fn every_completion_order_without_close_or_loss_answers_exactly_once() {
+        for refusal in [false, true] {
+            permutations(&mut [0, 1, 2], 0, &mut |order| {
+                let mut state = State::default();
+                let mut responses = Vec::new();
+                for event in order {
+                    let effects = state.apply(match event {
+                        0 => Event::Reply((!refusal).then(|| "inc-1".into())),
+                        1 => Event::Outcome(json!({"request":"inc-1", "response":0})),
+                        _ => Event::Timeout,
+                    });
+                    if let Some(response) = effects.response {
+                        responses.push(response);
+                    }
+                }
+                assert_eq!(responses.len(), 1, "missing/duplicate Response: {order:?}");
+                if refusal {
+                    assert_eq!(responses[0]["response"], 2);
+                }
+                state.apply(Event::Sweep);
+                assert_eq!(state.phase, Phase::Ended);
+            });
+        }
+        let mut state = State::default();
+        assert_eq!(state.apply(Event::Reply(None)).response.unwrap()["response"], 2);
+        assert!(state.apply(Event::Reply(None)).response.is_none());
+    }
+
+    #[test]
+    fn provider_loss_cancels_an_open_request() {
+        let mut state = State::default();
+        state.apply(Event::Reply(Some("inc-1".into())));
+        let effects = state.apply(Event::Lost);
+        assert_eq!(effects.cancel.as_deref(), Some("inc-1"));
+        assert_eq!(effects.response.unwrap()["response"], 2);
+        assert!(effects.unexport);
+        assert!(state.apply(Event::Lost).cancel.is_none());
     }
 
     #[test]

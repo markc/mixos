@@ -1,7 +1,7 @@
 # File chooser contract: `files.choose`
 
-Status: draft, version 0.1.0, ready for step 2 (implementation). Nothing
-here is served yet. Revised after reviews by Sol, Fable and GLM.
+Status: draft, version 0.1.0. DOpus serves the files provider and chooser
+window; portald serves FileChooser v4. Revised after reviews by Sol, Fable and GLM.
 
 MixOS has one system file chooser. A person picks files or a save location
 in it; it never opens, reads or writes the files. It is reached two ways:
@@ -270,7 +270,9 @@ removed when they do:
 
 - **Provider lost, or an outcome missed (portald's view).** While at least
   one Request is not ended, portald reads `files.choose.list` every 5
-  seconds. An error or a changed `incarnation` means `files` was lost. An
+  seconds. Two consecutive list failures or a changed `incarnation` mean
+  `files` was lost. A successful list clears the failure count. On loss
+  while the Bus is still live, portald also cancels each open chooser. An
   **open** Request whose `request` is missing from the list, with the
   incarnation unchanged, was decided and its publication missed: portald
   reads `files.choose.result` and sends the `Response` (`done`), or
@@ -340,7 +342,8 @@ name that cannot be made valid is not sent; duplicate `files` names keep the
 first; an empty string becomes the field's default;
 a label over its limit is cut at a character boundary; a list over its limit
 keeps its first entries; an invalid entry (a pattern over 256 bytes, a choice
-with a duplicate id) is dropped. portald logs each adjustment.
+with a duplicate id) is dropped. portald logs each adjustment, except a normal
+empty `title` or `accept_label` that selects the default.
 
 The outcome becomes `Response(u response, a{sv} results)`, addressed to the
 Request's owner alone:
@@ -368,6 +371,10 @@ one lock, and a Request leaves the table only when it is ended.
 - A Request in **closing** that never gets a reply is also swept: portald
   looks for its `correlation` in `files.choose.list`, cancels any match, and
   ends it.
+- The sweep also checks each Request owner's D-Bus name, recovering a missed
+  disconnect signal as Close (cancel, no Response). A failed or timed out cancel
+  is retried by the five-second sweep, up to three attempts in total; rc 0
+  acknowledges cancellation, including unknown or already ended requests.
 - `Close` from anyone but the owner is refused with
   `org.freedesktop.portal.Error.NotAllowed`.
 - A lost connection is final. When portald loses the Bus, or `files` is lost

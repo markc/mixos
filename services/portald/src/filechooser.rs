@@ -2,6 +2,8 @@
 //! FileChooser v4: the session portal forwards to the native files service.
 pub mod lifecycle;
 pub mod mapping;
+#[cfg(test)]
+mod regression;
 
 use crate::portal::{OBJECT_PATH, PortalError};
 use crate::screencast::{handle, request};
@@ -25,6 +27,13 @@ pub const VERSION: u32 = 4;
 const IO_TIMEOUT: Duration = Duration::from_secs(1);
 const CHOOSE_TIMEOUT: Duration = Duration::from_secs(5);
 const POLL: Duration = Duration::from_secs(5);
+const CANCEL_ATTEMPTS: u8 = 3;
+
+#[derive(Default)]
+struct Cancel {
+    attempts: u8,
+    in_flight: bool,
+}
 
 struct Entry {
     path: OwnedObjectPath,
@@ -40,6 +49,7 @@ struct Registry {
     sequence: u64,
     generation: Option<u64>,
     incarnation: Option<String>,
+    list_failures: u8,
 }
 
 #[derive(Clone)]
@@ -47,6 +57,7 @@ pub struct Bridge {
     client: Arc<SupervisedClient>,
     registry: Arc<Mutex<Registry>>,
     counter: Arc<AtomicU64>,
+    cancels: Arc<std::sync::Mutex<HashMap<String, Cancel>>>,
 }
 
 /// Splits the one native incoming lane without introducing another broker
@@ -99,6 +110,7 @@ impl Bridge {
             client,
             registry: Arc::default(),
             counter: handle::counter(),
+            cancels: Arc::default(),
         }
     }
 
@@ -114,12 +126,42 @@ impl Bridge {
     }
 
     fn cancel(&self, request: String, generation: Option<u64>) {
+        if generation.is_none() || settings::native::live_generation(&self.client) != generation {
+            return;
+        }
+        self.cancels.lock().unwrap().entry(request.clone()).or_default();
+        self.retry_cancel(request);
+    }
+
+    fn retry_cancel(&self, request: String) {
+        if settings::native::live_generation(&self.client).is_none() {
+            return;
+        }
+        {
+            let mut pending = self.cancels.lock().unwrap();
+            let Some(cancel) = pending.get_mut(&request) else { return };
+            if cancel.in_flight {
+                return;
+            }
+            cancel.in_flight = true;
+            cancel.attempts += 1;
+        }
         let this = self.clone();
         tokio::spawn(async move {
-            if generation.is_some() && settings::native::live_generation(&this.client) == generation
-            {
-                this.call("files.choose.cancel", json!({"request":request}))
-                    .await;
+            // Unknown, expired and already ended requests acknowledge with rc 0.
+            // Request ids include the incarnation, so retries across reconnects
+            // cannot cancel a new chooser that happens to reuse a sequence.
+            let acknowledged = this.call("files.choose.cancel", json!({"request":request})).await.is_some();
+            let mut pending = this.cancels.lock().unwrap();
+            if acknowledged {
+                pending.remove(&request);
+            } else if let Some(cancel) = pending.get_mut(&request) {
+                if cancel.attempts >= CANCEL_ATTEMPTS {
+                    tracing::warn!(%request, "files cancel retry budget exhausted");
+                    pending.remove(&request);
+                } else {
+                    cancel.in_flight = false;
+                }
             }
         });
     }
@@ -164,6 +206,7 @@ impl Bridge {
             self.apply(connection, registry, id, Event::Lost).await;
         }
         registry.incarnation = None;
+        registry.list_failures = 0;
     }
 
     /// A queued reply or publication can beat the state-watch arm after the
@@ -230,6 +273,12 @@ impl Bridge {
             .and_then(|v| v["request"].as_str())
             .map(str::to_owned);
         let mut registry = self.registry.lock().await;
+        // No native call was made when choose captured no generation. Its
+        // failure is final even if attach has since admitted a new generation.
+        if generation.is_none() {
+            self.apply(connection, &mut registry, id, Event::Reply(None)).await;
+            return;
+        }
         if !self.fence(connection, &mut registry).await {
             return;
         }
@@ -308,6 +357,23 @@ impl Bridge {
     }
 
     async fn poll(&self, connection: &Connection) {
+        let pending: Vec<_> = self.cancels.lock().unwrap().keys().cloned().collect();
+        for request in pending {
+            self.retry_cancel(request);
+        }
+        // A bounded NameOwnerChanged stream may overflow while apply holds the
+        // registry lock. Reconcile independently of files liveness and results.
+        let owners: std::collections::HashSet<_> = self.registry.lock().await.entries.values()
+            .map(|e| e.owner.clone()).collect();
+        if let Ok(proxy) = zbus::fdo::DBusProxy::new(connection).await {
+            for owner in owners {
+                if let Ok(name) = zbus::names::BusName::try_from(owner.clone())
+                    && matches!(tokio::time::timeout(IO_TIMEOUT, proxy.name_has_owner(name)).await, Ok(Ok(false)))
+                {
+                    self.owner_left(connection, &owner).await;
+                }
+            }
+        }
         let (generation, entries) = {
             let registry = self.registry.lock().await;
             (
@@ -338,7 +404,10 @@ impl Bridge {
         else {
             let mut registry = self.registry.lock().await;
             if registry.generation == generation {
-                self.lost(connection, &mut registry).await;
+                registry.list_failures += 1;
+                if registry.list_failures >= 2 {
+                    self.lost(connection, &mut registry).await;
+                }
             }
             return;
         };
@@ -347,6 +416,7 @@ impl Bridge {
             if registry.generation != generation {
                 return;
             }
+            registry.list_failures = 0;
             if registry
                 .incarnation
                 .as_deref()
@@ -463,8 +533,7 @@ impl Bridge {
                                 s.starts_with(&format!("{}/", handle::REQUEST_ROOT))
                             }) && let Some(id) = entry["request"].as_str()
                             {
-                                self.call("files.choose.cancel", json!({"request":id}))
-                                    .await;
+                                self.cancel(id.into(), Some(generation));
                             }
                         }
                     }

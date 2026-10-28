@@ -27,7 +27,9 @@ pub fn cut(value: &str, limit: usize) -> String {
 
 fn label(value: &str, limit: usize, key: &str) -> Option<String> {
     if value.is_empty() {
-        adjusted(key);
+        if !matches!(key, "title" | "accept_label") {
+            adjusted(key);
+        }
         return None;
     }
     if value.len() > limit {
@@ -390,6 +392,37 @@ pub fn outcome(value: &Json, had_choices: bool) -> (u32, Results) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn empty_title_and_accept_label_select_defaults_without_warning() {
+        #[derive(Clone, Default)]
+        struct Log(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+        impl std::io::Write for Log {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+        }
+        let log = Log::default();
+        let writer = log.clone();
+        let subscriber = tracing_subscriber::fmt().without_time().with_ansi(false)
+            .with_max_level(tracing::Level::WARN).with_writer(move || writer.clone()).finish();
+        let _guard = tracing::subscriber::set_default(subscriber);
+        let mut options = Options::new();
+        put(&mut options, "accept_label", Value::from(""));
+        let body = map("open", "", "", &options).unwrap();
+        assert!(body.get("title").is_none());
+        assert!(body.get("accept_label").is_none());
+        assert!(log.0.lock().unwrap().is_empty());
+        // Keep warning coverage for a real adjustment, and prove the capture
+        // was active rather than merely ignoring all tracing events.
+        map("open", "", &"x".repeat(257), &Options::new()).unwrap();
+        let bytes = log.0.lock().unwrap();
+        let text = String::from_utf8_lossy(&bytes);
+        assert!(text.contains("FileChooser option adjusted"));
+        assert!(text.contains("title"));
+    }
 
     fn put(options: &mut Options, key: &str, value: Value<'_>) {
         options.insert(key.into(), OwnedValue::try_from(value).unwrap());
