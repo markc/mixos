@@ -428,7 +428,7 @@ fn parse_choice(value: &Value) -> Result<Choice> {
 
 impl Request {
     /// Canonical Bus body, retaining non-UTF-8 names and locations exactly.
-    pub fn body(&self) -> Value {
+    pub fn body(&self) -> Result<Value> {
         let mut body = json!({
             "mode": self.mode, "title": self.title, "accept_label": self.accept_label,
             "parent_window": self.parent_window,
@@ -456,8 +456,7 @@ impl Request {
             ("current_file", &self.current_file),
         ] {
             if let Some(path) = value {
-                // Requests were validated at the boundary.
-                body[key] = json!(file_uri(path).expect("validated location"));
+                body[key] = json!(file_uri(path)?);
             }
         }
         if let Some(name) = &self.current_name {
@@ -471,7 +470,14 @@ impl Request {
                 body[key] = json!(value);
             }
         }
-        body
+        // Public fields may have been changed since parse(). Validate the wire
+        // shape again, including names, filters, choices and the total size.
+        Self::parse(&body.to_string(), &Defaults {
+            open_title: self.title.clone(), save_title: self.title.clone(),
+            save_files_title: self.title.clone(), open_accept: self.accept_label.clone(),
+            save_accept: self.accept_label.clone(),
+        })?;
+        Ok(body)
     }
 
     pub fn parse(body: &str, defaults: &Defaults) -> Result<Self> {

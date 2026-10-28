@@ -81,7 +81,9 @@ impl Portal {
             .at(path.as_str(), RequestObject(self.closed.clone()))
             .await
             .unwrap();
-        if let Some(code) = self.early {
+        if self.early == Some(99) {
+            connection.object_server().remove::<RequestObject, _>(path.as_str()).await.unwrap();
+        } else if let Some(code) = self.early {
             emit(connection, &sender, &path, code).await;
         }
         self.calls
@@ -380,4 +382,80 @@ async fn portal_response_zero_preserves_bytes_choices_and_filter() {
     assert_eq!(path_bytes(&paths[0]), b"/tmp/\xff.md");
     assert_eq!(choices["check"], "true");
     assert_eq!(current_filter.unwrap().name, "Text");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn portal_malformed_response_zero_is_final_in_the_handle() {
+    let (_process, address) = dbus();
+    let (_server, _calls, _) = serve(&address, Some(0)).await;
+    let mut handle = choose(request("{}").unwrap());
+    handle.driver = Some(Box::new(move |req, cancel, emitter| {
+        runtime().block_on(async {
+            let client = connection(&address).await;
+            let mut system_cancel = cancel.clone();
+            cascade(async { None }, async {
+                portal::session(&client, &req, &mut system_cancel).await.unwrap()
+            }, cancel, &emitter).await;
+        });
+    }));
+    let ctx = Context::default();
+    let outcome = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            if let Some(answer) = frame(&ctx, ViewportId::ROOT, &mut handle) { break answer; }
+            assert!(handle.fallback.is_none());
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }).await.unwrap();
+    assert!(matches!(outcome, Outcome::Failed(_)));
+    assert_eq!(handle.tier(), Tier::System);
+}
+
+#[test]
+fn portal_selected_filter_is_matched_by_name_after_backend_normalisation() {
+    let req = request(r#"{"filters":[{"name":"Text","patterns":["*.txt"],"mime_types":[]},{"name":"Markdown","patterns":["*.md"],"mime_types":["text/markdown"]}]}"#).unwrap();
+    let mut values = Options::new();
+    values.insert("uris".into(), OwnedValue::try_from(Value::from(vec!["file:///tmp/a.md"])).unwrap());
+    // A backend can serialise MIME/glob entries differently. The selected
+    // filter also differs from the request's initial current_filter.
+    values.insert("current_filter".into(), OwnedValue::try_from(Value::from(("Markdown", vec![(1u32, "text/markdown")]))).unwrap());
+    let Outcome::Chosen { current_filter, .. } = portal::decode(&req, 0, &values).unwrap() else { panic!() };
+    assert_eq!(current_filter, Some(req.filters[1].clone()));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn portal_dead_response_stream_is_rebuilt_once_before_close_recovery() {
+    let (_process, address) = dbus();
+    let (server, mut calls, closed) = serve(&address, None).await;
+    let client = connection(&address).await;
+    let (_tx, mut cancel) = watch::channel(false);
+    let task = tokio::spawn(async move {
+        portal::session_broken_stream(&client, &request("{}").unwrap(), &mut cancel, 1).await.unwrap()
+    });
+    let call = tokio::time::timeout(Duration::from_secs(5), calls.recv()).await.unwrap().unwrap();
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    emit(&server, &call.owner, &call.path, 1).await;
+    assert_eq!(tokio::time::timeout(Duration::from_secs(5), task).await.unwrap().unwrap(), Some(Outcome::Cancelled));
+    assert_eq!(closed.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn portal_recovery_close_of_an_ended_request_falls_through() {
+    let (_process, address) = dbus();
+    let (_server, mut calls, closed) = serve(&address, Some(99)).await;
+    let client = connection(&address).await;
+    let (_tx, mut cancel) = watch::channel(false);
+    let task = tokio::spawn(async move {
+        portal::session_broken_stream(&client, &request("{}").unwrap(), &mut cancel, 2).await
+    });
+    let _call = tokio::time::timeout(Duration::from_secs(5), calls.recv()).await.unwrap().unwrap();
+    assert!(tokio::time::timeout(Duration::from_secs(8), task).await.unwrap().unwrap().is_err());
+    assert_eq!(closed.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn portal_close_unknown_method_is_an_acknowledged_end() {
+    let (_process, address) = dbus();
+    let (server, _, _) = serve(&address, None).await;
+    let client = connection(&address).await;
+    assert!(portal::close(&client, server.unique_name().unwrap().as_str(), PATH).await.is_ok());
 }

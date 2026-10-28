@@ -2,6 +2,7 @@
 use super::*;
 use serde_json::json;
 mod native_tests;
+mod regression;
 #[cfg(all(target_os = "linux", feature = "portal"))]
 mod portal_tests;
 
@@ -64,8 +65,8 @@ fn cascade_waits_for_each_end_cancel_stops_and_failure_advances() {
         (
             Some(Outcome::Failed("BUSY".into())),
             Some(Outcome::Failed("Response 2".into())),
-            Tier::InProcess,
-            1,
+            Tier::Bus,
+            0,
         ),
         (None, None, Tier::InProcess, 1),
     ] {
@@ -110,9 +111,9 @@ fn cascade_waits_for_each_end_cancel_stops_and_failure_advances() {
 }
 
 #[test]
-fn cancel_is_final_and_every_failure_falls_through() {
+fn cancel_and_decode_failure_are_final() {
     assert!(final_outcome(&Some(Outcome::Cancelled)));
-    assert!(!final_outcome(&Some(Outcome::Failed("failure".into()))));
+    assert!(final_outcome(&Some(Outcome::Failed("failure".into()))));
     assert!(!final_outcome(&None));
 }
 
@@ -165,6 +166,6 @@ fn bus_outcome_refuses_shapes_not_offered() {
     ));
     assert!(matches!(
         decode_outcome(&request, &json!({"response":1,"reason":"caller"})),
-        Outcome::Failed(_)
+        Outcome::Cancelled
     ));
 }

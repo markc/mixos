@@ -7400,9 +7400,33 @@ Toolkit apps call `toolkit::choose(request)` and poll its handle in the
 opening viewport. It tries registered Bus `files` first, then the system
 chooser (direct FileChooser portal on Linux, rfd on Windows/macOS), then
 the in-process toolkit chooser. Each tier ends before the next starts;
-refusals and failures, including any portal Response 2, advance, while the
-person's Cancel is final. The handle sends the app's `correlation`, matches
-native outcomes by request id and recovers them with `files.choose.result`.
+refusals and provider failures, including portal Response 2, advance. Every
+cancel, including `reason: caller`, is final. An accepted Response 0 that
+cannot be decoded or validated is a final error reported to the app.
+The handle sends the app's `correlation` (generating a unique one if absent),
+matches native outcomes by request id and recovers them with
+`files.choose.result`. Lost acknowledgements are recovered by correlation
+in `files.choose.list`; any matching window is cancelled before fallback,
+even when `files.choose` returned an error after opening it.
+`on_behalf_of` is the opening viewport's app id, or the root app id when the
+secondary viewport has none.
+
+Toolkit uses the same five-second liveness sweep described under Losing a
+party: `files` missing from service discovery, two consecutive list failures,
+or a changed incarnation ends the tier. A lost provider gets one bounded
+best-effort cancel; an unreachable cancel never prevents fallback. A stalled
+`files.choose` acknowledgement is bounded to two seconds; cancellation or
+dropping the handle closes the known id or recovers it by correlation after
+that bound. A live chooser waiting for the person has no timeout.
+
+On Windows/macOS, rfd 0.17.2 exposes neither a session-availability probe nor
+an error distinct from Cancel. Its failed dialog is therefore a final Cancel;
+the toolkit cannot advance to tier 3 on that failure. rfd also exposes no
+Close operation: app cancellation or dropping the handle discards the answer
+but does **not** close its native dialog. The worker waits for that dialog to
+end and never opens a second one. rfd save results apply the request's
+`*.ext` save-name rule; rfd does not return the selected filter or custom
+choices. Linux probes the portal owner and interface version before use.
 
 The Bus service `files` is served by DOpus in chooser mode,
 `dopus --choose-service`, a session unit started with the desk. It has no main

@@ -280,6 +280,7 @@ impl FileChooser {
 
     /// Show above the current modal; return once the person picks or cancels.
     pub fn show(&mut self, ctx: &Context) -> Option<Outcome> {
+        let opening = !self.started;
         if !self.started {
             self.started = true;
             crate::menu::close(ctx);
@@ -367,7 +368,7 @@ impl FileChooser {
         let layer = egui::LayerId::new(egui::Order::Foreground, self.id);
         // Raising both areas gives them equal priority and can leave a
         // reopened replacement question behind the chooser.
-        if self.replace.is_none() && !egui::Popup::is_any_open(ctx) {
+        if self.replace.is_none() && (opening || !egui::Popup::is_any_open(ctx)) {
             ctx.move_to_top(layer);
         }
         let choices = vec![

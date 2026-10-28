@@ -59,6 +59,13 @@ impl Emitter {
     }
 }
 
+impl Drop for Emitter {
+    fn drop(&mut self) {
+        // Also wake on an unwinding/dead worker so poll observes Disconnected.
+        self.ctx.request_repaint_of(self.viewport);
+    }
+}
+
 /// Parse the Bus request shape with toolkit's translated mode defaults.
 pub fn request(body: &str) -> Result<Request, Refusal> {
     use crate::strings::own;
@@ -76,7 +83,10 @@ pub fn request(body: &str) -> Result<Request, Refusal> {
 
 /// Create a chooser. Poll it in the opening viewport's frame to bind and start
 /// it. Construction and polling never wait for I/O or join a worker.
-pub fn choose(request: Request) -> Handle {
+pub fn choose(mut request: Request) -> Handle {
+    if request.correlation.is_none() {
+        request.correlation = Some(format!("toolkit-{}", uuid::Uuid::now_v7()));
+    }
     let (cancel, _) = watch::channel(false);
     Handle {
         request,
@@ -120,9 +130,23 @@ impl Handle {
         if self.viewport.is_some_and(|id| id != ctx.viewport_id()) {
             return None;
         }
+        if *self.cancel.borrow() {
+            self.ended = true;
+            return Some(Outcome::Cancelled);
+        }
         if self.receiver.is_none() {
             let viewport = ctx.viewport_id();
             self.viewport = Some(viewport);
+            // eframe keeps the app id in the viewport builder. Secondary
+            // viewports may omit it, in which case use the root app's id.
+            self.request.on_behalf_of = ctx.viewport(|v| v.builder.app_id.clone())
+                .or_else(|| ctx.viewport_for(ViewportId::ROOT, |v| v.builder.app_id.clone()))
+                .or_else(crate::titlebar::app_id)
+                .or_else(|| self.request.on_behalf_of.clone());
+            if let Err(error) = self.request.body() {
+                self.ended = true;
+                return Some(Outcome::Failed(error.message));
+            }
             let (tx, rx) = mpsc::channel();
             self.receiver = Some(rx);
             let emitter = Emitter {
@@ -157,7 +181,17 @@ impl Handle {
                 return Some(Outcome::Failed(error.to_string()));
             }
         }
-        while let Ok(message) = self.receiver.as_ref().expect("started").try_recv() {
+        loop {
+            let message = match self.receiver.as_ref().expect("started").try_recv() {
+                Ok(message) => message,
+                Err(mpsc::TryRecvError::Empty) => break,
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    if self.fallback.is_none() {
+                        self.start_fallback();
+                    }
+                    break;
+                }
+            };
             match message {
                 Message::Tier(tier) => self.tier = tier,
                 Message::Answer(outcome) => {
@@ -165,10 +199,7 @@ impl Handle {
                     return Some(outcome);
                 }
                 Message::Fallback => {
-                    self.tier = Tier::InProcess;
-                    self.fallback = Some(crate::file_chooser::FileChooser::from_request(
-                        self.request.clone(),
-                    ));
+                    self.start_fallback();
                 }
             }
         }
@@ -181,11 +212,22 @@ impl Handle {
         self.ended = true;
         Some(outcome)
     }
+
+    fn start_fallback(&mut self) {
+        self.tier = Tier::InProcess;
+        self.fallback = Some(crate::file_chooser::FileChooser::from_request(self.request.clone()));
+    }
+
+    /// End this request. Native cancellation runs on the worker and is bounded
+    /// by discovery/recovery I/O; polling returns Cancelled exactly once.
+    pub fn cancel(&mut self) {
+        self.cancel.send_replace(true);
+    }
 }
 
 impl Drop for Handle {
     fn drop(&mut self) {
-        let _ = self.cancel.send(true);
+        self.cancel.send_replace(true);
     }
 }
 
@@ -226,6 +268,7 @@ async fn cascade(
     emitter.send(Message::Tier(Tier::Bus));
     let outcome = bus.await;
     if *cancel.borrow() {
+        emitter.send(Message::Answer(Outcome::Cancelled));
         return;
     }
     if final_outcome(&outcome) {
@@ -235,6 +278,7 @@ async fn cascade(
     emitter.send(Message::Tier(Tier::System));
     let outcome = system.await;
     if *cancel.borrow() {
+        emitter.send(Message::Answer(Outcome::Cancelled));
         return;
     }
     if final_outcome(&outcome) {
@@ -245,16 +289,13 @@ async fn cascade(
 }
 
 fn final_outcome(outcome: &Option<Outcome>) -> bool {
-    matches!(outcome, Some(Outcome::Chosen { .. } | Outcome::Cancelled))
+    outcome.is_some()
 }
 
 fn decode_outcome(request: &Request, value: &serde_json::Value) -> Outcome {
     use files::chooser::{Acceptance, location};
     let parsed = || -> anyhow::Result<Outcome> {
         match value["response"].as_u64() {
-            Some(1) if value["reason"] == "caller" => {
-                return Ok(Outcome::Failed("native chooser cancelled by caller".into()));
-            }
             Some(1) => return Ok(Outcome::Cancelled),
             Some(0) => {}
             _ => {
@@ -304,6 +345,23 @@ fn decode_outcome(request: &Request, value: &serde_json::Value) -> Outcome {
         })
     };
     parsed().unwrap_or_else(|e| Outcome::Failed(e.to_string()))
+}
+
+#[cfg(any(target_os = "windows", target_os = "macos", test))]
+fn platform_paths(request: &Request, mut paths: Vec<PathBuf>) -> Outcome {
+    if request.mode == Mode::Save {
+        for path in &mut paths {
+            let Some(name) = path.file_name() else {
+                return Outcome::Failed("save result has no filename".into());
+            };
+            let name = request.save_name(&path_bytes(Path::new(name)));
+            if let Err(error) = files::chooser::validate_name(&name) {
+                return Outcome::Failed(error.message);
+            }
+            path.set_file_name(path_from_bytes(&name));
+        }
+    }
+    Outcome::Chosen { paths, choices: request.choice_defaults(), current_filter: None }
 }
 
 #[cfg(unix)]

@@ -16,7 +16,7 @@ fn canonical_body_round_trips_all_modes_without_losing_bytes_or_defaults() {
             "files":["one.md",{"bytes":"%FF.md"}], "on_behalf_of":"test app"}),
     ] {
         let request = Request::parse(&body.to_string(), &defaults()).unwrap();
-        let reparsed = Request::parse(&request.body().to_string(), &defaults()).unwrap();
+        let reparsed = Request::parse(&request.body().unwrap().to_string(), &defaults()).unwrap();
         assert_eq!(request, reparsed);
     }
 }
@@ -29,6 +29,15 @@ fn defaults() -> Defaults {
         open_accept: "Open".into(),
         save_accept: "Save".into(),
     }
+}
+
+#[test]
+fn edited_locations_are_refused_without_panicking_in_body() {
+    let mut req = Request::parse("{}", &defaults()).unwrap();
+    req.current_folder = Some(b"relative\0".to_vec());
+    let result = std::panic::catch_unwind(|| req.body());
+    assert!(result.is_ok(), "a public Request edit must not kill its worker");
+    assert!(result.unwrap().is_err());
 }
 
 #[derive(Default)]

@@ -24,11 +24,20 @@ fn label(key: &str) -> String {
 
 /// An undecorated window for a MixOS app: the title bar is drawn by [`show`].
 pub fn viewport(app_id: &str, title: &str) -> ViewportBuilder {
+    // eframe does not copy its native root builder into egui's root state.
+    // Keep the first (application) id for services called from that context.
+    let _ = APP_ID.set(app_id.to_owned());
     ViewportBuilder::default()
         .with_min_inner_size(crate::window::MIN_SIZE)
         .with_app_id(app_id)
         .with_title(title)
         .with_decorations(false)
+}
+
+static APP_ID: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+pub(crate) fn app_id() -> Option<String> {
+    APP_ID.get().cloned()
 }
 
 fn maximized(ui: &Ui) -> bool {

@@ -62,6 +62,7 @@ async fn real_noded_early_topic_by_id_and_result_recovery() {
             let id = "0123456789abcdef-1";
             let outcome = json!({"request":id,"correlation":"compose-3","response":0,"uris":["file:///tmp/%FF.md"]});
             let answer = match command.command.as_str() {
+                "files.choose.list" => json!({"incarnation":"0123456789abcdef","requests":[]}),
                 "files.choose" => {
                     assert_eq!(body["correlation"], "compose-3");
                     if body["title"] == "Early" {
@@ -123,7 +124,9 @@ async fn slow_real_bus_intent_keeps_egui_frames_running_and_cancel_is_final() {
     let p = provider.clone();
     let task = tokio::spawn(async move {
         while let Some(command) = incoming.recv().await {
-            let value = if command.command == "files.choose" {
+            let value = if command.command == "files.choose.list" {
+                json!({"incarnation":"0123456789abcdef","requests":[]})
+            } else if command.command == "files.choose" {
                 started_tx.send(()).unwrap();
                 gate.notified().await;
                 json!({"request":"0123456789abcdef-1"})

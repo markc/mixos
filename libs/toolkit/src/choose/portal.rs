@@ -123,7 +123,7 @@ pub(super) async fn attempt(
         .ok()?;
     match session(&connection, request, cancel).await {
         Ok(outcome) => outcome,
-        Err(error) => Some(Outcome::Failed(error.to_string())),
+        Err(_) => None,
     }
 }
 
@@ -131,6 +131,15 @@ pub(super) async fn session(
     connection: &Connection,
     request: &Request,
     cancel: &mut watch::Receiver<bool>,
+) -> Result<Option<Outcome>> {
+    session_inner(connection, request, cancel, #[cfg(test)] 0).await
+}
+
+async fn session_inner(
+    connection: &Connection,
+    request: &Request,
+    cancel: &mut watch::Receiver<bool>,
+    #[cfg(test)] mut break_stream: u8,
 ) -> Result<Option<Outcome>> {
     let dbus = tokio::time::timeout(IO_BOUND, zbus::fdo::DBusProxy::new(connection)).await??;
     if !tokio::time::timeout(IO_BOUND, dbus.name_has_owner(DESKTOP.try_into()?)).await?? {
@@ -171,7 +180,7 @@ pub(super) async fn session(
         .build();
     let mut responses = tokio::time::timeout(
         IO_BOUND,
-        MessageStream::for_match_rule(rule, connection, Some(8)),
+        MessageStream::for_match_rule(rule.clone(), connection, Some(8)),
     )
     .await??;
     if *cancel.borrow() {
@@ -212,6 +221,7 @@ pub(super) async fn session(
         Err(_) => (predicted.try_into()?, true),
     };
     let mut responses_live = true;
+    let mut rebuilt = false;
     let mut sweep = tokio::time::interval(Duration::from_secs(5));
     sweep.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
@@ -220,21 +230,38 @@ pub(super) async fn session(
                 let _ = close(connection, owner.as_str(), actual.as_str()).await;
                 return Ok(None);
             }
-            next = responses.next(), if responses_live => {
+            next = async {
+                #[cfg(test)]
+                if break_stream > 0 { break_stream -= 1; return None; }
+                responses.next().await
+            }, if responses_live => {
                 let message = match next {
                     Some(Ok(message)) => message,
                     _ => {
                         // A broken signal stream alone is not permission to
                         // overlap the still open Request with another chooser.
+                        if !rebuilt {
+                            rebuilt = true;
+                            if let Ok(Ok(stream)) = tokio::time::timeout(IO_BOUND,
+                                MessageStream::for_match_rule(rule.clone(), connection, Some(8))).await {
+                                responses = stream;
+                                continue;
+                            }
+                        }
                         responses_live = false;
                         recovering = true;
                         continue;
                     }
                 };
                 if message.header().path().is_none_or(|p| p.as_str() != actual.as_str()) { continue; }
-                let (code, values): (u32, Options) = message.body().deserialize()?;
+                let (code, values): (u32, Options) = match message.body().deserialize() {
+                    Ok(body) => body,
+                    Err(error) => return Ok(Some(Outcome::Failed(error.to_string()))),
+                };
                 // Every Response, including 2, ends the Request before fallback.
-                return Ok(Some(decode(request, code, &values)?));
+                return Ok(if code == 2 { None } else {
+                    Some(decode(request, code, &values).unwrap_or_else(|e| Outcome::Failed(e.to_string())))
+                });
             }
             _ = sweep.tick() => {
                 if recovering && close(connection, owner.as_str(), actual.as_str()).await.is_ok() {
@@ -250,16 +277,21 @@ pub(super) async fn session(
     }
 }
 
-async fn close(connection: &Connection, owner: &str, path: &str) -> Result<()> {
-    tokio::time::timeout(
+pub(super) async fn close(connection: &Connection, owner: &str, path: &str) -> Result<()> {
+    let reply = tokio::time::timeout(
         IO_BOUND,
         connection.call_method(Some(owner), path, Some(REQUEST), "Close", &()),
     )
-    .await??;
-    Ok(())
+    .await?;
+    match reply {
+        Ok(_) => Ok(()),
+        Err(zbus::Error::MethodError(name, _, _)) if matches!(name.as_str(),
+            "org.freedesktop.DBus.Error.UnknownObject" | "org.freedesktop.DBus.Error.UnknownMethod") => Ok(()),
+        Err(error) => Err(error.into()),
+    }
 }
 
-fn decode(request: &Request, code: u32, values: &Options) -> Result<Outcome> {
+pub(super) fn decode(request: &Request, code: u32, values: &Options) -> Result<Outcome> {
     if code == 1 {
         return Ok(Outcome::Cancelled);
     }
@@ -281,10 +313,17 @@ fn decode(request: &Request, code: u32, values: &Options) -> Result<Outcome> {
         );
     }
     if let Some(current) = values.get("current_filter") {
-        let (name, entries) = WireFilter::try_from(current.try_clone()?)?;
-        value["current_filter"] = serde_json::json!({"name": name,
-            "patterns": entries.iter().filter(|(k, _)| *k == 0).map(|(_, s)| s).collect::<Vec<_>>(),
-            "mime_types": entries.iter().filter(|(k, _)| *k == 1).map(|(_, s)| s).collect::<Vec<_>>()});
+        let (name, _) = WireFilter::try_from(current.try_clone()?)?;
+        // GTK and KDE may normalise the tuple's entries. The displayed name
+        // identifies the offered filter; retain its original contract shape.
+        let selected = request.filters.iter().chain(request.current_filter.iter())
+            .find(|filter| filter.name == name).context("portal returned an unknown filter name")?;
+        value["current_filter"] = serde_json::to_value(selected)?;
     }
     Ok(decode_outcome(request, &value))
+}
+
+#[cfg(test)]
+pub(super) async fn session_broken_stream(connection: &Connection, request: &Request, cancel: &mut watch::Receiver<bool>, breaks: u8) -> Result<Option<Outcome>> {
+    session_inner(connection, request, cancel, breaks).await
 }
