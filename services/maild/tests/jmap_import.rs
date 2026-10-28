@@ -158,6 +158,7 @@ async fn email_set_contract_import_is_idempotent_on_blob_hash() {
     assert_eq!(got["receivedAt"], "2024-01-01T00:00:00.000Z");
     assert_eq!(first["created"]["a"]["blobId"], got["blobId"]);
     assert!(first["created"]["a"]["threadId"].is_string());
+    assert_eq!(first["created"]["a"]["threadId"], got["threadId"]);
     let changes = f.call("Email/changes", json!({"sinceState": first["oldState"]})).await;
     assert_eq!(changes["created"], json!([id]));
 }

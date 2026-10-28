@@ -578,6 +578,9 @@ pub async fn get(
     let mut list = Vec::with_capacity(records.len());
     for record in records {
         let mut val = record_to_jmap(&record);
+        if properties.as_ref().is_none_or(|p| p.iter().any(|p| p == "threadId")) {
+            val["threadId"] = mailstore.thread_for_email(account_id, record.id)?.0.into();
+        }
         if inspect_mime {
             // One message at a time bounds raw-buffer residency even for a
             // large Email/get. Parsing and file reads stay off the async loop.
