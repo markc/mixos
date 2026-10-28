@@ -108,6 +108,8 @@ fn body_content_matches_transfer_decoded_binary_octets() {
     let script = compile(r#"require "body"; if allof(body :content "image/gif" :comparator "i;octet" :contains "GIF89a",body :content "" :comparator "i;octet" :matches "GIF89a?",not body :content "image/gif" :comparator "i;octet" :is "GIF89a�",body :raw :contains "R0lG") { discard; }"#).unwrap();
     let data = b"Content-Type: image/gif\r\nContent-Transfer-Encoding: base64\r\n\r\nR0lGODlh/w==\r\n";
     assert!(script.evaluate(Context{data,from:"a",to:"b"}).unwrap().filings.is_empty());
+    let script = compile(r#"require "body"; if allof(body :raw :contains "aaab",not body :raw :contains "aaaaac",body :raw :contains "") { discard; }"#).unwrap();
+    assert!(script.evaluate(Context {data:b"Content-Type: application/octet-stream\r\n\r\naaaaabab\xff",from:"a",to:"b"}).unwrap().filings.is_empty());
 }
 #[test]
 fn variables_expansion_modifiers_and_string_test() {
@@ -346,4 +348,16 @@ fn body_transform_work_is_bounded_when_decoded_text_is_empty() {
     let data = format!("Content-Type: text/html\r\n\r\n<!--{}-->", "x".repeat(1024*1024));
     let source = format!("require \"body\"; {}", "if body :contains \"never\" { discard; }".repeat(30));
     assert!(compile(&source).unwrap().evaluate(Context {data:data.as_bytes(),from:"a",to:"b"}).is_err());
+}
+#[test]
+fn header_and_expansion_allocations_are_bounded_before_matching() {
+    let data = format!("Subject: {}\r\n\r\nbody", "x".repeat(1024*1024));
+    let names = vec!["\"Subject\"";16].join(",");
+    let script = compile(&format!("if header :contains [{names}] \"x\" {{ discard; }}")).unwrap();
+    assert!(script.evaluate(Context {data:data.as_bytes(),from:"a",to:"b"}).is_err());
+    let values = vec!["\"${x}\"";400].join(",");
+    let source = format!("require \"variables\"; set \"x\" \"{}\"; if string :is [{values}] \"${{x}}\" {{ discard; }}", "x".repeat(30000));
+    assert!(compile(&source).unwrap().evaluate(Context {data:MESSAGE,from:"a",to:"b"}).is_err());
+    let source = format!("require \"variables\"; set \"x\" \"{}\"; {}", "x".repeat(30000),"set \"x\" \"${x}\";".repeat(400));
+    assert!(compile(&source).unwrap().evaluate(Context {data:MESSAGE,from:"a",to:"b"}).is_err());
 }

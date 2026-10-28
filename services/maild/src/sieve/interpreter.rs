@@ -669,6 +669,8 @@ impl Script {
 }
 impl Eval<'_> {
     fn set_variable(&mut self, key: String, value: String) -> Result<()> {
+        self.steps += value.len()/1024+1;
+        ensure!(self.steps <= MAX_STEPS,"variable allocation work limit");
         let bytes = self.variable_bytes - self.variables.get(&key).map(String::len).unwrap_or(0)
             + value.len();
         ensure!(bytes <= 1024 * 1024, "variable storage limit");
@@ -730,8 +732,15 @@ impl Eval<'_> {
         ensure!(out.len() <= MAX_SCRIPT_BYTES, "expanded string limit");
         Ok(out)
     }
-    fn expanded(&self, values: &[String]) -> Result<Vec<String>> {
-        values.iter().map(|s| self.expand(s)).collect()
+    fn expanded(&mut self, values: &[String]) -> Result<Vec<String>> {
+        let mut result = Vec::new();
+        for value in values {
+            let value = self.expand(value)?;
+            self.steps += value.len()/1024+1;
+            ensure!(self.steps <= MAX_STEPS,"expansion allocation limit");
+            result.push(value);
+        }
+        Ok(result)
     }
     fn code(&mut self, code: &[Statement]) -> Result<()> {
         for statement in code {
@@ -944,9 +953,12 @@ impl Eval<'_> {
                 }
                 let names = self.expanded(&args.values[0])?;
                 if name == "exists" {
-                    return Ok(names
-                        .iter()
-                        .all(|n| self.message.header(n.as_str()).is_some()));
+                    for name in names {
+                        self.steps += self.context.data.len()/1024+1;
+                        ensure!(self.steps <= MAX_STEPS,"header scan limit");
+                        if self.message.header(name.as_str()).is_none() { return Ok(false); }
+                    }
+                    return Ok(true);
                 }
                 if name == "mailboxexists" {
                     for name in names {
@@ -962,25 +974,32 @@ impl Eval<'_> {
                 match name.as_str() {
                     "header" => {
                         for n in &names {
-                            let mut headers: Vec<String> = self
+                            self.steps += self.context.data.len()/1024+1;
+                            ensure!(self.steps <= MAX_STEPS,"header scan limit");
+                            let mut headers: Vec<&str> = self
                                 .text_headers
                                 .iter()
                                 .filter(|(name, _)| name.eq_ignore_ascii_case(n))
-                                .map(|(_, value)| value.clone())
+                                .map(|(_, value)| value.as_str())
                                 .collect();
                             if let Some(index) = args.tag("index") {
                                 let index = index.parse::<usize>()?;
                                 if args.has("last") {
                                     headers.reverse();
                                 }
-                                values.extend(headers.into_iter().nth(index - 1));
-                            } else {
-                                values.extend(headers);
+                                headers = headers.into_iter().nth(index-1).into_iter().collect();
+                            }
+                            for header in headers {
+                                self.steps += header.len()/1024+1;
+                                ensure!(self.steps <= MAX_STEPS,"header allocation limit");
+                                values.push(header.to_string());
                             }
                         }
                     }
                     "address" => {
                         for n in &names {
+                            self.steps += self.context.data.len()/1024+1;
+                            ensure!(self.steps <= MAX_STEPS,"address scan limit");
                             // Parse arbitrary address headers with the same MIME parser.
                             let mut headers: Vec<_> = self
                                 .message
@@ -1030,6 +1049,8 @@ impl Eval<'_> {
                             octets.push(self.context.data[start..].to_vec());
                         } else {
                             for part in &self.message.parts {
+                                self.steps += content_types.as_ref().map_or(1,Vec::len);
+                                ensure!(self.steps <= MAX_STEPS,"MIME selector work limit");
                                 let content_type = part
                                     .content_type()
                                     .map(|ct| {
@@ -1138,6 +1159,8 @@ impl Eval<'_> {
     }
     fn flag_values(&mut self, raw: &[String]) -> Result<Vec<String>> {
         let mut values = BTreeMap::new();
+        self.steps += raw.iter().map(String::len).sum::<usize>()/1024;
+        ensure!(self.steps <= MAX_STEPS,"flag scan work limit");
         for flag in raw.iter().flat_map(|s| s.split_whitespace()) {
             self.step()?;
             if valid_flag(flag) {
@@ -1163,7 +1186,7 @@ impl Eval<'_> {
             return Ok(match op { "gt"=>order.is_gt(),"ge"=>order.is_ge(),"lt"=>order.is_lt(),"le"=>order.is_le(),"eq"=>order.is_eq(),"ne"=>order.is_ne(),_=>unreachable!() });
         }
         if args.has("matches") { glob_octets(&value,&key,&mut self.steps) }
-        else if args.has("contains") { Ok(key.is_empty() || value.windows(key.len()).any(|part|part==key)) }
+        else if args.has("contains") { Ok(contains_octets(&value,&key)) }
         else if numeric { Ok(numeric_key(&String::from_utf8_lossy(&value)) == numeric_key(&String::from_utf8_lossy(&key))) }
         else { Ok(value==key) }
     }
@@ -1240,6 +1263,26 @@ fn numeric_key(s: &str) -> (bool, usize, String) {
     let digits: String = s.chars().take_while(char::is_ascii_digit).collect();
     let significant = digits.trim_start_matches('0').to_string();
     (digits.is_empty(), significant.len(), significant)
+}
+
+/// Linear-time substring matching; repeated near-matches in a binary body must
+/// not multiply the byte-work budget by the key length.
+fn contains_octets(value: &[u8], key: &[u8]) -> bool {
+    if key.is_empty() { return true; }
+    let mut prefix = vec![0;key.len()];
+    let mut matched = 0;
+    for i in 1..key.len() {
+        while matched > 0 && key[i] != key[matched] { matched = prefix[matched-1]; }
+        if key[i] == key[matched] { matched += 1; }
+        prefix[i] = matched;
+    }
+    matched = 0;
+    for byte in value {
+        while matched > 0 && *byte != key[matched] { matched = prefix[matched-1]; }
+        if *byte == key[matched] { matched += 1; }
+        if matched == key.len() { return true; }
+    }
+    false
 }
 
 /// Body octets have no capture side effects. Match byte units without a UTF-8
