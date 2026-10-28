@@ -76,7 +76,10 @@ impl Request {
 }
 
 fn address(value: &str) -> Result<()> {
-    ensure!(crate::smtp::envelope::valid_address(value, false), "invalid mailbox address");
+    ensure!(
+        crate::smtp::envelope::valid_address(value, false),
+        "invalid mailbox address"
+    );
     Ok(())
 }
 
@@ -143,7 +146,9 @@ pub async fn dispatch(
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct StatusRequest { id: uuid::Uuid }
+struct StatusRequest {
+    id: uuid::Uuid,
+}
 
 /// Durable queue outcomes, retained after delivery/bounce and across restarts.
 pub async fn status(cmd: &IncomingCommand, db: &Db) -> (u8, String) {
@@ -167,8 +172,8 @@ pub async fn status(cmd: &IncomingCommand, db: &Db) -> (u8, String) {
         }).await?
     }.await;
     match result {
-        Ok(value) => (0,value.to_string()),
-        Err(e) => (10,json!({"error":e.to_string()}).to_string()),
+        Ok(value) => (0, value.to_string()),
+        Err(e) => (10, json!({"error":e.to_string()}).to_string()),
     }
 }
 

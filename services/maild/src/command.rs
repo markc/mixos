@@ -896,14 +896,19 @@ async fn run_account_cli(action: AccountAction) -> Result<()> {
             if rc == 0 {
                 match serde_json::from_str::<serde_json::Value>(&body_str) {
                     Ok(mut resp) => {
-                        let (id_rc, id_body, _) = client.call_with_headers_raw(
-                            "maild", "maild.accounts.lookup", &BTreeMap::new(),
-                            &serde_json::json!({"email":email}).to_string(),
-                        ).await?;
+                        let (id_rc, id_body, _) = client
+                            .call_with_headers_raw(
+                                "maild",
+                                "maild.accounts.lookup",
+                                &BTreeMap::new(),
+                                &serde_json::json!({"email":email}).to_string(),
+                            )
+                            .await?;
                         anyhow::ensure!(id_rc == 0, "account id lookup failed: {id_body}");
                         let stats: serde_json::Value = serde_json::from_str(&id_body)?;
-                        resp["account_id"] = stats.get("account_id").cloned()
-                            .ok_or_else(|| anyhow::anyhow!("account statistics omitted numeric id"))?;
+                        resp["account_id"] = stats.get("account_id").cloned().ok_or_else(|| {
+                            anyhow::anyhow!("account statistics omitted numeric id")
+                        })?;
                         let pretty = serde_json::to_string_pretty(&resp)
                             .unwrap_or_else(|_| body_str.clone());
                         println!("{pretty}");
@@ -1358,13 +1363,21 @@ async fn run_alias_cli(action: AliasAction) -> Result<()> {
             headers.insert("key".to_string(), alias.clone());
             headers.insert("merge".to_string(), "replace".to_string());
             let (get_rc, get_body, _) = client
-                .call_with_headers_raw("maild", "maild.props.get", &headers, "").await?;
+                .call_with_headers_raw("maild", "maild.props.get", &headers, "")
+                .await?;
             let prior: serde_json::Value = serde_json::from_str(&get_body)?;
             let version = if get_rc == 0 {
-                if !replace { anyhow::bail!("alias {alias} already exists; use `maild alias set` to repoint"); }
-                prior["version"].as_u64().ok_or_else(|| anyhow::anyhow!("missing alias version"))?
+                if !replace {
+                    anyhow::bail!("alias {alias} already exists; use `maild alias set` to repoint");
+                }
+                prior["version"]
+                    .as_u64()
+                    .ok_or_else(|| anyhow::anyhow!("missing alias version"))?
             } else {
-                anyhow::ensure!(prior["error_code"] == "not_found", "alias lookup failed: {get_body}");
+                anyhow::ensure!(
+                    prior["error_code"] == "not_found",
+                    "alias lookup failed: {get_body}"
+                );
                 0
             };
             headers.insert("if_version".to_string(), version.to_string());
@@ -1376,16 +1389,21 @@ async fn run_alias_cli(action: AliasAction) -> Result<()> {
             // against that exact version (a racing resurrection still loses CAS).
             let failure: serde_json::Value = serde_json::from_str(&resp_body)?;
             if get_rc != 0 && failure["error_code"] == "version_mismatch" {
-                let anchor = failure["current_version"].as_u64()
+                let anchor = failure["current_version"]
+                    .as_u64()
                     .ok_or_else(|| anyhow::anyhow!("missing tombstone version"))?;
                 let (check_rc, check_body, _) = client
-                    .call_with_headers_raw("maild", "maild.props.get", &headers, "").await?;
+                    .call_with_headers_raw("maild", "maild.props.get", &headers, "")
+                    .await?;
                 let check: serde_json::Value = serde_json::from_str(&check_body)?;
-                anyhow::ensure!(check_rc != 0 && check["error_code"] == "not_found",
-                    "alias changed concurrently; retry the command");
+                anyhow::ensure!(
+                    check_rc != 0 && check["error_code"] == "not_found",
+                    "alias changed concurrently; retry the command"
+                );
                 headers.insert("if_version".into(), anchor.to_string());
                 (rc, resp_body, _) = client
-                    .call_with_headers_raw("maild", "maild.props.set", &headers, &body).await?;
+                    .call_with_headers_raw("maild", "maild.props.set", &headers, &body)
+                    .await?;
             }
             if rc == 0 {
                 println!("Set alias {alias} -> {}", targets.join(", "));
@@ -1454,9 +1472,16 @@ async fn run_alias_cli(action: AliasAction) -> Result<()> {
                         .and_then(|f| f.get("target"))
                         .and_then(|v| v.as_str())
                         .unwrap_or("");
-                    let target = fields.and_then(|f| f.get("targets")).and_then(|v| v.as_array())
+                    let target = fields
+                        .and_then(|f| f.get("targets"))
+                        .and_then(|v| v.as_array())
                         .filter(|v| !v.is_empty())
-                        .map(|v| v.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>().join(", "))
+                        .map(|v| {
+                            v.iter()
+                                .filter_map(|v| v.as_str())
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        })
                         .unwrap_or_else(|| legacy_target.to_string());
                     let enabled = fields
                         .and_then(|f| f.get("enabled"))
@@ -2588,19 +2613,31 @@ mod cli_parser_tests {
 
     #[test]
     fn alias_set_and_catchall_accept_multiple_targets() {
-        for verb in ["add","set"] {
-            let cli = parse(&["maild","alias",verb,"@example.com","alice@example.com","bob@example.com"]).unwrap();
+        for verb in ["add", "set"] {
+            let cli = parse(&[
+                "maild",
+                "alias",
+                verb,
+                "@example.com",
+                "alice@example.com",
+                "bob@example.com",
+            ])
+            .unwrap();
             match cli.command {
-                Command::Alias {action: AliasAction::Add {alias,target} | AliasAction::Set {alias,target}} => {
-                    assert_eq!(alias,"@example.com");
-                    assert_eq!(target,vec!["alice@example.com","bob@example.com"]);
+                Command::Alias {
+                    action: AliasAction::Add { alias, target } | AliasAction::Set { alias, target },
+                } => {
+                    assert_eq!(alias, "@example.com");
+                    assert_eq!(target, vec!["alice@example.com", "bob@example.com"]);
                 }
                 _ => panic!("expected alias mutation"),
             }
         }
-        assert!(parse(&["maild","alias","set","sales@example.com"]).is_err());
-        assert!(matches!(parse(&["maild","dkim","check","example.com"]).unwrap().command,
-            Command::Dkim {action:DkimAction::Check {domain}} if domain == "example.com"));
+        assert!(parse(&["maild", "alias", "set", "sales@example.com"]).is_err());
+        assert!(
+            matches!(parse(&["maild","dkim","check","example.com"]).unwrap().command,
+            Command::Dkim {action:DkimAction::Check {domain}} if domain == "example.com")
+        );
     }
 
     // --- dkim generate / rotate / retire ------------------------------

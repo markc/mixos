@@ -470,7 +470,14 @@ async fn process_queue(state: &SmtpState, resolver: &TokioResolver) -> Result<us
         let mut deferred = false;
         for recipient in &pending {
             let Some((_, domain)) = recipient.rsplit_once('@') else {
-                queue::recipient_result(&state.db.conn, entry.id, recipient, "bounced", "553 5.1.3 Invalid recipient").await?;
+                queue::recipient_result(
+                    &state.db.conn,
+                    entry.id,
+                    recipient,
+                    "bounced",
+                    "553 5.1.3 Invalid recipient",
+                )
+                .await?;
                 continue;
             };
             // One transaction per recipient: every SMTP reply has an unambiguous
@@ -488,7 +495,14 @@ async fn process_queue(state: &SmtpState, resolver: &TokioResolver) -> Result<us
             .await
             {
                 Ok(reply) => {
-                    queue::recipient_result(&state.db.conn, entry.id, recipient, "delivered", &reply).await?;
+                    queue::recipient_result(
+                        &state.db.conn,
+                        entry.id,
+                        recipient,
+                        "delivered",
+                        &reply,
+                    )
+                    .await?;
                     tracing::info!(
                         queue_id = entry.id,
                         domain = domain,
@@ -526,7 +540,14 @@ async fn process_queue(state: &SmtpState, resolver: &TokioResolver) -> Result<us
                                 crate::maillog::sanitize(&e.to_string()),
                             );
                         }
-                        queue::recipient_result(&state.db.conn, entry.id, recipient, "bounced", &e.to_string()).await?;
+                        queue::recipient_result(
+                            &state.db.conn,
+                            entry.id,
+                            recipient,
+                            "bounced",
+                            &e.to_string(),
+                        )
+                        .await?;
 
                         // Generate and deliver bounce to sender
                         if let Err(be) = generate_bounce(
@@ -540,7 +561,14 @@ async fn process_queue(state: &SmtpState, resolver: &TokioResolver) -> Result<us
                             tracing::warn!(error = %be, "Failed to generate bounce");
                         }
                     } else {
-                        queue::recipient_result(&state.db.conn, entry.id, recipient, "deferred", &e.to_string()).await?;
+                        queue::recipient_result(
+                            &state.db.conn,
+                            entry.id,
+                            recipient,
+                            "deferred",
+                            &e.to_string(),
+                        )
+                        .await?;
                         deferred = true;
                     }
                 }
@@ -568,9 +596,9 @@ async fn generate_bounce(state: &SmtpState, from: &str, to: &[String], error: &s
     // must still bounce to the alias's target account. Resolve `from`
     // for the is-local gate; the `deliver` call below passes the
     // original `from` and re-resolves the recipient itself.
-    let accounts = crate::props::aliases::recipient_accounts(
-        &state.aliases_runtime, &state.db.conn, from,
-    ).await?;
+    let accounts =
+        crate::props::aliases::recipient_accounts(&state.aliases_runtime, &state.db.conn, from)
+            .await?;
     if !accounts.is_empty() {
         // Bounce goes to the *original sender*, so the Message-ID
         // identifies our domain as the sender sees us. Lookup keyed
@@ -957,7 +985,16 @@ async fn try_deliver_session(
     }
 
     // Plaintext delivery (no STARTTLS or STARTTLS failed gracefully)
-    deliver_message(&mut reader, &mut writer, host, from, recipients, data, &ehlo_resp).await
+    deliver_message(
+        &mut reader,
+        &mut writer,
+        host,
+        from,
+        recipients,
+        data,
+        &ehlo_resp,
+    )
+    .await
 }
 
 /// Send MAIL FROM, RCPT TO, DATA on an already-greeted SMTP connection.
@@ -979,14 +1016,24 @@ where
     let utf8 = super::envelope::needs_smtputf8(from, recipients, data);
     let eight_bit = !data.is_ascii();
     if utf8 && !super::envelope::has_extension(ehlo, "SMTPUTF8") {
-        return Err(PermanentFailure(format!("550 5.6.7 {host} does not offer SMTPUTF8; message cannot be downgraded")).into());
+        return Err(PermanentFailure(format!(
+            "550 5.6.7 {host} does not offer SMTPUTF8; message cannot be downgraded"
+        ))
+        .into());
     }
     if eight_bit && !super::envelope::has_extension(ehlo, "8BITMIME") {
-        return Err(PermanentFailure(format!("550 5.6.3 {host} does not offer 8BITMIME; message cannot be downgraded")).into());
+        return Err(PermanentFailure(format!(
+            "550 5.6.3 {host} does not offer 8BITMIME; message cannot be downgraded"
+        ))
+        .into());
     }
     let mut mail = format!("MAIL FROM:<{from}>");
-    if utf8 { mail.push_str(" SMTPUTF8"); }
-    if eight_bit { mail.push_str(" BODY=8BITMIME"); }
+    if utf8 {
+        mail.push_str(" SMTPUTF8");
+    }
+    if eight_bit {
+        mail.push_str(" BODY=8BITMIME");
+    }
     send_cmd(writer, &mail).await?;
     let resp = read_response(reader).await?;
     if !resp.starts_with('2') {
@@ -1787,44 +1834,100 @@ mod rcpt_rejection_tests {
     async fn smtputf8_and_8bitmime_outbound_wire_negotiation() {
         use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
         for (extensions, from, data, expected) in [
-            ("250-8BITMIME\r\n250 SMTPUTF8", "élise@example.com", "Subject: café\r\n\r\nbody\r\n", Some(" SMTPUTF8 BODY=8BITMIME")),
-            ("250 8BITMIME", "a@example.com", "Subject: ASCII\r\n\r\ncafé\r\n", Some(" BODY=8BITMIME")),
-            ("250 8BITMIME", "a@example.com", "Subject: café\r\n\r\nbody\r\n", None),
-            ("250 SMTPUTF8", "élise@example.com", "Subject: café\r\n\r\nbody\r\n", None),
-            ("250 ok", "a@example.com", "Subject: ASCII\r\n\r\nbody\r\n", Some("")),
+            (
+                "250-8BITMIME\r\n250 SMTPUTF8",
+                "élise@example.com",
+                "Subject: café\r\n\r\nbody\r\n",
+                Some(" SMTPUTF8 BODY=8BITMIME"),
+            ),
+            (
+                "250 8BITMIME",
+                "a@example.com",
+                "Subject: ASCII\r\n\r\ncafé\r\n",
+                Some(" BODY=8BITMIME"),
+            ),
+            (
+                "250 8BITMIME",
+                "a@example.com",
+                "Subject: café\r\n\r\nbody\r\n",
+                None,
+            ),
+            (
+                "250 SMTPUTF8",
+                "élise@example.com",
+                "Subject: café\r\n\r\nbody\r\n",
+                None,
+            ),
+            (
+                "250 ok",
+                "a@example.com",
+                "Subject: ASCII\r\n\r\nbody\r\n",
+                Some(""),
+            ),
         ] {
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             let addr = listener.local_addr().unwrap();
             let peer = tokio::spawn(async move {
-                let (stream,_) = listener.accept().await.unwrap();
+                let (stream, _) = listener.accept().await.unwrap();
                 let mut io = BufReader::new(stream);
-                io.get_mut().write_all(b"220 mx.example.net\r\n").await.unwrap();
+                io.get_mut()
+                    .write_all(b"220 mx.example.net\r\n")
+                    .await
+                    .unwrap();
                 let mut wire = String::new();
                 let mut body = false;
                 loop {
                     let mut line = String::new();
-                    if io.read_line(&mut line).await.unwrap() == 0 { break; }
+                    if io.read_line(&mut line).await.unwrap() == 0 {
+                        break;
+                    }
                     wire.push_str(&line);
                     let reply = if body {
-                        if line == ".\r\n" {body=false; "250 stored\r\n".to_string()} else {continue;}
-                    } else if line.starts_with("EHLO") {format!("250-mx.example.net\r\n{extensions}\r\n")}
-                    else if line.starts_with("DATA") {body=true; "354 send\r\n".into()}
-                    else if line.starts_with("QUIT") {break;}
-                    else {"250 ok\r\n".into()};
+                        if line == ".\r\n" {
+                            body = false;
+                            "250 stored\r\n".to_string()
+                        } else {
+                            continue;
+                        }
+                    } else if line.starts_with("EHLO") {
+                        format!("250-mx.example.net\r\n{extensions}\r\n")
+                    } else if line.starts_with("DATA") {
+                        body = true;
+                        "354 send\r\n".into()
+                    } else if line.starts_with("QUIT") {
+                        break;
+                    } else {
+                        "250 ok\r\n".into()
+                    };
                     io.get_mut().write_all(reply.as_bytes()).await.unwrap();
                 }
                 wire
             });
             let stream = tokio::net::TcpStream::connect(addr).await.unwrap();
             let recipient = "b@example.net".to_string();
-            let result = try_deliver_session(stream,"mx.example.net","mail.example.com",from,&[&recipient],data.as_bytes(),TlsPolicy::Verify).await;
+            let result = try_deliver_session(
+                stream,
+                "mx.example.net",
+                "mail.example.com",
+                from,
+                &[&recipient],
+                data.as_bytes(),
+                TlsPolicy::Verify,
+            )
+            .await;
             let wire = peer.await.unwrap();
             if let Some(parameters) = expected {
-                assert!(result.is_ok(),"{result:?}");
-                assert!(wire.contains(&format!("MAIL FROM:<{from}>{parameters}\r\n")),"{wire}");
+                assert!(result.is_ok(), "{result:?}");
+                assert!(
+                    wire.contains(&format!("MAIL FROM:<{from}>{parameters}\r\n")),
+                    "{wire}"
+                );
             } else {
                 assert!(is_permanent(&result.unwrap_err()));
-                assert!(!wire.contains("MAIL FROM"),"must fail before offering an unsupported message: {wire}");
+                assert!(
+                    !wire.contains("MAIL FROM"),
+                    "must fail before offering an unsupported message: {wire}"
+                );
             }
         }
     }

@@ -552,7 +552,10 @@ where
 
         let line = match std::str::from_utf8(&buf) {
             Ok(line) => line,
-            Err(_) => { write_line(writer, "501 5.6.7 Invalid UTF-8 command").await?; continue; }
+            Err(_) => {
+                write_line(writer, "501 5.6.7 Invalid UTF-8 command").await?;
+                continue;
+            }
         };
         let line = line.trim_end();
 
@@ -677,12 +680,23 @@ where
                     Some(addr) => {
                         session.reset_transaction();
                         let parameters = mail_parameters(args);
-                        let smtp_utf8 = parameters.iter().any(|p| p.eq_ignore_ascii_case("SMTPUTF8"));
+                        let smtp_utf8 = parameters
+                            .iter()
+                            .any(|p| p.eq_ignore_ascii_case("SMTPUTF8"));
                         if parameters.iter().any(|p| {
                             let p = p.to_ascii_uppercase();
-                            p != "SMTPUTF8" && p != "BODY=8BITMIME" && p != "BODY=7BIT"
-                                && !p.strip_prefix("SIZE=").is_some_and(|n| n.parse::<usize>().is_ok())
-                        }) || parameters.iter().filter(|p| p.eq_ignore_ascii_case("SMTPUTF8")).count() > 1 {
+                            p != "SMTPUTF8"
+                                && p != "BODY=8BITMIME"
+                                && p != "BODY=7BIT"
+                                && !p
+                                    .strip_prefix("SIZE=")
+                                    .is_some_and(|n| n.parse::<usize>().is_ok())
+                        }) || parameters
+                            .iter()
+                            .filter(|p| p.eq_ignore_ascii_case("SMTPUTF8"))
+                            .count()
+                            > 1
+                        {
                             write_line(writer, "555 5.5.4 Unsupported MAIL parameter").await?;
                             continue;
                         }
@@ -967,7 +981,9 @@ fn mail_parameters(args: &str) -> Vec<&str> {
     let parameters = if rest.starts_with('<') {
         rest.find('>').map(|end| &rest[end + 1..]).unwrap_or("")
     } else {
-        rest.split_once(char::is_whitespace).map(|(_, p)| p).unwrap_or("")
+        rest.split_once(char::is_whitespace)
+            .map(|(_, p)| p)
+            .unwrap_or("")
     };
     parameters.split_ascii_whitespace().collect()
 }

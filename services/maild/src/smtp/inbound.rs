@@ -347,14 +347,17 @@ pub async fn deliver(
         // what the sender wrote — only the account follows the alias).
         // `?` propagates a transient alias-store error so delivery is
         // retried rather than silently treating the alias as non-local.
-        let accounts = crate::props::aliases::recipient_accounts(
-            &state.aliases_runtime, &state.db.conn, rcpt,
-        ).await?;
+        let accounts =
+            crate::props::aliases::recipient_accounts(&state.aliases_runtime, &state.db.conn, rcpt)
+                .await?;
         if accounts.is_empty() {
             remote_addrs.push(rcpt.clone());
         } else {
             for account in accounts {
-                if !local_recipients.iter().any(|(_, existing, _)| existing.id == account.id) {
+                if !local_recipients
+                    .iter()
+                    .any(|(_, existing, _)| existing.id == account.id)
+                {
                     local_recipients.push((rcpt.clone(), account, None));
                 }
             }

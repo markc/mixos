@@ -215,21 +215,26 @@ async fn create_submission(
     let mut delivered_accounts = std::collections::BTreeSet::new();
     let mut recipients_seen = std::collections::BTreeSet::new();
     for addr in &to_addrs {
-        if !recipients_seen.insert(addr) { continue; }
+        if !recipients_seen.insert(addr) {
+            continue;
+        }
         // Phase 1 aliases: resolve the recipient through `maild.aliases`
         // BEFORE the local-vs-remote classification, so a JMAP client
         // sending to a local alias delivers locally to the alias target
         // instead of being queued outbound. The original `addr` is kept
         // for the envelope/logs; only the account lookup follows the
         // alias.
-        let accounts = crate::props::aliases::recipient_accounts(aliases_runtime, &db.conn, addr).await?;
+        let accounts =
+            crate::props::aliases::recipient_accounts(aliases_runtime, &db.conn, addr).await?;
         if accounts.is_empty() {
             remote_addrs.push(addr.clone());
         }
         let local = !accounts.is_empty();
         let mut local_error = None;
         for rcpt_account in accounts {
-            if delivered_accounts.contains(&rcpt_account.id) { continue; }
+            if delivered_accounts.contains(&rcpt_account.id) {
+                continue;
+            }
             // Local delivery via MailStore: bytes are already in the
             // shared CAS (the email is account-scoped to the sender,
             // so its `blob_hash` reads directly through the shared
@@ -290,7 +295,10 @@ async fn create_submission(
                 Some(error) => ("bounced", error),
                 None => ("delivered", "250 2.0.0 Local delivery completed".into()),
             };
-            let conn = db.conn.lock().map_err(|e| anyhow::anyhow!("lock error: {e}"))?;
+            let conn = db
+                .conn
+                .lock()
+                .map_err(|e| anyhow::anyhow!("lock error: {e}"))?;
             conn.execute("INSERT INTO smtp_delivery(submission_id,recipient,status,last_reply) VALUES(?1,?2,?3,?4)",
                 rusqlite::params![submission_id.to_string(),addr,status,reply])?;
         }
@@ -304,9 +312,14 @@ async fn create_submission(
         let queue_id =
             crate::smtp::queue::enqueue(&db.conn, &from_addr, &remote_addrs, blob_hash).await?;
         {
-            let conn = db.conn.lock().map_err(|e| anyhow::anyhow!("lock error: {e}"))?;
-            conn.execute("UPDATE smtp_delivery SET submission_id=?2 WHERE queue_id=?1",
-                rusqlite::params![queue_id,submission_id.to_string()])?;
+            let conn = db
+                .conn
+                .lock()
+                .map_err(|e| anyhow::anyhow!("lock error: {e}"))?;
+            conn.execute(
+                "UPDATE smtp_delivery SET submission_id=?2 WHERE queue_id=?1",
+                rusqlite::params![queue_id, submission_id.to_string()],
+            )?;
         }
         tracing::info!(queue_id = queue_id, from = %from_addr, to = ?remote_addrs, "EmailSubmission queued for remote delivery");
     }
