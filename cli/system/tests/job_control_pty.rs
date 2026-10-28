@@ -406,12 +406,11 @@ impl Pty {
     fn report(&mut self, name: &str) -> Vec<i32> {
         let path = self.home.path().join(name);
         wait_for(|| fs::read_to_string(&path).is_ok_and(|v| v.split_whitespace().count() == 4));
-        let fields = fs::read_to_string(path)
+        fs::read_to_string(path)
             .unwrap()
             .split_whitespace()
             .map(|v| v.parse().unwrap())
-            .collect::<Vec<_>>();
-        fields
+            .collect::<Vec<_>>()
     }
     fn exit(&mut self) {
         self.send("\x04");

@@ -6,6 +6,7 @@ use std::process::Command;
 /// Arm before any other pre_exec work. Check the fork/prctl race against the
 /// parent's PID captured before fork, rather than accepting a new adopter.
 pub fn guard(command: &mut Command) {
+    #[cfg(target_os = "linux")]
     let parent = std::process::id() as libc::pid_t;
     unsafe {
         command.pre_exec(move || {
