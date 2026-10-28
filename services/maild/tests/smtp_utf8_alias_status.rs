@@ -719,12 +719,27 @@ async fn local_fanout_defers_only_failed_targets_and_retries_without_duplicates(
         let queued = maild::smtp::queue::list(&built.app_state.db.conn,10).await?;
         assert_eq!(queued.len(),1);
         assert_eq!(queued[0].local_account_id,Some(bob));
+        assert_eq!(queued[0].attempts,1,"the initial failed local attempt must be counted");
         ms.update_mailbox(bob,bob_inbox,None,None,Some(Some(MailboxRole::Inbox)),None,None)?;
         maild::smtp::queue::flush(&built.app_state.db.conn).await?;
         wait_delivered(&built,id).await?;
         assert_eq!(inbox_count(&built,alice)?,before_alice+1);
         assert_eq!(inbox_count(&built,bob)?,if native {1} else {2});
     }
+    // Deleting an account must not deliver a retry into its orphaned MDS set.
+    ms.update_mailbox(bob,bob_inbox,None,None,Some(None),None,None)?;
+    let deleted = submit_native(&built,json!({"operation_id":"local-deleted","account":"alice@example.com","to":["team@example.com"],"subject":"deleted target","text":"fanout"})).await?;
+    ms.update_mailbox(bob,bob_inbox,None,None,Some(Some(MailboxRole::Inbox)),None,None)?;
+    built.app_state.db.conn.lock().unwrap().execute("DELETE FROM accounts WHERE id=?1",[bob])?;
+    maild::smtp::queue::flush(&built.app_state.db.conn).await?;
+    timeout(Duration::from_secs(65),async {
+        loop {
+            let results = status(&built,deleted).await?;
+            if results["recipients"].as_array().unwrap().iter().any(|r|r["target"]=="bob@example.com" && r["status"]=="bounced") {return Ok::<_,anyhow::Error>(());}
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    }).await??;
+    assert_eq!(inbox_count(&built,bob)?,2);
     Ok(())
 }
 
@@ -775,7 +790,7 @@ async fn dangling_alias_targets_do_not_block_inbound_submission_or_bounces() -> 
 async fn receipt_retention_expires_terminal_submissions_and_cleans_unlinked_outcomes() -> Result<()> {
     let tmp = tempfile::tempdir()?;
     let (built,_) = fixture(&tmp,None).await?;
-    account(&built,"alice@example.com").await?;
+    let alice = account(&built,"alice@example.com").await?;
     assert_eq!(maild::smtp::SmtpConfig::default().delivery_retention_days,30);
     let configured: Config = config::from_conf_mix_str("delivery_retention_days: 7\n")?;
     assert_eq!(configured.delivery_retention_days,Some(7));
@@ -804,7 +819,11 @@ async fn receipt_retention_expires_terminal_submissions_and_cleans_unlinked_outc
         let count: i64 = built.app_state.db.conn.lock().unwrap().query_row("SELECT COUNT(*) FROM smtp_delivery WHERE queue_id=?1",[id],|r|r.get(0))?;
         assert_eq!(count,0,"unlinked SMTP receipt outlived its queue payload");
     }
+    let before = maild::db::changelog::current_state(&built.app_state.db.conn,alice,"EmailSubmission").await?;
     maild::smtp::queue::sweep_receipts(&built.app_state.db.conn,30).await?;
+    let changes = maild::jmap::submission::changes(&built.app_state.db,alice,json!({"sinceState":before})).await?;
+    assert_eq!(changes["destroyed"],json!([ids[0]]));
+    assert_ne!(changes["newState"],json!(before));
     let (rc,_) = maild::bus::submission::status(&bus_cmd("maild.submission.status",json!({"id":ids[0]})),&built.app_state.db).await;
     assert_eq!(rc,10);
     assert_eq!(status(&built,ids[1]).await?["delivery_confirmed"],true);

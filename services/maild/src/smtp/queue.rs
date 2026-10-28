@@ -98,7 +98,7 @@ async fn enqueue_entry(conn: &Arc<Mutex<Connection>>, from_addr: &str,
             .map_err(|e| anyhow::anyhow!("lock error: {e}"))?;
         let tx = conn.transaction()?;
         tx.execute(
-            "INSERT INTO smtp_queue (from_addr,to_addrs,blob_hash,local_account_id,next_retry,last_error) VALUES (?1,?2,?3,?4,CASE WHEN ?5 IS NULL THEN datetime('now') ELSE datetime('now','+1 minute') END,?5)",
+            "INSERT INTO smtp_queue (from_addr,to_addrs,blob_hash,local_account_id,next_retry,last_error,attempts) VALUES (?1,?2,?3,?4,CASE WHEN ?5 IS NULL THEN datetime('now') ELSE datetime('now','+1 minute') END,?5,CASE WHEN ?5 IS NULL THEN 0 ELSE 1 END)",
             params![from_addr, to_addrs_json, blob_hash_hex,local.as_ref().map(|l| l.0),error],
         )?;
         let id = tx.last_insert_rowid();
@@ -360,7 +360,13 @@ pub async fn sweep_receipts(conn: &Arc<Mutex<Connection>>, days: u32) -> Result<
         if days > 0 {
             let cutoff = format!("-{days} days");
             removed += tx.execute("DELETE FROM smtp_delivery WHERE status IN ('delivered','bounced') AND updated_at < datetime('now',?1) AND NOT EXISTS(SELECT 1 FROM smtp_queue q WHERE q.id=smtp_delivery.queue_id) AND NOT EXISTS(SELECT 1 FROM smtp_delivery sibling WHERE sibling.submission_id=smtp_delivery.submission_id AND (sibling.status IN ('queued','deferred') OR sibling.updated_at >= datetime('now',?1)))",[&cutoff])?;
-            removed += tx.execute("DELETE FROM email_submissions WHERE created_at < datetime('now',?1) AND undo_status='final' AND NOT EXISTS(SELECT 1 FROM smtp_delivery d WHERE d.submission_id=email_submissions.id) AND NOT EXISTS(SELECT 1 FROM smtp_queue q WHERE q.id=email_submissions.queue_id)",[&cutoff])?;
+            let expired = tx.prepare("SELECT id,account_id FROM email_submissions WHERE created_at < datetime('now',?1) AND undo_status='final' AND NOT EXISTS(SELECT 1 FROM smtp_delivery d WHERE d.submission_id=email_submissions.id) AND NOT EXISTS(SELECT 1 FROM smtp_queue q WHERE q.id=email_submissions.queue_id)")?
+                .query_map([&cutoff], |row| Ok((row.get::<_,String>(0)?,row.get::<_,i32>(1)?)))?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            for (id,account) in expired {
+                crate::db::changelog::record_tx(&tx,account,"EmailSubmission",Uuid::parse_str(&id)?,"destroyed")?;
+                removed += tx.execute("DELETE FROM email_submissions WHERE id=?1",[id])?;
+            }
         }
         tx.commit()?;
         Ok(removed)
