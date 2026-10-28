@@ -339,7 +339,10 @@ async fn portal_response_zero_preserves_bytes_choices_and_filter() {
     let (_cancel_tx, mut cancel) = watch::channel(false);
     let task =
         tokio::spawn(async move { portal::session(&client, &req, &mut cancel).await.unwrap() });
-    let call = tokio::time::timeout(Duration::from_secs(5), calls.recv()).await.expect("portal method was not called").unwrap();
+    let call = tokio::time::timeout(Duration::from_secs(5), calls.recv())
+        .await
+        .expect("portal method was not called")
+        .unwrap();
     let mut results = Options::new();
     results.insert(
         "uris".into(),
@@ -367,7 +370,10 @@ async fn portal_response_zero_preserves_bytes_choices_and_filter() {
         paths,
         choices,
         current_filter,
-    }) = tokio::time::timeout(Duration::from_secs(10), task).await.expect("portal outcome did not arrive").unwrap()
+    }) = tokio::time::timeout(Duration::from_secs(10), task)
+        .await
+        .expect("portal outcome did not arrive")
+        .unwrap()
     else {
         panic!("not chosen")
     };

@@ -88,7 +88,8 @@ fn email_save_suggested_name_appends_extension_and_round_trips_choices() {
     assert_eq!(h.state().0.name, "message");
     h.get_by_label("Read only").click();
     h.run();
-    h.get_by_role_and_label(egui::accesskit::Role::ComboBox, "Encoding").click();
+    h.get_by_role_and_label(egui::accesskit::Role::ComboBox, "Encoding")
+        .click();
     h.run();
     h.get_by_label("UTF-16").click();
     h.run();
@@ -187,7 +188,8 @@ fn filter_menu_selects_inserted_current_filter_then_reloads() {
         "filters":[{"name":"Markdown","patterns":["*.md"],"mime_types":[]}],
         "current_filter":{"name":"Images","patterns":["*.png"],"mime_types":[]}}));
     let mut h = harness(FileChooser::from_request(request));
-    h.get_by_role_and_label(egui::accesskit::Role::ComboBox, "File type").click();
+    h.get_by_role_and_label(egui::accesskit::Role::ComboBox, "File type")
+        .click();
     h.run();
     h.get_by_label("Markdown").click();
     h.run();
