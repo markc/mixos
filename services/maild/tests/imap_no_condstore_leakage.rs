@@ -175,7 +175,7 @@ fn insert_one_email(ms: &Arc<dyn MailStore>, mds: &Arc<SqliteCasMds>) -> Result<
 }
 
 #[tokio::test]
-async fn capability_omits_condstore_qresync_enable() -> Result<()> {
+async fn capability_omits_condstore_qresync_but_advertises_enable() -> Result<()> {
     let (_tmp, db, _mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
     let (client, _join) = spawn_session(db, ms, ImapConfig::default()).await;
     let (r, mut w) = tokio::io::split(client);
@@ -199,8 +199,8 @@ async fn capability_omits_condstore_qresync_enable() -> Result<()> {
     // turn on those semantics, and advertising it without those
     // extensions would surprise clients that infer support.
     assert!(
-        !blob.contains(" ENABLE") && !blob.contains("\tENABLE"),
-        "CAPABILITY should not advertise ENABLE in the v1 subset: {blob}"
+        blob.contains(" ENABLE"),
+        "CAPABILITY must advertise ENABLE for rev2 and UTF8=ACCEPT: {blob}"
     );
     Ok(())
 }
@@ -392,7 +392,7 @@ async fn enable_condstore_does_not_unlock_modseq_in_fetch() -> Result<()> {
     )
     .await??;
     let enable_blob = enable_lines.join("\n").to_uppercase();
-    for forbidden in ["ENABLED", "CONDSTORE", "QRESYNC", "MODSEQ"] {
+    for forbidden in ["CONDSTORE", "QRESYNC", "MODSEQ"] {
         assert!(
             !enable_blob.contains(forbidden),
             "ENABLE exchange must not contain {forbidden} in the v1 subset: {enable_blob}"

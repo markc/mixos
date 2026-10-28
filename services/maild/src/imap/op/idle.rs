@@ -227,7 +227,7 @@ fn uid_of(seq: Seq) -> u64 {
 /// plain `* N EXISTS` is *not* sufficient: if the skipped/raced
 /// events include deletions the client must see the EXPUNGEs to
 /// keep its UID→MSN map valid.
-fn diff_lines(old: &[u64], new: &[u64]) -> Vec<String> {
+pub(crate) fn diff_lines(old: &[u64], new: &[u64]) -> Vec<String> {
     let new_set: std::collections::BTreeSet<u64> = new.iter().copied().collect();
     let old_set: std::collections::BTreeSet<u64> = old.iter().copied().collect();
     let mut out = Vec::new();
@@ -283,6 +283,7 @@ pub async fn handle<R, W>(
     reader: &mut BufReader<R>,
     writer: &mut W,
     keepalive_interval: Duration,
+    shutdown: &mut Option<tokio::sync::watch::Receiver<bool>>,
 ) -> Result<IdleOutcome>
 where
     R: AsyncRead + Unpin,
@@ -369,6 +370,12 @@ where
         tokio::select! {
             biased;
 
+            _ = crate::imap::session::wait_shutdown(shutdown) => {
+                writer.write_all(b"* BYE [UNAVAILABLE] server shutting down\r\n").await?;
+                writer.flush().await?;
+                return Ok(IdleOutcome::Close);
+            }
+
             // 1. DONE / bad line from the client. Highest priority so
             // a client racing DONE against an event doesn't wait on a
             // notifier wake.
@@ -431,6 +438,25 @@ where
             event = recv_event(&mut sub), if sub.is_some() => {
                 match event {
                     Ok(ev) => {
+                        if let ContainerEvent::FlagsChanged { item_id, .. } = &ev {
+                            if let Some(sm) = selected.as_deref_mut() {
+                                let store = store.clone();
+                                let container = sm.container_id;
+                                match tokio::task::spawn_blocking(move || store.list_emails_in_mailbox(account_id, container, crate::mailstore::ListOpts { sort_by: crate::mailstore::SortKey::Seq, limit: u32::MAX, offset: 0 })).await {
+                                    Ok(Ok(handles)) => {
+                                        let uids: Vec<u64> = handles.iter().map(|h| h.uid).collect();
+                                        for line in diff_lines(&sm.view_uids, &uids) { writer.write_all(line.as_bytes()).await?; }
+                                        sm.view_uids = uids;
+                                        if let Some((i, h)) = handles.iter().enumerate().find(|(_, h)| h.id == *item_id) {
+                                            writer.write_all(format!("* {} FETCH (UID {} FLAGS {})\r\n", i+1, h.uid, super::flags::render_keywords(h.keywords, &h.tags)).as_bytes()).await?;
+                                        }
+                                    }
+                                    _ => writer.write_all(b"* NO [UNAVAILABLE] mailbox flag updates unavailable\r\n").await?,
+                                }
+                                writer.flush().await?;
+                            }
+                            continue;
+                        }
                         if let Some(sm) = selected.as_deref_mut()
                             && let Some(line) = translate_event(&ev, &mut sm.view_uids)
                         {
@@ -439,11 +465,7 @@ where
                         }
                     }
                     Err(broadcast::error::RecvError::Lagged(n)) => {
-                        let alert = format!(
-                            "* OK [ALERT] notifier lagged {n} events; resyncing\r\n"
-                        );
-                        writer.write_all(alert.as_bytes()).await?;
-                        writer.flush().await?;
+                        tracing::warn!(missed = n, "IMAP notifier lagged; resynchronising");
                         if let Some(mb) = mailbox {
                             match snapshot_uids(store.clone(), account_id, mb).await {
                                 Ok(new_uids) => {

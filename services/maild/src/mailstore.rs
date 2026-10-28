@@ -353,6 +353,11 @@ pub struct EmailImport {
     pub received_at: i64,
 }
 pub trait MailStore: Send + Sync {
+    /// IMAP subscriptions name mailboxes independently of their existence.
+    fn imap_subscription_names(&self, _account: AccountId) -> Result<Vec<String>> { Ok(Vec::new()) }
+    fn imap_set_subscription(&self, _account: AccountId, _name: &str, _subscribed: bool) -> Result<()> {
+        Err(anyhow!("persistent IMAP subscriptions unavailable"))
+    }
     /// Stage an uploaded blob behind a JMAP `BlobId`.
     ///
     /// **Upload-staging path only.** v1.1 amendment §1 distinguishes two
@@ -494,6 +499,12 @@ pub trait MailStore: Send + Sync {
         stamp_id: &str,
         read_only_src: bool,
     ) -> Result<MembershipUid>;
+
+    /// Atomic multi-message COPY: any failure rolls back every destination
+    /// membership, UID allocation and outbox entry (RFC 9051 section 6.4.7).
+    fn copy_messages(&self, _account: AccountId, _items: Vec<(ItemId, String)>, _src: ContainerId, _dest: ContainerId, _read_only_src: bool) -> Result<Vec<MembershipUid>> {
+        Err(anyhow!("atomic copy unavailable"))
+    }
 
     /// IMAP EXPUNGE / UID EXPUNGE primitive (RFC 9051 §6.4.3 /
     /// RFC 4315 §2.1). Atomically remove every supplied
@@ -2242,6 +2253,29 @@ fn find_or_new_thread_id_in_tx(
 }
 
 impl MailStore for SqliteMailStore {
+    fn imap_subscription_names(&self, account: AccountId) -> Result<Vec<String>> {
+        let set = self.ensure_account_set(account)?;
+        self.mds.with_set_tx(&set, |tx| {
+            tx.tx().execute_batch("CREATE TABLE IF NOT EXISTS mail_imap_subscriptions (name TEXT PRIMARY KEY NOT NULL)")
+                .map_err(|e| mds::Error::Other(e.to_string()))?;
+            let mut statement = tx.tx().prepare("SELECT name FROM mail_imap_subscriptions ORDER BY name")
+                .map_err(|e| mds::Error::Other(e.to_string()))?;
+            statement.query_map([], |row| row.get::<_, String>(0))
+                .map_err(|e| mds::Error::Other(e.to_string()))?
+                .collect::<rusqlite::Result<Vec<_>>>().map_err(|e| mds::Error::Other(e.to_string()))
+        }).map_err(anyhow::Error::from)
+    }
+
+    fn imap_set_subscription(&self, account: AccountId, name: &str, subscribed: bool) -> Result<()> {
+        let set = self.ensure_account_set(account)?;
+        self.mds.with_set_tx(&set, |tx| {
+            tx.tx().execute_batch("CREATE TABLE IF NOT EXISTS mail_imap_subscriptions (name TEXT PRIMARY KEY NOT NULL)")
+                .map_err(|e| mds::Error::Other(e.to_string()))?;
+            let sql = if subscribed { "INSERT OR IGNORE INTO mail_imap_subscriptions(name) VALUES (?1)" } else { "DELETE FROM mail_imap_subscriptions WHERE name = ?1" };
+            tx.tx().execute(sql, [name]).map_err(|e| mds::Error::Other(e.to_string()))?;
+            Ok(())
+        }).map_err(anyhow::Error::from)
+    }
     fn create_blob_ref(
         &self,
         account: AccountId,
@@ -3020,12 +3054,19 @@ impl MailStore for SqliteMailStore {
         stamp_id: &str,
         read_only_src: bool,
     ) -> Result<MembershipUid> {
+        self.copy_messages(account, vec![(item_id, stamp_id.to_string())], src, dest, read_only_src)?
+            .pop().ok_or_else(|| anyhow!("empty copy result"))
+    }
+
+    fn copy_messages(&self, account: AccountId, items: Vec<(ItemId, String)>, src: ContainerId, dest: ContainerId, read_only_src: bool) -> Result<Vec<MembershipUid>> {
         if src == dest {
             return Err(anyhow!("copy_message: src and dest must differ"));
         }
         let set = account_id_to_setid(account);
-        let stamp_id = stamp_id.to_string();
         let result = self.mds.with_set_tx(&set, |tx| {
+            let mut results = Vec::with_capacity(items.len());
+            for (item_id, stamp_id) in &items {
+
             // `add_membership_from` inherits keywords + tags from the
             // `src` membership specifically — RFC 9051 §6.4.7 wants
             // the destination to preserve the source mailbox's flags,
@@ -3112,17 +3153,19 @@ impl MailStore for SqliteMailStore {
             }
 
             let uid_validity = tx.container_seq_validity(&dest)?;
-            Ok(MembershipUid {
+            results.push(MembershipUid {
                 container_id: dest,
                 uid: placement.seq.0 as u64,
                 uid_validity,
-            })
+            });
+            }
+            Ok(results)
         });
 
         match result {
             Ok(uid) => Ok(uid),
             Err(mds::Error::SetNotFound(_)) => {
-                Err(anyhow!("email not found: {id}", id = item_id.0))
+                Err(anyhow!("email not found: source mailbox"))
             }
             Err(mds::Error::Other(s))
                 if s.starts_with("email not found")

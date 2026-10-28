@@ -16,6 +16,7 @@ pub fn render(caps: &[&str]) -> String { caps.join(" ") }
 pub fn render_owned(caps: &[String]) -> String {
     caps.iter().filter_map(|cap| {
         let cap = cap.trim();
+        if cap.eq_ignore_ascii_case("LITERAL-") { return Some("LITERAL-"); }
         INITIAL.iter().find(|supported| supported.eq_ignore_ascii_case(cap)).copied()
     }).collect::<Vec<_>>().join(" ")
 }

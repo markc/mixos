@@ -245,6 +245,18 @@ pub async fn handle(
     store: Arc<dyn MailStore>,
     mode: StoreMode,
 ) -> String {
+    handle_with_view(tag, args, account_id, container, store, mode, None).await
+}
+
+pub async fn handle_with_view(
+    tag: &str,
+    args: &str,
+    account_id: AccountId,
+    container: ContainerId,
+    store: Arc<dyn MailStore>,
+    mode: StoreMode,
+    view: Option<&[u64]>,
+) -> String {
     let req = match parse_args(args, mode) {
         Ok(r) => r,
         Err(e) => return tagged(tag, Status::Bad, None, &e),
@@ -276,7 +288,7 @@ pub async fn handle(
     };
 
     let by_id: HashMap<ItemId, EmailHandle> = handles.iter().map(|h| (h.id, h.clone())).collect();
-    let map = SequenceMap::from_entries(handles.iter().map(|h| (h.uid, h.id)));
+    let map = SequenceMap::from_entries(handles.iter().map(|h| (h.uid, h.id))).with_view(view);
 
     // Resolve sequence set. UID STORE `*` / `<n>:*` on an empty
     // mailbox: see fetch.rs for the matching sentinel rationale.

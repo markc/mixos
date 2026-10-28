@@ -70,7 +70,7 @@ use crate::imap::mailbox_name::{ResolveResult, resolve};
 use crate::imap::op::list;
 use crate::imap::response::{Status, tagged, wire_uidvalidity};
 use crate::imap::seq::{Resolved, SeqSet, SequenceMap};
-use crate::mailstore::{EmailHandle, ListOpts, MailStore, SortKey};
+use crate::mailstore::{ListOpts, MailStore, SortKey};
 
 type AccountId = i32;
 
@@ -148,6 +148,19 @@ pub async fn handle(
     mode: CopyMode,
     read_only_src: bool,
 ) -> String {
+    handle_with_view(tag, args, account_id, src_container, store, mode, read_only_src, None).await
+}
+
+pub async fn handle_with_view(
+    tag: &str,
+    args: &str,
+    account_id: AccountId,
+    src_container: ContainerId,
+    store: Arc<dyn MailStore>,
+    mode: CopyMode,
+    read_only_src: bool,
+    view: Option<&[u64]>,
+) -> String {
     let req = match parse_args(args, mode) {
         Ok(r) => r,
         Err(e) => return tagged(tag, Status::Bad, None, &e),
@@ -217,7 +230,7 @@ pub async fn handle(
         }
     };
 
-    let map = SequenceMap::from_entries(handles.iter().map(|h| (h.uid, h.id)));
+    let map = SequenceMap::from_entries(handles.iter().map(|h| (h.uid, h.id))).with_view(view);
     let resolved: Vec<Resolved> = match req.mode {
         CopyMode::Msn => map.resolve_msn(&req.set),
         CopyMode::Uid => map.resolve_uid(&req.set, 0),
@@ -228,75 +241,17 @@ pub async fn handle(
         return tagged(tag, Status::Ok, None, "COPY completed");
     }
 
-    // Issue per-item copies. Substrate returns the dest MembershipUid
-    // (uid + uid_validity); we accumulate (src_uid, dest_uid) for
-    // the COPYUID code.
-    //
-    // **Snapshot/write race:** the source snapshot is read in its
-    // own short tx before the per-item writes start; a concurrent
-    // EXPUNGE / STORE between snapshot and the per-item copy_message
-    // can leave the resolved ItemId pointing at a row that's already
-    // gone, which surfaces as a substrate `email not found` error
-    // and terminates the COPY with `NO [SERVERBUG]`. This matches
-    // STORE's existing snapshot-then-mutate behaviour and avoids
-    // taking a mailbox-level lock; the wire response is well-formed
-    // either way.
-    //
-    // The junk-boundary retrain row uses `INSERT OR IGNORE` against
-    // a `(stamp_id, label)` PK. We pass `item_id.0.to_string()` as
-    // the stamp because for inbound-delivered items, the ItemId IS
-    // the per-delivery stamp the verdict topic publishes — see
-    // `src/smtp/inbound.rs:386` (`email_uuid = item_id.0`). This
-    // gives each row a per-item unique stamp so multi-message COPY
-    // into Junk does not silently drop later retrains.
-    let mut src_uids: Vec<u64> = Vec::with_capacity(resolved.len());
-    let mut dest_uids: Vec<u64> = Vec::with_capacity(resolved.len());
-    let mut uid_validity: Option<u64> = None;
-
-    let by_id: std::collections::HashMap<mds::ItemId, &EmailHandle> =
-        handles.iter().map(|h| (h.id, h)).collect();
-
-    for r in resolved.iter() {
-        let src_uid = match by_id.get(&r.item_id) {
-            Some(h) => h.uid,
-            None => continue,
-        };
-        let store_for_copy = store.clone();
-        let item_id = r.item_id;
-        let stamp = item_id.0.to_string();
-        let res = tokio::task::spawn_blocking(move || {
-            store_for_copy.copy_message(
-                account_id,
-                item_id,
-                src_container,
-                dest_id,
-                &stamp,
-                read_only_src,
-            )
-        })
-        .await;
-        match res {
-            Ok(Ok(uid)) => {
-                if uid_validity.is_none() {
-                    uid_validity = Some(uid.uid_validity);
-                }
-                src_uids.push(src_uid);
-                dest_uids.push(uid.uid);
-            }
-            Ok(Err(e)) => {
-                tracing::warn!(error = %e, "COPY copy_message failed");
-                return tagged(tag, Status::No, Some("SERVERBUG"), "COPY failed");
-            }
-            Err(e) => {
-                tracing::warn!(error = %e, "COPY spawn_blocking panicked");
-                return tagged(tag, Status::No, Some("SERVERBUG"), "COPY failed");
-            }
-        }
-    }
-
-    if dest_uids.is_empty() {
-        return tagged(tag, Status::Ok, None, "COPY completed");
-    }
+    let src_uids: Vec<u64> = resolved.iter().map(|r| r.uid).collect();
+    let items = resolved.iter().map(|r| (r.item_id, r.item_id.0.to_string())).collect();
+    let copied = tokio::task::spawn_blocking(move || {
+        store.copy_messages(account_id, items, src_container, dest_id, read_only_src)
+    }).await;
+    let copied = match copied {
+        Ok(Ok(copied)) => copied,
+        _ => return tagged(tag, Status::No, Some("UNAVAILABLE"), "COPY failed; no messages copied"),
+    };
+    let dest_uids: Vec<u64> = copied.iter().map(|u| u.uid).collect();
+    let uid_validity = copied.first().map(|u| u.uid_validity);
 
     // Render `COPYUID <uidvalidity> <src-set> <dest-set>` per RFC 4315.
     let validity = wire_uidvalidity(uid_validity.unwrap_or(0));

@@ -1,41 +1,11 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! Mailbox-name encoder / decoder for IMAP Phase 2.
-//!
-//! Bridges the gap between [`crate::mailstore::MailboxRecord`] —
-//! flat `name` + `parent: Option<ContainerId>` graph — and the
-//! IMAP wire shape that LIST / LSUB / NAMESPACE / SELECT need.
-//!
-//! Pure module: no I/O, no MailStore reference, no `tokio`. Takes
-//! `&[MailboxRecord]` slices and returns owned `String` /
-//! structured rows. The wire handlers (`op/list.rs`, `op/lsub.rs`,
-//! `op/select.rs` in) own the I/O; this module owns the naming
-//! rules so they can be tested in isolation.
-//!
-//! # Design (locked Phase 2)
-//!
-//! * **Hierarchy delimiter**: `/`. Advertised in NAMESPACE.
-//! * **INBOX**: the container whose `role == Some(MailboxRole::Inbox)`
-//!   is exposed on the wire as the literal `INBOX` (uppercase),
-//!   regardless of its stored `name` or `parent`. Decode matches
-//!   `INBOX` case-insensitively to the role container.
-//! * **Charset**: ASCII-only on the wire in v1. v1's advertised
-//!   capability set does **not** include `UTF8=ACCEPT`, so any
-//!   mailbox whose stored `name` contains a non-ASCII byte is
-//!   *unrepresentable* over IMAP and is omitted from LIST / LSUB
-//!   with a logged warning; SELECT / STATUS on such names is the
-//!   wire handler's responsibility to reject with
-//!   `NO [SERVERBUG] mailbox name not representable over IMAP`.
-//! * **Internal delimiter conflict**: a stored segment containing
-//!   the literal `/` is similarly *unrepresentable* — emitting it
-//!   would lie about hierarchy. Same omission/`NO [SERVERBUG]`
-//!   rule as non-ASCII.
-//! * **CHILDREN**: derived from the input slice — a single O(N)
-//!   parent-id-count pass attaches `\HasChildren` / `\HasNoChildren`
-//!   per row.
-//!
-//! No CREATE/RENAME validation lives here yet — that is job.
+//! Mailbox hierarchy and identity. Canonical names are UTF-8 with '/' as
+//! the hierarchy delimiter. The role-Inbox container is always INBOX, matched
+//! case-insensitively; other names are case-sensitive. The session handles
+//! modified UTF-7 for rev1 clients. Broken hierarchies and embedded delimiters
+//! are omitted rather than exposed with ambiguous identities.
 
 use std::collections::HashMap;
 
@@ -591,14 +561,13 @@ mod tests {
     }
 
     #[test]
-    fn non_ascii_name_is_omitted_with_reason() {
+    fn non_ascii_name_is_preserved_for_session_encoding() {
         let r = mk("Heizölrückstoßabdämpfung", None, None, false);
         let id = r.id;
         let set = encode_all(&[r]);
-        assert!(set.mailboxes.is_empty());
-        assert_eq!(set.omitted.len(), 1);
-        assert_eq!(set.omitted[0].id, id);
-        assert_eq!(set.omitted[0].reason, OmissionReason::NonAsciiName);
+        assert_eq!(set.mailboxes[0].id, id);
+        assert_eq!(set.mailboxes[0].wire_name, "Heizölrückstoßabdämpfung");
+        assert!(set.omitted.is_empty());
     }
 
     #[test]
@@ -696,15 +665,11 @@ mod tests {
     }
 
     #[test]
-    fn ampersand_in_name_omitted_as_charset_reserved() {
+    fn ampersand_in_name_is_preserved_for_session_encoding() {
         let r = mk("R&D", None, None, false);
         let set = encode_all(&[r]);
-        assert!(set.mailboxes.is_empty());
-        assert_eq!(set.omitted.len(), 1);
-        assert_eq!(
-            set.omitted[0].reason,
-            OmissionReason::NameContainsCharsetReserved
-        );
+        assert_eq!(set.mailboxes[0].wire_name, "R&D");
+        assert!(set.omitted.is_empty());
     }
 
     #[test]

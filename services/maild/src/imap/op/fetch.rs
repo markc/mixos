@@ -1,55 +1,12 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! `FETCH` / `UID FETCH` — RFC 9051 §6.4.5 / §6.4.8.
-//!
-//! Phase 3 scope so far: metadata atoms (`FLAGS`, `UID`,
-//! `RFC822.SIZE`, `INTERNALDATE`) shipped in ; body atoms
-//! `ENVELOPE` and `BODYSTRUCTURE` shipped via a
-//! `MailStore::read_blob` + `mail_parser` round trip; `BODY[*]` /
-//! `BODY.PEEK[*]` with top-level `section-msgtext` (empty / HEADER /
-//! HEADER.FIELDS\[.NOT\] / TEXT), optional `<offset.length>` partial,
-//! and `RFC822` / `RFC822.HEADER` / `RFC822.TEXT` legacy aliases
-//! shipped in — including the `\Seen` side-effect for non-PEEK
-//! body atoms (RFC 9051 §6.4.5). Still deferred: part-by-part
-//! addressing (`BODY[1.2.MIME]`,); the `FAST` / `ALL` / `FULL`
-//! macros (depend on body atoms); and `MODSEQ` (gated on `ENABLE
-//! CONDSTORE`, Phase 6).
-//!
-//! ## Wire shape
-//!
-//! For each resolved message:
-//!
-//! ```text
-//! * <msn> FETCH (<atom1> <value1> <atom2> <value2>...)\r\n
-//! ```
-//!
-//! followed by a single tagged response (`<tag> OK FETCH completed`).
-//! On UID FETCH the server MUST implicitly include the `UID` atom
-//! in every response per RFC 9051 §6.4.8; this module honours that
-//! whether or not the client explicitly listed it.
-//!
-//! Atoms are emitted in the order they were parsed from the wire
-//! (with an implicit `UID` prepended on UID FETCH if not already
-//! present). RFC 9051 §6.4.5 permits any order; clients diff by
-//! atom name not position, so preserving wire order keeps test
-//! transcripts predictable.
-//!
-//! ## Sequence resolution
-//!
-//! The sequence-set is parsed by [`crate::imap::seq::SeqSet`] and
-//! resolved against a fresh [`crate::imap::seq::SequenceMap`] built
-//! from `MailStore::list_emails_in_mailbox` at FETCH time. Each
-//! response carries the resolved msn; the underlying
-//! [`crate::mailstore::EmailHandle`] is looked up by `ItemId` to
-//! materialise the FLAGS / UID / SIZE / INTERNALDATE values.
-//!
-//! Building the SequenceMap per-FETCH (rather than at SELECT time
-//! and caching on `SelectedMailbox`) keeps small and avoids the
-//! cache-coherence question — Phase 5 IDLE replaces this with a
-//! snapshot refreshed on notifier deltas. The list call is the
-//! same one JMAP `Email/query` issues, so the cost is the existing
-//! mailstore read path, not a new hot path.
+//! FETCH and UID FETCH: metadata, ENVELOPE, extensible BODYSTRUCTURE and
+//! non-extensible BODY, macros, MIME section paths and octet partials. BODY
+//! returns stored transfer-encoded content; BINARY decodes transfer encoding
+//! and uses literal8 when the result contains NUL. Both use one MIME tree,
+//! including nested message/rfc822 buffers. Session views preserve MSNs while
+//! expunge notifications are prohibited. Read-only sessions never set Seen.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -387,6 +344,7 @@ fn parse_body_section(s: &str) -> Result<BodySection, String> {
         let path_text = trimmed[..end].trim_end_matches('.');
         let path = parse_part_path(path_text)?;
         let suffix = &trimmed[end..];
+        if suffix.is_empty() && trimmed.ends_with('.') { return Err("MIME part path ends with a dot".into()); }
         let selector = if suffix.is_empty() { None } else {
             if !trimmed[..end].ends_with('.') { return Err("missing dot before section selector".into()); }
             Some(Box::new(if suffix.eq_ignore_ascii_case("MIME") { BodySection::Mime } else { parse_body_section(suffix)? }))
@@ -447,7 +405,14 @@ fn parse_header_field_list(s: &str) -> Result<Vec<String>, String> {
     let s = s
         .strip_suffix(')')
         .ok_or_else(|| "FETCH header-list missing closing ')'".to_string())?;
-    let names: Vec<String> = s.split_ascii_whitespace().map(str::to_string).collect();
+    let mut names = Vec::new();
+    let mut rest = s.trim_start();
+    while !rest.is_empty() {
+        let (name, tail) = super::list::take_mailbox_token(rest)?;
+        if name.is_empty() || name.bytes().any(|b| b <= 0x20 || b >= 0x7f || b == b':') { return Err("invalid FETCH header field name".into()); }
+        names.push(name);
+        rest = tail.trim_start();
+    }
     Ok(names)
 }
 
@@ -655,13 +620,13 @@ pub async fn handle(
     store: Arc<dyn MailStore>,
     mode: FetchMode,
 ) -> Vec<u8> {
-    handle_with_access(tag, args, account_id, container, store, mode, false).await
+    handle_with_access(tag, args, account_id, container, store, mode, false, None).await
 }
 
 #[allow(clippy::too_many_arguments)]
 pub async fn handle_with_access(
     tag: &str, args: &str, account_id: AccountId, container: ContainerId,
-    store: Arc<dyn MailStore>, mode: FetchMode, read_only: bool,
+    store: Arc<dyn MailStore>, mode: FetchMode, read_only: bool, view: Option<&[u64]>,
 ) -> Vec<u8> {
     let req = match parse_args(args, mode) {
         Ok(r) => r,
@@ -698,7 +663,7 @@ pub async fn handle_with_access(
     // item_id → handle so per-row atom emission can read FLAGS /
     // SIZE / INTERNALDATE without a second mailstore round-trip.
     let by_id: HashMap<ItemId, EmailHandle> = handles.iter().map(|h| (h.id, h.clone())).collect();
-    let map = SequenceMap::from_entries(handles.iter().map(|h| (h.uid, h.id)));
+    let map = SequenceMap::from_entries(handles.iter().map(|h| (h.uid, h.id))).with_view(view);
 
     // UID FETCH `*` and `<n>:*` rely on UIDNEXT - 1 on an empty
     // mailbox. We don't have a fresh `MailboxRecord` here, but
@@ -764,6 +729,12 @@ pub async fn handle_with_access(
             };
             let parsed = mail_parser::MessageParser::default().parse(bytes);
             for atom in &req.atoms {
+                if let (FetchAtom::Binary { path, .. }, Some(msg)) = (atom, parsed.as_ref())
+                    && let Some((part, _, _)) = locate_part(msg, bytes, path)
+                    && matches!(part.body, mail_parser::PartType::Multipart(_) | mail_parser::PartType::Message(_)) {
+                    out.extend_from_slice(tagged(tag, Status::Bad, None, "BINARY requires a leaf MIME part").as_bytes());
+                    return out;
+                }
                 if let (FetchAtom::Binary { path, .. }, Some(msg)) = (atom, parsed.as_ref())
                     && binary_bytes(msg, bytes, path).is_err() {
                     out.extend_from_slice(tagged(tag, Status::No, Some("UNKNOWN-CTE"), "cannot decode MIME part").as_bytes());
@@ -1596,12 +1567,27 @@ fn binary_bytes(msg: &mail_parser::Message<'_>, raw: &[u8], path: &[usize]) -> R
     let Some((part, _, raw)) = locate_part(msg, raw, path) else { return Ok(None); };
     let data = raw.get(part.offset_body as usize..part.offset_end as usize).ok_or(())?;
     let cte = part.content_transfer_encoding().unwrap_or("7bit");
+    let finish = |data: Vec<u8>| {
+        if matches!(part.body, mail_parser::PartType::Text(_) | mail_parser::PartType::Html(_)) {
+            let mut normal = Vec::with_capacity(data.len());
+            let mut i = 0;
+            while i < data.len() {
+                if data[i] == b'\r' {
+                    normal.extend_from_slice(b"\r\n");
+                    if data.get(i+1) == Some(&b'\n') { i += 1; }
+                } else if data[i] == b'\n' { normal.extend_from_slice(b"\r\n"); }
+                else { normal.push(data[i]); }
+                i += 1;
+            }
+            Some(normal)
+        } else { Some(data) }
+    };
     if ["7bit", "8bit", "binary"].iter().any(|s| cte.eq_ignore_ascii_case(s)) {
-        return Ok(Some(data.to_vec()));
+        return Ok(finish(data.to_vec()));
     }
     if cte.eq_ignore_ascii_case("base64") {
         let compact: Vec<u8> = data.iter().copied().filter(|b| !b.is_ascii_whitespace()).collect();
-        return base64::engine::general_purpose::STANDARD.decode(compact).map(Some).map_err(|_| ());
+        return base64::engine::general_purpose::STANDARD.decode(compact).map(finish).map_err(|_| ());
     }
     if cte.eq_ignore_ascii_case("quoted-printable") {
         let mut out = Vec::with_capacity(data.len());
@@ -1615,7 +1601,7 @@ fn binary_bytes(msg: &mail_parser::Message<'_>, raw: &[u8], path: &[usize]) -> R
             out.push((hi * 16 + lo) as u8);
             i += 3;
         }
-        return Ok(Some(out));
+        return Ok(finish(out));
     }
     Err(())
 }
@@ -1869,13 +1855,10 @@ mod tests {
     }
 
     #[test]
-    fn parse_args_rejects_macros() {
-        for m in ["FAST", "ALL", "FULL"] {
-            let e = parse_args(&format!("1 {m}"), FetchMode::Msn).unwrap_err();
-            assert!(
-                e.contains("macro") && e.contains("not implemented"),
-                "{m} → {e}"
-            );
+    fn parse_args_expands_macros_only_when_standalone() {
+        for (m, count) in [("FAST", 3), ("ALL", 4), ("FULL", 5)] {
+            assert_eq!(parse_args(&format!("1 {m}"), FetchMode::Msn).unwrap().atoms.len(), count);
+            assert!(parse_args(&format!("1 ({m} UID)"), FetchMode::Msn).is_err());
         }
     }
 

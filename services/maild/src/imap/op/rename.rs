@@ -1,37 +1,9 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! `RENAME` — RFC 9051 §6.3.6.
-//!
-//! Phase 2 v1: resolve the old wire name, validate every segment
-//! of the new name, look up the destination parent (must already
-//! exist), and call `MailStore::rename_mailbox`.
-//!
-//! Locked Phase 2 decisions (with sign-off):
-//! * **INBOX rename is rejected** with `NO [CANNOT] INBOX cannot be
-//!   renamed`. RFC 9051 §6.3.6 actually requires INBOX-rename to
-//!   move messages from INBOX into the new mailbox and leave INBOX
-//!   empty — that behaviour depends on STORE / MOVE landing in
-//!   Phase 4, so v1 refuses outright rather than implementing it
-//!   half-way.
-//! * **Destination parent must exist.** Unlike `CREATE`, RENAME does
-//!   **not** auto-create intermediate segments. RFC's auto-create
-//!   language is on CREATE only; RENAME silently materialising the
-//!   parent tree would mask client mistakes and could leave orphans
-//!   if the final rename then fails on cycle/already-exists/role.
-//!   A missing parent path surfaces as `NO [NONEXISTENT] parent
-//!   mailbox does not exist`.
-//! * **Pre-resolve the destination.** If the full new wire name
-//!   already resolves to a different container, return
-//!   `NO [ALREADYEXISTS]` up-front so the client sees the same
-//!   diagnostic whether the conflict is detected here or by the
-//!   storage layer.
-//!
-//! Segment validation mirrors `CREATE` — non-empty, printable ASCII,
-//! no `&` (RFC 3501 modified-UTF-7 introducer), not the reserved
-//! `__upload_staging__` name. Renaming **to** literal `INBOX` (any
-//! case) is also rejected: it would shadow the role-Inbox container
-//! on the wire.
+//! RENAME preserves mailbox identity and renames descendants through their
+//! parent links. RENAME INBOX atomically moves its messages to a fresh
+//! destination while retaining the original INBOX and its children.
 
 use std::sync::Arc;
 
@@ -207,6 +179,9 @@ pub async fn handle(
     };
 
     let final_owned = final_segment.to_string();
+    if list::preserve_subscriptions(store.clone(), account_id).await.is_err() {
+        return tagged(tag, Status::No, Some("UNAVAILABLE"), "subscriptions unavailable");
+    }
     let s2 = store.clone();
     let rename = tokio::task::spawn_blocking(move || {
         s2.rename_mailbox(account_id, old_id, &final_owned, new_parent)

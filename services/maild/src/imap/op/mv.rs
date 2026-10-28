@@ -138,6 +138,18 @@ pub async fn handle(
     store: Arc<dyn MailStore>,
     mode: MoveMode,
 ) -> MoveOutcome {
+    handle_with_view(tag, args, account_id, src_container, store, mode, None).await
+}
+
+pub async fn handle_with_view(
+    tag: &str,
+    args: &str,
+    account_id: AccountId,
+    src_container: ContainerId,
+    store: Arc<dyn MailStore>,
+    mode: MoveMode,
+    view: Option<&[u64]>,
+) -> MoveOutcome {
     let req = match parse_args(args, mode) {
         Ok(r) => r,
         Err(e) => return tagged(tag, Status::Bad, None, &e).into(),
@@ -205,7 +217,7 @@ pub async fn handle(
         }
     };
 
-    let map = SequenceMap::from_entries(handles.iter().map(|h| (h.uid, h.id)));
+    let map = SequenceMap::from_entries(handles.iter().map(|h| (h.uid, h.id))).with_view(view);
     let resolved: Vec<Resolved> = match req.mode {
         MoveMode::Msn => map.resolve_msn(&req.set),
         MoveMode::Uid => map.resolve_uid(&req.set, 0),

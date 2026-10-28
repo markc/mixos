@@ -1,43 +1,10 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! `STATUS` — RFC 9051 §6.3.11.
-//!
-//! Phase 2 v1: resolve the wire mailbox name through
-//! [`crate::imap::mailbox_name::resolve`], read the matching
-//! [`MailboxRecord`] off `MailStore::list_mailboxes`, and emit
-//!
-//! ```text
-//! * STATUS "<wire-name>" (<item value> <item value>...)
-//! <tag> OK STATUS completed
-//! ```
-//!
-//! Supported items in v1: `MESSAGES`, `UIDNEXT`, `UIDVALIDITY`,
-//! `UNSEEN`, `RECENT`. The first four map 1:1 to a [`MailboxRecord`]
-//! field already populated by the storage layer — no per-call
-//! `container_status` round-trip is needed. `RECENT` is a constant
-//! `0`: IMAP4rev2 removed it (§7.3) and maild never tracks
-//! `\Recent`, but it is a MANDATORY rev1 STATUS item and real rev1
-//! clients (Thunderbird polls `STATUS <box> (UIDNEXT MESSAGES UNSEEN
-//! RECENT)` on every folder check) hard-fail their folder machinery
-//! when it BADs — draft save and Sent-copy never even reach APPEND.
-//! Reporting `0` is semantically honest under rev1 (\Recent is
-//! advisory; "no recent messages" is always a valid answer — Gmail
-//! does the same) and harmless under rev2 (clients that enabled rev2
-//! don't ask). Found live-fire on admin@renta.net, 2026-06-12.
-//!
-//! Items deliberately rejected with `BAD`:
-//! * `HIGHESTMODSEQ` — CONDSTORE not in the v1 capability subset.
-//! * `DELETED` — implementable as a constant `0` today (no
-//!   `\Deleted` until Phase 4) but the value would silently become
-//!   wrong as soon as STORE ships; defer instead of fossilising a
-//!   lie.
-//! * `SIZE` — IMAP4rev2 §6.3.11 STATUS=SIZE needs an aggregate over
-//!   item sizes which `list_mailboxes` does not project; revisit
-//!   alongside FETCH SIZE in Phase 3.
-//!
-//! Unknown items fail with `BAD supported STATUS items are
-//! MESSAGES UIDNEXT UIDVALIDITY UNSEEN RECENT`.
+//! STATUS reports mailbox counters, UID identity, SIZE, DELETED and the
+//! configured APPENDLIMIT. SIZE and DELETED use membership metadata without
+//! loading message blobs. RECENT remains zero for rev1 compatibility.
+//! HIGHESTMODSEQ remains gated on the complete imap-ext CONDSTORE implementation.
 
 use std::sync::Arc;
 
@@ -298,7 +265,7 @@ mod tests {
 
     #[test]
     fn parse_args_rejects_unsupported_items() {
-        for item in ["HIGHESTMODSEQ", "DELETED", "SIZE", "BOGUS"] {
+        for item in ["HIGHESTMODSEQ", "BOGUS"] {
             let e = parse_args(&format!("INBOX ({item})")).unwrap_err();
             assert!(e.contains("not supported"), "{item} -> {e}");
         }

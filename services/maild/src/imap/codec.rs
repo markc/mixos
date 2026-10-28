@@ -1,50 +1,11 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! Minimal CRLF line codec.
-//!
-//! Phase 1 commands (CAPABILITY, NOOP, LOGOUT, ID, LOGIN, AUTHENTICATE)
-//! never include IMAP literals on the wire, so a strict CRLF line
-//! reader was sufficient for them. Phase 4 (APPEND,) introduces
-//! a single trailing literal at the end of a command — handled here
-//! by [`read_command`], which:
-//!
-//! * reads the first line via [`read_line`];
-//! * detects a trailing `{N}` (synchronizing) or `{N+}` (RFC 7888
-//!   non-synchronizing) literal marker;
-//! * for sync literals, writes `+ Ready for literal data\r\n` and
-//!   flushes before reading the body — clients block on this
-//!   continuation per RFC 9051 §6.3.12;
-//! * reads exactly `N` bytes of body via `read_exact`;
-//! * reads the trailing CRLF that terminates the command (which must
-//!   be empty for "literal is the final argument" scope —
-//!   embedded mid-command literals are not supported until the full
-//!   imap-codec swap lands).
-//!
-//! Oversized literals are handled per protocol:
-//! * **Sync** (`{N}`): we refuse the continuation, so the client
-//!   never sends the body. Stream stays in sync; we return
-//!   [`ReadCommandError::SyncLiteralTooLarge`] and the caller emits
-//!   `BAD literal too large` / `NO [TOOBIG]`.
-//! * **Non-sync** (`{N+}`): the client sends the body without
-//!   waiting, so we drain the announced bytes (and the trailing
-//!   CRLF) to preserve stream sync (RFC 7888 §4), then return
-//!   [`ReadCommandError::NonSyncLiteralTooLarge`].
-//!
-//! [`parse_line`] is unchanged from Phase 1 and is called on
-//! [`Command::line`] by the session dispatcher. It still rejects any
-//! line that contains an unstripped literal marker, which after
-//! [`read_command`] can only happen if the marker was malformed — in
-//! that case [`read_command`] returns [`ReadCommandError::MalformedLiteral`]
-//! ahead of [`parse_line`] ever seeing the line.
-//!
-//! Command framing (no literal):
-//!   `<tag> <command> [<args>]\r\n`
-//! where tag/command are ASCII tokens (no whitespace, no NUL), and
-//! `<args>` is the remainder of the line verbatim. The session loop
-//! re-parses `<args>` per-command because the v1 command set has very
-//! different argument shapes (`LOGIN user pass` vs `ID NIL` vs
-//! `AUTHENTICATE PLAIN [<initial-response>]`).
+//! Bounded IMAP command framing with synchronising and non-synchronising
+//! literals and literal8. Commands continue through text/literal segments until
+//! the final CRLF. Authentication and aggregate caps are checked before
+//! continuations. Refused non-sync input is drained only when framing can be
+//! recovered; FramingLost requires connection closure.
 
 use std::io::ErrorKind;
 
@@ -184,6 +145,7 @@ pub struct Command {
     /// Literal body bytes — exactly `N` octets when present. `None`
     /// means the command had no literal indicator.
     pub literal: Option<Vec<u8>>,
+    pub literal8: bool,
     /// What followed `literal`, in wire order. Always empty for a
     /// single-literal command.
     pub continuation: Vec<Segment>,
@@ -197,6 +159,7 @@ pub struct Command {
 pub struct Segment {
     pub text: Vec<u8>,
     pub literal: Option<Vec<u8>>,
+    pub literal8: bool,
 }
 
 /// Possible outcomes from [`read_command`].
@@ -286,6 +249,7 @@ impl std::error::Error for ReadCommandError {}
 struct LiteralMarker {
     declared: u64,
     non_sync: bool,
+    literal8: bool,
 }
 
 /// Read one IMAP command, including an optional trailing literal.
@@ -359,6 +323,17 @@ where
     F: FnOnce(&[u8]) -> bool,
     G: FnOnce(&[u8]) -> bool,
 {
+    read_command_multi_policy(reader, writer, max_literal, accept_literals, multi_literal, u64::MAX).await
+}
+
+/// LITERAL- has a 4096-octet non-synchronising limit; LITERAL+ has none.
+pub async fn read_command_multi_policy<R, W, F, G>(
+    reader: &mut BufReader<R>, writer: &mut W, max_literal: u64,
+    accept_literals: F, multi_literal: G, non_sync_limit: u64,
+) -> Result<Command, ReadCommandError>
+where R: AsyncRead + Unpin, W: AsyncWrite + Unpin,
+    F: FnOnce(&[u8]) -> bool, G: FnOnce(&[u8]) -> bool,
+{
     let raw = match read_line(reader).await {
         Ok(l) => l,
         Err(ReadLineError::Eof) => return Err(ReadCommandError::Eof),
@@ -372,6 +347,7 @@ where
             return Ok(Command {
                 line: raw,
                 literal: None,
+                literal8: false,
                 continuation: Vec::new(),
             });
         }
@@ -382,6 +358,10 @@ where
             });
         }
     };
+
+    if marker.non_sync && marker.declared > non_sync_limit {
+        return Err(ReadCommandError::FramingLost { line, reason: "non-synchronising literal exceeds LITERAL- 4096-octet limit".into() });
+    }
 
     // State/command gate. Refuse before consuming any body bytes / before
     // ack'ing a sync continuation. Cap-check intentionally runs after
@@ -423,7 +403,7 @@ where
     };
     // An over-cap non-sync literal in a multi-literal command can't be
     // drained safely: whatever follows it may announce more literals.
-    if multi && marker.non_sync && marker.declared > max_literal {
+    if multi && !is_append && marker.non_sync && marker.declared > max_literal {
         return Err(ReadCommandError::FramingLost {
             line,
             reason: format!("literal {} exceeds cap {max_literal}", marker.declared),
@@ -461,13 +441,16 @@ where
                 continuation.push(Segment {
                     text: trailing,
                     literal: None,
+                    literal8: false,
                 });
                 break;
             }
             Ok(Some((text, next))) => {
                 used += text.len() as u64;
                 let cap = max_literal.saturating_sub(used);
-                let refusal = if continuation.len() + 1 >= MAX_MULTI_LITERALS {
+                let refusal = if next.non_sync && next.declared > non_sync_limit {
+                    Some("non-synchronising literal exceeds LITERAL- 4096-octet limit".into())
+                } else if continuation.len() + 1 >= MAX_MULTI_LITERALS {
                     Some(format!(
                         "more than {MAX_MULTI_LITERALS} literals in one command"
                     ))
@@ -494,6 +477,7 @@ where
                 continuation.push(Segment {
                     text,
                     literal: Some(lit),
+                    literal8: next.literal8,
                 });
             }
             Err(reason) => return Err(ReadCommandError::MalformedLiteral { line, reason }),
@@ -503,6 +487,7 @@ where
     Ok(Command {
         line,
         literal: Some(body),
+        literal8: marker.literal8,
         continuation,
     })
 }
@@ -541,7 +526,11 @@ where
             // line caps at MAX_LINE_BYTES like any other) but we
             // surface it rather than silently truncating.
             match read_line(reader).await {
-                Ok(_) => {}
+                Ok(tail) => {
+                    if matches!(strip_trailing_literal_marker(&tail), Ok(Some(_))) {
+                        return Err(ReadCommandError::FramingLost { line, reason: "oversize command continues with another literal".into() });
+                    }
+                }
                 Err(ReadLineError::Eof) => return Err(ReadCommandError::Eof),
                 Err(ReadLineError::LineTooLong) => {
                     return Err(ReadCommandError::LineTooLong);
@@ -656,7 +645,7 @@ fn strip_trailing_literal_marker(line: &[u8]) -> Result<Option<(Vec<u8>, Literal
     }
     Ok(Some((
         line[..prefix_end].to_vec(),
-        LiteralMarker { declared, non_sync },
+        LiteralMarker { declared, non_sync, literal8: open > 0 && line[open-1] == b'~' },
     )))
 }
 

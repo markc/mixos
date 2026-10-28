@@ -1,14 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! `LOGIN <user> <password>` — RFC 9051 §6.2.3.
-//!
-//! Legal only in `NotAuthenticated`. Phase 1 accepts the simple
-//! two-atom form; quoted-string forms (`LOGIN "alice" "p w"`) are
-//! also accepted because real clients use them when the password
-//! contains a space. Literals (`{N}`) are rejected by the codec in
-//! Phase 1 — Thunderbird only emits LOGIN literals when the password
-//! contains an 8-bit byte, which is rare.
+//! LOGIN accepts atom, quoted and framed literal credentials over implicit
+//! TLS. The session codec applies a small pre-auth literal cap.
 
 use anyhow::{Result, anyhow};
 

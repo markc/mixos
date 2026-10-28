@@ -432,6 +432,7 @@ async fn rename_inbox_preserves_identity_children_and_moves_messages() -> Result
     insert_email(&ms, &mds, MIME, "message", Flags(Flags::FLAGGED), 1_700_000_000_000)?;
     let (mut r, mut w) = selected(ms, db).await?;
     command(&mut r, &mut w, "c", "CREATE INBOX/Child").await?;
+    command(&mut r, &mut w, "u", "UNSELECT").await?;
     let before = command(&mut r, &mut w, "b", "STATUS INBOX (UIDVALIDITY UIDNEXT)").await?;
     assert!(command(&mut r, &mut w, "n", "RENAME INBOX Saved").await?.contains("n OK"));
     let after = command(&mut r, &mut w, "b", "STATUS INBOX (UIDVALIDITY UIDNEXT)").await?;
@@ -459,6 +460,119 @@ async fn examine_fetch_and_close_unselect_have_distinct_effects() -> Result<()> 
     command(&mut r, &mut w, "s", "SELECT INBOX").await?;
     assert_eq!(command(&mut r, &mut w, "c", "CLOSE").await?, "c OK CLOSE completed\r\n");
     assert!(command(&mut r, &mut w, "s", "STATUS INBOX (MESSAGES)").await?.contains("MESSAGES 0"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn copy_failure_rolls_back_earlier_destinations_and_uidnext() -> Result<()> {
+    let (_tmp, db, mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
+    for n in 1..=2 { insert_email(&ms, &mds, b"Subject: x\r\n\r\nbody", &format!("m{n}"), Flags(0), 1_700_000_000_000)?; }
+    let (mut r, mut w) = selected(ms, db).await?;
+    command(&mut r, &mut w, "c", "COPY 2 Archive").await?;
+    let before = command(&mut r, &mut w, "s", "STATUS Archive (MESSAGES UIDNEXT)").await?;
+    assert!(command(&mut r, &mut w, "c", "COPY 1:2 Archive").await?.contains("c NO"));
+    assert_eq!(before, command(&mut r, &mut w, "s", "STATUS Archive (MESSAGES UIDNEXT)").await?);
+    Ok(())
+}
+
+#[tokio::test]
+async fn multiappend_storage_failure_rolls_back_all_rows_and_uids() -> Result<()> {
+    let (_tmp, db, mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
+    let set = maild::mailstore::account_id_to_setid(1);
+    mds.with_set_tx(&set, |tx| {
+        tx.tx().execute_batch("CREATE TRIGGER reject_append BEFORE INSERT ON mail_envelopes WHEN NEW.subject = 'reject' BEGIN SELECT RAISE(ABORT, 'injected append failure'); END")
+            .map_err(|e| mds::Error::Other(e.to_string()))?;
+        Ok(())
+    })?;
+    let (mut r, mut w) = selected(ms, db).await?;
+    let before = command(&mut r, &mut w, "s", "STATUS INBOX (MESSAGES UIDNEXT)").await?;
+    let first = b"Subject: first\r\n\r\nbody";
+    let second = b"Subject: reject\r\n\r\nbody";
+    let mut wire = format!("a APPEND INBOX {{{}+}}\r\n", first.len()).into_bytes();
+    wire.extend_from_slice(first);
+    wire.extend_from_slice(format!(" {{{}+}}\r\n", second.len()).as_bytes());
+    wire.extend_from_slice(second); wire.extend_from_slice(b"\r\n");
+    assert!(String::from_utf8_lossy(&exchange(&mut r, &mut w, "a", &wire).await?).contains("a NO"));
+    assert_eq!(before, command(&mut r, &mut w, "s", "STATUS INBOX (MESSAGES UIDNEXT)").await?);
+    Ok(())
+}
+
+#[tokio::test]
+async fn shutdown_sends_bye_during_idle_and_releases_account_slot() -> Result<()> {
+    let (_tmp, db, _mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
+    let (client, server) = tokio::io::duplex(65536);
+    let (shutdown, rx) = tokio::sync::watch::channel(false);
+    let slots = AccountSlots::new();
+    let session_slots = slots.clone();
+    let join = tokio::spawn(async move {
+        maild::imap::session::handle_connection_with_shutdown(server, "127.0.0.1:0".parse().unwrap(), None, Arc::new(ImapConfig::default()), db, ms, session_slots, "localhost".into(), Some(rx)).await
+    });
+    let (mut r, mut w) = login(client).await?;
+    w.write_all(b"i IDLE\r\n").await?;
+    assert_eq!(read_line(&mut r).await?, "+ idling");
+    shutdown.send(true)?;
+    let bye = tokio::time::timeout(std::time::Duration::from_secs(5), read_line(&mut r)).await??;
+    assert!(bye.starts_with("* BYE [UNAVAILABLE]"), "{bye}");
+    join.await??;
+    assert!(slots.snapshot().await.is_empty());
+    Ok(())
+}
+
+#[tokio::test]
+async fn subscriptions_survive_rename_and_delete_and_absent_names_can_be_removed() -> Result<()> {
+    let (_tmp, db, _mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
+    let (mut r, mut w) = selected(ms, db).await?;
+    command(&mut r, &mut w, "c", "CREATE Original").await?;
+    command(&mut r, &mut w, "s", "SUBSCRIBE Original").await?;
+    command(&mut r, &mut w, "n", "RENAME Original Renamed").await?;
+    let result = command(&mut r, &mut w, "l", "LIST (SUBSCRIBED) \"\" Original").await?;
+    assert!(result.contains("\\Subscribed") && result.contains("\\NonExistent"), "{result}");
+    command(&mut r, &mut w, "d", "DELETE Renamed").await?;
+    let result = command(&mut r, &mut w, "l", "LSUB \"\" Renamed").await?;
+    assert!(result.contains("Renamed"), "{result}");
+    command(&mut r, &mut w, "u", "UNSUBSCRIBE Original").await?;
+    assert_eq!(command(&mut r, &mut w, "l", "LSUB \"\" Original").await?, "l OK LSUB completed\r\n");
+    Ok(())
+}
+
+#[tokio::test]
+async fn pending_expunge_preserves_msns_until_a_permitted_command() -> Result<()> {
+    let (_tmp, db, mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
+    for n in 1..=2 { insert_email(&ms, &mds, b"Subject: x\r\n\r\nbody", &format!("m{n}"), Flags(0), 1_700_000_000_000)?; }
+    let (mut r, mut w) = selected(ms.clone(), db).await?;
+    let inbox = ms.mailbox_by_role(1, MailboxRole::Inbox)?.unwrap();
+    let first = ms.list_emails_in_mailbox(1, inbox, maild::mailstore::ListOpts { sort_by: maild::mailstore::SortKey::Seq, limit: 1, offset: 0 })?[0].id;
+    ms.expunge_memberships(1, inbox, &[first])?;
+    let result = command(&mut r, &mut w, "f", "FETCH 2 UID").await?;
+    assert!(result.contains("* 2 FETCH (UID 2)"), "{result}");
+    assert!(!result.contains("EXPUNGE"), "{result}");
+    let result = command(&mut r, &mut w, "f", "STORE 2 +FLAGS (\\Flagged)").await?;
+    assert!(result.contains("* 2 FETCH"), "{result}");
+    assert!(!result.contains("EXPUNGE"), "{result}");
+    let result = command(&mut r, &mut w, "q", "SEARCH ALL").await?;
+    assert!(result.contains("* SEARCH 2"), "{result}");
+    let result = command(&mut r, &mut w, "n", "NOOP").await?;
+    assert!(result.contains("* 1 EXPUNGE"), "{result}");
+    assert!(command(&mut r, &mut w, "f", "FETCH 1 UID").await?.contains("* 1 FETCH (UID 2)"));
+    insert_email(&ms, &mds, b"Subject: new\r\n\r\nbody", "new", Flags(0), 1_700_000_000_000)?;
+    assert!(command(&mut r, &mut w, "n", "NOOP").await?.contains("* 2 EXISTS"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn utf8_append_wrapper_and_literal_kind_are_checked() -> Result<()> {
+    let (_tmp, db, _mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
+    let (client, _) = spawn_session(db, ms, ImapConfig::default()).await;
+    let (mut r, mut w) = login(client).await?;
+    command(&mut r, &mut w, "e", "ENABLE UTF8=ACCEPT").await?;
+    let raw = "Subject: Café\r\n\r\ntext".as_bytes();
+    let mut wire = format!("a APPEND INBOX UTF8 (~{{{}+}}\r\n", raw.len()).into_bytes();
+    wire.extend_from_slice(raw); wire.extend_from_slice(b")\r\n");
+    assert!(String::from_utf8_lossy(&exchange(&mut r, &mut w, "a", &wire).await?).contains("a OK [APPENDUID"));
+    let raw = b"Subject: x\r\n\r\n\0";
+    let mut wire = format!("a APPEND INBOX {{{}+}}\r\n", raw.len()).into_bytes();
+    wire.extend_from_slice(raw); wire.extend_from_slice(b"\r\n");
+    assert!(String::from_utf8_lossy(&exchange(&mut r, &mut w, "a", &wire).await?).contains("a BAD"));
     Ok(())
 }
 

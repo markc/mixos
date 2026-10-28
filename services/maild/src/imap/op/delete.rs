@@ -1,31 +1,9 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! `DELETE` — RFC 9051 §6.3.5.
-//!
-//! Phase 2 v1: resolve the wire mailbox name and call
-//! `MailStore::destroy_mailbox` with [`DestroyPolicy::Reject`]. The
-//! locked Phase 2 design refuses to auto-purge messages — STORE and
-//! EXPUNGE ship in Phase 4, so a non-empty mailbox cannot be
-//! deleted yet through this command.
-//!
-//! Special cases:
-//! * `DELETE INBOX` is rejected up-front with `NO [CANNOT] INBOX
-//!   cannot be deleted` for the clearer wire message; the storage
-//!   layer would also refuse via the `"mailbox has role"` guard, but
-//!   the IMAP-side message is more accurate (it's INBOX, not
-//!   "mailbox with role").
-//!
-//! Error mapping (storage error prefix → wire response):
-//! * `"mailbox not found"` → `NO [NONEXISTENT] mailbox does not exist`
-//!   (race against a concurrent destroy).
-//! * `"mailbox not empty"` → `NO [CANNOT] mailbox has messages`.
-//! * `"mailbox has children"` → `NO [CANNOT] mailbox has child mailboxes`.
-//! * `"mailbox has role"` → `NO [CANNOT] cannot delete mailbox with
-//!   a special-use role`.
-//! * `"reserved container"` / `"mailbox conflicting policy"` →
-//!   `NO [SERVERBUG]` with logging; neither should be reachable via
-//!   wire under the `Reject` policy.
+//! DELETE removes the mailbox and its memberships atomically, retaining
+//! messages that also belong to another mailbox. INBOX and mailboxes with
+//! children are protected. Persistent subscription names survive deletion.
 
 use std::sync::Arc;
 
@@ -105,8 +83,11 @@ pub async fn handle(
     };
 
     let s2 = store.clone();
+    if list::preserve_subscriptions(store.clone(), account_id).await.is_err() {
+        return tagged(tag, Status::No, Some("UNAVAILABLE"), "subscriptions unavailable");
+    }
     let destroy = tokio::task::spawn_blocking(move || {
-        s2.destroy_mailbox(account_id, id, DestroyPolicy::Reject)
+        s2.destroy_mailbox(account_id, id, DestroyPolicy::Delete)
     })
     .await;
     let destroy = match destroy {

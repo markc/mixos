@@ -116,6 +116,18 @@ pub async fn handle(
     store: Arc<dyn MailStore>,
     mode_uid: bool,
 ) -> ExpungeOutcome {
+    handle_with_view(tag, args, account_id, mailbox, store, mode_uid, None).await
+}
+
+pub async fn handle_with_view(
+    tag: &str,
+    args: &str,
+    account_id: AccountId,
+    mailbox: ContainerId,
+    store: Arc<dyn MailStore>,
+    mode_uid: bool,
+    view: Option<&[u64]>,
+) -> ExpungeOutcome {
     let uid_filter: Option<SeqSet> = if mode_uid {
         match parse_args_uid(args) {
             Ok(s) => Some(s),
@@ -156,7 +168,7 @@ pub async fn handle(
     // semantics (handles `*`, `1:*`, etc.); collect the matched UIDs
     // into a set.
     let uid_allowed: Option<std::collections::HashSet<u64>> = if let Some(s) = &uid_filter {
-        let map = SequenceMap::from_entries(handles.iter().map(|h| (h.uid, h.id)));
+        let map = SequenceMap::from_entries(handles.iter().map(|h| (h.uid, h.id))).with_view(view);
         Some(
             map.resolve_uid(s, 0)
                 .into_iter()
@@ -196,7 +208,10 @@ pub async fn handle(
         {
             continue;
         }
-        let msn = u32::try_from(idx + 1).unwrap_or(u32::MAX);
+        let msn = if let Some(view) = view {
+            let Ok(i) = view.binary_search(&h.uid) else { continue; };
+            (i+1) as u32
+        } else { u32::try_from(idx + 1).unwrap_or(u32::MAX) };
         targets.push((msn, h.id, h.uid));
     }
 

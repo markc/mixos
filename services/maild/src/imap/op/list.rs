@@ -1,34 +1,10 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! `LIST` — RFC 9051 §6.3.9.
-//!
-//! Phase 2 v1: walk the per-account MailboxRecord set,
-//! encode names via [`crate::imap::mailbox_name`], filter by the
-//! requested pattern, emit one `* LIST (attrs) "/" "wire-name"`
-//! response per match plus a final tagged OK.
-//!
-//! The v1 advertised capability set does NOT include LIST-EXTENDED,
-//! LIST-STATUS, or UTF8=ACCEPT, so:
-//! * Only positional `reference-name` and `mailbox-name` are parsed.
-//!   `RETURN (...)` and `SELECT (...)` parameters are rejected as
-//!   `BAD` to keep the wire grammar honest.
-//! * `\Subscribed` is not emitted on LIST responses; subscription
-//!   state surfaces through `LSUB` only.
-//! * Mailbox names that the encoder marks unrepresentable
-//!   (non-ASCII, contain `/`, broken parent chain) are omitted from
-//!   the result with a `tracing::warn!`; SELECT / STATUS on those
-//!   names emits `NO [SERVERBUG] mailbox name not representable
-//! over IMAP`.
-//!
-//! Argument grammar this handler accepts:
-//! ```text
-//! LIST <ref-name> <mailbox-name-pattern>
-//! ```
-//! where each token is an atom or quoted-string (literals are
-//! already rejected at the codec layer). The reference name is
-//! ignored in v1 unless non-empty, in which case it returns
-//! `BAD non-empty LIST reference not supported in this phase`.
+//! LIST-EXTENDED, LIST-STATUS, SPECIAL-USE and hierarchical reference names.
+//! Selection options constrain matches; return options annotate them. Mailbox
+//! strings are canonical UTF-8 internally; the session supplies the appropriate
+//! UTF-8 or modified UTF-7 wire encoding. LSUB reuses positional parsing.
 
 use std::sync::Arc;
 
@@ -159,6 +135,30 @@ pub fn canonical_pattern(reference: &str, pattern: &str) -> String {
     else { format!("{reference}{pattern}") }
 }
 
+pub(crate) fn subscription_view(records: &[crate::mailstore::MailboxRecord], subscriptions: &[String]) -> crate::imap::mailbox_name::EncodedSet {
+    use crate::imap::mailbox_name::EncodedMailbox;
+    let mut set = encode_all(records);
+    for name in subscriptions {
+        if let Some(enc) = set.mailboxes.iter_mut().find(|enc| enc.wire_name == *name) { enc.is_subscribed = true; }
+        else {
+            set.mailboxes.push(EncodedMailbox { id: mds::ContainerId(uuid::Uuid::nil()), wire_name: name.clone(), has_children: false, role: None, is_subscribed: true });
+        }
+    }
+    for enc in &mut set.mailboxes {
+        enc.has_children |= subscriptions.iter().any(|name| name.starts_with(&format!("{}/", enc.wire_name)));
+    }
+    set
+}
+
+pub(crate) async fn preserve_subscriptions(store: Arc<dyn MailStore>, account_id: AccountId) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        for enc in encode_all(&store.list_mailboxes(account_id)?).mailboxes {
+            if enc.is_subscribed { store.imap_set_subscription(account_id, &enc.wire_name, true)?; }
+        }
+        Ok::<_, anyhow::Error>(())
+    }).await.map_err(|e| e.to_string())?.map_err(|e| e.to_string())
+}
+
 #[derive(Debug)]
 struct ExtendedArgs {
     reference: String,
@@ -278,7 +278,12 @@ pub async fn handle_with_limit(tag: &str, args: &str, account_id: AccountId, sto
             return tagged(tag, Status::No, Some("SERVERBUG"), "list failed");
         }
     };
-    let set = encode_all(&records);
+    let subscriptions_store = store.clone();
+    let subscriptions = match tokio::task::spawn_blocking(move || subscriptions_store.imap_subscription_names(account_id)).await {
+        Ok(Ok(names)) => names,
+        _ => return tagged(tag, Status::No, Some("UNAVAILABLE"), "subscriptions unavailable"),
+    };
+    let set = subscription_view(&records, &subscriptions);
     for om in &set.omitted {
         tracing::warn!(
             mailbox_id = ?om.id,
@@ -294,16 +299,19 @@ pub async fn handle_with_limit(tag: &str, args: &str, account_id: AccountId, sto
     };
     let recursive = parsed.selection.iter().any(|s| s == "RECURSIVEMATCH");
     for enc in &set.mailboxes {
+        let missing = enc.id.0.is_nil();
+        if missing && !parsed.selection.iter().any(|s| s == "SUBSCRIBED") { continue; }
         if !parsed.patterns.iter().any(|p| matches_pattern(&enc.wire_name, &canonical_pattern(&parsed.reference, p))) { continue; }
         let child_match = recursive && set.mailboxes.iter().any(|child| child.wire_name.starts_with(&format!("{}/", enc.wire_name)) && selected(child));
         if !selected(enc) && !child_match { continue; }
         let mut attrs = format_attrs(enc);
+        if missing { attrs.push_str(" \\NonExistent"); }
         if (parsed.returns.iter().any(|s| s == "SUBSCRIBED") || parsed.selection.iter().any(|s| s == "SUBSCRIBED")) && enc.is_subscribed { attrs.push_str(" \\Subscribed"); }
         // With RECURSIVEMATCH, CHILDINFO describes the descendants that
         // satisfied the selection even when the parent itself did not.
         let childinfo = if child_match { format!(" (CHILDINFO ({}))", parsed.selection.iter().filter(|s| s.as_str() == "SUBSCRIBED" || s.as_str() == "SPECIAL-USE").map(|s| quote_mailbox(s)).collect::<Vec<_>>().join(" ")) } else { String::new() };
         out.push_str(&format!("* LIST ({attrs}) \"/\" {}{childinfo}\r\n", quote_mailbox(&enc.wire_name)));
-        if let Some(items) = &parsed.status {
+        if let Some(items) = &parsed.status && !missing {
             let status = super::status::handle_with_limit(tag, &format!("{} ({items})", quote_mailbox(&enc.wire_name)), account_id, store.clone(), append_limit).await;
             let Some(line) = status.lines().find(|l| l.starts_with("* STATUS ")) else { return out + &tagged(tag, Status::No, Some("UNAVAILABLE"), "LIST STATUS unavailable"); };
             out.push_str(line); out.push_str("\r\n");

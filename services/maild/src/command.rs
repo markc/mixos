@@ -2421,6 +2421,8 @@ async fn async_main() -> Result<()> {
             }
             let listener = tokio::net::TcpListener::bind(&cfg.listen).await?;
             tracing::info!(addr = %cfg.listen, "maild JMAP listening");
+            let imap_shutdown = built.imap_handle.clone();
+            let serving = async {
 
             // Use TLS if cert/key configured
             if let (Some(cert_path), Some(key_path)) = (&cfg.tls_cert, &cfg.tls_key) {
@@ -2456,6 +2458,12 @@ async fn async_main() -> Result<()> {
                 let router = built.router.clone();
                 let _keepalive = built;
                 axum::serve(listener, router).await?;
+            }
+                Ok::<(), anyhow::Error>(())
+            };
+            tokio::select! {
+                result = serving => result?,
+                _ = crate::imap::server::shutdown_signal() => imap_shutdown.shutdown().await,
             }
         }
     }
