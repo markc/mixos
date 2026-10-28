@@ -96,8 +96,10 @@ fn body_decodes_transfer_encoding_and_raw_preserves_it() {
 }
 #[test]
 fn body_wildcards_preserve_earlier_match_variables() {
-    let plan = evaluate(r#"require ["variables","body","fileinto"]; if allof(header :matches "Subject" "* CASE",body :matches "Hello *") { fileinto "${1}"; }"#);
-    assert_eq!(plan.filings[0].mailbox.as_deref(),Some("Mixed"));
+    let plan = evaluate(
+        r#"require ["variables","body","fileinto"]; if allof(header :matches "Subject" "* CASE",body :matches "Hello *") { fileinto "${1}"; }"#,
+    );
+    assert_eq!(plan.filings[0].mailbox.as_deref(), Some("Mixed"));
 }
 #[test]
 fn body_content_selectors_expand_variables() {
@@ -106,10 +108,31 @@ fn body_content_selectors_expand_variables() {
 #[test]
 fn body_content_matches_transfer_decoded_binary_octets() {
     let script = compile(r#"require "body"; if allof(body :content "image/gif" :comparator "i;octet" :contains "GIF89a",body :content "" :comparator "i;octet" :matches "GIF89a?",not body :content "image/gif" :comparator "i;octet" :is "GIF89a�",body :raw :contains "R0lG") { discard; }"#).unwrap();
-    let data = b"Content-Type: image/gif\r\nContent-Transfer-Encoding: base64\r\n\r\nR0lGODlh/w==\r\n";
-    assert!(script.evaluate(Context{data,from:"a",to:"b"}).unwrap().filings.is_empty());
+    let data =
+        b"Content-Type: image/gif\r\nContent-Transfer-Encoding: base64\r\n\r\nR0lGODlh/w==\r\n";
+    assert!(
+        script
+            .evaluate(Context {
+                data,
+                from: "a",
+                to: "b"
+            })
+            .unwrap()
+            .filings
+            .is_empty()
+    );
     let script = compile(r#"require "body"; if allof(body :raw :contains "aaab",not body :raw :contains "aaaaac",body :raw :contains "") { discard; }"#).unwrap();
-    assert!(script.evaluate(Context {data:b"Content-Type: application/octet-stream\r\n\r\naaaaabab\xff",from:"a",to:"b"}).unwrap().filings.is_empty());
+    assert!(
+        script
+            .evaluate(Context {
+                data: b"Content-Type: application/octet-stream\r\n\r\naaaaabab\xff",
+                from: "a",
+                to: "b"
+            })
+            .unwrap()
+            .filings
+            .is_empty()
+    );
 }
 #[test]
 fn variables_expansion_modifiers_and_string_test() {
@@ -137,30 +160,69 @@ fn relational_value_count_and_ascii_numeric() {
 }
 #[test]
 fn variables_count_ignores_empty_strings() {
-    assert!(matches(r#"string :count "eq" :comparator "i;ascii-numeric" "${unset}" "0""#));
-    assert!(matches(r#"string :count "eq" :comparator "i;ascii-numeric" ["", "x", "${unset}", "y"] "2""#));
+    assert!(matches(
+        r#"string :count "eq" :comparator "i;ascii-numeric" "${unset}" "0""#
+    ));
+    assert!(matches(
+        r#"string :count "eq" :comparator "i;ascii-numeric" ["", "x", "${unset}", "y"] "2""#
+    ));
 }
 #[test]
 fn mailboxexists_uses_snapshot_and_inbox_case_rules() {
-    let script = compile(r#"require "mailbox"; if mailboxexists ["inbox/Projects", "Archive"] { discard; }"#).unwrap();
-    let check = |mailboxes: &[String]| script.evaluate_with_mailboxes(Context {data:MESSAGE,from:"a",to:"b"},mailboxes).unwrap().filings.is_empty();
-    assert!(check(&["INBOX/Projects".into(),"Archive".into()]));
-    assert!(!check(&["INBOX/projects".into(),"Archive".into()]));
+    let script = compile(
+        r#"require "mailbox"; if mailboxexists ["inbox/Projects", "Archive"] { discard; }"#,
+    )
+    .unwrap();
+    let check = |mailboxes: &[String]| {
+        script
+            .evaluate_with_mailboxes(
+                Context {
+                    data: MESSAGE,
+                    from: "a",
+                    to: "b",
+                },
+                mailboxes,
+            )
+            .unwrap()
+            .filings
+            .is_empty()
+    };
+    assert!(check(&["INBOX/Projects".into(), "Archive".into()]));
+    assert!(!check(&["INBOX/projects".into(), "Archive".into()]));
     assert!(!check(&["INBOX/Projects".into()]));
     assert!(compile(r#"if mailboxexists "INBOX" { keep; }"#).is_err());
 }
 #[test]
 fn flag_updates_consume_work_budget() {
-    let flags = (0..65).map(|n| format!("f{n}")).collect::<Vec<_>>().join(" ");
-    let source = format!(r#"require ["imap4flags","variables"]; set "flags" "{flags}"; {}"#, "addflag \"${flags}\";".repeat(10));
-    assert!(compile(&source).unwrap().evaluate(Context {data:MESSAGE,from:"a",to:"b"}).is_err());
+    let flags = (0..65)
+        .map(|n| format!("f{n}"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let source = format!(
+        r#"require ["imap4flags","variables"]; set "flags" "{flags}"; {}"#,
+        "addflag \"${flags}\";".repeat(10)
+    );
+    assert!(
+        compile(&source)
+            .unwrap()
+            .evaluate(Context {
+                data: MESSAGE,
+                from: "a",
+                to: "b"
+            })
+            .is_err()
+    );
 }
 #[test]
 fn hasflag_splits_keys_and_counts_distinct_flags_per_variable() {
-    let plan = evaluate(r#"require ["imap4flags","variables","relational","comparator-i;ascii-numeric"]; set "a" "Seen seen Flagged"; set "b" "Seen"; if allof(hasflag "a" "missing SEEN",hasflag :count "eq" :comparator "i;ascii-numeric" ["a","b"] "3") { discard; }"#);
+    let plan = evaluate(
+        r#"require ["imap4flags","variables","relational","comparator-i;ascii-numeric"]; set "a" "Seen seen Flagged"; set "b" "Seen"; if allof(hasflag "a" "missing SEEN",hasflag :count "eq" :comparator "i;ascii-numeric" ["a","b"] "3") { discard; }"#,
+    );
     assert!(plan.filings.is_empty());
-    let plan = evaluate(r#"require "imap4flags"; setflag ["\\Recent","\\Unknown","bad(flag)","project"]; if hasflag "project" { keep; stop; } discard;"#);
-    assert_eq!(plan.filings[0].flags,vec!["project"]);
+    let plan = evaluate(
+        r#"require "imap4flags"; setflag ["\\Recent","\\Unknown","bad(flag)","project"]; if hasflag "project" { keep; stop; } discard;"#,
+    );
+    assert_eq!(plan.filings[0].flags, vec!["project"]);
 }
 #[test]
 fn index_selects_first_and_last_header() {
@@ -345,25 +407,85 @@ fn string_work_and_variable_storage_are_bounded() {
 }
 #[test]
 fn body_transform_work_is_bounded_when_decoded_text_is_empty() {
-    let data = format!("Content-Type: text/html\r\n\r\n<!--{}-->", "x".repeat(1024*1024));
-    let source = format!("require \"body\"; {}", "if body :contains \"never\" { discard; }".repeat(30));
-    assert!(compile(&source).unwrap().evaluate(Context {data:data.as_bytes(),from:"a",to:"b"}).is_err());
+    let data = format!(
+        "Content-Type: text/html\r\n\r\n<!--{}-->",
+        "x".repeat(1024 * 1024)
+    );
+    let source = format!(
+        "require \"body\"; {}",
+        "if body :contains \"never\" { discard; }".repeat(30)
+    );
+    assert!(
+        compile(&source)
+            .unwrap()
+            .evaluate(Context {
+                data: data.as_bytes(),
+                from: "a",
+                to: "b"
+            })
+            .is_err()
+    );
 }
 #[test]
 fn header_and_expansion_allocations_are_bounded_before_matching() {
-    let data = format!("Subject: {}\r\n\r\nbody", "x".repeat(1024*1024));
-    let names = vec!["\"Subject\"";16].join(",");
-    let script = compile(&format!("if header :contains [{names}] \"x\" {{ discard; }}")).unwrap();
-    assert!(script.evaluate(Context {data:data.as_bytes(),from:"a",to:"b"}).is_err());
-    let values = vec!["\"${x}\"";400].join(",");
-    let source = format!("require \"variables\"; set \"x\" \"{}\"; if string :is [{values}] \"${{x}}\" {{ discard; }}", "x".repeat(30000));
-    assert!(compile(&source).unwrap().evaluate(Context {data:MESSAGE,from:"a",to:"b"}).is_err());
-    let source = format!("require \"variables\"; set \"x\" \"{}\"; {}", "x".repeat(30000),"set \"x\" \"${x}\";".repeat(400));
-    assert!(compile(&source).unwrap().evaluate(Context {data:MESSAGE,from:"a",to:"b"}).is_err());
+    let data = format!("Subject: {}\r\n\r\nbody", "x".repeat(1024 * 1024));
+    let names = vec!["\"Subject\""; 16].join(",");
+    let script = compile(&format!(
+        "if header :contains [{names}] \"x\" {{ discard; }}"
+    ))
+    .unwrap();
+    assert!(
+        script
+            .evaluate(Context {
+                data: data.as_bytes(),
+                from: "a",
+                to: "b"
+            })
+            .is_err()
+    );
+    let values = vec!["\"${x}\""; 400].join(",");
+    let source = format!(
+        "require \"variables\"; set \"x\" \"{}\"; if string :is [{values}] \"${{x}}\" {{ discard; }}",
+        "x".repeat(30000)
+    );
+    assert!(
+        compile(&source)
+            .unwrap()
+            .evaluate(Context {
+                data: MESSAGE,
+                from: "a",
+                to: "b"
+            })
+            .is_err()
+    );
+    let source = format!(
+        "require \"variables\"; set \"x\" \"{}\"; {}",
+        "x".repeat(30000),
+        "set \"x\" \"${x}\";".repeat(400)
+    );
+    assert!(
+        compile(&source)
+            .unwrap()
+            .evaluate(Context {
+                data: MESSAGE,
+                from: "a",
+                to: "b"
+            })
+            .is_err()
+    );
 }
 #[test]
 fn nested_invalid_variable_references_consume_scan_budget() {
-    let nested = "${".repeat(15000)+"}";
+    let nested = "${".repeat(15000) + "}";
     let source = format!("require \"variables\"; set \"x\" \"{nested}\"; keep;");
-    assert!(compile(&source).unwrap().evaluate(Context {data:MESSAGE,from:"a",to:"b"}).is_err());
+    assert!(
+        compile(&source)
+            .unwrap()
+            .evaluate(Context {
+                data: MESSAGE,
+                from: "a",
+                to: "b"
+            })
+            .is_err()
+    );
 }

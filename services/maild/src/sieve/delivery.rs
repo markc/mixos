@@ -130,7 +130,11 @@ pub async fn plan(
     let account = delivery.account.id;
     tokio::task::spawn_blocking(move || {
         let script = compile(&script.source)?;
-        let paths = if script.needs_mailboxes() { mailbox_snapshot(&super::mailboxes::load(&ms,account)?)? } else { Vec::new() };
+        let paths = if script.needs_mailboxes() {
+            mailbox_snapshot(&super::mailboxes::load(&ms, account)?)?
+        } else {
+            Vec::new()
+        };
         script.evaluate_with_mailboxes(
             Context {
                 data: &data,
@@ -145,29 +149,42 @@ pub async fn plan(
 }
 
 fn mailbox_snapshot(boxes: &[super::mailboxes::Mailbox]) -> Result<Vec<String>> {
-    ensure!(boxes.len() <= super::MAX_STEPS,"mailbox snapshot count limit");
-    let by_id: HashMap<_,_> = boxes.iter().map(|entry|(entry.id,entry)).collect();
+    ensure!(
+        boxes.len() <= super::MAX_STEPS,
+        "mailbox snapshot count limit"
+    );
+    let by_id: HashMap<_, _> = boxes.iter().map(|entry| (entry.id, entry)).collect();
     let mut steps = 0;
     let mut bytes = 0;
     let mut paths = Vec::new();
     for mailbox in boxes {
-        if !mailbox.writable { continue; }
+        if !mailbox.writable {
+            continue;
+        }
         let mut parts = Vec::new();
         let mut path_bytes = 0;
         let mut current = Some(mailbox);
         while let Some(entry) = current {
             steps += 1;
-            ensure!(steps <= super::MAX_STEPS,"mailbox snapshot work limit");
-            ensure!(parts.len() < boxes.len(),"mailbox parent cycle");
+            ensure!(steps <= super::MAX_STEPS, "mailbox snapshot work limit");
+            ensure!(parts.len() < boxes.len(), "mailbox parent cycle");
             let name = if entry.inbox { "INBOX" } else { &entry.name };
-            path_bytes += name.len()+1;
-            bytes += name.len()+1;
-            ensure!(bytes <= 1024*1024,"mailbox snapshot allocation limit");
+            path_bytes += name.len() + 1;
+            bytes += name.len() + 1;
+            ensure!(bytes <= 1024 * 1024, "mailbox snapshot allocation limit");
             parts.push(name.to_string());
-            current = entry.parent.map(|parent|by_id.get(&parent).copied().ok_or_else(||anyhow::anyhow!("missing mailbox parent"))).transpose()?;
+            current = entry
+                .parent
+                .map(|parent| {
+                    by_id
+                        .get(&parent)
+                        .copied()
+                        .ok_or_else(|| anyhow::anyhow!("missing mailbox parent"))
+                })
+                .transpose()?;
         }
         bytes += path_bytes;
-        ensure!(bytes <= 1024*1024,"mailbox snapshot allocation limit");
+        ensure!(bytes <= 1024 * 1024, "mailbox snapshot allocation limit");
         parts.reverse();
         paths.push(parts.join("/"));
     }
@@ -266,23 +283,40 @@ async fn deliver_inner(
     let filings = plan.filings.clone();
     let resolved = tokio::task::spawn_blocking(move || -> Result<Vec<_>> {
         let mut resolved: Vec<(ContainerId, Flags, Tags)> = Vec::new();
-        let mut resolver = if filings.iter().any(|filing|filing.mailbox.is_some()) {
-            Some(MailboxResolver::from_mailboxes(super::mailboxes::load(&ms2,id)?)?)
-        } else { None };
+        let mut resolver = if filings.iter().any(|filing| filing.mailbox.is_some()) {
+            Some(MailboxResolver::from_mailboxes(super::mailboxes::load(
+                &ms2, id,
+            )?)?)
+        } else {
+            None
+        };
         // Check every non-create destination before creating any folders.
-        let planned: Vec<_> = filings.iter().filter(|filing|filing.create).filter_map(|filing|filing.mailbox.as_deref()).map(super::interpreter::mailbox_key).collect();
+        let planned: Vec<_> = filings
+            .iter()
+            .filter(|filing| filing.create)
+            .filter_map(|filing| filing.mailbox.as_deref())
+            .map(super::interpreter::mailbox_key)
+            .collect();
         for filing in &filings {
-            if !filing.create && let Some(name) = &filing.mailbox {
+            if !filing.create
+                && let Some(name) = &filing.mailbox
+            {
                 let key = super::interpreter::mailbox_key(name);
                 let prefix = format!("{key}/");
-                if !planned.iter().any(|path|path==&key || path.starts_with(prefix.as_str())) {
-                    resolver.as_mut().unwrap().resolve(&ms2,id,name,false)?;
+                if !planned
+                    .iter()
+                    .any(|path| path == &key || path.starts_with(prefix.as_str()))
+                {
+                    resolver.as_mut().unwrap().resolve(&ms2, id, name, false)?;
                 }
             }
         }
         for filing in filings {
             let target = if let Some(name) = filing.mailbox {
-                resolver.as_mut().unwrap().resolve(&ms2,id,&name,filing.create)?
+                resolver
+                    .as_mut()
+                    .unwrap()
+                    .resolve(&ms2, id, &name, filing.create)?
             } else {
                 default
             };
@@ -518,75 +552,101 @@ async fn validate(
 }
 
 struct MailboxResolver {
-    children: HashMap<(Option<ContainerId>,String),ContainerId>,
+    children: HashMap<(Option<ContainerId>, String), ContainerId>,
     inbox: Option<ContainerId>,
-    paths: HashMap<String,ContainerId>,
+    paths: HashMap<String, ContainerId>,
     steps: usize,
     refreshed: bool,
 }
 impl MailboxResolver {
     fn from_mailboxes(boxes: Vec<super::mailboxes::Mailbox>) -> Result<Self> {
-        ensure!(boxes.len() <= super::MAX_STEPS,"destination snapshot count limit");
-        let inbox = boxes.iter().find(|entry|entry.inbox).map(|entry|entry.id);
+        ensure!(
+            boxes.len() <= super::MAX_STEPS,
+            "destination snapshot count limit"
+        );
+        let inbox = boxes.iter().find(|entry| entry.inbox).map(|entry| entry.id);
         let mut children = HashMap::new();
         let mut bytes = 0;
         for entry in boxes {
             bytes += entry.name.len();
-            ensure!(bytes <= 1024*1024,"destination snapshot allocation limit");
-            children.insert((entry.parent,entry.name),entry.id);
+            ensure!(
+                bytes <= 1024 * 1024,
+                "destination snapshot allocation limit"
+            );
+            children.insert((entry.parent, entry.name), entry.id);
         }
-        Ok(Self {children,inbox,paths:HashMap::new(),steps:0,refreshed:false})
+        Ok(Self {
+            children,
+            inbox,
+            paths: HashMap::new(),
+            steps: 0,
+            refreshed: false,
+        })
     }
-    fn resolve(&mut self, ms: &SqliteMailStore, account: i32, path: &str, create: bool) -> Result<ContainerId> {
+    fn resolve(
+        &mut self,
+        ms: &SqliteMailStore,
+        account: i32,
+        path: &str,
+        create: bool,
+    ) -> Result<ContainerId> {
         let path_key = super::interpreter::mailbox_key(path);
-        if let Some(id) = self.paths.get(&path_key) { return Ok(*id); }
+        if let Some(id) = self.paths.get(&path_key) {
+            return Ok(*id);
+        }
         let mut parent = None;
-        for (index,name) in path.split('/').enumerate() {
+        for (index, name) in path.split('/').enumerate() {
             self.steps += 1;
-            ensure!(self.steps <= super::MAX_STEPS,"destination path work limit");
-            let key = (parent,name.to_string());
+            ensure!(
+                self.steps <= super::MAX_STEPS,
+                "destination path work limit"
+            );
+            let key = (parent, name.to_string());
             let existing = if index == 0 && name.eq_ignore_ascii_case("INBOX") {
                 self.inbox
-            } else { self.children.get(&key).copied() };
-            let id = if let Some(id) = existing { id } else {
-                ensure!(create,"fileinto mailbox does not exist");
-                match ms.create_mailbox(account,name,parent,ContainerAttrs {special_use:None,subscribed:false,extra:serde_json::json!({})}) {
+            } else {
+                self.children.get(&key).copied()
+            };
+            let id = if let Some(id) = existing {
+                id
+            } else {
+                ensure!(create, "fileinto mailbox does not exist");
+                match ms.create_mailbox(
+                    account,
+                    name,
+                    parent,
+                    ContainerAttrs {
+                        special_use: None,
+                        subscribed: false,
+                        extra: serde_json::json!({}),
+                    },
+                ) {
                     Ok(id) => id,
                     Err(error) => {
                         // Recover one concurrent create, with bounded work. A
                         // changing namespace cannot force repeated full reloads.
-                        ensure!(!self.refreshed,"destination namespace changed repeatedly");
+                        ensure!(!self.refreshed, "destination namespace changed repeatedly");
                         self.refreshed = true;
-                        let fresh = super::mailboxes::load(ms,account)?;
+                        let fresh = super::mailboxes::load(ms, account)?;
                         self.steps += fresh.len();
-                        ensure!(self.steps <= super::MAX_STEPS,"destination refresh work limit");
-                        fresh.into_iter().find(|entry|entry.parent==parent && entry.name==name).map(|entry|entry.id).ok_or(error)?
+                        ensure!(
+                            self.steps <= super::MAX_STEPS,
+                            "destination refresh work limit"
+                        );
+                        fresh
+                            .into_iter()
+                            .find(|entry| entry.parent == parent && entry.name == name)
+                            .map(|entry| entry.id)
+                            .ok_or(error)?
                     }
                 }
             };
-            self.children.insert(key,id);
+            self.children.insert(key, id);
             parent = Some(id);
         }
-        let id = parent.ok_or_else(||anyhow::anyhow!("empty mailbox path"))?;
-        self.paths.insert(path_key,id);
+        let id = parent.ok_or_else(|| anyhow::anyhow!("empty mailbox path"))?;
+        self.paths.insert(path_key, id);
         Ok(id)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn destination_metadata_limits_precede_index_allocation() -> Result<()> {
-        let tmp = tempfile::tempdir()?;
-        let ms = SqliteMailStore::new(Arc::new(mds::SqliteCasMds::open(tmp.path())?));
-        ms.create_mailbox(1,"Inbox",None,ContainerAttrs {special_use:Some("\\Inbox".into()),subscribed:true,extra:serde_json::json!({})})?;
-        let record = super::super::mailboxes::load(&ms,1)?.into_iter().next().unwrap();
-        assert!(MailboxResolver::from_mailboxes(vec![record.clone();super::super::MAX_STEPS+1]).is_err());
-        let mut oversized = record;
-        oversized.name = "x".repeat(1024*1024+1);
-        assert!(MailboxResolver::from_mailboxes(vec![oversized]).is_err());
-        Ok(())
     }
 }
 
@@ -760,4 +820,36 @@ async fn vacation_reply(
     )
     .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn destination_metadata_limits_precede_index_allocation() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let ms = SqliteMailStore::new(Arc::new(mds::SqliteCasMds::open(tmp.path())?));
+        ms.create_mailbox(
+            1,
+            "Inbox",
+            None,
+            ContainerAttrs {
+                special_use: Some("\\Inbox".into()),
+                subscribed: true,
+                extra: serde_json::json!({}),
+            },
+        )?;
+        let record = super::super::mailboxes::load(&ms, 1)?
+            .into_iter()
+            .next()
+            .unwrap();
+        assert!(
+            MailboxResolver::from_mailboxes(vec![record.clone(); super::super::MAX_STEPS + 1])
+                .is_err()
+        );
+        let mut oversized = record;
+        oversized.name = "x".repeat(1024 * 1024 + 1);
+        assert!(MailboxResolver::from_mailboxes(vec![oversized]).is_err());
+        Ok(())
+    }
 }

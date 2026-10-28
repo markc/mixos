@@ -157,11 +157,20 @@ async fn unsupported_flags_are_ignored_without_changing_filing() -> Result<()> {
     let record = f.ms.get_email(f.account.id, id)?;
     assert_eq!(record.keywords.0, Flags::SEEN);
     assert_eq!(record.tags, Tags::from(vec!["project".into()]));
-    let keywords = (0..70).map(|n|format!("tag{n}")).collect::<Vec<_>>().join(" ");
-    f.script(&format!(r#"require ["imap4flags","fileinto"]; setflag "{keywords}"; fileinto "FlagTest";"#)).await?;
-    let id = f.deliver(MESSAGE,false,false).await?.unwrap();
-    assert_eq!(f.count("Inbox"),0);
-    assert_eq!(f.ms.get_email(f.account.id,id)?.tags.len(),maild::keyword::MAX_KEYWORDS_PER_MESSAGE);
+    let keywords = (0..70)
+        .map(|n| format!("tag{n}"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    f.script(&format!(
+        r#"require ["imap4flags","fileinto"]; setflag "{keywords}"; fileinto "FlagTest";"#
+    ))
+    .await?;
+    let id = f.deliver(MESSAGE, false, false).await?.unwrap();
+    assert_eq!(f.count("Inbox"), 0);
+    assert_eq!(
+        f.ms.get_email(f.account.id, id)?.tags.len(),
+        maild::keyword::MAX_KEYWORDS_PER_MESSAGE
+    );
     Ok(())
 }
 #[tokio::test]
@@ -201,14 +210,24 @@ async fn mailbox_snapshot_work_is_bounded_and_skipped_when_unused() -> Result<()
     let f = Fixture::new().await?;
     let mut parent = None;
     for n in 0..160 {
-        parent = Some(f.ms.create_mailbox(f.account.id,&format!("d{n}"),parent,mds::ContainerAttrs {special_use:None,subscribed:false,extra:serde_json::json!({})})?);
+        parent = Some(f.ms.create_mailbox(
+            f.account.id,
+            &format!("d{n}"),
+            parent,
+            mds::ContainerAttrs {
+                special_use: None,
+                subscribed: false,
+                extra: serde_json::json!({}),
+            },
+        )?);
     }
-    f.script(r#"require "mailbox"; if mailboxexists "INBOX" { discard; }"#).await?;
-    assert!(f.deliver(MESSAGE,false,false).await?.is_some());
-    assert_eq!(f.count("Inbox"),1);
+    f.script(r#"require "mailbox"; if mailboxexists "INBOX" { discard; }"#)
+        .await?;
+    assert!(f.deliver(MESSAGE, false, false).await?.is_some());
+    assert_eq!(f.count("Inbox"), 1);
     f.script("discard;").await?;
-    assert!(f.deliver(MESSAGE,false,false).await?.is_none());
-    assert_eq!(f.count("Inbox"),1);
+    assert!(f.deliver(MESSAGE, false, false).await?.is_none());
+    assert_eq!(f.count("Inbox"), 1);
     Ok(())
 }
 #[tokio::test]
@@ -250,14 +269,26 @@ async fn fileinto_nested_names_resolve_parent_and_inbox_role() -> Result<()> {
 async fn created_mailboxes_and_parents_satisfy_later_filing_actions() -> Result<()> {
     let f = Fixture::new().await?;
     f.script(r#"require ["fileinto","mailbox","copy","imap4flags"]; fileinto :create :copy "NewParent/Child"; fileinto :copy "NewParent"; fileinto :flags "\\Seen" "NewParent/Child";"#).await?;
-    f.deliver(MESSAGE,false,false).await?;
-    assert_eq!(f.count("Inbox"),0);
-    let parent = f.ms.mailbox_by_name(f.account.id,"NewParent")?.unwrap();
-    assert_eq!(f.ms.list_emails_in_mailbox(f.account.id,parent,ListOpts::default())?.len(),1);
-    let child = f.ms.list_mailboxes(f.account.id)?.into_iter().find(|entry|entry.parent==Some(parent) && entry.name=="Child").unwrap();
-    let items = f.ms.list_emails_in_mailbox(f.account.id,child.id,ListOpts::default())?;
-    assert_eq!(items.len(),1);
-    assert_ne!(f.ms.get_email(f.account.id,items[0].id)?.keywords.0 & Flags::SEEN,0);
+    f.deliver(MESSAGE, false, false).await?;
+    assert_eq!(f.count("Inbox"), 0);
+    let parent = f.ms.mailbox_by_name(f.account.id, "NewParent")?.unwrap();
+    assert_eq!(
+        f.ms.list_emails_in_mailbox(f.account.id, parent, ListOpts::default())?
+            .len(),
+        1
+    );
+    let child =
+        f.ms.list_mailboxes(f.account.id)?
+            .into_iter()
+            .find(|entry| entry.parent == Some(parent) && entry.name == "Child")
+            .unwrap();
+    let items =
+        f.ms.list_emails_in_mailbox(f.account.id, child.id, ListOpts::default())?;
+    assert_eq!(items.len(), 1);
+    assert_ne!(
+        f.ms.get_email(f.account.id, items[0].id)?.keywords.0 & Flags::SEEN,
+        0
+    );
     Ok(())
 }
 #[tokio::test]
