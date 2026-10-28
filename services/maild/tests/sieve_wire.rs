@@ -53,6 +53,8 @@ async fn starttls_upload_activate_then_real_smtp_delivery_and_rejection() -> Res
     let key_path = tmp.path().join("key.pem");
     std::fs::write(&cert_path, certified.cert.pem())?;
     std::fs::write(&key_path, certified.key_pair.serialize_pem())?;
+    let filter_path = tmp.path().join("inbound.mix");
+    std::fs::write(&filter_path,"-- SPDX-License-Identifier: MIT OR Apache-2.0\nreturn \"Global\"\n")?;
     let mut cfg = Config {
         hostname: "mail.example.com".into(),
         database_path: tmp.path().join("mail.db").display().to_string(),
@@ -65,6 +67,7 @@ async fn starttls_upload_activate_then_real_smtp_delivery_and_rejection() -> Res
         sieve_listen: Some(ListenSpec::Single("127.0.0.1:0".into())),
         tls_cert: Some(cert_path.display().to_string()),
         tls_key: Some(key_path.display().to_string()),
+        inbound_filter: Some(filter_path.display().to_string()),
         ..Config::default()
     };
     let built = build_runtime(
@@ -87,6 +90,7 @@ async fn starttls_upload_activate_then_real_smtp_delivery_and_rejection() -> Res
         .await?
         .unwrap();
     ms.create_mailbox(account.id,"Inbox",None,mds::ContainerAttrs { special_use:Some("\\Inbox".into()),subscribed:true,extra:serde_json::json!({}) })?;
+    let global = ms.create_mailbox(account.id,"Global",None,mds::ContainerAttrs { special_use:None,subscribed:false,extra:serde_json::json!({}) })?;
 
     let mut roots = rustls::RootCertStore::empty();
     roots.add(certified.cert.der().clone())?;
@@ -129,7 +133,7 @@ async fn starttls_upload_activate_then_real_smtp_delivery_and_rejection() -> Res
             .await?
             .starts_with("NO")
     );
-    let script = "require [\"fileinto\",\"mailbox\",\"imap4flags\"];\r\nfileinto :create :flags \"\\\\Seen\" \"Projects\";\r\n";
+    let script = "require [\"fileinto\",\"mailbox\",\"imap4flags\"];\r\nif header :is \"X-Mixos-Spam-Verdict\" \"UNKNOWN\" { fileinto :create :flags \"\\\\Seen\" \"Projects\"; } else { discard; }\r\n";
     assert!(
         send(
             &mut io,
@@ -209,6 +213,7 @@ async fn starttls_upload_activate_then_real_smtp_delivery_and_rejection() -> Res
     let projects = ms.mailbox_by_name(account.id, "Projects")?.unwrap();
     let messages = ms.list_emails_in_mailbox(account.id, projects, ListOpts::default())?;
     assert_eq!(messages.len(), 1);
+    assert!(ms.list_emails_in_mailbox(account.id,global,ListOpts::default())?.is_empty());
     assert_ne!(messages[0].keywords.0 & mds::Flags::SEEN, 0);
     assert!(
         send(
@@ -220,6 +225,8 @@ async fn starttls_upload_activate_then_real_smtp_delivery_and_rejection() -> Res
     );
     assert!(message(&mut smtp).await?.starts_with("550 5.7.1 Denied"));
     assert!(send(&mut io, "SETACTIVE \"\"\r\n").await?.starts_with("OK"));
+    assert!(message(&mut smtp).await?.starts_with("250"));
+    assert_eq!(ms.list_emails_in_mailbox(account.id,global,ListOpts::default())?.len(),1);
     assert!(
         send(&mut io, "DELETESCRIPT \"renamed\"\r\n")
             .await?

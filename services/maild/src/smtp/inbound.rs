@@ -783,11 +783,7 @@ pub async fn deliver(
             && !mail_from.is_empty()
             && !is_auto_submitted(&message)
             && vacation_sender_verified(&verify_result, mail_from)
-            && matches!(
-                crate::sieve::store::active(&state.db, account.id).await,
-                Ok(None)
-            )
-            && let Ok(Some(vr)) = db::vacation::is_active(&state.db.conn, account.id).await
+            && let Ok(Some(vr)) = legacy_vacation(&state.db, account.id).await
             && matches!(
                 db::vacation::mark_reply_if_due(&state.db.conn, account.id, mail_from).await,
                 Ok(true)
@@ -998,6 +994,11 @@ fn vacation_sender_verified(verify_result: &VerifyResult, mail_from: &str) -> bo
 }
 
 #[allow(clippy::too_many_arguments)]
+async fn legacy_vacation(db: &crate::db::Db, account: i32) -> Result<Option<db::vacation::VacationResponse>> {
+    if crate::sieve::store::active(db,account).await?.is_some() { return Ok(None); }
+    db::vacation::is_active(&db.conn,account).await
+}
+
 async fn run_inbound_filter(
     config: &super::SmtpConfig,
     from: &str,
@@ -1495,5 +1496,24 @@ mod tests {
         assert_eq!(header_value_safe("a\0b"), "ab");
         // Legitimate single-line values pass through unchanged.
         assert_eq!(header_value_safe("Out of office"), "Out of office");
+    }
+}
+
+#[cfg(test)]
+mod sieve_vacation_tests {
+    #[tokio::test]
+    async fn active_sieve_suppresses_legacy_vacation_until_disabled() -> anyhow::Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let db = crate::db::Db::connect(tmp.path().join("mail.db").to_str().unwrap(),tmp.path().join("blobs").to_str().unwrap()).await?;
+        db.migrate().await?;
+        db.conn.lock().unwrap().execute("INSERT INTO accounts(email,password) VALUES('bob@example.com','test')",[])?;
+        crate::db::vacation::upsert(&db.conn,1,&crate::db::vacation::VacationResponse { is_enabled:true,..Default::default() }).await?;
+        assert!(super::legacy_vacation(&db,1).await?.is_some());
+        crate::sieve::store::put(&db,1,"main","keep;",None).await?;
+        crate::sieve::store::activate(&db,1,"main").await?;
+        assert!(super::legacy_vacation(&db,1).await?.is_none());
+        crate::sieve::store::activate(&db,1,"").await?;
+        assert!(super::legacy_vacation(&db,1).await?.is_some());
+        Ok(())
     }
 }
