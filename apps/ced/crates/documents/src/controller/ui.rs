@@ -559,7 +559,7 @@ impl Controller {
                         x.close_after_save = Some(intent.clone());
                         x.save_intent = Some(intent.clone());
                     }
-                    self.server_op(
+                    self.save_or_server_op(
                         t,
                         ServerOp::Save {
                             path: None,
@@ -568,7 +568,7 @@ impl Controller {
                         intent,
                         fx,
                     )
-                    .map_err(|e| (code::CONFLICT, e))?;
+                    .map_err(|e| (e.code(), e.to_string()))?;
                 } else {
                     self.close(t, arg_bool("force"), None, intent, fx);
                 }

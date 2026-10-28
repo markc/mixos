@@ -4,7 +4,8 @@ use maildoc::MailDocument;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-pub const INTERNAL: &str = "INTERNAL";
+pub use crate::commands::code::INTERNAL;
+use crate::commands::code;
 
 /// Save refusals retain their category independently of their wording.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -18,8 +19,8 @@ pub enum SaveError {
 impl SaveError {
     pub fn code(&self) -> &'static str {
         match self {
-            Self::Argument(_) => "INVALID_ARGUMENT",
-            Self::Conflict(_) => "CONFLICT",
+            Self::Argument(_) => code::INVALID_ARGUMENT,
+            Self::Conflict(_) => code::CONFLICT,
             Self::Internal(_) => INTERNAL,
             Self::Document(refusal) => refusal_code(refusal),
         }
@@ -35,7 +36,7 @@ pub fn refusal_code(refusal: &maildoc::Refusal) -> &'static str {
         | maildoc::Refusal::MalformedHeader(_)
         | maildoc::Refusal::DuplicateHeader(_)
         | maildoc::Refusal::EmptyValue(_)
-        | maildoc::Refusal::InvalidValue { .. } => "INVALID_ARGUMENT",
+        | maildoc::Refusal::InvalidValue { .. } => code::INVALID_ARGUMENT,
     }
 }
 

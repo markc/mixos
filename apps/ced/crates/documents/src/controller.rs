@@ -690,6 +690,7 @@ impl Controller {
                 }
                 if let Some(t) = self.tab_mut(id) {
                     if let Some(saved) = &st.mail
+                        && st.recovery_id.is_some()
                         && let Ok(document) = maildoc::parse(&saved.disk)
                     {
                         let mut mail = crate::mail::MailState::new(document, saved.disk.clone());
@@ -1677,7 +1678,8 @@ impl Controller {
         let row = list.as_ref().and_then(|l| {
             l.buffers
                 .iter()
-                .find(|b| Some(&b.recovery_id) == rid.as_ref())
+                .find(|b| Some(&b.recovery_id) == rid.as_ref()
+                    && (self.tab(tab).is_none_or(|t| t.mail.is_none()) || b.path.is_none()))
                 .map(|b| (l, b))
         });
         match row {

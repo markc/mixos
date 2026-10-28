@@ -283,6 +283,11 @@ impl Controller {
                 let buffer = t.mirror.as_ref().unwrap().buffer().to_string();
                 t.mail = Some(MailState::new(document.clone(), text));
                 t.mirror = None;
+                // The file buffer's identity must never be persisted as the
+                // identity of its new body scratch.
+                if let Some(x) = self.x.get_mut(&tab) {
+                    x.recovery_id = None;
+                }
                 self.send(
                     Outgoing {
                         command: "edit.close".into(),
@@ -1276,5 +1281,30 @@ mod tests {
         c.send_open(tab, None, true, &mut fx);
         assert!(fx.iter().any(|e| matches!(e, Effect::Send { out, .. } if out.command == "edit.open" && serde_json::from_str::<Value>(&out.body).unwrap()["text"] == "Live body")));
         assert_eq!(c.tab(tab).unwrap().mirror.as_ref().unwrap().detached_copy().unwrap().text, "Body");
+    }
+
+    #[test]
+    fn a_session_saved_before_seed_open_never_uses_the_file_as_a_body() {
+        let mut c = Controller::new(Config::default(), 1, true);
+        let mut service = FakeEditd::new("0000e1e1");
+        service.create(Some(PATH), LETTER);
+        let mut queue: VecDeque<_> = c.open_paths(&[PATH.into()], Intent::ui(0)).into();
+        while c.tabs().iter().all(|t| t.mail.is_none()) {
+            let effect = queue.pop_front().expect("mail classification must finish");
+            if let Effect::Send { req, out } = effect {
+                let answer = service.handle("local:ced", &out.command, &serde_json::from_str(&out.body).unwrap());
+                queue.extend(c.on_incoming(Incoming::Reply { req, rc:answer.rc, body:answer.body.to_string() }));
+            }
+        }
+        let session = c.session();
+        assert!(session.tabs[0].recovery_id.is_none());
+        assert!(session.tabs[0].mail.is_some());
+        let mut restored = Controller::new(Config::default(), 2, true);
+        restored.set_session(session);
+        let fx = restored.start();
+        settle(&mut restored, &mut service, fx);
+        let tab = restored.tab(restored.active().unwrap()).unwrap();
+        assert!(tab.mail.is_some());
+        assert_eq!(text_string(tab.mirror.as_ref().unwrap().text()), "Body");
     }
 }
