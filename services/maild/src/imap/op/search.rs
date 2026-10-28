@@ -36,26 +36,38 @@
 //! - `NOT <key>`, `OR <key1> <key2>`, `(<key1> <key2>...)` —
 //!   the standard combinators.
 //!
+//! - `BEFORE`, `ON`, `SINCE <date>` — the internal date
+//!   (`received_at`, UTC day) against a `d-Mon-yyyy` date.
+//! - `SENTBEFORE`, `SENTON`, `SENTSINCE <date>` — the day of the
+//!   `Date:` header as the sender wrote it (time and zone ignored, RFC
+//!   9051 §6.4.4). A message with no parseable `Date:` falls back to
+//!   the internal date, as Dovecot does.
+//! - `FROM`, `TO`, `CC`, `BCC`, `SUBJECT <string>`, `HEADER <name>
+//!   <string>` — case-insensitive substring of the named field. The
+//!   needle is tried against both the raw field and its RFC 2047
+//!   decoded form, so a non-ASCII search finds an encoded-word subject.
+//!   `HEADER <name> ""` matches any message that has the field.
+//! - `BODY <string>` — substring of the decoded text body parts (HTML
+//!   parts are reduced to text first). `TEXT <string>` — header block
+//!   or body.
+//!
 //! Multiple top-level keys are AND-combined (RFC 9051 §6.4.4
 //! "combining multiple search-keys with implicit AND").
 //!
-//! ## scope (deferred)
-//!
-//! Header / date / body-text criteria — `FROM`, `TO`, `CC`, `BCC`,
-//! `SUBJECT`, `HEADER name astring`, `BEFORE`, `ON`, `SINCE`,
-//! `SENTBEFORE`, `SENTON`, `SENTSINCE`, `TEXT`, `BODY`. These require
-//! parsing each message body and are deferred. They are rejected as
-//! `BAD` rather than silently treated as `ALL` — silently dropping a
-//! filter the client expects to honour would cause the wrong message
-//! list to render (state-of-truth divergence with no IDLE-style
-//! reconciliation channel for SEARCH).
+//! String arguments arrive as atoms, quoted strings, or — for
+//! non-ASCII text, which Thunderbird sends as `{N}` — a single
+//! trailing literal that the session splices back into the argument
+//! line as a quoted string (see `session::splice_search_literal`).
 //!
 //! ## Substrate primitive
 //!
 //! `list_emails_in_mailbox` returns the full snapshot — `EmailHandle`
-//! carries `uid`, `keywords`, `size_bytes`, `received_at`. needs
-//! no blob load. (date / header / body) will add a per-row blob
-//! fetch path mirroring `op::fetch`.
+//! carries `uid`, `keywords`, `size_bytes`, `received_at`. Each
+//! message is first judged on that metadata alone with three-valued
+//! logic ([`eval`] returns `None` when a header, sent-date or body key
+//! is still undecided); only the undecided ones pay for a blob read
+//! and a `mail_parser` parse. So `UNDELETED FROM x` on a mailbox of
+//! mostly deleted mail never loads the deleted blobs.
 //!
 //! ## Response shape
 //!
@@ -69,6 +81,7 @@
 
 use std::sync::Arc;
 
+use chrono::NaiveDate;
 use mds::{ContainerId, Flags};
 
 use super::flags::{self, FlagToken};
@@ -110,6 +123,21 @@ enum Crit {
     MsnInSet(SeqSet),
     /// `uid` is a member of `set`.
     UidInSet(SeqSet),
+    /// Internal date (UTC day) is before / on / on-or-after the day.
+    Before(NaiveDate),
+    On(NaiveDate),
+    Since(NaiveDate),
+    /// `Date:` header day is before / on / on-or-after the day.
+    SentBefore(NaiveDate),
+    SentOn(NaiveDate),
+    SentSince(NaiveDate),
+    /// Lowercased field name, lowercased needle. An empty needle
+    /// matches any message carrying the field.
+    Header(String, String),
+    /// Lowercased needle against the decoded text body.
+    Body(String),
+    /// Lowercased needle against the header block or the body.
+    Text(String),
     /// All sub-keys must match.
     And(Vec<Crit>),
     /// Either sub-key matches.
@@ -299,10 +327,39 @@ fn parse_key(tokens: &[String], idx: usize) -> Result<(Crit, usize), String> {
             let (k2, n2) = parse_key(tokens, n1)?;
             Ok((Crit::Or(Box::new(k1), Box::new(k2)), n2))
         }
-        "FROM" | "TO" | "CC" | "BCC" | "SUBJECT" | "HEADER" | "TEXT" | "BODY" | "BEFORE" | "ON"
-        | "SINCE" | "SENTBEFORE" | "SENTON" | "SENTSINCE" => Err(format!(
-            "SEARCH {upper} criterion deferred (T13b) — try ALL, flag predicates, UID, NOT, OR, SMALLER, LARGER"
-        )),
+        "BEFORE" | "ON" | "SINCE" | "SENTBEFORE" | "SENTON" | "SENTSINCE" => {
+            let arg = tokens
+                .get(idx + 1)
+                .ok_or_else(|| format!("SEARCH {upper} missing date"))?;
+            let day = parse_date(arg).ok_or_else(|| {
+                format!("SEARCH {upper} expected a date like 1-Feb-2026, got {arg:?}")
+            })?;
+            let crit = match upper.as_str() {
+                "BEFORE" => Crit::Before(day),
+                "ON" => Crit::On(day),
+                "SINCE" => Crit::Since(day),
+                "SENTBEFORE" => Crit::SentBefore(day),
+                "SENTON" => Crit::SentOn(day),
+                _ => Crit::SentSince(day),
+            };
+            Ok((crit, idx + 2))
+        }
+        "FROM" | "TO" | "CC" | "BCC" | "SUBJECT" => {
+            let needle = string_arg(tokens, idx + 1, &upper)?;
+            Ok((Crit::Header(upper.to_ascii_lowercase(), needle), idx + 2))
+        }
+        "HEADER" => {
+            let name = tokens
+                .get(idx + 1)
+                .ok_or_else(|| "SEARCH HEADER missing field name".to_string())?;
+            if name.is_empty() {
+                return Err("SEARCH HEADER empty field name".into());
+            }
+            let needle = string_arg(tokens, idx + 2, "HEADER")?;
+            Ok((Crit::Header(name.to_ascii_lowercase(), needle), idx + 3))
+        }
+        "BODY" => Ok((Crit::Body(string_arg(tokens, idx + 1, "BODY")?), idx + 2)),
+        "TEXT" => Ok((Crit::Text(string_arg(tokens, idx + 1, "TEXT")?), idx + 2)),
         _ => match SeqSet::parse(tok) {
             Ok(set) => Ok((Crit::MsnInSet(set), idx + 1)),
             Err(_) => Err(format!("SEARCH unknown criterion {tok:?}")),
@@ -316,6 +373,35 @@ fn parse_number(tokens: &[String], idx: usize, key: &str) -> Result<u64, String>
         .ok_or_else(|| format!("SEARCH {key} missing number"))?;
     tok.parse::<u64>()
         .map_err(|_| format!("SEARCH {key} expected number, got {tok:?}"))
+}
+
+/// A search string argument, lowercased for the case-insensitive
+/// substring match RFC 9051 §6.4.4 asks for.
+fn string_arg(tokens: &[String], idx: usize, key: &str) -> Result<String, String> {
+    tokens
+        .get(idx)
+        .map(|s| s.to_lowercase())
+        .ok_or_else(|| format!("SEARCH {key} missing string"))
+}
+
+/// Parse an RFC 9051 `date` (`date-day "-" date-month "-" date-year`,
+/// e.g. `1-Feb-2026` or `01-feb-2026`; quotes already stripped).
+fn parse_date(tok: &str) -> Option<NaiveDate> {
+    let mut parts = tok.split('-');
+    let day: u32 = parts.next()?.parse().ok()?;
+    let month_tok = parts.next()?;
+    let year: i32 = parts.next()?.parse().ok()?;
+    if parts.next().is_some() || month_tok.len() != 3 {
+        return None;
+    }
+    const MONTHS: [&str; 12] = [
+        "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec",
+    ];
+    let month = MONTHS
+        .iter()
+        .position(|m| m.eq_ignore_ascii_case(month_tok))? as u32
+        + 1;
+    NaiveDate::from_ymd_opt(year, month, day)
 }
 
 /// Parse the argument of `KEYWORD` / `UNKEYWORD`.
@@ -362,11 +448,123 @@ fn parse_keyword(tok: &str, negated: bool) -> Result<Crit, String> {
     })
 }
 
-/// Evaluate a criterion against a single message. `exists` and
-/// `largest_uid` are the mailbox-wide bounds needed to resolve `*`
-/// inside `MsnInSet` / `UidInSet` per RFC 9051 §9.
-fn matches(crit: &Crit, msn: u32, handle: &EmailHandle, exists: u32, largest_uid: u64) -> bool {
-    match crit {
+/// The parts of a message that header, sent-date and body keys look
+/// at, extracted once per message and lowercased for matching.
+struct Doc {
+    /// `(lowercased name, lowercased raw value, lowercased decoded value)`.
+    headers: Vec<(String, String, String)>,
+    /// Decoded text body parts, lowercased.
+    body: String,
+    /// Day of the `Date:` header, if it parsed.
+    sent: Option<NaiveDate>,
+}
+
+impl Doc {
+    fn from_raw(raw: &[u8]) -> Doc {
+        let Some(message) = mail_parser::MessageParser::default().parse(raw) else {
+            // Unparseable: no fields to match, body is the lossy bytes.
+            return Doc {
+                headers: Vec::new(),
+                body: String::from_utf8_lossy(raw).to_lowercase(),
+                sent: None,
+            };
+        };
+        let headers = message
+            .headers()
+            .iter()
+            .map(|h| {
+                let raw_value = raw
+                    .get(h.offset_start as usize..h.offset_end as usize)
+                    .map(String::from_utf8_lossy)
+                    .unwrap_or_default();
+                (
+                    h.name().to_ascii_lowercase(),
+                    raw_value.to_lowercase(),
+                    decoded_value(h.value()).to_lowercase(),
+                )
+            })
+            .collect();
+        let mut body = String::new();
+        let mut pos = 0;
+        while let Some(text) = message.body_text(pos) {
+            if !body.is_empty() {
+                body.push('\n');
+            }
+            body.push_str(&text.to_lowercase());
+            pos += 1;
+        }
+        let sent = message
+            .date()
+            .and_then(|d| NaiveDate::from_ymd_opt(i32::from(d.year), d.month.into(), d.day.into()));
+        Doc {
+            headers,
+            body,
+            sent,
+        }
+    }
+
+    fn header_has(&self, name: &str, needle: &str) -> bool {
+        self.headers.iter().any(|(n, raw, decoded)| {
+            n == name && (needle.is_empty() || raw.contains(needle) || decoded.contains(needle))
+        })
+    }
+
+    fn text_has(&self, needle: &str) -> bool {
+        self.body.contains(needle)
+            || self.headers.iter().any(|(n, raw, decoded)| {
+                n.contains(needle) || raw.contains(needle) || decoded.contains(needle)
+            })
+    }
+}
+
+/// Render a parsed header value as plain text for matching: addresses
+/// as `Name <addr>`, text and text lists as written after RFC 2047
+/// decoding. Other kinds (dates, content types) match on the raw value.
+fn decoded_value(value: &mail_parser::HeaderValue<'_>) -> String {
+    use mail_parser::HeaderValue;
+    match value {
+        HeaderValue::Address(addr) => addr
+            .iter()
+            .map(|a| match (a.name(), a.address()) {
+                (Some(n), Some(e)) => format!("{n} <{e}>"),
+                (Some(n), None) => n.to_string(),
+                (None, Some(e)) => e.to_string(),
+                (None, None) => String::new(),
+            })
+            .collect::<Vec<_>>()
+            .join(", "),
+        HeaderValue::Text(t) => t.to_string(),
+        HeaderValue::TextList(list) => list.join(" "),
+        _ => String::new(),
+    }
+}
+
+/// UTC day of a unix-millis internal date.
+fn internal_day(received_at_ms: i64) -> NaiveDate {
+    chrono::DateTime::from_timestamp_millis(received_at_ms)
+        .unwrap_or_default()
+        .date_naive()
+}
+
+/// Evaluate a criterion against a single message, three-valued.
+/// `exists` and `largest_uid` are the mailbox-wide bounds needed to
+/// resolve `*` inside `MsnInSet` / `UidInSet` per RFC 9051 §9.
+///
+/// With `doc` = `None` only metadata is available, and a key that
+/// needs the message content returns `None` (undecided) unless the
+/// combinators already settle the answer (`false AND ?` = `false`,
+/// `true OR ?` = `true`). With `doc` = `Some`, the result is always
+/// `Some`.
+fn eval(
+    crit: &Crit,
+    msn: u32,
+    handle: &EmailHandle,
+    exists: u32,
+    largest_uid: u64,
+    doc: Option<&Doc>,
+) -> Option<bool> {
+    let sent_day = |d: &Doc| d.sent.unwrap_or_else(|| internal_day(handle.received_at));
+    Some(match crit {
         Crit::All => true,
         Crit::None => false,
         Crit::FlagsSet(f) => (handle.keywords.0 & f.0) == f.0,
@@ -376,15 +574,78 @@ fn matches(crit: &Crit, msn: u32, handle: &EmailHandle, exists: u32, largest_uid
         Crit::Larger(n) => handle.size_bytes > *n,
         Crit::MsnInSet(set) => set.contains_msn(msn, exists),
         Crit::UidInSet(set) => set.contains_uid(handle.uid, largest_uid),
-        Crit::And(ks) => ks
-            .iter()
-            .all(|k| matches(k, msn, handle, exists, largest_uid)),
-        Crit::Or(a, b) => {
-            matches(a, msn, handle, exists, largest_uid)
-                || matches(b, msn, handle, exists, largest_uid)
+        Crit::Before(day) => internal_day(handle.received_at) < *day,
+        Crit::On(day) => internal_day(handle.received_at) == *day,
+        Crit::Since(day) => internal_day(handle.received_at) >= *day,
+        Crit::SentBefore(day) => sent_day(doc?) < *day,
+        Crit::SentOn(day) => sent_day(doc?) == *day,
+        Crit::SentSince(day) => sent_day(doc?) >= *day,
+        Crit::Header(name, needle) => doc?.header_has(name, needle),
+        Crit::Body(needle) => doc?.body.contains(needle.as_str()),
+        Crit::Text(needle) => doc?.text_has(needle),
+        Crit::And(ks) => {
+            let mut undecided = false;
+            for k in ks {
+                match eval(k, msn, handle, exists, largest_uid, doc) {
+                    Some(false) => return Some(false),
+                    Some(true) => {}
+                    None => undecided = true,
+                }
+            }
+            if undecided {
+                return None;
+            }
+            true
         }
-        Crit::Not(k) => !matches(k, msn, handle, exists, largest_uid),
+        Crit::Or(a, b) => match (
+            eval(a, msn, handle, exists, largest_uid, doc),
+            eval(b, msn, handle, exists, largest_uid, doc),
+        ) {
+            (Some(true), _) | (_, Some(true)) => true,
+            (Some(false), Some(false)) => false,
+            _ => return None,
+        },
+        Crit::Not(k) => !eval(k, msn, handle, exists, largest_uid, doc)?,
+    })
+}
+
+/// Judge every message in the snapshot, loading and parsing a blob
+/// only for messages the metadata alone leaves undecided. Runs on a
+/// blocking thread: blob reads are synchronous filesystem work.
+fn collect_hits(
+    crit: &Crit,
+    handles: &[EmailHandle],
+    store: &dyn MailStore,
+) -> Vec<(u32, u64)> {
+    let exists = u32::try_from(handles.len()).unwrap_or(u32::MAX);
+    let largest_uid = handles.last().map(|h| h.uid).unwrap_or(0);
+    let mut hits: Vec<(u32, u64)> = Vec::with_capacity(handles.len());
+    for (idx, handle) in handles.iter().enumerate() {
+        let msn = (idx + 1) as u32;
+        let hit = match eval(crit, msn, handle, exists, largest_uid, None) {
+            Some(decided) => decided,
+            None => match store.read_blob(handle.blob_hash) {
+                Ok(raw) => {
+                    let doc = Doc::from_raw(&raw);
+                    eval(crit, msn, handle, exists, largest_uid, Some(&doc)).unwrap_or(false)
+                }
+                Err(e) => {
+                    // A missing blob cannot match a content key; skip
+                    // the row rather than fail the whole SEARCH.
+                    tracing::warn!(
+                        error = %e,
+                        item_id = %handle.id.0,
+                        "SEARCH read_blob failed; treating message as non-matching"
+                    );
+                    false
+                }
+            },
+        };
+        if hit {
+            hits.push((msn, handle.uid));
+        }
     }
+    hits
 }
 
 pub async fn handle(
@@ -432,16 +693,18 @@ pub async fn handle(
     handles.sort_by_key(|h| h.uid);
     handles.dedup_by_key(|h| h.uid);
 
-    let exists = u32::try_from(handles.len()).unwrap_or(u32::MAX);
-    let largest_uid = handles.last().map(|h| h.uid).unwrap_or(0);
-
-    let mut hits: Vec<(u32, u64)> = Vec::with_capacity(handles.len());
-    for (idx, handle) in handles.iter().enumerate() {
-        let msn = (idx + 1) as u32;
-        if matches(&req.crit, msn, handle, exists, largest_uid) {
-            hits.push((msn, handle.uid));
+    let crit = req.crit.clone();
+    let hits = match tokio::task::spawn_blocking(move || {
+        collect_hits(&crit, &handles, store.as_ref())
+    })
+    .await
+    {
+        Ok(h) => h,
+        Err(e) => {
+            tracing::warn!(error = %e, "SEARCH evaluation panicked");
+            return tagged(tag, Status::No, Some("SERVERBUG"), "search failed");
         }
-    }
+    };
 
     let mut out = String::new();
     out.push_str(&render_search_response(&hits, req.mode));
@@ -495,6 +758,27 @@ mod tests {
             size_bytes: size,
         }
     }
+
+    /// Metadata-only evaluation, for keys that never need the blob.
+    fn matches(crit: &Crit, msn: u32, h: &EmailHandle, exists: u32, largest_uid: u64) -> bool {
+        eval(crit, msn, h, exists, largest_uid, None).expect("metadata-only key")
+    }
+
+    /// Full evaluation against a raw message.
+    fn matches_raw(crit: &Crit, h: &EmailHandle, raw: &[u8]) -> bool {
+        let doc = Doc::from_raw(raw);
+        eval(crit, 1, h, 1, h.uid.max(1), Some(&doc)).unwrap()
+    }
+
+    const RAW: &[u8] = b"From: Alice Example <alice@example.com>\r\n\
+To: bob@example.net\r\n\
+Cc: carol@example.org\r\n\
+Subject: =?UTF-8?B?Q2Fmw6kgbWVudQ==?=\r\n\
+Date: Tue, 27 Oct 2026 23:30:00 -0400\r\n\
+X-Ticket: T-42\r\n\
+Content-Type: text/plain; charset=utf-8\r\n\
+\r\n\
+The quarterly Invoice is attached.\r\n";
 
     /// Test-only matcher with msn-bound and uid-bound defaulted from
     /// the handle so the property tests stay readable. Real callers
@@ -642,9 +926,116 @@ mod tests {
     }
 
     #[test]
-    fn parse_deferred_header_criterion_returns_bad() {
-        let e = parse_args("SUBJECT hello", SearchMode::Msn).unwrap_err();
-        assert!(e.contains("deferred"), "{e}");
+    fn parse_header_criteria() {
+        let r = parse_args("FROM \"Alice\"", SearchMode::Uid).unwrap();
+        assert_eq!(r.crit, Crit::Header("from".into(), "alice".into()));
+        let r = parse_args("SUBJECT hello", SearchMode::Msn).unwrap();
+        assert_eq!(r.crit, Crit::Header("subject".into(), "hello".into()));
+        let r = parse_args("HEADER X-Ticket \"\"", SearchMode::Msn).unwrap();
+        assert_eq!(r.crit, Crit::Header("x-ticket".into(), String::new()));
+        let r = parse_args("BODY Invoice", SearchMode::Msn).unwrap();
+        assert_eq!(r.crit, Crit::Body("invoice".into()));
+        let e = parse_args("FROM", SearchMode::Msn).unwrap_err();
+        assert!(e.contains("missing string"), "{e}");
+        let e = parse_args("HEADER X-Ticket", SearchMode::Msn).unwrap_err();
+        assert!(e.contains("missing string"), "{e}");
+    }
+
+    /// Thunderbird's quick filter shape on a Trash folder.
+    #[test]
+    fn parse_thunderbird_quick_filter() {
+        let r = parse_args(
+            "CHARSET UTF-8 UNDELETED OR FROM \"alice\" SUBJECT \"alice\"",
+            SearchMode::Uid,
+        )
+        .unwrap();
+        assert_eq!(
+            r.crit,
+            Crit::And(vec![
+                Crit::FlagsClear(Flags(Flags::DELETED)),
+                Crit::Or(
+                    Box::new(Crit::Header("from".into(), "alice".into())),
+                    Box::new(Crit::Header("subject".into(), "alice".into())),
+                ),
+            ])
+        );
+    }
+
+    #[test]
+    fn parse_dates() {
+        let d = NaiveDate::from_ymd_opt(2026, 2, 1).unwrap();
+        assert_eq!(parse_args("SINCE 1-Feb-2026", SearchMode::Msn).unwrap().crit, Crit::Since(d));
+        assert_eq!(
+            parse_args("BEFORE \"01-feb-2026\"", SearchMode::Msn).unwrap().crit,
+            Crit::Before(d)
+        );
+        assert_eq!(parse_args("SENTON 1-FEB-2026", SearchMode::Msn).unwrap().crit, Crit::SentOn(d));
+        for bad in ["SINCE 2026-02-01", "SINCE 31-Feb-2026", "SINCE 1-Febr-2026", "ON"] {
+            assert!(parse_args(bad, SearchMode::Msn).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn matches_header_fields_raw_and_decoded() {
+        let h = make_handle(1, 0, 100);
+        let hdr = |n: &str, s: &str| Crit::Header(n.into(), s.to_lowercase());
+        assert!(matches_raw(&hdr("from", "ALICE"), &h, RAW));
+        assert!(matches_raw(&hdr("from", "alice@example.com"), &h, RAW));
+        assert!(!matches_raw(&hdr("from", "bob"), &h, RAW));
+        assert!(matches_raw(&hdr("to", "bob@"), &h, RAW));
+        assert!(matches_raw(&hdr("cc", "carol"), &h, RAW));
+        assert!(!matches_raw(&hdr("bcc", ""), &h, RAW));
+        // Encoded-word subject: found by its decoded text and its raw form.
+        assert!(matches_raw(&hdr("subject", "café"), &h, RAW));
+        assert!(matches_raw(&hdr("subject", "CAFÉ MENU"), &h, RAW));
+        assert!(matches_raw(&hdr("subject", "=?utf-8?b?"), &h, RAW));
+        assert!(matches_raw(&hdr("x-ticket", ""), &h, RAW));
+        assert!(matches_raw(&hdr("x-ticket", "t-42"), &h, RAW));
+    }
+
+    #[test]
+    fn matches_body_and_text() {
+        let h = make_handle(1, 0, 100);
+        assert!(matches_raw(&Crit::Body("invoice".into()), &h, RAW));
+        assert!(!matches_raw(&Crit::Body("alice".into()), &h, RAW));
+        assert!(matches_raw(&Crit::Text("alice".into()), &h, RAW));
+        assert!(matches_raw(&Crit::Text("quarterly".into()), &h, RAW));
+        assert!(!matches_raw(&Crit::Text("absent".into()), &h, RAW));
+    }
+
+    #[test]
+    fn matches_dates() {
+        // 2026-10-28 01:00 UTC.
+        let mut h = make_handle(1, 0, 100);
+        h.received_at = 1_793_149_200_000;
+        let day = |d| NaiveDate::from_ymd_opt(2026, 10, d).unwrap();
+        assert!(matches(&Crit::On(day(28)), 1, &h, 1, 1));
+        assert!(matches(&Crit::Since(day(28)), 1, &h, 1, 1));
+        assert!(!matches(&Crit::Before(day(28)), 1, &h, 1, 1));
+        assert!(matches(&Crit::Before(day(29)), 1, &h, 1, 1));
+        // The Date: header's own day (27th, -0400), not its UTC instant.
+        assert!(matches_raw(&Crit::SentOn(day(27)), &h, RAW));
+        assert!(matches_raw(&Crit::SentBefore(day(28)), &h, RAW));
+        assert!(!matches_raw(&Crit::SentSince(day(28)), &h, RAW));
+        // No Date: header falls back to the internal date.
+        let no_date = b"Subject: x\r\n\r\nbody\r\n";
+        assert!(matches_raw(&Crit::SentOn(day(28)), &h, no_date));
+    }
+
+    /// Metadata settles a content key when it can, so the blob is
+    /// only loaded for messages that are still undecided.
+    #[test]
+    fn eval_short_circuits_without_blob() {
+        let deleted = make_handle(1, Flags::DELETED, 100);
+        let live = make_handle(2, 0, 100);
+        let crit = parse_args("UNDELETED FROM alice", SearchMode::Uid).unwrap().crit;
+        assert_eq!(eval(&crit, 1, &deleted, 2, 2, None), Some(false));
+        assert_eq!(eval(&crit, 2, &live, 2, 2, None), None);
+        let crit = parse_args("OR ALL FROM alice", SearchMode::Uid).unwrap().crit;
+        assert_eq!(eval(&crit, 2, &live, 2, 2, None), Some(true));
+        let crit = parse_args("NOT FROM alice", SearchMode::Uid).unwrap().crit;
+        assert_eq!(eval(&crit, 2, &live, 2, 2, None), None);
+        assert!(!matches_raw(&crit, &live, RAW));
     }
 
     #[test]

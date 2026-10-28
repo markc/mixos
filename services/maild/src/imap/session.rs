@@ -218,7 +218,7 @@ impl Session {
             if self.state.is_logout() {
                 return Ok(());
             }
-            let cmd = match self.read_command(reader, writer).await? {
+            let mut cmd = match self.read_command(reader, writer).await? {
                 ReadOutcome::Frame(c) => c,
                 ReadOutcome::Eof => return Ok(()),
                 ReadOutcome::LiteralRejected { response } => {
@@ -231,6 +231,25 @@ impl Session {
                     continue;
                 }
             };
+
+            // A SEARCH string sent as a literal (Thunderbird does this
+            // for non-ASCII text) rejoins the argument line as a
+            // quoted string, so `op::search` sees one flat line.
+            if is_search_line(&cmd.line) {
+                if let Err(msg) = splice_search_literal(&mut cmd) {
+                    self.bad_commands += 1;
+                    let tag = sniff_tag(&cmd.line).unwrap_or("*".to_string());
+                    writer
+                        .write_all(tagged(&tag, Status::Bad, None, msg).as_bytes())
+                        .await?;
+                    writer.flush().await?;
+                    if self.over_bad_command_cap() {
+                        self.emit_bye(writer, "too many bad commands").await?;
+                        return Ok(());
+                    }
+                    continue;
+                }
+            }
 
             let parsed = match codec::parse_line(&cmd.line) {
                 Ok(p) => p,
@@ -1118,8 +1137,8 @@ impl Session {
         // issuing `CAPABILITY {N+}` etc. — could otherwise push
         // `max_literal_bytes` (default 64 MiB) into RAM before any
         // account-scoped cap applies. The only command in that legally
-        // takes a literal is APPEND; later phases (AUTHENTICATE
-        // continuation, SEARCH, STORE flags via literal8) extend this
+        // takes a literal is APPEND, plus SEARCH for a trailing search
+        // string; later phases (AUTHENTICATE continuation, STORE flags via literal8) extend this
         // allow-list as those surfaces land. Refused literals leave the
         // stream in sync — sync form withholds the `+ Ready`
         // continuation; non-sync form drains the body + trailing CRLF
@@ -1132,7 +1151,7 @@ impl Session {
             let mut parts = line.splitn(3, |b| *b == b' ');
             let _tag = parts.next();
             let command_name = parts.next().unwrap_or(b"");
-            command_name.eq_ignore_ascii_case(b"APPEND")
+            command_name.eq_ignore_ascii_case(b"APPEND") || is_search_line(line)
         };
         let fut = codec::read_command(reader, writer, max_lit, accept_literals);
         let result = if !self.state.is_authenticated() {
@@ -1558,9 +1577,77 @@ fn sniff_tag(line: &[u8]) -> Option<String> {
     }
 }
 
+/// Whether a command line (tag, command, args) is `SEARCH` or
+/// `UID SEARCH`.
+fn is_search_line(line: &[u8]) -> bool {
+    let mut parts = line.split(|b| *b == b' ').filter(|p| !p.is_empty());
+    let _tag = parts.next();
+    match parts.next() {
+        Some(c) if c.eq_ignore_ascii_case(b"SEARCH") => true,
+        Some(c) if c.eq_ignore_ascii_case(b"UID") => {
+            parts.next().is_some_and(|c| c.eq_ignore_ascii_case(b"SEARCH"))
+        }
+        _ => false,
+    }
+}
+
+/// Fold a SEARCH command's trailing literal back into its line as a
+/// quoted string (`FROM {5}` + `Zoë` → `FROM "Zoë"`). The codec only
+/// frames a literal that ends the command, which is the shape a
+/// client sends for a single non-ASCII search string. A search string
+/// is a needle, not a message body, so anything over a line's worth
+/// is refused.
+fn splice_search_literal(cmd: &mut codec::Command) -> Result<(), &'static str> {
+    let Some(lit) = cmd.literal.take() else {
+        return Ok(());
+    };
+    if lit.len() > codec::MAX_LINE_BYTES {
+        return Err("SEARCH literal too large");
+    }
+    let text = std::str::from_utf8(&lit).map_err(|_| "SEARCH literal is not UTF-8")?;
+    let mut quoted = String::with_capacity(text.len() + 3);
+    quoted.push_str(" \"");
+    for c in text.chars() {
+        if c == '"' || c == '\\' {
+            quoted.push('\\');
+        }
+        quoted.push(c);
+    }
+    quoted.push('"');
+    cmd.line.extend_from_slice(quoted.as_bytes());
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn is_search_line_matches_search_and_uid_search() {
+        assert!(is_search_line(b"a1 SEARCH FROM"));
+        assert!(is_search_line(b"a1 uid search CHARSET UTF-8 FROM"));
+        assert!(!is_search_line(b"a1 UID FETCH 1 FLAGS"));
+        assert!(!is_search_line(b"a1 APPEND INBOX"));
+    }
+
+    #[test]
+    fn splice_search_literal_quotes_and_escapes() {
+        let mut cmd = codec::Command {
+            line: b"a1 UID SEARCH CHARSET UTF-8 FROM".to_vec(),
+            literal: Some("Zoë \"z\\\"".as_bytes().to_vec()),
+        };
+        splice_search_literal(&mut cmd).unwrap();
+        assert!(cmd.literal.is_none());
+        assert_eq!(
+            String::from_utf8(cmd.line).unwrap(),
+            "a1 UID SEARCH CHARSET UTF-8 FROM \"Zoë \\\"z\\\\\\\"\""
+        );
+        let mut bad = codec::Command {
+            line: b"a1 SEARCH BODY".to_vec(),
+            literal: Some(vec![0xff, 0xfe]),
+        };
+        assert!(splice_search_literal(&mut bad).is_err());
+    }
 
     /// `snapshot` reflects live acquires, drops to zero-count rows once
     /// released, and never reports a row whose count reached zero —
