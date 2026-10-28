@@ -270,6 +270,10 @@ buffer at revision zero with no undo entry for its initial contents. <code>text<
 and <code>path</code> are mutually exclusive. Initial contents count against the same
 byte budget and text limits as file-backed buffers. This additive contract
 is available from editd 0.3.0.</p>
+<p>A non-empty seeded scratch reports <code>dirty: true</code> immediately, even at revision
+zero. Save it to a path or use <code>edit.close {buffer, force:true}</code> to discard it.
+An empty new scratch is clean. Ced mail tabs track saved body content themselves,
+so a clean mail document can use a dirty scratch without showing a false marker.</p>
         </article>
         <p class="doc-source"><a href="/editd/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>

@@ -616,6 +616,7 @@ impl Actor {
         self.buffer.is_dirty()
             && !(self.buffer.saved_rev().is_none()
                 && self.buffer.rev() == 0
+                && self.buffer.text().is_empty()
                 && !self.restored_dirty)
     }
 

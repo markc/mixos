@@ -195,8 +195,12 @@ async fn scratch_initial_text_has_no_undo_entry_and_never_reads_a_path() {
         .await;
     let buffer = opened["buffer"].as_str().unwrap();
     assert_eq!(opened["rev"], 0);
+    assert_eq!(opened["dirty"], true);
+    assert_eq!(h.ok("edit.open", json!({"text":""})).await["dirty"], false);
     assert_eq!(opened["language"], "markdown");
     assert_eq!(h.text(buffer).await, text);
+    let closed = h.call("edit.close", json!({"buffer":buffer})).await;
+    assert_eq!(closed.0, 10, "a seeded scratch must not close without consent");
     let undone = h.call("edit.undo", json!({"buffer":buffer})).await;
     assert_eq!(undone.0, 10);
     assert_eq!(undone.1["reason"], "nothing_to_undo");

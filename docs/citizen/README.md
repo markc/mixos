@@ -5,6 +5,12 @@ description: An app's supervised native Bus connection, shared by the MixOS apps
 
 # citizen
 
+`call_app_with_limit` accepts separate registration-wait and per-command
+deadlines. The default `call_app` command limit is 30 seconds. A registration
+wait expiring before another attempt reports that the app did not appear;
+a deadline during a delivered call reports an uncertain outcome. Callers
+must not retry that outcome. Ced uses a 120-second limit for `email.send`.
+
 An app's supervised native Bus connection, shared by the MixOS apps
 (Workshop, [Prefs](../prefs/README.md)). Headless: no UI dependency.
 

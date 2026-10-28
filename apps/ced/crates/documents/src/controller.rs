@@ -226,7 +226,7 @@ struct TabX {
     ext_due: bool,
     ext_live: bool,
     ext_dirty: bool,
-    mail_save: Option<Effect>,
+    mail_save: Option<mail::SaveIntent>,
 }
 
 /// What a request the controller sent is for.
@@ -731,6 +731,7 @@ impl Controller {
                     }
                     self.send_info(&mut fx);
                 } else {
+                    self.cancel_parked_mail_saves(&mut fx);
                     let all: Vec<u64> = self.waiters.iter().map(|w| w.id).collect();
                     for w in all {
                         self.finish_waiter(
@@ -1089,7 +1090,10 @@ impl Controller {
             Some(p) => json!({"path": p, "origin": UI_ORIGIN}),
             None => match self.tab(tab).and_then(|t| t.mail.as_ref()) {
                 Some(mail) => {
-                    json!({"origin": UI_ORIGIN, "text": mail.saved.body, "language": "markdown"})
+                    let text = self.tab(tab).and_then(|t| t.mirror.as_ref())
+                        .map(|m| m.detached_copy().map_or_else(|| text_string(m.text()), |copy| copy.text.clone()))
+                        .unwrap_or_else(|| mail.saved.body.clone());
+                    json!({"origin": UI_ORIGIN, "text": text, "language": "markdown"})
                 }
                 None => json!({"origin": UI_ORIGIN}),
             },
@@ -2019,10 +2023,11 @@ impl Controller {
                 }
             }
         }
+        if !live {
+            self.cancel_mail_save(tab, "the parked mail save was cancelled because the body buffer is reconnecting", fx);
+        }
         if idle {
-            if let Some(save) = self.x.get_mut(&tab).and_then(|x| x.mail_save.take()) {
-                fx.push(save);
-            }
+            self.drain_mail_save(tab, fx);
             if let Some(job) = self.x.get_mut(&tab).and_then(|x| x.find.take()) {
                 self.start_find(tab, job, fx);
             }
@@ -2036,7 +2041,7 @@ impl Controller {
             let saved = self
                 .tab(tab)
                 .and_then(|t| t.mirror.as_ref())
-                .is_some_and(|m| !m.meta().dirty);
+                .is_some_and(|m| !m.meta().dirty) && self.tab(tab).is_some_and(|t| t.mail.is_none());
             if let Some(intent) = self
                 .x
                 .get_mut(&tab)
@@ -2327,7 +2332,7 @@ impl Controller {
             }
             ActionId::FileSend => {
                 self.save_mail(need(tab)?, None, true, fx)
-                    .map_err(conflict)?;
+                    .map_err(|e| (mail::error_code(&e), e))?;
                 Ok(None)
             }
             ActionId::MailHeaders => Err((
@@ -2381,10 +2386,12 @@ impl Controller {
                 Ok(None)
             }
             ActionId::FileExit => {
+                self.cancel_parked_mail_saves(fx);
                 if let Some(message) = self.mail_exit_refusal() {
                     return Err((code::CONFLICT, message.into()));
                 }
                 fx.push(Effect::SaveSession);
+                self.close_mail_buffers(fx);
                 fx.push(Effect::Quit);
                 Ok(None)
             }
@@ -2394,6 +2401,7 @@ impl Controller {
             | ActionId::EditUndoOther => {
                 let t = need(tab)?;
                 if let Some(mail) = self.tab_mut(t).and_then(|t| t.mail.as_mut()) {
+                    mail.editing_field = None;
                     if mail.sending || mail.saving {
                         return Err((code::CONFLICT, "the mail document is busy".into()));
                     }
@@ -2533,6 +2541,7 @@ impl Controller {
         intent: Intent,
         fx: &mut Vec<Effect>,
     ) {
+        self.cancel_mail_save(tab, "the parked mail save was cancelled by Close", fx);
         if self
             .tab(tab)
             .and_then(|t| t.mail.as_ref())
@@ -3022,11 +3031,13 @@ impl Controller {
                 )
             }
             "app.quit" => {
+                self.cancel_parked_mail_saves(fx);
                 if let Some(message) = self.mail_exit_refusal() {
                     return refuse(fx, code::CONFLICT, message.into(), None);
                 }
                 reply(fx, ok_body(&commands::QuitReply { quitting: true }));
                 fx.push(Effect::SaveSession);
+                self.close_mail_buffers(fx);
                 fx.push(Effect::Quit);
             }
             "ced.diagnostics" => {

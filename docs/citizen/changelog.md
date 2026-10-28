@@ -11,6 +11,9 @@ generated: by docs/_build/gen-site.mix from libs/citizen/CHANGELOG.md; do not ed
 
 ## Unreleased — 2026-10-27
 
+- Add `call_app_with_limit` for a caller-selected command deadline. Registration
+  wait limits no longer shorten a delivered call; timeouts remain uncertain.
+
 - Serve live debug queries and six logging levels in the Bus lane, including
   instance names and canonical discovery names. Record command receipt and
   result at debug without adding application actions.

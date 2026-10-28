@@ -334,7 +334,10 @@ instance). Commands keep the app’s canonical prefix, such as <code>ced.macros.
 the body editor. From is a plain address; Email checks identities when you
 send. Cc, Bcc and Reply-To buttons reveal optional rows. Thread headers are
 read-only. Attach… chooses multiple paths; each attachment chip can be removed.
-Each header field change is one undo step. Header undo history is separate
+Each committed header field edit is one undo step; typing in a field coalesces
+until focus leaves it or a command commits it. The last 256 header undo steps
+are retained. Execution events are published on commit, not per keystroke.
+Header undo history is separate
 from the edit service's body history: Undo exhausts header edits first, then
 undoes body edits. Redo restores header edits before body edits.</p>
 <p>The native edit service holds the body in a scratch buffer, seeded at revision
@@ -342,12 +345,16 @@ zero, so Undo cannot remove the initial body. Ced keeps the headers with the
 tab. Save and Save As assemble the document with <code>maildoc::write</code>: LF line
 ends, sorted headers, omitted empty headers and canonical trailing body
 whitespace. An invalid field refuses the save without touching the file.
-A file changed on disk also refuses the save; use Save As or reopen it.
+A file changed on disk also refuses the save; use Save As or reopen it. A
+deleted file is recreated. Body dirty checks use the same LF and trailing
+whitespace normalisation as the writer. A lost scratch is seeded from the
+current mirror or detached copy, retaining unsaved body edits.
 Save As retains the mail kind. Reload from Disk requires closing and reopening
 the mail tab, so it cannot silently replace separately edited headers.</p>
 <p>File ▸ Send saves first, then asks Email to send that absolute document path.
 The tab shows Sending… until Email replies. A second Send is refused while
-one is in flight. Email's refusal appears verbatim. An uncertain transport
+one is in flight. Each Email call has 120 seconds; the separate registration
+wait is 10 seconds. Email's refusal appears verbatim. An uncertain transport
 outcome says the mail may have been sent; ced never retries it. Opening a
 document never sends anything. Ced knows no accounts, JMAP or sending limits.</p>
 <p>Agents use <code>ced.execute {id:"file.send", params:{tab:1}}</code>; the reply waits for
@@ -358,7 +365,16 @@ Send is unavailable on ordinary text and Bus-message documents (<code>to</code> 
 <code>command</code>), which remain plain text for Workshop. A refused mail candidate
 also opens as unchanged text, with maildoc's exact refusal beside it for repair.
 Mail tabs keep header edits in this process. Exit refuses while a mail tab
-is dirty or a save/Send is in flight; save or explicitly close the tab first.</p>
+is dirty or a save/Send is in flight; save or explicitly close the tab first.
+Clean mail scratch buffers are force-closed on exit. A save waiting for body
+edits holds intent only: it assembles the latest body when the edits drain.
+Close and Exit cancel that intent; reconnection cancels it with a notice.
+Same-frame header edits are applied before Save or Send. Header controls and
+Attach are disabled during save or Send. Non-UTF-8 attachment paths are refused.
+Optional header fields default when omitted by an agent.</p>
+<p>Empty front matter is ordinary text. Only actual <code>mail-*</code> keys make a mail
+candidate; continuation lines do not. Mail with a UTF-8 BOM stays text and
+shows a notice explaining how to remove the BOM.</p>
         </article>
         <p class="doc-source"><a href="/ced/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>

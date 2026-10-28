@@ -133,8 +133,20 @@ pub async fn call_app(
     body: Value,
     wait_limit: Duration,
 ) -> Result<Reply, AppCallError> {
+    call_app_with_limit(client, app_id, command, body, wait_limit, Duration::from_secs(30)).await
+}
+
+/// As `call_app`, with a separate deadline for each delivered command. The
+/// registration wait never cuts short a command which may already be running.
+pub async fn call_app_with_limit(
+    client: &impl AppClient,
+    app_id: &str,
+    command: &str,
+    body: Value,
+    wait_limit: Duration,
+    limit: Duration,
+) -> Result<Reply, AppCallError> {
     let service = command.split('.').next().unwrap_or(command);
-    let limit = Duration::from_secs(30);
     let first = client
         .app_call(service, command, &body, limit)
         .await
@@ -165,9 +177,9 @@ pub async fn call_app(
         if remaining.is_zero() {
             return Err(AppCallError::DidNotAppear);
         }
-        let reply = tokio::time::timeout_at(
-            deadline,
-            client.app_call(service, command, &body, remaining.min(limit)),
+        let reply = tokio::time::timeout(
+            limit,
+            client.app_call(service, command, &body, limit),
         )
         .await
         .map_err(|_| {
@@ -313,12 +325,13 @@ mod tests {
 
         let client = SlowApp(std::sync::atomic::AtomicUsize::new(0));
         let error = runtime()
-            .block_on(call_app(
+            .block_on(call_app_with_limit(
                 &client,
                 "dev.mixos.email",
                 "email.compose",
                 json!({}),
                 Duration::from_secs(1),
+                Duration::from_millis(20),
             ))
             .unwrap_err();
         assert!(matches!(

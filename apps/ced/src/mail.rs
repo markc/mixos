@@ -8,8 +8,12 @@ pub fn save(path: &str, text: &str, expected: Option<&str>) -> Result<(), String
     // replacing writer, retaining permissions and following the target link.
     maildoc::parse(text).map_err(|e| e.to_string())?;
     if let Some(expected) = expected {
-        let current = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
-        if current != expected {
+        let current = match std::fs::read_to_string(path) {
+            Ok(text) => Some(text),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => return Err(e.to_string()),
+        };
+        if current.is_some_and(|text| text != expected) {
             return Err(
                 "the mail document changed on disk; save to another file or reopen it".into(),
             );
@@ -21,12 +25,13 @@ pub fn save(path: &str, text: &str, expected: Option<&str>) -> Result<(), String
 }
 
 pub async fn send(client: &impl citizen::app::AppClient, path: &str) -> Result<String, String> {
-    match citizen::call_app(
+    match citizen::call_app_with_limit(
         client,
         "dev.mixos.email",
         "email.send",
         serde_json::json!({"document":path}),
         Duration::from_secs(10),
+        Duration::from_secs(120),
     )
     .await
     {
@@ -89,6 +94,21 @@ mod tests {
         assert_eq!(client.log().len(), 1);
     }
 
+    #[tokio::test]
+    async fn send_has_a_full_two_minute_deadline_and_timeout_is_uncertain() {
+        struct Deadline;
+        impl citizen::app::AppClient for Deadline {
+            async fn app_call<'a>(&'a self, _service: &'a str, command: &'a str, _body: &'a serde_json::Value, limit: Duration) -> Result<Reply, CallError> {
+                assert_eq!(command, "email.send");
+                assert_eq!(limit, Duration::from_secs(120));
+                Err(CallError::from("Bus request timed out"))
+            }
+        }
+        let message = send(&Deadline, "/home/user/letter.md").await.unwrap_err();
+        assert!(message.contains("may have been sent"));
+        assert!(!message.contains("could not contact Email"));
+    }
+
     #[test]
     fn saves_round_trip_and_validation_or_disk_changes_leave_the_file_alone() {
         let directory = std::env::temp_dir().join(format!("ced-mail-save-{}", std::process::id()));
@@ -110,6 +130,9 @@ mod tests {
             std::fs::read_to_string(path).unwrap(),
             "changed by another editor"
         );
+        std::fs::remove_file(path).unwrap();
+        save(path, text, Some(text)).unwrap();
+        assert_eq!(std::fs::read_to_string(path).unwrap(), text);
         std::fs::remove_file(path).unwrap();
         std::fs::remove_dir(directory).unwrap();
     }

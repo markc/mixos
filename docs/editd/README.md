@@ -49,3 +49,8 @@ buffer at revision zero with no undo entry for its initial contents. `text`
 and `path` are mutually exclusive. Initial contents count against the same
 byte budget and text limits as file-backed buffers. This additive contract
 is available from editd 0.3.0.
+
+A non-empty seeded scratch reports `dirty: true` immediately, even at revision
+zero. Save it to a path or use `edit.close {buffer, force:true}` to discard it.
+An empty new scratch is clean. Ced mail tabs track saved body content themselves,
+so a clean mail document can use a dirty scratch without showing a false marker.

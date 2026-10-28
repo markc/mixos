@@ -234,6 +234,11 @@
     <div id="doc-view" class="content-section">
         <article id="content-doc" class="prose" data-pagefind-body>
 <h1 id="citizen">citizen</h1>
+<p><code>call_app_with_limit</code> accepts separate registration-wait and per-command
+deadlines. The default <code>call_app</code> command limit is 30 seconds. A registration
+wait expiring before another attempt reports that the app did not appear;
+a deadline during a delivered call reports an uncertain outcome. Callers
+must not retry that outcome. Ced uses a 120-second limit for <code>email.send</code>.</p>
 <p>An app's supervised native Bus connection, shared by the MixOS apps
 (Workshop, <a href="/prefs/">Prefs</a>). Headless: no UI dependency.</p>
 <ul>

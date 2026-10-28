@@ -10,6 +10,9 @@ generated: by docs/_build/gen-site.mix from services/editd/CHANGELOG.md; do not 
 
 ## 0.3.0
 
+- Non-empty seeded scratch buffers report `dirty: true` at revision zero and
+  require a save or forced close. Empty scratch buffers remain clean.
+
 - `edit.open` accepts optional initial `text` for scratch buffers, without an
   initial undo entry. Refuse `text` with `path`, preserve the text including
   a leading BOM character, and admit its bytes through the shared budget.

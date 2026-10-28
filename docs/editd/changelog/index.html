@@ -240,9 +240,15 @@
 </blockquote>
 <h2 id="030">0.3.0</h2>
 <ul>
-<li><code>edit.open</code> accepts optional initial <code>text</code> for scratch buffers, without an
+<li>
+<p>Non-empty seeded scratch buffers report <code>dirty: true</code> at revision zero and
+require a save or forced close. Empty scratch buffers remain clean.</p>
+</li>
+<li>
+<p><code>edit.open</code> accepts optional initial <code>text</code> for scratch buffers, without an
 initial undo entry. Refuse <code>text</code> with <code>path</code>, preserve the text including
-a leading BOM character, and admit its bytes through the shared budget.</li>
+a leading BOM character, and admit its bytes through the shared budget.</p>
+</li>
 </ul>
 <h2 id="020">0.2.0</h2>
 <p>Transplant the <code>edit.*</code> buffer contract and retained golden fixtures from

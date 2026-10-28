@@ -20,6 +20,7 @@ pub fn strip(ui: &mut egui::Ui, app: &App, events: &mut Vec<UiEvent>) {
     let column = form::column(ui, ["mail-from", "mail-to", "mail-cc", "mail-bcc", "mail-reply-to", "mail-subject", "mail-in-reply-to", "mail-references", "mail-attachments"].map(label));
     let mut headers = mail.headers.clone();
     let before = headers.clone();
+    let mut committed = false;
     let show_cc = mail.show_cc || !headers.cc.is_empty();
     let show_bcc = mail.show_bcc || !headers.bcc.is_empty();
     let show_reply_to = mail.show_reply_to || !headers.reply_to.is_empty();
@@ -40,11 +41,11 @@ pub fn strip(ui: &mut egui::Ui, app: &App, events: &mut Vec<UiEvent>) {
                                 if ui.add(toolkit::button::IconButton::new(icon).size(toolkit::field::height_of(ui.ctx())).selected(selected).tooltip(label(&format!("mail-show-{field}")))).clicked() { events.push(UiEvent::MailRow(tab.id, field)); }
                             }
                             let width = ui.available_width();
-                            form::text(ui, field_id, labelled, buffer, width);
+                            committed |= form::text(ui, field_id, labelled, buffer, width).lost_focus();
                         });
                     } else {
                         let width = ui.available_width();
-                        form::text(ui, field_id, labelled, buffer, width);
+                        committed |= form::text(ui, field_id, labelled, buffer, width).lost_focus();
                     }
                 });
             }
@@ -64,10 +65,11 @@ pub fn strip(ui: &mut egui::Ui, app: &App, events: &mut Vec<UiEvent>) {
                     }
                 });
             });
-            if let Some(index) = remove { headers.attachments.remove(index); }
+            if let Some(index) = remove { headers.attachments.remove(index); committed = true; }
         });
     });
     if headers != before { events.push(UiEvent::MailHeaders(tab.id, headers)); }
+    if committed { events.push(UiEvent::MailCommit(tab.id)); }
     if let Some(notice) = &mail.notice {
         ui.weak(if mail.sending { label("mail-sending") } else {
             match notice.as_str() { "Sent" => label("mail-sent"), "Saved" => label("mail-saved"), _ => notice.clone() }
@@ -83,6 +85,7 @@ pub fn chooser(ctx: &egui::Context, app: &mut App, events: &mut Vec<UiEvent>) {
                 let mut headers = mail.headers.clone();
                 headers.attachments.extend(paths);
                 events.push(UiEvent::MailHeaders(*tab, headers));
+                events.push(UiEvent::MailCommit(*tab));
             }
         app.mail_chooser = None;
     }

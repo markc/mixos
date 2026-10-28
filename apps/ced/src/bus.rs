@@ -473,7 +473,9 @@ async fn run(
                     }
                     Effect::Send { req, out: request } => {
                         let (c, o) = (client.clone(), out.clone());
-                        tokio::spawn(async move {
+                        // Drain these before deregistering too: clean mail
+                        // scratch closes must reach editd before ced exits.
+                        replies.spawn(async move {
                             let deadline = tokio::time::Instant::now()
                                 + Duration::from_millis(request.deadline_ms);
                             let headers = BTreeMap::new();
@@ -502,6 +504,7 @@ async fn run(
                                 Err(_) => Incoming::Deadline { req },
                             };
                             o.send(Delivery::Incoming(incoming));
+                            Ok(())
                         });
                     }
                     Effect::Respond { id, rc, body } => {

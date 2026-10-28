@@ -11,6 +11,19 @@ generated: by docs/_build/gen-site.mix from apps/ced/CHANGELOG.md; do not edit
 
 ## Unreleased — 2026-10-28
 
+- Park save intent until the body pipeline drains; cancel parked saves on
+  close, exit or reconnection. Same-frame header edits precede Save and Send.
+  Preserve current body text when recreating a lost scratch, compare canonical
+  bodies and force-close clean mail scratch buffers on exit.
+- Coalesce header typing into bounded field undo history and publish committed
+  edits only. Refuse non-UTF-8 attachment paths before JSON conversion. Disable
+  attachment selection and header commands during save or Send.
+- Keep empty front matter and continuation text as text; explain BOM refusals.
+  Trim sender addresses, default optional header arguments, protect relative
+  paths against external edits and recreate externally deleted mail files.
+- Allow 120 seconds per Email send call, separate from its registration wait;
+  delivered-call timeouts remain uncertain and are never retried.
+
 - Open mail documents as body-only editor tabs with shared header rows,
   optional recipients, read-only thread headers and attachment paths. Refused
   mail stays unchanged text with the parser's refusal. Bus messages stay text.

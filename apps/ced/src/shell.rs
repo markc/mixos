@@ -736,6 +736,7 @@ impl Shell {
         // Another text field has the keyboard: its keys are its own.
         let focused = ui.ctx().memory(|m| m.focused());
         let typing_elsewhere = focused.is_some() && focused != self.app.editor_id;
+        let mut header_chords = Vec::new();
         if typing_elsewhere && crate::mail_view::header_focused(ui.ctx(), &self.app) {
             // The controller owns header undo steps. Consume those chords
             // before TextEdit can run its separate internal undo history.
@@ -745,8 +746,7 @@ impl Shell {
                     events.push(UiEvent::Command(id, toolkit::action::Origin::Shortcut));
                 }
             }
-            crate::view::apply(&mut self.app, &self.commands, events);
-            self.perform();
+            header_chords = events;
         }
         if !typing_elsewhere {
             self.split_input(ui.ctx());
@@ -759,7 +759,7 @@ impl Shell {
             self.perform();
         }
         let connected = self.transport.connected();
-        let events = view(
+        let mut events = view(
             ui,
             &mut self.app,
             &self.commands,
@@ -767,6 +767,7 @@ impl Shell {
             &self.palette,
             connected,
         );
+        events.extend(header_chords);
         crate::view::apply(&mut self.app, &self.commands, events);
         toolkit::markdown::open_links(ui.ctx(), "ced");
         self.perform();

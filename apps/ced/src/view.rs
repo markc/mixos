@@ -30,6 +30,7 @@ pub enum UiEvent {
     Command(&'static str, Origin),
     CloseMacros,
     MailHeaders(TabId, documents::mail::Headers),
+    MailCommit(TabId),
     MailRow(TabId, &'static str),
     MailAttach(TabId),
     SelectTab(TabId),
@@ -113,10 +114,14 @@ pub fn view(
 
 /// Run one frame's events against the app.
 pub fn apply(app: &mut App, commands: &Registry<App>, events: Vec<UiEvent>) {
+    // A header preview belongs to the frame that displayed it, regardless of
+    // whether a menu/shortcut event was collected before or after the strip.
+    let (headers, events): (Vec<_>, Vec<_>) = events.into_iter()
+        .partition(|e| matches!(e, UiEvent::MailHeaders(..)));
     let (closed, events): (Vec<_>, Vec<_>) = events
         .into_iter()
         .partition(|e| matches!(e, UiEvent::CloseMacros));
-    for event in events.into_iter().chain(closed) {
+    for event in headers.into_iter().chain(events).chain(closed) {
         apply_one(app, commands, event);
         record_noted(app, commands);
     }
@@ -134,26 +139,20 @@ fn apply_one(app: &mut App, commands: &Registry<App>, event: UiEvent) {
         match event {
             UiEvent::MailHeaders(tab, headers) => {
                 if app.ctl.tabs().iter().find(|t| t.id == tab).and_then(|t| t.mail.as_ref()).is_some_and(|mail| !mail.sending && !mail.saving) {
-                    let headers = match serde_json::to_value(&headers) {
-                        Ok(value) => value,
-                        Err(_) => {
-                            // The chooser can return a non-UTF-8 OS path. Let
-                            // the engine explain it rather than panic in JSON.
-                            let _ = app.ctl.edit_headers(tab, headers);
-                            return;
-                        }
-                    };
-                    app.action_args(Some(tab), ActionId::MailHeaders, serde_json::json!({"headers":headers}));
-                    app.noted.push((ActionId::MailHeaders.id(), Origin::Ui));
+                    // Validate OS paths before any JSON hop can lose bytes.
+                    let _ = app.ctl.preview_headers(tab, headers);
                 }
             }
+            UiEvent::MailCommit(tab) => commit_mail_headers(app, tab),
             UiEvent::MailRow(tab, field) => app.ctl.show_mail_row(tab, field),
             UiEvent::MailAttach(tab) => {
+                if !app.ctl.tabs().iter().find(|t| t.id == tab).and_then(|t| t.mail.as_ref()).is_some_and(|mail| !mail.saving && !mail.sending) { return; }
                 let directory = app.ctl.tabs().iter().find(|t| t.id == tab).and_then(|t| t.path.as_deref()).and_then(|p| std::path::Path::new(p).parent()).unwrap_or(std::path::Path::new("/")).to_path_buf();
                 app.mail_chooser = Some((tab, toolkit::file_chooser::FileChooser::new(directory, label("mail-attach"), label("mail-attach"))));
             }
             UiEvent::CloseMacros => app.ui.macros_open = false,
             UiEvent::Command(id, origin) => {
+                if let Some(tab) = app.active() { commit_mail_headers(app, tab); }
                 let _ = commands.execute(id, app, origin);
             }
             UiEvent::SelectTab(tab) => {
@@ -189,6 +188,15 @@ fn apply_one(app: &mut App, commands: &Registry<App>, event: UiEvent) {
                 );
             }
         }
+    }
+}
+
+fn commit_mail_headers(app: &mut App, tab: TabId) {
+    if app.ctl.commit_headers(tab) {
+        let headers = &app.ctl.tabs().iter().find(|t| t.id == tab).unwrap().mail.as_ref().unwrap().headers;
+        let headers = serde_json::to_value(headers).expect("validated header paths");
+        app.action_args(Some(tab), ActionId::MailHeaders, serde_json::json!({"headers":headers}));
+        app.noted.push((ActionId::MailHeaders.id(), Origin::Ui));
     }
 }
 
@@ -872,6 +880,84 @@ fn dialogs(
 mod tests {
     use super::count_chars;
     use edit::text::Text;
+
+    fn mail_app() -> (crate::app::App, u64) {
+        use documents::controller::{Controller, Effect};
+        use editor_model::types::{Incoming, Intent};
+        let config = documents::config::Config::default();
+        let mut ctl = Controller::new(config.clone(), 1, true);
+        let mut service = editor_model::fake::FakeEditd::new("0000e1e1");
+        let path = "/home/user/letter.md";
+        service.create(Some(path), "---\nmail-subject: Original\nmail-to: bob@example.org\n---\nBody");
+        let mut queue: std::collections::VecDeque<_> = ctl.open_paths(&[path.into()], Intent::ui(0)).into();
+        while let Some(effect) = queue.pop_front() {
+            if let Effect::Send { req, out } = effect {
+                let args = serde_json::from_str(&out.body).unwrap();
+                let answer = service.handle("local:ced", &out.command, &args);
+                queue.extend(ctl.on_incoming(Incoming::Reply { req, rc:answer.rc, body:answer.body.to_string() }));
+                for event in service.take_events() {
+                    queue.extend(ctl.on_incoming(Incoming::Topic { topic:"edit.changed".into(), body:serde_json::to_string(&event).unwrap() }));
+                }
+            }
+        }
+        let tab = ctl.active().unwrap();
+        (crate::app::App::new(ctl, config), tab)
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ui_attachment_paths_are_checked_before_the_json_hop() {
+        use std::os::unix::ffi::OsStringExt;
+        let (mut app, tab) = mail_app();
+        let mut headers = app.active_tab().unwrap().mail.as_ref().unwrap().headers.clone();
+        headers.attachments.push(std::ffi::OsString::from_vec(b"/tmp/report-\xff".to_vec()).into());
+        let expected = maildoc::write(&headers.document("Body".into())).unwrap_err().to_string();
+        super::apply(&mut app, &crate::actions::registry(), vec![super::UiEvent::MailHeaders(tab, headers)]);
+        let t = app.active_tab().unwrap();
+        assert_eq!(t.mail.as_ref().unwrap().notice.as_deref(), Some(expected.as_str()));
+        assert!(t.mail.as_ref().unwrap().headers.attachments.is_empty());
+        assert!(!t.dirty());
+        assert!(app.effects.is_empty());
+    }
+
+    #[test]
+    fn frame_headers_precede_save_or_send_in_either_event_order() {
+        use documents::controller::Effect;
+        for action in ["file.save", "file.send"] {
+            for command_first in [false, true] {
+                let (mut app, tab) = mail_app();
+                let mut headers = app.active_tab().unwrap().mail.as_ref().unwrap().headers.clone();
+                headers.subject = "Shown in this frame".into();
+                let mut events = vec![super::UiEvent::MailHeaders(tab, headers), super::UiEvent::Command(action, toolkit::action::Origin::Shortcut)];
+                if command_first { events.reverse(); }
+                super::apply(&mut app, &crate::actions::registry(), events);
+                assert!(app.effects.iter().any(|e| matches!(e, Effect::SaveMail { text, .. } if maildoc::parse(text).unwrap().subject == "Shown in this frame")));
+            }
+        }
+    }
+
+    #[test]
+    fn ui_previews_publish_only_on_commit_and_busy_disables_headers_and_attach() {
+        use documents::actions::ActionId;
+        let (mut app, tab) = mail_app();
+        let registry = crate::actions::registry();
+        for subject in ["C", "Ch", "Changed"] {
+            let mut headers = app.active_tab().unwrap().mail.as_ref().unwrap().headers.clone();
+            headers.subject = subject.into();
+            super::apply(&mut app, &registry, vec![super::UiEvent::MailHeaders(tab, headers)]);
+            assert!(app.effects.is_empty(), "previews execute no action");
+            assert!(registry.take_executed().0.is_empty());
+        }
+        super::apply(&mut app, &registry, vec![super::UiEvent::MailCommit(tab)]);
+        assert_eq!(registry.take_executed().0.len(), 1, "commit executes mail.headers once");
+        app.action(ActionId::FileSend);
+        assert!(!app.enabled(ActionId::MailHeaders));
+        super::apply(&mut app, &registry, vec![super::UiEvent::MailAttach(tab)]);
+        assert!(app.mail_chooser.is_none());
+        let fx = app.ctl.on_mail_saved(tab, "/home/user/letter.md".into(), "".into(), true, None, Err("disk full".into()));
+        app.absorb(fx);
+        assert!(app.enabled(ActionId::MailHeaders));
+    }
 
     #[test]
     fn selections_count_scalars_across_line_endings() {

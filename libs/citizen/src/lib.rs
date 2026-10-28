@@ -13,7 +13,7 @@
 //! worker thread, the closing refusal and the `<app>.ping` / `<app>.show`
 //! commands used for single-instance activation.
 pub mod app;
-pub use app::{AppCallError, AppClient, call_app};
+pub use app::{AppCallError, AppClient, call_app, call_app_with_limit};
 pub mod macros;
 pub use logging::debug;
 pub mod outbox;

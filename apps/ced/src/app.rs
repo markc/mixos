@@ -450,7 +450,7 @@ impl App {
         let tab = self.active().is_some();
         match action {
             FileSend => self.active().is_some_and(|tab| self.ctl.can_send(tab)),
-            MailHeaders => self.active_tab().is_some_and(|tab| tab.mail.is_some()),
+            MailHeaders => self.active_tab().and_then(|tab| tab.mail.as_ref()).is_some_and(|mail| !mail.saving && !mail.sending),
             ViewMarkdownSource | ViewMarkdownSplit | ViewMarkdownPreview => {
                 self.active().is_some_and(|tab| self.markdown(tab))
             }

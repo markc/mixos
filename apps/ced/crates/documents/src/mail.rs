@@ -27,12 +27,11 @@ pub fn classify(text: &str) -> Kind {
         .copied()
         .filter_map(|line| line.split_once(':').map(|(name, _)| name.trim()))
         .collect();
-    let mail = lines
-        .iter()
-        .any(|line| line.trim_start().starts_with("mail-"));
+    let mail = lines.iter().filter(|line| !line.starts_with(char::is_whitespace))
+        .filter_map(|line| line.split_once(':'))
+        .any(|(key, _)| key.starts_with("mail-"));
     let closed = rest.lines().any(|line| line == "---");
-    let empty = lines.iter().all(|line| line.is_empty()) && closed;
-    if mail || empty {
+    if mail {
         match maildoc::parse(text) {
             Ok(doc) => Kind::Mail(doc),
             Err(error) => Kind::Refused(error.to_string()),
@@ -45,7 +44,7 @@ pub fn classify(text: &str) -> Kind {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct Headers {
     pub from: String,
     pub to: String,
@@ -81,7 +80,7 @@ impl Headers {
                 value.split(',').map(|s| s.trim().to_owned()).collect()
             }
         };
-        let optional = |value: &str| (!value.is_empty()).then(|| value.to_owned());
+        let optional = |value: &str| (!value.trim().is_empty()).then(|| value.trim().to_owned());
         MailDocument {
             from: optional(&self.from),
             to: addresses(&self.to),
@@ -114,6 +113,7 @@ pub struct MailState {
     pub(crate) undo: Vec<Headers>,
     pub(crate) redo: Vec<Headers>,
     pub(crate) seeding: bool,
+    pub(crate) editing_field: Option<&'static str>,
 }
 
 impl MailState {
@@ -135,6 +135,7 @@ impl MailState {
             undo: Vec::new(),
             redo: Vec::new(),
             seeding: true,
+            editing_field: None,
         }
     }
 }
@@ -142,6 +143,18 @@ impl MailState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn optional_headers_default_and_sender_addresses_are_trimmed() {
+        let mut headers: Headers = serde_json::from_str(r#"{"to":"bob@example.org"}"#).unwrap();
+        assert!(headers.cc.is_empty() && headers.attachments.is_empty());
+        headers.from = "  ann@example.org  ".into();
+        headers.reply_to = " reply@example.org ".into();
+        let document = headers.document("Body".into());
+        assert_eq!(document.from.as_deref(), Some("ann@example.org"));
+        assert_eq!(document.reply_to.as_deref(), Some("reply@example.org"));
+        assert!(maildoc::write(&document).is_ok());
+    }
 
     #[test]
     fn classifier_observes_fences_and_header_names() {
@@ -154,7 +167,9 @@ mod tests {
             classify("---\nThis is a rule above prose, not front matter."),
             Kind::Text
         ));
-        assert!(matches!(classify("---\n\n---\nBody"), Kind::Mail(_)));
+        assert_eq!(classify("---\n\n---\nBody"), Kind::Text);
+        assert_eq!(classify("---\ntitle: Notes\n mail-to: bob@example.org\n---\nBody"), Kind::Text);
+        assert_eq!(classify("---\nmail-without-a-colon\n---\nBody"), Kind::Text);
         assert!(matches!(
             classify("---\ntitle: Notes\n---\ntext"),
             Kind::Text
