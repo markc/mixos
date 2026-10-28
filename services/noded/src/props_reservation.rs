@@ -69,7 +69,9 @@ pub(crate) fn reserved_owner(name: &str) -> Option<&str> {
 pub(crate) fn publisher_owner(name: &str) -> Option<&str> {
     // files outcomes are public but authoritative: only the chooser provider
     // may publish them (file chooser contract, Outcome).
-    if name == "files.chosen" { return Some("files"); }
+    if name == "files.chosen" {
+        return Some("files");
+    }
     if settings_topic(name) {
         return Some("settingsd");
     }

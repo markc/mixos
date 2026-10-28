@@ -28,6 +28,10 @@
 --   nested compd, which needs a headless weston host (nested_host_lib). Run
 --   it where weston is installed:
 --   MIXOS_TEST_BIN=<bin> mix apps/dopus/tests/chooser_bus_test.mix.
+-- - services/portald/tests/chooser_bus_test.mix: needs the same headless
+--   weston host; runs a persistent zbus caller against the real portal and
+--   chooser. Build portald's filechooser_probe example first, then run:
+--   MIXOS_TEST_BIN=<bin> mix services/portald/tests/chooser_bus_test.mix.
 $root = dirname(dirname(realpath($0)))
 $bin = $root .. "/target/debug"
 $only = []

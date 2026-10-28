@@ -20,7 +20,10 @@ use zbus::fdo::{RequestNameFlags, RequestNameReply};
 use zbus::zvariant::Value;
 
 pub struct Config {
-    pub filechooser: Option<(crate::filechooser::Bridge, mpsc::Receiver<(u64, serde_json::Value)>)>,
+    pub filechooser: Option<(
+        crate::filechooser::Bridge,
+        mpsc::Receiver<(u64, serde_json::Value)>,
+    )>,
     pub address: String,
     pub state_dir: Option<PathBuf>,
     pub binding: Binding,
@@ -249,7 +252,9 @@ pub async fn serve(
         }
     }
     tracing::info!("portal stopping");
-    if let Some(chooser) = chooser { chooser.abort(); }
+    if let Some(chooser) = chooser {
+        chooser.abort();
+    }
     if let Some(owners) = owners {
         owners.abort();
     }

@@ -63,7 +63,9 @@ impl<I> Source<I> {
                 if let Ok(value) = serde_json::from_str(&command.body) {
                     let _ = self.outcomes.try_send((command.generation, value));
                 }
-            } else { tracing::warn!("files.chosen without files owner stamp ignored"); }
+            } else {
+                tracing::warn!("files.chosen without files owner stamp ignored");
+            }
             return None;
         }
         Some(event)
@@ -74,34 +76,48 @@ impl<I: crate::service::CommandSource> crate::service::CommandSource for Source<
     async fn next_event(&mut self) -> Option<BoundedIncomingEvent> {
         loop {
             let event = self.incoming.next_event().await?;
-            if let Some(event) = self.forward(event) { return Some(event); }
+            if let Some(event) = self.forward(event) {
+                return Some(event);
+            }
         }
     }
     fn try_next_event(&mut self) -> Option<BoundedIncomingEvent> {
         loop {
             let event = self.incoming.try_next_event()?;
-            if let Some(event) = self.forward(event) { return Some(event); }
+            if let Some(event) = self.forward(event) {
+                return Some(event);
+            }
         }
     }
 }
 
 impl Bridge {
     pub fn new(client: Arc<SupervisedClient>) -> Self {
-        Self { client, registry: Arc::default(), counter: Arc::default() }
+        Self {
+            client,
+            registry: Arc::default(),
+            counter: Arc::default(),
+        }
     }
 
     async fn call(&self, command: &str, body: Json) -> Option<Json> {
-        match tokio::time::timeout(IO_TIMEOUT, self.client.call_typed("files", command, body)).await {
+        match tokio::time::timeout(IO_TIMEOUT, self.client.call_typed("files", command, body)).await
+        {
             Ok(Ok(PortReply::Ok { rc: 0, value })) => Some(value),
-            other => { tracing::warn!(?other, %command, "files call failed"); None }
+            other => {
+                tracing::warn!(?other, %command, "files call failed");
+                None
+            }
         }
     }
 
     fn cancel(&self, request: String, generation: Option<u64>) {
         let this = self.clone();
         tokio::spawn(async move {
-            if generation.is_some() && settings::native::live_generation(&this.client) == generation {
-                this.call("files.choose.cancel", json!({"request":request})).await;
+            if generation.is_some() && settings::native::live_generation(&this.client) == generation
+            {
+                this.call("files.choose.cancel", json!({"request":request}))
+                    .await;
             }
         });
     }
@@ -110,22 +126,32 @@ impl Bridge {
     // a Close cannot return before a winning Response has been enqueued, and
     // no old operation can remove a new Request at a reused path.
     async fn apply(&self, connection: &Connection, registry: &mut Registry, id: u64, event: Event) {
-        let Some(entry) = registry.entries.get_mut(&id) else { return; };
+        let Some(entry) = registry.entries.get_mut(&id) else {
+            return;
+        };
         let effects = entry.state.apply(event);
-        if let Some(cancel) = effects.cancel { self.cancel(cancel, registry.generation); }
+        if let Some(cancel) = effects.cancel {
+            self.cancel(cancel, registry.generation);
+        }
         if let Some(response) = effects.response {
             let (code, results) = mapping::outcome(&response, entry.choices);
             request::emit(connection, &entry.path, &entry.owner, code, results).await;
         }
         if effects.unexport {
-            let _ = connection.object_server().remove::<request::Request, _>(entry.path.clone()).await;
+            let _ = connection
+                .object_server()
+                .remove::<request::Request, _>(entry.path.clone())
+                .await;
         }
-        if entry.state.phase == Phase::Ended { registry.entries.remove(&id); }
+        if entry.state.phase == Phase::Ended {
+            registry.entries.remove(&id);
+        }
     }
 
     pub async fn close(&self, connection: &Connection, id: u64) {
         let mut registry = self.registry.lock().await;
-        self.apply(connection, &mut registry, id, Event::Close).await;
+        self.apply(connection, &mut registry, id, Event::Close)
+            .await;
     }
 
     async fn lost(&self, connection: &Connection, registry: &mut Registry) {
@@ -137,33 +163,68 @@ impl Bridge {
 
     async fn owner_left(&self, connection: &Connection, owner: &str) {
         let mut registry = self.registry.lock().await;
-        let ids: Vec<_> = registry.entries.iter().filter(|(_, e)| e.owner == owner).map(|(id, _)| *id).collect();
-        for id in ids { self.apply(connection, &mut registry, id, Event::Close).await; }
+        let ids: Vec<_> = registry
+            .entries
+            .iter()
+            .filter(|(_, e)| e.owner == owner)
+            .map(|(id, _)| *id)
+            .collect();
+        for id in ids {
+            self.apply(connection, &mut registry, id, Event::Close)
+                .await;
+        }
     }
 
     async fn outcome(&self, connection: &Connection, generation: u64, value: Json) {
         let mut registry = self.registry.lock().await;
-        if registry.generation != Some(generation) { return; }
-        let ids: Vec<_> = registry.entries.iter().filter(|(_, entry)| match &entry.state.phase {
-            Phase::Sending => value["correlation"].as_str() == Some(entry.path.as_str()),
-            Phase::Open(id) => value["request"].as_str() == Some(id),
-            _ => false,
-        }).map(|(id, _)| *id).collect();
-        for id in ids { self.apply(connection, &mut registry, id, Event::Outcome(value.clone())).await; }
+        if registry.generation != Some(generation) {
+            return;
+        }
+        let ids: Vec<_> = registry
+            .entries
+            .iter()
+            .filter(|(_, entry)| match &entry.state.phase {
+                Phase::Sending => value["correlation"].as_str() == Some(entry.path.as_str()),
+                Phase::Open(id) => value["request"].as_str() == Some(id),
+                _ => false,
+            })
+            .map(|(id, _)| *id)
+            .collect();
+        for id in ids {
+            self.apply(connection, &mut registry, id, Event::Outcome(value.clone()))
+                .await;
+        }
     }
 
-    async fn reply(&self, connection: &Connection, generation: Option<u64>, id: u64, reply: Option<Json>) {
-        let request = reply.as_ref().and_then(|v| v["request"].as_str()).map(str::to_owned);
+    async fn reply(
+        &self,
+        connection: &Connection,
+        generation: Option<u64>,
+        id: u64,
+        reply: Option<Json>,
+    ) {
+        let request = reply
+            .as_ref()
+            .and_then(|v| v["request"].as_str())
+            .map(str::to_owned);
         let mut registry = self.registry.lock().await;
-        if registry.generation != generation { return; }
+        if registry.generation != generation {
+            return;
+        }
         if !registry.entries.contains_key(&id) {
-            if let Some(request) = request { self.cancel(request, generation); }
+            if let Some(request) = request {
+                self.cancel(request, generation);
+            }
             return;
         }
         if registry.incarnation.is_none() {
-            registry.incarnation = request.as_ref().and_then(|s| s.split_once('-')).map(|(inc, _)| inc.to_owned());
+            registry.incarnation = request
+                .as_ref()
+                .and_then(|s| s.split_once('-'))
+                .map(|(inc, _)| inc.to_owned());
         }
-        self.apply(connection, &mut registry, id, Event::Reply(request)).await;
+        self.apply(connection, &mut registry, id, Event::Reply(request))
+            .await;
     }
 
     async fn choose(&self, connection: Connection, id: u64, mut body: Json, owner: String) {
@@ -171,15 +232,24 @@ impl Bridge {
         // alone cannot catch a NameOwnerChanged already delivered before insert.
         let present = async {
             let proxy = zbus::fdo::DBusProxy::new(&connection).await?;
-            proxy.name_has_owner(zbus::names::BusName::try_from(owner.clone())?).await.map_err(zbus::Error::from)
-        }.await;
-        if matches!(present, Ok(false)) { self.close(&connection, id).await; }
-        let app = crate::screencast::consent::app_name(crate::screencast::caller_pid(&connection, &owner).await)
-            .unwrap_or_else(|| "unknown".into());
+            proxy
+                .name_has_owner(zbus::names::BusName::try_from(owner.clone())?)
+                .await
+                .map_err(zbus::Error::from)
+        }
+        .await;
+        if matches!(present, Ok(false)) {
+            self.close(&connection, id).await;
+        }
+        let app = crate::screencast::consent::app_name(
+            crate::screencast::caller_pid(&connection, &owner).await,
+        )
+        .unwrap_or_else(|| "unknown".into());
         body["on_behalf_of"] = json!(mapping::cut(&format!("{owner} {app}"), 128));
         let generation = self.registry.lock().await.generation;
         if generation.is_none() || generation != settings::native::live_generation(&self.client) {
-            self.reply(&connection, generation, id, None).await; return;
+            self.reply(&connection, generation, id, None).await;
+            return;
         }
         // Keep the native reply future alive after our deadline. A late window
         // is cancelled even when a closing sweep has already retired the entry.
@@ -190,14 +260,18 @@ impl Bridge {
             Err(_) => {
                 {
                     let mut registry = self.registry.lock().await;
-                    self.apply(&connection, &mut registry, id, Event::Timeout).await;
+                    self.apply(&connection, &mut registry, id, Event::Timeout)
+                        .await;
                 }
                 call.await
             }
         };
         let reply = match reply {
             Ok(PortReply::Ok { rc: 0, value }) => Some(value),
-            other => { tracing::warn!(?other, "files.choose refused"); None }
+            other => {
+                tracing::warn!(?other, "files.choose refused");
+                None
+            }
         };
         self.reply(&connection, generation, id, reply).await;
     }
@@ -205,21 +279,48 @@ impl Bridge {
     async fn poll(&self, connection: &Connection) {
         let (generation, entries) = {
             let registry = self.registry.lock().await;
-            (registry.generation, registry.entries.iter().map(|(id, e)| (*id, e.path.to_string(), match &e.state.phase {
-                Phase::Open(request) => Some(request.clone()), _ => None,
-            })).collect::<Vec<_>>())
+            (
+                registry.generation,
+                registry
+                    .entries
+                    .iter()
+                    .map(|(id, e)| {
+                        (
+                            *id,
+                            e.path.to_string(),
+                            match &e.state.phase {
+                                Phase::Open(request) => Some(request.clone()),
+                                _ => None,
+                            },
+                        )
+                    })
+                    .collect::<Vec<_>>(),
+            )
         };
-        if entries.is_empty() { return; }
+        if entries.is_empty() {
+            return;
+        }
         let list = self.call("files.choose.list", json!({})).await;
-        let Some((incarnation, open)) = list.as_ref().and_then(|v| Some((v["incarnation"].as_str()?, v["requests"].as_array()?))) else {
+        let Some((incarnation, open)) = list
+            .as_ref()
+            .and_then(|v| Some((v["incarnation"].as_str()?, v["requests"].as_array()?)))
+        else {
             let mut registry = self.registry.lock().await;
-            if registry.generation == generation { self.lost(connection, &mut registry).await; }
+            if registry.generation == generation {
+                self.lost(connection, &mut registry).await;
+            }
             return;
         };
         {
             let mut registry = self.registry.lock().await;
-            if registry.generation != generation { return; }
-            if registry.incarnation.as_deref().is_some_and(|old| old != incarnation) {
+            if registry.generation != generation {
+                return;
+            }
+            if registry
+                .incarnation
+                .as_deref()
+                .is_some_and(|old| old != incarnation)
+            {
                 self.lost(connection, &mut registry).await;
                 registry.incarnation = Some(incarnation.into());
                 return;
@@ -228,19 +329,38 @@ impl Bridge {
         }
         for (id, path, request) in entries {
             if let Some(request) = request {
-                if open.iter().any(|v| v["request"] == request) { continue; }
-                let result = self.call("files.choose.result", json!({"request": request})).await;
-                let value = result.filter(|v| v["state"] == "done").map(|v| v["outcome"].clone())
+                if open.iter().any(|v| v["request"] == request) {
+                    continue;
+                }
+                let result = self
+                    .call("files.choose.result", json!({"request": request}))
+                    .await;
+                let value = result
+                    .filter(|v| v["state"] == "done")
+                    .map(|v| v["outcome"].clone())
                     .unwrap_or_else(|| json!({"request":request, "response":2}));
-                self.outcome(connection, generation.unwrap_or_default(), value).await;
+                self.outcome(connection, generation.unwrap_or_default(), value)
+                    .await;
             } else {
                 let mut registry = self.registry.lock().await;
-                if registry.generation != generation { return; }
-                if registry.entries.get(&id).is_some_and(|e| e.state.phase == Phase::Closing) {
-                    for request in open.iter().filter(|v| v["correlation"].as_str() == Some(&path)) {
-                        if let Some(request) = request["request"].as_str() { self.cancel(request.into(), generation); }
+                if registry.generation != generation {
+                    return;
+                }
+                if registry
+                    .entries
+                    .get(&id)
+                    .is_some_and(|e| e.state.phase == Phase::Closing)
+                {
+                    for request in open
+                        .iter()
+                        .filter(|v| v["correlation"].as_str() == Some(&path))
+                    {
+                        if let Some(request) = request["request"].as_str() {
+                            self.cancel(request.into(), generation);
+                        }
                     }
-                    self.apply(connection, &mut registry, id, Event::Sweep).await;
+                    self.apply(connection, &mut registry, id, Event::Sweep)
+                        .await;
                 }
             }
         }
@@ -248,7 +368,11 @@ impl Bridge {
 
     /// Subscribe before exporting FileChooser. Settings already owns the name
     /// and answers reads while this source initialisation runs independently.
-    pub async fn attach(&self, connection: Connection, mut outcomes: mpsc::Receiver<(u64, Json)>) -> anyhow::Result<()> {
+    pub async fn attach(
+        &self,
+        connection: Connection,
+        mut outcomes: mpsc::Receiver<(u64, Json)>,
+    ) -> anyhow::Result<()> {
         use futures_util::StreamExt;
         let proxy = zbus::fdo::DBusProxy::new(&connection).await?;
         let mut owners = proxy.receive_name_owner_changed().await?;
@@ -267,7 +391,11 @@ impl Bridge {
             }
             if let Some(generation) = generation
                 && self.registry.lock().await.generation.is_none()
-                && matches!(tokio::time::timeout(IO_TIMEOUT, self.client.subscribe_topic("files.chosen")).await, Ok(Ok(())))
+                && matches!(
+                    tokio::time::timeout(IO_TIMEOUT, self.client.subscribe_topic("files.chosen"))
+                        .await,
+                    Ok(Ok(()))
+                )
                 && settings::native::live_generation(&self.client) == Some(generation)
             {
                 // Startup and every reconnect clear choosers from the previous
@@ -275,19 +403,32 @@ impl Bridge {
                 if let Some(list) = self.call("files.choose.list", json!({})).await {
                     if let Some(open) = list["requests"].as_array() {
                         for entry in open {
-                            if entry["correlation"].as_str().is_some_and(|s| s.starts_with(&format!("{}/", handle::REQUEST_ROOT)))
-                                && let Some(id) = entry["request"].as_str()
-                            { self.call("files.choose.cancel", json!({"request":id})).await; }
+                            if entry["correlation"].as_str().is_some_and(|s| {
+                                s.starts_with(&format!("{}/", handle::REQUEST_ROOT))
+                            }) && let Some(id) = entry["request"].as_str()
+                            {
+                                self.call("files.choose.cancel", json!({"request":id}))
+                                    .await;
+                            }
                         }
                     }
-                    self.registry.lock().await.incarnation = list["incarnation"].as_str().map(str::to_owned);
+                    self.registry.lock().await.incarnation =
+                        list["incarnation"].as_str().map(str::to_owned);
                 }
                 if settings::native::live_generation(&self.client) == Some(generation) {
                     self.registry.lock().await.generation = Some(generation);
                 }
             }
             if !exported {
-                connection.object_server().at(OBJECT_PATH, FileChooser { bridge: self.clone() }).await?;
+                connection
+                    .object_server()
+                    .at(
+                        OBJECT_PATH,
+                        FileChooser {
+                            bridge: self.clone(),
+                        },
+                    )
+                    .await?;
                 exported = true;
             }
             tokio::select! {
@@ -309,26 +450,68 @@ impl Bridge {
     }
 
     async fn owner_shutdown(&self, connection: &Connection) {
-        let owners: Vec<_> = self.registry.lock().await.entries.values().map(|e| e.owner.clone()).collect();
-        for owner in owners { self.owner_left(connection, &owner).await; }
+        let owners: Vec<_> = self
+            .registry
+            .lock()
+            .await
+            .entries
+            .values()
+            .map(|e| e.owner.clone())
+            .collect();
+        for owner in owners {
+            self.owner_left(connection, &owner).await;
+        }
     }
 }
 
-pub struct FileChooser { bridge: Bridge }
+pub struct FileChooser {
+    bridge: Bridge,
+}
 
 impl FileChooser {
-    async fn begin(&self, mode: &str, parent: &str, title: &str, options: Options, header: Header<'_>, connection: &Connection) -> Result<OwnedObjectPath, PortalError> {
-        let owner = header.sender().map(|s| s.as_str().to_owned()).ok_or_else(|| PortalError::InvalidArgument("no sender".into()))?;
-        let path = handle::request_path(&owner, &handle::token(&options, "handle_token", &self.bridge.counter)?)?;
+    async fn begin(
+        &self,
+        mode: &str,
+        parent: &str,
+        title: &str,
+        options: Options,
+        header: Header<'_>,
+        connection: &Connection,
+    ) -> Result<OwnedObjectPath, PortalError> {
+        let owner = header
+            .sender()
+            .map(|s| s.as_str().to_owned())
+            .ok_or_else(|| PortalError::InvalidArgument("no sender".into()))?;
+        let path = handle::request_path(
+            &owner,
+            &handle::token(&options, "handle_token", &self.bridge.counter)?,
+        )?;
         let mut body = mapping::map(mode, parent, title, &options)?;
         body["correlation"] = json!(path.as_str());
         let mut registry = self.bridge.registry.lock().await;
         registry.sequence += 1;
         let id = registry.sequence;
-        if !connection.object_server().at(path.clone(), request::Request::filechooser(&owner, self.bridge.clone(), id)).await? {
-            return Err(PortalError::InvalidArgument("handle_token already has a live Request".into()));
+        if !connection
+            .object_server()
+            .at(
+                path.clone(),
+                request::Request::filechooser(&owner, self.bridge.clone(), id),
+            )
+            .await?
+        {
+            return Err(PortalError::InvalidArgument(
+                "handle_token already has a live Request".into(),
+            ));
         }
-        registry.entries.insert(id, Entry { path: path.clone(), owner: owner.clone(), choices: body["choices"].as_array().is_some_and(|v| !v.is_empty()), state: State::default() });
+        registry.entries.insert(
+            id,
+            Entry {
+                path: path.clone(),
+                owner: owner.clone(),
+                choices: body["choices"].as_array().is_some_and(|v| !v.is_empty()),
+                state: State::default(),
+            },
+        );
         drop(registry);
         let bridge = self.bridge.clone();
         let connection = connection.clone();
@@ -343,18 +526,51 @@ impl FileChooser {
 #[zbus::interface(name = "org.freedesktop.portal.FileChooser")]
 impl FileChooser {
     #[zbus(property, name = "version")]
-    fn version(&self) -> u32 { VERSION }
+    fn version(&self) -> u32 {
+        VERSION
+    }
 
     #[zbus(name = "OpenFile")]
-    async fn open_file(&self, parent_window: &str, title: &str, options: Options, #[zbus(header)] header: Header<'_>, #[zbus(connection)] connection: &Connection) -> Result<OwnedObjectPath, PortalError> {
-        self.begin("open", parent_window, title, options, header, connection).await
+    async fn open_file(
+        &self,
+        parent_window: &str,
+        title: &str,
+        options: Options,
+        #[zbus(header)] header: Header<'_>,
+        #[zbus(connection)] connection: &Connection,
+    ) -> Result<OwnedObjectPath, PortalError> {
+        self.begin("open", parent_window, title, options, header, connection)
+            .await
     }
     #[zbus(name = "SaveFile")]
-    async fn save_file(&self, parent_window: &str, title: &str, options: Options, #[zbus(header)] header: Header<'_>, #[zbus(connection)] connection: &Connection) -> Result<OwnedObjectPath, PortalError> {
-        self.begin("save", parent_window, title, options, header, connection).await
+    async fn save_file(
+        &self,
+        parent_window: &str,
+        title: &str,
+        options: Options,
+        #[zbus(header)] header: Header<'_>,
+        #[zbus(connection)] connection: &Connection,
+    ) -> Result<OwnedObjectPath, PortalError> {
+        self.begin("save", parent_window, title, options, header, connection)
+            .await
     }
     #[zbus(name = "SaveFiles")]
-    async fn save_files(&self, parent_window: &str, title: &str, options: Options, #[zbus(header)] header: Header<'_>, #[zbus(connection)] connection: &Connection) -> Result<OwnedObjectPath, PortalError> {
-        self.begin("save_files", parent_window, title, options, header, connection).await
+    async fn save_files(
+        &self,
+        parent_window: &str,
+        title: &str,
+        options: Options,
+        #[zbus(header)] header: Header<'_>,
+        #[zbus(connection)] connection: &Connection,
+    ) -> Result<OwnedObjectPath, PortalError> {
+        self.begin(
+            "save_files",
+            parent_window,
+            title,
+            options,
+            header,
+            connection,
+        )
+        .await
     }
 }

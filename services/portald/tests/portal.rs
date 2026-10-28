@@ -782,7 +782,7 @@ impl NativePortal {
         ));
         let live = tokio::spawn(live::serve(
             Config {
-            filechooser: None,
+                filechooser: None,
                 address: bus.address.clone(),
                 state_dir: None,
                 binding,

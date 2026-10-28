@@ -44,7 +44,15 @@ pub async fn run(
     let chooser = filechooser::Bridge::new(client.clone());
     let (outcomes, chooser_outcomes) = mpsc::channel(64);
     let feed = tokio::spawn(async move {
-        if let Err(error) = service::run(feed_binding, client, filechooser::Source { incoming, outcomes }, projections, feed_status).await {
+        if let Err(error) = service::run(
+            feed_binding,
+            client,
+            filechooser::Source { incoming, outcomes },
+            projections,
+            feed_status,
+        )
+        .await
+        {
             tracing::warn!(%error, "settings source unavailable; serving last-good values");
         }
     });

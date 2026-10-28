@@ -20,26 +20,38 @@ pub const CANCELLED: u32 = 1;
 pub const FAILED: u32 = 2;
 
 #[derive(Debug)]
-pub enum CloseError { Fdo(fdo::Error), NotAllowed }
+pub enum CloseError {
+    Fdo(fdo::Error),
+    NotAllowed,
+}
 
 impl From<zbus::Error> for CloseError {
-    fn from(error: zbus::Error) -> Self { Self::Fdo(error.into()) }
+    fn from(error: zbus::Error) -> Self {
+        Self::Fdo(error.into())
+    }
 }
 
 impl zbus::DBusError for CloseError {
     fn name(&self) -> zbus::names::ErrorName<'_> {
         match self {
             Self::Fdo(error) => zbus::DBusError::name(error),
-            Self::NotAllowed => zbus::names::ErrorName::try_from("org.freedesktop.portal.Error.NotAllowed").expect("constant"),
+            Self::NotAllowed => {
+                zbus::names::ErrorName::try_from("org.freedesktop.portal.Error.NotAllowed")
+                    .expect("constant")
+            }
         }
     }
     fn description(&self) -> Option<&str> {
-        match self { Self::Fdo(error) => zbus::DBusError::description(error), Self::NotAllowed => Some("not the owner of this request") }
+        match self {
+            Self::Fdo(error) => zbus::DBusError::description(error),
+            Self::NotAllowed => Some("not the owner of this request"),
+        }
     }
     fn create_reply(&self, header: &Header<'_>) -> zbus::Result<zbus::Message> {
         match self {
             Self::Fdo(error) => zbus::DBusError::create_reply(error, header),
-            Self::NotAllowed => zbus::Message::error(header, self.name())?.build(&self.description().unwrap_or_default()),
+            Self::NotAllowed => zbus::Message::error(header, self.name())?
+                .build(&self.description().unwrap_or_default()),
         }
     }
 }
@@ -58,7 +70,10 @@ impl Request {
     }
 
     pub fn filechooser(owner: &str, bridge: crate::filechooser::Bridge, id: u64) -> Self {
-        Self { owner: owner.to_owned(), chooser: Some((bridge, id)) }
+        Self {
+            owner: owner.to_owned(),
+            chooser: Some((bridge, id)),
+        }
     }
 }
 
@@ -151,7 +166,13 @@ pub async fn respond(
 
 /// Shared addressed signal emission. The FileChooser registry serialises this
 /// with Close and retirement; ScreenCast retains its existing liveness check.
-pub async fn emit(connection: &Connection, path: &OwnedObjectPath, owner: &str, code: u32, results: HashMap<&str, Value<'_>>) {
+pub async fn emit(
+    connection: &Connection,
+    path: &OwnedObjectPath,
+    owner: &str,
+    code: u32,
+    results: HashMap<&str, Value<'_>>,
+) {
     let emitted = async {
         let destination = BusName::try_from(owner.to_owned()).map_err(zbus::Error::from)?;
         let emitter = SignalEmitter::new(connection, path.clone())?.set_destination(destination);
