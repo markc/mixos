@@ -119,7 +119,7 @@ maild alias remove sales@example.com
 
 `add` creates an absent alias, including resurrection of a tombstone at its
 retained version; it refuses an existing alias. `set` creates or repoints with
-an optimistic version check. Concurrent changes require a retry. Both verbs
+an optimistic version check. Concurrent changes require a retry. Both commands
 take one to 32 local account addresses, with no chains or off-site forwarding.
 
 Delivery checks for a real mailbox first, then an enabled exact alias, then
