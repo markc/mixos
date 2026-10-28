@@ -148,7 +148,17 @@ pub async fn handle(
     mode: CopyMode,
     read_only_src: bool,
 ) -> String {
-    handle_with_view(tag, args, account_id, src_container, store, mode, read_only_src, None).await
+    handle_with_view(
+        tag,
+        args,
+        account_id,
+        src_container,
+        store,
+        mode,
+        read_only_src,
+        None,
+    )
+    .await
 }
 
 pub async fn handle_with_view(
@@ -242,13 +252,24 @@ pub async fn handle_with_view(
     }
 
     let src_uids: Vec<u64> = resolved.iter().map(|r| r.uid).collect();
-    let items = resolved.iter().map(|r| (r.item_id, r.item_id.0.to_string())).collect();
+    let items = resolved
+        .iter()
+        .map(|r| (r.item_id, r.item_id.0.to_string()))
+        .collect();
     let copied = tokio::task::spawn_blocking(move || {
         store.copy_messages(account_id, items, src_container, dest_id, read_only_src)
-    }).await;
+    })
+    .await;
     let copied = match copied {
         Ok(Ok(copied)) => copied,
-        _ => return tagged(tag, Status::No, Some("UNAVAILABLE"), "COPY failed; no messages copied"),
+        _ => {
+            return tagged(
+                tag,
+                Status::No,
+                Some("UNAVAILABLE"),
+                "COPY failed; no messages copied",
+            );
+        }
     };
     let dest_uids: Vec<u64> = copied.iter().map(|u| u.uid).collect();
     let uid_validity = copied.first().map(|u| u.uid_validity);

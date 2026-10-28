@@ -169,7 +169,11 @@ pub(super) fn validate_segment(seg: &str) -> Result<(), String> {
     if seg.is_empty() {
         return Err("empty mailbox path segment".to_string());
     }
-    if !unicode_normalization::is_nfc(seg) || seg.chars().any(|c| (c as u32 & 0xffff) >= 0xfffe || (0xfdd0..=0xfdef).contains(&(c as u32))) {
+    if !unicode_normalization::is_nfc(seg)
+        || seg
+            .chars()
+            .any(|c| (c as u32 & 0xffff) >= 0xfffe || (0xfdd0..=0xfdef).contains(&(c as u32)))
+    {
         return Err("mailbox name must be Net-Unicode (NFC)".into());
     }
     for b in seg.bytes() {
@@ -261,7 +265,12 @@ async fn load_records(
 }
 
 /// Execute CREATE for an authenticated session.
-pub async fn handle(tag: &str, args: &str, account_id: AccountId, store: Arc<dyn MailStore>) -> String {
+pub async fn handle(
+    tag: &str,
+    args: &str,
+    account_id: AccountId,
+    store: Arc<dyn MailStore>,
+) -> String {
     let parsed = match parse_args(args) {
         Ok(parsed) => parsed,
         Err(e) => return tagged(tag, Status::Bad, None, &e),
@@ -270,34 +279,68 @@ pub async fn handle(tag: &str, args: &str, account_id: AccountId, store: Arc<dyn
         Ok(role) => role,
         Err(e) => return tagged(tag, Status::No, Some("USEATTR"), &e),
     };
-    let name = parsed.name.strip_suffix(HIERARCHY_DELIMITER).unwrap_or(&parsed.name);
+    let name = parsed
+        .name
+        .strip_suffix(HIERARCHY_DELIMITER)
+        .unwrap_or(&parsed.name);
     let segments: Vec<&str> = name.split(HIERARCHY_DELIMITER).collect();
     for segment in &segments {
-        if let Err(e) = validate_segment(segment) { return tagged(tag, Status::No, Some("CANNOT"), &e); }
+        if let Err(e) = validate_segment(segment) {
+            return tagged(tag, Status::No, Some("CANNOT"), &e);
+        }
     }
     let mut records = match load_records(&store, account_id, tag).await {
-        Ok(records) => records, Err(response) => return response,
+        Ok(records) => records,
+        Err(response) => return response,
     };
-    let existing = match resolve(name, &records) { ResolveResult::Found(id) => Some(id), _ => None };
+    let existing = match resolve(name, &records) {
+        ResolveResult::Found(id) => Some(id),
+        _ => None,
+    };
     if let Some(role) = leaf_role
-        && other_role_holder_exists(&records, role, existing) {
-        return tagged(tag, Status::No, Some("USEATTR"), "SPECIAL-USE attribute already in use");
+        && other_role_holder_exists(&records, role, existing)
+    {
+        return tagged(
+            tag,
+            Status::No,
+            Some("USEATTR"),
+            "SPECIAL-USE attribute already in use",
+        );
     }
     let mut parent = None;
     for (i, segment) in segments.iter().enumerate() {
-        let last = i+1 == segments.len();
+        let last = i + 1 == segments.len();
         let path = segments[..=i].join("/");
         match resolve(&path, &records) {
             ResolveResult::Found(id) => {
                 if last {
-                    if let LeafRoleCheck::Mismatch = check_existing_leaf_role(&records, id, leaf_role) {
-                        return tagged(tag, Status::No, Some("USEATTR"), "existing mailbox has a different SPECIAL-USE attribute");
+                    if let LeafRoleCheck::Mismatch =
+                        check_existing_leaf_role(&records, id, leaf_role)
+                    {
+                        return tagged(
+                            tag,
+                            Status::No,
+                            Some("USEATTR"),
+                            "existing mailbox has a different SPECIAL-USE attribute",
+                        );
                     }
-                    return tagged(tag, Status::No, Some("ALREADYEXISTS"), "mailbox already exists");
+                    return tagged(
+                        tag,
+                        Status::No,
+                        Some("ALREADYEXISTS"),
+                        "mailbox already exists",
+                    );
                 }
                 parent = Some(id);
             }
-            ResolveResult::Unrepresentable => return tagged(tag, Status::No, Some("CANNOT"), "mailbox name cannot be represented"),
+            ResolveResult::Unrepresentable => {
+                return tagged(
+                    tag,
+                    Status::No,
+                    Some("CANNOT"),
+                    "mailbox name cannot be represented",
+                );
+            }
             ResolveResult::NotFound => {
                 if i == 0 && segment.eq_ignore_ascii_case("INBOX") {
                     return tagged(tag, Status::No, Some("SERVERBUG"), "INBOX unavailable");
@@ -305,22 +348,61 @@ pub async fn handle(tag: &str, args: &str, account_id: AccountId, store: Arc<dyn
                 let name = segment.to_string();
                 let attrs = jmap_attrs_for_create(if last { leaf_role } else { None }, 0, false);
                 let creating = store.clone();
-                let created = tokio::task::spawn_blocking(move || creating.create_mailbox(account_id, &name, parent, attrs)).await;
+                let created = tokio::task::spawn_blocking(move || {
+                    creating.create_mailbox(account_id, &name, parent, attrs)
+                })
+                .await;
                 match created {
                     Ok(Ok(id)) => parent = Some(id),
                     Ok(Err(e)) if e.to_string().starts_with("mailbox already exists") && !last => {
-                        records = match load_records(&store, account_id, tag).await { Ok(records) => records, Err(response) => return response };
+                        records = match load_records(&store, account_id, tag).await {
+                            Ok(records) => records,
+                            Err(response) => return response,
+                        };
                         match resolve(&path, &records) {
                             ResolveResult::Found(id) => parent = Some(id),
-                            _ => return tagged(tag, Status::No, Some("UNAVAILABLE"), "mailbox hierarchy changed; retry"),
+                            _ => {
+                                return tagged(
+                                    tag,
+                                    Status::No,
+                                    Some("UNAVAILABLE"),
+                                    "mailbox hierarchy changed; retry",
+                                );
+                            }
                         }
                     }
-                    Ok(Err(e)) if e.to_string().starts_with("mailbox special-use") => return tagged(tag, Status::No, Some("USEATTR"), "SPECIAL-USE attribute already in use"),
-                    Ok(Err(e)) if e.to_string().starts_with("mailbox already exists") => return tagged(tag, Status::No, Some("ALREADYEXISTS"), "mailbox already exists"),
-                    _ => return tagged(tag, Status::No, Some("UNAVAILABLE"), "mailbox creation unavailable"),
+                    Ok(Err(e)) if e.to_string().starts_with("mailbox special-use") => {
+                        return tagged(
+                            tag,
+                            Status::No,
+                            Some("USEATTR"),
+                            "SPECIAL-USE attribute already in use",
+                        );
+                    }
+                    Ok(Err(e)) if e.to_string().starts_with("mailbox already exists") => {
+                        return tagged(
+                            tag,
+                            Status::No,
+                            Some("ALREADYEXISTS"),
+                            "mailbox already exists",
+                        );
+                    }
+                    _ => {
+                        return tagged(
+                            tag,
+                            Status::No,
+                            Some("UNAVAILABLE"),
+                            "mailbox creation unavailable",
+                        );
+                    }
                 }
-                if last { return tagged(tag, Status::Ok, None, "CREATE completed"); }
-                records = match load_records(&store, account_id, tag).await { Ok(records) => records, Err(response) => return response };
+                if last {
+                    return tagged(tag, Status::Ok, None, "CREATE completed");
+                }
+                records = match load_records(&store, account_id, tag).await {
+                    Ok(records) => records,
+                    Err(response) => return response,
+                };
             }
         }
     }

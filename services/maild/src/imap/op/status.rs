@@ -112,28 +112,41 @@ pub async fn handle(
     account_id: AccountId,
     store: Arc<dyn MailStore>,
 ) -> String {
-    handle_with_limit(tag, args, account_id, store, crate::imap::config::ImapConfig::default().max_literal_bytes).await
+    handle_with_limit(
+        tag,
+        args,
+        account_id,
+        store,
+        crate::imap::config::ImapConfig::default().max_literal_bytes,
+    )
+    .await
 }
 
-pub async fn handle_with_limit(tag: &str, args: &str, account_id: AccountId, store: Arc<dyn MailStore>, append_limit: u64) -> String {
+pub async fn handle_with_limit(
+    tag: &str,
+    args: &str,
+    account_id: AccountId,
+    store: Arc<dyn MailStore>,
+    append_limit: u64,
+) -> String {
     let parsed = match parse_args(args) {
         Ok(p) => p,
         Err(e) => return tagged(tag, Status::Bad, None, &e),
     };
 
     let list_store = store.clone();
-    let records = match tokio::task::spawn_blocking(move || list_store.list_mailboxes(account_id)).await
-    {
-        Ok(Ok(r)) => r,
-        Ok(Err(e)) => {
-            tracing::warn!(error = %e, "STATUS list_mailboxes failed");
-            return tagged(tag, Status::No, Some("SERVERBUG"), "status failed");
-        }
-        Err(e) => {
-            tracing::warn!(error = %e, "STATUS spawn_blocking panicked");
-            return tagged(tag, Status::No, Some("SERVERBUG"), "status failed");
-        }
-    };
+    let records =
+        match tokio::task::spawn_blocking(move || list_store.list_mailboxes(account_id)).await {
+            Ok(Ok(r)) => r,
+            Ok(Err(e)) => {
+                tracing::warn!(error = %e, "STATUS list_mailboxes failed");
+                return tagged(tag, Status::No, Some("SERVERBUG"), "status failed");
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "STATUS spawn_blocking panicked");
+                return tagged(tag, Status::No, Some("SERVERBUG"), "status failed");
+            }
+        };
 
     let resolved_id = match resolve(&parsed.mailbox, &records) {
         ResolveResult::Found(id) => id,
@@ -180,15 +193,36 @@ pub async fn handle_with_limit(tag: &str, args: &str, account_id: AccountId, sto
         }
     };
 
-    let (size, deleted) = if parsed.items.iter().any(|i| matches!(i, StatusItem::Size | StatusItem::Deleted)) {
+    let (size, deleted) = if parsed
+        .items
+        .iter()
+        .any(|i| matches!(i, StatusItem::Size | StatusItem::Deleted))
+    {
         match tokio::task::spawn_blocking(move || {
-            let handles = store.list_emails_in_mailbox(account_id, resolved_id, crate::mailstore::ListOpts { sort_by: crate::mailstore::SortKey::Seq, limit: u32::MAX, offset: 0 })?;
-            Ok::<_, anyhow::Error>(handles.iter().fold((0u64, 0u64), |(size, deleted), h| (size.saturating_add(h.size_bytes), deleted + u64::from(h.keywords.0 & mds::Flags::DELETED != 0))))
-        }).await {
+            let handles = store.list_emails_in_mailbox(
+                account_id,
+                resolved_id,
+                crate::mailstore::ListOpts {
+                    sort_by: crate::mailstore::SortKey::Seq,
+                    limit: u32::MAX,
+                    offset: 0,
+                },
+            )?;
+            Ok::<_, anyhow::Error>(handles.iter().fold((0u64, 0u64), |(size, deleted), h| {
+                (
+                    size.saturating_add(h.size_bytes),
+                    deleted + u64::from(h.keywords.0 & mds::Flags::DELETED != 0),
+                )
+            }))
+        })
+        .await
+        {
             Ok(Ok(totals)) => totals,
             _ => return tagged(tag, Status::No, Some("UNAVAILABLE"), "status unavailable"),
         }
-    } else { (0, 0) };
+    } else {
+        (0, 0)
+    };
     let mut body = String::new();
     for (i, item) in parsed.items.iter().enumerate() {
         if i > 0 {

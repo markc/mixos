@@ -52,6 +52,7 @@ async fn make_fixture(
     let mds = Arc::new(SqliteCasMds::open(mds_dir)?);
     let mailstore: Arc<dyn MailStore> = Arc::new(SqliteMailStore::new(Arc::clone(&mds)));
     mailstore.create_mailbox(1, "INBOX", None, attrs_for(Some("\\Inbox"), true))?;
+    mailstore.create_mailbox(1, "Archive", None, attrs_for(Some("\\Archive"), true))?;
     Ok((tmp, db, mds, mailstore))
 }
 
@@ -160,28 +161,51 @@ type Writer = tokio::io::WriteHalf<tokio::io::DuplexStream>;
 
 /// Read literals by octet count so CRLF, NUL and tag-like body text cannot
 /// accidentally satisfy the response reader. All wire tests have a deadline.
-async fn exchange(reader: &mut Reader, writer: &mut Writer, tag: &str, wire: &[u8]) -> Result<Vec<u8>> {
+async fn exchange(
+    reader: &mut Reader,
+    writer: &mut Writer,
+    tag: &str,
+    wire: &[u8],
+) -> Result<Vec<u8>> {
     tokio::time::timeout(std::time::Duration::from_secs(10), async {
         writer.write_all(wire).await?;
         let mut out = Vec::new();
         loop {
             let mut line = Vec::new();
-            anyhow::ensure!(reader.read_until(b'\n', &mut line).await? != 0, "peer closed");
+            anyhow::ensure!(
+                reader.read_until(b'\n', &mut line).await? != 0,
+                "peer closed"
+            );
             let done = line.starts_with(format!("{tag} ").as_bytes());
-            let literal = line.strip_suffix(b"}\r\n").and_then(|s| s.iter().rposition(|b| *b == b'{').map(|i| &s[i+1..])).and_then(|s| std::str::from_utf8(s).ok()).and_then(|s| s.parse::<usize>().ok());
+            let literal = line
+                .strip_suffix(b"}\r\n")
+                .and_then(|s| s.iter().rposition(|b| *b == b'{').map(|i| &s[i + 1..]))
+                .and_then(|s| std::str::from_utf8(s).ok())
+                .and_then(|s| s.parse::<usize>().ok());
             out.extend_from_slice(&line);
             if let Some(n) = literal {
                 let start = out.len();
-                out.resize(start+n, 0);
+                out.resize(start + n, 0);
                 reader.read_exact(&mut out[start..]).await?;
             }
-            if done { return Ok(out); }
+            if done {
+                return Ok(out);
+            }
         }
-    }).await?
+    })
+    .await?
 }
 
-async fn command(reader: &mut Reader, writer: &mut Writer, tag: &str, args: &str) -> Result<String> {
-    Ok(String::from_utf8_lossy(&exchange(reader, writer, tag, format!("{tag} {args}\r\n").as_bytes()).await?).into_owned())
+async fn command(
+    reader: &mut Reader,
+    writer: &mut Writer,
+    tag: &str,
+    args: &str,
+) -> Result<String> {
+    Ok(String::from_utf8_lossy(
+        &exchange(reader, writer, tag, format!("{tag} {args}\r\n").as_bytes()).await?,
+    )
+    .into_owned())
 }
 
 async fn selected(ms: Arc<dyn MailStore>, db: Db) -> Result<(Reader, Writer)> {
@@ -215,22 +239,52 @@ async fn thunderbird_mime_parts_on_demand_and_structure_agree() -> Result<()> {
     assert!(structure.contains("\"MESSAGE\" \"RFC822\""), "{structure}");
     assert!(structure.contains("\"BASE64\" 8"), "{structure}");
     for (section, expected) in [
-        ("1.1", "plain"), ("1.2", "<b>html</b>"), ("2", "QQBC/w=="),
-        ("3.1", "forwarded text"), ("3.2", "Caf=C3=A9"),
-        ("1.MIME", "Content-Type: multipart/alternative; boundary=alt\r\n\r\n"),
-        ("3.2.MIME", "Content-Type: text/plain\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n"),
+        ("1.1", "plain"),
+        ("1.2", "<b>html</b>"),
+        ("2", "QQBC/w=="),
+        ("3.1", "forwarded text"),
+        ("3.2", "Caf=C3=A9"),
+        (
+            "1.MIME",
+            "Content-Type: multipart/alternative; boundary=alt\r\n\r\n",
+        ),
+        (
+            "3.2.MIME",
+            "Content-Type: text/plain\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n",
+        ),
         ("3.HEADER.FIELDS (Subject)", "Subject: Forwarded\r\n\r\n"),
     ] {
-        let response = command(&mut r, &mut w, "p", &format!("FETCH 1 BODY.PEEK[{section}]")).await?;
-        assert!(response.contains(&format!("{{{}}}\r\n{expected})", expected.len())), "{section}: {response}");
+        let response = command(
+            &mut r,
+            &mut w,
+            "p",
+            &format!("FETCH 1 BODY.PEEK[{section}]"),
+        )
+        .await?;
+        assert!(
+            response.contains(&format!("{{{}}}\r\n{expected})", expected.len())),
+            "{section}: {response}"
+        );
     }
     let response = command(&mut r, &mut w, "h", "FETCH 1 (BODY.PEEK[3.HEADER] BODY.PEEK[3.TEXT] BODY.PEEK[3.HEADER.FIELDS.NOT (From Content-Type)] BODY.PEEK[1.HEADER])").await?;
-    assert!(response.contains("Subject: Forwarded\r\n\r\n"), "{response}");
+    assert!(
+        response.contains("Subject: Forwarded\r\n\r\n"),
+        "{response}"
+    );
     assert!(response.contains("BODY[1.HEADER] NIL"), "{response}");
-    let response = command(&mut r, &mut w, "x", "FETCH 1 (BODY.PEEK[2]<2.3> BODY.PEEK[99] FLAGS)").await?;
+    let response = command(
+        &mut r,
+        &mut w,
+        "x",
+        "FETCH 1 (BODY.PEEK[2]<2.3> BODY.PEEK[99] FLAGS)",
+    )
+    .await?;
     assert!(response.contains("BODY[2]<2> {3}\r\nBC/"), "{response}");
     assert!(response.contains("BODY[99] NIL"), "{response}");
-    assert!(response.contains("FLAGS ()"), "PEEK changed flags: {response}");
+    assert!(
+        response.contains("FLAGS ()"),
+        "PEEK changed flags: {response}"
+    );
     Ok(())
 }
 
@@ -239,15 +293,30 @@ async fn fetch_macros_and_non_extensible_body() -> Result<()> {
     let (_tmp, db, mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
     insert_email(&ms, &mds, MIME, "MIME", Flags(0), 1_700_000_000_000)?;
     let (mut r, mut w) = selected(ms, db).await?;
-    for (macro_, envelope, body) in [("FAST", false, false), ("ALL", true, false), ("FULL", true, true)] {
+    for (macro_, envelope, body) in [
+        ("FAST", false, false),
+        ("ALL", true, false),
+        ("FULL", true, true),
+    ] {
         let result = command(&mut r, &mut w, "m", &format!("FETCH 1 {macro_}")).await?;
         assert!(result.contains("RFC822.SIZE"), "{result}");
         assert_eq!(result.contains("ENVELOPE"), envelope, "{result}");
         assert_eq!(result.contains(" BODY ("), body, "{result}");
-        assert!(!result.contains("ATTACHMENT"), "BODY has extension fields: {result}");
+        assert!(
+            !result.contains("ATTACHMENT"),
+            "BODY has extension fields: {result}"
+        );
     }
-    assert!(command(&mut r, &mut w, "b", "FETCH 1 BODY").await?.contains("BODY (("));
-    assert!(command(&mut r, &mut w, "b", "FETCH 1 (FAST UID)").await?.contains("BAD"));
+    assert!(
+        command(&mut r, &mut w, "b", "FETCH 1 BODY")
+            .await?
+            .contains("BODY ((")
+    );
+    assert!(
+        command(&mut r, &mut w, "b", "FETCH 1 (FAST UID)")
+            .await?
+            .contains("BAD")
+    );
     Ok(())
 }
 
@@ -256,29 +325,74 @@ async fn binary_decodes_sizes_partials_literal8_and_seen() -> Result<()> {
     let (_tmp, db, mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
     insert_email(&ms, &mds, MIME, "MIME", Flags(0), 1_700_000_000_000)?;
     let (mut r, mut w) = selected(ms, db).await?;
-    let result = exchange(&mut r, &mut w, "b", b"b FETCH 1 (BINARY.PEEK[2] BINARY.SIZE[2] FLAGS)\r\n").await?;
-    assert!(result.windows(b"BINARY[2] ~{4}\r\nA\0B\xff".len()).any(|s| s == b"BINARY[2] ~{4}\r\nA\0B\xff"), "{result:?}");
+    let result = exchange(
+        &mut r,
+        &mut w,
+        "b",
+        b"b FETCH 1 (BINARY.PEEK[2] BINARY.SIZE[2] FLAGS)\r\n",
+    )
+    .await?;
+    assert!(
+        result
+            .windows(b"BINARY[2] ~{4}\r\nA\0B\xff".len())
+            .any(|s| s == b"BINARY[2] ~{4}\r\nA\0B\xff"),
+        "{result:?}"
+    );
     assert!(String::from_utf8_lossy(&result).contains("BINARY.SIZE[2] 4 FLAGS ()"));
-    let result = command(&mut r, &mut w, "b", "FETCH 1 (BINARY.PEEK[3.2] BINARY.SIZE[3.2])").await?;
-    assert!(result.contains("{5}\r\nCafé BINARY.SIZE[3.2] 5"), "{result}");
+    let result = command(
+        &mut r,
+        &mut w,
+        "b",
+        "FETCH 1 (BINARY.PEEK[3.2] BINARY.SIZE[3.2])",
+    )
+    .await?;
+    assert!(
+        result.contains("{5}\r\nCafé BINARY.SIZE[3.2] 5"),
+        "{result}"
+    );
     let result = exchange(&mut r, &mut w, "b", b"b FETCH 1 BINARY[2]<1.2>\r\n").await?;
-    assert!(result.windows(b"~{2}\r\n\0B".len()).any(|s| s == b"~{2}\r\n\0B"), "{result:?}");
+    assert!(
+        result
+            .windows(b"~{2}\r\n\0B".len())
+            .any(|s| s == b"~{2}\r\n\0B"),
+        "{result:?}"
+    );
     assert!(String::from_utf8_lossy(&result).contains("FLAGS (\\Seen)"));
     Ok(())
 }
 
 #[tokio::test]
 async fn binary_unknown_and_malformed_transfer_encoding_fail() -> Result<()> {
-    for (encoding, data) in [("x-custom", "encoded"), ("base64", "a!=="), ("quoted-printable", "=GG")] {
+    for (encoding, data) in [
+        ("x-custom", "encoded"),
+        ("base64", "a!=="),
+        ("quoted-printable", "=GG"),
+    ] {
         let (_tmp, db, mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
-        let raw = format!("Content-Type: application/octet-stream\r\nContent-Transfer-Encoding: {encoding}\r\n\r\n{data}");
-        insert_email(&ms, &mds, raw.as_bytes(), "bad", Flags(0), 1_700_000_000_000)?;
+        let raw = format!(
+            "Content-Type: application/octet-stream\r\nContent-Transfer-Encoding: {encoding}\r\n\r\n{data}"
+        );
+        insert_email(
+            &ms,
+            &mds,
+            raw.as_bytes(),
+            "bad",
+            Flags(0),
+            1_700_000_000_000,
+        )?;
         let (mut r, mut w) = selected(ms, db).await?;
         for atom in ["BINARY[1]", "BINARY.SIZE[1]"] {
             let result = command(&mut r, &mut w, "b", &format!("FETCH 1 {atom}")).await?;
-            assert!(result.contains("b NO [UNKNOWN-CTE]"), "{encoding}: {result}");
+            assert!(
+                result.contains("b NO [UNKNOWN-CTE]"),
+                "{encoding}: {result}"
+            );
         }
-        assert!(command(&mut r, &mut w, "f", "FETCH 1 FLAGS").await?.contains("FLAGS ()"));
+        assert!(
+            command(&mut r, &mut w, "f", "FETCH 1 FLAGS")
+                .await?
+                .contains("FLAGS ()")
+        );
     }
     Ok(())
 }
@@ -286,16 +400,43 @@ async fn binary_unknown_and_malformed_transfer_encoding_fail() -> Result<()> {
 #[tokio::test]
 async fn enable_rev2_esearch_save_and_dollar_survive_expunge() -> Result<()> {
     let (_tmp, db, mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
-    for n in 1..=3 { insert_email(&ms, &mds, b"Subject: x\r\n\r\nbody", &format!("m{n}"), Flags(0), 1_700_000_000_000)?; }
+    for n in 1..=3 {
+        insert_email(
+            &ms,
+            &mds,
+            b"Subject: x\r\n\r\nbody",
+            &format!("m{n}"),
+            Flags(0),
+            1_700_000_000_000,
+        )?;
+    }
     let (client, _) = spawn_session(db, ms, ImapConfig::default()).await;
     let (mut r, mut w) = login(client).await?;
-    let enabled = command(&mut r, &mut w, "e", "ENABLE IMAP4rev2 UTF8=ACCEPT CONDSTORE QRESYNC unknown").await?;
-    assert!(enabled.starts_with("* ENABLED IMAP4rev2 UTF8=ACCEPT\r\n"), "{enabled}");
+    let enabled = command(
+        &mut r,
+        &mut w,
+        "e",
+        "ENABLE IMAP4rev2 UTF8=ACCEPT CONDSTORE QRESYNC unknown",
+    )
+    .await?;
+    assert!(
+        enabled.starts_with("* ENABLED IMAP4rev2 UTF8=ACCEPT\r\n"),
+        "{enabled}"
+    );
     command(&mut r, &mut w, "s", "SELECT INBOX").await?;
     let result = command(&mut r, &mut w, "q", "SEARCH ALL").await?;
     assert!(result.contains("* ESEARCH (TAG \"q\") ALL 1:3"), "{result}");
-    let result = command(&mut r, &mut w, "q", "UID SEARCH RETURN (MIN MAX ALL COUNT SAVE) ALL").await?;
-    assert!(result.contains("UID MIN 1 MAX 3 ALL 1:3 COUNT 3"), "{result}");
+    let result = command(
+        &mut r,
+        &mut w,
+        "q",
+        "UID SEARCH RETURN (MIN MAX ALL COUNT SAVE) ALL",
+    )
+    .await?;
+    assert!(
+        result.contains("UID MIN 1 MAX 3 ALL 1:3 COUNT 3"),
+        "{result}"
+    );
     command(&mut r, &mut w, "f", "UID STORE 1 +FLAGS (\\Deleted)").await?;
     command(&mut r, &mut w, "x", "UID EXPUNGE 1").await?;
     let result = command(&mut r, &mut w, "f", "FETCH $ UID").await?;
@@ -305,8 +446,17 @@ async fn enable_rev2_esearch_save_and_dollar_survive_expunge() -> Result<()> {
     assert!(result.contains("COUNT 2"), "{result}");
     let result = command(&mut r, &mut w, "q", "SEARCH RETURN (SAVE) UID 999").await?;
     assert_eq!(result, "q OK SEARCH completed\r\n");
-    assert_eq!(command(&mut r, &mut w, "f", "UID FETCH $ FLAGS").await?, "f OK UID FETCH completed\r\n");
-    let result = command(&mut r, &mut w, "q", "SEARCH RETURN (MIN MAX ALL COUNT) UID 999").await?;
+    assert_eq!(
+        command(&mut r, &mut w, "f", "UID FETCH $ FLAGS").await?,
+        "f OK UID FETCH completed\r\n"
+    );
+    let result = command(
+        &mut r,
+        &mut w,
+        "q",
+        "SEARCH RETURN (MIN MAX ALL COUNT) UID 999",
+    )
+    .await?;
     assert!(result.contains("* ESEARCH (TAG \"q\") COUNT 0"), "{result}");
     Ok(())
 }
@@ -314,16 +464,32 @@ async fn enable_rev2_esearch_save_and_dollar_survive_expunge() -> Result<()> {
 #[tokio::test]
 async fn legacy_search_and_save_min_max_with_uid_copy_and_store() -> Result<()> {
     let (_tmp, db, mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
-    for n in 1..=3 { insert_email(&ms, &mds, b"Subject: x\r\n\r\nbody", &format!("m{n}"), Flags(0), 1_700_000_000_000)?; }
+    for n in 1..=3 {
+        insert_email(
+            &ms,
+            &mds,
+            b"Subject: x\r\n\r\nbody",
+            &format!("m{n}"),
+            Flags(0),
+            1_700_000_000_000,
+        )?;
+    }
     let (mut r, mut w) = selected(ms, db).await?;
-    assert!(command(&mut r, &mut w, "q", "SEARCH ALL").await?.contains("* SEARCH 1 2 3"));
+    assert!(
+        command(&mut r, &mut w, "q", "SEARCH ALL")
+            .await?
+            .contains("* SEARCH 1 2 3")
+    );
     command(&mut r, &mut w, "q", "SEARCH RETURN (MIN MAX SAVE) ALL").await?;
     let result = command(&mut r, &mut w, "f", "UID STORE $ +FLAGS (\\Flagged)").await?;
     assert_eq!(result.matches("FLAGS (\\Flagged)").count(), 2, "{result}");
     let result = command(&mut r, &mut w, "c", "UID COPY $ Archive").await?;
     assert!(result.contains("COPYUID"), "{result}");
     command(&mut r, &mut w, "s", "SELECT Archive").await?;
-    assert_eq!(command(&mut r, &mut w, "f", "FETCH $ UID").await?, "f OK FETCH completed\r\n");
+    assert_eq!(
+        command(&mut r, &mut w, "f", "FETCH $ UID").await?,
+        "f OK FETCH completed\r\n"
+    );
     Ok(())
 }
 
@@ -331,16 +497,42 @@ async fn legacy_search_and_save_min_max_with_uid_copy_and_store() -> Result<()> 
 async fn status_aggregates_and_appendlimit_match_config() -> Result<()> {
     let (_tmp, db, mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
     let raw = b"Subject: x\r\n\r\nbody";
-    insert_email(&ms, &mds, raw, "a", Flags(Flags::DELETED), 1_700_000_000_000)?;
+    insert_email(
+        &ms,
+        &mds,
+        raw,
+        "a",
+        Flags(Flags::DELETED),
+        1_700_000_000_000,
+    )?;
     insert_email(&ms, &mds, raw, "b", Flags(0), 1_700_000_000_000)?;
-    let cfg = ImapConfig { max_literal_bytes: 12345, ..ImapConfig::default() };
+    let cfg = ImapConfig {
+        max_literal_bytes: 12345,
+        ..ImapConfig::default()
+    };
     let (client, _) = spawn_session(db, ms, cfg).await;
     let (mut r, mut w) = login(client).await?;
     let caps = command(&mut r, &mut w, "c", "CAPABILITY").await?;
     assert!(caps.contains("APPENDLIMIT=12345"), "{caps}");
-    let result = command(&mut r, &mut w, "s", "STATUS INBOX (MESSAGES SIZE DELETED APPENDLIMIT RECENT)").await?;
-    assert!(result.contains(&format!("MESSAGES 2 SIZE {} DELETED 1 APPENDLIMIT 12345 RECENT 0", raw.len()*2)), "{result}");
-    assert!(command(&mut r, &mut w, "s", "STATUS INBOX (HIGHESTMODSEQ)").await?.contains("s BAD"));
+    let result = command(
+        &mut r,
+        &mut w,
+        "s",
+        "STATUS INBOX (MESSAGES SIZE DELETED APPENDLIMIT RECENT)",
+    )
+    .await?;
+    assert!(
+        result.contains(&format!(
+            "MESSAGES 2 SIZE {} DELETED 1 APPENDLIMIT 12345 RECENT 0",
+            raw.len() * 2
+        )),
+        "{result}"
+    );
+    assert!(
+        command(&mut r, &mut w, "s", "STATUS INBOX (HIGHESTMODSEQ)")
+            .await?
+            .contains("s BAD")
+    );
     Ok(())
 }
 
@@ -350,19 +542,51 @@ async fn list_extended_references_patterns_status_and_special_use() -> Result<()
     let (mut r, mut w) = selected(ms, db).await?;
     command(&mut r, &mut w, "c", "CREATE Projects/One").await?;
     command(&mut r, &mut w, "c", "SUBSCRIBE Projects/One").await?;
-    let result = command(&mut r, &mut w, "l", "LIST (SUBSCRIBED RECURSIVEMATCH) \"\" % RETURN (SUBSCRIBED CHILDREN)").await?;
-    assert!(result.contains("\"Projects\" (CHILDINFO (\"SUBSCRIBED\"))"), "{result}");
-    let result = command(&mut r, &mut w, "l", "LIST \"Projects/\" % RETURN (STATUS (MESSAGES SIZE APPENDLIMIT) CHILDREN)").await?;
+    let result = command(
+        &mut r,
+        &mut w,
+        "l",
+        "LIST (SUBSCRIBED RECURSIVEMATCH) \"\" % RETURN (SUBSCRIBED CHILDREN)",
+    )
+    .await?;
+    assert!(
+        result.contains("\"Projects\" (CHILDINFO (\"SUBSCRIBED\"))"),
+        "{result}"
+    );
+    let result = command(
+        &mut r,
+        &mut w,
+        "l",
+        "LIST \"Projects/\" % RETURN (STATUS (MESSAGES SIZE APPENDLIMIT) CHILDREN)",
+    )
+    .await?;
     assert!(result.contains("\"Projects/One\""), "{result}");
-    assert!(result.contains("* STATUS \"Projects/One\" (MESSAGES 0 SIZE 0 APPENDLIMIT"), "{result}");
+    assert!(
+        result.contains("* STATUS \"Projects/One\" (MESSAGES 0 SIZE 0 APPENDLIMIT"),
+        "{result}"
+    );
     let result = command(&mut r, &mut w, "l", "LSUB \"Projects/\" *").await?;
     assert!(result.contains("\"Projects/One\""), "{result}");
-    let result = command(&mut r, &mut w, "l", "LIST (REMOTE SPECIAL-USE) \"\" (INBOX Archive) RETURN (SPECIAL-USE)").await?;
+    let result = command(
+        &mut r,
+        &mut w,
+        "l",
+        "LIST (REMOTE SPECIAL-USE) \"\" (INBOX Archive) RETURN (SPECIAL-USE)",
+    )
+    .await?;
     assert!(result.contains("\\Archive"), "{result}");
     assert!(result.contains("\\Inbox"), "{result}");
     assert!(!result.contains("Projects"), "{result}");
-    assert!(command(&mut r, &mut w, "l", "LIST (RECURSIVEMATCH) \"\" *").await?.contains("l BAD"));
-    assert!(command(&mut r, &mut w, "l", "LIST \"\" * RETURN (BOGUS)").await?.contains("l BAD"));
+    assert!(
+        command(&mut r, &mut w, "l", "LIST (RECURSIVEMATCH) \"\" *")
+            .await?
+            .contains("l BAD")
+    );
+    assert!(
+        command(&mut r, &mut w, "l", "LIST \"\" * RETURN (BOGUS)")
+            .await?
+            .contains("l BAD")
+    );
     Ok(())
 }
 
@@ -371,14 +595,26 @@ async fn utf8_mailbox_names_and_rev1_modified_utf7_roundtrip() -> Result<()> {
     let (_tmp, db, _mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
     let (client, _) = spawn_session(db, ms, ImapConfig::default()).await;
     let (mut r, mut w) = login(client).await?;
-    assert!(command(&mut r, &mut w, "c", "CREATE \"Caf&AOk- &- tea\"").await?.contains("c OK"));
+    assert!(
+        command(&mut r, &mut w, "c", "CREATE \"Caf&AOk- &- tea\"")
+            .await?
+            .contains("c OK")
+    );
     let result = command(&mut r, &mut w, "l", "LIST \"\" *").await?;
     assert!(result.contains("Caf&AOk- &- tea"), "{result}");
     command(&mut r, &mut w, "e", "ENABLE UTF8=ACCEPT").await?;
     let result = command(&mut r, &mut w, "l", "LIST \"\" \"Café & tea\"").await?;
     assert!(result.contains("\"Café & tea\""), "{result}");
-    assert!(command(&mut r, &mut w, "s", "SELECT \"Café & tea\"").await?.contains("s OK"));
-    assert!(command(&mut r, &mut w, "c", "CREATE \"日本語\"").await?.contains("c OK"));
+    assert!(
+        command(&mut r, &mut w, "s", "SELECT \"Café & tea\"")
+            .await?
+            .contains("s OK")
+    );
+    assert!(
+        command(&mut r, &mut w, "c", "CREATE \"日本語\"")
+            .await?
+            .contains("c OK")
+    );
     Ok(())
 }
 
@@ -389,27 +625,69 @@ async fn general_literals_login_names_flags_search_and_multiappend() -> Result<(
     let (rr, mut w) = tokio::io::split(client);
     let mut r = BufReader::new(rr);
     read_line(&mut r).await?;
-    let result = exchange(&mut r, &mut w, "a", b"a LOGIN {17+}\r\nalice@example.com {7+}\r\nhunter2\r\n").await?;
+    let result = exchange(
+        &mut r,
+        &mut w,
+        "a",
+        b"a LOGIN {17+}\r\nalice@example.com {7+}\r\nhunter2\r\n",
+    )
+    .await?;
     assert!(String::from_utf8_lossy(&result).contains("a OK"));
     let result = exchange(&mut r, &mut w, "c", b"c CREATE {5+}\r\nBox A\r\n").await?;
     assert!(String::from_utf8_lossy(&result).contains("c OK"));
-    assert!(String::from_utf8_lossy(&exchange(&mut r, &mut w, "n", b"n RENAME {5+}\r\nBox A {5+}\r\nBox B\r\n").await?).contains("n OK"));
+    assert!(
+        String::from_utf8_lossy(
+            &exchange(
+                &mut r,
+                &mut w,
+                "n",
+                b"n RENAME {5+}\r\nBox A {5+}\r\nBox B\r\n"
+            )
+            .await?
+        )
+        .contains("n OK")
+    );
     let one = b"Subject: One\r\n\r\nfirst";
     let two = b"Subject: Two\r\n\r\nsecond\0data";
-    let mut wire = format!("a APPEND {{5+}}\r\nBox B (\\Seen project) \"01-Jan-2026 10:00:00 +0000\" {{{}+}}\r\n", one.len()).into_bytes();
+    let mut wire = format!(
+        "a APPEND {{5+}}\r\nBox B (\\Seen project) \"01-Jan-2026 10:00:00 +0000\" {{{}+}}\r\n",
+        one.len()
+    )
+    .into_bytes();
     wire.extend_from_slice(one);
     wire.extend_from_slice(format!(" (\\Flagged) ~{{{}+}}\r\n", two.len()).as_bytes());
-    wire.extend_from_slice(two); wire.extend_from_slice(b"\r\n");
+    wire.extend_from_slice(two);
+    wire.extend_from_slice(b"\r\n");
     let result = exchange(&mut r, &mut w, "a", &wire).await?;
-    assert!(String::from_utf8_lossy(&result).contains("APPENDUID"), "{result:?}");
-    assert!(String::from_utf8_lossy(&result).contains(" 1:2]"), "{result:?}");
+    assert!(
+        String::from_utf8_lossy(&result).contains("APPENDUID"),
+        "{result:?}"
+    );
+    assert!(
+        String::from_utf8_lossy(&result).contains(" 1:2]"),
+        "{result:?}"
+    );
     command(&mut r, &mut w, "s", "SELECT \"Box B\"").await?;
-    let result = exchange(&mut r, &mut w, "f", b"f STORE 2 +FLAGS ({6+}\r\nurgent)\r\n").await?;
-    assert!(String::from_utf8_lossy(&result).contains("urgent"), "{result:?}");
+    let result = exchange(
+        &mut r,
+        &mut w,
+        "f",
+        b"f STORE 2 +FLAGS ({6+}\r\nurgent)\r\n",
+    )
+    .await?;
+    assert!(
+        String::from_utf8_lossy(&result).contains("urgent"),
+        "{result:?}"
+    );
     let result = exchange(&mut r, &mut w, "q", b"q SEARCH SUBJECT {3+}\r\nTwo\r\n").await?;
     assert!(String::from_utf8_lossy(&result).contains("* SEARCH 2"));
     command(&mut r, &mut w, "u", "UNSELECT").await?;
-    assert!(String::from_utf8_lossy(&exchange(&mut r, &mut w, "d", b"d DELETE {5+}\r\nBox B\r\n").await?).contains("d OK"));
+    assert!(
+        String::from_utf8_lossy(
+            &exchange(&mut r, &mut w, "d", b"d DELETE {5+}\r\nBox B\r\n").await?
+        )
+        .contains("d OK")
+    );
     Ok(())
 }
 
@@ -419,59 +697,131 @@ async fn multiappend_failure_leaves_no_partial_messages() -> Result<()> {
     let (mut r, mut w) = selected(ms, db).await?;
     let one = b"Subject: One\r\n\r\nfirst";
     let mut wire = format!("a APPEND INBOX {{{}+}}\r\n", one.len()).into_bytes();
-    wire.extend_from_slice(one); wire.extend_from_slice(b" {0+}\r\n\r\n");
+    wire.extend_from_slice(one);
+    wire.extend_from_slice(b" {0+}\r\n\r\n");
     let result = exchange(&mut r, &mut w, "a", &wire).await?;
-    assert!(String::from_utf8_lossy(&result).contains("a NO"), "{result:?}");
-    assert!(command(&mut r, &mut w, "s", "STATUS INBOX (MESSAGES)").await?.contains("MESSAGES 0"));
+    assert!(
+        String::from_utf8_lossy(&result).contains("a NO"),
+        "{result:?}"
+    );
+    assert!(
+        command(&mut r, &mut w, "s", "STATUS INBOX (MESSAGES)")
+            .await?
+            .contains("MESSAGES 0")
+    );
     Ok(())
 }
 
 #[tokio::test]
 async fn rename_inbox_preserves_identity_children_and_moves_messages() -> Result<()> {
     let (_tmp, db, mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
-    insert_email(&ms, &mds, MIME, "message", Flags(Flags::FLAGGED), 1_700_000_000_000)?;
+    insert_email(
+        &ms,
+        &mds,
+        MIME,
+        "message",
+        Flags(Flags::FLAGGED),
+        1_700_000_000_000,
+    )?;
     let (mut r, mut w) = selected(ms, db).await?;
     command(&mut r, &mut w, "c", "CREATE INBOX/Child").await?;
     command(&mut r, &mut w, "u", "UNSELECT").await?;
     let before = command(&mut r, &mut w, "b", "STATUS INBOX (UIDVALIDITY UIDNEXT)").await?;
-    assert!(command(&mut r, &mut w, "n", "RENAME INBOX Saved").await?.contains("n OK"));
+    assert!(
+        command(&mut r, &mut w, "n", "RENAME INBOX Saved")
+            .await?
+            .contains("n OK")
+    );
     let after = command(&mut r, &mut w, "b", "STATUS INBOX (UIDVALIDITY UIDNEXT)").await?;
     assert_eq!(before, after);
-    assert!(command(&mut r, &mut w, "b", "STATUS INBOX (MESSAGES)").await?.contains("MESSAGES 0"));
-    assert!(command(&mut r, &mut w, "s", "SELECT INBOX/Child").await?.contains("s OK"));
+    assert!(
+        command(&mut r, &mut w, "b", "STATUS INBOX (MESSAGES)")
+            .await?
+            .contains("MESSAGES 0")
+    );
+    assert!(
+        command(&mut r, &mut w, "s", "SELECT INBOX/Child")
+            .await?
+            .contains("s OK")
+    );
     command(&mut r, &mut w, "s", "SELECT Saved").await?;
-    assert!(command(&mut r, &mut w, "f", "FETCH 1 FLAGS").await?.contains("\\Flagged"));
+    assert!(
+        command(&mut r, &mut w, "f", "FETCH 1 FLAGS")
+            .await?
+            .contains("\\Flagged")
+    );
     Ok(())
 }
 
 #[tokio::test]
 async fn examine_fetch_and_close_unselect_have_distinct_effects() -> Result<()> {
     let (_tmp, db, mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
-    insert_email(&ms, &mds, b"Subject: x\r\n\r\nbody", "a", Flags(Flags::DELETED), 1_700_000_000_000)?;
+    insert_email(
+        &ms,
+        &mds,
+        b"Subject: x\r\n\r\nbody",
+        "a",
+        Flags(Flags::DELETED),
+        1_700_000_000_000,
+    )?;
     let (mut r, mut w) = selected(ms, db).await?;
     command(&mut r, &mut w, "s", "EXAMINE INBOX").await?;
     let result = command(&mut r, &mut w, "f", "FETCH 1 (BODY[] FLAGS)").await?;
-    assert!(!result.contains("\\Seen"), "EXAMINE changed flags: {result}");
+    assert!(
+        !result.contains("\\Seen"),
+        "EXAMINE changed flags: {result}"
+    );
     command(&mut r, &mut w, "c", "CLOSE").await?;
-    assert!(command(&mut r, &mut w, "s", "STATUS INBOX (MESSAGES)").await?.contains("MESSAGES 1"));
+    assert!(
+        command(&mut r, &mut w, "s", "STATUS INBOX (MESSAGES)")
+            .await?
+            .contains("MESSAGES 1")
+    );
     command(&mut r, &mut w, "s", "SELECT INBOX").await?;
     command(&mut r, &mut w, "u", "UNSELECT").await?;
-    assert!(command(&mut r, &mut w, "s", "STATUS INBOX (MESSAGES)").await?.contains("MESSAGES 1"));
+    assert!(
+        command(&mut r, &mut w, "s", "STATUS INBOX (MESSAGES)")
+            .await?
+            .contains("MESSAGES 1")
+    );
     command(&mut r, &mut w, "s", "SELECT INBOX").await?;
-    assert_eq!(command(&mut r, &mut w, "c", "CLOSE").await?, "c OK CLOSE completed\r\n");
-    assert!(command(&mut r, &mut w, "s", "STATUS INBOX (MESSAGES)").await?.contains("MESSAGES 0"));
+    assert_eq!(
+        command(&mut r, &mut w, "c", "CLOSE").await?,
+        "c OK CLOSE completed\r\n"
+    );
+    assert!(
+        command(&mut r, &mut w, "s", "STATUS INBOX (MESSAGES)")
+            .await?
+            .contains("MESSAGES 0")
+    );
     Ok(())
 }
 
 #[tokio::test]
 async fn copy_failure_rolls_back_earlier_destinations_and_uidnext() -> Result<()> {
     let (_tmp, db, mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
-    for n in 1..=2 { insert_email(&ms, &mds, b"Subject: x\r\n\r\nbody", &format!("m{n}"), Flags(0), 1_700_000_000_000)?; }
+    for n in 1..=2 {
+        insert_email(
+            &ms,
+            &mds,
+            b"Subject: x\r\n\r\nbody",
+            &format!("m{n}"),
+            Flags(0),
+            1_700_000_000_000,
+        )?;
+    }
     let (mut r, mut w) = selected(ms, db).await?;
     command(&mut r, &mut w, "c", "COPY 2 Archive").await?;
     let before = command(&mut r, &mut w, "s", "STATUS Archive (MESSAGES UIDNEXT)").await?;
-    assert!(command(&mut r, &mut w, "c", "COPY 1:2 Archive").await?.contains("c NO"));
-    assert_eq!(before, command(&mut r, &mut w, "s", "STATUS Archive (MESSAGES UIDNEXT)").await?);
+    assert!(
+        command(&mut r, &mut w, "c", "COPY 1:2 Archive")
+            .await?
+            .contains("c NO")
+    );
+    assert_eq!(
+        before,
+        command(&mut r, &mut w, "s", "STATUS Archive (MESSAGES UIDNEXT)").await?
+    );
     Ok(())
 }
 
@@ -491,9 +841,13 @@ async fn multiappend_storage_failure_rolls_back_all_rows_and_uids() -> Result<()
     let mut wire = format!("a APPEND INBOX {{{}+}}\r\n", first.len()).into_bytes();
     wire.extend_from_slice(first);
     wire.extend_from_slice(format!(" {{{}+}}\r\n", second.len()).as_bytes());
-    wire.extend_from_slice(second); wire.extend_from_slice(b"\r\n");
+    wire.extend_from_slice(second);
+    wire.extend_from_slice(b"\r\n");
     assert!(String::from_utf8_lossy(&exchange(&mut r, &mut w, "a", &wire).await?).contains("a NO"));
-    assert_eq!(before, command(&mut r, &mut w, "s", "STATUS INBOX (MESSAGES UIDNEXT)").await?);
+    assert_eq!(
+        before,
+        command(&mut r, &mut w, "s", "STATUS INBOX (MESSAGES UIDNEXT)").await?
+    );
     Ok(())
 }
 
@@ -505,7 +859,18 @@ async fn shutdown_sends_bye_during_idle_and_releases_account_slot() -> Result<()
     let slots = AccountSlots::new();
     let session_slots = slots.clone();
     let join = tokio::spawn(async move {
-        maild::imap::session::handle_connection_with_shutdown(server, "127.0.0.1:0".parse().unwrap(), None, Arc::new(ImapConfig::default()), db, ms, session_slots, "localhost".into(), Some(rx)).await
+        maild::imap::session::handle_connection_with_shutdown(
+            server,
+            "127.0.0.1:0".parse().unwrap(),
+            None,
+            Arc::new(ImapConfig::default()),
+            db,
+            ms,
+            session_slots,
+            "localhost".into(),
+            Some(rx),
+        )
+        .await
     });
     let (mut r, mut w) = login(client).await?;
     w.write_all(b"i IDLE\r\n").await?;
@@ -526,22 +891,46 @@ async fn subscriptions_survive_rename_and_delete_and_absent_names_can_be_removed
     command(&mut r, &mut w, "s", "SUBSCRIBE Original").await?;
     command(&mut r, &mut w, "n", "RENAME Original Renamed").await?;
     let result = command(&mut r, &mut w, "l", "LIST (SUBSCRIBED) \"\" Original").await?;
-    assert!(result.contains("\\Subscribed") && result.contains("\\NonExistent"), "{result}");
+    assert!(
+        result.contains("\\Subscribed") && result.contains("\\NonExistent"),
+        "{result}"
+    );
     command(&mut r, &mut w, "d", "DELETE Renamed").await?;
     let result = command(&mut r, &mut w, "l", "LSUB \"\" Renamed").await?;
     assert!(result.contains("Renamed"), "{result}");
     command(&mut r, &mut w, "u", "UNSUBSCRIBE Original").await?;
-    assert_eq!(command(&mut r, &mut w, "l", "LSUB \"\" Original").await?, "l OK LSUB completed\r\n");
+    assert_eq!(
+        command(&mut r, &mut w, "l", "LSUB \"\" Original").await?,
+        "l OK LSUB completed\r\n"
+    );
     Ok(())
 }
 
 #[tokio::test]
 async fn pending_expunge_preserves_msns_until_a_permitted_command() -> Result<()> {
     let (_tmp, db, mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
-    for n in 1..=2 { insert_email(&ms, &mds, b"Subject: x\r\n\r\nbody", &format!("m{n}"), Flags(0), 1_700_000_000_000)?; }
+    for n in 1..=2 {
+        insert_email(
+            &ms,
+            &mds,
+            b"Subject: x\r\n\r\nbody",
+            &format!("m{n}"),
+            Flags(0),
+            1_700_000_000_000,
+        )?;
+    }
     let (mut r, mut w) = selected(ms.clone(), db).await?;
     let inbox = ms.mailbox_by_role(1, MailboxRole::Inbox)?.unwrap();
-    let first = ms.list_emails_in_mailbox(1, inbox, maild::mailstore::ListOpts { sort_by: maild::mailstore::SortKey::Seq, limit: 1, offset: 0 })?[0].id;
+    let first = ms.list_emails_in_mailbox(
+        1,
+        inbox,
+        maild::mailstore::ListOpts {
+            sort_by: maild::mailstore::SortKey::Seq,
+            limit: 1,
+            offset: 0,
+        },
+    )?[0]
+        .id;
     ms.expunge_memberships(1, inbox, &[first])?;
     let result = command(&mut r, &mut w, "f", "FETCH 2 UID").await?;
     assert!(result.contains("* 2 FETCH (UID 2)"), "{result}");
@@ -553,9 +942,24 @@ async fn pending_expunge_preserves_msns_until_a_permitted_command() -> Result<()
     assert!(result.contains("* SEARCH 2"), "{result}");
     let result = command(&mut r, &mut w, "n", "NOOP").await?;
     assert!(result.contains("* 1 EXPUNGE"), "{result}");
-    assert!(command(&mut r, &mut w, "f", "FETCH 1 UID").await?.contains("* 1 FETCH (UID 2)"));
-    insert_email(&ms, &mds, b"Subject: new\r\n\r\nbody", "new", Flags(0), 1_700_000_000_000)?;
-    assert!(command(&mut r, &mut w, "n", "NOOP").await?.contains("* 2 EXISTS"));
+    assert!(
+        command(&mut r, &mut w, "f", "FETCH 1 UID")
+            .await?
+            .contains("* 1 FETCH (UID 2)")
+    );
+    insert_email(
+        &ms,
+        &mds,
+        b"Subject: new\r\n\r\nbody",
+        "new",
+        Flags(0),
+        1_700_000_000_000,
+    )?;
+    assert!(
+        command(&mut r, &mut w, "n", "NOOP")
+            .await?
+            .contains("* 2 EXISTS")
+    );
     Ok(())
 }
 
@@ -567,31 +971,63 @@ async fn utf8_append_wrapper_and_literal_kind_are_checked() -> Result<()> {
     command(&mut r, &mut w, "e", "ENABLE UTF8=ACCEPT").await?;
     let raw = "Subject: Café\r\n\r\ntext".as_bytes();
     let mut wire = format!("a APPEND INBOX UTF8 (~{{{}+}}\r\n", raw.len()).into_bytes();
-    wire.extend_from_slice(raw); wire.extend_from_slice(b")\r\n");
-    assert!(String::from_utf8_lossy(&exchange(&mut r, &mut w, "a", &wire).await?).contains("a OK [APPENDUID"));
+    wire.extend_from_slice(raw);
+    wire.extend_from_slice(b")\r\n");
+    assert!(
+        String::from_utf8_lossy(&exchange(&mut r, &mut w, "a", &wire).await?)
+            .contains("a OK [APPENDUID")
+    );
     let raw = b"Subject: x\r\n\r\n\0";
     let mut wire = format!("a APPEND INBOX {{{}+}}\r\n", raw.len()).into_bytes();
-    wire.extend_from_slice(raw); wire.extend_from_slice(b"\r\n");
-    assert!(String::from_utf8_lossy(&exchange(&mut r, &mut w, "a", &wire).await?).contains("a BAD"));
+    wire.extend_from_slice(raw);
+    wire.extend_from_slice(b"\r\n");
+    assert!(
+        String::from_utf8_lossy(&exchange(&mut r, &mut w, "a", &wire).await?).contains("a BAD")
+    );
     let raw = b"Subject: binary\r\nContent-Type: application/octet-stream\r\nContent-Transfer-Encoding: binary\r\n\r\nA\0B\xff";
     let mut wire = format!("a APPEND INBOX ~{{{}+}}\r\n", raw.len()).into_bytes();
-    wire.extend_from_slice(raw); wire.extend_from_slice(b"\r\n");
-    assert!(String::from_utf8_lossy(&exchange(&mut r, &mut w, "a", &wire).await?).contains("a OK [APPENDUID"));
+    wire.extend_from_slice(raw);
+    wire.extend_from_slice(b"\r\n");
+    assert!(
+        String::from_utf8_lossy(&exchange(&mut r, &mut w, "a", &wire).await?)
+            .contains("a OK [APPENDUID")
+    );
     command(&mut r, &mut w, "s", "SELECT INBOX").await?;
     let result = command(&mut r, &mut w, "f", "FETCH 2 BODY.PEEK[1]").await?;
     assert!(result.contains("{8}\r\nQQBC/w=="), "{result}");
     let result = exchange(&mut r, &mut w, "f", b"f FETCH 2 BINARY.PEEK[1]\r\n").await?;
-    assert!(result.windows(b"~{4}\r\nA\0B\xff".len()).any(|s| s == b"~{4}\r\nA\0B\xff"), "{result:?}");
+    assert!(
+        result
+            .windows(b"~{4}\r\nA\0B\xff".len())
+            .any(|s| s == b"~{4}\r\nA\0B\xff"),
+        "{result:?}"
+    );
     Ok(())
 }
 
 #[tokio::test]
 async fn binary_text_normalises_crlf_before_sizing_and_slicing() -> Result<()> {
     let (_tmp, db, mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
-    insert_email(&ms, &mds, b"Content-Type: text/plain\n\nline1\nline2\n", "lf", Flags(0), 1_700_000_000_000)?;
+    insert_email(
+        &ms,
+        &mds,
+        b"Content-Type: text/plain\n\nline1\nline2\n",
+        "lf",
+        Flags(0),
+        1_700_000_000_000,
+    )?;
     let (mut r, mut w) = selected(ms, db).await?;
-    let result = command(&mut r, &mut w, "f", "FETCH 1 (BINARY.PEEK[1] BINARY.SIZE[1] BINARY.PEEK[1]<5.4>)").await?;
-    assert!(result.contains("{14}\r\nline1\r\nline2\r\n BINARY.SIZE[1] 14"), "{result}");
+    let result = command(
+        &mut r,
+        &mut w,
+        "f",
+        "FETCH 1 (BINARY.PEEK[1] BINARY.SIZE[1] BINARY.PEEK[1]<5.4>)",
+    )
+    .await?;
+    assert!(
+        result.contains("{14}\r\nline1\r\nline2\r\n BINARY.SIZE[1] 14"),
+        "{result}"
+    );
     assert!(result.contains("BINARY[1]<5> {4}\r\n\r\nli"), "{result}");
     Ok(())
 }
@@ -599,20 +1035,42 @@ async fn binary_text_normalises_crlf_before_sizing_and_slicing() -> Result<()> {
 #[tokio::test]
 async fn literal_minus_limits_only_non_synchronising_literals() -> Result<()> {
     let (_tmp, db, _mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
-    let cfg = ImapConfig { advertise_capabilities: Some(vec!["IMAP4rev2".into(), "IMAP4rev1".into(), "LITERAL-".into()]), ..Default::default() };
+    let cfg = ImapConfig {
+        advertise_capabilities: Some(vec![
+            "IMAP4rev2".into(),
+            "IMAP4rev1".into(),
+            "LITERAL-".into(),
+        ]),
+        ..Default::default()
+    };
     let (client, _) = spawn_session(db, ms.clone(), cfg).await;
     let (mut r, mut w) = login(client).await?;
     let caps = command(&mut r, &mut w, "c", "CAPABILITY").await?;
-    assert!(caps.contains("LITERAL-") && !caps.contains("LITERAL+"), "{caps}");
-    let mut raw = b"Subject: large\r\n\r\n".to_vec(); raw.resize(5000, b'a');
+    assert!(
+        caps.contains("LITERAL-") && !caps.contains("LITERAL+"),
+        "{caps}"
+    );
+    let mut raw = b"Subject: large\r\n\r\n".to_vec();
+    raw.resize(5000, b'a');
     w.write_all(b"a APPEND INBOX {5000}\r\n").await?;
     assert_eq!(read_line(&mut r).await?, "+ Ready for literal data");
-    w.write_all(&raw).await?; w.write_all(b"\r\n").await?;
-    assert!(read_until_tagged(&mut r, "a").await?.last().unwrap().contains("a OK [APPENDUID"));
+    w.write_all(&raw).await?;
+    w.write_all(b"\r\n").await?;
+    assert!(
+        read_until_tagged(&mut r, "a")
+            .await?
+            .last()
+            .unwrap()
+            .contains("a OK [APPENDUID")
+    );
     let mut wire = b"a APPEND INBOX {5000+}\r\n".to_vec();
-    wire.extend_from_slice(&raw); wire.extend_from_slice(b"\r\nevil DELETE Archive\r\n");
+    wire.extend_from_slice(&raw);
+    wire.extend_from_slice(b"\r\nevil DELETE Archive\r\n");
     let result = exchange(&mut r, &mut w, "a", &wire).await?;
-    assert!(String::from_utf8_lossy(&result).contains("a BAD"), "{result:?}");
+    assert!(
+        String::from_utf8_lossy(&result).contains("a BAD"),
+        "{result:?}"
+    );
     assert!(read_line(&mut r).await?.starts_with("* BYE"));
     assert!(ms.mailbox_by_role(1, MailboxRole::Archive)?.is_some());
     Ok(())
@@ -622,52 +1080,112 @@ async fn literal_minus_limits_only_non_synchronising_literals() -> Result<()> {
 async fn extended_list_empty_patterns_lsub_ancestors_and_hostile_wildcards() -> Result<()> {
     let (_tmp, db, _mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
     let (mut r, mut w) = selected(ms, db).await?;
-    assert_eq!(command(&mut r, &mut w, "l", "LIST () INBOX \"\" RETURN (CHILDREN)").await?, "l OK LIST completed\r\n");
-    assert_eq!(command(&mut r, &mut w, "l", "LIST \"\" (\"\")").await?, "l OK LIST completed\r\n");
+    assert_eq!(
+        command(&mut r, &mut w, "l", "LIST () INBOX \"\" RETURN (CHILDREN)").await?,
+        "l OK LIST completed\r\n"
+    );
+    assert_eq!(
+        command(&mut r, &mut w, "l", "LIST \"\" (\"\")").await?,
+        "l OK LIST completed\r\n"
+    );
     command(&mut r, &mut w, "s", "SUBSCRIBE Ghost/Child").await?;
     let result = command(&mut r, &mut w, "l", "LSUB \"\" %").await?;
-    assert!(result.contains("* LSUB (\\Noselect) \"/\" \"Ghost\""), "{result}");
-    let result = command(&mut r, &mut w, "l", "LIST (SUBSCRIBED RECURSIVEMATCH SUBSCRIBED) \"\" %").await?;
-    assert!(result.contains("\"Ghost\" (CHILDINFO (\"SUBSCRIBED\"))"), "{result}");
+    assert!(
+        result.contains("* LSUB (\\Noselect) \"/\" \"Ghost\""),
+        "{result}"
+    );
+    let result = command(
+        &mut r,
+        &mut w,
+        "l",
+        "LIST (SUBSCRIBED RECURSIVEMATCH SUBSCRIBED) \"\" %",
+    )
+    .await?;
+    assert!(
+        result.contains("\"Ghost\" (CHILDINFO (\"SUBSCRIBED\"))"),
+        "{result}"
+    );
     let name = "a".repeat(100);
     command(&mut r, &mut w, "c", &format!("CREATE {name}")).await?;
     let pattern = "*a".repeat(50) + "b";
-    assert_eq!(command(&mut r, &mut w, "l", &format!("LIST \"\" {pattern}")).await?, "l OK LIST completed\r\n");
+    assert_eq!(
+        command(&mut r, &mut w, "l", &format!("LIST \"\" {pattern}")).await?,
+        "l OK LIST completed\r\n"
+    );
     Ok(())
 }
 
 #[tokio::test]
 async fn charset_errors_and_save_failure_have_correct_state() -> Result<()> {
     let (_tmp, db, mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
-    insert_email(&ms, &mds, b"Subject: x\r\n\r\nbody", "x", Flags(0), 1_700_000_000_000)?;
+    insert_email(
+        &ms,
+        &mds,
+        b"Subject: x\r\n\r\nbody",
+        "x",
+        Flags(0),
+        1_700_000_000_000,
+    )?;
     let (mut r, mut w) = selected(ms, db).await?;
     command(&mut r, &mut w, "q", "SEARCH RETURN (SAVE) ALL").await?;
-    assert!(command(&mut r, &mut w, "q", "SEARCH RETURN (SAVE) CHARSET X-UNKNOWN ALL").await?.contains("q NO [BADCHARSET (US-ASCII UTF-8)]"));
-    assert_eq!(command(&mut r, &mut w, "f", "FETCH $ UID").await?, "f OK FETCH completed\r\n");
+    assert!(
+        command(
+            &mut r,
+            &mut w,
+            "q",
+            "SEARCH RETURN (SAVE) CHARSET X-UNKNOWN ALL"
+        )
+        .await?
+        .contains("q NO [BADCHARSET (US-ASCII UTF-8)]")
+    );
+    assert_eq!(
+        command(&mut r, &mut w, "f", "FETCH $ UID").await?,
+        "f OK FETCH completed\r\n"
+    );
     command(&mut r, &mut w, "u", "UNSELECT").await?;
     command(&mut r, &mut w, "e", "ENABLE IMAP4rev2").await?;
     command(&mut r, &mut w, "s", "SELECT INBOX").await?;
-    assert!(command(&mut r, &mut w, "q", "SEARCH CHARSET UTF-8 ALL").await?.contains("q BAD"));
+    assert!(
+        command(&mut r, &mut w, "q", "SEARCH CHARSET UTF-8 ALL")
+            .await?
+            .contains("q BAD")
+    );
     Ok(())
 }
 
 #[tokio::test]
 async fn search_work_limit_never_returns_a_truncated_match_set() -> Result<()> {
     let (_tmp, db, mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
-    insert_email(&ms, &mds, b"Subject: x\r\n\r\nbody", "x", Flags(0), 1_700_000_000_000)?;
+    insert_email(
+        &ms,
+        &mds,
+        b"Subject: x\r\n\r\nbody",
+        "x",
+        Flags(0),
+        1_700_000_000_000,
+    )?;
     // Exercise the metadata work guard without allocating a giant fixture.
     mds.with_set_tx(&maild::mailstore::account_id_to_setid(1), |tx| {
-        tx.tx().execute("UPDATE item SET size_bytes = 67108865", []).map_err(|e| mds::Error::Other(e.to_string()))?;
+        tx.tx()
+            .execute("UPDATE item SET size_bytes = 67108865", [])
+            .map_err(|e| mds::Error::Other(e.to_string()))?;
         Ok(())
     })?;
     let (mut r, mut w) = selected(ms, db).await?;
-    assert!(command(&mut r, &mut w, "q", "SEARCH ALL").await?.contains("* SEARCH 1"));
+    assert!(
+        command(&mut r, &mut w, "q", "SEARCH ALL")
+            .await?
+            .contains("* SEARCH 1")
+    );
     for criteria in ["BODY absent", "NOT BODY absent", "RETURN (SAVE) TEXT body"] {
         let result = command(&mut r, &mut w, "q", &format!("SEARCH {criteria}")).await?;
         assert!(result.contains("q NO [LIMIT]"), "{criteria}: {result}");
         assert!(!result.contains("* SEARCH"), "{result}");
     }
-    assert_eq!(command(&mut r, &mut w, "f", "FETCH $ UID").await?, "f OK FETCH completed\r\n");
+    assert_eq!(
+        command(&mut r, &mut w, "f", "FETCH $ UID").await?,
+        "f OK FETCH completed\r\n"
+    );
     Ok(())
 }
 
@@ -678,16 +1196,82 @@ async fn capabilities_match_after_login_and_enable_and_zero_arg_commands_validat
     let (rr, mut w) = tokio::io::split(client);
     let mut r = BufReader::new(rr);
     let greeting = read_line(&mut r).await?;
-    let caps = greeting.split("[CAPABILITY ").nth(1).unwrap().split(']').next().unwrap().to_string();
-    w.write_all(b"a LOGIN alice@example.com hunter2\r\n").await?;
+    let caps = greeting
+        .split("[CAPABILITY ")
+        .nth(1)
+        .unwrap()
+        .split(']')
+        .next()
+        .unwrap()
+        .to_string();
+    w.write_all(b"a LOGIN alice@example.com hunter2\r\n")
+        .await?;
     let authenticated = read_line(&mut r).await?;
-    assert!(authenticated.contains(&format!("[CAPABILITY {caps}]")), "{authenticated}");
+    assert!(
+        authenticated.contains(&format!("[CAPABILITY {caps}]")),
+        "{authenticated}"
+    );
     command(&mut r, &mut w, "e", "ENABLE IMAP4rev2").await?;
     let result = command(&mut r, &mut w, "c", "CAPABILITY").await?;
-    assert!(result.contains(&format!("* CAPABILITY {caps}\r\n")), "{result}");
+    assert!(
+        result.contains(&format!("* CAPABILITY {caps}\r\n")),
+        "{result}"
+    );
     for command_name in ["CAPABILITY", "NOOP", "NAMESPACE", "LOGOUT"] {
-        assert!(command(&mut r, &mut w, "b", &format!("{command_name} extra")).await?.contains("b BAD"));
+        assert!(
+            command(&mut r, &mut w, "b", &format!("{command_name} extra"))
+                .await?
+                .contains("b BAD")
+        );
     }
     Ok(())
 }
 
+#[tokio::test]
+async fn append_and_inbox_rename_report_observed_size_changes_before_completion() -> Result<()> {
+    let (_tmp, db, _mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
+    let (mut r, mut w) = selected(ms, db).await?;
+    let raw = b"Subject: x\r\n\r\nbody";
+    let mut wire = format!("a APPEND INBOX {{{}+}}\r\n", raw.len()).into_bytes();
+    wire.extend_from_slice(raw); wire.extend_from_slice(b"\r\n");
+    let response = exchange(&mut r, &mut w, "a", &wire).await?;
+    assert!(response.starts_with(b"* 1 EXISTS\r\na OK [APPENDUID"), "{response:?}");
+    let response = command(&mut r, &mut w, "n", "RENAME INBOX Saved").await?;
+    assert!(response.starts_with("* 1 EXPUNGE\r\nn OK"), "{response}");
+    Ok(())
+}
+
+#[tokio::test]
+async fn native_jmap_name_and_subscription_updates_keep_their_contracts() -> Result<()> {
+    let (_tmp, db, mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
+    insert_email(&ms, &mds, b"Subject: x\r\n\r\nbody", "x", Flags(0), 1_700_000_000_000)?;
+    let inbox = ms.mailbox_by_role(1, MailboxRole::Inbox)?.unwrap();
+    ms.rename_mailbox(1, inbox, "Display name", None)?;
+    let record = ms.list_mailboxes(1)?.into_iter().find(|r| r.id == inbox).unwrap();
+    assert_eq!(record.name, "Display name");
+    assert_eq!(record.total_emails, 1);
+    let (mut r, mut w) = selected(ms.clone(), db).await?;
+    command(&mut r, &mut w, "c", "CREATE Subscribed").await?;
+    command(&mut r, &mut w, "s", "SUBSCRIBE Subscribed").await?;
+    let id = ms.list_mailboxes(1)?.into_iter().find(|r| r.name == "Subscribed").unwrap().id;
+    ms.update_mailbox(1, id, None, None, None, None, Some(false))?;
+    assert_eq!(command(&mut r, &mut w, "l", "LIST (SUBSCRIBED) \"\" Subscribed").await?, "l OK LIST completed\r\n");
+    Ok(())
+}
+
+#[tokio::test]
+async fn idle_reports_flag_changes_with_uids_without_modseq() -> Result<()> {
+    let (_tmp, db, mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
+    insert_email(&ms, &mds, b"Subject: x\r\n\r\nbody", "x", Flags(0), 1_700_000_000_000)?;
+    let (mut r, mut w) = selected(ms.clone(), db).await?;
+    let inbox = ms.mailbox_by_role(1, MailboxRole::Inbox)?.unwrap();
+    let item = ms.list_emails_in_mailbox(1, inbox, maild::mailstore::ListOpts::default())?[0].id;
+    w.write_all(b"i IDLE\r\n").await?;
+    assert_eq!(read_line(&mut r).await?, "+ idling");
+    ms.add_flags_in_mailbox(1, item, inbox, Flags(Flags::FLAGGED))?;
+    let response = tokio::time::timeout(std::time::Duration::from_secs(5), read_line(&mut r)).await??;
+    assert_eq!(response, "* 1 FETCH (UID 1 FLAGS (\\Flagged))");
+    w.write_all(b"DONE\r\n").await?;
+    assert!(read_line(&mut r).await?.starts_with("i OK"));
+    Ok(())
+}

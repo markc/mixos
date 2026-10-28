@@ -84,9 +84,18 @@ pub async fn handle(
     let id = match resolve(&name, &records) {
         ResolveResult::Found(id) => id,
         ResolveResult::NotFound => {
-            return match tokio::task::spawn_blocking(move || store.imap_set_subscription(account_id, &name, subscribe)).await {
+            return match tokio::task::spawn_blocking(move || {
+                store.imap_set_subscription(account_id, &name, subscribe)
+            })
+            .await
+            {
                 Ok(Ok(())) => tagged(tag, Status::Ok, None, &format!("{command} completed")),
-                _ => tagged(tag, Status::No, Some("UNAVAILABLE"), "subscriptions unavailable"),
+                _ => tagged(
+                    tag,
+                    Status::No,
+                    Some("UNAVAILABLE"),
+                    "subscriptions unavailable",
+                ),
             };
         }
         ResolveResult::Unrepresentable => {

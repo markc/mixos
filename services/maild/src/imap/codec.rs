@@ -323,16 +323,31 @@ where
     F: FnOnce(&[u8]) -> bool,
     G: FnOnce(&[u8]) -> bool,
 {
-    read_command_multi_policy(reader, writer, max_literal, accept_literals, multi_literal, u64::MAX).await
+    read_command_multi_policy(
+        reader,
+        writer,
+        max_literal,
+        accept_literals,
+        multi_literal,
+        u64::MAX,
+    )
+    .await
 }
 
 /// LITERAL- has a 4096-octet non-synchronising limit; LITERAL+ has none.
 pub async fn read_command_multi_policy<R, W, F, G>(
-    reader: &mut BufReader<R>, writer: &mut W, max_literal: u64,
-    accept_literals: F, multi_literal: G, non_sync_limit: u64,
+    reader: &mut BufReader<R>,
+    writer: &mut W,
+    max_literal: u64,
+    accept_literals: F,
+    multi_literal: G,
+    non_sync_limit: u64,
 ) -> Result<Command, ReadCommandError>
-where R: AsyncRead + Unpin, W: AsyncWrite + Unpin,
-    F: FnOnce(&[u8]) -> bool, G: FnOnce(&[u8]) -> bool,
+where
+    R: AsyncRead + Unpin,
+    W: AsyncWrite + Unpin,
+    F: FnOnce(&[u8]) -> bool,
+    G: FnOnce(&[u8]) -> bool,
 {
     let raw = match read_line(reader).await {
         Ok(l) => l,
@@ -353,7 +368,10 @@ where R: AsyncRead + Unpin, W: AsyncWrite + Unpin,
         }
         Err(e) => {
             if raw.ends_with(b"+}") {
-                return Err(ReadCommandError::FramingLost { line: raw, reason: e });
+                return Err(ReadCommandError::FramingLost {
+                    line: raw,
+                    reason: e,
+                });
             }
             return Err(ReadCommandError::MalformedLiteral {
                 line: raw,
@@ -363,7 +381,10 @@ where R: AsyncRead + Unpin, W: AsyncWrite + Unpin,
     };
 
     if marker.non_sync && marker.declared > non_sync_limit {
-        return Err(ReadCommandError::FramingLost { line, reason: "non-synchronising literal exceeds LITERAL- 4096-octet limit".into() });
+        return Err(ReadCommandError::FramingLost {
+            line,
+            reason: "non-synchronising literal exceeds LITERAL- 4096-octet limit".into(),
+        });
     }
 
     // State/command gate. Refuse before consuming any body bytes / before
@@ -372,7 +393,10 @@ where R: AsyncRead + Unpin, W: AsyncWrite + Unpin,
     if !accept_literals(&line) {
         if marker.non_sync {
             if marker.declared > drain_limit(max_literal) {
-                return Err(ReadCommandError::FramingLost { line, reason: "refused literal exceeds drain limit".into() });
+                return Err(ReadCommandError::FramingLost {
+                    line,
+                    reason: "refused literal exceeds drain limit".into(),
+                });
             }
             if let Err(e) = drain_n(reader, marker.declared).await {
                 return Err(io_to_err(e));
@@ -380,7 +404,10 @@ where R: AsyncRead + Unpin, W: AsyncWrite + Unpin,
             match read_line(reader).await {
                 Ok(tail) => {
                     if matches!(strip_trailing_literal_marker(&tail), Ok(Some(_))) {
-                        return Err(ReadCommandError::FramingLost { line, reason: "refused command continues with another literal".into() });
+                        return Err(ReadCommandError::FramingLost {
+                            line,
+                            reason: "refused command continues with another literal".into(),
+                        });
                     }
                 }
                 Err(ReadLineError::Eof) => return Err(ReadCommandError::Eof),
@@ -401,7 +428,10 @@ where R: AsyncRead + Unpin, W: AsyncWrite + Unpin,
     }
 
     let multi = multi_literal(&line);
-    let is_append = line.split(|b| *b == b' ').nth(1).is_some_and(|s| s.eq_ignore_ascii_case(b"APPEND"));
+    let is_append = line
+        .split(|b| *b == b' ')
+        .nth(1)
+        .is_some_and(|s| s.eq_ignore_ascii_case(b"APPEND"));
     let max_literal = if multi && !is_append {
         max_literal.min(MAX_MULTI_LITERAL_BYTES)
     } else {
@@ -486,9 +516,13 @@ where R: AsyncRead + Unpin, W: AsyncWrite + Unpin,
                     literal8: next.literal8,
                 });
             }
-            Err(reason) => return Err(if trailing.ends_with(b"+}") {
-                ReadCommandError::FramingLost { line, reason }
-            } else { ReadCommandError::MalformedLiteral { line, reason } }),
+            Err(reason) => {
+                return Err(if trailing.ends_with(b"+}") {
+                    ReadCommandError::FramingLost { line, reason }
+                } else {
+                    ReadCommandError::MalformedLiteral { line, reason }
+                });
+            }
         }
     }
 
@@ -521,7 +555,10 @@ where
     if marker.declared > max_literal {
         if marker.non_sync {
             if marker.declared > drain_limit(max_literal) {
-                return Err(ReadCommandError::FramingLost { line, reason: "oversize literal exceeds drain limit".into() });
+                return Err(ReadCommandError::FramingLost {
+                    line,
+                    reason: "oversize literal exceeds drain limit".into(),
+                });
             }
             // Client is already sending the body — drain to keep
             // sync, then consume the command-terminator CRLF that
@@ -539,7 +576,10 @@ where
             match read_line(reader).await {
                 Ok(tail) => {
                     if matches!(strip_trailing_literal_marker(&tail), Ok(Some(_))) {
-                        return Err(ReadCommandError::FramingLost { line, reason: "oversize command continues with another literal".into() });
+                        return Err(ReadCommandError::FramingLost {
+                            line,
+                            reason: "oversize command continues with another literal".into(),
+                        });
                     }
                 }
                 Err(ReadLineError::Eof) => return Err(ReadCommandError::Eof),
@@ -625,11 +665,17 @@ fn strip_trailing_literal_marker(line: &[u8]) -> Result<Option<(Vec<u8>, Literal
     let mut quoted = false;
     let mut escaped = false;
     for b in &line[..open] {
-        if escaped { escaped = false; }
-        else if *b == b'\\' && quoted { escaped = true; }
-        else if *b == b'"' { quoted = !quoted; }
+        if escaped {
+            escaped = false;
+        } else if *b == b'\\' && quoted {
+            escaped = true;
+        } else if *b == b'"' {
+            quoted = !quoted;
+        }
     }
-    if quoted { return Ok(None); }
+    if quoted {
+        return Ok(None);
+    }
     if inner.is_empty() {
         return Err("empty literal marker `{}`".to_string());
     }
@@ -650,8 +696,12 @@ fn strip_trailing_literal_marker(line: &[u8]) -> Result<Option<(Vec<u8>, Literal
         .map_err(|_| "literal size overflows u64".to_string())?;
     // Trim the marker plus a single whitespace gap so `parse_line`
     // sees a clean tail (e.g. `a001 APPEND INBOX {123}` → `a001 APPEND INBOX`).
-    let mut prefix_end = if open > 0 && line[open-1] == b'~' { open - 1 } else { open };
-    if prefix_end > 0 && !matches!(line[prefix_end-1], b' ' | b'(') {
+    let mut prefix_end = if open > 0 && line[open - 1] == b'~' {
+        open - 1
+    } else {
+        open
+    };
+    if prefix_end > 0 && !matches!(line[prefix_end - 1], b' ' | b'(') {
         return Err("literal marker must start an argument".into());
     }
     while prefix_end > 0 && line[prefix_end - 1] == b' ' {
@@ -659,7 +709,11 @@ fn strip_trailing_literal_marker(line: &[u8]) -> Result<Option<(Vec<u8>, Literal
     }
     Ok(Some((
         line[..prefix_end].to_vec(),
-        LiteralMarker { declared, non_sync, literal8: open > 0 && line[open-1] == b'~' },
+        LiteralMarker {
+            declared,
+            non_sync,
+            literal8: open > 0 && line[open - 1] == b'~',
+        },
     )))
 }
 
@@ -676,7 +730,8 @@ async fn drain_n<R: AsyncRead + Unpin>(reader: &mut BufReader<R>, n: u64) -> std
 }
 
 fn drain_limit(cap: u64) -> u64 {
-    cap.saturating_mul(2).clamp(MAX_MULTI_LITERAL_BYTES, 128 * 1024 * 1024)
+    cap.saturating_mul(2)
+        .clamp(MAX_MULTI_LITERAL_BYTES, 128 * 1024 * 1024)
 }
 
 fn io_to_err(e: std::io::Error) -> ReadCommandError {

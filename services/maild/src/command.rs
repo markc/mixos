@@ -2423,42 +2423,42 @@ async fn async_main() -> Result<()> {
             tracing::info!(addr = %cfg.listen, "maild JMAP listening");
             let imap_shutdown = built.imap_handle.clone();
             let serving = async {
-
-            // Use TLS if cert/key configured
-            if let (Some(cert_path), Some(key_path)) = (&cfg.tls_cert, &cfg.tls_key) {
-                let tls_acceptor = ::config::load_tls_config(cert_path, key_path)?;
-                tracing::info!("JMAP HTTPS enabled");
-                let app = built.router.clone();
-                let _keepalive = built;
-                loop {
-                    let (stream, _peer) = listener.accept().await?;
-                    let acceptor = tls_acceptor.clone();
-                    let app = app.clone();
-                    tokio::spawn(async move {
-                        match acceptor.accept(stream).await {
-                            Ok(tls_stream) => {
-                                let io = hyper_util::rt::TokioIo::new(tls_stream);
-                                let service = hyper_util::service::TowerToHyperService::new(app);
-                                if let Err(e) = hyper_util::server::conn::auto::Builder::new(
-                                    hyper_util::rt::TokioExecutor::new(),
-                                )
-                                .serve_connection(io, service)
-                                .await
-                                {
-                                    tracing::debug!(error = %e, "HTTPS connection error");
+                // Use TLS if cert/key configured
+                if let (Some(cert_path), Some(key_path)) = (&cfg.tls_cert, &cfg.tls_key) {
+                    let tls_acceptor = ::config::load_tls_config(cert_path, key_path)?;
+                    tracing::info!("JMAP HTTPS enabled");
+                    let app = built.router.clone();
+                    let _keepalive = built;
+                    loop {
+                        let (stream, _peer) = listener.accept().await?;
+                        let acceptor = tls_acceptor.clone();
+                        let app = app.clone();
+                        tokio::spawn(async move {
+                            match acceptor.accept(stream).await {
+                                Ok(tls_stream) => {
+                                    let io = hyper_util::rt::TokioIo::new(tls_stream);
+                                    let service =
+                                        hyper_util::service::TowerToHyperService::new(app);
+                                    if let Err(e) = hyper_util::server::conn::auto::Builder::new(
+                                        hyper_util::rt::TokioExecutor::new(),
+                                    )
+                                    .serve_connection(io, service)
+                                    .await
+                                    {
+                                        tracing::debug!(error = %e, "HTTPS connection error");
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::debug!(error = %e, "TLS handshake failed");
                                 }
                             }
-                            Err(e) => {
-                                tracing::debug!(error = %e, "TLS handshake failed");
-                            }
-                        }
-                    });
+                        });
+                    }
+                } else {
+                    let router = built.router.clone();
+                    let _keepalive = built;
+                    axum::serve(listener, router).await?;
                 }
-            } else {
-                let router = built.router.clone();
-                let _keepalive = built;
-                axum::serve(listener, router).await?;
-            }
                 Ok::<(), anyhow::Error>(())
             };
             tokio::select! {

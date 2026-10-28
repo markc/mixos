@@ -39,21 +39,30 @@ pub async fn handle(
         return tagged(tag, Status::Ok, None, "LSUB completed");
     }
     let list_store = store.clone();
-    let records = match tokio::task::spawn_blocking(move || list_store.list_mailboxes(account_id)).await
+    let records =
+        match tokio::task::spawn_blocking(move || list_store.list_mailboxes(account_id)).await {
+            Ok(Ok(r)) => r,
+            Ok(Err(e)) => {
+                tracing::warn!(error = %e, "LSUB list_mailboxes failed");
+                return tagged(tag, Status::No, Some("SERVERBUG"), "lsub failed");
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "LSUB spawn_blocking panicked");
+                return tagged(tag, Status::No, Some("SERVERBUG"), "lsub failed");
+            }
+        };
+    let names = match tokio::task::spawn_blocking(move || store.imap_subscription_names(account_id))
+        .await
     {
-        Ok(Ok(r)) => r,
-        Ok(Err(e)) => {
-            tracing::warn!(error = %e, "LSUB list_mailboxes failed");
-            return tagged(tag, Status::No, Some("SERVERBUG"), "lsub failed");
-        }
-        Err(e) => {
-            tracing::warn!(error = %e, "LSUB spawn_blocking panicked");
-            return tagged(tag, Status::No, Some("SERVERBUG"), "lsub failed");
-        }
-    };
-    let names = match tokio::task::spawn_blocking(move || store.imap_subscription_names(account_id)).await {
         Ok(Ok(names)) => names,
-        _ => return tagged(tag, Status::No, Some("UNAVAILABLE"), "subscriptions unavailable"),
+        _ => {
+            return tagged(
+                tag,
+                Status::No,
+                Some("UNAVAILABLE"),
+                "subscriptions unavailable",
+            );
+        }
     };
     let set = list::subscription_view(&records, &names);
     for om in &set.omitted {
@@ -68,13 +77,26 @@ pub async fn handle(
     for enc in &set.mailboxes {
         if !enc.is_subscribed {
             if parsed.pattern.contains('%')
-                && matches_pattern(&enc.wire_name, &list::canonical_pattern(&parsed.reference, &parsed.pattern))
-                && set.mailboxes.iter().any(|child| child.is_subscribed && child.wire_name.starts_with(&format!("{}/", enc.wire_name))) {
-                out.push_str(&format!("* LSUB (\\Noselect) \"/\" {}\r\n", crate::imap::mailbox_name::quote_mailbox(&enc.wire_name)));
+                && matches_pattern(
+                    &enc.wire_name,
+                    &list::canonical_pattern(&parsed.reference, &parsed.pattern),
+                )
+                && set.mailboxes.iter().any(|child| {
+                    child.is_subscribed
+                        && child.wire_name.starts_with(&format!("{}/", enc.wire_name))
+                })
+            {
+                out.push_str(&format!(
+                    "* LSUB (\\Noselect) \"/\" {}\r\n",
+                    crate::imap::mailbox_name::quote_mailbox(&enc.wire_name)
+                ));
             }
             continue;
         }
-        if !matches_pattern(&enc.wire_name, &list::canonical_pattern(&parsed.reference, &parsed.pattern)) {
+        if !matches_pattern(
+            &enc.wire_name,
+            &list::canonical_pattern(&parsed.reference, &parsed.pattern),
+        ) {
             continue;
         }
         out.push_str(&render_mailbox_line("LSUB", enc));

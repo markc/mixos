@@ -83,9 +83,6 @@ pub async fn handle(
     };
 
     let s2 = store.clone();
-    if list::preserve_subscriptions(store.clone(), account_id).await.is_err() {
-        return tagged(tag, Status::No, Some("UNAVAILABLE"), "subscriptions unavailable");
-    }
     let destroy = tokio::task::spawn_blocking(move || {
         s2.destroy_mailbox(account_id, id, DestroyPolicy::Delete)
     })

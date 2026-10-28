@@ -209,9 +209,13 @@ pub async fn handle_with_view(
             continue;
         }
         let msn = if let Some(view) = view {
-            let Ok(i) = view.binary_search(&h.uid) else { continue; };
-            (i+1) as u32
-        } else { u32::try_from(idx + 1).unwrap_or(u32::MAX) };
+            let Ok(i) = view.binary_search(&h.uid) else {
+                continue;
+            };
+            (i + 1) as u32
+        } else {
+            u32::try_from(idx + 1).unwrap_or(u32::MAX)
+        };
         targets.push((msn, h.id, h.uid));
     }
 

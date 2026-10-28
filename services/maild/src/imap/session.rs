@@ -97,16 +97,34 @@ pub async fn handle_connection<S>(
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
-    handle_connection_with_shutdown(stream, peer, lip, cfg, db, mailstore, slots, negotiated_hostname, None).await
+    handle_connection_with_shutdown(
+        stream,
+        peer,
+        lip,
+        cfg,
+        db,
+        mailstore,
+        slots,
+        negotiated_hostname,
+        None,
+    )
+    .await
 }
 
 #[allow(clippy::too_many_arguments)]
 pub async fn handle_connection_with_shutdown<S>(
-    stream: S, peer: SocketAddr, lip: Option<SocketAddr>, cfg: Arc<ImapConfig>,
-    db: Db, mailstore: Arc<dyn MailStore>, slots: Arc<AccountSlots>,
-    negotiated_hostname: String, shutdown: Option<tokio::sync::watch::Receiver<bool>>,
+    stream: S,
+    peer: SocketAddr,
+    lip: Option<SocketAddr>,
+    cfg: Arc<ImapConfig>,
+    db: Db,
+    mailstore: Arc<dyn MailStore>,
+    slots: Arc<AccountSlots>,
+    negotiated_hostname: String,
+    shutdown: Option<tokio::sync::watch::Receiver<bool>>,
 ) -> Result<()>
-where S: AsyncRead + AsyncWrite + Unpin,
+where
+    S: AsyncRead + AsyncWrite + Unpin,
 {
     crate::maillog::imap_connect(peer, lip);
     let (read_half, write_half) = tokio::io::split(stream);
@@ -227,7 +245,9 @@ impl Session {
             };
             self.shutdown = shutdown;
             let Some(outcome) = outcome else {
-                writer.write_all(b"* BYE [UNAVAILABLE] server shutting down\r\n").await?;
+                writer
+                    .write_all(b"* BYE [UNAVAILABLE] server shutting down\r\n")
+                    .await?;
                 writer.flush().await?;
                 return Ok(());
             };
@@ -271,7 +291,11 @@ impl Session {
                     self.bad_commands += 1;
                     let tag = sniff_tag(&cmd.line).unwrap_or("*".to_string());
                     let resp = tagged(&tag, Status::Bad, None, &msg);
-                    writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+                    writer
+                        .write_all(
+                            crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes(),
+                        )
+                        .await?;
                     writer.flush().await?;
                     if self.over_bad_command_cap() {
                         self.emit_bye(writer, "too many bad commands").await?;
@@ -281,14 +305,36 @@ impl Session {
                 }
             };
 
-            let mailbox_command = matches!(parsed.command_upper.as_str(), "LIST" | "LSUB" | "CREATE" | "DELETE" | "RENAME" | "SELECT" | "EXAMINE" | "STATUS" | "SUBSCRIBE" | "UNSUBSCRIBE" | "COPY" | "MOVE")
-                || (parsed.command_upper == "UID" && parsed.args.split_ascii_whitespace().next().is_some_and(|s| s.eq_ignore_ascii_case("COPY") || s.eq_ignore_ascii_case("MOVE")));
+            let mailbox_command = matches!(
+                parsed.command_upper.as_str(),
+                "LIST"
+                    | "LSUB"
+                    | "CREATE"
+                    | "DELETE"
+                    | "RENAME"
+                    | "SELECT"
+                    | "EXAMINE"
+                    | "STATUS"
+                    | "SUBSCRIBE"
+                    | "UNSUBSCRIBE"
+                    | "COPY"
+                    | "MOVE"
+            ) || (parsed.command_upper == "UID"
+                && parsed
+                    .args
+                    .split_ascii_whitespace()
+                    .next()
+                    .is_some_and(|s| {
+                        s.eq_ignore_ascii_case("COPY") || s.eq_ignore_ascii_case("MOVE")
+                    }));
             if mailbox_command && !self.utf8 {
                 match crate::imap::mailbox_encoding::map_tokens(&parsed.args, false) {
                     Ok(args) => parsed.args = args,
                     Err(e) => {
                         self.bad_commands += 1;
-                        writer.write_all(tagged(&parsed.tag, Status::Bad, None, &e).as_bytes()).await?;
+                        writer
+                            .write_all(tagged(&parsed.tag, Status::Bad, None, &e).as_bytes())
+                            .await?;
                         writer.flush().await?;
                         continue;
                     }
@@ -309,7 +355,9 @@ impl Session {
                         parsed.command_upper
                     ),
                 );
-                writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+                writer
+                    .write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes())
+                    .await?;
                 writer.flush().await?;
                 if self.over_bad_command_cap() {
                     self.emit_bye(writer, "too many bad commands").await?;
@@ -318,16 +366,34 @@ impl Session {
                 continue;
             }
 
-            if matches!(parsed.command_upper.as_str(), "CAPABILITY" | "NOOP" | "LOGOUT" | "NAMESPACE") && !parsed.args.trim().is_empty() {
+            if matches!(
+                parsed.command_upper.as_str(),
+                "CAPABILITY" | "NOOP" | "LOGOUT" | "NAMESPACE"
+            ) && !parsed.args.trim().is_empty()
+            {
                 self.bad_commands += 1;
-                writer.write_all(tagged(&parsed.tag, Status::Bad, None, "command takes no arguments").as_bytes()).await?;
+                writer
+                    .write_all(
+                        tagged(&parsed.tag, Status::Bad, None, "command takes no arguments")
+                            .as_bytes(),
+                    )
+                    .await?;
                 writer.flush().await?;
-                if self.over_bad_command_cap() { self.emit_bye(writer, "too many bad commands").await?; return Ok(()); }
+                if self.over_bad_command_cap() {
+                    self.emit_bye(writer, "too many bad commands").await?;
+                    return Ok(());
+                }
                 continue;
             }
 
-            if self.state.selected().is_some() && !matches!(parsed.command_upper.as_str(), "SELECT" | "EXAMINE" | "CLOSE" | "UNSELECT" | "LOGOUT" | "IDLE" | "ENABLE") {
-                let allow_expunge = !matches!(parsed.command_upper.as_str(), "FETCH" | "STORE" | "SEARCH");
+            if self.state.selected().is_some()
+                && !matches!(
+                    parsed.command_upper.as_str(),
+                    "SELECT" | "EXAMINE" | "CLOSE" | "UNSELECT" | "LOGOUT" | "IDLE" | "ENABLE"
+                )
+            {
+                let allow_expunge =
+                    !matches!(parsed.command_upper.as_str(), "FETCH" | "STORE" | "SEARCH");
                 self.refresh_view(writer, allow_expunge).await?;
             }
 
@@ -373,33 +439,76 @@ impl Session {
                 "ENABLE" => {
                     if !self.state.is_authenticated() || self.state.selected().is_some() {
                         self.bad_commands += 1;
-                        writer.write_all(tagged(&parsed.tag, Status::Bad, None, "ENABLE requires authenticated state").as_bytes()).await?;
+                        writer
+                            .write_all(
+                                tagged(
+                                    &parsed.tag,
+                                    Status::Bad,
+                                    None,
+                                    "ENABLE requires authenticated state",
+                                )
+                                .as_bytes(),
+                            )
+                            .await?;
                     } else if parsed.args.trim().is_empty() {
                         self.bad_commands += 1;
-                        writer.write_all(tagged(&parsed.tag, Status::Bad, None, "ENABLE requires capabilities").as_bytes()).await?;
+                        writer
+                            .write_all(
+                                tagged(
+                                    &parsed.tag,
+                                    Status::Bad,
+                                    None,
+                                    "ENABLE requires capabilities",
+                                )
+                                .as_bytes(),
+                            )
+                            .await?;
                     } else {
                         let mut enabled = Vec::new();
                         for cap in parsed.args.split_ascii_whitespace() {
                             let cap = cap.to_ascii_uppercase();
                             match cap.as_str() {
-                                "IMAP4REV2" => { self.rev2 = true; self.utf8 = true; enabled.push("IMAP4rev2"); }
-                                "UTF8=ACCEPT" => { self.utf8 = true; enabled.push("UTF8=ACCEPT"); }
+                                "IMAP4REV2" => {
+                                    self.rev2 = true;
+                                    self.utf8 = true;
+                                    enabled.push("IMAP4rev2");
+                                }
+                                "UTF8=ACCEPT" => {
+                                    self.utf8 = true;
+                                    enabled.push("UTF8=ACCEPT");
+                                }
                                 // CONDSTORE/QRESYNC are deliberately ignored until imap-ext
                                 // registers the complete implementation, per RFC 5161.
                                 _ => {}
                             }
                         }
                         enabled.dedup();
-                        let suffix = if enabled.is_empty() { String::new() } else { format!(" {}", enabled.join(" ")) };
-                        writer.write_all(format!("* ENABLED{suffix}\r\n").as_bytes()).await?;
-                        writer.write_all(tagged(&parsed.tag, Status::Ok, None, "ENABLE completed").as_bytes()).await?;
+                        let suffix = if enabled.is_empty() {
+                            String::new()
+                        } else {
+                            format!(" {}", enabled.join(" "))
+                        };
+                        writer
+                            .write_all(format!("* ENABLED{suffix}\r\n").as_bytes())
+                            .await?;
+                        writer
+                            .write_all(
+                                tagged(&parsed.tag, Status::Ok, None, "ENABLE completed")
+                                    .as_bytes(),
+                            )
+                            .await?;
                     }
                 }
                 "NAMESPACE" => {
                     if !self.state.is_authenticated() {
                         self.bad_commands += 1;
                         let resp = tagged(&parsed.tag, Status::Bad, None, "NOT AUTHENTICATED");
-                        writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
                     } else {
                         writer
                             .write_all(op::namespace::handle(&parsed.tag).as_bytes())
@@ -410,7 +519,12 @@ impl Session {
                     if !self.state.is_authenticated() {
                         self.bad_commands += 1;
                         let resp = tagged(&parsed.tag, Status::Bad, None, "NOT AUTHENTICATED");
-                        writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
                     } else {
                         // `is_authenticated()` already guarantees `account_id`
                         // was set during LOGIN/AUTHENTICATE — both arms in
@@ -429,14 +543,24 @@ impl Session {
                             self.cfg.max_literal_bytes,
                         )
                         .await;
-                        writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
                     }
                 }
                 "LSUB" => {
                     if !self.state.is_authenticated() {
                         self.bad_commands += 1;
                         let resp = tagged(&parsed.tag, Status::Bad, None, "NOT AUTHENTICATED");
-                        writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
                     } else {
                         let aid = self
                             .account_id
@@ -448,14 +572,24 @@ impl Session {
                             self.mailstore.clone(),
                         )
                         .await;
-                        writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
                     }
                 }
                 command_name @ ("SELECT" | "EXAMINE") => {
                     if !self.state.is_authenticated() {
                         self.bad_commands += 1;
                         let resp = tagged(&parsed.tag, Status::Bad, None, "NOT AUTHENTICATED");
-                        writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
                     } else {
                         // RFC 9051 §6.3.2 — every SELECT/EXAMINE,
                         // *including* a failing one, implicitly
@@ -479,12 +613,24 @@ impl Session {
                         )
                         .await;
                         let mut response = String::new();
-                        if !self.rev2 && outcome.selected.is_some() { response.push_str("* 0 RECENT\r\n"); }
-                        for line in outcome.response.lines() {
-                            if (!self.rev2 && line.starts_with("* LIST ")) || (self.rev2 && line.starts_with("* OK [UNSEEN ")) { continue; }
-                            response.push_str(line); response.push_str("\r\n");
+                        if !self.rev2 && outcome.selected.is_some() {
+                            response.push_str("* 0 RECENT\r\n");
                         }
-                        writer.write_all(crate::imap::mailbox_encoding::response(&response, self.utf8).as_bytes()).await?;
+                        for line in outcome.response.lines() {
+                            if (!self.rev2 && line.starts_with("* LIST "))
+                                || (self.rev2 && line.starts_with("* OK [UNSEEN "))
+                            {
+                                continue;
+                            }
+                            response.push_str(line);
+                            response.push_str("\r\n");
+                        }
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&response, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
                         if let Some(sm) = outcome.selected {
                             self.state = State::Selected(sm);
                         }
@@ -494,7 +640,12 @@ impl Session {
                     if !self.state.is_authenticated() {
                         self.bad_commands += 1;
                         let resp = tagged(&parsed.tag, Status::Bad, None, "NOT AUTHENTICATED");
-                        writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
                     } else {
                         let aid = self
                             .account_id
@@ -507,14 +658,24 @@ impl Session {
                             self.cfg.max_literal_bytes,
                         )
                         .await;
-                        writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
                     }
                 }
                 "APPEND" => {
                     if !self.state.is_authenticated() {
                         self.bad_commands += 1;
                         let resp = tagged(&parsed.tag, Status::Bad, None, "NOT AUTHENTICATED");
-                        writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
                     } else {
                         // The codec already consumed the literal body
                         // (or rejected it with a stream-preserving
@@ -526,13 +687,13 @@ impl Session {
                             Ok(messages) => messages,
                             Err(e) => {
                                 self.bad_commands += 1;
-                                let resp = tagged(
-                                    &parsed.tag,
-                                    Status::Bad,
-                                    None,
-                                    &e,
-                                );
-                                writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+                                let resp = tagged(&parsed.tag, Status::Bad, None, &e);
+                                writer
+                                    .write_all(
+                                        crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                            .as_bytes(),
+                                    )
+                                    .await?;
                                 writer.flush().await?;
                                 if self.over_bad_command_cap() {
                                     self.emit_bye(writer, "too many bad commands").await?;
@@ -546,11 +707,18 @@ impl Session {
                             for (args, _) in &mut messages {
                                 match crate::imap::mailbox_encoding::map_tokens(args, false) {
                                     Ok(decoded) => *args = decoded,
-                                    Err(e) => { failure = Some(e); break; }
+                                    Err(e) => {
+                                        failure = Some(e);
+                                        break;
+                                    }
                                 }
                             }
                             if let Some(e) = failure {
-                                writer.write_all(tagged(&parsed.tag, Status::Bad, None, &e).as_bytes()).await?;
+                                writer
+                                    .write_all(
+                                        tagged(&parsed.tag, Status::Bad, None, &e).as_bytes(),
+                                    )
+                                    .await?;
                                 writer.flush().await?;
                                 continue;
                             }
@@ -562,7 +730,12 @@ impl Session {
                             Err(e) => {
                                 self.bad_commands += 1;
                                 let resp = tagged(&parsed.tag, Status::Bad, None, &e);
-                                writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+                                writer
+                                    .write_all(
+                                        crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                            .as_bytes(),
+                                    )
+                                    .await?;
                             }
                             Ok(()) => {
                                 let resp = op::append::handle_many(
@@ -572,7 +745,15 @@ impl Session {
                                     self.mailstore.clone(),
                                 )
                                 .await;
-                                writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+                                if resp.starts_with(&format!("{} OK", parsed.tag)) && self.state.selected().is_some() {
+                                    self.refresh_view(writer, true).await?;
+                                }
+                                writer
+                                    .write_all(
+                                        crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                            .as_bytes(),
+                                    )
+                                    .await?;
                             }
                         }
                     }
@@ -586,18 +767,40 @@ impl Session {
                         self.bad_commands += 1;
                         let resp =
                             tagged(&parsed.tag, Status::Bad, None, "command takes no arguments");
-                        writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
                     } else if self.state.selected().is_none() {
                         self.bad_commands += 1;
                         let resp = tagged(&parsed.tag, Status::Bad, None, "no mailbox selected");
-                        writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
                     } else {
-                        let resp = if command_name == "CLOSE" && !self.state.selected().unwrap().read_only {
+                        let resp = if command_name == "CLOSE"
+                            && !self.state.selected().unwrap().read_only
+                        {
                             let sm = self.state.selected().unwrap();
-                            let result = op::expunge::handle(&parsed.tag, "", self.account_id.unwrap(), sm.container_id, self.mailstore.clone(), false).await;
+                            let result = op::expunge::handle(
+                                &parsed.tag,
+                                "",
+                                self.account_id.unwrap(),
+                                sm.container_id,
+                                self.mailstore.clone(),
+                                false,
+                            )
+                            .await;
                             let completion = result.wire.lines().last().unwrap_or_default();
                             if !completion.starts_with(&format!("{} OK", parsed.tag)) {
-                                writer.write_all(format!("{completion}\r\n").as_bytes()).await?;
+                                writer
+                                    .write_all(format!("{completion}\r\n").as_bytes())
+                                    .await?;
                                 writer.flush().await?;
                                 continue;
                             }
@@ -611,7 +814,12 @@ impl Session {
                         // ships STORE). Both commands simply drop the
                         // selected mailbox.
                         self.state = State::Authenticated;
-                        writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
                     }
                 }
                 "CHECK" => {
@@ -629,11 +837,21 @@ impl Session {
                         self.bad_commands += 1;
                         let resp =
                             tagged(&parsed.tag, Status::Bad, None, "command takes no arguments");
-                        writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
                     } else if self.state.selected().is_none() {
                         self.bad_commands += 1;
                         let resp = tagged(&parsed.tag, Status::Bad, None, "no mailbox selected");
-                        writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
                     } else {
                         writer
                             .write_all(op::check::handle(&parsed.tag).as_bytes())
@@ -644,8 +862,20 @@ impl Session {
                     if !self.state.is_authenticated() {
                         self.bad_commands += 1;
                         let resp = tagged(&parsed.tag, Status::Bad, None, "NOT AUTHENTICATED");
-                        writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
                     } else {
+                        if command_name == "DELETE"
+                            && let Some(sm) = self.state.selected()
+                            && op::delete::parse_args(&parsed.args).is_ok_and(|name| name == sm.name || (name.eq_ignore_ascii_case("INBOX") && sm.name == "INBOX")) {
+                            writer.write_all(tagged(&parsed.tag, Status::No, Some("CANNOT"), "UNSELECT the mailbox before deleting it").as_bytes()).await?;
+                            writer.flush().await?;
+                            continue;
+                        }
                         let aid = self
                             .account_id
                             .expect("authenticated session must have account_id");
@@ -698,7 +928,29 @@ impl Session {
                                 .await
                             }
                         };
-                        writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+                        if command_name == "RENAME" && resp.starts_with(&format!("{} OK", parsed.tag)) {
+                            let names = op::rename::parse_args(&parsed.args).expect("successful RENAME has valid arguments");
+                            if !names.old_name.eq_ignore_ascii_case("INBOX") && let Some(sm) = self.state.selected_mut() {
+                                if sm.name == names.old_name { sm.name = names.new_name.clone(); }
+                                else if sm.name.starts_with(&format!("{}/", names.old_name)) {
+                                    sm.name = format!("{}{}", names.new_name, &sm.name[names.old_name.len()..]);
+                                }
+                            }
+                            if self.state.selected().is_some() { self.refresh_view(writer, true).await?; }
+                            if self.rev2 {
+                                let pattern = format!("\"\" ({} {}) RETURN (SUBSCRIBED CHILDREN)", crate::imap::mailbox_name::quote_mailbox(&names.new_name), crate::imap::mailbox_name::quote_mailbox(&format!("{}/*", names.new_name)));
+                                let listing = op::list::handle_with_limit(&parsed.tag, &pattern, aid, self.mailstore.clone(), self.cfg.max_literal_bytes).await;
+                                for line in listing.lines().filter(|line| line.starts_with("* LIST ")) {
+                                    writer.write_all(format!("{line}\r\n").as_bytes()).await?;
+                                }
+                            }
+                        }
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
                     }
                 }
                 command_name @ ("FETCH" | "STORE" | "SEARCH" | "COPY" | "MOVE" | "EXPUNGE"
@@ -706,7 +958,12 @@ impl Session {
                     if !self.state.is_authenticated() {
                         self.bad_commands += 1;
                         let resp = tagged(&parsed.tag, Status::Bad, None, "NOT AUTHENTICATED");
-                        writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
                     } else {
                         // Route to one of seven actions: Fetch(mode),
                         // Store(mode), Search(mode), Copy(mode),
@@ -763,24 +1020,43 @@ impl Session {
                         };
 
                         let action = match action {
-                            Action::Fetch(mode, args) => Action::Fetch(mode, self.expand_saved_set(&args, mode == op::fetch::FetchMode::Uid).await?),
-                            Action::Store(mode, args) => Action::Store(mode, self.expand_saved_set(&args, mode == op::store::StoreMode::Uid).await?),
-                            Action::Copy(mode, args) => Action::Copy(mode, self.expand_saved_set(&args, mode == op::copy::CopyMode::Uid).await?),
-                            Action::Move(mode, args) => Action::Move(mode, self.expand_saved_set(&args, mode == op::mv::MoveMode::Uid).await?),
-                            Action::Expunge(true, args) => Action::Expunge(true, self.expand_saved_set(&args, true).await?),
+                            Action::Fetch(mode, args) => Action::Fetch(
+                                mode,
+                                self.expand_saved_set(&args, mode == op::fetch::FetchMode::Uid)
+                                    .await?,
+                            ),
+                            Action::Store(mode, args) => Action::Store(
+                                mode,
+                                self.expand_saved_set(&args, mode == op::store::StoreMode::Uid)
+                                    .await?,
+                            ),
+                            Action::Copy(mode, args) => Action::Copy(
+                                mode,
+                                self.expand_saved_set(&args, mode == op::copy::CopyMode::Uid)
+                                    .await?,
+                            ),
+                            Action::Move(mode, args) => Action::Move(
+                                mode,
+                                self.expand_saved_set(&args, mode == op::mv::MoveMode::Uid)
+                                    .await?,
+                            ),
+                            Action::Expunge(true, args) => {
+                                Action::Expunge(true, self.expand_saved_set(&args, true).await?)
+                            }
                             other => other,
                         };
 
                         match action {
                             Action::BadInner => {
                                 self.bad_commands += 1;
-                                let resp = tagged(
-                                    &parsed.tag,
-                                    Status::Bad,
-                                    None,
-                                    "invalid UID command",
-                                );
-                                writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+                                let resp =
+                                    tagged(&parsed.tag, Status::Bad, None, "invalid UID command");
+                                writer
+                                    .write_all(
+                                        crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                            .as_bytes(),
+                                    )
+                                    .await?;
                             }
                             Action::Fetch(mode, args) => {
                                 match self.state.selected() {
@@ -800,7 +1076,14 @@ impl Session {
                                                 self.bad_commands += 1;
                                                 let resp =
                                                     tagged(&parsed.tag, Status::Bad, None, &e);
-                                                writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+                                                writer
+                                                    .write_all(
+                                                        crate::imap::mailbox_encoding::response(
+                                                            &resp, self.utf8,
+                                                        )
+                                                        .as_bytes(),
+                                                    )
+                                                    .await?;
                                             }
                                             Ok(_) => {
                                                 let resp = op::fetch::handle_with_access(
@@ -826,7 +1109,14 @@ impl Session {
                                             None,
                                             "no mailbox selected",
                                         );
-                                        writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+                                        writer
+                                            .write_all(
+                                                crate::imap::mailbox_encoding::response(
+                                                    &resp, self.utf8,
+                                                )
+                                                .as_bytes(),
+                                            )
+                                            .await?;
                                     }
                                 }
                             }
@@ -842,12 +1132,21 @@ impl Session {
                                         // `op::search::handle` re-parses
                                         // on its own path; the second
                                         // parse is pure and trivial.
-                                        match op::search::parse_args_for_session(&args, mode, self.utf8) {
+                                        match op::search::parse_args_for_session(
+                                            &args, mode, self.utf8,
+                                        ) {
                                             Err(e) => {
                                                 self.bad_commands += 1;
                                                 let resp =
                                                     tagged(&parsed.tag, Status::Bad, None, &e);
-                                                writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+                                                writer
+                                                    .write_all(
+                                                        crate::imap::mailbox_encoding::response(
+                                                            &resp, self.utf8,
+                                                        )
+                                                        .as_bytes(),
+                                                    )
+                                                    .await?;
                                             }
                                             Ok(()) => {
                                                 let resp = op::search::handle_extended(
@@ -863,7 +1162,14 @@ impl Session {
                                                     Some(&sm.view_uids),
                                                 )
                                                 .await;
-                                                writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+                                                writer
+                                                    .write_all(
+                                                        crate::imap::mailbox_encoding::response(
+                                                            &resp, self.utf8,
+                                                        )
+                                                        .as_bytes(),
+                                                    )
+                                                    .await?;
                                             }
                                         }
                                     }
@@ -875,7 +1181,14 @@ impl Session {
                                             None,
                                             "no mailbox selected",
                                         );
-                                        writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+                                        writer
+                                            .write_all(
+                                                crate::imap::mailbox_encoding::response(
+                                                    &resp, self.utf8,
+                                                )
+                                                .as_bytes(),
+                                            )
+                                            .await?;
                                     }
                                 }
                             }
@@ -899,7 +1212,14 @@ impl Session {
                                             Some("CANNOT"),
                                             "mailbox is read-only",
                                         );
-                                        writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+                                        writer
+                                            .write_all(
+                                                crate::imap::mailbox_encoding::response(
+                                                    &resp, self.utf8,
+                                                )
+                                                .as_bytes(),
+                                            )
+                                            .await?;
                                     }
                                     Some(sm) => {
                                         let container = sm.container_id;
@@ -916,7 +1236,14 @@ impl Session {
                                                 self.bad_commands += 1;
                                                 let resp =
                                                     tagged(&parsed.tag, Status::Bad, None, &e);
-                                                writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+                                                writer
+                                                    .write_all(
+                                                        crate::imap::mailbox_encoding::response(
+                                                            &resp, self.utf8,
+                                                        )
+                                                        .as_bytes(),
+                                                    )
+                                                    .await?;
                                             }
                                             Ok(()) => {
                                                 let resp = op::store::handle_with_view(
@@ -929,7 +1256,14 @@ impl Session {
                                                     Some(&sm.view_uids),
                                                 )
                                                 .await;
-                                                writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+                                                writer
+                                                    .write_all(
+                                                        crate::imap::mailbox_encoding::response(
+                                                            &resp, self.utf8,
+                                                        )
+                                                        .as_bytes(),
+                                                    )
+                                                    .await?;
                                             }
                                         }
                                     }
@@ -941,7 +1275,14 @@ impl Session {
                                             None,
                                             "no mailbox selected",
                                         );
-                                        writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+                                        writer
+                                            .write_all(
+                                                crate::imap::mailbox_encoding::response(
+                                                    &resp, self.utf8,
+                                                )
+                                                .as_bytes(),
+                                            )
+                                            .await?;
                                     }
                                 }
                             }
@@ -962,7 +1303,14 @@ impl Session {
                                                 self.bad_commands += 1;
                                                 let resp =
                                                     tagged(&parsed.tag, Status::Bad, None, &e);
-                                                writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+                                                writer
+                                                    .write_all(
+                                                        crate::imap::mailbox_encoding::response(
+                                                            &resp, self.utf8,
+                                                        )
+                                                        .as_bytes(),
+                                                    )
+                                                    .await?;
                                             }
                                             Ok(()) => {
                                                 let resp = op::copy::handle_with_view(
@@ -976,7 +1324,14 @@ impl Session {
                                                     Some(&sm.view_uids),
                                                 )
                                                 .await;
-                                                writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+                                                writer
+                                                    .write_all(
+                                                        crate::imap::mailbox_encoding::response(
+                                                            &resp, self.utf8,
+                                                        )
+                                                        .as_bytes(),
+                                                    )
+                                                    .await?;
                                             }
                                         }
                                     }
@@ -988,7 +1343,14 @@ impl Session {
                                             None,
                                             "no mailbox selected",
                                         );
-                                        writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+                                        writer
+                                            .write_all(
+                                                crate::imap::mailbox_encoding::response(
+                                                    &resp, self.utf8,
+                                                )
+                                                .as_bytes(),
+                                            )
+                                            .await?;
                                     }
                                 }
                             }
@@ -1005,7 +1367,14 @@ impl Session {
                                             Some("CANNOT"),
                                             "mailbox is read-only",
                                         );
-                                        writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+                                        writer
+                                            .write_all(
+                                                crate::imap::mailbox_encoding::response(
+                                                    &resp, self.utf8,
+                                                )
+                                                .as_bytes(),
+                                            )
+                                            .await?;
                                     }
                                     Some(sm) => {
                                         let container = sm.container_id;
@@ -1017,7 +1386,14 @@ impl Session {
                                                 self.bad_commands += 1;
                                                 let resp =
                                                     tagged(&parsed.tag, Status::Bad, None, &e);
-                                                writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+                                                writer
+                                                    .write_all(
+                                                        crate::imap::mailbox_encoding::response(
+                                                            &resp, self.utf8,
+                                                        )
+                                                        .as_bytes(),
+                                                    )
+                                                    .await?;
                                             }
                                             Ok(()) => {
                                                 let outcome = op::mv::handle_with_view(
@@ -1059,7 +1435,14 @@ impl Session {
                                             None,
                                             "no mailbox selected",
                                         );
-                                        writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+                                        writer
+                                            .write_all(
+                                                crate::imap::mailbox_encoding::response(
+                                                    &resp, self.utf8,
+                                                )
+                                                .as_bytes(),
+                                            )
+                                            .await?;
                                     }
                                 }
                             }
@@ -1072,7 +1455,14 @@ impl Session {
                                         Some("CANNOT"),
                                         "mailbox is read-only",
                                     );
-                                    writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+                                    writer
+                                        .write_all(
+                                            crate::imap::mailbox_encoding::response(
+                                                &resp, self.utf8,
+                                            )
+                                            .as_bytes(),
+                                        )
+                                        .await?;
                                 }
                                 Some(sm) => {
                                     let container = sm.container_id;
@@ -1083,7 +1473,14 @@ impl Session {
                                         Err(e) => {
                                             self.bad_commands += 1;
                                             let resp = tagged(&parsed.tag, Status::Bad, None, &e);
-                                            writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+                                            writer
+                                                .write_all(
+                                                    crate::imap::mailbox_encoding::response(
+                                                        &resp, self.utf8,
+                                                    )
+                                                    .as_bytes(),
+                                                )
+                                                .await?;
                                         }
                                         Ok(()) => {
                                             let outcome = op::expunge::handle_with_view(
@@ -1093,7 +1490,7 @@ impl Session {
                                                 container,
                                                 self.mailstore.clone(),
                                                 uid_mode,
-                                                    Some(&sm.view_uids),
+                                                Some(&sm.view_uids),
                                             )
                                             .await;
                                             writer.write_all(outcome.wire.as_bytes()).await?;
@@ -1115,7 +1512,14 @@ impl Session {
                                         None,
                                         "no mailbox selected",
                                     );
-                                    writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+                                    writer
+                                        .write_all(
+                                            crate::imap::mailbox_encoding::response(
+                                                &resp, self.utf8,
+                                            )
+                                            .as_bytes(),
+                                        )
+                                        .await?;
                                 }
                             },
                         }
@@ -1129,7 +1533,12 @@ impl Session {
                     if !self.state.is_authenticated() {
                         self.bad_commands += 1;
                         let resp = tagged(&parsed.tag, Status::Bad, None, "NOT AUTHENTICATED");
-                        writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
                     } else {
                         let aid = self
                             .account_id
@@ -1180,13 +1589,7 @@ impl Session {
                     self.bad_commands += 1;
                     writer
                         .write_all(
-                            tagged(
-                                &parsed.tag,
-                                Status::Bad,
-                                None,
-                                "unknown command",
-                            )
-                            .as_bytes(),
+                            tagged(&parsed.tag, Status::Bad, None, "unknown command").as_bytes(),
                         )
                         .await?;
                 }
@@ -1205,39 +1608,78 @@ impl Session {
         }
     }
 
-    async fn refresh_view<W: AsyncWrite + Unpin>(&mut self, writer: &mut W, allow_expunge: bool) -> Result<()> {
+    async fn refresh_view<W: AsyncWrite + Unpin>(
+        &mut self,
+        writer: &mut W,
+        allow_expunge: bool,
+    ) -> Result<()> {
         let sm = self.state.selected().unwrap();
         let container = sm.container_id;
         let aid = self.account_id.unwrap();
         let store = self.mailstore.clone();
-        let handles = tokio::task::spawn_blocking(move || store.list_emails_in_mailbox(aid, container, crate::mailstore::ListOpts { sort_by: crate::mailstore::SortKey::Seq, limit: u32::MAX, offset: 0 })).await??;
+        let handles = tokio::task::spawn_blocking(move || {
+            store.list_emails_in_mailbox(
+                aid,
+                container,
+                crate::mailstore::ListOpts {
+                    sort_by: crate::mailstore::SortKey::Seq,
+                    limit: u32::MAX,
+                    offset: 0,
+                },
+            )
+        })
+        .await??;
         let fresh: Vec<u64> = handles.iter().map(|h| h.uid).collect();
         let sm = self.state.selected_mut().unwrap();
         if allow_expunge {
-            for line in op::idle::diff_lines(&sm.view_uids, &fresh) { writer.write_all(line.as_bytes()).await?; }
+            for line in op::idle::diff_lines(&sm.view_uids, &fresh) {
+                writer.write_all(line.as_bytes()).await?;
+            }
             sm.view_uids = fresh.clone();
         } else {
             let old_len = sm.view_uids.len();
             for uid in &fresh {
-                if sm.view_uids.binary_search(uid).is_err() { sm.view_uids.push(*uid); }
+                if sm.view_uids.binary_search(uid).is_err() {
+                    sm.view_uids.push(*uid);
+                }
             }
             sm.view_uids.sort_unstable();
-            if sm.view_uids.len() != old_len { writer.write_all(format!("* {} EXISTS\r\n", sm.view_uids.len()).as_bytes()).await?; }
+            if sm.view_uids.len() != old_len {
+                writer
+                    .write_all(format!("* {} EXISTS\r\n", sm.view_uids.len()).as_bytes())
+                    .await?;
+            }
         }
         sm.exists = sm.view_uids.len() as u64;
-        self.saved_search.retain(|uid| fresh.binary_search(uid).is_ok());
+        self.saved_search
+            .retain(|uid| fresh.binary_search(uid).is_ok());
         Ok(())
     }
 
     async fn expand_saved_set(&self, args: &str, uid_mode: bool) -> Result<String> {
         let args = args.trim_start();
         let (set, tail) = args.split_once(' ').unwrap_or((args, ""));
-        if set != "$" || self.saved_search.is_empty() { return Ok(args.to_string()); }
-        let values = if uid_mode { self.saved_search.clone() } else {
-            let Some(sm) = self.state.selected() else { return Ok(args.to_string()); };
-            sm.view_uids.iter().enumerate().filter(|(_, uid)| self.saved_search.contains(uid)).map(|(i, _)| (i+1) as u64).collect()
+        if set != "$" || self.saved_search.is_empty() {
+            return Ok(args.to_string());
+        }
+        let values = if uid_mode {
+            self.saved_search.clone()
+        } else {
+            let Some(sm) = self.state.selected() else {
+                return Ok(args.to_string());
+            };
+            sm.view_uids
+                .iter()
+                .enumerate()
+                .filter(|(_, uid)| self.saved_search.contains(uid))
+                .map(|(i, _)| (i + 1) as u64)
+                .collect()
         };
-        let set = if values.is_empty() { "$".to_string() } else { op::copy::render_uid_set(&values) };
+        let set = if values.is_empty() {
+            "$".to_string()
+        } else {
+            op::copy::render_uid_set(&values)
+        };
         Ok(format!("{set} {tail}"))
     }
 
@@ -1282,7 +1724,11 @@ impl Session {
         R: AsyncRead + Unpin,
         W: AsyncWrite + Unpin,
     {
-        let max_lit = if self.state.is_authenticated() { self.cfg.max_literal_bytes } else { self.cfg.max_literal_bytes.min(codec::MAX_LINE_BYTES as u64) };
+        let max_lit = if self.state.is_authenticated() {
+            self.cfg.max_literal_bytes
+        } else {
+            self.cfg.max_literal_bytes.min(codec::MAX_LINE_BYTES as u64)
+        };
         // Refuse literals before the session is authenticated, and
         // post-auth refuse them for any command that doesn't actually
         // consume a literal body. With `LITERAL+` advertised in the
@@ -1301,11 +1747,25 @@ impl Session {
             let mut parts = line.splitn(3, |b| *b == b' ');
             let _tag = parts.next();
             let command_name = parts.next().unwrap_or(b"");
-            authed || command_name.eq_ignore_ascii_case(b"LOGIN") || command_name.eq_ignore_ascii_case(b"ID") || command_name.eq_ignore_ascii_case(b"AUTHENTICATE")
+            authed
+                || command_name.eq_ignore_ascii_case(b"LOGIN")
+                || command_name.eq_ignore_ascii_case(b"ID")
+                || command_name.eq_ignore_ascii_case(b"AUTHENTICATE")
         };
         let caps = crate::imap::capabilities::for_config(&self.cfg);
-        let non_sync_limit = if caps.split_ascii_whitespace().any(|c| c == "LITERAL+") { u64::MAX } else { 4096 };
-        let fut = codec::read_command_multi_policy(reader, writer, max_lit, accept_literals, |_| true, non_sync_limit);
+        let non_sync_limit = if caps.split_ascii_whitespace().any(|c| c == "LITERAL+") {
+            u64::MAX
+        } else {
+            4096
+        };
+        let fut = codec::read_command_multi_policy(
+            reader,
+            writer,
+            max_lit,
+            accept_literals,
+            |_| true,
+            non_sync_limit,
+        );
         let result = if !self.state.is_authenticated() {
             match timeout(self.cfg.pre_auth_timeout, fut).await {
                 Ok(r) => r,
@@ -1438,7 +1898,9 @@ impl Session {
         if !self.state.is_not_authenticated() {
             self.bad_commands += 1;
             let resp = tagged(tag, Status::Bad, None, "LOGIN only valid before auth");
-            writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+            writer
+                .write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes())
+                .await?;
             return Ok(());
         }
         let (user, pass) = match op::login::parse_args(args) {
@@ -1475,7 +1937,9 @@ impl Session {
                 None,
                 "AUTHENTICATE only valid before auth",
             );
-            writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+            writer
+                .write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes())
+                .await?;
             return Ok(());
         }
         let parsed = match op::authenticate::parse_args(args) {
@@ -1615,7 +2079,9 @@ impl Session {
                     Some("AUTHENTICATIONFAILED"),
                     "OAUTHBEARER not configured",
                 );
-                writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+                writer
+                    .write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes())
+                    .await?;
                 Ok(())
             }
         }
@@ -1673,7 +2139,9 @@ impl Session {
                     Some("AUTHENTICATIONFAILED"),
                     "invalid credentials",
                 );
-                writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+                writer
+                    .write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes())
+                    .await?;
                 return Ok(());
             }
             Err(e) => {
@@ -1693,7 +2161,9 @@ impl Session {
                     Some("UNAVAILABLE"),
                     "authentication unavailable",
                 );
-                writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+                writer
+                    .write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes())
+                    .await?;
                 return Ok(());
             }
         };
@@ -1706,7 +2176,9 @@ impl Session {
             .await
         {
             let resp = tagged(tag, Status::No, Some("INUSE"), "too many connections");
-            writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+            writer
+                .write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes())
+                .await?;
             self.emit_bye(writer, "concurrent connection limit reached")
                 .await?;
             // Force the loop to exit.
@@ -1722,7 +2194,9 @@ impl Session {
         let caps_body = crate::imap::capabilities::for_config(&self.cfg);
         let code = format!("CAPABILITY {caps_body}");
         let resp = tagged(tag, Status::Ok, Some(&code), "authenticated");
-        writer.write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes()).await?;
+        writer
+            .write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes())
+            .await?;
         crate::maillog::imap_login_ok(user, method, self.peer, self.local);
         Ok(())
     }
@@ -1759,15 +2233,21 @@ fn is_search_line(line: &[u8]) -> bool {
 }
 
 fn is_append_line(line: &[u8]) -> bool {
-    line.split(|b| *b == b' ').nth(1).is_some_and(|s| s.eq_ignore_ascii_case(b"APPEND"))
+    line.split(|b| *b == b' ')
+        .nth(1)
+        .is_some_and(|s| s.eq_ignore_ascii_case(b"APPEND"))
 }
 
 pub(crate) async fn wait_shutdown(shutdown: &mut Option<tokio::sync::watch::Receiver<bool>>) {
     if let Some(rx) = shutdown {
         while !*rx.borrow_and_update() {
-            if rx.changed().await.is_err() { return std::future::pending().await; }
+            if rx.changed().await.is_err() {
+                return std::future::pending().await;
+            }
         }
-    } else { std::future::pending().await }
+    } else {
+        std::future::pending().await
+    }
 }
 
 /// Literal argument strings and literal message data share framing, but only
@@ -1775,43 +2255,70 @@ pub(crate) async fn wait_shutdown(shutdown: &mut Option<tokio::sync::watch::Rece
 fn frame_append(cmd: codec::Command, utf8: bool) -> Result<Vec<(String, Vec<u8>)>, String> {
     let mut prefix = cmd.line;
     let mut pieces = vec![(Vec::new(), cmd.literal, cmd.literal8)];
-    pieces.extend(cmd.continuation.into_iter().map(|s| (s.text, s.literal, s.literal8)));
+    pieces.extend(
+        cmd.continuation
+            .into_iter()
+            .map(|s| (s.text, s.literal, s.literal8)),
+    );
     let mut messages = Vec::new();
     let mut base = None;
     let mut wrapper = false;
     for (mut text, literal, literal8) in pieces {
         if wrapper {
-            let tail = std::str::from_utf8(&text).map_err(|_| "invalid APPEND continuation")?.trim_start();
-            let tail = tail.strip_prefix(')').ok_or("UTF8 APPEND missing closing paren")?;
+            let tail = std::str::from_utf8(&text)
+                .map_err(|_| "invalid APPEND continuation")?
+                .trim_start();
+            let tail = tail
+                .strip_prefix(')')
+                .ok_or("UTF8 APPEND missing closing paren")?;
             text = tail.as_bytes().to_vec();
             wrapper = false;
         }
         prefix.extend_from_slice(&text);
         let Some(literal) = literal else {
-            if !text.iter().all(u8::is_ascii_whitespace) { return Err("APPEND trailing data without a message literal".into()); }
+            if !text.iter().all(u8::is_ascii_whitespace) {
+                return Err("APPEND trailing data without a message literal".into());
+            }
             continue;
         };
         let mut line = codec::parse_line(&prefix).map_err(|e| e.to_string())?;
         if line.args.to_ascii_uppercase().ends_with("UTF8 (") {
-            if !utf8 { return Err("UTF8 APPEND requires ENABLE UTF8=ACCEPT or IMAP4rev2".into()); }
-            line.args.truncate(line.args.len()-6);
+            if !utf8 {
+                return Err("UTF8 APPEND requires ENABLE UTF8=ACCEPT or IMAP4rev2".into());
+            }
+            line.args.truncate(line.args.len() - 6);
             line.args = line.args.trim_end().to_string();
             wrapper = true;
         }
         if op::append::parse_args_for_dispatch(&line.args).is_ok() {
-            if !literal8 && literal.contains(&0) { return Err("NUL in APPEND requires literal8".into()); }
+            if !literal8 && literal.contains(&0) {
+                return Err("NUL in APPEND requires literal8".into());
+            }
             if base.is_none() {
                 let (name, _) = op::list::take_mailbox_name(line.args.trim_start())?;
-                base = Some(format!("{} APPEND {}", line.tag, crate::imap::mailbox_name::quote_mailbox(&name)).into_bytes());
+                base = Some(
+                    format!(
+                        "{} APPEND {}",
+                        line.tag,
+                        crate::imap::mailbox_name::quote_mailbox(&name)
+                    )
+                    .into_bytes(),
+                );
             }
             messages.push((line.args, literal));
             prefix = base.clone().unwrap();
         } else if messages.is_empty() {
             push_quoted(&mut prefix, &literal).map_err(str::to_string)?;
-        } else { return Err("invalid MULTIAPPEND flags or date".into()); }
+        } else {
+            return Err("invalid MULTIAPPEND flags or date".into());
+        }
     }
-    if wrapper { return Err("UTF8 APPEND missing closing paren".into()); }
-    if messages.is_empty() { return Err("APPEND requires a literal message body".into()); }
+    if wrapper {
+        return Err("UTF8 APPEND missing closing paren".into());
+    }
+    if messages.is_empty() {
+        return Err("APPEND requires a literal message body".into());
+    }
     Ok(messages)
 }
 

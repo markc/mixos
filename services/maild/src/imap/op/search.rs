@@ -167,24 +167,38 @@ fn parse_args(args: &str, mode: SearchMode) -> Result<SearchReq, String> {
     let tokens = tokenize(trimmed)?;
     let mut idx = 0;
     let mut returns = None;
-    if tokens.first().is_some_and(|s| s.eq_ignore_ascii_case("RETURN")) {
+    if tokens
+        .first()
+        .is_some_and(|s| s.eq_ignore_ascii_case("RETURN"))
+    {
         idx += 1;
-        if tokens.get(idx).map(String::as_str) != Some("(") { return Err("SEARCH RETURN requires parentheses".into()); }
+        if tokens.get(idx).map(String::as_str) != Some("(") {
+            return Err("SEARCH RETURN requires parentheses".into());
+        }
         idx += 1;
         let mut opts = Vec::new();
         while tokens.get(idx).map(String::as_str) != Some(")") {
-            let opt = tokens.get(idx).ok_or("SEARCH RETURN missing closing paren")?.to_ascii_uppercase();
-            if !["MIN", "MAX", "ALL", "COUNT", "SAVE"].contains(&opt.as_str()) { return Err(format!("unknown SEARCH return option {opt}")); }
-            if !opts.contains(&opt) { opts.push(opt); }
+            let opt = tokens
+                .get(idx)
+                .ok_or("SEARCH RETURN missing closing paren")?
+                .to_ascii_uppercase();
+            if !["MIN", "MAX", "ALL", "COUNT", "SAVE"].contains(&opt.as_str()) {
+                return Err(format!("unknown SEARCH return option {opt}"));
+            }
+            if !opts.contains(&opt) {
+                opts.push(opt);
+            }
             idx += 1;
         }
         idx += 1;
-        if opts.is_empty() { opts.push("ALL".into()); }
+        if opts.is_empty() {
+            opts.push("ALL".into());
+        }
         returns = Some(opts);
     }
     let mut charset = None;
     if idx + 1 < tokens.len() && tokens[idx].eq_ignore_ascii_case("CHARSET") {
-        charset = Some(tokens[idx+1].clone());
+        charset = Some(tokens[idx + 1].clone());
         idx += 2;
     }
     let mut keys: Vec<Crit> = Vec::new();
@@ -201,7 +215,12 @@ fn parse_args(args: &str, mode: SearchMode) -> Result<SearchReq, String> {
     } else {
         Crit::And(keys)
     };
-    Ok(SearchReq { crit, mode, returns, charset })
+    Ok(SearchReq {
+        crit,
+        mode,
+        returns,
+        charset,
+    })
 }
 
 /// Pre-validate `args` so grammar failures can bump the abuse-cap
@@ -212,7 +231,9 @@ pub fn parse_args_for_dispatch(args: &str, mode: SearchMode) -> Result<(), Strin
 
 pub fn parse_args_for_session(args: &str, mode: SearchMode, utf8: bool) -> Result<(), String> {
     let req = parse_args(args, mode)?;
-    if utf8 && req.charset.is_some() { return Err("CHARSET is forbidden after enabling UTF-8".into()); }
+    if utf8 && req.charset.is_some() {
+        return Err("CHARSET is forbidden after enabling UTF-8".into());
+    }
     Ok(())
 }
 
@@ -270,8 +291,14 @@ fn parse_key(tokens: &[String], idx: usize) -> Result<(Crit, usize), String> {
     parse_key_at_depth(tokens, idx, 0)
 }
 
-fn parse_key_at_depth(tokens: &[String], idx: usize, depth: usize) -> Result<(Crit, usize), String> {
-    if depth > 64 { return Err("SEARCH nesting limit exceeded".into()); }
+fn parse_key_at_depth(
+    tokens: &[String],
+    idx: usize,
+    depth: usize,
+) -> Result<(Crit, usize), String> {
+    if depth > 64 {
+        return Err("SEARCH nesting limit exceeded".into());
+    }
     if idx >= tokens.len() {
         return Err("SEARCH unexpected end of expression".into());
     }
@@ -296,7 +323,7 @@ fn parse_key_at_depth(tokens: &[String], idx: usize, depth: usize) -> Result<(Cr
                     };
                     return Ok((combined, cur + 1));
                 }
-                let (k, next) = parse_key_at_depth(tokens, cur, depth+1)?;
+                let (k, next) = parse_key_at_depth(tokens, cur, depth + 1)?;
                 keys.push(k);
                 cur = next;
             }
@@ -345,18 +372,20 @@ fn parse_key_at_depth(tokens: &[String], idx: usize, depth: usize) -> Result<(Cr
             let set_tok = tokens
                 .get(idx + 1)
                 .ok_or_else(|| "SEARCH UID missing sequence-set".to_string())?;
-            if set_tok == "$" { return Ok((Crit::Saved, idx + 2)); }
+            if set_tok == "$" {
+                return Ok((Crit::Saved, idx + 2));
+            }
             let set = SeqSet::parse(set_tok)
                 .map_err(|e| format!("SEARCH UID invalid sequence-set: {e}"))?;
             Ok((Crit::UidInSet(set), idx + 2))
         }
         "NOT" => {
-            let (k, next) = parse_key_at_depth(tokens, idx + 1, depth+1)?;
+            let (k, next) = parse_key_at_depth(tokens, idx + 1, depth + 1)?;
             Ok((Crit::Not(Box::new(k)), next))
         }
         "OR" => {
-            let (k1, n1) = parse_key_at_depth(tokens, idx + 1, depth+1)?;
-            let (k2, n2) = parse_key_at_depth(tokens, n1, depth+1)?;
+            let (k1, n1) = parse_key_at_depth(tokens, idx + 1, depth + 1)?;
+            let (k2, n2) = parse_key_at_depth(tokens, n1, depth + 1)?;
             Ok((Crit::Or(Box::new(k1), Box::new(k2)), n2))
         }
         "BEFORE" | "ON" | "SINCE" | "SENTBEFORE" | "SENTON" | "SENTSINCE" => {
@@ -584,7 +613,10 @@ impl Doc {
 
     fn header_has(&self, name: &str, needle: &str) -> bool {
         self.headers.iter().any(|(n, raw, decoded)| {
-            n == name && (needle.is_empty() || crate::imap::text::contains(raw, needle) || crate::imap::text::contains(decoded, needle))
+            n == name
+                && (needle.is_empty()
+                    || crate::imap::text::contains(raw, needle)
+                    || crate::imap::text::contains(decoded, needle))
         })
     }
 
@@ -718,13 +750,19 @@ fn collect_hits(
             anyhow::bail!("SEARCH cancelled");
         }
         let msn = if let Some(view) = view {
-            let Ok(i) = view.binary_search(&handle.uid) else { continue; };
-            (i+1) as u32
-        } else { (idx + 1) as u32 };
+            let Ok(i) = view.binary_search(&handle.uid) else {
+                continue;
+            };
+            (i + 1) as u32
+        } else {
+            (idx + 1) as u32
+        };
         let hit = match eval(crit, msn, handle, exists, largest_uid, None) {
             Some(decided) => decided,
             None => {
-                if handle.size_bytes > MAX_SEARCH_MESSAGE_BYTES as u64 { anyhow::bail!("SEARCH message work limit exceeded"); }
+                if handle.size_bytes > MAX_SEARCH_MESSAGE_BYTES as u64 {
+                    anyhow::bail!("SEARCH message work limit exceeded");
+                }
                 let raw = store.read_blob(handle.blob_hash).map_err(|e| {
                     tracing::warn!(
                         error = %e,
@@ -733,7 +771,9 @@ fn collect_hits(
                     );
                     e
                 })?;
-                if raw.len() > MAX_SEARCH_MESSAGE_BYTES { anyhow::bail!("SEARCH message work limit exceeded"); }
+                if raw.len() > MAX_SEARCH_MESSAGE_BYTES {
+                    anyhow::bail!("SEARCH message work limit exceeded");
+                }
                 let doc = Doc::from_raw(&raw);
                 eval(crit, msn, handle, exists, largest_uid, Some(&doc)).unwrap_or(false)
             }
@@ -753,38 +793,96 @@ pub async fn handle(
     store: Arc<dyn MailStore>,
     mode: SearchMode,
 ) -> String {
-    handle_extended(tag, args, account_id, container, store, mode, false, false, &mut Vec::new(), None).await
+    handle_extended(
+        tag,
+        args,
+        account_id,
+        container,
+        store,
+        mode,
+        false,
+        false,
+        &mut Vec::new(),
+        None,
+    )
+    .await
 }
 
 /// Session SEARCH state: SAVE always stores UIDs, so expunges cannot retarget `$`.
 #[allow(clippy::too_many_arguments)]
 pub async fn handle_extended(
-    tag: &str, args: &str, account_id: AccountId, container: ContainerId,
-    store: Arc<dyn MailStore>, mode: SearchMode, rev2: bool, utf8: bool, saved: &mut Vec<u64>,
+    tag: &str,
+    args: &str,
+    account_id: AccountId,
+    container: ContainerId,
+    store: Arc<dyn MailStore>,
+    mode: SearchMode,
+    rev2: bool,
+    utf8: bool,
+    saved: &mut Vec<u64>,
     view: Option<&[u64]>,
 ) -> String {
     let mut req = match parse_args(args, mode) {
         Ok(r) => r,
-        Err(e) if e.starts_with("BADCHARSET") => return tagged(tag, Status::No, Some(&e), "unsupported search charset"),
+        Err(e) if e.starts_with("BADCHARSET") => {
+            return tagged(tag, Status::No, Some(&e), "unsupported search charset");
+        }
         Err(e) => return tagged(tag, Status::Bad, None, &e),
     };
     fn apply_saved(crit: &mut Crit, saved: &[u64]) {
         match crit {
-            Crit::Saved => *crit = if saved.is_empty() { Crit::None } else { Crit::UidInSet(SeqSet::parse(&super::copy::render_uid_set(saved)).expect("saved UIDs are valid")) },
-            Crit::And(keys) => { for key in keys { apply_saved(key, saved); } }
-            Crit::Or(a, b) => { apply_saved(a, saved); apply_saved(b, saved); }
+            Crit::Saved => {
+                *crit = if saved.is_empty() {
+                    Crit::None
+                } else {
+                    Crit::UidInSet(
+                        SeqSet::parse(&super::copy::render_uid_set(saved))
+                            .expect("saved UIDs are valid"),
+                    )
+                }
+            }
+            Crit::And(keys) => {
+                for key in keys {
+                    apply_saved(key, saved);
+                }
+            }
+            Crit::Or(a, b) => {
+                apply_saved(a, saved);
+                apply_saved(b, saved);
+            }
             Crit::Not(key) => apply_saved(key, saved),
             _ => {}
         }
     }
     apply_saved(&mut req.crit, saved);
-    let save = req.returns.as_ref().is_some_and(|opts| opts.iter().any(|s| s == "SAVE"));
-    if utf8 && req.charset.is_some() { return tagged(tag, Status::Bad, None, "CHARSET is forbidden after enabling UTF-8"); }
+    let save = req
+        .returns
+        .as_ref()
+        .is_some_and(|opts| opts.iter().any(|s| s == "SAVE"));
+    if utf8 && req.charset.is_some() {
+        return tagged(
+            tag,
+            Status::Bad,
+            None,
+            "CHARSET is forbidden after enabling UTF-8",
+        );
+    }
     // A syntactically valid SAVE that fails with NO resets the variable.
     // Copy its previous value into the AST before clearing it (SEARCH $ SAVE).
-    if save { saved.clear(); }
-    if req.charset.as_ref().is_some_and(|charset| !["US-ASCII", "UTF-8"].iter().any(|s| charset.eq_ignore_ascii_case(s))) {
-        return tagged(tag, Status::No, Some("BADCHARSET (US-ASCII UTF-8)"), "unsupported search charset");
+    if save {
+        saved.clear();
+    }
+    if req.charset.as_ref().is_some_and(|charset| {
+        !["US-ASCII", "UTF-8"]
+            .iter()
+            .any(|s| charset.eq_ignore_ascii_case(s))
+    }) {
+        return tagged(
+            tag,
+            Status::No,
+            Some("BADCHARSET (US-ASCII UTF-8)"),
+            "unsupported search charset",
+        );
     }
 
     let opts = ListOpts {
@@ -839,7 +937,12 @@ pub async fn handle_extended(
         Ok(Ok(h)) => h,
         Ok(Err(e)) => {
             if e.to_string().contains("work limit") {
-                return tagged(tag, Status::No, Some("LIMIT"), "SEARCH message exceeds content work limit");
+                return tagged(
+                    tag,
+                    Status::No,
+                    Some("LIMIT"),
+                    "SEARCH message exceeds content work limit",
+                );
             }
             // Logged per message in `collect_hits`. UNAVAILABLE: a
             // storage fault the client may retry, not a protocol bug.
@@ -858,18 +961,39 @@ pub async fn handle_extended(
 
     let mut out = String::new();
     if let Some(opts) = &req.returns
-        && opts.iter().any(|s| s == "SAVE") {
+        && opts.iter().any(|s| s == "SAVE")
+    {
         let min = opts.iter().any(|s| s == "MIN");
         let max = opts.iter().any(|s| s == "MAX");
         let all = opts.iter().any(|s| s == "ALL" || s == "COUNT");
-        *saved = hits.iter().enumerate().filter(|(i, _)| all || (!min && !max) || (min && *i == 0) || (max && *i + 1 == hits.len())).map(|(_, h)| h.1).collect();
+        *saved = hits
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| {
+                all || (!min && !max) || (min && *i == 0) || (max && *i + 1 == hits.len())
+            })
+            .map(|(_, h)| h.1)
+            .collect();
     }
     if req.returns.is_some() || rev2 {
         let defaults = vec!["ALL".to_string()];
         let opts = req.returns.as_ref().unwrap_or(&defaults);
         if opts.iter().any(|s| s != "SAVE") {
-            out.push_str(&format!("* ESEARCH (TAG {}){}", super::super::mailbox_name::quote_mailbox(tag), if mode == SearchMode::Uid { " UID" } else { "" }));
-            let values: Vec<u64> = hits.iter().map(|h| if mode == SearchMode::Uid { h.1 } else { u64::from(h.0) }).collect();
+            out.push_str(&format!(
+                "* ESEARCH (TAG {}){}",
+                super::super::mailbox_name::quote_mailbox(tag),
+                if mode == SearchMode::Uid { " UID" } else { "" }
+            ));
+            let values: Vec<u64> = hits
+                .iter()
+                .map(|h| {
+                    if mode == SearchMode::Uid {
+                        h.1
+                    } else {
+                        u64::from(h.0)
+                    }
+                })
+                .collect();
             for opt in opts {
                 let value = match opt.as_str() {
                     "MIN" => values.first().map(u64::to_string),
@@ -878,7 +1002,9 @@ pub async fn handle_extended(
                     "ALL" if !values.is_empty() => Some(super::copy::render_uid_set(&values)),
                     _ => None,
                 };
-                if let Some(value) = value { out.push_str(&format!(" {opt} {value}")); }
+                if let Some(value) = value {
+                    out.push_str(&format!(" {opt} {value}"));
+                }
             }
             out.push_str("\r\n");
         }

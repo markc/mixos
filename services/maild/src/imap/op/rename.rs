@@ -179,12 +179,11 @@ pub async fn handle(
     };
 
     let final_owned = final_segment.to_string();
-    if list::preserve_subscriptions(store.clone(), account_id).await.is_err() {
-        return tagged(tag, Status::No, Some("UNAVAILABLE"), "subscriptions unavailable");
-    }
     let s2 = store.clone();
+    let inbox = parsed.old_name.eq_ignore_ascii_case("INBOX");
     let rename = tokio::task::spawn_blocking(move || {
-        s2.rename_mailbox(account_id, old_id, &final_owned, new_parent)
+        if inbox { s2.rename_inbox(account_id, old_id, &final_owned, new_parent) }
+        else { s2.rename_mailbox(account_id, old_id, &final_owned, new_parent) }
     })
     .await;
     let rename = match rename {

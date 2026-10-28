@@ -40,26 +40,37 @@ impl ImapHandle {
         self.shutdown.send_replace(true);
         let _ = tokio::time::timeout(std::time::Duration::from_secs(5), async {
             while *active.borrow_and_update() != 0 {
-                if active.changed().await.is_err() { break; }
+                if active.changed().await.is_err() {
+                    break;
+                }
             }
-        }).await;
+        })
+        .await;
     }
 }
 
 struct ActiveSession(tokio::sync::watch::Sender<usize>);
 impl Drop for ActiveSession {
-    fn drop(&mut self) { self.0.send_modify(|n| *n = n.saturating_sub(1)); }
+    fn drop(&mut self) {
+        self.0.send_modify(|n| *n = n.saturating_sub(1));
+    }
 }
 
 pub async fn shutdown_signal() {
     #[cfg(unix)]
     {
-        if let Ok(mut signal) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+        if let Ok(mut signal) =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+        {
             tokio::select! { _ = signal.recv() => {}, _ = tokio::signal::ctrl_c() => {} }
-        } else { let _ = tokio::signal::ctrl_c().await; }
+        } else {
+            let _ = tokio::signal::ctrl_c().await;
+        }
     }
     #[cfg(not(unix))]
-    { let _ = tokio::signal::ctrl_c().await; }
+    {
+        let _ = tokio::signal::ctrl_c().await;
+    }
 }
 
 /// Build TLS and start IMAPS listeners.
@@ -206,5 +217,9 @@ pub async fn start(
         });
     }
 
-    Ok(ImapHandle { imaps_addrs, shutdown, active })
+    Ok(ImapHandle {
+        imaps_addrs,
+        shutdown,
+        active,
+    })
 }

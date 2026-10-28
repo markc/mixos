@@ -376,7 +376,8 @@ async fn list_rejects_non_empty_reference() -> Result<()> {
     let (client, _join) = spawn_session(db, ms, ImapConfig::default()).await;
     let (mut reader, mut w) = login(client).await?;
     w.write_all(b"a02 LIST INBOX *\r\n").await?;
-    let lines = read_until_tagged(&mut reader, "a02").await?; let resp = lines.last().unwrap();
+    let lines = read_until_tagged(&mut reader, "a02").await?;
+    let resp = lines.last().unwrap();
     assert!(resp.starts_with("a02 OK"), "{resp}");
     assert!(lines.iter().any(|line| line.contains("INBOX")));
     Ok(())
@@ -389,7 +390,8 @@ async fn list_rejects_return_extension() -> Result<()> {
     let (mut reader, mut w) = login(client).await?;
     w.write_all(b"a02 LIST \"\" * RETURN (SUBSCRIBED)\r\n")
         .await?;
-    let lines = read_until_tagged(&mut reader, "a02").await?; let resp = lines.last().unwrap();
+    let lines = read_until_tagged(&mut reader, "a02").await?;
+    let resp = lines.last().unwrap();
     assert!(resp.starts_with("a02 OK"), "{resp}");
     Ok(())
 }
@@ -706,12 +708,7 @@ async fn status_rejects_unsupported_items() -> Result<()> {
     assert!(untagged.contains("RECENT 0"), "{untagged}");
     let resp = read_line(&mut reader).await?;
     assert!(resp.starts_with("a02 OK"), "{resp}");
-    for (tag, item) in [
-        ("a03", "HIGHESTMODSEQ"),
-        
-        
-        ("a06", "BOGUS"),
-    ] {
+    for (tag, item) in [("a03", "HIGHESTMODSEQ"), ("a06", "BOGUS")] {
         let cmd = format!("{tag} STATUS INBOX ({item})\r\n");
         w.write_all(cmd.as_bytes()).await?;
         let resp = read_line(&mut reader).await?;

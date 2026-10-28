@@ -239,30 +239,55 @@ pub async fn handle(
         }
     };
     let view_uids = handles.iter().map(|h| h.uid).collect::<Vec<_>>();
-    let keywords: std::collections::BTreeSet<&str> = handles.iter().flat_map(|h| h.tags.iter().map(String::as_str)).collect();
-    let flags = format!("{SYSTEM_FLAGS}{}", if keywords.is_empty() { String::new() } else { format!(" {}", keywords.into_iter().collect::<Vec<_>>().join(" ")) });
+    let keywords: std::collections::BTreeSet<&str> = handles
+        .iter()
+        .flat_map(|h| h.tags.iter().map(String::as_str))
+        .collect();
+    let flags = format!(
+        "{SYSTEM_FLAGS}{}",
+        if keywords.is_empty() {
+            String::new()
+        } else {
+            format!(" {}", keywords.into_iter().collect::<Vec<_>>().join(" "))
+        }
+    );
     let exists = view_uids.len() as u64;
 
     let mut out = String::new();
     out.push_str(&format!("* FLAGS ({flags})\r\n"));
     out.push_str(&format!("* {exists} EXISTS\r\n"));
-    if let Some(i) = handles.iter().position(|h| h.keywords.0 & mds::Flags::SEEN == 0) {
-        out.push_str(&format!("* OK [UNSEEN {}] First unseen\r\n", i+1));
+    if let Some(i) = handles
+        .iter()
+        .position(|h| h.keywords.0 & mds::Flags::SEEN == 0)
+    {
+        out.push_str(&format!("* OK [UNSEEN {}] First unseen\r\n", i + 1));
     }
     // `\*` (RFC 9051 §7.1) advertises that STORE/APPEND may create new
     // client-defined keywords — distinct from the `* FLAGS` line, which lists
     // only the defined system flags.
-    if read_only { out.push_str("* OK [PERMANENTFLAGS ()] Read-only\r\n"); }
-    else { out.push_str(&format!("* OK [PERMANENTFLAGS ({SYSTEM_FLAGS} \\*)] Permanent flags\r\n")); }
+    if read_only {
+        out.push_str("* OK [PERMANENTFLAGS ()] Read-only\r\n");
+    } else {
+        out.push_str(&format!(
+            "* OK [PERMANENTFLAGS ({SYSTEM_FLAGS} \\*)] Permanent flags\r\n"
+        ));
+    }
     // 32-bit on the wire (RFC 9051 nz-number); the stored value is epoch-ms.
     let wire_validity = wire_uidvalidity(uid_validity);
     out.push_str(&format!("* OK [UIDVALIDITY {wire_validity}] Ok\r\n"));
     out.push_str(&format!("* OK [UIDNEXT {uid_next}] Predicted next UID\r\n"));
-    if let Some(enc) = encode_all(&records).mailboxes.iter().find(|enc| enc.id == resolved_id) {
+    if let Some(enc) = encode_all(&records)
+        .mailboxes
+        .iter()
+        .find(|enc| enc.id == resolved_id)
+    {
         let mut row = crate::imap::mailbox_name::render_mailbox_line("LIST", enc);
         if name != wire_name {
-            row.truncate(row.len()-2);
-            row.push_str(&format!(" (OLDNAME ({}))\r\n", crate::imap::mailbox_name::quote_mailbox(&name)));
+            row.truncate(row.len() - 2);
+            row.push_str(&format!(
+                " (OLDNAME ({}))\r\n",
+                crate::imap::mailbox_name::quote_mailbox(&name)
+            ));
         }
         out.push_str(&row);
     }

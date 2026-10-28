@@ -142,7 +142,11 @@ impl SeqSet {
     pub fn parse(input: &str) -> Result<Self, String> {
         // Non-empty SEARCHRES values are expanded by the session. An
         // unexpanded `$` denotes the empty saved result (RFC 5182).
-        if input == "$" { return Ok(Self { elements: Vec::new() }); }
+        if input == "$" {
+            return Ok(Self {
+                elements: Vec::new(),
+            });
+        }
         if input.is_empty() {
             return Err("sequence-set is empty".to_string());
         }
@@ -284,7 +288,10 @@ impl SequenceMap {
             entries.len(),
             "SequenceMap built with duplicate UIDs"
         );
-        Self { entries, view: None }
+        Self {
+            entries,
+            view: None,
+        }
     }
 
     /// Keep the client's sequence numbers until EXPUNGE may legally be sent.
@@ -300,7 +307,8 @@ impl SequenceMap {
         // the cap is the RFC 9051 nz-number ceiling. A mailbox with
         // more than 4 billion messages would have already failed
         // earlier limits.
-        u32::try_from(self.view.as_ref().map_or(self.entries.len(), Vec::len)).expect("EXISTS exceeds u32; mailbox too large")
+        u32::try_from(self.view.as_ref().map_or(self.entries.len(), Vec::len))
+            .expect("EXISTS exceeds u32; mailbox too large")
     }
 
     /// Largest UID in the snapshot, or `None` on an empty mailbox.
@@ -345,10 +353,16 @@ impl SequenceMap {
             for msn in a..=b {
                 let idx = (msn - 1) as usize;
                 let (uid, item_id) = if let Some(view) = &self.view {
-                    let Some(uid) = view.get(idx) else { continue; };
-                    let Ok(index) = self.entries.binary_search_by_key(uid, |(uid, _)| *uid) else { continue; };
+                    let Some(uid) = view.get(idx) else {
+                        continue;
+                    };
+                    let Ok(index) = self.entries.binary_search_by_key(uid, |(uid, _)| *uid) else {
+                        continue;
+                    };
                     self.entries[index]
-                } else { self.entries[idx] };
+                } else {
+                    self.entries[idx]
+                };
                 hits.insert(msn, Resolved { msn, uid, item_id });
             }
         }
@@ -397,9 +411,13 @@ impl SequenceMap {
             for (idx, (uid, item_id)) in self.entries.iter().enumerate() {
                 if *uid >= lo && *uid <= hi {
                     let msn = if let Some(view) = &self.view {
-                        let Ok(index) = view.binary_search(uid) else { continue; };
-                        (index+1) as u32
-                    } else { (idx + 1) as u32 };
+                        let Ok(index) = view.binary_search(uid) else {
+                            continue;
+                        };
+                        (index + 1) as u32
+                    } else {
+                        (idx + 1) as u32
+                    };
                     hits.insert(
                         msn,
                         Resolved {

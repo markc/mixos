@@ -376,18 +376,18 @@ fn match_at(name: &[u8], ni: usize, pat: &[u8], pi: usize) -> bool {
     let pat = &pat[pi..];
     // A bounded dynamic-programming row avoids exponential backtracking on
     // hostile patterns such as *a*a*a*a*a*b against a long run of 'a'.
-    let mut previous = vec![false; pat.len()+1];
-    let mut next = vec![false; pat.len()+1];
+    let mut previous = vec![false; pat.len() + 1];
+    let mut next = vec![false; pat.len() + 1];
     previous[0] = true;
     for (j, token) in pat.iter().enumerate() {
-        previous[j+1] = previous[j] && matches!(token, b'*' | b'%');
+        previous[j + 1] = previous[j] && matches!(token, b'*' | b'%');
     }
     for byte in name {
         next[0] = false;
         for (j, token) in pat.iter().enumerate() {
-            next[j+1] = match token {
-                b'*' => next[j] || previous[j+1],
-                b'%' => next[j] || (*byte != b'/' && previous[j+1]),
+            next[j + 1] = match token {
+                b'*' => next[j] || previous[j + 1],
+                b'%' => next[j] || (*byte != b'/' && previous[j + 1]),
                 _ => *byte == *token && previous[j],
             };
         }

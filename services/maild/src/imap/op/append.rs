@@ -163,7 +163,11 @@ fn parse_internaldate(s: &str) -> Result<i64, String> {
 /// runs against the freshest `list_mailboxes` snapshot — APPEND has
 /// no SELECTED-state pre-condition, just AUTHENTICATED.
 pub async fn handle(
-    tag: &str, args: &str, body: Vec<u8>, account_id: AccountId, store: Arc<dyn MailStore>,
+    tag: &str,
+    args: &str,
+    body: Vec<u8>,
+    account_id: AccountId,
+    store: Arc<dyn MailStore>,
 ) -> String {
     handle_many(tag, vec![(args.to_string(), body)], account_id, store).await
 }
@@ -171,7 +175,10 @@ pub async fn handle(
 /// Parse every message before the first mutation; commit the complete batch in
 /// one native MailStore transaction (RFC 3502 all-or-nothing guarantee).
 pub async fn handle_many(
-    tag: &str, messages: Vec<(String, Vec<u8>)>, account_id: AccountId, store: Arc<dyn MailStore>,
+    tag: &str,
+    messages: Vec<(String, Vec<u8>)>,
+    account_id: AccountId,
+    store: Arc<dyn MailStore>,
 ) -> String {
     let mut prepared = Vec::with_capacity(messages.len());
     let mut mailbox = None;
@@ -181,24 +188,50 @@ pub async fn handle_many(
             Err(e) => return tagged(tag, Status::Bad, None, &e),
         };
         if mailbox.as_ref().is_some_and(|name| name != &req.mailbox) {
-            return tagged(tag, Status::Bad, None, "MULTIAPPEND has one destination mailbox");
+            return tagged(
+                tag,
+                Status::Bad,
+                None,
+                "MULTIAPPEND has one destination mailbox",
+            );
         }
         mailbox = Some(req.mailbox);
-        if body.is_empty() { return tagged(tag, Status::No, None, "empty message"); }
+        if body.is_empty() {
+            return tagged(tag, Status::No, None, "empty message");
+        }
         let body = if body.contains(&0) {
             match normalise_binary_message(&body) {
                 Ok(body) => body,
-                Err(()) => return tagged(tag, Status::No, Some("UNKNOWN-CTE"), "binary message cannot be represented losslessly"),
+                Err(()) => {
+                    return tagged(
+                        tag,
+                        Status::No,
+                        Some("UNKNOWN-CTE"),
+                        "binary message cannot be represented losslessly",
+                    );
+                }
             }
-        } else { body };
+        } else {
+            body
+        };
         let Some(parsed) = MessageParser::default().parse(&body) else {
             return tagged(tag, Status::No, Some("PARSE"), "message body not parseable");
         };
         let envelope = build_envelope(&parsed);
         let in_reply_to = extract_in_reply_to(&parsed);
-        prepared.push((body, envelope, in_reply_to, req.flags, req.tags, req.received_at_ms.unwrap_or_else(|| chrono::Utc::now().timestamp_millis())));
+        prepared.push((
+            body,
+            envelope,
+            in_reply_to,
+            req.flags,
+            req.tags,
+            req.received_at_ms
+                .unwrap_or_else(|| chrono::Utc::now().timestamp_millis()),
+        ));
     }
-    let Some(mailbox) = mailbox else { return tagged(tag, Status::Bad, None, "APPEND requires a message"); };
+    let Some(mailbox) = mailbox else {
+        return tagged(tag, Status::Bad, None, "APPEND requires a message");
+    };
     let outcome = tokio::task::spawn_blocking(move || {
         let records = store.list_mailboxes(account_id)?;
         let container_id = match resolve(&mailbox, &records) {
@@ -208,19 +241,31 @@ pub async fn handle_many(
         let mut imports = Vec::with_capacity(prepared.len());
         for (body, envelope, in_reply_to, flags, tags, received_at) in prepared {
             imports.push(crate::mailstore::EmailImport {
-                blob: store.put_blob(&body)?, envelope, in_reply_to, flags, tags, received_at,
+                blob: store.put_blob(&body)?,
+                envelope,
+                in_reply_to,
+                flags,
+                tags,
+                received_at,
             });
         }
         store.append_emails(account_id, container_id, imports)
-    }).await;
+    })
+    .await;
     match outcome {
         Ok(Ok(results)) if !results.is_empty() => {
             let validity = wire_uidvalidity(results[0].1.uid_validity);
             let uids: Vec<u64> = results.iter().map(|r| r.1.uid).collect();
-            let code = format!("APPENDUID {} {}", validity, super::copy::render_uid_set(&uids));
+            let code = format!(
+                "APPENDUID {} {}",
+                validity,
+                super::copy::render_uid_set(&uids)
+            );
             tagged(tag, Status::Ok, Some(&code), "APPEND completed")
         }
-        Ok(Err(e)) if e.to_string().starts_with("mailbox not found") => tagged(tag, Status::No, Some("TRYCREATE"), "mailbox does not exist"),
+        Ok(Err(e)) if e.to_string().starts_with("mailbox not found") => {
+            tagged(tag, Status::No, Some("TRYCREATE"), "mailbox does not exist")
+        }
         _ => tagged(tag, Status::No, Some("UNAVAILABLE"), "APPEND unavailable"),
     }
 }
@@ -231,7 +276,9 @@ pub async fn handle_many(
 fn normalise_binary_message(raw: &[u8]) -> Result<Vec<u8>, ()> {
     use base64::Engine;
     use mail_parser::{MimeHeaders, PartType};
-    if !raw.contains(&0) { return Ok(raw.to_vec()); }
+    if !raw.contains(&0) {
+        return Ok(raw.to_vec());
+    }
     let message = MessageParser::default().parse(raw).ok_or(())?;
     let mut replacements: Vec<(usize, usize, Vec<u8>)> = Vec::new();
     for part in &message.parts {
@@ -239,41 +286,68 @@ fn normalise_binary_message(raw: &[u8]) -> Result<Vec<u8>, ()> {
         let body_start = part.offset_body as usize;
         let body_end = part.offset_end as usize;
         let header = raw.get(header_start..body_start).ok_or(())?;
-        if header.contains(&0) { return Err(()); }
+        if header.contains(&0) {
+            return Err(());
+        }
         let data = raw.get(body_start..body_end).ok_or(())?;
-        if !data.contains(&0) { continue; }
+        if !data.contains(&0) {
+            continue;
+        }
         let (cte, data) = match &part.body {
             PartType::Multipart(_) => continue,
-            PartType::Message(inner) => ("8bit", normalise_binary_message(inner.raw_message.as_ref())?),
+            PartType::Message(inner) => (
+                "8bit",
+                normalise_binary_message(inner.raw_message.as_ref())?,
+            ),
             _ => {
                 let cte = part.content_transfer_encoding().unwrap_or("7bit");
-                if !["7bit", "8bit", "binary"].iter().any(|s| s.eq_ignore_ascii_case(cte)) { return Err(()); }
+                if !["7bit", "8bit", "binary"]
+                    .iter()
+                    .any(|s| s.eq_ignore_ascii_case(cte))
+                {
+                    return Err(());
+                }
                 let encoded = base64::engine::general_purpose::STANDARD.encode(data);
-                let mut body = Vec::with_capacity(encoded.len()+encoded.len()/38);
+                let mut body = Vec::with_capacity(encoded.len() + encoded.len() / 38);
                 for (i, line) in encoded.as_bytes().chunks(76).enumerate() {
-                    if i != 0 { body.extend_from_slice(b"\r\n"); }
+                    if i != 0 {
+                        body.extend_from_slice(b"\r\n");
+                    }
                     body.extend_from_slice(line);
                 }
                 ("base64", body)
             }
         };
-        let mut new_header = Vec::with_capacity(header.len()+48);
+        let mut new_header = Vec::with_capacity(header.len() + 48);
         let mut cursor = header_start;
         for field in &part.headers {
-            if field.name.as_str().eq_ignore_ascii_case("Content-Transfer-Encoding") {
+            if field
+                .name
+                .as_str()
+                .eq_ignore_ascii_case("Content-Transfer-Encoding")
+            {
                 let start = field.offset_field as usize;
                 let mut end = field.offset_end as usize;
-                if start < cursor || end > body_start { return Err(()); }
-                while end < body_start && matches!(raw[end], b'\r' | b'\n') { end += 1; }
+                if start < cursor || end > body_start {
+                    return Err(());
+                }
+                while end < body_start && matches!(raw[end], b'\r' | b'\n') {
+                    end += 1;
+                }
                 new_header.extend_from_slice(&raw[cursor..start]);
                 cursor = end;
             }
         }
         new_header.extend_from_slice(&raw[cursor..body_start]);
-        if new_header.ends_with(b"\r\n\r\n") { new_header.truncate(new_header.len()-2); }
-        else if new_header.ends_with(b"\n\n") { new_header.pop(); }
-        else if !new_header.is_empty() && !new_header.ends_with(b"\n") { new_header.extend_from_slice(b"\r\n"); }
-        new_header.extend_from_slice(format!("Content-Transfer-Encoding: {cte}\r\n\r\n").as_bytes());
+        if new_header.ends_with(b"\r\n\r\n") {
+            new_header.truncate(new_header.len() - 2);
+        } else if new_header.ends_with(b"\n\n") {
+            new_header.pop();
+        } else if !new_header.is_empty() && !new_header.ends_with(b"\n") {
+            new_header.extend_from_slice(b"\r\n");
+        }
+        new_header
+            .extend_from_slice(format!("Content-Transfer-Encoding: {cte}\r\n\r\n").as_bytes());
         new_header.extend_from_slice(&data);
         replacements.push((header_start, body_end, new_header));
     }
@@ -281,13 +355,17 @@ fn normalise_binary_message(raw: &[u8]) -> Result<Vec<u8>, ()> {
     let mut output = Vec::with_capacity(raw.len());
     let mut cursor = 0;
     for (start, end, bytes) in replacements {
-        if start < cursor || end < start { return Err(()); }
+        if start < cursor || end < start {
+            return Err(());
+        }
         output.extend_from_slice(&raw[cursor..start]);
         output.extend_from_slice(&bytes);
         cursor = end;
     }
     output.extend_from_slice(&raw[cursor..]);
-    if output.contains(&0) { return Err(()); }
+    if output.contains(&0) {
+        return Err(());
+    }
     Ok(output)
 }
 

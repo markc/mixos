@@ -140,7 +140,12 @@ impl FetchAtom {
             Self::Envelope => out.push_str("ENVELOPE"),
             Self::BodyStructure => out.push_str("BODYSTRUCTURE"),
             Self::BodyBasic => out.push_str("BODY"),
-            Self::Binary { path, partial, size, .. } => {
+            Self::Binary {
+                path,
+                partial,
+                size,
+                ..
+            } => {
                 out.push_str(if *size { "BINARY.SIZE[" } else { "BINARY[" });
                 out.push_str(&part_path(path));
                 out.push(']');
@@ -187,7 +192,11 @@ impl FetchAtom {
     fn needs_body(&self) -> bool {
         match self {
             Self::Uid | Self::Flags | Self::InternalDate | Self::Rfc822Size => false,
-            Self::Envelope | Self::BodyStructure | Self::BodyBasic | Self::Body { .. } | Self::Binary { .. } => true,
+            Self::Envelope
+            | Self::BodyStructure
+            | Self::BodyBasic
+            | Self::Body { .. }
+            | Self::Binary { .. } => true,
         }
     }
 
@@ -198,7 +207,11 @@ impl FetchAtom {
     fn sets_seen(&self) -> bool {
         matches!(
             self,
-            Self::Binary { peek: false, size: false, .. } | Self::Body {
+            Self::Binary {
+                peek: false,
+                size: false,
+                ..
+            } | Self::Body {
                 peek: false,
                 rfc822_alias: None,
                 ..
@@ -218,15 +231,26 @@ impl FetchAtom {
         // handling since the `[section]<partial>` suffix is part of
         // the atom syntax (and `RFC822*` aliases lower to body atoms).
         let upper = tok.to_ascii_uppercase();
-        for (prefix, peek, size) in [("BINARY.PEEK[", true, false), ("BINARY.SIZE[", true, true), ("BINARY[", false, false)] {
+        for (prefix, peek, size) in [
+            ("BINARY.PEEK[", true, false),
+            ("BINARY.SIZE[", true, true),
+            ("BINARY[", false, false),
+        ] {
             if let Some(rest) = upper.strip_prefix(prefix) {
-                let (section, tail) = rest.split_once(']').ok_or("BINARY missing closing bracket")?;
+                let (section, tail) = rest
+                    .split_once(']')
+                    .ok_or("BINARY missing closing bracket")?;
                 let path = parse_part_path(section)?;
                 let partial = parse_partial(tail)?;
                 if size && partial.is_some() {
                     return Err("BINARY.SIZE does not accept a partial".into());
                 }
-                return Ok(Self::Binary { path, partial, peek, size });
+                return Ok(Self::Binary {
+                    path,
+                    partial,
+                    peek,
+                    size,
+                });
             }
         }
         if let Some(rest) = upper.strip_prefix("BODY.PEEK[") {
@@ -265,9 +289,7 @@ impl FetchAtom {
             "BODY.PEEK" => Err("FETCH atom BODY.PEEK requires a [section]".to_string()),
             // The macros expand to atom lists, some of which include
             // body atoms; defer until those atoms are wired.
-            "FAST" | "ALL" | "FULL" => {
-                Err(format!("FETCH macro {tok:?} must stand alone"))
-            }
+            "FAST" | "ALL" | "FULL" => Err(format!("FETCH macro {tok:?} must stand alone")),
             "MODSEQ" => Err(
                 "FETCH MODSEQ requires ENABLE CONDSTORE (not advertised in this phase)".to_string(),
             ),
@@ -340,14 +362,26 @@ fn parse_body_section(s: &str) -> Result<BodySection, String> {
         return Ok(BodySection::Whole);
     }
     if trimmed.as_bytes()[0].is_ascii_digit() {
-        let end = trimmed.find(|c: char| !c.is_ascii_digit() && c != '.').unwrap_or(trimmed.len());
+        let end = trimmed
+            .find(|c: char| !c.is_ascii_digit() && c != '.')
+            .unwrap_or(trimmed.len());
         let path_text = trimmed[..end].trim_end_matches('.');
         let path = parse_part_path(path_text)?;
         let suffix = &trimmed[end..];
-        if suffix.is_empty() && trimmed.ends_with('.') { return Err("MIME part path ends with a dot".into()); }
-        let selector = if suffix.is_empty() { None } else {
-            if !trimmed[..end].ends_with('.') { return Err("missing dot before section selector".into()); }
-            Some(Box::new(if suffix.eq_ignore_ascii_case("MIME") { BodySection::Mime } else { parse_body_section(suffix)? }))
+        if suffix.is_empty() && trimmed.ends_with('.') {
+            return Err("MIME part path ends with a dot".into());
+        }
+        let selector = if suffix.is_empty() {
+            None
+        } else {
+            if !trimmed[..end].ends_with('.') {
+                return Err("missing dot before section selector".into());
+            }
+            Some(Box::new(if suffix.eq_ignore_ascii_case("MIME") {
+                BodySection::Mime
+            } else {
+                parse_body_section(suffix)?
+            }))
         };
         return Ok(BodySection::Part(path, selector));
     }
@@ -374,19 +408,29 @@ fn parse_body_section(s: &str) -> Result<BodySection, String> {
     match kw_upper.as_str() {
         "HEADER.FIELDS" => Ok(BodySection::HeaderFields(names)),
         "HEADER.FIELDS.NOT" => Ok(BodySection::HeaderFieldsNot(names)),
-        _ => Err(format!(
-            "FETCH section {s:?} not recognised"
-        )),
+        _ => Err(format!("FETCH section {s:?} not recognised")),
     }
 }
 
 fn parse_part_path(s: &str) -> Result<Vec<usize>, String> {
-    if s.is_empty() { return Ok(Vec::new()); }
-    s.split('.').map(|n| n.parse::<usize>().ok().filter(|n| *n > 0).ok_or_else(|| "invalid MIME part number".into())).collect()
+    if s.is_empty() {
+        return Ok(Vec::new());
+    }
+    s.split('.')
+        .map(|n| {
+            n.parse::<usize>()
+                .ok()
+                .filter(|n| *n > 0)
+                .ok_or_else(|| "invalid MIME part number".into())
+        })
+        .collect()
 }
 
 fn part_path(path: &[usize]) -> String {
-    path.iter().map(usize::to_string).collect::<Vec<_>>().join(".")
+    path.iter()
+        .map(usize::to_string)
+        .collect::<Vec<_>>()
+        .join(".")
 }
 
 /// Split at the first `(` and return `(prefix-before, inside-and-closer)`.
@@ -409,7 +453,9 @@ fn parse_header_field_list(s: &str) -> Result<Vec<String>, String> {
     let mut rest = s.trim_start();
     while !rest.is_empty() {
         let (name, tail) = super::list::take_mailbox_token(rest)?;
-        if name.is_empty() || name.bytes().any(|b| b <= 0x20 || b >= 0x7f || b == b':') { return Err("invalid FETCH header field name".into()); }
+        if name.is_empty() || name.bytes().any(|b| b <= 0x20 || b >= 0x7f || b == b':') {
+            return Err("invalid FETCH header field name".into());
+        }
         names.push(name);
         rest = tail.trim_start();
     }
@@ -498,11 +544,24 @@ pub fn parse_args(args: &str, mode: FetchMode) -> Result<FetchRequest, String> {
     }
     let mut atoms = Vec::with_capacity(atom_tokens.len() + 1);
     for tok in &atom_tokens {
-        if ["FAST", "ALL", "FULL"].iter().any(|s| tok.eq_ignore_ascii_case(s)) {
-            if atoms_src.starts_with('(') { return Err("FETCH macros must stand alone".into()); }
-            atoms.extend([FetchAtom::Flags, FetchAtom::InternalDate, FetchAtom::Rfc822Size]);
-            if !tok.eq_ignore_ascii_case("FAST") { atoms.push(FetchAtom::Envelope); }
-            if tok.eq_ignore_ascii_case("FULL") { atoms.push(FetchAtom::BodyBasic); }
+        if ["FAST", "ALL", "FULL"]
+            .iter()
+            .any(|s| tok.eq_ignore_ascii_case(s))
+        {
+            if atoms_src.starts_with('(') {
+                return Err("FETCH macros must stand alone".into());
+            }
+            atoms.extend([
+                FetchAtom::Flags,
+                FetchAtom::InternalDate,
+                FetchAtom::Rfc822Size,
+            ]);
+            if !tok.eq_ignore_ascii_case("FAST") {
+                atoms.push(FetchAtom::Envelope);
+            }
+            if tok.eq_ignore_ascii_case("FULL") {
+                atoms.push(FetchAtom::BodyBasic);
+            }
             continue;
         }
         atoms.push(FetchAtom::parse(tok)?);
@@ -625,8 +684,14 @@ pub async fn handle(
 
 #[allow(clippy::too_many_arguments)]
 pub async fn handle_with_access(
-    tag: &str, args: &str, account_id: AccountId, container: ContainerId,
-    store: Arc<dyn MailStore>, mode: FetchMode, read_only: bool, view: Option<&[u64]>,
+    tag: &str,
+    args: &str,
+    account_id: AccountId,
+    container: ContainerId,
+    store: Arc<dyn MailStore>,
+    mode: FetchMode,
+    read_only: bool,
+    view: Option<&[u64]>,
 ) -> Vec<u8> {
     let req = match parse_args(args, mode) {
         Ok(r) => r,
@@ -718,26 +783,49 @@ pub async fn handle_with_access(
             None
         };
         if needs_body && body_bytes.is_none() {
-            out.extend_from_slice(tagged(tag, Status::No, Some("UNAVAILABLE"), "message unreadable").as_bytes());
+            out.extend_from_slice(
+                tagged(tag, Status::No, Some("UNAVAILABLE"), "message unreadable").as_bytes(),
+            );
             return out;
         }
 
         // Fail before changing flags or emitting a row when decoding fails.
-        if req.atoms.iter().any(|a| matches!(a, FetchAtom::Binary { .. })) {
+        if req
+            .atoms
+            .iter()
+            .any(|a| matches!(a, FetchAtom::Binary { .. }))
+        {
             let Some(bytes) = body_bytes.as_deref() else {
-                return tagged(tag, Status::No, Some("UNAVAILABLE"), "message unreadable").into_bytes();
+                return tagged(tag, Status::No, Some("UNAVAILABLE"), "message unreadable")
+                    .into_bytes();
             };
             let parsed = mail_parser::MessageParser::default().parse(bytes);
             for atom in &req.atoms {
                 if let (FetchAtom::Binary { path, .. }, Some(msg)) = (atom, parsed.as_ref())
                     && let Some((part, _, _)) = locate_part(msg, bytes, path)
-                    && matches!(part.body, mail_parser::PartType::Multipart(_) | mail_parser::PartType::Message(_)) {
-                    out.extend_from_slice(tagged(tag, Status::Bad, None, "BINARY requires a leaf MIME part").as_bytes());
+                    && matches!(
+                        part.body,
+                        mail_parser::PartType::Multipart(_) | mail_parser::PartType::Message(_)
+                    )
+                {
+                    out.extend_from_slice(
+                        tagged(tag, Status::Bad, None, "BINARY requires a leaf MIME part")
+                            .as_bytes(),
+                    );
                     return out;
                 }
                 if let (FetchAtom::Binary { path, .. }, Some(msg)) = (atom, parsed.as_ref())
-                    && binary_bytes(msg, bytes, path).is_err() {
-                    out.extend_from_slice(tagged(tag, Status::No, Some("UNKNOWN-CTE"), "cannot decode MIME part").as_bytes());
+                    && binary_bytes(msg, bytes, path).is_err()
+                {
+                    out.extend_from_slice(
+                        tagged(
+                            tag,
+                            Status::No,
+                            Some("UNKNOWN-CTE"),
+                            "cannot decode MIME part",
+                        )
+                        .as_bytes(),
+                    );
                     return out;
                 }
             }
@@ -785,7 +873,15 @@ pub async fn handle_with_access(
                         item_id = %handle.id.0,
                         "FETCH \\Seen side-effect failed; emitting pre-FETCH flags"
                     );
-                    out.extend_from_slice(tagged(tag, Status::No, Some("UNAVAILABLE"), "cannot update Seen flag").as_bytes());
+                    out.extend_from_slice(
+                        tagged(
+                            tag,
+                            Status::No,
+                            Some("UNAVAILABLE"),
+                            "cannot update Seen flag",
+                        )
+                        .as_bytes(),
+                    );
                     return out;
                 }
                 Err(e) => {
@@ -794,7 +890,15 @@ pub async fn handle_with_access(
                         item_id = %handle.id.0,
                         "FETCH \\Seen spawn_blocking panicked; emitting pre-FETCH flags"
                     );
-                    out.extend_from_slice(tagged(tag, Status::No, Some("UNAVAILABLE"), "cannot update Seen flag").as_bytes());
+                    out.extend_from_slice(
+                        tagged(
+                            tag,
+                            Status::No,
+                            Some("UNAVAILABLE"),
+                            "cannot update Seen flag",
+                        )
+                        .as_bytes(),
+                    );
                     return out;
                 }
             }
@@ -803,7 +907,10 @@ pub async fn handle_with_access(
         };
 
         let mut atoms = req.atoms.clone();
-        if needs_seen && effective_handle.keywords != handle.keywords && !atoms.contains(&FetchAtom::Flags) {
+        if needs_seen
+            && effective_handle.keywords != handle.keywords
+            && !atoms.contains(&FetchAtom::Flags)
+        {
             atoms.push(FetchAtom::Flags);
         }
         out.extend_from_slice(&render_fetch_row(
@@ -880,7 +987,13 @@ fn render_fetch_row(
             FetchAtom::BodyStructure | FetchAtom::BodyBasic => match (parsed.as_ref(), body) {
                 (Some(m), Some(bytes)) => {
                     let mut structure = String::new();
-                    render_part(&mut structure, m, 0, bytes, matches!(atom, FetchAtom::BodyStructure));
+                    render_part(
+                        &mut structure,
+                        m,
+                        0,
+                        bytes,
+                        matches!(atom, FetchAtom::BodyStructure),
+                    );
                     s.extend_from_slice(structure.as_bytes())
                 }
                 // Same rationale as ENVELOPE fallback: bare NIL is
@@ -900,8 +1013,16 @@ fn render_fetch_row(
                 // <0>` is a valid value for an empty section).
                 _ => s.extend_from_slice(b"{0}\r\n"),
             },
-            FetchAtom::Binary { path, partial, size, .. } => {
-                let decoded = parsed.as_ref().and_then(|m| binary_bytes(m, body.unwrap_or_default(), path).ok()).flatten();
+            FetchAtom::Binary {
+                path,
+                partial,
+                size,
+                ..
+            } => {
+                let decoded = parsed
+                    .as_ref()
+                    .and_then(|m| binary_bytes(m, body.unwrap_or_default(), path).ok())
+                    .flatten();
                 match decoded {
                     Some(bytes) if *size => s.extend_from_slice(bytes.len().to_string().as_bytes()),
                     Some(bytes) => {
@@ -1147,7 +1268,13 @@ fn render_bodystructure(message: &mail_parser::Message<'_>, raw: &[u8]) -> Strin
 /// inner `Message` (whose own `parts[0]` is its root), since
 /// `mail_parser`'s flat-vec model embeds nested messages by value
 /// rather than by index.
-fn render_part(out: &mut String, msg: &mail_parser::Message<'_>, idx: usize, raw: &[u8], extensions: bool) {
+fn render_part(
+    out: &mut String,
+    msg: &mail_parser::Message<'_>,
+    idx: usize,
+    raw: &[u8],
+    extensions: bool,
+) {
     use mail_parser::{MimeHeaders, PartType};
     let Some(part) = msg.parts.get(idx) else {
         // Defensive: an index past the end can only happen if a
@@ -1207,7 +1334,9 @@ fn render_part(out: &mut String, msg: &mail_parser::Message<'_>, idx: usize, raw
             out.push(' ');
             out.push_str(&count_lines(raw, part.offset_body, part.offset_end).to_string());
             // body-ext-1part
-            if extensions { render_ext_1part(out, part); }
+            if extensions {
+                render_ext_1part(out, part);
+            }
             out.push(')');
         }
         PartType::Message(inner) => {
@@ -1245,7 +1374,9 @@ fn render_part(out: &mut String, msg: &mail_parser::Message<'_>, idx: usize, raw
             // is still measured in the outer `raw` slice — that range
             // is what the wrapper's offset_body / offset_end refer to.
             out.push_str(&count_lines(raw, part.offset_body, part.offset_end).to_string());
-            if extensions { render_ext_1part(out, part); }
+            if extensions {
+                render_ext_1part(out, part);
+            }
             out.push(')');
         }
         PartType::Binary(_) | PartType::InlineBinary(_) => {
@@ -1260,7 +1391,9 @@ fn render_part(out: &mut String, msg: &mail_parser::Message<'_>, idx: usize, raw
                 None => ("APPLICATION".to_string(), "OCTET-STREAM".to_string()),
             };
             render_one_part_header(out, part, &type_, &subtype, raw);
-            if extensions { render_ext_1part(out, part); }
+            if extensions {
+                render_ext_1part(out, part);
+            }
             out.push(')');
         }
     }
@@ -1435,9 +1568,14 @@ fn render_body_section(
     raw: &[u8],
 ) -> Vec<u8> {
     if let BodySection::Part(path, selector) = section {
-        let Some((part, _, _)) = locate_part(msg, raw, path) else { return b"NIL".to_vec(); };
-        if selector.as_deref().is_some_and(|s| !matches!(s, BodySection::Mime))
-            && !matches!(part.body, mail_parser::PartType::Message(_)) {
+        let Some((part, _, _)) = locate_part(msg, raw, path) else {
+            return b"NIL".to_vec();
+        };
+        if selector
+            .as_deref()
+            .is_some_and(|s| !matches!(s, BodySection::Mime))
+            && !matches!(part.body, mail_parser::PartType::Message(_))
+        {
             return b"NIL".to_vec();
         }
     }
@@ -1466,14 +1604,26 @@ fn body_section_bytes<'a>(
     let body_end = (root.offset_end as usize).min(raw_len);
     match section {
         BodySection::Part(path, selector) => {
-            let Some((part, _, part_raw)) = locate_part(msg, raw, path) else { return Cow::Borrowed(&[]); };
+            let Some((part, _, part_raw)) = locate_part(msg, raw, path) else {
+                return Cow::Borrowed(&[]);
+            };
             match selector.as_deref() {
-                None => Cow::Borrowed(part_raw.get(part.offset_body as usize..part.offset_end as usize).unwrap_or_default()),
-                Some(BodySection::Mime) => Cow::Borrowed(part_raw.get(part.offset_header as usize..part.offset_body as usize).unwrap_or_default()),
+                None => Cow::Borrowed(
+                    part_raw
+                        .get(part.offset_body as usize..part.offset_end as usize)
+                        .unwrap_or_default(),
+                ),
+                Some(BodySection::Mime) => Cow::Borrowed(
+                    part_raw
+                        .get(part.offset_header as usize..part.offset_body as usize)
+                        .unwrap_or_default(),
+                ),
                 Some(selector) => match &part.body {
-                    mail_parser::PartType::Message(inner) => body_section_bytes(selector, inner, inner.raw_message.as_ref()),
+                    mail_parser::PartType::Message(inner) => {
+                        body_section_bytes(selector, inner, inner.raw_message.as_ref())
+                    }
                     _ => Cow::Borrowed(&[]),
-                }
+                },
             }
         }
         BodySection::Mime => Cow::Borrowed(&[]),
@@ -1537,69 +1687,125 @@ fn body_section_bytes<'a>(
 /// Traverse the same Multipart child vectors and Message roots as render_part.
 /// Offsets always belong to the returned message's raw buffer.
 fn locate_part<'a>(
-    msg: &'a mail_parser::Message<'_>, raw: &'a [u8], path: &[usize],
-) -> Option<(&'a mail_parser::MessagePart<'a>, &'a mail_parser::Message<'a>, &'a [u8])> {
+    msg: &'a mail_parser::Message<'_>,
+    raw: &'a [u8],
+    path: &[usize],
+) -> Option<(
+    &'a mail_parser::MessagePart<'a>,
+    &'a mail_parser::Message<'a>,
+    &'a [u8],
+)> {
     let mut msg = msg;
     let mut raw = raw;
     let mut idx = 0;
     for (depth, n) in path.iter().enumerate() {
-        if depth > 64 { return None; }
+        if depth > 64 {
+            return None;
+        }
         let part = msg.parts.get(idx)?;
         match &part.body {
-            mail_parser::PartType::Multipart(children) => idx = *children.get(n.checked_sub(1)?)? as usize,
+            mail_parser::PartType::Multipart(children) => {
+                idx = *children.get(n.checked_sub(1)?)? as usize
+            }
             mail_parser::PartType::Message(inner) if depth > 0 => {
                 msg = inner;
                 raw = inner.raw_message.as_ref();
                 idx = match &inner.parts.first()?.body {
-                    mail_parser::PartType::Multipart(children) => *children.get(n.checked_sub(1)?)? as usize,
+                    mail_parser::PartType::Multipart(children) => {
+                        *children.get(n.checked_sub(1)?)? as usize
+                    }
                     _ if *n == 1 => 0,
                     _ => return None,
                 };
             }
-            _ if depth == 0 && *n == 1 => {},
+            _ if depth == 0 && *n == 1 => {}
             _ => return None,
         }
     }
     Some((msg.parts.get(idx)?, msg, raw))
 }
 
-fn binary_bytes(msg: &mail_parser::Message<'_>, raw: &[u8], path: &[usize]) -> Result<Option<Vec<u8>>, ()> {
-    use mail_parser::MimeHeaders;
+fn binary_bytes(
+    msg: &mail_parser::Message<'_>,
+    raw: &[u8],
+    path: &[usize],
+) -> Result<Option<Vec<u8>>, ()> {
     use base64::Engine;
-    let Some((part, _, raw)) = locate_part(msg, raw, path) else { return Ok(None); };
-    let data = raw.get(part.offset_body as usize..part.offset_end as usize).ok_or(())?;
+    use mail_parser::MimeHeaders;
+    let Some((part, _, raw)) = locate_part(msg, raw, path) else {
+        return Ok(None);
+    };
+    let data = raw
+        .get(part.offset_body as usize..part.offset_end as usize)
+        .ok_or(())?;
     let cte = part.content_transfer_encoding().unwrap_or("7bit");
     let finish = |data: Vec<u8>| {
-        if matches!(part.body, mail_parser::PartType::Text(_) | mail_parser::PartType::Html(_)) {
+        if matches!(
+            part.body,
+            mail_parser::PartType::Text(_) | mail_parser::PartType::Html(_)
+        ) {
             let mut normal = Vec::with_capacity(data.len());
             let mut i = 0;
             while i < data.len() {
                 if data[i] == b'\r' {
                     normal.extend_from_slice(b"\r\n");
-                    if data.get(i+1) == Some(&b'\n') { i += 1; }
-                } else if data[i] == b'\n' { normal.extend_from_slice(b"\r\n"); }
-                else { normal.push(data[i]); }
+                    if data.get(i + 1) == Some(&b'\n') {
+                        i += 1;
+                    }
+                } else if data[i] == b'\n' {
+                    normal.extend_from_slice(b"\r\n");
+                } else {
+                    normal.push(data[i]);
+                }
                 i += 1;
             }
             Some(normal)
-        } else { Some(data) }
+        } else {
+            Some(data)
+        }
     };
-    if ["7bit", "8bit", "binary"].iter().any(|s| cte.eq_ignore_ascii_case(s)) {
+    if ["7bit", "8bit", "binary"]
+        .iter()
+        .any(|s| cte.eq_ignore_ascii_case(s))
+    {
         return Ok(finish(data.to_vec()));
     }
     if cte.eq_ignore_ascii_case("base64") {
-        let compact: Vec<u8> = data.iter().copied().filter(|b| !b.is_ascii_whitespace()).collect();
-        return base64::engine::general_purpose::STANDARD.decode(compact).map(finish).map_err(|_| ());
+        let compact: Vec<u8> = data
+            .iter()
+            .copied()
+            .filter(|b| !b.is_ascii_whitespace())
+            .collect();
+        return base64::engine::general_purpose::STANDARD
+            .decode(compact)
+            .map(finish)
+            .map_err(|_| ());
     }
     if cte.eq_ignore_ascii_case("quoted-printable") {
         let mut out = Vec::with_capacity(data.len());
         let mut i = 0;
         while i < data.len() {
-            if data[i] != b'=' { out.push(data[i]); i += 1; continue; }
-            if data.get(i+1..i+3) == Some(b"\r\n") { i += 3; continue; }
-            if data.get(i+1) == Some(&b'\n') { i += 2; continue; }
-            let hi = data.get(i+1).and_then(|b| (*b as char).to_digit(16)).ok_or(())?;
-            let lo = data.get(i+2).and_then(|b| (*b as char).to_digit(16)).ok_or(())?;
+            if data[i] != b'=' {
+                out.push(data[i]);
+                i += 1;
+                continue;
+            }
+            if data.get(i + 1..i + 3) == Some(b"\r\n") {
+                i += 3;
+                continue;
+            }
+            if data.get(i + 1) == Some(&b'\n') {
+                i += 2;
+                continue;
+            }
+            let hi = data
+                .get(i + 1)
+                .and_then(|b| (*b as char).to_digit(16))
+                .ok_or(())?;
+            let lo = data
+                .get(i + 2)
+                .and_then(|b| (*b as char).to_digit(16))
+                .ok_or(())?;
             out.push((hi * 16 + lo) as u8);
             i += 3;
         }
@@ -1859,7 +2065,13 @@ mod tests {
     #[test]
     fn parse_args_expands_macros_only_when_standalone() {
         for (m, count) in [("FAST", 3), ("ALL", 4), ("FULL", 5)] {
-            assert_eq!(parse_args(&format!("1 {m}"), FetchMode::Msn).unwrap().atoms.len(), count);
+            assert_eq!(
+                parse_args(&format!("1 {m}"), FetchMode::Msn)
+                    .unwrap()
+                    .atoms
+                    .len(),
+                count
+            );
             assert!(parse_args(&format!("1 ({m} UID)"), FetchMode::Msn).is_err());
         }
     }
