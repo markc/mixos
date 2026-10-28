@@ -5386,13 +5386,17 @@ dependencies = [
 name = "maild-auth"
 version = "0.1.2"
 dependencies = [
+ "base64 0.22.1",
  "bus",
  "mail-auth",
+ "rsa",
  "rustls-pki-types",
  "serde",
+ "sha2 0.10.9",
  "thiserror 2.0.20",
  "tokio",
  "tracing",
+ "x509-parser",
 ]
 
 [[package]]

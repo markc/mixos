@@ -58,7 +58,8 @@ pub fn generate(spec: KeySpec) -> Result<DkimKeyMaterial> {
             let private_pem = pem_encode("RSA PRIVATE KEY", pair.private_key());
             let key = rsa::RsaPublicKey::from_pkcs1_der(pair.public_key())
                 .map_err(|e| Error::KeyLoad(format!("RSA public key: {e}")))?;
-            let public = key.to_public_key_der()
+            let public = key
+                .to_public_key_der()
                 .map_err(|e| Error::KeyLoad(format!("RSA SPKI: {e}")))?;
             let public_b64 = base64_encode(public.as_bytes());
             let dns_txt_record = format!("v=DKIM1; k=rsa; p={public_b64}");
@@ -97,8 +98,12 @@ pub fn public_record(pem: &[u8]) -> Result<String> {
         };
         let key = mail_auth::common::crypto::Ed25519Key::from_pkcs8_maybe_unchecked_der(
             der.secret_pkcs8_der(),
-        ).map_err(|e| Error::KeyLoad(format!("Ed25519 private key: {e}")))?;
-        return Ok(format!("v=DKIM1; k=ed25519; p={}", base64_encode(&key.public_key())));
+        )
+        .map_err(|e| Error::KeyLoad(format!("Ed25519 private key: {e}")))?;
+        return Ok(format!(
+            "v=DKIM1; k=ed25519; p={}",
+            base64_encode(&key.public_key())
+        ));
     }
     let key = match der {
         PrivateKeyDer::Pkcs1(der) => rsa::RsaPrivateKey::from_pkcs1_der(der.secret_pkcs1_der())
@@ -107,9 +112,14 @@ pub fn public_record(pem: &[u8]) -> Result<String> {
             .map_err(|e| Error::KeyLoad(e.to_string()))?,
         _ => return Err(Error::KeyLoad("unsupported RSA private key".into())),
     };
-    let public = key.to_public_key().to_public_key_der()
+    let public = key
+        .to_public_key()
+        .to_public_key_der()
         .map_err(|e| Error::KeyLoad(e.to_string()))?;
-    Ok(format!("v=DKIM1; k=rsa; p={}", base64_encode(public.as_bytes())))
+    Ok(format!(
+        "v=DKIM1; k=rsa; p={}",
+        base64_encode(public.as_bytes())
+    ))
 }
 
 /// Compare the published key bytes and algorithm; TXT chunks are joined by DNS.
@@ -120,16 +130,30 @@ pub fn record_matches(pem: &[u8], txt: &str) -> Result<bool> {
         let mut tags = std::collections::BTreeMap::new();
         for tag in txt.split(';').map(str::trim).filter(|s| !s.is_empty()) {
             let (name, value) = tag.split_once('=')?;
-            if tags.insert(name.trim(), value.trim()).is_some() { return None; }
+            if tags.insert(name.trim(), value.trim()).is_some() {
+                return None;
+            }
         }
         Some(tags)
     }
     let expected = public_record(pem)?;
-    let Some(want) = tags(&expected) else { unreachable!() };
-    let Some(got) = tags(txt) else { return Ok(false) };
-    let decode = |value: Option<&&str>| value.and_then(|s| {
-        STANDARD.decode(s.chars().filter(|c| !c.is_ascii_whitespace()).collect::<String>()).ok()
-    });
+    let Some(want) = tags(&expected) else {
+        unreachable!()
+    };
+    let Some(got) = tags(txt) else {
+        return Ok(false);
+    };
+    let decode = |value: Option<&&str>| {
+        value.and_then(|s| {
+            STANDARD
+                .decode(
+                    s.chars()
+                        .filter(|c| !c.is_ascii_whitespace())
+                        .collect::<String>(),
+                )
+                .ok()
+        })
+    };
     Ok(got.get("v").is_none_or(|v| *v == "DKIM1")
         && got.get("k").copied().unwrap_or("rsa") == want["k"]
         && decode(got.get("p")).is_some_and(|key| Some(key) == decode(want.get("p"))))
@@ -191,22 +215,29 @@ mod tests {
     #[test]
     fn printed_rsa_spki_parses_independently_and_verifies_generated_signature() {
         use base64::{Engine, engine::general_purpose::STANDARD};
-        use rsa::{pkcs1::DecodeRsaPrivateKey, pkcs8::DecodePublicKey,
-            signature::{Signer as _, Verifier as _}};
+        use rsa::{
+            pkcs1::DecodeRsaPrivateKey,
+            pkcs8::DecodePublicKey,
+            signature::{Signer as _, Verifier as _},
+        };
         use x509_parser::prelude::FromDer;
         let mat = generate(KeySpec::Rsa { bits: 2048 }).unwrap();
         let encoded = mat.dns_txt_record.split("p=").nth(1).unwrap();
         let der = STANDARD.decode(encoded).unwrap();
         let (remaining, parsed) = x509_parser::x509::SubjectPublicKeyInfo::from_der(&der).unwrap();
         assert!(remaining.is_empty());
-        assert_eq!(parsed.algorithm.algorithm.to_id_string(), "1.2.840.113549.1.1.1");
+        assert_eq!(
+            parsed.algorithm.algorithm.to_id_string(),
+            "1.2.840.113549.1.1.1"
+        );
         assert!(parsed.parsed().is_ok());
         let private = rsa::RsaPrivateKey::from_pkcs1_pem(&mat.private_pem).unwrap();
         let signer = rsa::pkcs1v15::SigningKey::<sha2::Sha256>::new_unprefixed(private);
         let signature = signer.sign(b"generated DKIM key round trip");
         let public = rsa::RsaPublicKey::from_public_key_der(&der).unwrap();
         rsa::pkcs1v15::VerifyingKey::<sha2::Sha256>::new_unprefixed(public)
-            .verify(b"generated DKIM key round trip", &signature).unwrap();
+            .verify(b"generated DKIM key round trip", &signature)
+            .unwrap();
         assert!(record_matches(mat.private_pem.as_bytes(), &mat.dns_txt_record).unwrap());
         let wrong = generate(KeySpec::Rsa { bits: 2048 }).unwrap();
         assert!(!record_matches(mat.private_pem.as_bytes(), &wrong.dns_txt_record).unwrap());
@@ -256,7 +287,13 @@ mod tests {
         assert!(mat.private_pem.starts_with("-----BEGIN PRIVATE KEY-----"));
         assert!(mat.dns_txt_record.starts_with("v=DKIM1; k=ed25519; p="));
         use base64::Engine;
-        assert_eq!(base64::engine::general_purpose::STANDARD.decode(&mat.public_b64).unwrap().len(), 32);
+        assert_eq!(
+            base64::engine::general_purpose::STANDARD
+                .decode(&mat.public_b64)
+                .unwrap()
+                .len(),
+            32
+        );
         assert!(record_matches(mat.private_pem.as_bytes(), &mat.dns_txt_record).unwrap());
 
         let cfg = DkimSignerConfig {

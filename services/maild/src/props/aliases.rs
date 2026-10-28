@@ -63,7 +63,9 @@ pub fn schema() -> PropertySchema {
         },
         FieldSchema {
             name: "targets".into(),
-            ty: FieldType::List { item: Box::new(FieldType::Email) },
+            ty: FieldType::List {
+                item: Box::new(FieldType::Email),
+            },
             default: Some(PropValue::List(Vec::new())),
             secret: false,
             help: "Local delivery targets; empty preserves the legacy target field".into(),
@@ -214,53 +216,56 @@ impl HookHandler for AliasesHooks {
                 }
                 None => return Err(HookError::validation("target is required")),
             };
-            let targets = targets_from_value(new).map_err(|e| HookError::validation(e.to_string()))?;
+            let targets =
+                targets_from_value(new).map_err(|e| HookError::validation(e.to_string()))?;
             if targets.first() != Some(&target) {
-                return Err(HookError::validation("target must equal the first targets entry"));
+                return Err(HookError::validation(
+                    "target must equal the first targets entry",
+                ));
             }
             let mut unique = std::collections::BTreeSet::new();
             for target in targets {
-            Self::validate_email_shape("target", &target)?;
-            if target != canon(&target) {
-                return Err(HookError::validation(format!(
-                    "target {target:?} is not canonical (expected {:?})",
-                    canon(&target)
-                )));
-            }
+                Self::validate_email_shape("target", &target)?;
+                if target != canon(&target) {
+                    return Err(HookError::validation(format!(
+                        "target {target:?} is not canonical (expected {:?})",
+                        canon(&target)
+                    )));
+                }
 
-            // Self-alias: a row that points to itself is a no-op loop.
-            if ctx.key.key == target {
-                return Err(HookError::validation(
-                    "alias address and target are identical (self-alias)",
-                ));
-            }
+                // Self-alias: a row that points to itself is a no-op loop.
+                if ctx.key.key == target {
+                    return Err(HookError::validation(
+                        "alias address and target are identical (self-alias)",
+                    ));
+                }
 
-            // Account/alias disjointness. Without these an alias could
-            // SHADOW a real account — `mc@` could be both a live account
-            // and an alias `mc@ → eve@`, so the resolve-before-lookup
-            // paths would deliver mc@'s mail to eve@ AND let eve@ submit
-            // `From: mc@`. So:
-            //   * the alias KEY must NOT be a real account (no shadowing);
-            //   * the TARGET MUST be a real account (the contract — mail
-            //     to the alias has somewhere live to land).
-            // (The reciprocal "an account email must not be an alias key"
-            // is enforced on the accounts side in `props::accounts`.)
-            if self.account_exists(&ctx.key.key).await? {
-                return Err(HookError::validation(format!(
-                    "alias address {:?} is already a real account — an address cannot be \
+                // Account/alias disjointness. Without these an alias could
+                // SHADOW a real account — `mc@` could be both a live account
+                // and an alias `mc@ → eve@`, so the resolve-before-lookup
+                // paths would deliver mc@'s mail to eve@ AND let eve@ submit
+                // `From: mc@`. So:
+                //   * the alias KEY must NOT be a real account (no shadowing);
+                //   * the TARGET MUST be a real account (the contract — mail
+                //     to the alias has somewhere live to land).
+                // (The reciprocal "an account email must not be an alias key"
+                // is enforced on the accounts side in `props::accounts`.)
+                if self.account_exists(&ctx.key.key).await? {
+                    return Err(HookError::validation(format!(
+                        "alias address {:?} is already a real account — an address cannot be \
                      both an account and an alias (it would shadow the account's mail)",
-                    ctx.key.key
-                )));
-            }
-            if !self.account_exists(&target).await? {
-                return Err(HookError::validation(format!(
-                    "alias target {target:?} is not a maild.accounts row — an alias must \
+                        ctx.key.key
+                    )));
+                }
+                if !self.account_exists(&target).await? {
+                    return Err(HookError::validation(format!(
+                        "alias target {target:?} is not a maild.accounts row — an alias must \
                      point to a real local account; off-site forwarding is not permitted"
-                )));
-            }
-            if !unique.insert(target) {
-                return Err(HookError::validation("duplicate alias target"));
-            }
+                    )));
+                }
+                if !unique.insert(target) {
+                    return Err(HookError::validation("duplicate alias target"));
+                }
             }
 
             // Cross-namespace hooks can race with account creation/removal.
@@ -301,18 +306,26 @@ pub fn register(
 /// follows the target onward, so a (racily-committed) cyclic/chained row
 /// can never loop or fan out here.
 pub async fn resolve_alias(runtime: &Arc<Runtime>, addr: &str) -> Result<Option<String>> {
-    Ok(resolve_targets(runtime, addr).await?.and_then(|targets| targets.into_iter().next()))
+    Ok(resolve_targets(runtime, addr)
+        .await?
+        .and_then(|targets| targets.into_iter().next()))
 }
 
 fn targets_from_value(value: &PropValue) -> Result<Vec<String>> {
-    let obj = value.as_object().ok_or_else(|| anyhow::anyhow!("invalid alias record"))?;
+    let obj = value
+        .as_object()
+        .ok_or_else(|| anyhow::anyhow!("invalid alias record"))?;
     if let Some(PropValue::List(targets)) = obj.get("targets")
-        && !targets.is_empty() {
+        && !targets.is_empty()
+    {
         anyhow::ensure!(targets.len() <= 32, "alias target count exceeds 32");
-        return targets.iter().map(|v| match v {
-            PropValue::String(s) => Ok(s.clone()),
-            _ => Err(anyhow::anyhow!("alias targets must be email strings")),
-        }).collect();
+        return targets
+            .iter()
+            .map(|v| match v {
+                PropValue::String(s) => Ok(s.clone()),
+                _ => Err(anyhow::anyhow!("alias targets must be email strings")),
+            })
+            .collect();
     }
     match obj.get("target") {
         Some(PropValue::String(s)) => Ok(vec![s.clone()]),
@@ -367,9 +380,17 @@ pub async fn recipient_accounts(
     let mut accounts = Vec::new();
     if let Some(targets) = targets {
         for target in targets {
-            let account = crate::db::account::get_by_email(conn, &target).await?
-                .ok_or_else(|| anyhow::anyhow!("alias target {target} is no longer a local mailbox; forwarding refused"))?;
-            if !accounts.iter().any(|existing: &crate::db::account::Account| existing.id == account.id) {
+            let account = crate::db::account::get_by_email(conn, &target)
+                .await?
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "alias target {target} is no longer a local mailbox; forwarding refused"
+                    )
+                })?;
+            if !accounts
+                .iter()
+                .any(|existing: &crate::db::account::Account| existing.id == account.id)
+            {
                 accounts.push(account);
             }
         }
@@ -401,7 +422,9 @@ pub async fn sender_authorized(runtime: &Arc<Runtime>, from: &str, authed: &str)
     if from_c == authed_c {
         return true;
     }
-    if from_c.starts_with('@') { return false; }
+    if from_c.starts_with('@') {
+        return false;
+    }
     matches!(resolve_targets(runtime, &from_c).await, Ok(Some(targets)) if targets.contains(&authed_c))
 }
 
