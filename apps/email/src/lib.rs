@@ -143,8 +143,7 @@ pub fn run(args: &Args) -> Result<(), String> {
         toolkit::titlebar::viewport("dev.mixos.email.compose-1", &label("compose-title"))
             .with_inner_size([900.0, 700.0])
     } else {
-        toolkit::titlebar::viewport(APP_ID, &label("title"))
-            .with_inner_size([1200.0, 780.0])
+        toolkit::titlebar::viewport(APP_ID, &label("title")).with_inner_size([1200.0, 780.0])
     };
     if args.compose {
         let store = toolkit::saved::Store::<serde_json::Value>::load(

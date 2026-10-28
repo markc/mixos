@@ -110,8 +110,7 @@ fn run(settings: &Settings) -> Result<(), String> {
     let options = eframe::NativeOptions {
         // Client-side decorations: the toolkit title bar is the window frame.
         viewport: saved.window.viewport(
-            toolkit::titlebar::viewport(APP_ID, &label("title"))
-                .with_inner_size([1100.0, 760.0]),
+            toolkit::titlebar::viewport(APP_ID, &label("title")).with_inner_size([1100.0, 760.0]),
         ),
         ..eframe::NativeOptions::default()
     };

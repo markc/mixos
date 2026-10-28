@@ -235,8 +235,8 @@ impl Dialog {
                 // sizing the body. A small viewport must clamp both bounds:
                 // egui::Resize cannot accept a minimum above its maximum.
                 let body_max = if compact {
-                    let footer = tokens.dialog_above_buttons as f32
-                        + Chrome::of(ctx).metrics.push_height;
+                    let footer =
+                        tokens.dialog_above_buttons as f32 + Chrome::of(ctx).metrics.push_height;
                     let header = title.rect.height()
                         + tokens.dialog_above_rule as f32
                         + tokens.dialog_below_rule as f32;
@@ -251,7 +251,10 @@ impl Dialog {
                             .id_salt(id.with("compact-body"))
                             .max_height(body_max.y)
                             .auto_shrink(false)
-                            .show(ui, body)
+                            .show(ui, |ui| {
+                                ui.set_max_size(body_max);
+                                body(ui)
+                            })
                             .inner
                     } else {
                         body(ui)

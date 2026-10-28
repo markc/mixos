@@ -189,7 +189,9 @@ fn minimum_window_renders() {
         let strings = strings();
         let mut h = Harness::builder()
             .with_size(egui::Vec2::from(toolkit::window::MIN_SIZE))
-            .build_ui(move |ui| { let _ = view(ui, &engine, &registry, &strings); });
+            .build_ui(move |ui| {
+                let _ = view(ui, &engine, &registry, &strings);
+            });
         toolkit::install(&h.ctx, &Theme::embedded());
         h.run_steps(4);
     }

@@ -210,12 +210,20 @@ pub fn view(
         }
     }
     let compact = window.x < 640.0;
-    let total = if compact { ui.available_height() } else { ui.available_width() };
+    let total = if compact {
+        ui.available_height()
+    } else {
+        ui.available_width()
+    };
     let (_, changed) = toolkit::saved::widgets::panel(
         ui,
         "services",
-        (if compact { egui::Panel::top("services") } else { egui::Panel::left("services") })
-            .frame(bars::dock_frame(ui.ctx())),
+        (if compact {
+            egui::Panel::top("services")
+        } else {
+            egui::Panel::left("services")
+        })
+        .frame(bars::dock_frame(ui.ctx())),
         total,
         engine.ui.split,
         inspector::engine::SERVICES_SPLIT,

@@ -416,11 +416,15 @@ pub fn view(
             ui.label(&state.status);
         }
         if let Some(compose) = &state.compose {
-            egui::ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
-                ui.push_id(ctx.viewport_id(), |ui| {
-                    crate::view::compose::form(ui, compose, state, palette, &mut events)
+            let available = ui.available_size();
+            egui::ScrollArea::vertical()
+                .auto_shrink(false)
+                .show(ui, |ui| {
+                    ui.set_max_height(available.y);
+                    ui.push_id(ctx.viewport_id(), |ui| {
+                        crate::view::compose::form(ui, compose, state, palette, &mut events)
+                    });
                 });
-            });
         } else if state.documents.opening() {
             ui.weak(crate::label("loading"));
         } else {

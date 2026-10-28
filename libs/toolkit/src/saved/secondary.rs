@@ -331,23 +331,42 @@ mod tests {
     fn saved_size_is_initial_only_and_never_becomes_a_minimum() {
         let ctx = egui::Context::default();
         ctx.set_embed_viewports(false);
-        install(&ctx, "example", None, [("child".into(), Frame {
-            size: Some([900.0, 700.0]),
-            ..Default::default()
-        })].into());
+        install(
+            &ctx,
+            "example",
+            None,
+            [(
+                "child".into(),
+                Frame {
+                    size: Some([900.0, 700.0]),
+                    ..Default::default()
+                },
+            )]
+            .into(),
+        );
         let original = || egui::ViewportBuilder::default().with_inner_size([760.0, 560.0]);
         let first = builder(&ctx, "example", "child", original());
         assert_eq!(first.inner_size, Some(egui::vec2(900.0, 700.0)));
-        assert_eq!(first.min_inner_size, Some(egui::Vec2::from(crate::window::MIN_SIZE)));
+        assert_eq!(
+            first.min_inner_size,
+            Some(egui::Vec2::from(crate::window::MIN_SIZE))
+        );
         let next = builder(&ctx, "example", "child", original());
         assert_eq!(next.inner_size, None);
         assert_eq!(next.maximized, None);
         assert_eq!(next.min_inner_size, first.min_inner_size);
         let mut live = first;
         let (commands, _) = live.patch(next);
-        assert!(!commands.iter().any(|c| matches!(c, egui::ViewportCommand::InnerSize(_))));
+        assert!(
+            !commands
+                .iter()
+                .any(|c| matches!(c, egui::ViewportCommand::InnerSize(_)))
+        );
         finish(&ctx, "example", "child");
-        assert_eq!(builder(&ctx, "example", "child", original()).inner_size, Some(egui::vec2(900.0, 700.0)));
+        assert_eq!(
+            builder(&ctx, "example", "child", original()).inner_size,
+            Some(egui::vec2(900.0, 700.0))
+        );
     }
 
     #[test]

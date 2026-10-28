@@ -434,81 +434,95 @@ fn performance(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
     if ui.available_width() < 640.0 {
         egui::Panel::top("compact-sections").show(ui, |ui| {
             let keys = model::sections(Some(s));
-            let names: Vec<_> = keys.iter().map(|key| section_text(s, key).map(|v| v.0).unwrap_or_default()).collect();
-            let mut selected = keys.iter().position(|key| *key == engine.ui.section).unwrap_or(0);
-            if toolkit::combo::show(ui, "compact-section", &mut selected, &names, Some(ui.available_width())).changed() {
+            let names: Vec<_> = keys
+                .iter()
+                .map(|key| section_text(s, key).map(|v| v.0).unwrap_or_default())
+                .collect();
+            let mut selected = keys
+                .iter()
+                .position(|key| *key == engine.ui.section)
+                .unwrap_or(0);
+            if toolkit::combo::show(
+                ui,
+                "compact-section",
+                &mut selected,
+                &names,
+                Some(ui.available_width()),
+            )
+            .changed()
+            {
                 events.push(UiEvent::Section(keys[selected].clone()));
             }
         });
     } else {
-    egui::Panel::left("sections")
-        .resizable(false)
-        .default_size(250.0)
-        .frame(bars::dock_frame(ui.ctx()))
-        .show(ui, |ui| {
-            ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
-                for key in model::sections(Some(s)) {
-                    let Some((title, figure, kind)) = section_text(s, &key) else {
-                        continue;
-                    };
-                    let selected = engine.ui.section == key;
-                    let response = ui
-                        .horizontal(|ui| {
-                            let (values, max) = section_series(engine, &key);
-                            let format = |index, value, age| {
-                                let name = if key == "tcp" {
-                                    label(if index == 0 { "receive" } else { "send" })
-                                } else {
-                                    String::new()
+        egui::Panel::left("sections")
+            .resizable(false)
+            .default_size(250.0)
+            .frame(bars::dock_frame(ui.ctx()))
+            .show(ui, |ui| {
+                ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
+                    for key in model::sections(Some(s)) {
+                        let Some((title, figure, kind)) = section_text(s, &key) else {
+                            continue;
+                        };
+                        let selected = engine.ui.section == key;
+                        let response = ui
+                            .horizontal(|ui| {
+                                let (values, max) = section_series(engine, &key);
+                                let format = |index, value, age| {
+                                    let name = if key == "tcp" {
+                                        label(if index == 0 { "receive" } else { "send" })
+                                    } else {
+                                        String::new()
+                                    };
+                                    chart::readout(&name, value, age as f64, kind.format())
                                 };
-                                chart::readout(&name, value, age as f64, kind.format())
-                            };
-                            let second = engine.rings.get("tcp.out_segs");
-                            let series: Vec<_> = if key == "tcp" {
-                                vec![
-                                    (values.as_slice(), kind.hue()),
-                                    (second.as_slice(), Hue::Series(2)),
-                                ]
-                            } else {
-                                vec![(values.as_slice(), kind.hue())]
-                            };
-                            graph::lines(
-                                ui,
-                                Vec2::new(64.0, 36.0),
-                                &series,
-                                max,
-                                Some(Readout {
-                                    samples: vitals::history::WINDOW,
-                                    interval_s: s.interval_s,
-                                    format: &format,
-                                }),
-                            );
-                            ui.vertical(|ui| {
-                                // Both drawn every frame; either click chooses.
-                                let title = toolkit::selectable(
+                                let second = engine.rings.get("tcp.out_segs");
+                                let series: Vec<_> = if key == "tcp" {
+                                    vec![
+                                        (values.as_slice(), kind.hue()),
+                                        (second.as_slice(), Hue::Series(2)),
+                                    ]
+                                } else {
+                                    vec![(values.as_slice(), kind.hue())]
+                                };
+                                graph::lines(
                                     ui,
-                                    selected,
-                                    RichText::new(&title).strong(),
-                                )
-                                .clicked();
-                                let figure = ui
-                                    .add(
-                                        egui::Label::new(RichText::new(&figure).small())
-                                            .sense(Sense::click()),
+                                    Vec2::new(64.0, 36.0),
+                                    &series,
+                                    max,
+                                    Some(Readout {
+                                        samples: vitals::history::WINDOW,
+                                        interval_s: s.interval_s,
+                                        format: &format,
+                                    }),
+                                );
+                                ui.vertical(|ui| {
+                                    // Both drawn every frame; either click chooses.
+                                    let title = toolkit::selectable(
+                                        ui,
+                                        selected,
+                                        RichText::new(&title).strong(),
                                     )
                                     .clicked();
-                                title || figure
+                                    let figure = ui
+                                        .add(
+                                            egui::Label::new(RichText::new(&figure).small())
+                                                .sense(Sense::click()),
+                                        )
+                                        .clicked();
+                                    title || figure
+                                })
+                                .inner
                             })
-                            .inner
-                        })
-                        .inner;
-                    if response {
-                        events.push(UiEvent::Section(key.clone()));
+                            .inner;
+                        if response {
+                            events.push(UiEvent::Section(key.clone()));
+                        }
+                        ui.add_space(6.0);
                     }
-                    ui.add_space(6.0);
-                }
+                });
             });
-        });
     }
     egui::CentralPanel::default()
         .frame(bars::dock_frame(ui.ctx()))
