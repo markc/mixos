@@ -126,16 +126,17 @@ impl Shell {
             }
         }
     }
-    fn background_job(&mut self) -> i32 {
+    fn job(&mut self, background: bool) -> i32 {
         let report = self._home.path().join("job-pid");
         self.master
             .as_mut()
             .unwrap()
             .write_all(
                 format!(
-                    "TERMINAL_JOB_REPORT={} {} --exact fixture_job --nocapture &\n",
+                "TERMINAL_JOB_REPORT={} {} --exact fixture_job --nocapture{}\n",
                     report.display(),
-                    std::env::current_exe().unwrap().display()
+                std::env::current_exe().unwrap().display(),
+                if background { " &" } else { "" }
                 )
                 .as_bytes(),
             )
@@ -200,7 +201,7 @@ fn fixture_job() {
 fn terminal_hangup_also_hangs_up_background_job_groups() {
     let mut shell = Shell::new(true, true, "owned");
     shell.prompt();
-    let child = shell.background_job();
+    let child = shell.job(true);
     drop(shell.master.take());
     assert_eq!(shell.wait().code(), Some(129));
     assert!(
@@ -210,10 +211,20 @@ fn terminal_hangup_also_hangs_up_background_job_groups() {
 }
 
 #[test]
+fn terminal_hangup_while_waiting_for_a_foreground_job_exits_129() {
+    let mut shell = Shell::new(true, true, "owned");
+    shell.prompt();
+    let child = shell.job(false);
+    drop(shell.master.take());
+    assert_eq!(shell.wait().code(), Some(129));
+    assert!(!std::path::Path::new(&format!("/proc/{child}/exe")).exists());
+}
+
+#[test]
 fn fixture_drop_kills_grandchildren_in_other_job_groups() {
     let mut shell = Shell::new(false, true, "owned");
     shell.prompt();
-    let child = shell.background_job();
+    let child = shell.job(true);
     assert_ne!(unsafe { libc::getpgid(child) }, shell.child.id() as i32);
     assert_eq!(unsafe { libc::getsid(child) }, shell.child.id() as i32);
     drop(shell);
