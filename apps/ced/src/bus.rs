@@ -799,7 +799,8 @@ mod tests {
         edit.respond(&open, 0, r#"{"buffer":"seeding-body"}"#).await.unwrap();
         // The host receives the open but deliberately does not create a mirror.
         loop {
-            if matches!(tokio::time::timeout(Duration::from_secs(1), deliveries.next()).await.unwrap(), Some(Delivery::Incoming(Incoming::Reply { req:1, .. }))) { break; }
+            let delivery = tokio::time::timeout(Duration::from_secs(1), deliveries.next()).await.unwrap().expect("ced delivery stream closed");
+            if matches!(delivery, Delivery::Incoming(Incoming::Reply { req:1, .. })) { break; }
         }
         handle.shutdown(None);
         let BoundedIncomingEvent::Command(close) = tokio::time::timeout(Duration::from_secs(1), requests.recv()).await.unwrap().unwrap() else { panic!("expected close"); };
@@ -810,7 +811,8 @@ mod tests {
         assert_eq!(body["origin"], UI_ORIGIN);
         edit.respond(&close, 0, "{}").await.unwrap();
         loop {
-            if let Some(Delivery::Stopped { faults }) = tokio::time::timeout(Duration::from_secs(3), deliveries.next()).await.unwrap() {
+            let delivery = tokio::time::timeout(Duration::from_secs(3), deliveries.next()).await.unwrap().expect("ced stopped without a receipt");
+            if let Delivery::Stopped { faults } = delivery {
                 assert!(faults.is_empty(), "{faults:?}");
                 break;
             }
@@ -841,7 +843,8 @@ mod tests {
             c.call_with_headers_raw("ced-shutdown-test", "ced.state", &BTreeMap::new(), "{}").await
         });
         loop {
-            if matches!(tokio::time::timeout(Duration::from_secs(1), deliveries.next()).await.unwrap(), Some(Delivery::Command(_))) { break; }
+            let delivery = tokio::time::timeout(Duration::from_secs(1), deliveries.next()).await.unwrap().expect("ced delivery stream closed");
+            if matches!(delivery, Delivery::Command(_)) { break; }
         }
         // The close also never answers. It must be sent, but must not consume
         // the allowance needed by deregistration and the session writer.
@@ -854,7 +857,8 @@ mod tests {
         let close = tokio::time::timeout(Duration::from_secs(1), requests.recv()).await.unwrap().unwrap();
         assert!(matches!(close, BoundedIncomingEvent::Command(cmd) if cmd.command == "edit.close"));
         let faults = loop {
-            if let Some(Delivery::Stopped { faults }) = tokio::time::timeout(Duration::from_secs(3), deliveries.next()).await.unwrap() { break faults; }
+            let delivery = tokio::time::timeout(Duration::from_secs(3), deliveries.next()).await.unwrap().expect("ced stopped without a receipt");
+            if let Delivery::Stopped { faults } = delivery { break faults; }
         };
         assert!(start.elapsed() < DRAIN);
         assert!(!faults.iter().any(|f| f.contains("deregister") || f.contains("session drain")), "{faults:?}");

@@ -1208,16 +1208,17 @@ mod tests {
 
     #[test]
     fn mail_session_reattaches_unsaved_body_or_falls_back_to_the_file() {
-        for retained in [false, true] {
+        for mode in 0..3 {
+            let retained = mode != 0;
             let (mut c, mut service, tab) = opened(LETTER);
             let fx = c.on_editor(tab, EditorMsg::Command(EditCommand::Insert("Unsaved ".into())));
             settle(&mut c, &mut service, fx);
             let session = c.session();
             assert_eq!(session.tabs[0].path.as_deref(), Some(PATH));
             assert!(session.tabs[0].recovery_id.is_some());
-            if retained {
+            if mode == 2 {
                 service.restart("0000e2e2", None);
-            } else {
+            } else if !retained {
                 service = FakeEditd::new("0000e2e2");
                 service.create(Some(PATH), LETTER);
             }
@@ -1254,8 +1255,7 @@ mod tests {
         let (mut c, _, tab) = opened(LETTER);
         c.tab_mut(tab).unwrap().path = Some("letter.md".into());
         let absolute = std::path::absolute("letter.md").unwrap().to_str().unwrap().to_owned();
-        let mut fx = Vec::new();
-        c.save_mail(tab, Some(absolute), false, &mut fx).unwrap();
+        let fx = c.on_action_args(Some(tab), ActionId::FileSaveAs, Some(json!({"path":absolute})), Intent::ui(tab));
         assert!(fx.iter().any(|e| matches!(e, Effect::SaveMail { expected:Some(text), .. } if text == LETTER)));
         let (mut c, _, tab) = opened(LETTER);
         c.tab_mut(tab).unwrap().path = Some("./letter.md".into());
