@@ -747,7 +747,10 @@ impl Controller {
                 .collect();
             // Accepted diagnostic under the state lock: the launch caller
             // already reclaimed the terminal before entering abort cleanup.
-            let _ = writeln!(io::stderr(), "mix: failed job {id} survived TERM/KILL grace: {survivors:?}");
+            let _ = writeln!(
+                io::stderr(),
+                "mix: failed job {id} survived TERM/KILL grace: {survivors:?}"
+            );
         }
     }
     fn launch_stopped(&self, id: usize) -> bool {

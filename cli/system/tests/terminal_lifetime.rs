@@ -133,10 +133,10 @@ impl Shell {
             .unwrap()
             .write_all(
                 format!(
-                "TERMINAL_JOB_REPORT={} {} --exact fixture_job --nocapture{}\n",
+                    "TERMINAL_JOB_REPORT={} {} --exact fixture_job --nocapture{}\n",
                     report.display(),
-                std::env::current_exe().unwrap().display(),
-                if background { " &" } else { "" }
+                    std::env::current_exe().unwrap().display(),
+                    if background { " &" } else { "" }
                 )
                 .as_bytes(),
             )
