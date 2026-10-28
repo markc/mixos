@@ -177,9 +177,9 @@ mod tests {
             }).unwrap();
             let ctx = egui::Context::default();
             install(&ctx, &theme);
-            let output = ctx.run(egui::RawInput::default(), |ctx| {
-                ctx.fonts_mut(|fonts| {
-                    fonts.layout_no_wrap("MixOS Preferences Hamburgefonts 0123456789".into(),
+            let output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                ui.fonts_mut(|fonts| {
+                    let _ = fonts.layout_no_wrap("MixOS Preferences Hamburgefonts 0123456789".into(),
                         FontId::proportional(24.0), egui::Color32::WHITE);
                 });
             });

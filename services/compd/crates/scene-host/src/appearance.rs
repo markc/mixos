@@ -261,7 +261,7 @@ mod tests {
                 assert!((ctx.global_style().text_styles[&text].size
                     - unscaled.global_style().text_styles[&text].size * ratio).abs() < 0.001);
             }
-            let _ = ctx.run(Default::default(), |ctx| ctx.fonts(|fonts| {
+            let _ = ctx.run_ui(Default::default(), |ui| ui.fonts(|fonts| {
                 assert_eq!(fonts.definitions().families[&egui::FontFamily::Proportional][0], toolkit::fonts::inter_face(weight).0);
             }));
             for style in ChromeStyle::ALL {
