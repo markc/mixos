@@ -254,7 +254,7 @@ impl Service {
         if invalid { types.clear(); }
         let stamp = Stamp::new(&state.session);
         let size = offer.is_none().then_some(0);
-        let selection = Selection { stamp: stamp.clone(), sensitive: invalid || types.iter().any(|m| m == SECRET_HINT), mime_types: types, size, data: BTreeMap::new(), offer, remote: None };
+        let selection = Selection { stamp: stamp.clone(), sensitive: invalid || types.iter().any(|m| m.eq_ignore_ascii_case(SECRET_HINT)), mime_types: types, size, data: BTreeMap::new(), offer, remote: None };
         state.adopt(primary, selection.clone());
         drop(state);
         self.changed(primary).await;
@@ -264,9 +264,9 @@ impl Service {
     async fn classify(self: &Arc<Self>, primary: bool, selection: Selection) {
         let stamp = selection.stamp.clone();
         // Unknown hints fail closed. No bytes enter history until classification.
-        let sensitive = if selection.mime_types.iter().any(|m| m == SECRET_HINT) {
+        let sensitive = if let Some(hint) = selection.hint_mime() {
             match selection.offer.clone() {
-                Some(offer) => self.driver.read(offer, SECRET_HINT.into(), 256).await.map_or(true, |v| v == b"secret"),
+                Some(offer) => self.driver.read(offer, hint, 256).await.map_or(true, |v| sensitive_hint(&v)),
                 None => true,
             }
         } else { selection.sensitive };
@@ -341,7 +341,7 @@ impl Service {
                 }
                 let lazy = data.len() < r.mime_types.len();
                 let s = Selection { stamp: r.stamp.clone(), mime_types: r.mime_types, sensitive: false, size: r.size, data, offer: None, remote: lazy.then(|| Remote { session: envelope.from_session.clone(), stamp: r.stamp }) };
-                ensure!(peer.images || !s.mime_types.iter().any(|m| m.starts_with("image/")), "IMAGES_DISABLED: receiving pair forbids images");
+                s.can_export(peer.images)?;
                 ensure!(s.size.is_none_or(|n| n <= MAX_BYTES), "SIZE_CAP: advertised size exceeds 64 MiB");
                 let clear = s.mime_types.is_empty();
                 json!({"applied": self.set(s, false, clear).await?, "lazy": lazy})
@@ -389,7 +389,7 @@ impl Service {
                 let own = self.state.lock().await.session.clone();
                 let stamp = p.stamp.unwrap_or_else(|| Stamp::new(&own));
                 ensure!(stamp.origin_session == own && uuid::Uuid::parse_str(&stamp.generation).is_ok(), "ORIGIN: local sets must originate in this session");
-                let sensitive = p.sensitive || (p.mime == SECRET_HINT && data == b"secret");
+                let sensitive = p.sensitive || (p.mime.eq_ignore_ascii_case(SECRET_HINT) && sensitive_hint(&data));
                 Ok(json!({"applied": self.set(Selection::owned(stamp, p.mime, data, sensitive), p.primary, false).await?}))
             }
             "clipboard.clear" => {
@@ -457,22 +457,27 @@ pub async fn run(session_name: String, url: String, settings: Settings, key: Opt
     let mut tasks = tokio::task::JoinSet::new();
     let mut observations: [Option<tokio::task::AbortHandle>; 2] = [None, None];
     let mut connection = client.subscribe_state();
+    let mut reconcile_connection = true;
     let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
     let result = loop {
+        if reconcile_connection {
+            reconcile_connection = false;
+            let state = *connection.borrow_and_update();
+            match state {
+                bus::native_client::ConnState::Connected => {
+                    service.changed(false).await;
+                    service.changed(true).await;
+                }
+                bus::native_client::ConnState::Fatal => break Err(anyhow!("Bus registration rejected")),
+                _ => {}
+            }
+        }
         tokio::select! {
             _ = sigterm.recv() => break Ok(()),
             _ = tokio::signal::ctrl_c() => break Ok(()),
             changed = connection.changed() => {
                 if changed.is_err() { break Err(anyhow!("Bus supervisor closed")); }
-                let state = *connection.borrow_and_update();
-                match state {
-                    bus::native_client::ConnState::Connected => {
-                        service.changed(false).await;
-                        service.changed(true).await;
-                    }
-                    bus::native_client::ConnState::Fatal => break Err(anyhow!("Bus registration rejected")),
-                    _ => {}
-                }
+                reconcile_connection = true;
             },
             done = tasks.join_next(), if !tasks.is_empty() => { if let Some(Err(error)) = done && !error.is_cancelled() { tracing::warn!(%error, "clipboard task failed"); } },
             event = incoming.recv() => match event {

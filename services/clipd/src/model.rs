@@ -13,6 +13,16 @@ pub const HISTORY_PREVIEW_CHARS: usize = 512;
 pub const SECRET_HINT: &str = "x-kde-passwordManagerHint";
 pub const MARKER: &str = "application/x-mixos-clipboard-";
 
+pub fn image_mime(mime: &str) -> bool {
+    mime.trim().split_once('/').is_some_and(|(kind, _)| kind.trim().eq_ignore_ascii_case("image"))
+}
+
+pub fn sensitive_hint(bytes: &[u8]) -> bool {
+    std::str::from_utf8(bytes).map_or(true, |value| {
+        value.trim_matches(|c: char| c.is_ascii_whitespace() || c == '\0').eq_ignore_ascii_case("secret")
+    })
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Stamp {
@@ -128,8 +138,11 @@ impl Selection {
         let mut items = BTreeMap::from([(mime.clone(), Arc::new(data))]);
         let mut types = vec![mime];
         if sensitive {
-            types.push(SECRET_HINT.into());
-            items.insert(SECRET_HINT.into(), Arc::new(b"secret".to_vec()));
+            let hint = types.iter().find(|m| m.eq_ignore_ascii_case(SECRET_HINT)).cloned().unwrap_or_else(|| {
+                types.push(SECRET_HINT.into());
+                SECRET_HINT.into()
+            });
+            items.insert(hint, Arc::new(b"secret".to_vec()));
         }
         Self { stamp, mime_types: types, sensitive, size: Some(items.values().map(|v| v.len()).sum()), data: items, offer: None, remote: None }
     }
@@ -139,9 +152,13 @@ impl Selection {
             .into_iter().find(|mime| self.mime_types.iter().any(|m| m == mime)).map(str::to_owned)
     }
 
+    pub fn hint_mime(&self) -> Option<String> {
+        self.mime_types.iter().find(|mime| mime.eq_ignore_ascii_case(SECRET_HINT)).cloned()
+    }
+
     pub fn can_export(&self, images: bool) -> Result<()> {
         ensure!(!self.sensitive, "SENSITIVE: selection cannot leave this session");
-        ensure!(images || !self.mime_types.iter().any(|m| m.starts_with("image/")), "IMAGES_DISABLED: enable images for this pair first");
+        ensure!(images || !self.mime_types.iter().any(|m| image_mime(m)), "IMAGES_DISABLED: enable images for this pair first");
         Ok(())
     }
 
@@ -257,6 +274,10 @@ mod tests {
         assert_eq!(s.data[SECRET_HINT].as_slice(), b"secret");
         c.adopt(false, s); c.remember(false);
         assert!(c.history.is_empty());
+        for value in [b"secret".as_slice(), b"SECRET\n", b"secret\0", &[255]] { assert!(sensitive_hint(value)); }
+        assert!(!sensitive_hint(b"public"));
+        let hint_only = Selection::owned(Stamp::new("vt1"), SECRET_HINT.into(), b"secret".to_vec(), true);
+        assert_eq!(hint_only.mime_types, vec![SECRET_HINT]);
     }
     #[test]
     fn history_is_a_deduplicated_fifty_entry_text_ring() {
@@ -276,6 +297,8 @@ mod tests {
         assert!(c.history.is_empty());
         let s = Selection::owned(Stamp::new("vt1"), "image/png".into(), vec![0], false);
         assert!(s.can_export(false).is_err()); assert!(s.can_export(true).is_ok());
+        let upper = Selection::owned(Stamp::new("vt1"), "IMAGE/PNG".into(), vec![0], false);
+        assert!(upper.can_export(false).is_err());
         let mut cached = s;
         assert!(cached.cache("text/plain".into(), vec![0; MAX_BYTES + 1]).is_err());
         assert!(!cached.data.contains_key("text/plain"));
@@ -303,6 +326,7 @@ mod tests {
         assert_eq!(metadata["sensitive"], true);
         assert_eq!(metadata["primary"], false);
         assert!(metadata.get("data").is_none());
+        assert_eq!(metadata.as_object().unwrap().keys().map(String::as_str).collect::<Vec<_>>(), ["generation", "mime_types", "origin_session", "primary", "sensitive", "session", "size"]);
         assert!(!metadata.to_string().contains("must-not-escape"));
     }
 }
