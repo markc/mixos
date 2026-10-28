@@ -219,6 +219,23 @@ async fn utf8_inbound_and_authenticated_submission_store_mail() -> Result<()> {
         "555",
     )
     .await?;
+    for parameter in ["AUTH=<>", "AUTH=sender+2Btag@example.org"] {
+        command(
+            &mut io,
+            &format!("MAIL FROM:<sender@example.org> {parameter}"),
+            "250",
+        )
+        .await?;
+        command(&mut io, "RSET", "250").await?;
+    }
+    for parameter in ["AUTH=", "AUTH=not-an-address", "AUTH=sender+ZZ@example.org"] {
+        command(
+            &mut io,
+            &format!("MAIL FROM:<sender@example.org> {parameter}"),
+            "555",
+        )
+        .await?;
+    }
     command(&mut io, "MAIL FROM:<sender@example.org>", "250").await?;
     command(&mut io, &format!("RCPT TO:<{address}>"), "553").await?;
     command(&mut io, "RCPT TO:<alice@example.com>", "250").await?;
@@ -292,7 +309,7 @@ async fn utf8_inbound_and_authenticated_submission_store_mail() -> Result<()> {
     command(&mut io, &format!("AUTH PLAIN {auth}"), "235").await?;
     command(
         &mut io,
-        &format!("MAIL FROM:<{address}> SMTPUTF8 BODY=8BITMIME"),
+        &format!("MAIL FROM:<{address}> AUTH=<> SMTPUTF8 BODY=8BITMIME"),
         "250",
     )
     .await?;

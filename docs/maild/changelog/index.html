@@ -265,7 +265,8 @@ daemon-generated spam headers are available to scripts.</p>
 <li>
 <p>Advertise SMTPUTF8 on inbound and submission, accept UTF-8 envelopes and
 headers, and negotiate SMTPUTF8 and BODY=8BITMIME on outbound delivery.
-Unsupported peers produce a permanent bounce; messages are not downgraded.</p>
+Unsupported peers produce a permanent bounce; messages are not downgraded.
+Preserve valid MAIL AUTH trace parameters alongside SMTPUTF8.</p>
 </li>
 <li>
 <p>Generate RSA DKIM DNS keys as SubjectPublicKeyInfo, retain raw Ed25519 keys,

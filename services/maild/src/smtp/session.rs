@@ -688,6 +688,7 @@ where
                             p != "SMTPUTF8"
                                 && p != "BODY=8BITMIME"
                                 && p != "BODY=7BIT"
+                                && !super::envelope::valid_auth_parameter(&p)
                                 && !p
                                     .strip_prefix("SIZE=")
                                     .is_some_and(|n| n.parse::<usize>().is_ok())
