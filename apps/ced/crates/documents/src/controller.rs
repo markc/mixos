@@ -1857,7 +1857,11 @@ impl Controller {
             let existing = self
                 .tabs
                 .iter()
-                .find(|t| t.path.as_ref().is_some_and(|p| std::path::absolute(p).ok() == std::path::absolute(&path).ok()))
+                .find(|t| {
+                    t.path.as_ref().is_some_and(|p| {
+                        std::path::absolute(p).ok() == std::path::absolute(&path).ok()
+                    })
+                })
                 .map(|t| t.id);
             let id = match existing {
                 Some(id) => id,

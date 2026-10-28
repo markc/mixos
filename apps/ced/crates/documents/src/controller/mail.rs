@@ -1291,7 +1291,11 @@ mod tests {
             assert_eq!(tab.path.as_deref(), Some(PATH));
             assert_eq!(
                 text_string(tab.mirror.as_ref().unwrap().text()),
-                if retained { "Unsaved Body" } else { "Disk body" }
+                if retained {
+                    "Unsaved Body"
+                } else {
+                    "Disk body"
+                }
             );
             assert_eq!(tab.dirty(), retained);
             assert!(
