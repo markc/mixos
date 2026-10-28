@@ -1014,7 +1014,7 @@ where
     use tokio::io::AsyncWriteExt;
 
     let utf8 = super::envelope::needs_smtputf8(from, recipients, data);
-    let eight_bit = !data.is_ascii();
+    let eight_bit = utf8 || !data.is_ascii();
     if utf8 && !super::envelope::has_extension(ehlo, "SMTPUTF8") {
         return Err(PermanentFailure(format!(
             "550 5.6.7 {host} does not offer SMTPUTF8; message cannot be downgraded"
@@ -1833,7 +1833,21 @@ mod rcpt_rejection_tests {
     #[tokio::test]
     async fn smtputf8_and_8bitmime_outbound_wire_negotiation() {
         use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+        let mime_header = "MIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=x\r\n\r\n--x\r\nContent-Type: text/plain\r\nContent-Disposition: inline; filename=\"café.txt\"\r\n\r\nbody\r\n--x--\r\n";
         for (extensions, from, data, expected) in [
+            (
+                "250-8BITMIME\r\n250 SMTPUTF8",
+                "élise@example.com",
+                "Subject: ASCII\r\n\r\nbody\r\n",
+                Some(" SMTPUTF8 BODY=8BITMIME"),
+            ),
+            (
+                "250-8BITMIME\r\n250 SMTPUTF8",
+                "a@example.com",
+                mime_header,
+                Some(" SMTPUTF8 BODY=8BITMIME"),
+            ),
+            ("250 8BITMIME", "a@example.com", mime_header, None),
             (
                 "250-8BITMIME\r\n250 SMTPUTF8",
                 "élise@example.com",

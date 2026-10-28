@@ -89,12 +89,36 @@ pub fn mailbox_addresses(addr: &str) -> Vec<String> {
 }
 
 pub fn utf8_headers(data: &[u8]) -> bool {
+    if data.is_ascii() {
+        return false;
+    }
     let end = data
         .windows(4)
         .position(|w| w == b"\r\n\r\n")
         .or_else(|| data.windows(2).position(|w| w == b"\n\n"))
         .unwrap_or(data.len());
-    !data[..end].is_ascii()
+    if !data[..end].is_ascii() {
+        return true;
+    }
+    // RFC 6531 section 3.6 includes MIME part headers. Body text alone
+    // requires 8BITMIME, while a raw UTF-8 MIME header requires SMTPUTF8.
+    let Some(message) = mail_parser::MessageParser::default().parse(data) else {
+        return false;
+    };
+    let mut pending = vec![&message];
+    while let Some(message) = pending.pop() {
+        for part in &message.parts {
+            if message.raw_message.get(part.offset_header as usize..part.offset_body as usize)
+                .is_some_and(|header| !header.is_ascii()) {
+                return true;
+            }
+            if part.encoding == mail_parser::Encoding::None
+                && let mail_parser::PartType::Message(inner) = &part.body {
+                pending.push(inner);
+            }
+        }
+    }
+    false
 }
 
 pub fn needs_smtputf8(from: &str, recipients: &[&String], data: &[u8]) -> bool {

@@ -229,6 +229,10 @@ async fn utf8_inbound_and_authenticated_submission_store_mail() -> Result<()> {
         "550",
     )
     .await?;
+    command(&mut io, "MAIL FROM:<sender@example.org> BODY=8BITMIME", "250").await?;
+    command(&mut io, "RCPT TO:<alice@example.com>", "250").await?;
+    command(&mut io, "DATA", "354").await?;
+    command(&mut io, "MIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=x\r\n\r\n--x\r\nContent-Type: text/plain\r\nContent-Disposition: inline; filename=\"café.txt\"\r\n\r\nbody\r\n--x--\r\n.", "550").await?;
     send(&built, address).await?;
     assert_eq!(inbox_count(&built, id)?, 1);
     let ms = &built.app_state.mailstore;
