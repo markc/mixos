@@ -229,7 +229,12 @@ async fn utf8_inbound_and_authenticated_submission_store_mail() -> Result<()> {
         "550",
     )
     .await?;
-    command(&mut io, "MAIL FROM:<sender@example.org> BODY=8BITMIME", "250").await?;
+    command(
+        &mut io,
+        "MAIL FROM:<sender@example.org> BODY=8BITMIME",
+        "250",
+    )
+    .await?;
     command(&mut io, "RCPT TO:<alice@example.com>", "250").await?;
     command(&mut io, "DATA", "354").await?;
     command(&mut io, "MIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=x\r\n\r\n--x\r\nContent-Type: text/plain\r\nContent-Disposition: inline; filename=\"café.txt\"\r\n\r\nbody\r\n--x--\r\n.", "550").await?;
@@ -440,8 +445,16 @@ async fn aliases_resurrect_repoint_fanout_and_mailbox_precedence_on_wire() -> Re
     )
     .await?;
     let identities = identities["list"].as_array().unwrap();
-    assert!(identities.iter().any(|identity| identity["email"] == "team@example.com"));
-    assert!(!identities.iter().any(|identity| identity["email"] == "@example.com"));
+    assert!(
+        identities
+            .iter()
+            .any(|identity| identity["email"] == "team@example.com")
+    );
+    assert!(
+        !identities
+            .iter()
+            .any(|identity| identity["email"] == "@example.com")
+    );
     let submission = bus_cmd(
         "maild.submit",
         json!({"operation_id":"aliases-local-1","account":"alice@example.com",
