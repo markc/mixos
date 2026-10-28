@@ -35,7 +35,12 @@ pub(super) async fn attempt(request: &Request) -> Option<Outcome> {
     };
     Some(
         paths
-            .map(|paths| platform_paths(request, paths.into_iter().map(|p| p.path().to_owned()).collect()))
+            .map(|paths| {
+                platform_paths(
+                    request,
+                    paths.into_iter().map(|p| p.path().to_owned()).collect(),
+                )
+            })
             .unwrap_or(Outcome::Cancelled),
     )
 }

@@ -139,7 +139,8 @@ impl Handle {
             self.viewport = Some(viewport);
             // eframe keeps the app id in the viewport builder. Secondary
             // viewports may omit it, in which case use the root app's id.
-            self.request.on_behalf_of = ctx.viewport(|v| v.builder.app_id.clone())
+            self.request.on_behalf_of = ctx
+                .viewport(|v| v.builder.app_id.clone())
                 .or_else(|| ctx.viewport_for(ViewportId::ROOT, |v| v.builder.app_id.clone()))
                 .or_else(crate::titlebar::app_id)
                 .or_else(|| self.request.on_behalf_of.clone());
@@ -215,7 +216,9 @@ impl Handle {
 
     fn start_fallback(&mut self) {
         self.tier = Tier::InProcess;
-        self.fallback = Some(crate::file_chooser::FileChooser::from_request(self.request.clone()));
+        self.fallback = Some(crate::file_chooser::FileChooser::from_request(
+            self.request.clone(),
+        ));
     }
 
     /// End this request. Native cancellation runs on the worker and is bounded
@@ -361,7 +364,11 @@ fn platform_paths(request: &Request, mut paths: Vec<PathBuf>) -> Outcome {
             path.set_file_name(path_from_bytes(&name));
         }
     }
-    Outcome::Chosen { paths, choices: request.choice_defaults(), current_filter: None }
+    Outcome::Chosen {
+        paths,
+        choices: request.choice_defaults(),
+        current_filter: None,
+    }
 }
 
 #[cfg(unix)]

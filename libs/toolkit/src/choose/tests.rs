@@ -2,9 +2,9 @@
 use super::*;
 use serde_json::json;
 mod native_tests;
-mod regression;
 #[cfg(all(target_os = "linux", feature = "portal"))]
 mod portal_tests;
+mod regression;
 
 fn runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_current_thread()
