@@ -859,12 +859,17 @@ impl FileChooser {
 }
 
 fn check_directories(paths: Vec<PathBuf>) -> Result<Vec<PathBuf>, String> {
-    for path in &paths {
-        if !std::fs::metadata(path).map_err(|e| e.to_string())?.is_dir() {
+    let mut checked = Vec::with_capacity(paths.len());
+    for path in paths {
+        // Directory outcomes may not contain . or .. components. Resolve on
+        // the worker, including when the initial directory listing failed.
+        let path = path.canonicalize().map_err(|error| error.to_string())?;
+        if !std::fs::metadata(&path).map_err(|e| e.to_string())?.is_dir() {
             return Err(own("file-chooser-folder-required"));
         }
+        checked.push(path);
     }
-    Ok(paths)
+    Ok(checked)
 }
 
 fn check_batch(folder: PathBuf, names: Vec<Vec<u8>>) -> Result<Answer, String> {
@@ -908,13 +913,6 @@ fn open_filtered(
     hidden: bool,
     request: Option<&ChooseRequest>,
 ) -> Result<Answer, String> {
-    // Directory outcomes may not contain . or .. components. Resolve on the
-    // filesystem worker so typed relative navigation still names the real folder.
-    let path = if request.is_some_and(|r| r.directory) {
-        path.canonicalize().map_err(|error| error.to_string())?
-    } else {
-        path
-    };
     let mut answer = open_path(path, hidden)?;
     if let (Answer::Picked(_), Some(request)) = (&answer, request)
         && (request.directory || request.mode == ChooseMode::SaveFiles)
