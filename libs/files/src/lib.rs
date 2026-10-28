@@ -33,6 +33,7 @@
 //!   daemon runs on a timer and after each watcher burst.
 
 pub mod atomic;
+pub mod chooser;
 pub mod diff;
 pub mod error;
 pub mod frontmatter;
