@@ -29,25 +29,40 @@ fn finite(value: f64, min: f64, max: f64) -> f64 {
     }
 }
 
+fn text_tokens(style: &mut ResolvedStyle, scale: f64) {
+    for size in [
+        &mut style.body_size,
+        &mut style.small_size,
+        &mut style.heading_size,
+        &mut style.button_link_size,
+        &mut style.dialog_title_size,
+        &mut style.panel_pill_size,
+        &mut style.panel_section_size,
+        &mut style.push_label_size,
+        &mut style.tabs_pro_size,
+        &mut style.tabs_studio_name_size,
+        &mut style.tabs_studio_meta_size,
+        &mut style.title_size,
+        &mut style.value_number_size,
+        &mut style.value_unit_size,
+    ] {
+        *size *= scale;
+    }
+}
+
+/// Interface font size reaches native controls as well as egui text styles.
+/// Monospace content keeps its independent size.
+pub(crate) fn interface_tokens(mut style: ResolvedStyle, scale: f64) -> ResolvedStyle {
+    text_tokens(&mut style, scale);
+    style
+}
+
 pub(crate) fn tokens(mut style: ResolvedStyle, ui: &CommonUi) -> ResolvedStyle {
     // Desktop values only: the current summary has no per-app overrides.
     let text = ui.text_scale;
     let density = ui.density;
-    style.body_size *= text;
-    style.small_size *= text;
-    style.heading_size *= text;
+    text_tokens(&mut style, text);
     style.mono_size *= text;
-    style.button_link_size *= text;
-    style.dialog_title_size *= text;
-    style.panel_pill_size *= text;
-    style.panel_section_size *= text;
-    style.push_label_size *= text;
-    style.tabs_pro_size *= text;
-    style.tabs_studio_name_size *= text;
-    style.tabs_studio_meta_size *= text;
-    style.title_size *= text;
-    style.value_number_size *= text;
-    style.value_unit_size *= text;
     style.push_height *= density;
     style.dock_margin *= density;
     style.options_bar *= density;

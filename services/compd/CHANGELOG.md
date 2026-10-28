@@ -18,6 +18,8 @@
   preserve the design's display weight offset, clamped to the bundled faces,
   and scale with interface size and text scale. Load Inter Bold for titles.
   Existing settings events rebuild and activate these resources together.
+- Install the shell's text scale through the shared theme so native controls
+  follow it alongside egui text styles.
 
 - Exclude Email composer app IDs from hosted menus and action bars. Composers
   request client decorations and keep their own single complete title row.

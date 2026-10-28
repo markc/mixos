@@ -9,6 +9,9 @@
   more ink, and size tests check proportional styles without changing mono.
 - Keep session font overrides when an app falls back from a custom or unknown
   design to its installed theme.
+- Scale native button, link, tab, panel, dialog, title and value text metrics
+  with the interface size. Apply the ratio once in chrome and pair text styles;
+  keep independently sized monospace content and spacing unchanged.
 
 - Allow a viewport to require its own complete client frame independently of
   the session decoration preference and later theme changes. Each viewport

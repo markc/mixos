@@ -98,7 +98,6 @@ pub fn style(theme: &Theme) -> Style {
         style.scroll_animation = egui::style::ScrollAnimation::none();
     }
     apply_role_overlay(&mut style.visuals, theme);
-    apply_interface_size(&mut style, theme);
     style
 }
 
@@ -106,12 +105,7 @@ pub fn style(theme: &Theme) -> Style {
 /// Every style but the monospace one moves by the same ratio, so the headings
 /// keep their place above the body. The design's own size changes nothing.
 fn apply_interface_size(style: &mut Style, theme: &Theme) {
-    let Some(size) = theme.overlay().size else {
-        return;
-    };
-    let typography = theme.typography();
-    let design = design::active_typography(Some(typography), TypographyRole::Ui).font_size as f32;
-    let ratio = size / design;
+    let ratio = theme.interface_size_scale();
     if (ratio - 1.0).abs() < f32::EPSILON {
         return;
     }
@@ -163,6 +157,7 @@ pub fn pair_style(theme: &Theme) -> Style {
     for font in style.text_styles.values_mut() {
         font.size *= theme.ui().text_scale as f32;
     }
+    apply_interface_size(&mut style, theme);
 
     for widget in [
         &mut style.visuals.widgets.noninteractive,
@@ -485,6 +480,53 @@ mod tests {
                 style(&base.clone().with_overlay(Default::default()).unwrap()).text_styles,
                 before.text_styles
             );
+        }
+    }
+
+    #[test]
+    fn interface_size_reaches_native_control_fonts_without_changing_spacing() {
+        for scheme in [Scheme::Ocean, Scheme::Studio] {
+            let base = Theme::for_context(DesignContext {
+                scheme,
+                ..Default::default()
+            })
+            .with_ui(crate::ui_scale::CommonUi {
+                text_scale: 1.5,
+                density: 0.85,
+                ..Default::default()
+            });
+            let sized = base
+                .clone()
+                .with_overlay(crate::theme::Overlay {
+                    size: Some(18.0),
+                    ..Default::default()
+                })
+                .unwrap();
+            let a = crate::chrome::Chrome::for_theme(&base).style;
+            let b = crate::chrome::Chrome::for_theme(&sized).style;
+            let ratio = f64::from(sized.interface_size_scale());
+            for (before, after) in [
+                (a.body_size, b.body_size),
+                (a.small_size, b.small_size),
+                (a.heading_size, b.heading_size),
+                (a.button_link_size, b.button_link_size),
+                (a.dialog_title_size, b.dialog_title_size),
+                (a.panel_pill_size, b.panel_pill_size),
+                (a.panel_section_size, b.panel_section_size),
+                (a.push_label_size, b.push_label_size),
+                (a.tabs_pro_size, b.tabs_pro_size),
+                (a.tabs_studio_name_size, b.tabs_studio_name_size),
+                (a.tabs_studio_meta_size, b.tabs_studio_meta_size),
+                (a.title_size, b.title_size),
+                (a.value_number_size, b.value_number_size),
+                (a.value_unit_size, b.value_unit_size),
+            ] {
+                assert!((after - before * ratio).abs() < 0.001);
+            }
+            assert_eq!(a.mono_size, b.mono_size);
+            assert_eq!(a.tool_bar, b.tool_bar);
+            assert_eq!(a.menu_row_height, b.menu_row_height);
+            assert_eq!(a.field_height, b.field_height);
         }
     }
 

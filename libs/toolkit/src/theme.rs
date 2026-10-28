@@ -464,7 +464,16 @@ impl Theme {
 
     /// The chrome's forms and lengths (the design's style family).
     pub fn style(&self) -> ResolvedStyle {
-        crate::ui_scale::tokens(self.raw_style(), &self.ui)
+        crate::ui_scale::interface_tokens(
+            crate::ui_scale::tokens(self.raw_style(), &self.ui),
+            f64::from(self.interface_size_scale()),
+        )
+    }
+
+    /// The session's interface size relative to the design's own UI size.
+    pub fn interface_size_scale(&self) -> f32 {
+        let ui = design::active_typography(Some(self.typography()), design::TypographyRole::Ui);
+        self.overlay.size.map_or(1.0, |size| size / ui.font_size as f32)
     }
 
     /// Desktop accessibility and layout choices. Per-app overrides require

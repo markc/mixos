@@ -115,11 +115,7 @@ pub(crate) fn build(snapshot: &Snapshot) -> Result<Look, Diagnostic> {
     } else {
         title.weight
     };
-    let ui = design::active_typography(Some(theme.typography()), TypographyRole::Ui);
-    let size_ratio = theme
-        .overlay()
-        .size
-        .map_or(1.0, |size| size / ui.font_size as f32);
+    let size_ratio = theme.interface_size_scale();
     let family = match title.generic {
         TypographyGeneric::Monospace => DecoFontFamily::Monospace,
         _ if title.family.is_empty() || title.family == "Inter" => DecoFontFamily::SystemUi,
@@ -186,16 +182,14 @@ pub(crate) fn page(theme: &Theme, dialog: bool) -> Palette {
 /// Install `theme` on a scene's egui context at `text_scale`, with an edge
 /// page's surface and ink on the secondary pair.
 pub(crate) fn install(ctx: &egui::Context, theme: &Theme, text_scale: f32, dialog: bool) {
-    toolkit::install(ctx, theme);
+    let mut ui = theme.ui().clone();
+    ui.text_scale *= f64::from(text_scale);
+    let scaled = theme.clone().with_ui(ui);
+    toolkit::install(ctx, &scaled);
     let palette = page(theme, dialog);
     let fill = crate::view::colour(palette.base.surface);
     let ink = crate::view::colour(palette.base.foreground);
     ctx.global_style_mut(|style| {
-        if (text_scale - 1.0).abs() > f32::EPSILON {
-            for font in style.text_styles.values_mut() {
-                font.size *= text_scale;
-            }
-        }
         style.visuals.panel_fill = fill;
         style.visuals.window_fill = fill;
         style.visuals.override_text_color = Some(ink);
@@ -262,6 +256,10 @@ mod tests {
             install(&ctx, &look.theme, look.text_scale, false);
             let ui = design::active_typography(Some(plain.theme.typography()), TypographyRole::Ui);
             let ratio = 18.0 / ui.font_size as f32 * 1.5;
+            let before = toolkit::chrome::Chrome::of(&unscaled).style;
+            let after = toolkit::chrome::Chrome::of(&ctx).style;
+            assert!((after.push_label_size - before.push_label_size * f64::from(ratio)).abs() < 0.001);
+            assert!((after.panel_section_size - before.panel_section_size * f64::from(ratio)).abs() < 0.001);
             for text in [
                 egui::TextStyle::Body,
                 egui::TextStyle::Button,
