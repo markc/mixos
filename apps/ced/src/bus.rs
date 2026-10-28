@@ -362,7 +362,9 @@ async fn run(
     let mut sends = tokio::task::JoinSet::new();
     let mut force_closes = tokio::task::JoinSet::new();
     let closing_mail = Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let mail_buffers = Arc::new(std::sync::Mutex::new(std::collections::HashSet::<String>::new()));
+    let mail_buffers = Arc::new(std::sync::Mutex::new(
+        std::collections::HashSet::<String>::new(),
+    ));
     let mut next_command = 0u64;
     let mut macro_jobs = citizen::macros::Jobs::default();
     let mut session = None;
@@ -625,8 +627,10 @@ async fn run(
     for buffer in buffers {
         let c = client.clone();
         force_closes.spawn(async move {
-            let body = serde_json::json!({"buffer":buffer,"force":true,"origin":UI_ORIGIN}).to_string();
-            c.call_with_headers_raw(EDIT, "edit.close", &BTreeMap::new(), &body).await
+            let body =
+                serde_json::json!({"buffer":buffer,"force":true,"origin":UI_ORIGIN}).to_string();
+            c.call_with_headers_raw(EDIT, "edit.close", &BTreeMap::new(), &body)
+                .await
                 .map_err(|error| format!("mail scratch close: {error}"))?;
             Ok(())
         });
@@ -784,26 +788,52 @@ mod tests {
     async fn quit_closes_a_seed_whose_reply_has_not_reached_the_controller() {
         let broker = test_broker::Broker::start();
         let edit = SupervisedClient::connect_options("edit", &broker.url)
-            .bounded_incoming(8).connect().await.unwrap();
+            .bounded_incoming(8)
+            .connect()
+            .await
+            .unwrap();
         let mut requests = edit.incoming_bounded().unwrap();
-        let (handle, mut deliveries) = spawn("ced-seeding-test", &broker.url, Arc::new(|| {})).unwrap();
+        let (handle, mut deliveries) =
+            spawn("ced-seeding-test", &broker.url, Arc::new(|| {})).unwrap();
         handle.perform(&Effect::Send {
             req: 1,
             out: editor_model::types::Outgoing {
                 command: "edit.open".into(),
                 body: r#"{"text":"Body","language":"markdown"}"#.into(),
-                op_id: None, deadline_ms: 30_000,
+                op_id: None,
+                deadline_ms: 30_000,
             },
         });
-        let BoundedIncomingEvent::Command(open) = tokio::time::timeout(Duration::from_secs(1), requests.recv()).await.unwrap().unwrap() else { panic!("expected open"); };
-        edit.respond(&open, 0, r#"{"buffer":"seeding-body"}"#).await.unwrap();
+        let BoundedIncomingEvent::Command(open) =
+            tokio::time::timeout(Duration::from_secs(1), requests.recv())
+                .await
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected open");
+        };
+        edit.respond(&open, 0, r#"{"buffer":"seeding-body"}"#)
+            .await
+            .unwrap();
         // The host receives the open but deliberately does not create a mirror.
         loop {
-            let delivery = tokio::time::timeout(Duration::from_secs(1), deliveries.next()).await.unwrap().expect("ced delivery stream closed");
-            if matches!(delivery, Delivery::Incoming(Incoming::Reply { req:1, .. })) { break; }
+            let delivery = tokio::time::timeout(Duration::from_secs(1), deliveries.next())
+                .await
+                .unwrap()
+                .expect("ced delivery stream closed");
+            if matches!(delivery, Delivery::Incoming(Incoming::Reply { req: 1, .. })) {
+                break;
+            }
         }
         handle.shutdown(None);
-        let BoundedIncomingEvent::Command(close) = tokio::time::timeout(Duration::from_secs(1), requests.recv()).await.unwrap().unwrap() else { panic!("expected close"); };
+        let BoundedIncomingEvent::Command(close) =
+            tokio::time::timeout(Duration::from_secs(1), requests.recv())
+                .await
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected close");
+        };
         assert_eq!(close.command, "edit.close");
         let body: serde_json::Value = serde_json::from_str(&close.body).unwrap();
         assert_eq!(body["buffer"], "seeding-body");
@@ -811,7 +841,10 @@ mod tests {
         assert_eq!(body["origin"], UI_ORIGIN);
         edit.respond(&close, 0, "{}").await.unwrap();
         loop {
-            let delivery = tokio::time::timeout(Duration::from_secs(3), deliveries.next()).await.unwrap().expect("ced stopped without a receipt");
+            let delivery = tokio::time::timeout(Duration::from_secs(3), deliveries.next())
+                .await
+                .unwrap()
+                .expect("ced stopped without a receipt");
             if let Delivery::Stopped { faults } = delivery {
                 assert!(faults.is_empty(), "{faults:?}");
                 break;
@@ -824,50 +857,96 @@ mod tests {
     async fn quit_with_unanswered_edit_requests_deregisters_refuses_and_flushes() {
         let broker = test_broker::Broker::start();
         let edit = SupervisedClient::connect_options("edit", &broker.url)
-            .bounded_incoming(8).connect().await.unwrap();
+            .bounded_incoming(8)
+            .connect()
+            .await
+            .unwrap();
         let mut requests = edit.incoming_bounded().unwrap();
-        let (handle, mut deliveries) = spawn("ced-shutdown-test", &broker.url, Arc::new(|| {})).unwrap();
+        let (handle, mut deliveries) =
+            spawn("ced-shutdown-test", &broker.url, Arc::new(|| {})).unwrap();
         let send = |req, command: &str, body: &str| Effect::Send {
             req,
             out: editor_model::types::Outgoing {
-                command: command.into(), body: body.into(), op_id: None, deadline_ms: 30_000,
+                command: command.into(),
+                body: body.into(),
+                op_id: None,
+                deadline_ms: 30_000,
             },
         };
         handle.perform(&send(1, "edit.get", r#"{"buffer":"never-answers"}"#));
-        let first = tokio::time::timeout(Duration::from_secs(1), requests.recv()).await.unwrap().unwrap();
+        let first = tokio::time::timeout(Duration::from_secs(1), requests.recv())
+            .await
+            .unwrap()
+            .unwrap();
         assert!(matches!(first, BoundedIncomingEvent::Command(cmd) if cmd.command == "edit.get"));
         // Leave a real caller pending, to check the closing refusal too.
-        let caller = Arc::new(SupervisedClient::connect_options("shutdown-caller", &broker.url).connect().await.unwrap());
+        let caller = Arc::new(
+            SupervisedClient::connect_options("shutdown-caller", &broker.url)
+                .connect()
+                .await
+                .unwrap(),
+        );
         let c = caller.clone();
         let waiting = tokio::spawn(async move {
-            c.call_with_headers_raw("ced-shutdown-test", "ced.state", &BTreeMap::new(), "{}").await
+            c.call_with_headers_raw("ced-shutdown-test", "ced.state", &BTreeMap::new(), "{}")
+                .await
         });
         loop {
-            let delivery = tokio::time::timeout(Duration::from_secs(1), deliveries.next()).await.unwrap().expect("ced delivery stream closed");
-            if matches!(delivery, Delivery::Command(_)) { break; }
+            let delivery = tokio::time::timeout(Duration::from_secs(1), deliveries.next())
+                .await
+                .unwrap()
+                .expect("ced delivery stream closed");
+            if matches!(delivery, Delivery::Command(_)) {
+                break;
+            }
         }
         // The close also never answers. It must be sent, but must not consume
         // the allowance needed by deregistration and the session writer.
-        handle.perform(&send(2, "edit.close", r#"{"buffer":"scratch","force":true}"#));
+        handle.perform(&send(
+            2,
+            "edit.close",
+            r#"{"buffer":"scratch","force":true}"#,
+        ));
         let path = broker.endpoint.parent().unwrap().join("ced-session.json");
         let writer = SessionWriter::spawn();
-        writer.queue(path.clone(), documents::session::Session::default()).unwrap();
+        writer
+            .queue(path.clone(), documents::session::Session::default())
+            .unwrap();
         let start = std::time::Instant::now();
         handle.shutdown(Some(writer));
-        let close = tokio::time::timeout(Duration::from_secs(1), requests.recv()).await.unwrap().unwrap();
+        let close = tokio::time::timeout(Duration::from_secs(1), requests.recv())
+            .await
+            .unwrap()
+            .unwrap();
         assert!(matches!(close, BoundedIncomingEvent::Command(cmd) if cmd.command == "edit.close"));
         let faults = loop {
-            let delivery = tokio::time::timeout(Duration::from_secs(3), deliveries.next()).await.unwrap().expect("ced stopped without a receipt");
-            if let Delivery::Stopped { faults } = delivery { break faults; }
+            let delivery = tokio::time::timeout(Duration::from_secs(3), deliveries.next())
+                .await
+                .unwrap()
+                .expect("ced stopped without a receipt");
+            if let Delivery::Stopped { faults } = delivery {
+                break faults;
+            }
         };
         assert!(start.elapsed() < DRAIN);
-        assert!(!faults.iter().any(|f| f.contains("deregister") || f.contains("session drain")), "{faults:?}");
-        assert_eq!(documents::session::load(&path), documents::session::Session::default());
+        assert!(
+            !faults
+                .iter()
+                .any(|f| f.contains("deregister") || f.contains("session drain")),
+            "{faults:?}"
+        );
+        assert_eq!(
+            documents::session::load(&path),
+            documents::session::Session::default()
+        );
         assert!(path.is_file());
         let (rc, body, _) = waiting.await.unwrap().unwrap();
         assert_eq!(rc, 10);
         assert!(body.contains("ced is closing"));
-        let (rc, _, error) = caller.call_with_headers_raw("ced-shutdown-test", "ced.ping", &BTreeMap::new(), "{}").await.unwrap();
+        let (rc, _, error) = caller
+            .call_with_headers_raw("ced-shutdown-test", "ced.ping", &BTreeMap::new(), "{}")
+            .await
+            .unwrap();
         assert!(rc >= 10 && error.unwrap().contains("not found"));
         caller.close().await;
         edit.close().await;

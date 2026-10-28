@@ -4,8 +4,8 @@ use maildoc::MailDocument;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-pub use crate::commands::code::INTERNAL;
 use crate::commands::code;
+pub use crate::commands::code::INTERNAL;
 
 /// Save refusals retain their category independently of their wording.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,14 +43,18 @@ pub fn refusal_code(refusal: &maildoc::Refusal) -> &'static str {
 impl std::fmt::Display for SaveError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Argument(message) | Self::Conflict(message) | Self::Internal(message) => f.write_str(message),
+            Self::Argument(message) | Self::Conflict(message) | Self::Internal(message) => {
+                f.write_str(message)
+            }
             Self::Document(error) => error.fmt(f),
         }
     }
 }
 
 impl From<std::io::Error> for SaveError {
-    fn from(error: std::io::Error) -> Self { Self::Internal(error.to_string()) }
+    fn from(error: std::io::Error) -> Self {
+        Self::Internal(error.to_string())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -218,13 +222,22 @@ mod tests {
             MalformedHeader("saved".into()),
             DuplicateHeader("internal".into()),
             EmptyValue("conflict".into()),
-            InvalidValue { header: "io".into(), reason: "anything".into() },
+            InvalidValue {
+                header: "io".into(),
+                reason: "anything".into(),
+            },
         ] {
             assert_eq!(refusal_code(&refusal), "INVALID_ARGUMENT");
             assert_eq!(SaveError::Document(refusal).code(), "INVALID_ARGUMENT");
         }
-        assert_eq!(SaveError::Conflict("invalid address".into()).code(), "CONFLICT");
-        assert_eq!(SaveError::Internal("the mail document is busy".into()).code(), INTERNAL);
+        assert_eq!(
+            SaveError::Conflict("invalid address".into()).code(),
+            "CONFLICT"
+        );
+        assert_eq!(
+            SaveError::Internal("the mail document is busy".into()).code(),
+            INTERNAL
+        );
     }
 
     #[test]

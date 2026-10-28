@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! File and application effects, called only from ced's Bus worker.
-use documents::mail::{Failure, SaveError, INTERNAL};
+use documents::mail::{Failure, INTERNAL, SaveError};
 use std::path::Path;
 use std::time::Duration;
 
@@ -22,7 +22,9 @@ pub fn save(path: &str, text: &str, expected: Option<&str>) -> Result<(), SaveEr
     }
     let mut document = editor::local::Document::open_bytes(Path::new(path), text.as_bytes())
         .map_err(|e| SaveError::Internal(e.to_string()))?;
-    document.save_as(path).map_err(|e| SaveError::Internal(e.to_string()))
+    document
+        .save_as(path)
+        .map_err(|e| SaveError::Internal(e.to_string()))
 }
 
 pub async fn send(client: &impl citizen::app::AppClient, path: &str) -> Result<String, Failure> {
@@ -109,7 +111,10 @@ mod tests {
     async fn send_has_a_full_two_minute_deadline_and_timeout_is_uncertain() {
         let broker = test_broker::Broker::start();
         let email = bus::native_client::SupervisedClient::connect_options("email", &broker.url)
-            .bounded_incoming(8).connect().await.unwrap();
+            .bounded_incoming(8)
+            .connect()
+            .await
+            .unwrap();
         let mut incoming = email.incoming_bounded().unwrap();
         struct Deadline(bus::native_client::SupervisedClient);
         impl citizen::app::AppClient for Deadline {
@@ -124,11 +129,21 @@ mod tests {
                 assert_eq!(limit, Duration::from_secs(120));
                 // Exercise the real post-delivery native timeout. Only the
                 // test's wall time is shortened; send still asks for 120 s.
-                citizen::app::AppClient::app_call(&self.0, service, command, body, Duration::from_millis(50)).await
+                citizen::app::AppClient::app_call(
+                    &self.0,
+                    service,
+                    command,
+                    body,
+                    Duration::from_millis(50),
+                )
+                .await
             }
         }
-        let caller = bus::native_client::SupervisedClient::connect_options("mail-timeout-test", &broker.url)
-            .connect().await.unwrap();
+        let caller =
+            bus::native_client::SupervisedClient::connect_options("mail-timeout-test", &broker.url)
+                .connect()
+                .await
+                .unwrap();
         let client = Deadline(caller);
         let message = send(&client, "/home/user/letter.md")
             .await
@@ -136,8 +151,13 @@ mod tests {
             .message;
         assert!(message.contains("may have been sent"));
         assert!(!message.contains("could not contact Email"));
-        let delivered = tokio::time::timeout(Duration::from_secs(1), incoming.recv()).await.unwrap().unwrap();
-        assert!(matches!(delivered, bus::native_client::BoundedIncomingEvent::Command(cmd) if cmd.command == "email.send"));
+        let delivered = tokio::time::timeout(Duration::from_secs(1), incoming.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            matches!(delivered, bus::native_client::BoundedIncomingEvent::Command(cmd) if cmd.command == "email.send")
+        );
         assert!(incoming.recv().now_or_never().is_none());
         client.0.close().await;
         email.close().await;

@@ -621,10 +621,9 @@ fn document(
 
 fn body_editable(app: &App, tab: &Tab) -> bool {
     app.dialog.is_none()
-        && tab
-            .mail
-            .as_ref()
-            .is_none_or(|mail| (!mail.sending && !mail.saving) || app.ctl.mail_body_editable(tab.id))
+        && tab.mail.as_ref().is_none_or(|mail| {
+            (!mail.sending && !mail.saving) || app.ctl.mail_body_editable(tab.id)
+        })
 }
 
 fn centred(ui: &mut Ui, text: &str) {
@@ -994,7 +993,12 @@ mod tests {
         assert!(app.ctl.mail_save_parked(tab));
         assert!(super::body_editable(&app, app.active_tab().unwrap()));
         let (mut app, tab) = mail_app();
-        let fx = app.ctl.on_editor(tab, documents::editor::EditorMsg::Command(editor_model::model::EditCommand::Insert("First ".into())));
+        let fx = app.ctl.on_editor(
+            tab,
+            documents::editor::EditorMsg::Command(editor_model::model::EditCommand::Insert(
+                "First ".into(),
+            )),
+        );
         app.absorb(fx);
         app.action(ActionId::FileSend);
         assert!(!super::body_editable(&app, app.active_tab().unwrap()));
@@ -1008,7 +1012,14 @@ mod tests {
         let (mut app, tab) = mail_app();
         super::commit_mail_headers(&mut app, tab, Some("subject"));
         assert!(app.noted.is_empty());
-        let mut headers = app.active_tab().unwrap().mail.as_ref().unwrap().headers.clone();
+        let mut headers = app
+            .active_tab()
+            .unwrap()
+            .mail
+            .as_ref()
+            .unwrap()
+            .headers
+            .clone();
         headers.subject = "Changed".into();
         app.ctl.preview_headers(tab, headers).unwrap();
         super::commit_mail_headers(&mut app, tab, Some("subject"));

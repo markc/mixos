@@ -15,17 +15,29 @@ const EPOCH: &str = "0000e1e1";
 #[test]
 fn initial_scratch_text_is_dirty_until_saved() {
     let mut service = FakeEditd::new(EPOCH);
-    let open = service.handle("local:test", "edit.open", &serde_json::json!({"text":"Body"}));
+    let open = service.handle(
+        "local:test",
+        "edit.open",
+        &serde_json::json!({"text":"Body"}),
+    );
     assert_eq!(open.rc, 0);
     let list = service.handle("local:test", "edit.list", &serde_json::json!({}));
-    let row = list.body["buffers"].as_array().unwrap().iter()
-        .find(|row| row["buffer"] == open.body["buffer"]).unwrap();
+    let row = list.body["buffers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["buffer"] == open.body["buffer"])
+        .unwrap();
     assert_eq!(row["dirty"], true);
     assert_eq!(row["path"], Value::Null);
     let empty = service.handle("local:test", "edit.open", &serde_json::json!({}));
     let list = service.handle("local:test", "edit.list", &serde_json::json!({}));
-    let row = list.body["buffers"].as_array().unwrap().iter()
-        .find(|row| row["buffer"] == empty.body["buffer"]).unwrap();
+    let row = list.body["buffers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["buffer"] == empty.body["buffer"])
+        .unwrap();
     assert_eq!(row["dirty"], true);
 }
 const CLIENT_ONLY: &[&str] = &[

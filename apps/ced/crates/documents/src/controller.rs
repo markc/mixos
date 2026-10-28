@@ -709,7 +709,9 @@ impl Controller {
                 }
                 ids.push(id);
                 match (&st.path, &st.recovery_id) {
-                    (Some(_), Some(_)) if self.tab(id).is_some_and(|t| t.mail.is_some()) => self.send_list(id, &mut fx),
+                    (Some(_), Some(_)) if self.tab(id).is_some_and(|t| t.mail.is_some()) => {
+                        self.send_list(id, &mut fx)
+                    }
                     (Some(p), _) => self.send_open(id, Some(p.clone()), false, &mut fx),
                     (None, Some(_)) => self.send_list(id, &mut fx),
                     (None, None) => self.send_open(id, None, false, &mut fx),
@@ -1638,12 +1640,6 @@ impl Controller {
                 if let Some(x) = self.x.get_mut(&tab) {
                     x.reattaching = false;
                 }
-                if let Some(t) = self.tab_mut(tab)
-                    && t.mirror.is_none() && t.mail.is_some()
-                {
-                    t.mail = None;
-                    t.classified = false;
-                }
                 self.timer(DEADLINE_LONG_MS, TimerFor::Reattach(tab), fx);
             }
             return;
@@ -1683,8 +1679,10 @@ impl Controller {
         let row = list.as_ref().and_then(|l| {
             l.buffers
                 .iter()
-                .find(|b| Some(&b.recovery_id) == rid.as_ref()
-                    && (self.tab(tab).is_none_or(|t| t.mail.is_none()) || b.path.is_none()))
+                .find(|b| {
+                    Some(&b.recovery_id) == rid.as_ref()
+                        && (self.tab(tab).is_none_or(|t| t.mail.is_none()) || b.path.is_none())
+                })
                 .map(|b| (l, b))
         });
         match row {
@@ -1696,7 +1694,17 @@ impl Controller {
                 if let Some(x) = self.x.get_mut(&tab) {
                     x.reattaching = false;
                 }
-                let path = self.tab(tab).filter(|t| t.mail.is_none()).and_then(|t| t.path.clone());
+                if let Some(t) = self.tab_mut(tab)
+                    && t.mirror.is_none()
+                    && t.mail.is_some()
+                {
+                    t.mail = None;
+                    t.classified = false;
+                }
+                let path = self
+                    .tab(tab)
+                    .filter(|t| t.mail.is_none())
+                    .and_then(|t| t.path.clone());
                 self.send_open(tab, path, reattach, fx);
             }
         }
@@ -1842,19 +1850,21 @@ impl Controller {
                 split_line_col(raw)
             };
             let goto = cmd.and_then(|(_, g)| g).or(goto);
+            let opened_path = path.clone();
             let path = std::path::absolute(&path)
                 .map(|p| p.to_string_lossy().into_owned())
                 .unwrap_or(path);
             let existing = self
                 .tabs
                 .iter()
-                .find(|t| t.path.as_deref() == Some(path.as_str()))
+                .find(|t| t.path.as_ref().is_some_and(|p| std::path::absolute(p).ok() == std::path::absolute(&path).ok()))
                 .map(|t| t.id);
             let id = match existing {
                 Some(id) => id,
                 None => {
                     let id = self.new_tab(Some(path.clone()));
                     self.send_open(id, Some(path), false, fx);
+                    self.x.get_mut(&id).unwrap().opened_path = Some(opened_path);
                     id
                 }
             };
@@ -2196,7 +2206,11 @@ impl Controller {
     ) -> Result<(), String> {
         if self.tab(tab).is_some_and(|t| t.mail.is_some()) {
             match &op {
-                ServerOp::Save { path, .. } => return self.save_mail(tab, path.clone(), false, fx).map_err(|e| e.to_string()),
+                ServerOp::Save { path, .. } => {
+                    return self
+                        .save_mail(tab, path.clone(), false, fx)
+                        .map_err(|e| e.to_string());
+                }
                 ServerOp::Reload { .. } => {
                     return Err("close and reopen this mail document to reload it".into());
                 }
