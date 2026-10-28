@@ -864,7 +864,10 @@ fn check_directories(paths: Vec<PathBuf>) -> Result<Vec<PathBuf>, String> {
         // Directory outcomes may not contain . or .. components. Resolve on
         // the worker, including when the initial directory listing failed.
         let path = path.canonicalize().map_err(|error| error.to_string())?;
-        if !std::fs::metadata(&path).map_err(|e| e.to_string())?.is_dir() {
+        if !std::fs::metadata(&path)
+            .map_err(|e| e.to_string())?
+            .is_dir()
+        {
             return Err(own("file-chooser-folder-required"));
         }
         checked.push(path);
