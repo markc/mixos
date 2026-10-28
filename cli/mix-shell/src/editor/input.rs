@@ -210,29 +210,16 @@ mod tests {
     use super::*;
     #[test]
     fn suspended_owner_observes_hangup_without_reading_input() {
-        use std::fs::File;
-        use std::os::fd::{AsRawFd, FromRawFd};
+        use std::os::fd::AsRawFd;
         use std::os::unix::net::UnixStream;
-        let (mut master, mut slave) = (-1, -1);
-        assert_eq!(
-            unsafe {
-                libc::openpty(
-                    &mut master,
-                    &mut slave,
-                    std::ptr::null_mut(),
-                    std::ptr::null(),
-                    std::ptr::null(),
-                )
-            },
-            0
-        );
-        let master = unsafe { File::from_raw_fd(master) };
-        let slave = unsafe { File::from_raw_fd(slave) };
+        // Atomic CLOEXEC sockets isolate this poll test from sibling forks;
+        // the system integration tests cover the real PTY hangup.
+        let (input, peer) = UnixStream::pair().unwrap();
         let (control, _control_peer) = UnixStream::pair().unwrap();
         let (signal, _signal_peer) = UnixStream::pair().unwrap();
-        drop(master);
+        drop(peer);
         let error = wait(
-            slave.as_raw_fd(),
+            input.as_raw_fd(),
             false,
             control.as_raw_fd(),
             signal.as_raw_fd(),
