@@ -119,9 +119,27 @@ fn an_agent_seat_copy_is_offered_on_the_primary_seat() {
         "the agent-seat client served the paste"
     );
     // And it survives that client's source going away, like any copy.
+    let held = |h: &Harness| {
+        smithay::wayland::selection::data_device::current_data_device_selection_userdata::<
+            dispatcher::state::Dispatch,
+        >(&h.wire.state.seat.seat)
+        .map(|u| *u)
+    };
+    eprintln!(
+        "DIAG before destroy: held={:?} capture_gen={} capture_mimes={:?}",
+        held(&h),
+        h.wire.state.clipboard.capture.generation(),
+        h.wire.state.clipboard.capture.mime_types()
+    );
     source.destroy();
     h.roundtrip();
     h.roundtrip_client(b);
+    eprintln!(
+        "DIAG after destroy: held={:?} capture_gen={} capture_mimes={:?}",
+        held(&h),
+        h.wire.state.clipboard.capture.generation(),
+        h.wire.state.clipboard.capture.mime_types()
+    );
     assert!(
         h.extra_clients[b].selection_mimes(PRIMARY).is_some(),
         "the mirror was replaced by compd's copy, not cleared"
