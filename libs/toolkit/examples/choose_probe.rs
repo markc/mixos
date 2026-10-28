@@ -46,6 +46,8 @@ async fn drive(
     })
     .await?;
     if !cancel && mode == Mode::Open {
+        bus.call("files", "files.ui.click", json!({"viewport":id,"label":"Filter"})).await?;
+        bus.call("files", "files.ui.click", json!({"viewport":id,"label":"All files"})).await?;
         bus.call(
             "files",
             "files.ui.click",
@@ -89,7 +91,8 @@ async fn main() -> Result<()> {
             let mut body = json!({"mode":mode,"current_folder":folder,"correlation":correlation,
                 "choices":[{"id":"check","label":"Check","options":[]}]});
             if mode != Mode::SaveFiles {
-                body["filters"] = json!([{"name":"Markdown","patterns":["*.md"],"mime_types":[]}]);
+                body["filters"] = json!([{"name":"Markdown","patterns":["*.md"],"mime_types":[]},
+                    {"name":"All files","patterns":["*"],"mime_types":[]}]);
             }
             if mode == Mode::Save {
                 body["current_name"] = json!("draft");
@@ -142,10 +145,14 @@ async fn main() -> Result<()> {
                     current_filter.is_some() == (mode != Mode::SaveFiles),
                     "chosen filter lost"
                 );
+                if mode == Mode::Open {
+                    ensure!(current_filter.unwrap().name == "All files", "selected filter did not round-trip");
+                }
             }
             println!("PASS toolkit::choose {mode:?} cancel={cancel} through real DOpus");
         }
     }
+    simultaneous_and_busy(bus.clone()).await?;
     ensure!(
         std::fs::read_to_string(folder.join("notes.md"))? == "original",
         "chooser changed source"
@@ -154,5 +161,59 @@ async fn main() -> Result<()> {
         ensure!(!folder.join(name).exists(), "chooser wrote destination");
     }
     bus.close().await;
+    Ok(())
+}
+
+async fn simultaneous_and_busy(bus: Arc<SupervisedClient>) -> Result<()> {
+    // Each Handle owns its own client. The real provider must open precisely
+    // one window per request, including two from the same toolkit app.
+    let mut handles = ["parallel-one", "parallel-two"].map(|correlation| {
+        toolkit::choose(toolkit::choose::request(&json!({"correlation":correlation,"on_behalf_of":"dev.mixos.example"}).to_string()).unwrap())
+    });
+    let ctx = egui::Context::default();
+    let requests = tokio::time::timeout(WAIT, async {
+        loop {
+            ctx.run_ui(Default::default(), |ui| {
+                for handle in &mut handles { assert!(handle.poll(ui.ctx()).is_none()); }
+            }).drop_without_applying_deltas();
+            let listed = bus.call("files", "files.choose.list", json!({})).await?;
+            let requests: Vec<_> = listed["requests"].as_array().context("list")?.iter()
+                .filter(|r| matches!(r["correlation"].as_str(), Some("parallel-one" | "parallel-two"))).cloned().collect();
+            if requests.len() == 2 { break Ok::<_, anyhow::Error>(requests); }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }).await??;
+    for correlation in ["parallel-one", "parallel-two"] {
+        ensure!(requests.iter().filter(|r| r["correlation"] == correlation).count() == 1, "duplicate chooser");
+    }
+    for row in &requests { bus.call("files", "files.choose.cancel", json!({"request":row["request"]})).await?; }
+    let mut answers = [0usize; 2];
+    tokio::time::timeout(WAIT, async {
+        loop {
+            ctx.run_ui(Default::default(), |ui| {
+                for (i, handle) in handles.iter_mut().enumerate() {
+                    if let Some(answer) = handle.poll(ui.ctx()) { assert_eq!(answer, Outcome::Cancelled); answers[i] += 1; }
+                    assert_eq!(handle.tier(), Tier::Bus, "external cancellation opened another chooser");
+                }
+            }).drop_without_applying_deltas();
+            if answers == [1, 1] { break; }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }).await?;
+    for _ in 0..3 {
+        ctx.run_ui(Default::default(), |ui| { for handle in &mut handles { assert!(handle.poll(ui.ctx()).is_none()); } }).drop_without_applying_deltas();
+    }
+    // Exercise BUSY on one actual caller connection: its first two requests
+    // are accepted and its third is refused without opening a window.
+    let mut ids = Vec::new();
+    for _ in 0..2 {
+        let reply = bus.call("files", "files.choose", json!({})).await?;
+        ids.push(reply["request"].as_str().context("request id")?.to_owned());
+    }
+    let busy = bus.call_typed("files", "files.choose", json!({})).await?;
+    ensure!(matches!(busy, bus::PortReply::AppError { ref message, .. } if serde_json::from_str::<serde_json::Value>(message).is_ok_and(|v| v["error_code"] == "BUSY")), "real provider did not refuse BUSY: {busy:?}");
+    for id in ids { bus.call("files", "files.choose.cancel", json!({"request":id})).await?; }
+    ensure!(bus.call("files", "files.choose.list", json!({})).await?["requests"].as_array().context("list")?.is_empty(), "parked window left behind");
+    println!("PASS two Handles, external cancel is final, real per-caller BUSY");
     Ok(())
 }
