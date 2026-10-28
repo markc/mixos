@@ -201,7 +201,9 @@ async fn create_submission(
     // Separate local vs remote recipients
     let mut remote_addrs = Vec::new();
     let mut delivered_accounts = std::collections::BTreeSet::new();
+    let mut recipients_seen = std::collections::BTreeSet::new();
     for addr in &to_addrs {
+        if !recipients_seen.insert(addr) { continue; }
         // Phase 1 aliases: resolve the recipient through `maild.aliases`
         // BEFORE the local-vs-remote classification, so a JMAP client
         // sending to a local alias delivers locally to the alias target
@@ -212,8 +214,10 @@ async fn create_submission(
         if accounts.is_empty() {
             remote_addrs.push(addr.clone());
         }
+        let local = !accounts.is_empty();
+        let mut local_error = None;
         for rcpt_account in accounts {
-            if !delivered_accounts.insert(rcpt_account.id) { continue; }
+            if delivered_accounts.contains(&rcpt_account.id) { continue; }
             // Local delivery via MailStore: bytes are already in the
             // shared CAS (the email is account-scoped to the sender,
             // so its `blob_hash` reads directly through the shared
@@ -257,18 +261,26 @@ async fn create_submission(
             .await;
             match create_outcome {
                 Ok(_) => {
-                    let conn = db.conn.lock().map_err(|e| anyhow::anyhow!("lock error: {e}"))?;
-                    conn.execute("INSERT OR IGNORE INTO smtp_delivery(submission_id,recipient,status,last_reply) VALUES(?1,?2,'delivered','250 2.0.0 Local delivery completed')",
-                        rusqlite::params![submission_id.to_string(),addr])?;
+                    delivered_accounts.insert(rcpt_account_id);
                     tracing::info!(from = %from_addr, to = %addr, "Local delivery completed");
                 }
                 Err(e) => {
                     if strict_local {
                         return Err(e);
                     }
+                    local_error = Some(e.to_string());
                     tracing::warn!(error = %e, from = %from_addr, to = %addr, "Local delivery failed");
                 }
             }
+        }
+        if local {
+            let (status, reply) = match local_error {
+                Some(error) => ("bounced", error),
+                None => ("delivered", "250 2.0.0 Local delivery completed".into()),
+            };
+            let conn = db.conn.lock().map_err(|e| anyhow::anyhow!("lock error: {e}"))?;
+            conn.execute("INSERT INTO smtp_delivery(submission_id,recipient,status,last_reply) VALUES(?1,?2,?3,?4)",
+                rusqlite::params![submission_id.to_string(),addr,status,reply])?;
         }
     }
 

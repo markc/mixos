@@ -551,7 +551,7 @@ async fn process_queue(state: &SmtpState, resolver: &TokioResolver) -> Result<us
             queue::mark_delivered(&state.db.conn, entry.id).await?;
             delivered += 1;
         } else {
-            queue::mark_failed(&state.db.conn, entry.id, "one or more recipients deferred").await?;
+            queue::retry_pending(&state.db.conn, entry.id).await?;
         }
     }
 
@@ -568,10 +568,10 @@ async fn generate_bounce(state: &SmtpState, from: &str, to: &[String], error: &s
     // must still bounce to the alias's target account. Resolve `from`
     // for the is-local gate; the `deliver` call below passes the
     // original `from` and re-resolves the recipient itself.
-    let resolved_from =
-        crate::props::aliases::resolve_recipient(&state.aliases_runtime, from).await?;
-    let account = db::account::get_by_email(&state.db.conn, &resolved_from).await?;
-    if let Some(_account) = account {
+    let accounts = crate::props::aliases::recipient_accounts(
+        &state.aliases_runtime, &state.db.conn, from,
+    ).await?;
+    if !accounts.is_empty() {
         // Bounce goes to the *original sender*, so the Message-ID
         // identifies our domain as the sender sees us. Lookup keyed
         // on the sender's domain.

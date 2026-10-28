@@ -26,6 +26,17 @@ generated: by docs/_build/gen-site.mix from services/maild/CHANGELOG.md; do not 
   and account authentication, plus `maild.sieve.list/get/put/activate` Bus
   commands. SMTP's classifier and global Mix filter precede account Sieve;
   daemon-generated spam headers are available to scripts.
+- Advertise SMTPUTF8 on inbound and submission, accept UTF-8 envelopes and
+  headers, and negotiate SMTPUTF8 and BODY=8BITMIME on outbound delivery.
+  Unsupported peers produce a permanent bounce; messages are not downgraded.
+- Generate RSA DKIM DNS keys as SubjectPublicKeyInfo, retain raw Ed25519 keys,
+  and add `maild dkim check DOMAIN` to compare the published active key.
+- Add `maild.submission.status {id}` with durable per-recipient queue outcomes
+  and SMTP replies. Retries skip recipients already delivered or bounced.
+- Resurrect deleted aliases, add `maild alias set`, local multi-target aliases
+  and `@domain` catch-alls. Real mailboxes win over aliases and catch-alls;
+  non-local targets are refused. Account inspection includes the numeric id;
+  Bayesian inspection retains its read-only unknown-account refusal.
 
 - IMAP `SEARCH` and `UID SEARCH` implement the header, date and text keys:
   `FROM`, `TO`, `CC`, `BCC`, `SUBJECT`, `HEADER`, `BODY`, `TEXT`, `BEFORE`,

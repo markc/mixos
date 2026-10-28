@@ -623,7 +623,7 @@ where
                     Some((account_id, account_email)) => {
                         crate::maillog::smtp_sasl_ok(&account_email, &mechanism, session.peer);
                         session.authenticated_account = Some(account_id);
-                        session.authenticated_email = Some(account_email.to_lowercase());
+                        session.authenticated_email = Some(account_email.to_ascii_lowercase());
                         write_line(writer, "235 2.7.0 Authentication successful").await?;
                     }
                     None => {

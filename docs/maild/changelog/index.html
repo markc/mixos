@@ -263,6 +263,25 @@ commands. SMTP's classifier and global Mix filter precede account Sieve;
 daemon-generated spam headers are available to scripts.</p>
 </li>
 <li>
+<p>Advertise SMTPUTF8 on inbound and submission, accept UTF-8 envelopes and
+headers, and negotiate SMTPUTF8 and BODY=8BITMIME on outbound delivery.
+Unsupported peers produce a permanent bounce; messages are not downgraded.</p>
+</li>
+<li>
+<p>Generate RSA DKIM DNS keys as SubjectPublicKeyInfo, retain raw Ed25519 keys,
+and add <code>maild dkim check DOMAIN</code> to compare the published active key.</p>
+</li>
+<li>
+<p>Add <code>maild.submission.status {id}</code> with durable per-recipient queue outcomes
+and SMTP replies. Retries skip recipients already delivered or bounced.</p>
+</li>
+<li>
+<p>Resurrect deleted aliases, add <code>maild alias set</code>, local multi-target aliases
+and <code>@domain</code> catch-alls. Real mailboxes win over aliases and catch-alls;
+non-local targets are refused. Account inspection includes the numeric id;
+Bayesian inspection retains its read-only unknown-account refusal.</p>
+</li>
+<li>
 <p>IMAP <code>SEARCH</code> and <code>UID SEARCH</code> implement the header, date and text keys:
 <code>FROM</code>, <code>TO</code>, <code>CC</code>, <code>BCC</code>, <code>SUBJECT</code>, <code>HEADER</code>, <code>BODY</code>, <code>TEXT</code>, <code>BEFORE</code>,
 <code>ON</code>, <code>SINCE</code>, <code>SENTBEFORE</code>, <code>SENTON</code> and <code>SENTSINCE</code>. They were refused
