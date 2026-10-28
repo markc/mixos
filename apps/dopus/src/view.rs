@@ -597,7 +597,9 @@ fn panes(
         ui.scope_builder(
             UiBuilder::new().max_rect(rect).id_salt(pane.index()),
             |ui| {
-                ui.set_clip_rect(ui.clip_rect().intersect(rect));
+                if ui.ctx().content_rect().width() < 640.0 {
+                    ui.set_clip_rect(ui.clip_rect().intersect(rect));
+                }
                 pane_view(ui, app, commands, strings, pane, events);
             },
         );
