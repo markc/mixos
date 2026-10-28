@@ -29,6 +29,7 @@ pub mod seq;
 pub mod server;
 pub mod session;
 pub mod state;
+pub mod text;
 
 pub use config::ImapConfig;
 pub use server::{ImapHandle, start};

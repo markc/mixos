@@ -48,7 +48,7 @@ use crate::mailstore::MailStore;
 
 type AccountId = i32;
 
-const SUPPORTED_ITEMS: &str = "MESSAGES UIDNEXT UIDVALIDITY UNSEEN RECENT";
+const SUPPORTED_ITEMS: &str = "MESSAGES UIDNEXT UIDVALIDITY UNSEEN RECENT SIZE DELETED APPENDLIMIT";
 
 /// Parsed STATUS arguments.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -66,6 +66,9 @@ pub enum StatusItem {
     Unseen,
     /// Constant `0` — maild never tracks `\Recent` (see module doc).
     Recent,
+    Size,
+    Deleted,
+    AppendLimit,
 }
 
 impl StatusItem {
@@ -76,8 +79,13 @@ impl StatusItem {
             "UIDVALIDITY" => Ok(Self::UidValidity),
             "UNSEEN" => Ok(Self::Unseen),
             "RECENT" => Ok(Self::Recent),
+            "SIZE" => Ok(Self::Size),
+            "DELETED" => Ok(Self::Deleted),
+            "APPENDLIMIT" => Ok(Self::AppendLimit),
+            // imap-ext hook: enable HIGHESTMODSEQ together with its CONDSTORE
+            // session state and durable per-membership MODSEQ semantics.
             other => Err(format!(
-                "STATUS item {other:?} not supported in this phase (supported: {SUPPORTED_ITEMS})"
+                "STATUS item {other:?} not supported (supported: {SUPPORTED_ITEMS})"
             )),
         }
     }
@@ -89,6 +97,9 @@ impl StatusItem {
             Self::UidValidity => "UIDVALIDITY",
             Self::Unseen => "UNSEEN",
             Self::Recent => "RECENT",
+            Self::Size => "SIZE",
+            Self::Deleted => "DELETED",
+            Self::AppendLimit => "APPENDLIMIT",
         }
     }
 }
@@ -134,12 +145,17 @@ pub async fn handle(
     account_id: AccountId,
     store: Arc<dyn MailStore>,
 ) -> String {
+    handle_with_limit(tag, args, account_id, store, crate::imap::config::ImapConfig::default().max_literal_bytes).await
+}
+
+pub async fn handle_with_limit(tag: &str, args: &str, account_id: AccountId, store: Arc<dyn MailStore>, append_limit: u64) -> String {
     let parsed = match parse_args(args) {
         Ok(p) => p,
         Err(e) => return tagged(tag, Status::Bad, None, &e),
     };
 
-    let records = match tokio::task::spawn_blocking(move || store.list_mailboxes(account_id)).await
+    let list_store = store.clone();
+    let records = match tokio::task::spawn_blocking(move || list_store.list_mailboxes(account_id)).await
     {
         Ok(Ok(r)) => r,
         Ok(Err(e)) => {
@@ -197,6 +213,15 @@ pub async fn handle(
         }
     };
 
+    let (size, deleted) = if parsed.items.iter().any(|i| matches!(i, StatusItem::Size | StatusItem::Deleted)) {
+        match tokio::task::spawn_blocking(move || {
+            let handles = store.list_emails_in_mailbox(account_id, resolved_id, crate::mailstore::ListOpts { sort_by: crate::mailstore::SortKey::Seq, limit: u32::MAX, offset: 0 })?;
+            Ok::<_, anyhow::Error>(handles.iter().fold((0u64, 0u64), |(size, deleted), h| (size.saturating_add(h.size_bytes), deleted + u64::from(h.keywords.0 & mds::Flags::DELETED != 0))))
+        }).await {
+            Ok(Ok(totals)) => totals,
+            _ => return tagged(tag, Status::No, Some("UNAVAILABLE"), "status unavailable"),
+        }
+    } else { (0, 0) };
     let mut body = String::new();
     for (i, item) in parsed.items.iter().enumerate() {
         if i > 0 {
@@ -208,6 +233,9 @@ pub async fn handle(
             StatusItem::UidValidity => u64::from(wire_uidvalidity(rec.uid_validity)),
             StatusItem::Unseen => rec.unread_emails,
             StatusItem::Recent => 0,
+            StatusItem::Size => size,
+            StatusItem::Deleted => deleted,
+            StatusItem::AppendLimit => append_limit,
         };
         body.push_str(item.as_str());
         body.push(' ');

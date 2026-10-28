@@ -84,6 +84,15 @@ pub enum FetchAtom {
     /// `BODY` plus body-fld-md5 / disposition / language / location
     /// per the §7.5.2 `body-ext-1part` / `body-ext-mpart` grammar.
     BodyStructure,
+    /// Non-extensible MIME structure (FETCH BODY).
+    BodyBasic,
+    /// Transfer-decoded body content or its decoded octet count.
+    Binary {
+        path: Vec<usize>,
+        partial: Option<BodyPartial>,
+        peek: bool,
+        size: bool,
+    },
     /// `BODY[<section>]<<partial>>` or `BODY.PEEK[<section>]<<partial>>`
     /// — RFC 9051 §6.4.5 section addressing. scope: top-level
     /// `section-msgtext` (empty / HEADER / HEADER.FIELDS / HEADER.FIELDS.NOT
@@ -127,6 +136,9 @@ pub enum BodySection {
     /// `BODY[TEXT]` — body-text only (everything after the
     /// header/body blank-line separator).
     Text,
+    /// MIME part path, optionally followed by a message text selector.
+    Part(Vec<usize>, Option<Box<BodySection>>),
+    Mime,
 }
 
 /// `<offset.length>` partial range. Both are octet counts; `length`
@@ -170,6 +182,15 @@ impl FetchAtom {
             Self::Rfc822Size => out.push_str("RFC822.SIZE"),
             Self::Envelope => out.push_str("ENVELOPE"),
             Self::BodyStructure => out.push_str("BODYSTRUCTURE"),
+            Self::BodyBasic => out.push_str("BODY"),
+            Self::Binary { path, partial, size, .. } => {
+                out.push_str(if *size { "BINARY.SIZE[" } else { "BINARY[" });
+                out.push_str(&part_path(path));
+                out.push(']');
+                if let Some(p) = partial {
+                    out.push_str(&format!("<{}>", p.offset));
+                }
+            }
             Self::Body {
                 section,
                 partial,
@@ -209,7 +230,7 @@ impl FetchAtom {
     fn needs_body(&self) -> bool {
         match self {
             Self::Uid | Self::Flags | Self::InternalDate | Self::Rfc822Size => false,
-            Self::Envelope | Self::BodyStructure | Self::Body { .. } => true,
+            Self::Envelope | Self::BodyStructure | Self::BodyBasic | Self::Body { .. } | Self::Binary { .. } => true,
         }
     }
 
@@ -220,7 +241,7 @@ impl FetchAtom {
     fn sets_seen(&self) -> bool {
         matches!(
             self,
-            Self::Body {
+            Self::Binary { peek: false, size: false, .. } | Self::Body {
                 peek: false,
                 rfc822_alias: None,
                 ..
@@ -240,6 +261,17 @@ impl FetchAtom {
         // handling since the `[section]<partial>` suffix is part of
         // the atom syntax (and `RFC822*` aliases lower to body atoms).
         let upper = tok.to_ascii_uppercase();
+        for (prefix, peek, size) in [("BINARY.PEEK[", true, false), ("BINARY.SIZE[", true, true), ("BINARY[", false, false)] {
+            if let Some(rest) = upper.strip_prefix(prefix) {
+                let (section, tail) = rest.split_once(']').ok_or("BINARY missing closing bracket")?;
+                let path = parse_part_path(section)?;
+                let partial = parse_partial(tail)?;
+                if size && partial.is_some() {
+                    return Err("BINARY.SIZE does not accept a partial".into());
+                }
+                return Ok(Self::Binary { path, partial, peek, size });
+            }
+        }
         if let Some(rest) = upper.strip_prefix("BODY.PEEK[") {
             return parse_body_atom_tail(tok, rest, true);
         }
@@ -272,11 +304,7 @@ impl FetchAtom {
                 peek: false,
                 rfc822_alias: Some(Rfc822Alias::Text),
             }),
-            "BODY" => Err(
-                "FETCH atom BODY without [section] is not the BODYSTRUCTURE alias; \
-                 use BODYSTRUCTURE explicitly"
-                    .to_string(),
-            ),
+            "BODY" => Ok(Self::BodyBasic),
             "BODY.PEEK" => Err("FETCH atom BODY.PEEK requires a [section]".to_string()),
             // The macros expand to atom lists, some of which include
             // body atoms; defer until those atoms are wired.
@@ -301,6 +329,15 @@ impl BodySection {
             Self::HeaderFields(names) => format!("HEADER.FIELDS ({})", names.join(" ")),
             Self::HeaderFieldsNot(names) => format!("HEADER.FIELDS.NOT ({})", names.join(" ")),
             Self::Text => "TEXT".to_string(),
+            Self::Mime => "MIME".to_string(),
+            Self::Part(path, selector) => {
+                let mut s = part_path(path);
+                if let Some(selector) = selector {
+                    s.push('.');
+                    s.push_str(&selector.wire_form());
+                }
+                s
+            }
         }
     }
 }
@@ -345,6 +382,17 @@ fn parse_body_section(s: &str) -> Result<BodySection, String> {
     if trimmed.is_empty() {
         return Ok(BodySection::Whole);
     }
+    if trimmed.as_bytes()[0].is_ascii_digit() {
+        let end = trimmed.find(|c: char| !c.is_ascii_digit() && c != '.').unwrap_or(trimmed.len());
+        let path_text = trimmed[..end].trim_end_matches('.');
+        let path = parse_part_path(path_text)?;
+        let suffix = &trimmed[end..];
+        let selector = if suffix.is_empty() { None } else {
+            if !trimmed[..end].ends_with('.') { return Err("missing dot before section selector".into()); }
+            Some(Box::new(if suffix.eq_ignore_ascii_case("MIME") { BodySection::Mime } else { parse_body_section(suffix)? }))
+        };
+        return Ok(BodySection::Part(path, selector));
+    }
     let upper = trimmed.to_ascii_uppercase();
     if upper == "HEADER" {
         return Ok(BodySection::Header);
@@ -369,9 +417,18 @@ fn parse_body_section(s: &str) -> Result<BodySection, String> {
         "HEADER.FIELDS" => Ok(BodySection::HeaderFields(names)),
         "HEADER.FIELDS.NOT" => Ok(BodySection::HeaderFieldsNot(names)),
         _ => Err(format!(
-            "FETCH section {s:?} unsupported (T12a accepts HEADER / HEADER.FIELDS[.NOT] / TEXT / part-spec is T12b)"
+            "FETCH section {s:?} not recognised"
         )),
     }
+}
+
+fn parse_part_path(s: &str) -> Result<Vec<usize>, String> {
+    if s.is_empty() { return Ok(Vec::new()); }
+    s.split('.').map(|n| n.parse::<usize>().ok().filter(|n| *n > 0).ok_or_else(|| "invalid MIME part number".into())).collect()
+}
+
+fn part_path(path: &[usize]) -> String {
+    path.iter().map(usize::to_string).collect::<Vec<_>>().join(".")
 }
 
 /// Split at the first `(` and return `(prefix-before, inside-and-closer)`.
@@ -476,6 +533,13 @@ pub fn parse_args(args: &str, mode: FetchMode) -> Result<FetchRequest, String> {
     }
     let mut atoms = Vec::with_capacity(atom_tokens.len() + 1);
     for tok in &atom_tokens {
+        if ["FAST", "ALL", "FULL"].iter().any(|s| tok.eq_ignore_ascii_case(s)) {
+            if atoms_src.starts_with('(') { return Err("FETCH macros must stand alone".into()); }
+            atoms.extend([FetchAtom::Flags, FetchAtom::InternalDate, FetchAtom::Rfc822Size]);
+            if !tok.eq_ignore_ascii_case("FAST") { atoms.push(FetchAtom::Envelope); }
+            if tok.eq_ignore_ascii_case("FULL") { atoms.push(FetchAtom::BodyBasic); }
+            continue;
+        }
         atoms.push(FetchAtom::parse(tok)?);
     }
     // RFC 9051 §6.4.8: UID FETCH responses MUST include UID. Prepend
@@ -681,6 +745,21 @@ pub async fn handle(
             None
         };
 
+        // Fail before changing flags or emitting a row when decoding fails.
+        if req.atoms.iter().any(|a| matches!(a, FetchAtom::Binary { .. })) {
+            let Some(bytes) = body_bytes.as_deref() else {
+                return tagged(tag, Status::No, Some("UNAVAILABLE"), "message unreadable").into_bytes();
+            };
+            let parsed = mail_parser::MessageParser::default().parse(bytes);
+            for atom in &req.atoms {
+                if let (FetchAtom::Binary { path, .. }, Some(msg)) = (atom, parsed.as_ref())
+                    && binary_bytes(msg, bytes, path).is_err() {
+                    out.extend_from_slice(tagged(tag, Status::No, Some("UNKNOWN-CTE"), "cannot decode MIME part").as_bytes());
+                    return out;
+                }
+            }
+        }
+
         // \Seen side-effect (RFC 9051 §6.4.5): BODY[...] without PEEK
         // and the legacy RFC822 / RFC822.TEXT data items mark the
         // message \Seen. Apply the update *before* rendering so the
@@ -809,9 +888,11 @@ fn render_fetch_row(
                 // even when the body load / parse failed.
                 None => s.extend_from_slice(ENVELOPE_ALL_NIL.as_bytes()),
             },
-            FetchAtom::BodyStructure => match (parsed.as_ref(), body) {
+            FetchAtom::BodyStructure | FetchAtom::BodyBasic => match (parsed.as_ref(), body) {
                 (Some(m), Some(bytes)) => {
-                    s.extend_from_slice(render_bodystructure(m, bytes).as_bytes())
+                    let mut structure = String::new();
+                    render_part(&mut structure, m, 0, bytes, matches!(atom, FetchAtom::BodyStructure));
+                    s.extend_from_slice(structure.as_bytes())
                 }
                 // Same rationale as ENVELOPE fallback: bare NIL is
                 // not a legal `BODYSTRUCTURE` value — every `body`
@@ -830,6 +911,20 @@ fn render_fetch_row(
                 // <0>` is a valid value for an empty section).
                 _ => s.extend_from_slice(b"{0}\r\n"),
             },
+            FetchAtom::Binary { path, partial, size, .. } => {
+                let decoded = parsed.as_ref().and_then(|m| binary_bytes(m, body.unwrap_or_default(), path).ok()).flatten();
+                match decoded {
+                    Some(bytes) if *size => s.extend_from_slice(bytes.len().to_string().as_bytes()),
+                    Some(bytes) => {
+                        let data = apply_partial(&bytes, partial.as_ref());
+                        let marker = if data.contains(&0) { "~" } else { "" };
+                        s.extend_from_slice(format!("{marker}{{{}}}\r\n", data.len()).as_bytes());
+                        s.extend_from_slice(data);
+                    }
+                    None if *size => s.extend_from_slice(b"0"),
+                    None => s.extend_from_slice(b"NIL"),
+                }
+            }
         }
     }
     s.extend_from_slice(b")\r\n");
@@ -1053,7 +1148,7 @@ const BODYSTRUCTURE_FALLBACK: &str =
 /// `body-fld-lines` (LF count, for TEXT / MESSAGE/RFC822 only).
 fn render_bodystructure(message: &mail_parser::Message<'_>, raw: &[u8]) -> String {
     let mut out = String::new();
-    render_part(&mut out, message, 0, raw);
+    render_part(&mut out, message, 0, raw, true);
     out
 }
 
@@ -1062,7 +1157,7 @@ fn render_bodystructure(message: &mail_parser::Message<'_>, raw: &[u8]) -> Strin
 /// inner `Message` (whose own `parts[0]` is its root), since
 /// `mail_parser`'s flat-vec model embeds nested messages by value
 /// rather than by index.
-fn render_part(out: &mut String, msg: &mail_parser::Message<'_>, idx: usize, raw: &[u8]) {
+fn render_part(out: &mut String, msg: &mail_parser::Message<'_>, idx: usize, raw: &[u8], extensions: bool) {
     use mail_parser::{MimeHeaders, PartType};
     let Some(part) = msg.parts.get(idx) else {
         // Defensive: an index past the end can only happen if a
@@ -1082,7 +1177,7 @@ fn render_part(out: &mut String, msg: &mail_parser::Message<'_>, idx: usize, raw
                 out.push_str(BODYSTRUCTURE_FALLBACK);
             } else {
                 for &cid in child_ids {
-                    render_part(out, msg, cid as usize, raw);
+                    render_part(out, msg, cid as usize, raw, extensions);
                 }
             }
             out.push(' ');
@@ -1094,14 +1189,16 @@ fn render_part(out: &mut String, msg: &mail_parser::Message<'_>, idx: usize, raw
             out.push_str(&render_string(&subtype.to_ascii_uppercase()));
             // body-ext-mpart: body-fld-param SP body-fld-dsp SP
             //                 body-fld-lang SP body-fld-loc
-            out.push(' ');
-            out.push_str(&render_param_list(part.content_type()));
-            out.push(' ');
-            out.push_str(&render_disposition(part));
-            out.push(' ');
-            out.push_str(&render_language(part));
-            out.push(' ');
-            out.push_str(&render_nstring(part.content_location()));
+            if extensions {
+                out.push(' ');
+                out.push_str(&render_param_list(part.content_type()));
+                out.push(' ');
+                out.push_str(&render_disposition(part));
+                out.push(' ');
+                out.push_str(&render_language(part));
+                out.push(' ');
+                out.push_str(&render_nstring(part.content_location()));
+            }
             out.push(')');
         }
         PartType::Text(_) | PartType::Html(_) => {
@@ -1120,7 +1217,7 @@ fn render_part(out: &mut String, msg: &mail_parser::Message<'_>, idx: usize, raw
             out.push(' ');
             out.push_str(&count_lines(raw, part.offset_body, part.offset_end).to_string());
             // body-ext-1part
-            render_ext_1part(out, part);
+            if extensions { render_ext_1part(out, part); }
             out.push(')');
         }
         PartType::Message(inner) => {
@@ -1151,14 +1248,14 @@ fn render_part(out: &mut String, msg: &mail_parser::Message<'_>, idx: usize, raw
             out.push_str(&render_envelope(inner));
             out.push(' ');
             let inner_raw = inner.raw_message.as_ref();
-            render_part(out, inner, 0, inner_raw);
+            render_part(out, inner, 0, inner_raw, extensions);
             out.push(' ');
             // The wrapper's own `body-fld-lines` (the MESSAGE/RFC822
             // body, i.e. the embedded message viewed as a single blob)
             // is still measured in the outer `raw` slice — that range
             // is what the wrapper's offset_body / offset_end refer to.
             out.push_str(&count_lines(raw, part.offset_body, part.offset_end).to_string());
-            render_ext_1part(out, part);
+            if extensions { render_ext_1part(out, part); }
             out.push(')');
         }
         PartType::Binary(_) | PartType::InlineBinary(_) => {
@@ -1173,7 +1270,7 @@ fn render_part(out: &mut String, msg: &mail_parser::Message<'_>, idx: usize, raw
                 None => ("APPLICATION".to_string(), "OCTET-STREAM".to_string()),
             };
             render_one_part_header(out, part, &type_, &subtype, raw);
-            render_ext_1part(out, part);
+            if extensions { render_ext_1part(out, part); }
             out.push(')');
         }
     }
@@ -1347,6 +1444,13 @@ fn render_body_section(
     msg: &mail_parser::Message<'_>,
     raw: &[u8],
 ) -> Vec<u8> {
+    if let BodySection::Part(path, selector) = section {
+        let Some((part, _, _)) = locate_part(msg, raw, path) else { return b"NIL".to_vec(); };
+        if selector.as_deref().is_some_and(|s| !matches!(s, BodySection::Mime))
+            && !matches!(part.body, mail_parser::PartType::Message(_)) {
+            return b"NIL".to_vec();
+        }
+    }
     let bytes = body_section_bytes(section, msg, raw);
     let sliced: &[u8] = apply_partial(bytes.as_ref(), partial);
     let mut out = Vec::with_capacity(sliced.len() + 16);
@@ -1371,6 +1475,18 @@ fn body_section_bytes<'a>(
     let body_start = (root.offset_body as usize).min(raw_len);
     let body_end = (root.offset_end as usize).min(raw_len);
     match section {
+        BodySection::Part(path, selector) => {
+            let Some((part, _, part_raw)) = locate_part(msg, raw, path) else { return Cow::Borrowed(&[]); };
+            match selector.as_deref() {
+                None => Cow::Borrowed(part_raw.get(part.offset_body as usize..part.offset_end as usize).unwrap_or_default()),
+                Some(BodySection::Mime) => Cow::Borrowed(part_raw.get(part.offset_header as usize..part.offset_body as usize).unwrap_or_default()),
+                Some(selector) => match &part.body {
+                    mail_parser::PartType::Message(inner) => body_section_bytes(selector, inner, inner.raw_message.as_ref()),
+                    _ => Cow::Borrowed(&[]),
+                }
+            }
+        }
+        BodySection::Mime => Cow::Borrowed(&[]),
         BodySection::Whole => Cow::Borrowed(&raw[..body_end]),
         BodySection::Header => {
             // Header block including the blank-line CRLF separator
@@ -1426,6 +1542,65 @@ fn body_section_bytes<'a>(
             Cow::Owned(out)
         }
     }
+}
+
+/// Traverse the same Multipart child vectors and Message roots as render_part.
+/// Offsets always belong to the returned message's raw buffer.
+fn locate_part<'a>(
+    msg: &'a mail_parser::Message<'_>, raw: &'a [u8], path: &[usize],
+) -> Option<(&'a mail_parser::MessagePart<'a>, &'a mail_parser::Message<'a>, &'a [u8])> {
+    let mut msg = msg;
+    let mut raw = raw;
+    let mut idx = 0;
+    for (depth, n) in path.iter().enumerate() {
+        if depth > 64 { return None; }
+        let part = msg.parts.get(idx)?;
+        match &part.body {
+            mail_parser::PartType::Multipart(children) => idx = *children.get(n.checked_sub(1)?)? as usize,
+            mail_parser::PartType::Message(inner) if depth > 0 => {
+                msg = inner;
+                raw = inner.raw_message.as_ref();
+                idx = match &inner.parts.first()?.body {
+                    mail_parser::PartType::Multipart(children) => *children.get(n.checked_sub(1)?)? as usize,
+                    _ if *n == 1 => 0,
+                    _ => return None,
+                };
+            }
+            _ if depth == 0 && *n == 1 => {},
+            _ => return None,
+        }
+    }
+    Some((msg.parts.get(idx)?, msg, raw))
+}
+
+fn binary_bytes(msg: &mail_parser::Message<'_>, raw: &[u8], path: &[usize]) -> Result<Option<Vec<u8>>, ()> {
+    use mail_parser::MimeHeaders;
+    use base64::Engine;
+    let Some((part, _, raw)) = locate_part(msg, raw, path) else { return Ok(None); };
+    let data = raw.get(part.offset_body as usize..part.offset_end as usize).ok_or(())?;
+    let cte = part.content_transfer_encoding().unwrap_or("7bit");
+    if ["7bit", "8bit", "binary"].iter().any(|s| cte.eq_ignore_ascii_case(s)) {
+        return Ok(Some(data.to_vec()));
+    }
+    if cte.eq_ignore_ascii_case("base64") {
+        let compact: Vec<u8> = data.iter().copied().filter(|b| !b.is_ascii_whitespace()).collect();
+        return base64::engine::general_purpose::STANDARD.decode(compact).map(Some).map_err(|_| ());
+    }
+    if cte.eq_ignore_ascii_case("quoted-printable") {
+        let mut out = Vec::with_capacity(data.len());
+        let mut i = 0;
+        while i < data.len() {
+            if data[i] != b'=' { out.push(data[i]); i += 1; continue; }
+            if data.get(i+1..i+3) == Some(b"\r\n") { i += 3; continue; }
+            if data.get(i+1) == Some(&b'\n') { i += 2; continue; }
+            let hi = data.get(i+1).and_then(|b| (*b as char).to_digit(16)).ok_or(())?;
+            let lo = data.get(i+2).and_then(|b| (*b as char).to_digit(16)).ok_or(())?;
+            out.push((hi * 16 + lo) as u8);
+            i += 3;
+        }
+        return Ok(Some(out));
+    }
+    Err(())
 }
 
 /// True when `bytes` contains a bare LF (one not preceded by CR) —

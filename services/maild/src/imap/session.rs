@@ -150,6 +150,9 @@ where
             account_id: None,
             peer,
             local: lip,
+            rev2: false,
+            utf8: false,
+            saved_search: Vec::new(),
         };
 
         let r = session.run(&mut reader, &mut writer).await;
@@ -206,6 +209,9 @@ struct Session {
     /// Local (bound) socket the client connected to, for the
     /// dovecot-style `lip=` field. `None` if `local_addr()` failed.
     local: Option<SocketAddr>,
+    rev2: bool,
+    utf8: bool,
+    saved_search: Vec<u64>,
 }
 
 impl Session {
@@ -329,6 +335,31 @@ impl Session {
                 "AUTHENTICATE" => {
                     self.handle_authenticate(&parsed.tag, &parsed.args, reader, writer)
                         .await?;
+                }
+                "ENABLE" => {
+                    if !self.state.is_authenticated() || self.state.selected().is_some() {
+                        self.bad_commands += 1;
+                        writer.write_all(tagged(&parsed.tag, Status::Bad, None, "ENABLE requires authenticated state").as_bytes()).await?;
+                    } else if parsed.args.trim().is_empty() {
+                        self.bad_commands += 1;
+                        writer.write_all(tagged(&parsed.tag, Status::Bad, None, "ENABLE requires capabilities").as_bytes()).await?;
+                    } else {
+                        let mut enabled = Vec::new();
+                        for cap in parsed.args.split_ascii_whitespace() {
+                            let cap = cap.to_ascii_uppercase();
+                            match cap.as_str() {
+                                "IMAP4REV2" => { self.rev2 = true; self.utf8 = true; enabled.push("IMAP4rev2"); }
+                                "UTF8=ACCEPT" => { self.utf8 = true; enabled.push("UTF8=ACCEPT"); }
+                                // CONDSTORE/QRESYNC are deliberately ignored until imap-ext
+                                // registers the complete implementation, per RFC 5161.
+                                _ => {}
+                            }
+                        }
+                        enabled.dedup();
+                        let suffix = if enabled.is_empty() { String::new() } else { format!(" {}", enabled.join(" ")) };
+                        writer.write_all(format!("* ENABLED{suffix}\r\n").as_bytes()).await?;
+                        writer.write_all(tagged(&parsed.tag, Status::Ok, None, "ENABLE completed").as_bytes()).await?;
+                    }
                 }
                 "NAMESPACE" => {
                     if !self.state.is_authenticated() {
@@ -742,13 +773,15 @@ impl Session {
                                                 writer.write_all(resp.as_bytes()).await?;
                                             }
                                             Ok(()) => {
-                                                let resp = op::search::handle(
+                                                let resp = op::search::handle_extended(
                                                     &parsed.tag,
                                                     &args,
                                                     aid,
                                                     container,
                                                     self.mailstore.clone(),
                                                     mode,
+                                                    self.rev2,
+                                                    &mut self.saved_search,
                                                 )
                                                 .await;
                                                 writer.write_all(resp.as_bytes()).await?;
