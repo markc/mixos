@@ -495,3 +495,31 @@ async fn email_import_and_submission_resolve_creation_ids_in_one_request() {
         calls[0][1]["created"]["box"]["id"]
     );
 }
+
+#[tokio::test]
+async fn email_import_storage_failure_is_server_fail_and_rolls_back() {
+    let f = Fixture::new().await;
+    let blob = f.upload("storage-failure").await;
+    let set = maild::mailstore::account_id_to_setid(1);
+    let ms = &f.built.app_state.mailstore;
+    ms.mds()
+        .with_set_tx(&set, |tx| {
+            tx.tx()
+                .execute_batch(
+                    "CREATE TRIGGER fail_import BEFORE INSERT ON mail_envelopes BEGIN SELECT RAISE(ABORT, 'fixture storage fault'); END;",
+                )
+                .map_err(|error| mds::Error::Other(error.to_string()))?;
+            Ok(())
+        })
+        .unwrap();
+    let response = f
+        .call(
+            "Email/import",
+            json!({"emails": {"a": {"blobId": blob, "mailboxIds": {&f.inbox: true}}}}),
+        )
+        .await;
+    assert_eq!(response["notCreated"]["a"]["type"], "serverFail", "{response}");
+    assert!(response["created"].is_null());
+    assert_eq!(response["oldState"], response["newState"]);
+    assert_eq!(f.call("Email/query", json!({})).await["ids"], json!([]));
+}

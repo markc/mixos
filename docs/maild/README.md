@@ -153,6 +153,8 @@ untouched. Missing or invalid blob, mailbox or keyword references produce
 and account-owned CAS blob ids are accepted, with account ownership checked.
 Positive account mail quotas are checked inside the creation transaction;
 concurrent imports cannot exceed them. Upload staging does not consume mail quota.
+Unexpected storage failures return `serverFail`; a failed creation transaction
+leaves no email, memberships or state changes behind.
 These are the [RFC 8621 §4.8](https://www.rfc-editor.org/rfc/rfc8621.html#section-4.8)
 import semantics; the earlier placeholder's successful duplicate-create
 response was incorrect.

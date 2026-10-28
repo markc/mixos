@@ -2407,6 +2407,14 @@ pub async fn import(
                     if msg.starts_with("blobNotFound:") || msg.starts_with("mailbox not found") {
                         value["type"] = "invalidProperties".into();
                     }
+                    if value["type"] == "invalidArguments" {
+                        // The legacy Email/set helper uses this fallback for
+                        // unclassified errors. Import's input failures have
+                        // typed prefixes; an unexpected storage error is ours.
+                        tracing::error!(error = %error, "Email/import storage operation failed");
+                        value["type"] = "serverFail".into();
+                        value["description"] = "Email storage operation failed".into();
+                    }
                     if value["type"] == "invalidProperties" {
                         for property in ["blobId", "mailboxIds", "keywords", "receivedAt"] {
                             if msg.contains(property)

@@ -27,7 +27,8 @@
   `Email/import` (RFC 8621 §4.8) state preconditions, validation, CAS blob
   references, Received date defaults, thread ids and atomic duplicate rejection
   (`alreadyExists` with `existingId`), and transactional mail quota checks.
-  Test upload/import/submission together.
+  Test upload/import/submission together. Unexpected storage errors return
+  `serverFail` and roll back the entry, rather than blaming client arguments.
 - Resolve mail creation references across a JMAP request, including mailbox
   creation, import and submission, and preserve the optional `createdIds` map.
 - Correct the manual and test guide to describe the packaged maild binary.
