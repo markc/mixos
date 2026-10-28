@@ -510,7 +510,7 @@ impl Controller {
                 let headers = serde_json::from_value(headers)
                     .map_err(|e| (code::INVALID_ARGUMENT, e.to_string()))?;
                 self.edit_headers(t, headers)
-                    .map_err(|e| (super::mail::error_code(&e), e))?;
+                    .map_err(|e| (e.code(), e.to_string()))?;
                 Ok(None)
             }
             ActionId::FileSave | ActionId::FileSaveAs => {
@@ -522,7 +522,7 @@ impl Controller {
                 if let Some(x) = self.x.get_mut(&t) {
                     x.save_intent = Some(intent.clone());
                 }
-                self.server_op(
+                self.save_or_server_op(
                     t,
                     ServerOp::Save {
                         path,
@@ -531,16 +531,7 @@ impl Controller {
                     intent,
                     fx,
                 )
-                .map_err(|e| {
-                    (
-                        if self.tab(t).is_some_and(|t| t.mail.is_some()) {
-                            super::mail::error_code(&e)
-                        } else {
-                            code::CONFLICT
-                        },
-                        e,
-                    )
-                })?;
+                .map_err(|e| (e.code(), e.to_string()))?;
                 Ok(None)
             }
             ActionId::FileClose => {

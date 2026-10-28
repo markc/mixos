@@ -4,6 +4,54 @@ use maildoc::MailDocument;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+pub const INTERNAL: &str = "INTERNAL";
+
+/// Save refusals retain their category independently of their wording.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SaveError {
+    Argument(String),
+    Conflict(String),
+    Internal(String),
+    Document(maildoc::Refusal),
+}
+
+impl SaveError {
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::Argument(_) => "INVALID_ARGUMENT",
+            Self::Conflict(_) => "CONFLICT",
+            Self::Internal(_) => INTERNAL,
+            Self::Document(refusal) => refusal_code(refusal),
+        }
+    }
+}
+
+pub fn refusal_code(refusal: &maildoc::Refusal) -> &'static str {
+    match refusal {
+        maildoc::Refusal::TooLarge { .. }
+        | maildoc::Refusal::CarriageReturn
+        | maildoc::Refusal::Framing(_)
+        | maildoc::Refusal::HeaderNotAllowed(_)
+        | maildoc::Refusal::MalformedHeader(_)
+        | maildoc::Refusal::DuplicateHeader(_)
+        | maildoc::Refusal::EmptyValue(_)
+        | maildoc::Refusal::InvalidValue { .. } => "INVALID_ARGUMENT",
+    }
+}
+
+impl std::fmt::Display for SaveError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Argument(message) | Self::Conflict(message) | Self::Internal(message) => f.write_str(message),
+            Self::Document(error) => error.fmt(f),
+        }
+    }
+}
+
+impl From<std::io::Error> for SaveError {
+    fn from(error: std::io::Error) -> Self { Self::Internal(error.to_string()) }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Failure {
     pub code: String,

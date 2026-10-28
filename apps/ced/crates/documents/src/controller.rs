@@ -189,6 +189,8 @@ struct TabX {
     /// Opaque session-only view hints supplied by the window.
     view_hints: HashMap<&'static str, &'static str>,
     recovery_id: Option<String>,
+    /// Body scratch to attach after restoring the mail file headers.
+    mail_recovery_id: Option<String>,
     /// `edit.open` answered (success or failure) at least once.
     opened: bool,
     /// Waiting for a reattach open/list.
@@ -641,7 +643,7 @@ impl Controller {
             .iter()
             .map(|t| SessionTab {
                 path: t.path.clone(),
-                recovery_id: if t.path.is_none() {
+                recovery_id: if t.path.is_none() || t.mail.is_some() {
                     self.x.get(&t.id).and_then(|x| x.recovery_id.clone())
                 } else {
                     None
@@ -683,6 +685,7 @@ impl Controller {
                 let id = self.new_tab(st.path.clone());
                 if let Some(x) = self.x.get_mut(&id) {
                     x.recovery_id = st.recovery_id.clone();
+                    x.mail_recovery_id = st.path.as_ref().and(st.recovery_id.clone());
                 }
                 if let Some(t) = self.tab_mut(id) {
                     t.editor.sel = Selection {
@@ -1095,10 +1098,7 @@ impl Controller {
                     let text = self
                         .tab(tab)
                         .and_then(|t| t.mirror.as_ref())
-                        .map(|m| {
-                            m.detached_copy()
-                                .map_or_else(|| text_string(m.text()), |copy| copy.text.clone())
-                        })
+                        .map(|m| text_string(m.text()))
                         .unwrap_or_else(|| mail.saved.body.clone());
                     json!({"origin": UI_ORIGIN, "text": text, "language": "markdown"})
                 }
@@ -1672,7 +1672,8 @@ impl Controller {
                 if let Some(x) = self.x.get_mut(&tab) {
                     x.reattaching = false;
                 }
-                self.send_open(tab, None, reattach, fx);
+                let path = self.tab(tab).filter(|t| t.mail.is_none()).and_then(|t| t.path.clone());
+                self.send_open(tab, path, reattach, fx);
             }
         }
     }
@@ -1708,7 +1709,7 @@ impl Controller {
             }
         };
         if let Some(t) = self.tab_mut(tab) {
-            if t.mail.is_none() {
+            if t.mail.is_none() && t.path.is_none() {
                 t.path.clone_from(&open.path);
             }
             t.saved_language = None;
@@ -2111,7 +2112,7 @@ impl Controller {
             .mail
             .as_ref()
             .is_some_and(|mail| mail.sending || mail.saving)
-            && !self.mail_save_parked(tab)
+            && !self.mail_body_editable(tab)
         {
             return Err("the mail document is busy".into());
         }
@@ -2171,7 +2172,7 @@ impl Controller {
     ) -> Result<(), String> {
         if self.tab(tab).is_some_and(|t| t.mail.is_some()) {
             match &op {
-                ServerOp::Save { path, .. } => return self.save_mail(tab, path.clone(), false, fx),
+                ServerOp::Save { path, .. } => return self.save_mail(tab, path.clone(), false, fx).map_err(|e| e.to_string()),
                 ServerOp::Reload { .. } => {
                     return Err("close and reopen this mail document to reload it".into());
                 }
@@ -2345,7 +2346,7 @@ impl Controller {
             }
             ActionId::FileSend => {
                 self.save_mail(need(tab)?, None, true, fx)
-                    .map_err(|e| (mail::error_code(&e), e))?;
+                    .map_err(|e| (e.code(), e.to_string()))?;
                 Ok(None)
             }
             ActionId::MailHeaders => Err((
@@ -2354,7 +2355,7 @@ impl Controller {
             )),
             ActionId::FileSave => {
                 let t = need(tab)?;
-                self.server_op(
+                self.save_or_server_op(
                     t,
                     ServerOp::Save {
                         path: None,
@@ -2363,16 +2364,7 @@ impl Controller {
                     intent,
                     fx,
                 )
-                .map_err(|e| {
-                    (
-                        if self.tab(t).is_some_and(|t| t.mail.is_some()) {
-                            mail::error_code(&e)
-                        } else {
-                            code::CONFLICT
-                        },
-                        e,
-                    )
-                })?;
+                .map_err(|e| (e.code(), e.to_string()))?;
                 Ok(None)
             }
             ActionId::FileSaveAll => {

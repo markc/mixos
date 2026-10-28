@@ -1,42 +1,11 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 use super::*;
-use crate::mail::{Failure, Headers, Kind, MailState};
+use crate::mail::{Failure, Headers, Kind, MailState, SaveError};
 
 pub(super) struct SaveIntent {
     path: String,
     send: bool,
     command: Option<(u64, String)>,
-}
-
-pub(super) fn error_code(message: &str) -> &'static str {
-    if matches!(
-        message,
-        "the mail document is busy"
-            | "a mail save or Send is already in flight"
-            | "the body buffer is reconnecting"
-    ) || message.starts_with("the parked mail save was cancelled")
-        || message.starts_with("the mail document changed on disk;")
-    {
-        code::CONFLICT
-    } else if message.starts_with("invalid ")
-        || message.starts_with("mail document ")
-        || message.starts_with("empty mail-")
-        || message.starts_with("malformed mail ")
-        || message.starts_with("header not allowed")
-        || message.starts_with("duplicate mail ")
-        || matches!(
-            message,
-            "not a mail document"
-                | "thread headers are read-only"
-                | "path is not UTF-8"
-                | "save the document to a file first"
-                | "Send is only available on a mail document"
-        )
-    {
-        code::INVALID_ARGUMENT
-    } else {
-        code::INTERNAL
-    }
 }
 
 fn canonical_body(body: &str) -> String {
@@ -68,6 +37,24 @@ impl Tab {
 }
 
 impl Controller {
+    /// A parked Save follows subsequent edits; Send freezes its body immediately.
+    pub fn mail_body_editable(&self, tab: TabId) -> bool {
+        self.tab(tab).and_then(|t| t.mail.as_ref()).is_none_or(|mail| {
+            !mail.sending && (!mail.saving || self.mail_save_parked(tab))
+        })
+    }
+
+    pub(super) fn save_or_server_op(
+        &mut self, tab: TabId, op: ServerOp, intent: Intent, fx: &mut Vec<Effect>,
+    ) -> Result<(), SaveError> {
+        if self.tab(tab).is_some_and(|t| t.mail.is_some())
+            && let ServerOp::Save { path, .. } = &op
+        {
+            return self.save_mail(tab, path.clone(), false, fx);
+        }
+        self.server_op(tab, op, intent, fx).map_err(SaveError::Conflict)
+    }
+
     pub fn mail_save_parked(&self, tab: TabId) -> bool {
         self.x.get(&tab).is_some_and(|x| x.mail_save.is_some())
     }
@@ -81,7 +68,7 @@ impl Controller {
                 mail.saving_body = None;
                 mail.notice = Some(notice.into());
             }
-            Self::mail_answer(park.command, Err(notice.into()), fx);
+            Self::mail_answer(park.command, Err(SaveError::Conflict(notice.into())), fx);
         }
     }
 
@@ -114,7 +101,10 @@ impl Controller {
 
     pub(super) fn drain_mail_save(&mut self, tab: TabId, fx: &mut Vec<Effect>) {
         if let Some(park) = self.x.get_mut(&tab).and_then(|x| x.mail_save.take()) {
-            let mail = self.tab_mut(tab).unwrap().mail.as_mut().unwrap();
+            let Some(mail) = self.tab_mut(tab).and_then(|t| t.mail.as_mut()) else {
+                Self::mail_answer(park.command, Err(SaveError::Conflict("the mail tab is no longer open".into())), fx);
+                return;
+            };
             mail.saving = false;
             mail.sending = false;
             self.op_cmd = park.command.clone();
@@ -136,7 +126,7 @@ impl Controller {
         }
         self.tabs
             .iter()
-            .any(|tab| tab.mail.is_some() && tab.dirty())
+            .any(|tab| tab.mail.as_ref().is_some_and(|mail| !mail.seeding) && tab.dirty())
             .then_some("save or close mail documents with unsaved changes before exiting")
     }
 
@@ -153,12 +143,12 @@ impl Controller {
 
     /// One field's committed edit is one header undo step. Body undo remains
     /// owned by edit; header history is exhausted before body undo.
-    pub fn edit_headers(&mut self, tab: TabId, headers: Headers) -> Result<(), String> {
+    pub fn edit_headers(&mut self, tab: TabId, headers: Headers) -> Result<(), SaveError> {
         self.update_headers(tab, headers, false)
     }
 
     /// Text fields preview every frame; one focus/edit session is one undo step.
-    pub fn preview_headers(&mut self, tab: TabId, headers: Headers) -> Result<(), String> {
+    pub fn preview_headers(&mut self, tab: TabId, headers: Headers) -> Result<(), SaveError> {
         self.update_headers(tab, headers, true)
     }
 
@@ -180,31 +170,30 @@ impl Controller {
         tab: TabId,
         headers: Headers,
         preview: bool,
-    ) -> Result<(), String> {
+    ) -> Result<(), SaveError> {
         let mail = self
             .tab_mut(tab)
             .and_then(|t| t.mail.as_mut())
-            .ok_or("not a mail document")?;
+            .ok_or_else(|| SaveError::Argument("not a mail document".into()))?;
         if mail.sending || mail.saving {
-            return Err("the mail document is busy".into());
+            return Err(SaveError::Conflict("the mail document is busy".into()));
         }
         if headers
             .attachments
             .iter()
             .any(|path| path.to_str().is_none())
         {
-            let message = maildoc::Refusal::InvalidValue {
+            let error = maildoc::Refusal::InvalidValue {
                 header: "mail-attachments".into(),
                 reason: "path is not UTF-8".into(),
-            }
-            .to_string();
-            mail.notice = Some(message.clone());
-            return Err(message);
+            };
+            mail.notice = Some(error.to_string());
+            return Err(SaveError::Document(error));
         }
         if headers.in_reply_to != mail.headers.in_reply_to
             || headers.references != mail.headers.references
         {
-            return Err("thread headers are read-only".into());
+            return Err(SaveError::Argument("thread headers are read-only".into()));
         }
         if headers != mail.headers {
             // More than one field can change in a single UI frame or a Bus
@@ -304,7 +293,13 @@ impl Controller {
                     Req::Discard,
                     fx,
                 );
-                self.send_open(tab, None, false, fx);
+                if let Some(rid) = self.x.get_mut(&tab).and_then(|x| x.mail_recovery_id.take()) {
+                    self.x.get_mut(&tab).unwrap().recovery_id = Some(rid);
+                    self.tab_mut(tab).unwrap().mail.as_mut().unwrap().seeding = false;
+                    self.send_list(tab, fx);
+                } else {
+                    self.send_open(tab, None, false, fx);
+                }
                 true
             }
             Kind::Refused(message) => {
@@ -321,26 +316,27 @@ impl Controller {
         path: Option<String>,
         send: bool,
         fx: &mut Vec<Effect>,
-    ) -> Result<(), String> {
-        let t = self.tab_mut(tab).ok_or("no tab is open")?;
-        let m = t.mirror.as_ref().ok_or("the buffer is not open")?;
+    ) -> Result<(), SaveError> {
+        let t = self.tab_mut(tab).ok_or_else(|| SaveError::Conflict("no tab is open".into()))?;
+        let m = t.mirror.as_ref().ok_or_else(|| SaveError::Conflict("the buffer is not open".into()))?;
         let mail = t
             .mail
             .as_mut()
-            .ok_or("Send is only available on a mail document")?;
+            .ok_or_else(|| SaveError::Argument("Send is only available on a mail document".into()))?;
         if mail.sending || mail.saving {
-            return Err("a mail save or Send is already in flight".into());
+            return Err(SaveError::Conflict("a mail save or Send is already in flight".into()));
         }
         if !matches!(m.phase(), Phase::Live) {
-            return Err("the body buffer is reconnecting".into());
+            return Err(SaveError::Conflict("the body buffer is reconnecting".into()));
         }
         let idle = m.is_idle();
         let path = path
             .or_else(|| t.path.clone())
-            .ok_or("save the document to a file first")?;
+            .ok_or_else(|| SaveError::Argument("save the document to a file first".into()))?;
         if !idle {
             mail.saving = true;
             mail.sending = send;
+            mail.notice = send.then(|| "Sending…".to_owned());
             mail.saving_body = None;
             self.x.get_mut(&tab).unwrap().mail_save = Some(SaveIntent {
                 path,
@@ -356,18 +352,17 @@ impl Controller {
             Err(error) => {
                 let message = error.to_string();
                 mail.notice = Some(message.clone());
-                return Err(message);
+                return Err(SaveError::Document(error));
             }
         };
         let normal_path = |p: &str| std::fs::canonicalize(p).or_else(|_| std::path::absolute(p));
-        let path = normal_path(&path).map_err(|e| e.to_string())?;
+        let canonical = normal_path(&path)?;
         let expected = t
             .path
             .as_ref()
             .and_then(|p| normal_path(p).ok())
-            .filter(|p| p == &path)
+            .filter(|p| p == &canonical)
             .map(|_| mail.disk.clone());
-        let path = path.to_str().ok_or("path is not UTF-8")?.to_owned();
         mail.saving = true;
         mail.saving_body = Some(body);
         mail.sending = send;
@@ -392,7 +387,7 @@ impl Controller {
         text: String,
         send: bool,
         command: Option<(u64, String)>,
-        result: Result<(), String>,
+        result: Result<(), SaveError>,
     ) -> Vec<Effect> {
         let mut fx = Vec::new();
         let Some(t) = self.tab_mut(tab) else {
@@ -425,7 +420,7 @@ impl Controller {
             Err(message) => {
                 mail.sending = false;
                 mail.saving_body = None;
-                mail.notice = Some(message.clone());
+                mail.notice = Some(message.to_string());
                 Self::mail_answer(command, Err(message), &mut fx);
                 if let Some(x) = self.x.get_mut(&tab) {
                     x.close_after_save = None;
@@ -460,14 +455,14 @@ impl Controller {
 
     fn mail_answer(
         command: Option<(u64, String)>,
-        result: Result<String, String>,
+        result: Result<String, SaveError>,
         fx: &mut Vec<Effect>,
     ) {
         let refusal_code = result
             .as_ref()
             .err()
-            .map_or(code::INTERNAL, |message| error_code(message));
-        Self::mail_answer_with_code(command, result, refusal_code, fx);
+            .map_or(code::INTERNAL, SaveError::code);
+        Self::mail_answer_with_code(command, result.map_err(|error| error.to_string()), refusal_code, fx);
     }
 
     fn mail_answer_with_code(
@@ -695,7 +690,7 @@ mod tests {
         else {
             unreachable!()
         };
-        let fx = c.on_mail_saved(tab, path, text, send, command, Err("disk full".into()));
+        let fx = c.on_mail_saved(tab, path, text, send, command, Err(SaveError::Internal("disk full".into())));
         assert!(!fx.iter().any(|e| matches!(e, Effect::SendMail { .. })));
         assert!(c.can_send(tab));
         let mut headers = c.tab(tab).unwrap().mail.as_ref().unwrap().headers.clone();
@@ -883,7 +878,7 @@ mod tests {
         let expected = maildoc::write(&headers.document("Body".into()))
             .unwrap_err()
             .to_string();
-        assert_eq!(c.edit_headers(tab, headers).unwrap_err(), expected);
+        assert_eq!(c.edit_headers(tab, headers).unwrap_err().to_string(), expected);
         assert_eq!(
             c.tab(tab).unwrap().mail.as_ref().unwrap().notice.as_deref(),
             Some(expected.as_str())
@@ -1157,16 +1152,123 @@ mod tests {
         let mut fx = Vec::new();
         Controller::mail_answer(
             Some((77, "file.send".into())),
-            Err("invalid address".into()),
+            Err(SaveError::Document(maildoc::Refusal::Framing("wording without a prefix".into()))),
             &mut fx,
         );
         Controller::mail_answer(
             Some((78, "file.send".into())),
-            Err("a mail save or Send is already in flight".into()),
+            Err(SaveError::Conflict("a mail save or Send is already in flight".into())),
             &mut fx,
         );
         assert!(fx.iter().any(|e| matches!(e, Effect::Respond { id:77, body, .. } if serde_json::from_str::<Value>(body).unwrap()["error_code"] == code::INVALID_ARGUMENT)));
         assert!(fx.iter().any(|e| matches!(e, Effect::Respond { id:78, body, .. } if serde_json::from_str::<Value>(body).unwrap()["error_code"] == code::CONFLICT)));
-        assert_eq!(error_code("disk full"), code::INTERNAL);
+        assert_eq!(SaveError::Internal("invalid address".into()).code(), code::INTERNAL);
+    }
+
+    #[test]
+    fn parked_send_freezes_body_and_reports_sending_but_save_allows_edits() {
+        for send in [false, true] {
+            let (mut c, _, tab) = opened(LETTER);
+            c.on_editor(tab, EditorMsg::Command(EditCommand::Insert("First ".into())));
+            execute(&mut c, tab, if send { "file.send" } else { "file.save" });
+            assert!(c.mail_save_parked(tab));
+            assert_eq!(c.mail_body_editable(tab), !send);
+            if send {
+                assert_eq!(c.tab(tab).unwrap().mail.as_ref().unwrap().notice.as_deref(), Some("Sending…"));
+            }
+            let before = text_string(c.tab(tab).unwrap().mirror.as_ref().unwrap().text());
+            c.on_editor(tab, EditorMsg::Command(EditCommand::Insert("Later ".into())));
+            let after = text_string(c.tab(tab).unwrap().mirror.as_ref().unwrap().text());
+            assert_eq!(before == after, send);
+            let undo = execute(&mut c, tab, "edit.undo");
+            assert!(undo.iter().any(|e| matches!(e, Effect::Respond { rc:10, body, .. } if body.contains("mail document is busy"))));
+        }
+    }
+
+    #[test]
+    fn draining_a_save_after_the_tab_disappears_is_a_refusal() {
+        let (mut c, _, tab) = opened(LETTER);
+        c.on_editor(tab, EditorMsg::Command(EditCommand::Insert("First ".into())));
+        execute(&mut c, tab, "file.save");
+        c.tab_mut(tab).unwrap().mail = None;
+        let mut fx = Vec::new();
+        c.drain_mail_save(tab, &mut fx);
+        assert!(fx.iter().any(|e| matches!(e, Effect::Respond { rc:10, body, .. } if body.contains("no longer open"))));
+    }
+
+    #[test]
+    fn mail_session_reattaches_unsaved_body_or_falls_back_to_the_file() {
+        for retained in [false, true] {
+            let (mut c, mut service, tab) = opened(LETTER);
+            let fx = c.on_editor(tab, EditorMsg::Command(EditCommand::Insert("Unsaved ".into())));
+            settle(&mut c, &mut service, fx);
+            let session = c.session();
+            assert_eq!(session.tabs[0].path.as_deref(), Some(PATH));
+            assert!(session.tabs[0].recovery_id.is_some());
+            if retained {
+                service.restart("0000e2e2", None);
+            } else {
+                service = FakeEditd::new("0000e2e2");
+                service.create(Some(PATH), LETTER);
+            }
+            let mut restored = Controller::new(Config::default(), 2, true);
+            restored.set_session(session);
+            let fx = restored.start();
+            let effects = settle(&mut restored, &mut service, fx);
+            let tab = restored.tab(restored.active().unwrap()).unwrap();
+            assert!(tab.mail.is_some());
+            assert_eq!(tab.path.as_deref(), Some(PATH));
+            assert_eq!(text_string(tab.mirror.as_ref().unwrap().text()), if retained { "Unsaved Body" } else { "Body" });
+            assert_eq!(tab.dirty(), retained);
+            assert!(!effects.iter().any(|e| matches!(e, Effect::Prompt(Prompt::Recovered { .. }))));
+        }
+    }
+
+    #[test]
+    fn quit_force_closes_a_scratch_before_seeding_finishes() {
+        let (mut c, _, tab) = opened(LETTER);
+        let buffer = c.tab(tab).unwrap().mirror.as_ref().unwrap().buffer().to_owned();
+        c.tab_mut(tab).unwrap().mail.as_mut().unwrap().seeding = true;
+        let fx = execute(&mut c, tab, "file.exit");
+        assert!(fx.iter().any(|e| matches!(e, Effect::Send { out, .. } if out.command == "edit.close" && serde_json::from_str::<Value>(&out.body).unwrap() == json!({"buffer":buffer,"force":true,"origin":UI_ORIGIN}))));
+        assert!(fx.iter().any(|e| matches!(e, Effect::Quit)));
+    }
+
+    #[test]
+    fn relative_save_as_checks_disk_and_preserves_the_opened_path() {
+        let (mut c, _, tab) = opened(LETTER);
+        c.tab_mut(tab).unwrap().path = Some("letter.md".into());
+        let absolute = std::path::absolute("letter.md").unwrap().to_str().unwrap().to_owned();
+        let mut fx = Vec::new();
+        c.save_mail(tab, Some(absolute), false, &mut fx).unwrap();
+        assert!(fx.iter().any(|e| matches!(e, Effect::SaveMail { expected:Some(text), .. } if text == LETTER)));
+        let (mut c, _, tab) = opened(LETTER);
+        c.tab_mut(tab).unwrap().path = Some("./letter.md".into());
+        let fx = execute(&mut c, tab, "file.save");
+        let (path, text, send, command) = fx.into_iter().find_map(|e| match e {
+            Effect::SaveMail { path, text, send, command, .. } => Some((path,text,send,command)),
+            _ => None,
+        }).unwrap();
+        assert_eq!(path, "./letter.md");
+        c.on_mail_saved(tab, path, text, send, command, Ok(()));
+        assert_eq!(c.tab(tab).unwrap().path.as_deref(), Some("./letter.md"));
+    }
+
+    #[test]
+    fn reseed_uses_live_body_and_leaves_the_detached_copy_alone() {
+        let (mut c, mut service, tab) = opened(LETTER);
+        let answer = service.handle("local:ced", "edit.open", &json!({"text":"Live body","origin":UI_ORIGIN}));
+        let open: wire::OpenReply = serde_json::from_value(answer.body).unwrap();
+        let step = c.tab_mut(tab).unwrap().mirror.as_mut().unwrap().reattach(&open);
+        let mut fx = Vec::new();
+        c.drive(tab, step, &mut fx);
+        settle(&mut c, &mut service, fx);
+        let m = c.tab(tab).unwrap().mirror.as_ref().unwrap();
+        assert_eq!(text_string(m.text()), "Live body");
+        assert_eq!(m.detached_copy().unwrap().text, "Body");
+        let mut fx = Vec::new();
+        c.send_open(tab, None, true, &mut fx);
+        assert!(fx.iter().any(|e| matches!(e, Effect::Send { out, .. } if out.command == "edit.open" && serde_json::from_str::<Value>(&out.body).unwrap()["text"] == "Live body")));
+        assert_eq!(c.tab(tab).unwrap().mirror.as_ref().unwrap().detached_copy().unwrap().text, "Body");
     }
 }

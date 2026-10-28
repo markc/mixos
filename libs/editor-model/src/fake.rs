@@ -139,7 +139,9 @@ impl FakeEditd {
     /// A buffer holding `text`, clean at rev 0, optionally bound to `path`.
     pub fn create(&mut self, path: Option<&str>, text: &str) -> String {
         let (mut buf, _) = Buffer::from_bytes(text.as_bytes()).expect("fixture text");
-        buf.mark_saved();
+        if path.is_some() || text.is_empty() {
+            buf.mark_saved();
+        }
         let bid = format!("b{}_{}", self.next, self.epoch);
         self.next += 1;
         let recovery_id = format!("{:016x}", 0x5f0c_2a9e_1b7d_4c00u64 + self.next);

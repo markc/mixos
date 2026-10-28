@@ -1,28 +1,28 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! File and application effects, called only from ced's Bus worker.
-use documents::mail::Failure;
+use documents::mail::{Failure, SaveError, INTERNAL};
 use std::path::Path;
 use std::time::Duration;
 
-pub fn save(path: &str, text: &str, expected: Option<&str>) -> Result<(), String> {
+pub fn save(path: &str, text: &str, expected: Option<&str>) -> Result<(), SaveError> {
     // Validate before touching the destination. Use the native editor's
     // replacing writer, retaining permissions and following the target link.
-    maildoc::parse(text).map_err(|e| e.to_string())?;
+    maildoc::parse(text).map_err(SaveError::Document)?;
     if let Some(expected) = expected {
         let current = match std::fs::read_to_string(path) {
             Ok(text) => Some(text),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-            Err(e) => return Err(e.to_string()),
+            Err(e) => return Err(e.into()),
         };
         if current.is_some_and(|text| text != expected) {
-            return Err(
+            return Err(SaveError::Conflict(
                 "the mail document changed on disk; save to another file or reopen it".into(),
-            );
+            ));
         }
     }
     let mut document = editor::local::Document::open_bytes(Path::new(path), text.as_bytes())
-        .map_err(|e| e.to_string())?;
-    document.save_as(path).map_err(|e| e.to_string())
+        .map_err(SaveError::from)?;
+    document.save_as(path).map_err(SaveError::from)
 }
 
 pub async fn send(client: &impl citizen::app::AppClient, path: &str) -> Result<String, Failure> {
@@ -49,20 +49,20 @@ pub async fn send(client: &impl citizen::app::AppClient, path: &str) -> Result<S
         }
         Err(citizen::app::AppCallError::Transport(error)) if error.outcome_unknown => {
             Err(Failure::new(
-                "INTERNAL",
+                INTERNAL,
                 format!("the mail may have been sent; {}", error.message),
             ))
         }
         Err(citizen::app::AppCallError::Transport(error)) => Err(Failure::new(
-            "INTERNAL",
+            INTERNAL,
             format!("could not contact Email: {}", error.message),
         )),
         Err(citizen::app::AppCallError::LaunchFailed(message)) => Err(Failure::new(
-            "INTERNAL",
+            INTERNAL,
             format!("could not launch Email: {message}"),
         )),
         Err(citizen::app::AppCallError::DidNotAppear) => Err(Failure::new(
-            "INTERNAL",
+            INTERNAL,
             "Email did not appear before the wait limit",
         )),
     }
@@ -72,6 +72,7 @@ pub async fn send(client: &impl citizen::app::AppClient, path: &str) -> Result<S
 mod tests {
     use super::*;
     use citizen::{CallError, Handle, Logged, Reply};
+    use futures::FutureExt;
 
     #[tokio::test]
     async fn email_refusal_is_verbatim_and_has_only_the_document_argument() {
@@ -106,26 +107,40 @@ mod tests {
 
     #[tokio::test]
     async fn send_has_a_full_two_minute_deadline_and_timeout_is_uncertain() {
-        struct Deadline;
+        let broker = test_broker::Broker::start();
+        let email = bus::native_client::SupervisedClient::connect_options("email", &broker.url)
+            .bounded_incoming(8).connect().await.unwrap();
+        let mut incoming = email.incoming_bounded().unwrap();
+        struct Deadline(bus::native_client::SupervisedClient);
         impl citizen::app::AppClient for Deadline {
             async fn app_call<'a>(
                 &'a self,
-                _service: &'a str,
+                service: &'a str,
                 command: &'a str,
-                _body: &'a serde_json::Value,
+                body: &'a serde_json::Value,
                 limit: Duration,
             ) -> Result<Reply, CallError> {
                 assert_eq!(command, "email.send");
                 assert_eq!(limit, Duration::from_secs(120));
-                Err(CallError::from("Bus request timed out"))
+                // Exercise the real post-delivery native timeout. Only the
+                // test's wall time is shortened; send still asks for 120 s.
+                citizen::app::AppClient::app_call(&self.0, service, command, body, Duration::from_millis(50)).await
             }
         }
-        let message = send(&Deadline, "/home/user/letter.md")
+        let caller = bus::native_client::SupervisedClient::connect_options("mail-timeout-test", &broker.url)
+            .connect().await.unwrap();
+        let client = Deadline(caller);
+        let message = send(&client, "/home/user/letter.md")
             .await
             .unwrap_err()
             .message;
         assert!(message.contains("may have been sent"));
         assert!(!message.contains("could not contact Email"));
+        let delivered = tokio::time::timeout(Duration::from_secs(1), incoming.recv()).await.unwrap().unwrap();
+        assert!(matches!(delivered, bus::native_client::BoundedIncomingEvent::Command(cmd) if cmd.command == "email.send"));
+        assert!(incoming.recv().now_or_never().is_none());
+        client.0.close().await;
+        email.close().await;
     }
 
     #[tokio::test]

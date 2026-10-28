@@ -76,7 +76,7 @@ pub enum Delivery {
         text: String,
         send: bool,
         command: Option<(u64, String)>,
-        result: Result<(), String>,
+        result: Result<(), documents::mail::SaveError>,
     },
     MailSent {
         tab: u64,
@@ -359,11 +359,20 @@ async fn run(
 
     let mut commands: HashMap<u64, IncomingCommand> = HashMap::new();
     let mut replies = tokio::task::JoinSet::new();
+    let mut sends = tokio::task::JoinSet::new();
+    let mut force_closes = tokio::task::JoinSet::new();
+    let closing_mail = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let mut next_command = 0u64;
     let mut macro_jobs = citizen::macros::Jobs::default();
     let mut session = None;
     loop {
         tokio::select! {
+            _ = sends.join_next(), if !sends.is_empty() => {},
+            result = force_closes.join_next(), if !force_closes.is_empty() => {
+                if let Some(Ok(Err(error))) = result {
+                    tracing::warn!(%error, "ced mail close failed");
+                }
+            },
             result = replies.join_next(), if !replies.is_empty() => {
                 if let Some(Ok(Err(error))) = result {
                     tracing::warn!(%error, "ced Bus reply failed");
@@ -460,7 +469,7 @@ async fn run(
                         let o = out.clone();
                         tokio::spawn(async move {
                             let (p, t) = (path.clone(), text.clone());
-                            let result = tokio::task::spawn_blocking(move || crate::mail::save(&p, &t, expected.as_deref())).await.unwrap_or_else(|error| Err(error.to_string()));
+                            let result = tokio::task::spawn_blocking(move || crate::mail::save(&p, &t, expected.as_deref())).await.unwrap_or_else(|error| Err(documents::mail::SaveError::Internal(error.to_string())));
                             o.send(Delivery::MailSaved { tab, path, text, send, command, result });
                         });
                     }
@@ -473,9 +482,12 @@ async fn run(
                     }
                     Effect::Send { req, out: request } => {
                         let (c, o) = (client.clone(), out.clone());
-                        // Drain these before deregistering too: clean mail
-                        // scratch closes must reach editd before ced exits.
-                        replies.spawn(async move {
+                        let args: serde_json::Value = serde_json::from_str(&request.body).unwrap_or_default();
+                        let scratch_open = request.command == "edit.open" && args.get("text").is_some() && args.get("path").is_none();
+                        let force_close = request.command == "edit.close" && args["force"] == true;
+                        let closing = closing_mail.clone();
+                        let tasks = if scratch_open || force_close { &mut force_closes } else { &mut sends };
+                        tasks.spawn(async move {
                             let deadline = tokio::time::Instant::now()
                                 + Duration::from_millis(request.deadline_ms);
                             let headers = BTreeMap::new();
@@ -503,7 +515,19 @@ async fn run(
                                 }
                                 Err(_) => Incoming::Deadline { req },
                             };
-                            o.send(Delivery::Incoming(incoming));
+                            // A quit can overtake an open's reply, before the
+                            // controller has a buffer id to close.
+                            if scratch_open && closing.load(std::sync::atomic::Ordering::SeqCst)
+                                && let Incoming::Reply { rc: 0..=9, body, .. } = &incoming
+                                && let Ok(value) = serde_json::from_str::<serde_json::Value>(body)
+                                && let Some(buffer) = value["buffer"].as_str()
+                            {
+                                let body = serde_json::json!({"buffer":buffer,"force":true,"origin":"ced"}).to_string();
+                                c.call_with_headers_raw(EDIT, "edit.close", &BTreeMap::new(), &body).await
+                                    .map_err(|error| format!("mail scratch close: {error}"))?;
+                            } else {
+                                o.send(Delivery::Incoming(incoming));
+                            }
                             Ok(())
                         });
                     }
@@ -583,9 +607,16 @@ async fn run(
     let deadline = std::time::Instant::now() + DRAIN;
     let until = tokio::time::Instant::from_std(deadline);
     let mut faults = Vec::new();
+    closing_mail.store(true, std::sync::atomic::Ordering::SeqCst);
+    sends.abort_all();
+    // Force closes have a small, separate allowance. An unanswered edit
+    // request must leave time for deregistration, refusals and persistence.
+    let close_until = tokio::time::Instant::now() + Duration::from_millis(250);
+    drain_replies(&mut force_closes, close_until, &mut faults).await;
     // Replies already queued (a quit's own answer among them) go out
     // first, while ordinary replies are still allowed.
-    drain_replies(&mut replies, until, &mut faults).await;
+    let reply_until = tokio::time::Instant::now() + Duration::from_millis(250);
+    drain_replies(&mut replies, reply_until, &mut faults).await;
     // Then leave the Bus, so nothing new is routed here; the connection
     // stays up for the refusals below.
     match tokio::time::timeout_at(until, client.deregister_for_drain()).await {
@@ -725,6 +756,58 @@ pub fn forward_open(url: &str, service: &str, paths: &[String]) -> Result<(), St
 #[cfg(test)]
 mod tests {
     use super::*;
+    use futures::StreamExt;
+
+    #[tokio::test]
+    async fn quit_with_unanswered_edit_requests_deregisters_refuses_and_flushes() {
+        let broker = test_broker::Broker::start();
+        let edit = SupervisedClient::connect_options("edit", &broker.url)
+            .bounded_incoming(8).connect().await.unwrap();
+        let mut requests = edit.incoming_bounded().unwrap();
+        let (handle, mut deliveries) = spawn("ced-shutdown-test", &broker.url, Arc::new(|| {})).unwrap();
+        let send = |req, command: &str, body: &str| Effect::Send {
+            req,
+            out: editor_model::types::Outgoing {
+                command: command.into(), body: body.into(), op_id: None, deadline_ms: 30_000,
+            },
+        };
+        handle.perform(&send(1, "edit.get", r#"{"buffer":"never-answers"}"#));
+        let first = tokio::time::timeout(Duration::from_secs(1), requests.recv()).await.unwrap().unwrap();
+        assert!(matches!(first, BoundedIncomingEvent::Command(cmd) if cmd.command == "edit.get"));
+        // Leave a real caller pending, to check the closing refusal too.
+        let caller = Arc::new(SupervisedClient::connect_options("shutdown-caller", &broker.url).connect().await.unwrap());
+        let c = caller.clone();
+        let waiting = tokio::spawn(async move {
+            c.call_with_headers_raw("ced-shutdown-test", "ced.state", &BTreeMap::new(), "{}").await
+        });
+        loop {
+            if matches!(tokio::time::timeout(Duration::from_secs(1), deliveries.next()).await.unwrap(), Some(Delivery::Command(_))) { break; }
+        }
+        // The close also never answers. It must be sent, but must not consume
+        // the allowance needed by deregistration and the session writer.
+        handle.perform(&send(2, "edit.close", r#"{"buffer":"scratch","force":true}"#));
+        let path = broker.endpoint.parent().unwrap().join("ced-session.json");
+        let writer = SessionWriter::spawn();
+        writer.queue(path.clone(), documents::session::Session::default()).unwrap();
+        let start = std::time::Instant::now();
+        handle.shutdown(Some(writer));
+        let close = tokio::time::timeout(Duration::from_secs(1), requests.recv()).await.unwrap().unwrap();
+        assert!(matches!(close, BoundedIncomingEvent::Command(cmd) if cmd.command == "edit.close"));
+        let faults = loop {
+            if let Some(Delivery::Stopped { faults }) = tokio::time::timeout(Duration::from_secs(3), deliveries.next()).await.unwrap() { break faults; }
+        };
+        assert!(start.elapsed() < DRAIN);
+        assert!(!faults.iter().any(|f| f.contains("deregister") || f.contains("session drain")), "{faults:?}");
+        assert_eq!(documents::session::load(&path), documents::session::Session::default());
+        assert!(path.is_file());
+        let (rc, body, _) = waiting.await.unwrap().unwrap();
+        assert_eq!(rc, 10);
+        assert!(body.contains("ced is closing"));
+        let (rc, _, error) = caller.call_with_headers_raw("ced-shutdown-test", "ced.ping", &BTreeMap::new(), "{}").await.unwrap();
+        assert!(rc >= 10 && error.unwrap().contains("not found"));
+        caller.close().await;
+        edit.close().await;
+    }
 
     #[test]
     fn failure_keeps_real_error_text() {

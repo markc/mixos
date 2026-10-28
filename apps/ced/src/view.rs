@@ -235,7 +235,7 @@ fn commit_mail_headers(app: &mut App, tab: TabId, field: Option<&str>) {
         return;
     }
     let committed = app.ctl.commit_header_field(tab, field);
-    if committed || field.is_some() {
+    if committed {
         let headers = &app
             .ctl
             .tabs()
@@ -624,7 +624,7 @@ fn body_editable(app: &App, tab: &Tab) -> bool {
         && tab
             .mail
             .as_ref()
-            .is_none_or(|mail| (!mail.sending && !mail.saving) || app.ctl.mail_save_parked(tab.id))
+            .is_none_or(|mail| (!mail.sending && !mail.saving) || app.ctl.mail_body_editable(tab.id))
 }
 
 fn centred(ui: &mut Ui, text: &str) {
@@ -990,12 +990,31 @@ mod tests {
             )),
         );
         app.absorb(fx);
-        app.action(ActionId::FileSend);
+        app.action(ActionId::FileSave);
         assert!(app.ctl.mail_save_parked(tab));
         assert!(super::body_editable(&app, app.active_tab().unwrap()));
+        let (mut app, tab) = mail_app();
+        let fx = app.ctl.on_editor(tab, documents::editor::EditorMsg::Command(editor_model::model::EditCommand::Insert("First ".into())));
+        app.absorb(fx);
+        app.action(ActionId::FileSend);
+        assert!(!super::body_editable(&app, app.active_tab().unwrap()));
         let (mut app, _) = mail_app();
         app.action(ActionId::FileSend);
         assert!(!super::body_editable(&app, app.active_tab().unwrap()));
+    }
+
+    #[test]
+    fn focus_loss_only_publishes_a_committed_header_edit() {
+        let (mut app, tab) = mail_app();
+        super::commit_mail_headers(&mut app, tab, Some("subject"));
+        assert!(app.noted.is_empty());
+        let mut headers = app.active_tab().unwrap().mail.as_ref().unwrap().headers.clone();
+        headers.subject = "Changed".into();
+        app.ctl.preview_headers(tab, headers).unwrap();
+        super::commit_mail_headers(&mut app, tab, Some("subject"));
+        assert_eq!(app.noted.len(), 1);
+        super::commit_mail_headers(&mut app, tab, Some("subject"));
+        assert_eq!(app.noted.len(), 1);
     }
 
     #[cfg(unix)]
