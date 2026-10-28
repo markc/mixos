@@ -2456,10 +2456,16 @@ impl Controller {
             | ActionId::EditUndoAny
             | ActionId::EditUndoOther => {
                 let t = need(tab)?;
+                let parked = self.mail_save_parked(t);
                 if let Some(mail) = self.tab_mut(t).and_then(|t| t.mail.as_mut()) {
                     mail.editing_field = None;
                     if mail.sending || mail.saving {
-                        return Err((code::CONFLICT, "the mail document is busy".into()));
+                        let message = if parked {
+                            "Undo and Redo are unavailable while a mail save or Send is waiting for body edits"
+                        } else {
+                            "the mail document is busy"
+                        };
+                        return Err((code::CONFLICT, message.into()));
                     }
                     let entry = if action == ActionId::EditRedo {
                         mail.redo.pop()

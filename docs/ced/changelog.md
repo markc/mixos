@@ -15,7 +15,8 @@ generated: by docs/_build/gen-site.mix from apps/ced/CHANGELOG.md; do not edit
   waits separately, leaving time to deregister, refuse callers and flush the
   session. Close mail scratches even when quit overtakes their seeding.
 - Freeze body editing and show Sending… as soon as Send parks; parked Save
-  still accepts typing. Undo and Redo report busy while either is parked.
+  still accepts typing. Undo and Redo explain that Save or Send is waiting for
+  body edits while either is parked.
 - Reattach session mail bodies by recovery id with their header state, or
   reopen the file if the scratch is gone. Reseed from live text while keeping
   detached copies separate. Preserve the opened path after Save and compare

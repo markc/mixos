@@ -1243,7 +1243,7 @@ mod tests {
             let after = text_string(c.tab(tab).unwrap().mirror.as_ref().unwrap().text());
             assert_eq!(before == after, send);
             let undo = execute(&mut c, tab, "edit.undo");
-            assert!(undo.iter().any(|e| matches!(e, Effect::Respond { rc:10, body, .. } if body.contains("mail document is busy"))));
+            assert!(undo.iter().any(|e| matches!(e, Effect::Respond { rc:10, body, .. } if body.contains("waiting for body edits"))));
         }
     }
 

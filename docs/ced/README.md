@@ -165,7 +165,8 @@ edits holds intent only: it assembles the latest body when the edits drain.
 Body typing continues while a plain Save is parked and pauses during the file
 write. A parked Send immediately shows Sending… and freezes body edits, so
 text typed after Send cannot join that message. Undo and Redo refuse with a
-busy notice while either operation is parked.
+notice explaining that Save or Send is waiting for body edits while either
+operation is parked.
 Close and Exit cancel that intent; reconnection cancels it with a notice.
 Same-frame header edits are applied before Save or Send. Header controls and
 Attach are disabled during save or Send. Non-UTF-8 attachment paths are refused.
