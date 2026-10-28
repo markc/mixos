@@ -123,7 +123,8 @@ Unlinked SMTP outcomes are removed with their queue entry. Terminal receipts
 and EmailSubmission records expire together after `delivery_retention_days`
 (default 30; zero disables age-based expiry). Active or partly deferred
 submissions retain their complete status until delivery finishes. The worker
-sweeps retention on each queue pass.
+sweeps retention on each queue pass and records expiry in the JMAP
+EmailSubmission change stream in the same transaction as deletion.
 
 ## Local aliases
 

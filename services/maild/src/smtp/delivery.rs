@@ -373,7 +373,10 @@ async fn process_queue(state: &SmtpState, resolver: &TokioResolver) -> Result<us
     for entry in entries {
         if let Some(account_id) = entry.local_account_id {
             let result = match entry.blob_hash {
-                Some(hash) => queue::deliver_local(&state.mailstore,account_id,hash).await,
+                Some(hash) => match db::account::get_by_id(&state.db.conn,account_id).await? {
+                    Some(_) => queue::deliver_local(&state.mailstore,account_id,hash).await,
+                    None => Err(PermanentFailure("550 5.1.1 Local target account no longer exists".into()).into()),
+                },
                 None => Err(anyhow::anyhow!("local retry has no blob hash")),
             };
             match result {
@@ -382,7 +385,7 @@ async fn process_queue(state: &SmtpState, resolver: &TokioResolver) -> Result<us
                     queue::mark_delivered(&state.db.conn,entry.id).await?;
                     delivered += 1;
                 }
-                Err(error) if entry.attempts >= 9 => {
+                Err(error) if is_permanent(&error) || entry.attempts >= 9 => {
                     queue::mark_permanent_failure(&state.db.conn,entry.id,&error.to_string()).await?;
                     if let Err(bounce_error) = generate_bounce(state,&entry.from_addr,&entry.to_addrs,&error.to_string()).await {
                         tracing::error!(error=%bounce_error,"Failed to generate local retry exhaustion bounce");
