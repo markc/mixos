@@ -124,6 +124,35 @@ async fn fileinto_create_copy_and_flags_use_real_mailstore() -> Result<()> {
     Ok(())
 }
 #[tokio::test]
+async fn repeated_filings_merge_flags_and_keywords() -> Result<()> {
+    let f = Fixture::new().await?;
+    f.script(r#"require ["imap4flags","fileinto"]; keep :flags ["\\Seen","first"]; fileinto :flags ["\\Flagged","second"] "INBOX";"#).await?;
+    f.deliver(MESSAGE,false,false).await?;
+    assert_eq!(f.count("Inbox"),1);
+    let inbox = f.ms.mailbox_by_role(f.account.id,MailboxRole::Inbox)?.unwrap();
+    let items = f.ms.list_emails_in_mailbox(f.account.id,inbox,ListOpts::default())?;
+    let record = f.ms.get_email(f.account.id,items[0].id)?;
+    assert_eq!(record.keywords.0 & (Flags::SEEN | Flags::FLAGGED), Flags::SEEN | Flags::FLAGGED);
+    assert!(record.tags.contains("first"));
+    assert!(record.tags.contains("second"));
+    Ok(())
+}
+#[tokio::test]
+async fn mailboxexists_resolves_nested_account_owned_writable_mailboxes() -> Result<()> {
+    let f = Fixture::new().await?;
+    f.script(r#"require ["fileinto","mailbox"]; fileinto :create "INBOX/Projects";"#).await?;
+    f.deliver(MESSAGE,false,false).await?;
+    store::put(&f.db,2,"other",r#"require ["fileinto","mailbox"]; fileinto :create "OtherAccount";"#,None).await?;
+    store::activate(&f.db,2,"other").await?;
+    f.script(r#"redirect "alice@example.com";"#).await?;
+    f.deliver(MESSAGE,false,false).await?;
+    f.ms.create_mailbox(f.account.id,"ReadOnly",None,mds::ContainerAttrs {special_use:None,subscribed:false,extra:serde_json::json!({"jmap_my_rights":{"may_add_items":false}})})?;
+    f.script(r#"require "mailbox"; if allof(mailboxexists ["inbox","INBOX/Projects"],not mailboxexists "OtherAccount",not mailboxexists "ReadOnly") { discard; }"#).await?;
+    assert!(f.deliver(MESSAGE,false,false).await?.is_none());
+    assert_eq!(f.count("Inbox"),0);
+    Ok(())
+}
+#[tokio::test]
 async fn refused_redirect_cancels_other_actions_and_keeps() -> Result<()> {
     let f = Fixture::new().await?;
     f.script(r#"redirect "outsider@example.net"; discard;"#)

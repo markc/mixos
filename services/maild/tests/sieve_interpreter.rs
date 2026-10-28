@@ -119,6 +119,26 @@ fn relational_value_count_and_ascii_numeric() {
     ));
 }
 #[test]
+fn variables_count_ignores_empty_strings() {
+    assert!(matches(r#"string :count "eq" :comparator "i;ascii-numeric" "${unset}" "0""#));
+    assert!(matches(r#"string :count "eq" :comparator "i;ascii-numeric" ["", "x", "${unset}", "y"] "2""#));
+}
+#[test]
+fn mailboxexists_uses_snapshot_and_inbox_case_rules() {
+    let script = compile(r#"require "mailbox"; if mailboxexists ["inbox/Projects", "Archive"] { discard; }"#).unwrap();
+    let check = |mailboxes: &[String]| script.evaluate_with_mailboxes(Context {data:MESSAGE,from:"a",to:"b"},mailboxes).unwrap().filings.is_empty();
+    assert!(check(&["INBOX/Projects".into(),"Archive".into()]));
+    assert!(!check(&["INBOX/projects".into(),"Archive".into()]));
+    assert!(!check(&["INBOX/Projects".into()]));
+    assert!(compile(r#"if mailboxexists "INBOX" { keep; }"#).is_err());
+}
+#[test]
+fn flag_updates_consume_work_budget() {
+    let flags = (0..65).map(|n| format!("f{n}")).collect::<Vec<_>>().join(" ");
+    let source = format!(r#"require ["imap4flags","variables"]; set "flags" "{flags}"; {}"#, "addflag \"${flags}\";".repeat(10));
+    assert!(compile(&source).unwrap().evaluate(Context {data:MESSAGE,from:"a",to:"b"}).is_err());
+}
+#[test]
 fn index_selects_first_and_last_header() {
     assert!(matches(r#"header :index 1 :is "X-Test" "first""#));
     assert!(matches(r#"header :index 1 :last :is "X-Test" "last""#));

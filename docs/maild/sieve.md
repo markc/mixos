@@ -23,7 +23,8 @@ Base commands are `require`, `if`/`elsif`/`else`, `stop`, `keep`, `discard` and
 bracketed comments, `:is`/`:contains`/`:matches`, `i;ascii-casemap` and `i;octet`
 are supported.
 
-Extensions: `fileinto`, `mailbox` (`fileinto :create`), `envelope`, `imap4flags`,
+Extensions: `fileinto`, `mailbox` (`fileinto :create` and account-scoped
+`mailboxexists` for writable mailboxes), `envelope`, `imap4flags`,
 `copy`, `body`, `variables`, `vacation`, `relational`, `comparator-i;ascii-numeric`,
 `reject`, `ereject` and `index`. Required capabilities must precede executable
 statements. Unknown commands/tags/capabilities are refused, including in dead

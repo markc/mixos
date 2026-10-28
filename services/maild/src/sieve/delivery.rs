@@ -115,19 +115,35 @@ fn address(address: &str) -> Result<()> {
 
 /// Evaluate only. Exposed for delivery diagnostics and malformed stored-script
 /// recovery tests; the caller must still validate the action destinations.
-pub async fn plan(db: &Db, delivery: &Delivery<'_>) -> Result<Option<Plan>> {
+pub async fn plan(db: &Db, ms: &Arc<SqliteMailStore>, delivery: &Delivery<'_>) -> Result<Option<Plan>> {
     let Some(script) = store::active(db, delivery.account.id).await? else {
         return Ok(None);
     };
     let data = delivery.data.to_vec();
     let from = delivery.from.to_string();
     let to = delivery.to.to_string();
+    let ms = ms.clone();
+    let account = delivery.account.id;
     tokio::task::spawn_blocking(move || {
-        compile(&script.source)?.evaluate(Context {
+        let boxes = ms.list_mailboxes(account)?;
+        let mut paths = Vec::new();
+        for mailbox in &boxes {
+            if !mailbox.my_rights.may_add_items { continue; }
+            let mut parts = Vec::new();
+            let mut current = Some(mailbox);
+            while let Some(entry) = current {
+                ensure!(parts.len() < boxes.len(), "mailbox parent cycle");
+                parts.push(if entry.role == Some(MailboxRole::Inbox) { "INBOX".to_string() } else { entry.name.clone() });
+                current = entry.parent.map(|parent| boxes.iter().find(|entry| entry.id == parent).ok_or_else(||anyhow::anyhow!("missing mailbox parent"))).transpose()?;
+            }
+            parts.reverse();
+            paths.push(parts.join("/"));
+        }
+        compile(&script.source)?.evaluate_with_mailboxes(Context {
             data: &data,
             from: &from,
             to: &to,
-        })
+        }, &paths)
     })
     .await?
     .map(Some)
@@ -150,7 +166,7 @@ async fn deliver_inner(
     delivery: Delivery<'_>,
     remaining: &mut usize,
 ) -> Result<Option<ItemId>> {
-    let selected = plan(db, &delivery).await;
+    let selected = plan(db, ms, &delivery).await;
     let mut plan = match selected {
         Ok(Some(plan)) => plan,
         Ok(None) => Plan {
@@ -224,7 +240,7 @@ async fn deliver_inner(
     let default = delivery.default_mailbox;
     let filings = plan.filings.clone();
     let resolved = tokio::task::spawn_blocking(move || -> Result<Vec<_>> {
-        let mut resolved = Vec::new();
+        let mut resolved: Vec<(ContainerId, Flags, Tags)> = Vec::new();
         for filing in filings {
             let target = if let Some(name) = filing.mailbox {
                 mailbox_target(&ms2, id, &name, filing.create)?
@@ -232,7 +248,11 @@ async fn deliver_inner(
                 default
             };
             let (flags, tags) = flags(&filing.flags)?;
-            if !resolved.iter().any(|(prior, _, _)| prior == &target) {
+            if let Some((_, existing_flags, existing_tags)) = resolved.iter_mut().find(|(prior, _, _)| prior == &target) {
+                existing_flags.0 |= flags.0;
+                for tag in tags.iter() { existing_tags.insert(tag.clone()); }
+                ensure!(existing_tags.len() <= crate::keyword::MAX_KEYWORDS_PER_MESSAGE, "keyword limit");
+            } else {
                 resolved.push((target, flags, tags));
             }
         }

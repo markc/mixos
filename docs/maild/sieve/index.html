@@ -251,7 +251,8 @@ uses the existing MIME parser and native mail store without new dependencies.</p
 <code>not</code>, <code>true</code> and <code>false</code>. Quoted and <code>text:</code> multi-line strings, hash and
 bracketed comments, <code>:is</code>/<code>:contains</code>/<code>:matches</code>, <code>i;ascii-casemap</code> and <code>i;octet</code>
 are supported.</p>
-<p>Extensions: <code>fileinto</code>, <code>mailbox</code> (<code>fileinto :create</code>), <code>envelope</code>, <code>imap4flags</code>,
+<p>Extensions: <code>fileinto</code>, <code>mailbox</code> (<code>fileinto :create</code> and account-scoped
+<code>mailboxexists</code> for writable mailboxes), <code>envelope</code>, <code>imap4flags</code>,
 <code>copy</code>, <code>body</code>, <code>variables</code>, <code>vacation</code>, <code>relational</code>, <code>comparator-i;ascii-numeric</code>,
 <code>reject</code>, <code>ereject</code> and <code>index</code>. Required capabilities must precede executable
 statements. Unknown commands/tags/capabilities are refused, including in dead

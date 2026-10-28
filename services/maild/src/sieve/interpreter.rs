@@ -256,7 +256,7 @@ impl Parser {
                 &["days", "addresses", "subject", "from", "handle"],
             ),
             "reject" | "ereject" => (1, &[], &[]),
-            "exists" => (1, &[], &[]),
+            "exists" | "mailboxexists" => (1, &[], &[]),
             "size" => (1, &["over", "under"], &[]),
             "address" | "envelope" | "header" | "string" | "hasflag" => (
                 if name == "hasflag" { 1 } else { 2 },
@@ -446,11 +446,12 @@ impl Parser {
                 Test::Group(name == "allof", tests)
             }
             "header" | "address" | "exists" | "size" | "envelope" | "body" | "string"
-            | "hasflag" => {
+            | "hasflag" | "mailboxexists" => {
                 match name.as_str() {
                     "envelope" | "body" => self.need(&name)?,
                     "string" => self.need("variables")?,
                     "hasflag" => self.need("imap4flags")?,
+                    "mailboxexists" => self.need("mailbox")?,
                     _ => {}
                 }
                 let args = self.args(&name, true)?;
@@ -592,9 +593,16 @@ struct Eval<'a> {
     variables_enabled: bool,
     text_headers: Vec<(String, String)>,
     variable_bytes: usize,
+    mailboxes: BTreeSet<String>,
 }
 impl Script {
     pub fn evaluate(&self, context: Context<'_>) -> Result<Plan> {
+        self.evaluate_with_mailboxes(context, &[])
+    }
+
+    /// Evaluate against a snapshot of this account's writable mailbox paths.
+    /// The interpreter still performs no I/O.
+    pub fn evaluate_with_mailboxes(&self, context: Context<'_>, mailboxes: &[String]) -> Result<Plan> {
         let message = MessageParser::default()
             .parse(context.data)
             .ok_or_else(|| anyhow::anyhow!("message parse error"))?;
@@ -629,6 +637,7 @@ impl Script {
             variables_enabled: self.variables,
             text_headers,
             variable_bytes: 0,
+            mailboxes: mailboxes.iter().map(|name| mailbox_key(name)).collect(),
         };
         eval.code(&self.code)?;
         if eval.implicit_keep {
@@ -840,10 +849,13 @@ impl Eval<'_> {
                     .into_iter()
                     .flat_map(|s| s.split_whitespace().map(str::to_string).collect::<Vec<_>>())
                 {
+                    self.steps += target.len() + 1;
+                    ensure!(self.steps <= MAX_STEPS, "flag work limit");
                     target.retain(|f: &String| !f.eq_ignore_ascii_case(&flag));
                     if name != "removeflag" {
                         target.push(flag);
                     }
+                    ensure!(target.len() <= crate::keyword::MAX_KEYWORDS_PER_MESSAGE + 5, "flag count limit");
                 }
                 if let Some(variable) = variable {
                     self.set_variable(variable, target.join(" "))?;
@@ -925,6 +937,15 @@ impl Eval<'_> {
                     return Ok(names
                         .iter()
                         .all(|n| self.message.header(n.as_str()).is_some()));
+                }
+                if name == "mailboxexists" {
+                    for name in names {
+                        self.step()?;
+                        if !self.mailboxes.contains(&mailbox_key(&name)) {
+                            return Ok(false);
+                        }
+                    }
+                    return Ok(true);
                 }
                 let mut values = Vec::new();
                 match name.as_str() {
@@ -1065,6 +1086,9 @@ impl Eval<'_> {
                     }
                 }
                 if args.has("count") {
+                    if name == "string" {
+                        values.retain(|value| !value.is_empty());
+                    }
                     values = vec![values.len().to_string()];
                 }
                 let keys = self.expanded(if name == "body" {
@@ -1133,6 +1157,15 @@ impl Eval<'_> {
         } else {
             Ok(value == key)
         }
+    }
+}
+
+fn mailbox_key(path: &str) -> String {
+    let (first, rest) = path.split_once('/').unwrap_or((path, ""));
+    if first.eq_ignore_ascii_case("INBOX") {
+        if rest.is_empty() { "INBOX".into() } else { format!("INBOX/{rest}") }
+    } else {
+        path.into()
     }
 }
 
