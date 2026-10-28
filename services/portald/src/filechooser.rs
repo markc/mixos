@@ -680,47 +680,95 @@ mod tests {
             .read_line(&mut address)
             .unwrap();
         let server = zbus::connection::Builder::address(address.trim())
-            .unwrap().build().await.unwrap();
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
         let owner = zbus::connection::Builder::address(address.trim())
-            .unwrap().build().await.unwrap();
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
         let broker = test_broker::Broker::start();
-        let client = Arc::new(SupervisedClient::connect_options("portal-fence-test", &broker.url)
-            .connect().await.unwrap());
+        let client = Arc::new(
+            SupervisedClient::connect_options("portal-fence-test", &broker.url)
+                .connect()
+                .await
+                .unwrap(),
+        );
         let generation = settings::native::live_generation(&client).unwrap();
         client.close().await;
         let bridge = Bridge::new(client);
         let owner_name = owner.unique_name().unwrap().as_str();
         for reply in [false, true] {
-            let path = handle::request_path(owner_name, if reply { "reply" } else { "outcome" }).unwrap();
+            let path =
+                handle::request_path(owner_name, if reply { "reply" } else { "outcome" }).unwrap();
             let value = json!({"request":"0000000000000001-1", "correlation":path.as_str(), "response":0, "uris":["file:///tmp/chosen"]});
             let mut state = State::default();
-            if reply { state.apply(Event::Outcome(value.clone())); }
-            else { state.phase = Phase::Open("0000000000000001-1".into()); }
+            if reply {
+                state.apply(Event::Outcome(value.clone()));
+            } else {
+                state.phase = Phase::Open("0000000000000001-1".into());
+            }
             {
                 let mut registry = bridge.registry.lock().await;
                 registry.generation = Some(generation);
-                registry.entries.insert(1, Entry { path:path.clone(), owner:owner_name.into(), choices:false, state, reply_sent:None });
+                registry.entries.insert(
+                    1,
+                    Entry {
+                        path: path.clone(),
+                        owner: owner_name.into(),
+                        choices: false,
+                        state,
+                        reply_sent: None,
+                    },
+                );
             }
-            server.object_server().at(path.clone(), request::Request::filechooser(owner_name, bridge.clone(), 1)).await.unwrap();
-            let rule = MatchRule::builder().msg_type(zbus::message::Type::Signal)
-                .interface("org.freedesktop.portal.Request").unwrap().member("Response").unwrap()
-                .path(path).unwrap().build();
-            let mut signals = MessageStream::for_match_rule(rule, &owner, Some(4)).await.unwrap();
+            server
+                .object_server()
+                .at(
+                    path.clone(),
+                    request::Request::filechooser(owner_name, bridge.clone(), 1),
+                )
+                .await
+                .unwrap();
+            let rule = MatchRule::builder()
+                .msg_type(zbus::message::Type::Signal)
+                .interface("org.freedesktop.portal.Request")
+                .unwrap()
+                .member("Response")
+                .unwrap()
+                .path(path)
+                .unwrap()
+                .build();
+            let mut signals = MessageStream::for_match_rule(rule, &owner, Some(4))
+                .await
+                .unwrap();
             // Deliberately do not run the state watch: these completions were
             // queued before it processed the already lost native connection.
             if reply {
-                bridge.reply(&server, Some(generation), 1, Some(value.clone())).await;
+                bridge
+                    .reply(&server, Some(generation), 1, Some(value.clone()))
+                    .await;
             } else {
                 bridge.outcome(&server, generation, value.clone()).await;
             }
-            let message = tokio::time::timeout(Duration::from_secs(5), signals.next()).await.unwrap().unwrap().unwrap();
-            let (code, results): (u32, HashMap<String, zbus::zvariant::OwnedValue>) = message.body().deserialize().unwrap();
+            let message = tokio::time::timeout(Duration::from_secs(5), signals.next())
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap();
+            let (code, results): (u32, HashMap<String, zbus::zvariant::OwnedValue>) =
+                message.body().deserialize().unwrap();
             assert_eq!(code, 2);
             assert!(results.is_empty());
             assert!(bridge.registry.lock().await.entries.is_empty());
             bridge.outcome(&server, generation, value).await;
-            assert!(tokio::time::timeout(Duration::from_millis(50), signals.next()).await.is_err());
+            assert!(
+                tokio::time::timeout(Duration::from_millis(50), signals.next())
+                    .await
+                    .is_err()
+            );
         }
     }
 }
-
