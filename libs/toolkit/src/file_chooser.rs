@@ -627,7 +627,6 @@ impl FileChooser {
                     ui.weak(own("file-chooser-capped"));
                 }
             });
-        self.options(ui);
         if let Some((at, modifiers)) = clicked {
             self.selection.click(
                 at,
@@ -661,6 +660,7 @@ impl FileChooser {
         } else if activate {
             self.pick(&ctx);
         }
+        self.options(ui);
     }
 
     fn up(&mut self, ctx: &Context) {
@@ -822,6 +822,10 @@ fn check_typed(folder: PathBuf, text: String, request: &ChooseRequest) -> Result
 
 fn open_filtered(path: PathBuf, hidden: bool, request: Option<&ChooseRequest>) -> Result<Answer, String> {
     let mut answer = open_path(path, hidden)?;
+    if let (Answer::Picked(_), Some(request)) = (&answer, request)
+        && (request.directory || request.mode == ChooseMode::SaveFiles) {
+        return Err(own("file-chooser-folder-required"));
+    }
     if let (Answer::Listed(listing), Some(request)) = (&mut answer, request) {
         let db = request.current_filter.as_ref().filter(|f| !f.mime_types.is_empty()).map(|_| mimedb::Database::load());
         listing.entries.retain(|entry| {
@@ -1574,3 +1578,6 @@ mod tests {
         assert!(!h.state().1);
     }
 }
+
+#[cfg(test)]
+mod contract_tests;
