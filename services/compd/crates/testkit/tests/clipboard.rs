@@ -128,7 +128,10 @@ fn an_agent_seat_copy_is_offered_on_the_primary_seat() {
         h.pump();
         std::thread::sleep(std::time::Duration::from_millis(2));
     }
-    assert!(!h.wire.state.clipboard.capture.is_empty(), "the capture finished");
+    assert!(
+        !h.wire.state.clipboard.capture.is_empty(),
+        "the capture finished"
+    );
     source.destroy();
     h.roundtrip();
     h.roundtrip_client(b);
