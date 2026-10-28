@@ -216,7 +216,7 @@ async fn deliver_inner(
                 .iter()
                 .any(|allowed| allowed.eq_ignore_ascii_case(d))
         });
-    let validation = validate(db, ms, &delivery, &plan, external, *remaining).await;
+    let validation = validate(db, &delivery, &plan, external, *remaining).await;
     let redirects = match validation {
         Ok(redirects) => redirects,
         Err(error) => {
@@ -266,9 +266,23 @@ async fn deliver_inner(
     let filings = plan.filings.clone();
     let resolved = tokio::task::spawn_blocking(move || -> Result<Vec<_>> {
         let mut resolved: Vec<(ContainerId, Flags, Tags)> = Vec::new();
+        let mut resolver = if filings.iter().any(|filing|filing.mailbox.is_some()) {
+            Some(MailboxResolver::from_mailboxes(ms2.list_mailboxes(id)?)?)
+        } else { None };
+        // Check every non-create destination before creating any folders.
+        let planned: Vec<_> = filings.iter().filter(|filing|filing.create).filter_map(|filing|filing.mailbox.as_deref()).map(super::interpreter::mailbox_key).collect();
+        for filing in &filings {
+            if !filing.create && let Some(name) = &filing.mailbox {
+                let key = super::interpreter::mailbox_key(name);
+                let prefix = format!("{key}/");
+                if !planned.iter().any(|path|path==&key || path.starts_with(prefix.as_str())) {
+                    resolver.as_mut().unwrap().resolve(&ms2,id,name,false)?;
+                }
+            }
+        }
         for filing in filings {
             let target = if let Some(name) = filing.mailbox {
-                mailbox_target(&ms2, id, &name, filing.create)?
+                resolver.as_mut().unwrap().resolve(&ms2,id,&name,filing.create)?
             } else {
                 default
             };
@@ -437,7 +451,6 @@ fn redirect_depth(data: &[u8]) -> usize {
 }
 async fn validate(
     db: &Db,
-    ms: &Arc<SqliteMailStore>,
     delivery: &Delivery<'_>,
     plan: &Plan,
     external: bool,
@@ -473,9 +486,6 @@ async fn validate(
                     .all(|s| !s.is_empty() && s != "." && s != ".."),
                 "invalid mailbox path"
             );
-            if !filing.create {
-                mailbox_target(ms, delivery.account.id, name, false)?;
-            }
         }
     }
     if let Some(vacation) = &plan.vacation {
@@ -507,47 +517,77 @@ async fn validate(
     Ok(redirects)
 }
 
-fn mailbox_target(
-    ms: &SqliteMailStore,
-    account: i32,
-    path: &str,
-    create: bool,
-) -> Result<ContainerId> {
-    let mut parent = None;
-    for (index, name) in path.split('/').enumerate() {
-        let existing = if index == 0 && name.eq_ignore_ascii_case("INBOX") {
-            ms.mailbox_by_role(account, MailboxRole::Inbox)?
-        } else {
-            ms.list_mailboxes(account)?
-                .iter()
-                .find(|m| m.parent == parent && m.name == name)
-                .map(|m| m.id)
-        };
-        parent = Some(if let Some(id) = existing {
-            id
-        } else {
-            ensure!(create, "fileinto mailbox does not exist");
-            match ms.create_mailbox(
-                account,
-                name,
-                parent,
-                ContainerAttrs {
-                    special_use: None,
-                    subscribed: false,
-                    extra: serde_json::json!({}),
-                },
-            ) {
-                Ok(id) => id,
-                Err(error) => ms
-                    .list_mailboxes(account)?
-                    .iter()
-                    .find(|m| m.parent == parent && m.name == name)
-                    .map(|m| m.id)
-                    .ok_or(error)?,
-            }
-        });
+struct MailboxResolver {
+    children: HashMap<(Option<ContainerId>,String),ContainerId>,
+    inbox: Option<ContainerId>,
+    paths: HashMap<String,ContainerId>,
+    steps: usize,
+    refreshed: bool,
+}
+impl MailboxResolver {
+    fn from_mailboxes(boxes: Vec<crate::mailstore::MailboxRecord>) -> Result<Self> {
+        ensure!(boxes.len() <= super::MAX_STEPS,"destination snapshot count limit");
+        let inbox = boxes.iter().find(|entry|entry.role == Some(MailboxRole::Inbox)).map(|entry|entry.id);
+        let mut children = HashMap::new();
+        let mut bytes = 0;
+        for entry in boxes {
+            bytes += entry.name.len();
+            ensure!(bytes <= 1024*1024,"destination snapshot allocation limit");
+            children.insert((entry.parent,entry.name),entry.id);
+        }
+        Ok(Self {children,inbox,paths:HashMap::new(),steps:0,refreshed:false})
     }
-    parent.ok_or_else(|| anyhow::anyhow!("empty mailbox path"))
+    fn resolve(&mut self, ms: &SqliteMailStore, account: i32, path: &str, create: bool) -> Result<ContainerId> {
+        let path_key = super::interpreter::mailbox_key(path);
+        if let Some(id) = self.paths.get(&path_key) { return Ok(*id); }
+        let mut parent = None;
+        for (index,name) in path.split('/').enumerate() {
+            self.steps += 1;
+            ensure!(self.steps <= super::MAX_STEPS,"destination path work limit");
+            let key = (parent,name.to_string());
+            let existing = if index == 0 && name.eq_ignore_ascii_case("INBOX") {
+                self.inbox
+            } else { self.children.get(&key).copied() };
+            let id = if let Some(id) = existing { id } else {
+                ensure!(create,"fileinto mailbox does not exist");
+                match ms.create_mailbox(account,name,parent,ContainerAttrs {special_use:None,subscribed:false,extra:serde_json::json!({})}) {
+                    Ok(id) => id,
+                    Err(error) => {
+                        // Recover one concurrent create, with bounded work. A
+                        // changing namespace cannot force repeated full reloads.
+                        ensure!(!self.refreshed,"destination namespace changed repeatedly");
+                        self.refreshed = true;
+                        let fresh = ms.list_mailboxes(account)?;
+                        self.steps += fresh.len();
+                        ensure!(self.steps <= super::MAX_STEPS,"destination refresh work limit");
+                        fresh.into_iter().find(|entry|entry.parent==parent && entry.name==name).map(|entry|entry.id).ok_or(error)?
+                    }
+                }
+            };
+            self.children.insert(key,id);
+            parent = Some(id);
+        }
+        let id = parent.ok_or_else(||anyhow::anyhow!("empty mailbox path"))?;
+        self.paths.insert(path_key,id);
+        Ok(id)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn destination_metadata_limits_precede_index_allocation() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let ms = SqliteMailStore::new(Arc::new(mds::SqliteCasMds::open(tmp.path())?));
+        ms.create_mailbox(1,"Inbox",None,ContainerAttrs {special_use:Some("\\Inbox".into()),subscribed:true,extra:serde_json::json!({})})?;
+        let record = ms.list_mailboxes(1)?.into_iter().next().unwrap();
+        assert!(MailboxResolver::from_mailboxes(vec![record.clone();super::super::MAX_STEPS+1]).is_err());
+        let mut oversized = record;
+        oversized.name = "x".repeat(1024*1024+1);
+        assert!(MailboxResolver::from_mailboxes(vec![oversized]).is_err());
+        Ok(())
+    }
 }
 
 async fn enqueue(

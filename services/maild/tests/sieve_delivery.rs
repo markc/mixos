@@ -247,6 +247,20 @@ async fn fileinto_nested_names_resolve_parent_and_inbox_role() -> Result<()> {
     Ok(())
 }
 #[tokio::test]
+async fn created_mailboxes_and_parents_satisfy_later_filing_actions() -> Result<()> {
+    let f = Fixture::new().await?;
+    f.script(r#"require ["fileinto","mailbox","copy","imap4flags"]; fileinto :create :copy "NewParent/Child"; fileinto :copy "NewParent"; fileinto :flags "\\Seen" "NewParent/Child";"#).await?;
+    f.deliver(MESSAGE,false,false).await?;
+    assert_eq!(f.count("Inbox"),0);
+    let parent = f.ms.mailbox_by_name(f.account.id,"NewParent")?.unwrap();
+    assert_eq!(f.ms.list_emails_in_mailbox(f.account.id,parent,ListOpts::default())?.len(),1);
+    let child = f.ms.list_mailboxes(f.account.id)?.into_iter().find(|entry|entry.parent==Some(parent) && entry.name=="Child").unwrap();
+    let items = f.ms.list_emails_in_mailbox(f.account.id,child.id,ListOpts::default())?;
+    assert_eq!(items.len(),1);
+    assert_ne!(f.ms.get_email(f.account.id,items[0].id)?.keywords.0 & Flags::SEEN,0);
+    Ok(())
+}
+#[tokio::test]
 async fn local_redirect_runs_destination_script_and_bounds_cycles() -> Result<()> {
     let f = Fixture::new().await?;
     f.script(r#"redirect "alice@example.com";"#).await?;

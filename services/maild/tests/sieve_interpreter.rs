@@ -361,3 +361,9 @@ fn header_and_expansion_allocations_are_bounded_before_matching() {
     let source = format!("require \"variables\"; set \"x\" \"{}\"; {}", "x".repeat(30000),"set \"x\" \"${x}\";".repeat(400));
     assert!(compile(&source).unwrap().evaluate(Context {data:MESSAGE,from:"a",to:"b"}).is_err());
 }
+#[test]
+fn nested_invalid_variable_references_consume_scan_budget() {
+    let nested = "${".repeat(15000)+"}";
+    let source = format!("require \"variables\"; set \"x\" \"{nested}\"; keep;");
+    assert!(compile(&source).unwrap().evaluate(Context {data:MESSAGE,from:"a",to:"b"}).is_err());
+}

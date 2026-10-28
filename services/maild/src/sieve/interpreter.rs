@@ -688,13 +688,17 @@ impl Eval<'_> {
         ensure!(self.steps <= MAX_STEPS, "instruction limit");
         Ok(())
     }
-    fn expand(&self, value: &str) -> Result<String> {
+    fn expand(&mut self, value: &str) -> Result<String> {
+        self.steps += value.len()/1024+1;
+        ensure!(self.steps <= MAX_STEPS,"variable scan work limit");
         if !self.variables_enabled {
             return Ok(value.to_string());
         }
         let mut out = String::new();
         let mut rest = value;
         while let Some(pos) = rest.find("${") {
+            self.steps += rest.len()/1024+1;
+            ensure!(self.steps <= MAX_STEPS,"variable scan work limit");
             out.push_str(&rest[..pos]);
             let next = &rest[pos + 2..];
             if let Some(end) = next.find('}') {
@@ -789,12 +793,13 @@ impl Eval<'_> {
                 } else {
                     self.flags.clone()
                 };
-                self.plan.filings.push(Filing {
-                    mailbox: if name == "fileinto" {
+                let mailbox = if name == "fileinto" {
                         Some(self.expand(args.value(0))?)
                     } else {
                         None
-                    },
+                    };
+                self.plan.filings.push(Filing {
+                    mailbox,
                     create: args.has("create"),
                     flags,
                 });
@@ -1244,7 +1249,7 @@ impl Eval<'_> {
     }
 }
 
-fn mailbox_key(path: &str) -> String {
+pub(super) fn mailbox_key(path: &str) -> String {
     let (first, rest) = path.split_once('/').unwrap_or((path, ""));
     if first.eq_ignore_ascii_case("INBOX") {
         if rest.is_empty() { "INBOX".into() } else { format!("INBOX/{rest}") }
