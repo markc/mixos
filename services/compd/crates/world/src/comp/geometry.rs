@@ -402,6 +402,7 @@ fn transition(
         let Some((output, area)) = target(comp, space, id, window) else {
             return GeometryChange::default();
         };
+        comp.usable.entry(output.clone()).or_insert(area);
         let (location, size) = window.fullscreen().map_or_else(
             || {
                 (
@@ -438,6 +439,9 @@ fn transition(
         }
         return GeometryChange::default();
     }
+    // During exit-ack the fullscreen restore record is already gone. Apply
+    // this follow-up now, even if the client's committed flag still says
+    // Fullscreen; otherwise Floating drops out of subsequent re-fit passes.
     let area = if comp.placement(id) == Placement::Floating {
         if !previous.constrained() {
             shell::set_maximized(window, false);
@@ -593,8 +597,10 @@ pub fn refresh_usable(
             let destination = usable.get_key_value(&saved.output).or_else(|| usable.first_key_value());
             let Some((name, new)) = destination else { continue };
             let old = comp.usable.get(&saved.output).copied().unwrap_or(*new);
-            saved.location = remap_float(saved, old, *new);
-            saved.output.clone_from(name);
+            if old != *new || name != &saved.output {
+                saved.location = remap_float(saved, old, *new);
+                saved.output.clone_from(name);
+            }
         }
         comp.usable = usable;
         comp.outputs_changed();
@@ -766,7 +772,10 @@ pub fn apply_interactive_at(
         )
     });
     if drag.start_output.is_none() {
-        drag.start_output = target(comp, space, grab.id, window).map(|(name, _)| name);
+        drag.start_output = target(comp, space, grab.id, window).map(|(name, area)| {
+            comp.usable.entry(name.clone()).or_insert(area);
+            name
+        });
     }
     if grab.cancelled {
         comp.set_placement(grab.id, window, drag.placement.clone());

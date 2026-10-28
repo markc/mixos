@@ -30,17 +30,71 @@ Dragging a resizable window to an outer side edge previews a half tile; the
 top and bottom quarter of each side preview a quarter tile. A 20 logical px
 side band takes precedence over the 5 px top band, which previews a real
 maximise. Zones use the usable area, so a pointer over an edge panel still
-counts. Shared output edges do not arm. Shift disables these zones.
+counts. Shared output edges require a 250 ms dwell by default. Shift disables
+these zones. A zone change restarts its dwell and show delay.
 
-Release commits the preview. Escape cancels a move and restores its starting
+Release commits only after the shared-edge dwell and preview delay have both
+finished. An earlier release leaves the window floating. Escape cancels a move and restores its starting
 geometry and placement, including a maximised or tiled start. Dragging away
 keeps the original saved floating geometry. Hot corners remain active during
 the grab and do not take ownership of a titlebar press.
 
-The static preview uses the theme focus ring: a 25% fill and a solid 2 px
+The preview grows from the window's current frame to the tile over 180 ms,
+with cubic ease-out. Retargeting starts from its current animated rectangle.
+Disarming, Shift, Escape and grab completion hide it immediately. The preview
+uses the theme focus ring: a 25% fill and a solid 2 px
 outline, above panels and below screen UI. Tiles advertise all four xdg tiled
 edges and square compd's own chrome. Size hints prevent fixed-size tiling and
 top maximise when a maximum size cannot fit the usable area.
+
+### Drag tiling props
+
+Read `comp.props.get {path:"tiling"}` and write leaves with
+`comp.props.set {path:"tiling.preview_delay_ms",value:100}`. The same props
+catalogue describes types, ranges and `persistence:"file"`; props watches
+report changes. Valid writes apply live on the next pointer sample and save
+the `tiling` object in `preferences.json` beside `settings.json`. The set reply
+reports `persisted:true|false`; a failed save leaves the live setting applied.
+Older files use defaults; invalid saved leaves individually use defaults.
+Corner props remain runtime-only.
+
+| Key (under `tiling`) | Default | Range |
+|---|---|---|
+| `edge_tiling` | `true` | bool; disables drag zones only |
+| `top_maximize` | `true` | bool |
+| `corner_ratio` | `0.25` | 0.05–0.5 |
+| `side_band_px` | `20` | integer 1–200 logical px |
+| `top_band_px` | `5` | integer 1–200 logical px |
+| `shared_edge_dwell_ms` | `250` | integer 0–2000 ms |
+| `preview_delay_ms` | `0` | integer 0–2000 ms |
+| `preview_animation_ms` | `180` | integer 0–1000 ms; zero snaps the preview |
+
+On shared edges the dwell runs first, followed by the preview delay. Both
+must finish before release can tile. Outer edges skip the shared-edge dwell.
+Hot corners keep their independent 4 px detector and remain active in drags.
+
+Timing uses an injectable monotonic policy clock. A calloop one-shot waits
+for the pending dwell/delay or the next 16 ms animation step, ending exactly
+at the animation deadline. The timer is removed when the grab ends or
+disarms. A settled preview and an idle desktop schedule no preview timers
+or redraws. Testkit advances frozen policy time without sleeping or rendering.
+
+Docked panels and layer-shell reservations re-fit constrained windows from
+their placement and output/workspace split. Saved floating geometry keeps its
+size: its centre maps proportionally between usable areas and clamps inside
+the new area (oversized rectangles anchor at its top-left). Removing an output
+returns its tiled and maximised windows to their saved floating rectangles on
+a surviving output, with the same centre mapping. With no output, geometry
+waits for a survivor. Workspace moves preserve tile slots and apply the
+destination workspace's split. A restore during fullscreen exit-ack applies
+geometry and sends its own configure.
+
+Output placement, usable areas, adjacency and drag zones support multiple
+outputs; testkit covers two adjacent outputs. Workspace commands and visibility
+still follow the default output: independent workspace switching on another
+output is refused. The native cursor's configured crossing layout is separate
+from Space's output geometry. This tiling support does not make workspaces
+independent per monitor.
 
 `comp.window.maximize {id, generation, output?}` accepts an output key or
 native output name. Omitting it preserves the existing output choice. An

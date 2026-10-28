@@ -10,6 +10,18 @@ generated: by docs/_build/gen-site.mix from services/compd/CHANGELOG.md; do not 
 
 ## Unreleased — 2026-10-27
 
+- Animate drag tile previews with cubic ease-out and continuous retargeting.
+  Add a clock testkit can advance and a demand-driven one-shot timer: no
+  preview work at idle. Shared edges dwell before arming; preview delay gates
+  both visibility and release. Quoin hot corners remain independent.
+- Expose eight validated live `tiling.*` props, persisted in `preferences.json`:
+  drag enablement, top maximise, corner ratio, side/top bands, shared-edge
+  dwell, preview delay and animation duration.
+- Re-fit saved floating centres when usable areas change. Restore tiled and
+  maximised windows to floating on output removal; workspace sends preserve
+  the tile and use the destination split. Apply geometry and configure when
+  unmaximising during fullscreen exit-ack.
+
 - Exclude Email composer app IDs from hosted menus and action bars. Composers
   request client decorations and keep their own single complete title row.
 - Resolve other dotted app IDs to their first Bus service segment. Route titlebar
