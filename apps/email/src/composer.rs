@@ -1085,7 +1085,12 @@ mod tests {
             h.run_steps(2);
             h.get_by_label(title).click();
             h.run_steps(2);
-            assert_eq!(toolkit::menu::current(&h.ctx).map(|m| m.menu).as_deref(), Some(title), "clicked {title}: {:?}", h.state());
+            assert_eq!(
+                toolkit::menu::current(&h.ctx).map(|m| m.menu).as_deref(),
+                Some(title),
+                "clicked {title}: {:?}",
+                h.state()
+            );
             h.snapshot(format!("minimum_composer_menu_{title}"));
             toolkit::menu::close(&h.ctx);
             h.run_steps(2);

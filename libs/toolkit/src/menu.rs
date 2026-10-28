@@ -1721,7 +1721,15 @@ fn render_picked(
                     Some(_) => st.popup_right,
                     None => chrome.menu_side == design::MenuSide::Right,
                 };
-                if vertical && right {
+                if compact_width.is_some() {
+                    // The icon is inset further than the popup edge. Use the
+                    // window edge so both bounded columns actually fit.
+                    origin.x = if right {
+                        screen.right() - metrics.edge_gap - outer.x
+                    } else {
+                        screen.left() + metrics.edge_gap
+                    };
+                } else if vertical && right {
                     origin.x = anchor.right() - outer.x;
                 }
                 origin.x = origin
