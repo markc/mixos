@@ -30,13 +30,14 @@ pub fn classify(text: &str) -> Kind {
     let mail = lines
         .iter()
         .any(|line| line.trim_start().starts_with("mail-"));
-    let empty = lines.iter().all(|line| line.is_empty()) && rest.lines().any(|line| line == "---");
+    let closed = rest.lines().any(|line| line == "---");
+    let empty = lines.iter().all(|line| line.is_empty()) && closed;
     if mail || empty {
         match maildoc::parse(text) {
             Ok(doc) => Kind::Mail(doc),
             Err(error) => Kind::Refused(error.to_string()),
         }
-    } else if names.contains(&"to") && names.contains(&"command") {
+    } else if closed && names.contains(&"to") && names.contains(&"command") {
         Kind::BusMessage
     } else {
         Kind::Text
@@ -144,6 +145,7 @@ mod tests {
 
     #[test]
     fn classifier_observes_fences_and_header_names() {
+        assert_eq!(classify("---\nto: edit\ncommand: edit.info"), Kind::Text);
         assert!(matches!(
             classify("hello\nmail-to: a@example.org"),
             Kind::Text
