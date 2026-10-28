@@ -757,7 +757,7 @@ async fn email_get_batches_optional_threads_off_async_executor_without_writes() 
     assert!(
         ms.thread_for_email(
             1,
-            maild::mailstore::ItemId(b["id"].as_str().unwrap().parse().unwrap())
+            mds::ItemId(b["id"].as_str().unwrap().parse().unwrap())
         )
         .unwrap()
         .is_none()
@@ -820,7 +820,12 @@ async fn creation_references_cover_same_call_parent_update_destroy_and_errors() 
     let calls = &response["methodResponses"];
     let child = &calls[0][1]["created"]["a-child"]["id"];
     assert!(child.is_string(), "{response}");
-    assert!(calls[0][1]["updated"].as_object().unwrap().contains_key(child.as_str().unwrap()));
+    assert!(
+        calls[0][1]["updated"]
+            .as_object()
+            .unwrap()
+            .contains_key(child.as_str().unwrap())
+    );
     assert_eq!(
         calls[0][1]["notCreated"]["bad"]["type"],
         "invalidProperties"
