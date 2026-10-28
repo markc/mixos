@@ -18,6 +18,15 @@
   and account authentication, plus `maild.sieve.list/get/put/activate` Bus
   commands. SMTP's classifier and global Mix filter precede account Sieve;
   daemon-generated spam headers are available to scripts.
+- Migrate legacy queues to non-reusable IDs and bind receipts atomically.
+  Retry failed local targets without repeating successful fan-out deliveries;
+  show each local target in submission status. Expire terminal receipts and
+  EmailSubmission records after configurable `delivery_retention_days` (30 by default).
+- Derive BODY=8BITMIME from the body alone. Accept legacy raw eight-bit headers
+  inbound and on submission; preserve transactions after rejected MAIL commands.
+  Accept IPv4/IPv6 address literals syntactically. Skip dangling alias targets
+  with an error log when healthy local targets remain, and check both IDN
+  spellings when preventing account/alias collisions.
 - Advertise SMTPUTF8 on inbound and submission, accept UTF-8 envelopes and
   headers, and negotiate SMTPUTF8 and BODY=8BITMIME on outbound delivery.
   Unsupported peers produce a permanent bounce; messages are not downgraded.
@@ -28,8 +37,9 @@
   and SMTP replies. Retries skip recipients already delivered or bounced.
 - Resurrect deleted aliases, add `maild alias set`, local multi-target aliases
   and `@domain` catch-alls. Real mailboxes win over aliases and catch-alls;
-  non-local targets are refused. Account inspection includes the numeric id;
-  Bayesian inspection retains its read-only unknown-account refusal.
+  non-local targets are refused. Account inspection includes the numeric id.
+  The read-only Bayesian unknown-account refusal already existed; native CLI
+  regression coverage now checks its exact error text and absence of file creation.
 
 - IMAP `SEARCH` and `UID SEARCH` implement the header, date and text keys:
   `FROM`, `TO`, `CC`, `BCC`, `SUBJECT`, `HEADER`, `BODY`, `TEXT`, `BEFORE`,

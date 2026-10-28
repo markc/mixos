@@ -48,6 +48,7 @@ pub struct SmtpConfig {
     /// See [`crate::config::Config::smtp_outbound_bind`].
     pub outbound_bind: Vec<std::net::IpAddr>,
     pub max_message_size: usize,
+    pub delivery_retention_days: u32,
     /// Whether opaque vtoken RCPTs (the single-segment HMAC namespace) are
     /// accepted at RCPT TO. Set at startup by the pre-flight scan
     /// ([`crate::runtime`]): `false` (fail-safe) if any existing account/alias
@@ -121,6 +122,7 @@ impl Default for SmtpConfig {
             listen_smtps: vec![],
             outbound_bind: Vec::new(),
             max_message_size: 25 * 1024 * 1024, // 25 MB
+            delivery_retention_days: 30,
             opaque_rcpt_enabled: true,
             dkim_selector: None,
             dkim_private_key: None,

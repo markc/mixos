@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use super::types::*;
 use crate::db::{self, Db};
-use mds::{ItemId, Mds, Tags};
+use mds::ItemId;
 
 use crate::mailstore::{MailStore, MailboxRole, SqliteMailStore};
 
@@ -92,7 +92,7 @@ async fn create_submission(
     aliases_runtime: &Arc<::props::Runtime>,
     account_id: i32,
     obj: &serde_json::Value,
-    strict_local: bool,
+    _strict_local: bool,
 ) -> Result<Uuid> {
     #[derive(Deserialize)]
     struct SubmissionCreate {
@@ -200,112 +200,47 @@ async fn create_submission(
 
     // Separate local vs remote recipients
     let mut remote_addrs = Vec::new();
-    let mut delivered_accounts = std::collections::BTreeSet::new();
     let mut recipients_seen = std::collections::BTreeSet::new();
+    let mut routes = Vec::new();
     for addr in &to_addrs {
-        if !recipients_seen.insert(addr) {
-            continue;
-        }
-        // Share SMTP's mailbox/exact/catch-all precedence and local-only
-        // fan-out. Keep the original recipient in the submission receipt.
-        let accounts =
-            crate::props::aliases::recipient_accounts(aliases_runtime, &db.conn, addr).await?;
-        if accounts.is_empty() {
-            remote_addrs.push(addr.clone());
-        }
-        let local = !accounts.is_empty();
-        let mut local_error = None;
-        for rcpt_account in accounts {
-            if delivered_accounts.contains(&rcpt_account.id) {
-                continue;
-            }
-            // Local delivery via MailStore: bytes are already in the
-            // shared CAS (the email is account-scoped to the sender,
-            // so its `blob_hash` reads directly through the shared
-            // store). Fetch by hash, resolve the recipient's Inbox,
-            // parse the RFC 5322 headers for envelope + In-Reply-To,
-            // and create the row through the recipient's
-            // `with_set_tx` boundary.
-            //
-            // Behavior shift vs legacy path: the recipient's envelope
-            // reflects the full parsed To: list (via
-            // `build_envelope`) instead of just the recipient's own
-            // address. This matches what an externally-delivered
-            // copy of the same message would carry.
-            let create_outcome = async {
-                let ms = mailstore.clone();
-                let data =
-                    tokio::task::spawn_blocking(move || ms.mds().get_blob(&blob_hash)).await??;
-                let data = crate::sieve::delivery::stamp_spam(&data, "UNKNOWN", 0.0);
-                let inbox = mailstore
-                    .mailbox_by_role(rcpt_account.id, MailboxRole::Inbox)?
-                    .ok_or_else(|| anyhow::anyhow!("recipient has no Inbox"))?;
-                crate::sieve::delivery::deliver(
-                    db,
-                    mailstore,
-                    crate::sieve::delivery::Delivery {
-                        account: &rcpt_account,
-                        from: &from_addr,
-                        to: addr,
-                        data: &data,
-                        default_mailbox: inbox,
-                        default_tags: Tags::new(),
-                        external_domains: &db.sieve_external_domains,
-                        sender_verified: true,
-                        spam: false,
-                        smtp_reject: false,
-                        routing: None,
-                    },
-                )
-                .await
-            }
-            .await;
-            match create_outcome {
-                Ok(_) => {
-                    delivered_accounts.insert(rcpt_account_id);
-                    tracing::info!(from = %from_addr, to = %addr, "Local delivery completed");
-                }
-                Err(e) => {
-                    if strict_local {
-                        return Err(e);
-                    }
-                    local_error = Some(e.to_string());
-                    tracing::warn!(error = %e, from = %from_addr, to = %addr, "Local delivery failed");
-                }
-            }
-        }
-        if local {
-            let (status, reply) = match local_error {
-                Some(error) => ("bounced", error),
-                None => ("delivered", "250 2.0.0 Local delivery completed".into()),
-            };
-            let conn = db
-                .conn
-                .lock()
-                .map_err(|e| anyhow::anyhow!("lock error: {e}"))?;
-            conn.execute("INSERT INTO smtp_delivery(submission_id,recipient,status,last_reply) VALUES(?1,?2,?3,?4)",
-                rusqlite::params![submission_id.to_string(),addr,status,reply])?;
+        if recipients_seen.insert(addr) {
+            let accounts = crate::props::aliases::recipient_accounts(aliases_runtime, &db.conn, addr).await?;
+            routes.push((addr.clone(),accounts));
         }
     }
-
-    // Queue remote recipients for outbound SMTP. collapses
-    // the transitional load+put_blob round-trip: the
-    // record carries `blob_hash` directly off the substrate row, so
-    // we can hand it straight to `enqueue`.
-    if !remote_addrs.is_empty() {
-        let queue_id =
-            crate::smtp::queue::enqueue(&db.conn, &from_addr, &remote_addrs, blob_hash).await?;
-        {
-            let conn = db
-                .conn
-                .lock()
-                .map_err(|e| anyhow::anyhow!("lock error: {e}"))?;
-            conn.execute(
-                "UPDATE smtp_delivery SET submission_id=?2 WHERE queue_id=?1",
-                rusqlite::params![queue_id, submission_id.to_string()],
-            )?;
+    // One physical copy per mailbox, with a visible outcome for each envelope
+    // recipient/target pair. A failed target gets a durable local queue entry.
+    let mut local_outcomes = std::collections::BTreeMap::<i32,(Option<i64>,String,String)>::new();
+    for (addr,accounts) in routes {
+        if accounts.is_empty() {
+            remote_addrs.push(addr);
+            continue;
         }
-        tracing::info!(queue_id = queue_id, from = %from_addr, to = ?remote_addrs, "EmailSubmission queued for remote delivery");
+        for account in accounts {
+            let outcome = if let Some(outcome) = local_outcomes.get(&account.id) {
+                outcome.clone()
+            } else {
+                let outcome = match crate::smtp::queue::deliver_local(mailstore,account.id,blob_hash).await {
+                    Ok(()) => (None,"delivered".to_string(),"250 2.0.0 Local delivery completed".to_string()),
+                    Err(error) => {
+                        let reply = format!("451 4.3.0 Local delivery deferred: {error}");
+                        tracing::error!(recipient=%addr,target=%account.email,error=%error,"Local delivery deferred for retry");
+                        let queue_id = crate::smtp::queue::enqueue_local(&db.conn,&from_addr,&addr,&account.email,
+                            account.id,blob_hash,submission_id,&reply).await?;
+                        (Some(queue_id),"deferred".to_string(),reply)
+                    }
+                };
+                local_outcomes.insert(account.id,outcome.clone());
+                outcome
+            };
+            crate::smtp::queue::record_local(&db.conn,submission_id,&addr,&account.email,
+                outcome.0,&outcome.1,&outcome.2).await?;
+        }
+    }
+    if !remote_addrs.is_empty() {
+        let queue_id = crate::smtp::queue::enqueue_submission(&db.conn,&from_addr,
+            &remote_addrs,blob_hash,submission_id).await?;
+        tracing::info!(queue_id,from=%from_addr,to=?remote_addrs,"EmailSubmission queued for remote delivery");
     }
 
     // Move to Sent mailbox if one exists. The legacy path was

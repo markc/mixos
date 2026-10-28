@@ -398,11 +398,11 @@ pub async fn recipient_accounts(
     let mut accounts = Vec::new();
     if let Some(targets) = targets {
         for target in targets {
-            let account = mailbox_account(conn, &target).await?.ok_or_else(|| {
-                anyhow::anyhow!(
-                    "alias target {target} is no longer a local mailbox; forwarding refused"
-                )
-            })?;
+            let Some(account) = mailbox_account(conn, &target).await? else {
+                tracing::error!(alias = %addr, target = %target,
+                    "Alias target is no longer a local mailbox; skipping target, forwarding refused");
+                continue;
+            };
             if !accounts
                 .iter()
                 .any(|existing: &crate::db::account::Account| existing.id == account.id)
@@ -410,6 +410,7 @@ pub async fn recipient_accounts(
                 accounts.push(account);
             }
         }
+        anyhow::ensure!(!accounts.is_empty(), "alias {addr} has no remaining local targets; forwarding refused");
     }
     Ok(accounts)
 }

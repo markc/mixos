@@ -30,6 +30,7 @@ pub struct QueueEntry {
     pub attempts: i32,
     pub next_retry: String,
     pub last_error: Option<String>,
+    pub local_account_id: Option<i32>,
 }
 
 fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<QueueEntry> {
@@ -55,11 +56,12 @@ fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<QueueEntry> {
         attempts: row.get(5)?,
         next_retry: row.get(6)?,
         last_error: row.get(7)?,
+        local_account_id: row.get(8)?,
     })
 }
 
 const SELECT_COLS: &str =
-    "id, from_addr, to_addrs, blob_id, blob_hash, attempts, next_retry, last_error";
+    "id, from_addr, to_addrs, blob_id, blob_hash, attempts, next_retry, last_error, local_account_id";
 
 /// Enqueue a message for outbound delivery, addressed by CAS hash.
 pub async fn enqueue(
@@ -68,15 +70,44 @@ pub async fn enqueue(
     to_addrs: &[String],
     blob_hash: BlobHash,
 ) -> Result<i64> {
+    enqueue_entry(conn, from_addr, to_addrs, blob_hash, None, None, None).await
+}
+
+pub async fn enqueue_submission(conn: &Arc<Mutex<Connection>>, from_addr: &str,
+    to_addrs: &[String], blob_hash: BlobHash, submission: Uuid) -> Result<i64> {
+    enqueue_entry(conn, from_addr, to_addrs, blob_hash, Some(submission), None, None).await
+}
+
+pub(crate) async fn enqueue_local(conn: &Arc<Mutex<Connection>>, from_addr: &str,
+    recipient: &str, target: &str, account_id: i32, blob_hash: BlobHash,
+    submission: Uuid, error: &str) -> Result<i64> {
+    enqueue_entry(conn, from_addr, &[recipient.to_string()], blob_hash,
+        Some(submission), Some((account_id,target.to_string())), Some(error.to_string())).await
+}
+
+async fn enqueue_entry(conn: &Arc<Mutex<Connection>>, from_addr: &str,
+    to_addrs: &[String], blob_hash: BlobHash, submission: Option<Uuid>,
+    local: Option<(i32,String)>, error: Option<String>) -> Result<i64> {
     let conn = conn.clone();
     let from_addr = from_addr.to_string();
-    let to_addrs = to_addrs.to_vec();
+    let to_addrs_json = serde_json::to_string(to_addrs)?;
+    let blob_hash_hex = mds::blob::hex(&blob_hash);
     tokio::task::spawn_blocking(move || {
         let mut conn = conn
             .lock()
             .map_err(|e| anyhow::anyhow!("lock error: {e}"))?;
         let tx = conn.transaction()?;
-        let id = enqueue_on(&tx, &from_addr, &to_addrs, blob_hash)?;
+        tx.execute(
+            "INSERT INTO smtp_queue (from_addr,to_addrs,blob_hash,local_account_id,next_retry,last_error) VALUES (?1,?2,?3,?4,CASE WHEN ?5 IS NULL THEN datetime('now') ELSE datetime('now','+1 minute') END,?5)",
+            params![from_addr, to_addrs_json, blob_hash_hex,local.as_ref().map(|l| l.0),error],
+        )?;
+        let id = tx.last_insert_rowid();
+        for recipient in serde_json::from_str::<Vec<String>>(&to_addrs_json)? {
+            tx.execute(
+                "INSERT INTO smtp_delivery(queue_id,submission_id,recipient,target,status,last_reply) VALUES(?1,?2,?3,?4,?5,?6) ON CONFLICT(queue_id,recipient,target) DO NOTHING",
+                params![id,submission.map(|s| s.to_string()),recipient,local.as_ref().map(|l| l.1.as_str()).unwrap_or(""),if error.is_some() {"deferred"} else {"queued"},error],
+            )?;
+        }
         tx.commit()?;
         // Key values inline: the journald sink emits structured fields
         // as journal FIELDS, invisible in default `journalctl` output.
@@ -115,7 +146,7 @@ pub async fn pending(conn: &Arc<Mutex<Connection>>, id: i64) -> Result<Vec<Strin
     let conn = conn.clone();
     tokio::task::spawn_blocking(move || {
         let conn = conn.lock().map_err(|e| anyhow::anyhow!("lock error: {e}"))?;
-        let mut stmt = conn.prepare("SELECT recipient FROM smtp_delivery WHERE queue_id=?1 AND status IN ('queued','deferred') ORDER BY rowid")?;
+        let mut stmt = conn.prepare("SELECT DISTINCT recipient FROM smtp_delivery WHERE queue_id=?1 AND status IN ('queued','deferred') ORDER BY rowid")?;
         Ok(stmt.query_map([id], |row| row.get(0))?.collect::<rusqlite::Result<Vec<_>>>()?)
     }).await?
 }
@@ -162,7 +193,10 @@ pub async fn mark_delivered(conn: &Arc<Mutex<Connection>>, id: i64) -> Result<()
         let conn = conn
             .lock()
             .map_err(|e| anyhow::anyhow!("lock error: {e}"))?;
-        conn.execute("DELETE FROM smtp_queue WHERE id = ?1", params![id])?;
+        let tx = conn.unchecked_transaction()?;
+        tx.execute("DELETE FROM smtp_delivery WHERE queue_id=?1 AND submission_id IS NULL", [id])?;
+        tx.execute("DELETE FROM smtp_queue WHERE id = ?1", params![id])?;
+        tx.commit()?;
         Ok(())
     })
     .await?
@@ -228,8 +262,11 @@ pub async fn mark_permanent_failure(
         let conn = conn
             .lock()
             .map_err(|e| anyhow::anyhow!("lock error: {e}"))?;
-        conn.execute("UPDATE smtp_delivery SET status='bounced',last_reply=?2,updated_at=datetime('now') WHERE queue_id=?1 AND status IN ('queued','deferred')", params![id,error])?;
-        conn.execute("DELETE FROM smtp_queue WHERE id = ?1", params![id])?;
+        let tx = conn.unchecked_transaction()?;
+        tx.execute("UPDATE smtp_delivery SET status='bounced',last_reply=?2,updated_at=datetime('now') WHERE queue_id=?1 AND status IN ('queued','deferred')", params![id,error])?;
+        tx.execute("DELETE FROM smtp_delivery WHERE queue_id=?1 AND submission_id IS NULL", [id])?;
+        tx.execute("DELETE FROM smtp_queue WHERE id = ?1", params![id])?;
+        tx.commit()?;
         Ok(())
     })
     .await?
@@ -268,4 +305,64 @@ pub async fn flush(conn: &Arc<Mutex<Connection>>) -> Result<u64> {
         Ok(changes as u64)
     })
     .await?
+}
+
+pub(crate) async fn record_local(conn: &Arc<Mutex<Connection>>, submission: Uuid,
+    recipient: &str, target: &str, queue_id: Option<i64>, status: &str, reply: &str) -> Result<()> {
+    let conn = conn.clone();
+    let (recipient,target,status,reply) = (recipient.to_string(),target.to_string(),status.to_string(),reply.to_string());
+    tokio::task::spawn_blocking(move || {
+        let conn = conn.lock().map_err(|e| anyhow::anyhow!("lock error: {e}"))?;
+        conn.execute("INSERT INTO smtp_delivery(queue_id,submission_id,recipient,target,status,last_reply) VALUES(?1,?2,?3,?4,COALESCE((SELECT status FROM smtp_delivery WHERE queue_id=?1 LIMIT 1),?5),COALESCE((SELECT last_reply FROM smtp_delivery WHERE queue_id=?1 LIMIT 1),?6)) ON CONFLICT(submission_id,recipient,target) DO NOTHING",
+            params![queue_id,submission.to_string(),recipient,target,status,reply])?;
+        Ok(())
+    }).await?
+}
+
+/// The same local delivery operation serves initial submission and queue retries.
+pub(crate) async fn deliver_local(store: &Arc<crate::mailstore::SqliteMailStore>,
+    account_id: i32, blob_hash: BlobHash) -> Result<()> {
+    use crate::mailstore::{MailStore, MailboxRole};
+    use mds::{Flags, Mds, Tags};
+    let store = store.clone();
+    tokio::task::spawn_blocking(move || {
+        let data = store.mds().get_blob(&blob_hash)?;
+        let inbox = store.mailbox_by_role(account_id,MailboxRole::Inbox)?
+            .ok_or_else(|| anyhow::anyhow!("recipient {account_id} has no Inbox"))?;
+        let parsed = mail_parser::MessageParser::default().parse(data.as_slice())
+            .ok_or_else(|| anyhow::anyhow!("failed to parse message for envelope"))?;
+        store.create_email(account_id,inbox,blob_hash,
+            crate::jmap::email::build_envelope(&parsed),
+            &crate::jmap::email::extract_in_reply_to(&parsed),Flags(0),Tags::new(),chrono::Utc::now().timestamp_millis())?;
+        Ok(())
+    }).await?
+}
+
+pub(crate) async fn local_result(conn: &Arc<Mutex<Connection>>, id: i64,
+    status: &str, reply: &str) -> Result<()> {
+    let conn = conn.clone();
+    let (status,reply) = (status.to_string(),reply.to_string());
+    tokio::task::spawn_blocking(move || {
+        let conn = conn.lock().map_err(|e| anyhow::anyhow!("lock error: {e}"))?;
+        conn.execute("UPDATE smtp_delivery SET status=?2,last_reply=?3,updated_at=datetime('now') WHERE queue_id=?1 AND status IN ('queued','deferred')",params![id,status,reply])?;
+        Ok(())
+    }).await?
+}
+
+/// Keep complete active receipts; expire terminal submissions as a whole.
+/// Zero disables age-based retention. Unlinked SMTP outcomes are ephemeral.
+pub async fn sweep_receipts(conn: &Arc<Mutex<Connection>>, days: u32) -> Result<usize> {
+    let conn = conn.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = conn.lock().map_err(|e| anyhow::anyhow!("lock error: {e}"))?;
+        let tx = conn.unchecked_transaction()?;
+        let mut removed = tx.execute("DELETE FROM smtp_delivery WHERE submission_id IS NULL AND NOT EXISTS(SELECT 1 FROM smtp_queue q WHERE q.id=smtp_delivery.queue_id)",[])?;
+        if days > 0 {
+            let cutoff = format!("-{days} days");
+            removed += tx.execute("DELETE FROM smtp_delivery WHERE status IN ('delivered','bounced') AND updated_at < datetime('now',?1) AND NOT EXISTS(SELECT 1 FROM smtp_queue q WHERE q.id=smtp_delivery.queue_id) AND NOT EXISTS(SELECT 1 FROM smtp_delivery sibling WHERE sibling.submission_id=smtp_delivery.submission_id AND (sibling.status IN ('queued','deferred') OR sibling.updated_at >= datetime('now',?1)))",[&cutoff])?;
+            removed += tx.execute("DELETE FROM email_submissions WHERE created_at < datetime('now',?1) AND undo_status='final' AND NOT EXISTS(SELECT 1 FROM smtp_delivery d WHERE d.submission_id=email_submissions.id) AND NOT EXISTS(SELECT 1 FROM smtp_queue q WHERE q.id=email_submissions.queue_id)",[&cutoff])?;
+        }
+        tx.commit()?;
+        Ok(removed)
+    }).await?
 }

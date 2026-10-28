@@ -49,7 +49,12 @@ Inbound SMTP and authenticated submission advertise `SMTPUTF8` and
 or UTF-8 headers, adding `BODY=8BITMIME` for an eight-bit body. UTF-8 local
 parts and domains are stored without transliteration or Unicode normalisation;
 address lookup folds ASCII case as for existing mailboxes. Invalid UTF-8
-commands and UTF-8 addresses/headers without the parameter are refused.
+commands and UTF-8 envelope addresses without the parameter are refused.
+Inbound SMTP and submission accept legacy raw eight-bit headers without
+SMTPUTF8 and preserve their bytes; outbound delivery derives the extensions
+it needs from the stored message. IPv4 and IPv6 address literals are accepted
+syntactically; recipient policy may still refuse them. A rejected MAIL command
+preserves the previously accepted envelope and recipients.
 Configure hosted internationalised domains in `maild.domains` using their DNS
 A-label (for example `xn--fsqu00a.example.com`); the RCPT gate converts the
 envelope's U-label for that authoritative lookup.
@@ -59,8 +64,9 @@ discarded and never grant permission to use an envelope sender.
 
 Outbound delivery detects non-ASCII envelope addresses and headers, checks the
 peer's EHLO capabilities (again after STARTTLS), and requests `SMTPUTF8` when
-needed, including UTF-8 MIME part headers. SMTPUTF8 and eight-bit content
-require `8BITMIME` and request `BODY=8BITMIME`.
+needed, including UTF-8 MIME part headers. Only eight-bit bytes after the
+top-level header block require `8BITMIME` and request `BODY=8BITMIME`.
+UTF-8 envelope addresses or headers with an ASCII body request SMTPUTF8 alone.
 ASCII mail does not request either extension. If a required extension is
 missing, maild records a permanent `5.6.7` (SMTPUTF8) or `5.6.3` (8BITMIME)
 failure and bounces to the local sender. It does not rewrite addresses or
@@ -96,9 +102,12 @@ maild.submission.status {"id":"00000000-0000-4000-8000-000000000001"}
 ```
 
 The response has `id`, `delivery_confirmed` and `recipients`. Each recipient
-has `recipient`, `status` (`queued`, `delivered`, `deferred`, `bounced`),
+has `recipient`, `target`, `status` (`queued`, `delivered`, `deferred`, `bounced`),
 `last_smtp_reply` (null before an attempt) and `updated_at` (UTC). Local delivery
-records the local completion reply. Remote delivery records the receiving
+records one outcome for each local target, so partial fan-out success is
+visible. A temporary local failure is deferred onto the existing delivery
+queue; retries deliver only to the failed mailbox, without repeating successful
+copies. Remote delivery records the receiving
 server's end-of-DATA reply or its rejection/error. Delivered means the next
 server accepted responsibility, not that a person read the message.
 
@@ -107,7 +116,13 @@ retry with the queue's backoff; delivered and bounced recipients are skipped.
 Each remote recipient has its own SMTP transaction, trading connection reuse
 for independent results and retries. Unknown ids, malformed requests and
 legacy submissions without recorded outcomes return an error, never an invented
-delivery result. Terminal receipts are retained with submission records.
+delivery result. Queue IDs never repeat, including after upgrading a legacy
+database. Receipts are linked to submissions in the enqueue transaction.
+Unlinked SMTP outcomes are removed with their queue entry. Terminal receipts
+and EmailSubmission records expire together after `delivery_retention_days`
+(default 30; zero disables age-based expiry). Active or partly deferred
+submissions retain their complete status until delivery finishes. The worker
+sweeps retention on each queue pass.
 
 ## Local aliases
 
@@ -124,9 +139,10 @@ an optimistic version check. Concurrent changes require a retry. Both commands
 take one to 32 local account addresses, with no chains or off-site forwarding.
 
 Delivery checks for a real mailbox first, then an enabled exact alias, then
-the enabled domain catch-all. All targets must still be real local accounts;
-removing one causes a retriable delivery failure rather than external
-forwarding. Multiple local targets receive a copy each. An exact alias grants
+the enabled domain catch-all. Missing targets are skipped with an error log;
+healthy local targets still receive their copies. Resolution fails only when
+no local targets remain, and never forwards externally. Account creation
+checks both IDN spellings for alias collisions. An exact alias grants
 its targets permission to send as that alias; a catch-all grants no sender
 identity. Reserved virtual-token recipients retain their existing routing.
 Property records retain `target` as the first target for compatibility

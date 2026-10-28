@@ -555,9 +555,10 @@ impl HookHandler for AccountsHooks {
                 // if it is somehow empty we skip rather than block create
                 // (the impossible startup-window case).
                 if let Some(aliases_rt) = self.aliases_runtime.get() {
+                    for spelling in crate::smtp::envelope::mailbox_addresses(&ctx.key.key) {
                     let aliases_key = RecordKey::collection(
                         crate::props::aliases::namespace_name(),
-                        ctx.key.key.clone(),
+                        spelling,
                     );
                     match aliases_rt.store().get(&aliases_key).await {
                         Ok(_) => {
@@ -574,6 +575,7 @@ impl HookHandler for AccountsHooks {
                                 "maild.aliases read on account-create collision check: {e}"
                             )));
                         }
+                    }
                     }
                 }
             }

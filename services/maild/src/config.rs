@@ -89,6 +89,8 @@ pub struct Config {
     pub smtp_outbound_bind: Vec<String>,
     /// Maximum message size in bytes
     pub max_message_size: Option<usize>,
+    /// Terminal delivery receipts and EmailSubmission retention; default 30 days.
+    pub delivery_retention_days: Option<u32>,
     /// DKIM selector (e.g., "default"). Legacy single-key shape;
     /// stays as the unsigned-domain fallback when `[[dkim.domain]]`
     /// rows are also present (multi-vhost umbrella Phase 1).
@@ -290,6 +292,7 @@ impl Default for Config {
             smtp_smtps: None,
             smtp_outbound_bind: Vec::new(),
             max_message_size: None,
+            delivery_retention_days: None,
             dkim_selector: None,
             dkim_private_key: None,
             dkim: DkimSubsection::default(),
@@ -395,6 +398,7 @@ impl From<&::config::node::NodeConfig> for Config {
             sieve_vacation_external: true,
             smtp_outbound_bind: Vec::new(),
             max_message_size: None,
+            delivery_retention_days: None,
             dkim_selector: None,
             dkim_private_key: None,
             dkim: DkimSubsection::default(),

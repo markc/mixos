@@ -761,6 +761,7 @@ pub async fn build_runtime(cfg: &Config, opts: RuntimeOpts) -> Result<BuiltMaild
             })
             .collect(),
         max_message_size: cfg.max_message_size.unwrap_or(25 * 1024 * 1024),
+        delivery_retention_days: cfg.delivery_retention_days.unwrap_or(30),
         opaque_rcpt_enabled,
         dkim_selector: cfg.dkim_selector.clone(),
         dkim_private_key: cfg.dkim_private_key.clone(),
