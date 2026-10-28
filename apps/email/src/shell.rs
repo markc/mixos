@@ -2579,7 +2579,7 @@ mod tests {
 
     #[test]
     fn followed_custom_design_keeps_file_colours_and_installs_font_choices() {
-        let mut shell = compose_fixture(false).0;
+        let (mut shell, _broker) = compose_fixture(false);
         shell.file_theme = Theme::for_context(design::DesignContext {
             scheme: design::Scheme::Ocean,
             mode: design::Mode::Light,
@@ -2641,7 +2641,8 @@ mod tests {
                 shell.ctx.global_style().text_styles[&egui::TextStyle::Body].size,
                 18.0
             );
-            let _ = shell.ctx.run(Default::default(), |_| {});
+            let mut output = shell.ctx.run_ui(Default::default(), |_| {});
+            output.textures_delta.clear();
             assert_eq!(
                 shell.ctx.fonts(|fonts| {
                     fonts.definitions().families[&egui::FontFamily::Proportional][0].clone()
