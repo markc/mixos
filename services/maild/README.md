@@ -9,7 +9,9 @@ declaration under `share/maild/units`, and the patched parser's licences under
 `share/licenses/maild/mail-parser`. `maild@INSTANCE` requires the matching
 `noded@INSTANCE` and `<etc>/session/INSTANCE.env` broker configuration.
 Its service config is `<etc>/maild/config.conf.mix`. State is owned by
-`maild` under `/var/lib/maild`, with `MIXOS_VAR` set to that root by the unit.
+`maild` under `<var>/maild` and `<var>/jmap`. Units retain the interim bind
+capability for config listeners; socket templates require explicit host
+addresses, service selection and enablement before removing it with a drop-in.
 Configured TLS certificates and DKIM keys must be readable by that account.
 
 See the [manual](../../docs/maild/README.md) and

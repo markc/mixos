@@ -1537,18 +1537,33 @@ pub struct SqliteMailStore {
 impl SqliteMailStore {
     /// The thread assigned in the email's create transaction, scoped to its
     /// account. Used by Email/import's mandatory created properties.
-    pub fn thread_for_email(&self, account: AccountId, id: ItemId) -> Result<ThreadId> {
+    pub fn thread_for_email(&self, account: AccountId, id: ItemId) -> Result<Option<ThreadId>> {
+        Ok(self.threads_for_emails(account, &[id])?.remove(&id))
+    }
+
+    /// One account-scoped read for an Email/get batch. Missing legacy sidecars
+    /// are absent from the map; they must not prevent reading the email.
+    pub fn threads_for_emails(&self, account: AccountId, ids: &[ItemId]) -> Result<std::collections::HashMap<ItemId, ThreadId>> {
+        if ids.is_empty() {
+            return Ok(std::collections::HashMap::new());
+        }
         let set = account_id_to_setid(account);
+        let ids = serde_json::to_string(&ids.iter().map(|id| id.0.to_string()).collect::<Vec<_>>())?;
         self.mds
-            .with_set_tx(&set, |tx| {
-                tx.tx()
-                    .query_row(
-                        "SELECT thread_id FROM mail_threads WHERE account_id = ?1 AND item_id = ?2",
-                        params![account, id.0.to_string()],
-                        |row| row.get::<_, String>(0),
-                    )
-                    .map(ThreadId)
-                    .map_err(|e| mds::Error::Other(e.to_string()))
+            .with_set_read(&set, |conn| {
+                let read = || -> rusqlite::Result<_> {
+                    let mut statement = conn.prepare("SELECT item_id, thread_id FROM mail_threads WHERE account_id = ?1 AND item_id IN (SELECT value FROM json_each(?2))")?;
+                    let rows = statement.query_map(params![account, ids], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))?;
+                    let mut out = std::collections::HashMap::new();
+                    for row in rows {
+                        let (id, thread) = row?;
+                        if let Ok(id) = id.parse::<Uuid>() {
+                            out.insert(ItemId(id), ThreadId(thread));
+                        }
+                    }
+                    Ok(out)
+                };
+                read().map_err(|e| mds::Error::Other(e.to_string()))
             })
             .map_err(Into::into)
     }

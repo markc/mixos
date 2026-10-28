@@ -107,40 +107,71 @@ under `<state>/jmap`, and DKIM, TLS and rule state under `<state>/maild`; with
 
 ## Socket activation
 
-Enable only the socket units for protocols the host serves:
+Both service forms retain `CAP_NET_BIND_SERVICE` under the decision's interim
+clause, so upgrading preserves config binds on privileged ports. Activation
+is available, but its per-host installation is not automatic.
 
-| Unit | Descriptor name | Shipped bind |
+The shipped socket templates have **no active ListenStream** and cannot bind
+until an operator or installer renders the host's configured addresses:
+
+| Template | Descriptor name | Config source |
 |---|---|---|
-| `maild-smtp.socket` | `smtp` | `127.0.0.1:25` |
-| `maild-submissions.socket` | `submissions` | `127.0.0.1:465` |
-| `maild-imaps.socket` | `imaps` | `127.0.0.1:993` |
-| `maild-jmap.socket` | `jmap` | `127.0.0.1:8088` |
+| `maild-smtp@.socket` | `smtp` | every `smtp_inbound` address |
+| `maild-submissions@.socket` | `submissions` | every `smtp_smtps` address |
+| `maild-imaps@.socket` | `imaps` | every `imap_imaps` address |
+| `maild-jmap@.socket` | `jmap` | `listen` |
 
-These opt-in defaults stay on loopback. In a host drop-in, clear
-`ListenStream=` and set it to the host's mesh address and port. Public binds
-are an explicit operator choice. Each unit uses `FreeBind=yes` and starts
-`maild.service`. TLS material is required for `submissions` and `imaps`.
+For `maild@INSTANCE.service`, render a drop-in for each selected protocol's
+`maild-PROTOCOL@INSTANCE.socket`. Copy **all** addresses for that protocol
+from the instance's config; an inherited protocol replaces all its config binds.
+For example, `maild-smtp@INSTANCE.socket.d/listeners.conf` contains:
+
+```ini
+[Socket]
+ListenStream=
+ListenStream=192.0.2.10:25
+ListenStream=[2001:db8::10]:25
+```
+
+`Service=maild@%i.service` selects the matching instance. For plain
+`maild.service`, use the `default` socket instance and add
+`Service=maild.service` to each socket drop-in. No installer enables these
+examples or chooses loopback/public addresses. Enable the rendered socket
+instances explicitly during the host's planned service transition, after
+checking for conflicts with already-bound config listeners. Each uses
+`FreeBind=yes`. TLS material is required for `submissions` and `imaps`.
 JMAP, CalDAV and CardDAV share the `jmap` HTTP listener and its TLS config.
 There is no separate STARTTLS submission listener on port 587.
 
 Maild consumes fd 3 onwards only when `LISTEN_PID` matches its process;
 `LISTEN_FDS` and `LISTEN_FDNAMES` must describe named listening TCP sockets.
 Several fds may share a protocol name. Unknown names, mismatched counts and
-non-listeners fail startup. Inherited listeners replace configured binds for
+non-listeners fail startup. The activation environment is cleared before the
+runtime or helpers start. Inherited listeners replace configured binds for
 that protocol; protocols without inherited sockets still use their configured
 addresses. STARTTLS requirements match the inherited socket's actual local
 address, just as they do a configured bind.
 
-Both service forms run without a bind capability. Without activation, use
-unprivileged config ports or an existing host port policy. For an instance
-service, set `Service=maild@INSTANCE.service` in each socket's host drop-in.
+Only after **every privileged listener** has a working enabled socket, or has
+been moved to an unprivileged config port, install this service drop-in at
+`maild.service.d/socket-capabilities.conf` (or
+`maild@INSTANCE.service.d/socket-capabilities.conf`):
+
+```ini
+[Service]
+CapabilityBoundingSet=
+AmbientCapabilities=
+```
+
+Keep the capability until that host transition is complete. Removing it while
+any configured privileged listener still binds itself makes startup fail.
 
 ## Uploading and sending with JMAP
 
 Upload an RFC 5322 message to the session's `uploadUrl`, then call
 `Email/import` with `accountId` and an `emails` map. Each entry has `blobId`,
 non-empty `mailboxIds`, optional `keywords` (default `{}`) and `receivedAt`
-(a UTCDate). The default date comes from the most recent Received header,
+(a UTCDate, or null for the default). The default date comes from the most recent Received header,
 or the import time. `ifInState` checks the Email state before any writes.
 Responses contain per-entry `created` or `notCreated` results, with id,
 canonical blob id, thread id and byte size for each created email.
@@ -148,10 +179,17 @@ canonical blob id, thread id and byte size for each created email.
 Duplicate content within an account is rejected atomically with
 `alreadyExists` and `existingId`, including concurrent imports and imports
 through different upload aliases. It leaves existing metadata and memberships
-untouched. Missing or invalid blob, mailbox or keyword references produce
+untouched, even when a retry requests different mailboxes or keywords. Maild
+does not add memberships as a side effect of this rejection: a failed import
+must remain safe to retry, and the client should explicitly patch
+`existingId` with `Email/set` to add mailboxes. This preserves the atomic
+duplicate/quota rules and avoids silently overwriting existing keyword state.
+Missing or invalid blob, mailbox or keyword references produce
 `invalidProperties`; invalid MIME produces `invalidEmail`. Uploaded aliases
 and account-owned CAS blob ids are accepted, with account ownership checked.
 Parser unwinds are contained and returned as `invalidEmail` for that entry.
+The legacy `Email/set create` extension reports invalid MIME as
+`invalidProperties` on `blobId`, a standard SetError.
 Positive account mail quotas are checked inside the creation transaction;
 concurrent imports cannot exceed them. Upload staging does not consume mail quota.
 Unexpected storage failures return `serverFail`; a failed creation transaction
@@ -163,11 +201,19 @@ response was incorrect.
 Submit the returned email id with `EmailSubmission/set`. This works without
 maild's legacy top-level `blobId` extension on `Email/set create`. The Email
 creation id can also be referenced as `#draft` by submission in the same
-request; mailbox creation ids resolve in import's `mailboxIds`. An optional
+request; mailbox creation ids resolve in import's `mailboxIds`. Implemented
+`/set` methods also resolve Id fields, update/destroy targets and mailbox
+parents, ordering dependent creates within one call. Unresolvable references
+produce per-entry errors. Submission `onSuccessUpdateEmail` and
+`onSuccessDestroyEmail` refer to successful submission ids, including `#id`
+references, and return the implicit `Email/set` response with the same call id.
+An optional
 request `createdIds` map seeds these references and is returned with the new ids.
 The Email
 app still uses that extension: it should upload, import into Drafts with
 `$draft`, then submit the created id (and handle import errors, including
 `alreadyExists`). This branch does not change the app. Broader existing JMAP
 projection gaps, including some address/header fields, remain separate work;
-this is not a claim of full JMAP conformance.
+this is not a claim of full JMAP conformance. Thread ids are fetched in one
+read per Email/get batch; a missing legacy thread row projects null. SQLite,
+blob reads and MIME parsing run off the async executor.

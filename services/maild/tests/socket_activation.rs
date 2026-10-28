@@ -109,12 +109,17 @@ fn activation_child() {
             },
         );
     }
+    let inherited = unsafe { maild::activation::InheritedSockets::from_env() };
+    for key in ["LISTEN_PID", "LISTEN_FDS", "LISTEN_FDNAMES"] {
+        assert!(std::env::var_os(key).is_none(), "{key} leaked after adoption");
+    }
+    let inherited = inherited.unwrap();
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .unwrap();
     runtime.block_on(async {
-        let mut sockets = maild::activation::Sockets::from_env().unwrap();
+        let mut sockets = inherited.into_sockets().unwrap();
         let addresses: Vec<_> = std::env::var("ACTIVATED_ADDRS")
             .unwrap()
             .split(',')
@@ -124,7 +129,6 @@ fn activation_child() {
             assert!(sockets.take("smtp").is_empty());
             return;
         }
-        assert!(maild::activation::Sockets::from_env().is_err());
         if mode == "runtime" {
             use maild::{
                 config::{Config, ListenSpec},

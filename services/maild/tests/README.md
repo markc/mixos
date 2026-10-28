@@ -44,6 +44,18 @@ blob refusal and mailbox/import/submission creation references in one request.
 rejects logical root escapes. `socket_activation.rs` passes actual listening
 fds with LISTEN_PID/LISTEN_FDS/LISTEN_FDNAMES to a subprocess, checking name
 routing, multiple sockets, fallback binds, close-on-exec and invalid metadata.
+It also checks that activation metadata is cleared before runtime startup.
+`service_units.rs` prevents capability removal before host activation is
+configured and checks that socket templates choose the matching service
+instance without enabling any address.
+
+The JMAP HTTP suite also covers null import dates, invalid-MIME SetErrors,
+optional batched thread reads, creation references throughout implemented
+/set methods, dependent mailbox creates and submission success actions.
+SQLite statement tracing on a current-thread HTTP executor detects blocking
+storage calls in import, blob-based creation and Email/get. Duplicate imports
+into another mailbox set must leave memberships, keywords, dates and state
+unchanged; clients can explicitly patch the returned existingId instead.
 
 The `parser_nesting` suite directly exercises the vendored mail-parser 0.11.5
 without maild's MIME preflight. It must pass all three cases on a 2 MiB stack,

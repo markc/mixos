@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+[Unit]
+Description=MixOS inbound SMTP socket example for %i
+Documentation=https://mixos.dev/maild/
+
+[Socket]
+# Render every smtp_inbound address from this instance's config in a drop-in.
+# No address is enabled by default. Example: ListenStream=192.0.2.10:25
+FreeBind=yes
+FileDescriptorName=smtp
+Service=maild@%i.service
+
+[Install]
+WantedBy=sockets.target

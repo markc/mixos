@@ -10,16 +10,30 @@ use tokio::net::TcpListener;
 #[derive(Default)]
 pub struct Sockets(HashMap<String, Vec<TcpListener>>);
 
-impl Sockets {
+#[derive(Default)]
+pub struct InheritedSockets(HashMap<String, Vec<std::net::TcpListener>>);
+
+impl InheritedSockets {
     /// Consume fd 3 onwards only for this process. Unknown names and non-TCP
     /// listeners fail startup rather than silently serving the wrong protocol.
-    pub fn from_env() -> Result<Self> {
-        if std::env::var("LISTEN_PID").ok().as_deref()
+    ///
+    /// # Safety
+    /// Call during single-threaded process startup, before any environment
+    /// readers or runtime/helper threads exist. Clears LISTEN_* even on error.
+    pub unsafe fn from_env() -> Result<Self> {
+        let pid = std::env::var("LISTEN_PID");
+        let count = std::env::var("LISTEN_FDS");
+        let names = std::env::var("LISTEN_FDNAMES");
+        for key in ["LISTEN_PID", "LISTEN_FDS", "LISTEN_FDNAMES"] {
+            // SAFETY: the caller guarantees single-threaded startup.
+            unsafe { std::env::remove_var(key) };
+        }
+        if pid.ok().as_deref()
             != Some(std::process::id().to_string().as_str())
         {
             return Ok(Self::default());
         }
-        let count: i32 = std::env::var("LISTEN_FDS")
+        let count: i32 = count
             .context("missing LISTEN_FDS")?
             .parse()
             .context("invalid LISTEN_FDS")?;
@@ -47,7 +61,7 @@ impl Sockets {
                 unsafe { OwnedFd::from_raw_fd(fd) }
             })
             .collect();
-        let names = std::env::var("LISTEN_FDNAMES").context("missing LISTEN_FDNAMES")?;
+        let names = names.context("missing LISTEN_FDNAMES")?;
         let names: Vec<_> = names.split(':').collect();
         if names.len() != fds.len() {
             bail!("LISTEN_FDNAMES count mismatch");
@@ -104,11 +118,24 @@ impl Sockets {
                 .0
                 .entry(name.to_owned())
                 .or_default()
-                .push(TcpListener::from_std(listener)?);
+                .push(listener);
         }
         Ok(sockets)
     }
 
+    /// Register the adopted descriptors after entering the Tokio runtime.
+    pub fn into_sockets(self) -> Result<Sockets> {
+        let mut sockets = Sockets::default();
+        for (name, listeners) in self.0 {
+            for listener in listeners {
+                sockets.0.entry(name.clone()).or_default().push(TcpListener::from_std(listener)?);
+            }
+        }
+        Ok(sockets)
+    }
+}
+
+impl Sockets {
     pub fn take(&mut self, name: &str) -> Vec<TcpListener> {
         self.0.remove(name).unwrap_or_default()
     }

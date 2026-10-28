@@ -7,6 +7,7 @@ pub mod calendar;
 pub mod contact;
 pub mod email;
 pub mod mailbox;
+mod mutation;
 pub mod references;
 pub mod submission;
 pub mod thread;
@@ -176,21 +177,10 @@ pub async fn api(
             continue;
         }
 
-        references::resolve_mail_creation_references(method, &mut resolved_args, &created_ids);
-        let result = dispatch(
-            &state.db,
-            &state.mailstore,
-            &state.domains_runtime,
-            &state.aliases_runtime,
-            account_id,
-            method,
-            resolved_args,
-            &state.classifier,
-        )
-        .await;
+        let result = mutation::call(&state, account_id, method, resolved_args, &mut created_ids).await;
 
         match result {
-            Ok(value) => {
+            Ok((value, extra)) => {
                 if let Some(created) = value.get("created").and_then(serde_json::Value::as_object) {
                     for (creation_id, object) in created {
                         if let Some(id) = object.get("id").and_then(serde_json::Value::as_str) {
@@ -236,6 +226,9 @@ pub async fn api(
                     }
                 }
                 responses.push(MethodResponse(method.clone(), value, call_id.clone()));
+                if let Some((method, value)) = extra {
+                    responses.push(MethodResponse(method, value, call_id.clone()));
+                }
             }
             Err(e) => {
                 // RFC 8620 §3.6.1: method-level errors emit

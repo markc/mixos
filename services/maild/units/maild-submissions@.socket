@@ -4,10 +4,11 @@ Description=MixOS implicit TLS submission socket
 Documentation=https://mixos.dev/maild/
 
 [Socket]
-ListenStream=127.0.0.1:465
+# Render every smtp_smtps address from this instance's config in a drop-in.
+# No address is enabled by default. Example: ListenStream=192.0.2.10:465
 FreeBind=yes
 FileDescriptorName=submissions
-Service=maild.service
+Service=maild@%i.service
 
 [Install]
 WantedBy=sockets.target

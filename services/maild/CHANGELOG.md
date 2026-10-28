@@ -20,7 +20,16 @@
   daemon-generated spam headers are available to scripts.
 - Adopt named systemd TCP sockets for SMTP, implicit TLS submission, IMAPS
   and JMAP/DAV, retaining config binds without socket activation. Ship opt-in
-  socket units and remove the services' bind capability.
+  socket templates without active addresses. Retain the interim bind capability
+  until each host explicitly enables sockets for all privileged listeners.
+- Clear activation environment variables before starting runtime threads.
+- Keep Email/import, blob creation and batched Email/get thread reads off the
+  async executor; missing legacy thread rows project null. Accept null receivedAt
+  as the import default. Map invalid MIME in Email/set create to
+  invalidProperties on blobId.
+- Resolve creation references at implemented /set Id fields and update/destroy
+  targets, including dependent mailbox creates. Apply submission success actions
+  through the implicit Email/set response.
 - Resolve all configured paths, including TLS and DKIM identities, through
   the shared `mixos:` resolver; accept `database` as a `database_path` alias.
 - Replace five JMAP placeholders with authenticated HTTP contracts. Correct

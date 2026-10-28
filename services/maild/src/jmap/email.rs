@@ -575,13 +575,20 @@ pub async fn get(
             })
         });
     let mut list = Vec::with_capacity(records.len());
+    let threads = if properties.as_ref().is_none_or(|p| p.iter().any(|p| p == "threadId")) {
+        let ms = mailstore.clone();
+        let ids = records.iter().map(|r| r.id).collect::<Vec<_>>();
+        tokio::task::spawn_blocking(move || ms.threads_for_emails(account_id, &ids)).await??
+    } else {
+        Default::default()
+    };
     for record in records {
         let mut val = record_to_jmap(&record);
         if properties
             .as_ref()
             .is_none_or(|p| p.iter().any(|p| p == "threadId"))
         {
-            val["threadId"] = mailstore.thread_for_email(account_id, record.id)?.0.into();
+            val["threadId"] = serde_json::json!(threads.get(&record.id).map(|t| &t.0));
         }
         if inspect_mime {
             // One message at a time bounds raw-buffer residency even for a
@@ -2035,11 +2042,7 @@ pub async fn set(
         } else {
             Some(destroyed_list)
         },
-        not_created: if not_created.is_empty() {
-            None
-        } else {
-            Some(not_created)
-        },
+        not_created: None,
         not_updated: if not_updated.is_empty() {
             None
         } else {
@@ -2052,7 +2055,9 @@ pub async fn set(
         },
     };
 
-    Ok(serde_json::to_value(resp)?)
+    let mut value = serde_json::to_value(resp)?;
+    value["notCreated"] = if not_created.is_empty() { serde_json::Value::Null } else { serde_json::to_value(not_created)? };
+    Ok(value)
 }
 
 /// Map a `create_from_blob` failure to a JMAP [`SetError`]. The
@@ -2060,9 +2065,12 @@ pub async fn set(
 /// `blobNotFound:`, `mailbox not found:`) through `anyhow` errors so
 /// the JMAP layer can re-shape them into the corresponding
 /// `SetError.type` without re-parsing the underlying source.
-fn classify_create_error(e: &anyhow::Error) -> SetError {
+fn classify_create_error(e: &anyhow::Error) -> serde_json::Value {
     let msg = e.to_string();
-    if let Some(rest) = msg.strip_prefix("invalidProperties: ") {
+    if let Some(rest) = msg.strip_prefix("invalidEmail: ") {
+        return serde_json::json!({"type": "invalidProperties", "description": rest, "properties": ["blobId"]});
+    }
+    let error = if let Some(rest) = msg.strip_prefix("invalidProperties: ") {
         SetError {
             error_type: "invalidProperties".into(),
             description: Some(rest.to_string()),
@@ -2091,7 +2099,17 @@ fn classify_create_error(e: &anyhow::Error) -> SetError {
             error_type: "invalidArguments".into(),
             description: Some(msg),
         }
+    };
+    let mut value = serde_json::to_value(error).expect("SetError is serialisable");
+    if value["type"] == "invalidProperties" {
+        for property in ["blobId", "mailboxIds", "keywords", "receivedAt"] {
+            if msg.contains(property) {
+                value["properties"] = serde_json::json!([property]);
+                break;
+            }
+        }
     }
+    value
 }
 
 fn classify_email_not_found(e: &anyhow::Error) -> SetError {
@@ -2221,7 +2239,8 @@ async fn create_from_blob(
         ));
     }
 
-    let known = mailstore.list_mailboxes(account_id)?;
+    let ms = mailstore.clone();
+    let known = tokio::task::spawn_blocking(move || ms.list_mailboxes(account_id)).await??;
     if mailbox_ids
         .iter()
         .any(|id| !known.iter().any(|m| m.id == *id))
@@ -2232,23 +2251,34 @@ async fn create_from_blob(
         if !super::hash_owned_by_account(db, mailstore, account_id, hash).await? {
             anyhow::bail!("blobNotFound: {blob_id_str}");
         }
-        (mailstore.read_blob(hash)?, Some(hash))
+        let ms = mailstore.clone();
+        (tokio::task::spawn_blocking(move || ms.read_blob(hash)).await??, Some(hash))
     } else {
         let blob_id = blob_id_str
             .parse::<Uuid>()
             .map_err(|_| anyhow::anyhow!("invalidProperties: Invalid blobId"))?;
         use crate::mailstore::{BlobId, BlobRefLookup};
-        match mailstore.resolve_blob_ref(account_id, BlobId(blob_id))? {
-            BlobRefLookup::Found(hash) => (mailstore.read_blob(hash)?, Some(hash)),
-            BlobRefLookup::NotFound => (
+        let ms = mailstore.clone();
+        let lookup = tokio::task::spawn_blocking(move || -> Result<_> {
+            Ok(match ms.resolve_blob_ref(account_id, BlobId(blob_id))? {
+                BlobRefLookup::Found(hash) => (Some(ms.read_blob(hash)?), Some(hash), false),
+                BlobRefLookup::NotFound => (None, None, false),
+                BlobRefLookup::Dangling => (None, None, true),
+            })
+        }).await??;
+        match lookup {
+            (Some(bytes), Some(hash), _) => (bytes, Some(hash)),
+            (None, None, false) => (
                 db::blob::load_for_account(&db.conn, &db.blob_dir, account_id, blob_id)
                     .await?
                     .ok_or_else(|| anyhow::anyhow!("blobNotFound: {blob_id}"))?,
                 None,
             ),
-            BlobRefLookup::Dangling => anyhow::bail!("blobNotFound: {blob_id}"),
+            _ => anyhow::bail!("blobNotFound: {blob_id}"),
         }
     };
+    let entry = entry.clone();
+    let (blob_data, envelope, in_reply_to, initial_keywords, initial_tags, received_at) = tokio::task::spawn_blocking(move || -> Result<_> {
     crate::attachments::structure_preflight(&blob_data)
         .map_err(|e| anyhow::anyhow!("invalidEmail: {e}"))?;
     let parser = MessageParser::default();
@@ -2283,7 +2313,7 @@ async fn create_from_blob(
         }
     };
 
-    let received_at: i64 = match entry.get("receivedAt") {
+    let received_at: i64 = match entry.get("receivedAt").filter(|v| !v.is_null()) {
         Some(v) => {
             let valid = v.as_str().is_some_and(|s| s.ends_with('Z'));
             if !valid {
@@ -2298,6 +2328,9 @@ async fn create_from_blob(
             .map(|d| d.to_timestamp() * 1000)
             .unwrap_or_else(|| chrono::Utc::now().timestamp_millis()),
     };
+    drop(message);
+    Ok((blob_data, envelope, in_reply_to, initial_keywords, initial_tags, received_at))
+    }).await??;
 
     let ms = mailstore.clone();
     let mailboxes = mailbox_ids;
@@ -2380,7 +2413,8 @@ pub async fn import(
         .get("emails")
         .and_then(|v| v.as_object())
         .ok_or_else(|| invalid("emails must be an object"))?;
-    let old_state = mailstore.email_state(account_id)?.to_string();
+    let ms = mailstore.clone();
+    let old_state = tokio::task::spawn_blocking(move || ms.email_state(account_id)).await??.to_string();
     check_if_in_state(&args, &old_state)?;
     let mut created = serde_json::Map::new();
     let mut not_created = serde_json::Map::new();
@@ -2388,13 +2422,15 @@ pub async fn import(
         let result = create_from_blob(db, mailstore, account_id, entry, true).await;
         match result {
             Ok(id) => {
-                let record = mailstore.get_email(account_id, id)?;
-                let thread = mailstore.thread_for_email(account_id, id)?;
+                let ms = mailstore.clone();
+                let (record, thread) = tokio::task::spawn_blocking(move || -> Result<_> {
+                    Ok((ms.get_email(account_id, id)?, ms.thread_for_email(account_id, id)?))
+                }).await??;
                 created.insert(
                     creation_id.clone(),
                     serde_json::json!({
                         "id": id.0.to_string(), "blobId": mds::blob::hex(&record.blob_hash),
-                        "threadId": thread.0, "size": record.size_bytes,
+                        "threadId": thread.map(|t| t.0), "size": record.size_bytes,
                     }),
                 );
             }
@@ -2407,7 +2443,7 @@ pub async fn import(
                 } else if msg.starts_with("invalidEmail:") {
                     serde_json::json!({"type": "invalidEmail", "description": msg})
                 } else {
-                    let mut value = serde_json::to_value(classify_create_error(&error))?;
+                    let mut value = classify_create_error(&error);
                     if msg.starts_with("blobNotFound:") || msg.starts_with("mailbox not found") {
                         value["type"] = "invalidProperties".into();
                     }
@@ -2435,7 +2471,8 @@ pub async fn import(
             }
         }
     }
-    let new_state = mailstore.email_state(account_id)?.to_string();
+    let ms = mailstore.clone();
+    let new_state = tokio::task::spawn_blocking(move || ms.email_state(account_id)).await??.to_string();
     Ok(serde_json::json!({
         "accountId": account, "oldState": old_state, "newState": new_state,
         "created": if created.is_empty() { serde_json::Value::Null } else { created.into() },

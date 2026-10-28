@@ -70,6 +70,13 @@ covers the mesh case and states what it does not settle for the public one.
   `CapabilityBoundingSet=CAP_NET_BIND_SERVICE` in its unit. Taking
   inherited sockets is part of each port's definition of done (maild,
   webd, dnsd).
+- **maild status, 2026-10-28:** named descriptor adoption is implemented,
+  but host-specific activation installation remains incomplete. Both service
+  forms retain the interim capability so existing configured privileged binds
+  survive upgrades. The socket templates have no active addresses and must
+  be rendered from each host/instance's config and explicitly enabled. Only
+  then may the documented service drop-in clear both capability settings.
+  Descriptor adoption alone does not complete the port migration.
 - **Not file capabilities.** The kernel clears them whenever the file is
   replaced, so every update would silently lose the ports. In the one
   binary they would also give the `mix` shell, and every script, the right

@@ -4,10 +4,11 @@ Description=MixOS implicit TLS IMAP socket
 Documentation=https://mixos.dev/maild/
 
 [Socket]
-ListenStream=127.0.0.1:993
+# Render every imap_imaps address from this instance's config in a drop-in.
+# No address is enabled by default. Example: ListenStream=192.0.2.10:993
 FreeBind=yes
 FileDescriptorName=imaps
-Service=maild.service
+Service=maild@%i.service
 
 [Install]
 WantedBy=sockets.target

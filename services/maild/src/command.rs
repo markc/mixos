@@ -2186,14 +2186,16 @@ pub(crate) fn run() -> Result<()> {
     // before any other side effect, the tokio runtime included, so a
     // thread- or fd-starved host still gets an answer.
     buildinfo::exit_on_version!();
+    // SAFETY: command::run is entered from main before any threads start.
+    let inherited = unsafe { crate::activation::InheritedSockets::from_env()? };
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .expect("build the tokio runtime")
-        .block_on(async_main())
+        .block_on(async_main(inherited))
 }
 
-async fn async_main() -> Result<()> {
+async fn async_main(inherited: crate::activation::InheritedSockets) -> Result<()> {
     rustls::crypto::ring::default_provider()
         .install_default()
         .expect("Failed to install rustls CryptoProvider");
@@ -2410,7 +2412,7 @@ async fn async_main() -> Result<()> {
         },
 
         Command::Serve => {
-            let mut sockets = crate::activation::Sockets::from_env()?;
+            let mut sockets = inherited.into_sockets()?;
             let built = runtime::build_runtime_with_sockets(
                 &cfg,
                 runtime::RuntimeOpts::default(),

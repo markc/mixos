@@ -31,7 +31,7 @@ try
   if $identity.component != "maild" or $identity.version != $version then
     raise("PACKAGE_IDENTITY", "packaged maild dispatched to the wrong component")
   end
-  for $name in ["maild@.service", "maild.service", "maild-smtp.socket", "maild-submissions.socket", "maild-imaps.socket", "maild-jmap.socket", "sysusers.conf"]
+  for $name in ["maild@.service", "maild.service", "maild-smtp@.socket", "maild-submissions@.socket", "maild-imaps@.socket", "maild-jmap@.socket", "sysusers.conf"]
     if (hash_file($root .. "/services/maild/units/" .. $name, "sha256") !=
         hash_file($top .. "/share/maild/units/" .. $name, "sha256")) then
       raise("PACKAGE_UNIT", $name .. " differs from its component source")
