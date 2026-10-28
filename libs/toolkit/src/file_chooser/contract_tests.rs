@@ -7,8 +7,7 @@ type State = (FileChooser, Option<Outcome>);
 
 #[test]
 fn opening_from_a_still_recorded_menu_raises_above_the_parent_dialog() {
-    let dir = tempfile::tempdir().unwrap();
-    let chooser = FileChooser::new(dir.path(), "Attach files", "Attach");
+    let chooser = FileChooser::new("/home/user/Documents", "Attach files", "Attach");
     let mut h = Harness::builder().with_size(egui::vec2(900.0, 700.0))
         .with_context_setup(|ctx| crate::install(ctx, &crate::Theme::embedded()))
         .build_ui_state(|ui, state: &mut (FileChooser, bool)| {
@@ -27,6 +26,9 @@ fn opening_from_a_still_recorded_menu_raises_above_the_parent_dialog() {
     h.run_steps(1);
     let chooser_layer = egui::LayerId::new(egui::Order::Foreground, h.state().0.id);
     assert_eq!(h.ctx.memory(|m| m.areas().top_layer_id(egui::Order::Foreground)), Some(chooser_layer));
+    h.state_mut().0.pending = None;
+    h.state_mut().0.browsing = None;
+    h.state_mut().0.error = None;
     h.run_steps(3);
     h.snapshot("file_chooser_menu_open");
     let _ = h.get_by_label("Attach");
