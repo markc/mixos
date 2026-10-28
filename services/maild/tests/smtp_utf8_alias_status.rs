@@ -266,9 +266,10 @@ async fn round2_alias_fanout_reject_keeps_committed_copy_and_sends_one_dsn() -> 
     command(&mut io, "MAIL FROM:<carol@example.com>", "250").await?;
     command(&mut io, "RCPT TO:<team@example.com>", "250").await?;
     command(&mut io, "DATA", "354").await?;
-    command(&mut io, "From: carol@example.com\r\nTo: team@example.com\r\nSubject: fanout reject\r\n\r\nbody\r\n.", "250").await?;
+    let response = command(&mut io, "From: carol@example.com\r\nTo: team@example.com\r\nSubject: fanout reject\r\n\r\nbody\r\n.", "").await?;
     assert_eq!(inbox_count(&built, alice)?, 1);
     assert_eq!(inbox_count(&built, bob)?, 0);
+    assert!(response.starts_with("250"), "copy already committed: {response}");
     let messages = timeout(Duration::from_secs(70), peer).await???;
     assert_eq!(messages.len(), 1);
     assert!(
@@ -356,10 +357,15 @@ async fn round2_sieve_single_target_550_is_logged_on_wire() -> Result<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn round2_literal_submission_and_sieve_dsns_transmit_without_mx_lookup() -> Result<()> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
-    let addr = listener.local_addr()?;
+    let listener_v6 = TcpListener::bind("[::1]:0").await?;
     // Bare IP keys can only be reached by parsing the address literal first.
-    let mx = [("192.0.2.1".into(), addr), ("2001:db8::1".into(), addr)].into();
-    let peer = tokio::spawn(capture_smtp(listener, 4));
+    let mx = [
+        ("192.0.2.1".into(), listener.local_addr()?),
+        ("2001:db8::1".into(), listener_v6.local_addr()?),
+    ]
+    .into();
+    let peer = tokio::spawn(capture_smtp(listener, 2));
+    let peer_v6 = tokio::spawn(capture_smtp(listener_v6, 2));
     let tmp = tempfile::tempdir()?;
     let (built, tls) = fixture_with_overrides(&tmp, mx).await?;
     account(&built, "alice@example.com").await?;
@@ -414,7 +420,8 @@ async fn round2_literal_submission_and_sieve_dsns_transmit_without_mx_lookup() -
         )
         .await?;
     }
-    let messages = timeout(Duration::from_secs(70), peer).await???;
+    let mut messages = timeout(Duration::from_secs(70), peer).await???;
+    messages.extend(timeout(Duration::from_secs(70), peer_v6).await???);
     for domain in ["[192.0.2.1]", "[IPv6:2001:db8::1]"] {
         let recipient = format!("RCPT TO:<user@{domain}>");
         let submissions: Vec<_> = messages
