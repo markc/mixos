@@ -167,6 +167,7 @@ enum Statement {
 pub struct Script {
     code: Vec<Statement>,
     variables: bool,
+    needs_mailboxes: bool,
 }
 
 struct Parser {
@@ -174,6 +175,7 @@ struct Parser {
     p: usize,
     required: BTreeSet<String>,
     depth: usize,
+    needs_mailboxes: bool,
 }
 impl Parser {
     fn peek(&self) -> Option<&Token> {
@@ -456,7 +458,7 @@ impl Parser {
                     "envelope" | "body" => self.need(&name)?,
                     "string" => self.need("variables")?,
                     "hasflag" => self.need("imap4flags")?,
-                    "mailboxexists" => self.need("mailbox")?,
+                    "mailboxexists" => { self.need("mailbox")?; self.needs_mailboxes = true; }
                     _ => {}
                 }
                 let args = self.args(&name, true)?;
@@ -545,12 +547,14 @@ pub fn compile(src: &str) -> Result<Script> {
         p: 0,
         required: BTreeSet::new(),
         depth: 0,
+        needs_mailboxes: false,
     };
     let code = parser.code(true)?;
     ensure!(parser.p == parser.tokens.len(), "unexpected closing brace");
     Ok(Script {
         code,
         variables: parser.required.contains("variables"),
+        needs_mailboxes: parser.needs_mailboxes,
     })
 }
 
@@ -601,6 +605,7 @@ struct Eval<'a> {
     mailboxes: BTreeSet<String>,
 }
 impl Script {
+    pub(super) fn needs_mailboxes(&self) -> bool { self.needs_mailboxes }
     pub fn evaluate(&self, context: Context<'_>) -> Result<Plan> {
         self.evaluate_with_mailboxes(context, &[])
     }

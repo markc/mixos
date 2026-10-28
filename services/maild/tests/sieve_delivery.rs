@@ -197,6 +197,21 @@ async fn mailboxexists_resolves_nested_account_owned_writable_mailboxes() -> Res
     Ok(())
 }
 #[tokio::test]
+async fn mailbox_snapshot_work_is_bounded_and_skipped_when_unused() -> Result<()> {
+    let f = Fixture::new().await?;
+    let mut parent = None;
+    for n in 0..160 {
+        parent = Some(f.ms.create_mailbox(f.account.id,&format!("d{n}"),parent,mds::ContainerAttrs {special_use:None,subscribed:false,extra:serde_json::json!({})})?);
+    }
+    f.script(r#"require "mailbox"; if mailboxexists "INBOX" { discard; }"#).await?;
+    assert!(f.deliver(MESSAGE,false,false).await?.is_some());
+    assert_eq!(f.count("Inbox"),1);
+    f.script("discard;").await?;
+    assert!(f.deliver(MESSAGE,false,false).await?.is_none());
+    assert_eq!(f.count("Inbox"),1);
+    Ok(())
+}
+#[tokio::test]
 async fn refused_redirect_cancels_other_actions_and_keeps() -> Result<()> {
     let f = Fixture::new().await?;
     f.script(r#"redirect "outsider@example.net"; discard;"#)

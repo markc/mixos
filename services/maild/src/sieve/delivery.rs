@@ -9,7 +9,7 @@ use crate::{
 use anyhow::{Result, ensure};
 use mail_parser::MessageParser;
 use mds::{ContainerAttrs, ContainerId, Flags, ItemId, Mds, Tags};
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 /// Remove sender-supplied verdicts before adding the daemon's own values.
 pub fn stamp_spam(data: &[u8], verdict: &str, score: f64) -> Vec<u8> {
@@ -129,35 +129,9 @@ pub async fn plan(
     let ms = ms.clone();
     let account = delivery.account.id;
     tokio::task::spawn_blocking(move || {
-        let boxes = ms.list_mailboxes(account)?;
-        let mut paths = Vec::new();
-        for mailbox in &boxes {
-            if !mailbox.my_rights.may_add_items {
-                continue;
-            }
-            let mut parts = Vec::new();
-            let mut current = Some(mailbox);
-            while let Some(entry) = current {
-                ensure!(parts.len() < boxes.len(), "mailbox parent cycle");
-                parts.push(if entry.role == Some(MailboxRole::Inbox) {
-                    "INBOX".to_string()
-                } else {
-                    entry.name.clone()
-                });
-                current = entry
-                    .parent
-                    .map(|parent| {
-                        boxes
-                            .iter()
-                            .find(|entry| entry.id == parent)
-                            .ok_or_else(|| anyhow::anyhow!("missing mailbox parent"))
-                    })
-                    .transpose()?;
-            }
-            parts.reverse();
-            paths.push(parts.join("/"));
-        }
-        compile(&script.source)?.evaluate_with_mailboxes(
+        let script = compile(&script.source)?;
+        let paths = if script.needs_mailboxes() { mailbox_snapshot(&ms.list_mailboxes(account)?)? } else { Vec::new() };
+        script.evaluate_with_mailboxes(
             Context {
                 data: &data,
                 from: &from,
@@ -168,6 +142,36 @@ pub async fn plan(
     })
     .await?
     .map(Some)
+}
+
+fn mailbox_snapshot(boxes: &[crate::mailstore::MailboxRecord]) -> Result<Vec<String>> {
+    ensure!(boxes.len() <= super::MAX_STEPS,"mailbox snapshot count limit");
+    let by_id: HashMap<_,_> = boxes.iter().map(|entry|(entry.id,entry)).collect();
+    let mut steps = 0;
+    let mut bytes = 0;
+    let mut paths = Vec::new();
+    for mailbox in boxes {
+        if !mailbox.my_rights.may_add_items { continue; }
+        let mut parts = Vec::new();
+        let mut path_bytes = 0;
+        let mut current = Some(mailbox);
+        while let Some(entry) = current {
+            steps += 1;
+            ensure!(steps <= super::MAX_STEPS,"mailbox snapshot work limit");
+            ensure!(parts.len() < boxes.len(),"mailbox parent cycle");
+            let name = if entry.role == Some(MailboxRole::Inbox) { "INBOX" } else { &entry.name };
+            path_bytes += name.len()+1;
+            bytes += name.len()+1;
+            ensure!(bytes <= 1024*1024,"mailbox snapshot allocation limit");
+            parts.push(name.to_string());
+            current = entry.parent.map(|parent|by_id.get(&parent).copied().ok_or_else(||anyhow::anyhow!("missing mailbox parent"))).transpose()?;
+        }
+        bytes += path_bytes;
+        ensure!(bytes <= 1024*1024,"mailbox snapshot allocation limit");
+        parts.reverse();
+        paths.push(parts.join("/"));
+    }
+    Ok(paths)
 }
 
 /// Return the first stored item for existing verdict/log events. None means the
