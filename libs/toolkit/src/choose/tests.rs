@@ -101,7 +101,7 @@ fn cascade_waits_for_each_end_cancel_stops_and_failure_advances() {
                         None
                     }
                 })
-                .last()
+                .next_back()
                 .unwrap()
         };
         assert_eq!(actual, expected);

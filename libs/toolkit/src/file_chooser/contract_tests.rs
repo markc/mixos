@@ -9,6 +9,7 @@ fn harness(mut chooser: FileChooser) -> Harness<'static, State> {
     chooser.started = true;
     let mut harness = Harness::builder()
         .with_size(egui::vec2(900.0, 700.0))
+        .with_context_setup(|ctx| crate::install(ctx, &crate::Theme::embedded()))
         .build_ui_state(
             |ui, state: &mut State| {
                 if state.1.is_none() {
@@ -17,7 +18,6 @@ fn harness(mut chooser: FileChooser) -> Harness<'static, State> {
             },
             (chooser, None),
         );
-    crate::install(&harness.ctx, &crate::Theme::embedded());
     harness.run_steps(3);
     harness
 }
@@ -88,7 +88,7 @@ fn email_save_suggested_name_appends_extension_and_round_trips_choices() {
     assert_eq!(h.state().0.name, "message");
     h.get_by_label("Read only").click();
     h.run();
-    h.get_by_label("Encoding").click();
+    h.get_by_role_and_label(egui::accesskit::Role::ComboBox, "Encoding").click();
     h.run();
     h.get_by_label("UTF-16").click();
     h.run();
@@ -187,7 +187,7 @@ fn filter_menu_selects_inserted_current_filter_then_reloads() {
         "filters":[{"name":"Markdown","patterns":["*.md"],"mime_types":[]}],
         "current_filter":{"name":"Images","patterns":["*.png"],"mime_types":[]}}));
     let mut h = harness(FileChooser::from_request(request));
-    h.get_by_label("File type").click();
+    h.get_by_role_and_label(egui::accesskit::Role::ComboBox, "File type").click();
     h.run();
     h.get_by_label("Markdown").click();
     h.run();
