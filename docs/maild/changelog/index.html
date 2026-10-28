@@ -253,7 +253,8 @@ in one command (64 literals and 64 KiB at most). Past those limits a sync
 literal is refused; a non-sync one gets <code>BAD</code> and the connection closes, since
 the rest of the command can no longer be framed. Other commands keep the
 single trailing literal. <code>BODY</code> and <code>TEXT</code> also search forwarded
-<code>message/rfc822</code> parts.</li>
+<code>message/rfc822</code> parts. A literal may carry a multi-line needle; CRLF and LF
+match alike. A content scan stops when the client disconnects.</li>
 </ul>
 <h2 id="011--2026-10-18">0.1.1 — 2026-10-18</h2>
 <ul>

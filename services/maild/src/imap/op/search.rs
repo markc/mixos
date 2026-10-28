@@ -80,6 +80,7 @@
 //! §7.3.4.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use chrono::NaiveDate;
 use mds::{ContainerId, Flags};
@@ -375,12 +376,19 @@ fn parse_number(tokens: &[String], idx: usize, key: &str) -> Result<u64, String>
         .map_err(|_| format!("SEARCH {key} expected number, got {tok:?}"))
 }
 
-/// A search string argument, lowercased for the case-insensitive
-/// substring match RFC 9051 §6.4.4 asks for.
+/// Normalise text for matching: lowercase (RFC 9051 §6.4.4 matches
+/// case-insensitively) and CRLF / bare CR to LF, so a multi-line
+/// needle sent as a literal matches whichever line ending the message
+/// used.
+fn fold(s: &str) -> String {
+    s.replace("\r\n", "\n").replace('\r', "\n").to_lowercase()
+}
+
+/// A search string argument, folded for matching.
 fn string_arg(tokens: &[String], idx: usize, key: &str) -> Result<String, String> {
     tokens
         .get(idx)
-        .map(|s| s.to_lowercase())
+        .map(|s| fold(s))
         .ok_or_else(|| format!("SEARCH {key} missing string"))
 }
 
@@ -469,7 +477,7 @@ impl Doc {
             return Doc {
                 headers: Vec::new(),
                 header_block: String::new(),
-                body: String::from_utf8_lossy(raw).to_lowercase(),
+                body: fold(&String::from_utf8_lossy(raw)),
                 sent: None,
             };
         };
@@ -483,8 +491,8 @@ impl Doc {
                     .unwrap_or_default();
                 (
                     h.name().to_ascii_lowercase(),
-                    raw_value.to_lowercase(),
-                    decoded_value(h.value()).to_lowercase(),
+                    fold(&raw_value),
+                    fold(&decoded_value(h.value())),
                 )
             })
             .collect();
@@ -493,7 +501,7 @@ impl Doc {
             .position(|w| w == b"\r\n\r\n")
             .or_else(|| raw.windows(2).position(|w| w == b"\n\n"))
             .unwrap_or(raw.len());
-        let header_block = String::from_utf8_lossy(&raw[..header_end]).to_lowercase();
+        let header_block = fold(&String::from_utf8_lossy(&raw[..header_end]));
         // Every decoded text part, not just the preferred body list:
         // mail_parser keeps the plain and HTML halves of a
         // multipart/alternative in separate lists, and a term may sit
@@ -505,7 +513,7 @@ impl Doc {
             if !body.is_empty() {
                 body.push('\n');
             }
-            body.push_str(&text.to_lowercase());
+            body.push_str(&fold(text));
         };
         let mut stack: Vec<&mail_parser::Message<'_>> = vec![&message];
         while let Some(m) = stack.pop() {
@@ -652,15 +660,23 @@ fn eval(
 /// row would turn a storage fault into an authoritative "no match"
 /// (and a false match under `NOT`), with nothing telling the client
 /// to retry.
+///
+/// `cancel` is set when the session drops the SEARCH (the client went
+/// away): the scan stops before the next message rather than reading
+/// the rest of the mailbox for nobody.
 fn collect_hits(
     crit: &Crit,
     handles: &[EmailHandle],
     store: &dyn MailStore,
+    cancel: &AtomicBool,
 ) -> anyhow::Result<Vec<(u32, u64)>> {
     let exists = u32::try_from(handles.len()).unwrap_or(u32::MAX);
     let largest_uid = handles.last().map(|h| h.uid).unwrap_or(0);
     let mut hits: Vec<(u32, u64)> = Vec::with_capacity(handles.len());
     for (idx, handle) in handles.iter().enumerate() {
+        if cancel.load(Ordering::Relaxed) {
+            anyhow::bail!("SEARCH cancelled");
+        }
         let msn = (idx + 1) as u32;
         let hit = match eval(crit, msn, handle, exists, largest_uid, None) {
             Some(decided) => decided,
@@ -729,9 +745,19 @@ pub async fn handle(
     handles.sort_by_key(|h| h.uid);
     handles.dedup_by_key(|h| h.uid);
 
+    // Dropping this future (the session ended) drops the guard, which
+    // tells the blocking scan to stop.
+    struct CancelOnDrop(Arc<AtomicBool>);
+    impl Drop for CancelOnDrop {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::Relaxed);
+        }
+    }
+    let guard = CancelOnDrop(Arc::new(AtomicBool::new(false)));
+    let cancel = guard.0.clone();
     let crit = req.crit.clone();
     let hits = match tokio::task::spawn_blocking(move || {
-        collect_hits(&crit, &handles, store.as_ref())
+        collect_hits(&crit, &handles, store.as_ref(), &cancel)
     })
     .await
     {
@@ -1046,6 +1072,18 @@ The quarterly Invoice is attached.\r\n";
         assert!(matches_raw(&Crit::Text("x-ticket: t-42".into()), &h, RAW));
         let not_text = Crit::Not(Box::new(Crit::Text("x-ticket: t-42".into())));
         assert!(!matches_raw(&not_text, &h, RAW));
+    }
+
+    /// A multi-line needle (legal in a literal) matches across a line
+    /// break whatever ending the message used.
+    #[test]
+    fn matches_multiline_needle() {
+        let h = make_handle(1, 0, 100);
+        let raw = b"Subject: x\r\n\r\nfirst line\r\nSecond line\r\n";
+        let needle = |s: &str| Crit::Body(fold(s));
+        assert!(matches_raw(&needle("line\r\nsecond"), &h, raw));
+        assert!(matches_raw(&needle("line\nsecond"), &h, raw));
+        assert!(!matches_raw(&needle("line\r\nthird"), &h, raw));
     }
 
     /// A term only in the HTML half of multipart/alternative is found.

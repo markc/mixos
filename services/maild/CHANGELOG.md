@@ -15,7 +15,8 @@
   literal is refused; a non-sync one gets `BAD` and the connection closes, since
   the rest of the command can no longer be framed. Other commands keep the
   single trailing literal. `BODY` and `TEXT` also search forwarded
-  `message/rfc822` parts.
+  `message/rfc822` parts. A literal may carry a multi-line needle; CRLF and LF
+  match alike. A content scan stops when the client disconnects.
 
 ## 0.1.1 — 2026-10-18
 

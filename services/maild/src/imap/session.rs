@@ -1625,8 +1625,10 @@ fn splice_search_literal(cmd: &mut codec::Command) -> Result<(), &'static str> {
 /// Append ` "<lit>"` to `line`, escaping `"` and `\`.
 fn push_quoted(line: &mut Vec<u8>, lit: &[u8]) -> Result<(), &'static str> {
     let text = std::str::from_utf8(lit).map_err(|_| "SEARCH literal is not UTF-8")?;
-    if text.contains(['\r', '\n', '\0']) {
-        return Err("SEARCH literal contains CR, LF or NUL");
+    // CR and LF are legal in a literal (a multi-line needle); NUL is not
+    // (RFC 9051 CHAR8). The tokenizer keeps line breaks inside quotes.
+    if text.contains('\0') {
+        return Err("SEARCH literal contains NUL");
     }
     line.extend_from_slice(b" \"");
     for c in text.chars() {
