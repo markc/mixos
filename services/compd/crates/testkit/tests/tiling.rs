@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Parsed Bus commands and real Super key edges drive the shared executor.
 
-use comp_model::reply::ControlReply;
 use comp_model::request::{Request, WindowOp, classify};
 use policy::bindings::BindingAction;
 use policy_host::geometry;
