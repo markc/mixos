@@ -1064,7 +1064,9 @@ async fn decide_rcpt_to(
 
     let recipient_domain = match addr.rsplit_once('@') {
         Some((_, d)) if super::envelope::address_literal(d) => {
-            return RcptDecision::PermanentReject("550 5.1.2 Address literal is not a local domain");
+            return RcptDecision::PermanentReject(
+                "550 5.1.2 Address literal is not a local domain",
+            );
         }
         Some((_, d)) => match super::envelope::dns_domain(d) {
             Some(domain) => domain,
