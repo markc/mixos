@@ -772,7 +772,7 @@ async fn general_literals_login_names_flags_search_and_multiappend() -> Result<(
     let one = b"Subject: One\r\n\r\nfirst";
     let two = b"Subject: Two\r\n\r\nsecond\0data";
     let mut wire = format!(
-        "a APPEND {{5+}}\r\nBox B (\\Seen project) \"01-Jan-2026 10:00:00 +0000\" {{{}+}}\r\n",
+        "a APPEND {{5+}}\r\nBox B (\\Seen project research&-dev) \"01-Jan-2026 10:00:00 +0000\" {{{}+}}\r\n",
         one.len()
     )
     .into_bytes();
@@ -790,6 +790,11 @@ async fn general_literals_login_names_flags_search_and_multiappend() -> Result<(
         "{result:?}"
     );
     command(&mut r, &mut w, "s", "SELECT \"Box B\"").await?;
+    let result = command(&mut r, &mut w, "k", "FETCH 1 FLAGS").await?;
+    assert!(result.contains("research&-dev"), "{result}");
+    assert!(!result.contains("research&dev"), "{result}");
+    let result = command(&mut r, &mut w, "k", "SEARCH KEYWORD research&-dev").await?;
+    assert!(result.contains("* SEARCH 1\r\n"), "{result}");
     let result = exchange(
         &mut r,
         &mut w,

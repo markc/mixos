@@ -66,6 +66,13 @@ pub fn encode(name: &str) -> String {
     result
 }
 
+/// APPEND has one mailbox argument followed by flags and a date. Only the
+/// mailbox uses modified UTF-7; keyword bytes must remain unchanged.
+pub fn decode_first_mailbox(text: &str) -> Result<String, String> {
+    let (name, rest) = super::op::list::take_mailbox_name(text.trim_start())?;
+    Ok(format!("{}{}", super::mailbox_name::quote_mailbox(&decode(&name)?), rest))
+}
+
 /// Map a command's mailbox strings without changing its grammar. This is used
 /// only for commands whose astring arguments are mailbox names or patterns.
 pub fn map_tokens(text: &str, encode_wire: bool) -> Result<String, String> {

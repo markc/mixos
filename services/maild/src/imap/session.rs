@@ -719,7 +719,7 @@ impl Session {
                         if !self.utf8 {
                             let mut failure = None;
                             for (args, _) in &mut messages {
-                                match crate::imap::mailbox_encoding::map_tokens(args, false) {
+                                match crate::imap::mailbox_encoding::decode_first_mailbox(args) {
                                     Ok(decoded) => *args = decoded,
                                     Err(e) => {
                                         failure = Some(e);
