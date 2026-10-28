@@ -524,3 +524,23 @@ async fn email_import_storage_failure_is_server_fail_and_rolls_back() {
     assert_eq!(response["oldState"], response["newState"]);
     assert_eq!(f.call("Email/query", json!({})).await["ids"], json!([]));
 }
+
+#[cfg(debug_assertions)]
+#[tokio::test]
+async fn email_import_parser_panic_is_invalid_email_and_service_survives() {
+    let f = Fixture::new().await;
+    // This existing attachment regression triggers mail-parser's debug-only
+    // "Invalid part ID" assertion. Release builds parse the same bytes.
+    let raw = "Content-Type: multipart/mixed; boundary=x\r\n\r\n--x\r\nContent-Type: message/rfc822\r\n\r\nContent-Type: message/rfc822\r\n\r\nContent-Type: application/octet-stream\r\nContent-Transfer-Encoding: base64\r\n\r\nAP8=\r\n--x--\r\n";
+    let blob = f.upload_message(raw).await;
+    let response = f
+        .call(
+            "Email/import",
+            json!({"emails": {"a": {"blobId": blob, "mailboxIds": {&f.inbox: true}}}}),
+        )
+        .await;
+    assert_eq!(response["notCreated"]["a"]["type"], "invalidEmail", "{response}");
+    assert!(response["created"].is_null());
+    assert_eq!(response["oldState"], response["newState"]);
+    assert!(f.import("after-parser-panic").await["created"]["a"]["id"].is_string());
+}

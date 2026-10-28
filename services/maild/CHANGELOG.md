@@ -29,6 +29,7 @@
   (`alreadyExists` with `existingId`), and transactional mail quota checks.
   Test upload/import/submission together. Unexpected storage errors return
   `serverFail` and roll back the entry, rather than blaming client arguments.
+  Parser unwinds return `invalidEmail` without dropping the HTTP request.
 - Resolve mail creation references across a JMAP request, including mailbox
   creation, import and submission, and preserve the optional `createdIds` map.
 - Correct the manual and test guide to describe the packaged maild binary.

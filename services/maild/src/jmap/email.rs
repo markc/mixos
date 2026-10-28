@@ -2252,9 +2252,10 @@ async fn create_from_blob(
     crate::attachments::structure_preflight(&blob_data)
         .map_err(|e| anyhow::anyhow!("invalidEmail: {e}"))?;
     let parser = MessageParser::default();
-    let message = parser
-        .parse(&blob_data)
-        .ok_or_else(|| anyhow::anyhow!("invalidEmail: Failed to parse MIME message"))?;
+    let message =
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| parser.parse(&blob_data)))
+            .map_err(|_| anyhow::anyhow!("invalidEmail: MIME parser rejected the message"))?
+            .ok_or_else(|| anyhow::anyhow!("invalidEmail: Failed to parse MIME message"))?;
     let envelope = build_envelope(&message);
     let in_reply_to = extract_in_reply_to(&message);
 

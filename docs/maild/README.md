@@ -151,6 +151,7 @@ through different upload aliases. It leaves existing metadata and memberships
 untouched. Missing or invalid blob, mailbox or keyword references produce
 `invalidProperties`; invalid MIME produces `invalidEmail`. Uploaded aliases
 and account-owned CAS blob ids are accepted, with account ownership checked.
+Parser unwinds are contained and returned as `invalidEmail` for that entry.
 Positive account mail quotas are checked inside the creation transaction;
 concurrent imports cannot exceed them. Upload staging does not consume mail quota.
 Unexpected storage failures return `serverFail`; a failed creation transaction
