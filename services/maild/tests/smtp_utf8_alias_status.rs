@@ -857,7 +857,11 @@ async fn local_fanout_defers_only_failed_targets_and_retries_without_duplicates(
                 rusqlite::params![queued[0].id,queued[0].from_addr,serde_json::to_string(&queued[0].to_addrs)?,mds::blob::hex(&queued[0].blob_hash.unwrap()),bob,queued[0].attempts],
             )?;
             wait_queue_empty(&built).await?;
-            assert_eq!(inbox_count(&built, bob)?, 1, "a terminal local receipt must not be delivered twice after recovery");
+            assert_eq!(
+                inbox_count(&built, bob)?,
+                1,
+                "a terminal local receipt must not be delivered twice after recovery"
+            );
             assert_eq!(inbox_count(&built, alice)?, before_alice + 1);
         }
     }
@@ -903,12 +907,16 @@ async fn local_fanout_defers_only_failed_targets_and_retries_without_duplicates(
 async fn wait_queue_empty(built: &BuiltMaild) -> Result<()> {
     timeout(Duration::from_secs(65), async {
         loop {
-            if maild::smtp::queue::list(&built.app_state.db.conn, 10).await?.is_empty() {
+            if maild::smtp::queue::list(&built.app_state.db.conn, 10)
+                .await?
+                .is_empty()
+            {
                 return Ok::<_, anyhow::Error>(());
             }
             tokio::time::sleep(Duration::from_millis(25)).await;
         }
-    }).await??;
+    })
+    .await??;
     Ok(())
 }
 
