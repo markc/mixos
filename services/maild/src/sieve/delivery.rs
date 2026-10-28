@@ -9,7 +9,10 @@ use crate::{
 use anyhow::{Result, ensure};
 use mail_parser::MessageParser;
 use mds::{ContainerAttrs, ContainerId, Flags, ItemId, Mds, Tags};
-use std::{collections::{HashMap, HashSet}, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 fn strip_headers(data: &[u8], remove: impl Fn(&str) -> bool) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(data.len());
@@ -36,7 +39,9 @@ pub fn stamp_spam(data: &[u8], verdict: &str, score: f64) -> Vec<u8> {
     let mut bytes =
         format!("X-Mixos-Spam-Verdict: {verdict}\r\nX-Mixos-Spam-Score: {score:.4}\r\n")
             .into_bytes();
-    bytes.extend(strip_headers(data, |name| name.to_ascii_lowercase().starts_with("x-mixos-spam-")));
+    bytes.extend(strip_headers(data, |name| {
+        name.to_ascii_lowercase().starts_with("x-mixos-spam-")
+    }));
     bytes
 }
 
@@ -244,11 +249,23 @@ async fn deliver_inner(
                 .iter()
                 .any(|allowed| allowed.eq_ignore_ascii_case(d))
         });
-    let allowed = if hops >= super::MAX_REDIRECTS { 0 } else { *remaining };
+    let allowed = if hops >= super::MAX_REDIRECTS {
+        0
+    } else {
+        *remaining
+    };
     if plan.redirects.len() > allowed {
-        tracing::warn!(account=delivery.account.id, hops, "Sieve redirect hop/action budget exhausted; dropping redirects");
+        tracing::warn!(
+            account = delivery.account.id,
+            hops,
+            "Sieve redirect hop/action budget exhausted; dropping redirects"
+        );
         plan.redirects.truncate(allowed);
-        if plan.redirects.is_empty() && plan.filings.is_empty() && !plan.discarded && plan.reject.is_none() {
+        if plan.redirects.is_empty()
+            && plan.filings.is_empty()
+            && !plan.discarded
+            && plan.reject.is_none()
+        {
             plan.filings.push(super::interpreter::Filing::default());
         }
     }
@@ -446,10 +463,16 @@ async fn deliver_inner(
                     ))
                     .await?;
                 } else {
-                    let mut outgoing = format!("Received: from {host} by {host} with ESMTP; {date}\r\n",
-                        host=crate::smtp::inbound::header_value_safe(&db.sieve_hostname),
-                        date=chrono::Utc::now().to_rfc2822()).into_bytes();
-                    outgoing.extend(strip_headers(bytes, |name| name.eq_ignore_ascii_case("X-Mixos-Sieve-Hop") || name.to_ascii_lowercase().starts_with("x-mixos-spam-")));
+                    let mut outgoing = format!(
+                        "Received: from {host} by {host} with ESMTP; {date}\r\n",
+                        host = crate::smtp::inbound::header_value_safe(&db.sieve_hostname),
+                        date = chrono::Utc::now().to_rfc2822()
+                    )
+                    .into_bytes();
+                    outgoing.extend(strip_headers(bytes, |name| {
+                        name.eq_ignore_ascii_case("X-Mixos-Sieve-Hop")
+                            || name.to_ascii_lowercase().starts_with("x-mixos-spam-")
+                    }));
                     enqueue(db, ms, delivery.from, &destination, &outgoing).await?;
                 }
                 Ok::<(), anyhow::Error>(())
@@ -465,7 +488,8 @@ async fn deliver_inner(
         }
     }
     if let Some(vacation) = plan.vacation
-        && let Err(error) = vacation_reply(db, ms, &delivery, &vacation, db.sieve_vacation_external).await
+        && let Err(error) =
+            vacation_reply(db, ms, &delivery, &vacation, db.sieve_vacation_external).await
     {
         tracing::warn!(%error,"Sieve vacation reply failed; retaining original delivery outcome");
     }
@@ -489,14 +513,26 @@ fn rejection_report(domain: &str, sender: &str, recipient: &str, reason: &str) -
 }
 
 fn own_received(data: &[u8], hostname: &str) -> usize {
-    MessageParser::new().header_text("Received")
+    MessageParser::new()
+        .header_text("Received")
         .parse_headers(data)
         .map(|m| {
             m.headers()
                 .iter()
                 .filter(|h| h.name.as_str().eq_ignore_ascii_case("Received"))
                 .filter_map(|h| h.value.as_text())
-                .filter(|value| value.split_ascii_whitespace().collect::<Vec<_>>().windows(2).any(|words| words[0].eq_ignore_ascii_case("by") && words[1].trim_end_matches(';').eq_ignore_ascii_case(hostname)))
+                .filter(|value| {
+                    value
+                        .split_ascii_whitespace()
+                        .collect::<Vec<_>>()
+                        .windows(2)
+                        .any(|words| {
+                            words[0].eq_ignore_ascii_case("by")
+                                && words[1]
+                                    .trim_end_matches(';')
+                                    .eq_ignore_ascii_case(hostname)
+                        })
+                })
                 .count()
         })
         .unwrap_or(0)
@@ -579,7 +615,9 @@ impl MailboxResolver {
         let mut bytes = 0;
         let mut writable = HashSet::new();
         for entry in boxes {
-            if entry.writable { writable.insert(entry.id); }
+            if entry.writable {
+                writable.insert(entry.id);
+            }
             bytes += entry.name.len();
             ensure!(
                 bytes <= 1024 * 1024,
@@ -634,7 +672,10 @@ impl MailboxResolver {
                         extra: serde_json::json!({}),
                     },
                 ) {
-                    Ok(id) => { self.writable.insert(id); id },
+                    Ok(id) => {
+                        self.writable.insert(id);
+                        id
+                    }
                     Err(error) => {
                         // Recover one concurrent create, with bounded work. A
                         // changing namespace cannot force repeated full reloads.
@@ -650,7 +691,9 @@ impl MailboxResolver {
                             .into_iter()
                             .find(|entry| entry.parent == parent && entry.name == name)
                             .ok_or(error)?;
-                        if entry.writable { self.writable.insert(entry.id); }
+                        if entry.writable {
+                            self.writable.insert(entry.id);
+                        }
                         entry.id
                     }
                 }
@@ -659,7 +702,10 @@ impl MailboxResolver {
             parent = Some(id);
         }
         let id = parent.ok_or_else(|| anyhow::anyhow!("empty mailbox path"))?;
-        ensure!(self.writable.contains(&id), "fileinto mailbox does not exist or is not writable");
+        ensure!(
+            self.writable.contains(&id),
+            "fileinto mailbox does not exist or is not writable"
+        );
         self.paths.insert(path_key, id);
         Ok(id)
     }
@@ -778,8 +824,13 @@ async fn vacation_reply(
     }
     // subject() is MIME-decoded. The builder emits encoded words only when
     // necessary, so an encoded original cannot acquire a raw ASCII prefix.
-    let default_subject = message.subject().map(|subject| format!("Auto: {subject}")).unwrap_or_else(|| "Automated reply".into());
-    let subject = crate::smtp::inbound::header_value_safe(vacation.subject.as_deref().unwrap_or(&default_subject));
+    let default_subject = message
+        .subject()
+        .map(|subject| format!("Auto: {subject}"))
+        .unwrap_or_else(|| "Automated reply".into());
+    let subject = crate::smtp::inbound::header_value_safe(
+        vacation.subject.as_deref().unwrap_or(&default_subject),
+    );
     let mut builder = mail_builder::MessageBuilder::new()
         .from(delivery.account.email.as_str())
         .to(delivery.from)

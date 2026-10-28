@@ -189,8 +189,12 @@ async fn command<S: AsyncRead + Unpin>(io: &mut BufReader<S>) -> Result<Option<V
                 .and_then(|s| s.strip_suffix("+}"))
                 .ok_or_else(|| anyhow::anyhow!("expected non-synchronising literal"))?
                 .parse::<usize>()?;
-            if result.first().is_some_and(|verb: &String| verb.eq_ignore_ascii_case("PUTSCRIPT"))
-                && result.len() == 2 && n > MAX_SCRIPT_BYTES {
+            if result
+                .first()
+                .is_some_and(|verb: &String| verb.eq_ignore_ascii_case("PUTSCRIPT"))
+                && result.len() == 2
+                && n > MAX_SCRIPT_BYTES
+            {
                 bail!("QUOTA/MAXSIZE: script exceeds size limit");
             }
             total = total
@@ -292,7 +296,11 @@ pub async fn session<S: AsyncRead + AsyncWrite + Unpin>(
             Ok(Ok(Some(args))) if !args.is_empty() => args,
             Ok(Ok(None)) => return Ok(None),
             Ok(Err(error)) if error.to_string().starts_with("QUOTA/MAXSIZE") => {
-                write(&mut io, "NO (QUOTA/MAXSIZE) \"script exceeds size limit\"\r\n").await?;
+                write(
+                    &mut io,
+                    "NO (QUOTA/MAXSIZE) \"script exceeds size limit\"\r\n",
+                )
+                .await?;
                 // Non-synchronising literal octets may already be in flight.
                 // Close rather than interpreting their contents as commands.
                 return Ok(None);
@@ -404,12 +412,17 @@ async fn execute(db: &Db, account: i32, verb: &str, args: &[String]) -> Result<S
         _ => None,
     } {
         if verb == "PUTSCRIPT" {
-            ensure!(source.len() <= MAX_SCRIPT_BYTES, "QUOTA/MAXSIZE: script exceeds size limit");
+            ensure!(
+                source.len() <= MAX_SCRIPT_BYTES,
+                "QUOTA/MAXSIZE: script exceeds size limit"
+            );
         }
         let source = source.clone();
         let script = tokio::task::spawn_blocking(move || compile(&source)).await??;
         !db.sieve_vacation_external && script.uses_vacation()
-    } else { false };
+    } else {
+        false
+    };
     match verb {
         "LISTSCRIPTS" => {
             for entry in store::list(db, account).await? {
@@ -436,6 +449,8 @@ async fn execute(db: &Db, account: i32, verb: &str, args: &[String]) -> Result<S
     }
     response.push_str(if warning {
         "OK (WARNINGS) \"vacation replies to external senders are disabled\"\r\n"
-    } else { "OK \"Done\"\r\n" });
+    } else {
+        "OK \"Done\"\r\n"
+    });
     Ok(response)
 }

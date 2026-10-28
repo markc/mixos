@@ -616,7 +616,9 @@ impl Script {
         fn uses(code: &[Statement]) -> bool {
             code.iter().any(|statement| match statement {
                 Statement::Action(name, _) => name == "vacation",
-                Statement::If(branches, otherwise) => branches.iter().any(|(_, code)| uses(code)) || uses(otherwise),
+                Statement::If(branches, otherwise) => {
+                    branches.iter().any(|(_, code)| uses(code)) || uses(otherwise)
+                }
             })
         }
         uses(&self.code)
@@ -660,11 +662,29 @@ impl Script {
             .unwrap_or_default();
         // Parse/index the header section once. Attachments must not consume the
         // header-test budget; later comparisons charge only selected values.
-        let address_headers = address_parser.parse_headers(context.data)
-            .map(|m| m.headers().iter().map(|h| (
-                h.name.as_str().to_string(),
-                h.value.as_address().map(|addresses| addresses.iter().filter_map(|a| a.address()).map(str::to_string).collect()).unwrap_or_default(),
-            )).collect()).unwrap_or_default();
+        let address_headers = address_parser
+            .parse_headers(context.data)
+            .map(|m| {
+                m.headers()
+                    .iter()
+                    .map(|h| {
+                        (
+                            h.name.as_str().to_string(),
+                            h.value
+                                .as_address()
+                                .map(|addresses| {
+                                    addresses
+                                        .iter()
+                                        .filter_map(|a| a.address())
+                                        .map(str::to_string)
+                                        .collect()
+                                })
+                                .unwrap_or_default(),
+                        )
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
         let mut eval = Eval {
             context,
             message,
@@ -1055,7 +1075,9 @@ impl Eval<'_> {
                                     .collect();
                             }
                             for (_, addresses) in headers {
-                                self.steps += addresses.iter().map(String::len).sum::<usize>() / 1024 + addresses.len();
+                                self.steps += addresses.iter().map(String::len).sum::<usize>()
+                                    / 1024
+                                    + addresses.len();
                                 ensure!(self.steps <= MAX_STEPS, "address allocation limit");
                                 values.extend(addresses.iter().cloned());
                             }
@@ -1111,10 +1133,19 @@ impl Eval<'_> {
                                         })
                                     })
                                     .unwrap_or_else(|| content_type.starts_with("text/"));
-                                if selected && matches!(&part.body, PartType::Text(_) | PartType::Html(_) | PartType::Binary(_) | PartType::InlineBinary(_)) {
+                                if selected
+                                    && matches!(
+                                        &part.body,
+                                        PartType::Text(_)
+                                            | PartType::Html(_)
+                                            | PartType::Binary(_)
+                                            | PartType::InlineBinary(_)
+                                    )
+                                {
                                     // Charge the selected source before decoding/
                                     // transforming, including HTML with empty output.
-                                    self.steps += (part.offset_end - part.offset_body) as usize / 1024;
+                                    self.steps +=
+                                        (part.offset_end - part.offset_body) as usize / 1024;
                                     ensure!(self.steps <= MAX_STEPS, "body source work limit");
                                 }
                                 if selected
@@ -1298,7 +1329,11 @@ impl Eval<'_> {
             });
         }
         if args.has("matches") {
-            let pattern = if octet { key.clone() } else { key.to_ascii_lowercase() };
+            let pattern = if octet {
+                key.clone()
+            } else {
+                key.to_ascii_lowercase()
+            };
             if let Some(captures) = glob(original, &pattern, !octet, &mut self.steps)? {
                 if capture {
                     self.captures = captures;

@@ -149,7 +149,10 @@ pub async fn put(
     source: &str,
     expected_version: Option<i64>,
 ) -> Result<i64> {
-    ensure!(source.len() <= MAX_SCRIPT_BYTES, "QUOTA/MAXSIZE: script exceeds size limit");
+    ensure!(
+        source.len() <= MAX_SCRIPT_BYTES,
+        "QUOTA/MAXSIZE: script exceeds size limit"
+    );
     validate_name(name)?;
     let name = name.to_string();
     let source = source.to_string();
