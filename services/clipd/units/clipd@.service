@@ -17,3 +17,5 @@ KillMode=control-group
 TimeoutStopSec=10
 Restart=on-failure
 RestartSec=2
+NoNewPrivileges=yes
+UMask=0077

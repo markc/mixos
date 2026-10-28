@@ -2,6 +2,9 @@
 -- version: 0.1.0
 -- Run only through the authorised CBC launcher. fmt prints its patch and
 -- restores this job's own edits while the worker lock is still held.
+if len(args()) != 1 or not contains(["fmt", "gate"], args()[0]) then
+  raise("USAGE", "CBC helper requires exactly one mode: fmt or gate")
+end
 if args()[0] == "fmt" then
   try
     run_argv_must(["cargo", "fmt", "-p", "mix", "-p", "mixos-mcp", "-p", "inputd"], {timeout: 120})
