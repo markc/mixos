@@ -1064,7 +1064,11 @@ mod tests {
             let server = std::thread::spawn(move || {
                 let mut harness = testkit::Harness::new();
                 ready
-                    .send((harness.connect_external(), harness.connect_external(), harness.connect_external()))
+                    .send((
+                        harness.connect_external(),
+                        harness.connect_external(),
+                        harness.connect_external(),
+                    ))
                     .unwrap();
                 while matches!(
                     stopped.try_recv(),
@@ -1074,7 +1078,8 @@ mod tests {
                     std::thread::sleep(Duration::from_millis(1));
                 }
             });
-            let (owner, reader, provider) = connections.recv_timeout(Duration::from_secs(5)).unwrap();
+            let (owner, reader, provider) =
+                connections.recv_timeout(Duration::from_secs(5)).unwrap();
             let (driver, mut events) = Driver::start_connection(
                 wayland_client::Connection::from_socket(owner).unwrap(),
                 None,
@@ -1088,18 +1093,30 @@ mod tests {
             let (provider, mut offered) = Driver::start_connection(
                 wayland_client::Connection::from_socket(provider).unwrap(),
                 None,
-            ).unwrap();
+            )
+            .unwrap();
             // A real external owner keeps serving every offered MIME after
             // the initial classification, including later lazy hint reads.
-            let provider_data: Arc<Mutex<[Option<Selection>; 2]>> = Arc::new(Mutex::new([None, None]));
+            let provider_data: Arc<Mutex<[Option<Selection>; 2]>> =
+                Arc::new(Mutex::new([None, None]));
             let available = provider_data.clone();
             let provide = tokio::spawn(async move {
                 while let Some(event) = offered.recv().await {
                     match event {
-                        Event::Send { stamp, primary, mime, fd } => {
-                            let bytes = available.lock().await[usize::from(primary)].as_ref()
-                                .filter(|s| s.stamp == stamp).and_then(|s| s.data.get(&mime)).cloned();
-                            if let Some(bytes) = bytes { let _ = crate::wayland::write_fd(fd, &bytes).await; }
+                        Event::Send {
+                            stamp,
+                            primary,
+                            mime,
+                            fd,
+                        } => {
+                            let bytes = available.lock().await[usize::from(primary)]
+                                .as_ref()
+                                .filter(|s| s.stamp == stamp)
+                                .and_then(|s| s.data.get(&mime))
+                                .cloned();
+                            if let Some(bytes) = bytes {
+                                let _ = crate::wayland::write_fd(fd, &bytes).await;
+                            }
                         }
                         Event::Failed(error) => panic!("{error}"),
                         _ => {}
@@ -1183,9 +1200,12 @@ mod tests {
                             let owner = owner.clone();
                             classifiers.spawn(async move {
                                 let selection = owner.state.lock().await.selections
-                                    [usize::from(primary)].clone().filter(|s| s.stamp == stamp);
+                                    [usize::from(primary)]
+                                .clone()
+                                .filter(|s| s.stamp == stamp);
                                 if let Some(s) = selection
-                                    && let Ok(bytes) = owner.bytes(&s, &mime, primary).await {
+                                    && let Ok(bytes) = owner.bytes(&s, &mime, primary).await
+                                {
                                     let _ = crate::wayland::write_fd(fd, &bytes).await;
                                 }
                             });
@@ -1212,10 +1232,18 @@ mod tests {
             let marker = selection.stamp.marker();
             tokio::time::timeout(Duration::from_secs(5), async {
                 loop {
-                    let (got_primary, types) = self.changes.recv().await.expect("selection observer closed");
-                    if got_primary == primary && types.contains(&marker) { break; }
+                    let (got_primary, types) = self
+                        .changes
+                        .recv()
+                        .await
+                        .expect("selection observer closed");
+                    if got_primary == primary && types.contains(&marker) {
+                        break;
+                    }
                 }
-            }).await.unwrap();
+            })
+            .await
+            .unwrap();
         }
         async fn paste(&mut self, marker: &str, mime: &str) -> Vec<u8> {
             let offer = tokio::time::timeout(Duration::from_secs(5), async {
