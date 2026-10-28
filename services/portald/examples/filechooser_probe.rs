@@ -103,8 +103,55 @@ async fn main() -> anyhow::Result<()> {
         one(&client,&bus,&folder,method,false).await?;
         one(&client,&bus,&folder,method,true).await?;
     }
+    for save in [false, true] {
+        for cancel in [false, true] { rfd_dialog(&bus, &folder, save, cancel).await?; }
+    }
     ensure!(std::fs::read_to_string(format!("{folder}/notes.txt"))? == "original","chooser wrote existing file");
     for name in ["one.txt","two.txt"] { ensure!(!std::path::Path::new(&format!("{folder}/{name}")).exists(),"chooser wrote file"); }
     bus.close().await;
+    Ok(())
+}
+
+async fn rfd_dialog(bus: &SupervisedClient, folder: &str, save: bool, cancel: bool) -> anyhow::Result<()> {
+    let title = format!("rfd probe {save} {cancel}");
+    let directory = folder.to_owned();
+    let dialog_title = title.clone();
+    let dialog = tokio::task::spawn_blocking(move || {
+        let dialog = rfd::FileDialog::new().set_title(dialog_title).set_directory(directory).add_filter("Text", &["txt"]);
+        if save { dialog.set_file_name("rfd-output.txt").save_file() } else { dialog.pick_file() }
+    });
+    let id = tokio::time::timeout(WAIT, async {
+        loop {
+            let list = bus.call("files", "files.choose.list", json!({})).await?;
+            if let Some(id) = list["requests"].as_array().into_iter().flatten()
+                .find(|entry| entry["title"] == title).and_then(|entry| entry["request"].as_str()) {
+                break Ok::<_, anyhow::Error>(id.to_owned());
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    }).await??;
+    tokio::time::timeout(WAIT, async {
+        loop {
+            if let Ok(tree) = drive(bus, &id, "files.ui.tree", json!({})).await
+                && tree.to_string().contains("Places") { break; }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    }).await?;
+    if cancel {
+        let _ = drive(bus, &id, "files.ui.click", json!({"label":"Cancel"})).await;
+    } else if save {
+        let _ = drive(bus, &id, "files.ui.click", json!({"label":"Save"})).await;
+    } else {
+        drive(bus, &id, "files.ui.click", json!({"label":"notes.txt"})).await?;
+        let _ = drive(bus, &id, "files.ui.click", json!({"label":"Open"})).await;
+    }
+    let result = tokio::time::timeout(WAIT, dialog).await??;
+    if cancel { ensure!(result.is_none(), "rfd cancel returned a file"); }
+    else {
+        let expected = std::path::Path::new(folder).join(if save { "rfd-output.txt" } else { "notes.txt" });
+        ensure!(result.as_ref() == Some(&expected), "rfd returned {result:?}, expected {expected:?}");
+    }
+    ensure!(!std::path::Path::new(folder).join("rfd-output.txt").exists(), "chooser wrote rfd output");
+    println!("PASS rfd 0.17.2 save={save} cancel={cancel} through portal viewport {id}");
     Ok(())
 }

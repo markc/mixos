@@ -273,7 +273,9 @@ pub fn map(mode: &str, parent: &str, title: &str, options: &Options) -> Result<J
     if mode == "save_files" {
         let mut seen = HashSet::new();
         let mut names = Vec::new();
-        for value in files.unwrap_or_default() {
+        let files = files.unwrap_or_default();
+        if files.len() > 256 { adjusted("files"); }
+        for value in files.into_iter().take(256) {
             let tail = value.rsplit(|&b| b == b'/').next().unwrap_or_default();
             if tail != value {
                 adjusted("files");

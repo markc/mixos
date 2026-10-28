@@ -34,8 +34,13 @@ try
   if not $ready then raise("PORTAL_TEST","files did not register: " .. $tmp .. "/files.log") end
   $portal = spawn([$bin .. "/portald", "serve", "--instance", "test"],
     {env:$client, stdout:{file:$tmp .. "/portal.log"}, stderr:"stdout", detach:true})
+  -- rfd must use the portal. An empty PATH prevents its external fallback
+  -- from opening anything when the portal path fails.
+  mkdir($tmp .. "/empty-path", {parents:true})
+  $probe_env = $client
+  $probe_env.PATH = $tmp .. "/empty-path"
   $result = run_argv([$bin .. "/examples/filechooser_probe", $tmp .. "/home"],
-    {env:$client,timeout:180,stderr:"stdout"})
+    {env:$probe_env,timeout:300,stderr:"stdout"})
   print($result.stdout)
   if $result.exit_code != 0 or $result.timed_out then raise("PORTAL_TEST","probe failed; logs " .. $tmp) end
   $passed = true
