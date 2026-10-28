@@ -233,6 +233,7 @@ async fn handle_account(
     let quota_bytes = account.quota.max(0) as u64;
     let body = serde_json::json!({
         "account": account.email,
+        "account_id": account.id,
         "mailbox_count": stat.mailbox_count,
         "message_count": stat.message_count,
         "total_bytes": stat.total_bytes,

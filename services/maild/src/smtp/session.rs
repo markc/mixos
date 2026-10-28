@@ -68,6 +68,7 @@ struct Session {
     /// re-querying the DB on every transaction.
     authenticated_email: Option<String>,
     mail_from: Option<String>,
+    smtp_utf8: bool,
     rcpt_to: Vec<String>,
     ehlo_host: Option<String>,
     tls_active: bool,
@@ -111,6 +112,7 @@ impl Session {
             authenticated_account: None,
             authenticated_email: None,
             mail_from: None,
+            smtp_utf8: false,
             rcpt_to: Vec::new(),
             ehlo_host: None,
             tls_active,
@@ -120,6 +122,7 @@ impl Session {
 
     fn reset_transaction(&mut self) {
         self.mail_from = None;
+        self.smtp_utf8 = false;
         self.rcpt_to.clear();
     }
 
@@ -349,6 +352,12 @@ where
             let is_terminator = buf == b".\r\n" || (!session.require_auth && buf == b".\n");
             if is_terminator {
                 data_mode = false;
+                if !session.smtp_utf8 && super::envelope::utf8_headers(&data_buf) {
+                    write_line(writer, "550 5.6.7 UTF-8 headers require SMTPUTF8").await?;
+                    data_buf.clear();
+                    session.reset_transaction();
+                    continue;
+                }
                 // A bad line earlier in this submission DATA → reject the
                 // whole message rather than deliver a smuggling-ambiguous
                 // one.
@@ -541,7 +550,10 @@ where
             continue;
         }
 
-        let line = String::from_utf8_lossy(&buf);
+        let line = match std::str::from_utf8(&buf) {
+            Ok(line) => line,
+            Err(_) => { write_line(writer, "501 5.6.7 Invalid UTF-8 command").await?; continue; }
+        };
         let line = line.trim_end();
 
         let (cmd, args) = match line.find(' ') {
@@ -559,6 +571,7 @@ where
                     write_line(writer, &format!("250-{hostname}")).await?;
                     write_line(writer, &format!("250-SIZE {max_size}")).await?;
                     write_line(writer, "250-8BITMIME").await?;
+                    write_line(writer, "250-SMTPUTF8").await?;
                     write_line(writer, "250-PIPELINING").await?;
                     if session.tls_available() {
                         write_line(writer, "250-STARTTLS").await?;
@@ -662,6 +675,25 @@ where
 
                 match from {
                     Some(addr) => {
+                        session.reset_transaction();
+                        let parameters = mail_parameters(args);
+                        let smtp_utf8 = parameters.iter().any(|p| p.eq_ignore_ascii_case("SMTPUTF8"));
+                        if parameters.iter().any(|p| {
+                            let p = p.to_ascii_uppercase();
+                            p != "SMTPUTF8" && p != "BODY=8BITMIME" && p != "BODY=7BIT"
+                                && !p.strip_prefix("SIZE=").is_some_and(|n| n.parse::<usize>().is_ok())
+                        }) || parameters.iter().filter(|p| p.eq_ignore_ascii_case("SMTPUTF8")).count() > 1 {
+                            write_line(writer, "555 5.5.4 Unsupported MAIL parameter").await?;
+                            continue;
+                        }
+                        if !super::envelope::valid_address(&addr, true) {
+                            write_line(writer, "501 5.1.7 Bad sender address").await?;
+                            continue;
+                        }
+                        if !addr.is_ascii() && !smtp_utf8 {
+                            write_line(writer, "553 5.6.7 UTF-8 sender requires SMTPUTF8").await?;
+                            continue;
+                        }
                         // RFC 6409 §6.1: on a submission port the
                         // envelope sender MUST match the authenticated
                         // identity — OR be an enabled alias OF that
@@ -694,6 +726,7 @@ where
                             continue;
                         }
                         session.mail_from = Some(addr);
+                        session.smtp_utf8 = smtp_utf8;
                         write_line(writer, "250 2.1.0 OK").await?;
                     }
                     None => {
@@ -714,6 +747,16 @@ where
                 if session.mail_from.is_none() {
                     write_line(writer, "503 5.5.1 MAIL FROM first").await?;
                     continue;
+                }
+                if let Some(addr) = parse_rcpt_to(args) {
+                    if !super::envelope::valid_address(&addr, false) {
+                        write_line(writer, "501 5.1.3 Bad recipient address").await?;
+                        continue;
+                    }
+                    if !addr.is_ascii() && !session.smtp_utf8 {
+                        write_line(writer, "553 5.6.7 UTF-8 recipient requires SMTPUTF8").await?;
+                        continue;
+                    }
                 }
 
                 let decision = decide_rcpt_to(
@@ -919,6 +962,16 @@ fn parse_rcpt_to(args: &str) -> Option<String> {
     extract_angle_addr(rest)
 }
 
+fn mail_parameters(args: &str) -> Vec<&str> {
+    let rest = args.get(5..).unwrap_or("").trim();
+    let parameters = if rest.starts_with('<') {
+        rest.find('>').map(|end| &rest[end + 1..]).unwrap_or("")
+    } else {
+        rest.split_once(char::is_whitespace).map(|(_, p)| p).unwrap_or("")
+    };
+    parameters.split_ascii_whitespace().collect()
+}
+
 /// Extract email from `<addr>` or bare addr, stripping ESMTP params.
 fn extract_angle_addr(s: &str) -> Option<String> {
     if s.starts_with('<') {
@@ -927,11 +980,11 @@ fn extract_angle_addr(s: &str) -> Option<String> {
         if addr.is_empty() {
             Some(String::new()) // null sender <>
         } else {
-            Some(addr.to_lowercase())
+            Some(addr.to_ascii_lowercase())
         }
     } else {
         let addr = s.split_whitespace().next()?;
-        Some(addr.to_lowercase())
+        Some(addr.to_ascii_lowercase())
     }
 }
 
@@ -1027,14 +1080,14 @@ async fn decide_rcpt_to(
     // envelope keeps what the sender wrote (delivery re-resolves in
     // `inbound.rs`). A transient alias-store error is a retriable 451 —
     // NOT a permanent 550 that would bounce a valid alias.
-    let resolved = match props::aliases::resolve_recipient(aliases_runtime, &addr).await {
+    let resolved = match props::aliases::recipient_accounts(aliases_runtime, db_conn, &addr).await {
         Ok(r) => r,
         Err(_) => return RcptDecision::TransientReject("451 4.3.0 Temporary system error"),
     };
 
     if namespace_empty {
-        return match crate::db::account::get_by_email(db_conn, &resolved).await {
-            Ok(Some(_)) => RcptDecision::Accept(addr),
+        return match !resolved.is_empty() {
+            true => RcptDecision::Accept(addr),
             // opaque vtoken-shaped recipient → accept opaquely (anti-enumeration);
             // validated/discarded after DATA. See the authoritative arm.
             _ if opaque_rcpt_ok => RcptDecision::Accept(addr),
@@ -1079,8 +1132,8 @@ async fn decide_rcpt_to(
         "authoritative" => {
             // Existence check on the alias-resolved address; Accept the
             // original envelope address (resolved computed once above).
-            match crate::db::account::get_by_email(db_conn, &resolved).await {
-                Ok(Some(_)) => RcptDecision::Accept(addr),
+            match !resolved.is_empty() {
+                true => RcptDecision::Accept(addr),
                 // An opaque vtoken-shaped recipient on a domain we host is
                 // accepted opaquely — no registry consult, so RCPT reveals
                 // nothing about token validity (the anti-enumeration property).

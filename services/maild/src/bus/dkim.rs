@@ -101,8 +101,40 @@ pub async fn dispatch(action: &str, cmd: &IncomingCommand, state: &DkimState) ->
         "generate" => to_response(handle_generate(cmd, state).await),
         "rotate" => to_response(handle_rotate(cmd, state).await),
         "retire" => to_response(handle_retire(cmd, state).await),
+        "check" => to_response(handle_check(cmd, state).await),
         other => (RC_ERROR, err_body(&format!("unknown dkim action: {other}"))),
     }
+}
+
+async fn handle_check(cmd: &IncomingCommand, state: &DkimState) -> Result<JsonValue> {
+    let args = super::try_resolve_args(cmd).map_err(anyhow::Error::msg)?;
+    let domain = args.get("domain").and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow!("domain is required"))?.to_ascii_lowercase();
+    domains::validate_fqdn(&domain).map_err(|e| anyhow!("invalid domain: {e}"))?;
+    let lock = state.lock_for(&Domain::new(&domain)).await;
+    let _guard = lock.lock().await;
+    let (selector, pem) = if let Some(cfg) = state.baseline.iter()
+        .find(|cfg| cfg.domain.as_str() == domain && cfg.active_for_signing) {
+        (cfg.selector.clone(), cfg.private_key_pem.clone())
+    } else {
+        let (body, _) = read_or_default_row(&state.domains_runtime, &domain).await?;
+        let selector = opt_string_get(&body, "dkim_selector_active")
+            .ok_or_else(|| anyhow!("domain has no active DKIM selector"))?;
+        let pem = tokio::fs::read(dkim_rebuild::pem_path(&state.key_root, &domain, &selector)).await?;
+        (selector, pem)
+    };
+    let name = format!("{selector}._domainkey.{domain}.");
+    let resolver = hickory_resolver::TokioResolver::builder_tokio()?.build();
+    let records = resolver.txt_lookup(&name).await?;
+    let records: Vec<String> = records.iter().map(|txt| {
+        String::from_utf8(txt.txt_data().iter().flat_map(|part| part.iter().copied()).collect())
+    }).collect::<std::result::Result<_, _>>()?;
+    let keys: Vec<_> = records.iter().filter(|txt| txt.trim_start().starts_with("v=DKIM1")).collect();
+    if keys.len() != 1 { bail!("expected one DKIM TXT record at {name}, found {}", keys.len()); }
+    if !keygen::record_matches(&pem, keys[0])? {
+        bail!("published DKIM record at {name} does not match the private key (RSA requires SPKI)");
+    }
+    Ok(json!({"domain":domain,"selector":selector,"dns_name":name,"matches":true}))
 }
 
 /// Build a substrate audit-cause string that records both the command and
