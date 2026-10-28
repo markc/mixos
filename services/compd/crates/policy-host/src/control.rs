@@ -1390,12 +1390,14 @@ pub fn execute(lp: &mut Loop, effects: Vec<Effect>) {
         }),
     );
     let mut moved = false;
+    let mut refit = false;
     for effect in effects {
         match effect {
             // The X11 half: an X11 window's HIDDEN and `_NET_WM_DESKTOP`
             // follow its workspace (the relabel).
             Effect::Withdraw { .. } | Effect::Present { .. } | Effect::Relabelled { .. } => {
                 moved = true;
+                refit = true;
             }
             Effect::MarkDirty { .. } | Effect::WorkspacesDirty(_) => moved = true,
             Effect::Settle { prefer } => {
@@ -1516,6 +1518,11 @@ pub fn execute(lp: &mut Loop, effects: Vec<Effect>) {
     if moved {
         lp.inner.comp.workspaces_changed();
         lp.state.schedule_redraw(RedrawReason::Workspace);
+    }
+    if refit {
+        // A send changes which split owns a tile. Apply it before the command
+        // projects its reply, including windows hidden on the destination.
+        refresh_usable(lp);
     }
 }
 

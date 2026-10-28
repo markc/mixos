@@ -12,8 +12,8 @@ use world::state::Loop;
 pub use world::comp::clock::{Clock, ManualClock};
 
 pub fn service(lp: &mut Loop) {
-    let now = lp.inner.comp.clock.now();
-    if lp.inner.comp.drag.as_mut().is_some_and(|drag| drag.tick(now)) {
+    let Some(drag) = lp.inner.comp.drag.as_mut() else { return };
+    if drag.tick(lp.inner.comp.clock.now()) {
         lp.state.schedule_redraw(RedrawReason::WindowState);
     }
 }
@@ -44,12 +44,15 @@ impl Wakeup {
         let Some(deadline) = deadline else { return };
         let fired = Rc::new(Cell::new(false));
         let flag = Rc::clone(&fired);
-        let token = handle.insert_source(Timer::from_deadline(deadline), move |_, _, data| {
+        let result = handle.insert_source(Timer::from_deadline(deadline), move |_, _, data| {
             flag.set(true);
             fire(data);
             TimeoutAction::Drop
-        }).expect("drag preview timer");
-        self.armed = Some((token, deadline, fired));
+        });
+        match result {
+            Ok(token) => self.armed = Some((token, deadline, fired)),
+            Err(error) => model::warn!("drag preview timer: {error}"),
+        }
     }
 }
 

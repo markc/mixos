@@ -34,6 +34,7 @@ struct Pending {
     candidate: Candidate,
     since: Instant,
     from: Rectangle<i32, Logical>,
+    follow_frame: bool,
     ready: Instant,
     duration: Duration,
 }
@@ -102,16 +103,21 @@ impl Drag {
         };
         let current = self.animation.as_ref().map(|a| a.rectangle(now)).unwrap_or(frame);
         if self.pending.as_ref().is_none_or(|p| p.candidate != candidate) {
+            let follow_frame = self.animation.is_none();
             self.disarm();
             self.pending = Some(Pending {
                 candidate,
                 since: now,
                 from: current,
+                follow_frame,
                 ready: now,
                 duration: Duration::ZERO,
             });
         }
         let pending = self.pending.as_mut().expect("sampled zone");
+        if self.armed.is_none() && pending.follow_frame {
+            pending.from = frame;
+        }
         pending.ready = pending.since + Duration::from_millis(
             if pending.candidate.shared { config.shared_edge_dwell_ms } else { 0 }
                 + config.preview_delay_ms,

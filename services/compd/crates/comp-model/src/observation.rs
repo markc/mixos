@@ -1242,7 +1242,8 @@ pub fn known_read_only_path(path: &str) -> bool {
     if path == "workspaces" || path == "workspaces.list" {
         return true;
     }
-    path == "input"
+    path == "tiling"
+        || path == "input"
         || path == "input.last_origin"
         || path == "input.seats"
         || path.starts_with("input.seats.")

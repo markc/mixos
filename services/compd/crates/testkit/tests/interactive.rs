@@ -31,10 +31,14 @@ fn ms(value: u64) -> std::time::Duration {
 }
 
 fn set_tiling(h: &mut Harness, leaf: &str, value: serde_json::Value) {
+    static WRITES: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _guard = WRITES.lock().unwrap();
     let path = format!("tiling.{leaf}");
     assert!(comp_model::observation::validate_set_request(&path, &value).is_ok());
     let reply = policy_host::tiling::set(&mut h.wire.inner.comp, &path, &value).wire_json();
     assert_eq!(reply["persisted"], true, "{reply}");
+    let saved = model::environment::preference::base::load();
+    assert_eq!(comp_model::tiling::TilingConfig::from_saved(&saved.tiling), h.comp().tiling);
 }
 
 /// Paint the actual preview elements offscreen for visual QA, without a GPU.
@@ -183,6 +187,42 @@ fn shared_dwell_then_show_delay_are_both_required_without_more_motion() {
 }
 
 #[test]
+fn a_shared_top_maximise_zone_dwells_while_the_adjacent_outer_top_does_not() {
+    let mut h = Harness::two_outputs();
+    let secondary = h.wire.inner.space.state.outputs().find(|o| o.name() == "testkit-1").unwrap().clone();
+    h.wire.inner.space.state.map_output(&secondary, (0, -1080));
+    let (surface, _, _) = h.mapped_toplevel(640, 480);
+    let (_, window) = window(&h, &surface);
+    begin_move(&mut h, &window);
+    motion(&mut h, (960.0, 0.0));
+    apply(&mut h, &window);
+    h.advance_time(ms(249));
+    assert!(preview(&h).is_empty());
+    h.advance_time(ms(1));
+    assert_eq!(h.comp().drag.as_ref().unwrap().armed.as_ref().unwrap().placement.name(), "maximized");
+    motion(&mut h, (960.0, -1080.0));
+    apply(&mut h, &window);
+    assert_eq!(h.comp().drag.as_ref().unwrap().armed.as_ref().unwrap().placement.output(), Some("testkit-1"));
+}
+
+#[test]
+fn delayed_preview_starts_at_the_latest_window_frame_in_the_same_zone() {
+    let mut h = Harness::new();
+    let (surface, _, _) = h.mapped_toplevel(640, 480);
+    let (_, window) = window(&h, &surface);
+    set_tiling(&mut h, "preview_delay_ms", serde_json::json!(100));
+    begin_move(&mut h, &window);
+    motion(&mut h, (0.0, 400.0));
+    apply(&mut h, &window);
+    h.advance_time(ms(50));
+    motion(&mut h, (0.0, 500.0));
+    apply(&mut h, &window);
+    let frame = smithay::utils::Rectangle::new(h.wire.inner.space.state.element_location(&window).unwrap(), (640, 480).into());
+    h.advance_time(ms(50));
+    assert_eq!(h.comp().drag.as_ref().unwrap().preview_rectangle, Some(frame));
+}
+
+#[test]
 fn tiling_props_apply_on_the_next_motion_and_persist() {
     use serde_json::json;
     for (leaf, value, at, expected) in [
@@ -203,8 +243,6 @@ fn tiling_props_apply_on_the_next_motion_and_persist() {
         motion(&mut h, at);
         apply(&mut h, &window);
         assert_eq!(h.comp().drag.as_ref().unwrap().armed.as_ref().map(|a| a.placement.name()), expected, "{leaf}");
-        let saved = model::environment::preference::base::load();
-        assert_eq!(serde_json::to_value(comp_model::tiling::TilingConfig::from_saved(&saved.tiling)).unwrap()[leaf], value);
         if leaf == "preview_animation_ms" {
             assert_eq!(h.comp().drag.as_ref().unwrap().preview_rectangle, Some(smithay::utils::Rectangle::new((0, 0).into(), (960, 1080).into())));
             assert!(policy_host::tiling::deadline(h.comp()).is_none());

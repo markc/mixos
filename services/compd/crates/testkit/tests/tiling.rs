@@ -243,6 +243,7 @@ fn super_shift_m_keeps_lifo_order_and_constrained_placement() {
 #[test]
 fn bus_placement_slots_saved_geometry_topics_and_query() {
     let (mut h, id, generation, window, _, _) = fixture();
+    h.wire.inner.comp.tiling.edge_tiling = false; // keys and Bus remain enabled
     assert!(h.comp().float_snapshot(id).is_none());
     for tile in world::comp::TileSlot::ALL {
         let body = json!({"id": id.0, "generation": generation, "placement": "tiled", "slot": tile.name()});
