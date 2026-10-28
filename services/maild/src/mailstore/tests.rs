@@ -9860,3 +9860,48 @@ mod retention {
         );
     }
 }
+
+/// IMAP SEARCH content keys against the real store: header hits load
+/// blobs, and an unreadable blob fails the SEARCH instead of quietly
+/// dropping the row.
+mod imap_search {
+    use super::*;
+    use crate::imap::op::search::{SearchMode, handle};
+
+    const ALICE: &[u8] = b"From: Alice <alice@example.com>\r\nSubject: hello\r\n\r\nbody one\r\n";
+    const BOB: &[u8] = b"From: Bob <bob@example.net>\r\nSubject: other\r\n\r\nbody two\r\n";
+
+    #[tokio::test]
+    async fn search_from_hits_and_unreadable_blob_is_no() {
+        let (dir, mds, store) = open_mailstore();
+        let set = provision(&store);
+        let trash = mk_container(&mds, &set, "Trash", Some("\\Trash"));
+        add_item_in(&mds, &set, trash, ALICE);
+        add_item_in(&mds, &set, trash, BOB);
+        let store: Arc<dyn MailStore> = Arc::new(store);
+
+        let resp = handle("a1", "FROM alice", TEST_ACCOUNT, trash, store.clone(), SearchMode::Msn).await;
+        assert_eq!(resp, "* SEARCH 1\r\na1 OK SEARCH completed\r\n");
+        let resp = handle(
+            "a2",
+            "CHARSET UTF-8 OR SUBJECT other BODY \"one\"",
+            TEST_ACCOUNT,
+            trash,
+            store.clone(),
+            SearchMode::Msn,
+        )
+        .await;
+        assert_eq!(resp, "* SEARCH 1 2\r\na2 OK SEARCH completed\r\n");
+
+        // Remove Bob's blob from under its live item.
+        let hash = mds.put_blob(BOB).unwrap();
+        std::fs::remove_file(mds::blob::blob_path(&dir.path().join("blobs"), &hash)).unwrap();
+
+        // A metadata-only search never touches the blob.
+        let resp = handle("a3", "ALL", TEST_ACCOUNT, trash, store.clone(), SearchMode::Msn).await;
+        assert_eq!(resp, "* SEARCH 1 2\r\na3 OK SEARCH completed\r\n");
+        // A content search must not report a partial answer as complete.
+        let resp = handle("a4", "NOT FROM alice", TEST_ACCOUNT, trash, store, SearchMode::Msn).await;
+        assert!(resp.starts_with("a4 NO [UNAVAILABLE]"), "{resp}");
+    }
+}

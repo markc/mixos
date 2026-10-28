@@ -172,10 +172,9 @@ pub fn parse_line(line: &[u8]) -> Result<Line> {
 /// A complete IMAP command frame: the command line (with any trailing
 /// literal marker stripped) plus the literal body, if present.
 ///
-/// Phase 4 scope: exactly one literal, anchored at the end of the
-/// command. Embedded mid-command literals (e.g. `LOGIN {n}\r\n...{n}\r\n...`)
-/// would require re-entering the literal protocol for every fragment;
-/// they remain unsupported until the imap-codec/imap-next swap.
+/// Most commands carry at most one literal, anchored at the end of the
+/// command. A command read through [`read_command_multi`] (SEARCH) may
+/// continue after it; the rest arrives in `continuation`.
 #[derive(Debug, Clone)]
 pub struct Command {
     /// Command line bytes with any trailing literal marker (and the
@@ -184,6 +183,19 @@ pub struct Command {
     pub line: Vec<u8>,
     /// Literal body bytes — exactly `N` octets when present. `None`
     /// means the command had no literal indicator.
+    pub literal: Option<Vec<u8>>,
+    /// What followed `literal`, in wire order. Always empty for a
+    /// single-literal command.
+    pub continuation: Vec<Segment>,
+}
+
+/// One piece of a multi-literal command after its first literal: the
+/// argument text up to the next literal marker (marker and the space
+/// before it stripped), then that literal's body, or `None` for the
+/// final text that ended the command.
+#[derive(Debug, Clone)]
+pub struct Segment {
+    pub text: Vec<u8>,
     pub literal: Option<Vec<u8>>,
 }
 
@@ -310,6 +322,37 @@ where
     W: AsyncWrite + Unpin,
     F: FnOnce(&[u8]) -> bool,
 {
+    read_command_multi(reader, writer, max_literal, accept_literals, |_| false).await
+}
+
+/// Total literal bytes (plus continuation text) one multi-literal
+/// command may carry. These are search strings, not message bodies.
+pub const MAX_MULTI_LITERAL_BYTES: u64 = 64 * 1024;
+
+/// Most literals one multi-literal command may carry.
+pub const MAX_MULTI_LITERALS: usize = 64;
+
+/// [`read_command`], but a command for which `multi_literal(line)`
+/// is true may continue after its first literal: more argument text,
+/// and more literals, until a line ends without a marker (SEARCH's
+/// `OR FROM {4}\r\ncafé SUBJECT {4}\r\ncafé\r\n`). Those pieces come
+/// back in [`Command::continuation`] in wire order. All literals and
+/// continuation text together are capped at
+/// [`MAX_MULTI_LITERAL_BYTES`], and at most [`MAX_MULTI_LITERALS`]
+/// literals are read.
+pub async fn read_command_multi<R, W, F, G>(
+    reader: &mut BufReader<R>,
+    writer: &mut W,
+    max_literal: u64,
+    accept_literals: F,
+    multi_literal: G,
+) -> Result<Command, ReadCommandError>
+where
+    R: AsyncRead + Unpin,
+    W: AsyncWrite + Unpin,
+    F: FnOnce(&[u8]) -> bool,
+    G: FnOnce(&[u8]) -> bool,
+{
     let raw = match read_line(reader).await {
         Ok(l) => l,
         Err(ReadLineError::Eof) => return Err(ReadCommandError::Eof),
@@ -323,6 +366,7 @@ where
             return Ok(Command {
                 line: raw,
                 literal: None,
+                continuation: Vec::new(),
             });
         }
         Err(e) => {
@@ -360,6 +404,96 @@ where
         });
     }
 
+    let multi = multi_literal(&line);
+    let max_literal = if multi {
+        max_literal.min(MAX_MULTI_LITERAL_BYTES)
+    } else {
+        max_literal
+    };
+    let body = read_literal_body(reader, writer, &line, marker, max_literal).await?;
+    let mut used = body.len() as u64;
+    let mut continuation: Vec<Segment> = Vec::new();
+
+    // After the literal body, the command continues. A single-literal
+    // command (APPEND) only supports the "literal is the final
+    // argument" shape — the trailing line must be empty (just CRLF).
+    // A multi-literal command reads text and further literals until a
+    // line ends without a marker.
+    loop {
+        let trailing = match read_line(reader).await {
+            Ok(t) => t,
+            Err(ReadLineError::Eof) => return Err(ReadCommandError::Eof),
+            Err(ReadLineError::LineTooLong) => return Err(ReadCommandError::LineTooLong),
+            Err(ReadLineError::Io(e)) => return Err(ReadCommandError::Io(e)),
+        };
+        if trailing.is_empty() {
+            break;
+        }
+        if !multi {
+            return Err(ReadCommandError::MalformedLiteral {
+                line,
+                reason: "data after literal body; mid-command literals not supported for this command"
+                    .to_string(),
+            });
+        }
+        match strip_trailing_literal_marker(&trailing) {
+            Ok(None) => {
+                continuation.push(Segment {
+                    text: trailing,
+                    literal: None,
+                });
+                break;
+            }
+            Ok(Some((text, next))) => {
+                if continuation.len() + 1 >= MAX_MULTI_LITERALS {
+                    if next.non_sync {
+                        // Keep the stream in sync: swallow the body and
+                        // whatever remains of the command.
+                        drain_n(reader, next.declared).await.map_err(io_to_err)?;
+                        let _ = read_line(reader).await;
+                    }
+                    return Err(ReadCommandError::MalformedLiteral {
+                        line,
+                        reason: format!("more than {MAX_MULTI_LITERALS} literals in one command"),
+                    });
+                }
+                used += text.len() as u64;
+                let cap = max_literal.saturating_sub(used);
+                let lit = read_literal_body(reader, writer, &line, next, cap).await?;
+                used += lit.len() as u64;
+                continuation.push(Segment {
+                    text,
+                    literal: Some(lit),
+                });
+            }
+            Err(reason) => return Err(ReadCommandError::MalformedLiteral { line, reason }),
+        }
+    }
+
+    Ok(Command {
+        line,
+        literal: Some(body),
+        continuation,
+    })
+}
+
+/// Read one literal body announced by `marker`: refuse it when it is
+/// over `max_literal` (draining a non-sync body to keep the stream in
+/// sync), send the `+` continuation for a sync literal, then read
+/// exactly `N` bytes. `line` is only carried into errors so the caller
+/// can sniff the tag.
+async fn read_literal_body<R, W>(
+    reader: &mut BufReader<R>,
+    writer: &mut W,
+    line: &[u8],
+    marker: LiteralMarker,
+    max_literal: u64,
+) -> Result<Vec<u8>, ReadCommandError>
+where
+    R: AsyncRead + Unpin,
+    W: AsyncWrite + Unpin,
+{
+    let line = line.to_vec();
     // Cap check.
     if marker.declared > max_literal {
         if marker.non_sync {
@@ -429,29 +563,7 @@ where
         }
         return Err(ReadCommandError::Io(e));
     }
-
-    // After the literal body, the command continues. only supports
-    // the "literal is the final argument" shape — the trailing line
-    // must be empty (just CRLF). Anything else is treated as malformed
-    // for now; a future imap-codec swap accepts mid-command literals.
-    let trailing = match read_line(reader).await {
-        Ok(t) => t,
-        Err(ReadLineError::Eof) => return Err(ReadCommandError::Eof),
-        Err(ReadLineError::LineTooLong) => return Err(ReadCommandError::LineTooLong),
-        Err(ReadLineError::Io(e)) => return Err(ReadCommandError::Io(e)),
-    };
-    if !trailing.is_empty() {
-        return Err(ReadCommandError::MalformedLiteral {
-            line,
-            reason: "data after literal body; mid-command literals not supported in this phase"
-                .to_string(),
-        });
-    }
-
-    Ok(Command {
-        line,
-        literal: Some(body),
-    })
+    Ok(body)
 }
 
 /// Walk back through `line` looking for a trailing `{N}` / `{N+}`

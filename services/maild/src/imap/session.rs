@@ -1153,7 +1153,7 @@ impl Session {
             let command_name = parts.next().unwrap_or(b"");
             command_name.eq_ignore_ascii_case(b"APPEND") || is_search_line(line)
         };
-        let fut = codec::read_command(reader, writer, max_lit, accept_literals);
+        let fut = codec::read_command_multi(reader, writer, max_lit, accept_literals, is_search_line);
         let result = if !self.state.is_authenticated() {
             match timeout(self.cfg.pre_auth_timeout, fut).await {
                 Ok(r) => r,
@@ -1591,30 +1591,40 @@ fn is_search_line(line: &[u8]) -> bool {
     }
 }
 
-/// Fold a SEARCH command's trailing literal back into its line as a
-/// quoted string (`FROM {5}` + `Zoë` → `FROM "Zoë"`). The codec only
-/// frames a literal that ends the command, which is the shape a
-/// client sends for a single non-ASCII search string. A search string
-/// is a needle, not a message body, so anything over a line's worth
-/// is refused.
+/// Fold a SEARCH command's literals back into one line, each as a
+/// quoted string (`OR FROM {4}` `café` ` SUBJECT {4}` `café` →
+/// `OR FROM "café" SUBJECT "café"`), so `op::search` parses a flat
+/// line. The codec has already capped the total size
+/// ([`codec::MAX_MULTI_LITERAL_BYTES`]).
 fn splice_search_literal(cmd: &mut codec::Command) -> Result<(), &'static str> {
-    let Some(lit) = cmd.literal.take() else {
+    let Some(first) = cmd.literal.take() else {
         return Ok(());
     };
-    if lit.len() > codec::MAX_LINE_BYTES {
-        return Err("SEARCH literal too large");
+    push_quoted(&mut cmd.line, &first)?;
+    for seg in std::mem::take(&mut cmd.continuation) {
+        cmd.line.extend_from_slice(&seg.text);
+        if let Some(lit) = seg.literal {
+            push_quoted(&mut cmd.line, &lit)?;
+        }
     }
-    let text = std::str::from_utf8(&lit).map_err(|_| "SEARCH literal is not UTF-8")?;
-    let mut quoted = String::with_capacity(text.len() + 3);
-    quoted.push_str(" \"");
+    Ok(())
+}
+
+/// Append ` "<lit>"` to `line`, escaping `"` and `\`.
+fn push_quoted(line: &mut Vec<u8>, lit: &[u8]) -> Result<(), &'static str> {
+    let text = std::str::from_utf8(lit).map_err(|_| "SEARCH literal is not UTF-8")?;
+    if text.contains(['\r', '\n', '\0']) {
+        return Err("SEARCH literal contains CR, LF or NUL");
+    }
+    line.extend_from_slice(b" \"");
     for c in text.chars() {
         if c == '"' || c == '\\' {
-            quoted.push('\\');
+            line.push(b'\\');
         }
-        quoted.push(c);
+        let mut buf = [0u8; 4];
+        line.extend_from_slice(c.encode_utf8(&mut buf).as_bytes());
     }
-    quoted.push('"');
-    cmd.line.extend_from_slice(quoted.as_bytes());
+    line.push(b'"');
     Ok(())
 }
 
@@ -1635,6 +1645,7 @@ mod tests {
         let mut cmd = codec::Command {
             line: b"a1 UID SEARCH CHARSET UTF-8 FROM".to_vec(),
             literal: Some("Zoë \"z\\\"".as_bytes().to_vec()),
+            continuation: Vec::new(),
         };
         splice_search_literal(&mut cmd).unwrap();
         assert!(cmd.literal.is_none());
@@ -1645,8 +1656,47 @@ mod tests {
         let mut bad = codec::Command {
             line: b"a1 SEARCH BODY".to_vec(),
             literal: Some(vec![0xff, 0xfe]),
+            continuation: Vec::new(),
         };
         assert!(splice_search_literal(&mut bad).is_err());
+    }
+
+    /// Thunderbird's non-ASCII quick filter: two literals, the second
+    /// followed by a closing paren, end to end through the codec.
+    #[tokio::test]
+    async fn search_with_several_literals_reaches_one_flat_line() {
+        let wire = "a1 UID SEARCH CHARSET UTF-8 (OR FROM {5}\r\ncafé SUBJECT {5+}\r\ncafé) UNDELETED\r\n";
+        let mut reader = tokio::io::BufReader::new(wire.as_bytes());
+        let mut writer: Vec<u8> = Vec::new();
+        let mut cmd =
+            codec::read_command_multi(&mut reader, &mut writer, 1024, |_| true, is_search_line)
+                .await
+                .unwrap();
+        // One continuation request: the first literal is sync, the
+        // second non-sync.
+        assert_eq!(writer, b"+ Ready for literal data\r\n");
+        splice_search_literal(&mut cmd).unwrap();
+        let line = String::from_utf8(cmd.line.clone()).unwrap();
+        assert_eq!(
+            line,
+            "a1 UID SEARCH CHARSET UTF-8 (OR FROM \"café\" SUBJECT \"café\") UNDELETED"
+        );
+        let parsed = codec::parse_line(&cmd.line).unwrap();
+        let inner = parsed.args.strip_prefix("SEARCH ").unwrap();
+        op::search::parse_args_for_dispatch(inner, op::search::SearchMode::Uid).unwrap();
+    }
+
+    /// A non-SEARCH command still may not continue after its literal.
+    #[tokio::test]
+    async fn append_rejects_data_after_literal() {
+        let wire = "a1 APPEND INBOX {2+}\r\nhi EXTRA\r\n";
+        let mut reader = tokio::io::BufReader::new(wire.as_bytes());
+        let mut writer: Vec<u8> = Vec::new();
+        let err =
+            codec::read_command_multi(&mut reader, &mut writer, 1024, |_| true, is_search_line)
+                .await
+                .unwrap_err();
+        assert!(matches!(err, codec::ReadCommandError::MalformedLiteral { .. }), "{err}");
     }
 
     /// `snapshot` reflects live acquires, drops to zero-count rows once

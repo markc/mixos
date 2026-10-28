@@ -208,6 +208,7 @@
                 <div class="panel-title">On this page</div>
                 <div class="panel-content">
                     <nav id="toc-nav">
+                        <a href="#unreleased">Unreleased</a>
                         <a href="#011--2026-10-18">0.1.1 — 2026-10-18</a>
                     </nav>
                 </div>
@@ -237,6 +238,20 @@
 <blockquote>
 <p>Mirrored from <a href="https://github.com/markc/mixos/blob/main/services/maild/CHANGELOG.md"><code>services/maild/CHANGELOG.md</code></a>, where releases update it. The component's page is <a href="/maild/">maild</a>. This page describes the current <code>main</code> branch of MixOS.</p>
 </blockquote>
+<h2 id="unreleased">Unreleased</h2>
+<ul>
+<li>IMAP <code>SEARCH</code> and <code>UID SEARCH</code> implement the header, date and text keys:
+<code>FROM</code>, <code>TO</code>, <code>CC</code>, <code>BCC</code>, <code>SUBJECT</code>, <code>HEADER</code>, <code>BODY</code>, <code>TEXT</code>, <code>BEFORE</code>,
+<code>ON</code>, <code>SINCE</code>, <code>SENTBEFORE</code>, <code>SENTON</code> and <code>SENTSINCE</code>. They were refused
+as deferred, so Thunderbird quick filters failed on every folder. Header
+keys match the raw and RFC 2047 decoded field; <code>BODY</code> covers every text
+and HTML part. A blob is read only for messages that flags, size and
+sequence keys leave undecided; an unreadable blob answers
+<code>NO [UNAVAILABLE]</code> rather than a partial result.</li>
+<li><code>SEARCH</code> accepts string literals anywhere in the command, including several
+in one command (64 literals and 64 KiB at most). Other commands keep the
+single trailing literal.</li>
+</ul>
 <h2 id="011--2026-10-18">0.1.1 — 2026-10-18</h2>
 <ul>
 <li>Port the JMAP, SMTP, IMAP, CalDAV and CardDAV daemon and its authentication,

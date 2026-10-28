@@ -484,14 +484,23 @@ impl Doc {
                 )
             })
             .collect();
+        // Every decoded text part, not just the preferred body list:
+        // mail_parser keeps the plain and HTML halves of a
+        // multipart/alternative in separate lists, and a term may sit
+        // only in the HTML one.
         let mut body = String::new();
-        let mut pos = 0;
-        while let Some(text) = message.body_text(pos) {
+        for part in &message.parts {
+            let text = match &part.body {
+                mail_parser::PartType::Text(t) => t.to_lowercase(),
+                mail_parser::PartType::Html(h) => {
+                    mail_parser::decoders::html::html_to_text(h).to_lowercase()
+                }
+                _ => continue,
+            };
             if !body.is_empty() {
                 body.push('\n');
             }
-            body.push_str(&text.to_lowercase());
-            pos += 1;
+            body.push_str(&text);
         }
         let sent = message
             .date()
@@ -612,11 +621,16 @@ fn eval(
 /// Judge every message in the snapshot, loading and parsing a blob
 /// only for messages the metadata alone leaves undecided. Runs on a
 /// blocking thread: blob reads are synchronous filesystem work.
+///
+/// A blob that cannot be read fails the whole SEARCH: skipping the
+/// row would turn a storage fault into an authoritative "no match"
+/// (and a false match under `NOT`), with nothing telling the client
+/// to retry.
 fn collect_hits(
     crit: &Crit,
     handles: &[EmailHandle],
     store: &dyn MailStore,
-) -> Vec<(u32, u64)> {
+) -> anyhow::Result<Vec<(u32, u64)>> {
     let exists = u32::try_from(handles.len()).unwrap_or(u32::MAX);
     let largest_uid = handles.last().map(|h| h.uid).unwrap_or(0);
     let mut hits: Vec<(u32, u64)> = Vec::with_capacity(handles.len());
@@ -624,28 +638,24 @@ fn collect_hits(
         let msn = (idx + 1) as u32;
         let hit = match eval(crit, msn, handle, exists, largest_uid, None) {
             Some(decided) => decided,
-            None => match store.read_blob(handle.blob_hash) {
-                Ok(raw) => {
-                    let doc = Doc::from_raw(&raw);
-                    eval(crit, msn, handle, exists, largest_uid, Some(&doc)).unwrap_or(false)
-                }
-                Err(e) => {
-                    // A missing blob cannot match a content key; skip
-                    // the row rather than fail the whole SEARCH.
+            None => {
+                let raw = store.read_blob(handle.blob_hash).map_err(|e| {
                     tracing::warn!(
                         error = %e,
                         item_id = %handle.id.0,
-                        "SEARCH read_blob failed; treating message as non-matching"
+                        "SEARCH read_blob failed"
                     );
-                    false
-                }
-            },
+                    e
+                })?;
+                let doc = Doc::from_raw(&raw);
+                eval(crit, msn, handle, exists, largest_uid, Some(&doc)).unwrap_or(false)
+            }
         };
         if hit {
             hits.push((msn, handle.uid));
         }
     }
-    hits
+    Ok(hits)
 }
 
 pub async fn handle(
@@ -699,7 +709,12 @@ pub async fn handle(
     })
     .await
     {
-        Ok(h) => h,
+        Ok(Ok(h)) => h,
+        Ok(Err(_)) => {
+            // Logged per message in `collect_hits`. UNAVAILABLE: a
+            // storage fault the client may retry, not a protocol bug.
+            return tagged(tag, Status::No, Some("UNAVAILABLE"), "search failed: message unreadable");
+        }
         Err(e) => {
             tracing::warn!(error = %e, "SEARCH evaluation panicked");
             return tagged(tag, Status::No, Some("SERVERBUG"), "search failed");
@@ -1001,6 +1016,29 @@ The quarterly Invoice is attached.\r\n";
         assert!(matches_raw(&Crit::Text("alice".into()), &h, RAW));
         assert!(matches_raw(&Crit::Text("quarterly".into()), &h, RAW));
         assert!(!matches_raw(&Crit::Text("absent".into()), &h, RAW));
+    }
+
+    /// A term only in the HTML half of multipart/alternative is found.
+    #[test]
+    fn matches_body_in_html_alternative() {
+        let raw = b"From: a@example.com\r\n\
+Subject: x\r\n\
+MIME-Version: 1.0\r\n\
+Content-Type: multipart/alternative; boundary=\"b\"\r\n\
+\r\n\
+--b\r\n\
+Content-Type: text/plain\r\n\
+\r\n\
+plain words\r\n\
+--b\r\n\
+Content-Type: text/html\r\n\
+\r\n\
+<p>only <b>htmlterm</b> here</p>\r\n\
+--b--\r\n";
+        let h = make_handle(1, 0, 100);
+        assert!(matches_raw(&Crit::Body("plain words".into()), &h, raw));
+        assert!(matches_raw(&Crit::Body("htmlterm".into()), &h, raw));
+        assert!(matches_raw(&Crit::Text("htmlterm".into()), &h, raw));
     }
 
     #[test]
