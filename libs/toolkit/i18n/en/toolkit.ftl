@@ -115,6 +115,7 @@ file-chooser-name-required = Enter a file name.
 file-chooser-name-invalid = Enter a file name without a folder separator.
 file-chooser-name-link = { $name } is a link; choose another name
 file-chooser-replace-title = Replace file?
+file-chooser-replace-files-title = Replace existing files?
 file-chooser-replace = Replace
 file-chooser-replace-body = Replace { $path }?
 file-chooser-loading = Loading…

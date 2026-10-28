@@ -392,7 +392,7 @@ impl FileChooser {
         if let Some(path) = self.replace.clone() {
             let id = self.id.with("replace");
             ctx.move_to_top(egui::LayerId::new(egui::Order::Foreground, id));
-            let shown = Dialog::new(id, own("file-chooser-replace-title"))
+            let shown = Dialog::new(id, own(if self.batch.is_some() { "file-chooser-replace-files-title" } else { "file-chooser-replace-title" }))
                 .buttons(vec![
                     Choice::new(own("file-chooser-replace"), Role::Default),
                     Choice::new(own("file-chooser-cancel"), Role::Cancel),
