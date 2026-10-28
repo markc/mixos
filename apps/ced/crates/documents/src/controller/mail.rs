@@ -613,11 +613,13 @@ mod tests {
     #[test]
     fn saved_body_uses_the_same_canonical_form_as_disk_and_reseed() {
         let (mut c, mut service, tab) = opened(LETTER);
-        let fx = c.on_editor(tab, EditorMsg::Command(EditCommand::Insert("\r\n ".into())));
+        c.tab_mut(tab).unwrap().editor.sel = Selection { anchor:4, head:4 };
+        let fx = c.on_editor(tab, EditorMsg::Command(EditCommand::Insert("\r\n \t".into())));
         settle(&mut c, &mut service, fx);
         let fx = execute(&mut c, tab, "file.save");
         let Effect::SaveMail { path, text, send, command, .. } = fx.into_iter().find(|e| matches!(e, Effect::SaveMail { .. })).unwrap() else { unreachable!() };
         let body = maildoc::parse(&text).unwrap().body;
+        assert_eq!(body, "Body");
         c.on_mail_saved(tab, path, text, send, command, Ok(()));
         assert_eq!(c.tab(tab).unwrap().mail.as_ref().unwrap().saved_body, body);
         assert!(!c.tab(tab).unwrap().dirty());
