@@ -695,9 +695,9 @@ fn status(ui: &mut Ui, app: &App, connected: bool) {
             format!("UTF-8 · {eol}")
         });
         ui.small(label_with("status-rev", &[("rev", &m.rev().to_string())]));
-        ui.small(if meta.dirty {
+        ui.small(if tab.dirty() {
             label("status-modified")
-        } else if meta.path.is_some() {
+        } else if tab.path.is_some() {
             label("status-saved")
         } else {
             label("status-unsaved")

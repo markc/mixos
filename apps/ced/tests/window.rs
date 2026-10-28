@@ -358,6 +358,7 @@ fn mail_document_header_strip_pro_light() {
     assert!(tab.mail.is_some());
     assert!(!tab.dirty());
     assert!(app.enabled(documents::actions::ActionId::FileSend));
+    assert!(h.query_all_by_label("Saved").next().is_some());
     assert!(
         h.query_all_by_label("Subject")
             .any(|node| node.rect().is_positive())
