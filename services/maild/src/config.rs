@@ -73,9 +73,11 @@ pub struct Config {
     pub sieve_listen: Option<ListenSpec>,
     /// False uses RFC 5804 STARTTLS. True selects implicit TLS.
     pub sieve_implicit_tls: bool,
-    /// Account domains allowed to send Sieve redirects/automatic replies off-site.
+    /// Account domains allowed to send Sieve redirects off-site.
     /// Exact domain names; empty (default) denies all external destinations.
     pub sieve_external_domains: Vec<String>,
+    /// Permit vacation replies to external senders (default true).
+    pub sieve_vacation_external: bool,
     /// Local source address(es) to bind for OUTBOUND SMTP delivery
     /// connections, e.g. `["2001:db8::25"]`. At most one entry
     /// per family applies: dialling an IPv6 MX binds the v6 entry (if
@@ -299,6 +301,7 @@ impl Default for Config {
             sieve_listen: None,
             sieve_implicit_tls: false,
             sieve_external_domains: Vec::new(),
+            sieve_vacation_external: true,
             imap_max_literal_bytes: None,
             imap_idle_status_interval_secs: None,
             imap_pre_auth_timeout_secs: None,
@@ -389,6 +392,7 @@ impl From<&::config::node::NodeConfig> for Config {
             sieve_listen: None,
             sieve_implicit_tls: false,
             sieve_external_domains: Vec::new(),
+            sieve_vacation_external: true,
             smtp_outbound_bind: Vec::new(),
             max_message_size: None,
             dkim_selector: None,

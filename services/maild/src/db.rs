@@ -116,6 +116,8 @@ pub struct Db {
     pub conn: Arc<Mutex<Connection>>,
     pub blob_dir: std::path::PathBuf,
     pub sieve_external_domains: Arc<Vec<String>>,
+    pub sieve_vacation_external: bool,
+    pub sieve_hostname: Arc<String>,
 }
 
 impl Db {
@@ -140,6 +142,8 @@ impl Db {
             migration: Arc::new(tokio::sync::Semaphore::new(1)),
             blob_dir,
             sieve_external_domains: Arc::new(Vec::new()),
+            sieve_vacation_external: true,
+            sieve_hostname: Arc::new("localhost".into()),
         })
     }
 

@@ -428,6 +428,8 @@ fn body_transform_work_is_bounded_when_decoded_text_is_empty() {
 }
 #[test]
 fn header_and_expansion_allocations_are_bounded_before_matching() {
+    // A large *header* copied repeatedly still consumes the allocation budget;
+    // unrelated attachment bytes are covered by the separate positive test.
     let data = format!("Subject: {}\r\n\r\nbody", "x".repeat(1024 * 1024));
     let names = vec!["\"Subject\""; 16].join(",");
     let script = compile(&format!(
@@ -473,6 +475,55 @@ fn header_and_expansion_allocations_are_bounded_before_matching() {
             })
             .is_err()
     );
+}
+
+#[test]
+fn large_bodies_do_not_spend_the_header_or_unselected_body_budget() {
+    let mut data = b"From: sender@example.org\r\nSubject: report\r\nContent-Type: application/octet-stream\r\n\r\n".to_vec();
+    data.extend(vec![b'x'; 20 * 1024 * 1024]);
+    let tests = vec!["header :is \"Subject\" \"report\""; 10].join(",");
+    let source = format!("if allof({tests},exists [\"Subject\",\"From\"],address \"From\" \"sender@example.org\") {{ discard; }}");
+    let plan = compile(&source).unwrap().evaluate(Context { data: &data, from: "a", to: "b" }).unwrap();
+    assert!(plan.discarded);
+    let mut mime = b"Subject: report\r\nContent-Type: multipart/mixed; boundary=b\r\n\r\n--b\r\nContent-Type: text/plain\r\n\r\nsmall selected part\r\n--b\r\nContent-Type: application/octet-stream\r\n\r\n".to_vec();
+    mime.extend(vec![b'x'; 20 * 1024 * 1024]);
+    mime.extend_from_slice(b"\r\n--b--\r\n");
+    assert!(compile("require \"body\"; if body :text :contains \"selected\" { discard; }").unwrap().evaluate(Context {data: &mime, from:"a", to:"b"}).unwrap().discarded);
+}
+
+#[test]
+fn address_parses_every_named_custom_field_and_dynamic_selector() {
+    let fields = ["Delivered-To", "X-Original-To", "Return-Path", "Envelope-To", "Errors-To", "Mail-Followup-To", "Disposition-Notification-To"];
+    let mut data = String::new();
+    for field in fields {
+        data.push_str(&format!("{field}: Group: Other <other@example.net>, Person <person@example.org>;\r\n"));
+    }
+    data.push_str("X-Original-To: last@example.org\r\n\r\nbody");
+    for field in fields {
+        let script = format!(r#"require ["variables","index"]; set "field" "{field}"; if allof(address "${{field}}" "person@example.org",address :domain "{field}" "example.net",address :localpart "{field}" "person") {{ discard; }}"#);
+        assert!(compile(&script).unwrap().evaluate(Context {data: data.as_bytes(),from:"a",to:"b"}).unwrap().discarded, "{field}");
+    }
+    assert!(compile(r#"require "index"; if address :index 1 :last "X-Original-To" "last@example.org" { discard; }"#).unwrap().evaluate(Context {data:data.as_bytes(),from:"a",to:"b"}).unwrap().discarded);
+}
+
+#[test]
+fn ascii_casemap_relational_order_uses_uppercase_for_strings_headers_and_octets() {
+    assert!(matches(r#"string :value "lt" "a" "[""#));
+    assert!(matches(r#"header :value "lt" "Subject" "[""#));
+    assert!(!matches(r#"string :value "lt" :comparator "i;octet" "a" "[""#));
+    let script = compile(r#"require ["body","relational"]; if body :content "application/octet-stream" :value "lt" "[" { discard; }"#).unwrap();
+    assert!(script.evaluate(Context {data:b"Content-Type: application/octet-stream\r\n\r\na",from:"a",to:"b"}).unwrap().discarded);
+}
+
+#[test]
+fn discard_is_compatible_with_reject_in_either_order() {
+    for source in [r#"require "reject"; discard; reject "Denied";"#, r#"require "ereject"; ereject "Denied"; discard;"#] {
+        let plan = evaluate(source);
+        assert_eq!(plan.reject.as_deref(), Some("Denied"));
+        assert!(plan.discarded);
+        assert!(plan.filings.is_empty());
+    }
+    assert!(compile(r#"require ["reject","fileinto"]; fileinto "Folder"; reject "Denied";"#).unwrap().evaluate(Context {data:MESSAGE,from:"a",to:"b"}).is_err());
 }
 #[test]
 fn nested_invalid_variable_references_consume_scan_budget() {

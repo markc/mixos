@@ -9,26 +9,34 @@ use crate::{
 use anyhow::{Result, ensure};
 use mail_parser::MessageParser;
 use mds::{ContainerAttrs, ContainerId, Flags, ItemId, Mds, Tags};
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::{HashMap, HashSet}, sync::Arc};
 
-/// Remove sender-supplied verdicts before adding the daemon's own values.
-pub fn stamp_spam(data: &[u8], verdict: &str, score: f64) -> Vec<u8> {
-    let mut bytes =
-        format!("X-Mixos-Spam-Verdict: {verdict}\r\nX-Mixos-Spam-Score: {score:.4}\r\n")
-            .into_bytes();
+fn strip_headers(data: &[u8], remove: impl Fn(&str) -> bool) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(data.len());
     let mut cursor = 0;
-    if let Some(message) = MessageParser::default().parse(data) {
+    if let Some(message) = MessageParser::default().parse_headers(data) {
         for header in message.headers() {
-            if ["X-Mixos-Spam-Verdict", "X-Mixos-Spam-Score"]
-                .iter()
-                .any(|n| header.name.as_str().eq_ignore_ascii_case(n))
-            {
+            if remove(header.name.as_str()) {
                 bytes.extend_from_slice(&data[cursor..header.offset_field as usize]);
                 cursor = header.offset_end as usize;
             }
         }
     }
     bytes.extend_from_slice(&data[cursor..]);
+    bytes
+}
+
+/// This private marker is never trusted as loop-control evidence.
+pub fn strip_hop(data: &[u8]) -> Vec<u8> {
+    strip_headers(data, |name| name.eq_ignore_ascii_case("X-Mixos-Sieve-Hop"))
+}
+
+/// Remove sender-supplied verdicts before adding the daemon's own values.
+pub fn stamp_spam(data: &[u8], verdict: &str, score: f64) -> Vec<u8> {
+    let mut bytes =
+        format!("X-Mixos-Spam-Verdict: {verdict}\r\nX-Mixos-Spam-Score: {score:.4}\r\n")
+            .into_bytes();
+    bytes.extend(strip_headers(data, |name| name.to_ascii_lowercase().starts_with("x-mixos-spam-")));
     bytes
 }
 
@@ -103,6 +111,7 @@ fn address(address: &str) -> Result<()> {
         .ok_or_else(|| anyhow::anyhow!("invalid address"))?;
     ensure!(
         !local.is_empty()
+            && !local.contains('@')
             && !domain.is_empty()
             && address.len() <= 254
             && address
@@ -199,7 +208,8 @@ pub async fn deliver(
     delivery: Delivery<'_>,
 ) -> Result<Option<ItemId>> {
     let mut remaining = super::MAX_REDIRECTS;
-    deliver_inner(db, ms, delivery, &mut remaining).await
+    let hops = own_received(delivery.data, &db.sieve_hostname);
+    deliver_inner(db, ms, delivery, &mut remaining, hops).await
 }
 
 async fn deliver_inner(
@@ -207,6 +217,7 @@ async fn deliver_inner(
     ms: &Arc<SqliteMailStore>,
     delivery: Delivery<'_>,
     remaining: &mut usize,
+    hops: usize,
 ) -> Result<Option<ItemId>> {
     let selected = plan(db, ms, &delivery).await;
     let mut plan = match selected {
@@ -233,7 +244,15 @@ async fn deliver_inner(
                 .iter()
                 .any(|allowed| allowed.eq_ignore_ascii_case(d))
         });
-    let validation = validate(db, &delivery, &plan, external, *remaining).await;
+    let allowed = if hops >= super::MAX_REDIRECTS { 0 } else { *remaining };
+    if plan.redirects.len() > allowed {
+        tracing::warn!(account=delivery.account.id, hops, "Sieve redirect hop/action budget exhausted; dropping redirects");
+        plan.redirects.truncate(allowed);
+        if plan.redirects.is_empty() && plan.filings.is_empty() && !plan.discarded && plan.reject.is_none() {
+            plan.filings.push(super::interpreter::Filing::default());
+        }
+    }
+    let validation = validate(db, &delivery, &plan, external).await;
     let redirects = match validation {
         Ok(redirects) => redirects,
         Err(error) => {
@@ -388,13 +407,7 @@ async fn deliver_inner(
         *remaining -= plan.redirects.len();
         let mut handled = first.is_some() || plan.discarded;
         for (destination, local) in redirects {
-            let depth = redirect_depth(delivery.data);
-            if depth >= super::MAX_REDIRECTS {
-                tracing::warn!("Sieve redirect loop suppressed");
-                continue;
-            }
-            let mut bytes = format!("X-Mixos-Sieve-Hop: {}\r\n", depth + 1).into_bytes();
-            bytes.extend_from_slice(delivery.data);
+            let bytes = delivery.data;
             let result = async {
                 if let Some(account) = local {
                     let inbox = ms
@@ -406,11 +419,11 @@ async fn deliver_inner(
                             &account,
                             delivery.from,
                             &destination,
-                            &bytes,
+                            bytes,
                         )
                         .await?
                     } else {
-                        (inbox, bytes.clone(), delivery.spam)
+                        (inbox, bytes.to_vec(), delivery.spam)
                     };
                     Box::pin(deliver_inner(
                         db,
@@ -429,10 +442,15 @@ async fn deliver_inner(
                             routing: delivery.routing,
                         },
                         remaining,
+                        hops + 1,
                     ))
                     .await?;
                 } else {
-                    enqueue(db, ms, delivery.from, &destination, &bytes).await?;
+                    let mut outgoing = format!("Received: from {host} by {host} with ESMTP; {date}\r\n",
+                        host=crate::smtp::inbound::header_value_safe(&db.sieve_hostname),
+                        date=chrono::Utc::now().to_rfc2822()).into_bytes();
+                    outgoing.extend(strip_headers(bytes, |name| name.eq_ignore_ascii_case("X-Mixos-Sieve-Hop") || name.to_ascii_lowercase().starts_with("x-mixos-spam-")));
+                    enqueue(db, ms, delivery.from, &destination, &outgoing).await?;
                 }
                 Ok::<(), anyhow::Error>(())
             }
@@ -447,7 +465,7 @@ async fn deliver_inner(
         }
     }
     if let Some(vacation) = plan.vacation
-        && let Err(error) = vacation_reply(db, ms, &delivery, &vacation, external).await
+        && let Err(error) = vacation_reply(db, ms, &delivery, &vacation, db.sieve_vacation_external).await
     {
         tracing::warn!(%error,"Sieve vacation reply failed; retaining original delivery outcome");
     }
@@ -470,16 +488,16 @@ fn rejection_report(domain: &str, sender: &str, recipient: &str, reason: &str) -
     format!("From: <postmaster@{domain}>\r\nTo: <{sender}>\r\nDate: {date}\r\nMessage-ID: <{boundary}@{domain}>\r\nSubject: Message refused by recipient filter\r\nAuto-Submitted: auto-generated\r\nMIME-Version: 1.0\r\nContent-Type: multipart/report; report-type=delivery-status; boundary=\"{boundary}\"\r\n\r\n--{boundary}\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\nThe recipient's mail filter refused your message.\r\n\r\n{reason}\r\n\r\n--{boundary}\r\nContent-Type: message/delivery-status\r\n\r\nReporting-MTA: dns; {domain}\r\n\r\nFinal-Recipient: rfc822; {recipient}\r\nAction: failed\r\nStatus: 5.7.1\r\n\r\n--{boundary}--\r\n").into_bytes()
 }
 
-fn redirect_depth(data: &[u8]) -> usize {
-    MessageParser::default()
-        .parse(data)
+fn own_received(data: &[u8], hostname: &str) -> usize {
+    MessageParser::new().header_text("Received")
+        .parse_headers(data)
         .map(|m| {
             m.headers()
                 .iter()
-                .filter(|h| h.name.as_str().eq_ignore_ascii_case("X-Mixos-Sieve-Hop"))
-                .filter_map(|h| h.value.as_text()?.trim().parse::<usize>().ok())
-                .max()
-                .unwrap_or(0)
+                .filter(|h| h.name.as_str().eq_ignore_ascii_case("Received"))
+                .filter_map(|h| h.value.as_text())
+                .filter(|value| value.split_ascii_whitespace().collect::<Vec<_>>().windows(2).any(|words| words[0].eq_ignore_ascii_case("by") && words[1].trim_end_matches(';').eq_ignore_ascii_case(hostname)))
+                .count()
         })
         .unwrap_or(0)
 }
@@ -488,17 +506,8 @@ async fn validate(
     delivery: &Delivery<'_>,
     plan: &Plan,
     external: bool,
-    remaining: usize,
 ) -> Result<Vec<(String, Option<db::account::Account>)>> {
     let mut redirects = Vec::new();
-    ensure!(
-        plan.redirects.is_empty() || redirect_depth(delivery.data) < super::MAX_REDIRECTS,
-        "redirect hop limit"
-    );
-    ensure!(
-        plan.redirects.len() <= remaining,
-        "local redirect budget exhausted"
-    );
     for target in &plan.redirects {
         address(target)?;
         let local = db::account::get_by_email(&db.conn, &target.to_ascii_lowercase()).await?;
@@ -557,6 +566,7 @@ struct MailboxResolver {
     paths: HashMap<String, ContainerId>,
     steps: usize,
     refreshed: bool,
+    writable: HashSet<ContainerId>,
 }
 impl MailboxResolver {
     fn from_mailboxes(boxes: Vec<super::mailboxes::Mailbox>) -> Result<Self> {
@@ -567,7 +577,9 @@ impl MailboxResolver {
         let inbox = boxes.iter().find(|entry| entry.inbox).map(|entry| entry.id);
         let mut children = HashMap::new();
         let mut bytes = 0;
+        let mut writable = HashSet::new();
         for entry in boxes {
+            if entry.writable { writable.insert(entry.id); }
             bytes += entry.name.len();
             ensure!(
                 bytes <= 1024 * 1024,
@@ -581,6 +593,7 @@ impl MailboxResolver {
             paths: HashMap::new(),
             steps: 0,
             refreshed: false,
+            writable,
         })
     }
     fn resolve(
@@ -621,7 +634,7 @@ impl MailboxResolver {
                         extra: serde_json::json!({}),
                     },
                 ) {
-                    Ok(id) => id,
+                    Ok(id) => { self.writable.insert(id); id },
                     Err(error) => {
                         // Recover one concurrent create, with bounded work. A
                         // changing namespace cannot force repeated full reloads.
@@ -633,11 +646,12 @@ impl MailboxResolver {
                             self.steps <= super::MAX_STEPS,
                             "destination refresh work limit"
                         );
-                        fresh
+                        let entry = fresh
                             .into_iter()
                             .find(|entry| entry.parent == parent && entry.name == name)
-                            .map(|entry| entry.id)
-                            .ok_or(error)?
+                            .ok_or(error)?;
+                        if entry.writable { self.writable.insert(entry.id); }
+                        entry.id
                     }
                 }
             };
@@ -645,6 +659,7 @@ impl MailboxResolver {
             parent = Some(id);
         }
         let id = parent.ok_or_else(|| anyhow::anyhow!("empty mailbox path"))?;
+        ensure!(self.writable.contains(&id), "fileinto mailbox does not exist or is not writable");
         self.paths.insert(path_key, id);
         Ok(id)
     }
@@ -735,13 +750,15 @@ async fn vacation_reply(
     }) {
         return Ok(());
     }
-    // Never respond to a Bcc-only recipient. :addresses adds recognised
-    // recipient identities; it does not authorise sender spoofing.
+    // RFC 5230: recognised identities include the final envelope recipient;
+    // those identities must occur in an original recipient header.
     let mut addresses = vacation.addresses.clone();
     addresses.push(delivery.account.email.clone());
-    let addressed = [message.to(), message.cc()]
+    addresses.push(delivery.to.to_string());
+    let addressed = ["To", "Cc", "Bcc", "Resent-To", "Resent-Cc", "Resent-Bcc"]
         .into_iter()
-        .flatten()
+        .flat_map(|name| message.header_values(name))
+        .filter_map(|h| h.as_address())
         .flat_map(|a| a.iter())
         .filter_map(|a| a.address())
         .any(|a| addresses.iter().any(|v| v.eq_ignore_ascii_case(a)));
@@ -759,9 +776,10 @@ async fn vacation_reply(
     {
         return Ok(());
     }
-    let subject = crate::smtp::inbound::header_value_safe(
-        vacation.subject.as_deref().unwrap_or("Auto: Out of Office"),
-    );
+    // subject() is MIME-decoded. The builder emits encoded words only when
+    // necessary, so an encoded original cannot acquire a raw ASCII prefix.
+    let default_subject = message.subject().map(|subject| format!("Auto: {subject}")).unwrap_or_else(|| "Automated reply".into());
+    let subject = crate::smtp::inbound::header_value_safe(vacation.subject.as_deref().unwrap_or(&default_subject));
     let mut builder = mail_builder::MessageBuilder::new()
         .from(delivery.account.email.as_str())
         .to(delivery.from)

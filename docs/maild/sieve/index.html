@@ -267,7 +267,8 @@ if body :text :contains "release announcement" {
 }
 </code></pre>
 <p><code>fileinto</code> uses slash-separated mailbox paths; <code>INBOX</code> resolves by role.
-<code>:create</code> creates missing parents. Missing destinations without <code>:create</code>
+<code>:create</code> creates missing parents. Non-writable destinations are treated as
+missing, consistently with <code>mailboxexists</code>. Missing destinations without <code>:create</code>
 keep the message at its default destination. Flags map to the same MDS flags
 and validated user keywords as IMAP/JMAP. File actions snapshot the current
 flags; repeated filings into one mailbox use the last flag list. Invalid,
@@ -279,7 +280,9 @@ support variables, and selected binary parts retain their decoded octets.
 Body wildcards preserve earlier match captures. Relational
 <code>:value</code>/<code>:count</code> support <code>gt</code>, <code>ge</code>, <code>lt</code>, <code>le</code>, <code>eq</code>, <code>ne</code>; <code>:count</code> requires
 <code>i;ascii-numeric</code>. Header <code>:index N</code> selects one occurrence, with <code>:last</code>
-counting from the end.</p>
+counting from the end.
+<code>address</code> parses every field named by the script, including custom address
+headers. ASCII casemap ordering folds letters to uppercase before comparison.</p>
 <h2 id="delivery-and-policy">Delivery and policy</h2>
 <p>SMTP classifies spam, runs the global Mix <code>inbound_filter</code>, then runs account
 Sieve. This preserves the existing filter's spam inputs. The Mix destination,
@@ -288,18 +291,26 @@ has daemon-generated <code>X-Mixos-Spam-Verdict</code> and <code>X-Mixos-Spam-Sc
 incoming copies are removed. Verdicts are <code>HAM</code>, <code>SPAM</code> or <code>UNKNOWN</code> when
 classification is disabled or fails. JMAP/native Bus submissions also run
 recipient Sieve on local delivery, with Inbox as keep, without rerunning the
-inbound classifier or global Mix filter.</p>
+inbound classifier or global Mix filter. These local copies receive fresh
+<code>UNKNOWN</code>/zero spam headers before the recipient's script runs.</p>
 <p>Evaluation produces a complete action plan. Syntax/runtime errors,
 missing destinations and refused redirects cancel the plan and keep the message.
 Limits: 64 KiB per script, 10,000 evaluation/matching/allocation steps, 64
 filing/redirect actions, 1 MiB of variables and four redirects. Matching charges
-for scanned bytes as well as instructions. Filing and <code>mailboxexists</code> read at
+for scanned bytes as well as instructions. Header parsing is charged once for
+the header section; attachments do not spend the header-test budget. Body
+transforms charge only selected parts. Filing and <code>mailboxexists</code> read at
 most 10,000 metadata records and 1 MiB of names/attributes, omitting message
 counts. Their path processing also has a 10,000-visit, 1 MiB budget; exhaustion
 keeps the message. Local redirects run the destination's
 script; SMTP redirects also rerun the destination's classifier and global filter
-using the original verified ingress. The four-hop header also bounds remote loops. A forged high hop count
-can suppress forwarding but never grants extra hops.</p>
+using the original verified ingress. Local hop counts stay out of band; remote
+loops are bounded by this host's own <code>Received</code> trace lines. A hop/action limit
+drops only excess redirects, retaining other actions and restoring implicit keep
+when the suppressed redirect was the only delivery action. External SMTP ingress
+strips <code>X-Mixos-Sieve-Hop</code>; that field never supplies a trusted hop count.
+Off-site redirects add a <code>Received</code> trace and strip the private hop marker and
+all <code>X-Mixos-Spam-*</code> fields, including folded continuations.</p>
 <p>Once a filing or redirect has committed, later secondary-action I/O failures are
 logged and the accepted delivery is retained. This follows maild's existing
 partial-delivery behaviour and avoids retrying an already accepted copy.
@@ -307,16 +318,19 @@ Secondary actions have no durable replay across the separate MDS/mail.db stores.
 <p><code>reject</code>/<code>ereject</code> return SMTP <code>550 5.7.1</code> after DATA for a single normal
 recipient. Mixed-recipient/asynchronous delivery instead queues a DSN with a
 null reverse path. DSNs to null/unverified senders are suppressed to prevent
-backscatter. Combining reject with filing, redirect, discard or vacation is a
+backscatter. Discard is compatible with reject. Combining reject with filing, redirect or vacation is a
 runtime error and keeps the original message.</p>
 <p>Off-site redirects default to refused. <code>sieve_external_domains</code> lists exact
-account domains allowed to redirect to non-local addresses. It also enables
-those domains' Sieve vacation replies to non-local senders. This is operator
+account domains allowed to redirect to non-local addresses. Vacation replies to
+external senders are independently allowed by default; set
+<code>sieve_vacation_external: false</code> to suppress them. These are operator
 configuration, never script data. Local destinations must be account addresses.</p>
 <p>Vacation supports <code>:days</code> (1..31, default 7), <code>:addresses</code>, <code>:subject</code>, <code>:from</code>
 <code>:handle</code> and <code>:mime</code> entities. <code>:from</code> must be the account address. <code>:addresses</code> recognises
-additional To/Cc recipient identities; it does not authorise sender spoofing.
-Replies require verified ingress and a recognised To/Cc identity. Spam, null
+additional recipient identities; it does not authorise sender spoofing.
+Recognised identities include the account and final envelope recipient, and must
+appear in To/Cc/Bcc or Resent-To/Resent-Cc/Resent-Bcc. Replies require verified
+ingress. Spam, null
 senders, self-mail, list/bulk mail and automatic responses receive no reply.
 A sender/response-handle stamp and its native queue row commit in one mail.db
 transaction, permitting one reply per interval across concurrent deliveries and
@@ -329,12 +343,16 @@ Replies use a null reverse path,
 selects the account domain's DKIM signer; absent signing configuration retains
 the existing unsigned behaviour. An active Sieve script takes ownership of
 automatic responses; the older JMAP VacationResponse runs only without an
-active Sieve script, preventing two automatic replies to the same message.</p>
+active Sieve script, preventing two automatic replies to the same message.
+Without <code>:subject</code>, replies use <code>Auto: </code> followed by the decoded original
+subject, or <code>Automated reply</code> if it is absent. Non-ASCII subjects are emitted
+as encoded words; ASCII subjects remain plain text.</p>
 <h2 id="managesieve">ManageSieve</h2>
 <p>Disabled by default. In the maild configuration:</p>
 <pre><code class="language-mix">sieve_listen: ["192.0.2.10:4190"]
 sieve_implicit_tls: false
 sieve_external_domains: []
+sieve_vacation_external: true
 </code></pre>
 <p><code>false</code> selects RFC 5804 STARTTLS, the normal mode on 4190; <code>true</code> selects
 implicit TLS. Both share SMTP/IMAP's TLS identities, SNI resolver and hot-reload
@@ -347,7 +365,12 @@ set the keys in the maild configuration used by the daemon.</p>
 Passwords use the shared account verifier. PLAIN authorisation identity must
 be empty or equal the login identity. Only the authenticated account's scripts
 are accessible. Uploads accept quoted strings and non-synchronising octet
-literals (<code>{N+}</code>). Malformed/oversized frames close the session. Limits: 128
+literals (<code>{N+}</code>). When external vacation replies are disabled, valid PUTSCRIPT
+and CHECKSCRIPT commands containing a vacation action return
+<code>OK (WARNINGS) "vacation replies to external senders are disabled"</code>; scripts
+are still accepted. An oversized PUTSCRIPT returns <code>NO (QUOTA/MAXSIZE)</code> and
+closes the session without reading its non-synchronising literal. Other
+malformed/oversized frames close the session. Limits: 128
 connections, 180-second pre-authentication and 30-minute authenticated command
 timeouts, 30-second TLS/authentication and response-write timeouts,
 three failed logins. STARTTLS discards buffered plaintext commands.</p>

@@ -226,6 +226,7 @@ async fn create_submission(
                 let ms = mailstore.clone();
                 let data =
                     tokio::task::spawn_blocking(move || ms.mds().get_blob(&blob_hash)).await??;
+                let data = crate::sieve::delivery::stamp_spam(&data, "UNKNOWN", 0.0);
                 let inbox = mailstore
                     .mailbox_by_role(rcpt_account.id, MailboxRole::Inbox)?
                     .ok_or_else(|| anyhow::anyhow!("recipient has no Inbox"))?;

@@ -241,11 +241,20 @@
 <h2 id="unreleased">Unreleased</h2>
 <ul>
 <li>
+<p>Fix Sieve attachment-independent header budgets, custom address fields,
+writable fileinto destinations, redirect-only loop suppression and private
+header removal on external redirects. Local submission stamps fresh spam
+metadata. Vacation replies have an independent default-on external policy,
+ManageSieve policy warnings, original-subject defaults and full recipient
+header recognition. Correct casemap ordering, discard/reject compatibility,
+oversized PUTSCRIPT quota responses and malformed redirect address refusal.</p>
+</li>
+<li>
 <p>Add per-account, versioned Sieve rules to SMTP and local submission delivery,
 with a bounded in-process interpreter, fileinto/create, flags, copy, body,
 variables, vacation, relational/index tests and reject/ereject. Script and
-policy errors keep the message. External redirects and automatic replies
-require an operator-enabled account domain; vacation suppression is durable.</p>
+policy errors keep the message. External redirects require an operator-enabled
+account domain; vacation suppression is durable and independently configured.</p>
 </li>
 <li>
 <p>Add an opt-in RFC 5804 ManageSieve listener using the shared TLS identities

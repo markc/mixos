@@ -540,6 +540,8 @@ mod tests {
             conn: Arc::new(Mutex::new(conn)),
             migration: Arc::new(tokio::sync::Semaphore::new(1)),
             sieve_external_domains: Arc::new(Vec::new()),
+            sieve_vacation_external: true,
+            sieve_hostname: Arc::new("localhost".into()),
             blob_dir: tmp.path().to_path_buf(),
         };
         (overrides_runtime, db_handle, tmp)

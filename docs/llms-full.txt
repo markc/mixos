@@ -11291,7 +11291,8 @@ if body :text :contains "release announcement" {
 ```
 
 `fileinto` uses slash-separated mailbox paths; `INBOX` resolves by role.
-`:create` creates missing parents. Missing destinations without `:create`
+`:create` creates missing parents. Non-writable destinations are treated as
+missing, consistently with `mailboxexists`. Missing destinations without `:create`
 keep the message at its default destination. Flags map to the same MDS flags
 and validated user keywords as IMAP/JMAP. File actions snapshot the current
 flags; repeated filings into one mailbox use the last flag list. Invalid,
@@ -11305,6 +11306,8 @@ Body wildcards preserve earlier match captures. Relational
 `:value`/`:count` support `gt`, `ge`, `lt`, `le`, `eq`, `ne`; `:count` requires
 `i;ascii-numeric`. Header `:index N` selects one occurrence, with `:last`
 counting from the end.
+`address` parses every field named by the script, including custom address
+headers. ASCII casemap ordering folds letters to uppercase before comparison.
 
 ## Delivery and policy
 
@@ -11315,19 +11318,27 @@ has daemon-generated `X-Mixos-Spam-Verdict` and `X-Mixos-Spam-Score` headers;
 incoming copies are removed. Verdicts are `HAM`, `SPAM` or `UNKNOWN` when
 classification is disabled or fails. JMAP/native Bus submissions also run
 recipient Sieve on local delivery, with Inbox as keep, without rerunning the
-inbound classifier or global Mix filter.
+inbound classifier or global Mix filter. These local copies receive fresh
+`UNKNOWN`/zero spam headers before the recipient's script runs.
 
 Evaluation produces a complete action plan. Syntax/runtime errors,
 missing destinations and refused redirects cancel the plan and keep the message.
 Limits: 64 KiB per script, 10,000 evaluation/matching/allocation steps, 64
 filing/redirect actions, 1 MiB of variables and four redirects. Matching charges
-for scanned bytes as well as instructions. Filing and `mailboxexists` read at
+for scanned bytes as well as instructions. Header parsing is charged once for
+the header section; attachments do not spend the header-test budget. Body
+transforms charge only selected parts. Filing and `mailboxexists` read at
 most 10,000 metadata records and 1 MiB of names/attributes, omitting message
 counts. Their path processing also has a 10,000-visit, 1 MiB budget; exhaustion
 keeps the message. Local redirects run the destination's
 script; SMTP redirects also rerun the destination's classifier and global filter
-using the original verified ingress. The four-hop header also bounds remote loops. A forged high hop count
-can suppress forwarding but never grants extra hops.
+using the original verified ingress. Local hop counts stay out of band; remote
+loops are bounded by this host's own `Received` trace lines. A hop/action limit
+drops only excess redirects, retaining other actions and restoring implicit keep
+when the suppressed redirect was the only delivery action. External SMTP ingress
+strips `X-Mixos-Sieve-Hop`; that field never supplies a trusted hop count.
+Off-site redirects add a `Received` trace and strip the private hop marker and
+all `X-Mixos-Spam-*` fields, including folded continuations.
 
 Once a filing or redirect has committed, later secondary-action I/O failures are
 logged and the accepted delivery is retained. This follows maild's existing
@@ -11337,18 +11348,21 @@ Secondary actions have no durable replay across the separate MDS/mail.db stores.
 `reject`/`ereject` return SMTP `550 5.7.1` after DATA for a single normal
 recipient. Mixed-recipient/asynchronous delivery instead queues a DSN with a
 null reverse path. DSNs to null/unverified senders are suppressed to prevent
-backscatter. Combining reject with filing, redirect, discard or vacation is a
+backscatter. Discard is compatible with reject. Combining reject with filing, redirect or vacation is a
 runtime error and keeps the original message.
 
 Off-site redirects default to refused. `sieve_external_domains` lists exact
-account domains allowed to redirect to non-local addresses. It also enables
-those domains' Sieve vacation replies to non-local senders. This is operator
+account domains allowed to redirect to non-local addresses. Vacation replies to
+external senders are independently allowed by default; set
+`sieve_vacation_external: false` to suppress them. These are operator
 configuration, never script data. Local destinations must be account addresses.
 
 Vacation supports `:days` (1..31, default 7), `:addresses`, `:subject`, `:from`
 `:handle` and `:mime` entities. `:from` must be the account address. `:addresses` recognises
-additional To/Cc recipient identities; it does not authorise sender spoofing.
-Replies require verified ingress and a recognised To/Cc identity. Spam, null
+additional recipient identities; it does not authorise sender spoofing.
+Recognised identities include the account and final envelope recipient, and must
+appear in To/Cc/Bcc or Resent-To/Resent-Cc/Resent-Bcc. Replies require verified
+ingress. Spam, null
 senders, self-mail, list/bulk mail and automatic responses receive no reply.
 A sender/response-handle stamp and its native queue row commit in one mail.db
 transaction, permitting one reply per interval across concurrent deliveries and
@@ -11362,6 +11376,9 @@ selects the account domain's DKIM signer; absent signing configuration retains
 the existing unsigned behaviour. An active Sieve script takes ownership of
 automatic responses; the older JMAP VacationResponse runs only without an
 active Sieve script, preventing two automatic replies to the same message.
+Without `:subject`, replies use `Auto: ` followed by the decoded original
+subject, or `Automated reply` if it is absent. Non-ASCII subjects are emitted
+as encoded words; ASCII subjects remain plain text.
 
 ## ManageSieve
 
@@ -11371,6 +11388,7 @@ Disabled by default. In the maild configuration:
 sieve_listen: ["192.0.2.10:4190"]
 sieve_implicit_tls: false
 sieve_external_domains: []
+sieve_vacation_external: true
 ```
 
 `false` selects RFC 5804 STARTTLS, the normal mode on 4190; `true` selects
@@ -11385,7 +11403,12 @@ Commands: `CAPABILITY`, `AUTHENTICATE` PLAIN/LOGIN, `LISTSCRIPTS`, `GETSCRIPT`,
 Passwords use the shared account verifier. PLAIN authorisation identity must
 be empty or equal the login identity. Only the authenticated account's scripts
 are accessible. Uploads accept quoted strings and non-synchronising octet
-literals (`{N+}`). Malformed/oversized frames close the session. Limits: 128
+literals (`{N+}`). When external vacation replies are disabled, valid PUTSCRIPT
+and CHECKSCRIPT commands containing a vacation action return
+`OK (WARNINGS) "vacation replies to external senders are disabled"`; scripts
+are still accepted. An oversized PUTSCRIPT returns `NO (QUOTA/MAXSIZE)` and
+closes the session without reading its non-synchronising literal. Other
+malformed/oversized frames close the session. Limits: 128
 connections, 180-second pre-authentication and 30-minute authenticated command
 timeouts, 30-second TLS/authentication and response-write timeouts,
 three failed logins. STARTTLS discards buffered plaintext commands.
@@ -39130,11 +39153,18 @@ loads unchanged.
 
 ## Unreleased
 
+- Fix Sieve attachment-independent header budgets, custom address fields,
+  writable fileinto destinations, redirect-only loop suppression and private
+  header removal on external redirects. Local submission stamps fresh spam
+  metadata. Vacation replies have an independent default-on external policy,
+  ManageSieve policy warnings, original-subject defaults and full recipient
+  header recognition. Correct casemap ordering, discard/reject compatibility,
+  oversized PUTSCRIPT quota responses and malformed redirect address refusal.
 - Add per-account, versioned Sieve rules to SMTP and local submission delivery,
   with a bounded in-process interpreter, fileinto/create, flags, copy, body,
   variables, vacation, relational/index tests and reject/ereject. Script and
-  policy errors keep the message. External redirects and automatic replies
-  require an operator-enabled account domain; vacation suppression is durable.
+  policy errors keep the message. External redirects require an operator-enabled
+  account domain; vacation suppression is durable and independently configured.
 - Add an opt-in RFC 5804 ManageSieve listener using the shared TLS identities
   and account authentication, plus `maild.sieve.list/get/put/activate` Bus
   commands. SMTP's classifier and global Mix filter precede account Sieve;

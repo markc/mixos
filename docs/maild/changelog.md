@@ -10,11 +10,18 @@ generated: by docs/_build/gen-site.mix from services/maild/CHANGELOG.md; do not 
 
 ## Unreleased
 
+- Fix Sieve attachment-independent header budgets, custom address fields,
+  writable fileinto destinations, redirect-only loop suppression and private
+  header removal on external redirects. Local submission stamps fresh spam
+  metadata. Vacation replies have an independent default-on external policy,
+  ManageSieve policy warnings, original-subject defaults and full recipient
+  header recognition. Correct casemap ordering, discard/reject compatibility,
+  oversized PUTSCRIPT quota responses and malformed redirect address refusal.
 - Add per-account, versioned Sieve rules to SMTP and local submission delivery,
   with a bounded in-process interpreter, fileinto/create, flags, copy, body,
   variables, vacation, relational/index tests and reject/ereject. Script and
-  policy errors keep the message. External redirects and automatic replies
-  require an operator-enabled account domain; vacation suppression is durable.
+  policy errors keep the message. External redirects require an operator-enabled
+  account domain; vacation suppression is durable and independently configured.
 - Add an opt-in RFC 5804 ManageSieve listener using the shared TLS identities
   and account authentication, plus `maild.sieve.list/get/put/activate` Bus
   commands. SMTP's classifier and global Mix filter precede account Sieve;

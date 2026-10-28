@@ -20,11 +20,12 @@ struct Fixture {
 impl Fixture {
     async fn new() -> Result<Self> {
         let tmp = tempfile::tempdir()?;
-        let db = Db::connect(
+        let mut db = Db::connect(
             tmp.path().join("mail.db").to_str().unwrap(),
             tmp.path().join("blobs").to_str().unwrap(),
         )
         .await?;
+        db.sieve_hostname = Arc::new("mail.example.com".into());
         db.migrate().await?;
         db.conn.lock().unwrap().execute("INSERT INTO accounts(email,password) VALUES('bob@example.com','test'),('alice@example.com','test')",[])?;
         let account = db::account::get_by_email(&db.conn, "bob@example.com")
@@ -69,6 +70,9 @@ impl Fixture {
         external: bool,
         smtp: bool,
     ) -> Result<Option<mds::ItemId>> {
+        self.deliver_to(bytes, external, smtp, "bob@example.com").await
+    }
+    async fn deliver_to(&self, bytes: &[u8], external: bool, smtp: bool, to: &str) -> Result<Option<mds::ItemId>> {
         let domains = ["example.com".to_string()];
         delivery::deliver(
             &self.db,
@@ -76,7 +80,7 @@ impl Fixture {
             Delivery {
                 account: &self.account,
                 from: "sender@example.org",
-                to: "bob@example.com",
+                to,
                 data: bytes,
                 default_mailbox: self
                     .ms
@@ -106,6 +110,148 @@ impl Fixture {
     }
 }
 const MESSAGE: &[u8] = b"From: sender@example.org\r\nTo: bob@example.com\r\nSubject: test\r\nMessage-ID: <one@example.org>\r\n\r\nHello\r\n";
+
+#[tokio::test]
+async fn forged_hop_is_ignored_and_exhausted_received_drops_only_redirects() -> Result<()> {
+    let f = Fixture::new().await?;
+    f.script(r#"require ["fileinto","mailbox","vacation"]; fileinto :create "Filed"; redirect "alice@example.com"; vacation "Away";"#).await?;
+    let mut bytes = b"X-Mixos-Sieve-Hop: 999\r\n".to_vec();
+    bytes.extend_from_slice(MESSAGE);
+    f.deliver(&bytes, false, false).await?;
+    assert_eq!(f.count("Filed"), 1);
+    let alice_inbox = f.ms.mailbox_by_role(2, MailboxRole::Inbox)?.unwrap();
+    assert_eq!(f.ms.list_emails_in_mailbox(2, alice_inbox, ListOpts::default())?.len(), 1);
+    let f = Fixture::new().await?;
+    f.script(r#"require ["fileinto","mailbox","vacation"]; fileinto :create "Filed"; redirect "alice@example.com"; vacation "Away";"#).await?;
+    let mut bytes = "Received: from remote.example.org\r\n\tby MAIL.EXAMPLE.COM with ESMTP; date\r\n".repeat(maild::sieve::MAX_REDIRECTS).into_bytes();
+    bytes.extend_from_slice(MESSAGE);
+    f.deliver(&bytes, false, false).await?;
+    assert_eq!(f.count("Filed"), 1, "loop suppression must preserve fileinto");
+    let alice_inbox = f.ms.mailbox_by_role(2, MailboxRole::Inbox)?.unwrap();
+    assert!(f.ms.list_emails_in_mailbox(2, alice_inbox, ListOpts::default())?.is_empty());
+    assert_eq!(maild::smtp::queue::list(&f.db.conn, 10).await?.len(), 1, "vacation must survive redirect suppression");
+    Ok(())
+}
+
+#[tokio::test]
+async fn received_limit_restores_redirect_only_keep_and_ignores_other_hosts() -> Result<()> {
+    let f = Fixture::new().await?;
+    f.script(r#"redirect "alice@example.com";"#).await?;
+    let mut bytes = "Received: from remote.example.org by mail.example.com; date\r\n".repeat(maild::sieve::MAX_REDIRECTS).into_bytes();
+    bytes.extend_from_slice(MESSAGE);
+    f.deliver(&bytes, false, false).await?;
+    assert_eq!(f.count("Inbox"), 1);
+    let mut bytes = "Received: from remote.example.org by mail.example.com.other.example.net; date\r\n".repeat(10).into_bytes();
+    bytes.extend_from_slice(MESSAGE);
+    f.deliver(&bytes, false, false).await?;
+    let alice_inbox = f.ms.mailbox_by_role(2, MailboxRole::Inbox)?.unwrap();
+    assert_eq!(f.ms.list_emails_in_mailbox(2, alice_inbox, ListOpts::default())?.len(), 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn local_redirect_budget_preserves_each_recipients_filing_plan() -> Result<()> {
+    let f = Fixture::new().await?;
+    f.script(r#"require ["fileinto","mailbox"]; fileinto :create "BobFiled"; redirect "alice@example.com"; redirect "bob@example.com";"#).await?;
+    store::put(&f.db, 2, "main", r#"require ["fileinto","mailbox"]; fileinto :create "AliceFiled"; redirect "bob@example.com";"#, None).await?;
+    store::activate(&f.db, 2, "main").await?;
+    f.deliver(MESSAGE, false, false).await?;
+    assert_eq!(f.count("BobFiled"), 3);
+    assert_eq!(f.count("Inbox"), 0);
+    let alice_folder = f.ms.mailbox_by_name(2, "AliceFiled")?.unwrap();
+    assert_eq!(f.ms.list_emails_in_mailbox(2, alice_folder, ListOpts::default())?.len(), 2);
+    let alice_inbox = f.ms.mailbox_by_role(2, MailboxRole::Inbox)?.unwrap();
+    assert!(f.ms.list_emails_in_mailbox(2, alice_inbox, ListOpts::default())?.is_empty());
+    Ok(())
+}
+
+#[tokio::test]
+async fn offsite_redirect_strips_private_headers_and_adds_received_trace() -> Result<()> {
+    let f = Fixture::new().await?;
+    f.script(r#"redirect "remote@example.net";"#).await?;
+    let mut bytes = b"X-Mixos-Sieve-Hop: 1\r\nX-Mixos-Spam-Verdict: HAM\r\nX-Mixos-Spam-Score: 0\r\nX-Mixos-Spam-Debug: private\r\n\tcontinued private\r\nReceived: from old.example.org by old.example.net; date\r\n".to_vec();
+    bytes.extend_from_slice(MESSAGE);
+    f.deliver(&bytes, true, false).await?;
+    let queue = maild::smtp::queue::list(&f.db.conn, 10).await?;
+    let bytes = f.ms.mds().get_blob(&queue[0].blob_hash.unwrap())?;
+    let raw = String::from_utf8_lossy(&bytes);
+    assert!(!raw.to_ascii_lowercase().contains("x-mixos-"));
+    assert!(!raw.contains("continued private"));
+    let parsed = mail_parser::MessageParser::default().parse(&bytes).unwrap();
+    assert_eq!(parsed.header_values("Received").count(), 2);
+    assert!(raw.contains("by mail.example.com"));
+    assert!(raw.contains("by old.example.net"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn fileinto_agrees_with_mailboxexists_on_insert_permission() -> Result<()> {
+    for create in [false, true] {
+        let f = Fixture::new().await?;
+        f.ms.create_mailbox(1, "ReadOnly", None, mds::ContainerAttrs {special_use:None,subscribed:false,extra:serde_json::json!({"jmap_my_rights":{"may_add_items":false}})})?;
+        f.script(&format!(r#"require ["fileinto","mailbox"]; if not mailboxexists "ReadOnly" {{ fileinto {} "ReadOnly"; }}"#, if create {":create"} else {""})).await?;
+        f.deliver(MESSAGE, false, false).await?;
+        assert_eq!(f.count("ReadOnly"), 0);
+        assert_eq!(f.count("Inbox"), 1);
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn vacation_external_policy_is_independent_of_redirect_allowlist() -> Result<()> {
+    for enabled in [true, false] {
+        let mut f = Fixture::new().await?;
+        assert!(f.db.sieve_vacation_external);
+        f.db.sieve_vacation_external = enabled;
+        f.script(r#"require "vacation"; vacation "Away";"#).await?;
+        f.deliver(MESSAGE, false, false).await?;
+        assert_eq!(maild::smtp::queue::list(&f.db.conn, 10).await?.len(), usize::from(enabled));
+        f.script(r#"redirect "remote@example.net";"#).await?;
+        f.deliver(MESSAGE, false, false).await?;
+        assert_eq!(f.count("Inbox"), 2, "redirect still defaults to denied");
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn vacation_default_subject_decodes_and_reencodes_original_subject() -> Result<()> {
+    for (header, expected, encoded) in [("Subject: Original\r\n", "Auto: Original", false),("Subject: =?UTF-8?Q?caf=C3=A9?=\r\n", "Auto: café", true),("Subject: =?UTF-8?Q?ASCII?=\r\n", "Auto: ASCII", false),("", "Automated reply", false)] {
+        let f = Fixture::new().await?;
+        f.script(r#"require "vacation"; vacation "Away";"#).await?;
+        let data = format!("From: sender@example.org\r\nTo: bob@example.com\r\n{header}\r\nbody");
+        f.deliver(data.as_bytes(), false, false).await?;
+        let queue = maild::smtp::queue::list(&f.db.conn, 10).await?;
+        let bytes = f.ms.mds().get_blob(&queue[0].blob_hash.unwrap())?;
+        let parsed = mail_parser::MessageParser::default().parse(&bytes).unwrap();
+        assert_eq!(parsed.subject(), Some(expected));
+        let raw = String::from_utf8_lossy(&bytes);
+        assert_eq!(raw.contains("=?"), encoded);
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn vacation_recognises_envelope_identity_in_all_recipient_headers() -> Result<()> {
+    for field in ["To", "Cc", "Bcc", "Resent-To", "Resent-Cc", "Resent-Bcc"] {
+        let f = Fixture::new().await?;
+        f.script(r#"require "vacation"; vacation "Away";"#).await?;
+        let data = format!("From: sender@example.org\r\n{field}: alias@example.com\r\n\r\nbody");
+        f.deliver_to(data.as_bytes(), false, false, "alias@example.com").await?;
+        assert_eq!(maild::smtp::queue::list(&f.db.conn, 10).await?.len(), 1, "{field}");
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn redirect_rejects_a_second_at_sign_in_the_local_part() -> Result<()> {
+    let f = Fixture::new().await?;
+    f.script(r#"require ["fileinto","mailbox"]; fileinto :create "Filed"; redirect "bad@local@example.net";"#).await?;
+    f.deliver(MESSAGE, true, false).await?;
+    assert_eq!(f.count("Filed"), 0);
+    assert_eq!(f.count("Inbox"), 1);
+    assert!(maild::smtp::queue::list(&f.db.conn, 10).await?.is_empty());
+    Ok(())
+}
 
 #[tokio::test]
 async fn fileinto_create_copy_and_flags_use_real_mailstore() -> Result<()> {
@@ -413,9 +559,11 @@ async fn vacation_once_per_sender_survives_concurrency_and_restart() -> Result<(
 }
 #[tokio::test]
 async fn vacation_suppresses_lists_autoresponses_bcc_and_offsite_policy() -> Result<()> {
-    let f = Fixture::new().await?;
+    let mut f = Fixture::new().await?;
     f.script(r#"require "vacation"; vacation "Away";"#).await?;
+    f.db.sieve_vacation_external = false;
     f.deliver(MESSAGE, false, false).await?;
+    f.db.sieve_vacation_external = true;
     for header in [
         "Auto-Submitted: auto-replied\r\n",
         "Auto-Submitted: no\r\nAuto-Submitted: auto-replied\r\n",
@@ -467,6 +615,28 @@ async fn native_submission_runs_recipient_sieve() -> Result<()> {
     assert_eq!(result.0, 0, "{}", result.1);
     assert_eq!(f.count("FromSubmission"), 1);
     assert_eq!(f.count("Inbox"), 0);
+    Ok(())
+}
+
+#[tokio::test]
+async fn native_jmap_submission_replaces_a_cotenants_forged_spam_verdict() -> Result<()> {
+    let f = Fixture::new().await?;
+    f.script(r#"require ["fileinto","mailbox"]; if allof(header :is "X-Mixos-Spam-Verdict" "UNKNOWN",header :is "X-Mixos-Spam-Score" "0.0000") { fileinto :create "TrustedSubmission"; } else { discard; }"#).await?;
+    let bytes = b"From: alice@example.com\r\nTo: bob@example.com\r\nSubject: local\r\nX-Mixos-Spam-Verdict: HAM\r\nX-Mixos-Spam-Verdict: SPAM\r\nX-Mixos-Spam-Score: 99\r\n\r\nbody";
+    let hash = f.ms.mds().put_blob(bytes)?;
+    let parsed = mail_parser::MessageParser::default().parse(bytes).unwrap();
+    let drafts = f.ms.mailbox_by_role(2, MailboxRole::Drafts)?.unwrap();
+    let (item, _) = f.ms.create_email(2, drafts, hash, maild::jmap::email::build_envelope(&parsed), &None, Flags(0), Tags::new(), chrono::Utc::now().timestamp_millis())?;
+    let aliases = Arc::new(::props::Runtime::new("maild", maild::props::aliases::spec(::props::Hooks::noop()), Arc::new(::props::MemoryStore::new("maild"))));
+    let result = maild::jmap::submission::set(&f.db, &f.ms, &aliases, 2, serde_json::json!({"create":{"send":{"emailId":item.0.to_string()}}})).await?;
+    assert!(result["created"]["send"]["id"].is_string(), "{result}");
+    assert_eq!(f.count("TrustedSubmission"), 1);
+    let mailbox = f.ms.mailbox_by_name(1, "TrustedSubmission")?.unwrap();
+    let records = f.ms.list_emails_in_mailbox(1, mailbox, ListOpts::default())?;
+    let bytes = f.ms.mds().get_blob(&records[0].blob_hash.unwrap())?;
+    let parsed = mail_parser::MessageParser::default().parse(&bytes).unwrap();
+    assert_eq!(parsed.header_values("X-Mixos-Spam-Verdict").count(), 1);
+    assert_eq!(parsed.header("X-Mixos-Spam-Verdict").and_then(|h| h.as_text()), Some("UNKNOWN"));
     Ok(())
 }
 #[tokio::test]

@@ -189,6 +189,10 @@ async fn command<S: AsyncRead + Unpin>(io: &mut BufReader<S>) -> Result<Option<V
                 .and_then(|s| s.strip_suffix("+}"))
                 .ok_or_else(|| anyhow::anyhow!("expected non-synchronising literal"))?
                 .parse::<usize>()?;
+            if result.first().is_some_and(|verb: &String| verb.eq_ignore_ascii_case("PUTSCRIPT"))
+                && result.len() == 2 && n > MAX_SCRIPT_BYTES {
+                bail!("QUOTA/MAXSIZE: script exceeds size limit");
+            }
             total = total
                 .checked_add(n)
                 .ok_or_else(|| anyhow::anyhow!("literal overflow"))?;
@@ -287,6 +291,12 @@ pub async fn session<S: AsyncRead + AsyncWrite + Unpin>(
         let args = match command {
             Ok(Ok(Some(args))) if !args.is_empty() => args,
             Ok(Ok(None)) => return Ok(None),
+            Ok(Err(error)) if error.to_string().starts_with("QUOTA/MAXSIZE") => {
+                write(&mut io, "NO (QUOTA/MAXSIZE) \"script exceeds size limit\"\r\n").await?;
+                // Non-synchronising literal octets may already be in flight.
+                // Close rather than interpreting their contents as commands.
+                return Ok(None);
+            }
             _ => {
                 write(
                     &mut io,
@@ -388,6 +398,18 @@ async fn execute(db: &Db, account: i32, verb: &str, args: &[String]) -> Result<S
     };
     ensure!(args.len() == arity, "wrong argument count");
     let mut response = String::new();
+    let warning = if let Some(source) = match verb {
+        "PUTSCRIPT" => Some(&args[1]),
+        "CHECKSCRIPT" => Some(&args[0]),
+        _ => None,
+    } {
+        if verb == "PUTSCRIPT" {
+            ensure!(source.len() <= MAX_SCRIPT_BYTES, "QUOTA/MAXSIZE: script exceeds size limit");
+        }
+        let source = source.clone();
+        let script = tokio::task::spawn_blocking(move || compile(&source)).await??;
+        !db.sieve_vacation_external && script.uses_vacation()
+    } else { false };
     match verb {
         "LISTSCRIPTS" => {
             for entry in store::list(db, account).await? {
@@ -405,16 +427,15 @@ async fn execute(db: &Db, account: i32, verb: &str, args: &[String]) -> Result<S
         "PUTSCRIPT" => {
             store::put(db, account, &args[0], &args[1], None).await?;
         }
-        "CHECKSCRIPT" => {
-            let source = args[0].clone();
-            tokio::task::spawn_blocking(move || compile(&source)).await??;
-        }
+        "CHECKSCRIPT" => {}
         "SETACTIVE" => store::activate(db, account, &args[0]).await?,
         "DELETESCRIPT" => store::delete(db, account, &args[0]).await?,
         "RENAMESCRIPT" => store::rename(db, account, &args[0], &args[1]).await?,
         "HAVESPACE" => store::have_space(db, account, &args[0], args[1].parse()?).await?,
         _ => unreachable!(),
     }
-    response.push_str("OK \"Done\"\r\n");
+    response.push_str(if warning {
+        "OK (WARNINGS) \"vacation replies to external senders are disabled\"\r\n"
+    } else { "OK \"Done\"\r\n" });
     Ok(response)
 }

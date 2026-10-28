@@ -195,7 +195,11 @@ pub async fn deliver(
     let ar_rendered = &verify_result.authentication_results_header.rendered;
     let mut augmented_data = Vec::with_capacity(ar_rendered.len() + data.len());
     augmented_data.extend_from_slice(ar_rendered.as_bytes());
-    augmented_data.extend_from_slice(data);
+    if ingress.is_local_auth() {
+        augmented_data.extend_from_slice(data);
+    } else {
+        augmented_data.extend(crate::sieve::delivery::strip_hop(data));
+    }
 
     // --- Parse the message ---
     let parser = MessageParser::default();

@@ -247,6 +247,8 @@ pub async fn build_runtime(cfg: &Config, opts: RuntimeOpts) -> Result<BuiltMaild
 
     let mut database = db::Db::connect(&cfg.database_path, &cfg.blob_dir).await?;
     database.sieve_external_domains = Arc::new(cfg.sieve_external_domains.clone());
+    database.sieve_vacation_external = cfg.sieve_vacation_external;
+    database.sieve_hostname = Arc::new(cfg.hostname.clone());
     database.migrate().await?;
 
     // Inbound DATA filter pipeline (auth → rules → bayesian).

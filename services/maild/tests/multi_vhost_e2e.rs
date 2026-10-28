@@ -477,6 +477,7 @@ fn make_multi_vhost_config(
         sieve_listen: None,
         sieve_implicit_tls: false,
         sieve_external_domains: Vec::new(),
+        sieve_vacation_external: true,
         smtp_outbound_bind: Vec::new(),
         max_message_size: None,
         dkim_selector: None,

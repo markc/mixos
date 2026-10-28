@@ -346,6 +346,7 @@ fn make_config(root: &std::path::Path, cert_path: &str, key_path: &str) -> Confi
         sieve_listen: None,
         sieve_implicit_tls: false,
         sieve_external_domains: Vec::new(),
+        sieve_vacation_external: true,
         smtp_outbound_bind: Vec::new(),
         max_message_size: None,
         dkim_selector: None,

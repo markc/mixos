@@ -604,12 +604,22 @@ struct Eval<'a> {
     steps: usize,
     variables_enabled: bool,
     text_headers: Vec<(String, String)>,
+    address_headers: Vec<(String, Vec<String>)>,
     variable_bytes: usize,
     mailboxes: BTreeSet<String>,
 }
 impl Script {
     pub(super) fn needs_mailboxes(&self) -> bool {
         self.needs_mailboxes
+    }
+    pub(super) fn uses_vacation(&self) -> bool {
+        fn uses(code: &[Statement]) -> bool {
+            code.iter().any(|statement| match statement {
+                Statement::Action(name, _) => name == "vacation",
+                Statement::If(branches, otherwise) => branches.iter().any(|(_, code)| uses(code)) || uses(otherwise),
+            })
+        }
+        uses(&self.code)
     }
     pub fn evaluate(&self, context: Context<'_>) -> Result<Plan> {
         self.evaluate_with_mailboxes(context, &[])
@@ -625,9 +635,14 @@ impl Script {
         let message = MessageParser::default()
             .parse(context.data)
             .ok_or_else(|| anyhow::anyhow!("message parse error"))?;
+        let header_bytes = message.root_part().offset_body as usize;
+        let header_steps = header_bytes / 1024 + message.headers().len();
+        ensure!(header_steps <= MAX_STEPS, "header scan work limit");
         let mut text_parser = MessageParser::new().default_header_text();
+        let mut address_parser = MessageParser::new();
         for header in message.headers() {
             text_parser = text_parser.header_text(header.name.as_str().to_string());
+            address_parser = address_parser.header_address(header.name.as_str().to_string());
         }
         let text_headers = text_parser
             .parse_headers(context.data)
@@ -643,6 +658,13 @@ impl Script {
                     .collect()
             })
             .unwrap_or_default();
+        // Parse/index the header section once. Attachments must not consume the
+        // header-test budget; later comparisons charge only selected values.
+        let address_headers = address_parser.parse_headers(context.data)
+            .map(|m| m.headers().iter().map(|h| (
+                h.name.as_str().to_string(),
+                h.value.as_address().map(|addresses| addresses.iter().filter_map(|a| a.address()).map(str::to_string).collect()).unwrap_or_default(),
+            )).collect()).unwrap_or_default();
         let mut eval = Eval {
             context,
             message,
@@ -652,9 +674,10 @@ impl Script {
             flags: Vec::new(),
             implicit_keep: true,
             stopped: false,
-            steps: 0,
+            steps: header_steps,
             variables_enabled: self.variables,
             text_headers,
+            address_headers,
             variable_bytes: 0,
             mailboxes: mailboxes.iter().map(|name| mailbox_key(name)).collect(),
         };
@@ -674,8 +697,7 @@ impl Script {
             eval.plan.reject.is_none()
                 || (eval.plan.filings.is_empty()
                     && eval.plan.redirects.is_empty()
-                    && eval.plan.vacation.is_none()
-                    && !eval.plan.discarded),
+                    && eval.plan.vacation.is_none()),
             "reject conflicts with another action"
         );
         Ok(eval.plan)
@@ -957,12 +979,6 @@ impl Eval<'_> {
                 Ok(*all)
             }
             Test::Match(name, args) => {
-                if ["header", "address", "exists", "body"].contains(&name.as_str()) {
-                    // Account for source scans and transforms even if the
-                    // resulting text is empty (for example, HTML comments).
-                    self.steps += self.context.data.len() / 1024;
-                    ensure!(self.steps <= MAX_STEPS, "message scan work limit");
-                }
                 if name == "size" {
                     let n: usize = args.value(0).parse()?;
                     return Ok(if args.has("over") {
@@ -974,7 +990,7 @@ impl Eval<'_> {
                 let names = self.expanded(&args.values[0])?;
                 if name == "exists" {
                     for name in names {
-                        self.steps += self.context.data.len() / 1024 + 1;
+                        self.step()?;
                         ensure!(self.steps <= MAX_STEPS, "header scan limit");
                         if self.message.header(name.as_str()).is_none() {
                             return Ok(false);
@@ -996,7 +1012,7 @@ impl Eval<'_> {
                 match name.as_str() {
                     "header" => {
                         for n in &names {
-                            self.steps += self.context.data.len() / 1024 + 1;
+                            self.step()?;
                             ensure!(self.steps <= MAX_STEPS, "header scan limit");
                             let mut headers: Vec<&str> = self
                                 .text_headers
@@ -1020,14 +1036,13 @@ impl Eval<'_> {
                     }
                     "address" => {
                         for n in &names {
-                            self.steps += self.context.data.len() / 1024 + 1;
-                            ensure!(self.steps <= MAX_STEPS, "address scan limit");
-                            // Parse arbitrary address headers with the same MIME parser.
+                            self.step()?;
+                            // The cached parser explicitly treats every root
+                            // field as an address list, including custom names.
                             let mut headers: Vec<_> = self
-                                .message
-                                .headers()
+                                .address_headers
                                 .iter()
-                                .filter(|h| h.name.as_str().eq_ignore_ascii_case(n))
+                                .filter(|(name, _)| name.eq_ignore_ascii_case(n))
                                 .collect();
                             if args.has("last") {
                                 headers.reverse();
@@ -1039,16 +1054,10 @@ impl Eval<'_> {
                                     .into_iter()
                                     .collect();
                             }
-                            for header in headers {
-                                let value = &header.value;
-                                if let Some(addresses) = value.as_address() {
-                                    values.extend(
-                                        addresses
-                                            .iter()
-                                            .filter_map(|a| a.address())
-                                            .map(str::to_string),
-                                    );
-                                }
+                            for (_, addresses) in headers {
+                                self.steps += addresses.iter().map(String::len).sum::<usize>() / 1024 + addresses.len();
+                                ensure!(self.steps <= MAX_STEPS, "address allocation limit");
+                                values.extend(addresses.iter().cloned());
                             }
                         }
                     }
@@ -1072,6 +1081,8 @@ impl Eval<'_> {
                             .transpose()?;
                         if args.has("raw") {
                             let start = self.message.root_part().offset_body as usize;
+                            self.steps += (self.context.data.len() - start) / 1024;
+                            ensure!(self.steps <= MAX_STEPS, "body source work limit");
                             octets.push(self.context.data[start..].to_vec());
                         } else {
                             for part in &self.message.parts {
@@ -1100,6 +1111,12 @@ impl Eval<'_> {
                                         })
                                     })
                                     .unwrap_or_else(|| content_type.starts_with("text/"));
+                                if selected && matches!(&part.body, PartType::Text(_) | PartType::Html(_) | PartType::Binary(_) | PartType::InlineBinary(_)) {
+                                    // Charge the selected source before decoding/
+                                    // transforming, including HTML with empty output.
+                                    self.steps += (part.offset_end - part.offset_body) as usize / 1024;
+                                    ensure!(self.steps <= MAX_STEPS, "body source work limit");
+                                }
                                 if selected
                                     && let PartType::Binary(bytes) | PartType::InlineBinary(bytes) =
                                         &part.body
@@ -1214,8 +1231,8 @@ impl Eval<'_> {
         let mut key = key.as_bytes().to_vec();
         let numeric = args.tag("comparator") == Some("i;ascii-numeric");
         if !numeric && args.tag("comparator") != Some("i;octet") {
-            value.make_ascii_lowercase();
-            key.make_ascii_lowercase();
+            value.make_ascii_uppercase();
+            key.make_ascii_uppercase();
         }
         if let Some(op) = args.tag("count").or(args.tag("value")) {
             let order = if numeric {
@@ -1257,12 +1274,12 @@ impl Eval<'_> {
         let value = if octet || numeric {
             value.to_string()
         } else {
-            value.to_ascii_lowercase()
+            value.to_ascii_uppercase()
         };
         let key = if octet || numeric {
             key.to_string()
         } else {
-            key.to_ascii_lowercase()
+            key.to_ascii_uppercase()
         };
         if let Some(op) = args.tag("count").or(args.tag("value")) {
             let order = if numeric {
@@ -1281,7 +1298,8 @@ impl Eval<'_> {
             });
         }
         if args.has("matches") {
-            if let Some(captures) = glob(original, &key, !octet, &mut self.steps)? {
+            let pattern = if octet { key.clone() } else { key.to_ascii_lowercase() };
+            if let Some(captures) = glob(original, &pattern, !octet, &mut self.steps)? {
                 if capture {
                     self.captures = captures;
                 }

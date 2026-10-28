@@ -71,6 +71,7 @@ async fn starttls_upload_activate_then_real_smtp_delivery_and_rejection() -> Res
         tls_cert: Some(cert_path.display().to_string()),
         tls_key: Some(key_path.display().to_string()),
         inbound_filter: Some(filter_path.display().to_string()),
+        sieve_vacation_external: false,
         ..Config::default()
     };
     let built = build_runtime(
@@ -83,6 +84,7 @@ async fn starttls_upload_activate_then_real_smtp_delivery_and_rejection() -> Res
     )
     .await?;
     let db = &built.app_state.db;
+    assert!(!db.sieve_vacation_external, "runtime must propagate vacation policy");
     let ms = &built.app_state.mailstore;
     let hash = bcrypt::hash("test-password", 4)?;
     db.conn.lock().unwrap().execute(
@@ -187,7 +189,7 @@ async fn starttls_upload_activate_then_real_smtp_delivery_and_rejection() -> Res
             .await?
             .starts_with("NO")
     );
-    let script = "require [\"fileinto\",\"mailbox\",\"imap4flags\"];\r\nif header :is \"X-Mixos-Spam-Verdict\" \"UNKNOWN\" { fileinto :create :flags \"\\\\Seen\" \"Projects\"; } else { discard; }\r\n";
+    let script = "require [\"fileinto\",\"mailbox\",\"imap4flags\"];\r\nif allof(header :is \"X-Mixos-Spam-Verdict\" \"UNKNOWN\",not exists \"X-Mixos-Sieve-Hop\") { fileinto :create :flags \"\\\\Seen\" \"Projects\"; } else { discard; }\r\n";
     assert!(
         send(
             &mut io,
@@ -260,7 +262,7 @@ async fn starttls_upload_activate_then_real_smtp_delivery_and_rejection() -> Res
             let line = smtp_line(io).await?;
             ensure!(line.starts_with(code), "{line}");
         }
-        io.get_mut().write_all(b"From: sender@example.org\r\nTo: bob@example.com\r\nSubject: wire Sieve\r\n\r\nhello\r\n.\r\n").await?;
+        io.get_mut().write_all(b"From: sender@example.org\r\nTo: bob@example.com\r\nSubject: wire Sieve\r\nX-Mixos-Sieve-Hop: 999\r\n\r\nhello\r\n.\r\n").await?;
         smtp_line(io).await
     }
     assert!(message(&mut smtp).await?.starts_with("250"));
@@ -408,19 +410,55 @@ async fn login_challenge_authzid_refusal_and_account_isolation() -> Result<()> {
     Ok(())
 }
 #[tokio::test]
-async fn oversized_literal_disconnects_without_allocating_or_writing_script() -> Result<()> {
+async fn oversized_putscript_returns_maxsize_without_allocating_or_writing_script() -> Result<()> {
+    for size in [maild::sieve::MAX_SCRIPT_BYTES + 1, 999999999] {
     let (_tmp, db) = test_db().await?;
     let (client, stream) = tokio::io::duplex(1024);
     let db2 = db.clone();
     let task = tokio::spawn(async move { server::session(stream, &db2, true).await });
     let mut io = BufReader::new(client);
     response(&mut io).await?;
+    let auth = format!("AUTHENTICATE \"PLAIN\" \"{}\"\r\n", STANDARD.encode(b"\0bob@example.com\0test-password"));
+    assert!(send(&mut io, &auth).await?.starts_with("OK"));
     assert!(
-        send(&mut io, "PUTSCRIPT \"main\" {999999999+}\r\n")
+        send(&mut io, &format!("PUTSCRIPT \"main\" {{{size}+}}\r\n"))
             .await?
-            .starts_with("BYE")
+            .starts_with("NO (QUOTA/MAXSIZE)")
     );
     assert!(store::list(&db, 1).await?.is_empty());
     task.await??;
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn vacation_policy_defaults_true_and_wire_warnings_follow_actual_actions() -> Result<()> {
+    assert!(Config::default().sieve_vacation_external);
+    assert!(serde_json::from_value::<Config>(serde_json::json!({}))?.sieve_vacation_external);
+    assert!(!serde_json::from_value::<Config>(serde_json::json!({"sieve_vacation_external":false}))?.sieve_vacation_external);
+    for enabled in [true, false] {
+        let (_tmp, mut db) = test_db().await?;
+        db.sieve_vacation_external = enabled;
+        let (client, stream) = tokio::io::duplex(128 * 1024);
+        let db2 = db.clone();
+        let task = tokio::spawn(async move { server::session(stream, &db2, true).await });
+        let mut io = BufReader::new(client);
+        response(&mut io).await?;
+        let auth = format!("AUTHENTICATE \"PLAIN\" \"{}\"\r\n", STANDARD.encode(b"\0bob@example.com\0test-password"));
+        assert!(send(&mut io, &auth).await?.starts_with("OK"));
+        for source in ["require \"vacation\"; vacation \"Away\";", "require \"vacation\"; if false { vacation \"Away\"; }"] {
+            for prefix in ["PUTSCRIPT \"vacation\"", "CHECKSCRIPT"] {
+                let reply = send(&mut io, &format!("{prefix} {{{}+}}\r\n{source}\r\n", source.len())).await?;
+                if enabled { assert_eq!(reply, "OK \"Done\"\r\n"); }
+                else { assert_eq!(reply, "OK (WARNINGS) \"vacation replies to external senders are disabled\"\r\n"); }
+            }
+        }
+        for source in ["require \"vacation\"; keep;", "# vacation in a comment\nkeep;"] {
+            assert_eq!(send(&mut io, &format!("CHECKSCRIPT {{{}+}}\r\n{source}\r\n", source.len())).await?, "OK \"Done\"\r\n");
+        }
+        assert!(send(&mut io, "SETACTIVE \"vacation\"\r\n").await?.starts_with("OK"));
+        assert!(send(&mut io, "LOGOUT\r\n").await?.starts_with("OK"));
+        task.await??;
+    }
     Ok(())
 }
