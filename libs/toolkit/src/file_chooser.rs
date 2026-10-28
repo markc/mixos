@@ -367,7 +367,7 @@ impl FileChooser {
         let layer = egui::LayerId::new(egui::Order::Foreground, self.id);
         // Raising both areas gives them equal priority and can leave a
         // reopened replacement question behind the chooser.
-        if self.replace.is_none() {
+        if self.replace.is_none() && !egui::Popup::is_any_open(ctx) {
             ctx.move_to_top(layer);
         }
         let choices = vec![
