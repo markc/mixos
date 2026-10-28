@@ -340,9 +340,8 @@ pub async fn deliver(
             }
         }
 
-        // Phase 1 aliases: resolve the recipient through `maild.aliases`
-        // before the account lookup so mail to an alias lands in the
-        // target's mailbox. The ORIGINAL `rcpt` is preserved in the
+        // Resolve mailbox first, then exact alias, then catch-all. Fan out
+        // only to real local accounts. The ORIGINAL `rcpt` is preserved in the
         // `local_recipients` tuple (log / Mix-filter `$TO` keep matching
         // what the sender wrote — only the account follows the alias).
         // `?` propagates a transient alias-store error so delivery is

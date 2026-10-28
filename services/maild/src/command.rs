@@ -907,7 +907,7 @@ async fn run_account_cli(action: AccountAction) -> Result<()> {
                         anyhow::ensure!(id_rc == 0, "account id lookup failed: {id_body}");
                         let stats: serde_json::Value = serde_json::from_str(&id_body)?;
                         resp["account_id"] = stats.get("account_id").cloned().ok_or_else(|| {
-                            anyhow::anyhow!("account statistics omitted numeric id")
+                            anyhow::anyhow!("account lookup omitted numeric id")
                         })?;
                         let pretty = serde_json::to_string_pretty(&resp)
                             .unwrap_or_else(|_| body_str.clone());
