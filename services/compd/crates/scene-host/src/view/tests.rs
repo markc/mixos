@@ -31,6 +31,52 @@ fn runtime(source: &str, size: (u32, u32)) -> UiRuntime<SceneUi> {
     rt
 }
 
+#[test]
+fn interface_font_reaches_authored_panel_text_layout_and_scene_frame_titles() {
+    use ui::UiProgram;
+    let source = "---\nscene: 1\nname: fonts\ncitizen: test\n---\n```mix\nroot: {widget: \"column\", children: [\"body\", \"clock\", \"mono\"]}\nbody: {widget: \"text\", text: \"Body\"}\nclock: {widget: \"text\", text: \"Clock\", size: 19, bold: true}\nmono: {widget: \"text\", text: \"Mono\", size: 13, mono: true}\n```";
+    for size in [None, Some(18.0)] {
+        let mut desktop = settings::Desktop::default();
+        desktop.appearance.font_size = size;
+        desktop.appearance.font_weight = size.map(|_| 300);
+        let look = Arc::new(crate::appearance::build(&crate::appearance::snapshot_of(desktop)).unwrap());
+        let ratio = look.theme.interface_size_scale();
+        let mut scene = SceneUi::with_look(content(source, Some(Frame { title: "Frame".into() }), true), look.clone());
+        let ctx = egui::Context::default();
+        scene.setup(&ctx);
+        let mut seen = std::collections::BTreeSet::new();
+        for _ in 0..2 {
+            let mut output = ctx.run_ui(Default::default(), |ui| scene.show(ui, &mut Vec::new()));
+            output.textures_delta.clear();
+            for shape in output.shapes {
+                if let egui::Shape::Text(text) = shape.shape {
+                    let label = text.galley.job.text.as_str();
+                    let font = &text.galley.job.sections[0].format.font_id;
+                    let expected = match label {
+                        "Body" => crate::appearance::ui_size(&look.theme, 1.0),
+                        "Clock" => 19.0 * ratio,
+                        "Mono" => 13.0,
+                        "Frame" => {
+                            let title = design::active_typography(Some(look.theme.typography()), design::TypographyRole::UiDisplay);
+                            if size.is_some() {
+                                assert_eq!(font.family, egui::FontFamily::Name(toolkit::fonts::HEADING.into()));
+                            }
+                            title.font_size as f32 * ratio
+                        }
+                        _ => continue,
+                    };
+                    assert!((font.size - expected).abs() < 0.001, "{label}: {font:?}");
+                    seen.insert(label.to_owned());
+                }
+            }
+        }
+        assert_eq!(seen.len(), 4, "{seen:?}");
+        let styles = scene.text_styles();
+        assert!((styles.ui.size(Some(19.0)) - 19.0 * ratio).abs() < 0.001);
+        assert_eq!(styles.mono.size(Some(13.0)), 13.0);
+    }
+}
+
 fn rect_of(rt: &UiRuntime<SceneUi>, id: &str) -> egui::Rect {
     *rt.program
         .layout()

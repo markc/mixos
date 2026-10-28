@@ -352,11 +352,17 @@ impl SceneUi {
     }
 
     /// The text metrics layout and paint use: the design's ui and mono roles
-    /// at the look's text scale (Quoin's 13 px where the design names none).
+    /// at the look's text scale, with the interface size applied to UI text
+    /// (Quoin's 13 px where the design names none).
     pub(crate) fn text_styles(&self) -> flex::TextStyles {
         let theme = self.theme();
         let scale = self.text_scale();
         let role = |role| {
+            let scale = scale * if role == design::TypographyRole::Mono {
+                1.0
+            } else {
+                theme.interface_size_scale()
+            };
             let record = design::active_typography(Some(theme.typography()), role);
             flex::TextStyle {
                 size: if record.font_size > 0.0 {
@@ -365,6 +371,7 @@ impl SceneUi {
                     TEXT_SIZE * scale
                 },
                 line_height: record.line_height.map(|h| h as f32 * scale),
+                scale,
             }
         };
         flex::TextStyles {

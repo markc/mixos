@@ -364,14 +364,7 @@ impl UiProgram for MenuUi {
             egui::Stroke::new(1.0, border),
             egui::StrokeKind::Inside,
         );
-        let size = design::active_typography(Some(theme.typography()), design::TypographyRole::Ui)
-            .font_size as f32
-            * scale;
-        let size = if size > 0.0 {
-            size
-        } else {
-            crate::view::TEXT_SIZE * scale
-        };
+        let size = crate::appearance::ui_size(&theme, scale);
         let inner = full.shrink(PADDING);
         egui::ScrollArea::vertical().show_viewport(ui, |ui, _viewport| {
             let (rows, _) = ui.allocate_exact_size(

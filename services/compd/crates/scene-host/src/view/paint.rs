@@ -19,8 +19,8 @@ use super::{
 };
 use crate::templates::text as port_text;
 
-/// The font a scene text draws in: Inter (SemiBold when bold), or the mono
-/// face.
+/// The font a scene text draws in: the session's body or display face,
+/// or the independent mono face.
 pub(crate) fn font(size: f32, mono: bool, bold: bool) -> FontId {
     let family = if mono {
         FontFamily::Monospace
@@ -222,7 +222,7 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
             "text" => {
                 let mono = flag(&node, "mono");
                 let style = if mono { styles.mono } else { styles.ui };
-                let size = number(&node, "size").unwrap_or(style.size);
+                let size = style.size(number(&node, "size"));
                 let font = font(size, mono, flag(&node, "bold"));
                 let colour = hex(port_text(&node, "color")).unwrap_or(ink);
                 let mut text = port_text(&node, "text").to_owned();
@@ -463,12 +463,12 @@ fn paint_frame(
     let theme = scene.theme();
     let display =
         design::active_typography(Some(theme.typography()), design::TypographyRole::UiDisplay);
-    let size = display.font_size as f32 * scene.text_scale();
+    let size = display.font_size as f32 * theme.interface_size_scale() * scene.text_scale();
     ui.painter().text(
         pos2(rect.left() + 12.0, rect.center().y),
         Align2::LEFT_CENTER,
         title,
-        font(size, false, display.weight >= 600),
+        font(size, false, theme.overlay().weight.is_some() || display.weight >= 600),
         colour(bar.foreground),
     );
     let Some(close) = scene

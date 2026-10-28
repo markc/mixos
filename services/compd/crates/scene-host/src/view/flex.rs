@@ -62,9 +62,15 @@ pub(crate) struct TextStyles {
 pub(crate) struct TextStyle {
     pub size: f32,
     pub line_height: Option<f32>,
+    /// Scale authored scene sizes by the same choices as the default size.
+    pub scale: f32,
 }
 
 impl TextStyle {
+    pub fn size(&self, authored: Option<f32>) -> f32 {
+        authored.map_or(self.size, |size| size * self.scale)
+    }
+
     pub fn line(&self, size: f32) -> f32 {
         self.line_height.unwrap_or(size * 1.2)
     }
@@ -253,7 +259,7 @@ impl<'a> Builder<'a> {
         Some(match node.family.as_str() {
             "text" => {
                 let style = self.text_style(flag(node, "mono"));
-                style.line(number(node, "size").unwrap_or(style.size))
+                style.line(style.size(number(node, "size")))
             }
             "image" => number(node, "h").unwrap_or(16.0),
             "row" => children(node)
@@ -537,7 +543,7 @@ impl<'a> Builder<'a> {
             "list" => return self.list(id, node, style, &key, list, depth),
             "text" => {
                 let mono = flag(node, "mono");
-                let size = number(node, "size").unwrap_or(self.text_style(mono).size);
+                let size = self.text_style(mono).size(number(node, "size"));
                 let leaf = Leaf::Text {
                     text: port_text(node, "text").to_owned(),
                     size,

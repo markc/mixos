@@ -20,6 +20,17 @@ use toolkit::theme::{Overlay, Theme};
 /// The effective context the shell draws in.
 pub(crate) const CONTEXT: &str = "desktop";
 
+/// The proportional size used to measure and paint shell menus and cards.
+pub(crate) fn ui_size(theme: &Theme, text_scale: f32) -> f32 {
+    let record = design::active_typography(Some(theme.typography()), TypographyRole::Ui);
+    let size = if record.font_size > 0.0 {
+        record.font_size as f32
+    } else {
+        crate::view::TEXT_SIZE
+    };
+    size * theme.interface_size_scale() * text_scale
+}
+
 #[derive(Clone, Debug)]
 pub struct Look {
     pub theme: Arc<Theme>,
@@ -205,7 +216,7 @@ pub(crate) fn fixture(mode: &str, scale: f64) -> Arc<Look> {
 }
 
 #[cfg(test)]
-fn snapshot_of(desktop: settings::Desktop) -> Snapshot {
+pub(crate) fn snapshot_of(desktop: settings::Desktop) -> Snapshot {
     let effective = settings::resolve(&desktop).unwrap();
     Snapshot {
         schema: settings::SCHEMA,
@@ -252,6 +263,7 @@ mod tests {
             let look = build(&next).unwrap();
             assert_eq!(look.theme.overlay().weight, Some(weight));
             assert_eq!(look.theme.overlay().size, Some(18.0));
+            assert!((ui_size(&look.theme, look.text_scale) - 27.0).abs() < 0.001);
             let ctx = egui::Context::default();
             install(&ctx, &look.theme, look.text_scale, false);
             let ui = design::active_typography(Some(plain.theme.typography()), TypographyRole::Ui);

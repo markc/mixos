@@ -69,12 +69,7 @@ pub fn place(scene: (f32, f32, f32, f32), at: &TipAt, output: (f32, f32)) -> (f3
 /// as the scene measured it.
 fn ui_size(look: Option<&crate::appearance::Look>, theme: &toolkit::theme::Theme) -> f32 {
     let scale = look.map_or(1.0, |look| look.text_scale);
-    let record = design::active_typography(Some(theme.typography()), design::TypographyRole::Ui);
-    if record.font_size > 0.0 {
-        record.font_size as f32 * scale
-    } else {
-        crate::view::TEXT_SIZE * scale
-    }
+    crate::appearance::ui_size(theme, scale)
 }
 
 #[derive(Clone, Debug)]
@@ -390,6 +385,18 @@ pub(crate) fn reconcile(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn interface_font_size_matches_the_scene_measurement_for_cards() {
+        let mut desktop = settings::Desktop::default();
+        desktop.appearance.font_size = Some(18.0);
+        desktop.ui.text_scale = 1.5;
+        let look = crate::appearance::build(&crate::appearance::snapshot_of(desktop)).unwrap();
+        assert!((ui_size(Some(&look), &look.theme) - 27.0).abs() < 0.001);
+        let plain = crate::appearance::fixture("dark", 1.0);
+        let design = design::active_typography(Some(plain.theme.typography()), design::TypographyRole::Ui);
+        assert_eq!(ui_size(None, &plain.theme), design.font_size as f32);
+    }
 
     fn at(anchor: (f32, f32, f32, f32), size: (f32, f32)) -> TipAt {
         TipAt {
