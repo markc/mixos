@@ -1348,6 +1348,12 @@ async fn capabilities_match_after_login_and_enable_and_zero_arg_commands_validat
                 .contains("b BAD")
         );
     }
+    for invalid_tag in ["bad\"tag", "bad\\tag", "bad(tag"] {
+        w.write_all(format!("{invalid_tag} NOOP\r\n").as_bytes()).await?;
+        let response = read_line(&mut r).await?;
+        assert!(response.starts_with("* BAD"), "{response}");
+    }
+    assert!(command(&mut r, &mut w, "n", "NOOP").await?.contains("n OK"));
     Ok(())
 }
 
@@ -1478,7 +1484,7 @@ async fn uidvalidity_does_not_repeat_on_rapid_or_legacy_mailbox_recreation() -> 
         tx.tx()
             .execute(
                 "UPDATE container SET seq_validity = ?1 WHERE id = ?2",
-                params![legacy * 1000, id.0.to_string()],
+                params![(legacy * 1000) as i64, id.0.to_string()],
             )
             .map_err(|e| mds::Error::Other(e.to_string()))?;
         Ok(())

@@ -2264,11 +2264,8 @@ fn sniff_tag(line: &[u8]) -> Option<String> {
         return None;
     }
     let slice = &line[..end];
-    if slice.iter().all(|b| b.is_ascii_graphic() && *b != b'+') {
-        std::str::from_utf8(slice).ok().map(str::to_string)
-    } else {
-        None
-    }
+    let tag = std::str::from_utf8(slice).ok()?;
+    codec::is_valid_tag(tag).then(|| tag.to_string())
 }
 
 /// Whether a command line (tag, command, args) is `SEARCH` or

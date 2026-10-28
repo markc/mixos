@@ -40,15 +40,13 @@
 //!   removal we already accounted for (e.g. a queued event that
 //!   fired between subscribe and entry-snapshot whose effect the
 //!   diff already emitted).
-//! * `FlagsChanged` / `ItemMoved` — skipped. `ItemMoved` is
+//! * `FlagsChanged` — resolve the current membership and emit
+//!   `FETCH (UID ... FLAGS (...))` using the client's snapshot.
+//! * `ItemMoved` — skipped. `ItemMoved` is
 //!   *additive* (the substrate also publishes the underlying
 //!   `ItemAdded`/`ItemRemoved` on src/dest) so we still see the
 //!   moved-into-this-mailbox / moved-out-of-this-mailbox shapes
-//!   without parsing the correlation event. Flag updates are
-//!   re-fetched by the client on the next NOOP/SELECT pass; an
-//!   MSN-bearing `FETCH FLAGS` push would require an out-of-band
-//!   item-id → MSN lookup that's not worth the substrate
-//!   roundtrip for the Thunderbird MVP.
+//!   without parsing the correlation event.
 //!
 //! ## Entry-race coherence
 //!
@@ -82,9 +80,7 @@
 //!
 //! `broadcast::Receiver::recv` returns `RecvError::Lagged(n)` when
 //! the subscriber falls more than `notifier::DEFAULT_CAPACITY`
-//! events behind. We emit a `* OK [ALERT] notifier lagged …` line
-//! (RFC 9051 §7.1 — `OK` with an `[ALERT]` response code is a
-//! human-readable warning the client should surface), then run the
+//! events behind. We log the lag and run the
 //! same diff-and-emit as entry: resnapshot the UID list, emit the
 //! local-view → new-snapshot diff (descending EXPUNGEs + final
 //! EXISTS), and replace the local view. `EXISTS` alone is
