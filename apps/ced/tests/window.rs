@@ -337,6 +337,13 @@ fn mail_field_typing_and_undo_use_the_tab_headers() {
     let app = &h.state().shell.as_ref().unwrap().app;
     assert_eq!(app.active_tab().unwrap().mail.as_ref().unwrap().headers.subject, "Original");
     assert!(!app.active_tab().unwrap().dirty());
+    // A menu Undo after the shortcut must not undo an undo recorded by
+    // TextEdit's separate history and bring "Changed" back again.
+    h.state_mut().shell.as_mut().unwrap().app.action(documents::actions::ActionId::EditUndo);
+    h.run_steps(4);
+    let app = &h.state().shell.as_ref().unwrap().app;
+    assert_eq!(app.active_tab().unwrap().mail.as_ref().unwrap().headers.subject, "Original");
+    assert!(!app.active_tab().unwrap().dirty());
 }
 
 fn markdown_snapshot(scheme: Scheme, mode: Mode, action: documents::actions::ActionId, name: &str) {
