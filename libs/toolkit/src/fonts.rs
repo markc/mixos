@@ -183,7 +183,7 @@ mod tests {
                 .unwrap();
             let ctx = egui::Context::default();
             install(&ctx, &theme);
-            let output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
                 ui.fonts_mut(|fonts| {
                     let _ = fonts.layout_no_wrap(
                         "MixOS Preferences Hamburgefonts 0123456789".into(),
@@ -206,6 +206,7 @@ mod tests {
                         .sum::<u64>()
                 })
                 .sum();
+            output.textures_delta.clear();
             eprintln!("Inter {weight}: atlas coverage {coverage}");
             assert!(
                 coverage > previous,

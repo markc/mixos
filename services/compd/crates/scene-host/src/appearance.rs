@@ -275,7 +275,7 @@ mod tests {
                         < 0.001
                 );
             }
-            let _ = ctx.run_ui(Default::default(), |ui| {
+            let mut output = ctx.run_ui(Default::default(), |ui| {
                 ui.fonts(|fonts| {
                     assert_eq!(
                         fonts.definitions().families[&egui::FontFamily::Proportional][0],
@@ -283,6 +283,7 @@ mod tests {
                     );
                 })
             });
+            output.textures_delta.clear();
             for style in ChromeStyle::ALL {
                 let chrome = look.chrome(style);
                 assert_eq!(
