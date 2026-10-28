@@ -62,7 +62,9 @@ async fn versions_atomic_activation_isolation_and_optimistic_edits() -> Result<(
 async fn quota_and_history_retention() -> Result<()> {
     let (_tmp, db) = fixture().await?;
     let oversized = " ".repeat(maild::sieve::MAX_SCRIPT_BYTES + 1);
-    let error = store::put(&db, 1, "too-large", &oversized, None).await.unwrap_err();
+    let error = store::put(&db, 1, "too-large", &oversized, None)
+        .await
+        .unwrap_err();
     assert!(error.to_string().starts_with("QUOTA/MAXSIZE"));
     assert!(store::list(&db, 1).await?.is_empty());
     for n in 0..32 {
