@@ -476,9 +476,16 @@ fn tiling_props_read_describe_validate_and_diff_through_the_props_model() {
     let mut pending = PendingPropChanges::default();
     crate::diff::collect_snapshot_diff(&original, &snapshot, "props.set", &mut pending);
     assert!(!pending.is_empty());
-    let saved = json!({"edge_tiling":false,"side_band_px":50.5,"preview_delay_ms":2001,"future_leaf":true});
-    assert_eq!(crate::tiling::TilingConfig::from_saved(saved.as_object().unwrap()),
-        crate::tiling::TilingConfig { edge_tiling:false, side_band_px:50.5, ..Default::default() });
+    let saved =
+        json!({"edge_tiling":false,"side_band_px":50.5,"preview_delay_ms":2001,"future_leaf":true});
+    assert_eq!(
+        crate::tiling::TilingConfig::from_saved(saved.as_object().unwrap()),
+        crate::tiling::TilingConfig {
+            edge_tiling: false,
+            side_band_px: 50.5,
+            ..Default::default()
+        }
+    );
 }
 
 #[test]

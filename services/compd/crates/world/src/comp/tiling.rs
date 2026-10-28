@@ -231,10 +231,14 @@ impl InnerEdges {
         for other in others {
             let (other_right, other_bottom) =
                 (other.loc.x + other.size.w, other.loc.y + other.size.h);
-            let vertical = output.loc.y < other_bottom && other.loc.y < bottom
-                && pointer.is_none_or(|p| p.y >= f64::from(other.loc.y) && p.y < f64::from(other_bottom));
-            let horizontal = output.loc.x < other_right && other.loc.x < right
-                && pointer.is_none_or(|p| p.x >= f64::from(other.loc.x) && p.x < f64::from(other_right));
+            let vertical = output.loc.y < other_bottom
+                && other.loc.y < bottom
+                && pointer
+                    .is_none_or(|p| p.y >= f64::from(other.loc.y) && p.y < f64::from(other_bottom));
+            let horizontal = output.loc.x < other_right
+                && other.loc.x < right
+                && pointer
+                    .is_none_or(|p| p.x >= f64::from(other.loc.x) && p.x < f64::from(other_right));
             edges.left |= vertical && other_right == output.loc.x;
             edges.right |= vertical && other.loc.x == right;
             edges.top |= horizontal && other_bottom == output.loc.y;

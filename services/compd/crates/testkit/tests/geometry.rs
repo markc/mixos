@@ -355,7 +355,10 @@ fn only_the_owning_output_reconfigures_and_restore_survives_output_loss() {
     assert_eq!(fallback.size, restore.size);
     assert_eq!(fallback.location, (280, 185).into());
     assert_eq!(fallback.output, "testkit-0");
-    assert_eq!(h.wire.inner.space.state.element_location(&window), Some(fallback.location));
+    assert_eq!(
+        h.wire.inner.space.state.element_location(&window),
+        Some(fallback.location)
+    );
     let primary = h.wire.inner.output.clone();
     h.wire.inner.space.state.unmap_output(&primary);
     let before = count(&h, &top);
@@ -658,8 +661,16 @@ fn removing_an_output_restores_tiles_and_maximised_windows_on_a_survivor() {
         refresh(&mut h, id, &window);
         if tiled {
             let host = &mut h.wire.inner;
-            geometry::set_placement(&mut host.comp, &mut host.space.state, id, &window,
-                Placement::Tiled { slot: TileSlot::Right, output: "testkit-1".into() });
+            geometry::set_placement(
+                &mut host.comp,
+                &mut host.space.state,
+                id,
+                &window,
+                Placement::Tiled {
+                    slot: TileSlot::Right,
+                    output: "testkit-1".into(),
+                },
+            );
         } else {
             maximize(&mut h, id, &window, true);
         }
