@@ -217,13 +217,24 @@ impl InnerEdges {
         output: Rectangle<i32, Logical>,
         others: impl IntoIterator<Item = Rectangle<i32, Logical>>,
     ) -> Self {
+        Self::at(output, others, None)
+    }
+
+    /// A partially shared side is outer beyond its neighbour's extent.
+    pub fn at(
+        output: Rectangle<i32, Logical>,
+        others: impl IntoIterator<Item = Rectangle<i32, Logical>>,
+        pointer: Option<Point<f64, Logical>>,
+    ) -> Self {
         let mut edges = Self::default();
         let (right, bottom) = (output.loc.x + output.size.w, output.loc.y + output.size.h);
         for other in others {
             let (other_right, other_bottom) =
                 (other.loc.x + other.size.w, other.loc.y + other.size.h);
-            let vertical = output.loc.y < other_bottom && other.loc.y < bottom;
-            let horizontal = output.loc.x < other_right && other.loc.x < right;
+            let vertical = output.loc.y < other_bottom && other.loc.y < bottom
+                && pointer.is_none_or(|p| p.y >= f64::from(other.loc.y) && p.y < f64::from(other_bottom));
+            let horizontal = output.loc.x < other_right && other.loc.x < right
+                && pointer.is_none_or(|p| p.x >= f64::from(other.loc.x) && p.x < f64::from(other_right));
             edges.left |= vertical && other_right == output.loc.x;
             edges.right |= vertical && other.loc.x == right;
             edges.top |= horizontal && other_bottom == output.loc.y;
@@ -308,12 +319,13 @@ pub fn armed(
             .copied()
             .unwrap_or_default(),
     );
-    let inner = InnerEdges::between(
+    let inner = InnerEdges::at(
         outer,
         space
             .outputs()
             .filter(|other| *other != output)
             .filter_map(|other| space.output_geometry(other)),
+        Some(pointer),
     );
     let (min, max) = geometry::size_hints(window);
     let resizable = !((max.0 > 0 && min.0 >= max.0) || (max.1 > 0 && min.1 >= max.1));

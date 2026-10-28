@@ -229,6 +229,22 @@ fn shared_dwell_then_show_delay_are_both_required_without_more_motion() {
 }
 
 #[test]
+fn the_unshared_part_of_a_partially_shared_side_arms_immediately() {
+    let mut h = Harness::two_outputs();
+    let secondary = h.wire.inner.space.state.outputs().find(|o| o.name() == "testkit-1").unwrap().clone();
+    secondary.change_current_state(Some(smithay::output::Mode { size:(1920,720).into(), refresh:60000 }), None, None, None);
+    let (surface, _, _) = h.mapped_toplevel(640, 480);
+    let (_, window) = window(&h, &surface);
+    begin_move(&mut h, &window);
+    motion(&mut h, (1919.0, 400.0));
+    apply(&mut h, &window);
+    assert!(h.comp().drag.as_ref().unwrap().armed.is_none());
+    motion(&mut h, (1919.0, 900.0));
+    apply(&mut h, &window);
+    assert!(h.comp().drag.as_ref().unwrap().armed.is_some());
+}
+
+#[test]
 fn a_shared_top_maximise_zone_dwells_while_the_adjacent_outer_top_does_not() {
     let mut h = Harness::two_outputs();
     let secondary = h

@@ -297,7 +297,8 @@ Corner props remain runtime-only.</p>
 <tr><td><code>preview_animation_ms</code></td><td><code>180</code></td><td>integer 0–1000 ms; zero snaps the preview</td></tr>
 </tbody></table>
 <p>On shared edges the dwell runs first, followed by the preview delay. Both
-must finish before release can tile. Outer edges skip the shared-edge dwell.
+must finish before release can tile. Outer edges skip the shared-edge dwell,
+including the unshared section of a side beside a shorter neighbouring output.
 Hot corners keep their independent 4 px detector and remain active in drags.</p>
 <p>Timing uses an injectable monotonic policy clock. A calloop one-shot waits
 for the pending dwell/delay or the next 16 ms animation step, ending exactly
