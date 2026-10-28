@@ -48,14 +48,20 @@ handle alive until it answers; dropping it cancels the native request or
 calls portal `Request.Close`. Paths retain exact OS bytes in `PathBuf`.
 Set `correlation` to the app's own window key; native outcomes are routed
 by the provider's request id, with `files.choose.result` recovering missed
-publications. Nothing is cached between calls.
+publications. If omitted, correlation gets a unique per-handle value used
+to cancel requests whose acknowledgements were lost. `on_behalf_of` comes
+from the app id recorded for its viewport. Nothing is cached between calls.
 
 The tiers run sequentially: registered Bus `files`, the system chooser,
 then `file_chooser::FileChooser` inside the calling viewport. Discovery,
 calls and filesystem work run off the frame thread. Connection and discovery
 operations have a two-second bound. A visible chooser has no user deadline;
 a slow acknowledgement or lost connection is resolved or cancelled before
-another tier starts. Refusals and failures advance; Cancel ends the request.
+another tier starts. Refusals and provider failures advance. Every Cancel
+is final, including cancellation by another Bus caller. A malformed accepted
+answer is a final `Outcome::Failed`, preserving the person's decision.
+`Handle::cancel()` ends polling once and asks the worker to cancel. A stalled
+Bus intent waits at most two seconds before recovery by correlation.
 
 On Linux, the default `portal` feature calls FileChooser directly with
 zbus, preserving all request fields and distinguishing Responses 0, 1 and
@@ -66,7 +72,10 @@ default features to omit this tier. Windows and macOS alone compile rfd
 accept label, express general glob/MIME filters, or distinguish failure
 from Cancel: choices retain their defaults, `current_filter` is `None`,
 simple extension filters are mapped, and both failure and Cancel end the
-request. SaveFiles skips rfd and uses the local chooser.
+request. rfd exposes no session probe or Close operation: cancelling or
+dropping the handle ignores the answer but leaves its dialog open until
+the person ends it. Save results apply `Request::save_name`; SaveFiles skips
+rfd and uses the local chooser.
 
 The local chooser supports open (single/multiple files or folders), save,
 SaveFiles, filter menus, choices, suggested names, exact byte names and

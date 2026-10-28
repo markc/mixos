@@ -29,6 +29,7 @@ fn worker_death_opens_fallback_and_keeps_the_request() {
 fn two_failed_tiers_open_the_in_process_chooser_with_the_same_request() {
     let mut handle = choose(request(r#"{"mode":"save_files","title":"Keep this title","files":["one.md","two.md"],"choices":[{"id":"check","label":"Check","options":[],"default":"true"}]}"#).unwrap());
     let saved = handle.request.clone();
+    assert!(saved.correlation.is_some(), "the same request must remain identifiable through the handoff");
     handle.driver = Some(Box::new(|_, cancel, emitter| {
         runtime().block_on(cascade(async { None }, async { None }, cancel, &emitter));
     }));
@@ -158,9 +159,9 @@ impl Fake {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn real_noded_provider_and_broker_loss_open_the_next_tier_once_within_fifteen_seconds() {
-    for loss in [0, 1, 2, 3] {
+    for (loss, sending) in [(0, false), (1, false), (2, false), (3, false), (0, true), (1, true)] {
         let mut broker = test_broker::Broker::start();
-        let mut fake = Fake::start(&broker.url, 0).await;
+        let mut fake = Fake::start(&broker.url, if sending { 3 } else { 0 }).await;
         let req = request("{}").unwrap();
         let (_tx, mut cancel) = watch::channel(false);
         let url = broker.url.clone();
