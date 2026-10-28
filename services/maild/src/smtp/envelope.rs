@@ -14,17 +14,35 @@ pub fn valid_address(addr: &str, null_ok: bool) -> bool {
         && local.len() <= 64
         && !domain.is_empty()
         && domain.len() <= 255
-        && !local.contains('@')
-        && local.chars().all(|c| {
-            !c.is_ascii() || c.is_ascii_alphanumeric() || ".!#$%&'*+-/=?^_`{|}~".contains(c)
-        })
-        && !addr
-            .chars()
-            .any(|c| c.is_control() || c.is_whitespace() || "<>\"()\\,;:".contains(c))
-        && !local.starts_with('.')
-        && !local.ends_with('.')
-        && !local.contains("..")
+        && valid_local(local)
+        && !addr.chars().any(char::is_control)
         && dns_domain(domain).is_some()
+}
+
+fn valid_local(local: &str) -> bool {
+    if let Some(quoted) = local.strip_prefix('"').and_then(|s| s.strip_suffix('"')) {
+        let mut escaped = false;
+        for c in quoted.chars() {
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == '"' {
+                return false;
+            }
+        }
+        return !escaped;
+    }
+    if local.starts_with('.') || local.ends_with('.') || local.contains("..") {
+        return false;
+    }
+    local.chars().all(|c| {
+        if c.is_ascii() {
+            c.is_ascii_alphanumeric() || ".!#$%&'*+-/=?^_`{|}~".contains(c)
+        } else {
+            !c.is_whitespace()
+        }
+    })
 }
 
 /// DNS and authoritative domain rows use IDNA A-labels; envelopes retain UTF-8.
