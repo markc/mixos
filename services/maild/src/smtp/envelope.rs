@@ -19,7 +19,7 @@ pub fn valid_address(addr: &str, null_ok: bool) -> bool {
         && (address_literal(domain) || dns_domain(domain).is_some())
 }
 
-fn address_literal(domain: &str) -> bool {
+pub(super) fn address_literal(domain: &str) -> bool {
     let Some(literal) = domain.strip_prefix('[').and_then(|s| s.strip_suffix(']')) else {
         return false;
     };

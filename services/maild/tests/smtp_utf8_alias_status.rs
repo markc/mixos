@@ -516,51 +516,87 @@ fn bus_cmd(command: &str, body: Value) -> IncomingCommand {
 }
 
 async fn submit_native(built: &BuiltMaild, body: Value) -> Result<uuid::Uuid> {
-    let (rc, body) = maild::bus::submission::dispatch(&bus_cmd("maild.submit",body),
-        &built.app_state.db,&built.app_state.mailstore,&built.app_state.aliases_runtime,1024*1024).await;
-    ensure!(rc == 0,"submit: {body}");
-    Ok(serde_json::from_str::<Value>(&body)?["submission_id"].as_str().unwrap().parse()?)
+    let (rc, body) = maild::bus::submission::dispatch(
+        &bus_cmd("maild.submit", body),
+        &built.app_state.db,
+        &built.app_state.mailstore,
+        &built.app_state.aliases_runtime,
+        1024 * 1024,
+    )
+    .await;
+    ensure!(rc == 0, "submit: {body}");
+    Ok(serde_json::from_str::<Value>(&body)?["submission_id"]
+        .as_str()
+        .unwrap()
+        .parse()?)
 }
 
 async fn status(built: &BuiltMaild, id: uuid::Uuid) -> Result<Value> {
-    let (rc,body) = maild::bus::submission::status(&bus_cmd("maild.submission.status",json!({"id":id})),&built.app_state.db).await;
-    ensure!(rc == 0,"status: {body}");
+    let (rc, body) = maild::bus::submission::status(
+        &bus_cmd("maild.submission.status", json!({"id":id})),
+        &built.app_state.db,
+    )
+    .await;
+    ensure!(rc == 0, "status: {body}");
     Ok(serde_json::from_str(&body)?)
 }
 
 async fn wait_delivered(built: &BuiltMaild, id: uuid::Uuid) -> Result<Value> {
-    timeout(Duration::from_secs(65),async {
+    timeout(Duration::from_secs(65), async {
         loop {
-            let result = status(built,id).await?;
-            if result["delivery_confirmed"] == true && maild::smtp::queue::list(&built.app_state.db.conn,10).await?.is_empty() {
+            let result = status(built, id).await?;
+            if result["delivery_confirmed"] == true
+                && maild::smtp::queue::list(&built.app_state.db.conn, 10)
+                    .await?
+                    .is_empty()
+            {
                 return Ok(result);
             }
             tokio::time::sleep(Duration::from_millis(25)).await;
         }
-    }).await?
+    })
+    .await?
 }
 
-#[tokio::test(flavor="multi_thread",worker_threads=4)]
-async fn legacy_queue_ids_migrate_and_second_message_transmits_without_retagging_first() -> Result<()> {
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn legacy_queue_ids_migrate_and_second_message_transmits_without_retagging_first()
+-> Result<()> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let peer_addr = listener.local_addr()?;
     let peer = tokio::spawn(async move {
         let mut messages = Vec::new();
         for _ in 0..2 {
-            let (stream,_) = listener.accept().await.unwrap();
+            let (stream, _) = listener.accept().await.unwrap();
             let mut io = BufReader::new(stream);
-            io.get_mut().write_all(b"220 mx.example.net\r\n").await.unwrap();
+            io.get_mut()
+                .write_all(b"220 mx.example.net\r\n")
+                .await
+                .unwrap();
             let mut data = false;
             let mut message = String::new();
             loop {
                 let mut line = String::new();
-                if io.read_line(&mut line).await.unwrap() == 0 { break; }
+                if io.read_line(&mut line).await.unwrap() == 0 {
+                    break;
+                }
                 let reply = if data {
-                    if line == ".\r\n" {data=false; "250 2.0.0 stored\r\n"} else {message.push_str(&line);continue;}
-                } else if line.starts_with("EHLO") {"250-mx.example.net\r\n250 8BITMIME\r\n"}
-                else if line.starts_with("DATA") {data=true;"354 send\r\n"}
-                else if line.starts_with("QUIT") {break;}
-                else {"250 ok\r\n"};
+                    if line == ".\r\n" {
+                        data = false;
+                        "250 2.0.0 stored\r\n"
+                    } else {
+                        message.push_str(&line);
+                        continue;
+                    }
+                } else if line.starts_with("EHLO") {
+                    "250-mx.example.net\r\n250 8BITMIME\r\n"
+                } else if line.starts_with("DATA") {
+                    data = true;
+                    "354 send\r\n"
+                } else if line.starts_with("QUIT") {
+                    break;
+                } else {
+                    "250 ok\r\n"
+                };
                 io.get_mut().write_all(reply.as_bytes()).await.unwrap();
             }
             messages.push(message);
@@ -568,141 +604,207 @@ async fn legacy_queue_ids_migrate_and_second_message_transmits_without_retagging
         messages
     });
     let tmp = tempfile::tempdir()?;
-    let (built,_) = fixture(&tmp,Some(peer_addr)).await?;
-    account(&built,"alice@example.com").await?;
+    let (built, _) = fixture(&tmp, Some(peer_addr)).await?;
+    account(&built, "alice@example.com").await?;
     {
         let conn = built.app_state.db.conn.lock().unwrap();
-        let sql: String = conn.query_row("SELECT sql FROM sqlite_master WHERE name='smtp_queue'",[],|r|r.get(0))?;
+        let sql: String = conn.query_row(
+            "SELECT sql FROM sqlite_master WHERE name='smtp_queue'",
+            [],
+            |r| r.get(0),
+        )?;
         conn.execute_batch("DROP TABLE smtp_queue")?;
-        conn.execute_batch(&sql.replace("AUTOINCREMENT",""))?;
+        conn.execute_batch(&sql.replace("AUTOINCREMENT", ""))?;
     }
     let first = submit_native(&built,json!({"operation_id":"reuse-1","account":"alice@example.com","to":["same@remote.example.net"],"subject":"M1","text":"first payload"})).await?;
-    let first_queue_id: i64 = built.app_state.db.conn.lock().unwrap().query_row("SELECT queue_id FROM smtp_delivery WHERE submission_id=?1",[first.to_string()],|r| r.get(0))?;
-    let original = wait_delivered(&built,first).await?;
+    let first_queue_id: i64 = built.app_state.db.conn.lock().unwrap().query_row(
+        "SELECT queue_id FROM smtp_delivery WHERE submission_id=?1",
+        [first.to_string()],
+        |r| r.get(0),
+    )?;
+    let original = wait_delivered(&built, first).await?;
     // Upgrade the legacy database after its last queue row has disappeared.
     built.app_state.db.migrate().await?;
     built.app_state.db.migrate().await?;
     let second = submit_native(&built,json!({"operation_id":"reuse-2","account":"alice@example.com","to":["same@remote.example.net"],"subject":"M2","text":"second payload"})).await?;
-    let second_queue_id: i64 = built.app_state.db.conn.lock().unwrap().query_row("SELECT queue_id FROM smtp_delivery WHERE submission_id=?1",[second.to_string()],|r|r.get(0))?;
+    let second_queue_id: i64 = built.app_state.db.conn.lock().unwrap().query_row(
+        "SELECT queue_id FROM smtp_delivery WHERE submission_id=?1",
+        [second.to_string()],
+        |r| r.get(0),
+    )?;
     assert!(second_queue_id > first_queue_id);
-    wait_delivered(&built,second).await?;
-    assert_eq!(status(&built,first).await?,original);
-    let messages = timeout(Duration::from_secs(5),peer).await??;
+    wait_delivered(&built, second).await?;
+    assert_eq!(status(&built, first).await?, original);
+    let messages = timeout(Duration::from_secs(5), peer).await??;
     assert!(messages[0].contains("first payload"));
     assert!(messages[1].contains("second payload"));
     Ok(())
 }
 
-async fn authenticated(built: &BuiltMaild,tls: &tokio_rustls::TlsConnector,email: &str)
-    -> Result<BufReader<tokio_rustls::client::TlsStream<TcpStream>>> {
-    let stream = tls.connect(rustls::pki_types::ServerName::try_from("localhost")?,TcpStream::connect(built.smtp_handle.smtps_addrs[0]).await?).await?;
+async fn authenticated(
+    built: &BuiltMaild,
+    tls: &tokio_rustls::TlsConnector,
+    email: &str,
+) -> Result<BufReader<tokio_rustls::client::TlsStream<TcpStream>>> {
+    let stream = tls
+        .connect(
+            rustls::pki_types::ServerName::try_from("localhost")?,
+            TcpStream::connect(built.smtp_handle.smtps_addrs[0]).await?,
+        )
+        .await?;
     let mut io = BufReader::new(stream);
     reply(&mut io).await?;
-    command(&mut io,"EHLO client.example.org","250").await?;
-    let auth = base64::engine::general_purpose::STANDARD.encode(format!("\0{email}\0test-password"));
-    command(&mut io,&format!("AUTH PLAIN {auth}"),"235").await?;
+    command(&mut io, "EHLO client.example.org", "250").await?;
+    let auth =
+        base64::engine::general_purpose::STANDARD.encode(format!("\0{email}\0test-password"));
+    command(&mut io, &format!("AUTH PLAIN {auth}"), "235").await?;
     Ok(io)
 }
 
-async fn raw_header_mail<S: AsyncRead+AsyncWrite+Unpin>(io: &mut BufReader<S>) -> Result<()> {
-    command(io,"MAIL FROM:<alice@example.com> BODY=8BITMIME","250").await?;
-    command(io,"RCPT TO:<alice@example.com>","250").await?;
-    command(io,"DATA","354").await?;
-    command(io,"From: alice@example.com\r\nSubject: café\r\n\r\nASCII body\r\n.","250").await?;
+async fn raw_header_mail<S: AsyncRead + AsyncWrite + Unpin>(io: &mut BufReader<S>) -> Result<()> {
+    command(io, "MAIL FROM:<alice@example.com> BODY=8BITMIME", "250").await?;
+    command(io, "RCPT TO:<alice@example.com>", "250").await?;
+    command(io, "DATA", "354").await?;
+    command(
+        io,
+        "From: alice@example.com\r\nSubject: café\r\n\r\nASCII body\r\n.",
+        "250",
+    )
+    .await?;
     Ok(())
 }
 
-#[tokio::test(flavor="multi_thread",worker_threads=4)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn legacy_raw_headers_are_accepted_on_inbound_and_submission() -> Result<()> {
     let tmp = tempfile::tempdir()?;
-    let (built,tls) = fixture(&tmp,None).await?;
-    let alice = account(&built,"alice@example.com").await?;
+    let (built, tls) = fixture(&tmp, None).await?;
+    let alice = account(&built, "alice@example.com").await?;
     let mut io = BufReader::new(TcpStream::connect(built.smtp_handle.inbound_addrs[0]).await?);
     reply(&mut io).await?;
-    command(&mut io,"EHLO client.example.org","250").await?;
+    command(&mut io, "EHLO client.example.org", "250").await?;
     raw_header_mail(&mut io).await?;
-    let mut io = authenticated(&built,&tls,"alice@example.com").await?;
+    let mut io = authenticated(&built, &tls, "alice@example.com").await?;
     raw_header_mail(&mut io).await?;
-    assert_eq!(inbox_count(&built,alice)?,2);
+    assert_eq!(inbox_count(&built, alice)?, 2);
     let ms = &built.app_state.mailstore;
-    for message in ms.list_emails_in_mailbox(alice,ms.mailbox_by_role(alice,MailboxRole::Inbox)?.unwrap(),ListOpts::default())? {
-        assert!(String::from_utf8(ms.mds().get_blob(&message.blob_hash)?)?.contains("Subject: café"));
+    for message in ms.list_emails_in_mailbox(
+        alice,
+        ms.mailbox_by_role(alice, MailboxRole::Inbox)?.unwrap(),
+        ListOpts::default(),
+    )? {
+        assert!(
+            String::from_utf8(ms.mds().get_blob(&message.blob_hash)?)?.contains("Subject: café")
+        );
     }
     Ok(())
 }
 
-#[tokio::test(flavor="multi_thread",worker_threads=4)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn rejected_mail_preserves_accepted_transaction_in_both_protocols() -> Result<()> {
     let tmp = tempfile::tempdir()?;
-    let (built,tls) = fixture(&tmp,None).await?;
-    let alice = account(&built,"alice@example.com").await?;
+    let (built, tls) = fixture(&tmp, None).await?;
+    let alice = account(&built, "alice@example.com").await?;
     let mut io = BufReader::new(TcpStream::connect(built.smtp_handle.inbound_addrs[0]).await?);
     reply(&mut io).await?;
-    command(&mut io,"EHLO client.example.org","250").await?;
-    command(&mut io,"MAIL FROM:<élise@example.org> SMTPUTF8","250").await?;
-    command(&mut io,"RCPT TO:<alice@example.com>","250").await?;
-    command(&mut io,"MAIL FROM:<bad>","501").await?;
-    command(&mut io,"MAIL FROM:<other@example.org> SMTPUTF8=yes","555").await?;
-    command(&mut io,"MAIL FROM:<élise@example.org>","553").await?;
-    command(&mut io,"DATA","354").await?;
-    command(&mut io,"From: élise@example.org\r\nSubject: preserved\r\n\r\nfirst\r\n.","250").await?;
-    let mut io = authenticated(&built,&tls,"alice@example.com").await?;
-    command(&mut io,"MAIL FROM:<alice@example.com>","250").await?;
-    command(&mut io,"RCPT TO:<alice@example.com>","250").await?;
-    command(&mut io,"MAIL FROM:<other@example.org>","530").await?;
-    command(&mut io,"DATA","354").await?;
-    command(&mut io,"From: alice@example.com\r\nSubject: preserved\r\n\r\nsecond\r\n.","250").await?;
-    assert_eq!(inbox_count(&built,alice)?,2);
+    command(&mut io, "EHLO client.example.org", "250").await?;
+    command(&mut io, "MAIL FROM:<élise@example.org> SMTPUTF8", "250").await?;
+    command(&mut io, "RCPT TO:<alice@example.com>", "250").await?;
+    command(&mut io, "MAIL FROM:<bad>", "501").await?;
+    command(&mut io, "MAIL FROM:<other@example.org> SMTPUTF8=yes", "555").await?;
+    command(&mut io, "MAIL FROM:<élise@example.org>", "553").await?;
+    command(&mut io, "DATA", "354").await?;
+    command(
+        &mut io,
+        "From: élise@example.org\r\nSubject: preserved\r\n\r\nfirst\r\n.",
+        "250",
+    )
+    .await?;
+    let mut io = authenticated(&built, &tls, "alice@example.com").await?;
+    command(&mut io, "MAIL FROM:<alice@example.com>", "250").await?;
+    command(&mut io, "RCPT TO:<alice@example.com>", "250").await?;
+    command(&mut io, "MAIL FROM:<other@example.org>", "530").await?;
+    command(&mut io, "DATA", "354").await?;
+    command(
+        &mut io,
+        "From: alice@example.com\r\nSubject: preserved\r\n\r\nsecond\r\n.",
+        "250",
+    )
+    .await?;
+    assert_eq!(inbox_count(&built, alice)?, 2);
     Ok(())
 }
 
-#[tokio::test(flavor="multi_thread",worker_threads=4)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn address_literals_reach_delivery_policy_after_syntax_validation() -> Result<()> {
     let tmp = tempfile::tempdir()?;
-    let (built,_) = fixture(&tmp,None).await?;
+    let (built, tls) = fixture(&tmp, None).await?;
+    account(&built, "alice@example.com").await?;
     let mut io = BufReader::new(TcpStream::connect(built.smtp_handle.inbound_addrs[0]).await?);
     reply(&mut io).await?;
-    command(&mut io,"EHLO client.example.org","250").await?;
-    for domain in ["[192.0.2.1]","[IPv6:2001:db8::1]"] {
-        command(&mut io,&format!("MAIL FROM:<user@{domain}>"),"250").await?;
-        command(&mut io,&format!("RCPT TO:<user@{domain}>"),"550").await?;
-        command(&mut io,"RSET","250").await?;
+    command(&mut io, "EHLO client.example.org", "250").await?;
+    for domain in ["[192.0.2.1]", "[IPv6:2001:db8::1]"] {
+        command(&mut io, &format!("MAIL FROM:<user@{domain}>"), "250").await?;
+        command(&mut io, &format!("RCPT TO:<user@{domain}>"), "550").await?;
+        command(&mut io, "RSET", "250").await?;
     }
-    for domain in ["[999.0.2.1]","[IPv6:invalid]","[2001:db8::1]"] {
-        command(&mut io,&format!("MAIL FROM:<user@{domain}>"),"501").await?;
+    for domain in ["[999.0.2.1]", "[IPv6:invalid]", "[2001:db8::1]"] {
+        command(&mut io, &format!("MAIL FROM:<user@{domain}>"), "501").await?;
+    }
+    let mut io = authenticated(&built, &tls, "alice@example.com").await?;
+    for domain in ["[192.0.2.1]", "[IPv6:2001:db8::1]"] {
+        command(&mut io, "MAIL FROM:<alice@example.com>", "250").await?;
+        command(&mut io, &format!("RCPT TO:<user@{domain}>"), "250").await?;
+        command(&mut io, "RSET", "250").await?;
     }
     Ok(())
 }
 
-#[tokio::test(flavor="multi_thread",worker_threads=4)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn idn_alias_spelling_cannot_be_shadowed_by_account_creation() -> Result<()> {
     let tmp = tempfile::tempdir()?;
-    let (built,_) = fixture(&tmp,None).await?;
-    account(&built,"alice@example.com").await?;
-    for (alias_addr,mailbox) in [("team@xn--fsqu00a.example.com","team@例子.example.com"),("staff@例子.example.com","staff@xn--fsqu00a.example.com")] {
-        alias(&built,alias_addr,&["alice@example.com"],Version::zero()).await?;
-        let error = account(&built,mailbox).await.unwrap_err().to_string();
-        assert!(error.contains("already a maild.aliases alias"),"{error}");
-        assert!(maild::db::account::get_by_email(&built.app_state.db.conn,mailbox).await?.is_none());
+    let (built, _) = fixture(&tmp, None).await?;
+    account(&built, "alice@example.com").await?;
+    for (alias_addr, mailbox) in [
+        ("team@xn--fsqu00a.example.com", "team@例子.example.com"),
+        ("staff@例子.example.com", "staff@xn--fsqu00a.example.com"),
+    ] {
+        alias(&built, alias_addr, &["alice@example.com"], Version::zero()).await?;
+        let error = account(&built, mailbox).await.unwrap_err().to_string();
+        assert!(error.contains("already a maild.aliases alias"), "{error}");
+        assert!(
+            maild::db::account::get_by_email(&built.app_state.db.conn, mailbox)
+                .await?
+                .is_none()
+        );
     }
     Ok(())
 }
 
-#[tokio::test(flavor="multi_thread",worker_threads=4)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn local_fanout_defers_only_failed_targets_and_retries_without_duplicates() -> Result<()> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let tmp = tempfile::tempdir()?;
-    let (built,_) = fixture(&tmp,Some(listener.local_addr()?)).await?;
-    let alice = account(&built,"alice@example.com").await?;
-    let bob = account(&built,"bob@example.com").await?;
-    alias(&built,"team@example.com",&["alice@example.com","bob@example.com"],Version::zero()).await?;
+    let (built, _) = fixture(&tmp, Some(listener.local_addr()?)).await?;
+    let alice = account(&built, "alice@example.com").await?;
+    let bob = account(&built, "bob@example.com").await?;
+    alias(
+        &built,
+        "team@example.com",
+        &["alice@example.com", "bob@example.com"],
+        Version::zero(),
+    )
+    .await?;
     let ms = &built.app_state.mailstore;
-    let bob_inbox = ms.mailbox_by_role(bob,MailboxRole::Inbox)?.unwrap();
+    let bob_inbox = ms.mailbox_by_role(bob, MailboxRole::Inbox)?.unwrap();
     let first = submit_native(&built,json!({"operation_id":"local-seed","account":"alice@example.com","to":["alice@example.com"],"subject":"seed","text":"seed"})).await?;
-    let email_id: String = built.app_state.db.conn.lock().unwrap().query_row("SELECT email_id FROM email_submissions WHERE id=?1",[first.to_string()],|r|r.get(0))?;
-    for native in [true,false] {
-        ms.update_mailbox(bob,bob_inbox,None,None,Some(None),None,None)?;
-        let before_alice = inbox_count(&built,alice)?;
+    let email_id: String = built.app_state.db.conn.lock().unwrap().query_row(
+        "SELECT email_id FROM email_submissions WHERE id=?1",
+        [first.to_string()],
+        |r| r.get(0),
+    )?;
+    for native in [true, false] {
+        ms.update_mailbox(bob, bob_inbox, None, None, Some(None), None, None)?;
+        let before_alice = inbox_count(&built, alice)?;
         let id = if native {
             submit_native(&built,json!({"operation_id":"local-partial","account":"alice@example.com","to":["team@example.com","bob@example.com"],"subject":"partial","text":"fanout"})).await?
         } else {
@@ -710,147 +812,297 @@ async fn local_fanout_defers_only_failed_targets_and_retries_without_duplicates(
                 json!({"create":{"x":{"emailId":email_id,"envelope":{"mailFrom":{"email":"alice@example.com"},"rcptTo":[{"email":"team@example.com"},{"email":"bob@example.com"}]}}}})).await?;
             created["created"]["x"]["id"].as_str().unwrap().parse()?
         };
-        let partial = status(&built,id).await?;
+        let partial = status(&built, id).await?;
         let results = partial["recipients"].as_array().unwrap();
-        assert_eq!(results.len(),3);
-        assert_eq!(results.iter().filter(|r| r["status"]=="deferred" && r["target"]=="bob@example.com").count(),2);
-        assert!(results.iter().any(|r| r["status"]=="delivered" && r["target"]=="alice@example.com"));
-        assert_eq!(inbox_count(&built,alice)?,before_alice+1);
-        let queued = maild::smtp::queue::list(&built.app_state.db.conn,10).await?;
-        assert_eq!(queued.len(),1);
-        assert_eq!(queued[0].local_account_id,Some(bob));
-        assert_eq!(queued[0].attempts,1,"the initial failed local attempt must be counted");
-        ms.update_mailbox(bob,bob_inbox,None,None,Some(Some(MailboxRole::Inbox)),None,None)?;
+        assert_eq!(results.len(), 3);
+        assert_eq!(
+            results
+                .iter()
+                .filter(|r| r["status"] == "deferred" && r["target"] == "bob@example.com")
+                .count(),
+            2
+        );
+        assert!(
+            results
+                .iter()
+                .any(|r| r["status"] == "delivered" && r["target"] == "alice@example.com")
+        );
+        assert_eq!(inbox_count(&built, alice)?, before_alice + 1);
+        let queued = maild::smtp::queue::list(&built.app_state.db.conn, 10).await?;
+        assert_eq!(queued.len(), 1);
+        assert_eq!(queued[0].local_account_id, Some(bob));
+        assert_eq!(
+            queued[0].attempts, 1,
+            "the initial failed local attempt must be counted"
+        );
+        ms.update_mailbox(
+            bob,
+            bob_inbox,
+            None,
+            None,
+            Some(Some(MailboxRole::Inbox)),
+            None,
+            None,
+        )?;
         maild::smtp::queue::flush(&built.app_state.db.conn).await?;
-        wait_delivered(&built,id).await?;
-        assert_eq!(inbox_count(&built,alice)?,before_alice+1);
-        assert_eq!(inbox_count(&built,bob)?,if native {1} else {2});
+        wait_delivered(&built, id).await?;
+        assert_eq!(inbox_count(&built, alice)?, before_alice + 1);
+        assert_eq!(inbox_count(&built, bob)?, if native { 1 } else { 2 });
     }
     // Deleting an account must not deliver a retry into its orphaned MDS set.
-    ms.update_mailbox(bob,bob_inbox,None,None,Some(None),None,None)?;
+    ms.update_mailbox(bob, bob_inbox, None, None, Some(None), None, None)?;
     let deleted = submit_native(&built,json!({"operation_id":"local-deleted","account":"alice@example.com","to":["team@example.com"],"subject":"deleted target","text":"fanout"})).await?;
-    ms.update_mailbox(bob,bob_inbox,None,None,Some(Some(MailboxRole::Inbox)),None,None)?;
-    built.app_state.db.conn.lock().unwrap().execute("DELETE FROM accounts WHERE id=?1",[bob])?;
+    ms.update_mailbox(
+        bob,
+        bob_inbox,
+        None,
+        None,
+        Some(Some(MailboxRole::Inbox)),
+        None,
+        None,
+    )?;
+    built
+        .app_state
+        .db
+        .conn
+        .lock()
+        .unwrap()
+        .execute("DELETE FROM accounts WHERE id=?1", [bob])?;
     maild::smtp::queue::flush(&built.app_state.db.conn).await?;
-    timeout(Duration::from_secs(65),async {
+    timeout(Duration::from_secs(65), async {
         loop {
-            let results = status(&built,deleted).await?;
-            if results["recipients"].as_array().unwrap().iter().any(|r|r["target"]=="bob@example.com" && r["status"]=="bounced") {return Ok::<_,anyhow::Error>(());}
+            let results = status(&built, deleted).await?;
+            if results["recipients"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|r| r["target"] == "bob@example.com" && r["status"] == "bounced")
+            {
+                return Ok::<_, anyhow::Error>(());
+            }
             tokio::time::sleep(Duration::from_millis(25)).await;
         }
-    }).await??;
-    assert_eq!(inbox_count(&built,bob)?,2);
+    })
+    .await??;
+    assert_eq!(inbox_count(&built, bob)?, 2);
     Ok(())
 }
 
-#[tokio::test(flavor="multi_thread",worker_threads=4)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn dangling_alias_targets_do_not_block_inbound_submission_or_bounces() -> Result<()> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let peer_addr = listener.local_addr()?;
     let peer = tokio::spawn(async move {
-        let (stream,_) = listener.accept().await.unwrap();
+        let (stream, _) = listener.accept().await.unwrap();
         let mut io = BufReader::new(stream);
-        io.get_mut().write_all(b"220 mx.example.net\r\n").await.unwrap();
+        io.get_mut()
+            .write_all(b"220 mx.example.net\r\n")
+            .await
+            .unwrap();
         let mut line = String::new();
         io.read_line(&mut line).await.unwrap();
         assert!(line.starts_with("EHLO"));
-        io.get_mut().write_all(b"250-mx.example.net\r\n250 8BITMIME\r\n").await.unwrap();
+        io.get_mut()
+            .write_all(b"250-mx.example.net\r\n250 8BITMIME\r\n")
+            .await
+            .unwrap();
         line.clear();
-        assert_eq!(io.read_line(&mut line).await.unwrap(),0);
+        assert_eq!(io.read_line(&mut line).await.unwrap(), 0);
     });
     let tmp = tempfile::tempdir()?;
-    let (built,_) = fixture(&tmp,Some(peer_addr)).await?;
-    let alice = account(&built,"alice@example.com").await?;
-    let bob = account(&built,"bob@example.com").await?;
-    for address in ["tëam@example.com","@example.com"] {
-        alias(&built,address,&["alice@example.com","bob@example.com"],Version::zero()).await?;
+    let (built, _) = fixture(&tmp, Some(peer_addr)).await?;
+    let alice = account(&built, "alice@example.com").await?;
+    let bob = account(&built, "bob@example.com").await?;
+    for address in ["tëam@example.com", "@example.com"] {
+        alias(
+            &built,
+            address,
+            &["alice@example.com", "bob@example.com"],
+            Version::zero(),
+        )
+        .await?;
     }
-    built.app_state.db.conn.lock().unwrap().execute("DELETE FROM accounts WHERE id=?1",[bob])?;
-    send(&built,"tëam@example.com").await?;
-    send(&built,"missing@example.com").await?;
+    built
+        .app_state
+        .db
+        .conn
+        .lock()
+        .unwrap()
+        .execute("DELETE FROM accounts WHERE id=?1", [bob])?;
+    send(&built, "tëam@example.com").await?;
+    send(&built, "missing@example.com").await?;
     let id = submit_native(&built,json!({"operation_id":"dangling-local","account":"alice@example.com","to":["tëam@example.com","unknown@example.com"],"subject":"local","text":"body"})).await?;
-    assert_eq!(status(&built,id).await?["delivery_confirmed"],true);
-    assert_eq!(inbox_count(&built,alice)?,3);
+    assert_eq!(status(&built, id).await?["delivery_confirmed"], true);
+    assert_eq!(inbox_count(&built, alice)?, 3);
     let bounce = submit_native(&built,json!({"operation_id":"dangling-bounce","account":"alice@example.com","from":"tëam@example.com","to":["x@remote.example.net"],"subject":"café","text":"body"})).await?;
-    timeout(Duration::from_secs(65),peer).await??;
-    timeout(Duration::from_secs(10),async {
+    timeout(Duration::from_secs(65), peer).await??;
+    timeout(Duration::from_secs(10), async {
         loop {
-            if status(&built,bounce).await?["recipients"][0]["status"] == "bounced" && inbox_count(&built,alice)? == 4 {return Ok::<_,anyhow::Error>(());}
+            if status(&built, bounce).await?["recipients"][0]["status"] == "bounced"
+                && inbox_count(&built, alice)? == 4
+            {
+                return Ok::<_, anyhow::Error>(());
+            }
             tokio::time::sleep(Duration::from_millis(25)).await;
         }
-    }).await??;
-    built.app_state.db.conn.lock().unwrap().execute("DELETE FROM accounts WHERE id=?1",[alice])?;
-    let error = maild::props::aliases::recipient_accounts(&built.app_state.aliases_runtime,&built.app_state.db.conn,"tëam@example.com").await.unwrap_err().to_string();
-    assert!(error.contains("no remaining local targets"),"{error}");
-    assert!(maild::smtp::queue::list(&built.app_state.db.conn,10).await?.is_empty());
+    })
+    .await??;
+    built
+        .app_state
+        .db
+        .conn
+        .lock()
+        .unwrap()
+        .execute("DELETE FROM accounts WHERE id=?1", [alice])?;
+    let error = maild::props::aliases::recipient_accounts(
+        &built.app_state.aliases_runtime,
+        &built.app_state.db.conn,
+        "tëam@example.com",
+    )
+    .await
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("no remaining local targets"), "{error}");
+    assert!(
+        maild::smtp::queue::list(&built.app_state.db.conn, 10)
+            .await?
+            .is_empty()
+    );
     Ok(())
 }
 
-#[tokio::test(flavor="multi_thread",worker_threads=4)]
-async fn receipt_retention_expires_terminal_submissions_and_cleans_unlinked_outcomes() -> Result<()> {
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn receipt_retention_expires_terminal_submissions_and_cleans_unlinked_outcomes() -> Result<()>
+{
     let tmp = tempfile::tempdir()?;
-    let (built,_) = fixture(&tmp,None).await?;
-    let alice = account(&built,"alice@example.com").await?;
-    assert_eq!(maild::smtp::SmtpConfig::default().delivery_retention_days,30);
+    let (built, _) = fixture(&tmp, None).await?;
+    let alice = account(&built, "alice@example.com").await?;
+    assert_eq!(
+        maild::smtp::SmtpConfig::default().delivery_retention_days,
+        30
+    );
     let configured: Config = config::from_conf_mix_str("delivery_retention_days: 7\n")?;
-    assert_eq!(configured.delivery_retention_days,Some(7));
+    assert_eq!(configured.delivery_retention_days, Some(7));
     let mut ids = Vec::new();
-    for operation in ["expired","recent","pending","mixed"] {
+    for operation in ["expired", "recent", "pending", "mixed"] {
         ids.push(submit_native(&built,json!({"operation_id":operation,"account":"alice@example.com",
             "to":if operation=="mixed" {vec!["x@remote.example.net","later@remote.example.net"]} else {vec!["x@remote.example.net"]},"subject":operation,"text":"body"})).await?);
     }
-    let entries = maild::smtp::queue::list(&built.app_state.db.conn,10).await?;
+    let entries = maild::smtp::queue::list(&built.app_state.db.conn, 10).await?;
     let hash = entries[0].blob_hash.unwrap();
     for entry in &entries[..2] {
-        maild::smtp::queue::recipient_result(&built.app_state.db.conn,entry.id,"x@remote.example.net","delivered","250 stored").await?;
-        maild::smtp::queue::mark_delivered(&built.app_state.db.conn,entry.id).await?;
+        maild::smtp::queue::recipient_result(
+            &built.app_state.db.conn,
+            entry.id,
+            "x@remote.example.net",
+            "delivered",
+            "250 stored",
+        )
+        .await?;
+        maild::smtp::queue::mark_delivered(&built.app_state.db.conn, entry.id).await?;
     }
-    maild::smtp::queue::recipient_result(&built.app_state.db.conn,entries[3].id,"x@remote.example.net","delivered","250 stored").await?;
+    maild::smtp::queue::recipient_result(
+        &built.app_state.db.conn,
+        entries[3].id,
+        "x@remote.example.net",
+        "delivered",
+        "250 stored",
+    )
+    .await?;
     {
         let conn = built.app_state.db.conn.lock().unwrap();
-        conn.execute("UPDATE email_submissions SET created_at=datetime('now','-31 days')",[])?;
+        conn.execute(
+            "UPDATE email_submissions SET created_at=datetime('now','-31 days')",
+            [],
+        )?;
         conn.execute("UPDATE smtp_delivery SET updated_at=datetime('now','-31 days') WHERE submission_id<>?1",[ids[1].to_string()])?;
-        conn.execute("UPDATE smtp_delivery SET updated_at=datetime('now','-29 days') WHERE submission_id=?1",[ids[1].to_string()])?;
+        conn.execute(
+            "UPDATE smtp_delivery SET updated_at=datetime('now','-29 days') WHERE submission_id=?1",
+            [ids[1].to_string()],
+        )?;
     }
-    for permanent in [false,true] {
-        let id = maild::smtp::queue::enqueue(&built.app_state.db.conn,"alice@example.com",&["x@remote.example.net".into()],hash).await?;
-        if permanent {maild::smtp::queue::mark_permanent_failure(&built.app_state.db.conn,id,"550 refused").await?;}
-        else {maild::smtp::queue::mark_delivered(&built.app_state.db.conn,id).await?;}
-        let count: i64 = built.app_state.db.conn.lock().unwrap().query_row("SELECT COUNT(*) FROM smtp_delivery WHERE queue_id=?1",[id],|r|r.get(0))?;
-        assert_eq!(count,0,"unlinked SMTP receipt outlived its queue payload");
+    for permanent in [false, true] {
+        let id = maild::smtp::queue::enqueue(
+            &built.app_state.db.conn,
+            "alice@example.com",
+            &["x@remote.example.net".into()],
+            hash,
+        )
+        .await?;
+        if permanent {
+            maild::smtp::queue::mark_permanent_failure(&built.app_state.db.conn, id, "550 refused")
+                .await?;
+        } else {
+            maild::smtp::queue::mark_delivered(&built.app_state.db.conn, id).await?;
+        }
+        let count: i64 = built.app_state.db.conn.lock().unwrap().query_row(
+            "SELECT COUNT(*) FROM smtp_delivery WHERE queue_id=?1",
+            [id],
+            |r| r.get(0),
+        )?;
+        assert_eq!(count, 0, "unlinked SMTP receipt outlived its queue payload");
     }
-    let before = maild::db::changelog::current_state(&built.app_state.db.conn,alice,"EmailSubmission").await?;
-    maild::smtp::queue::sweep_receipts(&built.app_state.db.conn,30).await?;
-    let changes = maild::jmap::submission::changes(&built.app_state.db,alice,json!({"sinceState":before})).await?;
-    assert_eq!(changes["destroyed"],json!([ids[0]]));
-    assert_ne!(changes["newState"],json!(before));
-    let (rc,_) = maild::bus::submission::status(&bus_cmd("maild.submission.status",json!({"id":ids[0]})),&built.app_state.db).await;
-    assert_eq!(rc,10);
-    assert_eq!(status(&built,ids[1]).await?["delivery_confirmed"],true);
-    assert_eq!(status(&built,ids[2]).await?["recipients"][0]["status"],"queued");
-    assert_eq!(status(&built,ids[3]).await?["recipients"].as_array().unwrap().len(),2);
-    maild::smtp::queue::sweep_receipts(&built.app_state.db.conn,7).await?;
-    let count: i64 = built.app_state.db.conn.lock().unwrap().query_row("SELECT COUNT(*) FROM email_submissions WHERE id=?1",[ids[1].to_string()],|r|r.get(0))?;
-    assert_eq!(count,0);
-    assert_eq!(status(&built,ids[2]).await?["recipients"][0]["status"],"queued");
+    let before =
+        maild::db::changelog::current_state(&built.app_state.db.conn, alice, "EmailSubmission")
+            .await?;
+    maild::smtp::queue::sweep_receipts(&built.app_state.db.conn, 30).await?;
+    let changes =
+        maild::jmap::submission::changes(&built.app_state.db, alice, json!({"sinceState":before}))
+            .await?;
+    assert_eq!(changes["destroyed"], json!([ids[0]]));
+    assert_ne!(changes["newState"], json!(before));
+    let (rc, _) = maild::bus::submission::status(
+        &bus_cmd("maild.submission.status", json!({"id":ids[0]})),
+        &built.app_state.db,
+    )
+    .await;
+    assert_eq!(rc, 10);
+    assert_eq!(status(&built, ids[1]).await?["delivery_confirmed"], true);
+    assert_eq!(
+        status(&built, ids[2]).await?["recipients"][0]["status"],
+        "queued"
+    );
+    assert_eq!(
+        status(&built, ids[3]).await?["recipients"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    maild::smtp::queue::sweep_receipts(&built.app_state.db.conn, 7).await?;
+    let count: i64 = built.app_state.db.conn.lock().unwrap().query_row(
+        "SELECT COUNT(*) FROM email_submissions WHERE id=?1",
+        [ids[1].to_string()],
+        |r| r.get(0),
+    )?;
+    assert_eq!(count, 0);
+    assert_eq!(
+        status(&built, ids[2]).await?["recipients"][0]["status"],
+        "queued"
+    );
     Ok(())
 }
 
-#[tokio::test(flavor="multi_thread",worker_threads=4)]
-async fn legacy_queue_and_receipt_schema_upgrade_preserves_pending_payload_and_status() -> Result<()> {
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn legacy_queue_and_receipt_schema_upgrade_preserves_pending_payload_and_status() -> Result<()>
+{
     let tmp = tempfile::tempdir()?;
-    let (built,_) = fixture(&tmp,None).await?;
-    account(&built,"alice@example.com").await?;
+    let (built, _) = fixture(&tmp, None).await?;
+    account(&built, "alice@example.com").await?;
     let id = submit_native(&built,json!({"operation_id":"upgrade-pending","account":"alice@example.com","to":["x@remote.example.net"],"subject":"migration","text":"pending payload"})).await?;
     let conn = &built.app_state.db.conn;
-    let queue_id = maild::smtp::queue::list(conn,10).await?[0].id;
-    maild::smtp::queue::mark_failed(conn,queue_id,"451 stored diagnostic").await?;
-    let original = status(&built,id).await?;
-    let hash = maild::smtp::queue::list(conn,10).await?[0].blob_hash;
+    let queue_id = maild::smtp::queue::list(conn, 10).await?[0].id;
+    maild::smtp::queue::mark_failed(conn, queue_id, "451 stored diagnostic").await?;
+    let original = status(&built, id).await?;
+    let hash = maild::smtp::queue::list(conn, 10).await?[0].blob_hash;
     {
         let conn = conn.lock().unwrap();
-        let sql: String = conn.query_row("SELECT sql FROM sqlite_master WHERE name='smtp_queue'",[],|r|r.get(0))?;
-        let legacy = sql.replace("AUTOINCREMENT","");
+        let sql: String = conn.query_row(
+            "SELECT sql FROM sqlite_master WHERE name='smtp_queue'",
+            [],
+            |r| r.get(0),
+        )?;
+        let legacy = sql.replace("AUTOINCREMENT", "");
         conn.execute_batch("ALTER TABLE smtp_queue RENAME TO old_queue")?;
         conn.execute_batch(&legacy)?;
         conn.execute_batch("INSERT INTO smtp_queue SELECT * FROM old_queue; DROP TABLE old_queue;
@@ -863,13 +1115,16 @@ async fn legacy_queue_and_receipt_schema_upgrade_preserves_pending_payload_and_s
     }
     built.app_state.db.migrate().await?;
     built.app_state.db.migrate().await?;
-    let entries = maild::smtp::queue::list(conn,10).await?;
-    assert_eq!(entries.len(),1);
-    assert_eq!(entries[0].id,queue_id);
-    assert_eq!(entries[0].attempts,1);
-    assert_eq!(entries[0].blob_hash,hash);
-    assert_eq!(entries[0].last_error.as_deref(),Some("451 stored diagnostic"));
-    assert_eq!(status(&built,id).await?,original);
+    let entries = maild::smtp::queue::list(conn, 10).await?;
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].id, queue_id);
+    assert_eq!(entries[0].attempts, 1);
+    assert_eq!(entries[0].blob_hash, hash);
+    assert_eq!(
+        entries[0].last_error.as_deref(),
+        Some("451 stored diagnostic")
+    );
+    assert_eq!(status(&built, id).await?, original);
     Ok(())
 }
 
