@@ -2134,8 +2134,9 @@ entry. `x-kde-passwordManagerHint` with value `secret`, unreadable hints and
 explicit `sensitive:true` sets never enter history or cross sessions.
 Content commands admit only broker-stamped local-session callers.
 
-Mix provides `clip_get([mime])` (complete UTF-8 text, at most 1 MiB) and
-`clip_set(text[, mime])`. They use the local broker's `clipd`; failures raise.
+Mix provides `clip_get([mime])` (a UTF-8 string or binary bytes, at most 1 MiB)
+and `clip_set(text[, mime])`. Binary decoding uses Mix's crypto feature,
+included in the native shell. They use the local broker's `clipd`; failures raise.
 The MCP tools are `clipboard_get` and `clipboard_set` and likewise target
 the local session. Use the Bus commands for binary or chunked reads.
 

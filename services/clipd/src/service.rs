@@ -578,7 +578,12 @@ mod tests {
         }
         async fn paste(&mut self, marker: &str, mime: &str) -> Vec<u8> {
             let offer = tokio::time::timeout(Duration::from_secs(5), async {
-                loop { if let Some(Event::Selection { offer: Some(offer), types, primary: false, .. }) = self.events.recv().await { if types.iter().any(|t| t == marker) { break offer; } } }
+                loop { match self.events.recv().await {
+                    Some(Event::Selection { offer: Some(offer), types, primary: false, .. }) if types.iter().any(|t| t == marker) => break offer,
+                    Some(Event::Failed(error)) => panic!("{error}"),
+                    None => panic!("Wayland reader closed"),
+                    _ => {}
+                } }
             }).await.unwrap();
             self.reader.read(offer, mime.into(), MAX_BYTES).await.unwrap()
         }
@@ -598,7 +603,20 @@ mod tests {
         source.service.set(image.clone(), false, false).await.unwrap();
         assert_eq!(source.service.push("vt4").await.unwrap()["lazy"], true);
         assert!(target.service.state.lock().await.selections[0].as_ref().unwrap().data.is_empty());
+        let current = target.service.state.lock().await.selections[0].clone().unwrap();
+        assert!(target.service.bytes_with_path(&current, "image/png", false, &["vt4".into()]).await.unwrap_err().to_string().contains("SOURCE_CYCLE"));
         assert_eq!(target.paste(&image.stamp.marker(), "image/png").await, vec![42; CHUNK * 2 + 13]);
+
+        let mut command = IncomingCommand { generation:0, from:"fixture".into(), command:"clipboard.receive".into(), id:None, args:seal(&[7;32], "vt1", "vt4", "clipboard.receive", json!(Receive { stamp:image.stamp.clone(), mime_types:image.mime_types.clone(), size:image.size, data:None })).unwrap(), body:String::new(), headers:BTreeMap::new() };
+        assert!(target.service.dispatch(&command).await.is_ok());
+        assert!(target.service.dispatch(&command).await.unwrap_err().to_string().contains("replayed"));
+        command.command = "clipboard.set".into();
+        command.args = json!({"mime":"text/plain", "data":"x".repeat(TEXT_CAP + 1)});
+        command.headers.insert("broker_origin".into(), "local".into());
+        assert!(source.service.dispatch(&command).await.unwrap_err().to_string().contains("SIZE_CAP"));
+        command.headers.insert("broker_origin".into(), "mesh".into());
+        command.args = json!({"mime":"text/plain", "data":"remote"});
+        assert!(source.service.dispatch(&command).await.unwrap_err().to_string().contains("SESSION_ONLY"));
 
         let secret = Selection::owned(Stamp::new("vt1"), "text/plain".into(), b"secret".to_vec(), true);
         source.service.set(secret, false, false).await.unwrap();

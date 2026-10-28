@@ -200,6 +200,9 @@ mod tests {
         assert!(!c.adopt(false, s.clone()));
         assert!(c.adopt(false, text(&c, "two".into(), false)));
         assert!(!c.adopt(false, s));
+        let current = c.selections[0].as_ref().unwrap().stamp.clone();
+        for n in 0..260 { c.adopt(true, text(&c, n.to_string(), false)); }
+        assert!(c.is_echo(&current), "PRIMARY churn must not evict the live clipboard guard");
         assert_ne!(Stamp::new("vt1"), Stamp::new("vt1"));
     }
     #[test]

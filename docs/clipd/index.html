@@ -266,8 +266,9 @@ Materialisation is capped at 64 MiB with a five-second Wayland read deadline.</p
 entry. <code>x-kde-passwordManagerHint</code> with value <code>secret</code>, unreadable hints and
 explicit <code>sensitive:true</code> sets never enter history or cross sessions.
 Content commands admit only broker-stamped local-session callers.</p>
-<p>Mix provides <code>clip_get([mime])</code> (complete UTF-8 text, at most 1 MiB) and
-<code>clip_set(text[, mime])</code>. They use the local broker's <code>clipd</code>; failures raise.
+<p>Mix provides <code>clip_get([mime])</code> (a UTF-8 string or binary bytes, at most 1 MiB)
+and <code>clip_set(text[, mime])</code>. Binary decoding uses Mix's crypto feature,
+included in the native shell. They use the local broker's <code>clipd</code>; failures raise.
 The MCP tools are <code>clipboard_get</code> and <code>clipboard_set</code> and likewise target
 the local session. Use the Bus commands for binary or chunked reads.</p>
 <h2 id="same-host-push">Same-host push</h2>

@@ -85,7 +85,7 @@ pub fn clamp_signed_index(idx: i64, len: usize) -> usize {
 // in builtins_hof.rs because HOFs use a different dispatch path).
 builtin_table! {
     BUILTINS, BUILTIN_NAMES,
-    ("clip_get", CapabilityClass::Bus, "bus", "Read UTF-8 text from the local session clipd (at most 1 MiB); raises on unavailable, binary or truncated data", contract!((mime?: string) -> string; failure[raises])),
+    ("clip_get", CapabilityClass::Bus, "bus", "Read the local session clipd (at most 1 MiB): UTF-8 string or binary bytes (crypto feature); raises on unavailable or truncated data", contract!((mime?: string) -> any_of(string, bytes); failure[raises])),
     ("clip_set", CapabilityClass::Bus, "bus", "Set local session clipboard text over the Bus; MIME defaults to text/plain;charset=utf-8", contract!((text: string, mime?: string) -> bool; failure[raises])),
     ("length", CapabilityClass::Pure,          "string",  "Length of a string (codepoints), list/map (elements), or bytes/buffer (bytes, v0.64.0)", contract!((v: any_of(string, list, map, bytes, buffer)) -> number)),
     ("len", CapabilityClass::Pure,             "string",  "Alias for length()", contract!((v: any_of(string, list, map, bytes, buffer)) -> number)),

@@ -14729,10 +14729,15 @@ impl Evaluator {
                         let Value::Map(reply) = &reply else {
                             return Err(self.runtime_err("clip_get: malformed clipboard reply"));
                         };
-                        if reply.get("encoding") != Some(&Value::String("utf8".into())) || reply.get("eof") != Some(&Value::Bool(true)) {
-                            return Err(self.runtime_err("clip_get: requires complete UTF-8 text up to 1 MiB; use clipboard.get for binary or chunked data"));
+                        if reply.get("eof") != Some(&Value::Bool(true)) {
+                            return Err(self.runtime_err("clip_get: selection exceeds 1 MiB; use clipboard.get for chunked data"));
                         }
-                        return reply.get("data").cloned().ok_or_else(|| self.runtime_err("clip_get: missing data"));
+                        let data = reply.get("data").cloned().ok_or_else(|| self.runtime_err("clip_get: missing data"))?;
+                        return match reply.get("encoding").map(Value::to_mix_string).as_deref() {
+                            Some("utf8") => Ok(data),
+                            Some("base64") => builtins::call_builtin("base64_decode", vec![data])?.ok_or_else(|| self.runtime_err("clip_get: binary data requires the crypto feature")),
+                            _ => Err(self.runtime_err("clip_get: unknown encoding")),
+                        };
                     }
 
                     // publish(topic, body[, opts]) — one-call topic publish
