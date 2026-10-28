@@ -1,0 +1,9 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- wl-paste's callback sends metadata only and deliberately never reads stdin.
+-- Its pipe closes on exit, including for sensitive/binary selections.
+$which = args()[0]
+$target = env("MIXOS_CLIPD_TARGET", "clipd")
+$body = json_encode({selection: $which, token: env("MIXOS_CLIPD_WATCH_TOKEN"), state: env("CLIPBOARD_STATE")})
+send $target clipboard.observe body=$body timeout=5
+if $rc != 0 then exit(1) end

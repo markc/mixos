@@ -23,6 +23,11 @@
     term: "term",
     indexd: "indexd"
   },
+  -- Mix services ship scripts and units; they are not Cargo binaries.
+  scripts: {
+    "mixos-server": ["clipd"],
+    "mixos-desktop": ["clipd", "notifyd", "releasesd"]
+  },
   packages: {
     "mixos-server": ["mix", "mixos-mcp", "noded", "hostd", "monitord", "maild"],
     "mixos-desktop": ["mix", "mixos-mcp", "noded", "hostd", "monitord", "editd", "portald", "settingsd", "backdrop", "workshop", "ced", "compd", "dopus", "email", "monitor", "prefs", "screenshot", "term", "indexd"]

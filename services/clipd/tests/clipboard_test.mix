@@ -1,0 +1,44 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- State/policy tests complement real broker tests; no fake Wayland bindings.
+$c = require("../scripts/lib/clipboard.mix")
+$cfg = $c.settings({peers: {beta: {target: "clipd.beta.example.bus", follow: true}}})
+$state = $c.new_state("alpha", "desktop")
+$passed = 0
+fn check($label, $ok)
+  if not $ok then raise("TEST", $label) end
+  print("PASS " .. $label)
+  return 1
+end
+fn refused($f, $code)
+  try
+    $f()
+  catch $m, $err
+    return $err.code == $code
+  end
+  return false
+end
+for $i = 0 to 54
+  $s = $c.owned($state, {data: to_string($i)}, 100, $cfg)
+  $state = $c.adopt($state, "clipboard", $s, $cfg).state
+end
+$passed = $passed + check("history cap fifty", len($state.history) == 50 and $state.history[49].data == "5")
+$s = $c.owned($state, {data: "secret", sensitive: true}, 100, $cfg)
+$state = $c.adopt($state, "clipboard", $s, $cfg).state
+$passed = $passed + check("password no history and forty-five second deadline", len($state.history) == 50 and $s.deadline == 145)
+$passed = $passed + check("loop guard rejects replay", not $c.adopt($state, "clipboard", $s, $cfg).applied)
+$other = $s
+$other.stamp.origin_node = "beta"
+$passed = $passed + check("origin node is part of the loop key", $c.adopt($state, "clipboard", $other, $cfg).applied)
+$passed = $passed + check("primary is an independent loop key", $c.adopt($state, "primary", $s, $cfg).applied)
+$passed = $passed + check("metadata excludes data", not contains(json_encode($c.metadata($state, "clipboard")), "secret"))
+$passed = $passed + check("allowlisted broker peer admitted", $c.caller_peer({broker_origin: "mesh", broker_peer: "beta"}, $cfg) == "beta")
+$passed = $passed + check("non-member broker peer refused", refused(fn() = $c.caller_peer({broker_origin: "mesh", broker_peer: "gamma", node: "beta"}, $cfg), "ALLOWLIST"))
+$passed = $passed + check("unstamped claimed node refused", refused(fn() = $c.caller_peer({node: "beta", from: "clipd.beta.example.bus"}, $cfg), "ALLOWLIST"))
+$passed = $passed + check("conflicting selection aliases refused", refused(fn() = $c.selection({selection: "primary", primary: false}), "SELECTION"))
+$passed = $passed + check("invalid selection refused", refused(fn() = $c.selection({selection: "other"}), "SELECTION"))
+$passed = $passed + check("sensitive blobs refused", refused(fn() = $c.owned($state, {blob: {}, sensitive: true}, 100, $cfg), "SENSITIVE"))
+$s = $c.owned($state, {data: "λtest"}, 100, $cfg)
+$part = $c.chunk($s, $s.data, {offset: 1})
+$passed = $passed + check("split UTF-8 uses base64 without loss", $part.encoding == "base64" and deep_eq(base64_decode($part.data), slice($s.data, 1)))
+print(to_string($passed) .. " policy checks passed")

@@ -74,6 +74,8 @@ One line per component with a page: kind, then install profiles. The
   - [ced — changelog](https://mixos.dev/ced/changelog.md): Release notes of the ced component, mirrored from apps/ced/CHANGELOG.md.
 - [citizen](https://mixos.dev/citizen/README.md): lib; profiles: none (library). An app's supervised native Bus connection, shared by the MixOS apps for registration, calls, replies, single-instance launch and window restore.
   - [citizen — changelog](https://mixos.dev/citizen/changelog.md): Release notes of the citizen component, mirrored from libs/citizen/CHANGELOG.md.
+- [clipd](https://mixos.dev/clipd/README.md): service; profiles: server, desktop. mix --serve <prefix>/lib/clipd/clipd.mix --name clipd runs a clipboard Bus citizen. There is no clipd Rust crate, GUI, Wayland dependency in Mix, or new…
+  - [clipd — changelog](https://mixos.dev/clipd/changelog.md): Release notes of the clipd component, mirrored from services/clipd/CHANGELOG.md.
 - [compd](https://mixos.dev/compd/README.md): service; profiles: unclassified. The MixOS Wayland compositor, which owns scanout, rendering, input and capture, and serves the comp Bus service with its workspaces, commands, topics and props tree.
   - [compd — changelog](https://mixos.dev/compd/changelog.md): Release notes of the compd component, mirrored from services/compd/CHANGELOG.md.
 - [config](https://mixos.dev/config/README.md): lib; profiles: none (library). Where MixOS keeps its files and how a conf.mix file is read, with one directory rule for every component and descriptor-safe atomic file helpers.

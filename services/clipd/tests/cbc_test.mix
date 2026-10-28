@@ -1,0 +1,16 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Run only through the authorised CBC launcher. fmt prints its patch and
+-- restores this job's own edits while the worker lock is still held.
+if args()[0] == "fmt" then
+  try
+    run_argv_must(["cargo", "fmt", "-p", "mix", "-p", "mixos-mcp"], {timeout: 120})
+    print(run_argv_must(["git", "diff", "--", "libs/mix", "cli/mixos-mcp"]))
+  finally
+    run_argv_must(["git", "checkout", "-q", "--", "."])
+  end
+else
+  run_argv_must(["cargo", "fmt", "-p", "mix", "-p", "mixos-mcp", "--", "--check"], {timeout: 120, stdout: "inherit", stderr: "inherit"})
+  run_argv_must(["cargo", "clippy", "-p", "mix", "-p", "mixos-mcp", "--all-targets", "--", "-D", "warnings"], {timeout: 3600, stdout: "inherit", stderr: "inherit"})
+  run_argv_must(["cargo", "test", "-p", "mix", "-p", "mixos-mcp"], {timeout: 3600, stdout: "inherit", stderr: "inherit"})
+end

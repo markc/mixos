@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+[Unit]
+Description=MixOS clipboard for session %i
+Wants=noded@%i.service
+After=noded@%i.service
+PartOf=session@%i.target
+
+[Service]
+Type=simple
+User=mixos
+EnvironmentFile=@{etc}/session/%i.env
+Environment=MIXOS_CLIPD_SESSION=vt%i
+Environment=MIXOS_CLIPD_MODE=wayland
+Environment=MIX_STATS=off
+ExecStart=@{prefix}/bin/mix --serve @{prefix}/lib/clipd/clipd.mix --name clipd
+KillMode=control-group
+TimeoutStopSec=10
+Restart=on-failure
+RestartSec=2

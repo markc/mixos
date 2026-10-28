@@ -3061,6 +3061,8 @@ pub(crate) const INLINE_SPECIAL_FORMS: &[&str] = &[
     "bus_call",
     "port_exists",
     "bus_reconnect",
+    "clip_get",
+    "clip_set",
     "noded_register",
     "subscribe",
     "unsubscribe",
@@ -14698,6 +14700,89 @@ impl Evaluator {
                         return Ok(reply);
                     }
 
+                    if matches!(name.as_str(), "clip_get" | "clip_set") {
+                        self.check_capability(name)?;
+                        let handler =
+                            { self.globals.borrow().bus_handler.clone() }.ok_or_else(|| {
+                                self.runtime_err("clipboard requires a local Bus connection")
+                            })?;
+                        let mut params = IndexMap::new();
+                        let command = if name == "clip_get" {
+                            if let Some(first) = eval_args.first() {
+                                if matches!(first.to_mix_string().as_str(), "clipboard" | "primary") {
+                                    params.insert("selection".into(), first.clone());
+                                    if let Some(mime) = eval_args.get(1) {
+                                        params.insert("mime".into(), mime.clone());
+                                    }
+                                } else {
+                                    if eval_args.len() > 1 {
+                                        return Err(self.runtime_err("clip_get: expected selection before MIME"));
+                                    }
+                                    params.insert("mime".into(), first.clone());
+                                }
+                            }
+                            "clipboard.get"
+                        } else {
+                            params.insert("data".into(), eval_args[0].clone());
+                            let mut mime_index = 1;
+                            if let Some(first) = eval_args.get(1) {
+                                if matches!(first.to_mix_string().as_str(), "clipboard" | "primary") {
+                                    params.insert("selection".into(), first.clone());
+                                    mime_index = 2;
+                                } else if eval_args.len() > 2 {
+                                    return Err(self.runtime_err("clip_set: expected selection before MIME"));
+                                }
+                            }
+                            params.insert(
+                                "mime".into(),
+                                eval_args.get(mime_index).cloned().unwrap_or_else(|| {
+                                    Value::String("text/plain;charset=utf-8".into())
+                                }),
+                            );
+                            "clipboard.set"
+                        };
+                        // `body` selects the handler's JSON-body path, matching
+                        // ordinary `send clipd clipboard.* body=...`.
+                        let body = crate::json::mix_to_json_ordered(&Value::map(params), false)
+                            .map_err(|error| self.runtime_err(error.to_string()))?;
+                        let args =
+                            Value::map(IndexMap::from([("body".into(), Value::String(body))]));
+                        let future = handler.send_with_reply("clipd", command, &args);
+                        let (rc, result, reply) = self.await_with_class_c_yield(future).await??;
+                        if rc != 0 {
+                            return Err(self.runtime_err(format!(
+                                "{name}: clipboard unavailable (rc {rc}): {}",
+                                result.to_mix_string()
+                            )));
+                        }
+                        if name == "clip_set" {
+                            return Ok(Value::Bool(true));
+                        }
+                        let Value::Map(reply) = &reply else {
+                            return Err(self.runtime_err("clip_get: malformed clipboard reply"));
+                        };
+                        if reply.get("blob").is_some_and(|v| !matches!(v, Value::Nil)) {
+                            return Err(self.runtime_err("clip_get: binary/large selection uses blobd; use clipboard.get and blob.fetch"));
+                        }
+                        if reply.get("eof") != Some(&Value::Bool(true)) {
+                            return Err(self.runtime_err("clip_get: selection exceeds 1 MiB; use clipboard.get for chunked data"));
+                        }
+                        let data = reply
+                            .get("data")
+                            .cloned()
+                            .ok_or_else(|| self.runtime_err("clip_get: missing data"))?;
+                        return match reply.get("encoding").map(Value::to_mix_string).as_deref() {
+                            Some("utf8") => Ok(data),
+                            Some("base64") => builtins::call_builtin("base64_decode", vec![data])?
+                                .ok_or_else(|| {
+                                    self.runtime_err(
+                                        "clip_get: binary data requires the crypto feature",
+                                    )
+                                }),
+                            _ => Err(self.runtime_err("clip_get: unknown encoding")),
+                        };
+                    }
+
                     // publish(topic, body[, opts]) — one-call topic publish
                     // (0.63.0): builds the SPEC-02 wire frame and routes it
                     // through `send noded topic.publish name=… retain=…
@@ -15861,6 +15946,8 @@ impl Evaluator {
                 "port_exists"
                     | "noded_register"
                     | "bus_reconnect"
+                    | "clip_get"
+                    | "clip_set"
                     | "subscribe"
                     | "unsubscribe"
                     | "reply"

@@ -1,0 +1,167 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Pure clipboard state and policy. No content is persisted.
+$TEXT_CAP = 1048576
+$MAX_BYTES = 67108864
+$HINT = "x-kde-passwordManagerHint"
+
+fn selection($b)
+  $s = $b.selection ?? (if $b.primary ?? false then "primary" else "clipboard" end)
+  if not contains(["clipboard", "primary"], $s) then raise("SELECTION", "selection must be clipboard or primary") end
+  if $b.primary != nil and $b.primary != ($s == "primary") then raise("SELECTION", "selection and primary disagree") end
+  return $s
+end
+
+fn mime($v)
+  if type($v) != "string" or len($v) == 0 or len($v) > 255 or len(re_find($v, "[\\x00-\\x1f\\x7f]")) > 0 then
+    raise("MIME", "invalid MIME type")
+  end
+  return $v
+end
+
+fn settings($raw)
+  $c = merge({schema: 1, peers: {}, eager_text_bytes: $TEXT_CAP, history_cap: 50, password_timeout: 45, follow_primary: false}, $raw)
+  if $c.schema != 1 or type($c.peers) != "map" or len($c.peers) > 64 then raise("SETTINGS", "invalid schema or peers") end
+  for $key in ["eager_text_bytes", "history_cap", "password_timeout"]
+    if type($c[$key]) != "number" or floor($c[$key]) != $c[$key] then raise("SETTINGS", "integer limits required") end
+  end
+  if $c.eager_text_bytes < 0 or $c.eager_text_bytes > $TEXT_CAP or $c.history_cap < 0 or $c.history_cap > 50 or $c.password_timeout < 1 or $c.password_timeout > 300 then raise("SETTINGS", "limits out of range") end
+  if type($c.follow_primary) != "bool" then raise("SETTINGS", "follow_primary must be boolean") end
+  for $node, $p in $c.peers
+    if type($p) != "map" or type($p.target) != "string" or not re_match($p.target, "^[a-z][a-z0-9-]*(\\.[a-z0-9.-]+\\.bus)?$") then raise("SETTINGS", "peer needs an exact Bus target") end
+    if not re_match($node, "^[a-z][a-z0-9-]*$") then raise("SETTINGS", "invalid peer node") end
+    for $flag in ["follow", "images"]
+      if $p[$flag] != nil and type($p[$flag]) != "bool" then raise("SETTINGS", "peer flags must be boolean") end
+    end
+  end
+  return $c
+end
+
+fn new_state($node, $session)
+  return {node: $node, session: $session, selections: {clipboard: nil, primary: nil}, history: [], seen: [], rotate: 0}
+end
+
+-- Only broker-stamped provenance decides membership. Payload node/from fields
+-- cannot grant access. Bare service targets allow two citizens on one broker.
+fn caller_peer($headers, $c)
+  for $node, $p in $c.peers
+    if $headers.broker_origin == "mesh" and $headers.broker_peer == $node then return $node end
+    if $headers.broker_origin == "local" and not contains($p.target, ".") and $headers["from"] == $p.target then return $node end
+  end
+  raise("ALLOWLIST", "caller is not a configured clipboard peer")
+end
+
+fn authorised($headers, $c)
+  if $headers.broker_origin == "local" then return true end
+  caller_peer($headers, $c)
+  return true
+end
+
+fn stamp($state)
+  return {origin_node: $state.node, origin_session: $state.session, generation: uuid()}
+end
+
+fn stamp_key($s, $which)
+  if type($s) != "map" or type($s.origin_node) != "string" or type($s.origin_session) != "string" or type($s.generation) != "string" or len($s.generation) == 0 or len(json_encode($s)) > 512 then raise("STAMP", "invalid origin stamp") end
+  return json_encode([$s.origin_node, $s.origin_session, $s.generation, $which])
+end
+
+fn is_echo($state, $which, $s)
+  $key = stamp_key($s, $which)
+  if contains($state.seen, $key) then return true end
+  $live = $state.selections[$which]
+  return $live != nil and stamp_key($live.stamp, $which) == $key
+end
+
+fn text_mime($types)
+  for $m in ["text/plain;charset=utf-8", "text/plain", "UTF8_STRING", "TEXT", "STRING"]
+    if contains($types, $m) then return $m end
+  end
+  return nil
+end
+
+fn image($types)
+  for $m in $types
+    if starts_with(lower($m), "image/") then return true end
+  end
+  return false
+end
+
+fn owned($state, $b, $now, $c)
+  $which = selection($b)
+  $m = mime($b.mime ?? "text/plain;charset=utf-8")
+  $sensitive = $b.sensitive ?? false
+  if type($sensitive) != "bool" then raise("ARGUMENT", "sensitive must be boolean") end
+  $encoding = $b.encoding ?? "utf8"
+  if not contains(["utf8", "base64"], $encoding) then raise("ENCODING", "encoding must be utf8 or base64") end
+  $bytes = nil
+  $blob = $b.blob
+  if $blob == nil then
+    if type($b.data) != "string" then raise("ARGUMENT", "data or blob is required") end
+    $bytes = if $encoding == "base64" then base64_decode($b.data) else string_to_bytes($b.data) end
+    if len($bytes) > $TEXT_CAP then raise("SIZE_CAP", "use blob.put and a blob reference for large clipboard data") end
+    if $m == $HINT then $sensitive = true end
+    if $sensitive and $encoding != "utf8" then raise("SENSITIVE", "sensitive binary content is not supported") end
+  else
+    if $sensitive then raise("SENSITIVE", "passwords must never enter blob storage") end
+    blob_ref($blob)
+  end
+  $types = [$m]
+  if $sensitive then push($types, $HINT) end
+  return {stamp: $b.stamp ?? stamp($state), mime_types: $types, mime: $m, sensitive: $sensitive,
+    data: $bytes, blob: $blob, size: (if $bytes != nil then len($bytes) else $blob.size end),
+    remote: nil, external: false, deadline: (if $sensitive then $now + $c.password_timeout else nil end)}
+end
+
+fn blob_ref($r)
+  if type($r) != "map" or type($r.blob) != "string" or not re_match($r.blob, "^b3:[0-9a-f]{64}$") or type($r.origin) != "string" or type($r.size) != "number" or $r.size < 0 or floor($r.size) != $r.size or $r.size > $MAX_BYTES then raise("BLOB", "invalid or oversized blob reference") end
+  mime($r.mime)
+  return $r
+end
+
+fn metadata($state, $which)
+  $s = $state.selections[$which]
+  return {node: $state.node, session: $state.session, selection: $which, primary: $which == "primary",
+    generation: (if $s == nil then nil else $s.stamp.generation end),
+    origin_node: (if $s == nil then nil else $s.stamp.origin_node end),
+    origin_session: (if $s == nil then nil else $s.stamp.origin_session end),
+    mime_types: (if $s == nil then [] else $s.mime_types end), size: (if $s == nil then 0 else $s.size end),
+    sensitive: $s != nil and $s.sensitive}
+end
+
+fn adopt($state, $which, $s, $c)
+  if is_echo($state, $which, $s.stamp) then return {state: $state, applied: false} end
+  $state.seen = slice(concat($state.seen, [stamp_key($s.stamp, $which)]), -256)
+  $state.selections[$which] = $s
+  $state.rotate = 0
+  if not $s.sensitive and $s.data != nil and text_mime($s.mime_types) != nil and len($s.data) > 0 and len($s.data) <= $TEXT_CAP then
+    try
+      $text = bytes_to_string($s.data)
+      $rows = filter($state.history, fn($r) = $r.data != $text)
+      $state.history = slice(concat([{id: uuid(), mime: $s.mime, data: $text}], $rows), 0, $c.history_cap)
+    catch $m
+      -- Binary data never enters text history.
+    end
+  end
+  return {state: $state, applied: true}
+end
+
+fn history_view($state)
+  return map($state.history, fn($r) = {id: $r.id, mime: $r.mime, data: slice($r.data, 0, 512), size: len(string_to_bytes($r.data)), truncated: len($r.data) > 512})
+end
+
+fn chunk($s, $bytes, $b)
+  $offset = $b.offset ?? 0
+  if type($offset) != "number" or floor($offset) != $offset or $offset < 0 or $offset > len($bytes) then raise("OFFSET", "invalid byte offset") end
+  $part = slice($bytes, $offset, $offset + $TEXT_CAP)
+  $encoding = "utf8"
+  $data = ""
+  try
+    $data = bytes_to_string($part)
+  catch $m
+    $encoding = "base64"
+    $data = base64_encode($part)
+  end
+  return {mime: $b.mime ?? $s.mime, data: $data, encoding: $encoding, size: len($bytes), offset: $offset,
+    next_offset: $offset + len($part), eof: $offset + len($part) == len($bytes), sensitive: $s.sensitive, stamp: $s.stamp}
+end

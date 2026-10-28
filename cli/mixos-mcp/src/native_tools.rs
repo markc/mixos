@@ -34,6 +34,33 @@ pub(crate) struct ServiceTarget {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+pub(crate) struct ClipboardGet {
+    /// Selection: clipboard (default) or primary. The primary alias remains accepted.
+    selection: Option<String>,
+    /// MIME type; defaults to the preferred text type.
+    mime: Option<String>,
+    #[serde(default)]
+    primary: bool,
+    /// Byte offset for selections larger than 1 MiB.
+    #[serde(default)]
+    offset: usize,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ClipboardSet {
+    /// Selection: clipboard (default) or primary.
+    selection: Option<String>,
+    text: String,
+    mime: Option<String>,
+    #[serde(default)]
+    primary: bool,
+    #[serde(default)]
+    sensitive: bool,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct CommandInvocation {
     /// Bus service name, for example "workshop".
     service: String,
@@ -119,8 +146,15 @@ impl MixosMcp {
         args: Value,
     ) -> Result<Json<NativeObservation>, String> {
         exact_target(&service, "service")?;
-        if serde_json::to_vec(&args).map_err(|e| e.to_string())?.len() > 16_384 {
-            return Err("native desktop request exceeds 16384 bytes; nothing was sent".into());
+        let request_cap = if command == "clipboard.set" {
+            6 * 1024 * 1024 + 4096
+        } else {
+            16_384
+        };
+        if serde_json::to_vec(&args).map_err(|e| e.to_string())?.len() > request_cap {
+            return Err(format!(
+                "native request exceeds {request_cap} bytes; nothing was sent"
+            ));
         }
         let noded = self.noded().await?;
         // One attempt only. A lost reply does not establish that work stopped.
@@ -138,12 +172,17 @@ impl MixosMcp {
                 ));
             }
         };
+        let response_cap = if command == "clipboard.get" {
+            6 * 1024 * 1024 + 4096
+        } else {
+            1024 * 1024
+        };
         if serde_json::to_vec(&result)
             .map_err(|e| e.to_string())?
             .len()
-            > 1024 * 1024
+            > response_cap
         {
-            return Err("native desktop response exceeds 1 MiB".into());
+            return Err(format!("native response exceeds {response_cap} bytes"));
         }
         Ok(Json(NativeObservation {
             service,
@@ -155,6 +194,53 @@ impl MixosMcp {
 
 #[tool_router(router = native_tool_router, vis = "pub(crate)")]
 impl MixosMcp {
+    /// Read the local session clipboard. Binary data is base64; large data
+    /// includes next_offset/eof. Remote sessions must use clipboard.push.
+    #[tool(annotations(
+        read_only_hint = true,
+        destructive_hint = false,
+        idempotent_hint = true
+    ))]
+    async fn clipboard_get(
+        &self,
+        Parameters(p): Parameters<ClipboardGet>,
+    ) -> Result<Json<NativeObservation>, String> {
+        let mut args = json!({"primary": p.primary, "offset": p.offset});
+        if let Some(selection) = p.selection {
+            if !matches!(selection.as_str(), "clipboard" | "primary") || (p.primary && selection != "primary") {
+                return Err("invalid or conflicting clipboard selection".into());
+            }
+            args["primary"] = json!(selection == "primary");
+            args["selection"] = json!(selection);
+        }
+        if let Some(mime) = p.mime {
+            args["mime"] = json!(mime);
+        }
+        self.native_observation("clipd".into(), "clipboard.get", args)
+            .await
+    }
+
+    /// Set UTF-8 text on the local session clipboard without keyboard focus.
+    #[tool(annotations(
+        read_only_hint = false,
+        destructive_hint = false,
+        idempotent_hint = false
+    ))]
+    async fn clipboard_set(
+        &self,
+        Parameters(p): Parameters<ClipboardSet>,
+    ) -> Result<Json<NativeObservation>, String> {
+        let mut args = json!({"mime": p.mime.unwrap_or_else(|| "text/plain;charset=utf-8".into()), "data": p.text, "primary": p.primary, "sensitive": p.sensitive});
+        if let Some(selection) = p.selection {
+            if !matches!(selection.as_str(), "clipboard" | "primary") || (p.primary && selection != "primary") {
+                return Err("invalid or conflicting clipboard selection".into());
+            }
+            args["primary"] = json!(selection == "primary");
+            args["selection"] = json!(selection);
+        }
+        self.native_observation("clipd".into(), "clipboard.set", args).await
+    }
+
     /// Describe one explicitly targeted application and its native commands.
     #[tool(annotations(
         read_only_hint = true,

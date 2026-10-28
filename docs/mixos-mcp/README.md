@@ -64,9 +64,15 @@ Each name below is exposed as `mcp__mixos__<name>` in Claude Code.
 - `log_tail`, `log_search`
 - `app_describe`, `app_actions`, `app_execute`
 - `desktop_windows`, `desktop_window_wait`
+- `clipboard_get`, `clipboard_set`
 - `context_search`, `index_workspace`, `knowledge_digest`
 - `docs_feedback`, `journal_feedback`, `memory_feedback`, `journal_supersede`
 - `mix_execute`, `mcp_status`
+
+`clipboard_get {mime?, primary?, offset?}` and
+`clipboard_set {text, mime?, primary?, sensitive?}` use the current session's
+`clipd` service. Reads return the encoding and chunk continuation fields.
+See [clipd](../clipd/README.md) for limits and cross-session push semantics.
 
 ### Application commands
 
