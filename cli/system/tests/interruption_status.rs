@@ -2,6 +2,8 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Error prose never grants interruption status; real signals retain CLI exits.
 #![cfg(unix)]
+#[path = "support/pty.rs"]
+mod pty;
 
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::os::unix::process::CommandExt;
@@ -10,6 +12,13 @@ use std::time::{Duration, Instant};
 
 fn command(home: &std::path::Path) -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_mix"));
+    pty::guard(&mut cmd);
+    unsafe {
+        cmd.pre_exec(|| {
+            if libc::setsid() < 0 { return Err(std::io::Error::last_os_error()); }
+            Ok(())
+        });
+    }
     cmd.env("HOME", home)
         .env("MIX_STATS", "off")
         .env("MIX_SIGTERM_BACKSTOP_SECS", "1")
@@ -69,6 +78,7 @@ fn error_messages_and_codes_cannot_impersonate_a_signal() {
 struct OwnedChild(Child);
 impl Drop for OwnedChild {
     fn drop(&mut self) {
+        pty::kill_session(self.0.id());
         let _ = self.0.kill();
         let _ = self.0.wait();
     }

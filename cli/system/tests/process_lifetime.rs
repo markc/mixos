@@ -11,18 +11,33 @@
 //! and every restart orphaned one more server holding its port.
 
 #![cfg(target_os = "linux")]
+#[path = "support/pty.rs"]
+mod pty;
 
 use std::io::Write;
 use std::os::fd::FromRawFd;
+use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+fn command() -> Command {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_mix"));
+    pty::guard(&mut command);
+    unsafe {
+        command.pre_exec(|| {
+            if libc::setsid() < 0 { return Err(std::io::Error::last_os_error()); }
+            Ok(())
+        });
+    }
+    command
+}
 
 #[test]
 fn plain_process_watch_without_handlers_exits() {
     let dir = scratch_dir("watch-no-handlers");
     let script = write_script(&dir, "process_watch([\"true\"])\n");
-    let mut child = Command::new(env!("CARGO_BIN_EXE_mix"))
+    let mut child = command()
         .arg("--no-prelude")
         .arg(script)
         .stdin(Stdio::null())
@@ -35,6 +50,7 @@ fn plain_process_watch_without_handlers_exits() {
             break;
         }
         if Instant::now() >= deadline {
+            pty::kill_session(child.id());
             let _ = child.kill();
             let _ = child.wait();
             panic!("unhandled watch kept plain script alive");
@@ -136,7 +152,7 @@ fn owned_spawn_group_is_terminated_when_mix_exits_normally() {
         helper_argv(&dir)
     );
     let script = write_script(&dir, &source);
-    let status = Command::new(env!("CARGO_BIN_EXE_mix"))
+    let status = command()
         .arg(&script)
         .env("MIX_STATS", "off")
         .stdin(Stdio::null())
@@ -182,7 +198,7 @@ fn owned_spawn_leader_dies_when_mix_is_killed() {
         helper_argv(&dir)
     );
     let script = write_script(&dir, &source);
-    let mut child = Command::new(env!("CARGO_BIN_EXE_mix"))
+    let mut child = command()
         .arg(&script)
         .env("MIX_STATS", "off")
         .stdin(Stdio::null())
@@ -223,7 +239,7 @@ fn plain_spawn_child_survives_mix_exit() {
          while !exists(\"{d}/leader\") and $n < 250\n  sleep(0.02)\n  $n = $n + 1\nend\n"
     );
     let script = write_script(&dir, &source);
-    let status = Command::new(env!("CARGO_BIN_EXE_mix"))
+    let status = command()
         .arg(&script)
         .env("MIX_STATS", "off")
         .stdin(Stdio::null())
@@ -243,7 +259,7 @@ fn plain_spawn_child_survives_mix_exit() {
 fn run_with_stdin(label: &str, source: &str, stdin: Stdio, feed: Option<&[u8]>) -> (bool, String) {
     let dir = scratch_dir(label);
     let script = write_script(&dir, source);
-    let mut child = Command::new(env!("CARGO_BIN_EXE_mix"))
+    let mut child = command()
         .arg(&script)
         .env("MIX_STATS", "off")
         .stdin(stdin)
@@ -262,6 +278,7 @@ fn run_with_stdin(label: &str, source: &str, stdin: Stdio, feed: Option<&[u8]>) 
     let deadline = Instant::now() + Duration::from_secs(20);
     while child.try_wait().expect("try_wait").is_none() {
         if Instant::now() >= deadline {
+            pty::kill_session(child.id());
             let _ = child.kill();
             let _ = child.wait();
             let _ = std::fs::remove_dir_all(&dir);
@@ -319,6 +336,9 @@ fn stdin_inherit_refuses_a_terminal_stdin() {
         )
     };
     assert_eq!(rc, 0, "openpty");
+    for fd in [master, slave] {
+        assert_eq!(unsafe { libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) }, 0);
+    }
     // SAFETY: `slave` is a descriptor we own; Stdio takes ownership of it.
     let stdin = unsafe { Stdio::from(std::os::fd::OwnedFd::from_raw_fd(slave)) };
     let (ok, out) = run_with_stdin(

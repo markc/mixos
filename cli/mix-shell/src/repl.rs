@@ -1185,12 +1185,19 @@ pub fn run_repl() -> i32 {
                 }
             }
             Err(ReadlineError::Eof) => {
+                if crate::editor::terminal::hung_up(libc::STDIN_FILENO) {
+                    exit_code = 128 + libc::SIGHUP;
+                }
                 if !line_buf.is_empty() {
                     match mix::continuation::splice_explicit_continuations(&line_buf) {
                         Err(error) if error.is_incomplete_input() => eprintln!("{}", error),
                         _ => eprintln!("mix: unexpected EOF while input is incomplete"),
                     }
                 }
+                break;
+            }
+            Err(ReadlineError::Io(e)) if matches!(e.raw_os_error(), Some(libc::EIO | libc::ENXIO | libc::ENOTTY)) => {
+                exit_code = 128 + libc::SIGHUP;
                 break;
             }
             Err(e) => {
@@ -1203,6 +1210,10 @@ pub fn run_repl() -> i32 {
     // The editor is about to go away; an admission that reserved a prompt on a
     // shell that is leaving must find no surface rather than a dead control.
     crate::session_execute::withdraw();
+
+    // Terminal EOF/EIO must close job groups too, without depending on a
+    // delivered SIGHUP or waiting for history/statistics writes to finish.
+    job_table.shutdown();
 
     // Save usage stats before exit
     if let Some(stats) = eval.take_stats() {
