@@ -45,11 +45,14 @@ if body :text :contains "release announcement" {
 `:create` creates missing parents. Missing destinations without `:create`
 keep the message at its default destination. Flags map to the same MDS flags
 and validated user keywords as IMAP/JMAP. File actions snapshot the current
-flags. `:copy` preserves implicit keep. Variables support substitution, wildcard
+flags; repeated filings into one mailbox use the last flag list. Invalid,
+unsupported and excess native keywords are ignored. `:copy` preserves implicit keep. Variables support substitution, wildcard
 captures, case modifiers, wildcard quoting and length.
 
 `body` uses decoded MIME text, strips HTML markup for `:text`, selects MIME types
-with `:content`, and exposes the untransformed body with `:raw`. Relational
+with `:content`, and exposes the untransformed body with `:raw`. MIME selectors
+support variables, and selected binary parts retain their decoded octets.
+Body wildcards preserve earlier match captures. Relational
 `:value`/`:count` support `gt`, `ge`, `lt`, `le`, `eq`, `ne`; `:count` requires
 `i;ascii-numeric`. Header `:index N` selects one occurrence, with `:last`
 counting from the end.
@@ -65,7 +68,7 @@ classification is disabled or fails. JMAP/native Bus submissions also run
 recipient Sieve on local delivery, with Inbox as keep, without rerunning the
 inbound classifier or global Mix filter.
 
-Evaluation produces a complete action plan. Syntax/runtime errors, invalid flags,
+Evaluation produces a complete action plan. Syntax/runtime errors,
 missing destinations and refused redirects cancel the plan and keep the message.
 Limits: 64 KiB per script, 10,000 evaluation/matching/allocation steps, 64
 filing/redirect actions, 1 MiB of variables and four redirects. Matching charges
@@ -73,6 +76,11 @@ for scanned bytes as well as instructions. Local redirects run the destination's
 script; SMTP redirects also rerun the destination's classifier and global filter
 using the original verified ingress. The four-hop header also bounds remote loops. A forged high hop count
 can suppress forwarding but never grants extra hops.
+
+Once a filing or redirect has committed, later secondary-action I/O failures are
+logged and the accepted delivery is retained. This follows maild's existing
+partial-delivery behaviour and avoids retrying an already accepted copy.
+Secondary actions have no durable replay across the separate MDS/mail.db stores.
 
 `reject`/`ereject` return SMTP `550 5.7.1` after DATA for a single normal
 recipient. Mixed-recipient/asynchronous delivery instead queues a DSN with a
