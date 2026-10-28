@@ -287,7 +287,8 @@ envelope's U-label for that authoritative lookup.
 Mailbox lookup accepts either the U-label or A-label spelling of its domain.</p>
 <p>Outbound delivery detects non-ASCII envelope addresses and headers, checks the
 peer's EHLO capabilities (again after STARTTLS), and requests <code>SMTPUTF8</code> when
-needed. Eight-bit content requires <code>8BITMIME</code> and requests <code>BODY=8BITMIME</code>.
+needed, including UTF-8 MIME part headers. SMTPUTF8 and eight-bit content
+require <code>8BITMIME</code> and request <code>BODY=8BITMIME</code>.
 ASCII mail does not request either extension. If a required extension is
 missing, maild records a permanent <code>5.6.7</code> (SMTPUTF8) or <code>5.6.3</code> (8BITMIME)
 failure and bounces to the local sender. It does not rewrite addresses or
