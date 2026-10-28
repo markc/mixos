@@ -553,23 +553,25 @@ fn performance(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
         .show(ui, |ui| {
             let width = ui.available_width();
             let compact = ui.ctx().content_rect().width() < 640.0;
-            let output = ScrollArea::new([compact, true]).auto_shrink(false).show(ui, |ui| {
-                if compact {
-                    ui.set_max_width(width);
-                }
-                let key = engine.ui.section.as_str();
-                if key == "cpu" {
-                    cpu(ui, engine, s);
-                } else if key == "memory" {
-                    memory(ui, engine, s);
-                } else if key == "tcp" {
-                    tcp(ui, engine, s);
-                } else if let Some(name) = key.strip_prefix("disk:") {
-                    disk(ui, engine, s, name);
-                } else if let Some(name) = key.strip_prefix("net:") {
-                    net(ui, engine, s, name);
-                }
-            });
+            let output = ScrollArea::new([compact, true])
+                .auto_shrink(false)
+                .show(ui, |ui| {
+                    if compact {
+                        ui.set_max_width(width);
+                    }
+                    let key = engine.ui.section.as_str();
+                    if key == "cpu" {
+                        cpu(ui, engine, s);
+                    } else if key == "memory" {
+                        memory(ui, engine, s);
+                    } else if key == "tcp" {
+                        tcp(ui, engine, s);
+                    } else if let Some(name) = key.strip_prefix("disk:") {
+                        disk(ui, engine, s, name);
+                    } else if let Some(name) = key.strip_prefix("net:") {
+                        net(ui, engine, s, name);
+                    }
+                });
             ui.ctx().data_mut(|data| {
                 data.insert_temp(
                     egui::Id::unique("monitor-performance-layout"),
