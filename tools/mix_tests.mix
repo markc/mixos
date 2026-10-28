@@ -24,6 +24,10 @@
 --   behaviour crash-loops on the global-scope promotion debug_assert
 --   (libs/mix/src/scope.rs); back in once that scope design is settled.
 -- - tests/desktop/: nested and on-hardware compositor runs.
+-- - apps/dopus/tests/chooser_bus_test.mix: drives real chooser windows on a
+--   nested compd, which needs a headless weston host (nested_host_lib). Run
+--   it where weston is installed:
+--   MIXOS_TEST_BIN=<bin> mix apps/dopus/tests/chooser_bus_test.mix.
 $root = dirname(dirname(realpath($0)))
 $bin = $root .. "/target/debug"
 $only = []
@@ -72,7 +76,6 @@ $scripts = [
   "services/notifyd/tests/notify_test.mix",
   "services/notifyd/tests/notifyd_test.mix",
   "apps/dopus/tests/dopus_bus_test.mix",
-  "apps/dopus/tests/chooser_bus_test.mix",
   "apps/screenshot/tests/edit_path_test.mix"
 ]
 if len($only) > 0 then
