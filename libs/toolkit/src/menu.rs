@@ -2069,7 +2069,7 @@ fn show_level(
                     // Area size is cached between openings. Grow to this
                     // menu's measured, bounded frame even after a shorter
                     // catalogue, without forcing scrollbars past its edge.
-                    ui.set_min_size(vec2(width, max_height));
+                    ui.set_min_size(vec2(width, max_height.min(layout.size.y)));
                 }
                 if let Some((search, query)) = header {
                     search_header(ui, chrome, search, query, layout.size.x, entries.is_empty());
@@ -2355,6 +2355,58 @@ fn configure_scroll(ui: &mut Ui, chrome: &Chrome) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_width_bounded_short_menu_keeps_its_measured_height() {
+        let ctx = Context::default();
+        crate::install(&ctx, &crate::Theme::embedded());
+        for pass in 0..5 {
+            let mut out = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(420.0, 260.0))),
+                    time: Some(pass as f64),
+                    ..Default::default()
+                },
+                |ui| {
+                    let chrome = Chrome::of(&ctx);
+                    let menus = [Menu {
+                        title: "File".into(),
+                        entries: vec![Entry::Row(Row::command("quit", "Quit", None, true))],
+                    }];
+                    let layout = Layout::new(ui, &chrome, &menus[0].entries, 180.0);
+                    let margin = Frame::menu(ui.style()).total_margin().sum();
+                    let mut nav = Nav::default();
+                    nav.open(0);
+                    let shown = show_level(
+                        &ctx,
+                        &chrome,
+                        0,
+                        &menus[0].entries,
+                        &layout,
+                        Rect::from_min_size(pos2(4.0, 38.0), layout.size + margin),
+                        &mut nav,
+                        &menus,
+                        View {
+                            max_height: 210.0,
+                            max_width: Some(180.0),
+                            moved: false,
+                            keyed: false,
+                            deeper: None,
+                        },
+                        None,
+                    );
+                    if pass > 2 {
+                        assert!(
+                            shown.frame.height() <= layout.size.y + margin.y + 1.0,
+                            "a short menu must not fill the available window height"
+                        );
+                        assert!(shown.bar.is_none());
+                    }
+                },
+            );
+            out.textures_delta.clear();
+        }
+    }
 
     #[test]
     fn a_covered_bar_closes_only_its_own_state_and_keeps_the_layer() {

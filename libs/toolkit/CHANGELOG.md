@@ -22,6 +22,7 @@
 - Share a 360×240 logical window minimum across app and secondary viewports. Restore secondary geometry only at creation; constrain and scroll small dialogs and saved docks.
 - Share a 360×240 logical window minimum across app and secondary viewports. Restore secondary geometry only at creation; constrain and scroll small dialogs and saved docks. Use the compact menu in narrow windows so menu titles cannot overlap the window controls.
 - Bound folded menu columns in narrow windows so a submenu cannot cover its parent row and turn a labelled menu click into a different command. Overflowing rows scroll within their column.
+- Keep short folded menu frames at their measured row height when their width is bounded, rather than stretching them to the bottom of the window.
 
 ## Unreleased — 2026-10-28
 
