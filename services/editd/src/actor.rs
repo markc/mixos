@@ -1870,14 +1870,12 @@ async fn init(a: &ActorInit) -> Result<(Actor, bool), Refusal> {
     let (buffer, meta, path, opened_as, base, disk, created, language) = match &a.init {
         Init::Scratch { language, text } => {
             let bytes = if text.starts_with('\u{FEFF}') { format!("\u{FEFF}{text}").into_bytes() } else { text.as_bytes().to_vec() };
-            let (buffer, _) = Buffer::from_bytes(&bytes).map_err(|e| from_core(e, None))?;
+            let (buffer, mut meta) = Buffer::from_bytes(&bytes).map_err(|e| from_core(e, None))?;
+            meta.bom = false;
             let language = language.clone().unwrap_or_else(|| "text".into());
             (
                 buffer,
-                FileMeta {
-                    bom: false,
-                    eol: Eol::None,
-                },
+                meta,
                 None,
                 None,
                 None,

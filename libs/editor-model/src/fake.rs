@@ -782,7 +782,13 @@ impl FakeEditd {
         let (bid, reopened, created) = match found {
             Some(bid) => (bid, true, false),
             None if r.path.is_none() || r.create => {
-                (self.create(r.path.as_deref(), r.text.as_deref().unwrap_or_default()), false, r.path.is_some())
+                let text = r.text.as_deref().unwrap_or_default();
+                let preserved;
+                let text = if r.path.is_none() && text.starts_with('\u{FEFF}') {
+                    preserved = format!("\u{FEFF}{text}");
+                    &preserved
+                } else { text };
+                (self.create(r.path.as_deref(), text), false, r.path.is_some())
             }
             None => {
                 return Err(refusal(
