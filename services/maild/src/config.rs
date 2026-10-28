@@ -443,21 +443,37 @@ impl Config {
                 .into_owned();
             Ok(())
         }
-        for value in [&mut self.database_path, &mut self.blob_dir, &mut self.mds_dir] {
+        for value in [
+            &mut self.database_path,
+            &mut self.blob_dir,
+            &mut self.mds_dir,
+        ] {
             resolve(value)?;
         }
         for value in [
-            &mut self.dkim_private_key, &mut self.tls_cert, &mut self.tls_key,
-            &mut self.inbound_filter, &mut self.spam_db_dir, &mut self.spam_baseline_db,
-            &mut self.rules_pack_path, &mut self.rule_stats_dir,
-        ].into_iter().flatten() {
+            &mut self.dkim_private_key,
+            &mut self.tls_cert,
+            &mut self.tls_key,
+            &mut self.inbound_filter,
+            &mut self.spam_db_dir,
+            &mut self.spam_baseline_db,
+            &mut self.rules_pack_path,
+            &mut self.rule_stats_dir,
+        ]
+        .into_iter()
+        .flatten()
+        {
             resolve(value)?;
         }
-        for value in [&mut self.tls_key_root, &mut self.dkim.key_root].into_iter().flatten() {
+        for value in [&mut self.tls_key_root, &mut self.dkim.key_root]
+            .into_iter()
+            .flatten()
+        {
             *value = paths::resolve(value.to_string_lossy()).map_err(anyhow::Error::msg)?;
         }
         for row in &mut self.dkim.domains {
-            row.key_path = paths::resolve(row.key_path.to_string_lossy()).map_err(anyhow::Error::msg)?;
+            row.key_path =
+                paths::resolve(row.key_path.to_string_lossy()).map_err(anyhow::Error::msg)?;
         }
         for identity in &mut self.tls.identity {
             resolve(&mut identity.cert)?;

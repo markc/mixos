@@ -578,7 +578,10 @@ pub async fn get(
     let mut list = Vec::with_capacity(records.len());
     for record in records {
         let mut val = record_to_jmap(&record);
-        if properties.as_ref().is_none_or(|p| p.iter().any(|p| p == "threadId")) {
+        if properties
+            .as_ref()
+            .is_none_or(|p| p.iter().any(|p| p == "threadId"))
+        {
             val["threadId"] = mailstore.thread_for_email(account_id, record.id)?.0.into();
         }
         if inspect_mime {
@@ -2217,7 +2220,10 @@ async fn create_from_blob(
     }
 
     let known = mailstore.list_mailboxes(account_id)?;
-    if mailbox_ids.iter().any(|id| !known.iter().any(|m| m.id == *id)) {
+    if mailbox_ids
+        .iter()
+        .any(|id| !known.iter().any(|m| m.id == *id))
+    {
         anyhow::bail!("invalidProperties: mailboxIds contains an unknown mailbox");
     }
     let (blob_data, alias_hash) = if let Some(hash) = crate::mailstore::parse_hash(blob_id_str) {
@@ -2226,14 +2232,18 @@ async fn create_from_blob(
         }
         (mailstore.read_blob(hash)?, Some(hash))
     } else {
-        let blob_id = blob_id_str.parse::<Uuid>()
+        let blob_id = blob_id_str
+            .parse::<Uuid>()
             .map_err(|_| anyhow::anyhow!("invalidProperties: Invalid blobId"))?;
         use crate::mailstore::{BlobId, BlobRefLookup};
         match mailstore.resolve_blob_ref(account_id, BlobId(blob_id))? {
             BlobRefLookup::Found(hash) => (mailstore.read_blob(hash)?, Some(hash)),
             BlobRefLookup::NotFound => (
                 db::blob::load_for_account(&db.conn, &db.blob_dir, account_id, blob_id)
-                    .await?.ok_or_else(|| anyhow::anyhow!("blobNotFound: {blob_id}"))?, None),
+                    .await?
+                    .ok_or_else(|| anyhow::anyhow!("blobNotFound: {blob_id}"))?,
+                None,
+            ),
             BlobRefLookup::Dangling => anyhow::bail!("blobNotFound: {blob_id}"),
         }
     };
@@ -2273,11 +2283,15 @@ async fn create_from_blob(
     let received_at: i64 = match entry.get("receivedAt") {
         Some(v) => {
             let valid = v.as_str().is_some_and(|s| s.ends_with('Z'));
-            if !valid { anyhow::bail!("invalidProperties: receivedAt must be a UTCDate"); }
+            if !valid {
+                anyhow::bail!("invalidProperties: receivedAt must be a UTCDate");
+            }
             parse_utcdate_ms(v, "receivedAt")
                 .map_err(|e| anyhow::anyhow!("invalidProperties: receivedAt: {e}"))?
         }
-        None => message.received().and_then(|r| r.date())
+        None => message
+            .received()
+            .and_then(|r| r.date())
             .map(|d| d.to_timestamp() * 1000)
             .unwrap_or_else(|| chrono::Utc::now().timestamp_millis()),
     };
@@ -2336,14 +2350,23 @@ pub async fn import(
     args: serde_json::Value,
 ) -> Result<serde_json::Value> {
     let invalid = |description: &str| JmapMethodError {
-        error_type: "invalidArguments".into(), description: Some(description.into()),
+        error_type: "invalidArguments".into(),
+        description: Some(description.into()),
     };
-    let account = args.get("accountId").and_then(|v| v.as_str())
+    let account = args
+        .get("accountId")
+        .and_then(|v| v.as_str())
         .ok_or_else(|| invalid("accountId must be an Id"))?;
     if account != account_id.to_string() {
-        return Err(JmapMethodError { error_type: "accountNotFound".into(), description: None }.into());
+        return Err(JmapMethodError {
+            error_type: "accountNotFound".into(),
+            description: None,
+        }
+        .into());
     }
-    let emails = args.get("emails").and_then(|v| v.as_object())
+    let emails = args
+        .get("emails")
+        .and_then(|v| v.as_object())
         .ok_or_else(|| invalid("emails must be an object"))?;
     let old_state = mailstore.email_state(account_id)?.to_string();
     check_if_in_state(&args, &old_state)?;
@@ -2355,10 +2378,13 @@ pub async fn import(
             Ok(id) => {
                 let record = mailstore.get_email(account_id, id)?;
                 let thread = mailstore.thread_for_email(account_id, id)?;
-                created.insert(creation_id.clone(), serde_json::json!({
-                    "id": id.0.to_string(), "blobId": mds::blob::hex(&record.blob_hash),
-                    "threadId": thread.0, "size": record.size_bytes,
-                }));
+                created.insert(
+                    creation_id.clone(),
+                    serde_json::json!({
+                        "id": id.0.to_string(), "blobId": mds::blob::hex(&record.blob_hash),
+                        "threadId": thread.0, "size": record.size_bytes,
+                    }),
+                );
             }
             Err(error) => {
                 let msg = error.to_string();
@@ -2373,7 +2399,9 @@ pub async fn import(
                     }
                     if value["type"] == "invalidProperties" {
                         for property in ["blobId", "mailboxIds", "keywords", "receivedAt"] {
-                            if msg.contains(property) || (property == "blobId" && msg.starts_with("blobNotFound:")) {
+                            if msg.contains(property)
+                                || (property == "blobId" && msg.starts_with("blobNotFound:"))
+                            {
                                 value["properties"] = serde_json::json!([property]);
                                 break;
                             }
@@ -2396,10 +2424,15 @@ pub async fn import(
 fn check_if_in_state(args: &serde_json::Value, state: &str) -> Result<()> {
     if let Some(value) = args.get("ifInState").filter(|v| !v.is_null()) {
         let expected = value.as_str().ok_or_else(|| JmapMethodError {
-            error_type: "invalidArguments".into(), description: Some("ifInState must be String|null".into()),
+            error_type: "invalidArguments".into(),
+            description: Some("ifInState must be String|null".into()),
         })?;
         if expected != state {
-            return Err(JmapMethodError { error_type: "stateMismatch".into(), description: None }.into());
+            return Err(JmapMethodError {
+                error_type: "stateMismatch".into(),
+                description: None,
+            }
+            .into());
         }
     }
     Ok(())

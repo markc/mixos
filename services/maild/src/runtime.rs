@@ -234,7 +234,9 @@ pub async fn build_runtime(cfg: &Config, opts: RuntimeOpts) -> Result<BuiltMaild
 }
 
 pub async fn build_runtime_with_sockets(
-    cfg: &Config, opts: RuntimeOpts, sockets: &mut crate::activation::Sockets,
+    cfg: &Config,
+    opts: RuntimeOpts,
+    sockets: &mut crate::activation::Sockets,
 ) -> Result<BuiltMaild> {
     let resolved = cfg.clone().resolve_paths()?;
     let cfg = &resolved;
@@ -806,8 +808,14 @@ pub async fn build_runtime_with_sockets(
     )
     .await?;
     let imap_cfg = imap::ImapConfig::from_config(cfg, tls_slot, tls_config_cache);
-    let imap_handle =
-        imap::server::start_with_listeners(database.clone(), mailstore.clone(), imap_cfg, imap_slots, sockets.take("imaps")).await?;
+    let imap_handle = imap::server::start_with_listeners(
+        database.clone(),
+        mailstore.clone(),
+        imap_cfg,
+        imap_slots,
+        sockets.take("imaps"),
+    )
+    .await?;
 
     // State change broadcast channel for EventSource push.
     let (state_tx, _) = tokio::sync::broadcast::channel::<jmap::StateChange>(256);

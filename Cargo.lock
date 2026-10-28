@@ -5356,6 +5356,7 @@ dependencies = [
  "mds",
  "mimalloc",
  "mix",
+ "paths",
  "props",
  "quick-xml 0.37.5",
  "rand 0.8.8",

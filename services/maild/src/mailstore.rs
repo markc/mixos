@@ -1543,12 +1543,18 @@ impl SqliteMailStore {
     /// account. Used by Email/import's mandatory created properties.
     pub fn thread_for_email(&self, account: AccountId, id: ItemId) -> Result<ThreadId> {
         let set = account_id_to_setid(account);
-        self.mds.with_set_tx(&set, |tx| {
-            tx.tx().query_row(
-                "SELECT thread_id FROM mail_threads WHERE account_id = ?1 AND item_id = ?2",
-                params![account, id.0.to_string()], |row| row.get::<_, String>(0),
-            ).map(ThreadId).map_err(|e| mds::Error::Other(e.to_string()))
-        }).map_err(Into::into)
+        self.mds
+            .with_set_tx(&set, |tx| {
+                tx.tx()
+                    .query_row(
+                        "SELECT thread_id FROM mail_threads WHERE account_id = ?1 AND item_id = ?2",
+                        params![account, id.0.to_string()],
+                        |row| row.get::<_, String>(0),
+                    )
+                    .map(ThreadId)
+                    .map_err(|e| mds::Error::Other(e.to_string()))
+            })
+            .map_err(Into::into)
     }
 
     pub fn new(mds: Arc<SqliteCasMds>) -> Self {
@@ -3871,7 +3877,17 @@ impl MailStore for SqliteMailStore {
         initial_tags: Tags,
         received_at: i64,
     ) -> Result<(ItemId, Vec<MembershipUid>)> {
-        self.create_with_memberships(account, mailboxes, blob, envelope, in_reply_to, initial_keywords, initial_tags, received_at, false)
+        self.create_with_memberships(
+            account,
+            mailboxes,
+            blob,
+            envelope,
+            in_reply_to,
+            initial_keywords,
+            initial_tags,
+            received_at,
+            false,
+        )
     }
 
     fn add_memberships(
@@ -5595,9 +5611,12 @@ impl SqliteMailStore {
                 // non-empty above so [0] is safe.
                 Err(anyhow!("mailbox not found: {cid}", cid = mailboxes[0].0))
             }
-            Err(mds::Error::Other(s)) if s.starts_with("mailbox not found") || s.starts_with("alreadyExists:") => Err(anyhow!(s)),
+            Err(mds::Error::Other(s))
+                if s.starts_with("mailbox not found") || s.starts_with("alreadyExists:") =>
+            {
+                Err(anyhow!(s))
+            }
             Err(other) => Err(anyhow!(other)),
         }
     }
-
 }

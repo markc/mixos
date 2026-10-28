@@ -218,9 +218,22 @@ pub async fn start(
     aliases_runtime: Arc<Runtime>,
     vtoken_store: Arc<crate::vtoken::VtokenStore>,
 ) -> Result<SmtpHandle> {
-    start_with_sockets(db, config, mail_auth, rule_engine, rule_stats, classifier,
-        mailstore, verdict_tx, overrides_runtime, domains_runtime, aliases_runtime,
-        vtoken_store, &mut crate::activation::Sockets::default()).await
+    start_with_sockets(
+        db,
+        config,
+        mail_auth,
+        rule_engine,
+        rule_stats,
+        classifier,
+        mailstore,
+        verdict_tx,
+        overrides_runtime,
+        domains_runtime,
+        aliases_runtime,
+        vtoken_store,
+        &mut crate::activation::Sockets::default(),
+    )
+    .await
 }
 
 #[allow(clippy::too_many_arguments)]

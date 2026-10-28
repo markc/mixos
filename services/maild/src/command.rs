@@ -2411,7 +2411,12 @@ async fn async_main() -> Result<()> {
 
         Command::Serve => {
             let mut sockets = crate::activation::Sockets::from_env()?;
-            let built = runtime::build_runtime_with_sockets(&cfg, runtime::RuntimeOpts::default(), &mut sockets).await?;
+            let built = runtime::build_runtime_with_sockets(
+                &cfg,
+                runtime::RuntimeOpts::default(),
+                &mut sockets,
+            )
+            .await?;
             // Live `maild.log` watcher — swaps the EnvFilter on every
             // `props.set maild.log {...}`. Spawns a task on the live
             // tokio runtime; the `log_handle` was created above.
@@ -2422,52 +2427,59 @@ async fn async_main() -> Result<()> {
             for addr in &built.smtp_handle.smtps_addrs {
                 tracing::info!(addr = %addr, "SMTPS submission bound");
             }
-            let listeners = crate::activation::listeners(sockets.take("jmap"), std::slice::from_ref(&cfg.listen)).await?;
+            let listeners = crate::activation::listeners(
+                sockets.take("jmap"),
+                std::slice::from_ref(&cfg.listen),
+            )
+            .await?;
             let mut servers = tokio::task::JoinSet::new();
             for listener in listeners {
-            tracing::info!(addr = %listener.local_addr()?, "maild JMAP/DAV listening");
-            let app = built.router.clone();
-            let tls = match (&cfg.tls_cert, &cfg.tls_key) {
-                (Some(cert), Some(key)) => Some(::config::load_tls_config(cert, key)?),
-                _ => None,
-            };
-            servers.spawn(async move {
-
-            // Use TLS if cert/key configured
-            if let Some(tls_acceptor) = tls {
-                tracing::info!("JMAP HTTPS enabled");
-                loop {
-                    let (stream, _peer) = listener.accept().await?;
-                    let acceptor = tls_acceptor.clone();
-                    let app = app.clone();
-                    tokio::spawn(async move {
-                        match acceptor.accept(stream).await {
-                            Ok(tls_stream) => {
-                                let io = hyper_util::rt::TokioIo::new(tls_stream);
-                                let service = hyper_util::service::TowerToHyperService::new(app);
-                                if let Err(e) = hyper_util::server::conn::auto::Builder::new(
-                                    hyper_util::rt::TokioExecutor::new(),
-                                )
-                                .serve_connection(io, service)
-                                .await
-                                {
-                                    tracing::debug!(error = %e, "HTTPS connection error");
+                tracing::info!(addr = %listener.local_addr()?, "maild JMAP/DAV listening");
+                let app = built.router.clone();
+                let tls = match (&cfg.tls_cert, &cfg.tls_key) {
+                    (Some(cert), Some(key)) => Some(::config::load_tls_config(cert, key)?),
+                    _ => None,
+                };
+                servers.spawn(async move {
+                    // Use TLS if cert/key configured
+                    if let Some(tls_acceptor) = tls {
+                        tracing::info!("JMAP HTTPS enabled");
+                        loop {
+                            let (stream, _peer) = listener.accept().await?;
+                            let acceptor = tls_acceptor.clone();
+                            let app = app.clone();
+                            tokio::spawn(async move {
+                                match acceptor.accept(stream).await {
+                                    Ok(tls_stream) => {
+                                        let io = hyper_util::rt::TokioIo::new(tls_stream);
+                                        let service =
+                                            hyper_util::service::TowerToHyperService::new(app);
+                                        if let Err(e) =
+                                            hyper_util::server::conn::auto::Builder::new(
+                                                hyper_util::rt::TokioExecutor::new(),
+                                            )
+                                            .serve_connection(io, service)
+                                            .await
+                                        {
+                                            tracing::debug!(error = %e, "HTTPS connection error");
+                                        }
+                                    }
+                                    Err(e) => {
+                                        tracing::debug!(error = %e, "TLS handshake failed");
+                                    }
                                 }
-                            }
-                            Err(e) => {
-                                tracing::debug!(error = %e, "TLS handshake failed");
-                            }
+                            });
                         }
-                    });
-                }
-            } else {
-                axum::serve(listener, app).await?;
-            }
-            Ok::<(), anyhow::Error>(())
-            });
+                    } else {
+                        axum::serve(listener, app).await?;
+                    }
+                    Ok::<(), anyhow::Error>(())
+                });
             }
             let _keepalive = built;
-            if let Some(result) = servers.join_next().await { result??; }
+            if let Some(result) = servers.join_next().await {
+                result??;
+            }
         }
     }
 

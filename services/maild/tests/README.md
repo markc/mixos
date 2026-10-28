@@ -5,8 +5,8 @@ The full family suite is `cargo test -p maild -p maild-auth -p maild-rules
 -p maild-bayesian -p mds`. Shared Bus changes also require `cargo test -p bus`.
 
 All source tests have been ported, including the binary's tests in the
-library's `command` module. No test files were dropped. Counts below include
-unit and integration test declarations, excluding examples in comments.
+library's `command` module. No test files were dropped. These are historical
+port counts, before subsequent protocol work added coverage:
 
 | Crate | Source | Port | Difference |
 |---|---:|---:|---|
@@ -16,30 +16,40 @@ unit and integration test declarations, excluding examples in comments.
 | maild-bayesian | 41 | 41 | None |
 
 One maild sequence-map test is release-only: the debug and release constructors
-deliberately handle duplicate UIDs differently. The debug suite therefore
-collects 1,482 tests: 1,476 pass and six are ignored. A release build additionally
+deliberately handle duplicate UIDs differently. A release build additionally
 collects `from_entries_release_build_coalesces_duplicate_uids`.
 
-The six ignores are inherited:
+The inherited native-broker test remains opt-in:
 
 - `native_bus_submission_replays_across_actors_without_duplicate_mail` needs
   an exact built native noded binary and a persistent fixture directory. Set
   `MIXOS_NATIVE_MAIL_NODED` and `MIXOS_NATIVE_MAIL_FIXTURE_DIR`, then run
   `cargo test -p maild --test native_bus_submission -- --ignored` on the worker.
   This starts an isolated broker and never contacts an external MX.
-- Five `jmap::email::tests::email_set_contract_*` functions are deliberately
-  panicking placeholders. Their ignore reasons identify the missing executable
-  assertions: multi-mailbox creation, empty mailboxIds rejection, per-id partial
-  updates, update-before-destroy ordering and blob import idempotence. They
-  remain present; the port does not turn those placeholders into coverage.
+
+The five former `jmap::email::tests::email_set_contract_*` placeholders now
+run as authenticated HTTP tests in `jmap_import.rs`: multi-mailbox creation,
+empty mailboxIds rejection, per-id partial updates, update-before-destroy
+ordering and duplicate import without a second creation/change. The ordering
+test checks RFC 8620 §5.3; the old placeholder's whole-request transaction
+requirement was stronger than the RFC. The import test checks RFC 8621 §4.8's
+`alreadyExists`/`existingId` response, replacing the placeholder's incorrect
+successful-create response for a duplicate. The same suite tests import state
+preconditions, Received date defaults, partial failure, account-owned CAS ids,
+concurrent duplicate rejection, thread properties and upload/import/submission.
+
+`config_paths.rs` checks every configured path through both loaders and
+rejects logical root escapes. `socket_activation.rs` passes actual listening
+fds with LISTEN_PID/LISTEN_FDS/LISTEN_FDNAMES to a subprocess, checking name
+routing, multiple sockets, fallback binds, close-on-exec and invalid metadata.
 
 The `parser_nesting` suite directly exercises the vendored mail-parser 0.11.5
 without maild's MIME preflight. It must pass all three cases on a 2 MiB stack,
 including parse and drop of 100,000 nested messages. Do not remove the patch or
 these tests when updating dependencies.
 
-After building the system binary on the worker, run
-`<prefix>/bin/mix services/maild/tests/package_test.mix target/debug/mix`.
+After building maild on the worker, run
+`<prefix>/bin/mix services/maild/tests/package_test.mix target/debug/maild`.
 This builds throwaway package archives, extracts the server archive, executes
-the packaged `maild` symlink and checks its identity, units and parser licences.
+the packaged `maild` binary and checks its identity, service/socket units and parser licences.
 Other binary entries are fixtures; the gate makes no desktop-package claim.

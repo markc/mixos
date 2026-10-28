@@ -15,8 +15,8 @@
 //! ports without replicating the wiring; `main.rs::Command::Serve`
 //! drives the same entry point.
 
-pub mod attachments;
 pub mod activation;
+pub mod attachments;
 pub mod auth;
 pub mod blob_lane;
 pub mod bus;
