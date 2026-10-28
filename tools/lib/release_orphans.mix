@@ -48,7 +48,7 @@ fn finish($name, $target, $before)
   print("ORPHANS " .. $name .. " before=" .. len($before) .. " after=" .. len($after) .. " new=" .. len($new))
   for $item in $new
     if not same_orphan($item, $target) then continue end
-    $report = run_argv(["ps", "-o", "pid,etime,args,tty", "-p", to_string($item.pid)], {timeout: 10})
+    $report = run_argv(["ps", "-ww", "-o", "pid,etime,tty,args", "-p", to_string($item.pid)], {timeout: 10})
     print(trim($report.stdout))
     -- ps is diagnostic only. Revalidate ownership and start time immediately
     -- before signalling, including after a diagnostic delay.
