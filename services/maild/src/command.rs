@@ -139,6 +139,8 @@ enum Command {
 /// the in-memory signer.
 #[derive(Subcommand)]
 enum DkimAction {
+    /// Check that the published active selector matches the installed private key.
+    Check { domain: String },
     /// Generate a fresh DKIM keypair for a (domain, selector) pair.
     /// The first selector becomes active; subsequent generates leave
     /// the existing active in place. Prints the DNS TXT record the
@@ -351,7 +353,14 @@ enum AliasAction {
         /// The alias address (e.g. mc@example.com)
         alias: String,
         /// The target local account (e.g. admin@example.com)
-        target: String,
+        #[arg(required = true, num_args = 1..)]
+        target: Vec<String>,
+    },
+    /// Create, resurrect or repoint an alias to local accounts.
+    Set {
+        alias: String,
+        #[arg(required = true, num_args = 1..)]
+        target: Vec<String>,
     },
     /// List every alias (`address -> target`, enabled flag).
     List,
@@ -886,7 +895,15 @@ async fn run_account_cli(action: AccountAction) -> Result<()> {
                 .await?;
             if rc == 0 {
                 match serde_json::from_str::<serde_json::Value>(&body_str) {
-                    Ok(resp) => {
+                    Ok(mut resp) => {
+                        let (id_rc, id_body, _) = client.call_with_headers_raw(
+                            "maild", "maild.stats.account", &BTreeMap::new(),
+                            &serde_json::json!({"email":email}).to_string(),
+                        ).await?;
+                        anyhow::ensure!(id_rc == 0, "account id lookup failed: {id_body}");
+                        let stats: serde_json::Value = serde_json::from_str(&id_body)?;
+                        resp["account_id"] = stats.get("account_id").cloned()
+                            .ok_or_else(|| anyhow::anyhow!("account statistics omitted numeric id"))?;
                         let pretty = serde_json::to_string_pretty(&resp)
                             .unwrap_or_else(|_| body_str.clone());
                         println!("{pretty}");
@@ -1324,13 +1341,15 @@ async fn run_alias_cli(action: AliasAction) -> Result<()> {
             )
         })?;
 
+    let replace = matches!(action, AliasAction::Set { .. });
     match action {
-        AliasAction::Add { alias, target } => {
+        AliasAction::Add { alias, target } | AliasAction::Set { alias, target } => {
             let alias = canon(&alias);
-            let target = canon(&target);
+            let targets: Vec<_> = target.iter().map(|s| canon(s)).collect();
             let body = serde_json::json!({
                 "address": alias,
-                "target": target,
+                "target": targets[0],
+                "targets": targets,
                 "enabled": true,
             })
             .to_string();
@@ -1338,13 +1357,38 @@ async fn run_alias_cli(action: AliasAction) -> Result<()> {
             headers.insert("namespace".to_string(), NAMESPACE.to_string());
             headers.insert("key".to_string(), alias.clone());
             headers.insert("merge".to_string(), "replace".to_string());
-            // Fresh-create: reject if the alias already exists.
-            headers.insert("if_version".to_string(), "0".to_string());
-            let (rc, resp_body, _err) = client
+            let (get_rc, get_body, _) = client
+                .call_with_headers_raw("maild", "maild.props.get", &headers, "").await?;
+            let prior: serde_json::Value = serde_json::from_str(&get_body)?;
+            let version = if get_rc == 0 {
+                if !replace { anyhow::bail!("alias {alias} already exists; use `maild alias set` to repoint"); }
+                prior["version"].as_u64().ok_or_else(|| anyhow::anyhow!("missing alias version"))?
+            } else {
+                anyhow::ensure!(prior["error_code"] == "not_found", "alias lookup failed: {get_body}");
+                0
+            };
+            headers.insert("if_version".to_string(), version.to_string());
+            let (mut rc, mut resp_body, _) = client
                 .call_with_headers_raw("maild", "maild.props.set", &headers, &body)
                 .await?;
+            // The substrate preserves a deleted row's version anchor. A failed
+            // create reports it; prove the row is still absent before retrying
+            // against that exact version (a racing resurrection still loses CAS).
+            let failure: serde_json::Value = serde_json::from_str(&resp_body)?;
+            if get_rc != 0 && failure["error_code"] == "version_mismatch" {
+                let anchor = failure["current_version"].as_u64()
+                    .ok_or_else(|| anyhow::anyhow!("missing tombstone version"))?;
+                let (check_rc, check_body, _) = client
+                    .call_with_headers_raw("maild", "maild.props.get", &headers, "").await?;
+                let check: serde_json::Value = serde_json::from_str(&check_body)?;
+                anyhow::ensure!(check_rc != 0 && check["error_code"] == "not_found",
+                    "alias changed concurrently; retry the command");
+                headers.insert("if_version".into(), anchor.to_string());
+                (rc, resp_body, _) = client
+                    .call_with_headers_raw("maild", "maild.props.set", &headers, &body).await?;
+            }
             if rc == 0 {
-                println!("Added alias {alias} -> {target}");
+                println!("Set alias {alias} -> {}", targets.join(", "));
             } else {
                 let parsed: serde_json::Value =
                     serde_json::from_str(&resp_body).unwrap_or(serde_json::Value::Null);
@@ -1364,7 +1408,7 @@ async fn run_alias_cli(action: AliasAction) -> Result<()> {
                     });
                 if code == "version_mismatch" {
                     return Err(anyhow::anyhow!(
-                        "alias {alias} already exists; remove it first to repoint"
+                        "alias {alias} changed concurrently; retry or use `maild alias set`"
                     ));
                 }
                 return Err(anyhow::anyhow!("alias add failed (rc={rc}): {msg}"));
@@ -1406,10 +1450,14 @@ async fn run_alias_cli(action: AliasAction) -> Result<()> {
                 for r in records {
                     let addr = r.get("key").and_then(|v| v.as_str()).unwrap_or("");
                     let fields = r.get("fields");
-                    let target = fields
+                    let legacy_target = fields
                         .and_then(|f| f.get("target"))
                         .and_then(|v| v.as_str())
                         .unwrap_or("");
+                    let target = fields.and_then(|f| f.get("targets")).and_then(|v| v.as_array())
+                        .filter(|v| !v.is_empty())
+                        .map(|v| v.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>().join(", "))
+                        .unwrap_or_else(|| legacy_target.to_string());
                     let enabled = fields
                         .and_then(|f| f.get("enabled"))
                         .and_then(|v| v.as_bool())
@@ -2043,6 +2091,10 @@ async fn run_dkim_cli(action: DkimAction) -> Result<()> {
                 "algorithm": algorithm,
             })
             .to_string(),
+        ),
+        DkimAction::Check { domain } => (
+            "maild.dkim.check",
+            serde_json::json!({"domain":domain}).to_string(),
         ),
         DkimAction::Rotate { domain, selector } => (
             "maild.dkim.rotate",

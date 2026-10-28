@@ -5,6 +5,7 @@
 
 pub mod bounce;
 pub mod delivery;
+pub(crate) mod envelope;
 pub mod headers;
 pub mod inbound;
 pub mod queue;

@@ -72,10 +72,12 @@ pub async fn enqueue(
     let from_addr = from_addr.to_string();
     let to_addrs = to_addrs.to_vec();
     tokio::task::spawn_blocking(move || {
-        let conn = conn
+        let mut conn = conn
             .lock()
             .map_err(|e| anyhow::anyhow!("lock error: {e}"))?;
-        let id = enqueue_on(&conn, &from_addr, &to_addrs, blob_hash)?;
+        let tx = conn.transaction()?;
+        let id = enqueue_on(&tx, &from_addr, &to_addrs, blob_hash)?;
+        tx.commit()?;
         // Key values inline: the journald sink emits structured fields
         // as journal FIELDS, invisible in default `journalctl` output.
         tracing::info!(
@@ -101,7 +103,33 @@ pub(crate) fn enqueue_on(
         "INSERT INTO smtp_queue (from_addr,to_addrs,blob_hash) VALUES(?1,?2,?3)",
         params![from, serde_json::to_string(to)?, mds::blob::hex(&hash)],
     )?;
-    Ok(conn.last_insert_rowid())
+    let id = conn.last_insert_rowid();
+    for recipient in to {
+        conn.execute("INSERT INTO smtp_delivery(queue_id,recipient) VALUES(?1,?2)", params![id, recipient])?;
+    }
+    Ok(id)
+}
+
+/// Recipients still owed this message. Terminal results are never retried.
+pub async fn pending(conn: &Arc<Mutex<Connection>>, id: i64) -> Result<Vec<String>> {
+    let conn = conn.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = conn.lock().map_err(|e| anyhow::anyhow!("lock error: {e}"))?;
+        let mut stmt = conn.prepare("SELECT recipient FROM smtp_delivery WHERE queue_id=?1 AND status IN ('queued','deferred') ORDER BY rowid")?;
+        Ok(stmt.query_map([id], |row| row.get(0))?.collect::<rusqlite::Result<Vec<_>>>()?)
+    }).await?
+}
+
+pub async fn recipient_result(conn: &Arc<Mutex<Connection>>, id: i64, recipient: &str, status: &str, reply: &str) -> Result<()> {
+    let conn = conn.clone();
+    let recipient = recipient.to_string();
+    let status = status.to_string();
+    let reply = reply.to_string();
+    tokio::task::spawn_blocking(move || {
+        let conn = conn.lock().map_err(|e| anyhow::anyhow!("lock error: {e}"))?;
+        conn.execute("UPDATE smtp_delivery SET status=?3,last_reply=?4,updated_at=datetime('now') WHERE queue_id=?1 AND recipient=?2 AND status IN ('queued','deferred')", params![id, recipient, status, reply])?;
+        Ok(())
+    }).await?
 }
 
 /// Fetch messages ready for delivery (next_retry <= now, attempts < 10).
@@ -149,6 +177,7 @@ pub async fn mark_failed(conn: &Arc<Mutex<Connection>>, id: i64, error: &str) ->
             .lock()
             .map_err(|e| anyhow::anyhow!("lock error: {e}"))?;
         // Exponential backoff: multiply by power of 3
+        conn.execute("UPDATE smtp_delivery SET status='deferred',last_reply=COALESCE(last_reply,?2),updated_at=datetime('now') WHERE queue_id=?1 AND status IN ('queued','deferred')", params![id,error])?;
         // SQLite doesn't have POWER, so we compute the interval in Rust
         let attempts: i32 = conn
             .query_row(
@@ -183,10 +212,12 @@ pub async fn mark_permanent_failure(
         "Permanent delivery failure — removing from queue"
     );
     let conn = conn.clone();
+    let error = error.to_string();
     tokio::task::spawn_blocking(move || {
         let conn = conn
             .lock()
             .map_err(|e| anyhow::anyhow!("lock error: {e}"))?;
+        conn.execute("UPDATE smtp_delivery SET status='bounced',last_reply=?2,updated_at=datetime('now') WHERE queue_id=?1 AND status IN ('queued','deferred')", params![id,error])?;
         conn.execute("DELETE FROM smtp_queue WHERE id = ?1", params![id])?;
         Ok(())
     })

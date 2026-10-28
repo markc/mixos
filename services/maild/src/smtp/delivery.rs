@@ -3,7 +3,6 @@
 
 //! Outbound delivery worker — polls queue, delivers via SMTP with STARTTLS, handles retries.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -452,7 +451,7 @@ async fn process_queue(state: &SmtpState, resolver: &TokioResolver) -> Result<us
         };
 
         // Group recipients by domain for efficient delivery
-        let by_domain = group_by_domain(&entry.to_addrs);
+        let pending = queue::pending(&state.db.conn, entry.id).await?;
 
         // Per-domain EHLO host derived from the *sender*'s
         // maild.domains row. Computed once per queue entry; the
@@ -468,20 +467,28 @@ async fn process_queue(state: &SmtpState, resolver: &TokioResolver) -> Result<us
         )
         .await;
 
-        let mut all_ok = true;
-        for (domain, recipients) in &by_domain {
+        let mut deferred = false;
+        for recipient in &pending {
+            let Some((_, domain)) = recipient.rsplit_once('@') else {
+                queue::recipient_result(&state.db.conn, entry.id, recipient, "bounced", "553 5.1.3 Invalid recipient").await?;
+                continue;
+            };
+            // One transaction per recipient: every SMTP reply has an unambiguous
+            // durable owner, including partial acceptance on a shared domain.
+            let recipients = [recipient];
             match deliver_to_domain(
                 state,
                 resolver,
                 &helo_host,
                 &entry.from_addr,
-                recipients,
+                &recipients,
                 domain,
                 &data,
             )
             .await
             {
-                Ok(()) => {
+                Ok(reply) => {
+                    queue::recipient_result(&state.db.conn, entry.id, recipient, "delivered", &reply).await?;
                     tracing::info!(
                         queue_id = entry.id,
                         domain = domain,
@@ -504,7 +511,6 @@ async fn process_queue(state: &SmtpState, resolver: &TokioResolver) -> Result<us
                         // inline journal MESSAGE.
                         crate::maillog::sanitize(&e.to_string()),
                     );
-                    all_ok = false;
                     // A 5xx is the remote server telling us the answer will
                     // never change: bounce NOW rather than burning the retry
                     // ladder. Retrying a `550 No such domain here` for hours
@@ -520,14 +526,13 @@ async fn process_queue(state: &SmtpState, resolver: &TokioResolver) -> Result<us
                                 crate::maillog::sanitize(&e.to_string()),
                             );
                         }
-                        queue::mark_permanent_failure(&state.db.conn, entry.id, &e.to_string())
-                            .await?;
+                        queue::recipient_result(&state.db.conn, entry.id, recipient, "bounced", &e.to_string()).await?;
 
                         // Generate and deliver bounce to sender
                         if let Err(be) = generate_bounce(
                             state,
                             &entry.from_addr,
-                            &entry.to_addrs,
+                            std::slice::from_ref(recipient),
                             &e.to_string(),
                         )
                         .await
@@ -535,15 +540,18 @@ async fn process_queue(state: &SmtpState, resolver: &TokioResolver) -> Result<us
                             tracing::warn!(error = %be, "Failed to generate bounce");
                         }
                     } else {
-                        queue::mark_failed(&state.db.conn, entry.id, &e.to_string()).await?;
+                        queue::recipient_result(&state.db.conn, entry.id, recipient, "deferred", &e.to_string()).await?;
+                        deferred = true;
                     }
                 }
             }
         }
 
-        if all_ok {
+        if !deferred {
             queue::mark_delivered(&state.db.conn, entry.id).await?;
             delivered += 1;
+        } else {
+            queue::mark_failed(&state.db.conn, entry.id, "one or more recipients deferred").await?;
         }
     }
 
@@ -607,7 +615,7 @@ async fn deliver_to_domain(
     recipients: &[&String],
     domain: &str,
     data: &[u8],
-) -> Result<()> {
+) -> Result<String> {
     // Test seam: `SmtpConfig::test_mx_overrides` short-circuits both
     // the MX lookup and the `host:port` resolution paths, dialing
     // the mapped `SocketAddr` directly. The rest of the wire flow
@@ -646,7 +654,7 @@ async fn deliver_to_domain(
         )
         .await
         {
-            Ok(()) => return Ok(()),
+            Ok(reply) => return Ok(reply),
             Err(e) => {
                 if is_permanent(&e) {
                     tracing::debug!(mx = mx_host, error = %e, "MX rejected permanently — not trying further MX hosts");
@@ -693,7 +701,7 @@ async fn try_deliver(
     recipients: &[&String],
     data: &[u8],
     outbound_bind: &[std::net::IpAddr],
-) -> Result<()> {
+) -> Result<String> {
     let stream = connect_smtp(host, port, outbound_bind).await?;
     match try_deliver_session(
         stream,
@@ -809,7 +817,7 @@ async fn try_deliver_addr(
     from: &str,
     recipients: &[&String],
     data: &[u8],
-) -> Result<()> {
+) -> Result<String> {
     use tokio::net::TcpStream;
 
     let stream = tokio::time::timeout(std::time::Duration::from_secs(30), TcpStream::connect(addr))
@@ -865,7 +873,7 @@ async fn try_deliver_session(
     recipients: &[&String],
     data: &[u8],
     tls: TlsPolicy,
-) -> Result<()> {
+) -> Result<String> {
     use tokio::io::BufReader;
 
     let (reader, mut writer) = stream.into_split();
@@ -888,7 +896,7 @@ async fn try_deliver_session(
             anyhow::bail!("EHLO/HELO rejected by {host}: {resp}");
         }
         // No STARTTLS possible with HELO, proceed plaintext
-        return deliver_message(&mut reader, &mut writer, host, from, recipients, data).await;
+        return deliver_message(&mut reader, &mut writer, host, from, recipients, data, "").await;
     }
 
     // Attempt STARTTLS if advertised
@@ -926,6 +934,7 @@ async fn try_deliver_session(
                         from,
                         recipients,
                         data,
+                        &resp,
                     )
                     .await;
                 }
@@ -948,7 +957,7 @@ async fn try_deliver_session(
     }
 
     // Plaintext delivery (no STARTTLS or STARTTLS failed gracefully)
-    deliver_message(&mut reader, &mut writer, host, from, recipients, data).await
+    deliver_message(&mut reader, &mut writer, host, from, recipients, data, &ehlo_resp).await
 }
 
 /// Send MAIL FROM, RCPT TO, DATA on an already-greeted SMTP connection.
@@ -959,17 +968,31 @@ async fn deliver_message<R, W>(
     from: &str,
     recipients: &[&String],
     data: &[u8],
-) -> Result<()>
+    ehlo: &str,
+) -> Result<String>
 where
     R: tokio::io::AsyncRead + Unpin,
     W: tokio::io::AsyncWrite + Unpin,
 {
     use tokio::io::AsyncWriteExt;
 
-    // MAIL FROM
-    send_cmd(writer, &format!("MAIL FROM:<{from}>")).await?;
+    let utf8 = super::envelope::needs_smtputf8(from, recipients, data);
+    let eight_bit = !data.is_ascii();
+    if utf8 && !super::envelope::has_extension(ehlo, "SMTPUTF8") {
+        return Err(PermanentFailure(format!("550 5.6.7 {host} does not offer SMTPUTF8; message cannot be downgraded")).into());
+    }
+    if eight_bit && !super::envelope::has_extension(ehlo, "8BITMIME") {
+        return Err(PermanentFailure(format!("550 5.6.3 {host} does not offer 8BITMIME; message cannot be downgraded")).into());
+    }
+    let mut mail = format!("MAIL FROM:<{from}>");
+    if utf8 { mail.push_str(" SMTPUTF8"); }
+    if eight_bit { mail.push_str(" BODY=8BITMIME"); }
+    send_cmd(writer, &mail).await?;
     let resp = read_response(reader).await?;
     if !resp.starts_with('2') {
+        if resp.starts_with('5') {
+            return Err(PermanentFailure(format!("MAIL FROM rejected by {host}: {resp}")).into());
+        }
         anyhow::bail!("MAIL FROM rejected by {host}: {resp}");
     }
 
@@ -1062,7 +1085,7 @@ where
     // QUIT
     let _ = send_cmd(writer, "QUIT").await;
 
-    Ok(())
+    Ok(resp)
 }
 
 /// Send an SMTP command.
@@ -1201,20 +1224,6 @@ fn legacy_dkim_sign(cfg: &super::SmtpConfig, data: &[u8]) -> Option<Vec<u8>> {
             None
         }
     }
-}
-
-/// Group email addresses by domain.
-fn group_by_domain<'a>(addrs: &'a [String]) -> HashMap<String, Vec<&'a String>> {
-    let mut map: HashMap<String, Vec<&'a String>> = HashMap::new();
-    for addr in addrs {
-        let domain = addr
-            .rsplit('@')
-            .next()
-            .unwrap_or("localhost")
-            .to_lowercase();
-        map.entry(domain).or_default().push(addr);
-    }
-    map
 }
 
 #[cfg(test)]
@@ -1774,6 +1783,52 @@ mod rcpt_rejection_tests {
 
     use super::*;
 
+    #[tokio::test]
+    async fn smtputf8_and_8bitmime_outbound_wire_negotiation() {
+        use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+        for (extensions, from, data, expected) in [
+            ("250-8BITMIME\r\n250 SMTPUTF8", "élise@example.com", "Subject: café\r\n\r\nbody\r\n", Some(" SMTPUTF8 BODY=8BITMIME")),
+            ("250 8BITMIME", "a@example.com", "Subject: ASCII\r\n\r\ncafé\r\n", Some(" BODY=8BITMIME")),
+            ("250 8BITMIME", "a@example.com", "Subject: café\r\n\r\nbody\r\n", None),
+            ("250 SMTPUTF8", "élise@example.com", "Subject: café\r\n\r\nbody\r\n", None),
+            ("250 ok", "a@example.com", "Subject: ASCII\r\n\r\nbody\r\n", Some("")),
+        ] {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let addr = listener.local_addr().unwrap();
+            let peer = tokio::spawn(async move {
+                let (stream,_) = listener.accept().await.unwrap();
+                let mut io = BufReader::new(stream);
+                io.get_mut().write_all(b"220 mx.example.net\r\n").await.unwrap();
+                let mut wire = String::new();
+                let mut body = false;
+                loop {
+                    let mut line = String::new();
+                    if io.read_line(&mut line).await.unwrap() == 0 { break; }
+                    wire.push_str(&line);
+                    let reply = if body {
+                        if line == ".\r\n" {body=false; "250 stored\r\n".to_string()} else {continue;}
+                    } else if line.starts_with("EHLO") {format!("250-mx.example.net\r\n{extensions}\r\n")}
+                    else if line.starts_with("DATA") {body=true; "354 send\r\n".into()}
+                    else if line.starts_with("QUIT") {break;}
+                    else {"250 ok\r\n".into()};
+                    io.get_mut().write_all(reply.as_bytes()).await.unwrap();
+                }
+                wire
+            });
+            let stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+            let recipient = "b@example.net".to_string();
+            let result = try_deliver_session(stream,"mx.example.net","mail.example.com",from,&[&recipient],data.as_bytes(),TlsPolicy::Verify).await;
+            let wire = peer.await.unwrap();
+            if let Some(parameters) = expected {
+                assert!(result.is_ok(),"{result:?}");
+                assert!(wire.contains(&format!("MAIL FROM:<{from}>{parameters}\r\n")),"{wire}");
+            } else {
+                assert!(is_permanent(&result.unwrap_err()));
+                assert!(!wire.contains("MAIL FROM"),"must fail before offering an unsupported message: {wire}");
+            }
+        }
+    }
+
     /// Run `deliver_message` against a peer that replies with `replies` in
     /// order. Returns the error (if any) and everything we wrote.
     async fn run(replies: &[&str], recipients: &[&str]) -> (Option<anyhow::Error>, String) {
@@ -1793,6 +1848,7 @@ mod rcpt_rejection_tests {
             "sender@from.test",
             &refs,
             b"Subject: t\r\n\r\nbody\r\n",
+            "",
         )
         .await;
         (res.err(), String::from_utf8_lossy(&writer).into_owned())

@@ -348,6 +348,23 @@ CREATE TABLE IF NOT EXISTS smtp_queue (
 
 CREATE INDEX IF NOT EXISTS idx_queue_retry ON smtp_queue (next_retry);
 
+-- Durable recipient outcomes survive removal of the queue payload. Deliberately
+-- no foreign key to smtp_queue: terminal receipts remain queryable on restart.
+CREATE TABLE IF NOT EXISTS smtp_delivery (
+    queue_id INTEGER,
+    submission_id TEXT,
+    recipient TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'queued'
+        CHECK(status IN ('queued','delivered','deferred','bounced')),
+    last_reply TEXT,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(queue_id, recipient),
+    UNIQUE(submission_id, recipient)
+);
+CREATE INDEX IF NOT EXISTS idx_delivery_submission ON smtp_delivery(submission_id);
+INSERT OR IGNORE INTO smtp_delivery(queue_id, recipient)
+    SELECT smtp_queue.id, value FROM smtp_queue, json_each(smtp_queue.to_addrs);
+
 -- calendars
 CREATE TABLE IF NOT EXISTS calendars (
     id              TEXT PRIMARY KEY,

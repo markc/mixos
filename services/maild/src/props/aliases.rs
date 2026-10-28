@@ -68,7 +68,7 @@ pub fn schema() -> PropertySchema {
     PropertySchema::new(vec![
         FieldSchema {
             name: "address".into(),
-            ty: FieldType::Email,
+            ty: FieldType::String,
             default: None,
             secret: false,
             help: "The alias address (primary key, canonical lowercase)".into(),
@@ -82,6 +82,16 @@ pub fn schema() -> PropertySchema {
             default: None,
             secret: false,
             help: "Local account email the alias delivers to / submits as".into(),
+            since: None,
+            until: None,
+            validators: Vec::new(),
+        },
+        FieldSchema {
+            name: "targets".into(),
+            ty: FieldType::List { item: Box::new(FieldType::Email) },
+            default: Some(PropValue::List(Vec::new())),
+            secret: false,
+            help: "Local delivery targets; empty preserves the legacy target field".into(),
             since: None,
             until: None,
             validators: Vec::new(),
@@ -195,7 +205,11 @@ impl HookHandler for AliasesHooks {
             // Wire key shape + canonical-form contract: the key IS the
             // alias address and must already be canonical so the stored
             // form matches every `resolve_alias(canon(addr))` lookup.
-            Self::validate_email_shape("alias address", &ctx.key.key)?;
+            if let Some(domain) = ctx.key.key.strip_prefix('@') {
+                Self::validate_email_shape("catch-all domain", &format!("catchall@{domain}"))?;
+            } else {
+                Self::validate_email_shape("alias address", &ctx.key.key)?;
+            }
             if ctx.key.key != canon(&ctx.key.key) {
                 return Err(HookError::validation(format!(
                     "alias address {:?} is not canonical (expected lowercase/trimmed {:?})",
@@ -225,6 +239,12 @@ impl HookHandler for AliasesHooks {
                 }
                 None => return Err(HookError::validation("target is required")),
             };
+            let targets = targets_from_value(new).map_err(|e| HookError::validation(e.to_string()))?;
+            if targets.first() != Some(&target) {
+                return Err(HookError::validation("target must equal the first targets entry"));
+            }
+            let mut unique = std::collections::BTreeSet::new();
+            for target in targets {
             Self::validate_email_shape("target", &target)?;
             if target != canon(&target) {
                 return Err(HookError::validation(format!(
@@ -260,8 +280,12 @@ impl HookHandler for AliasesHooks {
             if !self.account_exists(&target).await? {
                 return Err(HookError::validation(format!(
                     "alias target {target:?} is not a maild.accounts row — an alias must \
-                     point to a real local account"
+                     point to a real local account; off-site forwarding is not permitted"
                 )));
+            }
+            if !unique.insert(target) {
+                return Err(HookError::validation("duplicate alias target"));
+            }
             }
 
             // No explicit no-chaining check is needed: the two account
@@ -331,6 +355,27 @@ pub fn register(
 /// follows the target onward, so a (racily-committed) cyclic/chained row
 /// can never loop or fan out here.
 pub async fn resolve_alias(runtime: &Arc<Runtime>, addr: &str) -> Result<Option<String>> {
+    Ok(resolve_targets(runtime, addr).await?.and_then(|targets| targets.into_iter().next()))
+}
+
+fn targets_from_value(value: &PropValue) -> Result<Vec<String>> {
+    let obj = value.as_object().ok_or_else(|| anyhow::anyhow!("invalid alias record"))?;
+    if let Some(PropValue::List(targets)) = obj.get("targets")
+        && !targets.is_empty() {
+        anyhow::ensure!(targets.len() <= 32, "alias target count exceeds 32");
+        return targets.iter().map(|v| match v {
+            PropValue::String(s) => Ok(s.clone()),
+            _ => Err(anyhow::anyhow!("alias targets must be email strings")),
+        }).collect();
+    }
+    match obj.get("target") {
+        Some(PropValue::String(s)) => Ok(vec![s.clone()]),
+        _ => Err(anyhow::anyhow!("target is required")),
+    }
+}
+
+/// Exact alias lookup only: catch-alls never grant a sender identity.
+async fn resolve_targets(runtime: &Arc<Runtime>, addr: &str) -> Result<Option<Vec<String>>> {
     let key = RecordKey::collection(namespace_name(), canon(addr));
     // `store().get()` yields a snapshot whose `.value` is the `Record`;
     // the record's own `.value` is the `PropValue` body. NotFound is a
@@ -352,10 +397,38 @@ pub async fn resolve_alias(runtime: &Arc<Runtime>, addr: &str) -> Result<Option<
     if !enabled {
         return Ok(None);
     }
-    Ok(match obj.get("target") {
-        Some(PropValue::String(t)) => Some(canon(t)),
-        _ => None,
-    })
+    Ok(Some(targets_from_value(&snap.value.value)?))
+}
+
+/// Mailboxes win, then exact aliases, then the domain catch-all. All targets
+/// must still exist locally at delivery time, including after account removal.
+pub async fn recipient_accounts(
+    runtime: &Arc<Runtime>,
+    conn: &Arc<std::sync::Mutex<rusqlite::Connection>>,
+    addr: &str,
+) -> Result<Vec<crate::db::account::Account>> {
+    let addr = canon(addr);
+    if let Some(account) = crate::db::account::get_by_email(conn, &addr).await? {
+        return Ok(vec![account]);
+    }
+    let targets = match resolve_targets(runtime, &addr).await? {
+        Some(targets) => Some(targets),
+        None => match addr.rsplit_once('@') {
+            Some((_, domain)) => resolve_targets(runtime, &format!("@{domain}")).await?,
+            None => None,
+        },
+    };
+    let mut accounts = Vec::new();
+    if let Some(targets) = targets {
+        for target in targets {
+            let account = crate::db::account::get_by_email(conn, &target).await?
+                .ok_or_else(|| anyhow::anyhow!("alias target {target} is no longer a local mailbox; forwarding refused"))?;
+            if !accounts.iter().any(|existing: &crate::db::account::Account| existing.id == account.id) {
+                accounts.push(account);
+            }
+        }
+    }
+    Ok(accounts)
 }
 
 /// Rewrite-before-lookup helper for the inbound recipient sites: the
@@ -382,7 +455,8 @@ pub async fn sender_authorized(runtime: &Arc<Runtime>, from: &str, authed: &str)
     if from_c == authed_c {
         return true;
     }
-    matches!(resolve_alias(runtime, &from_c).await, Ok(Some(t)) if t == authed_c)
+    if from_c.starts_with('@') { return false; }
+    matches!(resolve_targets(runtime, &from_c).await, Ok(Some(targets)) if targets.contains(&authed_c))
 }
 
 /// True if `email` (canonical) has a `maild.accounts` row. Best-effort:
