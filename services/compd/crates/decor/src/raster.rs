@@ -518,6 +518,7 @@ mod tests {
             let enlarged = crate::theme::ChromeTheme::from_read(style, theme.dictionary(), crate::layout::DecoFontFamily::SystemUi, crate::layout::DecoFontWeight(700), size);
             let deco = enlarged.deco;
             assert_eq!(deco.metrics.titlebar_height, plain.deco.metrics.titlebar_height);
+            assert_eq!(plain.deco.metrics.fitted_title_size(1.0), title.font_size as f32, "default title size is unchanged");
             assert_eq!(crate::layout::DecoExtents::of(&deco), crate::layout::DecoExtents::of(&plain.deco));
             let mut state = state();
             state.title = "Preferences ÅÉgjpq 0123456789".into();
@@ -527,7 +528,7 @@ mod tests {
                 let mask = crate::text::title_mask(&state.title, &deco.metrics.title_font_family, deco.metrics.fitted_title_size(scale), deco.metrics.title_font_weight.0, layout.title_slot.w * scale, scale).unwrap();
                 assert!(mask.alpha.iter().any(|&a| a > 0));
                 let (_, y) = title_origin(&deco, &layout, &mask, scale);
-                let padding = deco.metrics.title_pad * 0.5 * scale;
+                let padding = deco.metrics.title_padding_y * scale;
                 let top = layout.titlebar.y * scale + padding;
                 let bottom = (layout.titlebar.y + layout.titlebar.h) * scale - padding;
                 assert!(y as f32 >= top.floor(), "{style:?} at {scale}: top");

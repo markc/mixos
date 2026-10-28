@@ -69,6 +69,7 @@ pub fn mac(mode: Mode) -> DecoTheme {
             title_font_weight: DEFAULT_TITLE_FONT_WEIGHT,
             title_align: TitleAlign::Center,
             title_pad: 8.0,
+            title_padding_y: 2.0,
             shadow: ShadowSpec {
                 softness: 40.0,
                 offset_y: 12.0,
@@ -177,6 +178,7 @@ pub fn win11(mode: Mode) -> DecoTheme {
             title_font_weight: DEFAULT_TITLE_FONT_WEIGHT,
             title_align: TitleAlign::Leading,
             title_pad: 12.0,
+            title_padding_y: 2.0,
             shadow: ShadowSpec {
                 softness: 22.0,
                 offset_y: 6.0,
@@ -319,6 +321,7 @@ pub fn mixos(scheme: Scheme, mode: Mode) -> DecoTheme {
             title_font_weight: DEFAULT_TITLE_FONT_WEIGHT,
             title_align: TitleAlign::Center,
             title_pad: 10.0,
+            title_padding_y: 2.0,
             shadow: ShadowSpec {
                 softness: 28.0,
                 offset_y: 8.0,

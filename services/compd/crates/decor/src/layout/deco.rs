@@ -271,16 +271,17 @@ pub struct DecoMetrics {
     pub title_align: TitleAlign,
     /// Minimum padding between title text and buttons or edges.
     pub title_pad: f32,
+    /// Clear space above and below the title's line box.
+    pub title_padding_y: f32,
     pub shadow: ShadowSpec,
 }
 
 impl DecoMetrics {
-    /// Fit the title's 1.3-em line box inside the fixed bar. The vertical
-    /// inset is half the horizontal title padding, shared by every preset.
+    /// Fit the title's 1.3-em line box inside the fixed bar's vertical padding.
     /// Round the available physical height down before shaping, whose line
     /// height rounds up, so fractional output scales keep the padding too.
     pub fn fitted_title_size(&self, scale: f32) -> f32 {
-        let room = ((self.titlebar_height - self.title_pad).max(0.0) * scale).floor();
+        let room = ((self.titlebar_height - 2.0 * self.title_padding_y).max(0.0) * scale).floor();
         self.title_size_px.min(room / (1.3 * scale))
     }
 }
