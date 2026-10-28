@@ -30,7 +30,7 @@ pub enum UiEvent {
     Command(&'static str, Origin),
     CloseMacros,
     MailHeaders(TabId, documents::mail::Headers),
-    MailCommit(TabId),
+    MailCommit(TabId, Option<&'static str>),
     MailRow(TabId, &'static str),
     MailAttach(TabId),
     SelectTab(TabId),
@@ -151,7 +151,7 @@ fn apply_one(app: &mut App, commands: &Registry<App>, event: UiEvent) {
                     let _ = app.ctl.preview_headers(tab, headers);
                 }
             }
-            UiEvent::MailCommit(tab) => commit_mail_headers(app, tab),
+            UiEvent::MailCommit(tab, field) => commit_mail_headers(app, tab, field),
             UiEvent::MailRow(tab, field) => app.ctl.show_mail_row(tab, field),
             UiEvent::MailAttach(tab) => {
                 if !app
@@ -185,7 +185,7 @@ fn apply_one(app: &mut App, commands: &Registry<App>, event: UiEvent) {
             UiEvent::CloseMacros => app.ui.macros_open = false,
             UiEvent::Command(id, origin) => {
                 if let Some(tab) = app.active() {
-                    commit_mail_headers(app, tab);
+                    commit_mail_headers(app, tab, None);
                 }
                 let _ = commands.execute(id, app, origin);
             }
@@ -225,8 +225,14 @@ fn apply_one(app: &mut App, commands: &Registry<App>, event: UiEvent) {
     }
 }
 
-fn commit_mail_headers(app: &mut App, tab: TabId) {
-    if app.ctl.commit_headers(tab) {
+fn commit_mail_headers(app: &mut App, tab: TabId, field: Option<&str>) {
+    if !app.ctl.tabs().iter().any(|t| {
+        t.id == tab && t.mail.as_ref().is_some_and(|mail| !mail.saving && !mail.sending)
+    }) {
+        return;
+    }
+    let committed = app.ctl.commit_header_field(tab, field);
+    if committed || field.is_some() {
         let headers = &app
             .ctl
             .tabs()
@@ -1074,7 +1080,7 @@ mod tests {
             assert!(app.effects.is_empty(), "previews execute no action");
             assert!(registry.take_executed().0.is_empty());
         }
-        super::apply(&mut app, &registry, vec![super::UiEvent::MailCommit(tab)]);
+        super::apply(&mut app, &registry, vec![super::UiEvent::MailCommit(tab, None)]);
         assert_eq!(
             registry.take_executed().0.len(),
             1,
@@ -1104,6 +1110,26 @@ mod tests {
             .on_mail_sent(tab, None, Err("server refused".into()));
         app.absorb(fx);
         assert!(app.enabled(ActionId::MailHeaders));
+    }
+
+    #[test]
+    fn committing_the_old_field_does_not_split_typing_in_the_new_field() {
+        let (mut app, tab) = mail_app();
+        let registry = crate::actions::registry();
+        let mut headers = app.active_tab().unwrap().mail.as_ref().unwrap().headers.clone();
+        headers.subject = "Changed".into();
+        super::apply(&mut app, &registry, vec![super::UiEvent::MailHeaders(tab, headers.clone())]);
+        headers.to = "c".into();
+        super::apply(&mut app, &registry, vec![
+            super::UiEvent::MailHeaders(tab, headers.clone()),
+            super::UiEvent::MailCommit(tab, Some("subject")),
+        ]);
+        headers.to = "carol@example.org".into();
+        super::apply(&mut app, &registry, vec![super::UiEvent::MailHeaders(tab, headers)]);
+        super::apply(&mut app, &registry, vec![super::UiEvent::Command("edit.undo", toolkit::action::Origin::Shortcut)]);
+        let headers = &app.active_tab().unwrap().mail.as_ref().unwrap().headers;
+        assert_eq!(headers.to, "bob@example.org");
+        assert_eq!(headers.subject, "Changed");
     }
 
     #[test]

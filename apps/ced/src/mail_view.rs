@@ -50,7 +50,7 @@ pub fn strip(ui: &mut egui::Ui, app: &App, events: &mut Vec<UiEvent>) {
     );
     let mut headers = mail.headers.clone();
     let before = headers.clone();
-    let mut committed = false;
+    let mut committed = Vec::new();
     let show_cc = mail.show_cc || !headers.cc.is_empty();
     let show_bcc = mail.show_bcc || !headers.bcc.is_empty();
     let show_reply_to = mail.show_reply_to || !headers.reply_to.is_empty();
@@ -68,6 +68,10 @@ pub fn strip(ui: &mut egui::Ui, app: &App, events: &mut Vec<UiEvent>) {
                     continue;
                 }
                 let field_id = field_id(ui.ctx(), tab.id, key);
+                let field = match key {
+                    "mail-reply-to" => "reply_to",
+                    _ => key.strip_prefix("mail-").unwrap(),
+                };
                 form::row(ui, &label(key), column, |ui, labelled| {
                     if key == "mail-to" {
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -89,12 +93,15 @@ pub fn strip(ui: &mut egui::Ui, app: &App, events: &mut Vec<UiEvent>) {
                                 }
                             }
                             let width = ui.available_width();
-                            committed |=
-                                form::text(ui, field_id, labelled, buffer, width).lost_focus();
+                            if form::text(ui, field_id, labelled, buffer, width).lost_focus() {
+                                committed.push(Some(field));
+                            }
                         });
                     } else {
                         let width = ui.available_width();
-                        committed |= form::text(ui, field_id, labelled, buffer, width).lost_focus();
+                        if form::text(ui, field_id, labelled, buffer, width).lost_focus() {
+                            committed.push(Some(field));
+                        }
                     }
                 });
             }
@@ -132,15 +139,15 @@ pub fn strip(ui: &mut egui::Ui, app: &App, events: &mut Vec<UiEvent>) {
             });
             if let Some(index) = remove {
                 headers.attachments.remove(index);
-                committed = true;
+                committed.push(None);
             }
         });
     });
     if headers != before {
         events.push(UiEvent::MailHeaders(tab.id, headers));
     }
-    if committed {
-        events.push(UiEvent::MailCommit(tab.id));
+    for field in committed {
+        events.push(UiEvent::MailCommit(tab.id, field));
     }
     if let Some(notice) = &mail.notice {
         ui.weak(if mail.sending {
@@ -171,7 +178,7 @@ pub fn chooser(ctx: &egui::Context, app: &mut App, events: &mut Vec<UiEvent>) {
             let mut headers = mail.headers.clone();
             headers.attachments.extend(paths);
             events.push(UiEvent::MailHeaders(*tab, headers));
-            events.push(UiEvent::MailCommit(*tab));
+            events.push(UiEvent::MailCommit(*tab, None));
         }
         app.mail_chooser = None;
     }

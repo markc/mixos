@@ -163,9 +163,16 @@ impl Controller {
     }
 
     pub fn commit_headers(&mut self, tab: TabId) -> bool {
+        self.commit_header_field(tab, None)
+    }
+
+    pub fn commit_header_field(&mut self, tab: TabId, field: Option<&str>) -> bool {
         self.tab_mut(tab)
             .and_then(|t| t.mail.as_mut())
-            .is_some_and(|mail| mail.editing_field.take().is_some())
+            .is_some_and(|mail| {
+                (field.is_none() || mail.editing_field == field)
+                    && mail.editing_field.take().is_some()
+            })
     }
 
     fn update_headers(
