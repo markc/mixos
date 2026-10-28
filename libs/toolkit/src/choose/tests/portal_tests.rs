@@ -418,12 +418,12 @@ async fn portal_malformed_response_zero_is_final_in_the_handle() {
 
 #[test]
 fn portal_selected_filter_is_matched_by_name_after_backend_normalisation() {
-    let req = request(r#"{"filters":[{"name":"Text","patterns":["*.txt"],"mime_types":[]},{"name":"Markdown","patterns":["*.md"],"mime_types":["text/markdown"]}]}"#).unwrap();
+    let req = request(r#"{"filters":[{"name":"Text","patterns":["*.txt"],"mime_types":[]},{"name":"Images","patterns":["*.[pP][nN][gG]"],"mime_types":[]}]}"#).unwrap();
     let mut values = Options::new();
-    values.insert("uris".into(), OwnedValue::try_from(Value::from(vec!["file:///tmp/a.md"])).unwrap());
-    // A backend can serialise MIME/glob entries differently. The selected
-    // filter also differs from the request's initial current_filter.
-    values.insert("current_filter".into(), OwnedValue::try_from(Value::from(("Markdown", vec![(1u32, "text/markdown")]))).unwrap());
+    values.insert("uris".into(), OwnedValue::try_from(Value::from(vec!["file:///tmp/a.png"])).unwrap());
+    // KDE normalises case-pair globs before returning the selected tuple.
+    // This filter also differs from the request's initial current_filter.
+    values.insert("current_filter".into(), OwnedValue::try_from(Value::from(("Images", vec![(0u32, "*.png")]))).unwrap());
     let Outcome::Chosen { current_filter, .. } = portal::decode(&req, 0, &values).unwrap() else { panic!() };
     assert_eq!(current_filter, Some(req.filters[1].clone()));
 }
