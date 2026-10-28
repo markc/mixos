@@ -1879,9 +1879,20 @@ async fn rename_repairs_only_colliding_live_or_deleted_name_identities() -> Resu
             .uid_validity,
         12345
     );
-    assert!(command(&mut r, &mut w, "r", "RENAME Twin Elsewhere").await?.contains("r OK"));
-    assert_ne!(ms.list_mailboxes(1)?.iter().find(|row| row.id == twin).unwrap().uid_validity, 12345,
-        "an identity retired under another name must not be reused");
+    assert!(
+        command(&mut r, &mut w, "r", "RENAME Twin Elsewhere")
+            .await?
+            .contains("r OK")
+    );
+    assert_ne!(
+        ms.list_mailboxes(1)?
+            .iter()
+            .find(|row| row.id == twin)
+            .unwrap()
+            .uid_validity,
+        12345,
+        "an identity retired under another name must not be reused"
+    );
     assert!(
         command(&mut r, &mut w, "d", "DELETE Deleted")
             .await?
