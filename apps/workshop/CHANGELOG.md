@@ -5,4 +5,3 @@
 
 - Follow session font size and weight with a custom design package, keeping
   the theme file design beneath profile framing, menus and title band.
-
