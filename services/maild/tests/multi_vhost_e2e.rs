@@ -480,6 +480,7 @@ fn make_multi_vhost_config(
         sieve_vacation_external: true,
         smtp_outbound_bind: Vec::new(),
         max_message_size: None,
+        delivery_retention_days: None,
         dkim_selector: None,
         dkim_private_key: None,
         dkim: Default::default(),

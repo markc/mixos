@@ -23,7 +23,10 @@ fn address_literal(domain: &str) -> bool {
     let Some(literal) = domain.strip_prefix('[').and_then(|s| s.strip_suffix(']')) else {
         return false;
     };
-    if literal.get(..5).is_some_and(|prefix| prefix.eq_ignore_ascii_case("IPv6:")) {
+    if literal
+        .get(..5)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("IPv6:"))
+    {
         literal[5..].parse::<std::net::Ipv6Addr>().is_ok()
     } else {
         literal.parse::<std::net::Ipv4Addr>().is_ok()
@@ -32,11 +35,14 @@ fn address_literal(domain: &str) -> bool {
 
 /// BODY=8BITMIME describes content after the top-level header block.
 pub fn eight_bit_body(data: &[u8]) -> bool {
-    let crlf = data.windows(4).position(|w| w == b"\r\n\r\n").map(|i| i + 4);
+    let crlf = data
+        .windows(4)
+        .position(|w| w == b"\r\n\r\n")
+        .map(|i| i + 4);
     let lf = data.windows(2).position(|w| w == b"\n\n").map(|i| i + 2);
-    let body = match (crlf,lf) {
-        (Some(a),Some(b)) => Some(a.min(b)),
-        (a,b) => a.or(b),
+    let body = match (crlf, lf) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (a, b) => a.or(b),
     };
     body.is_some_and(|start| !data[start..].is_ascii())
 }
