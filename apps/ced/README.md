@@ -68,4 +68,5 @@ args:{headers:HEADERS}}}`. Thread headers cannot be changed through that action.
 Send is unavailable on ordinary text and Bus-message documents (`to` plus
 `command`), which remain plain text for Workshop. A refused mail candidate
 also opens as unchanged text, with maildoc's exact refusal beside it for repair.
-Mail tabs keep header edits in this process; save before ending the session.
+Mail tabs keep header edits in this process. Exit refuses while a mail tab
+is dirty or a save/Send is in flight; save or explicitly close the tab first.

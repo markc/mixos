@@ -2381,6 +2381,9 @@ impl Controller {
                 Ok(None)
             }
             ActionId::FileExit => {
+                if let Some(message) = self.mail_exit_refusal() {
+                    return Err((code::CONFLICT, message.into()));
+                }
                 fx.push(Effect::SaveSession);
                 fx.push(Effect::Quit);
                 Ok(None)
@@ -3019,6 +3022,9 @@ impl Controller {
                 )
             }
             "app.quit" => {
+                if let Some(message) = self.mail_exit_refusal() {
+                    return refuse(fx, code::CONFLICT, message.into(), None);
+                }
                 reply(fx, ok_body(&commands::QuitReply { quitting: true }));
                 fx.push(Effect::SaveSession);
                 fx.push(Effect::Quit);

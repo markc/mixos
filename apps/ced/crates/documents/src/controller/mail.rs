@@ -20,6 +20,21 @@ impl Tab {
 }
 
 impl Controller {
+    pub(super) fn mail_exit_refusal(&self) -> Option<&'static str> {
+        if self
+            .tabs
+            .iter()
+            .filter_map(|tab| tab.mail.as_ref())
+            .any(|mail| mail.saving || mail.sending)
+        {
+            return Some("wait for the mail save or Send to finish before exiting");
+        }
+        self.tabs
+            .iter()
+            .any(|tab| tab.mail.is_some() && tab.dirty())
+            .then_some("save or close mail documents with unsaved changes before exiting")
+    }
+
     pub fn can_send(&self, tab: TabId) -> bool {
         self.tab(tab).is_some_and(|t| t.mail.as_ref().is_some_and(|mail| !mail.sending && !mail.saving)
             && t.mirror.as_ref().is_some_and(|m| matches!(m.phase(), Phase::Live)))
@@ -402,5 +417,24 @@ mod tests {
         assert_eq!(c.tab(tab).unwrap().mail.as_ref().unwrap().notice.as_deref(), Some(expected.as_str()));
         assert!(!c.tab(tab).unwrap().dirty());
         assert!(serde_json::to_value(c.state_reply(tab, true).unwrap()).is_ok());
+    }
+
+    #[test]
+    fn quitting_cannot_silently_drop_unsaved_headers() {
+        let (mut c, _, tab) = opened(LETTER);
+        let mut headers = c.tab(tab).unwrap().mail.as_ref().unwrap().headers.clone();
+        headers.subject = "Unsaved".into();
+        c.edit_headers(tab, headers).unwrap();
+        let fx = execute(&mut c, tab, "file.exit");
+        assert!(!fx.iter().any(|effect| matches!(effect, Effect::Quit)));
+        assert!(fx.iter().any(|effect| matches!(effect, Effect::Respond { rc: 10, .. })));
+        let fx = c.on_bus_command(BusCommand {
+            id: 78,
+            command: "app.quit".into(),
+            body: "{}".into(),
+            caller_key: "local:test".into(),
+        });
+        assert!(!fx.iter().any(|effect| matches!(effect, Effect::Quit)));
+        assert!(fx.iter().any(|effect| matches!(effect, Effect::Respond { rc: 10, .. })));
     }
 }

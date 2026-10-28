@@ -357,7 +357,8 @@ headers and calling <code>ced.execute {id:"mail.headers", params:{tab:1, args:{h
 Send is unavailable on ordinary text and Bus-message documents (<code>to</code> plus
 <code>command</code>), which remain plain text for Workshop. A refused mail candidate
 also opens as unchanged text, with maildoc's exact refusal beside it for repair.
-Mail tabs keep header edits in this process; save before ending the session.</p>
+Mail tabs keep header edits in this process. Exit refuses while a mail tab
+is dirty or a save/Send is in flight; save or explicitly close the tab first.</p>
         </article>
         <p class="doc-source"><a href="/ced/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>
