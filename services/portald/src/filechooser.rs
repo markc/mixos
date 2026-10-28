@@ -370,10 +370,12 @@ impl Bridge {
                         .iter()
                         .filter(|v| v["correlation"].as_str() == Some(&path))
                     {
-                        if let Some(request) = request["request"].as_str() {
-                            if !registry.entries.values().any(|entry| matches!(&entry.state.phase, Phase::Open(live) if live == request)) {
-                                self.cancel(request.into(), generation);
-                            }
+                        if let Some(request) = request["request"].as_str()
+                            && !registry.entries.values().any(|entry| {
+                                matches!(&entry.state.phase, Phase::Open(live) if live == request)
+                            })
+                        {
+                            self.cancel(request.into(), generation);
                         }
                     }
                     self.apply(connection, &mut registry, id, Event::Sweep)
