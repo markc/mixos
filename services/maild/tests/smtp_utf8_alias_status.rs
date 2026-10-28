@@ -269,7 +269,10 @@ async fn round2_alias_fanout_reject_keeps_committed_copy_and_sends_one_dsn() -> 
     let response = command(&mut io, "From: carol@example.com\r\nTo: team@example.com\r\nSubject: fanout reject\r\n\r\nbody\r\n.", "").await?;
     assert_eq!(inbox_count(&built, alice)?, 1);
     assert_eq!(inbox_count(&built, bob)?, 0);
-    assert!(response.starts_with("250"), "copy already committed: {response}");
+    assert!(
+        response.starts_with("250"),
+        "copy already committed: {response}"
+    );
     let messages = timeout(Duration::from_secs(70), peer).await???;
     assert_eq!(messages.len(), 1);
     assert!(
