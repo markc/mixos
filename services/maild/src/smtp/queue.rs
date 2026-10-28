@@ -170,7 +170,10 @@ pub(crate) fn enqueue_on(
     )?;
     let id = conn.last_insert_rowid();
     for recipient in to {
-        conn.execute("INSERT OR IGNORE INTO smtp_delivery(queue_id,recipient) VALUES(?1,?2)", params![id, recipient])?;
+        conn.execute(
+            "INSERT OR IGNORE INTO smtp_delivery(queue_id,recipient) VALUES(?1,?2)",
+            params![id, recipient],
+        )?;
     }
     Ok(id)
 }
@@ -185,7 +188,13 @@ pub async fn pending(conn: &Arc<Mutex<Connection>>, id: i64) -> Result<Vec<Strin
     }).await?
 }
 
-pub async fn recipient_result(conn: &Arc<Mutex<Connection>>, id: i64, recipient: &str, status: &str, reply: &str) -> Result<()> {
+pub async fn recipient_result(
+    conn: &Arc<Mutex<Connection>>,
+    id: i64,
+    recipient: &str,
+    status: &str,
+    reply: &str,
+) -> Result<()> {
     let conn = conn.clone();
     let recipient = recipient.to_string();
     let status = status.to_string();
@@ -379,26 +388,33 @@ pub(crate) async fn deliver_local(
 ) -> Result<()> {
     use crate::mailstore::{MailStore, MailboxRole};
     use mds::{Mds, Tags};
-    let account = crate::db::account::get_by_id(&db.conn, account_id).await?
+    let account = crate::db::account::get_by_id(&db.conn, account_id)
+        .await?
         .ok_or_else(|| anyhow::anyhow!("recipient {account_id} no longer exists"))?;
     let ms = store.clone();
     let data = tokio::task::spawn_blocking(move || ms.mds().get_blob(&blob_hash)).await??;
     let data = crate::sieve::delivery::stamp_spam(&data, "UNKNOWN", 0.0);
-    let inbox = store.mailbox_by_role(account_id, MailboxRole::Inbox)?
+    let inbox = store
+        .mailbox_by_role(account_id, MailboxRole::Inbox)?
         .ok_or_else(|| anyhow::anyhow!("recipient {account_id} has no Inbox"))?;
-    crate::sieve::delivery::deliver(db, store, crate::sieve::delivery::Delivery {
-        account: &account,
-        from,
-        to,
-        data: &data,
-        default_mailbox: inbox,
-        default_tags: Tags::new(),
-        external_domains: &db.sieve_external_domains,
-        sender_verified: true,
-        spam: false,
-        smtp_reject: false,
-        routing: None,
-    }).await?;
+    crate::sieve::delivery::deliver(
+        db,
+        store,
+        crate::sieve::delivery::Delivery {
+            account: &account,
+            from,
+            to,
+            data: &data,
+            default_mailbox: inbox,
+            default_tags: Tags::new(),
+            external_domains: &db.sieve_external_domains,
+            sender_verified: true,
+            spam: false,
+            smtp_reject: false,
+            routing: None,
+        },
+    )
+    .await?;
     Ok(())
 }
 

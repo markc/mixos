@@ -918,16 +918,28 @@ async fn local_alias_retry_runs_sieve_and_transmits_vacation() -> Result<()> {
         let mut envelope = String::new();
         loop {
             let mut line = String::new();
-            if io.read_line(&mut line).await? == 0 { break; }
+            if io.read_line(&mut line).await? == 0 {
+                break;
+            }
             let response = if data {
-                if line == ".\r\n" { data = false; "250 2.0.0 stored\r\n" }
-                else { message.push_str(&line); continue; }
+                if line == ".\r\n" {
+                    data = false;
+                    "250 2.0.0 stored\r\n"
+                } else {
+                    message.push_str(&line);
+                    continue;
+                }
             } else if line.starts_with("EHLO") {
                 "250-mx.example.net\r\n250 8BITMIME\r\n"
             } else if line.starts_with("DATA") {
-                data = true; "354 send\r\n"
-            } else if line.starts_with("QUIT") { break; }
-            else { envelope.push_str(&line); "250 ok\r\n" };
+                data = true;
+                "354 send\r\n"
+            } else if line.starts_with("QUIT") {
+                break;
+            } else {
+                envelope.push_str(&line);
+                "250 ok\r\n"
+            };
             io.get_mut().write_all(response.as_bytes()).await?;
         }
         Ok::<_, anyhow::Error>((envelope, message))
@@ -936,7 +948,13 @@ async fn local_alias_retry_runs_sieve_and_transmits_vacation() -> Result<()> {
     let (built, _) = fixture(&tmp, Some(peer_addr)).await?;
     account(&built, "alice@remote.example.net").await?;
     let bob = account(&built, "bob@example.com").await?;
-    alias(&built, "team@example.com", &["bob@example.com"], Version::zero()).await?;
+    alias(
+        &built,
+        "team@example.com",
+        &["bob@example.com"],
+        Version::zero(),
+    )
+    .await?;
     let db = &built.app_state.db;
     maild::sieve::store::put(db, bob, "main",
         r#"require ["fileinto","mailbox","vacation"]; fileinto :create "Filed"; vacation :days 1 :handle "receipt-integration" "Away";"#, None).await?;
@@ -951,15 +969,37 @@ async fn local_alias_retry_runs_sieve_and_transmits_vacation() -> Result<()> {
     let rows = deferred["recipients"].as_array().unwrap();
     assert_eq!(rows.len(), 2);
     assert!(rows.iter().all(|r| r["status"] == "deferred"));
-    ms.update_mailbox(bob, inbox, None, None, Some(Some(MailboxRole::Inbox)), None, None)?;
+    ms.update_mailbox(
+        bob,
+        inbox,
+        None,
+        None,
+        Some(Some(MailboxRole::Inbox)),
+        None,
+        None,
+    )?;
     maild::smtp::queue::flush(&db.conn).await?;
     wait_delivered(&built, first).await?;
-    let filed = ms.mailbox_by_name(bob, "Filed")?.expect("retry must run Sieve");
-    assert_eq!(ms.list_emails_in_mailbox(bob, filed, ListOpts::default())?.len(), 1);
+    let filed = ms
+        .mailbox_by_name(bob, "Filed")?
+        .expect("retry must run Sieve");
+    assert_eq!(
+        ms.list_emails_in_mailbox(bob, filed, ListOpts::default())?
+            .len(),
+        1
+    );
     assert_eq!(inbox_count(&built, bob)?, 0);
     let (envelope, message) = timeout(Duration::from_secs(65), peer).await???;
-    assert!(envelope.contains("RCPT TO:<alice@remote.example.net>"), "{envelope}");
-    assert!(message.to_ascii_lowercase().contains("auto-submitted: auto-replied"), "{message}");
+    assert!(
+        envelope.contains("RCPT TO:<alice@remote.example.net>"),
+        "{envelope}"
+    );
+    assert!(
+        message
+            .to_ascii_lowercase()
+            .contains("auto-submitted: auto-replied"),
+        "{message}"
+    );
     assert!(message.contains("Away"), "{message}");
     wait_queue_empty(&built).await?;
     let second = submit_native(&built, json!({"operation_id":"sieve-initial","account":"alice@remote.example.net",
@@ -968,9 +1008,16 @@ async fn local_alias_retry_runs_sieve_and_transmits_vacation() -> Result<()> {
     let rows = rows["recipients"].as_array().unwrap();
     assert_eq!(rows.len(), 2);
     assert!(rows.iter().all(|r| r["status"] == "delivered"));
-    assert_eq!(ms.list_emails_in_mailbox(bob, filed, ListOpts::default())?.len(), 2);
+    assert_eq!(
+        ms.list_emails_in_mailbox(bob, filed, ListOpts::default())?
+            .len(),
+        2
+    );
     assert_eq!(inbox_count(&built, bob)?, 0);
-    assert!(maild::smtp::queue::list(&db.conn, 10).await?.is_empty(), "vacation suppression must survive retry");
+    assert!(
+        maild::smtp::queue::list(&db.conn, 10).await?.is_empty(),
+        "vacation suppression must survive retry"
+    );
     Ok(())
 }
 
