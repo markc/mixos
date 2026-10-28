@@ -34,8 +34,7 @@ pub async fn set(
     // Handle create
     if let Some(create) = args.get("create").and_then(|v| v.as_object()) {
         for (client_id, obj) in create {
-            let result =
-                create_submission(db, mailstore, aliases_runtime, account_id, obj).await;
+            let result = create_submission(db, mailstore, aliases_runtime, account_id, obj).await;
             match result {
                 Ok(submission_id) => {
                     created_map.insert(
