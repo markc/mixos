@@ -555,24 +555,26 @@ impl HookHandler for AccountsHooks {
                 // if it is somehow empty we skip rather than block create
                 // (the impossible startup-window case).
                 if let Some(aliases_rt) = self.aliases_runtime.get() {
-                    let aliases_key = RecordKey::collection(
-                        crate::props::aliases::namespace_name(),
-                        ctx.key.key.clone(),
-                    );
-                    match aliases_rt.store().get(&aliases_key).await {
-                        Ok(_) => {
-                            return Err(HookError::validation(format!(
-                                "address {:?} is already a maild.aliases alias — remove the \
+                    for spelling in crate::smtp::envelope::mailbox_addresses(&ctx.key.key) {
+                        let aliases_key = RecordKey::collection(
+                            crate::props::aliases::namespace_name(),
+                            spelling,
+                        );
+                        match aliases_rt.store().get(&aliases_key).await {
+                            Ok(_) => {
+                                return Err(HookError::validation(format!(
+                                    "address {:?} is already a maild.aliases alias — remove the \
                                  alias before creating an account with this address (an \
                                  address cannot be both an account and an alias)",
-                                ctx.key.key
-                            )));
-                        }
-                        Err(StoreError::NotFound) => {}
-                        Err(e) => {
-                            return Err(HookError::hook(format!(
-                                "maild.aliases read on account-create collision check: {e}"
-                            )));
+                                    ctx.key.key
+                                )));
+                            }
+                            Err(StoreError::NotFound) => {}
+                            Err(e) => {
+                                return Err(HookError::hook(format!(
+                                    "maild.aliases read on account-create collision check: {e}"
+                                )));
+                            }
                         }
                     }
                 }

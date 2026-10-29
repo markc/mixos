@@ -30,4 +30,10 @@ tokio.workspace = true
 serde.workspace = true
 tracing.workspace = true
 thiserror.workspace = true
+rsa = "0.9.10"
+base64.workspace = true
 bus = { workspace = true, features = ["native"], optional = true }
+
+[dev-dependencies]
+x509-parser.workspace = true
+sha2.workspace = true

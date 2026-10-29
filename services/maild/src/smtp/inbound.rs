@@ -340,18 +340,26 @@ pub async fn deliver(
             }
         }
 
-        // Phase 1 aliases: resolve the recipient through `maild.aliases`
-        // before the account lookup so mail to an alias lands in the
-        // target's mailbox. The ORIGINAL `rcpt` is preserved in the
+        // Resolve mailbox first, then exact alias, then catch-all. Fan out
+        // only to real local accounts. The ORIGINAL `rcpt` is preserved in the
         // `local_recipients` tuple (log / Mix-filter `$TO` keep matching
         // what the sender wrote — only the account follows the alias).
         // `?` propagates a transient alias-store error so delivery is
         // retried rather than silently treating the alias as non-local.
-        let resolved =
-            crate::props::aliases::resolve_recipient(&state.aliases_runtime, rcpt).await?;
-        match db::account::get_by_email(&state.db.conn, &resolved).await? {
-            Some(account) => local_recipients.push((rcpt.clone(), account, None)),
-            None => remote_addrs.push(rcpt.clone()),
+        let accounts =
+            crate::props::aliases::recipient_accounts(&state.aliases_runtime, &state.db.conn, rcpt)
+                .await?;
+        if accounts.is_empty() {
+            remote_addrs.push(rcpt.clone());
+        } else {
+            for account in accounts {
+                if !local_recipients
+                    .iter()
+                    .any(|(_, existing, _)| existing.id == account.id)
+                {
+                    local_recipients.push((rcpt.clone(), account, None));
+                }
+            }
         }
     }
 
@@ -689,7 +697,11 @@ pub async fn deliver(
                 sender_verified: ingress.is_local_auth()
                     || vacation_sender_verified(&verify_result, mail_from),
                 spam: spam_verdict.as_deref() == Some("SPAM"),
-                smtp_reject: rcpt_to.len() == 1 && vtoken_ctx.is_none(),
+                // One RCPT can expand to several alias targets. Once a peer
+                // target has committed, reject only this target with a DSN.
+                smtp_reject: rcpt_to.len() == 1
+                    && local_recipients.len() == 1
+                    && vtoken_ctx.is_none(),
                 routing: Some(&routing),
             },
         )

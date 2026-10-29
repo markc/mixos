@@ -356,6 +356,12 @@ pub fn command_manifest() -> Vec<::bus::CommandDescriptor> {
             false,
         ),
         CommandDescriptor::new(
+            "maild.submission.status",
+            &["id"],
+            "Read durable per-recipient submission delivery results",
+            true,
+        ),
+        CommandDescriptor::new(
             "maild.props.get",
             &["namespace", "key"],
             "Read properties",
@@ -600,6 +606,18 @@ pub fn command_manifest() -> Vec<::bus::CommandDescriptor> {
             false,
         ),
         CommandDescriptor::new("maild.tls.reload", &[], "Reload mail TLS identities", false),
+        CommandDescriptor::new(
+            "maild.dkim.check",
+            &["domain"],
+            "Check published DKIM against the private key",
+            true,
+        ),
+        CommandDescriptor::new(
+            "maild.accounts.lookup",
+            &["email"],
+            "Look up a numeric account id without opening its mail store",
+            true,
+        ),
     ]
 }
 
@@ -763,6 +781,8 @@ async fn dispatch_loop(
             sieve::dispatch(&cmd, &db).await
         } else if cmd.command == "maild.submit" {
             submission::dispatch(&cmd, &db, &mailstore, &aliases_runtime, max_message_size).await
+        } else if cmd.command == "maild.submission.status" {
+            submission::status(&cmd, &db).await
         } else if let Some(action) = cmd.command.strip_prefix("maild.rules.") {
             rules::dispatch(
                 action,
