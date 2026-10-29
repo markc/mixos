@@ -10,20 +10,53 @@ $run = $n.new_run("/tmp/toolkit-fallback")
 $tmp = $run.path
 $empty = nil
 $broker = nil
-$session = nil
+$compositor = nil
+$dbus = nil
 $provider = nil
 $portal = nil
 $passed = false
+$owners = {}
+fn identity($pid)
+  if not process_alive($pid) then return nil end
+  $p = "/proc/" .. $pid
+  $s = read_file($p .. "/stat")
+  return {uid:stat($p).uid,start:split(trim(slice($s,last_index_of($s,")")+2))," ")[19],argv:read_file($p .. "/cmdline")}
+end
+fn stop_owned($pid,$expected)
+  if $pid == nil or $expected == nil then return end
+  for $signal in [15,9]
+    if not process_alive($pid) or not deep_eq(identity($pid),$expected) then return end
+    $stopped = kill($pid,$signal)
+    $deadline = monotonic()+2
+    while process_alive($pid) and monotonic() < $deadline sleep(0.05) end
+  end
+  if process_alive($pid) and deep_eq(identity($pid),$expected) then raise("CLEANUP","owned child survived " .. $pid) end
+end
 try
   $empty = $pb.start({dir:$tmp .. "/empty",name:"chooser-empty",noded:$bin .. "/noded",export:false})
-  $broker = $n.private_bus({dir:$tmp .. "/broker",name:"chooser-driver",noded:$bin .. "/noded"})
+  $broker = $pb.start({dir:$tmp .. "/broker",name:"chooser-driver",noded:$bin .. "/noded"})
   mkdir($tmp .. "/home",{parents:true})
+  mkdir($tmp .. "/runtime",{parents:true})
+  chmod($tmp .. "/runtime",0o700)
   write_file($tmp .. "/home/notes.md","original")
   copy($root .. "/tests/desktop/smoke-settings.json",$tmp .. "/settings.json")
-  $session = $n.start({bin:$bin .. "/compd",tag:"chooser-fallback",run:$run,config:$tmp .. "/settings.json",software:true,dbus:true})
-  if not $n.wait_ready($session,40) then raise("FALLBACK","private compositor unavailable") end
-  $client = $n.client_env($session,{HOME:$tmp .. "/home",XDG_CONFIG_HOME:$tmp .. "/config",XDG_STATE_HOME:$tmp .. "/state",MIXOS_APP_HOME:$tmp .. "/dopus",MIXOS_COMP_SERVICE:$session.service,WINIT_UNIX_BACKEND:"wayland",WGPU_BACKEND:"gl",LIBGL_ALWAYS_SOFTWARE:"1",MIXOS_NODED_URL:$broker.url})
+  $client = merge($pb.client_env($broker),{HOME:$tmp .. "/home",XDG_CONFIG_HOME:$tmp .. "/config",XDG_STATE_HOME:$tmp .. "/state",MIXOS_APP_HOME:$tmp .. "/dopus",MIXOS_COMP_SERVICE:"fallbackcomp",WINIT_UNIX_BACKEND:"wayland",WGPU_BACKEND:"gl",LIBGL_ALWAYS_SOFTWARE:"1",XDG_RUNTIME_DIR:$tmp .. "/runtime",WAYLAND_DISPLAY:"chooser-fallback",DISPLAY:"",MIXOS_BUS_SOCKET:nil,MIXOS_SESSION_FD:nil,DBUS_SESSION_BUS_ADDRESS:nil})
+  $dbus = spawn(["dbus-daemon","--session","--nofork","--nopidfile","--print-address=1"],{env:$client,stdout:{file:$tmp .. "/dbus.address"},stderr:{file:$tmp .. "/dbus.log"},detach:true})
+  $owners.dbus = identity($dbus)
+  $deadline = monotonic()+10
+  while monotonic() < $deadline
+    if is_file($tmp .. "/dbus.address") and trim(read_file($tmp .. "/dbus.address")) != "" then break end
+    sleep(0.05)
+  end
+  $client.DBUS_SESSION_BUS_ADDRESS = trim(read_file($tmp .. "/dbus.address"))
+  if $client.DBUS_SESSION_BUS_ADDRESS == "" then raise("FALLBACK","private D-Bus unavailable") end
+  $compositor = spawn([$bin .. "/compd","--headless","--socket","chooser-fallback","--size","1280x800","--config-file",$tmp .. "/settings.json","--bus-service","fallbackcomp"],{env:$client,stdout:{file:$tmp .. "/compd.log"},stderr:"stdout",detach:true})
+  $owners.compositor = identity($compositor)
+  $deadline = monotonic()+20
+  while not exists($tmp .. "/runtime/chooser-fallback") and monotonic() < $deadline sleep(0.1) end
+  if not exists($tmp .. "/runtime/chooser-fallback") then raise("FALLBACK","private headless compd unavailable") end
   $provider = spawn([$bin .. "/dopus","--choose-service","--noded-url",$broker.url],{env:$client,stdout:{file:$tmp .. "/files.log"},stderr:"stdout",detach:true})
+  $owners.provider = identity($provider)
   $deadline = monotonic() + 20
   $ready = false
   while monotonic() < $deadline
@@ -33,7 +66,10 @@ try
   end
   if not $ready then raise("FALLBACK","files did not register") end
   $portal = spawn([$bin .. "/portald","serve","--instance","test"],{env:$client,stdout:{file:$tmp .. "/portal.log"},stderr:"stdout",detach:true})
-  $probe_env = merge($client,{MIXOS_NODED_URL:$empty.url,CHOOSER_DRIVER_URL:$broker.url})
+  $owners.portal = identity($portal)
+  -- System mode waits boundedly for the real portal's D-Bus version before
+  -- constructing any Handle. Its driver uses the separate explicit URL.
+  $probe_env = merge($client,{MIXOS_NODED_URL:$empty.url,CHOOSER_DRIVER_URL:$broker.url,MIXOS_NODE_CONFIG:$empty.conf,MIXOS_BUS_SOCKET:nil,MIXOS_SESSION_FD:nil,MIXOS_RUN:$empty.dir .. "/run",MIXOS_ETC:$empty.dir .. "/etc",MIXOS_VAR:$empty.dir .. "/var"})
   $r = run_argv([$probe,$tmp .. "/home","system"],{env:$probe_env,timeout:300,stderr:"stdout"})
   write_file($tmp .. "/system.log",$r.stdout)
   print($r.stdout)
@@ -46,11 +82,17 @@ try
   if not $r.ok then raise("FALLBACK","embedded client failed: " .. $tmp) end
   $passed = true
 finally
-  for $pid in [$portal,$provider]
-    if $pid != nil and process_alive($pid) then $stopped = kill($pid,15) end
+  $errors = []
+  for $child in [{pid:$portal,id:$owners.portal ?? nil},{pid:$provider,id:$owners.provider ?? nil},{pid:$compositor,id:$owners.compositor ?? nil},{pid:$dbus,id:$owners.dbus ?? nil}]
+    try stop_owned($child.pid,$child.id) catch $message push($errors,$message) end
   end
-  if $session != nil then $n.stop($session) end
-  if $broker != nil and process_alive($broker.pid) then $stopped = kill($broker.pid,15) end
-  if $empty != nil then $pb.stop($empty) end
+  for $owned_bus in [$broker,$empty]
+    if $owned_bus != nil then
+      try $pb.stop($owned_bus) catch $message push($errors,$message) end
+    end
+  end
+  if len($errors) > 0 then $passed = false end
+  write_file($tmp .. "/receipt.json",json_encode({passed:$passed,cleanup_errors:$errors}))
   $n.finish_run($run,$passed)
+  if len($errors) > 0 then raise("CLEANUP",json_encode($errors)) end
 end

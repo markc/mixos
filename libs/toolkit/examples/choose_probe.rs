@@ -95,6 +95,16 @@ async fn drive(
 async fn main() -> Result<()> {
     let folder = PathBuf::from(std::env::args().nth(1).context("folder argument")?);
     let mode = std::env::args().nth(2).unwrap_or_else(|| "bus".into());
+    if matches!(mode.as_str(), "system" | "embedded") {
+        let resolved = bus::client_helpers::resolve_noded_url();
+        let empty = SupervisedClient::connect_options("chooser-empty-audit", &resolved).connect().await?;
+        ensure!(!empty.list_services().await?.iter().any(|name| name == "files"),
+            "fallback caller's broker unexpectedly has files");
+        let info = empty.call("noded", "noded.info", json!({})).await?;
+        ensure!(info["node"] == "chooser-empty", "wrong caller broker: {info}");
+        println!("PASS caller resolver reaches provider-free broker {resolved}: {info}");
+        empty.close().await;
+    }
     if mode == "embedded" {
         return embedded(&folder);
     }
@@ -247,7 +257,12 @@ fn embedded(folder: &std::path::Path) -> Result<()> {
                 }, (handle, Vec::new()));
             toolkit::install(&h.ctx, &toolkit::Theme::embedded());
             let deadline = Instant::now() + WAIT;
-            while h.state().0.tier() != Tier::InProcess || h.query_by_label("notes.md").is_none() {
+            while h.state().0.tier() != Tier::InProcess
+                || if mode == Mode::SaveFiles {
+                    h.query_by_label("Save").is_none_or(|node| node.accesskit_node().is_disabled())
+                } else {
+                    h.query_by_label("notes.md").is_none()
+                } {
                 ensure!(Instant::now() < deadline, "embedded UI did not become ready");
                 ensure!(h.state().1.is_empty(), "unexpected early outcome: {:?}",h.state().1);
                 h.run_steps(1);
