@@ -38,10 +38,10 @@ impl Session {
     }
 
     pub fn kill(&self) {
-        kill_session(self.pid, self.start.as_deref());
         #[cfg(target_os = "linux")]
         {
             use std::os::fd::AsRawFd;
+            kill_session(self.pid, self.start.as_deref(), self.pidfd.as_raw_fd());
             // Always terminate the exact owned child, including non-session
             // leaders or a child whose /proc entry became unreadable.
             unsafe {
@@ -153,13 +153,36 @@ pub fn guard(command: &mut Command) {
 /// Includes job-control groups inside an unreaped, directly owned session.
 /// The leader stays reserved until cleanup; pidfds bind signals to the exact
 /// selected members. Already-reaped or foreign leaders are never signalled.
-fn kill_session(session: u32, expected_start: Option<&str>) {
+#[cfg(target_os = "linux")]
+fn retained_child(pidfd: i32) -> bool {
+    let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
+    loop {
+        let rc = unsafe {
+            libc::waitid(
+                libc::P_PIDFD,
+                pidfd as u32,
+                &mut info,
+                libc::WEXITED | libc::WNOWAIT | libc::WNOHANG,
+            )
+        };
+        if rc == 0 {
+            return true;
+        }
+        if std::io::Error::last_os_error().kind() != std::io::ErrorKind::Interrupted {
+            return false;
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn kill_session(session: u32, expected_start: Option<&str>, leader_pidfd: i32) {
     #[cfg(target_os = "linux")]
     {
         use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
-        // waitid proves this is still our unreaped child, even after an exit
-        // assertion. It returns ECHILD after a raw ptrace reaper consumed it.
-        if status(session, true).is_err() {
+        // The original pidfd, not a current same-number PID, proves the leader
+        // is still our retained child. A ptrace reap makes this ECHILD even if
+        // the number is reused within the same kernel start-time tick.
+        if !retained_child(leader_pidfd) {
             return;
         }
         let Some(leader) =
@@ -180,6 +203,7 @@ fn kill_session(session: u32, expected_start: Option<&str>) {
                 if identity(pid).is_some_and(|member| {
                     pid == session || (leader.0 == session && member.0 == session)
                 }) && identity(session).as_ref() == Some(&leader)
+                    && retained_child(leader_pidfd)
                 {
                     unsafe {
                         libc::syscall(
@@ -194,10 +218,6 @@ fn kill_session(session: u32, expected_start: Option<&str>) {
             }
         }
     }
-    // MixOS and its strong PTY lifetime guarantees target Linux. Other Unix
-    // builds cannot enumerate sessions safely and must not signal guessed PIDs.
-    #[cfg(not(target_os = "linux"))]
-    let _ = (session, expected_start);
 }
 
 #[cfg(target_os = "linux")]
@@ -216,7 +236,11 @@ fn stale_session_identity_does_not_authorise_group_cleanup() {
     }
     let mut child = command.spawn().unwrap();
     let session = Session::new(&child);
-    kill_session(child.id(), Some("stale leader start"));
+    kill_session(
+        child.id(),
+        Some("stale leader start"),
+        std::os::fd::AsRawFd::as_raw_fd(&session.pidfd),
+    );
     let untouched = try_wait(&mut child).unwrap().is_none();
     session.kill();
     let _ = child.wait();
