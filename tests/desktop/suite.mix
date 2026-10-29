@@ -139,7 +139,8 @@ $MIX = which("mix") ?? (mixos_path("prefix") .. "/bin/mix")
 mkdir($OUT, {parents: true})
 
 -- The gate table. `style` "harness" takes --bin/--config-file; "standalone"
--- takes the compd binary as its first argument (and --scale).
+-- takes the compd binary as its first argument (and --scale); "plain" takes
+-- only its declared args.
 $GATES = [
   {name: "compat_bus_env", script: "compat_bus_env_test.mix", style: "plain", args: []},
   {name: "desktop", script: "desktop_nested_gate.mix", style: "harness",
@@ -198,6 +199,8 @@ fn run_gate($g, $ctx)
         push($argv, $first)
       end
     end
+  elif $g.style != "plain" then
+    raise("GATE_STYLE", "Unknown gate style: " .. to_string($g.style))
   end
   for each $x in $g.args
     push($argv, $x)

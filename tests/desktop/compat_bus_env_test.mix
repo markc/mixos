@@ -1,7 +1,13 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Exercise actual D-Bus activation without starting a portal or compositor.
+-- This is an environment regression, not a real portal/unmount test. Scratch
+-- evidence is retained; no user mount is created or removed.
 $n = require("nested_host_lib.mix")
+for each $tool in ["dbus-daemon","dbus-send"]
+  if which($tool) == nil then raise("DEPENDENCY","Missing " .. $tool) end
+end
 $host_mounts = filter(split(read_file("/proc/self/mountinfo"),"\n"),fn($l)=contains($l," - fuse.portal "))
+print("Host document mounts observed: " .. to_string(len($host_mounts)) .. " (zero means mount preservation is not exercised)")
 $run = "/tmp/compat-env-" .. uuid()
 $runtime = $run .. "/runtime"
 mkdir($runtime, {parents:true})
