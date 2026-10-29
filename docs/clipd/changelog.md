@@ -10,6 +10,9 @@ generated: by docs/_build/gen-site.mix from services/clipd/CHANGELOG.md; do not 
 
 ## 0.1.0 — 2026-10-28
 
+- Run clipboard policy and private-broker service tests in the standard Mix gate
+  using freshly built Mix and blobd binaries.
+
 - Replace the unmerged Rust prototype with a Mix `--serve` service.
 - Add headless storage, both selections, text history, indexed picking,
   configured mesh follow and server push/pull, lazy password reads and expiry.

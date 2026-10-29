@@ -241,8 +241,8 @@
 citizen. There is no clipd Rust crate, GUI, Wayland dependency in Mix, or new
 transport. Store mode holds data in memory. Wayland mode uses the session's
 external <code>wl-paste</code> and <code>wl-copy</code> executables.</p>
-<p>This implementation is <strong>not ready for live desktop acceptance</strong>: wl-copy
-cannot advertise a remote lazy offer or run a fetch callback at paste time.
+<p>The graphical implementation supports materialised text and blob ownership.
+wl-copy cannot advertise a remote lazy offer or run a fetch callback at paste time.
 Remote password offers and uncached remote types are refused in Wayland mode
 with <code>LAZY_WAYLAND_UNAVAILABLE</code>. They work lazily through the Bus in store mode.
 Local Wayland password sets are also refused because wl-copy spools stdin to a
@@ -362,10 +362,12 @@ blobd for binary references and reads outside the Bus.</p>
 checks both selections with the real wl-clipboard tools, own-set echo handling,
 password history exclusion and expiry. Set <code>MIXOS_TEST_COMPD</code> to a CBC-built
 binary. The test does not connect to a live desktop.</p>
-<p>Before merge: CBC tests for mix and mixos-mcp; a private headless Wayland test;
-then live VT1/VT3/VT4 and cross-node acceptance by the session owner. The lazy
-Wayland ownership limitation must be resolved or explicitly scoped before
-desktop rollout. No gold install, desk restart or merge is authorised here.</p>
+<p>The standard Mix gate includes the policy and private-broker service suites and
+uses <code>MIXOS_TEST_MIX</code> and <code>MIXOS_TEST_BLOBD</code> to select freshly built binaries.
+The private Wayland test also accepts those variables. Live cross-application
+and cross-node acceptance is separate from these private tests. Graphical
+password and uncached remote offers remain refused until the lazy ownership
+policy is settled.</p>
         </article>
         <p class="doc-source"><a href="/clipd/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>

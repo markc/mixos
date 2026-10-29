@@ -5,8 +5,8 @@ citizen. There is no clipd Rust crate, GUI, Wayland dependency in Mix, or new
 transport. Store mode holds data in memory. Wayland mode uses the session's
 external `wl-paste` and `wl-copy` executables.
 
-This implementation is **not ready for live desktop acceptance**: wl-copy
-cannot advertise a remote lazy offer or run a fetch callback at paste time.
+The graphical implementation supports materialised text and blob ownership.
+wl-copy cannot advertise a remote lazy offer or run a fetch callback at paste time.
 Remote password offers and uncached remote types are refused in Wayland mode
 with `LAZY_WAYLAND_UNAVAILABLE`. They work lazily through the Bus in store mode.
 Local Wayland password sets are also refused because wl-copy spools stdin to a
@@ -152,7 +152,9 @@ checks both selections with the real wl-clipboard tools, own-set echo handling,
 password history exclusion and expiry. Set `MIXOS_TEST_COMPD` to a CBC-built
 binary. The test does not connect to a live desktop.
 
-Before merge: CBC tests for mix and mixos-mcp; a private headless Wayland test;
-then live VT1/VT3/VT4 and cross-node acceptance by the session owner. The lazy
-Wayland ownership limitation must be resolved or explicitly scoped before
-desktop rollout. No gold install, desk restart or merge is authorised here.
+The standard Mix gate includes the policy and private-broker service suites and
+uses `MIXOS_TEST_MIX` and `MIXOS_TEST_BLOBD` to select freshly built binaries.
+The private Wayland test also accepts those variables. Live cross-application
+and cross-node acceptance is separate from these private tests. Graphical
+password and uncached remote offers remain refused until the lazy ownership
+policy is settled.

@@ -3,7 +3,8 @@
 -- Private headless compositor; never connects to a live desktop.
 -- MIXOS_TEST_COMPD can name a CBC-built compd. Requires wl-clipboard.
 $pb = require("../../../tests/lib/private_bus.mix")
-$mix = mixos_path("prefix") .. "/bin/mix"
+$mix = env("MIXOS_TEST_MIX", mixos_path("prefix") .. "/bin/mix")
+$blobd = env("MIXOS_TEST_BLOBD", mixos_path("prefix") .. "/bin/blobd")
 $compd = env("MIXOS_TEST_COMPD", mixos_path("prefix") .. "/bin/compd")
 if not is_file($compd) or which("wl-copy") == nil or which("wl-paste") == nil then
   raise("DEPENDENCY", "Wayland test needs compd, wl-copy and wl-paste")
@@ -74,7 +75,7 @@ try
   sleep(0.3)
   check("own clear echo retains generation", call("clipboard.info", {}).v.clipboard.generation == $cleared)
   write_file($tmp .. "/blobd.conf.mix", "root: " .. $tmp .. "/blobs\ncas_group: " .. trim(run_argv_must(["id", "-gn"])) .. "\n")
-  push($pids, spawn([mixos_path("prefix") .. "/bin/blobd", "--config", $tmp .. "/blobd.conf.mix"],
+  push($pids, spawn([$blobd, "--config", $tmp .. "/blobd.conf.mix"],
     {detach: true, env: $env, stdout: {file: $tmp .. "/blobd.log"}, stderr: "stdout"}))
   for $i = 1 to 80
     send blobd blob.info timeout=1
@@ -97,7 +98,7 @@ try
   $stat = if type($result) == "string" then json_parse($result) else $result end
   check("replaced binary releases clipd pin", not contains($stat.pins, "clipd"))
   write_file($tmp .. "/origin.conf.mix", "root: " .. $tmp .. "/origin-blobs\nname: origin\ncas_group: " .. trim(run_argv_must(["id", "-gn"])) .. "\n")
-  push($pids, spawn([mixos_path("prefix") .. "/bin/blobd", "--config", $tmp .. "/origin.conf.mix"],
+  push($pids, spawn([$blobd, "--config", $tmp .. "/origin.conf.mix"],
     {detach: true, env: $env, stdout: {file: $tmp .. "/origin.log"}, stderr: "stdout"}))
   check("separate origin store ready", eventually(fn() = request("blobd-origin", "blob.info", {}).rc == 0))
   $bytes = bytes_from([2, 255, 7, 0])

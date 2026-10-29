@@ -24,6 +24,8 @@
 --   behaviour crash-loops on the global-scope promotion debug_assert
 --   (libs/mix/src/scope.rs); back in once that scope design is settled.
 -- - tests/desktop/: nested and on-hardware compositor runs.
+-- - services/clipd/tests/wayland_test.mix: needs a private headless compd and
+--   wl-clipboard. Run with MIXOS_TEST_COMPD and MIXOS_TEST_BLOBD from the build.
 -- - apps/dopus/tests/chooser_bus_test.mix: drives real chooser windows on a
 --   nested compd, which needs a headless weston host (nested_host_lib). Run
 --   it where weston is installed:
@@ -60,6 +62,8 @@ $scripts = [
   "tools/gold_release_test.mix",
   "services/bridged/tests/bridge_core_test.mix",
   "services/bridged/tests/bridged_test.mix",
+  "services/clipd/tests/clipboard_test.mix",
+  "services/clipd/tests/clipd_test.mix",
   "services/compd/tests/apps_bus_test.mix",
   "services/compd/tests/apps_test.mix",
   "services/compd/tests/desktop_icons_test.mix",
@@ -92,6 +96,7 @@ $env = {
   -- The bridged tests' child processes run the fresh mix, not the installed one.
   BRIDGED_MIX: $bin .. "/mix",
   MIXOS_TEST_NODED: $bin .. "/noded",
+  MIXOS_TEST_BLOBD: $bin .. "/blobd",
   MIXOS_TEST_EDITD: $bin .. "/editd",
   MIXOS_TEST_DOPUS: $bin .. "/dopus",
   MIXOS_TEST_COMPD: $bin .. "/compd",
