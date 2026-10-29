@@ -274,6 +274,16 @@ path to the build checkout's <code>docs/mix</code> is no longer a lookup candida
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
+<li>Interactive shells exit with status 129 on terminal hangup or EIO, even
+without job control or a delivered SIGHUP. Suspended editors keep watching
+terminal loss, and shutdown hangs up managed job groups. Plain EOF still
+exits normally. PTY fixtures use kernel parent-death guards and clean up
+their whole session, including separate job-control groups.</li>
+<li>Terminal loss during incomplete multiline input exits with status 129
+instead of panicking while reporting a legacy-editor EIO to the dead terminal.</li>
+<li>The release gate detects and reaps newly orphaned executables from its own
+checkout after each stage, fails the leaking stage, and excludes other
+checkouts and existing orphans.</li>
 <li>A foreground job stopped (^Z) just after its exec is now stopped, not
 reported as "job stopped before exec acknowledgement" and aborted. The
 launch checked for the stop before reading the exec acknowledgement that

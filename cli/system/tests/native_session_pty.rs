@@ -8,6 +8,8 @@
 //! Nextest uses separate test processes (no shared mutex); its timeout budget
 //! still needs to allow setup plus the real lease/retry fixture durations.
 #![cfg(target_os = "linux")]
+#[path = "support/pty.rs"]
+mod pty;
 
 use ::bus::native_client::session::{ExpectedScope, GrantResult};
 use ::bus::native_client::{NodedClient, UnixConnectOutcome, VerifiedConnection};
@@ -356,6 +358,7 @@ impl Child {
             0
         );
         let mut command = Command::new(current_mix());
+        pty::guard(&mut command);
         command
             .current_dir(home.path())
             .envs(env)
@@ -440,6 +443,7 @@ impl Child {
 }
 impl Drop for Child {
     fn drop(&mut self) {
+        pty::kill_session(self.process.id());
         if !self.reaped {
             unsafe {
                 libc::kill(self.pid(), libc::SIGKILL);

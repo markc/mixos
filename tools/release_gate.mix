@@ -34,6 +34,8 @@ $log_dir = "/tmp/mixos-release-gate-" .. slice($commit, 0, 12) .. "-" .. uuid()
 -- are added; a drop below it means the stage's filters stopped matching.
 $E2E_MIN = 18
 mkdir($log_dir, {parents: true})
+$orphans = require("lib/release_orphans.mix")
+$orphan_target = cwd() .. "/target"
 
 fn stage($name, $argv, $timeout)
   $log = $log_dir .. "/" .. $name .. ".log"
@@ -54,7 +56,14 @@ fn stage($name, $argv, $timeout)
       MIXOS_TEST_EDITD: realpath("target/debug/editd"),
       MIXOS_TEST_DOPUS: realpath("target/debug/dopus")}
   end
-  $r = run_argv($argv, $opts)
+  -- Watch every stage: nested Mix suites can run tests or spawn fixtures too.
+  -- Canonical executable paths exclude other checkouts on a shared worker.
+  $before = $orphans.snapshot($orphan_target)
+  try
+    $r = run_argv($argv, $opts)
+  finally
+    $orphans.finish($name, $orphan_target, $before)
+  end
   $lines = if $r.exit_code == 0 then "20" else "100" end
   $tail = run_argv(["tail", "-n", $lines, $log], {timeout: 20, max_output: 100000})
   print(trim($tail.stdout))

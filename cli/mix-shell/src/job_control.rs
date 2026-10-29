@@ -385,7 +385,9 @@ impl Controller {
                         if let Some(shutdown) = shutdown
                             && let Err(e) = shutdown()
                         {
-                            eprintln!("mix: input shutdown: {e}");
+                            // The terminal may be gone. A diagnostic must not
+                            // panic the sole job reaper and strand shutdown.
+                            let _ = writeln!(io::stderr(), "mix: input shutdown: {e}");
                         }
                         close_jobs(&monitor);
                         let _ = foreground(monitor_tty.as_raw_fd(), shell_pgid);
@@ -745,7 +747,10 @@ impl Controller {
                 .collect();
             // Accepted diagnostic under the state lock: the launch caller
             // already reclaimed the terminal before entering abort cleanup.
-            eprintln!("mix: failed job {id} survived TERM/KILL grace: {survivors:?}");
+            let _ = writeln!(
+                io::stderr(),
+                "mix: failed job {id} survived TERM/KILL grace: {survivors:?}"
+            );
         }
     }
     fn launch_stopped(&self, id: usize) -> bool {
@@ -807,7 +812,7 @@ impl Drop for TerminalLease<'_> {
             foreground(self.controller.tty.as_raw_fd(), self.controller.shell_pgid)?;
             set_modes(self.controller.tty.as_raw_fd(), &self.saved)
         }) {
-            eprintln!("mix: terminal restore: {e}");
+            let _ = writeln!(io::stderr(), "mix: terminal restore: {e}");
         }
         if let Some(observer) = self.controller.foreground_observer.get() {
             observer(false);
@@ -902,7 +907,12 @@ fn close_jobs(shared: &Shared) {
             drop(s);
             let _ttou = TtouGuard::new();
             for (id, pgid) in survivors {
-                eprintln!("mix: job {} (pgid {}) survived HUP/CONT grace", id, pgid);
+                let _ = writeln!(
+                    io::stderr(),
+                    "mix: job {} (pgid {}) survived HUP/CONT grace",
+                    id,
+                    pgid
+                );
             }
             shared.state.lock().unwrap().closed = true;
             shared.changed.notify_all();

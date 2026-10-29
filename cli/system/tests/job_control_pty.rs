@@ -7,6 +7,8 @@
 //! Nextest uses separate test processes (no shared mutex); its timeout budget
 //! still needs to allow setup plus the real job-control fixture durations.
 #![cfg(target_os = "linux")]
+#[path = "support/pty.rs"]
+mod pty;
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::os::fd::{AsRawFd, FromRawFd};
@@ -79,7 +81,9 @@ fn fixture_process() {
         "outer-shell" => {
             // A real same-session parent keeps the nested shell group from
             // being orphaned, and observes its stop rather than a /proc guess.
-            let mut child = Command::new(env!("CARGO_BIN_EXE_mix")).spawn().unwrap();
+            let mut command = Command::new(env!("CARGO_BIN_EXE_mix"));
+            pty::guard(&mut command);
+            let mut child = command.spawn().unwrap();
             let pid = child.id() as i32;
             fs::write(report.with_extension("child"), pid.to_string()).unwrap();
             let mut status = 0;
@@ -207,7 +211,6 @@ struct Pty {
     shell: Child,
     home: tempfile::TempDir,
     pending: String,
-    jobs: Vec<i32>,
 }
 impl Pty {
     fn new(args: &[&str], redirected: bool, controlling: bool) -> Self {
@@ -292,6 +295,7 @@ impl Pty {
         let executable = home.path().join("mix");
         fs::copy(env!("CARGO_BIN_EXE_mix"), &executable).unwrap();
         let mut cmd = Command::new(executable);
+        pty::guard(&mut cmd);
         cmd.args(args)
             .env("HOME", home.path())
             .env("TERM", "xterm-256color")
@@ -334,7 +338,6 @@ impl Pty {
             shell,
             home,
             pending: String::new(),
-            jobs: vec![],
         }
     }
     fn interactive() -> Self {
@@ -403,13 +406,11 @@ impl Pty {
     fn report(&mut self, name: &str) -> Vec<i32> {
         let path = self.home.path().join(name);
         wait_for(|| fs::read_to_string(&path).is_ok_and(|v| v.split_whitespace().count() == 4));
-        let fields = fs::read_to_string(path)
+        fs::read_to_string(path)
             .unwrap()
             .split_whitespace()
             .map(|v| v.parse().unwrap())
-            .collect::<Vec<_>>();
-        self.jobs.push(fields[0]);
-        fields
+            .collect::<Vec<_>>()
     }
     fn exit(&mut self) {
         self.send("\x04");
@@ -459,12 +460,8 @@ impl Pty {
 }
 impl Drop for Pty {
     fn drop(&mut self) {
-        // Only fixture-owned IDs. Kill jobs before their session-leader shell.
-        for pid in &self.jobs {
-            unsafe {
-                libc::kill(*pid, libc::SIGKILL);
-            }
-        }
+        // Includes nested shells and every job-control group in this session.
+        pty::kill_session(self.shell.id());
         let _ = self.shell.kill();
         let _ = self.shell.wait();
     }
@@ -520,7 +517,6 @@ fn unmanaged_stream_stop_is_visible_to_outer_parent_and_resumes() {
     let pid_path = p.home.path().join("outer.child");
     wait_for(|| pid_path.exists());
     let nested: i32 = fs::read_to_string(pid_path).unwrap().parse().unwrap();
-    p.jobs.push(nested);
     let report = p.home.path().join("stream");
     p.send(&format!(
         "run_stream([\"{}\", \"--exact\", \"fixture_process\", \"--nocapture\"], {{env: {{P0J_MODE: \"hold\", P0J_REPORT: \"{}\"}}}})\n",
@@ -1169,6 +1165,7 @@ fn run_bounded_ptrace_case(name: &str) -> bool {
     let output = tempfile::NamedTempFile::new().unwrap();
     let log = output.reopen().unwrap();
     let mut command = Command::new("/proc/self/exe");
+    pty::guard(&mut command);
     command
         .args(["--exact", name, "--nocapture"])
         .env(CASE_ENV, name)
@@ -1202,9 +1199,7 @@ fn run_bounded_ptrace_case(name: &str) -> bool {
         if Instant::now() >= deadline {
             // Only this case's session/group. Never join or use a blocking
             // reap on timeout: even a failed kill must not hang the test run.
-            unsafe {
-                libc::kill(-(child.id() as i32), libc::SIGKILL);
-            }
+            pty::kill_session(child.id());
             let _ = child.kill();
             let cleanup_deadline = Instant::now() + Duration::from_secs(1);
             while matches!(child.try_wait(), Ok(None)) && Instant::now() < cleanup_deadline {

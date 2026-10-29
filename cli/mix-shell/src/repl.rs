@@ -206,6 +206,9 @@ fn record_builtin(report: &mut Option<Report>, code: i32, what: &str) {
 
 /// Run the interactive REPL.
 pub fn run_repl() -> i32 {
+    // A closed input pipe also polls HUP, but is ordinary EOF. Remember the
+    // input type before terminal loss makes isatty itself fail with EIO.
+    let terminal_input = unsafe { libc::isatty(libc::STDIN_FILENO) } == 1;
     let _session_lifetime = crate::session_state::ShellLifetime;
     if crate::session_state::enabled() {
         mix::shell_observation::set_observer(|observation| {
@@ -1185,12 +1188,31 @@ pub fn run_repl() -> i32 {
                 }
             }
             Err(ReadlineError::Eof) => {
-                if !line_buf.is_empty() {
+                if terminal_input && crate::editor::terminal::hung_up(libc::STDIN_FILENO) {
+                    exit_code = 128 + libc::SIGHUP;
+                } else if !line_buf.is_empty() {
                     match mix::continuation::splice_explicit_continuations(&line_buf) {
                         Err(error) if error.is_incomplete_input() => eprintln!("{}", error),
                         _ => eprintln!("mix: unexpected EOF while input is incomplete"),
                     }
                 }
+                break;
+            }
+            Err(ReadlineError::Io(e))
+                if matches!(
+                    e.raw_os_error(),
+                    Some(libc::EIO | libc::ENXIO | libc::ENOTTY)
+                ) =>
+            {
+                exit_code = 128 + libc::SIGHUP;
+                break;
+            }
+            // Rustyline's termios operations use nix errors, not io::Error.
+            #[cfg(unix)]
+            Err(ReadlineError::Errno(e))
+                if matches!(e as i32, libc::EIO | libc::ENXIO | libc::ENOTTY) =>
+            {
+                exit_code = 128 + libc::SIGHUP;
                 break;
             }
             Err(e) => {
@@ -1203,6 +1225,10 @@ pub fn run_repl() -> i32 {
     // The editor is about to go away; an admission that reserved a prompt on a
     // shell that is leaving must find no surface rather than a dead control.
     crate::session_execute::withdraw();
+
+    // Terminal EOF/EIO must close job groups too, without depending on a
+    // delivered SIGHUP or waiting for history/statistics writes to finish.
+    job_table.shutdown();
 
     // Save usage stats before exit
     if let Some(stats) = eval.take_stats() {

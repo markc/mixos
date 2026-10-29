@@ -53,6 +53,7 @@ $bin = realpath($bin)
 
 $scripts = [
   "tests/component_install_test.mix",
+  "tests/release_orphans_test.mix",
   "tests/layering_gate_test.mix",
   "tests/command_registry_test.mix",
   "tests/command_registry_families_test.mix",
@@ -102,6 +103,7 @@ $env = {
 }
 $failed = []
 for each $s in $scripts
+  $env.MIXOS_RELEASE_ORPHAN_LIVE = if $s == "tests/release_orphans_test.mix" then "1" else "" end
   -- The releasesd installer deliberately refuses root. The CBC worker may
   -- run this gate as root, so exercise those user-install tests as nobody.
   $argv = if starts_with($s, "services/releasesd/tests/") and uid() == 0 then

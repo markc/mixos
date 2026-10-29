@@ -854,7 +854,8 @@ impl Owner {
         loop {
             let editing = self.editor.state() == State::Editing;
             let ready = input::wait(
-                editing.then(|| self.terminal.fd()),
+                self.terminal.fd(),
+                editing,
                 wake.as_raw_fd(),
                 signals.as_raw_fd(),
                 self.terminal.output_fd(),
