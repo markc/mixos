@@ -30,7 +30,7 @@ struct Shell {
 impl Drop for Shell {
     fn drop(&mut self) {
         self.session.kill();
-        let _ = self.child.wait();
+        self.session.reap();
     }
 }
 impl Shell {

@@ -440,9 +440,7 @@ impl Child {
 impl Drop for Child {
     fn drop(&mut self) {
         self.session.kill();
-        unsafe {
-            libc::waitpid(self.pid(), std::ptr::null_mut(), 0);
-        }
+        self.session.reap();
     }
 }
 

@@ -464,7 +464,7 @@ impl Drop for Pty {
     fn drop(&mut self) {
         // Includes nested shells and every job-control group in this session.
         self.session.kill();
-        let _ = self.shell.wait();
+        self.session.reap();
     }
 }
 

@@ -87,7 +87,7 @@ impl OwnedChild {
 impl Drop for OwnedChild {
     fn drop(&mut self) {
         self.1.kill();
-        let _ = self.0.wait();
+        self.1.reap();
     }
 }
 

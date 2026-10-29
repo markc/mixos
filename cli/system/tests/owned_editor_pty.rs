@@ -774,7 +774,7 @@ impl Pty {
 impl Drop for Pty {
     fn drop(&mut self) {
         self.session.kill();
-        let _ = self.child.wait();
+        self.session.reap();
     }
 }
 

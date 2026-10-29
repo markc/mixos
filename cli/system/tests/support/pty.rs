@@ -8,6 +8,8 @@ use std::process::{Child, Command, ExitStatus};
 pub struct Session {
     pid: u32,
     start: Option<String>,
+    #[cfg(target_os = "linux")]
+    pidfd: std::os::fd::OwnedFd,
 }
 
 impl Session {
@@ -16,14 +18,56 @@ impl Session {
         let start = Some(identity(child.id()).expect("spawned session leader stat").1);
         #[cfg(not(target_os = "linux"))]
         let start = None;
+        #[cfg(target_os = "linux")]
+        let pidfd = {
+            use std::os::fd::FromRawFd;
+            let fd = unsafe { libc::syscall(libc::SYS_pidfd_open, child.id(), 0) };
+            assert!(fd >= 0, "owned child pidfd: {}", std::io::Error::last_os_error());
+            unsafe { std::os::fd::OwnedFd::from_raw_fd(fd as i32) }
+        };
         Self {
             pid: child.id(),
             start,
+            #[cfg(target_os = "linux")]
+            pidfd,
         }
     }
 
     pub fn kill(&self) {
         kill_session(self.pid, self.start.as_deref());
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::fd::AsRawFd;
+            // Always terminate the exact owned child, including non-session
+            // leaders or a child whose /proc entry became unreadable.
+            unsafe {
+                libc::syscall(
+                    libc::SYS_pidfd_send_signal,
+                    self.pidfd.as_raw_fd(),
+                    libc::SIGKILL,
+                    std::ptr::null::<libc::siginfo_t>(),
+                    0,
+                );
+            }
+        }
+    }
+
+    /// Reap this exact child even when a ptrace thread already consumed its
+    /// numeric PID. P_PIDFD returns ECHILD instead of waiting on a replacement.
+    pub fn reap(&self) {
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::fd::AsRawFd;
+            let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
+            loop {
+                let rc = unsafe {
+                    libc::waitid(libc::P_PIDFD, self.pidfd.as_raw_fd() as u32, &mut info, libc::WEXITED)
+                };
+                if rc == 0 || std::io::Error::last_os_error().kind() != std::io::ErrorKind::Interrupted {
+                    break;
+                }
+            }
+        }
     }
 }
 
@@ -165,6 +209,7 @@ fn stale_session_identity_does_not_signal_a_new_leader() {
     let stale = Session {
         pid: child.id(),
         start: Some("stale leader start".into()),
+        pidfd: session.pidfd.try_clone().unwrap(),
     };
     stale.kill();
     let untouched = try_wait(&mut child).unwrap().is_none();
