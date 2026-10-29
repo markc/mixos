@@ -697,6 +697,7 @@ fn substituted_parent_scope_is_rejected_without_failing_shell() {
         drop(launch);
         drop(key);
         let mut output = child.until("RC_MARKER=[]\r\n");
+        eprintln!("SCOPE_STARTUP_INITIAL_BYTES={output:?}");
         if !output.contains("mix native-session FAILED at scope:") {
             output.push_str(&child.until("mix native-session FAILED at scope:"));
         }
