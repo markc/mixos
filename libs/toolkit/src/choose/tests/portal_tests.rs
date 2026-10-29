@@ -207,8 +207,13 @@ async fn portal_hung_method_acknowledgement_is_bounded_and_final() {
     .await
     .unwrap()
     .unwrap();
-    assert!(matches!(result, Some(Outcome::Failed(message)) if message.contains("acknowledgement")));
-    assert!(calls.try_recv().is_ok(), "the portal actually opened its Request");
+    assert!(
+        matches!(result, Some(Outcome::Failed(message)) if message.contains("acknowledgement"))
+    );
+    assert!(
+        calls.try_recv().is_ok(),
+        "the portal actually opened its Request"
+    );
     assert_eq!(closed.load(Ordering::SeqCst), 1);
 }
 
