@@ -28,7 +28,9 @@ impl BusHandler for ClipboardBus {
             match command {
                 "clipboard.get" => {
                     let binary = body["mime"] == "application/octet-stream";
-                    if !binary {
+                    let blob = body["mime"] == "application/x-test-blob";
+                    let partial = body["mime"] == "application/x-test-partial";
+                    if !binary && !blob && !partial {
                         if body.get("selection").is_some() {
                             assert_eq!(
                                 body,
@@ -45,7 +47,11 @@ impl BusHandler for ClipboardBus {
                                 "encoding".into(),
                                 Value::String(if binary { "base64" } else { "utf8" }.into()),
                             ),
-                            ("eof".into(), Value::Bool(true)),
+                            ("eof".into(), Value::Bool(!partial)),
+                            (
+                                "blob".into(),
+                                if blob { Value::String("reference".into()) } else { Value::Nil },
+                            ),
                             (
                                 "data".into(),
                                 Value::String(
@@ -140,4 +146,36 @@ async fn clipboard_set_without_text_returns_an_error_in_compatible_mode() {
     eval.set_bus_handler(Rc::new(ClipboardBus { fail: false }));
     let error = eval.execute(&program).await.unwrap_err().to_string();
     assert!(error.contains("clip_set"), "{error}");
+}
+
+#[tokio::test]
+async fn clipboard_get_refuses_blob_or_incomplete_replies() {
+    for (mime, expected) in [
+        ("application/x-test-blob", "blobd"),
+        ("application/x-test-partial", "chunked"),
+    ] {
+        let source = format!("clip_get(\"{mime}\")\n");
+        let tokens = mix::lexer::Lexer::new(&source).tokenize().unwrap();
+        let program = mix::parser::Parser::new(tokens, &source)
+            .parse_program()
+            .unwrap();
+        let mut eval = Evaluator::with_output(Box::new(SharedBuf::new()), Box::new(SharedBuf::new()));
+        eval.set_bus_handler(Rc::new(ClipboardBus { fail: false }));
+        let error = eval.execute(&program).await.unwrap_err().to_string();
+        assert!(error.contains(expected), "{error}");
+    }
+}
+
+#[tokio::test]
+async fn clipboard_get_rejects_surplus_arguments_in_strict_mode() {
+    let source = "clip_get(\"primary\", \"text/plain\", \"surplus\")\n";
+    let tokens = mix::lexer::Lexer::new(source).tokenize().unwrap();
+    let program = mix::parser::Parser::new(tokens, source)
+        .parse_program()
+        .unwrap();
+    let mut eval = Evaluator::with_output(Box::new(SharedBuf::new()), Box::new(SharedBuf::new()));
+    eval.set_arity_mode(mix::ArityMode::Strict);
+    eval.set_bus_handler(Rc::new(ClipboardBus { fail: false }));
+    let error = eval.execute(&program).await.unwrap_err().to_string();
+    assert!(error.contains("ARITY_MISMATCH"), "{error}");
 }

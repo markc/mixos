@@ -115,7 +115,9 @@ compiled or linked into MixOS binaries.
 Two generation-owned `spawn(argv,{exit_event:true})` children run
 `wl-paste [--primary] --watch <prefix>/bin/mix watch.mix <selection>`. The callback
 does not read stdin: it sends a local Bus notification, then closes the pipe.
-The citizen lists types and reads bounded ordinary text. The KDE password hint
+The citizen lists types and samples ordinary text only up to the eager limit
+(plus one byte to detect a larger offer); larger text stays lazy until read.
+The KDE password hint
 is treated conservatively as sensitive whenever present. On-demand reads use
 `wl-paste --type MIME --no-newline`, with a five-second deadline and 64 MiB cap;
 a Mix pipeline helper preserves raw bytes without a temporary read file.

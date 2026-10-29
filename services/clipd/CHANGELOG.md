@@ -2,6 +2,9 @@
 
 ## 0.1.0 — 2026-10-28
 
+- Keep active store blobs pinned and release cancelled fetch pins on completion;
+  bound eager Wayland text probes, preserve byte sizes and rotation order,
+  refuse password-marker blobs and return an error for argumentless clip_set.
 - Run clipboard policy and private-broker service tests in the standard Mix gate
   using freshly built Mix and blobd binaries.
 

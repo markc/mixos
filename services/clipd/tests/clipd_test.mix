@@ -81,6 +81,8 @@ try
   check("primary alias reads separately", call("clipd", "clipboard.get", {primary: true}).v.data == "primary")
   check("primary stays local by default", call("peerclip", "clipboard.get", {selection: "primary"}).rc != 0)
   check("clipboard unaffected", call("clipd", "clipboard.get", {}).v.data == "hello\nλ")
+  check("non-UTF8 text set", call("clipd", "clipboard.set", {mime: "text/plain", data: "AP8=", encoding: "base64"}).rc == 0)
+  check("non-UTF8 text follows lazily without loss", eventually(fn() = call("peerclip", "clipboard.get", {}).v.encoding == "base64" and call("peerclip", "clipboard.get", {}).v.data == "AP8="))
   check("non-member push refused", call("clipd", "clipboard.push", {to: "outsider"}).v.error_code == "ALLOWLIST")
   check("receive cannot claim member identity", call("clipd", "clipboard.receive", {source: {node: "clipboard-test"}}).v.error_code == "ALLOWLIST")
   check("private watcher cannot be spoofed", call("clipd", "clipboard.observe", {selection: "clipboard", token: "spoof"}).v.error_code == "ALLOWLIST")
@@ -93,6 +95,12 @@ try
   check("stale index fence", call("clipd", "clipboard.pick", {index: 0, expected_id: "stale"}).v.error_code == "STALE_HISTORY")
   check("pick index", call("clipd", "clipboard.pick", {index: 1, expected_id: $history[1].id}).rc == 0)
   check("pick restores full data", call("clipd", "clipboard.get", {}).v.data == "row51")
+  $cycle = call("clipd", "clipboard.history", {}).v
+  for $i = 0 to 2
+    check("rotate keeps ordered history " .. $i, call("clipd", "desktop.clipboard.rotate", {}).rc == 0 and call("clipd", "clipboard.get", {}).v.data == $cycle[$i].data)
+  end
+  check("rotate preserves stable history ids", deep_eq($cycle, call("clipd", "clipboard.history", {}).v))
+  call("clipd", "clipboard.pick", {index: 0, expected_id: $cycle[0].id})
   check("picker gap explicit", call("clipd", "desktop.clipboard.menu", {}).v.error_code == "PICKER_UNAVAILABLE")
   $stamp = call("clipd", "clipboard.get", {}).v.stamp
   check("loop guard preserves selection", not call("clipd", "clipboard.set", {data: "echo", stamp: $stamp}).v.applied)
@@ -119,12 +127,15 @@ try
   $blob = call("blobd", "blob.put", {path: $tmp .. "/binary", mime: "image/png"})
   check("binary ingested by blobd", $blob.rc == 0 and $blob.v.size == 3)
   check("binary set by reference", call("clipd", "clipboard.set", {mime: "image/png", blob: $blob.v}).rc == 0)
+  check("store selection pins its active blob", contains(call("blobd", "blob.stat", {blob: $blob.v.blob}).v.pins, "clipd"))
   $got = call("clipd", "clipboard.get", {})
   check("binary get carries reference without bytes", $got.rc == 0 and $got.v.data == "" and $got.v.blob.blob == $blob.v.blob and not $got.v.eof)
   check("binary follow carries reference", eventually(fn() = call("peerclip", "clipboard.get", {}).v.blob.blob == $blob.v.blob))
   check("blob fetch owns transfer", call("blobd", "blob.fetch", {blob: $got.v.blob}).v.present)
   $path = call("blobd", "blob.path", {blob: $got.v.blob.blob}).v.path
   check("binary bytes round trip outside Bus", deep_eq(read_file_bytes($path), $bytes))
+  check("replace store binary", call("clipd", "clipboard.set", {data: "after-binary"}).rc == 0)
+  check("store replacement releases old clipd pin", eventually(fn() = not contains(call("blobd", "blob.stat", {blob: $blob.v.blob}).v.pins, "clipd")))
   check("malformed blob refused", call("clipd", "clipboard.set", {mime: "image/png", blob: {blob: "invalid"}}).v.error_code == "BLOB")
   send clipd QUIT timeout=5
   send peerclip QUIT timeout=5

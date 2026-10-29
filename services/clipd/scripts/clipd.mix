@@ -73,6 +73,20 @@ fn wl_read($which, $mime)
   return base64_decode(trim($r.stdout))
 end
 
+fn wl_eager($which, $mime, $cap)
+  if $cap == 0 then return nil end
+  $a = concat(wl_argv("wl-paste", $which), ["--type", $mime, "--no-newline"])
+  $r = run_pipeline([{argv: $a}, {argv: [$mix_bin, $here .. "/encode_stdin.mix", to_string($cap)], env: {MIX_STATS: "off"}}],
+    {timeout: 5, max_output: ($cap + 1) * 2 + 64})
+  if $r.stdout_truncated then raise("SOURCE_GONE", "selection probe exceeded its output bound") end
+  $bytes = base64_decode(trim($r.stdout))
+  -- Closing the sampled pipe can give wl-paste SIGPIPE; the larger value
+  -- remains lazy and is never accepted as a complete byte payload here.
+  if len($bytes) > $cap then return nil end
+  if not $r.ok then raise("SOURCE_GONE", "selection probe failed") end
+  return $bytes
+end
+
 fn blob_path($ref)
   $f = rpc("blobd", "blob.fetch", {blob: $ref, owner: serve_name()})
   if not ($f.present ?? false) then raise("BLOB_PENDING", "blob fetch is in progress; retry after blob.fetched") end
@@ -124,8 +138,16 @@ end
 
 fn commit_selection($which, $s, $follow, $apply)
   if $clip.is_echo($S, $which, $s.stamp) then return $S end
+  if $mode != "wayland" and $s.blob != nil then blob_path($s.blob) end
   if $apply then wl_apply($which, $s) end
+  $pending = $S.pending[$which]
   $S.pending[$which] = nil
+  if $pending != nil and $pending.offer.blob != nil then
+    -- Fetch completion can pin after this immediate release attempt. Retain
+    -- only cancelled fetches until their terminal event, not arbitrary pins.
+    $S.retired[$pending.offer.blob.blob] = $pending.offer.blob
+    task_start("clipboard.unpin", json_encode({blob: $pending.offer.blob}))
+  end
   $old = $S.selections[$which]
   $out = $clip.adopt($S, $which, $s, $C)
   if $old != nil and $old.blob != nil then
@@ -152,7 +174,11 @@ fn export_offer($which, $to)
   if $clip.image($s.mime_types) and not ($p.images ?? ($p.follow ?? false)) then raise("IMAGES_DISABLED", "images disabled for destination") end
   $data = nil
   if not $s.sensitive and $s.data != nil and $clip.text_mime($s.mime_types) != nil and len($s.data) <= $C.eager_text_bytes then
-    $data = bytes_to_string($s.data)
+    try
+      $data = bytes_to_string($s.data)
+    catch $m
+      -- Keep non-UTF8 text lazy; clipboard.fetch preserves it as base64.
+    end
   end
   return {selection: $which, stamp: $s.stamp, mime_types: $s.mime_types, mime: $s.mime,
     size: $s.size, sensitive: $s.sensitive, deadline: $s.deadline, data: $data,
@@ -307,7 +333,10 @@ on "desktop.clipboard.rotate"
     permitted()
     $n = $S.rotate
     $s = picked({index: $n})
+    $history = $S.history
     $S = commit_selection("clipboard", $s, true, true)
+    -- Rotation must not move its current item to the front of its own cycle.
+    $S.history = $history
     $S.rotate = ($n + 1) % len($S.history)
     changed("clipboard", true)
     reply(0, json_encode({applied: true}))
@@ -389,12 +418,21 @@ on blob.fetched
       if $before != nil and $S.pending[$which] == nil then changed($which, $before.follow) end
     end
   end
+  if ($event.headers ?? {}).broker_origin == "local" and $S.retired[body().blob] != nil then
+    task_start("clipboard.unpin", json_encode({blob: $S.retired[body().blob]}))
+    $S.retired = delete($S.retired, body().blob)
+  end
 end
 on blob.pinned
   for $which in ["clipboard", "primary"]
     $before = $S.pending[$which]
     $S = resume_blob($which)
     if $before != nil and $S.pending[$which] == nil then changed($which, $before.follow) end
+  end
+  if ($event.headers ?? {}).broker_origin == "local" and $S.retired[body().blob] != nil then
+    -- A fetch can finish after the offer was cleared. Release its late pin
+    -- unless either live selection or pending offer still uses the blob.
+    task_start("clipboard.unpin", json_encode({blob: $S.retired[body().blob]}))
   end
 end
 subscribe("blob.fetched")
@@ -423,6 +461,7 @@ on clipboard.cache
   if $s != nil and not $s.sensitive and deep_eq($s.stamp, body().stamp) then
     if $S.selections[$which].blobs == nil then $S.selections[$which].blobs = {} end
     $S.selections[$which].blobs[body().mime] = body().blob
+    if body().mime == $s.mime and $s.size == nil then $S.selections[$which].size = body().blob.size end
   else
     task_start("clipboard.unpin", json_encode({blob: body().blob}))
   end
@@ -435,6 +474,8 @@ on clipboard.unpin
   local_task()
   $used = false
   for $which in ["clipboard", "primary"]
+    $pending = $S.pending[$which]
+    if $pending != nil and $pending.offer.blob != nil and $pending.offer.blob.blob == body().blob.blob then $used = true end
     $s = $S.selections[$which]
     if $s != nil and $s.blob != nil and $s.blob.blob == body().blob.blob then $used = true end
     if $s != nil then
@@ -499,10 +540,14 @@ on clipboard.observe desc "private local watcher notification; no clipboard cont
     if $s.sensitive then
       $s.deadline = time() + $C.password_timeout
     elif $clip.text_mime($types) != nil then
-      $bytes = wl_read($which, $s.mime)
+      $cap = $C.eager_text_bytes
+      if $old != nil and $old.data != nil then $cap = max($cap, len($old.data)) end
+      $bytes = wl_eager($which, $s.mime, $cap)
       if not deep_eq(wl_types($which), $types) then raise("STALE_OFFER", "selection types changed while reading") end
-      $s.size = len($bytes)
-      if len($bytes) <= $C.eager_text_bytes then $s.data = $bytes end
+      if $bytes != nil then
+        $s.size = len($bytes)
+        if len($bytes) <= $C.eager_text_bytes then $s.data = $bytes end
+      end
     end
     -- wl-copy cannot add an arbitrary origin MIME marker. Compare bytes only
     -- for our current eager ownership; never read a password for this guard.

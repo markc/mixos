@@ -58,7 +58,11 @@ impl Evaluator {
                 }
                 "clipboard.get"
             } else {
-                params.insert("data".into(), eval_args[0].clone());
+                let data = eval_args
+                    .first()
+                    .cloned()
+                    .ok_or_else(|| self.runtime_err("clip_set: text argument required"))?;
+                params.insert("data".into(), data);
                 let mut mime_index = 1;
                 if let Some(first) = eval_args.get(1) {
                     if matches!(first.to_mix_string().as_str(), "clipboard" | "primary") {

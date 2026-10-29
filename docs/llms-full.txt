@@ -2292,7 +2292,9 @@ compiled or linked into MixOS binaries.
 Two generation-owned `spawn(argv,{exit_event:true})` children run
 `wl-paste [--primary] --watch <prefix>/bin/mix watch.mix <selection>`. The callback
 does not read stdin: it sends a local Bus notification, then closes the pipe.
-The citizen lists types and reads bounded ordinary text. The KDE password hint
+The citizen lists types and samples ordinary text only up to the eager limit
+(plus one byte to detect a larger offer); larger text stays lazy until read.
+The KDE password hint
 is treated conservatively as sensitive whenever present. On-demand reads use
 `wl-paste --type MIME --no-newline`, with a five-second deadline and 64 MiB cap;
 a Mix pipeline helper preserves raw bytes without a temporary read file.
@@ -39048,6 +39050,9 @@ written in Mix on `tcp_listen`.
 
 ## 0.1.0 — 2026-10-28
 
+- Keep active store blobs pinned and release cancelled fetch pins on completion;
+  bound eager Wayland text probes, preserve byte sizes and rotation order,
+  refuse password-marker blobs and return an error for argumentless clip_set.
 - Run clipboard policy and private-broker service tests in the standard Mix gate
   using freshly built Mix and blobd binaries.
 
