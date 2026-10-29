@@ -1199,7 +1199,7 @@ pub fn run_repl() -> i32 {
                 break;
             }
             Err(ReadlineError::Io(e))
-                if matches!(
+                if terminal_input && matches!(
                     e.raw_os_error(),
                     Some(libc::EIO | libc::ENXIO | libc::ENOTTY)
                 ) =>
@@ -1210,7 +1210,7 @@ pub fn run_repl() -> i32 {
             // Rustyline's termios operations use nix errors, not io::Error.
             #[cfg(unix)]
             Err(ReadlineError::Errno(e))
-                if matches!(e as i32, libc::EIO | libc::ENXIO | libc::ENOTTY) =>
+                if terminal_input && matches!(e as i32, libc::EIO | libc::ENXIO | libc::ENOTTY) =>
             {
                 exit_code = 128 + libc::SIGHUP;
                 break;

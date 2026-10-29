@@ -482,8 +482,8 @@ fn external_stop_is_cooked_and_bg_waits_for_foreground_before_resuming_draft() {
     assert!(p.prompt().contains("\r\n731\r\n"));
     p.send(b"\x04");
     p.until("SUPERVISOR-PASS");
-    wait(|| p.child.try_wait().unwrap().is_some());
-    assert!(p.child.wait().unwrap().success());
+    wait(|| pty::try_wait(&mut p.child).unwrap().is_some());
+    assert!(pty::wait(&mut p.child).unwrap().success());
 }
 
 #[test]
@@ -491,8 +491,8 @@ fn published_prompt_waits_for_deferred_editing_ack_and_ignores_errors() {
     let _fixture = fixture_guard();
     let mut p = Pty::new(Some("activation"), true);
     p.until("ACTIVATION-PASS");
-    wait(|| p.child.try_wait().unwrap().is_some());
-    assert!(p.child.wait().unwrap().success());
+    wait(|| pty::try_wait(&mut p.child).unwrap().is_some());
+    assert!(pty::wait(&mut p.child).unwrap().success());
 }
 
 #[test]
@@ -506,8 +506,8 @@ fn undrained_master_does_not_block_suspend_or_shutdown() {
     same_modes(p.original, modes(p.slave.as_raw_fd()));
     // Only after acknowledgement may the parent drain libtest's own output.
     p.until("test result:");
-    wait(|| p.child.try_wait().unwrap().is_some());
-    assert!(p.child.wait().unwrap().success());
+    wait(|| pty::try_wait(&mut p.child).unwrap().is_some());
+    assert!(pty::wait(&mut p.child).unwrap().success());
 }
 
 #[test]
@@ -528,8 +528,8 @@ fn bounded_drain_completes_partial_escape_output_and_finish_before_cleanup() {
         output.contains("\r\n\n\r\n\x1b[?2004l") || output.contains("\r\r\n\r\n\r\r\n\x1b[?2004l")
     );
     same_modes(p.original, modes(p.slave.as_raw_fd()));
-    wait(|| p.child.try_wait().unwrap().is_some());
-    assert!(p.child.wait().unwrap().success());
+    wait(|| pty::try_wait(&mut p.child).unwrap().is_some());
+    assert!(pty::wait(&mut p.child).unwrap().success());
 }
 
 #[test]
@@ -540,8 +540,8 @@ fn input_failure_shutdown_waits_for_terminal_cleanup() {
     p.send(b"x");
     p.until("CLEANUP-PASS");
     same_modes(p.original, modes(p.slave.as_raw_fd()));
-    wait(|| p.child.try_wait().unwrap().is_some());
-    assert!(p.child.wait().unwrap().success());
+    wait(|| pty::try_wait(&mut p.child).unwrap().is_some());
+    assert!(pty::wait(&mut p.child).unwrap().success());
 }
 
 #[test]
@@ -764,21 +764,15 @@ impl Pty {
     }
     fn exit(&mut self) {
         self.send(b"\x04");
-        wait(|| self.child.try_wait().unwrap().is_some());
-        assert!(self.child.wait().unwrap().success());
+        wait(|| pty::try_wait(&mut self.child).unwrap().is_some());
+        assert!(pty::wait(&mut self.child).unwrap().success());
         same_modes(self.original, modes(self.slave.as_raw_fd()));
     }
 }
 impl Drop for Pty {
     fn drop(&mut self) {
         pty::kill_session(self.child.id());
-        if self.child.try_wait().ok().flatten().is_none() {
-            unsafe {
-                libc::kill(-(self.child.id() as i32), libc::SIGKILL);
-            }
-            let _ = self.child.kill();
-            let _ = self.child.wait();
-        }
+        let _ = self.child.wait();
     }
 }
 
@@ -828,8 +822,8 @@ fn control_pause_preserves_draft_and_split_decoder_without_child_leak() {
     p.send(&"👩".as_bytes()[2..]);
     p.send(b"\n");
     p.until("FIXTURE-PASS");
-    wait(|| p.child.try_wait().unwrap().is_some());
-    assert!(p.child.wait().unwrap().success());
+    wait(|| pty::try_wait(&mut p.child).unwrap().is_some());
+    assert!(pty::wait(&mut p.child).unwrap().success());
 }
 
 #[test]
@@ -843,14 +837,14 @@ fn control_pause_preserves_paste_and_admission_wakes_without_input() {
     p.prompt();
     p.send(b"XYZ\x1b[201~\n");
     p.until("FIXTURE-PASS");
-    wait(|| p.child.try_wait().unwrap().is_some());
-    assert!(p.child.wait().unwrap().success());
+    wait(|| pty::try_wait(&mut p.child).unwrap().is_some());
+    assert!(pty::wait(&mut p.child).unwrap().success());
     let mut p = Pty::new(Some("admission"), true);
     p.until("ADMISSION-RESUMED");
     p.send(b"accepted\n");
     p.until("FIXTURE-PASS");
-    wait(|| p.child.try_wait().unwrap().is_some());
-    assert!(p.child.wait().unwrap().success());
+    wait(|| pty::try_wait(&mut p.child).unwrap().is_some());
+    assert!(pty::wait(&mut p.child).unwrap().success());
 }
 
 #[test]
@@ -876,8 +870,8 @@ fn silent_resize_redraw_and_hup_restores_modes_and_protocols() {
         libc::kill(p.child.id() as i32, libc::SIGHUP);
     }
     p.until("\x1b[?2004l");
-    wait(|| p.child.try_wait().unwrap().is_some());
-    assert_eq!(p.child.wait().unwrap().code(), Some(129));
+    wait(|| pty::try_wait(&mut p.child).unwrap().is_some());
+    assert_eq!(pty::wait(&mut p.child).unwrap().code(), Some(129));
     same_modes(p.original, modes(p.slave.as_raw_fd()));
 }
 
@@ -965,8 +959,8 @@ fn search_state_survives_control_suspend_and_resume() {
     // First Enter selects the search result; the second submits it.
     p.send(b"\n\n");
     p.until("FIXTURE-PASS");
-    wait(|| p.child.try_wait().unwrap().is_some());
-    assert!(p.child.wait().unwrap().success());
+    wait(|| pty::try_wait(&mut p.child).unwrap().is_some());
+    assert!(pty::wait(&mut p.child).unwrap().success());
 }
 
 #[test]
@@ -980,8 +974,8 @@ fn completion_cycles_and_restricted_profile_cannot_read_ordinary_snapshots() {
     p.until("$cycle_b");
     p.send(b"\n");
     p.until("FIXTURE-PASS");
-    wait(|| p.child.try_wait().unwrap().is_some());
-    assert!(p.child.wait().unwrap().success());
+    wait(|| pty::try_wait(&mut p.child).unwrap().is_some());
+    assert!(pty::wait(&mut p.child).unwrap().success());
 
     let mut p = Pty::new(Some("restricted"), true);
     p.until("jobs> ");
@@ -991,8 +985,8 @@ fn completion_cycles_and_restricted_profile_cannot_read_ordinary_snapshots() {
     p.until("\x07");
     p.send(b"\x15jobs\n");
     p.until("FIXTURE-PASS");
-    wait(|| p.child.try_wait().unwrap().is_some());
-    assert!(p.child.wait().unwrap().success());
+    wait(|| pty::try_wait(&mut p.child).unwrap().is_some());
+    assert!(pty::wait(&mut p.child).unwrap().success());
 }
 
 #[test]

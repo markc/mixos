@@ -281,9 +281,11 @@ exits normally. PTY fixtures use kernel parent-death guards and clean up
 their whole session, including separate job-control groups.</li>
 <li>Terminal loss during incomplete multiline input exits with status 129
 instead of panicking while reporting a legacy-editor EIO to the dead terminal.</li>
-<li>The release gate detects and reaps newly orphaned executables from its own
-checkout after each stage, fails the leaking stage, and excludes other
-checkouts and existing orphans.</li>
+<li>The release gate detects newly surviving executables from its own checkout
+after each stage, including under subreapers, and fails the leaking stage.
+It never signals discovered processes and excludes other checkouts and
+existing processes. Test fixtures retain exited session leaders until their
+owned groups are cleaned through pidfds and the leader is finally reaped.</li>
 <li>A foreground job stopped (^Z) just after its exec is now stopped, not
 reported as "job stopped before exec acknowledgement" and aborted. The
 launch checked for the stop before reading the exec acknowledgement that

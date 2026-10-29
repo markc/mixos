@@ -414,7 +414,7 @@ impl Pty {
     }
     fn exit(&mut self) {
         self.send("\x04");
-        wait_for(|| self.shell.try_wait().unwrap().is_some());
+        wait_for(|| pty::try_wait(&mut self.shell).unwrap().is_some());
     }
     /// Collect output already waiting on the master without blocking. This
     /// process keeps the slave open, so the master never reaches EOF and a
@@ -462,7 +462,6 @@ impl Drop for Pty {
     fn drop(&mut self) {
         // Includes nested shells and every job-control group in this session.
         pty::kill_session(self.shell.id());
-        let _ = self.shell.kill();
         let _ = self.shell.wait();
     }
 }
@@ -637,7 +636,7 @@ fn close_reports_hup_ignoring_survivor_without_kill_escalation() {
     let start = Instant::now();
     p.send("\x04");
     p.until("survived HUP/CONT grace");
-    wait_for(|| p.shell.try_wait().unwrap().is_some());
+    wait_for(|| pty::try_wait(&mut p.shell).unwrap().is_some());
     assert!(
         start.elapsed() < LIMIT,
         "bounded close exceeded fixture deadline"
@@ -761,8 +760,8 @@ fn noninteractive_ssh_style_command_never_takes_terminal_or_group() {
     let mut p = Pty::new(&["-c", source], false, true);
     let original = unsafe { libc::tcgetpgrp(p.master.as_raw_fd()) };
     assert_eq!(original, p.shell.id() as i32);
-    wait_for(|| p.shell.try_wait().unwrap().is_some());
-    assert!(p.shell.wait().unwrap().success());
+    wait_for(|| pty::try_wait(&mut p.shell).unwrap().is_some());
+    assert!(pty::wait(&mut p.shell).unwrap().success());
     // Source guard complements process observations (which cannot detect an
     // otherwise invisible tcsetpgrp to the already-owning group).
     let source = include_str!("../../mix-shell/src/lib.rs");
@@ -826,8 +825,8 @@ fn captured_runners_keep_their_wait_owner_inside_an_interactive_session() {
 fn redirected_stdin_and_no_controlling_terminal_do_not_initialise_jobs() {
     let _fixture = fixture_guard();
     let mut p = Pty::new(&[], true, true);
-    wait_for(|| p.shell.try_wait().unwrap().is_some());
-    assert!(p.shell.wait().unwrap().success());
+    wait_for(|| pty::try_wait(&mut p.shell).unwrap().is_some());
+    assert!(pty::wait(&mut p.shell).unwrap().success());
     let mut no_tty = Pty::new(&[], false, false);
     no_tty.until(PROMPT);
     assert!(no_tty.command("bg").contains("unavailable"));
@@ -847,8 +846,8 @@ fn source_shares_background_controller_and_hup_reaps_owned_jobs() {
     unsafe {
         libc::kill(p.shell.id() as i32, libc::SIGHUP);
     }
-    wait_for(|| p.shell.try_wait().unwrap().is_some());
-    assert_eq!(p.shell.wait().unwrap().code(), Some(129));
+    wait_for(|| pty::try_wait(&mut p.shell).unwrap().is_some());
+    assert_eq!(pty::wait(&mut p.shell).unwrap().code(), Some(129));
     assert!(!alive(j[0]));
 }
 
@@ -869,8 +868,8 @@ fn hup_restores_retained_slave_after_foreground_raw_leak() {
         unsafe {
             libc::kill(p.shell.id() as i32, libc::SIGHUP);
         }
-        wait_for(|| p.shell.try_wait().unwrap().is_some());
-        assert_eq!(p.shell.wait().unwrap().code(), Some(129));
+        wait_for(|| pty::try_wait(&mut p.shell).unwrap().is_some());
+        assert_eq!(pty::wait(&mut p.shell).unwrap().code(), Some(129));
         let restored = tty_modes(p.slave.as_raw_fd());
         assert_eq!(restored.c_iflag, original.c_iflag);
         assert_eq!(restored.c_oflag, original.c_oflag);
@@ -900,8 +899,8 @@ fn cold_start_hup_keeps_repaired_modes_before_any_launch() {
     unsafe {
         libc::kill(p.shell.id() as i32, libc::SIGHUP);
     }
-    wait_for(|| p.shell.try_wait().unwrap().is_some());
-    assert_eq!(p.shell.wait().unwrap().code(), Some(129));
+    wait_for(|| pty::try_wait(&mut p.shell).unwrap().is_some());
+    assert_eq!(pty::wait(&mut p.shell).unwrap().code(), Some(129));
     let restored = tty_modes(p.slave.as_raw_fd());
     assert_eq!(
         restored.c_oflag & (libc::OPOST | libc::ONLCR),

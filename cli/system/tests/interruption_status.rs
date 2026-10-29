@@ -81,7 +81,6 @@ struct OwnedChild(Child);
 impl Drop for OwnedChild {
     fn drop(&mut self) {
         pty::kill_session(self.0.id());
-        let _ = self.0.kill();
         let _ = self.0.wait();
     }
 }
@@ -191,7 +190,7 @@ fn assert_sigint_after_cleanup(mode: &str, framed: bool, cleanup: Cleanup) {
     let ready_deadline = Instant::now() + Duration::from_secs(5);
     while !ready.is_file() {
         assert!(
-            child.0.try_wait().unwrap().is_none(),
+            pty::try_wait(&mut child.0).unwrap().is_none(),
             "{mode} exited before ready (framed={framed})"
         );
         assert!(
@@ -203,7 +202,7 @@ fn assert_sigint_after_cleanup(mode: &str, framed: bool, cleanup: Cleanup) {
     assert_eq!(unsafe { libc::kill(child.0.id() as i32, libc::SIGINT) }, 0);
     let deadline = Instant::now() + Duration::from_secs(5);
     let status = loop {
-        if let Some(status) = child.0.try_wait().unwrap() {
+        if let Some(status) = pty::try_wait(&mut child.0).unwrap() {
             break status;
         }
         assert!(
@@ -296,7 +295,7 @@ fn real_signals_exit_nonzero_for_waiting_and_cooperative_evaluations() {
                 let ready_deadline = Instant::now() + Duration::from_secs(5);
                 while !marker.is_file() {
                     assert!(
-                        child.0.try_wait().unwrap().is_none(),
+                        pty::try_wait(&mut child.0).unwrap().is_none(),
                         "{mode} exited before ready"
                     );
                     assert!(
@@ -305,11 +304,11 @@ fn real_signals_exit_nonzero_for_waiting_and_cooperative_evaluations() {
                     );
                     std::thread::sleep(Duration::from_millis(10));
                 }
-                assert!(child.0.try_wait().unwrap().is_none());
+                assert!(pty::try_wait(&mut child.0).unwrap().is_none());
                 assert_eq!(unsafe { libc::kill(child.0.id() as i32, signal) }, 0);
                 let deadline = Instant::now() + Duration::from_secs(20);
                 let status = loop {
-                    if let Some(status) = child.0.try_wait().unwrap() {
+                    if let Some(status) = pty::try_wait(&mut child.0).unwrap() {
                         break status;
                     }
                     assert!(Instant::now() < deadline, "{mode} ignored signal {signal}");
@@ -355,7 +354,7 @@ fn sigint_during_cpu_only_prelude_exits_with_130_for_command_and_file() {
             .contains("PRELUDE_READY")
         {
             assert!(
-                child.0.try_wait().unwrap().is_none(),
+                pty::try_wait(&mut child.0).unwrap().is_none(),
                 "{mode} exited before reaching the prelude loop"
             );
             assert!(
@@ -364,11 +363,11 @@ fn sigint_during_cpu_only_prelude_exits_with_130_for_command_and_file() {
             );
             std::thread::sleep(Duration::from_millis(10));
         }
-        assert!(child.0.try_wait().unwrap().is_none());
+        assert!(pty::try_wait(&mut child.0).unwrap().is_none());
         assert_eq!(unsafe { libc::kill(child.0.id() as i32, libc::SIGINT) }, 0);
         let deadline = Instant::now() + Duration::from_secs(5);
         let status = loop {
-            if let Some(status) = child.0.try_wait().unwrap() {
+            if let Some(status) = pty::try_wait(&mut child.0).unwrap() {
                 break status;
             }
             assert!(Instant::now() < deadline, "{mode} prelude ignored SIGINT");
@@ -457,7 +456,7 @@ fn assert_framed_startup_sigint(startup: &str) {
     let ready_deadline = Instant::now() + Duration::from_secs(5);
     while !ready.is_file() {
         assert!(
-            child.0.try_wait().unwrap().is_none(),
+            pty::try_wait(&mut child.0).unwrap().is_none(),
             "{startup} exited before reaching the startup loop"
         );
         assert!(Instant::now() < ready_deadline, "{startup} never ready");
@@ -466,7 +465,7 @@ fn assert_framed_startup_sigint(startup: &str) {
     assert_eq!(unsafe { libc::kill(child.0.id() as i32, libc::SIGINT) }, 0);
     let deadline = Instant::now() + Duration::from_secs(5);
     let status = loop {
-        if let Some(status) = child.0.try_wait().unwrap() {
+        if let Some(status) = pty::try_wait(&mut child.0).unwrap() {
             break status;
         }
         assert!(Instant::now() < deadline, "{startup} ignored SIGINT");

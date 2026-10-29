@@ -29,7 +29,6 @@ struct Shell {
 impl Drop for Shell {
     fn drop(&mut self) {
         pty::kill_session(self.child.id());
-        let _ = self.child.kill();
         let _ = self.child.wait();
     }
 }
@@ -102,7 +101,7 @@ impl Shell {
     fn wait(&mut self) -> std::process::ExitStatus {
         let deadline = Instant::now() + Duration::from_secs(5);
         loop {
-            if let Some(status) = self.child.try_wait().unwrap() {
+            if let Some(status) = pty::try_wait(&mut self.child).unwrap() {
                 return status;
             }
             assert!(
@@ -140,13 +139,17 @@ impl Shell {
         }
     }
     fn job(&mut self, background: bool) -> i32 {
+        self.job_with_hup(background, false)
+    }
+    fn job_with_hup(&mut self, background: bool, ignore_hup: bool) -> i32 {
         let report = self._home.path().join("job-pid");
         self.master
             .as_mut()
             .unwrap()
             .write_all(
                 format!(
-                    "TERMINAL_JOB_REPORT={} {} --exact fixture_job --nocapture{}\n",
+                    "TERMINAL_JOB_IGNORE_HUP={} TERMINAL_JOB_REPORT={} {} --exact fixture_job --nocapture{}\n",
+                    if ignore_hup { "1" } else { "0" },
                     report.display(),
                     std::env::current_exe().unwrap().display(),
                     if background { " &" } else { "" }
@@ -232,6 +235,9 @@ fn fixture_job() {
     let Some(report) = std::env::var_os("TERMINAL_JOB_REPORT") else {
         return;
     };
+    if std::env::var("TERMINAL_JOB_IGNORE_HUP").as_deref() == Ok("1") {
+        unsafe { libc::signal(libc::SIGHUP, libc::SIG_IGN) };
+    }
     fs::write(report, std::process::id().to_string()).unwrap();
     loop {
         std::thread::park();
@@ -246,10 +252,7 @@ fn terminal_hangup_also_hangs_up_background_job_groups() {
     let child = shell.job(true);
     drop(shell.master.take());
     assert_eq!(shell.wait().code(), Some(129));
-    assert!(
-        !std::path::Path::new(&format!("/proc/{child}")).exists(),
-        "background job {child} outlived the shell"
-    );
+    wait_not_running(child);
 }
 
 #[test]
@@ -260,7 +263,27 @@ fn terminal_hangup_while_waiting_for_a_foreground_job_exits_129() {
     let child = shell.job(false);
     drop(shell.master.take());
     assert_eq!(shell.wait().code(), Some(129));
-    assert!(!std::path::Path::new(&format!("/proc/{child}/exe")).exists());
+    wait_not_running(child);
+}
+
+fn wait_not_running(child: i32) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while std::path::Path::new(&format!("/proc/{child}/exe")).exists() {
+        assert!(Instant::now() < deadline, "job {child} outlived the shell");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[test]
+fn terminal_loss_exits_with_hup_immune_foreground_job() {
+    let _fixture = fixture_guard();
+    for editor in ["owned", "rustyline"] {
+        let mut shell = Shell::new(true, true, editor);
+        shell.prompt();
+        shell.job_with_hup(false, true);
+        drop(shell.master.take());
+        assert_eq!(shell.wait().code(), Some(129), "{editor}");
+    }
 }
 
 #[test]
@@ -283,33 +306,61 @@ fn fixture_drop_kills_grandchildren_in_other_job_groups() {
 }
 
 #[test]
+fn observed_exit_reserves_leader_for_session_cleanup() {
+    let _fixture = fixture_guard();
+    let mut shell = Shell::new(true, true, "owned");
+    shell.prompt();
+    let child = shell.job_with_hup(true, true);
+    shell.child.kill().unwrap();
+    assert!(!shell.wait().success());
+    // waitid(WNOWAIT) observed the exit but has not released the leader PID.
+    let stat = fs::read_to_string(format!("/proc/{}/stat", shell.child.id())).unwrap();
+    assert!(stat.rsplit_once(") ").unwrap().1.starts_with('Z'));
+    assert!(std::path::Path::new(&format!("/proc/{child}/exe")).exists());
+    drop(shell);
+    wait_not_running(child);
+}
+
+#[test]
 fn fixture_parent() {
     let _fixture = fixture_guard();
     let Some(report) = std::env::var_os("TERMINAL_PARENT_REPORT") else {
         return;
     };
-    let shell = Shell::new(true, false, "owned");
-    // A stopped shell cannot notice terminal EOF or run a signal handler.
-    // Its death therefore proves the kernel parent-death guard fired.
+    // No terminal and no editor: HUP/CONT on an orphaned stopped group cannot
+    // explain this child's death. Only the kernel parent-death guard can.
+    let mut command = Command::new("sleep");
+    pty::guard(&mut command);
+    command.arg("300").stdin(std::process::Stdio::null());
+    unsafe {
+        command.pre_exec(|| {
+            libc::signal(libc::SIGHUP, libc::SIG_IGN);
+            if libc::setsid() < 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    let child = command.spawn().unwrap();
     assert_eq!(
-        unsafe { libc::kill(shell.child.id() as i32, libc::SIGSTOP) },
+        unsafe { libc::kill(child.id() as i32, libc::SIGSTOP) },
         0
     );
     let mut status = 0;
     assert_eq!(
-        unsafe { libc::waitpid(shell.child.id() as i32, &mut status, libc::WUNTRACED) },
-        shell.child.id() as i32
+        unsafe { libc::waitpid(child.id() as i32, &mut status, libc::WUNTRACED) },
+        child.id() as i32
     );
     assert!(libc::WIFSTOPPED(status));
-    fs::write(report, shell.child.id().to_string()).unwrap();
-    // The outer test kills this process; normal return would run Shell::drop.
+    fs::write(report, child.id().to_string()).unwrap();
+    // The outer test kills this process; the child's guard must do the cleanup.
     loop {
         std::thread::sleep(Duration::from_secs(60));
     }
 }
 
 #[test]
-fn killed_test_runner_cannot_orphan_a_stopped_shell() {
+fn killed_test_runner_cannot_orphan_a_stopped_child() {
     let _fixture = fixture_guard();
     let home = tempfile::tempdir().unwrap();
     let report = home.path().join("child-pid");
@@ -342,7 +393,7 @@ fn killed_test_runner_cannot_orphan_a_stopped_shell() {
         std::thread::sleep(Duration::from_millis(10));
     };
     runner.child.kill().unwrap();
-    runner.child.wait().unwrap();
+    pty::wait(&mut runner.child).unwrap();
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         let state = fs::read_to_string(format!("/proc/{child}/stat"));

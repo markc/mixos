@@ -6,10 +6,10 @@ fn identity($proc_root, $id, $target)
     $base = $proc_root .. "/" .. to_string($id)
     $text = read_file($base .. "/stat")
     $fields = split(slice($text, last_index_of($text, ")") + 2), " ")
-    if len($fields) < 20 or $fields[1] != "1" then return nil end
+    if len($fields) < 20 then return nil end
     $exe = realpath($base .. "/exe")
     if $exe == nil or not starts_with($exe, $target .. "/") then return nil end
-    return {pid: $id, start: $fields[19], exe: $exe}
+    return {pid: $id, parent: $fields[1], start: $fields[19], exe: $exe}
   catch $message
     -- Processes may exit while /proc is being read. Other users' exe links
     -- may be unreadable; they cannot be established as this checkout's own.
@@ -35,7 +35,7 @@ fn added($before, $after)
     fn($old) = $old.pid == $item.pid and $old.start == $item.start))
 end
 
-fn same_orphan($item, $target)
+fn same_process($item, $target)
   $now = identity("/proc", $item.pid, $target)
   return $now != nil and $now.start == $item.start and $now.exe == $item.exe
 end
@@ -45,16 +45,14 @@ fn finish($name, $target, $before)
   if $target == nil then return end
   $after = snapshot($target)
   $new = added($before, $after)
-  print("ORPHANS " .. $name .. " before=" .. len($before) .. " after=" .. len($after) .. " new=" .. len($new))
+  print("SURVIVORS " .. $name .. " before=" .. len($before) .. " after=" .. len($after) .. " new=" .. len($new))
   for $item in $new
-    if not same_orphan($item, $target) then continue end
+    if not same_process($item, $target) then continue end
     $report = run_argv(["ps", "-ww", "-o", "pid,etime,tty,args", "-p", to_string($item.pid)], {timeout: 10})
     print(trim($report.stdout))
-    -- ps is diagnostic only. Revalidate ownership and start time immediately
-    -- before signalling, including after a diagnostic delay.
-    if same_orphan($item, $target) then kill($item.pid, 9) end
+    -- Diagnostics only. A shared-worker gate never signals discovered PIDs.
   end
   if len($new) > 0 then
-    raise("RELEASE_GATE", $name .. " leaked " .. len($new) .. " orphan processes")
+    raise("RELEASE_GATE", $name .. " left " .. len($new) .. " new target processes")
   end
 end

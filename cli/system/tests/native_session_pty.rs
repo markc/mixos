@@ -243,7 +243,6 @@ struct Child {
     pty: File,
     process: std::process::Child,
     home: tempfile::TempDir,
-    reaped: bool,
 }
 impl Child {
     fn spawn(broker: &Broker, launch: &LaunchFd) -> Self {
@@ -390,7 +389,6 @@ impl Child {
             pty,
             process,
             home,
-            reaped: false,
         }
     }
     fn pid(&self) -> i32 {
@@ -428,15 +426,11 @@ impl Child {
         self.send("exit\n");
         let deadline = Instant::now() + Duration::from_secs(30);
         loop {
-            let mut status = 0;
-            let result = unsafe { libc::waitpid(self.pid(), &mut status, libc::WNOHANG) };
-            if result == self.pid() {
-                self.reaped = true;
-                assert!(libc::WIFEXITED(status));
-                assert_eq!(libc::WEXITSTATUS(status), 0);
+            if let Some(status) = pty::try_wait(&mut self.process).unwrap() {
+                assert_eq!(status.code(), Some(0));
                 return;
             }
-            assert!(result >= 0 && Instant::now() < deadline, "Mix did not exit");
+            assert!(Instant::now() < deadline, "Mix did not exit");
             std::thread::sleep(Duration::from_millis(10));
         }
     }
@@ -444,11 +438,8 @@ impl Child {
 impl Drop for Child {
     fn drop(&mut self) {
         pty::kill_session(self.process.id());
-        if !self.reaped {
-            unsafe {
-                libc::kill(self.pid(), libc::SIGKILL);
-                libc::waitpid(self.pid(), std::ptr::null_mut(), 0);
-            }
+        unsafe {
+            libc::waitpid(self.pid(), std::ptr::null_mut(), 0);
         }
     }
 }
