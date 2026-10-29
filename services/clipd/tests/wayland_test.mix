@@ -1,0 +1,150 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Private headless compositor; never connects to a live desktop.
+-- MIXOS_TEST_COMPD can name a CBC-built compd. Requires wl-clipboard.
+$pb = require("../../../tests/lib/private_bus.mix")
+$mix = env("MIXOS_TEST_MIX", mixos_path("prefix") .. "/bin/mix")
+$blobd = env("MIXOS_TEST_BLOBD", mixos_path("prefix") .. "/bin/blobd")
+$compd = env("MIXOS_TEST_COMPD", mixos_path("prefix") .. "/bin/compd")
+if not is_file($compd) or which("wl-copy") == nil or which("wl-paste") == nil then
+  raise("DEPENDENCY", "Wayland test needs compd, wl-copy and wl-paste")
+end
+$script = realpath(dirname($0) .. "/../scripts/clipd.mix")
+$tmp = "/var/tmp/clipd-wayland-" .. uuid()
+$bus = nil
+$pids = []
+fn check($label, $ok)
+  if not $ok then raise("TEST", $label) end
+  print("PASS " .. $label)
+end
+fn request($target, $command, $b)
+  $wire = json_encode($b)
+  send $target $command body=$wire timeout=10
+  $v = $result
+  if type($v) == "string" then
+    try
+      $v = json_parse($v)
+    catch $m
+    end
+  end
+  return {rc: $rc, v: $v}
+end
+fn call($command, $b)
+  return request("clipd", $command, $b)
+end
+fn eventually($f)
+  for $i = 1 to 80
+    try
+      if $f() then return true end
+    catch $m
+      -- Not-ready replies need not have the success fields yet.
+    end
+    sleep(0.1)
+  end
+  return false
+end
+mkdir($tmp, {parents: true})
+mkdir($tmp .. "/runtime")
+chmod($tmp .. "/runtime", 0o700)
+try
+  $bus = $pb.start({dir: $tmp .. "/bus", name: "clipboard-test"})
+  copy(realpath(dirname($0) .. "/../../../tests/desktop/smoke-settings.json"), $tmp .. "/compositor.conf.mix")
+  write_file($tmp .. "/clipboard.conf.mix", "{schema:1,password_timeout:1,eager_text_bytes:64}\n")
+  $env = merge($pb.client_env($bus), {XDG_RUNTIME_DIR: $tmp .. "/runtime", WAYLAND_DISPLAY: "clipboard-test",
+    MIX_STATS: "off", LIBGL_ALWAYS_SOFTWARE: "1", MIXOS_CLIPD_SESSION: "test",
+    MIXOS_CLIPD_CONFIG: $tmp .. "/clipboard.conf.mix", MIXOS_CLIPD_MODE: "wayland"})
+  push($pids, spawn([$compd, "--headless", "--socket", "clipboard-test", "--size", "640x480", "--config-file", $tmp .. "/compositor.conf.mix", "--bus-service", "cliptestcomp"],
+    {detach: true, env: $env, stdout: {file: $tmp .. "/compd.log"}, stderr: "stdout"}))
+  check("private compositor socket", eventually(fn() = exists($tmp .. "/runtime/clipboard-test")))
+  push($pids, spawn([$mix, "--serve", $script, "--name", "clipd"], {detach: true, env: $env,
+    stdout: {file: $tmp .. "/clipd.log"}, stderr: "stdout"}))
+  check("Wayland citizen ready", eventually(fn() = call("clipboard.info", {}).rc == 0))
+  run_argv_must(["wl-copy", "--type", "text/plain"], {stdin: "external\nλ", env: $env, timeout: 5, stderr: "null"})
+  check("watch detects external copy", eventually(fn() = call("clipboard.get", {}).v.data == "external\nλ"))
+  $set = call("clipboard.set", {data: "from-bus"})
+  check("Bus set owns Wayland clipboard", $set.rc == 0)
+  $paste = run_argv(["wl-paste", "--no-newline"], {env: $env, timeout: 5})
+  check("external tool reads Bus set", $paste.ok and $paste.stdout == "from-bus")
+  sleep(0.3)
+  check("own set echo retains origin generation", call("clipboard.get", {}).v.stamp.generation == $set.v.stamp.generation)
+  check("primary set via Bus", call("clipboard.set", {selection: "primary", data: "primary-bus"}).rc == 0)
+  $paste = run_argv(["wl-paste", "--primary", "--no-newline"], {env: $env, timeout: 5})
+  check("primary tool read", $paste.ok and $paste.stdout == "primary-bus")
+  run_argv_must(["wl-copy", "--primary", "--type", "text/plain"], {stdin: "external-primary", env: $env, timeout: 5, stderr: "null"})
+  check("primary watcher detects an external copy", eventually(fn() = call("clipboard.get", {selection: "primary"}).v.data == "external-primary"))
+  check("clear clipboard", call("clipboard.clear", {}).rc == 0)
+  $cleared = call("clipboard.info", {}).v.clipboard.generation
+  sleep(0.3)
+  check("own clear echo retains generation", call("clipboard.info", {}).v.clipboard.generation == $cleared)
+  write_file($tmp .. "/blobd.conf.mix", "root: " .. $tmp .. "/blobs\ncas_group: " .. trim(run_argv_must(["id", "-gn"])) .. "\n")
+  push($pids, spawn([$blobd, "--config", $tmp .. "/blobd.conf.mix"],
+    {detach: true, env: $env, stdout: {file: $tmp .. "/blobd.log"}, stderr: "stdout"}))
+  for $i = 1 to 80
+    send blobd blob.info timeout=1
+    if $rc == 0 then break end
+    sleep(0.1)
+  end
+  check("private blobd ready", $rc == 0)
+  $large = repeat("x", 4096)
+  run_argv_must(["wl-copy", "--type", "text/plain"], {stdin: $large, env: $env, timeout: 5, stderr: "null"})
+  check("large text offer stays lazy during observation", eventually(fn() = contains(call("clipboard.info", {}).v.clipboard.mime_types, "text/plain") and call("clipboard.info", {}).v.clipboard.size == nil))
+  $large_read = call("clipboard.get", {})
+  check("lazy text read preserves the complete bytes", $large_read.rc == 0 and $large_read.v.data == $large and $large_read.v.size == 4096)
+  run_argv_must(["wl-copy", "--type", "application/octet-stream"], {stdin: bytes_from([0, 255, 42]), env: $env, timeout: 5, stderr: "null"})
+  check("binary offer observed", eventually(fn() = contains(call("clipboard.info", {}).v.clipboard.mime_types, "application/octet-stream")))
+  $binary = call("clipboard.get", {})
+  check("binary read returns only blob reference", $binary.rc == 0 and $binary.v.data == "" and $binary.v.blob.size == 3)
+  check("materialised selection reports its byte size", eventually(fn() = call("clipboard.info", {}).v.clipboard.size == 3))
+  $set = call("clipboard.set", {mime: "application/octet-stream", blob: $binary.v.blob})
+  check("binary blob sets Wayland ownership", $set.rc == 0)
+  sleep(0.3)
+  check("binary own-set echo retains generation", call("clipboard.info", {}).v.clipboard.generation == $set.v.stamp.generation)
+  check("clear binary", call("clipboard.clear", {}).rc == 0)
+  sleep(0.2)
+  $wire = json_encode({blob: $binary.v.blob.blob})
+  send blobd blob.stat body=$wire timeout=5
+  $stat = if type($result) == "string" then json_parse($result) else $result end
+  check("replaced binary releases clipd pin", not contains($stat.pins, "clipd"))
+  write_file($tmp .. "/origin.conf.mix", "root: " .. $tmp .. "/origin-blobs\nname: origin\ncas_group: " .. trim(run_argv_must(["id", "-gn"])) .. "\n")
+  push($pids, spawn([$blobd, "--config", $tmp .. "/origin.conf.mix"],
+    {detach: true, env: $env, stdout: {file: $tmp .. "/origin.log"}, stderr: "stdout"}))
+  check("separate origin store ready", eventually(fn() = request("blobd-origin", "blob.info", {}).rc == 0))
+  $bytes = bytes_from([2, 255, 7, 0])
+  write_file($tmp .. "/incoming", $bytes)
+  $ref = request("blobd-origin", "blob.put", {path: $tmp .. "/incoming", mime: "application/octet-stream"}).v
+  check("unavailable blob waits without replacing clipboard", call("clipboard.set", {mime: $ref.mime, blob: $ref}).v.pending and call("clipboard.get", {}).v.error_code == "EMPTY")
+  check("both selections may await the same blob", call("clipboard.set", {selection: "primary", mime: $ref.mime, blob: $ref}).v.pending)
+  request("blobd", "blob.put", {path: $tmp .. "/incoming", mime: $ref.mime})
+  check("native blob arrival resumes clipboard", eventually(fn() = call("clipboard.get", {}).v.blob.blob == $ref.blob))
+  check("native blob arrival resumes primary independently", eventually(fn() = call("clipboard.get", {selection: "primary"}).v.blob.blob == $ref.blob))
+  $paste = run_pipeline([{argv: ["wl-paste", "--type", $ref.mime, "--no-newline"], env: $env},
+    {argv: [$mix, dirname($script) .. "/encode_stdin.mix"], env: $env}], {timeout: 5})
+  check("resumed ownership has the verified bytes", $paste.ok and trim($paste.stdout) == base64_encode($bytes))
+  write_file($tmp .. "/incoming", bytes_from([4, 5, 255]))
+  $later = request("blobd-origin", "blob.put", {path: $tmp .. "/incoming", mime: "application/octet-stream"}).v
+  check("next missing blob queues", call("clipboard.set", {mime: $later.mime, blob: $later}).v.pending)
+  call("clipboard.clear", {})
+  -- Model fetch completion through blobd's real owner-tagged pin event.
+  request("blobd", "blob.put", {path: $tmp .. "/incoming", mime: $later.mime, owner: "clipd"})
+  sleep(0.3)
+  check("clear fences a late blob arrival", call("clipboard.get", {}).v.error_code == "EMPTY" and not call("clipboard.info", {}).v.pending.clipboard)
+  $stat = request("blobd", "blob.stat", {blob: $later.blob}).v
+  check("fenced pending blob releases clipd pin", not contains($stat.pins, "clipd"))
+  run_argv_must(["wl-copy", "--sensitive", "--type", "text/plain"], {stdin: "synthetic-password", env: $env, timeout: 5, stderr: "null"})
+  check("password marker observed", eventually(fn() = call("clipboard.info", {}).v.clipboard.sensitive))
+  check("password only read on request", call("clipboard.get", {}).v.data == "synthetic-password")
+  check("password absent from history", not contains(json_encode(call("clipboard.history", {}).v), "synthetic-password"))
+  sleep(1.2)
+  check("password cleared from Bus", call("clipboard.get", {}).v.error_code == "EMPTY")
+  $paste = run_argv(["wl-paste", "--no-newline"], {env: $env, timeout: 5})
+  check("password cleared from compositor", not $paste.ok)
+  check("unsafe password set refused", call("clipboard.set", {data: "synthetic", sensitive: true}).v.error_code == "LAZY_WAYLAND_UNAVAILABLE")
+  check("clear primary", call("clipboard.clear", {selection: "primary"}).rc == 0)
+  send clipd QUIT timeout=5
+finally
+  for $pid in reverse($pids)
+    if process_alive($pid) then kill($pid, 15) end
+  end
+  if $bus != nil then $pb.stop($bus) end
+end
+print("PASS private Wayland integration; logs: " .. $tmp)

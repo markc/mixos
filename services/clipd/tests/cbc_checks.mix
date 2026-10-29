@@ -1,0 +1,32 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Run only through the authorised CBC launcher. fmt prints its patch and
+-- restores this job's own edits while the worker lock is still held.
+if len(args()) != 1 or not contains(["fmt", "gate"], args()[0]) then
+  raise("USAGE", "CBC helper requires exactly one mode: fmt or gate")
+end
+if args()[0] == "fmt" then
+  try
+    run_argv_must(["cargo", "fmt", "-p", "mix", "-p", "mixos-mcp", "-p", "inputd"], {timeout: 120})
+    print(run_argv_must(["git", "diff", "--", "libs/mix", "cli/mixos-mcp", "services/inputd"]))
+  finally
+    run_argv_must(["git", "checkout", "-q", "--", "."])
+  end
+else
+  $failed = []
+  for $command in [
+    ["cargo", "fmt", "-p", "mix", "-p", "mixos-mcp", "-p", "inputd", "--", "--check"],
+    ["cargo", "clippy", "-p", "mix", "-p", "mixos-mcp", "--all-targets", "--", "-D", "warnings"],
+    ["cargo", "test", "-p", "mix", "-p", "mixos-mcp", "--no-fail-fast"],
+    ["cargo", "clippy", "-p", "inputd", "--all-targets", "--", "-D", "warnings"],
+    ["cargo", "test", "-p", "inputd"]
+  ]
+    print("CHECK " .. join($command, " "))
+    $r = run_argv($command, {timeout: 3600, stdout: "inherit", stderr: "inherit"})
+    if not $r.ok then push($failed, join($command, " ")) end
+  end
+  if len($failed) > 0 then
+    print("FAILED: " .. join($failed, "; "))
+    exit(1)
+  end
+end

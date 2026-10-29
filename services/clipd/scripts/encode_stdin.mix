@@ -1,0 +1,15 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Keep binary stdout out of run_argv's text decoder. No temporary file.
+$argv = args()
+$cap = 67108864
+if len($argv) > 0 then
+  if len($argv) != 1 or not re_match($argv[0], "^[0-9]+$") then raise("ARGUMENT", "invalid read cap") end
+  $cap = to_number($argv[0])
+  if $cap > 67108864 then raise("ARGUMENT", "read cap exceeds 64 MiB") end
+end
+$bytes = read_stdin_bytes($cap + 1)
+-- A prefix probe returns one extra byte to distinguish a complete eager
+-- value from a larger lazy offer. Full reads keep their hard size refusal.
+if len($argv) == 0 and len($bytes) > $cap then raise("SIZE_CAP", "clipboard exceeds 64 MiB") end
+print(base64_encode($bytes))

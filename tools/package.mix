@@ -163,7 +163,8 @@ for $pkg in $selected
   remove($top .. "/share/layout/templates.mx")
   $layout_manifest = load_data($source .. "/share/layout/templates.mx")
   $layout_files = []
-  $layout_owners = $PACKAGES[$pkg]
+  $script_services = ($release.scripts ?? {})[$pkg] ?? []
+  $layout_owners = concat($PACKAGES[$pkg], $script_services)
   if $pkg == "mixos-desktop" then
     -- Preserve main's shipped unit copies. These prefix copies are separate
     -- from the /etc units owned and recorded by component_install.
@@ -192,6 +193,10 @@ for $pkg in $selected
     copy($source .. "/" .. $d, $top .. "/share/doc/" .. $pkg .. "/" .. $d)
     chmod($top .. "/share/doc/" .. $pkg .. "/" .. $d, 0o644)
   end
+  for $svc in $script_services
+    add_tree($source .. "/services/" .. $svc .. "/scripts", $top .. "/lib/" .. $svc)
+    add_tree($source .. "/services/" .. $svc .. "/units", $top .. "/share/" .. $svc .. "/units")
+  end
   if $pkg == "mixos-desktop" then
     if not $fixture then
       $input = "/usr/lib/x86_64-linux-gnu/libinput.so.10.13.0"
@@ -215,9 +220,7 @@ for $pkg in $selected
     add_tree($source .. "/share/brand", $top .. "/share/brand")
     add_tree($source .. "/share/icons", $top .. "/share/icons")
     add_tree($source .. "/services/compd/scripts", $top .. "/share/compd/scripts")
-    add_tree($source .. "/services/notifyd/scripts", $top .. "/lib/notifyd")
-    add_tree($source .. "/services/releasesd/scripts", $top .. "/lib/releasesd")
-    for $svc in ["compd", "indexd", "notifyd", "settingsd", "hostd", "noded", "monitord", "editd", "portald", "releasesd"]
+    for $svc in ["compd", "indexd", "settingsd", "hostd", "noded", "monitord", "editd", "portald"]
       add_tree($source .. "/services/" .. $svc .. "/units", $top .. "/share/" .. $svc .. "/units")
     end
     mkdir($top .. "/share/indexd/examples", {parents: true})

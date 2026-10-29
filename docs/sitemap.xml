@@ -17,6 +17,7 @@
   <url><loc>https://mixos.dev/bus/</loc></url>
   <url><loc>https://mixos.dev/ced/</loc></url>
   <url><loc>https://mixos.dev/citizen/</loc></url>
+  <url><loc>https://mixos.dev/clipd/</loc></url>
   <url><loc>https://mixos.dev/compd/</loc></url>
   <url><loc>https://mixos.dev/config/</loc></url>
   <url><loc>https://mixos.dev/daemon/</loc></url>
@@ -174,6 +175,7 @@
   <url><loc>https://mixos.dev/bridged/changelog/</loc></url>
   <url><loc>https://mixos.dev/ced/changelog/</loc></url>
   <url><loc>https://mixos.dev/citizen/changelog/</loc></url>
+  <url><loc>https://mixos.dev/clipd/changelog/</loc></url>
   <url><loc>https://mixos.dev/compd/changelog/</loc></url>
   <url><loc>https://mixos.dev/dopus/changelog/</loc></url>
   <url><loc>https://mixos.dev/editd/changelog/</loc></url>

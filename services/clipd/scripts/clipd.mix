@@ -1,0 +1,601 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- clipd is a per-session Mix citizen; wl-clipboard stays outside mix.
+-- Configuration: MIXOS_CLIPD_CONFIG (strict data), MIXOS_CLIPD_MODE=store|wayland|auto,
+-- MIXOS_CLIPD_SESSION. Never persist clipboard content or log request bodies.
+$clip = require("lib/clipboard.mix")
+$config_path = env("MIXOS_CLIPD_CONFIG", mixos_path("etc") .. "/clipboard.conf.mix")
+$C = $clip.settings(if is_file($config_path) then load_data($config_path) else {} end)
+$node_config = env("MIXOS_NODE_CONFIG", mixos_path("etc") .. "/node.conf.mix")
+$node = if is_file($node_config) then load_data($node_config).node else nil end
+if type($node) != "string" or $node == "" then raise("NODE", "clipboard needs the native node identity") end
+$S = $clip.new_state($node, env("MIXOS_CLIPD_SESSION", "store"))
+$mode = env("MIXOS_CLIPD_MODE", "auto")
+if not contains(["auto", "store", "wayland"], $mode) then raise("MODE", "invalid clipboard mode") end
+if $mode == "auto" then $mode = if env("WAYLAND_DISPLAY", "") != "" then "wayland" else "store" end end
+if $mode == "wayland" and (which("wl-paste") == nil or which("wl-copy") == nil) then raise("DEPENDENCY", "Wayland clipd requires wl-paste and wl-copy") end
+$mix_bin = mixos_path("prefix") .. "/bin/mix"
+$here = dirname(realpath($0))
+$watch_token = uuid()
+$watchers = {}
+
+fn body()
+  if type($event.args) != "map" then raise("ARGUMENT", "JSON object required") end
+  return $event.args
+end
+
+fn permitted()
+  return $clip.authorised($event.headers ?? {}, $C)
+end
+
+fn peer()
+  return $clip.caller_peer($event.headers ?? {}, $C)
+end
+
+fn local_task()
+  if len($event.headers ?? {}) != 0 then raise("ALLOWLIST", "local continuation cannot be called over the Bus") end
+end
+
+fn rpc($target, $command, $b)
+  $wire = json_encode($b)
+  send $target $command body=$wire timeout=6
+  if $rc != 0 then raise("PEER_REFUSED", "clipboard downstream refused or unavailable") end
+  return if type($result) == "string" then json_parse($result) else $result end
+end
+
+fn fail($error)
+  -- Never echo a parser/process error: it may contain clipboard content.
+  reply(10, json_encode({error_code: $error.code ?? "CLIPBOARD", message: "clipboard request refused; see error_code"}))
+end
+
+fn wl_argv($program, $which)
+  $a = [$program]
+  if $which == "primary" then push($a, "--primary") end
+  if $C.seat != nil then $a = concat($a, ["--seat", $C.seat]) end
+  return $a
+end
+
+fn wl_types($which)
+  $a = concat(wl_argv("wl-paste", $which), ["--list-types"])
+  $r = run_argv($a, {timeout: 5, max_output: 65536})
+  if $r.exit_code == 1 and contains($r.stderr, "Nothing is copied") then return [] end
+  if not $r.ok or $r.stdout_truncated then raise("WAYLAND", "cannot list selection types") end
+  $types = filter(split($r.stdout, "\n"), fn($m) = $m != "")
+  if len($types) > 128 then raise("MIME", "too many MIME types") end
+  for $m in $types $clip.mime($m) end
+  return $types
+end
+
+fn wl_read($which, $mime)
+  $a = concat(wl_argv("wl-paste", $which), ["--type", $mime, "--no-newline"])
+  $r = run_pipeline([{argv: $a}, {argv: [$mix_bin, $here .. "/encode_stdin.mix"], env: {MIX_STATS: "off"}}], {timeout: 5, max_output: 90000000})
+  if not $r.ok or $r.stdout_truncated then raise("SOURCE_GONE", "selection read failed or exceeded deadline") end
+  return base64_decode(trim($r.stdout))
+end
+
+fn wl_eager($which, $mime, $cap)
+  if $cap == 0 then return nil end
+  $a = concat(wl_argv("wl-paste", $which), ["--type", $mime, "--no-newline"])
+  $r = run_pipeline([{argv: $a}, {argv: [$mix_bin, $here .. "/encode_stdin.mix", to_string($cap)], env: {MIX_STATS: "off"}}],
+    {timeout: 5, max_output: ($cap + 1) * 2 + 64})
+  if $r.stdout_truncated then raise("SOURCE_GONE", "selection probe exceeded its output bound") end
+  $bytes = base64_decode(trim($r.stdout))
+  -- Closing the sampled pipe can give wl-paste SIGPIPE; the larger value
+  -- remains lazy and is never accepted as a complete byte payload here.
+  if len($bytes) > $cap then return nil end
+  if not $r.ok then raise("SOURCE_GONE", "selection probe failed") end
+  return $bytes
+end
+
+fn blob_path($ref)
+  $f = rpc("blobd", "blob.fetch", {blob: $ref, owner: serve_name()})
+  if not ($f.present ?? false) then raise("BLOB_PENDING", "blob fetch is in progress; retry after blob.fetched") end
+  $p = rpc("blobd", "blob.path", {blob: $ref.blob ?? $ref})
+  return $p.path
+end
+
+fn put_blob($bytes, $mime)
+  -- Non-secret bytes only. The temporary input is private and always removed;
+  -- blobd owns storage and the binary transfer lane.
+  $dir = env("XDG_RUNTIME_DIR", "/tmp") .. "/clipd-" .. uuid()
+  mkdir($dir)
+  chmod($dir, 0o700)
+  $path = $dir .. "/payload"
+  try
+    write_file($path, $bytes)
+    chmod($path, 0o600)
+    return rpc("blobd", "blob.put", {path: $path, mime: $mime, owner: serve_name()})
+  finally
+    remove_dir($dir)
+  end
+end
+
+fn wl_apply($which, $s)
+  if $mode != "wayland" then return nil end
+  $a = wl_argv("wl-copy", $which)
+  if len($s.mime_types) == 0 then
+    run_argv_must(concat($a, ["--clear"]), {timeout: 5, stderr: "null"})
+    return nil
+  end
+  -- wl-copy consumes stdin before advertising ownership and has no fetch
+  -- callback. Refuse rather than materialising a lazy password at the target.
+  if $s.sensitive then raise("LAZY_WAYLAND_UNAVAILABLE", "wl-copy cannot serve a lazy password offer") end
+  if $s.remote != nil and $s.data == nil and $s.blob == nil then raise("LAZY_WAYLAND_UNAVAILABLE", "wl-copy cannot advertise an unmaterialised remote offer") end
+  $input = if $s.blob != nil then {file: blob_path($s.blob)} else $s.data end
+  run_argv_must(concat($a, ["--type", $s.mime]), {stdin: $input, timeout: 5, stderr: "null"})
+end
+
+fn changed($which, $follow)
+  publish("clipboard.changed", json_encode($clip.metadata($S, $which)))
+  $s = $S.selections[$which]
+  if $s != nil and $s.deadline != nil then
+    task_start("clipboard.expire", json_encode({selection: $which, stamp: $s.stamp, deadline: $s.deadline}))
+  end
+  if $follow and ($which == "clipboard" or $C.follow_primary) then
+    task_start("clipboard.follow", json_encode({selection: $which, stamp: $s.stamp}))
+  end
+end
+
+fn commit_selection($which, $s, $follow, $apply)
+  if $clip.is_echo($S, $which, $s.stamp) then return $S end
+  if $mode != "wayland" and $s.blob != nil then blob_path($s.blob) end
+  if $apply then wl_apply($which, $s) end
+  $pending = $S.pending[$which]
+  $S.pending[$which] = nil
+  if $pending != nil and $pending.offer.blob != nil then
+    -- Fetch completion can pin after this immediate release attempt. Retain
+    -- only cancelled fetches until their terminal event, not arbitrary pins.
+    $S.retired[$pending.offer.blob.blob] = $pending.offer.blob
+    task_start("clipboard.unpin", json_encode({blob: $pending.offer.blob}))
+  end
+  $old = $S.selections[$which]
+  $out = $clip.adopt($S, $which, $s, $C)
+  if $old != nil and $old.blob != nil then
+    task_start("clipboard.unpin", json_encode({blob: $old.blob}))
+  end
+  if $old != nil then
+    for $mime, $ref in ($old.blobs ?? {})
+      task_start("clipboard.unpin", json_encode({blob: $ref}))
+    end
+  end
+  return $out.state
+end
+
+fn empty_selection()
+  return {stamp: $clip.stamp($S), mime_types: [], mime: "text/plain;charset=utf-8", data: string_to_bytes(""),
+    size: 0, sensitive: false, remote: nil, external: false, blob: nil, deadline: nil}
+end
+
+fn export_offer($which, $to)
+  $p = $C.peers[$to]
+  if $p == nil then raise("ALLOWLIST", "destination is not a configured member") end
+  $s = $S.selections[$which]
+  if $s == nil then $s = empty_selection() end
+  if $clip.image($s.mime_types) and not ($p.images ?? ($p.follow ?? false)) then raise("IMAGES_DISABLED", "images disabled for destination") end
+  $data = nil
+  if not $s.sensitive and $s.data != nil and $clip.text_mime($s.mime_types) != nil and len($s.data) <= $C.eager_text_bytes then
+    try
+      $data = bytes_to_string($s.data)
+    catch $m
+      -- Keep non-UTF8 text lazy; clipboard.fetch preserves it as base64.
+    end
+  end
+  return {selection: $which, stamp: $s.stamp, mime_types: $s.mime_types, mime: $s.mime,
+    size: $s.size, sensitive: $s.sensitive, deadline: $s.deadline, data: $data,
+    blob: $s.blob, source: {node: $S.node, session: $S.session}}
+end
+
+fn push_to($which, $to)
+  $offer = export_offer($which, $to)
+  return rpc($C.peers[$to].target, "clipboard.receive", $offer)
+end
+
+fn get_selection($b)
+  $which = $clip.selection($b)
+  if $b.node != nil and $b.node != $S.node then
+    $p = $C.peers[$b.node]
+    if $p == nil then raise("ALLOWLIST", "source node is not configured") end
+    $b.node = nil
+    return rpc($p.target, "clipboard.get", $b)
+  end
+  $s = $S.selections[$which]
+  if $s == nil or len($s.mime_types) == 0 then raise("EMPTY", "selection is empty") end
+  if $s.deadline != nil and $s.deadline <= time() then raise("EXPIRED", "password offer expired") end
+  $m = $b.mime ?? $s.mime
+  if not contains($s.mime_types, $m) then raise("MIME", "type not offered") end
+  $ref = ($s.blobs ?? {})[$m] ?? (if $m == $s.mime then $s.blob else nil end)
+  if $s.remote != nil and $ref == nil and ($m != $s.mime or $s.data == nil) then
+    $source = $s.remote.node
+    if $C.peers[$source] == nil then raise("ALLOWLIST", "lazy source is no longer a member") end
+    $path = $b.visited ?? []
+    if len($path) >= 8 or contains($path, $S.node .. "/" .. $S.session) then raise("SOURCE_CYCLE", "lazy fetch cycle") end
+    push($path, $S.node .. "/" .. $S.session)
+    $out = rpc($C.peers[$source].target, "clipboard.fetch", {selection: $which, mime: $m, offset: $b.offset ?? 0, stamp: $s.stamp, visited: $path})
+    $live = $S.selections[$which]
+    if $live == nil or not deep_eq($live.stamp, $s.stamp) then raise("SOURCE_GONE", "selection changed during lazy read") end
+    return $out
+  end
+  if $ref != nil then
+    return {mime: $m, data: "", encoding: "base64", eof: false, blob: $ref, size: $ref.size, offset: 0, next_offset: 0, sensitive: false, stamp: $s.stamp}
+  end
+  $bytes = $s.data
+  if $s.external then $bytes = wl_read($which, $m) end
+  if $bytes == nil then raise("SOURCE_GONE", "selection owner unavailable") end
+  if not $s.sensitive and (len($bytes) > $clip.TEXT_CAP or $clip.text_mime([$m]) == nil) then
+    $ref = put_blob($bytes, $m)
+    task_start("clipboard.cache", json_encode({selection: $which, stamp: $s.stamp, mime: $m, blob: $ref}))
+    return {mime: $m, data: "", encoding: "base64", eof: false, blob: $ref, size: len($bytes), offset: 0, next_offset: 0, sensitive: false, stamp: $s.stamp}
+  end
+  return $clip.chunk($s, $bytes, merge($b, {mime: $m}))
+end
+
+on clipboard.get async desc "read clipboard or primary; binary/large data uses a blob reference"
+  try
+    permitted()
+    reply(0, json_encode(get_selection(body())))
+  catch $m, $err
+    fail($err)
+  end
+end
+
+on clipboard.set desc "set {selection?,mime,data,encoding?,sensitive?,stamp?} or a blob reference"
+  try
+    permitted()
+    $b = body()
+    $which = $clip.selection($b)
+    $s = $clip.owned($S, $b, time(), $C)
+    if $b.stamp != nil and $s.stamp.origin_node == nil then $s.stamp.origin_node = $S.node end
+    if $clip.is_echo($S, $which, $s.stamp) then
+      reply(0, json_encode({applied: false}))
+    else
+      if not $s.sensitive and $s.data != nil and $clip.text_mime($s.mime_types) == nil then
+        raise("BLOB_REQUIRED", "binary clipboard data requires a blob reference")
+      end
+      $S = commit_selection($which, $s, true, true)
+      changed($which, true)
+      reply(0, json_encode({applied: true, stamp: $s.stamp}))
+    end
+  catch $m, $err
+    if $err.code == "BLOB_PENDING" then
+      $S.pending[$which] = {offer: $s, follow: true}
+      reply(0, json_encode({applied: false, pending: true, stamp: $s.stamp}))
+    else
+      fail($err)
+    end
+  end
+end
+
+on clipboard.clear desc "clear {selection?}"
+  try
+    permitted()
+    $which = $clip.selection(body())
+    $S = commit_selection($which, empty_selection(), true, true)
+    changed($which, true)
+    reply(0, json_encode({applied: true}))
+  catch $m, $err
+    fail($err)
+  end
+end
+
+on clipboard.info desc "selection metadata, mode, limits and configured members"
+  try
+    permitted()
+    reply(0, json_encode({node: $S.node, session: $S.session, mode: $mode, protocol: $mode,
+      clipboard: $clip.metadata($S, "clipboard"), primary: $clip.metadata($S, "primary"),
+      history: len($S.history), peers: $C.peers, text_cap: $clip.TEXT_CAP, max_bytes: $clip.MAX_BYTES,
+      pending: {clipboard: $S.pending.clipboard != nil, primary: $S.pending.primary != nil},
+      lazy_wayland: false, picker: false}))
+  catch $m, $err
+    fail($err)
+  end
+end
+
+on clipboard.peers desc "configured follow group and explicit server allowlist"
+  try
+    permitted()
+    reply(0, json_encode($C.peers))
+  catch $m, $err
+    fail($err)
+  end
+end
+
+on clipboard.history desc "up to fifty text previews, newest first"
+  try
+    permitted()
+    reply(0, json_encode($clip.history_view($S)))
+  catch $m, $err
+    fail($err)
+  end
+end
+
+fn picked($b)
+  $n = $b.index ?? $b.n
+  if type($n) != "number" or floor($n) != $n or $n < 0 or $n >= len($S.history) then raise("INDEX", "invalid history index") end
+  $r = $S.history[$n]
+  if $b.expected_id != nil and $b.expected_id != $r.id then raise("STALE_HISTORY", "history entry changed") end
+  return $clip.owned($S, {mime: $r.mime, data: $r.data}, time(), $C)
+end
+
+on clipboard.pick desc "restore {index} (n alias), optionally fenced by expected_id"
+  try
+    permitted()
+    $which = $clip.selection(body())
+    $S = commit_selection($which, picked(body()), true, true)
+    changed($which, true)
+    reply(0, json_encode({applied: true}))
+  catch $m, $err
+    fail($err)
+  end
+end
+
+on "desktop.clipboard.rotate"
+  try
+    permitted()
+    $n = $S.rotate
+    $s = picked({index: $n})
+    $history = $S.history
+    $S = commit_selection("clipboard", $s, true, true)
+    -- Rotation must not move its current item to the front of its own cycle.
+    $S.history = $history
+    $S.rotate = ($n + 1) % len($S.history)
+    changed("clipboard", true)
+    reply(0, json_encode({applied: true}))
+  catch $m, $err
+    fail($err)
+  end
+end
+
+on "desktop.clipboard.menu"
+  reply(10, json_encode({error_code: "PICKER_UNAVAILABLE", message: "use clipboard.history and clipboard.pick {index}"}))
+end
+
+on clipboard.push async desc "push {to,selection?} only to a configured member"
+  try
+    permitted()
+    reply(0, json_encode(push_to($clip.selection(body()), body().to)))
+  catch $m, $err
+    fail($err)
+  end
+end
+
+on clipboard.receive desc "member-only metadata/eager-text offer; origin stamp fences echoes"
+  try
+    $from = peer()
+    $b = body()
+    $which = $clip.selection($b)
+    if type($b.source) != "map" or $b.source.node != $from then raise("ALLOWLIST", "offer source disagrees with broker peer") end
+    if type($b.mime_types) != "list" or len($b.mime_types) > 128 then raise("MIME", "invalid MIME list") end
+    for $m in $b.mime_types $clip.mime($m) end
+    $clip.mime($b.mime)
+    if $clip.image($b.mime_types) and not ($C.peers[$from].images ?? ($C.peers[$from].follow ?? false)) then raise("IMAGES_DISABLED", "images disabled for source") end
+    if type($b.sensitive) != "bool" then raise("SENSITIVE", "sensitive flag required") end
+    $sensitive = $b.sensitive or contains($b.mime_types, $clip.HINT)
+    if $sensitive and ($b.data != nil or $b.blob != nil) then raise("SENSITIVE", "password offers must be lazy") end
+    if $sensitive and (type($b.deadline) != "number" or $b.deadline <= time()) then raise("EXPIRED", "password offer expired") end
+    if $b.blob != nil then $clip.blob_ref($b.blob) end
+    if $b.data != nil and (type($b.data) != "string" or len(string_to_bytes($b.data)) > $C.eager_text_bytes or $clip.text_mime($b.mime_types) == nil) then raise("SIZE_CAP", "only bounded text may travel eagerly") end
+    $s = {stamp: $b.stamp, mime: $b.mime, mime_types: $b.mime_types, sensitive: $sensitive, size: $b.size,
+      data: (if $b.data == nil then nil else string_to_bytes($b.data) end), blob: $b.blob,
+      remote: (if len($b.mime_types) == 0 or (len($b.mime_types) == 1 and ($b.data != nil or $b.blob != nil)) then nil else $b.source end),
+      external: false, deadline: (if $sensitive then min($b.deadline, time() + $C.password_timeout) else nil end)}
+    $applied = not $clip.is_echo($S, $which, $s.stamp)
+    if $applied then
+      $S = commit_selection($which, $s, false, true)
+      changed($which, false)
+    end
+    reply(0, json_encode({applied: $applied}))
+  catch $m, $err
+    if $err.code == "BLOB_PENDING" then
+      $S.pending[$which] = {offer: $s, follow: false}
+      reply(0, json_encode({applied: false, pending: true, stamp: $s.stamp}))
+    else
+      fail($err)
+    end
+  end
+end
+
+-- blob.fetch is asynchronous. Keep the old selection until blobd confirms
+-- verified local bytes, then resume on its native completion/pin event.
+-- A later set, clear or external copy cancels this selection's pending offer.
+fn resume_blob($which)
+  if ($event.headers ?? {}).broker_origin != "local" then return $S end
+  $pending = $S.pending[$which]
+  if $pending != nil and $pending.offer.blob.blob == body().blob then
+    try
+      return commit_selection($which, $pending.offer, $pending.follow, true)
+    catch $m, $err
+      eprint("clipd: pending blob unavailable (" .. $err.code .. ")")
+      if $err.code != "BLOB_PENDING" then
+        $state = $S
+        $state.pending[$which] = nil
+        task_start("clipboard.unpin", json_encode({blob: $pending.offer.blob}))
+        return $state
+      end
+    end
+  end
+  return $S
+end
+
+on blob.fetched
+  if body().outcome == "ok" then
+    for $which in ["clipboard", "primary"]
+      $before = $S.pending[$which]
+      $S = resume_blob($which)
+      if $before != nil and $S.pending[$which] == nil then changed($which, $before.follow) end
+    end
+  elif ($event.headers ?? {}).broker_origin == "local" then
+    for $which in ["clipboard", "primary"]
+      $pending = $S.pending[$which]
+      if $pending != nil and $pending.offer.blob.blob == body().blob then
+        $S.pending[$which] = nil
+        task_start("clipboard.unpin", json_encode({blob: $pending.offer.blob}))
+        eprint("clipd: pending blob fetch failed; previous selection retained")
+      end
+    end
+  end
+  if ($event.headers ?? {}).broker_origin == "local" and $S.retired[body().blob] != nil then
+    task_start("clipboard.unpin", json_encode({blob: $S.retired[body().blob]}))
+    $S.retired = delete($S.retired, body().blob)
+  end
+end
+on blob.pinned
+  for $which in ["clipboard", "primary"]
+    $before = $S.pending[$which]
+    $S = resume_blob($which)
+    if $before != nil and $S.pending[$which] == nil then changed($which, $before.follow) end
+  end
+  if ($event.headers ?? {}).broker_origin == "local" and $S.retired[body().blob] != nil then
+    -- A fetch can finish after the offer was cleared. Release its late pin
+    -- unless either live selection or pending offer still uses the blob.
+    task_start("clipboard.unpin", json_encode({blob: $S.retired[body().blob]}))
+  end
+end
+subscribe("blob.fetched")
+subscribe("blob.pinned")
+
+on clipboard.fetch async desc "member-only lazy read fenced by the original stamp"
+  try
+    peer()
+    $b = body()
+    $s = $S.selections[$clip.selection($b)]
+    if $s == nil or not deep_eq($s.stamp, $b.stamp) then raise("SOURCE_GONE", "source generation changed") end
+    reply(0, json_encode(get_selection($b)))
+  catch $m, $err
+    fail($err)
+  end
+end
+
+-- Local continuations reject every broker-stamped request.
+on clipboard.cache async
+  local_task()
+end
+on clipboard.cache
+  local_task()
+  $which = $clip.selection(body())
+  $s = $S.selections[$which]
+  if $s != nil and not $s.sensitive and deep_eq($s.stamp, body().stamp) then
+    if $S.selections[$which].blobs == nil then $S.selections[$which].blobs = {} end
+    $S.selections[$which].blobs[body().mime] = body().blob
+    if body().mime == $s.mime and $s.size == nil then $S.selections[$which].size = body().blob.size end
+  else
+    task_start("clipboard.unpin", json_encode({blob: body().blob}))
+  end
+end
+
+on clipboard.unpin async
+  local_task()
+end
+on clipboard.unpin
+  local_task()
+  $used = false
+  for $which in ["clipboard", "primary"]
+    $pending = $S.pending[$which]
+    if $pending != nil and $pending.offer.blob != nil and $pending.offer.blob.blob == body().blob.blob then $used = true end
+    $s = $S.selections[$which]
+    if $s != nil and $s.blob != nil and $s.blob.blob == body().blob.blob then $used = true end
+    if $s != nil then
+      for $mime, $ref in ($s.blobs ?? {})
+        if $ref.blob == body().blob.blob then $used = true end
+      end
+    end
+  end
+  if not $used then
+    try
+      rpc("blobd", "blob.unpin", {blob: body().blob.blob, owner: serve_name()})
+    catch $m, $err
+      eprint("clipd: blob unpin unavailable (" .. $err.code .. ")")
+    end
+  end
+end
+
+on clipboard.follow async
+  local_task()
+  for $to, $p in $C.peers
+    if $p.follow ?? false then
+      $s = $S.selections[$clip.selection(body())]
+      if $s != nil and deep_eq($s.stamp, body().stamp) then
+        try
+          push_to($clip.selection(body()), $to)
+        catch $m, $err
+          eprint("clipd: follow refused (" .. $err.code .. ")")
+        end
+      end
+    end
+  end
+end
+
+on clipboard.expire async
+  local_task()
+  $wait = body().deadline - time()
+  if $wait > 0 then sleep($wait) end
+end
+on clipboard.expire
+  local_task()
+  $which = $clip.selection(body())
+  $s = $S.selections[$which]
+  if $s != nil and $s.deadline != nil and $s.deadline <= time() and deep_eq($s.stamp, body().stamp) then
+    $S = commit_selection($which, empty_selection(), false, true)
+    changed($which, false)
+  end
+end
+
+on clipboard.observe desc "private local watcher notification; no clipboard content in the callback"
+  try
+    if ($event.headers ?? {}).broker_origin != "local" or body().token != $watch_token or $mode != "wayland" then raise("ALLOWLIST", "watcher notification refused") end
+    $which = $clip.selection(body())
+    $types = wl_types($which)
+    $old = $S.selections[$which]
+    $s = empty_selection()
+    $s.mime_types = $types
+    $s.external = len($types) > 0
+    $s.mime = $clip.text_mime($types) ?? ($types[0] ?? "text/plain")
+    $s.data = nil
+    $s.size = nil
+    $s.sensitive = contains($types, $clip.HINT)
+    if $s.sensitive then
+      $s.deadline = time() + $C.password_timeout
+    elif $clip.text_mime($types) != nil then
+      $cap = $C.eager_text_bytes
+      if $old != nil and $old.data != nil then $cap = max($cap, len($old.data)) end
+      $bytes = wl_eager($which, $s.mime, $cap)
+      if not deep_eq(wl_types($which), $types) then raise("STALE_OFFER", "selection types changed while reading") end
+      if $bytes != nil then
+        $s.size = len($bytes)
+        if len($bytes) <= $C.eager_text_bytes then $s.data = $bytes end
+      end
+    end
+    -- wl-copy cannot add an arbitrary origin MIME marker. Compare bytes only
+    -- for our current eager ownership; never read a password for this guard.
+    $echo = $old != nil and not $s.sensitive and $old.data != nil and $s.data != nil and deep_eq($old.data, $s.data)
+    if $old != nil and len($old.mime_types) == 0 and len($types) == 0 then $echo = true end
+    if $old != nil and $old.blob != nil and not $s.sensitive and contains($types, $old.mime) then
+      $bytes = wl_read($which, $old.mime)
+      if not deep_eq(wl_types($which), $types) then raise("STALE_OFFER", "selection types changed while reading") end
+      $echo = len($bytes) == $old.size and hash_sha256($bytes) == hash_file(blob_path($old.blob), "sha256")
+    end
+    if not $echo then
+      $S = commit_selection($which, $s, true, false)
+      changed($which, true)
+    end
+    reply(0, json_encode({applied: not $echo}))
+  catch $m, $err
+    fail($err)
+  end
+end
+
+fn start_watcher($which)
+  return spawn(concat(wl_argv("wl-paste", $which), ["--watch", $mix_bin, $here .. "/watch.mix", $which]),
+    {exit_event: true, tag: $which, env: {MIXOS_CLIPD_TARGET: serve_name(), MIXOS_CLIPD_WATCH_TOKEN: $watch_token, MIX_STATS: "off"}, stderr: "inherit"})
+end
+
+on proc.exited
+  -- A failed watcher is a service fault, not a silently stale clipboard.
+  if $watchers[$event.args.tag] == $event.args.pid then
+    eprint("clipd: clipboard watcher exited; restarting service")
+    exit(1)
+  end
+end
+
+if $mode == "wayland" then
+  for $which in ["clipboard", "primary"] $watchers[$which] = start_watcher($which) end
+end

@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+[Unit]
+Description=MixOS clipboard store
+Wants=noded.service
+After=noded.service
+
+[Service]
+Type=simple
+DynamicUser=yes
+User=clipd
+Environment=MIXOS_ETC=@{etc}
+Environment=MIXOS_NODE_CONFIG=@{etc}/node.conf.mix
+Environment=MIXOS_CLIPD_CONFIG=@{etc}/clipboard.conf.mix
+Environment=MIXOS_CLIPD_MODE=store
+Environment=MIX_STATS=off
+ExecStart=@{prefix}/bin/mix --serve @{prefix}/lib/clipd/clipd.mix --name clipd
+KillMode=control-group
+TimeoutStopSec=10
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

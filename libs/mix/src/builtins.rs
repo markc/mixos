@@ -85,6 +85,8 @@ pub fn clamp_signed_index(idx: i64, len: usize) -> usize {
 // in builtins_hof.rs because HOFs use a different dispatch path).
 builtin_table! {
     BUILTINS, BUILTIN_NAMES,
+    ("clip_get", CapabilityClass::Bus, "bus", "Read clipd: clip_get([selection, mime]); selection is clipboard (default) or primary. A sole MIME remains accepted. Raises for unavailable data or blob references", contract!((selection_or_mime?: string, mime?: string) -> any_of(string, bytes); failure[raises])),
+    ("clip_set", CapabilityClass::Bus, "bus", "Set clipboard text: clip_set(text[, selection, mime]); a sole MIME remains accepted, default text/plain;charset=utf-8", contract!((text: string, selection_or_mime?: string, mime?: string) -> bool; failure[raises])),
     ("length", CapabilityClass::Pure,          "string",  "Length of a string (codepoints), list/map (elements), or bytes/buffer (bytes, v0.64.0)", contract!((v: any_of(string, list, map, bytes, buffer)) -> number)),
     ("len", CapabilityClass::Pure,             "string",  "Alias for length()", contract!((v: any_of(string, list, map, bytes, buffer)) -> number)),
     ("upper", CapabilityClass::Pure,           "string",  "Convert string to uppercase", contract!((s: string) -> string)),
