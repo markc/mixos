@@ -50,7 +50,11 @@ impl BusHandler for ClipboardBus {
                             ("eof".into(), Value::Bool(!partial)),
                             (
                                 "blob".into(),
-                                if blob { Value::String("reference".into()) } else { Value::Nil },
+                                if blob {
+                                    Value::String("reference".into())
+                                } else {
+                                    Value::Nil
+                                },
                             ),
                             (
                                 "data".into(),
@@ -159,7 +163,8 @@ async fn clipboard_get_refuses_blob_or_incomplete_replies() {
         let program = mix::parser::Parser::new(tokens, &source)
             .parse_program()
             .unwrap();
-        let mut eval = Evaluator::with_output(Box::new(SharedBuf::new()), Box::new(SharedBuf::new()));
+        let mut eval =
+            Evaluator::with_output(Box::new(SharedBuf::new()), Box::new(SharedBuf::new()));
         eval.set_bus_handler(Rc::new(ClipboardBus { fail: false }));
         let error = eval.execute(&program).await.unwrap_err().to_string();
         assert!(error.contains(expected), "{error}");
@@ -176,6 +181,6 @@ async fn clipboard_get_rejects_surplus_arguments_in_strict_mode() {
     let mut eval = Evaluator::with_output(Box::new(SharedBuf::new()), Box::new(SharedBuf::new()));
     eval.set_arity_mode(mix::ArityMode::Strict);
     eval.set_bus_handler(Rc::new(ClipboardBus { fail: false }));
-    let error = eval.execute(&program).await.unwrap_err().to_string();
-    assert!(error.contains("ARITY_MISMATCH"), "{error}");
+    let error = eval.execute(&program).await.unwrap_err();
+    assert_eq!(error.info().unwrap().code, "ARITY_MISMATCH");
 }
