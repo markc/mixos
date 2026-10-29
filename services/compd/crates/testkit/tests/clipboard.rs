@@ -173,7 +173,11 @@ fn first_middle_click_after_focus_receives_primary_before_button() {
     h.roundtrip_client(owner);
     h.roundtrip();
     assert!(
-        h.client.state.clipboard.primary_selections.get(&PRIMARY)
+        h.client
+            .state
+            .clipboard
+            .primary_selections
+            .get(&PRIMARY)
             .is_none_or(|offer| offer.is_none()),
         "the unfocused target must not already hold a PRIMARY offer"
     );
@@ -181,7 +185,12 @@ fn first_middle_click_after_focus_receives_primary_before_button() {
     // In particular, do NOT use focus_keyboard(): its roundtrip would deliver
     // a deferred offer before the click and make the broken ordering pass.
     let first = h.focus_and_press(&target, 0x112);
-    let (serial, seat, read) = h.client.state.clipboard.primary_pastes.pop()
+    let (serial, seat, read) = h
+        .client
+        .state
+        .clipboard
+        .primary_pastes
+        .pop()
         .expect("the first middle press was observed");
     assert_eq!((serial, seat), (first, PRIMARY));
     let mut read = read.expect("PRIMARY must be offered at the FIRST middle-button callback");
@@ -199,7 +208,9 @@ fn first_middle_click_after_focus_receives_primary_before_button() {
     h.clear_keyboard_focus();
     // Losing focus revokes selection authority; it need not send selection(nil)
     // to the former client. An unfocused replacement must not displace the owner.
-    let _refused = h.client.set_primary_selection(PRIMARY, b"unfocused-replacement");
+    let _refused = h
+        .client
+        .set_primary_selection(PRIMARY, b"unfocused-replacement");
     h.roundtrip();
     h.focus_and_press(&target, 0x112);
     let (_, _, read) = h.client.state.clipboard.primary_pastes.pop().unwrap();
@@ -224,6 +235,13 @@ fn agent_keyboard_focus_does_not_redirect_primary_selection() {
     h.focus_agent_keyboard(&target);
     h.roundtrip_client(owner);
     assert!(h.extra_clients[owner].state.clipboard.primary_selections[&PRIMARY].is_some());
-    assert!(h.client.state.clipboard.primary_selections.get(&PRIMARY)
-        .is_none_or(|offer| offer.is_none()), "agent focus cannot move physical PRIMARY");
+    assert!(
+        h.client
+            .state
+            .clipboard
+            .primary_selections
+            .get(&PRIMARY)
+            .is_none_or(|offer| offer.is_none()),
+        "agent focus cannot move physical PRIMARY"
+    );
 }

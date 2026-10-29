@@ -84,8 +84,15 @@ impl TestClient {
         self.primary_manager = Some(manager);
     }
 
-    pub fn set_primary_selection(&mut self, seat: usize, payload: &[u8]) -> ZwpPrimarySelectionSourceV1 {
-        let manager = self.primary_manager.as_ref().expect("bind_primary_devices first");
+    pub fn set_primary_selection(
+        &mut self,
+        seat: usize,
+        payload: &[u8],
+    ) -> ZwpPrimarySelectionSourceV1 {
+        let manager = self
+            .primary_manager
+            .as_ref()
+            .expect("bind_primary_devices first");
         let source = manager.create_source(self.qh(), payload.to_vec());
         source.offer("text/plain;charset=utf-8".to_owned());
         self.primary_devices[seat].set_selection(Some(&source), 0);
@@ -151,30 +158,52 @@ impl TestClient {
 /// An offer arriving later in the same event batch cannot repair this captured miss.
 pub(crate) fn primary_middle_press(state: &mut ClientState, serial: u32, seat: usize) {
     let mime = "text/plain;charset=utf-8";
-    let read = state.clipboard.primary_selections.get(&seat).and_then(|o| o.as_ref()).and_then(|offer| {
-        let mimes = state.clipboard.primary_offer_mimes.get(&offer.id().protocol_id())?;
-        if !mimes.iter().any(|m| m == mime) {
-            return None;
-        }
-        let (read, write) = std::io::pipe().expect("primary paste pipe");
-        set_nonblocking(&read);
-        offer.receive(mime.to_owned(), write.as_fd());
-        drop(write);
-        Some(ClipboardRead { read, bytes: Vec::new() })
-    });
+    let read = state
+        .clipboard
+        .primary_selections
+        .get(&seat)
+        .and_then(|o| o.as_ref())
+        .and_then(|offer| {
+            let mimes = state
+                .clipboard
+                .primary_offer_mimes
+                .get(&offer.id().protocol_id())?;
+            if !mimes.iter().any(|m| m == mime) {
+                return None;
+            }
+            let (read, write) = std::io::pipe().expect("primary paste pipe");
+            set_nonblocking(&read);
+            offer.receive(mime.to_owned(), write.as_fd());
+            drop(write);
+            Some(ClipboardRead {
+                read,
+                bytes: Vec::new(),
+            })
+        });
     state.clipboard.primary_pastes.push((serial, seat, read));
 }
 
 impl Dispatch<ZwpPrimarySelectionDeviceManagerV1, ()> for ClientState {
-    fn event(_: &mut Self, _: &ZwpPrimarySelectionDeviceManagerV1,
-        _: <ZwpPrimarySelectionDeviceManagerV1 as Proxy>::Event, _: &(),
-        _: &Connection, _: &QueueHandle<Self>) {}
+    fn event(
+        _: &mut Self,
+        _: &ZwpPrimarySelectionDeviceManagerV1,
+        _: <ZwpPrimarySelectionDeviceManagerV1 as Proxy>::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+    }
 }
 
 impl Dispatch<ZwpPrimarySelectionDeviceV1, usize> for ClientState {
-    fn event(state: &mut Self, _: &ZwpPrimarySelectionDeviceV1,
-        event: zwp_primary_selection_device_v1::Event, seat: &usize,
-        _: &Connection, _: &QueueHandle<Self>) {
+    fn event(
+        state: &mut Self,
+        _: &ZwpPrimarySelectionDeviceV1,
+        event: zwp_primary_selection_device_v1::Event,
+        seat: &usize,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
         if let zwp_primary_selection_device_v1::Event::Selection { id } = event {
             state.clipboard.primary_selections.insert(*seat, id);
         }
@@ -186,20 +215,34 @@ impl Dispatch<ZwpPrimarySelectionDeviceV1, usize> for ClientState {
 }
 
 impl Dispatch<ZwpPrimarySelectionOfferV1, ()> for ClientState {
-    fn event(state: &mut Self, offer: &ZwpPrimarySelectionOfferV1,
-        event: zwp_primary_selection_offer_v1::Event, _: &(),
-        _: &Connection, _: &QueueHandle<Self>) {
+    fn event(
+        state: &mut Self,
+        offer: &ZwpPrimarySelectionOfferV1,
+        event: zwp_primary_selection_offer_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
         if let zwp_primary_selection_offer_v1::Event::Offer { mime_type } = event {
-            state.clipboard.primary_offer_mimes.entry(offer.id().protocol_id())
-                .or_default().push(mime_type);
+            state
+                .clipboard
+                .primary_offer_mimes
+                .entry(offer.id().protocol_id())
+                .or_default()
+                .push(mime_type);
         }
     }
 }
 
 impl Dispatch<ZwpPrimarySelectionSourceV1, Vec<u8>> for ClientState {
-    fn event(_: &mut Self, _: &ZwpPrimarySelectionSourceV1,
-        event: zwp_primary_selection_source_v1::Event, payload: &Vec<u8>,
-        _: &Connection, _: &QueueHandle<Self>) {
+    fn event(
+        _: &mut Self,
+        _: &ZwpPrimarySelectionSourceV1,
+        event: zwp_primary_selection_source_v1::Event,
+        payload: &Vec<u8>,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
         if let zwp_primary_selection_source_v1::Event::Send { fd, .. } = event {
             write_all(fd, payload);
         }

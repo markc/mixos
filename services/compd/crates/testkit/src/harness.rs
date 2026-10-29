@@ -478,8 +478,18 @@ impl Harness {
     }
 
     pub fn clear_keyboard_focus(&mut self) {
-        let keyboard = self.wire.state.seat.seat.get_keyboard().expect("primary keyboard");
-        keyboard.set_focus(&mut self.wire.state, None, smithay::utils::SERIAL_COUNTER.next_serial());
+        let keyboard = self
+            .wire
+            .state
+            .seat
+            .seat
+            .get_keyboard()
+            .expect("primary keyboard");
+        keyboard.set_focus(
+            &mut self.wire.state,
+            None,
+            smithay::utils::SERIAL_COUNTER.next_serial(),
+        );
         self.roundtrip();
     }
 
