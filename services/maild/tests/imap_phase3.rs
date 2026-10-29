@@ -497,15 +497,14 @@ async fn uid_fetch_unknown_inner_command_returns_bad() -> Result<()> {
     w.write_all(b"a02 SELECT INBOX\r\n").await?;
     let _ = read_until_tagged(&mut reader, "a02").await?;
 
-    // After - every RFC 9051 §6.4.8 UID inner command
+    // Every RFC 9051 §6.4.8 UID inner command
     // (FETCH/STORE/SEARCH/COPY/MOVE/EXPUNGE) is implemented; only an
-    // unknown command name should now produce the "UID inner command not
-    // implemented" BAD path.
+    // unknown command name produces BAD.
     w.write_all(b"a03 UID FROBNICATE 1\r\n").await?;
     let lines = read_until_tagged(&mut reader, "a03").await?;
     assert_eq!(lines.len(), 1, "{lines:?}");
     assert!(
-        lines[0].starts_with("a03 BAD") && lines[0].to_lowercase().contains("uid inner command"),
+        lines[0].starts_with("a03 BAD") && lines[0].to_lowercase().contains("invalid uid command"),
         "{}",
         lines[0]
     );

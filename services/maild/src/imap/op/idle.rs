@@ -40,15 +40,13 @@
 //!   removal we already accounted for (e.g. a queued event that
 //!   fired between subscribe and entry-snapshot whose effect the
 //!   diff already emitted).
-//! * `FlagsChanged` / `ItemMoved` — skipped. `ItemMoved` is
+//! * `FlagsChanged` — resolve the current membership and emit
+//!   `FETCH (UID ... FLAGS (...))` using the client's snapshot.
+//! * `ItemMoved` — skipped. `ItemMoved` is
 //!   *additive* (the substrate also publishes the underlying
 //!   `ItemAdded`/`ItemRemoved` on src/dest) so we still see the
 //!   moved-into-this-mailbox / moved-out-of-this-mailbox shapes
-//!   without parsing the correlation event. Flag updates are
-//!   re-fetched by the client on the next NOOP/SELECT pass; an
-//!   MSN-bearing `FETCH FLAGS` push would require an out-of-band
-//!   item-id → MSN lookup that's not worth the substrate
-//!   roundtrip for the Thunderbird MVP.
+//!   without parsing the correlation event.
 //!
 //! ## Entry-race coherence
 //!
@@ -82,9 +80,7 @@
 //!
 //! `broadcast::Receiver::recv` returns `RecvError::Lagged(n)` when
 //! the subscriber falls more than `notifier::DEFAULT_CAPACITY`
-//! events behind. We emit a `* OK [ALERT] notifier lagged …` line
-//! (RFC 9051 §7.1 — `OK` with an `[ALERT]` response code is a
-//! human-readable warning the client should surface), then run the
+//! events behind. We log the lag and run the
 //! same diff-and-emit as entry: resnapshot the UID list, emit the
 //! local-view → new-snapshot diff (descending EXPUNGEs + final
 //! EXISTS), and replace the local view. `EXISTS` alone is
@@ -227,7 +223,7 @@ fn uid_of(seq: Seq) -> u64 {
 /// plain `* N EXISTS` is *not* sufficient: if the skipped/raced
 /// events include deletions the client must see the EXPUNGEs to
 /// keep its UID→MSN map valid.
-fn diff_lines(old: &[u64], new: &[u64]) -> Vec<String> {
+pub(crate) fn diff_lines(old: &[u64], new: &[u64]) -> Vec<String> {
     let new_set: std::collections::BTreeSet<u64> = new.iter().copied().collect();
     let old_set: std::collections::BTreeSet<u64> = old.iter().copied().collect();
     let mut out = Vec::new();
@@ -283,6 +279,7 @@ pub async fn handle<R, W>(
     reader: &mut BufReader<R>,
     writer: &mut W,
     keepalive_interval: Duration,
+    shutdown: &mut Option<tokio::sync::watch::Receiver<bool>>,
 ) -> Result<IdleOutcome>
 where
     R: AsyncRead + Unpin,
@@ -369,6 +366,12 @@ where
         tokio::select! {
             biased;
 
+            _ = crate::imap::session::wait_shutdown(shutdown) => {
+                writer.write_all(b"* BYE [UNAVAILABLE] server shutting down\r\n").await?;
+                writer.flush().await?;
+                return Ok(IdleOutcome::Close);
+            }
+
             // 1. DONE / bad line from the client. Highest priority so
             // a client racing DONE against an event doesn't wait on a
             // notifier wake.
@@ -431,6 +434,37 @@ where
             event = recv_event(&mut sub), if sub.is_some() => {
                 match event {
                     Ok(ev) => {
+                        if let ContainerEvent::FlagsChanged { item_id, .. } = &ev {
+                            if let Some(sm) = selected.as_deref_mut() {
+                                let lookup_store = store.clone();
+                                let container = sm.container_id;
+                                let item = *item_id;
+                                match tokio::task::spawn_blocking(move || lookup_store.imap_membership(account_id, container, item)).await {
+                                    Ok(Ok(Some(handle))) => {
+                                        if sm.view_uids.binary_search(&handle.uid).is_err() {
+                                            let uids = match snapshot_uids(store.clone(), account_id, container).await {
+                                                Ok(uids) => uids,
+                                                Err(error) => {
+                                                    tracing::warn!(%error, "IDLE flag resynchronisation failed");
+                                                    writer.write_all(b"* NO [UNAVAILABLE] mailbox flag updates unavailable\r\n").await?;
+                                                    writer.flush().await?;
+                                                    continue;
+                                                }
+                                            };
+                                            for line in diff_lines(&sm.view_uids, &uids) { writer.write_all(line.as_bytes()).await?; }
+                                            sm.view_uids = uids;
+                                        }
+                                        if let Ok(index) = sm.view_uids.binary_search(&handle.uid) {
+                                            writer.write_all(format!("* {} FETCH (UID {} FLAGS {})\r\n", index + 1, handle.uid, super::flags::render_keywords(handle.keywords, &handle.tags)).as_bytes()).await?;
+                                        }
+                                    }
+                                    Ok(Ok(None)) => {},
+                                    _ => writer.write_all(b"* NO [UNAVAILABLE] mailbox flag updates unavailable\r\n").await?,
+                                }
+                                writer.flush().await?;
+                            }
+                            continue;
+                        }
                         if let Some(sm) = selected.as_deref_mut()
                             && let Some(line) = translate_event(&ev, &mut sm.view_uids)
                         {
@@ -439,11 +473,7 @@ where
                         }
                     }
                     Err(broadcast::error::RecvError::Lagged(n)) => {
-                        let alert = format!(
-                            "* OK [ALERT] notifier lagged {n} events; resyncing\r\n"
-                        );
-                        writer.write_all(alert.as_bytes()).await?;
-                        writer.flush().await?;
+                        tracing::warn!(missed = n, "IMAP notifier lagged; resynchronising");
                         if let Some(mb) = mailbox {
                             match snapshot_uids(store.clone(), account_id, mb).await {
                                 Ok(new_uids) => {

@@ -37,8 +37,8 @@
 //!
 //! Phase 4 ships the five RFC 9051 §2.3.2 system flags
 //! (`\Seen`, `\Flagged`, `\Answered`, `\Draft`, `\Deleted`). User
-//! keywords (`Tags` in the substrate) are deferred to a later task.
-//! `UNCHANGEDSINCE` (CONDSTORE) is deferred to Phase 6.
+//! keywords (`Tags` in the substrate) are stored per membership by
+//! `apply_op_tags`. `UNCHANGEDSINCE` is gated on the imap-ext CONDSTORE work.
 //!
 //! Unknown flag atoms are rejected as `BAD` rather than silently
 //! ignored: silently dropping a flag the client believes it stored is
@@ -245,6 +245,18 @@ pub async fn handle(
     store: Arc<dyn MailStore>,
     mode: StoreMode,
 ) -> String {
+    handle_with_view(tag, args, account_id, container, store, mode, None).await
+}
+
+pub async fn handle_with_view(
+    tag: &str,
+    args: &str,
+    account_id: AccountId,
+    container: ContainerId,
+    store: Arc<dyn MailStore>,
+    mode: StoreMode,
+    view: Option<&[u64]>,
+) -> String {
     let req = match parse_args(args, mode) {
         Ok(r) => r,
         Err(e) => return tagged(tag, Status::Bad, None, &e),
@@ -276,7 +288,7 @@ pub async fn handle(
     };
 
     let by_id: HashMap<ItemId, EmailHandle> = handles.iter().map(|h| (h.id, h.clone())).collect();
-    let map = SequenceMap::from_entries(handles.iter().map(|h| (h.uid, h.id)));
+    let map = SequenceMap::from_entries(handles.iter().map(|h| (h.uid, h.id))).with_view(view);
 
     // Resolve sequence set. UID STORE `*` / `<n>:*` on an empty
     // mailbox: see fetch.rs for the matching sentinel rationale.

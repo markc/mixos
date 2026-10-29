@@ -7,6 +7,12 @@
   writes. Ignore submission email actions without a successful operation in
   that call, rather than emitting implicit Email errors keyed by submission
   references. Document stage ordering and the absence of a cross-stage transaction.
+- Coalesce IMAP FETCH UID runs into indexed range scans, including one scan for
+  full-folder requests with UID holes. Preserve IDLE sessions after transient
+  resynchronisation failures and clear saved SEARCH results before error paths.
+- Cover cross-session IMAP visibility of JMAP, SMTP and Sieve changes, and Sieve
+  account-deletion cascades on both application and property-store connections.
+
 - Fix Sieve attachment-independent header budgets, custom address fields,
   writable fileinto destinations, redirect-only loop suppression and private
   header removal on external redirects. Local submission stamps fresh spam
@@ -49,6 +55,25 @@
   creation, import and submission, and preserve the optional `createdIds` map.
 - Correct the manual and test guide to describe the packaged maild binary.
 
+- Complete the IMAP core with MIME part FETCH, non-extensible BODY and macros,
+  BINARY decoding, ENABLE, ESEARCH/SEARCHRES, STATUS aggregates and APPENDLIMIT,
+  LIST-EXTENDED/LIST-STATUS and UTF-8/modified UTF-7 mailbox names.
+- Generalise literal framing and add atomic MULTIAPPEND and COPY. RENAME INBOX
+  moves messages while preserving INBOX; subscriptions survive rename/delete.
+  Correct CLOSE, EXAMINE, sequence-number notifications and shutdown BYE.
+- Allocate new mailbox UIDVALIDITY values with a durable high-water mark so
+  rapid delete/recreate cannot reuse a message identity. Convert legacy mailbox
+  values to their existing wire seconds without invalidating client caches;
+  repair only renamed identities that collide with live or deleted-name values.
+- Avoid full-folder reads for unchanged selected sessions and indexed FETCH
+  requests. IDLE flag notifications read one membership, with a catch-up diff
+  only for an unknown UID.
+- Report exact RENAME descendants with OLDNAME, accept explicit UTF-8/ASCII
+  SEARCH charsets in every mode, clear failed SAVE state, and deselect a deleted
+  selected mailbox. Reject non-canonical UTF-7 and C1 mailbox controls; correct
+  subscription child attributes, delimiter probes and unpadded BINARY decoding.
+- Bound SEARCH content work and match without whole-message lowercase copies.
+  Keep CONDSTORE/QRESYNC gated on the separate extension implementation.
 - IMAP `SEARCH` and `UID SEARCH` implement the header, date and text keys:
   `FROM`, `TO`, `CC`, `BCC`, `SUBJECT`, `HEADER`, `BODY`, `TEXT`, `BEFORE`,
   `ON`, `SINCE`, `SENTBEFORE`, `SENTON` and `SENTSINCE`. They were refused
@@ -60,8 +85,8 @@
 - `SEARCH` accepts string literals anywhere in the command, including several
   in one command (64 literals and 64 KiB at most). Past those limits a sync
   literal is refused; a non-sync one gets `BAD` and the connection closes, since
-  the rest of the command can no longer be framed. Other commands keep the
-  single trailing literal. `BODY` and `TEXT` also search forwarded
+  the rest of the command can no longer be framed. The same framing now serves
+  other command arguments and MULTIAPPEND. `BODY` and `TEXT` also search forwarded
   `message/rfc822` parts. A literal may carry a multi-line needle; CRLF and LF
   match alike. A content scan stops when the client disconnects.
 

@@ -28,6 +28,49 @@ use crate::tls::current_tls_pair;
 #[derive(Debug, Clone)]
 pub struct ImapHandle {
     pub imaps_addrs: Vec<SocketAddr>,
+    shutdown: tokio::sync::watch::Sender<bool>,
+    active: tokio::sync::watch::Sender<usize>,
+}
+
+impl ImapHandle {
+    /// Stop accepting and let each session finish its current response, send
+    /// BYE, flush and release its account slot before the runtime exits.
+    pub async fn shutdown(&self) {
+        let mut active = self.active.subscribe();
+        self.shutdown.send_replace(true);
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while *active.borrow_and_update() != 0 {
+                if active.changed().await.is_err() {
+                    break;
+                }
+            }
+        })
+        .await;
+    }
+}
+
+struct ActiveSession(tokio::sync::watch::Sender<usize>);
+impl Drop for ActiveSession {
+    fn drop(&mut self) {
+        self.0.send_modify(|n| *n = n.saturating_sub(1));
+    }
+}
+
+pub async fn shutdown_signal() {
+    #[cfg(unix)]
+    {
+        if let Ok(mut signal) =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+        {
+            tokio::select! { _ = signal.recv() => {}, _ = tokio::signal::ctrl_c() => {} }
+        } else {
+            let _ = tokio::signal::ctrl_c().await;
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
+    }
 }
 
 /// Build TLS and start IMAPS listeners.
@@ -52,9 +95,13 @@ pub async fn start_with_listeners(
     slots: Arc<AccountSlots>,
     inherited: Vec<TcpListener>,
 ) -> Result<ImapHandle> {
+    let (shutdown, _) = tokio::sync::watch::channel(false);
+    let (active, _) = tokio::sync::watch::channel(0usize);
     if cfg.listen_imaps.is_empty() && inherited.is_empty() {
         return Ok(ImapHandle {
             imaps_addrs: Vec::new(),
+            shutdown,
+            active,
         });
     }
     // Refuse to start IMAPS if the slot is empty at startup. The
@@ -83,9 +130,16 @@ pub async fn start_with_listeners(
         let slots_task = slots.clone();
         let db_task = db.clone();
         let mailstore_task = mailstore.clone();
+        let mut stopping = Some(shutdown.subscribe());
+        let active_task = active.clone();
         tokio::spawn(async move {
             loop {
-                match listener.accept().await {
+                let accepted = tokio::select! {
+                    biased;
+                    _ = session::wait_shutdown(&mut stopping) => break,
+                    result = listener.accept() => result,
+                };
+                match accepted {
                     Ok((stream, peer)) => {
                         let peer = SocketAddr::new(peer.ip().to_canonical(), peer.port());
                         let cfg = cfg_task.clone();
@@ -115,7 +169,11 @@ pub async fn start_with_listeners(
                             }
                         };
                         let acceptor = tokio_rustls::TlsAcceptor::from(server_config);
+                        let shutdown = stopping.clone();
+                        active_task.send_modify(|n| *n += 1);
+                        let active_guard = ActiveSession(active_task.clone());
                         tokio::spawn(async move {
+                            let _active = active_guard;
                             match acceptor.accept(stream).await {
                                 Ok(tls_stream) => {
                                     // Recover SNI before splitting —
@@ -133,7 +191,7 @@ pub async fn start_with_listeners(
                                     // error); do NOT log a second one
                                     // here or each failed session is
                                     // double-counted.
-                                    let _ = session::handle_connection(
+                                    let _ = session::handle_connection_with_shutdown(
                                         tls_stream,
                                         peer,
                                         lip,
@@ -142,6 +200,7 @@ pub async fn start_with_listeners(
                                         mailstore,
                                         slots,
                                         negotiated_hostname,
+                                        shutdown,
                                     )
                                     .await;
                                 }
@@ -163,5 +222,9 @@ pub async fn start_with_listeners(
         });
     }
 
-    Ok(ImapHandle { imaps_addrs })
+    Ok(ImapHandle {
+        imaps_addrs,
+        shutdown,
+        active,
+    })
 }

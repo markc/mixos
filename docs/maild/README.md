@@ -14,6 +14,9 @@ Accounts can run [Sieve delivery scripts](sieve.md), managed through the Bus or
 the optional TLS ManageSieve listener on port 4190. Off-site redirects and
 automatic Sieve replies are disabled until the operator allows the account domain.
 
+The [IMAP protocol support and conformance audit](imap.md) documents command
+behaviour, wire tests, capability negotiation and the CONDSTORE integration hook.
+
 ## Properties
 
 Maild uses the shared `props` library with its `store`, `sqlite` and `router`

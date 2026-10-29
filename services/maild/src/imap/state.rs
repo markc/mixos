@@ -83,11 +83,9 @@ pub struct SelectedMailbox {
     /// re-entering IDLE after an out-of-band mutation receives
     /// the EXPUNGEs / EXISTS it would otherwise never see.
     ///
-    /// APPEND/COPY/MOVE-into-selected do **not** currently emit
-    /// `EXISTS` to the calling session and therefore do not update
-    /// this vector — IDLE entry compensates by diffing against a
-    /// fresh substrate snapshot, surfacing additions as a single
-    /// post-diff `EXISTS`.
+    /// Mutations update this view as their notifications are emitted. A cheap
+    /// native mailbox version check avoids unchanged snapshots; IDLE entry
+    /// also takes a fresh snapshot to catch missed out-of-band changes.
     pub view_uids: Vec<u64>,
 }
 
