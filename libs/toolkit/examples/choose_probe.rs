@@ -97,11 +97,22 @@ async fn main() -> Result<()> {
     let mode = std::env::args().nth(2).unwrap_or_else(|| "bus".into());
     if matches!(mode.as_str(), "system" | "embedded") {
         let resolved = bus::client_helpers::resolve_noded_url();
-        let empty = SupervisedClient::connect_options("chooser-empty-audit", &resolved).connect().await?;
-        ensure!(!empty.list_services().await?.iter().any(|name| name == "files"),
-            "fallback caller's broker unexpectedly has files");
+        let empty = SupervisedClient::connect_options("chooser-empty-audit", &resolved)
+            .connect()
+            .await?;
+        ensure!(
+            !empty
+                .list_services()
+                .await?
+                .iter()
+                .any(|name| name == "files"),
+            "fallback caller's broker unexpectedly has files"
+        );
         let info = empty.call("noded", "noded.info", json!({})).await?;
-        ensure!(info["node"] == "chooser-empty", "wrong caller broker: {info}");
+        ensure!(
+            info["node"] == "chooser-empty",
+            "wrong caller broker: {info}"
+        );
         println!("PASS caller resolver reaches provider-free broker {resolved}: {info}");
         empty.close().await;
     }
@@ -118,27 +129,32 @@ async fn main() -> Result<()> {
     let driver_url = std::env::var("CHOOSER_DRIVER_URL")
         .unwrap_or_else(|_| bus::client_helpers::resolve_noded_url());
     let bus = Arc::new(
-        SupervisedClient::connect_options(
-            "toolkit-chooser-probe",
-            &driver_url,
-        )
-        .connect()
-        .await?,
+        SupervisedClient::connect_options("toolkit-chooser-probe", &driver_url)
+            .connect()
+            .await?,
     );
     #[cfg(all(target_os = "linux", feature = "portal"))]
     if expected_tier == Tier::System {
         let connection = zbus::Connection::session().await?;
         tokio::time::timeout(WAIT, async {
             loop {
-                if connection.call_method(
-                    Some("org.freedesktop.portal.Desktop"),
-                    "/org/freedesktop/portal/desktop",
-                    Some("org.freedesktop.DBus.Properties"), "Get",
-                    &("org.freedesktop.portal.FileChooser", "version"),
-                ).await.is_ok() { break; }
+                if connection
+                    .call_method(
+                        Some("org.freedesktop.portal.Desktop"),
+                        "/org/freedesktop/portal/desktop",
+                        Some("org.freedesktop.DBus.Properties"),
+                        "Get",
+                        &("org.freedesktop.portal.FileChooser", "version"),
+                    )
+                    .await
+                    .is_ok()
+                {
+                    break;
+                }
                 tokio::time::sleep(Duration::from_millis(50)).await;
             }
-        }).await?;
+        })
+        .await?;
     }
     for mode in [Mode::Open, Mode::Save, Mode::SaveFiles] {
         for cancel in [false, true] {
@@ -177,7 +193,11 @@ async fn main() -> Result<()> {
             // it. A drive error can otherwise leave the live window waiting.
             tokio::time::timeout(WAIT, driver).await???;
             let outcome = outcome?;
-            ensure!(pending.tier() == expected_tier, "wrong tier: {:?}", pending.tier());
+            ensure!(
+                pending.tier() == expected_tier,
+                "wrong tier: {:?}",
+                pending.tier()
+            );
             if cancel {
                 ensure!(outcome == Outcome::Cancelled, "Cancel returned {outcome:?}");
             } else {
@@ -216,12 +236,20 @@ async fn main() -> Result<()> {
                 ctx.run_ui(Default::default(), |ui| {
                     assert!(pending.poll(ui.ctx()).is_none());
                     assert_eq!(pending.tier(), expected_tier);
-                }).drop_without_applying_deltas();
+                })
+                .drop_without_applying_deltas();
                 tokio::time::sleep(Duration::from_millis(10)).await;
             }
-            ensure!(bus.call("files", "files.choose.list", json!({})).await?["requests"]
-                .as_array().context("requests")?.is_empty(), "chooser left open after outcome");
-            println!("PASS toolkit::choose {mode:?} cancel={cancel} tier={expected_tier:?} through real DOpus");
+            ensure!(
+                bus.call("files", "files.choose.list", json!({})).await?["requests"]
+                    .as_array()
+                    .context("requests")?
+                    .is_empty(),
+                "chooser left open after outcome"
+            );
+            println!(
+                "PASS toolkit::choose {mode:?} cancel={cancel} tier={expected_tier:?} through real DOpus"
+            );
         }
     }
     if expected_tier == Tier::Bus {
@@ -241,30 +269,52 @@ async fn main() -> Result<()> {
 /// Real production cascade and real FileChooser, driven through egui's public
 /// accessibility/input harness. This is frame/UI proof, not a mapped window.
 fn embedded(folder: &std::path::Path) -> Result<()> {
-    use egui_kittest::{Harness, kittest::Queryable};
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::{NodeT, Queryable};
     use std::time::Instant;
     for mode in [Mode::Open, Mode::Save, Mode::SaveFiles] {
         for cancel in [false, true] {
             let mut body = json!({"mode":mode,"current_folder":folder,
                 "title":"Embedded acceptance", "choices":[{"id":"check","label":"Check","options":[]}]});
-            if mode == Mode::Save { body["current_name"] = json!("embedded.md"); }
-            if mode == Mode::SaveFiles { body["files"] = json!(["one.md","two.md"]); }
-            let handle = toolkit::choose(toolkit::choose::request(&body.to_string())
-                .map_err(|e| anyhow::anyhow!(e.message))?);
-            let mut h = Harness::builder().with_size(egui::vec2(900.0,700.0))
-                .build_ui_state(|ui, state: &mut (toolkit::choose::Handle, Vec<Outcome>)| {
-                    if let Some(answer) = state.0.poll(ui.ctx()) { state.1.push(answer); }
-                }, (handle, Vec::new()));
+            if mode == Mode::Save {
+                body["current_name"] = json!("embedded.md");
+            }
+            if mode == Mode::SaveFiles {
+                body["files"] = json!(["one.md", "two.md"]);
+            }
+            let handle = toolkit::choose(
+                toolkit::choose::request(&body.to_string())
+                    .map_err(|e| anyhow::anyhow!(e.message))?,
+            );
+            let mut h = Harness::builder()
+                .with_size(egui::vec2(900.0, 700.0))
+                .build_ui_state(
+                    |ui, state: &mut (toolkit::choose::Handle, Vec<Outcome>)| {
+                        if let Some(answer) = state.0.poll(ui.ctx()) {
+                            state.1.push(answer);
+                        }
+                    },
+                    (handle, Vec::new()),
+                );
             toolkit::install(&h.ctx, &toolkit::Theme::embedded());
             let deadline = Instant::now() + WAIT;
             while h.state().0.tier() != Tier::InProcess
                 || if mode == Mode::SaveFiles {
-                    h.query_by_label("Save").is_none_or(|node| node.accesskit_node().is_disabled())
+                    h.query_by_label("Save")
+                        .is_none_or(|node| node.accesskit_node().is_disabled())
                 } else {
                     h.query_by_label("notes.md").is_none()
-                } {
-                ensure!(Instant::now() < deadline, "embedded UI did not become ready");
-                ensure!(h.state().1.is_empty(), "unexpected early outcome: {:?}",h.state().1);
+                }
+            {
+                ensure!(
+                    Instant::now() < deadline,
+                    "embedded UI did not become ready"
+                );
+                ensure!(
+                    h.state().1.is_empty(),
+                    "unexpected early outcome: {:?}",
+                    h.state().1
+                );
                 h.run_steps(1);
                 std::thread::sleep(Duration::from_millis(10));
             }
@@ -275,35 +325,51 @@ fn embedded(folder: &std::path::Path) -> Result<()> {
                     h.get_by_label("notes.md").click();
                     h.run_steps(2);
                 }
-                h.get_by_label(if mode == Mode::Open { "Open" } else { "Save" }).click();
+                h.get_by_label(if mode == Mode::Open { "Open" } else { "Save" })
+                    .click();
             }
             while h.state().1.is_empty() {
-                ensure!(Instant::now() < deadline,"embedded input did not settle");
+                ensure!(Instant::now() < deadline, "embedded input did not settle");
                 h.run_steps(1);
                 std::thread::sleep(Duration::from_millis(10));
             }
-            for _ in 0..10 { h.run_steps(1); }
-            ensure!(h.state().0.tier() == Tier::InProcess && h.state().1.len() == 1,
-                "embedded outcome/tier not final");
+            for _ in 0..10 {
+                h.run_steps(1);
+            }
+            ensure!(
+                h.state().0.tier() == Tier::InProcess && h.state().1.len() == 1,
+                "embedded outcome/tier not final"
+            );
             if cancel {
-                ensure!(h.state().1[0] == Outcome::Cancelled,"embedded cancellation failed");
+                ensure!(
+                    h.state().1[0] == Outcome::Cancelled,
+                    "embedded cancellation failed"
+                );
             } else {
                 let Outcome::Chosen { paths, choices, .. } = &h.state().1[0] else {
-                    anyhow::bail!("embedded did not choose: {:?}",h.state().1);
+                    anyhow::bail!("embedded did not choose: {:?}", h.state().1);
                 };
                 let expected = match mode {
                     Mode::Open => vec![folder.join("notes.md")],
                     Mode::Save => vec![folder.join("embedded.md")],
-                    Mode::SaveFiles => vec![folder.join("one.md"),folder.join("two.md")],
+                    Mode::SaveFiles => vec![folder.join("one.md"), folder.join("two.md")],
                 };
-                ensure!(*paths == expected && choices["check"] == "false","embedded result differs");
+                ensure!(
+                    *paths == expected && choices["check"] == "false",
+                    "embedded result differs"
+                );
             }
-            println!("PASS real cascade InProcess {mode:?} cancel={cancel}; deterministic egui frame/input, no native window");
+            println!(
+                "PASS real cascade InProcess {mode:?} cancel={cancel}; deterministic egui frame/input, no native window"
+            );
         }
     }
-    ensure!(std::fs::read_to_string(folder.join("notes.md"))? == "original","source changed");
-    for name in ["embedded.md","one.md","two.md"] {
-        ensure!(!folder.join(name).exists(),"chooser wrote destination");
+    ensure!(
+        std::fs::read_to_string(folder.join("notes.md"))? == "original",
+        "source changed"
+    );
+    for name in ["embedded.md", "one.md", "two.md"] {
+        ensure!(!folder.join(name).exists(), "chooser wrote destination");
     }
     Ok(())
 }
