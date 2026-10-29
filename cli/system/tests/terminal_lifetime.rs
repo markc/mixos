@@ -349,6 +349,9 @@ fn observed_exit_reserves_leader_for_session_cleanup() {
 }
 
 #[test]
+// The outer test kills this fixture parent to prove kernel parent-death cleanup;
+// a normal wait here would prevent that scenario rather than reap the child.
+#[allow(clippy::zombie_processes)]
 fn fixture_parent() {
     let _fixture = fixture_guard();
     let Some(report) = std::env::var_os("TERMINAL_PARENT_REPORT") else {
