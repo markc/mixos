@@ -1,6 +1,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Exercise actual D-Bus activation without starting a portal or compositor.
 $n = require("nested_host_lib.mix")
+$host_mounts = filter(split(read_file("/proc/self/mountinfo"),"\n"),fn($l)=contains($l," - fuse.portal "))
 $run = "/tmp/compat-env-" .. uuid()
 $runtime = $run .. "/runtime"
 mkdir($runtime, {parents:true})
@@ -8,8 +9,8 @@ chmod($runtime, 0o700)
 mkdir($run .. "/services", {parents:true})
 $capture = $run .. "/activation.json"
 $probe = $run .. "/probe.mix"
-write_file($probe, "write_file(" .. json_encode($capture) .. ", json_encode({runtime:env(\"XDG_RUNTIME_DIR\"), home:env(\"HOME\"), config:env(\"XDG_CONFIG_HOME\"), data:env(\"XDG_DATA_HOME\"), state:env(\"XDG_STATE_HOME\"), cache:env(\"XDG_CACHE_HOME\"), wayland:env(\"WAYLAND_DISPLAY\"), display:env(\"DISPLAY\"), system_bus:env(\"DBUS_SYSTEM_BUS_ADDRESS\"), session_bus:env(\"DBUS_SESSION_BUS_ADDRESS\")}))\nexit(0)\n")
-$mix = which("mix")
+write_file($probe, "write_file(" .. json_encode($capture) .. ", json_encode({pid:pid(),runtime:env(\"XDG_RUNTIME_DIR\"), home:env(\"HOME\"), config:env(\"XDG_CONFIG_HOME\"), data:env(\"XDG_DATA_HOME\"), state:env(\"XDG_STATE_HOME\"), cache:env(\"XDG_CACHE_HOME\"), wayland:env(\"WAYLAND_DISPLAY\"), display:env(\"DISPLAY\"), system_bus:env(\"DBUS_SYSTEM_BUS_ADDRESS\"), session_bus:env(\"DBUS_SESSION_BUS_ADDRESS\")}))\nexit(0)\n")
+$mix = env("MIXOS_TEST_MIX", which("mix"))
 write_file($run .. "/services/org.example.EnvProbe.service", "[D-BUS Service]\nName=org.example.EnvProbe\nExec=" .. $mix .. " " .. $probe .. "\n")
 $address = "unix:path=" .. $run .. "/bus"
 write_file($run .. "/bus.conf", "<busconfig><type>session</type><listen>" .. $address .. "</listen><auth>EXTERNAL</auth><servicedir>" .. $run .. "/services</servicedir><policy context=\"default\"><allow send_destination=\"*\"/><allow receive_sender=\"*\"/><allow own=\"*\"/></policy></busconfig>")
@@ -24,13 +25,20 @@ try
   if $activation.timed_out then raise("ACTIVATION_TIMEOUT",json_encode($activation)) end
   if not is_file($capture) then raise("ACTIVATION",read_file($run .. "/bus.log")) end
   $got = json_parse(read_file($capture))
+  $deadline = monotonic() + 3
+  while process_alive($got.pid) and monotonic() < $deadline sleep(0.05) end
+  if process_alive($got.pid) then raise("CHILD_CLEANUP","Activated probe survived") end
   if $got.runtime != $runtime or $got.home != $run .. "/activation-home" or $got.wayland != "owned-wayland" or $got.display != "" then raise("ISOLATION",json_encode($got)) end
   for each $key in ["config","data","state","cache"]
     if not starts_with($got[$key],$run .. "/activation-home/") then raise("PERSISTENCE",json_encode($got)) end
   end
   if $got.system_bus != nil and $got.system_bus != "" then raise("SYSTEM_BUS",json_encode($got)) end
   if split($got.session_bus,",")[0] != $address then raise("PRIVATE_BUS",json_encode($got)) end
+  if not deep_eq($host_mounts,filter(split(read_file("/proc/self/mountinfo"),"\n"),fn($l)=contains($l," - fuse.portal "))) then raise("HOST_MOUNT","Host document portal mount changed") end
   print("PASS activated child uses owned runtime, storage, Wayland and private D-Bus")
 finally
   if process_alive($pid) then kill($pid,15) end
+  $deadline = monotonic() + 3
+  while process_alive($pid) and monotonic() < $deadline sleep(0.05) end
+  if process_alive($pid) then raise("CLEANUP","Owned private D-Bus daemon survived") end
 end

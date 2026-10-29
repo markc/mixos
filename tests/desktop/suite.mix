@@ -141,6 +141,7 @@ mkdir($OUT, {parents: true})
 -- The gate table. `style` "harness" takes --bin/--config-file; "standalone"
 -- takes the compd binary as its first argument (and --scale).
 $GATES = [
+  {name: "compat_bus_env", script: "compat_bus_env_test.mix", style: "plain", args: []},
   {name: "desktop", script: "desktop_nested_gate.mix", style: "harness",
     args: ["--layer-client", "waybar", "--overlay-client", "fuzzel", "--x-client", "xmessage"]},
   {name: "control", script: "comp_control_smoke.mix", style: "harness", args: []},
@@ -181,7 +182,7 @@ fn run_gate($g, $ctx)
       push($argv, "--bin")
       push($argv, $ctx.bin)
     end
-  else
+  elif $g.style == "standalone" then
     push($argv, $ctx.bin)
     if $ctx.config != "" then
       push($argv, "--config-file")
