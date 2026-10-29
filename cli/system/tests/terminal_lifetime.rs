@@ -308,6 +308,8 @@ fn fixture_drop_kills_grandchildren_in_other_job_groups() {
 #[test]
 fn observed_exit_reserves_leader_for_session_cleanup() {
     let _fixture = fixture_guard();
+    let mut unrelated = Shell::new(false, true, "owned");
+    unrelated.prompt();
     let mut shell = Shell::new(true, true, "owned");
     shell.prompt();
     let child = shell.job_with_hup(true, true);
@@ -319,6 +321,7 @@ fn observed_exit_reserves_leader_for_session_cleanup() {
     assert!(std::path::Path::new(&format!("/proc/{child}/exe")).exists());
     drop(shell);
     wait_not_running(child);
+    assert!(pty::try_wait(&mut unrelated.child).unwrap().is_none());
 }
 
 #[test]
