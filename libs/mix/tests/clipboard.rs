@@ -128,3 +128,16 @@ async fn clipboard_builtins_send_to_the_local_service_and_raise_refusals() {
             .contains("rc 10")
     );
 }
+
+#[tokio::test]
+async fn clipboard_set_without_text_returns_an_error_in_compatible_mode() {
+    let source = "clip_set()\n";
+    let tokens = mix::lexer::Lexer::new(source).tokenize().unwrap();
+    let program = mix::parser::Parser::new(tokens, source)
+        .parse_program()
+        .unwrap();
+    let mut eval = Evaluator::with_output(Box::new(SharedBuf::new()), Box::new(SharedBuf::new()));
+    eval.set_bus_handler(Rc::new(ClipboardBus { fail: false }));
+    let error = eval.execute(&program).await.unwrap_err().to_string();
+    assert!(error.contains("clip_set"), "{error}");
+}

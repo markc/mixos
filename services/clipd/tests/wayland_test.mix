@@ -119,6 +119,8 @@ try
   request("blobd", "blob.put", {path: $tmp .. "/incoming", mime: $later.mime})
   sleep(0.3)
   check("clear fences a late blob arrival", call("clipboard.get", {}).v.error_code == "EMPTY" and not call("clipboard.info", {}).v.pending.clipboard)
+  $stat = request("blobd", "blob.stat", {blob: $later.blob}).v
+  check("fenced pending blob releases clipd pin", not contains($stat.pins, "clipd"))
   run_argv_must(["wl-copy", "--sensitive", "--type", "text/plain"], {stdin: "synthetic-password", env: $env, timeout: 5, stderr: "null"})
   check("password marker observed", eventually(fn() = call("clipboard.info", {}).v.clipboard.sensitive))
   check("password only read on request", call("clipboard.get", {}).v.data == "synthetic-password")

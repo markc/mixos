@@ -38,6 +38,8 @@ $passed = $passed + check("unstamped claimed node refused", refused(fn() = $c.ca
 $passed = $passed + check("conflicting selection aliases refused", refused(fn() = $c.selection({selection: "primary", primary: false}), "SELECTION"))
 $passed = $passed + check("invalid selection refused", refused(fn() = $c.selection({selection: "other"}), "SELECTION"))
 $passed = $passed + check("sensitive blobs refused", refused(fn() = $c.owned($state, {blob: {}, sensitive: true}, 100, $cfg), "SENSITIVE"))
+$ref = {blob: "b3:0000000000000000000000000000000000000000000000000000000000000000", origin: "alpha", size: 3, mime: "text/plain"}
+$passed = $passed + check("password-marker blob refused", refused(fn() = $c.owned($state, {mime: $c.HINT, blob: $ref}, 100, $cfg), "SENSITIVE"))
 $s = $c.owned($state, {data: "λtest"}, 100, $cfg)
 $part = $c.chunk($s, $s.data, {offset: 1})
 $passed = $passed + check("split UTF-8 uses base64 without loss", $part.encoding == "base64" and deep_eq(base64_decode($part.data), slice($s.data, 1)))
