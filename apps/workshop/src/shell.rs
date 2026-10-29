@@ -530,6 +530,11 @@ impl Shell {
     /// is held, in order, while drive input accepted before it is still
     /// unanswered; completions are applied at once.
     fn pump(&mut self) {
+        // Exit has closed and drained the command inbox. Tasks that finish
+        // afterwards are stale; they cannot change the final shutdown state.
+        if self.exiting {
+            return;
+        }
         while let Ok(event) = self.rx.try_recv() {
             match &event {
                 Event::Delivery(Delivery::Connected) => {
@@ -553,7 +558,7 @@ impl Shell {
                 self.macro_stopping = false;
                 self.macro_stopped = true;
                 self.perform(Effect::Exit);
-                continue;
+                return;
             }
             if let Event::MacroChanged = event {
                 let status = macros::Session::for_app("workshop").status();
