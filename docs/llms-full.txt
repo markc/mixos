@@ -38871,6 +38871,8 @@ written in Mix on `tcp_listen`.
 
 ## Unreleased — 2026-10-27
 
+- `compd --backends` prints the backends compiled in (`native winit headless`)
+  and exits, so an install can refuse a compd built without `native` (KMS).
 - Animate drag tile previews with cubic ease-out and continuous retargeting.
   Add a clock testkit can advance and a demand-driven one-shot timer: no
   preview work at idle. Shared edges dwell before arming; preview delay gates
