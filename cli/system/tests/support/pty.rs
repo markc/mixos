@@ -104,9 +104,7 @@ fn kill_session(session: u32, expected_start: Option<&str>) {
         if status(session, true).is_err() {
             return;
         }
-        let Some(leader) = identity(session).filter(|leader| {
-            leader.0 == session && Some(leader.1.as_str()) == expected_start
-        }) else {
+        let Some(leader) = identity(session).filter(|leader| Some(leader.1.as_str()) == expected_start) else {
             return;
         };
         if let Ok(entries) = std::fs::read_dir("/proc") {
@@ -119,7 +117,9 @@ fn kill_session(session: u32, expected_start: Option<&str>) {
                     continue;
                 }
                 let fd = unsafe { OwnedFd::from_raw_fd(fd as i32) };
-                if identity(pid).is_some_and(|member| member.0 == session)
+                if identity(pid).is_some_and(|member| {
+                    pid == session || (leader.0 == session && member.0 == session)
+                })
                     && identity(session).as_ref() == Some(&leader)
                 {
                     unsafe {
@@ -163,4 +163,16 @@ fn stale_session_identity_does_not_signal_a_new_leader() {
     session.kill();
     let _ = child.wait();
     assert!(untouched, "an old identity authorised signalling a new leader");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn cleanup_kills_only_owned_child_without_a_new_session() {
+    let mut command = Command::new("sleep");
+    guard(&mut command);
+    let mut child = command.arg("60").spawn().unwrap();
+    let session = Session::new(&child);
+    assert_ne!(identity(child.id()).unwrap().0, child.id());
+    session.kill();
+    assert!(!child.wait().unwrap().success());
 }

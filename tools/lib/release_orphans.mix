@@ -45,14 +45,16 @@ fn finish($name, $target, $before)
   if $target == nil then return end
   $after = snapshot($target)
   $new = added($before, $after)
-  print("SURVIVORS " .. $name .. " before=" .. len($before) .. " after=" .. len($after) .. " new=" .. len($new))
+  $surviving = []
   for $item in $new
     if not same_process($item, $target) then continue end
     $report = run_argv(["ps", "-ww", "-o", "pid,etime,tty,args", "-p", to_string($item.pid)], {timeout: 10})
     print(trim($report.stdout))
     -- Diagnostics only. A shared-worker gate never signals discovered PIDs.
+    if same_process($item, $target) then push($surviving, $item) end
   end
-  if len($new) > 0 then
-    raise("RELEASE_GATE", $name .. " left " .. len($new) .. " new target processes")
+  print("SURVIVORS " .. $name .. " before=" .. len($before) .. " after=" .. len($after) .. " new=" .. len($surviving))
+  if len($surviving) > 0 then
+    raise("RELEASE_GATE", $name .. " left " .. len($surviving) .. " new target processes")
   end
 end
