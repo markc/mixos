@@ -189,6 +189,41 @@ fn activation_child() {
             .unwrap()
             .unwrap();
             assert!(greeting.starts_with("220 "), "{greeting}");
+
+            // An inherited IMAPS socket must retain the core's graceful
+            // shutdown path even when configured addresses cannot be bound.
+            let mut roots = rustls::RootCertStore::empty();
+            roots.add(cert.der().clone()).unwrap();
+            let client = rustls::ClientConfig::builder()
+                .with_root_certificates(roots)
+                .with_no_client_auth();
+            let connector = tokio_rustls::TlsConnector::from(std::sync::Arc::new(client));
+            let tcp = tokio::net::TcpStream::connect(&addresses[4]).await.unwrap();
+            let tls = connector
+                .connect("example.com".try_into().unwrap(), tcp)
+                .await
+                .unwrap();
+            let mut imap = tokio::io::BufReader::new(tls);
+            let mut greeting = String::new();
+            tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                imap.read_line(&mut greeting),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            assert!(greeting.starts_with("* OK "), "{greeting}");
+            built.imap_handle.shutdown().await;
+            let mut bye = String::new();
+            tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                imap.read_line(&mut bye),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            assert!(bye.starts_with("* BYE [UNAVAILABLE]"), "{bye}");
+
             let listeners =
                 maild::activation::listeners(sockets.take("jmap"), &["invalid-bind".into()])
                     .await
