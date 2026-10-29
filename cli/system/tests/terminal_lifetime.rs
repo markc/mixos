@@ -114,10 +114,13 @@ impl Shell {
         }
     }
     fn prompt(&mut self) {
+        self.until("LOSS> ");
+    }
+    fn until(&mut self, marker: &str) {
         let deadline = Instant::now() + Duration::from_secs(5);
         let master = self.master.as_mut().unwrap();
         let mut output = String::new();
-        while !output.contains("LOSS> ") {
+        while !output.contains(marker) {
             assert!(Instant::now() < deadline, "prompt: {output:?}");
             let mut fd = libc::pollfd {
                 fd: master.as_raw_fd(),
@@ -153,8 +156,10 @@ impl Shell {
             .unwrap();
         let deadline = Instant::now() + Duration::from_secs(5);
         loop {
-            if let Ok(pid) = fs::read_to_string(&report) {
-                return pid.parse().unwrap();
+            if let Ok(text) = fs::read_to_string(&report)
+                && let Ok(pid) = text.parse()
+            {
+                return pid;
             }
             assert!(Instant::now() < deadline, "background job did not start");
             std::thread::sleep(Duration::from_millis(10));
@@ -176,6 +181,19 @@ fn closing_master_exits_with_and_without_inherited_hup_ignore() {
                 "{editor}, ignored={ignore_hup}"
             );
         }
+    }
+}
+
+#[test]
+fn terminal_loss_with_incomplete_input_exits_129() {
+    let _fixture = fixture_guard();
+    for (controlling, editor) in [(true, "owned"), (true, "rustyline"), (false, "rustyline")] {
+        let mut shell = Shell::new(true, controlling, editor);
+        shell.prompt();
+        shell.master.as_mut().unwrap().write_all(b"if true then\n").unwrap();
+        shell.until("  > ");
+        drop(shell.master.take());
+        assert_eq!(shell.wait().code(), Some(129), "{editor}, controlling={controlling}");
     }
 }
 
@@ -306,8 +324,10 @@ fn killed_test_runner_cannot_orphan_a_stopped_shell() {
     };
     let deadline = Instant::now() + Duration::from_secs(5);
     let child: i32 = loop {
-        if let Ok(pid) = fs::read_to_string(&report) {
-            break pid.parse().unwrap();
+        if let Ok(text) = fs::read_to_string(&report)
+            && let Ok(pid) = text.parse()
+        {
+            break pid;
         }
         assert!(Instant::now() < deadline, "runner did not report its child");
         std::thread::sleep(Duration::from_millis(10));
