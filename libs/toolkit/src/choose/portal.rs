@@ -206,6 +206,14 @@ async fn session_inner(
     tokio::pin!(call);
     let reply = tokio::select! {
         reply = &mut call => reply,
+        _ = tokio::time::sleep(IO_BOUND) => {
+            // The method must acknowledge the Request promptly; the visible
+            // dialog itself has no deadline. Try the standard predicted path,
+            // then fail finally: a legacy owner may use another handle, so an
+            // unacknowledged Close cannot justify opening a second chooser.
+            let _ = close(connection, owner.as_str(), &predicted).await;
+            return Ok(Some(Outcome::Failed("portal chooser acknowledgement timed out".into())));
+        }
         _ = cancelled(cancel) => {
             // Close the predicted path promptly, then retain the method future
             // long enough to close a different/late returned handle as well.

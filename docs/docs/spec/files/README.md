@@ -44,6 +44,11 @@ best-effort cancel; an unreachable cancel never prevents fallback. A stalled
 `files.choose` acknowledgement is bounded to two seconds; cancellation or
 dropping the handle closes the known id or recovers it by correlation after
 that bound. A live chooser waiting for the person has no timeout.
+The portal method acknowledgement is also bounded to two seconds. A stalled
+acknowledgement triggers a best-effort Close on the predicted Request and a
+final failure; it cannot open a second chooser while an older portal's actual
+handle remains unknown. The 64-filter limit includes an inserted current
+filter, so every accepted request can be serialised back to the same contract.
 
 On Windows/macOS, rfd 0.17.2 exposes neither a session-availability probe nor
 an error distinct from Cancel. Its failed dialog is therefore a final Cancel;

@@ -95,7 +95,9 @@ impl Portal {
                 .remove::<RequestObject, _>(path.as_str())
                 .await
                 .unwrap();
-        } else if let Some(code) = self.early {
+        } else if let Some(code) = self.early
+            && code != 98
+        {
             emit(connection, &sender, &path, code).await;
         }
         self.calls
@@ -106,6 +108,9 @@ impl Portal {
                 owner: sender,
             })
             .unwrap();
+        if self.early == Some(98) {
+            std::future::pending::<()>().await;
+        }
         Ok(path.try_into().unwrap())
     }
 }
@@ -186,6 +191,25 @@ async fn serve(
         .unwrap();
     connection.request_name(DESKTOP).await.unwrap();
     (connection, rx, closed)
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn portal_hung_method_acknowledgement_is_bounded_and_final() {
+    let (_process, address) = dbus();
+    let (_server, mut calls, closed) = serve(&address, Some(98)).await;
+    let client = connection(&address).await;
+    let req = request("{}").unwrap();
+    let (_cancel_tx, mut cancel) = watch::channel(false);
+    let result = tokio::time::timeout(
+        Duration::from_secs(7),
+        portal::session(&client, &req, &mut cancel),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert!(matches!(result, Some(Outcome::Failed(message)) if message.contains("acknowledgement")));
+    assert!(calls.try_recv().is_ok(), "the portal actually opened its Request");
+    assert_eq!(closed.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

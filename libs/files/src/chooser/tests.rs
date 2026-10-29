@@ -21,6 +21,26 @@ fn canonical_body_round_trips_all_modes_without_losing_bytes_or_defaults() {
     }
 }
 
+#[test]
+fn inserted_current_filter_stays_within_the_round_trip_limit() {
+    let filters = (0..64)
+        .map(|i| json!({"name":format!("Filter {i}"),"patterns":["*.md"],"mime_types":[]}))
+        .collect::<Vec<_>>();
+    let extra = json!({"name":"Extra","patterns":["*.txt"],"mime_types":[]});
+    assert!(
+        parse(json!({"filters":filters,"current_filter":extra}))
+            .unwrap_err()
+            .message
+            .contains("64-filter")
+    );
+    let request = parse(json!({"filters":&filters[..63],"current_filter":extra})).unwrap();
+    assert_eq!(request.filters.len(), 64);
+    assert_eq!(
+        Request::parse(&request.body().unwrap().to_string(), &defaults()).unwrap(),
+        request
+    );
+}
+
 fn defaults() -> Defaults {
     Defaults {
         open_title: "Open".into(),

@@ -11,6 +11,9 @@ generated: by docs/_build/gen-site.mix from libs/toolkit/CHANGELOG.md; do not ed
 
 ## Unreleased — 2026-10-28
 
+- Bound a stalled portal method acknowledgement without opening a second
+  chooser; reject an inserted current filter that would exceed the shared
+  contract's 64-filter limit before starting any tier.
 - Follow the summary custom-source flag explicitly, retaining the file design
   and its overlay while applying profile framing, menus, band and fonts.
 - Bundle the unmodified Inter 4.1 Bold (700) face under the existing SIL OFL

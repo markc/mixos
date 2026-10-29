@@ -547,6 +547,11 @@ impl Request {
             && let Some(current) = &current_filter
             && !filters.contains(current)
         {
+            if filters.len() == 64 {
+                return Err(Refusal::argument(
+                    "current_filter would exceed the 64-filter limit",
+                ));
+            }
             filters.insert(0, current.clone());
         }
         let choices: Vec<_> = list(&m, "choices", 0, 16)?
