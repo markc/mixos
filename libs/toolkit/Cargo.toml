@@ -20,6 +20,10 @@ contract = "none"
 mod_module_files = "deny"
 
 [dependencies]
+files.workspace = true
+mimedb.workspace = true
+anyhow.workspace = true
+uuid.workspace = true
 icons.workspace = true
 logging.workspace = true
 paths = { path = "../../libs/paths" }
@@ -64,11 +68,20 @@ futures = { workspace = true, optional = true }
 xkbcommon = { version = "0.7", default-features = false, optional = true }
 
 [features]
+default = ["portal"]
+portal = ["dep:zbus", "dep:futures-util"]
 layer = ["dep:smithay-client-toolkit", "dep:wayland-backend", "dep:wgpu", "dep:egui-wgpu", "dep:futures", "dep:xkbcommon"]
 
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus = { workspace = true, optional = true }
+futures-util = { workspace = true, optional = true }
+
+[target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
+rfd = { version = "=0.17.2", default-features = false }
+
 [dev-dependencies]
+test-broker = { path = "../test-broker" }
 anyhow.workspace = true
 libc.workspace = true
-uuid.workspace = true
 egui_kittest.workspace = true
 tempfile.workspace = true

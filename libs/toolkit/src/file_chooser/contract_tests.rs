@@ -1,0 +1,295 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+use super::*;
+use egui_kittest::{Harness, kittest::Queryable};
+use serde_json::json;
+
+type State = (FileChooser, Option<Outcome>);
+
+#[test]
+fn opening_from_a_still_recorded_menu_raises_above_the_parent_dialog() {
+    let chooser = FileChooser::new("/home/user/Documents", "Attach files", "Attach");
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(900.0, 700.0))
+        .with_context_setup(|ctx| crate::install(ctx, &crate::Theme::embedded()))
+        .build_ui_state(
+            |ui, state: &mut (FileChooser, bool)| {
+                let parent = Id::unique("compose-under-menu");
+                ui.ctx()
+                    .move_to_top(egui::LayerId::new(egui::Order::Foreground, parent));
+                Dialog::new(parent, "Compose")
+                    .enabled(!state.1)
+                    .show(ui.ctx(), |ui| {
+                        crate::menu::bar(
+                            ui,
+                            &[crate::menu::Menu {
+                                title: "Attachments".into(),
+                                entries: vec![crate::menu::Entry::Row(crate::menu::Row::command(
+                                    "attach",
+                                    "Attach files",
+                                    None,
+                                    true,
+                                ))],
+                            }],
+                        );
+                        ui.label("Message body");
+                    });
+                if state.1 {
+                    // The menu was drawn earlier in the frame (Attachments), and
+                    // egui still records its popup while the chooser is opening.
+                    if !state.0.started {
+                        crate::menu::open_path(ui.ctx(), &["Attachments".into()]).unwrap();
+                        assert!(crate::menu::is_open(ui.ctx()));
+                        egui::Popup::open_id(ui.ctx(), Id::unique("attachments-menu"));
+                    }
+                    state.0.show(ui.ctx());
+                }
+            },
+            (chooser, false),
+        );
+    h.run_steps(3);
+    h.state_mut().1 = true;
+    h.run_steps(1);
+    let chooser_layer = egui::LayerId::new(egui::Order::Foreground, h.state().0.id);
+    assert_eq!(
+        h.ctx
+            .memory(|m| m.areas().top_layer_id(egui::Order::Foreground)),
+        Some(chooser_layer)
+    );
+    h.state_mut().0.pending = None;
+    h.state_mut().0.browsing = None;
+    h.state_mut().0.error = None;
+    h.run_steps(3);
+    h.snapshot("file_chooser_menu_open");
+    let _ = h.get_by_label("Attach");
+    let _ = h.get_by_label("Cancel");
+}
+
+fn harness(mut chooser: FileChooser) -> Harness<'static, State> {
+    chooser.started = true;
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(900.0, 700.0))
+        .with_context_setup(|ctx| crate::install(ctx, &crate::Theme::embedded()))
+        .build_ui_state(
+            |ui, state: &mut State| {
+                if state.1.is_none() {
+                    state.1 = state.0.show(ui.ctx());
+                }
+            },
+            (chooser, None),
+        );
+    harness.run_steps(3);
+    harness
+}
+
+fn settle(h: &mut Harness<'_, State>) {
+    for _ in 0..200 {
+        h.run();
+        if h.state().0.pending.is_none() {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    panic!("chooser worker did not settle");
+}
+
+fn parse(value: serde_json::Value) -> ChooseRequest {
+    crate::choose::request(&value.to_string()).unwrap()
+}
+
+#[test]
+fn email_attach_multiple_and_filters_keep_folders() {
+    let dir = tempfile::tempdir().unwrap();
+    for name in ["one.md", "two.md", "photo.png"] {
+        std::fs::write(dir.path().join(name), "").unwrap();
+    }
+    std::fs::create_dir(dir.path().join("Reports")).unwrap();
+    let request = parse(
+        json!({"mode":"open","multiple":true,"title":"Attach files","accept_label":"Attach",
+        "current_folder":dir.path().to_str().unwrap(),"filters":[{"name":"Markdown","patterns":["*.md"],"mime_types":[]}]}),
+    );
+    let mut chooser = FileChooser::from_request(request.clone());
+    let Answer::Listed(listing) = open_filtered(dir.path().into(), false, Some(&request)).unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(
+        listing
+            .entries
+            .iter()
+            .map(|e| e.name.as_str())
+            .collect::<Vec<_>>(),
+        ["Reports", "one.md", "two.md"]
+    );
+    chooser.entries = listing.entries;
+    chooser.selection.all(&chooser.entries);
+    let mut h = harness(chooser);
+    h.get_by_label("Attach").click();
+    settle(&mut h);
+    let Some(Outcome::Picked(paths)) = &h.state().1 else {
+        panic!("not picked")
+    };
+    assert_eq!(
+        paths,
+        &[dir.path().join("one.md"), dir.path().join("two.md")]
+    );
+}
+
+#[test]
+fn email_save_suggested_name_appends_extension_and_round_trips_choices() {
+    let dir = tempfile::tempdir().unwrap();
+    let request = parse(
+        json!({"mode":"save","title":"Save message","current_name":"message",
+        "current_folder":dir.path().to_str().unwrap(),"filters":[{"name":"Markdown","patterns":["*.md"],"mime_types":[]}],
+        "choices":[{"id":"encoding","label":"Encoding","options":[{"id":"utf8","label":"UTF-8"},{"id":"utf16","label":"UTF-16"}]},
+        {"id":"readonly","label":"Read only","options":[]}]}),
+    );
+    let mut h = harness(FileChooser::from_request(request));
+    assert_eq!(h.state().0.name, "message");
+    h.get_by_label("Read only").click();
+    h.run();
+    h.get_by_role_and_label(egui::accesskit::Role::ComboBox, "Encoding")
+        .click();
+    h.run();
+    h.get_by_label("UTF-16").click();
+    h.run();
+    h.state_mut().0.path = "/home/user/Documents".into();
+    h.run();
+    h.snapshot("file_chooser_contract_save");
+    h.get_by_label("Save").click();
+    settle(&mut h);
+    let Some(Outcome::Save { path, .. }) = &h.state().1 else {
+        panic!("not saved")
+    };
+    assert_eq!(path, &dir.path().join("message.md"));
+    let crate::choose::Outcome::Chosen {
+        choices,
+        current_filter,
+        ..
+    } = h.state().0.chosen(vec![path.clone()])
+    else {
+        panic!()
+    };
+    assert_eq!(choices["readonly"], "true");
+    assert_eq!(choices["encoding"], "utf16");
+    assert_eq!(current_filter.unwrap().name, "Markdown");
+    assert!(!path.exists());
+}
+
+#[test]
+fn directory_and_save_files_keep_exact_names_and_confirm_replacement_once() {
+    // The host's main filesystem can enforce UTF-8 names; tmpfs retains bytes.
+    let dir = tempfile::tempdir_in("/dev/shm").unwrap();
+    let mut chooser = FileChooser::from_request(parse(
+        json!({"directory":true,"current_folder":dir.path().to_str().unwrap()}),
+    ));
+    assert!(chooser.can_confirm());
+    chooser.pick(&Context::default());
+    let answer = chooser
+        .pending
+        .take()
+        .unwrap()
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .unwrap()
+        .unwrap();
+    assert!(matches!(answer, Answer::Picked(paths) if paths == [dir.path()]));
+    std::fs::write(dir.path().join("one.md"), "original").unwrap();
+    let names = vec![b"one.md".to_vec(), b"\xff.md".to_vec()];
+    let Answer::Batch(paths, replace) = check_batch(dir.path().into(), names.clone()).unwrap()
+    else {
+        panic!()
+    };
+    assert!(replace);
+    assert_eq!(
+        crate::choose::path_bytes(&paths[1]),
+        crate::choose::path_bytes(&dir.path().join(crate::choose::path_from_bytes(&names[1])))
+    );
+    let mut chooser = FileChooser::from_request(parse(
+        json!({"mode":"save_files","files":["one.md",{"bytes":"%FF.md"}],"current_folder":dir.path().to_str().unwrap()}),
+    ));
+    chooser.batch = Some(paths.clone());
+    chooser.replace = Some(paths[0].clone());
+    let mut h = harness(chooser);
+    h.get_by_label("Replace").click();
+    h.run();
+    assert_eq!(h.state().1, Some(Outcome::Picked(paths)));
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("one.md")).unwrap(),
+        "original"
+    );
+}
+
+#[test]
+fn typed_save_paths_navigate_and_current_file_bytes_survive() {
+    let dir = tempfile::tempdir_in("/dev/shm").unwrap();
+    std::fs::create_dir(dir.path().join("Reports")).unwrap();
+    let request = parse(
+        json!({"mode":"save","current_file":format!("file://{}/%FF.md", dir.path().display())}),
+    );
+    let chooser = FileChooser::from_request(request.clone());
+    assert_eq!(chooser.directory, dir.path());
+    let Answer::Save(path, false) = check_typed(dir.path().into(), chooser.name, &request).unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(path.file_name().unwrap().as_encoded_bytes(), b"\xff.md");
+    assert!(
+        matches!(check_typed(dir.path().into(), "Reports/letter".into(), &request), Ok(Answer::Navigate(_, tail)) if tail == "letter")
+    );
+    assert!(check_typed(dir.path().into(), "missing/letter".into(), &request).is_err());
+}
+
+#[test]
+fn filter_menu_selects_inserted_current_filter_then_reloads() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("letter.md"), "").unwrap();
+    std::fs::write(dir.path().join("photo.png"), "").unwrap();
+    let request = parse(json!({"current_folder":dir.path().to_str().unwrap(),
+        "filters":[{"name":"Markdown","patterns":["*.md"],"mime_types":[]}],
+        "current_filter":{"name":"Images","patterns":["*.png"],"mime_types":[]}}));
+    let mut h = harness(FileChooser::from_request(request));
+    h.get_by_role_and_label(egui::accesskit::Role::ComboBox, "File type")
+        .click();
+    h.run();
+    h.get_by_label("Markdown").click();
+    h.run();
+    settle(&mut h);
+    assert_eq!(
+        h.state()
+            .0
+            .contract
+            .as_ref()
+            .unwrap()
+            .current_filter
+            .as_ref()
+            .unwrap()
+            .name,
+        "Markdown"
+    );
+    assert_eq!(
+        h.state()
+            .0
+            .entries
+            .iter()
+            .map(|e| e.name.as_str())
+            .collect::<Vec<_>>(),
+        ["letter.md"]
+    );
+}
+
+#[test]
+fn directory_navigation_resolves_dot_components_on_the_worker() {
+    let dir = tempfile::tempdir().unwrap();
+    let child = dir.path().join("child");
+    std::fs::create_dir(&child).unwrap();
+    let request = parse(json!({"directory":true}));
+    let paths = check_directories(vec![child.join("..")]).unwrap();
+    assert_eq!(paths, [dir.path().canonicalize().unwrap()]);
+    request
+        .validate_acceptance(&files::chooser::Acceptance {
+            paths: paths.iter().map(|p| crate::choose::path_bytes(p)).collect(),
+            folder: None,
+            current_filter: None,
+            choices: Default::default(),
+        })
+        .unwrap();
+}

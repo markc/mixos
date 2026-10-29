@@ -266,6 +266,41 @@ agent --Bus files.choose--------------------------^                  |
           &lt;---- outcome on the files.chosen topic, or files.choose.result
 </code></pre>
 <h2 id="provider">Provider</h2>
+<p>Toolkit apps call <code>toolkit::choose(request)</code> and poll its handle in the
+opening viewport. It tries registered Bus <code>files</code> first, then the system
+chooser (direct FileChooser portal on Linux, rfd on Windows/macOS), then
+the in-process toolkit chooser. Each tier ends before the next starts;
+refusals and provider failures, including portal Response 2, advance. Every
+cancel, including <code>reason: caller</code>, is final. An accepted Response 0 that
+cannot be decoded or validated is a final error reported to the app.
+The handle sends the app's <code>correlation</code> (generating a unique one if absent),
+matches native outcomes by request id and recovers them with
+<code>files.choose.result</code>. Lost acknowledgements are recovered by correlation
+in <code>files.choose.list</code>; any matching window is cancelled before fallback,
+even when <code>files.choose</code> returned an error after opening it.
+<code>on_behalf_of</code> is the root app id, retained by toolkit's viewport builder
+when egui has no root metadata, so separate windows share remembered folders.
+The opening viewport's id is used only when no app id is available.</p>
+<p>Toolkit uses the same five-second liveness sweep described under Losing a
+party: <code>files</code> missing from service discovery, two consecutive list failures,
+or a changed incarnation ends the tier. A lost provider gets one bounded
+best-effort cancel; an unreachable cancel never prevents fallback. A stalled
+<code>files.choose</code> acknowledgement is bounded to two seconds; cancellation or
+dropping the handle closes the known id or recovers it by correlation after
+that bound. A live chooser waiting for the person has no timeout.
+The portal method acknowledgement is also bounded to two seconds. A stalled
+acknowledgement triggers a best-effort Close on the predicted Request and a
+final failure; it cannot open a second chooser while an older portal's actual
+handle remains unknown. The 64-filter limit includes an inserted current
+filter, so every accepted request can be serialised back to the same contract.</p>
+<p>On Windows/macOS, rfd 0.17.2 exposes neither a session-availability probe nor
+an error distinct from Cancel. Its failed dialog is therefore a final Cancel;
+the toolkit cannot advance to tier 3 on that failure. rfd also exposes no
+Close operation: app cancellation or dropping the handle discards the answer
+but does <strong>not</strong> close its native dialog. The worker waits for that dialog to
+end and never opens a second one. rfd save results apply the request's
+<code>*.ext</code> save-name rule; rfd does not return the selected filter or custom
+choices. Linux probes the portal owner and interface version before use.</p>
 <p>The Bus service <code>files</code> is served by DOpus in chooser mode,
 <code>dopus --choose-service</code>, a session unit started with the desk. It has no main
 window. Each accepted <code>files.choose</code> opens one chooser window: a single DOpus

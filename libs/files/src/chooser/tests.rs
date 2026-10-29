@@ -3,6 +3,44 @@
 
 use super::*;
 
+#[test]
+fn canonical_body_round_trips_all_modes_without_losing_bytes_or_defaults() {
+    for body in [
+        json!({"mode":"open","multiple":true,"directory":true,"correlation":"compose-3",
+            "current_filter":{"name":"Text","patterns":["*.md"],"mime_types":["text/*"]},
+            "choices":[{"id":"check","label":"Check","options":[]}]}),
+        json!({"mode":"save","current_file":"file:///tmp/%FF.md","accept_label":"_Write",
+            "filters":[{"name":"Text","patterns":["*.md"],"mime_types":[]}],
+            "current_filter":{"name":"Other","patterns":["*.txt"],"mime_types":[]}}),
+        json!({"mode":"save_files","current_folder":"file:///tmp/%FE",
+            "files":["one.md",{"bytes":"%FF.md"}], "on_behalf_of":"test app"}),
+    ] {
+        let request = Request::parse(&body.to_string(), &defaults()).unwrap();
+        let reparsed = Request::parse(&request.body().unwrap().to_string(), &defaults()).unwrap();
+        assert_eq!(request, reparsed);
+    }
+}
+
+#[test]
+fn inserted_current_filter_stays_within_the_round_trip_limit() {
+    let filters = (0..64)
+        .map(|i| json!({"name":format!("Filter {i}"),"patterns":["*.md"],"mime_types":[]}))
+        .collect::<Vec<_>>();
+    let extra = json!({"name":"Extra","patterns":["*.txt"],"mime_types":[]});
+    assert!(
+        parse(json!({"filters":filters,"current_filter":extra}))
+            .unwrap_err()
+            .message
+            .contains("64-filter")
+    );
+    let request = parse(json!({"filters":&filters[..63],"current_filter":extra})).unwrap();
+    assert_eq!(request.filters.len(), 64);
+    assert_eq!(
+        Request::parse(&request.body().unwrap().to_string(), &defaults()).unwrap(),
+        request
+    );
+}
+
 fn defaults() -> Defaults {
     Defaults {
         open_title: "Open".into(),
@@ -11,6 +49,18 @@ fn defaults() -> Defaults {
         open_accept: "Open".into(),
         save_accept: "Save".into(),
     }
+}
+
+#[test]
+fn edited_locations_are_refused_without_panicking_in_body() {
+    let mut req = Request::parse("{}", &defaults()).unwrap();
+    req.current_folder = Some(b"relative\0".to_vec());
+    let result = std::panic::catch_unwind(|| req.body());
+    assert!(
+        result.is_ok(),
+        "a public Request edit must not kill its worker"
+    );
+    assert!(result.unwrap().is_err());
 }
 
 #[derive(Default)]
