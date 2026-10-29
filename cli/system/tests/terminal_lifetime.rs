@@ -161,14 +161,29 @@ impl Shell {
             )
             .unwrap();
         let deadline = Instant::now() + Duration::from_secs(5);
+        let mut output = String::new();
         loop {
             if let Ok(text) = fs::read_to_string(&report)
                 && let Ok(pid) = text.parse()
             {
                 return pid;
             }
-            assert!(Instant::now() < deadline, "background job did not start");
-            std::thread::sleep(Duration::from_millis(10));
+            assert!(Instant::now() < deadline, "job did not start: {output}");
+            // The editor redraws as it consumes the command. Service the
+            // master while waiting, or a long command can fill the PTY and
+            // block before Enter is reached.
+            let master = self.master.as_mut().unwrap();
+            let mut poll = libc::pollfd { fd: master.as_raw_fd(), events: libc::POLLIN, revents: 0 };
+            if unsafe { libc::poll(&mut poll, 1, 10) } > 0 {
+                let mut bytes = [0; 4096];
+                let n = master.read(&mut bytes).unwrap();
+                output.push_str(&String::from_utf8_lossy(&bytes[..n]));
+                if output.contains("\x1b[6n") {
+                    master.write_all(b"\x1b[1;1R").unwrap();
+                    output.clear();
+                }
+                if output.len() > 65536 { output.clear(); }
+            }
         }
     }
 }
