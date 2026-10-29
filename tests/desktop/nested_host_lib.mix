@@ -590,6 +590,21 @@ end
 -- exits 2 when the host or the compositor cannot start. `config` is compd's
 -- settings file (its COMPOSITOR_ENVIRONMENT). `kind` is always "compd"; it
 -- names the run directory and the Bus service.
+-- D-Bus activated children inherit the daemon's environment, not the caller's.
+-- Keep their document-portal mounts and persistence inside the owned fixture.
+fn compat_bus_env($run, $runtime, $socket)
+  $home = $run .. "/activation-home"
+  for each $path in [$home, $home .. "/config", $home .. "/data", $home .. "/state", $home .. "/cache"]
+    mkdir($path, {parents:true})
+    chmod($path, 0o700)
+  end
+  return {HOME:$home, XDG_CONFIG_HOME:$home .. "/config", XDG_DATA_HOME:$home .. "/data",
+    XDG_STATE_HOME:$home .. "/state", XDG_CACHE_HOME:$home .. "/cache",
+    XDG_RUNTIME_DIR:$runtime, WAYLAND_DISPLAY:$socket, DISPLAY:"",
+    DBUS_SESSION_BUS_ADDRESS:nil, DBUS_STARTER_ADDRESS:nil,
+    DBUS_STARTER_BUS_TYPE:nil, DBUS_SYSTEM_BUS_ADDRESS:nil}
+end
+
 fn start($opts)
   $kind = "compd"
   $bin = $opts["bin"]
@@ -643,7 +658,8 @@ fn start($opts)
   if $dbus_daemon != nil and $dbus_daemon != "" then
     $dbus_address = "unix:path=" .. $run .. "/session-bus"
     $dbus_pid = spawn([$dbus_daemon, "--session", "--nofork", "--nopidfile", "--address=" .. $dbus_address],
-      {stdout: {file: $run .. "/dbus.log"}, stderr: "stdout", detach: true})
+      {env:compat_bus_env($run, $runtime, $socket),
+       stdout: {file: $run .. "/dbus.log"}, stderr: "stdout", detach: true})
     $t = 0
     while not exists($run .. "/session-bus") and $t < 25
       sleep(0.2)
