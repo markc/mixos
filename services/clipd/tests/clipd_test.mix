@@ -136,6 +136,10 @@ try
   check("binary bytes round trip outside Bus", deep_eq(read_file_bytes($path), $bytes))
   check("replace store binary", call("clipd", "clipboard.set", {data: "after-binary"}).rc == 0)
   check("store replacement releases old clipd pin", eventually(fn() = not contains(call("blobd", "blob.stat", {blob: $blob.v.blob}).v.pins, "clipd")))
+  $missing = {blob: "b3:0000000000000000000000000000000000000000000000000000000000000000", origin: "missing", size: 3, mime: "image/png"}
+  check("store defers missing blob", call("clipd", "clipboard.set", {mime: "image/png", blob: $missing}).v.pending)
+  check("failed native fetch ends pending state", eventually(fn() = not call("clipd", "clipboard.info", {}).v.pending.clipboard))
+  check("failed fetch preserves prior selection", call("clipd", "clipboard.get", {}).v.data == "after-binary")
   check("malformed blob refused", call("clipd", "clipboard.set", {mime: "image/png", blob: {blob: "invalid"}}).v.error_code == "BLOB")
   send clipd QUIT timeout=5
   send peerclip QUIT timeout=5

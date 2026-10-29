@@ -13,6 +13,7 @@ generated: by docs/_build/gen-site.mix from services/clipd/CHANGELOG.md; do not 
 - Keep active store blobs pinned and release cancelled fetch pins on completion;
   bound eager Wayland text probes, preserve byte sizes and rotation order,
   refuse password-marker blobs and return an error for argumentless clip_set.
+- End failed pending blob fetches without replacing the previous selection.
 - Run clipboard policy and private-broker service tests in the standard Mix gate
   using freshly built Mix and blobd binaries.
 

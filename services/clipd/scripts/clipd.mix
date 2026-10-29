@@ -405,6 +405,12 @@ fn resume_blob($which)
       return commit_selection($which, $pending.offer, $pending.follow, true)
     catch $m, $err
       eprint("clipd: pending blob unavailable (" .. $err.code .. ")")
+      if $err.code != "BLOB_PENDING" then
+        $state = $S
+        $state.pending[$which] = nil
+        task_start("clipboard.unpin", json_encode({blob: $pending.offer.blob}))
+        return $state
+      end
     end
   end
   return $S
@@ -416,6 +422,15 @@ on blob.fetched
       $before = $S.pending[$which]
       $S = resume_blob($which)
       if $before != nil and $S.pending[$which] == nil then changed($which, $before.follow) end
+    end
+  elif ($event.headers ?? {}).broker_origin == "local" then
+    for $which in ["clipboard", "primary"]
+      $pending = $S.pending[$which]
+      if $pending != nil and $pending.offer.blob.blob == body().blob then
+        $S.pending[$which] = nil
+        task_start("clipboard.unpin", json_encode({blob: $pending.offer.blob}))
+        eprint("clipd: pending blob fetch failed; previous selection retained")
+      end
     end
   end
   if ($event.headers ?? {}).broker_origin == "local" and $S.retired[body().blob] != nil then
