@@ -2104,8 +2104,13 @@ async fn create_and_subscribe_reject_c1_and_utf7_command_injection() -> Result<(
     command(&mut r, &mut w, "e", "ENABLE UTF8=ACCEPT").await?;
     for control in ['\u{80}', '\u{85}', '\u{9f}'] {
         for imap_command in ["CREATE", "SUBSCRIBE"] {
-            let response =
-                command(&mut r, &mut w, "b", &format!("{imap_command} \"bad{control}name\"")).await?;
+            let response = command(
+                &mut r,
+                &mut w,
+                "b",
+                &format!("{imap_command} \"bad{control}name\""),
+            )
+            .await?;
             assert!(response.contains("b NO [CANNOT]"), "{response}");
         }
     }
