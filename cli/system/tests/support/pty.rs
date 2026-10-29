@@ -22,7 +22,11 @@ impl Session {
         let pidfd = {
             use std::os::fd::FromRawFd;
             let fd = unsafe { libc::syscall(libc::SYS_pidfd_open, child.id(), 0) };
-            assert!(fd >= 0, "owned child pidfd: {}", std::io::Error::last_os_error());
+            assert!(
+                fd >= 0,
+                "owned child pidfd: {}",
+                std::io::Error::last_os_error()
+            );
             unsafe { std::os::fd::OwnedFd::from_raw_fd(fd as i32) }
         };
         Self {
@@ -61,9 +65,16 @@ impl Session {
             let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
             loop {
                 let rc = unsafe {
-                    libc::waitid(libc::P_PIDFD, self.pidfd.as_raw_fd() as u32, &mut info, libc::WEXITED)
+                    libc::waitid(
+                        libc::P_PIDFD,
+                        self.pidfd.as_raw_fd() as u32,
+                        &mut info,
+                        libc::WEXITED,
+                    )
                 };
-                if rc == 0 || std::io::Error::last_os_error().kind() != std::io::ErrorKind::Interrupted {
+                if rc == 0
+                    || std::io::Error::last_os_error().kind() != std::io::ErrorKind::Interrupted
+                {
                     break;
                 }
             }
@@ -168,8 +179,7 @@ fn kill_session(session: u32, expected_start: Option<&str>) {
                 let fd = unsafe { OwnedFd::from_raw_fd(fd as i32) };
                 if identity(pid).is_some_and(|member| {
                     pid == session || (leader.0 == session && member.0 == session)
-                })
-                    && identity(session).as_ref() == Some(&leader)
+                }) && identity(session).as_ref() == Some(&leader)
                 {
                     unsafe {
                         libc::syscall(
@@ -192,7 +202,7 @@ fn kill_session(session: u32, expected_start: Option<&str>) {
 
 #[cfg(target_os = "linux")]
 #[test]
-fn stale_session_identity_does_not_signal_a_new_leader() {
+fn stale_session_identity_does_not_authorise_group_cleanup() {
     let mut command = Command::new("sleep");
     guard(&mut command);
     command.arg("60");
@@ -206,16 +216,14 @@ fn stale_session_identity_does_not_signal_a_new_leader() {
     }
     let mut child = command.spawn().unwrap();
     let session = Session::new(&child);
-    let stale = Session {
-        pid: child.id(),
-        start: Some("stale leader start".into()),
-        pidfd: session.pidfd.try_clone().unwrap(),
-    };
-    stale.kill();
+    kill_session(child.id(), Some("stale leader start"));
     let untouched = try_wait(&mut child).unwrap().is_none();
     session.kill();
     let _ = child.wait();
-    assert!(untouched, "an old identity authorised signalling a new leader");
+    assert!(
+        untouched,
+        "an old identity authorised signalling a new leader"
+    );
 }
 
 #[cfg(target_os = "linux")]
