@@ -385,11 +385,7 @@ impl Child {
             });
         }
         let process = command.spawn().unwrap();
-        Self {
-            pty,
-            process,
-            home,
-        }
+        Self { pty, process, home }
     }
     fn pid(&self) -> i32 {
         self.process.id() as i32

@@ -342,10 +342,7 @@ fn fixture_parent() {
         });
     }
     let child = command.spawn().unwrap();
-    assert_eq!(
-        unsafe { libc::kill(child.id() as i32, libc::SIGSTOP) },
-        0
-    );
+    assert_eq!(unsafe { libc::kill(child.id() as i32, libc::SIGSTOP) }, 0);
     let mut status = 0;
     assert_eq!(
         unsafe { libc::waitpid(child.id() as i32, &mut status, libc::WUNTRACED) },
