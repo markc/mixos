@@ -1959,6 +1959,27 @@ mod tests {
     }
 
     #[test]
+    fn quit_waits_for_reply_bearing_workshop_completion() {
+        let mut e = engine();
+        e.queue_workshop("catalogues", json!({}), Some(73));
+        let effects = e.take_effects();
+        let [Effect::Workshop { ticket, reply, .. }] = effects.as_slice() else {
+            panic!()
+        };
+        let ticket = *ticket;
+        assert_eq!(*reply, Some(73));
+        e.quit();
+        assert!(!e.take_effects().contains(&Effect::Exit));
+        assert!(e.busy());
+
+        // The shell sends this operation's reply before calling settled.
+        assert!(e.workshop_completion(ticket, "catalogues"));
+        e.workshop_settled();
+        assert!(!e.busy());
+        assert!(e.take_effects().contains(&Effect::Exit));
+    }
+
+    #[test]
     fn a_lost_reply_is_uncertain_and_never_retried() {
         let mut e = engine();
         e.command(
