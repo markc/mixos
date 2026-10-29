@@ -3,6 +3,35 @@
 use std::os::unix::process::CommandExt;
 use std::process::{Child, Command, ExitStatus};
 
+/// Original leader identity survives a raw ptrace reap as a stale token rather
+/// than accidentally authorising cleanup of a new child with a reused PID.
+pub struct Session {
+    pid: u32,
+    start: Option<String>,
+}
+
+impl Session {
+    pub fn new(child: &Child) -> Self {
+        #[cfg(target_os = "linux")]
+        let start = Some(identity(child.id()).expect("spawned session leader stat").1);
+        #[cfg(not(target_os = "linux"))]
+        let start = None;
+        Self { pid: child.id(), start }
+    }
+
+    pub fn kill(&self) {
+        kill_session(self.pid, self.start.as_deref());
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn identity(pid: u32) -> Option<(u32, String)> {
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    let (_, tail) = stat.rsplit_once(") ")?;
+    let fields: Vec<_> = tail.split_whitespace().collect();
+    Some((fields.get(3)?.parse().ok()?, fields.get(19)?.to_string()))
+}
+
 /// Observe terminal status without surrendering the session leader's PID.
 /// Drop must clean the fixture's other job groups before the final reap.
 pub fn try_wait(child: &mut Child) -> std::io::Result<Option<ExitStatus>> {
@@ -66,22 +95,18 @@ pub fn guard(command: &mut Command) {
 /// Includes job-control groups inside an unreaped, directly owned session.
 /// The leader stays reserved until cleanup; pidfds bind signals to the exact
 /// selected members. Already-reaped or foreign leaders are never signalled.
-pub fn kill_session(session: u32) {
+fn kill_session(session: u32, expected_start: Option<&str>) {
     #[cfg(target_os = "linux")]
     {
         use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
-        fn identity(pid: u32) -> Option<(u32, String)> {
-            let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
-            let (_, tail) = stat.rsplit_once(") ")?;
-            let fields: Vec<_> = tail.split_whitespace().collect();
-            Some((fields.get(3)?.parse().ok()?, fields.get(19)?.to_string()))
-        }
         // waitid proves this is still our unreaped child, even after an exit
         // assertion. It returns ECHILD after a raw ptrace reaper consumed it.
         if status(session, true).is_err() {
             return;
         }
-        let Some(leader) = identity(session).filter(|leader| leader.0 == session) else {
+        let Some(leader) = identity(session).filter(|leader| {
+            leader.0 == session && Some(leader.1.as_str()) == expected_start
+        }) else {
             return;
         };
         if let Ok(entries) = std::fs::read_dir("/proc") {
@@ -113,5 +138,29 @@ pub fn kill_session(session: u32) {
     // MixOS and its strong PTY lifetime guarantees target Linux. Other Unix
     // builds cannot enumerate sessions safely and must not signal guessed PIDs.
     #[cfg(not(target_os = "linux"))]
-    let _ = session;
+    let _ = (session, expected_start);
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn stale_session_identity_does_not_signal_a_new_leader() {
+    let mut command = Command::new("sleep");
+    guard(&mut command);
+    command.arg("60");
+    unsafe {
+        command.pre_exec(|| {
+            if libc::setsid() < 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    let mut child = command.spawn().unwrap();
+    let session = Session::new(&child);
+    let stale = Session { pid: child.id(), start: Some("stale leader start".into()) };
+    stale.kill();
+    let untouched = try_wait(&mut child).unwrap().is_none();
+    session.kill();
+    let _ = child.wait();
+    assert!(untouched, "an old identity authorised signalling a new leader");
 }

@@ -607,6 +607,7 @@ struct Pty {
     slave: File,
     original: libc::termios,
     child: Child,
+    session: pty::Session,
     home: tempfile::TempDir,
     pending: Vec<u8>,
 }
@@ -699,6 +700,7 @@ impl Pty {
             master,
             slave,
             original,
+            session: pty::Session::new(&child),
             child,
             home,
             pending: vec![],
@@ -771,7 +773,7 @@ impl Pty {
 }
 impl Drop for Pty {
     fn drop(&mut self) {
-        pty::kill_session(self.child.id());
+        self.session.kill();
         let _ = self.child.wait();
     }
 }

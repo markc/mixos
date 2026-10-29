@@ -23,12 +23,13 @@ fn fixture_guard() -> std::sync::MutexGuard<'static, ()> {
 
 struct Shell {
     child: Child,
+    session: pty::Session,
     master: Option<File>,
     _home: tempfile::TempDir,
 }
 impl Drop for Shell {
     fn drop(&mut self) {
-        pty::kill_session(self.child.id());
+        self.session.kill();
         let _ = self.child.wait();
     }
 }
@@ -92,8 +93,10 @@ impl Shell {
                 Ok(())
             });
         }
+        let child = cmd.spawn().unwrap();
         Self {
-            child: cmd.spawn().unwrap(),
+            session: pty::Session::new(&child),
+            child,
             master: Some(master),
             _home: home,
         }
@@ -377,8 +380,10 @@ fn killed_test_runner_cannot_orphan_a_stopped_child() {
             Ok(())
         });
     }
+    let runner_child = command.spawn().unwrap();
     let mut runner = Shell {
-        child: command.spawn().unwrap(),
+        session: pty::Session::new(&runner_child),
+        child: runner_child,
         master: None,
         _home: home,
     };
@@ -405,7 +410,6 @@ fn killed_test_runner_cannot_orphan_a_stopped_child() {
             break;
         }
         if Instant::now() >= deadline {
-            pty::kill_session(child as u32);
             panic!("kernel parent-death guard left shell {child} alive");
         }
         std::thread::sleep(Duration::from_millis(10));

@@ -77,10 +77,16 @@ fn error_messages_and_codes_cannot_impersonate_a_signal() {
     }
 }
 
-struct OwnedChild(Child);
+struct OwnedChild(Child, pty::Session);
+impl OwnedChild {
+    fn new(child: Child) -> Self {
+        let session = pty::Session::new(&child);
+        Self(child, session)
+    }
+}
 impl Drop for OwnedChild {
     fn drop(&mut self) {
-        pty::kill_session(self.0.id());
+        self.1.kill();
         let _ = self.0.wait();
     }
 }
@@ -186,7 +192,7 @@ fn assert_sigint_after_cleanup(mode: &str, framed: bool, cleanup: Cleanup) {
         }
         _ => panic!("unknown mode: {mode}"),
     }
-    let mut child = OwnedChild(cmd.spawn().unwrap());
+    let mut child = OwnedChild::new(cmd.spawn().unwrap());
     let ready_deadline = Instant::now() + Duration::from_secs(5);
     while !ready.is_file() {
         assert!(
@@ -291,7 +297,7 @@ fn real_signals_exit_nonzero_for_waiting_and_cooperative_evaluations() {
                         cmd.args(["-i", "-c", "probe_run"]);
                     }
                 }
-                let mut child = OwnedChild(cmd.spawn().unwrap());
+                let mut child = OwnedChild::new(cmd.spawn().unwrap());
                 let ready_deadline = Instant::now() + Duration::from_secs(5);
                 while !marker.is_file() {
                     assert!(
@@ -347,7 +353,7 @@ fn sigint_during_cpu_only_prelude_exits_with_130_for_command_and_file() {
                 cmd.arg(script);
             }
         }
-        let mut child = OwnedChild(cmd.spawn().unwrap());
+        let mut child = OwnedChild::new(cmd.spawn().unwrap());
         let ready_deadline = Instant::now() + Duration::from_secs(5);
         while !std::fs::read_to_string(&stdout_path)
             .unwrap()
@@ -452,7 +458,7 @@ fn assert_framed_startup_sigint(startup: &str) {
             Ok(())
         });
     }
-    let mut child = OwnedChild(cmd.spawn().unwrap());
+    let mut child = OwnedChild::new(cmd.spawn().unwrap());
     let ready_deadline = Instant::now() + Duration::from_secs(5);
     while !ready.is_file() {
         assert!(

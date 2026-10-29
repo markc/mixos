@@ -242,6 +242,7 @@ impl Parent {
 struct Child {
     pty: File,
     process: std::process::Child,
+    session: pty::Session,
     home: tempfile::TempDir,
 }
 impl Child {
@@ -385,7 +386,7 @@ impl Child {
             });
         }
         let process = command.spawn().unwrap();
-        Self { pty, process, home }
+        Self { pty, session: pty::Session::new(&process), process, home }
     }
     fn pid(&self) -> i32 {
         self.process.id() as i32
@@ -433,7 +434,7 @@ impl Child {
 }
 impl Drop for Child {
     fn drop(&mut self) {
-        pty::kill_session(self.process.id());
+        self.session.kill();
         unsafe {
             libc::waitpid(self.pid(), std::ptr::null_mut(), 0);
         }

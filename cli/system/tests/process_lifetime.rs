@@ -52,7 +52,7 @@ fn plain_process_watch_without_handlers_exits() {
             break;
         }
         if Instant::now() >= deadline {
-            pty::kill_session(child.id());
+            pty::Session::new(&child).kill();
             let _ = child.kill();
             let _ = child.wait();
             panic!("unhandled watch kept plain script alive");
@@ -280,7 +280,7 @@ fn run_with_stdin(label: &str, source: &str, stdin: Stdio, feed: Option<&[u8]>) 
     let deadline = Instant::now() + Duration::from_secs(20);
     while child.try_wait().expect("try_wait").is_none() {
         if Instant::now() >= deadline {
-            pty::kill_session(child.id());
+            pty::Session::new(&child).kill();
             let _ = child.kill();
             let _ = child.wait();
             let _ = std::fs::remove_dir_all(&dir);

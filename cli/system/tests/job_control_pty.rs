@@ -209,6 +209,7 @@ struct Pty {
     slave: File,
     initial_modes: libc::termios,
     shell: Child,
+    session: pty::Session,
     home: tempfile::TempDir,
     pending: String,
 }
@@ -335,6 +336,7 @@ impl Pty {
             master,
             slave,
             initial_modes,
+            session: pty::Session::new(&shell),
             shell,
             home,
             pending: String::new(),
@@ -461,7 +463,7 @@ impl Pty {
 impl Drop for Pty {
     fn drop(&mut self) {
         // Includes nested shells and every job-control group in this session.
-        pty::kill_session(self.shell.id());
+        self.session.kill();
         let _ = self.shell.wait();
     }
 }
@@ -1183,6 +1185,7 @@ fn run_bounded_ptrace_case(name: &str) -> bool {
     let mut child = command
         .spawn()
         .unwrap_or_else(|e| panic!("{name}: start isolated case: {e}"));
+    let session = pty::Session::new(&child);
     loop {
         if let Some(status) = child
             .try_wait()
@@ -1198,7 +1201,7 @@ fn run_bounded_ptrace_case(name: &str) -> bool {
         if Instant::now() >= deadline {
             // Only this case's session/group. Never join or use a blocking
             // reap on timeout: even a failed kill must not hang the test run.
-            pty::kill_session(child.id());
+            session.kill();
             let _ = child.kill();
             let cleanup_deadline = Instant::now() + Duration::from_secs(1);
             while matches!(child.try_wait(), Ok(None)) && Instant::now() < cleanup_deadline {
