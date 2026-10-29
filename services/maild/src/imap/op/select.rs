@@ -48,7 +48,7 @@
 
 use std::sync::Arc;
 
-use crate::imap::mailbox_name::{ResolveResult, resolve};
+use crate::imap::mailbox_name::{ResolveResult, encode_all, resolve};
 use crate::imap::op::list;
 use crate::imap::response::{Status, tagged, wire_uidvalidity};
 use crate::imap::state::SelectedMailbox;
@@ -212,7 +212,7 @@ pub async fn handle(
     // and "what the session believes the client was told"
     // coherent.
     let store_for_uids = store.clone();
-    let view_uids = match tokio::task::spawn_blocking(move || {
+    let handles = match tokio::task::spawn_blocking(move || {
         store_for_uids.list_emails_in_mailbox(
             account_id,
             resolved_id,
@@ -225,7 +225,7 @@ pub async fn handle(
     })
     .await
     {
-        Ok(Ok(handles)) => handles.into_iter().map(|h| h.uid).collect::<Vec<u64>>(),
+        Ok(Ok(handles)) => handles,
         Ok(Err(e)) => {
             tracing::warn!(
                 error = %e,
@@ -238,25 +238,59 @@ pub async fn handle(
             return SelectOutcome::fail(tag, "SERVERBUG", "select failed");
         }
     };
+    let view_uids = handles.iter().map(|h| h.uid).collect::<Vec<_>>();
+    let keywords: std::collections::BTreeSet<&str> = handles
+        .iter()
+        .flat_map(|h| h.tags.iter().map(String::as_str))
+        .collect();
+    let flags = format!(
+        "{SYSTEM_FLAGS}{}",
+        if keywords.is_empty() {
+            String::new()
+        } else {
+            format!(" {}", keywords.into_iter().collect::<Vec<_>>().join(" "))
+        }
+    );
     let exists = view_uids.len() as u64;
 
     let mut out = String::new();
-    out.push_str(&format!("* FLAGS ({SYSTEM_FLAGS})\r\n"));
+    out.push_str(&format!("* FLAGS ({flags})\r\n"));
     out.push_str(&format!("* {exists} EXISTS\r\n"));
+    if let Some(i) = handles
+        .iter()
+        .position(|h| h.keywords.0 & mds::Flags::SEEN == 0)
+    {
+        out.push_str(&format!("* OK [UNSEEN {}] First unseen\r\n", i + 1));
+    }
     // `\*` (RFC 9051 §7.1) advertises that STORE/APPEND may create new
     // client-defined keywords — distinct from the `* FLAGS` line, which lists
     // only the defined system flags.
-    out.push_str(&format!(
-        "* OK [PERMANENTFLAGS ({SYSTEM_FLAGS} \\*)] Limited\r\n"
-    ));
+    if read_only {
+        out.push_str("* OK [PERMANENTFLAGS ()] Read-only\r\n");
+    } else {
+        out.push_str(&format!(
+            "* OK [PERMANENTFLAGS ({SYSTEM_FLAGS} \\*)] Permanent flags\r\n"
+        ));
+    }
     // 32-bit on the wire (RFC 9051 nz-number); the stored value is epoch-ms.
     let wire_validity = wire_uidvalidity(uid_validity);
     out.push_str(&format!("* OK [UIDVALIDITY {wire_validity}] Ok\r\n"));
     out.push_str(&format!("* OK [UIDNEXT {uid_next}] Predicted next UID\r\n"));
-    out.push_str(&format!(
-        "* LIST () \"/\" {}\r\n",
-        crate::imap::mailbox_name::quote_mailbox(&wire_name),
-    ));
+    if let Some(enc) = encode_all(&records)
+        .mailboxes
+        .iter()
+        .find(|enc| enc.id == resolved_id)
+    {
+        let mut row = crate::imap::mailbox_name::render_mailbox_line("LIST", enc);
+        if name != wire_name {
+            row.truncate(row.len() - 2);
+            row.push_str(&format!(
+                " (OLDNAME ({}))\r\n",
+                crate::imap::mailbox_name::quote_mailbox(&name)
+            ));
+        }
+        out.push_str(&row);
+    }
 
     let (code, text) = if read_only {
         ("READ-ONLY", "EXAMINE completed")

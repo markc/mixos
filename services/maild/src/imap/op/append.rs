@@ -3,10 +3,9 @@
 
 //! `APPEND` — RFC 9051 §6.3.12 / RFC 4315 (UIDPLUS APPENDUID).
 //!
-//! Phase 4 ships APPEND with a single trailing literal (sync or
-//! non-sync per RFC 7888 `LITERAL+`). The codec ([`crate::imap::codec`])
-//! has already consumed the literal body by the time this handler
-//! runs; we only see the parsed command line plus `literal: Vec<u8>`.
+//! The codec ([`crate::imap::codec`]) frames synchronising,
+//! non-synchronising and binary literals. The session separates argument
+//! strings from message octets and supplies one or more MULTIAPPEND entries.
 //!
 //! Wire grammar (after the command is stripped):
 //!
@@ -15,7 +14,7 @@
 //! mailbox     = atom / quoted-string
 //! date-time   = '"' DD "-" Mmm "-" YYYY SP HH ":" MM ":" SS SP ("+"/"-") ZHHMM '"'
 //! flag-list   = flag *(SP flag)
-//! flag        = "\Answered" / "\Flagged" / "\Deleted" / "\Seen" / "\Draft"
+//! flag        = system-flag / keyword
 //! ```
 //!
 //! The literal itself is stripped from the line by the codec, so the
@@ -30,7 +29,7 @@
 //! ```
 //!
 //! where `<uidvalidity>` and `<uid>` come from the [`MembershipUid`]
-//! returned by [`crate::mailstore::MailStore::create_email`] — both
+//! returned by [`crate::mailstore::MailStore::append_emails`] — both
 //! read inside the same `with_set_tx` that committed the membership,
 //! so an APPENDUID for a freshly-inserted membership cannot diverge
 //! from the actual stored row.
@@ -41,10 +40,9 @@
 //! |----------------------------------------|-------------------------------------------|
 //! | grammar parse                          | `BAD <reason>`                            |
 //! | mailbox does not exist                 | `NO [TRYCREATE] mailbox does not exist`   |
-//! | mailbox name unrepresentable           | `NO [SERVERBUG] mailbox not representable`|
 //! | mail_parser rejects the literal        | `NO [PARSE] message body not parseable`   |
-//! | substrate `blob not found`             | `NO [SERVERBUG] storage error`            |
-//! | substrate other error                  | `NO [SERVERBUG] APPEND failed`            |
+//! | unsupported binary representation      | `NO [UNKNOWN-CTE]`                       |
+//! | substrate error                        | `NO [UNAVAILABLE] APPEND unavailable`     |
 //!
 //! `TRYCREATE` is RFC 9051 §7.1's hint that the client should retry
 //! after `CREATE`-ing the mailbox; Thunderbird honours it on first-
@@ -169,111 +167,210 @@ pub async fn handle(
     account_id: AccountId,
     store: Arc<dyn MailStore>,
 ) -> String {
-    let req = match parse_args(args) {
-        Ok(r) => r,
-        Err(e) => return tagged(tag, Status::Bad, None, &e),
-    };
+    handle_many(tag, vec![(args.to_string(), body)], account_id, store).await
+}
 
-    // Parse the message body in foreground — `mail_parser` is CPU-
-    // bound, but typical messages are < 1 MiB. spawn_blocking would
-    // pay a worker hop for sub-millisecond work; SMTP inbound uses
-    // foreground parsing for the same reason.
-    let parser = MessageParser::default();
-    let parsed = match parser.parse(&body) {
-        Some(m) => m,
-        None => return tagged(tag, Status::No, Some("PARSE"), "message body not parseable"),
-    };
-    let envelope = build_envelope(&parsed);
-    let in_reply_to = extract_in_reply_to(&parsed);
-    drop(parsed); // `parsed` borrows `body`; drop the borrow before move.
-
-    let received_at_ms = req
-        .received_at_ms
-        .unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
-
-    // Resolve mailbox via wire-name → ContainerId, on the freshest
-    // list_mailboxes snapshot.
-    let store_for_list = store.clone();
-    let records = match tokio::task::spawn_blocking(move || {
-        store_for_list.list_mailboxes(account_id)
-    })
-    .await
-    {
-        Ok(Ok(r)) => r,
-        Ok(Err(e)) => {
-            tracing::warn!(error = %e, "APPEND list_mailboxes failed");
-            return tagged(tag, Status::No, Some("SERVERBUG"), "APPEND failed");
-        }
-        Err(e) => {
-            tracing::warn!(error = %e, "APPEND list_mailboxes spawn_blocking panicked");
-            return tagged(tag, Status::No, Some("SERVERBUG"), "APPEND failed");
-        }
-    };
-
-    let container_id = match resolve(&req.mailbox, &records) {
-        ResolveResult::Found(id) => id,
-        ResolveResult::NotFound => {
-            return tagged(tag, Status::No, Some("TRYCREATE"), "mailbox does not exist");
-        }
-        ResolveResult::Unrepresentable => {
+/// Parse every message before the first mutation; commit the complete batch in
+/// one native MailStore transaction (RFC 3502 all-or-nothing guarantee).
+pub async fn handle_many(
+    tag: &str,
+    messages: Vec<(String, Vec<u8>)>,
+    account_id: AccountId,
+    store: Arc<dyn MailStore>,
+) -> String {
+    let mut prepared = Vec::with_capacity(messages.len());
+    let mut mailbox = None;
+    for (args, body) in messages {
+        let req = match parse_args(&args) {
+            Ok(r) => r,
+            Err(e) => return tagged(tag, Status::Bad, None, &e),
+        };
+        if mailbox.as_ref().is_some_and(|name| name != &req.mailbox) {
             return tagged(
                 tag,
-                Status::No,
-                Some("SERVERBUG"),
-                "mailbox name not representable over IMAP",
+                Status::Bad,
+                None,
+                "MULTIAPPEND has one destination mailbox",
             );
         }
-    };
-
-    // Land bytes in CAS + create the email row inside one
-    // spawn_blocking, mirroring smtp::inbound's local-delivery shape.
-    let store_for_create = store.clone();
-    let body_for_create = body;
-    let flags = req.flags;
-    let tags = req.tags;
-    let create_outcome = tokio::task::spawn_blocking(move || {
-        let blob_hash = store_for_create.put_blob(&body_for_create)?;
-        store_for_create.create_email(
-            account_id,
-            container_id,
-            blob_hash,
+        mailbox = Some(req.mailbox);
+        if body.is_empty() {
+            return tagged(tag, Status::No, Some("PARSE"), "empty message");
+        }
+        let body = if body.contains(&0) {
+            match normalise_binary_message(&body) {
+                Ok(body) => body,
+                Err(()) => {
+                    return tagged(
+                        tag,
+                        Status::No,
+                        Some("UNKNOWN-CTE"),
+                        "binary message cannot be represented losslessly",
+                    );
+                }
+            }
+        } else {
+            body
+        };
+        let Some(parsed) = MessageParser::default().parse(&body) else {
+            return tagged(tag, Status::No, Some("PARSE"), "message body not parseable");
+        };
+        let envelope = build_envelope(&parsed);
+        let in_reply_to = extract_in_reply_to(&parsed);
+        prepared.push((
+            body,
             envelope,
-            &in_reply_to,
-            flags,
-            // APPEND user keywords from the flag-list, persisted with the
-            // new item in the same create transaction.
-            tags,
-            received_at_ms,
-        )
+            in_reply_to,
+            req.flags,
+            req.tags,
+            req.received_at_ms
+                .unwrap_or_else(|| chrono::Utc::now().timestamp_millis()),
+        ));
+    }
+    let Some(mailbox) = mailbox else {
+        return tagged(tag, Status::Bad, None, "APPEND requires a message");
+    };
+    let outcome = tokio::task::spawn_blocking(move || {
+        let records = store.list_mailboxes(account_id)?;
+        let container_id = match resolve(&mailbox, &records) {
+            ResolveResult::Found(id) => id,
+            _ => anyhow::bail!("mailbox not found"),
+        };
+        let mut imports = Vec::with_capacity(prepared.len());
+        for (body, envelope, in_reply_to, flags, tags, received_at) in prepared {
+            imports.push(crate::mailstore::EmailImport {
+                blob: store.put_blob(&body)?,
+                envelope,
+                in_reply_to,
+                flags,
+                tags,
+                received_at,
+            });
+        }
+        store.append_emails(account_id, container_id, imports)
     })
     .await;
+    match outcome {
+        Ok(Ok(results)) if !results.is_empty() => {
+            let validity = wire_uidvalidity(results[0].1.uid_validity);
+            let uids: Vec<u64> = results.iter().map(|r| r.1.uid).collect();
+            let code = format!(
+                "APPENDUID {} {}",
+                validity,
+                super::copy::render_uid_set(&uids)
+            );
+            tagged(tag, Status::Ok, Some(&code), "APPEND completed")
+        }
+        Ok(Err(e)) if e.to_string().starts_with("mailbox not found") => {
+            tagged(tag, Status::No, Some("TRYCREATE"), "mailbox does not exist")
+        }
+        _ => tagged(tag, Status::No, Some("UNAVAILABLE"), "APPEND unavailable"),
+    }
+}
 
-    let membership = match create_outcome {
-        Ok(Ok((_item, uid))) => uid,
-        Ok(Err(e)) => {
-            let msg = e.to_string();
-            // Substrate-level `mailbox not found` after we resolved
-            // would be a TOCTOU race against a DELETE in another
-            // session — surface as TRYCREATE rather than SERVERBUG so
-            // the client retries with CREATE.
-            if msg.starts_with("mailbox not found") {
-                return tagged(tag, Status::No, Some("TRYCREATE"), "mailbox does not exist");
+/// BODY fetches are ordinary IMAP strings, which cannot contain NUL. RFC 3516
+/// permits changing the transfer encoding during binary APPEND. Encode raw
+/// binary leaf bodies without changing their decoded octets or other headers.
+fn normalise_binary_message(raw: &[u8]) -> Result<Vec<u8>, ()> {
+    normalise_binary_message_at_depth(raw, 0)
+}
+
+fn normalise_binary_message_at_depth(raw: &[u8], depth: usize) -> Result<Vec<u8>, ()> {
+    use base64::Engine;
+    use mail_parser::{MimeHeaders, PartType};
+    if !raw.contains(&0) {
+        return Ok(raw.to_vec());
+    }
+    // Reparsing an embedded message resets mail_parser's own nesting budget.
+    // Keep one budget across the complete APPEND normalisation.
+    if depth >= 64 {
+        return Err(());
+    }
+    let message = MessageParser::default().parse(raw).ok_or(())?;
+    let mut replacements: Vec<(usize, usize, Vec<u8>)> = Vec::new();
+    for part in &message.parts {
+        let header_start = part.offset_header as usize;
+        let body_start = part.offset_body as usize;
+        let body_end = part.offset_end as usize;
+        let header = raw.get(header_start..body_start).ok_or(())?;
+        if header.contains(&0) {
+            return Err(());
+        }
+        let data = raw.get(body_start..body_end).ok_or(())?;
+        if !data.contains(&0) {
+            continue;
+        }
+        let encoding = part.content_transfer_encoding().unwrap_or("7bit");
+        if !["7bit", "8bit", "binary"]
+            .iter()
+            .any(|s| s.eq_ignore_ascii_case(encoding))
+        {
+            return Err(());
+        }
+        let (cte, data) = match &part.body {
+            PartType::Multipart(_) => continue,
+            PartType::Message(_) => ("8bit", normalise_binary_message_at_depth(data, depth + 1)?),
+            _ => {
+                let encoded = base64::engine::general_purpose::STANDARD.encode(data);
+                let mut body = Vec::with_capacity(encoded.len() + encoded.len() / 38);
+                for (i, line) in encoded.as_bytes().chunks(76).enumerate() {
+                    if i != 0 {
+                        body.extend_from_slice(b"\r\n");
+                    }
+                    body.extend_from_slice(line);
+                }
+                ("base64", body)
             }
-            tracing::warn!(error = %msg, "APPEND create_email failed");
-            return tagged(tag, Status::No, Some("SERVERBUG"), "APPEND failed");
+        };
+        let mut new_header = Vec::with_capacity(header.len() + 48);
+        let mut cursor = header_start;
+        for field in &part.headers {
+            if field
+                .name
+                .as_str()
+                .eq_ignore_ascii_case("Content-Transfer-Encoding")
+            {
+                let start = field.offset_field as usize;
+                let mut end = field.offset_end as usize;
+                if start < cursor || end > body_start {
+                    return Err(());
+                }
+                while end < body_start && matches!(raw[end], b'\r' | b'\n') {
+                    end += 1;
+                }
+                new_header.extend_from_slice(&raw[cursor..start]);
+                cursor = end;
+            }
         }
-        Err(e) => {
-            tracing::warn!(error = %e, "APPEND spawn_blocking panicked");
-            return tagged(tag, Status::No, Some("SERVERBUG"), "APPEND failed");
+        new_header.extend_from_slice(&raw[cursor..body_start]);
+        if new_header.ends_with(b"\r\n\r\n") {
+            new_header.truncate(new_header.len() - 2);
+        } else if new_header.ends_with(b"\n\n") {
+            new_header.pop();
+        } else if !new_header.is_empty() && !new_header.ends_with(b"\n") {
+            new_header.extend_from_slice(b"\r\n");
         }
-    };
-
-    let code = format!(
-        "APPENDUID {} {}",
-        wire_uidvalidity(membership.uid_validity),
-        membership.uid
-    );
-    tagged(tag, Status::Ok, Some(&code), "APPEND completed")
+        new_header
+            .extend_from_slice(format!("Content-Transfer-Encoding: {cte}\r\n\r\n").as_bytes());
+        new_header.extend_from_slice(&data);
+        replacements.push((header_start, body_end, new_header));
+    }
+    replacements.sort_by_key(|r| r.0);
+    let mut output = Vec::with_capacity(raw.len());
+    let mut cursor = 0;
+    for (start, end, bytes) in replacements {
+        if start < cursor || end < start {
+            return Err(());
+        }
+        output.extend_from_slice(&raw[cursor..start]);
+        output.extend_from_slice(&bytes);
+        cursor = end;
+    }
+    output.extend_from_slice(&raw[cursor..]);
+    if output.contains(&0) {
+        return Err(());
+    }
+    Ok(output)
 }
 
 #[cfg(test)]

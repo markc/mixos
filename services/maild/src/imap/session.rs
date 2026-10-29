@@ -1,23 +1,9 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! Per-connection IMAP session driver.
-//!
-//! Phase 1 dispatch: CAPABILITY / NOOP / LOGOUT / ID / LOGIN /
-//! AUTHENTICATE plus a hard `BAD` for the literal indicator and a
-//! `BAD command not implemented` for everything else.
-//!
-//! Authentication wiring goes through `crate::auth::basic::verify`
-//! (the same path SMTP submission uses), so bcrypt cost and the
-//! accounts table layout stay in lockstep across protocols.
-//! Per-account concurrency caps are enforced via [`AccountSlots`]
-//! handed in by the server module: the count is decremented after
-//! `Session::run` returns (both `Ok` and propagated `Err`). A panic
-//! inside `run` is *not* caught here, so a slot leak is possible
-//! against a panicking handler. Phase 1 has no `unwrap`/`expect` on
-//! the hot path and every awaited I/O returns `Result`, so the
-//! panic surface is narrow; if Phase 2+ widens it, switch the
-//! release to an async-drop guard rather than rely on this invariant.
+//! Stateful IMAP command dispatch. Preserve rev1 response forms until ENABLE
+//! IMAP4rev2, retain the selected mailbox's visible UID order, and keep saved
+//! search identities independent of changing message sequence numbers.
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -111,6 +97,35 @@ pub async fn handle_connection<S>(
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
+    handle_connection_with_shutdown(
+        stream,
+        peer,
+        lip,
+        cfg,
+        db,
+        mailstore,
+        slots,
+        negotiated_hostname,
+        None,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn handle_connection_with_shutdown<S>(
+    stream: S,
+    peer: SocketAddr,
+    lip: Option<SocketAddr>,
+    cfg: Arc<ImapConfig>,
+    db: Db,
+    mailstore: Arc<dyn MailStore>,
+    slots: Arc<AccountSlots>,
+    negotiated_hostname: String,
+    shutdown: Option<tokio::sync::watch::Receiver<bool>>,
+) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
     crate::maillog::imap_connect(peer, lip);
     let (read_half, write_half) = tokio::io::split(stream);
     let mut reader = BufReader::with_capacity(8192, read_half);
@@ -129,10 +144,7 @@ where
         // SNI — Cyrus-style `<host> IMAP ready` so the client sees the
         // identity the cert was issued under, not just a generic
         // banner.
-        let caps_body = match cfg.advertise_capabilities.as_ref() {
-            Some(o) => crate::imap::capabilities::render_owned(o),
-            None => crate::imap::capabilities::render(crate::imap::capabilities::INITIAL),
-        };
+        let caps_body = crate::imap::capabilities::for_config(&cfg);
         let code = format!("CAPABILITY {caps_body}");
         let greeting_text = format!("{negotiated_hostname} maild IMAP ready");
         let greeting = untagged_ok_with_code(&code, &greeting_text);
@@ -150,9 +162,24 @@ where
             account_id: None,
             peer,
             local: lip,
+            rev2: false,
+            utf8: false,
+            view_version: None,
+            pending_expunge: false,
+            saved_search: Vec::new(),
+            shutdown,
         };
 
         let r = session.run(&mut reader, &mut writer).await;
+        if r.is_err() {
+            // Tell a connected peer why this server-initiated close is fatal.
+            // A broken transport may already be unwritable; retain the original
+            // error for logging and still release the account slot below.
+            let _ = writer
+                .write_all(b"* BYE [UNAVAILABLE] session cannot continue\r\n")
+                .await;
+            let _ = writer.flush().await;
+        }
 
         // Release the slot on normal return and on `Err` propagation
         // from `run` (the `?` paths in the loop body still pass through
@@ -206,6 +233,12 @@ struct Session {
     /// Local (bound) socket the client connected to, for the
     /// dovecot-style `lip=` field. `None` if `local_addr()` failed.
     local: Option<SocketAddr>,
+    rev2: bool,
+    utf8: bool,
+    view_version: Option<(u64, u64)>,
+    pending_expunge: bool,
+    saved_search: Vec<u64>,
+    shutdown: Option<tokio::sync::watch::Receiver<bool>>,
 }
 
 impl Session {
@@ -218,7 +251,20 @@ impl Session {
             if self.state.is_logout() {
                 return Ok(());
             }
-            let mut cmd = match self.read_command(reader, writer).await? {
+            let mut shutdown = self.shutdown.take();
+            let outcome = tokio::select! {
+                result = self.read_command(reader, writer) => Some(result?),
+                _ = wait_shutdown(&mut shutdown) => None,
+            };
+            self.shutdown = shutdown;
+            let Some(outcome) = outcome else {
+                writer
+                    .write_all(b"* BYE [UNAVAILABLE] server shutting down\r\n")
+                    .await?;
+                writer.flush().await?;
+                return Ok(());
+            };
+            let mut cmd = match outcome {
                 ReadOutcome::Frame(c) => c,
                 ReadOutcome::Eof => return Ok(()),
                 ReadOutcome::LiteralRejected { response } => {
@@ -232,11 +278,10 @@ impl Session {
                 }
             };
 
-            // A SEARCH string sent as a literal (Thunderbird does this
-            // for non-ASCII text) rejoins the argument line as a
-            // quoted string, so `op::search` sees one flat line.
-            if is_search_line(&cmd.line)
-                && let Err(msg) = splice_search_literal(&mut cmd)
+            // Rejoin literal arguments as quoted tokens for command parsers.
+            // APPEND keeps message octets separate from its argument strings.
+            if !is_append_line(&cmd.line)
+                && let Err(msg) = splice_literals(&mut cmd)
             {
                 self.bad_commands += 1;
                 let tag = sniff_tag(&cmd.line).unwrap_or("*".to_string());
@@ -251,14 +296,18 @@ impl Session {
                 continue;
             }
 
-            let parsed = match codec::parse_line(&cmd.line) {
+            let mut parsed = match codec::parse_line(&cmd.line) {
                 Ok(p) => p,
                 Err(e) => {
                     let msg = e.to_string();
                     self.bad_commands += 1;
                     let tag = sniff_tag(&cmd.line).unwrap_or("*".to_string());
                     let resp = tagged(&tag, Status::Bad, None, &msg);
-                    writer.write_all(resp.as_bytes()).await?;
+                    writer
+                        .write_all(
+                            crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes(),
+                        )
+                        .await?;
                     writer.flush().await?;
                     if self.over_bad_command_cap() {
                         self.emit_bye(writer, "too many bad commands").await?;
@@ -267,6 +316,42 @@ impl Session {
                     continue;
                 }
             };
+
+            let mailbox_command = matches!(
+                parsed.command_upper.as_str(),
+                "LIST"
+                    | "LSUB"
+                    | "CREATE"
+                    | "DELETE"
+                    | "RENAME"
+                    | "SELECT"
+                    | "EXAMINE"
+                    | "STATUS"
+                    | "SUBSCRIBE"
+                    | "UNSUBSCRIBE"
+                    | "COPY"
+                    | "MOVE"
+            ) || (parsed.command_upper == "UID"
+                && parsed
+                    .args
+                    .split_ascii_whitespace()
+                    .next()
+                    .is_some_and(|s| {
+                        s.eq_ignore_ascii_case("COPY") || s.eq_ignore_ascii_case("MOVE")
+                    }));
+            if mailbox_command && !self.utf8 {
+                match crate::imap::mailbox_encoding::map_tokens(&parsed.args, false) {
+                    Ok(args) => parsed.args = args,
+                    Err(e) => {
+                        self.bad_commands += 1;
+                        writer
+                            .write_all(tagged(&parsed.tag, Status::Bad, None, &e).as_bytes())
+                            .await?;
+                        writer.flush().await?;
+                        continue;
+                    }
+                }
+            }
 
             // Literal-framing arrived for a command that does not accept
             // one. The codec already consumed the body, so the stream
@@ -278,17 +363,50 @@ impl Session {
                     Status::Bad,
                     None,
                     &format!(
-                        "{} does not accept literal arguments in this phase",
+                        "{} has an unconsumed literal argument",
                         parsed.command_upper
                     ),
                 );
-                writer.write_all(resp.as_bytes()).await?;
+                writer
+                    .write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes())
+                    .await?;
                 writer.flush().await?;
                 if self.over_bad_command_cap() {
                     self.emit_bye(writer, "too many bad commands").await?;
                     return Ok(());
                 }
                 continue;
+            }
+
+            if matches!(
+                parsed.command_upper.as_str(),
+                "CAPABILITY" | "NOOP" | "LOGOUT" | "NAMESPACE"
+            ) && !parsed.args.trim().is_empty()
+            {
+                self.bad_commands += 1;
+                writer
+                    .write_all(
+                        tagged(&parsed.tag, Status::Bad, None, "command takes no arguments")
+                            .as_bytes(),
+                    )
+                    .await?;
+                writer.flush().await?;
+                if self.over_bad_command_cap() {
+                    self.emit_bye(writer, "too many bad commands").await?;
+                    return Ok(());
+                }
+                continue;
+            }
+
+            if self.state.selected().is_some()
+                && !matches!(
+                    parsed.command_upper.as_str(),
+                    "SELECT" | "EXAMINE" | "CLOSE" | "UNSELECT" | "LOGOUT" | "IDLE" | "ENABLE"
+                )
+            {
+                let allow_expunge =
+                    !matches!(parsed.command_upper.as_str(), "FETCH" | "STORE" | "SEARCH");
+                self.refresh_view(writer, allow_expunge).await?;
             }
 
             tracing::debug!(
@@ -330,11 +448,79 @@ impl Session {
                     self.handle_authenticate(&parsed.tag, &parsed.args, reader, writer)
                         .await?;
                 }
+                "ENABLE" => {
+                    if !self.state.is_authenticated() || self.state.selected().is_some() {
+                        self.bad_commands += 1;
+                        writer
+                            .write_all(
+                                tagged(
+                                    &parsed.tag,
+                                    Status::Bad,
+                                    None,
+                                    "ENABLE requires authenticated state",
+                                )
+                                .as_bytes(),
+                            )
+                            .await?;
+                    } else if parsed.args.trim().is_empty() {
+                        self.bad_commands += 1;
+                        writer
+                            .write_all(
+                                tagged(
+                                    &parsed.tag,
+                                    Status::Bad,
+                                    None,
+                                    "ENABLE requires capabilities",
+                                )
+                                .as_bytes(),
+                            )
+                            .await?;
+                    } else {
+                        let mut enabled = Vec::new();
+                        for cap in parsed.args.split_ascii_whitespace() {
+                            let cap = cap.to_ascii_uppercase();
+                            match cap.as_str() {
+                                "IMAP4REV2" => {
+                                    self.rev2 = true;
+                                    self.utf8 = true;
+                                    enabled.push("IMAP4rev2");
+                                }
+                                "UTF8=ACCEPT" => {
+                                    self.utf8 = true;
+                                    enabled.push("UTF8=ACCEPT");
+                                }
+                                // CONDSTORE/QRESYNC are deliberately ignored until imap-ext
+                                // registers the complete implementation, per RFC 5161.
+                                _ => {}
+                            }
+                        }
+                        enabled.sort_unstable();
+                        enabled.dedup();
+                        if !enabled.is_empty() {
+                            writer
+                                .write_all(
+                                    format!("* ENABLED {}\r\n", enabled.join(" ")).as_bytes(),
+                                )
+                                .await?;
+                        }
+                        writer
+                            .write_all(
+                                tagged(&parsed.tag, Status::Ok, None, "ENABLE completed")
+                                    .as_bytes(),
+                            )
+                            .await?;
+                    }
+                }
                 "NAMESPACE" => {
                     if !self.state.is_authenticated() {
                         self.bad_commands += 1;
                         let resp = tagged(&parsed.tag, Status::Bad, None, "NOT AUTHENTICATED");
-                        writer.write_all(resp.as_bytes()).await?;
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
                     } else {
                         writer
                             .write_all(op::namespace::handle(&parsed.tag).as_bytes())
@@ -345,7 +531,12 @@ impl Session {
                     if !self.state.is_authenticated() {
                         self.bad_commands += 1;
                         let resp = tagged(&parsed.tag, Status::Bad, None, "NOT AUTHENTICATED");
-                        writer.write_all(resp.as_bytes()).await?;
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
                     } else {
                         // `is_authenticated()` already guarantees `account_id`
                         // was set during LOGIN/AUTHENTICATE — both arms in
@@ -356,21 +547,32 @@ impl Session {
                         let aid = self
                             .account_id
                             .expect("authenticated session must have account_id");
-                        let resp = op::list::handle(
+                        let resp = op::list::handle_with_limit(
                             &parsed.tag,
                             &parsed.args,
                             aid,
                             self.mailstore.clone(),
+                            self.cfg.max_literal_bytes,
                         )
                         .await;
-                        writer.write_all(resp.as_bytes()).await?;
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
                     }
                 }
                 "LSUB" => {
                     if !self.state.is_authenticated() {
                         self.bad_commands += 1;
                         let resp = tagged(&parsed.tag, Status::Bad, None, "NOT AUTHENTICATED");
-                        writer.write_all(resp.as_bytes()).await?;
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
                     } else {
                         let aid = self
                             .account_id
@@ -382,14 +584,24 @@ impl Session {
                             self.mailstore.clone(),
                         )
                         .await;
-                        writer.write_all(resp.as_bytes()).await?;
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
                     }
                 }
                 command_name @ ("SELECT" | "EXAMINE") => {
                     if !self.state.is_authenticated() {
                         self.bad_commands += 1;
                         let resp = tagged(&parsed.tag, Status::Bad, None, "NOT AUTHENTICATED");
-                        writer.write_all(resp.as_bytes()).await?;
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
                     } else {
                         // RFC 9051 §6.3.2 — every SELECT/EXAMINE,
                         // *including* a failing one, implicitly
@@ -398,7 +610,13 @@ impl Session {
                         // so a failed reselect leaves the session
                         // in a no-selection state, not stuck on the
                         // old mailbox.
+                        if self.rev2 && self.state.selected().is_some() {
+                            writer
+                                .write_all(b"* OK [CLOSED] previous mailbox closed\r\n")
+                                .await?;
+                        }
                         self.state = State::Authenticated;
+                        self.saved_search.clear();
                         let aid = self
                             .account_id
                             .expect("authenticated session must have account_id");
@@ -411,8 +629,28 @@ impl Session {
                             read_only,
                         )
                         .await;
-                        writer.write_all(outcome.response.as_bytes()).await?;
+                        let mut response = String::new();
+                        if !self.rev2 && outcome.selected.is_some() {
+                            response.push_str("* 0 RECENT\r\n");
+                        }
+                        for line in outcome.response.lines() {
+                            if (!self.rev2 && line.starts_with("* LIST "))
+                                || (self.rev2 && line.starts_with("* OK [UNSEEN "))
+                            {
+                                continue;
+                            }
+                            response.push_str(line);
+                            response.push_str("\r\n");
+                        }
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&response, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
                         if let Some(sm) = outcome.selected {
+                            self.view_version = Some((sm.uid_validity, sm.highest_mod_seq));
+                            self.pending_expunge = false;
                             self.state = State::Selected(sm);
                         }
                     }
@@ -421,26 +659,42 @@ impl Session {
                     if !self.state.is_authenticated() {
                         self.bad_commands += 1;
                         let resp = tagged(&parsed.tag, Status::Bad, None, "NOT AUTHENTICATED");
-                        writer.write_all(resp.as_bytes()).await?;
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
                     } else {
                         let aid = self
                             .account_id
                             .expect("authenticated session must have account_id");
-                        let resp = op::status::handle(
+                        let resp = op::status::handle_with_limit(
                             &parsed.tag,
                             &parsed.args,
                             aid,
                             self.mailstore.clone(),
+                            self.cfg.max_literal_bytes,
                         )
                         .await;
-                        writer.write_all(resp.as_bytes()).await?;
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
                     }
                 }
                 "APPEND" => {
                     if !self.state.is_authenticated() {
                         self.bad_commands += 1;
                         let resp = tagged(&parsed.tag, Status::Bad, None, "NOT AUTHENTICATED");
-                        writer.write_all(resp.as_bytes()).await?;
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
                     } else {
                         // The codec already consumed the literal body
                         // (or rejected it with a stream-preserving
@@ -448,17 +702,17 @@ impl Session {
                         // means the client framed APPEND without a
                         // trailing `{N}` marker — RFC 9051 §6.3.12
                         // mandates a literal, so this is a BAD.
-                        let body = match cmd.literal.clone() {
-                            Some(b) => b,
-                            None => {
+                        let mut messages = match frame_append(cmd, self.utf8) {
+                            Ok(messages) => messages,
+                            Err(e) => {
                                 self.bad_commands += 1;
-                                let resp = tagged(
-                                    &parsed.tag,
-                                    Status::Bad,
-                                    None,
-                                    "APPEND requires a literal message body",
-                                );
-                                writer.write_all(resp.as_bytes()).await?;
+                                let resp = tagged(&parsed.tag, Status::Bad, None, &e);
+                                writer
+                                    .write_all(
+                                        crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                            .as_bytes(),
+                                    )
+                                    .await?;
                                 writer.flush().await?;
                                 if self.over_bad_command_cap() {
                                     self.emit_bye(writer, "too many bad commands").await?;
@@ -467,25 +721,60 @@ impl Session {
                                 continue;
                             }
                         };
+                        if !self.utf8 {
+                            let mut failure = None;
+                            for (args, _) in &mut messages {
+                                match crate::imap::mailbox_encoding::decode_first_mailbox(args) {
+                                    Ok(decoded) => *args = decoded,
+                                    Err(e) => {
+                                        failure = Some(e);
+                                        break;
+                                    }
+                                }
+                            }
+                            if let Some(e) = failure {
+                                writer
+                                    .write_all(
+                                        tagged(&parsed.tag, Status::Bad, None, &e).as_bytes(),
+                                    )
+                                    .await?;
+                                writer.flush().await?;
+                                continue;
+                            }
+                        }
                         let aid = self
                             .account_id
                             .expect("authenticated session must have account_id");
-                        match op::append::parse_args_for_dispatch(&parsed.args) {
+                        match op::append::parse_args_for_dispatch(&messages[0].0) {
                             Err(e) => {
                                 self.bad_commands += 1;
                                 let resp = tagged(&parsed.tag, Status::Bad, None, &e);
-                                writer.write_all(resp.as_bytes()).await?;
+                                writer
+                                    .write_all(
+                                        crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                            .as_bytes(),
+                                    )
+                                    .await?;
                             }
                             Ok(()) => {
-                                let resp = op::append::handle(
+                                let resp = op::append::handle_many(
                                     &parsed.tag,
-                                    &parsed.args,
-                                    body,
+                                    messages,
                                     aid,
                                     self.mailstore.clone(),
                                 )
                                 .await;
-                                writer.write_all(resp.as_bytes()).await?;
+                                if resp.starts_with(&format!("{} OK", parsed.tag))
+                                    && self.state.selected().is_some()
+                                {
+                                    self.refresh_view(writer, true).await?;
+                                }
+                                writer
+                                    .write_all(
+                                        crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                            .as_bytes(),
+                                    )
+                                    .await?;
                             }
                         }
                     }
@@ -499,22 +788,58 @@ impl Session {
                         self.bad_commands += 1;
                         let resp =
                             tagged(&parsed.tag, Status::Bad, None, "command takes no arguments");
-                        writer.write_all(resp.as_bytes()).await?;
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
                     } else if self.state.selected().is_none() {
                         self.bad_commands += 1;
                         let resp = tagged(&parsed.tag, Status::Bad, None, "no mailbox selected");
-                        writer.write_all(resp.as_bytes()).await?;
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
                     } else {
-                        let resp = if command_name == "CLOSE" {
+                        let resp = if command_name == "CLOSE"
+                            && !self.state.selected().unwrap().read_only
+                        {
+                            let sm = self.state.selected().unwrap();
+                            let result = op::expunge::handle(
+                                &parsed.tag,
+                                "",
+                                self.account_id.unwrap(),
+                                sm.container_id,
+                                self.mailstore.clone(),
+                                false,
+                            )
+                            .await;
+                            let completion = result.wire.lines().last().unwrap_or_default();
+                            if !completion.starts_with(&format!("{} OK", parsed.tag)) {
+                                writer
+                                    .write_all(format!("{completion}\r\n").as_bytes())
+                                    .await?;
+                                writer.flush().await?;
+                                continue;
+                            }
+                            op::close::handle_close(&parsed.tag)
+                        } else if command_name == "CLOSE" {
                             op::close::handle_close(&parsed.tag)
                         } else {
                             op::close::handle_unselect(&parsed.tag)
                         };
-                        // Phase 2: no \Deleted purge yet (Phase 4
-                        // ships STORE). Both commands simply drop the
-                        // selected mailbox.
+                        // CLOSE has completed any writable purge above;
+                        // UNSELECT only drops the selection.
                         self.state = State::Authenticated;
-                        writer.write_all(resp.as_bytes()).await?;
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
                     }
                 }
                 "CHECK" => {
@@ -532,11 +857,21 @@ impl Session {
                         self.bad_commands += 1;
                         let resp =
                             tagged(&parsed.tag, Status::Bad, None, "command takes no arguments");
-                        writer.write_all(resp.as_bytes()).await?;
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
                     } else if self.state.selected().is_none() {
                         self.bad_commands += 1;
                         let resp = tagged(&parsed.tag, Status::Bad, None, "no mailbox selected");
-                        writer.write_all(resp.as_bytes()).await?;
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
                     } else {
                         writer
                             .write_all(op::check::handle(&parsed.tag).as_bytes())
@@ -547,11 +882,34 @@ impl Session {
                     if !self.state.is_authenticated() {
                         self.bad_commands += 1;
                         let resp = tagged(&parsed.tag, Status::Bad, None, "NOT AUTHENTICATED");
-                        writer.write_all(resp.as_bytes()).await?;
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
                     } else {
                         let aid = self
                             .account_id
                             .expect("authenticated session must have account_id");
+                        let rename_before = if command_name == "RENAME"
+                            || (command_name == "DELETE" && self.state.selected().is_some())
+                        {
+                            let store = self.mailstore.clone();
+                            Some(
+                                tokio::task::spawn_blocking(move || store.list_mailboxes(aid))
+                                    .await??,
+                            )
+                        } else {
+                            None
+                        };
+                        let deleting_selected = command_name == "DELETE"
+                            && self.state.selected().is_some_and(|sm| {
+                                op::delete::parse_args(&parsed.args).is_ok_and(|name| {
+                                    matches!(crate::imap::mailbox_name::resolve(&name, rename_before.as_deref().unwrap_or(&[])),
+                                        crate::imap::mailbox_name::ResolveResult::Found(id) if id == sm.container_id)
+                                })
+                            });
                         let resp = match command_name {
                             "CREATE" => {
                                 op::create::handle(
@@ -601,7 +959,102 @@ impl Session {
                                 .await
                             }
                         };
-                        writer.write_all(resp.as_bytes()).await?;
+                        if deleting_selected && resp.starts_with(&format!("{} OK", parsed.tag)) {
+                            self.state = State::Authenticated;
+                            self.view_version = None;
+                            self.pending_expunge = false;
+                            self.saved_search.clear();
+                            if self.rev2 {
+                                writer
+                                    .write_all(b"* OK [CLOSED] selected mailbox deleted\r\n")
+                                    .await?;
+                            }
+                        }
+                        if command_name == "RENAME"
+                            && resp.starts_with(&format!("{} OK", parsed.tag))
+                        {
+                            let names = op::rename::parse_args(&parsed.args)
+                                .expect("successful RENAME has valid arguments");
+                            let before = crate::imap::mailbox_name::encode_all(
+                                rename_before.as_ref().unwrap(),
+                            );
+                            let mut renamed_ids = std::collections::HashSet::new();
+                            if let crate::imap::mailbox_name::ResolveResult::Found(root) =
+                                crate::imap::mailbox_name::resolve(
+                                    &names.old_name,
+                                    rename_before.as_ref().unwrap(),
+                                )
+                            {
+                                renamed_ids.insert(root);
+                                loop {
+                                    let previous = renamed_ids.len();
+                                    for mailbox in rename_before.as_ref().unwrap() {
+                                        if mailbox
+                                            .parent
+                                            .is_some_and(|parent| renamed_ids.contains(&parent))
+                                        {
+                                            renamed_ids.insert(mailbox.id);
+                                        }
+                                    }
+                                    if renamed_ids.len() == previous {
+                                        break;
+                                    }
+                                }
+                            }
+                            let store = self.mailstore.clone();
+                            let after =
+                                tokio::task::spawn_blocking(move || store.list_mailboxes(aid))
+                                    .await??;
+                            let after = crate::imap::mailbox_name::encode_all(&after);
+                            if let Some(sm) = self.state.selected_mut()
+                                && let Some(mailbox) = after
+                                    .mailboxes
+                                    .iter()
+                                    .find(|mailbox| mailbox.id == sm.container_id)
+                            {
+                                sm.name = mailbox.wire_name.clone();
+                            }
+                            if self.state.selected().is_some() {
+                                self.refresh_view(writer, true).await?;
+                            }
+                            if self.rev2 {
+                                for mailbox in &after.mailboxes {
+                                    let old = before
+                                        .mailboxes
+                                        .iter()
+                                        .find(|old| {
+                                            old.id == mailbox.id
+                                                && renamed_ids.contains(&old.id)
+                                                && old.wire_name != mailbox.wire_name
+                                        })
+                                        .map(|old| old.wire_name.as_str())
+                                        .or_else(|| {
+                                            (names.old_name.eq_ignore_ascii_case("INBOX")
+                                                && mailbox.wire_name
+                                                    == crate::imap::mailbox_name::fold_inbox_prefix(
+                                                        &names.new_name,
+                                                    ))
+                                            .then_some("INBOX")
+                                        });
+                                    if let Some(old) = old {
+                                        let mut attrs =
+                                            crate::imap::mailbox_name::format_attrs(mailbox);
+                                        if mailbox.is_subscribed {
+                                            attrs.push_str(" \\Subscribed");
+                                        }
+                                        writer.write_all(format!("* LIST ({attrs}) \"/\" {} (\"OLDNAME\" ({}))\r\n",
+                                            crate::imap::mailbox_name::quote_mailbox(&mailbox.wire_name),
+                                            crate::imap::mailbox_name::quote_mailbox(old)).as_bytes()).await?;
+                                    }
+                                }
+                            }
+                        }
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
                     }
                 }
                 command_name @ ("FETCH" | "STORE" | "SEARCH" | "COPY" | "MOVE" | "EXPUNGE"
@@ -609,7 +1062,12 @@ impl Session {
                     if !self.state.is_authenticated() {
                         self.bad_commands += 1;
                         let resp = tagged(&parsed.tag, Status::Bad, None, "NOT AUTHENTICATED");
-                        writer.write_all(resp.as_bytes()).await?;
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
                     } else {
                         // Route to one of seven actions: Fetch(mode),
                         // Store(mode), Search(mode), Copy(mode),
@@ -665,16 +1123,44 @@ impl Session {
                             Action::Search(op::search::SearchMode::Msn, parsed.args.clone())
                         };
 
+                        let action = match action {
+                            Action::Fetch(mode, args) => Action::Fetch(
+                                mode,
+                                self.expand_saved_set(&args, mode == op::fetch::FetchMode::Uid)
+                                    .await?,
+                            ),
+                            Action::Store(mode, args) => Action::Store(
+                                mode,
+                                self.expand_saved_set(&args, mode == op::store::StoreMode::Uid)
+                                    .await?,
+                            ),
+                            Action::Copy(mode, args) => Action::Copy(
+                                mode,
+                                self.expand_saved_set(&args, mode == op::copy::CopyMode::Uid)
+                                    .await?,
+                            ),
+                            Action::Move(mode, args) => Action::Move(
+                                mode,
+                                self.expand_saved_set(&args, mode == op::mv::MoveMode::Uid)
+                                    .await?,
+                            ),
+                            Action::Expunge(true, args) => {
+                                Action::Expunge(true, self.expand_saved_set(&args, true).await?)
+                            }
+                            other => other,
+                        };
+
                         match action {
                             Action::BadInner => {
                                 self.bad_commands += 1;
-                                let resp = tagged(
-                                    &parsed.tag,
-                                    Status::Bad,
-                                    None,
-                                    "UID inner command not implemented in this phase",
-                                );
-                                writer.write_all(resp.as_bytes()).await?;
+                                let resp =
+                                    tagged(&parsed.tag, Status::Bad, None, "invalid UID command");
+                                writer
+                                    .write_all(
+                                        crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                            .as_bytes(),
+                                    )
+                                    .await?;
                             }
                             Action::Fetch(mode, args) => {
                                 match self.state.selected() {
@@ -694,16 +1180,25 @@ impl Session {
                                                 self.bad_commands += 1;
                                                 let resp =
                                                     tagged(&parsed.tag, Status::Bad, None, &e);
-                                                writer.write_all(resp.as_bytes()).await?;
+                                                writer
+                                                    .write_all(
+                                                        crate::imap::mailbox_encoding::response(
+                                                            &resp, self.utf8,
+                                                        )
+                                                        .as_bytes(),
+                                                    )
+                                                    .await?;
                                             }
                                             Ok(_) => {
-                                                let resp = op::fetch::handle(
+                                                let resp = op::fetch::handle_with_access(
                                                     &parsed.tag,
                                                     &args,
                                                     aid,
                                                     container,
                                                     self.mailstore.clone(),
                                                     mode,
+                                                    sm.read_only,
+                                                    Some(&sm.view_uids),
                                                 )
                                                 .await;
                                                 writer.write_all(&resp).await?;
@@ -718,7 +1213,14 @@ impl Session {
                                             None,
                                             "no mailbox selected",
                                         );
-                                        writer.write_all(resp.as_bytes()).await?;
+                                        writer
+                                            .write_all(
+                                                crate::imap::mailbox_encoding::response(
+                                                    &resp, self.utf8,
+                                                )
+                                                .as_bytes(),
+                                            )
+                                            .await?;
                                     }
                                 }
                             }
@@ -734,24 +1236,47 @@ impl Session {
                                         // `op::search::handle` re-parses
                                         // on its own path; the second
                                         // parse is pure and trivial.
-                                        match op::search::parse_args_for_dispatch(&args, mode) {
+                                        match op::search::parse_args_for_session(
+                                            &args, mode, self.utf8,
+                                        ) {
                                             Err(e) => {
+                                                if op::search::requests_save(&args) {
+                                                    self.saved_search.clear();
+                                                }
                                                 self.bad_commands += 1;
                                                 let resp =
                                                     tagged(&parsed.tag, Status::Bad, None, &e);
-                                                writer.write_all(resp.as_bytes()).await?;
+                                                writer
+                                                    .write_all(
+                                                        crate::imap::mailbox_encoding::response(
+                                                            &resp, self.utf8,
+                                                        )
+                                                        .as_bytes(),
+                                                    )
+                                                    .await?;
                                             }
                                             Ok(()) => {
-                                                let resp = op::search::handle(
+                                                let resp = op::search::handle_extended(
                                                     &parsed.tag,
                                                     &args,
                                                     aid,
                                                     container,
                                                     self.mailstore.clone(),
                                                     mode,
+                                                    self.rev2,
+                                                    self.utf8,
+                                                    &mut self.saved_search,
+                                                    Some(&sm.view_uids),
                                                 )
                                                 .await;
-                                                writer.write_all(resp.as_bytes()).await?;
+                                                writer
+                                                    .write_all(
+                                                        crate::imap::mailbox_encoding::response(
+                                                            &resp, self.utf8,
+                                                        )
+                                                        .as_bytes(),
+                                                    )
+                                                    .await?;
                                             }
                                         }
                                     }
@@ -763,7 +1288,14 @@ impl Session {
                                             None,
                                             "no mailbox selected",
                                         );
-                                        writer.write_all(resp.as_bytes()).await?;
+                                        writer
+                                            .write_all(
+                                                crate::imap::mailbox_encoding::response(
+                                                    &resp, self.utf8,
+                                                )
+                                                .as_bytes(),
+                                            )
+                                            .await?;
                                     }
                                 }
                             }
@@ -787,7 +1319,14 @@ impl Session {
                                             Some("CANNOT"),
                                             "mailbox is read-only",
                                         );
-                                        writer.write_all(resp.as_bytes()).await?;
+                                        writer
+                                            .write_all(
+                                                crate::imap::mailbox_encoding::response(
+                                                    &resp, self.utf8,
+                                                )
+                                                .as_bytes(),
+                                            )
+                                            .await?;
                                     }
                                     Some(sm) => {
                                         let container = sm.container_id;
@@ -804,19 +1343,34 @@ impl Session {
                                                 self.bad_commands += 1;
                                                 let resp =
                                                     tagged(&parsed.tag, Status::Bad, None, &e);
-                                                writer.write_all(resp.as_bytes()).await?;
+                                                writer
+                                                    .write_all(
+                                                        crate::imap::mailbox_encoding::response(
+                                                            &resp, self.utf8,
+                                                        )
+                                                        .as_bytes(),
+                                                    )
+                                                    .await?;
                                             }
                                             Ok(()) => {
-                                                let resp = op::store::handle(
+                                                let resp = op::store::handle_with_view(
                                                     &parsed.tag,
                                                     &args,
                                                     aid,
                                                     container,
                                                     self.mailstore.clone(),
                                                     mode,
+                                                    Some(&sm.view_uids),
                                                 )
                                                 .await;
-                                                writer.write_all(resp.as_bytes()).await?;
+                                                writer
+                                                    .write_all(
+                                                        crate::imap::mailbox_encoding::response(
+                                                            &resp, self.utf8,
+                                                        )
+                                                        .as_bytes(),
+                                                    )
+                                                    .await?;
                                             }
                                         }
                                     }
@@ -828,7 +1382,14 @@ impl Session {
                                             None,
                                             "no mailbox selected",
                                         );
-                                        writer.write_all(resp.as_bytes()).await?;
+                                        writer
+                                            .write_all(
+                                                crate::imap::mailbox_encoding::response(
+                                                    &resp, self.utf8,
+                                                )
+                                                .as_bytes(),
+                                            )
+                                            .await?;
                                     }
                                 }
                             }
@@ -849,10 +1410,17 @@ impl Session {
                                                 self.bad_commands += 1;
                                                 let resp =
                                                     tagged(&parsed.tag, Status::Bad, None, &e);
-                                                writer.write_all(resp.as_bytes()).await?;
+                                                writer
+                                                    .write_all(
+                                                        crate::imap::mailbox_encoding::response(
+                                                            &resp, self.utf8,
+                                                        )
+                                                        .as_bytes(),
+                                                    )
+                                                    .await?;
                                             }
                                             Ok(()) => {
-                                                let resp = op::copy::handle(
+                                                let resp = op::copy::handle_with_view(
                                                     &parsed.tag,
                                                     &args,
                                                     aid,
@@ -860,9 +1428,18 @@ impl Session {
                                                     self.mailstore.clone(),
                                                     mode,
                                                     read_only_src,
+                                                    Some(&sm.view_uids),
                                                 )
                                                 .await;
-                                                writer.write_all(resp.as_bytes()).await?;
+                                                self.refresh_view(writer, true).await?;
+                                                writer
+                                                    .write_all(
+                                                        crate::imap::mailbox_encoding::response(
+                                                            &resp, self.utf8,
+                                                        )
+                                                        .as_bytes(),
+                                                    )
+                                                    .await?;
                                             }
                                         }
                                     }
@@ -874,7 +1451,14 @@ impl Session {
                                             None,
                                             "no mailbox selected",
                                         );
-                                        writer.write_all(resp.as_bytes()).await?;
+                                        writer
+                                            .write_all(
+                                                crate::imap::mailbox_encoding::response(
+                                                    &resp, self.utf8,
+                                                )
+                                                .as_bytes(),
+                                            )
+                                            .await?;
                                     }
                                 }
                             }
@@ -891,7 +1475,14 @@ impl Session {
                                             Some("CANNOT"),
                                             "mailbox is read-only",
                                         );
-                                        writer.write_all(resp.as_bytes()).await?;
+                                        writer
+                                            .write_all(
+                                                crate::imap::mailbox_encoding::response(
+                                                    &resp, self.utf8,
+                                                )
+                                                .as_bytes(),
+                                            )
+                                            .await?;
                                     }
                                     Some(sm) => {
                                         let container = sm.container_id;
@@ -903,19 +1494,32 @@ impl Session {
                                                 self.bad_commands += 1;
                                                 let resp =
                                                     tagged(&parsed.tag, Status::Bad, None, &e);
-                                                writer.write_all(resp.as_bytes()).await?;
+                                                writer
+                                                    .write_all(
+                                                        crate::imap::mailbox_encoding::response(
+                                                            &resp, self.utf8,
+                                                        )
+                                                        .as_bytes(),
+                                                    )
+                                                    .await?;
                                             }
                                             Ok(()) => {
-                                                let outcome = op::mv::handle(
+                                                let outcome = op::mv::handle_with_view(
                                                     &parsed.tag,
                                                     &args,
                                                     aid,
                                                     container,
                                                     self.mailstore.clone(),
                                                     mode,
+                                                    Some(&sm.view_uids),
                                                 )
                                                 .await;
-                                                writer.write_all(outcome.wire.as_bytes()).await?;
+                                                self.write_mutation_outcome(
+                                                    writer,
+                                                    &outcome.wire,
+                                                    &outcome.expunged_uids,
+                                                )
+                                                .await?;
                                                 // Prune the session's view UID
                                                 // list in lockstep with the
                                                 // EXPUNGE lines the handler
@@ -944,7 +1548,14 @@ impl Session {
                                             None,
                                             "no mailbox selected",
                                         );
-                                        writer.write_all(resp.as_bytes()).await?;
+                                        writer
+                                            .write_all(
+                                                crate::imap::mailbox_encoding::response(
+                                                    &resp, self.utf8,
+                                                )
+                                                .as_bytes(),
+                                            )
+                                            .await?;
                                     }
                                 }
                             }
@@ -957,7 +1568,14 @@ impl Session {
                                         Some("CANNOT"),
                                         "mailbox is read-only",
                                     );
-                                    writer.write_all(resp.as_bytes()).await?;
+                                    writer
+                                        .write_all(
+                                            crate::imap::mailbox_encoding::response(
+                                                &resp, self.utf8,
+                                            )
+                                            .as_bytes(),
+                                        )
+                                        .await?;
                                 }
                                 Some(sm) => {
                                     let container = sm.container_id;
@@ -968,19 +1586,32 @@ impl Session {
                                         Err(e) => {
                                             self.bad_commands += 1;
                                             let resp = tagged(&parsed.tag, Status::Bad, None, &e);
-                                            writer.write_all(resp.as_bytes()).await?;
+                                            writer
+                                                .write_all(
+                                                    crate::imap::mailbox_encoding::response(
+                                                        &resp, self.utf8,
+                                                    )
+                                                    .as_bytes(),
+                                                )
+                                                .await?;
                                         }
                                         Ok(()) => {
-                                            let outcome = op::expunge::handle(
+                                            let outcome = op::expunge::handle_with_view(
                                                 &parsed.tag,
                                                 &args,
                                                 aid,
                                                 container,
                                                 self.mailstore.clone(),
                                                 uid_mode,
+                                                Some(&sm.view_uids),
                                             )
                                             .await;
-                                            writer.write_all(outcome.wire.as_bytes()).await?;
+                                            self.write_mutation_outcome(
+                                                writer,
+                                                &outcome.wire,
+                                                &outcome.expunged_uids,
+                                            )
+                                            .await?;
                                             if !outcome.expunged_uids.is_empty()
                                                 && let Some(sm) = self.state.selected_mut()
                                             {
@@ -999,7 +1630,14 @@ impl Session {
                                         None,
                                         "no mailbox selected",
                                     );
-                                    writer.write_all(resp.as_bytes()).await?;
+                                    writer
+                                        .write_all(
+                                            crate::imap::mailbox_encoding::response(
+                                                &resp, self.utf8,
+                                            )
+                                            .as_bytes(),
+                                        )
+                                        .await?;
                                 }
                             },
                         }
@@ -1013,7 +1651,12 @@ impl Session {
                     if !self.state.is_authenticated() {
                         self.bad_commands += 1;
                         let resp = tagged(&parsed.tag, Status::Bad, None, "NOT AUTHENTICATED");
-                        writer.write_all(resp.as_bytes()).await?;
+                        writer
+                            .write_all(
+                                crate::imap::mailbox_encoding::response(&resp, self.utf8)
+                                    .as_bytes(),
+                            )
+                            .await?;
                     } else {
                         let aid = self
                             .account_id
@@ -1032,6 +1675,7 @@ impl Session {
                             reader,
                             writer,
                             self.cfg.idle_status_interval,
+                            &mut self.shutdown,
                         )
                         .await?;
                         match outcome {
@@ -1063,13 +1707,7 @@ impl Session {
                     self.bad_commands += 1;
                     writer
                         .write_all(
-                            tagged(
-                                &parsed.tag,
-                                Status::Bad,
-                                None,
-                                "command not implemented in this phase",
-                            )
-                            .as_bytes(),
+                            tagged(&parsed.tag, Status::Bad, None, "unknown command").as_bytes(),
                         )
                         .await?;
                 }
@@ -1086,6 +1724,132 @@ impl Session {
                 return Ok(());
             }
         }
+    }
+
+    async fn write_mutation_outcome<W: AsyncWrite + Unpin>(
+        &mut self,
+        writer: &mut W,
+        wire: &str,
+        expunged: &[u64],
+    ) -> Result<()> {
+        let wire = wire.trim_end_matches("\r\n");
+        let completion = if let Some((prefix, completion)) = wire.rsplit_once("\r\n") {
+            writer.write_all(prefix.as_bytes()).await?;
+            writer.write_all(b"\r\n").await?;
+            completion
+        } else {
+            wire
+        };
+        if let Some(sm) = self.state.selected_mut() {
+            sm.view_uids.retain(|uid| !expunged.contains(uid));
+        }
+        self.refresh_view(writer, true).await?;
+        writer
+            .write_all(format!("{completion}\r\n").as_bytes())
+            .await?;
+        Ok(())
+    }
+
+    async fn refresh_view<W: AsyncWrite + Unpin>(
+        &mut self,
+        writer: &mut W,
+        allow_expunge: bool,
+    ) -> Result<()> {
+        let sm = self.state.selected().unwrap();
+        let container = sm.container_id;
+        let aid = self.account_id.unwrap();
+        let version_store = self.mailstore.clone();
+        let version =
+            tokio::task::spawn_blocking(move || version_store.imap_mailbox_version(aid, container))
+                .await??;
+        if version.is_some()
+            && version == self.view_version
+            && (!allow_expunge || !self.pending_expunge)
+        {
+            return Ok(());
+        }
+        let store = self.mailstore.clone();
+        let handles = tokio::task::spawn_blocking(move || {
+            store.list_emails_in_mailbox(
+                aid,
+                container,
+                crate::mailstore::ListOpts {
+                    sort_by: crate::mailstore::SortKey::Seq,
+                    limit: u32::MAX,
+                    offset: 0,
+                },
+            )
+        })
+        .await??;
+        let fresh: Vec<u64> = handles.iter().map(|h| h.uid).collect();
+        let sm = self.state.selected_mut().unwrap();
+        if let Some((validity, _)) = version
+            && validity != sm.uid_validity
+        {
+            writer
+                .write_all(
+                    format!("* OK [UIDVALIDITY {validity}] mailbox identity changed\r\n")
+                        .as_bytes(),
+                )
+                .await?;
+            sm.uid_validity = validity;
+        }
+        self.pending_expunge = !allow_expunge
+            && sm
+                .view_uids
+                .iter()
+                .any(|uid| fresh.binary_search(uid).is_err());
+        if allow_expunge {
+            for line in op::idle::diff_lines(&sm.view_uids, &fresh) {
+                writer.write_all(line.as_bytes()).await?;
+            }
+            sm.view_uids = fresh.clone();
+        } else {
+            let old_len = sm.view_uids.len();
+            for uid in &fresh {
+                if sm.view_uids.binary_search(uid).is_err() {
+                    sm.view_uids.push(*uid);
+                }
+            }
+            sm.view_uids.sort_unstable();
+            if sm.view_uids.len() != old_len {
+                writer
+                    .write_all(format!("* {} EXISTS\r\n", sm.view_uids.len()).as_bytes())
+                    .await?;
+            }
+        }
+        sm.exists = sm.view_uids.len() as u64;
+        self.saved_search
+            .retain(|uid| fresh.binary_search(uid).is_ok());
+        self.view_version = version;
+        Ok(())
+    }
+
+    async fn expand_saved_set(&self, args: &str, uid_mode: bool) -> Result<String> {
+        let args = args.trim_start();
+        let (set, tail) = args.split_once(' ').unwrap_or((args, ""));
+        if set != "$" || self.saved_search.is_empty() {
+            return Ok(args.to_string());
+        }
+        let values = if uid_mode {
+            self.saved_search.clone()
+        } else {
+            let Some(sm) = self.state.selected() else {
+                return Ok(args.to_string());
+            };
+            sm.view_uids
+                .iter()
+                .enumerate()
+                .filter(|(_, uid)| self.saved_search.contains(uid))
+                .map(|(i, _)| (i + 1) as u64)
+                .collect()
+        };
+        let set = if values.is_empty() {
+            "$".to_string()
+        } else {
+            op::copy::render_uid_set(&values)
+        };
+        Ok(format!("{set} {tail}"))
     }
 
     fn over_bad_command_cap(&self) -> bool {
@@ -1129,32 +1893,40 @@ impl Session {
         R: AsyncRead + Unpin,
         W: AsyncWrite + Unpin,
     {
-        let max_lit = self.cfg.max_literal_bytes;
-        // Refuse literals before the session is authenticated, and
-        // post-auth refuse them for any command that doesn't actually
-        // consume a literal body. With `LITERAL+` advertised in the
-        // greeting an unauthenticated peer — or an authenticated one
-        // issuing `CAPABILITY {N+}` etc. — could otherwise push
-        // `max_literal_bytes` (default 64 MiB) into RAM before any
-        // account-scoped cap applies. The only command in that legally
-        // takes a literal is APPEND, plus SEARCH for a trailing search
-        // string; later phases (AUTHENTICATE continuation, STORE flags via literal8) extend this
-        // allow-list as those surfaces land. Refused literals leave the
-        // stream in sync — sync form withholds the `+ Ready`
-        // continuation; non-sync form drains the body + trailing CRLF
-        // before responding.
+        let max_lit = if self.state.is_authenticated() {
+            self.cfg.max_literal_bytes
+        } else {
+            self.cfg.max_literal_bytes.min(codec::MAX_LINE_BYTES as u64)
+        };
+        // Before authentication, accept only the small literals needed by
+        // LOGIN, ID and AUTHENTICATE. Authenticated commands use general
+        // segmented framing with account-scoped literal and aggregate caps.
+        // Refusals withhold synchronising continuations or safely drain
+        // bounded non-synchronising input; lost framing closes the session.
         let authed = self.state.is_authenticated();
         let accept_literals = move |line: &[u8]| -> bool {
-            if !authed {
-                return false;
-            }
             let mut parts = line.splitn(3, |b| *b == b' ');
             let _tag = parts.next();
             let command_name = parts.next().unwrap_or(b"");
-            command_name.eq_ignore_ascii_case(b"APPEND") || is_search_line(line)
+            authed
+                || command_name.eq_ignore_ascii_case(b"LOGIN")
+                || command_name.eq_ignore_ascii_case(b"ID")
+                || command_name.eq_ignore_ascii_case(b"AUTHENTICATE")
         };
-        let fut =
-            codec::read_command_multi(reader, writer, max_lit, accept_literals, is_search_line);
+        let caps = crate::imap::capabilities::for_config(&self.cfg);
+        let non_sync_limit = if caps.split_ascii_whitespace().any(|c| c == "LITERAL+") {
+            u64::MAX
+        } else {
+            4096
+        };
+        let fut = codec::read_command_multi_policy(
+            reader,
+            writer,
+            max_lit,
+            accept_literals,
+            |_| true,
+            non_sync_limit,
+        );
         let result = if !self.state.is_authenticated() {
             match timeout(self.cfg.pre_auth_timeout, fut).await {
                 Ok(r) => r,
@@ -1164,9 +1936,7 @@ impl Session {
                 }
             }
         } else {
-            // Phase 1 has no post-auth idle command yet; rely on TCP
-            // keepalive / OS timeouts. Phase 5 (IDLE) wires explicit
-            // post-auth read timeouts.
+            // IDLE has its own keepalive loop; command reads use TCP liveness.
             fut.await
         };
         match result {
@@ -1287,7 +2057,9 @@ impl Session {
         if !self.state.is_not_authenticated() {
             self.bad_commands += 1;
             let resp = tagged(tag, Status::Bad, None, "LOGIN only valid before auth");
-            writer.write_all(resp.as_bytes()).await?;
+            writer
+                .write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes())
+                .await?;
             return Ok(());
         }
         let (user, pass) = match op::login::parse_args(args) {
@@ -1324,7 +2096,9 @@ impl Session {
                 None,
                 "AUTHENTICATE only valid before auth",
             );
-            writer.write_all(resp.as_bytes()).await?;
+            writer
+                .write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes())
+                .await?;
             return Ok(());
         }
         let parsed = match op::authenticate::parse_args(args) {
@@ -1464,7 +2238,9 @@ impl Session {
                     Some("AUTHENTICATIONFAILED"),
                     "OAUTHBEARER not configured",
                 );
-                writer.write_all(resp.as_bytes()).await?;
+                writer
+                    .write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes())
+                    .await?;
                 Ok(())
             }
         }
@@ -1475,7 +2251,12 @@ impl Session {
         reader: &mut BufReader<R>,
     ) -> Result<Option<String>> {
         let line_fut = codec::read_line(reader);
-        let line = match timeout(self.cfg.pre_auth_timeout, line_fut).await {
+        let mut shutdown = self.shutdown.clone();
+        let outcome = tokio::select! {
+            result = timeout(self.cfg.pre_auth_timeout, line_fut) => result,
+            _ = wait_shutdown(&mut shutdown) => return Ok(None),
+        };
+        let line = match outcome {
             Ok(Ok(v)) => v,
             Ok(Err(ReadLineError::Eof)) => return Ok(None),
             Ok(Err(ReadLineError::LineTooLong)) => {
@@ -1517,7 +2298,9 @@ impl Session {
                     Some("AUTHENTICATIONFAILED"),
                     "invalid credentials",
                 );
-                writer.write_all(resp.as_bytes()).await?;
+                writer
+                    .write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes())
+                    .await?;
                 return Ok(());
             }
             Err(e) => {
@@ -1534,13 +2317,35 @@ impl Session {
                 let resp = tagged(
                     tag,
                     Status::No,
-                    Some("SERVERBUG"),
+                    Some("UNAVAILABLE"),
                     "authentication unavailable",
                 );
-                writer.write_all(resp.as_bytes()).await?;
+                writer
+                    .write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes())
+                    .await?;
                 return Ok(());
             }
         };
+
+        let store = self.mailstore.clone();
+        match tokio::task::spawn_blocking(move || store.prepare_imap_account(aid)).await {
+            Ok(Ok(())) => {}
+            result => {
+                tracing::warn!(?result, "IMAP account preparation failed");
+                writer
+                    .write_all(
+                        tagged(
+                            tag,
+                            Status::No,
+                            Some("UNAVAILABLE"),
+                            "mailbox identities unavailable",
+                        )
+                        .as_bytes(),
+                    )
+                    .await?;
+                return Ok(());
+            }
+        }
 
         // Reserve a per-account slot before flipping state. Failure
         // closes the connection with a polite `* BYE [INUSE]`.
@@ -1550,7 +2355,9 @@ impl Session {
             .await
         {
             let resp = tagged(tag, Status::No, Some("INUSE"), "too many connections");
-            writer.write_all(resp.as_bytes()).await?;
+            writer
+                .write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes())
+                .await?;
             self.emit_bye(writer, "concurrent connection limit reached")
                 .await?;
             // Force the loop to exit.
@@ -1563,13 +2370,12 @@ impl Session {
         // Per RFC 9051 §6.2.2 / §6.2.3, embed CAPABILITY in the OK
         // response code to defeat client-side caching of the pre-auth
         // capability list.
-        let caps_body = match self.cfg.advertise_capabilities.as_ref() {
-            Some(o) => crate::imap::capabilities::render_owned(o),
-            None => crate::imap::capabilities::render(crate::imap::capabilities::INITIAL),
-        };
+        let caps_body = crate::imap::capabilities::for_config(&self.cfg);
         let code = format!("CAPABILITY {caps_body}");
         let resp = tagged(tag, Status::Ok, Some(&code), "authenticated");
-        writer.write_all(resp.as_bytes()).await?;
+        writer
+            .write_all(crate::imap::mailbox_encoding::response(&resp, self.utf8).as_bytes())
+            .await?;
         crate::maillog::imap_login_ok(user, method, self.peer, self.local);
         Ok(())
     }
@@ -1583,15 +2389,13 @@ fn sniff_tag(line: &[u8]) -> Option<String> {
         return None;
     }
     let slice = &line[..end];
-    if slice.iter().all(|b| b.is_ascii_graphic() && *b != b'+') {
-        std::str::from_utf8(slice).ok().map(str::to_string)
-    } else {
-        None
-    }
+    let tag = std::str::from_utf8(slice).ok()?;
+    codec::is_valid_tag(tag).then(|| tag.to_string())
 }
 
 /// Whether a command line (tag, command, args) is `SEARCH` or
 /// `UID SEARCH`.
+#[cfg(test)]
 fn is_search_line(line: &[u8]) -> bool {
     let mut parts = line.split(|b| *b == b' ').filter(|p| !p.is_empty());
     let _tag = parts.next();
@@ -1604,12 +2408,104 @@ fn is_search_line(line: &[u8]) -> bool {
     }
 }
 
-/// Fold a SEARCH command's literals back into one line, each as a
+fn is_append_line(line: &[u8]) -> bool {
+    line.split(|b| *b == b' ')
+        .nth(1)
+        .is_some_and(|s| s.eq_ignore_ascii_case(b"APPEND"))
+}
+
+pub(crate) async fn wait_shutdown(shutdown: &mut Option<tokio::sync::watch::Receiver<bool>>) {
+    if let Some(rx) = shutdown {
+        while !*rx.borrow_and_update() {
+            if rx.changed().await.is_err() {
+                return std::future::pending().await;
+            }
+        }
+    } else {
+        std::future::pending().await
+    }
+}
+
+/// Literal argument strings and literal message data share framing, but only
+/// message data may contain arbitrary bytes. Rebuild textual args separately.
+fn frame_append(cmd: codec::Command, utf8: bool) -> Result<Vec<(String, Vec<u8>)>, String> {
+    let mut prefix = cmd.line;
+    let mut pieces = vec![(Vec::new(), cmd.literal, cmd.literal8)];
+    pieces.extend(
+        cmd.continuation
+            .into_iter()
+            .map(|s| (s.text, s.literal, s.literal8)),
+    );
+    let mut messages = Vec::new();
+    let mut base = None;
+    let mut wrapper = false;
+    for (mut text, literal, literal8) in pieces {
+        if wrapper {
+            let tail = std::str::from_utf8(&text)
+                .map_err(|_| "invalid APPEND continuation")?
+                .trim_start();
+            let tail = tail
+                .strip_prefix(')')
+                .ok_or("UTF8 APPEND missing closing paren")?;
+            text = tail.as_bytes().to_vec();
+            wrapper = false;
+        }
+        prefix.extend_from_slice(&text);
+        let Some(literal) = literal else {
+            if !text.iter().all(u8::is_ascii_whitespace) {
+                return Err("APPEND trailing data without a message literal".into());
+            }
+            continue;
+        };
+        let mut line = codec::parse_line(&prefix).map_err(|e| e.to_string())?;
+        if line.args.to_ascii_uppercase().ends_with("UTF8 (") {
+            if !utf8 {
+                return Err("UTF8 APPEND requires ENABLE UTF8=ACCEPT or IMAP4rev2".into());
+            }
+            line.args.truncate(line.args.len() - 6);
+            line.args = line.args.trim_end().to_string();
+            wrapper = true;
+        }
+        match op::append::parse_args_for_dispatch(&line.args) {
+            Ok(()) => {
+                if !literal8 && literal.contains(&0) {
+                    return Err("NUL in APPEND requires literal8".into());
+                }
+                if base.is_none() {
+                    let (name, _) = op::list::take_mailbox_name(line.args.trim_start())?;
+                    base = Some(
+                        format!(
+                            "{} APPEND {}",
+                            line.tag,
+                            crate::imap::mailbox_name::quote_mailbox(&name)
+                        )
+                        .into_bytes(),
+                    );
+                }
+                messages.push((line.args, literal));
+                prefix = base.clone().unwrap();
+            }
+            Err(_) if messages.is_empty() && line.args.trim().is_empty() => {
+                push_quoted(&mut prefix, &literal).map_err(str::to_string)?;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    if wrapper {
+        return Err("UTF8 APPEND missing closing paren".into());
+    }
+    if messages.is_empty() {
+        return Err("APPEND requires a literal message body".into());
+    }
+    Ok(messages)
+}
+
+/// Fold command argument literals back into one line, each as a
 /// quoted string (`OR FROM {4}` `café` ` SUBJECT {4}` `café` →
-/// `OR FROM "café" SUBJECT "café"`), so `op::search` parses a flat
-/// line. The codec has already capped the total size
+/// `OR FROM "café" SUBJECT "café"`), so command parsers see flat
+/// arguments. The codec has already capped the total size
 /// ([`codec::MAX_MULTI_LITERAL_BYTES`]).
-fn splice_search_literal(cmd: &mut codec::Command) -> Result<(), &'static str> {
+fn splice_literals(cmd: &mut codec::Command) -> Result<(), &'static str> {
     let Some(first) = cmd.literal.take() else {
         return Ok(());
     };
@@ -1625,11 +2521,11 @@ fn splice_search_literal(cmd: &mut codec::Command) -> Result<(), &'static str> {
 
 /// Append ` "<lit>"` to `line`, escaping `"` and `\`.
 fn push_quoted(line: &mut Vec<u8>, lit: &[u8]) -> Result<(), &'static str> {
-    let text = std::str::from_utf8(lit).map_err(|_| "SEARCH literal is not UTF-8")?;
+    let text = std::str::from_utf8(lit).map_err(|_| "literal argument is not UTF-8")?;
     // CR and LF are legal in a literal (a multi-line needle); NUL is not
     // (RFC 9051 CHAR8). The tokenizer keeps line breaks inside quotes.
     if text.contains('\0') {
-        return Err("SEARCH literal contains NUL");
+        return Err("literal argument contains NUL");
     }
     line.extend_from_slice(b" \"");
     for c in text.chars() {
@@ -1656,13 +2552,14 @@ mod tests {
     }
 
     #[test]
-    fn splice_search_literal_quotes_and_escapes() {
+    fn splice_literals_quotes_and_escapes() {
         let mut cmd = codec::Command {
             line: b"a1 UID SEARCH CHARSET UTF-8 FROM".to_vec(),
             literal: Some("Zoë \"z\\\"".as_bytes().to_vec()),
+            literal8: false,
             continuation: Vec::new(),
         };
-        splice_search_literal(&mut cmd).unwrap();
+        splice_literals(&mut cmd).unwrap();
         assert!(cmd.literal.is_none());
         assert_eq!(
             String::from_utf8(cmd.line).unwrap(),
@@ -1671,9 +2568,10 @@ mod tests {
         let mut bad = codec::Command {
             line: b"a1 SEARCH BODY".to_vec(),
             literal: Some(vec![0xff, 0xfe]),
+            literal8: false,
             continuation: Vec::new(),
         };
-        assert!(splice_search_literal(&mut bad).is_err());
+        assert!(splice_literals(&mut bad).is_err());
     }
 
     /// Thunderbird's non-ASCII quick filter: two literals, the second
@@ -1691,7 +2589,7 @@ mod tests {
         // One continuation request: the first literal is sync, the
         // second non-sync.
         assert_eq!(writer, b"+ Ready for literal data\r\n");
-        splice_search_literal(&mut cmd).unwrap();
+        splice_literals(&mut cmd).unwrap();
         let line = String::from_utf8(cmd.line.clone()).unwrap();
         assert_eq!(
             line,

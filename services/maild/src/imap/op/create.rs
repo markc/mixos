@@ -1,99 +1,12 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! `CREATE` — RFC 9051 §6.3.4.
-//!
-//! Phase 2 v1: walk the hierarchical name top-down, creating
-//! missing intermediate segments as we go. The wire grammar is one
-//! mailbox name (atom or quoted-string); segments are split on the
-//! advertised hierarchy delimiter `/`.
-//!
-//! Behaviour locked with
-//! * Every segment is pre-validated **before** the first storage
-//!   mutation — non-empty, printable ASCII (0x20..=0x7e), no `&`
-//!   (RFC 3501 modified-UTF-7 introducer; would render wrong on a
-//!   strict `IMAP4rev1` client without UTF8=ACCEPT), not the reserved
-//!   `__upload_staging__` name. This prevents the worst partial-walk
-//!   outcome where `foo/bar/<bad>` leaves `foo/bar` orphaned.
-//! * `CREATE INBOX` (case-insensitive) returns tagged `OK` if the
-//!   account has a role-Inbox container — RFC 9051 mandates the
-//!   idempotent-probe semantic. If the account is missing INBOX the
-//!   handler returns `NO [SERVERBUG]`; that's an account-bootstrap
-//!   invariant break, not something the client can fix.
-//! * `CREATE foo/` (trailing delimiter) normalises to `foo` and is
-//!   idempotent: if `foo` already exists, return `OK` (the client is
-//!   announcing "ensure this parent path is present") rather than
-//!   `NO [ALREADYEXISTS]`. Without the trailing delimiter, a
-//!   pre-existing final segment is `NO [ALREADYEXISTS]`.
-//! * Empty path segments (`foo//bar`, `/foo`) are rejected as
-//!   `NO [CANNOT] empty mailbox path segment` after the trailing
-//!   delimiter is stripped — they cannot be silently coalesced
-//!   without lying about the name the client typed. A bare `foo/`
-//!   is **not** in this set: it normalises to `foo` per the
-//!   trailing-delimiter rule above.
-//!
-//! Walk atomicity is **not** transactional in v1. The storage
-//! `create_mailbox` opens its own `with_set_tx` per call, so a walk
-//! that creates `a` then fails on `a/b` (e.g. another session beat
-//! us to creating `a/b` with a clashing storage row) leaves `a`
-//! committed. This is user-visible but not corrupting: the client
-//! can retry the same `CREATE a/b/c` and the walk will continue
-//! through the already-existing prefix. A fully-atomic walk would
-//! require a typed `SqliteSetTx::create_mailbox` (`with_set_tx`
-//! cannot re-enter public `Mds` mutation methods per
-//! `feedback_with_set_tx_no_reentry`); deferred to a future phase.
-//!
-//! Storage-race handling: if `create_mailbox` returns
-//! `"mailbox already exists"` on an intermediate segment (another
-//! session raced us in between resolve and create), we reload the
-//! mailbox list and re-resolve the prefix to pick up the
-//! now-existing id rather than continuing with a stale parent.
-//!
-//! SPECIAL-USE (RFC 6154 §5.1): the optional `(USE (\Drafts...))`
-//! parameter after the mailbox name designates one SPECIAL-USE
-//! attribute for the *leaf* segment; any intermediate segments
-//! created by the walk get `role = None`. Constraints:
-//! * `\Inbox` is rejected (`NO [USEATTR]`) — the role-Inbox container
-//!   is account-bootstrap-managed and cannot be (re)assigned by the
-//!   client.
-//! * Unknown SPECIAL-USE attributes are rejected `NO [USEATTR]`.
-//! * Multiple attributes in one CREATE are rejected `NO [USEATTR]` —
-//!   our storage model is single-`MailboxRole` per mailbox.
-//! * Per-account role uniqueness is enforced *here*: storage today has
-//!   no `(account, role)` unique index and `mailbox_by_role` returns
-//!   the first match by iteration order, so allowing duplicate roles
-//!   would be a user-visible ambiguity. CREATE with a USE role that
-//!   another mailbox already carries → `NO [USEATTR]`.
-//! * On the three idempotent CREATE paths (bare `INBOX`,
-//!   `Found+trailing-slash`, race-reload `Found`) we additionally
-//!   require the existing mailbox's role to match the requested USE;
-//!   otherwise we'd return `OK` while silently ignoring the attribute
-//!   the client asked for.
-//! * The wire `USE` keyword and the SPECIAL-USE flag tokens are parsed
-//!   ASCII-case-insensitively (RFC 9051 §1.2 says IMAP keywords are
-//!   case-insensitive). `\drafts` and `\DRAFTS` both map to
-//!   `MailboxRole::Drafts`.
-//!
-//! Role uniqueness on the CREATE path is enforced *atomically* by the
-//! storage layer: `MailStore::create_mailbox` runs a
-//! `SELECT … json_extract(attrs, '$.special_use')` probe inside the
-//! same `with_set_tx` scope as the create. The per-set mutex
-//! serialises concurrent CREATEs on the same account, so two peer
-//! `CREATE foo (USE (\Drafts))` / `CREATE bar (USE (\Drafts))` calls
-//! cannot both commit — the second to acquire the mutex sees the
-//! first's row and returns `mailbox special-use already in use: …`,
-//! which the handler maps to `NO [USEATTR]`. The snapshot pre-walk
-//! scan in this file is the cheap fast-path that avoids leaving
-//! intermediate folders behind when the leaf would conflict; the
-//! storage-layer check is the authoritative barrier.
-//!
-//! Limitation: the barrier covers CREATE only. `update_mailbox` can
-//! still introduce a duplicate-role state if two concurrent updates
-//! re-assign the same `MailboxRole` to different mailboxes (the same
-//! caller-side snapshot pattern JMAP `Mailbox/set update` documents).
-//! Tightening the update path is a follow-up — the in-tx probe needs
-//! a target-id exclusion to allow same-target idempotent updates, and
-//! is symmetric work better tackled with its own review pass.
+//! CREATE with hierarchical parents and CREATE-SPECIAL-USE. Validate every
+//! path segment before mutation. Names must be Net-Unicode (NFC). Existing
+//! mailboxes, including INBOX, produce NO; a trailing delimiter is ignored.
+//! USE assigns one role to the leaf; role uniqueness is enforced by MailStore.
+//! Intermediate parents may remain after a failed create and can be reused
+//! on retry. No messages are changed by CREATE.
 
 use std::sync::Arc;
 
@@ -256,15 +169,8 @@ pub(super) fn validate_segment(seg: &str) -> Result<(), String> {
     if seg.is_empty() {
         return Err("empty mailbox path segment".to_string());
     }
-    for b in seg.bytes() {
-        if !(0x20..=0x7e).contains(&b) {
-            return Err(format!(
-                "non-ASCII or control byte 0x{b:02x} in mailbox name (UTF8=ACCEPT not advertised)"
-            ));
-        }
-        if b == b'&' {
-            return Err("'&' is reserved as the IMAP4rev1 modified-UTF-7 introducer".to_string());
-        }
+    if !crate::imap::mailbox_name::is_net_unicode(seg) {
+        return Err("mailbox name must be Net-Unicode (NFC, no controls or noncharacters)".into());
     }
     if seg == UPLOAD_STAGING_NAME {
         return Err(format!("{seg:?} is a reserved mailbox name"));
@@ -355,106 +261,48 @@ pub async fn handle(
     store: Arc<dyn MailStore>,
 ) -> String {
     let parsed = match parse_args(args) {
-        Ok(p) => p,
+        Ok(parsed) => parsed,
         Err(e) => return tagged(tag, Status::Bad, None, &e),
     };
-    let raw_name = parsed.name;
     let leaf_role = match role_from_use_flags(&parsed.use_flags) {
-        Ok(r) => r,
+        Ok(role) => role,
         Err(e) => return tagged(tag, Status::No, Some("USEATTR"), &e),
     };
-
-    // RFC 9051 §6.3.4: a trailing delimiter announces "ensure this
-    // hierarchy parent exists." Strip it, but remember the flag so a
-    // pre-existing final segment is `OK` (the client is asserting
-    // existence, not requesting a fresh creation).
-    let (trimmed, had_trailing_slash) = match raw_name.strip_suffix(HIERARCHY_DELIMITER) {
-        Some(stripped) => (stripped.to_string(), true),
-        None => (raw_name.clone(), false),
-    };
-    if trimmed.is_empty() {
-        return tagged(tag, Status::No, Some("CANNOT"), "empty mailbox name");
-    }
-
-    let segments: Vec<&str> = trimmed.split(HIERARCHY_DELIMITER).collect();
-    for seg in &segments {
-        if let Err(e) = validate_segment(seg) {
+    let name = parsed
+        .name
+        .strip_suffix(HIERARCHY_DELIMITER)
+        .unwrap_or(&parsed.name);
+    let segments: Vec<&str> = name.split(HIERARCHY_DELIMITER).collect();
+    for segment in &segments {
+        if let Err(e) = validate_segment(segment) {
             return tagged(tag, Status::No, Some("CANNOT"), &e);
         }
     }
-
     let mut records = match load_records(&store, account_id, tag).await {
-        Ok(r) => r,
-        Err(resp) => return resp,
+        Ok(records) => records,
+        Err(response) => return response,
     };
-
-    // If the first segment is the reserved `INBOX` wire name we MUST
-    // anchor the walk on the role-Inbox container, never on a non-role
-    // storage row literally named "INBOX": the latter would shadow
-    // INBOX on the wire (the encoder would omit it as a shadow root,
-    // per `OmissionReason::InboxNameCollision`), so the client gets `OK` for
-    // a mailbox tree it then cannot see in LIST/SELECT. Without a
-    // role-Inbox the account is in a broken state; refuse rather than
-    // synthesising a non-role replacement.
-    let starts_with_inbox = segments
-        .first()
-        .is_some_and(|s| s.eq_ignore_ascii_case("INBOX"));
-    let inbox_id = records
-        .iter()
-        .find(|r| r.role == Some(MailboxRole::Inbox))
-        .map(|r| r.id);
-    if starts_with_inbox && inbox_id.is_none() {
-        tracing::error!("CREATE INBOX[/...]: account has no role-Inbox container");
-        return tagged(tag, Status::No, Some("SERVERBUG"), "INBOX unavailable");
+    let existing = match resolve(name, &records) {
+        ResolveResult::Found(id) => Some(id),
+        _ => None,
+    };
+    if let Some(role) = leaf_role
+        && other_role_holder_exists(&records, role, existing)
+    {
+        return tagged(
+            tag,
+            Status::No,
+            Some("USEATTR"),
+            "SPECIAL-USE attribute already in use",
+        );
     }
-    // `CREATE INBOX` is the RFC 9051 idempotent existence probe. If the
-    // client also supplied a non-empty `(USE (...))`, they're trying to
-    // (re)assign a SPECIAL-USE attribute to INBOX — `\Inbox` is already
-    // rejected at parse, and any other role here would silently no-op
-    // because INBOX is bootstrap-managed. Reject `NO [USEATTR]`.
-    if segments.len() == 1 && starts_with_inbox {
-        if leaf_role.is_some() {
-            return tagged(
-                tag,
-                Status::No,
-                Some("USEATTR"),
-                "INBOX SPECIAL-USE attribute is not client-assignable",
-            );
-        }
-        return tagged(tag, Status::Ok, None, "CREATE completed");
-    }
-
-    // Walk segments top-down, resolving each prefix against the
-    // current snapshot. On `Found`, descend into that container as
-    // the parent. On `NotFound`, switch to the creation tail loop.
-    //
-    // When the path starts with `INBOX`, seed the walk with the
-    // resolved role-Inbox id and skip segment 0 entirely — segment 0
-    // is the reserved wire alias and cannot itself be created or
-    // re-resolved. Skipping it also closes the
-    // "tail-create synthesises a non-role INBOX" hazard a literal
-    // walk would expose if the encoder ever omits the row.
-    let start_index = if starts_with_inbox { 1 } else { 0 };
-    let mut parent: Option<ContainerId> = inbox_id.filter(|_| starts_with_inbox);
-    for i in start_index..segments.len() {
-        let _seg = segments[i];
-        let is_last = i == segments.len() - 1;
-        let prefix: String = segments[..=i].join(&HIERARCHY_DELIMITER.to_string());
-        match resolve(&prefix, &records) {
+    let mut parent = None;
+    for (i, segment) in segments.iter().enumerate() {
+        let last = i + 1 == segments.len();
+        let path = segments[..=i].join("/");
+        match resolve(&path, &records) {
             ResolveResult::Found(id) => {
-                if is_last {
-                    if !had_trailing_slash {
-                        return tagged(
-                            tag,
-                            Status::No,
-                            Some("ALREADYEXISTS"),
-                            "mailbox already exists",
-                        );
-                    }
-                    // Idempotent existence probe. If the client also
-                    // sent USE, the existing mailbox MUST already
-                    // carry that role — otherwise we'd return OK and
-                    // silently ignore the requested SPECIAL-USE.
+                if last {
                     if let LeafRoleCheck::Mismatch =
                         check_existing_leaf_role(&records, id, leaf_role)
                     {
@@ -462,27 +310,15 @@ pub async fn handle(
                             tag,
                             Status::No,
                             Some("USEATTR"),
-                            "mailbox exists with a different SPECIAL-USE attribute",
+                            "existing mailbox has a different SPECIAL-USE attribute",
                         );
                     }
-                    // Even if the target itself satisfies USE, refuse
-                    // to OK an idempotent probe when *another* mailbox
-                    // already holds the same role — the snapshot
-                    // contains a pre-existing duplicate (e.g. from
-                    // JMAP's documented non-atomic role snapshot path
-                    // or a prior TOCTOU race) and re-OKing would
-                    // perpetuate the ambiguity.
-                    if let Some(role) = leaf_role
-                        && other_role_holder_exists(&records, role, Some(id))
-                    {
-                        return tagged(
-                            tag,
-                            Status::No,
-                            Some("USEATTR"),
-                            "another mailbox already has that SPECIAL-USE attribute",
-                        );
-                    }
-                    return tagged(tag, Status::Ok, None, "CREATE completed");
+                    return tagged(
+                        tag,
+                        Status::No,
+                        Some("ALREADYEXISTS"),
+                        "mailbox already exists",
+                    );
                 }
                 parent = Some(id);
             }
@@ -490,273 +326,76 @@ pub async fn handle(
                 return tagged(
                     tag,
                     Status::No,
-                    Some("SERVERBUG"),
-                    "mailbox name not representable over IMAP",
+                    Some("CANNOT"),
+                    "mailbox name cannot be represented",
                 );
             }
             ResolveResult::NotFound => {
-                // Tail-create: build segments[i..] under `parent`. The
-                // SPECIAL-USE role (if any) lands on the leaf segment
-                // only; intermediates always get `None` so the encoder
-                // doesn't accidentally tag a synthesised parent as
-                // `\Drafts` etc.
-                //
-                // Pre-create role-uniqueness check: storage has no
-                // `(account, role)` unique index, so we reject here if
-                // any existing mailbox already carries `leaf_role`.
-                // The target doesn't exist yet (`NotFound`), so the
-                // exclusion-id is `None`.
-                if let Some(role) = leaf_role
-                    && other_role_holder_exists(&records, role, None)
-                {
-                    return tagged(
-                        tag,
-                        Status::No,
-                        Some("USEATTR"),
-                        "another mailbox already has that SPECIAL-USE attribute",
-                    );
+                if i == 0 && segment.eq_ignore_ascii_case("INBOX") {
+                    return tagged(tag, Status::No, Some("SERVERBUG"), "INBOX unavailable");
                 }
-                let mut current_parent = parent;
-                for j in i..segments.len() {
-                    let is_last_segment = j == segments.len() - 1;
-                    let seg_owned = segments[j].to_string();
-                    let role_for_seg = if is_last_segment { leaf_role } else { None };
-                    let attrs = jmap_attrs_for_create(role_for_seg, 0, false);
-                    let store_c = store.clone();
-                    let cp = current_parent;
-                    let res = tokio::task::spawn_blocking(move || {
-                        store_c.create_mailbox(account_id, &seg_owned, cp, attrs)
-                    })
-                    .await;
-                    let create_res = match res {
-                        Ok(r) => r,
-                        Err(e) => {
-                            tracing::warn!(error = %e, "CREATE spawn_blocking panicked");
-                            return tagged(tag, Status::No, Some("SERVERBUG"), "create failed");
-                        }
-                    };
-                    let is_last_j = j == segments.len() - 1;
-                    match create_res {
-                        Ok(new_id) => {
-                            current_parent = Some(new_id);
-                            if is_last_j {
-                                return tagged(tag, Status::Ok, None, "CREATE completed");
-                            }
-                        }
-                        Err(e) => {
-                            let msg = e.to_string();
-                            if msg.starts_with("mailbox already exists") {
-                                // Race: another session created this segment.
-                                // For the final segment without trailing slash
-                                // that's still ALREADYEXISTS — same answer the
-                                // pre-walk resolve would have returned.
-                                if is_last_j && !had_trailing_slash {
-                                    return tagged(
-                                        tag,
-                                        Status::No,
-                                        Some("ALREADYEXISTS"),
-                                        "mailbox already exists",
-                                    );
-                                }
-                                // Otherwise reload + re-resolve to discover the
-                                // raced-in id rather than continuing with a
-                                // stale parent.
-                                records = match load_records(&store, account_id, tag).await {
-                                    Ok(r) => r,
-                                    Err(resp) => return resp,
-                                };
-                                let prefix_j: String =
-                                    segments[..=j].join(&HIERARCHY_DELIMITER.to_string());
-                                match resolve(&prefix_j, &records) {
-                                    ResolveResult::Found(id) => {
-                                        current_parent = Some(id);
-                                        if is_last_j {
-                                            // Trailing-slash idempotence wins,
-                                            // but only if the raced-in mailbox
-                                            // already carries the requested
-                                            // SPECIAL-USE (if any). Otherwise
-                                            // we'd return OK while ignoring
-                                            // the USE the client asked for.
-                                            if let LeafRoleCheck::Mismatch =
-                                                check_existing_leaf_role(&records, id, leaf_role)
-                                            {
-                                                return tagged(
-                                                    tag,
-                                                    Status::No,
-                                                    Some("USEATTR"),
-                                                    "mailbox exists with a different SPECIAL-USE attribute",
-                                                );
-                                            }
-                                            // Same belt-and-braces guard as
-                                            // the non-race idempotent path:
-                                            // refuse to perpetuate a
-                                            // pre-existing duplicate-role
-                                            // snapshot.
-                                            if let Some(role) = leaf_role
-                                                && other_role_holder_exists(
-                                                    &records,
-                                                    role,
-                                                    Some(id),
-                                                )
-                                            {
-                                                return tagged(
-                                                    tag,
-                                                    Status::No,
-                                                    Some("USEATTR"),
-                                                    "another mailbox already has that SPECIAL-USE attribute",
-                                                );
-                                            }
-                                            return tagged(
-                                                tag,
-                                                Status::Ok,
-                                                None,
-                                                "CREATE completed",
-                                            );
-                                        }
-                                    }
-                                    ResolveResult::NotFound => {
-                                        // Storage reported a conflict on this
-                                        // segment, then it vanished before our
-                                        // reload landed (create-then-destroy
-                                        // race). Retry the create once, but
-                                        // only if the parent chain itself is
-                                        // still consistent — a missing parent
-                                        // means the chain broke under us and
-                                        // we should not synthesise around it.
-                                        let parent_ok = match current_parent {
-                                            None => true,
-                                            Some(pid) => records.iter().any(|r| r.id == pid),
-                                        };
-                                        if !parent_ok {
-                                            tracing::error!(
-                                                prefix = %prefix_j,
-                                                ?current_parent,
-                                                "CREATE race: parent chain broken after reload"
-                                            );
-                                            return tagged(
-                                                tag,
-                                                Status::No,
-                                                Some("SERVERBUG"),
-                                                "create failed",
-                                            );
-                                        }
-                                        let seg_retry = segments[j].to_string();
-                                        let role_retry = if is_last_j { leaf_role } else { None };
-                                        // Re-check role uniqueness on the
-                                        // reloaded snapshot before retrying
-                                        // — another session may have raced
-                                        // in a holder we didn't see on the
-                                        // first pass.
-                                        if let Some(role) = role_retry
-                                            && other_role_holder_exists(&records, role, None)
-                                        {
-                                            return tagged(
-                                                tag,
-                                                Status::No,
-                                                Some("USEATTR"),
-                                                "another mailbox already has that SPECIAL-USE attribute",
-                                            );
-                                        }
-                                        let attrs_retry =
-                                            jmap_attrs_for_create(role_retry, 0, false);
-                                        let store_r = store.clone();
-                                        let cp_retry = current_parent;
-                                        let retry = tokio::task::spawn_blocking(move || {
-                                            store_r.create_mailbox(
-                                                account_id,
-                                                &seg_retry,
-                                                cp_retry,
-                                                attrs_retry,
-                                            )
-                                        })
-                                        .await;
-                                        match retry {
-                                            Ok(Ok(new_id)) => {
-                                                current_parent = Some(new_id);
-                                                if is_last_j {
-                                                    return tagged(
-                                                        tag,
-                                                        Status::Ok,
-                                                        None,
-                                                        "CREATE completed",
-                                                    );
-                                                }
-                                            }
-                                            Ok(Err(e2)) => {
-                                                tracing::warn!(
-                                                    error = %e2,
-                                                    prefix = %prefix_j,
-                                                    "CREATE race retry: storage rejected on second attempt"
-                                                );
-                                                return tagged(
-                                                    tag,
-                                                    Status::No,
-                                                    Some("SERVERBUG"),
-                                                    "create failed",
-                                                );
-                                            }
-                                            Err(e2) => {
-                                                tracing::warn!(error = %e2, "CREATE retry spawn_blocking panicked");
-                                                return tagged(
-                                                    tag,
-                                                    Status::No,
-                                                    Some("SERVERBUG"),
-                                                    "create failed",
-                                                );
-                                            }
-                                        }
-                                    }
-                                    ResolveResult::Unrepresentable => {
-                                        tracing::error!(
-                                            prefix = %prefix_j,
-                                            "CREATE race: prefix unrepresentable after reload"
-                                        );
-                                        return tagged(
-                                            tag,
-                                            Status::No,
-                                            Some("SERVERBUG"),
-                                            "create failed",
-                                        );
-                                    }
-                                }
-                            } else if msg.starts_with("mailbox special-use already in use") {
-                                // Storage-layer SPECIAL-USE uniqueness
-                                // barrier closed the TOCTOU window
-                                // between the pre-walk snapshot scan
-                                // and the in-tx commit (peer CREATE
-                                // landed first). Maps cleanly to
-                                // NO [USEATTR].
+                let name = segment.to_string();
+                let attrs = jmap_attrs_for_create(if last { leaf_role } else { None }, 0, false);
+                let creating = store.clone();
+                let created = tokio::task::spawn_blocking(move || {
+                    creating.create_mailbox(account_id, &name, parent, attrs)
+                })
+                .await;
+                match created {
+                    Ok(Ok(id)) => parent = Some(id),
+                    Ok(Err(e)) if e.to_string().starts_with("mailbox already exists") && !last => {
+                        records = match load_records(&store, account_id, tag).await {
+                            Ok(records) => records,
+                            Err(response) => return response,
+                        };
+                        match resolve(&path, &records) {
+                            ResolveResult::Found(id) => parent = Some(id),
+                            _ => {
                                 return tagged(
                                     tag,
                                     Status::No,
-                                    Some("USEATTR"),
-                                    "another mailbox already has that SPECIAL-USE attribute",
+                                    Some("UNAVAILABLE"),
+                                    "mailbox hierarchy changed; retry",
                                 );
-                            } else if msg.starts_with("reserved name")
-                                || msg.starts_with("mailbox invalid name")
-                            {
-                                return tagged(tag, Status::No, Some("CANNOT"), &msg);
-                            } else if msg.starts_with("mailbox parent not found") {
-                                tracing::error!(
-                                    error = %msg,
-                                    "CREATE walk: parent not found despite top-down construction"
-                                );
-                                return tagged(tag, Status::No, Some("SERVERBUG"), "create failed");
-                            } else {
-                                tracing::warn!(error = %msg, "CREATE storage error");
-                                return tagged(tag, Status::No, Some("SERVERBUG"), "create failed");
                             }
                         }
                     }
+                    Ok(Err(e)) if e.to_string().starts_with("mailbox special-use") => {
+                        return tagged(
+                            tag,
+                            Status::No,
+                            Some("USEATTR"),
+                            "SPECIAL-USE attribute already in use",
+                        );
+                    }
+                    Ok(Err(e)) if e.to_string().starts_with("mailbox already exists") => {
+                        return tagged(
+                            tag,
+                            Status::No,
+                            Some("ALREADYEXISTS"),
+                            "mailbox already exists",
+                        );
+                    }
+                    _ => {
+                        return tagged(
+                            tag,
+                            Status::No,
+                            Some("UNAVAILABLE"),
+                            "mailbox creation unavailable",
+                        );
+                    }
                 }
-                // The inner loop always returns on the last segment.
-                tracing::error!("CREATE walk tail fell through without returning");
-                return tagged(tag, Status::No, Some("SERVERBUG"), "create failed");
+                if last {
+                    return tagged(tag, Status::Ok, None, "CREATE completed");
+                }
+                records = match load_records(&store, account_id, tag).await {
+                    Ok(records) => records,
+                    Err(response) => return response,
+                };
             }
         }
     }
-    tracing::error!("CREATE walk fell through without returning");
-    tagged(tag, Status::No, Some("SERVERBUG"), "create failed")
+    tagged(tag, Status::No, Some("CANNOT"), "invalid mailbox path")
 }
 
 #[cfg(test)]
@@ -901,15 +540,14 @@ mod tests {
     }
 
     #[test]
-    fn validate_segment_rejects_non_ascii() {
-        let e = validate_segment("Caf\u{00e9}").unwrap_err();
-        assert!(e.contains("non-ASCII"), "{e}");
+    fn validate_segment_accepts_normalised_unicode() {
+        assert!(validate_segment("Caf\u{00e9}").is_ok());
+        assert!(validate_segment("Cafe\u{301}").is_err());
     }
 
     #[test]
-    fn validate_segment_rejects_ampersand() {
-        let e = validate_segment("R&D").unwrap_err();
-        assert!(e.contains("UTF-7"), "{e}");
+    fn validate_segment_accepts_ampersand_after_wire_decoding() {
+        assert!(validate_segment("R&D").is_ok());
     }
 
     #[test]
@@ -921,6 +559,6 @@ mod tests {
     #[test]
     fn validate_segment_rejects_control_byte() {
         let e = validate_segment("foo\nbar").unwrap_err();
-        assert!(e.contains("non-ASCII"), "{e}");
+        assert!(e.contains("Net-Unicode"), "{e}");
     }
 }

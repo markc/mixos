@@ -336,14 +336,127 @@ pub struct EmailHandle {
     pub size_bytes: u64,
 }
 
-/// MailStore behaviour required by the `maild::jmap` adapter.
-///
-/// All methods are synchronous; tokio callers wrap in
-/// `tokio::task::spawn_blocking` per the maild convention. Sync
-/// matches `mds::Mds` (which is also sync) and lets the
-/// adapter chain MDS + sidecar writes inside one rusqlite
-/// `Transaction` without crossing await points.
+/// One message prepared for an atomic IMAP MULTIAPPEND transaction.
+pub struct EmailImport {
+    pub blob: BlobHash,
+    pub envelope: EmailEnvelope,
+    pub in_reply_to: Vec<String>,
+    pub flags: Flags,
+    pub tags: Tags,
+    pub received_at: i64,
+}
+/// Coalesce sorted UIDs into inclusive, contiguous intervals.
+pub fn imap_uid_ranges(uids: &[u64]) -> Vec<(u64, u64)> {
+    let mut ranges = Vec::new();
+    let mut pending = uids;
+    while let Some(&first) = pending.first() {
+        let mut end = 1;
+        while end < pending.len() && pending[end - 1].checked_add(1) == Some(pending[end]) {
+            end += 1;
+        }
+        ranges.push((first, pending[end - 1]));
+        pending = &pending[end..];
+    }
+    ranges
+}
+
+/// MailStore behaviour required by maild's protocol adapters. Methods are
+/// synchronous; async callers use spawn_blocking. Native transactions commit
+/// MDS mutations and mail projections together.
 pub trait MailStore: Send + Sync {
+    /// Prepare stable IMAP identities before exposing an authenticated session.
+    fn prepare_imap_account(&self, _account: AccountId) -> Result<()> {
+        Ok(())
+    }
+
+    /// Constant-cost change check. None requests the conservative snapshot path.
+    fn imap_mailbox_version(
+        &self,
+        _account: AccountId,
+        _mailbox: ContainerId,
+    ) -> Result<Option<(u64, u64)>> {
+        Ok(None)
+    }
+
+    /// Resolve sorted UIDs with one indexed scan per contiguous run.
+    fn imap_fetch_handles(
+        &self,
+        account: AccountId,
+        mailbox: ContainerId,
+        uids: &[u64],
+    ) -> Result<Vec<EmailHandle>> {
+        let mut handles = Vec::new();
+        for (first, last) in imap_uid_ranges(uids) {
+            handles.extend(self.imap_fetch_range(account, mailbox, first, last)?);
+        }
+        Ok(handles)
+    }
+
+    /// Read a UID interval. Native storage performs one membership-index scan.
+    fn imap_fetch_range(
+        &self,
+        account: AccountId,
+        mailbox: ContainerId,
+        first: u64,
+        last: u64,
+    ) -> Result<Vec<EmailHandle>> {
+        Ok(self
+            .list_emails_in_mailbox(
+                account,
+                mailbox,
+                ListOpts {
+                    sort_by: SortKey::Seq,
+                    limit: u32::MAX,
+                    offset: 0,
+                },
+            )?
+            .into_iter()
+            .filter(|handle| (first..=last).contains(&handle.uid))
+            .collect())
+    }
+
+    fn imap_membership(
+        &self,
+        account: AccountId,
+        mailbox: ContainerId,
+        item: ItemId,
+    ) -> Result<Option<EmailHandle>> {
+        Ok(self
+            .list_emails_in_mailbox(
+                account,
+                mailbox,
+                ListOpts {
+                    sort_by: SortKey::Seq,
+                    limit: u32::MAX,
+                    offset: 0,
+                },
+            )?
+            .into_iter()
+            .find(|handle| handle.id == item))
+    }
+    /// IMAP RENAME INBOX moves messages rather than renaming the Inbox display
+    /// name. Keep it separate from JMAP's generic rename_mailbox semantics.
+    fn rename_inbox(
+        &self,
+        _account: AccountId,
+        _inbox: ContainerId,
+        _name: &str,
+        _parent: Option<ContainerId>,
+    ) -> Result<()> {
+        Err(anyhow!("atomic INBOX rename unavailable"))
+    }
+    /// IMAP subscriptions name mailboxes independently of their existence.
+    fn imap_subscription_names(&self, _account: AccountId) -> Result<Vec<String>> {
+        Ok(Vec::new())
+    }
+    fn imap_set_subscription(
+        &self,
+        _account: AccountId,
+        _name: &str,
+        _subscribed: bool,
+    ) -> Result<()> {
+        Err(anyhow!("persistent IMAP subscriptions unavailable"))
+    }
     /// Stage an uploaded blob behind a JMAP `BlobId`.
     ///
     /// **Upload-staging path only.** v1.1 amendment §1 distinguishes two
@@ -485,6 +598,19 @@ pub trait MailStore: Send + Sync {
         stamp_id: &str,
         read_only_src: bool,
     ) -> Result<MembershipUid>;
+
+    /// Atomic multi-message COPY: any failure rolls back every destination
+    /// membership, UID allocation and outbox entry (RFC 9051 section 6.4.7).
+    fn copy_messages(
+        &self,
+        _account: AccountId,
+        _items: Vec<(ItemId, String)>,
+        _src: ContainerId,
+        _dest: ContainerId,
+        _read_only_src: bool,
+    ) -> Result<Vec<MembershipUid>> {
+        Err(anyhow!("atomic copy unavailable"))
+    }
 
     /// IMAP EXPUNGE / UID EXPUNGE primitive (RFC 9051 §6.4.3 /
     /// RFC 4315 §2.1). Atomically remove every supplied
@@ -1037,6 +1163,16 @@ pub trait MailStore: Send + Sync {
         received_at: i64,
     ) -> Result<(ItemId, MembershipUid)>;
 
+    /// Commit all message items, projections and memberships together. Backends
+    /// without an atomic implementation must refuse before writing anything.
+    fn append_emails(
+        &self,
+        _account: AccountId,
+        _mailbox: ContainerId,
+        _messages: Vec<EmailImport>,
+    ) -> Result<Vec<(ItemId, MembershipUid)>> {
+        Err(anyhow!("atomic append unavailable"))
+    }
     /// Create an email item with N≥1 initial memberships in one
     /// `with_set_tx` scope. Multi-mailbox counterpart of
     /// [`MailStore::create_email`], used by JMAP `Email/set create`
@@ -2262,6 +2398,170 @@ fn find_or_new_thread_id_in_tx(
 }
 
 impl MailStore for SqliteMailStore {
+    fn prepare_imap_account(&self, account: AccountId) -> Result<()> {
+        let set = account_id_to_setid(account);
+        match self.mds.with_set_tx(&set, |tx| {
+            imap_uidvalidity_high_water(tx.tx())?;
+            // Preserve exactly the identity already sent by wire_uidvalidity.
+            // Collisions matter when names are reused, and are repaired there.
+            tx.tx().execute(
+                "UPDATE container SET seq_validity = seq_validity / 1000 WHERE seq_validity > 4294967295 AND name != ?1",
+                [UPLOAD_STAGING_NAME],
+            ).map_err(|e| mds::Error::Other(e.to_string()))?;
+            Ok(())
+        }) {
+            Ok(()) | Err(mds::Error::SetNotFound(_)) => Ok(()),
+            Err(error) => Err(anyhow!(error)),
+        }
+    }
+
+    fn imap_mailbox_version(
+        &self,
+        account: AccountId,
+        mailbox: ContainerId,
+    ) -> Result<Option<(u64, u64)>> {
+        let status = self
+            .mds
+            .container_status(&account_id_to_setid(account), &mailbox)?;
+        Ok(Some((status.seq_validity, status.change_seq.0)))
+    }
+
+    fn imap_fetch_range(
+        &self,
+        account: AccountId,
+        mailbox: ContainerId,
+        first: u64,
+        last: u64,
+    ) -> Result<Vec<EmailHandle>> {
+        self.mds
+            .with_set_read(&account_id_to_setid(account), |conn| {
+                let first =
+                    Seq(u32::try_from(first).map_err(|e| mds::Error::Other(e.to_string()))?);
+                let last = Seq(u32::try_from(last).map_err(|e| mds::Error::Other(e.to_string()))?);
+                Ok(
+                    mds::container::list_items(conn, &mailbox, SeqRange::Range(first, last))?
+                        .into_iter()
+                        .map(imap_email_handle)
+                        .collect(),
+                )
+            })
+            .map_err(Into::into)
+    }
+
+    fn imap_membership(
+        &self,
+        account: AccountId,
+        mailbox: ContainerId,
+        item: ItemId,
+    ) -> Result<Option<EmailHandle>> {
+        self.mds
+            .with_set_read(
+                &account_id_to_setid(account),
+                |conn| match mds::container::fetch_item(conn, &item, &mailbox) {
+                    Ok(record) => Ok(Some(imap_email_handle(record))),
+                    Err(mds::Error::ItemNotFound(_)) => Ok(None),
+                    Err(error) => Err(error),
+                },
+            )
+            .map_err(Into::into)
+    }
+
+    fn rename_inbox(
+        &self,
+        account: AccountId,
+        inbox: ContainerId,
+        name: &str,
+        parent: Option<ContainerId>,
+    ) -> Result<()> {
+        if name.is_empty() || name == UPLOAD_STAGING_NAME {
+            return Err(anyhow!("mailbox invalid name"));
+        }
+        let set = account_id_to_setid(account);
+        let result = self.mds.with_set_tx(&set, |tx| {
+            let role: Option<Option<String>> = tx
+                .tx()
+                .query_row(
+                    "SELECT json_extract(attrs, '$.special_use') FROM container WHERE id = ?1",
+                    [inbox.0.to_string()],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(|e| mds::Error::Other(e.to_string()))?;
+            if role.flatten().as_deref() != Some(r"\Inbox") {
+                return Err(mds::Error::ContainerNotFound(inbox.0.to_string()));
+            }
+            imap_preserve_subscriptions(tx.tx())?;
+            let dest = tx.create_container_named(
+                parent.as_ref(),
+                name,
+                &jmap_attrs_for_create(None, 0, false),
+            )?;
+            imap_allocate_uidvalidity(tx.tx(), &dest)?;
+            let items = {
+                let mut statement = tx
+                    .tx()
+                    .prepare("SELECT item_id FROM membership WHERE container_id = ?1 ORDER BY seq")
+                    .map_err(|e| mds::Error::Other(e.to_string()))?;
+                statement
+                    .query_map([inbox.0.to_string()], |row| row.get::<_, String>(0))
+                    .map_err(|e| mds::Error::Other(e.to_string()))?
+                    .collect::<rusqlite::Result<Vec<_>>>()
+                    .map_err(|e| mds::Error::Other(e.to_string()))?
+            };
+            for item in items {
+                let item = ItemId(
+                    uuid::Uuid::parse_str(&item).map_err(|e| mds::Error::Other(e.to_string()))?,
+                );
+                tx.move_item(&item, &inbox, &dest, Flags(0))?;
+            }
+            Ok(())
+        });
+        match result {
+            Ok(()) => Ok(()),
+            Err(mds::Error::ContainerAlreadyExists { .. }) => {
+                Err(anyhow!("mailbox already exists: {name}"))
+            }
+            Err(mds::Error::SetNotFound(_)) | Err(mds::Error::ContainerNotFound(_)) => {
+                Err(anyhow!("mailbox not found"))
+            }
+            Err(e) => Err(anyhow!(e)),
+        }
+    }
+
+    fn imap_subscription_names(&self, account: AccountId) -> Result<Vec<String>> {
+        let set = self.ensure_account_set(account)?;
+        self.mds.with_set_tx(&set, |tx| {
+            tx.tx().execute_batch("CREATE TABLE IF NOT EXISTS mail_imap_subscriptions (name TEXT PRIMARY KEY NOT NULL)")
+                .map_err(|e| mds::Error::Other(e.to_string()))?;
+            let mut statement = tx.tx().prepare("SELECT name FROM mail_imap_subscriptions ORDER BY name")
+                .map_err(|e| mds::Error::Other(e.to_string()))?;
+            statement.query_map([], |row| row.get::<_, String>(0))
+                .map_err(|e| mds::Error::Other(e.to_string()))?
+                .collect::<rusqlite::Result<Vec<_>>>().map_err(|e| mds::Error::Other(e.to_string()))
+        }).map_err(anyhow::Error::from)
+    }
+
+    fn imap_set_subscription(
+        &self,
+        account: AccountId,
+        name: &str,
+        subscribed: bool,
+    ) -> Result<()> {
+        if name.is_empty()
+            || !crate::imap::mailbox_name::is_net_unicode(name)
+            || name.split('/').any(str::is_empty)
+        {
+            return Err(anyhow!("mailbox invalid subscription name"));
+        }
+        let set = self.ensure_account_set(account)?;
+        self.mds.with_set_tx(&set, |tx| {
+            tx.tx().execute_batch("CREATE TABLE IF NOT EXISTS mail_imap_subscriptions (name TEXT PRIMARY KEY NOT NULL)")
+                .map_err(|e| mds::Error::Other(e.to_string()))?;
+            let sql = if subscribed { "INSERT OR IGNORE INTO mail_imap_subscriptions(name) VALUES (?1)" } else { "DELETE FROM mail_imap_subscriptions WHERE name = ?1" };
+            tx.tx().execute(sql, [name]).map_err(|e| mds::Error::Other(e.to_string()))?;
+            Ok(())
+        }).map_err(anyhow::Error::from)
+    }
     fn create_blob_ref(
         &self,
         account: AccountId,
@@ -2453,7 +2753,9 @@ impl MailStore for SqliteMailStore {
                     )));
                 }
             }
-            tx.create_container_named(parent.as_ref(), name, &attrs)
+            let id = tx.create_container_named(parent.as_ref(), name, &attrs)?;
+            imap_allocate_uidvalidity(tx.tx(), &id)?;
+            Ok(id)
         }) {
             Ok(id) => Ok(id),
             Err(mds::Error::ContainerNotFound(p)) => Err(anyhow!("mailbox parent not found: {p}")),
@@ -2498,7 +2800,14 @@ impl MailStore for SqliteMailStore {
         // can't exist if the set doesn't.
         let set = account_id_to_setid(account);
         match self.mds.with_set_tx(&set, |tx| {
-            tx.rename_container(&id, new_parent.as_ref(), new_name)
+            imap_preserve_subscriptions(tx.tx())?;
+            let old_name = imap_name_in_connection(tx.tx(), &id).ok();
+            tx.rename_container(&id, new_parent.as_ref(), new_name)?;
+            let new_name = imap_name_in_connection(tx.tx(), &id).ok();
+            if new_name.is_some() && new_name != old_name {
+                imap_repair_renamed_identities(tx.tx(), &id)?;
+            }
+            Ok(())
         }) {
             Ok(()) => Ok(()),
             Err(mds::Error::SetNotFound(_)) => Err(anyhow!("mailbox not found: {id}", id = id.0)),
@@ -2603,6 +2912,9 @@ impl MailStore for SqliteMailStore {
                      clear special_use via Mailbox/set update first"
                 )));
             }
+            imap_preserve_subscriptions(tx.tx())?;
+            imap_uidvalidity_high_water(tx.tx())?;
+            imap_record_deleted_identity(tx.tx(), &id)?;
             match on_emails {
                 DestroyPolicy::Reject => {
                     // Authoritative live count over `membership`, not
@@ -2777,6 +3089,7 @@ impl MailStore for SqliteMailStore {
             // already-exists checks before the attrs UPDATE — no point
             // re-encoding attrs if the rename will fail.
             if rename_requested {
+                let old_wire_name = imap_name_in_connection(tx.tx(), &id).ok();
                 let target_name = new_name.unwrap_or(cur_name.as_str());
                 let target_parent: Option<ContainerId> = match new_parent {
                     Some(opt) => opt,
@@ -2788,6 +3101,10 @@ impl MailStore for SqliteMailStore {
                     },
                 };
                 tx.rename_container(&id, target_parent.as_ref(), target_name)?;
+                let current_wire_name = imap_name_in_connection(tx.tx(), &id).ok();
+                if current_wire_name.is_some() && current_wire_name != old_wire_name {
+                    imap_repair_renamed_identities(tx.tx(), &id)?;
+                }
             }
 
             // Attrs update. Decode the snapshot we already SELECTed,
@@ -2802,6 +3119,18 @@ impl MailStore for SqliteMailStore {
             //  §"Trait
             // surface change").
             if attrs_change_requested {
+                if is_subscribed == Some(false) {
+                    match imap_name_in_connection(tx.tx(), &id) {
+                        Ok(name) => {
+                            tx.tx().execute_batch("CREATE TABLE IF NOT EXISTS mail_imap_subscriptions (name TEXT PRIMARY KEY NOT NULL)")
+                                .map_err(|e| mds::Error::Other(e.to_string()))?;
+                            tx.tx().execute("DELETE FROM mail_imap_subscriptions WHERE name = ?1", [name])
+                                .map_err(|e| mds::Error::Other(e.to_string()))?;
+                        }
+                        Err(mds::Error::Other(message)) if message.starts_with("mailbox not representable") => {},
+                        Err(e) => return Err(e),
+                    }
+                }
                 let mut attrs: ContainerAttrs = serde_json::from_str(&cur_attrs_raw)
                     .map_err(|e| mds::Error::Other(format!("decode container attrs: {e}")))?;
                 if let Some(r_opt) = role {
@@ -3018,12 +3347,33 @@ impl MailStore for SqliteMailStore {
         stamp_id: &str,
         read_only_src: bool,
     ) -> Result<MembershipUid> {
+        self.copy_messages(
+            account,
+            vec![(item_id, stamp_id.to_string())],
+            src,
+            dest,
+            read_only_src,
+        )?
+        .pop()
+        .ok_or_else(|| anyhow!("empty copy result"))
+    }
+
+    fn copy_messages(
+        &self,
+        account: AccountId,
+        items: Vec<(ItemId, String)>,
+        src: ContainerId,
+        dest: ContainerId,
+        read_only_src: bool,
+    ) -> Result<Vec<MembershipUid>> {
         if src == dest {
             return Err(anyhow!("copy_message: src and dest must differ"));
         }
         let set = account_id_to_setid(account);
-        let stamp_id = stamp_id.to_string();
         let result = self.mds.with_set_tx(&set, |tx| {
+            let mut results = Vec::with_capacity(items.len());
+            for (item_id, stamp_id) in &items {
+
             // `add_membership_from` inherits keywords + tags from the
             // `src` membership specifically — RFC 9051 §6.4.7 wants
             // the destination to preserve the source mailbox's flags,
@@ -3035,7 +3385,7 @@ impl MailStore for SqliteMailStore {
             // row between IMAP snapshot and this tx must fail the
             // COPY, not mint a dest membership with the wrong flags.
             let placement = tx
-                .add_membership_from(&item_id, &src, &dest)
+                .add_membership_from(item_id, &src, &dest)
                 .map_err(|e| match e {
                     mds::Error::ItemNotFound(_) => mds::Error::Other(format!(
                         "email not found: {id}",
@@ -3110,18 +3460,18 @@ impl MailStore for SqliteMailStore {
             }
 
             let uid_validity = tx.container_seq_validity(&dest)?;
-            Ok(MembershipUid {
+            results.push(MembershipUid {
                 container_id: dest,
                 uid: placement.seq.0 as u64,
                 uid_validity,
-            })
+            });
+            }
+            Ok(results)
         });
 
         match result {
             Ok(uid) => Ok(uid),
-            Err(mds::Error::SetNotFound(_)) => {
-                Err(anyhow!("email not found: {id}", id = item_id.0))
-            }
+            Err(mds::Error::SetNotFound(_)) => Err(anyhow!("email not found: source mailbox")),
             Err(mds::Error::Other(s))
                 if s.starts_with("email not found")
                     || s.starts_with("mailbox not found")
@@ -3688,187 +4038,218 @@ impl MailStore for SqliteMailStore {
         initial_tags: Tags,
         received_at: i64,
     ) -> Result<(ItemId, MembershipUid)> {
-        let set = account_id_to_setid(account);
-        // Initial user keywords applied to the new membership atomically
-        // with the create (mds `insert_membership` writes the tags column
-        // in the same tx). Empty for the common no-user-keyword create.
-        let initial_tags: Vec<String> = initial_tags.into();
-        let to_json = serde_json::to_string(&envelope.to)
-            .map_err(|e| anyhow!("serialize envelope.to: {e}"))?;
-        let cc_json = serde_json::to_string(&envelope.cc)
-            .map_err(|e| anyhow!("serialize envelope.cc: {e}"))?;
-        let bcc_json = serde_json::to_string(&envelope.bcc)
-            .map_err(|e| anyhow!("serialize envelope.bcc: {e}"))?;
-        let reply_to_json = serde_json::to_string(&envelope.reply_to)
-            .map_err(|e| anyhow!("serialize envelope.reply_to: {e}"))?;
-        let in_reply_to: Vec<String> = in_reply_to.to_vec();
+        self.append_emails(
+            account,
+            mailbox,
+            vec![EmailImport {
+                blob,
+                envelope,
+                in_reply_to: in_reply_to.to_vec(),
+                flags: initial_keywords,
+                tags: initial_tags,
+                received_at,
+            }],
+        )?
+        .pop()
+        .ok_or_else(|| anyhow!("empty append result"))
+    }
 
+    fn append_emails(
+        &self,
+        account: AccountId,
+        mailbox: ContainerId,
+        messages: Vec<EmailImport>,
+    ) -> Result<Vec<(ItemId, MembershipUid)>> {
+        let set = account_id_to_setid(account);
         let mds = &self.mds;
         let result = mds.with_set_tx(&set, |tx| {
-            // `mds.blob_size` and `mds.blob_exists` (below) are pure
-            // `fs::metadata` / `Path::exists` calls — they do **not**
-            // re-enter the per-set `Mutex` that `with_set_tx` holds, so
-            // calling them inside the closure is safe per the re-entry
-            // rule (which only forbids `Mds` *mutation* methods).
-            // Capture the blob size INSIDE the closure so a GC Pass 2
-            // that started after our entry is serialized against
-            // `add_staging_item`'s blobs_db UPSERT below.
-            // `add_staging_item` takes the size as input — the
-            // primitive itself does not stat the file.
-            let blob_size = mds.blob_size(&blob).map_err(|e| match e {
-                mds::Error::BlobNotFound(_) => mds::Error::BlobNotFound(blob::hex(&blob)),
-                other => other,
-            })?;
+            let mut results = Vec::with_capacity(messages.len());
+            for message in &messages {
+                let blob = message.blob;
+                let envelope = &message.envelope;
+                let in_reply_to = &message.in_reply_to;
+                let initial_keywords = message.flags;
+                let initial_tags = &message.tags;
+                let received_at = message.received_at; // Initial user keywords applied to the new membership atomically
+                // with the create (mds `insert_membership` writes the tags column
+                // in the same tx). Empty for the common no-user-keyword create.
+                let initial_tags: Vec<String> = initial_tags.clone().into();
+                let to_json = serde_json::to_string(&envelope.to)
+                    .map_err(|e| mds::Error::Other(format!("serialize envelope.to: {e}")))?;
+                let cc_json = serde_json::to_string(&envelope.cc)
+                    .map_err(|e| mds::Error::Other(format!("serialize envelope.cc: {e}")))?;
+                let bcc_json = serde_json::to_string(&envelope.bcc)
+                    .map_err(|e| mds::Error::Other(format!("serialize envelope.bcc: {e}")))?;
+                let reply_to_json = serde_json::to_string(&envelope.reply_to)
+                    .map_err(|e| mds::Error::Other(format!("serialize envelope.reply_to: {e}")))?;
+                let in_reply_to: Vec<String> = in_reply_to.to_vec();
 
-            let (item_id, placement) = tx
-                .add_staging_item(&mailbox, &blob, blob_size, initial_keywords, &initial_tags)
-                .map_err(|e| match e {
-                    mds::Error::ContainerNotFound(_) => mds::Error::Other(format!(
-                        "mailbox not found: {mailbox}",
-                        mailbox = mailbox.0
-                    )),
+                // `mds.blob_size` and `mds.blob_exists` (below) are pure
+                // `fs::metadata` / `Path::exists` calls — they do **not**
+                // re-enter the per-set `Mutex` that `with_set_tx` holds, so
+                // calling them inside the closure is safe per the re-entry
+                // rule (which only forbids `Mds` *mutation* methods).
+                // Capture the blob size INSIDE the closure so a GC Pass 2
+                // that started after our entry is serialized against
+                // `add_staging_item`'s blobs_db UPSERT below.
+                // `add_staging_item` takes the size as input — the
+                // primitive itself does not stat the file.
+                let blob_size = mds.blob_size(&blob).map_err(|e| match e {
+                    mds::Error::BlobNotFound(_) => mds::Error::BlobNotFound(blob::hex(&blob)),
                     other => other,
                 })?;
 
-            // Defensive re-stat after `add_staging_item`. If a GC Pass
-            // 2 ran between our entry and `add_blob_ref_in_tx`, it
-            // would have deleted the CAS file and the `blob` row;
-            // `add_blob_ref_in_tx`'s UPSERT then re-created the row
-            // (with our `blob_size`) but cannot re-create the file.
-            // Catch that here — the per-set tx's blobs_db writes are
-            // not yet committed, so returning an error rolls back
-            // every write atomically: the re-inserted `blob` row, the
-            // bumped `refcount`, the `blob_ref`, the `item`, and the
-            // initial `membership`. The blob row going back to absent
-            // is the load-bearing piece — GC's next pass then sees no
-            // row at all and the dangling row scenario does not arise.
-            // Any *future* GC Pass 2 sees refcount ≥ 1 from our
-            // committed UPSERT and skips.
-            if !mds.blob_exists(&blob)? {
-                return Err(mds::Error::BlobNotFound(blob::hex(&blob)));
-            }
+                let (item_id, placement) = tx
+                    .add_staging_item(&mailbox, &blob, blob_size, initial_keywords, &initial_tags)
+                    .map_err(|e| match e {
+                        mds::Error::ContainerNotFound(_) => mds::Error::Other(format!(
+                            "mailbox not found: {mailbox}",
+                            mailbox = mailbox.0
+                        )),
+                        other => other,
+                    })?;
 
-            // Override the auto-assigned `received_at` (now_ms) with
-            // the caller-supplied timestamp. Matches IMAP `INTERNALDATE`
-            // / JMAP `receivedAt` semantics — the caller knows when the
-            // server received this message; mds doesn't.
-            let updated = tx
-                .tx()
-                .execute(
-                    "UPDATE item SET received_at = ?1 WHERE id = ?2",
-                    params![received_at, item_id.0.to_string()],
-                )
-                .map_err(|e| mds::Error::Other(format!("update item.received_at: {e}")))?;
-            if updated != 1 {
-                return Err(mds::Error::Other(format!(
-                    "update item.received_at: expected 1 row, got {updated}"
-                )));
-            }
+                // Defensive re-stat after `add_staging_item`. If a GC Pass
+                // 2 ran between our entry and `add_blob_ref_in_tx`, it
+                // would have deleted the CAS file and the `blob` row;
+                // `add_blob_ref_in_tx`'s UPSERT then re-created the row
+                // (with our `blob_size`) but cannot re-create the file.
+                // Catch that here — the per-set tx's blobs_db writes are
+                // not yet committed, so returning an error rolls back
+                // every write atomically: the re-inserted `blob` row, the
+                // bumped `refcount`, the `blob_ref`, the `item`, and the
+                // initial `membership`. The blob row going back to absent
+                // is the load-bearing piece — GC's next pass then sees no
+                // row at all and the dangling row scenario does not arise.
+                // Any *future* GC Pass 2 sees refcount ≥ 1 from our
+                // committed UPSERT and skips.
+                if !mds.blob_exists(&blob)? {
+                    return Err(mds::Error::BlobNotFound(blob::hex(&blob)));
+                }
 
-            let normalized_subject = subject::normalize_subject(&envelope.subject);
-            let inserted = tx
-                .tx()
-                .execute(
-                    "INSERT INTO mail_envelopes \
+                // Override the auto-assigned `received_at` (now_ms) with
+                // the caller-supplied timestamp. Matches IMAP `INTERNALDATE`
+                // / JMAP `receivedAt` semantics — the caller knows when the
+                // server received this message; mds doesn't.
+                let updated = tx
+                    .tx()
+                    .execute(
+                        "UPDATE item SET received_at = ?1 WHERE id = ?2",
+                        params![received_at, item_id.0.to_string()],
+                    )
+                    .map_err(|e| mds::Error::Other(format!("update item.received_at: {e}")))?;
+                if updated != 1 {
+                    return Err(mds::Error::Other(format!(
+                        "update item.received_at: expected 1 row, got {updated}"
+                    )));
+                }
+
+                let normalized_subject = subject::normalize_subject(&envelope.subject);
+                let inserted = tx
+                    .tx()
+                    .execute(
+                        "INSERT INTO mail_envelopes \
                      (item_id, from_addr, to_addrs, cc_addrs, bcc_addrs, \
                       reply_to_addrs, subject, date_ts, message_id, \
                       normalized_subject) \
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-                    params![
-                        item_id.0.to_string(),
-                        envelope.from,
-                        to_json,
-                        cc_json,
-                        bcc_json,
-                        reply_to_json,
-                        envelope.subject,
-                        envelope.date,
-                        envelope.message_id,
-                        normalized_subject,
-                    ],
-                )
-                .map_err(|e| mds::Error::Other(format!("insert mail_envelopes: {e}")))?;
-            if inserted != 1 {
-                return Err(mds::Error::Other(format!(
-                    "insert mail_envelopes: expected 1 row, got {inserted}"
-                )));
-            }
+                        params![
+                            item_id.0.to_string(),
+                            envelope.from,
+                            to_json,
+                            cc_json,
+                            bcc_json,
+                            reply_to_json,
+                            envelope.subject,
+                            envelope.date,
+                            envelope.message_id,
+                            normalized_subject,
+                        ],
+                    )
+                    .map_err(|e| mds::Error::Other(format!("insert mail_envelopes: {e}")))?;
+                if inserted != 1 {
+                    return Err(mds::Error::Other(format!(
+                        "insert mail_envelopes: expected 1 row, got {inserted}"
+                    )));
+                }
 
-            let thread_id =
-                find_or_new_thread_id_in_tx(tx, account, &in_reply_to, &envelope.subject)?;
-            let inserted = tx
-                .tx()
-                .execute(
-                    "INSERT INTO mail_threads (item_id, account_id, thread_id) \
+                let thread_id =
+                    find_or_new_thread_id_in_tx(tx, account, &in_reply_to, &envelope.subject)?;
+                let inserted = tx
+                    .tx()
+                    .execute(
+                        "INSERT INTO mail_threads (item_id, account_id, thread_id) \
                      VALUES (?1, ?2, ?3)",
-                    params![item_id.0.to_string(), account, thread_id],
-                )
-                .map_err(|e| mds::Error::Other(format!("insert mail_threads: {e}")))?;
-            if inserted != 1 {
-                return Err(mds::Error::Other(format!(
-                    "insert mail_threads: expected 1 row, got {inserted}"
-                )));
-            }
+                        params![item_id.0.to_string(), account, thread_id],
+                    )
+                    .map_err(|e| mds::Error::Other(format!("insert mail_threads: {e}")))?;
+                if inserted != 1 {
+                    return Err(mds::Error::Other(format!(
+                        "insert mail_threads: expected 1 row, got {inserted}"
+                    )));
+                }
 
-            // mail_search FTS5 projection — Phase 8e gate 2. Synchronous
-            // write inside this `with_set_tx` so the row commits
-            // atomically with `item` / `mail_envelopes` / `mail_threads`.
-            // `mds.get_blob` is a `fs::read` against the CAS root and
-            // does not re-enter the per-set mutex; if it fails (GC race
-            // squeezed between `blob_exists` above and here, or a
-            // transient fs error) we fall back to indexing the envelope-
-            // only columns rather than dropping the search row entirely.
-            // A missing FTS row would make the message permanently
-            // un-findable until a `mail_search rebuild` admin command
-            // runs — far worse than a row that lacks `body_text`.
-            // Acceptance bar (`_tasks/2026-05-04-maild-phase-8e.spec.mix`)
-            // calls out FTS overhead measurement as a follow-up before
-            // declaring 8e done; not bench-gating here keeps the
-            // synchronous-write semantics the spec demands.
-            let raw_body = mds.get_blob(&blob).unwrap_or_else(|e| {
-                warn!(
-                    item_id = %item_id.0,
-                    blob = %blob::hex(&blob),
-                    err = %e,
-                    "mail_search: blob load failed inside with_set_tx; indexing envelope only"
-                );
-                Vec::new()
-            });
-            let projection = build_search_projection(&envelope, &raw_body);
-            let inserted = tx
-                .tx()
-                .execute(
-                    "INSERT INTO mail_search \
+                // mail_search FTS5 projection — Phase 8e gate 2. Synchronous
+                // write inside this `with_set_tx` so the row commits
+                // atomically with `item` / `mail_envelopes` / `mail_threads`.
+                // `mds.get_blob` is a `fs::read` against the CAS root and
+                // does not re-enter the per-set mutex; if it fails (GC race
+                // squeezed between `blob_exists` above and here, or a
+                // transient fs error) we fall back to indexing the envelope-
+                // only columns rather than dropping the search row entirely.
+                // A missing FTS row would make the message permanently
+                // un-findable until a `mail_search rebuild` admin command
+                // runs — far worse than a row that lacks `body_text`.
+                // Acceptance bar (`_tasks/2026-05-04-maild-phase-8e.spec.mix`)
+                // calls out FTS overhead measurement as a follow-up before
+                // declaring 8e done; not bench-gating here keeps the
+                // synchronous-write semantics the spec demands.
+                let raw_body = mds.get_blob(&blob).unwrap_or_else(|e| {
+                    warn!(
+                        item_id = %item_id.0,
+                        blob = %blob::hex(&blob),
+                        err = %e,
+                        "mail_search: blob load failed inside with_set_tx; indexing envelope only"
+                    );
+                    Vec::new()
+                });
+                let projection = build_search_projection(envelope, &raw_body);
+                let inserted = tx
+                    .tx()
+                    .execute(
+                        "INSERT INTO mail_search \
                      (item_id, account_id, headers, subject, body_text, normalized_addrs) \
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                    params![
-                        item_id.0.to_string(),
-                        account,
-                        projection.headers,
-                        projection.subject,
-                        projection.body_text,
-                        projection.normalized_addrs,
-                    ],
-                )
-                .map_err(|e| mds::Error::Other(format!("insert mail_search: {e}")))?;
-            if inserted != 1 {
-                return Err(mds::Error::Other(format!(
-                    "insert mail_search: expected 1 row, got {inserted}"
-                )));
-            }
+                        params![
+                            item_id.0.to_string(),
+                            account,
+                            projection.headers,
+                            projection.subject,
+                            projection.body_text,
+                            projection.normalized_addrs,
+                        ],
+                    )
+                    .map_err(|e| mds::Error::Other(format!("insert mail_search: {e}")))?;
+                if inserted != 1 {
+                    return Err(mds::Error::Other(format!(
+                        "insert mail_search: expected 1 row, got {inserted}"
+                    )));
+                }
 
-            // Read the destination container's seq_validity in the
-            // same tx that produced the membership row, so the returned
-            // (uid, uid_validity) pair is read-consistent with the
-            // freshly-inserted membership.seq — surfaces UIDPLUS
-            // APPENDUID without a second mds round-trip.
-            let uid_validity = tx.container_seq_validity(&mailbox)?;
-            let uid = MembershipUid {
-                container_id: mailbox,
-                uid: placement.seq.0 as u64,
-                uid_validity,
-            };
-            Ok((item_id, uid))
+                // Read the destination container's seq_validity in the
+                // same tx that produced the membership row, so the returned
+                // (uid, uid_validity) pair is read-consistent with the
+                // freshly-inserted membership.seq — surfaces UIDPLUS
+                // APPENDUID without a second mds round-trip.
+                let uid_validity = tx.container_seq_validity(&mailbox)?;
+                let uid = MembershipUid {
+                    container_id: mailbox,
+                    uid: placement.seq.0 as u64,
+                    uid_validity,
+                };
+                results.push((item_id, uid));
+            }
+            Ok(results)
         });
 
         match result {
@@ -5381,9 +5762,188 @@ fn reap_mail_search_if_item_gone(
     Ok(())
 }
 
+/// Project an indexed native membership read without a second message query.
+fn imap_email_handle(record: mds::types::ItemRecord) -> EmailHandle {
+    EmailHandle {
+        id: record.id,
+        blob_hash: record.meta.blob_hash,
+        keywords: record.flags,
+        tags: record.tags.into(),
+        received_at: record.meta.received_at,
+        seq: record.seq,
+        uid: u64::from(record.seq.0),
+        mod_seq: record.change_seq.0,
+        size_bytes: record.meta.size_bytes,
+    }
+}
+
+/// Retain the greatest current or historical wire identity for this account.
+fn imap_uidvalidity_high_water(conn: &rusqlite::Connection) -> mds::Result<i64> {
+    conn.execute_batch("CREATE TABLE IF NOT EXISTS mail_imap_uidvalidity (id INTEGER PRIMARY KEY CHECK(id = 1), value INTEGER NOT NULL)")
+        .map_err(|e| mds::Error::Other(e.to_string()))?;
+    let previous: Option<i64> = conn
+        .query_row(
+            "SELECT value FROM mail_imap_uidvalidity WHERE id = 1",
+            [],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| mds::Error::Other(e.to_string()))?;
+    let present: i64 = conn.query_row(
+        "SELECT COALESCE(MAX(CASE WHEN seq_validity > 4294967295 THEN seq_validity / 1000 ELSE seq_validity END), 0) FROM container",
+        [], |row| row.get(0),
+    ).map_err(|e| mds::Error::Other(e.to_string()))?;
+    let high = previous
+        .unwrap_or(0)
+        .max(present)
+        .max(chrono::Utc::now().timestamp().max(1));
+    conn.execute("INSERT INTO mail_imap_uidvalidity(id, value) VALUES (1, ?1) ON CONFLICT(id) DO UPDATE SET value = excluded.value", [high])
+        .map_err(|e| mds::Error::Other(e.to_string()))?;
+    Ok(high)
+}
+
+/// New mailbox identities use a durable counter, including across deletion.
+/// Legacy epoch-millisecond identities retain their seconds-converted wire value.
+/// RENAME repairs only identities shared with another live or retired mailbox.
+fn imap_allocate_uidvalidity(conn: &rusqlite::Connection, id: &ContainerId) -> mds::Result<()> {
+    let next = imap_uidvalidity_high_water(conn)?
+        .checked_add(1)
+        .filter(|n| *n <= i64::from(u32::MAX))
+        .ok_or_else(|| mds::Error::Other("IMAP UIDVALIDITY space exhausted".into()))?;
+    conn.execute(
+        "UPDATE mail_imap_uidvalidity SET value = ?1 WHERE id = 1",
+        [next],
+    )
+    .map_err(|e| mds::Error::Other(e.to_string()))?;
+    conn.execute(
+        "UPDATE container SET seq_validity = ?1 WHERE id = ?2",
+        params![next, id.0.to_string()],
+    )
+    .map_err(|e| mds::Error::Other(e.to_string()))?;
+    Ok(())
+}
+
+fn imap_identity_history(conn: &rusqlite::Connection) -> mds::Result<()> {
+    conn.execute_batch("CREATE TABLE IF NOT EXISTS mail_imap_deleted_identity (name TEXT NOT NULL, validity INTEGER NOT NULL, PRIMARY KEY(name, validity)); CREATE INDEX IF NOT EXISTS mail_imap_deleted_validity ON mail_imap_deleted_identity(validity)")
+        .map_err(|error| mds::Error::Other(error.to_string()))
+}
+
+fn imap_record_deleted_identity(conn: &rusqlite::Connection, id: &ContainerId) -> mds::Result<()> {
+    imap_identity_history(conn)?;
+    let Ok(name) = imap_name_in_connection(conn, id) else {
+        return Ok(());
+    };
+    conn.execute("INSERT OR IGNORE INTO mail_imap_deleted_identity(name, validity) SELECT ?1, CASE WHEN seq_validity > 4294967295 THEN seq_validity / 1000 ELSE seq_validity END FROM container WHERE id = ?2", params![name, id.0.to_string()])
+        .map_err(|error| mds::Error::Other(error.to_string()))?;
+    Ok(())
+}
+
+fn imap_repair_renamed_identities(
+    conn: &rusqlite::Connection,
+    root: &ContainerId,
+) -> mds::Result<()> {
+    imap_identity_history(conn)?;
+    let ids = {
+        let mut statement = conn.prepare("WITH RECURSIVE renamed(id) AS (SELECT ?1 UNION ALL SELECT c.id FROM container c JOIN renamed r ON c.parent_id = r.id) SELECT id FROM renamed")
+            .map_err(|error| mds::Error::Other(error.to_string()))?;
+        statement
+            .query_map([root.0.to_string()], |row| row.get::<_, String>(0))
+            .map_err(|error| mds::Error::Other(error.to_string()))?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(|error| mds::Error::Other(error.to_string()))?
+    };
+    for id in ids {
+        let container = ContainerId(
+            Uuid::parse_str(&id).map_err(|error| mds::Error::Other(error.to_string()))?,
+        );
+        let Ok(_) = imap_name_in_connection(conn, &container) else {
+            continue;
+        };
+        let collision: bool = conn.query_row(
+            "WITH identity(value) AS (SELECT CASE WHEN seq_validity > 4294967295 THEN seq_validity / 1000 ELSE seq_validity END FROM container WHERE id = ?1) SELECT EXISTS(SELECT 1 FROM container c, identity i WHERE c.id != ?1 AND c.name != ?2 AND (CASE WHEN c.seq_validity > 4294967295 THEN c.seq_validity / 1000 ELSE c.seq_validity END) = i.value) OR EXISTS(SELECT 1 FROM mail_imap_deleted_identity h, identity i WHERE h.validity = i.value)",
+            params![id, UPLOAD_STAGING_NAME], |row| row.get(0),
+        ).map_err(|error| mds::Error::Other(error.to_string()))?;
+        if collision {
+            // The mailbox may have been cached under earlier names. Preserve
+            // the retired value before replacing it, not just on DELETE.
+            imap_record_deleted_identity(conn, &container)?;
+            imap_allocate_uidvalidity(conn, &container)?;
+        }
+    }
+    Ok(())
+}
+
+/// Canonical IMAP name inside an existing native transaction.
+fn imap_name_in_connection(conn: &rusqlite::Connection, id: &ContainerId) -> mds::Result<String> {
+    let mut current = Some(id.0.to_string());
+    let mut parts = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    while let Some(id) = current {
+        if !seen.insert(id.clone()) {
+            return Err(mds::Error::Other(
+                "mailbox not representable: parent cycle".into(),
+            ));
+        }
+        let (name, parent, role): (String, Option<String>, Option<String>) = conn.query_row(
+            "SELECT name, parent_id, json_extract(attrs, '$.special_use') FROM container WHERE id = ?1",
+            [id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        ).map_err(|e| mds::Error::Other(e.to_string()))?;
+        if role.as_deref() == Some(r"\Inbox") {
+            parts.push("INBOX".to_string());
+            break;
+        }
+        if name.is_empty()
+            || name.contains('/')
+            || !crate::imap::mailbox_name::is_net_unicode(&name)
+        {
+            return Err(mds::Error::Other(
+                "mailbox not representable over IMAP".into(),
+            ));
+        }
+        parts.push(name);
+        current = parent;
+    }
+    parts.reverse();
+    Ok(parts.join("/"))
+}
+
+/// Preserve subscription names in the same transaction as a rename/delete.
+fn imap_preserve_subscriptions(conn: &rusqlite::Connection) -> mds::Result<()> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS mail_imap_subscriptions (name TEXT PRIMARY KEY NOT NULL)",
+    )
+    .map_err(|e| mds::Error::Other(e.to_string()))?;
+    let ids = {
+        let mut statement = conn
+            .prepare("SELECT id FROM container WHERE json_extract(attrs, '$.subscribed') = 1")
+            .map_err(|e| mds::Error::Other(e.to_string()))?;
+        statement
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|e| mds::Error::Other(e.to_string()))?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(|e| mds::Error::Other(e.to_string()))?
+    };
+    for id in ids {
+        let id =
+            ContainerId(uuid::Uuid::parse_str(&id).map_err(|e| mds::Error::Other(e.to_string()))?);
+        let name = match imap_name_in_connection(conn, &id) {
+            Ok(name) => name,
+            Err(mds::Error::Other(message)) if message.starts_with("mailbox not representable") => {
+                continue;
+            }
+            Err(e) => return Err(e),
+        };
+        conn.execute(
+            "INSERT OR IGNORE INTO mail_imap_subscriptions(name) VALUES (?1)",
+            [name],
+        )
+        .map_err(|e| mds::Error::Other(e.to_string()))?;
+    }
+    Ok(())
+}
+
 /// Find the container whose `attrs.special_use` JSON field matches
-/// `special_use`. Returns `Ok(None)` if no such container exists in
-/// this set (e.g. the account has no `\Junk` mailbox configured).
+/// `special_use`. Returns `Ok(None)` if no such container exists in this set.
 fn lookup_special_use_container(
     tx: &rusqlite::Transaction<'_>,
     special_use: &str,

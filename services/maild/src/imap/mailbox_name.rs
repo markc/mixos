@@ -1,41 +1,11 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! Mailbox-name encoder / decoder for IMAP Phase 2.
-//!
-//! Bridges the gap between [`crate::mailstore::MailboxRecord`] —
-//! flat `name` + `parent: Option<ContainerId>` graph — and the
-//! IMAP wire shape that LIST / LSUB / NAMESPACE / SELECT need.
-//!
-//! Pure module: no I/O, no MailStore reference, no `tokio`. Takes
-//! `&[MailboxRecord]` slices and returns owned `String` /
-//! structured rows. The wire handlers (`op/list.rs`, `op/lsub.rs`,
-//! `op/select.rs` in) own the I/O; this module owns the naming
-//! rules so they can be tested in isolation.
-//!
-//! # Design (locked Phase 2)
-//!
-//! * **Hierarchy delimiter**: `/`. Advertised in NAMESPACE.
-//! * **INBOX**: the container whose `role == Some(MailboxRole::Inbox)`
-//!   is exposed on the wire as the literal `INBOX` (uppercase),
-//!   regardless of its stored `name` or `parent`. Decode matches
-//!   `INBOX` case-insensitively to the role container.
-//! * **Charset**: ASCII-only on the wire in v1. v1's advertised
-//!   capability set does **not** include `UTF8=ACCEPT`, so any
-//!   mailbox whose stored `name` contains a non-ASCII byte is
-//!   *unrepresentable* over IMAP and is omitted from LIST / LSUB
-//!   with a logged warning; SELECT / STATUS on such names is the
-//!   wire handler's responsibility to reject with
-//!   `NO [SERVERBUG] mailbox name not representable over IMAP`.
-//! * **Internal delimiter conflict**: a stored segment containing
-//!   the literal `/` is similarly *unrepresentable* — emitting it
-//!   would lie about hierarchy. Same omission/`NO [SERVERBUG]`
-//!   rule as non-ASCII.
-//! * **CHILDREN**: derived from the input slice — a single O(N)
-//!   parent-id-count pass attaches `\HasChildren` / `\HasNoChildren`
-//!   per row.
-//!
-//! No CREATE/RENAME validation lives here yet — that is job.
+//! Mailbox hierarchy and identity. Canonical names are UTF-8 with '/' as
+//! the hierarchy delimiter. The role-Inbox container is always INBOX, matched
+//! case-insensitively; other names are case-sensitive. The session handles
+//! modified UTF-7 for rev1 clients. Broken hierarchies and embedded delimiters
+//! are omitted rather than exposed with ambiguous identities.
 
 use std::collections::HashMap;
 
@@ -269,14 +239,11 @@ fn walk_name(
             root_kind = RootKind::RoleInbox;
             break;
         }
-        if !is_ascii_printable(&cur.name) {
+        if !is_net_unicode(&cur.name) {
             return Err(OmissionReason::NonAsciiName);
         }
         if cur.name.contains(HIERARCHY_DELIMITER) {
             return Err(OmissionReason::NameContainsDelimiter);
-        }
-        if cur.name.contains('&') {
-            return Err(OmissionReason::NameContainsCharsetReserved);
         }
         segments.push(&cur.name);
         match cur.parent {
@@ -297,8 +264,12 @@ fn walk_name(
     })
 }
 
-fn is_ascii_printable(s: &str) -> bool {
-    s.bytes().all(|b| (0x20..=0x7e).contains(&b))
+pub(crate) fn is_net_unicode(s: &str) -> bool {
+    unicode_normalization::is_nfc(s)
+        && s.chars().all(|c| {
+            let n = c as u32;
+            !c.is_control() && (n & 0xffff) < 0xfffe && !(0xfdd0..=0xfdef).contains(&n)
+        })
 }
 
 /// Result of [`resolve`]: either the [`ContainerId`] the wire name
@@ -328,6 +299,8 @@ pub enum ResolveResult {
 /// case-fold non-INBOX names — that would conflict with the
 /// non-negotiable "UIDVALIDITY identifies a mailbox" invariant.
 pub fn resolve(wire_name: &str, records: &[MailboxRecord]) -> ResolveResult {
+    let canonical = fold_inbox_prefix(wire_name);
+    let wire_name = canonical.as_ref();
     if wire_name.eq_ignore_ascii_case("INBOX") {
         for r in records {
             if r.role == Some(MailboxRole::Inbox) {
@@ -382,7 +355,7 @@ pub fn matches_pattern(wire_name: &str, pattern: &str) -> bool {
 /// insensitively *and* the boundary after it is end-of-pattern or
 /// the hierarchy delimiter — so `inboxes` (with a trailing `es`) is
 /// left untouched and treated as an unrelated user-named mailbox.
-fn fold_inbox_prefix(pattern: &str) -> std::borrow::Cow<'_, str> {
+pub(crate) fn fold_inbox_prefix(pattern: &str) -> std::borrow::Cow<'_, str> {
     let bytes = pattern.as_bytes();
     if bytes.len() < 5 {
         return std::borrow::Cow::Borrowed(pattern);
@@ -405,39 +378,28 @@ fn fold_inbox_prefix(pattern: &str) -> std::borrow::Cow<'_, str> {
 }
 
 fn match_at(name: &[u8], ni: usize, pat: &[u8], pi: usize) -> bool {
-    if pi == pat.len() {
-        return ni == name.len();
+    let name = &name[ni..];
+    let pat = &pat[pi..];
+    // A bounded dynamic-programming row avoids exponential backtracking on
+    // hostile patterns such as *a*a*a*a*a*b against a long run of 'a'.
+    let mut previous = vec![false; pat.len() + 1];
+    let mut next = vec![false; pat.len() + 1];
+    previous[0] = true;
+    for (j, token) in pat.iter().enumerate() {
+        previous[j + 1] = previous[j] && matches!(token, b'*' | b'%');
     }
-    match pat[pi] {
-        b'*' => {
-            // Try matching `*` against 0..=remaining bytes of name.
-            for j in ni..=name.len() {
-                if match_at(name, j, pat, pi + 1) {
-                    return true;
-                }
-            }
-            false
+    for byte in name {
+        next[0] = false;
+        for (j, token) in pat.iter().enumerate() {
+            next[j + 1] = match token {
+                b'*' => next[j] || previous[j + 1],
+                b'%' => next[j] || (*byte != b'/' && previous[j + 1]),
+                _ => *byte == *token && previous[j],
+            };
         }
-        b'%' => {
-            // `%` may consume any byte except the delimiter.
-            for j in ni..=name.len() {
-                if match_at(name, j, pat, pi + 1) {
-                    return true;
-                }
-                if j < name.len() && name[j] as char == HIERARCHY_DELIMITER {
-                    break;
-                }
-            }
-            false
-        }
-        b => {
-            if ni < name.len() && name[ni] == b {
-                match_at(name, ni + 1, pat, pi + 1)
-            } else {
-                false
-            }
-        }
+        std::mem::swap(&mut previous, &mut next);
     }
+    previous[pat.len()]
 }
 
 /// Quote a wire-name for a LIST / LSUB response.
@@ -594,14 +556,13 @@ mod tests {
     }
 
     #[test]
-    fn non_ascii_name_is_omitted_with_reason() {
+    fn non_ascii_name_is_preserved_for_session_encoding() {
         let r = mk("Heizölrückstoßabdämpfung", None, None, false);
         let id = r.id;
         let set = encode_all(&[r]);
-        assert!(set.mailboxes.is_empty());
-        assert_eq!(set.omitted.len(), 1);
-        assert_eq!(set.omitted[0].id, id);
-        assert_eq!(set.omitted[0].reason, OmissionReason::NonAsciiName);
+        assert_eq!(set.mailboxes[0].id, id);
+        assert_eq!(set.mailboxes[0].wire_name, "Heizölrückstoßabdämpfung");
+        assert!(set.omitted.is_empty());
     }
 
     #[test]
@@ -699,15 +660,11 @@ mod tests {
     }
 
     #[test]
-    fn ampersand_in_name_omitted_as_charset_reserved() {
+    fn ampersand_in_name_is_preserved_for_session_encoding() {
         let r = mk("R&D", None, None, false);
         let set = encode_all(&[r]);
-        assert!(set.mailboxes.is_empty());
-        assert_eq!(set.omitted.len(), 1);
-        assert_eq!(
-            set.omitted[0].reason,
-            OmissionReason::NameContainsCharsetReserved
-        );
+        assert_eq!(set.mailboxes[0].wire_name, "R&D");
+        assert!(set.omitted.is_empty());
     }
 
     #[test]

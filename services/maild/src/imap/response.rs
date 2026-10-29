@@ -81,21 +81,20 @@ pub fn continuation(challenge_b64: &str) -> String {
 ///
 /// RFC 9051 §2.3.1.1 (and RFC 3501) define UIDVALIDITY as an
 /// `nz-number` — a **32-bit** unsigned integer. The mailstore's
-/// `seq_validity` is an epoch-**milliseconds** stamp (e.g.
+/// Legacy `seq_validity` values are epoch-**milliseconds** stamps (e.g.
 /// `1783857640000`), which overflows u32 and made every strict client
 /// choke: dovecot's imapc parses the code as uint32, fails, and reports
 /// "Opening mailbox failed: UIDVALIDITY not received" (found
 /// a mailbox migration using dsync). Thunderbird
 /// only survived because it is lenient.
 ///
-/// Mapping: values that fit in u32 pass through untouched (unit tests
-/// use small stamps); anything larger is taken as milliseconds and
-/// reduced to seconds, which is monotonic, stable for a given mailbox,
-/// and fits until 2106. It is a one-time cache invalidation for clients
-/// that stored the old 64-bit value — the correct thing to happen when
-/// UIDVALIDITY changes. Every IMAP wire site (SELECT/EXAMINE, STATUS,
-/// APPENDUID, COPYUID) MUST go through this; the storage value itself
-/// is untouched (it is also the Bus-visible `seq_validity`).
+/// New mailboxes use a durable 32-bit allocation in MailStore. Values that fit
+/// in u32 pass through untouched. Account preparation migrates legacy mailbox
+/// identities before authentication completes, preserving their existing wire
+/// seconds value and client caches. RENAME repairs colliding identities only.
+/// The milliseconds conversion remains a compatibility fallback for direct
+/// handler callers. Every wire site (SELECT/EXAMINE, STATUS, APPENDUID, COPYUID)
+/// uses this helper.
 pub fn wire_uidvalidity(seq_validity: u64) -> u32 {
     if seq_validity <= u32::MAX as u64 {
         seq_validity as u32

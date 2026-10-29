@@ -2572,9 +2572,13 @@ async fn async_main(inherited: crate::activation::InheritedSockets) -> Result<()
                     Ok::<(), anyhow::Error>(())
                 });
             }
+            let imap_shutdown = built.imap_handle.clone();
             let _keepalive = built;
-            if let Some(result) = servers.join_next().await {
-                result??;
+            tokio::select! {
+                result = servers.join_next() => {
+                    if let Some(result) = result { result??; }
+                }
+                _ = crate::imap::server::shutdown_signal() => imap_shutdown.shutdown().await,
             }
         }
     }

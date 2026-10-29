@@ -1,50 +1,11 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! Minimal CRLF line codec.
-//!
-//! Phase 1 commands (CAPABILITY, NOOP, LOGOUT, ID, LOGIN, AUTHENTICATE)
-//! never include IMAP literals on the wire, so a strict CRLF line
-//! reader was sufficient for them. Phase 4 (APPEND,) introduces
-//! a single trailing literal at the end of a command — handled here
-//! by [`read_command`], which:
-//!
-//! * reads the first line via [`read_line`];
-//! * detects a trailing `{N}` (synchronizing) or `{N+}` (RFC 7888
-//!   non-synchronizing) literal marker;
-//! * for sync literals, writes `+ Ready for literal data\r\n` and
-//!   flushes before reading the body — clients block on this
-//!   continuation per RFC 9051 §6.3.12;
-//! * reads exactly `N` bytes of body via `read_exact`;
-//! * reads the trailing CRLF that terminates the command (which must
-//!   be empty for "literal is the final argument" scope —
-//!   embedded mid-command literals are not supported until the full
-//!   imap-codec swap lands).
-//!
-//! Oversized literals are handled per protocol:
-//! * **Sync** (`{N}`): we refuse the continuation, so the client
-//!   never sends the body. Stream stays in sync; we return
-//!   [`ReadCommandError::SyncLiteralTooLarge`] and the caller emits
-//!   `BAD literal too large` / `NO [TOOBIG]`.
-//! * **Non-sync** (`{N+}`): the client sends the body without
-//!   waiting, so we drain the announced bytes (and the trailing
-//!   CRLF) to preserve stream sync (RFC 7888 §4), then return
-//!   [`ReadCommandError::NonSyncLiteralTooLarge`].
-//!
-//! [`parse_line`] is unchanged from Phase 1 and is called on
-//! [`Command::line`] by the session dispatcher. It still rejects any
-//! line that contains an unstripped literal marker, which after
-//! [`read_command`] can only happen if the marker was malformed — in
-//! that case [`read_command`] returns [`ReadCommandError::MalformedLiteral`]
-//! ahead of [`parse_line`] ever seeing the line.
-//!
-//! Command framing (no literal):
-//!   `<tag> <command> [<args>]\r\n`
-//! where tag/command are ASCII tokens (no whitespace, no NUL), and
-//! `<args>` is the remainder of the line verbatim. The session loop
-//! re-parses `<args>` per-command because the v1 command set has very
-//! different argument shapes (`LOGIN user pass` vs `ID NIL` vs
-//! `AUTHENTICATE PLAIN [<initial-response>]`).
+//! Bounded IMAP command framing with synchronising and non-synchronising
+//! literals and literal8. Commands continue through text/literal segments until
+//! the final CRLF. Authentication and aggregate caps are checked before
+//! continuations. Refused non-sync input is drained only when framing can be
+//! recovered; FramingLost requires connection closure.
 
 use std::io::ErrorKind;
 
@@ -136,12 +97,10 @@ pub fn parse_line(line: &[u8]) -> Result<Line> {
     if line.contains(&0u8) {
         return Err(anyhow!("NUL byte in command line"));
     }
-    // Reject IMAP literal indicators at this phase. A line whose
-    // last non-whitespace token is `{NNN}` or `{NNN+}` means the
-    // client expects to send NNN bytes of literal data on the next
-    // line; Phase 1 has no command that should receive a literal.
+    // Framing must consume literal markers before flat argument parsing.
+    // An outstanding marker here means the caller skipped that step.
     if has_unsupported_literal(line) {
-        return Err(anyhow!("literal not supported in this phase"));
+        return Err(anyhow!("unframed literal marker"));
     }
     let text = std::str::from_utf8(line).map_err(|_| anyhow!("non-UTF8 command line"))?;
 
@@ -184,6 +143,7 @@ pub struct Command {
     /// Literal body bytes — exactly `N` octets when present. `None`
     /// means the command had no literal indicator.
     pub literal: Option<Vec<u8>>,
+    pub literal8: bool,
     /// What followed `literal`, in wire order. Always empty for a
     /// single-literal command.
     pub continuation: Vec<Segment>,
@@ -197,6 +157,7 @@ pub struct Command {
 pub struct Segment {
     pub text: Vec<u8>,
     pub literal: Option<Vec<u8>>,
+    pub literal8: bool,
 }
 
 /// Possible outcomes from [`read_command`].
@@ -211,7 +172,7 @@ pub enum ReadCommandError {
     Io(std::io::Error),
     /// Literal indicator was structurally malformed — non-numeric `N`,
     /// missing `}`, empty body, integer overflow, or content after the
-    /// literal body in a position we don't support in this phase. No
+    /// literal body when a caller requested single-literal framing. No
     /// continuation was issued; the read stream is in sync. Caller
     /// maps to `BAD <message>` and continues. `line` carries the
     /// command bytes preceding the bad marker so the dispatcher can
@@ -286,6 +247,7 @@ impl std::error::Error for ReadCommandError {}
 struct LiteralMarker {
     declared: u64,
     non_sync: bool,
+    literal8: bool,
 }
 
 /// Read one IMAP command, including an optional trailing literal.
@@ -359,6 +321,32 @@ where
     F: FnOnce(&[u8]) -> bool,
     G: FnOnce(&[u8]) -> bool,
 {
+    read_command_multi_policy(
+        reader,
+        writer,
+        max_literal,
+        accept_literals,
+        multi_literal,
+        u64::MAX,
+    )
+    .await
+}
+
+/// LITERAL- has a 4096-octet non-synchronising limit; LITERAL+ has none.
+pub async fn read_command_multi_policy<R, W, F, G>(
+    reader: &mut BufReader<R>,
+    writer: &mut W,
+    max_literal: u64,
+    accept_literals: F,
+    multi_literal: G,
+    non_sync_limit: u64,
+) -> Result<Command, ReadCommandError>
+where
+    R: AsyncRead + Unpin,
+    W: AsyncWrite + Unpin,
+    F: FnOnce(&[u8]) -> bool,
+    G: FnOnce(&[u8]) -> bool,
+{
     let raw = match read_line(reader).await {
         Ok(l) => l,
         Err(ReadLineError::Eof) => return Err(ReadCommandError::Eof),
@@ -372,10 +360,17 @@ where
             return Ok(Command {
                 line: raw,
                 literal: None,
+                literal8: false,
                 continuation: Vec::new(),
             });
         }
         Err(e) => {
+            if raw.ends_with(b"+}") {
+                return Err(ReadCommandError::FramingLost {
+                    line: raw,
+                    reason: e,
+                });
+            }
             return Err(ReadCommandError::MalformedLiteral {
                 line: raw,
                 reason: e,
@@ -383,16 +378,36 @@ where
         }
     };
 
+    if marker.non_sync && marker.declared > non_sync_limit {
+        return Err(ReadCommandError::FramingLost {
+            line,
+            reason: "non-synchronising literal exceeds LITERAL- 4096-octet limit".into(),
+        });
+    }
+
     // State/command gate. Refuse before consuming any body bytes / before
     // ack'ing a sync continuation. Cap-check intentionally runs after
     // this, since refusal is the stricter outcome.
     if !accept_literals(&line) {
         if marker.non_sync {
+            if marker.declared > drain_limit(max_literal) {
+                return Err(ReadCommandError::FramingLost {
+                    line,
+                    reason: "refused literal exceeds drain limit".into(),
+                });
+            }
             if let Err(e) = drain_n(reader, marker.declared).await {
                 return Err(io_to_err(e));
             }
             match read_line(reader).await {
-                Ok(_) => {}
+                Ok(tail) => {
+                    if matches!(strip_trailing_literal_marker(&tail), Ok(Some(_))) {
+                        return Err(ReadCommandError::FramingLost {
+                            line,
+                            reason: "refused command continues with another literal".into(),
+                        });
+                    }
+                }
                 Err(ReadLineError::Eof) => return Err(ReadCommandError::Eof),
                 Err(ReadLineError::LineTooLong) => {
                     return Err(ReadCommandError::LineTooLong);
@@ -411,14 +426,18 @@ where
     }
 
     let multi = multi_literal(&line);
-    let max_literal = if multi {
+    let is_append = line
+        .split(|b| *b == b' ')
+        .nth(1)
+        .is_some_and(|s| s.eq_ignore_ascii_case(b"APPEND"));
+    let max_literal = if multi && !is_append {
         max_literal.min(MAX_MULTI_LITERAL_BYTES)
     } else {
         max_literal
     };
     // An over-cap non-sync literal in a multi-literal command can't be
     // drained safely: whatever follows it may announce more literals.
-    if multi && marker.non_sync && marker.declared > max_literal {
+    if multi && !is_append && marker.non_sync && marker.declared > max_literal {
         return Err(ReadCommandError::FramingLost {
             line,
             reason: format!("literal {} exceeds cap {max_literal}", marker.declared),
@@ -456,13 +475,16 @@ where
                 continuation.push(Segment {
                     text: trailing,
                     literal: None,
+                    literal8: false,
                 });
                 break;
             }
             Ok(Some((text, next))) => {
                 used += text.len() as u64;
                 let cap = max_literal.saturating_sub(used);
-                let refusal = if continuation.len() + 1 >= MAX_MULTI_LITERALS {
+                let refusal = if next.non_sync && next.declared > non_sync_limit {
+                    Some("non-synchronising literal exceeds LITERAL- 4096-octet limit".into())
+                } else if continuation.len() + 1 >= MAX_MULTI_LITERALS {
                     Some(format!(
                         "more than {MAX_MULTI_LITERALS} literals in one command"
                     ))
@@ -489,15 +511,23 @@ where
                 continuation.push(Segment {
                     text,
                     literal: Some(lit),
+                    literal8: next.literal8,
                 });
             }
-            Err(reason) => return Err(ReadCommandError::MalformedLiteral { line, reason }),
+            Err(reason) => {
+                return Err(if trailing.ends_with(b"+}") {
+                    ReadCommandError::FramingLost { line, reason }
+                } else {
+                    ReadCommandError::MalformedLiteral { line, reason }
+                });
+            }
         }
     }
 
     Ok(Command {
         line,
         literal: Some(body),
+        literal8: marker.literal8,
         continuation,
     })
 }
@@ -522,6 +552,12 @@ where
     // Cap check.
     if marker.declared > max_literal {
         if marker.non_sync {
+            if marker.declared > drain_limit(max_literal) {
+                return Err(ReadCommandError::FramingLost {
+                    line,
+                    reason: "oversize literal exceeds drain limit".into(),
+                });
+            }
             // Client is already sending the body — drain to keep
             // sync, then consume the command-terminator CRLF that
             // follows. read_line errors here propagate as Io/Eof
@@ -536,7 +572,14 @@ where
             // line caps at MAX_LINE_BYTES like any other) but we
             // surface it rather than silently truncating.
             match read_line(reader).await {
-                Ok(_) => {}
+                Ok(tail) => {
+                    if matches!(strip_trailing_literal_marker(&tail), Ok(Some(_))) {
+                        return Err(ReadCommandError::FramingLost {
+                            line,
+                            reason: "oversize command continues with another literal".into(),
+                        });
+                    }
+                }
                 Err(ReadLineError::Eof) => return Err(ReadCommandError::Eof),
                 Err(ReadLineError::LineTooLong) => {
                     return Err(ReadCommandError::LineTooLong);
@@ -616,6 +659,21 @@ fn strip_trailing_literal_marker(line: &[u8]) -> Result<Option<(Vec<u8>, Literal
         return Ok(None);
     }
     let inner = &line[open + 1..close];
+    // Braces inside quoted strings are data, including a mailbox named "{1}".
+    let mut quoted = false;
+    let mut escaped = false;
+    for b in &line[..open] {
+        if escaped {
+            escaped = false;
+        } else if *b == b'\\' && quoted {
+            escaped = true;
+        } else if *b == b'"' {
+            quoted = !quoted;
+        }
+    }
+    if quoted {
+        return Ok(None);
+    }
     if inner.is_empty() {
         return Err("empty literal marker `{}`".to_string());
     }
@@ -636,13 +694,24 @@ fn strip_trailing_literal_marker(line: &[u8]) -> Result<Option<(Vec<u8>, Literal
         .map_err(|_| "literal size overflows u64".to_string())?;
     // Trim the marker plus a single whitespace gap so `parse_line`
     // sees a clean tail (e.g. `a001 APPEND INBOX {123}` → `a001 APPEND INBOX`).
-    let mut prefix_end = open;
+    let mut prefix_end = if open > 0 && line[open - 1] == b'~' {
+        open - 1
+    } else {
+        open
+    };
+    if prefix_end > 0 && !matches!(line[prefix_end - 1], b' ' | b'(') {
+        return Err("literal marker must start an argument".into());
+    }
     while prefix_end > 0 && line[prefix_end - 1] == b' ' {
         prefix_end -= 1;
     }
     Ok(Some((
         line[..prefix_end].to_vec(),
-        LiteralMarker { declared, non_sync },
+        LiteralMarker {
+            declared,
+            non_sync,
+            literal8: open > 0 && line[open - 1] == b'~',
+        },
     )))
 }
 
@@ -656,6 +725,11 @@ async fn drain_n<R: AsyncRead + Unpin>(reader: &mut BufReader<R>, n: u64) -> std
         remaining -= take as u64;
     }
     Ok(())
+}
+
+fn drain_limit(cap: u64) -> u64 {
+    cap.saturating_mul(2)
+        .clamp(MAX_MULTI_LITERAL_BYTES, 128 * 1024 * 1024)
 }
 
 fn io_to_err(e: std::io::Error) -> ReadCommandError {
@@ -676,20 +750,45 @@ fn has_unsupported_literal(line: &[u8]) -> bool {
     if end == 0 || line[end - 1] != b'}' {
         return false;
     }
-    // Walk back to matching `{`.
+    // Braces inside a quoted string are data, not an unconsumed marker.
     let mut i = end - 1;
     while i > 0 && line[i] != b'{' {
         i -= 1;
     }
-    line[i] == b'{'
+    let mut quoted = false;
+    let mut escaped = false;
+    for byte in &line[..i] {
+        if escaped {
+            escaped = false;
+        } else if *byte == b'\\' && quoted {
+            escaped = true;
+        } else if *byte == b'"' {
+            quoted = !quoted;
+        }
+    }
+    line[i] == b'{' && !quoted
 }
 
-fn is_valid_tag(tag: &str) -> bool {
-    // RFC 9051 tag = 1*<any ASTRING-CHAR except "+">. Phase 1 enforces
-    // the practical subset: printable ASCII, no whitespace, no '+'.
-    tag.chars().all(|c| {
-        c.is_ascii_graphic() && c != '+' && c != '(' && c != ')' && c != '{' && c != '%' && c != '*'
-    })
+#[cfg(test)]
+#[test]
+fn quoted_braces_are_not_unconsumed_literal_markers() {
+    assert!(!has_unsupported_literal(b"a CREATE \"{1}"));
+    assert!(
+        strip_trailing_literal_marker(b"a CREATE \"{1}")
+            .unwrap()
+            .is_none()
+    );
+    assert!(parse_line(b"a CREATE \"{1}\"").is_ok());
+    assert!(has_unsupported_literal(b"a CREATE {1}"));
+}
+
+pub(crate) fn is_valid_tag(tag: &str) -> bool {
+    // RFC 9051 tag = 1*<any ASTRING-CHAR except "+">.
+    !tag.is_empty()
+        && tag.bytes().all(|c| {
+            c.is_ascii_graphic()
+                && !matches!(c, b'+' | b'(' | b')' | b'{' | b'%' | b'*' | b'"' | b'\\')
+        })
 }
 
 #[cfg(test)]

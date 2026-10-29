@@ -110,6 +110,7 @@ enum Crit {
     /// and `NEW` (RFC 9051 §6.4.4 `NEW = RECENT UNSEEN`, which is
     /// empty whenever `RECENT` is empty).
     None,
+    Saved,
     /// All named bits in `flags` must be set on the message.
     FlagsSet(Flags),
     /// None of the named bits in `flags` may be set on the message.
@@ -153,6 +154,8 @@ enum Crit {
 struct SearchReq {
     crit: Crit,
     mode: SearchMode,
+    returns: Option<Vec<String>>,
+    charset: Option<String>,
 }
 
 /// Parse the argument portion of `SEARCH` / `UID SEARCH`.
@@ -163,11 +166,40 @@ fn parse_args(args: &str, mode: SearchMode) -> Result<SearchReq, String> {
     }
     let tokens = tokenize(trimmed)?;
     let mut idx = 0;
-    if idx + 1 < tokens.len() && tokens[idx].eq_ignore_ascii_case("CHARSET") {
-        idx += 2;
+    let mut returns = None;
+    if tokens
+        .first()
+        .is_some_and(|s| s.eq_ignore_ascii_case("RETURN"))
+    {
+        idx += 1;
+        if tokens.get(idx).map(String::as_str) != Some("(") {
+            return Err("SEARCH RETURN requires parentheses".into());
+        }
+        idx += 1;
+        let mut opts = Vec::new();
+        while tokens.get(idx).map(String::as_str) != Some(")") {
+            let opt = tokens
+                .get(idx)
+                .ok_or("SEARCH RETURN missing closing paren")?
+                .to_ascii_uppercase();
+            if !["MIN", "MAX", "ALL", "COUNT", "SAVE"].contains(&opt.as_str()) {
+                return Err(format!("unknown SEARCH return option {opt}"));
+            }
+            if !opts.contains(&opt) {
+                opts.push(opt);
+            }
+            idx += 1;
+        }
+        idx += 1;
+        if opts.is_empty() {
+            opts.push("ALL".into());
+        }
+        returns = Some(opts);
     }
-    if idx < tokens.len() && tokens[idx].eq_ignore_ascii_case("RETURN") {
-        return Err("SEARCH RETURN (ESEARCH) not implemented in this phase".into());
+    let mut charset = None;
+    if idx + 1 < tokens.len() && tokens[idx].eq_ignore_ascii_case("CHARSET") {
+        charset = Some(tokens[idx + 1].clone());
+        idx += 2;
     }
     let mut keys: Vec<Crit> = Vec::new();
     while idx < tokens.len() {
@@ -183,13 +215,42 @@ fn parse_args(args: &str, mode: SearchMode) -> Result<SearchReq, String> {
     } else {
         Crit::And(keys)
     };
-    Ok(SearchReq { crit, mode })
+    Ok(SearchReq {
+        crit,
+        mode,
+        returns,
+        charset,
+    })
 }
 
 /// Pre-validate `args` so grammar failures can bump the abuse-cap
 /// counter at the dispatch site.
 pub fn parse_args_for_dispatch(args: &str, mode: SearchMode) -> Result<(), String> {
     parse_args(args, mode).map(|_| ())
+}
+
+pub fn parse_args_for_session(args: &str, mode: SearchMode, _utf8: bool) -> Result<(), String> {
+    parse_args(args, mode).map(|_| ())
+}
+
+/// Recognise SAVE before parsing criteria, so a failed SAVE never retains `$`.
+pub fn requests_save(args: &str) -> bool {
+    let Some((keyword, tail)) = args.trim_start().split_once(char::is_whitespace) else {
+        return false;
+    };
+    if !keyword.eq_ignore_ascii_case("RETURN") {
+        return false;
+    }
+    let Some(options) = tail
+        .trim_start()
+        .strip_prefix('(')
+        .and_then(|s| s.split_once(')').map(|p| p.0))
+    else {
+        return false;
+    };
+    options
+        .split_ascii_whitespace()
+        .any(|option| option.eq_ignore_ascii_case("SAVE"))
 }
 
 fn tokenize(s: &str) -> Result<Vec<String>, String> {
@@ -243,6 +304,17 @@ fn tokenize(s: &str) -> Result<Vec<String>, String> {
 }
 
 fn parse_key(tokens: &[String], idx: usize) -> Result<(Crit, usize), String> {
+    parse_key_at_depth(tokens, idx, 0)
+}
+
+fn parse_key_at_depth(
+    tokens: &[String],
+    idx: usize,
+    depth: usize,
+) -> Result<(Crit, usize), String> {
+    if depth > 64 {
+        return Err("SEARCH nesting limit exceeded".into());
+    }
     if idx >= tokens.len() {
         return Err("SEARCH unexpected end of expression".into());
     }
@@ -267,13 +339,14 @@ fn parse_key(tokens: &[String], idx: usize) -> Result<(Crit, usize), String> {
                     };
                     return Ok((combined, cur + 1));
                 }
-                let (k, next) = parse_key(tokens, cur)?;
+                let (k, next) = parse_key_at_depth(tokens, cur, depth + 1)?;
                 keys.push(k);
                 cur = next;
             }
         }
         ")" => Err("SEARCH stray closing paren".into()),
         "ALL" => Ok((Crit::All, idx + 1)),
+        "$" => Ok((Crit::Saved, idx + 1)),
         "ANSWERED" => Ok((Crit::FlagsSet(Flags(Flags::ANSWERED)), idx + 1)),
         "UNANSWERED" => Ok((Crit::FlagsClear(Flags(Flags::ANSWERED)), idx + 1)),
         "DELETED" => Ok((Crit::FlagsSet(Flags(Flags::DELETED)), idx + 1)),
@@ -315,17 +388,20 @@ fn parse_key(tokens: &[String], idx: usize) -> Result<(Crit, usize), String> {
             let set_tok = tokens
                 .get(idx + 1)
                 .ok_or_else(|| "SEARCH UID missing sequence-set".to_string())?;
+            if set_tok == "$" {
+                return Ok((Crit::Saved, idx + 2));
+            }
             let set = SeqSet::parse(set_tok)
                 .map_err(|e| format!("SEARCH UID invalid sequence-set: {e}"))?;
             Ok((Crit::UidInSet(set), idx + 2))
         }
         "NOT" => {
-            let (k, next) = parse_key(tokens, idx + 1)?;
+            let (k, next) = parse_key_at_depth(tokens, idx + 1, depth + 1)?;
             Ok((Crit::Not(Box::new(k)), next))
         }
         "OR" => {
-            let (k1, n1) = parse_key(tokens, idx + 1)?;
-            let (k2, n2) = parse_key(tokens, n1)?;
+            let (k1, n1) = parse_key_at_depth(tokens, idx + 1, depth + 1)?;
+            let (k2, n2) = parse_key_at_depth(tokens, n1, depth + 1)?;
             Ok((Crit::Or(Box::new(k1), Box::new(k2)), n2))
         }
         "BEFORE" | "ON" | "SINCE" | "SENTBEFORE" | "SENTON" | "SENTSINCE" => {
@@ -456,18 +532,36 @@ fn parse_keyword(tok: &str, negated: bool) -> Result<Crit, String> {
     })
 }
 
-/// The parts of a message that header, sent-date and body keys look
-/// at, extracted once per message and lowercased for matching.
+/// Content extracted once per message, retaining its original case.
 struct Doc {
-    /// `(lowercased name, lowercased raw value, lowercased decoded value)`.
+    /// `(lowercased name, raw value, decoded value)`.
     headers: Vec<(String, String, String)>,
-    /// The raw header block, lowercased, so `TEXT` can match across a
+    /// The raw header block, so `TEXT` can match across a
     /// field name and its value (`TEXT "subject: invoice"`).
     header_block: String,
-    /// Decoded text body parts, lowercased.
+    /// Decoded text body parts.
     body: String,
     /// Day of the `Date:` header, if it parsed.
     sent: Option<NaiveDate>,
+}
+
+/// Bound MIME parsing and decoding per message. Refuse the SEARCH rather than
+/// silently treating unscanned content as a non-match (especially under NOT).
+const MAX_SEARCH_MESSAGE_BYTES: usize = 64 * 1024 * 1024;
+const MAX_SEARCH_SCAN_BYTES: usize = 256 * 1024 * 1024;
+
+/// Bound repeated scans as well as MIME decoding. HEADER can examine both raw
+/// and decoded values; TEXT can examine the body and both header forms.
+fn content_scan_weight(crit: &Crit) -> usize {
+    match crit {
+        Crit::Body(_) => 1,
+        Crit::Header(_, _) => 2,
+        Crit::Text(_) => 3,
+        Crit::And(keys) => keys.iter().map(content_scan_weight).sum(),
+        Crit::Or(a, b) => content_scan_weight(a).saturating_add(content_scan_weight(b)),
+        Crit::Not(key) => content_scan_weight(key),
+        _ => 0,
+    }
 }
 
 impl Doc {
@@ -477,7 +571,7 @@ impl Doc {
             return Doc {
                 headers: Vec::new(),
                 header_block: String::new(),
-                body: fold(&String::from_utf8_lossy(raw)),
+                body: String::from_utf8_lossy(raw).into_owned(),
                 sent: None,
             };
         };
@@ -491,8 +585,8 @@ impl Doc {
                     .unwrap_or_default();
                 (
                     h.name().to_ascii_lowercase(),
-                    fold(&raw_value),
-                    fold(&decoded_value(h.value())),
+                    raw_value.into_owned(),
+                    decoded_value(h.value()),
                 )
             })
             .collect();
@@ -501,7 +595,7 @@ impl Doc {
             .position(|w| w == b"\r\n\r\n")
             .or_else(|| raw.windows(2).position(|w| w == b"\n\n"))
             .unwrap_or(raw.len());
-        let header_block = fold(&String::from_utf8_lossy(&raw[..header_end]));
+        let header_block = String::from_utf8_lossy(&raw[..header_end]).into_owned();
         // Every decoded text part, not just the preferred body list:
         // mail_parser keeps the plain and HTML halves of a
         // multipart/alternative in separate lists, and a term may sit
@@ -513,7 +607,7 @@ impl Doc {
             if !body.is_empty() {
                 body.push('\n');
             }
-            body.push_str(&fold(text));
+            body.push_str(text);
         };
         let mut stack: Vec<&mail_parser::Message<'_>> = vec![&message];
         while let Some(m) = stack.pop() {
@@ -549,17 +643,20 @@ impl Doc {
 
     fn header_has(&self, name: &str, needle: &str) -> bool {
         self.headers.iter().any(|(n, raw, decoded)| {
-            n == name && (needle.is_empty() || raw.contains(needle) || decoded.contains(needle))
+            n == name
+                && (needle.is_empty()
+                    || crate::imap::text::contains(raw, needle)
+                    || crate::imap::text::contains(decoded, needle))
         })
     }
 
     fn text_has(&self, needle: &str) -> bool {
-        self.body.contains(needle)
-            || self.header_block.contains(needle)
+        crate::imap::text::contains(&self.body, needle)
+            || crate::imap::text::contains(&self.header_block, needle)
             || self
                 .headers
                 .iter()
-                .any(|(_, _, decoded)| decoded.contains(needle))
+                .any(|(_, _, decoded)| crate::imap::text::contains(decoded, needle))
     }
 }
 
@@ -613,6 +710,7 @@ fn eval(
     Some(match crit {
         Crit::All => true,
         Crit::None => false,
+        Crit::Saved => false,
         Crit::FlagsSet(f) => (handle.keywords.0 & f.0) == f.0,
         Crit::FlagsClear(f) => (handle.keywords.0 & f.0) == 0,
         Crit::TagSet(name) => handle.tags.contains(name),
@@ -627,7 +725,7 @@ fn eval(
         Crit::SentOn(day) => sent_day(doc?) == *day,
         Crit::SentSince(day) => sent_day(doc?) >= *day,
         Crit::Header(name, needle) => doc?.header_has(name, needle),
-        Crit::Body(needle) => doc?.body.contains(needle.as_str()),
+        Crit::Body(needle) => crate::imap::text::contains(&doc?.body, needle),
         Crit::Text(needle) => doc?.text_has(needle),
         Crit::And(ks) => {
             let mut undecided = false;
@@ -672,18 +770,33 @@ fn collect_hits(
     handles: &[EmailHandle],
     store: &dyn MailStore,
     cancel: &AtomicBool,
+    view: Option<&[u64]>,
 ) -> anyhow::Result<Vec<(u32, u64)>> {
-    let exists = u32::try_from(handles.len()).unwrap_or(u32::MAX);
+    let exists = u32::try_from(view.map_or(handles.len(), <[u64]>::len)).unwrap_or(u32::MAX);
     let largest_uid = handles.last().map(|h| h.uid).unwrap_or(0);
+    let scan_weight = content_scan_weight(crit);
     let mut hits: Vec<(u32, u64)> = Vec::with_capacity(handles.len());
     for (idx, handle) in handles.iter().enumerate() {
         if cancel.load(Ordering::Relaxed) {
             anyhow::bail!("SEARCH cancelled");
         }
-        let msn = (idx + 1) as u32;
+        let msn = if let Some(view) = view {
+            let Ok(i) = view.binary_search(&handle.uid) else {
+                continue;
+            };
+            (i + 1) as u32
+        } else {
+            (idx + 1) as u32
+        };
         let hit = match eval(crit, msn, handle, exists, largest_uid, None) {
             Some(decided) => decided,
             None => {
+                if handle.size_bytes > MAX_SEARCH_MESSAGE_BYTES as u64
+                    || handle.size_bytes.saturating_mul(scan_weight as u64)
+                        > MAX_SEARCH_SCAN_BYTES as u64
+                {
+                    anyhow::bail!("SEARCH message work limit exceeded");
+                }
                 let raw = store.read_blob(handle.blob_hash).map_err(|e| {
                     tracing::warn!(
                         error = %e,
@@ -692,6 +805,11 @@ fn collect_hits(
                     );
                     e
                 })?;
+                if raw.len() > MAX_SEARCH_MESSAGE_BYTES
+                    || raw.len().saturating_mul(scan_weight) > MAX_SEARCH_SCAN_BYTES
+                {
+                    anyhow::bail!("SEARCH message work limit exceeded");
+                }
                 let doc = Doc::from_raw(&raw);
                 eval(crit, msn, handle, exists, largest_uid, Some(&doc)).unwrap_or(false)
             }
@@ -711,10 +829,95 @@ pub async fn handle(
     store: Arc<dyn MailStore>,
     mode: SearchMode,
 ) -> String {
-    let req = match parse_args(args, mode) {
+    handle_extended(
+        tag,
+        args,
+        account_id,
+        container,
+        store,
+        mode,
+        false,
+        false,
+        &mut Vec::new(),
+        None,
+    )
+    .await
+}
+
+/// Session SEARCH state: SAVE always stores UIDs, so expunges cannot retarget `$`.
+#[allow(clippy::too_many_arguments)]
+pub async fn handle_extended(
+    tag: &str,
+    args: &str,
+    account_id: AccountId,
+    container: ContainerId,
+    store: Arc<dyn MailStore>,
+    mode: SearchMode,
+    rev2: bool,
+    _utf8: bool,
+    saved: &mut Vec<u64>,
+    view: Option<&[u64]>,
+) -> String {
+    // Clear before any parser or execution error, retaining the old value for
+    // a successful SEARCH RETURN (SAVE) $ to reference.
+    let mut previous_saved = requests_save(args).then(|| std::mem::take(saved));
+    let mut req = match parse_args(args, mode) {
         Ok(r) => r,
-        Err(e) => return tagged(tag, Status::Bad, None, &e),
+        Err(e) if e.starts_with("BADCHARSET") => {
+            return tagged(tag, Status::No, Some(&e), "unsupported search charset");
+        }
+        Err(e) => {
+            return tagged(tag, Status::Bad, None, &e);
+        }
     };
+    // The tokenizer also accepts adjacent parentheses and quoted return
+    // options. Preserve SAVE's lifetime for those parsed forms too.
+    if previous_saved.is_none()
+        && req
+            .returns
+            .as_ref()
+            .is_some_and(|opts| opts.iter().any(|option| option == "SAVE"))
+    {
+        previous_saved = Some(std::mem::take(saved));
+    }
+    fn apply_saved(crit: &mut Crit, saved: &[u64]) {
+        match crit {
+            Crit::Saved => {
+                *crit = if saved.is_empty() {
+                    Crit::None
+                } else {
+                    Crit::UidInSet(
+                        SeqSet::parse(&super::copy::render_uid_set(saved))
+                            .expect("saved UIDs are valid"),
+                    )
+                }
+            }
+            Crit::And(keys) => {
+                for key in keys {
+                    apply_saved(key, saved);
+                }
+            }
+            Crit::Or(a, b) => {
+                apply_saved(a, saved);
+                apply_saved(b, saved);
+            }
+            Crit::Not(key) => apply_saved(key, saved),
+            _ => {}
+        }
+    }
+    apply_saved(&mut req.crit, previous_saved.as_deref().unwrap_or(saved));
+    if req.charset.as_ref().is_some_and(|charset| {
+        !["US-ASCII", "UTF-8"]
+            .iter()
+            .any(|s| charset.eq_ignore_ascii_case(s))
+    }) {
+        return tagged(
+            tag,
+            Status::No,
+            Some("BADCHARSET (US-ASCII UTF-8)"),
+            "unsupported search charset",
+        );
+    }
 
     let opts = ListOpts {
         sort_by: SortKey::Seq,
@@ -759,13 +962,22 @@ pub async fn handle(
     let guard = CancelOnDrop(Arc::new(AtomicBool::new(false)));
     let cancel = guard.0.clone();
     let crit = req.crit.clone();
+    let view = view.map(<[u64]>::to_vec);
     let hits = match tokio::task::spawn_blocking(move || {
-        collect_hits(&crit, &handles, store.as_ref(), &cancel)
+        collect_hits(&crit, &handles, store.as_ref(), &cancel, view.as_deref())
     })
     .await
     {
         Ok(Ok(h)) => h,
-        Ok(Err(_)) => {
+        Ok(Err(e)) => {
+            if e.to_string().contains("work limit") {
+                return tagged(
+                    tag,
+                    Status::No,
+                    Some("LIMIT"),
+                    "SEARCH message exceeds content work limit",
+                );
+            }
             // Logged per message in `collect_hits`. UNAVAILABLE: a
             // storage fault the client may retry, not a protocol bug.
             return tagged(
@@ -782,7 +994,57 @@ pub async fn handle(
     };
 
     let mut out = String::new();
-    out.push_str(&render_search_response(&hits, req.mode));
+    if let Some(opts) = &req.returns
+        && opts.iter().any(|s| s == "SAVE")
+    {
+        let min = opts.iter().any(|s| s == "MIN");
+        let max = opts.iter().any(|s| s == "MAX");
+        let all = opts.iter().any(|s| s == "ALL" || s == "COUNT");
+        *saved = hits
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| {
+                all || (!min && !max) || (min && *i == 0) || (max && *i + 1 == hits.len())
+            })
+            .map(|(_, h)| h.1)
+            .collect();
+    }
+    if req.returns.is_some() || rev2 {
+        let defaults = vec!["ALL".to_string()];
+        let opts = req.returns.as_ref().unwrap_or(&defaults);
+        if opts.iter().any(|s| s != "SAVE") {
+            out.push_str(&format!(
+                "* ESEARCH (TAG {}){}",
+                super::super::mailbox_name::quote_mailbox(tag),
+                if mode == SearchMode::Uid { " UID" } else { "" }
+            ));
+            let values: Vec<u64> = hits
+                .iter()
+                .map(|h| {
+                    if mode == SearchMode::Uid {
+                        h.1
+                    } else {
+                        u64::from(h.0)
+                    }
+                })
+                .collect();
+            for opt in opts {
+                let value = match opt.as_str() {
+                    "MIN" => values.first().map(u64::to_string),
+                    "MAX" => values.last().map(u64::to_string),
+                    "COUNT" => Some(values.len().to_string()),
+                    "ALL" if !values.is_empty() => Some(super::copy::render_uid_set(&values)),
+                    _ => None,
+                };
+                if let Some(value) = value {
+                    out.push_str(&format!(" {opt} {value}"));
+                }
+            }
+            out.push_str("\r\n");
+        }
+    } else {
+        out.push_str(&render_search_response(&hits, req.mode));
+    }
     let text = if req.mode == SearchMode::Uid {
         "UID SEARCH completed"
     } else {
@@ -1209,9 +1471,9 @@ forwardedterm inside\r\n\
     }
 
     #[test]
-    fn parse_return_esearch_rejected() {
-        let e = parse_args("RETURN (ALL) SEEN", SearchMode::Msn).unwrap_err();
-        assert!(e.contains("ESEARCH"), "{e}");
+    fn parse_return_esearch_options() {
+        let req = parse_args("RETURN (ALL COUNT SAVE) SEEN", SearchMode::Msn).unwrap();
+        assert_eq!(req.returns.unwrap(), ["ALL", "COUNT", "SAVE"]);
     }
 
     #[test]

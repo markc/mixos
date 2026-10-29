@@ -85,6 +85,27 @@ pub struct SeqSet {
 }
 
 impl SeqSet {
+    /// Intersect a set with the established client view without copying or
+    /// scanning that view for a single-message FETCH.
+    pub fn select_uids(&self, view: &[u64], uid_mode: bool) -> Vec<u64> {
+        let mut selected = std::collections::BTreeSet::new();
+        for element in &self.elements {
+            let bounds = if uid_mode {
+                let (lo, hi) = element_endpoints_uid(element, view.last().copied().unwrap_or(0));
+                let start = view.partition_point(|uid| *uid < lo);
+                let end = view.partition_point(|uid| *uid <= hi);
+                Some((start, end))
+            } else {
+                element_endpoints_msn(element, view.len() as u32)
+                    .map(|(lo, hi)| ((lo - 1) as usize, hi as usize))
+            };
+            if let Some((start, end)) = bounds {
+                selected.extend(view[start..end].iter().copied());
+            }
+        }
+        selected.into_iter().collect()
+    }
+
     /// Borrow the parsed elements in wire order.
     pub fn elements(&self) -> &[Element] {
         &self.elements
@@ -140,6 +161,13 @@ impl SeqSet {
     /// * Each `from:to` range has exactly one `:`. `1:2:3` is BAD.
     /// * A bare `:` or `:5` or `5:` is BAD.
     pub fn parse(input: &str) -> Result<Self, String> {
+        // Non-empty SEARCHRES values are expanded by the session. An
+        // unexpanded `$` denotes the empty saved result (RFC 5182).
+        if input == "$" {
+            return Ok(Self {
+                elements: Vec::new(),
+            });
+        }
         if input.is_empty() {
             return Err("sequence-set is empty".to_string());
         }
@@ -225,6 +253,7 @@ fn parse_endpoint(s: &str) -> Result<Endpoint, String> {
 pub struct SequenceMap {
     /// `(uid, item_id)` ordered by ascending uid. Index `i` ↔ msn `i+1`.
     entries: Vec<(u64, ItemId)>,
+    view: Option<Vec<u64>>,
 }
 
 /// One row of a resolved sequence-set: the wire MSN, the UID, and
@@ -280,7 +309,16 @@ impl SequenceMap {
             entries.len(),
             "SequenceMap built with duplicate UIDs"
         );
-        Self { entries }
+        Self {
+            entries,
+            view: None,
+        }
+    }
+
+    /// Keep the client's sequence numbers until EXPUNGE may legally be sent.
+    pub fn with_view(mut self, view: Option<&[u64]>) -> Self {
+        self.view = view.map(<[u64]>::to_vec);
+        self
     }
 
     /// Number of messages in the selected mailbox at snapshot time —
@@ -290,7 +328,8 @@ impl SequenceMap {
         // the cap is the RFC 9051 nz-number ceiling. A mailbox with
         // more than 4 billion messages would have already failed
         // earlier limits.
-        u32::try_from(self.entries.len()).expect("EXISTS exceeds u32; mailbox too large")
+        u32::try_from(self.view.as_ref().map_or(self.entries.len(), Vec::len))
+            .expect("EXISTS exceeds u32; mailbox too large")
     }
 
     /// Largest UID in the snapshot, or `None` on an empty mailbox.
@@ -334,7 +373,17 @@ impl SequenceMap {
             };
             for msn in a..=b {
                 let idx = (msn - 1) as usize;
-                let (uid, item_id) = self.entries[idx];
+                let (uid, item_id) = if let Some(view) = &self.view {
+                    let Some(uid) = view.get(idx) else {
+                        continue;
+                    };
+                    let Ok(index) = self.entries.binary_search_by_key(uid, |(uid, _)| *uid) else {
+                        continue;
+                    };
+                    self.entries[index]
+                } else {
+                    self.entries[idx]
+                };
                 hits.insert(msn, Resolved { msn, uid, item_id });
             }
         }
@@ -382,7 +431,14 @@ impl SequenceMap {
             // small and ships test-grade.
             for (idx, (uid, item_id)) in self.entries.iter().enumerate() {
                 if *uid >= lo && *uid <= hi {
-                    let msn = (idx + 1) as u32;
+                    let msn = if let Some(view) = &self.view {
+                        let Ok(index) = view.binary_search(uid) else {
+                            continue;
+                        };
+                        (index + 1) as u32
+                    } else {
+                        (idx + 1) as u32
+                    };
                     hits.insert(
                         msn,
                         Resolved {
