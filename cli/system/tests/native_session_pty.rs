@@ -245,6 +245,25 @@ struct Child {
     session: pty::Session,
     home: tempfile::TempDir,
 }
+
+/// Reads `reader` into the caller's `output` until `marker` appears in the
+/// accumulated bytes. The buffer belongs to the caller, so consecutive waits
+/// can share it: a marker split across an earlier wait and a later one is
+/// recognised by the later wait instead of being lost to a discarded buffer.
+fn read_until_appending<R: Read>(reader: &mut R, output: &mut String, marker: &str) {
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while !output.contains(marker) {
+        let mut bytes = [0; 8192];
+        match reader.read(&mut bytes) {
+            Ok(n) if n > 0 => output.push_str(&String::from_utf8_lossy(&bytes[..n])),
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
+            other => panic!("PTY ended: {other:?}; {output}"),
+        }
+        assert!(Instant::now() < deadline, "waiting for {marker}: {output}");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
 impl Child {
     fn spawn(broker: &Broker, launch: &LaunchFd) -> Self {
         Self::spawn_editor(broker, launch, "owned")
@@ -400,19 +419,12 @@ impl Child {
         self.pty.write_all(line.as_bytes()).unwrap();
     }
     fn until(&mut self, marker: &str) -> String {
-        let deadline = Instant::now() + Duration::from_secs(30);
         let mut output = String::new();
-        while !output.contains(marker) {
-            let mut bytes = [0; 8192];
-            match self.pty.read(&mut bytes) {
-                Ok(n) if n > 0 => output.push_str(&String::from_utf8_lossy(&bytes[..n])),
-                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
-                other => panic!("PTY ended: {other:?}; {output}"),
-            }
-            assert!(Instant::now() < deadline, "waiting for {marker}: {output}");
-            std::thread::sleep(Duration::from_millis(10));
-        }
+        read_until_appending(&mut self.pty, &mut output, marker);
         output
+    }
+    fn until_appending(&mut self, output: &mut String, marker: &str) {
+        read_until_appending(&mut self.pty, output, marker);
     }
     fn context(&mut self) -> serde_json::Value {
         self.send("mix context\nprint(\"CONTEXT_DONE\")\n");
@@ -442,6 +454,80 @@ impl Drop for Child {
         self.session.kill();
         self.session.reap();
     }
+}
+
+/// A fake `Read` that serves one queued chunk per call. A chunk larger than
+/// the caller's buffer is split, with the remainder served on the next call,
+/// so the fake does not depend on the helper's fixed 8192-byte read size.
+struct ChunkedReader {
+    chunks: std::collections::VecDeque<Vec<u8>>,
+}
+
+impl ChunkedReader {
+    fn new(chunks: &[&str]) -> Self {
+        Self {
+            chunks: chunks
+                .iter()
+                .map(|chunk| chunk.as_bytes().to_vec())
+                .collect(),
+        }
+    }
+
+    fn pending(&self) -> usize {
+        self.chunks.len()
+    }
+}
+
+impl Read for ChunkedReader {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let chunk = match self.chunks.front_mut() {
+            Some(chunk) => chunk,
+            None => return Ok(0),
+        };
+        let count = chunk.len().min(buf.len());
+        buf[..count].copy_from_slice(&chunk[..count]);
+        if count == chunk.len() {
+            self.chunks.pop_front();
+        } else {
+            chunk.drain(..count);
+        }
+        Ok(count)
+    }
+}
+
+/// A startup diagnostic split across the RC_MARKER capture boundary: `until`
+/// began every wait from an empty String, so a sentinel straddling two waits
+/// could be recognised by neither one alone. Deterministic fake reads — no
+/// PTY, no threads, no timed negative wait.
+#[test]
+fn read_until_appending_recognises_a_marker_split_across_waits() {
+    const SENTINEL: &str = concat!(
+        "mix native-session FAILED at scope: ",
+        "broker scope does not match retained launch; ",
+        "shell remains usable without binding\r\n"
+    );
+    let first = "RC_MARKER=[]\r\nmix native-session FAILED at sco";
+    let second = concat!(
+        "pe: broker scope does not match retained launch; ",
+        "shell remains usable without binding\r\n"
+    );
+    // Neither chunk alone carries the whole sentinel.
+    assert!(!first.contains(SENTINEL));
+    assert!(!second.contains(SENTINEL));
+    let mut reader = ChunkedReader::new(&[first, second]);
+    let mut output = String::new();
+    read_until_appending(&mut reader, &mut output, "RC_MARKER=[]\r\n");
+    // The RC_MARKER wait consumed exactly the first chunk and stopped, which
+    // is what strands the sentinel's tail for the next wait to pick up.
+    assert_eq!(output, first);
+    assert_eq!(reader.pending(), 1);
+    assert!(output.contains("mix native-session FAILED at sco"));
+    assert!(!output.contains(SENTINEL));
+    // The second wait recognises the full sentinel only because the first
+    // wait's bytes survive in the shared accumulator, and the exact combined
+    // bytes are retained.
+    read_until_appending(&mut reader, &mut output, SENTINEL);
+    assert_eq!(output, format!("{first}{second}"));
 }
 
 fn runtime() -> tokio::runtime::Runtime {
@@ -668,10 +754,13 @@ fn valid_handoff_with_broker_down_does_not_delay_first_source() {
         ]);
         drop(launch);
         drop(key);
-        let mut output = child.until("RC_MARKER=[]\r\n");
+        // Both startup waits share one accumulator: the diagnostic may arrive
+        // split across the RC_MARKER capture boundary.
+        let mut output = String::new();
+        child.until_appending(&mut output, "RC_MARKER=[]\r\n");
         assert!(start.elapsed() < Duration::from_secs(1));
         if !output.contains("mix native-session FAILED at connect:") {
-            output.push_str(&child.until("mix native-session FAILED at connect:"));
+            child.until_appending(&mut output, "mix native-session FAILED at connect:");
         }
         child.send("print(\"UNBOUND_WORKS\")\n");
         output.push_str(&child.until("UNBOUND_WORKS\r\n"));
@@ -696,10 +785,13 @@ fn substituted_parent_scope_is_rejected_without_failing_shell() {
         let mut child = Child::spawn(&broker, &launch);
         drop(launch);
         drop(key);
-        let mut output = child.until("RC_MARKER=[]\r\n");
+        // Both startup waits share one accumulator: the diagnostic may arrive
+        // split across the RC_MARKER capture boundary.
+        let mut output = String::new();
+        child.until_appending(&mut output, "RC_MARKER=[]\r\n");
         eprintln!("SCOPE_STARTUP_INITIAL_BYTES={output:?}");
         if !output.contains("mix native-session FAILED at scope:") {
-            output.push_str(&child.until("mix native-session FAILED at scope:"));
+            child.until_appending(&mut output, "mix native-session FAILED at scope:");
         }
         child.send("print(\"REFUSED_WORKS\")\n");
         output.push_str(&child.until("REFUSED_WORKS\r\n"));
