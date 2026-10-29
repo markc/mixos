@@ -215,13 +215,10 @@ fn activation_child() {
             assert!(greeting.starts_with("* OK "), "{greeting}");
             built.imap_handle.shutdown().await;
             let mut bye = String::new();
-            tokio::time::timeout(
-                std::time::Duration::from_secs(5),
-                imap.read_line(&mut bye),
-            )
-            .await
-            .unwrap()
-            .unwrap();
+            tokio::time::timeout(std::time::Duration::from_secs(5), imap.read_line(&mut bye))
+                .await
+                .unwrap()
+                .unwrap();
             assert!(bye.starts_with("* BYE [UNAVAILABLE]"), "{bye}");
 
             let listeners =
