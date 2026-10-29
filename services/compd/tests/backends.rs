@@ -19,5 +19,8 @@ fn backend_probe_exits_before_config_or_display_initialisation() {
     .into_iter()
     .filter_map(|(compiled, name)| compiled.then_some(name))
     .collect();
-    assert_eq!(String::from_utf8(output.stdout).unwrap(), names.join(" ") + "\n");
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap(),
+        names.join(" ") + "\n"
+    );
 }
