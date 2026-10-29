@@ -190,10 +190,19 @@ fn terminal_loss_with_incomplete_input_exits_129() {
     for (controlling, editor) in [(true, "owned"), (true, "rustyline"), (false, "rustyline")] {
         let mut shell = Shell::new(true, controlling, editor);
         shell.prompt();
-        shell.master.as_mut().unwrap().write_all(b"if true then\n").unwrap();
+        shell
+            .master
+            .as_mut()
+            .unwrap()
+            .write_all(b"if true then\n")
+            .unwrap();
         shell.until("  > ");
         drop(shell.master.take());
-        assert_eq!(shell.wait().code(), Some(129), "{editor}, controlling={controlling}");
+        assert_eq!(
+            shell.wait().code(),
+            Some(129),
+            "{editor}, controlling={controlling}"
+        );
     }
 }
 

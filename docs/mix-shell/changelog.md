@@ -31,7 +31,7 @@ generated: by docs/_build/gen-site.mix from cli/mix-shell/CHANGELOG.md; do not e
   exits normally. PTY fixtures use kernel parent-death guards and clean up
   their whole session, including separate job-control groups.
 - Terminal loss during incomplete multiline input exits with status 129
-  instead of panicking while writing an EOF diagnostic to the dead terminal.
+  instead of panicking while reporting a legacy-editor EIO to the dead terminal.
 - The release gate detects and reaps newly orphaned executables from its own
   checkout after each stage, fails the leaking stage, and excludes other
   checkouts and existing orphans.
