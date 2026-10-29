@@ -1,0 +1,56 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- External acceptance client; production libraries unchanged.
+-- Good private broker: portald/files/driver. Empty private broker: Handle.
+$n = require("../../../tests/desktop/nested_host_lib.mix")
+$pb = require("../../../tests/lib/private_bus.mix")
+$root = dirname(dirname(dirname(dirname(realpath($0)))))
+$bin = env("MIXOS_TEST_BIN",$root .. "/target/release")
+$probe = env("MIXOS_CHOOSE_PROBE",$bin .. "/examples/choose_probe")
+$run = $n.new_run("/tmp/toolkit-fallback")
+$tmp = $run.path
+$empty = nil
+$broker = nil
+$session = nil
+$provider = nil
+$portal = nil
+$passed = false
+try
+  $empty = $pb.start({dir:$tmp .. "/empty",name:"chooser-empty",noded:$bin .. "/noded",export:false})
+  $broker = $n.private_bus({dir:$tmp .. "/broker",name:"chooser-driver",noded:$bin .. "/noded"})
+  mkdir($tmp .. "/home",{parents:true})
+  write_file($tmp .. "/home/notes.md","original")
+  copy($root .. "/tests/desktop/smoke-settings.json",$tmp .. "/settings.json")
+  $session = $n.start({bin:$bin .. "/compd",tag:"chooser-fallback",run:$run,config:$tmp .. "/settings.json",software:true,dbus:true})
+  if not $n.wait_ready($session,40) then raise("FALLBACK","private compositor unavailable") end
+  $client = $n.client_env($session,{HOME:$tmp .. "/home",XDG_CONFIG_HOME:$tmp .. "/config",XDG_STATE_HOME:$tmp .. "/state",MIXOS_APP_HOME:$tmp .. "/dopus",MIXOS_COMP_SERVICE:$session.service,WINIT_UNIX_BACKEND:"wayland",WGPU_BACKEND:"gl",LIBGL_ALWAYS_SOFTWARE:"1",MIXOS_NODED_URL:$broker.url})
+  $provider = spawn([$bin .. "/dopus","--choose-service","--noded-url",$broker.url],{env:$client,stdout:{file:$tmp .. "/files.log"},stderr:"stdout",detach:true})
+  $deadline = monotonic() + 20
+  $ready = false
+  while monotonic() < $deadline
+    $r = $n.call_within("files","files.choose.list",{},2)
+    if $r.rc == 0 then $ready = true; break end
+    sleep(0.1)
+  end
+  if not $ready then raise("FALLBACK","files did not register") end
+  $portal = spawn([$bin .. "/portald","serve","--instance","test"],{env:$client,stdout:{file:$tmp .. "/portal.log"},stderr:"stdout",detach:true})
+  $probe_env = merge($client,{MIXOS_NODED_URL:$empty.url,CHOOSER_DRIVER_URL:$broker.url})
+  $r = run_argv([$probe,$tmp .. "/home","system"],{env:$probe_env,timeout:300,stderr:"stdout"})
+  write_file($tmp .. "/system.log",$r.stdout)
+  print($r.stdout)
+  if not $r.ok then raise("FALLBACK","system client failed: " .. $tmp) end
+  -- Only the caller loses D-Bus. The actual portal and files stay alive.
+  $probe_env.DBUS_SESSION_BUS_ADDRESS = "unix:path=" .. $tmp .. "/no-session-bus"
+  $r = run_argv([$probe,$tmp .. "/home","embedded"],{env:$probe_env,timeout:180,stderr:"stdout"})
+  write_file($tmp .. "/embedded.log",$r.stdout)
+  print($r.stdout)
+  if not $r.ok then raise("FALLBACK","embedded client failed: " .. $tmp) end
+  $passed = true
+finally
+  for $pid in [$portal,$provider]
+    if $pid != nil and process_alive($pid) then $stopped = kill($pid,15) end
+  end
+  if $session != nil then $n.stop($session) end
+  if $broker != nil and process_alive($broker.pid) then $stopped = kill($broker.pid,15) end
+  if $empty != nil then $pb.stop($empty) end
+  $n.finish_run($run,$passed)
+end
