@@ -4,7 +4,6 @@ use std::os::fd::OwnedFd;
 
 use crate::clipboard::capture::ClipboardCapture;
 use crate::clipboard::worker::Worker;
-use smithay::reexports::wayland_server::Client;
 use smithay::reexports::wayland_server::backend::ClientId;
 use smithay::wayland::selection::data_device::DataDeviceState;
 
@@ -32,8 +31,4 @@ pub struct Clipboard {
     // was answered against; `ClientId` is who asked, so the worker can judge a
     // client's pastes together.
     pub pending_sends: Vec<(u64, ClientId, String, OwnedFd)>,
-    // Deferred `set_data_device_focus` (needs DataDeviceHandler — downstream);
-    // recorded by `focus_changed`, applied by the rim drain. The inner
-    // `Option<Client>` is the focused client (None == clear focus).
-    pub pending_focus: Option<Option<Client>>,
 }

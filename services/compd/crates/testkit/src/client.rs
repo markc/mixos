@@ -101,6 +101,8 @@ pub struct TestClient {
     pub(crate) data_manager:
         Option<wayland_client::protocol::wl_data_device_manager::WlDataDeviceManager>,
     pub(crate) data_devices: Vec<wayland_client::protocol::wl_data_device::WlDataDevice>,
+    pub(crate) primary_manager: Option<wayland_protocols::wp::primary_selection::zv1::client::zwp_primary_selection_device_manager_v1::ZwpPrimarySelectionDeviceManagerV1>,
+    pub(crate) primary_devices: Vec<wayland_protocols::wp::primary_selection::zv1::client::zwp_primary_selection_device_v1::ZwpPrimarySelectionDeviceV1>,
 }
 
 impl TestClient {
@@ -129,6 +131,8 @@ impl TestClient {
             files: Vec::new(),
             data_manager: None,
             data_devices: Vec::new(),
+            primary_manager: None,
+            primary_devices: Vec::new(),
         }
     }
 
@@ -661,6 +665,9 @@ impl Dispatch<WlPointer, usize> for ClientState {
                     wayland_client::WEnum::Value(wl_pointer::ButtonState::Pressed)
                 );
                 state.buttons.push((serial, button, pressed, *seat));
+                if pressed && button == 0x112 {
+                    crate::clipboard::primary_middle_press(state, serial, *seat);
+                }
             }
             _ => {}
         }

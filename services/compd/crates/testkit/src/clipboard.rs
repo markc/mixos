@@ -18,12 +18,22 @@ use wayland_client::protocol::{
     wl_data_source::{self, WlDataSource},
 };
 use wayland_client::{Connection, Dispatch, Proxy, QueueHandle};
+use wayland_protocols::wp::primary_selection::zv1::client::{
+    zwp_primary_selection_device_manager_v1::ZwpPrimarySelectionDeviceManagerV1,
+    zwp_primary_selection_device_v1::{self, ZwpPrimarySelectionDeviceV1},
+    zwp_primary_selection_offer_v1::{self, ZwpPrimarySelectionOfferV1},
+    zwp_primary_selection_source_v1::{self, ZwpPrimarySelectionSourceV1},
+};
 
 use crate::client::{ClientState, TestClient};
 
 /// What the clipboard handlers record, kept on [`ClientState`].
 #[derive(Default)]
 pub struct ClipboardState {
+    pub primary_offer_mimes: HashMap<u32, Vec<String>>,
+    pub primary_selections: HashMap<usize, Option<ZwpPrimarySelectionOfferV1>>,
+    /// PRIMARY reads requested inside the middle-button callback, not after a roundtrip.
+    pub primary_pastes: Vec<(u32, usize, Option<ClipboardRead>)>,
     /// Flavors each offer advertised, by the offer's protocol id.
     pub offer_mimes: HashMap<u32, Vec<String>>,
     /// The current selection offer per data device (index = seat index).
@@ -61,6 +71,27 @@ impl ClipboardRead {
 }
 
 impl TestClient {
+    pub fn bind_primary_devices(&mut self) {
+        let (name, version) = crate::client::find_in(
+            &self.state.globals,
+            "zwp_primary_selection_device_manager_v1",
+        );
+        let manager: ZwpPrimarySelectionDeviceManagerV1 =
+            self.registry().bind(name, version.min(1), self.qh(), ());
+        self.primary_devices = (0..self.seat_count())
+            .map(|i| manager.get_device(self.seat(i), self.qh(), i))
+            .collect();
+        self.primary_manager = Some(manager);
+    }
+
+    pub fn set_primary_selection(&mut self, seat: usize, payload: &[u8]) -> ZwpPrimarySelectionSourceV1 {
+        let manager = self.primary_manager.as_ref().expect("bind_primary_devices first");
+        let source = manager.create_source(self.qh(), payload.to_vec());
+        source.offer("text/plain;charset=utf-8".to_owned());
+        self.primary_devices[seat].set_selection(Some(&source), 0);
+        source
+    }
+
     /// Bind `wl_data_device_manager` and get a data device on every bound seat
     /// (index = seat index, as [`TestClient::seat`]).
     pub fn bind_data_devices(&mut self) {
@@ -112,6 +143,65 @@ impl TestClient {
         ClipboardRead {
             read,
             bytes: Vec::new(),
+        }
+    }
+}
+
+/// Model a client which pastes immediately when it processes the first middle press.
+/// An offer arriving later in the same event batch cannot repair this captured miss.
+pub(crate) fn primary_middle_press(state: &mut ClientState, serial: u32, seat: usize) {
+    let mime = "text/plain;charset=utf-8";
+    let read = state.clipboard.primary_selections.get(&seat).and_then(|o| o.as_ref()).and_then(|offer| {
+        let mimes = state.clipboard.primary_offer_mimes.get(&offer.id().protocol_id())?;
+        if !mimes.iter().any(|m| m == mime) {
+            return None;
+        }
+        let (read, write) = std::io::pipe().expect("primary paste pipe");
+        set_nonblocking(&read);
+        offer.receive(mime.to_owned(), write.as_fd());
+        drop(write);
+        Some(ClipboardRead { read, bytes: Vec::new() })
+    });
+    state.clipboard.primary_pastes.push((serial, seat, read));
+}
+
+impl Dispatch<ZwpPrimarySelectionDeviceManagerV1, ()> for ClientState {
+    fn event(_: &mut Self, _: &ZwpPrimarySelectionDeviceManagerV1,
+        _: <ZwpPrimarySelectionDeviceManagerV1 as Proxy>::Event, _: &(),
+        _: &Connection, _: &QueueHandle<Self>) {}
+}
+
+impl Dispatch<ZwpPrimarySelectionDeviceV1, usize> for ClientState {
+    fn event(state: &mut Self, _: &ZwpPrimarySelectionDeviceV1,
+        event: zwp_primary_selection_device_v1::Event, seat: &usize,
+        _: &Connection, _: &QueueHandle<Self>) {
+        if let zwp_primary_selection_device_v1::Event::Selection { id } = event {
+            state.clipboard.primary_selections.insert(*seat, id);
+        }
+    }
+
+    wayland_client::event_created_child!(ClientState, ZwpPrimarySelectionDeviceV1, [
+        zwp_primary_selection_device_v1::EVT_DATA_OFFER_OPCODE => (ZwpPrimarySelectionOfferV1, ()),
+    ]);
+}
+
+impl Dispatch<ZwpPrimarySelectionOfferV1, ()> for ClientState {
+    fn event(state: &mut Self, offer: &ZwpPrimarySelectionOfferV1,
+        event: zwp_primary_selection_offer_v1::Event, _: &(),
+        _: &Connection, _: &QueueHandle<Self>) {
+        if let zwp_primary_selection_offer_v1::Event::Offer { mime_type } = event {
+            state.clipboard.primary_offer_mimes.entry(offer.id().protocol_id())
+                .or_default().push(mime_type);
+        }
+    }
+}
+
+impl Dispatch<ZwpPrimarySelectionSourceV1, Vec<u8>> for ClientState {
+    fn event(_: &mut Self, _: &ZwpPrimarySelectionSourceV1,
+        event: zwp_primary_selection_source_v1::Event, payload: &Vec<u8>,
+        _: &Connection, _: &QueueHandle<Self>) {
+        if let zwp_primary_selection_source_v1::Event::Send { fd, .. } = event {
+            write_all(fd, payload);
         }
     }
 }

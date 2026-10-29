@@ -50,7 +50,6 @@ use smithay::wayland::compositor;
 use smithay::wayland::compositor::CompositorHandler;
 use smithay::wayland::pointer_constraints::with_pointer_constraint;
 use smithay::wayland::seat::WaylandFocus;
-use smithay::wayland::selection::data_device::set_data_device_focus;
 
 /// Whether a surface's last processed commit carried a buffer: the edge that
 /// tells an xdg toplevel's unmap (attached -> null) from its initial bufferless
@@ -968,20 +967,6 @@ impl<A: WireTrait + 'static> Wire<A> {
                     "syncobj fence source not inserted: {err:?}"
                 ));
             }
-        }
-        // Deferred data-device focus (needs DataDeviceHandler, available here).
-        if let Some(client) = self.state.clipboard.pending_focus.take() {
-            set_data_device_focus(
-                &self.state.output.display_handle,
-                &self.state.seat.seat,
-                client.clone(),
-            );
-            // Primary selection follows the same keyboard focus.
-            smithay::wayland::selection::primary_selection::set_primary_focus(
-                &self.state.output.display_handle,
-                &self.state.seat.seat,
-                client,
-            );
         }
         // Clipboard persistence: start reading a selection the client just set, retire
         // finished readers, write persisted flavors back to pasting clients. All of it

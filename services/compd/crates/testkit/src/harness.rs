@@ -392,6 +392,19 @@ impl Harness {
             surface,
             button,
             smithay::backend::input::ButtonState::Pressed,
+            false,
+        )
+    }
+
+    /// A click-to-focus dispatch: keyboard focus and pointer press are queued
+    /// in one server turn, with no client pump between them. This preserves the
+    /// event ordering seen by a client's immediate middle-button paste handler.
+    pub fn focus_and_press(&mut self, surface: &WlSurface, button: u32) -> u32 {
+        self.pointer_button(
+            surface,
+            button,
+            smithay::backend::input::ButtonState::Pressed,
+            true,
         )
     }
 
@@ -401,6 +414,7 @@ impl Harness {
             surface,
             button,
             smithay::backend::input::ButtonState::Released,
+            false,
         )
     }
 
@@ -409,6 +423,7 @@ impl Harness {
         surface: &WlSurface,
         button: u32,
         state: smithay::backend::input::ButtonState,
+        focus_keyboard: bool,
     ) -> u32 {
         use smithay::input::pointer::{ButtonEvent, MotionEvent};
         use smithay::utils::{Point, SERIAL_COUNTER};
@@ -426,7 +441,7 @@ impl Harness {
         let dispatch = &mut self.wire.state;
         pointer.motion(
             dispatch,
-            Some((server, Point::from((0.0, 0.0)))),
+            Some((server.clone(), Point::from((0.0, 0.0)))),
             &MotionEvent {
                 location: Point::from((1.0, 1.0)),
                 serial: SERIAL_COUNTER.next_serial(),
@@ -434,6 +449,10 @@ impl Harness {
             },
         );
         pointer.frame(dispatch);
+        if focus_keyboard {
+            let keyboard = dispatch.seat.seat.get_keyboard().expect("primary keyboard");
+            keyboard.set_focus(dispatch, Some(server), SERIAL_COUNTER.next_serial());
+        }
         let serial = SERIAL_COUNTER.next_serial();
         pointer.button(
             dispatch,
@@ -456,6 +475,12 @@ impl Harness {
             "the client did not receive button {button:#x} with serial {serial}"
         );
         serial
+    }
+
+    pub fn clear_keyboard_focus(&mut self) {
+        let keyboard = self.wire.state.seat.seat.get_keyboard().expect("primary keyboard");
+        keyboard.set_focus(&mut self.wire.state, None, smithay::utils::SERIAL_COUNTER.next_serial());
+        self.roundtrip();
     }
 
     /// Give the primary seat's keyboard to a surface of extra client `index`.

@@ -800,8 +800,8 @@ impl Dispatch {
 }
 
 // ── SeatHandler for Dispatch (REQUIRED here: `Seat<Dispatch>` field) ──────────
-// Inlined from seat.dispatch / seat.focus. `set_data_device_focus` is deferred
-// to wire.base via `clipboard.pending_focus` (it needs DataDeviceHandler).
+// Inlined from seat.dispatch / seat.focus. Selection offers follow focus before
+// the input event that caused it reaches the client.
 impl SeatHandler for Dispatch {
     type KeyboardFocus = WlSurface;
     type PointerFocus = WlSurface;
@@ -904,8 +904,20 @@ impl SeatHandler for Dispatch {
             self.seat.previous_focus = focused.cloned();
         }
 
-        // `set_data_device_focus` needs DataDeviceHandler (downstream) — defer it.
-        self.clipboard.pending_focus = Some(client);
+        // A first middle press reads PRIMARY immediately in the client. Publish
+        // its offer before returning to pointer delivery, not in the later drain.
+        // These helpers only update selection SeatData and enqueue protocol
+        // events: they do not re-enter the keyboard/pointer locks held here.
+        smithay::wayland::selection::data_device::set_data_device_focus(
+            &self.output.display_handle,
+            seat,
+            client.clone(),
+        );
+        smithay::wayland::selection::primary_selection::set_primary_focus(
+            &self.output.display_handle,
+            seat,
+            client,
+        );
 
         // Follow keyboard focus with tablet-pad focus: `leave` the old client's pad,
         // `enter` the new one, so pad button/ring/strip/dial/mode events are gated to

@@ -25,6 +25,5 @@ where
         worker: None,
         pending_capture: None,
         pending_sends: vec![],
-        pending_focus: None,
     }
 }
