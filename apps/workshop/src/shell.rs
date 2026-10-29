@@ -1422,6 +1422,35 @@ mod tests {
     }
 
     #[test]
+    fn completed_shutdown_ignores_late_workshop_completions() {
+        let mut shell = test_shell();
+        shell.macro_stopping = true;
+        shell
+            .tx
+            .send(Event::Stopped(Err("forced shutdown failure".into())))
+            .unwrap();
+        shell.pump();
+        assert!(shell.exiting);
+
+        // A task may finish after Exit drained the forwarded queue. Its stale
+        // completion must not change the final shutdown result next frame.
+        shell
+            .tx
+            .send(Event::Workshop(
+                shell.engine.workshop.latest_catalogues,
+                "catalogues".into(),
+                json!({}),
+                None,
+                Err("late catalogue failure".into()),
+            ))
+            .unwrap();
+        shell.pump();
+        assert_eq!(shell.engine.workshop.message, "forced shutdown failure");
+        assert!(shell.macro_stopped);
+        assert!(!shell.macro_stopping);
+    }
+
+    #[test]
     fn failed_topic_subscriptions_are_not_committed_and_are_retried() {
         let mut shell = test_shell();
         for ticket in 100..102 {
