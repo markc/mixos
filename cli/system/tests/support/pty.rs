@@ -3,7 +3,7 @@
 use std::os::unix::process::CommandExt;
 use std::process::{Child, Command, ExitStatus};
 
-/// Original leader identity survives a raw ptrace reap as a stale token rather
+/// Original child identity survives a raw ptrace reap as a stale token rather
 /// than accidentally authorising cleanup of a new child with a reused PID.
 pub struct Session {
     pid: u32,
@@ -16,7 +16,10 @@ impl Session {
         let start = Some(identity(child.id()).expect("spawned session leader stat").1);
         #[cfg(not(target_os = "linux"))]
         let start = None;
-        Self { pid: child.id(), start }
+        Self {
+            pid: child.id(),
+            start,
+        }
     }
 
     pub fn kill(&self) {
@@ -104,7 +107,9 @@ fn kill_session(session: u32, expected_start: Option<&str>) {
         if status(session, true).is_err() {
             return;
         }
-        let Some(leader) = identity(session).filter(|leader| Some(leader.1.as_str()) == expected_start) else {
+        let Some(leader) =
+            identity(session).filter(|leader| Some(leader.1.as_str()) == expected_start)
+        else {
             return;
         };
         if let Ok(entries) = std::fs::read_dir("/proc") {
@@ -157,7 +162,10 @@ fn stale_session_identity_does_not_signal_a_new_leader() {
     }
     let mut child = command.spawn().unwrap();
     let session = Session::new(&child);
-    let stale = Session { pid: child.id(), start: Some("stale leader start".into()) };
+    let stale = Session {
+        pid: child.id(),
+        start: Some("stale leader start".into()),
+    };
     stale.kill();
     let untouched = try_wait(&mut child).unwrap().is_none();
     session.kill();

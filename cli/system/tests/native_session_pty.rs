@@ -386,7 +386,12 @@ impl Child {
             });
         }
         let process = command.spawn().unwrap();
-        Self { pty, session: pty::Session::new(&process), process, home }
+        Self {
+            pty,
+            session: pty::Session::new(&process),
+            process,
+            home,
+        }
     }
     fn pid(&self) -> i32 {
         self.process.id() as i32

@@ -173,7 +173,11 @@ impl Shell {
             // master while waiting, or a long command can fill the PTY and
             // block before Enter is reached.
             let master = self.master.as_mut().unwrap();
-            let mut poll = libc::pollfd { fd: master.as_raw_fd(), events: libc::POLLIN, revents: 0 };
+            let mut poll = libc::pollfd {
+                fd: master.as_raw_fd(),
+                events: libc::POLLIN,
+                revents: 0,
+            };
             if unsafe { libc::poll(&mut poll, 1, 10) } > 0 {
                 let mut bytes = [0; 4096];
                 let n = master.read(&mut bytes).unwrap();
@@ -182,7 +186,9 @@ impl Shell {
                     master.write_all(b"\x1b[1;1R").unwrap();
                     output.clear();
                 }
-                if output.len() > 65536 { output.clear(); }
+                if output.len() > 65536 {
+                    output.clear();
+                }
             }
         }
     }
