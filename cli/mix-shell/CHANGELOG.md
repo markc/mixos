@@ -22,6 +22,8 @@
   terminal loss, and shutdown hangs up managed job groups. Plain EOF still
   exits normally. PTY fixtures use kernel parent-death guards and clean up
   their whole session, including separate job-control groups.
+- Terminal loss during incomplete multiline input exits with status 129
+  instead of panicking while writing an EOF diagnostic to the dead terminal.
 - The release gate detects and reaps newly orphaned executables from its own
   checkout after each stage, fails the leaking stage, and excludes other
   checkouts and existing orphans.

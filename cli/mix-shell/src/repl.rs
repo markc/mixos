@@ -1190,8 +1190,7 @@ pub fn run_repl() -> i32 {
             Err(ReadlineError::Eof) => {
                 if terminal_input && crate::editor::terminal::hung_up(libc::STDIN_FILENO) {
                     exit_code = 128 + libc::SIGHUP;
-                }
-                if !line_buf.is_empty() {
+                } else if !line_buf.is_empty() {
                     match mix::continuation::splice_explicit_continuations(&line_buf) {
                         Err(error) if error.is_incomplete_input() => eprintln!("{}", error),
                         _ => eprintln!("mix: unexpected EOF while input is incomplete"),
