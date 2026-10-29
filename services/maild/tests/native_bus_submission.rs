@@ -106,6 +106,25 @@ async fn call(
         .context("native command deadline")?
 }
 
+async fn cli(args: &[&str]) -> Result<String> {
+    let args: Vec<String> = args.iter().map(|s| (*s).to_string()).collect();
+    let socket = Path::new(&std::env::var("MIXOS_NATIVE_MAIL_ROOT")?).join("broker.sock");
+    tokio::task::spawn_blocking(move || {
+        let output = Command::new(env!("CARGO_BIN_EXE_maild"))
+            .args(args)
+            .env("MIXOS_BUS_SOCKET", socket)
+            .env_remove("MIXOS_SESSION_FD")
+            .output()?;
+        ensure!(
+            output.status.success(),
+            "maild CLI failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        Ok(String::from_utf8(output.stdout)?)
+    })
+    .await?
+}
+
 async fn run_child() -> Result<()> {
     let _ = rustls::crypto::ring::default_provider().install_default();
     let root = std::env::var("MIXOS_NATIVE_MAIL_ROOT")?;
@@ -233,6 +252,123 @@ async fn run_child() -> Result<()> {
         serde_json::to_vec_pretty(&json!({"first":first,
         "changed_actor_replay":replay,"conflict_rejected":true,"local_count":local_count,
         "queue_count":queued.len(),"original_actor":actor,"outbound_delivery_disabled":true}))?,
+    )?;
+    let status = call(
+        &second_actor,
+        "maild.submission.status",
+        json!({"id":first["submission_id"]}),
+    )
+    .await?;
+    ensure!(
+        status["recipients"][0]["status"] == "delivered"
+            && status["recipients"][1]["status"] == "queued",
+        "native status did not read real local/queue results"
+    );
+    // The legacy sender row has no props metadata. Show must still expose its id.
+    let shown: serde_json::Value =
+        serde_json::from_str(&cli(&["account", "show", "sender@example.test"]).await?)?;
+    ensure!(
+        shown["account_id"].as_i64().is_some(),
+        "account show omitted numeric id"
+    );
+    for email in ["alice@example.com", "bob@example.com"] {
+        cli(&["account", "add", email, "test-password"]).await?;
+    }
+    cli(&["alias", "add", "team@example.com", "alice@example.com"]).await?;
+    ensure!(
+        cli(&["alias", "add", "team@example.com", "bob@example.com"])
+            .await
+            .is_err(),
+        "add silently repointed a live alias"
+    );
+    cli(&["alias", "remove", "team@example.com"]).await?;
+    cli(&["alias", "add", "team@example.com", "bob@example.com"]).await?;
+    let resurrected = call(&second_actor,"maild.submit",json!({"operation_id":"native-alias-resurrect",
+        "account":"sender@example.test","to":["team@example.com"],"subject":"resurrect","text":"resurrect"})).await?;
+    cli(&[
+        "alias",
+        "set",
+        "team@example.com",
+        "alice@example.com",
+        "bob@example.com",
+    ])
+    .await?;
+    cli(&["alias", "add", "@example.com", "alice@example.com"]).await?;
+    for (operation, to) in [
+        ("native-alias-fanout", "team@example.com"),
+        ("native-mailbox-wins", "bob@example.com"),
+        ("native-catchall", "unknown@example.com"),
+    ] {
+        let receipt = call(
+            &second_actor,
+            "maild.submit",
+            json!({"operation_id":operation,
+            "account":"sender@example.test","to":[to],"subject":operation,"text":"local aliases"}),
+        )
+        .await?;
+        let status = call(
+            &second_actor,
+            "maild.submission.status",
+            json!({"id":receipt["submission_id"]}),
+        )
+        .await?;
+        ensure!(
+            status["delivery_confirmed"] == true,
+            "local alias receipt was not confirmed: {status}"
+        );
+    }
+    let mut counts = Vec::new();
+    for email in ["alice@example.com", "bob@example.com"] {
+        let account = maild::db::account::get_by_email(&built.app_state.db.conn, email)
+            .await?
+            .context("CLI account")?;
+        let inbox = built
+            .app_state
+            .mailstore
+            .mailbox_by_role(account.id, MailboxRole::Inbox)?
+            .context("CLI account Inbox")?;
+        counts.push(
+            built
+                .app_state
+                .mailstore
+                .list_emails_in_mailbox(account.id, inbox, ListOpts::default())?
+                .len(),
+        );
+        let shown: serde_json::Value =
+            serde_json::from_str(&cli(&["account", "show", email]).await?)?;
+        ensure!(
+            shown["account_id"] == account.id,
+            "account show printed the wrong numeric id"
+        );
+    }
+    ensure!(
+        counts == [2, 3],
+        "CLI alias delivery precedence/fan-out wrong: {counts:?}"
+    );
+    let refused = cli(&["alias", "add", "outside@example.com", "nobody@example.net"])
+        .await
+        .unwrap_err();
+    ensure!(
+        refused.to_string().contains("off-site forwarding"),
+        "non-local target error was unclear: {refused}"
+    );
+    let refusal = cli(&["bayesian", "stats", "999999"])
+        .await
+        .unwrap_err()
+        .to_string();
+    assert_eq!(
+        refusal.trim(),
+        "maild CLI failed: maild.bayesian.stats failed (rc=10): account not found"
+    );
+    ensure!(
+        !root.join("spam/999999").exists(),
+        "Bayes stats created an unknown corpus directory"
+    );
+    std::fs::write(
+        root.join("cli-alias-receipts.json"),
+        serde_json::to_vec_pretty(&json!({
+        "resurrected":resurrected,"alice_inbox":counts[0],"bob_inbox":counts[1],
+        "unknown_bayes_refused":true,"non_local_alias_refused":true}))?,
     )?;
     Ok(())
 }

@@ -96,8 +96,10 @@ logged and the accepted delivery is retained. This follows maild's existing
 partial-delivery behaviour and avoids retrying an already accepted copy.
 Secondary actions have no durable replay across the separate MDS/mail.db stores.
 
-`reject`/`ereject` return SMTP `550 5.7.1` after DATA for a single normal
-recipient. Mixed-recipient/asynchronous delivery instead queues a DSN with a
+`reject`/`ereject` return SMTP `550 5.7.1` after DATA only for one normal RCPT
+that resolves to one mailbox; these refusals appear in the SMTP rejection log.
+An alias with multiple local targets, mixed recipients or asynchronous delivery
+instead queues a DSN for the rejecting target with a
 null reverse path. DSNs to null/unverified senders are suppressed to prevent
 backscatter. Discard is compatible with reject. Combining reject with filing, redirect or vacation is a
 runtime error and keeps the original message.

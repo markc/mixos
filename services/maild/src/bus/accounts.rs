@@ -65,6 +65,20 @@ pub async fn dispatch(
     accounts_runtime: &Arc<Runtime>,
 ) -> (u8, String) {
     match action {
+        "lookup" => {
+            let email = match required_email(cmd) {
+                Ok(email) => email,
+                Err(body) => return (RC_ERROR, body),
+            };
+            match db::account::get_by_email(&db.conn, &email).await {
+                Ok(Some(account)) => (
+                    0,
+                    serde_json::json!({"email":account.email,"account_id":account.id}).to_string(),
+                ),
+                Ok(None) => (RC_ERROR, err_body("account not found")),
+                Err(e) => (RC_ERROR, err_body(&format!("account lookup failed: {e}"))),
+            }
+        }
         "seed_mailboxes" => handle_seed_mailboxes(cmd, db, mailstore).await,
         "seed_content" => handle_seed_content(cmd, db, mailstore).await,
         "revoke_tokens" => handle_revoke_tokens(cmd, db).await,

@@ -150,7 +150,7 @@ impl Db {
     pub async fn migrate(&self) -> Result<()> {
         let conn = self.conn.clone();
         tokio::task::spawn_blocking(move || -> Result<()> {
-            let conn = conn
+            let mut conn = conn
                 .lock()
                 .map_err(|e| anyhow::anyhow!("lock error: {e}"))?;
             conn.execute_batch(SCHEMA)?;
@@ -167,6 +167,64 @@ impl Db {
             {
                 return Err(e.into());
             }
+            if let Err(e) = conn.execute("ALTER TABLE smtp_queue ADD COLUMN local_account_id INTEGER", [])
+                && !e.to_string().contains("duplicate column name") {
+                return Err(e.into());
+            }
+            // CREATE IF NOT EXISTS cannot upgrade deployed, reusable rowids.
+            let queue_sql: String = conn.query_row("SELECT sql FROM sqlite_master WHERE name='smtp_queue'", [], |row| row.get(0))?;
+            if !queue_sql.to_ascii_uppercase().contains("AUTOINCREMENT") {
+                let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+                tx.execute_batch(r#"
+                    CREATE TABLE smtp_queue_monotonic (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        from_addr TEXT NOT NULL, to_addrs TEXT NOT NULL DEFAULT '[]',
+                        blob_id TEXT REFERENCES blobs(id), blob_hash TEXT,
+                        attempts INTEGER DEFAULT 0, next_retry TEXT DEFAULT (datetime('now')),
+                        last_error TEXT, created_at TEXT DEFAULT (datetime('now')),
+                        local_account_id INTEGER
+                    );
+                    INSERT INTO smtp_queue_monotonic SELECT id,from_addr,to_addrs,blob_id,blob_hash,
+                        attempts,next_retry,last_error,created_at,local_account_id FROM smtp_queue;
+                    DROP TABLE smtp_queue;
+                    ALTER TABLE smtp_queue_monotonic RENAME TO smtp_queue;
+                    CREATE INDEX idx_queue_retry ON smtp_queue(next_retry);
+                "#)?;
+                tx.commit()?;
+            }
+            let has_target = conn.prepare("PRAGMA table_info(smtp_delivery)")?
+                .query_map([], |row| row.get::<_,String>(1))?
+                .collect::<rusqlite::Result<Vec<_>>>()?.iter().any(|name| name == "target");
+            if !has_target {
+                let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+                tx.execute_batch(r#"
+                    ALTER TABLE smtp_delivery RENAME TO smtp_delivery_legacy;
+                    CREATE TABLE smtp_delivery (
+                        queue_id INTEGER, submission_id TEXT, recipient TEXT NOT NULL,
+                        target TEXT NOT NULL DEFAULT '',
+                        status TEXT NOT NULL DEFAULT 'queued' CHECK(status IN ('queued','delivered','deferred','bounced')),
+                        last_reply TEXT, updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                        UNIQUE(queue_id,recipient,target), UNIQUE(submission_id,recipient,target)
+                    );
+                    INSERT INTO smtp_delivery(queue_id,submission_id,recipient,status,last_reply,updated_at)
+                        SELECT queue_id,submission_id,recipient,status,last_reply,updated_at FROM smtp_delivery_legacy;
+                    DROP TABLE smtp_delivery_legacy;
+                    CREATE INDEX idx_delivery_submission ON smtp_delivery(submission_id);
+                "#)?;
+                tx.commit()?;
+            }
+            // Retained history may outlive every queue row, including on upgrade.
+            conn.execute_batch(r#"
+                INSERT INTO sqlite_sequence(name,seq) SELECT 'smtp_queue',0
+                    WHERE NOT EXISTS(SELECT 1 FROM sqlite_sequence WHERE name='smtp_queue');
+                UPDATE sqlite_sequence SET seq=MAX(seq,COALESCE((SELECT MAX(queue_id) FROM smtp_delivery),0))
+                    WHERE name='smtp_queue';
+                INSERT OR IGNORE INTO smtp_delivery(queue_id,recipient)
+                    SELECT q.id,value FROM smtp_queue q,json_each(q.to_addrs) WHERE q.local_account_id IS NULL;
+                DELETE FROM smtp_delivery WHERE submission_id IS NULL
+                    AND NOT EXISTS(SELECT 1 FROM smtp_queue q WHERE q.id=smtp_delivery.queue_id);
+                CREATE INDEX IF NOT EXISTS idx_delivery_updated ON smtp_delivery(updated_at);
+            "#)?;
             // (email-2FA): per-account opt-in second-factor flag. Pre-existing
             // accounts tables lack the column, so the COALESCE(mfa_enabled, 0)
             // SELECTs in props/accounts.rs would fail without it; an additive
@@ -340,6 +398,7 @@ CREATE TABLE IF NOT EXISTS smtp_queue (
     to_addrs        TEXT NOT NULL DEFAULT '[]',
     blob_id         TEXT REFERENCES blobs(id),
     blob_hash       TEXT,
+    local_account_id INTEGER,
     attempts        INTEGER DEFAULT 0,
     next_retry      TEXT DEFAULT (datetime('now')),
     last_error      TEXT,
@@ -347,6 +406,22 @@ CREATE TABLE IF NOT EXISTS smtp_queue (
 );
 
 CREATE INDEX IF NOT EXISTS idx_queue_retry ON smtp_queue (next_retry);
+
+-- Durable recipient outcomes survive removal of the queue payload. Deliberately
+-- no foreign key to smtp_queue: terminal receipts remain queryable on restart.
+CREATE TABLE IF NOT EXISTS smtp_delivery (
+    queue_id INTEGER,
+    submission_id TEXT,
+    recipient TEXT NOT NULL,
+    target TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'queued'
+        CHECK(status IN ('queued','delivered','deferred','bounced')),
+    last_reply TEXT,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(queue_id, recipient, target),
+    UNIQUE(submission_id, recipient, target)
+);
+CREATE INDEX IF NOT EXISTS idx_delivery_submission ON smtp_delivery(submission_id);
 
 -- calendars
 CREATE TABLE IF NOT EXISTS calendars (
@@ -454,6 +529,7 @@ CREATE TABLE IF NOT EXISTS email_submissions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_submissions_account ON email_submissions (account_id);
+CREATE INDEX IF NOT EXISTS idx_submissions_created ON email_submissions (created_at);
 
 -- vacation_responses — JMAP VacationResponse (RFC 8621 §8)
 CREATE TABLE IF NOT EXISTS vacation_responses (

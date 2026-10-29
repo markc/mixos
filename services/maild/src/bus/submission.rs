@@ -77,33 +77,8 @@ impl Request {
 
 fn address(value: &str) -> Result<()> {
     ensure!(
-        value.len() <= 254 && value.is_ascii(),
+        crate::smtp::envelope::valid_address(value, false),
         "invalid mailbox address"
-    );
-    let (local, domain) = value
-        .split_once('@')
-        .ok_or_else(|| anyhow::anyhow!("invalid mailbox address"))?;
-    ensure!(
-        !local.is_empty()
-            && local.len() <= 64
-            && !local.starts_with('.')
-            && !local.ends_with('.')
-            && !local.contains("..")
-            && local
-                .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || b".!#$%&'*+-/=?^_`{|}~".contains(&b)),
-        "invalid mailbox local part"
-    );
-    ensure!(
-        !domain.is_empty()
-            && domain.split('.').all(|label| !label.is_empty()
-                && label.len() <= 63
-                && !label.starts_with('-')
-                && !label.ends_with('-')
-                && label
-                    .bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || b == b'-')),
-        "invalid mailbox domain"
     );
     Ok(())
 }
@@ -166,6 +141,40 @@ pub async fn dispatch(
             10,
             json!({"error":error.to_string(),"delivery_confirmed":false}).to_string(),
         ),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StatusRequest {
+    id: uuid::Uuid,
+}
+
+/// Durable queue outcomes, retained after delivery/bounce and across restarts.
+pub async fn status(cmd: &IncomingCommand, db: &Db) -> (u8, String) {
+    let result = async {
+        ensure!(cmd.body.len() <= 4096 && cmd.header("args").is_none_or(|s| s.len() <= 4096), "status request exceeds byte bound");
+        let request: StatusRequest = serde_json::from_value(
+            super::try_resolve_args(cmd).map_err(anyhow::Error::msg)?)?;
+        let conn = db.conn.clone();
+        tokio::task::spawn_blocking(move || -> Result<Value> {
+            let conn = conn.lock().map_err(|e| anyhow::anyhow!("database lock: {e}"))?;
+            let id = request.id.to_string();
+            ensure!(conn.query_row("SELECT 1 FROM email_submissions WHERE id=?1", [&id], |_| Ok(())).optional()?.is_some(), "submission not found");
+            let mut stmt = conn.prepare("SELECT recipient,status,last_reply,updated_at,CASE WHEN target='' THEN recipient ELSE target END FROM smtp_delivery WHERE submission_id=?1 ORDER BY recipient,target")?;
+            let recipients = stmt.query_map([&id], |row| Ok(json!({
+                "recipient":row.get::<_,String>(0)?, "status":row.get::<_,String>(1)?,
+                "last_smtp_reply":row.get::<_,Option<String>>(2)?, "updated_at":row.get::<_,String>(3)?,
+                "target":row.get::<_,String>(4)?
+            })))?.collect::<rusqlite::Result<Vec<_>>>()?;
+            ensure!(!recipients.is_empty(), "delivery status unavailable for legacy submission");
+            let confirmed = recipients.iter().all(|r| r["status"] == "delivered");
+            Ok(json!({"id":id,"recipients":recipients,"delivery_confirmed":confirmed}))
+        }).await?
+    }.await;
+    match result {
+        Ok(value) => (0, value.to_string()),
+        Err(e) => (10, json!({"error":e.to_string()}).to_string()),
     }
 }
 

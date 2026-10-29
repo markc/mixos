@@ -5,6 +5,7 @@
 
 pub mod bounce;
 pub mod delivery;
+pub(crate) mod envelope;
 pub mod headers;
 pub mod inbound;
 pub mod queue;
@@ -46,6 +47,7 @@ pub struct SmtpConfig {
     /// See [`crate::config::Config::smtp_outbound_bind`].
     pub outbound_bind: Vec<std::net::IpAddr>,
     pub max_message_size: usize,
+    pub delivery_retention_days: u32,
     /// Whether opaque vtoken RCPTs (the single-segment HMAC namespace) are
     /// accepted at RCPT TO. Set at startup by the pre-flight scan
     /// ([`crate::runtime`]): `false` (fail-safe) if any existing account/alias
@@ -100,6 +102,8 @@ pub struct SmtpConfig {
     /// the resolver/transport seam is replaced — so per-domain DKIM
     /// signing and per-domain HELO selection on `delivery_worker` are
     /// exercised end-to-end.
+    /// Address literals use their parsed bare IP as the map key, preserving
+    /// the production literal-routing decision before the transport seam.
     ///
     /// Operator-invisible: production config leaves this empty and
     /// the loader does not parse it from TOML. Populated only by
@@ -119,6 +123,7 @@ impl Default for SmtpConfig {
             listen_smtps: vec![],
             outbound_bind: Vec::new(),
             max_message_size: 25 * 1024 * 1024, // 25 MB
+            delivery_retention_days: 30,
             opaque_rcpt_enabled: true,
             dkim_selector: None,
             dkim_private_key: None,

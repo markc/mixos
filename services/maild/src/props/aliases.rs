@@ -1,37 +1,12 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! Property-store namespace `maild.aliases` — Phase 1
-//! local-target single-hop email aliases.
-//!
-//! A row maps an **alias address** (the key) to a **target** local
-//! account email, so mail addressed to the alias is delivered to the
-//! target's mailbox AND an authenticated account may submit `From:` the
-//! alias (the alias is an identity *of* the target). Both directions go
-//! through the single resolver [`resolve_alias`]; see the plan
-//!.
-//!
-//! ## Lifecycle
-//!
-//! `Simple` — no provisioning side-effects; the substrate commits the
-//! validated body into `__props_values` via [`JsonValuesMapping`].
-//!
-//! ## Canonical form
-//!
-//! [`canon`] (`trim` + ASCII-lowercase) is applied to the key, the body
-//! `target`, and **every** lookup, so the alias key and the recipient/
-//! sender comparison never disagree (SMTP lowercases addresses but
-//! `db::account::get_by_email` is an exact SQL match — this is the one
-//! contract that closes that gap).
-//!
-//! ## No-chaining invariant (Phase 1 cycle/chain foreclosure)
-//!
-//! `before_set` enforces that the set of alias **keys** and the set of
-//! alias **targets** stay **disjoint**: an address may be an alias key
-//! OR a target, never both. With that invariant no alias's target is
-//! itself an alias, so resolution is always single-hop and acyclic — no
-//! resolve-time hop cap is needed. Multi-hop (with a bounded cap) is a
-//! deferred Phase 2 item.
+//! Local aliases in `maild.aliases`. Targets are real accounts, so resolution
+//! is single-hop and cannot forward off-site. Legacy `target` stores the first
+//! target; `targets` optionally carries the full fan-out list. Delivery always
+//! checks real mailboxes before exact aliases and domain catch-alls. Catch-alls
+//! never grant a sender identity. Keys and targets fold ASCII case without
+//! normalising Unicode. Writes use the Simple property lifecycle and CAS.
 
 use std::sync::Arc;
 
@@ -68,7 +43,7 @@ pub fn schema() -> PropertySchema {
     PropertySchema::new(vec![
         FieldSchema {
             name: "address".into(),
-            ty: FieldType::Email,
+            ty: FieldType::String,
             default: None,
             secret: false,
             help: "The alias address (primary key, canonical lowercase)".into(),
@@ -82,6 +57,18 @@ pub fn schema() -> PropertySchema {
             default: None,
             secret: false,
             help: "Local account email the alias delivers to / submits as".into(),
+            since: None,
+            until: None,
+            validators: Vec::new(),
+        },
+        FieldSchema {
+            name: "targets".into(),
+            ty: FieldType::List {
+                item: Box::new(FieldType::Email),
+            },
+            default: Some(PropValue::List(Vec::new())),
+            secret: false,
+            help: "Local delivery targets; empty preserves the legacy target field".into(),
             since: None,
             until: None,
             validators: Vec::new(),
@@ -140,15 +127,19 @@ impl AliasesHooks {
 
     /// True if `email` (canonical) has a live `maild.accounts` row.
     async fn account_exists(&self, email: &str) -> Result<bool, HookError> {
-        let key =
-            RecordKey::collection(crate::props::accounts::namespace_name(), email.to_string());
-        match self.accounts_runtime.store().get(&key).await {
-            Ok(_) => Ok(true),
-            Err(::props::store::StoreError::NotFound) => Ok(false),
-            Err(e) => Err(HookError::hook(format!(
-                "aliases->accounts cross-namespace read failed: {e}"
-            ))),
+        for email in crate::smtp::envelope::mailbox_addresses(email) {
+            let key = RecordKey::collection(crate::props::accounts::namespace_name(), email);
+            match self.accounts_runtime.store().get(&key).await {
+                Ok(_) => return Ok(true),
+                Err(::props::store::StoreError::NotFound) => {}
+                Err(e) => {
+                    return Err(HookError::hook(format!(
+                        "aliases->accounts cross-namespace read failed: {e}"
+                    )));
+                }
+            }
         }
+        Ok(false)
     }
 
     fn validate_email_shape(field: &str, s: &str) -> Result<(), HookError> {
@@ -195,7 +186,11 @@ impl HookHandler for AliasesHooks {
             // Wire key shape + canonical-form contract: the key IS the
             // alias address and must already be canonical so the stored
             // form matches every `resolve_alias(canon(addr))` lookup.
-            Self::validate_email_shape("alias address", &ctx.key.key)?;
+            if let Some(domain) = ctx.key.key.strip_prefix('@') {
+                Self::validate_email_shape("catch-all domain", &format!("catchall@{domain}"))?;
+            } else {
+                Self::validate_email_shape("alias address", &ctx.key.key)?;
+            }
             if ctx.key.key != canon(&ctx.key.key) {
                 return Err(HookError::validation(format!(
                     "alias address {:?} is not canonical (expected lowercase/trimmed {:?})",
@@ -225,77 +220,61 @@ impl HookHandler for AliasesHooks {
                 }
                 None => return Err(HookError::validation("target is required")),
             };
-            Self::validate_email_shape("target", &target)?;
-            if target != canon(&target) {
-                return Err(HookError::validation(format!(
-                    "target {target:?} is not canonical (expected {:?})",
-                    canon(&target)
-                )));
-            }
-
-            // Self-alias: a row that points to itself is a no-op loop.
-            if ctx.key.key == target {
+            let targets =
+                targets_from_value(new).map_err(|e| HookError::validation(e.to_string()))?;
+            if targets.first() != Some(&target) {
                 return Err(HookError::validation(
-                    "alias address and target are identical (self-alias)",
+                    "target must equal the first targets entry",
                 ));
             }
+            let mut unique = std::collections::BTreeSet::new();
+            for target in targets {
+                Self::validate_email_shape("target", &target)?;
+                if target != canon(&target) {
+                    return Err(HookError::validation(format!(
+                        "target {target:?} is not canonical (expected {:?})",
+                        canon(&target)
+                    )));
+                }
 
-            // Account/alias disjointness. Without these an alias could
-            // SHADOW a real account — `mc@` could be both a live account
-            // and an alias `mc@ → eve@`, so the resolve-before-lookup
-            // paths would deliver mc@'s mail to eve@ AND let eve@ submit
-            // `From: mc@`. So:
-            //   * the alias KEY must NOT be a real account (no shadowing);
-            //   * the TARGET MUST be a real account (the contract — mail
-            //     to the alias has somewhere live to land).
-            // (The reciprocal "an account email must not be an alias key"
-            // is enforced on the accounts side in `props::accounts`.)
-            if self.account_exists(&ctx.key.key).await? {
-                return Err(HookError::validation(format!(
-                    "alias address {:?} is already a real account — an address cannot be \
+                // Self-alias: a row that points to itself is a no-op loop.
+                if ctx.key.key == target {
+                    return Err(HookError::validation(
+                        "alias address and target are identical (self-alias)",
+                    ));
+                }
+
+                // Account/alias disjointness. Without these an alias could
+                // SHADOW a real account — `mc@` could be both a live account
+                // and an alias `mc@ → eve@`, so the resolve-before-lookup
+                // paths would deliver mc@'s mail to eve@ AND let eve@ submit
+                // `From: mc@`. So:
+                //   * the alias KEY must NOT be a real account (no shadowing);
+                //   * the TARGET MUST be a real account (the contract — mail
+                //     to the alias has somewhere live to land).
+                // (The reciprocal "an account email must not be an alias key"
+                // is enforced on the accounts side in `props::accounts`.)
+                if self.account_exists(&ctx.key.key).await? {
+                    return Err(HookError::validation(format!(
+                        "alias address {:?} is already a real account — an address cannot be \
                      both an account and an alias (it would shadow the account's mail)",
-                    ctx.key.key
-                )));
-            }
-            if !self.account_exists(&target).await? {
-                return Err(HookError::validation(format!(
-                    "alias target {target:?} is not a maild.accounts row — an alias must \
-                     point to a real local account"
-                )));
+                        ctx.key.key
+                    )));
+                }
+                if !self.account_exists(&target).await? {
+                    return Err(HookError::validation(format!(
+                        "alias target {target:?} is not a maild.accounts row — an alias must \
+                     point to a real local account; off-site forwarding is not permitted"
+                    )));
+                }
+                if !unique.insert(target) {
+                    return Err(HookError::validation("duplicate alias target"));
+                }
             }
 
-            // No explicit no-chaining check is needed: the two account
-            // guards above (key ∉ accounts, target ∈ accounts) plus the
-            // reciprocal account-side guard (account ∉ alias keys) keep
-            // the alias-key and account sets disjoint, so a target (an
-            // account) can never be an alias key — no alias can point at
-            // another alias.
-            //
-            // KNOWN LIMITATION (accepted, Phase 1): these are
-            // read-then-commit cross-namespace checks, so they carry the
-            // substrate's project-wide hook-model TOCTOU — the SAME window
-            // `account_overrides` lives with against `accounts`. A
-            // *concurrent* `alias add a@` and `account add a@` could both
-            // pass before either commits, leaving `a@` as both an account
-            // AND an alias key. The blast radius in that state is a REAL
-            // shadow, not just a dangling alias: mail to `a@` resolves to
-            // the alias target, and that target can submit `From: a@`,
-            // while `a@` is also a live account. We accept it for Phase 1
-            // ONLY because reaching it needs two privileged mutations
-            // racing on the SAME address (a single operator running CLI
-            // commands sequentially never hits it; there is no external
-            // caller path), and resolution is single-hop so it can't loop
-            // or multi-hop. It is operator-CORRECTABLE but NOT
-            // self-healing: an account *update* skips this check
-            // (`ctx.old.is_some()`), so a dual-state persists until an
-            // operator removes/repoints the alias or deletes one side —
-            // which `reconcile_diagnostic` (run at startup) surfaces
-            // loudly so it can't sit silently across a restart. Atomic
-            // enforcement is a substrate-level concern (cross-namespace
-            // mutation serialization / DB-backed constraint, benefiting
-            // every namespace) and is deferred to that hardening; see the
-            // follow-up note in the plan. Cascade-on-account-delete is
-            // likewise deferred.
+            // Cross-namespace hooks can race with account creation/removal.
+            // Delivery checks mailboxes first and revalidates every target,
+            // so a raced row cannot shadow an account or forward off-site.
             Ok(())
         })
     }
@@ -331,6 +310,44 @@ pub fn register(
 /// follows the target onward, so a (racily-committed) cyclic/chained row
 /// can never loop or fan out here.
 pub async fn resolve_alias(runtime: &Arc<Runtime>, addr: &str) -> Result<Option<String>> {
+    Ok(resolve_targets(runtime, addr)
+        .await?
+        .and_then(|targets| targets.into_iter().next()))
+}
+
+fn targets_from_value(value: &PropValue) -> Result<Vec<String>> {
+    let obj = value
+        .as_object()
+        .ok_or_else(|| anyhow::anyhow!("invalid alias record"))?;
+    if let Some(PropValue::List(targets)) = obj.get("targets")
+        && !targets.is_empty()
+    {
+        anyhow::ensure!(targets.len() <= 32, "alias target count exceeds 32");
+        return targets
+            .iter()
+            .map(|v| match v {
+                PropValue::String(s) => Ok(s.clone()),
+                _ => Err(anyhow::anyhow!("alias targets must be email strings")),
+            })
+            .collect();
+    }
+    match obj.get("target") {
+        Some(PropValue::String(s)) => Ok(vec![s.clone()]),
+        _ => Err(anyhow::anyhow!("target is required")),
+    }
+}
+
+/// Exact alias lookup only: catch-alls never grant a sender identity.
+async fn resolve_targets(runtime: &Arc<Runtime>, addr: &str) -> Result<Option<Vec<String>>> {
+    for addr in crate::smtp::envelope::mailbox_addresses(&canon(addr)) {
+        if let Some(targets) = lookup_targets(runtime, &addr).await? {
+            return Ok(Some(targets));
+        }
+    }
+    Ok(None)
+}
+
+async fn lookup_targets(runtime: &Arc<Runtime>, addr: &str) -> Result<Option<Vec<String>>> {
     let key = RecordKey::collection(namespace_name(), canon(addr));
     // `store().get()` yields a snapshot whose `.value` is the `Record`;
     // the record's own `.value` is the `PropValue` body. NotFound is a
@@ -352,10 +369,65 @@ pub async fn resolve_alias(runtime: &Arc<Runtime>, addr: &str) -> Result<Option<
     if !enabled {
         return Ok(None);
     }
-    Ok(match obj.get("target") {
-        Some(PropValue::String(t)) => Some(canon(t)),
-        _ => None,
-    })
+    Ok(Some(
+        targets_from_value(&snap.value.value)?
+            .into_iter()
+            .map(|target| canon(&target))
+            .collect(),
+    ))
+}
+
+/// Mailboxes win, then exact aliases, then the domain catch-all. All targets
+/// must still exist locally at delivery time, including after account removal.
+pub async fn recipient_accounts(
+    runtime: &Arc<Runtime>,
+    conn: &Arc<std::sync::Mutex<rusqlite::Connection>>,
+    addr: &str,
+) -> Result<Vec<crate::db::account::Account>> {
+    let addr = canon(addr);
+    if let Some(account) = mailbox_account(conn, &addr).await? {
+        return Ok(vec![account]);
+    }
+    let targets = match resolve_targets(runtime, &addr).await? {
+        Some(targets) => Some(targets),
+        None => match addr.rsplit_once('@') {
+            Some((_, domain)) => resolve_targets(runtime, &format!("@{domain}")).await?,
+            None => None,
+        },
+    };
+    let mut accounts = Vec::new();
+    if let Some(targets) = targets {
+        for target in targets {
+            let Some(account) = mailbox_account(conn, &target).await? else {
+                tracing::error!(alias = %addr, target = %target,
+                    "Alias target is no longer a local mailbox; skipping target, forwarding refused");
+                continue;
+            };
+            if !accounts
+                .iter()
+                .any(|existing: &crate::db::account::Account| existing.id == account.id)
+            {
+                accounts.push(account);
+            }
+        }
+        anyhow::ensure!(
+            !accounts.is_empty(),
+            "alias {addr} has no remaining local targets; forwarding refused"
+        );
+    }
+    Ok(accounts)
+}
+
+async fn mailbox_account(
+    conn: &Arc<std::sync::Mutex<rusqlite::Connection>>,
+    addr: &str,
+) -> Result<Option<crate::db::account::Account>> {
+    for mailbox in crate::smtp::envelope::mailbox_addresses(addr) {
+        if let Some(account) = crate::db::account::get_by_email(conn, &mailbox).await? {
+            return Ok(Some(account));
+        }
+    }
+    Ok(None)
 }
 
 /// Rewrite-before-lookup helper for the inbound recipient sites: the
@@ -379,17 +451,26 @@ pub async fn resolve_recipient(runtime: &Arc<Runtime>, addr: &str) -> Result<Str
 pub async fn sender_authorized(runtime: &Arc<Runtime>, from: &str, authed: &str) -> bool {
     let from_c = canon(from);
     let authed_c = canon(authed);
-    if from_c == authed_c {
+    if crate::smtp::envelope::mailbox_addresses(&from_c).contains(&authed_c) {
         return true;
     }
-    matches!(resolve_alias(runtime, &from_c).await, Ok(Some(t)) if t == authed_c)
+    if from_c.starts_with('@') {
+        return false;
+    }
+    matches!(resolve_targets(runtime, &from_c).await, Ok(Some(targets))
+        if targets.iter().any(|target| crate::smtp::envelope::mailbox_addresses(target).contains(&authed_c)))
 }
 
 /// True if `email` (canonical) has a `maild.accounts` row. Best-effort:
 /// a transient read error returns `false` (used only by the diagnostic).
 async fn account_row_exists(accounts_runtime: &Arc<Runtime>, email: &str) -> bool {
-    let key = RecordKey::collection(crate::props::accounts::namespace_name(), email.to_string());
-    accounts_runtime.store().get(&key).await.is_ok()
+    for email in crate::smtp::envelope::mailbox_addresses(email) {
+        let key = RecordKey::collection(crate::props::accounts::namespace_name(), email);
+        if accounts_runtime.store().get(&key).await.is_ok() {
+            return true;
+        }
+    }
+    false
 }
 
 /// Startup reconciliation diagnostic for the account/alias disjointness
@@ -427,12 +508,9 @@ async fn compute_alias_conflicts(
         if account_row_exists(accounts_runtime, &key).await {
             shadows.push(key.clone());
         }
-        if let PropValue::Object(m) = &record.value
-            && let Some(PropValue::String(t)) = m.get("target")
-        {
-            let target = canon(t);
+        for target in targets_from_value(&record.value)? {
             if !account_row_exists(accounts_runtime, &target).await {
-                dangling.push((key, target));
+                dangling.push((key.clone(), target));
             }
         }
     }
@@ -714,6 +792,63 @@ mod tests {
             "shadow detected"
         );
         assert!(dangling.is_empty(), "target admin@ is still a real account");
+    }
+
+    #[tokio::test]
+    async fn reconcile_diagnostic_checks_every_fanout_target() {
+        let (aliases, accounts) = fixture_full(&["admin@example.com", "boss@example.com"]).await;
+        let body = PropValue::Object(BTreeMap::from([
+            (
+                "address".into(),
+                PropValue::String("team@example.com".into()),
+            ),
+            (
+                "target".into(),
+                PropValue::String("admin@example.com".into()),
+            ),
+            (
+                "targets".into(),
+                PropValue::List(vec![
+                    PropValue::String("admin@example.com".into()),
+                    PropValue::String("boss@example.com".into()),
+                ]),
+            ),
+        ]));
+        aliases
+            .set(
+                RecordKey::collection(namespace_name(), "team@example.com"),
+                body,
+                SetOpts {
+                    expected_version: Some(Version::zero()),
+                    merge: MergeMode::Replace,
+                    actor: Actor::service("test").unwrap(),
+                    cause: None,
+                    ts_ms: 0,
+                },
+            )
+            .await
+            .unwrap();
+        let key =
+            RecordKey::collection(crate::props::accounts::namespace_name(), "boss@example.com");
+        let version = accounts.store().get(&key).await.unwrap().value.version;
+        accounts
+            .delete(
+                key,
+                ::props::DeleteOpts {
+                    expected_version: Some(version),
+                    actor: Actor::service("test").unwrap(),
+                    cause: None,
+                    ts_ms: 0,
+                },
+            )
+            .await
+            .unwrap();
+        let (shadows, dangling) = compute_alias_conflicts(&aliases, &accounts).await.unwrap();
+        assert!(shadows.is_empty());
+        assert_eq!(
+            dangling,
+            vec![("team@example.com".into(), "boss@example.com".into())]
+        );
     }
 
     async fn set_alias(

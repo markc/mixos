@@ -209,6 +209,10 @@
                 <div class="panel-content">
                     <nav id="toc-nav">
                         <a href="#properties">Properties</a>
+                        <a href="#smtp-internationalisation">SMTP internationalisation</a>
+                        <a href="#dkim-dns-checks">DKIM DNS checks</a>
+                        <a href="#submission-status">Submission status</a>
+                        <a href="#local-aliases">Local aliases</a>
                         <a href="#shared-libraries">Shared libraries</a>
                         <a href="#metadata-store">Metadata store</a>
                         <a href="#running-and-packaging">Running and packaging</a>
@@ -270,6 +274,109 @@ the broker peer when supplied, otherwise the stable actor <code>bus</code>; the 
 request selects the sending account. Sender validation, size limits and
 operation replay protection still apply. Config loading ignores unknown
 keys, so existing files carrying removed operator lists continue to load.</p>
+<h2 id="smtp-internationalisation">SMTP internationalisation</h2>
+<p>Inbound SMTP and authenticated submission advertise <code>SMTPUTF8</code> and
+<code>8BITMIME</code>. Send <code>MAIL FROM:&lt;address&gt; SMTPUTF8</code> for UTF-8 envelope addresses
+or UTF-8 headers, adding <code>BODY=8BITMIME</code> for an eight-bit body. UTF-8 local
+parts and domains are stored without transliteration or Unicode normalisation;
+address lookup folds ASCII case as for existing mailboxes. Invalid UTF-8
+commands and UTF-8 envelope addresses without the parameter are refused.
+Inbound SMTP and submission accept legacy raw eight-bit headers without
+SMTPUTF8 and preserve their bytes; outbound delivery derives the extensions
+it needs from the stored message. IPv4 and IPv6 address literals are accepted
+syntactically; recipient policy may still refuse them. A rejected MAIL command
+preserves the previously accepted envelope and recipients.
+Outbound delivery to IPv4 and IPv6 literals connects directly to port 25 without
+an MX lookup, using the normal TLS and source-address policy. This also applies
+to queued DSNs addressed to literal senders.
+Configure hosted internationalised domains in <code>maild.domains</code> using their DNS
+A-label (for example <code>xn--fsqu00a.example.com</code>); the RCPT gate converts the
+envelope's U-label for that authoritative lookup.
+Mailbox lookup accepts either the U-label or A-label spelling of its domain.
+Valid <code>AUTH=</code> trace parameters may accompany MAIL. These untrusted claims are
+discarded and never grant permission to use an envelope sender.</p>
+<p>Outbound delivery detects non-ASCII envelope addresses and headers, checks the
+peer's EHLO capabilities (again after STARTTLS), and requests <code>SMTPUTF8</code> when
+needed, including UTF-8 MIME part headers. Only eight-bit bytes after the
+top-level header block require <code>8BITMIME</code> and request <code>BODY=8BITMIME</code>.
+The first LF or CRLF blank line ends that header block; later body paragraphs
+do not change whether its headers need SMTPUTF8.
+UTF-8 envelope addresses or headers with an ASCII body request SMTPUTF8 alone.
+ASCII mail does not request either extension. If a required extension is
+missing, maild records a permanent <code>5.6.7</code> (SMTPUTF8) or <code>5.6.3</code> (8BITMIME)
+failure and bounces to the local sender. It does not rewrite addresses or
+content. This is the non-delivery policy allowed by
+<a href="https://www.rfc-editor.org/rfc/rfc6531#section-3.2">RFC 6531 §3.2</a>.</p>
+<h2 id="dkim-dns-checks">DKIM DNS checks</h2>
+<p><code>maild dkim generate --domain example.com --selector s2026a</code> prints a TXT
+value whose RSA <code>p=</code> contains DER SubjectPublicKeyInfo, as required by
+<a href="https://www.rfc-editor.org/rfc/rfc6376#section-3.6.1">RFC 6376 §3.6.1</a>.
+Ed25519 <code>p=</code> remains the raw 32-byte key from
+<a href="https://www.rfc-editor.org/rfc/rfc8463#section-4">RFC 8463</a>.
+Publish that value at <code>s2026a._domainkey.example.com</code>. DNS TXT chunks belong
+to one record and must concatenate without extra whitespace inside the key.</p>
+<p>Run <code>maild dkim check example.com</code> after publication. The read-only
+<code>maild.dkim.check {domain}</code> query reads the active selector, fetches its TXT
+record and compares its key and algorithm with the installed private key.
+Success returns <code>matches:true</code>; a missing, duplicate, revoked or mismatching
+record fails. Legacy RSA PKCS#1 DNS values must be republished as SPKI; private
+keys remain valid and need no rotation. The query also supports configured
+<code>[[dkim.domain]]</code> active signers.</p>
+<h2 id="submission-status">Submission status</h2>
+<p><code>maild.submit</code> returns an acceptance receipt with <code>submission_id</code>.
+<code>delivery_confirmed:false</code> in this replayable receipt describes acceptance;
+it does not change when delivery finishes. Query current results with:</p>
+<pre><code class="language-text">maild.submission.status {"id":"00000000-0000-4000-8000-000000000001"}
+</code></pre>
+<p>The response has <code>id</code>, <code>delivery_confirmed</code> and <code>recipients</code>. Each recipient
+has <code>recipient</code>, <code>target</code>, <code>status</code> (<code>queued</code>, <code>delivered</code>, <code>deferred</code>, <code>bounced</code>),
+<code>last_smtp_reply</code> (null before an attempt) and <code>updated_at</code> (UTC). Local delivery
+records one outcome for each local target, so partial fan-out success is
+visible. A temporary local failure is deferred onto the existing delivery
+queue; retries deliver only to the failed mailbox, without repeating successful
+copies, including recovery after a delivery receipt is committed. Remote delivery records the receiving
+server's end-of-DATA reply or its rejection/error. Delivered means the next
+server accepted responsibility, not that a person read the message.</p>
+<p>Queue results survive payload removal and daemon restarts. Deferred recipients
+retry with the queue's backoff; delivered and bounced recipients are skipped.
+Each remote recipient has its own SMTP transaction, trading connection reuse
+for independent results and retries. Unknown ids, malformed requests and
+legacy submissions without recorded outcomes return an error, never an invented
+delivery result. Queue IDs never repeat, including after upgrading a legacy
+database. Receipts are linked to submissions in the enqueue transaction.
+Unlinked SMTP outcomes are removed with their queue entry. Terminal receipts
+and EmailSubmission records expire together after <code>delivery_retention_days</code>
+(default 30; zero disables age-based expiry). Active or partly deferred
+submissions retain their complete status until delivery finishes. The worker
+sweeps retention on each queue pass and records expiry in the JMAP
+EmailSubmission change stream in the same transaction as deletion.
+The first sweep also removes pre-receipt EmailSubmission records older than the
+configured window; it does not fabricate outcomes for those older submissions.</p>
+<h2 id="local-aliases">Local aliases</h2>
+<pre><code class="language-text">maild alias add sales@example.com alice@example.com bob@example.com
+maild alias set sales@example.com bob@example.com
+maild alias add @example.com alice@example.com bob@example.com
+maild alias remove sales@example.com
+</code></pre>
+<p><code>add</code> creates an absent alias, including resurrection of a tombstone at its
+retained version; it refuses an existing alias. <code>set</code> creates or repoints with
+an optimistic version check. Concurrent changes require a retry. Both commands
+take one to 32 local account addresses, with no chains or off-site forwarding.</p>
+<p>Delivery checks for a real mailbox first, then an enabled exact alias, then
+the enabled domain catch-all. Missing targets are skipped with an error log;
+healthy local targets still receive their copies. Resolution fails only when
+no local targets remain, and never forwards externally. Account creation
+checks both IDN spellings for alias collisions. An exact alias grants
+its targets permission to send as that alias; a catch-all grants no sender
+identity. Reserved virtual-token recipients retain their existing routing.
+Property records retain <code>target</code> as the first target for compatibility
+and add <code>targets</code> for the full list; an absent or empty list uses <code>target</code>.</p>
+<p><code>maild account show alice@example.com</code> includes <code>account_id</code>, the numeric id
+accepted by Bayesian commands. The read-only <code>maild.accounts.lookup {email}</code>
+query supplies this identity without opening the account's mail store.
+<code>maild bayesian stats ID</code> refuses unknown ids
+and reads an existing corpus without creating a directory or <code>bayes.db</code>;
+an existing untrained account reports cold-start counts.</p>
 <h2 id="shared-libraries">Shared libraries</h2>
 <p>Maild uses <code>bus::native_client::NodedClient</code> and the Bus connection helpers.
 Its advertised commands are registered in the repository Bus registry and checked
