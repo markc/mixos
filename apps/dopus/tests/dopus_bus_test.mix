@@ -349,7 +349,7 @@ try
       check(not $row.enabled, "headless location.focus must be disabled")
     end
   end
-  check($location_rows == 1, "actions.list must contain location.focus")
+  check($location_rows == 1, "dopus.actions must contain location.focus")
 
   -- P4: plain panel state exists headless, but toggles require a window.
   $before_panels = ok('dopus.state', {})
@@ -456,7 +456,7 @@ try
     and $p.summary != nil
     and $st.theme_scheme != nil and $st.theme_mode != nil,
     "dopus.state shape: " .. json_encode($st))
-  -- actions.list describes the same availability for keyboard and Bus.
+  -- dopus.actions describes the same availability for keyboard and Bus.
   $acts = ok('dopus.actions', {})
   $file_rows = 0
   for each $row in $acts.actions
@@ -465,7 +465,7 @@ try
       check($row.enabled != nil, "file row without enabled: " .. json_encode($row))
     end
   end
-  check($file_rows == 7, "expected 7 file.* rows in actions.list, got " .. to_string($file_rows))
+  check($file_rows == 7, "expected 7 file.* rows in dopus.actions, got " .. to_string($file_rows))
 
   -- 10c. dopus-test.action.executed carried every accepted dopus.execute, in
   -- order, from the bus, and nothing else: no refused action (unknown id,
