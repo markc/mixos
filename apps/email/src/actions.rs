@@ -754,7 +754,7 @@ pub fn choice(state: &State) -> toolkit::theme_menu::Choice {
 }
 
 /// Store the Theme menu's choice as the window's.
-fn set_choice(state: &mut State, choice: toolkit::theme_menu::Choice) {
+pub(crate) fn set_choice(state: &mut State, choice: toolkit::theme_menu::Choice) {
     state.ui.theme.scheme = choice.scheme;
     state.ui.theme.style = choice.style;
     state.ui.theme.mode = choice.mode;

@@ -473,7 +473,6 @@ pub fn registry() -> Registry<State> {
         ("compose.paste", "edit"),
         ("compose.attach", "compose-attachments-menu"),
         ("compose.attachments.clear", "compose-attachments-menu"),
-        ("view.mode", "view"),
         ("file.quit", "file"),
     ] {
         let a = original.get(id).unwrap();
@@ -512,12 +511,28 @@ pub fn registry() -> Registry<State> {
         enabled: a.enabled,
         run: a.run,
     });
+    registry.theme_menu("view", crate::actions::choice, crate::actions::set_choice);
+    // The compose editor has no find bar; mailbox command search lives in
+    // the mailbox window.
+    registry.no_search();
     registry
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn composer_modes_use_the_shared_theme_setter() {
+        let mut state = crate::state::tests::connected_many(&["a"]);
+        let registry = registry();
+        for mode in design::Mode::ALL {
+            registry
+                .execute(toolkit::theme_menu::mode_id(mode), &mut state, Origin::Ui)
+                .unwrap();
+            assert_eq!(state.ui.theme.mode, Some(mode));
+        }
+    }
 
     fn fixture(standalone: bool) -> (State, Windows, toolkit::Theme, egui::Context) {
         let state = crate::state::tests::connected_many(&["a"]);
