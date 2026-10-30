@@ -7,16 +7,27 @@
 use crate::chrome::{self, Chrome};
 use crate::style;
 use crate::theme::Theme;
-use egui::{FontFamily, FontId, Frame, Margin, TextStyle, Ui};
+use egui::{Color32, FontFamily, FontId, Frame, Margin, TextStyle, Ui};
 use settings::content::Content;
 use std::sync::OnceLock;
 
 /// Draw `add` inside the surface described by `content`.
 pub fn surface(ui: &mut Ui, content: &Content, add: impl FnOnce(&mut Ui)) {
+    surface_with(ui, content, None, add);
+}
+
+/// [`surface`] with its padding painted in `fill`, so a body that paints its
+/// own background (the editor) reaches the surface edge and the padding reads
+/// as space inside it rather than a gap around it.
+pub fn surface_filled(ui: &mut Ui, content: &Content, fill: Color32, add: impl FnOnce(&mut Ui)) {
+    surface_with(ui, content, Some(fill), add);
+}
+
+fn surface_with(ui: &mut Ui, content: &Content, fill: Option<Color32>, add: impl FnOnce(&mut Ui)) {
     if content.light {
-        light(ui, content, add);
+        light(ui, content, fill, add);
     } else {
-        padded(ui, content, add);
+        padded(ui, content, fill, add);
     }
 }
 
@@ -32,24 +43,25 @@ pub fn light_theme() -> &'static Theme {
     })
 }
 
-fn light(ui: &mut Ui, content: &Content, add: impl FnOnce(&mut Ui)) {
+fn light(ui: &mut Ui, content: &Content, fill: Option<Color32>, add: impl FnOnce(&mut Ui)) {
     let ctx = ui.ctx().clone();
     let theme = light_theme().clone().with_ui(crate::ui_scale::of(&ctx));
     let previous = Chrome::of(&ctx);
     chrome::install(&ctx, &Chrome::for_theme(&theme));
     let light_style = style::style(&theme);
-    let fill = light_style.visuals.panel_fill;
+    let fill = fill.unwrap_or(light_style.visuals.panel_fill);
     Frame::new().fill(fill).show(ui, |ui| {
         ui.set_style(light_style);
-        padded(ui, content, add);
+        padded(ui, content, None, add);
     });
     chrome::install(&ctx, &previous);
 }
 
 /// The padding and the font, inside the surface's own style scope, so the
 /// override reaches no other region.
-fn padded(ui: &mut Ui, content: &Content, add: impl FnOnce(&mut Ui)) {
+fn padded(ui: &mut Ui, content: &Content, fill: Option<Color32>, add: impl FnOnce(&mut Ui)) {
     Frame::new()
+        .fill(fill.unwrap_or(Color32::TRANSPARENT))
         .inner_margin(Margin::same(
             (content.padding as f64 * crate::ui_scale::of(ui.ctx()).density)
                 .round()

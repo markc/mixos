@@ -504,7 +504,7 @@ fn document(
     let draw_editor = |ui: &mut Ui| {
         ui.add_enabled_ui(editable, |ui| {
             let mut out = None;
-            toolkit::content::surface(ui, &app.editor_style, |ui| {
+            toolkit::content::surface_filled(ui, &app.editor_style, palette.background, |ui| {
                 if mode == PreviewMode::Split
                     && let Some(baseline) = preview.as_ref().and_then(|document| {
                         toolkit::markdown::first_heading_baseline(ui, document)
@@ -538,7 +538,7 @@ fn document(
         .inner
     };
     let draw_preview = |ui: &mut Ui| {
-        toolkit::content::surface(ui, &app.editor_style, |ui| {
+        toolkit::content::surface_filled(ui, &app.editor_style, palette.background, |ui| {
             for style in [egui::TextStyle::Body, egui::TextStyle::Monospace] {
                 if let Some(font) = ui.style_mut().text_styles.get_mut(&style) {
                     font.size = font_px;
