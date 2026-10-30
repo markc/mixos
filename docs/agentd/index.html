@@ -268,10 +268,16 @@ strict data:</p>
 <pre><code class="language-mix">max_live: 4
 agents: {
   claude: {argv: ["claude-agent-acp"], roots: ["/home/user/src"]},
-  gemini: {argv: ["gemini", "--acp"], roots: ["/home/user/src"]},
+  gemini: {argv: ["gemini", "--acp", "--skip-trust"], roots: ["/home/user/src"]},
   opencode: {argv: ["opencode", "acp"], roots: ["/home/user/src"], policy: "ask"}
 }
 </code></pre>
+<p>Tested agents (2026-10-30), each with mixos-mcp reaching the Bus:</p>
+<table><thead><tr><th>Agent</th><th>argv</th><th>Notes</th></tr></thead><tbody>
+<tr><td>Claude</td><td><code>claude-agent-acp</code> (npm <code>@agentclientprotocol/claude-agent-acp</code>)</td><td>Uses its own file and shell tools, so Claude Code hooks such as a PreToolUse gate still apply.</td></tr>
+<tr><td>Gemini CLI</td><td><code>gemini --acp --skip-trust</code></td><td>Without <code>--skip-trust</code> Gemini treats the folder as untrusted and starts no MCP server. The flag trusts the session's <code>cwd</code> for that run only, so roots should hold only trusted code. Reads go through <code>fs/read_text_file</code>; writes use its own shell.</td></tr>
+<tr><td>OpenCode</td><td><code>opencode acp</code></td><td>The model is a config option: <code>agent.session.set {session, option: "model", value: "deepseek/deepseek-v4-pro"}</code>.</td></tr>
+</tbody></table>
 <ul>
 <li>
 <p><strong>argv</strong>: the agent's ACP command, run directly (no shell).</p>
