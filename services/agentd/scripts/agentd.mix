@@ -80,6 +80,10 @@ end
 $CONF_FILE = env("MIXOS_AGENTD_CONF", mixos_path("etc", "agent.conf.mix"))
 $CONF = $a.check_conf(load_data($CONF_FILE))
 $MCP_BIN = env("MIXOS_AGENTD_MCP", mixos_path("prefix", "bin/mixos-mcp"))
+$BUS_ENV = {}
+for each $n in $a.bus_env_names()
+  if env($n) != "" then $BUS_ENV[$n] = env($n) end
+end
 $MAX_LINE = 16777216
 $READ_LIMIT = 2000
 $READ_BYTES = 33554432
@@ -521,7 +525,7 @@ fn on_reply($id, $msg)
     $rpc = next_rpc()
     $S.sessions[$id].pending[to_string($rpc)] = {kind: "new"}
     $s = $S.sessions[$id]
-    write_frame($id, $a.session_new_frame($rpc, $s.cwd, $s.dirs, $a.mcp_entry($MCP_BIN, $id)))
+    write_frame($id, $a.session_new_frame($rpc, $s.cwd, $s.dirs, $a.mcp_entry($MCP_BIN, $id, $BUS_ENV)))
     emit_event($id, {kind: "initialized", agent_info: $res.agentInfo, protocol: $res.protocolVersion})
   elif $p.kind == "new" and type($res.sessionId) != "string" then
     emit_event($id, {kind: "error", during: "new", error: {message: "session/new returned no sessionId"}})

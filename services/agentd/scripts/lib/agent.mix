@@ -293,10 +293,29 @@ fn initialize_frame($id)
     clientInfo: {name: "mixos-agentd", version: "0.1.0"}})
 end
 
+-- The variables that decide which broker and layout a MixOS program finds
+-- (libs/bus and libs/paths). Some agents (Codex) start MCP servers with a
+-- bare environment, so agentd hands its own values to the bridge: the
+-- bridge then reaches the broker agentd is on, not a default one.
+$BUS_ENV_NAMES = ["MIXOS", "MIXOS_PREFIX", "MIXOS_ETC", "MIXOS_VAR", "MIXOS_RUN", "MIXOS_CACHE",
+  "MIXOS_SHARE", "MIXOS_NODE_CONFIG", "MIXOS_NODED_URL", "MIXOS_BUS_SOCKET", "MIXOS_BROKER_ACCOUNT",
+  "MIXOS_MCP_ALLOW_TCP", "XDG_RUNTIME_DIR", "HOME"]
+
+fn bus_env_names()
+  return $BUS_ENV_NAMES
+end
+
 -- The mixos-mcp entry every session gets: the bridge registers on the Bus
 -- as mcp-s-<session>-..., so agentd can recognise its agents calling back.
-fn mcp_entry($mcp_bin, $session)
-  return {name: "mixos", command: $mcp_bin, args: [], env: [{name: "MIXOS_AGENT_SESSION", value: $session}]}
+-- $bus_env: {NAME: value} of the set $BUS_ENV_NAMES from agentd's own env.
+fn mcp_entry($mcp_bin, $session, $bus_env)
+  $env = [{name: "MIXOS_AGENT_SESSION", value: $session}]
+  for each $n in sort(keys($bus_env ?? {}))
+    if contains($BUS_ENV_NAMES, $n) and type($bus_env[$n]) == "string" and $bus_env[$n] != "" then
+      $env = concat($env, [{name: $n, value: $bus_env[$n]}])
+    end
+  end
+  return {name: "mixos", command: $mcp_bin, args: [], env: $env}
 end
 
 fn session_new_frame($id, $cwd, $dirs, $mcp)

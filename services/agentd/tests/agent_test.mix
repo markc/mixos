@@ -130,9 +130,11 @@ $init = json_parse(trim($a.initialize_frame(1)))
 check("initialize is protocol 1 with fs and terminal on",
   $init.method == "initialize" and $init.params.protocolVersion == 1 and $init.params.clientCapabilities.terminal == true and
   $init.params.clientCapabilities.fs.readTextFile == true and $init.params.clientCapabilities.fs.writeTextFile == true)
-$new = json_parse(trim($a.session_new_frame(2, "/w", [], $a.mcp_entry("/opt/mixos/bin/mixos-mcp", "abcd1234ef"))))
+$new = json_parse(trim($a.session_new_frame(2, "/w", [], $a.mcp_entry("/opt/mixos/bin/mixos-mcp", "abcd1234ef", {MIXOS_NODED_URL: "ws://192.0.2.1:9000", PATH: "/x", MIXOS_RUN: ""}))))
 check("session/new carries the mixos-mcp entry and session env",
   $new.params.mcpServers[0].env[0].name == "MIXOS_AGENT_SESSION" and $new.params.mcpServers[0].env[0].value == "abcd1234ef")
+check("the mcp entry passes set Bus discovery vars only (not PATH, not empty)",
+  len($new.params.mcpServers[0].env) == 2 and $new.params.mcpServers[0].env[1].name == "MIXOS_NODED_URL")
 check("session/new omits empty additionalDirectories", $new.params.additionalDirectories == nil)
 check("frames end in exactly one newline", ends_with($a.cancel_frame("s"), "}\n"))
 check("cancel is a notification (no id)", json_parse(trim($a.cancel_frame("s"))).id == nil)
