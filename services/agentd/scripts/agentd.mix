@@ -35,6 +35,26 @@
 
 $a = require("lib/agent.mix")
 
+-- The stdin pipe builtins are new in mix 0.117.x (main 75eac3915). Refuse a
+-- mix without them with a clear message rather than a fault on first use.
+if not has_builtin("process_write") then
+  eprint("agentd: this mix has no process_write (needs process_watch stdin pipes, main 75eac3915+)")
+  exit(1)
+end
+
+-- The only two call sites of those builtins. The pragmas keep repo lint
+-- clean under the last released mix (N-1), which does not know them yet;
+-- once a release carries them, lint notes the pragmas as stale (MIX-D3019).
+fn pipe_write($watch, $frame)
+  -- lint: ignore MIX-E1102
+  return process_write($watch, $frame)
+end
+
+fn pipe_close($watch)
+  -- lint: ignore MIX-E1102
+  return process_close_stdin($watch)
+end
+
 $CONF_FILE = env("MIXOS_AGENTD_CONF", mixos_path("etc", "agent.conf.mix"))
 $CONF = $a.check_conf(load_data($CONF_FILE))
 $MCP_BIN = env("MIXOS_AGENTD_MCP", mixos_path("prefix", "bin/mixos-mcp"))
@@ -95,7 +115,7 @@ fn next_rpc()
 end
 
 fn write_frame($id, $frame)
-  if not process_write($S.sessions[$id].watch, $frame) then
+  if not pipe_write($S.sessions[$id].watch, $frame) then
     eprint("agentd: " .. $id .. ": stdin refused a frame (closed or full)")
     return false
   end
@@ -280,7 +300,7 @@ on agent.session.close desc "end the agent {session}: stdin closes, the process 
   if $id != nil then
     if $S.sessions[$id].status != "ended" then
       settle_all_permissions($id, nil)
-      process_close_stdin($S.sessions[$id].watch)
+      pipe_close($S.sessions[$id].watch)
     end
     reply(0, json_encode({session: $id, status: $S.sessions[$id].status}))
   end
@@ -368,7 +388,7 @@ fn on_reply($id, $msg)
     emit_event($id, {kind: "error", during: $p.kind, error: $msg.error})
     if $p.kind == "initialize" or $p.kind == "new" then
       -- No session to work with: end the agent.
-      process_close_stdin($S.sessions[$id].watch)
+      pipe_close($S.sessions[$id].watch)
     elif $p.kind == "prompt" then
       $S.sessions[$id].status = "ready"
       $S.sessions[$id].turn = nil
@@ -385,7 +405,7 @@ fn on_reply($id, $msg)
     emit_event($id, {kind: "initialized", agent_info: $res.agentInfo, protocol: $res.protocolVersion})
   elif $p.kind == "new" and type($res.sessionId) != "string" then
     emit_event($id, {kind: "error", during: "new", error: {message: "session/new returned no sessionId"}})
-    process_close_stdin($S.sessions[$id].watch)
+    pipe_close($S.sessions[$id].watch)
   elif $p.kind == "new" then
     $S.sessions[$id].acp = $res.sessionId
     $S.sessions[$id].status = "ready"
