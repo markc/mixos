@@ -412,7 +412,9 @@ pub fn view(ui: &mut Ui, app: &App, commands: &Registry<App>, strings: &Strings)
     dialogs(ui.ctx(), app, commands, strings, &mut events);
     if let Some(chosen) = toolkit::search::show(ui.ctx(), commands, app, strings, app.search_open) {
         events.push(UiEvent::CloseSearch);
-        if let Some((id, origin)) = chosen { events.push(UiEvent::Command(id, origin)); }
+        if let Some((id, origin)) = chosen {
+            events.push(UiEvent::Command(id, origin));
+        }
     }
     if toolkit::macros::show_app(ui.ctx(), "dopus", app.macros_open) {
         events.push(UiEvent::CloseMacros);

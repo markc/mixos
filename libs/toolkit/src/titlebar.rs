@@ -571,7 +571,10 @@ pub fn show_bar<S>(
     let items = icon_bar(ui.ctx(), registry, state, strings, actions, dark);
     hosting::publish(ui.ctx(), &items);
     if hosting::hosted(ui.ctx()) {
-        return bar_commands(show_with(ui, title, icon, registry, state, strings, &mut []), dark);
+        return bar_commands(
+            show_with(ui, title, icon, registry, state, strings, &mut []),
+            dark,
+        );
     }
     // Fit keeps the tail and drops app actions from the left.
     let mut controls: Vec<Control<'_>> = items
@@ -583,7 +586,10 @@ pub fn show_bar<S>(
             selected: item.toggled,
         })
         .collect();
-    bar_commands(show_with(ui, title, icon, registry, state, strings, &mut controls), dark)
+    bar_commands(
+        show_with(ui, title, icon, registry, state, strings, &mut controls),
+        dark,
+    )
 }
 
 // Resolve against the mode actually painted, before dispatch through the
@@ -591,7 +597,11 @@ pub fn show_bar<S>(
 fn bar_commands(mut fired: Vec<(&'static str, Origin)>, dark: bool) -> Vec<(&'static str, Origin)> {
     for (id, _) in &mut fired {
         if *id == "view.mode" {
-            *id = crate::theme_menu::mode_id(if dark { design::Mode::Light } else { design::Mode::Dark });
+            *id = crate::theme_menu::mode_id(if dark {
+                design::Mode::Light
+            } else {
+                design::Mode::Dark
+            });
         }
     }
     fired

@@ -634,7 +634,9 @@ pub fn registry() -> Registry<State> {
         enabled: undialogued,
         run: |state| state.open_dialog(crate::state::Dialog::About),
     });
-    r.search_action(toolkit::search::command(undialogued, |s: &mut State| s.ui.search_open = true));
+    r.search_action(toolkit::search::command(undialogued, |s: &mut State| {
+        s.ui.search_open = true
+    }));
     // Bare keys and Delete belong to a text field while one is typed in.
     for id in [
         "mail.flag",

@@ -73,7 +73,11 @@ pub fn view(
         strings,
         &[],
     );
-    events.extend(fired.into_iter().map(|(id, origin)| UiEvent::Command(id, origin)));
+    events.extend(
+        fired
+            .into_iter()
+            .map(|(id, origin)| UiEvent::Command(id, origin)),
+    );
     bars::status(ui, |ui| status(ui, app, connected));
     if app.ui.problems {
         egui::Panel::bottom("problems")

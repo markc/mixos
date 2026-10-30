@@ -800,9 +800,17 @@ impl Shell {
                 }
             }
         }
-        if let Some(chosen) = toolkit::search::show(&ctx, &self.commands, &self.app, &self.strings, self.app.search_open) {
+        if let Some(chosen) = toolkit::search::show(
+            &ctx,
+            &self.commands,
+            &self.app,
+            &self.strings,
+            self.app.search_open,
+        ) {
             self.app.search_open = false;
-            if let Some((id, origin)) = chosen { let _ = self.commands.execute(id, &mut self.app, origin); }
+            if let Some((id, origin)) = chosen {
+                let _ = self.commands.execute(id, &mut self.app, origin);
+            }
         }
         if toolkit::macros::show_app(&ctx, "term", self.app.macros_open) {
             self.app.macros_open = false;

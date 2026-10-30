@@ -144,7 +144,11 @@ pub fn view(
         strings,
         &[Action::new("mail.compose", Icon::SquarePen)],
     );
-    events.extend(fired.into_iter().map(|(id, origin)| UiEvent::Command(id, origin)));
+    events.extend(
+        fired
+            .into_iter()
+            .map(|(id, origin)| UiEvent::Command(id, origin)),
+    );
     status(ui, state);
     if state.accounts.is_empty() {
         egui::CentralPanel::default()
@@ -178,9 +182,13 @@ pub fn view(
             events.push(UiEvent::CloseDialog);
         }
     }
-    if let Some(chosen) = toolkit::search::show(ui.ctx(), commands, state, strings, state.ui.search_open) {
+    if let Some(chosen) =
+        toolkit::search::show(ui.ctx(), commands, state, strings, state.ui.search_open)
+    {
         events.push(UiEvent::CloseSearch);
-        if let Some((id, origin)) = chosen { events.push(UiEvent::Command(id, origin)); }
+        if let Some((id, origin)) = chosen {
+            events.push(UiEvent::Command(id, origin));
+        }
     }
     if toolkit::macros::show_app(ui.ctx(), "email", state.ui.macros_open) {
         events.push(UiEvent::CloseMacros);

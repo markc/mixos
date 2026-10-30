@@ -18,9 +18,13 @@ pub fn command<S>(enabled: fn(&S) -> bool, open: fn(&mut S)) -> Action<S> {
 }
 
 /// `None` stays open; `Some(None)` closes; `Some(Some(id))` runs a result.
-pub fn show<S>(ctx: &egui::Context, registry: &Registry<S>, state: &S, strings: &Strings, open: bool)
-    -> Option<Option<(&'static str, Origin)>>
-{
+pub fn show<S>(
+    ctx: &egui::Context,
+    registry: &Registry<S>,
+    state: &S,
+    strings: &Strings,
+    open: bool,
+) -> Option<Option<(&'static str, Origin)>> {
     let key = crate::window_id(ctx.viewport_id(), "toolkit.command-search");
     if !open {
         ctx.data_mut(|d| d.remove::<String>(key));
@@ -30,18 +34,33 @@ pub fn show<S>(ctx: &egui::Context, registry: &Registry<S>, state: &S, strings: 
     let first = previous.is_none();
     let mut query = previous.unwrap_or_default();
     let mut chosen = None;
-    let response = crate::dialog::Dialog::new(key, crate::strings::own("search-menus"))
-        .show(ctx, |ui| {
-            let field = crate::field::search(ui, &mut query, &crate::strings::own("search-menus"), ui.available_width());
-            if first { field.request_focus(); }
+    let response =
+        crate::dialog::Dialog::new(key, crate::strings::own("search-menus")).show(ctx, |ui| {
+            let field = crate::field::search(
+                ui,
+                &mut query,
+                &crate::strings::own("search-menus"),
+                ui.available_width(),
+            );
+            if first {
+                field.request_focus();
+            }
             egui::ScrollArea::vertical().show(ui, |ui| {
                 for action in registry.search(&query, state, strings) {
-                    if action.id != "view.search" && ui.button(crate::action::label_text(strings, action.label)).clicked() {
+                    if action.id != "view.search"
+                        && ui
+                            .button(crate::action::label_text(strings, action.label))
+                            .clicked()
+                    {
                         chosen = Some((action.id, Origin::Palette));
                     }
                 }
             });
         });
     ctx.data_mut(|d| d.insert_temp(key, query));
-    if chosen.is_some() || response.dismissed { Some(chosen) } else { None }
+    if chosen.is_some() || response.dismissed {
+        Some(chosen)
+    } else {
+        None
+    }
 }

@@ -175,7 +175,11 @@ impl<S: 'static> Registry<S> {
             move |s| {
                 let mut choice = get(s);
                 let mode = choice.mode.unwrap_or_else(|| crate::Theme::load().mode());
-                choice.mode = Some(if mode == Mode::Dark { Mode::Light } else { Mode::Dark });
+                choice.mode = Some(if mode == Mode::Dark {
+                    Mode::Light
+                } else {
+                    Mode::Dark
+                });
                 set(s, choice);
             },
             |_| false,

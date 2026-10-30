@@ -128,7 +128,11 @@ pub fn view(
         strings,
         &[Action::new("file.refresh", Icon::RefreshCw)],
     );
-    events.extend(fired.into_iter().map(|(id, origin)| UiEvent::Command(id, origin)));
+    events.extend(
+        fired
+            .into_iter()
+            .map(|(id, origin)| UiEvent::Command(id, origin)),
+    );
     bars::status(ui, |ui| {
         let (icon, colour) = if engine.connected {
             (Icon::Plug, ui.visuals().weak_text_color())

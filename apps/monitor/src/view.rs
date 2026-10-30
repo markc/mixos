@@ -64,7 +64,11 @@ pub fn view(
         strings,
         &[Action::new("file.refresh", Icon::RefreshCw)],
     );
-    events.extend(fired.into_iter().map(|(id, origin)| UiEvent::Command(id, origin)));
+    events.extend(
+        fired
+            .into_iter()
+            .map(|(id, origin)| UiEvent::Command(id, origin)),
+    );
     status_bar(ui, engine);
     tool_bar(ui, engine, commands, strings, &mut events);
     egui::CentralPanel::default()

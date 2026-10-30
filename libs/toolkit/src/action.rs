@@ -154,7 +154,11 @@ impl<S> Registry<S> {
 
     /// Assert the visible tail contract against the app's real registry.
     pub fn assert_tail(&self, state: &S, strings: &Strings, search: bool) {
-        assert_eq!(self.search_available, Some(search), "declare search or no_search");
+        assert_eq!(
+            self.search_available,
+            Some(search),
+            "declare search or no_search"
+        );
         let ctx = egui::Context::default();
         let items = crate::titlebar::icon_bar(&ctx, self, state, strings, &[], true);
         let expected = if search {
@@ -162,10 +166,13 @@ impl<S> Registry<S> {
         } else {
             vec!["help.macros", "help.keys", "view.mode"]
         };
-        let ids: Vec<_> = items.iter().map(|i| match i.command {
-            "help.shortcuts" => "help.keys",
-            id => id,
-        }).collect();
+        let ids: Vec<_> = items
+            .iter()
+            .map(|i| match i.command {
+                "help.shortcuts" => "help.keys",
+                id => id,
+            })
+            .collect();
         assert_eq!(ids, expected);
     }
 

@@ -148,7 +148,10 @@ pub fn registry() -> Registry<App> {
         enabled: |a: &App| a.dialog.is_none(),
         run: |a: &mut App| a.open(Dialog::About),
     });
-    r.search_action(toolkit::search::command(toolkit::action::always, |a: &mut App| a.search_open = true));
+    r.search_action(toolkit::search::command(
+        toolkit::action::always,
+        |a: &mut App| a.search_open = true,
+    ));
     r.search_menu("help");
     r
 }

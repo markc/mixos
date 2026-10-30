@@ -112,7 +112,11 @@ pub fn view(
         strings,
         &[Action::new("view.refresh", Icon::RefreshCw)],
     );
-    events.extend(fired.into_iter().map(|(id, origin)| UiEvent::Command(id, origin)));
+    events.extend(
+        fired
+            .into_iter()
+            .map(|(id, origin)| UiEvent::Command(id, origin)),
+    );
     bars::status(ui, |ui| {
         if !engine.connected {
             ui.add(icons::image_of(
