@@ -34673,10 +34673,12 @@ otherwise the native client's node config discovery applies, including
 The bridge registers under an anonymous name, `mcp-<pid>-<nonce>`. When an
 agent gateway starts the agent that runs it, the gateway sets
 `MIXOS_AGENT_SESSION` to that agent's session id: 4 to 12 lowercase letters
-or digits. The bridge then registers as `mcp-s-<session>-<pid hex>`. The
+or digits. The bridge then registers as `mcp-s-<session>-<pid hex><4 hex>`
+(the trailing hex keeps bridges in separate PID namespaces apart). The
 broker stamps that name as `from` on everything the bridge sends, so the
 gateway can recognise one of its own agents calling back. A value outside
-that form is ignored with a warning, and the anonymous name is used.
+that form is an error: every Bus tool fails with that reason, rather than
+the bridge quietly registering under an anonymous name.
 
 Set `MIXOS_BROKER_ACCOUNT` to the broker's operating-system account and
 `MIXOS_BUS_SOCKET` to the session's Unix socket when overriding discovery.
