@@ -78,7 +78,13 @@ fn object_subschemas(schema: &mut Value) {
     let Value::Object(map) = schema else {
         return;
     };
-    for key in ["properties", "patternProperties", "$defs", "definitions", "dependentSchemas"] {
+    for key in [
+        "properties",
+        "patternProperties",
+        "$defs",
+        "definitions",
+        "dependentSchemas",
+    ] {
         if let Some(Value::Object(subs)) = map.get_mut(key) {
             subs.values_mut().for_each(fix);
         }
@@ -265,8 +271,10 @@ mod tests {
                 let listed = matches!(key.as_str(), "anyOf" | "oneOf" | "allOf" | "prefixItems");
                 open_object
                     || (positional
-                    && (sub.is_boolean()
-                        || sub.as_array().is_some_and(|a| a.iter().any(Value::is_boolean))))
+                        && (sub.is_boolean()
+                            || sub
+                                .as_array()
+                                .is_some_and(|a| a.iter().any(Value::is_boolean))))
                     || (keyed
                         && sub
                             .as_object()
