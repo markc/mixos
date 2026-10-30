@@ -1304,6 +1304,12 @@ it publishes the event or runs the command: `$MIXOS_AGENTD_DB`, else
 
 Sessions are dropped from the log `log_keep_days` after they end.
 
+If the log cannot be written (a full disk), commands are refused, but the
+agent's events are still published and the gap is reported on stderr. A
+watcher that follows `seq` should therefore also check the session's
+`status` in a read: after such a gap and a restart, the `ended` event can
+carry a `seq` the watcher has already seen.
+
 ## Agents calling back
 
 agentd runs every agent with `MIXOS_AGENT_SESSION` set to its session id,

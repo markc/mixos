@@ -97,10 +97,14 @@ fn body()
 end
 
 -- Reply, and record the reply as the receipt of the acting command.
+-- The marker is cleared first: if the receipt cannot be written the row
+-- keeps no rc (a retry gets COMMAND_INTERRUPTED), and no later reply can
+-- land on it.
 fn answer($rc, $json)
-  if $S.cmd != nil then
-    $log.command_done($DB, $S.cmd.scope, $S.cmd.id, $rc, $json)
-    $S.cmd = nil
+  $cmd = $S.cmd
+  $S.cmd = nil
+  if $cmd != nil then
+    $log.command_done($DB, $cmd.scope, $cmd.id, $rc, $json)
   end
   reply($rc, $json)
 end
@@ -264,6 +268,8 @@ on agent.session.new desc "start an agent session {agent, cwd, mode?, additional
   elif live_count() >= $CONF.max_live then
     fail("AGENT_LIMIT", "already " .. to_string(live_count()) .. " live sessions (max " .. to_string($CONF.max_live) .. ")")
   else
+    $id = nil
+    $logged = false
     try
       $req = $a.check_new($CONF, body())
       $c = $CONF.agents[$req.agent]
@@ -271,6 +277,11 @@ on agent.session.new desc "start an agent session {agent, cwd, mode?, additional
       while $log.known($DB, $id)
         $id = $a.mint_session_id($S.sessions)
       end
+      -- The log row comes first: no agent runs that the log does not have.
+      $row = {id: $id, agent: $req.agent, cwd: $req.cwd, parent: $parent, sender: $from, created_at: now_iso()}
+      $log.session_started($DB, $row)
+      $logged = true
+      $log.command_link($DB, "new", $S.cmd.id, $id)
       $env = $c.env
       $env.MIXOS_AGENT_SESSION = $id
       -- lint: ignore MIX-E1102
@@ -279,15 +290,24 @@ on agent.session.new desc "start an agent session {agent, cwd, mode?, additional
       $S.sessions[$id] = {id: $id, agent: $req.agent, cwd: $req.cwd, dirs: $req.additional_dirs,
         mode: $req.mode, parent: $parent, sender: $from, watch: $watch, acp: nil,
         status: "starting", seq: 0, turn: nil, queued: nil, pending: {}, perms: {},
-        created_at: now_iso(), stderr_tail: []}
-      $log.session_started($DB, $S.sessions[$id])
-      $log.command_link($DB, "new", $S.cmd.id, $id)
+        created_at: $row.created_at, stderr_tail: []}
       $rpc = next_rpc()
       $S.sessions[$id].pending[to_string($rpc)] = {kind: "initialize"}
       write_frame($id, $a.initialize_frame($rpc))
       prune()
       answer(0, json_encode({session: $id, status: "starting"}))
     catch $m, $err
+      if $logged and $S.sessions[$id] == nil then
+        -- Logged but never started: end it in the log.
+        try
+          $log.session_ended($DB, $id, nil, nil, "spawn_failed", time())
+        catch $m2
+          eprint("agentd: " .. $id .. ": could not end the unstarted session in the log: " .. $m2)
+        end
+      elif $S.sessions[$id] != nil and $S.sessions[$id].status != "ended" then
+        -- Started, then something failed: no caller holds the session, so end it.
+        pipe_close($S.sessions[$id].watch)
+      end
       fail($err.code ?? "USAGE", $m)
     end
   end
@@ -417,6 +437,8 @@ on agent.session.list desc "live and recently ended sessions (ended ones from th
 end
 
 on agent.session.read desc "a session and its logged events after seq {session, since?, limit?}; more: true means read again from next"
+  -- Not an acting command: its refusals are never anyone's receipt.
+  $S.cmd = nil
   $args = body()
   $id = $args.session
   $since = $args.since ?? 0

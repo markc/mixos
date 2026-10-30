@@ -68,21 +68,29 @@ end
 -- Events after $since in seq order: at most $limit, and stopping before
 -- $max_bytes of JSON (one event always fits, however large).
 -- Returns {events, more, next}: next is the since for the following read.
+-- Two passes: sizes first, then only the bodies that fit, so a read never
+-- loads more than about $max_bytes of event text.
 fn read($h, $id, $since, $limit, $max_bytes)
-  $rows = sqlexec($h, "SELECT seq, body FROM events WHERE session = ? AND seq > ? ORDER BY seq LIMIT ?",
+  $sizes = sqlexec($h, "SELECT seq, length(CAST(body AS BLOB)) AS n FROM events WHERE session = ? AND seq > ? ORDER BY seq LIMIT ?",
     [$id, $since, $limit + 1])
-  $out = []
+  $count = 0
   $bytes = 0
   $next = $since
   $more = false
-  for each $r in $rows
-    if len($out) >= $limit or (len($out) > 0 and $bytes + len($r.body) > $max_bytes) then
+  for each $r in $sizes
+    if $count >= $limit or ($count > 0 and $bytes + $r.n > $max_bytes) then
       $more = true
       break
     end
-    $out = concat($out, [json_parse($r.body)])
-    $bytes = $bytes + len($r.body)
+    $count = $count + 1
+    $bytes = $bytes + $r.n
     $next = $r.seq
+  end
+  $out = []
+  if $count > 0 then
+    for each $r in sqlexec($h, "SELECT body FROM events WHERE session = ? AND seq > ? AND seq <= ? ORDER BY seq", [$id, $since, $next])
+      $out = concat($out, [json_parse($r.body)])
+    end
   end
   return {events: $out, more: $more, next: $next}
 end

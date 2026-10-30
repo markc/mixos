@@ -90,7 +90,8 @@ try
   $env = merge($pb.client_env($bus), {HOME: $tmp .. "/home", MIXOS_NOTIFYD_STATE: $tmp .. "/notify.json"})
   $conf = {max_live: 2, agents: {
     fake: {argv: [$mix, $fake], roots: [$tmp .. "/ws"], permission_timeout_s: 5},
-    auto: {argv: [$mix, $fake], roots: [$tmp .. "/ws"], policy: "allow_once"}}}
+    auto: {argv: [$mix, $fake], roots: [$tmp .. "/ws"], policy: "allow_once"},
+    broken: {argv: [$tmp .. "/no-such-agent"], roots: [$tmp .. "/ws"]}}}
   write_file($tmp .. "/agent.conf.mix", data_encode($conf))
   push($pids, citizen($listener, "agentlisten", merge($env, {AGENT_EVENTS: $tmp .. "/events"}), "listener.log"))
   push($pids, citizen($notifyd, "notify", $env, "notifyd.log"))
@@ -110,7 +111,11 @@ try
   -- Topic subscriptions confirm asynchronously.
   sleep(3)
   $ag = agent("agent.agents", {})
-  check("both configured agents are listed", len($ag.v.agents) == 2 and $ag.v.max_live == 2)
+  check("the configured agents are listed", len($ag.v.agents) == 3 and $ag.v.max_live == 2)
+  $broken = agent("agent.session.new", {agent: "broken", cwd: $tmp .. "/ws"})
+  check("an agent that cannot start is refused", $broken.rc != 0)
+  $bl = filter(agent("agent.session.list", {}).v.sessions, fn($x) = $x.end_reason == "spawn_failed")
+  check("and its session is ended in the log, not left live", len($bl) == 1 and $bl[0].status == "ended")
 
   -- Roots and validation.
   $out = agent("agent.session.new", {agent: "fake", cwd: $tmp .. "/outside"})

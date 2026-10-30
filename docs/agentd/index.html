@@ -364,6 +364,11 @@ sessions are ended with a last <code>ended</code> event whose <code>reason</code
 <code>agentd_restart</code>.</li>
 </ul>
 <p>Sessions are dropped from the log <code>log_keep_days</code> after they end.</p>
+<p>If the log cannot be written (a full disk), commands are refused, but the
+agent's events are still published and the gap is reported on stderr. A
+watcher that follows <code>seq</code> should therefore also check the session's
+<code>status</code> in a read: after such a gap and a restart, the <code>ended</code> event can
+carry a <code>seq</code> the watcher has already seen.</p>
 <h2 id="agents-calling-back">Agents calling back</h2>
 <p>agentd runs every agent with <code>MIXOS_AGENT_SESSION</code> set to its session id,
 and that agent's mixos-mcp registers on the Bus as
