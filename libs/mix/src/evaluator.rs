@@ -14328,11 +14328,19 @@ impl Evaluator {
                         // untouched and returns Err, so swallowing it returns ""
                         // — indistinguishable from EOF. A hook or filter reading
                         // one undecodable line then silently does nothing.
-                        if let Err(e) = std::io::stdin().read_line(&mut line) {
-                            return Err(MixError::RuntimeError {
-                                span: None,
-                                msg: format!("readline: {}", e),
-                            });
+                        let n = match std::io::stdin().read_line(&mut line) {
+                            Ok(n) => n,
+                            Err(e) => {
+                                return Err(MixError::RuntimeError {
+                                    span: None,
+                                    msg: format!("readline: {}", e),
+                                });
+                            }
+                        };
+                        // Zero bytes is end of input: nil, so a loop can tell
+                        // it from an empty line (which stays "").
+                        if n == 0 {
+                            return Ok(Value::Nil);
                         }
                         let v = Value::String(line.trim_end_matches('\n').to_string());
                         self.check_collection_size(&v)?; // Knob D

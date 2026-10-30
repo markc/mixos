@@ -1218,7 +1218,7 @@ dir=/srv/mail/inbox base=msg.2.eml stem=msg.2 ext=eml
 ## Standard input — `readline`, `read_stdin`, `read_stdin_bytes`
 
 ```
-readline([prompt])      read one line from stdin (trailing \n stripped); optional prompt
+readline([prompt])      read one line from stdin (trailing \n stripped), nil at end of input; optional prompt
 read_stdin()            read ALL of stdin to EOF as one string (strict UTF-8)
 read_stdin_bytes([max]) read ALL of stdin to EOF as raw bytes (v0.65.0)
 read_stdin_bytes(8192)  read at most 8192 bytes — same cap as read_file_bytes
@@ -1228,6 +1228,19 @@ read_stdin_bytes(8192)  read at most 8192 bytes — same cap as read_file_bytes
 to EOF. `readline` reads a single line and, if given a prompt argument, writes it
 to stdout (flushed) first — the interactive-input path. Both read UTF-8 *text*
 and both **raise** on a stream that will not decode, matching `read_file`.
+
+At end of input `readline` returns `nil`, and keeps returning `nil`; an empty
+line is `""`. A line-at-a-time loop therefore tests for `nil`:
+
+```
+while true
+  $l = readline()
+  if $l == nil then break end
+  print("[" .. $l .. "]")
+end
+```
+
+A final line with no trailing newline is still returned before the `nil`.
 
 `read_stdin_bytes` is the binary twin, and it is the only way to read a stream
 that is not valid UTF-8:
