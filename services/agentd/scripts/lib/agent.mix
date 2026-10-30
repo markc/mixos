@@ -100,12 +100,15 @@ fn _is_link($path)
 end
 
 -- The real path to read, or raises NOT_FOUND / OUTSIDE_ROOTS / USAGE.
+-- NOT_FOUND says "Resource not found" (ACP's -32002 text): Gemini CLI
+-- recognises a missing file by that message, not the code, and treats any
+-- other text as a failed read (its write tool then gives up).
 fn fs_read_target($path, $dirs)
   if type($path) != "string" or not starts_with($path, "/") then _usage("path must be absolute") end
   if realpath($path) == nil then
     -- Missing: "not found" only inside the session, so the answer never
     -- says whether a path outside it exists.
-    if realpath(dirname($path)) != nil and under_roots(dirname($path), $dirs) then raise("NOT_FOUND", "no file " .. $path) end
+    if realpath(dirname($path)) != nil and under_roots(dirname($path), $dirs) then raise("NOT_FOUND", "Resource not found: " .. $path) end
     raise("OUTSIDE_ROOTS", $path .. " is outside the session's directories")
   end
   if not under_roots($path, $dirs) then raise("OUTSIDE_ROOTS", $path .. " is outside the session's directories") end
@@ -128,7 +131,7 @@ fn fs_write_target($path, $dirs)
   end
   $parent = dirname($path)
   if realpath($parent) == nil then
-    if realpath(dirname($parent)) != nil and under_roots(dirname($parent), $dirs) then raise("NOT_FOUND", "no directory " .. $parent) end
+    if realpath(dirname($parent)) != nil and under_roots(dirname($parent), $dirs) then raise("NOT_FOUND", "Resource not found: " .. $parent) end
     raise("OUTSIDE_ROOTS", $path .. " is outside the session's directories")
   end
   if not under_roots($parent, $dirs) then raise("OUTSIDE_ROOTS", $path .. " is outside the session's directories") end

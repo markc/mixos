@@ -1217,7 +1217,7 @@ Tested agents (2026-10-30), each with mixos-mcp reaching the Bus:
 | Agent | argv | Notes |
 |---|---|---|
 | Claude | `claude-agent-acp` (npm `@agentclientprotocol/claude-agent-acp`) | Uses its own file and shell tools, so Claude Code hooks such as a PreToolUse gate still apply. |
-| Gemini CLI | `gemini --acp --skip-trust` | Without `--skip-trust` Gemini treats the folder as untrusted and starts no MCP server. The flag trusts the session's `cwd` for that run only, so roots should hold only trusted code. Reads go through `fs/read_text_file`; writes use its own shell. |
+| Gemini CLI | `gemini --acp --skip-trust` | Without `--skip-trust` Gemini treats the folder as untrusted and starts no MCP server. The flag trusts the session's `cwd` for that run only, so roots should hold only trusted code. Reads go through `fs/read_text_file`. Its write tool cannot create a new file through any ACP client: it checks for a missing file with `instanceof Error`, which a JSON-RPC error is not, so it falls back to its own shell. |
 | OpenCode | `opencode acp` | The model is a config option: `agent.session.set {session, option: "model", value: "deepseek/deepseek-v4-pro"}`. |
 
 - **argv**: the agent's ACP command, run directly (no shell).

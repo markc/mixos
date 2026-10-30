@@ -686,7 +686,7 @@ fn serve_terminal($id, $msg)
     else
       $tid = to_string($p.terminalId)
       $t = $S.terms[$tid]
-      if $t == nil or $t.session != $id then raise("NOT_FOUND", "no terminal " .. $tid) end
+      if $t == nil or $t.session != $id then raise("NOT_FOUND", "Resource not found: terminal " .. $tid) end
       if $msg.method == "terminal/output" then
         $out = {output: $a.tail_text($t.tail), truncated: $t.tail.truncated}
         if $t.exit != nil then $out.exitStatus = term_exit_result($t) end
