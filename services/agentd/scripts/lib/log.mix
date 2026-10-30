@@ -15,7 +15,7 @@ $SCHEMA = [
   "CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, agent TEXT NOT NULL, cwd TEXT NOT NULL, parent TEXT, sender TEXT, created_at TEXT NOT NULL, status TEXT NOT NULL, ended_at REAL, exit_code INTEGER, signal INTEGER, end_reason TEXT)",
   "CREATE INDEX IF NOT EXISTS sessions_ended ON sessions(ended_at)",
   "CREATE TABLE IF NOT EXISTS events (session TEXT NOT NULL, seq INTEGER NOT NULL, kind TEXT NOT NULL, at REAL NOT NULL, body TEXT NOT NULL, PRIMARY KEY (session, seq))",
-  "CREATE TABLE IF NOT EXISTS commands (scope TEXT NOT NULL, id TEXT NOT NULL, command TEXT NOT NULL, sender TEXT, at REAL NOT NULL, args TEXT, rc INTEGER, receipt TEXT, PRIMARY KEY (scope, id))",
+  "CREATE TABLE IF NOT EXISTS commands (scope TEXT NOT NULL, id TEXT NOT NULL, command TEXT NOT NULL, sender TEXT, at REAL NOT NULL, args TEXT, rc INTEGER, receipt TEXT, session TEXT, PRIMARY KEY (scope, id))",
   "CREATE INDEX IF NOT EXISTS commands_at ON commands(at)"
 ]
 
@@ -133,22 +133,28 @@ fn command_begin($h, $scope, $id, $command, $sender, $args, $at)
     [$scope, $id, $command, $sender, $at, $args])
 end
 
+-- A "new" command's receipt lives as long as the session it created.
+fn command_link($h, $scope, $id, $session)
+  sqlexec($h, "UPDATE commands SET session = ? WHERE scope = ? AND id = ?", [$session, $scope, $id])
+end
+
 fn command_done($h, $scope, $id, $rc, $receipt)
   sqlexec($h, "UPDATE commands SET rc = ?, receipt = ? WHERE scope = ? AND id = ?", [$rc, $receipt, $scope, $id])
 end
 
 -- Retention: drop sessions that ended before $cutoff (epoch seconds), with
--- their events and commands, and "new" commands older than $cutoff.
--- Returns the number of sessions dropped.
+-- their events, their commands and the "new" command that created them.
+-- A "new" command that created no session (refused) goes once it is older
+-- than $cutoff. Returns the ids of the sessions dropped.
 fn expire($h, $cutoff)
   $ids = map(sqlexec($h, "SELECT id FROM sessions WHERE status = 'ended' AND ended_at < ?", [$cutoff]), fn($r) = $r.id)
   for each $id in $ids
     sqlexec($h, "DELETE FROM events WHERE session = ?", [$id])
-    sqlexec($h, "DELETE FROM commands WHERE scope = ?", [$id])
+    sqlexec($h, "DELETE FROM commands WHERE scope = ? OR (scope = 'new' AND session = ?)", [$id, $id])
     sqlexec($h, "DELETE FROM sessions WHERE id = ?", [$id])
   end
-  sqlexec($h, "DELETE FROM commands WHERE scope = 'new' AND at < ?", [$cutoff])
+  sqlexec($h, "DELETE FROM commands WHERE scope = 'new' AND session IS NULL AND at < ?", [$cutoff])
   -- Rows whose session is gone from the log (none should exist).
   sqlexec($h, "DELETE FROM commands WHERE scope != 'new' AND at < ? AND scope NOT IN (SELECT id FROM sessions)", [$cutoff])
-  return len($ids)
+  return $ids
 end

@@ -218,8 +218,11 @@ try
   check("the session's end is published", saw("ended " .. $s, ""))
   $after = agent("agent.session.prompt", {session: $s, content: "x"})
   check("a closed session refuses prompts", $after.rc == 15)
-  check("after close a new session fits under the cap",
-    agent("agent.session.new", {agent: "fake", cwd: $tmp .. "/ws"}).rc == 0)
+  $n3 = agent("agent.session.new", {agent: "fake", cwd: $tmp .. "/ws", id: "new-once"})
+  check("after close a new session fits under the cap", $n3.rc == 0)
+  $n3again = agent("agent.session.new", {agent: "fake", cwd: $tmp .. "/ws", id: "new-once"})
+  check("a retried session.new returns the same session, not a second one",
+    $n3again.rc == 0 and $n3again.v.session == $n3.v.session)
 
   -- Restart agentd on the same log: history and receipts survive, and the
   -- sessions that were live are ended by the restart.
