@@ -191,6 +191,11 @@ fn rounded_native_frame_masks_the_resolved_target_and_handles_opaque_fallback() 
         state.target_format = format;
         *state.renderer.write() = crate::Renderer::new(&state.device, format, options);
         painter.screen_capture_state = None;
+        // A new renderer needs a fresh font-atlas upload, just as a new device
+        // does. Reusing the previous context would leave coloured meshes
+        // referring to a missing white texel in the second format.
+        let ctx = Context::default();
+        painter.context = ctx.clone();
         for scale in [1, 2] {
             let size = [67 * scale, 31 * scale];
             for (rounded, transparent) in [(true, true), (false, true), (true, false)] {
@@ -237,7 +242,8 @@ fn rounded_native_frame_masks_the_resolved_target_and_handles_opaque_fallback() 
                     .expect("GPU corner readback");
                 assert_eq!(
                     image[(33 * scale as usize, 15 * scale as usize)],
-                    egui::Color32::BLUE
+                    egui::Color32::BLUE,
+                    "format={format:?} scale={scale} rounded={rounded} transparent={transparent}"
                 );
                 if rounded && transparent {
                     for (x, y) in [

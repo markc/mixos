@@ -42,11 +42,13 @@ impl Plugin for WindowFrame {
         let focused = ctx.input(|i| i.viewport().focused.unwrap_or(i.focused));
         let scale = ctx.input(|i| i.viewport().native_pixels_per_point.unwrap_or(1.0));
         let active = rounded(ctx);
+        let client = crate::chrome::Chrome::of(ctx).decorations == design::Decorations::Client
+            && !ctx.input(|i| i.viewport().fullscreen.unwrap_or(false));
         let key = Id::unique(("egui-wgpu.window-frame", viewport));
-        let request = if active {
+        let request = if client {
             (
-                frame.radius * scale,
-                frame.border_width * scale,
+                if active { frame.radius * scale } else { 0.0 },
+                if frame.border_width > 0.0 { (frame.border_width * scale).round().max(1.0) } else { 0.0 },
                 if focused {
                     frame.border_focused
                 } else {
