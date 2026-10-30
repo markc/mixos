@@ -1,4 +1,4 @@
--- version: 0.7.1
+-- version: 0.8.0
 -- The bottom panel's behaviour: compositor, tray, notification and popup
 -- state in; one complete model out through the loader (scenes.model). The
 -- layout is static in scene.mix. Clicks arrive as {scene,node,kind,item?};
@@ -606,6 +606,41 @@ on task async
     return
   end
   $out = $r.call($COMP, $action.command, $action.args)
+  schedule()
+  $r.respond($out)
+end
+
+-- A right click on a task: bring that window here, on screen (a window lost
+-- off screen or on another workspace). Steps stop at the first refusal.
+on task_here async
+  $item = $r.event_args($event).item
+  if not fetch_windows() then $r.respond($r.failure("comp_unavailable", "window list unavailable")); return end
+  -- The window's output's work area; a window wholly off screen has no
+  -- output (the case this exists for), so then the default output's.
+  $usable = nil
+  $output = nil
+  $outputs = $r.call($COMP, "comp.props.get", {path: "outputs"})
+  if $outputs.ok and type($outputs.value) == "map" then
+    for each $w in $state.windows
+      if type($item) == "map" and $w.id == $item.window and type($w.output) == "string" then $output = $w.output end
+    end
+    if $output != nil and type($outputs.value[$output]) != "map" then $output = nil end
+    for each $key in keys($outputs.value)
+      if $output == nil and type($outputs.value[$key]) == "map" and $outputs.value[$key].default == true then $output = $key end
+    end
+    if $output != nil and type($outputs.value[$output]) == "map" then $usable = $outputs.value[$output].usable end
+  end
+  $plan = $t.bring_here_at($state.windows, $item, $state.ws_current, $usable, $output)
+  if not $plan.ok then
+    schedule()
+    $r.respond($r.failure($plan.error_code, $plan.message))
+    return
+  end
+  $out = nil
+  for each $step in $plan.steps
+    $out = $r.call($COMP, $step.command, $step.args)
+    if not $out.ok then break end
+  end
   schedule()
   $r.respond($out)
 end

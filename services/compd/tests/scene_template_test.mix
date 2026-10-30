@@ -454,6 +454,34 @@ check($go2.command == "comp.window.restore", "a minimised window elsewhere resto
 $focused_away = $taskbar.normal_windows([window_row(20, 1, 1, "Other workspace", "example.editor", true, false)])
 check($taskbar.task_action_at($focused_away, {window: 20, generation: 1}, 2).command == "comp.window.focus", "a window elsewhere is never minimised from the panel")
 check($taskbar.task_action($focused_away, {window: 20, generation: 1}).command == "comp.window.minimize" and $taskbar.task_action($fresh, $busy.tasks[0]).workspace == nil, "the two-argument task_action user copies call is unchanged")
+-- Bring here: the lost terminal case (other workspace, off screen).
+$usable = {x: 0, y: 36, width: 1536, height: 776}
+$lost = window_row(79, 110, 2, "Terminal", "dev.mixos.term", false, false)
+$lost.output = "o_x"
+$lost.window_x = -286
+$lost.window_y = 825
+$lost.window_width = 900
+$lost.window_height = 560
+$here = $taskbar.bring_here_at($taskbar.normal_windows([$lost]), {window: 79, generation: 110}, 1, $usable, nil)
+check($here.ok and deep_eq(map($here.steps, fn($s) = $s.command), ["comp.window.send_to_workspace", "comp.window.place", "comp.window.focus"]), "bring here sends, places, then focuses")
+check(deep_eq($here.steps[0].args, {id: 79, generation: 110, index: 1}), "bring here sends to the current workspace")
+check(deep_eq($here.steps[1].args, {id: 79, generation: 110, output: "o_x", x: 318, y: 144}), "bring here centres in the work area at its own size")
+$big = $lost
+$big.window_width = 2000
+$big.window_height = 1000
+$big.minimized = true
+$fit = $taskbar.bring_here_at([$big], {window: 79, generation: 110}, 2, $usable, nil)
+check($fit.steps[0].command == "comp.window.restore" and length($fit.steps) == 3, "a minimised window here restores, no workspace move")
+check(deep_eq($fit.steps[1].args, {id: 79, generation: 110, output: "o_x", x: 0, y: 36, width: 1536, height: 776}), "a window larger than the work area shrinks to fit")
+$max = $lost
+$max.maximized = true
+check(deep_eq(map($taskbar.bring_here_at([$max], {window: 79, generation: 110}, 1, $usable, nil).steps, fn($s) = $s.command), ["comp.window.send_to_workspace", "comp.window.focus"]), "a maximised window is not placed")
+check(length($taskbar.bring_here_at([$lost], {window: 79, generation: 110}, 2, nil, nil).steps) == 1, "no work area: focus only when already here")
+$gone = $lost
+$gone.output = nil
+check($taskbar.bring_here_at([$gone], {window: 79, generation: 110}, 1, $usable, "o_default").steps[1].args.output == "o_default", "a window on no output is placed on the given one")
+check($taskbar.bring_here_at([$lost], {window: 79, generation: 9}, 1, $usable, nil).error_code == "stale_window", "bring here refuses a stale generation")
+check($taskbar.bring_here_at([$lost], {id: "t_79"}, 1, $usable, nil).error_code == "invalid_args", "bring here needs window and generation")
 $many_all = []
 for $i = 1 to 60
   push($many_all, window_row($i, 1, ($i % 3) + 1, "Window " .. to_string($i), "example.app", false, false))

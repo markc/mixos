@@ -15,7 +15,7 @@ pager: {"align":"center","flow":"horizontal","gap":3,"on_click":"ws","on_context
 ws_btn: {"align":"center","background":"= $item.background","children":["ws_label"],"height":30,"hover":"#ffffff1a","justify":"center","padding":8,"radius":6,"tooltip":"= $item.tip","widget":"row"}
 ws_label: {"bold":"= $item.current","color":"= $item.color","size":12,"text":"= $item.label","widget":"text"}
 gap2: {"size":8,"widget":"spacer"}
-tasks: {"align":"center","flow":"horizontal","gap":4,"on_click":"task","row":"task_btn","row_height":40,"rows":"= $model.tasks","widget":"list"}
+tasks: {"align":"center","flow":"horizontal","gap":4,"on_click":"task","on_context":"task_here","row":"task_btn","row_height":40,"rows":"= $model.tasks","widget":"list"}
 task_btn: {"align":"center","background":"= $item.background","children":["task_icon","task_initial"],"height":40,"hover":"#ffffff1a","justify":"center","min_width":40,"padding":8,"radius":6,"tooltip":"= $item.tip","widget":"row"}
 task_icon: {"h":24,"hidden":"= not $item.has_icon","src":"= $item.icon","w":24,"widget":"image"}
 task_initial: {"bold":true,"color":"= $item.color","hidden":"= $item.has_icon","size":14,"text":"= $item.initial","widget":"text"}

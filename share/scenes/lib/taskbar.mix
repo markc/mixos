@@ -96,6 +96,49 @@ fn task_action_at($windows, $item, $ws_current)
   return refusal("stale_window", "window no longer exists")
 end
 
+-- "Bring here" (a right click on a task): the window comes to the current
+-- workspace, on screen. Steps are comp commands run in order, each with the
+-- id and generation the fresh list holds. A minimised window is restored; a
+-- window elsewhere is sent here; a floating one is centred in $usable (the
+-- output's {x, y, width, height} work area, logical px), shrunk to fit if
+-- it is larger; a maximised or fullscreen one already fills it. Then focus.
+-- $usable nil = no placement (the window still comes here and is focused).
+-- $output names the output $usable belongs to: the window's own, or, for a
+-- window wholly off screen (no output), the one it is placed on.
+fn bring_here_at($windows, $item, $ws_current, $usable, $output)
+  if type($item) != "map" or type($item.window) != "number" or type($item.generation) != "number" then
+    return refusal("invalid_args", "item must carry the window id and generation")
+  end
+  $w = nil
+  for each $row in $windows
+    if $row.id == $item.window then $w = $row end
+  end
+  if $w == nil then return refusal("stale_window", "window no longer exists") end
+  if $w.generation != $item.generation then
+    return refusal("stale_window", "window changed since the panel was drawn")
+  end
+  $id = {id: $w.id, generation: $w.generation}
+  $steps = []
+  if $w.minimized then push($steps, {command: "comp.window.restore", args: $id}) end
+  if $ws_current != nil and elsewhere($w, $ws_current) then
+    push($steps, {command: "comp.window.send_to_workspace", args: {id: $w.id, generation: $w.generation, index: $ws_current}})
+  end
+  if type($usable) == "map" and not $w.maximized and not $w.fullscreen then
+    $width = min($w.window_width ?? $w.width, $usable.width)
+    $height = min($w.window_height ?? $w.height, $usable.height)
+    $place = {id: $w.id, generation: $w.generation,
+      x: $usable.x + floor(($usable.width - $width) / 2),
+      y: $usable.y + floor(($usable.height - $height) / 2)}
+    $on = $output ?? $w.output
+    if type($on) == "string" then $place.output = $on end
+    if $width < ($w.window_width ?? $w.width) then $place.width = $width end
+    if $height < ($w.window_height ?? $w.height) then $place.height = $height end
+    push($steps, {command: "comp.window.place", args: $place})
+  end
+  push($steps, {command: "comp.window.focus", args: $id})
+  return {ok: true, steps: $steps}
+end
+
 fn workspace_index($item)
   if type($item) != "map" or type($item.index) != "number" or $item.index < 1 or floor($item.index) != $item.index then
     return nil
