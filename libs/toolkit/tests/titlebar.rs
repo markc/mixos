@@ -24,7 +24,8 @@ fn minimum_window_keeps_menu_tail_and_captions_disjoint() {
     let theme = Theme::for_context(design::DesignContext {
         scheme: design::Scheme::Studio, mode: design::Mode::Dark,
         ..Default::default()
-    }).framed(design::RequestedDecorations::Client, design::CaptionSide::Right);
+    }).framed(design::RequestedDecorations::Client, design::CaptionSide::Right)
+        .with_menus(design::MenuStyle::Bar, design::MenuSide::Left);
     let mut h = Harness::builder()
         .with_size(egui::vec2(320.0, 200.0))
         .with_context_setup(move |ctx| toolkit::install(ctx, &theme))
