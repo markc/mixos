@@ -106,7 +106,7 @@ fn emit_event($id, $fields)
   $e.session = $id
   $e.seq = $S.sessions[$id].seq
   $events = $S.sessions[$id].events
-  $events = push($events, $e)
+  $events = concat($events, [$e])
   if len($events) > $EVENTS_KEPT then $events = slice($events, len($events) - $EVENTS_KEPT) end
   $S.sessions[$id].events = $events
   publish("agent.session.updated", json_encode($e), {command: "agent.session.updated"})
@@ -413,7 +413,7 @@ on proc.line
   $id = $event.args.tag
   if $S.sessions[$id] != nil then
     if $event.args.stream == "stderr" then
-      $tail = push($S.sessions[$id].stderr_tail, slice($event.args.line, 0, 400))
+      $tail = concat($S.sessions[$id].stderr_tail, [slice($event.args.line, 0, 400)])
       if len($tail) > 20 then $tail = slice($tail, len($tail) - 20) end
       $S.sessions[$id].stderr_tail = $tail
     else
