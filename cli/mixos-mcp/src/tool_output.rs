@@ -59,6 +59,49 @@ pub(crate) struct TermListObservation {
     pub panes: Vec<Value>,
 }
 
+/// schemars writes a free-form `serde_json::Value` field as the boolean
+/// schema `true`. JSON Schema allows that, but the TypeScript MCP SDK (Gemini
+/// CLI) requires every property, item and branch schema to be an object, and
+/// one boolean subschema makes it drop the whole `tools/list`. Rewrite
+/// boolean subschemas in their object form: `true` is `{}`, `false` is
+/// `{"not": {}}`. `additionalProperties: false` keeps its boolean.
+fn object_subschemas(schema: &mut Value) {
+    fn fix(sub: &mut Value) {
+        match sub {
+            Value::Bool(true) => *sub = json!({}),
+            Value::Bool(false) => *sub = json!({"not": {}}),
+            _ => object_subschemas(sub),
+        }
+    }
+    let Value::Object(map) = schema else {
+        return;
+    };
+    for key in ["properties", "patternProperties", "$defs", "definitions"] {
+        if let Some(Value::Object(subs)) = map.get_mut(key) {
+            subs.values_mut().for_each(fix);
+        }
+    }
+    for key in ["items", "not", "if", "then", "else"] {
+        if let Some(sub) = map.get_mut(key) {
+            fix(sub);
+        }
+    }
+    for key in ["anyOf", "oneOf", "allOf", "prefixItems"] {
+        if let Some(Value::Array(subs)) = map.get_mut(key) {
+            subs.iter_mut().for_each(fix);
+        }
+    }
+}
+
+fn object_schema(schema: &rmcp::model::JsonObject) -> std::sync::Arc<rmcp::model::JsonObject> {
+    let mut value = Value::Object(schema.clone());
+    object_subschemas(&mut value);
+    let Value::Object(map) = value else {
+        unreachable!("an object stays an object")
+    };
+    std::sync::Arc::new(map)
+}
+
 pub(crate) fn decorate(mut tool: Tool) -> Tool {
     if tool.output_schema.is_none() {
         tool.output_schema = Some(if tool.name == "bus_call" {
@@ -69,6 +112,8 @@ pub(crate) fn decorate(mut tool: Tool) -> Tool {
             rmcp::handler::server::common::schema_for_output::<TextObservation>()
         });
     }
+    tool.input_schema = object_schema(&tool.input_schema);
+    tool.output_schema = tool.output_schema.as_deref().map(object_schema);
     if tool.annotations.is_none() {
         let read_only = matches!(
             tool.name.as_ref(),
@@ -174,6 +219,63 @@ mod tests {
         };
         assert!(!observed.is_error.unwrap_or(false));
         assert!(observed.structured_content.is_some());
+    }
+
+    /// Any boolean schema below the root, in any position the TypeScript
+    /// MCP SDK checks.
+    fn has_boolean_subschema(schema: &Value) -> bool {
+        match schema {
+            Value::Object(map) => map.iter().any(|(key, sub)| {
+                let positional = matches!(key.as_str(), "items" | "not" | "if" | "then" | "else");
+                let keyed = matches!(
+                    key.as_str(),
+                    "properties" | "patternProperties" | "$defs" | "definitions"
+                );
+                let listed = matches!(key.as_str(), "anyOf" | "oneOf" | "allOf" | "prefixItems");
+                (positional && sub.is_boolean())
+                    || (keyed && sub.as_object().is_some_and(|m| m.values().any(Value::is_boolean)))
+                    || (listed && sub.as_array().is_some_and(|a| a.iter().any(Value::is_boolean)))
+                    || has_boolean_subschema(sub)
+            }),
+            Value::Array(items) => items.iter().any(has_boolean_subschema),
+            _ => false,
+        }
+    }
+
+    #[test]
+    fn output_schemas_have_no_boolean_subschemas() {
+        for name in ["bus_call", "mix_execute", "log_tail", "term_list"] {
+            let mut tool = Tool::default();
+            tool.name = name.into();
+            let tool = decorate(tool);
+            let schema = Value::Object((*tool.output_schema.unwrap()).clone());
+            assert!(!has_boolean_subschema(&schema), "{name}: {schema}");
+        }
+        let raw = schemars::schema_for!(TermListObservation);
+        let mut tool = Tool::default();
+        tool.name = "term_list".into();
+        tool.output_schema = Some(std::sync::Arc::new(
+            serde_json::to_value(&raw).unwrap().as_object().unwrap().clone(),
+        ));
+        let schema = Value::Object((*decorate(tool).output_schema.unwrap()).clone());
+        assert!(!has_boolean_subschema(&schema), "term_list: {schema}");
+    }
+
+    #[test]
+    fn boolean_subschemas_become_objects_and_false_stays_false_for_additional_properties() {
+        let mut schema = json!({
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {"a": true, "b": {"type": "array", "items": true}, "c": false},
+            "anyOf": [true, {"properties": {"d": true}}]
+        });
+        object_subschemas(&mut schema);
+        assert_eq!(schema["additionalProperties"], json!(false));
+        assert_eq!(schema["properties"]["a"], json!({}));
+        assert_eq!(schema["properties"]["b"]["items"], json!({}));
+        assert_eq!(schema["properties"]["c"], json!({"not": {}}));
+        assert_eq!(schema["anyOf"][0], json!({}));
+        assert_eq!(schema["anyOf"][1]["properties"]["d"], json!({}));
     }
 
     #[test]
