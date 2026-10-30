@@ -42,11 +42,12 @@ pub fn automatic(facts: &SessionFacts) -> Resolution {
 /// Placement belongs to the theme, while session facts are process-wide.
 pub fn automatic_with_actions(facts: &SessionFacts, actions: ActionsPlace) -> Resolution {
     let host_desktop = prefers_client_side(&facts.desktops);
-    let (mode, reason) = if actions == ActionsPlace::Titlebar && !host_desktop {
+    let (mode, reason) = if !facts.wayland {
+        // X11 has no window menu or shadow request for an app-drawn bar.
+        (Decorations::Server, "rule1")
+    } else if actions == ActionsPlace::Titlebar && !host_desktop {
         // Only compd can host the app's Action Bar in a server title bar.
         (Decorations::Client, "rule3b")
-    } else if !facts.wayland {
-        (Decorations::Server, "rule1")
     } else if host_desktop {
         (Decorations::Client, "rule2")
     } else if facts.decoration_global == Some(true) {
@@ -335,7 +336,7 @@ mod tests {
         );
         assert_eq!(
             automatic_with_actions(&facts(false, "KDE", Some(true)), ActionsPlace::Titlebar).reason,
-            "rule3b"
+            "rule1"
         );
         assert_eq!(
             automatic_with_actions(

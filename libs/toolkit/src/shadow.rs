@@ -157,6 +157,8 @@ struct Attached {
 }
 impl Drop for Attached {
     fn drop(&mut self) {
+        // Version 1 has no destroy request; sending one is a protocol error,
+        // so a v1 shadow object is left to die with the connection.
         if self.shadow.version() >= 2 {
             self.shadow.destroy();
         }
