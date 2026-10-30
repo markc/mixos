@@ -934,7 +934,10 @@ async fn run_account_cli(action: AccountAction) -> Result<()> {
                     if lookup_rc == 0 {
                         println!("{}", serde_json::to_string_pretty(&identity)?);
                     } else if identity["error"] == "account not found" {
-                        println!("Account {email} not found");
+                        // Exit non-zero, as `account verify` does, so a guard
+                        // can test for the account without parsing stdout.
+                        eprintln!("Account {email} not found");
+                        std::process::exit(1);
                     } else {
                         anyhow::bail!("account lookup failed: {lookup_body}");
                     }
