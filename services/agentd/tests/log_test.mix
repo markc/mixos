@@ -19,6 +19,7 @@ $tmp = "/tmp/agent-log-test-" .. to_string(pid())
 $path = $tmp .. "/state/agentd/sessions.db"
 $h = $log.open($path)
 check("open creates the file and its directory", is_file($path))
+check("the file is private (0600)", stat($path).perm == 384)
 
 $log.session_started($h, {id: "aaaa1111", agent: "claude", cwd: "/w", parent: nil, sender: "cli", created_at: "2026-10-30T00:00:00Z"})
 check("a started session is known", $log.known($h, "aaaa1111") and not $log.known($h, "bbbb2222"))

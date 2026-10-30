@@ -22,8 +22,17 @@ $SCHEMA = [
 -- Open (creating) the log. WAL with synchronous=NORMAL: a commit is not
 -- an fsync, so streamed chunks stay cheap; a power cut can lose the last
 -- commits but never corrupts the file.
+-- The log holds prompts and agent output: the file is created 0600 before
+-- SQLite opens it (an empty file is an empty database), and SQLite gives
+-- its -wal and -shm files the same mode.
 fn open($path)
-  if $path != ":memory:" then mkdir(dirname($path), {parents: true}) end
+  if $path != ":memory:" then
+    mkdir(dirname($path), {parents: true})
+    if not is_file($path) then
+      write_file($path, "")
+      chmod($path, 0o600)
+    end
+  end
   $h = sqlopen($path, "rwc")
   sqlexec($h, "PRAGMA synchronous=NORMAL")
   for each $sql in $SCHEMA
