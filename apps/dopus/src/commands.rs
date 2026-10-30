@@ -1351,7 +1351,12 @@ mod tests {
     #[test]
     fn unknown_ids_and_commands_are_refused() {
         let (_dir, mut core) = core();
-        let bad = serve(&mut core, false, "dopus.execute", r#"{"id":"nope.nothing"}"#);
+        let bad = serve(
+            &mut core,
+            false,
+            "dopus.execute",
+            r#"{"id":"nope.nothing"}"#,
+        );
         assert_eq!(refusal(&bad).as_deref(), Some(code::INVALID_ARGUMENT));
         let elsewhere = serve(&mut core, false, "dopus.execute", r#"{"id":"place.open"}"#);
         assert_eq!(refusal(&elsewhere).as_deref(), Some(code::UNAVAILABLE));
