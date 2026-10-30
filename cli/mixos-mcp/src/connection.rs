@@ -119,10 +119,16 @@ pub(crate) const AGENT_SESSION_ENV: &str = "MIXOS_AGENT_SESSION";
 /// 31-byte service-name rule, unique per process, and matched by prefix
 /// `mcp-s-<session>-`. Otherwise, including an invalid session, it is the
 /// anonymous `mcp-<pid>-<nonce>`; the invalid value is reported, not used.
-pub(crate) fn broker_name(session: Option<&str>, pid: u32, nonce: u128) -> (String, Option<String>) {
+pub(crate) fn broker_name(
+    session: Option<&str>,
+    pid: u32,
+    nonce: u128,
+) -> (String, Option<String>) {
     match session {
-        Some(s) if (4..=12).contains(&s.len())
-            && s.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit()) =>
+        Some(s)
+            if (4..=12).contains(&s.len())
+                && s.bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit()) =>
         {
             (format!("mcp-s-{s}-{pid:x}"), None)
         }
@@ -142,7 +148,9 @@ impl BrokerConnection {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_nanos();
-        let session = std::env::var(AGENT_SESSION_ENV).ok().filter(|s| !s.is_empty());
+        let session = std::env::var(AGENT_SESSION_ENV)
+            .ok()
+            .filter(|s| !s.is_empty());
         let (name, warning) = broker_name(session.as_deref(), std::process::id(), nonce);
         if let Some(warning) = warning {
             tracing::warn!("{warning}");
@@ -303,10 +311,20 @@ mod tests {
 
     #[test]
     fn invalid_agent_sessions_fall_back_to_the_anonymous_name() {
-        for bad in ["abc", "toolongsession1", "Upper1", "has-dash", "a.b.c.d", "sp ace"] {
+        for bad in [
+            "abc",
+            "toolongsession1",
+            "Upper1",
+            "has-dash",
+            "a.b.c.d",
+            "sp ace",
+        ] {
             let (name, warning) = broker_name(Some(bad), 77, 0x1f);
             assert_eq!(name, "mcp-77-1f", "{bad}");
-            assert!(warning.is_some_and(|w| w.contains(AGENT_SESSION_ENV)), "{bad}");
+            assert!(
+                warning.is_some_and(|w| w.contains(AGENT_SESSION_ENV)),
+                "{bad}"
+            );
         }
     }
 
