@@ -331,17 +331,17 @@ FUSE and automounted filesystems too.</p>
 <tr><td><code>dopus.ping</code>, <code>dopus.describe</code>, <code>dopus.info</code></td><td></td><td>liveness, the control surface, version and build</td></tr>
 <tr><td><code>dopus.state</code></td><td></td><td>both panes (path, sort, hidden files, previews, selection, rows, status) and the sidebars</td></tr>
 <tr><td><code>dopus.open</code></td><td><code>paths</code> (one per pane), or one path and <code>pane</code></td><td>goes there</td></tr>
-<tr><td><code>dopus.action</code></td><td><code>id</code>, <code>pane</code> (<code>left</code>, <code>right</code> or <code>active</code>)</td><td>runs one action</td></tr>
-<tr><td><code>dopus.actions.list</code></td><td></td><td>every action, its keys in force and whether it can run now</td></tr>
+<tr><td><code>dopus.execute</code></td><td><code>id</code>, optional <code>params</code>; <code>params.pane</code> is <code>left</code>, <code>right</code> or <code>active</code> (the default)</td><td>runs one action</td></tr>
+<tr><td><code>dopus.actions</code></td><td></td><td>every action, its keys in force and whether it can run now</td></tr>
 <tr><td><code>dopus.theme.set</code></td><td><code>scheme</code>, <code>mode</code></td><td>this window's look</td></tr>
 <tr><td><code>dopus.quit</code></td><td></td><td>closes the window</td></tr>
 </tbody></table>
 <p>Every action accepts local and mesh callers, including <code>file.open</code>,
 <code>file.new-folder</code>, <code>file.rename</code>, <code>file.copy-other-pane</code>,
-<code>file.move-other-pane</code> and <code>file.delete</code>. <code>dopus.actions.list</code> reports the
+<code>file.move-other-pane</code> and <code>file.delete</code>. <code>dopus.actions</code> reports the
 same availability as the keyboard and menus: selection, an idle worker and
 valid arguments still matter.</p>
-<p><strong>Mail selection</strong> (<code>dopus.action {id:"file.mail"}</code>) sends the current pane's
+<p><strong>Mail selection</strong> (<code>dopus.execute {id:"file.mail"}</code>) sends the current pane's
 selected file paths to Email. It is available for one or more regular files,
 including symlinks to files, and appears in the File and row context menus.
 It launches Email through the session launcher when needed. A new message
@@ -352,7 +352,7 @@ area and action reply report whether a message opened, files were added or
 Email refused; the reply's <code>result</code> contains <code>added</code>, <code>count</code> and <code>message</code>.
 Headless instances support this action on their selection too.</p>
 <p>File actions keep the normal name prompts, destructive confirmations and
-drop choices. After <code>dopus.action {id:"file.new-folder"}</code>, use
+drop choices. After <code>dopus.execute {id:"file.new-folder"}</code>, use
 <code>dopus.ui.type {text:"Projects"}</code> and <code>dopus.ui.click {label:"OK"}</code> to
 answer the focused prompt. For rename, select the old text first with
 <code>dopus.ui.key {key:"A",modifiers:["ctrl"]}</code>. Answer a delete confirmation
@@ -367,13 +367,13 @@ silently overwritten.</p>
 <a href="/docs/drive/">driving an app</a> (<code>dopus.ui.*</code>, <code>dopus.window</code>). The commands are
 registered in <code>docs/docs/spec/bus/commands.conf.mix</code>.</p>
 <p>Each command run from a menu, a key, a sidebar button or an accepted
-<code>dopus.action</code> is published on <code>dopus.action.executed</code>, with how it was
+<code>dopus.execute</code> is published on <code>dopus.action.executed</code>, with how it was
 reached (<code>menu</code>, <code>shortcut</code>, <code>ui</code> or <code>bus</code>;
 <a href="/docs/decisions/2026-10-11-executed-commands/">executed commands</a>). A refused
 action is not published.</p>
 <p><code>dopus --headless</code> runs the core and the Bus port without a window, for
 tests: the same commands, minus those that need a window. It publishes its
-accepted <code>dopus.action</code> runs on <code>&lt;service&gt;.action.executed</code> too.
+accepted <code>dopus.execute</code> runs on <code>&lt;service&gt;.action.executed</code> too.
 Headless instances cancel name prompts and confirmations because there is
 no window to answer them; copy and move still use the real filesystem worker.</p>
 <p><code>dopus --choose-service</code> is a separate process registered as <code>files</code>, without

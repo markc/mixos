@@ -51,7 +51,7 @@ $alpha = $tmp .. "/work/alpha"
 $beta = $tmp .. "/work/beta"
 $gamma = $tmp .. "/work/gamma"
 -- dopus-test.action.executed, one JSON line per delivery, written by a
--- `mix --serve` watcher; $expected is every accepted dopus.action id, in order.
+-- `mix --serve` watcher; $expected is every accepted dopus.execute id, in order.
 $watch_pid = nil
 $watch_out = $tmp .. "/executed.jsonl"
 $expected = []
@@ -83,12 +83,12 @@ fn refused($line, $a, $code)
   return $r.reply
 end
 fn act($id)
-  $reply = ok('dopus.action id=$a.id', {id: $id})
+  $reply = ok('dopus.execute id=$a.id', {id: $id})
   push($expected, $id)
   return $reply
 end
 fn act_on($id, $pane)
-  $reply = ok('dopus.action id=$a.id pane=$a.pane', {id: $id, pane: $pane})
+  $reply = ok('dopus.execute body=$a.body', {body: json_encode({id: $id, params: {pane: $pane}})})
   push($expected, $id)
   return $reply
 end
@@ -220,7 +220,9 @@ try
   act_on("view.sort-size", "right")
   check(pane(1).sort == "size" and pane(0).sort == "name", "targeted sort leaked")
   act_on("view.sort-name", "right")
-  refused('dopus.action id="nav.parent" pane="other"', {}, "INVALID_ARGUMENT")
+  refused('dopus.execute body=$a.body', {body: json_encode({id: "nav.parent", params: {pane: "other"}})}, "INVALID_ARGUMENT")
+  -- The pre-family body shape (pane at the top level) is refused too.
+  refused('dopus.execute id="nav.parent" pane="left"', {}, "INVALID_ARGUMENT")
   refused('dopus.open paths=[] pane="right"', {}, "INVALID_ARGUMENT")
   $info = ok('dopus.info', {})
   check($info.panes == 2 and length($info.pane_states) == 2
@@ -305,7 +307,7 @@ try
   -- alpha's one entry, a.txt, is a regular file).
   act("nav.switch-pane")
   ok('dopus.open paths=[$a.g]', {g: $gamma})
-  $acts = ok('dopus.actions.list', {})
+  $acts = ok('dopus.actions', {})
   $disabled = 0
   for each $row in $acts.actions
     if starts_with($row.id, "file.") then
@@ -326,7 +328,7 @@ try
   end
   check($relisted, "alpha listing never came back in 5 s: " .. json_encode(pane(0)))
   act("selection.next")
-  $acts = ok('dopus.actions.list', {})
+  $acts = ok('dopus.actions', {})
   $enabled = 0
   for each $row in $acts.actions
     if starts_with($row.id, "file.") then
@@ -337,9 +339,9 @@ try
   check($enabled == 7, "expected 7 enabled file rows with a selection, got " .. to_string($enabled))
 
   -- 10. refusals stay honest
-  refused('dopus.action id="no.such-action"', {}, "INVALID_ARGUMENT")
-  refused('dopus.action id="location.focus"', {}, "UNAVAILABLE")
-  $acts = ok('dopus.actions.list', {})
+  refused('dopus.execute id="no.such-action"', {}, "INVALID_ARGUMENT")
+  refused('dopus.execute id="location.focus"', {}, "UNAVAILABLE")
+  $acts = ok('dopus.actions', {})
   $location_rows = 0
   for each $row in $acts.actions
     if $row.id == "location.focus" then
@@ -357,7 +359,7 @@ try
     and $before_panels.properties.width > 0.219 and $before_panels.properties.width < 0.221,
     "panel defaults must be Places 15%, Properties 22%")
   for each $id in ["view.toggle-places", "view.toggle-properties"]
-    $refusal = refused('dopus.action id=$a.id pane="right"', {id: $id}, "UNAVAILABLE")
+    $refusal = refused('dopus.execute body=$a.body', {body: json_encode({id: $id, params: {pane: "right"}})}, "UNAVAILABLE")
     check($refusal.reason == "headless", $id .. " must report headless")
     $found = 0
     for each $row in $acts.actions
@@ -376,8 +378,8 @@ try
   refused('dopus.frobnicate', {}, "UNKNOWN_COMMAND")
   refused('dopus.theme.set mode="dark"', {}, "UNAVAILABLE")
   -- Theme actions need a painter and remain UNAVAILABLE headless.
-  refused('dopus.action id="theme.mode-toggle"', {}, "UNAVAILABLE")
-  refused('dopus.action id="theme.scheme-ocean"', {}, "UNAVAILABLE")
+  refused('dopus.execute id="theme.mode-toggle"', {}, "UNAVAILABLE")
+  refused('dopus.execute id="theme.scheme-ocean"', {}, "UNAVAILABLE")
   -- A second registration under the same name must fail (single instance):
   $dupe = run_argv([$dopus, "--headless", "--service", "dopus-test", "--noded-url", $url],
     {clear_env: true, env: $env, timeout: 20})
@@ -455,7 +457,7 @@ try
     and $st.theme_scheme != nil and $st.theme_mode != nil,
     "dopus.state shape: " .. json_encode($st))
   -- actions.list describes the same availability for keyboard and Bus.
-  $acts = ok('dopus.actions.list', {})
+  $acts = ok('dopus.actions', {})
   $file_rows = 0
   for each $row in $acts.actions
     if starts_with($row.id, "file.") then
@@ -465,7 +467,7 @@ try
   end
   check($file_rows == 7, "expected 7 file.* rows in actions.list, got " .. to_string($file_rows))
 
-  -- 10c. dopus-test.action.executed carried every accepted dopus.action, in
+  -- 10c. dopus-test.action.executed carried every accepted dopus.execute, in
   -- order, from the bus, and nothing else: no refused action (unknown id,
   -- bad pane, headless-unavailable, theme.*) and no other command.
   -- The publisher is async: wait for the count, then a beat for strays.
