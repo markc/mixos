@@ -173,6 +173,7 @@ try
   $np = agent("agent.session.resume", {session: $p})
   check("an agent with neither resume nor load is AGENT_NOT_RESUMABLE", $np.rc == 15 and code($np.v) == "AGENT_NOT_RESUMABLE")
   check("an unknown session is UNKNOWN_SESSION", agent("agent.session.resume", {session: "zzzz9999"}).rc == 14)
+  check("a resume naming no session is answered UNKNOWN_SESSION", agent("agent.session.resume", {}).rc == 14)
 
   -- Restart: a session live at the restart can be resumed afterwards.
   $k = start("resumer")

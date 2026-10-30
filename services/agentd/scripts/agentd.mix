@@ -32,8 +32,8 @@
 --   update?, stop?}, agent.session.ended {session, exit_code, signal},
 --   agent.permission.requested {session, request, title, options}.
 -- Replies: rc 0 JSON; rc 10 bad request (USAGE, OUTSIDE_ROOTS, UNKNOWN_AGENT);
--- rc 14 UNKNOWN_SESSION; rc 15 AGENT_RUNNING, not ready or
--- COMMAND_INTERRUPTED; rc 16 AGENT_LIMIT or AGENT_DEPTH; rc 17 AGENT_SELF.
+-- rc 14 UNKNOWN_SESSION; rc 15 AGENT_RUNNING, not ready, COMMAND_INTERRUPTED
+-- or AGENT_NOT_RESUMABLE; rc 16 AGENT_LIMIT or AGENT_DEPTH; rc 17 AGENT_SELF.
 -- Errors use {error_code, message}.
 --
 -- Conf: $MIXOS_AGENTD_CONF, else <etc>/agent.conf.mix (strict data):
@@ -341,7 +341,8 @@ end
 
 on agent.session.resume desc "bring back an ended session {session}: same id and log, the agent resumes (or loads) its own history; replies {session, via} at once"
   $id = nil
-  if begin("agent.session.resume", body().session) then $id = body().session end
+  -- "" fails valid_session_id, so a missing session is UNKNOWN_SESSION.
+  if begin("agent.session.resume", body().session) then $id = body().session ?? "" end
   if $id != nil then
     $from = sender()
     $parent = sender_session($from)
@@ -376,6 +377,10 @@ on agent.session.resume desc "bring back an ended session {session}: same id and
             catch $m2
               eprint("agentd: " .. $id .. ": could not restore the ended row: " .. $m2)
             end
+          elif not $S.sessions[$id].reopen.done then
+            -- Started, then the reply failed: end it, and the exit restores
+            -- the ended row (as agent.session.new does).
+            pipe_close($S.sessions[$id].watch)
           end
           fail($err.code ?? "USAGE", $m)
         end
