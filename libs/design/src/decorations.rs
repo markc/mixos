@@ -59,7 +59,8 @@ pub fn automatic_with_actions(facts: &SessionFacts, actions: ActionsPlace) -> Re
 }
 
 /// The detector must return within the toolkit's detection budget. One
-/// resolver is shared by the process; explicit choices never call it.
+/// resolver is shared by the process; explicit choices call it only for
+/// `ssd` with title-bar actions (whether the desktop can host them).
 pub struct Resolver {
     detect: Box<dyn Fn() -> SessionFacts + Send + Sync>,
     environment: Box<dyn Fn() -> Option<String> + Send + Sync>,
@@ -120,6 +121,22 @@ impl Resolver {
         let mode = match requested {
             RequestedDecorations::Auto => {
                 return automatic_with_actions(self.facts(), actions);
+            }
+            // A profile's `ssd` with title-bar actions asks for compd's hosted
+            // bar. A desktop that cannot host them (KWin) gets the app's own
+            // bar instead of a server frame over a separate action row. Only
+            // the environment override forces a server frame there.
+            RequestedDecorations::Server
+                if override_mode.is_none() && actions == ActionsPlace::Titlebar =>
+            {
+                let facts = self.facts();
+                if facts.wayland && !prefers_client_side(&facts.desktops) {
+                    return Resolution {
+                        mode: Decorations::Client,
+                        reason: "rule3b",
+                    };
+                }
+                Decorations::Server
             }
             RequestedDecorations::Client => Decorations::Client,
             RequestedDecorations::Server => Decorations::Server,
@@ -317,11 +334,48 @@ mod tests {
                 "rule3"
             );
         }
-        for mode in [Client, Server] {
+        assert_eq!(
+            r.resolve_with_actions(Some(Client), Auto, ActionsPlace::Titlebar),
+            Resolution {
+                mode: Decorations::Client,
+                reason: "choice",
+            }
+        );
+        // `ssd` with title-bar actions cannot be hosted by KWin: the app
+        // draws its own bar. In a row, or on compd, `ssd` stands.
+        for session in [Auto, Server] {
             assert_eq!(
-                r.resolve_with_actions(Some(mode), Auto, ActionsPlace::Titlebar)
-                    .reason,
-                "choice"
+                r.resolve_with_actions(Some(Server), session, ActionsPlace::Titlebar),
+                Resolution {
+                    mode: Decorations::Client,
+                    reason: "rule3b",
+                }
+            );
+            assert_eq!(
+                r.resolve_with_actions(None, Server, ActionsPlace::Titlebar)
+                    .mode,
+                Decorations::Client
+            );
+        }
+        assert_eq!(
+            r.resolve_with_actions(Some(Server), Auto, ActionsPlace::Row),
+            Resolution {
+                mode: Decorations::Server,
+                reason: "choice",
+            }
+        );
+        for (wayland, desktops) in [(true, "MixOS"), (false, "KDE")] {
+            let r = Resolver::new(
+                move || facts(wayland, desktops, Some(true)),
+                || None,
+                |_| {},
+            );
+            assert_eq!(
+                r.resolve_with_actions(Some(Server), Auto, ActionsPlace::Titlebar),
+                Resolution {
+                    mode: Decorations::Server,
+                    reason: "choice",
+                }
             );
         }
         let r = Resolver::new(
