@@ -227,7 +227,7 @@ pub fn settle(
         for effect in effects {
             match effect {
                 Effect::Commands { id } => {
-                    let body = json!({ "commands": commands.describe(app, strings) });
+                    let body = json!({ "actions": commands.describe(app, strings) });
                     out.push(Effect::Reply { id, rc: 0, body });
                 }
                 Effect::Execute { id, request, alias } => {

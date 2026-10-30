@@ -1086,7 +1086,7 @@ fn dispatch(
         ),
         "email.info" => state.reply(id, 0, state.info()),
         "email.actions" => {
-            let body = json!({ "commands": commands.describe(state, strings) });
+            let body = json!({ "actions": commands.describe(state, strings) });
             state.reply(id, 0, body);
         }
         "email.accounts" => state.reply(id, 0, json!({ "accounts": state.accounts_view() })),

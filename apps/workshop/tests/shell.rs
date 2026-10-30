@@ -762,7 +762,7 @@ fn view_theme_forest_by_bus_clicks_installs_forest() {
     wait(&mut rig, &[4]);
     let commands = reply(&rig, 4).unwrap().2;
     let tick = |id: &str| {
-        commands["commands"]
+        commands["actions"]
             .as_array()
             .unwrap()
             .iter()
@@ -1219,7 +1219,7 @@ fn view_theme_style_and_decorations_by_bus_clicks() {
     wait(&mut rig, &[103]);
     let commands = reply(&rig, 103).unwrap().2;
     let tick = |id: &str| {
-        commands["commands"]
+        commands["actions"]
             .as_array()
             .unwrap()
             .iter()

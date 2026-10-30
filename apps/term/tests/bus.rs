@@ -211,7 +211,7 @@ fn the_window_answers_its_commands_over_a_real_broker() {
     assert_eq!(rc, 0, "{body}");
     let commands: Value = serde_json::from_str(&body).unwrap();
     assert!(
-        commands["commands"]
+        commands["actions"]
             .as_array()
             .unwrap()
             .iter()
