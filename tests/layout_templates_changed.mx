@@ -2,6 +2,10 @@
 # Intentional default-layout changes since relocation baseline f91c2a1f.
 # Hashes cover the rendered bytes, checked by tests/layout_templates_test.mix.
 {
+  "services/indexd/units/indexd.service": {
+    "reason": "read node config from @{etc} like every other service unit; @{prefix}/etc is not where desks and test nodes keep it",
+    "sha256": "2378bd4054581f97a84e0c6c5c5dd7560120817063b7a262a94a07372e5e7e86"
+  },
   "services/compd/units/compd@.service": {
     "reason": "order after the session and system broker without wanting either; the session target chooses the broker (noded@N is masked on system-broker desks)",
     "sha256": "9e3f3662f77c8fecf86b671686c915356ad340d735de195c83d04907bba69ef5"
