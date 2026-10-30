@@ -85,6 +85,8 @@ try
   check("read --json prints one JSON event per line, after --since",
     $js.rc == 0 and json_parse(lines($js.out)[0]).seq == 2)
 
+  $q = cli(["send", $s, "quick", "--wait", "--timeout", "1"], 60)
+  check("a --timeout shorter than the catch-up still sees a turn that ended", $q.rc == 0 and contains($q.out, "echo:quick"))
   $t = cli(["send", $s, "SLOW", "--wait", "--timeout", "2"], 60)
   check("send --wait exits 124 when the turn outlives --timeout", $t.rc == 124 and contains($t.err, "no stop within"))
   check("cancel stops it", cli(["cancel", $s], 30).rc == 0)

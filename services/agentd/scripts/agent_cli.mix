@@ -208,6 +208,9 @@ if env("MIXOS_AGENT_CLI_WAIT") != "" then
     sleep($W.timeout)
   end
   on agent.cli.timeout
+    -- A short --timeout can fire before the catch-up: read back once first.
+    catch_up()
+    if $S.done then return nil end
     print("")
     eprint("mix agent: no stop within " .. to_string($W.timeout) .. " s; the turn goes on (mix agent read " .. $W.session .. ")")
     finish(124)
