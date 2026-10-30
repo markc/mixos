@@ -31,6 +31,7 @@ On every MixOS system.
 Apps, services and command-line components that do not declare install profiles
 yet. They are listed on both this page and the desktop page until they do.
 
+- [agentd](../agentd/README.md) (service): How agentd runs coding agents (Claude, Codex, Gemini, OpenCode and other ACP agents) as Bus sessions that anything on the Bus can start, watch, steer and answer.
 - [backdrop](../backdrop/README.md) (app): The MixOS desktop background — drawn by its own program on the compositor's background layer, on every output, at native and fractional scale.
 - [blobd](../blobd/README.md) (service): The node blob store: content-addressed bytes kept in mds, with owner pins, quotas and garbage collection. The MixOS port of blobd, with the store, the Bus citizen, the byte lane and the cross-node…
 - [bridged](../bridged/README.md) (service): How bridged puts an external application with a line-delimited JSON control channel on the Bus, one instance per application, and what that exposes.

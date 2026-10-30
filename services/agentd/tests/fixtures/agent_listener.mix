@@ -1,0 +1,41 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- agent_listener: a test citizen that records agentd's topics, one line per
+-- delivery in $AGENT_EVENTS:
+--   updated <session> <seq> <kind> <detail>   detail: text (or len=N), stop
+--   ended <session> <exit_code>
+--   permission <session> <request>
+$file = env("AGENT_EVENTS")
+
+fn eargs()
+  if type($event.args) == "map" then return $event.args end
+  return {}
+end
+
+on agent.session.updated
+  $v = eargs()
+  $detail = "-"
+  if $v.kind == "agent_message_chunk" and type($v.update.content) == "map" then
+    $t = $v.update.content.text ?? ""
+    $detail = if len($t) > 200 then "len=" .. to_string(len($t)) else $t end
+  elif $v.kind == "stop" then
+    $detail = $v.stop
+  elif $v.kind == "permission_answered" then
+    $detail = to_string($v.option)
+  end
+  append_file($file, "updated " .. $v.session .. " " .. to_string($v.seq) .. " " .. $v.kind .. " " .. $detail .. "\n")
+end
+on agent.session.ended
+  $v = eargs()
+  append_file($file, "ended " .. $v.session .. " " .. to_string($v.exit_code) .. "\n")
+end
+on agent.permission.requested
+  $v = eargs()
+  append_file($file, "permission " .. $v.session .. " " .. $v.request .. "\n")
+end
+subscribe("agent.session.updated")
+subscribe("agent.session.ended")
+subscribe("agent.permission.requested")
+on listener.ready
+  reply(0, "{}")
+end
