@@ -591,6 +591,21 @@ fn json_unicode_escapes_decode() {
     assert_eq!(text(r#"{t: "C:\users"}"#), "C:\\users");
 }
 
+/// JSON null is nil in strict data (it used to read back as the string
+/// "null", so a nil written by json_encode came back non-empty). A quoted
+/// "null" stays a string.
+#[test]
+fn json_null_is_nil_and_quoted_null_is_a_string() {
+    let v = parse_data(r#"{"relay": null, "s": "null", "list": [1, null]}"#).unwrap();
+    let Value::Map(m) = v else { panic!("map") };
+    assert!(matches!(m.get("relay"), Some(Value::Nil)));
+    assert!(matches!(m.get("s"), Some(Value::String(s)) if s == "null"));
+    let Some(Value::List(items)) = m.get("list") else {
+        panic!("list")
+    };
+    assert!(matches!(items.get(1), Some(Value::Nil)));
+}
+
 #[test]
 fn lone_surrogates_are_refused() {
     assert!(
