@@ -53,11 +53,12 @@ once upstream provides the same surface-independent paint path.
 resolved target, after all egui painting and before capture/presentation.
 Toolkit sets `(radius_px, border_width_px, straight_srgba, chrome_fill_srgba)` under the
 viewport-scoped temporary ID `("egui-wgpu.window-frame", viewport_id)` each
-pass. The painter consumes it once. When rounding is active on an alpha-capable
-surface, it clears with the toolkit's title-bar chrome fill and forces alpha 1.
+pass. The painter consumes it once. Every registered window clears with the
+toolkit's title-bar chrome fill and forces alpha 1, including square windows
+and opaque-only surfaces.
 Unpainted panel gaps therefore stay opaque; only the corner mask removes alpha.
-The previous clear behaviour is retained for radius zero, opaque-only surfaces,
-and callers without a frame request. This is central in the painter, with no
+The previous clear behaviour is retained for callers without a frame request.
+This is central in the painter, with no
 changes to the apps' `App::clear_color` methods.
 The hairline uses the shared compd frame colours. The mask touches only the
 four corner squares and multiplies destination colour and alpha with
@@ -75,5 +76,5 @@ in the existing headless GPU suite. The GPU test checks both RGBA/BGRA, scales
 1 and 2, antialiasing, premultiplication, border pixels, opaque fallback,
 radius-zero restore, viewport isolation, and an unpainted central gap whose
 pixels match the opaque fill while the corner cuts have zero alpha. It also
-checks that disabled/unsupported rounding and unregistered callers retain their
-previous clear. No dependencies were added.
+checks that disabled/unsupported rounding keeps the opaque chrome fill and
+unregistered callers retain their previous clear. No dependencies were added.

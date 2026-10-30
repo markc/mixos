@@ -606,10 +606,9 @@ impl Painter {
             .data(|data| data.get_temp::<bool>(alpha_key))
             .unwrap_or(self.support_transparent_backbuffer && offscreen);
         // An opaque foundation covers gaps between panels too. Only the final
-        // corner mask may remove its alpha. Preserve the old clear otherwise.
+        // corner mask may remove its alpha, including when rounding is off.
         let clear_color = match frame {
-            Some((radius, _, _, [r, g, b, _])) if transparent && radius > 0.0 => [r, g, b, 1.0],
-            Some(_) => [0.0; 4],
+            Some((_, _, _, [r, g, b, _])) => [r, g, b, 1.0],
             None => clear_color,
         };
         if frame.is_some_and(|f| f.0 > 0.0) && !transparent {

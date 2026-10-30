@@ -98,7 +98,7 @@ pub fn view(
             });
     }
     egui::CentralPanel::default()
-        .frame(egui::Frame::new())
+        .frame(egui::Frame::new().fill(palette.background))
         .show(ui, |ui| {
             // The tabs sit directly on the document, with no gap between.
             ui.spacing_mut().item_spacing.y = 0.0;

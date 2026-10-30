@@ -163,7 +163,7 @@ fn hidden_window_capture_without_surface() {
 
 /// The real GPU pass must cut all panels, preserve premultiplied colour, draw
 /// the border, fill unpainted gaps opaquely, and consume only this viewport's
-/// one-shot request. Disabled rounding retains the previous clear behaviour.
+/// one-shot request. Every registered window clears opaquely, rounded or not.
 #[test]
 fn rounded_native_frame_fills_unpainted_gaps_and_masks_only_corners() {
     let config = WgpuConfiguration {
@@ -263,10 +263,8 @@ fn rounded_native_frame_fills_unpainted_gaps_and_masks_only_corners() {
                     .expect("GPU corner readback");
                 assert_eq!(
                     image[(33 * scale as usize, 15 * scale as usize)],
-                    if rounded && transparent {
+                    if present {
                         fill
-                    } else if present {
-                        egui::Color32::TRANSPARENT
                     } else {
                         egui::Color32::GREEN
                     },

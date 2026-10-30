@@ -554,7 +554,7 @@ pub fn form(
         });
         ui.add_space(4.0);
         // The text takes the composer's own padding, font and size.
-        toolkit::content::surface(ui, &state.settings.composer, |ui| {
+        toolkit::content::surface_filled(ui, &state.settings.composer, palette.background, |ui| {
             let view = editor::View {
                 read_only: compose.busy,
                 label: Some(crate::label("body")),
