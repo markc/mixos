@@ -1,0 +1,86 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- fake_acp_agent: a minimal ACP v1 agent on stdio for agentd's tests. No
+-- model: it answers initialize and session/new, and a prompt by streaming
+-- text back. Prompt text drives it:
+--   PERMISSION  ask session/request_permission first; echo the answer
+--   BIG         stream one 2 MiB text chunk (framing past 64 KiB lines)
+--   MCP         echo the MIXOS_AGENT_SESSION its mixos-mcp entry carries
+--   SLOW        hold the turn open until the next frame (a cancel lands)
+-- readline() returns "" at EOF (and for an empty line, which ACP never
+-- sends), so "" ends the agent.
+
+$sessions = {}
+$next_id = 900
+
+fn out($m)
+  $m.jsonrpc = "2.0"
+  print(json_encode($m))
+end
+
+fn update($sid, $u)
+  out({method: "session/update", params: {sessionId: $sid, update: $u}})
+end
+
+fn text($sid, $t)
+  update($sid, {sessionUpdate: "agent_message_chunk", content: {type: "text", text: $t}})
+end
+
+fn prompt_text($params)
+  $out = ""
+  for each $b in $params.prompt ?? []
+    if $b.type == "text" then $out = $out .. $b.text end
+  end
+  return $out
+end
+
+loop
+  $line = readline()
+  if $line == "" then break end
+  $m = json_parse($line)
+  if $m.method == "initialize" then
+    out({id: $m.id, result: {protocolVersion: 1, agentInfo: {name: "fake-acp", version: "0"},
+      agentCapabilities: {loadSession: false}, authMethods: []}})
+  elif $m.method == "session/new" then
+    $sid = "fake-" .. to_string(len(keys($sessions)) + 1)
+    $mcp = "-"
+    for each $s in $m.params.mcpServers ?? []
+      for each $e in $s.env ?? []
+        if $e.name == "MIXOS_AGENT_SESSION" then $mcp = $e.value end
+      end
+    end
+    $sessions[$sid] = {mcp: $mcp, cwd: $m.params.cwd}
+    out({id: $m.id, result: {sessionId: $sid, modes: {currentModeId: "default",
+      availableModes: [{id: "default", name: "Default"}, {id: "plan", name: "Plan"}]}}})
+  elif $m.method == "session/prompt" then
+    $sid = $m.params.sessionId
+    $t = prompt_text($m.params)
+    $stop = "end_turn"
+    if contains($t, "MCP") then text($sid, "mcp:" .. $sessions[$sid].mcp) end
+    if contains($t, "BIG") then text($sid, repeat("x", 2097152)) end
+    if contains($t, "PERMISSION") then
+      $next_id = $next_id + 1
+      out({id: $next_id, method: "session/request_permission", params: {sessionId: $sid,
+        toolCall: {toolCallId: "t1", title: "Write file", kind: "edit"},
+        options: [
+          {optionId: "allow", name: "Allow", kind: "allow_once"},
+          {optionId: "always", name: "Always allow", kind: "allow_always"},
+          {optionId: "deny", name: "Reject", kind: "reject_once"}]}})
+      $answer = json_parse(readline())
+      $o = $answer.result.outcome
+      text($sid, "perm:" .. (if $o.outcome == "selected" then $o.optionId else $o.outcome end))
+    end
+    if contains($t, "SLOW") then
+      -- A cancel arrives as a notification while this turn runs.
+      $c = json_parse(readline())
+      if $c.method == "session/cancel" then $stop = "cancelled" end
+    end
+    text($sid, "echo:" .. $t)
+    out({id: $m.id, result: {stopReason: $stop}})
+  elif $m.method == "session/set_mode" then
+    update($m.params.sessionId, {sessionUpdate: "current_mode_update", currentModeId: $m.params.modeId})
+    out({id: $m.id, result: {}})
+  elif $m.id != nil then
+    out({id: $m.id, error: {code: -32601, message: "method not found: " .. $m.method}})
+  end
+end

@@ -1,0 +1,250 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- version: 0.1.0
+-- agent: the pure half of agentd, the ACP gateway
+-- (docs/docs/decisions/2026-10-30-acp-agent-sessions.md). It holds no
+-- process or Bus state, so every rule here is tested offline:
+--   - configuration and session-argument validation, including the
+--     workspace-root check (realpath, no symlink escape);
+--   - session ids (4-12 lowercase letters or digits, so they fit the
+--     mixos-mcp Bus name mcp-s-<id>-<pid><nonce>);
+--   - ACP JSON-RPC frame builders (client side, protocol v1);
+--   - mapping ACP session/update notifications to Bus topic events;
+--   - permission policy: which option an auto-policy or a timeout picks.
+-- Errors raise USAGE (bad request), UNKNOWN_AGENT, OUTSIDE_ROOTS.
+
+$PROTOCOL_VERSION = 1
+$SESSION_ID_LEN = 10
+$CONTENT_MAX = 1048576
+
+fn _usage($message)
+  raise("USAGE", $message)
+end
+
+-- Configuration ------------------------------------------------------------
+
+-- conf: {agents: {NAME: {argv: [..], roots: [..], policy?, permission_timeout_s?,
+--   env?: {K: V}}}, max_live?}. Returns the normalised conf or raises USAGE.
+fn check_conf($conf)
+  if type($conf) != "map" or type($conf.agents) != "map" then _usage("conf needs an agents map") end
+  $out = {agents: {}, max_live: $conf.max_live ?? 4}
+  if type($out.max_live) != "number" or $out.max_live < 1 or $out.max_live > 32 then
+    _usage("max_live must be 1 to 32")
+  end
+  for each $name in keys($conf.agents)
+    $a = $conf.agents[$name]
+    if not re_match($name, "^[a-z][a-z0-9_-]{0,31}$") then _usage("agent name " .. $name .. " must match [a-z][a-z0-9_-]{0,31}") end
+    if type($a) != "map" or type($a.argv) != "list" or len($a.argv) == 0 then _usage("agent " .. $name .. " needs a non-empty argv") end
+    for each $arg in $a.argv
+      if type($arg) != "string" then _usage("agent " .. $name .. " argv must be strings") end
+    end
+    if type($a.roots) != "list" or len($a.roots) == 0 then _usage("agent " .. $name .. " needs at least one root") end
+    $roots = []
+    for each $r in $a.roots
+      if type($r) != "string" or not starts_with($r, "/") then _usage("agent " .. $name .. " roots must be absolute paths") end
+      push($roots, $r)
+    end
+    $policy = $a.policy ?? "ask"
+    if not contains(["ask", "allow_once"], $policy) then _usage("agent " .. $name .. " policy must be ask or allow_once") end
+    $timeout = $a.permission_timeout_s ?? 300
+    if type($timeout) != "number" or $timeout < 5 or $timeout > 86400 then _usage("agent " .. $name .. " permission_timeout_s must be 5 to 86400") end
+    $env = $a.env ?? {}
+    if type($env) != "map" then _usage("agent " .. $name .. " env must be a map") end
+    $out.agents[$name] = {argv: $a.argv, roots: $roots, policy: $policy, permission_timeout_s: $timeout, env: $env}
+  end
+  return $out
+end
+
+-- Roots --------------------------------------------------------------------
+
+-- True when $path resolves (symlinks followed) to a root or below one. A
+-- path that does not exist is refused: realpath cannot prove where it goes.
+fn under_roots($path, $roots)
+  if type($path) != "string" or not starts_with($path, "/") then return false end
+  -- realpath is nil for a path that does not exist.
+  $real = realpath($path)
+  if $real == nil then return false end
+  for each $root in $roots
+    $r = realpath($root)
+    if $r != nil and ($real == $r or starts_with($real, $r .. "/")) then return true end
+  end
+  return false
+end
+
+-- Validate agent.session.new arguments against the conf. Returns
+-- {agent, cwd, additional_dirs, mode} or raises.
+fn check_new($conf, $args)
+  if type($args) != "map" then _usage("body must be a map") end
+  if type($args.agent) != "string" then _usage("agent is required") end
+  $a = $conf.agents[$args.agent]
+  if $a == nil then raise("UNKNOWN_AGENT", "no agent " .. $args.agent .. " is configured") end
+  if type($args.cwd) != "string" then _usage("cwd is required") end
+  if not under_roots($args.cwd, $a.roots) then raise("OUTSIDE_ROOTS", "cwd " .. $args.cwd .. " is not under the agent's roots") end
+  $dirs = []
+  for each $d in $args.additional_dirs ?? []
+    if not under_roots($d, $a.roots) then raise("OUTSIDE_ROOTS", "additional dir " .. to_string($d) .. " is not under the agent's roots") end
+    push($dirs, realpath($d))
+  end
+  if $args.mode != nil and type($args.mode) != "string" then _usage("mode must be a string") end
+  return {agent: $args.agent, cwd: realpath($args.cwd), additional_dirs: $dirs, mode: $args.mode}
+end
+
+-- Session ids --------------------------------------------------------------
+
+fn valid_session_id($id)
+  return type($id) == "string" and re_match($id, "^[a-z0-9]{4,12}$")
+end
+
+-- A fresh id that is not in $taken (a map of id -> anything). Hex from a
+-- v4 uuid: lowercase letters and digits only, as mixos-mcp requires.
+fn mint_session_id($taken)
+  loop
+    $id = slice(replace(uuid(), "-", ""), 0, $SESSION_ID_LEN)
+    if $taken[$id] == nil then return $id end
+  end
+end
+
+-- ACP frames (client -> agent) ---------------------------------------------
+
+fn _frame($id, $method, $params)
+  $f = {jsonrpc: "2.0", method: $method, params: $params}
+  if $id != nil then $f.id = $id end
+  return json_encode($f) .. "\n"
+end
+
+fn initialize_frame($id)
+  return _frame($id, "initialize", {
+    protocolVersion: $PROTOCOL_VERSION,
+    -- fs and terminal stay off until agentd serves them (stage 2).
+    clientCapabilities: {fs: {readTextFile: false, writeTextFile: false}, terminal: false},
+    clientInfo: {name: "mixos-agentd", version: "0.1.0"}})
+end
+
+-- The mixos-mcp entry every session gets: the bridge registers on the Bus
+-- as mcp-s-<session>-..., so agentd can recognise its agents calling back.
+fn mcp_entry($mcp_bin, $session)
+  return {name: "mixos", command: $mcp_bin, args: [], env: [{name: "MIXOS_AGENT_SESSION", value: $session}]}
+end
+
+fn session_new_frame($id, $cwd, $dirs, $mcp)
+  $p = {cwd: $cwd, mcpServers: [$mcp]}
+  if len($dirs) > 0 then $p.additionalDirectories = $dirs end
+  return _frame($id, "session/new", $p)
+end
+
+-- content: a string (one text block) or a list of ACP content blocks.
+fn prompt_blocks($content)
+  if type($content) == "string" then
+    if $content == "" then _usage("content is empty") end
+    if len($content) > $CONTENT_MAX then _usage("content is over 1 MiB") end
+    return [{type: "text", text: $content}]
+  end
+  if type($content) != "list" or len($content) == 0 then _usage("content must be text or a list of ACP content blocks") end
+  for each $b in $content
+    if type($b) != "map" or type($b.type) != "string" then _usage("each content block needs a type") end
+  end
+  if len(json_encode($content)) > $CONTENT_MAX then _usage("content is over 1 MiB") end
+  return $content
+end
+
+fn prompt_frame($id, $acp_session, $blocks)
+  return _frame($id, "session/prompt", {sessionId: $acp_session, prompt: $blocks})
+end
+
+fn cancel_frame($acp_session)
+  return _frame(nil, "session/cancel", {sessionId: $acp_session})
+end
+
+fn set_mode_frame($id, $acp_session, $mode)
+  return _frame($id, "session/set_mode", {sessionId: $acp_session, modeId: $mode})
+end
+
+fn set_option_frame($id, $acp_session, $option, $value)
+  return _frame($id, "session/set_config_option", {sessionId: $acp_session, configId: $option, value: $value})
+end
+
+fn response_frame($id, $result)
+  return json_encode({jsonrpc: "2.0", id: $id, result: $result}) .. "\n"
+end
+
+fn error_frame($id, $code, $message)
+  return json_encode({jsonrpc: "2.0", id: $id, error: {code: $code, message: $message}}) .. "\n"
+end
+
+-- Agent -> client messages -------------------------------------------------
+
+-- Classify one parsed JSON-RPC message from the agent:
+--   {kind: "reply", id, result?, error?}   an answer to one of ours
+--   {kind: "update", acp_session, update}  a session/update notification
+--   {kind: "request", id, method, params}  a request we must answer
+--   {kind: "notification", method, params} anything else without an id
+--   {kind: "invalid"}
+fn classify($m)
+  if type($m) != "map" or $m.jsonrpc != "2.0" then return {kind: "invalid"} end
+  if $m.method == nil then
+    if $m.id == nil then return {kind: "invalid"} end
+    return {kind: "reply", id: $m.id, result: $m.result, error: $m.error}
+  end
+  if $m.id != nil then return {kind: "request", id: $m.id, method: $m.method, params: $m.params ?? {}} end
+  if $m.method == "session/update" and type($m.params) == "map" then
+    return {kind: "update", acp_session: $m.params.sessionId, update: $m.params.update ?? {}}
+  end
+  return {kind: "notification", method: $m.method, params: $m.params ?? {}}
+end
+
+-- One Bus event body for agent.session.updated. kind is the ACP
+-- sessionUpdate discriminator; the update itself rides along unchanged.
+fn update_event($session, $seq, $update)
+  $kind = if type($update) == "map" and type($update.sessionUpdate) == "string" then $update.sessionUpdate else "unknown" end
+  return {session: $session, seq: $seq, kind: $kind, update: $update}
+end
+
+$STOP_REASONS = ["end_turn", "max_tokens", "max_turn_requests", "refusal", "cancelled"]
+
+fn stop_reason($result)
+  if type($result) == "map" and contains($STOP_REASONS, $result.stopReason) then return $result.stopReason end
+  return "unknown"
+end
+
+-- Permission policy --------------------------------------------------------
+
+fn _option_of_kind($options, $kind)
+  for each $o in $options ?? []
+    if type($o) == "map" and $o.kind == $kind and type($o.optionId) == "string" then return $o.optionId end
+  end
+  return nil
+end
+
+-- The option an instance policy answers by itself, or nil to ask the human.
+-- allow_once may pick only an allow_once option: never allow_always, which
+-- would widen a shared agent's grants beyond this one request.
+fn auto_answer($policy, $request)
+  if $policy == "allow_once" then return _option_of_kind($request.options, "allow_once") end
+  return nil
+end
+
+-- The answer when nobody answered in time: no answer is never yes.
+fn timeout_answer($request)
+  return _option_of_kind($request.options, "reject_once") ?? _option_of_kind($request.options, "reject_always")
+end
+
+-- The ACP result for a permission request: a chosen option, or cancelled
+-- (the turn was cancelled, or the agent offered no way to decline).
+fn permission_result($option_id)
+  if $option_id == nil then return {outcome: {outcome: "cancelled"}} end
+  return {outcome: {outcome: "selected", optionId: $option_id}}
+end
+
+-- Buttons for the notifyd question: one per offered option, at most four
+-- (notifyd's limit), allow_always never offered.
+fn permission_buttons($options)
+  $out = []
+  for each $o in $options ?? []
+    if len($out) < 4 and type($o) == "map" and type($o.optionId) == "string" and $o.kind != "allow_always" then
+      $id = lower(re_replace($o.optionId, "[^a-zA-Z0-9_-]", "-"))
+      if len($id) > 32 then $id = slice($id, 0, 32) end
+      push($out, {id: $id, label: slice($o.name ?? $o.optionId, 0, 32), option: $o.optionId})
+    end
+  end
+  return $out
+end
