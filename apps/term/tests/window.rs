@@ -58,6 +58,32 @@ fn replace(tabs: &TabSet, id: u64, text: &str) {
 }
 
 #[test]
+fn title_bar_carries_the_standard_tail() {
+    if !term_core::test_support::with_mix("title_bar_carries_the_standard_tail") {
+        return;
+    }
+    let settings = Settings {
+        config: Config::default(),
+        term: "xterm-256color".into(),
+    };
+    let tabs = Arc::new(Mutex::new(TabSet::with_session(settings, None).unwrap()));
+    let (cleanup, reaper) = Cleanup::start().unwrap();
+    let app = App::new(
+        tabs.clone(),
+        cleanup.clone(),
+        None,
+        Arc::new(AtomicBool::new(true)),
+        Raster::for_test(1.0, 13.0, Cursor::Underline).unwrap(),
+        FontSize::new(13.0),
+    );
+    term::actions::registry().assert_tail(&app, &term::strings(), true);
+    drop(app);
+    cleanup.submit(tabs.lock().unwrap().shutdown());
+    drop(cleanup);
+    reaper.join().unwrap();
+}
+
+#[test]
 fn two_tabs_and_a_split_studio_dark() {
     if !term_core::test_support::with_mix("two_tabs_and_a_split_studio_dark") {
         return;
@@ -87,7 +113,6 @@ fn two_tabs_and_a_split_studio_dark() {
         raster,
         FontSize::new(13.0),
     );
-    term::actions::registry().assert_tail(&app, &term::strings(), true);
     let theme = Theme::for_context(DesignContext {
         scheme: Scheme::Studio,
         mode: Mode::Dark,
