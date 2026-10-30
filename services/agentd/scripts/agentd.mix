@@ -42,6 +42,7 @@ $MAX_LINE = 16777216
 $EVENTS_KEPT = 2000
 $RING_BYTES = 33554432
 $TOPIC_MAX = 262144
+$SETS_MAX = 8
 $ENDED_KEPT = 32
 
 -- One map holds everything; handlers run one at a time, so it is the only
@@ -206,7 +207,13 @@ fn start_turn($id, $blocks)
   $S.sessions[$id].pending[to_string($rpc)] = {kind: "prompt"}
   $S.sessions[$id].turn = $rpc
   $S.sessions[$id].status = "running"
-  write_frame($id, $a.prompt_frame($rpc, $S.sessions[$id].acp, $blocks))
+  $S.sessions[$id].cancelling = false
+  if not write_frame($id, $a.prompt_frame($rpc, $S.sessions[$id].acp, $blocks)) then
+    $S.sessions[$id].pending = delete($S.sessions[$id].pending, to_string($rpc))
+    $S.sessions[$id].turn = nil
+    $S.sessions[$id].status = "ready"
+    return nil
+  end
   return $rpc
 end
 
@@ -225,7 +232,12 @@ on agent.session.prompt desc "send a prompt {session, content}; replies {session
         $S.sessions[$id].queued = $blocks
         reply(0, json_encode({session: $id, turn: nil, queued: true}))
       else
-        reply(0, json_encode({session: $id, turn: start_turn($id, $blocks)}))
+        $turn = start_turn($id, $blocks)
+        if $turn == nil then
+          fail("AGENT_NOT_READY", "session " .. $id .. " did not accept the prompt (its stdin is closed or full)")
+        else
+          reply(0, json_encode({session: $id, turn: $turn}))
+        end
       end
     catch $m, $err
       fail($err.code ?? "USAGE", $m)
@@ -239,7 +251,7 @@ fn settle_all_permissions($id, $outcome_option)
     $p = $S.sessions[$id].perms[$key]
     write_frame($id, $a.response_frame($p.rpc, $a.permission_result($outcome_option)))
     if $p.notify != nil then
-      send notify notify.close body=json_encode({id: $p.notify})
+      send notify notify.close body=json_encode({id: $p.notify}) timeout=5
       $S.notify = delete($S.notify, to_string($p.notify))
     end
   end
@@ -256,6 +268,7 @@ on agent.session.cancel desc "cancel the running turn {session}; pending permiss
     else
       -- ACP: a cancel must answer every pending permission request cancelled.
       settle_all_permissions($id, nil)
+      $S.sessions[$id].cancelling = true
       write_frame($id, $a.cancel_frame($s.acp))
       reply(0, json_encode({session: $id, cancelled: true}))
     end
@@ -278,8 +291,11 @@ on agent.session.set desc "set {session, mode} or {session, option, value} (mode
   if $id != nil then
     $s = $S.sessions[$id]
     $args = body()
+    $sets = len(filter(keys($s.pending), fn($k) = $s.pending[$k].kind == "set"))
     if $s.status == "starting" or $s.status == "ended" then
       fail("AGENT_NOT_READY", "session " .. $id .. " is " .. $s.status)
+    elif $sets >= $SETS_MAX then
+      fail("AGENT_RUNNING", "session " .. $id .. " already has " .. to_string($sets) .. " settings waiting for the agent")
     elif type($args.mode) == "string" then
       $rpc = next_rpc()
       $S.sessions[$id].pending[to_string($rpc)] = {kind: "set"}
@@ -334,7 +350,7 @@ on agent.permission.respond desc "answer a permission request {session, request,
     elif filter($p.options, fn($o) = $o.optionId == body().option)[0].kind == "allow_always" then
       fail("USAGE", "allow_always is never answered through agentd")
     else
-      if $p.notify != nil then send notify notify.close body=json_encode({id: $p.notify}) end
+      if $p.notify != nil then send notify notify.close body=json_encode({id: $p.notify}) timeout=5 end
       answer_permission($id, $key, body().option)
       reply(0, json_encode({session: $id, request: $key, option: body().option}))
     end
@@ -401,7 +417,7 @@ fn ask_human($id, $key, $params)
     app: "agentd", source: "agent." .. $id,
     actions: map($buttons, fn($b) = {id: $b.id, label: $b.label}),
     timeout_ms: $c.permission_timeout_s * 1000, request_id: $id .. "-" .. $key}
-  send notify notify.send body=json_encode($req)
+  send notify notify.send body=json_encode($req) timeout=5
   if $rc == 0 and type($result) == "map" and $result.id != nil then
     $S.sessions[$id].perms[$key].notify = $result.id
     $S.sessions[$id].perms[$key].buttons = $buttons
@@ -416,10 +432,14 @@ end
 fn on_request($id, $msg)
   if $msg.method == "session/request_permission" then
     $key = to_string($msg.id)
+    if $S.sessions[$id].cancelling == true or $S.sessions[$id].status != "running" then
+      -- The turn was cancelled (or is over): nobody is asked.
+      write_frame($id, $a.response_frame($msg.id, $a.permission_result(nil)))
+      return nil
+    end
     $S.sessions[$id].perms[$key] = {rpc: $msg.id, options: $msg.params.options ?? [], notify: nil}
-    publish("agent.permission.requested", json_encode({session: $id, request: $key,
-      title: if type($msg.params.toolCall) == "map" then $msg.params.toolCall.title else nil end,
-      options: $msg.params.options}), {command: "agent.permission.requested"})
+    publish("agent.permission.requested", json_encode($a.permission_topic($id, $key, $msg.params)),
+      {command: "agent.permission.requested"})
     $auto = $a.auto_answer($CONF.agents[$S.sessions[$id].agent].policy, $msg.params)
     if $auto != nil then
       answer_permission($id, $key, $auto)
@@ -466,7 +486,7 @@ on proc.watch_exited
     for each $key in keys($S.sessions[$id].perms)
       $p = $S.sessions[$id].perms[$key]
       if $p.notify != nil then
-        send notify notify.close body=json_encode({id: $p.notify})
+        send notify notify.close body=json_encode({id: $p.notify}) timeout=5
         $S.notify = delete($S.notify, to_string($p.notify))
       end
     end

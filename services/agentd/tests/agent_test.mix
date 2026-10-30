@@ -60,6 +60,9 @@ refuses("cwd outside roots", "OUTSIDE_ROOTS", fn() = $a.check_new($conf, {agent:
 refuses("cwd through an escaping symlink", "OUTSIDE_ROOTS", fn() = $a.check_new($conf, {agent: "fake", cwd: $tmp .. "/root/escape"}))
 refuses("additional dir outside roots", "OUTSIDE_ROOTS", fn() = $a.check_new($conf, {agent: "fake", cwd: $tmp .. "/root/ws", additional_dirs: [$tmp .. "/outside"]}))
 refuses("missing cwd", "USAGE", fn() = $a.check_new($conf, {agent: "fake"}))
+refuses("17 additional dirs", "USAGE", fn() = $a.check_new($conf, {agent: "fake", cwd: $tmp .. "/root/ws", additional_dirs: map(range(0, 17), fn($i) = $tmp .. "/root/ws")}))
+refuses("additional dirs that are not a list", "USAGE", fn() = $a.check_new($conf, {agent: "fake", cwd: $tmp .. "/root/ws", additional_dirs: "x"}))
+refuses("an over-long additional dir", "USAGE", fn() = $a.check_new($conf, {agent: "fake", cwd: $tmp .. "/root/ws", additional_dirs: [repeat("a", 4097)]}))
 
 -- Session ids.
 $taken = {}
@@ -112,6 +115,11 @@ check("timeout falls back to reject_always",
 check("timeout with no reject option cancels",
   $a.permission_result($a.timeout_answer({options: [{optionId: "a1", kind: "allow_once"}]})).outcome.outcome == "cancelled")
 check("selected result carries the option id", $a.permission_result("r1").outcome.optionId == "r1")
+$huge = {toolCall: {title: repeat("t", 100000)}, options: map(range(0, 50), fn($i) = {optionId: repeat("o", 1000), name: repeat("n", 1000), kind: "allow_once"})}
+$topic = $a.permission_topic("s1", "901", $huge)
+check("permission topic bounds title, options and their text",
+  len($topic.title) == 200 and len($topic.options) == 8 and len($topic.options[0].optionId) == 64 and len(json_encode($topic)) < 4096)
+check("permission topic tolerates a missing toolCall", $a.permission_topic("s1", "1", {options: []}).title == nil)
 $buttons = $a.permission_buttons($req.options)
 check("buttons drop allow_always", len($buttons) == 2 and $buttons[0].option == "a1" and $buttons[1].option == "r1")
 

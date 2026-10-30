@@ -142,6 +142,13 @@ try
   $c = agent("agent.session.cancel", {session: $s})
   check("cancel is accepted", $c.rc == 0 and $c.v.cancelled == true)
   check("the cancelled turn reports cancelled", saw("updated " .. $s .. " ", "stop cancelled"))
+  sleep(0.3)
+  agent("agent.session.prompt", {session: $s, content: "LATE"})
+  sleep(0.3)
+  agent("agent.session.cancel", {session: $s})
+  check("a permission asked after cancel is answered cancelled", saw("updated " .. $s .. " ", "agent_message_chunk late:cancelled"))
+  check("and nobody was asked", not contains(events(), "permission " .. $s .. " 902"))
+  sleep(0.3)
 
   -- Permission answered by the human through notifyd.
   agent("agent.session.prompt", {session: $s, content: "PERMISSION"})

@@ -16,6 +16,10 @@
 $PROTOCOL_VERSION = 1
 $SESSION_ID_LEN = 10
 $CONTENT_MAX = 1048576
+$DIRS_MAX = 16
+$PATH_MAX = 4096
+$TITLE_MAX = 200
+$OPTIONS_MAX = 8
 
 fn _usage($message)
   raise("USAGE", $message)
@@ -81,7 +85,12 @@ fn check_new($conf, $args)
   if type($args.cwd) != "string" then _usage("cwd is required") end
   if not under_roots($args.cwd, $a.roots) then raise("OUTSIDE_ROOTS", "cwd " .. $args.cwd .. " is not under the agent's roots") end
   $dirs = []
-  for each $d in $args.additional_dirs ?? []
+  $extra = $args.additional_dirs ?? []
+  if type($extra) != "list" or len($extra) > $DIRS_MAX then _usage("additional_dirs must be a list of at most " .. to_string($DIRS_MAX) .. " paths") end
+  for each $d in $extra
+    if type($d) != "string" or len($d) > $PATH_MAX then _usage("each additional dir must be a path of at most " .. to_string($PATH_MAX) .. " bytes") end
+  end
+  for each $d in $extra
     if not under_roots($d, $a.roots) then raise("OUTSIDE_ROOTS", "additional dir " .. to_string($d) .. " is not under the agent's roots") end
     push($dirs, realpath($d))
   end
@@ -233,6 +242,19 @@ end
 fn permission_result($option_id)
   if $option_id == nil then return {outcome: {outcome: "cancelled"}} end
   return {outcome: {outcome: "selected", optionId: $option_id}}
+end
+
+-- The agent.permission.requested body: the agent's text is bounded, so a
+-- hostile request cannot push a huge payload to every subscriber.
+fn permission_topic($session, $key, $params)
+  $title = if type($params.toolCall) == "map" and type($params.toolCall.title) == "string" then slice($params.toolCall.title, 0, $TITLE_MAX) else nil end
+  $options = []
+  for each $o in $params.options ?? []
+    if len($options) < $OPTIONS_MAX and type($o) == "map" and type($o.optionId) == "string" then
+      push($options, {optionId: slice($o.optionId, 0, 64), name: slice(to_string($o.name ?? ""), 0, 64), kind: $o.kind})
+    end
+  end
+  return {session: $session, request: slice($key, 0, 64), title: $title, options: $options}
 end
 
 -- Buttons for the notifyd question: one per offered option, at most four

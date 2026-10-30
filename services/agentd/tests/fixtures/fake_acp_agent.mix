@@ -7,6 +7,7 @@
 --   BIG         stream one 2 MiB text chunk (framing past 64 KiB lines)
 --   MCP         echo the MIXOS_AGENT_SESSION its mixos-mcp entry carries
 --   SLOW        hold the turn open until the next frame (a cancel lands)
+--   LATE        like SLOW, then ask permission after the cancel; echo it
 -- readline() returns "" at EOF (and for an empty line, which ACP never
 -- sends), so "" ends the agent.
 
@@ -70,10 +71,18 @@ loop
       $o = $answer.result.outcome
       text($sid, "perm:" .. (if $o.outcome == "selected" then $o.optionId else $o.outcome end))
     end
-    if contains($t, "SLOW") then
+    if contains($t, "SLOW") or contains($t, "LATE") then
       -- A cancel arrives as a notification while this turn runs.
       $c = json_parse(readline())
       if $c.method == "session/cancel" then $stop = "cancelled" end
+    end
+    if contains($t, "LATE") then
+      $next_id = $next_id + 1
+      out({id: $next_id, method: "session/request_permission", params: {sessionId: $sid,
+        toolCall: {toolCallId: "t2", title: "Late write"},
+        options: [{optionId: "allow", name: "Allow", kind: "allow_once"}, {optionId: "deny", name: "Reject", kind: "reject_once"}]}})
+      $late = json_parse(readline()).result.outcome
+      text($sid, "late:" .. (if $late.outcome == "selected" then $late.optionId else $late.outcome end))
     end
     text($sid, "echo:" .. $t)
     out({id: $m.id, result: {stopReason: $stop}})
