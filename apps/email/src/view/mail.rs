@@ -912,7 +912,9 @@ fn message(
     toolkit::bars::hairline(ui);
     let mut attachment_context = false;
     let fill = if content.light {
-        toolkit::chrome::Chrome::for_theme(toolkit::content::light_theme()).palette.canvas
+        toolkit::chrome::Chrome::for_theme(toolkit::content::light_theme())
+            .palette
+            .canvas
     } else {
         ui.visuals().panel_fill
     };

@@ -620,7 +620,14 @@ mod tail_tests {
             for (id, origin) in clicks {
                 registry.execute(id, &mut choice, origin).unwrap();
             }
-            assert_eq!(choice.mode, Some(if dark { design::Mode::Light } else { design::Mode::Dark }));
+            assert_eq!(
+                choice.mode,
+                Some(if dark {
+                    design::Mode::Light
+                } else {
+                    design::Mode::Dark
+                })
+            );
         }
     }
 }
