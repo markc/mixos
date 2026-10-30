@@ -108,12 +108,13 @@ try
     resumer: {argv: [$mix, $fake, "resume"], roots: [$tmp .. "/ws"]},
     loader: {argv: [$mix, $fake, "load"], roots: [$tmp .. "/ws"]},
     refuser: {argv: [$mix, $fake, "refuse"], roots: [$tmp .. "/ws"]},
-    plain: {argv: [$mix, $fake], roots: [$tmp .. "/ws"]}}}
+    plain: {argv: [$mix, $fake], roots: [$tmp .. "/ws"]},
+    stubborn: {argv: [$mix, $fake, "stubborn"], roots: [$tmp .. "/ws"]}}}
   write_file($tmp .. "/agent.conf.mix", data_encode($conf))
   push($pids, citizen($listener, "agentlisten", merge($env, {AGENT_EVENTS: $tmp .. "/events"}), "listener.log"))
   push($pids, citizen($notifyd, "notify", $env, "notifyd.log"))
   $agentd_env = merge($env, {MIXOS_AGENTD_CONF: $tmp .. "/agent.conf.mix",
-    MIXOS_AGENTD_MCP: "/bin/true", MIXOS_AGENTD_DB: $tmp .. "/state/sessions.db"})
+    MIXOS_AGENTD_MCP: "/bin/true", MIXOS_AGENTD_DB: $tmp .. "/state/sessions.db", MIXOS_AGENTD_CLOSE_GRACE_S: "1"})
   $agentd_pid = citizen($agentd, "agent", $agentd_env, "agentd.log")
   push($pids, $agentd_pid)
   check("agentd answers", up())
@@ -149,7 +150,7 @@ try
   check("resume falls back to session/load", $lr.rc == 0 and $lr.v.via == "load")
   check("the loaded session comes back", saw("updated " .. $l .. " ", " resumed "))
   check("replayed history is not logged again",
-    len(filter(logged($l, "agent_message_chunk"), fn($e) = $e.update.content.text == "old history")) == 0)
+    len(filter(logged($l, "agent_message_chunk"), fn($e) = $e.update.content.text == "old history" or $e.update.content.text == "late history")) == 0)
   check("a current-state update during the load is kept", len(logged($l, "current_mode_update")) == 1)
   close_and_wait($l)
 
@@ -174,6 +175,13 @@ try
   check("an agent with neither resume nor load is AGENT_NOT_RESUMABLE", $np.rc == 15 and code($np.v) == "AGENT_NOT_RESUMABLE")
   check("an unknown session is UNKNOWN_SESSION", agent("agent.session.resume", {session: "zzzz9999"}).rc == 14)
   check("a resume naming no session is answered UNKNOWN_SESSION", agent("agent.session.resume", {}).rc == 14)
+
+  -- An agent that ignores stdin EOF is stopped after the close grace.
+  $g = start("stubborn")
+  agent("agent.session.close", {session: $g})
+  check("close ends an agent that ignores EOF, after the grace", saw("ended " .. $g, ""))
+  $gv = agent("agent.session.read", {session: $g, since: 0}).v.session
+  check("and the session is ended", $gv.status == "ended")
 
   -- Restart: a session live at the restart can be resumed afterwards.
   $k = start("resumer")

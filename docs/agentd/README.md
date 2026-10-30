@@ -83,7 +83,7 @@ Bodies are JSON objects.
 | `agent.session.new` | `{agent, cwd, mode?, additional_dirs?}` | `{session, status}` at once; `ready` follows as an event |
 | `agent.session.prompt` | `{session, content}` | `{session, turn}`; the turn streams as events |
 | `agent.session.cancel` | `{session}` | cancels the running turn |
-| `agent.session.close` | `{session}` | ends the agent; the session stays in the log and can be resumed |
+| `agent.session.close` | `{session}` | ends the agent (stdin closes; an agent still running 10 s later is stopped); the session stays in the log and can be resumed |
 | `agent.session.resume` | `{session}` | `{session, status, via}` at once: brings back an ended session (see Resuming) |
 | `agent.session.set` | `{session, mode}` or `{session, option, value}` | sets a mode, or a config option such as the model |
 | `agent.session.list` | | live and recently ended sessions |
@@ -158,7 +158,9 @@ against `max_live`, and like `new` it is refused to a session's own agent
 (`AGENT_SELF`) and to a child session (`AGENT_DEPTH`). An agent that offers
 neither method gets `AGENT_NOT_RESUMABLE` before anything starts. If the
 agent refuses (it no longer has the session) or exits first, the session
-goes back to ended exactly as it was, with a `resume_failed` event.
+goes back to ended exactly as it was, with a `resume_failed` event. After a
+load, replayed history is dropped until the session's next prompt, because
+Gemini CLI answers `session/load` first and replays after.
 
 agentd does not restore the mode or model (set them again) or a permission
 question that was open when the session ended (prompt again). Advertised

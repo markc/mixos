@@ -98,7 +98,8 @@ $tl = $a.tail_add({lines: [], bytes: 0, truncated: false}, "ok", 100)
 check("tail under the limit is not truncated", not $tl.truncated and $a.tail_text($tl) == "ok\n")
 check("resume_via prefers resume, then load, else nil",
   $a.resume_via({sessionCapabilities: {resume: {}}, loadSession: true}) == "resume" and
-  $a.resume_via({loadSession: true}) == "load" and $a.resume_via({loadSession: false}) == nil and $a.resume_via(nil) == nil)
+  $a.resume_via({loadSession: true}) == "load" and
+  $a.resume_via({loadSession: true, sessionCapabilities: {resume: false}}) == "load" and $a.resume_via({loadSession: false}) == nil and $a.resume_via(nil) == nil)
 $rf = json_parse(trim($a.reopen_frame(9, "load", "acp-1", "/w", ["/w2"], $a.mcp_entry("/bin/mcp", "abcd1234ef", {}))))
 check("reopen frame: method, sessionId, mcp entry, dirs",
   $rf.method == "session/load" and $rf.params.sessionId == "acp-1" and $rf.params.mcpServers[0].env[0].value == "abcd1234ef" and

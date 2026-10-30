@@ -19,6 +19,7 @@
 --   load    advertise loadSession; session/load replays one old chunk and
 --           a current mode update before answering
 --   refuse  advertise session/resume, then refuse it
+--   stubborn  ignore stdin EOF (keep running), as Gemini CLI does
 $caps_mode = if len(args()) > 0 then args()[0] else "" end
 $sessions = {}
 $next_id = 900
@@ -56,7 +57,10 @@ end
 
 loop
   $line = readline()
-  if $line == nil or $line == "" then break end
+  if $line == nil or $line == "" then
+    if $caps_mode == "stubborn" then sleep(120) end
+    break
+  end
   $m = json_parse($line)
   if $m.method == "initialize" then
     $caps = {loadSession: $caps_mode == "load"}
@@ -75,6 +79,8 @@ loop
       end
       out({id: $m.id, result: {modes: {currentModeId: "plan",
         availableModes: [{id: "default", name: "Default"}, {id: "plan", name: "Plan"}]}}})
+      -- Gemini CLI replays after its answer as well: so does this fake.
+      if $m.method == "session/load" then text($sid, "late history") end
     end
   elif $m.method == "session/new" then
     $sid = "fake-" .. to_string(len(keys($sessions)) + 1)

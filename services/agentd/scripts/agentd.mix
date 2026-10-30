@@ -395,6 +395,7 @@ fn start_turn($id, $blocks)
   $S.sessions[$id].turn = $rpc
   $S.sessions[$id].status = "running"
   $S.sessions[$id].cancelling = false
+  $S.sessions[$id].replaying = false
   if not write_frame($id, $a.prompt_frame($rpc, $S.sessions[$id].acp, $blocks)) then
     $S.sessions[$id].pending = delete($S.sessions[$id].pending, to_string($rpc))
     $S.sessions[$id].turn = nil
@@ -471,6 +472,11 @@ on agent.session.close desc "end the agent {session}: stdin closes, the process 
     if $S.sessions[$id].status != "ended" then
       settle_all_permissions($id, nil)
       pipe_close($S.sessions[$id].watch)
+      -- Some agents (Gemini CLI) do not exit at stdin EOF. After a grace
+      -- period, a session still closing is stopped (agent.close_grace).
+      $token = uuid()
+      $S.sessions[$id].closing = $token
+      task_start("agent.close_grace", json_encode({session: $id, token: $token}))
     end
     answer(0, json_encode({session: $id, status: $S.sessions[$id].status}))
   end
@@ -603,7 +609,9 @@ fn on_reply($id, $msg)
   elif $p.kind == "reopen" then
     $S.sessions[$id].acp = $S.sessions[$id].reopen.acp
     $S.sessions[$id].status = "ready"
-    $S.sessions[$id].replaying = false
+    -- A load stays in replay until the next prompt: Gemini CLI answers
+    -- session/load first and replays after, and an idle agent sends no
+    -- messages or tool calls of its own.
     $S.sessions[$id].reopen.done = true
     $log.session_agent($DB, $id, $S.sessions[$id].acp, $S.sessions[$id].dirs, $S.sessions[$id].caps, $S.sessions[$id].agent_info)
     emit_event($id, {kind: "resumed", via: $S.sessions[$id].reopen.via, agent_info: $S.sessions[$id].agent_info,
@@ -854,14 +862,28 @@ on proc.line
   end
 end
 
-on proc.watch_exited
-  $tid = term_tid($event.args.tag)
-  if $tid != nil then
-    term_exited($tid, $event.args.exit_code, $a.signal_name($event.args.signal))
-    return nil
+-- The close grace: the async entry waits, then the plain entry acts on
+-- current state. Only the close that started it can act (the token), so a
+-- session that exited, or was resumed, in the meantime is left alone.
+$CLOSE_GRACE_S = to_number(env("MIXOS_AGENTD_CLOSE_GRACE_S", "10"))
+
+on agent.close_grace async
+  sleep($CLOSE_GRACE_S)
+end
+
+on agent.close_grace
+  $id = to_string(body().session)
+  $s = $S.sessions[$id]
+  if $s != nil and $s.status != "ended" and $s.closing != nil and $s.closing == body().token then
+    eprint("agentd: " .. $id .. ": the agent did not exit " .. to_string($CLOSE_GRACE_S) .. " s after close; stopping it")
+    term_stop($s.watch)
+    session_exited($id, nil, 15, "CLOSE_TIMEOUT")
   end
-  $id = $event.args.tag
-  if $S.sessions[$id] != nil then
+end
+
+-- The agent of session $id is gone (it exited, or close stopped it).
+fn session_exited($id, $exit_code, $signal, $error_code)
+  if $S.sessions[$id] != nil and $S.sessions[$id].status != "ended" then
     -- The agent is gone: so are its terminals.
     for each $k in filter(keys($S.terms), fn($k) = $S.terms[$k].session == $id)
       term_release($k)
@@ -882,15 +904,24 @@ on proc.watch_exited
       -- goes back to ended exactly as it was.
       $S.sessions[$id].replaying = false
       emit_event($id, {kind: "resume_failed", via: $reopen.via, error: $reopen.error,
-        error_code: if $reopen.error != nil then "AGENT_NOT_RESUMABLE" else ($event.args.error_code ?? "AGENT_EXITED") end})
+        error_code: if $reopen.error != nil then "AGENT_NOT_RESUMABLE" else ($error_code ?? "AGENT_EXITED") end})
       $log.session_restore($DB, $reopen.prior)
     else
-      $log.session_ended($DB, $id, $event.args.exit_code, $event.args.signal, $event.args.error_code, time())
+      $log.session_ended($DB, $id, $exit_code, $signal, $error_code, time())
     end
     prune()
-    publish("agent.session.ended", json_encode({session: $id, exit_code: $event.args.exit_code,
-      signal: $event.args.signal, error_code: $event.args.error_code}), {command: "agent.session.ended"})
+    publish("agent.session.ended", json_encode({session: $id, exit_code: $exit_code,
+      signal: $signal, error_code: $error_code}), {command: "agent.session.ended"})
   end
+end
+
+on proc.watch_exited
+  $tid = term_tid($event.args.tag)
+  if $tid != nil then
+    term_exited($tid, $event.args.exit_code, $a.signal_name($event.args.signal))
+    return nil
+  end
+  session_exited($event.args.tag, $event.args.exit_code, $event.args.signal, $event.args.error_code)
 end
 
 -- notifyd answers. answered: a button; closed: dismissed, expired or

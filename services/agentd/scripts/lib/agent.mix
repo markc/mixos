@@ -323,7 +323,11 @@ end
 -- replays its history), else nil (not resumable).
 fn resume_via($caps)
   if type($caps) != "map" then return nil end
-  if type($caps.sessionCapabilities) == "map" and $caps.sessionCapabilities.resume != nil then return "resume" end
+  if type($caps.sessionCapabilities) == "map" then
+    -- ACP advertises it as an object ({}); read false or null as not offered.
+    $r = $caps.sessionCapabilities.resume
+    if $r == true or type($r) == "map" then return "resume" end
+  end
   if $caps.loadSession == true then return "load" end
   return nil
 end

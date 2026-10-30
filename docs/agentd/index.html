@@ -319,7 +319,7 @@ after it ends.</p>
 <tr><td><code>agent.session.new</code></td><td><code>{agent, cwd, mode?, additional_dirs?}</code></td><td><code>{session, status}</code> at once; <code>ready</code> follows as an event</td></tr>
 <tr><td><code>agent.session.prompt</code></td><td><code>{session, content}</code></td><td><code>{session, turn}</code>; the turn streams as events</td></tr>
 <tr><td><code>agent.session.cancel</code></td><td><code>{session}</code></td><td>cancels the running turn</td></tr>
-<tr><td><code>agent.session.close</code></td><td><code>{session}</code></td><td>ends the agent; the session stays in the log and can be resumed</td></tr>
+<tr><td><code>agent.session.close</code></td><td><code>{session}</code></td><td>ends the agent (stdin closes; an agent still running 10 s later is stopped); the session stays in the log and can be resumed</td></tr>
 <tr><td><code>agent.session.resume</code></td><td><code>{session}</code></td><td><code>{session, status, via}</code> at once: brings back an ended session (see Resuming)</td></tr>
 <tr><td><code>agent.session.set</code></td><td><code>{session, mode}</code> or <code>{session, option, value}</code></td><td>sets a mode, or a config option such as the model</td></tr>
 <tr><td><code>agent.session.list</code></td><td></td><td>live and recently ended sessions</td></tr>
@@ -385,7 +385,9 @@ against <code>max_live</code>, and like <code>new</code> it is refused to a sess
 (<code>AGENT_SELF</code>) and to a child session (<code>AGENT_DEPTH</code>). An agent that offers
 neither method gets <code>AGENT_NOT_RESUMABLE</code> before anything starts. If the
 agent refuses (it no longer has the session) or exits first, the session
-goes back to ended exactly as it was, with a <code>resume_failed</code> event.</p>
+goes back to ended exactly as it was, with a <code>resume_failed</code> event. After a
+load, replayed history is dropped until the session's next prompt, because
+Gemini CLI answers <code>session/load</code> first and replays after.</p>
 <p>agentd does not restore the mode or model (set them again) or a permission
 question that was open when the session ended (prompt again). Advertised
 at <code>initialize</code>: Claude, OpenCode and Codex offer <code>session/resume</code>; Gemini
