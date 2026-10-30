@@ -76,84 +76,18 @@ delegate_noop!(Globals: ignore wl_shm::WlShm);
 delegate_noop!(Globals: ignore wl_shm_pool::WlShmPool);
 delegate_noop!(Globals: ignore wl_buffer::WlBuffer);
 
-/// Tiles clockwise from top. Offsets are physical pixel extents in that order
-/// (left, top, right, bottom); buffers contain native-endian premultiplied ARGB.
-struct Tiles {
-    images: Vec<(i32, i32, Vec<u8>)>,
-    extents: [i32; 4],
+#[derive(Clone, Copy, PartialEq)]
+struct ShadowSettings {
+    frame: design::frame::Frame,
+    radius: f32,
+    scale: f32,
+    focused: bool,
+    size: [u32; 2],
 }
-
-fn tiles(shadow: egui::epaint::Shadow, scale: f32) -> Tiles {
-    let scale = scale.clamp(0.5, 8.0);
-    let radius = (f32::from(shadow.blur) * scale).ceil().max(1.0);
-    let spread = f32::from(shadow.spread) * scale;
-    let [ox, oy] = shadow.offset.map(|v| f32::from(v) * scale);
-    let extent = |offset: f32| (radius + spread + offset).ceil().clamp(1.0, 4096.0) as i32;
-    let [left, top, right, bottom] = [extent(-ox), extent(-oy), extent(ox), extent(oy)];
-    let extents = [left, top, right, bottom];
-    // The short side overlaps the window by the offset. Without that overlap,
-    // its corner ends before the Gaussian reaches the edge tile's peak and
-    // leaves a visible seam (especially with a vertical shadow offset).
-    let lw = left + ox.max(0.0).ceil() as i32;
-    let th = top + oy.max(0.0).ceil() as i32;
-    let rw = right + (-ox).max(0.0).ceil() as i32;
-    let bh = bottom + (-oy).max(0.0).ceil() as i32;
-    let specs = [
-        (1, th, 0, -top, 0, -1),
-        (rw, th, right - rw, -top, 1, -1),
-        (rw, 1, right - rw, 0, 1, 0),
-        (rw, bh, right - rw, bottom - bh, 1, 1),
-        (1, bh, 0, bottom - bh, 0, 1),
-        (lw, bh, -left, bottom - bh, -1, 1),
-        (lw, 1, -left, 0, -1, 0),
-        (lw, th, -left, -top, -1, -1),
-    ];
-    let colour = shadow.color.to_srgba_unmultiplied();
-    let images = specs
-        .into_iter()
-        .map(|(w, h, x0, y0, horizontal, vertical)| {
-            let mut bytes = Vec::with_capacity((w * h * 4) as usize);
-            for y in y0..y0 + h {
-                for x in x0..x0 + w {
-                    let distance = |coordinate: i32, offset: f32, direction: i32| {
-                        if direction < 0 {
-                            (-coordinate as f32 - 1.0 + offset - spread).max(0.0)
-                        } else {
-                            (coordinate as f32 - offset - spread).max(0.0)
-                        }
-                    };
-                    let dx = if horizontal != 0 {
-                        distance(x, ox, horizontal)
-                    } else {
-                        0.0
-                    };
-                    let dy = if vertical != 0 {
-                        distance(y, oy, vertical)
-                    } else {
-                        0.0
-                    };
-                    let sigma = radius / 3.0;
-                    let a = (f32::from(colour[3])
-                        * (-(dx * dx + dy * dy) / (2.0 * sigma * sigma)).exp())
-                    .round() as u32;
-                    let channel = |c: u8| u32::from(c) * a / 255;
-                    let argb = (a << 24)
-                        | (channel(colour[0]) << 16)
-                        | (channel(colour[1]) << 8)
-                        | channel(colour[2]);
-                    bytes.extend_from_slice(&argb.to_ne_bytes());
-                }
-            }
-            (w, h, bytes)
-        })
-        .collect();
-    Tiles { images, extents }
-}
-
 struct Attached {
     shadow: OrgKdeKwinShadow,
     buffers: Vec<wl_buffer::WlBuffer>,
-    settings: (egui::epaint::Shadow, f32),
+    settings: ShadowSettings,
 }
 impl Drop for Attached {
     fn drop(&mut self) {
@@ -236,14 +170,14 @@ impl NativeShadow {
         }
     }
 
-    fn attach(&mut self, settings: (egui::epaint::Shadow, f32)) -> std::io::Result<()> {
+    fn attach(&mut self, settings: ShadowSettings) -> std::io::Result<()> {
         let Some(manager) = &self.globals.manager else {
             return Ok(());
         };
         let Some(shm) = &self.globals.shm else {
             return Ok(());
         };
-        let tiles = tiles(settings.0, settings.1);
+        let tiles = design::frame::shadow_pieces(settings.frame.shadow, settings.radius, settings.scale, settings.focused, settings.size);
         let path = std::env::temp_dir().join(format!("mixos-shadow-{}", uuid::Uuid::new_v4()));
         let mut file = std::fs::OpenOptions::new()
             .read(true)
@@ -251,17 +185,16 @@ impl NativeShadow {
             .create_new(true)
             .open(&path)?;
         std::fs::remove_file(path)?;
-        for (_, _, pixels) in &tiles.images {
-            file.write_all(pixels)?;
-        }
-        let size = tiles.images.iter().map(|(_, _, p)| p.len() as i32).sum();
+        for piece in &tiles.pieces { file.write_all(&piece.argb)?; }
+        let size = tiles.pieces.iter().map(|p| p.argb.len() as i32).sum();
         let qh = self.queue.handle();
         let pool = shm.create_pool(file.as_fd(), size, &qh, ());
         let mut offset = 0;
         let buffers: Vec<_> = tiles
-            .images
+            .pieces
             .iter()
-            .map(|(w, h, pixels)| {
+            .map(|piece| {
+                let (w, h, pixels) = (&piece.width, &piece.height, &piece.argb);
                 let buffer =
                     pool.create_buffer(offset, *w, *h, w * 4, wl_shm::Format::Argb8888, &qh, ());
                 offset += pixels.len() as i32;
@@ -279,7 +212,7 @@ impl NativeShadow {
         shadow.attach_left(&buffers[6]);
         shadow.attach_top_left(&buffers[7]);
         let [left, top, right, bottom] =
-            tiles.extents.map(|v| f64::from(v) / f64::from(settings.1));
+            tiles.extents.map(|v| f64::from(v) / f64::from(settings.scale));
         shadow.set_left_offset(left);
         shadow.set_top_offset(top);
         shadow.set_right_offset(right);
@@ -318,12 +251,14 @@ impl egui::Plugin for NativeShadow {
             !i.viewport().maximized.unwrap_or(false) && !i.viewport().fullscreen.unwrap_or(false)
         }) && crate::chrome::Chrome::of(ui.ctx()).decorations
             == design::Decorations::Client;
-        let settings = (
-            ui.style().visuals.window_shadow,
-            ui.input(|i| i.viewport().native_pixels_per_point.unwrap_or(1.0))
-                .clamp(0.5, 8.0),
-        );
-        if !visible
+        let frame = crate::chrome::Chrome::of(ui.ctx()).frame;
+        let scale = ui.input(|i| i.viewport().native_pixels_per_point.unwrap_or(1.0)).clamp(0.5, 8.0);
+        let size = (ui.ctx().content_rect().size() * ui.ctx().pixels_per_point()).round();
+        let settings = ShadowSettings {
+            frame, scale, radius: crate::window_frame::radius(ui.ctx(), frame),
+            focused: ui.input(|i| i.viewport().focused.unwrap_or(i.focused)),
+            size: [size.x.max(1.0) as u32, size.y.max(1.0) as u32],
+        };        if !visible
             || self
                 .attached
                 .as_ref()
@@ -361,55 +296,3 @@ impl Drop for NativeShadow {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn gaussian_tiles_are_scaled_premultiplied_and_seamless() {
-        let shadow = egui::epaint::Shadow {
-            offset: [0, 4],
-            blur: 24,
-            spread: 0,
-            color: egui::Color32::from_black_alpha(90),
-        };
-        let a = tiles(shadow, 1.0);
-        let b = tiles(shadow, 2.0);
-        assert_eq!(a.extents, [24, 20, 24, 28]);
-        assert_eq!(b.extents, [48, 40, 48, 56]);
-        assert_eq!(a.images.len(), 8);
-        for (w, h, bytes) in &a.images {
-            assert_eq!(bytes.len(), (w * h * 4) as usize);
-            for pixel in bytes.chunks_exact(4) {
-                let argb = u32::from_ne_bytes(pixel.try_into().unwrap());
-                assert_eq!(argb & 0x00ffffff, 0);
-                assert!(argb >> 24 <= 90);
-            }
-        }
-        let alpha = |i: usize, x: i32, y: i32| {
-            let (w, _, bytes) = &a.images[i];
-            u32::from_ne_bytes(bytes[((y * w + x) * 4) as usize..][..4].try_into().unwrap()) >> 24
-        };
-        assert!(alpha(0, 0, 0) < alpha(0, 0, 19));
-        assert!(alpha(4, 0, 27) < alpha(4, 0, 0));
-        // At each corner/edge seam the extra axis is at the window boundary.
-        assert!(alpha(0, 0, 10).abs_diff(alpha(1, 0, 10)) <= 1);
-        assert!(alpha(4, 0, 10).abs_diff(alpha(3, 0, 10)) <= 1);
-        for (corner, edge, row) in [
-            (1, 2, a.images[1].1 - 1),
-            (3, 2, 0),
-            (5, 6, 0),
-            (7, 6, a.images[7].1 - 1),
-        ] {
-            for x in 0..a.images[corner].0 {
-                assert_eq!(alpha(corner, x, row), alpha(edge, x, 0));
-            }
-        }
-        let clear = tiles(egui::epaint::Shadow::NONE, 1.0);
-        assert!(
-            clear
-                .images
-                .iter()
-                .all(|(_, _, bytes)| bytes.iter().all(|b| *b == 0))
-        );
-    }
-}

@@ -276,6 +276,7 @@ pub(super) fn run(url: &str) -> Result<(), String> {
     let status = result.clone();
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
+            .with_transparent(true)
             .with_visible(false)
             .with_app_id("dev.mixos.dopus.files"),
         ..Default::default()

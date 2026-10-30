@@ -434,6 +434,8 @@ pub struct Chrome {
     pub menu_style: design::MenuStyle,
     pub menu_side: design::MenuSide,
     pub band: design::title_band::Settings,
+    /// The same top-level frame geometry and shadow as compd.
+    pub frame: design::frame::Frame,
 }
 
 fn key() -> Id {
@@ -481,6 +483,7 @@ impl Chrome {
             menu_style: theme.menu_style(),
             menu_side: theme.menu_side(),
             band: theme.band(),
+            frame: design::frame::Frame::resolve(theme.band().style, theme.dictionary()),
         }
     }
 
@@ -513,6 +516,7 @@ impl Chrome {
                 menu_style: design::MenuStyle::default(),
                 menu_side: design::MenuSide::default(),
                 band: Default::default(),
+                frame: Default::default(),
             }
         });
         let local = crate::window_id(ctx.viewport_id(), "toolkit.chrome.client-side");

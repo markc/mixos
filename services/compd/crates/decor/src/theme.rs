@@ -382,12 +382,7 @@ fn apply_dictionary(theme: &mut DecoTheme, dictionary: &ResolvedDictionary) {
 
     // The preset picks the shape family; the theme's radius wins for the
     // mixos style (mac and win11 keep their platform radius).
-    if theme.style == ChromeStyle::Mixos
-        && let Some(radius) = dictionary.metrics.get("radius")
-        && radius.kind == ResolvedMetricKind::Px
-    {
-        theme.metrics.corner_radius = radius.value as f32;
-    }
+    theme.metrics.corner_radius = design::frame::resolve_corner_radius(theme.style, theme.metrics.corner_radius, Some(dictionary));
 }
 
 #[cfg(test)]

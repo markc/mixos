@@ -43,6 +43,7 @@ pub mod compat;
 mod compiler;
 mod context;
 pub mod decorations;
+pub mod frame;
 mod design_model;
 mod diagnostic;
 mod equivalence;

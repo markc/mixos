@@ -53,6 +53,7 @@ pub mod datatable;
 pub use logging::debug;
 pub mod choose;
 pub mod decorations;
+mod window_frame;
 pub mod dialog;
 pub mod drive;
 pub mod executed;

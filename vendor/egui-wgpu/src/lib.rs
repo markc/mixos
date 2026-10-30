@@ -36,6 +36,8 @@ pub mod capture;
 /// Module for painting [`egui`](https://github.com/emilk/egui) with [`wgpu`] on [`winit`].
 #[cfg(feature = "winit")]
 pub mod winit;
+#[cfg(feature = "winit")]
+mod window_frame;
 
 use std::sync::Arc;
 

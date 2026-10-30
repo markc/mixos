@@ -46,3 +46,26 @@ unaligned and partial-vector copies),
 and `cargo test -p toolkit --test offscreen_patch` (re-vendor wiring).
 All Rust commands run on the build worker. Drop alongside the eframe patch
 once upstream provides the same surface-independent paint path.
+
+## Native window frame
+
+`src/window_frame.rs` and `.wgsl` implement an opt-in final pass on the
+resolved target, after all egui painting and before capture/presentation.
+Toolkit sets `(radius_px, border_width_px, straight_srgba)` under the
+viewport-scoped temporary ID `("egui-wgpu.window-frame", viewport_id)` each
+pass. The painter consumes it once. This also opts into a transparent clear.
+The hairline uses the shared compd frame colours. The mask touches only the
+four corner squares and multiplies destination colour and alpha with
+`src=Zero, dst=SrcAlpha`; neither panel frames nor MSAA attachments need changes.
+
+Transparent roots prefer premultiplied surface alpha. Actual capability is
+reported under `("egui-wgpu.transparent", viewport_id)`; opaque targets skip
+the final pass and log once per viewport at debug. Radius zero removes the
+mask when maximised/fullscreen. Offscreen capture applies the same pass when
+the viewport supports alpha, before its GPU readback copy.
+
+Guards: toolkit's `window_frame_patch` and `window_frame` unit tests, and
+`rounded_native_frame_masks_the_resolved_target_and_handles_opaque_fallback`
+in the existing headless GPU suite. The GPU test checks both RGBA/BGRA, scales
+1 and 2, antialiasing, premultiplication, border pixels, opaque fallback,
+radius-zero restore, and viewport isolation. No dependencies were added.

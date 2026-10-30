@@ -32,6 +32,7 @@ pub fn viewport(app_id: &str, title: &str) -> ViewportBuilder {
         .with_app_id(app_id)
         .with_title(title)
         .with_decorations(false)
+        .with_transparent(true)
 }
 
 static APP_ID: std::sync::OnceLock<String> = std::sync::OnceLock::new();

@@ -21,12 +21,15 @@ const BUDGET: Duration = Duration::from_millis(200);
 #[cfg(all(target_os = "linux", feature = "shadow"))]
 pub fn initialise_window(ctx: &egui::Context, window: Option<Arc<winit::window::Window>>) {
     if let Some(window) = window {
+        crate::window_frame::install(ctx);
         crate::shadow::install(ctx, window);
     }
 }
 
 #[cfg(not(all(target_os = "linux", feature = "shadow")))]
-pub fn initialise_window<W>(_: &egui::Context, _: Option<Arc<W>>) {}
+pub fn initialise_window<W>(ctx: &egui::Context, window: Option<Arc<W>>) {
+    if window.is_some() { crate::window_frame::install(ctx); }
+}
 
 /// Install once after winit has chosen the backend. Merely having a
 /// WAYLAND_DISPLAY in the environment is not evidence for that choice.

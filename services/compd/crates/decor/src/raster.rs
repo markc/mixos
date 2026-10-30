@@ -434,6 +434,11 @@ pub struct ShadowTile {
 /// physical px). Falloff: full inside the box, smoothstep to nothing over
 /// `softness` outside it.
 pub fn shadow_tile(colour: Srgba, alpha: f32, radius: f32, softness: f32) -> ShadowTile {
+    let tile = design::frame::shadow_tile([colour.r, colour.g, colour.b, colour.a], alpha, radius, softness);
+    ShadowTile { corner: tile.corner, image: Image { width: tile.size, height: tile.size, pixels: tile.pixels } }
+}
+#[cfg(test)]
+fn legacy_shadow_tile(colour: Srgba, alpha: f32, radius: f32, softness: f32) -> ShadowTile {
     let corner = (softness + radius).ceil().max(1.0) as u32;
     let size = corner * 2 + 1;
     let mut image = Image::new(size, size);
@@ -742,5 +747,20 @@ mod tests {
         img.pixels[0] = premul(Srgba::new(1.0, 0.5, 0.0, 0.5), 1.0);
         assert_eq!(img.to_argb8888(), vec![0, 64, 128, 128]);
         let _ = vec2(0.0, 0.0);
+    }
+}
+
+#[test]
+fn shared_shadow_raster_is_byte_identical_to_the_legacy_decor_raster() {
+    for (colour, alpha, radius, softness) in [
+        (Srgba::new(0.0, 0.0, 0.0, 1.0), 0.45, 12.0, 40.0),
+        (Srgba::new(0.8, 0.2, 0.1, 0.7), 0.35, 6.25, 28.5),
+        (Srgba::new(0.2, 0.7, 0.4, 0.5), 0.18, 0.0, 0.0),
+    ] {
+        let actual = shadow_tile(colour, alpha, radius, softness);
+        let legacy = legacy_shadow_tile(colour, alpha, radius, softness);
+        assert_eq!(actual.corner, legacy.corner);
+        assert_eq!(actual.image, legacy.image);
+        assert_eq!(actual.image.to_argb8888(), legacy.image.to_argb8888());
     }
 }
