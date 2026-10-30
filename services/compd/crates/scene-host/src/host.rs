@@ -1078,11 +1078,12 @@ impl SceneHost {
     }
 
     /// A corner click on a settings-owned edge: `shell.panels.<id>` with its
-    /// mode replaced, fenced on the snapshot the click saw, so a change made
-    /// meanwhile elsewhere is refused rather than overwritten. The accepted
-    /// change returns as a new look, which moves the edge.
+    /// mode replaced, fenced on the applied snapshot (the preferences the
+    /// click read), so a change made meanwhile elsewhere, or a second click
+    /// before the first lands, is refused rather than overwritten. The
+    /// accepted change returns as a new look, which moves the edge.
     fn write_panel_mode(&self, id: &str, mode: &str) {
-        let Some(snapshot) = self.settings.session().host().consumer().current() else {
+        let Some(snapshot) = self.settings.session().host().consumer().applied() else {
             tracing::warn!(id, "scene host: corner click before settings were read");
             return;
         };
