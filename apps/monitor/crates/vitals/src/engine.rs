@@ -230,6 +230,7 @@ pub struct Session<D = Decorations> {
     pub style: Option<Style>,
     pub mode: Mode,
     pub decorations: D,
+    pub actions_place: design::ActionsPlace,
     pub captions: CaptionSide,
 }
 
@@ -728,7 +729,7 @@ impl Engine {
     }
 
     pub fn decoration_resolution(&self) -> design::decorations::Resolution {
-        design::decorations::resolve(self.ui.theme_decorations, self.session.decorations)
+        design::decorations::resolve_with_actions(self.ui.theme_decorations, self.session.decorations, self.session.actions_place)
     }
 
     pub fn effective(&self) -> Session<design::Decorations> {
@@ -738,6 +739,7 @@ impl Engine {
             style: ui.theme_style.unwrap_or(self.session.style),
             mode: ui.theme_mode.unwrap_or(self.session.mode),
             decorations: self.decoration_resolution().mode,
+            actions_place: self.session.actions_place,
             captions: ui.theme_captions.unwrap_or(self.session.captions),
         }
     }

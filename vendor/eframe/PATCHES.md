@@ -41,7 +41,7 @@ the guards before changing the pinned version.
 ## Wayland window menu
 
 `native/winit_integration.rs` drains an `egui::Pos2` from context temporary
-data under `egui::Id::new(("eframe.window-menu", viewport_id))`. The wgpu and
+data under `egui::Id::unique(("eframe.window-menu", viewport_id))`. The wgpu and
 glow integrations call it after each UI pass, including immediate viewports.
 It converts egui points to physical pixels (native scale × egui zoom), then
 calls winit's `Window::show_window_menu` on Wayland only. Requests are one-shot

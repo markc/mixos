@@ -61,7 +61,7 @@ thumbs.workspace = true
 smithay-client-toolkit = { version = "=0.19.2", optional = true }
 wayland-backend = { workspace = true, features = ["client_system"], optional = true }
 wayland-scanner = { workspace = true, optional = true }
-winit = { version = "=0.30.13", default-features = false, features = ["wayland"], optional = true }
+winit = { version = "=0.30.13", default-features = false, features = ["wayland", "rwh_06"], optional = true }
 raw-window-handle = "0.6"
 wgpu = { workspace = true, optional = true }
 egui-wgpu = { workspace = true, optional = true }

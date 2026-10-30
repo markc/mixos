@@ -323,6 +323,7 @@ impl Shell {
         };
         shell.engine.session = (shell.theme.scheme(), shell.theme.mode());
         shell.engine.session_decorations = shell.theme.requested_decorations();
+        shell.engine.session_actions = shell.theme.band().place;
         shell.engine.start_appearance(&hostname());
         shell.engine.read_wallpaper();
         shell.settle();
@@ -641,6 +642,7 @@ impl Shell {
         toolkit::debug!(app = APP, "settings preview applied");
         self.engine.session = (base.scheme(), base.mode());
         self.engine.session_decorations = base.requested_decorations();
+        self.engine.session_actions = base.band().place;
         self.installed = (choice, look, custom_source, font);
     }
 

@@ -211,6 +211,7 @@ fn session_of(theme: &Theme) -> vitals::Session {
         style: theme.style_axis(),
         mode: theme.mode(),
         decorations: theme.requested_decorations(),
+        actions_place: theme.band().place,
         captions: theme.captions(),
     }
 }

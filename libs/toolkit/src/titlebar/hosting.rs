@@ -148,10 +148,18 @@ mod tests {
 
     #[test]
     fn publication_is_hosted_coalesced_and_revisioned() {
-        design::decorations::with_resolver(Arc::new(design::decorations::Resolver::new(
-            || design::decorations::SessionFacts { wayland: true, desktops: "MixOS".into(), decoration_global: Some(true) },
-            || None, |_| {},
-        )), publication_on_host);
+        design::decorations::with_resolver(
+            Arc::new(design::decorations::Resolver::new(
+                || design::decorations::SessionFacts {
+                    wayland: true,
+                    desktops: "MixOS".into(),
+                    decoration_global: Some(true),
+                },
+                || None,
+                |_| {},
+            )),
+            publication_on_host,
+        );
     }
 
     fn publication_on_host() {
@@ -209,23 +217,43 @@ mod tests {
     #[test]
     fn foreign_ssd_keeps_menu_and_actions_in_the_app() {
         for desktop in ["KDE", "GNOME", "MixOS", "KDE:mixos"] {
-            design::decorations::with_resolver(Arc::new(design::decorations::Resolver::new(
-                move || design::decorations::SessionFacts { wayland: true, desktops: desktop.into(), decoration_global: Some(true) },
-                || None, |_| {},
-            )), || {
-                let ctx = Context::default();
-                crate::install(&ctx, &crate::Theme::embedded()
-                    .framed(design::Decorations::Server, design::CaptionSide::Auto)
-                    .with_menus(design::MenuStyle::Titlebar, design::MenuSide::Left)
-                    .with_band(design::title_band::Settings::from_names("auto", "right", "titlebar", "mac")));
-                crate::drive::install(&ctx, "demo");
-                crate::drive::set_service(&ctx, Some("demo"));
-                let host = design::decorations::prefers_client_side(desktop);
-                assert_eq!(hosted(&ctx), host);
-                assert_eq!(crate::menu::effective(&ctx), if host { design::MenuStyle::Titlebar } else { design::MenuStyle::Button });
-                assert_eq!(crate::menu::form(&ctx)["hosted"], host);
-                assert_eq!(form(&ctx)["hosted"], host);
-            });
+            design::decorations::with_resolver(
+                Arc::new(design::decorations::Resolver::new(
+                    move || design::decorations::SessionFacts {
+                        wayland: true,
+                        desktops: desktop.into(),
+                        decoration_global: Some(true),
+                    },
+                    || None,
+                    |_| {},
+                )),
+                || {
+                    let ctx = Context::default();
+                    crate::install(
+                        &ctx,
+                        &crate::Theme::embedded()
+                            .framed(design::Decorations::Server, design::CaptionSide::Auto)
+                            .with_menus(design::MenuStyle::Titlebar, design::MenuSide::Left)
+                            .with_band(design::title_band::Settings::from_names(
+                                "auto", "right", "titlebar", "mac",
+                            )),
+                    );
+                    crate::drive::install(&ctx, "demo");
+                    crate::drive::set_service(&ctx, Some("demo"));
+                    let host = design::decorations::prefers_client_side(desktop);
+                    assert_eq!(hosted(&ctx), host);
+                    assert_eq!(
+                        crate::menu::effective(&ctx),
+                        if host {
+                            design::MenuStyle::Titlebar
+                        } else {
+                            design::MenuStyle::Button
+                        }
+                    );
+                    assert_eq!(crate::menu::form(&ctx)["hosted"], host);
+                    assert_eq!(form(&ctx)["hosted"], host);
+                },
+            );
         }
     }
 }

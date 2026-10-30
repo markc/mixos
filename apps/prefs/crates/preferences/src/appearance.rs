@@ -130,7 +130,7 @@ fn named<T>(what: &str, name: &str, from_name: fn(&str) -> Option<T>) -> Result<
 
 impl Look {
     pub fn decoration_resolution(&self) -> design::decorations::Resolution {
-        design::decorations::resolve(None, self.decorations)
+        design::decorations::resolve_with_actions(None, self.decorations, design::ActionsPlace::resolve(&self.actions_place))
     }
 
     /// The appearance summary distinguishes the stored request from what

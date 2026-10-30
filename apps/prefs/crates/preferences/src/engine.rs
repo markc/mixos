@@ -360,6 +360,7 @@ pub struct Engine {
     /// The session theme's scheme and mode, as the shell loaded it.
     pub session: (Scheme, Mode),
     pub session_decorations: Decorations,
+    pub session_actions: design::ActionsPlace,
     /// The Appearance panel over settingsd.
     pub look: Appearance,
     pub wallpaper: crate::wallpaper::WallpaperEditor,
@@ -394,6 +395,7 @@ impl Engine {
             quitting: false,
             session: (Scheme::default(), Mode::default()),
             session_decorations: Decorations::default(),
+            session_actions: design::ActionsPlace::default(),
             look: Appearance::default(),
             wallpaper: crate::wallpaper::WallpaperEditor::default(),
             picker: crate::picker::Picker::default(),
@@ -774,7 +776,8 @@ impl Engine {
             .look
             .shown()
             .map_or(self.session_decorations, |look| look.decorations);
-        design::decorations::resolve(self.ui.theme_decorations, session)
+        let actions = self.look.shown().map_or(self.session_actions, |look| design::ActionsPlace::resolve(&look.actions_place));
+        design::decorations::resolve_with_actions(self.ui.theme_decorations, session, actions)
     }
 
     /// Choose the window's scheme and mode (`None` follows the session).

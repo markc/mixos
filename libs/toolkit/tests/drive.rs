@@ -1133,8 +1133,16 @@ fn a_capture_ignores_other_screenshots() {
 }
 
 fn on_mixos(operation: impl FnOnce()) {
-    design::decorations::with_resolver(std::sync::Arc::new(design::decorations::Resolver::new(
-        || design::decorations::SessionFacts { wayland: true, desktops: "MixOS".into(), decoration_global: Some(true) },
-        || None, |_| {},
-    )), operation);
+    design::decorations::with_resolver(
+        std::sync::Arc::new(design::decorations::Resolver::new(
+            || design::decorations::SessionFacts {
+                wayland: true,
+                desktops: "MixOS".into(),
+                decoration_global: Some(true),
+            },
+            || None,
+            |_| {},
+        )),
+        operation,
+    );
 }

@@ -170,15 +170,21 @@ pub fn resolve(choice: Option<RequestedDecorations>, session: RequestedDecoratio
 /// Headless callers have no host; tests can inject the resolver.
 pub fn has_host() -> bool {
     let injected = INJECTED.with(|slot| slot.borrow().clone());
-    injected.as_ref().or_else(|| PROCESS.get()).is_some_and(|r| {
-        let facts = r.facts();
-        facts.wayland && prefers_client_side(&facts.desktops)
-    })
+    injected
+        .as_ref()
+        .or_else(|| PROCESS.get())
+        .is_some_and(|r| {
+            let facts = r.facts();
+            facts.wayland && prefers_client_side(&facts.desktops)
+        })
 }
 
 pub fn is_wayland() -> bool {
     let injected = INJECTED.with(|slot| slot.borrow().clone());
-    injected.as_ref().or_else(|| PROCESS.get()).is_some_and(|r| r.facts().wayland)
+    injected
+        .as_ref()
+        .or_else(|| PROCESS.get())
+        .is_some_and(|r| r.facts().wayland)
 }
 
 pub fn resolve_with_actions(
@@ -194,11 +200,14 @@ pub fn resolve_with_actions(
     // read neither the environment nor the real session.
     let mode = match choice.unwrap_or(session) {
         RequestedDecorations::Auto => {
-            return automatic_with_actions(&SessionFacts {
-                wayland: true,
-                desktops: String::new(),
-                decoration_global: None,
-            }, actions);
+            return automatic_with_actions(
+                &SessionFacts {
+                    wayland: true,
+                    desktops: String::new(),
+                    decoration_global: None,
+                },
+                actions,
+            );
         }
         RequestedDecorations::Client => Decorations::Client,
         RequestedDecorations::Server => Decorations::Server,
@@ -294,18 +303,47 @@ mod tests {
     fn titlebar_actions_are_per_theme_and_explicit_modes_win() {
         let r = Resolver::new(|| facts(true, "KDE", Some(true)), || None, |_| {});
         for _ in 0..2 {
-            assert_eq!(r.resolve_with_actions(None, Auto, ActionsPlace::Titlebar), Resolution {
-                mode: Decorations::Client, reason: "rule3b",
-            });
-            assert_eq!(r.resolve_with_actions(None, Auto, ActionsPlace::Row).reason, "rule3");
+            assert_eq!(
+                r.resolve_with_actions(None, Auto, ActionsPlace::Titlebar),
+                Resolution {
+                    mode: Decorations::Client,
+                    reason: "rule3b",
+                }
+            );
+            assert_eq!(
+                r.resolve_with_actions(None, Auto, ActionsPlace::Row).reason,
+                "rule3"
+            );
         }
         for mode in [Client, Server] {
-            assert_eq!(r.resolve_with_actions(Some(mode), Auto, ActionsPlace::Titlebar).reason, "choice");
+            assert_eq!(
+                r.resolve_with_actions(Some(mode), Auto, ActionsPlace::Titlebar)
+                    .reason,
+                "choice"
+            );
         }
-        let r = Resolver::new(|| facts(true, "KDE", Some(true)), || Some("ssd".into()), |_| {});
-        assert_eq!(r.resolve_with_actions(None, Auto, ActionsPlace::Titlebar).mode, Decorations::Server);
-        assert_eq!(automatic_with_actions(&facts(false, "KDE", Some(true)), ActionsPlace::Titlebar).reason, "rule1");
-        assert_eq!(automatic_with_actions(&facts(true, "KDE:MixOS", Some(true)), ActionsPlace::Titlebar).reason, "rule2");
+        let r = Resolver::new(
+            || facts(true, "KDE", Some(true)),
+            || Some("ssd".into()),
+            |_| {},
+        );
+        assert_eq!(
+            r.resolve_with_actions(None, Auto, ActionsPlace::Titlebar)
+                .mode,
+            Decorations::Server
+        );
+        assert_eq!(
+            automatic_with_actions(&facts(false, "KDE", Some(true)), ActionsPlace::Titlebar).reason,
+            "rule1"
+        );
+        assert_eq!(
+            automatic_with_actions(
+                &facts(true, "KDE:MixOS", Some(true)),
+                ActionsPlace::Titlebar
+            )
+            .reason,
+            "rule2"
+        );
     }
 
     #[test]

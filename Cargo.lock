@@ -10228,7 +10228,9 @@ dependencies = [
  "uuid",
  "wayland-backend",
  "wayland-client",
+ "wayland-scanner",
  "wgpu",
+ "winit 0.30.13",
  "xkbcommon 0.7.0",
  "zbus",
 ]

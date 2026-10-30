@@ -689,9 +689,11 @@ mod tests {
                 RequestedDecorations::Auto
             );
             assert_eq!(automatic.decorations(), Decorations::Server);
-            let titlebar = automatic.clone().with_band(design::title_band::Settings::from_names(
-                "auto", "right", "titlebar", "mac",
-            ));
+            let titlebar = automatic
+                .clone()
+                .with_band(design::title_band::Settings::from_names(
+                    "auto", "right", "titlebar", "mac",
+                ));
             assert_eq!(titlebar.decorations(), Decorations::Client);
             assert_eq!(titlebar.decoration_resolution().reason, "rule3b");
             assert_eq!(automatic.decoration_resolution().reason, "rule3");
