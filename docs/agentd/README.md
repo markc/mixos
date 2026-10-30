@@ -17,7 +17,8 @@ agentd speaks the [Agent Client Protocol](https://agentclientprotocol.com)
 already support, so one integration covers them all. agentd adds what ACP
 lacks: addressing across the mesh, many watchers, and a human in the loop.
 Every session also gets [mixos-mcp](../mixos-mcp/README.md), so the agent
-can use the Bus in turn.
+can use the Bus in turn. The rules are in the
+[decision](../docs/decisions/2026-10-30-acp-agent-sessions.md).
 
 ```text
  Bus callers ── agent.* commands, agent.session.* topics ──► agentd

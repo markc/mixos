@@ -253,7 +253,8 @@ question goes to the human on the desk they are looking at, through
 already support, so one integration covers them all. agentd adds what ACP
 lacks: addressing across the mesh, many watchers, and a human in the loop.
 Every session also gets <a href="/mixos-mcp/">mixos-mcp</a>, so the agent
-can use the Bus in turn.</p>
+can use the Bus in turn. The rules are in the
+<a href="/docs/decisions/2026-10-30-acp-agent-sessions/">decision</a>.</p>
 <pre><code class="language-text"> Bus callers ── agent.* commands, agent.session.* topics ──► agentd
                                                               │ ACP over the agent's stdio
                                                               ▼
