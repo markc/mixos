@@ -1,0 +1,215 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- agentd_resume_test: agent.session.resume over a real Bus, against the
+-- fake ACP agent in its resume, load and refuse modes.
+-- - Resume keeps the session id and continues its seq; the agent gets its
+--   mixos-mcp entry again; a retry replays the receipt; a live session is
+--   refused.
+-- - Load drops the replayed history but keeps current-state updates.
+-- - A refused resume puts the session back to ended as it was.
+-- - An agent that offers neither is refused before anything starts.
+-- - A session live at an agentd restart can be resumed after it.
+-- Run from the checkout root: mix services/agentd/tests/agentd_resume_test.mix
+-- MIXOS_TEST_MIX / MIXOS_TEST_NODED choose the binaries (tools/mix_tests.mix
+-- sets both); the mix must have process_watch stdin pipes.
+
+$pb = require("../../../tests/lib/private_bus.mix")
+$here = dirname(realpath($0))
+$agentd = realpath($here .. "/../scripts/agentd.mix")
+$notifyd = realpath($here .. "/../../notifyd/scripts/notifyd.mix")
+$listener = realpath($here .. "/fixtures/agent_listener.mix")
+$fake = realpath($here .. "/fixtures/fake_acp_agent.mix")
+$mix = env("MIXOS_TEST_MIX", mixos_path("prefix") .. "/bin/mix")
+$noded = env("MIXOS_TEST_NODED", mixos_path("prefix") .. "/bin/noded")
+$tmp = env("TMPDIR", "/tmp") .. "/agentd-resume-test." .. uuid()
+$results = []
+$pids = []
+
+fn check($name, $ok)
+  push($results, {name: $name, ok: $ok})
+  print((if $ok then "PASS " else "FAIL " end) .. $name)
+end
+
+fn decode($v)
+  if type($v) == "string" then
+    try
+      return json_parse($v)
+    catch $m
+    end
+  end
+  return $v
+end
+
+fn agent($command, $body)
+  $b = json_encode($body)
+  send agent $command body=$b timeout=10
+  return {rc: $rc, v: decode($result)}
+end
+
+fn code($v)
+  if type($v) == "map" then return $v.error_code end
+  return nil
+end
+
+fn events()
+  if not is_file($tmp .. "/events") then return [] end
+  return filter(split(read_file($tmp .. "/events"), "\n"), fn($l) = $l != "")
+end
+
+fn saw($prefix, $part)
+  for $i = 1 to 100
+    for each $l in events()
+      if starts_with($l, $prefix) and contains($l, $part) then return true end
+    end
+    sleep(0.1)
+  end
+  return false
+end
+
+fn count_seen($prefix, $part)
+  return len(filter(events(), fn($l) = starts_with($l, $prefix) and contains($l, $part)))
+end
+
+fn citizen($script, $name, $env, $log)
+  return spawn([$mix, "--serve", $script, "--name", $name],
+    {detach: true, env: $env, stdout: {file: $tmp .. "/" .. $log, append: true}, stderr: "stdout"})
+end
+
+-- A logged event of $s, by kind, read back from agentd.
+fn logged($s, $kind)
+  return filter(agent("agent.session.read", {session: $s, since: 0}).v.events ?? [], fn($e) = $e.kind == $kind)
+end
+
+fn up()
+  for $i = 1 to 80
+    if agent("agent.agents", {}).rc == 0 then return true end
+    sleep(0.25)
+  end
+  return false
+end
+
+fn start($name)
+  $n = agent("agent.session.new", {agent: $name, cwd: $tmp .. "/ws"})
+  saw("updated " .. to_string($n.v.session) .. " ", " ready ")
+  return $n.v.session
+end
+
+fn close_and_wait($s)
+  agent("agent.session.close", {session: $s})
+  return saw("ended " .. $s, "")
+end
+
+$bus = nil
+mkdir($tmp .. "/ws", {parents: true})
+try
+  $bus = $pb.start({dir: $tmp .. "/bus", name: "agentd-resume", noded: $noded})
+  $env = merge($pb.client_env($bus), {HOME: $tmp .. "/home", MIXOS_NOTIFYD_STATE: $tmp .. "/notify.json"})
+  $conf = {max_live: 3, agents: {
+    resumer: {argv: [$mix, $fake, "resume"], roots: [$tmp .. "/ws"]},
+    loader: {argv: [$mix, $fake, "load"], roots: [$tmp .. "/ws"]},
+    refuser: {argv: [$mix, $fake, "refuse"], roots: [$tmp .. "/ws"]},
+    plain: {argv: [$mix, $fake], roots: [$tmp .. "/ws"]}}}
+  write_file($tmp .. "/agent.conf.mix", data_encode($conf))
+  push($pids, citizen($listener, "agentlisten", merge($env, {AGENT_EVENTS: $tmp .. "/events"}), "listener.log"))
+  push($pids, citizen($notifyd, "notify", $env, "notifyd.log"))
+  $agentd_env = merge($env, {MIXOS_AGENTD_CONF: $tmp .. "/agent.conf.mix",
+    MIXOS_AGENTD_MCP: "/bin/true", MIXOS_AGENTD_DB: $tmp .. "/state/sessions.db"})
+  $agentd_pid = citizen($agentd, "agent", $agentd_env, "agentd.log")
+  push($pids, $agentd_pid)
+  check("agentd answers", up())
+  sleep(3)
+
+  -- Resume: same id, seq continues, mixos-mcp comes back.
+  $s = start("resumer")
+  agent("agent.session.prompt", {session: $s, content: "MCP before"})
+  check("a turn before close", saw("updated " .. $s .. " ", "echo:MCP before"))
+  sleep(0.3)
+  $seq_before = agent("agent.session.read", {session: $s, since: 0}).v.session.seq
+  check("close ends it", close_and_wait($s))
+  $r = agent("agent.session.resume", {session: $s, id: "res-1"})
+  check("resume is accepted via session/resume", $r.rc == 0 and $r.v.via == "resume" and $r.v.session == $s)
+  check("the session comes back", saw("updated " .. $s .. " ", " resumed "))
+  $res = logged($s, "resumed")
+  $init = logged($s, "initialized")
+  check("the seq continues: initialized, then resumed",
+    len($res) == 1 and len($init) == 2 and $init[1].seq == $seq_before + 1 and $res[0].seq == $seq_before + 2)
+  agent("agent.session.prompt", {session: $s, content: "MCP after"})
+  check("the resumed agent answers a turn", saw("updated " .. $s .. " ", "echo:MCP after"))
+  check("with its mixos-mcp entry again", count_seen("updated " .. $s .. " ", "mcp:" .. $s) == 2)
+  $again = agent("agent.session.resume", {session: $s, id: "res-1"})
+  check("a retried resume replays its receipt", $again.rc == 0 and $again.v.via == "resume")
+  $live = agent("agent.session.resume", {session: $s})
+  check("resuming a live session is refused", $live.rc == 10 and code($live.v) == "USAGE")
+  close_and_wait($s)
+
+  -- Load: history replay dropped, current state kept.
+  $l = start("loader")
+  close_and_wait($l)
+  $lr = agent("agent.session.resume", {session: $l})
+  check("resume falls back to session/load", $lr.rc == 0 and $lr.v.via == "load")
+  check("the loaded session comes back", saw("updated " .. $l .. " ", " resumed "))
+  check("replayed history is not logged again",
+    len(filter(logged($l, "agent_message_chunk"), fn($e) = $e.update.content.text == "old history")) == 0)
+  check("a current-state update during the load is kept", len(logged($l, "current_mode_update")) == 1)
+  close_and_wait($l)
+
+  -- Refused: back to ended, as it was.
+  $f = start("refuser")
+  close_and_wait($f)
+  $before = agent("agent.session.read", {session: $f, since: 0}).v.session
+  $fr = agent("agent.session.resume", {session: $f})
+  check("a resume the agent will refuse is accepted at first", $fr.rc == 0 and $fr.v.via == "resume")
+  check("then fails", saw("updated " .. $f .. " ", " resume_failed "))
+  sleep(0.5)
+  $after = agent("agent.session.read", {session: $f, since: 0}).v.session
+  check("and the session is ended as before",
+    $after.status == "ended" and $after.exit_code == $before.exit_code and $after.end_reason == $before.end_reason)
+  $rf = logged($f, "resume_failed")
+  check("the failure names AGENT_NOT_RESUMABLE", len($rf) == 1 and $rf[0].error_code == "AGENT_NOT_RESUMABLE")
+
+  -- Neither offered: refused before anything starts.
+  $p = start("plain")
+  close_and_wait($p)
+  $np = agent("agent.session.resume", {session: $p})
+  check("an agent with neither resume nor load is AGENT_NOT_RESUMABLE", $np.rc == 15 and code($np.v) == "AGENT_NOT_RESUMABLE")
+  check("an unknown session is UNKNOWN_SESSION", agent("agent.session.resume", {session: "zzzz9999"}).rc == 14)
+
+  -- Restart: a session live at the restart can be resumed afterwards.
+  $k = start("resumer")
+  $killed = kill($agentd_pid, 15)
+  check("agentd stops", $killed != false)
+  for $i = 1 to 40
+    if agent("agent.agents", {}).rc != 0 then break end
+    sleep(0.25)
+  end
+  push($pids, citizen($agentd, "agent", $agentd_env, "agentd.log"))
+  check("agentd comes back", up())
+  $kr = agent("agent.session.resume", {session: $k})
+  check("the session ended by the restart resumes", $kr.rc == 0 and $kr.v.via == "resume")
+  check("and is ready again", saw("updated " .. $k .. " ", " resumed "))
+finally
+  for each $pid in $pids
+    try
+      kill($pid, 15)
+    catch $m
+    end
+  end
+  if $bus != nil then $pb.stop($bus) end
+end
+
+$failed = filter($results, fn($r) = not $r.ok)
+print(to_string(len($results) - len($failed)) .. "/" .. to_string(len($results)) .. " passed")
+if len($failed) > 0 then
+  print("logs in " .. $tmp)
+  for each $f in ["agentd.log", "events"]
+    if is_file($tmp .. "/" .. $f) then
+      print("--- " .. $f)
+      $lines = lines(read_file($tmp .. "/" .. $f))
+      for each $x in slice($lines, max(0, len($lines) - 40))
+        print("  | " .. slice($x, 0, 300))
+      end
+    end
+  end
+  exit(1)
+end
+remove_dir($tmp)

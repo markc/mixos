@@ -105,6 +105,31 @@ check("an old new command keeps its receipt while its session stays", $log.comma
 check("and old commands of sessions the log never had", $log.command_get($h, "zzzz9999", "o1") == nil)
 check("a later session stays", $log.known($h, "bbbb2222"))
 check("view of an unknown session is nil", $log.view($h, "cccc3333") == nil)
+
+-- What a resume needs, and its two outcomes.
+$log.session_agent($h, "bbbb2222", "acp-9", ["/w2"], {loadSession: true}, {name: "fake"})
+$row = $log.session_row($h, "bbbb2222")
+check("session_row decodes acp, dirs and capabilities",
+  $row.acp == "acp-9" and deep_eq($row.dirs, ["/w2"]) and $row.caps.loadSession == true and $row.agent_info.name == "fake")
+$log.session_resumed($h, "bbbb2222")
+$live = $log.session_row($h, "bbbb2222")
+check("a resumed session is live with no end recorded", $live.status == "live" and $live.ended_at == nil and $live.exit_code == nil)
+check("expiry skips a resumed session", len($log.expire($h, 999999)) == 0 and $log.known($h, "bbbb2222"))
+$log.session_restore($h, $row)
+$back = $log.session_row($h, "bbbb2222")
+check("a failed resume restores the ended row", $back.status == "ended" and $back.ended_at == 3000 and $back.exit_code == 0)
+sqlclose($h)
+
+-- A log from before the resume columns gains them in place.
+$old = $tmp .. "/old.db"
+$oh = sqlopen($old, "rwc")
+sqlexec($oh, "CREATE TABLE sessions (id TEXT PRIMARY KEY, agent TEXT NOT NULL, cwd TEXT NOT NULL, parent TEXT, sender TEXT, created_at TEXT NOT NULL, status TEXT NOT NULL, ended_at REAL, exit_code INTEGER, signal INTEGER, end_reason TEXT)")
+sqlexec($oh, "INSERT INTO sessions (id, agent, cwd, created_at, status) VALUES (?, ?, ?, ?, ?)", ["dddd4444", "a", "/w", "t", "ended"])
+sqlclose($oh)
+$h = $log.open($old)
+$cols = map(sqlexec($h, "PRAGMA table_info(sessions)"), fn($r) = $r.name)
+check("an older log gains the resume columns", contains($cols, "acp") and contains($cols, "caps") and contains($cols, "dirs"))
+check("and keeps its rows", $log.session_row($h, "dddd4444").acp == nil and $log.known($h, "dddd4444"))
 sqlclose($h)
 
 run_argv_must(["rm", "-rf", $tmp])

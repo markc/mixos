@@ -19,6 +19,11 @@ $SCHEMA = [
   "CREATE INDEX IF NOT EXISTS commands_at ON commands(at)"
 ]
 
+-- Columns added after the first schema: what a resume needs (the agent's
+-- own session id, the extra directories, what the agent advertised). Added
+-- to an older file in place; each is NULL until written.
+$SESSION_COLUMNS = ["acp TEXT", "dirs TEXT", "caps TEXT", "agent_info TEXT"]
+
 -- Open (creating) the log. WAL with synchronous=NORMAL: a commit is not
 -- an fsync, so streamed chunks stay cheap; a power cut can lose the last
 -- commits but never corrupts the file.
@@ -38,6 +43,10 @@ fn open($path)
   for each $sql in $SCHEMA
     sqlexec($h, $sql)
   end
+  $have = map(sqlexec($h, "PRAGMA table_info(sessions)"), fn($r) = $r.name)
+  for each $col in $SESSION_COLUMNS
+    if not contains($have, before($col, " ")) then sqlexec($h, "ALTER TABLE sessions ADD COLUMN " .. $col) end
+  end
   return $h
 end
 
@@ -48,6 +57,34 @@ end
 fn session_started($h, $s)
   sqlexec($h, "INSERT INTO sessions (id, agent, cwd, parent, sender, created_at, status) VALUES (?, ?, ?, ?, ?, ?, 'live')",
     [$s.id, $s.agent, $s.cwd, $s.parent, $s.sender, $s.created_at])
+end
+
+-- What the agent said at initialize and session/new: needed to resume.
+fn session_agent($h, $id, $acp, $dirs, $caps, $agent_info)
+  sqlexec($h, "UPDATE sessions SET acp = ?, dirs = ?, caps = ?, agent_info = ? WHERE id = ?",
+    [$acp, json_encode($dirs ?? []), json_encode($caps), json_encode($agent_info), $id])
+end
+
+-- The stored row of a session, decoded, or nil.
+fn session_row($h, $id)
+  $rows = sqlexec($h, "SELECT * FROM sessions WHERE id = ?", [$id])
+  if len($rows) == 0 then return nil end
+  $r = $rows[0]
+  for each $k in ["dirs", "caps", "agent_info"]
+    $r[$k] = if type($r[$k]) == "string" then json_parse($r[$k]) else nil end
+  end
+  return $r
+end
+
+-- A resume makes an ended session live again (expiry skips it).
+fn session_resumed($h, $id)
+  sqlexec($h, "UPDATE sessions SET status = 'live', ended_at = NULL, exit_code = NULL, signal = NULL, end_reason = NULL WHERE id = ?", [$id])
+end
+
+-- A failed resume puts back the row as it was before it.
+fn session_restore($h, $row)
+  sqlexec($h, "UPDATE sessions SET status = 'ended', ended_at = ?, exit_code = ?, signal = ?, end_reason = ? WHERE id = ?",
+    [$row.ended_at, $row.exit_code, $row.signal, $row.end_reason, $row.id])
 end
 
 fn session_ended($h, $id, $exit_code, $signal, $reason, $at)

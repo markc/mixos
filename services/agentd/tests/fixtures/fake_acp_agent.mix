@@ -14,8 +14,24 @@
 -- readline() is nil at EOF (an older mix gives ""; ACP never sends an
 -- empty line), so either ends the agent.
 
+-- An optional first argument sets what it can do with a past session:
+--   resume  advertise session/resume (no replay)
+--   load    advertise loadSession; session/load replays one old chunk and
+--           a current mode update before answering
+--   refuse  advertise session/resume, then refuse it
+$caps_mode = if len(args()) > 0 then args()[0] else "" end
 $sessions = {}
 $next_id = 900
+
+fn session_mcp($params)
+  $mcp = "-"
+  for each $s in $params.mcpServers ?? []
+    for each $e in $s.env ?? []
+      if $e.name == "MIXOS_AGENT_SESSION" then $mcp = $e.value end
+    end
+  end
+  return $mcp
+end
 
 fn out($m)
   $m.jsonrpc = "2.0"
@@ -43,17 +59,26 @@ loop
   if $line == nil or $line == "" then break end
   $m = json_parse($line)
   if $m.method == "initialize" then
+    $caps = {loadSession: $caps_mode == "load"}
+    if $caps_mode == "resume" or $caps_mode == "refuse" then $caps.sessionCapabilities = {resume: {}} end
     out({id: $m.id, result: {protocolVersion: 1, agentInfo: {name: "fake-acp", version: "0"},
-      agentCapabilities: {loadSession: false}, authMethods: []}})
+      agentCapabilities: $caps, authMethods: []}})
+  elif $m.method == "session/resume" or $m.method == "session/load" then
+    $sid = $m.params.sessionId
+    if $caps_mode == "refuse" then
+      out({id: $m.id, error: {code: -32002, message: "Resource not found: session " .. to_string($sid)}})
+    else
+      $sessions[$sid] = {mcp: session_mcp($m.params), cwd: $m.params.cwd}
+      if $m.method == "session/load" then
+        text($sid, "old history")
+        update($sid, {sessionUpdate: "current_mode_update", currentModeId: "plan"})
+      end
+      out({id: $m.id, result: {modes: {currentModeId: "plan",
+        availableModes: [{id: "default", name: "Default"}, {id: "plan", name: "Plan"}]}}})
+    end
   elif $m.method == "session/new" then
     $sid = "fake-" .. to_string(len(keys($sessions)) + 1)
-    $mcp = "-"
-    for each $s in $m.params.mcpServers ?? []
-      for each $e in $s.env ?? []
-        if $e.name == "MIXOS_AGENT_SESSION" then $mcp = $e.value end
-      end
-    end
-    $sessions[$sid] = {mcp: $mcp, cwd: $m.params.cwd}
+    $sessions[$sid] = {mcp: session_mcp($m.params), cwd: $m.params.cwd}
     out({id: $m.id, result: {sessionId: $sid, modes: {currentModeId: "default",
       availableModes: [{id: "default", name: "Default"}, {id: "plan", name: "Plan"}]}}})
   elif $m.method == "session/prompt" then

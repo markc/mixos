@@ -18,6 +18,7 @@
 --   agent.session.prompt {session, content}        -> {session, turn}
 --   agent.session.cancel {session}                 cancel the running turn
 --   agent.session.close {session}                  end the agent
+--   agent.session.resume {session}                 bring an ended session back
 --   agent.session.set {session, mode} | {session, option, value}
 --   agent.session.list                             live and recent sessions
 --   agent.session.read {session, since?, limit?}   logged events after seq
@@ -129,7 +130,7 @@ end
 fn fail($code, $message)
   $rc = 10
   if $code == "UNKNOWN_SESSION" then $rc = 14
-  elif contains(["AGENT_RUNNING", "AGENT_NOT_READY", "COMMAND_INTERRUPTED"], $code) then $rc = 15
+  elif contains(["AGENT_RUNNING", "AGENT_NOT_READY", "COMMAND_INTERRUPTED", "AGENT_NOT_RESUMABLE"], $code) then $rc = 15
   elif contains(["AGENT_LIMIT", "AGENT_DEPTH"], $code) then $rc = 16
   elif $code == "AGENT_SELF" then $rc = 17
   end
@@ -275,6 +276,25 @@ on agent.agents desc "configured agents: name, argv[0], roots, policy"
   reply(0, json_encode({agents: $out, live: live_count(), max_live: $CONF.max_live}))
 end
 
+-- Start the agent process for session $id and send initialize. $req is
+-- {agent, cwd, additional_dirs, mode}; $seq is the last logged seq (0 for
+-- a new session); $reopen is nil, or {via, acp, prior} for a resume.
+fn spawn_agent($id, $req, $parent, $sender, $created_at, $seq, $reopen)
+  $c = $CONF.agents[$req.agent]
+  $env = $c.env
+  $env.MIXOS_AGENT_SESSION = $id
+  -- lint: ignore MIX-E1102
+  $watch = process_watch($c.argv, {stdin: "pipe", overflow: "block", max_line: $MAX_LINE,
+    stderr: "lines", tag: $id, cwd: $req.cwd, env: $env})
+  $S.sessions[$id] = {id: $id, agent: $req.agent, cwd: $req.cwd, dirs: $req.additional_dirs,
+    mode: $req.mode, parent: $parent, sender: $sender, watch: $watch, acp: nil,
+    status: "starting", seq: $seq, turn: nil, queued: nil, pending: {}, perms: {},
+    created_at: $created_at, stderr_tail: [], reopen: $reopen, replaying: false}
+  $rpc = next_rpc()
+  $S.sessions[$id].pending[to_string($rpc)] = {kind: "initialize"}
+  write_frame($id, $a.initialize_frame($rpc))
+end
+
 on agent.session.new desc "start an agent session {agent, cwd, mode?, additional_dirs?}; replies {session} at once"
   $from = sender()
   $parent = sender_session($from)
@@ -299,18 +319,7 @@ on agent.session.new desc "start an agent session {agent, cwd, mode?, additional
       $log.session_started($DB, $row)
       $logged = true
       $log.command_link($DB, "new", $S.cmd.id, $id)
-      $env = $c.env
-      $env.MIXOS_AGENT_SESSION = $id
-      -- lint: ignore MIX-E1102
-      $watch = process_watch($c.argv, {stdin: "pipe", overflow: "block", max_line: $MAX_LINE,
-        stderr: "lines", tag: $id, cwd: $req.cwd, env: $env})
-      $S.sessions[$id] = {id: $id, agent: $req.agent, cwd: $req.cwd, dirs: $req.additional_dirs,
-        mode: $req.mode, parent: $parent, sender: $from, watch: $watch, acp: nil,
-        status: "starting", seq: 0, turn: nil, queued: nil, pending: {}, perms: {},
-        created_at: $row.created_at, stderr_tail: []}
-      $rpc = next_rpc()
-      $S.sessions[$id].pending[to_string($rpc)] = {kind: "initialize"}
-      write_frame($id, $a.initialize_frame($rpc))
+      spawn_agent($id, $req, $parent, $from, $row.created_at, 0, nil)
       prune()
       answer(0, json_encode({session: $id, status: "starting"}))
     catch $m, $err
@@ -326,6 +335,51 @@ on agent.session.new desc "start an agent session {agent, cwd, mode?, additional
         pipe_close($S.sessions[$id].watch)
       end
       fail($err.code ?? "USAGE", $m)
+    end
+  end
+end
+
+on agent.session.resume desc "bring back an ended session {session}: same id and log, the agent resumes (or loads) its own history; replies {session, via} at once"
+  $id = nil
+  if begin("agent.session.resume", body().session) then $id = body().session end
+  if $id != nil then
+    $from = sender()
+    $parent = sender_session($from)
+    $row = if $a.valid_session_id($id) then $log.session_row($DB, $id) else nil end
+    if $row == nil then
+      fail("UNKNOWN_SESSION", "no session " .. to_string($id))
+    elif $parent == $id then
+      fail("AGENT_SELF", "a session's own agent cannot act on that session")
+    elif $parent != nil and $S.sessions[$parent] != nil and $S.sessions[$parent].parent != nil then
+      fail("AGENT_DEPTH", "a child session cannot resume sessions")
+    elif $row.status != "ended" or ($S.sessions[$id] != nil and $S.sessions[$id].status != "ended") then
+      fail("USAGE", "session " .. $id .. " is live")
+    elif live_count() >= $CONF.max_live then
+      fail("AGENT_LIMIT", "already " .. to_string(live_count()) .. " live sessions (max " .. to_string($CONF.max_live) .. ")")
+    else
+      $via = $a.resume_via($row.caps)
+      if $via == nil or type($row.acp) != "string" then
+        fail("AGENT_NOT_RESUMABLE", "the agent of session " .. $id .. " offers neither session/resume nor session/load")
+      else
+        try
+          -- The current conf decides: the agent must still exist and the
+          -- directories must still lie under its roots.
+          $req = $a.check_new($CONF, {agent: $row.agent, cwd: $row.cwd, additional_dirs: $row.dirs ?? []})
+          $log.session_resumed($DB, $id)
+          spawn_agent($id, $req, $row.parent, $row.sender, $row.created_at, $log.last_seq($DB, $id),
+            {via: $via, acp: $row.acp, prior: $row, done: false})
+          answer(0, json_encode({session: $id, status: "starting", via: $via}))
+        catch $m, $err
+          if $S.sessions[$id] == nil or $S.sessions[$id].status == "ended" then
+            try
+              $log.session_restore($DB, $row)
+            catch $m2
+              eprint("agentd: " .. $id .. ": could not restore the ended row: " .. $m2)
+            end
+          end
+          fail($err.code ?? "USAGE", $m)
+        end
+      end
     end
   end
 end
@@ -510,7 +564,12 @@ fn on_reply($id, $msg)
   $S.sessions[$id].pending = delete($S.sessions[$id].pending, $key)
   if $msg.error != nil then
     emit_event($id, {kind: "error", during: $p.kind, error: $msg.error})
-    if $p.kind == "initialize" or $p.kind == "new" then
+    if $p.kind == "reopen" then
+      -- The agent would not take its session back (pruned history, or an
+      -- id format it no longer knows). The exit restores the ended row.
+      $S.sessions[$id].reopen.error = $msg.error
+      pipe_close($S.sessions[$id].watch)
+    elif $p.kind == "initialize" or $p.kind == "new" then
       -- No session to work with: end the agent.
       pipe_close($S.sessions[$id].watch)
     elif $p.kind == "prompt" then
@@ -522,17 +581,40 @@ fn on_reply($id, $msg)
   -- A reply without a result map must not fault the handler.
   $res = if type($msg.result) == "map" then $msg.result else {} end
   if $p.kind == "initialize" then
+    $S.sessions[$id].caps = $res.agentCapabilities
+    $S.sessions[$id].agent_info = $res.agentInfo
     $rpc = next_rpc()
-    $S.sessions[$id].pending[to_string($rpc)] = {kind: "new"}
     $s = $S.sessions[$id]
-    write_frame($id, $a.session_new_frame($rpc, $s.cwd, $s.dirs, $a.mcp_entry($MCP_BIN, $id, $BUS_ENV)))
+    $mcp = $a.mcp_entry($MCP_BIN, $id, $BUS_ENV)
+    if $s.reopen != nil then
+      $S.sessions[$id].pending[to_string($rpc)] = {kind: "reopen"}
+      $S.sessions[$id].replaying = $s.reopen.via == "load"
+      write_frame($id, $a.reopen_frame($rpc, $s.reopen.via, $s.reopen.acp, $s.cwd, $s.dirs, $mcp))
+    else
+      $S.sessions[$id].pending[to_string($rpc)] = {kind: "new"}
+      write_frame($id, $a.session_new_frame($rpc, $s.cwd, $s.dirs, $mcp))
+    end
     emit_event($id, {kind: "initialized", agent_info: $res.agentInfo, protocol: $res.protocolVersion})
+  elif $p.kind == "reopen" then
+    $S.sessions[$id].acp = $S.sessions[$id].reopen.acp
+    $S.sessions[$id].status = "ready"
+    $S.sessions[$id].replaying = false
+    $S.sessions[$id].reopen.done = true
+    $log.session_agent($DB, $id, $S.sessions[$id].acp, $S.sessions[$id].dirs, $S.sessions[$id].caps, $S.sessions[$id].agent_info)
+    emit_event($id, {kind: "resumed", via: $S.sessions[$id].reopen.via, agent_info: $S.sessions[$id].agent_info,
+      capabilities: $S.sessions[$id].caps, modes: $res.modes, config_options: $res.configOptions, models: $res.models})
+    if $S.sessions[$id].queued != nil then
+      $blocks = $S.sessions[$id].queued
+      $S.sessions[$id].queued = nil
+      start_turn($id, $blocks)
+    end
   elif $p.kind == "new" and type($res.sessionId) != "string" then
     emit_event($id, {kind: "error", during: "new", error: {message: "session/new returned no sessionId"}})
     pipe_close($S.sessions[$id].watch)
   elif $p.kind == "new" then
     $S.sessions[$id].acp = $res.sessionId
     $S.sessions[$id].status = "ready"
+    $log.session_agent($DB, $id, $res.sessionId, $S.sessions[$id].dirs, $S.sessions[$id].caps, $S.sessions[$id].agent_info)
     emit_event($id, {kind: "ready", modes: $res.modes, config_options: $res.configOptions,
       models: $res.models})
     if $S.sessions[$id].mode != nil then
@@ -755,7 +837,9 @@ on proc.line
       if $c.kind == "reply" then
         on_reply($id, $c)
       elif $c.kind == "update" then
-        emit_event($id, $a.update_event($id, 0, $c.update))
+        $ev = $a.update_event($id, 0, $c.update)
+        -- A load replays history the log already holds: drop that part.
+        if not ($S.sessions[$id].replaying and $a.is_replayed_kind($ev.kind)) then emit_event($id, $ev) end
       elif $c.kind == "request" then
         on_request($id, $c)
       elif $c.kind == "invalid" then
@@ -787,7 +871,17 @@ on proc.watch_exited
     $S.sessions[$id].perms = {}
     $S.sessions[$id].status = "ended"
     $S.sessions[$id].turn = nil
-    $log.session_ended($DB, $id, $event.args.exit_code, $event.args.signal, $event.args.error_code, time())
+    $reopen = $S.sessions[$id].reopen
+    if $reopen != nil and not $reopen.done then
+      -- The resume failed (refused, or the agent died first): the session
+      -- goes back to ended exactly as it was.
+      $S.sessions[$id].replaying = false
+      emit_event($id, {kind: "resume_failed", via: $reopen.via, error: $reopen.error,
+        error_code: if $reopen.error != nil then "AGENT_NOT_RESUMABLE" else ($event.args.error_code ?? "AGENT_EXITED") end})
+      $log.session_restore($DB, $reopen.prior)
+    else
+      $log.session_ended($DB, $id, $event.args.exit_code, $event.args.signal, $event.args.error_code, time())
+    end
     prune()
     publish("agent.session.ended", json_encode({session: $id, exit_code: $event.args.exit_code,
       signal: $event.args.signal, error_code: $event.args.error_code}), {command: "agent.session.ended"})

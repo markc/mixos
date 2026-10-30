@@ -211,6 +211,7 @@
                         <a href="#configuration">Configuration</a>
                         <a href="#commands">Commands</a>
                         <a href="#events">Events</a>
+                        <a href="#resuming">Resuming</a>
                         <a href="#session-log">Session log</a>
                         <a href="#files">Files</a>
                         <a href="#terminals">Terminals</a>
@@ -318,7 +319,8 @@ after it ends.</p>
 <tr><td><code>agent.session.new</code></td><td><code>{agent, cwd, mode?, additional_dirs?}</code></td><td><code>{session, status}</code> at once; <code>ready</code> follows as an event</td></tr>
 <tr><td><code>agent.session.prompt</code></td><td><code>{session, content}</code></td><td><code>{session, turn}</code>; the turn streams as events</td></tr>
 <tr><td><code>agent.session.cancel</code></td><td><code>{session}</code></td><td>cancels the running turn</td></tr>
-<tr><td><code>agent.session.close</code></td><td><code>{session}</code></td><td>ends the agent</td></tr>
+<tr><td><code>agent.session.close</code></td><td><code>{session}</code></td><td>ends the agent; the session stays in the log and can be resumed</td></tr>
+<tr><td><code>agent.session.resume</code></td><td><code>{session}</code></td><td><code>{session, status, via}</code> at once: brings back an ended session (see Resuming)</td></tr>
 <tr><td><code>agent.session.set</code></td><td><code>{session, mode}</code> or <code>{session, option, value}</code></td><td>sets a mode, or a config option such as the model</td></tr>
 <tr><td><code>agent.session.list</code></td><td></td><td>live and recently ended sessions</td></tr>
 <tr><td><code>agent.session.read</code></td><td><code>{session, since?, limit?}</code></td><td>the session and its logged events after <code>seq</code>: <code>{session, events, more, next}</code></td></tr>
@@ -338,7 +340,7 @@ command is not run again.</p>
 <table><thead><tr><th>rc</th><th>error_code</th></tr></thead><tbody>
 <tr><td>10</td><td><code>USAGE</code>, <code>OUTSIDE_ROOTS</code> or <code>UNKNOWN_AGENT</code></td></tr>
 <tr><td>14</td><td><code>UNKNOWN_SESSION</code></td></tr>
-<tr><td>15</td><td><code>AGENT_RUNNING</code> (a turn is already running), <code>AGENT_NOT_READY</code> or <code>COMMAND_INTERRUPTED</code></td></tr>
+<tr><td>15</td><td><code>AGENT_RUNNING</code> (a turn is already running), <code>AGENT_NOT_READY</code>, <code>COMMAND_INTERRUPTED</code> or <code>AGENT_NOT_RESUMABLE</code></td></tr>
 <tr><td>16</td><td><code>AGENT_LIMIT</code> or <code>AGENT_DEPTH</code></td></tr>
 <tr><td>17</td><td><code>AGENT_SELF</code></td></tr>
 </tbody></table>
@@ -359,10 +361,35 @@ the update unchanged in <code>update</code>;</li>
 <li><code>error</code>;</li>
 <li><code>fs_read</code>, <code>fs_write</code> or <code>fs_refused</code> (see Files);</li>
 <li><code>terminal_created</code> or <code>terminal_exited</code> (see Terminals);</li>
-<li><code>ended</code>, logged (not published) when a restart ends a session.</li>
+<li><code>ended</code>, logged (not published) when a restart ends a session;</li>
+<li><code>resumed</code> (with <code>via</code>, the agent's info and capabilities) or
+<code>resume_failed</code> (see Resuming).</li>
 </ul>
 <p><code>seq</code> rises by one per event in a session. A watcher that missed events
 reads them back with <code>agent.session.read {since}</code>.</p>
+<h2 id="resuming">Resuming</h2>
+<p><code>agent.session.resume {session}</code> brings back a session that ended, whether
+it was closed, its agent exited, or agentd restarted. Nothing resumes by
+itself. The session keeps its id, its <code>mcp-s-&lt;session&gt;-</code> Bus name and its
+log, and <code>seq</code> carries on. agentd starts the agent again and asks it to
+reopen its own record of the session:</p>
+<ul>
+<li><code>session/resume</code> when the agent offered it at <code>initialize</code> (no replay);</li>
+<li>otherwise <code>session/load</code>. The agent then replays the conversation, which
+the log already holds, so replayed messages, tool calls and plans are
+dropped; current state (mode, commands, config options) is kept.</li>
+</ul>
+<p>The current configuration decides: the agent must still be configured and
+the session's directories must still lie under its roots. A resume counts
+against <code>max_live</code>, and like <code>new</code> it is refused to a session's own agent
+(<code>AGENT_SELF</code>) and to a child session (<code>AGENT_DEPTH</code>). An agent that offers
+neither method gets <code>AGENT_NOT_RESUMABLE</code> before anything starts. If the
+agent refuses (it no longer has the session) or exits first, the session
+goes back to ended exactly as it was, with a <code>resume_failed</code> event.</p>
+<p>agentd does not restore the mode or model (set them again) or a permission
+question that was open when the session ended (prompt again). Advertised
+at <code>initialize</code>: Claude, OpenCode and Codex offer <code>session/resume</code>; Gemini
+offers <code>session/load</code>.</p>
 <h2 id="session-log">Session log</h2>
 <p>agentd writes every event and every acting command to a SQLite log before
 it publishes the event or runs the command: <code>$MIXOS_AGENTD_DB</code>, else

@@ -318,6 +318,33 @@ fn mcp_entry($mcp_bin, $session, $bus_env)
   return {name: "mixos", command: $mcp_bin, args: [], env: $env}
 end
 
+-- How a logged session can come back, from what its agent advertised at
+-- initialize: "resume" (no replay) when offered, else "load" (the agent
+-- replays its history), else nil (not resumable).
+fn resume_via($caps)
+  if type($caps) != "map" then return nil end
+  if type($caps.sessionCapabilities) == "map" and $caps.sessionCapabilities.resume != nil then return "resume" end
+  if $caps.loadSession == true then return "load" end
+  return nil
+end
+
+-- session/resume or session/load for $acp, with the same mixos-mcp entry
+-- (the agent would otherwise come back without the Bus).
+fn reopen_frame($id, $via, $acp, $cwd, $dirs, $mcp)
+  $p = {sessionId: $acp, cwd: $cwd, mcpServers: [$mcp]}
+  if len($dirs ?? []) > 0 then $p.additionalDirectories = $dirs end
+  return _frame($id, "session/" .. $via, $p)
+end
+
+-- During a load the agent replays the conversation. The log already holds
+-- it, so these kinds are dropped while the load runs; current-state kinds
+-- (mode, commands, config options) are kept and published.
+$REPLAYED_KINDS = ["agent_message_chunk", "user_message_chunk", "agent_thought_chunk", "tool_call", "tool_call_update", "plan"]
+
+fn is_replayed_kind($kind)
+  return contains($REPLAYED_KINDS, $kind)
+end
+
 fn session_new_frame($id, $cwd, $dirs, $mcp)
   $p = {cwd: $cwd, mcpServers: [$mcp]}
   if len($dirs) > 0 then $p.additionalDirectories = $dirs end

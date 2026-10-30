@@ -83,7 +83,8 @@ Bodies are JSON objects.
 | `agent.session.new` | `{agent, cwd, mode?, additional_dirs?}` | `{session, status}` at once; `ready` follows as an event |
 | `agent.session.prompt` | `{session, content}` | `{session, turn}`; the turn streams as events |
 | `agent.session.cancel` | `{session}` | cancels the running turn |
-| `agent.session.close` | `{session}` | ends the agent |
+| `agent.session.close` | `{session}` | ends the agent; the session stays in the log and can be resumed |
+| `agent.session.resume` | `{session}` | `{session, status, via}` at once: brings back an ended session (see Resuming) |
 | `agent.session.set` | `{session, mode}` or `{session, option, value}` | sets a mode, or a config option such as the model |
 | `agent.session.list` | | live and recently ended sessions |
 | `agent.session.read` | `{session, since?, limit?}` | the session and its logged events after `seq`: `{session, events, more, next}` |
@@ -108,7 +109,7 @@ Refusals carry `{error_code, message}`:
 |---|---|
 | 10 | `USAGE`, `OUTSIDE_ROOTS` or `UNKNOWN_AGENT` |
 | 14 | `UNKNOWN_SESSION` |
-| 15 | `AGENT_RUNNING` (a turn is already running), `AGENT_NOT_READY` or `COMMAND_INTERRUPTED` |
+| 15 | `AGENT_RUNNING` (a turn is already running), `AGENT_NOT_READY`, `COMMAND_INTERRUPTED` or `AGENT_NOT_RESUMABLE` |
 | 16 | `AGENT_LIMIT` or `AGENT_DEPTH` |
 | 17 | `AGENT_SELF` |
 
@@ -131,10 +132,38 @@ Refusals carry `{error_code, message}`:
 - `error`;
 - `fs_read`, `fs_write` or `fs_refused` (see Files);
 - `terminal_created` or `terminal_exited` (see Terminals);
-- `ended`, logged (not published) when a restart ends a session.
+- `ended`, logged (not published) when a restart ends a session;
+- `resumed` (with `via`, the agent's info and capabilities) or
+  `resume_failed` (see Resuming).
 
 `seq` rises by one per event in a session. A watcher that missed events
 reads them back with `agent.session.read {since}`.
+
+## Resuming
+
+`agent.session.resume {session}` brings back a session that ended, whether
+it was closed, its agent exited, or agentd restarted. Nothing resumes by
+itself. The session keeps its id, its `mcp-s-<session>-` Bus name and its
+log, and `seq` carries on. agentd starts the agent again and asks it to
+reopen its own record of the session:
+
+- `session/resume` when the agent offered it at `initialize` (no replay);
+- otherwise `session/load`. The agent then replays the conversation, which
+  the log already holds, so replayed messages, tool calls and plans are
+  dropped; current state (mode, commands, config options) is kept.
+
+The current configuration decides: the agent must still be configured and
+the session's directories must still lie under its roots. A resume counts
+against `max_live`, and like `new` it is refused to a session's own agent
+(`AGENT_SELF`) and to a child session (`AGENT_DEPTH`). An agent that offers
+neither method gets `AGENT_NOT_RESUMABLE` before anything starts. If the
+agent refuses (it no longer has the session) or exits first, the session
+goes back to ended exactly as it was, with a `resume_failed` event.
+
+agentd does not restore the mode or model (set them again) or a permission
+question that was open when the session ended (prompt again). Advertised
+at `initialize`: Claude, OpenCode and Codex offer `session/resume`; Gemini
+offers `session/load`.
 
 ## Session log
 
