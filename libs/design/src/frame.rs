@@ -214,9 +214,30 @@ pub fn shadow_pieces(
         (c, -1, 1, top_height, w / 2, -soft + offset),
         (c + 1, -1, c, top_height, w + soft - c, -soft + offset),
         (c + 1, 0, c, 1, w + soft - c, h / 2),
-        (c + 1, 1, c, bottom_height, w + soft - c, h + soft + offset - bottom_height),
-        (c, 1, 1, bottom_height, w / 2, h + soft + offset - bottom_height),
-        (0, 1, c, bottom_height, -soft, h + soft + offset - bottom_height),
+        (
+            c + 1,
+            1,
+            c,
+            bottom_height,
+            w + soft - c,
+            h + soft + offset - bottom_height,
+        ),
+        (
+            c,
+            1,
+            1,
+            bottom_height,
+            w / 2,
+            h + soft + offset - bottom_height,
+        ),
+        (
+            0,
+            1,
+            c,
+            bottom_height,
+            -soft,
+            h + soft + offset - bottom_height,
+        ),
         (0, 0, c, 1, -soft, h / 2),
         (0, -1, c, top_height, -soft, -soft + offset),
     ];
@@ -231,8 +252,7 @@ pub fn shadow_pieces(
                     _ => (c + 1 + y - bottom_extra).max(c),
                 };
                 for x in 0..width {
-                    let pixel =
-                        tile.pixels[(sy as u32 * tile.size + (sx + x) as u32) as usize];
+                    let pixel = tile.pixels[(sy as u32 * tile.size + (sx + x) as u32) as usize];
                     let cut = 1.0
                         - coverage(rounded_box(
                             (dx as f32 + x as f32 + 0.5, dy as f32 + y as f32 + 0.5),
@@ -284,8 +304,16 @@ mod tests {
                 let top = tiles.extents[1];
                 let right = dim - tiles.extents[2] - 1;
                 let bottom = tiles.pieces[5].height - tiles.extents[3] - 1;
-                for (piece, x, y) in [(7, left, top), (1, right, top), (3, right, bottom), (5, left, bottom)] {
-                    assert!(alpha(piece, x, y) > 0, "shadow fills corner {piece} for {style:?} at {scale}");
+                for (piece, x, y) in [
+                    (7, left, top),
+                    (1, right, top),
+                    (3, right, bottom),
+                    (5, left, bottom),
+                ] {
+                    assert!(
+                        alpha(piece, x, y) > 0,
+                        "shadow fills corner {piece} for {style:?} at {scale}"
+                    );
                 }
                 assert_eq!(
                     alpha(7, dim - 1, dim - 1),

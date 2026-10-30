@@ -22,8 +22,8 @@ use crate::layout::{
     ButtonColors, ChromeStyle, DecoFontFamily, DecoFontWeight, DecoTheme, Srgba, presets,
 };
 use design::{
-    Contrast, DesignCompileResult, DesignContext, LinearRgba, ResolvedDictionary,
-    SourceIdentity, TypographyRole, UnstampedResolvedDesign,
+    Contrast, DesignCompileResult, DesignContext, LinearRgba, ResolvedDictionary, SourceIdentity,
+    TypographyRole, UnstampedResolvedDesign,
 };
 
 /// A theme colour as 8-bit straight-alpha sRGB `[r, g, b, a]`, as the truth

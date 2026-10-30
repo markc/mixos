@@ -48,7 +48,11 @@ impl Plugin for WindowFrame {
         let request = if client {
             (
                 if active { frame.radius * scale } else { 0.0 },
-                if frame.border_width > 0.0 { (frame.border_width * scale).round().max(1.0) } else { 0.0 },
+                if frame.border_width > 0.0 {
+                    (frame.border_width * scale).round().max(1.0)
+                } else {
+                    0.0
+                },
                 if focused {
                     frame.border_focused
                 } else {
