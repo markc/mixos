@@ -56,6 +56,11 @@ struct PendingProcess {
     lines: VecDeque<ProcessRecord>,
     line_count: usize,
     max_queue: usize,
+    /// `overflow: "block"`: lines are never dropped; the reader stops at a
+    /// full queue and `room` wakes it when delivery makes space.
+    lossless: bool,
+    #[cfg(target_os = "linux")]
+    room: Option<std::os::unix::net::UnixStream>,
     terminal: Option<serde_json::Value>,
 }
 
@@ -175,7 +180,9 @@ impl Queue {
         let Some(p) = pending.processes.get_mut(handle) else {
             return;
         };
-        if p.line_count == p.max_queue {
+        // A lossless reader stops at a full queue, so it overshoots by at
+        // most the lines of one pipe read; it never drops.
+        if p.line_count >= p.max_queue && !p.lossless {
             if let Some(ProcessRecord::Overflow(dropped)) = p.lines.back_mut() {
                 *dropped = dropped.saturating_add(1);
             } else {
@@ -201,6 +208,32 @@ impl Queue {
             p.terminal = Some(
                 serde_json::json!({"watch":handle, "tag":p.tag, "exit_code":code, "signal":signal, "detached_output":detached_output}),
             );
+        }
+        drop(pending);
+        self.ready.notify_waiters();
+    }
+
+    /// True when a lossless watch's queue is full and its reader must wait
+    /// for `room`. An unknown (unwatched) handle is never full.
+    #[cfg(target_os = "linux")]
+    pub(crate) fn process_full(&self, handle: &str) -> bool {
+        let pending = self.pending.lock().unwrap();
+        pending
+            .processes
+            .get(handle)
+            .is_some_and(|p| p.lossless && p.line_count >= p.max_queue)
+    }
+
+    /// A lossless watch's line passed `max_line`: the group was killed
+    /// rather than deliver a truncated frame.
+    pub(crate) fn process_line_limit(&self, handle: &str, max_line: usize) {
+        let mut pending = self.pending.lock().unwrap();
+        if let Some(p) = pending.processes.get_mut(handle) {
+            p.terminal = Some(serde_json::json!({
+                "watch": handle, "tag": p.tag, "exit_code": null, "signal": 9,
+                "detached_output": true, "error_code": "PROC_LINE_LIMIT",
+                "error": format!("a line exceeded max_line ({max_line} bytes); process group killed")
+            }));
         }
         drop(pending);
         self.ready.notify_waiters();
@@ -232,6 +265,15 @@ impl Queue {
                 ),
                 ProcessRecord::Line(line) => {
                     p.line_count -= 1;
+                    #[cfg(target_os = "linux")]
+                    if p.line_count + 1 >= p.max_queue
+                        && p.line_count < p.max_queue
+                        && let Some(room) = &p.room
+                    {
+                        // Non-blocking: a full socket already holds a wake.
+                        use std::io::Write;
+                        let _ = (&*room).write(&[1]);
+                    }
                     event("proc.line", line)
                 }
             };
@@ -825,21 +867,36 @@ impl NativeEvents {
                 "maximum 128 process watches per evaluator",
             ));
         }
-        let (command, tag, max_line, max_queue) = crate::builtins::process_watch_command(args)?;
+        let spec = crate::builtins::process_watch_command(args)?;
         let h = format!("process:{}", NEXT_HANDLE.fetch_add(1, Ordering::Relaxed));
+        // The room pair wakes a lossless reader parked on a full queue.
+        #[cfg(target_os = "linux")]
+        let (room, room_wait) = if spec.lossless {
+            let (room, wait) = std::os::unix::net::UnixStream::pair()
+                .map_err(|e| refusal("PROC_MONITOR", e.to_string()))?;
+            room.set_nonblocking(true)
+                .map_err(|e| refusal("PROC_MONITOR", e.to_string()))?;
+            (Some(room), Some(wait))
+        } else {
+            (None, None)
+        };
         self.queue.pending.lock().unwrap().processes.insert(
             h.clone(),
             PendingProcess {
-                tag,
-                max_queue,
+                tag: spec.tag.clone(),
+                max_queue: spec.max_queue,
+                lossless: spec.lossless,
+                #[cfg(target_os = "linux")]
+                room,
                 ..Default::default()
             },
         );
         match crate::child_events::ProcessWatch::new(
-            command,
+            spec,
             self.queue.clone(),
             h.clone(),
-            max_line,
+            #[cfg(target_os = "linux")]
+            room_wait,
         ) {
             Ok(source) => {
                 self.processes.insert(h.clone(), source);
@@ -850,6 +907,28 @@ impl NativeEvents {
                 Err(e)
             }
         }
+    }
+
+    /// Queue bytes for a watched child's stdin. True when accepted whole
+    /// (written later by the watch's worker, in order); false when the
+    /// handle is unknown or finished, stdin is closed or broken, or the
+    /// bytes would overflow `stdin_buffer`. Never blocks the evaluator.
+    pub fn process_write(&mut self, h: &str, data: &[u8]) -> MixResult<bool> {
+        self.processes.retain(|_, p| !p.finished());
+        let Some(p) = self.processes.get(h) else {
+            return Ok(false);
+        };
+        p.write(data)
+    }
+
+    /// Close a watched child's stdin once queued bytes are written (EOF to
+    /// the child). True when it was open.
+    pub fn process_close_stdin(&mut self, h: &str) -> MixResult<bool> {
+        self.processes.retain(|_, p| !p.finished());
+        let Some(p) = self.processes.get(h) else {
+            return Ok(false);
+        };
+        p.close_stdin()
     }
 
     pub fn process_unwatch(&mut self, h: &str) -> bool {
@@ -1853,11 +1932,19 @@ mod process_tests {
             .insert("process:panic".into(), PendingProcess::default());
         let mut command = std::process::Command::new("sleep");
         command.arg("100").stdout(std::process::Stdio::piped());
-        let watch = crate::child_events::ProcessWatch::new(
+        let spec = crate::builtins::ProcessWatchSpec {
             command,
+            tag: String::new(),
+            max_line: usize::MAX,
+            max_queue: 1024,
+            stdin_buffer: None,
+            lossless: false,
+        };
+        let watch = crate::child_events::ProcessWatch::new(
+            spec,
             queue.clone(),
             "process:panic".into(),
-            usize::MAX,
+            None,
         )
         .unwrap();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);

@@ -49,12 +49,92 @@ mod linux {
     }
 
     /// The same generation-owned, sole-reaper model as ChildWatch, with
-    /// stdout/stderr and cancellation in one poll set. No evaluator values
-    /// or runtime handles cross the worker boundary.
+    /// stdout/stderr, an optional stdin writer and cancellation in one poll
+    /// set. No evaluator values or runtime handles cross the worker boundary.
     pub(crate) struct ProcessWatch {
         cancel: UnixStream,
         completed: Arc<std::sync::atomic::AtomicBool>,
         worker: Option<thread::JoinHandle<()>>,
+        /// Shared stdin buffer and the kick that wakes the worker to write it.
+        stdin: Option<(Arc<std::sync::Mutex<Stdin>>, UnixStream)>,
+    }
+
+    /// Bytes accepted by `process_write` and not yet written. The worker
+    /// owns the pipe; the evaluator only appends and kicks, so a slow child
+    /// never blocks the evaluator.
+    pub(crate) struct Stdin {
+        buf: std::collections::VecDeque<u8>,
+        cap: usize,
+        /// `process_close_stdin` asked for EOF after the buffer drains.
+        close: bool,
+        /// The pipe is closed: by request, a write error, or the watch ending.
+        done: bool,
+    }
+
+    fn set_nonblocking(fd: i32) -> std::io::Result<()> {
+        let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+        if flags < 0 || unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        Ok(())
+    }
+
+    /// Read and discard wake bytes. False once the peer is gone (EOF), so a
+    /// hung-up wake socket leaves the poll set instead of spinning.
+    fn drain_wake(socket: &UnixStream) -> bool {
+        use std::io::Read;
+        let mut bytes = [0; 64];
+        loop {
+            match (&*socket).read(&mut bytes) {
+                Ok(0) => return false,
+                Ok(_) => continue,
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(e) => return e.kind() == std::io::ErrorKind::WouldBlock,
+            }
+        }
+    }
+
+    /// Write what the pipe takes now. True when bytes remain and the worker
+    /// should poll for POLLOUT. A write error (the child closed its stdin)
+    /// discards the buffer and ends the pipe: later writes return false.
+    fn flush_stdin(fd: &mut Option<OwnedFd>, state: &std::sync::Mutex<Stdin>) -> bool {
+        let Some(raw) = fd.as_ref().map(|f| f.as_raw_fd()) else {
+            return false;
+        };
+        let mut s = state.lock().unwrap();
+        while !s.buf.is_empty() {
+            let (head, _) = s.buf.as_slices();
+            let n = unsafe { libc::write(raw, head.as_ptr().cast(), head.len()) };
+            if n > 0 {
+                s.buf.drain(..n as usize);
+                continue;
+            }
+            let kind = std::io::Error::last_os_error().kind();
+            if n < 0 && kind == std::io::ErrorKind::Interrupted {
+                continue;
+            }
+            if n == 0 || kind == std::io::ErrorKind::WouldBlock {
+                return true;
+            }
+            s.buf.clear();
+            s.done = true;
+            *fd = None;
+            return false;
+        }
+        if s.close {
+            s.done = true;
+            *fd = None;
+        }
+        false
+    }
+
+    fn end_stdin(fd: &mut Option<OwnedFd>, state: Option<&std::sync::Mutex<Stdin>>) {
+        *fd = None;
+        if let Some(state) = state {
+            let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
+            s.buf.clear();
+            s.done = true;
+        }
     }
 
     struct Pipe {
@@ -62,23 +142,20 @@ mod linux {
         stream: &'static str,
         line: Vec<u8>,
         truncated: bool,
+        /// A lossless watch saw a line longer than max_line.
+        overlong: bool,
         closed: bool,
     }
 
     impl Pipe {
         fn new(fd: OwnedFd, stream: &'static str) -> std::io::Result<Self> {
-            let flags = unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_GETFL) };
-            if flags < 0
-                || unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_SETFL, flags | libc::O_NONBLOCK) }
-                    < 0
-            {
-                return Err(std::io::Error::last_os_error());
-            }
+            set_nonblocking(fd.as_raw_fd())?;
             Ok(Self {
                 fd,
                 stream,
                 line: Vec::new(),
                 truncated: false,
+                overlong: false,
                 closed: false,
             })
         }
@@ -96,7 +173,7 @@ mod linux {
             self.truncated = false;
         }
 
-        fn read(&mut self, queue: &Queue, handle: &str, max: usize) {
+        fn read(&mut self, queue: &Queue, handle: &str, max: usize, lossless: bool) {
             let mut bytes = [0; 4096];
             let n =
                 unsafe { libc::read(self.fd.as_raw_fd(), bytes.as_mut_ptr().cast(), bytes.len()) };
@@ -106,6 +183,11 @@ mod linux {
                         self.emit(queue, handle);
                     } else if self.line.len() < max {
                         self.line.push(b);
+                    } else if lossless {
+                        // A cut frame is a lost message: the worker ends
+                        // the watch instead of emitting it.
+                        self.overlong = true;
+                        return;
                     } else {
                         self.truncated = true;
                     }
@@ -126,12 +208,19 @@ mod linux {
 
     impl ProcessWatch {
         pub fn new(
-            mut command: std::process::Command,
+            spec: crate::builtins::ProcessWatchSpec,
             queue: Arc<Queue>,
             handle: String,
-            max_line: usize,
+            room_wait: Option<UnixStream>,
         ) -> MixResult<Self> {
             use std::os::unix::process::CommandExt;
+            let crate::builtins::ProcessWatchSpec {
+                mut command,
+                max_line,
+                stdin_buffer,
+                lossless,
+                ..
+            } = spec;
             command.process_group(0);
             crate::desktop_events::arm_parent_death(&mut command);
             let mut child = command
@@ -145,9 +234,29 @@ mod linux {
                 if let Some(stderr) = child.stderr.take() {
                     pipes.push(Pipe::new(stderr.into(), "stderr")?);
                 }
-                Ok((pidfd, cancel, wake, pipes))
+                let stdin = match (stdin_buffer, child.stdin.take()) {
+                    (Some(cap), Some(pipe)) => {
+                        let fd: OwnedFd = pipe.into();
+                        set_nonblocking(fd.as_raw_fd())?;
+                        let (kick, kicked) = UnixStream::pair()?;
+                        kick.set_nonblocking(true)?;
+                        kicked.set_nonblocking(true)?;
+                        let state = Arc::new(std::sync::Mutex::new(Stdin {
+                            buf: std::collections::VecDeque::new(),
+                            cap,
+                            close: false,
+                            done: false,
+                        }));
+                        Some((state, kick, kicked, fd))
+                    }
+                    _ => None,
+                };
+                if let Some(room) = &room_wait {
+                    room.set_nonblocking(true)?;
+                }
+                Ok((pidfd, cancel, wake, pipes, stdin))
             })();
-            let (pidfd, cancel, wake, mut pipes) = match setup {
+            let (pidfd, cancel, wake, mut pipes, stdin) = match setup {
                 Ok(v) => v,
                 Err(e) => {
                     signal_group(pid, libc::SIGKILL);
@@ -157,6 +266,13 @@ mod linux {
                 }
             };
             crate::builtins::register_managed_pid(pid);
+            let (stdin_shared, mut stdin_worker) = match stdin {
+                Some((state, kick, kicked, fd)) => {
+                    (Some((state.clone(), kick)), Some((state, Some(kicked), Some(fd))))
+                }
+                None => (None, None),
+            };
+            let mut room_wait = room_wait;
             let slot = Arc::new(std::sync::Mutex::new(Some(child)));
             let worker_slot = slot.clone();
             let completed = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -164,9 +280,18 @@ mod linux {
             let worker = thread::Builder::new()
                 .name("mix-process-lines".into())
                 .spawn(move || {
+                    // A child that closes its stdin must surface as EPIPE on
+                    // this thread, never as a process-wide SIGPIPE.
+                    unsafe {
+                        let mut set: libc::sigset_t = std::mem::zeroed();
+                        libc::sigemptyset(&mut set);
+                        libc::sigaddset(&mut set, libc::SIGPIPE);
+                        libc::pthread_sigmask(libc::SIG_BLOCK, &set, std::ptr::null_mut());
+                    }
                     let mut child = worker_slot.lock().unwrap().take().unwrap();
                     let mut exited = false;
                     let mut cancelled = false;
+                    let mut line_limit = false;
                     let mut drain_deadline = None;
                     let mut detached_output = false;
                     // Keep Child outside the unwind boundary: std's Child Drop
@@ -191,6 +316,15 @@ mod linux {
                                 }
                                 break;
                             }
+                            let want_out = match &mut stdin_worker {
+                                Some((state, _, fd)) => flush_stdin(fd, state),
+                                None => false,
+                            };
+                            // Lossless: a full queue parks the pipes until
+                            // delivery writes to `room`. After leader exit the
+                            // pipes drain regardless, bounded by the deadline.
+                            let blocked = lossless && !exited && queue.process_full(&handle);
+                            let poll_fd = |on: bool, fd: i32| if on { fd } else { -1 };
                             let mut fds = vec![
                                 libc::pollfd {
                                     fd: if exited { -1 } else { pidfd.as_raw_fd() },
@@ -202,10 +336,33 @@ mod linux {
                                     events: libc::POLLIN,
                                     revents: 0,
                                 },
+                                libc::pollfd {
+                                    fd: stdin_worker
+                                        .as_ref()
+                                        .and_then(|(_, kicked, _)| kicked.as_ref())
+                                        .map_or(-1, |k| k.as_raw_fd()),
+                                    events: libc::POLLIN,
+                                    revents: 0,
+                                },
+                                libc::pollfd {
+                                    fd: stdin_worker
+                                        .as_ref()
+                                        .and_then(|(_, _, fd)| fd.as_ref())
+                                        .map_or(-1, |fd| poll_fd(want_out, fd.as_raw_fd())),
+                                    events: libc::POLLOUT,
+                                    revents: 0,
+                                },
+                                libc::pollfd {
+                                    fd: room_wait
+                                        .as_ref()
+                                        .map_or(-1, |r| poll_fd(blocked, r.as_raw_fd())),
+                                    events: libc::POLLIN,
+                                    revents: 0,
+                                },
                             ];
                             for pipe in &pipes {
                                 fds.push(libc::pollfd {
-                                    fd: if pipe.closed { -1 } else { pipe.fd.as_raw_fd() },
+                                    fd: poll_fd(!pipe.closed && !blocked, pipe.fd.as_raw_fd()),
                                     events: libc::POLLIN,
                                     revents: 0,
                                 });
@@ -260,11 +417,31 @@ mod linux {
                                 // End descendants in the original group. Detached
                                 // pipe holders are bounded by the drain deadline.
                                 signal_group(pid, libc::SIGKILL);
-                            }
-                            for (pipe, fd) in pipes.iter_mut().zip(&fds[2..]) {
-                                if fd.revents != 0 {
-                                    pipe.read(&queue, &handle, max_line);
+                                if let Some((state, _, fd)) = &mut stdin_worker {
+                                    end_stdin(fd, Some(&**state));
                                 }
+                            }
+                            if fds[2].revents != 0
+                                && let Some((_, kicked, _)) = &mut stdin_worker
+                                && kicked.as_ref().is_some_and(|k| !drain_wake(k))
+                            {
+                                *kicked = None;
+                            }
+                            if fds[4].revents != 0
+                                && room_wait.as_ref().is_some_and(|r| !drain_wake(r))
+                            {
+                                room_wait = None;
+                            }
+                            for (pipe, fd) in pipes.iter_mut().zip(&fds[5..]) {
+                                if fd.revents != 0 {
+                                    pipe.read(&queue, &handle, max_line, lossless);
+                                }
+                            }
+                            if pipes.iter().any(|p| p.overlong) {
+                                line_limit = true;
+                                signal_group(pid, libc::SIGKILL);
+                                signal_leader(&pidfd, libc::SIGKILL);
+                                break;
                             }
                             if exited && pipes.iter().all(|p| p.closed) {
                                 break;
@@ -275,6 +452,9 @@ mod linux {
                         signal_group(pid, libc::SIGKILL);
                         signal_leader(&pidfd, libc::SIGKILL);
                     }
+                    if let Some((state, _, fd)) = &mut stdin_worker {
+                        end_stdin(fd, Some(&**state));
+                    }
                     drop(pipes);
                     let status = child.wait();
                     crate::builtins::unregister_managed_pid(pid);
@@ -284,6 +464,8 @@ mod linux {
                     worker_completed.store(true, std::sync::atomic::Ordering::Release);
                     if outcome.is_err() {
                         queue.process_failed(&handle);
+                    } else if line_limit {
+                        queue.process_line_limit(&handle, max_line);
                     } else if !cancelled {
                         match status {
                             Ok(s) => {
@@ -298,6 +480,7 @@ mod linux {
                     cancel,
                     completed,
                     worker: Some(worker),
+                    stdin: stdin_shared,
                 }),
                 Err(e) => {
                     if let Some(mut child) = slot.lock().unwrap().take() {
@@ -312,6 +495,45 @@ mod linux {
         }
         pub fn finished(&self) -> bool {
             self.completed.load(std::sync::atomic::Ordering::Acquire)
+        }
+
+        fn stdin(&self, caller: &str) -> MixResult<&(Arc<std::sync::Mutex<Stdin>>, UnixStream)> {
+            self.stdin.as_ref().ok_or_else(|| {
+                refusal(
+                    "PROC_STDIN_NOT_PIPED",
+                    format!("{caller} needs a watch started with {{stdin: \"pipe\"}}"),
+                )
+            })
+        }
+
+        /// Append whole or not at all, so a framed message is never split
+        /// by a full buffer. The worker writes it in order.
+        pub fn write(&self, data: &[u8]) -> MixResult<bool> {
+            let (state, kick) = self.stdin("process_write")?;
+            if self.finished() {
+                return Ok(false);
+            }
+            let mut s = state.lock().unwrap();
+            if s.done || s.close || s.buf.len() + data.len() > s.cap {
+                return Ok(false);
+            }
+            s.buf.extend(data);
+            drop(s);
+            // Non-blocking: a full socket already holds a pending wake.
+            use std::io::Write;
+            let _ = (&*kick).write(&[1]);
+            Ok(true)
+        }
+
+        pub fn close_stdin(&self) -> MixResult<bool> {
+            let (state, kick) = self.stdin("process_close_stdin")?;
+            let mut s = state.lock().unwrap();
+            let open = !s.done && !s.close;
+            s.close = true;
+            drop(s);
+            use std::io::Write;
+            let _ = (&*kick).write(&[1]);
+            Ok(open)
         }
 
         pub fn cancel(&self) {
@@ -452,7 +674,7 @@ pub(crate) struct ProcessWatch;
 #[cfg(not(target_os = "linux"))]
 impl ProcessWatch {
     pub fn cancel(&self) {}
-    pub fn new(_: std::process::Command, _: Arc<Queue>, _: String, _: usize) -> MixResult<Self> {
+    pub fn new(_: crate::builtins::ProcessWatchSpec, _: Arc<Queue>, _: String) -> MixResult<Self> {
         Err(refusal(
             "PROC_UNSUPPORTED",
             "process_watch requires Linux pidfd",
@@ -460,6 +682,12 @@ impl ProcessWatch {
     }
     pub fn finished(&self) -> bool {
         true
+    }
+    pub fn write(&self, _: &[u8]) -> MixResult<bool> {
+        Ok(false)
+    }
+    pub fn close_stdin(&self) -> MixResult<bool> {
+        Ok(false)
     }
 }
 #[cfg(not(target_os = "linux"))]
