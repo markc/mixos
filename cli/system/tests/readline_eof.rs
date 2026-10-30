@@ -46,14 +46,20 @@ fn blank_line_is_empty_and_eof_is_nil() {
         String::from_utf8_lossy(&out.stderr)
     );
     // EOF stays nil on a second read.
-    assert_eq!(String::from_utf8_lossy(&out.stdout), "[a]\n[]\n[b]\neof true\n");
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout),
+        "[a]\n[]\n[b]\neof true\n"
+    );
 }
 
 #[test]
 fn last_line_without_newline_is_read_before_eof() {
     let out = run(LOOP, b"a\nlast");
     assert!(out.status.success());
-    assert_eq!(String::from_utf8_lossy(&out.stdout), "[a]\n[last]\neof true\n");
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout),
+        "[a]\n[last]\neof true\n"
+    );
 }
 
 #[test]
