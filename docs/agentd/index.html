@@ -212,6 +212,7 @@
                         <a href="#commands">Commands</a>
                         <a href="#events">Events</a>
                         <a href="#session-log">Session log</a>
+                        <a href="#files">Files</a>
                         <a href="#agents-calling-back">Agents calling back</a>
                     </nav>
                 </div>
@@ -348,6 +349,7 @@ the update unchanged in <code>update</code>;</li>
 <code>refusal</code> or <code>cancelled</code>;</li>
 <li><code>permission_answered</code>;</li>
 <li><code>error</code>;</li>
+<li><code>fs_read</code>, <code>fs_write</code> or <code>fs_refused</code> (see Files);</li>
 <li><code>ended</code>, logged (not published) when a restart ends a session.</li>
 </ul>
 <p><code>seq</code> rises by one per event in a session. A watcher that missed events
@@ -369,6 +371,16 @@ agent's events are still published and the gap is reported on stderr. A
 watcher that follows <code>seq</code> should therefore also check the session's
 <code>status</code> in a read: after such a gap and a restart, the <code>ended</code> event can
 carry a <code>seq</code> the watcher has already seen.</p>
+<h2 id="files">Files</h2>
+<p>agentd serves ACP's <code>fs/read_text_file</code> (with <code>line</code> and <code>limit</code>) and
+<code>fs/write_text_file</code>, inside the session's <code>cwd</code> and <code>additional_dirs</code>
+only. Paths must be absolute and are resolved first, so a symlink or <code>..</code>
+cannot lead out; a new file's parent directory must already exist. A read
+is limited to 8 MiB. Refusals are JSON-RPC errors: <code>-32002</code> for a missing
+file, <code>-32602</code> for a path outside the session or a bad request. Every read,
+write and refusal is an event (<code>fs_read</code>, <code>fs_write</code>, <code>fs_refused</code>).</p>
+<p>This confines what the agent asks agentd to do. An agent's own tools, such
+as its shell or Claude's built-in file tools, do not go through agentd.</p>
 <h2 id="agents-calling-back">Agents calling back</h2>
 <p>agentd runs every agent with <code>MIXOS_AGENT_SESSION</code> set to its session id,
 and that agent's mixos-mcp registers on the Bus as

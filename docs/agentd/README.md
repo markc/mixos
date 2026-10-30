@@ -120,6 +120,7 @@ Refusals carry `{error_code, message}`:
   `refusal` or `cancelled`;
 - `permission_answered`;
 - `error`;
+- `fs_read`, `fs_write` or `fs_refused` (see Files);
 - `ended`, logged (not published) when a restart ends a session.
 
 `seq` rises by one per event in a session. A watcher that missed events
@@ -144,6 +145,19 @@ agent's events are still published and the gap is reported on stderr. A
 watcher that follows `seq` should therefore also check the session's
 `status` in a read: after such a gap and a restart, the `ended` event can
 carry a `seq` the watcher has already seen.
+
+## Files
+
+agentd serves ACP's `fs/read_text_file` (with `line` and `limit`) and
+`fs/write_text_file`, inside the session's `cwd` and `additional_dirs`
+only. Paths must be absolute and are resolved first, so a symlink or `..`
+cannot lead out; a new file's parent directory must already exist. A read
+is limited to 8 MiB. Refusals are JSON-RPC errors: `-32002` for a missing
+file, `-32602` for a path outside the session or a bad request. Every read,
+write and refusal is an event (`fs_read`, `fs_write`, `fs_refused`).
+
+This confines what the agent asks agentd to do. An agent's own tools, such
+as its shell or Claude's built-in file tools, do not go through agentd.
 
 ## Agents calling back
 
