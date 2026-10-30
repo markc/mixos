@@ -12,6 +12,7 @@ use std::time::Instant;
 /// GPU. Callback dispatch latency must not train the render budget.
 pub struct GpuCompletion<D: 'static> {
     elapsed: Rc<Cell<Option<std::time::Duration>>>,
+    fired: Rc<Cell<bool>>,
     token: RegistrationToken,
     handle: LoopHandle<'static, D>,
 }
@@ -40,6 +41,8 @@ impl<D: 'static> GpuCompletion<D> {
         use std::os::fd::AsFd;
         let elapsed = Rc::new(Cell::new(None));
         let completed = elapsed.clone();
+        let fired = Rc::new(Cell::new(false));
+        let signalled = fired.clone();
         let token = handle
             .insert_source(
                 Generic::new(fd, Interest::READ, Mode::Level),
@@ -49,12 +52,15 @@ impl<D: 'static> GpuCompletion<D> {
                     let now = kms::scanout::timing::vblank::monotonic_now();
                     completed
                         .set(signal.and_then(|signal| elapsed_at(start, observed, now?, signal)));
-                    Ok(PostAction::Disable)
+                    // Remove unregisters the fd exactly once; Drop skips this token.
+                    signalled.set(true);
+                    Ok(PostAction::Remove)
                 },
             )
             .ok()?;
         Some(Self {
             elapsed,
+            fired,
             token,
             handle: handle.clone(),
         })
@@ -62,6 +68,11 @@ impl<D: 'static> GpuCompletion<D> {
 
     pub fn elapsed(&self) -> Option<std::time::Duration> {
         self.elapsed.get()
+    }
+
+    #[cfg(test)]
+    fn fired(&self) -> bool {
+        self.fired.get()
     }
 }
 
@@ -79,7 +90,11 @@ fn elapsed_at(
 
 impl<D: 'static> Drop for GpuCompletion<D> {
     fn drop(&mut self) {
-        self.handle.remove(self.token);
+        // A fired source already unregistered itself via PostAction::Remove;
+        // removing its token again would unregister twice and fail with ENOENT.
+        if !self.fired.get() {
+            self.handle.remove(self.token);
+        }
     }
 }
 
@@ -134,6 +149,7 @@ impl<D: 'static> DeadlineTimer<D> {
 
 impl<D: 'static> Drop for DeadlineTimer<D> {
     fn drop(&mut self) {
+        // A Timer cancels a timer-wheel entry, not an epoll fd; disable-then-remove is safe.
         self.handle.remove(self.token);
     }
 }
@@ -281,7 +297,7 @@ mod tests {
         );
         let elapsed = sample.elapsed();
         event_loop.dispatch(Some(Duration::ZERO), &mut ()).unwrap();
-        assert_eq!(sample.elapsed(), elapsed, "readiness disables the source");
+        assert_eq!(sample.elapsed(), elapsed, "readiness removes the source");
         assert_eq!(queries.get(), 1);
         drop(sample);
         event_loop.dispatch(Some(Duration::ZERO), &mut ()).unwrap();
@@ -291,6 +307,51 @@ mod tests {
             GpuCompletion::new(&event_loop.handle(), reader.into(), Instant::now()).unwrap();
         drop(sample); // reset/prune before completion
         event_loop.dispatch(Some(Duration::ZERO), &mut ()).unwrap();
+    }
+
+    #[test]
+    fn fired_source_is_removed_once() {
+        use smithay::reexports::calloop::{Interest, Mode, PostAction, generic::Generic};
+        use std::io::Write;
+        use std::os::unix::net::UnixStream;
+        let mut event_loop: EventLoop<'static, ()> = EventLoop::try_new().unwrap();
+        let (reader, mut writer) = UnixStream::pair().unwrap();
+        let start = Instant::now();
+        let queries = Rc::new(Cell::new(0));
+        let calls = queries.clone();
+        let sample =
+            GpuCompletion::with_query(&event_loop.handle(), reader.into(), start, move |_| {
+                calls.set(calls.get() + 1);
+                None
+            })
+            .unwrap();
+        writer.write_all(&[1]).unwrap();
+        event_loop.dispatch(Some(Duration::ZERO), &mut ()).unwrap();
+        assert_eq!(queries.get(), 1);
+        assert!(sample.fired(), "readiness removed the source itself");
+        // Drop must take the no-remove branch: no second unregister of the token.
+        drop(sample);
+        event_loop.dispatch(Some(Duration::ZERO), &mut ()).unwrap();
+        assert_eq!(queries.get(), 1, "the query ran exactly once");
+
+        // A fresh source still dispatches, so the loop survived the removal.
+        let (reader, mut writer) = UnixStream::pair().unwrap();
+        let reader_fd: std::os::fd::OwnedFd = reader.into();
+        let dispatched = Rc::new(Cell::new(0));
+        let seen = dispatched.clone();
+        event_loop
+            .handle()
+            .insert_source(
+                Generic::new(reader_fd, Interest::READ, Mode::Level),
+                move |_, _, _| {
+                    seen.set(seen.get() + 1);
+                    Ok(PostAction::Disable)
+                },
+            )
+            .unwrap();
+        writer.write_all(&[1]).unwrap();
+        event_loop.dispatch(Some(Duration::ZERO), &mut ()).unwrap();
+        assert_eq!(dispatched.get(), 1, "the loop still dispatches new sources");
     }
 
     #[test]
