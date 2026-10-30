@@ -1341,8 +1341,8 @@ mod tests {
             let (mut a, mut service, _, _) = documents();
             let (rc, body) = bus(&mut a, &mut service, "ced.execute", json!({"id": id}));
             assert_eq!(rc, 0, "{id}");
-            assert_eq!(body["opened"], true, "{id}");
-            assert_eq!(body["queued"], false, "{id}");
+            assert_eq!(body["result"]["opened"], true, "{id}");
+            assert_eq!(body["result"]["queued"], false, "{id}");
             assert!(match a.dialog {
                 Some(Dialog::Keys) => is_keys,
                 Some(Dialog::About) => !is_keys,
