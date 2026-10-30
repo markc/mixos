@@ -146,6 +146,10 @@ pub fn registry() -> Registry<App> {
     });
     // View › Theme: any scheme, style, mode and framing, in this window only.
     r.theme_menu("view", |a: &App| a.theme, |a: &mut App, c| a.theme = c);
+    r.search_action(toolkit::search::command(
+        toolkit::action::always,
+        |a: &mut App| a.search_open = true,
+    ));
     r.search_menu("help");
     r
 }

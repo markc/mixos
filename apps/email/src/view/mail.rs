@@ -911,7 +911,14 @@ fn message(
     );
     toolkit::bars::hairline(ui);
     let mut attachment_context = false;
-    toolkit::content::surface(ui, content, |ui| {
+    let fill = if content.light {
+        toolkit::chrome::Chrome::for_theme(toolkit::content::light_theme())
+            .palette
+            .canvas
+    } else {
+        ui.visuals().panel_fill
+    };
+    toolkit::content::surface_filled(ui, content, fill, |ui| {
         // The keys use the actual id returned by this area's previous frame.
         let offset = scroll_with_keys(ui, focused);
         let area = ScrollArea::vertical();

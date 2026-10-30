@@ -32,6 +32,7 @@ pub fn title_bar(
     commands: &Registry<App>,
     strings: &Strings,
 ) -> Vec<UiEvent> {
+    titlebar::seamless(ui.ctx(), true);
     // The icon bar: the standard tail only.
     titlebar::show_bar(
         ui,
@@ -69,8 +70,14 @@ pub fn tab_strip(ui: &mut Ui, app: &App) -> Vec<UiEvent> {
         })
         .collect();
     let selected = tabs.iter().position(|tab| tab.active).unwrap_or(0);
-    let picked =
-        toolkit::tabs::documents(ui, egui::Id::unique("term.tabs"), &shown, selected, None);
+    let picked = toolkit::tabs::documents_on(
+        ui,
+        egui::Id::unique("term.tabs"),
+        &shown,
+        selected,
+        None,
+        Chrome::of(ui.ctx()).palette.canvas,
+    );
     let mut events = Vec::new();
     if let Some(tab) = picked.selected.and_then(|i| tabs.get(i)) {
         events.push(UiEvent::SelectTab(tab.id));

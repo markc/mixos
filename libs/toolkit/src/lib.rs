@@ -74,6 +74,7 @@ pub mod markdown;
 pub mod menu;
 pub mod panel;
 pub mod saved;
+pub mod search;
 pub mod session_look;
 pub mod slider;
 pub mod space;

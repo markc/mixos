@@ -11,6 +11,72 @@ use toolkit::{Icon, Strings, Theme, titlebar};
 
 const FTL: &str = "menu-file = File\ncmd-quit = Quit\n";
 
+#[test]
+fn minimum_window_keeps_menu_tail_and_captions_disjoint() {
+    let mut registry = registry();
+    for (id, label) in [
+        ("help.macros", "macros"),
+        ("view.search", "search"),
+        ("help.keys", "keys"),
+        ("view.mode", "mode"),
+    ] {
+        registry.add(toolkit::Action {
+            id,
+            label,
+            menu: None,
+            submenu: None,
+            group: 0,
+            shortcut: None,
+            icon: None,
+            enabled: always,
+            run: |_| {},
+        });
+    }
+    let strings = Strings::new(&format!(
+        "{FTL}macros = Macros\nsearch = Search\nkeys = Keys\nmode = Mode\n"
+    ));
+    let theme = Theme::for_context(design::DesignContext {
+        scheme: design::Scheme::Studio,
+        mode: design::Mode::Dark,
+        ..Default::default()
+    })
+    .framed(
+        design::RequestedDecorations::Client,
+        design::CaptionSide::Right,
+    )
+    .with_menus(design::MenuStyle::Bar, design::MenuSide::Left);
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(320.0, 200.0))
+        .with_context_setup(move |ctx| toolkit::install(ctx, &theme))
+        .build_ui(move |ui| {
+            let viewport = ui.ctx().content_rect();
+            let mut root = ui.new_child(egui::UiBuilder::new().max_rect(viewport));
+            titlebar::show_bar(
+                &mut root,
+                "Terminal",
+                Some(Icon::FileTerminal),
+                &registry,
+                &(),
+                &strings,
+                &[],
+            );
+        });
+    h.run();
+    let rects: Vec<_> = [
+        "Menus", "Macros", "Search", "Keys", "Mode", "Minimize", "Maximize", "Close",
+    ]
+    .map(|label| (label, h.get_by_label(label).rect()))
+    .into();
+    for (i, (name, rect)) in rects.iter().enumerate() {
+        for (other, next) in &rects[i + 1..] {
+            assert!(
+                rect.right() <= next.left() + 0.1 || next.right() <= rect.left() + 0.1,
+                "{name} {rect:?} overlaps {other} {next:?}"
+            );
+        }
+    }
+}
+
 fn registry() -> Registry<()> {
     let mut r = Registry::new();
     r.add(toolkit::Action {

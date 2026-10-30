@@ -41,6 +41,7 @@ panel-menu = Panel menu
 more-tabs = More tabs
 close-document = Close { $name }
 search-menus = Search menus
+toolkit-toggle-mode = Light or dark interface
 datatable-first-page = First page
 datatable-previous-page = Previous page
 datatable-next-page = Next page

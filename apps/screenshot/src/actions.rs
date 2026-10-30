@@ -439,6 +439,7 @@ pub fn registry() -> toolkit::action::EngineAdapter<App> {
         run: |a: &mut App| a.open(Dialog::About),
     });
     let mut adapter = toolkit::action::EngineAdapter::new(r.into_registry());
+    adapter.no_search();
     adapter.search_menu("help");
     adapter
 }
@@ -525,6 +526,10 @@ pub fn tool_id(tool: Tool) -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn title_bar_carries_the_standard_tail() {
+        registry().assert_tail(&app(), &crate::strings(), false);
+    }
     use super::*;
     use toolkit::action::Origin;
 

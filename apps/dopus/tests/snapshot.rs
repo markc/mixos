@@ -127,6 +127,11 @@ fn app(sidebars: bool) -> App {
     app
 }
 
+#[test]
+fn title_bar_carries_the_standard_tail() {
+    dopus::actions::registry().assert_tail(&app(false), &dopus::strings(), true);
+}
+
 fn window(theme: Theme, name: &str, sidebars: bool, dialog: Option<Dialog>) {
     let mut app = app(sidebars);
     if let Some(dialog) = dialog {

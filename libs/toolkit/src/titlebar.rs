@@ -302,7 +302,6 @@ pub fn show_with<S>(
                     0.0
                 }
         };
-        let captions = if server { 0.0 } else { 3.0 * m.caption_width };
         let caption_align = chrome.captions.alignment(Alignment::Right);
         let menu_align = chrome.menu_side.alignment();
         let actions_align = chrome.band.actions.alignment();
@@ -318,6 +317,18 @@ pub fn show_with<S>(
         } else {
             m.title_bar_margin
         };
+        // At a small window's minimum, the full tail and compact menu take
+        // priority over wide caption hit targets. Keep each caption at least
+        // an icon button wide, and use the same width to lay out and paint it.
+        let caption_width = if server {
+            0.0
+        } else {
+            ((bar.width() - menu_width - mark - menu_pad - actions_min - actions_pad) / 3.0).clamp(
+                (chrome.style.icon_button as f32).min(m.caption_width),
+                m.caption_width,
+            )
+        };
+        let captions = 3.0 * caption_width;
         let groups = design::title_band::layout(
             bar.width(),
             &[
@@ -430,8 +441,8 @@ pub fn show_with<S>(
             };
             for (i, caption) in order.into_iter().enumerate() {
                 let rect = Rect::from_min_size(
-                    pos2(group(0).left() + i as f32 * m.caption_width, bar.top()),
-                    vec2(m.caption_width, bar.height()),
+                    pos2(group(0).left() + i as f32 * caption_width, bar.top()),
+                    vec2(caption_width, bar.height()),
                 );
                 caption_button(ui, rect, caption, &chrome);
             }
@@ -567,11 +578,14 @@ pub fn show_bar<S>(
     strings: &Strings,
     actions: &[Action],
 ) -> Vec<(&'static str, Origin)> {
-    let dark = ui.visuals().dark_mode;
+    let dark = Chrome::of(ui.ctx()).mode == design::Mode::Dark;
     let items = icon_bar(ui.ctx(), registry, state, strings, actions, dark);
     hosting::publish(ui.ctx(), &items);
     if hosting::hosted(ui.ctx()) {
-        return show_with(ui, title, icon, registry, state, strings, &mut []);
+        return bar_commands(
+            show_with(ui, title, icon, registry, state, strings, &mut []),
+            dark,
+        );
     }
     // Fit keeps the tail and drops app actions from the left.
     let mut controls: Vec<Control<'_>> = items
@@ -583,7 +597,50 @@ pub fn show_bar<S>(
             selected: item.toggled,
         })
         .collect();
-    show_with(ui, title, icon, registry, state, strings, &mut controls)
+    bar_commands(
+        show_with(ui, title, icon, registry, state, strings, &mut controls),
+        dark,
+    )
+}
+
+// Resolve against the mode actually painted, before dispatch through the
+// Theme menu's setter. Repeated clicks in one frame choose the same mode.
+fn bar_commands(mut fired: Vec<(&'static str, Origin)>, dark: bool) -> Vec<(&'static str, Origin)> {
+    for (id, _) in &mut fired {
+        if *id == "view.mode" {
+            *id = crate::theme_menu::mode_id(if dark {
+                design::Mode::Light
+            } else {
+                design::Mode::Dark
+            });
+        }
+    }
+    fired
+}
+
+#[cfg(test)]
+mod tail_tests {
+    #[test]
+    fn mode_clicks_choose_opposite_the_painted_frame_through_the_theme_setter() {
+        use crate::{Registry, theme_menu::Choice};
+        for dark in [false, true] {
+            let mut registry = Registry::new();
+            registry.theme_menu("view", |c: &Choice| *c, |c, value| *c = value);
+            let mut choice = Choice::default();
+            let clicks = super::bar_commands(vec![("view.mode", super::Origin::Ui); 2], dark);
+            for (id, origin) in clicks {
+                registry.execute(id, &mut choice, origin).unwrap();
+            }
+            assert_eq!(
+                choice.mode,
+                Some(if dark {
+                    design::Mode::Light
+                } else {
+                    design::Mode::Dark
+                })
+            );
+        }
+    }
 }
 
 /// [`show_bar`] for a core command table.

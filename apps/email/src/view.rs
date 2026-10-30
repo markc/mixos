@@ -39,6 +39,7 @@ pub enum UiEvent {
     DocumentReplace(bool),
     Command(&'static str, Origin),
     CloseMacros,
+    CloseSearch,
     /// Switch the centre pane's surface.
     Mode(Mode),
     /// A tree row was clicked: select what it stands for.
@@ -143,24 +144,11 @@ pub fn view(
         strings,
         &[Action::new("mail.compose", Icon::SquarePen)],
     );
-    let mut mode_set = false;
-    for (id, origin) in fired {
-        if id == "view.mode" {
-            // The toggle goes to the mode opposite the one this frame drew,
-            // so a click reported twice cannot flip it back.
-            if !mode_set {
-                commands.note(id, origin);
-                let target = match state.effective_mode() {
-                    design::Mode::Dark => design::Mode::Light,
-                    design::Mode::Light => design::Mode::Dark,
-                };
-                events.push(UiEvent::SetMode(target));
-                mode_set = true;
-            }
-        } else {
-            events.push(UiEvent::Command(id, origin));
-        }
-    }
+    events.extend(
+        fired
+            .into_iter()
+            .map(|(id, origin)| UiEvent::Command(id, origin)),
+    );
     status(ui, state);
     if state.accounts.is_empty() {
         egui::CentralPanel::default()
@@ -192,6 +180,14 @@ pub fn view(
         if shown.chosen.is_some() || shown.dismissed {
             dialog::Dialog::reset(ui.ctx(), id);
             events.push(UiEvent::CloseDialog);
+        }
+    }
+    if let Some(chosen) =
+        toolkit::search::show(ui.ctx(), commands, state, strings, state.ui.search_open)
+    {
+        events.push(UiEvent::CloseSearch);
+        if let Some((id, origin)) = chosen {
+            events.push(UiEvent::Command(id, origin));
         }
     }
     if toolkit::macros::show_app(ui.ctx(), "email", state.ui.macros_open) {

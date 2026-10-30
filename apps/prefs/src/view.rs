@@ -112,26 +112,11 @@ pub fn view(
         strings,
         &[Action::new("view.refresh", Icon::RefreshCw)],
     );
-    // The toggle goes to the mode opposite the one this frame drew, so a
-    // click reported twice cannot flip it back.
-    let mut mode_set = false;
-    for (id, origin) in fired {
-        if id == "view.mode" {
-            if !mode_set {
-                commands.note(id, origin);
-                let shown = engine.effective_theme().1;
-                let target = if shown == design::Mode::Dark {
-                    design::Mode::Light
-                } else {
-                    design::Mode::Dark
-                };
-                events.push(UiEvent::SetMode(target));
-                mode_set = true;
-            }
-        } else {
-            events.push(UiEvent::Command(id, origin));
-        }
-    }
+    events.extend(
+        fired
+            .into_iter()
+            .map(|(id, origin)| UiEvent::Command(id, origin)),
+    );
     bars::status(ui, |ui| {
         if !engine.connected {
             ui.add(icons::image_of(

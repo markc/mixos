@@ -1454,6 +1454,7 @@ pub struct UiState {
     pub attachments_expanded: bool,
     pub attachments_inline: bool,
     pub macros_open: bool,
+    pub search_open: bool,
     pub places: f32,
     pub reader: f32,
     pub dialog: Option<Dialog>,
@@ -1468,6 +1469,7 @@ impl Default for UiState {
     fn default() -> Self {
         Self {
             macros_open: false,
+            search_open: false,
             attachments_expanded: false,
             attachments_inline: true,
             places: 0.18,
@@ -5810,6 +5812,7 @@ impl State {
                 self.remove_compose_attachment(&path);
             }
             UiEvent::CloseMacros => self.ui.macros_open = false,
+            UiEvent::CloseSearch => self.ui.search_open = false,
             UiEvent::Command(id, origin) => {
                 let _ = (id, origin);
                 // Commands run through the registry (commands.rs), which

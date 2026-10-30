@@ -104,6 +104,7 @@ pub struct App {
     /// The Keyboard Shortcuts dialog is open.
     pub keys_dialog: bool,
     pub macros_open: bool,
+    pub search_open: bool,
     /// The About dialog is open.
     pub about_dialog: bool,
     /// Text the platform read for a Ctrl+Shift+V, for the paste command.
@@ -201,6 +202,7 @@ impl App {
             theme: Default::default(),
             keys_dialog: false,
             macros_open: false,
+            search_open: false,
             about_dialog: false,
             pasted: None,
             target_tab: None,

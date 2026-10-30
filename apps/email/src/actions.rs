@@ -633,19 +633,10 @@ pub fn registry() -> Registry<State> {
         icon: None,
         enabled: undialogued,
         run: |state| state.open_dialog(crate::state::Dialog::About),
-    })
-    // The title bar's right-hand controls (no menu of their own).
-    .add(Action {
-        id: "view.mode",
-        submenu: None,
-        group: 0,
-        label: "toggle-mode",
-        menu: None,
-        shortcut: None,
-        icon: None,
-        enabled: toolkit::action::always,
-        run: State::toggle_mode,
     });
+    r.search_action(toolkit::search::command(undialogued, |s: &mut State| {
+        s.ui.search_open = true
+    }));
     // Bare keys and Delete belong to a text field while one is typed in.
     for id in [
         "mail.flag",
@@ -763,7 +754,7 @@ pub fn choice(state: &State) -> toolkit::theme_menu::Choice {
 }
 
 /// Store the Theme menu's choice as the window's.
-fn set_choice(state: &mut State, choice: toolkit::theme_menu::Choice) {
+pub(crate) fn set_choice(state: &mut State, choice: toolkit::theme_menu::Choice) {
     state.ui.theme.scheme = choice.scheme;
     state.ui.theme.style = choice.style;
     state.ui.theme.mode = choice.mode;
