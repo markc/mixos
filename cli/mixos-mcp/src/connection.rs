@@ -150,8 +150,8 @@ impl BrokerConnection {
             .as_nanos();
         // Only a genuinely unset variable means "not an agent": empty or
         // non-UTF-8 values go through validation and fail closed.
-        let session = std::env::var_os(AGENT_SESSION_ENV)
-            .map(|value| value.to_string_lossy().into_owned());
+        let session =
+            std::env::var_os(AGENT_SESSION_ENV).map(|value| value.to_string_lossy().into_owned());
         let name = broker_name(session.as_deref(), std::process::id(), nonce);
         if let Err(error) = &name {
             tracing::error!("{error}");
