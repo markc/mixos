@@ -359,21 +359,26 @@ fn on_reply($id, $msg)
     end
     return nil
   end
+  -- A reply without a result map must not fault the handler.
+  $res = if type($msg.result) == "map" then $msg.result else {} end
   if $p.kind == "initialize" then
     $rpc = next_rpc()
     $S.sessions[$id].pending[to_string($rpc)] = {kind: "new"}
     $s = $S.sessions[$id]
     write_frame($id, $a.session_new_frame($rpc, $s.cwd, $s.dirs, $a.mcp_entry($MCP_BIN, $id)))
-    emit_event($id, {kind: "initialized", agent_info: $msg.result.agentInfo, protocol: $msg.result.protocolVersion})
+    emit_event($id, {kind: "initialized", agent_info: $res.agentInfo, protocol: $res.protocolVersion})
+  elif $p.kind == "new" and type($res.sessionId) != "string" then
+    emit_event($id, {kind: "error", during: "new", error: {message: "session/new returned no sessionId"}})
+    process_close_stdin($S.sessions[$id].watch)
   elif $p.kind == "new" then
-    $S.sessions[$id].acp = $msg.result.sessionId
+    $S.sessions[$id].acp = $res.sessionId
     $S.sessions[$id].status = "ready"
-    emit_event($id, {kind: "ready", modes: $msg.result.modes, config_options: $msg.result.configOptions,
-      models: $msg.result.models})
+    emit_event($id, {kind: "ready", modes: $res.modes, config_options: $res.configOptions,
+      models: $res.models})
     if $S.sessions[$id].mode != nil then
       $rpc = next_rpc()
       $S.sessions[$id].pending[to_string($rpc)] = {kind: "set"}
-      write_frame($id, $a.set_mode_frame($rpc, $msg.result.sessionId, $S.sessions[$id].mode))
+      write_frame($id, $a.set_mode_frame($rpc, $res.sessionId, $S.sessions[$id].mode))
     end
     if $S.sessions[$id].queued != nil then
       $blocks = $S.sessions[$id].queued
@@ -390,7 +395,7 @@ end
 fn ask_human($id, $key, $params)
   $c = $CONF.agents[$S.sessions[$id].agent]
   $buttons = $a.permission_buttons($params.options)
-  $title = $params.toolCall.title ?? "a tool call"
+  $title = (if type($params.toolCall) == "map" then $params.toolCall.title else nil end) ?? "a tool call"
   $req = {summary: slice($S.sessions[$id].agent .. " wants: " .. $title, 0, 120),
     body: slice("Session " .. $id .. " in " .. $S.sessions[$id].cwd, 0, 500),
     app: "agentd", source: "agent." .. $id,
@@ -413,7 +418,8 @@ fn on_request($id, $msg)
     $key = to_string($msg.id)
     $S.sessions[$id].perms[$key] = {rpc: $msg.id, options: $msg.params.options ?? [], notify: nil}
     publish("agent.permission.requested", json_encode({session: $id, request: $key,
-      title: $msg.params.toolCall.title, options: $msg.params.options}), {command: "agent.permission.requested"})
+      title: if type($msg.params.toolCall) == "map" then $msg.params.toolCall.title else nil end,
+      options: $msg.params.options}), {command: "agent.permission.requested"})
     $auto = $a.auto_answer($CONF.agents[$S.sessions[$id].agent].policy, $msg.params)
     if $auto != nil then
       answer_permission($id, $key, $auto)
