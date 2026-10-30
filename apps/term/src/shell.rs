@@ -729,6 +729,7 @@ impl Shell {
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(canvas))
             .show(ui, |ui| {
+                ui.spacing_mut().item_spacing.y = 0.0;
                 events.extend(view::tab_strip(ui, &self.app));
                 view::notice(ui, &self.app, self.font.unsaved);
                 let area = ui.available_rect_before_wrap();
