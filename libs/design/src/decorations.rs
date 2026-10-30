@@ -41,13 +41,14 @@ pub fn automatic(facts: &SessionFacts) -> Resolution {
 
 /// Placement belongs to the theme, while session facts are process-wide.
 pub fn automatic_with_actions(facts: &SessionFacts, actions: ActionsPlace) -> Resolution {
-    let (mode, reason) = if !facts.wayland {
-        (Decorations::Server, "rule1")
-    } else if prefers_client_side(&facts.desktops) {
-        (Decorations::Client, "rule2")
-    } else if actions == ActionsPlace::Titlebar {
+    let host_desktop = prefers_client_side(&facts.desktops);
+    let (mode, reason) = if actions == ActionsPlace::Titlebar && !host_desktop {
         // Only compd can host the app's Action Bar in a server title bar.
         (Decorations::Client, "rule3b")
+    } else if !facts.wayland {
+        (Decorations::Server, "rule1")
+    } else if host_desktop {
+        (Decorations::Client, "rule2")
     } else if facts.decoration_global == Some(true) {
         (Decorations::Server, "rule3")
     } else {
@@ -160,8 +161,8 @@ pub fn with_resolver<T>(resolver: Arc<Resolver>, operation: impl FnOnce() -> T) 
     operation()
 }
 
-/// Without an installed resolver, reads no environment and resolves `auto`
-/// as rule 4 without detection, for headless engines and offscreen UI.
+/// Without an installed resolver, uses headless facts without reading the
+/// environment or detecting a display, for engines and offscreen UI.
 pub fn resolve(choice: Option<RequestedDecorations>, session: RequestedDecorations) -> Resolution {
     resolve_with_actions(choice, session, ActionsPlace::Row)
 }
@@ -334,7 +335,7 @@ mod tests {
         );
         assert_eq!(
             automatic_with_actions(&facts(false, "KDE", Some(true)), ActionsPlace::Titlebar).reason,
-            "rule1"
+            "rule3b"
         );
         assert_eq!(
             automatic_with_actions(

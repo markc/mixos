@@ -252,7 +252,7 @@ injecting both facts and the variable without reading the real session.
   undecorated. Only the free gap between the menus and the buttons drags
   the window. Call `titlebar::edges` last in the frame to add the resize
   zones. Under server-side decorations the row becomes a plain menu bar.
-  On foreign Wayland desktops, automatic framing uses the app title bar when
+  On foreign desktops, automatic framing uses the app title bar when
   Actions are placed “In the title bar”. Explicit `csd`/`ssd` settings and
   `MIXOS_DECORATIONS` take precedence. Only a MixOS desktop can host menus
   and Actions; elsewhere an explicit SSD window keeps them in its own row.
