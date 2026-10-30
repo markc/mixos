@@ -364,13 +364,7 @@ pub fn show_with<S>(
         } else if menu_align == Alignment::Right {
             menu.max.x -= menu_pad;
         }
-        let anchor = if form == design::MenuStyle::Button {
-            let rect = Rect::from_min_size(menu.min, vec2(menu_width, menu.height()));
-            menu.min.x += menu_width;
-            menu_button_at(ui, rect)
-        } else {
-            None
-        };
+        // The mark leads, as a window icon does, then the menu (button or bar).
         if mark > 0.0
             && let Some(icon) = icon
         {
@@ -388,6 +382,13 @@ pub fn show_with<S>(
             }
         }
         menu.min.x += mark;
+        let anchor = if form == design::MenuStyle::Button {
+            let rect = Rect::from_min_size(menu.min, vec2(menu_width, menu.height()));
+            menu.min.x += menu_width;
+            menu_button_at(ui, rect)
+        } else {
+            None
+        };
         menus(ui, menu, registry, state, strings, anchor, &mut fired);
         let mut actions = group(2);
         if actions_align == Alignment::Left {
