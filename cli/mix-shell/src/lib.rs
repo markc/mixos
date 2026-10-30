@@ -758,7 +758,14 @@ pub(crate) fn run_agent_cli(args: &[String]) -> i32 {
             return 1;
         }
     };
-    match std::process::Command::new(exe).arg(&script).args(args).status() {
+    // The CLI re-runs itself under `--serve` for `send --wait`: with this
+    // same binary, not whatever mix is installed in the prefix.
+    match std::process::Command::new(&exe)
+        .arg(&script)
+        .args(args)
+        .env("MIXOS_AGENT_CLI_MIX", &exe)
+        .status()
+    {
         Ok(status) => status.code().unwrap_or(1),
         Err(error) => {
             eprintln!("mix agent: {error}");

@@ -97,6 +97,15 @@ loop
     $stop = "end_turn"
     if contains($t, "MCP") then text($sid, "mcp:" .. $sessions[$sid].mcp) end
     if contains($t, "BIG") then text($sid, repeat("x", 2097152)) end
+    if contains($t, "DRIP") then
+      -- Text spread over 5 s: a watcher that subscribed late must still
+      -- show every chunk once, in order.
+      text($sid, "d1")
+      sleep(4)
+      text($sid, "d2")
+      sleep(1)
+      text($sid, "d3")
+    end
     if $t == "TERMRUN" or $t == "TERMKILL" or $t == "TERMOUT" then
       -- One request at a time; each answer is the next line from agentd.
       fn call($method, $params)

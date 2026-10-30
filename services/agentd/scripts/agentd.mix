@@ -242,7 +242,8 @@ end
 
 fn view($s)
   return {session: $s.id, agent: $s.agent, cwd: $s.cwd, parent: $s.parent, status: $s.status,
-    seq: $s.seq, turn: $s.turn, created_at: $s.created_at, open_permissions: len(keys($s.perms))}
+    seq: $s.seq, turn: $s.turn, created_at: $s.created_at, open_permissions: len(keys($s.perms)),
+    permission_requests: sort(keys($s.perms))}
 end
 
 -- Look up the session a command names; replies the refusal itself.

@@ -45,7 +45,8 @@ try
   $env = merge($pb.client_env($bus), {HOME: $tmp .. "/home", MIXOS_NOTIFYD_STATE: $tmp .. "/notify.json"})
   $CLI_ENV = merge($pb.client_env($bus), {MIXOS_AGENT_CLI_MIX: $mix})
   write_file($tmp .. "/agent.conf.mix", data_encode({max_live: 3, agents: {
-    fake: {argv: [$mix, $fake, "resume"], roots: [$tmp .. "/ws"], permission_timeout_s: 60}}}))
+    fake: {argv: [$mix, $fake, "resume"], roots: [$tmp .. "/ws"], permission_timeout_s: 60},
+    auto: {argv: [$mix, $fake], roots: [$tmp .. "/ws"], policy: "allow_once"}}}))
   push($pids, citizen($notifyd, "notify", $env, "notifyd.log"))
   push($pids, citizen($agentd, "agent", merge($env, {MIXOS_AGENTD_CONF: $tmp .. "/agent.conf.mix",
     MIXOS_AGENTD_MCP: "/bin/true", MIXOS_AGENTD_DB: $tmp .. "/sessions.db", MIXOS_AGENTD_CLOSE_GRACE_S: "1"}), "agentd.log"))
@@ -71,6 +72,9 @@ try
   check("send --wait exits 2 when a permission question waits on a human",
     $p.rc == 2 and contains($p.err, "waiting on a human") and contains($p.err, "mix agent answer " .. $s))
   $req = trim(re_find($p.err, "answer " .. $s .. " ([0-9]+) ")[0].groups[0] ?? "")
+  $p2 = cli(["send", $s, "more", "--wait", "--timeout", "30"], 60)
+  check("send --wait with a question already open exits 2 and names it",
+    $p2.rc == 2 and contains($p2.err, "mix agent answer " .. $s .. " " .. $req .. " OPTION"))
   $a = cli(["answer", $s, $req, "allow"], 30)
   check("answer answers the question", $a.rc == 0)
   sleep(1)
@@ -97,6 +101,16 @@ try
   $after = cli(["send", $s, "again", "--wait", "--timeout", "30"], 60)
   check("and it answers again", $after.rc == 0 and contains($after.out, "echo:again"))
   check("list shows it", contains(cli(["list"], 30).out, $s))
+
+  $d = cli(["send", $s, "DRIP", "--wait", "--timeout", "30"], 60)
+  check("a turn spread across the subscribe delay shows every chunk once, in order",
+    $d.rc == 0 and contains($d.out, "d1d2d3echo:DRIP") and len(split($d.out, "d1")) == 2)
+
+  $au = trim(cli(["start", "auto"], 30).out)
+  sleep(1)
+  $ap = cli(["send", $au, "PERMISSION", "--wait", "--timeout", "30"], 60)
+  check("a question an allow_once policy answers does not stop --wait",
+    $ap.rc == 0 and contains($ap.out, "perm:allow") and not contains($ap.err, "waiting on a human"))
 
   $bad = cli(["send", "zzzz9999", "x"], 30)
   check("a refusal exits 1 with the error code", $bad.rc == 1 and contains($bad.err, "UNKNOWN_SESSION"))
