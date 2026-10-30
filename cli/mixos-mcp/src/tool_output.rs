@@ -233,8 +233,14 @@ mod tests {
                 );
                 let listed = matches!(key.as_str(), "anyOf" | "oneOf" | "allOf" | "prefixItems");
                 (positional && sub.is_boolean())
-                    || (keyed && sub.as_object().is_some_and(|m| m.values().any(Value::is_boolean)))
-                    || (listed && sub.as_array().is_some_and(|a| a.iter().any(Value::is_boolean)))
+                    || (keyed
+                        && sub
+                            .as_object()
+                            .is_some_and(|m| m.values().any(Value::is_boolean)))
+                    || (listed
+                        && sub
+                            .as_array()
+                            .is_some_and(|a| a.iter().any(Value::is_boolean)))
                     || has_boolean_subschema(sub)
             }),
             Value::Array(items) => items.iter().any(has_boolean_subschema),
@@ -255,7 +261,11 @@ mod tests {
         let mut tool = Tool::default();
         tool.name = "term_list".into();
         tool.output_schema = Some(std::sync::Arc::new(
-            serde_json::to_value(&raw).unwrap().as_object().unwrap().clone(),
+            serde_json::to_value(&raw)
+                .unwrap()
+                .as_object()
+                .unwrap()
+                .clone(),
         ));
         let schema = Value::Object((*decorate(tool).output_schema.unwrap()).clone());
         assert!(!has_boolean_subschema(&schema), "term_list: {schema}");
