@@ -164,6 +164,22 @@ impl<S: 'static> Registry<S> {
             change(&mut choice);
             set(s, choice);
         };
+        self.add_choice(
+            Place {
+                id: "view.mode",
+                label: "toolkit-toggle-mode",
+                menu: None,
+                submenu: None,
+                group: 0,
+            },
+            move |s| {
+                let mut choice = get(s);
+                let mode = choice.mode.unwrap_or_else(|| crate::Theme::load().mode());
+                choice.mode = Some(if mode == Mode::Dark { Mode::Light } else { Mode::Dark });
+                set(s, choice);
+            },
+            |_| false,
+        );
         for scheme in Scheme::ALL {
             let group = if scheme.is_chrome_scheme() { 1 } else { 0 };
             self.add_choice(

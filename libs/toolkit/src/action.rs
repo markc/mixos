@@ -88,6 +88,7 @@ impl std::error::Error for CommandError {}
 /// The application's commands, in menu order.
 pub struct Registry<S> {
     commands: Vec<Action<S>>,
+    search_available: Option<bool>,
     /// Fluent key of the menu that opens with a search field (§3.5).
     search_menu: Option<&'static str>,
     dialog_menus: Vec<&'static str>,
@@ -104,6 +105,7 @@ impl<S> Default for Registry<S> {
     fn default() -> Self {
         Self {
             commands: Vec::new(),
+            search_available: None,
             search_menu: None,
             dialog_menus: Vec::new(),
             core: ::action::Registry::new(),
@@ -133,6 +135,38 @@ fn choose<S>(_: &mut S) {}
 impl<S> Registry<S> {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Supply the app's find, filter or command-search action for the tail.
+    pub fn search_action(&mut self, action: Action<S>) -> &mut Self {
+        assert_eq!(action.id, "view.search");
+        assert_ne!(self.search_available, Some(false));
+        self.search_available = Some(true);
+        self.add(action)
+    }
+
+    /// Explicitly omit search from this app's tail.
+    pub fn no_search(&mut self) -> &mut Self {
+        assert!(self.get("view.search").is_none());
+        self.search_available = Some(false);
+        self
+    }
+
+    /// Assert the visible tail contract against the app's real registry.
+    pub fn assert_tail(&self, state: &S, strings: &Strings, search: bool) {
+        assert_eq!(self.search_available, Some(search), "declare search or no_search");
+        let ctx = egui::Context::default();
+        let items = crate::titlebar::icon_bar(&ctx, self, state, strings, &[], true);
+        let expected = if search {
+            vec!["help.macros", "view.search", "help.keys", "view.mode"]
+        } else {
+            vec!["help.macros", "help.keys", "view.mode"]
+        };
+        let ids: Vec<_> = items.iter().map(|i| match i.command {
+            "help.shortcuts" => "help.keys",
+            id => id,
+        }).collect();
+        assert_eq!(ids, expected);
     }
 
     /// Finish a transitional table, retaining its handlers and bindings in
@@ -900,6 +934,7 @@ impl<S> EngineAdapter<S> {
             .collect();
         let mut ui = Registry {
             commands,
+            search_available: None,
             search_menu: None,
             dialog_menus: Vec::new(),
             core,
@@ -958,6 +993,13 @@ impl<S> EngineAdapter<S> {
     pub fn search_menu(&mut self, menu: &'static str) -> &mut Self {
         self.ui.search_menu(menu);
         self
+    }
+    pub fn no_search(&mut self) -> &mut Self {
+        self.ui.no_search();
+        self
+    }
+    pub fn assert_tail(&self, state: &S, strings: &Strings, search: bool) {
+        self.ui.assert_tail(state, strings, search);
     }
     pub fn rebind(&mut self, overrides: &crate::keymap::Overrides) -> Vec<String> {
         self.ui.rebind(overrides)

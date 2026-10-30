@@ -87,6 +87,7 @@ fn two_tabs_and_a_split_studio_dark() {
         raster,
         FontSize::new(13.0),
     );
+    term::actions::registry().assert_tail(&app, &term::strings(), true);
     let theme = Theme::for_context(DesignContext {
         scheme: Scheme::Studio,
         mode: Mode::Dark,

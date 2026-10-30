@@ -60,7 +60,7 @@ pub fn registry() -> Registry<Engine> {
         enabled: Engine::can_refresh,
         run: Engine::refresh,
     })
-    .add(Action {
+    .search_action(Action {
         id: "view.search",
         submenu: None,
         group: 1,
@@ -387,18 +387,6 @@ pub fn registry() -> Registry<Engine> {
         icon: None,
         enabled: undialogued,
         run: |e| e.open(Dialog::About),
-    })
-    // The title bar's light/dark switch (no menu of its own).
-    .add(Action {
-        id: "view.mode",
-        submenu: None,
-        group: 0,
-        label: "toggle-mode",
-        menu: None,
-        shortcut: None,
-        icon: None,
-        enabled: toolkit::action::always,
-        run: Engine::toggle_mode,
     });
     // Help opens with a field that searches every command.
     r.search_menu("help");
@@ -434,6 +422,10 @@ fn set_choice(e: &mut Engine, choice: toolkit::theme_menu::Choice) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn title_bar_carries_the_standard_tail() {
+        registry().assert_tail(&Engine::new(crate::label_with), &crate::strings(), true);
+    }
     use super::*;
 
     #[test]

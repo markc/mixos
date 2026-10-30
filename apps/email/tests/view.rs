@@ -175,6 +175,11 @@ fn fixture() -> State {
     state
 }
 
+#[test]
+fn title_bar_carries_the_standard_tail() {
+    email::actions::registry().assert_tail(&empty(), &email::strings(), true);
+}
+
 fn empty() -> State {
     State::new(
         UiState::default(),

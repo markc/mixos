@@ -252,7 +252,7 @@ pub fn registry() -> Registry<App> {
     r.theme_menu("view", |a: &App| a.theme, |a: &mut App, c| a.theme = c);
     // The title bar's search and light/dark switch (no menu of their own).
     // Search opens the find bar; the view sets the mode from the one drawn.
-    r.add(Action {
+    r.search_action(Action {
         id: "view.search",
         label: "search-find",
         menu: None,
@@ -262,17 +262,6 @@ pub fn registry() -> Registry<App> {
         icon: None,
         enabled: |a: &App| a.enabled(ActionId::SearchFind),
         run: |a: &mut App| a.action(ActionId::SearchFind),
-    })
-    .add(Action {
-        id: "view.mode",
-        label: "toggle-mode",
-        menu: None,
-        submenu: None,
-        group: 0,
-        shortcut: None,
-        icon: None,
-        enabled: toolkit::action::always,
-        run: |_: &mut App| {},
     });
     r.search_menu("help");
     r
@@ -289,6 +278,7 @@ mod tests {
             documents::controller::Controller::new(documents::config::Config::default(), 1, false),
             documents::config::Config::default(),
         );
+        r.assert_tail(&app, &crate::strings(), true);
         let items = toolkit::titlebar::icon_bar(
             &egui::Context::default(),
             &r,

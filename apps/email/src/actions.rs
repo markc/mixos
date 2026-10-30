@@ -633,19 +633,8 @@ pub fn registry() -> Registry<State> {
         icon: None,
         enabled: undialogued,
         run: |state| state.open_dialog(crate::state::Dialog::About),
-    })
-    // The title bar's right-hand controls (no menu of their own).
-    .add(Action {
-        id: "view.mode",
-        submenu: None,
-        group: 0,
-        label: "toggle-mode",
-        menu: None,
-        shortcut: None,
-        icon: None,
-        enabled: toolkit::action::always,
-        run: State::toggle_mode,
     });
+    r.search_action(toolkit::search::command(undialogued, |s: &mut State| s.ui.search_open = true));
     // Bare keys and Delete belong to a text field while one is typed in.
     for id in [
         "mail.flag",
