@@ -87,7 +87,8 @@ mod tests {
             let root = input.viewports.get_mut(&egui::ViewportId::ROOT).unwrap();
             root.maximized = Some(maximized);
             root.fullscreen = Some(fullscreen);
-            let _ = ctx.run_ui(input, |_| {});
+            let mut output = ctx.run_ui(input, |_| {});
+            output.textures_delta.clear();
             let value = ctx
                 .data_mut(|d| d.remove_temp::<(f32, f32, [f32; 4])>(request))
                 .unwrap();

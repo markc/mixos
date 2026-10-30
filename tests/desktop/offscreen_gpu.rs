@@ -194,7 +194,7 @@ fn rounded_native_frame_masks_the_resolved_target_and_handles_opaque_fallback() 
         for scale in [1, 2] {
             let size = [67 * scale, 31 * scale];
             for (rounded, transparent) in [(true, true), (false, true), (true, false)] {
-                let output = ctx.run_ui(
+                let mut output = ctx.run_ui(
                     egui::RawInput {
                         screen_rect: Some(egui::Rect::from_min_size(
                             egui::Pos2::ZERO,
@@ -226,7 +226,7 @@ fn rounded_native_frame_masks_the_resolved_target_and_handles_opaque_fallback() 
                     scale as f32,
                     [0.0, 1.0, 0.0, 1.0],
                     &ctx.tessellate(output.shapes, scale as f32),
-                    &mut output.textures_delta.clone(),
+                    &mut output.textures_delta,
                     vec![egui::ScreenshotCallback::new(move |image| {
                         tx.send(image).unwrap();
                     })],
