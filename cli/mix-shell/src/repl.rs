@@ -1089,9 +1089,10 @@ pub fn run_repl() -> i32 {
                                 // plumbed `mix ./script.mix | …` is not a
                                 // meta name and keeps plain command
                                 // tracking.
-                                let is_meta_name =
-                                    matches!(sub, "stats" | "lint" | "edit" | "agent" | "--version" | "-V")
-                                        || crate::META_CLI_COMMANDS.contains(&sub);
+                                let is_meta_name = matches!(
+                                    sub,
+                                    "stats" | "lint" | "edit" | "agent" | "--version" | "-V"
+                                ) || crate::META_CLI_COMMANDS.contains(&sub);
                                 if is_meta_name {
                                     plumbed_meta_recorded = true;
                                     if let Some(mut s) = eval.stats_mut() {
