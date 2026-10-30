@@ -302,7 +302,6 @@ pub fn show_with<S>(
                     0.0
                 }
         };
-        let captions = if server { 0.0 } else { 3.0 * m.caption_width };
         let caption_align = chrome.captions.alignment(Alignment::Right);
         let menu_align = chrome.menu_side.alignment();
         let actions_align = chrome.band.actions.alignment();
@@ -318,6 +317,16 @@ pub fn show_with<S>(
         } else {
             m.title_bar_margin
         };
+        // At a small window's minimum, the full tail and compact menu take
+        // priority over wide caption hit targets. Keep each caption at least
+        // an icon button wide, and use the same width to lay out and paint it.
+        let caption_width = if server {
+            0.0
+        } else {
+            ((bar.width() - menu_width - mark - menu_pad - actions_min - actions_pad) / 3.0)
+                .clamp((chrome.style.icon_button as f32).min(m.caption_width), m.caption_width)
+        };
+        let captions = 3.0 * caption_width;
         let groups = design::title_band::layout(
             bar.width(),
             &[
@@ -430,8 +439,8 @@ pub fn show_with<S>(
             };
             for (i, caption) in order.into_iter().enumerate() {
                 let rect = Rect::from_min_size(
-                    pos2(group(0).left() + i as f32 * m.caption_width, bar.top()),
-                    vec2(m.caption_width, bar.height()),
+                    pos2(group(0).left() + i as f32 * caption_width, bar.top()),
+                    vec2(caption_width, bar.height()),
                 );
                 caption_button(ui, rect, caption, &chrome);
             }
