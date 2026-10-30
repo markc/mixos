@@ -70,6 +70,8 @@ fn object_subschemas(schema: &mut Value) {
         match sub {
             Value::Bool(true) => *sub = json!({}),
             Value::Bool(false) => *sub = json!({"not": {}}),
+            // The draft-7 tuple form of items is a list of schemas.
+            Value::Array(subs) => subs.iter_mut().for_each(fix),
             _ => object_subschemas(sub),
         }
     }
@@ -232,7 +234,9 @@ mod tests {
                     "properties" | "patternProperties" | "$defs" | "definitions"
                 );
                 let listed = matches!(key.as_str(), "anyOf" | "oneOf" | "allOf" | "prefixItems");
-                (positional && sub.is_boolean())
+                (positional
+                    && (sub.is_boolean()
+                        || sub.as_array().is_some_and(|a| a.iter().any(Value::is_boolean))))
                     || (keyed
                         && sub
                             .as_object()
@@ -276,7 +280,8 @@ mod tests {
         let mut schema = json!({
             "type": "object",
             "additionalProperties": false,
-            "properties": {"a": true, "b": {"type": "array", "items": true}, "c": false},
+            "properties": {"a": true, "b": {"type": "array", "items": true}, "c": false,
+                "t": {"type": "array", "items": [{"type": "string"}, true]}},
             "anyOf": [true, {"properties": {"d": true}}]
         });
         object_subschemas(&mut schema);
@@ -284,6 +289,7 @@ mod tests {
         assert_eq!(schema["properties"]["a"], json!({}));
         assert_eq!(schema["properties"]["b"]["items"], json!({}));
         assert_eq!(schema["properties"]["c"], json!({"not": {}}));
+        assert_eq!(schema["properties"]["t"]["items"][1], json!({}));
         assert_eq!(schema["anyOf"][0], json!({}));
         assert_eq!(schema["anyOf"][1]["properties"]["d"], json!({}));
     }
