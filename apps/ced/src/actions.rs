@@ -298,7 +298,10 @@ mod tests {
             true,
         );
         let ids: Vec<_> = items.iter().map(|i| i.command).collect();
-        assert_eq!(ids, ["help.macros", "view.search", "help.keys", "view.mode"]);
+        assert_eq!(
+            ids,
+            ["help.macros", "view.search", "help.keys", "view.mode"]
+        );
     }
 
     #[test]
