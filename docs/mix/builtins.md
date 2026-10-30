@@ -250,7 +250,7 @@ Since 0.29.0 every builtin carries a structured contract — per-argument names/
   path_join       Join path components with the native separator
   path_parts      Decompose a path into {dir, base, stem, ext} (v0.2.1)
   walk            Recursive directory walk: walk(dir, {max_depth, follow_symlinks, include_dirs, strict}); invalid max_depth raises instead of becoming unlimited (strict since v0.55.0). Unreadable directories and unstat-able entries are skipped unless strict: true, which raises WALK_UNREADABLE (details.path names the first one) so a gate can tell no matches from could not look
-  readline        Read a line from stdin (optional prompt argument)
+  readline        Read a line from stdin (optional prompt argument); nil at end of input
   read_stdin      Read all of stdin to EOF as a string (for pipe/hook input). STRICT UTF-8 — binary stdin raises; use read_stdin_bytes for that
   read_stdin_bytes Read all of stdin to EOF as raw bytes — the binary twin of read_stdin, which refuses invalid UTF-8. Optional arg caps the read: read_stdin_bytes(8192) reads at most 8192 bytes, the same cap contract as read_file_bytes (v0.65.0)
   tty_mode        Put the controlling terminal into raw or cooked mode: tty_mode("raw") disables canonical buffering, echo and signal generation (a lone ESC arrives as one byte — the keystroke-recorder primitive), tty_mode("cooked") restores the saved termios. The original termios is restored on process exit if the caller never returns to cooked (v0.103.9)
