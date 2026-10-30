@@ -100,7 +100,9 @@ fn protocol_tiles(settings: ShadowSettings) -> design::frame::ShadowPieces {
     if settings.scale == 1.0 {
         return tiles;
     }
-    tiles.extents = tiles.extents.map(|v| (v as f32 / settings.scale).round() as i32);
+    tiles.extents = tiles
+        .extents
+        .map(|v| (v as f32 / settings.scale).round() as i32);
     for piece in &mut tiles.pieces {
         let w = (piece.width as f32 / settings.scale).round().max(1.0) as i32;
         let h = (piece.height as f32 / settings.scale).round().max(1.0) as i32;
@@ -115,8 +117,10 @@ fn protocol_tiles(settings: ShadowSettings) -> design::frame::ShadowPieces {
                     f32::from(piece.argb[((y * piece.width + x) * 4 + channel) as usize])
                 };
                 for channel in 0..4 {
-                    let a = sample(0, 0, channel) * (1.0 - sx.fract()) + sample(1, 0, channel) * sx.fract();
-                    let b = sample(0, 1, channel) * (1.0 - sx.fract()) + sample(1, 1, channel) * sx.fract();
+                    let a = sample(0, 0, channel) * (1.0 - sx.fract())
+                        + sample(1, 0, channel) * sx.fract();
+                    let b = sample(0, 1, channel) * (1.0 - sx.fract())
+                        + sample(1, 1, channel) * sx.fract();
                     pixels.push((a * (1.0 - sy.fract()) + b * sy.fract()).round() as u8);
                 }
             }
@@ -358,10 +362,20 @@ mod tests {
                 shadow: design::frame::ShadowSpec::for_style(style),
                 ..Default::default()
             };
-            let settings = ShadowSettings { frame, radius: frame.radius, scale: 1.0, focused: true, size: [640, 480] };
+            let settings = ShadowSettings {
+                frame,
+                radius: frame.radius,
+                scale: 1.0,
+                focused: true,
+                size: [640, 480],
+            };
             let reference = protocol_tiles(settings);
             for scale in [1.0, 1.5, 2.0] {
-                let tiles = protocol_tiles(ShadowSettings { scale, size: [ (640.0 * scale) as u32, (480.0 * scale) as u32 ], ..settings });
+                let tiles = protocol_tiles(ShadowSettings {
+                    scale,
+                    size: [(640.0 * scale) as u32, (480.0 * scale) as u32],
+                    ..settings
+                });
                 assert_eq!(tiles.extents, reference.extents);
                 for (a, b) in tiles.pieces.iter().zip(&reference.pieces) {
                     assert_eq!((a.width, a.height), (b.width, b.height));
