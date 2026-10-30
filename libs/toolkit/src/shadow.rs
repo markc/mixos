@@ -91,15 +91,22 @@ fn tiles(shadow: egui::epaint::Shadow, scale: f32) -> Tiles {
     let extent = |offset: f32| (radius + spread + offset).ceil().clamp(1.0, 4096.0) as i32;
     let [left, top, right, bottom] = [extent(-ox), extent(-oy), extent(ox), extent(oy)];
     let extents = [left, top, right, bottom];
+    // The short side overlaps the window by the offset. Without that overlap,
+    // its corner ends before the Gaussian reaches the edge tile's peak and
+    // leaves a visible seam (especially with a vertical shadow offset).
+    let lw = left + ox.max(0.0).ceil() as i32;
+    let th = top + oy.max(0.0).ceil() as i32;
+    let rw = right + (-ox).max(0.0).ceil() as i32;
+    let bh = bottom + (-oy).max(0.0).ceil() as i32;
     let specs = [
-        (1, top, 0, -top, false, true),
-        (right, top, 0, -top, true, true),
-        (right, 1, 0, 0, true, false),
-        (right, bottom, 0, 0, true, true),
-        (1, bottom, 0, 0, false, true),
-        (left, bottom, -left, 0, true, true),
-        (left, 1, -left, 0, true, false),
-        (left, top, -left, -top, true, true),
+        (1, th, 0, -top, 0, -1),
+        (rw, th, right - rw, -top, 1, -1),
+        (rw, 1, right - rw, 0, 1, 0),
+        (rw, bh, right - rw, bottom - bh, 1, 1),
+        (1, bh, 0, bottom - bh, 0, 1),
+        (lw, bh, -left, bottom - bh, -1, 1),
+        (lw, 1, -left, 0, -1, 0),
+        (lw, th, -left, -top, -1, -1),
     ];
     let colour = shadow.color.to_srgba_unmultiplied();
     let images = specs
@@ -108,15 +115,15 @@ fn tiles(shadow: egui::epaint::Shadow, scale: f32) -> Tiles {
             let mut bytes = Vec::with_capacity((w * h * 4) as usize);
             for y in y0..y0 + h {
                 for x in x0..x0 + w {
-                    let distance = |coordinate: i32, offset: f32| {
-                        if coordinate < 0 {
-                            (-coordinate as f32 + offset - spread).max(0.0)
+                    let distance = |coordinate: i32, offset: f32, direction: i32| {
+                        if direction < 0 {
+                            (-coordinate as f32 - 1.0 + offset - spread).max(0.0)
                         } else {
-                            (coordinate as f32 + 1.0 - offset - spread).max(0.0)
+                            (coordinate as f32 - offset - spread).max(0.0)
                         }
                     };
-                    let dx = if horizontal { distance(x, ox) } else { 0.0 };
-                    let dy = if vertical { distance(y, oy) } else { 0.0 };
+                    let dx = if horizontal != 0 { distance(x, ox, horizontal) } else { 0.0 };
+                    let dy = if vertical != 0 { distance(y, oy, vertical) } else { 0.0 };
                     let sigma = radius / 3.0;
                     let a = (f32::from(colour[3])
                         * (-(dx * dx + dy * dy) / (2.0 * sigma * sigma)).exp())
@@ -377,6 +384,11 @@ mod tests {
         // At each corner/edge seam the extra axis is at the window boundary.
         assert!(alpha(0, 0, 10).abs_diff(alpha(1, 0, 10)) <= 1);
         assert!(alpha(4, 0, 10).abs_diff(alpha(3, 0, 10)) <= 1);
+        for (corner, edge, row) in [(1, 2, a.images[1].1 - 1), (3, 2, 0), (5, 6, 0), (7, 6, a.images[7].1 - 1)] {
+            for x in 0..a.images[corner].0 {
+                assert_eq!(alpha(corner, x, row), alpha(edge, x, 0));
+            }
+        }
         let clear = tiles(egui::epaint::Shadow::NONE, 1.0);
         assert!(
             clear

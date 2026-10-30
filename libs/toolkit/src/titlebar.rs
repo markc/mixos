@@ -379,7 +379,9 @@ pub fn show_with<S>(
             icons::image_of(ui.ctx(), icon, m.mark, p.icon).paint_at(ui, rect);
             let response =
                 ui.interact(rect, ui.scope_id().with("window-menu-mark"), Sense::click());
-            response.widget_info(|| WidgetInfo::labeled(Role::Button, true, label("window-system-menu")));
+            response.widget_info(|| {
+                WidgetInfo::labeled(Role::Button, true, label("window-system-menu"))
+            });
             if response.clicked_by(egui::PointerButton::Primary) {
                 request_window_menu(ui.ctx(), response.interact_pointer_pos());
             }
@@ -445,12 +447,8 @@ fn request_window_menu(ctx: &egui::Context, position: Option<Pos2>) {
         && let Some(position) = position
     {
         // eframe drains this viewport-scoped one-shot after the UI pass.
-        ctx.data_mut(|data| {
-            data.insert_temp(
-                egui::Id::unique(("eframe.window-menu", ctx.viewport_id())),
-                position,
-            );
-        });
+        let key = egui::Id::unique(("eframe.window-menu", ctx.viewport_id()));
+        ctx.data_mut(|data| data.insert_temp(key, position));
     }
 }
 

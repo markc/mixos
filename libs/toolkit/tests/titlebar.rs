@@ -328,6 +328,10 @@ fn the_icon_bar_skips_unknown_and_duplicate_standard_actions() {
 
 #[test]
 fn compact_menu_titlebars() {
+    on_mixos(compact_menu_titlebars_on_host);
+}
+
+fn compact_menu_titlebars_on_host() {
     use design::{CaptionSide, MenuSide, MenuStyle, RequestedDecorations};
     let mut results = egui_kittest::SnapshotResults::new();
     for decorations in [RequestedDecorations::Client, RequestedDecorations::Server] {

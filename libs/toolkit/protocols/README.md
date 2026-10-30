@@ -4,6 +4,7 @@
 https://invent.kde.org/libraries/plasma-wayland-protocols/-/blob/master/src/protocols/shadow.xml
 
 Copyright 2015 Martin Gräßlin, LGPL-2.1-or-later (header preserved).
+The licence text is in `LICENSE.LGPL-2.1`.
 This protocol-only file is used by wayland-scanner to describe KWin's wire
 interface; no KDE implementation code or plasma protocol crate is linked.
 The native `shadow` feature reuses the workspace's wayland-backend,
