@@ -271,6 +271,31 @@ pub fn documents(
     selected: usize,
     drop_target: Option<usize>,
 ) -> DocEvents {
+    strip(ui, id, tabs, selected, drop_target, None)
+}
+
+/// [`documents`] attached to the body below: no bottom margin, and the
+/// selected tab filled with `body` (the body's own fill), square at the
+/// bottom and unbordered, so it reads as the top of the body it opens.
+pub fn documents_on(
+    ui: &mut Ui,
+    id: Id,
+    tabs: &[DocTab],
+    selected: usize,
+    drop_target: Option<usize>,
+    body: Color32,
+) -> DocEvents {
+    strip(ui, id, tabs, selected, drop_target, Some(body))
+}
+
+fn strip(
+    ui: &mut Ui,
+    id: Id,
+    tabs: &[DocTab],
+    selected: usize,
+    drop_target: Option<usize>,
+    body: Option<Color32>,
+) -> DocEvents {
     let chrome = Chrome::of(ui.ctx());
     let pro = is_strip(&chrome);
     let frame = if pro {
@@ -288,9 +313,13 @@ pub fn documents(
                 top: crate::chrome::Chrome::of(ui.ctx())
                     .style
                     .tabs_studio_margin_top as i8,
-                bottom: crate::chrome::Chrome::of(ui.ctx())
-                    .style
-                    .tabs_studio_margin_bottom as i8,
+                bottom: if body.is_some() {
+                    0
+                } else {
+                    crate::chrome::Chrome::of(ui.ctx())
+                        .style
+                        .tabs_studio_margin_bottom as i8
+                },
             })
     };
     frame
@@ -302,11 +331,15 @@ pub fn documents(
                 ),
                 Sense::hover(),
             );
-            strip_tabs(ui, id, &chrome, strip, tabs, selected, drop_target)
+            strip_tabs(ui, id, &chrome, strip, tabs, selected, drop_target, body)
         })
         .inner
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the strip's inputs, called from one place"
+)]
 fn strip_tabs(
     ui: &mut Ui,
     id: Id,
@@ -315,6 +348,7 @@ fn strip_tabs(
     tabs: &[DocTab],
     selected: usize,
     drop_target: Option<usize>,
+    body: Option<Color32>,
 ) -> DocEvents {
     let pro = is_strip(chrome);
     let (pad, minimum, gap) = if pro {
@@ -410,6 +444,7 @@ fn strip_tabs(
             &names[index],
             (&name_font, &meta_font),
             index == selected,
+            body,
         );
         if tab_events.0 {
             events.selected = Some(index);
@@ -465,6 +500,7 @@ fn doc_tab(
     name: &str,
     (name_font, meta_font): (&FontId, &FontId),
     selected: bool,
+    body: Option<Color32>,
 ) -> (bool, bool) {
     let (p, pro) = (&chrome.palette, is_strip(chrome));
     let response = ui.interact(rect, id, Sense::click());
@@ -506,7 +542,16 @@ fn doc_tab(
     let ppp = ui.pixels_per_point();
     let painter = ui.painter();
     let radius = if pro { 0 } else { chrome.metrics.radius_sm };
-    if selected {
+    if selected && let Some(body) = body {
+        // Square at the bottom so the tab runs into the body it opens.
+        let corner = egui::CornerRadius {
+            nw: radius,
+            ne: radius,
+            sw: 0,
+            se: 0,
+        };
+        painter.rect_filled(rect, corner, body);
+    } else if selected {
         painter.rect_filled(rect, radius, if pro { p.chrome } else { p.card });
         if !pro {
             painter.rect_stroke(

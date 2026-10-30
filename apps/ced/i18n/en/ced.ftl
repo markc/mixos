@@ -155,3 +155,4 @@ mail-show-reply-to = Show Reply-To
 mail-sending = Sending…
 mail-sent = Sent
 mail-saved = Saved
+toggle-mode = Light or dark interface

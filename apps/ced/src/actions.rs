@@ -250,6 +250,30 @@ pub fn registry() -> Registry<App> {
     }
     // View › Theme: any scheme, style, mode and framing, in this window only.
     r.theme_menu("view", |a: &App| a.theme, |a: &mut App, c| a.theme = c);
+    // The title bar's search and light/dark switch (no menu of their own).
+    // Search opens the find bar; the view sets the mode from the one drawn.
+    r.add(Action {
+        id: "view.search",
+        label: "search-find",
+        menu: None,
+        submenu: None,
+        group: 0,
+        shortcut: None,
+        icon: None,
+        enabled: |a: &App| a.enabled(ActionId::SearchFind),
+        run: |a: &mut App| a.action(ActionId::SearchFind),
+    })
+    .add(Action {
+        id: "view.mode",
+        label: "toggle-mode",
+        menu: None,
+        submenu: None,
+        group: 0,
+        shortcut: None,
+        icon: None,
+        enabled: toolkit::action::always,
+        run: |_: &mut App| {},
+    });
     r.search_menu("help");
     r
 }
@@ -257,6 +281,28 @@ pub fn registry() -> Registry<App> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn title_bar_carries_the_standard_tail() {
+        let r = registry();
+        let app = App::new(
+            documents::controller::Controller::new(documents::config::Config::default(), 1, false),
+            documents::config::Config::default(),
+        );
+        let items = toolkit::titlebar::icon_bar(
+            &egui::Context::default(),
+            &r,
+            &app,
+            &crate::strings(),
+            &[],
+            true,
+        );
+        let ids: Vec<_> = items.iter().map(|i| i.command).collect();
+        assert_eq!(
+            ids,
+            ["help.macros", "view.search", "help.keys", "view.mode"]
+        );
+    }
 
     #[test]
     fn every_action_is_a_command_with_its_wire_id() {

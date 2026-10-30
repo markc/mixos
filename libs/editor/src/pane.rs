@@ -861,6 +861,11 @@ impl Pane<'_, '_> {
         let top = self.st.top;
         let m = self.measure();
         let (total, first) = m.rows.extent(m.text, &m.cfg, m.ck, top);
+        if total <= g.full_rows() && first == 0 {
+            // The whole document is in view: no bar, even though the view
+            // may still scroll past the end.
+            return (0, 0);
+        }
         (total + g.full_rows() - 1, first)
     }
 
