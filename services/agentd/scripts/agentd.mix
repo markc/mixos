@@ -42,7 +42,8 @@ if not has_builtin("process_write") then
   exit(1)
 end
 
--- The only two call sites of those builtins. The pragmas keep repo lint
+-- The only two call sites of those builtins (process_watch is called once,
+-- in agent.session.new, with the same pragma). The pragmas keep repo lint
 -- clean under the last released mix (N-1), which does not know them yet;
 -- once a release carries them, lint notes the pragmas as stale (MIX-D3019).
 fn pipe_write($watch, $frame)
@@ -205,6 +206,7 @@ on agent.session.new desc "start an agent session {agent, cwd, mode?, additional
       $id = $a.mint_session_id($S.sessions)
       $env = $c.env
       $env.MIXOS_AGENT_SESSION = $id
+      -- lint: ignore MIX-E1102
       $watch = process_watch($c.argv, {stdin: "pipe", overflow: "block", max_line: $MAX_LINE,
         stderr: "lines", tag: $id, cwd: $req.cwd, env: $env})
       $S.sessions[$id] = {id: $id, agent: $req.agent, cwd: $req.cwd, dirs: $req.additional_dirs,
