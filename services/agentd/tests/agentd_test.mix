@@ -128,7 +128,10 @@ try
 
   -- A 2 MiB frame crosses the pipe whole.
   agent("agent.session.prompt", {session: $s, content: "BIG"})
-  check("a 2 MiB chunk arrives intact", saw("updated " .. $s .. " ", "agent_message_chunk len=2097152"))
+  check("a 2 MiB event goes out on the topic as a truncated marker", saw("updated " .. $s .. " ", "agent_message_chunk truncated="))
+  $big = filter(agent("agent.session.read", {session: $s, since: 0}).v.events,
+    fn($e) = $e.kind == "agent_message_chunk" and len($e.update.content.text ?? "") > 1000)
+  check("read returns the 2 MiB chunk intact", len($big) == 1 and len($big[0].update.content.text) == 2097152)
   check("and the BIG turn ends", saw("updated " .. $s .. " ", "echo:BIG"))
   sleep(0.5)
 

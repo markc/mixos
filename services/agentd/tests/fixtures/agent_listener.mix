@@ -15,7 +15,9 @@ end
 on agent.session.updated
   $v = eargs()
   $detail = "-"
-  if $v.kind == "agent_message_chunk" and type($v.update.content) == "map" then
+  if $v.truncated == true then
+    $detail = "truncated=" .. to_string($v.bytes)
+  elif $v.kind == "agent_message_chunk" and type($v.update.content) == "map" then
     $t = $v.update.content.text ?? ""
     $detail = if len($t) > 200 then "len=" .. to_string(len($t)) else $t end
   elif $v.kind == "stop" then

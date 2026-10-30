@@ -40,6 +40,8 @@ $CONF = $a.check_conf(load_data($CONF_FILE))
 $MCP_BIN = env("MIXOS_AGENTD_MCP", mixos_path("prefix", "bin/mixos-mcp"))
 $MAX_LINE = 16777216
 $EVENTS_KEPT = 2000
+$RING_BYTES = 33554432
+$TOPIC_MAX = 262144
 $ENDED_KEPT = 32
 
 -- One map holds everything; handlers run one at a time, so it is the only
@@ -105,11 +107,26 @@ fn emit_event($id, $fields)
   $e = $fields
   $e.session = $id
   $e.seq = $S.sessions[$id].seq
-  $events = $S.sessions[$id].events
-  $events = concat($events, [$e])
-  if len($events) > $EVENTS_KEPT then $events = slice($events, len($events) - $EVENTS_KEPT) end
+  $wire = json_encode($e)
+  -- The ring is bounded by count and bytes; read serves it whole.
+  $events = concat($S.sessions[$id].events, [$e])
+  $sizes = concat($S.sessions[$id].sizes, [len($wire)])
+  $bytes = $S.sessions[$id].bytes + len($wire)
+  while len($events) > 1 and (len($events) > $EVENTS_KEPT or $bytes > $RING_BYTES)
+    $bytes = $bytes - $sizes[0]
+    $events = slice($events, 1)
+    $sizes = slice($sizes, 1)
+  end
   $S.sessions[$id].events = $events
-  publish("agent.session.updated", json_encode($e), {command: "agent.session.updated"})
+  $S.sessions[$id].sizes = $sizes
+  $S.sessions[$id].bytes = $bytes
+  -- Topics are notifications: a large event goes out as a marker, and the
+  -- watcher reads the whole event back with agent.session.read.
+  if len($wire) > $TOPIC_MAX then
+    $wire = json_encode({session: $id, seq: $e.seq, kind: $e.kind, truncated: true, bytes: len($wire)})
+  end
+  $rc = publish("agent.session.updated", $wire, {command: "agent.session.updated"})
+  if $rc != 0 then eprint("agentd: " .. $id .. ": publish seq " .. to_string($e.seq) .. " refused rc " .. to_string($rc)) end
 end
 
 fn view($s)
@@ -171,7 +188,7 @@ on agent.session.new desc "start an agent session {agent, cwd, mode?, additional
         stderr: "lines", tag: $id, cwd: $req.cwd, env: $env})
       $S.sessions[$id] = {id: $id, agent: $req.agent, cwd: $req.cwd, dirs: $req.additional_dirs,
         mode: $req.mode, parent: $parent, sender: $from, watch: $watch, acp: nil,
-        status: "starting", seq: 0, events: [], turn: nil, queued: nil, pending: {}, perms: {},
+        status: "starting", seq: 0, events: [], sizes: [], bytes: 0, turn: nil, queued: nil, pending: {}, perms: {},
         created_at: now_iso(), stderr_tail: []}
       $rpc = next_rpc()
       $S.sessions[$id].pending[to_string($rpc)] = {kind: "initialize"}
