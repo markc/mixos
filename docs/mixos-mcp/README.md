@@ -24,7 +24,8 @@ or digits. The bridge then registers as `mcp-s-<session>-<pid hex><4 hex>`
 (the trailing hex keeps bridges in separate PID namespaces apart). The
 broker stamps that name as `from` on everything the bridge sends, so the
 gateway can recognise one of its own agents calling back. A value outside
-that form is an error: every Bus tool fails with that reason, rather than
+that form, including an empty or non-UTF-8 value, is an error: every Bus
+tool fails with that reason, rather than
 the bridge quietly registering under an anonymous name.
 
 Set `MIXOS_BROKER_ACCOUNT` to the broker's operating-system account and
