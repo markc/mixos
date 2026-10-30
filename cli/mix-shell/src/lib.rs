@@ -740,6 +740,33 @@ fn run_stats_subcommand(sub_args: &[String]) -> i32 {
 /// REPL session state. Commands that inspect session state (`vars`,
 /// `aliases`, `functions`, `type`, `context`) will show empty
 /// results, which is the correct behaviour: there IS no session.
+/// `mix agent ...`: run agentd's CLI script with this same binary and
+/// return its exit code.
+pub(crate) fn run_agent_cli(args: &[String]) -> i32 {
+    let script = ::paths::root(::paths::Root::Prefix).join("lib/agentd/agent_cli.mix");
+    if !script.is_file() {
+        eprintln!(
+            "mix agent: {} is not installed (it ships with agentd)",
+            script.display()
+        );
+        return 1;
+    }
+    let exe = match std::env::current_exe() {
+        Ok(exe) => exe,
+        Err(error) => {
+            eprintln!("mix agent: cannot find this mix binary: {error}");
+            return 1;
+        }
+    };
+    match std::process::Command::new(exe).arg(&script).args(args).status() {
+        Ok(status) => status.code().unwrap_or(1),
+        Err(error) => {
+            eprintln!("mix agent: {error}");
+            1
+        }
+    }
+}
+
 fn run_meta_subcommand(sub_args: &[String]) -> i32 {
     if sub_args.first().map(String::as_str) == Some("layout") {
         return meta::run_layout(&sub_args[1..]);
@@ -2201,7 +2228,7 @@ pub fn main() -> process::ExitCode {
         // `mix SCRIPT --version` (and `--serve SCRIPT`, `mix -`): the same
         // cold answer for a script. The script is read, never parsed or run.
         let reserved =
-            |s: &str| matches!(s, "stats" | "lint" | "edit") || META_CLI_COMMANDS.contains(&s);
+            |s: &str| matches!(s, "stats" | "lint" | "edit" | "agent") || META_CLI_COMMANDS.contains(&s);
         match script_meta::script_version_request(&args, &reserved) {
             script_meta::Answer::Print(line) => {
                 println!("{line}");
@@ -2590,6 +2617,15 @@ fn real_main() -> i32 {
                 // is shadowed like the meta names — run it as ./lint.
                 let sub_args: Vec<String> = args[i + 1..].to_vec();
                 return lint::run_lint(&sub_args, VERSION);
+            }
+            "agent" => {
+                // `mix agent` is agentd's command line, a Mix script
+                // installed at <prefix>/lib/agentd/agent_cli.mix. It owns
+                // its exit code (2 = waiting on a human, 124 = timed out),
+                // so like lint and edit it cannot ride the meta path. A
+                // CWD script named `agent` is shadowed; run it as ./agent.
+                let sub_args: Vec<String> = args[i + 1..].to_vec();
+                return run_agent_cli(&sub_args);
             }
             "edit" => {
                 // `mix edit` owns its exit code (0 edited / 1 absent /

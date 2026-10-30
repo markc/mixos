@@ -219,6 +219,7 @@
                         <a href="#time--the-timing-modifier" class="toc-h3">time — the timing modifier</a>
                         <a href="#mix-trace--the-statement-tracer" class="toc-h3">mix trace — the statement tracer</a>
                         <a href="#mix-stats--usage-tracking" class="toc-h3">mix stats — usage tracking</a>
+                        <a href="#agents--mix-agent-the-front-end-to-agentd">Agents — mix agent, the front end to agentd</a>
                         <a href="#files--mix-edit-the-one-line-edit-that-refuses-to-guess">Files — mix edit, the one-line edit that refuses to guess</a>
                         <a href="#ecosystem--probe-the-bus-mesh">Ecosystem — probe the Bus mesh</a>
                         <a href="#ai-powered--agent-driven-workflows">AI-powered — agent-driven workflows</a>
@@ -616,6 +617,19 @@ mix stats keywords     keyword counts                    mix stats clear NAME re
 mix stats meta         meta-command counts               mix stats all        aggregate every weekly file
 mix stats errors       error-kind counts                 mix stats week W     one week (e.g. 2026-W27)
 mix stats trend NAME / since DATE / query SQL            SQLite history
+</code></pre>
+<h2 id="agents--mix-agent-the-front-end-to-agentd">Agents — <code>mix agent</code>, the front end to agentd</h2>
+<p><code>mix agent</code> runs agentd's command line (installed with agentd at
+<code>&lt;prefix&gt;/lib/agentd/agent_cli.mix</code>) with the same binary, at the OS shell
+and at the Mix prompt alike. Like <code>mix lint</code> and <code>mix edit</code> it owns its exit
+code: 0 done, 1 refused or failed, 2 a turn waiting on a human, 64 usage,
+124 <code>--wait</code> timed out. The commands and their meaning are in
+<a href="/agentd/#command-line">agentd</a>. A CWD script named <code>agent</code> is
+shadowed; run it as <code>mix ./agent</code>.</p>
+<pre><code class="language-text">$ mix agent start claude --cwd ~/src/app
+4f1c2a9e0b
+$ mix agent send 4f1c2a9e0b "run the tests and fix the first failure" --wait
+…the agent's reply, streamed…
 </code></pre>
 <h2 id="files--mix-edit-the-one-line-edit-that-refuses-to-guess">Files — <code>mix edit</code>, the one-line edit that refuses to guess</h2>
 <pre><code>mix edit [--all] [-n|--dry-run] FILE OLD NEW

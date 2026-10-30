@@ -212,6 +212,7 @@
                         <a href="#commands">Commands</a>
                         <a href="#events">Events</a>
                         <a href="#resuming">Resuming</a>
+                        <a href="#command-line">Command line</a>
                         <a href="#session-log">Session log</a>
                         <a href="#files">Files</a>
                         <a href="#terminals">Terminals</a>
@@ -393,6 +394,24 @@ quiet for a second, and replayed history is dropped until then.</p>
 question that was open when the session ended (prompt again). Advertised
 at <code>initialize</code>: Claude, OpenCode and Codex offer <code>session/resume</code>; Gemini
 offers <code>session/load</code>.</p>
+<h2 id="command-line">Command line</h2>
+<p><code>mix agent</code> drives agentd from a shell or the Mix prompt. Each command is one
+Bus call, except <code>send --wait</code>, which follows the turn on the topics (it runs
+as a short-lived Bus citizen, so nothing polls) and streams the agent's text.</p>
+<table><thead><tr><th>Command</th><th>Does</th></tr></thead><tbody>
+<tr><td><code>mix agent agents</code></td><td>the configured agents</td></tr>
+<tr><td><code>mix agent list</code></td><td>live and recent sessions</td></tr>
+<tr><td><code>mix agent start AGENT [--cwd DIR] [--dir DIR]... [--mode M]</code></td><td>starts a session; prints its id (cwd defaults to the current directory)</td></tr>
+<tr><td><code>mix agent send SESSION TEXT... [--wait] [--timeout S] [--id ID]</code></td><td>sends a prompt; with <code>--wait</code>, streams the turn and exits with its outcome</td></tr>
+<tr><td><code>mix agent read SESSION [--since N] [--json]</code></td><td>the session's events, one per line</td></tr>
+<tr><td><code>mix agent answer SESSION REQUEST OPTION</code></td><td>answers a permission question</td></tr>
+<tr><td><code>mix agent cancel|close|resume SESSION</code></td><td>as the Bus commands</td></tr>
+<tr><td><code>mix agent set SESSION --mode M</code> or <code>--option NAME --value V</code></td><td>sets a mode or a config option</td></tr>
+</tbody></table>
+<p>Exit codes: 0 done (<code>end_turn</code>), 1 refused, failed, or a turn that stopped
+another way, 2 the turn is waiting on a human (a permission question:
+<code>answer</code> it, then <code>send</code> or <code>read</code> again), 64 usage, 124 <code>--wait</code> timed out
+(the turn goes on).</p>
 <h2 id="session-log">Session log</h2>
 <p>agentd writes every event and every acting command to a SQLite log before
 it publishes the event or runs the command: <code>$MIXOS_AGENTD_DB</code>, else

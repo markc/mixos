@@ -1002,6 +1002,16 @@ pub fn run_repl() -> i32 {
                                         let rc = crate::edit::run_edit(&owned);
                                         eval.set_global("status", Value::Number(f64::from(rc)));
                                     }
+                                    // `mix agent` at the prompt: the same
+                                    // CLI and exit code as from a shell.
+                                    Some("agent") => {
+                                        let owned: Vec<String> = meta_args[1..]
+                                            .iter()
+                                            .map(|s| (*s).to_string())
+                                            .collect();
+                                        let rc = crate::run_agent_cli(&owned);
+                                        eval.set_global("status", Value::Number(f64::from(rc)));
+                                    }
                                     Some("stats") => match eval.stats_mut() {
                                         Some(mut stats) => {
                                             let _ = stats_io::cmd_stats_dispatch(
@@ -1080,7 +1090,7 @@ pub fn run_repl() -> i32 {
                                 // meta name and keeps plain command
                                 // tracking.
                                 let is_meta_name =
-                                    matches!(sub, "stats" | "lint" | "edit" | "--version" | "-V")
+                                    matches!(sub, "stats" | "lint" | "edit" | "agent" | "--version" | "-V")
                                         || crate::META_CLI_COMMANDS.contains(&sub);
                                 if is_meta_name {
                                     plumbed_meta_recorded = true;

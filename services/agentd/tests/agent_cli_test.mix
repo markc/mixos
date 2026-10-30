@@ -1,0 +1,126 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- agent_cli_test: the `mix agent` command line (scripts/agent_cli.mix)
+-- against agentd and the fake ACP agent on a private Bus: agents, start,
+-- send with and without --wait (exit 0, 2 waiting on a human, 124 timed
+-- out), answer, read, cancel, close, resume, and usage errors.
+-- Run from the checkout root: mix services/agentd/tests/agent_cli_test.mix
+-- MIXOS_TEST_MIX / MIXOS_TEST_NODED choose the binaries (tools/mix_tests.mix
+-- sets both); the mix must have process_watch stdin pipes.
+
+$pb = require("../../../tests/lib/private_bus.mix")
+$here = dirname(realpath($0))
+$agentd = realpath($here .. "/../scripts/agentd.mix")
+$cli = realpath($here .. "/../scripts/agent_cli.mix")
+$notifyd = realpath($here .. "/../../notifyd/scripts/notifyd.mix")
+$fake = realpath($here .. "/fixtures/fake_acp_agent.mix")
+$mix = env("MIXOS_TEST_MIX", mixos_path("prefix") .. "/bin/mix")
+$noded = env("MIXOS_TEST_NODED", mixos_path("prefix") .. "/bin/noded")
+$tmp = env("TMPDIR", "/tmp") .. "/agent-cli-test." .. uuid()
+$results = []
+$pids = []
+
+fn check($name, $ok)
+  push($results, {name: $name, ok: $ok})
+  print((if $ok then "PASS " else "FAIL " end) .. $name)
+end
+
+fn citizen($script, $name, $env, $log)
+  return spawn([$mix, "--serve", $script, "--name", $name],
+    {detach: true, env: $env, stdout: {file: $tmp .. "/" .. $log, append: true}, stderr: "stdout"})
+end
+
+$bus = nil
+$CLI_ENV = {}
+
+-- Run `mix agent ...` (the CLI script) and return {rc, out, err}.
+fn cli($argv, $secs)
+  $r = run_argv(concat([$mix, $cli], $argv), {env: $CLI_ENV, timeout: $secs ?? 60, stderr: "capture", cwd: $tmp .. "/ws"})
+  return {rc: $r.exit_code, out: $r.stdout ?? "", err: $r.stderr ?? ""}
+end
+
+mkdir($tmp .. "/ws", {parents: true})
+try
+  $bus = $pb.start({dir: $tmp .. "/bus", name: "agent-cli", noded: $noded})
+  $env = merge($pb.client_env($bus), {HOME: $tmp .. "/home", MIXOS_NOTIFYD_STATE: $tmp .. "/notify.json"})
+  $CLI_ENV = merge($pb.client_env($bus), {MIXOS_AGENT_CLI_MIX: $mix})
+  write_file($tmp .. "/agent.conf.mix", data_encode({max_live: 3, agents: {
+    fake: {argv: [$mix, $fake, "resume"], roots: [$tmp .. "/ws"], permission_timeout_s: 60}}}))
+  push($pids, citizen($notifyd, "notify", $env, "notifyd.log"))
+  push($pids, citizen($agentd, "agent", merge($env, {MIXOS_AGENTD_CONF: $tmp .. "/agent.conf.mix",
+    MIXOS_AGENTD_MCP: "/bin/true", MIXOS_AGENTD_DB: $tmp .. "/sessions.db", MIXOS_AGENTD_CLOSE_GRACE_S: "1"}), "agentd.log"))
+  $up = false
+  for $i = 1 to 80
+    if cli(["agents"], 10).rc == 0 then
+      $up = true
+      break
+    end
+    sleep(0.25)
+  end
+  check("agents lists the configured agent", $up and contains(cli(["agents"], 10).out, "fake"))
+
+  $st = cli(["start", "fake"], 30)
+  $s = trim($st.out)
+  check("start prints the session id", $st.rc == 0 and re_match($s, "^[a-z0-9]{4,12}$"))
+  sleep(1)
+
+  $w = cli(["send", $s, "hello", "there", "--wait", "--timeout", "30"], 60)
+  check("send --wait streams the reply and exits 0 at end_turn", $w.rc == 0 and contains($w.out, "echo:hello there"))
+
+  $p = cli(["send", $s, "PERMISSION", "--wait", "--timeout", "30"], 60)
+  check("send --wait exits 2 when a permission question waits on a human",
+    $p.rc == 2 and contains($p.err, "waiting on a human") and contains($p.err, "mix agent answer " .. $s))
+  $req = trim(re_find($p.err, "answer " .. $s .. " ([0-9]+) ")[0].groups[0] ?? "")
+  $a = cli(["answer", $s, $req, "allow"], 30)
+  check("answer answers the question", $a.rc == 0)
+  sleep(1)
+  $rd = cli(["read", $s], 30)
+  check("read shows the answer and the agent's reply", $rd.rc == 0 and contains($rd.out, "permission_answered") and contains($rd.out, "perm:allow"))
+  check("read ends with the session summary", contains($rd.out, "-- " .. $s .. " "))
+  $js = cli(["read", $s, "--json", "--since", "1"], 30)
+  check("read --json prints one JSON event per line, after --since",
+    $js.rc == 0 and json_parse(lines($js.out)[0]).seq == 2)
+
+  $t = cli(["send", $s, "SLOW", "--wait", "--timeout", "2"], 60)
+  check("send --wait exits 124 when the turn outlives --timeout", $t.rc == 124 and contains($t.err, "no stop within"))
+  check("cancel stops it", cli(["cancel", $s], 30).rc == 0)
+  sleep(1)
+
+  $n = cli(["send", $s, "plain"], 30)
+  check("send without --wait prints the turn", $n.rc == 0 and starts_with(trim($n.out), "turn "))
+  sleep(1)
+  check("close ends the session", cli(["close", $s], 30).rc == 0)
+  sleep(2)
+  $re = cli(["resume", $s], 30)
+  check("resume brings it back", $re.rc == 0 and contains($re.out, "\"via\":\"resume\""))
+  sleep(2)
+  $after = cli(["send", $s, "again", "--wait", "--timeout", "30"], 60)
+  check("and it answers again", $after.rc == 0 and contains($after.out, "echo:again"))
+  check("list shows it", contains(cli(["list"], 30).out, $s))
+
+  $bad = cli(["send", "zzzz9999", "x"], 30)
+  check("a refusal exits 1 with the error code", $bad.rc == 1 and contains($bad.err, "UNKNOWN_SESSION"))
+  check("an unknown command exits 64", cli(["frobnicate"], 10).rc == 64)
+  check("no command exits 64 with usage", cli([], 10).rc == 64)
+finally
+  for each $pid in $pids
+    try
+      kill($pid, 15)
+    catch $m
+    end
+  end
+  if $bus != nil then $pb.stop($bus) end
+end
+
+$failed = filter($results, fn($r) = not $r.ok)
+print(to_string(len($results) - len($failed)) .. "/" .. to_string(len($results)) .. " passed")
+if len($failed) > 0 then
+  print("logs in " .. $tmp)
+  if is_file($tmp .. "/agentd.log") then
+    for each $x in slice(lines(read_file($tmp .. "/agentd.log")), 0, 40)
+      print("  | " .. slice($x, 0, 300))
+    end
+  end
+  exit(1)
+end
+remove_dir($tmp)

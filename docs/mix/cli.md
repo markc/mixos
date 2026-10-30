@@ -484,6 +484,23 @@ mix stats errors       error-kind counts                 mix stats week W     on
 mix stats trend NAME / since DATE / query SQL            SQLite history
 ```
 
+## Agents — `mix agent`, the front end to agentd
+
+`mix agent` runs agentd's command line (installed with agentd at
+`<prefix>/lib/agentd/agent_cli.mix`) with the same binary, at the OS shell
+and at the Mix prompt alike. Like `mix lint` and `mix edit` it owns its exit
+code: 0 done, 1 refused or failed, 2 a turn waiting on a human, 64 usage,
+124 `--wait` timed out. The commands and their meaning are in
+[agentd](../agentd/README.md#command-line). A CWD script named `agent` is
+shadowed; run it as `mix ./agent`.
+
+```text
+$ mix agent start claude --cwd ~/src/app
+4f1c2a9e0b
+$ mix agent send 4f1c2a9e0b "run the tests and fix the first failure" --wait
+…the agent's reply, streamed…
+```
+
 ## Files — `mix edit`, the one-line edit that refuses to guess
 
 ```

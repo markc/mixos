@@ -168,6 +168,28 @@ question that was open when the session ended (prompt again). Advertised
 at `initialize`: Claude, OpenCode and Codex offer `session/resume`; Gemini
 offers `session/load`.
 
+## Command line
+
+`mix agent` drives agentd from a shell or the Mix prompt. Each command is one
+Bus call, except `send --wait`, which follows the turn on the topics (it runs
+as a short-lived Bus citizen, so nothing polls) and streams the agent's text.
+
+| Command | Does |
+|---|---|
+| `mix agent agents` | the configured agents |
+| `mix agent list` | live and recent sessions |
+| `mix agent start AGENT [--cwd DIR] [--dir DIR]... [--mode M]` | starts a session; prints its id (cwd defaults to the current directory) |
+| `mix agent send SESSION TEXT... [--wait] [--timeout S] [--id ID]` | sends a prompt; with `--wait`, streams the turn and exits with its outcome |
+| `mix agent read SESSION [--since N] [--json]` | the session's events, one per line |
+| `mix agent answer SESSION REQUEST OPTION` | answers a permission question |
+| `mix agent cancel\|close\|resume SESSION` | as the Bus commands |
+| `mix agent set SESSION --mode M` or `--option NAME --value V` | sets a mode or a config option |
+
+Exit codes: 0 done (`end_turn`), 1 refused, failed, or a turn that stopped
+another way, 2 the turn is waiting on a human (a permission question:
+`answer` it, then `send` or `read` again), 64 usage, 124 `--wait` timed out
+(the turn goes on).
+
 ## Session log
 
 agentd writes every event and every acting command to a SQLite log before
