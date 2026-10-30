@@ -84,6 +84,50 @@ struct ShadowSettings {
     focused: bool,
     size: [u32; 2],
 }
+
+// KWin's Shadow::elementSize uses the wl_buffer dimensions as logical pixels;
+// shadow.xml has no buffer-scale request. Rasterise at native output scale,
+// then filter into the protocol's logical-sized tiles. Sending the native
+// buffers directly would enlarge the inward cutout as well as the shadow.
+fn protocol_tiles(settings: ShadowSettings) -> design::frame::ShadowPieces {
+    let mut tiles = design::frame::shadow_pieces(
+        settings.frame.shadow,
+        settings.radius,
+        settings.scale,
+        settings.focused,
+        settings.size,
+    );
+    if settings.scale == 1.0 {
+        return tiles;
+    }
+    tiles.extents = tiles.extents.map(|v| (v as f32 / settings.scale).round() as i32);
+    for piece in &mut tiles.pieces {
+        let w = (piece.width as f32 / settings.scale).round().max(1.0) as i32;
+        let h = (piece.height as f32 / settings.scale).round().max(1.0) as i32;
+        let mut pixels = Vec::with_capacity((w * h * 4) as usize);
+        for y in 0..h {
+            let sy = ((y as f32 + 0.5) * piece.height as f32 / h as f32 - 0.5).max(0.0);
+            for x in 0..w {
+                let sx = ((x as f32 + 0.5) * piece.width as f32 / w as f32 - 0.5).max(0.0);
+                let sample = |dx: i32, dy: i32, channel: i32| {
+                    let x = (sx as i32 + dx).min(piece.width - 1);
+                    let y = (sy as i32 + dy).min(piece.height - 1);
+                    f32::from(piece.argb[((y * piece.width + x) * 4 + channel) as usize])
+                };
+                for channel in 0..4 {
+                    let a = sample(0, 0, channel) * (1.0 - sx.fract()) + sample(1, 0, channel) * sx.fract();
+                    let b = sample(0, 1, channel) * (1.0 - sx.fract()) + sample(1, 1, channel) * sx.fract();
+                    pixels.push((a * (1.0 - sy.fract()) + b * sy.fract()).round() as u8);
+                }
+            }
+        }
+        piece.width = w;
+        piece.height = h;
+        piece.argb = pixels;
+    }
+    tiles
+}
+
 struct Attached {
     shadow: OrgKdeKwinShadow,
     buffers: Vec<wl_buffer::WlBuffer>,
@@ -177,13 +221,7 @@ impl NativeShadow {
         let Some(shm) = &self.globals.shm else {
             return Ok(());
         };
-        let tiles = design::frame::shadow_pieces(
-            settings.frame.shadow,
-            settings.radius,
-            settings.scale,
-            settings.focused,
-            settings.size,
-        );
+        let tiles = protocol_tiles(settings);
         let path = std::env::temp_dir().join(format!("mixos-shadow-{}", uuid::Uuid::new_v4()));
         let mut file = std::fs::OpenOptions::new()
             .read(true)
@@ -219,9 +257,7 @@ impl NativeShadow {
         shadow.attach_bottom_left(&buffers[5]);
         shadow.attach_left(&buffers[6]);
         shadow.attach_top_left(&buffers[7]);
-        let [left, top, right, bottom] = tiles
-            .extents
-            .map(|v| f64::from(v) / f64::from(settings.scale));
+        let [left, top, right, bottom] = tiles.extents.map(f64::from);
         shadow.set_left_offset(left);
         shadow.set_top_offset(top);
         shadow.set_right_offset(right);
@@ -307,5 +343,32 @@ impl Drop for NativeShadow {
             .backend()
             .destroy_object(&self.registry.id());
         let _ = self.connection.flush();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn protocol_geometry_stays_logical_at_every_native_scale() {
+        for style in design::WindowStyle::ALL {
+            let frame = design::frame::Frame {
+                radius: design::frame::corner_radius(style, None),
+                shadow: design::frame::ShadowSpec::for_style(style),
+                ..Default::default()
+            };
+            let settings = ShadowSettings { frame, radius: frame.radius, scale: 1.0, focused: true, size: [640, 480] };
+            let reference = protocol_tiles(settings);
+            for scale in [1.0, 1.5, 2.0] {
+                let tiles = protocol_tiles(ShadowSettings { scale, size: [ (640.0 * scale) as u32, (480.0 * scale) as u32 ], ..settings });
+                assert_eq!(tiles.extents, reference.extents);
+                for (a, b) in tiles.pieces.iter().zip(&reference.pieces) {
+                    assert_eq!((a.width, a.height), (b.width, b.height));
+                    assert_eq!(a.argb.len(), (a.width * a.height * 4) as usize);
+                    assert!(a.argb.iter().any(|v| *v > 0));
+                }
+            }
+        }
     }
 }
