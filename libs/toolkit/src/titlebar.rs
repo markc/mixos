@@ -578,7 +578,7 @@ pub fn show_bar<S>(
     strings: &Strings,
     actions: &[Action],
 ) -> Vec<(&'static str, Origin)> {
-    let dark = ui.visuals().dark_mode;
+    let dark = Chrome::of(ui.ctx()).mode == design::Mode::Dark;
     let items = icon_bar(ui.ctx(), registry, state, strings, actions, dark);
     hosting::publish(ui.ctx(), &items);
     if hosting::hosted(ui.ctx()) {

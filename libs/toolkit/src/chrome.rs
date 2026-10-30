@@ -422,6 +422,9 @@ impl Metrics {
 /// Everything the title bar and menus draw with.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Chrome {
+    /// The installed design mode. egui's contrast base can differ (Pro Light
+    /// has grey chrome), so it cannot identify the window's mode choice.
+    pub mode: Mode,
     /// Interface font ratio; at 1.0 controls retain their authored geometry.
     pub interface_size_scale: f32,
     /// The forms the chrome takes (the theme's style).
@@ -474,6 +477,7 @@ impl Chrome {
             Metrics::of(&style)
         };
         Self {
+            mode: theme.mode(),
             interface_size_scale: theme.interface_size_scale(),
             style,
             palette,
@@ -507,6 +511,7 @@ impl Chrome {
                 .get_or_init(|| Theme::for_context(design::DesignContext::revision_one()).style());
             let style = ctx.global_style();
             Self {
+                mode: if style.visuals.dark_mode { Mode::Dark } else { Mode::Light },
                 interface_size_scale: 1.0,
                 style: tokens,
                 palette: Palette::from_visuals(&style.visuals),
