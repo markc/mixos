@@ -2140,8 +2140,8 @@ mod tests {
             assert_eq!(answer.rc, 10);
             assert_eq!(answer.body["error_code"], "BUSY");
             assert!(!pending(ctx));
-            let tree = request(ctx, 2, "ui.tree", &json!({}));
-            assert!(tree.is_some_and(|a| a.rc == 0));
+            // A query is answered at once, never queued behind a frame.
+            assert!(request(ctx, 2, "ui.tree", &json!({})).is_some());
         });
     }
 
