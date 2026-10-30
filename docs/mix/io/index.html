@@ -1254,7 +1254,7 @@ deliberate split. A path with no extension gives <code>""</code> from <code>extn
 (<code>basename("/srv/mail/")</code> → <code>"mail"</code>).</p>
 </blockquote>
 <h2 id="standard-input--readline-read_stdin-read_stdin_bytes">Standard input — <code>readline</code>, <code>read_stdin</code>, <code>read_stdin_bytes</code></h2>
-<pre><code>readline([prompt])      read one line from stdin (trailing \n stripped); optional prompt
+<pre><code>readline([prompt])      read one line from stdin (trailing \n stripped), nil at end of input; optional prompt
 read_stdin()            read ALL of stdin to EOF as one string (strict UTF-8)
 read_stdin_bytes([max]) read ALL of stdin to EOF as raw bytes (v0.65.0)
 read_stdin_bytes(8192)  read at most 8192 bytes — same cap as read_file_bytes
@@ -1263,6 +1263,15 @@ read_stdin_bytes(8192)  read at most 8192 bytes — same cap as read_file_bytes
 to EOF. <code>readline</code> reads a single line and, if given a prompt argument, writes it
 to stdout (flushed) first — the interactive-input path. Both read UTF-8 <em>text</em>
 and both <strong>raise</strong> on a stream that will not decode, matching <code>read_file</code>.</p>
+<p>At end of input <code>readline</code> returns <code>nil</code>, and keeps returning <code>nil</code>; an empty
+line is <code>""</code>. A line-at-a-time loop therefore tests for <code>nil</code>:</p>
+<pre><code>while true
+  $l = readline()
+  if $l == nil then break end
+  print("[" .. $l .. "]")
+end
+</code></pre>
+<p>A final line with no trailing newline is still returned before the <code>nil</code>.</p>
 <p><code>read_stdin_bytes</code> is the binary twin, and it is the only way to read a stream
 that is not valid UTF-8:</p>
 <pre><code>$ printf '\x00\x01\xff\xfe binary' | mix -c 'print(read_stdin())'

@@ -211,6 +211,7 @@
                         <a href="#configuration">Configuration</a>
                         <a href="#commands">Commands</a>
                         <a href="#events">Events</a>
+                        <a href="#session-log">Session log</a>
                         <a href="#agents-calling-back">Agents calling back</a>
                     </nav>
                 </div>
@@ -296,6 +297,10 @@ request is rejected. No answer is never yes.</p>
 <p><strong>max_live</strong> (default 4): live sessions at once. It is a hard cap, and
 agent-started sessions count against it.</p>
 </li>
+<li>
+<p><strong>log_keep_days</strong> (default 30): how long the session log keeps a session
+after it ends.</p>
+</li>
 </ul>
 <h2 id="commands">Commands</h2>
 <p>Bodies are JSON objects.</p>
@@ -307,15 +312,24 @@ agent-started sessions count against it.</p>
 <tr><td><code>agent.session.close</code></td><td><code>{session}</code></td><td>ends the agent</td></tr>
 <tr><td><code>agent.session.set</code></td><td><code>{session, mode}</code> or <code>{session, option, value}</code></td><td>sets a mode, or a config option such as the model</td></tr>
 <tr><td><code>agent.session.list</code></td><td></td><td>live and recently ended sessions</td></tr>
-<tr><td><code>agent.session.read</code></td><td><code>{session, since?}</code></td><td>the session and its retained events after <code>seq</code></td></tr>
+<tr><td><code>agent.session.read</code></td><td><code>{session, since?, limit?}</code></td><td>the session and its logged events after <code>seq</code>: <code>{session, events, more, next}</code></td></tr>
 <tr><td><code>agent.permission.respond</code></td><td><code>{session, request, option}</code></td><td>answers a permission request</td></tr>
 </tbody></table>
 <p><code>content</code> is a string, or a list of ACP content blocks.</p>
+<p>A read returns at most <code>limit</code> events (default and maximum 2000) and about
+32 MiB. When <code>more</code> is true, read again with <code>since</code> set to <code>next</code>.</p>
+<p>The acting commands (<code>new</code>, <code>prompt</code>, <code>cancel</code>, <code>close</code>, <code>set</code>, <code>respond</code>)
+take an optional <code>id</code> of 1-128 characters from <code>[A-Za-z0-9._:-]</code>. Ids are
+scoped to the session (to <code>new</code> for <code>agent.session.new</code>). A retry with the
+same id gets the first reply and never runs again, so a caller that lost a
+reply can safely send the command again. If agentd stopped after logging a
+command but before replying, the retry gets <code>COMMAND_INTERRUPTED</code>; the
+command is not run again.</p>
 <p>Refusals carry <code>{error_code, message}</code>:</p>
 <table><thead><tr><th>rc</th><th>error_code</th></tr></thead><tbody>
 <tr><td>10</td><td><code>USAGE</code>, <code>OUTSIDE_ROOTS</code> or <code>UNKNOWN_AGENT</code></td></tr>
 <tr><td>14</td><td><code>UNKNOWN_SESSION</code></td></tr>
-<tr><td>15</td><td><code>AGENT_RUNNING</code> (a turn is already running) or <code>AGENT_NOT_READY</code></td></tr>
+<tr><td>15</td><td><code>AGENT_RUNNING</code> (a turn is already running), <code>AGENT_NOT_READY</code> or <code>COMMAND_INTERRUPTED</code></td></tr>
 <tr><td>16</td><td><code>AGENT_LIMIT</code> or <code>AGENT_DEPTH</code></td></tr>
 <tr><td>17</td><td><code>AGENT_SELF</code></td></tr>
 </tbody></table>
@@ -333,10 +347,28 @@ the update unchanged in <code>update</code>;</li>
 <li><code>stop</code>, with <code>stop</code> set to <code>end_turn</code>, <code>max_tokens</code>, <code>max_turn_requests</code>,
 <code>refusal</code> or <code>cancelled</code>;</li>
 <li><code>permission_answered</code>;</li>
-<li><code>error</code>.</li>
+<li><code>error</code>;</li>
+<li><code>ended</code>, logged (not published) when a restart ends a session.</li>
 </ul>
 <p><code>seq</code> rises by one per event in a session. A watcher that missed events
 reads them back with <code>agent.session.read {since}</code>.</p>
+<h2 id="session-log">Session log</h2>
+<p>agentd writes every event and every acting command to a SQLite log before
+it publishes the event or runs the command: <code>$MIXOS_AGENTD_DB</code>, else
+<code>&lt;var&gt;/agentd/sessions.db</code>. The log outlives agentd. After a restart:</p>
+<ul>
+<li>ended sessions and their events can still be listed and read;</li>
+<li>command receipts still answer retries;</li>
+<li>the agents that were running are gone (agentd owned them), so their
+sessions are ended with a last <code>ended</code> event whose <code>reason</code> is
+<code>agentd_restart</code>.</li>
+</ul>
+<p>Sessions are dropped from the log <code>log_keep_days</code> after they end.</p>
+<p>If the log cannot be written (a full disk), commands are refused, but the
+agent's events are still published and the gap is reported on stderr. A
+watcher that follows <code>seq</code> should therefore also check the session's
+<code>status</code> in a read: after such a gap and a restart, the <code>ended</code> event can
+carry a <code>seq</code> the watcher has already seen.</p>
 <h2 id="agents-calling-back">Agents calling back</h2>
 <p>agentd runs every agent with <code>MIXOS_AGENT_SESSION</code> set to its session id,
 and that agent's mixos-mcp registers on the Bus as

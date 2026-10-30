@@ -1,0 +1,113 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- log_test: agentd's durable session log, offline, on a temporary SQLite
+-- file: sessions, events and their paged read, command receipts, restart
+-- recovery (reopening the file) and retention.
+-- Run from the checkout root: mix services/agentd/tests/log_test.mix
+-- Prints PASS/FAIL per check; exits 1 on any failure.
+
+$log = require("../scripts/lib/log.mix")
+$a = require("../scripts/lib/agent.mix")
+$results = []
+
+fn check($name, $ok)
+  push($results, {name: $name, ok: $ok})
+  print((if $ok then "PASS " else "FAIL " end) .. $name)
+end
+
+$tmp = "/tmp/agent-log-test-" .. to_string(pid())
+$path = $tmp .. "/state/agentd/sessions.db"
+$h = $log.open($path)
+check("open creates the file and its directory", is_file($path))
+check("the file is private (0600)", stat($path).perm == 384)
+
+$log.session_started($h, {id: "aaaa1111", agent: "claude", cwd: "/w", parent: nil, sender: "cli", created_at: "2026-10-30T00:00:00Z"})
+check("a started session is known", $log.known($h, "aaaa1111") and not $log.known($h, "bbbb2222"))
+for $i = 1 to 5
+  $log.append($h, "aaaa1111", $i, "chunk", json_encode({session: "aaaa1111", seq: $i, kind: "chunk", text: repeat("x", 100)}), 1000 + $i)
+end
+check("last_seq is the highest appended", $log.last_seq($h, "aaaa1111") == 5)
+$caught = false
+try
+  $log.append($h, "aaaa1111", 5, "chunk", "{}", 1)
+catch $m
+  $caught = true
+end
+check("a seq is never written twice", $caught)
+
+$r = $log.read($h, "aaaa1111", 0, 100, 1000000)
+check("read returns every event in seq order", len($r.events) == 5 and $r.events[0].seq == 1 and $r.events[4].seq == 5 and not $r.more and $r.next == 5)
+$r = $log.read($h, "aaaa1111", 2, 2, 1000000)
+check("read after since, bounded by limit", len($r.events) == 2 and $r.events[0].seq == 3 and $r.more and $r.next == 4)
+-- Each event is 158 bytes of JSON: two fit in 400, three do not.
+$r = $log.read($h, "aaaa1111", 0, 100, 400)
+check("read stops before the byte bound", len($r.events) == 2 and $r.more and $r.next == 2)
+$r = $log.read($h, "aaaa1111", 0, 100, 1)
+check("one event always fits, however large", len($r.events) == 1 and $r.more)
+$r = $log.read($h, "aaaa1111", 5, 100, 1000000)
+check("read past the end is empty", len($r.events) == 0 and not $r.more and $r.next == 5)
+
+-- Commands.
+check("an unknown command id has no row", $log.command_get($h, "aaaa1111", "c1") == nil)
+$log.command_begin($h, "aaaa1111", "c1", "agent.session.prompt", "cli", "{}", 1000)
+$row = $log.command_get($h, "aaaa1111", "c1")
+check("a begun command has no receipt yet", $row.command == "agent.session.prompt" and $row.rc == nil)
+$log.command_done($h, "aaaa1111", "c1", 0, "{\"turn\":7}")
+$row = $log.command_get($h, "aaaa1111", "c1")
+check("a done command keeps its receipt", $row.rc == 0 and $row.receipt == "{\"turn\":7}")
+check("command ids are scoped per session", $log.command_get($h, "bbbb2222", "c1") == nil)
+$caught = false
+try
+  $log.command_begin($h, "aaaa1111", "c1", "agent.session.prompt", "cli", "{}", 1001)
+catch $m
+  $caught = true
+end
+check("a command id is never begun twice in one scope", $caught)
+check("valid command ids", $a.valid_command_id("c1") and $a.valid_command_id("retry:2026-10-30.a_b-c") and
+  not $a.valid_command_id("") and not $a.valid_command_id("has space") and not $a.valid_command_id(repeat("x", 129)) and
+  not $a.valid_command_id(7))
+
+-- Restart: reopen the file; a session that never ended is ended in the log.
+sqlclose($h)
+$h = $log.open($path)
+check("events survive a reopen", len($log.read($h, "aaaa1111", 0, 100, 1000000).events) == 5)
+check("receipts survive a reopen", $log.command_get($h, "aaaa1111", "c1").rc == 0)
+$ended = $log.recover($h, 2000)
+check("recover ends the unended session", deep_eq($ended, ["aaaa1111"]))
+$v = $log.view($h, "aaaa1111")
+check("its view says ended by the restart", $v.status == "ended" and $v.end_reason == "agentd_restart" and $v.seq == 6)
+$r = $log.read($h, "aaaa1111", 5, 100, 1000000)
+check("with a last ended event", len($r.events) == 1 and $r.events[0].kind == "ended" and $r.events[0].reason == "agentd_restart")
+check("recover is idempotent", len($log.recover($h, 2001)) == 0)
+
+-- A normal end, then recent and retention.
+$log.session_started($h, {id: "bbbb2222", agent: "claude", cwd: "/w", parent: "aaaa1111", sender: "mcp-s-aaaa1111-1", created_at: "2026-10-30T01:00:00Z"})
+$log.session_ended($h, "bbbb2222", 0, nil, nil, 3000)
+$v = $log.view($h, "bbbb2222")
+check("an ended session keeps exit code and parent", $v.exit_code == 0 and $v.parent == "aaaa1111" and $v.seq == 0)
+$recent = $log.recent($h, 10, {})
+check("recent lists ended sessions newest first", len($recent) == 2 and $recent[0].session == "bbbb2222")
+check("recent skips the given ids", len($log.recent($h, 10, {bbbb2222: true})) == 1)
+$log.command_begin($h, "new", "n1", "agent.session.new", "cli", "{}", 500)
+-- n2 created bbbb2222, which outlives the cutoff: its receipt must stay.
+$log.command_begin($h, "new", "n2", "agent.session.new", "cli", "{}", 500)
+$log.command_link($h, "new", "n2", "bbbb2222")
+-- n3 created aaaa1111, which expires: its receipt goes with it.
+$log.command_begin($h, "new", "n3", "agent.session.new", "cli", "{}", 2400)
+$log.command_link($h, "new", "n3", "aaaa1111")
+$log.command_begin($h, "zzzz9999", "o1", "agent.session.prompt", "cli", "{}", 500)
+check("expire drops sessions ended before the cutoff", deep_eq($log.expire($h, 2500), ["aaaa1111"]))
+check("with their events and commands", not $log.known($h, "aaaa1111") and
+  len($log.read($h, "aaaa1111", 0, 100, 1000000).events) == 0 and $log.command_get($h, "aaaa1111", "c1") == nil)
+check("and old new commands that created nothing", $log.command_get($h, "new", "n1") == nil)
+check("and the new command that created the dropped session", $log.command_get($h, "new", "n3") == nil)
+check("an old new command keeps its receipt while its session stays", $log.command_get($h, "new", "n2") != nil)
+check("and old commands of sessions the log never had", $log.command_get($h, "zzzz9999", "o1") == nil)
+check("a later session stays", $log.known($h, "bbbb2222"))
+check("view of an unknown session is nil", $log.view($h, "cccc3333") == nil)
+sqlclose($h)
+
+run_argv_must(["rm", "-rf", $tmp])
+$failed = len(filter($results, fn($r) = not $r.ok))
+print(to_string(len($results) - $failed) .. "/" .. to_string(len($results)) .. " passed")
+if $failed > 0 then exit(1) end

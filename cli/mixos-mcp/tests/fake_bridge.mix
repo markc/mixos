@@ -6,7 +6,7 @@ $starts = if is_file($state_file) then to_number(read_file($state_file)) + 1 els
 write_file($state_file, to_string($starts))
 while true
     $line = readline()
-    if $line == "" then break end
+    if $line == nil or $line == "" then break end
     $request = json_parse($line)
     $mode = $request.body.mode ?? "normal"
     if $mode == "delay" then sleep(0.7) end

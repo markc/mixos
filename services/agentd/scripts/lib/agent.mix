@@ -28,12 +28,16 @@ end
 -- Configuration ------------------------------------------------------------
 
 -- conf: {agents: {NAME: {argv: [..], roots: [..], policy?, permission_timeout_s?,
---   env?: {K: V}}}, max_live?}. Returns the normalised conf or raises USAGE.
+--   env?: {K: V}}}, max_live?, log_keep_days?}. Returns the normalised conf
+--   or raises USAGE.
 fn check_conf($conf)
   if type($conf) != "map" or type($conf.agents) != "map" then _usage("conf needs an agents map") end
-  $out = {agents: {}, max_live: $conf.max_live ?? 4}
+  $out = {agents: {}, max_live: $conf.max_live ?? 4, log_keep_days: $conf.log_keep_days ?? 30}
   if type($out.max_live) != "number" or $out.max_live < 1 or $out.max_live > 32 then
     _usage("max_live must be 1 to 32")
+  end
+  if type($out.log_keep_days) != "number" or $out.log_keep_days < 1 or $out.log_keep_days > 3650 then
+    _usage("log_keep_days must be 1 to 3650")
   end
   for each $name in keys($conf.agents)
     $a = $conf.agents[$name]
@@ -102,6 +106,11 @@ end
 
 fn valid_session_id($id)
   return type($id) == "string" and re_match($id, "^[a-z0-9]{4,12}$")
+end
+
+-- A caller-chosen command id (for retries): 1-128 of [A-Za-z0-9._:-].
+fn valid_command_id($id)
+  return type($id) == "string" and re_match($id, "^[A-Za-z0-9._:-]{1,128}$")
 end
 
 -- A fresh id that is not in $taken (a map of id -> anything). Hex from a

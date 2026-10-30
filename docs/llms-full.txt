@@ -1226,6 +1226,8 @@ agents: {
   request is rejected. No answer is never yes.
 - **max_live** (default 4): live sessions at once. It is a hard cap, and
   agent-started sessions count against it.
+- **log_keep_days** (default 30): how long the session log keeps a session
+  after it ends.
 
 ## Commands
 
@@ -1240,10 +1242,21 @@ Bodies are JSON objects.
 | `agent.session.close` | `{session}` | ends the agent |
 | `agent.session.set` | `{session, mode}` or `{session, option, value}` | sets a mode, or a config option such as the model |
 | `agent.session.list` | | live and recently ended sessions |
-| `agent.session.read` | `{session, since?}` | the session and its retained events after `seq` |
+| `agent.session.read` | `{session, since?, limit?}` | the session and its logged events after `seq`: `{session, events, more, next}` |
 | `agent.permission.respond` | `{session, request, option}` | answers a permission request |
 
 `content` is a string, or a list of ACP content blocks.
+
+A read returns at most `limit` events (default and maximum 2000) and about
+32 MiB. When `more` is true, read again with `since` set to `next`.
+
+The acting commands (`new`, `prompt`, `cancel`, `close`, `set`, `respond`)
+take an optional `id` of 1-128 characters from `[A-Za-z0-9._:-]`. Ids are
+scoped to the session (to `new` for `agent.session.new`). A retry with the
+same id gets the first reply and never runs again, so a caller that lost a
+reply can safely send the command again. If agentd stopped after logging a
+command but before replying, the retry gets `COMMAND_INTERRUPTED`; the
+command is not run again.
 
 Refusals carry `{error_code, message}`:
 
@@ -1251,7 +1264,7 @@ Refusals carry `{error_code, message}`:
 |---|---|
 | 10 | `USAGE`, `OUTSIDE_ROOTS` or `UNKNOWN_AGENT` |
 | 14 | `UNKNOWN_SESSION` |
-| 15 | `AGENT_RUNNING` (a turn is already running) or `AGENT_NOT_READY` |
+| 15 | `AGENT_RUNNING` (a turn is already running), `AGENT_NOT_READY` or `COMMAND_INTERRUPTED` |
 | 16 | `AGENT_LIMIT` or `AGENT_DEPTH` |
 | 17 | `AGENT_SELF` |
 
@@ -1271,10 +1284,31 @@ Refusals carry `{error_code, message}`:
 - `stop`, with `stop` set to `end_turn`, `max_tokens`, `max_turn_requests`,
   `refusal` or `cancelled`;
 - `permission_answered`;
-- `error`.
+- `error`;
+- `ended`, logged (not published) when a restart ends a session.
 
 `seq` rises by one per event in a session. A watcher that missed events
 reads them back with `agent.session.read {since}`.
+
+## Session log
+
+agentd writes every event and every acting command to a SQLite log before
+it publishes the event or runs the command: `$MIXOS_AGENTD_DB`, else
+`<var>/agentd/sessions.db`. The log outlives agentd. After a restart:
+
+- ended sessions and their events can still be listed and read;
+- command receipts still answer retries;
+- the agents that were running are gone (agentd owned them), so their
+  sessions are ended with a last `ended` event whose `reason` is
+  `agentd_restart`.
+
+Sessions are dropped from the log `log_keep_days` after they end.
+
+If the log cannot be written (a full disk), commands are refused, but the
+agent's events are still published and the gap is reported on stderr. A
+watcher that follows `seq` should therefore also check the session's
+`status` in a read: after such a gap and a restart, the `ended` event can
+carry a `seq` the watcher has already seen.
 
 ## Agents calling back
 
@@ -12918,7 +12952,7 @@ Since 0.29.0 every builtin carries a structured contract — per-argument names/
   path_join       Join path components with the native separator
   path_parts      Decompose a path into {dir, base, stem, ext} (v0.2.1)
   walk            Recursive directory walk: walk(dir, {max_depth, follow_symlinks, include_dirs, strict}); invalid max_depth raises instead of becoming unlimited (strict since v0.55.0). Unreadable directories and unstat-able entries are skipped unless strict: true, which raises WALK_UNREADABLE (details.path names the first one) so a gate can tell no matches from could not look
-  readline        Read a line from stdin (optional prompt argument)
+  readline        Read a line from stdin (optional prompt argument); nil at end of input
   read_stdin      Read all of stdin to EOF as a string (for pipe/hook input). STRICT UTF-8 — binary stdin raises; use read_stdin_bytes for that
   read_stdin_bytes Read all of stdin to EOF as raw bytes — the binary twin of read_stdin, which refuses invalid UTF-8. Optional arg caps the read: read_stdin_bytes(8192) reads at most 8192 bytes, the same cap contract as read_file_bytes (v0.65.0)
   tty_mode        Put the controlling terminal into raw or cooked mode: tty_mode("raw") disables canonical buffering, echo and signal generation (a lone ESC arrives as one byte — the keystroke-recorder primitive), tty_mode("cooked") restores the saved termios. The original termios is restored on process exit if the caller never returns to cooked (v0.103.9)
@@ -23124,7 +23158,7 @@ dir=/srv/mail/inbox base=msg.2.eml stem=msg.2 ext=eml
 ## Standard input — `readline`, `read_stdin`, `read_stdin_bytes`
 
 ```
-readline([prompt])      read one line from stdin (trailing \n stripped); optional prompt
+readline([prompt])      read one line from stdin (trailing \n stripped), nil at end of input; optional prompt
 read_stdin()            read ALL of stdin to EOF as one string (strict UTF-8)
 read_stdin_bytes([max]) read ALL of stdin to EOF as raw bytes (v0.65.0)
 read_stdin_bytes(8192)  read at most 8192 bytes — same cap as read_file_bytes
@@ -23134,6 +23168,19 @@ read_stdin_bytes(8192)  read at most 8192 bytes — same cap as read_file_bytes
 to EOF. `readline` reads a single line and, if given a prompt argument, writes it
 to stdout (flushed) first — the interactive-input path. Both read UTF-8 *text*
 and both **raise** on a stream that will not decode, matching `read_file`.
+
+At end of input `readline` returns `nil`, and keeps returning `nil`; an empty
+line is `""`. A line-at-a-time loop therefore tests for `nil`:
+
+```
+while true
+  $l = readline()
+  if $l == nil then break end
+  print("[" .. $l .. "]")
+end
+```
+
+A final line with no trailing newline is still returned before the `nil`.
 
 `read_stdin_bytes` is the binary twin, and it is the only way to read a stream
 that is not valid UTF-8:

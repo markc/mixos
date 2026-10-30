@@ -7,7 +7,9 @@
 --   mixos-mcp session env, a 2 MiB frame, a busy turn and cancel, a
 --   permission answered by the human through notifyd, an allow_once
 --   auto-policy, the AGENT_SELF refusal (an impostor registered under the
---   session's mcp-s- name), the live-session cap, roots, and close.
+--   session's mcp-s- name), the live-session cap, roots, close, command
+--   ids (a retry replays its receipt, never re-runs), paged reads, and an
+--   agentd restart on the same session log.
 -- Run from the checkout root: mix services/agentd/tests/agentd_test.mix
 -- MIXOS_TEST_MIX / MIXOS_TEST_NODED choose the binaries (tools/mix_tests.mix
 -- sets both); the mix must have process_watch stdin pipes.
@@ -88,12 +90,15 @@ try
   $env = merge($pb.client_env($bus), {HOME: $tmp .. "/home", MIXOS_NOTIFYD_STATE: $tmp .. "/notify.json"})
   $conf = {max_live: 2, agents: {
     fake: {argv: [$mix, $fake], roots: [$tmp .. "/ws"], permission_timeout_s: 5},
-    auto: {argv: [$mix, $fake], roots: [$tmp .. "/ws"], policy: "allow_once"}}}
+    auto: {argv: [$mix, $fake], roots: [$tmp .. "/ws"], policy: "allow_once"},
+    broken: {argv: [$tmp .. "/no-such-agent"], roots: [$tmp .. "/ws"]}}}
   write_file($tmp .. "/agent.conf.mix", data_encode($conf))
   push($pids, citizen($listener, "agentlisten", merge($env, {AGENT_EVENTS: $tmp .. "/events"}), "listener.log"))
   push($pids, citizen($notifyd, "notify", $env, "notifyd.log"))
-  push($pids, citizen($agentd, "agent", merge($env, {MIXOS_AGENTD_CONF: $tmp .. "/agent.conf.mix",
-    MIXOS_AGENTD_MCP: "/bin/true"}), "agentd.log"))
+  $agentd_env = merge($env, {MIXOS_AGENTD_CONF: $tmp .. "/agent.conf.mix",
+    MIXOS_AGENTD_MCP: "/bin/true", MIXOS_AGENTD_DB: $tmp .. "/state/sessions.db"})
+  $agentd_pid = citizen($agentd, "agent", $agentd_env, "agentd.log")
+  push($pids, $agentd_pid)
   $up = false
   for $i = 1 to 80
     if agent("agent.agents", {}).rc == 0 then
@@ -106,7 +111,11 @@ try
   -- Topic subscriptions confirm asynchronously.
   sleep(3)
   $ag = agent("agent.agents", {})
-  check("both configured agents are listed", len($ag.v.agents) == 2 and $ag.v.max_live == 2)
+  check("the configured agents are listed", len($ag.v.agents) == 3 and $ag.v.max_live == 2)
+  $broken = agent("agent.session.new", {agent: "broken", cwd: $tmp .. "/ws"})
+  check("an agent that cannot start is refused", $broken.rc != 0)
+  $bl = filter(agent("agent.session.list", {}).v.sessions, fn($x) = $x.end_reason == "spawn_failed")
+  check("and its session is ended in the log, not left live", len($bl) == 1 and $bl[0].status == "ended")
 
   -- Roots and validation.
   $out = agent("agent.session.new", {agent: "fake", cwd: $tmp .. "/outside"})
@@ -125,6 +134,23 @@ try
   check("the agent saw its mixos-mcp session env", saw("updated " .. $s .. " ", "agent_message_chunk mcp:" .. $s))
   check("text streamed back", saw("updated " .. $s .. " ", "agent_message_chunk echo:hello MCP"))
   check("the turn ended with end_turn", saw("updated " .. $s .. " ", "stop end_turn"))
+
+  -- Command ids: a retry gets the first receipt and never runs again.
+  $first = agent("agent.session.prompt", {session: $s, content: "once", id: "turn-once"})
+  check("a prompt with an id is accepted", $first.rc == 0 and $first.v.turn != nil)
+  check("and its turn runs", saw("updated " .. $s .. " ", "agent_message_chunk echo:once"))
+  sleep(0.5)
+  $again = agent("agent.session.prompt", {session: $s, content: "once", id: "turn-once"})
+  check("the retry replies the first receipt", $again.rc == 0 and $again.v.turn == $first.v.turn)
+  sleep(1)
+  check("and the turn did not run twice", len(filter(events(), fn($l) = contains($l, "echo:once"))) == 1)
+  $other = agent("agent.session.cancel", {session: $s, id: "turn-once"})
+  check("an id reused for another command is USAGE", $other.rc == 10 and code($other.v) == "USAGE")
+  $badid = agent("agent.session.prompt", {session: $s, content: "x", id: "has space"})
+  check("a malformed id is USAGE", $badid.rc == 10 and code($badid.v) == "USAGE")
+  $page = agent("agent.session.read", {session: $s, since: 0, limit: 2})
+  check("read pages by limit", $page.rc == 0 and len($page.v.events) == 2 and $page.v.more == true and $page.v.next == 2)
+  check("a bad limit is USAGE", agent("agent.session.read", {session: $s, limit: 0}).rc == 10)
 
   -- A 2 MiB frame crosses the pipe whole.
   agent("agent.session.prompt", {session: $s, content: "BIG"})
@@ -197,8 +223,41 @@ try
   check("the session's end is published", saw("ended " .. $s, ""))
   $after = agent("agent.session.prompt", {session: $s, content: "x"})
   check("a closed session refuses prompts", $after.rc == 15)
-  check("after close a new session fits under the cap",
-    agent("agent.session.new", {agent: "fake", cwd: $tmp .. "/ws"}).rc == 0)
+  $n3 = agent("agent.session.new", {agent: "fake", cwd: $tmp .. "/ws", id: "new-once"})
+  check("after close a new session fits under the cap", $n3.rc == 0)
+  $n3again = agent("agent.session.new", {agent: "fake", cwd: $tmp .. "/ws", id: "new-once"})
+  check("a retried session.new returns the same session, not a second one",
+    $n3again.rc == 0 and $n3again.v.session == $n3.v.session)
+
+  -- Restart agentd on the same log: history and receipts survive, and the
+  -- sessions that were live are ended by the restart.
+  $before = agent("agent.session.read", {session: $s, since: 0}).v.events
+  $killed = kill($agentd_pid, 15)
+  check("the first agentd is stopped", $killed != false)
+  for $i = 1 to 40
+    if agent("agent.agents", {}).rc != 0 then break end
+    sleep(0.25)
+  end
+  push($pids, citizen($agentd, "agent", $agentd_env, "agentd.log"))
+  $up = false
+  for $i = 1 to 80
+    if agent("agent.agents", {}).rc == 0 then
+      $up = true
+      break
+    end
+    sleep(0.25)
+  end
+  check("agentd comes back on the same log", $up)
+  $old = agent("agent.session.read", {session: $s, since: 0})
+  check("a closed session's events survive the restart",
+    $old.rc == 0 and $old.v.session.status == "ended" and len($old.v.events) == len($before))
+  $live = agent("agent.session.read", {session: $s2, since: 0})
+  $lastev = if $live.rc == 0 and len($live.v.events) > 0 then $live.v.events[len($live.v.events) - 1] else {} end
+  check("a session live at the restart is ended by it",
+    $live.rc == 0 and $live.v.session.end_reason == "agentd_restart" and $lastev.kind == "ended")
+  check("list shows sessions from the log", len(filter(agent("agent.session.list", {}).v.sessions, fn($x) = $x.session == $s2)) == 1)
+  $replay = agent("agent.session.prompt", {session: $s, content: "once", id: "turn-once"})
+  check("a receipt survives the restart", $replay.rc == 0 and $replay.v.turn == $first.v.turn)
 finally
   for each $p in $pids
     try
