@@ -145,6 +145,7 @@ fn end_presentation(
 #[derive(Default)]
 struct Mapping {
     deadlines: BTreeMap<String, tokio::time::Instant>,
+    paused_at: Option<tokio::time::Instant>,
 }
 
 impl Mapping {
@@ -155,7 +156,31 @@ impl Mapping {
         );
     }
 
+    /// Freezes the window-map deadlines: `expired` cannot fire while paused.
+    fn pause(&mut self, now: tokio::time::Instant) {
+        if self.paused_at.is_none() {
+            self.paused_at = Some(now);
+        }
+    }
+
+    /// Ends the pause, shifts every deadline by the outage and returns it.
+    fn resume(&mut self, now: tokio::time::Instant) -> Duration {
+        match self.paused_at.take() {
+            Some(paused_at) => {
+                let outage = now.saturating_duration_since(paused_at);
+                for at in self.deadlines.values_mut() {
+                    *at += outage;
+                }
+                outage
+            }
+            None => Duration::ZERO,
+        }
+    }
+
     async fn expired(&mut self) -> Vec<String> {
+        if self.paused_at.is_some() {
+            return std::future::pending().await;
+        }
         let Some(deadline) = self.deadlines.values().min().copied() else {
             return std::future::pending().await;
         };
@@ -269,8 +294,9 @@ pub fn dispatch(
     }
 }
 
-/// No window, no desktop or file-manager workers. Fatal Bus loss exits so the
-/// session unit restarts with a new incarnation and no surviving requests.
+/// No window, no desktop or file-manager workers. Only a terminal client
+/// state (shutting down or fatal) exits so the session unit restarts with a
+/// new incarnation; a broker bounce keeps the chooser and its requests alive.
 pub fn run(url: &str) -> Result<(), String> {
     if std::env::var_os("WAYLAND_DISPLAY").is_some()
         || std::env::var_os("DISPLAY").is_some_and(|s| !s.is_empty())
@@ -390,8 +416,34 @@ fn run_host(
                     } else { events_open = false; }
                 }
                 changed = state.changed() => {
-                    if changed.is_err() || *state.borrow_and_update() != ConnState::Connected {
-                        return Err("files Bus disconnected".into());
+                    if changed.is_err() {
+                        return Err("files Bus state watch closed".into());
+                    }
+                    // A broker bounce keeps every window: the supervisor reconnects and
+                    // replays subscriptions, so only terminal states end the chooser.
+                    match *state.borrow_and_update() {
+                        ConnState::Connected => {
+                            if mapping.paused_at.is_some() {
+                                let paused = mapping.deadlines.len();
+                                let outage = mapping.resume(tokio::time::Instant::now());
+                                tracing::info!(
+                                    outage_ms = outage.as_millis() as u64,
+                                    paused,
+                                    "files Bus reconnected; chooser resumes with its windows"
+                                );
+                            }
+                        }
+                        ConnState::Disconnected | ConnState::Connecting => {
+                            if mapping.paused_at.is_none() {
+                                mapping.pause(tokio::time::Instant::now());
+                                tracing::warn!(
+                                    "files Bus disconnected; chooser keeps its windows and \
+                                     waits for the broker"
+                                );
+                            }
+                        }
+                        ConnState::ShuttingDown => return Err("files Bus shutting down".into()),
+                        ConnState::Fatal => return Err("files Bus fatal".into()),
                     }
                 }
             }
@@ -611,5 +663,58 @@ mod tests {
         );
         assert!(rx.try_recv().is_err());
         assert_eq!(engine.list()["requests"], json!([]));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn deadline_holds_through_a_pause_longer_than_the_window_then_fires() {
+        let mut mapping = Mapping::default();
+        mapping.opened("a");
+        tokio::time::advance(Duration::from_secs(2)).await;
+        mapping.pause(tokio::time::Instant::now());
+        // The pause outlasts the whole 5 s window, so nothing may fire during it.
+        assert!(
+            tokio::time::timeout(Duration::from_secs(6), mapping.expired())
+                .await
+                .is_err()
+        );
+        let resumed = tokio::time::Instant::now();
+        mapping.resume(resumed);
+        // Only the 3 s of window left before the pause remain afterwards.
+        let ids = tokio::time::timeout(Duration::from_secs(4), mapping.expired())
+            .await
+            .expect("the shifted deadline still fires");
+        assert_eq!(ids, vec!["a".to_owned()]);
+        assert_eq!(tokio::time::Instant::now(), resumed + Duration::from_secs(3));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn resume_returns_the_outage_and_shifts_every_deadline() {
+        let mut mapping = Mapping::default();
+        mapping.opened("a");
+        tokio::time::advance(Duration::from_secs(1)).await;
+        mapping.opened("b");
+        mapping.pause(tokio::time::Instant::now());
+        tokio::time::advance(Duration::from_secs(4)).await;
+        let now = tokio::time::Instant::now();
+        assert_eq!(mapping.resume(now), Duration::from_secs(4));
+        assert_eq!(mapping.deadlines["a"], now + Duration::from_secs(4));
+        assert_eq!(mapping.deadlines["b"], now + Duration::from_secs(5));
+        assert_eq!(mapping.paused_at, None);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn pause_keeps_the_first_instant_and_resume_without_pause_is_zero() {
+        let mut mapping = Mapping::default();
+        mapping.opened("a");
+        let first = tokio::time::Instant::now();
+        mapping.pause(first);
+        tokio::time::advance(Duration::from_secs(3)).await;
+        mapping.pause(tokio::time::Instant::now());
+        assert_eq!(mapping.paused_at, Some(first));
+        let resumed = tokio::time::Instant::now();
+        assert_eq!(mapping.resume(resumed), Duration::from_secs(3));
+        assert_eq!(mapping.deadlines["a"], resumed + Duration::from_secs(5));
+        assert_eq!(mapping.resume(resumed), Duration::ZERO);
+        assert_eq!(mapping.paused_at, None);
     }
 }

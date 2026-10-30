@@ -43,6 +43,8 @@ unicode-segmentation = "1"
 citizen = { workspace = true, features = ["testing"] }
 egui_kittest.workspace = true
 tempfile.workspace = true
+# The chooser's deadline tests run on tokio's paused clock.
+tokio = { workspace = true, features = ["rt", "macros", "time", "test-util"] }
 
 [build-dependencies]
 buildinfo.workspace = true
