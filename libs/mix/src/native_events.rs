@@ -270,9 +270,7 @@ impl Queue {
                         && p.line_count < p.max_queue
                         && let Some(room) = &p.room
                     {
-                        // Non-blocking: a full socket already holds a wake.
-                        use std::io::Write;
-                        let _ = (&*room).write(&[1]);
+                        crate::child_events::wake(room);
                     }
                     event("proc.line", line)
                 }

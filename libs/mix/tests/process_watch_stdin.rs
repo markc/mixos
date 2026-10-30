@@ -142,6 +142,31 @@ async fn writes_after_the_child_exits_return_false() {
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn a_child_that_closes_its_stdin_refuses_later_writes() {
+    let mut e = Evaluator::new();
+    // The shell drops its only copy of the read end, then idles. Nothing has
+    // been written, so the worker must see the hang-up without POLLOUT.
+    exec(
+        &mut e,
+        r#"$h = process_watch(["sh", "-c", "exec 0<&-; echo closed; sleep 30"], {stdin: "pipe"})"#,
+    )
+    .await
+    .unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        exec(&mut e, "sleep(0.05)").await.unwrap();
+        if exec(&mut e, r#"process_write($h, "x\n")"#).await.unwrap() == Value::Bool(false) {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "closed stdin never refused a write"
+        );
+    }
+    e.close_native_events();
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn block_delivers_every_line_in_order_past_a_tiny_queue() {
     let mut e = watcher().await;
     exec(

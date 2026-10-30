@@ -1082,7 +1082,8 @@ watch lossless:
 
 - A full queue stops reading the child's pipes until delivery makes room. The
   child then blocks on its own write, so back-pressure reaches it. The queue
-  can overshoot `max_queue` by at most the lines of one 4 KiB read. After the
+  can overshoot `max_queue` by at most the lines of one 4 KiB read per
+  pipe. After the
   leader exits, pipes drain regardless, within the usual 500 ms.
 - A line longer than `max_line` is never delivered truncated. The watch kills
   the process group and ends with
@@ -1103,9 +1104,11 @@ mean the child has read it. It returns false when:
 
 - the value would exceed `stdin_buffer`;
 - stdin has been closed by `process_close_stdin`;
-- the child closed its stdin (the write failed with EPIPE, and anything still
-  buffered is discarded);
+- the child closed its stdin;
 - the watch has finished, or the handle is unknown.
+
+Bytes accepted but never read, because the child exits or closes its stdin
+first, are discarded.
 
 `process_close_stdin(handle) -> bool` sends EOF once already-accepted bytes are
 written. It returns true when stdin was open. Both raise

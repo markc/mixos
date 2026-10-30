@@ -128,12 +128,26 @@ mod linux {
         false
     }
 
+    /// Mark stdin done under the lock before closing the fd, so a
+    /// concurrent `process_write` sees `done` rather than appending to a
+    /// buffer about to be discarded.
     fn end_stdin(fd: &mut Option<OwnedFd>, state: Option<&std::sync::Mutex<Stdin>>) {
-        *fd = None;
         if let Some(state) = state {
             let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
             s.buf.clear();
             s.done = true;
+        }
+        *fd = None;
+    }
+
+    /// Queue one wake byte. WouldBlock means a wake is already pending; any
+    /// other failure means the peer is gone and nothing waits on it.
+    pub(crate) fn wake(socket: &UnixStream) {
+        use std::io::Write;
+        while let Err(e) = (&*socket).write(&[1]) {
+            if e.kind() != std::io::ErrorKind::Interrupted {
+                break;
+            }
         }
     }
 
@@ -326,6 +340,8 @@ mod linux {
                             // pipes drain regardless, bounded by the deadline.
                             let blocked = lossless && !exited && queue.process_full(&handle);
                             let poll_fd = |on: bool, fd: i32| if on { fd } else { -1 };
+                            // Fixed slots: 0 pidfd, 1 cancel wake, 2 stdin kick,
+                            // 3 stdin pipe, 4 room; pipes follow from 5.
                             let mut fds = vec![
                                 libc::pollfd {
                                     fd: if exited { -1 } else { pidfd.as_raw_fd() },
@@ -345,12 +361,15 @@ mod linux {
                                     events: libc::POLLIN,
                                     revents: 0,
                                 },
+                                // Always polled: with no bytes pending (events 0)
+                                // poll still reports POLLERR once the child closes
+                                // its stdin, so later writes return false.
                                 libc::pollfd {
                                     fd: stdin_worker
                                         .as_ref()
                                         .and_then(|(_, _, fd)| fd.as_ref())
-                                        .map_or(-1, |fd| poll_fd(want_out, fd.as_raw_fd())),
-                                    events: libc::POLLOUT,
+                                        .map_or(-1, |fd| fd.as_raw_fd()),
+                                    events: if want_out { libc::POLLOUT } else { 0 },
                                     revents: 0,
                                 },
                                 libc::pollfd {
@@ -421,6 +440,11 @@ mod linux {
                                 if let Some((state, _, fd)) = &mut stdin_worker {
                                     end_stdin(fd, Some(&**state));
                                 }
+                            }
+                            if fds[3].revents & (libc::POLLERR | libc::POLLHUP | libc::POLLNVAL) != 0
+                                && let Some((state, _, fd)) = &mut stdin_worker
+                            {
+                                end_stdin(fd, Some(&**state));
                             }
                             if fds[2].revents != 0
                                 && let Some((_, kicked, _)) = &mut stdin_worker
@@ -520,9 +544,7 @@ mod linux {
             }
             s.buf.extend(data);
             drop(s);
-            // Non-blocking: a full socket already holds a pending wake.
-            use std::io::Write;
-            let _ = (&*kick).write(&[1]);
+            wake(kick);
             Ok(true)
         }
 
@@ -532,8 +554,7 @@ mod linux {
             let open = !s.done && !s.close;
             s.close = true;
             drop(s);
-            use std::io::Write;
-            let _ = (&*kick).write(&[1]);
+            wake(kick);
             Ok(open)
         }
 
@@ -668,7 +689,7 @@ mod linux {
 }
 
 #[cfg(target_os = "linux")]
-pub(crate) use linux::{ChildWatch, ProcessWatch};
+pub(crate) use linux::{ChildWatch, ProcessWatch, wake};
 
 #[cfg(not(target_os = "linux"))]
 pub(crate) struct ProcessWatch;
