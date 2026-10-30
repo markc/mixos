@@ -1104,6 +1104,8 @@ async fn serve(
                         Ok(Ok(_)) => {}
                         Ok(Err(error)) if event.kind.ends_with(".ui.menu.popup") || event.kind.ends_with(".execute") => tracing::warn!(%error, to = %event.to, "window chrome call failed"),
                         Err(_) if event.kind.ends_with(".ui.menu.popup") || event.kind.ends_with(".execute") => tracing::warn!(to = %event.to, "window chrome call timed out"),
+                        Ok(Err(error)) if event.kind == "settings.apply" => tracing::warn!(%error, "corner panel mode not saved"),
+                        Err(_) if event.kind == "settings.apply" => tracing::warn!("corner panel mode save timed out"),
                         Ok(Err(error)) => tracing::debug!(%error, to = %event.to, kind = %event.kind, "scene event failed"),
                         Err(_) => tracing::debug!(to = %event.to, kind = %event.kind, "scene event timed out"),
                     }
