@@ -74,11 +74,11 @@ fn free_gaps(bar: Rect, occupied: &[Rect]) -> Vec<Rect> {
 /// Drop the divider under the title bar, for a window whose next row (a
 /// document tab strip) continues the chrome. Set before the title bar draws.
 pub fn seamless(ctx: &egui::Context, on: bool) {
-    ctx.data_mut(|d| d.insert_temp(egui::Id::new("toolkit.titlebar.seamless"), on));
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique("toolkit.titlebar.seamless"), on));
 }
 
 fn seamless_of(ctx: &egui::Context) -> bool {
-    ctx.data(|d| d.get_temp(egui::Id::new("toolkit.titlebar.seamless")))
+    ctx.data(|d| d.get_temp(egui::Id::unique("toolkit.titlebar.seamless")))
         .unwrap_or(false)
 }
 
