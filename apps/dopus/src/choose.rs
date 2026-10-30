@@ -684,7 +684,10 @@ mod tests {
             .await
             .expect("the shifted deadline still fires");
         assert_eq!(ids, vec!["a".to_owned()]);
-        assert_eq!(tokio::time::Instant::now(), resumed + Duration::from_secs(3));
+        assert_eq!(
+            tokio::time::Instant::now(),
+            resumed + Duration::from_secs(3)
+        );
     }
 
     #[tokio::test(start_paused = true)]
