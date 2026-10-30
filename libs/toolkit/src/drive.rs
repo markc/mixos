@@ -1117,6 +1117,24 @@ impl Drive {
                 "the window is hidden: restore it first",
             ));
         }
+        // An occluded window that has run no pass for the quiet period cannot read
+        // input either: answer now instead of after the period, so a caller is
+        // not held for a frame that is not coming (desk Bus audit F7). A window
+        // still painting while occluded (an offscreen pass, a parked desk) keeps
+        // taking input. Captures are left to their own offscreen path.
+        if command_name != "ui.capture"
+            && args.get("viewport").is_none()
+            && ctx.input(|i| i.viewport().occluded == Some(true))
+            && self
+                .last_ui_pass
+                .is_none_or(|pass| pass.elapsed() >= INPUT_QUIET_PERIOD)
+        {
+            return Some(refusal(
+                id,
+                "CANCELLED",
+                "the window is covered and produced no frames: show it first",
+            ));
+        }
         if self.queue.len() >= QUEUE_LIMIT {
             return Some(refusal(id, "BUSY", "too many queued inputs"));
         }
@@ -2120,6 +2138,31 @@ mod tests {
             },
         );
         (ctx, temp)
+    }
+
+    #[test]
+    fn covered_idle_window_refuses_input_at_once_but_a_painting_one_takes_it() {
+        for painting in [false, true] {
+            let (ctx, _temp) = capture_context();
+            if painting {
+                ctx.with_plugin(|drive: &mut Drive| drive.last_ui_pass = Some(Instant::now()));
+            }
+            let mut input = RawInput::default();
+            input.viewports.get_mut(&egui::ViewportId::ROOT).unwrap().occluded = Some(true);
+            let _output = ctx.run_logic(&input, |ctx| {
+                let answer = request(ctx, 1, "ui.type", &json!({"text":"hello"}));
+                if painting {
+                    assert!(answer.is_none(), "a painting window queues the input");
+                } else {
+                    let answer = answer.expect("refused at once");
+                    assert_eq!(answer.rc, 10);
+                    assert_eq!(answer.body["error_code"], "CANCELLED");
+                }
+                // A query that needs no frame still answers.
+                let tree = request(ctx, 2, "ui.tree", &json!({}));
+                assert!(tree.is_some_and(|a| a.rc == 0));
+            });
+        }
     }
 
     #[test]
