@@ -783,6 +783,7 @@ impl Painter {
                 // we returned above.
                 return vsync_sec;
             };
+            let format = target_texture.format();
             let target_view = target_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
             let (view, resolve_target) = (self.options.msaa_samples > 1)
