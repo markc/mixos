@@ -441,7 +441,8 @@ mod linux {
                                     end_stdin(fd, Some(&**state));
                                 }
                             }
-                            if fds[3].revents & (libc::POLLERR | libc::POLLHUP | libc::POLLNVAL) != 0
+                            if fds[3].revents & (libc::POLLERR | libc::POLLHUP | libc::POLLNVAL)
+                                != 0
                                 && let Some((state, _, fd)) = &mut stdin_worker
                             {
                                 end_stdin(fd, Some(&**state));
