@@ -200,7 +200,12 @@ fn rounded_native_frame_fills_unpainted_gaps_and_masks_only_corners() {
         painter.context = ctx.clone();
         for scale in [1, 2] {
             let size = [67 * scale, 31 * scale];
-            for (present, rounded, transparent) in [(true, true, true), (true, false, true), (true, true, false), (false, false, true)] {
+            for (present, rounded, transparent) in [
+                (true, true, true),
+                (true, false, true),
+                (true, true, false),
+                (false, false, true),
+            ] {
                 let mut output = ctx.run_ui(
                     egui::RawInput {
                         screen_rect: Some(egui::Rect::from_min_size(
@@ -212,7 +217,10 @@ fn rounded_native_frame_fills_unpainted_gaps_and_masks_only_corners() {
                     |ui| {
                         for (left, right) in [(0.0, 20.0), (47.0, 67.0)] {
                             ui.painter().rect_filled(
-                                egui::Rect::from_min_max(egui::pos2(left, 0.0), egui::pos2(right, 31.0)),
+                                egui::Rect::from_min_max(
+                                    egui::pos2(left, 0.0),
+                                    egui::pos2(right, 31.0),
+                                ),
                                 0.0,
                                 egui::Color32::BLUE,
                             );
@@ -231,7 +239,9 @@ fn rounded_native_frame_fills_unpainted_gaps_and_masks_only_corners() {
                 let child =
                     egui::Id::unique(("egui-wgpu.window-frame", ViewportId::from_hash_of("child")));
                 ctx.data_mut(|data| {
-                    if present { data.insert_temp(key, request); }
+                    if present {
+                        data.insert_temp(key, request);
+                    }
                     data.insert_temp(child, request);
                     data.insert_temp(alpha_key, transparent);
                 });
@@ -253,10 +263,19 @@ fn rounded_native_frame_fills_unpainted_gaps_and_masks_only_corners() {
                     .expect("GPU corner readback");
                 assert_eq!(
                     image[(33 * scale as usize, 15 * scale as usize)],
-                    if rounded && transparent { fill } else if present { egui::Color32::TRANSPARENT } else { egui::Color32::GREEN },
+                    if rounded && transparent {
+                        fill
+                    } else if present {
+                        egui::Color32::TRANSPARENT
+                    } else {
+                        egui::Color32::GREEN
+                    },
                     "unpainted gap: format={format:?} scale={scale} present={present} rounded={rounded} transparent={transparent}"
                 );
-                assert_eq!(image[(10 * scale as usize, 15 * scale as usize)], egui::Color32::BLUE);
+                assert_eq!(
+                    image[(10 * scale as usize, 15 * scale as usize)],
+                    egui::Color32::BLUE
+                );
                 if rounded && transparent {
                     for (x, y) in [
                         (0, 0),
@@ -283,7 +302,11 @@ fn rounded_native_frame_fills_unpainted_gaps_and_masks_only_corners() {
                     );
                     for y in 10 * scale..size[1] - 10 * scale {
                         for x in 10 * scale..size[0] - 10 * scale {
-                            assert_eq!(image[(x as usize, y as usize)].a(), 255, "the interior stays opaque");
+                            assert_eq!(
+                                image[(x as usize, y as usize)].a(),
+                                255,
+                                "the interior stays opaque"
+                            );
                         }
                     }
                     if format == wgpu::TextureFormat::Bgra8Unorm

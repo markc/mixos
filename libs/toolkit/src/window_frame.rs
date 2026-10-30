@@ -104,8 +104,14 @@ mod tests {
                 .unwrap();
             assert_eq!(value.0 > 0.0, expected);
             assert_eq!(radius(&ctx, frame) > 0.0, expected);
-            let [r, g, b, _] = crate::chrome::Chrome::of(&ctx).palette.chrome.to_srgba_unmultiplied();
-            assert_eq!(value.3, egui::Color32::from_rgb(r, g, b).to_normalized_gamma_f32());
+            let [r, g, b, _] = crate::chrome::Chrome::of(&ctx)
+                .palette
+                .chrome
+                .to_srgba_unmultiplied();
+            assert_eq!(
+                value.3,
+                egui::Color32::from_rgb(r, g, b).to_normalized_gamma_f32()
+            );
             assert_eq!(value.3[3], 1.0);
         }
     }
