@@ -163,6 +163,9 @@ fn fit_with_tokens(free: f32, slots: &[Slot], tokens: &design::ResolvedStyle) ->
                 0.0
             }
     };
+    // The band sizes the group to exactly what the controls need, and the
+    // rect arithmetic can land a hair short: never drop a control for that.
+    let free = free + 0.5;
     let mut shown = slots.len();
     while shown > 0
         && need(
