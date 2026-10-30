@@ -511,7 +511,11 @@ impl Chrome {
                 .get_or_init(|| Theme::for_context(design::DesignContext::revision_one()).style());
             let style = ctx.global_style();
             Self {
-                mode: if style.visuals.dark_mode { Mode::Dark } else { Mode::Light },
+                mode: if style.visuals.dark_mode {
+                    Mode::Dark
+                } else {
+                    Mode::Light
+                },
                 interface_size_scale: 1.0,
                 style: tokens,
                 palette: Palette::from_visuals(&style.visuals),
