@@ -222,19 +222,11 @@ impl BrokerConnection {
                     options.incoming_capacity = Some(64);
                     // Retain the resolved locator, including one advertised by ping.
                     options.endpoint = Some(endpoint);
-                    NodedClient::connect_unix(name, &url, &options, Some(provenance.clone()))
-                        .await
+                    NodedClient::connect_unix(name, &url, &options, Some(provenance.clone())).await
                 }
                 Err(error) => Err(error),
             };
-            finish_connect(
-                name,
-                &url,
-                Some(provenance),
-                tcp_opt_in.as_deref(),
-                result,
-            )
-            .await
+            finish_connect(name, &url, Some(provenance), tcp_opt_in.as_deref(), result).await
         };
         let client = tokio::time::timeout(std::time::Duration::from_secs(5), connect)
             .await
