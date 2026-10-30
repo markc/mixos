@@ -129,8 +129,9 @@ fn sender_session($from)
 end
 
 -- Start an acting command: log it before it runs. $scope is the session
--- id ("new" for agent.session.new); a command naming no valid session is
--- not logged (it can only be refused). Returns false when it must not run,
+-- id ("new" for agent.session.new); a command naming no session agentd
+-- has had is not logged (it can only be refused, and nothing would ever
+-- expire its row). Returns false when it must not run,
 -- having replied already: a retry gets its first receipt.
 fn begin($command, $scope)
   $S.cmd = nil
@@ -139,7 +140,9 @@ fn begin($command, $scope)
     fail("USAGE", "id must be 1-128 of [A-Za-z0-9._:-]")
     return false
   end
-  if $scope != "new" and not $a.valid_session_id($scope) then return true end
+  if $scope != "new" and not ($a.valid_session_id($scope) and ($S.sessions[$scope] != nil or $log.known($DB, $scope))) then
+    return true
+  end
   if $id != nil then
     $row = $log.command_get($DB, $scope, $id)
     if $row != nil then

@@ -148,5 +148,7 @@ fn expire($h, $cutoff)
     sqlexec($h, "DELETE FROM sessions WHERE id = ?", [$id])
   end
   sqlexec($h, "DELETE FROM commands WHERE scope = 'new' AND at < ?", [$cutoff])
+  -- Rows whose session is gone from the log (none should exist).
+  sqlexec($h, "DELETE FROM commands WHERE scope != 'new' AND at < ? AND scope NOT IN (SELECT id FROM sessions)", [$cutoff])
   return len($ids)
 end
