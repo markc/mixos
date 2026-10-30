@@ -386,7 +386,12 @@ is limited to 8 MiB. Refusals are JSON-RPC errors: <code>-32002</code> for a mis
 file, <code>-32602</code> for a path outside the session or a bad request. Every read,
 write and refusal is an event (<code>fs_read</code>, <code>fs_write</code>, <code>fs_refused</code>).</p>
 <p>This confines what the agent asks agentd to do. An agent's own tools, such
-as its shell or Claude's built-in file tools, do not go through agentd.</p>
+as its shell or Claude's built-in file tools, do not go through agentd.
+The path check and the read or write are separate steps, so an agent that
+replaces a path with a symlink between them can still lead one out; that
+takes the agent's own tools, which reach the same files anyway. A missing
+path outside the session is answered as outside, so the errors do not tell
+the agent what exists elsewhere.</p>
 <h2 id="agents-calling-back">Agents calling back</h2>
 <p>agentd runs every agent with <code>MIXOS_AGENT_SESSION</code> set to its session id,
 and that agent's mixos-mcp registers on the Bus as

@@ -83,7 +83,10 @@ end
 -- An agent may read and write only inside its session's directories (cwd
 -- and additional_dirs, both already under the instance roots). Paths are
 -- resolved first, so a symlink cannot lead out. This confines the ACP
--- client surface only; the agent's own tools are not confined.
+-- client surface only; the agent's own tools are not confined. The check
+-- and the read or write are separate steps, so an agent that swaps a path
+-- for a symlink in between can still lead one out; doing that takes the
+-- agent's own shell or file tools, which reach the same files directly.
 
 $FS_READ_MAX = 8388608
 
@@ -99,7 +102,12 @@ end
 -- The real path to read, or raises NOT_FOUND / OUTSIDE_ROOTS / USAGE.
 fn fs_read_target($path, $dirs)
   if type($path) != "string" or not starts_with($path, "/") then _usage("path must be absolute") end
-  if realpath($path) == nil then raise("NOT_FOUND", "no file " .. $path) end
+  if realpath($path) == nil then
+    -- Missing: "not found" only inside the session, so the answer never
+    -- says whether a path outside it exists.
+    if realpath(dirname($path)) != nil and under_roots(dirname($path), $dirs) then raise("NOT_FOUND", "no file " .. $path) end
+    raise("OUTSIDE_ROOTS", $path .. " is outside the session's directories")
+  end
   if not under_roots($path, $dirs) then raise("OUTSIDE_ROOTS", $path .. " is outside the session's directories") end
   $real = realpath($path)
   if not is_file($real) then _usage($path .. " is not a file") end
@@ -119,7 +127,10 @@ fn fs_write_target($path, $dirs)
     return $real
   end
   $parent = dirname($path)
-  if realpath($parent) == nil then raise("NOT_FOUND", "no directory " .. $parent) end
+  if realpath($parent) == nil then
+    if realpath(dirname($parent)) != nil and under_roots(dirname($parent), $dirs) then raise("NOT_FOUND", "no directory " .. $parent) end
+    raise("OUTSIDE_ROOTS", $path .. " is outside the session's directories")
+  end
   if not under_roots($parent, $dirs) then raise("OUTSIDE_ROOTS", $path .. " is outside the session's directories") end
   return realpath($parent) .. "/" .. basename($path)
 end

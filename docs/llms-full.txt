@@ -1331,6 +1331,11 @@ write and refusal is an event (`fs_read`, `fs_write`, `fs_refused`).
 
 This confines what the agent asks agentd to do. An agent's own tools, such
 as its shell or Claude's built-in file tools, do not go through agentd.
+The path check and the read or write are separate steps, so an agent that
+replaces a path with a symlink between them can still lead one out; that
+takes the agent's own tools, which reach the same files anyway. A missing
+path outside the session is answered as outside, so the errors do not tell
+the agent what exists elsewhere.
 
 ## Agents calling back
 

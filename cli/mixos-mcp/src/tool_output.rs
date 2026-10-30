@@ -78,15 +78,32 @@ fn object_subschemas(schema: &mut Value) {
     let Value::Object(map) = schema else {
         return;
     };
-    for key in ["properties", "patternProperties", "$defs", "definitions"] {
+    for key in ["properties", "patternProperties", "$defs", "definitions", "dependentSchemas"] {
         if let Some(Value::Object(subs)) = map.get_mut(key) {
             subs.values_mut().for_each(fix);
         }
     }
-    for key in ["items", "not", "if", "then", "else"] {
+    for key in [
+        "items",
+        "not",
+        "if",
+        "then",
+        "else",
+        "contains",
+        "propertyNames",
+        "unevaluatedItems",
+        "unevaluatedProperties",
+    ] {
         if let Some(sub) = map.get_mut(key) {
             fix(sub);
         }
+    }
+    // `additionalProperties: true` becomes `{}` (same meaning); `false`
+    // stays, since it is what closes an object and clients accept it.
+    if let Some(Value::Bool(true)) = map.get("additionalProperties") {
+        map.insert("additionalProperties".into(), json!({}));
+    } else if let Some(sub @ Value::Object(_)) = map.get_mut("additionalProperties") {
+        object_subschemas(sub);
     }
     for key in ["anyOf", "oneOf", "allOf", "prefixItems"] {
         if let Some(Value::Array(subs)) = map.get_mut(key) {
@@ -228,13 +245,26 @@ mod tests {
     fn has_boolean_subschema(schema: &Value) -> bool {
         match schema {
             Value::Object(map) => map.iter().any(|(key, sub)| {
-                let positional = matches!(key.as_str(), "items" | "not" | "if" | "then" | "else");
+                let positional = matches!(
+                    key.as_str(),
+                    "items"
+                        | "not"
+                        | "if"
+                        | "then"
+                        | "else"
+                        | "contains"
+                        | "propertyNames"
+                        | "unevaluatedItems"
+                        | "unevaluatedProperties"
+                );
+                let open_object = key == "additionalProperties" && *sub == Value::Bool(true);
                 let keyed = matches!(
                     key.as_str(),
                     "properties" | "patternProperties" | "$defs" | "definitions"
                 );
                 let listed = matches!(key.as_str(), "anyOf" | "oneOf" | "allOf" | "prefixItems");
-                (positional
+                open_object
+                    || (positional
                     && (sub.is_boolean()
                         || sub.as_array().is_some_and(|a| a.iter().any(Value::is_boolean))))
                     || (keyed
@@ -281,7 +311,9 @@ mod tests {
             "type": "object",
             "additionalProperties": false,
             "properties": {"a": true, "b": {"type": "array", "items": true}, "c": false,
-                "t": {"type": "array", "items": [{"type": "string"}, true]}},
+                "t": {"type": "array", "items": [{"type": "string"}, true]},
+                "m": {"type": "object", "additionalProperties": true},
+                "k": {"type": "array", "contains": true}},
             "anyOf": [true, {"properties": {"d": true}}]
         });
         object_subschemas(&mut schema);
@@ -290,6 +322,8 @@ mod tests {
         assert_eq!(schema["properties"]["b"]["items"], json!({}));
         assert_eq!(schema["properties"]["c"], json!({"not": {}}));
         assert_eq!(schema["properties"]["t"]["items"][1], json!({}));
+        assert_eq!(schema["properties"]["m"]["additionalProperties"], json!({}));
+        assert_eq!(schema["properties"]["k"]["contains"], json!({}));
         assert_eq!(schema["anyOf"][0], json!({}));
         assert_eq!(schema["anyOf"][1]["properties"]["d"], json!({}));
     }

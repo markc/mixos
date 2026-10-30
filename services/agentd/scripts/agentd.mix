@@ -594,6 +594,7 @@ end
 -- agent touched through agentd.
 fn serve_fs($id, $msg)
   $s = $S.sessions[$id]
+  if $s == nil then return nil end
   $p = if type($msg.params) == "map" then $msg.params else {} end
   $dirs = concat([$s.cwd], $s.dirs ?? [])
   try
