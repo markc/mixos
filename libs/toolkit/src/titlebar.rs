@@ -377,7 +377,9 @@ pub fn show_with<S>(
             let rect = Rect::from_min_size(at, vec2(m.mark, m.mark))
                 .round_to_pixels(ui.pixels_per_point());
             icons::image_of(ui.ctx(), icon, m.mark, p.icon).paint_at(ui, rect);
-            let response = ui.interact(rect, ui.scope_id().with("window-menu-mark"), Sense::click());
+            let response =
+                ui.interact(rect, ui.scope_id().with("window-menu-mark"), Sense::click());
+            response.widget_info(|| WidgetInfo::labeled(Role::Button, true, label("window-system-menu")));
             if response.clicked_by(egui::PointerButton::Primary) {
                 request_window_menu(ui.ctx(), response.interact_pointer_pos());
             }

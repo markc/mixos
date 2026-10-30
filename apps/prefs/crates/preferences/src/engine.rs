@@ -776,7 +776,9 @@ impl Engine {
             .look
             .shown()
             .map_or(self.session_decorations, |look| look.decorations);
-        let actions = self.look.shown().map_or(self.session_actions, |look| design::ActionsPlace::resolve(&look.actions_place));
+        let actions = self.look.shown().map_or(self.session_actions, |look| {
+            design::ActionsPlace::resolve(&look.actions_place)
+        });
         design::decorations::resolve_with_actions(self.ui.theme_decorations, session, actions)
     }
 

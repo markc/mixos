@@ -215,7 +215,7 @@ fn mark_and_empty_bar_request_the_wayland_window_menu() {
                         wayland.then_some(at)
                     );
                     assert_eq!(
-                        h.ctx.data(|d| d.get_temp::<egui::Pos2>(egui::Id::new((
+                        h.ctx.data(|d| d.get_temp::<egui::Pos2>(egui::Id::unique((
                             "eframe.window-menu",
                             ViewportId::from_hash_of("child")
                         )))),

@@ -37920,6 +37920,14 @@ injecting both facts and the variable without reading the real session.
   undecorated. Only the free gap between the menus and the buttons drags
   the window. Call `titlebar::edges` last in the frame to add the resize
   zones. Under server-side decorations the row becomes a plain menu bar.
+  On foreign Wayland desktops, automatic framing uses the app title bar when
+  Actions are placed “In the title bar”. Explicit `csd`/`ssd` settings and
+  `MIXOS_DECORATIONS` take precedence. Only a MixOS desktop can host menus
+  and Actions; elsewhere an explicit SSD window keeps them in its own row.
+  On Wayland, click the app mark or right-click empty title-bar space for
+  the compositor's window menu. KWin shadows follow the theme and output
+  scale, and detach while maximised or fullscreen. The default `shadow`
+  feature enables native shadows; offscreen tests need no display.
 - `menu`: menu bars and menus drawn by the toolkit, not by egui's
   `MenuBar`. One highlight is shared by pointer and keyboard, a menu opens
   on press, and press-drag-release runs an item. `Nav` holds the open menu

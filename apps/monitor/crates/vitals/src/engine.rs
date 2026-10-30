@@ -729,7 +729,11 @@ impl Engine {
     }
 
     pub fn decoration_resolution(&self) -> design::decorations::Resolution {
-        design::decorations::resolve_with_actions(self.ui.theme_decorations, self.session.decorations, self.session.actions_place)
+        design::decorations::resolve_with_actions(
+            self.ui.theme_decorations,
+            self.session.decorations,
+            self.session.actions_place,
+        )
     }
 
     pub fn effective(&self) -> Session<design::Decorations> {

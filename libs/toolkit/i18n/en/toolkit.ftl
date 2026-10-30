@@ -3,6 +3,7 @@ window-maximize = Maximize
 window-restore = Restore
 window-close = Close
 window-menu = Menus
+window-system-menu = Window menu
 toolkit-macros = Macros
 macros-close = Close
 macros-new-global = New global
