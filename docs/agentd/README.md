@@ -61,6 +61,8 @@ agents: {
   request is rejected. No answer is never yes.
 - **max_live** (default 4): live sessions at once. It is a hard cap, and
   agent-started sessions count against it.
+- **log_keep_days** (default 30): how long the session log keeps a session
+  after it ends.
 
 ## Commands
 
@@ -75,10 +77,21 @@ Bodies are JSON objects.
 | `agent.session.close` | `{session}` | ends the agent |
 | `agent.session.set` | `{session, mode}` or `{session, option, value}` | sets a mode, or a config option such as the model |
 | `agent.session.list` | | live and recently ended sessions |
-| `agent.session.read` | `{session, since?}` | the session and its retained events after `seq` |
+| `agent.session.read` | `{session, since?, limit?}` | the session and its logged events after `seq`: `{session, events, more, next}` |
 | `agent.permission.respond` | `{session, request, option}` | answers a permission request |
 
 `content` is a string, or a list of ACP content blocks.
+
+A read returns at most `limit` events (default and maximum 2000) and about
+32 MiB. When `more` is true, read again with `since` set to `next`.
+
+The acting commands (`new`, `prompt`, `cancel`, `close`, `set`, `respond`)
+take an optional `id` of 1-128 characters from `[A-Za-z0-9._:-]`. Ids are
+scoped to the session (to `new` for `agent.session.new`). A retry with the
+same id gets the first reply and never runs again, so a caller that lost a
+reply can safely send the command again. If agentd stopped after logging a
+command but before replying, the retry gets `COMMAND_INTERRUPTED`; the
+command is not run again.
 
 Refusals carry `{error_code, message}`:
 
@@ -86,7 +99,7 @@ Refusals carry `{error_code, message}`:
 |---|---|
 | 10 | `USAGE`, `OUTSIDE_ROOTS` or `UNKNOWN_AGENT` |
 | 14 | `UNKNOWN_SESSION` |
-| 15 | `AGENT_RUNNING` (a turn is already running) or `AGENT_NOT_READY` |
+| 15 | `AGENT_RUNNING` (a turn is already running), `AGENT_NOT_READY` or `COMMAND_INTERRUPTED` |
 | 16 | `AGENT_LIMIT` or `AGENT_DEPTH` |
 | 17 | `AGENT_SELF` |
 
@@ -106,10 +119,25 @@ Refusals carry `{error_code, message}`:
 - `stop`, with `stop` set to `end_turn`, `max_tokens`, `max_turn_requests`,
   `refusal` or `cancelled`;
 - `permission_answered`;
-- `error`.
+- `error`;
+- `ended`, logged (not published) when a restart ends a session.
 
 `seq` rises by one per event in a session. A watcher that missed events
 reads them back with `agent.session.read {since}`.
+
+## Session log
+
+agentd writes every event and every acting command to a SQLite log before
+it publishes the event or runs the command: `$MIXOS_AGENTD_DB`, else
+`<var>/agentd/sessions.db`. The log outlives agentd. After a restart:
+
+- ended sessions and their events can still be listed and read;
+- command receipts still answer retries;
+- the agents that were running are gone (agentd owned them), so their
+  sessions are ended with a last `ended` event whose `reason` is
+  `agentd_restart`.
+
+Sessions are dropped from the log `log_keep_days` after they end.
 
 ## Agents calling back
 

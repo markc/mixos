@@ -88,6 +88,7 @@ $scripts = [
   "services/notifyd/tests/notify_test.mix",
   "services/notifyd/tests/notifyd_test.mix",
   "services/agentd/tests/agent_test.mix",
+  "services/agentd/tests/log_test.mix",
   "services/agentd/tests/agentd_test.mix",
   "apps/dopus/tests/dopus_bus_test.mix",
   "apps/screenshot/tests/edit_path_test.mix"

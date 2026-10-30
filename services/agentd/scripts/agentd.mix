@@ -20,20 +20,30 @@
 --   agent.session.close {session}                  end the agent
 --   agent.session.set {session, mode} | {session, option, value}
 --   agent.session.list                             live and recent sessions
---   agent.session.read {session, since?}           retained events after seq
+--   agent.session.read {session, since?, limit?}   logged events after seq
 --   agent.permission.respond {session, request, option}
+-- The acting commands (new, prompt, cancel, close, set, respond) take an
+-- optional id (1-128 of [A-Za-z0-9._:-]), scoped to the session ("new" for
+-- agent.session.new): a retry with the same id gets the first reply and
+-- never runs again. A first run cut off before it replied (agentd stopped)
+-- answers COMMAND_INTERRUPTED.
 -- Topics (inner command = topic): agent.session.updated {session, seq, kind,
 --   update?, stop?}, agent.session.ended {session, exit_code, signal},
 --   agent.permission.requested {session, request, title, options}.
 -- Replies: rc 0 JSON; rc 10 bad request (USAGE, OUTSIDE_ROOTS, UNKNOWN_AGENT);
--- rc 14 UNKNOWN_SESSION; rc 15 AGENT_RUNNING or not ready; rc 16 AGENT_LIMIT
--- or AGENT_DEPTH; rc 17 AGENT_SELF. Errors use {error_code, message}.
+-- rc 14 UNKNOWN_SESSION; rc 15 AGENT_RUNNING, not ready or
+-- COMMAND_INTERRUPTED; rc 16 AGENT_LIMIT or AGENT_DEPTH; rc 17 AGENT_SELF.
+-- Errors use {error_code, message}.
 --
 -- Conf: $MIXOS_AGENTD_CONF, else <etc>/agent.conf.mix (strict data):
 --   agents: {claude: {argv: [...], roots: ["/home/user/src"],
---     policy: "ask", permission_timeout_s: 300}}, max_live: 4
+--     policy: "ask", permission_timeout_s: 300}}, max_live: 4,
+--   log_keep_days: 30
+-- Log: $MIXOS_AGENTD_DB, else <var>/agentd/sessions.db (lib/log.mix). Every
+-- event and acting command is written there before it is published or run.
 
 $a = require("lib/agent.mix")
+$log = require("lib/log.mix")
 
 -- The stdin pipe builtins are new in mix 0.117.x (main 75eac3915). Refuse a
 -- mix without them with a clear message rather than a fault on first use.
@@ -60,17 +70,24 @@ $CONF_FILE = env("MIXOS_AGENTD_CONF", mixos_path("etc", "agent.conf.mix"))
 $CONF = $a.check_conf(load_data($CONF_FILE))
 $MCP_BIN = env("MIXOS_AGENTD_MCP", mixos_path("prefix", "bin/mixos-mcp"))
 $MAX_LINE = 16777216
-$EVENTS_KEPT = 2000
-$RING_BYTES = 33554432
+$READ_LIMIT = 2000
+$READ_BYTES = 33554432
 $TOPIC_MAX = 262144
 $SETS_MAX = 8
 $ENDED_KEPT = 32
 
+$DB = $log.open(env("MIXOS_AGENTD_DB", mixos_path("var", "agentd/sessions.db")))
+for each $id in $log.recover($DB, time())
+  eprint("agentd: " .. $id .. ": ended in the log (agentd restarted)")
+end
+$log.expire($DB, time() - $CONF.log_keep_days * 86400)
+
 -- One map holds everything; handlers run one at a time, so it is the only
 -- copy. sessions[id] = {id, agent, cwd, parent, sender, watch, acp, status,
--- seq, events, turn, queued, pending: {rpc -> {kind}}, perms: {key -> {..}},
--- created_at}. status: starting | ready | running | ended.
-$S = {sessions: {}, rpc: 0, notify: {}}
+-- seq, turn, queued, pending: {rpc -> {kind}}, perms: {key -> {..}},
+-- created_at}. status: starting | ready | running | ended. Events live in
+-- the log, not here. cmd is the acting command being answered, if any.
+$S = {sessions: {}, rpc: 0, notify: {}, cmd: nil}
 
 subscribe("notify.changed")
 
@@ -79,14 +96,23 @@ fn body()
   return {}
 end
 
+-- Reply, and record the reply as the receipt of the acting command.
+fn answer($rc, $json)
+  if $S.cmd != nil then
+    $log.command_done($DB, $S.cmd.scope, $S.cmd.id, $rc, $json)
+    $S.cmd = nil
+  end
+  reply($rc, $json)
+end
+
 fn fail($code, $message)
   $rc = 10
   if $code == "UNKNOWN_SESSION" then $rc = 14
-  elif contains(["AGENT_RUNNING", "AGENT_NOT_READY"], $code) then $rc = 15
+  elif contains(["AGENT_RUNNING", "AGENT_NOT_READY", "COMMAND_INTERRUPTED"], $code) then $rc = 15
   elif contains(["AGENT_LIMIT", "AGENT_DEPTH"], $code) then $rc = 16
   elif $code == "AGENT_SELF" then $rc = 17
   end
-  reply($rc, json_encode({error_code: $code, message: $message}))
+  answer($rc, json_encode({error_code: $code, message: $message}))
 end
 
 -- The broker-owned sender: from on local delivery, broker_service on mesh.
@@ -100,6 +126,38 @@ fn sender_session($from)
   $m = re_find($from, "^mcp-s-([a-z0-9]{4,12})-")
   if len($m) == 0 then return nil end
   return $m[0].groups[0]
+end
+
+-- Start an acting command: log it before it runs. $scope is the session
+-- id ("new" for agent.session.new); a command naming no valid session is
+-- not logged (it can only be refused). Returns false when it must not run,
+-- having replied already: a retry gets its first receipt.
+fn begin($command, $scope)
+  $S.cmd = nil
+  $id = body().id
+  if $id != nil and not $a.valid_command_id($id) then
+    fail("USAGE", "id must be 1-128 of [A-Za-z0-9._:-]")
+    return false
+  end
+  if $scope != "new" and not $a.valid_session_id($scope) then return true end
+  if $id != nil then
+    $row = $log.command_get($DB, $scope, $id)
+    if $row != nil then
+      if $row.command != $command then
+        fail("USAGE", "id " .. $id .. " was used for " .. $row.command)
+      elif $row.rc == nil then
+        fail("COMMAND_INTERRUPTED", "command " .. $id .. " was cut off before it replied; it is not run again")
+      else
+        reply($row.rc, $row.receipt)
+      end
+      return false
+    end
+  else
+    $id = "auto-" .. uuid()
+  end
+  $log.command_begin($DB, $scope, $id, $command, sender(), json_encode(body()), time())
+  $S.cmd = {scope: $scope, id: $id}
+  return true
 end
 
 fn live_count()
@@ -123,25 +181,14 @@ fn write_frame($id, $frame)
   return true
 end
 
--- Retain and publish one event. seq is strictly increasing per session.
+-- Log, then publish, one event. seq is strictly increasing per session.
 fn emit_event($id, $fields)
   $S.sessions[$id].seq = $S.sessions[$id].seq + 1
   $e = $fields
   $e.session = $id
   $e.seq = $S.sessions[$id].seq
   $wire = json_encode($e)
-  -- The ring is bounded by count and bytes; read serves it whole.
-  $events = concat($S.sessions[$id].events, [$e])
-  $sizes = concat($S.sessions[$id].sizes, [len($wire)])
-  $bytes = $S.sessions[$id].bytes + len($wire)
-  while len($events) > 1 and (len($events) > $EVENTS_KEPT or $bytes > $RING_BYTES)
-    $bytes = $bytes - $sizes[0]
-    $events = slice($events, 1)
-    $sizes = slice($sizes, 1)
-  end
-  $S.sessions[$id].events = $events
-  $S.sessions[$id].sizes = $sizes
-  $S.sessions[$id].bytes = $bytes
+  $log.append($DB, $id, $e.seq, $e.kind, $wire, time())
   -- Topics are notifications: a large event goes out as a marker, and the
   -- watcher reads the whole event back with agent.session.read.
   if len($wire) > $TOPIC_MAX then
@@ -170,8 +217,10 @@ fn session_for($args, $acting)
   return $id
 end
 
--- Drop old ended sessions so the map stays bounded.
+-- Drop old ended sessions so the map stays bounded (the log keeps them for
+-- log_keep_days), and expire the log.
 fn prune()
+  $log.expire($DB, time() - $CONF.log_keep_days * 86400)
   $ended = filter(keys($S.sessions), fn($k) = $S.sessions[$k].status == "ended")
   if len($ended) > $ENDED_KEPT then
     $ended = sort_by($ended, fn($k) = $S.sessions[$k].created_at)
@@ -195,7 +244,9 @@ end
 on agent.session.new desc "start an agent session {agent, cwd, mode?, additional_dirs?}; replies {session} at once"
   $from = sender()
   $parent = sender_session($from)
-  if $parent != nil and $S.sessions[$parent] != nil and $S.sessions[$parent].parent != nil then
+  if not begin("agent.session.new", "new") then
+    -- answered: a retry, or a bad id
+  elif $parent != nil and $S.sessions[$parent] != nil and $S.sessions[$parent].parent != nil then
     fail("AGENT_DEPTH", "a child session cannot start sessions")
   elif live_count() >= $CONF.max_live then
     fail("AGENT_LIMIT", "already " .. to_string(live_count()) .. " live sessions (max " .. to_string($CONF.max_live) .. ")")
@@ -204,6 +255,9 @@ on agent.session.new desc "start an agent session {agent, cwd, mode?, additional
       $req = $a.check_new($CONF, body())
       $c = $CONF.agents[$req.agent]
       $id = $a.mint_session_id($S.sessions)
+      while $log.known($DB, $id)
+        $id = $a.mint_session_id($S.sessions)
+      end
       $env = $c.env
       $env.MIXOS_AGENT_SESSION = $id
       -- lint: ignore MIX-E1102
@@ -211,13 +265,14 @@ on agent.session.new desc "start an agent session {agent, cwd, mode?, additional
         stderr: "lines", tag: $id, cwd: $req.cwd, env: $env})
       $S.sessions[$id] = {id: $id, agent: $req.agent, cwd: $req.cwd, dirs: $req.additional_dirs,
         mode: $req.mode, parent: $parent, sender: $from, watch: $watch, acp: nil,
-        status: "starting", seq: 0, events: [], sizes: [], bytes: 0, turn: nil, queued: nil, pending: {}, perms: {},
+        status: "starting", seq: 0, turn: nil, queued: nil, pending: {}, perms: {},
         created_at: now_iso(), stderr_tail: []}
+      $log.session_started($DB, $S.sessions[$id])
       $rpc = next_rpc()
       $S.sessions[$id].pending[to_string($rpc)] = {kind: "initialize"}
       write_frame($id, $a.initialize_frame($rpc))
       prune()
-      reply(0, json_encode({session: $id, status: "starting"}))
+      answer(0, json_encode({session: $id, status: "starting"}))
     catch $m, $err
       fail($err.code ?? "USAGE", $m)
     end
@@ -240,7 +295,8 @@ fn start_turn($id, $blocks)
 end
 
 on agent.session.prompt desc "send a prompt {session, content}; replies {session, turn}, the turn's events follow on agent.session.updated"
-  $id = session_for(body(), true)
+  $id = nil
+  if begin("agent.session.prompt", body().session) then $id = session_for(body(), true) end
   if $id != nil then
     $s = $S.sessions[$id]
     try
@@ -252,13 +308,13 @@ on agent.session.prompt desc "send a prompt {session, content}; replies {session
       elif $s.status == "starting" then
         -- Sent as soon as session/new answers.
         $S.sessions[$id].queued = $blocks
-        reply(0, json_encode({session: $id, turn: nil, queued: true}))
+        answer(0, json_encode({session: $id, turn: nil, queued: true}))
       else
         $turn = start_turn($id, $blocks)
         if $turn == nil then
           fail("AGENT_NOT_READY", "session " .. $id .. " did not accept the prompt (its stdin is closed or full)")
         else
-          reply(0, json_encode({session: $id, turn: $turn}))
+          answer(0, json_encode({session: $id, turn: $turn}))
         end
       end
     catch $m, $err
@@ -281,35 +337,38 @@ fn settle_all_permissions($id, $outcome_option)
 end
 
 on agent.session.cancel desc "cancel the running turn {session}; pending permission requests are answered cancelled"
-  $id = session_for(body(), true)
+  $id = nil
+  if begin("agent.session.cancel", body().session) then $id = session_for(body(), true) end
   if $id != nil then
     $s = $S.sessions[$id]
     if $s.status != "running" then
       $S.sessions[$id].queued = nil
-      reply(0, json_encode({session: $id, cancelled: false}))
+      answer(0, json_encode({session: $id, cancelled: false}))
     else
       -- ACP: a cancel must answer every pending permission request cancelled.
       settle_all_permissions($id, nil)
       $S.sessions[$id].cancelling = true
       write_frame($id, $a.cancel_frame($s.acp))
-      reply(0, json_encode({session: $id, cancelled: true}))
+      answer(0, json_encode({session: $id, cancelled: true}))
     end
   end
 end
 
 on agent.session.close desc "end the agent {session}: stdin closes, the process is reaped"
-  $id = session_for(body(), true)
+  $id = nil
+  if begin("agent.session.close", body().session) then $id = session_for(body(), true) end
   if $id != nil then
     if $S.sessions[$id].status != "ended" then
       settle_all_permissions($id, nil)
       pipe_close($S.sessions[$id].watch)
     end
-    reply(0, json_encode({session: $id, status: $S.sessions[$id].status}))
+    answer(0, json_encode({session: $id, status: $S.sessions[$id].status}))
   end
 end
 
 on agent.session.set desc "set {session, mode} or {session, option, value} (model and the rest are config options)"
-  $id = session_for(body(), true)
+  $id = nil
+  if begin("agent.session.set", body().session) then $id = session_for(body(), true) end
   if $id != nil then
     $s = $S.sessions[$id]
     $args = body()
@@ -322,33 +381,42 @@ on agent.session.set desc "set {session, mode} or {session, option, value} (mode
       $rpc = next_rpc()
       $S.sessions[$id].pending[to_string($rpc)] = {kind: "set"}
       write_frame($id, $a.set_mode_frame($rpc, $s.acp, $args.mode))
-      reply(0, json_encode({session: $id, mode: $args.mode}))
+      answer(0, json_encode({session: $id, mode: $args.mode}))
     elif type($args.option) == "string" and $args.value != nil then
       $rpc = next_rpc()
       $S.sessions[$id].pending[to_string($rpc)] = {kind: "set"}
       write_frame($id, $a.set_option_frame($rpc, $s.acp, $args.option, $args.value))
-      reply(0, json_encode({session: $id, option: $args.option}))
+      answer(0, json_encode({session: $id, option: $args.option}))
     else
       fail("USAGE", "set needs mode, or option and value")
     end
   end
 end
 
-on agent.session.list desc "live and recently ended sessions"
+on agent.session.list desc "live and recently ended sessions (ended ones from the log too)"
   $out = []
   for each $id in keys($S.sessions)
     push($out, view($S.sessions[$id]))
   end
+  $out = concat($out, $log.recent($DB, $ENDED_KEPT, $S.sessions))
   reply(0, json_encode({sessions: $out}))
 end
 
-on agent.session.read desc "a session and its retained events after seq {session, since?}"
-  $id = session_for(body(), false)
-  if $id != nil then
-    $since = body().since ?? 0
-    $events = filter($S.sessions[$id].events, fn($e) = $e.seq > $since)
-    reply(0, json_encode({session: view($S.sessions[$id]), events: $events,
-      stderr_tail: $S.sessions[$id].stderr_tail}))
+on agent.session.read desc "a session and its logged events after seq {session, since?, limit?}; more: true means read again from next"
+  $args = body()
+  $id = $args.session
+  $since = $args.since ?? 0
+  $limit = $args.limit ?? $READ_LIMIT
+  $live = if $a.valid_session_id($id) then $S.sessions[$id] else nil end
+  $v = if $live != nil then view($live) elif $a.valid_session_id($id) then $log.view($DB, $id) else nil end
+  if $v == nil then
+    fail("UNKNOWN_SESSION", "no session " .. to_string($id))
+  elif type($since) != "number" or $since < 0 or type($limit) != "number" or $limit < 1 or $limit > $READ_LIMIT then
+    fail("USAGE", "since must be a seq (0 or more) and limit 1 to " .. to_string($READ_LIMIT))
+  else
+    $r = $log.read($DB, $id, $since, floor($limit), $READ_BYTES)
+    reply(0, json_encode({session: $v, events: $r.events, more: $r.more, next: $r.next,
+      stderr_tail: if $live != nil then $live.stderr_tail else [] end}))
   end
 end
 
@@ -361,7 +429,8 @@ fn answer_permission($id, $key, $option)
 end
 
 on agent.permission.respond desc "answer a permission request {session, request, option}"
-  $id = session_for(body(), true)
+  $id = nil
+  if begin("agent.permission.respond", body().session) then $id = session_for(body(), true) end
   if $id != nil then
     $key = to_string(body().request)
     $p = $S.sessions[$id].perms[$key]
@@ -374,7 +443,7 @@ on agent.permission.respond desc "answer a permission request {session, request,
     else
       if $p.notify != nil then send notify notify.close body=json_encode({id: $p.notify}) timeout=5 end
       answer_permission($id, $key, body().option)
-      reply(0, json_encode({session: $id, request: $key, option: body().option}))
+      answer(0, json_encode({session: $id, request: $key, option: body().option}))
     end
   end
 end
@@ -515,6 +584,7 @@ on proc.watch_exited
     $S.sessions[$id].perms = {}
     $S.sessions[$id].status = "ended"
     $S.sessions[$id].turn = nil
+    $log.session_ended($DB, $id, $event.args.exit_code, $event.args.signal, $event.args.error_code, time())
     publish("agent.session.ended", json_encode({session: $id, exit_code: $event.args.exit_code,
       signal: $event.args.signal, error_code: $event.args.error_code}), {command: "agent.session.ended"})
   end
