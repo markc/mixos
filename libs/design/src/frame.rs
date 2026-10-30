@@ -203,26 +203,36 @@ pub fn shadow_pieces(
     let soft = (spec.softness * scale).round() as i32;
     let offset = (spec.offset_y * scale).round() as i32;
     let [w, h] = size.map(|v| v as i32);
-    // source x/y, width/height, destination x/y. Edge samples are far from
-    // the client's corners; its one-pixel centre strip stretches in KWin.
+    // Extend the inward tail against the offset as well. Otherwise the bottom
+    // corner stops short of the client's radius (entirely outside for Mac).
+    let top_height = c + (-offset).max(0);
+    let bottom_extra = offset.max(0);
+    let bottom_height = c + bottom_extra;
+    // source x, vertical slice (-1 top, 0 centre, 1 bottom), width/height,
+    // destination x/y. Repeat the dense centre row for each inward extension.
     let slices = [
-        (c, 0, 1, c, w / 2, -soft + offset),
-        (c + 1, 0, c, c, w + soft - c, -soft + offset),
-        (c + 1, c, c, 1, w + soft - c, h / 2),
-        (c + 1, c + 1, c, c, w + soft - c, h + soft + offset - c),
-        (c, c + 1, 1, c, w / 2, h + soft + offset - c),
-        (0, c + 1, c, c, -soft, h + soft + offset - c),
-        (0, c, c, 1, -soft, h / 2),
-        (0, 0, c, c, -soft, -soft + offset),
+        (c, -1, 1, top_height, w / 2, -soft + offset),
+        (c + 1, -1, c, top_height, w + soft - c, -soft + offset),
+        (c + 1, 0, c, 1, w + soft - c, h / 2),
+        (c + 1, 1, c, bottom_height, w + soft - c, h + soft + offset - bottom_height),
+        (c, 1, 1, bottom_height, w / 2, h + soft + offset - bottom_height),
+        (0, 1, c, bottom_height, -soft, h + soft + offset - bottom_height),
+        (0, 0, c, 1, -soft, h / 2),
+        (0, -1, c, top_height, -soft, -soft + offset),
     ];
     let pieces = slices
         .into_iter()
-        .map(|(sx, sy, width, height, dx, dy)| {
+        .map(|(sx, vertical, width, height, dx, dy)| {
             let mut argb = Vec::with_capacity((width * height * 4) as usize);
             for y in 0..height {
+                let sy = match vertical {
+                    -1 => y.min(c),
+                    0 => c,
+                    _ => (c + 1 + y - bottom_extra).max(c),
+                };
                 for x in 0..width {
                     let pixel =
-                        tile.pixels[((sy + y) as u32 * tile.size + (sx + x) as u32) as usize];
+                        tile.pixels[(sy as u32 * tile.size + (sx + x) as u32) as usize];
                     let cut = 1.0
                         - coverage(rounded_box(
                             (dx as f32 + x as f32 + 0.5, dy as f32 + y as f32 + 0.5),
@@ -262,8 +272,8 @@ mod tests {
                 let tiles = shadow_pieces(spec, radius, scale, true, [640, 480]);
                 let dim = ((spec.softness + radius) * scale).ceil() as i32;
                 assert_eq!((tiles.pieces[7].width, tiles.pieces[7].height), (dim, dim));
-                let alpha = |x: i32, y: i32| {
-                    let p = &tiles.pieces[7];
+                let alpha = |piece: usize, x: i32, y: i32| {
+                    let p = &tiles.pieces[piece];
                     u32::from_ne_bytes(
                         p.argb[((y * p.width + x) * 4) as usize..][..4]
                             .try_into()
@@ -272,12 +282,13 @@ mod tests {
                 };
                 let left = tiles.extents[0];
                 let top = tiles.extents[1];
-                assert!(
-                    alpha(left, top) > 0,
-                    "shadow fills the transparent window corner"
-                );
+                let right = dim - tiles.extents[2] - 1;
+                let bottom = tiles.pieces[5].height - tiles.extents[3] - 1;
+                for (piece, x, y) in [(7, left, top), (1, right, top), (3, right, bottom), (5, left, bottom)] {
+                    assert!(alpha(piece, x, y) > 0, "shadow fills corner {piece} for {style:?} at {scale}");
+                }
                 assert_eq!(
-                    alpha(dim - 1, dim - 1),
+                    alpha(7, dim - 1, dim - 1),
                     0,
                     "opaque client interior is cut out"
                 );
