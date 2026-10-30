@@ -267,9 +267,10 @@ mod linux {
             };
             crate::builtins::register_managed_pid(pid);
             let (stdin_shared, mut stdin_worker) = match stdin {
-                Some((state, kick, kicked, fd)) => {
-                    (Some((state.clone(), kick)), Some((state, Some(kicked), Some(fd))))
-                }
+                Some((state, kick, kicked, fd)) => (
+                    Some((state.clone(), kick)),
+                    Some((state, Some(kicked), Some(fd))),
+                ),
                 None => (None, None),
             };
             let mut room_wait = room_wait;

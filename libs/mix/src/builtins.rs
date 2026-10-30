@@ -6701,7 +6701,10 @@ pub(crate) fn process_watch_command(args: &[Value]) -> MixResult<ProcessWatchSpe
                 }
                 "stdin_buffer" => {
                     let Value::Number(n) = value else {
-                        return Err(opt_invalid(caller, "stdin_buffer must be a positive integer"));
+                        return Err(opt_invalid(
+                            caller,
+                            "stdin_buffer must be a positive integer",
+                        ));
                     };
                     stdin_buffer = as_count(caller, *n, PROCESS_STDIN_BUFFER_MAX)
                         .ok()

@@ -65,7 +65,13 @@ async fn written_lines_round_trip_and_close_gives_eof() {
     )
     .await
     .unwrap();
-    for (name, want) in [("a", true), ("b", true), ("c", true), ("d", false), ("f", false)] {
+    for (name, want) in [
+        ("a", true),
+        ("b", true),
+        ("c", true),
+        ("d", false),
+        ("f", false),
+    ] {
         assert_eq!(e.get_global(name), Some(Value::Bool(want)), "${name}");
     }
     // cat exits on EOF, so the pump ends with the terminal record.
