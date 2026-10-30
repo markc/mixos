@@ -158,9 +158,10 @@ against `max_live`, and like `new` it is refused to a session's own agent
 (`AGENT_SELF`) and to a child session (`AGENT_DEPTH`). An agent that offers
 neither method gets `AGENT_NOT_RESUMABLE` before anything starts. If the
 agent refuses (it no longer has the session) or exits first, the session
-goes back to ended exactly as it was, with a `resume_failed` event. After a
-load, replayed history is dropped until the session's next prompt, because
-Gemini CLI answers `session/load` first and replays after.
+goes back to ended exactly as it was, with a `resume_failed` event. Gemini
+CLI answers `session/load` first and replays after, so after a load the
+session stays `starting` (a prompt is queued) until the replay has been
+quiet for a second, and replayed history is dropped until then.
 
 agentd does not restore the mode or model (set them again) or a permission
 question that was open when the session ended (prompt again). Advertised

@@ -20,7 +20,8 @@
 --           a current mode update before answering
 --   refuse  advertise session/resume, then refuse it
 --   stubborn  ignore stdin EOF (keep running), as Gemini CLI does
-$caps_mode = if len(args()) > 0 then args()[0] else "" end
+-- Modes combine with commas (refuse,stubborn).
+$modes = if len(args()) > 0 then split(args()[0], ",") else [] end
 $sessions = {}
 $next_id = 900
 
@@ -58,18 +59,18 @@ end
 loop
   $line = readline()
   if $line == nil or $line == "" then
-    if $caps_mode == "stubborn" then sleep(120) end
+    if contains($modes, "stubborn") then sleep(120) end
     break
   end
   $m = json_parse($line)
   if $m.method == "initialize" then
-    $caps = {loadSession: $caps_mode == "load"}
-    if $caps_mode == "resume" or $caps_mode == "refuse" then $caps.sessionCapabilities = {resume: {}} end
+    $caps = {loadSession: contains($modes, "load")}
+    if contains($modes, "resume") or contains($modes, "refuse") then $caps.sessionCapabilities = {resume: {}} end
     out({id: $m.id, result: {protocolVersion: 1, agentInfo: {name: "fake-acp", version: "0"},
       agentCapabilities: $caps, authMethods: []}})
   elif $m.method == "session/resume" or $m.method == "session/load" then
     $sid = $m.params.sessionId
-    if $caps_mode == "refuse" then
+    if contains($modes, "refuse") then
       out({id: $m.id, error: {code: -32002, message: "Resource not found: session " .. to_string($sid)}})
     else
       $sessions[$sid] = {mcp: session_mcp($m.params), cwd: $m.params.cwd}
@@ -80,7 +81,10 @@ loop
       out({id: $m.id, result: {modes: {currentModeId: "plan",
         availableModes: [{id: "default", name: "Default"}, {id: "plan", name: "Plan"}]}}})
       -- Gemini CLI replays after its answer as well: so does this fake.
-      if $m.method == "session/load" then text($sid, "late history") end
+      if $m.method == "session/load" then
+        sleep(0.3)
+        text($sid, "late history")
+      end
     end
   elif $m.method == "session/new" then
     $sid = "fake-" .. to_string(len(keys($sessions)) + 1)

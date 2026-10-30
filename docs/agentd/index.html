@@ -385,9 +385,10 @@ against <code>max_live</code>, and like <code>new</code> it is refused to a sess
 (<code>AGENT_SELF</code>) and to a child session (<code>AGENT_DEPTH</code>). An agent that offers
 neither method gets <code>AGENT_NOT_RESUMABLE</code> before anything starts. If the
 agent refuses (it no longer has the session) or exits first, the session
-goes back to ended exactly as it was, with a <code>resume_failed</code> event. After a
-load, replayed history is dropped until the session's next prompt, because
-Gemini CLI answers <code>session/load</code> first and replays after.</p>
+goes back to ended exactly as it was, with a <code>resume_failed</code> event. Gemini
+CLI answers <code>session/load</code> first and replays after, so after a load the
+session stays <code>starting</code> (a prompt is queued) until the replay has been
+quiet for a second, and replayed history is dropped until then.</p>
 <p>agentd does not restore the mode or model (set them again) or a permission
 question that was open when the session ended (prompt again). Advertised
 at <code>initialize</code>: Claude, OpenCode and Codex offer <code>session/resume</code>; Gemini

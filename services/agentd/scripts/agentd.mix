@@ -73,6 +73,16 @@ fn term_stop($watch)
   return process_unwatch($watch)
 end
 
+-- End a session's agent: close its stdin, and stop it if it is still
+-- running after the close grace (Gemini CLI does not exit at stdin EOF).
+-- Every path that ends an agent goes through here.
+fn end_agent($id)
+  pipe_close($S.sessions[$id].watch)
+  $token = uuid()
+  $S.sessions[$id].closing = $token
+  task_start("agent.close_grace", json_encode({session: $id, token: $token}))
+end
+
 fn pipe_close($watch)
   -- lint: ignore MIX-E1102
   return process_close_stdin($watch)
@@ -332,7 +342,7 @@ on agent.session.new desc "start an agent session {agent, cwd, mode?, additional
         end
       elif $S.sessions[$id] != nil and $S.sessions[$id].status != "ended" then
         -- Started, then something failed: no caller holds the session, so end it.
-        pipe_close($S.sessions[$id].watch)
+        end_agent($id)
       end
       fail($err.code ?? "USAGE", $m)
     end
@@ -380,11 +390,50 @@ on agent.session.resume desc "bring back an ended session {session}: same id and
           elif not $S.sessions[$id].reopen.done then
             -- Started, then the reply failed: end it, and the exit restores
             -- the ended row (as agent.session.new does).
-            pipe_close($S.sessions[$id].watch)
+            end_agent($id)
           end
           fail($err.code ?? "USAGE", $m)
         end
       end
+    end
+  end
+end
+
+-- A reopened session is ready: stop dropping replay, run a queued prompt.
+fn session_ready($id)
+  $S.sessions[$id].status = "ready"
+  $S.sessions[$id].replaying = false
+  if $S.sessions[$id].queued != nil then
+    $blocks = $S.sessions[$id].queued
+    $S.sessions[$id].queued = nil
+    start_turn($id, $blocks)
+  end
+end
+
+-- The load settle: re-armed while replay keeps arriving, at most
+-- $SETTLE_MAX times, then the session is ready either way.
+$SETTLE_S = to_number(env("MIXOS_AGENTD_SETTLE_S", "1"))
+$SETTLE_MAX = 30
+
+fn load_settle_arm($id, $round)
+  $token = uuid()
+  $S.sessions[$id].settling = $token
+  task_start("agent.load_settle", json_encode({session: $id, token: $token, round: $round}))
+end
+
+on agent.load_settle async
+  sleep($SETTLE_S)
+end
+
+on agent.load_settle
+  $id = to_string(body().session)
+  $s = $S.sessions[$id]
+  if $s != nil and $s.status == "starting" and $s.settling != nil and $s.settling == body().token then
+    $round = body().round ?? 0
+    if time() - ($s.last_replay ?? 0) < $SETTLE_S and $round < $SETTLE_MAX then
+      load_settle_arm($id, $round + 1)
+    else
+      session_ready($id)
     end
   end
 end
@@ -471,12 +520,7 @@ on agent.session.close desc "end the agent {session}: stdin closes, the process 
   if $id != nil then
     if $S.sessions[$id].status != "ended" then
       settle_all_permissions($id, nil)
-      pipe_close($S.sessions[$id].watch)
-      -- Some agents (Gemini CLI) do not exit at stdin EOF. After a grace
-      -- period, a session still closing is stopped (agent.close_grace).
-      $token = uuid()
-      $S.sessions[$id].closing = $token
-      task_start("agent.close_grace", json_encode({session: $id, token: $token}))
+      end_agent($id)
     end
     answer(0, json_encode({session: $id, status: $S.sessions[$id].status}))
   end
@@ -579,10 +623,10 @@ fn on_reply($id, $msg)
       -- The agent would not take its session back (pruned history, or an
       -- id format it no longer knows). The exit restores the ended row.
       $S.sessions[$id].reopen.error = $msg.error
-      pipe_close($S.sessions[$id].watch)
+      end_agent($id)
     elif $p.kind == "initialize" or $p.kind == "new" then
       -- No session to work with: end the agent.
-      pipe_close($S.sessions[$id].watch)
+      end_agent($id)
     elif $p.kind == "prompt" then
       $S.sessions[$id].status = "ready"
       $S.sessions[$id].turn = nil
@@ -608,22 +652,22 @@ fn on_reply($id, $msg)
     emit_event($id, {kind: "initialized", agent_info: $res.agentInfo, protocol: $res.protocolVersion})
   elif $p.kind == "reopen" then
     $S.sessions[$id].acp = $S.sessions[$id].reopen.acp
-    $S.sessions[$id].status = "ready"
-    -- A load stays in replay until the next prompt: Gemini CLI answers
-    -- session/load first and replays after, and an idle agent sends no
-    -- messages or tool calls of its own.
     $S.sessions[$id].reopen.done = true
     $log.session_agent($DB, $id, $S.sessions[$id].acp, $S.sessions[$id].dirs, $S.sessions[$id].caps, $S.sessions[$id].agent_info)
     emit_event($id, {kind: "resumed", via: $S.sessions[$id].reopen.via, agent_info: $S.sessions[$id].agent_info,
       capabilities: $S.sessions[$id].caps, modes: $res.modes, config_options: $res.configOptions, models: $res.models})
-    if $S.sessions[$id].queued != nil then
-      $blocks = $S.sessions[$id].queued
-      $S.sessions[$id].queued = nil
-      start_turn($id, $blocks)
+    if $S.sessions[$id].reopen.via == "load" then
+      -- Gemini CLI answers session/load first and replays after. The session
+      -- stays "starting" (prompts queue) until the replay has been quiet
+      -- for a moment (agent.load_settle), so no replay lands in a new turn.
+      $S.sessions[$id].last_replay = time()
+      load_settle_arm($id, 0)
+    else
+      session_ready($id)
     end
   elif $p.kind == "new" and type($res.sessionId) != "string" then
     emit_event($id, {kind: "error", during: "new", error: {message: "session/new returned no sessionId"}})
-    pipe_close($S.sessions[$id].watch)
+    end_agent($id)
   elif $p.kind == "new" then
     $S.sessions[$id].acp = $res.sessionId
     $S.sessions[$id].status = "ready"
@@ -852,7 +896,11 @@ on proc.line
       elif $c.kind == "update" then
         $ev = $a.update_event($id, 0, $c.update)
         -- A load replays history the log already holds: drop that part.
-        if not ($S.sessions[$id].replaying and $a.is_replayed_kind($ev.kind)) then emit_event($id, $ev) end
+        if $S.sessions[$id].replaying and $a.is_replayed_kind($ev.kind) then
+          $S.sessions[$id].last_replay = time()
+        else
+          emit_event($id, $ev)
+        end
       elif $c.kind == "request" then
         on_request($id, $c)
       elif $c.kind == "invalid" then

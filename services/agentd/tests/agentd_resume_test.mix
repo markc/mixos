@@ -104,12 +104,13 @@ mkdir($tmp .. "/ws", {parents: true})
 try
   $bus = $pb.start({dir: $tmp .. "/bus", name: "agentd-resume", noded: $noded})
   $env = merge($pb.client_env($bus), {HOME: $tmp .. "/home", MIXOS_NOTIFYD_STATE: $tmp .. "/notify.json"})
-  $conf = {max_live: 3, agents: {
+  $conf = {max_live: 4, agents: {
     resumer: {argv: [$mix, $fake, "resume"], roots: [$tmp .. "/ws"]},
     loader: {argv: [$mix, $fake, "load"], roots: [$tmp .. "/ws"]},
     refuser: {argv: [$mix, $fake, "refuse"], roots: [$tmp .. "/ws"]},
     plain: {argv: [$mix, $fake], roots: [$tmp .. "/ws"]},
-    stubborn: {argv: [$mix, $fake, "stubborn"], roots: [$tmp .. "/ws"]}}}
+    stubborn: {argv: [$mix, $fake, "stubborn"], roots: [$tmp .. "/ws"]},
+    refuse_stubborn: {argv: [$mix, $fake, "refuse,stubborn"], roots: [$tmp .. "/ws"]}}}
   write_file($tmp .. "/agent.conf.mix", data_encode($conf))
   push($pids, citizen($listener, "agentlisten", merge($env, {AGENT_EVENTS: $tmp .. "/events"}), "listener.log"))
   push($pids, citizen($notifyd, "notify", $env, "notifyd.log"))
@@ -148,7 +149,12 @@ try
   close_and_wait($l)
   $lr = agent("agent.session.resume", {session: $l})
   check("resume falls back to session/load", $lr.rc == 0 and $lr.v.via == "load")
+  -- Prompt at once: it must queue until the replay (sent after the load
+  -- reply, as Gemini does) has gone quiet.
+  $lp = agent("agent.session.prompt", {session: $l, content: "after load"})
+  check("a prompt sent straight after resume is queued", $lp.rc == 0 and $lp.v.queued == true)
   check("the loaded session comes back", saw("updated " .. $l .. " ", " resumed "))
+  check("and the queued prompt runs", saw("updated " .. $l .. " ", "echo:after load"))
   check("replayed history is not logged again",
     len(filter(logged($l, "agent_message_chunk"), fn($e) = $e.update.content.text == "old history" or $e.update.content.text == "late history")) == 0)
   check("a current-state update during the load is kept", len(logged($l, "current_mode_update")) == 1)
@@ -167,6 +173,13 @@ try
     $after.status == "ended" and $after.exit_code == $before.exit_code and $after.end_reason == $before.end_reason)
   $rf = logged($f, "resume_failed")
   check("the failure names AGENT_NOT_RESUMABLE", len($rf) == 1 and $rf[0].error_code == "AGENT_NOT_RESUMABLE")
+
+  -- Refused by an agent that also ignores EOF: still back to ended.
+  $fs = start("refuse_stubborn")
+  close_and_wait($fs)
+  agent("agent.session.resume", {session: $fs})
+  check("a refused resume of an agent that ignores EOF still ends", saw("updated " .. $fs .. " ", " resume_failed "))
+  check("and the session is ended again", agent("agent.session.read", {session: $fs, since: 0}).v.session.status == "ended")
 
   -- Neither offered: refused before anything starts.
   $p = start("plain")
