@@ -599,17 +599,19 @@ impl Painter {
         let frame_key = egui::Id::unique(("egui-wgpu.window-frame", viewport_id));
         let frame = self
             .context
-            .data_mut(|data| data.remove_temp::<(f32, f32, [f32; 4])>(frame_key));
-        let clear_color = if frame.is_some() {
-            [0.0; 4]
-        } else {
-            clear_color
-        };
+            .data_mut(|data| data.remove_temp::<(f32, f32, [f32; 4], [f32; 4])>(frame_key));
         let alpha_key = egui::Id::unique(("egui-wgpu.transparent", viewport_id));
         let transparent = self
             .context
             .data(|data| data.get_temp::<bool>(alpha_key))
             .unwrap_or(self.support_transparent_backbuffer && offscreen);
+        // An opaque foundation covers gaps between panels too. Only the final
+        // corner mask may remove its alpha. Preserve the old clear otherwise.
+        let clear_color = match frame {
+            Some((radius, _, _, [r, g, b, _])) if transparent && radius > 0.0 => [r, g, b, 1.0],
+            Some(_) => [0.0; 4],
+            None => clear_color,
+        };
         if frame.is_some_and(|f| f.0 > 0.0) && !transparent {
             let logged = egui::Id::unique(("egui-wgpu.opaque-frame-logged", viewport_id));
             let first = self.context.data_mut(|data| {
@@ -869,7 +871,7 @@ impl Painter {
                     &mut encoder,
                     &target_view,
                     size,
-                    request,
+                    (request.0, request.1, request.2),
                 );
             }
 

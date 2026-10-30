@@ -51,9 +51,14 @@ once upstream provides the same surface-independent paint path.
 
 `src/window_frame.rs` and `.wgsl` implement an opt-in final pass on the
 resolved target, after all egui painting and before capture/presentation.
-Toolkit sets `(radius_px, border_width_px, straight_srgba)` under the
+Toolkit sets `(radius_px, border_width_px, straight_srgba, chrome_fill_srgba)` under the
 viewport-scoped temporary ID `("egui-wgpu.window-frame", viewport_id)` each
-pass. The painter consumes it once. This also opts into a transparent clear.
+pass. The painter consumes it once. When rounding is active on an alpha-capable
+surface, it clears with the toolkit's title-bar chrome fill and forces alpha 1.
+Unpainted panel gaps therefore stay opaque; only the corner mask removes alpha.
+The previous clear behaviour is retained for radius zero, opaque-only surfaces,
+and callers without a frame request. This is central in the painter, with no
+changes to the apps' `App::clear_color` methods.
 The hairline uses the shared compd frame colours. The mask touches only the
 four corner squares and multiplies destination colour and alpha with
 `src=Zero, dst=SrcAlpha`; neither panel frames nor MSAA attachments need changes.
@@ -65,7 +70,10 @@ mask when maximised/fullscreen. Offscreen capture applies the same pass when
 the viewport supports alpha, before its GPU readback copy.
 
 Guards: toolkit's `window_frame_patch` and `window_frame` unit tests, and
-`rounded_native_frame_masks_the_resolved_target_and_handles_opaque_fallback`
+`rounded_native_frame_fills_unpainted_gaps_and_masks_only_corners`
 in the existing headless GPU suite. The GPU test checks both RGBA/BGRA, scales
 1 and 2, antialiasing, premultiplication, border pixels, opaque fallback,
-radius-zero restore, and viewport isolation. No dependencies were added.
+radius-zero restore, viewport isolation, and an unpainted central gap whose
+pixels match the opaque fill while the corner cuts have zero alpha. It also
+checks that disabled/unsupported rounding and unregistered callers retain their
+previous clear. No dependencies were added.

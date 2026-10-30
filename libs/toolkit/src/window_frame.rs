@@ -38,11 +38,14 @@ impl Plugin for WindowFrame {
             ctx.send_viewport_cmd(ViewportCommand::Transparent(true));
             ctx.data_mut(|d| d.insert_temp(init, true));
         }
-        let frame = crate::chrome::Chrome::of(ctx).frame;
+        let chrome = crate::chrome::Chrome::of(ctx);
+        let frame = chrome.frame;
+        let [r, g, b, _] = chrome.palette.chrome.to_srgba_unmultiplied();
+        let fill = egui::Color32::from_rgb(r, g, b).to_normalized_gamma_f32();
         let focused = ctx.input(|i| i.viewport().focused.unwrap_or(i.focused));
         let scale = ctx.input(|i| i.viewport().native_pixels_per_point.unwrap_or(1.0));
         let active = rounded(ctx);
-        let client = crate::chrome::Chrome::of(ctx).decorations == design::Decorations::Client
+        let client = chrome.decorations == design::Decorations::Client
             && !ctx.input(|i| i.viewport().fullscreen.unwrap_or(false));
         let key = Id::unique(("egui-wgpu.window-frame", viewport));
         let request = if client {
@@ -58,9 +61,10 @@ impl Plugin for WindowFrame {
                 } else {
                     frame.border_unfocused
                 },
+                fill,
             )
         } else {
-            (0.0_f32, 0.0_f32, [0.0_f32; 4])
+            (0.0_f32, 0.0_f32, [0.0_f32; 4], fill)
         };
         ctx.data_mut(|d| d.insert_temp(key, request));
     }
@@ -96,10 +100,13 @@ mod tests {
             let mut output = ctx.run_ui(input, |_| {});
             output.textures_delta.clear();
             let value = ctx
-                .data_mut(|d| d.remove_temp::<(f32, f32, [f32; 4])>(request))
+                .data_mut(|d| d.remove_temp::<(f32, f32, [f32; 4], [f32; 4])>(request))
                 .unwrap();
             assert_eq!(value.0 > 0.0, expected);
             assert_eq!(radius(&ctx, frame) > 0.0, expected);
+            let [r, g, b, _] = crate::chrome::Chrome::of(&ctx).palette.chrome.to_srgba_unmultiplied();
+            assert_eq!(value.3, egui::Color32::from_rgb(r, g, b).to_normalized_gamma_f32());
+            assert_eq!(value.3[3], 1.0);
         }
     }
 }

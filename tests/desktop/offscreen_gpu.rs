@@ -162,9 +162,10 @@ fn hidden_window_capture_without_surface() {
 }
 
 /// The real GPU pass must cut all panels, preserve premultiplied colour, draw
-/// the border, and consume only this viewport's one-shot request.
+/// the border, fill unpainted gaps opaquely, and consume only this viewport's
+/// one-shot request. Disabled rounding retains the previous clear behaviour.
 #[test]
-fn rounded_native_frame_masks_the_resolved_target_and_handles_opaque_fallback() {
+fn rounded_native_frame_fills_unpainted_gaps_and_masks_only_corners() {
     let config = WgpuConfiguration {
         wgpu_setup: crate::WgpuSetup::CreateNew(crate::WgpuSetupCreateNew::without_display_handle()),
         ..Default::default()
@@ -183,6 +184,7 @@ fn rounded_native_frame_masks_the_resolved_target_and_handles_opaque_fallback() 
     );
     let key = egui::Id::unique(("egui-wgpu.window-frame", ViewportId::ROOT));
     let alpha_key = egui::Id::unique(("egui-wgpu.transparent", ViewportId::ROOT));
+    let fill = egui::Color32::from_rgb(37, 73, 109);
     for format in [
         wgpu::TextureFormat::Rgba8Unorm,
         wgpu::TextureFormat::Bgra8Unorm,
@@ -198,7 +200,7 @@ fn rounded_native_frame_masks_the_resolved_target_and_handles_opaque_fallback() 
         painter.context = ctx.clone();
         for scale in [1, 2] {
             let size = [67 * scale, 31 * scale];
-            for (rounded, transparent) in [(true, true), (false, true), (true, false)] {
+            for (present, rounded, transparent) in [(true, true, true), (true, false, true), (true, true, false), (false, false, true)] {
                 let mut output = ctx.run_ui(
                     egui::RawInput {
                         screen_rect: Some(egui::Rect::from_min_size(
@@ -208,19 +210,28 @@ fn rounded_native_frame_masks_the_resolved_target_and_handles_opaque_fallback() 
                         ..Default::default()
                     },
                     |ui| {
-                        ui.painter()
-                            .rect_filled(ui.ctx().content_rect(), 0.0, egui::Color32::BLUE);
+                        for (left, right) in [(0.0, 20.0), (47.0, 67.0)] {
+                            ui.painter().rect_filled(
+                                egui::Rect::from_min_max(egui::pos2(left, 0.0), egui::pos2(right, 31.0)),
+                                0.0,
+                                egui::Color32::BLUE,
+                            );
+                        }
                     },
                 );
-                let request = if rounded {
+                let (radius, border, colour) = if rounded {
                     (10.0 * scale as f32, scale as f32, [1.0, 0.0, 0.0, 1.0])
                 } else {
                     (0.0, 0.0, [0.0; 4])
                 };
+                // Even an accidentally translucent bridge fill must become
+                // opaque; transparency is confined to the masked corners.
+                let [r, g, b, _] = fill.to_normalized_gamma_f32();
+                let request = (radius, border, colour, [r, g, b, 0.25]);
                 let child =
                     egui::Id::unique(("egui-wgpu.window-frame", ViewportId::from_hash_of("child")));
                 ctx.data_mut(|data| {
-                    data.insert_temp(key, request);
+                    if present { data.insert_temp(key, request); }
                     data.insert_temp(child, request);
                     data.insert_temp(alpha_key, transparent);
                 });
@@ -242,9 +253,10 @@ fn rounded_native_frame_masks_the_resolved_target_and_handles_opaque_fallback() 
                     .expect("GPU corner readback");
                 assert_eq!(
                     image[(33 * scale as usize, 15 * scale as usize)],
-                    egui::Color32::BLUE,
-                    "format={format:?} scale={scale} rounded={rounded} transparent={transparent}"
+                    if rounded && transparent { fill } else if present { egui::Color32::TRANSPARENT } else { egui::Color32::GREEN },
+                    "unpainted gap: format={format:?} scale={scale} present={present} rounded={rounded} transparent={transparent}"
                 );
+                assert_eq!(image[(10 * scale as usize, 15 * scale as usize)], egui::Color32::BLUE);
                 if rounded && transparent {
                     for (x, y) in [
                         (0, 0),
@@ -269,6 +281,11 @@ fn rounded_native_frame_masks_the_resolved_target_and_handles_opaque_fallback() 
                             .iter()
                             .all(|c| c.r() <= c.a() && c.g() <= c.a() && c.b() <= c.a())
                     );
+                    for y in 10 * scale..size[1] - 10 * scale {
+                        for x in 10 * scale..size[0] - 10 * scale {
+                            assert_eq!(image[(x as usize, y as usize)].a(), 255, "the interior stays opaque");
+                        }
+                    }
                     if format == wgpu::TextureFormat::Bgra8Unorm
                         && scale == 2
                         && let Some(path) = std::env::var_os("MIXOS_FRAME_PREVIEW")
@@ -300,11 +317,11 @@ fn rounded_native_frame_masks_the_resolved_target_and_handles_opaque_fallback() 
                     );
                 }
                 assert_eq!(
-                    ctx.data(|data| data.get_temp::<(f32, f32, [f32; 4])>(key)),
+                    ctx.data(|data| data.get_temp::<(f32, f32, [f32; 4], [f32; 4])>(key)),
                     None
                 );
                 assert_eq!(
-                    ctx.data(|data| data.get_temp::<(f32, f32, [f32; 4])>(child)),
+                    ctx.data(|data| data.get_temp::<(f32, f32, [f32; 4], [f32; 4])>(child)),
                     Some(request)
                 );
             }
