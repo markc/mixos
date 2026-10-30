@@ -3,6 +3,9 @@
 `shadow.xml` is copied unchanged from KDE plasma-wayland-protocols:
 https://invent.kde.org/libraries/plasma-wayland-protocols/-/blob/master/src/protocols/shadow.xml
 
+Upstream revision: `1db07441870d54157e937674b99380a7dcc0fb32`.
+XML SHA-256: `3796bbc8d922df764dbee8ff147c3b945c023469d92695c0d59eabe39793afaa`.
+
 Copyright 2015 Martin Gräßlin, LGPL-2.1-or-later (header preserved).
 The licence text is in `LICENSE.LGPL-2.1`.
 This protocol-only file is used by wayland-scanner to describe KWin's wire

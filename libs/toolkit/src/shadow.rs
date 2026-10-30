@@ -122,8 +122,16 @@ fn tiles(shadow: egui::epaint::Shadow, scale: f32) -> Tiles {
                             (coordinate as f32 - offset - spread).max(0.0)
                         }
                     };
-                    let dx = if horizontal != 0 { distance(x, ox, horizontal) } else { 0.0 };
-                    let dy = if vertical != 0 { distance(y, oy, vertical) } else { 0.0 };
+                    let dx = if horizontal != 0 {
+                        distance(x, ox, horizontal)
+                    } else {
+                        0.0
+                    };
+                    let dy = if vertical != 0 {
+                        distance(y, oy, vertical)
+                    } else {
+                        0.0
+                    };
                     let sigma = radius / 3.0;
                     let a = (f32::from(colour[3])
                         * (-(dx * dx + dy * dy) / (2.0 * sigma * sigma)).exp())
@@ -384,7 +392,12 @@ mod tests {
         // At each corner/edge seam the extra axis is at the window boundary.
         assert!(alpha(0, 0, 10).abs_diff(alpha(1, 0, 10)) <= 1);
         assert!(alpha(4, 0, 10).abs_diff(alpha(3, 0, 10)) <= 1);
-        for (corner, edge, row) in [(1, 2, a.images[1].1 - 1), (3, 2, 0), (5, 6, 0), (7, 6, a.images[7].1 - 1)] {
+        for (corner, edge, row) in [
+            (1, 2, a.images[1].1 - 1),
+            (3, 2, 0),
+            (5, 6, 0),
+            (7, 6, a.images[7].1 - 1),
+        ] {
             for x in 0..a.images[corner].0 {
                 assert_eq!(alpha(corner, x, row), alpha(edge, x, 0));
             }
