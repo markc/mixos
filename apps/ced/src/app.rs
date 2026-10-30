@@ -149,12 +149,10 @@ pub enum Dialog {
     Recovered {
         rows: Vec<RecoveredRow>,
     },
-    Keys {
-        token: u64,
-    },
-    About {
-        token: u64,
-    },
+    /// Informational: its Bus action answered when it opened (F6, 2026-10-30).
+    Keys,
+    /// Informational: its Bus action answered when it opened (F6, 2026-10-30).
+    About,
 }
 
 impl Dialog {
@@ -163,9 +161,7 @@ impl Dialog {
         match self {
             Dialog::Open { token, .. }
             | Dialog::SaveAs { token, .. }
-            | Dialog::Goto { token, .. }
-            | Dialog::Keys { token }
-            | Dialog::About { token } => Some(*token),
+            | Dialog::Goto { token, .. } => Some(*token),
             _ => None,
         }
     }
@@ -771,13 +767,13 @@ impl App {
                 self.ui.macros_open = !self.ui.macros_open;
                 self.done(token, ok())
             }
-            HelpKeys => {
-                self.show(Dialog::Keys { token });
-                Vec::new()
-            }
-            HelpAbout => {
-                self.show(Dialog::About { token });
-                Vec::new()
+            // Informational dialogs answer when they open: a caller has no reason
+            // to wait for a person to close them (F6 ruling, 2026-10-30). Input
+            // dialogs keep their token and answer with the result.
+            HelpKeys | HelpAbout => {
+                let queued = self.dialog.is_some();
+                self.show(if matches!(action, HelpKeys) { Dialog::Keys } else { Dialog::About });
+                self.done(token, Ok(json!({"opened": true, "queued": queued})))
             }
             _ => self.done(token, ok()),
         }
@@ -954,9 +950,7 @@ impl App {
                 | Dialog::Goto { token, .. },
                 _,
             ) => self.done(token, Err(Self::refused(code::CONFLICT, "cancelled"))),
-            (Dialog::Keys { token } | Dialog::About { token }, _) => {
-                self.done(token, Ok(json!({})))
-            }
+            (Dialog::Keys | Dialog::About, _) => Vec::new(),
             (Dialog::CloseDirty { tab, intent }, Answer::Accept) => self.ctl.on_action_args(
                 Some(tab),
                 ActionId::FileClose,
@@ -1329,7 +1323,7 @@ mod tests {
             assert!(!a.sync_view_hints());
             assert_eq!(a.hint_syncs, syncs, "idle frames do not reach the writes");
         }
-        a.dialog = Some(Dialog::About { token: 0 });
+        a.dialog = Some(Dialog::About);
         assert!(a.sync_view_hints());
         assert!(!a.sync_view_hints());
         a.dialog = None;
@@ -1338,9 +1332,74 @@ mod tests {
     }
 
     #[test]
+    fn informational_dialogs_answer_when_they_open_and_closing_answers_nothing() {
+        for (id, is_keys) in [("help.about", false), ("help.keys", true)] {
+            let (mut a, mut service, _, _) = documents();
+            let (rc, body) = bus(&mut a, &mut service, "ced.execute", json!({"id": id}));
+            assert_eq!(rc, 0, "{id}");
+            assert_eq!(body["opened"], true, "{id}");
+            assert_eq!(body["queued"], false, "{id}");
+            assert!(match a.dialog {
+                Some(Dialog::Keys) => is_keys,
+                Some(Dialog::About) => !is_keys,
+                _ => false,
+            });
+            // Closing it later must not answer a second time.
+            a.answer(Answer::Accept);
+            assert!(a.dialog.is_none());
+            assert!(
+                settle(&mut a, &mut service)
+                    .into_iter()
+                    .all(|effect| !matches!(effect, Effect::Respond { .. })),
+                "{id}: closing answered again"
+            );
+        }
+    }
+
+    #[test]
+    fn an_input_dialog_that_outlives_its_caller_answers_once_with_timeout() {
+        use editor_model::types::Incoming;
+        let (mut a, mut service, one, _) = documents();
+        let fx = a.ctl.on_bus_command(documents::controller::BusCommand {
+            id: 9,
+            command: "ced.execute".into(),
+            body: json!({"id": "search.goto_line", "params": {"tab": one}}).to_string(),
+            caller_key: "local:test".into(),
+        });
+        let deadline = fx.iter().find_map(|effect| match effect {
+            Effect::Timer { id, .. } => Some(*id),
+            _ => None,
+        });
+        a.absorb(fx);
+        assert!(settle(&mut a, &mut service).is_empty(), "waits for the window");
+        assert!(matches!(a.dialog, Some(Dialog::Goto { .. })));
+        // The caller's deadline passes before anyone answers the dialog.
+        let fx = a.ctl.on_incoming(Incoming::Timer {
+            id: deadline.expect("a UI deadline timer"),
+        });
+        let timeouts = fx
+            .iter()
+            .filter(|effect| matches!(effect, Effect::Respond { rc: 10, body, .. } if body.contains("TIMEOUT")))
+            .count();
+        assert_eq!(timeouts, 1);
+        a.absorb(fx);
+        settle(&mut a, &mut service);
+        // The person finishes it later: the line is gone to, nobody is answered again.
+        if let Some(Dialog::Goto { text, .. }) = a.dialog.as_mut() {
+            *text = "1".into();
+        }
+        a.answer(Answer::Accept);
+        assert!(a.dialog.is_none());
+        assert!(
+            settle(&mut a, &mut service).is_empty(),
+            "a late completion answered the timed-out caller"
+        );
+    }
+
+    #[test]
     fn older_bus_actions_keep_their_enablement_with_a_window_and_dialog() {
         let (mut a, mut service, _, _) = documents();
-        for dialog in [None, Some(Dialog::About { token: 0 })] {
+        for dialog in [None, Some(Dialog::About)] {
             a.dialog = dialog;
             let actions = bus(&mut a, &mut service, "ced.actions", json!({})).1;
             for row in actions["actions"].as_array().unwrap() {
@@ -1503,7 +1562,7 @@ mod tests {
     #[test]
     fn prompts_wait_behind_an_open_dialog() {
         let mut a = app();
-        a.dialog = Some(Dialog::About { token: 0 });
+        a.dialog = Some(Dialog::About);
         a.prompt(Prompt::Recovered {
             buffers: vec![RecoveredRow {
                 buffer: "b1".into(),
@@ -1520,7 +1579,7 @@ mod tests {
     #[test]
     fn dialogs_for_a_missing_document_are_never_shown() {
         let mut a = app();
-        a.dialog = Some(Dialog::About { token: 0 });
+        a.dialog = Some(Dialog::About);
         a.queued.push_back(Dialog::Goto {
             tab: 42,
             text: String::new(),
