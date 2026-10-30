@@ -109,16 +109,48 @@ async fn finish_connect(
     }
 }
 
+/// The environment variable an agent gateway sets on agents it runs. A bridge
+/// started by such an agent registers under a name that carries the session,
+/// so the gateway can recognise its own agents calling back over the Bus.
+pub(crate) const AGENT_SESSION_ENV: &str = "MIXOS_AGENT_SESSION";
+
+/// The Bus name for this bridge. With a valid agent session (4-12 lowercase
+/// letters or digits) it is `mcp-s-<session>-<pid hex>`: within noded's
+/// 31-byte service-name rule, unique per process, and matched by prefix
+/// `mcp-s-<session>-`. Otherwise, including an invalid session, it is the
+/// anonymous `mcp-<pid>-<nonce>`; the invalid value is reported, not used.
+pub(crate) fn broker_name(session: Option<&str>, pid: u32, nonce: u128) -> (String, Option<String>) {
+    match session {
+        Some(s) if (4..=12).contains(&s.len())
+            && s.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit()) =>
+        {
+            (format!("mcp-s-{s}-{pid:x}"), None)
+        }
+        Some(s) => (
+            format!("mcp-{pid}-{nonce:x}"),
+            Some(format!(
+                "ignoring {AGENT_SESSION_ENV}={s:?}: a session is 4-12 lowercase letters or digits"
+            )),
+        ),
+        None => (format!("mcp-{pid}-{nonce:x}"), None),
+    }
+}
+
 impl BrokerConnection {
     pub(crate) fn new() -> Self {
         let nonce = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_nanos();
+        let session = std::env::var(AGENT_SESSION_ENV).ok().filter(|s| !s.is_empty());
+        let (name, warning) = broker_name(session.as_deref(), std::process::id(), nonce);
+        if let Some(warning) = warning {
+            tracing::warn!("{warning}");
+        }
         Self {
             client: Mutex::new(None),
             connecting: tokio::sync::Mutex::new(()),
-            name: format!("mcp-{}-{nonce:x}", std::process::id()),
+            name,
             started_at: buildinfo::now_rfc3339(),
         }
     }
@@ -244,6 +276,39 @@ impl BrokerConnection {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// noded's rule: 2-31 bytes, lowercase first, then lowercase/digit/'-'.
+    fn noded_accepts(name: &str) -> bool {
+        (2..=31).contains(&name.len())
+            && name.as_bytes()[0].is_ascii_lowercase()
+            && name
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+    }
+
+    #[test]
+    fn agent_session_names_carry_the_session_and_fit_noded() {
+        let (name, warning) = broker_name(Some("k3x9q2ab7m1z"), 4_194_304, 0);
+        assert_eq!(name, "mcp-s-k3x9q2ab7m1z-400000");
+        assert!(warning.is_none());
+        assert!(noded_accepts(&name), "{name}");
+        // The longest session with the largest Linux pid still fits.
+        let (name, _) = broker_name(Some("zzzzzzzzzzzz"), 4_194_304, u128::MAX);
+        assert!(noded_accepts(&name), "{name}");
+        let (anonymous, warning) = broker_name(None, 1234, 0xabc);
+        assert_eq!(anonymous, "mcp-1234-abc");
+        assert!(warning.is_none());
+        assert!(noded_accepts(&anonymous));
+    }
+
+    #[test]
+    fn invalid_agent_sessions_fall_back_to_the_anonymous_name() {
+        for bad in ["abc", "toolongsession1", "Upper1", "has-dash", "a.b.c.d", "sp ace"] {
+            let (name, warning) = broker_name(Some(bad), 77, 0x1f);
+            assert_eq!(name, "mcp-77-1f", "{bad}");
+            assert!(warning.is_some_and(|w| w.contains(AGENT_SESSION_ENV)), "{bad}");
+        }
+    }
 
     #[test]
     fn bridge_answers_protocol_commands_and_refuses_the_rest() {
