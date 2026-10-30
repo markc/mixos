@@ -323,8 +323,10 @@ pub fn show_with<S>(
         let caption_width = if server {
             0.0
         } else {
-            ((bar.width() - menu_width - mark - menu_pad - actions_min - actions_pad) / 3.0)
-                .clamp((chrome.style.icon_button as f32).min(m.caption_width), m.caption_width)
+            ((bar.width() - menu_width - mark - menu_pad - actions_min - actions_pad) / 3.0).clamp(
+                (chrome.style.icon_button as f32).min(m.caption_width),
+                m.caption_width,
+            )
         };
         let captions = 3.0 * caption_width;
         let groups = design::title_band::layout(
