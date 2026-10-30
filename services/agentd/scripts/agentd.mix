@@ -191,7 +191,14 @@ fn emit_event($id, $fields)
   $e.session = $id
   $e.seq = $S.sessions[$id].seq
   $wire = json_encode($e)
-  $log.append($DB, $id, $e.seq, $e.kind, $wire, time())
+  -- The agent has already said it: an event the log cannot take (disk
+  -- full) is still published, and the gap is reported. A command, by
+  -- contrast, is refused when its log row cannot be written.
+  try
+    $log.append($DB, $id, $e.seq, $e.kind, $wire, time())
+  catch $m
+    eprint("agentd: " .. $id .. ": seq " .. to_string($e.seq) .. " not logged: " .. $m)
+  end
   -- Topics are notifications: a large event goes out as a marker, and the
   -- watcher reads the whole event back with agent.session.read.
   if len($wire) > $TOPIC_MAX then
