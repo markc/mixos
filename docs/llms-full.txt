@@ -1294,6 +1294,7 @@ Refusals carry `{error_code, message}`:
 - `permission_answered`;
 - `error`;
 - `fs_read`, `fs_write` or `fs_refused` (see Files);
+- `terminal_created` or `terminal_exited` (see Terminals);
 - `ended`, logged (not published) when a restart ends a session.
 
 `seq` rises by one per event in a session. A watcher that missed events
@@ -1336,6 +1337,21 @@ replaces a path with a symlink between them can still lead one out; that
 takes the agent's own tools, which reach the same files anyway. A missing
 path outside the session is answered as outside, so the errors do not tell
 the agent what exists elsewhere.
+
+## Terminals
+
+agentd serves ACP's `terminal/*` on the headless path: the command runs
+directly on pipes (no shell, no PTY), in the session's `cwd` or a `cwd`
+inside its directories, with the instance `env` plus any the agent asks
+for. agentd keeps the newest 5,000 lines of stdout and stderr together, up
+to `outputByteLimit` bytes (at most 8 MiB), dropping from the front.
+Terminal query sequences (cursor and device status requests, colour
+queries) are removed, since nothing is there to answer them. A session has
+at most 8 terminals at once, and they end with it. `terminal/kill` stops
+the command (TERM, then KILL) and reports `SIGTERM`. Each terminal's start
+and exit are events (`terminal_created`, `terminal_exited`).
+
+On a desk, terminals are to move onto Term, so a human can watch them.
 
 ## Agents calling back
 

@@ -61,6 +61,17 @@ fn pipe_write($watch, $frame)
   return process_write($watch, $frame)
 end
 
+-- A terminal: a watch on pipes, no stdin, stdout and stderr in one tail.
+fn term_watch($argv, $cwd, $env, $tag)
+  -- lint: ignore MIX-E1102
+  return process_watch($argv, {stderr: "lines", tag: $tag, cwd: $cwd, env: $env})
+end
+
+fn term_stop($watch)
+  -- lint: ignore MIX-E1102
+  return process_unwatch($watch)
+end
+
 fn pipe_close($watch)
   -- lint: ignore MIX-E1102
   return process_close_stdin($watch)
@@ -87,7 +98,9 @@ $log.expire($DB, time() - $CONF.log_keep_days * 86400)
 -- seq, turn, queued, pending: {rpc -> {kind}}, perms: {key -> {..}},
 -- created_at}. status: starting | ready | running | ended. Events live in
 -- the log, not here. cmd is the acting command being answered, if any.
-$S = {sessions: {}, rpc: 0, notify: {}, cmd: nil}
+-- terms[tid] = {session, watch, tail: {lines, bytes, truncated}, limit,
+-- exit: nil | {exitCode, signal}, waiters: [rpc ids]}; tid = "t<n>".
+$S = {sessions: {}, rpc: 0, notify: {}, cmd: nil, terms: {}, term_seq: 0}
 
 subscribe("notify.changed")
 
@@ -575,9 +588,10 @@ fn on_request($id, $msg)
     end
   elif $msg.method == "fs/read_text_file" or $msg.method == "fs/write_text_file" then
     serve_fs($id, $msg)
+  elif starts_with(to_string($msg.method), "terminal/") then
+    serve_terminal($id, $msg)
   else
-    -- terminal/* is not offered yet (capability off).
-    write_frame($id, $a.error_frame($msg.id, -32601, "agentd does not serve " .. $msg.method .. " yet"))
+    write_frame($id, $a.error_frame($msg.id, -32601, "agentd does not serve " .. to_string($msg.method)))
   end
 end
 
@@ -617,7 +631,107 @@ fn serve_fs($id, $msg)
   end
 end
 
+-- terminal/* on the headless path: pipes, no PTY, a bounded output tail.
+$TERMS_MAX = 8
+
+fn term_exit_result($t)
+  return {exitCode: $t.exit.exitCode, signal: $t.exit.signal}
+end
+
+-- A terminal ended (by itself, or stopped here): answer its waiters.
+fn term_exited($tid, $exit_code, $signal)
+  $t = $S.terms[$tid]
+  if $t == nil or $t.exit != nil then return nil end
+  $S.terms[$tid].exit = {exitCode: $exit_code, signal: $signal}
+  for each $rpc in $t.waiters
+    write_frame($t.session, $a.response_frame($rpc, term_exit_result($S.terms[$tid])))
+  end
+  $S.terms[$tid].waiters = []
+  emit_event($t.session, {kind: "terminal_exited", terminal: $tid, exit_code: $exit_code, signal: $signal})
+end
+
+-- Stop a running terminal: TERM, then KILL (process_unwatch), no event
+-- follows from the watch, so the exit is recorded here.
+fn term_kill($tid)
+  $t = $S.terms[$tid]
+  if $t != nil and $t.exit == nil then
+    term_stop($t.watch)
+    term_exited($tid, nil, "SIGTERM")
+  end
+end
+
+fn term_release($tid)
+  term_kill($tid)
+  $S.terms = delete($S.terms, $tid)
+end
+
+fn serve_terminal($id, $msg)
+  $s = $S.sessions[$id]
+  if $s == nil then return nil end
+  $p = if type($msg.params) == "map" then $msg.params else {} end
+  try
+    if $p.sessionId != $s.acp then raise("USAGE", "sessionId is not this session's") end
+    if $msg.method == "terminal/create" then
+      $mine = filter(keys($S.terms), fn($k) = $S.terms[$k].session == $id)
+      if len($mine) >= $TERMS_MAX then raise("USAGE", "already " .. to_string($TERMS_MAX) .. " terminals; release one") end
+      $req = $a.check_terminal($p, concat([$s.cwd], $s.dirs ?? []))
+      $S.term_seq = $S.term_seq + 1
+      $tid = "t" .. to_string($S.term_seq)
+      $env = merge($CONF.agents[$s.agent].env, $req.env)
+      $watch = term_watch($req.argv, $req.cwd, $env, "term:" .. $tid)
+      $S.terms[$tid] = {session: $id, watch: $watch, tail: {lines: [], bytes: 0, truncated: false},
+        limit: $req.limit, exit: nil, waiters: []}
+      write_frame($id, $a.response_frame($msg.id, {terminalId: $tid}))
+      emit_event($id, {kind: "terminal_created", terminal: $tid, argv: $req.argv, cwd: $req.cwd})
+    else
+      $tid = to_string($p.terminalId)
+      $t = $S.terms[$tid]
+      if $t == nil or $t.session != $id then raise("NOT_FOUND", "no terminal " .. $tid) end
+      if $msg.method == "terminal/output" then
+        $out = {output: $a.tail_text($t.tail), truncated: $t.tail.truncated}
+        if $t.exit != nil then $out.exitStatus = term_exit_result($t) end
+        write_frame($id, $a.response_frame($msg.id, $out))
+      elif $msg.method == "terminal/wait_for_exit" then
+        if $t.exit != nil then
+          write_frame($id, $a.response_frame($msg.id, term_exit_result($t)))
+        else
+          -- Answered when the command ends (term_exited).
+          $S.terms[$tid].waiters = concat($t.waiters, [$msg.id])
+        end
+      elif $msg.method == "terminal/kill" then
+        term_kill($tid)
+        write_frame($id, $a.response_frame($msg.id, {}))
+      elif $msg.method == "terminal/release" then
+        term_release($tid)
+        write_frame($id, $a.response_frame($msg.id, {}))
+      else
+        raise("NO_METHOD", "agentd does not serve " .. $msg.method)
+      end
+    end
+  catch $m, $err
+    $code = if $err.code == "NO_METHOD" then -32601 else fs_error_code($err.code) end
+    write_frame($id, $a.error_frame($msg.id, $code, $m))
+  end
+end
+
+fn term_tid($tag)
+  if type($tag) == "string" and starts_with($tag, "term:") then return slice($tag, 5) end
+  return nil
+end
+
+on proc.overflow
+  $tid = term_tid($event.args.tag)
+  if $tid != nil and $S.terms[$tid] != nil then $S.terms[$tid].tail.truncated = true end
+end
+
 on proc.line
+  $tid = term_tid($event.args.tag)
+  if $tid != nil then
+    if $S.terms[$tid] != nil then
+      $S.terms[$tid].tail = $a.tail_add($S.terms[$tid].tail, $event.args.line, $S.terms[$tid].limit)
+    end
+    return nil
+  end
   $id = $event.args.tag
   if $S.sessions[$id] != nil then
     if $event.args.stream == "stderr" then
@@ -646,8 +760,17 @@ on proc.line
 end
 
 on proc.watch_exited
+  $tid = term_tid($event.args.tag)
+  if $tid != nil then
+    term_exited($tid, $event.args.exit_code, $a.signal_name($event.args.signal))
+    return nil
+  end
   $id = $event.args.tag
   if $S.sessions[$id] != nil then
+    -- The agent is gone: so are its terminals.
+    for each $k in filter(keys($S.terms), fn($k) = $S.terms[$k].session == $id)
+      term_release($k)
+    end
     for each $key in keys($S.sessions[$id].perms)
       $p = $S.sessions[$id].perms[$key]
       if $p.notify != nil then

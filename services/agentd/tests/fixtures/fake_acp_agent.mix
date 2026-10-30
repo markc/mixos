@@ -62,6 +62,35 @@ loop
     $stop = "end_turn"
     if contains($t, "MCP") then text($sid, "mcp:" .. $sessions[$sid].mcp) end
     if contains($t, "BIG") then text($sid, repeat("x", 2097152)) end
+    if $t == "TERMRUN" or $t == "TERMKILL" or $t == "TERMOUT" then
+      -- One request at a time; each answer is the next line from agentd.
+      fn call($method, $params)
+        $next_id = $next_id + 1
+        $params.sessionId = $sid
+        out({id: $next_id, method: $method, params: $params})
+        return json_parse(readline())
+      end
+      if $t == "TERMRUN" then
+        $c = call("terminal/create", {command: "sh", args: ["-c", "echo one; echo two >&2; exit 3"]})
+        $tid = $c.result.terminalId
+        $w = call("terminal/wait_for_exit", {terminalId: $tid})
+        $o = call("terminal/output", {terminalId: $tid})
+        call("terminal/release", {terminalId: $tid})
+        $gone = call("terminal/output", {terminalId: $tid})
+        text($sid, "term:" .. to_string($w.result.exitCode) .. ":" .. replace($o.result.output, "\n", "/") ..
+          ":" .. to_string($o.result.exitStatus.exitCode) .. ":gone=" .. to_string($gone.error.code))
+      elif $t == "TERMKILL" then
+        $c = call("terminal/create", {command: "sleep", args: ["30"]})
+        $tid = $c.result.terminalId
+        call("terminal/kill", {terminalId: $tid})
+        $w = call("terminal/wait_for_exit", {terminalId: $tid})
+        call("terminal/release", {terminalId: $tid})
+        text($sid, "killed:" .. to_string($w.result.signal))
+      else
+        $c = call("terminal/create", {command: "true", cwd: "/"})
+        text($sid, "termerr:" .. to_string($c.error.code))
+      end
+    end
     if starts_with($t, "FSREAD ") or starts_with($t, "FSLINES ") or starts_with($t, "FSWRITE ") then
       $next_id = $next_id + 1
       $op = before($t, " ")

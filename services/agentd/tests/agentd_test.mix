@@ -157,6 +157,15 @@ try
   check("fs write with dot-dot out is refused", fs_turn("FSWRITE " .. $proj .. "/../../outside/x|pwned", "fserr:-32602") and not is_file($tmp .. "/outside/x"))
   check("fs read of a missing file is not found", fs_turn("FSREAD " .. $proj .. "/none", "fserr:-32002"))
   check("fs read in an additional dir", fs_turn("FSREAD " .. realpath($tmp .. "/ws/extra/x.txt"), "read:x1"))
+  -- terminal/* on pipes.
+  check("terminal: run, wait, output (stdout and stderr), exit code, release",
+    fs_turn("TERMRUN", "term:3:one/two/:3:gone=-32002"))
+  check("terminal: kill stops a running command", fs_turn("TERMKILL", "killed:SIGTERM"))
+  check("terminal: cwd outside the session is refused", fs_turn("TERMOUT", "termerr:-32602"))
+  $tev = filter(agent("agent.session.read", {session: $s, since: 0}).v.events, fn($e) = starts_with($e.kind, "terminal_"))
+  check("terminal create and exit are logged events",
+    len(filter($tev, fn($e) = $e.kind == "terminal_created")) == 2 and len(filter($tev, fn($e) = $e.kind == "terminal_exited")) == 2)
+
   $fsev = filter(agent("agent.session.read", {session: $s, since: 0}).v.events, fn($e) = starts_with($e.kind, "fs_"))
   check("fs reads, writes and refusals are logged events",
     len(filter($fsev, fn($e) = $e.kind == "fs_write")) == 1 and len(filter($fsev, fn($e) = $e.kind == "fs_read")) == 3 and

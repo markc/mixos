@@ -148,6 +148,77 @@ fn slice_lines($text, $line, $limit)
   return join(slice($all, $from, $to), "\n")
 end
 
+-- Terminals (terminal/*) ---------------------------------------------------
+-- The headless path: agentd runs the command on pipes (no PTY) and keeps a
+-- bounded tail of its output. On a desk this is to move to Term's Bus
+-- commands (decision ruling 5).
+
+$TERM_LINES = 5000
+$TERM_BYTES = 8388608
+$TERM_ARGS_MAX = 256
+$TERM_ENV_MAX = 64
+
+-- Validate terminal/create params. Returns {argv, cwd, env, limit} or
+-- raises USAGE / OUTSIDE_ROOTS.
+fn check_terminal($p, $dirs)
+  if type($p.command) != "string" or $p.command == "" then _usage("command is required") end
+  $args = $p.args ?? []
+  if type($args) != "list" or len($args) > $TERM_ARGS_MAX then _usage("args must be a list of at most " .. to_string($TERM_ARGS_MAX)) end
+  for each $x in $args
+    if type($x) != "string" then _usage("args must be strings") end
+  end
+  $env = {}
+  $list = $p.env ?? []
+  if type($list) != "list" or len($list) > $TERM_ENV_MAX then _usage("env must be a list of at most " .. to_string($TERM_ENV_MAX)) end
+  for each $e in $list
+    if type($e) != "map" or type($e.name) != "string" or type($e.value) != "string" or not re_match($e.name, "^[A-Za-z_][A-Za-z0-9_]*$") then
+      _usage("env entries are {name, value} strings")
+    end
+    $env[$e.name] = $e.value
+  end
+  $cwd = $p.cwd ?? $dirs[0]
+  if type($cwd) != "string" or not starts_with($cwd, "/") then _usage("cwd must be absolute") end
+  if not under_roots($cwd, $dirs) then raise("OUTSIDE_ROOTS", "cwd " .. $cwd .. " is outside the session's directories") end
+  $limit = $p.outputByteLimit ?? $TERM_BYTES
+  if type($limit) != "number" or $limit < 0 then _usage("outputByteLimit must be 0 or more") end
+  return {argv: concat([$p.command], $args), cwd: realpath($cwd), env: $env, limit: min(floor($limit), $TERM_BYTES)}
+end
+
+-- Terminal query traffic (cursor and device status requests, OSC colour
+-- queries) is dropped: there is no terminal to answer it, and replaying it
+-- to a real terminal later would make that terminal answer.
+fn strip_queries($line)
+  $s = re_replace($line, "\\x1b\\[[0-9;?>]*[nc]", "")
+  return re_replace($s, "\\x1b\\][0-9]+;\\?(\\x07|\\x1b\\\\)", "")
+end
+
+-- Append one line to a terminal's tail {lines, bytes, truncated}, keeping
+-- at most $TERM_LINES lines and $limit bytes, dropping from the front.
+fn tail_add($t, $line, $limit)
+  $line = strip_queries($line)
+  $lines = concat($t.lines, [$line])
+  $bytes = $t.bytes + byte_length($line) + 1
+  $truncated = $t.truncated
+  while len($lines) > 0 and (len($lines) > $TERM_LINES or $bytes > $limit)
+    $bytes = $bytes - byte_length($lines[0]) - 1
+    $lines = slice($lines, 1)
+    $truncated = true
+  end
+  return {lines: $lines, bytes: $bytes, truncated: $truncated}
+end
+
+fn tail_text($t)
+  if len($t.lines) == 0 then return "" end
+  return join($t.lines, "\n") .. "\n"
+end
+
+-- ACP reports a signal by name.
+fn signal_name($n)
+  if $n == nil then return nil end
+  $names = {"1": "SIGHUP", "2": "SIGINT", "3": "SIGQUIT", "6": "SIGABRT", "9": "SIGKILL", "13": "SIGPIPE", "15": "SIGTERM"}
+  return $names[to_string($n)] ?? ("SIG" .. to_string($n))
+end
+
 -- Validate agent.session.new arguments against the conf. Returns
 -- {agent, cwd, additional_dirs, mode} or raises.
 fn check_new($conf, $args)
@@ -202,8 +273,8 @@ end
 fn initialize_frame($id)
   return _frame($id, "initialize", {
     protocolVersion: $PROTOCOL_VERSION,
-    -- fs/* is served inside the session's directories; terminal/* is not yet.
-    clientCapabilities: {fs: {readTextFile: true, writeTextFile: true}, terminal: false},
+    -- fs/* inside the session's directories; terminal/* on pipes (headless).
+    clientCapabilities: {fs: {readTextFile: true, writeTextFile: true}, terminal: true},
     clientInfo: {name: "mixos-agentd", version: "0.1.0"}})
 end
 
