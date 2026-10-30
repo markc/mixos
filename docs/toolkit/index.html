@@ -476,9 +476,14 @@ Actions are placed “In the title bar”. Explicit <code>csd</code>/<code>ssd</
 <code>MIXOS_DECORATIONS</code> take precedence. Only a MixOS desktop can host menus
 and Actions; elsewhere an explicit SSD window keeps them in its own row.
 On Wayland, click the app mark or right-click empty title-bar space for
-the compositor's window menu. KWin shadows follow the theme and output
-scale, and detach while maximised or fullscreen. The default <code>shadow</code>
-feature enables native shadows; offscreen tests need no display.</li>
+the compositor's window menu. Native frames share compd's per-style shadow,
+corner radius and hairline border through <code>design::frame</code>. KWin's shadow
+includes the transparent rounded corners and follows output scale and focus.
+A final GPU pass rounds the whole app after its panels paint; opaque surfaces
+retain square corners. Maximised/fullscreen windows are square and have no
+shadow. This winit/egui version supplies no tiled-edge flags, so tiled windows
+use the maximised-state fallback. The default <code>shadow</code> feature enables the
+KWin protocol integration; offscreen tests need no display.</li>
 <li><code>menu</code>: menu bars and menus drawn by the toolkit, not by egui's
 <code>MenuBar</code>. One highlight is shared by pointer and keyboard, a menu opens
 on press, and press-drag-release runs an item. <code>Nav</code> holds the open menu

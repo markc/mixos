@@ -53,7 +53,6 @@ pub mod datatable;
 pub use logging::debug;
 pub mod choose;
 pub mod decorations;
-mod window_frame;
 pub mod dialog;
 pub mod drive;
 pub mod executed;
@@ -61,6 +60,7 @@ pub mod field;
 pub mod file_chooser;
 #[cfg(all(target_os = "linux", feature = "shadow"))]
 mod shadow;
+mod window_frame;
 pub use choose::choose;
 pub mod fonts;
 pub mod graph;

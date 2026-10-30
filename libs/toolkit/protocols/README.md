@@ -19,8 +19,17 @@ dispatches only its dedicated queue; winit reads the socket. Registry discovery
 is asynchronous and bounded repaint requests stop after 250 ms. A compositor
 without the global (including compd) gets no shadow requests.
 
-Tiles use the theme's window-shadow blur, spread, offsets and colour, scaled
-by the native output scale independently of egui zoom. They are immutable shm
-buffers; no in-flight pixels are overwritten. Changes in theme or scale rebuild
-them. Maximised/fullscreen/SSD windows detach; restore reattaches before
-winit's next surface commit. The pure generator test runs without a display.
+Tiles use compd's shared `design::frame` shadow spec, rounded-box raster and
+corner radius, scaled by native output scale independently of egui zoom. They
+extend inward by the radius and offset; the actual client rounded rectangle
+is cut out, preserving shadow beneath transparent corners. They are immutable
+shm buffers; no in-flight pixels are overwritten. Theme, scale, size and focus
+changes rebuild them, using compd's focused/unfocused alpha. Maximised,
+fullscreen and SSD windows detach; restore reattaches before winit's next
+surface commit. Pure generator tests run without a display. The separate final
+GPU frame pass enables rounding only on alpha-capable surfaces, and winit's
+transparent-window hint leaves the surface opaque region unset.
+
+compd's decor renderer clips only server-decorated windows: it returns before
+creating its clip for CSD. The toolkit therefore rounds CSD on compd too;
+there is no second compositor round applied to the same CSD surface.

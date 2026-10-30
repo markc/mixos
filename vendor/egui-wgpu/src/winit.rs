@@ -319,8 +319,12 @@ impl Painter {
         );
         // Report the actual surface capability, not just the requested hint.
         let key = egui::Id::unique(("egui-wgpu.transparent", viewport_id));
-        let transparent = matches!(alpha_mode, wgpu::CompositeAlphaMode::PreMultiplied | wgpu::CompositeAlphaMode::PostMultiplied);
-        self.context.data_mut(|data| data.insert_temp(key, transparent));
+        let transparent = matches!(
+            alpha_mode,
+            wgpu::CompositeAlphaMode::PreMultiplied | wgpu::CompositeAlphaMode::PostMultiplied
+        );
+        self.context
+            .data_mut(|data| data.insert_temp(key, transparent));
         self.context.request_repaint_of(viewport_id);
         let Some(width) = NonZeroU32::new(width) else {
             log::debug!("The window width was zero; skipping generate textures");
@@ -593,18 +597,31 @@ impl Painter {
 
         let offscreen = window.is_none();
         let frame_key = egui::Id::unique(("egui-wgpu.window-frame", viewport_id));
-        let frame = self.context.data_mut(|data| data.remove_temp::<(f32, f32, [f32; 4])>(frame_key));
-        let clear_color = if frame.is_some() { [0.0; 4] } else { clear_color };
+        let frame = self
+            .context
+            .data_mut(|data| data.remove_temp::<(f32, f32, [f32; 4])>(frame_key));
+        let clear_color = if frame.is_some() {
+            [0.0; 4]
+        } else {
+            clear_color
+        };
         let alpha_key = egui::Id::unique(("egui-wgpu.transparent", viewport_id));
-        let transparent = self.context.data(|data| data.get_temp::<bool>(alpha_key))
+        let transparent = self
+            .context
+            .data(|data| data.get_temp::<bool>(alpha_key))
             .unwrap_or(self.support_transparent_backbuffer && offscreen);
         if frame.is_some_and(|f| f.0 > 0.0) && !transparent {
             let logged = egui::Id::unique(("egui-wgpu.opaque-frame-logged", viewport_id));
             let first = self.context.data_mut(|data| {
                 let first = !data.get_temp::<bool>(logged).unwrap_or(false);
-                data.insert_temp(logged, true); first
+                data.insert_temp(logged, true);
+                first
             });
-            if first { log::debug!("Skipping rounded window frame: surface only supports opaque presentation"); }
+            if first {
+                log::debug!(
+                    "Skipping rounded window frame: surface only supports opaque presentation"
+                );
+            }
         }
         let capture = offscreen || !capture_data.is_empty();
         let mut vsync_sec = 0.0;
@@ -832,11 +849,27 @@ impl Painter {
                 &screen_descriptor,
             );
 
-            if transparent && let Some(request) = frame && (request.0 > 0.0 || request.1 > 0.0) {
-                if self.window_frame.as_ref().is_none_or(|f| f.format != format) {
-                    self.window_frame = Some(crate::window_frame::WindowFrame::new(&render_state.device, format));
+            if transparent
+                && let Some(request) = frame
+                && (request.0 > 0.0 || request.1 > 0.0)
+            {
+                if self
+                    .window_frame
+                    .as_ref()
+                    .is_none_or(|f| f.format != format)
+                {
+                    self.window_frame = Some(crate::window_frame::WindowFrame::new(
+                        &render_state.device,
+                        format,
+                    ));
                 }
-                self.window_frame.as_ref().unwrap().paint(&render_state.queue, &mut encoder, &target_view, size, request);
+                self.window_frame.as_ref().unwrap().paint(
+                    &render_state.queue,
+                    &mut encoder,
+                    &target_view,
+                    size,
+                    request,
+                );
             }
 
             if !capture_data.is_empty()

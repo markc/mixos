@@ -177,7 +177,13 @@ impl NativeShadow {
         let Some(shm) = &self.globals.shm else {
             return Ok(());
         };
-        let tiles = design::frame::shadow_pieces(settings.frame.shadow, settings.radius, settings.scale, settings.focused, settings.size);
+        let tiles = design::frame::shadow_pieces(
+            settings.frame.shadow,
+            settings.radius,
+            settings.scale,
+            settings.focused,
+            settings.size,
+        );
         let path = std::env::temp_dir().join(format!("mixos-shadow-{}", uuid::Uuid::new_v4()));
         let mut file = std::fs::OpenOptions::new()
             .read(true)
@@ -185,7 +191,9 @@ impl NativeShadow {
             .create_new(true)
             .open(&path)?;
         std::fs::remove_file(path)?;
-        for piece in &tiles.pieces { file.write_all(&piece.argb)?; }
+        for piece in &tiles.pieces {
+            file.write_all(&piece.argb)?;
+        }
         let size = tiles.pieces.iter().map(|p| p.argb.len() as i32).sum();
         let qh = self.queue.handle();
         let pool = shm.create_pool(file.as_fd(), size, &qh, ());
@@ -211,8 +219,9 @@ impl NativeShadow {
         shadow.attach_bottom_left(&buffers[5]);
         shadow.attach_left(&buffers[6]);
         shadow.attach_top_left(&buffers[7]);
-        let [left, top, right, bottom] =
-            tiles.extents.map(|v| f64::from(v) / f64::from(settings.scale));
+        let [left, top, right, bottom] = tiles
+            .extents
+            .map(|v| f64::from(v) / f64::from(settings.scale));
         shadow.set_left_offset(left);
         shadow.set_top_offset(top);
         shadow.set_right_offset(right);
@@ -252,13 +261,18 @@ impl egui::Plugin for NativeShadow {
         }) && crate::chrome::Chrome::of(ui.ctx()).decorations
             == design::Decorations::Client;
         let frame = crate::chrome::Chrome::of(ui.ctx()).frame;
-        let scale = ui.input(|i| i.viewport().native_pixels_per_point.unwrap_or(1.0)).clamp(0.5, 8.0);
+        let scale = ui
+            .input(|i| i.viewport().native_pixels_per_point.unwrap_or(1.0))
+            .clamp(0.5, 8.0);
         let size = (ui.ctx().content_rect().size() * ui.ctx().pixels_per_point()).round();
         let settings = ShadowSettings {
-            frame, scale, radius: crate::window_frame::radius(ui.ctx(), frame),
+            frame,
+            scale,
+            radius: crate::window_frame::radius(ui.ctx(), frame),
             focused: ui.input(|i| i.viewport().focused.unwrap_or(i.focused)),
             size: [size.x.max(1.0) as u32, size.y.max(1.0) as u32],
-        };        if !visible
+        };
+        if !visible
             || self
                 .attached
                 .as_ref()
@@ -295,4 +309,3 @@ impl Drop for NativeShadow {
         let _ = self.connection.flush();
     }
 }
-

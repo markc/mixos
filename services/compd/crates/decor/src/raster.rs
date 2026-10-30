@@ -434,8 +434,20 @@ pub struct ShadowTile {
 /// physical px). Falloff: full inside the box, smoothstep to nothing over
 /// `softness` outside it.
 pub fn shadow_tile(colour: Srgba, alpha: f32, radius: f32, softness: f32) -> ShadowTile {
-    let tile = design::frame::shadow_tile([colour.r, colour.g, colour.b, colour.a], alpha, radius, softness);
-    ShadowTile { corner: tile.corner, image: Image { width: tile.size, height: tile.size, pixels: tile.pixels } }
+    let tile = design::frame::shadow_tile(
+        [colour.r, colour.g, colour.b, colour.a],
+        alpha,
+        radius,
+        softness,
+    );
+    ShadowTile {
+        corner: tile.corner,
+        image: Image {
+            width: tile.size,
+            height: tile.size,
+            pixels: tile.pixels,
+        },
+    }
 }
 #[cfg(test)]
 fn legacy_shadow_tile(colour: Srgba, alpha: f32, radius: f32, softness: f32) -> ShadowTile {

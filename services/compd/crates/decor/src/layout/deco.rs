@@ -257,9 +257,13 @@ impl ShadowSpec {
     pub fn for_style(style: ChromeStyle) -> Self {
         let spec = design::frame::ShadowSpec::for_style(style);
         let [r, g, b, a] = spec.color;
-        Self { softness: spec.softness, offset_y: spec.offset_y,
-            color: Srgba::new(r, g, b, a), alpha_focused: spec.alpha_focused,
-            alpha_unfocused: spec.alpha_unfocused }
+        Self {
+            softness: spec.softness,
+            offset_y: spec.offset_y,
+            color: Srgba::new(r, g, b, a),
+            alpha_focused: spec.alpha_focused,
+            alpha_unfocused: spec.alpha_unfocused,
+        }
     }
 }
 

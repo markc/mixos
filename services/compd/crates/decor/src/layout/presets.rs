@@ -61,7 +61,7 @@ pub fn mac(mode: Mode) -> DecoTheme {
         mode,
         metrics: DecoMetrics {
             titlebar_height: 28.0,
-            border_thickness: 0.0,
+            border_thickness: design::frame::border_width(ChromeStyle::Mac),
             resize_band: 8.0,
             corner_radius: design::frame::corner_radius(ChromeStyle::Mac, None),
             title_size_px: pt_to_px(DEFAULT_TITLE_SIZE_PT),
@@ -164,7 +164,7 @@ pub fn win11(mode: Mode) -> DecoTheme {
         mode,
         metrics: DecoMetrics {
             titlebar_height: 32.0,
-            border_thickness: 1.0,
+            border_thickness: design::frame::border_width(ChromeStyle::Win11),
             resize_band: 8.0,
             corner_radius: design::frame::corner_radius(ChromeStyle::Win11, None),
             title_size_px: pt_to_px(DEFAULT_TITLE_SIZE_PT),
@@ -301,7 +301,7 @@ pub fn mixos(scheme: Scheme, mode: Mode) -> DecoTheme {
         mode,
         metrics: DecoMetrics {
             titlebar_height: 30.0,
-            border_thickness: 1.0,
+            border_thickness: design::frame::border_width(ChromeStyle::Mixos),
             resize_band: 8.0,
             corner_radius: design::frame::corner_radius(ChromeStyle::Mixos, None),
             title_size_px: pt_to_px(DEFAULT_TITLE_SIZE_PT),

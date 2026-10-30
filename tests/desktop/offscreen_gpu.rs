@@ -172,10 +172,21 @@ fn rounded_native_frame_masks_the_resolved_target_and_handles_opaque_fallback() 
     let options = RendererOptions::default();
     let ctx = Context::default();
     let mut painter = block_on(Painter::new(ctx.clone(), config.clone(), true, options));
-    painter.render_state = Some(block_on(RenderState::create(&config, &painter.instance, None, options)).expect("headless adapter"));
+    painter.render_state = Some(
+        block_on(RenderState::create(
+            &config,
+            &painter.instance,
+            None,
+            options,
+        ))
+        .expect("headless adapter"),
+    );
     let key = egui::Id::unique(("egui-wgpu.window-frame", ViewportId::ROOT));
     let alpha_key = egui::Id::unique(("egui-wgpu.transparent", ViewportId::ROOT));
-    for format in [wgpu::TextureFormat::Rgba8Unorm, wgpu::TextureFormat::Bgra8Unorm] {
+    for format in [
+        wgpu::TextureFormat::Rgba8Unorm,
+        wgpu::TextureFormat::Bgra8Unorm,
+    ] {
         let state = painter.render_state.as_mut().unwrap();
         state.target_format = format;
         *state.renderer.write() = crate::Renderer::new(&state.device, format, options);
@@ -183,43 +194,113 @@ fn rounded_native_frame_masks_the_resolved_target_and_handles_opaque_fallback() 
         for scale in [1, 2] {
             let size = [67 * scale, 31 * scale];
             for (rounded, transparent) in [(true, true), (false, true), (true, false)] {
-                let output = ctx.run_ui(egui::RawInput {
-                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(67.0,31.0))),
-                    ..Default::default()
-                }, |ui| { ui.painter().rect_filled(ui.ctx().content_rect(), 0.0, egui::Color32::BLUE); });
-                let request = if rounded { (10.0 * scale as f32, scale as f32, [1.0,0.0,0.0,1.0]) } else { (0.0,0.0,[0.0;4]) };
-                let child = egui::Id::unique(("egui-wgpu.window-frame", ViewportId::from_hash_of("child")));
-                ctx.data_mut(|data| { data.insert_temp(key, request); data.insert_temp(child, request); data.insert_temp(alpha_key, transparent); });
+                let output = ctx.run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(
+                            egui::Pos2::ZERO,
+                            egui::vec2(67.0, 31.0),
+                        )),
+                        ..Default::default()
+                    },
+                    |ui| {
+                        ui.painter()
+                            .rect_filled(ui.ctx().content_rect(), 0.0, egui::Color32::BLUE);
+                    },
+                );
+                let request = if rounded {
+                    (10.0 * scale as f32, scale as f32, [1.0, 0.0, 0.0, 1.0])
+                } else {
+                    (0.0, 0.0, [0.0; 4])
+                };
+                let child =
+                    egui::Id::unique(("egui-wgpu.window-frame", ViewportId::from_hash_of("child")));
+                ctx.data_mut(|data| {
+                    data.insert_temp(key, request);
+                    data.insert_temp(child, request);
+                    data.insert_temp(alpha_key, transparent);
+                });
                 let (tx, rx) = std::sync::mpsc::channel();
-                painter.paint_and_update_textures_impl(ViewportId::ROOT, size, scale as f32, [0.0,1.0,0.0,1.0],
-                    &ctx.tessellate(output.shapes, scale as f32), &mut output.textures_delta.clone(),
-                    vec![egui::ScreenshotCallback::new(move |image| { tx.send(image).unwrap(); })], None);
-                let image = rx.recv_timeout(core::time::Duration::from_secs(15)).expect("GPU corner readback");
-                assert_eq!(image[(33 * scale as usize, 15 * scale as usize)], egui::Color32::BLUE);
+                painter.paint_and_update_textures_impl(
+                    ViewportId::ROOT,
+                    size,
+                    scale as f32,
+                    [0.0, 1.0, 0.0, 1.0],
+                    &ctx.tessellate(output.shapes, scale as f32),
+                    &mut output.textures_delta.clone(),
+                    vec![egui::ScreenshotCallback::new(move |image| {
+                        tx.send(image).unwrap();
+                    })],
+                    None,
+                );
+                let image = rx
+                    .recv_timeout(core::time::Duration::from_secs(15))
+                    .expect("GPU corner readback");
+                assert_eq!(
+                    image[(33 * scale as usize, 15 * scale as usize)],
+                    egui::Color32::BLUE
+                );
                 if rounded && transparent {
-                    for (x,y) in [(0,0),(size[0]-1,0),(0,size[1]-1),(size[0]-1,size[1]-1)] {
-                        assert_eq!(image[(x as usize,y as usize)], egui::Color32::TRANSPARENT);
+                    for (x, y) in [
+                        (0, 0),
+                        (size[0] - 1, 0),
+                        (0, size[1] - 1),
+                        (size[0] - 1, size[1] - 1),
+                    ] {
+                        assert_eq!(image[(x as usize, y as usize)], egui::Color32::TRANSPARENT);
                     }
-                    assert_eq!(image[(33 * scale as usize,0)], egui::Color32::RED, "shared hairline border");
-                    assert!(image.pixels.iter().any(|c| c.a() > 0 && c.a() < 255), "antialiased coverage");
-                    assert!(image.pixels.iter().all(|c| c.r() <= c.a() && c.g() <= c.a() && c.b() <= c.a()));
-                    if format == wgpu::TextureFormat::Bgra8Unorm && scale == 2
-                        && let Some(path) = std::env::var_os("MIXOS_FRAME_PREVIEW") {
+                    assert_eq!(
+                        image[(33 * scale as usize, 0)],
+                        egui::Color32::RED,
+                        "shared hairline border"
+                    );
+                    assert!(
+                        image.pixels.iter().any(|c| c.a() > 0 && c.a() < 255),
+                        "antialiased coverage"
+                    );
+                    assert!(
+                        image
+                            .pixels
+                            .iter()
+                            .all(|c| c.r() <= c.a() && c.g() <= c.a() && c.b() <= c.a())
+                    );
+                    if format == wgpu::TextureFormat::Bgra8Unorm
+                        && scale == 2
+                        && let Some(path) = std::env::var_os("MIXOS_FRAME_PREVIEW")
+                    {
                         let mut ppm = format!("P6\n{} {}\n255\n", size[0], size[1]).into_bytes();
                         for (i, pixel) in image.pixels.iter().enumerate() {
-                            let x = i % size[0] as usize; let y = i / size[0] as usize;
-                            let background = if (x / 8 + y / 8) % 2 == 0 { 190_u16 } else { 230_u16 };
-                            for channel in [pixel.r(),pixel.g(),pixel.b()] {
-                                ppm.push((u16::from(channel) + background * u16::from(255 - pixel.a()) / 255) as u8);
+                            let x = i % size[0] as usize;
+                            let y = i / size[0] as usize;
+                            let background = if (x / 8 + y / 8) % 2 == 0 {
+                                190_u16
+                            } else {
+                                230_u16
+                            };
+                            for channel in [pixel.r(), pixel.g(), pixel.b()] {
+                                ppm.push(
+                                    (u16::from(channel)
+                                        + background * u16::from(255 - pixel.a()) / 255)
+                                        as u8,
+                                );
                             }
                         }
                         std::fs::write(path, ppm).unwrap();
                     }
                 } else {
-                    assert_eq!(image[(0,0)], egui::Color32::BLUE, "square or Opaque stays unmasked");
+                    assert_eq!(
+                        image[(0, 0)],
+                        egui::Color32::BLUE,
+                        "square or Opaque stays unmasked"
+                    );
                 }
-                assert_eq!(ctx.data(|data| data.get_temp::<(f32,f32,[f32;4])>(key)), None);
-                assert_eq!(ctx.data(|data| data.get_temp::<(f32,f32,[f32;4])>(child)), Some(request));
+                assert_eq!(
+                    ctx.data(|data| data.get_temp::<(f32, f32, [f32; 4])>(key)),
+                    None
+                );
+                assert_eq!(
+                    ctx.data(|data| data.get_temp::<(f32, f32, [f32; 4])>(child)),
+                    Some(request)
+                );
             }
         }
     }

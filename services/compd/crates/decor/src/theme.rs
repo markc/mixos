@@ -23,7 +23,7 @@ use crate::layout::{
 };
 use design::{
     Contrast, DesignCompileResult, DesignContext, LinearRgba, ResolvedDictionary,
-    ResolvedMetricKind, SourceIdentity, TypographyRole, UnstampedResolvedDesign,
+    SourceIdentity, TypographyRole, UnstampedResolvedDesign,
 };
 
 /// A theme colour as 8-bit straight-alpha sRGB `[r, g, b, a]`, as the truth
@@ -382,7 +382,11 @@ fn apply_dictionary(theme: &mut DecoTheme, dictionary: &ResolvedDictionary) {
 
     // The preset picks the shape family; the theme's radius wins for the
     // mixos style (mac and win11 keep their platform radius).
-    theme.metrics.corner_radius = design::frame::resolve_corner_radius(theme.style, theme.metrics.corner_radius, Some(dictionary));
+    theme.metrics.corner_radius = design::frame::resolve_corner_radius(
+        theme.style,
+        theme.metrics.corner_radius,
+        Some(dictionary),
+    );
 }
 
 #[cfg(test)]

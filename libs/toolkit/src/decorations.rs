@@ -28,7 +28,9 @@ pub fn initialise_window(ctx: &egui::Context, window: Option<Arc<winit::window::
 
 #[cfg(not(all(target_os = "linux", feature = "shadow")))]
 pub fn initialise_window<W>(ctx: &egui::Context, window: Option<Arc<W>>) {
-    if window.is_some() { crate::window_frame::install(ctx); }
+    if window.is_some() {
+        crate::window_frame::install(ctx);
+    }
 }
 
 /// Install once after winit has chosen the backend. Merely having a
