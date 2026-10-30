@@ -165,8 +165,8 @@ fn fit_with_tokens(free: f32, slots: &[Slot], tokens: &design::ResolvedStyle) ->
     };
     // The band sizes the group to exactly what the controls need, and the
     // rect arithmetic can land a hair short: never drop a control for that.
-    // Slack decides only what fits; widths still come from `free`.
-    const SLACK: f32 = 0.5;
+    // Half a point of slack decides only what fits; widths still come from
+    // `free`. A rounding tolerance, not a style value.
     let mut shown = slots.len();
     while shown > 0
         && need(
@@ -176,7 +176,7 @@ fn fit_with_tokens(free: f32, slots: &[Slot], tokens: &design::ResolvedStyle) ->
                 max: tokens.title_combo_max_width as f32,
             }
             .min,
-        ) > free + SLACK
+        ) > free + 0.5
     {
         shown -= 1;
     }
