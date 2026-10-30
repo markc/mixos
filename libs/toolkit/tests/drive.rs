@@ -406,6 +406,10 @@ fn a_shortcut_with_modifiers_runs_its_command() {
 
 #[test]
 fn menu_paths_and_popups_work_in_every_form() {
+    on_mixos(menu_paths_and_popups_work_in_every_form_on_host);
+}
+
+fn menu_paths_and_popups_work_in_every_form_on_host() {
     use design::{CaptionSide, MenuSide, MenuStyle, RequestedDecorations};
     let mut baseline = None;
     for style in MenuStyle::ALL {
@@ -421,7 +425,7 @@ fn menu_paths_and_popups_work_in_every_form() {
                 let form = ok(&mut h, "ui.menu.form", json!({}));
                 assert_eq!(
                     form,
-                    json!({"style":style.name(), "side":side.name(), "effective":style.effective(theme.decorations()).name(), "hosted":true, "service":"demo"})
+                    json!({"style":style.name(), "side":side.name(), "effective":style.effective(theme.decorations()).name(), "hosted":style.effective(theme.decorations()) == design::MenuStyle::Titlebar, "service":"demo"})
                 );
                 let list = ok(&mut h, "ui.menu.list", json!({}));
                 if let Some(baseline) = &baseline {
@@ -508,6 +512,10 @@ fn pointer_press_and_release_follow_the_menu_rules() {
 
 #[test]
 fn titlebar_menus_follow_the_drives_actual_registration() {
+    on_mixos(titlebar_menus_follow_the_drives_actual_registration_on_host);
+}
+
+fn titlebar_menus_follow_the_drives_actual_registration_on_host() {
     let mut h = window();
     let theme = fixture::theme(Scheme::Pro, Mode::Light)
         .framed(
@@ -556,6 +564,10 @@ fn titlebar_menus_follow_the_drives_actual_registration() {
 
 #[test]
 fn first_registration_survives_drive_install_and_theme_reinstallation() {
+    on_mixos(first_registration_survives_drive_install_and_theme_reinstallation_on_host);
+}
+
+fn first_registration_survives_drive_install_and_theme_reinstallation_on_host() {
     let ctx = egui::Context::default();
     drive::set_service(&ctx, Some("demo"));
     drive::install(&ctx, "demo");
@@ -1118,4 +1130,11 @@ fn a_capture_ignores_other_screenshots() {
         "not the stray 4×3 image: {}",
         shot.body
     );
+}
+
+fn on_mixos(operation: impl FnOnce()) {
+    design::decorations::with_resolver(std::sync::Arc::new(design::decorations::Resolver::new(
+        || design::decorations::SessionFacts { wayland: true, desktops: "MixOS".into(), decoration_global: Some(true) },
+        || None, |_| {},
+    )), operation);
 }

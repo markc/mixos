@@ -6,6 +6,23 @@ use winit::{
 };
 
 use egui::ViewportId;
+
+/// Local bridge until egui has a ShowWindowMenu viewport command.
+/// Positions are egui points; winit expects physical pixels or logical units.
+pub fn show_window_menu(ctx: &egui::Context, viewport: ViewportId, window: &Window) {
+    let key = egui::Id::new(("eframe.window-menu", viewport));
+    let position = ctx.data_mut(|data| data.remove_temp::<egui::Pos2>(key));
+    if let Some(position) = position {
+        use raw_window_handle::{HasDisplayHandle as _, RawDisplayHandle};
+        if window.display_handle().is_ok_and(|h| matches!(h.as_raw(), RawDisplayHandle::Wayland(_))) {
+            let scale = window.scale_factor() as f32 * ctx.zoom_factor();
+            window.show_window_menu(winit::dpi::PhysicalPosition::new(
+                position.x * scale,
+                position.y * scale,
+            ));
+        }
+    }
+}
 #[cfg(feature = "accesskit")]
 use egui_winit::accesskit_winit;
 

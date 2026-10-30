@@ -193,6 +193,7 @@ fn window(args: &Args) -> Result<(), String> {
         options,
         Box::new(move |cc| {
             toolkit::decorations::initialise(cc);
+            toolkit::decorations::initialise_window(&cc.egui_ctx, cc.winit_window().cloned());
             toolkit::install(&cc.egui_ctx, &theme);
             let shell = Shell::new(
                 cc.egui_ctx.clone(),

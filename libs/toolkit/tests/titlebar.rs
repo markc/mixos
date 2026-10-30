@@ -164,6 +164,34 @@ fn double_clicking_the_free_bar_maximizes() {
     );
 }
 
+#[test]
+fn mark_and_empty_bar_request_the_wayland_window_menu() {
+    for wayland in [false, true] {
+        design::decorations::with_resolver(std::sync::Arc::new(design::decorations::Resolver::new(
+            move || design::decorations::SessionFacts { wayland, desktops: "KDE".into(), decoration_global: Some(true) },
+            || None, |_| {},
+        )), || {
+            for (button, mark) in [(egui::PointerButton::Primary, true), (egui::PointerButton::Secondary, false)] {
+                let mut h = harness();
+                toolkit::install(&h.ctx, &Theme::embedded().framed(design::Decorations::Client, design::CaptionSide::Auto));
+                h.run();
+                let m = toolkit::chrome::Chrome::of(&h.ctx).metrics;
+                let at = egui::pos2(if mark { m.title_bar_margin + m.mark / 2.0 } else { 200.0 }, m.title_bar_height / 2.0);
+                h.input_mut().events.push(egui::Event::PointerMoved(at));
+                h.step();
+                for pressed in [true, false] {
+                    h.input_mut().events.push(egui::Event::PointerButton { pos: at, button, pressed, modifiers: egui::Modifiers::NONE });
+                    h.step();
+                }
+                let key = egui::Id::new(("eframe.window-menu", ViewportId::ROOT));
+                assert_eq!(h.ctx.data(|d| d.get_temp::<egui::Pos2>(key)), wayland.then_some(at));
+                assert_eq!(h.ctx.data(|d| d.get_temp::<egui::Pos2>(egui::Id::new(("eframe.window-menu", ViewportId::from_hash_of("child"))))), None);
+                assert!(!commands(&h).contains(&ViewportCommand::StartDrag));
+            }
+        });
+    }
+}
+
 fn plain(id: &'static str) -> toolkit::Action<bool> {
     toolkit::Action {
         id,
@@ -345,6 +373,10 @@ fn titlebar_without_a_drive_keeps_an_app_menu_button() {
 
 #[test]
 fn title_band_layouts_and_hosted_actions() {
+    on_mixos(title_band_layouts_and_hosted_actions_on_host);
+}
+
+fn title_band_layouts_and_hosted_actions_on_host() {
     let mut results = egui_kittest::SnapshotResults::new();
     for (name, decorations, service, title, menu, actions, captions) in [
         (
@@ -426,4 +458,11 @@ fn title_band_layouts_and_hosted_actions() {
         h.snapshot(format!("title_band_{name}"));
         results.extend(h.take_snapshot_results());
     }
+}
+
+fn on_mixos(operation: impl FnOnce()) {
+    design::decorations::with_resolver(std::sync::Arc::new(design::decorations::Resolver::new(
+        || design::decorations::SessionFacts { wayland: true, desktops: "MixOS".into(), decoration_global: Some(true) },
+        || None, |_| {},
+    )), operation);
 }

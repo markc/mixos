@@ -858,6 +858,7 @@ impl GlowWinitRunning<'_> {
         let gl_surface = viewport.gl_surface.as_ref().unwrap();
         let egui_winit = viewport.egui_winit.as_mut().unwrap();
 
+        super::winit_integration::show_window_menu(&integration.egui_ctx, viewport_id, &window);
         egui_winit.handle_platform_output_with_event_loop(&window, event_loop, platform_output);
 
         if is_visible {
@@ -1855,6 +1856,7 @@ fn render_immediate_viewport(
         }
     }
 
+    super::winit_integration::show_window_menu(&egui_ctx, ids.this, window);
     egui_winit.handle_platform_output(window, platform_output);
 
     event_loop_context::with_current_event_loop(|event_loop| {

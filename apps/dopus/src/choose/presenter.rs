@@ -285,6 +285,7 @@ pub(super) fn run(url: &str) -> Result<(), String> {
         options,
         Box::new(move |cc| {
             toolkit::decorations::initialise(cc);
+            toolkit::decorations::initialise_window(&cc.egui_ctx, cc.winit_window().cloned());
             toolkit::install(&cc.egui_ctx, &theme);
             drive::install(&cc.egui_ctx, "files");
             drive::set_service(&cc.egui_ctx, Some("files"));

@@ -167,6 +167,7 @@ pub fn run(args: &Args) -> Result<(), String> {
         options,
         Box::new(move |cc| {
             toolkit::decorations::initialise(cc);
+            toolkit::decorations::initialise_window(&cc.egui_ctx, cc.winit_window().cloned());
             toolkit::install(&cc.egui_ctx, &theme);
             let mut shell = shell::Shell::new(cc.egui_ctx.clone(), theme, shell_bus, deliveries)?;
             shell.compose_launch(compose, document);

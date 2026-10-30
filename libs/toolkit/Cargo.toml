@@ -60,6 +60,8 @@ thumbs.workspace = true
 # wgpu's GL backend on the raw wl_surface, and libwayland's display pointer.
 smithay-client-toolkit = { version = "=0.19.2", optional = true }
 wayland-backend = { workspace = true, features = ["client_system"], optional = true }
+wayland-scanner = { workspace = true, optional = true }
+winit = { version = "=0.30.13", default-features = false, features = ["wayland"], optional = true }
 raw-window-handle = "0.6"
 wgpu = { workspace = true, optional = true }
 egui-wgpu = { workspace = true, optional = true }
@@ -68,7 +70,8 @@ futures = { workspace = true, optional = true }
 xkbcommon = { version = "0.7", default-features = false, optional = true }
 
 [features]
-default = ["portal"]
+default = ["portal", "shadow"]
+shadow = ["dep:wayland-backend", "dep:wayland-scanner", "dep:winit"]
 portal = ["dep:zbus", "dep:futures-util"]
 layer = ["dep:smithay-client-toolkit", "dep:wayland-backend", "dep:wgpu", "dep:egui-wgpu", "dep:futures", "dep:xkbcommon"]
 

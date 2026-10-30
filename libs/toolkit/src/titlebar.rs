@@ -377,6 +377,10 @@ pub fn show_with<S>(
             let rect = Rect::from_min_size(at, vec2(m.mark, m.mark))
                 .round_to_pixels(ui.pixels_per_point());
             icons::image_of(ui.ctx(), icon, m.mark, p.icon).paint_at(ui, rect);
+            let response = ui.interact(rect, ui.id().with("window-menu-mark"), Sense::click());
+            if response.clicked_by(egui::PointerButton::Primary) {
+                request_window_menu(ui.ctx(), response.interact_pointer_pos());
+            }
         }
         menu.min.x += mark;
         menus(ui, menu, registry, state, strings, anchor, &mut fired);
@@ -420,7 +424,9 @@ pub fn show_with<S>(
             );
         }
         for drag in drag {
-            if drag.double_clicked() {
+            if drag.secondary_clicked() {
+                request_window_menu(ui.ctx(), drag.interact_pointer_pos());
+            } else if drag.double_clicked() {
                 ui.ctx()
                     .send_viewport_cmd(ViewportCommand::Maximized(!maximized(ui)));
             } else if drag.drag_started_by(egui::PointerButton::Primary) {
@@ -429,6 +435,21 @@ pub fn show_with<S>(
         }
     });
     fired
+}
+
+fn request_window_menu(ctx: &egui::Context, position: Option<Pos2>) {
+    if Chrome::of(ctx).decorations == Decorations::Client
+        && design::decorations::is_wayland()
+        && let Some(position) = position
+    {
+        // eframe drains this viewport-scoped one-shot after the UI pass.
+        ctx.data_mut(|data| {
+            data.insert_temp(
+                egui::Id::new(("eframe.window-menu", ctx.viewport_id())),
+                position,
+            );
+        });
+    }
 }
 
 /// The title bar for a core command table, with the same controls and layout.

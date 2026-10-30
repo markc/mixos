@@ -53,6 +53,8 @@ pub mod datatable;
 pub use logging::debug;
 pub mod choose;
 pub mod decorations;
+#[cfg(all(target_os = "linux", feature = "shadow"))]
+mod shadow;
 pub mod dialog;
 pub mod drive;
 pub mod executed;

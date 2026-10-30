@@ -853,6 +853,7 @@ impl WgpuWinitRunning<'_> {
             return Ok(EventResult::Wait);
         };
 
+        super::winit_integration::show_window_menu(&egui_ctx, viewport_id, &window);
         egui_winit.handle_platform_output_with_event_loop(window, event_loop, platform_output);
 
         let vsync_secs = if is_visible {
@@ -1382,6 +1383,7 @@ fn render_immediate_viewport(
         );
     }
 
+    super::winit_integration::show_window_menu(&egui_ctx, ids.this, window);
     egui_winit.handle_platform_output(window, platform_output);
 
     handle_viewport_output(

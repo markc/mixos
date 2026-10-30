@@ -16,6 +16,18 @@ use wayland_client::{Connection, Dispatch, QueueHandle};
 // Leave scheduling and reply overhead inside AD-5's 250 ms ceiling.
 const BUDGET: Duration = Duration::from_millis(200);
 
+/// Install root-window integration while retaining the native window owner.
+/// This is a no-op without the optional shadow feature or on other backends.
+#[cfg(all(target_os = "linux", feature = "shadow"))]
+pub fn initialise_window(ctx: &egui::Context, window: Option<Arc<winit::window::Window>>) {
+    if let Some(window) = window {
+        crate::shadow::install(ctx, window);
+    }
+}
+
+#[cfg(not(all(target_os = "linux", feature = "shadow")))]
+pub fn initialise_window<W>(_: &egui::Context, _: Option<Arc<W>>) {}
+
 /// Install once after winit has chosen the backend. Merely having a
 /// WAYLAND_DISPLAY in the environment is not evidence for that choice.
 pub fn initialise(display: &impl HasDisplayHandle) {

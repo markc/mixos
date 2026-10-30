@@ -37,3 +37,17 @@ in `../egui-wgpu/PATCHES.md`. All Rust commands run on the build worker.
 Drop this patch when upstream supports hidden-window painting without a
 compositor frame callback or a surface acquire. Refresh deliberately and run
 the guards before changing the pinned version.
+
+## Wayland window menu
+
+`native/winit_integration.rs` drains an `egui::Pos2` from context temporary
+data under `egui::Id::new(("eframe.window-menu", viewport_id))`. The wgpu and
+glow integrations call it after each UI pass, including immediate viewports.
+It converts egui points to physical pixels (native scale × egui zoom), then
+calls winit's `Window::show_window_menu` on Wayland only. Requests are one-shot
+and viewport-scoped. Other backends drain and ignore them.
+
+Guard: `cargo test -p toolkit --test window_menu_patch`; toolkit title-bar
+tests cover the producer and viewport isolation. Drop this bridge when egui
+supplies an equivalent viewport command. compd currently inherits smithay's
+no-op window-menu handler; the request has no effect there.

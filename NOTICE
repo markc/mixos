@@ -150,3 +150,6 @@ attribution retained where present).
 lucide.min.js: lucide 1.17.0, Lucide Contributors, ISC, with the
 Feather-derived icons also Cole Bemis, MIT. Its upstream @license
 header is retained; the complete notices ship as LICENSE-lucide.txt.
+KWin shadow protocol description (libs/toolkit/protocols/shadow.xml):
+Copyright 2015 Martin Gräßlin, LGPL-2.1-or-later.
+Source: KDE plasma-wayland-protocols, src/protocols/shadow.xml.

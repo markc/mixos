@@ -5,7 +5,7 @@ use std::cell::RefCell;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 
-use crate::{Decorations, RequestedDecorations};
+use crate::{ActionsPlace, Decorations, RequestedDecorations};
 
 /// Desktops which keep the house title bar even with the decoration global.
 pub const CLIENT_SIDE_DESKTOPS: &[&str] = &["MixOS"];
@@ -36,10 +36,18 @@ pub struct Resolution {
 }
 
 pub fn automatic(facts: &SessionFacts) -> Resolution {
+    automatic_with_actions(facts, ActionsPlace::Row)
+}
+
+/// Placement belongs to the theme, while session facts are process-wide.
+pub fn automatic_with_actions(facts: &SessionFacts, actions: ActionsPlace) -> Resolution {
     let (mode, reason) = if !facts.wayland {
         (Decorations::Server, "rule1")
     } else if prefers_client_side(&facts.desktops) {
         (Decorations::Client, "rule2")
+    } else if actions == ActionsPlace::Titlebar {
+        // Only compd can host the app's Action Bar in a server title bar.
+        (Decorations::Client, "rule3b")
     } else if facts.decoration_global == Some(true) {
         (Decorations::Server, "rule3")
     } else {
@@ -80,6 +88,19 @@ impl Resolver {
         choice: Option<RequestedDecorations>,
         session: RequestedDecorations,
     ) -> Resolution {
+        self.resolve_with_actions(choice, session, ActionsPlace::Row)
+    }
+
+    pub fn facts(&self) -> &SessionFacts {
+        self.facts.get_or_init(|| (self.detect)())
+    }
+
+    pub fn resolve_with_actions(
+        &self,
+        choice: Option<RequestedDecorations>,
+        session: RequestedDecorations,
+        actions: ActionsPlace,
+    ) -> Resolution {
         let value = (self.environment)();
         let value = value.as_deref().unwrap_or_default().trim();
         let override_mode = if value.is_empty() {
@@ -96,7 +117,7 @@ impl Resolver {
         let requested = override_mode.or(choice).unwrap_or(session);
         let mode = match requested {
             RequestedDecorations::Auto => {
-                return automatic(self.facts.get_or_init(|| (self.detect)()));
+                return automatic_with_actions(self.facts(), actions);
             }
             RequestedDecorations::Client => Decorations::Client,
             RequestedDecorations::Server => Decorations::Server,
@@ -142,19 +163,42 @@ pub fn with_resolver<T>(resolver: Arc<Resolver>, operation: impl FnOnce() -> T) 
 /// Without an installed resolver, reads no environment and resolves `auto`
 /// as rule 4 without detection, for headless engines and offscreen UI.
 pub fn resolve(choice: Option<RequestedDecorations>, session: RequestedDecorations) -> Resolution {
+    resolve_with_actions(choice, session, ActionsPlace::Row)
+}
+
+/// Whether the installed session can host app menus and Action Bars.
+/// Headless callers have no host; tests can inject the resolver.
+pub fn has_host() -> bool {
+    let injected = INJECTED.with(|slot| slot.borrow().clone());
+    injected.as_ref().or_else(|| PROCESS.get()).is_some_and(|r| {
+        let facts = r.facts();
+        facts.wayland && prefers_client_side(&facts.desktops)
+    })
+}
+
+pub fn is_wayland() -> bool {
+    let injected = INJECTED.with(|slot| slot.borrow().clone());
+    injected.as_ref().or_else(|| PROCESS.get()).is_some_and(|r| r.facts().wayland)
+}
+
+pub fn resolve_with_actions(
+    choice: Option<RequestedDecorations>,
+    session: RequestedDecorations,
+    actions: ActionsPlace,
+) -> Resolution {
     let injected = INJECTED.with(|slot| slot.borrow().clone());
     if let Some(resolver) = injected.as_ref().or_else(|| PROCESS.get()) {
-        return resolver.resolve(choice, session);
+        return resolver.resolve_with_actions(choice, session, actions);
     }
     // Headless engines and offscreen UI have no windowing integration. They
     // read neither the environment nor the real session.
     let mode = match choice.unwrap_or(session) {
         RequestedDecorations::Auto => {
-            return automatic(&SessionFacts {
+            return automatic_with_actions(&SessionFacts {
                 wayland: true,
                 desktops: String::new(),
                 decoration_global: None,
-            });
+            }, actions);
         }
         RequestedDecorations::Client => Decorations::Client,
         RequestedDecorations::Server => Decorations::Server,
@@ -244,6 +288,24 @@ mod tests {
                 reason: "rule4",
             }
         );
+    }
+
+    #[test]
+    fn titlebar_actions_are_per_theme_and_explicit_modes_win() {
+        let r = Resolver::new(|| facts(true, "KDE", Some(true)), || None, |_| {});
+        for _ in 0..2 {
+            assert_eq!(r.resolve_with_actions(None, Auto, ActionsPlace::Titlebar), Resolution {
+                mode: Decorations::Client, reason: "rule3b",
+            });
+            assert_eq!(r.resolve_with_actions(None, Auto, ActionsPlace::Row).reason, "rule3");
+        }
+        for mode in [Client, Server] {
+            assert_eq!(r.resolve_with_actions(Some(mode), Auto, ActionsPlace::Titlebar).reason, "choice");
+        }
+        let r = Resolver::new(|| facts(true, "KDE", Some(true)), || Some("ssd".into()), |_| {});
+        assert_eq!(r.resolve_with_actions(None, Auto, ActionsPlace::Titlebar).mode, Decorations::Server);
+        assert_eq!(automatic_with_actions(&facts(false, "KDE", Some(true)), ActionsPlace::Titlebar).reason, "rule1");
+        assert_eq!(automatic_with_actions(&facts(true, "KDE:MixOS", Some(true)), ActionsPlace::Titlebar).reason, "rule2");
     }
 
     #[test]

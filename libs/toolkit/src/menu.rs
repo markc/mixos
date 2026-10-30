@@ -1010,7 +1010,7 @@ pub fn form(ctx: &Context) -> serde_json::Value {
         "style": chrome.menu_style.name(),
         "side": chrome.menu_side.name(),
         "effective": effective(ctx).name(),
-        "hosted": service.is_some(),
+        "hosted": effective(ctx) == design::MenuStyle::Titlebar,
         "service": service,
     })
 }
@@ -1019,7 +1019,8 @@ pub(crate) fn effective(ctx: &Context) -> design::MenuStyle {
     let chrome = Chrome::of(ctx);
     let style = chrome.menu_style.effective(chrome.decorations);
     if (style == design::MenuStyle::Bar && ctx.content_rect().width() < 640.0)
-        || (style == design::MenuStyle::Titlebar && crate::drive::menu_service(ctx).is_none())
+        || (style == design::MenuStyle::Titlebar
+            && (!design::decorations::has_host() || crate::drive::menu_service(ctx).is_none()))
     {
         // The existing compact menu keeps every command reachable when a
         // full menu row would overlap the title-bar controls in a small tile.

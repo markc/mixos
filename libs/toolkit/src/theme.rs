@@ -446,7 +446,7 @@ impl Theme {
     }
 
     pub fn decoration_resolution(&self) -> design::decorations::Resolution {
-        design::decorations::resolve(None, self.decorations)
+        design::decorations::resolve_with_actions(None, self.decorations, self.band.place)
     }
 
     /// Where a client-side title bar puts its caption buttons.
@@ -689,6 +689,12 @@ mod tests {
                 RequestedDecorations::Auto
             );
             assert_eq!(automatic.decorations(), Decorations::Server);
+            let titlebar = automatic.clone().with_band(design::title_band::Settings::from_names(
+                "auto", "right", "titlebar", "mac",
+            ));
+            assert_eq!(titlebar.decorations(), Decorations::Client);
+            assert_eq!(titlebar.decoration_resolution().reason, "rule3b");
+            assert_eq!(automatic.decoration_resolution().reason, "rule3");
             choice.decorations = Some(RequestedDecorations::Client);
             assert_eq!(
                 session.with_choice(&choice).unwrap().decorations(),

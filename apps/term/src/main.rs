@@ -198,6 +198,7 @@ fn run(settings: config::Settings) -> Result<(), String> {
         options,
         Box::new(move |cc| {
             toolkit::decorations::initialise(cc);
+            toolkit::decorations::initialise_window(&cc.egui_ctx, cc.winit_window().cloned());
             let render_state = cc
                 .wgpu_render_state
                 .as_ref()
