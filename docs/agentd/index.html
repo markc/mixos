@@ -212,6 +212,8 @@
                         <a href="#commands">Commands</a>
                         <a href="#events">Events</a>
                         <a href="#session-log">Session log</a>
+                        <a href="#files">Files</a>
+                        <a href="#terminals">Terminals</a>
                         <a href="#agents-calling-back">Agents calling back</a>
                     </nav>
                 </div>
@@ -267,10 +269,17 @@ strict data:</p>
 <pre><code class="language-mix">max_live: 4
 agents: {
   claude: {argv: ["claude-agent-acp"], roots: ["/home/user/src"]},
-  gemini: {argv: ["gemini", "--acp"], roots: ["/home/user/src"]},
+  gemini: {argv: ["gemini", "--acp", "--skip-trust"], roots: ["/home/user/src"]},
   opencode: {argv: ["opencode", "acp"], roots: ["/home/user/src"], policy: "ask"}
 }
 </code></pre>
+<p>Tested agents (2026-10-30), each with mixos-mcp reaching the Bus:</p>
+<table><thead><tr><th>Agent</th><th>argv</th><th>Notes</th></tr></thead><tbody>
+<tr><td>Claude</td><td><code>claude-agent-acp</code> (npm <code>@agentclientprotocol/claude-agent-acp</code>)</td><td>Uses its own file and shell tools, so Claude Code hooks such as a PreToolUse gate still apply.</td></tr>
+<tr><td>Gemini CLI</td><td><code>gemini --acp --skip-trust</code></td><td>Without <code>--skip-trust</code> Gemini treats the folder as untrusted and starts no MCP server. The flag trusts the session's <code>cwd</code> for that run only, so roots should hold only trusted code. Reads go through <code>fs/read_text_file</code>. Its write tool cannot create a new file through any ACP client: it checks for a missing file with <code>instanceof Error</code>, which a JSON-RPC error is not, so it falls back to its own shell.</td></tr>
+<tr><td>Codex</td><td><code>codex-acp</code> (npm <code>@agentclientprotocol/codex-acp</code>)</td><td>Uses the normal Codex login and <code>CODEX_HOME</code>. It starts MCP servers with a bare environment, so agentd passes its own broker and layout variables (<code>MIXOS_NODED_URL</code>, <code>MIXOS_BUS_SOCKET</code>, <code>MIXOS_RUN</code>, …) in the mixos-mcp entry.</td></tr>
+<tr><td>OpenCode</td><td><code>opencode acp</code></td><td>The model is a config option: <code>agent.session.set {session, option: "model", value: "deepseek/deepseek-v4-pro"}</code>.</td></tr>
+</tbody></table>
 <ul>
 <li>
 <p><strong>argv</strong>: the agent's ACP command, run directly (no shell).</p>
@@ -348,6 +357,8 @@ the update unchanged in <code>update</code>;</li>
 <code>refusal</code> or <code>cancelled</code>;</li>
 <li><code>permission_answered</code>;</li>
 <li><code>error</code>;</li>
+<li><code>fs_read</code>, <code>fs_write</code> or <code>fs_refused</code> (see Files);</li>
+<li><code>terminal_created</code> or <code>terminal_exited</code> (see Terminals);</li>
 <li><code>ended</code>, logged (not published) when a restart ends a session.</li>
 </ul>
 <p><code>seq</code> rises by one per event in a session. A watcher that missed events
@@ -369,6 +380,34 @@ agent's events are still published and the gap is reported on stderr. A
 watcher that follows <code>seq</code> should therefore also check the session's
 <code>status</code> in a read: after such a gap and a restart, the <code>ended</code> event can
 carry a <code>seq</code> the watcher has already seen.</p>
+<h2 id="files">Files</h2>
+<p>agentd serves ACP's <code>fs/read_text_file</code> (with <code>line</code> and <code>limit</code>) and
+<code>fs/write_text_file</code>, inside the session's <code>cwd</code> and <code>additional_dirs</code>
+only. Paths must be absolute and are resolved first, so a symlink or <code>..</code>
+cannot lead out; a new file's parent directory must already exist. A read
+is limited to 8 MiB. Refusals are JSON-RPC errors: <code>-32002</code> for a missing
+file, <code>-32602</code> for a path outside the session or a bad request. Every read,
+write and refusal is an event (<code>fs_read</code>, <code>fs_write</code>, <code>fs_refused</code>).</p>
+<p>This confines what the agent asks agentd to do. An agent's own tools, such
+as its shell or Claude's built-in file tools, do not go through agentd.
+The path check and the read or write are separate steps, so an agent that
+replaces a path with a symlink between them can still lead one out; that
+takes the agent's own tools, which reach the same files anyway. A missing
+path outside the session is answered as outside, so the errors do not tell
+the agent what exists elsewhere.</p>
+<h2 id="terminals">Terminals</h2>
+<p>agentd serves ACP's <code>terminal/*</code> on the headless path: the command runs
+directly on pipes (no shell, no PTY), in the session's <code>cwd</code> or a <code>cwd</code>
+inside its directories, with the instance <code>env</code> plus any the agent asks
+for. agentd keeps the newest 5,000 lines of stdout and stderr together, up
+to <code>outputByteLimit</code> bytes (at most 8 MiB), dropping from the front.
+Terminal query sequences (cursor and device status requests, colour
+queries) are removed, since nothing is there to answer them. A session has
+at most 8 terminals at once, and they end with it. <code>terminal/kill</code> stops
+the command (TERM, then KILL) and reports <code>SIGTERM</code>, even when KILL was
+needed. Each terminal's start
+and exit are events (<code>terminal_created</code>, <code>terminal_exited</code>).</p>
+<p>On a desk, terminals are to move onto Term, so a human can watch them.</p>
 <h2 id="agents-calling-back">Agents calling back</h2>
 <p>agentd runs every agent with <code>MIXOS_AGENT_SESSION</code> set to its session id,
 and that agent's mixos-mcp registers on the Bus as

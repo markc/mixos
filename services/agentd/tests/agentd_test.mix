@@ -84,6 +84,8 @@ end
 
 $bus = nil
 mkdir($tmp .. "/ws/project", {parents: true})
+mkdir($tmp .. "/ws/extra", {parents: true})
+write_file($tmp .. "/ws/extra/x.txt", "x1")
 mkdir($tmp .. "/outside", {parents: true})
 try
   $bus = $pb.start({dir: $tmp .. "/bus", name: "agentd-test", noded: $noded})
@@ -125,7 +127,7 @@ try
   check("unknown session is rc 14", agent("agent.session.prompt", {session: "zzzz9999", content: "x"}).rc == 14)
 
   -- A session and a turn.
-  $n = agent("agent.session.new", {agent: "fake", cwd: $tmp .. "/ws/project"})
+  $n = agent("agent.session.new", {agent: "fake", cwd: $tmp .. "/ws/project", additional_dirs: [$tmp .. "/ws/extra"]})
   $s = $n.v.session
   check("session.new replies at once with a valid id", $n.rc == 0 and re_match(to_string($s), "^[a-z0-9]{4,12}$"))
   check("the session becomes ready", wait_ready($s))
@@ -134,6 +136,40 @@ try
   check("the agent saw its mixos-mcp session env", saw("updated " .. $s .. " ", "agent_message_chunk mcp:" .. $s))
   check("text streamed back", saw("updated " .. $s .. " ", "agent_message_chunk echo:hello MCP"))
   check("the turn ended with end_turn", saw("updated " .. $s .. " ", "stop end_turn"))
+
+  -- fs/* through agentd, inside the session's directories only.
+  $proj = realpath($tmp .. "/ws/project")
+  write_file($tmp .. "/outside/secret", "s0")
+  write_file($proj .. "/three.txt", "l1\nl2\nl3")
+  symlink($tmp .. "/outside/secret", $proj .. "/link")
+  fn fs_turn($t, $want)
+    agent("agent.session.prompt", {session: $s, content: $t})
+    $ok = saw("updated " .. $s .. " ", "agent_message_chunk " .. $want)
+    saw("updated " .. $s .. " ", "echo:" .. $t)
+    sleep(0.3)
+    return $ok
+  end
+  check("fs write inside the session", fs_turn("FSWRITE " .. $proj .. "/note.txt|n1", "wrote") and read_file($proj .. "/note.txt") == "n1")
+  check("fs read inside the session", fs_turn("FSREAD " .. $proj .. "/note.txt", "read:n1"))
+  check("fs read of line 2, limit 1", fs_turn("FSLINES " .. $proj .. "/three.txt", "read:l2"))
+  check("fs read outside is invalid params", fs_turn("FSREAD " .. $tmp .. "/outside/secret", "fserr:-32602"))
+  check("fs write through a symlink out is refused", fs_turn("FSWRITE " .. $proj .. "/link|pwned", "fserr:-32602") and read_file($tmp .. "/outside/secret") == "s0")
+  check("fs write with dot-dot out is refused", fs_turn("FSWRITE " .. $proj .. "/../../outside/x|pwned", "fserr:-32602") and not is_file($tmp .. "/outside/x"))
+  check("fs read of a missing file is not found", fs_turn("FSREAD " .. $proj .. "/none", "fserr:-32002"))
+  check("fs read in an additional dir", fs_turn("FSREAD " .. realpath($tmp .. "/ws/extra/x.txt"), "read:x1"))
+  -- terminal/* on pipes.
+  check("terminal: run, wait, output (stdout and stderr), exit code, release",
+    fs_turn("TERMRUN", "term:3:one/two/:3:gone=-32002"))
+  check("terminal: kill stops a running command", fs_turn("TERMKILL", "killed:SIGTERM"))
+  check("terminal: cwd outside the session is refused", fs_turn("TERMOUT", "termerr:-32602"))
+  $tev = filter(agent("agent.session.read", {session: $s, since: 0}).v.events, fn($e) = starts_with($e.kind, "terminal_"))
+  check("terminal create and exit are logged events",
+    len(filter($tev, fn($e) = $e.kind == "terminal_created")) == 2 and len(filter($tev, fn($e) = $e.kind == "terminal_exited")) == 2)
+
+  $fsev = filter(agent("agent.session.read", {session: $s, since: 0}).v.events, fn($e) = starts_with($e.kind, "fs_"))
+  check("fs reads, writes and refusals are logged events",
+    len(filter($fsev, fn($e) = $e.kind == "fs_write")) == 1 and len(filter($fsev, fn($e) = $e.kind == "fs_read")) == 3 and
+    len(filter($fsev, fn($e) = $e.kind == "fs_refused")) == 4)
 
   -- Command ids: a retry gets the first receipt and never runs again.
   $first = agent("agent.session.prompt", {session: $s, content: "once", id: "turn-once"})

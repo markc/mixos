@@ -8,8 +8,11 @@
 --   MCP         echo the MIXOS_AGENT_SESSION its mixos-mcp entry carries
 --   SLOW        hold the turn open until the next frame (a cancel lands)
 --   LATE        like SLOW, then ask permission after the cancel; echo it
--- readline() returns "" at EOF (and for an empty line, which ACP never
--- sends), so "" ends the agent.
+--   FSREAD P    fs/read_text_file P (whole file); echo read:<text> or err:<code>
+--   FSLINES P   fs/read_text_file P, line 2, limit 1
+--   FSWRITE P|T fs/write_text_file P with text T; echo wrote or err:<code>
+-- readline() is nil at EOF (an older mix gives ""; ACP never sends an
+-- empty line), so either ends the agent.
 
 $sessions = {}
 $next_id = 900
@@ -37,7 +40,7 @@ end
 
 loop
   $line = readline()
-  if $line == "" then break end
+  if $line == nil or $line == "" then break end
   $m = json_parse($line)
   if $m.method == "initialize" then
     out({id: $m.id, result: {protocolVersion: 1, agentInfo: {name: "fake-acp", version: "0"},
@@ -59,6 +62,55 @@ loop
     $stop = "end_turn"
     if contains($t, "MCP") then text($sid, "mcp:" .. $sessions[$sid].mcp) end
     if contains($t, "BIG") then text($sid, repeat("x", 2097152)) end
+    if $t == "TERMRUN" or $t == "TERMKILL" or $t == "TERMOUT" then
+      -- One request at a time; each answer is the next line from agentd.
+      fn call($method, $params)
+        $next_id = $next_id + 1
+        $params.sessionId = $sid
+        out({id: $next_id, method: $method, params: $params})
+        return json_parse(readline())
+      end
+      if $t == "TERMRUN" then
+        $c = call("terminal/create", {command: "sh", args: ["-c", "echo one; echo two >&2; exit 3"]})
+        $tid = $c.result.terminalId
+        $w = call("terminal/wait_for_exit", {terminalId: $tid})
+        $o = call("terminal/output", {terminalId: $tid})
+        call("terminal/release", {terminalId: $tid})
+        $gone = call("terminal/output", {terminalId: $tid})
+        text($sid, "term:" .. to_string($w.result.exitCode) .. ":" .. replace($o.result.output, "\n", "/") ..
+          ":" .. to_string($o.result.exitStatus.exitCode) .. ":gone=" .. to_string($gone.error.code))
+      elif $t == "TERMKILL" then
+        $c = call("terminal/create", {command: "sleep", args: ["30"]})
+        $tid = $c.result.terminalId
+        call("terminal/kill", {terminalId: $tid})
+        $w = call("terminal/wait_for_exit", {terminalId: $tid})
+        call("terminal/release", {terminalId: $tid})
+        text($sid, "killed:" .. to_string($w.result.signal))
+      else
+        $c = call("terminal/create", {command: "true", cwd: "/"})
+        text($sid, "termerr:" .. to_string($c.error.code))
+      end
+    end
+    if starts_with($t, "FSREAD ") or starts_with($t, "FSLINES ") or starts_with($t, "FSWRITE ") then
+      $next_id = $next_id + 1
+      $op = before($t, " ")
+      $arg = after($t, " ")
+      if $op == "FSWRITE" then
+        out({id: $next_id, method: "fs/write_text_file", params: {sessionId: $sid, path: before($arg, "|"), content: after($arg, "|")}})
+      elif $op == "FSLINES" then
+        out({id: $next_id, method: "fs/read_text_file", params: {sessionId: $sid, path: $arg, line: 2, limit: 1}})
+      else
+        out({id: $next_id, method: "fs/read_text_file", params: {sessionId: $sid, path: $arg}})
+      end
+      $r = json_parse(readline())
+      if $r.error != nil then
+        text($sid, "fserr:" .. to_string($r.error.code))
+      elif $op == "FSWRITE" then
+        text($sid, "wrote")
+      else
+        text($sid, "read:" .. $r.result.content)
+      end
+    end
     if contains($t, "PERMISSION") then
       $next_id = $next_id + 1
       out({id: $next_id, method: "session/request_permission", params: {sessionId: $sid,

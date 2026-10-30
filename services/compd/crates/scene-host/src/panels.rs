@@ -128,6 +128,9 @@ pub struct Panels {
     /// Loader-owned popup pages use the same command as the panel button.
     popup_routes: BTreeMap<(String, String), (String, String)>,
     popup_commands: Vec<(String, String)>,
+    /// Corner clicks on settings-owned edges: `(record id, mode)` for
+    /// `shell.panels.<id>.mode`, sent by the host as `settings.apply`.
+    settings_writes: Vec<(String, &'static str)>,
     /// The current config is read each time a corner opens.
     pub menu_conf: Option<std::path::PathBuf>,
 }
@@ -169,6 +172,7 @@ impl Default for Panels {
             pending_focus: BTreeMap::new(),
             popup_routes: BTreeMap::new(),
             popup_commands: Vec::new(),
+            settings_writes: Vec::new(),
             menu_conf: None,
         }
     }
@@ -745,19 +749,31 @@ impl Panels {
                             return true;
                         }
                     }
-                    if let Some(model) = self.models.get(&press.output) {
-                        let edge = press.corner.summoned_edge();
+                    let edge = press.corner.summoned_edge();
+                    if let Some(record) = self.preferences.record(edge) {
+                        // A settings-owned edge: the click is a settings
+                        // change (dock or overlay to hidden, hidden to dock),
+                        // written through settingsd; the new look applies it.
+                        let next = if record.preference.mode() == PanelMode::Hidden {
+                            "dock"
+                        } else {
+                            "hidden"
+                        };
+                        self.settings_writes.push((record.id.clone(), next));
+                    } else if let Some(model) = self.models.get(&press.output) {
                         let mode = model.panel(edge).mode;
+                        // One click hides a held edge (pinned or docked) and
+                        // pins a hidden one; Shift toggles dock.
                         let next = if press.shift {
                             if mode == PanelMode::Docked {
                                 PanelMode::Hidden
                             } else {
                                 PanelMode::Docked
                             }
-                        } else if mode == PanelMode::Pinned {
-                            PanelMode::Hidden
-                        } else {
+                        } else if mode == PanelMode::Hidden {
                             PanelMode::Pinned
+                        } else {
+                            PanelMode::Hidden
                         };
                         // Explicit modes: the pinned core's legacy Clicked
                         // docks, and its PinToggle releases into transience.
@@ -775,6 +791,10 @@ impl Panels {
 
     pub(crate) fn popup_commands(&mut self) -> Vec<(String, String)> {
         std::mem::take(&mut self.popup_commands)
+    }
+
+    pub(crate) fn settings_writes(&mut self) -> Vec<(String, &'static str)> {
+        std::mem::take(&mut self.settings_writes)
     }
 
     pub fn menu(&self) -> Option<&crate::menu::Menu> {
@@ -2128,11 +2148,42 @@ mod tests {
     }
 
     #[test]
+    fn hotspot_clicks_on_a_settings_owned_edge_write_the_settings_mode() {
+        for (stored, shift, written) in [
+            ("dock", false, "hidden"),
+            ("dock", true, "hidden"),
+            ("overlay", false, "hidden"),
+            ("hidden", false, "dock"),
+        ] {
+            let mut panels = panels_with("DP-1");
+            register(&mut panels, "DP-1", Edge::Bottom, "page", 52.0);
+            let mut shell = settings::Shell::default();
+            shell.panels.get_mut("bottom").unwrap().mode = stored.into();
+            panels.set_preferences(crate::preferences::Preferences::prepare(&shell).unwrap());
+            let start = Duration::from_secs(1);
+            let before = panels.mode("DP-1", Edge::Bottom);
+            panels.pointer_at("DP-1", Some((1.0, 799.0)), tuning(), start);
+            assert!(panels.pointer_button_at(0x110, true, shift, start));
+            assert!(panels.pointer_button_at(0x110, false, shift, start));
+            assert_eq!(
+                panels.settings_writes(),
+                vec![("bottom".into(), written)],
+                "{stored}, shift={shift}"
+            );
+            assert_eq!(
+                panels.mode("DP-1", Edge::Bottom),
+                before,
+                "the edge moves only when the new look arrives"
+            );
+        }
+    }
+
+    #[test]
     fn hotspot_clicks_obey_the_mode_table_and_capture_press_modifiers() {
         for (before, shift, after) in [
             (PanelMode::Hidden, false, "pinned"),
             (PanelMode::Pinned, false, "hidden"),
-            (PanelMode::Docked, false, "pinned"),
+            (PanelMode::Docked, false, "hidden"),
             (PanelMode::Hidden, true, "docked"),
             (PanelMode::Pinned, true, "docked"),
             (PanelMode::Docked, true, "hidden"),

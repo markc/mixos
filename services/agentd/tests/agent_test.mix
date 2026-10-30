@@ -48,6 +48,55 @@ check("subdirectory is inside", $a.under_roots($tmp .. "/root/ws/sub", [$tmp .. 
 check("sibling is outside", not $a.under_roots($tmp .. "/outside", [$tmp .. "/root"]))
 check("symlink out of the root is outside", not $a.under_roots($tmp .. "/root/escape", [$tmp .. "/root"]))
 check("dot-dot out of the root is outside", not $a.under_roots($tmp .. "/root/ws/../../outside", [$tmp .. "/root"]))
+
+-- Files (fs/*): the session's directories are root/ws.
+$dirs = [$tmp .. "/root/ws"]
+write_file($tmp .. "/root/ws/a.txt", "l1\nl2\nl3")
+write_file($tmp .. "/outside/secret", "s")
+symlink($tmp .. "/outside/secret", $tmp .. "/root/ws/link")
+symlink($tmp .. "/outside/none", $tmp .. "/root/ws/dangling")
+check("read target inside", $a.fs_read_target($tmp .. "/root/ws/a.txt", $dirs) == realpath($tmp .. "/root/ws/a.txt"))
+refuses("read of a missing file", "NOT_FOUND", fn() = $a.fs_read_target($tmp .. "/root/ws/none", $dirs))
+refuses("read outside", "OUTSIDE_ROOTS", fn() = $a.fs_read_target($tmp .. "/outside/secret", $dirs))
+refuses("a missing file outside says outside, not missing", "OUTSIDE_ROOTS", fn() = $a.fs_read_target($tmp .. "/outside/nothing", $dirs))
+refuses("a missing directory outside says outside", "OUTSIDE_ROOTS", fn() = $a.fs_write_target($tmp .. "/outside/no/x", $dirs))
+refuses("read through a symlink out", "OUTSIDE_ROOTS", fn() = $a.fs_read_target($tmp .. "/root/ws/link", $dirs))
+refuses("read of a relative path", "USAGE", fn() = $a.fs_read_target("a.txt", $dirs))
+refuses("read of a directory", "USAGE", fn() = $a.fs_read_target($tmp .. "/root/ws/sub", $dirs))
+check("write target for a new file", $a.fs_write_target($tmp .. "/root/ws/sub/new.txt", $dirs) == realpath($tmp .. "/root/ws/sub") .. "/new.txt")
+check("write target for an existing file", $a.fs_write_target($tmp .. "/root/ws/a.txt", $dirs) == realpath($tmp .. "/root/ws/a.txt"))
+refuses("write through a symlink out", "OUTSIDE_ROOTS", fn() = $a.fs_write_target($tmp .. "/root/ws/link", $dirs))
+refuses("write through a dangling symlink", "OUTSIDE_ROOTS", fn() = $a.fs_write_target($tmp .. "/root/ws/dangling", $dirs))
+refuses("write with dot-dot out", "OUTSIDE_ROOTS", fn() = $a.fs_write_target($tmp .. "/root/ws/../../outside/x", $dirs))
+refuses("write into a missing directory", "NOT_FOUND", fn() = $a.fs_write_target($tmp .. "/root/ws/no/x", $dirs))
+refuses("write two missing levels down is still not found", "NOT_FOUND", fn() = $a.fs_write_target($tmp .. "/root/ws/no/deeper/x", $dirs))
+refuses("read two missing levels down is still not found", "NOT_FOUND", fn() = $a.fs_read_target($tmp .. "/root/ws/no/deeper/x", $dirs))
+refuses("missing levels via dot-dot out stay outside", "OUTSIDE_ROOTS", fn() = $a.fs_write_target($tmp .. "/root/ws/../../outside/no/x", $dirs))
+refuses("write to a directory", "USAGE", fn() = $a.fs_write_target($tmp .. "/root/ws/sub", $dirs))
+check("slice_lines: all", $a.slice_lines("l1\nl2\nl3", nil, nil) == "l1\nl2\nl3")
+check("slice_lines: line 2, limit 1", $a.slice_lines("l1\nl2\nl3", 2, 1) == "l2")
+check("slice_lines: from line 2", $a.slice_lines("l1\nl2\nl3", 2, nil) == "l2\nl3")
+check("slice_lines: past the end", $a.slice_lines("l1", 5, nil) == "")
+refuses("slice_lines: line 0", "USAGE", fn() = $a.slice_lines("x", 0, nil))
+
+-- Terminals.
+$tc = $a.check_terminal({command: "echo", args: ["hi"], env: [{name: "X", value: "1"}], outputByteLimit: 99999999}, $dirs)
+check("terminal: argv, default cwd, env map, limit capped at 8 MiB",
+  deep_eq($tc.argv, ["echo", "hi"]) and $tc.cwd == realpath($tmp .. "/root/ws") and $tc.env.X == "1" and $tc.limit == 8388608)
+refuses("terminal without a command", "USAGE", fn() = $a.check_terminal({}, $dirs))
+refuses("terminal cwd outside", "OUTSIDE_ROOTS", fn() = $a.check_terminal({command: "true", cwd: $tmp .. "/outside"}, $dirs))
+refuses("terminal env with a bad name", "USAGE", fn() = $a.check_terminal({command: "true", env: [{name: "A=B", value: "x"}]}, $dirs))
+refuses("terminal args not strings", "USAGE", fn() = $a.check_terminal({command: "true", args: [1]}, $dirs))
+refuses("terminal cwd that is a file", "USAGE", fn() = $a.check_terminal({command: "true", cwd: $tmp .. "/root/ws/a.txt"}, $dirs))
+check("query traffic is stripped", $a.strip_queries("a" .. chr(27) .. "[6nb" .. chr(27) .. "]11;?" .. chr(7) .. "c") == "abc")
+$tl = {lines: [], bytes: 0, truncated: false}
+for each $x in ["one", "two", "three"]
+  $tl = $a.tail_add($tl, $x, 8)
+end
+check("tail keeps the newest lines within the byte limit", deep_eq($tl.lines, ["three"]) and $tl.truncated and $a.tail_text($tl) == "three\n")
+$tl = $a.tail_add({lines: [], bytes: 0, truncated: false}, "ok", 100)
+check("tail under the limit is not truncated", not $tl.truncated and $a.tail_text($tl) == "ok\n")
+check("signal names", $a.signal_name(15) == "SIGTERM" and $a.signal_name(11) == "SIGSEGV" and $a.signal_name(64) == "SIG64" and $a.signal_name(nil) == nil)
 check("a root-name prefix is not inside", not $a.under_roots($tmp .. "/rootx", [$tmp .. "/root"]))
 check("missing path is outside", not $a.under_roots($tmp .. "/root/nope", [$tmp .. "/root"]))
 check("relative path is outside", not $a.under_roots("root/ws", [$tmp .. "/root"]))
@@ -78,11 +127,14 @@ check("session ids fit mixos-mcp's 4-12", not $a.valid_session_id("abc") and not
 
 -- Frames.
 $init = json_parse(trim($a.initialize_frame(1)))
-check("initialize is protocol 1 with fs and terminal off",
-  $init.method == "initialize" and $init.params.protocolVersion == 1 and $init.params.clientCapabilities.terminal == false)
-$new = json_parse(trim($a.session_new_frame(2, "/w", [], $a.mcp_entry("/opt/mixos/bin/mixos-mcp", "abcd1234ef"))))
+check("initialize is protocol 1 with fs and terminal on",
+  $init.method == "initialize" and $init.params.protocolVersion == 1 and $init.params.clientCapabilities.terminal == true and
+  $init.params.clientCapabilities.fs.readTextFile == true and $init.params.clientCapabilities.fs.writeTextFile == true)
+$new = json_parse(trim($a.session_new_frame(2, "/w", [], $a.mcp_entry("/opt/mixos/bin/mixos-mcp", "abcd1234ef", {MIXOS_NODED_URL: "ws://192.0.2.1:9000", PATH: "/x", MIXOS_RUN: ""}))))
 check("session/new carries the mixos-mcp entry and session env",
   $new.params.mcpServers[0].env[0].name == "MIXOS_AGENT_SESSION" and $new.params.mcpServers[0].env[0].value == "abcd1234ef")
+check("the mcp entry passes set Bus discovery vars only (not PATH, not empty)",
+  len($new.params.mcpServers[0].env) == 2 and $new.params.mcpServers[0].env[1].name == "MIXOS_NODED_URL")
 check("session/new omits empty additionalDirectories", $new.params.additionalDirectories == nil)
 check("frames end in exactly one newline", ends_with($a.cancel_frame("s"), "}\n"))
 check("cancel is a notification (no id)", json_parse(trim($a.cancel_frame("s"))).id == nil)

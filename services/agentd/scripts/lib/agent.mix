@@ -79,6 +79,161 @@ fn under_roots($path, $roots)
   return false
 end
 
+-- Files (fs/*) --------------------------------------------------------------
+-- An agent may read and write only inside its session's directories (cwd
+-- and additional_dirs, both already under the instance roots). Paths are
+-- resolved first, so a symlink cannot lead out. This confines the ACP
+-- client surface only; the agent's own tools are not confined. The check
+-- and the read or write are separate steps, so an agent that swaps a path
+-- for a symlink in between can still lead one out; doing that takes the
+-- agent's own shell or file tools, which reach the same files directly.
+
+$FS_READ_MAX = 8388608
+
+-- True for a symlink, dangling or not (lstat); false when nothing is there.
+fn _is_link($path)
+  try
+    return stat($path, {follow_symlinks: false}).is_symlink
+  catch $m
+    return false
+  end
+end
+
+-- A missing path counts as inside when its nearest existing ancestor is.
+fn _inside_missing($path, $dirs)
+  $p = dirname($path)
+  while $p != "/" and realpath($p) == nil
+    $p = dirname($p)
+  end
+  return under_roots($p, $dirs)
+end
+
+-- The real path to read, or raises NOT_FOUND / OUTSIDE_ROOTS / USAGE.
+-- NOT_FOUND says "Resource not found" (ACP's -32002 text): Gemini CLI
+-- recognises a missing file by that message, not the code, and treats any
+-- other text as a failed read (its write tool then gives up).
+fn fs_read_target($path, $dirs)
+  if type($path) != "string" or not starts_with($path, "/") then _usage("path must be absolute") end
+  if realpath($path) == nil then
+    -- Missing: "not found" only inside the session, so the answer never
+    -- says whether a path outside it exists.
+    if _inside_missing($path, $dirs) then raise("NOT_FOUND", "Resource not found: " .. $path) end
+    raise("OUTSIDE_ROOTS", $path .. " is outside the session's directories")
+  end
+  if not under_roots($path, $dirs) then raise("OUTSIDE_ROOTS", $path .. " is outside the session's directories") end
+  $real = realpath($path)
+  if not is_file($real) then _usage($path .. " is not a file") end
+  if stat($real).size > $FS_READ_MAX then raise("TOO_LARGE", $path .. " is over " .. to_string($FS_READ_MAX) .. " bytes") end
+  return $real
+end
+
+-- The path to write. An existing file (or symlink) must resolve inside the
+-- session's directories; a new file's parent must. Raises like the reader.
+fn fs_write_target($path, $dirs)
+  if type($path) != "string" or not starts_with($path, "/") or ends_with($path, "/") then _usage("path must be an absolute file path") end
+  if realpath($path) != nil or _is_link($path) then
+    if realpath($path) == nil then raise("OUTSIDE_ROOTS", $path .. " is a dangling symlink") end
+    if not under_roots($path, $dirs) then raise("OUTSIDE_ROOTS", $path .. " is outside the session's directories") end
+    $real = realpath($path)
+    if is_dir($real) then _usage($path .. " is a directory") end
+    return $real
+  end
+  $parent = dirname($path)
+  if realpath($parent) == nil then
+    if _inside_missing($parent, $dirs) then raise("NOT_FOUND", "Resource not found: " .. $parent) end
+    raise("OUTSIDE_ROOTS", $path .. " is outside the session's directories")
+  end
+  if not under_roots($parent, $dirs) then raise("OUTSIDE_ROOTS", $path .. " is outside the session's directories") end
+  return realpath($parent) .. "/" .. basename($path)
+end
+
+-- Lines $line (1-based) onward, at most $limit of them; nil means all.
+fn slice_lines($text, $line, $limit)
+  if $line == nil and $limit == nil then return $text end
+  if ($line != nil and (type($line) != "number" or $line < 1)) or ($limit != nil and (type($limit) != "number" or $limit < 0)) then
+    _usage("line must be 1 or more and limit 0 or more")
+  end
+  $all = split($text, "\n")
+  $from = ($line ?? 1) - 1
+  if $from >= len($all) then return "" end
+  $to = if $limit == nil then len($all) else min(len($all), $from + $limit) end
+  return join(slice($all, $from, $to), "\n")
+end
+
+-- Terminals (terminal/*) ---------------------------------------------------
+-- The headless path: agentd runs the command on pipes (no PTY) and keeps a
+-- bounded tail of its output. On a desk this is to move to Term's Bus
+-- commands (decision ruling 5).
+
+$TERM_LINES = 5000
+$TERM_BYTES = 8388608
+$TERM_ARGS_MAX = 256
+$TERM_ENV_MAX = 64
+
+-- Validate terminal/create params. Returns {argv, cwd, env, limit} or
+-- raises USAGE / OUTSIDE_ROOTS.
+fn check_terminal($p, $dirs)
+  if type($p.command) != "string" or $p.command == "" then _usage("command is required") end
+  $args = $p.args ?? []
+  if type($args) != "list" or len($args) > $TERM_ARGS_MAX then _usage("args must be a list of at most " .. to_string($TERM_ARGS_MAX)) end
+  for each $x in $args
+    if type($x) != "string" then _usage("args must be strings") end
+  end
+  $env = {}
+  $list = $p.env ?? []
+  if type($list) != "list" or len($list) > $TERM_ENV_MAX then _usage("env must be a list of at most " .. to_string($TERM_ENV_MAX)) end
+  for each $e in $list
+    if type($e) != "map" or type($e.name) != "string" or type($e.value) != "string" or not re_match($e.name, "^[A-Za-z_][A-Za-z0-9_]*$") then
+      _usage("env entries are {name, value} strings")
+    end
+    $env[$e.name] = $e.value
+  end
+  $cwd = $p.cwd ?? $dirs[0]
+  if type($cwd) != "string" or not starts_with($cwd, "/") then _usage("cwd must be absolute") end
+  if not under_roots($cwd, $dirs) then raise("OUTSIDE_ROOTS", "cwd " .. $cwd .. " is outside the session's directories") end
+  if not is_dir(realpath($cwd)) then _usage("cwd must be a directory") end
+  $limit = $p.outputByteLimit ?? $TERM_BYTES
+  if type($limit) != "number" or $limit < 0 then _usage("outputByteLimit must be 0 or more") end
+  return {argv: concat([$p.command], $args), cwd: realpath($cwd), env: $env, limit: min(floor($limit), $TERM_BYTES)}
+end
+
+-- Terminal query traffic (cursor and device status requests, OSC colour
+-- queries) is dropped: there is no terminal to answer it, and replaying it
+-- to a real terminal later would make that terminal answer.
+fn strip_queries($line)
+  $s = re_replace($line, "\\x1b\\[[0-9;?>]*[nc]", "")
+  return re_replace($s, "\\x1b\\][0-9]+;\\?(\\x07|\\x1b\\\\)", "")
+end
+
+-- Append one line to a terminal's tail {lines, bytes, truncated}, keeping
+-- at most $TERM_LINES lines and $limit bytes, dropping from the front.
+fn tail_add($t, $line, $limit)
+  $line = strip_queries($line)
+  $lines = concat($t.lines, [$line])
+  $bytes = $t.bytes + byte_length($line) + 1
+  $truncated = $t.truncated
+  while len($lines) > 0 and (len($lines) > $TERM_LINES or $bytes > $limit)
+    $bytes = $bytes - byte_length($lines[0]) - 1
+    $lines = slice($lines, 1)
+    $truncated = true
+  end
+  return {lines: $lines, bytes: $bytes, truncated: $truncated}
+end
+
+fn tail_text($t)
+  if len($t.lines) == 0 then return "" end
+  return join($t.lines, "\n") .. "\n"
+end
+
+-- ACP reports a signal by name.
+fn signal_name($n)
+  if $n == nil then return nil end
+  $names = {"1": "SIGHUP", "2": "SIGINT", "3": "SIGQUIT", "4": "SIGILL", "5": "SIGTRAP", "6": "SIGABRT",
+    "7": "SIGBUS", "8": "SIGFPE", "9": "SIGKILL", "10": "SIGUSR1", "11": "SIGSEGV", "12": "SIGUSR2",
+    "13": "SIGPIPE", "14": "SIGALRM", "15": "SIGTERM", "24": "SIGXCPU", "25": "SIGXFSZ"}
+  return $names[to_string($n)] ?? ("SIG" .. to_string($n))
+end
+
 -- Validate agent.session.new arguments against the conf. Returns
 -- {agent, cwd, additional_dirs, mode} or raises.
 fn check_new($conf, $args)
@@ -133,15 +288,34 @@ end
 fn initialize_frame($id)
   return _frame($id, "initialize", {
     protocolVersion: $PROTOCOL_VERSION,
-    -- fs and terminal stay off until agentd serves them (stage 2).
-    clientCapabilities: {fs: {readTextFile: false, writeTextFile: false}, terminal: false},
+    -- fs/* inside the session's directories; terminal/* on pipes (headless).
+    clientCapabilities: {fs: {readTextFile: true, writeTextFile: true}, terminal: true},
     clientInfo: {name: "mixos-agentd", version: "0.1.0"}})
+end
+
+-- The variables that decide which broker and layout a MixOS program finds
+-- (libs/bus and libs/paths). Some agents (Codex) start MCP servers with a
+-- bare environment, so agentd hands its own values to the bridge: the
+-- bridge then reaches the broker agentd is on, not a default one.
+$BUS_ENV_NAMES = ["MIXOS", "MIXOS_PREFIX", "MIXOS_ETC", "MIXOS_VAR", "MIXOS_RUN", "MIXOS_CACHE",
+  "MIXOS_SHARE", "MIXOS_NODE_CONFIG", "MIXOS_NODED_URL", "MIXOS_BUS_SOCKET", "MIXOS_BROKER_ACCOUNT",
+  "MIXOS_MCP_ALLOW_TCP", "XDG_RUNTIME_DIR", "HOME"]
+
+fn bus_env_names()
+  return $BUS_ENV_NAMES
 end
 
 -- The mixos-mcp entry every session gets: the bridge registers on the Bus
 -- as mcp-s-<session>-..., so agentd can recognise its agents calling back.
-fn mcp_entry($mcp_bin, $session)
-  return {name: "mixos", command: $mcp_bin, args: [], env: [{name: "MIXOS_AGENT_SESSION", value: $session}]}
+-- $bus_env: {NAME: value} of the set $BUS_ENV_NAMES from agentd's own env.
+fn mcp_entry($mcp_bin, $session, $bus_env)
+  $env = [{name: "MIXOS_AGENT_SESSION", value: $session}]
+  for each $n in sort(keys($bus_env ?? {}))
+    if contains($BUS_ENV_NAMES, $n) and type($bus_env[$n]) == "string" and $bus_env[$n] != "" then
+      $env = concat($env, [{name: $n, value: $bus_env[$n]}])
+    end
+  end
+  return {name: "mixos", command: $mcp_bin, args: [], env: $env}
 end
 
 fn session_new_frame($id, $cwd, $dirs, $mcp)

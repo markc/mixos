@@ -1077,6 +1077,40 @@ impl SceneHost {
         }
     }
 
+    /// A corner click on a settings-owned edge: `shell.panels.<id>` with its
+    /// mode replaced, fenced on the applied snapshot (the preferences the
+    /// click read), so a change made meanwhile elsewhere, or a second click
+    /// before the first lands, is refused rather than overwritten. The
+    /// accepted change returns as a new look, which moves the edge.
+    fn write_panel_mode(&self, id: &str, mode: &str) {
+        let Some(snapshot) = self.settings.session().host().consumer().applied() else {
+            tracing::warn!(id, "scene host: corner click before settings were read");
+            return;
+        };
+        let Some(record) = snapshot.desktop.shell.panels.get(id) else {
+            return;
+        };
+        let mut record = record.clone();
+        record.mode = mode.into();
+        let operation = format!(
+            "corner-{id}-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |elapsed| elapsed.as_micros())
+        );
+        self.port.emit(
+            "settingsd",
+            "settings.apply",
+            json!({
+                "binding": snapshot.binding,
+                "expected_incarnation": snapshot.incarnation,
+                "expected_revision": snapshot.revision,
+                "operation_id": operation,
+                "changes": {format!("shell.panels.{id}"): record},
+            }),
+        );
+    }
+
     /// Advance the panel model to now (motion, grace): what the frame clock
     /// owes it next. A changed edge publishes.
     /// A tick that moved a reserved zone (an edge docked, undocked or resized)
@@ -1086,6 +1120,9 @@ impl SceneHost {
         for (owner, name) in self.host.panels.popup_commands() {
             self.port
                 .emit(&owner, "scenes.toggle", json!({"name": name}));
+        }
+        for (id, mode) in self.host.panels.settings_writes() {
+            self.write_panel_mode(&id, mode);
         }
         let before = self.host.panels.zones(output);
         let wake = self.host.panels.tick();
