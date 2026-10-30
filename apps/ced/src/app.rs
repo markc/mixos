@@ -772,7 +772,11 @@ impl App {
             // dialogs keep their token and answer with the result.
             HelpKeys | HelpAbout => {
                 let queued = self.dialog.is_some();
-                self.show(if matches!(action, HelpKeys) { Dialog::Keys } else { Dialog::About });
+                self.show(if matches!(action, HelpKeys) {
+                    Dialog::Keys
+                } else {
+                    Dialog::About
+                });
                 self.done(token, Ok(json!({"opened": true, "queued": queued})))
             }
             _ => self.done(token, ok()),
@@ -1371,7 +1375,10 @@ mod tests {
             _ => None,
         });
         a.absorb(fx);
-        assert!(settle(&mut a, &mut service).is_empty(), "waits for the window");
+        assert!(
+            settle(&mut a, &mut service).is_empty(),
+            "waits for the window"
+        );
         assert!(matches!(a.dialog, Some(Dialog::Goto { .. })));
         // The caller's deadline passes before anyone answers the dialog.
         let fx = a.ctl.on_incoming(Incoming::Timer {
@@ -1571,7 +1578,7 @@ mod tests {
                 bytes: Some(3),
             }],
         });
-        assert!(matches!(a.dialog, Some(Dialog::About { .. })));
+        assert!(matches!(a.dialog, Some(Dialog::About)));
         a.answer(Answer::Accept);
         assert!(matches!(a.dialog, Some(Dialog::Recovered { .. })));
     }
@@ -1604,8 +1611,8 @@ mod tests {
     #[test]
     fn quitting_cancels_every_dialog() {
         let mut a = app();
-        a.dialog = Some(Dialog::Keys { token: 1 });
-        a.queued.push_back(Dialog::About { token: 2 });
+        a.dialog = Some(Dialog::Keys);
+        a.queued.push_back(Dialog::About);
         a.cancel_dialogs();
         assert!(a.dialog.is_none() && a.queued.is_empty());
     }

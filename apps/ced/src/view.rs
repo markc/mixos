@@ -846,12 +846,12 @@ fn dialogs(
             vec![Choice::new(label("close"), Role::Cancel)],
             None,
         ),
-        Dialog::Keys { .. } => (
+        Dialog::Keys => (
             label("keys-title"),
             vec![Choice::new(label("close"), Role::Default)],
             None,
         ),
-        Dialog::About { .. } => (
+        Dialog::About => (
             label("about-title"),
             vec![Choice::new(label("close"), Role::Default)],
             None,
@@ -903,7 +903,7 @@ fn dialogs(
                     });
                 }
             }
-            Dialog::Keys { .. } => {
+            Dialog::Keys => {
                 egui::ScrollArea::vertical()
                     .max_height(360.0)
                     .show(ui, |ui| {
@@ -918,7 +918,7 @@ fn dialogs(
                         });
                     });
             }
-            Dialog::About { .. } => {
+            Dialog::About => {
                 ui.label(label("about-body"));
                 ui.weak(label_with(
                     "about-version",
