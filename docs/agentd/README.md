@@ -42,10 +42,18 @@ strict data:
 max_live: 4
 agents: {
   claude: {argv: ["claude-agent-acp"], roots: ["/home/user/src"]},
-  gemini: {argv: ["gemini", "--acp"], roots: ["/home/user/src"]},
+  gemini: {argv: ["gemini", "--acp", "--skip-trust"], roots: ["/home/user/src"]},
   opencode: {argv: ["opencode", "acp"], roots: ["/home/user/src"], policy: "ask"}
 }
 ```
+
+Tested agents (2026-10-30), each with mixos-mcp reaching the Bus:
+
+| Agent | argv | Notes |
+|---|---|---|
+| Claude | `claude-agent-acp` (npm `@agentclientprotocol/claude-agent-acp`) | Uses its own file and shell tools, so Claude Code hooks such as a PreToolUse gate still apply. |
+| Gemini CLI | `gemini --acp --skip-trust` | Without `--skip-trust` Gemini treats the folder as untrusted and starts no MCP server. The flag trusts the session's `cwd` for that run only, so roots should hold only trusted code. Reads go through `fs/read_text_file`; writes use its own shell. |
+| OpenCode | `opencode acp` | The model is a config option: `agent.session.set {session, option: "model", value: "deepseek/deepseek-v4-pro"}`. |
 
 - **argv**: the agent's ACP command, run directly (no shell).
 - **roots**: the directories a session's `cwd` and `additional_dirs` must
@@ -120,6 +128,7 @@ Refusals carry `{error_code, message}`:
   `refusal` or `cancelled`;
 - `permission_answered`;
 - `error`;
+- `fs_read`, `fs_write` or `fs_refused` (see Files);
 - `ended`, logged (not published) when a restart ends a session.
 
 `seq` rises by one per event in a session. A watcher that missed events
@@ -144,6 +153,24 @@ agent's events are still published and the gap is reported on stderr. A
 watcher that follows `seq` should therefore also check the session's
 `status` in a read: after such a gap and a restart, the `ended` event can
 carry a `seq` the watcher has already seen.
+
+## Files
+
+agentd serves ACP's `fs/read_text_file` (with `line` and `limit`) and
+`fs/write_text_file`, inside the session's `cwd` and `additional_dirs`
+only. Paths must be absolute and are resolved first, so a symlink or `..`
+cannot lead out; a new file's parent directory must already exist. A read
+is limited to 8 MiB. Refusals are JSON-RPC errors: `-32002` for a missing
+file, `-32602` for a path outside the session or a bad request. Every read,
+write and refusal is an event (`fs_read`, `fs_write`, `fs_refused`).
+
+This confines what the agent asks agentd to do. An agent's own tools, such
+as its shell or Claude's built-in file tools, do not go through agentd.
+The path check and the read or write are separate steps, so an agent that
+replaces a path with a symlink between them can still lead one out; that
+takes the agent's own tools, which reach the same files anyway. A missing
+path outside the session is answered as outside, so the errors do not tell
+the agent what exists elsewhere.
 
 ## Agents calling back
 

@@ -48,6 +48,33 @@ check("subdirectory is inside", $a.under_roots($tmp .. "/root/ws/sub", [$tmp .. 
 check("sibling is outside", not $a.under_roots($tmp .. "/outside", [$tmp .. "/root"]))
 check("symlink out of the root is outside", not $a.under_roots($tmp .. "/root/escape", [$tmp .. "/root"]))
 check("dot-dot out of the root is outside", not $a.under_roots($tmp .. "/root/ws/../../outside", [$tmp .. "/root"]))
+
+-- Files (fs/*): the session's directories are root/ws.
+$dirs = [$tmp .. "/root/ws"]
+write_file($tmp .. "/root/ws/a.txt", "l1\nl2\nl3")
+write_file($tmp .. "/outside/secret", "s")
+symlink($tmp .. "/outside/secret", $tmp .. "/root/ws/link")
+symlink($tmp .. "/outside/none", $tmp .. "/root/ws/dangling")
+check("read target inside", $a.fs_read_target($tmp .. "/root/ws/a.txt", $dirs) == realpath($tmp .. "/root/ws/a.txt"))
+refuses("read of a missing file", "NOT_FOUND", fn() = $a.fs_read_target($tmp .. "/root/ws/none", $dirs))
+refuses("read outside", "OUTSIDE_ROOTS", fn() = $a.fs_read_target($tmp .. "/outside/secret", $dirs))
+refuses("a missing file outside says outside, not missing", "OUTSIDE_ROOTS", fn() = $a.fs_read_target($tmp .. "/outside/nothing", $dirs))
+refuses("a missing directory outside says outside", "OUTSIDE_ROOTS", fn() = $a.fs_write_target($tmp .. "/outside/no/x", $dirs))
+refuses("read through a symlink out", "OUTSIDE_ROOTS", fn() = $a.fs_read_target($tmp .. "/root/ws/link", $dirs))
+refuses("read of a relative path", "USAGE", fn() = $a.fs_read_target("a.txt", $dirs))
+refuses("read of a directory", "USAGE", fn() = $a.fs_read_target($tmp .. "/root/ws/sub", $dirs))
+check("write target for a new file", $a.fs_write_target($tmp .. "/root/ws/sub/new.txt", $dirs) == realpath($tmp .. "/root/ws/sub") .. "/new.txt")
+check("write target for an existing file", $a.fs_write_target($tmp .. "/root/ws/a.txt", $dirs) == realpath($tmp .. "/root/ws/a.txt"))
+refuses("write through a symlink out", "OUTSIDE_ROOTS", fn() = $a.fs_write_target($tmp .. "/root/ws/link", $dirs))
+refuses("write through a dangling symlink", "OUTSIDE_ROOTS", fn() = $a.fs_write_target($tmp .. "/root/ws/dangling", $dirs))
+refuses("write with dot-dot out", "OUTSIDE_ROOTS", fn() = $a.fs_write_target($tmp .. "/root/ws/../../outside/x", $dirs))
+refuses("write into a missing directory", "NOT_FOUND", fn() = $a.fs_write_target($tmp .. "/root/ws/no/x", $dirs))
+refuses("write to a directory", "USAGE", fn() = $a.fs_write_target($tmp .. "/root/ws/sub", $dirs))
+check("slice_lines: all", $a.slice_lines("l1\nl2\nl3", nil, nil) == "l1\nl2\nl3")
+check("slice_lines: line 2, limit 1", $a.slice_lines("l1\nl2\nl3", 2, 1) == "l2")
+check("slice_lines: from line 2", $a.slice_lines("l1\nl2\nl3", 2, nil) == "l2\nl3")
+check("slice_lines: past the end", $a.slice_lines("l1", 5, nil) == "")
+refuses("slice_lines: line 0", "USAGE", fn() = $a.slice_lines("x", 0, nil))
 check("a root-name prefix is not inside", not $a.under_roots($tmp .. "/rootx", [$tmp .. "/root"]))
 check("missing path is outside", not $a.under_roots($tmp .. "/root/nope", [$tmp .. "/root"]))
 check("relative path is outside", not $a.under_roots("root/ws", [$tmp .. "/root"]))
@@ -78,8 +105,9 @@ check("session ids fit mixos-mcp's 4-12", not $a.valid_session_id("abc") and not
 
 -- Frames.
 $init = json_parse(trim($a.initialize_frame(1)))
-check("initialize is protocol 1 with fs and terminal off",
-  $init.method == "initialize" and $init.params.protocolVersion == 1 and $init.params.clientCapabilities.terminal == false)
+check("initialize is protocol 1 with fs on and terminal off",
+  $init.method == "initialize" and $init.params.protocolVersion == 1 and $init.params.clientCapabilities.terminal == false and
+  $init.params.clientCapabilities.fs.readTextFile == true and $init.params.clientCapabilities.fs.writeTextFile == true)
 $new = json_parse(trim($a.session_new_frame(2, "/w", [], $a.mcp_entry("/opt/mixos/bin/mixos-mcp", "abcd1234ef"))))
 check("session/new carries the mixos-mcp entry and session env",
   $new.params.mcpServers[0].env[0].name == "MIXOS_AGENT_SESSION" and $new.params.mcpServers[0].env[0].value == "abcd1234ef")

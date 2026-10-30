@@ -573,9 +573,47 @@ fn on_request($id, $msg)
     else
       ask_human($id, $key, $msg.params)
     end
+  elif $msg.method == "fs/read_text_file" or $msg.method == "fs/write_text_file" then
+    serve_fs($id, $msg)
   else
-    -- fs/* and terminal/* are not offered in stage 1 (capabilities off).
+    -- terminal/* is not offered yet (capability off).
     write_frame($id, $a.error_frame($msg.id, -32601, "agentd does not serve " .. $msg.method .. " yet"))
+  end
+end
+
+-- JSON-RPC error codes for the fs refusals: ACP's resource-not-found, else
+-- invalid params; anything unexpected is an internal error.
+fn fs_error_code($code)
+  if $code == "NOT_FOUND" then return -32002 end
+  if contains(["OUTSIDE_ROOTS", "USAGE", "TOO_LARGE"], $code) then return -32602 end
+  return -32603
+end
+
+-- fs/read_text_file and fs/write_text_file, inside the session's cwd and
+-- additional_dirs only. Each one is an event, so the log shows what the
+-- agent touched through agentd.
+fn serve_fs($id, $msg)
+  $s = $S.sessions[$id]
+  if $s == nil then return nil end
+  $p = if type($msg.params) == "map" then $msg.params else {} end
+  $dirs = concat([$s.cwd], $s.dirs ?? [])
+  try
+    if $p.sessionId != $s.acp then raise("USAGE", "sessionId is not this session's") end
+    if $msg.method == "fs/read_text_file" then
+      $real = $a.fs_read_target($p.path, $dirs)
+      $text = $a.slice_lines(read_file($real), $p.line, $p.limit)
+      write_frame($id, $a.response_frame($msg.id, {content: $text}))
+      emit_event($id, {kind: "fs_read", path: $real, bytes: len($text)})
+    else
+      if type($p.content) != "string" then raise("USAGE", "content must be a string") end
+      $target = $a.fs_write_target($p.path, $dirs)
+      write_file($target, $p.content)
+      write_frame($id, $a.response_frame($msg.id, {}))
+      emit_event($id, {kind: "fs_write", path: $target, bytes: len($p.content)})
+    end
+  catch $m, $err
+    write_frame($id, $a.error_frame($msg.id, fs_error_code($err.code), $m))
+    emit_event($id, {kind: "fs_refused", method: $msg.method, path: slice(to_string($p.path), 0, 4096), error_code: $err.code ?? "IO"})
   end
 end
 

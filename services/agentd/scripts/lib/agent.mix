@@ -79,6 +79,75 @@ fn under_roots($path, $roots)
   return false
 end
 
+-- Files (fs/*) --------------------------------------------------------------
+-- An agent may read and write only inside its session's directories (cwd
+-- and additional_dirs, both already under the instance roots). Paths are
+-- resolved first, so a symlink cannot lead out. This confines the ACP
+-- client surface only; the agent's own tools are not confined. The check
+-- and the read or write are separate steps, so an agent that swaps a path
+-- for a symlink in between can still lead one out; doing that takes the
+-- agent's own shell or file tools, which reach the same files directly.
+
+$FS_READ_MAX = 8388608
+
+-- True for a symlink, dangling or not (lstat); false when nothing is there.
+fn _is_link($path)
+  try
+    return stat($path, {follow_symlinks: false}).is_symlink
+  catch $m
+    return false
+  end
+end
+
+-- The real path to read, or raises NOT_FOUND / OUTSIDE_ROOTS / USAGE.
+fn fs_read_target($path, $dirs)
+  if type($path) != "string" or not starts_with($path, "/") then _usage("path must be absolute") end
+  if realpath($path) == nil then
+    -- Missing: "not found" only inside the session, so the answer never
+    -- says whether a path outside it exists.
+    if realpath(dirname($path)) != nil and under_roots(dirname($path), $dirs) then raise("NOT_FOUND", "no file " .. $path) end
+    raise("OUTSIDE_ROOTS", $path .. " is outside the session's directories")
+  end
+  if not under_roots($path, $dirs) then raise("OUTSIDE_ROOTS", $path .. " is outside the session's directories") end
+  $real = realpath($path)
+  if not is_file($real) then _usage($path .. " is not a file") end
+  if stat($real).size > $FS_READ_MAX then raise("TOO_LARGE", $path .. " is over " .. to_string($FS_READ_MAX) .. " bytes") end
+  return $real
+end
+
+-- The path to write. An existing file (or symlink) must resolve inside the
+-- session's directories; a new file's parent must. Raises like the reader.
+fn fs_write_target($path, $dirs)
+  if type($path) != "string" or not starts_with($path, "/") or ends_with($path, "/") then _usage("path must be an absolute file path") end
+  if realpath($path) != nil or _is_link($path) then
+    if realpath($path) == nil then raise("OUTSIDE_ROOTS", $path .. " is a dangling symlink") end
+    if not under_roots($path, $dirs) then raise("OUTSIDE_ROOTS", $path .. " is outside the session's directories") end
+    $real = realpath($path)
+    if is_dir($real) then _usage($path .. " is a directory") end
+    return $real
+  end
+  $parent = dirname($path)
+  if realpath($parent) == nil then
+    if realpath(dirname($parent)) != nil and under_roots(dirname($parent), $dirs) then raise("NOT_FOUND", "no directory " .. $parent) end
+    raise("OUTSIDE_ROOTS", $path .. " is outside the session's directories")
+  end
+  if not under_roots($parent, $dirs) then raise("OUTSIDE_ROOTS", $path .. " is outside the session's directories") end
+  return realpath($parent) .. "/" .. basename($path)
+end
+
+-- Lines $line (1-based) onward, at most $limit of them; nil means all.
+fn slice_lines($text, $line, $limit)
+  if $line == nil and $limit == nil then return $text end
+  if ($line != nil and (type($line) != "number" or $line < 1)) or ($limit != nil and (type($limit) != "number" or $limit < 0)) then
+    _usage("line must be 1 or more and limit 0 or more")
+  end
+  $all = split($text, "\n")
+  $from = ($line ?? 1) - 1
+  if $from >= len($all) then return "" end
+  $to = if $limit == nil then len($all) else min(len($all), $from + $limit) end
+  return join(slice($all, $from, $to), "\n")
+end
+
 -- Validate agent.session.new arguments against the conf. Returns
 -- {agent, cwd, additional_dirs, mode} or raises.
 fn check_new($conf, $args)
@@ -133,8 +202,8 @@ end
 fn initialize_frame($id)
   return _frame($id, "initialize", {
     protocolVersion: $PROTOCOL_VERSION,
-    -- fs and terminal stay off until agentd serves them (stage 2).
-    clientCapabilities: {fs: {readTextFile: false, writeTextFile: false}, terminal: false},
+    -- fs/* is served inside the session's directories; terminal/* is not yet.
+    clientCapabilities: {fs: {readTextFile: true, writeTextFile: true}, terminal: false},
     clientInfo: {name: "mixos-agentd", version: "0.1.0"}})
 end
 

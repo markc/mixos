@@ -8,8 +8,11 @@
 --   MCP         echo the MIXOS_AGENT_SESSION its mixos-mcp entry carries
 --   SLOW        hold the turn open until the next frame (a cancel lands)
 --   LATE        like SLOW, then ask permission after the cancel; echo it
--- readline() returns "" at EOF (and for an empty line, which ACP never
--- sends), so "" ends the agent.
+--   FSREAD P    fs/read_text_file P (whole file); echo read:<text> or err:<code>
+--   FSLINES P   fs/read_text_file P, line 2, limit 1
+--   FSWRITE P|T fs/write_text_file P with text T; echo wrote or err:<code>
+-- readline() is nil at EOF (an older mix gives ""; ACP never sends an
+-- empty line), so either ends the agent.
 
 $sessions = {}
 $next_id = 900
@@ -37,7 +40,7 @@ end
 
 loop
   $line = readline()
-  if $line == "" then break end
+  if $line == nil or $line == "" then break end
   $m = json_parse($line)
   if $m.method == "initialize" then
     out({id: $m.id, result: {protocolVersion: 1, agentInfo: {name: "fake-acp", version: "0"},
@@ -59,6 +62,26 @@ loop
     $stop = "end_turn"
     if contains($t, "MCP") then text($sid, "mcp:" .. $sessions[$sid].mcp) end
     if contains($t, "BIG") then text($sid, repeat("x", 2097152)) end
+    if starts_with($t, "FSREAD ") or starts_with($t, "FSLINES ") or starts_with($t, "FSWRITE ") then
+      $next_id = $next_id + 1
+      $op = before($t, " ")
+      $arg = after($t, " ")
+      if $op == "FSWRITE" then
+        out({id: $next_id, method: "fs/write_text_file", params: {sessionId: $sid, path: before($arg, "|"), content: after($arg, "|")}})
+      elif $op == "FSLINES" then
+        out({id: $next_id, method: "fs/read_text_file", params: {sessionId: $sid, path: $arg, line: 2, limit: 1}})
+      else
+        out({id: $next_id, method: "fs/read_text_file", params: {sessionId: $sid, path: $arg}})
+      end
+      $r = json_parse(readline())
+      if $r.error != nil then
+        text($sid, "fserr:" .. to_string($r.error.code))
+      elif $op == "FSWRITE" then
+        text($sid, "wrote")
+      else
+        text($sid, "read:" .. $r.result.content)
+      end
+    end
     if contains($t, "PERMISSION") then
       $next_id = $next_id + 1
       out({id: $next_id, method: "session/request_permission", params: {sessionId: $sid,
