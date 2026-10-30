@@ -650,8 +650,10 @@ fn term_exited($tid, $exit_code, $signal)
   emit_event($t.session, {kind: "terminal_exited", terminal: $tid, exit_code: $exit_code, signal: $signal})
 end
 
--- Stop a running terminal: TERM, then KILL (process_unwatch), no event
--- follows from the watch, so the exit is recorded here.
+-- Stop a running terminal: TERM, then KILL (process_unwatch). No event
+-- follows from the watch, so the exit is recorded here, as SIGTERM even
+-- when KILL was needed. An exit already queued but not yet delivered when
+-- the kill runs is discarded with it, and also reads as SIGTERM.
 fn term_kill($tid)
   $t = $S.terms[$tid]
   if $t != nil and $t.exit == nil then

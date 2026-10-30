@@ -183,7 +183,8 @@ to `outputByteLimit` bytes (at most 8 MiB), dropping from the front.
 Terminal query sequences (cursor and device status requests, colour
 queries) are removed, since nothing is there to answer them. A session has
 at most 8 terminals at once, and they end with it. `terminal/kill` stops
-the command (TERM, then KILL) and reports `SIGTERM`. Each terminal's start
+the command (TERM, then KILL) and reports `SIGTERM`, even when KILL was
+needed. Each terminal's start
 and exit are events (`terminal_created`, `terminal_exited`).
 
 On a desk, terminals are to move onto Term, so a human can watch them.
