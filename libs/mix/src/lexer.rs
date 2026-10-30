@@ -1825,6 +1825,12 @@ impl Lexer {
         if name == "do" {
             return Ok(self.spanned(Token::Do, line, col));
         }
+        // Strict data reads JSON: a bare `null` is nil, never the string
+        // "null" (a nil written by json_encode must read back as nil). Program
+        // source keeps `null` a bare word; a quoted "null" stays a string.
+        if self.data_mode && name == "null" {
+            return Ok(self.spanned(Token::Nil, line, col));
+        }
         let token = keyword_token(&name).unwrap_or(Token::String(name));
         Ok(self.spanned(token, line, col))
     }

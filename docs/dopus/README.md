@@ -109,18 +109,18 @@ DOpus answers on the Bus as `dopus` (schema `dopus.v1`).
 | `dopus.ping`, `dopus.describe`, `dopus.info` | | liveness, the control surface, version and build |
 | `dopus.state` | | both panes (path, sort, hidden files, previews, selection, rows, status) and the sidebars |
 | `dopus.open` | `paths` (one per pane), or one path and `pane` | goes there |
-| `dopus.action` | `id`, `pane` (`left`, `right` or `active`) | runs one action |
-| `dopus.actions.list` | | every action, its keys in force and whether it can run now |
+| `dopus.execute` | `id`, optional `params`; `params.pane` is `left`, `right` or `active` (the default) | runs one action |
+| `dopus.actions` | | every action, its keys in force and whether it can run now |
 | `dopus.theme.set` | `scheme`, `mode` | this window's look |
 | `dopus.quit` | | closes the window |
 
 Every action accepts local and mesh callers, including `file.open`,
 `file.new-folder`, `file.rename`, `file.copy-other-pane`,
-`file.move-other-pane` and `file.delete`. `dopus.actions.list` reports the
+`file.move-other-pane` and `file.delete`. `dopus.actions` reports the
 same availability as the keyboard and menus: selection, an idle worker and
 valid arguments still matter.
 
-**Mail selection** (`dopus.action {id:"file.mail"}`) sends the current pane's
+**Mail selection** (`dopus.execute {id:"file.mail"}`) sends the current pane's
 selected file paths to Email. It is available for one or more regular files,
 including symlinks to files, and appears in the File and row context menus.
 It launches Email through the session launcher when needed. A new message
@@ -132,7 +132,7 @@ Email refused; the reply's `result` contains `added`, `count` and `message`.
 Headless instances support this action on their selection too.
 
 File actions keep the normal name prompts, destructive confirmations and
-drop choices. After `dopus.action {id:"file.new-folder"}`, use
+drop choices. After `dopus.execute {id:"file.new-folder"}`, use
 `dopus.ui.type {text:"Projects"}` and `dopus.ui.click {label:"OK"}` to
 answer the focused prompt. For rename, select the old text first with
 `dopus.ui.key {key:"A",modifiers:["ctrl"]}`. Answer a delete confirmation
@@ -149,14 +149,14 @@ The window is drivable like every MixOS app, including its menus: see
 registered in `docs/docs/spec/bus/commands.conf.mix`.
 
 Each command run from a menu, a key, a sidebar button or an accepted
-`dopus.action` is published on `dopus.action.executed`, with how it was
+`dopus.execute` is published on `dopus.action.executed`, with how it was
 reached (`menu`, `shortcut`, `ui` or `bus`;
 [executed commands](../docs/decisions/2026-10-11-executed-commands.md)). A refused
 action is not published.
 
 `dopus --headless` runs the core and the Bus port without a window, for
 tests: the same commands, minus those that need a window. It publishes its
-accepted `dopus.action` runs on `<service>.action.executed` too.
+accepted `dopus.execute` runs on `<service>.action.executed` too.
 Headless instances cancel name prompts and confirmations because there is
 no window to answer them; copy and move still use the real filesystem worker.
 

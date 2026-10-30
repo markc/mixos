@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+[Unit]
+Description=MixOS agent sessions (ACP) for session %i
+# The session target chooses the broker (noded@%i or the system noded.service);
+# this unit only orders after both. Never Wants= or Requires= a broker: on a desk
+# with the system broker noded@%i is masked. notifyd asks the human.
+After=noded@%i.service noded.service notifyd@%i.service
+PartOf=session@%i.target
+
+[Service]
+Type=simple
+# The session's own user, never root: agents run with this user's HOME,
+# credentials and agent configuration (the agent rules and hooks load from
+# it). As for notifyd, the desk session user is mixos.
+User=mixos
+EnvironmentFile=@{etc}/session/%i.env
+ExecStart=@{prefix}/bin/mix --serve @{prefix}/lib/agentd/agentd.mix --name agent
+# Agents are children of agentd; stopping the unit ends every session.
+KillMode=control-group
+TimeoutStopSec=15
+Restart=on-failure
+RestartSec=2

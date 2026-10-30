@@ -15,6 +15,7 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 | Component | Kind | Profiles | Source | Description |
 |---|---|---|---|---|
 | [action](../action/README.md) · [changelog](../action/changelog.md) | lib | none (library) | [`libs/action`](https://github.com/markc/mixos/tree/main/libs/action) | UI-free command registry, typed dispatch and executed journal. |
+| [agentd](../agentd/README.md) | service | unclassified | [`services/agentd`](https://github.com/markc/mixos/tree/main/services/agentd) | How agentd runs coding agents (Claude, Codex, Gemini, OpenCode and other ACP agents) as Bus sessions that anything on the Bus can start, watch, steer and answer. |
 | [assets](../assets/README.md) | lib | none (library) | [`libs/assets`](https://github.com/markc/mixos/tree/main/libs/assets) | The resolver for a pinned, immutable set of fonts, icons and emoji on the local disk, which finds, verifies and reads a published set without any downloader or daemon. |
 | [backdrop](../backdrop/README.md) | app | unclassified | [`apps/backdrop`](https://github.com/markc/mixos/tree/main/apps/backdrop) | The MixOS desktop background — drawn by its own program on the compositor's background layer, on every output, at native and fractional scale. |
 | [blobd](../blobd/README.md) | service | unclassified | [`services/blobd`](https://github.com/markc/mixos/tree/main/services/blobd) | The node blob store: content-addressed bytes kept in mds, with owner pins, quotas and garbage collection. The MixOS port of blobd, with the store, the Bus citizen, the byte lane and the cross-node… |
@@ -138,6 +139,7 @@ checked separately by the layering gate.
 | [test-broker](https://github.com/markc/mixos/blob/main/libs/test-broker/Cargo.toml) | test-broker | lib | core | none | 0.1.2 |
 | [thumbs](https://github.com/markc/mixos/blob/main/libs/thumbs/Cargo.toml) | thumbs | lib | core | none | 0.1.2 |
 | [toolkit](https://github.com/markc/mixos/blob/main/libs/toolkit/Cargo.toml) | toolkit | lib | desktop | none | 0.1.2 |
+| [agentd](https://github.com/markc/mixos/blob/main/services/agentd/component.mx) | agentd | service | desktop | public | 0.1.0 |
 | [blobd](https://github.com/markc/mixos/blob/main/services/blobd/Cargo.toml) | blobd | service | core | none | 0.1.2 |
 | [bridged](https://github.com/markc/mixos/blob/main/services/bridged/component.mx) | bridged | service | desktop | public | 0.2.0 |
 | [clipd](https://github.com/markc/mixos/blob/main/services/clipd/component.mx) | clipd | service | desktop | public | 0.1.0 |

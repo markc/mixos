@@ -354,7 +354,9 @@ builtin_table! {
     ("net_watch", CapabilityClass::Env, "system", "Subscribe to Linux rtnetlink link/address changes; returns an evaluator-owned opaque handle. Delivers net.changed {watch, changes:[{kind:\"link\"|\"addr\", ifname, index, up, removed, operstate?, loopback?, wireless?, family?, address?, prefix?}], overflow, closed?} via $event.args; bursts coalesce per link/address, repeats that change nothing are dropped, overflow means re-read net_state(). opts {events: [\"link\",\"addr\"]}. No polling fallback", contract!((opts?: map("net_watch_options", {events: list(string)})) -> string; failure[raises])),
     ("net_unwatch", CapabilityClass::Env, "system", "Cancel a net_watch handle and its pending changes", contract!((handle: string) -> nil; failure[raises])),
     ("net_state", CapabilityClass::Env, "system", "Snapshot of network links and addresses from an rtnetlink dump: {links:[{ifname, index, up, operstate?, loopback, wireless}], addresses:[{ifname, index, family, address, prefix}]}. up = operstate up, or IFF_UP+IFF_RUNNING when the driver reports unknown (lo, WireGuard)", contract!(() -> map("net_state", {links: list(map), addresses: list(map)}); effects[must_use, blocking]; failure[raises])),
-    ("process_watch", CapabilityClass::Process, "system", "Watch a directly executed argv child's stdout as ordered proc.line {watch,tag,stream,line,truncated} events, then one proc.watch_exited {watch,tag,exit_code,signal,detached_output}. Pipes drain for at most 500ms after leader exit; detached_output flags cut-off output. Options cwd/env/clear_env match run_argv; stderr null (default), lines or inherit; tag string; max_line 65536 bytes (truncate and flag), max_queue 1024 lines (drop newest; ordered proc.overflow marker at the drop position). Evaluator owns the process group and reaper; unwatch, shutdown and reload retirement terminate it. Reload candidates cannot start watches. v0.117.x, unreleased", contract!((argv: list(string), opts?: map("process_watch_options", {cwd: any_of(string, nil), env: map, clear_env: bool, stderr: string, tag: string, max_line: number, max_queue: number})) -> string; effects[shell]; failure[raises])),
+    ("process_watch", CapabilityClass::Process, "system", "Watch a directly executed argv child's stdout as ordered proc.line {watch,tag,stream,line,truncated} events, then one proc.watch_exited {watch,tag,exit_code,signal,detached_output}. Pipes drain for at most 500ms after leader exit; detached_output flags cut-off output. Options cwd/env/clear_env match run_argv; stderr null (default), lines or inherit; tag string; max_line 65536 bytes (truncate and flag, up to 16 MiB), max_queue 1024 lines (drop newest; ordered proc.overflow marker at the drop position). overflow: \"block\" makes the watch lossless for framed protocols: a full queue stops reading the pipes until delivery makes room (overshooting by at most one 4 KiB read per pipe), and a line over max_line kills the group and ends the watch with error_code PROC_LINE_LIMIT instead of truncating. stdin: \"pipe\" opens the child stdin for process_write/process_close_stdin, buffered up to stdin_buffer bytes (default 8 MiB, max 64 MiB); default stdin is null. Evaluator owns the process group and reaper; unwatch, shutdown and reload retirement terminate it. Reload candidates cannot start watches. v0.117.x, unreleased", contract!((argv: list(string), opts?: map("process_watch_options", {cwd: any_of(string, nil), env: map, clear_env: bool, stderr: string, tag: string, max_line: number, max_queue: number, stdin: string, stdin_buffer: number, overflow: string})) -> string; effects[shell]; failure[raises])),
+    ("process_write", CapabilityClass::Process, "system", "Queue bytes for a process_watch child started with {stdin: \"pipe\"}: process_write(handle, string|bytes|buffer) -> bool. Never blocks the evaluator: the watch worker writes the bytes in order as the pipe drains. All or nothing: true when the whole value was accepted, false when it would exceed stdin_buffer, after process_close_stdin, after the child closed its stdin, or once the watch has finished. Accepted bytes the child never reads (it exits or closes stdin first) are discarded. Raises PROC_STDIN_NOT_PIPED for a watch without a stdin pipe. v0.117.x, unreleased", contract!((handle: string, data: any_of(string, bytes, buffer)) -> bool; effects[shell]; failure[raises])),
+    ("process_close_stdin", CapabilityClass::Process, "system", "Close a process_watch child stdin (EOF) once bytes already accepted by process_write are written. Returns true when stdin was open, false when already closed, broken or the watch finished. Raises PROC_STDIN_NOT_PIPED for a watch without a stdin pipe. v0.117.x, unreleased", contract!((handle: string) -> bool; effects[shell]; failure[raises])),
     ("process_unwatch", CapabilityClass::Process, "system", "Cancel a process_watch handle, discard pending events, terminate its process group (TERM, then KILL after 150ms), and reap the child. Waits up to 150ms for leader exit, returning promptly on TERM exit. Returns true only for a live watch or undelivered records, false after terminal delivery. v0.117.x, unreleased", contract!((handle: string) -> bool; effects[shell]; failure[raises])),
     ("audio_watch", CapabilityClass::Process, "system", "Subscribe to PipeWire (pulse server) change notices through one managed `pactl subscribe` child; returns an evaluator-owned opaque handle. Delivers audio.changed {watch, changes:[{facility, kind, index}], overflow, closed?} via $event.args; read the volume with audio_state() once per batch. closed {error_code:AUDIO_SOURCE_EXITED} when the server goes away. opts {facilities (default sink, source, server, card), runtime_dir}", contract!((opts?: map("audio_watch_options", {facilities: list(string), runtime_dir: string})) -> string; failure[raises])),
     ("audio_unwatch", CapabilityClass::Process, "system", "Cancel an audio_watch handle: kills and reaps its pactl child, drops pending changes", contract!((handle: string) -> nil; failure[raises])),
@@ -995,6 +997,8 @@ pub const EVAL_SPECIAL_BUILTINS: &[&str] = &[
     "net_state",
     "process_watch",
     "process_unwatch",
+    "process_write",
+    "process_close_stdin",
     "audio_watch",
     "audio_unwatch",
     "audio_state",
@@ -6612,9 +6616,25 @@ fn parse_stderr_route(caller: &str, value: &Value) -> MixResult<RunArgvStderr> {
     }
 }
 
-pub(crate) fn process_watch_command(
-    args: &[Value],
-) -> MixResult<(std::process::Command, String, usize, usize)> {
+/// A parsed `process_watch` call: the child command plus its watch options.
+pub(crate) struct ProcessWatchSpec {
+    pub command: std::process::Command,
+    pub tag: String,
+    pub max_line: usize,
+    pub max_queue: usize,
+    /// Bytes `process_write` may hold unwritten; `None` when stdin is null.
+    pub stdin_buffer: Option<usize>,
+    /// `overflow: "block"`: a full queue stops reading the pipes instead of
+    /// dropping, and a line over `max_line` ends the watch instead of
+    /// truncating. Framed protocols (ACP, JSON-RPC) need both.
+    pub lossless: bool,
+}
+
+/// Default and ceiling for `stdin_buffer`.
+const PROCESS_STDIN_BUFFER: usize = 8 * 1024 * 1024;
+const PROCESS_STDIN_BUFFER_MAX: usize = 64 * 1024 * 1024;
+
+pub(crate) fn process_watch_command(args: &[Value]) -> MixResult<ProcessWatchSpec> {
     let caller = "process_watch";
     let argv = parse_run_argv_argv(caller, &args[0])?;
     let mut common = indexmap::IndexMap::new();
@@ -6622,6 +6642,9 @@ pub(crate) fn process_watch_command(
     let mut stderr = "null";
     let mut max_line = 65536;
     let mut max_queue = 1024;
+    let mut stdin_pipe = false;
+    let mut stdin_buffer = PROCESS_STDIN_BUFFER;
+    let mut lossless = false;
     if let Some(value) = args.get(1) {
         let Value::Map(map) = value else {
             return Err(opt_invalid(caller, "options must be a map"));
@@ -6666,9 +6689,46 @@ pub(crate) fn process_watch_command(
                         max_queue = n;
                     }
                 }
+                "stdin" => {
+                    let Value::String(s) = value else {
+                        return Err(opt_invalid(caller, "stdin must be null or pipe"));
+                    };
+                    stdin_pipe = match s.as_str() {
+                        "null" => false,
+                        "pipe" => true,
+                        _ => return Err(opt_invalid(caller, "stdin must be null or pipe")),
+                    };
+                }
+                "stdin_buffer" => {
+                    let Value::Number(n) = value else {
+                        return Err(opt_invalid(
+                            caller,
+                            "stdin_buffer must be a positive integer",
+                        ));
+                    };
+                    stdin_buffer = as_count(caller, *n, PROCESS_STDIN_BUFFER_MAX)
+                        .ok()
+                        .filter(|&n| n > 0)
+                        .ok_or_else(|| {
+                            opt_invalid(caller, "stdin_buffer must be 1 to 67108864 bytes")
+                        })?;
+                }
+                "overflow" => {
+                    let Value::String(s) = value else {
+                        return Err(opt_invalid(caller, "overflow must be drop or block"));
+                    };
+                    lossless = match s.as_str() {
+                        "drop" => false,
+                        "block" => true,
+                        _ => return Err(opt_invalid(caller, "overflow must be drop or block")),
+                    };
+                }
                 _ => return Err(opt_invalid(caller, format!("unknown option {key}"))),
             }
         }
+    }
+    if map_has(args.get(1), "stdin_buffer") && !stdin_pipe {
+        return Err(opt_invalid(caller, "stdin_buffer requires stdin: \"pipe\""));
     }
     let opts = parse_run_argv_opts(caller, Some(&Value::Map(common.into())))?;
     let mut command = std::process::Command::new(&argv[0]);
@@ -6684,14 +6744,29 @@ pub(crate) fn process_watch_command(
         command.env_remove(key);
     }
     command
-        .stdin(std::process::Stdio::null())
+        .stdin(if stdin_pipe {
+            std::process::Stdio::piped()
+        } else {
+            std::process::Stdio::null()
+        })
         .stdout(std::process::Stdio::piped());
     command.stderr(match stderr {
         "lines" => std::process::Stdio::piped(),
         "inherit" => std::process::Stdio::inherit(),
         _ => std::process::Stdio::null(),
     });
-    Ok((command, tag, max_line, max_queue))
+    Ok(ProcessWatchSpec {
+        command,
+        tag,
+        max_line,
+        max_queue,
+        stdin_buffer: stdin_pipe.then_some(stdin_buffer),
+        lossless,
+    })
+}
+
+fn map_has(value: Option<&Value>, key: &str) -> bool {
+    matches!(value, Some(Value::Map(map)) if map.contains_key(key))
 }
 
 fn parse_run_argv_opts(caller: &str, v: Option<&Value>) -> MixResult<RunArgvOpts> {

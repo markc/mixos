@@ -1,0 +1,129 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- agent_test: agentd's pure library, offline: conf and session-argument
+-- validation, the workspace-root check (symlink escape included), session
+-- ids, ACP frames, message classification and permission policy.
+-- Run from the checkout root: mix services/agentd/tests/agent_test.mix
+-- Prints PASS/FAIL per check; exits 1 on any failure.
+
+$a = require("../scripts/lib/agent.mix")
+$results = []
+
+fn check($name, $ok)
+  push($results, {name: $name, ok: $ok})
+  print((if $ok then "PASS " else "FAIL " end) .. $name)
+end
+
+fn refuses($name, $code, $f)
+  try
+    $f()
+    check($name .. " (expected " .. $code .. ", nothing raised)", false)
+  catch $msg, $err
+    check($name, $err.code == $code)
+    if $err.code != $code then print("     got " .. to_string($err.code) .. ": " .. $msg) end
+  end
+end
+
+-- A private tree: root/ws is inside, outside/ is not, root/escape links out.
+$tmp = "/tmp/agent-test-" .. to_string(pid())
+mkdir($tmp .. "/root/ws/sub", {parents: true})
+mkdir($tmp .. "/outside", {parents: true})
+run_argv_must(["ln", "-s", $tmp .. "/outside", $tmp .. "/root/escape"])
+
+$conf = $a.check_conf({agents: {fake: {argv: ["mix", "fake.mix"], roots: [$tmp .. "/root"]}}})
+
+-- Conf.
+check("conf defaults: ask, 300 s, max_live 4",
+  $conf.agents.fake.policy == "ask" and $conf.agents.fake.permission_timeout_s == 300 and $conf.max_live == 4)
+refuses("conf without agents", "USAGE", fn() = $a.check_conf({}))
+refuses("agent without argv", "USAGE", fn() = $a.check_conf({agents: {x: {roots: ["/tmp"]}}}))
+refuses("agent without roots", "USAGE", fn() = $a.check_conf({agents: {x: {argv: ["a"]}}}))
+refuses("relative root", "USAGE", fn() = $a.check_conf({agents: {x: {argv: ["a"], roots: ["tmp"]}}}))
+refuses("allow_always policy", "USAGE", fn() = $a.check_conf({agents: {x: {argv: ["a"], roots: ["/tmp"], policy: "allow_always"}}}))
+refuses("bad agent name", "USAGE", fn() = $a.check_conf({agents: {"Bad Name": {argv: ["a"], roots: ["/tmp"]}}}))
+
+-- Roots.
+check("root itself is inside", $a.under_roots($tmp .. "/root", [$tmp .. "/root"]))
+check("subdirectory is inside", $a.under_roots($tmp .. "/root/ws/sub", [$tmp .. "/root"]))
+check("sibling is outside", not $a.under_roots($tmp .. "/outside", [$tmp .. "/root"]))
+check("symlink out of the root is outside", not $a.under_roots($tmp .. "/root/escape", [$tmp .. "/root"]))
+check("dot-dot out of the root is outside", not $a.under_roots($tmp .. "/root/ws/../../outside", [$tmp .. "/root"]))
+check("a root-name prefix is not inside", not $a.under_roots($tmp .. "/rootx", [$tmp .. "/root"]))
+check("missing path is outside", not $a.under_roots($tmp .. "/root/nope", [$tmp .. "/root"]))
+check("relative path is outside", not $a.under_roots("root/ws", [$tmp .. "/root"]))
+
+-- session.new arguments.
+$ok = $a.check_new($conf, {agent: "fake", cwd: $tmp .. "/root/ws", additional_dirs: [$tmp .. "/root/ws/sub"]})
+check("valid new resolves cwd and dirs", $ok.cwd == realpath($tmp .. "/root/ws") and len($ok.additional_dirs) == 1)
+refuses("unknown agent", "UNKNOWN_AGENT", fn() = $a.check_new($conf, {agent: "nope", cwd: $tmp .. "/root/ws"}))
+refuses("cwd outside roots", "OUTSIDE_ROOTS", fn() = $a.check_new($conf, {agent: "fake", cwd: $tmp .. "/outside"}))
+refuses("cwd through an escaping symlink", "OUTSIDE_ROOTS", fn() = $a.check_new($conf, {agent: "fake", cwd: $tmp .. "/root/escape"}))
+refuses("additional dir outside roots", "OUTSIDE_ROOTS", fn() = $a.check_new($conf, {agent: "fake", cwd: $tmp .. "/root/ws", additional_dirs: [$tmp .. "/outside"]}))
+refuses("missing cwd", "USAGE", fn() = $a.check_new($conf, {agent: "fake"}))
+refuses("17 additional dirs", "USAGE", fn() = $a.check_new($conf, {agent: "fake", cwd: $tmp .. "/root/ws", additional_dirs: map(range(0, 17), fn($i) = $tmp .. "/root/ws")}))
+refuses("additional dirs that are not a list", "USAGE", fn() = $a.check_new($conf, {agent: "fake", cwd: $tmp .. "/root/ws", additional_dirs: "x"}))
+refuses("an over-long additional dir", "USAGE", fn() = $a.check_new($conf, {agent: "fake", cwd: $tmp .. "/root/ws", additional_dirs: [repeat("a", 4097)]}))
+
+-- Session ids.
+$taken = {}
+$distinct = true
+for $i = 1 to 50
+  $id = $a.mint_session_id($taken)
+  if not $a.valid_session_id($id) or $taken[$id] != nil then $distinct = false end
+  $taken[$id] = true
+end
+check("50 minted ids are valid and distinct", $distinct)
+check("session ids refuse dashes and capitals", not $a.valid_session_id("ab-cd") and not $a.valid_session_id("ABCD"))
+check("session ids fit mixos-mcp's 4-12", not $a.valid_session_id("abc") and not $a.valid_session_id("abcdefghijklm"))
+
+-- Frames.
+$init = json_parse(trim($a.initialize_frame(1)))
+check("initialize is protocol 1 with fs and terminal off",
+  $init.method == "initialize" and $init.params.protocolVersion == 1 and $init.params.clientCapabilities.terminal == false)
+$new = json_parse(trim($a.session_new_frame(2, "/w", [], $a.mcp_entry("/opt/mixos/bin/mixos-mcp", "abcd1234ef"))))
+check("session/new carries the mixos-mcp entry and session env",
+  $new.params.mcpServers[0].env[0].name == "MIXOS_AGENT_SESSION" and $new.params.mcpServers[0].env[0].value == "abcd1234ef")
+check("session/new omits empty additionalDirectories", $new.params.additionalDirectories == nil)
+check("frames end in exactly one newline", ends_with($a.cancel_frame("s"), "}\n"))
+check("cancel is a notification (no id)", json_parse(trim($a.cancel_frame("s"))).id == nil)
+check("text content becomes one text block", $a.prompt_blocks("hi")[0].type == "text")
+refuses("empty content", "USAGE", fn() = $a.prompt_blocks(""))
+refuses("content over 1 MiB", "USAGE", fn() = $a.prompt_blocks(repeat("x", 1048577)))
+refuses("block without a type", "USAGE", fn() = $a.prompt_blocks([{text: "x"}]))
+
+-- Classification.
+check("reply", $a.classify({jsonrpc: "2.0", id: 3, result: {}}).kind == "reply")
+check("update", $a.classify({jsonrpc: "2.0", method: "session/update", params: {sessionId: "s", update: {sessionUpdate: "plan"}}}).kind == "update")
+check("agent request", $a.classify({jsonrpc: "2.0", id: 9, method: "session/request_permission", params: {}}).kind == "request")
+check("not JSON-RPC 2.0 is invalid", $a.classify({id: 1, result: {}}).kind == "invalid")
+check("update event keeps the discriminator", $a.update_event("s1", 7, {sessionUpdate: "tool_call", toolCallId: "t"}).kind == "tool_call")
+check("known stop reason", $a.stop_reason({stopReason: "cancelled"}) == "cancelled")
+check("unknown stop reason", $a.stop_reason({stopReason: "weird"}) == "unknown")
+
+-- Permission policy.
+$req = {options: [
+  {optionId: "a1", name: "Allow", kind: "allow_once"},
+  {optionId: "a2", name: "Always", kind: "allow_always"},
+  {optionId: "r1", name: "Reject", kind: "reject_once"}]}
+check("ask policy never answers by itself", $a.auto_answer("ask", $req) == nil)
+check("allow_once policy picks allow_once", $a.auto_answer("allow_once", $req) == "a1")
+check("allow_once policy never picks allow_always",
+  $a.auto_answer("allow_once", {options: [{optionId: "a2", kind: "allow_always"}]}) == nil)
+check("timeout picks reject_once", $a.timeout_answer($req) == "r1")
+check("timeout falls back to reject_always",
+  $a.timeout_answer({options: [{optionId: "ra", kind: "reject_always"}]}) == "ra")
+check("timeout with no reject option cancels",
+  $a.permission_result($a.timeout_answer({options: [{optionId: "a1", kind: "allow_once"}]})).outcome.outcome == "cancelled")
+check("selected result carries the option id", $a.permission_result("r1").outcome.optionId == "r1")
+$huge = {toolCall: {title: repeat("t", 100000)}, options: map(range(0, 50), fn($i) = {optionId: repeat("o", 1000), name: repeat("n", 1000), kind: "allow_once"})}
+$topic = $a.permission_topic("s1", "901", $huge)
+check("permission topic bounds title, options and their text",
+  len($topic.title) == 200 and len($topic.options) == 8 and len($topic.options[0].optionId) == 64 and len(json_encode($topic)) < 4096)
+check("permission topic tolerates a missing toolCall", $a.permission_topic("s1", "1", {options: []}).title == nil)
+$buttons = $a.permission_buttons($req.options)
+check("buttons drop allow_always", len($buttons) == 2 and $buttons[0].option == "a1" and $buttons[1].option == "r1")
+
+run_argv_must(["rm", "-rf", $tmp])
+$failed = len(filter($results, fn($r) = not $r.ok))
+print(to_string(len($results) - $failed) .. "/" .. to_string(len($results)) .. " passed")
+if $failed > 0 then exit(1) end

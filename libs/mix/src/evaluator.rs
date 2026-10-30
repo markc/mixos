@@ -3184,6 +3184,8 @@ pub(crate) const INLINE_SPECIAL_FORMS: &[&str] = &[
     "net_state",
     "process_watch",
     "process_unwatch",
+    "process_write",
+    "process_close_stdin",
     "audio_watch",
     "audio_unwatch",
     "audio_state",
@@ -3352,6 +3354,8 @@ pub const EXPR_MODE_DENIED_BUILTINS: &[&str] = &[
     "net_state",
     "process_watch",
     "process_unwatch",
+    "process_write",
+    "process_close_stdin",
     "audio_watch",
     "audio_unwatch",
     "audio_state",
@@ -13635,6 +13639,8 @@ impl Evaluator {
                     | "net_state"
                     | "process_watch"
                     | "process_unwatch"
+                    | "process_write"
+                    | "process_close_stdin"
                     | "audio_watch"
                     | "audio_unwatch"
                     | "audio_state"
@@ -13654,6 +13660,26 @@ impl Evaluator {
                             return Err(crate::native_events::refusal("PROC_WATCH_HANDLE", "handle must be a string"));
                         };
                         Ok(Value::Bool(self.globals.borrow_mut().native_events.process_unwatch(h)))
+                    }
+                    "process_write" => {
+                        let Some(Value::String(h)) = eval_args.first() else {
+                            return Err(crate::native_events::refusal("PROC_WATCH_HANDLE", "handle must be a string"));
+                        };
+                        let data: Vec<u8> = match eval_args.get(1) {
+                            Some(Value::String(s)) => s.as_bytes().to_vec(),
+                            Some(Value::Bytes(b)) => b.as_ref().clone(),
+                            Some(Value::Buffer(b)) => b.borrow().clone(),
+                            _ => return Err(crate::native_events::refusal("TYPE_MISMATCH", "process_write data must be a string, bytes or buffer")),
+                        };
+                        let h = h.clone();
+                        Ok(Value::Bool(self.globals.borrow_mut().native_events.process_write(&h, &data)?))
+                    }
+                    "process_close_stdin" => {
+                        let Some(Value::String(h)) = eval_args.first() else {
+                            return Err(crate::native_events::refusal("PROC_WATCH_HANDLE", "handle must be a string"));
+                        };
+                        let h = h.clone();
+                        Ok(Value::Bool(self.globals.borrow_mut().native_events.process_close_stdin(&h)?))
                     }
                     "net_watch" => {
                         let groups = crate::desktop_events::net_groups(eval_args.first())?;
@@ -14005,6 +14031,8 @@ impl Evaluator {
                             | "net_state"
                             | "process_watch"
                             | "process_unwatch"
+                            | "process_write"
+                            | "process_close_stdin"
                             | "audio_watch"
                             | "audio_unwatch"
                             | "audio_state"

@@ -2,7 +2,7 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! dopus's commands: one per action in the action table, so the menu bar,
 //! the shortcuts, the toolbar, the context menu and the toolkit's Bus drive
-//! reach the same path as `dopus.action`. Ids are the action ids; labels
+//! reach the same path as `dopus.execute`. Ids are the action ids; labels
 //! come from the catalogue; shortcuts are the default chords
 //! ([`crate::keymap`]): an action's first as its accelerator, the rest as
 //! further chords. The person's bindings are applied over them by

@@ -1,0 +1,128 @@
+---
+title: Agent sessions
+description: How agentd runs coding agents (Claude, Codex, Gemini, OpenCode and other ACP agents) as Bus sessions that anything on the Bus can start, watch, steer and answer.
+---
+
+# Agent sessions
+
+`agentd` runs coding agents as Bus sessions. Anything on the Bus can start
+one: Workshop, a terminal, a Mix script, or another agent. Each running
+agent's output is published as Bus events, so any number of watchers can
+follow a turn. When the agent asks permission to do something, the
+question goes to the human on the desk they are looking at, through
+[notifyd](../notifyd/README.md).
+
+agentd speaks the [Agent Client Protocol](https://agentclientprotocol.com)
+(ACP) to the agent. ACP is the open standard that most coding agents
+already support, so one integration covers them all. agentd adds what ACP
+lacks: addressing across the mesh, many watchers, and a human in the loop.
+Every session also gets [mixos-mcp](../mixos-mcp/README.md), so the agent
+can use the Bus in turn.
+
+```text
+ Bus callers ── agent.* commands, agent.session.* topics ──► agentd
+                                                              │ ACP over the agent's stdio
+                                                              ▼
+                                                     agent (claude-agent-acp, …)
+                                                              │ MCP
+                                                              ▼
+                                                 mixos-mcp ──► back onto the Bus
+```
+
+Run it as a session service: `mix --serve agentd.mix --name agent`. It
+needs a `mix` with `process_watch` stdin pipes (`stdin: "pipe"`,
+`process_write`).
+
+## Configuration
+
+agentd reads `$MIXOS_AGENTD_CONF`, else `<etc>/agent.conf.mix`. The file is
+strict data:
+
+```mix
+max_live: 4
+agents: {
+  claude: {argv: ["claude-agent-acp"], roots: ["/home/user/src"]},
+  gemini: {argv: ["gemini", "--acp"], roots: ["/home/user/src"]},
+  opencode: {argv: ["opencode", "acp"], roots: ["/home/user/src"], policy: "ask"}
+}
+```
+
+- **argv**: the agent's ACP command, run directly (no shell).
+- **roots**: the directories a session's `cwd` and `additional_dirs` must
+  lie under. Paths are resolved first, so a symlink cannot escape. This
+  confines only what the agent asks agentd for. The agent's own tools, such
+  as a shell, are not sandboxed by agentd.
+- **policy**:
+  - `ask` (the default) sends every permission request to the human.
+  - `allow_once` lets agentd answer `allow_once` by itself.
+
+  agentd never answers `allow_always`.
+- **permission_timeout_s** (default 300): with no answer by then, the
+  request is rejected. No answer is never yes.
+- **max_live** (default 4): live sessions at once. It is a hard cap, and
+  agent-started sessions count against it.
+
+## Commands
+
+Bodies are JSON objects.
+
+| Command | Body | Reply |
+|---|---|---|
+| `agent.agents` | | the configured agents, live count and cap |
+| `agent.session.new` | `{agent, cwd, mode?, additional_dirs?}` | `{session, status}` at once; `ready` follows as an event |
+| `agent.session.prompt` | `{session, content}` | `{session, turn}`; the turn streams as events |
+| `agent.session.cancel` | `{session}` | cancels the running turn |
+| `agent.session.close` | `{session}` | ends the agent |
+| `agent.session.set` | `{session, mode}` or `{session, option, value}` | sets a mode, or a config option such as the model |
+| `agent.session.list` | | live and recently ended sessions |
+| `agent.session.read` | `{session, since?}` | the session and its retained events after `seq` |
+| `agent.permission.respond` | `{session, request, option}` | answers a permission request |
+
+`content` is a string, or a list of ACP content blocks.
+
+Refusals carry `{error_code, message}`:
+
+| rc | error_code |
+|---|---|
+| 10 | `USAGE`, `OUTSIDE_ROOTS` or `UNKNOWN_AGENT` |
+| 14 | `UNKNOWN_SESSION` |
+| 15 | `AGENT_RUNNING` (a turn is already running) or `AGENT_NOT_READY` |
+| 16 | `AGENT_LIMIT` or `AGENT_DEPTH` |
+| 17 | `AGENT_SELF` |
+
+## Events
+
+| Topic | Body |
+|---|---|
+| `agent.session.updated` | `{session, seq, kind, …}` |
+| `agent.session.ended` | `{session, exit_code, signal}` |
+| `agent.permission.requested` | `{session, request, title, options}` |
+
+`kind` on `agent.session.updated` is one of:
+
+- `initialized` or `ready`;
+- an ACP update kind (`agent_message_chunk`, `tool_call`, `plan`, …), with
+  the update unchanged in `update`;
+- `stop`, with `stop` set to `end_turn`, `max_tokens`, `max_turn_requests`,
+  `refusal` or `cancelled`;
+- `permission_answered`;
+- `error`.
+
+`seq` rises by one per event in a session. A watcher that missed events
+reads them back with `agent.session.read {since}`.
+
+## Agents calling back
+
+agentd runs every agent with `MIXOS_AGENT_SESSION` set to its session id,
+and that agent's mixos-mcp registers on the Bus as
+`mcp-s-<session>-<suffix>`. The broker stamps that name as the sender of
+everything the bridge sends, so agentd recognises a session's own agent:
+
+- It cannot act on its own session (`AGENT_SELF`): no answering its own
+  permission requests, no prompting or closing itself.
+- A session it starts is a child, and a child cannot start sessions
+  (`AGENT_DEPTH`).
+- The `max_live` cap holds for everyone.
+
+This catches the agent's MCP path. An agent with a shell can still open a
+Bus client of its own, which is why the cap and the human answer matter.

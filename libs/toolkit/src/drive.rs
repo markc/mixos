@@ -2122,6 +2122,29 @@ mod tests {
         (ctx, temp)
     }
 
+    /// F7 (desk Bus audit): a covered window refuses input at once, so a caller
+    /// is never held for a frame that is not coming; queries still answer.
+    /// Frames withheld with no flag at all are bounded by INPUT_QUIET_PERIOD.
+    #[test]
+    fn covered_window_refuses_input_at_once_and_still_answers_queries() {
+        let (ctx, _temp) = capture_context();
+        let mut input = RawInput::default();
+        input
+            .viewports
+            .get_mut(&egui::ViewportId::ROOT)
+            .unwrap()
+            .occluded = Some(true);
+        let _output = ctx.run_logic(&input, |ctx| {
+            let answer = request(ctx, 1, "ui.type", &json!({"text":"hello"}))
+                .expect("refused at once, not queued");
+            assert_eq!(answer.rc, 10);
+            assert_eq!(answer.body["error_code"], "BUSY");
+            assert!(!pending(ctx));
+            // A query is answered at once, never queued behind a frame.
+            assert!(request(ctx, 2, "ui.tree", &json!({})).is_some());
+        });
+    }
+
     #[test]
     fn capture_refuses_only_at_its_quiet_deadline() {
         for running in [false, true] {

@@ -64,7 +64,9 @@ impl Drop for Client {
 pub(crate) struct BrokerConnection {
     client: Mutex<Option<Arc<Client>>>,
     connecting: tokio::sync::Mutex<()>,
-    name: String,
+    /// Err when MIXOS_AGENT_SESSION is set but invalid: every Bus tool
+    /// then fails with that reason.
+    name: Result<String, String>,
     started_at: String,
 }
 
@@ -109,16 +111,55 @@ async fn finish_connect(
     }
 }
 
+/// The environment variable an agent gateway sets on agents it runs. A bridge
+/// started by such an agent registers under a name that carries the session,
+/// so the gateway can recognise its own agents calling back over the Bus.
+pub(crate) const AGENT_SESSION_ENV: &str = "MIXOS_AGENT_SESSION";
+
+/// The Bus name for this bridge.
+///
+/// - No agent session: the anonymous `mcp-<pid>-<nonce hex>`.
+/// - A valid session (4-12 lowercase letters or digits):
+///   `mcp-s-<session>-<pid hex><4 nonce hex>`, at most 29 bytes, within
+///   noded's 31-byte rule. The nonce keeps bridges in separate PID
+///   namespaces apart. The gateway matches the prefix `mcp-s-<session>-`.
+/// - An invalid session is an error, never a silent anonymous name: a
+///   misconfigured gateway must not lose its self-check quietly.
+pub(crate) fn broker_name(session: Option<&str>, pid: u32, nonce: u128) -> Result<String, String> {
+    match session {
+        None => Ok(format!("mcp-{pid}-{nonce:x}")),
+        Some(s)
+            if (4..=12).contains(&s.len())
+                && s.bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit()) =>
+        {
+            Ok(format!("mcp-s-{s}-{pid:x}{:04x}", nonce & 0xffff))
+        }
+        Some(s) => Err(format!(
+            "{AGENT_SESSION_ENV}={s:?} is not a session id (4-12 lowercase letters or digits); \
+             refusing to connect to the Bus"
+        )),
+    }
+}
+
 impl BrokerConnection {
     pub(crate) fn new() -> Self {
         let nonce = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_nanos();
+        // Only a genuinely unset variable means "not an agent": empty or
+        // non-UTF-8 values go through validation and fail closed.
+        let session =
+            std::env::var_os(AGENT_SESSION_ENV).map(|value| value.to_string_lossy().into_owned());
+        let name = broker_name(session.as_deref(), std::process::id(), nonce);
+        if let Err(error) = &name {
+            tracing::error!("{error}");
+        }
         Self {
             client: Mutex::new(None),
             connecting: tokio::sync::Mutex::new(()),
-            name: format!("mcp-{}-{nonce:x}", std::process::id()),
+            name,
             started_at: buildinfo::now_rfc3339(),
         }
     }
@@ -140,6 +181,7 @@ impl BrokerConnection {
         if let Some(client) = self.live_client() {
             return Ok(client);
         }
+        let name = self.name.as_deref().map_err(|e| e.to_string())?;
         let _connecting = self.connecting.lock().await;
         if let Some(client) = self.live_client() {
             return Ok(client);
@@ -181,19 +223,11 @@ impl BrokerConnection {
                     options.incoming_capacity = Some(64);
                     // Retain the resolved locator, including one advertised by ping.
                     options.endpoint = Some(endpoint);
-                    NodedClient::connect_unix(&self.name, &url, &options, Some(provenance.clone()))
-                        .await
+                    NodedClient::connect_unix(name, &url, &options, Some(provenance.clone())).await
                 }
                 Err(error) => Err(error),
             };
-            finish_connect(
-                &self.name,
-                &url,
-                Some(provenance),
-                tcp_opt_in.as_deref(),
-                result,
-            )
-            .await
+            finish_connect(name, &url, Some(provenance), tcp_opt_in.as_deref(), result).await
         };
         let client = tokio::time::timeout(std::time::Duration::from_secs(5), connect)
             .await
@@ -244,6 +278,69 @@ impl BrokerConnection {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// noded's rule: 2-31 bytes, lowercase first, then lowercase/digit/'-'.
+    fn noded_accepts(name: &str) -> bool {
+        (2..=31).contains(&name.len())
+            && name.as_bytes()[0].is_ascii_lowercase()
+            && name
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+    }
+
+    #[test]
+    fn agent_session_names_carry_the_session_and_fit_noded() {
+        let name = broker_name(Some("k3x9q2ab7m1z"), 4_194_304, 0x1_beef).unwrap();
+        assert_eq!(name, "mcp-s-k3x9q2ab7m1z-400000beef");
+        assert!(noded_accepts(&name), "{name}");
+        assert!(name.starts_with("mcp-s-k3x9q2ab7m1z-"));
+        // The longest session with the largest Linux pid still fits.
+        let name = broker_name(Some("zzzzzzzzzzzz"), 4_194_304, u128::MAX).unwrap();
+        assert!(noded_accepts(&name), "{name}");
+        // The same pid in another PID namespace still gets a different name.
+        assert_ne!(
+            broker_name(Some("abcd"), 1, 0x0001).unwrap(),
+            broker_name(Some("abcd"), 1, 0x0002).unwrap()
+        );
+        let anonymous = broker_name(None, 1234, 0xabc).unwrap();
+        assert_eq!(anonymous, "mcp-1234-abc");
+        assert!(noded_accepts(&anonymous));
+    }
+
+    #[test]
+    fn a_session_prefix_never_matches_a_longer_session() {
+        let longer = broker_name(Some("abcd1"), 9, 0).unwrap();
+        assert!(!longer.starts_with("mcp-s-abcd-"), "{longer}");
+    }
+
+    #[test]
+    fn invalid_agent_sessions_refuse_the_bus_instead_of_going_anonymous() {
+        for bad in [
+            "abc",
+            "toolongsession1",
+            "Upper1",
+            "has-dash",
+            "a.b.c.d",
+            "sp ace",
+            "",
+            "abcd\u{fffd}",
+        ] {
+            let error = broker_name(Some(bad), 77, 0x1f).unwrap_err();
+            assert!(error.contains(AGENT_SESSION_ENV), "{bad}: {error}");
+        }
+    }
+
+    #[tokio::test]
+    async fn an_invalid_session_fails_every_bus_connection() {
+        let connection = BrokerConnection {
+            client: Mutex::new(None),
+            connecting: tokio::sync::Mutex::new(()),
+            name: broker_name(Some("BAD"), 1, 0),
+            started_at: String::new(),
+        };
+        let error = connection.get().await.err().expect("must refuse");
+        assert!(error.contains("refusing to connect"), "{error}");
+    }
 
     #[test]
     fn bridge_answers_protocol_commands_and_refuses_the_rest() {

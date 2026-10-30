@@ -11,7 +11,7 @@
 //!
 //! Ordering: deliveries are applied in arrival order, each with its effects
 //! performed before the next. A Bus command waits while drive input the
-//! toolkit accepted before it is still unanswered, so a `dopus.action`
+//! toolkit accepted before it is still unanswered, so a `dopus.execute`
 //! never overtakes a `dopus.ui.click` sent first. Quitting answers every
 //! dialog No, refuses held commands, saves the layout and stops the Bus;
 //! the window closes when the Bus has stopped.
@@ -461,7 +461,7 @@ impl Shell {
     }
 
     /// Apply the profile's bindings for dopus over the default chords, and
-    /// report the effective chords in `dopus.actions.list`.
+    /// report the effective chords in `dopus.actions`.
     pub fn set_keymap(&mut self, keymap: toolkit::keymap::Overrides) {
         if keymap == self.keymap {
             return;
@@ -669,7 +669,7 @@ impl Shell {
         }
     }
 
-    /// Record the actions `dopus.action` ran (their effects done) as Bus
+    /// Record the actions `dopus.execute` ran (their effects done) as Bus
     /// runs of their commands, and publish them.
     fn note_bus_runs(&mut self) {
         for id in std::mem::take(&mut self.app.ran) {

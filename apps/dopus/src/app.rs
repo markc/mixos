@@ -87,7 +87,7 @@ pub enum Effect {
         scheme: Option<String>,
         mode: Option<String>,
     },
-    /// A `theme.*` action, then reply to `id` as `dopus.action` does.
+    /// A `theme.*` action, then reply to `id` as `dopus.execute` does.
     ThemeAction {
         id: Option<u64>,
         action: ThemeAction,
@@ -99,7 +99,7 @@ pub enum Effect {
 pub struct App {
     pub macros_open: bool,
     pub core: DopusCore,
-    /// `dopus.actions.list`'s table.
+    /// `dopus.actions`'s table.
     pub actions: Vec<commands::ActionRow>,
     pub dialog: Option<Dialog>,
     queued: VecDeque<Dialog>,
@@ -113,7 +113,7 @@ pub struct App {
     pub theme: toolkit::theme_menu::Choice,
     /// Work for the shell.
     pub effects: Vec<Effect>,
-    /// Actions `dopus.action` accepted, oldest first, for the shell to
+    /// Actions `dopus.execute` accepted, oldest first, for the shell to
     /// publish on `dopus.action.executed` once their effects are done.
     pub ran: Vec<String>,
     pub quitting: bool,
@@ -636,7 +636,7 @@ mod tests {
         a.serve(
             &commands::Command {
                 id: 9,
-                command: "dopus.action".into(),
+                command: "dopus.execute".into(),
                 body: r#"{"id":"view.toggle-places"}"#.into(),
             },
             &meta,
@@ -655,7 +655,7 @@ mod tests {
         ] {
             let command = commands::Command {
                 id,
-                command: "dopus.action".into(),
+                command: "dopus.execute".into(),
                 body: body.into(),
             };
             a.serve(&command, &meta);

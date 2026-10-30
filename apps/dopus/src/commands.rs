@@ -7,10 +7,10 @@
 //! Every command is open to local and mesh callers with no authorisation gate.
 //! Success is rc 0; a refusal is rc 10 with a [`Refusal`] body.
 //!
-//! `dopus.action` serves navigation, view, pane, selection, theme and file
-//! actions through the same path as the keyboard and menus. File operations
-//! keep their prompts and confirmations, answered through drive input.
-//! `dopus.open` navigates the two panes.
+//! `dopus.execute` serves navigation, view, pane, selection, theme and file
+//! actions through the same path as the keyboard and menus; `dopus.actions`
+//! lists them. File operations keep their prompts and confirmations,
+//! answered through drive input. `dopus.open` navigates the two panes.
 //!
 //! The window also serves the toolkit's drive commands (`dopus.window`,
 //! `dopus.ui.click` and the rest, [`toolkit::drive`]); `dopus.describe`
@@ -42,8 +42,8 @@ pub const COMMANDS: &[(&str, bool)] = &[
     ("dopus.describe", true),
     ("dopus.info", true),
     ("dopus.state", true),
-    ("dopus.action", false),
-    ("dopus.actions.list", true),
+    ("dopus.execute", false),
+    ("dopus.actions", true),
     ("dopus.theme.set", false),
     ("dopus.open", false),
     ("dopus.quit", false),
@@ -158,15 +158,32 @@ pub struct AppearanceState {
     pub icon_weight: Option<u16>,
 }
 
-// ── action / actions.list ───────────────────────────────────────────────────
+// ── execute / actions ───────────────────────────────────────────────────────
 
+/// The `dopus.execute` body: the action `id` and its optional `params`,
+/// the action's arguments. A `pane` entry inside `params` picks the pane
+/// (the values [`PaneTarget`] takes); it is not passed on with the args.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ActionReq {
+#[serde(deny_unknown_fields)]
+pub struct ExecuteReq {
     pub id: String,
     #[serde(default)]
-    pub pane: PaneTarget,
-    #[serde(default)]
-    pub args: Option<serde_json::Value>,
+    pub params: Option<serde_json::Map<String, serde_json::Value>>,
+}
+
+/// Split `params`: a `pane` entry (any value [`PaneTarget`] takes) picks
+/// the pane and is removed; what remains is the action's args. With no
+/// `pane` entry the active pane runs the action.
+fn split_params(
+    params: &mut serde_json::Map<String, serde_json::Value>,
+    core: &DopusCore,
+) -> Result<PaneId, serde_json::Error> {
+    match params.remove("pane") {
+        Some(value) => {
+            serde_json::from_value::<PaneTarget>(value).map(|target| target.resolve(core))
+        }
+        None => Ok(core.active()),
+    }
 }
 
 /// Which pane an action targets; omitted is the active pane.
@@ -290,7 +307,7 @@ pub struct ServerMeta {
     pub theme_scheme: String,
     pub theme_mode: String,
     pub appearance: AppearanceState,
-    /// The `dopus.actions.list` table, built from the effective keymap.
+    /// The `dopus.actions` table, built from the effective keymap.
     pub actions: Vec<ActionRow>,
     /// Extra commands `dopus.describe` lists (the window's drive commands).
     pub extra_commands: Vec<String>,
@@ -321,7 +338,7 @@ pub enum Served {
         scheme: Option<String>,
         mode: Option<String>,
     },
-    /// A `theme.*` action, then reply as `dopus.action` does.
+    /// A `theme.*` action, then reply as `dopus.execute` does.
     ThemeAction {
         id: u64,
         action: ThemeAction,
@@ -374,13 +391,13 @@ impl Served {
     }
 }
 
-/// The action a `dopus.action` call ran, when `served` accepted it: what
+/// The action a `dopus.execute` call ran, when `served` accepted it: what
 /// the window and headless publish on `dopus.action.executed`.
 pub fn accepted_action(command: &Command, served: &[Served]) -> Option<String> {
-    if command.command != "dopus.action" || !served.iter().all(Served::accepts) {
+    if command.command != "dopus.execute" || !served.iter().all(Served::accepts) {
         return None;
     }
-    serde_json::from_str::<ActionReq>(&command.body)
+    serde_json::from_str::<ExecuteReq>(&command.body)
         .ok()
         .map(|req| req.id)
 }
@@ -452,7 +469,7 @@ fn theme_action(action: &str) -> Option<ThemeAction> {
         .then(|| ThemeAction::Scheme(scheme.to_owned()))
 }
 
-/// What applying one action does. A `dopus.action` call is a keystroke a
+/// What applying one action does. A `dopus.execute` call is a keystroke a
 /// remote caller pressed: the Bus and the keyboard share this.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Applied {
@@ -677,7 +694,7 @@ pub fn apply_availability(
     }
 }
 
-/// `dopus.actions.list`'s table: the actions with the chords `keys` gives
+/// The `dopus.actions` table: the actions with the chords `keys` gives
 /// each (the effective ones in the window, the defaults headless).
 pub fn action_table(keys: impl Fn(&str) -> Vec<String>) -> Vec<ActionRow> {
     ACTIONS
@@ -958,8 +975,8 @@ pub fn serve_command(
                 appearance: meta.appearance.clone(),
             },
         )],
-        "dopus.action" => {
-            let req = match serde_json::from_str::<ActionReq>(&command.body) {
+        "dopus.execute" => {
+            let req = match serde_json::from_str::<ExecuteReq>(&command.body) {
                 Ok(req) => req,
                 Err(error) => {
                     return vec![Served::error(
@@ -969,7 +986,19 @@ pub fn serve_command(
                     )];
                 }
             };
-            let pane = req.pane.resolve(core);
+            let mut params = req.params.unwrap_or_default();
+            let pane = match split_params(&mut params, core) {
+                Ok(pane) => pane,
+                Err(error) => {
+                    return vec![Served::error(
+                        id,
+                        code::INVALID_ARGUMENT,
+                        format!("params: {error}"),
+                    )];
+                }
+            };
+            // The rest of `params` is the action's args; none takes any yet.
+            let _args = params;
             match apply_action_in(&req.id, core, pane) {
                 Ok(Applied::Mail(paths)) => vec![Served::Mail { id, paths }],
                 Ok(Applied::ToggleSidebar(_)) if !window => vec![window_refusal(
@@ -1021,7 +1050,7 @@ pub fn serve_command(
                 Err(refusal) => vec![Served::refusal(id, refusal)],
             }
         }
-        "dopus.actions.list" => {
+        "dopus.actions" => {
             let mut actions = meta.actions.clone();
             apply_availability(&mut actions, &core.availability());
             for row in &mut actions {
@@ -1152,7 +1181,7 @@ mod tests {
         core.select_path(PaneId::Left, Some(file.clone()));
         core.select_modified(PaneId::Left, link.clone(), true, false);
         assert!(core.availability().selection_all_files);
-        let served = serve(&mut core, true, "dopus.action", r#"{"id":"file.mail"}"#);
+        let served = serve(&mut core, true, "dopus.execute", r#"{"id":"file.mail"}"#);
         assert!(
             matches!(&served[..], [Served::Mail { paths, .. }] if paths == &[file.clone(), link.clone()])
         );
@@ -1290,7 +1319,7 @@ mod tests {
             let served = serve(
                 &mut core,
                 true,
-                "dopus.action",
+                "dopus.execute",
                 &serde_json::json!({ "id": action }).to_string(),
             );
             let code = refusal(&served);
@@ -1322,9 +1351,14 @@ mod tests {
     #[test]
     fn unknown_ids_and_commands_are_refused() {
         let (_dir, mut core) = core();
-        let bad = serve(&mut core, false, "dopus.action", r#"{"id":"nope.nothing"}"#);
+        let bad = serve(
+            &mut core,
+            false,
+            "dopus.execute",
+            r#"{"id":"nope.nothing"}"#,
+        );
         assert_eq!(refusal(&bad).as_deref(), Some(code::INVALID_ARGUMENT));
-        let elsewhere = serve(&mut core, false, "dopus.action", r#"{"id":"place.open"}"#);
+        let elsewhere = serve(&mut core, false, "dopus.execute", r#"{"id":"place.open"}"#);
         assert_eq!(refusal(&elsewhere).as_deref(), Some(code::UNAVAILABLE));
         let command_name = serve(&mut core, false, "dopus.nope", "{}");
         assert_eq!(
@@ -1334,14 +1368,37 @@ mod tests {
         let pane = serve(
             &mut core,
             false,
-            "dopus.action",
-            r#"{"id":"nav.home","pane":3}"#,
+            "dopus.execute",
+            r#"{"id":"nav.home","params":{"pane":3}}"#,
         );
         assert_eq!(refusal(&pane).as_deref(), Some(code::INVALID_ARGUMENT));
     }
 
+    #[test]
+    fn execute_takes_params_and_refuses_the_old_body() {
+        let (_dir, mut core) = core();
+        for old in [
+            r#"{"id":"view.toggle-places","pane":"left"}"#,
+            r#"{"id":"view.toggle-places","args":{}}"#,
+        ] {
+            let served = serve(&mut core, false, "dopus.execute", old);
+            assert_eq!(
+                refusal(&served).as_deref(),
+                Some(code::INVALID_ARGUMENT),
+                "{old}"
+            );
+        }
+        let served = serve(
+            &mut core,
+            false,
+            "dopus.execute",
+            r#"{"id":"view.toggle-places","params":{"pane":"active"}}"#,
+        );
+        assert!(matches!(&served[..], [Served::ToggleSidebar { .. }]));
+    }
+
     /// What dopus.action.executed carries for a Bus call: the action of an
-    /// accepted dopus.action, never a refused one or another command. The v2 body
+    /// accepted dopus.execute, never a refused one or another command. The v2 body
     /// carries null params and result for these noted actions.
     #[test]
     fn only_accepted_actions_are_executed_runs() {
@@ -1357,13 +1414,13 @@ mod tests {
         };
         let hidden = r#"{"id":"view.toggle-hidden"}"#;
         assert_eq!(
-            ran(&mut core, true, "dopus.action", hidden).as_deref(),
+            ran(&mut core, true, "dopus.execute", hidden).as_deref(),
             Some("view.toggle-hidden")
         );
         // A file action, a sidebar headless (no window), another command.
         for (command_name, body) in [
-            ("dopus.action", r#"{"id":"file.delete"}"#),
-            ("dopus.action", r#"{"id":"view.toggle-places"}"#),
+            ("dopus.execute", r#"{"id":"file.delete"}"#),
+            ("dopus.execute", r#"{"id":"view.toggle-places"}"#),
             ("dopus.state", "{}"),
         ] {
             assert_eq!(
@@ -1380,7 +1437,7 @@ mod tests {
         let served = serve(
             &mut core,
             false,
-            "dopus.action",
+            "dopus.execute",
             r#"{"id":"theme.scheme-forest"}"#,
         );
         assert!(matches!(
@@ -1456,7 +1513,7 @@ mod tests {
         assert_eq!(parent.keys, ["Backspace", "Alt+ArrowUp"]);
         assert!(ACTIONS.iter().all(|(id, _)| is_action(id)));
         let (_dir, mut core) = core();
-        let served = serve(&mut core, true, "dopus.actions.list", "{}");
+        let served = serve(&mut core, true, "dopus.actions", "{}");
         let Served::Reply { body, .. } = &served[0] else {
             panic!()
         };

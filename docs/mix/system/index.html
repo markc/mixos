@@ -223,7 +223,8 @@
                         <a href="#background-processes--spawn-kill-process_alive">Background processes — spawn, kill, process_alive</a>
                         <a href="#managed-child-exit-events" class="toc-h3">Managed child exit events</a>
                         <a href="#signalling-and-liveness" class="toc-h3">Signalling and liveness</a>
-                        <a href="#child-line-events--process_watch-process_unwatch">Child line events — process_watch, process_unwatch</a>
+                        <a href="#child-line-events--process_watch-process_unwatch-process_write-process_close_stdin">Child line events — process_watch, process_unwatch, process_write, process_close_stdin</a>
+                        <a href="#writing-to-the-child-stdin-pipes" class="toc-h3">Writing to the child: stdin pipes</a>
                         <a href="#desktop-status-events--net_watch-audio_watch">Desktop status events — net_watch, audio_watch</a>
                         <a href="#network-net_watchopts---handle" class="toc-h3">Network: net_watch([opts]) -&gt; handle</a>
                         <a href="#audio-audio_watchopts---handle" class="toc-h3">Audio: audio_watch([opts]) -&gt; handle</a>
@@ -1171,10 +1172,10 @@ print("" .. process_alive(999999))
 false
 </code></pre>
 <p><code>kill(pid, 9)</code> sends SIGKILL; pass any signal number you need.</p>
-<h2 id="child-line-events--process_watch-process_unwatch">Child line events — process_watch, process_unwatch</h2>
+<h2 id="child-line-events--process_watch-process_unwatch-process_write-process_close_stdin">Child line events — process_watch, process_unwatch, process_write, process_close_stdin</h2>
 <p>(v0.117.x, unreleased)</p>
 <p><code>process_watch(argv[, opts]) -&gt; handle</code> starts argv directly, with no shell,
-null stdin and a new process group. It returns immediately. The evaluator's
+null stdin (unless <code>stdin: "pipe"</code>, below) and a new process group. It returns immediately. The evaluator's
 native event loop delivers <code>proc.line {watch, tag, stream, line, truncated}</code>,
 followed by exactly one <code>proc.watch_exited {watch, tag, exit_code, signal}</code>.
 The terminal name is distinct from managed spawn's <code>proc.exited</code>: watches
@@ -1204,6 +1205,50 @@ position: after all earlier retained lines and before any later retained line.
 Consecutive drops coalesce into one marker. Markers do not consume line capacity.
 The terminal cannot
 be dropped by queue overflow.</p>
+<p><code>overflow</code> is <code>"drop"</code> (the default, described above) or <code>"block"</code>. A framed
+protocol (JSON-RPC, ACP) cannot lose or cut a line, so <code>"block"</code> makes the
+watch lossless:</p>
+<ul>
+<li>A full queue stops reading the child's pipes until delivery makes room. The
+child then blocks on its own write, so back-pressure reaches it. The queue
+can overshoot <code>max_queue</code> by at most the lines of one 4 KiB read per
+pipe. After the
+leader exits, pipes drain regardless, within the usual 500 ms.</li>
+<li>A line longer than <code>max_line</code> is never delivered truncated. The watch kills
+the process group and ends with
+<code>proc.watch_exited {…, signal: 9, error_code: "PROC_LINE_LIMIT", error}</code>.
+Lines before it are delivered in order.</li>
+</ul>
+<h3 id="writing-to-the-child-stdin-pipes">Writing to the child: stdin pipes</h3>
+<p><code>stdin: "pipe"</code> opens the child's stdin; the default is <code>"null"</code>.
+<code>stdin_buffer</code> (default 8 MiB, at most 64 MiB, only with a pipe) bounds the
+bytes accepted but not yet written.</p>
+<p><code>process_write(handle, data) -&gt; bool</code> queues a string, bytes or buffer value.
+It never blocks the evaluator: the watch's worker thread writes the bytes in
+order as the pipe drains. It is all or nothing, so a framed message is never
+split by a full buffer. True means the whole value was accepted; it does not
+mean the child has read it. It returns false when:</p>
+<ul>
+<li>the value would exceed <code>stdin_buffer</code>;</li>
+<li>stdin has been closed by <code>process_close_stdin</code>;</li>
+<li>the child closed its stdin;</li>
+<li>the watch has finished, or the handle is unknown.</li>
+</ul>
+<p>Bytes accepted but never read, because the child exits or closes its stdin
+first, are discarded.</p>
+<p><code>process_close_stdin(handle) -&gt; bool</code> sends EOF once already-accepted bytes are
+written. It returns true when stdin was open. Both raise
+<code>PROC_STDIN_NOT_PIPED</code> for a watch started without a pipe.</p>
+<pre><code class="language-mix">-- A JSON-RPC child over stdio: one request per line, one reply per line.
+on proc.line
+  $reply = json_parse($event.args.line)
+  print($reply.id .. ": " .. json_encode($reply.result))
+end
+$agent = process_watch(["my-agent", "--stdio"],
+  {stdin: "pipe", overflow: "block", max_line: 16777216, tag: "agent"})
+process_write($agent, json_encode({jsonrpc: "2.0", id: 1, method: "initialize",
+  params: {protocolVersion: 1}}) .. "\n")
+</code></pre>
 <p><code>process_unwatch(handle) -&gt; bool</code> discards pending events, sends SIGTERM to
 the group and leader, waits for leader exit for up to 150 ms, then SIGKILLs
 remaining group members and reaps the leader. This synchronous join returns

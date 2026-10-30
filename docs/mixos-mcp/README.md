@@ -17,6 +17,17 @@ using `libs/bus`. `MIXOS_NODED_URL` overrides the node configuration URL;
 otherwise the native client's node config discovery applies, including
 `MIXOS_NODE_CONFIG`, `MIXOS_ETC` and the user/system defaults.
 
+The bridge registers under an anonymous name, `mcp-<pid>-<nonce>`. When an
+agent gateway starts the agent that runs it, the gateway sets
+`MIXOS_AGENT_SESSION` to that agent's session id: 4 to 12 lowercase letters
+or digits. The bridge then registers as `mcp-s-<session>-<pid hex><4 hex>`
+(the trailing hex keeps bridges in separate PID namespaces apart). The
+broker stamps that name as `from` on everything the bridge sends, so the
+gateway can recognise one of its own agents calling back. A value outside
+that form, including an empty or non-UTF-8 value, is an error: every Bus
+tool fails with that reason, rather than
+the bridge quietly registering under an anonymous name.
+
 Set `MIXOS_BROKER_ACCOUNT` to the broker's operating-system account and
 `MIXOS_BUS_SOCKET` to the session's Unix socket when overriding discovery.
 The account order is `MIXOS_BROKER_ACCOUNT`, node.conf `noded.account`, then

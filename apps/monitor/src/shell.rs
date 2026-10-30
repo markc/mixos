@@ -123,7 +123,7 @@ pub fn settle(engine: &mut Engine, commands: &Registry<Engine>, strings: &String
         for effect in effects {
             match effect {
                 Effect::Commands { id } => {
-                    let body = json!({ "commands": commands.describe(engine, strings) });
+                    let body = json!({ "actions": commands.describe(engine, strings) });
                     out.push(Effect::Reply { id, rc: 0, body });
                 }
                 Effect::Execute { id, command } => {

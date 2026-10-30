@@ -63,6 +63,7 @@ One line per component with a page: kind, then install profiles. The
 
 - [action](https://mixos.dev/action/README.md): lib; profiles: none (library). UI-free command registry, typed dispatch and executed journal.
   - [action — changelog](https://mixos.dev/action/changelog.md): Release notes of the action component, mirrored from libs/action/CHANGELOG.md.
+- [agentd](https://mixos.dev/agentd/README.md): service; profiles: unclassified. How agentd runs coding agents (Claude, Codex, Gemini, OpenCode and other ACP agents) as Bus sessions that anything on the Bus can start, watch, steer and answer.
 - [assets](https://mixos.dev/assets/README.md): lib; profiles: none (library). The resolver for a pinned, immutable set of fonts, icons and emoji on the local disk, which finds, verifies and reads a published set without any downloader or daemon.
 - [backdrop](https://mixos.dev/backdrop/README.md): app; profiles: unclassified. The MixOS desktop background — drawn by its own program on the compositor's background layer, on every output, at native and fractional scale.
 - [blobd](https://mixos.dev/blobd/README.md): service; profiles: unclassified. The node blob store: content-addressed bytes kept in mds, with owner pins, quotas and garbage collection. The MixOS port of blobd, with the store, the Bus citizen, the byte lane and the cross-node fetch.

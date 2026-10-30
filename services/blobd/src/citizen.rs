@@ -33,8 +33,16 @@ pub const TOPIC_UNPINNED: &str = "blob.unpinned";
 pub const TOPIC_SWEPT: &str = "blob.swept";
 pub const TOPIC_PROPS_CHANGED: &str = "blob.props.changed";
 
-const BROKER_RECONNECT_DELAY: Duration = Duration::from_secs(60);
+/// First retry after a lost or refused broker connection. It doubles up to
+/// the cap, as the supervised Bus client does, and resets after a session
+/// that registered: a broker restart is back within a second, not a minute.
+const BROKER_RECONNECT_FIRST: Duration = Duration::from_millis(250);
+const BROKER_RECONNECT_CAP: Duration = Duration::from_secs(30);
 const OP_TIMEOUT: Duration = Duration::from_secs(60);
+
+fn next_reconnect_delay(current: Duration) -> Duration {
+    current.saturating_mul(2).min(BROKER_RECONNECT_CAP)
+}
 
 /// One `retain: false` publication queued by a dispatch or a fetch
 /// completion.
@@ -729,6 +737,7 @@ pub async fn serve(citizen: Arc<Citizen>, command_max_concurrent: usize) -> Resu
     let service = citizen.service.clone();
     let permits = Arc::new(Semaphore::new(command_max_concurrent.max(1)));
 
+    let mut delay = BROKER_RECONNECT_FIRST;
     loop {
         let connection = tokio::time::timeout(
             OP_TIMEOUT,
@@ -739,23 +748,32 @@ pub async fn serve(citizen: Arc<Citizen>, command_max_concurrent: usize) -> Resu
             ),
         )
         .await;
-        match connection {
+        let registered = match connection {
             Ok(Ok(client)) => {
                 let client = Arc::new(client);
                 info!("registered as '{service}'");
                 run_connection(&citizen, &client, &permits).await;
                 client.close().await;
+                true
             }
             Ok(Err(error)) => {
-                warn!("broker unavailable; retrying in 60s: {error}");
+                warn!("broker unavailable; retrying in {delay:?}: {error}");
+                false
             }
             Err(_) => {
-                warn!("broker connection timed out; retrying in 60s");
+                warn!("broker connection timed out; retrying in {delay:?}");
+                false
             }
+        };
+        if registered {
+            delay = BROKER_RECONNECT_FIRST;
         }
         tokio::select! {
             _ = shutdown_signal() => return Ok(()),
-            _ = tokio::time::sleep(BROKER_RECONNECT_DELAY) => {}
+            _ = tokio::time::sleep(delay) => {}
+        }
+        if !registered {
+            delay = next_reconnect_delay(delay);
         }
     }
 }
@@ -1030,6 +1048,21 @@ mod tests {
     use serde_json::json;
     use std::time::Instant;
     use tempfile::TempDir;
+
+    #[test]
+    fn reconnect_backoff_starts_fast_doubles_and_caps() {
+        let mut delay = BROKER_RECONNECT_FIRST;
+        assert_eq!(delay, Duration::from_millis(250));
+        let mut seen = vec![delay];
+        for _ in 0..10 {
+            delay = next_reconnect_delay(delay);
+            seen.push(delay);
+        }
+        assert_eq!(seen[1], Duration::from_millis(500));
+        assert_eq!(seen[2], Duration::from_secs(1));
+        assert!(seen.iter().all(|d| *d <= BROKER_RECONNECT_CAP));
+        assert_eq!(*seen.last().unwrap(), BROKER_RECONNECT_CAP);
+    }
 
     fn citizen() -> (TempDir, Citizen) {
         let dir = TempDir::new().unwrap();

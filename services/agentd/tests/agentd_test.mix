@@ -1,0 +1,227 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- agentd_test: the agent.* commands over a real Bus, against a fake ACP
+-- agent (fixtures/fake_acp_agent.mix) on the stage 0 stdin pipe.
+-- - A private noded broker, the real notifyd, a topic listener and agentd.
+-- - Covers start, ready, a prompt turn's streamed text and stop reason, the
+--   mixos-mcp session env, a 2 MiB frame, a busy turn and cancel, a
+--   permission answered by the human through notifyd, an allow_once
+--   auto-policy, the AGENT_SELF refusal (an impostor registered under the
+--   session's mcp-s- name), the live-session cap, roots, and close.
+-- Run from the checkout root: mix services/agentd/tests/agentd_test.mix
+-- MIXOS_TEST_MIX / MIXOS_TEST_NODED choose the binaries (tools/mix_tests.mix
+-- sets both); the mix must have process_watch stdin pipes.
+
+$pb = require("../../../tests/lib/private_bus.mix")
+$here = dirname(realpath($0))
+$agentd = realpath($here .. "/../scripts/agentd.mix")
+$notifyd = realpath($here .. "/../../notifyd/scripts/notifyd.mix")
+$listener = realpath($here .. "/fixtures/agent_listener.mix")
+$impostor = realpath($here .. "/fixtures/impostor.mix")
+$fake = realpath($here .. "/fixtures/fake_acp_agent.mix")
+$mix = env("MIXOS_TEST_MIX", mixos_path("prefix") .. "/bin/mix")
+$noded = env("MIXOS_TEST_NODED", mixos_path("prefix") .. "/bin/noded")
+$tmp = env("TMPDIR", "/tmp") .. "/agentd-test." .. uuid()
+$results = []
+$pids = []
+
+fn check($name, $ok)
+  push($results, {name: $name, ok: $ok})
+  print((if $ok then "PASS " else "FAIL " end) .. $name)
+end
+
+fn decode($v)
+  if type($v) == "string" then
+    try
+      return json_parse($v)
+    catch $m
+    end
+  end
+  return $v
+end
+
+fn call($target, $command, $body)
+  $b = json_encode($body)
+  send $target $command body=$b timeout=10
+  return {rc: $rc, v: decode($result)}
+end
+
+fn agent($command, $body)
+  return call("agent", $command, $body)
+end
+
+fn code($v)
+  if type($v) == "map" then return $v.error_code end
+  return nil
+end
+
+fn events()
+  if not is_file($tmp .. "/events") then return [] end
+  return filter(split(read_file($tmp .. "/events"), "\n"), fn($l) = $l != "")
+end
+
+-- Wait (bounded) for an event line that starts with $prefix and contains $part.
+fn saw($prefix, $part)
+  for $i = 1 to 100
+    for each $l in events()
+      if starts_with($l, $prefix) and contains($l, $part) then return true end
+    end
+    sleep(0.1)
+  end
+  return false
+end
+
+fn wait_ready($id)
+  return saw("updated " .. $id .. " ", " ready ")
+end
+
+fn citizen($script, $name, $env, $log)
+  return spawn([$mix, "--serve", $script, "--name", $name],
+    {detach: true, env: $env, stdout: {file: $tmp .. "/" .. $log, append: true}, stderr: "stdout"})
+end
+
+$bus = nil
+mkdir($tmp .. "/ws/project", {parents: true})
+mkdir($tmp .. "/outside", {parents: true})
+try
+  $bus = $pb.start({dir: $tmp .. "/bus", name: "agentd-test", noded: $noded})
+  $env = merge($pb.client_env($bus), {HOME: $tmp .. "/home", MIXOS_NOTIFYD_STATE: $tmp .. "/notify.json"})
+  $conf = {max_live: 2, agents: {
+    fake: {argv: [$mix, $fake], roots: [$tmp .. "/ws"], permission_timeout_s: 5},
+    auto: {argv: [$mix, $fake], roots: [$tmp .. "/ws"], policy: "allow_once"}}}
+  write_file($tmp .. "/agent.conf.mix", data_encode($conf))
+  push($pids, citizen($listener, "agentlisten", merge($env, {AGENT_EVENTS: $tmp .. "/events"}), "listener.log"))
+  push($pids, citizen($notifyd, "notify", $env, "notifyd.log"))
+  push($pids, citizen($agentd, "agent", merge($env, {MIXOS_AGENTD_CONF: $tmp .. "/agent.conf.mix",
+    MIXOS_AGENTD_MCP: "/bin/true"}), "agentd.log"))
+  $up = false
+  for $i = 1 to 80
+    if agent("agent.agents", {}).rc == 0 then
+      $up = true
+      break
+    end
+    sleep(0.25)
+  end
+  check("agentd answers agent.agents", $up)
+  -- Topic subscriptions confirm asynchronously.
+  sleep(3)
+  $ag = agent("agent.agents", {})
+  check("both configured agents are listed", len($ag.v.agents) == 2 and $ag.v.max_live == 2)
+
+  -- Roots and validation.
+  $out = agent("agent.session.new", {agent: "fake", cwd: $tmp .. "/outside"})
+  check("cwd outside the roots is refused", $out.rc == 10 and code($out.v) == "OUTSIDE_ROOTS")
+  $unk = agent("agent.session.new", {agent: "nope", cwd: $tmp .. "/ws"})
+  check("unknown agent is refused", $unk.rc == 10 and code($unk.v) == "UNKNOWN_AGENT")
+  check("unknown session is rc 14", agent("agent.session.prompt", {session: "zzzz9999", content: "x"}).rc == 14)
+
+  -- A session and a turn.
+  $n = agent("agent.session.new", {agent: "fake", cwd: $tmp .. "/ws/project"})
+  $s = $n.v.session
+  check("session.new replies at once with a valid id", $n.rc == 0 and re_match(to_string($s), "^[a-z0-9]{4,12}$"))
+  check("the session becomes ready", wait_ready($s))
+  $p = agent("agent.session.prompt", {session: $s, content: "hello MCP"})
+  check("prompt is accepted with a turn", $p.rc == 0 and $p.v.turn != nil)
+  check("the agent saw its mixos-mcp session env", saw("updated " .. $s .. " ", "agent_message_chunk mcp:" .. $s))
+  check("text streamed back", saw("updated " .. $s .. " ", "agent_message_chunk echo:hello MCP"))
+  check("the turn ended with end_turn", saw("updated " .. $s .. " ", "stop end_turn"))
+
+  -- A 2 MiB frame crosses the pipe whole.
+  agent("agent.session.prompt", {session: $s, content: "BIG"})
+  check("a 2 MiB event goes out on the topic as a truncated marker", saw("updated " .. $s .. " ", "agent_message_chunk truncated="))
+  $big = filter(agent("agent.session.read", {session: $s, since: 0}).v.events,
+    fn($e) = $e.kind == "agent_message_chunk" and len($e.update.content.text ?? "") > 1000)
+  check("read returns the 2 MiB chunk intact", len($big) == 1 and len($big[0].update.content.text) == 2097152)
+  check("and the BIG turn ends", saw("updated " .. $s .. " ", "echo:BIG"))
+  sleep(0.5)
+
+  -- A busy turn, then cancel.
+  agent("agent.session.prompt", {session: $s, content: "SLOW"})
+  $busy = agent("agent.session.prompt", {session: $s, content: "again"})
+  check("a second prompt while running is AGENT_RUNNING", $busy.rc == 15 and code($busy.v) == "AGENT_RUNNING")
+  $c = agent("agent.session.cancel", {session: $s})
+  check("cancel is accepted", $c.rc == 0 and $c.v.cancelled == true)
+  check("the cancelled turn reports cancelled", saw("updated " .. $s .. " ", "stop cancelled"))
+  sleep(0.3)
+  agent("agent.session.prompt", {session: $s, content: "LATE"})
+  sleep(0.3)
+  agent("agent.session.cancel", {session: $s})
+  check("a permission asked after cancel is answered cancelled", saw("updated " .. $s .. " ", "agent_message_chunk late:cancelled"))
+  check("and nobody was asked", not contains(events(), "permission " .. $s .. " 902"))
+  sleep(0.3)
+
+  -- Permission answered by the human through notifyd.
+  agent("agent.session.prompt", {session: $s, content: "PERMISSION"})
+  check("permission request published", saw("permission " .. $s, ""))
+  $nid = nil
+  for $i = 1 to 50
+    $open = call("notify", "notify.list", {}).v
+    if type($open) == "list" then
+      for each $r in $open
+        if $r.source == "agent." .. $s then $nid = $r.id end
+      end
+    end
+    if $nid != nil then break end
+    sleep(0.1)
+  end
+  check("notifyd holds the question", $nid != nil)
+  $labels = if $nid != nil then map(call("notify", "notify.get", {id: $nid}).v.actions, fn($x) = $x.id) else [] end
+  check("allow_always is never offered as a button", not contains($labels, "always") and contains($labels, "deny"))
+  call("notify", "notify.action", {id: $nid, action: "deny"})
+  check("the human's answer reached the agent", saw("updated " .. $s .. " ", "agent_message_chunk perm:deny"))
+
+  -- The session's own agent cannot act on it (sender mcp-s-<id>-...).
+  push($pids, citizen($impostor, "mcp-s-" .. $s .. "-1f2e", $env, "impostor.log"))
+  sleep(1.5)
+  $self = call("mcp-s-" .. $s .. "-1f2e", "impostor.call", {command: "agent.session.prompt", body: {session: $s, content: "x"}})
+  check("a session's own sender is refused AGENT_SELF", $self.rc == 0 and $self.v.rc == 17)
+  $read = call("mcp-s-" .. $s .. "-1f2e", "impostor.call", {command: "agent.session.read", body: {session: $s}})
+  check("but it may still read its session", $read.rc == 0 and $read.v.rc == 0)
+
+  -- An allow_once auto-policy answers by itself.
+  $n2 = agent("agent.session.new", {agent: "auto", cwd: $tmp .. "/ws"})
+  $s2 = $n2.v.session
+  check("second session starts", $n2.rc == 0 and wait_ready($s2))
+  agent("agent.session.prompt", {session: $s2, content: "PERMISSION"})
+  check("allow_once policy picked allow_once", saw("updated " .. $s2 .. " ", "agent_message_chunk perm:allow"))
+
+  -- The live-session cap (max_live 2).
+  $third = agent("agent.session.new", {agent: "fake", cwd: $tmp .. "/ws"})
+  check("a third live session is AGENT_LIMIT", $third.rc == 16 and code($third.v) == "AGENT_LIMIT")
+
+  -- Read and close.
+  $r = agent("agent.session.read", {session: $s, since: 0})
+  check("read returns retained events in seq order",
+    $r.rc == 0 and len($r.v.events) > 5 and $r.v.events[0].seq == 1)
+  check("close is accepted", agent("agent.session.close", {session: $s}).rc == 0)
+  check("the session's end is published", saw("ended " .. $s, ""))
+  $after = agent("agent.session.prompt", {session: $s, content: "x"})
+  check("a closed session refuses prompts", $after.rc == 15)
+  check("after close a new session fits under the cap",
+    agent("agent.session.new", {agent: "fake", cwd: $tmp .. "/ws"}).rc == 0)
+finally
+  for each $p in $pids
+    try
+      kill($p, 15)
+    catch $m
+    end
+  end
+  if $bus != nil then $pb.stop($bus) end
+end
+
+$failed = filter($results, fn($r) = not $r.ok)
+print(to_string(len($results) - len($failed)) .. "/" .. to_string(len($results)) .. " passed")
+if len($failed) > 0 then
+  print("logs in " .. $tmp)
+  for each $f in ["agentd.log", "events"]
+    if is_file($tmp .. "/" .. $f) then
+      print("--- " .. $f)
+      $l = lines(read_file($tmp .. "/" .. $f))
+      for each $x in slice($l, max(0, len($l) - 40))
+        print("  | " .. slice($x, 0, 300))
+      end
+    end
+  end
+  exit(1)
+end
+remove_dir($tmp)

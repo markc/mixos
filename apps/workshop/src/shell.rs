@@ -151,7 +151,7 @@ pub fn settle(engine: &mut Engine, commands: &Registry<Engine>, strings: &String
         for effect in effects {
             match effect {
                 Effect::Commands { id } => {
-                    let body = json!({ "commands": commands.describe(engine, strings) });
+                    let body = json!({ "actions": commands.describe(engine, strings) });
                     out.push(Effect::Reply { id, rc: 0, body });
                 }
                 Effect::Execute { id, command } => {
@@ -1748,7 +1748,7 @@ mod tests {
         let (rc, body) = reply(1).unwrap();
         assert_eq!(rc, 0);
         assert!(
-            body["commands"]
+            body["actions"]
                 .as_array()
                 .is_some_and(|c| c.iter().any(|c| c["id"] == "bus.call"))
         );

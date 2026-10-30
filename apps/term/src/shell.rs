@@ -350,7 +350,7 @@ impl Shell {
             "term.actions" => (
                 0,
                 json!({
-                    "commands": self.commands.describe(&self.app, &self.strings),
+                    "actions": self.commands.describe(&self.app, &self.strings),
                     "state": self.app.state(),
                 }),
             ),

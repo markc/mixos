@@ -74,6 +74,11 @@ impl<D: 'static> GpuCompletion<D> {
     fn fired(&self) -> bool {
         self.fired.get()
     }
+
+    #[cfg(test)]
+    fn token(&self) -> RegistrationToken {
+        self.token
+    }
 }
 
 fn elapsed_at(
@@ -90,8 +95,10 @@ fn elapsed_at(
 
 impl<D: 'static> Drop for GpuCompletion<D> {
     fn drop(&mut self) {
-        // A fired source already unregistered itself via PostAction::Remove;
-        // removing its token again would unregister twice and fail with ENOENT.
+        // A fired source returned PostAction::Remove: calloop unregistered it
+        // once and dropped it, and its token is stale. Removing a stale token
+        // is a no-op today (tokens are versioned); skipping it keeps Drop from
+        // ever touching a slot the loop may have reused.
         if !self.fired.get() {
             self.handle.remove(self.token);
         }
@@ -328,8 +335,14 @@ mod tests {
         writer.write_all(&[1]).unwrap();
         event_loop.dispatch(Some(Duration::ZERO), &mut ()).unwrap();
         assert_eq!(queries.get(), 1);
-        assert!(sample.fired(), "readiness removed the source itself");
-        // Drop must take the no-remove branch: no second unregister of the token.
+        assert!(sample.fired(), "readiness ran the callback");
+        // Removed, not merely disabled: a disabled source can be re-enabled
+        // (and would be unregistered a second time by a later remove).
+        assert!(
+            event_loop.handle().enable(&sample.token()).is_err(),
+            "the source is gone from the loop"
+        );
+        // Drop must take the no-remove branch.
         drop(sample);
         event_loop.dispatch(Some(Duration::ZERO), &mut ()).unwrap();
         assert_eq!(queries.get(), 1, "the query ran exactly once");

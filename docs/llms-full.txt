@@ -751,6 +751,7 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 | Component | Kind | Profiles | Source | Description |
 |---|---|---|---|---|
 | [action](../action/README.md) · [changelog](../action/changelog.md) | lib | none (library) | [`libs/action`](https://github.com/markc/mixos/tree/main/libs/action) | UI-free command registry, typed dispatch and executed journal. |
+| [agentd](../agentd/README.md) | service | unclassified | [`services/agentd`](https://github.com/markc/mixos/tree/main/services/agentd) | How agentd runs coding agents (Claude, Codex, Gemini, OpenCode and other ACP agents) as Bus sessions that anything on the Bus can start, watch, steer and answer. |
 | [assets](../assets/README.md) | lib | none (library) | [`libs/assets`](https://github.com/markc/mixos/tree/main/libs/assets) | The resolver for a pinned, immutable set of fonts, icons and emoji on the local disk, which finds, verifies and reads a published set without any downloader or daemon. |
 | [backdrop](../backdrop/README.md) | app | unclassified | [`apps/backdrop`](https://github.com/markc/mixos/tree/main/apps/backdrop) | The MixOS desktop background — drawn by its own program on the compositor's background layer, on every output, at native and fractional scale. |
 | [blobd](../blobd/README.md) | service | unclassified | [`services/blobd`](https://github.com/markc/mixos/tree/main/services/blobd) | The node blob store: content-addressed bytes kept in mds, with owner pins, quotas and garbage collection. The MixOS port of blobd, with the store, the Bus citizen, the byte lane and the cross-node… |
@@ -874,6 +875,7 @@ checked separately by the layering gate.
 | [test-broker](https://github.com/markc/mixos/blob/main/libs/test-broker/Cargo.toml) | test-broker | lib | core | none | 0.1.2 |
 | [thumbs](https://github.com/markc/mixos/blob/main/libs/thumbs/Cargo.toml) | thumbs | lib | core | none | 0.1.2 |
 | [toolkit](https://github.com/markc/mixos/blob/main/libs/toolkit/Cargo.toml) | toolkit | lib | desktop | none | 0.1.2 |
+| [agentd](https://github.com/markc/mixos/blob/main/services/agentd/component.mx) | agentd | service | desktop | public | 0.1.0 |
 | [blobd](https://github.com/markc/mixos/blob/main/services/blobd/Cargo.toml) | blobd | service | core | none | 0.1.2 |
 | [bridged](https://github.com/markc/mixos/blob/main/services/bridged/component.mx) | bridged | service | desktop | public | 0.2.0 |
 | [clipd](https://github.com/markc/mixos/blob/main/services/clipd/component.mx) | clipd | service | desktop | public | 0.1.0 |
@@ -1161,6 +1163,134 @@ the state, checkpoint and both stacks untouched. New edits clear redo.
 edit, undo, redo or `mark_saved()` ends the coalescing group. `current()`,
 `can_undo()`, `can_redo()`, `depth()` and `labels()` expose state without mutation.
 `mark_saved()` records a checkpoint; `dirty()` compares document values.
+
+---
+
+<!-- page: https://mixos.dev/agentd/ (source: https://mixos.dev/agentd/README.md) -->
+
+# Agent sessions
+
+`agentd` runs coding agents as Bus sessions. Anything on the Bus can start
+one: Workshop, a terminal, a Mix script, or another agent. Each running
+agent's output is published as Bus events, so any number of watchers can
+follow a turn. When the agent asks permission to do something, the
+question goes to the human on the desk they are looking at, through
+[notifyd](../notifyd/README.md).
+
+agentd speaks the [Agent Client Protocol](https://agentclientprotocol.com)
+(ACP) to the agent. ACP is the open standard that most coding agents
+already support, so one integration covers them all. agentd adds what ACP
+lacks: addressing across the mesh, many watchers, and a human in the loop.
+Every session also gets [mixos-mcp](../mixos-mcp/README.md), so the agent
+can use the Bus in turn.
+
+```text
+ Bus callers ── agent.* commands, agent.session.* topics ──► agentd
+                                                              │ ACP over the agent's stdio
+                                                              ▼
+                                                     agent (claude-agent-acp, …)
+                                                              │ MCP
+                                                              ▼
+                                                 mixos-mcp ──► back onto the Bus
+```
+
+Run it as a session service: `mix --serve agentd.mix --name agent`. It
+needs a `mix` with `process_watch` stdin pipes (`stdin: "pipe"`,
+`process_write`).
+
+## Configuration
+
+agentd reads `$MIXOS_AGENTD_CONF`, else `<etc>/agent.conf.mix`. The file is
+strict data:
+
+```mix
+max_live: 4
+agents: {
+  claude: {argv: ["claude-agent-acp"], roots: ["/home/user/src"]},
+  gemini: {argv: ["gemini", "--acp"], roots: ["/home/user/src"]},
+  opencode: {argv: ["opencode", "acp"], roots: ["/home/user/src"], policy: "ask"}
+}
+```
+
+- **argv**: the agent's ACP command, run directly (no shell).
+- **roots**: the directories a session's `cwd` and `additional_dirs` must
+  lie under. Paths are resolved first, so a symlink cannot escape. This
+  confines only what the agent asks agentd for. The agent's own tools, such
+  as a shell, are not sandboxed by agentd.
+- **policy**:
+  - `ask` (the default) sends every permission request to the human.
+  - `allow_once` lets agentd answer `allow_once` by itself.
+
+  agentd never answers `allow_always`.
+- **permission_timeout_s** (default 300): with no answer by then, the
+  request is rejected. No answer is never yes.
+- **max_live** (default 4): live sessions at once. It is a hard cap, and
+  agent-started sessions count against it.
+
+## Commands
+
+Bodies are JSON objects.
+
+| Command | Body | Reply |
+|---|---|---|
+| `agent.agents` | | the configured agents, live count and cap |
+| `agent.session.new` | `{agent, cwd, mode?, additional_dirs?}` | `{session, status}` at once; `ready` follows as an event |
+| `agent.session.prompt` | `{session, content}` | `{session, turn}`; the turn streams as events |
+| `agent.session.cancel` | `{session}` | cancels the running turn |
+| `agent.session.close` | `{session}` | ends the agent |
+| `agent.session.set` | `{session, mode}` or `{session, option, value}` | sets a mode, or a config option such as the model |
+| `agent.session.list` | | live and recently ended sessions |
+| `agent.session.read` | `{session, since?}` | the session and its retained events after `seq` |
+| `agent.permission.respond` | `{session, request, option}` | answers a permission request |
+
+`content` is a string, or a list of ACP content blocks.
+
+Refusals carry `{error_code, message}`:
+
+| rc | error_code |
+|---|---|
+| 10 | `USAGE`, `OUTSIDE_ROOTS` or `UNKNOWN_AGENT` |
+| 14 | `UNKNOWN_SESSION` |
+| 15 | `AGENT_RUNNING` (a turn is already running) or `AGENT_NOT_READY` |
+| 16 | `AGENT_LIMIT` or `AGENT_DEPTH` |
+| 17 | `AGENT_SELF` |
+
+## Events
+
+| Topic | Body |
+|---|---|
+| `agent.session.updated` | `{session, seq, kind, …}` |
+| `agent.session.ended` | `{session, exit_code, signal}` |
+| `agent.permission.requested` | `{session, request, title, options}` |
+
+`kind` on `agent.session.updated` is one of:
+
+- `initialized` or `ready`;
+- an ACP update kind (`agent_message_chunk`, `tool_call`, `plan`, …), with
+  the update unchanged in `update`;
+- `stop`, with `stop` set to `end_turn`, `max_tokens`, `max_turn_requests`,
+  `refusal` or `cancelled`;
+- `permission_answered`;
+- `error`.
+
+`seq` rises by one per event in a session. A watcher that missed events
+reads them back with `agent.session.read {since}`.
+
+## Agents calling back
+
+agentd runs every agent with `MIXOS_AGENT_SESSION` set to its session id,
+and that agent's mixos-mcp registers on the Bus as
+`mcp-s-<session>-<suffix>`. The broker stamps that name as the sender of
+everything the bridge sends, so agentd recognises a session's own agent:
+
+- It cannot act on its own session (`AGENT_SELF`): no answering its own
+  permission requests, no prompting or closing itself.
+- A session it starts is a child, and a child cannot start sessions
+  (`AGENT_DEPTH`).
+- The `max_live` cap holds for everyone.
+
+This catches the agent's MCP path. An agent with a shell can still open a
+Bus client of its own, which is why the cap and the human answer matter.
 
 ---
 
@@ -9284,18 +9414,18 @@ DOpus answers on the Bus as `dopus` (schema `dopus.v1`).
 | `dopus.ping`, `dopus.describe`, `dopus.info` | | liveness, the control surface, version and build |
 | `dopus.state` | | both panes (path, sort, hidden files, previews, selection, rows, status) and the sidebars |
 | `dopus.open` | `paths` (one per pane), or one path and `pane` | goes there |
-| `dopus.action` | `id`, `pane` (`left`, `right` or `active`) | runs one action |
-| `dopus.actions.list` | | every action, its keys in force and whether it can run now |
+| `dopus.execute` | `id`, optional `params`; `params.pane` is `left`, `right` or `active` (the default) | runs one action |
+| `dopus.actions` | | every action, its keys in force and whether it can run now |
 | `dopus.theme.set` | `scheme`, `mode` | this window's look |
 | `dopus.quit` | | closes the window |
 
 Every action accepts local and mesh callers, including `file.open`,
 `file.new-folder`, `file.rename`, `file.copy-other-pane`,
-`file.move-other-pane` and `file.delete`. `dopus.actions.list` reports the
+`file.move-other-pane` and `file.delete`. `dopus.actions` reports the
 same availability as the keyboard and menus: selection, an idle worker and
 valid arguments still matter.
 
-**Mail selection** (`dopus.action {id:"file.mail"}`) sends the current pane's
+**Mail selection** (`dopus.execute {id:"file.mail"}`) sends the current pane's
 selected file paths to Email. It is available for one or more regular files,
 including symlinks to files, and appears in the File and row context menus.
 It launches Email through the session launcher when needed. A new message
@@ -9307,7 +9437,7 @@ Email refused; the reply's `result` contains `added`, `count` and `message`.
 Headless instances support this action on their selection too.
 
 File actions keep the normal name prompts, destructive confirmations and
-drop choices. After `dopus.action {id:"file.new-folder"}`, use
+drop choices. After `dopus.execute {id:"file.new-folder"}`, use
 `dopus.ui.type {text:"Projects"}` and `dopus.ui.click {label:"OK"}` to
 answer the focused prompt. For rename, select the old text first with
 `dopus.ui.key {key:"A",modifiers:["ctrl"]}`. Answer a delete confirmation
@@ -9324,14 +9454,14 @@ The window is drivable like every MixOS app, including its menus: see
 registered in `docs/docs/spec/bus/commands.conf.mix`.
 
 Each command run from a menu, a key, a sidebar button or an accepted
-`dopus.action` is published on `dopus.action.executed`, with how it was
+`dopus.execute` is published on `dopus.action.executed`, with how it was
 reached (`menu`, `shortcut`, `ui` or `bus`;
 [executed commands](../docs/decisions/2026-10-11-executed-commands.md)). A refused
 action is not published.
 
 `dopus --headless` runs the core and the Bus port without a window, for
 tests: the same commands, minus those that need a window. It publishes its
-accepted `dopus.action` runs on `<service>.action.executed` too.
+accepted `dopus.execute` runs on `<service>.action.executed` too.
 Headless instances cancel name prompts and confirmations because there is
 no window to answer them; copy and move still use the real filesystem worker.
 
@@ -12843,7 +12973,9 @@ Since 0.29.0 every builtin carries a structured contract — per-argument names/
   net_watch       Subscribe to Linux rtnetlink link/address changes; returns an evaluator-owned opaque handle. Delivers net.changed {watch, changes:[{kind:"link"|"addr", ifname, index, up, removed, operstate?, loopback?, wireless?, family?, address?, prefix?}], overflow, closed?} via $event.args; bursts coalesce per link/address, repeats that change nothing are dropped, overflow means re-read net_state(). opts {events: ["link","addr"]}. No polling fallback
   net_unwatch     Cancel a net_watch handle and its pending changes
   net_state       Snapshot of network links and addresses from an rtnetlink dump: {links:[{ifname, index, up, operstate?, loopback, wireless}], addresses:[{ifname, index, family, address, prefix}]}. up = operstate up, or IFF_UP+IFF_RUNNING when the driver reports unknown (lo, WireGuard)
-  process_watch   Watch a directly executed argv child's stdout as ordered proc.line {watch,tag,stream,line,truncated} events, then one proc.watch_exited {watch,tag,exit_code,signal,detached_output}. Pipes drain for at most 500ms after leader exit; detached_output flags cut-off output. Options cwd/env/clear_env match run_argv; stderr null (default), lines or inherit; tag string; max_line 65536 bytes (truncate and flag), max_queue 1024 lines (drop newest; ordered proc.overflow marker at the drop position). Evaluator owns the process group and reaper; unwatch, shutdown and reload retirement terminate it. Reload candidates cannot start watches. v0.117.x, unreleased
+  process_watch   Watch a directly executed argv child's stdout as ordered proc.line {watch,tag,stream,line,truncated} events, then one proc.watch_exited {watch,tag,exit_code,signal,detached_output}. Pipes drain for at most 500ms after leader exit; detached_output flags cut-off output. Options cwd/env/clear_env match run_argv; stderr null (default), lines or inherit; tag string; max_line 65536 bytes (truncate and flag, up to 16 MiB), max_queue 1024 lines (drop newest; ordered proc.overflow marker at the drop position). overflow: "block" makes the watch lossless for framed protocols: a full queue stops reading the pipes until delivery makes room (overshooting by at most one 4 KiB read per pipe), and a line over max_line kills the group and ends the watch with error_code PROC_LINE_LIMIT instead of truncating. stdin: "pipe" opens the child stdin for process_write/process_close_stdin, buffered up to stdin_buffer bytes (default 8 MiB, max 64 MiB); default stdin is null. Evaluator owns the process group and reaper; unwatch, shutdown and reload retirement terminate it. Reload candidates cannot start watches. v0.117.x, unreleased
+  process_write   Queue bytes for a process_watch child started with {stdin: "pipe"}: process_write(handle, string|bytes|buffer) -> bool. Never blocks the evaluator: the watch worker writes the bytes in order as the pipe drains. All or nothing: true when the whole value was accepted, false when it would exceed stdin_buffer, after process_close_stdin, after the child closed its stdin, or once the watch has finished. Accepted bytes the child never reads (it exits or closes stdin first) are discarded. Raises PROC_STDIN_NOT_PIPED for a watch without a stdin pipe. v0.117.x, unreleased
+  process_close_stdin Close a process_watch child stdin (EOF) once bytes already accepted by process_write are written. Returns true when stdin was open, false when already closed, broken or the watch finished. Raises PROC_STDIN_NOT_PIPED for a watch without a stdin pipe. v0.117.x, unreleased
   process_unwatch Cancel a process_watch handle, discard pending events, terminate its process group (TERM, then KILL after 150ms), and reap the child. Waits up to 150ms for leader exit, returning promptly on TERM exit. Returns true only for a live watch or undelivered records, false after terminal delivery. v0.117.x, unreleased
   audio_watch     Subscribe to PipeWire (pulse server) change notices through one managed `pactl subscribe` child; returns an evaluator-owned opaque handle. Delivers audio.changed {watch, changes:[{facility, kind, index}], overflow, closed?} via $event.args; read the volume with audio_state() once per batch. closed {error_code:AUDIO_SOURCE_EXITED} when the server goes away. opts {facilities (default sink, source, server, card), runtime_dir}
   audio_unwatch   Cancel an audio_watch handle: kills and reaps its pactl child, drops pending changes
@@ -32626,12 +32758,12 @@ false
 
 `kill(pid, 9)` sends SIGKILL; pass any signal number you need.
 
-## Child line events — process_watch, process_unwatch
+## Child line events — process_watch, process_unwatch, process_write, process_close_stdin
 
 (v0.117.x, unreleased)
 
 `process_watch(argv[, opts]) -> handle` starts argv directly, with no shell,
-null stdin and a new process group. It returns immediately. The evaluator's
+null stdin (unless `stdin: "pipe"`, below) and a new process group. It returns immediately. The evaluator's
 native event loop delivers `proc.line {watch, tag, stream, line, truncated}`,
 followed by exactly one `proc.watch_exited {watch, tag, exit_code, signal}`.
 The terminal name is distinct from managed spawn's `proc.exited`: watches
@@ -32665,6 +32797,56 @@ position: after all earlier retained lines and before any later retained line.
 Consecutive drops coalesce into one marker. Markers do not consume line capacity.
 The terminal cannot
 be dropped by queue overflow.
+
+`overflow` is `"drop"` (the default, described above) or `"block"`. A framed
+protocol (JSON-RPC, ACP) cannot lose or cut a line, so `"block"` makes the
+watch lossless:
+
+- A full queue stops reading the child's pipes until delivery makes room. The
+  child then blocks on its own write, so back-pressure reaches it. The queue
+  can overshoot `max_queue` by at most the lines of one 4 KiB read per
+  pipe. After the
+  leader exits, pipes drain regardless, within the usual 500 ms.
+- A line longer than `max_line` is never delivered truncated. The watch kills
+  the process group and ends with
+  `proc.watch_exited {…, signal: 9, error_code: "PROC_LINE_LIMIT", error}`.
+  Lines before it are delivered in order.
+
+### Writing to the child: stdin pipes
+
+`stdin: "pipe"` opens the child's stdin; the default is `"null"`.
+`stdin_buffer` (default 8 MiB, at most 64 MiB, only with a pipe) bounds the
+bytes accepted but not yet written.
+
+`process_write(handle, data) -> bool` queues a string, bytes or buffer value.
+It never blocks the evaluator: the watch's worker thread writes the bytes in
+order as the pipe drains. It is all or nothing, so a framed message is never
+split by a full buffer. True means the whole value was accepted; it does not
+mean the child has read it. It returns false when:
+
+- the value would exceed `stdin_buffer`;
+- stdin has been closed by `process_close_stdin`;
+- the child closed its stdin;
+- the watch has finished, or the handle is unknown.
+
+Bytes accepted but never read, because the child exits or closes its stdin
+first, are discarded.
+
+`process_close_stdin(handle) -> bool` sends EOF once already-accepted bytes are
+written. It returns true when stdin was open. Both raise
+`PROC_STDIN_NOT_PIPED` for a watch started without a pipe.
+
+```mix
+-- A JSON-RPC child over stdio: one request per line, one reply per line.
+on proc.line
+  $reply = json_parse($event.args.line)
+  print($reply.id .. ": " .. json_encode($reply.result))
+end
+$agent = process_watch(["my-agent", "--stdio"],
+  {stdin: "pipe", overflow: "block", max_line: 16777216, tag: "agent"})
+process_write($agent, json_encode({jsonrpc: "2.0", id: 1, method: "initialize",
+  params: {protocolVersion: 1}}) .. "\n")
+```
 
 `process_unwatch(handle) -> bool` discards pending events, sends SIGTERM to
 the group and leader, waits for leader exit for up to 150 ms, then SIGKILLs
@@ -34617,6 +34799,17 @@ The server starts without a Bus connection. The first Bus tool connects
 using `libs/bus`. `MIXOS_NODED_URL` overrides the node configuration URL;
 otherwise the native client's node config discovery applies, including
 `MIXOS_NODE_CONFIG`, `MIXOS_ETC` and the user/system defaults.
+
+The bridge registers under an anonymous name, `mcp-<pid>-<nonce>`. When an
+agent gateway starts the agent that runs it, the gateway sets
+`MIXOS_AGENT_SESSION` to that agent's session id: 4 to 12 lowercase letters
+or digits. The bridge then registers as `mcp-s-<session>-<pid hex><4 hex>`
+(the trailing hex keeps bridges in separate PID namespaces apart). The
+broker stamps that name as `from` on everything the bridge sends, so the
+gateway can recognise one of its own agents calling back. A value outside
+that form, including an empty or non-UTF-8 value, is an error: every Bus
+tool fails with that reason, rather than
+the bridge quietly registering under an anonymous name.
 
 Set `MIXOS_BROKER_ACCOUNT` to the broker's operating-system account and
 `MIXOS_BUS_SOCKET` to the session's Unix socket when overriding discovery.
@@ -41283,6 +41476,7 @@ On every MixOS system.
 Apps, services and command-line components that do not declare install profiles
 yet. They are listed on both this page and the server page until they do.
 
+- [agentd](../agentd/README.md) (service): How agentd runs coding agents (Claude, Codex, Gemini, OpenCode and other ACP agents) as Bus sessions that anything on the Bus can start, watch, steer and answer.
 - [backdrop](../backdrop/README.md) (app): The MixOS desktop background — drawn by its own program on the compositor's background layer, on every output, at native and fractional scale.
 - [blobd](../blobd/README.md) (service): The node blob store: content-addressed bytes kept in mds, with owner pins, quotas and garbage collection. The MixOS port of blobd, with the store, the Bus citizen, the byte lane and the cross-node…
 - [bridged](../bridged/README.md) (service): How bridged puts an external application with a line-delimited JSON control channel on the Bus, one instance per application, and what that exposes.
@@ -41338,6 +41532,7 @@ On every MixOS system.
 Apps, services and command-line components that do not declare install profiles
 yet. They are listed on both this page and the desktop page until they do.
 
+- [agentd](../agentd/README.md) (service): How agentd runs coding agents (Claude, Codex, Gemini, OpenCode and other ACP agents) as Bus sessions that anything on the Bus can start, watch, steer and answer.
 - [backdrop](../backdrop/README.md) (app): The MixOS desktop background — drawn by its own program on the compositor's background layer, on every output, at native and fractional scale.
 - [blobd](../blobd/README.md) (service): The node blob store: content-addressed bytes kept in mds, with owner pins, quotas and garbage collection. The MixOS port of blobd, with the store, the Bus citizen, the byte lane and the cross-node…
 - [bridged](../bridged/README.md) (service): How bridged puts an external application with a line-delimited JSON control channel on the Bus, one instance per application, and what that exposes.

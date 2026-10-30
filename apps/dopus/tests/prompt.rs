@@ -148,7 +148,7 @@ fn bus_file_operations_accept_driven_prompts_confirmations_and_drops() {
         h.state_mut().app.serve(
             &Command {
                 id: 1,
-                command: "dopus.action".into(),
+                command: "dopus.execute".into(),
                 body: json!({"id":id}).to_string(),
             },
             &meta,

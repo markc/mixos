@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Headless dopus: the same core and Bus surface, no window. Neighbours can
-//! read `dopus.state` (two panes) and drive `dopus.action` against it. The
+//! read `dopus.state` (two panes) and drive `dopus.execute` against it. The
 //! window and this loop share [`commands::serve_command`]; only the transport
 //! differs.
 //!
@@ -9,7 +9,7 @@
 //! every dialog at once with No (law 3), so nothing waits and no file
 //! operation starts. `OpenFile` is refused and logged (law 4). Theme and
 //! window actions are refused: there is nothing to paint. Accepted
-//! `dopus.action` runs are published on `dopus.action.executed`, origin
+//! `dopus.execute` runs are published on `dopus.action.executed`, origin
 //! `bus`, as the window publishes them.
 
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -105,7 +105,7 @@ pub fn run(
         .build()
         .map_err(|e| format!("headless runtime: {e}"))?;
     // Only for its command ids and the executed journal: accepted
-    // `dopus.action` runs are published as the window publishes them.
+    // `dopus.execute` runs are published as the window publishes them.
     let commands = crate::actions::registry();
     let topic = toolkit::executed::topic(bus.service());
     tracing::info!("dopus headless as `{service}`");
