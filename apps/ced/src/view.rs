@@ -61,6 +61,8 @@ pub fn view(
     connected: bool,
 ) -> Vec<UiEvent> {
     let mut events = Vec::new();
+    // The tab strip continues the chrome, so no divider above it.
+    titlebar::seamless(ui.ctx(), true);
     // The icon bar: the standard tail only.
     let fired = titlebar::show_bar(
         ui,
@@ -98,7 +100,9 @@ pub fn view(
     egui::CentralPanel::default()
         .frame(egui::Frame::new())
         .show(ui, |ui| {
-            tabs(ui, app, &mut events);
+            // The tabs sit directly on the document, with no gap between.
+            ui.spacing_mut().item_spacing.y = 0.0;
+            tabs(ui, app, palette, &mut events);
             notices(ui, app, &mut events);
             find_bar(ui, app, &mut events);
             crate::mail_view::strip(ui, app, &mut events);
@@ -278,7 +282,7 @@ pub fn tab_name(tab: &Tab) -> String {
         .unwrap_or_else(|| format!("untitled-{}", tab.id))
 }
 
-fn tabs(ui: &mut Ui, app: &App, events: &mut Vec<UiEvent>) {
+fn tabs(ui: &mut Ui, app: &App, palette: &Palette, events: &mut Vec<UiEvent>) {
     let list = app.ctl.tabs();
     if list.is_empty() {
         return;
@@ -308,7 +312,14 @@ fn tabs(ui: &mut Ui, app: &App, events: &mut Vec<UiEvent>) {
         .active()
         .and_then(|a| list.iter().position(|t| t.id == a))
         .unwrap_or(0);
-    let picked = toolkit::tabs::documents(ui, egui::Id::unique("ced.tabs"), &shown, selected, None);
+    let picked = toolkit::tabs::documents_on(
+        ui,
+        egui::Id::unique("ced.tabs"),
+        &shown,
+        selected,
+        None,
+        palette.background,
+    );
     if let Some(i) = picked.selected
         && let Some(t) = list.get(i)
     {

@@ -71,6 +71,17 @@ fn free_gaps(bar: Rect, occupied: &[Rect]) -> Vec<Rect> {
     gaps
 }
 
+/// Drop the divider under the title bar, for a window whose next row (a
+/// document tab strip) continues the chrome. Set before the title bar draws.
+pub fn seamless(ctx: &egui::Context, on: bool) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new("toolkit.titlebar.seamless"), on));
+}
+
+fn seamless_of(ctx: &egui::Context) -> bool {
+    ctx.data(|d| d.get_temp(egui::Id::new("toolkit.titlebar.seamless")))
+        .unwrap_or(false)
+}
+
 /// The title bar's height: 32 pt in Pro, 38 in Studio and Classic, one
 /// control plus an item gap above and below in the hue schemes.
 pub fn height(ui: &Ui) -> f32 {
@@ -220,6 +231,7 @@ pub fn show_with<S>(
     };
     let panel = egui::Panel::top("toolkit-titlebar")
         .exact_size(height)
+        .show_separator_line(!seamless_of(ui.ctx()))
         .frame(Frame::new().fill(p.chrome));
     panel.show(ui, |ui| {
         use design::title_band::{Alignment, Group};
