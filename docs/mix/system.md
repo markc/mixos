@@ -1036,12 +1036,12 @@ false
 
 `kill(pid, 9)` sends SIGKILL; pass any signal number you need.
 
-## Child line events — process_watch, process_unwatch
+## Child line events — process_watch, process_unwatch, process_write, process_close_stdin
 
 (v0.117.x, unreleased)
 
 `process_watch(argv[, opts]) -> handle` starts argv directly, with no shell,
-null stdin and a new process group. It returns immediately. The evaluator's
+null stdin (unless `stdin: "pipe"`, below) and a new process group. It returns immediately. The evaluator's
 native event loop delivers `proc.line {watch, tag, stream, line, truncated}`,
 followed by exactly one `proc.watch_exited {watch, tag, exit_code, signal}`.
 The terminal name is distinct from managed spawn's `proc.exited`: watches
@@ -1075,6 +1075,53 @@ position: after all earlier retained lines and before any later retained line.
 Consecutive drops coalesce into one marker. Markers do not consume line capacity.
 The terminal cannot
 be dropped by queue overflow.
+
+`overflow` is `"drop"` (the default, described above) or `"block"`. A framed
+protocol (JSON-RPC, ACP) cannot lose or cut a line, so `"block"` makes the
+watch lossless:
+
+- A full queue stops reading the child's pipes until delivery makes room. The
+  child then blocks on its own write, so back-pressure reaches it. The queue
+  can overshoot `max_queue` by at most the lines of one 4 KiB read. After the
+  leader exits, pipes drain regardless, within the usual 500 ms.
+- A line longer than `max_line` is never delivered truncated. The watch kills
+  the process group and ends with
+  `proc.watch_exited {…, signal: 9, error_code: "PROC_LINE_LIMIT", error}`.
+  Lines before it are delivered in order.
+
+### Writing to the child: stdin pipes
+
+`stdin: "pipe"` opens the child's stdin; the default is `"null"`.
+`stdin_buffer` (default 8 MiB, at most 64 MiB, only with a pipe) bounds the
+bytes accepted but not yet written.
+
+`process_write(handle, data) -> bool` queues a string, bytes or buffer value.
+It never blocks the evaluator: the watch's worker thread writes the bytes in
+order as the pipe drains. It is all or nothing, so a framed message is never
+split by a full buffer. True means the whole value was accepted; it does not
+mean the child has read it. It returns false when:
+
+- the value would exceed `stdin_buffer`;
+- stdin has been closed by `process_close_stdin`;
+- the child closed its stdin (the write failed with EPIPE, and anything still
+  buffered is discarded);
+- the watch has finished, or the handle is unknown.
+
+`process_close_stdin(handle) -> bool` sends EOF once already-accepted bytes are
+written. It returns true when stdin was open. Both raise
+`PROC_STDIN_NOT_PIPED` for a watch started without a pipe.
+
+```mix
+-- A JSON-RPC child over stdio: one request per line, one reply per line.
+on proc.line
+  $reply = json_parse($event.args.line)
+  print($reply.id .. ": " .. json_encode($reply.result))
+end
+$agent = process_watch(["my-agent", "--stdio"],
+  {stdin: "pipe", overflow: "block", max_line: 16777216, tag: "agent"})
+process_write($agent, json_encode({jsonrpc: "2.0", id: 1, method: "initialize",
+  params: {protocolVersion: 1}}) .. "\n")
+```
 
 `process_unwatch(handle) -> bool` discards pending events, sends SIGTERM to
 the group and leader, waits for leader exit for up to 150 ms, then SIGKILLs
