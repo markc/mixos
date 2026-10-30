@@ -1,10 +1,13 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
 [Unit]
 Description=MixOS desktop portal (Settings, ScreenCast) for session %i
+# The session target chooses the broker (noded@%i or the system noded.service);
+# this unit only orders after both. Never Wants= or Requires= a broker: on a desk
+# with the system broker noded@%i is masked.
 # Wants, not Requires: the portal owns the session bus name and keeps serving
-# last-good values when settingsd or the ABP broker is down.
-Wants=noded@%i.service settingsd@%i.service
-After=noded@%i.service settingsd@%i.service
+# last-good values when settingsd or the broker is down.
+Wants=settingsd@%i.service
+After=noded@%i.service noded.service settingsd@%i.service
 PartOf=session@%i.target
 # Bus downtime must never exhaust restarts: portald exits on bus loss and must keep retrying.
 StartLimitIntervalSec=0

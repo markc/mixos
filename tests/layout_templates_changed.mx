@@ -2,21 +2,45 @@
 # Intentional default-layout changes since relocation baseline f91c2a1f.
 # Hashes cover the rendered bytes, checked by tests/layout_templates_test.mix.
 {
+  "services/compd/units/compd@.service": {
+    "reason": "order after the session and system broker without wanting either; the session target chooses the broker (noded@N is masked on system-broker desks)",
+    "sha256": "9e3f3662f77c8fecf86b671686c915356ad340d735de195c83d04907bba69ef5"
+  },
+  "services/compd/units/compd-headless@.service": {
+    "reason": "order after the session and system broker without wanting either; the session target chooses the broker (noded@N is masked on system-broker desks)",
+    "sha256": "6a6bd62eb697a703917469c1e6a038fcef7a4331f9f8b0cd3229dc667677963b"
+  },
+  "services/portald/units/portald@.service": {
+    "reason": "order after the session and system broker without wanting either; the session target chooses the broker (noded@N is masked on system-broker desks)",
+    "sha256": "86198a199a2cf0a94492e27d7d6fbd83cf6d46cff5cfd18e6d79362672bf1c80"
+  },
+  "services/settingsd/units/settingsd@.service": {
+    "reason": "order after the session and system broker without wanting either; the session target chooses the broker (noded@N is masked on system-broker desks)",
+    "sha256": "be13dda77a9f648b1199e3270413660bb21e182e6aa9307568001d5931b69464"
+  },
+  "services/notifyd/units/notifyd@.service": {
+    "reason": "order after the session and system broker without wanting either; the session target chooses the broker (noded@N is masked on system-broker desks)",
+    "sha256": "0d28c3f021171646179c675013737cff8f203f74f7238af9105a0edf7a80fccc"
+  },
+  "services/releasesd/units/releasesd@.service": {
+    "reason": "order after the session and system broker without wanting either; the session target chooses the broker (noded@N is masked on system-broker desks)",
+    "sha256": "67f02840227a01e45a79ac9c18cc7ce3fa0be9ca48c9bd8be5d04a97526bb690"
+  },
   "services/clipd/units/clipd.service": {
     "reason": "add the Mix clipboard store citizen through its component-owned service unit",
     "sha256": "9e067b49fba8544a7ac5b0adee5d3761ad11014908e6cb3b470f6035cf679c97"
   },
   "services/clipd/units/clipd@.service": {
-    "reason": "add the Mix clipboard Wayland citizen through its component-owned session unit",
-    "sha256": "ede9a9f811e76307cf32d384058b68e5480cdd129fba91fbb067c63d70ca16ed"
+    "reason": "add the Mix clipboard Wayland citizen through its component-owned session unit; order after the session and system broker without wanting either; the session target chooses the broker (noded@N is masked on system-broker desks)",
+    "sha256": "460a45bbca78ec04c6cd83188a6f947e84879d21d4713d60a46a09ca984d4f54"
   },
   "apps/dopus/units/files@.service": {
-    "reason": "add the chooser-only DOpus session unit; want session noded and order after session and system noded",
-    "sha256": "74cde6399e8d2933eaf80cb2115907c901be3ae7821e25fd74c953864cc9a82f"
+    "reason": "add the chooser-only DOpus session unit; order after the session and system broker without wanting either; the session target chooses the broker (noded@N is masked on system-broker desks)",
+    "sha256": "e72cbf5f6ee2e9b0cc84877e05ca88c6d10171c89113f31948ae8720100e2eaf"
   },
   "services/editd/units/editd@.service": {
-    "reason": "want the session broker instead of binding to it, so a session on the system broker (noded@N masked) starts editd",
-    "sha256": "3fe74477b6f6fe69fbe1c02c00d42d610c06f843193251a80aba44c81c880b46"
+    "reason": "order after the session and system broker without wanting either; the session target chooses the broker (noded@N is masked on system-broker desks)",
+    "sha256": "6fc742ced0648239111d4129d2a1f7b555bfcb653698a3e03c741c303cecb8d5"
   },
   "services/dnsd/units/dnsd.service": {
     "reason": "read config from the etc root (@{etc}), not @{prefix}/etc",

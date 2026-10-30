@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
 [Unit]
 Description=MixOS settings authority for session %i
-# Wants, not Requires: the client reconnects to the broker by itself, and a
-# Requires= restart job fails by dependency while noded is in start-limit-hit,
-# which leaves the unit queued for a restart that never comes.
-Wants=noded@%i.service
-After=noded@%i.service
+# The session target chooses the broker (noded@%i or the system noded.service);
+# this unit only orders after both. Never Wants= or Requires= a broker: on a desk
+# with the system broker noded@%i is masked.
+# The client reconnects to the broker by itself.
+After=noded@%i.service noded.service
 # Each start waits at most a few seconds for the broker, so retrying every
 # second until it is up cannot spin; never let the start limit park the unit.
 StartLimitIntervalSec=0

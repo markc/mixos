@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
 [Unit]
 Description=MixOS shared editor service for session %i
-# Wants, not Requires or BindsTo: editd's Bus client reconnects by itself,
-# and a session that uses the node's system broker (noded@%i masked) must
-# still start it. A binding to a masked unit refuses every start job.
-Wants=noded@%i.service
+# The session target chooses the broker (noded@%i or the system noded.service);
+# this unit only orders after both. Never Wants= or Requires= a broker: on a desk
+# with the system broker noded@%i is masked.
+# editd's Bus client reconnects by itself.
 After=noded@%i.service noded.service
 PartOf=session@%i.target
 

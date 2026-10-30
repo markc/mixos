@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
 [Unit]
 Description=MixOS file chooser for session %i
-Wants=noded@%i.service
+# The session target chooses the broker (noded@%i or the system noded.service);
+# this unit only orders after both. Never Wants= or Requires= a broker: on a desk
+# with the system broker noded@%i is masked.
 After=noded@%i.service noded.service
 PartOf=session@%i.target
 StartLimitIntervalSec=0

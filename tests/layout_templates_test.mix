@@ -37,8 +37,13 @@ for $owner in ["bridged", "notifyd", "releasesd", "toolsd"]
   for $path in sort(glob($repo .. "/services/" .. $owner .. "/units/*"))
     if not is_file($path) then continue end
     $rel = strip_prefix($path, $repo .. "/")
-    $original = run_argv(["git", "-C", $repo, "show", "f91c2a1f:" .. $rel])
-    if not $original.ok or $renderer.external(read_file($path), $roots, "unit") != $original.stdout then raise("LAYOUT_BYTES", "component unit differs: " .. $rel) end
+    $rendered = $renderer.external(read_file($path), $roots, "unit")
+    if has_key($changed, $rel) then
+      if hash_sha256($rendered) != $changed[$rel].sha256 then raise("LAYOUT_BYTES", "component unit differs: " .. $rel) end
+    else
+      $original = run_argv(["git", "-C", $repo, "show", "f91c2a1f:" .. $rel])
+      if not $original.ok or $rendered != $original.stdout then raise("LAYOUT_BYTES", "component unit differs: " .. $rel) end
+    end
     $component_count = $component_count + 1
   end
 end
