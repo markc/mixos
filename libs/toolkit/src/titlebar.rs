@@ -607,6 +607,24 @@ fn bar_commands(mut fired: Vec<(&'static str, Origin)>, dark: bool) -> Vec<(&'st
     fired
 }
 
+#[cfg(test)]
+mod tail_tests {
+    #[test]
+    fn mode_clicks_choose_opposite_the_painted_frame_through_the_theme_setter() {
+        use crate::{Registry, theme_menu::Choice};
+        for dark in [false, true] {
+            let mut registry = Registry::new();
+            registry.theme_menu("view", |c: &Choice| *c, |c, value| *c = value);
+            let mut choice = Choice::default();
+            let clicks = super::bar_commands(vec![("view.mode", super::Origin::Ui); 2], dark);
+            for (id, origin) in clicks {
+                registry.execute(id, &mut choice, origin).unwrap();
+            }
+            assert_eq!(choice.mode, Some(if dark { design::Mode::Light } else { design::Mode::Dark }));
+        }
+    }
+}
+
 /// [`show_bar`] for a core command table.
 pub fn show_engine_bar<S>(
     ui: &mut Ui,
