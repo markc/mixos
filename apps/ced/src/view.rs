@@ -73,11 +73,25 @@ pub fn view(
         strings,
         &[],
     );
-    events.extend(
-        fired
-            .into_iter()
-            .map(|(id, origin)| UiEvent::Command(id, origin)),
-    );
+    // The light/dark switch goes to the mode opposite the one this frame
+    // drew, so a click reported twice cannot flip it back.
+    let dark = ui.visuals().dark_mode;
+    let mut mode_set = false;
+    for (id, origin) in fired {
+        if id == "view.mode" {
+            if !mode_set {
+                commands.note(id, origin);
+                app.theme.mode = Some(if dark {
+                    design::Mode::Light
+                } else {
+                    design::Mode::Dark
+                });
+                mode_set = true;
+            }
+        } else {
+            events.push(UiEvent::Command(id, origin));
+        }
+    }
     bars::status(ui, |ui| status(ui, app, connected));
     if app.ui.problems {
         egui::Panel::bottom("problems")
