@@ -943,7 +943,10 @@ impl Engine {
             };
             return Err(Refusal {
                 reason: Some(reason),
-                ..Refusal::new("UNKNOWN_REQUEST", format!("no open chooser {id} ({reason})"))
+                ..Refusal::new(
+                    "UNKNOWN_REQUEST",
+                    format!("no open chooser {id} ({reason})"),
+                )
             });
         };
         let request = &open.request;

@@ -1191,9 +1191,9 @@ impl Engine {
                     Some("cancel") => self.close_dialog(),
                     Some("confirm") => match dialog {
                         Dialog::Remove(_) => self.confirm_remove(),
-                        Dialog::RemoveAccount(_) | Dialog::ResetEmail | Dialog::ForgetPassword(_) => {
-                            self.confirm_email()
-                        }
+                        Dialog::RemoveAccount(_)
+                        | Dialog::ResetEmail
+                        | Dialog::ForgetPassword(_) => self.confirm_email(),
                         Dialog::About | Dialog::Shortcuts => {
                             return self.error(
                                 id,
@@ -1202,7 +1202,13 @@ impl Engine {
                             );
                         }
                     },
-                    _ => return self.error(id, "ARGUMENT", "answer must be \"confirm\" or \"cancel\""),
+                    _ => {
+                        return self.error(
+                            id,
+                            "ARGUMENT",
+                            "answer must be \"confirm\" or \"cancel\"",
+                        );
+                    }
                 }
                 self.ok(id, json!({"dialog":self.ui.dialog}));
             }
@@ -1645,12 +1651,20 @@ mod tests {
                 _ => None,
             })
         };
-        assert_eq!(reply(&mut e, 1, json!({"answer":"confirm"})).unwrap().1["error_code"], "NO_DIALOG");
+        assert_eq!(
+            reply(&mut e, 1, json!({"answer":"confirm"})).unwrap().1["error_code"],
+            "NO_DIALOG"
+        );
         e.remove_selected();
         e.take_effects();
-        assert_eq!(reply(&mut e, 2, json!({"answer":"maybe"})).unwrap().1["error_code"], "ARGUMENT");
         assert_eq!(
-            reply(&mut e, 3, json!({"answer":"confirm","open":null})).unwrap().1["error_code"],
+            reply(&mut e, 2, json!({"answer":"maybe"})).unwrap().1["error_code"],
+            "ARGUMENT"
+        );
+        assert_eq!(
+            reply(&mut e, 3, json!({"answer":"confirm","open":null}))
+                .unwrap()
+                .1["error_code"],
             "ARGUMENT"
         );
         assert_eq!(e.ui.dialog, Some(Dialog::Remove("demo".into())));
@@ -1664,8 +1678,14 @@ mod tests {
         assert!(effects.iter().any(|x| matches!(x,
             Effect::Reply { id: 4, rc: 0, body } if body == &json!({"dialog":null}))));
         e.open(Dialog::About);
-        assert_eq!(reply(&mut e, 5, json!({"answer":"confirm"})).unwrap().1["error_code"], "ARGUMENT");
-        assert_eq!(reply(&mut e, 6, json!({"answer":"cancel"})).unwrap(), (0, json!({"dialog":null})));
+        assert_eq!(
+            reply(&mut e, 5, json!({"answer":"confirm"})).unwrap().1["error_code"],
+            "ARGUMENT"
+        );
+        assert_eq!(
+            reply(&mut e, 6, json!({"answer":"cancel"})).unwrap(),
+            (0, json!({"dialog":null}))
+        );
     }
 
     #[test]

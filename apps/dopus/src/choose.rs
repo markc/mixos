@@ -777,15 +777,40 @@ mod tests {
         let id = opened.enable.clone().unwrap();
         engine.reply_sent(&id, &mut window);
         let accept = |body: Value, engine: &mut Engine, window: &mut Window| {
-            dispatch(engine, window, "files.choose.accept", &body.to_string(), "agent", 2)
+            dispatch(
+                engine,
+                window,
+                "files.choose.accept",
+                &body.to_string(),
+                "agent",
+                2,
+            )
         };
 
-        let wrong = accept(json!({"request":"000000000000002a-9","path":file}), &mut engine, &mut window);
-        assert_eq!((wrong.rc, &wrong.body["error_code"]), (10, &json!("UNKNOWN_REQUEST")));
+        let wrong = accept(
+            json!({"request":"000000000000002a-9","path":file}),
+            &mut engine,
+            &mut window,
+        );
+        assert_eq!(
+            (wrong.rc, &wrong.body["error_code"]),
+            (10, &json!("UNKNOWN_REQUEST"))
+        );
         let missing = dir.path().join("missing.txt");
-        let invalid = accept(json!({"request":id,"path":missing}), &mut engine, &mut window);
-        assert_eq!((invalid.rc, &invalid.body["error_code"]), (10, &json!("INVALID_PATH")));
-        let folder = accept(json!({"request":id,"path":dir.path()}), &mut engine, &mut window);
+        let invalid = accept(
+            json!({"request":id,"path":missing}),
+            &mut engine,
+            &mut window,
+        );
+        assert_eq!(
+            (invalid.rc, &invalid.body["error_code"]),
+            (10, &json!("INVALID_PATH"))
+        );
+        let folder = accept(
+            json!({"request":id,"path":dir.path()}),
+            &mut engine,
+            &mut window,
+        );
         assert_eq!(folder.body["error_code"], "INVALID_PATH");
         assert!(window.closed.is_empty() && invalid.outcome.is_none());
 

@@ -1352,7 +1352,13 @@ fn accept(e: &mut Engine, p: &mut TestPresenter, body: Value) -> Result<Outcome>
 #[test]
 fn accept_completes_open_like_the_accept_button() {
     let (mut e, mut p) = (engine(), TestPresenter::default());
-    let id = open(&mut e, &mut p, json!({"mode":"open","multiple":true}), "c", 1);
+    let id = open(
+        &mut e,
+        &mut p,
+        json!({"mode":"open","multiple":true}),
+        "c",
+        1,
+    );
     let outcome = accept(
         &mut e,
         &mut p,
@@ -1372,7 +1378,12 @@ fn accept_completes_open_like_the_accept_button() {
     );
     // A single `path` works too, and a folder chooser takes folders.
     let id = open(&mut e, &mut p, json!({"directory":true}), "c", 2);
-    let outcome = accept(&mut e, &mut p, json!({"request":id,"path":"/home/user/docs"})).unwrap();
+    let outcome = accept(
+        &mut e,
+        &mut p,
+        json!({"request":id,"path":"/home/user/docs"}),
+    )
+    .unwrap();
     assert_eq!(outcome.uris.unwrap(), ["file:///home/user/docs"]);
 }
 
@@ -1380,13 +1391,29 @@ fn accept_completes_open_like_the_accept_button() {
 fn accept_saves_with_the_window_rules() {
     let (mut e, mut p) = (engine(), TestPresenter::default());
     let filter = json!({"name":"Text","patterns":["*.txt"],"mime_types":[]});
-    let id = open(&mut e, &mut p, json!({"mode":"save","filters":[filter]}), "c", 1);
+    let id = open(
+        &mut e,
+        &mut p,
+        json!({"mode":"save","filters":[filter]}),
+        "c",
+        1,
+    );
     // The single-pattern extension rule applies, as it does to a typed name.
-    let outcome = accept(&mut e, &mut p, json!({"request":id,"path":"/home/user/new"})).unwrap();
+    let outcome = accept(
+        &mut e,
+        &mut p,
+        json!({"request":id,"path":"/home/user/new"}),
+    )
+    .unwrap();
     assert_eq!(outcome.uris.unwrap(), ["file:///home/user/new.txt"]);
 
     let id = open(&mut e, &mut p, json!({"mode":"save"}), "c", 2);
-    let exists = accept(&mut e, &mut p, json!({"request":id,"path":"/home/user/a.txt"})).unwrap_err();
+    let exists = accept(
+        &mut e,
+        &mut p,
+        json!({"request":id,"path":"/home/user/a.txt"}),
+    )
+    .unwrap_err();
     assert_eq!(exists.error_code, "EXISTS");
     let replaced = accept(
         &mut e,
@@ -1396,7 +1423,13 @@ fn accept_saves_with_the_window_rules() {
     .unwrap();
     assert_eq!(replaced.uris.unwrap(), ["file:///home/user/a.txt"]);
 
-    let id = open(&mut e, &mut p, json!({"mode":"save_files","files":["x.md","y.md"]}), "c", 3);
+    let id = open(
+        &mut e,
+        &mut p,
+        json!({"mode":"save_files","files":["x.md","y.md"]}),
+        "c",
+        3,
+    );
     let outcome = accept(
         &mut e,
         &mut p,
@@ -1416,16 +1449,24 @@ fn accept_refuses_unknown_and_finished_requests() {
         ("0000000000000000-1", "unknown"),
     ] {
         let refusal = accept(&mut e, &mut p, json!({"request":id,"path":path})).unwrap_err();
-        assert_eq!((refusal.error_code, refusal.reason), ("UNKNOWN_REQUEST", Some(reason)));
+        assert_eq!(
+            (refusal.error_code, refusal.reason),
+            ("UNKNOWN_REQUEST", Some(reason))
+        );
     }
     assert_eq!(
-        accept(&mut e, &mut p, json!({"request":"bad","path":path})).unwrap_err().error_code,
+        accept(&mut e, &mut p, json!({"request":"bad","path":path}))
+            .unwrap_err()
+            .error_code,
         "ARGUMENT"
     );
     let id = open(&mut e, &mut p, json!({}), "c", 1);
     accept(&mut e, &mut p, json!({"request":id,"path":path})).unwrap();
     let again = accept(&mut e, &mut p, json!({"request":id,"path":path})).unwrap_err();
-    assert_eq!((again.error_code, again.reason), ("UNKNOWN_REQUEST", Some("done")));
+    assert_eq!(
+        (again.error_code, again.reason),
+        ("UNKNOWN_REQUEST", Some("done"))
+    );
 }
 
 #[test]
@@ -1433,25 +1474,49 @@ fn accept_refuses_invalid_paths_and_leaves_the_chooser_open() {
     let (mut e, mut p) = (engine(), TestPresenter::default());
     let id = open(&mut e, &mut p, json!({}), "c", 1);
     for (body, code) in [
-        (json!({"request":id,"path":"/home/user/missing.txt"}), "INVALID_PATH"),
-        (json!({"request":id,"path":"/home/user/docs"}), "INVALID_PATH"),
+        (
+            json!({"request":id,"path":"/home/user/missing.txt"}),
+            "INVALID_PATH",
+        ),
+        (
+            json!({"request":id,"path":"/home/user/docs"}),
+            "INVALID_PATH",
+        ),
         (json!({"request":id,"path":"relative.txt"}), "ARGUMENT"),
         (json!({"request":id}), "ARGUMENT"),
-        (json!({"request":id,"path":"/home/user/a.txt","paths":["/home/user/a.txt"]}), "ARGUMENT"),
+        (
+            json!({"request":id,"path":"/home/user/a.txt","paths":["/home/user/a.txt"]}),
+            "ARGUMENT",
+        ),
         // Not multiple: one path only.
-        (json!({"request":id,"paths":["/home/user/a.txt","/home/user/b.txt"]}), "ARGUMENT"),
+        (
+            json!({"request":id,"paths":["/home/user/a.txt","/home/user/b.txt"]}),
+            "ARGUMENT",
+        ),
     ] {
-        assert_eq!(accept(&mut e, &mut p, body.clone()).unwrap_err().error_code, code, "{body}");
+        assert_eq!(
+            accept(&mut e, &mut p, body.clone()).unwrap_err().error_code,
+            code,
+            "{body}"
+        );
     }
-    let folder = open(&mut e, &mut p, json!({"directory":true}), "c", 2);
+    let folder = open(&mut e, &mut p, json!({"directory":true}), "d", 2);
     assert_eq!(
-        accept(&mut e, &mut p, json!({"request":folder,"path":"/home/user/a.txt"})).unwrap_err().error_code,
+        accept(
+            &mut e,
+            &mut p,
+            json!({"request":folder,"path":"/home/user/a.txt"})
+        )
+        .unwrap_err()
+        .error_code,
         "INVALID_PATH"
     );
-    let save = open(&mut e, &mut p, json!({"mode":"save"}), "c", 3);
+    let save = open(&mut e, &mut p, json!({"mode":"save"}), "s", 3);
     for path in ["/nowhere/new.txt", "/home/user/docs"] {
         assert_eq!(
-            accept(&mut e, &mut p, json!({"request":save,"path":path})).unwrap_err().error_code,
+            accept(&mut e, &mut p, json!({"request":save,"path":path}))
+                .unwrap_err()
+                .error_code,
             "INVALID_PATH",
             "{path}"
         );
