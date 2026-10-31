@@ -169,6 +169,37 @@ impl Authority {
         Ok(answer)
     }
 
+    /// `settings.palette` (§5.2, ruling 1): the desktop look's palette per
+    /// mode from `design::palette`, tagged with the record's identity. A
+    /// mirror answers from its cache with the same code, so no palette
+    /// crosses the wire between them.
+    pub fn palette(&self, request: &settings::PaletteRequest) -> Result<Value, Value> {
+        if request.binding != self.accepted.binding {
+            return Err(json!({"status":"wrong_target","binding":self.accepted.binding}));
+        }
+        let mode = match request.mode.as_deref() {
+            None => None,
+            Some(name) => Some(
+                settings::resolve::values::Mode::from_name(name).ok_or_else(
+                    || json!({"status":"validation_failed","path":"mode","message":"Unknown mode"}),
+                )?,
+            ),
+        };
+        let palette = settings::resolve::values::palette(
+            &self.accepted.values,
+            &self.accepted.embedded_source,
+            mode,
+        )
+        .map_err(|d| json!({"status":"validation_failed","diagnostics":d}))?;
+        Ok(json!({
+            "status": "current",
+            "binding": self.accepted.binding,
+            "incarnation": self.accepted.incarnation,
+            "revision": self.accepted.revision,
+            "palette": palette,
+        }))
+    }
+
     /// `settings.source` (ADR R14a, App. §K): the pinned source the look
     /// compiles, iff `digest` names it; `stale_digest` with the current one
     /// otherwise, so the follower rereads once. A mirror answers from its
