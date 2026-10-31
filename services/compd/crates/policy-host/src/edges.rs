@@ -38,10 +38,10 @@ use comp_model::observation::{ObservationRecord, PendingPropChanges, SurfaceEdge
 use comp_model::snapshot::{CompSnapshot, OutputSnapshot, ReadScopes, output_key};
 use dispatcher::wire::trait_::surface_event::SurfaceHandle;
 use policy::corner::CornerTopic;
-use surfaces::{SurfaceRecord, SurfaceRole};
+use surfaces::SurfaceRecord;
 use world::state::Loop;
 
-use crate::project::{Identity, project, project_focus, wl_surface};
+use crate::project::{Identity, project, project_focus, window_wl_surface};
 
 /// The `cause` of every `props.changed` record compd publishes: the diff runs
 /// over the whole projection after the engine's own state moved, so there is
@@ -318,9 +318,11 @@ fn unmapped(id: u64, old: &Published, foreign_id: Option<String>) -> Observation
 }
 
 fn published(lp: &Loop, record: &SurfaceRecord<SurfaceHandle>) -> Published {
-    // The ext-foreign-toplevel identifier of a mapped xdg toplevel.
-    let foreign_id = (record.mapped() && record.role() == SurfaceRole::Toplevel)
-        .then(|| wl_surface(lp, record.handle()))
+    // The ext-foreign-toplevel identifier of a mapped managed toplevel: an
+    // xdg toplevel, or an X window through the surface Xwayland gave it (the
+    // foreign list exports both).
+    let foreign_id = (record.mapped() && record.role().managed_toplevel())
+        .then(|| window_wl_surface(lp, record.handle()))
         .flatten()
         .and_then(|surface| lp.state.foreign.identifier_of(&surface));
     Published {

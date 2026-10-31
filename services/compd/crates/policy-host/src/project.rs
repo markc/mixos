@@ -886,6 +886,26 @@ fn project_stack(lp: &Loop, placements: &Placements) -> Vec<u64> {
     stack
 }
 
+/// A window record's drawable `wl_surface`: an xdg toplevel's own, or the
+/// one Xwayland associated with an X window (found through the Spaces, as
+/// `x11::` does). `None` for an X window not yet associated.
+pub(crate) fn window_wl_surface(lp: &Loop, handle: &SurfaceHandle) -> Option<WlSurface> {
+    match handle {
+        SurfaceHandle::Wl(_) => wl_surface(lp, handle),
+        SurfaceHandle::X11(id) => lp
+            .inner
+            .all_world_spaces()
+            .iter()
+            .flat_map(|space| space.state.elements())
+            .find_map(|window| {
+                window
+                    .x11_surface()
+                    .filter(|x11| x11.window_id() == *id)
+                    .and_then(|x11| x11.wl_surface())
+            }),
+    }
+}
+
 pub(crate) fn wl_surface(lp: &Loop, handle: &SurfaceHandle) -> Option<WlSurface> {
     match handle {
         // from_id can reconstruct a retired ID without its surface userdata.
