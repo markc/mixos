@@ -675,7 +675,8 @@ for each $path in $docs
   $ld = call($host, "shell.scene.load", {source: $src})
   if $ld.rc != 0 then fail("S9 " .. $name .. " shell.scene.load: rc " .. to_string($ld.rc) .. " " .. json_encode($ld.reply)) end
   -- A visible edge (the settings profile's bottom panel) keeps its current
-  -- mode: a pin there is refused with SETTINGS_MANAGED. Pin only a hidden edge.
+  -- mode: a pin on a settings-owned edge writes its settings record. Pin only
+  -- a hidden edge.
   $ps = call($host, "shell.panel.state", {edge: $edge})
   if $ps.rc != 0 then fail("S9 " .. $name .. " shell.panel.state {edge: " .. $edge .. "}: rc " .. to_string($ps.rc) .. " " .. json_encode($ps.reply)) end
   if not $ps.reply.visible then

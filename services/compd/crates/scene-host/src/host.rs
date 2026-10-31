@@ -49,9 +49,29 @@ pub struct Host {
     /// The hover tip on screen (`shell.props.get` `tooltip`), `null` when
     /// none: `{scene, title, subtitle, lines, x, y, width, height}`.
     pub tooltip: Value,
+    /// The last answer's settings write (a `shell.panel.*` change on a
+    /// settings-owned edge): its reply waits for settingsd and the new look.
+    deferred: Option<crate::panels::SettingsWrite>,
 }
 
 impl Host {
+    /// The settings write the last answer deferred to, if any: the caller
+    /// sends it as `settings.apply` and replies from the outcome instead of
+    /// the answer's placeholder body.
+    pub(crate) fn take_deferred(&mut self) -> Option<crate::panels::SettingsWrite> {
+        self.deferred.take()
+    }
+
+    fn defer(&mut self, write: crate::panels::SettingsWrite) -> Answer {
+        self.deferred = Some(write);
+        Answer {
+            rc: 0,
+            body: json!({"accepted":true, "applied":false, "pending":"settings"}).to_string(),
+            publish: Vec::new(),
+            changed: false,
+        }
+    }
+
     fn conf_mix(&self) -> std::path::PathBuf {
         self.conf_mix
             .clone()
@@ -148,6 +168,7 @@ impl Host {
         cache: Option<crate::lane::native::CacheEvidence<'_>>,
         layout: &mut Layout<'_>,
     ) -> Answer {
+        self.deferred = None;
         if let Err(error) = verify_caller_provenance(request) {
             let body = json!({"error_code":"SCENE_PROVENANCE", "message":format!("scene caller provenance: {error}")});
             return Answer {
@@ -357,7 +378,15 @@ impl Host {
                             None,
                         );
                     };
-                    self.panels.set_mode(output, edge, mode)
+                    // A settings-owned edge's mode is its record's: write it
+                    // through settingsd (the reply waits for the new look).
+                    match edges::PanelMode::parse(mode)
+                        .and_then(|mode| self.panels.settings_mode_write(edge, mode))
+                    {
+                        Some(Some(write)) => return self.defer(write),
+                        Some(None) => Ok(()),
+                        None => self.panels.set_mode(output, edge, mode),
+                    }
                 } else {
                     let Some(id) = argument(request, &args, "id") else {
                         return refused("BAD_ARGUMENT", "page.set requires an id argument", None);
@@ -425,6 +454,25 @@ impl Host {
                 let Some(thickness_px) = number_argument(&args, "thickness_px") else {
                     return refused(crate::panels::resize_range_refusal(edge));
                 };
+                // A settings-owned edge's thickness is its record's.
+                match self
+                    .panels
+                    .settings_thickness_write(edge, thickness_px as f32)
+                {
+                    Some(Ok(Some(write))) => return self.defer(write),
+                    Some(Ok(None)) => {
+                        let panels = self.panels.snapshot(output, Value::Null)["panels"].clone();
+                        return Answer {
+                            rc: 0,
+                            body: json!({"accepted":true, "applied":true, "panels":panels})
+                                .to_string(),
+                            publish: Vec::new(),
+                            changed: false,
+                        };
+                    }
+                    Some(Err(body)) => return refused(body),
+                    None => {}
+                }
                 match self.panels.resize(output, edge, thickness_px as f32) {
                     Ok(()) => Answer {
                         rc: 0,
@@ -483,6 +531,24 @@ impl Host {
                         }
                     }
                 };
+                // Pin, dock and unpin on a settings-owned edge set its
+                // record's mode, through settingsd.
+                if let Some(write) = kind
+                    .settings_mode()
+                    .and_then(|mode| self.panels.settings_mode_write(edge, mode))
+                {
+                    let Some(write) = write else {
+                        let panels = self.panels.snapshot(output, Value::Null)["panels"].clone();
+                        return Answer {
+                            rc: 0,
+                            body: json!({"accepted":true, "applied":true, "panels":panels})
+                                .to_string(),
+                            publish: Vec::new(),
+                            changed: false,
+                        };
+                    };
+                    return self.defer(write);
+                }
                 if let Err(refusal) = self.panels.input(output, edge, kind) {
                     return refused(
                         refusal.code,
@@ -693,6 +759,75 @@ pub struct SceneHost {
     settings: crate::lane::native::Ui<Arc<crate::appearance::Look>>,
     appearance_generation: u64,
     input_geometry: Option<InputGeometry>,
+    /// Bus callers whose `shell.panel.*` change went to settingsd, by
+    /// operation id: answered when the new look applies, refused when
+    /// settingsd refuses, and answered either way by the deadline.
+    settings_replies: BTreeMap<String, SettingsReply>,
+    settings_operations: u64,
+}
+
+/// How long a settings-owned panel change waits for settingsd and then for
+/// the new look before its caller is answered regardless.
+const SETTINGS_REPLY_BUDGET: std::time::Duration = std::time::Duration::from_secs(4);
+/// Bus panel changes in flight to settingsd at once.
+const MAX_SETTINGS_REPLIES: usize = 32;
+
+struct SettingsReply {
+    request: Request,
+    output: String,
+    /// `shell.panels.<id>`.
+    record: String,
+    /// settingsd's receipt `(incarnation, revision)` once it accepted.
+    awaiting: Option<(String, settings::Revision)>,
+    /// What the caller hears about the write: `{record, status, revision}`.
+    receipt: Value,
+    deadline: std::time::Instant,
+}
+
+/// Whether the applied snapshot `(incarnation, revision)` has reached the
+/// revision settingsd's receipt named for `reply`.
+fn settings_reply_applied(
+    reply: &SettingsReply,
+    applied: Option<&(String, settings::Revision)>,
+) -> bool {
+    match (&reply.awaiting, applied) {
+        (Some((incarnation, revision)), Some((now_incarnation, now_revision))) => {
+            incarnation == now_incarnation && now_revision >= revision
+        }
+        _ => false,
+    }
+}
+
+/// `settings.apply` for `write`: its `shell.panels.<id>` record with the
+/// change made, fenced on `snapshot`, the applied one (the preferences the
+/// change was read against), so a change made meanwhile elsewhere, or a
+/// second write before the first lands, is refused rather than overwritten.
+/// `Err` is a `SETTINGS_UNAVAILABLE` refusal body.
+pub(crate) fn settings_apply(
+    snapshot: Option<&settings::Snapshot>,
+    write: &crate::panels::SettingsWrite,
+    operation: &str,
+) -> Result<Value, Value> {
+    let Some(snapshot) = snapshot else {
+        return Err(json!({"error_code":"SETTINGS_UNAVAILABLE",
+            "message":"the shell has not applied its settings yet; retry when settingsd is up"}));
+    };
+    let Some(record) = snapshot.desktop.shell.panels.get(&write.id) else {
+        return Err(json!({"error_code":"SETTINGS_UNAVAILABLE",
+            "message":format!("the applied settings have no shell.panels.{} record", write.id)}));
+    };
+    let mut record = record.clone();
+    match write.change {
+        crate::panels::RecordChange::Mode(mode) => record.mode = mode.into(),
+        crate::panels::RecordChange::Thickness(px) => record.thickness = px,
+    }
+    Ok(json!({
+        "binding": snapshot.binding,
+        "expected_incarnation": snapshot.incarnation,
+        "expected_revision": snapshot.revision,
+        "operation_id": operation,
+        "changes": {format!("shell.panels.{}", write.id): record},
+    }))
 }
 
 /// Last rendered input shape. Appearance/revision-only changes do not reroute.
@@ -767,6 +902,8 @@ impl SceneHost {
             settings,
             appearance_generation: 0,
             input_geometry: None,
+            settings_replies: BTreeMap::new(),
+            settings_operations: 0,
         })
     }
 
@@ -830,6 +967,8 @@ impl SceneHost {
             // Open capture panels take the new look without waiting for input.
             world::surface::draw::capture::style::restyle(lp);
         }
+        // A new look may answer settings-owned panel changes.
+        self.settle_settings_replies();
         self.port.titlebar_services(action_services(lp));
         let Some(monitor) =
             dispatcher::wire::trait_::wire_trait::WireTrait::active_output(&lp.inner)
@@ -1029,9 +1168,16 @@ impl SceneHost {
                     for wire in answer.publish {
                         self.port.publish(wire);
                     }
-                    self.port.reply(&request, answer.rc, answer.body);
+                    match self.host.take_deferred() {
+                        // A settings-owned edge: settingsd answers first.
+                        Some(write) => self.request_settings_write(request, &write, output),
+                        None => self.port.reply(&request, answer.rc, answer.body),
+                    }
                     serviced.changed |= answer.changed;
                     serviced.answered += 1;
+                }
+                Inbound::Settings { operation, outcome } => {
+                    self.settings_answered(&operation, outcome);
                 }
                 Inbound::Live(live) => {
                     tracing::debug!(
@@ -1061,8 +1207,164 @@ impl SceneHost {
                 );
             }
         }
+        self.settle_settings_replies();
         self.publish_panels(output);
         serviced
+    }
+
+    fn operation_id(&mut self, kind: &str) -> String {
+        self.settings_operations = self.settings_operations.wrapping_add(1);
+        format!(
+            "shell-{kind}-{}-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |elapsed| elapsed.as_micros()),
+            self.settings_operations
+        )
+    }
+
+    /// The panels snapshot a settings-write reply carries.
+    fn reply_panels(&self, output: &str) -> Value {
+        self.host.panels.snapshot(output, Value::Null)["panels"].clone()
+    }
+
+    fn refuse_settings_write(&self, request: &Request, output: &str, mut body: Value) {
+        body["panels"] = self.reply_panels(output);
+        self.port.reply(request, 10, body.to_string());
+    }
+
+    /// A Bus caller's `shell.panel.*` change on a settings-owned edge: send
+    /// it to settingsd and answer once the outcome (and the new look) is in.
+    fn request_settings_write(
+        &mut self,
+        request: Request,
+        write: &crate::panels::SettingsWrite,
+        output: &str,
+    ) {
+        if self.port.settings_generation().is_none() {
+            return self.refuse_settings_write(
+                &request,
+                output,
+                json!({"error_code":"SETTINGS_UNAVAILABLE",
+                    "message":"the shell's Bus connection is down; settingsd cannot be reached"}),
+            );
+        }
+        if self.settings_replies.len() >= MAX_SETTINGS_REPLIES {
+            return self.refuse_settings_write(
+                &request,
+                output,
+                json!({"error_code":"SETTINGS_BUSY",
+                    "message":format!("{MAX_SETTINGS_REPLIES} panel settings writes are already in flight; retry")}),
+            );
+        }
+        let operation = self.operation_id("panel");
+        let applied = self.settings.session().host().consumer().applied();
+        let body = match settings_apply(applied, write, &operation) {
+            Ok(body) => body,
+            Err(refusal) => return self.refuse_settings_write(&request, output, refusal),
+        };
+        if !self.port.apply_settings(&operation, body) {
+            return self.refuse_settings_write(
+                &request,
+                output,
+                json!({"error_code":"SETTINGS_UNAVAILABLE",
+                    "message":"the shell's Bus worker has stopped"}),
+            );
+        }
+        let record = format!("shell.panels.{}", write.id);
+        self.settings_replies.insert(
+            operation,
+            SettingsReply {
+                request,
+                output: output.to_owned(),
+                receipt: json!({"record": record}),
+                record,
+                awaiting: None,
+                deadline: std::time::Instant::now() + SETTINGS_REPLY_BUDGET,
+            },
+        );
+        self.port
+            .wake_after(SETTINGS_REPLY_BUDGET + std::time::Duration::from_millis(10));
+    }
+
+    /// settingsd answered `operation`: a refusal goes straight back to its
+    /// caller; an accepted change waits for its revision to apply.
+    fn settings_answered(&mut self, operation: &str, outcome: Result<Value, Value>) {
+        let Some(mut reply) = self.settings_replies.remove(operation) else {
+            // Its caller was already answered at the deadline.
+            return;
+        };
+        let body = match outcome {
+            Ok(body) => body,
+            Err(refusal) => {
+                return self.refuse_settings_write(&reply.request, &reply.output, refusal);
+            }
+        };
+        let receipt = &body["receipt"];
+        let incarnation = receipt["incarnation"].as_str().map(str::to_owned);
+        let revision = serde_json::from_value::<settings::Revision>(receipt["revision"].clone());
+        let (Some(incarnation), Ok(revision)) = (incarnation, revision) else {
+            return self.refuse_settings_write(
+                &reply.request,
+                &reply.output,
+                json!({"error_code":"SETTINGS_UNAVAILABLE",
+                    "message":"settingsd accepted the change without a readable receipt",
+                    "settings":body}),
+            );
+        };
+        reply.receipt = json!({"record":reply.record, "status":body["status"],
+            "revision":receipt["revision"], "operation_id":operation});
+        reply.awaiting = Some((incarnation, revision));
+        self.settings_replies.insert(operation.to_owned(), reply);
+    }
+
+    /// Answer every settings write whose revision has applied, or whose
+    /// deadline passed: before settingsd answered, a `SETTINGS_UNAVAILABLE`
+    /// refusal; after, the stored change with `applied: false`.
+    fn settle_settings_replies(&mut self) {
+        if self.settings_replies.is_empty() {
+            return;
+        }
+        let now = std::time::Instant::now();
+        let applied = self
+            .settings
+            .session()
+            .host()
+            .consumer()
+            .applied()
+            .map(|snapshot| (snapshot.incarnation.clone(), snapshot.revision));
+        let due: Vec<String> = self
+            .settings_replies
+            .iter()
+            .filter(|(_, reply)| {
+                reply.deadline <= now || settings_reply_applied(reply, applied.as_ref())
+            })
+            .map(|(operation, _)| operation.clone())
+            .collect();
+        for operation in due {
+            let reply = self
+                .settings_replies
+                .remove(&operation)
+                .expect("due reply is pending");
+            let panels = self.reply_panels(&reply.output);
+            if reply.awaiting.is_none() {
+                self.refuse_settings_write(
+                    &reply.request,
+                    &reply.output,
+                    json!({"error_code":"SETTINGS_UNAVAILABLE",
+                        "message":"settingsd did not answer settings.apply in time"}),
+                );
+            } else if settings_reply_applied(&reply, applied.as_ref()) {
+                let body = json!({"accepted":true, "applied":true,
+                    "settings":reply.receipt, "panels":panels});
+                self.port.reply(&reply.request, 0, body.to_string());
+            } else {
+                let body = json!({"accepted":true, "applied":false,
+                    "message":"settingsd stored the change; the shell has not applied the new look yet (watch shell.panel.changed)",
+                    "settings":reply.receipt, "panels":panels});
+                self.port.reply(&reply.request, 0, body.to_string());
+            }
+        }
     }
 
     /// `<service>.panel.changed` once per change of each output's edges or the
@@ -1077,38 +1379,23 @@ impl SceneHost {
         }
     }
 
-    /// A corner click on a settings-owned edge: `shell.panels.<id>` with its
-    /// mode replaced, fenced on the applied snapshot (the preferences the
-    /// click read), so a change made meanwhile elsewhere, or a second click
-    /// before the first lands, is refused rather than overwritten. The
-    /// accepted change returns as a new look, which moves the edge.
-    fn write_panel_mode(&self, id: &str, mode: &str) {
-        let Some(snapshot) = self.settings.session().host().consumer().applied() else {
-            tracing::warn!(id, "scene host: corner click before settings were read");
-            return;
-        };
-        let Some(record) = snapshot.desktop.shell.panels.get(id) else {
-            return;
-        };
-        let mut record = record.clone();
-        record.mode = mode.into();
-        let operation = format!(
-            "corner-{id}-{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_or(0, |elapsed| elapsed.as_micros())
-        );
-        self.port.emit(
-            "settingsd",
-            "settings.apply",
-            json!({
-                "binding": snapshot.binding,
-                "expected_incarnation": snapshot.incarnation,
-                "expected_revision": snapshot.revision,
-                "operation_id": operation,
-                "changes": {format!("shell.panels.{id}"): record},
-            }),
-        );
+    /// A corner click or menu choice on a settings-owned edge, written as
+    /// [`settings_apply`] (fenced on the applied snapshot). The accepted
+    /// change returns as a new look, which moves the edge; a failed write is
+    /// logged by the port.
+    fn write_panel_record(&mut self, write: &crate::panels::SettingsWrite) {
+        let operation = self.operation_id("corner");
+        let applied = self.settings.session().host().consumer().applied();
+        match settings_apply(applied, write, &operation) {
+            Ok(body) => {
+                self.port.emit("settingsd", "settings.apply", body);
+            }
+            Err(refusal) => tracing::warn!(
+                id = %write.id,
+                message = %refusal["message"],
+                "scene host: corner panel change not sent to settingsd"
+            ),
+        }
     }
 
     /// Advance the panel model to now (motion, grace): what the frame clock
@@ -1121,8 +1408,8 @@ impl SceneHost {
             self.port
                 .emit(&owner, "scenes.toggle", json!({"name": name}));
         }
-        for (id, mode) in self.host.panels.settings_writes() {
-            self.write_panel_mode(&id, mode);
+        for write in self.host.panels.settings_writes() {
+            self.write_panel_record(&write);
         }
         let before = self.host.panels.zones(output);
         let wake = self.host.panels.tick();
@@ -1703,6 +1990,158 @@ mod tests {
             })
         );
         assert_eq!(host.panels.mode("DP-1", crate::seat::Edge::Right), "pinned");
+    }
+
+    #[test]
+    fn panel_changes_on_a_settings_owned_edge_defer_to_a_settings_write() {
+        use crate::panels::{PanelCommand, RecordChange, SettingsWrite};
+        let mut host = Host::default();
+        host.panels.ensure("DP-1", (1280.0, 800.0));
+        host.answer(
+            &request(SceneCommand::Load, "loader", LOCAL, json!({"source":EDGE})),
+            "DP-1",
+            Some(1),
+            &mut no_layout,
+        );
+        host.panels.sync(&host.store);
+        host.panels.set_preferences(
+            crate::preferences::Preferences::prepare(&settings::Shell::default()).unwrap(),
+        );
+        let panel = |kind| SceneCommand::Panel {
+            kind,
+            corner: false,
+        };
+        let write = |change| {
+            Some(SettingsWrite {
+                id: "bottom".into(),
+                change,
+            })
+        };
+        for (kind, body, expected) in [
+            (
+                SceneCommand::PanelMode,
+                json!({"edge":"bottom", "mode":"hidden"}),
+                write(RecordChange::Mode("hidden")),
+            ),
+            (
+                SceneCommand::PanelMode,
+                json!({"edge":"bottom", "mode":"pinned"}),
+                write(RecordChange::Mode("overlay")),
+            ),
+            (
+                panel(PanelCommand::Pin),
+                json!({"edge":"bottom"}),
+                write(RecordChange::Mode("overlay")),
+            ),
+            (
+                panel(PanelCommand::Unpin),
+                json!({"edge":"bottom"}),
+                write(RecordChange::Mode("hidden")),
+            ),
+            (
+                SceneCommand::PanelResize,
+                json!({"edge":"bottom", "thickness_px":56}),
+                write(RecordChange::Thickness(56)),
+            ),
+        ] {
+            let answer = host.answer(&request(kind, "agent", LOCAL, body.clone()), "DP-1", Some(1), &mut no_layout);
+            assert_eq!(answer.rc, 0, "{body}");
+            assert_eq!(host.take_deferred(), expected, "{body}");
+            assert_eq!(host.panels.mode("DP-1", crate::seat::Edge::Bottom), "docked");
+        }
+        // Already so: answered at once with the panels, nothing written.
+        for (kind, body) in [
+            (SceneCommand::PanelMode, json!({"edge":"bottom", "mode":"docked"})),
+            (panel(PanelCommand::Dock), json!({"edge":"bottom"})),
+            (SceneCommand::PanelResize, json!({"edge":"bottom", "thickness_px":40})),
+        ] {
+            let answer = host.answer(&request(kind, "agent", LOCAL, body.clone()), "DP-1", Some(1), &mut no_layout);
+            let value: Value = serde_json::from_str(&answer.body).unwrap();
+            assert_eq!((answer.rc, &value["applied"]), (0, &json!(true)), "{body}");
+            assert_eq!(value["panels"]["bottom"]["settings"]["record"], "bottom");
+            assert_eq!(host.take_deferred(), None, "{body}");
+        }
+        // Refusals are the caller's at once; an unowned edge keeps the direct path.
+        let answer = host.answer(
+            &request(SceneCommand::PanelResize, "agent", LOCAL, json!({"edge":"bottom", "thickness_px":40.5})),
+            "DP-1",
+            Some(1),
+            &mut no_layout,
+        );
+        assert_eq!(answer.rc, 10);
+        assert_eq!(host.take_deferred(), None);
+        let answer = host.answer(
+            &request(panel(PanelCommand::Pin), "agent", LOCAL, json!({"edge":"right"})),
+            "DP-1",
+            Some(1),
+            &mut no_layout,
+        );
+        assert_eq!(answer.rc, 0);
+        assert_eq!(host.take_deferred(), None);
+        assert_eq!(host.panels.mode("DP-1", crate::seat::Edge::Right), "pinned");
+        // A later answer never carries an earlier deferral.
+        host.answer(
+            &request(SceneCommand::PanelMode, "agent", LOCAL, json!({"edge":"bottom", "mode":"hidden"})),
+            "DP-1",
+            Some(1),
+            &mut no_layout,
+        );
+        host.answer(
+            &request(SceneCommand::PanelState, "agent", LOCAL, json!({"edge":"bottom"})),
+            "DP-1",
+            Some(1),
+            &mut no_layout,
+        );
+        assert_eq!(host.take_deferred(), None);
+    }
+
+    #[test]
+    fn settings_writes_carry_the_whole_record_fenced_on_the_applied_snapshot() {
+        use crate::panels::{RecordChange, SettingsWrite};
+        let snapshot = crate::appearance::snapshot_of(settings::Desktop::default());
+        let write = SettingsWrite {
+            id: "bottom".into(),
+            change: RecordChange::Thickness(56),
+        };
+        let body = settings_apply(Some(&snapshot), &write, "shell-panel-1").unwrap();
+        assert_eq!(body["expected_incarnation"], "test");
+        assert_eq!(body["expected_revision"], "1");
+        assert_eq!(body["operation_id"], "shell-panel-1");
+        assert_eq!(
+            body["changes"]["shell.panels.bottom"],
+            json!({"edge":"bottom", "mode":"dock", "thickness":56})
+        );
+        let request: settings::ApplyRequest = serde_json::from_value(body).unwrap();
+        assert_eq!(request.binding, snapshot.binding);
+        for (snapshot, id) in [(None, "bottom"), (Some(&snapshot), "nowhere")] {
+            let write = SettingsWrite {
+                id: id.into(),
+                change: RecordChange::Mode("hidden"),
+            };
+            assert_eq!(
+                settings_apply(snapshot, &write, "op").unwrap_err()["error_code"],
+                "SETTINGS_UNAVAILABLE"
+            );
+        }
+    }
+
+    #[test]
+    fn a_settings_reply_is_due_once_its_revision_applies_in_the_same_incarnation() {
+        let reply = |awaiting: Option<(&str, u64)>| SettingsReply {
+            request: request(SceneCommand::PanelMode, "agent", LOCAL, Value::Null),
+            output: "DP-1".into(),
+            record: "shell.panels.bottom".into(),
+            awaiting: awaiting.map(|(i, r)| (i.into(), settings::Revision(r))),
+            receipt: Value::Null,
+            deadline: std::time::Instant::now(),
+        };
+        let applied = |i: &str, r| Some((i.to_owned(), settings::Revision(r)));
+        assert!(!settings_reply_applied(&reply(None), applied("a", 9).as_ref()));
+        assert!(!settings_reply_applied(&reply(Some(("a", 3))), None));
+        assert!(!settings_reply_applied(&reply(Some(("a", 3))), applied("a", 2).as_ref()));
+        assert!(!settings_reply_applied(&reply(Some(("a", 3))), applied("b", 9).as_ref()));
+        assert!(settings_reply_applied(&reply(Some(("a", 3))), applied("a", 3).as_ref()));
+        assert!(settings_reply_applied(&reply(Some(("a", 3))), applied("a", 4).as_ref()));
     }
 
     #[test]

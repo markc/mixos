@@ -450,14 +450,25 @@ request. Panel rows include a nullable <code>settings</code> object with the rec
 <code>requested_px</code>, <code>fitted_px</code>, <code>presented_px</code>, <code>reserved_px</code> and constraint names.
 Output shrinkage fits the panel; regrowth recovers the request. Page selection
 and registration use the existing carousel and panel model.</p>
-<p>Settings owns the mode and thickness of each declared edge. Conflicting legacy
-panel writes refuse <code>SETTINGS_MANAGED</code> before changing interaction state; exact
-current mode or settled-size requests are no-ops. Transient show/hide and page
-selection remain available. Persistent toggles cannot undock managed panels.
-For managed edges Toggle changes transient visibility only while hidden; docked
-or pinned modes treat it as a successful no-op. Corner-menu mode entries are
-disabled while managed; activating a disabled selection is an inert action.
-Removing a profile record
+<p>Settings owns the mode and thickness of each declared edge, so a change to a
+managed edge is a change to its record. <code>shell.panel.mode</code>, <code>shell.panel.pin</code>
+(<code>overlay</code>), <code>shell.panel.dock</code> (<code>dock</code>), <code>shell.panel.unpin</code> (<code>hidden</code>) and
+<code>shell.panel.resize</code> (whole pixels within both the edge's resize range and
+16..=256) on a managed edge write <code>shell.panels.&lt;id&gt;</code> through <code>settings.apply</code>,
+fenced on the snapshot the shell has applied, and change no interaction state
+themselves. The caller is answered once the accepted revision applies as a new
+look: <code>{accepted, applied: true, settings: {record, status, revision, operation_id}, panels}</code>. If the look has not applied within four seconds the
+answer is the same with <code>applied: false</code>. settingsd's refusals come back as
+<code>SETTINGS_CONFLICT</code> (the fence failed; read the state and retry) or
+<code>SETTINGS_REFUSED</code> (with settingsd's body under <code>settings</code>). A missing,
+silent or unreachable settingsd gives <code>SETTINGS_UNAVAILABLE</code>, and more than 32
+writes in flight give <code>SETTINGS_BUSY</code>. Requests for the mode or thickness the
+record already holds are answered at once and write nothing. Transient
+show/hide and page selection remain direct. For managed edges Toggle changes
+transient visibility only while hidden; docked or pinned modes treat it as a
+successful no-op. The bottom-left corner click and the corner menu's mode
+entries also write the record. They answer no caller, so a failed write is
+logged. Removing a profile record
 restores that edge's captured local mode and settled thickness. Saving a page
 selection keeps those local values, so profile preferences do not leak into the
 local state file. Thickness or appearance updates retain interaction holders;
