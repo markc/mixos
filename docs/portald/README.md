@@ -15,7 +15,7 @@ bus, answers the `org.freedesktop.appearance` namespace and, when started with
 Values come from the settings authority, `settingsd`. Before authority or
 cache data is available, the portal serves the documented defaults. portald
 writes no files for other toolkits: the GTK and Qt files are
-[toolkit-export](../toolkit-export/README.md)'s.
+[exportd-gtkqt](../exportd/gtkqt.md)'s.
 
 ## Where the values come from
 

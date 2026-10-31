@@ -252,7 +252,7 @@ bus, answers the <code>org.freedesktop.appearance</code> namespace and, when sta
 <p>Values come from the settings authority, <code>settingsd</code>. Before authority or
 cache data is available, the portal serves the documented defaults. portald
 writes no files for other toolkits: the GTK and Qt files are
-<a href="/toolkit-export/">toolkit-export</a>'s.</p>
+<a href="/exportd/gtkqt/">exportd-gtkqt</a>'s.</p>
 <h2 id="where-the-values-come-from">Where the values come from</h2>
 <pre><code class="language-text">settingsd  --(retained topics: settingsd.desktop.keys.&lt;profile&gt;.appearance|window)--&gt;  portald
 portald    --settings.get {values} + settings.palette (bounded reads)-----------&gt;  settingsd

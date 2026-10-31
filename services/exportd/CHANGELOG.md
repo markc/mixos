@@ -11,3 +11,6 @@
   Breeze border size and buttons in `kwinrc`, and panel floating, then
   Plasma and KWin reconfigured over D-Bus; writes under KConfig's lock,
   re-notifies after a crash or an unreachable bus; undo and restore pause it.
+- The GTK and Qt exporter (`scripts/gtkqt.mix`): libadwaita colours with
+  mode links, settings.ini keys, qt5ct/qt6ct schemes and config, with
+  hand edits kept and undo.

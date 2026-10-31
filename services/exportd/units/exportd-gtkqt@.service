@@ -11,10 +11,10 @@ PartOf=session@%i.target
 Type=simple
 User=mixos
 # The session's XDG_CONFIG_HOME is where the GTK and Qt files go; state (what
-# was written, for undo) goes to $MIXOS_VAR/toolkit-export.
+# was written, for undo) goes to $MIXOS_VAR/exportd/gtkqt.
 EnvironmentFile=@{etc}/session/%i.env
 Environment=MIX_STATS=off
-ExecStart=@{prefix}/bin/mix --serve @{prefix}/lib/toolkit-export/toolkit-export.mix --name toolkit-export
+ExecStart=@{prefix}/bin/mix --serve @{prefix}/lib/exportd/gtkqt.mix --name exportd-gtkqt
 KillMode=control-group
 TimeoutStopSec=10
 Restart=on-failure
