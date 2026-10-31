@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+# agentd in a user's own session (a user unit, `systemctl --user`): the
+# `agent` Bus service for that user's ACP agents, always running. Console
+# desks use agentd@.service instead.
+# The user cannot write <etc> or <var>, so the conf and the session log live
+# in the user's XDG dirs: ~/.config/mixos/agent.conf.mix and
+# ~/.local/state/mixos/agentd/sessions.db.
+[Unit]
+Description=MixOS agent sessions (agentd)
+Documentation=https://mixos.dev/agentd/
+After=noded.service
+Wants=noded.service
+# No conf, no agents: skip rather than fail and restart.
+ConditionPathExists=%E/mixos/agent.conf.mix
+
+[Service]
+Type=simple
+StateDirectory=mixos/agentd
+StateDirectoryMode=0700
+Environment=MIXOS_AGENTD_CONF=%E/mixos/agent.conf.mix
+Environment=MIXOS_AGENTD_DB=%S/mixos/agentd/sessions.db
+ExecStart=@{prefix}/bin/mix --serve @{prefix}/lib/agentd/agentd.mix --name agent
+# Agents are children of agentd; stopping the unit ends every session.
+KillMode=control-group
+TimeoutStopSec=15
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target

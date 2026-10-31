@@ -265,7 +265,14 @@ can use the Bus in turn. The rules are in the
 </code></pre>
 <p>Run it as a session service: <code>mix --serve agentd.mix --name agent</code>. It
 needs a <code>mix</code> with <code>process_watch</code> stdin pipes (<code>stdin: "pipe"</code>,
-<code>process_write</code>).</p>
+<code>process_write</code>). Two units ship with it:</p>
+<ul>
+<li><code>agentd.service</code>, a user unit (<code>systemctl --user enable --now</code>) for a
+user's own session, always running. The user cannot write <code>&lt;etc&gt;</code> or
+<code>&lt;var&gt;</code>, so it reads <code>~/.config/mixos/agent.conf.mix</code> and keeps the log
+in <code>~/.local/state/mixos/agentd/</code>. With no conf file the unit is skipped.</li>
+<li><code>agentd@.service</code>, for console desk session <code>%i</code>, run as the desk user.</li>
+</ul>
 <h2 id="configuration">Configuration</h2>
 <p>agentd reads <code>$MIXOS_AGENTD_CONF</code>, else <code>&lt;etc&gt;/agent.conf.mix</code>. The file is
 strict data:</p>

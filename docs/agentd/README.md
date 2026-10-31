@@ -32,7 +32,13 @@ can use the Bus in turn. The rules are in the
 
 Run it as a session service: `mix --serve agentd.mix --name agent`. It
 needs a `mix` with `process_watch` stdin pipes (`stdin: "pipe"`,
-`process_write`).
+`process_write`). Two units ship with it:
+
+- `agentd.service`, a user unit (`systemctl --user enable --now`) for a
+  user's own session, always running. The user cannot write `<etc>` or
+  `<var>`, so it reads `~/.config/mixos/agent.conf.mix` and keeps the log
+  in `~/.local/state/mixos/agentd/`. With no conf file the unit is skipped.
+- `agentd@.service`, for console desk session `%i`, run as the desk user.
 
 ## Configuration
 
