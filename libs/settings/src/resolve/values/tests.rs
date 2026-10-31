@@ -375,36 +375,113 @@ fn resolve_v2_reproduces_today_s_look_for_the_same_choices() {
     }
 }
 
-/// The equivalence clause: for every authored scheme, mode and contrast,
-/// with the accent `auto`, no tints, `round` and `comfortable` (all
-/// defaults), v2's effective map is today's byte for byte, today's accent
-/// sealed in.
+/// The equivalence clause: for every authored scheme, every
+/// `appearance.style` (and the scheme's own), mode and contrast, with the
+/// accent `auto`, no tints, `round` and `comfortable` (all defaults), v2's
+/// effective map is today's byte for byte, today's accent sealed in. Every
+/// light case also carries an `apps.term.scheme` override (its own context,
+/// its own compile and sealed accent), and every high-contrast case pins
+/// the source explicitly (`appearance.source`), so both run across every
+/// scheme and style without multiplying the matrix.
 #[test]
 fn every_authored_scheme_at_the_defaults_is_today_s_look() {
-    for scheme in design::Scheme::AUTHORED {
-        for mode in ["dark", "light"] {
-            for contrast in ["normal", "high"] {
-                let mut today = Desktop::default();
-                today.appearance.scheme = scheme.name().into();
-                today.appearance.mode = mode.into();
-                today.appearance.contrast = contrast.into();
-                let next = resolved(&values(&[
-                    ("appearance.scheme", json!(scheme.name())),
-                    ("appearance.mode", json!(mode)),
-                    ("appearance.contrast", json!(contrast)),
-                ]));
-                let mut today = today_sealed(&today);
-                for e in today.values_mut() {
-                    let from = e.provenance.remove("ui.text_scale").unwrap();
-                    e.provenance.insert("accessibility.text_scale".into(), from);
+    let styles = std::iter::once(None).chain(design::Style::ALL.map(Some));
+    for style in styles {
+        for scheme in design::Scheme::AUTHORED {
+            for mode in ["dark", "light"] {
+                for contrast in ["normal", "high"] {
+                    let mut today = Desktop::default();
+                    let mut v2 = vec![
+                        ("appearance.scheme", json!(scheme.name())),
+                        ("appearance.mode", json!(mode)),
+                        ("appearance.contrast", json!(contrast)),
+                    ];
+                    today.appearance.scheme = scheme.name().into();
+                    today.appearance.mode = mode.into();
+                    today.appearance.contrast = contrast.into();
+                    if let Some(style) = style {
+                        today.appearance.style = Some(style.name().into());
+                        v2.push(("appearance.style", json!(style.name())));
+                    }
+                    if mode == "light" {
+                        let other = if scheme == design::Scheme::Ocean {
+                            "forest"
+                        } else {
+                            "ocean"
+                        };
+                        today.apps.insert(
+                            "term".into(),
+                            AppOverride {
+                                scheme: Some(other.into()),
+                                ..AppOverride::default()
+                            },
+                        );
+                        v2.push(("apps.term.scheme", json!(other)));
+                    }
+                    if contrast == "high" {
+                        today.appearance.source = Some(design::EMBEDDED_DEFAULT_SOURCE.into());
+                        v2.push(("appearance.source", json!(design::EMBEDDED_DEFAULT_SOURCE)));
+                    }
+                    let next = resolved(&values(&v2));
+                    let mut today = today_sealed(&today);
+                    for e in today.values_mut() {
+                        let from = e.provenance.remove("ui.text_scale").unwrap();
+                        e.provenance.insert("accessibility.text_scale".into(), from);
+                    }
+                    assert_eq!(
+                        serde_json::to_string(&today).unwrap(),
+                        serde_json::to_string(&next).unwrap(),
+                        "{scheme:?} {style:?} {mode} {contrast}"
+                    );
                 }
-                assert_eq!(
-                    serde_json::to_string(&today).unwrap(),
-                    serde_json::to_string(&next).unwrap(),
-                    "{scheme:?} {mode} {contrast}"
-                );
             }
         }
+    }
+}
+
+/// The two background tints keep their alpha (`ColourOr(.., Alpha::Any)`,
+/// §2.2): `#rrggbbaa` resolves, and the alpha reaches the compile.
+#[test]
+fn background_tints_keep_their_alpha() {
+    let digest = |bg: &str| {
+        crate::digest(&resolved(&values(&[
+            ("appearance.window_bg", json!(bg)),
+            ("appearance.container_bg", json!(bg)),
+        ])))
+        .unwrap()
+    };
+    assert_ne!(digest("#20242a80"), digest("#20242aff"));
+    assert_ne!(
+        digest("#20242a80"),
+        crate::digest(&resolved(&Values::new())).unwrap()
+    );
+}
+
+/// A tunable's number is stored in one form, so `5` and `5.0` seal the
+/// same look: `registry::apply` keeps the kind check's canonical value
+/// (whole for a radius, a float for a number).
+#[test]
+fn a_tunable_s_number_seals_in_one_form() {
+    let number = design::tunables()
+        .iter()
+        .find(|t| t.kind == "number" && t.name.starts_with("style."))
+        .expect("a number tunable");
+    let path = format!("tune.{}", number.name);
+    let Some(design::TunableRange::Number { min, .. }) = &number.range else {
+        panic!("{path}: a number range");
+    };
+    let whole = min.ceil();
+    for (path, a, b) in [
+        ("tune.style.radius", json!(5), json!(5.0)),
+        (path.as_str(), json!(whole as i64), json!(whole)),
+    ] {
+        let a = resolved(&values(&[(path, a)]));
+        let b = resolved(&values(&[(path, b)]));
+        assert_eq!(
+            crate::digest(&a).unwrap(),
+            crate::digest(&b).unwrap(),
+            "{path}"
+        );
     }
 }
 

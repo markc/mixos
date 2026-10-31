@@ -195,6 +195,24 @@ fn the_look_is_composed_of_the_look_views() {
         .collect();
     let read: BTreeSet<&str> = r.seen().into_iter().collect();
     assert!(read.is_subset(&members), "{:?}", read.difference(&members));
+    // Of `Accessibility`'s keys, only the two look keys.
+    let accessibility: Vec<&str> = read
+        .iter()
+        .copied()
+        .filter(|k| k.starts_with("accessibility."))
+        .collect();
+    assert_eq!(
+        accessibility,
+        ["accessibility.reduced_motion", "accessibility.text_scale"]
+    );
+    // On the wire (S7's look topic) in the registry's names, and back.
+    let wire = serde_json::to_value(&look).unwrap();
+    assert_eq!(wire["appearance"]["accent"], "purple");
+    assert_eq!(wire["appearance"]["roundness"], "square");
+    assert_eq!(wire["appearance"]["density"], "compact");
+    assert_eq!(wire["tune"]["style.radius"], look.tune.0["style.radius"]);
+    let back: Look = serde_json::from_value(wire).unwrap();
+    assert_eq!(back, look);
 }
 
 #[test]

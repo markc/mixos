@@ -100,7 +100,9 @@ impl ChangePlan {
                 ..Self::default()
             },
         };
-        plan.shell = shell && previous.is_none_or(|s| s.desktop.shell != next.desktop.shell);
+        // A tunable may already have marked the shell; the panels' own
+        // change adds to it, never clears it.
+        plan.shell |= shell && previous.is_none_or(|s| s.desktop.shell != next.desktop.shell);
         plan.layout |= plan.shell;
         plan
     }
@@ -313,27 +315,57 @@ fn compare(old: &Effective, new: &Effective) -> ChangePlan {
     let mut tuned = ChangePlan::default();
     let names: BTreeSet<&String> = old.tune.keys().chain(new.tune.keys()).collect();
     for name in names {
-        if old.tune.get(name) == new.tune.get(name) {
-            continue;
-        }
-        for domain in registry::tunable(name)
-            .into_iter()
-            .flat_map(|t| &t.domains)
-            .filter_map(|d| Domain::from_name(d))
-        {
-            tuned.mark(domain);
+        if old.tune.get(name) != new.tune.get(name) {
+            mark_tunable(&mut tuned, name);
         }
     }
-    let resources = resources || tuned.resources;
-    let text = text || resources || tuned.text;
+    with_tuned(
+        ChangePlan {
+            paint: paint || old.accent != new.accent || roundness,
+            text,
+            layout: layout || roundness,
+            resources,
+            motion: old.ui.reduced_motion != new.ui.reduced_motion,
+            shell: false,
+            ..ChangePlan::default()
+        },
+        tuned,
+    )
+}
+
+/// Mark the catalogue domains of the tunable `name`. The sealed values
+/// were validated against `design::tunables()`, so an unknown name or
+/// domain means the registry and the catalogue drifted: a defect, and an
+/// under-report if it ever ships.
+fn mark_tunable(plan: &mut ChangePlan, name: &str) {
+    let Some(tunable) = registry::tunable(name) else {
+        debug_assert!(false, "unknown tunable {name}");
+        return;
+    };
+    for domain in &tunable.domains {
+        match Domain::from_name(domain) {
+            Some(domain) => plan.mark(domain),
+            None => debug_assert!(false, "tunable {name}: unknown domain {domain}"),
+        }
+    }
+}
+
+/// `plan` with every domain `tuned` marks, the non-graphical ones
+/// (shell, input, export, system) included, and the implications
+/// (resources → text → layout).
+fn with_tuned(plan: ChangePlan, tuned: ChangePlan) -> ChangePlan {
+    let resources = plan.resources || tuned.resources;
+    let text = plan.text || tuned.text || resources;
     ChangePlan {
-        paint: paint || old.accent != new.accent || roundness || tuned.paint,
+        paint: plan.paint || tuned.paint,
         text,
-        layout: layout || text || roundness || tuned.layout,
+        layout: plan.layout || tuned.layout || text || tuned.shell,
         resources,
-        motion: old.ui.reduced_motion != new.ui.reduced_motion || tuned.motion,
-        shell: false,
-        ..ChangePlan::default()
+        motion: plan.motion || tuned.motion,
+        shell: plan.shell || tuned.shell,
+        input: plan.input || tuned.input,
+        export: plan.export || tuned.export,
+        system: plan.system || tuned.system,
     }
 }
 
@@ -383,6 +415,45 @@ mod tests {
                 other => panic!("{other}"),
             };
             assert!(marked, "{name}");
+        }
+    }
+
+    /// A tunable's non-graphical domains survive into the plan (no shipped
+    /// tunable carries one today, so the merge is tested directly).
+    #[test]
+    fn a_tunable_s_every_domain_reaches_the_plan() {
+        let tuned = ChangePlan {
+            shell: true,
+            input: true,
+            export: true,
+            system: true,
+            ..ChangePlan::default()
+        };
+        let plan = with_tuned(ChangePlan::default(), tuned);
+        assert!(plan.shell && plan.input && plan.export && plan.system);
+        assert!(plan.layout, "the shell implies layout");
+        assert!(!plan.paint && !plan.text && !plan.resources && !plan.motion);
+        let tuned = ChangePlan {
+            resources: true,
+            ..ChangePlan::default()
+        };
+        let plan = with_tuned(ChangePlan::default(), tuned);
+        assert!(plan.resources && plan.text && plan.layout);
+    }
+
+    /// Every tunable in the catalogue names domains the plan knows, so
+    /// `mark_tunable` never drops one.
+    #[test]
+    fn every_tunable_s_domains_parse() {
+        for tunable in design::tunables() {
+            assert!(registry::tunable(&tunable.name).is_some(), "{}", tunable.name);
+            for domain in &tunable.domains {
+                assert!(
+                    Domain::from_name(domain).is_some(),
+                    "{}: {domain}",
+                    tunable.name
+                );
+            }
         }
     }
 

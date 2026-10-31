@@ -5,8 +5,12 @@
 //! key of its own; the accent it draws is the derivation's, from the compile.
 use super::{AppLooks, Appearance, Framing, Reader, State, Tune, View};
 use crate::resolve::values::{Mode, effective_mode};
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, PartialEq)]
+/// Serialisable for S7's `settingsd.desktop.look.<profile>` topic, in the
+/// registry's own names (`comfortable`, `slightly_round`, `auto`, a swatch
+/// name or `#rrggbb`).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Look {
     pub appearance: Appearance,
     /// What the `auto` mode resolves from ([`Self::mode`]).
@@ -22,13 +26,13 @@ pub struct Look {
 
 impl View for Look {
     fn read(r: &Reader) -> Self {
-        let accessibility = super::Accessibility::read(r);
         Self {
             appearance: View::read(r),
             state: View::read(r),
             framing: View::read(r),
-            text_scale: accessibility.text_scale,
-            reduced_motion: accessibility.reduced_motion,
+            // The two look keys of `Accessibility`, read as it reads them.
+            text_scale: r.number("accessibility.text_scale"),
+            reduced_motion: r.bool("accessibility.reduced_motion"),
             apps: View::read(r),
             tune: View::read(r),
         }
@@ -45,7 +49,7 @@ impl Look {
     }
 
     /// Roundness and density, laid over the compiled style by
-    /// `design::geometry::apply` (R5 step 2a).
+    /// `design::geometry` (R5 step 2a).
     pub fn geometry(&self) -> design::geometry::Geometry {
         design::geometry::Geometry {
             roundness: self.appearance.roundness,

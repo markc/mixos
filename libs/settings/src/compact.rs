@@ -117,6 +117,11 @@ pub struct CompactEffective {
     pub font_size: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mono_family: Option<String>,
+    // Key space v2's sealed look inputs ride schema 2 without a bump: they
+    // are omitted wherever the format-4 path has none, and only v2 effective
+    // maps (not served before S6) carry them. Every reader of this shape
+    // (Quoin's consumer, compd decor, the cache) moves in the same gold
+    // install as the writer (group B); S7's schema 3 replaces this shape.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub accent: Option<design::SrgbColour>,
     #[serde(
