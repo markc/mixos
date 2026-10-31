@@ -632,10 +632,22 @@ fn reserved_ids_share_the_counter_and_have_no_record() {
 fn managed_x11_is_a_window_row_override_redirect_is_not() {
     let mut registry = registry();
     let (managed, _) = registry
-        .take_role(20, SurfaceRole::X11 { override_redirect: false }, None)
+        .take_role(
+            20,
+            SurfaceRole::X11 {
+                override_redirect: false,
+            },
+            None,
+        )
         .unwrap();
     let (menu, _) = registry
-        .take_role(21, SurfaceRole::X11 { override_redirect: true }, None)
+        .take_role(
+            21,
+            SurfaceRole::X11 {
+                override_redirect: true,
+            },
+            None,
+        )
         .unwrap();
     assert!(
         registry.windows().next().is_none(),
@@ -645,6 +657,10 @@ fn managed_x11_is_a_window_row_override_redirect_is_not() {
     registry.set_mapped(menu, true).unwrap();
     let (toplevel, _) = mapped_toplevel(&mut registry, 22);
     let rows: Vec<SurfaceId> = registry.windows().map(|record| record.id()).collect();
-    assert_eq!(rows, [managed, toplevel], "managed X11 and xdg, never override-redirect");
+    assert_eq!(
+        rows,
+        [managed, toplevel],
+        "managed X11 and xdg, never override-redirect"
+    );
     assert!(registry.resolve_window_target(managed.0, None).is_ok());
 }
