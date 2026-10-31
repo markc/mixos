@@ -177,6 +177,12 @@ for $f in split(trim($g.stdout), "\n")
   if not $skipped then $embed_hits[$f] = true end
 end
 
+-- A non-empty string field. mix 0.117 load_data reads a JSON null as the
+-- string "null", so that counts as missing too.
+fn filled($v)
+  return type($v) == "string" and trim($v) != "" and $v != "null"
+end
+
 fn entry_key($e)
   return $e.path ?? $e.glob ?? $e.dependency ?? "?"
 end
@@ -221,7 +227,7 @@ for $list_name in ["allow", "brand", "debt"]
     end
     if $list_name == "debt" then push($debt_keys, $k) end
     for $field in ["title", "author", "source", "licence", "licence_file"]
-      if type($e[$field]) != "string" or trim($e[$field]) == "" then
+      if not filled($e[$field]) then
         push($fail, $where .. ": missing " .. $field)
       end
     end
@@ -306,7 +312,7 @@ for $list_name in ["allow", "brand", "debt"]
           push($fail, $where .. ": a public-domain entry names its source URL")
         end
         for $field in ["agency", "why"]
-          if type($e[$field]) != "string" or trim($e[$field]) == "" then
+          if not filled($e[$field]) then
             push($fail, $where .. ": a public-domain entry needs " .. $field)
           end
         end
@@ -330,7 +336,7 @@ for $list_name in ["allow", "brand", "debt"]
       end
     else
       for $field in ["reason", "exit"]
-        if type($e[$field]) != "string" or trim($e[$field]) == "" then
+        if not filled($e[$field]) then
           push($fail, $where .. ": a debt entry needs " .. $field)
         end
       end
