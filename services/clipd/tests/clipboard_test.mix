@@ -35,6 +35,7 @@ $passed = $passed + check("metadata excludes data", not contains(json_encode($c.
 $passed = $passed + check("allowlisted broker peer admitted", $c.caller_peer({broker_origin: "mesh", broker_peer: "beta"}, $cfg) == "beta")
 $passed = $passed + check("any stamped mesh peer admitted as itself (open Bus)", $c.caller_peer({broker_origin: "mesh", broker_peer: "gamma", node: "beta"}, $cfg) == "gamma")
 $passed = $passed + check("a stamped local citizen is admitted as itself", $c.caller_peer({broker_origin: "local", from: "agent-7"}, $cfg) == "agent-7")
+$passed = $passed + check("an anonymous stamped local caller is admitted", $c.authorised({broker_origin: "local"}, $cfg))
 $passed = $passed + check("unstamped claimed node refused", refused(fn() = $c.caller_peer({node: "beta", from: "clipd.beta.example.bus"}, $cfg), "ALLOWLIST"))
 $passed = $passed + check("conflicting selection aliases refused", refused(fn() = $c.selection({selection: "primary", primary: false}), "SELECTION"))
 $passed = $passed + check("invalid selection refused", refused(fn() = $c.selection({selection: "other"}), "SELECTION"))

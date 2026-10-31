@@ -55,6 +55,9 @@ fn caller_peer($headers, $c)
       if not contains($p.target, ".") and $headers["from"] == $p.target then return $node end
     end
     if type($headers["from"]) == "string" and $headers["from"] != "" then return $headers["from"] end
+    -- A stamped local caller with no citizen name (an anonymous client) is
+    -- still local and admitted; it is simply not a named peer.
+    return "local"
   end
   raise("ALLOWLIST", "caller has no broker-stamped provenance")
 end
