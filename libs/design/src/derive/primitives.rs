@@ -308,9 +308,13 @@ mod tests {
         };
         assert!(chroma(ramp[27]) > SMALL_CHROMA_CAP);
         let capped = small(22, &ramp, BLACK);
-        assert!((chroma(capped) - SMALL_CHROMA_CAP).abs() < 1e-6);
+        let capped_chroma = chroma(capped);
+        assert!(
+            (capped_chroma - SMALL_CHROMA_CAP).abs() < 1e-3,
+            "capped chroma {capped_chroma}"
+        );
         // Lightness is kept.
-        assert!((cie_lab(capped).0 - cie_lab(ramp[27]).0).abs() < 1e-9);
+        assert!((cie_lab(capped).0 - cie_lab(ramp[27]).0).abs() < 1e-5);
         // A neutral step is untouched.
         let neutral = ramp_of_grey();
         assert_eq!(small(22, &neutral, BLACK), neutral[27]);

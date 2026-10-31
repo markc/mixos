@@ -219,8 +219,8 @@ fn a_frosted_flag_makes_texts_follow_the_container_alpha() {
     };
     assert_eq!(maximised.actual_alpha(), 1.0);
     let t = derive(&Seeds::default(), Mode::Dark, Contrast::Normal, &frosted);
-    // 22 + 94 and 22 + 74 leave the ramp: white instead of #E7E7E7.
-    assert_eq!(hex(t.background.on), "#FFFFFF");
+    // 22 + 94 leaves the ramp, so 22 + 74 = 96 instead of 92 (#E7E7E7).
+    assert_eq!(hex(t.background.on), "#F5F5F5");
 }
 
 #[test]
