@@ -22,7 +22,7 @@ use toolkit::{Icon, icons};
 /// The resolved light or dark mode the store's values give.
 pub fn resolved_dark(engine: &Engine) -> bool {
     let look = <settings::view::Look as settings::view::View>::of(&engine.store.values);
-    look.mode().0 == design::Mode::Dark
+    matches!(look.mode().0, settings::resolve::values::Mode::Dark)
 }
 
 /// COSMIC's standard button: 24 tall (compact), pill, button colour.
@@ -191,7 +191,7 @@ pub fn row(
         })
         .response;
     if goes(&row.control) {
-        let click = ui.interact(response.rect, ui.id().with(("go", row.id)), Sense::click());
+        let click = ui.interact(response.rect, ui.scope_id().with(("go", row.id)), Sense::click());
         let click = named(click, Role::Link, enabled, &name);
         if click.clicked() && enabled {
             go(row, events);
@@ -278,7 +278,7 @@ pub fn radio_row(
         })
         .response;
     if blocked.is_none() {
-        let whole = ui.interact(response.rect, ui.id().with(("radio", key, option.label)), Sense::click());
+        let whole = ui.interact(response.rect, ui.scope_id().with(("radio", key, option.label)), Sense::click());
         if whole.clicked() && !selected {
             set(events, key, lit(option.value));
         }
@@ -424,7 +424,9 @@ fn control(
             let colour = store.text(key).as_deref().and_then(super::parse_hex);
             let (rect, response) = ui.allocate_exact_size(vec2(48.0, 24.0), Sense::click());
             match colour {
-                Some(c) => ui.painter().rect_filled(rect, Look::radius(look.r_xs), c),
+                Some(c) => {
+                    ui.painter().rect_filled(rect, Look::radius(look.r_xs), c);
+                }
                 None => {
                     ui.painter()
                         .rect_filled(rect, Look::radius(look.r_xs), look.field);
@@ -551,7 +553,7 @@ fn segmented(
     for (i, option) in options.iter().enumerate() {
         let r = Rect::from_min_size(pos2(rect.min.x + each * i as f32, rect.min.y), vec2(each, 32.0));
         let selected = option.value.is(value.as_ref());
-        let response = ui.interact(r, ui.id().with(("seg", key, i)), Sense::click());
+        let response = ui.interact(r, ui.scope_id().with(("seg", key, i)), Sense::click());
         if selected {
             ui.painter()
                 .rect_filled(r.shrink(1.0), Look::radius(look.r_xl), look.sidebar_selected);
@@ -785,7 +787,7 @@ fn slider(
     name: &str,
     look: &Look,
 ) -> Option<f64> {
-    let id = ui.id().with(("slider", salt));
+    let id = ui.scope_id().with(("slider", salt));
     let held: Option<f64> = ui.data(|d| d.get_temp(id));
     let shown = held.unwrap_or(value);
     let mut out = None;

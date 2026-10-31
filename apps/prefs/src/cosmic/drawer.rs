@@ -88,7 +88,7 @@ fn colour(ui: &mut Ui, engine: &Engine, key: &'static str, look: &Look, events: 
         Some(preferences::catalog::Kind::Colour { alpha: true, .. })
     );
     let stored = engine.store.text(key).as_deref().and_then(super::parse_hex);
-    let id = ui.id().with(("picking", key));
+    let id = ui.scope_id().with(("picking", key));
     let mut picking: Color32 = ui
         .data(|d| d.get_temp(id))
         .or(stored)
@@ -114,7 +114,7 @@ fn colour(ui: &mut Ui, engine: &Engine, key: &'static str, look: &Look, events: 
         set(events, key, super::hex(held, alpha));
     }
     ui.add_space(look.s);
-    let hex_id = ui.id().with(("hex", key));
+    let hex_id = ui.scope_id().with(("hex", key));
     let mut text: String = ui
         .data(|d| d.get_temp(hex_id))
         .unwrap_or_else(|| engine.store.text(key).unwrap_or_default());
@@ -155,7 +155,7 @@ fn pick(
     look: &Look,
     events: &mut Vec<UiEvent>,
 ) {
-    let filter_id = ui.id().with(("pick-filter", key));
+    let filter_id = ui.scope_id().with(("pick-filter", key));
     let mut filter: String = ui.data(|d| d.get_temp(filter_id)).unwrap_or_default();
     if ui
         .add(
