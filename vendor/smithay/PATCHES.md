@@ -210,6 +210,11 @@ that the source retains its Move payload.
 - The inherited list left them out because neither maximize nor minimize was implemented and there were no screen edges. compd answers both requests through its window policy, maximises into the usable area (the camera is pinned), and writes HIDDEN with `set_hidden_hint` (EWMH hint only; `WM_STATE` stays Normal) for a minimised or off-workspace window.
 - Guard: the same `compd_ewmh_tests` guard; `mix tools/smithay_guards.mix` must stay green.
 
+**No `GetAtomName` for atom 0 in the `_NET_WM_STATE` debug line** (`xwayland/xwm/mod.rs`).
+- The debug message for a `_NET_WM_STATE` client message asked the server for the names of both property atoms. A one-property request carries 0 (`None`) in the second slot by spec, so every such message produced a BadAtom `GetAtomName` error event (`Got X11 Error`), seen three times per Firefox start under debug logging.
+- `debug_atom_name` skips atom 0 and uses a checked reply for the rest, so a failed lookup never becomes an error event. Only the debug text changes (`Some(name)` / `None`); tracing evaluates it only when debug logging is on.
+- Guard: none needed beyond the build; the behaviour is a debug-only argument.
+
 **Release-point signal failures are counted** (`wayland/drm_syncobj/sync_point.rs`).
 - Every syncobj release-point signal goes through `DrmSyncPoint::signal`; smithay's callers (buffer release, merge, destruction, the cleared-pending path) only log a failure. A failed signal leaves the client waiting on a release that never comes, which compd counts as an explicit-sync fault.
 - `signal` now routes its result through `note_signal`, which counts failures in a process-wide atomic; `drm_syncobj::signal_failures()` exposes the count. compd's `dispatcher` `explicit_sync::healthy` latches `info.explicit_sync_healthy` false on the first one and then refuses new explicit-sync commits. Behaviour of `signal` is otherwise unchanged (same result, same error).

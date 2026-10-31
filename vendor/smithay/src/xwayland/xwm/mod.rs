@@ -2869,12 +2869,8 @@ where
                             2 => "TOGGLE",
                             _ => "Unknown",
                         },
-                        conn.get_atom_name(data[1])?
-                            .reply_unchecked()?
-                            .map(|reply| String::from_utf8(reply.name)),
-                        conn.get_atom_name(data[2])?
-                            .reply_unchecked()?
-                            .map(|reply| String::from_utf8(reply.name)),
+                        debug_atom_name(&*conn, data[1]),
+                        debug_atom_name(&*conn, data[2]),
                     );
                     if let Some(surface) = xwm.windows.iter().find(|x| x.window_id() == msg.window).cloned() {
                         drop(_guard);
@@ -3248,6 +3244,19 @@ fn mime_from_atom(
             .reply_unchecked()?
             .and_then(|reply| String::from_utf8(reply.name).ok()),
     })
+}
+
+/// An atom's name for a debug message (compd patch, PATCHES.md). `None` (0) is
+/// never asked about: a one-property `_NET_WM_STATE` request carries 0 in its
+/// second slot by spec, and asking the server for atom 0's name is a BadAtom
+/// error event per message. A real atom uses a checked reply, so a failed
+/// lookup is an `Err` here, never an `Event::Error` on the WM connection.
+fn debug_atom_name(conn: &impl ConnectionExt, atom: u32) -> Option<String> {
+    if atom == x11rb::NONE {
+        return None;
+    }
+    let reply = conn.get_atom_name(atom).ok()?.reply().ok()?;
+    String::from_utf8(reply.name).ok()
 }
 
 fn atom_from_mime(
