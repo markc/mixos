@@ -4,13 +4,15 @@
 //!
 //! The [`crate::consumer::Consumer`] serves shells that hold the raw native
 //! connection and its owner-stamped deliveries. An app on a plain Bus
-//! connection has less: a hint that the profile changed (a delivery on
-//! [`crate::summary_topic`]) and the ability to call `settings.get`. A
-//! [`Follower`] turns that into the profile's [`Appearance`]:
+//! connection has less: a hint that the profile changed (a delivery on one
+//! of [`Follower::topics`], the contract 1.0.0 look topic and the `keys`
+//! topics of the app domains it carries) and the ability to call
+//! `settings.get`. A [`Follower`] turns that into the profile's
+//! [`Look`] and app domains:
 //!
 //! - every hint, reconnection or start asks for one [`Read`] of the
-//!   [`crate::Summary`] view; while one is in flight, further hints fold
-//!   into a single read after it;
+//!   `values` view (key space v2 §5.2); while one is in flight, further
+//!   hints fold into a single read after it;
 //! - a hint is never trusted: the look comes only from `settings.get`'s
 //!   answer, and an answer older than one already seen (a lower revision in
 //!   the same incarnation) is ignored;
@@ -19,7 +21,9 @@
 //!
 //! The app performs each [`Read`] on its connection and reports the reply
 //! with [`Follower::answered`].
-use crate::model::{Appearance, Binding, Revision, Summary};
+use crate::model::{Binding, Revision};
+use crate::registry::Values;
+use crate::view::{AppDomains, Keymaps, Look, View};
 use serde_json::{Value, json};
 use std::time::Duration;
 
@@ -41,25 +45,21 @@ pub struct Read {
 /// What an answer meant.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Followed {
-    /// The profile's appearance, at `revision`, new to this follower. Its
-    /// `source` is always `None`; `custom_source` says the profile names a
-    /// design source of its own (an app keeps its theme file then).
+    /// The profile's look ([`Look`], the follower view), at `revision`, new
+    /// to this follower. `custom_source` says the profile names a design
+    /// source of its own (an app keeps its theme file then).
     Look {
-        appearance: Box<Appearance>,
-        ui: crate::model::CommonUi,
+        look: Box<Look>,
         custom_source: bool,
         revision: u64,
         /// The person's key bindings, per application
         /// ([`crate::keymap`]); each app applies its own entry.
         keymaps: crate::keymap::Keymaps,
-        /// The terminal's preferences ([`crate::terminal`]); defaults when
-        /// the summary omits them.
+        /// The terminal's preferences ([`crate::terminal`]).
         terminal: Box<crate::terminal::Terminal>,
-        /// The email app's accounts and options ([`crate::email`]);
-        /// defaults when the summary omits them.
+        /// The email app's accounts and options ([`crate::email`]).
         email: Box<crate::email::Email>,
-        /// The Ced app's editor style ([`crate::content`]); defaults when the
-        /// summary omits it.
+        /// The Ced app's editor style ([`crate::content`]).
         ced: Box<crate::content::Ced>,
     },
     /// The same revision as before: nothing to do.
@@ -80,6 +80,30 @@ impl Followed {
             retry,
         }
     }
+}
+
+/// The prefixes besides the look whose `keys` topics wake a follower: what
+/// [`Followed::Look`] carries beyond the [`Look`].
+pub const HINT_PREFIXES: [&str; 4] = ["keymaps", "terminal", "email", "ced"];
+
+/// The hint topics of `profile`'s followers ([`Follower::topics`]), for an
+/// app that subscribes before it builds its follower.
+pub fn hint_topics(profile: &str) -> Vec<String> {
+    std::iter::once(crate::topics::look_topic(profile))
+        .chain(
+            HINT_PREFIXES
+                .iter()
+                .map(|prefix| crate::topics::keys_topic(profile, prefix)),
+        )
+        .collect()
+}
+
+/// Whether `topic` is one of [`hint_topics`] of `profile`.
+pub fn is_hint(profile: &str, topic: &str) -> bool {
+    topic == crate::topics::look_topic(profile)
+        || HINT_PREFIXES
+            .iter()
+            .any(|prefix| topic == crate::topics::keys_topic(profile, prefix))
 }
 
 /// The first retry after a transient fault, doubling up to [`RETRY_MAX`].
@@ -129,12 +153,17 @@ impl Follower {
         }
     }
 
-    /// The topic whose deliveries are hints for this follower: the
-    /// profile's summary topic, a few hundred bytes per change plus the
-    /// person's key bindings when there are any (bounded by
-    /// [`crate::keymap`]'s limits).
-    pub fn topic(&self) -> String {
-        crate::summary_topic(&self.binding.profile)
+    /// The topics whose deliveries are hints for this follower: the
+    /// profile's look topic and the `keys` topics of [`HINT_PREFIXES`].
+    /// Each is change-only, so a follower wakes only when what it reads
+    /// moved.
+    pub fn topics(&self) -> Vec<String> {
+        hint_topics(&self.binding.profile)
+    }
+
+    /// Whether a delivery on `topic` is a hint for this follower.
+    pub fn is_hint(&self, topic: &str) -> bool {
+        is_hint(&self.binding.profile, topic)
     }
 
     pub fn binding(&self) -> &Binding {
@@ -176,7 +205,7 @@ impl Follower {
             ticket: self.next_ticket,
             service: SERVICE,
             command: "settings.get",
-            body: json!({"binding":self.binding,"view":"summary"}),
+            body: json!({"binding":self.binding,"view":"values"}),
         }
     }
 
@@ -289,11 +318,17 @@ impl Follower {
                 false,
             );
         }
-        let summary: Summary = match serde_json::from_value(value["summary"].clone()) {
-            Ok(summary) => summary,
-            Err(e) => return Followed::fault(format!("summary: {e}"), false),
+        let Some(incarnation) = value["incarnation"].as_str() else {
+            return Followed::fault("values: no incarnation", false);
         };
-        let (incarnation, revision) = (summary.incarnation.as_str(), summary.revision);
+        let revision: Revision = match serde_json::from_value(value["revision"].clone()) {
+            Ok(revision) => revision,
+            Err(e) => return Followed::fault(format!("values: revision: {e}"), false),
+        };
+        let values: Values = match serde_json::from_value(value["values"].clone()) {
+            Ok(values) => values,
+            Err(e) => return Followed::fault(format!("values: {e}"), false),
+        };
         // Older is never the look; the same revision is, once settingsd was
         // missing and came back.
         if let Some((seen_incarnation, seen)) = &self.seen
@@ -303,15 +338,16 @@ impl Follower {
             return Followed::Unchanged;
         }
         self.seen = Some((incarnation.to_owned(), revision));
+        let look = Look::of(&values);
+        let domains = AppDomains::of(&values);
         Followed::Look {
-            appearance: Box::new(summary.appearance),
-            ui: summary.ui,
-            custom_source: summary.custom_source,
+            custom_source: look.appearance.source.is_some(),
+            look: Box::new(look),
             revision: revision.0,
-            keymaps: summary.keymaps,
-            terminal: Box::new(summary.terminal),
-            email: Box::new(summary.email),
-            ced: Box::new(summary.ced),
+            keymaps: Keymaps::of(&values).apps,
+            terminal: Box::new(domains.terminal),
+            email: Box::new(domains.email),
+            ced: Box::new(domains.ced),
         }
     }
 }
@@ -329,20 +365,64 @@ enum Meaning {
 mod tests {
     use super::*;
 
+    /// A `settings.get {view: values}` answer, as contract 1.0.0 gives it.
     fn snapshot(incarnation: &str, revision: &str, scheme: &str) -> String {
-        json!({"status":"current","summary":{"schema":1,
+        json!({"status":"current",
             "binding":{"instance":"example","profile":"default"},
-            "incarnation":incarnation,"revision":revision,"design_revision":revision,
-            "source_digest":"d","custom_source":false,
-            "appearance":{"scheme":scheme,"mode":"dark","contrast":"normal","source":null}}})
+            "incarnation":incarnation,"revision":revision,
+            "values":{"appearance.scheme":scheme,"appearance.mode":"dark",
+                "appearance.contrast":"normal"},
+            "resolved":{"appearance.mode":"dark"}})
         .to_string()
     }
 
     #[test]
-    fn it_follows_the_summary_topic_and_reads_the_summary_view() {
+    fn it_follows_the_look_and_app_domain_topics_and_reads_the_values_view() {
         let mut f = Follower::new("example");
-        assert_eq!(f.topic(), "settingsd.desktop.summary.default");
-        assert_eq!(f.read().unwrap().body["view"], "summary");
+        assert_eq!(
+            f.topics(),
+            [
+                "settingsd.desktop.look.default",
+                "settingsd.desktop.keys.default.keymaps",
+                "settingsd.desktop.keys.default.terminal",
+                "settingsd.desktop.keys.default.email",
+                "settingsd.desktop.keys.default.ced",
+            ]
+        );
+        assert!(f.is_hint("settingsd.desktop.keys.default.terminal"));
+        assert!(!f.is_hint("settingsd.desktop.keys.default.displays"));
+        assert!(!f.is_hint("settingsd.desktop.look.other"));
+        assert_eq!(f.read().unwrap().body["view"], "values");
+    }
+
+    #[test]
+    fn the_look_is_the_look_view_of_the_values() {
+        let mut f = Follower::new("example");
+        let read = f.read().unwrap();
+        let mut body: Value = serde_json::from_str(&snapshot("i", "3", "studio")).unwrap();
+        body["values"]["window.decorations"] = json!("ssd");
+        body["values"]["accessibility.text_scale"] = json!(1.5);
+        body["values"]["appearance.density"] = json!("compact");
+        match f
+            .answered(read.ticket, Some((0, &body.to_string(), None)))
+            .0
+        {
+            Some(Followed::Look {
+                look,
+                custom_source,
+                ..
+            }) => {
+                assert_eq!(look.appearance.scheme, "studio");
+                assert_eq!(look.framing.decorations, "ssd");
+                assert_eq!(look.text_scale, 1.5);
+                assert_eq!(
+                    look.appearance.density,
+                    design::geometry::Density::Compact
+                );
+                assert!(!custom_source);
+            }
+            other => panic!("{other:?}"),
+        }
     }
 
     #[test]
@@ -350,7 +430,7 @@ mod tests {
         let mut f = Follower::new("example");
         let read = f.read().unwrap();
         let mut body: Value = serde_json::from_str(&snapshot("i", "3", "studio")).unwrap();
-        body["summary"]["keymaps"] = json!({"dopus":{"nav.parent":["Ctrl+U"]}});
+        body["values"]["keymaps.dopus.nav.parent"] = json!(["Ctrl+U"]);
         match f
             .answered(read.ticket, Some((0, &body.to_string(), None)))
             .0
@@ -360,7 +440,7 @@ mod tests {
             }
             other => panic!("{other:?}"),
         }
-        // A summary without them (an older settingsd) reads as none.
+        // A profile without them reads as none.
         let read = f.read().unwrap();
         match f
             .answered(read.ticket, Some((0, &snapshot("i", "4", "studio"), None)))
@@ -404,7 +484,8 @@ mod tests {
         let mut f = Follower::new("example");
         let read = f.read().unwrap();
         let mut body: Value = serde_json::from_str(&snapshot("i", "3", "studio")).unwrap();
-        body["summary"]["terminal"] = json!({"padding":8.0,"cursor":{"shape":"bar"}});
+        body["values"]["terminal.padding"] = json!(8);
+        body["values"]["terminal.cursor.shape"] = json!("bar");
         match f
             .answered(read.ticket, Some((0, &body.to_string(), None)))
             .0
@@ -415,7 +496,7 @@ mod tests {
             }
             other => panic!("{other:?}"),
         }
-        // A summary without them (an older settingsd) reads as the defaults.
+        // A profile without them reads as the defaults.
         let read = f.read().unwrap();
         match f
             .answered(read.ticket, Some((0, &snapshot("i", "4", "studio"), None)))
@@ -431,8 +512,9 @@ mod tests {
         let mut f = Follower::new("example");
         let read = f.read().unwrap();
         let mut body: Value = serde_json::from_str(&snapshot("i", "3", "studio")).unwrap();
-        body["summary"]["email"] = json!({"accounts":[{"id":"acct-1","name":"Home",
-            "url":"https://mail.example.org","email":"me@example.org"}],"mail":{"page_size":50.0}});
+        body["values"]["email.accounts"] = json!([{"id":"acct-1","name":"Home",
+            "url":"https://mail.example.org","email":"me@example.org"}]);
+        body["values"]["email.mail.page_size"] = json!(50);
         match f
             .answered(read.ticket, Some((0, &body.to_string(), None)))
             .0
@@ -454,18 +536,14 @@ mod tests {
     }
 
     #[test]
-    fn a_custom_source_is_reported_not_carried() {
+    fn a_custom_source_is_reported() {
         let mut f = Follower::new("example");
         let read = f.read().unwrap();
         let mut body: Value = serde_json::from_str(&snapshot("i", "7", "forest")).unwrap();
-        body["summary"]["custom_source"] = json!(true);
+        body["values"]["appearance.source"] = json!("design: {}");
         let (followed, _) = f.answered(read.ticket, Some((0, &body.to_string(), None)));
         match followed {
-            Some(Followed::Look {
-                appearance,
-                custom_source,
-                ..
-            }) => assert!(custom_source && appearance.source.is_none()),
+            Some(Followed::Look { custom_source, .. }) => assert!(custom_source),
             other => panic!("{other:?}"),
         }
     }
@@ -480,12 +558,8 @@ mod tests {
             f.answered(read.ticket, Some((0, &snapshot("i", "7", "forest"), None)));
         assert!(next.is_none());
         match followed {
-            Some(Followed::Look {
-                appearance,
-                revision,
-                ..
-            }) => {
-                assert_eq!((appearance.scheme.as_str(), revision), ("forest", 7));
+            Some(Followed::Look { look, revision, .. }) => {
+                assert_eq!((look.appearance.scheme.as_str(), revision), ("forest", 7));
             }
             other => panic!("{other:?}"),
         }

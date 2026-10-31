@@ -14,9 +14,10 @@
 //! [`look`] and [`look_or`] in R5's order: the axes (the app's overrides,
 //! the resolved mode), the compile with the accent and the derived scheme's
 //! tints, `design::geometry` (roundness, density), the font choices, then
-//! the session's `tune.*`, which beat the geometry they override. The
-//! format-4 entry points stay as they are until the apps move onto `Look`
-//! (S8a).
+//! the session's `tune.*`, which beat the geometry they override. Apps
+//! following the profile draw through [`follow_look`]. The format-4 entry
+//! points ([`theme`], [`theme_or`], [`follow`]) remain for the tests that
+//! hold the v2 look to today's theme.
 use crate::theme::{Overlay, Theme};
 use design::{
     CaptionSide, Contrast, DesignContext, Mode, RequestedDecorations as Decorations, Scheme, Style,
@@ -184,7 +185,7 @@ pub fn look(look: &Look, app: Option<&str>) -> Option<Theme> {
             design::MenuSide::resolve(&framing.menu_side),
         )
         .with_band(band_of(framing))
-        .with_ui(look_ui(look, app));
+        .with_ui(ui(look, app));
     Some(lay(theme, fonts(look), look))
 }
 
@@ -207,7 +208,7 @@ pub fn look_or(look: &Look, app: Option<&str>, session: &Theme) -> Theme {
                 design::MenuSide::resolve(&framing.menu_side),
             )
             .with_band(band_of(framing))
-            .with_ui(look_ui(look, app));
+            .with_ui(ui(look, app));
         // The session's own style and chrome overrides stay beneath the
         // look's geometry and tunes.
         let mut base = fonts(look);
@@ -243,11 +244,23 @@ pub fn framed_session(look: &Look, session: &Theme) -> Theme {
         .expect("the session's style overlay is already valid")
 }
 
+/// What an app following the profile draws (`settings::follow`): `look`
+/// for `app` over its `session` design, or, when the profile names a design
+/// source of its own (`custom_source`), the session design with the look's
+/// framing and font choices. Either way with the look's ui ([`ui`]).
+pub fn follow_look(look: &Look, app: Option<&str>, custom_source: bool, session: &Theme) -> Theme {
+    if custom_source {
+        framed_session(look, session).with_ui(ui(look, app))
+    } else {
+        look_or(look, app, session)
+    }
+}
+
 /// R5 step 7 for `app`, and the density step's multiplier, which
 /// `ui_scale` lays over the legacy lengths (step 2a's density half, until
-/// the toolkit applies the step itself, S8a). It is the only place the
-/// density scales them: [`lay`] sets no legacy length.
-fn look_ui(look: &Look, app: Option<&str>) -> settings::model::CommonUi {
+/// the toolkit applies the step itself). It is the only place the density
+/// scales them: [`lay`] sets no legacy length.
+pub fn ui(look: &Look, app: Option<&str>) -> settings::model::CommonUi {
     let overlay = app.and_then(|id| look.apps.0.get(id));
     settings::model::CommonUi {
         density: look.appearance.density.multiplier(),
@@ -272,7 +285,7 @@ fn fonts(look: &Look) -> Overlay {
 /// The geometry's tokens over `raw` (R5 step 2a): the roundness preset's
 /// radii and the density's new `spacing_*` and `header_padding_*` tokens,
 /// as the tokens that differ from `raw`. No legacy length: `ui_scale`
-/// scales those by the density's multiplier ([`look_ui`]), exactly as
+/// scales those by the density's multiplier ([`ui`]), exactly as
 /// `design::geometry::legacy_lengths` would.
 fn geometry_tokens(
     look: &Look,
