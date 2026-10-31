@@ -26,6 +26,30 @@ $tmp = env("TMPDIR", "/tmp") .. "/peers-fed-test." .. uuid()
 $results = []
 $pids = []
 
+-- TERM every citizen, give each up to 5 s, then KILL: the release gate
+-- refuses a test that leaves a process behind, and a citizen still
+-- shutting down when the broker goes can outlive the test.
+fn stop_all($pids)
+  for each $p in $pids
+    try
+      kill($p, 15)
+    catch $m
+    end
+  end
+  for each $p in $pids
+    for $i = 1 to 50
+      if not process_alive($p) then break end
+      sleep(0.1)
+    end
+    if process_alive($p) then
+      try
+        kill($p, 9)
+      catch $m
+      end
+    end
+  end
+end
+
 fn check($name, $ok)
   push($results, {name: $name, ok: $ok})
   print((if $ok then "PASS " else "FAIL " end) .. $name)
@@ -147,12 +171,7 @@ try
   check("notice list from either node shows it", contains(cli($SOUTH, $b, ["notice", "list"]).stdout, "freeze"))
   check("and brings the other node up to date", contains(hook({hook_event_name: "PostToolUse", session_id: $b}, $SOUTH), "freeze north only"))
 finally
-  for each $p in $pids
-    try
-      kill($p, 15)
-    catch $m
-    end
-  end
+  stop_all($pids)
   if $bus != nil then $pb.stop($bus) end
 end
 
