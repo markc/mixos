@@ -294,10 +294,16 @@ pub fn from_authority(rc: u8, body: &str) -> bool {
     }
 }
 
-/// Who the broker says sent a command across the mesh: the peer node and
-/// its service. Both headers are the broker's own (reserved: a caller's
-/// are overwritten) and set only on a delivery from a verified peer, so a
-/// local caller, or one that names itself, has neither.
+/// Who the broker says sent a command across the mesh. Everything here is
+/// the broker's, never the caller's: `broker_peer` and `broker_service` are
+/// reserved headers it strips from callers and stamps on a delivery from a
+/// verified peer, and `from` is the registered name of the connection the
+/// message came in on, which for the mesh is the peer's bridge,
+/// `bridge-<node>` (a name the register gate keeps for that peer under
+/// admission enforce). The peer's node is the stamp, else the bridge's name.
+/// Its service is known only where the broker stamps it: noded has no
+/// remote-service identity on every mesh path yet, which is why a push is
+/// also confirmed with the authority itself ([`Confirmation`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Sender<'a> {
     pub node: Option<&'a str>,
@@ -306,21 +312,72 @@ pub struct Sender<'a> {
 
 impl<'a> Sender<'a> {
     pub fn of(command: &'a bus::native_client::IncomingCommand) -> Self {
+        Self::from_headers(
+            command.header("broker_peer"),
+            command.header("broker_service"),
+            &command.from,
+        )
+    }
+
+    pub fn from_headers(peer: Option<&'a str>, service: Option<&'a str>, from: &'a str) -> Self {
         Self {
-            node: command.header("broker_peer"),
-            service: command.header("broker_service"),
+            node: peer.or_else(|| from.strip_prefix("bridge-")),
+            service,
         }
     }
 
-    /// A push or stop notice: only the configured authority's settingsd.
+    /// A push or stop notice: from the configured authority's node, and from
+    /// its settingsd wherever the broker names the service.
     pub fn is_authority(&self, node: &str) -> bool {
-        self.node == Some(node) && self.service == Some("settingsd")
+        self.node == Some(node) && self.service.is_none_or(|s| s == "settingsd")
     }
 
     /// An attach: only from the node it names (the first fetch is anonymous,
     /// so the service is not required).
     pub fn is_node(&self, node: &str) -> bool {
         self.node == Some(node)
+    }
+}
+
+/// What the authority itself says of a pushed record, asked at its own
+/// `settingsd.<node>.bus` (only the registered settingsd answers there): a
+/// push is taken only when the authority holds exactly that record.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Confirmation {
+    /// Same incarnation, revision and record digest.
+    Holds,
+    /// The authority is already past it: a newer push follows.
+    Behind,
+    /// Not the authority's record (forged, or of another incarnation).
+    Refused(String),
+    /// The authority did not answer.
+    Unreachable,
+}
+
+/// Compare the authority's `settings.status` answer (rc and body) with the
+/// pushed record.
+pub fn confirm(reply: Option<(u8, &str)>, cache: &crate::mirror::Cache) -> Confirmation {
+    let Some((rc, body)) = reply else {
+        return Confirmation::Unreachable;
+    };
+    let status: Value = match serde_json::from_str(body) {
+        Ok(status) if rc == 0 => status,
+        _ => return Confirmation::Unreachable,
+    };
+    let revision = serde_json::from_value::<Revision>(status["revision"].clone()).ok();
+    if status["incarnation"] != cache.incarnation.as_str() {
+        return Confirmation::Refused("incarnation".into());
+    }
+    match revision {
+        Some(revision) if revision > cache.revision => Confirmation::Behind,
+        Some(revision) if revision == cache.revision => {
+            if status["mirror_digest"] == cache.content_digest.as_str() {
+                Confirmation::Holds
+            } else {
+                Confirmation::Refused("record digest".into())
+            }
+        }
+        _ => Confirmation::Refused("revision".into()),
     }
 }
 
@@ -432,6 +489,52 @@ mod tests {
         assert_eq!(again.due(Revision(3), now).len(), 1);
         assert!(!again.finished("delta", Revision(3), false, now));
         assert_eq!(again.nodes(), ["delta"]);
+    }
+
+    #[test]
+    fn the_sender_is_the_broker_stamp_or_the_bridge_it_came_through() {
+        let stamped = Sender::from_headers(Some("alpha"), Some("settingsd"), "bridge-alpha");
+        assert!(stamped.is_authority("alpha"));
+        assert!(!stamped.is_authority("beta"));
+        let bridged = Sender::from_headers(None, None, "bridge-alpha");
+        assert!(bridged.is_authority("alpha"), "the service is unknown on this path");
+        let other = Sender::from_headers(Some("alpha"), Some("observer"), "bridge-alpha");
+        assert!(!other.is_authority("alpha"), "a stamped service that is not settingsd");
+        let local = Sender::from_headers(None, None, "observer");
+        assert!(!local.is_authority("alpha") && !local.is_node("alpha"));
+        assert!(Sender::from_headers(None, None, "bridge-beta").is_node("beta"));
+    }
+
+    #[test]
+    fn a_push_is_taken_only_when_the_authority_holds_exactly_that_record() {
+        let cache = crate::mirror::Cache {
+            schema: 1,
+            format: 5,
+            binding: Binding {
+                instance: "alpha".into(),
+                profile: "default".into(),
+            },
+            authority: "alpha".into(),
+            incarnation: "inc".into(),
+            revision: Revision(4),
+            design_revision: Revision(2),
+            values: Default::default(),
+            embedded_source: String::new(),
+            effective_digest: "e".into(),
+            content_digest: "c".into(),
+        };
+        let status = |inc: &str, rev: &str, digest: &str| {
+            json!({"incarnation": inc, "revision": rev, "mirror_digest": digest}).to_string()
+        };
+        let holds = status("inc", "4", "c");
+        assert_eq!(confirm(Some((0, &holds)), &cache), Confirmation::Holds);
+        let past = status("inc", "5", "x");
+        assert_eq!(confirm(Some((0, &past)), &cache), Confirmation::Behind);
+        for forged in [status("inc", "4", "x"), status("inc", "3", "c"), status("other", "4", "c")] {
+            assert!(matches!(confirm(Some((0, &forged)), &cache), Confirmation::Refused(_)), "{forged}");
+        }
+        assert_eq!(confirm(None, &cache), Confirmation::Unreachable);
+        assert_eq!(confirm(Some((10, "{}")), &cache), Confirmation::Unreachable);
     }
 
     #[test]

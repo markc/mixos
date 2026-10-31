@@ -849,6 +849,23 @@ async fn connected(authority: &mut Authority, ctx: &mut Ctx) {
     }
 }
 
+/// The authority's own `settings.status`, asked at its address, to confirm
+/// a push or a stop notice with the only service that can answer there.
+async fn authority_status(ctx: &Ctx, node: &str, binding: &Binding) -> Option<(u8, String)> {
+    let body = json!({"binding": binding}).to_string();
+    ctx.client
+        .call_with_headers_raw_within(
+            &mirroring::address(node),
+            "settings.status",
+            &BTreeMap::new(),
+            &body,
+            mirroring::PUSH_TIMEOUT,
+        )
+        .await
+        .ok()
+        .map(|(rc, body, _)| (rc, body))
+}
+
 /// This broker's node name.
 async fn node_name(client: &SupervisedClient) -> Option<String> {
     let info = tokio::time::timeout(
@@ -943,16 +960,51 @@ async fn handle(
             (_, Ok(push)) if push.binding != authority.accepted.binding => {
                 Err(json!({"status":"wrong_target","binding":authority.accepted.binding}))
             }
-            (_, Ok(push)) if push.stopping => {
-                authority.stale = true;
-                tracing::info!("authority stopping; serving the cache stale");
-                Ok(json!({"status":"detached"}))
+            // A stop notice from an authority that still answers is not
+            // one: ignored.
+            (Some(node), Ok(push)) if push.stopping => {
+                let binding = authority.accepted.binding.clone();
+                if matches!(authority_status(ctx, node, &binding).await, Some((0, _))) {
+                    tracing::warn!("stop notice while the authority answers; ignored");
+                    Ok(json!({"status":"current","revision":authority.accepted.revision}))
+                } else {
+                    authority.stale = true;
+                    tracing::info!("authority stopping; serving the cache stale");
+                    Ok(json!({"status":"detached"}))
+                }
             }
-            (_, Ok(push)) => {
-                let (taken, reply) = adopt(authority, ctx, push).await;
-                authority = taken;
-                ctx.publish(&mut authority).await;
-                reply
+            (Some(node), Ok(push)) => {
+                let binding = authority.accepted.binding.clone();
+                let confirmed = match &push.cache {
+                    Some(cache) => {
+                        let status = authority_status(ctx, node, &binding).await;
+                        mirroring::confirm(status.as_ref().map(|(rc, b)| (*rc, b.as_str())), cache)
+                    }
+                    None => mirroring::Confirmation::Refused("no record".into()),
+                };
+                match confirmed {
+                    mirroring::Confirmation::Holds => {
+                        let (taken, reply) = adopt(authority, ctx, push).await;
+                        authority = taken;
+                        ctx.publish(&mut authority).await;
+                        reply
+                    }
+                    // A newer push is on its way: nothing to take, nothing
+                    // stale about it.
+                    mirroring::Confirmation::Behind => {
+                        Ok(json!({"status":"current","revision":authority.accepted.revision}))
+                    }
+                    // Not the authority's record: refused, the cache and
+                    // `stale` untouched.
+                    mirroring::Confirmation::Refused(why) => {
+                        tracing::warn!(%why, "pushed record is not the authority's; refused");
+                        Err(json!({"status":"not_confirmed","reason":why}))
+                    }
+                    mirroring::Confirmation::Unreachable => {
+                        authority.stale = true;
+                        Err(mirroring::unreachable(node))
+                    }
+                }
             }
             (_, Err(error)) => {
                 authority.stale = true;
@@ -992,6 +1044,13 @@ async fn handle(
         }
         if name == "settings.status" && matches!(authority.role, Role::Authority(_)) {
             object.insert("mirrors".into(), ctx.mirrors.status());
+            // The digest of the record a mirror would cache, which a mirror
+            // checks a push against ([`mirroring::confirm`]).
+            if let Some(own) = ctx.node.as_deref()
+                && let Ok(cache) = authority.cache(own)
+            {
+                object.insert("mirror_digest".into(), json!(cache.content_digest));
+            }
         }
     }
     let (rc, value) = match reply {
