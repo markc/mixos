@@ -26,9 +26,11 @@ pub mod v1;
 pub mod view;
 pub use design::EMBEDDED_DEFAULT_SOURCE;
 pub use model::*;
-pub use resolve::{
-    Accents, describe, resolve, resolve_with_embedded, resolve_with_embedded_and_accents,
-};
+pub use resolve::Accents;
+/// S8c shim: the format-4 resolver, for the tests outside settingsd (compd,
+/// portald, toolkit) that still build a format-4 snapshot. settingsd itself
+/// calls [`v1`] only to migrate and to downgrade. S8c deletes these two.
+pub use v1::{resolve, resolve_with_embedded};
 
 pub const CONTRACT_VERSION: &str = "0.8.0";
 pub const SCHEMA: u32 = 1;

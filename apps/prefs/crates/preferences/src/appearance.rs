@@ -1870,7 +1870,7 @@ mod tests {
             expected,
             "every serialised appearance axis must be exercised"
         );
-        let next = settings::resolve::patch(&settings::Desktop::default(), &changes, &[]).unwrap();
+        let next = settings::v1::patch(&settings::Desktop::default(), &changes, &[]).unwrap();
         settings::resolve(&next).unwrap();
     }
 

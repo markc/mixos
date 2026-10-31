@@ -434,7 +434,7 @@ pub(crate) fn set(
 mod tests {
     use super::*;
     use crate::model::Desktop;
-    use crate::resolve::{patch, resolve};
+    use crate::v1::{patch, resolve};
     use serde_json::json;
     use std::collections::BTreeMap;
 
@@ -557,7 +557,7 @@ mod tests {
             Desktop::default(),
             "the whole group"
         );
-        let described = crate::describe();
+        let described = crate::v1::describe();
         assert_eq!(described["fields"]["terminal.padding"]["default"], 8);
         for path in paths {
             assert!(described["fields"].get(path).is_some(), "{path}");

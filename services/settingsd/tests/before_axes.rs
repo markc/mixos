@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! The sealed-profile upgrade rule (`Accepted::upgrade`, `store::FORMAT`),
-//! against a format-1 profile written by the settingsd before the style and
-//! framing keys (fixtures: a primary and its backup after four accepted
-//! changes, the shape a long-running desktop profile has).
+//! The sealed-profile upgrade rule (`format4::Record::upgrade`, then the
+//! format-5 migration), against a format-1 profile written by the settingsd
+//! before the style and framing keys (fixtures: a primary and its backup
+//! after four accepted changes, the shape a long-running desktop profile
+//! has).
 use serde_json::json;
 use settings::*;
 use settingsd::{
     authority::Authority,
+    format4::Record,
     store::{FORMAT, Store},
 };
 use std::collections::BTreeMap;
@@ -53,7 +55,8 @@ fn the_fixtures_are_format_one() {
         !PRIMARY.contains("\"format\""),
         "format 1 has no format field"
     );
-    assert_eq!(FORMAT, 4);
+    assert_eq!(FORMAT, 5);
+    assert_eq!(settingsd::format4::FORMAT, 4);
 }
 
 #[test]
@@ -61,20 +64,25 @@ fn an_old_primary_and_backup_upgrade_on_open_and_accept_changes() {
     let dir = profile(PRIMARY, BACKUP);
     let (store, data) = Store::open(dir.path(), &binding()).unwrap();
     assert!(!store.restored, "the primary verified as stored");
-    assert_eq!(data.revision, Revision(5), "nothing authored changed");
-    assert_eq!(
-        (
-            data.desktop.appearance.scheme.as_str(),
-            data.desktop.appearance.mode.as_str()
-        ),
-        ("forest", "dark")
+    assert!(store.migrated);
+    assert_eq!(data.revision, Revision(6), "only the migration advanced it");
+    assert_eq!(data.values["appearance.scheme"], "forest");
+    assert!(
+        !data.values.contains_key("appearance.mode"),
+        "dark is the default"
     );
-    assert_eq!(
-        data.desktop.appearance.style, None,
+    assert!(
+        !data.values.contains_key("appearance.style"),
         "the new keys take their defaults"
     );
+    assert_eq!(data.values["appearance.roundness"], "square", "plain (F2)");
     assert_eq!(data.format, FORMAT);
-    assert_eq!(data.desktop.appearance.window_style, "mac");
+    assert!(!data.values.contains_key("window.style"));
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("desktop.format4.conf.mix")).unwrap(),
+        PRIMARY,
+        "the format-4 record is kept byte for byte"
+    );
     assert!(
         data.effective()
             .unwrap()
@@ -105,14 +113,11 @@ fn an_old_primary_and_backup_upgrade_on_open_and_accept_changes() {
     };
     assert_eq!(
         authority.apply(request).unwrap()["receipt"]["revision"],
-        "6"
+        "7"
     );
     drop(authority);
     let (_, reopened) = Store::open(dir.path(), &binding()).unwrap();
-    assert_eq!(
-        reopened.desktop.appearance.style.as_deref(),
-        Some("classic")
-    );
+    assert_eq!(reopened.values["appearance.style"], "classic");
 }
 
 /// The email group is authored and omitted at its defaults, so it needs no
@@ -122,8 +127,8 @@ fn an_old_primary_and_backup_upgrade_on_open_and_accept_changes() {
 fn an_old_profile_opens_with_default_email_and_takes_accounts() {
     let dir = profile(PRIMARY, BACKUP);
     let (store, data) = Store::open(dir.path(), &binding()).unwrap();
-    assert!(data.desktop.email.is_default());
-    assert_eq!(data.format, FORMAT, "no new format for the email group");
+    assert!(!data.values.keys().any(|k| k.starts_with("email.")));
+    assert_eq!(data.format, FORMAT);
     let mut authority = Authority::new(store, data).unwrap();
     let request = ApplyRequest {
         binding: binding(),
@@ -141,8 +146,8 @@ fn an_old_profile_opens_with_default_email_and_takes_accounts() {
     authority.apply(request).unwrap();
     drop(authority);
     let (_, reopened) = Store::open(dir.path(), &binding()).unwrap();
-    assert_eq!(reopened.desktop.email.accounts[0].signature, "-- \nMe");
-    assert_eq!(reopened.desktop.appearance.scheme, "forest");
+    assert_eq!(reopened.values["email.accounts"][0]["signature"], "-- \nMe");
+    assert_eq!(reopened.values["appearance.scheme"], "forest");
     reopened
         .effective()
         .expect("the effective digest still verifies");
@@ -153,7 +158,7 @@ fn an_old_backup_restores_upgraded() {
     let dir = profile("{ incomplete", BACKUP);
     let (store, data) = Store::open(dir.path(), &binding()).unwrap();
     assert!(store.restored, "the backup restored the corrupt primary");
-    assert_eq!(data.desktop.appearance.scheme, "forest");
+    assert_eq!(data.values["appearance.scheme"], "forest");
     assert_eq!(data.format, FORMAT);
     assert_eq!(
         format_of(dir.path(), "desktop.conf.mix"),
@@ -177,7 +182,7 @@ fn a_tampered_old_profile_is_still_refused() {
     let dir = profile(&tampered(PRIMARY), BACKUP);
     let (store, data) = Store::open(dir.path(), &binding()).unwrap();
     assert!(store.restored);
-    assert_eq!(data.desktop.appearance.scheme, "forest");
+    assert_eq!(data.values["appearance.scheme"], "forest");
 }
 
 #[test]
@@ -235,8 +240,7 @@ fn defaults_serialise_as_before_and_chosen_values_appear() {
 fn pre_workshop_stores_drop_retired_overrides_and_reseal_both_copies() {
     for authored in [false, true] {
         let dir = tempfile::tempdir().unwrap();
-        let (store, mut old) = Store::create(dir.path(), binding(), Desktop::default()).unwrap();
-        drop(store);
+        let mut old = Record::initial(binding(), Desktop::default()).unwrap();
         old.format = 3;
         if authored {
             old.desktop.apps.insert(
@@ -269,11 +273,21 @@ fn pre_workshop_stores_drop_retired_overrides_and_reseal_both_copies() {
         let (store, migrated) = Store::open(dir.path(), &binding()).unwrap();
         assert!(!store.restored);
         assert_eq!(migrated.format, FORMAT);
-        assert_eq!(migrated.revision, Revision(if authored { 2 } else { 1 }));
+        // The format-4 upgrade advances it when it drops an override, and
+        // the migration once more.
+        assert_eq!(migrated.revision, Revision(if authored { 3 } else { 2 }));
         assert_eq!(migrated.incarnation, old.incarnation);
-        assert_eq!(migrated.design_revision, old.design_revision);
-        assert!(!migrated.desktop.apps.contains_key("busviewer"));
-        assert_eq!(migrated.desktop.apps["term"], old.desktop.apps["term"]);
+        assert_eq!(
+            migrated.design_revision,
+            Revision(old.design_revision.0 + 1)
+        );
+        assert!(
+            !migrated
+                .values
+                .keys()
+                .any(|k| k.starts_with("apps.busviewer."))
+        );
+        assert_eq!(migrated.values["apps.term.text_scale"], 1.25);
         let effective = migrated.effective().unwrap();
         assert!(!effective.contains_key("app:busviewer"));
         assert!(effective.contains_key("app:workshop"));
@@ -283,7 +297,12 @@ fn pre_workshop_stores_drop_retired_overrides_and_reseal_both_copies() {
                 strict::from_str(&std::fs::read_to_string(dir.path().join(name)).unwrap()).unwrap();
             saved.check(&binding()).unwrap();
             saved.effective().unwrap();
-            assert!(!saved.desktop.apps.contains_key("busviewer"));
+            assert!(
+                !saved
+                    .values
+                    .keys()
+                    .any(|k| k.starts_with("apps.busviewer."))
+            );
         }
         let bytes = std::fs::read(dir.path().join("desktop.conf.mix")).unwrap();
         drop(Store::open(dir.path(), &binding()).unwrap());

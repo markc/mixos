@@ -239,6 +239,19 @@
 <p>Mirrored from <a href="https://github.com/markc/mixos/blob/main/services/settingsd/CHANGELOG.md"><code>services/settingsd/CHANGELOG.md</code></a>, where releases update it. The component's page is <a href="/settingsd/">settingsd</a>. This page describes the current <code>main</code> branch of MixOS.</p>
 </blockquote>
 <h2 id="unreleased">Unreleased</h2>
+<p>Store format 5 (key space v2, S6): the record holds the registry's sparse
+<code>values</code>; writes go through <code>registry::apply</code> and resolve through
+<code>resolve::values</code>, so <code>settings.apply</code>, <code>validate</code> and <code>reset</code> take v2 key
+names (<code>window.style</code>, <code>appearance.density</code>, <code>accessibility.text_scale</code>,
+<code>shell.panels.&lt;panel&gt;.autohide</code>, <code>reset: ["terminal.*"]</code>). A format-4
+profile migrates on open after its seal verifies: the old record is kept as
+<code>desktop.format4.conf.mix</code>, <code>migration.mx</code> records the digests and the
+table's report, a <code>migrate-v2</code> receipt advances the revision. New commands:
+<code>migrate [--dry-run] [--import-backdrop PATH]</code>, <code>downgrade --to 4 --target BIN [--from-kept]</code>, <code>retire</code>, and <code>serve --authority | --mirror-of NODE</code>
+(the mirror's sealed cache; its wire is S7). <code>settings.describe</code> is the
+registry's catalogue, and <code>settings.status</code> reports <code>role</code>, <code>authority</code> and
+<code>stale</code>. The published snapshot is unchanged in shape: its <code>desktop</code> is the
+format-4 projection of the values until S7's schema 3.</p>
 <p><code>settings.get</code> 0.7.0 includes <code>ui</code> in summary reads: text scale, density and
 reduced motion on the same revision as appearance. Store format unchanged.</p>
 <h2 id="010">0.1.0</h2>

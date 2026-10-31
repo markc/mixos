@@ -13,11 +13,10 @@
 //!
 //! The v2 model is complete over [`Values`]: [`crate::view`] decodes them,
 //! [`crate::resolve::values`] resolves them and
-//! [`crate::domains::ChangePlan::of_values`] plans their changes. The
-//! format-4 store still holds today's typed [`crate::Desktop`] and writes it
-//! with the frozen v1 vocabulary ([`crate::v1`]), whose names and value
-//! ranges v2 does not share; settingsd swaps to this registry when its
-//! store moves to format 5 (S6), which deletes [`crate::v1`].
+//! [`crate::domains::ChangePlan::of_values`] plans their changes.
+//! settingsd's format-5 store holds [`Values`] and writes them through
+//! [`apply`]; the frozen [`crate::v1`] only migrates format 4 and writes it
+//! back for a downgrade.
 use crate::model::Diagnostic;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};

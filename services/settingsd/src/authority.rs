@@ -1,11 +1,20 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-use crate::store::{Accepted, Store, valid_operation_id};
+use crate::store::{Accepted, Store, canonical, valid_operation_id};
 use serde_json::{Value, json};
 use settings::*;
 
+/// What a settingsd serves from (F1, design §5.4).
+pub enum Role {
+    /// The machine's one authority: the profile store, the only writer.
+    Authority(Store),
+    /// A desk's mirror of the authority on `node`: reads from its sealed
+    /// cache; writes are the authority's (forwarded in S7, refused until).
+    Mirror { node: String },
+}
+
 pub struct Authority {
-    pub store: Store,
+    pub role: Role,
     pub accepted: Accepted,
     pub snapshot: Snapshot,
     pub published: Option<Revision>,
@@ -17,15 +26,35 @@ pub struct Authority {
 impl Authority {
     pub fn new(store: Store, accepted: Accepted) -> anyhow::Result<Self> {
         accepted.check(&accepted.binding)?;
+        Self::serving(Role::Authority(store), accepted)
+    }
+    /// A mirror serving `cache`, which [`crate::mirror::open`] verified.
+    pub fn mirror(cache: &crate::mirror::Cache) -> anyhow::Result<Self> {
+        Self::serving(
+            Role::Mirror {
+                node: cache.authority.clone(),
+            },
+            cache.accepted(),
+        )
+    }
+    fn serving(role: Role, accepted: Accepted) -> anyhow::Result<Self> {
         let (effective, accents) = accepted.interpretation()?;
         let snapshot = snapshot(&accepted, effective)?;
         Ok(Self {
-            store,
+            role,
             accepted,
             snapshot,
             published: None,
             accents,
         })
+    }
+    /// The store's outcome of its last write is unknown: no publication or
+    /// mutation until a restart reads it back.
+    pub fn recovering(&self) -> bool {
+        matches!(&self.role, Role::Authority(store) if store.recovering)
+    }
+    fn restored(&self) -> bool {
+        matches!(&self.role, Role::Authority(store) if store.restored)
     }
     fn target(&self, binding: &Binding) -> Result<(), Value> {
         if binding != &self.accepted.binding {
@@ -40,10 +69,10 @@ impl Authority {
         Ok(match request.view {
             settings::View::Full => {
                 let snapshot = self.snapshot_in(request.schema)?;
-                json!({"status":"current","snapshot":snapshot,"publication_pending":pending,"recovering":self.store.recovering,"restored_from_backup":self.store.restored})
+                json!({"status":"current","snapshot":snapshot,"publication_pending":pending,"recovering":self.recovering(),"restored_from_backup":self.restored()})
             }
             settings::View::Summary => {
-                json!({"status":"current","summary":settings::Summary::of(&self.snapshot),"publication_pending":pending,"recovering":self.store.recovering,"restored_from_backup":self.store.restored})
+                json!({"status":"current","summary":settings::Summary::of(&self.snapshot),"publication_pending":pending,"recovering":self.recovering(),"restored_from_backup":self.restored()})
             }
         })
     }
@@ -91,24 +120,43 @@ impl Authority {
         self.target(binding)?;
         let receipt =
             operation.and_then(|id| self.accepted.receipts.iter().find(|r| r.operation_id == id));
+        let (role, authority, stale) = match &self.role {
+            Role::Authority(_) => ("authority", self.accepted.binding.instance.as_str(), false),
+            // Until S7's attach, a mirror cannot know its cache is current.
+            Role::Mirror { node } => ("mirror", node.as_str(), true),
+        };
         Ok(
             json!({"status": if operation.is_some() && receipt.is_none() {"unknown_operation"} else {"current"},
             "receipt":receipt,"binding":self.accepted.binding,"incarnation":self.accepted.incarnation,
             "revision":self.accepted.revision,"published_revision":self.published,
-            "publication_pending":self.published != Some(self.accepted.revision),"recovering":self.store.recovering,
-            "restored_from_backup":self.store.restored,"consumers":[],"renderer_integration":"pending"}),
+            "publication_pending":self.published != Some(self.accepted.revision),"recovering":self.recovering(),
+            "restored_from_backup":self.restored(),"role":role,"authority":authority,"stale":stale,
+            "consumers":[],"renderer_integration":"pending"}),
         )
+    }
+    /// Writes are the authority's. A mirror refuses them until S7 forwards
+    /// them.
+    fn writable(&self) -> Result<(), Value> {
+        match &self.role {
+            Role::Authority(_) => Ok(()),
+            Role::Mirror { node } => Err(json!({"status":"authority_unreachable","node":node})),
+        }
+    }
+    /// The values `request` would leave, through the registry's one write.
+    fn patched(&self, request: &ApplyRequest) -> Result<registry::Values, Value> {
+        registry::apply(&self.accepted.values, &request.changes, &request.reset)
+            .map(canonical)
+            .map_err(diagnostics)
     }
     pub fn validate(&self, request: &ApplyRequest) -> Result<Value, Value> {
         self.target(&request.binding)?;
+        self.writable()?;
         self.fence(request)?;
-        let next =
-            settings::resolve::patch(&self.accepted.desktop, &request.changes, &request.reset)
-                .map_err(diagnostic)?;
-        let effective = settings::resolve_with_embedded(&next, &self.accepted.embedded_source)
-            .map_err(diagnostics)?;
         let mut candidate = self.accepted.clone();
-        candidate.desktop = next;
+        candidate.values = self.patched(request)?;
+        let effective = resolve::values::resolve(&candidate.values, &candidate.embedded_source)
+            .map_err(diagnostics)?
+            .0;
         let candidate_snapshot = snapshot(&candidate, effective).map_err(snapshot_error)?;
         Ok(
             json!({"status":"valid","incarnation":self.accepted.incarnation,"revision":self.accepted.revision,"source_digest":candidate_snapshot.source_digest,"effective":candidate_snapshot.effective}),
@@ -129,7 +177,8 @@ impl Authority {
     /// makes a lost reply retry retrieve its original receipt after later edits.
     pub fn apply(&mut self, request: ApplyRequest) -> Result<Value, Value> {
         self.target(&request.binding)?;
-        if self.store.recovering {
+        self.writable()?;
+        if self.recovering() {
             return Err(
                 json!({"status":"outcome_unknown","message":"Recovery required before another mutation"}),
             );
@@ -168,10 +217,8 @@ impl Authority {
             );
         }
         self.fence(&request)?;
-        let desktop =
-            settings::resolve::patch(&self.accepted.desktop, &request.changes, &request.reset)
-                .map_err(diagnostic)?;
-        let unchanged = desktop == self.accepted.desktop;
+        let values = self.patched(&request)?;
+        let unchanged = values == self.accepted.values;
         let mut next = self.accepted.clone();
         if !unchanged {
             next.revision = Revision(
@@ -180,7 +227,7 @@ impl Authority {
                     .checked_add(1)
                     .ok_or_else(|| json!({"status":"revision_exhausted"}))?,
             );
-            if desktop.appearance != next.desktop.appearance || desktop.apps != next.desktop.apps {
+            if touches_design(&self.accepted.values, &values) {
                 next.design_revision = Revision(
                     next.design_revision
                         .0
@@ -189,12 +236,11 @@ impl Authority {
                 );
             }
         }
-        next.desktop = desktop;
+        next.values = values;
         let (effective, accents) = if unchanged {
             (self.snapshot.effective.clone(), self.accents.clone())
         } else {
-            settings::resolve_with_embedded_and_accents(&next.desktop, &next.embedded_source)
-                .map_err(diagnostics)?
+            resolve::values::resolve(&next.values, &next.embedded_source).map_err(diagnostics)?
         };
         let next_snapshot = snapshot(&next, effective).map_err(snapshot_error)?;
         next.effective_digest = settings::digest(&next_snapshot.effective)
@@ -216,9 +262,12 @@ impl Authority {
         }
         next.seal()
             .map_err(|e| json!({"status":"storage_failed","message":e.to_string()}))?;
-        if let Err(error) = self.store.commit(&self.accepted, &next) {
+        let Role::Authority(store) = &mut self.role else {
+            return Err(json!({"status":"authority_unreachable"}));
+        };
+        if let Err(error) = store.commit(&self.accepted, &next) {
             return Err(
-                json!({"status":if self.store.recovering {"outcome_unknown"} else {"storage_failed"},"message":error.to_string()}),
+                json!({"status":if store.recovering {"outcome_unknown"} else {"storage_failed"},"message":error.to_string()}),
             );
         }
         self.accepted = next;
@@ -228,6 +277,31 @@ impl Authority {
             json!({"status":receipt.outcome,"receipt":receipt,"publication_pending":self.published != Some(self.accepted.revision),"replayed":false}),
         )
     }
+}
+/// Whether a write changed the design's inputs (§2.2): a changed key whose
+/// registry domains include paint, text or layout, a `tune.style` token by
+/// the tunable's own domains. This covers format 4's `appearance` and
+/// `apps` (the look, framing, density, per-app looks) and also the app
+/// domains and `accessibility.text_scale`.
+pub fn touches_design(before: &registry::Values, after: &registry::Values) -> bool {
+    use registry::Domain::{Layout, Paint, Text};
+    let design = |domain: &registry::Domain| matches!(domain, Paint | Text | Layout);
+    before
+        .keys()
+        .chain(after.keys())
+        .filter(|path| before.get(*path) != after.get(*path))
+        .any(|path| {
+            let tunable = path
+                .strip_prefix("tune.")
+                .and_then(registry::tunable)
+                .is_some_and(|t| {
+                    t.domains
+                        .iter()
+                        .filter_map(|name| registry::Domain::from_name(name))
+                        .any(|d| design(&d))
+                });
+            tunable || registry::lookup(path).is_ok_and(|m| m.def.domains.iter().any(design))
+        })
 }
 fn diagnostic(error: Diagnostic) -> Value {
     diagnostics(vec![error])
@@ -256,24 +330,29 @@ fn snapshot_error(error: anyhow::Error) -> Value {
         json!({"status":"validation_failed","message":error.to_string()})
     }
 }
+/// The published snapshot. Its `desktop` is the format-4 projection of the
+/// values ([`settings::migrate::reverse`]) for the consumers that still read
+/// it; S7's schema 3 carries the values themselves.
 pub(crate) fn snapshot(
     accepted: &Accepted,
     effective: std::collections::BTreeMap<String, Effective>,
 ) -> anyhow::Result<Snapshot> {
-    let source = accepted
-        .desktop
-        .appearance
-        .source
-        .as_deref()
-        .unwrap_or(&accepted.embedded_source);
+    let desktop = settings::migrate::reverse(&accepted.values).desktop;
+    let source_digest = settings::source_digest(
+        desktop
+            .appearance
+            .source
+            .as_deref()
+            .unwrap_or(&accepted.embedded_source),
+    );
     let result = Snapshot {
         schema: SCHEMA,
         binding: accepted.binding.clone(),
         incarnation: accepted.incarnation.clone(),
         revision: accepted.revision,
         design_revision: accepted.design_revision,
-        source_digest: settings::source_digest(source),
-        desktop: accepted.desktop.clone(),
+        source_digest,
+        desktop,
         effective,
     };
     let bytes = result.encoded_len()?;

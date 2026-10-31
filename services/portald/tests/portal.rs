@@ -824,10 +824,18 @@ impl Drop for AuthorityTask {
 }
 
 fn authority_store(root: &std::path::Path, mode: &str) -> anyhow::Result<()> {
-    let mut desktop = settings::Desktop::default();
-    desktop.appearance.mode = mode.into();
+    // A profile on the scheme a migrated one names, in `mode`.
+    let values = settings::registry::apply(
+        &Default::default(),
+        &std::collections::BTreeMap::from([
+            ("appearance.scheme".into(), serde_json::json!("studio")),
+            ("appearance.mode".into(), serde_json::json!(mode)),
+        ]),
+        &[],
+    )
+    .map_err(|e| anyhow::anyhow!("{e:?}"))?;
     let (store, _) =
-        settingsd::store::Store::create(root, projection("a", 1, "dark").binding, desktop)?;
+        settingsd::store::Store::create(root, projection("a", 1, "dark").binding, values)?;
     drop(store);
     Ok(())
 }
@@ -923,7 +931,7 @@ async fn native_startup_live_change_and_settingsd_restart_without_broker_reconne
                 "binding": projection("a", 1, "dark").binding,
                 "expected_incarnation": initial["snapshot"]["incarnation"],
                 "expected_revision": "1", "operation_id": "portal-live-dark",
-                "changes": {"appearance.mode": "dark", "appearance.caption_side": "left"}
+                "changes": {"appearance.mode": "dark", "window.caption_side": "left"}
             }),
         )
         .await?;

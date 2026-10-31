@@ -856,3 +856,88 @@ fn a_rich_record_and_its_backdrop_validate_and_resolve() {
     registry::validate(&result.values).unwrap();
     resolver::resolve(&result.values, design::EMBEDDED_DEFAULT_SOURCE).unwrap();
 }
+
+/// Every on-step record comes back from its migration exactly, and nothing
+/// blocks: the downgrade's reverse conversion.
+#[test]
+fn an_on_step_record_reverses_exactly() {
+    let mut hidden = Desktop::default();
+    hidden.shell.panels.get_mut("bottom").unwrap().mode = "hidden".into();
+    hidden.shell.panels.insert(
+        "top".into(),
+        Panel {
+            edge: "top".into(),
+            mode: "dock".into(),
+            thickness: 32,
+        },
+    );
+    let mut mail = Desktop::default();
+    mail.appearance.scheme = "breeze".into();
+    mail.appearance.mode = "light".into();
+    mail.email = serde_json::from_value(json!({"default_account":"acct-1",
+        "accounts":[{"id":"acct-1","name":"Home","url":"https://mail.example.org",
+        "email":"me@example.org"}]}))
+    .unwrap();
+    mail.terminal.padding = 8;
+    for desktop in [Desktop::default(), rich_desktop(), hidden, mail] {
+        let back = reverse(&migrated(&desktop).values);
+        assert_eq!(back.blocking, Vec::<String>::new());
+        assert_eq!(back.desktop, desktop);
+    }
+}
+
+#[test]
+fn a_whole_float_font_weight_reverses() {
+    let mut values = with(|d| d.appearance.font_weight = Some(300)).values;
+    values.insert("appearance.font_weight".into(), json!(300.0));
+    let back = reverse(&values);
+    assert_eq!(back.desktop.appearance.font_weight, Some(300));
+    assert!(back.blocking.is_empty(), "{:?}", back.blocking);
+}
+
+#[test]
+fn an_off_step_density_reverses_to_its_step() {
+    let m = with(|d| d.ui.density = 1.05);
+    let back = reverse(&m.values);
+    assert!(back.blocking.is_empty(), "{:?}", back.blocking);
+    assert_eq!(back.desktop.ui.density, 1.0);
+}
+
+/// What only v2 has blocks, and the projection still carries the rest.
+#[test]
+fn v2_only_values_block_the_reverse_conversion() {
+    let base = migrated(&rich_desktop()).values;
+    let cases: [(&str, Value); 6] = [
+        ("appearance.accent", json!("#3584e4")),
+        ("wallpaper.image", json!("/home/user/hills.jpg")),
+        ("appearance.mode", json!("auto")),
+        ("appearance.roundness", json!("round")),
+        ("appearance.scheme", json!("mixos")),
+        ("shell.panels.bottom.autohide", json!(true)),
+    ];
+    for (path, value) in cases {
+        let values = registry::apply(&base, &[(path.to_owned(), value)].into(), &[]).unwrap();
+        let back = reverse(&values);
+        assert!(
+            back.blocking.contains(&path.to_owned()),
+            "{path}: {:?}",
+            back.blocking
+        );
+        assert_eq!(
+            back.desktop.appearance.font_family.as_deref(),
+            Some("Noto Sans")
+        );
+    }
+    // A fresh v2 profile draws the derived scheme, which format 4 cannot.
+    let fresh = reverse(&Values::new());
+    assert_eq!(fresh.blocking, vec!["appearance.scheme".to_owned()]);
+    assert_eq!(fresh.desktop.appearance.scheme, "mixos");
+    // Auto projects to the mode it resolves to.
+    let auto = registry::apply(
+        &base,
+        &[("appearance.mode".into(), json!("auto"))].into(),
+        &[],
+    )
+    .unwrap();
+    assert_eq!(reverse(&auto).desktop.appearance.mode, "dark");
+}
