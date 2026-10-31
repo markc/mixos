@@ -599,36 +599,19 @@ impl Shell {
     /// session's theme file nor settingsd is written.
     fn install_theme(&mut self) {
         let (choice, look, custom_source, font) = self.wanted();
+        // The draft over settingsd's look view, drawn as every app draws
+        // the profile: the accent, tints, geometry and tunes come with it.
         let base = match &look {
-            Some(look) if !custom_source => Theme::for_context(look.context()),
-            _ => self.theme.clone(),
-        };
-        let base = match &look {
-            Some(look) => base
-                .framed(
-                    look.decorations,
-                    design::CaptionSide::resolve(&look.captions),
-                )
-                .with_menus(
-                    design::MenuStyle::resolve(&look.menu_style),
-                    design::MenuSide::resolve(&look.menu_side),
-                )
-                .with_band(design::title_band::Settings::from_names(
-                    &look.title_align,
-                    &look.actions_align,
-                    &look.actions_place,
-                    &look.window_style,
-                )),
-            None => base,
-        };
-        // Desktop values only; per-app text overrides are not in Summary.
-        let base = match &look {
-            Some(look) => base.with_ui(toolkit::ui_scale::CommonUi {
-                text_scale: look.text_scale,
-                density: look.density,
-                reduced_motion: look.reduced_motion,
-            }),
-            None => base,
+            Some(look) => {
+                let view = match &self.engine.look.view {
+                    Some(view) => look.over_view(view),
+                    None => look.over_view(&<settings::view::Look as settings::view::View>::of(
+                        &Default::default(),
+                    )),
+                };
+                toolkit::session_look::follow_look(&view, Some(APP), custom_source, &self.theme)
+            }
+            None => self.theme.clone(),
         };
         let base = interface_theme(base, font.as_ref());
         let theme = match base.with_choice(&choice) {

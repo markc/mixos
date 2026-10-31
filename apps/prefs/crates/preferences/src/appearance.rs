@@ -40,10 +40,16 @@ pub const SETTINGS: &str = "settingsd";
 /// The desktop profile the panel edits.
 pub const PROFILE: &str = "default";
 
-/// The topic settingsd announces the profile's changes on: its summary,
-/// a hint a few hundred bytes long.
-pub fn topic() -> String {
-    settings::summary_topic(PROFILE)
+/// The topics settingsd announces the profile's changes on (contract
+/// 1.0.0): the look and the `keys` topics of the app domains the panels
+/// show. Each is a hint; the panels read the `values` view.
+pub fn topics() -> Vec<String> {
+    settings::follow::hint_topics(PROFILE)
+}
+
+/// Whether a delivery on `topic` is one of [`topics`].
+pub fn is_topic(topic: &str) -> bool {
+    settings::follow::is_hint(PROFILE, topic)
 }
 
 /// The session's interface font weight and size, as settingsd stores them.
@@ -175,6 +181,68 @@ impl Look {
             mono_family: stored.mono_family.clone(),
             ..Self::default()
         })
+    }
+
+    /// The profile's look as the 1.0.0 values give it (key space v2 §4.1):
+    /// `appearance.*`, the `window.*` framing and the accessibility keys.
+    /// The mode is the resolved one (an authored `auto` shows what it
+    /// resolves to), the density its step's multiplier.
+    pub fn from_view(view: &settings::view::Look) -> Result<Self, String> {
+        let a = &view.appearance;
+        let f = &view.framing;
+        Ok(Self {
+            scheme: named("scheme", &a.scheme, Scheme::from_name)?,
+            style: match &a.style {
+                None => None,
+                Some(name) => Some(named("style", name, Style::from_name)?),
+            },
+            mode: named("mode", view.mode().0.name(), Mode::from_name)?,
+            contrast: named("contrast", &a.contrast, Contrast::from_name)?,
+            decorations: named("decorations", &f.decorations, Decorations::from_name)?,
+            captions: f.caption_side.clone(),
+            window_style: f.style.clone(),
+            menu_style: f.menu_style.clone(),
+            menu_side: f.menu_side.clone(),
+            actions_place: f.actions_place.clone(),
+            actions_align: f.actions_align.clone(),
+            title_align: f.title_align.clone(),
+            font_family: a.font_family.clone(),
+            mono_family: a.mono_family.clone(),
+            text_scale: view.text_scale,
+            density: a.density.multiplier(),
+            reduced_motion: view.reduced_motion,
+        })
+    }
+
+    /// `base` (settingsd's look view) with this look's choices laid over
+    /// it: what the window previews, drawn as every app draws the profile
+    /// (`toolkit::session_look::follow_look`). An unchanged mode keeps the
+    /// authored one (`auto` stays `auto`).
+    pub fn over_view(&self, base: &settings::view::Look) -> settings::view::Look {
+        let mut view = base.clone();
+        let a = &mut view.appearance;
+        a.scheme = self.scheme.name().into();
+        a.style = self.style.map(|s| s.name().into());
+        if base.mode().0.name() != self.mode.name() {
+            a.mode = self.mode.name().into();
+        }
+        a.contrast = self.contrast.name().into();
+        a.density = design::geometry::Density::from_name(density_step(self.density))
+            .unwrap_or_default();
+        a.font_family = self.font_family.clone();
+        a.mono_family = self.mono_family.clone();
+        let f = &mut view.framing;
+        f.decorations = self.decorations.name().into();
+        f.caption_side = self.captions.clone();
+        f.style = self.window_style.clone();
+        f.menu_style = self.menu_style.clone();
+        f.menu_side = self.menu_side.clone();
+        f.actions_place = self.actions_place.clone();
+        f.actions_align = self.actions_align.clone();
+        f.title_align = self.title_align.clone();
+        view.text_scale = self.text_scale;
+        view.reduced_motion = self.reduced_motion;
+        view
     }
 
     /// The design context this look draws with.
@@ -661,6 +729,9 @@ pub struct Appearance {
     pub custom_source: bool,
     /// The profile's key bindings, per application, from the same read.
     pub keymaps: settings::keymap::Keymaps,
+    /// settingsd's look view from the same read: the accent, tints,
+    /// geometry and tunes the panel does not edit, under the preview.
+    pub view: Option<settings::view::Look>,
     /// The fence for the next apply: settingsd's incarnation and revision.
     fence: Option<(String, Revision)>,
     /// The person's edits, until applied or reverted.
@@ -720,6 +791,7 @@ impl Default for Appearance {
             interface_font: None,
             custom_source: false,
             keymaps: Default::default(),
+            view: None,
             fence: None,
             draft: None,
             pinned: Vec::new(),
@@ -968,15 +1040,37 @@ pub(crate) fn refusal(value: &Value) -> String {
         .map_or_else(|| value.to_string(), str::to_owned)
 }
 
-/// The summary and look in a `settings.get` reply (its `summary` view).
-fn snapshot(value: &Value) -> Result<(settings::Summary, Look), String> {
-    let summary: settings::Summary =
-        serde_json::from_value(value["summary"].clone()).map_err(|e| format!("summary: {e}"))?;
-    let mut look = Look::from_stored(&summary.appearance)?;
-    look.text_scale = summary.ui.text_scale;
-    look.density = summary.ui.density;
-    look.reduced_motion = summary.ui.reduced_motion;
-    Ok((summary, look))
+/// What one `settings.get {view: values}` reply holds for the panels: the
+/// fence, the look's typed view and the app domains (contract 1.0.0).
+struct Read {
+    incarnation: String,
+    revision: Revision,
+    look: settings::view::Look,
+    keymaps: settings::keymap::Keymaps,
+    domains: settings::view::AppDomains,
+}
+
+/// The values and look in a `settings.get` reply (its `values` view).
+fn snapshot(value: &Value) -> Result<(Read, Look), String> {
+    use settings::view::View;
+    let incarnation = value["incarnation"]
+        .as_str()
+        .ok_or("values: no incarnation")?
+        .to_owned();
+    let revision: Revision = serde_json::from_value(value["revision"].clone())
+        .map_err(|e| format!("values: revision: {e}"))?;
+    let values: settings::registry::Values =
+        serde_json::from_value(value["values"].clone()).map_err(|e| format!("values: {e}"))?;
+    let view = settings::view::Look::of(&values);
+    let look = Look::from_view(&view)?;
+    let read = Read {
+        incarnation,
+        revision,
+        look: view,
+        keymaps: settings::view::Keymaps::of(&values).apps,
+        domains: settings::view::AppDomains::of(&values),
+    };
+    Ok((read, look))
 }
 
 impl Engine {
@@ -1078,7 +1172,7 @@ impl Engine {
     pub(crate) fn call_settings(&mut self, call: Call) {
         let ticket = self.next();
         let body = match &call {
-            Call::Read => json!({"binding":self.look.binding,"view":"summary"}),
+            Call::Read => json!({"binding":self.look.binding,"view":"values"}),
             Call::Receipt(submitted) => {
                 json!({"binding":self.look.binding,"operation_id":submitted.operation})
             }
@@ -1089,7 +1183,7 @@ impl Engine {
                         BTreeMap::from([((*path).to_owned(), value.clone())]),
                         Vec::new(),
                     ),
-                    Edit::Reset => (BTreeMap::new(), vec!["terminal".to_owned()]),
+                    Edit::Reset => (BTreeMap::new(), vec!["terminal.*".to_owned()]),
                 };
                 serde_json::to_value(ApplyRequest {
                     binding: self.look.binding.clone(),
@@ -1121,7 +1215,7 @@ impl Engine {
                 let (incarnation, revision) = self.look.fence.clone().expect("a fenced apply");
                 let (changes, reset) = match edit {
                     EmailEdit::Apply(changes) => (changes.clone(), Vec::new()),
-                    EmailEdit::Reset => (BTreeMap::new(), vec!["email".to_owned()]),
+                    EmailEdit::Reset => (BTreeMap::new(), vec!["email.*".to_owned()]),
                 };
                 serde_json::to_value(ApplyRequest {
                     binding: self.look.binding.clone(),
@@ -1463,24 +1557,25 @@ impl Engine {
     fn read_answered(&mut self, answer: Answer) {
         match answer {
             Answer::Ok(value) => match snapshot(&value) {
-                Ok((summary, look)) => {
+                Ok((read, look)) => {
                     if self.look.problem_missing
                         && let Some(source) = self.look.problem_source
                     {
                         self.clear_settings_problem(source);
                     }
                     self.look.settings = Availability::Available;
-                    self.look.keymaps = summary.keymaps;
-                    self.look.fence = Some((summary.incarnation, summary.revision));
+                    self.look.keymaps = read.keymaps;
+                    self.look.fence = Some((read.incarnation, read.revision));
                     self.look.current = Some(look.clone());
-                    self.look.terminal = Some(summary.terminal);
-                    self.look.ced = Some(summary.ced);
+                    self.look.terminal = Some(read.domains.terminal);
+                    self.look.ced = Some(read.domains.ced);
                     self.look.interface_font = Some(InterfaceFont {
-                        weight: summary.appearance.font_weight,
-                        size: summary.appearance.font_size,
+                        weight: read.look.appearance.font_weight,
+                        size: read.look.appearance.font_size,
                     });
-                    self.email_read(summary.email);
-                    self.look.custom_source = summary.custom_source;
+                    self.email_read(read.domains.email);
+                    self.look.custom_source = read.look.appearance.source.is_some();
+                    self.look.view = Some(read.look);
                     // A recovering settingsd may not show a write it has
                     // already taken: it cannot decide pinned axes, and
                     // nothing is applied until a read that can (its change
@@ -1772,6 +1867,31 @@ fn axis_key(axis: Axis) -> &'static str {
     }
 }
 
+/// For tests: a `settings.get {view: values}` reply at `revision` holding
+/// `record` (one app domain's record, as its module serialises it) as the
+/// v2 keys under `prefix`: objects are walked, anything else is a leaf.
+#[cfg(test)]
+pub(crate) fn values_reply(revision: &str, prefix: &str, record: &Value) -> Value {
+    fn walk(path: &str, value: &Value, out: &mut serde_json::Map<String, Value>) {
+        match value.as_object() {
+            Some(members) => {
+                for (key, value) in members {
+                    walk(&format!("{path}.{key}"), value, out);
+                }
+            }
+            None => {
+                out.insert(path.to_owned(), value.clone());
+            }
+        }
+    }
+    let mut values = serde_json::Map::new();
+    walk(prefix, record, &mut values);
+    json!({"status":"current",
+        "binding":{"instance":"example","profile":"default"},
+        "incarnation":"inc-1","revision":revision,
+        "values":values,"resolved":{}})
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1800,16 +1920,18 @@ mod tests {
         })
     }
 
-    /// A `settings.get` summary-view reply, as settingsd builds it: the
-    /// source never travels, `custom_source` says whether there is one.
-    fn snapshot_with(revision: &str, mut appearance: Value) -> Value {
-        let custom_source = !appearance["source"].is_null();
-        appearance["source"] = Value::Null;
-        json!({"status":"current","summary":{"schema":1,
+    /// A `settings.get {view: values}` reply, as settingsd builds it
+    /// (contract 1.0.0), for an appearance given by its field names: the
+    /// framing fields under `window.*`, the rest under `appearance.*`.
+    fn snapshot_with(revision: &str, appearance: Value) -> Value {
+        let mut values = serde_json::Map::new();
+        for (field, value) in appearance.as_object().unwrap() {
+            values.insert(change_path(field), value.clone());
+        }
+        json!({"status":"current",
             "binding":{"instance":"example","profile":"default"},
-            "incarnation":"inc-1","revision":revision,"design_revision":revision,
-            "source_digest":"d","appearance":appearance,"custom_source":custom_source},
-            "publication_pending":false,"recovering":false})
+            "incarnation":"inc-1","revision":revision,
+            "values":values,"resolved":{}})
     }
 
     fn snapshot_body(revision: &str, scheme: &str, mode: &str) -> Value {
@@ -2125,24 +2247,15 @@ mod tests {
         ]
     }
 
-    /// Where today's summary keeps a v2 key: the read side still decodes the
-    /// v1 snapshot until settingsd serves the v2 values (S7).
-    fn v1_location(path: &str) -> (&str, &str) {
-        match path {
-            "accessibility.text_scale" => ("ui", "text_scale"),
-            "appearance.density" => ("ui", "density"),
-            "accessibility.reduced_motion" => ("ui", "reduced_motion"),
-            _ => path.split_once('.').unwrap(),
-        }
-    }
-
+    /// A values reply with the v2 key `path` stored as `value`. A density
+    /// is given as the Prefs multiplier and stored as its step.
     fn stored_control(revision: &str, path: &str, value: Value) -> Value {
         let mut body = snapshot_body(revision, "studio", "dark");
-        let (group, key) = v1_location(path);
-        if group == "ui" {
-            body["summary"]["ui"] = json!({"text_scale":1.0,"density":1.0,"reduced_motion":false});
-        }
-        body["summary"][group][key] = value;
+        let value = match (path, value.as_f64()) {
+            ("appearance.density", Some(density)) => json!(density_step(density)),
+            _ => value,
+        };
+        body["values"][path] = value;
         body
     }
 
@@ -2440,8 +2553,8 @@ mod tests {
             "no flicker back"
         );
         let mut stored = snapshot_body("8", "forest", "dark");
-        stored["summary"]["appearance"]["style"] = json!("pro");
-        stored["summary"]["appearance"]["decorations"] = json!("ssd");
+        stored["values"]["appearance.style"] = json!("pro");
+        stored["values"]["window.decorations"] = json!("ssd");
         answer_next(&mut e, 0, stored);
         assert!(e.look.draft.is_none() && e.look.sent.is_none());
         assert_eq!(e.look.revision(), Some(8));

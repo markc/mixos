@@ -255,14 +255,12 @@ mod tests {
         })
     }
 
-    /// A `settings.get` summary at `revision`, its terminal as given.
+    /// A `settings.get {view: values}` reply at `revision`, its terminal as
+    /// given.
     fn snapshot(revision: &str, terminal: Value) -> Value {
-        json!({"status":"current","summary":{"schema":1,
-            "binding":{"instance":"example","profile":"default"},
-            "incarnation":"inc-1","revision":revision,"design_revision":revision,
-            "source_digest":"d","appearance":{"scheme":"studio","mode":"dark","contrast":"normal","source":null},
-            "custom_source":false,"terminal":terminal},
-            "publication_pending":false,"recovering":false})
+        let mut reply = crate::appearance::values_reply(revision, "terminal", &terminal);
+        reply["values"]["appearance.scheme"] = json!("studio");
+        reply
     }
 
     fn label(key: &str, _: &[(&str, &str)]) -> String {
@@ -375,6 +373,6 @@ mod tests {
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].1, "settings.reset");
         assert_eq!(calls[0].2["changes"], json!({}));
-        assert_eq!(calls[0].2["reset"], json!(["terminal"]));
+        assert_eq!(calls[0].2["reset"], json!(["terminal.*"]));
     }
 }

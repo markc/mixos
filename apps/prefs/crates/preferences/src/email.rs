@@ -2448,12 +2448,9 @@ mod tests {
     }
 
     fn snapshot(revision: &str, email: Value) -> Value {
-        json!({"status":"current","summary":{"schema":1,
-            "binding":{"instance":"example","profile":"default"},
-            "incarnation":"inc-1","revision":revision,"design_revision":revision,
-            "source_digest":"d","appearance":{"scheme":"studio","mode":"dark","contrast":"normal","source":null},
-            "custom_source":false,"email":email},
-            "publication_pending":false,"recovering":false})
+        let mut reply = crate::appearance::values_reply(revision, "email", &email);
+        reply["values"]["appearance.scheme"] = json!("studio");
+        reply
     }
 
     fn label(key: &str, args: &[(&str, &str)]) -> String {
@@ -2756,7 +2753,7 @@ mod tests {
         let calls = settings_calls(&mut e);
         assert_eq!(calls[0].1, "settings.reset");
         assert_eq!(calls[0].2["changes"], json!({}));
-        assert_eq!(calls[0].2["reset"], json!(["email"]));
+        assert_eq!(calls[0].2["reset"], json!(["email.*"]));
     }
 
     #[test]
