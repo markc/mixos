@@ -47,7 +47,7 @@ use dispatcher::wire::trait_::surface_event::SurfaceHandle;
 use dispatcher::wire::trait_::surface_event::WindowRequest;
 use dispatcher::wire::trait_::wire_trait::{ActivationOrigin, WireTrait};
 use policy::Effect;
-use policy::window::WindowFacts;
+use policy::window::{KillVia, WindowFacts};
 use policy::workspaces::{DefaultOutput, SwitchGates, WorkspaceRefusal, WorkspaceTarget};
 use protocols::window::shell;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
@@ -55,6 +55,8 @@ use smithay::reexports::wayland_server::Resource;
 use smithay::reexports::wayland_server::backend::protocol::ProtocolError;
 use smithay::utils::{Logical, Point, Rectangle, Size};
 use smithay::wayland::seat::WaylandFocus;
+use smithay::xwayland::XWaylandClientData;
+use smithay::xwayland::xwm::X11KillError;
 use surfaces::{SurfaceId, WindowTargetError};
 use world::camera::transform::translate::slot;
 use world::comp::usable::Reserved;
@@ -1960,39 +1962,93 @@ fn cycle_window(lp: &mut Loop, reverse: bool) {
     let _ = focus(lp, id, generation, true);
 }
 
-/// The force-close kill: the window's client goes (every window it had
-/// with it). Returns its pid and the ids of its managed windows.
-pub fn kill_client(lp: &Loop, id: SurfaceId) -> (Option<i32>, Vec<u64>) {
-    let Some(window) = window_of(lp, id) else {
-        return (None, Vec::new());
-    };
-    let Some(client) = window
+/// What a force-close kill took: the client's pid (when known) and the ids
+/// of every managed window it had.
+pub type Killed = (Option<i32>, Vec<u64>);
+
+/// The force-close kill: the window's own client goes (every window it had
+/// with it). An xdg window's Wayland client is disconnected; an X11
+/// window's X client is cut off by the X server (`KillClient` through the
+/// window manager), never Xwayland, which every X11 window shares.
+///
+/// `Err(reason)` (nothing killed) when no client can be attributed to the
+/// window, or the one found is compd itself or Xwayland.
+pub fn kill_client(lp: &Loop, id: SurfaceId, via: KillVia) -> Result<Killed, &'static str> {
+    let window = window_of(lp, id).ok_or("client_unattributed")?;
+    match via {
+        KillVia::WaylandClient => kill_wayland_client(lp, &window),
+        KillVia::X11Client => kill_x11_client(lp, &window),
+    }
+}
+
+/// The managed-window ids among the world's windows that `owned` picks.
+fn owned_windows(lp: &Loop, owned: impl Fn(&Window) -> bool) -> Vec<u64> {
+    let comp = &lp.inner.comp;
+    lp.inner
+        .all_world_spaces()
+        .iter()
+        .flat_map(|space| space.state.elements())
+        .filter(|candidate| owned(candidate))
+        .filter_map(SurfaceHandle::of_window)
+        .filter_map(|handle| comp.registry.id_for_handle(&handle))
+        .map(|id| id.0)
+        .collect()
+}
+
+fn kill_x11_client(lp: &Loop, window: &Window) -> Result<Killed, &'static str> {
+    let x11 = window.x11_surface().ok_or("x11_client_unattributed")?;
+    let base = x11.x_client_base().ok_or("x11_disconnected")?;
+    let display = &lp.inner.loader.display_handle;
+    // The X server's own answer (XRes, SO_PEERCRED), else _NET_WM_PID:
+    // reported, and checked against compd and Xwayland, never signalled.
+    let pid = protocols::window::ident::pid(window, display);
+    let xwayland_pid = x11
+        .wl_surface()
+        .and_then(|surface| surface.client())
+        .and_then(|client| client.get_credentials(display).ok())
+        .map(|credentials| credentials.pid as u32);
+    if pid == Some(std::process::id()) {
+        return Err("client_is_compd");
+    }
+    if pid.is_some() && pid == xwayland_pid {
+        return Err("client_is_xwayland");
+    }
+    let windows = owned_windows(lp, |candidate| {
+        candidate
+            .x11_surface()
+            .is_some_and(|other| other.x_client_base() == Some(base))
+    });
+    x11.kill_client().map_err(|error| match error {
+        X11KillError::Disconnected => "x11_disconnected",
+        X11KillError::ServerOwned => "x11_server_owned",
+        X11KillError::OwnConnection => "client_is_compd",
+        X11KillError::Connection(_) => "x11_connection_error",
+    })?;
+    Ok((pid.and_then(|pid| i32::try_from(pid).ok()), windows))
+}
+
+fn kill_wayland_client(lp: &Loop, window: &Window) -> Result<Killed, &'static str> {
+    let client = window
         .toplevel()
         .and_then(|toplevel| toplevel.wl_surface().client())
-    else {
-        return (None, Vec::new());
-    };
+        .ok_or("client_unattributed")?;
+    if client.get_data::<XWaylandClientData>().is_some() {
+        return Err("client_is_xwayland");
+    }
     let display = &lp.inner.loader.display_handle;
     let pid = client
         .get_credentials(display)
         .ok()
         .map(|credentials| credentials.pid);
-    let comp = &lp.inner.comp;
-    let windows = lp
-        .inner
-        .all_world_spaces()
-        .iter()
-        .flat_map(|space| space.state.elements())
-        .filter(|candidate| {
-            candidate
-                .toplevel()
-                .and_then(|toplevel| toplevel.wl_surface().client())
-                .is_some_and(|owner| owner.id() == client.id())
-        })
-        .filter_map(SurfaceHandle::of_window)
-        .filter_map(|handle| comp.registry.id_for_handle(&handle))
-        .map(|id| id.0)
-        .collect();
+    if pid.is_some_and(|pid| pid as u32 == std::process::id()) {
+        return Err("client_is_compd");
+    }
+    let windows = owned_windows(lp, |candidate| {
+        candidate
+            .toplevel()
+            .and_then(|toplevel| toplevel.wl_surface().client())
+            .is_some_and(|owner| owner.id() == client.id())
+    });
     client.kill(
         display,
         ProtocolError {
@@ -2002,7 +2058,7 @@ pub fn kill_client(lp: &Loop, id: SurfaceId) -> (Option<i32>, Vec<u64>) {
             message: "killed by compd: comp.window.close {force} deadline passed".into(),
         },
     );
-    (pid, windows)
+    Ok((pid, windows))
 }
 
 /// The settle, reduced to the keyboard: if the focused window is hidden

@@ -805,7 +805,8 @@ impl Bus {
                 }
                 WaiterKind::ForceClose { id, generation } => {
                     use policy::window::{
-                        ForceCloseOutcome, close_reply, force_close_at_deadline, kill_reply,
+                        ForceCloseOutcome, close_reply, force_close_at_deadline,
+                        kill_refused_reply, kill_reply,
                     };
                     match force_close_at_deadline(
                         &lp.inner.comp.registry,
@@ -823,11 +824,21 @@ impl Bus {
                             deadline,
                         }),
                         ForceCloseOutcome::Locked => reply.send(ControlReply::Locked),
-                        ForceCloseOutcome::StillOpen(refusal) => reply.send(refusal),
-                        ForceCloseOutcome::Kill { id: target, mapped } => {
-                            let (pid, windows) = policy_host::control::kill_client(lp, target);
-                            reply.send(kill_reply(id, generation, waited_ms, mapped, pid, windows));
-                        }
+                        ForceCloseOutcome::Kill {
+                            id: target,
+                            mapped,
+                            via,
+                        } => match policy_host::control::kill_client(lp, target, via) {
+                            Ok((pid, windows)) => reply.send(kill_reply(
+                                id, generation, waited_ms, mapped, via, pid, windows,
+                            )),
+                            Err(reason) => {
+                                model::warn!(
+                                    "comp.window.close force: s{id} not killed: {reason}"
+                                );
+                                reply.send(kill_refused_reply(id, generation, waited_ms, reason))
+                            }
+                        },
                     }
                 }
             }
