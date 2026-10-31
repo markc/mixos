@@ -245,12 +245,21 @@ fn live_keys_are_refused_by_set_and_reset() {
     // owner has no such command yet.
     let message = &set(&[("system.hostname", json!("x"))]).unwrap_err()[0].message;
     let detail: Value = serde_json::from_str(message).unwrap();
-    assert_eq!(detail, json!({"owner": "hostd", "read": "host.info", "write": null}));
+    assert_eq!(
+        detail,
+        json!({"owner": "hostd", "read": "host.info", "write": null})
+    );
     let message = &set(&[("power.battery", json!(1))]).unwrap_err()[0].message;
     let detail: Value = serde_json::from_str(message).unwrap();
-    assert_eq!(detail, json!({"owner": "hostd", "read": null, "write": null}));
+    assert_eq!(
+        detail,
+        json!({"owner": "hostd", "read": null, "write": null})
+    );
     let described = describe_key(lookup("power.battery").unwrap().def);
-    assert_eq!((&described["read"], &described["write"]), (&Value::Null, &Value::Null));
+    assert_eq!(
+        (&described["read"], &described["write"]),
+        (&Value::Null, &Value::Null)
+    );
     // A prefix of live keys only is refused as live; a mixed one resets the
     // stored keys under it.
     for prefix in ["system.*", "network.*", "bluetooth.*"] {
@@ -858,7 +867,11 @@ fn every_int_step_is_positive_and_spawn_entries_are_stored() {
     let spawn = lookup("keymaps.comp.spawn.term").unwrap().def;
     assert_eq!((spawn.class, spawn.owner), (Class::Stored, None));
     // A zero step is never a division: the guard holds even for a bad table.
-    let zero = Kind::Int { min: 0, max: 10, step: 0 };
+    let zero = Kind::Int {
+        min: 0,
+        max: 10,
+        step: 0,
+    };
     assert_eq!(kind::check(&zero, "x", &json!(7)).unwrap(), json!(7));
 }
 
@@ -866,7 +879,10 @@ fn every_int_step_is_positive_and_spawn_entries_are_stored() {
 fn the_design_source_is_compiled_by_its_kind() {
     set(&[("appearance.source", json!(design::EMBEDDED_DEFAULT_SOURCE))]).unwrap();
     let broken = codes(set(&[("appearance.source", json!("{\"v1\":"))]));
-    assert_eq!(broken, [("validation_failed".into(), "appearance.source".into())]);
+    assert_eq!(
+        broken,
+        [("validation_failed".into(), "appearance.source".into())]
+    );
 }
 
 #[test]
