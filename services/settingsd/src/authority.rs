@@ -198,8 +198,18 @@ impl Authority {
             .map_err(diagnostics)?
             .0;
         let candidate_snapshot = snapshot(&candidate, effective).map_err(snapshot_error)?;
+        // The would-be values of each prefix the batch touches, defaults
+        // filled, as its topic would carry them (§5.2).
+        let touched: serde_json::Map<String, Value> =
+            settings::topics::changed_prefixes(&self.accepted.values, &candidate.values)
+                .into_iter()
+                .map(|p| {
+                    let values = settings::topics::prefix_values(&candidate.values, p);
+                    (p.to_owned(), Value::Object(values))
+                })
+                .collect();
         Ok(
-            json!({"status":"valid","incarnation":self.accepted.incarnation,"revision":self.accepted.revision,"source_digest":candidate_snapshot.source_digest,"effective":candidate_snapshot.effective}),
+            json!({"status":"valid","incarnation":self.accepted.incarnation,"revision":self.accepted.revision,"source_digest":candidate_snapshot.source_digest,"effective":candidate_snapshot.effective,"values":touched}),
         )
     }
     fn fence(&self, request: &ApplyRequest) -> Result<(), Value> {
