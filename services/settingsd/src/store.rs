@@ -90,8 +90,10 @@ impl Accepted {
     pub fn resolve(
         &self,
     ) -> anyhow::Result<(std::collections::BTreeMap<String, Effective>, Accents)> {
-        resolve::values::resolve(&self.values, &self.embedded_source)
-            .map_err(|e| anyhow::anyhow!("accepted interpretation unsupported: {e:?}"))
+        let effective = resolve::values::resolve(&self.values, &self.embedded_source)
+            .map_err(|e| anyhow::anyhow!("accepted interpretation unsupported: {e:?}"))?;
+        let accents = resolve::accents_of(&effective);
+        Ok((effective, accents))
     }
     pub fn effective(&self) -> anyhow::Result<std::collections::BTreeMap<String, Effective>> {
         self.interpretation().map(|(effective, _)| effective)

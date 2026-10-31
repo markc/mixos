@@ -24,6 +24,15 @@ pub(crate) fn error(path: &str, message: impl Into<String>) -> Diagnostic {
 /// removes this with [`crate::v1`].
 pub type Accents = BTreeMap<String, design::SrgbColour>;
 
+/// The accents sealed in a v2 effective map ([`Effective::accent`]), in the
+/// sidecar's shape.
+pub fn accents_of(effective: &BTreeMap<String, Effective>) -> Accents {
+    effective
+        .iter()
+        .filter_map(|(context, e)| Some((context.clone(), e.accent?)))
+        .collect()
+}
+
 /// The last design source parsed, by its digest. A profile's source rarely
 /// changes (the embedded one never does), so an apply reuses the parse.
 static PARSED: Mutex<Option<(String, Arc<design::DesignSourceDocument>)>> = Mutex::new(None);

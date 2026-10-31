@@ -162,7 +162,7 @@ mod tests {
         };
         let look = look(&a, &ui);
         assert_eq!(look.appearance.scheme, "studio");
-        assert_eq!(look.appearance.roundness, "slightly_round");
+        assert_eq!(look.appearance.roundness, Roundness::SlightlyRound);
         assert_eq!(look.framing.decorations, "ssd");
         assert_eq!(look.framing.style, "win11");
         assert_eq!(look.text_scale, 1.5);

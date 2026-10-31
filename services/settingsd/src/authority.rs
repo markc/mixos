@@ -195,9 +195,9 @@ impl Authority {
         self.fence(request)?;
         let mut candidate = self.accepted.clone();
         candidate.values = self.patched(request)?;
-        let (effective, accents) =
-            resolve::values::resolve(&candidate.values, &candidate.embedded_source)
-                .map_err(diagnostics)?;
+        let effective = resolve::values::resolve(&candidate.values, &candidate.embedded_source)
+            .map_err(diagnostics)?;
+        let accents = resolve::accents_of(&effective);
         let candidate_snapshot = snapshot(&candidate, effective).map_err(snapshot_error)?;
         // The would-be content of every topic the batch moves, as its topic
         // would carry it (§5.2): each prefix's values with defaults filled
@@ -309,7 +309,10 @@ impl Authority {
         let (effective, accents) = if unchanged {
             (self.snapshot.effective.clone(), self.accents.clone())
         } else {
-            resolve::values::resolve(&next.values, &next.embedded_source).map_err(diagnostics)?
+            let effective = resolve::values::resolve(&next.values, &next.embedded_source)
+                .map_err(diagnostics)?;
+            let accents = resolve::accents_of(&effective);
+            (effective, accents)
         };
         let next_snapshot = snapshot(&next, effective).map_err(snapshot_error)?;
         next.effective_digest = settings::digest(&next_snapshot.effective)
