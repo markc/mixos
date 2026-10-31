@@ -254,16 +254,27 @@ fn resolve_v2_reproduces_today_s_look_for_the_same_choices() {
         decided: "profile",
     };
     let rich = rich();
-    // A custom source that orders the app axis: every app compiles alone.
-    let source = design::EMBEDDED_DEFAULT_SOURCE.replacen(
-        "resolution_order: [\"scheme\", \"mode\"]",
-        "resolution_order: [\"scheme\", \"mode\", \"app\"]",
-        1,
-    );
+    // A custom source that orders the app axis and names one app (an empty
+    // block: the compile must claim it): every app compiles alone.
+    let source = design::EMBEDDED_DEFAULT_SOURCE
+        .replacen(
+            "resolution_order: [\"scheme\", \"mode\"]",
+            "resolution_order: [\"scheme\", \"mode\", \"app\"]",
+            1,
+        )
+        .replacen(
+            "modifiers: [\n",
+            "modifiers: [\n      { when: { app: \"workshop\" } },\n",
+            1,
+        );
     assert_ne!(
         source,
         design::EMBEDDED_DEFAULT_SOURCE,
         "the fixture orders app"
+    );
+    assert!(
+        crate::resolve::claims_app_axis(&crate::resolve::parsed(&source).unwrap()),
+        "the fixture claims the app axis"
     );
     let mut custom = self::rich();
     custom.name = "custom source";
