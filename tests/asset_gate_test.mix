@@ -1,0 +1,151 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Asset gate regressions: unlisted files, hash drift, licences, public-domain
+-- records, forbidden formats, embedded data, debt growth, and the real tree.
+$root = dirname(dirname(realpath($0)))
+$mix = env("MIXOS_TEST_MIX") ?? ""
+if $mix == "" then $mix = realpath("/proc/self/exe") end
+$gate = $root .. "/tools/asset_gate.mix"
+$tmp = "/tmp/mixos-asset-gate-test-" .. uuid()
+$failures = []
+
+fn put($rel, $text)
+  mkdir(dirname($tmp .. "/" .. $rel), {parents: true})
+  write_file($tmp .. "/" .. $rel, $text)
+end
+
+fn sha($rel)
+  return hash_file($tmp .. "/" .. $rel, "sha256")
+end
+
+fn scan()
+  return {ext: [".png", ".svg", ".ttf"], font_ext: [".ttf"], dirs: ["assets", "share"],
+    dir_skip_ext: [".mix", ".md", ".txt"], forbid_ext: [".ase", ".aco"], skip: ["target/", ".git/"], embed_skip: []}
+end
+
+fn licences()
+  return {allow: ["MIT", "Apache-2.0", "ISC", "CC0-1.0", "OFL-1.1", "LicenseRef-Public-Domain"],
+    font_only: ["OFL-1.1"], original: "MIT OR Apache-2.0", brand: "LicenseRef-MixOS-Brand",
+    public_domain: "LicenseRef-Public-Domain"}
+end
+
+fn entry($path, $licence)
+  return {path: $path, title: "t", author: "MixOS, original artwork", source: "https://example.org/x",
+    licence: $licence, licence_file: "LICENSE-MIT", sha256: sha($path)}
+end
+
+fn policy($allow, $brand, $debt)
+  return {assets: {scan: scan(), licences: licences(), pins: [], allow: $allow, brand: $brand, debt: $debt}}
+end
+
+fn write_policy($name, $p)
+  write_file($tmp .. "/" .. $name, json_encode($p))
+  return $tmp .. "/" .. $name
+end
+
+-- Runs the gate on the fixture; $base is the base policy for the debt check.
+fn check($name, $p, $base, $expected, $want)
+  $pf = write_policy("policy.conf.mix", $p)
+  $bf = write_policy("base.conf.mix", $base)
+  $r = run_argv([$mix, $gate, "--root", $tmp, "--policy", $pf, "--base-policy", $bf], {stderr: "stdout", timeout: 60})
+  if $r.exit_code != $expected or ($want != "" and not contains($r.stdout, $want)) then
+    push($failures, $name)
+    print("FAIL " .. $name .. " (rc " .. to_string($r.exit_code) .. ")\n" .. $r.stdout)
+  else
+    print("PASS " .. $name)
+  end
+end
+
+mkdir($tmp, {parents: true})
+run_argv_must(["git", "init", "-q", $tmp], {timeout: 30})
+put("LICENSE-MIT", "MIT\n")
+put("icons/a.svg", "<svg xmlns=\"http://www.w3.org/2000/svg\"/>\n")
+put("share/thing.bin", "bytes\n")
+put("fonts/f.ttf", "not really a font\n")
+put("fonts/OFL.txt", "SIL Open Font License 1.1\n")
+put("README.md", "no assets here\n")
+
+$a = entry("icons/a.svg", "MIT OR Apache-2.0")
+$t = entry("share/thing.bin", "ISC")
+$f = entry("fonts/f.ttf", "OFL-1.1")
+$f.licence_file = "fonts/OFL.txt"
+$clean = policy([$a, $t, $f], [], [])
+check("clean fixture passes", $clean, $clean, 0, "all listed")
+
+check("unlisted file fails", policy([$a, $f], [], []), $clean, 1, "share/thing.bin has no entry")
+
+$drift = $a
+$drift.sha256 = hash_sha256("something else")
+check("hash drift fails", policy([$drift, $t, $f], [], []), $clean, 1, "sha256 drifted")
+
+check("CC-BY licence fails", policy([entry("icons/a.svg", "CC-BY-4.0"), $t, $f], [], []), $clean, 1, "CC-BY-4.0 is not allowed")
+
+check("OFL on a non-font fails", policy([entry("icons/a.svg", "OFL-1.1"), $t, $f], [], []), $clean, 1, "fonts only")
+
+$nolic = $t
+$nolic.licence_file = "LICENSE-missing.txt"
+check("missing licence file fails", policy([$a, $nolic, $f], [], []), $clean, 1, "is missing")
+
+$pd = entry("icons/a.svg", "LicenseRef-Public-Domain")
+$pd.source = "a NASA picture"
+check("public domain without a source fails", policy([$pd, $t, $f], [], []), $clean, 1, "names its source URL")
+$pd.source = "https://images.example.gov/item/1"
+check("public domain without an agency fails", policy([$pd, $t, $f], [], []), $clean, 1, "needs agency")
+$pd.agency = "Example Space Agency (US federal)"
+$pd.why = "a work of the US federal government (17 U.S.C. 105)"
+check("public domain with source, agency and reason passes", policy([$pd, $t, $f], [], []), $clean, 0, "")
+
+$d = entry("share/thing.bin", "LicenseRef-Proprietary")
+$d.reason = "present today"
+$d.exit = "replace it"
+check("new debt fails", policy([$a, $f], [], [$d]), $clean, 1, "debt grew")
+check("existing debt passes", policy([$a, $f], [], [$d]), policy([$a, $f], [], [$d]), 0, "")
+$d2 = $d
+$d2.exit = nil
+check("debt without an exit fails", policy([$a, $f], [], [$d2]), policy([$a, $f], [], [$d2]), 1, "needs exit")
+
+check("brand outside share/brand fails", policy([$t, $f], [entry("icons/a.svg", "LicenseRef-MixOS-Brand")], []), $clean, 1, "copy_of")
+
+put("icons/swatch.ase", "palette\n")
+check("forbidden format fails", $clean, $clean, 1, "forbidden asset format icons/swatch.ase")
+remove($tmp .. "/icons/swatch.ase")
+
+put("web/app.css", "a{background:url(\"data:image/svg+xml,%3Csvg%3E%3C/svg%3E\")}\n")
+check("unlisted data URI fails", $clean, $clean, 1, "embeds image or font data")
+$emb = {path: "web/app.css", embedded: true, title: "t", author: "MixOS, original artwork",
+  source: "https://example.org/x", licence: "MIT OR Apache-2.0", licence_file: "LICENSE-MIT",
+  sha256: hash_sha256("data:image/svg+xml,%3Csvg%3E%3C/svg%3E")}
+check("listed data URI passes", policy([$a, $t, $f, $emb], [], []), $clean, 0, "")
+remove($tmp .. "/web/app.css")
+
+$glob = {glob: "icons/*.svg", title: "t", author: "MixOS, original artwork", source: "https://example.org/x",
+  licence: "MIT OR Apache-2.0", licence_file: "LICENSE-MIT",
+  sha256: hash_sha256("icons/a.svg " .. sha("icons/a.svg") .. "\n")}
+check("glob with its combined hash passes", policy([$glob, $t, $f], [], []), $clean, 0, "")
+check("file in two entries fails", policy([$glob, $a, $t, $f], [], []), $clean, 1, "covered by both")
+
+-- pinned_by reads the hash from an existing pin manifest.
+put("icons/pins.conf.mix", json_encode({sources: {a: {file: "a.svg", sha256: sha("icons/a.svg")}}}))
+$pinned = {glob: "icons/*.svg", title: "t", author: "MixOS, original artwork", source: "https://example.org/x",
+  licence: "MIT OR Apache-2.0", licence_file: "LICENSE-MIT", pinned_by: "icons/pins.conf.mix"}
+$pp = policy([$pinned, $t, $f], [], [])
+$pp.assets.pins = ["icons/pins.conf.mix"]
+check("pinned glob passes", $pp, $clean, 0, "")
+put("icons/pins.conf.mix", json_encode({sources: {a: {file: "a.svg", sha256: hash_sha256("old")}}}))
+check("pinned glob drift fails", $pp, $clean, 1, "drifted from its pin")
+
+-- The real tree, against its own debt list.
+$real = $root .. "/tools/assets.conf.mix"
+$r = run_argv([$mix, $gate, "--base-policy", $real], {stderr: "stdout", timeout: 300})
+if $r.exit_code != 0 then
+  push($failures, "real tree")
+  print("FAIL real tree passes\n" .. $r.stdout)
+else
+  print("PASS real tree passes")
+end
+
+run_argv_must(["rm", "-rf", $tmp], {timeout: 30})
+if len($failures) > 0 then
+  print(to_string(len($failures)) .. " failure(s)")
+  exit(1)
+end
+print("asset_gate_test: all passed")
