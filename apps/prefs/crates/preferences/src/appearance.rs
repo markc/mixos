@@ -2174,7 +2174,11 @@ mod tests {
             assert_eq!(body["expected_revision"], "7");
             assert_eq!(body["changes"], json!({path:value.clone()}));
             e.settled(ticket, reply(0, changed()));
-            answer_next(&mut e, 0, stored_control("8", path, stored_value(path, &value)));
+            answer_next(
+                &mut e,
+                0,
+                stored_control("8", path, stored_value(path, &value)),
+            );
             let key = path.split_once('.').unwrap().1;
             edit(&mut e, json!({key:default.clone()}));
             let (_, command_name, body) = next(&mut e);
