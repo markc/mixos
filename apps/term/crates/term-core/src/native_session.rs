@@ -95,7 +95,6 @@ pub struct NativeSession(
 );
 
 struct Shared {
-    policy: Policy,
     child_capabilities: Vec<Capability>,
     control: std::sync::Weak<crate::control::Control>,
     next_id: u64,
@@ -109,7 +108,6 @@ struct Shared {
 impl Default for Shared {
     fn default() -> Self {
         Self {
-            policy: Policy::DefaultOpen,
             child_capabilities: capabilities(),
             control: std::sync::Weak::new(),
             next_id: 1,
@@ -425,40 +423,24 @@ impl Supervisor {
         // Bounded, the reader refuses the overflow and reports dropped id-less
         // notices as a gap, both of which the actor settles above.
         options.incoming_capacity = Some(VERIFIED_LANE);
-        let policy = match std::env::var("MIXOS_TERM_POLICY").as_deref() {
-            Ok("restricted") => Policy::Restricted,
-            Ok("default-open") | Err(_) => Policy::DefaultOpen,
-            _ => return Err("invalid Term policy".into()),
-        };
-        if policy == Policy::DefaultOpen {
-            Self::with_options(options, url)
-        } else {
-            Self::with_policy(options, url, policy)
-        }
+        Self::with_options(options, url)
     }
 
+    /// Term's pane sessions are always default-open: every caller on the Bus
+    /// may read and drive them (open-Bus decision, 2026-10-26). There is no
+    /// strict mode; integrity checks on stamped provenance still apply.
     pub fn with_options(options: UnixConnectOptions, url: String) -> Result<Self, String> {
-        Self::with_policy(options, url, Policy::DefaultOpen)
-    }
-
-    pub fn with_policy(
-        options: UnixConnectOptions,
-        url: String,
-        policy: Policy,
-    ) -> Result<Self, String> {
-        Self::with_capabilities(options, url, policy, capabilities())
+        Self::with_capabilities(options, url, capabilities())
     }
 
     fn with_capabilities(
         options: UnixConnectOptions,
         url: String,
-        policy: Policy,
         child_capabilities: Vec<Capability>,
     ) -> Result<Self, String> {
         let key = fresh_key().map_err(|e| e.to_string())?;
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         let shared = Arc::new(std::sync::Mutex::new(Shared::default()));
-        shared.lock().unwrap().policy = policy;
         shared.lock().unwrap().child_capabilities = child_capabilities;
         let actor_shared = shared.clone();
         let activity = Arc::new(AtomicU64::new(clock_ms().unwrap_or(0)));
@@ -1040,8 +1022,7 @@ impl Actor {
                 }
             }
             Err(error) if forbidden(&error) => {
-                let policy = self.shared.lock().unwrap().policy;
-                bounded(connection.session_allocate(&self.key, policy)).await
+                bounded(connection.session_allocate(&self.key, Policy::DefaultOpen)).await
             }
             Err(error) => Err(error),
         };

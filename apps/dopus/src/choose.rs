@@ -11,7 +11,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use ::bus::native_client::{ConnState, SupervisedClient};
 use dopus_core::chooser::{
-    COMMANDS, Defaults, End, Engine, Outcome, Presenter, Refusal, Unavailable,
+    COMMANDS, Defaults, End, Engine, Entry, Outcome, Presenter, Refusal, Unavailable,
 };
 use serde_json::{Value, json};
 
@@ -63,6 +63,15 @@ pub fn manifest() -> Vec<::bus::CommandDescriptor> {
                 "on_behalf_of?",
             ],
             "files.choose.result" | "files.choose.cancel" => &["request"],
+            "files.choose.accept" => &[
+                "request",
+                "paths?",
+                "path?",
+                "folder?",
+                "current_filter?",
+                "choices?",
+                "replace?",
+            ],
             _ => &[],
         };
         entries.push(::bus::CommandDescriptor::new(name, args, name, *read_only));
@@ -245,6 +254,21 @@ async fn publish(client: &SupervisedClient, outcome: Outcome) {
     }
 }
 
+/// What a chosen path names on the real filesystem, for `files.choose.accept`.
+/// Folders and files follow links, as the window's checks do; a dangling
+/// link still counts as existing, so saving over it needs `replace`.
+fn probe(path: &[u8]) -> Entry {
+    use std::os::unix::ffi::OsStrExt;
+    let path = std::path::Path::new(std::ffi::OsStr::from_bytes(path));
+    match std::fs::metadata(path) {
+        Ok(meta) if meta.is_dir() => Entry::Directory,
+        Ok(meta) if meta.is_file() => Entry::File,
+        Ok(_) => Entry::Other,
+        Err(_) if path.symlink_metadata().is_ok() => Entry::Other,
+        Err(_) => Entry::Missing,
+    }
+}
+
 /// This dispatch is also used by tests; transport ordering stays in the host.
 pub fn dispatch(
     engine: &mut Engine,
@@ -268,6 +292,11 @@ pub fn dispatch(
         "files.choose.cancel" => engine.cancel(body, now, presenter).map(|ended| {
             outcome = ended;
             json!({})
+        }),
+        "files.choose.accept" => engine.accept(body, now, presenter, probe).map(|chosen| {
+            let reply = json!(chosen);
+            outcome = Some(chosen);
+            reply
         }),
         "files.choose.list" => {
             engine.sweep(now);
@@ -506,10 +535,10 @@ mod tests {
         }
         let help = dispatch(&mut engine, &mut presenter, "HELP", "", "test", 1);
         assert_eq!(help.rc, 0);
-        assert_eq!(help.body.as_array().unwrap().len(), 22);
+        assert_eq!(help.body.as_array().unwrap().len(), 23);
         let described = dispatch(&mut engine, &mut presenter, "app.describe", "", "test", 1);
         assert_eq!(described.body["app"], "files");
-        assert_eq!(described.body["commands"].as_array().unwrap().len(), 20);
+        assert_eq!(described.body["commands"].as_array().unwrap().len(), 21);
     }
 
     #[test]
@@ -719,5 +748,62 @@ mod tests {
         assert_eq!(mapping.deadlines["a"], resumed + Duration::from_secs(5));
         assert_eq!(mapping.resume(resumed), Duration::ZERO);
         assert_eq!(mapping.paused_at, None);
+    }
+
+    /// `files.choose.accept` answers through the same engine end as the
+    /// window's Accept button, against the real filesystem.
+    #[test]
+    fn typed_accept_completes_a_real_chooser_and_refuses_bad_paths() {
+        #[derive(Default)]
+        struct Window {
+            closed: Vec<String>,
+        }
+        impl Presenter for Window {
+            fn open(&mut self, _: &dopus_core::chooser::OpenRequest) -> Result<(), Unavailable> {
+                Ok(())
+            }
+            fn input_ready(&mut self, _: &str) {}
+            fn close(&mut self, id: &str) {
+                self.closed.push(id.into());
+            }
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("note.txt");
+        std::fs::write(&file, "x").unwrap();
+        let file = file.to_str().unwrap().to_owned();
+        let mut engine = Engine::new(42, defaults(), b"/home/user".to_vec()).unwrap();
+        let mut window = Window::default();
+        let opened = dispatch(&mut engine, &mut window, "files.choose", "{}", "caller", 1);
+        let id = opened.enable.clone().unwrap();
+        engine.reply_sent(&id, &mut window);
+        let accept = |body: Value, engine: &mut Engine, window: &mut Window| {
+            dispatch(engine, window, "files.choose.accept", &body.to_string(), "agent", 2)
+        };
+
+        let wrong = accept(json!({"request":"000000000000002a-9","path":file}), &mut engine, &mut window);
+        assert_eq!((wrong.rc, &wrong.body["error_code"]), (10, &json!("UNKNOWN_REQUEST")));
+        let missing = dir.path().join("missing.txt");
+        let invalid = accept(json!({"request":id,"path":missing}), &mut engine, &mut window);
+        assert_eq!((invalid.rc, &invalid.body["error_code"]), (10, &json!("INVALID_PATH")));
+        let folder = accept(json!({"request":id,"path":dir.path()}), &mut engine, &mut window);
+        assert_eq!(folder.body["error_code"], "INVALID_PATH");
+        assert!(window.closed.is_empty() && invalid.outcome.is_none());
+
+        let chosen = accept(json!({"request":id,"path":file}), &mut engine, &mut window);
+        assert_eq!(chosen.rc, 0, "{}", chosen.body);
+        assert_eq!(chosen.body["reason"], "chosen");
+        assert_eq!(chosen.body["uris"], json!([format!("file://{file}")]));
+        // The host publishes this outcome on files.chosen, as for the window.
+        assert_eq!(json!(chosen.outcome.unwrap()), chosen.body);
+        assert_eq!(window.closed, [id.clone()]);
+        let result = dispatch(
+            &mut engine,
+            &mut window,
+            "files.choose.result",
+            &json!({"request":id}).to_string(),
+            "caller",
+            3,
+        );
+        assert_eq!(result.body["outcome"], chosen.body);
     }
 }

@@ -101,7 +101,7 @@ if $mode == "check" then
   -- itself as that user, so it runs explicitly, not in this gate.
   stage("e2e", ["cargo", "test", "-p", "term-core", "--lib", "--locked", "--no-fail-fast", "--",
     "--ignored", "native_session::production_e2e::", "native_session::enforcement_tests::",
-    "--skip", "native_session::enforcement_tests::p0i_07_other_uid_both_policies"], 3600)
+    "--skip", "native_session::enforcement_tests::p0i_07_other_uid"], 3600)
   stage("clippy", ["cargo", "clippy", "--workspace", "--all-targets", "--locked", "--",
     "-D", "clippy::all", "-A", "clippy::module_inception", "-A", "clippy::too_many_arguments",
     "-A", "clippy::type_complexity", "-A", "clippy::large_enum_variant",

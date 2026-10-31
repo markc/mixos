@@ -19,13 +19,25 @@ const RATE_MS: u64 = 10_000;
 const MAX_RATE_CALLERS: usize = 1024;
 const MAX_REMEMBERED_CALLERS: usize = 128;
 
-/// All four commands; the bool denotes a query.
+/// All five commands; the bool denotes a query.
 pub const COMMANDS: &[(&str, bool)] = &[
     ("files.choose", false),
     ("files.choose.result", true),
     ("files.choose.cancel", false),
     ("files.choose.list", true),
+    ("files.choose.accept", false),
 ];
+
+/// What a path names on disk, as `Engine::accept` needs to know it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Entry {
+    Missing,
+    File,
+    Directory,
+    /// Exists but is neither a regular file nor a folder (a dangling link,
+    /// a socket, ...).
+    Other,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Refusal {
@@ -899,6 +911,141 @@ impl Engine {
         let id = request_id(body)?;
         self.own_sequence(&id)?;
         self.end(&id, End::Caller, now, presenter)
+    }
+
+    /// `files.choose.accept`: the typed equivalent of the person pressing
+    /// Accept, for agents. `probe` reports what is on disk at a path, so the
+    /// engine stays pure; the host stats the real filesystem. The checks are
+    /// the chooser window's: open entries must exist as the requested kind,
+    /// save targets need an existing folder, and an existing save target needs
+    /// `replace: true`, as the window's replace prompt would. The answer is
+    /// the outcome the requester receives.
+    pub fn accept(
+        &mut self,
+        body: &str,
+        now: u64,
+        presenter: &mut impl Presenter,
+        probe: impl Fn(&[u8]) -> Entry,
+    ) -> Result<Outcome> {
+        self.sweep(now);
+        let m = object(body)?;
+        let id = text(&m, "request", 1, 37)?
+            .map(str::to_owned)
+            .ok_or_else(|| Refusal::argument("request is required"))?;
+        let seq = self.own_sequence(&id)?;
+        let Some(open) = seq.and_then(|s| self.open.get(&s)) else {
+            let reason = if self.done.iter().any(|(_, o)| o.request == id) {
+                "done"
+            } else if seq.is_some_and(|s| s <= self.sequence && !self.lost.contains(&s)) {
+                "expired"
+            } else {
+                "unknown"
+            };
+            return Err(Refusal {
+                reason: Some(reason),
+                ..Refusal::new("UNKNOWN_REQUEST", format!("no open chooser {id} ({reason})"))
+            });
+        };
+        let request = &open.request;
+        let mut paths = match (m.get("paths"), m.get("path")) {
+            (Some(_), Some(_)) => {
+                return Err(Refusal::argument("give paths or path, not both"));
+            }
+            (None, Some(path)) => vec![location(path)?],
+            (Some(_), None) => list(&m, "paths", 1, 256)?
+                .iter()
+                .map(location)
+                .collect::<Result<Vec<_>>>()?,
+            (None, None) => return Err(Refusal::argument("paths is required")),
+        };
+        let replace = boolean(&m, "replace")?;
+        let current_filter = m.get("current_filter").map(Filter::parse).transpose()?;
+        let mut choices = BTreeMap::new();
+        if let Some(value) = m.get("choices") {
+            let object = value
+                .as_object()
+                .ok_or_else(|| Refusal::argument("choices: expected object"))?;
+            for (key, value) in object {
+                let value = match value {
+                    Value::String(s) => s.clone(),
+                    Value::Bool(b) => b.to_string(),
+                    _ => return Err(Refusal::argument("choices: expected string values")),
+                };
+                choices.insert(key.clone(), value);
+            }
+        }
+        let invalid = |message: &str| Refusal::new("INVALID_PATH", message);
+        let parent = |path: &[u8]| -> Vec<u8> {
+            match path.iter().rposition(|b| *b == b'/') {
+                Some(0) | None => vec![b'/'],
+                Some(slash) => path[..slash].to_vec(),
+            }
+        };
+        let folder = match request.mode {
+            Mode::Open => {
+                for path in &paths {
+                    let wanted = if request.directory {
+                        Entry::Directory
+                    } else {
+                        Entry::File
+                    };
+                    if probe(path) != wanted {
+                        return Err(invalid(if request.directory {
+                            "chosen path is not an existing folder"
+                        } else {
+                            "chosen path is not an existing file"
+                        }));
+                    }
+                }
+                None
+            }
+            Mode::Save => {
+                if paths.len() != 1 {
+                    return Err(Refusal::argument("wrong number of chosen paths"));
+                }
+                let folder = parent(&paths[0]);
+                let leaf = &paths[0][folder.len() + usize::from(folder != b"/")..];
+                validate_name(leaf)?;
+                let mut named = folder.clone();
+                if named.last() != Some(&b'/') {
+                    named.push(b'/');
+                }
+                named.extend_from_slice(&request.save_name(leaf));
+                paths[0] = named;
+                Some(folder)
+            }
+            Mode::SaveFiles => Some(match m.get("folder") {
+                Some(folder) => location(folder)?,
+                None => parent(&paths[0]),
+            }),
+        };
+        if let Some(folder) = &folder {
+            if probe(folder) != Entry::Directory {
+                return Err(invalid("chosen folder does not exist"));
+            }
+            for path in &paths {
+                match probe(path) {
+                    Entry::Missing => {}
+                    Entry::Directory => return Err(invalid("chosen path is a folder")),
+                    _ if !replace => {
+                        return Err(Refusal::new(
+                            "EXISTS",
+                            "chosen path exists; pass replace: true to save over it",
+                        ));
+                    }
+                    _ => {}
+                }
+            }
+        }
+        let accept = Acceptance {
+            paths,
+            folder,
+            current_filter: current_filter.or_else(|| request.current_filter.clone()),
+            choices,
+        };
+        request.validate_acceptance(&accept)?;
+        self.end(&id, End::Accept(accept), now, presenter)?
+            .ok_or_else(|| Refusal::new("UNKNOWN_REQUEST", format!("no open chooser {id}")))
     }
 
     pub fn list(&self) -> Value {

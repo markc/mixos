@@ -372,6 +372,7 @@ first.</p>
 <tr><td><code>screenshot.actions</code></td><td></td><td>every command with parameter schemas, labels, shortcuts and enablement</td></tr>
 <tr><td><code>screenshot.execute</code></td><td><code>id</code>, optional <code>params</code></td><td>runs a command; answers <code>{executed, result, status, dialog, job}</code></td></tr>
 <tr><td><code>screenshot.theme</code></td><td><code>scheme</code>, <code>mode</code></td><td>this window's look</td></tr>
+<tr><td><code>screenshot.dialog</code></td><td>none, <code>open</code> (<code>about</code>, <code>shortcuts</code> or null), or <code>answer</code> (a button id) with <code>path</code></td><td><code>{dialog}</code>: the open dialog's <code>kind</code>, <code>title</code>, <code>buttons</code> (<code>id</code>, <code>label</code>, <code>role</code>), and <code>body</code>, <code>path</code> and <code>status</code> where it has them, or null; answers while a dialog is open</td></tr>
 <tr><td><code>screenshot.show</code>, <code>screenshot.quit</code></td><td></td><td>brings the window forward; closes it (refused with unsaved work)</td></tr>
 </tbody></table>
 <p>Coordinates are pixels of the captured image, whatever the zoom. Like any
@@ -380,7 +381,10 @@ any image you can read, and <code>screenshot.export</code> writes a new PNG wher
 you can write (never over an existing file). An agent
 is refused rather than allowed to discard a person's unsaved annotations
 (<code>UNSAVED</code>), and is refused while a dialog is open (<code>DIALOG</code>) or another job
-runs (<code>BUSY</code>).</p>
+runs (<code>BUSY</code>). <code>screenshot.dialog</code> reads and answers the open dialog instead,
+as its buttons do: the Discard dialog's <code>save</code>, <code>discard</code> and <code>keep</code>, Open's
+<code>open</code> and <code>cancel</code>, Save As's <code>save</code> and <code>cancel</code>, and <code>done</code> for the help
+dialogs. <code>NO_DIALOG</code> means none is open.</p>
 <h3 id="parameterised-document-edits">Parameterised document edits</h3>
 <p>The headless <code>annotation</code> engine owns <code>edit.annotate</code> (the Shape body),
 <code>edit.move {id, dx, dy}</code>, <code>edit.delete {id}</code>, <code>edit.crop {crop}</code> (null resets),

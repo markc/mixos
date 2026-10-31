@@ -213,6 +213,7 @@
                         <a href="#fileschoose-intent" class="toc-h3">files.choose (intent)</a>
                         <a href="#fileschooseresult-query" class="toc-h3">files.choose.result (query)</a>
                         <a href="#fileschoosecancel-intent" class="toc-h3">files.choose.cancel (intent)</a>
+                        <a href="#fileschooseaccept-intent" class="toc-h3">files.choose.accept (intent)</a>
                         <a href="#fileschooselist-query" class="toc-h3">files.choose.list (query)</a>
                         <a href="#outcome">Outcome</a>
                         <a href="#filters">Filters</a>
@@ -400,6 +401,36 @@ nothing. A malformed <code>request</code> is <code>ARGUMENT</code>.</p>
 (<code>docs/docs/decisions/2026-10-26-open-bus-for-agents.md</code>); drive input can
 press Cancel in the window anyway. It is also how choosers left by a caller
 that has gone are cleared before noded's connection-closed notice exists.</p>
+<h3 id="fileschooseaccept-intent"><code>files.choose.accept</code> (intent)</h3>
+<p>Body <code>{request, paths}</code> or <code>{request, path}</code>, with optional <code>folder</code>,
+<code>current_filter</code>, <code>choices</code> and <code>replace</code>. Completes an open chooser exactly
+as the person pressing Accept does, so an agent can answer a chooser without
+driving its window. Any caller may accept any request, as for cancel.</p>
+<ul>
+<li><code>paths</code> is a list of 1 to 256 locations, <code>path</code> a single one; give one of
+them. <code>open</code> takes one path unless the request is <code>multiple</code>; <code>save</code> takes
+one; <code>save_files</code> takes <code>folder/name</code> for every requested name, in request
+order (<code>folder</code> defaults to the first path's folder).</li>
+<li><code>open</code> paths must exist as files, or as folders when the request is
+<code>directory</code>. A <code>save</code> or <code>save_files</code> target's folder must exist and the
+target must not be a folder. In <code>save</code>, the single-pattern <code>*.ext</code> rule
+is applied to the chosen name, as it is to a typed one.</li>
+<li>A target that already exists is refused with <code>EXISTS</code> unless
+<code>replace: true</code>; that is the window's replace prompt.</li>
+<li><code>current_filter</code> and <code>choices</code> (<code>{id: value}</code>) default to the request's and
+are checked as the window's are.</li>
+</ul>
+<p>Reply, rc 0: the outcome, exactly as published on <code>files.chosen</code> and kept for
+<code>files.choose.result</code>. Refusals leave the chooser open:</p>
+<ul>
+<li><code>UNKNOWN_REQUEST</code>, with <code>reason</code> <code>unknown</code>, <code>done</code> or <code>expired</code>, when the
+request is not open in this incarnation;</li>
+<li><code>INVALID_PATH</code> when a path or folder does not exist or is the wrong kind;</li>
+<li><code>EXISTS</code> as above;</li>
+<li><code>ARGUMENT</code> for a malformed body, the wrong number of paths, an unoffered
+filter or an invalid choice;</li>
+<li><code>BUSY</code> before the <code>files.choose</code> reply has been sent.</li>
+</ul>
 <h3 id="fileschooselist-query"><code>files.choose.list</code> (query)</h3>
 <p>Body none. Answers
 <code>{incarnation, requests: [{request, mode, title, caller, on_behalf_of, correlation, opened_ms}]}</code>

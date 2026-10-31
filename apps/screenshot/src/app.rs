@@ -389,6 +389,7 @@ pub mod code {
     pub const UNSAVED: &str = "UNSAVED";
     pub const NO_IMAGE: &str = "NO_IMAGE";
     pub const DIALOG: &str = "DIALOG";
+    pub const NO_DIALOG: &str = "NO_DIALOG";
     pub const HEADLESS: &str = "HEADLESS";
     pub const FAILED: &str = "FAILED";
     pub const COMPOSITOR: &str = "COMPOSITOR";
@@ -1438,6 +1439,11 @@ impl App {
         if command_name == "screenshot.take" {
             return self.take_command(id, &args);
         }
+        // The dialog command answers the dialog itself, so it is never
+        // refused because one is open.
+        if command_name == "screenshot.dialog" {
+            return self.dialog_command(id, &args);
+        }
         if self.modal() && command_name != "screenshot.show" {
             let message = self.label("dialog-open");
             return self.error(id, code::DIALOG, &message);
@@ -1702,6 +1708,178 @@ impl App {
             self.choose_output(output);
         }
         Ok(())
+    }
+
+    /// The open dialog as `screenshot.dialog` reports it: its kind, title and
+    /// buttons (the ids `screenshot.dialog {answer}` takes, Default first),
+    /// and for Open and Save As the path field and the status line.
+    pub fn dialog_view(&self) -> Value {
+        let Some(dialog) = self.ui.dialog else {
+            return Value::Null;
+        };
+        let button = |id: &str, label: &str, role: &str| {
+            json!({"id": id, "label": self.label(label), "role": role})
+        };
+        let (title, buttons) = match dialog {
+            Dialog::Discard => (
+                "discard-title",
+                vec![
+                    button("save", "save", "default"),
+                    button("discard", "discard", "other"),
+                    button("keep", "keep", "cancel"),
+                ],
+            ),
+            Dialog::Open => (
+                "open-title",
+                vec![
+                    button("open", "open-button", "default"),
+                    button("cancel", "cancel", "cancel"),
+                ],
+            ),
+            Dialog::SaveAs => (
+                "save-title",
+                vec![
+                    button("save", "save-button", "default"),
+                    button("cancel", "cancel", "cancel"),
+                ],
+            ),
+            Dialog::Shortcuts => ("shortcuts", vec![button("done", "done", "default")]),
+            Dialog::About => ("about", vec![button("done", "done", "default")]),
+        };
+        let mut view = json!({"kind": dialog, "title": self.label(title), "buttons": buttons});
+        match dialog {
+            Dialog::Discard => view["body"] = json!(self.label("discard-body")),
+            Dialog::Open | Dialog::SaveAs => {
+                view["path"] = json!(self.ui.path);
+                view["status"] = json!(self.status);
+            }
+            _ => {}
+        }
+        view
+    }
+
+    /// `screenshot.dialog`: read the open dialog (`{}`), open a help dialog
+    /// or close the open one (`{open: "about" | "shortcuts" | null}`, null
+    /// as Escape does), or press one of its buttons by id (`{answer, path?}`;
+    /// `path` fills the Open or Save As field first). Answered while a dialog
+    /// is open: it is how an agent clears one without driving the window.
+    fn dialog_command(&mut self, id: u64, args: &Value) {
+        let args = args.as_object().expect("checked object");
+        if let Some(key) = args
+            .keys()
+            .find(|k| !matches!(k.as_str(), "open" | "answer" | "path"))
+        {
+            let message = format!("unknown field {key:?}");
+            return self.error(id, code::ARGUMENT, &message);
+        }
+        match (args.get("open"), args.get("answer")) {
+            (Some(_), Some(_)) => {
+                return self.error(id, code::ARGUMENT, "give open or answer, not both");
+            }
+            (Some(open), None) => {
+                if args.contains_key("path") {
+                    return self.error(id, code::ARGUMENT, "path goes with answer");
+                }
+                let dialog = match open {
+                    Value::Null => None,
+                    Value::String(name) if name == "about" => Some(Dialog::About),
+                    Value::String(name) if name == "shortcuts" => Some(Dialog::Shortcuts),
+                    _ => {
+                        return self.error(
+                            id,
+                            code::ARGUMENT,
+                            "open must be \"about\", \"shortcuts\" or null",
+                        );
+                    }
+                };
+                match dialog {
+                    None => {
+                        if self.modal() {
+                            self.close_dialog();
+                        }
+                    }
+                    Some(_) if self.headless => {
+                        return self.error(id, code::HEADLESS, "a headless instance has no window");
+                    }
+                    Some(_) if self.modal() => {
+                        let message = self.label("dialog-open");
+                        return self.error(id, code::DIALOG, &message);
+                    }
+                    Some(_) if !self.idle() => {
+                        let message = self.label("busy");
+                        return self.error(id, code::BUSY, &message);
+                    }
+                    Some(dialog) => self.open(dialog),
+                }
+            }
+            (None, Some(answer)) => {
+                let Some(dialog) = self.ui.dialog else {
+                    let message = self.label("no-dialog");
+                    return self.error(id, code::NO_DIALOG, &message);
+                };
+                let Some(answer) = answer.as_str() else {
+                    return self.error(id, code::ARGUMENT, "answer must be a button id");
+                };
+                let path = match args.get("path") {
+                    None => None,
+                    Some(Value::String(path)) if matches!(dialog, Dialog::Open | Dialog::SaveAs) => {
+                        Some(path.clone())
+                    }
+                    Some(Value::String(_)) => {
+                        return self.error(id, code::ARGUMENT, "only Open and Save As take a path");
+                    }
+                    Some(_) => return self.error(id, code::ARGUMENT, "path must be a string"),
+                };
+                match (dialog, answer) {
+                    (Dialog::Discard, "save" | "discard" | "keep") => {
+                        self.answer(match answer {
+                            "save" => Answer::Save,
+                            "discard" => Answer::Discard,
+                            _ => Answer::Keep,
+                        });
+                        if self.ui.dialog == Some(Dialog::Discard) {
+                            let message = self.label("busy");
+                            return self.error(id, code::BUSY, &message);
+                        }
+                    }
+                    (Dialog::Open, "open") | (Dialog::SaveAs, "save") => {
+                        if let Some(path) = path {
+                            self.set_path(path);
+                        }
+                        self.submit_path();
+                        if self.ui.dialog == Some(dialog) {
+                            // Refused as the window refuses it: the dialog
+                            // stays, with the reason on its status line.
+                            let message = self.status.clone();
+                            return self.error(id, code::ARGUMENT, &message);
+                        }
+                    }
+                    (Dialog::Open | Dialog::SaveAs, "cancel")
+                    | (Dialog::Shortcuts | Dialog::About, "done") => self.close_dialog(),
+                    _ => {
+                        let ids: Vec<String> = self.dialog_view()["buttons"]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .filter_map(|b| b["id"].as_str().map(str::to_owned))
+                            .collect();
+                        let message = format!(
+                            "the {} dialog has no button {answer:?}; it has {}",
+                            dialog.name(),
+                            ids.join(", ")
+                        );
+                        return self.error(id, code::ARGUMENT, &message);
+                    }
+                }
+            }
+            (None, None) => {
+                if args.contains_key("path") {
+                    return self.error(id, code::ARGUMENT, "path goes with answer");
+                }
+            }
+        }
+        let body = json!({"dialog": self.dialog_view()});
+        self.effects.push(Effect::Reply { id, rc: 0, body });
     }
 
     /// `screenshot.theme`: the window's scheme and mode by name (null
@@ -2964,5 +3142,102 @@ mod tests {
             a.take_effects()[..],
             [Effect::Drive { id: 5, .. }]
         ));
+    }
+
+    fn dialog(a: &mut App, id: u64, body: Value) -> (u8, Value) {
+        a.command(id, "screenshot.dialog", &body.to_string());
+        let r = replies(&a.take_effects());
+        let (_, rc, body) = r.into_iter().find(|r| r.0 == id).expect("a reply");
+        (rc, body)
+    }
+
+    #[test]
+    fn dialog_command_reads_and_answers_the_discard_dialog() {
+        let mut a = with_doc();
+        a.add_shape(rect());
+        a.take(Some(Mode::Screen));
+        assert_eq!(a.ui.dialog, Some(Dialog::Discard));
+        // Every other command is still refused while it is up.
+        a.command(1, "screenshot.open", r#"{"path":"/tmp/x.png"}"#);
+        assert_eq!(replies(&a.take_effects())[0].2["error_code"], code::DIALOG);
+        let (rc, body) = dialog(&mut a, 2, json!({}));
+        assert_eq!(rc, 0);
+        assert_eq!(body["dialog"]["kind"], "discard");
+        assert_eq!(body["dialog"]["title"], crate::label("discard-title"));
+        let ids: Vec<_> = body["dialog"]["buttons"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|b| b["id"].as_str().unwrap())
+            .collect();
+        assert_eq!(ids, ["save", "discard", "keep"]);
+        let (rc, body) = dialog(&mut a, 3, json!({"answer":"open"}));
+        assert_eq!((rc, &body["error_code"]), (10, &json!(code::ARGUMENT)));
+        assert_eq!(a.ui.dialog, Some(Dialog::Discard));
+        let (rc, body) = dialog(&mut a, 4, json!({"answer":"keep"}));
+        assert_eq!((rc, &body["dialog"]), (0, &Value::Null));
+        assert!(a.pending().is_none());
+        assert_eq!(a.document.as_ref().unwrap().objects().len(), 1);
+        a.take(Some(Mode::Screen));
+        let (rc, _) = dialog(&mut a, 5, json!({"answer":"discard"}));
+        assert_eq!(rc, 0);
+        assert_eq!(a.ui.dialog, None);
+        assert!(a.capturing(), "discarding carries on with the capture");
+    }
+
+    #[test]
+    fn dialog_command_opens_closes_and_submits_paths() {
+        let mut a = app();
+        assert_eq!(dialog(&mut a, 1, json!({})), (0, json!({"dialog":null})));
+        assert_eq!(
+            dialog(&mut a, 2, json!({"answer":"done"})).1["error_code"],
+            code::NO_DIALOG
+        );
+        assert_eq!(dialog(&mut a, 3, json!({"open":"about"})).1["dialog"]["kind"], "about");
+        assert_eq!(
+            dialog(&mut a, 4, json!({"open":"shortcuts"})).1["error_code"],
+            code::DIALOG
+        );
+        assert_eq!(dialog(&mut a, 5, json!({"answer":"done"})), (0, json!({"dialog":null})));
+        for bad in [
+            json!({"open":"settings"}),
+            json!({"open":null,"answer":"done"}),
+            json!({"path":"/tmp"}),
+            json!({"bogus":1}),
+        ] {
+            assert_eq!(dialog(&mut a, 6, bad.clone()).1["error_code"], code::ARGUMENT, "{bad}");
+        }
+        assert_eq!(dialog(&mut a, 7, json!({"open":null})).0, 0);
+
+        a.open_dialog();
+        assert_eq!(a.ui.dialog, Some(Dialog::Open));
+        let view = dialog(&mut a, 8, json!({})).1;
+        assert_eq!(view["dialog"]["kind"], "open");
+        assert!(view["dialog"]["path"].is_string());
+        // An empty path is refused as the window refuses it; the dialog stays.
+        let (rc, body) = dialog(&mut a, 9, json!({"answer":"open","path":""}));
+        assert_eq!((rc, &body["error_code"]), (10, &json!(code::ARGUMENT)));
+        assert_eq!(a.ui.dialog, Some(Dialog::Open));
+        a.command(10, "screenshot.dialog", r#"{"answer":"open","path":"/tmp/shot.png"}"#);
+        let effects = a.take_effects();
+        assert_eq!(replies(&effects)[0].2, json!({"dialog":null}));
+        assert!(effects.iter().any(|e| matches!(e, Effect::Open { .. })));
+
+        let mut s = with_doc();
+        s.save_as();
+        assert_eq!(s.ui.dialog, Some(Dialog::SaveAs));
+        let existing = std::env::current_exe().unwrap().display().to_string();
+        let (rc, body) = dialog(&mut s, 11, json!({"answer":"save","path":existing}));
+        assert_eq!((rc, body["message"].as_str()), (10, Some(crate::label("exists").as_str())));
+        assert_eq!(s.ui.dialog, Some(Dialog::SaveAs));
+        assert_eq!(dialog(&mut s, 12, json!({"answer":"cancel"})), (0, json!({"dialog":null})));
+    }
+
+    #[test]
+    fn dialog_command_in_a_headless_instance_reads_and_refuses_to_open() {
+        let mut h = App::new(crate::label, crate::ink::inks(), true);
+        assert_eq!(dialog(&mut h, 1, json!({})), (0, json!({"dialog":null})));
+        assert_eq!(dialog(&mut h, 2, json!({"open":"about"})).1["error_code"], code::HEADLESS);
+        assert_eq!(dialog(&mut h, 3, json!({"open":null})).0, 0);
     }
 }

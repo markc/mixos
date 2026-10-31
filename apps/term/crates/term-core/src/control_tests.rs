@@ -14,7 +14,7 @@ const REQUIRE_MIX: &str = "requires clean current-HEAD MIXOS_E2E_MIX_BIN; explic
 
 #[test]
 fn t15_control_input_returns_to_live_screen() {
-    let fixture = Fixture::admission(Policy::DefaultOpen);
+    let fixture = Fixture::admission();
     runtime().block_on(async {
         let owner = verified(&fixture.broker).await;
         let (parent, child) = fixture.records(&owner, 1).await;
@@ -199,22 +199,22 @@ struct Fixture {
     environment: Vec<(String, String)>,
 }
 impl Fixture {
-    fn new(policy: Policy) -> Self {
-        Self::with_fault(policy, "none")
+    fn new() -> Self {
+        Self::with_fault("none")
     }
-    fn with_fault(policy: Policy, fault: &str) -> Self {
+    fn with_fault(fault: &str) -> Self {
         let program = super::production_e2e::current_mix();
-        Self::with_program(policy, fault, program)
+        Self::with_program(fault, program)
     }
     // Admission does not exercise Mix's execute/task protocol. Select a real
     // interpreter explicitly or on PATH, independently of the S4 build gate.
-    fn admission(policy: Policy) -> Self {
+    fn admission() -> Self {
         let program = crate::test_support::mix_binary::select()
             .expect("invalid test Mix selection")
             .expect("admission PTY needs mix on PATH or MIXOS_E2E_MIX_BIN");
-        Self::with_program(policy, "none", program)
+        Self::with_program("none", program)
     }
-    fn with_program(policy: Policy, fault: &str, program: std::path::PathBuf) -> Self {
+    fn with_program(fault: &str, program: std::path::PathBuf) -> Self {
         let broker = if fault == "quota" {
             Broker::with_grant_limit(1)
         } else {
@@ -250,12 +250,11 @@ impl Fixture {
             Supervisor::with_capabilities(
                 broker.options(),
                 broker.url.clone(),
-                policy,
                 vec![Capability::ReadState],
             )
             .unwrap()
         } else {
-            Supervisor::with_policy(broker.options(), broker.url.clone(), policy).unwrap()
+            Supervisor::with_options(broker.options(), broker.url.clone()).unwrap()
         };
         super::tests::wait_ready(&supervisor.handle, 1);
         // Retain a fixture-only key copy to exercise a legitimate resumption
@@ -474,7 +473,7 @@ fn target(parent: &SessionRecord, child: &SessionRecord) -> Target {
 
 #[test]
 fn grantless_type_admission() {
-    let fixture = Fixture::admission(Policy::DefaultOpen);
+    let fixture = Fixture::admission();
     runtime().block_on(async {
         let caller = verified(&fixture.broker).await;
         let (parent, child) = fixture.records(&caller, 1).await;
@@ -514,7 +513,7 @@ fn grantless_type_admission() {
 
 #[test]
 fn every_caller_can_read_write_and_manage_sibling_panes() {
-    let fixture = Fixture::admission(Policy::Restricted);
+    let fixture = Fixture::admission();
     runtime().block_on(async {
         let caller = verified(&fixture.broker).await;
         let (parent, child) = fixture.records(&caller, 1).await;
@@ -625,7 +624,7 @@ fn every_caller_can_read_write_and_manage_sibling_panes() {
 
 #[test]
 fn target_validation_is_independent_of_caller_scope() {
-    let fixture = Fixture::admission(Policy::Restricted);
+    let fixture = Fixture::admission();
     runtime().block_on(async {
         let caller = verified(&fixture.broker).await;
         let (parent, child) = fixture.records(&caller, 1).await;
@@ -652,10 +651,10 @@ fn target_validation_is_independent_of_caller_scope() {
 
 #[test]
 #[ignore = "requires clean current-HEAD MIXOS_E2E_MIX_BIN; explicit S4 gate only"]
-fn p0i_07_real_recipient_both_policies() {
+fn p0i_07_real_recipient() {
     eprintln!("{REQUIRE_MIX}");
-    for policy in [Policy::DefaultOpen, Policy::Restricted] {
-        let fixture = Fixture::new(policy);
+    {
+        let fixture = Fixture::new();
         runtime().block_on(async {
             let owner = verified(&fixture.broker).await;
             let (parent, child) = fixture.records(&owner, 1).await;
@@ -682,7 +681,7 @@ fn p0i_07_real_recipient_both_policies() {
             ] {
                 let mut body = json!({"target":target});
                 body.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
-                assert_eq!(call(bound.client(), &parent.name, command_name, body).await.0, 0, "{policy:?} {command_name}");
+                assert_eq!(call(bound.client(), &parent.name, command_name, body).await.0, 0, "{command_name}");
             }
             // Incomplete execution requests still receive a schema refusal.
             assert_eq!(call(bound.client(), &parent.name, "term.execute", json!({"target":target})).await, (10,json!({"error_code":"INVALID_ARGUMENT"})));
@@ -717,7 +716,7 @@ fn p0i_07_real_recipient_both_policies() {
 #[test]
 #[ignore = "requires clean current-HEAD MIXOS_E2E_MIX_BIN; explicit S4 gate only"]
 fn p0i_08_queued_input_human_revoke_and_deadline() {
-    let fixture = Fixture::new(Policy::DefaultOpen);
+    let fixture = Fixture::new();
     runtime().block_on(async {
         let owner = verified(&fixture.broker).await;
         let (parent, child) = fixture.records(&owner, 1).await;
@@ -806,7 +805,7 @@ fn p0i_10_unbound_pane_has_no_control() {
     ) {
         return;
     }
-    let fixture = Fixture::new(Policy::DefaultOpen);
+    let fixture = Fixture::new();
     runtime().block_on(async {
         let owner = verified(&fixture.broker).await;
         let (parent, child) = fixture.records(&owner, 1).await;
@@ -858,7 +857,7 @@ fn p0i_07_owner_mutations_and_retired_retries() {
         "term.type",
         "term.props.set",
     ] {
-        let fixture = Fixture::new(Policy::DefaultOpen);
+        let fixture = Fixture::new();
         runtime().block_on(async {
             let owner = verified(&fixture.broker).await;
             let (parent, child) = fixture.records(&owner, 1).await;
@@ -944,7 +943,7 @@ fn p0i_07_owner_mutations_and_retired_retries() {
 #[ignore = "requires clean current-HEAD MIXOS_E2E_MIX_BIN; explicit S4 gate only"]
 fn p0i_08_child_pane_term_and_broker_lifetime() {
     for cause in ["child_exit", "pane_close", "term_exit", "broker_bounce"] {
-        let mut fixture = Fixture::new(Policy::DefaultOpen);
+        let mut fixture = Fixture::new();
         runtime().block_on(async {
             let owner = verified(&fixture.broker).await;
             let (parent, child) = fixture.records(&owner, 1).await;
@@ -1040,7 +1039,7 @@ fn p0i_09_real_payload_tap_observe_and_logs() {
         return;
     }
     test_broker::trace_to_stderr();
-    let fixture = Fixture::new(Policy::DefaultOpen);
+    let fixture = Fixture::new();
     runtime().block_on(async {
         let audit = NodedClient::connect("term-policy-audit", &fixture.broker.url).await.unwrap();
         let mut observed = audit.incoming_async().await.unwrap();
@@ -1102,7 +1101,7 @@ fn p0i_09_real_payload_tap_observe_and_logs() {
 
 #[test]
 #[ignore = "SKIPPED privileged S4 multi-UID fixture: requires root, MIXOS_SESSION_TEST_UID and current-HEAD MIXOS_E2E_MIX_BIN; run explicitly"]
-fn p0i_07_other_uid_both_policies() {
+fn p0i_07_other_uid() {
     if let Ok(configuration) = std::env::var("MIXOS_S4_OTHER_UID_WORKER") {
         let configuration: Value = serde_json::from_str(&configuration).unwrap();
         runtime().block_on(async {
@@ -1133,14 +1132,14 @@ fn p0i_07_other_uid_both_policies() {
         .unwrap();
     assert_eq!(unsafe { libc::geteuid() }, 0, "SKIPPED: requires root");
     assert_ne!(uid, 0, "fixture UID must differ from owner");
-    for policy in [Policy::DefaultOpen, Policy::Restricted] {
-        let fixture = Fixture::new(policy);
+    {
+        let fixture = Fixture::new();
         runtime().block_on(async {
             let owner = verified(&fixture.broker).await;
             let (parent, child) = fixture.records(&owner, 1).await;
             let configuration = json!({"broker_uid":unsafe { libc::geteuid() },"broker_gid":unsafe { libc::getegid() },"endpoint":fixture.broker.endpoint,"url":fixture.broker.url,"name":parent.name,"target":target(&parent,&child)});
             let mut process = std::process::Command::new(std::env::current_exe().unwrap())
-                .args(["--exact", "native_session::enforcement_tests::p0i_07_other_uid_both_policies", "--ignored", "--nocapture"])
+                .args(["--exact", "native_session::enforcement_tests::p0i_07_other_uid", "--ignored", "--nocapture"])
                 .uid(uid).gid(uid).env("MIXOS_S4_OTHER_UID_WORKER", configuration.to_string())
                 .stdout(std::process::Stdio::piped()).spawn().unwrap();
             let status = tokio::time::timeout(Duration::from_secs(30), async {
@@ -1164,7 +1163,7 @@ fn p0i_07_other_uid_both_policies() {
 #[test]
 #[ignore = "requires clean current-HEAD MIXOS_E2E_MIX_BIN; explicit S4 gate only"]
 fn p0i_10_real_tcp_global_lane_serves_controls() {
-    let fixture = Fixture::new(Policy::Restricted);
+    let fixture = Fixture::new();
     let (notify, receiver) = tokio::sync::mpsc::unbounded_channel();
     drop(notify);
     let service = crate::bus::start_at(
@@ -1225,7 +1224,7 @@ fn p0i_10_launch_failures_reach_real_recipient_denial() {
         "cancelled",
         "quota",
     ] {
-        let fixture = Fixture::with_fault(Policy::DefaultOpen, fault);
+        let fixture = Fixture::with_fault(fault);
         runtime().block_on(async {
             let owner = verified(&fixture.broker).await;
             let records = owner.session_list().await.unwrap().records;
@@ -1350,7 +1349,7 @@ fn p0i_10_parent_bootstrap_outage_keeps_global_controls() {
 #[test]
 #[ignore = "requires clean current-HEAD MIXOS_E2E_MIX_BIN; explicit S4 gate only"]
 fn p0i_08_stale_cleanup_and_private_event_connection_guard() {
-    let fixture = Fixture::new(Policy::Restricted);
+    let fixture = Fixture::new();
     runtime().block_on(async {
         let first = verified(&fixture.broker).await;
         let (parent, target) = fixture.bound(&first).await;
@@ -1395,8 +1394,8 @@ fn p0i_08_stale_cleanup_and_private_event_connection_guard() {
 #[test]
 #[ignore = "requires clean current-HEAD MIXOS_E2E_MIX_BIN; explicit S4 gate only"]
 fn p0i_07_read_state_only_caller_can_write_and_terminate() {
-    for policy in [Policy::DefaultOpen, Policy::Restricted] {
-        let fixture = Fixture::with_fault(policy, "read_state_only");
+    {
+        let fixture = Fixture::with_fault("read_state_only");
         runtime().block_on(async {
             let bound = verified(&fixture.broker).await;
             let (parent, target) = fixture.bound(&bound).await;
@@ -1415,7 +1414,7 @@ fn p0i_07_read_state_only_caller_can_write_and_terminate() {
 #[ignore = "requires clean current-HEAD MIXOS_E2E_MIX_BIN; explicit S4 gate only"]
 fn p0i_07_affected_set_and_live_generation_authority() {
     eprintln!("{REQUIRE_MIX}");
-    let fixture = Fixture::new(Policy::DefaultOpen);
+    let fixture = Fixture::new();
     runtime().block_on(async {
         let owner = verified(&fixture.broker).await;
         let (parent, first) = fixture.records(&owner, 1).await;
@@ -1545,7 +1544,7 @@ fn p0i_07_affected_set_and_live_generation_authority() {
 #[test]
 #[ignore = "requires clean current-HEAD MIXOS_E2E_MIX_BIN; explicit S4 gate only"]
 fn p0i_08_two_writers_survive_caller_rebinding() {
-    let fixture = Fixture::new(Policy::DefaultOpen);
+    let fixture = Fixture::new();
     runtime().block_on(async {
         let bound = verified(&fixture.broker).await;
         let (parent, target) = fixture.bound(&bound).await;
@@ -1593,7 +1592,7 @@ fn control_input_never_opens_a_bracketed_paste() {
 #[ignore = "requires clean current-HEAD MIXOS_E2E_MIX_BIN; explicit S4 gate only"]
 fn p0i_07_actor_table_survives_reconnect_churn() {
     eprintln!("{REQUIRE_MIX}");
-    let fixture = Fixture::new(Policy::DefaultOpen);
+    let fixture = Fixture::new();
     runtime().block_on(async {
         let owner = verified(&fixture.broker).await;
         let (parent, child) = fixture.records(&owner, 1).await;
@@ -1753,7 +1752,7 @@ async fn idle_generation(client: &NodedClient, child: &SessionRecord) -> String 
 #[ignore = "requires clean current-HEAD MIXOS_E2E_MIX_BIN; explicit stage-D gate only"]
 fn p0j_d_execute_forwards_to_the_pane_shell_and_refuses_at_the_edges() {
     eprintln!("{REQUIRE_MIX}");
-    let fixture = Fixture::new(Policy::DefaultOpen);
+    let fixture = Fixture::new();
     runtime().block_on(async {
         let owner = verified(&fixture.broker).await;
         let (parent, child) = fixture.records(&owner, 1).await;
@@ -1955,7 +1954,7 @@ fn p0j_d_execute_forwards_to_the_pane_shell_and_refuses_at_the_edges() {
 #[ignore = "requires clean current-HEAD MIXOS_E2E_MIX_BIN; explicit P4 gate only"]
 fn p4_task_forwards_for_every_caller_and_keeps_families_separate() {
     eprintln!("{REQUIRE_MIX}");
-    let fixture = Fixture::new(Policy::DefaultOpen);
+    let fixture = Fixture::new();
     runtime().block_on(async {
         let owner = verified(&fixture.broker).await;
         let (parent, child) = fixture.records(&owner, 1).await;
@@ -2146,7 +2145,7 @@ fn p4_task_forwards_for_every_caller_and_keeps_families_separate() {
 #[ignore = "requires clean current-HEAD MIXOS_E2E_MIX_BIN; explicit gate only"]
 fn unified_send_drives_term_execute_from_a_separate_driver_process() {
     eprintln!("{REQUIRE_MIX}");
-    let fixture = Fixture::new(Policy::DefaultOpen);
+    let fixture = Fixture::new();
     runtime().block_on(async {
         let owner = verified(&fixture.broker).await;
         let (parent, child) = fixture.records(&owner, 1).await;

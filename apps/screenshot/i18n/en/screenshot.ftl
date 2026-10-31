@@ -110,6 +110,7 @@ capture-in-progress = A screenshot is already being taken
 marker-limit = Numbered markers stop at 9999
 quitting = Screenshot is closing
 dialog-open = A dialog is open in the window
+no-dialog = No dialog is open
 save-first = Save or undo the unsaved annotations first
 text-needed = Type the text in the options bar first
 disconnected = The Bus is disconnected

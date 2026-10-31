@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 pub const SCHEMA: &str = "screenshot.v1";
 
 /// Every command the app answers itself, in description order.
-pub const COMMANDS: [&str; 35] = [
+pub const COMMANDS: [&str; 36] = [
     "HELP",
     "app.describe",
     "screenshot.ping",
@@ -38,6 +38,7 @@ pub const COMMANDS: [&str; 35] = [
     "screenshot.show",
     "screenshot.quit",
     "screenshot.theme",
+    "screenshot.dialog",
     "screenshot.macros.list",
     "screenshot.macros.reload",
     "screenshot.macros.run",
@@ -107,7 +108,8 @@ pub fn describe() -> Value {
         {"name":"screenshot.execute","args":{"id":"command id","params":"optional command parameters"},"description":"Run one command with parameters and return its result, through the same registry as the window","read_only":false},
         {"name":"screenshot.show","description":"Restore and focus the existing window","read_only":false},
         {"name":"screenshot.quit","description":"Close; refused while unsaved annotations exist","read_only":false},
-        {"name":"screenshot.theme","args":{"scheme":"optional scheme name or null to follow the session","mode":"optional light, dark or null"},"description":"Choose the window's scheme and mode; answers the choice","read_only":false}
+        {"name":"screenshot.theme","args":{"scheme":"optional scheme name or null to follow the session","mode":"optional light, dark or null"},"description":"Choose the window's scheme and mode; answers the choice","read_only":false},
+        {"name":"screenshot.dialog","args":{"open":"optional \"about\", \"shortcuts\" or null (close as Escape does)","answer":"optional button id of the open dialog (discard: save, discard, keep; open: open, cancel; save_as: save, cancel; shortcuts, about: done)","path":"optional, with answer: fill the Open or Save As path first"},"description":"Read the open dialog ({} answers {dialog: {kind, title, buttons, body?, path?, status?} or null}), open or close a help dialog, or press one of its buttons; answered while a dialog is open","read_only":false}
     ]});
     surface["commands"]
         .as_array_mut()

@@ -403,11 +403,11 @@ try
   check(re_match($listing.incarnation, "^[0-9a-f]{16}$") and length($listing.requests) == 0,
     "chooser initial list: " .. json_encode($listing))
   $chooser_desc = ok('app.describe', {})
-  check($chooser_desc.app == "files" and length($chooser_desc.commands) == 20 and deep_eq(slice($chooser_desc.commands, 0, 4),
-    ["files.choose", "files.choose.result", "files.choose.cancel", "files.choose.list"]),
+  check($chooser_desc.app == "files" and length($chooser_desc.commands) == 21 and deep_eq(slice($chooser_desc.commands, 0, 5),
+    ["files.choose", "files.choose.result", "files.choose.cancel", "files.choose.list", "files.choose.accept"]),
     "chooser command set: " .. json_encode($chooser_desc))
   $chooser_help = ok('HELP', {})
-  check(length($chooser_help) == 22, "chooser HELP must list chooser, drive and discovery commands")
+  check(length($chooser_help) == 23, "chooser HELP must list chooser, drive and discovery commands")
   refused('dopus.ping', {}, "UNKNOWN_COMMAND")
   refused('dopus.quit', {}, "UNKNOWN_COMMAND")
   refused('files.choose mode="bad"', {}, "ARGUMENT")
@@ -422,6 +422,8 @@ try
   ok('files.choose.cancel request=$a.id', {id: $unknown})
   ok('files.choose.cancel request="0000000000000000-1"', {})
   refused('files.choose.cancel request="bad"', {}, "ARGUMENT")
+  refused('files.choose.accept request=$a.id path="/tmp"', {id: $unknown}, "UNKNOWN_REQUEST")
+  refused('files.choose.accept request="bad" path="/tmp"', {}, "ARGUMENT")
   check(length(ok('files.choose.list', {}).requests) == 0, "refused chooser kept a request")
   $target = "dopus-test"
 

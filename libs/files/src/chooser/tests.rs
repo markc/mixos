@@ -1334,3 +1334,130 @@ fn eviction_uses_decision_order_and_open_requests_never_expire() {
         json!({"state":"open"})
     );
 }
+
+/// A fake filesystem for `files.choose.accept`: `/home/user` and `/home/user/docs`
+/// are folders, `/home/user/a.txt` and `/home/user/b.txt` are files.
+fn disk(path: &[u8]) -> Entry {
+    match path {
+        b"/" | b"/home" | b"/home/user" | b"/home/user/docs" => Entry::Directory,
+        b"/home/user/a.txt" | b"/home/user/b.txt" => Entry::File,
+        _ => Entry::Missing,
+    }
+}
+
+fn accept(e: &mut Engine, p: &mut TestPresenter, body: Value) -> Result<Outcome> {
+    e.accept(&body.to_string(), 5, p, disk)
+}
+
+#[test]
+fn accept_completes_open_like_the_accept_button() {
+    let (mut e, mut p) = (engine(), TestPresenter::default());
+    let id = open(&mut e, &mut p, json!({"mode":"open","multiple":true}), "c", 1);
+    let outcome = accept(
+        &mut e,
+        &mut p,
+        json!({"request":id,"paths":["/home/user/a.txt","file:///home/user/b.txt"]}),
+    )
+    .unwrap();
+    assert_eq!((outcome.response, outcome.reason), (0, "chosen"));
+    assert_eq!(
+        outcome.uris.as_deref().unwrap(),
+        ["file:///home/user/a.txt", "file:///home/user/b.txt"]
+    );
+    assert_eq!(p.closed, [id.clone()]);
+    // The requester reads exactly the same outcome.
+    assert_eq!(
+        e.result(&body(&id), 6).unwrap(),
+        json!({"state":"done","outcome":outcome})
+    );
+    // A single `path` works too, and a folder chooser takes folders.
+    let id = open(&mut e, &mut p, json!({"directory":true}), "c", 2);
+    let outcome = accept(&mut e, &mut p, json!({"request":id,"path":"/home/user/docs"})).unwrap();
+    assert_eq!(outcome.uris.unwrap(), ["file:///home/user/docs"]);
+}
+
+#[test]
+fn accept_saves_with_the_window_rules() {
+    let (mut e, mut p) = (engine(), TestPresenter::default());
+    let filter = json!({"name":"Text","patterns":["*.txt"],"mime_types":[]});
+    let id = open(&mut e, &mut p, json!({"mode":"save","filters":[filter]}), "c", 1);
+    // The single-pattern extension rule applies, as it does to a typed name.
+    let outcome = accept(&mut e, &mut p, json!({"request":id,"path":"/home/user/new"})).unwrap();
+    assert_eq!(outcome.uris.unwrap(), ["file:///home/user/new.txt"]);
+
+    let id = open(&mut e, &mut p, json!({"mode":"save"}), "c", 2);
+    let exists = accept(&mut e, &mut p, json!({"request":id,"path":"/home/user/a.txt"})).unwrap_err();
+    assert_eq!(exists.error_code, "EXISTS");
+    let replaced = accept(
+        &mut e,
+        &mut p,
+        json!({"request":id,"path":"/home/user/a.txt","replace":true}),
+    )
+    .unwrap();
+    assert_eq!(replaced.uris.unwrap(), ["file:///home/user/a.txt"]);
+
+    let id = open(&mut e, &mut p, json!({"mode":"save_files","files":["x.md","y.md"]}), "c", 3);
+    let outcome = accept(
+        &mut e,
+        &mut p,
+        json!({"request":id,"folder":"/home/user/docs",
+            "paths":["/home/user/docs/x.md","/home/user/docs/y.md"]}),
+    )
+    .unwrap();
+    assert_eq!(outcome.reason, "chosen");
+}
+
+#[test]
+fn accept_refuses_unknown_and_finished_requests() {
+    let (mut e, mut p) = (engine(), TestPresenter::default());
+    let path = json!("/home/user/a.txt");
+    for (id, reason) in [
+        ("9f2c41d07ab3e655-9", "unknown"),
+        ("0000000000000000-1", "unknown"),
+    ] {
+        let refusal = accept(&mut e, &mut p, json!({"request":id,"path":path})).unwrap_err();
+        assert_eq!((refusal.error_code, refusal.reason), ("UNKNOWN_REQUEST", Some(reason)));
+    }
+    assert_eq!(
+        accept(&mut e, &mut p, json!({"request":"bad","path":path})).unwrap_err().error_code,
+        "ARGUMENT"
+    );
+    let id = open(&mut e, &mut p, json!({}), "c", 1);
+    accept(&mut e, &mut p, json!({"request":id,"path":path})).unwrap();
+    let again = accept(&mut e, &mut p, json!({"request":id,"path":path})).unwrap_err();
+    assert_eq!((again.error_code, again.reason), ("UNKNOWN_REQUEST", Some("done")));
+}
+
+#[test]
+fn accept_refuses_invalid_paths_and_leaves_the_chooser_open() {
+    let (mut e, mut p) = (engine(), TestPresenter::default());
+    let id = open(&mut e, &mut p, json!({}), "c", 1);
+    for (body, code) in [
+        (json!({"request":id,"path":"/home/user/missing.txt"}), "INVALID_PATH"),
+        (json!({"request":id,"path":"/home/user/docs"}), "INVALID_PATH"),
+        (json!({"request":id,"path":"relative.txt"}), "ARGUMENT"),
+        (json!({"request":id}), "ARGUMENT"),
+        (json!({"request":id,"path":"/home/user/a.txt","paths":["/home/user/a.txt"]}), "ARGUMENT"),
+        // Not multiple: one path only.
+        (json!({"request":id,"paths":["/home/user/a.txt","/home/user/b.txt"]}), "ARGUMENT"),
+    ] {
+        assert_eq!(accept(&mut e, &mut p, body.clone()).unwrap_err().error_code, code, "{body}");
+    }
+    let folder = open(&mut e, &mut p, json!({"directory":true}), "c", 2);
+    assert_eq!(
+        accept(&mut e, &mut p, json!({"request":folder,"path":"/home/user/a.txt"})).unwrap_err().error_code,
+        "INVALID_PATH"
+    );
+    let save = open(&mut e, &mut p, json!({"mode":"save"}), "c", 3);
+    for path in ["/nowhere/new.txt", "/home/user/docs"] {
+        assert_eq!(
+            accept(&mut e, &mut p, json!({"request":save,"path":path})).unwrap_err().error_code,
+            "INVALID_PATH",
+            "{path}"
+        );
+    }
+    assert!(p.closed.is_empty());
+    for id in [&id, &folder, &save] {
+        assert_eq!(e.result(&body(id), 6).unwrap(), json!({"state":"open"}));
+    }
+}
