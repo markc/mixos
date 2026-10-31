@@ -23,7 +23,7 @@ pub fn view(app: &App) -> Value {
         ),
         Dialog::Drop { .. } => (
             "drop",
-            "drop-body",
+            "title",
             vec![
                 ("move", "move-here", "default"),
                 ("copy", "copy-here", "other"),
@@ -49,6 +49,7 @@ pub fn view(app: &App) -> Value {
                     .to_string_lossy()
             );
         }
+        Dialog::About => value["body"] = json!(crate::label("about-body")),
         _ => {}
     }
     value

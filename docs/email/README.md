@@ -587,3 +587,7 @@ Confirmations use keep/discard/cancel (close_compose and quit), or
 restore/discard/later (draft_restore). Help opens with `{open: "about"}` or
 `{open: "shortcuts"}`. A BUSY compose request opens its close confirmation;
 answer keep or discard, then retry.
+
+An optional `window` selects a compose window (as listed by `email.info`);
+omission selects the most recently focused composer. Quit cancellation
+keeps sibling drafts open.

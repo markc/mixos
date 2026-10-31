@@ -60,6 +60,7 @@ pub fn view(app: &App) -> Value {
         }
         Dialog::Open { path, .. } | Dialog::SaveAs { path, .. } => value["path"] = json!(path),
         Dialog::Goto { text, .. } => value["text"] = json!(text),
+        Dialog::About => value["body"] = json!(crate::label("about-body")),
         _ => {}
     }
     value

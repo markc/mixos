@@ -352,7 +352,13 @@ impl Shell {
         match command_name {
             "HELP" => (0, json!(crate::bus::help(self.bus.name()))),
             "app.describe" => (0, crate::bus::describe(self.bus.name())),
-            "term.dialog" => crate::dialog::command(&mut self.app, args),
+            "term.dialog" => {
+                let (rc, mut body) = crate::dialog::command(&mut self.app, args);
+                if body["dialog"]["kind"] == "about" {
+                    body["dialog"]["body"] = json!(view::about_text(self.bus.connected() && self.follower.following()));
+                }
+                (rc, body)
+            }
             "term.actions" => (
                 0,
                 json!({

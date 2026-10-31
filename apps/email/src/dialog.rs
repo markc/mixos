@@ -55,6 +55,8 @@ pub fn view(state: &State) -> Value {
     } else if restore {
         value["body"] = json!(crate::label("restore-body"));
         value["draft"] = json!(state.restore.first());
+    } else if kind == "about" {
+        value["body"] = json!(crate::label("about-body"));
     }
     value
 }
