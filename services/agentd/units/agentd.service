@@ -8,8 +8,10 @@
 [Unit]
 Description=MixOS agent sessions (agentd)
 Documentation=https://mixos.dev/agentd/
+# The broker is the system noded.service, which a user unit cannot order
+# after or want; `mix --serve` is supervised and keeps retrying until the
+# broker answers. The After= covers a user-manager noded where there is one.
 After=noded.service
-Wants=noded.service
 # No conf, no agents: skip rather than fail and restart.
 ConditionPathExists=%E/mixos/agent.conf.mix
 
@@ -20,7 +22,10 @@ StateDirectoryMode=0700
 Environment=MIXOS_AGENTD_CONF=%E/mixos/agent.conf.mix
 Environment=MIXOS_AGENTD_DB=%S/mixos/agentd/sessions.db
 ExecStart=@{prefix}/bin/mix --serve @{prefix}/lib/agentd/agentd.mix --name agent
-# Agents are children of agentd; stopping the unit ends every session.
+# Agents are children of agentd; stopping the unit ends every session. The
+# whole group gets SIGTERM at once, so agentd's close grace does not run:
+# the log marks the sessions ended at the next start and notifyd times out
+# any question still open.
 KillMode=control-group
 TimeoutStopSec=15
 Restart=on-failure

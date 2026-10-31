@@ -40,6 +40,17 @@ fn decode($v)
   return $v
 end
 
+-- Print one line of `read` output. A reader that stops early (`| head`) is
+-- not an error.
+fn out($line)
+  try
+    print($line)
+  catch $m, $e
+    if $e.code == "IO_BROKEN_PIPE" then exit(0) end
+    raise($e.code, $m)
+  end
+end
+
 -- One call to agentd. Returns {rc, v}.
 fn call($command, $body, $timeout)
   $b = json_encode($body)
@@ -295,14 +306,14 @@ else
     while $more
       $v = must(call("agent.session.read", {session: $rest[0], since: $since}, 30))
       for each $e in $v.events
-        print(if $o.json then json_encode($e) else event_line($e) end)
+        out(if $o.json then json_encode($e) else event_line($e) end)
       end
       $more = $v.more == true
       $since = $v.next
     end
     if not $o.json then
       $s = $v.session
-      print("-- " .. $s.session .. " " .. $s.status .. " (" .. $s.agent .. "), seq " .. to_string($s.seq) ..
+      out("-- " .. $s.session .. " " .. $s.status .. " (" .. $s.agent .. "), seq " .. to_string($s.seq) ..
         (if ($s.open_permissions ?? 0) > 0 then ", " .. to_string($s.open_permissions) .. " permission question(s) open" else "" end))
     end
   elif contains(["cancel", "close", "resume"], $cmd) then

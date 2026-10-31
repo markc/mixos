@@ -77,5 +77,13 @@
   "services/noded/units/sysusers.conf": {
     "reason": "environment discovery: creates the noded system account",
     "sha256": "ae7ef8d4ed0a2a48967e2ec1930646171aa33a58c4f32d9c9a041386c836b68d"
+  },
+  "services/agentd/units/agentd.service": {
+    "reason": "add the agentd user unit: an always-on agent service in a user's own session, conf and log in the user's XDG dirs",
+    "sha256": "cb40dffe6eb314d62dc234e2267358f2969c1cb4d78afb8bdc2c7c798e08f06a"
+  },
+  "services/agentd/units/agentd@.service": {
+    "reason": "add the agentd console-desk session unit; order after the session and system broker without wanting either; the session target chooses the broker (noded@N is masked on system-broker desks)",
+    "sha256": "6e3cc7e4232a3c3c0b8b309c772987ce7ff41c9b1e4308af8ef479cf0b3e603e"
   }
 }
