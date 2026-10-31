@@ -612,7 +612,8 @@ fn a_mirror_on_a_second_broker_republishes_forwards_serves_stale_and_catches_up(
         // a far higher revision, which would wedge the mirror if it were
         // taken, is refused from a local caller naming itself the authority
         // (the broker overwrites those headers) and from the authority's
-        // node by a service that is not settingsd. An attach for the mirror's
+        // node by a service that is not settingsd (or, where noded stamps no
+        // service, because the authority does not hold it). An attach for the mirror's
         // node from elsewhere is refused too.
         let stored = fs::read_to_string(mirror_root.join("mirror.conf.mix")).unwrap();
         let mut forged: settingsd::mirror::Cache = strict::from_str(&stored).unwrap();
@@ -632,9 +633,15 @@ fn a_mirror_on_a_second_broker_republishes_forwards_serves_stale_and_catches_up(
             .await
             .unwrap();
         assert!(rc >= 10 && text.contains("wrong_sender"), "{rc} {text}");
+        // From the authority's node: refused by the stamped service where the
+        // broker stamps one (wrong_sender), else by the authority itself,
+        // which does not hold that record (not_confirmed).
         let (rc, body) = raw(&a.client, "settingsd.beta.bus", "settings.mirror.revision", &push).await;
         assert!(rc >= 10, "{rc} {body}");
-        assert_eq!(body["status"], "wrong_sender", "{body}");
+        assert!(
+            body["status"] == "wrong_sender" || body["status"] == "not_confirmed",
+            "{body}"
+        );
         let mut stop = push.clone();
         stop["stopping"] = json!(true);
         let (rc, body) = raw(&b.client, "settingsd", "settings.mirror.revision", &stop).await;
