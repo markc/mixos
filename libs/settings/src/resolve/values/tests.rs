@@ -638,6 +638,9 @@ fn the_palette_reports_the_fonts() {
     ]);
     let both = palette(&chosen, design::EMBEDDED_DEFAULT_SOURCE, Some(Mode::Dark)).unwrap();
     let fonts = &both["dark"]["fonts"];
-    assert_eq!(fonts["ui"], json!({"family": "Noto Sans", "size_px": 14.0, "weight": 500}));
+    assert_eq!(
+        fonts["ui"],
+        json!({"family": "Noto Sans", "size_px": 14.0, "weight": 500})
+    );
     assert_eq!(fonts["mono"]["family"], "Hack");
 }
