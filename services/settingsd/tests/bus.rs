@@ -519,16 +519,58 @@ fn a_batch_publishes_exactly_its_prefixes_and_a_reconnect_republishes_every_topi
 
         // The validate preview moves by content: under `auto`, a `state`
         // change also moves `appearance` (its resolved mode) and the look.
-        let status = ready(&fresh.client, "settingsd", "settings.status", json!({"binding": binding("alpha")})).await;
-        let auto = apply("alpha", &status, "mode-auto", json!({"appearance.mode": "auto"}));
-        let changed = fresh.client.call("settingsd", "settings.apply", auto).await.unwrap();
+        let status = ready(
+            &fresh.client,
+            "settingsd",
+            "settings.status",
+            json!({"binding": binding("alpha")}),
+        )
+        .await;
+        let auto = apply(
+            "alpha",
+            &status,
+            "mode-auto",
+            json!({"appearance.mode": "auto"}),
+        );
+        let changed = fresh
+            .client
+            .call("settingsd", "settings.apply", auto)
+            .await
+            .unwrap();
         assert_eq!(changed["status"], "changed", "{changed}");
-        let status = ready(&fresh.client, "settingsd", "settings.status", json!({"binding": binding("alpha")})).await;
-        let daylight = apply("alpha", &status, "preview", json!({"state.appearance.daylight": true}));
-        let preview = fresh.client.call("settingsd", "settings.validate", daylight).await.unwrap();
-        let moved: BTreeSet<&str> = preview["moved"].as_array().unwrap().iter().map(|m| m.as_str().unwrap()).collect();
-        assert_eq!(moved, BTreeSet::from(["appearance", "look", "state"]), "{preview}");
-        assert_eq!(preview["values"]["appearance"]["resolved"]["appearance.mode"], "light");
+        let status = ready(
+            &fresh.client,
+            "settingsd",
+            "settings.status",
+            json!({"binding": binding("alpha")}),
+        )
+        .await;
+        let daylight = apply(
+            "alpha",
+            &status,
+            "preview",
+            json!({"state.appearance.daylight": true}),
+        );
+        let preview = fresh
+            .client
+            .call("settingsd", "settings.validate", daylight)
+            .await
+            .unwrap();
+        let moved: BTreeSet<&str> = preview["moved"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| m.as_str().unwrap())
+            .collect();
+        assert_eq!(
+            moved,
+            BTreeSet::from(["appearance", "look", "state"]),
+            "{preview}"
+        );
+        assert_eq!(
+            preview["values"]["appearance"]["resolved"]["appearance.mode"],
+            "light"
+        );
         fresh.client.close().await;
     });
 }
@@ -629,14 +671,25 @@ fn a_mirror_on_a_second_broker_republishes_forwards_serves_stale_and_catches_up(
         ]);
         let (rc, text, _) = b
             .client
-            .call_with_headers_raw("settingsd", "settings.mirror.revision", &spoofed, &push.to_string())
+            .call_with_headers_raw(
+                "settingsd",
+                "settings.mirror.revision",
+                &spoofed,
+                &push.to_string(),
+            )
             .await
             .unwrap();
         assert!(rc >= 10 && text.contains("wrong_sender"), "{rc} {text}");
         // From the authority's node: refused by the stamped service where the
         // broker stamps one (wrong_sender), else by the authority itself,
         // which does not hold that record (not_confirmed).
-        let (rc, body) = raw(&a.client, "settingsd.beta.bus", "settings.mirror.revision", &push).await;
+        let (rc, body) = raw(
+            &a.client,
+            "settingsd.beta.bus",
+            "settings.mirror.revision",
+            &push,
+        )
+        .await;
         assert!(rc >= 10, "{rc} {body}");
         assert!(
             body["status"] == "wrong_sender" || body["status"] == "not_confirmed",
@@ -645,12 +698,23 @@ fn a_mirror_on_a_second_broker_republishes_forwards_serves_stale_and_catches_up(
         let mut stop = push.clone();
         stop["stopping"] = json!(true);
         let (rc, body) = raw(&b.client, "settingsd", "settings.mirror.revision", &stop).await;
-        assert_eq!((rc >= 10, &body["status"]), (true, &json!("wrong_sender")), "{body}");
+        assert_eq!(
+            (rc >= 10, &body["status"]),
+            (true, &json!("wrong_sender")),
+            "{body}"
+        );
         let attach = json!({"binding": binding("alpha"), "node": "beta", "revision": "1"});
         let (rc, body) = raw(&a.client, "settingsd", "settings.mirror.attach", &attach).await;
-        assert_eq!((rc >= 10, &body["status"]), (true, &json!("wrong_sender")), "{body}");
+        assert_eq!(
+            (rc >= 10, &body["status"]),
+            (true, &json!("wrong_sender")),
+            "{body}"
+        );
         let unmoved = status_until(&b.client, "settingsd", "alpha", "unmoved", |_| true).await;
-        assert_eq!(unmoved["revision"], first, "the forged record was not taken");
+        assert_eq!(
+            unmoved["revision"], first,
+            "the forged record was not taken"
+        );
         assert_eq!(unmoved["stale"], false, "nor did it touch stale");
 
         // An authority commit: the mirror republishes the same topics (and so
@@ -775,14 +839,22 @@ fn a_mirror_on_a_second_broker_republishes_forwards_serves_stale_and_catches_up(
         let (rc, body) = raw(&b.client, "settingsd", "settings.apply", &refused).await;
         assert!(rc >= 10, "{rc} {body}");
         assert_eq!(body["status"], "authority_unreachable", "{body}");
-        status_until(&b.client, "settingsd", "alpha", "stale after the refusal", |s| {
-            s["stale"] == true
-        })
+        status_until(
+            &b.client,
+            "settingsd",
+            "alpha",
+            "stale after the refusal",
+            |s| s["stale"] == true,
+        )
         .await;
         let _authority = fixture.brokers[0].settingsd(&authority_args, &authority_log);
-        status_until(&b.client, "settingsd", "alpha", "attached after the crash", |s| {
-            s["stale"] == false
-        })
+        status_until(
+            &b.client,
+            "settingsd",
+            "alpha",
+            "attached after the crash",
+            |s| s["stale"] == false,
+        )
         .await;
 
         // The mirror's own broker restarts while the authority commits: on

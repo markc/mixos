@@ -476,10 +476,10 @@ async fn attach(
     if !sender.is_node(&request.node) {
         return Err(mirroring::wrong_sender(&sender, &request.node));
     }
-    let own =
-        ctx.own_node().await.ok_or_else(
-            || json!({"status":"not_ready","message":"Broker node not known yet"}),
-        )?;
+    let own = ctx
+        .own_node()
+        .await
+        .ok_or_else(|| json!({"status":"not_ready","message":"Broker node not known yet"}))?;
     let push = push_of(authority, &own, Some(request.revision))
         .map_err(|e| json!({"status":"storage_failed","message":e.to_string()}))?;
     if !ctx.mirrors.attach(&request.node, request.revision) {
@@ -544,7 +544,9 @@ async fn take(
         }
         return (
             authority,
-            Err(json!({"status":"older_incarnation","incarnation":incarnation,"revision":revision})),
+            Err(
+                json!({"status":"older_incarnation","incarnation":incarnation,"revision":revision}),
+            ),
         );
     }
     let root = ctx.root.clone();
@@ -565,7 +567,9 @@ async fn take(
                 .map(|s| (*s).to_owned())
                 .or_else(|| panic.downcast_ref::<String>().cloned())
                 .unwrap_or_default();
-            Err(anyhow::anyhow!("adopting the pushed record panicked: {what}"))
+            Err(anyhow::anyhow!(
+                "adopting the pushed record panicked: {what}"
+            ))
         });
         (authority, taken)
     })

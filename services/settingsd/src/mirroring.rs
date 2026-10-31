@@ -497,9 +497,15 @@ mod tests {
         assert!(stamped.is_authority("alpha"));
         assert!(!stamped.is_authority("beta"));
         let bridged = Sender::from_headers(None, None, "bridge-alpha");
-        assert!(bridged.is_authority("alpha"), "the service is unknown on this path");
+        assert!(
+            bridged.is_authority("alpha"),
+            "the service is unknown on this path"
+        );
         let other = Sender::from_headers(Some("alpha"), Some("observer"), "bridge-alpha");
-        assert!(!other.is_authority("alpha"), "a stamped service that is not settingsd");
+        assert!(
+            !other.is_authority("alpha"),
+            "a stamped service that is not settingsd"
+        );
         let local = Sender::from_headers(None, None, "observer");
         assert!(!local.is_authority("alpha") && !local.is_node("alpha"));
         assert!(Sender::from_headers(None, None, "bridge-beta").is_node("beta"));
@@ -530,8 +536,18 @@ mod tests {
         assert_eq!(confirm(Some((0, &holds)), &cache), Confirmation::Holds);
         let past = status("inc", "5", "x");
         assert_eq!(confirm(Some((0, &past)), &cache), Confirmation::Behind);
-        for forged in [status("inc", "4", "x"), status("inc", "3", "c"), status("other", "4", "c")] {
-            assert!(matches!(confirm(Some((0, &forged)), &cache), Confirmation::Refused(_)), "{forged}");
+        for forged in [
+            status("inc", "4", "x"),
+            status("inc", "3", "c"),
+            status("other", "4", "c"),
+        ] {
+            assert!(
+                matches!(
+                    confirm(Some((0, &forged)), &cache),
+                    Confirmation::Refused(_)
+                ),
+                "{forged}"
+            );
         }
         assert_eq!(confirm(None, &cache), Confirmation::Unreachable);
         assert_eq!(confirm(Some((10, "{}")), &cache), Confirmation::Unreachable);
@@ -544,7 +560,10 @@ mod tests {
             assert!(table.attach(&format!("node-{i}"), Revision(1)));
         }
         assert!(!table.attach("one-too-many", Revision(1)), "full");
-        assert!(table.attach("node-0", Revision(2)), "a re-attach still fits");
+        assert!(
+            table.attach("node-0", Revision(2)),
+            "a re-attach still fits"
+        );
         assert!(!Attached::default().attach("Not A Node", Revision(1)));
         assert!(!Attached::default().attach("", Revision(1)));
     }
@@ -559,8 +578,14 @@ mod tests {
         assert!(!supersedes((&old, Revision(5)), (&old, Revision(4))));
         // A re-initialised authority starts low: it still wins.
         assert!(supersedes((&old, Revision(900)), (&new, Revision(1))));
-        assert!(!supersedes((&new, Revision(1)), (&old, Revision(900))), "never older");
-        assert!(!supersedes((&old, Revision(1)), ("not-a-uuid", Revision(9))));
+        assert!(
+            !supersedes((&new, Revision(1)), (&old, Revision(900))),
+            "never older"
+        );
+        assert!(!supersedes(
+            (&old, Revision(1)),
+            ("not-a-uuid", Revision(9))
+        ));
     }
 
     #[test]
@@ -582,9 +607,18 @@ mod tests {
     fn only_a_settingsd_answer_is_relayed() {
         assert!(from_authority(10, r#"{"status":"conflict","revision":3}"#));
         assert!(from_authority(0, r#"{"status":"changed"}"#));
-        assert!(!from_authority(0, r#"{"status":"conflict"}"#), "a refusal under rc 0");
-        assert!(!from_authority(10, r#"{"status":"changed"}"#), "a receipt under rc 10");
-        assert!(!from_authority(10, r#"{"status":"anything"}"#), "not a settingsd status");
+        assert!(
+            !from_authority(0, r#"{"status":"conflict"}"#),
+            "a refusal under rc 0"
+        );
+        assert!(
+            !from_authority(10, r#"{"status":"changed"}"#),
+            "a receipt under rc 10"
+        );
+        assert!(
+            !from_authority(10, r#"{"status":"anything"}"#),
+            "not a settingsd status"
+        );
         assert!(!from_authority(10, ""));
         assert!(!from_authority(10, r#"{"error_code":"UNKNOWN_COMMAND"}"#));
         assert!(!from_authority(10, "Mesh bridge error: closed"));
