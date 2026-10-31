@@ -596,7 +596,9 @@ pub fn accent_seed(chrome: &ResolvedChrome) -> Option<SrgbColour> {
     // `chrome`, so an achromatic scheme (mono) takes the accent it draws
     // with rather than a grey beside its chrome.
     let reads = |colour: SrgbColour| {
-        under.map_or(0.0, |under| crate::derive::primitives::contrast(colour, under))
+        under.map_or(0.0, |under| {
+            crate::derive::primitives::contrast(colour, under)
+        })
     };
     candidates
         .into_iter()
