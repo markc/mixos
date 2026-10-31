@@ -247,12 +247,15 @@ Captures are confined to the app's own directory:
 
 A window command, sent the way the title bar's caption buttons send it.
 
-- **Arguments:** `action`: `minimize`, `maximize`, `restore`, `close` or
-  `focus`.
+- **Arguments:** `action`: `minimize`, `maximize`, `restore` or `close`.
 - **Answer:** the window state (as `window.state` reports it) plus
   `requested`, the action.
-- `maximize`, `restore` and `focus` answer two frames later, with the state
-  the window then reports.
+- `maximize` and `restore` answer two frames later, with the state the
+  window then reports.
+- `focus` is refused (`UNSUPPORTED`): the compositor raises and focuses a
+  window only on its own authority and ignores the window's request. Call
+  `<app>.show`, which restores, raises and focuses the window through
+  compd, or `comp.window.focus {id, generation, raise: true}`.
 - A minimised window draws no frames, so `minimize` first settles any input
   still queued (see [Ordering](#ordering)), then answers at once.
 - `close` answers at once. The app then closes as if its close button had

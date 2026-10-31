@@ -93,6 +93,10 @@ pub enum Effect {
         action: ThemeAction,
         name: String,
     },
+    /// `dopus.show`: restore, raise and focus the window, then reply to `id`.
+    Show {
+        id: u64,
+    },
     Quit,
 }
 
@@ -308,6 +312,7 @@ impl App {
                         name,
                     });
                 }
+                Served::Show { id } => self.effects.push(Effect::Show { id }),
                 Served::Quit { .. } => self.quit(),
             }
         }

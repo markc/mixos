@@ -139,8 +139,8 @@ Screenshot answers on the Bus as `screenshot` (schema `screenshot.v1`).
 | Command | Arguments | Answer |
 |---|---|---|
 | `screenshot.ping`, `screenshot.info` | | liveness and the compositor served (`comp`); the document, its source and last save, the capture, the job and the UI state |
-| `screenshot.capture` | `mode` (`screen`, `window`, `region`), `output`, `window` `{id, generation}`, `cursor`, `delay` (0–10) | a new document, once it is ready; any answer, refusals included, carries `restore_failed: true` if the window could not be shown again; refused while unsaved annotations exist |
-| `screenshot.take` | `mode`, `window`, `comp` | as Print Screen: starts at once, or brings the window forward and asks about unsaved work at once; refused (`COMPOSITOR`) when `comp` names another compositor |
+| `screenshot.capture` | `mode` (`screen`, `window`, `region`), `output`, `window` `{id, generation}`, `cursor`, `delay` (0–10), `region` `{x, y, width, height, output?}` (region mode: captured as given, no drag) | a new document, once it is ready; any answer, refusals included, carries `restore_failed: true` if the window could not be shown again; refused while unsaved annotations exist |
+| `screenshot.take` | `mode`, `window`, `region`, `comp` | as Print Screen: starts at once, or brings the window forward and asks about unsaved work at once; refused (`COMPOSITOR`) when `comp` names another compositor |
 | `screenshot.cancel` | | cancels a capture during its delay |
 | `screenshot.open` | `path` | opens an image; refused while unsaved annotations exist |
 | `screenshot.annotate` (deprecated) | `kind`, `points`, `colour`, `width`, and `text`, `size`, `number` for text and markers | the document plus the new annotation's `id` |

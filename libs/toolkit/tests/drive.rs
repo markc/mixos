@@ -664,7 +664,17 @@ fn window_commands_send_viewport_commands() {
     assert_eq!(maximized["requested"], "maximize");
     assert!(maximized["pixels_per_point"].is_number());
     ok(&mut h, "window", json!({"action":"restore"}));
-    ok(&mut h, "window", json!({"action":"focus"}));
+    // compd ignores a client focus request: refused, naming the way that works.
+    let focus = call(&mut h, "window", json!({"action":"focus"}));
+    assert_eq!(focus.rc, 10);
+    assert_eq!(focus.body["error_code"], "UNSUPPORTED");
+    assert!(
+        focus.body["message"]
+            .as_str()
+            .is_some_and(|m| m.contains("demo.show") && m.contains("comp.window.focus")),
+        "{}",
+        focus.body
+    );
     let closing = ok(&mut h, "window", json!({"action":"close"}));
     assert_eq!(closing["requested"], "close");
     let sent = sent(&h);
@@ -672,11 +682,11 @@ fn window_commands_send_viewport_commands() {
         ViewportCommand::Maximized(true),
         ViewportCommand::Minimized(false),
         ViewportCommand::Maximized(false),
-        ViewportCommand::Focus,
         ViewportCommand::Close,
     ] {
         assert!(sent.contains(&expected), "{expected:?} in {sent:?}");
     }
+    assert!(!sent.contains(&ViewportCommand::Focus), "{sent:?}");
     let state = ok(&mut h, "window.state", json!({}));
     assert!(state["size"].is_array());
 }

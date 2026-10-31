@@ -67,6 +67,51 @@ impl Target {
 /// The longest delay a capture takes, in seconds.
 pub const MAX_DELAY: u32 = 10;
 
+/// A rectangle given up front, so a region capture needs no drag:
+/// output-local displayed logical pixels, as `comp.region.select` answers
+/// and `comp.capture.frame` takes. `output` names the output it is on
+/// (else the capture's `output`, else compd's choice: the pointer's).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Region {
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output: Option<String>,
+}
+
+impl Region {
+    /// Checked as compd checks it: non-negative origin, positive extent.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.x < 0
+            || self.y < 0
+            || self.width <= 0
+            || self.height <= 0
+            || self.x.checked_add(self.width).is_none()
+            || self.y.checked_add(self.height).is_none()
+        {
+            return Err(
+                "region must have a non-negative origin and a positive width and height".into(),
+            );
+        }
+        if self
+            .output
+            .as_ref()
+            .is_some_and(|s| s.is_empty() || s.len() > 256)
+        {
+            return Err("invalid region output name".into());
+        }
+        Ok(())
+    }
+
+    /// The rectangle alone, as `comp.capture.frame` takes it.
+    fn rectangle(&self) -> Value {
+        json!({"x": self.x, "y": self.y, "width": self.width, "height": self.height})
+    }
+}
+
 /// One capture's settings.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -82,6 +127,9 @@ pub struct Request {
     pub cursor: bool,
     #[serde(default)]
     pub delay: u32,
+    /// Region mode only: the rectangle to capture, skipping the drag.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub region: Option<Region>,
 }
 
 impl Default for Request {
@@ -92,11 +140,20 @@ impl Default for Request {
             window: None,
             cursor: false,
             delay: 0,
+            region: None,
         }
     }
 }
 
 impl Request {
+    /// Give the region up front; an output it names replaces the chosen one.
+    pub fn set_region(&mut self, region: Option<Region>) {
+        if region.as_ref().is_some_and(|r| r.output.is_some()) {
+            self.output = None;
+        }
+        self.region = region;
+    }
+
     pub fn validate(&self) -> Result<(), String> {
         if self.delay > MAX_DELAY {
             return Err(format!("delay must be 0..{MAX_DELAY} seconds"));
@@ -113,6 +170,17 @@ impl Request {
         }
         if self.mode != Mode::Window && self.window.is_some() {
             return Err("window only applies to window mode".into());
+        }
+        if let Some(region) = &self.region {
+            if self.mode != Mode::Region {
+                return Err("region only applies to region mode".into());
+            }
+            region.validate()?;
+            if let (Some(a), Some(b)) = (&region.output, &self.output)
+                && a != b
+            {
+                return Err("region.output and output name different outputs".into());
+            }
         }
         Ok(())
     }
@@ -414,7 +482,14 @@ pub async fn take_job(
         } else if let Some(output) = &request.output {
             args["output"] = json!(output);
         }
-        if request.mode == Mode::Region {
+        if let Some(region) = request.region.as_ref().filter(|_| request.mode == Mode::Region) {
+            // Given up front (an agent's capture): no drag, the seat stays
+            // with whoever has it.
+            if let Some(output) = region.output.as_ref().or(request.output.as_ref()) {
+                args["output"] = json!(output);
+            }
+            args["region"] = region.rectangle();
+        } else if request.mode == Mode::Region {
             let selection = comp
                 .call(
                     "comp.region.select",
@@ -646,6 +721,99 @@ pub(crate) mod tests {
         // A person's capture: restored activated, then raised and focused.
         assert_eq!(calls[5].1, json!({"id":4,"generation":9,"activate":true}));
         assert_eq!(calls[6].1, json!({"id":4,"generation":9,"raise":true}));
+    }
+
+    #[tokio::test]
+    async fn a_given_region_skips_the_selection_and_captures_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = Script::new(vec![Ok(
+            json!({"width":30,"height":20,"output":"DP-2","source":"kms"}),
+        )]);
+        let (_tx, rx) = channel();
+        let request: Request = serde_json::from_value(json!({
+            "mode": "region",
+            "region": {"x": 5, "y": 6, "width": 30, "height": 20, "output": "DP-2"},
+        }))
+        .unwrap();
+        take(script.clone(), request, None, false, dir.path().into(), rx)
+            .await
+            .unwrap();
+        assert_eq!(script.command_names(), ["comp.capture.frame"]);
+        let calls = script.calls.lock().unwrap();
+        let frame = &calls[0].1;
+        assert_eq!(frame["output"], "DP-2");
+        assert_eq!(
+            frame["region"],
+            json!({"x":5,"y":6,"width":30,"height":20})
+        );
+        assert!(frame.get("output_generation").is_none());
+    }
+
+    #[tokio::test]
+    async fn a_given_region_takes_the_requests_output_when_it_names_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = Script::new(vec![Ok(json!({"width":30,"height":20}))]);
+        let (_tx, rx) = channel();
+        let request = Request {
+            mode: Mode::Region,
+            output: Some("HDMI-A-1".into()),
+            region: Some(Region {
+                x: 0,
+                y: 0,
+                width: 30,
+                height: 20,
+                output: None,
+            }),
+            ..Request::default()
+        };
+        take(script.clone(), request, None, false, dir.path().into(), rx)
+            .await
+            .unwrap();
+        let calls = script.calls.lock().unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].1["output"], "HDMI-A-1");
+    }
+
+    #[test]
+    fn region_arguments_are_checked_before_anything_runs() {
+        let parse = |value: Value| {
+            serde_json::from_value::<Request>(value)
+                .map_err(|e| e.to_string())
+                .and_then(|r| r.validate())
+        };
+        let rect = json!({"x":0,"y":0,"width":10,"height":10});
+        assert!(parse(json!({"mode":"region","region":rect})).is_ok());
+        // Region mode only.
+        assert!(parse(json!({"region":rect})).is_err());
+        assert!(parse(json!({"mode":"screen","region":rect})).is_err());
+        // Positive extent, non-negative origin, i32 that does not overflow.
+        for bad in [
+            json!({"x":-1,"y":0,"width":10,"height":10}),
+            json!({"x":0,"y":-1,"width":10,"height":10}),
+            json!({"x":0,"y":0,"width":0,"height":10}),
+            json!({"x":0,"y":0,"width":10,"height":-5}),
+            json!({"x":i32::MAX,"y":0,"width":10,"height":10}),
+            json!({"x":0,"y":0,"width":10}),
+            json!({"x":0,"y":0,"width":10,"height":10,"colour":1}),
+            json!({"x":0.5,"y":0,"width":10,"height":10}),
+            json!({"x":0,"y":0,"width":10,"height":10,"output":""}),
+        ] {
+            assert!(
+                parse(json!({"mode":"region","region":bad})).is_err(),
+                "{bad}"
+            );
+        }
+        // Two different outputs are refused; the same one twice is fine.
+        assert!(
+            parse(json!({"mode":"region","output":"DP-1",
+                "region":{"x":0,"y":0,"width":1,"height":1,"output":"DP-2"}}))
+            .is_err()
+        );
+        assert!(
+            parse(json!({"mode":"region","output":"DP-1",
+                "region":{"x":0,"y":0,"width":1,"height":1,"output":"DP-1"}}))
+            .is_ok()
+        );
     }
 
     #[tokio::test]

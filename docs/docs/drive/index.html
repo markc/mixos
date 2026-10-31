@@ -475,12 +475,15 @@ to run; they cannot bound delivery while the app thread itself is blocked.</li>
 <h3 id="appwindow"><code>&lt;app&gt;.window</code></h3>
 <p>A window command, sent the way the title bar's caption buttons send it.</p>
 <ul>
-<li><strong>Arguments:</strong> <code>action</code>: <code>minimize</code>, <code>maximize</code>, <code>restore</code>, <code>close</code> or
-<code>focus</code>.</li>
+<li><strong>Arguments:</strong> <code>action</code>: <code>minimize</code>, <code>maximize</code>, <code>restore</code> or <code>close</code>.</li>
 <li><strong>Answer:</strong> the window state (as <code>window.state</code> reports it) plus
 <code>requested</code>, the action.</li>
-<li><code>maximize</code>, <code>restore</code> and <code>focus</code> answer two frames later, with the state
-the window then reports.</li>
+<li><code>maximize</code> and <code>restore</code> answer two frames later, with the state the
+window then reports.</li>
+<li><code>focus</code> is refused (<code>UNSUPPORTED</code>): the compositor raises and focuses a
+window only on its own authority and ignores the window's request. Call
+<code>&lt;app&gt;.show</code>, which restores, raises and focuses the window through
+compd, or <code>comp.window.focus {id, generation, raise: true}</code>.</li>
 <li>A minimised window draws no frames, so <code>minimize</code> first settles any input
 still queued (see <a href="#ordering">Ordering</a>), then answers at once.</li>
 <li><code>close</code> answers at once. The app then closes as if its close button had

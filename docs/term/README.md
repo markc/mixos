@@ -33,7 +33,8 @@ it) and answers:
 - the terminal's commands, served by term-core (`HELP` lists them):
   `term.info`, `term.session`, `term.tabs`, `term.tab.*`, `term.panes`, `term.pane.*`,
   `term.snapshot`, `term.scroll`, `term.type`, `term.props.watch`;
-- the window's own: `term.actions`, `term.execute`, `app.describe`, and the
+- the window's own: `term.actions`, `term.execute`, `term.show` (restore,
+  raise and focus the window through compd), `app.describe`, and the
   toolkit drive commands (`term.ui.*`, `term.window`, `term.window.state`).
 
 `term --headless` serves the terminal's commands with no window.

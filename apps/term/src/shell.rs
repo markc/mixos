@@ -333,6 +333,11 @@ impl Shell {
                         self.answer(answer.id, answer.rc, answer.body);
                     }
                 }
+                None if held.command == "term.show" => {
+                    if let Some(reply) = self.replies.remove(&held.id) {
+                        self.bus.show(reply);
+                    }
+                }
                 None => {
                     let (rc, body) = self.command(&held.command, &args);
                     self.answer(held.id, rc, body);

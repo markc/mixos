@@ -35,7 +35,11 @@ An app's supervised native Bus connection, shared by the MixOS apps
   first as a `citizen.topic.gap` record with `dropped`; this is local inbox
   metadata, not a published topic. Consumers still validate untrusted bodies.
 - `show(handle, comp, app_id)`: restore and focus this process's window
-  through [compd](../compd/README.md).
+  through [compd](../compd/README.md), answering `{shown, target}`.
+  `show_via(client, comp, app_id)` does the same for an app on its own
+  `SupervisedClient`, and `show_with(app_id, call)` over any caller.
+  `comp_service()` names the compositor (`MIXOS_COMP_SERVICE`, else
+  `comp`).
 - With the `testing` feature: `Handle::sink()`, a handle with no connection
   that logs its calls, replies and quit.
 

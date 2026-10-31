@@ -576,12 +576,15 @@ Captures are confined to the app's own directory:
 
 A window command, sent the way the title bar's caption buttons send it.
 
-- **Arguments:** `action`: `minimize`, `maximize`, `restore`, `close` or
-  `focus`.
+- **Arguments:** `action`: `minimize`, `maximize`, `restore` or `close`.
 - **Answer:** the window state (as `window.state` reports it) plus
   `requested`, the action.
-- `maximize`, `restore` and `focus` answer two frames later, with the state
-  the window then reports.
+- `maximize` and `restore` answer two frames later, with the state the
+  window then reports.
+- `focus` is refused (`UNSUPPORTED`): the compositor raises and focuses a
+  window only on its own authority and ignores the window's request. Call
+  `<app>.show`, which restores, raises and focuses the window through
+  compd, or `comp.window.focus {id, generation, raise: true}`.
 - A minimised window draws no frames, so `minimize` first settles any input
   still queued (see [Ordering](#ordering)), then answers at once.
 - `close` answers at once. The app then closes as if its close button had
@@ -2275,7 +2278,8 @@ second `ced` hands its paths to the first and exits.
 ## Bus
 
 `ced.*` (schema `ced.v1`): `ping`, `info`, `open`, `new`, `tabs`, `focus`,
-`state`, `type`, `select`, `execute`, `actions`, `wait`, `layout`, `stats`,
+`show` (restore, raise and focus the window through compd), `state`,
+`type`, `select`, `execute`, `actions`, `wait`, `layout`, `stats`,
 `diagnostics`, `problems`, plus `app.describe` and `app.quit`; and the
 toolkit drive commands (`ced.ui.*`, `ced.window`, `ced.window.state`; see
 [driving an app](../docs/drive.md)). A Bus caller's edits carry its own
@@ -2446,7 +2450,11 @@ An app's supervised native Bus connection, shared by the MixOS apps
   first as a `citizen.topic.gap` record with `dropped`; this is local inbox
   metadata, not a published topic. Consumers still validate untrusted bodies.
 - `show(handle, comp, app_id)`: restore and focus this process's window
-  through [compd](../compd/README.md).
+  through [compd](../compd/README.md), answering `{shown, target}`.
+  `show_via(client, comp, app_id)` does the same for an app on its own
+  `SupervisedClient`, and `show_with(app_id, call)` over any caller.
+  `comp_service()` names the compositor (`MIXOS_COMP_SERVICE`, else
+  `comp`).
 - With the `testing` feature: `Handle::sink()`, a handle with no connection
   that logs its calls, replies and quit.
 
@@ -9815,6 +9823,7 @@ DOpus answers on the Bus as `dopus` (schema `dopus.v1`).
 | `dopus.execute` | `id`, optional `params`; `params.pane` is `left`, `right` or `active` (the default) | runs one action |
 | `dopus.actions` | | every action, its keys in force and whether it can run now |
 | `dopus.theme.set` | `scheme`, `mode` | this window's look |
+| `dopus.show` | | restores, raises and focuses the window through compd: `{shown, target}` |
 | `dopus.quit` | | closes the window |
 
 Every action accepts local and mesh callers, including `file.open`,
@@ -37669,8 +37678,8 @@ Screenshot answers on the Bus as `screenshot` (schema `screenshot.v1`).
 | Command | Arguments | Answer |
 |---|---|---|
 | `screenshot.ping`, `screenshot.info` | | liveness and the compositor served (`comp`); the document, its source and last save, the capture, the job and the UI state |
-| `screenshot.capture` | `mode` (`screen`, `window`, `region`), `output`, `window` `{id, generation}`, `cursor`, `delay` (0–10) | a new document, once it is ready; any answer, refusals included, carries `restore_failed: true` if the window could not be shown again; refused while unsaved annotations exist |
-| `screenshot.take` | `mode`, `window`, `comp` | as Print Screen: starts at once, or brings the window forward and asks about unsaved work at once; refused (`COMPOSITOR`) when `comp` names another compositor |
+| `screenshot.capture` | `mode` (`screen`, `window`, `region`), `output`, `window` `{id, generation}`, `cursor`, `delay` (0–10), `region` `{x, y, width, height, output?}` (region mode: captured as given, no drag) | a new document, once it is ready; any answer, refusals included, carries `restore_failed: true` if the window could not be shown again; refused while unsaved annotations exist |
+| `screenshot.take` | `mode`, `window`, `region`, `comp` | as Print Screen: starts at once, or brings the window forward and asks about unsaved work at once; refused (`COMPOSITOR`) when `comp` names another compositor |
 | `screenshot.cancel` | | cancels a capture during its delay |
 | `screenshot.open` | `path` | opens an image; refused while unsaved annotations exist |
 | `screenshot.annotate` (deprecated) | `kind`, `points`, `colour`, `width`, and `text`, `size`, `number` for text and markers | the document plus the new annotation's `id` |
@@ -38298,7 +38307,8 @@ it) and answers:
 - the terminal's commands, served by term-core (`HELP` lists them):
   `term.info`, `term.session`, `term.tabs`, `term.tab.*`, `term.panes`, `term.pane.*`,
   `term.snapshot`, `term.scroll`, `term.type`, `term.props.watch`;
-- the window's own: `term.actions`, `term.execute`, `app.describe`, and the
+- the window's own: `term.actions`, `term.execute`, `term.show` (restore,
+  raise and focus the window through compd), `app.describe`, and the
   toolkit drive commands (`term.ui.*`, `term.window`, `term.window.state`).
 
 `term --headless` serves the terminal's commands with no window.

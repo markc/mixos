@@ -46,7 +46,7 @@ fn check(name: &str, v: &Value) {
         }
         (
             "ced.ping" | "ced.info" | "ced.new" | "ced.tabs" | "ced.actions" | "ced.stats"
-            | "app.describe" | "app.quit",
+            | "ced.show" | "app.describe" | "app.quit",
             "request",
         ) => parses::<EmptyReq>(name, v),
         ("ced.open", "request") => parses::<OpenReq>(name, v),
@@ -67,6 +67,7 @@ fn check(name: &str, v: &Value) {
         ("ced.new", "reply") => round_trips::<NewReply>(name, v),
         ("ced.tabs", "reply") => round_trips::<TabsReply>(name, v),
         ("ced.focus", "reply") => round_trips::<FocusReply>(name, v),
+        ("ced.show", "reply") => round_trips::<ShowReply>(name, v),
         ("ced.state", "reply") => round_trips::<StateReply>(name, v),
         ("ced.type", "reply") => round_trips::<TypeReply>(name, v),
         ("ced.select", "reply") => round_trips::<SelectReply>(name, v),

@@ -251,6 +251,7 @@ pub fn is_bus(effect: &Effect) -> bool {
             | Effect::Notify { .. }
             | Effect::Send { .. }
             | Effect::Respond { .. }
+            | Effect::Show { .. }
             | Effect::Timer { .. }
             | Effect::Subscribe { .. }
             | Effect::Quit
@@ -549,6 +550,28 @@ async fn run(
                             let c = client.clone();
                             replies.spawn(async move {
                                 tokio::time::timeout(Duration::from_secs(2), c.respond(&cmd, rc, &body))
+                                    .await
+                                    .map_err(|_| "Bus reply timed out".to_owned())?
+                                    .map_err(|error| format!("Bus reply: {error}"))
+                            });
+                        }
+                    }
+                    Effect::Show { id } => {
+                        if let Some(cmd) = commands.remove(&id) {
+                            let c = client.clone();
+                            let service = service.clone();
+                            replies.spawn(async move {
+                                let shown = citizen::show_via(c.clone(), citizen::comp_service(), crate::APP_ID).await;
+                                let (rc, body) = match shown {
+                                    Ok(shown) => (0, shown),
+                                    Err(error) => (10, serde_json::json!({
+                                        "error_code": documents::commands::code::ACTIVATION,
+                                        "message": error,
+                                        "reason": "show_failed",
+                                    })),
+                                };
+                                citizen::debug::answered(&service, &cmd.command, rc);
+                                tokio::time::timeout(Duration::from_secs(2), c.respond(&cmd, rc, &body.to_string()))
                                     .await
                                     .map_err(|_| "Bus reply timed out".to_owned())?
                                     .map_err(|error| format!("Bus reply: {error}"))

@@ -181,6 +181,9 @@ enum Work {
         rc: u8,
         body: String,
     },
+    Show {
+        id: u64,
+    },
     Subscribe(String),
     Look(settings::follow::Read),
     LookRetry {
@@ -204,6 +207,11 @@ pub struct BusHandle {
 impl BusHandle {
     pub fn mail(&self, id: Option<u64>, paths: Vec<std::path::PathBuf>) -> bool {
         self.tx.send(Work::Mail { id, paths }).is_ok()
+    }
+    /// `dopus.show`: restore, raise and focus the window through compd and
+    /// answer command `id`; false if the Bus thread has stopped.
+    pub fn show(&self, id: u64) -> bool {
+        self.tx.send(Work::Show { id }).is_ok()
     }
     pub fn connected(&self) -> bool {
         self.client.is_connected()
@@ -343,6 +351,23 @@ pub fn spawn(
     }
 }
 
+/// The `dopus.show` answer: compd's `{shown, target}`, or an `ACTIVATION`
+/// refusal naming what failed.
+pub fn show_reply(result: Result<serde_json::Value, String>) -> (u8, String) {
+    match result {
+        Ok(shown) => (0, shown.to_string()),
+        Err(message) => (
+            10,
+            serde_json::json!({
+                "error_code": crate::commands::code::ACTIVATION,
+                "message": message,
+                "reason": "show_failed",
+            })
+            .to_string(),
+        ),
+    }
+}
+
 async fn respond(
     service: &str,
     client: &SupervisedClient,
@@ -438,6 +463,17 @@ async fn run(
                         });
                     }
                     None => break,
+                    Some(Work::Show { id }) => {
+                        if let Some(cmd) = commands.remove(&id) {
+                            let (c, service) = (client.clone(), service.clone());
+                            tokio::spawn(async move {
+                                let (rc, body) = show_reply(
+                                    citizen::show_via(c.clone(), citizen::comp_service(), crate::APP_ID).await,
+                                );
+                                respond(&service, &c, &cmd, rc, &body).await;
+                            });
+                        }
+                    }
                     Some(Work::Respond { id, rc, body }) => {
                         // Awaited in place, so a reply is on the wire before a
                         // later quit closes the client.

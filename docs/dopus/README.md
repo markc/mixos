@@ -112,6 +112,7 @@ DOpus answers on the Bus as `dopus` (schema `dopus.v1`).
 | `dopus.execute` | `id`, optional `params`; `params.pane` is `left`, `right` or `active` (the default) | runs one action |
 | `dopus.actions` | | every action, its keys in force and whether it can run now |
 | `dopus.theme.set` | `scheme`, `mode` | this window's look |
+| `dopus.show` | | restores, raises and focuses the window through compd: `{shown, target}` |
 | `dopus.quit` | | closes the window |
 
 Every action accepts local and mesh callers, including `file.open`,
