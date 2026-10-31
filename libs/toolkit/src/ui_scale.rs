@@ -200,7 +200,9 @@ mod tests {
                     ..Default::default()
                 });
                 let raw = theme.raw_style();
-                for (multiplier, step) in DENSITY_STEPS.into_iter().zip(design::geometry::Density::ALL)
+                for (multiplier, step) in DENSITY_STEPS
+                    .into_iter()
+                    .zip(design::geometry::Density::ALL)
                 {
                     let ui = CommonUi {
                         density: multiplier,

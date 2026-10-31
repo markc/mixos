@@ -428,7 +428,12 @@ pub fn ring_safe_accent(theme: &DerivedTheme) -> SrgbColour {
     // lifted 0.03 with a third of the ring's chroma at its hue.
     let pair = surface(SrgbColour::from_linear(crate::LinearRgba {
         alpha: 1.0,
-        ..rgb(gamut_map_oklch((bg3 + 0.03).min(1.0), (c * 0.35).min(0.08), h, 64))
+        ..rgb(gamut_map_oklch(
+            (bg3 + 0.03).min(1.0),
+            (c * 0.35).min(0.08),
+            h,
+            64,
+        ))
     }));
     let clears = |candidate: crate::LinearRgba| {
         [muted, secondary, pair]

@@ -10,7 +10,11 @@ use crate::geometry::{Density, Roundness};
 use crate::{AccentChoice, Contrast, EMBEDDED_DEFAULT_SOURCE, Scheme, Swatch, parse_design_source};
 
 fn document() -> DesignSourceDocument {
-    parse_design_source(crate::SourceIdentity::new("embedded"), EMBEDDED_DEFAULT_SOURCE).unwrap()
+    parse_design_source(
+        crate::SourceIdentity::new("embedded"),
+        EMBEDDED_DEFAULT_SOURCE,
+    )
+    .unwrap()
 }
 
 fn palette_of(context: DesignContext) -> Palette {
