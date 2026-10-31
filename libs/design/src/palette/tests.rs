@@ -9,8 +9,12 @@ use super::*;
 use crate::geometry::{Density, Roundness};
 use crate::{AccentChoice, Contrast, EMBEDDED_DEFAULT_SOURCE, Scheme, Swatch, parse_design_source};
 
+fn document() -> DesignSourceDocument {
+    parse_design_source(crate::SourceIdentity::new("embedded"), EMBEDDED_DEFAULT_SOURCE).unwrap()
+}
+
 fn palette_of(context: DesignContext) -> Palette {
-    let document = parse_design_source(EMBEDDED_DEFAULT_SOURCE).unwrap();
+    let document = document();
     palette(
         &document,
         &context,
@@ -119,7 +123,7 @@ fn flat_composites_translucent_roles_over_their_surface() {
 
 #[test]
 fn geometry_reaches_the_cosmic_values() {
-    let document = parse_design_source(EMBEDDED_DEFAULT_SOURCE).unwrap();
+    let document = document();
     let square = mode_palette(
         &document,
         &DesignContext {
