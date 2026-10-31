@@ -212,6 +212,7 @@
                         <a href="#what-it-writes" class="toc-h3">What it writes</a>
                         <a href="#commands" class="toc-h3">Commands</a>
                         <a href="#environment" class="toc-h3">Environment</a>
+                        <a href="#gtk-and-qt">GTK and Qt</a>
                         <a href="#changelog">Changelog</a>
                     </nav>
                 </div>
@@ -251,7 +252,8 @@ and nothing is read back.</p>
 keys in one burst, with no polling;</li>
 <li>writes only the keys it owns, and only where the contents differ;</li>
 <li>keeps the contents it replaced, so one command undoes it;</li>
-<li>stops writing while <code>appearance.export_desktop</code> is <code>false</code>.</li>
+<li>stops writing while its gate is <code>false</code>: <code>appearance.export_desktop</code>
+for the desktops, <code>appearance.export_toolkits</code> for GTK and Qt.</li>
 </ul>
 <p>Colours and fonts come from <code>settings.palette</code>, the derived palette
 settingsd computes; an exporter names them and computes none.</p>
@@ -299,6 +301,12 @@ two complete themes.</p>
 <tr><td><code>MIXOS_EXPORTD_STATE</code></td><td><code>$XDG_STATE_HOME/mixos/exportd/cosmic</code> (undo and pause)</td></tr>
 <tr><td><code>MIXOS_EXPORTD_DRY_RUN=1</code></td><td>plan only: log what would change, write nothing</td></tr>
 </tbody></table>
+<h2 id="gtk-and-qt">GTK and Qt</h2>
+<p><code>scripts/gtkqt.mix</code> (<code>--name exportd-gtkqt</code>, unit <code>exportd-gtkqt@.service</code>)
+writes GTK CSS and <code>settings.ini</code> keys and the qt5ct/qt6ct colour schemes
+and config on every desk but a KDE Plasma one, where the KDE export covers
+GTK and Qt. Its commands are <code>exportd.gtkqt.status</code>, <code>.reconcile</code> and
+<code>.undo</code>. The <a href="/exportd/gtkqt/">GTK and Qt page</a> has the details.</p>
 <h2 id="changelog">Changelog</h2>
 <p>See the <a href="/exportd/changelog/">changelog</a>.</p>
         </article>

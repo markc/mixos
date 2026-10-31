@@ -19,7 +19,8 @@ Every exporter:
   keys in one burst, with no polling;
 - writes only the keys it owns, and only where the contents differ;
 - keeps the contents it replaced, so one command undoes it;
-- stops writing while `appearance.export_desktop` is `false`.
+- stops writing while its gate is `false`: `appearance.export_desktop`
+  for the desktops, `appearance.export_toolkits` for GTK and Qt.
 
 Colours and fonts come from `settings.palette`, the derived palette
 settingsd computes; an exporter names them and computes none.
@@ -80,6 +81,14 @@ two complete themes.
 | `MIXOS_EXPORTD_COSMIC_ROOT` | `$XDG_CONFIG_HOME/cosmic` |
 | `MIXOS_EXPORTD_STATE` | `$XDG_STATE_HOME/mixos/exportd/cosmic` (undo and pause) |
 | `MIXOS_EXPORTD_DRY_RUN=1` | plan only: log what would change, write nothing |
+
+## GTK and Qt
+
+`scripts/gtkqt.mix` (`--name exportd-gtkqt`, unit `exportd-gtkqt@.service`)
+writes GTK CSS and `settings.ini` keys and the qt5ct/qt6ct colour schemes
+and config on every desk but a KDE Plasma one, where the KDE export covers
+GTK and Qt. Its commands are `exportd.gtkqt.status`, `.reconcile` and
+`.undo`. The [GTK and Qt page](gtkqt.md) has the details.
 
 ## Changelog
 

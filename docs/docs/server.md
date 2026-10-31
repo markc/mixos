@@ -55,5 +55,4 @@ yet. They are listed on both this page and the desktop page until they do.
 - [settingsd](../settingsd/README.md) (service): The headless desktop settings authority, the one writer for a session profile's settings, with durable receipts and retained change publication on the Bus.
 - [system](../system/README.md) (cli): The system package builds the mix shell executable with optional noded, monitord, maild, webd and dnsd personalities selected by the name it is started under.
 - [term](../term/README.md) (app): The MixOS terminal, with tabs, split panes and a GPU-drawn grid, driven by the session settings and fully scriptable over the Bus.
-- [toolkit-export](../toolkit-export/README.md) (service): How toolkit-export makes GTK and Qt applications on a desk follow the MixOS mode, accent, colours, fonts and icon theme, and how to undo it.
 - [workshop](../workshop/README.md) (app): Workshop is the MixOS desktop app that lists the services and commands on this node's Bus, shows each command's description and the mesh peers, and calls one command once with a JSON body.

@@ -96,8 +96,8 @@ $scripts = [
   "services/agentd/tests/agentd_resume_test.mix",
   "services/peersd/tests/peersd_test.mix",
   "services/peersd/tests/peers_federation_test.mix",
-  "services/toolkit-export/tests/toolkit_test.mix",
-  "services/toolkit-export/tests/export_test.mix",
+  "services/exportd/tests/gtkqt_test.mix",
+  "services/exportd/tests/gtkqt_export_test.mix",
   "apps/dopus/tests/dopus_bus_test.mix",
   "apps/workshop/tests/agents_bus_test.mix",
   "apps/screenshot/tests/edit_path_test.mix"

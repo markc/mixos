@@ -26,7 +26,7 @@
   -- Mix services ship scripts and units; they are not Cargo binaries.
   scripts: {
     "mixos-server": ["clipd", "peersd"],
-    "mixos-desktop": ["clipd", "notifyd", "releasesd", "peersd", "toolkit-export"]
+    "mixos-desktop": ["clipd", "notifyd", "releasesd", "peersd", "exportd"]
   },
   packages: {
     "mixos-server": ["mix", "mixos-mcp", "noded", "hostd", "monitord", "maild"],
