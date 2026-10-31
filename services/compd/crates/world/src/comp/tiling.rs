@@ -363,7 +363,11 @@ pub fn armed(
                 .get(id)
                 .and_then(|r| r.workspace())
                 .unwrap_or_else(|| comp.current_workspace());
-            slot.rectangle(area, comp.tile_split_for(output, workspace))
+            slot.rectangle_with_gap(
+                area,
+                comp.tile_split_for(output, workspace),
+                comp.tile_gap(),
+            )
         }
         _ => area,
     };

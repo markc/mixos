@@ -110,18 +110,32 @@ impl TileSlot {
         area: Rectangle<i32, Logical>,
         split: TileSplit,
     ) -> Rectangle<i32, Logical> {
+        self.rectangle_with_gap(area, split, 0)
+    }
+
+    /// The slot with `gap` pixels between it and its neighbours across each
+    /// split (`window.gaps`): the leading tile gives up half (rounded down),
+    /// the trailing tile the rest. The area's own edges keep no gap.
+    pub fn rectangle_with_gap(
+        self,
+        area: Rectangle<i32, Logical>,
+        split: TileSplit,
+        gap: i32,
+    ) -> Rectangle<i32, Logical> {
         let w = area.size.w.max(0);
         let h = area.size.h.max(0);
         let x = (f64::from(w) * split.x.clamp(0.0, 1.0)).round() as i32;
         let y = (f64::from(h) * split.y.clamp(0.0, 1.0)).round() as i32;
+        let gap = gap.max(0);
+        let (lead, trail) = (gap / 2, gap - gap / 2);
         let (left, right) = match self {
-            Self::Left | Self::TopLeft | Self::BottomLeft => (0, x),
-            Self::Right | Self::TopRight | Self::BottomRight => (x, w),
+            Self::Left | Self::TopLeft | Self::BottomLeft => (0, (x - lead).max(0)),
+            Self::Right | Self::TopRight | Self::BottomRight => ((x + trail).min(w), w),
             Self::Top | Self::Bottom => (0, w),
         };
         let (top, bottom) = match self {
-            Self::Top | Self::TopLeft | Self::TopRight => (0, y),
-            Self::Bottom | Self::BottomLeft | Self::BottomRight => (y, h),
+            Self::Top | Self::TopLeft | Self::TopRight => (0, (y - lead).max(0)),
+            Self::Bottom | Self::BottomLeft | Self::BottomRight => ((y + trail).min(h), h),
             Self::Left | Self::Right => (0, h),
         };
         Rectangle::new(
@@ -495,5 +509,37 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn gaps_open_between_tiles_and_never_at_the_area_edge() {
+        let area = Rectangle::new((10, 20).into(), (1000, 800).into());
+        let split = TileSplit::default();
+        for gap in [0, 1, 7, 8] {
+            let left = TileSlot::Left.rectangle_with_gap(area, split, gap);
+            let right = TileSlot::Right.rectangle_with_gap(area, split, gap);
+            let top_left = TileSlot::TopLeft.rectangle_with_gap(area, split, gap);
+            let bottom_left = TileSlot::BottomLeft.rectangle_with_gap(area, split, gap);
+            assert_eq!(left.loc, area.loc);
+            assert_eq!(right.loc.x - (left.loc.x + left.size.w), gap);
+            assert_eq!(right.loc.x + right.size.w, area.loc.x + area.size.w);
+            assert_eq!(left.size.h, area.size.h);
+            assert_eq!(bottom_left.loc.y - (top_left.loc.y + top_left.size.h), gap);
+            assert_eq!(
+                bottom_left.loc.y + bottom_left.size.h,
+                area.loc.y + area.size.h
+            );
+            let top = TileSlot::Top.rectangle_with_gap(area, split, gap);
+            assert_eq!(top.size.w, area.size.w);
+        }
+        assert_eq!(
+            TileSlot::Left.rectangle_with_gap(area, split, 0),
+            TileSlot::Left.rectangle(area, split)
+        );
+        let tiny = Rectangle::new((0, 0).into(), (4, 4).into());
+        assert_eq!(
+            TileSlot::Right.rectangle_with_gap(tiny, split, 500).size.w,
+            0
+        );
     }
 }

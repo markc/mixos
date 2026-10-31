@@ -183,6 +183,8 @@ pub struct CompState {
     placements: HashMap<SurfaceId, (Placement, smithay::desktop::Window)>,
     float_geometries: HashMap<SurfaceId, FloatGeometry>,
     tile_splits: BTreeMap<(String, u32), TileSplit>,
+    /// `window.gaps`: pixels between adjacent tiles (none at the screen edge).
+    tile_gap: u32,
     placement_events: std::cell::RefCell<Vec<comp_model::observation::ObservationRecord>>,
     /// Client window-state requests (xdg / X11), for the host's policy.
     requests: Vec<(SurfaceId, WindowRequest)>,
@@ -874,6 +876,16 @@ impl CompState {
             .get(&(output.to_owned(), workspace))
             .copied()
             .unwrap_or_default()
+    }
+
+    /// The inner gap between tiles, in logical pixels.
+    pub fn tile_gap(&self) -> i32 {
+        i32::try_from(self.tile_gap).unwrap_or(i32::MAX)
+    }
+
+    /// Follow `window.gaps`; tiled windows re-fit on the next placement pass.
+    pub fn set_tile_gap(&mut self, gap: u32) {
+        self.tile_gap = gap;
     }
 
     /// Whether a layer surface named its output.

@@ -518,7 +518,10 @@ pub fn placement_area(
                 .and_then(|record| record.workspace())
                 .unwrap_or_else(|| comp.current_workspace());
             let split = comp.tile_split_for(&output, workspace);
-            let area = decor::window::content_area(window, tile.rectangle(outer, split));
+            let area = decor::window::content_area(
+                window,
+                tile.rectangle_with_gap(outer, split, comp.tile_gap()),
+            );
             let (w, h) = clamp_size((area.size.w, area.size.h), size_hints(window));
             let usable = decor::window::content_area(window, outer);
             let right = matches!(
