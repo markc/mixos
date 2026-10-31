@@ -38,6 +38,11 @@ buildinfo.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+# The broker pair's signed inventory (tests/bus.rs), as noded's own tests sign it.
+base64.workspace = true
+chrono.workspace = true
+ed25519-dalek.workspace = true
+mesh-trust.workspace = true
 settings = { workspace = true, features = ["native", "cache"] }
 
 [build-dependencies]
