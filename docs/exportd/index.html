@@ -253,8 +253,8 @@ keys in one burst, with no polling;</li>
 <li>keeps the contents it replaced, so one command undoes it;</li>
 <li>stops writing while <code>appearance.export_desktop</code> is <code>false</code>.</li>
 </ul>
-<p>Colours come from <code>settings.palette</code>, the derived palette settingsd
-computes; an exporter names colours and computes none.</p>
+<p>Colours and fonts come from <code>settings.palette</code>, the derived palette
+settingsd computes; an exporter names them and computes none.</p>
 <h2 id="cosmic">COSMIC</h2>
 <p><code>scripts/cosmic.mix</code> writes a COSMIC desktop's cosmic-config tree
 (<code>$XDG_CONFIG_HOME/cosmic</code>, one RON file per key). cosmic-comp, the panel
@@ -275,7 +275,9 @@ session's user.</p>
 <tr><td><code>shell.panels.top</code>, <code>.bottom</code></td><td><code>com.system76.CosmicPanel.Panel</code> and <code>.Dock</code> v1, and which of them <code>com.system76.CosmicPanel</code> v1 <code>entries</code> lists</td></tr>
 <tr><td><code>wallpaper.*</code></td><td><code>com.system76.CosmicBackground</code> v1 <code>all</code>, <code>same-on-all</code> and one key per output</td></tr>
 </tbody></table>
-<p>A null font is the design default (Inter, JetBrains Mono). Panel applet
+<p>The fonts are the palette's too: the families MixOS draws, the session's
+choice or the bundled Inter and JetBrains Mono (COSMIC takes the family
+alone; it has no size setting). Panel applet
 lists and the wallpaper are written only once MixOS has its own; until
 then COSMIC keeps its own.</p>
 <p>Each key is replaced atomically (a <code>.atomicwrite</code> temporary, then a

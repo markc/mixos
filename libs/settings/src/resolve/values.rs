@@ -297,7 +297,7 @@ pub fn palette(
             app: None,
         })
         .map_err(|e| vec![e])?;
-        let palette = design::palette::mode_palette(&doc, &context, &look.geometry(), &frosted)
+        let mut palette = design::palette::mode_palette(&doc, &context, &look.geometry(), &frosted)
             .map_err(|diagnostics| {
                 diagnostics
                     .into_iter()
@@ -306,6 +306,14 @@ pub fn palette(
                     })
                     .collect::<Vec<_>>()
             })?;
+        // The session's font choices over the design's, as the toolkit
+        // draws them.
+        palette.fonts = palette.fonts.with_choices(
+            appearance.font_family.as_deref(),
+            appearance.font_size,
+            appearance.font_weight,
+            appearance.mono_family.as_deref(),
+        );
         let palette = serde_json::to_value(palette)
             .map_err(|e| vec![Diagnostic::new("internal", "palette", e.to_string())])?;
         out.insert(each.name().into(), palette);

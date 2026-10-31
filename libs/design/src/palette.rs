@@ -16,7 +16,10 @@
 //!   theme with every container and component, plus the spacing and the
 //!   radii of the geometry. Under the derived scheme they are the
 //!   derivation itself (`parity: exact`); under an authored scheme they are
-//!   `derive(seeds_of(roles))`, the closest COSMIC can draw (`closest`).
+//!   `derive(seeds_of(roles))`, the closest COSMIC can draw (`closest`);
+//! - `fonts`: the interface and monospace fonts MixOS draws ([`Fonts`]),
+//!   with the session's font choices over the design's (the caller applies
+//!   them with [`Fonts::with_choices`]).
 //!
 //! Colours serialise as `#RRGGBBAA`. Pure data.
 
@@ -53,6 +56,88 @@ pub struct ModePalette {
     pub accent: SrgbColour,
     pub swatches: BTreeMap<&'static str, SrgbColour>,
     pub cosmic: Cosmic,
+    /// The interface and monospace fonts MixOS draws, so an exporter
+    /// writes the same ones.
+    pub fonts: Fonts,
+}
+
+/// The interface and monospace fonts of one look.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct Fonts {
+    pub ui: Font,
+    pub mono: Font,
+}
+
+/// One font: its family, size in logical pixels and CSS weight.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct Font {
+    pub family: String,
+    pub size_px: f64,
+    pub weight: u16,
+}
+
+/// The faces the toolkit bundles and draws whatever family a design's type
+/// records name: a session chooses another family through its settings
+/// ([`Fonts::with_choices`]), never through the design.
+pub const UI_FAMILY: &str = "Inter";
+pub const MONO_FAMILY: &str = "JetBrains Mono";
+
+/// The body weight of a style with fixed faces (the chrome's Inter
+/// Regular).
+const FIXED_FACES_WEIGHT: u16 = 400;
+
+impl Fonts {
+    /// The fonts of a compiled design: the bundled families, at the sizes
+    /// and weights of its `ui` and `mono` type roles (a style with fixed
+    /// faces draws its body at Regular).
+    pub fn of(design: &crate::UnstampedResolvedDesign) -> Self {
+        use crate::family::style::Faces;
+        use crate::{TypographyRole, active_typography};
+        let typography = design.typography();
+        let ui = active_typography(Some(typography), TypographyRole::Ui);
+        let mono = active_typography(Some(typography), TypographyRole::Mono);
+        let fixed = design
+            .dictionary()
+            .style
+            .is_some_and(|style| style.faces == Faces::Fixed);
+        Self {
+            ui: Font {
+                family: UI_FAMILY.into(),
+                size_px: ui.font_size,
+                weight: if fixed { FIXED_FACES_WEIGHT } else { ui.weight },
+            },
+            mono: Font {
+                family: MONO_FAMILY.into(),
+                size_px: mono.font_size,
+                weight: mono.weight,
+            },
+        }
+    }
+
+    /// These fonts with a session's choices over them; `None` keeps the
+    /// design's.
+    pub fn with_choices(
+        mut self,
+        family: Option<&str>,
+        size_px: Option<f64>,
+        weight: Option<u16>,
+        mono_family: Option<&str>,
+    ) -> Self {
+        let named = |name: Option<&str>| name.map(str::trim).filter(|n| !n.is_empty());
+        if let Some(family) = named(family) {
+            self.ui.family = family.into();
+        }
+        if let Some(size) = size_px {
+            self.ui.size_px = size;
+        }
+        if let Some(weight) = weight {
+            self.ui.weight = weight;
+        }
+        if let Some(family) = named(mono_family) {
+            self.mono.family = family.into();
+        }
+        self
+    }
 }
 
 /// The COSMIC-model values of one mode.
@@ -120,6 +205,7 @@ pub fn mode_palette(
         DesignCompileResult::Success(success) => success.candidate,
         DesignCompileResult::Fatal(failure) => return Err(failure.diagnostics),
     };
+    let fonts = Fonts::of(&design);
     let dictionary = design.dictionary();
     let roles = roles_of(dictionary);
     let builder = if context.scheme.is_derived() {
@@ -161,6 +247,7 @@ pub fn mode_palette(
                 radius_xl: xl,
             },
         },
+        fonts,
     })
 }
 

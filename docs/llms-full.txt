@@ -11182,8 +11182,8 @@ Every exporter:
 - keeps the contents it replaced, so one command undoes it;
 - stops writing while `appearance.export_desktop` is `false`.
 
-Colours come from `settings.palette`, the derived palette settingsd
-computes; an exporter names colours and computes none.
+Colours and fonts come from `settings.palette`, the derived palette
+settingsd computes; an exporter names them and computes none.
 
 ## COSMIC
 
@@ -11212,7 +11212,9 @@ session's user.
 | `shell.panels.top`, `.bottom` | `com.system76.CosmicPanel.Panel` and `.Dock` v1, and which of them `com.system76.CosmicPanel` v1 `entries` lists |
 | `wallpaper.*` | `com.system76.CosmicBackground` v1 `all`, `same-on-all` and one key per output |
 
-A null font is the design default (Inter, JetBrains Mono). Panel applet
+The fonts are the palette's too: the families MixOS draws, the session's
+choice or the bundled Inter and JetBrains Mono (COSMIC takes the family
+alone; it has no size setting). Panel applet
 lists and the wallpaper are written only once MixOS has its own; until
 then COSMIC keeps its own.
 
@@ -42550,8 +42552,11 @@ crashed authority is noticed only at the next forwarded write (noded has no
 peer-down event). `settings.source` serves the pinned source by digest (R14a).
 `settings.palette {binding, mode?}` answers the desktop look's palette per
 mode from `design::palette` (the 31 roles, `flat`, the resolved accent, the
-nine swatches and the COSMIC-model values), tagged with incarnation and
-revision; a mirror computes it from its cache.
+nine swatches, the COSMIC-model values with the theme palette's 32 colours by
+name, `neutral_0` to `neutral_10` included, and the `fonts` MixOS draws:
+`ui` and `mono` `{family, size_px, weight}`, the session's font keys over the
+design's), tagged with incarnation and revision; a mirror computes it from
+its cache.
 
 The 0.8.0 transition is gone: the format-4 topics
 (`settingsd.desktop.changed|compact|summary.<profile>`), the `full` and

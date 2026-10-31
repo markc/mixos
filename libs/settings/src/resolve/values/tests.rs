@@ -619,3 +619,25 @@ fn seam_keys_change_the_effective_look_and_its_digest() {
         }
     }
 }
+
+/// `settings.palette` reports the fonts MixOS draws: the bundled families
+/// at the design's sizes by default, and the session's choices over them.
+#[test]
+fn the_palette_reports_the_fonts() {
+    let both = palette(&Values::new(), design::EMBEDDED_DEFAULT_SOURCE, None).unwrap();
+    let fonts = &both["dark"]["fonts"];
+    assert_eq!(fonts["ui"]["family"], "Inter");
+    assert_eq!(fonts["mono"]["family"], "JetBrains Mono");
+    assert!(fonts["ui"]["size_px"].as_f64().unwrap() > 0.0);
+    assert_eq!(both["light"]["fonts"], *fonts);
+    let chosen = values(&[
+        ("appearance.font_family", json!("Noto Sans")),
+        ("appearance.font_size", json!(14.0)),
+        ("appearance.font_weight", json!(500)),
+        ("appearance.mono_family", json!("Hack")),
+    ]);
+    let both = palette(&chosen, design::EMBEDDED_DEFAULT_SOURCE, Some(Mode::Dark)).unwrap();
+    let fonts = &both["dark"]["fonts"];
+    assert_eq!(fonts["ui"], json!({"family": "Noto Sans", "size_px": 14.0, "weight": 500}));
+    assert_eq!(fonts["mono"]["family"], "Hack");
+}
