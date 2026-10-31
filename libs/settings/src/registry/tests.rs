@@ -678,7 +678,12 @@ fn c8_is_enforced_on_write_and_a_stored_conflict_still_loads() {
     );
     assert_eq!(codes(worse)[0].0, "constraint_failed");
     // Resolving it is a write like any other.
-    let fixed = apply(&stored, &BTreeMap::new(), &["keymaps.dopus.nav.parent".into()]).unwrap();
+    let fixed = apply(
+        &stored,
+        &BTreeMap::new(),
+        &["keymaps.dopus.nav.parent".into()],
+    )
+    .unwrap();
     assert!(constraint::conflicts(&fixed).is_empty());
 }
 
