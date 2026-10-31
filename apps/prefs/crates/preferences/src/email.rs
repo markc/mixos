@@ -567,9 +567,10 @@ fn every_email_path_prefs_sends_has_a_settings_setter() {
     };
     let changes = edit_between(&old, &next);
     assert_eq!(changes.len(), 7);
-    let patched = settings::v1::patch(&settings::Desktop::default(), &changes, &[]).unwrap();
-    settings::resolve(&patched).unwrap();
-    assert_eq!(patched.email, next);
+    let values: settings::registry::Values = changes.into_iter().collect();
+    settings::resolve::values::resolve(&values, settings::EMBEDDED_DEFAULT_SOURCE).unwrap();
+    use settings::view::View;
+    assert_eq!(settings::view::AppDomains::of(&values).email, next);
 }
 
 /// `change` over `email` as settingsd holds it: the edit to send, checked
@@ -2735,7 +2736,9 @@ mod tests {
     fn an_unedited_form_follows_another_writer() {
         let mut e = read();
         e.select_email_account("b");
-        e.delivery(citizen::Delivery::Topic(crate::appearance::topics()[0].clone()));
+        e.delivery(citizen::Delivery::Topic(
+            crate::appearance::topics()[0].clone(),
+        ));
         let mut after = two();
         after.accounts[1].name = "Family".into();
         settle_read(&mut e, "8", json!(after));

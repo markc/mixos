@@ -220,12 +220,11 @@ mod tests {
                 json!("xterm"),
             ),
         ];
-        let expected: std::collections::BTreeSet<_> = settings::v1::describe()["fields"]
-            .as_object()
-            .unwrap()
-            .keys()
+        let expected: std::collections::BTreeSet<_> = settings::registry::keys()
+            .iter()
+            .map(|def| def.path)
             .filter(|path| path.starts_with("terminal."))
-            .cloned()
+            .map(str::to_owned)
             .collect();
         assert_eq!(
             cases
@@ -237,13 +236,9 @@ mod tests {
         );
         for (setting, path, value) in cases {
             assert_eq!(setting.edit(), Edit::Set(path, value.clone()), "{path}");
-            let next = settings::v1::patch(
-                &settings::Desktop::default(),
-                &std::collections::BTreeMap::from([(path.into(), value)]),
-                &[],
-            )
-            .unwrap();
-            settings::resolve(&next).unwrap();
+            let values = settings::registry::Values::from([(path.into(), value)]);
+            settings::resolve::values::resolve(&values, settings::EMBEDDED_DEFAULT_SOURCE)
+                .unwrap();
         }
     }
 
