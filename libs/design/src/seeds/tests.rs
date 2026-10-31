@@ -7,9 +7,16 @@ use crate::{
     UnstampedResolvedDesign, compile_design, parse_design_source,
 };
 
+fn document() -> &'static crate::DesignSourceDocument {
+    static DOCUMENT: std::sync::OnceLock<crate::DesignSourceDocument> = std::sync::OnceLock::new();
+    DOCUMENT.get_or_init(|| {
+        parse_design_source(crate::SourceIdentity::new("embedded"), EMBEDDED_DEFAULT_SOURCE)
+            .unwrap()
+    })
+}
+
 fn compile(context: DesignContext) -> UnstampedResolvedDesign {
-    let document = parse_design_source(EMBEDDED_DEFAULT_SOURCE).unwrap();
-    match compile_design(&document, context.clone()) {
+    match compile_design(document(), context.clone()) {
         DesignCompileResult::Success(success) => success.candidate,
         DesignCompileResult::Fatal(failure) => {
             panic!("{context:?} did not compile: {:#?}", failure.diagnostics)
@@ -178,7 +185,7 @@ fn a_grey_accent_takes_the_lifted_accent_text() {
 fn auto_keeps_every_authored_scheme_unchanged() {
     // The axes default to nothing: an authored scheme at `auto` compiles
     // as it did before the axes existed, in every role.
-    let document = parse_design_source(EMBEDDED_DEFAULT_SOURCE).unwrap();
+    let document = document();
     for scheme in Scheme::AUTHORED {
         for mode in Mode::ALL {
             let context = DesignContext {
