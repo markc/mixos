@@ -2044,18 +2044,37 @@ mod tests {
                 write(RecordChange::Thickness(56)),
             ),
         ] {
-            let answer = host.answer(&request(kind, "agent", LOCAL, body.clone()), "DP-1", Some(1), &mut no_layout);
+            let answer = host.answer(
+                &request(kind, "agent", LOCAL, body.clone()),
+                "DP-1",
+                Some(1),
+                &mut no_layout,
+            );
             assert_eq!(answer.rc, 0, "{body}");
             assert_eq!(host.take_deferred(), expected, "{body}");
-            assert_eq!(host.panels.mode("DP-1", crate::seat::Edge::Bottom), "docked");
+            assert_eq!(
+                host.panels.mode("DP-1", crate::seat::Edge::Bottom),
+                "docked"
+            );
         }
         // Already so: answered at once with the panels, nothing written.
         for (kind, body) in [
-            (SceneCommand::PanelMode, json!({"edge":"bottom", "mode":"docked"})),
+            (
+                SceneCommand::PanelMode,
+                json!({"edge":"bottom", "mode":"docked"}),
+            ),
             (panel(PanelCommand::Dock), json!({"edge":"bottom"})),
-            (SceneCommand::PanelResize, json!({"edge":"bottom", "thickness_px":40})),
+            (
+                SceneCommand::PanelResize,
+                json!({"edge":"bottom", "thickness_px":40}),
+            ),
         ] {
-            let answer = host.answer(&request(kind, "agent", LOCAL, body.clone()), "DP-1", Some(1), &mut no_layout);
+            let answer = host.answer(
+                &request(kind, "agent", LOCAL, body.clone()),
+                "DP-1",
+                Some(1),
+                &mut no_layout,
+            );
             let value: Value = serde_json::from_str(&answer.body).unwrap();
             assert_eq!((answer.rc, &value["applied"]), (0, &json!(true)), "{body}");
             assert_eq!(value["panels"]["bottom"]["settings"]["record"], "bottom");
@@ -2063,7 +2082,12 @@ mod tests {
         }
         // Refusals are the caller's at once; an unowned edge keeps the direct path.
         let answer = host.answer(
-            &request(SceneCommand::PanelResize, "agent", LOCAL, json!({"edge":"bottom", "thickness_px":40.5})),
+            &request(
+                SceneCommand::PanelResize,
+                "agent",
+                LOCAL,
+                json!({"edge":"bottom", "thickness_px":40.5}),
+            ),
             "DP-1",
             Some(1),
             &mut no_layout,
@@ -2071,7 +2095,12 @@ mod tests {
         assert_eq!(answer.rc, 10);
         assert_eq!(host.take_deferred(), None);
         let answer = host.answer(
-            &request(panel(PanelCommand::Pin), "agent", LOCAL, json!({"edge":"right"})),
+            &request(
+                panel(PanelCommand::Pin),
+                "agent",
+                LOCAL,
+                json!({"edge":"right"}),
+            ),
             "DP-1",
             Some(1),
             &mut no_layout,
@@ -2081,13 +2110,23 @@ mod tests {
         assert_eq!(host.panels.mode("DP-1", crate::seat::Edge::Right), "pinned");
         // A later answer never carries an earlier deferral.
         host.answer(
-            &request(SceneCommand::PanelMode, "agent", LOCAL, json!({"edge":"bottom", "mode":"hidden"})),
+            &request(
+                SceneCommand::PanelMode,
+                "agent",
+                LOCAL,
+                json!({"edge":"bottom", "mode":"hidden"}),
+            ),
             "DP-1",
             Some(1),
             &mut no_layout,
         );
         host.answer(
-            &request(SceneCommand::PanelState, "agent", LOCAL, json!({"edge":"bottom"})),
+            &request(
+                SceneCommand::PanelState,
+                "agent",
+                LOCAL,
+                json!({"edge":"bottom"}),
+            ),
             "DP-1",
             Some(1),
             &mut no_layout,
@@ -2136,12 +2175,27 @@ mod tests {
             deadline: std::time::Instant::now(),
         };
         let applied = |i: &str, r| Some((i.to_owned(), settings::Revision(r)));
-        assert!(!settings_reply_applied(&reply(None), applied("a", 9).as_ref()));
+        assert!(!settings_reply_applied(
+            &reply(None),
+            applied("a", 9).as_ref()
+        ));
         assert!(!settings_reply_applied(&reply(Some(("a", 3))), None));
-        assert!(!settings_reply_applied(&reply(Some(("a", 3))), applied("a", 2).as_ref()));
-        assert!(!settings_reply_applied(&reply(Some(("a", 3))), applied("b", 9).as_ref()));
-        assert!(settings_reply_applied(&reply(Some(("a", 3))), applied("a", 3).as_ref()));
-        assert!(settings_reply_applied(&reply(Some(("a", 3))), applied("a", 4).as_ref()));
+        assert!(!settings_reply_applied(
+            &reply(Some(("a", 3))),
+            applied("a", 2).as_ref()
+        ));
+        assert!(!settings_reply_applied(
+            &reply(Some(("a", 3))),
+            applied("b", 9).as_ref()
+        ));
+        assert!(settings_reply_applied(
+            &reply(Some(("a", 3))),
+            applied("a", 3).as_ref()
+        ));
+        assert!(settings_reply_applied(
+            &reply(Some(("a", 3))),
+            applied("a", 4).as_ref()
+        ));
     }
 
     #[test]

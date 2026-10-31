@@ -1363,12 +1363,8 @@ fn admit(
 
 /// One `settings.apply` to settingsd, bounded by [`EVENT_TIMEOUT`].
 async fn settings_apply(client: &SupervisedClient, body: &Value) -> Result<Value, Value> {
-    let call = client.call_with_headers_raw(
-        "settingsd",
-        "settings.apply",
-        &BTreeMap::new(),
-        &body.to_string(),
-    );
+    let (headers, body) = (BTreeMap::new(), body.to_string());
+    let call = client.call_with_headers_raw("settingsd", "settings.apply", &headers, &body);
     match tokio::time::timeout(EVENT_TIMEOUT, call).await {
         Err(_) => Err(json!({"error_code":"SETTINGS_UNAVAILABLE",
             "message":"settingsd did not answer settings.apply in time"})),
@@ -1503,7 +1499,12 @@ mod tests {
                 None,
                 "SETTINGS_REFUSED",
             ),
-            (10, "", Some("no such service: settingsd"), "SETTINGS_UNAVAILABLE"),
+            (
+                10,
+                "",
+                Some("no such service: settingsd"),
+                "SETTINGS_UNAVAILABLE",
+            ),
             (0, "not json", None, "SETTINGS_UNAVAILABLE"),
         ] {
             let refusal = settings_outcome(rc, reply, error).unwrap_err();
@@ -1514,7 +1515,12 @@ mod tests {
             settings_outcome(10, r#"{"status":"conflict","revision":"3"}"#, None).unwrap_err();
         assert_eq!(refusal["settings"]["revision"], "3");
         let absent = settings_outcome(10, "", Some("no such service: settingsd")).unwrap_err();
-        assert!(absent["message"].as_str().unwrap().contains("no such service"));
+        assert!(
+            absent["message"]
+                .as_str()
+                .unwrap()
+                .contains("no such service")
+        );
     }
 
     #[test]
