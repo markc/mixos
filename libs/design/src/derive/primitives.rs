@@ -268,7 +268,7 @@ mod tests {
     fn ramp_keeps_the_seed_alpha_and_spans_black_to_white() {
         let seed = with_alpha(grey(0x80), 0.4);
         let ramp = ramp::<11>(seed);
-                assert!(ramp.iter().all(|step| step.alpha == 0.4));
+        assert!(ramp.iter().all(|step| step.alpha == 0.4));
         assert_eq!(ramp[0].to_srgba8()[..3], [0, 0, 0]);
         assert_eq!(ramp[10].to_srgba8()[..3], [255, 255, 255]);
     }

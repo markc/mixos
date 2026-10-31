@@ -364,7 +364,10 @@ fn custom_container_backgrounds_get_their_own_ramps_and_keep_alpha() {
     assert_eq!(t.primary.component.base, ramp::<100>(primary)[p_idx + 6]);
     assert_eq!(t.secondary.base, secondary);
     let s_idx = idx(secondary);
-    assert_eq!(t.secondary.component.base, ramp::<100>(secondary)[s_idx + 3]);
+    assert_eq!(
+        t.secondary.component.base,
+        ramp::<100>(secondary)[s_idx + 3]
+    );
     assert_eq!(t.secondary.component.base.alpha, secondary.alpha);
     // The transparent primary starts from the custom base too.
     assert_eq!(t.transparent_primary.base, with_alpha(primary, 1.0));
@@ -433,7 +436,10 @@ fn window_hint_is_copied_through() {
         window_hint: Some(hint),
         ..Seeds::default()
     };
-    assert_eq!(dark_with(&seeds, &FrostedGlass::default()).window_hint, Some(hint));
+    assert_eq!(
+        dark_with(&seeds, &FrostedGlass::default()).window_hint,
+        Some(hint)
+    );
     assert_eq!(dark_default().window_hint, None);
 }
 

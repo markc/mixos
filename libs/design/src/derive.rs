@@ -197,7 +197,10 @@ impl DerivedTheme {
     /// the control tint's OKLCh hue and chroma when one is set.
     pub fn control(&self, k: usize) -> Option<SrgbColour> {
         let neutral = *self.palette.neutral.get(k)?;
-        Some(self.control_tint.map_or(neutral, |tint| rehue(neutral, tint)))
+        Some(
+            self.control_tint
+                .map_or(neutral, |tint| rehue(neutral, tint)),
+        )
     }
 
     /// The accent text colour: `accent_text` when set, else the accent.
