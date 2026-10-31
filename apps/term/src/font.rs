@@ -585,12 +585,9 @@ mod tests {
         use settings::follow::{Followed, Follower};
 
         fn summary(revision: &str) -> String {
-            serde_json::json!({"status":"current","summary":{
-                "schema":1,"binding":{"instance":"example","profile":"default"},
-                "incarnation":"inc","revision":revision,"design_revision":"1",
-                "source_digest":"d","appearance":settings::Appearance::default(),
-                "custom_source":false
-            }})
+            serde_json::json!({"status":"current",
+                "binding":{"instance":"example","profile":"default"},
+                "incarnation":"inc","revision":revision,"values":{},"resolved":{}})
             .to_string()
         }
 

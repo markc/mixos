@@ -746,18 +746,21 @@ fn panel(h: &Harness<'static, Holder>) -> egui::Color32 {
     h.ctx.global_style().visuals.panel_fill
 }
 
-/// A `settings.get` summary answer: the profile at `revision` looks like
-/// `scheme`, dark; `custom` names a design source of its own.
+/// A `settings.get {view: values}` answer: the profile at `revision` looks
+/// like `scheme`, dark; `custom` names a design source of its own.
 fn summary_reply(
     revision: &str,
     scheme: &str,
     custom: bool,
 ) -> Option<(u8, String, Option<String>)> {
-    let body = json!({"status":"current","summary":{"schema":1,
+    let mut values = json!({"appearance.scheme":scheme,"appearance.mode":"dark",
+        "appearance.contrast":"normal"});
+    if custom {
+        values["appearance.source"] = json!("design: {}");
+    }
+    let body = json!({"status":"current",
         "binding":{"instance":"host","profile":"default"},
-        "incarnation":"i","revision":revision,"design_revision":revision,
-        "source_digest":"d","custom_source":custom,
-        "appearance":{"scheme":scheme,"mode":"dark","contrast":"normal","source":null}}});
+        "incarnation":"i","revision":revision,"values":values,"resolved":{}});
     Some((0, body.to_string(), None))
 }
 
@@ -779,7 +782,7 @@ fn file_panel() -> egui::Color32 {
     toolkit::style::style(&Theme::load()).visuals.panel_fill
 }
 
-/// A window whose summary subscription has landed, with its start read
+/// A window whose look subscription has landed, with its start read
 /// answered by `reply`.
 fn following(reply: Option<(u8, String, Option<String>)>) -> (Harness<'static, Holder>, Service) {
     let (mut h, service) = window(
@@ -788,10 +791,10 @@ fn following(reply: Option<(u8, String, Option<String>)>) -> (Harness<'static, H
         egui::vec2(640.0, 360.0),
     );
     h.run_steps(4);
-    let summary = settings::summary_topic(settings::follow::PROFILE);
+    let summary = settings::topics::look_topic(settings::follow::PROFILE);
     assert!(
         service.subscribed.borrow().contains(&summary),
-        "the summary topic: {:?}",
+        "the look topic: {:?}",
         service.subscribed.borrow()
     );
     assert_eq!(service.reads(), 0, "no read before the subscription lands");
@@ -812,7 +815,7 @@ fn following(reply: Option<(u8, String, Option<String>)>) -> (Harness<'static, H
 
 fn hint(service: &Service) {
     service.deliver(Delivery::Incoming(Incoming::Topic {
-        topic: settings::summary_topic(settings::follow::PROFILE),
+        topic: settings::topics::look_topic(settings::follow::PROFILE),
         body: "{}".into(),
     }));
 }
@@ -949,7 +952,7 @@ fn the_subscription_landing_catches_a_missed_change() {
     // The profile changes now; no hint can arrive yet. Then the
     // subscription lands and the read it makes has the change.
     service.deliver(Delivery::Subscribed {
-        topic: settings::summary_topic(settings::follow::PROFILE),
+        topic: settings::topics::look_topic(settings::follow::PROFILE),
     });
     h.run_steps(2);
     assert_eq!(service.reads(), 2, "the subscription landing reads");
@@ -1052,7 +1055,7 @@ fn closing_reads_no_look() {
     hint(&service);
     service.deliver(Delivery::Incoming(Incoming::Connection { up: true }));
     service.deliver(Delivery::Subscribed {
-        topic: settings::summary_topic(settings::follow::PROFILE),
+        topic: settings::topics::look_topic(settings::follow::PROFILE),
     });
     service.answer_look(look_reply("9", "ocean"));
     h.run_steps(6);
@@ -1088,7 +1091,7 @@ fn closing_with_an_armed_retry_reads_nothing() {
     for delivery in [
         Delivery::Incoming(Incoming::Connection { up: true }),
         Delivery::Subscribed {
-            topic: settings::summary_topic(settings::follow::PROFILE),
+            topic: settings::topics::look_topic(settings::follow::PROFILE),
         },
     ] {
         service.deliver(delivery);

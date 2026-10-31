@@ -232,7 +232,7 @@ pub struct Shell {
     inbox: Arc<Mutex<Deliveries>>,
     installed: toolkit::theme_menu::Choice,
     file_theme: Theme,
-    look: Option<settings::Appearance>,
+    look: Option<settings::view::Look>,
     custom_source: bool,
     common_ui: settings::model::CommonUi,
     keymap: toolkit::keymap::Overrides,
@@ -363,7 +363,7 @@ impl Shell {
                     continue;
                 }
                 Event::Delivery(Delivery::Topic(topic)) => {
-                    if topic == self.follower.topic() {
+                    if self.follower.is_hint(&topic) {
                         self.read_look();
                     }
                     continue;
@@ -508,12 +508,7 @@ impl Shell {
         self.look
             .as_ref()
             .map(|look| {
-                toolkit::look_delivery::theme(
-                    look,
-                    &self.common_ui,
-                    self.custom_source,
-                    &self.file_theme,
-                )
+                toolkit::session_look::follow_look(look, Some(APP), self.custom_source, &self.file_theme)
             })
             .unwrap_or_else(|| self.file_theme.clone())
             .with_ui(self.common_ui.clone())
@@ -529,11 +524,11 @@ impl Shell {
         self.keymap = keymap;
     }
 
-    pub fn set_look(&mut self, look: Option<settings::Appearance>) {
+    pub fn set_look(&mut self, look: Option<settings::view::Look>) {
         self.follow_look(look, false);
     }
 
-    fn follow_look(&mut self, look: Option<settings::Appearance>, custom_source: bool) {
+    fn follow_look(&mut self, look: Option<settings::view::Look>, custom_source: bool) {
         self.custom_source = custom_source;
         self.look = look;
         self.theme = self.session_theme();
@@ -577,15 +572,14 @@ impl Shell {
         let (followed, next) = self.follower.answered(ticket, answer);
         match followed {
             Some(settings::follow::Followed::Look {
-                appearance,
-                ui,
+                look,
                 custom_source,
                 keymaps,
                 ..
             }) => {
                 toolkit::debug!(app = "monitor", "settings applied");
-                self.common_ui = ui;
-                self.follow_look(Some(*appearance), custom_source);
+                self.common_ui = toolkit::session_look::ui(&look, Some(APP));
+                self.follow_look(Some(*look), custom_source);
                 self.set_keymap(keymaps.get(APP).cloned().unwrap_or_default());
             }
             Some(settings::follow::Followed::Missing) if self.look.is_some() => {

@@ -73,13 +73,12 @@ pub struct Shell {
     base: Theme,
     theme: Theme,
     file_theme: Theme,
-    look: Option<settings::Appearance>,
+    look: Option<settings::view::Look>,
     custom_source: bool,
     common_ui: settings::model::CommonUi,
     /// The profile's bindings for dopus, as last applied.
     keymap: toolkit::keymap::Overrides,
     follower: settings::follow::Follower,
-    look_topic: String,
     look_retry: u64,
     installed: Option<toolkit::theme_menu::Choice>,
     bus: Option<Bus>,
@@ -138,7 +137,6 @@ impl Shell {
             common_ui: settings::model::CommonUi::default(),
             keymap: toolkit::keymap::Overrides::new(),
             follower: settings::follow::Follower::new(&hostname()),
-            look_topic: settings::summary_topic(settings::follow::PROFILE),
             look_retry: 0,
             installed: None,
             bus,
@@ -154,11 +152,12 @@ impl Shell {
         if let Some(bus) = &shell.bus {
             // Hints arrive once the subscription lands; the read then
             // (`Delivery::Subscribed`) catches any change missed before.
-            for topic in [
-                shell.look_topic.clone(),
-                THEME_TOPIC.into(),
-                PROPS_TOPIC.into(),
-            ] {
+            for topic in shell
+                .follower
+                .topics()
+                .into_iter()
+                .chain([THEME_TOPIC.into(), PROPS_TOPIC.into()])
+            {
                 bus.handle.subscribe(topic);
             }
         }
@@ -229,7 +228,7 @@ impl Shell {
                     }
                 }
                 Delivery::Topic { topic, body } => {
-                    if topic == self.look_topic {
+                    if self.follower.is_hint(&topic) {
                         // A hint, never trusted: the look comes from the read.
                         self.read_look();
                     } else if topic == THEME_TOPIC {
@@ -242,7 +241,7 @@ impl Shell {
                 Delivery::Connected => self.read_look(),
                 Delivery::Disconnected => {}
                 Delivery::Subscribed { topic } => {
-                    if topic == self.look_topic {
+                    if self.follower.is_hint(&topic) {
                         self.read_look();
                     }
                 }
@@ -461,12 +460,7 @@ impl Shell {
             .look
             .as_ref()
             .map(|look| {
-                toolkit::look_delivery::theme(
-                    look,
-                    &self.common_ui,
-                    self.custom_source,
-                    &self.file_theme,
-                )
+                toolkit::session_look::follow_look(look, Some(APP), self.custom_source, &self.file_theme)
             })
             .unwrap_or_else(|| self.file_theme.clone())
             .with_ui(self.common_ui.clone());
@@ -496,11 +490,11 @@ impl Shell {
 
     /// Show the session look `look` (settingsd's), or the theme file's with
     /// `None`; the window's own choice stays on top.
-    pub fn set_look(&mut self, look: Option<settings::Appearance>) {
+    pub fn set_look(&mut self, look: Option<settings::view::Look>) {
         self.follow_look(look, false);
     }
 
-    fn follow_look(&mut self, look: Option<settings::Appearance>, custom_source: bool) {
+    fn follow_look(&mut self, look: Option<settings::view::Look>, custom_source: bool) {
         self.custom_source = custom_source;
         self.look = look;
         self.set_base();
@@ -534,15 +528,14 @@ impl Shell {
         let (followed, next) = self.follower.answered(ticket, answer);
         match followed {
             Some(settings::follow::Followed::Look {
-                appearance,
-                ui,
+                look,
                 custom_source,
                 keymaps,
                 ..
             }) => {
                 toolkit::debug!(app = "dopus", "settings applied");
-                self.common_ui = ui;
-                self.follow_look(Some(*appearance), custom_source);
+                self.common_ui = toolkit::session_look::ui(&look, Some(APP));
+                self.follow_look(Some(*look), custom_source);
                 self.set_keymap(keymaps.get(APP).cloned().unwrap_or_default());
             }
             // settingsd gone: the look falls back to the theme file, but the
