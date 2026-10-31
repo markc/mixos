@@ -7386,6 +7386,8 @@ dependencies = [
  "futures",
  "paths",
  "preferences",
+ "schemars",
+ "serde",
  "serde_json",
  "settings",
  "tokio",
