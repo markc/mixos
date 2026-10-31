@@ -116,6 +116,12 @@ fn effective_and_snapshot_bytes_match_the_pinned_format() {
 fn the_s2_source_changes_only_the_identity() {
     let before = include_str!("fixtures/2026-10-31-before-s2.theme.conf.mix");
     assert_eq!(source_digest(before), BEFORE_S2_SOURCE_DIGEST);
+    // A store sealed before S2 pins that source, and `interpretation()`
+    // re-derives from the pinned source: through this compiler it must give
+    // back exactly the sealed bytes.
+    let sealed = snapshot_with_source(before);
+    assert_eq!(digest(&sealed.effective).unwrap(), BEFORE_S2_EFFECTIVE_DIGEST);
+    assert_eq!(digest(&sealed).unwrap(), BEFORE_S2_SNAPSHOT_DIGEST);
     let mut snapshot = fixed_snapshot();
     for effective in snapshot.effective.values_mut() {
         assert_eq!(effective.design.source, MODERN_SOURCE_DIGEST);
