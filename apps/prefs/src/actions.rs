@@ -1,37 +1,136 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! Preferences' commands. The menu bar, the panel's buttons, the shortcuts and
-//! the Bus commands `prefs.actions` / `prefs.execute` all come from this
-//! registry.
+//! Preferences' commands. The title bar, the panel's buttons, the shortcuts
+//! and the Bus commands `prefs.actions` / `prefs.execute` all come from this
+//! registry; `prefs.page.open` and `prefs.set` are its typed `page.open` and
+//! `set`, so an agent or a Workshop macro moves through the pages and sets
+//! each control by the same path as a click.
 use egui::{Key, KeyboardShortcut, Modifiers};
-use preferences::{Dialog, Engine, SECTIONS, Section};
+use preferences::{Dialog, Engine};
+use schemars::JsonSchema;
+use serde::Deserialize;
+use serde_json::{Value, json};
+use toolkit::action::{Class, EngineAction, Error, ParamSpec};
 use toolkit::{Action, Icon, Registry};
 
 fn undialogued(e: &Engine) -> bool {
     e.ui.dialog.is_none() && !e.picker.open && !e.quitting
 }
 
-/// Icons belong to the renderer; the engine registry stays headless.
-pub fn section_icon(section: Section) -> Icon {
-    match section {
-        Section::Appearance => Icon::Palette,
-        Section::TextAndFonts => Icon::Type,
-        Section::Ced => Icon::FileCode,
-        Section::Windows => Icon::AppWindow,
-        Section::Accessibility => Icon::Accessibility,
-        Section::Wallpapers => Icon::Image,
-        Section::Email => Icon::Mail,
-        Section::Terminal => Icon::FileTerminal,
-        Section::Software => Icon::Package,
-    }
-}
-
 const fn key(modifiers: Modifiers, key: Key) -> Option<KeyboardShortcut> {
     Some(KeyboardShortcut::new(modifiers, key))
 }
 
+/// `page.open`'s parameters.
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OpenPage {
+    /// A page id from `prefs.pages` (COSMIC's kebab-case spelling works).
+    pub page: String,
+    /// A row id from `prefs.page`: open its drawer and bring it into view.
+    #[serde(default)]
+    pub row: Option<String>,
+}
+
+/// `set`'s parameters.
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SetKey {
+    /// A settings key a page row writes.
+    pub key: String,
+    /// The new value; null resets the key.
+    pub value: Value,
+}
+
+fn navigable(e: &Engine) -> Result<(), &'static str> {
+    if e.can_navigate() {
+        Ok(())
+    } else {
+        Err("a dialog is open")
+    }
+}
+
+fn open_page(e: &mut Engine, params: &Value) -> Result<Value, Error> {
+    let p: OpenPage = serde_json::from_value(params.clone()).map_err(|err| Error::BadParams {
+        id: "page.open",
+        msg: err.to_string(),
+    })?;
+    e.open_page(&p.page, p.row.as_deref()).map_err(Error::Failed)?;
+    Ok(json!({"page": e.nav.page, "row": p.row, "drawer": e.nav.drawer}))
+}
+
+fn set_key(e: &mut Engine, params: &Value) -> Result<Value, Error> {
+    let p: SetKey = serde_json::from_value(params.clone()).map_err(|err| Error::BadParams {
+        id: "set",
+        msg: err.to_string(),
+    })?;
+    e.set_key(&p.key, p.value).map_err(Error::Failed)?;
+    Ok(json!({"key": p.key, "value": e.store.value(&p.key), "writing": e.store.writing()}))
+}
+
+fn typed(
+    id: &'static str,
+    label: &'static str,
+    run: fn(&mut Engine, &Value) -> Result<Value, Error>,
+    params: ParamSpec,
+) -> EngineAction<Engine> {
+    EngineAction {
+        id,
+        label,
+        menu: None,
+        submenu: None,
+        group: 0,
+        shortcut: None,
+        icon: None,
+        enabled: navigable,
+        run,
+        params: Some(params),
+        class: Class::Intent,
+    }
+}
+
 pub fn registry() -> Registry<Engine> {
     let mut r = Registry::new();
+    r.add_engine(typed(
+        "page.open",
+        "page-open",
+        open_page,
+        ParamSpec {
+            type_name: "prefs::OpenPage",
+            schema: || schemars::schema_for!(OpenPage),
+        },
+    ))
+    .add_engine(typed(
+        "set",
+        "set-setting",
+        set_key,
+        ParamSpec {
+            type_name: "prefs::SetKey",
+            schema: || schemars::schema_for!(SetKey),
+        },
+    ))
+    .add(Action {
+        id: "sidebar.toggle",
+        submenu: None,
+        group: 0,
+        label: "sidebar-toggle",
+        menu: Some("view"),
+        shortcut: None,
+        icon: Some(Icon::PanelLeft),
+        enabled: Engine::can_navigate,
+        run: Engine::toggle_sidebar,
+    })
+    .add(Action {
+        id: "page.back",
+        submenu: None,
+        group: 0,
+        label: "page-back",
+        menu: Some("view"),
+        shortcut: key(Modifiers::ALT, Key::ArrowLeft),
+        icon: Some(Icon::ChevronLeft),
+        enabled: Engine::can_back,
+        run: Engine::back,
+    });
     r.add(toolkit::macros::command(
         |s: &Engine| s.ui.macros_open || undialogued(s),
         |e: &mut Engine| {
@@ -69,22 +168,9 @@ pub fn registry() -> Registry<Engine> {
         shortcut: key(Modifiers::NONE, Key::Slash),
         icon: Some(Icon::Search),
         enabled: Engine::can_navigate,
-        run: Engine::focus_search,
+        run: Engine::open_search,
     });
     r.scope("view.search", toolkit::action::Scope::Browsing);
-    for section in SECTIONS {
-        r.add(Action {
-            id: section.command,
-            label: section.title,
-            menu: Some("view"),
-            submenu: Some(section.category.label()),
-            group: 0,
-            shortcut: None,
-            icon: Some(section_icon(section.section)),
-            enabled: Engine::can_navigate,
-            run: section.run,
-        });
-    }
     // View › Theme: any scheme, style, mode and framing, in this window only.
     for (id, label, menu, enabled, run) in [
         (

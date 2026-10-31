@@ -1097,6 +1097,7 @@ impl Engine {
             self.look.binding = binding;
         }
         self.read_look();
+        self.start_store();
     }
 
     /// Read the profile again (a hint arrived, the Bus reconnected, Refresh),

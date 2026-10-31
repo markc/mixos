@@ -11,6 +11,8 @@ struct Settings {
     service: String,
     comp: String,
     url: String,
+    /// The page to open (`prefs appearance`, `prefs window-management`).
+    page: Option<String>,
 }
 
 impl Default for Settings {
@@ -19,6 +21,7 @@ impl Default for Settings {
             service: APP.into(),
             comp: std::env::var("MIXOS_COMP_SERVICE").unwrap_or_else(|_| "comp".into()),
             url: citizen::noded_url(),
+            page: None,
         }
     }
 }
@@ -27,6 +30,13 @@ fn parse(args: impl Iterator<Item = String>) -> Result<Settings, String> {
     let mut settings = Settings::default();
     let mut args = args;
     while let Some(arg) = args.next() {
+        if !arg.starts_with("--") && settings.page.is_none() {
+            if preferences::nav::page_id(&arg).is_none() {
+                return Err(format!("no such page: {arg}"));
+            }
+            settings.page = Some(arg);
+            continue;
+        }
         let value = args
             .next()
             .filter(|v| !v.is_empty())
@@ -64,6 +74,7 @@ fn run(settings: &Settings) -> Result<(), String> {
         ..eframe::NativeOptions::default()
     };
     let comp = settings.comp.clone();
+    let page = settings.page.clone();
     let shell_bus = handle.clone();
     let result = eframe::run_native(
         APP_ID,
@@ -72,7 +83,10 @@ fn run(settings: &Settings) -> Result<(), String> {
             toolkit::decorations::initialise(cc);
             toolkit::decorations::initialise_window(&cc.egui_ctx, cc.winit_window().cloned());
             toolkit::install(&cc.egui_ctx, &theme);
-            let shell = Shell::new(cc.egui_ctx.clone(), theme, shell_bus, deliveries, comp)?;
+            let mut shell = Shell::new(cc.egui_ctx.clone(), theme, shell_bus, deliveries, comp)?;
+            if let Some(page) = &page {
+                let _ = shell.engine_mut().open_page(page, None);
+            }
             Ok(Box::new(shell))
         }),
     )
@@ -90,7 +104,7 @@ fn main() {
     buildinfo::exit_on_version!(leading);
     if matches!(cli_args.get(1).map(String::as_str), Some("--help" | "-h")) {
         println!(
-            "prefs — MixOS preferences\nUsage: prefs [--noded-url URL] [--service NAME] [--comp NAME]"
+            "prefs — MixOS Preferences\nUsage: prefs [PAGE] [--noded-url URL] [--service NAME] [--comp NAME]\nPAGE is a page id from prefs.pages (appearance, panel, window-management, …)"
         );
         println!("{}", toolkit::debug::HELP);
         return;
@@ -98,6 +112,15 @@ fn main() {
     let result = parse(cli_args.into_iter().skip(1)).and_then(|settings| {
         // One window per session: a second launch raises the first.
         if citizen::probe(&settings.url, &settings.service, APP) {
+            // A deep link switches the running window to its page.
+            if let Some(page) = &settings.page {
+                citizen::request(
+                    &settings.url,
+                    &settings.service,
+                    "prefs.page.open",
+                    serde_json::json!({ "page": page }),
+                )?;
+            }
             match citizen::forward(&settings.url, &settings.service, APP) {
                 Ok(()) => return Ok(()),
                 Err(error) if citizen::probe(&settings.url, &settings.service, APP) => {
