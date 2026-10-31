@@ -23,9 +23,9 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 
 mod accessibility;
+mod app_domains;
 mod appearance;
 mod apps;
-mod app_domains;
 mod displays;
 mod input;
 mod keymaps;
@@ -38,10 +38,10 @@ mod window;
 mod workspaces;
 
 pub use accessibility::{Accessibility, Magnifier, Osk};
+pub use app_domains::AppDomains;
 pub use appearance::{Accent, AppLook, AppLooks, Appearance, Density, Frosted, State, Tune};
 pub use apps::{Applications, Xwayland};
 pub use displays::{Display, Displays};
-pub use app_domains::AppDomains;
 pub use input::{Input, Keyboard, Mouse, Tablet, Touchpad};
 pub use keymaps::{Keymaps, Spawn};
 pub use panels::{Applets, Panel, Panels};

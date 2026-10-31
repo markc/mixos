@@ -42,8 +42,7 @@ fn each_view(values: &Values) -> Vec<(&'static str, BTreeSet<&'static str>, Stri
 /// companion its constraints need.
 fn sampled(def: &KeyDef) -> Values {
     let changes = sample_batch(def).into_iter().collect();
-    registry::apply(&Values::new(), &changes, &[])
-        .unwrap_or_else(|e| panic!("{}: {e:?}", def.path))
+    registry::apply(&Values::new(), &changes, &[]).unwrap_or_else(|e| panic!("{}: {e:?}", def.path))
 }
 
 /// §1.6: every registry key is read by exactly one view, unless it is
@@ -73,7 +72,10 @@ fn every_key_is_read_by_exactly_one_view() {
             .map(|(name, _, _)| *name)
             .collect();
         if def.export_only {
-            assert!(readers.is_empty(), "{path}: export only, read by {readers:?}");
+            assert!(
+                readers.is_empty(),
+                "{path}: export only, read by {readers:?}"
+            );
             continue;
         }
         assert_eq!(readers.len(), 1, "{path}: read by {readers:?}");
@@ -107,10 +109,16 @@ fn defaults_decode_as_the_registry_and_today_s_model_have_them() {
     assert_eq!(v.window.framing.decorations, "auto");
     assert_eq!((v.window.active_hint, v.window.gaps), (3, 0));
     assert!(!v.panels.top.enabled && v.panels.bottom.enabled);
-    assert_eq!((v.panels.top.thickness, v.panels.bottom.thickness), (32, 40));
+    assert_eq!(
+        (v.panels.top.thickness, v.panels.bottom.thickness),
+        (32, 40)
+    );
     assert_eq!(v.panels.bottom.edge, "bottom");
     assert_eq!(v.panels.bottom.applets, Applets::default(), "Quoin's own");
-    assert_eq!(v.input.keyboard.layouts, vec![("us".to_owned(), String::new())]);
+    assert_eq!(
+        v.input.keyboard.layouts,
+        vec![("us".to_owned(), String::new())]
+    );
     assert_eq!(v.input.mouse.speed, 57);
     assert_eq!(v.accessibility.text_scale, 1.0);
     assert_eq!(v.time.zone, None, "the owner's until authored");
@@ -148,7 +156,10 @@ fn families_decode_by_member() {
     assert_eq!(v.wallpaper.image_for("eDP-1"), Some("/srv/walls/a.png"));
     assert_eq!(v.app_looks.0["term"].mode.as_deref(), Some("light"));
     assert_eq!(v.keymaps.app("dopus")["nav.parent"], ["Ctrl+U"]);
-    assert!(!v.keymaps.apps.contains_key("comp"), "spawn entries are apart");
+    assert!(
+        !v.keymaps.apps.contains_key("comp"),
+        "spawn entries are apart"
+    );
     assert_eq!(v.keymaps.spawn["browser"].command, ["firefox"]);
     assert_eq!(v.app_domains.terminal.font.size, 15.0);
 }

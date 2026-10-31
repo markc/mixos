@@ -69,7 +69,9 @@ pub struct TimeApplet {
 impl View for Time {
     fn read(r: &Reader) -> Self {
         Self {
-            zone: r.authored("time.zone").and_then(|v| v.as_str().map(str::to_owned)),
+            zone: r
+                .authored("time.zone")
+                .and_then(|v| v.as_str().map(str::to_owned)),
             ntp: r.bool("time.ntp"),
             format: TimeFormat {
                 h24: r.opt_bool("time.format.24h"),
@@ -94,9 +96,7 @@ pub struct Region {
 impl View for Region {
     fn read(r: &Reader) -> Self {
         Self {
-            languages: r
-                .authored("region.languages")
-                .map(|v| super::strings(&v)),
+            languages: r.authored("region.languages").map(|v| super::strings(&v)),
             formats: r
                 .authored("region.formats")
                 .and_then(|v| v.as_str().map(str::to_owned)),

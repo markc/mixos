@@ -66,7 +66,10 @@ fn an_app_mode_beats_the_resolved_auto_mode() {
     ]));
     assert_eq!(effective["desktop"].mode, "light");
     assert_eq!(effective["app:term"].mode, "dark");
-    assert_eq!(effective["app:term"].provenance["appearance.mode"], "apps.term");
+    assert_eq!(
+        effective["app:term"].provenance["appearance.mode"],
+        "apps.term"
+    );
     assert_eq!(effective["app:ced"].mode, "light");
 }
 
@@ -138,7 +141,8 @@ fn resolve_v2_reproduces_today_s_look_for_the_same_choices() {
     for (context, old) in today {
         let mut old = old;
         if let Some(from) = old.provenance.remove("ui.text_scale") {
-            old.provenance.insert("accessibility.text_scale".into(), from);
+            old.provenance
+                .insert("accessibility.text_scale".into(), from);
         }
         assert_eq!(
             serde_json::to_value(&old).unwrap(),
