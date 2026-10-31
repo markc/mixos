@@ -112,7 +112,10 @@ fn off_step_densities_map_by_the_midpoints_and_are_reported() {
         assert_eq!(m.report.changed.len(), 1, "density {density}");
         assert_eq!(m.report.changed[0].from, "ui.density");
         assert_eq!(m.report.changed[0].old, json!(density));
-        assert_eq!(m.report.changed[0].to.as_deref(), Some("appearance.density"));
+        assert_eq!(
+            m.report.changed[0].to.as_deref(),
+            Some("appearance.density")
+        );
     }
 }
 
@@ -126,7 +129,10 @@ fn panel_dock_stores_no_mode_and_no_autohide() {
 #[test]
 fn panel_overlay_stores_its_mode() {
     let m = with(|d| d.shell.panels.get_mut("bottom").unwrap().mode = "overlay".into());
-    assert_eq!(stored(&m, "shell.panels.bottom.mode"), Some(&json!("overlay")));
+    assert_eq!(
+        stored(&m, "shell.panels.bottom.mode"),
+        Some(&json!("overlay"))
+    );
     assert_eq!(stored(&m, "shell.panels.bottom.autohide"), None);
 }
 
@@ -134,7 +140,10 @@ fn panel_overlay_stores_its_mode() {
 fn panel_hidden_becomes_dock_with_autohide() {
     let m = with(|d| d.shell.panels.get_mut("bottom").unwrap().mode = "hidden".into());
     assert_eq!(stored(&m, "shell.panels.bottom.mode"), None);
-    assert_eq!(stored(&m, "shell.panels.bottom.autohide"), Some(&json!(true)));
+    assert_eq!(
+        stored(&m, "shell.panels.bottom.autohide"),
+        Some(&json!(true))
+    );
 }
 
 #[test]
@@ -304,13 +313,22 @@ fn backdrop_slideshow_maps_to_the_folder_form() {
         "schema": 1,
         "default": {"slideshow": {"folder": "/home/user/walls", "interval_s": 300, "shuffle": true}}
     }));
-    assert_eq!(stored(&m, "wallpaper.slideshow.enabled"), Some(&json!(true)));
+    assert_eq!(
+        stored(&m, "wallpaper.slideshow.enabled"),
+        Some(&json!(true))
+    );
     assert_eq!(
         stored(&m, "wallpaper.slideshow.folder"),
         Some(&json!("/home/user/walls"))
     );
-    assert_eq!(stored(&m, "wallpaper.slideshow.interval_s"), Some(&json!(300)));
-    assert_eq!(stored(&m, "wallpaper.slideshow.shuffle"), Some(&json!(true)));
+    assert_eq!(
+        stored(&m, "wallpaper.slideshow.interval_s"),
+        Some(&json!(300))
+    );
+    assert_eq!(
+        stored(&m, "wallpaper.slideshow.shuffle"),
+        Some(&json!(true))
+    );
     assert!(m.report.dropped.is_empty());
 }
 
@@ -320,7 +338,11 @@ fn backdrop_slideshow_of_images_without_a_folder_is_dropped() {
         "schema": 1,
         "default": {"slideshow": {"images": ["/home/user/walls/a.png"]}}
     }));
-    assert!(m.values.keys().all(|k| !k.starts_with("wallpaper.slideshow")));
+    assert!(
+        m.values
+            .keys()
+            .all(|k| !k.starts_with("wallpaper.slideshow"))
+    );
     assert_eq!(m.report.dropped.len(), 1);
     assert_eq!(m.report.dropped[0].from, "backdrop.default.slideshow");
 }
