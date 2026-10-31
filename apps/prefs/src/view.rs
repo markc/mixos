@@ -1460,7 +1460,9 @@ fn look_controls(
 ) {
     ui.add_enabled_ui(engine.can_edit_look(), |ui| {
         row(ui, "look-scheme", &label("look-scheme"), |ui| {
-            let schemes: Vec<_> = Scheme::ALL
+            // The authored schemes only: the format-4 store cannot hold
+            // the derived `mixos` until store format 5 (S6) lifts it.
+            let schemes: Vec<_> = Scheme::AUTHORED
                 .into_iter()
                 .map(|scheme| {
                     let name = toolkit::action::label_text(
