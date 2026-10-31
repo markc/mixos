@@ -133,7 +133,7 @@ pub fn contrast_ratio(a: LinearRgba, b: LinearRgba) -> f64 {
     (light + 0.05) / (dark + 0.05)
 }
 
-fn relative_luminance(value: LinearRgba) -> f64 {
+pub(crate) fn relative_luminance(value: LinearRgba) -> f64 {
     0.2126 * value.red + 0.7152 * value.green + 0.0722 * value.blue
 }
 
@@ -1271,7 +1271,12 @@ pub(crate) mod derivation {
         })
     }
 
-    fn gamut_map_oklch(lightness: f64, chroma: f64, hue: f64, iterations: usize) -> [f64; 3] {
+    pub(crate) fn gamut_map_oklch(
+        lightness: f64,
+        chroma: f64,
+        hue: f64,
+        iterations: usize,
+    ) -> [f64; 3] {
         let requested = oklch_at_chroma(lightness, chroma, hue);
         if in_gamut(requested) {
             return requested;
@@ -2203,11 +2208,19 @@ pub(crate) mod derivation {
     }
 }
 
-fn linear_to_srgb(value: f64) -> f64 {
+pub(crate) fn linear_to_srgb(value: f64) -> f64 {
     if value <= 0.003_130_8 {
         value * 12.92
     } else {
         1.055 * value.powf(1.0 / 2.4) - 0.055
+    }
+}
+
+pub(crate) fn srgb_to_linear(value: f64) -> f64 {
+    if value <= 0.040_45 {
+        value / 12.92
+    } else {
+        ((value + 0.055) / 1.055).powf(2.4)
     }
 }
 
