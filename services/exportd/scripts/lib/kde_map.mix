@@ -9,6 +9,8 @@ $kc = require("kconfig.mix")
 
 -- Breeze's names for the window border size, per density.
 $BORDERS = {compact: "Tiny", comfortable: "Normal", spacious: "Large"}
+-- The settings panels (registry `<panel>` members).
+$PANELS = ["top", "bottom"]
 
 fn hexval($s)
   $d = index_of("0123456789abcdef", lower($s))
@@ -134,15 +136,31 @@ fn buttons($side, $minimize, $maximize)
   return {left: "M", right: $ctl .. "X"}
 end
 
+-- Floating per screen edge, from each enabled settings panel's `gap`
+-- (key space §2.4: `.gap` is kde `floating`): {edge: bool}. A Plasma panel
+-- on an edge no settings panel names is left alone.
+fn panel_edges($v)
+  $out = {}
+  for $name in $PANELS
+    $base = "shell.panels." .. $name
+    if $v[$base .. ".enabled"] == true and type($v[$base .. ".edge"]) == "string" then
+      $out[$v[$base .. ".edge"]] = $v[$base .. ".gap"] == true
+    end
+  end
+  return $out
+end
+
 -- Everything kde-export writes for one revision.
 -- $v: the settings values (flat key map); $pal: settings.palette's
 -- `palette` ({dark, light}); $fonts: its resolved fonts ({ui: {family,
 -- size_px, weight}, mono: {family, size_px, weight}}); $icons: the icon theme directory names this
 -- machine has. Returns {mode, files: {file: {group: {key: value}}},
--- schemes: {name: text}, panel: {floating}, notes: [...]}.
+-- schemes: {name: text}, panels: {edge: floating}, notes: [...]}.
+-- $v["appearance.mode_resolved"] is the mode settingsd resolved (never
+-- `auto`).
 fn plan($v, $pal, $fonts, $icons)
   $notes = []
-  $mode = $v["appearance.mode_resolved"] ?? $v["appearance.mode"]
+  $mode = $v["appearance.mode_resolved"]
   if not contains(["dark", "light"], $mode) then raise("MODE", "no resolved mode") end
   $p = $pal[$mode]
   if $p == nil then raise("PALETTE", "palette has no " .. $mode .. " mode") end
@@ -181,14 +199,16 @@ fn plan($v, $pal, $fonts, $icons)
   else
     push($notes, "icon_theme_missing: " .. $icon)
   end
+  -- Reduced motion: KDE's animation speed factor, 0 = instant, 1 = normal.
+  $globals["KDE"] = {AnimationDurationFactor: if $v["accessibility.reduced_motion"] == true then "0" else "1" end}
   $globals["MixOS"] = {ExportedBy: "kde-export", Revision: to_string($v["_revision"] ?? "")}
 
   $b = buttons($v["window.caption_side"] ?? "auto", $v["window.controls.minimize"] ?? true, $v["window.controls.maximize"] ?? true)
   $density = $v["appearance.density"] ?? "comfortable"
   $kwin = {}
+  -- The decoration plugin and theme are the user's; these keys apply to
+  -- whichever is active.
   $kwin["org.kde.kdecoration2"] = {
-    library: "org.kde.breeze",
-    theme: "Breeze",
     BorderSize: $BORDERS[$density] ?? "Normal",
     BorderSizeAuto: "false",
     ButtonsOnLeft: $b.left,
@@ -198,7 +218,7 @@ fn plan($v, $pal, $fonts, $icons)
     mode: $mode,
     files: {kdeglobals: $globals, kwinrc: $kwin},
     schemes: {"MixOS-Dark": scheme_file($pal.dark, $hint), "MixOS-Light": scheme_file($pal.light, $hint)},
-    panel: {floating: ($v["appearance.roundness"] ?? "round") == "round"},
+    panels: panel_edges($v),
     notes: $notes
   }
 end

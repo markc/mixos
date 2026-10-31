@@ -1,16 +1,19 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
--- version: 0.1.0
+-- version: 0.2.0
 -- kde-export: the settings authority's look, written into a KDE Plasma
 -- session (kdeglobals, kwinrc, the MixOS colour schemes, panel floating).
--- A `mix --serve` citizen in the Plasma user's session. It subscribes to
--- the retained settings topics it reads, so it reconciles once at start
--- and again on each revision that moves them; there is no polling. It is
--- gated by `appearance.export_desktop`, writes only keys that differ, and
--- keeps the previous values for undo (exportd.kde.undo, exportd.kde.restore).
+-- A `mix --serve` citizen in the Plasma user's session. It reconciles once
+-- at start, then once per settings revision that moves a prefix it reads
+-- (the retained topics wake it; deliveries of a revision it already
+-- reconciled are skipped); there is no polling. It is gated by
+-- `appearance.export_desktop`, writes only keys that differ, and keeps the
+-- previous values for undo. Undo and restore pause it until
+-- exportd.kde.reconcile, so the next revision does not write the look back.
 --
 -- Environment: MIXOS_SETTINGS_INSTANCE (default: this node's name),
 -- MIXOS_KDE_EXPORT_DRY=1 (plan only), MIXOS_KDE_EXPORT_STATE (undo record),
--- MIXOS_KDE_EXPORT_RECONFIGURE=0 (no D-Bus calls: tests).
+-- MIXOS_KDE_EXPORT_RECONFIGURE=0 (no D-Bus calls), and for tests
+-- MIXOS_KDE_EXPORT_KWRITECONFIG / MIXOS_KDE_EXPORT_BUSCTL (JSON argv).
 $map = require("lib/kde_map.mix")
 $app = require("lib/kde_apply.mix")
 
@@ -22,75 +25,155 @@ if $instance == "" then raise("BINDING", "kde-export needs MIXOS_SETTINGS_INSTAN
 $binding = {instance: $instance, profile: "default"}
 $dry = env("MIXOS_KDE_EXPORT_DRY", "0") == "1"
 $ctx = $app.new_context()
-$status = {binding: $binding, dry: $dry, revision: nil, gated: false, last: nil, error: nil, runs: 0}
+$pause_file = $ctx.state_dir .. "/paused"
+$status = {binding: $binding, dry: $dry, revision: nil, gated: false, paused: is_file($pause_file), last: nil, error: nil, runs: 0}
+-- The palette of the last look read, keyed by the appearance values.
+$palette_cache = {key: nil, answer: nil}
 
 fn settings($command, $b)
   $wire = json_encode($b)
   send settingsd $command body=$wire timeout=10
   if $rc != 0 then raise("SETTINGS", "settingsd " .. $command .. " refused: " .. to_string($result)) end
-  return if type($result) == "string" then json_parse($result) else $result end
+  if type($result) == "string" then
+    try
+      return json_parse($result)
+    catch $m
+      raise("SETTINGS", "settingsd " .. $command .. " answered no JSON")
+    end
+  end
+  return $result
 end
 
--- One whole reconcile: read the values and the palette, plan, write the
--- difference. Returns the report.
-fn reconcile($binding, $ctx, $dry)
+-- One whole reconcile: read the values (and the palette, when the look
+-- moved), plan, write the difference. Returns {report, cache}.
+fn reconcile($binding, $ctx, $dry, $cache)
   $got = settings("settings.get", {binding: $binding, view: "values"})
   $v = $got.values
-  $v["appearance.mode_resolved"] = $got.resolved.mode
+  -- The resolved mode (never `auto`): the answer's `resolved`, beside the
+  -- authored values, as the appearance topic carries it.
+  $mode = get_resolved_mode($got)
+  $v["appearance.mode_resolved"] = $mode
   $v["_revision"] = $got.revision
   if $v["appearance.export_desktop"] == false then
-    return {revision: $got.revision, gated: true}
+    return {report: {revision: $got.revision, gated: true}, cache: $cache}
   end
-  $answer = settings("settings.palette", {binding: $binding})
-  $pal = $answer.palette
+  $akeys = sort(filter(keys($v), fn($k) = starts_with($k, "appearance.")))
+  $look = json_encode(map($akeys, fn($k) = [$k, $v[$k]]))
+  if $cache.key != $look then
+    $cache = {key: $look, answer: settings("settings.palette", {binding: $binding})}
+  end
+  $pal = $cache.answer.palette
   -- One look, one set of fonts: each mode carries the same pair.
-  $fonts = $pal[$got.resolved.mode].fonts
+  $fonts = if type($pal[$mode]) == "map" then $pal[$mode].fonts else nil end
   $plan = $map.plan($v, $pal, $fonts, $app.icon_themes($ctx))
   $report = $app.apply($ctx, $plan, $dry)
   $report.revision = $got.revision
   $report.mode = $plan.mode
   $report.gated = false
-  return $report
+  return {report: $report, cache: $cache}
 end
 
--- Returns the new status (a fn cannot assign the outer one).
-fn run_once($status)
+fn get_resolved_mode($got)
+  $mode = if type($got.resolved) == "map" then $got.resolved.mode else nil end
+  if not contains(["dark", "light"], $mode) then raise("SETTINGS", "settings.get answered no resolved mode") end
+  return $mode
+end
+
+fn revision_of($body)
+  $b = $body
+  if type($body) == "string" then
+    if $body == "" then return nil end
+    try
+      $b = json_parse($body)
+    catch $m
+      return nil
+    end
+  end
+  return if type($b) == "map" then to_number(to_string($b.revision ?? "")) else nil end
+end
+
+-- One run. Returns {status, cache} (a fn cannot assign the outer ones).
+fn run_once($status, $cache)
   $status.runs = $status.runs + 1
   try
-    $r = reconcile($binding, $ctx, $dry)
+    $out = reconcile($binding, $ctx, $dry, $cache)
+    $cache = $out.cache
+    $r = $out.report
     $status.revision = $r.revision
     $status.gated = $r.gated
     $status.last = $r
     $status.error = nil
-    if not $r.gated and ($r.changed ?? 0) > 0 then
+    if not $r.gated and (($r.changed ?? 0) > 0 or len($r.schemes ?? []) > 0) then
       print("kde-export: revision " .. to_string($r.revision) .. " wrote " .. to_string($r.changed) .. " keys" .. (if $dry then " (dry run)" else "" end))
     end
   catch $m, $e
     $status.error = {code: $e.code, message: $m}
     print("kde-export: reconcile failed: " .. sanitize($m))
   end
-  return $status
+  return {status: $status, cache: $cache}
+end
+
+-- A topic delivery: reconcile unless paused or its revision is one this
+-- run already reconciled (a revision moving several prefixes delivers one
+-- topic each; the first reconcile read them all).
+fn on_topic($status, $cache, $body)
+  if $status.paused then return {status: $status, cache: $cache} end
+  $rev = revision_of($body)
+  $done = to_number(to_string($status.revision ?? ""))
+  if $rev != nil and $done != nil and $rev <= $done and $status.error == nil then
+    return {status: $status, cache: $cache}
+  end
+  return run_once($status, $cache)
 end
 
 subscribe("settingsd.desktop.keys.default.appearance")
 subscribe("settingsd.desktop.keys.default.window")
 subscribe("settingsd.desktop.keys.default.accessibility")
+subscribe("settingsd.desktop.keys.default.shell.panels")
+
+-- The reconcile at start; the retained deliveries that follow are then
+-- revisions already done.
+if not is_reload_candidate() and not $status.paused then
+  $o = run_once($status, $palette_cache)
+  $status = $o.status
+  $palette_cache = $o.cache
+end
 
 on settingsd.desktop.keys.default.appearance
-  $status = run_once($status)
+  $o = on_topic($status, $palette_cache, $event.body)
+  $status = $o.status
+  $palette_cache = $o.cache
 end
 
 on settingsd.desktop.keys.default.window
-  $status = run_once($status)
+  $o = on_topic($status, $palette_cache, $event.body)
+  $status = $o.status
+  $palette_cache = $o.cache
 end
 
 on settingsd.desktop.keys.default.accessibility
-  $status = run_once($status)
+  $o = on_topic($status, $palette_cache, $event.body)
+  $status = $o.status
+  $palette_cache = $o.cache
 end
 
--- A broker restart: the retained topics come back, but reconcile anyway.
+on settingsd.desktop.keys.default.shell.panels
+  $o = on_topic($status, $palette_cache, $event.body)
+  $status = $o.status
+  $palette_cache = $o.cache
+end
+
+-- A broker restart: reconcile, whatever revision the topics carry. The
+-- first connection is the start, already reconciled above unless that failed.
+$connects = 0
 on bus.connected
-  $status = run_once($status)
+  $connects = $connects + 1
+  $due = $connects > 1 or $status.revision == nil or $status.error != nil
+  if $due and not $status.paused then
+    $o = run_once($status, $palette_cache)
+    $status = $o.status
+    $palette_cache = $o.cache
+  end
 end
 
 on exportd.kde.status
@@ -99,20 +182,28 @@ end
 
 on exportd.kde.plan
   try
-    reply(json_encode(reconcile($binding, $ctx, true)))
+    reply(json_encode(reconcile($binding, $ctx, true, $palette_cache).report))
   catch $m, $e
     reply(10, json_encode({error_code: $e.code ?? "EXPORT", message: $m}))
   end
 end
 
 on exportd.kde.reconcile
-  $status = run_once($status)
+  if is_file($pause_file) then remove($pause_file) end
+  $status.paused = false
+  $o = run_once($status, $palette_cache)
+  $status = $o.status
+  $palette_cache = $o.cache
   reply(json_encode($status))
 end
 
 on exportd.kde.undo
   try
-    reply(json_encode($app.undo($ctx)))
+    $r = $app.undo($ctx)
+    mkdir($ctx.state_dir, {parents: true})
+    write_atomic($pause_file, "undo\n")
+    $status.paused = true
+    reply(json_encode(merge($r, {paused: true})))
   catch $m, $e
     reply(10, json_encode({error_code: $e.code ?? "EXPORT", message: $m}))
   end
@@ -120,7 +211,11 @@ end
 
 on exportd.kde.restore
   try
-    reply(json_encode($app.restore($ctx)))
+    $r = $app.restore($ctx)
+    mkdir($ctx.state_dir, {parents: true})
+    write_atomic($pause_file, "restore\n")
+    $status.paused = true
+    reply(json_encode(merge($r, {paused: true})))
   catch $m, $e
     reply(10, json_encode({error_code: $e.code ?? "EXPORT", message: $m}))
   end
