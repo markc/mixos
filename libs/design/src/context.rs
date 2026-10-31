@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-/// The MixOS colour schemes: six hues, and five chrome schemes whose
+/// The MixOS colour schemes: six hues, five chrome schemes whose
 /// light and dark modes step the brightness (`pro`: Pro and Pro Medium Gray;
 /// `studio`: Studio and Studio Light; `classic`: Classic in both; Breeze and
-/// Adwaita each have light and dark palettes). The
-/// default is `studio`.
+/// Adwaita each have light and dark palettes), and `mixos`, the one derived
+/// scheme: authored as seeds, its roles computed by [`crate::derive`]
+/// ([`crate::seeds`]). The default is `studio`.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Scheme {
     Ocean,
@@ -19,10 +20,27 @@ pub enum Scheme {
     Classic,
     Breeze,
     Adwaita,
+    Mixos,
 }
 
 impl Scheme {
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 12] = [
+        Self::Ocean,
+        Self::Crimson,
+        Self::Stone,
+        Self::Forest,
+        Self::Sunset,
+        Self::Mono,
+        Self::Pro,
+        Self::Studio,
+        Self::Classic,
+        Self::Breeze,
+        Self::Adwaita,
+        Self::Mixos,
+    ];
+
+    /// The schemes authored as 31 roles, every scheme but `mixos`.
+    pub const AUTHORED: [Self; 11] = [
         Self::Ocean,
         Self::Crimson,
         Self::Stone,
@@ -35,6 +53,11 @@ impl Scheme {
         Self::Breeze,
         Self::Adwaita,
     ];
+
+    /// The scheme is authored as seeds, so the tints have a slot in it.
+    pub const fn is_derived(self) -> bool {
+        matches!(self, Self::Mixos)
+    }
 
     /// The six hue schemes of design revision one. Tests that pin revision
     /// one's exact derivation walks iterate these; the chrome schemes carry
@@ -52,7 +75,7 @@ impl Scheme {
     pub const fn is_chrome_scheme(self) -> bool {
         matches!(
             self,
-            Self::Pro | Self::Studio | Self::Classic | Self::Breeze | Self::Adwaita
+            Self::Pro | Self::Studio | Self::Classic | Self::Breeze | Self::Adwaita | Self::Mixos
         )
     }
 
@@ -69,11 +92,165 @@ impl Scheme {
             Self::Classic => "classic",
             Self::Breeze => "breeze",
             Self::Adwaita => "adwaita",
+            Self::Mixos => "mixos",
         }
     }
 
     pub fn from_name(name: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|scheme| scheme.name() == name)
+    }
+}
+
+/// An exact 8-bit sRGB colour with straight alpha, `[r, g, b, a]`: how a
+/// settings colour (`#rrggbb` or `#rrggbbaa`) enters a compile, so a
+/// context stays hashable and ordered.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Colour8(pub [u8; 4]);
+
+impl Colour8 {
+    /// `#rrggbb` or `#rrggbbaa`, either case.
+    pub fn from_hex(text: &str) -> Option<Self> {
+        crate::SrgbColour::from_hex(text).map(|colour| Self(colour.to_srgba8()))
+    }
+
+    /// `#rrggbb` when opaque, else `#rrggbbaa`, lower case: the settings
+    /// wire form.
+    pub fn to_hex(self) -> String {
+        let [r, g, b, a] = self.0;
+        if a == 255 {
+            format!("#{r:02x}{g:02x}{b:02x}")
+        } else {
+            format!("#{r:02x}{g:02x}{b:02x}{a:02x}")
+        }
+    }
+
+    /// This colour with alpha 255.
+    pub const fn opaque(self) -> Self {
+        let [r, g, b, _] = self.0;
+        Self([r, g, b, 255])
+    }
+
+    pub fn srgb(self) -> crate::SrgbColour {
+        let [red, green, blue, alpha] = self.0.map(|c| f64::from(c) / 255.0);
+        crate::SrgbColour {
+            red,
+            green,
+            blue,
+            alpha,
+        }
+    }
+}
+
+/// The nine accent swatches, resolved per mode from
+/// [`crate::cosmic_tables::BasePalette`].
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Swatch {
+    Blue,
+    Indigo,
+    Purple,
+    Pink,
+    Red,
+    Orange,
+    Yellow,
+    Green,
+    WarmGrey,
+}
+
+impl Swatch {
+    /// In [`crate::cosmic_tables::SWATCH_NAMES`] order.
+    pub const ALL: [Self; 9] = [
+        Self::Blue,
+        Self::Indigo,
+        Self::Purple,
+        Self::Pink,
+        Self::Red,
+        Self::Orange,
+        Self::Yellow,
+        Self::Green,
+        Self::WarmGrey,
+    ];
+
+    pub const fn name(self) -> &'static str {
+        crate::cosmic_tables::SWATCH_NAMES[self as usize]
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|swatch| swatch.name() == name)
+    }
+
+    /// The swatch's colour in `mode` (the high-contrast palettes carry the
+    /// same colours).
+    pub fn colour(self, mode: Mode) -> crate::SrgbColour {
+        crate::cosmic_tables::BasePalette::builtin(mode, Contrast::Normal).swatches()[self as usize]
+    }
+}
+
+/// The accent axis (`appearance.accent`): the scheme's own, a swatch
+/// resolved per mode, or one opaque colour for both modes.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum AccentChoice {
+    /// The scheme's authored accent; for `mixos`, the palette's blue.
+    #[default]
+    Auto,
+    Swatch(Swatch),
+    /// Opaque; alpha is forced to 255.
+    Custom(Colour8),
+}
+
+impl AccentChoice {
+    /// `auto`, a swatch name, or `#rrggbb`.
+    pub fn from_name(text: &str) -> Option<Self> {
+        if text == "auto" {
+            return Some(Self::Auto);
+        }
+        if let Some(swatch) = Swatch::from_name(text) {
+            return Some(Self::Swatch(swatch));
+        }
+        (text.len() == 7)
+            .then(|| Colour8::from_hex(text))
+            .flatten()
+            .map(Self::Custom)
+    }
+
+    pub fn name(self) -> String {
+        match self {
+            Self::Auto => "auto".into(),
+            Self::Swatch(swatch) => swatch.name().into(),
+            Self::Custom(colour) => colour.opaque().to_hex(),
+        }
+    }
+
+    /// The colour this choice draws in `mode`; `None` for `auto`.
+    pub fn resolve(self, mode: Mode) -> Option<crate::SrgbColour> {
+        match self {
+            Self::Auto => None,
+            Self::Swatch(swatch) => Some(swatch.colour(mode)),
+            Self::Custom(colour) => Some(colour.opaque().srgb()),
+        }
+    }
+}
+
+/// The four tint axes: seeds of the derived scheme, ignored under an
+/// authored one (`None` is `auto`). The two backgrounds keep their alpha;
+/// the two tints are opaque.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Tints {
+    /// `appearance.window_bg`.
+    pub window_bg: Option<Colour8>,
+    /// `appearance.container_bg`.
+    pub container_bg: Option<Colour8>,
+    /// `appearance.text_tint`.
+    pub text_tint: Option<Colour8>,
+    /// `appearance.control_tint`.
+    pub control_tint: Option<Colour8>,
+}
+
+impl Tints {
+    pub const fn is_auto(&self) -> bool {
+        self.window_bg.is_none()
+            && self.container_bg.is_none()
+            && self.text_tint.is_none()
+            && self.control_tint.is_none()
     }
 }
 
@@ -487,6 +664,10 @@ pub struct DesignContext {
     /// Stable application identity selecting a compile-time per-app overlay.
     /// `None` is the unoverlaid context used by the v0 equivalence gate.
     pub app: Option<String>,
+    /// The accent axis; `auto` keeps the scheme's own.
+    pub accent: AccentChoice,
+    /// The derived scheme's seeds; every authored scheme ignores them.
+    pub tints: Tints,
 }
 
 impl DesignContext {
@@ -501,6 +682,13 @@ impl DesignContext {
             contrast: Contrast::Normal,
             style: None,
             app: None,
+            accent: AccentChoice::Auto,
+            tints: Tints {
+                window_bg: None,
+                container_bg: None,
+                text_tint: None,
+                control_tint: None,
+            },
         }
     }
 }

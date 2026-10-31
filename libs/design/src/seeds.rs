@@ -1,0 +1,427 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
+//! The derived scheme `mixos` and the colour axes: how seeds become the 31
+//! chrome roles, and how an authored scheme's roles become seeds again.
+//!
+//! A derived scheme is authored as seeds (the theming ADR's A3): the accent
+//! axis and the four tints ([`crate::Tints`]) feed [`crate::derive::derive`],
+//! and [`ROLE_MAP`] reads the 31 roles off the derived theme. The compiler
+//! enters them as authored primitives, so they render exactly, and sets the
+//! semantic palette from the same theme ([`SEMANTIC_MAP`]) so the pairs and
+//! the button table agree with the chrome.
+//!
+//! Under an authored scheme the tints have no slot, and a chosen accent
+//! replaces the four accent roles only ([`apply_accent`]): `accent` is the
+//! colour, `accent_text` follows the derivation's step 14 against the card,
+//! `accent_border` is the accent, and `accent_soft` is the accent at 0.2.
+//!
+//! [`seeds_of`] is the inverse used to export an authored scheme to COSMIC
+//! and for the first tint under an authored scheme (F4): window background
+//! from `chrome`, container background from `card`, accent from the
+//! resolved accent, text tint from `text`, control tint from `field`.
+
+#[cfg(test)]
+mod tests;
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use crate::derive::primitives::{over, with_alpha};
+use crate::derive::{Component, Container, DerivedTheme, FrostedGlass, Seeds, derive};
+use crate::family::chrome::ResolvedChrome;
+use crate::source::{ColourSpace, DesignV1Source, OklchSource};
+use crate::{AccentChoice, Colour8, DesignContext, ResolvedDictionary, SrgbColour, Tints};
+
+/// One of the derived theme's three opaque containers.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Layer {
+    Background,
+    Primary,
+    Secondary,
+}
+
+/// A container's own colours.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ContainerPart {
+    Base,
+    On,
+    Divider,
+}
+
+/// The theme's components: each container's own, and the button family.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Family {
+    Of(Layer),
+    Accent,
+    AccentButton,
+    Button,
+    Destructive,
+    DestructiveButton,
+    IconButton,
+    Success,
+    Warning,
+}
+
+/// A component's colours that a role reads.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Part {
+    Base,
+    Hover,
+    Pressed,
+    Selected,
+    Divider,
+    On,
+    OnDisabled,
+}
+
+/// Where a role's colour comes from in a [`DerivedTheme`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum RoleSource {
+    Container(Layer, ContainerPart),
+    Component(Family, Part),
+    /// `accent_text`, or the accent when it already reads (spec §4.7).
+    AccentText,
+    /// The theme's shade.
+    Shade,
+    /// The accent at this alpha.
+    AccentAt(f64),
+    /// The first composited over the second, with the reference's `Over`.
+    Over(&'static RoleSource, &'static RoleSource),
+}
+
+use ContainerPart as C;
+use Family as F;
+use Layer::{Background as Bg, Primary as Pr, Secondary as Se};
+use Part as P;
+use RoleSource::{AccentAt, AccentText, Component as Comp, Container as Cont, Over, Shade};
+
+const FIELD: RoleSource = Over(&Comp(F::Button, P::Base), &Cont(Pr, C::Base));
+
+/// The 31 chrome roles of the derived scheme, in [`crate::family::chrome::ROLES`]
+/// order. The design fixes chrome, card, canvas, field, hover, pressed,
+/// row_selected, the three texts, separator, the accent roles, danger,
+/// warning, scrim and the primary pair (the ADR's A3); the rest are this
+/// table's, for Fable's visual sign-off.
+pub const ROLE_MAP: [(&str, RoleSource); 31] = [
+    // Surfaces.
+    ("chrome", Cont(Bg, C::Base)),
+    ("canvas", Cont(Se, C::Base)),
+    ("canvas_dot", Cont(Se, C::Divider)),
+    ("dock", Cont(Bg, C::Base)),
+    ("card", Cont(Pr, C::Base)),
+    ("card_border", Cont(Pr, C::Divider)),
+    ("tab_strip", Cont(Bg, C::Base)),
+    // Controls and their states.
+    ("field", FIELD),
+    ("field_border", Over(&Comp(F::Button, P::Divider), &FIELD)),
+    ("hover", Comp(F::Of(Bg), P::Hover)),
+    ("pressed", Comp(F::Of(Bg), P::Pressed)),
+    ("row_selected", Comp(F::Of(Bg), P::Selected)),
+    // Text and icons.
+    ("text", Cont(Bg, C::On)),
+    ("text_dim", Comp(F::Of(Bg), P::On)),
+    ("text_faint", Comp(F::Of(Bg), P::OnDisabled)),
+    ("icon", Comp(F::IconButton, P::On)),
+    // Accent and selection.
+    ("accent", Comp(F::Accent, P::Base)),
+    ("accent_soft", AccentAt(ACCENT_SOFT_ALPHA)),
+    ("accent_border", Comp(F::Accent, P::Base)),
+    ("accent_text", AccentText),
+    ("menu_highlight", Comp(F::Of(Pr), P::Hover)),
+    ("menu_highlight_text", Comp(F::Of(Pr), P::On)),
+    // Lines, depth and overlays.
+    ("separator", Cont(Bg, C::Divider)),
+    ("shadow", Shade),
+    ("scrim", Shade),
+    // Actions and status.
+    ("primary_bg", Comp(F::AccentButton, P::Base)),
+    ("primary_text", Comp(F::AccentButton, P::On)),
+    ("danger", Comp(F::Destructive, P::Base)),
+    ("warning", Comp(F::Warning, P::Base)),
+    ("caption_close", Comp(F::DestructiveButton, P::Base)),
+    ("caption_close_text", Comp(F::DestructiveButton, P::On)),
+];
+
+/// The semantic palette of the derived scheme, so pairs, rings and the
+/// button table are drawn from the same theme as the chrome.
+pub const SEMANTIC_MAP: [(&str, RoleSource); 13] = [
+    ("palette.background.1", Cont(Bg, C::Base)),
+    ("palette.background.2", Cont(Pr, C::Base)),
+    ("palette.background.3", Cont(Se, C::Base)),
+    ("palette.background.muted", Comp(F::Of(Bg), P::Base)),
+    ("palette.background.elevated", Comp(F::Of(Pr), P::Base)),
+    ("palette.foreground.default", Cont(Bg, C::On)),
+    ("palette.foreground.muted", Comp(F::Of(Bg), P::On)),
+    ("palette.foreground.quiet", Comp(F::Of(Bg), P::On)),
+    ("palette.accent.default", Comp(F::Accent, P::Base)),
+    ("palette.accent.hover", Comp(F::Accent, P::Hover)),
+    ("status.success", Comp(F::Success, P::Base)),
+    ("status.warning", Comp(F::Warning, P::Base)),
+    ("status.danger", Comp(F::Destructive, P::Base)),
+];
+
+/// `accent_soft`'s alpha: the derivation's hover-overlay alpha. It fills
+/// selections under body text, so it stays a tint, as studio authors it.
+pub const ACCENT_SOFT_ALPHA: f64 = 0.2;
+
+impl RoleSource {
+    /// The colour this source names in `theme`.
+    pub fn pick(&self, theme: &DerivedTheme) -> SrgbColour {
+        let container = |layer: Layer| -> &Container {
+            match layer {
+                Bg => &theme.background,
+                Pr => &theme.primary,
+                Se => &theme.secondary,
+            }
+        };
+        match *self {
+            Cont(layer, part) => {
+                let c = container(layer);
+                match part {
+                    C::Base => c.base,
+                    C::On => c.on,
+                    C::Divider => c.divider,
+                }
+            }
+            Comp(family, part) => {
+                let c: &Component = match family {
+                    F::Of(layer) => &container(layer).component,
+                    F::Accent => &theme.accent,
+                    F::AccentButton => &theme.accent_button,
+                    F::Button => &theme.button,
+                    F::Destructive => &theme.destructive,
+                    F::DestructiveButton => &theme.destructive_button,
+                    F::IconButton => &theme.icon_button,
+                    F::Success => &theme.success,
+                    F::Warning => &theme.warning,
+                };
+                match part {
+                    P::Base => c.base,
+                    P::Hover => c.hover,
+                    P::Pressed => c.pressed,
+                    P::Selected => c.selected,
+                    P::Divider => c.divider,
+                    P::On => c.on,
+                    P::OnDisabled => c.on_disabled,
+                }
+            }
+            AccentText => theme.accent_text_colour(),
+            Shade => theme.shade,
+            AccentAt(alpha) => with_alpha(theme.accent.base, alpha),
+            Over(top, under) => over(top.pick(theme), under.pick(theme)),
+        }
+    }
+
+    /// The source as the reference names it, e.g. `background.component.hover`.
+    pub fn describe(&self) -> String {
+        let layer = |layer: Layer| match layer {
+            Bg => "background",
+            Pr => "primary",
+            Se => "secondary",
+        };
+        let part = |part: Part| match part {
+            P::Base => "base",
+            P::Hover => "hover",
+            P::Pressed => "pressed",
+            P::Selected => "selected",
+            P::Divider => "divider",
+            P::On => "on",
+            P::OnDisabled => "on_disabled",
+        };
+        match *self {
+            Cont(l, p) => format!(
+                "{}.{}",
+                layer(l),
+                match p {
+                    C::Base => "base",
+                    C::On => "on",
+                    C::Divider => "divider",
+                }
+            ),
+            Comp(family, p) => {
+                let family = match family {
+                    F::Of(l) => format!("{}.component", layer(l)),
+                    F::Accent => "accent".into(),
+                    F::AccentButton => "accent_button".into(),
+                    F::Button => "button".into(),
+                    F::Destructive => "destructive".into(),
+                    F::DestructiveButton => "destructive_button".into(),
+                    F::IconButton => "icon_button".into(),
+                    F::Success => "success".into(),
+                    F::Warning => "warning".into(),
+                };
+                format!("{family}.{}", part(p))
+            }
+            AccentText => "accent_text (else accent.base)".into(),
+            Shade => "shade".into(),
+            AccentAt(alpha) => format!("accent.base @ {alpha}"),
+            Over(top, under) => format!("{} over {}", top.describe(), under.describe()),
+        }
+    }
+}
+
+/// The 31 roles of `theme`, by [`ROLE_MAP`].
+pub fn roles(theme: &DerivedTheme) -> BTreeMap<&'static str, SrgbColour> {
+    ROLE_MAP
+        .iter()
+        .map(|(role, source)| (*role, source.pick(theme)))
+        .collect()
+}
+
+/// The derivation's seeds for `context`: its accent and tints.
+pub fn seeds_for(context: &DesignContext) -> Seeds {
+    let colour = |seed: Option<Colour8>| seed.map(Colour8::srgb);
+    Seeds {
+        accent: context.accent.resolve(context.mode),
+        bg_color: colour(context.tints.window_bg),
+        primary_container_bg: colour(context.tints.container_bg),
+        neutral_tint: colour(context.tints.control_tint.map(Colour8::opaque)),
+        text_tint: colour(context.tints.text_tint.map(Colour8::opaque)),
+        ..Seeds::default()
+    }
+}
+
+/// The derived theme of `context` (its mode, contrast, accent and tints).
+/// Frosted glass is not a compile axis: the compile derives with the
+/// default glass, whose container alpha still reaches the primary texts.
+pub fn derived_theme(context: &DesignContext) -> DerivedTheme {
+    derive(
+        &seeds_for(context),
+        context.mode,
+        context.contrast,
+        &FrostedGlass::default(),
+    )
+}
+
+/// `colour` as an authored OKLCH primitive. Every 8-bit sRGB value
+/// round-trips through it.
+fn oklch(colour: SrgbColour) -> OklchSource {
+    let (l, c, h) = crate::colour_model::derivation::linear_srgb_to_oklch(colour.to_linear());
+    OklchSource {
+        color_space: ColourSpace::Oklch,
+        l,
+        c,
+        h,
+        alpha: colour.alpha,
+    }
+}
+
+/// Before the colour compile: under `mixos`, the derived theme's roles and
+/// semantic palette, entered as authored primitives; under an authored
+/// scheme with a chosen accent, the semantic accent. Returns each entered
+/// primitive with the rule that produced it, for provenance.
+pub(crate) fn complete_source(
+    source: &mut DesignV1Source,
+    authored: &mut BTreeSet<String>,
+    context: &DesignContext,
+) -> BTreeMap<String, String> {
+    let mut origins = BTreeMap::new();
+    let mut enter = |name: String, colour: SrgbColour, rule: String| {
+        source.primitives.colors.insert(name.clone(), oklch(colour));
+        authored.insert(name.clone());
+        origins.insert(name, rule);
+    };
+    let mode = context.mode.name();
+    if context.scheme.is_derived() {
+        let theme = derived_theme(context);
+        for (role, from) in ROLE_MAP {
+            enter(
+                format!("chrome.{role}"),
+                from.pick(&theme),
+                format!("derive.mixos.{mode}.{}", from.describe()),
+            );
+        }
+        for (name, from) in SEMANTIC_MAP {
+            enter(
+                name.into(),
+                from.pick(&theme),
+                format!("derive.mixos.{mode}.{}", from.describe()),
+            );
+        }
+    } else if let Some(accent) = context.accent.resolve(context.mode) {
+        let hover = semantic_accent_hover(accent, context);
+        let rule = format!("accent.{}.{mode}", context.accent.name());
+        enter("palette.accent.default".into(), accent, rule.clone());
+        enter("palette.accent.hover".into(), hover, rule);
+    }
+    origins
+}
+
+/// The reference's accent hover, Over(controls[5] at 0.2, accent), for the
+/// semantic accent of an authored scheme.
+fn semantic_accent_hover(accent: SrgbColour, context: &DesignContext) -> SrgbColour {
+    let controls =
+        crate::cosmic_tables::BasePalette::builtin(context.mode, context.contrast).neutral;
+    over(with_alpha(controls[5], 0.2), accent)
+}
+
+/// After the chrome compile, under an authored scheme with a chosen accent:
+/// the four accent roles from the axis, with the derivation's step-14 text
+/// rule measured against the scheme's own `chrome` and `card`.
+pub(crate) fn apply_accent(chrome: &mut ResolvedChrome, context: &DesignContext) {
+    if context.scheme.is_derived() {
+        return;
+    }
+    let Some(accent) = context.accent.resolve(context.mode) else {
+        return;
+    };
+    let role = |name: &str| chrome.get(name).map(SrgbColour::from_linear);
+    let bg = role("chrome").unwrap_or(accent);
+    let card = role("card").unwrap_or(bg);
+    let text = crate::derive::accent_text_for(accent, bg, card, context.mode, context.contrast)
+        .unwrap_or(accent);
+    for (name, colour) in [
+        ("accent", accent),
+        ("accent_soft", with_alpha(accent, ACCENT_SOFT_ALPHA)),
+        ("accent_border", accent),
+        ("accent_text", text),
+    ] {
+        chrome.set(name, colour.to_linear());
+    }
+}
+
+/// The seeds that would draw `dictionary`'s roles in the derived model:
+/// window background from `chrome`, container background from `card`, the
+/// resolved accent, text tint from `text`, control tint from `field` (a
+/// ramp keeps only its hue and chroma), and the scheme's danger, warning
+/// and success. `None` where the design authors no chrome family.
+pub fn seeds_of(dictionary: &ResolvedDictionary) -> Option<Seeds> {
+    let chrome = dictionary.chrome.as_ref()?;
+    let role = |name: &str| chrome.get(name).map(SrgbColour::from_linear);
+    let opaque = |colour: Option<SrgbColour>| colour.map(|c| with_alpha(c, 1.0));
+    Some(Seeds {
+        accent: opaque(crate::resolved_accent_of(dictionary)),
+        bg_color: role("chrome"),
+        primary_container_bg: role("card"),
+        secondary_container_bg: None,
+        neutral_tint: opaque(role("field")),
+        text_tint: opaque(role("text")),
+        success: opaque(
+            dictionary
+                .colours
+                .primitives
+                .get("status.success")
+                .copied()
+                .map(SrgbColour::from_linear),
+        ),
+        warning: opaque(role("warning")),
+        destructive: opaque(role("danger")),
+        window_hint: None,
+    })
+}
+
+/// The settings the first tint under an authored scheme writes beside
+/// `appearance.scheme = mixos` (F4): the accent and the four tints from
+/// `seeds`, each quantised to the 8-bit wire form.
+pub fn tint_batch(seeds: &Seeds) -> (AccentChoice, Tints) {
+    let eight = |colour: Option<SrgbColour>| colour.map(|c| Colour8(c.to_srgba8()));
+    let opaque = |colour: Option<SrgbColour>| eight(colour).map(Colour8::opaque);
+    (
+        opaque(seeds.accent).map_or(AccentChoice::Auto, AccentChoice::Custom),
+        Tints {
+            window_bg: eight(seeds.bg_color),
+            container_bg: eight(seeds.primary_container_bg),
+            text_tint: opaque(seeds.text_tint),
+            control_tint: opaque(seeds.neutral_tint),
+        },
+    )
+}

@@ -226,6 +226,8 @@ impl Theme {
                 })
                 .transpose()?,
             app: None,
+            accent: design::AccentChoice::Auto,
+            tints: design::Tints::default(),
         };
         let mut theme = Self::compile(&document, context)?;
         theme.decorations = axis(
@@ -489,7 +491,7 @@ impl Theme {
         &self.ui
     }
 
-    fn raw_style(&self) -> ResolvedStyle {
+    pub(crate) fn raw_style(&self) -> ResolvedStyle {
         if let Some(style) = self.overlay_style {
             return style;
         }

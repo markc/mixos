@@ -162,6 +162,10 @@ fn compile_flat_source(
             }
         }
     }
+    // The colour axes: the derived scheme's roles, or an authored scheme's
+    // chosen semantic accent, as authored primitives.
+    let derived_origins =
+        crate::seeds::complete_source(&mut completed_source, &mut authored_colors, &context);
     let source = &completed_source;
     let origins = &flattened.origins;
     let colours = match compile_colour_tokens(source, context.clone()) {
@@ -174,7 +178,7 @@ fn compile_flat_source(
         }
     };
 
-    let (chrome, chrome_warnings) = match crate::family::chrome::compile(
+    let (mut chrome, chrome_warnings) = match crate::family::chrome::compile(
         source,
         &crate::family::chrome::Inputs {
             colours: &colours.value,
@@ -191,6 +195,10 @@ fn compile_flat_source(
             });
         }
     };
+
+    if let Some(chrome) = chrome.as_mut() {
+        crate::seeds::apply_accent(chrome, &context);
+    }
 
     let style = match crate::family::style::compile(source, context.scheme, context.style) {
         Ok(style) => style,
@@ -250,6 +258,12 @@ fn compile_flat_source(
 
     let mut provenance = dictionary_provenance(&colours.value, &mapping.value, origins);
     for (name, (_, rule)) in palette_origins {
+        provenance.insert(
+            DesignValueId::ColourPrimitive(name),
+            authored(rule, Vec::new()),
+        );
+    }
+    for (name, rule) in derived_origins {
         provenance.insert(
             DesignValueId::ColourPrimitive(name),
             authored(rule, Vec::new()),
@@ -1577,6 +1591,8 @@ mod tests {
             contrast: Contrast::Normal,
             style: None,
             app: None,
+            accent: crate::AccentChoice::Auto,
+            tints: crate::Tints::default(),
         };
         let flattened = flatten_source(&document.v1, context.clone());
         let colours = compile_colour_tokens(&flattened.source, context.clone())
@@ -1665,6 +1681,8 @@ mod tests {
                     contrast: Contrast::Normal,
                     style: None,
                     app: None,
+                    accent: crate::AccentChoice::Auto,
+                    tints: crate::Tints::default(),
                 };
                 let flattened = flatten_source(&document.v1, context.clone());
                 let result = compile_flat_source(&document.identity, &flattened, context);
@@ -3192,6 +3210,8 @@ mod tests {
                         contrast,
                         style: None,
                         app: None,
+                        accent: crate::AccentChoice::Auto,
+                        tints: crate::Tints::default(),
                     };
                     for axis in [
                         ModifierAxis::Scheme,
@@ -3341,6 +3361,8 @@ mod tests {
                     contrast: Contrast::Normal,
                     style: None,
                     app: None,
+                    accent: crate::AccentChoice::Auto,
+                    tints: crate::Tints::default(),
                 },
             );
             let DesignCompileResult::Success(success) = result else {
@@ -3408,6 +3430,8 @@ mod tests {
                     contrast: Contrast::Normal,
                     style: None,
                     app: None,
+                    accent: crate::AccentChoice::Auto,
+                    tints: crate::Tints::default(),
                 };
                 let original_result = compile_design(&original, context.clone());
                 let reordered_result = compile_design(&reordered, context);
@@ -3690,6 +3714,8 @@ mod tests {
                     contrast: Contrast::Normal,
                     style: None,
                     app: None,
+                    accent: crate::AccentChoice::Auto,
+                    tints: crate::Tints::default(),
                 };
                 let result = compile_design(&document, context);
                 let DesignCompileResult::Success(success) = result else {

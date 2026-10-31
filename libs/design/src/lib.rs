@@ -50,11 +50,14 @@ mod diagnostic;
 mod equivalence;
 pub mod family;
 pub mod frame;
+pub mod geometry;
 mod mapping;
 mod mapping_model;
+pub mod palette;
 mod projection;
 mod recipe;
 mod recipe_compiler;
+pub mod seeds;
 mod source;
 mod state;
 pub mod title_band;
@@ -65,7 +68,7 @@ mod typography;
 
 pub use tunable::{Tunable, TunableRange, tunables};
 
-pub use accent::{SrgbColour, accent_for, resolved_accent};
+pub use accent::{SrgbColour, accent_for, resolved_accent, resolved_accent_of};
 pub use colour::{ColourCompileFailure, compile_colour_tokens};
 pub use colour_model::{
     FocusRingProvenance, LinearRgba, NON_TEXT_NAMES, ResolvedColours, ResolvedNonTextColour,
@@ -74,8 +77,8 @@ pub use colour_model::{
 pub use compiler::compile_design;
 pub use context::{ActionsAlign, ActionsPlace, TitleAlign};
 pub use context::{
-    CaptionSide, Contrast, Decorations, DesignContext, MenuSide, MenuStyle, Mode,
-    RequestedDecorations, Scheme, Style, WindowStyle,
+    AccentChoice, CaptionSide, Colour8, Contrast, Decorations, DesignContext, MenuSide, MenuStyle,
+    Mode, RequestedDecorations, Scheme, Style, Swatch, Tints, WindowStyle,
 };
 pub use design_model::{
     AuthoredMetric, DesignApplyDecision, DesignApplyTransition, DesignCompileFailure,
