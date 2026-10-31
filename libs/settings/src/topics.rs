@@ -128,7 +128,8 @@ fn concrete(def: &'static registry::KeyDef, values: &Values) -> Vec<String> {
     {
         let mut paths = vec![String::new()];
         for part in &parts {
-            let choices: Vec<&str> = closed_members(part).map_or_else(|| vec![*part], <[_]>::to_vec);
+            let choices: Vec<&str> =
+                closed_members(part).map_or_else(|| vec![*part], <[_]>::to_vec);
             paths = paths
                 .iter()
                 .flat_map(|head| {
@@ -209,7 +210,11 @@ pub fn view_values(
                 Err(e) => errors.push(e),
             }
         }
-        return if errors.is_empty() { Ok(out) } else { Err(errors) };
+        return if errors.is_empty() {
+            Ok(out)
+        } else {
+            Err(errors)
+        };
     }
     let mut all = Map::new();
     for topic in PREFIXES {
@@ -334,7 +339,14 @@ pub struct LookContent {
 
 pub fn look_content(values: &Values, resolved: &Resolved, source_digest: &str) -> LookContent {
     let mut out = Map::new();
-    for prefix in ["appearance", "state", "window", "accessibility", "apps", "tune"] {
+    for prefix in [
+        "appearance",
+        "state",
+        "window",
+        "accessibility",
+        "apps",
+        "tune",
+    ] {
         out.extend(
             prefix_values(values, prefix)
                 .into_iter()

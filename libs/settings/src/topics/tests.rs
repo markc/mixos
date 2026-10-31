@@ -87,10 +87,7 @@ fn a_change_moves_only_its_prefix() {
     let mut changes = BTreeMap::new();
     changes.insert("time.applet.show_seconds".to_owned(), json!(true));
     let after = registry::apply(&before, &changes, &[]).unwrap();
-    assert_eq!(
-        changed_prefixes(&before, &after),
-        BTreeSet::from(["time"])
-    );
+    assert_eq!(changed_prefixes(&before, &after), BTreeSet::from(["time"]));
     let resolved = Resolved::default();
     let (a, b) = (contents(&before, &resolved), contents(&after, &resolved));
     let moved: Vec<_> = PREFIXES.iter().filter(|p| a[*p] != b[*p]).collect();
@@ -112,7 +109,11 @@ fn the_values_view_reads_a_prefix_or_keys_and_refuses_live_paths() {
     let refused = view_values(&empty, Some("system"), None).unwrap_err();
     assert_eq!(refused[0].code, "live_key");
     assert!(view_values(&empty, Some("nope"), None).is_err());
-    assert!(view_values(&empty, Some("displays"), None).unwrap().is_empty());
+    assert!(
+        view_values(&empty, Some("displays"), None)
+            .unwrap()
+            .is_empty()
+    );
     let all = view_values(&empty, None, None).unwrap();
     assert!(all.keys().all(|k| prefix_of(k).is_some()));
 }

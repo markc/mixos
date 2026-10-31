@@ -152,7 +152,9 @@ impl Fixture {
         ));
         fs::create_dir(&root).unwrap();
         fs::set_permissions(&root, fs::Permissions::from_mode(0o711)).unwrap();
-        let ips: Vec<String> = (0..names.len()).map(|i| format!("127.0.0.{}", i + 2)).collect();
+        let ips: Vec<String> = (0..names.len())
+            .map(|i| format!("127.0.0.{}", i + 2))
+            .collect();
         let reservations: Vec<_> = ips
             .iter()
             .map(|ip| std::net::TcpListener::bind((ip.as_str(), 0)).unwrap())
@@ -314,7 +316,10 @@ async fn status_until(
         {
             return status;
         }
-        assert!(tokio::time::Instant::now() < deadline, "status never {what}");
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "status never {what}"
+        );
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
 }
@@ -388,7 +393,9 @@ fn all_at(latest: &BTreeMap<String, Value>, revision: &Value) -> bool {
 }
 
 fn at(latest: &BTreeMap<String, Value>, topic: &str, revision: &Value) -> bool {
-    latest.get(topic).is_some_and(|b| &b["revision"] == revision)
+    latest
+        .get(topic)
+        .is_some_and(|b| &b["revision"] == revision)
 }
 
 fn apply(instance: &str, status: &Value, operation: &str, changes: Value) -> Value {
@@ -412,25 +419,53 @@ fn a_batch_publishes_exactly_its_prefixes_and_a_reconnect_republishes_every_topi
         let log = fixture.root.join("authority.log");
         let broker = &fixture.brokers[0];
         let _authority = broker.settingsd(
-            &["serve", "--instance", "alpha", "--root", profile.to_str().unwrap()],
+            &[
+                "serve",
+                "--instance",
+                "alpha",
+                "--root",
+                profile.to_str().unwrap(),
+            ],
             &log,
         );
         let mut watch = Watch::new(&broker.url(), "topic-observer").await;
-        let status = ready(&watch.client, "settingsd", "settings.status", json!({"binding": binding("alpha")})).await;
+        let status = ready(
+            &watch.client,
+            "settingsd",
+            "settings.status",
+            json!({"binding": binding("alpha")}),
+        )
+        .await;
         let first = status["revision"].clone();
-        watch.until("every topic retained", |l| all_at(l, &first)).await;
+        watch
+            .until("every topic retained", |l| all_at(l, &first))
+            .await;
         watch.settle(Duration::from_millis(300)).await;
         watch.since();
 
         // A batch of two prefixes publishes those two and the snapshot. The
         // look is untouched (neither key is in it), so it stays quiet.
-        let request = apply("alpha", &status, "batch-two-prefixes", json!({
-            "time.applet.show_seconds": true, "accessibility.invert": true}));
-        let changed = watch.client.call("settingsd", "settings.apply", request).await.unwrap();
+        let request = apply(
+            "alpha",
+            &status,
+            "batch-two-prefixes",
+            json!({
+            "time.applet.show_seconds": true, "accessibility.invert": true}),
+        );
+        let changed = watch
+            .client
+            .call("settingsd", "settings.apply", request)
+            .await
+            .unwrap();
         assert_eq!(changed["status"], "changed", "{changed}");
         let second = changed["receipt"]["revision"].clone();
-        watch.until("the batch", |l| at(l, &keys("time"), &second)
-            && at(l, &keys("accessibility"), &second) && at(l, &snapshot(), &second)).await;
+        watch
+            .until("the batch", |l| {
+                at(l, &keys("time"), &second)
+                    && at(l, &keys("accessibility"), &second)
+                    && at(l, &snapshot(), &second)
+            })
+            .await;
         watch.settle(Duration::from_millis(1500)).await;
         assert_eq!(
             watch.since(),
@@ -442,7 +477,10 @@ fn a_batch_publishes_exactly_its_prefixes_and_a_reconnect_republishes_every_topi
         assert_eq!(time["changed_at"], second);
         assert_eq!(time["schema"], 3);
         let window = &watch.latest[&keys("window")];
-        assert_eq!(window["changed_at"], first, "an untouched prefix keeps its stamp");
+        assert_eq!(
+            window["changed_at"], first,
+            "an untouched prefix keeps its stamp"
+        );
 
         // A restarted broker has none of the retained state: a fresh
         // subscriber sees every topic only because settingsd republished.
@@ -452,7 +490,9 @@ fn a_batch_publishes_exactly_its_prefixes_and_a_reconnect_republishes_every_topi
         fixture.brokers[0].start();
         let broker = &fixture.brokers[0];
         let mut fresh = Watch::new(&broker.url(), "after-reconnect").await;
-        fresh.until("every topic republished", |l| all_at(l, &second)).await;
+        fresh
+            .until("every topic republished", |l| all_at(l, &second))
+            .await;
         for topic in topics() {
             let (old, new) = (&before[&topic], &fresh.latest[&topic]);
             assert_eq!(old["changed_at"], new["changed_at"], "{topic}");
@@ -469,79 +509,167 @@ fn a_mirror_on_a_second_broker_republishes_forwards_serves_stale_and_catches_up(
         let mut fixture = Fixture::new(&["alpha", "beta"]);
         let profile = fixture.profile("alpha");
         let mirror_root = fixture.root.join("mirror");
-        let (authority_log, mirror_log) =
-            (fixture.root.join("authority.log"), fixture.root.join("mirror.log"));
-        let authority_args = ["serve", "--instance", "alpha", "--root", profile.to_str().unwrap()];
+        let (authority_log, mirror_log) = (
+            fixture.root.join("authority.log"),
+            fixture.root.join("mirror.log"),
+        );
+        let authority_args = [
+            "serve",
+            "--instance",
+            "alpha",
+            "--root",
+            profile.to_str().unwrap(),
+        ];
         let mut authority = fixture.brokers[0].settingsd(&authority_args, &authority_log);
         let (alpha_url, beta_url) = (fixture.brokers[0].url(), fixture.brokers[1].url());
         let mut a = Watch::new(&alpha_url, "observer-alpha").await;
         let b_client = connect(&beta_url, "operator-beta").await;
         // The authority answers across the mesh before the mirror starts.
-        ready(&b_client, "settingsd.alpha.bus", "settings.status", json!({"binding": binding("alpha")})).await;
+        ready(
+            &b_client,
+            "settingsd.alpha.bus",
+            "settings.status",
+            json!({"binding": binding("alpha")}),
+        )
+        .await;
         b_client.close().await;
         let _mirror = fixture.brokers[1].settingsd(
-            &["serve", "--instance", "alpha", "--mirror-of", "alpha", "--root", mirror_root.to_str().unwrap()],
+            &[
+                "serve",
+                "--instance",
+                "alpha",
+                "--mirror-of",
+                "alpha",
+                "--root",
+                mirror_root.to_str().unwrap(),
+            ],
             &mirror_log,
         );
         let mut b = Watch::new(&beta_url, "observer-beta").await;
-        let status = status_until(&b.client, "settingsd", "alpha", "an attached mirror",
-            |s| s["role"] == "mirror" && s["stale"] == false).await;
+        let status = status_until(&b.client, "settingsd", "alpha", "an attached mirror", |s| {
+            s["role"] == "mirror" && s["stale"] == false
+        })
+        .await;
         assert_eq!(status["authority"], "alpha");
         let first = status["revision"].clone();
-        let authority_status = ready(&a.client, "settingsd", "settings.status", json!({"binding": binding("alpha")})).await;
+        let authority_status = ready(
+            &a.client,
+            "settingsd",
+            "settings.status",
+            json!({"binding": binding("alpha")}),
+        )
+        .await;
         assert_eq!(authority_status["role"], "authority");
-        assert!(authority_status["mirrors"].get("beta").is_some(), "{authority_status}");
+        assert!(
+            authority_status["mirrors"].get("beta").is_some(),
+            "{authority_status}"
+        );
 
         // The same topics at the same revision on both nodes.
         a.until("alpha's topics", |l| all_at(l, &first)).await;
         b.until("beta's topics", |l| all_at(l, &first)).await;
-        assert_eq!(a.latest, b.latest, "the mirror's bodies are the authority's");
+        assert_eq!(
+            a.latest, b.latest,
+            "the mirror's bodies are the authority's"
+        );
         a.settle(Duration::from_millis(300)).await;
         b.settle(Duration::from_millis(300)).await;
         a.since();
         b.since();
 
         // An authority commit: the mirror republishes the same topics.
-        let request = apply("alpha", &authority_status, "on-the-authority",
-            json!({"time.applet.show_seconds": true}));
-        let changed = a.client.call("settingsd", "settings.apply", request).await.unwrap();
+        let request = apply(
+            "alpha",
+            &authority_status,
+            "on-the-authority",
+            json!({"time.applet.show_seconds": true}),
+        );
+        let changed = a
+            .client
+            .call("settingsd", "settings.apply", request)
+            .await
+            .unwrap();
         let second = changed["receipt"]["revision"].clone();
-        let moved = |l: &BTreeMap<String, Value>| at(l, &keys("time"), &second) && at(l, &snapshot(), &second);
+        let moved = |l: &BTreeMap<String, Value>| {
+            at(l, &keys("time"), &second) && at(l, &snapshot(), &second)
+        };
         a.until("the commit on alpha", moved).await;
         b.until("the commit on beta", moved).await;
         a.settle(Duration::from_millis(1000)).await;
         b.settle(Duration::from_millis(1000)).await;
         let expected = BTreeSet::from([keys("time"), snapshot()]);
         assert_eq!(a.since(), expected);
-        assert_eq!(b.since(), expected, "the mirror republishes only what moved");
+        assert_eq!(
+            b.since(),
+            expected,
+            "the mirror republishes only what moved"
+        );
         assert_eq!(a.latest, b.latest);
 
         // A write through the mirror gets the authority's receipt, and its
         // replay by operation_id returns the same one.
-        let mirror_status = status_until(&b.client, "settingsd", "alpha", "current", |s| s["revision"] == second).await;
-        let request = apply("alpha", &mirror_status, "through-the-mirror",
-            json!({"accessibility.invert": true}));
-        let through = b.client.call("settingsd", "settings.apply", request.clone()).await.unwrap();
+        let mirror_status = status_until(&b.client, "settingsd", "alpha", "current", |s| {
+            s["revision"] == second
+        })
+        .await;
+        let request = apply(
+            "alpha",
+            &mirror_status,
+            "through-the-mirror",
+            json!({"accessibility.invert": true}),
+        );
+        let through = b
+            .client
+            .call("settingsd", "settings.apply", request.clone())
+            .await
+            .unwrap();
         assert_eq!(through["status"], "changed", "{through}");
         assert_eq!(through["replayed"], false);
         let third = through["receipt"]["revision"].clone();
-        let replay = b.client.call("settingsd", "settings.apply", request.clone()).await.unwrap();
+        let replay = b
+            .client
+            .call("settingsd", "settings.apply", request.clone())
+            .await
+            .unwrap();
         assert_eq!(replay["replayed"], true);
         assert_eq!(replay["receipt"], through["receipt"]);
-        let receipt = a.client.call("settingsd", "settings.status",
-            json!({"binding": binding("alpha"), "operation_id": "through-the-mirror"})).await.unwrap();
-        assert_eq!(receipt["receipt"], through["receipt"], "the authority holds the receipt");
+        let receipt = a
+            .client
+            .call(
+                "settingsd",
+                "settings.status",
+                json!({"binding": binding("alpha"), "operation_id": "through-the-mirror"}),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            receipt["receipt"], through["receipt"],
+            "the authority holds the receipt"
+        );
         let moved = |l: &BTreeMap<String, Value>| at(l, &keys("accessibility"), &third);
         a.until("the mirrored write on alpha", moved).await;
         b.until("the mirrored write on beta", moved).await;
-        assert_eq!(a.latest[&keys("accessibility")], b.latest[&keys("accessibility")]);
+        assert_eq!(
+            a.latest[&keys("accessibility")],
+            b.latest[&keys("accessibility")]
+        );
 
         // The authority stops: the mirror serves its cache stale and refuses
         // writes with authority_unreachable.
         authority.terminate();
-        status_until(&b.client, "settingsd", "alpha", "stale", |s| s["stale"] == true).await;
-        let cached = b.client.call("settingsd", "settings.get",
-            json!({"binding": binding("alpha"), "view": "values", "prefix": "accessibility"})).await.unwrap();
+        status_until(&b.client, "settingsd", "alpha", "stale", |s| {
+            s["stale"] == true
+        })
+        .await;
+        let cached = b
+            .client
+            .call(
+                "settingsd",
+                "settings.get",
+                json!({"binding": binding("alpha"), "view": "values", "prefix": "accessibility"}),
+            )
+            .await
+            .unwrap();
         assert_eq!(cached["revision"], third);
         assert_eq!(cached["values"]["accessibility.invert"], true);
         let mut refused = request.clone();
@@ -554,28 +682,52 @@ fn a_mirror_on_a_second_broker_republishes_forwards_serves_stale_and_catches_up(
 
         // The authority comes back: it pushes to the mirror it had attached.
         let _authority = fixture.brokers[0].settingsd(&authority_args, &authority_log);
-        status_until(&b.client, "settingsd", "alpha", "attached again", |s| s["stale"] == false).await;
+        status_until(&b.client, "settingsd", "alpha", "attached again", |s| {
+            s["stale"] == false
+        })
+        .await;
 
         // The mirror's own broker restarts while the authority commits: on
         // its reconnect the mirror re-attaches and catches up.
         b.client.close().await;
         fixture.brokers[1].process.stop();
-        let current = ready(&a.client, "settingsd", "settings.status", json!({"binding": binding("alpha")})).await;
-        let request = apply("alpha", &current, "while-the-mirror-is-away",
-            json!({"time.applet.show_date": false}));
-        let changed = a.client.call("settingsd", "settings.apply", request).await.unwrap();
+        let current = ready(
+            &a.client,
+            "settingsd",
+            "settings.status",
+            json!({"binding": binding("alpha")}),
+        )
+        .await;
+        let request = apply(
+            "alpha",
+            &current,
+            "while-the-mirror-is-away",
+            json!({"time.applet.show_date": false}),
+        );
+        let changed = a
+            .client
+            .call("settingsd", "settings.apply", request)
+            .await
+            .unwrap();
         let fourth = changed["receipt"]["revision"].clone();
-        a.until("the commit while away", |l| at(l, &keys("time"), &fourth)).await;
+        a.until("the commit while away", |l| at(l, &keys("time"), &fourth))
+            .await;
         fixture.brokers[1].start();
         let mut b = Watch::new(&beta_url, "observer-beta-again").await;
-        status_until(&b.client, "settingsd", "alpha", "caught up",
-            |s| s["revision"] == fourth && s["stale"] == false).await;
+        status_until(&b.client, "settingsd", "alpha", "caught up", |s| {
+            s["revision"] == fourth && s["stale"] == false
+        })
+        .await;
         // A reconnect republishes every topic, at the revision the attach
         // brought, not the cache's.
-        b.until("beta's topics after its reconnect", |l| all_at(l, &fourth)).await;
+        b.until("beta's topics after its reconnect", |l| all_at(l, &fourth))
+            .await;
         assert_eq!(a.latest[&keys("time")], b.latest[&keys("time")]);
         let mirror_log = fs::read_to_string(&mirror_log).unwrap();
-        assert!(mirror_log.contains("mirror took the authority's revision"), "{mirror_log}");
+        assert!(
+            mirror_log.contains("mirror took the authority's revision"),
+            "{mirror_log}"
+        );
         a.client.close().await;
         b.client.close().await;
     });
