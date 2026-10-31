@@ -273,8 +273,12 @@ mod tests {
             edits.push(edit.edit());
         }
         for edit in edits {
-            let values = settings::registry::Values::from([(edit.path.clone(), edit.value)]);
-            settings::resolve::values::resolve(&values, settings::EMBEDDED_DEFAULT_SOURCE)
+            // As settingsd applies it: a default is dropped, not stored.
+            let changes = std::collections::BTreeMap::from([(edit.path.clone(), edit.value)]);
+            settings::registry::apply(&Default::default(), &changes, &[])
+                .and_then(|values| {
+                    settings::resolve::values::resolve(&values, settings::EMBEDDED_DEFAULT_SOURCE)
+                })
                 .unwrap_or_else(|error| panic!("{}: {error:?}", edit.path));
         }
     }

@@ -2020,7 +2020,7 @@ mod tests {
             "every serialised appearance axis must be exercised"
         );
         // The v2 registry takes every change, and the result resolves.
-        let values: settings::registry::Values = changes.into_iter().collect();
+        let values = settings::registry::apply(&Default::default(), &changes, &[]).unwrap();
         settings::resolve::values::resolve(&values, settings::EMBEDDED_DEFAULT_SOURCE).unwrap();
     }
 

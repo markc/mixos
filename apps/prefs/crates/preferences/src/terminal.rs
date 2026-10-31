@@ -236,9 +236,10 @@ mod tests {
         );
         for (setting, path, value) in cases {
             assert_eq!(setting.edit(), Edit::Set(path, value.clone()), "{path}");
-            let values = settings::registry::Values::from([(path.into(), value)]);
-            settings::resolve::values::resolve(&values, settings::EMBEDDED_DEFAULT_SOURCE)
-                .unwrap();
+            // As settingsd applies it: a default is dropped, not stored.
+            let changes = std::collections::BTreeMap::from([(path.into(), value)]);
+            let values = settings::registry::apply(&Default::default(), &changes, &[]).unwrap();
+            settings::resolve::values::resolve(&values, settings::EMBEDDED_DEFAULT_SOURCE).unwrap();
         }
     }
 
