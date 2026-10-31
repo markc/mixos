@@ -582,18 +582,33 @@ pub fn accent_seed(chrome: &ResolvedChrome) -> Option<SrgbColour> {
     let chroma = |colour: SrgbColour| {
         crate::colour_model::derivation::linear_srgb_to_oklch(colour.to_linear()).1
     };
-    ["accent", "accent_border", "primary_bg"]
+    let candidates: Vec<SrgbColour> = ["accent", "accent_border", "primary_bg"]
         .into_iter()
         .filter_map(|role| chrome.get(role).map(SrgbColour::from_linear))
         .map(|colour| match under {
             Some(under) if colour.alpha < 1.0 => with_alpha(over(colour, under), 1.0),
             _ => with_alpha(colour, 1.0),
         })
+        .collect();
+    let most = candidates.iter().map(|c| chroma(*c)).fold(0.0, f64::max);
+    // Fable's C1: candidates within ACCENT_SEED_CHROMA_TIE of the most
+    // chromatic are tied, and a tie goes to the highest contrast against
+    // `chrome`, so an achromatic scheme (mono) takes the accent it draws
+    // with rather than a grey beside its chrome.
+    let reads = |colour: SrgbColour| {
+        under.map_or(0.0, |under| crate::derive::primitives::contrast(colour, under))
+    };
+    candidates
+        .into_iter()
+        .filter(|c| chroma(*c) >= most - ACCENT_SEED_CHROMA_TIE)
         .fold(None, |best: Option<SrgbColour>, colour| match best {
-            Some(best) if chroma(best) >= chroma(colour) => Some(best),
+            Some(best) if reads(best) >= reads(colour) => Some(best),
             _ => Some(colour),
         })
 }
+
+/// How close in OKLCh chroma two accent-seed candidates count as tied.
+pub const ACCENT_SEED_CHROMA_TIE: f64 = 0.02;
 
 /// The settings the first tint under an authored scheme writes beside
 /// `appearance.scheme = mixos` (F4): the accent and the four tints from
