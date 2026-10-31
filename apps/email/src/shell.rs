@@ -160,7 +160,7 @@ pub struct Shell {
     /// absent, or holds a look this build cannot draw.
     file_theme: Theme,
     /// The session look settingsd holds, once read.
-    look: Option<settings::Appearance>,
+    look: Option<settings::view::Look>,
     custom_source: bool,
     common_ui: settings::model::CommonUi,
     /// The profile's bindings for email, as last applied.
@@ -1730,7 +1730,7 @@ impl Shell {
                 continue;
             }
             if let Event::Delivery(citizen::Delivery::Topic(topic)) = &event {
-                if *topic == self.follower.topic() {
+                if self.follower.is_hint(topic) {
                     self.read_look();
                 }
                 continue;
@@ -2140,12 +2140,7 @@ impl Shell {
         self.look
             .as_ref()
             .map(|look| {
-                toolkit::look_delivery::theme(
-                    look,
-                    &self.common_ui,
-                    self.custom_source,
-                    &self.file_theme,
-                )
+                toolkit::session_look::follow_look(look, Some(APP), self.custom_source, &self.file_theme)
             })
             .unwrap_or_else(|| self.file_theme.clone())
             .with_ui(self.common_ui.clone())
@@ -2165,11 +2160,11 @@ impl Shell {
 
     /// Show the session look `look` (settingsd's), or the theme file's with
     /// `None`; the window's own choice stays on top.
-    pub fn set_look(&mut self, look: Option<settings::Appearance>) {
+    pub fn set_look(&mut self, look: Option<settings::view::Look>) {
         self.follow_look(look, false);
     }
 
-    fn follow_look(&mut self, look: Option<settings::Appearance>, custom_source: bool) {
+    fn follow_look(&mut self, look: Option<settings::view::Look>, custom_source: bool) {
         self.custom_source = custom_source;
         self.look = look;
         self.theme = self.session_theme();
@@ -2221,16 +2216,15 @@ impl Shell {
         let (followed, next) = self.follower.answered(ticket, answer);
         match followed {
             Some(settings::follow::Followed::Look {
-                appearance,
-                ui,
+                look,
                 custom_source,
                 keymaps,
                 email,
                 ..
             }) => {
                 toolkit::debug!(app = "email", "settings applied");
-                self.common_ui = ui;
-                self.follow_look(Some(*appearance), custom_source);
+                self.common_ui = toolkit::session_look::ui(&look, Some(APP));
+                self.follow_look(Some(*look), custom_source);
                 self.set_keymap(keymaps.get(APP).cloned().unwrap_or_default());
                 self.state.set_settings(*email);
             }
@@ -2593,22 +2587,26 @@ mod tests {
             ..Default::default()
         });
         for (revision, custom_source) in [(10, true), (11, false), (12, true)] {
-            let appearance = settings::Appearance {
-                scheme: "forest".into(),
-                font_weight: Some(700),
-                font_size: Some(18.0),
-                decorations: "ssd".into(),
-                caption_side: "left".into(),
-                menu_style: "titlebar".into(),
-                menu_side: "right".into(),
-                window_style: "win11".into(),
-                ..Default::default()
-            };
+            let mut values = settings::registry::Values::from([
+                ("appearance.scheme".to_owned(), json!("forest")),
+                ("appearance.font_weight".to_owned(), json!(700)),
+                ("appearance.font_size".to_owned(), json!(18.0)),
+                ("window.decorations".to_owned(), json!("ssd")),
+                ("window.caption_side".to_owned(), json!("left")),
+                ("window.menu_style".to_owned(), json!("titlebar")),
+                ("window.menu_side".to_owned(), json!("right")),
+                ("window.style".to_owned(), json!("win11")),
+            ]);
+            let look = <settings::view::Look as settings::view::View>::of(&values);
             let expected = if custom_source {
                 shell.file_theme.clone()
             } else {
-                toolkit::session_look::theme(&appearance).unwrap()
+                toolkit::session_look::follow_look(&look, Some(APP), false, &shell.file_theme)
             };
+            if custom_source {
+                // A design source of its own: the follower reports it.
+                values.insert("appearance.source".to_owned(), json!("design: {}"));
+            }
             let ticket = shell
                 .follower
                 .pending()
@@ -2617,12 +2615,9 @@ mod tests {
                 ticket,
                 Ok(citizen::Reply {
                     rc: 0,
-                    body: json!({"status":"current","summary":{
-                        "schema":1,"binding":shell.follower.binding(),
+                    body: json!({"status":"current","binding":shell.follower.binding(),
                         "incarnation":"font-follow","revision":revision.to_string(),
-                        "design_revision":revision.to_string(),"source_digest":"d",
-                        "custom_source":custom_source,"appearance":appearance
-                    }})
+                        "values":values,"resolved":{}})
                     .to_string(),
                     error: None,
                 }),
@@ -2635,7 +2630,7 @@ mod tests {
             assert_eq!(shell.theme.captions(), design::CaptionSide::Left);
             assert_eq!(shell.theme.menu_style(), design::MenuStyle::Titlebar);
             assert_eq!(shell.theme.menu_side(), design::MenuSide::Right);
-            assert_eq!(shell.theme.band(), toolkit::session_look::band(&appearance));
+            assert_eq!(shell.theme.band(), toolkit::session_look::band_of(&look.framing));
             assert_eq!(
                 shell.theme.requested_decorations(),
                 design::RequestedDecorations::Server

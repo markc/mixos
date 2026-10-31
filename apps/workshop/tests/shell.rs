@@ -840,11 +840,12 @@ fn the_theme_command_installs_its_choice() {
 fn the_settingsd_look_is_the_session_theme() {
     use design::{Mode, Scheme};
     let mut rig = live_rig();
-    let forest = settings::Appearance {
-        scheme: "forest".into(),
-        mode: "dark".into(),
-        ..settings::Appearance::default()
-    };
+    let forest = <settings::view::Look as settings::view::View>::of(
+        &settings::registry::Values::from([
+            ("appearance.scheme".to_owned(), json!("forest")),
+            ("appearance.mode".to_owned(), json!("dark")),
+        ]),
+    );
     rig.h.state_mut().as_mut().unwrap().set_look(Some(forest));
     rig.h.run_steps(5);
     assert_eq!(
@@ -897,11 +898,12 @@ fn look_reply(
 ) -> Result<inspector::bus::Reply, inspector::bus::CallError> {
     Ok(inspector::bus::Reply {
         rc: 0,
-        body: json!({"status":"current","summary":{"schema":1,
+        body: json!({"status":"current",
             "binding":{"instance":"host","profile":"default"},
-            "incarnation":"i","revision":revision,"design_revision":revision,
-            "source_digest":"d","custom_source":false,
-            "appearance":{"scheme":scheme,"mode":"dark","contrast":"normal","source":null}}})
+            "incarnation":"i","revision":revision,
+            "values":{"appearance.scheme":scheme,"appearance.mode":"dark",
+                "appearance.contrast":"normal"},
+            "resolved":{}})
         .to_string(),
         error: None,
     })
@@ -915,13 +917,15 @@ fn desktop_text_and_density_reinstall_through_the_live_follower() {
     let reply = |revision: &str, text_scale, density, custom_source| {
         let mut reply = look_reply(revision, "studio").unwrap();
         let mut body: Value = serde_json::from_str(&reply.body).unwrap();
-        body["summary"]["ui"] = json!({"text_scale":text_scale,"density":density,
-            "reduced_motion":false});
-        body["summary"]["custom_source"] = json!(custom_source);
+        body["values"]["accessibility.text_scale"] = json!(text_scale);
+        body["values"]["appearance.density"] = json!(density);
+        if custom_source {
+            body["values"]["appearance.source"] = json!("design: {}");
+        }
         reply.body = body.to_string();
         Ok(reply)
     };
-    answer_look(&mut rig, reply("21", 1.5, 0.85, false));
+    answer_look(&mut rig, reply("21", 1.5, "compact", false));
     let scaled = rig.h.ctx.global_style();
     assert!(
         (scaled.text_styles[&egui::TextStyle::Body].size
@@ -931,9 +935,9 @@ fn desktop_text_and_density_reinstall_through_the_live_follower() {
     );
     assert!((scaled.spacing.item_spacing.x - normal.spacing.item_spacing.x * 0.85).abs() < 0.001);
     // Custom designs still receive the independent desktop UI choices.
-    answer_look(&mut rig, reply("22", 1.5, 1.2, true));
+    answer_look(&mut rig, reply("22", 1.5, "spacious", true));
     assert_eq!(toolkit::ui_scale::of(&rig.h.ctx).density, 1.2);
-    answer_look(&mut rig, reply("23", 1.0, 1.0, false));
+    answer_look(&mut rig, reply("23", 1.0, "comfortable", false));
     assert_eq!(rig.h.ctx.global_style().text_styles, normal.text_styles);
     assert_eq!(rig.h.ctx.global_style().spacing, normal.spacing);
 }

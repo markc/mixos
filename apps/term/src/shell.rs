@@ -96,11 +96,10 @@ pub struct Shell {
     base: Theme,
     theme: Theme,
     file_theme: Theme,
-    look: Option<settings::Appearance>,
+    look: Option<settings::view::Look>,
     custom_source: bool,
     common_ui: settings::model::CommonUi,
     follower: settings::follow::Follower,
-    look_topic: String,
     /// A read already prepared by the follower after retargeting.
     look_prepared: Option<settings::follow::Read>,
     installed: Option<toolkit::theme_menu::Choice>,
@@ -148,7 +147,6 @@ impl Shell {
             custom_source: false,
             common_ui: settings::model::CommonUi::default(),
             follower: settings::follow::Follower::new(&hostname()),
-            look_topic: settings::summary_topic(settings::follow::PROFILE),
             look_prepared: None,
             installed: None,
             bus,
@@ -178,11 +176,9 @@ impl Shell {
 
     /// Apply everything the Bus and the clipboard have handed over.
     fn pump(&mut self) {
-        if self.bus.start(&[
-            self.look_topic.clone(),
-            "theme.changed".to_owned(),
-            "noded.props.changed".to_owned(),
-        ]) {
+        let mut topics = self.follower.topics();
+        topics.extend(["theme.changed".to_owned(), "noded.props.changed".to_owned()]);
+        if self.bus.start(&topics) {
             self.read_look();
         }
         while let Some(event) = self.bus.next_event() {
@@ -205,7 +201,7 @@ impl Shell {
                     });
                 }
                 WindowEvent::Topic { topic, body } => {
-                    if topic == self.look_topic {
+                    if self.follower.is_hint(&topic) {
                         // A hint, never trusted: the look comes from the read.
                         self.read_look();
                     } else if topic == "theme.changed" {
@@ -220,7 +216,7 @@ impl Shell {
         while let Some(delivery) = self.bus.next_delivery() {
             match delivery {
                 Delivery::Subscribed(topic) => {
-                    if topic == self.look_topic {
+                    if self.follower.is_hint(&topic) {
                         self.read_look();
                     }
                 }
@@ -442,12 +438,7 @@ impl Shell {
             .look
             .as_ref()
             .map(|look| {
-                toolkit::look_delivery::theme(
-                    look,
-                    &self.common_ui,
-                    self.custom_source,
-                    &self.file_theme,
-                )
+                toolkit::session_look::follow_look(look, Some(APP), self.custom_source, &self.file_theme)
             })
             .unwrap_or_else(|| self.file_theme.clone())
             .with_ui(self.common_ui.clone());
@@ -475,21 +466,24 @@ impl Shell {
         );
         match followed {
             Some(settings::follow::Followed::Look {
-                appearance,
-                ui,
+                look,
                 custom_source,
                 terminal,
                 ..
             }) => {
                 toolkit::debug!(app = "term", "settings applied");
-                self.common_ui = ui;
+                self.common_ui = toolkit::session_look::ui(&look, Some(APP));
                 self.app.set_text_scale(self.common_ui.text_scale as f32);
                 // The terminal's settings apply whatever the look's source.
-                let family = terminal.font_family(&appearance).map(str::to_owned);
+                let family = terminal
+                    .font
+                    .family
+                    .clone()
+                    .or_else(|| look.appearance.mono_family.clone());
                 self.app
                     .apply_terminal(&terminal, family.as_deref(), self.font.pending.is_some());
                 self.custom_source = custom_source;
-                self.look = Some(*appearance);
+                self.look = Some(*look);
                 self.set_base();
             }
             Some(settings::follow::Followed::Missing) if self.look.is_some() => {

@@ -141,7 +141,7 @@ pub struct Shell {
     /// absent, or holds a look this build cannot draw.
     file_theme: Theme,
     /// The session look settingsd holds, once read.
-    look: Option<settings::Appearance>,
+    look: Option<settings::view::Look>,
     custom_source: bool,
     common_ui: settings::model::CommonUi,
     /// The profile's bindings for ced, as last applied.
@@ -149,7 +149,6 @@ pub struct Shell {
     follower: settings::follow::Follower,
     /// The follower's hint topic (the profile's summary topic; a
     /// retarget changes only the instance, never the profile).
-    look_topic: String,
     /// The latest look retry; an older one firing is void.
     look_retry: u64,
     installed: Option<toolkit::theme_menu::Choice>,
@@ -196,7 +195,6 @@ impl Shell {
             common_ui: settings::model::CommonUi::default(),
             keymap: toolkit::keymap::Overrides::new(),
             follower: settings::follow::Follower::new(&hostname()),
-            look_topic: settings::summary_topic(settings::follow::PROFILE),
             look_retry: 0,
             installed: None,
             palette,
@@ -216,8 +214,9 @@ impl Shell {
         // Hints arrive only once the subscription lands; the read then
         // (`Delivery::Subscribed`) catches any change an earlier read (a
         // reconnection, a registration) could have missed.
-        let topic = shell.look_topic.clone();
-        shell.transport.perform(&Effect::Subscribe { topic });
+        for topic in shell.follower.topics() {
+            shell.transport.perform(&Effect::Subscribe { topic });
+        }
         shell
     }
 
@@ -256,7 +255,7 @@ impl Shell {
                     self.app.absorb(fx);
                 }
                 Delivery::NotificationFailed { text } => self.app.notification_failed(text),
-                Delivery::Incoming(Incoming::Topic { topic, .. }) if topic == self.look_topic => {
+                Delivery::Incoming(Incoming::Topic { topic, .. }) if self.follower.is_hint(&topic) => {
                     // A hint, never trusted: the look comes from the read.
                     // The window's own topic: the controller never sees it.
                     self.read_look();
@@ -282,7 +281,7 @@ impl Shell {
                     self.app.absorb(fx);
                 }
                 Delivery::Subscribed { topic } => {
-                    if topic == self.look_topic {
+                    if self.follower.is_hint(&topic) {
                         self.read_look();
                     }
                 }
@@ -525,12 +524,7 @@ impl Shell {
             .look
             .as_ref()
             .map(|look| {
-                toolkit::look_delivery::theme(
-                    look,
-                    &self.common_ui,
-                    self.custom_source,
-                    &self.file_theme,
-                )
+                toolkit::session_look::follow_look(look, Some(APP), self.custom_source, &self.file_theme)
             })
             .unwrap_or_else(|| self.file_theme.clone())
             .with_ui(self.common_ui.clone());
@@ -554,11 +548,11 @@ impl Shell {
 
     /// Show the session look `look` (settingsd's), or the theme file's with
     /// `None`; the window's own choice stays on top.
-    pub fn set_look(&mut self, look: Option<settings::Appearance>) {
+    pub fn set_look(&mut self, look: Option<settings::view::Look>) {
         self.follow_look(look, false);
     }
 
-    fn follow_look(&mut self, look: Option<settings::Appearance>, custom_source: bool) {
+    fn follow_look(&mut self, look: Option<settings::view::Look>, custom_source: bool) {
         self.custom_source = custom_source;
         self.look = look;
         self.set_base();
@@ -611,16 +605,15 @@ impl Shell {
         match followed {
             // Keep the file design for a custom source, with profile choices on top.
             Some(settings::follow::Followed::Look {
-                appearance,
-                ui,
+                look,
                 custom_source,
                 keymaps,
                 ced,
                 ..
             }) => {
                 toolkit::debug!(app = "ced", "settings applied");
-                self.common_ui = ui;
-                self.follow_look(Some(*appearance), custom_source);
+                self.common_ui = toolkit::session_look::ui(&look, Some(APP));
+                self.follow_look(Some(*look), custom_source);
                 self.set_keymap(keymaps.get(APP).cloned().unwrap_or_default());
                 self.app.set_editor_style(ced.editor.clone());
                 self.palette = self.editor_palette();

@@ -100,7 +100,7 @@ pub struct Shell {
     file_theme: Theme,
     theme: Theme,
     installed: Option<toolkit::theme_menu::Choice>,
-    look: Option<settings::Appearance>,
+    look: Option<settings::view::Look>,
     custom_source: bool,
     common_ui: settings::model::CommonUi,
     keymap: toolkit::keymap::Overrides,
@@ -269,7 +269,7 @@ impl Shell {
                     self.set_base();
                 }
                 Event::Delivery(Delivery::Topic(topic)) => {
-                    if topic == self.follower.topic() {
+                    if self.follower.is_hint(&topic) {
                         self.read_look();
                     }
                 }
@@ -552,12 +552,7 @@ impl Shell {
             .look
             .as_ref()
             .map(|look| {
-                toolkit::look_delivery::theme(
-                    look,
-                    &self.common_ui,
-                    self.custom_source,
-                    &self.file_theme,
-                )
+                toolkit::session_look::follow_look(look, Some(SERVICE), self.custom_source, &self.file_theme)
             })
             .unwrap_or_else(|| self.file_theme.clone())
             .with_ui(self.common_ui.clone());
@@ -627,16 +622,15 @@ impl Shell {
         let (followed, next) = self.follower.answered(ticket, answer);
         match followed {
             Some(settings::follow::Followed::Look {
-                appearance,
-                ui,
+                look,
                 custom_source,
                 keymaps,
                 ..
             }) => {
                 toolkit::debug!(app = "screenshot", "settings applied");
-                self.common_ui = ui;
+                self.common_ui = toolkit::session_look::ui(&look, Some(SERVICE));
                 self.custom_source = custom_source;
-                self.look = Some(*appearance);
+                self.look = Some(*look);
                 self.set_base();
                 self.set_keymap(keymaps.get(SERVICE).cloned().unwrap_or_default());
             }

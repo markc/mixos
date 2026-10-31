@@ -56,8 +56,9 @@ fn parse(args: impl Iterator<Item = String>) -> Result<Settings, String> {
 }
 
 fn run(settings: &Settings) -> Result<(), String> {
-    // The desktop profile's change hints: the session look (shell.rs).
-    let topics = [::settings::summary_topic(::settings::follow::PROFILE)];
+    // The desktop profile's change hints: the session look and the app
+    // domains (shell.rs).
+    let topics = ::settings::follow::hint_topics(::settings::follow::PROFILE);
     let (handle, deliveries) =
         citizen::start_with_macros(APP, &settings.service, &settings.url, &topics)?;
     let theme = toolkit::Theme::load();
