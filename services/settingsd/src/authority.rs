@@ -141,17 +141,22 @@ impl Authority {
         let snapshot = self.snapshot_in(request.schema)?;
         Ok(json!({"status":"current","appearance":projection,"snapshot":snapshot}))
     }
-    /// The accepted snapshot in the schema a read asked for: 1 (complete) or
-    /// 2 (each distinct design once, [`settings::compact`]).
+    /// The accepted snapshot in the schema a read asked for: 1 (complete),
+    /// 2 (each distinct design once, [`settings::compact`]) or 3 (schema 2
+    /// with the values, what the native shells' consumer holds).
     pub fn snapshot_in(&self, schema: u32) -> Result<Value, Value> {
         let encoded = match schema {
             settings::SCHEMA => serde_json::to_value(&self.snapshot),
             settings::compact::COMPACT_SCHEMA => {
                 settings::compact::encode(&self.snapshot).and_then(serde_json::to_value)
             }
+            settings::compact::VALUES_SCHEMA => {
+                settings::compact::encode_values(&self.snapshot, &self.accepted.values)
+                    .and_then(serde_json::to_value)
+            }
             other => {
                 return Err(
-                    json!({"status":"unsupported_schema","schema":other,"supported":[settings::SCHEMA, settings::compact::COMPACT_SCHEMA]}),
+                    json!({"status":"unsupported_schema","schema":other,"supported":[settings::SCHEMA, settings::compact::COMPACT_SCHEMA, settings::compact::VALUES_SCHEMA]}),
                 );
             }
         };

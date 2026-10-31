@@ -67,7 +67,9 @@ async fn fetch(client: &SupervisedClient, binding: &Binding) -> Result<Read, Dia
         .call_typed(
             SOURCE,
             FETCH_COMMAND,
-            json!({ "binding": binding, "schema": settings::compact::COMPACT_SCHEMA }),
+            // Schema 3: the snapshot the shared consumer also receives on
+            // its topic, so a read and a delivery of one revision are equal.
+            json!({ "binding": binding, "schema": settings::compact::VALUES_SCHEMA }),
         )
         .await
         .map_err(|error| fault(error.to_string()))?;

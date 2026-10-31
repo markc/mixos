@@ -110,7 +110,7 @@ fn settings_topic(name: &str) -> bool {
 }
 
 /// `settingsd.desktop.keys.<profile>.<prefix>`: a profile as
-/// [`settings_topic_under`] takes it, then a prefix of one to four
+/// [`settings_profile`] takes it, then a prefix of one to four
 /// dot-separated segments of lower-case letters, digits and `_`.
 fn settings_keys_topic(name: &str) -> bool {
     let Some(rest) = name.strip_prefix("settingsd.desktop.keys.") else {
@@ -119,7 +119,7 @@ fn settings_keys_topic(name: &str) -> bool {
     let Some((profile, prefix)) = rest.split_once('.') else {
         return false;
     };
-    settings_topic_under(&format!("settingsd.desktop.keys.{profile}"), "settingsd.desktop.keys")
+    settings_profile(profile)
         && prefix.len() <= 64
         && (1..=4).contains(&prefix.split('.').count())
         && prefix.split('.').all(|segment| {
@@ -135,13 +135,17 @@ fn settings_topic_under(name: &str, base: &str) -> bool {
         || name
             .strip_prefix(base)
             .and_then(|rest| rest.strip_prefix('.'))
-            .is_some_and(|profile| {
-                !profile.is_empty()
-                    && profile.len() <= 64
-                    && profile
-                        .bytes()
-                        .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
-            })
+            .is_some_and(settings_profile)
+}
+
+/// A profile name in a settings topic: 1 to 64 ASCII letters, digits, `-`
+/// and `_`.
+fn settings_profile(profile: &str) -> bool {
+    !profile.is_empty()
+        && profile.len() <= 64
+        && profile
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
 }
 
 /// True iff this peer may publish to `name`. Non-reserved topics
