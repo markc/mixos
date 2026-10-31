@@ -54,10 +54,19 @@ confirms its incarnation, revision and `mirror_digest`; attaches only from
 the node named, at most 16 mirrors, never an older incarnation. Known gap: a
 crashed authority is noticed only at the next forwarded write (noded has no
 peer-down event). `settings.source` serves the pinned source by digest (R14a).
-`settings.palette` waits for the combined S2/S4b stack.
+`settings.palette {binding, mode?}` answers the desktop look's palette per
+mode from `design::palette` (the 31 roles, `flat`, the resolved accent, the
+nine swatches and the COSMIC-model values), tagged with incarnation and
+revision; a mirror computes it from its cache.
 
-Transition until S8: the format-4 topics, `view: full|summary` (still the
-default when `view` is omitted) and `settings.appearance.get` stay.
+The 0.8.0 transition is gone: the format-4 topics
+(`settingsd.desktop.changed|compact|summary.<profile>`), the `full` and
+`summary` views, the snapshot `schema` request field and
+`settings.appearance.get`. `settings.get` defaults to `view: values`, and
+every view answers `publication_pending`, `recovering` and
+`restored_from_backup`. Followers (the toolkit apps, Prefs) read `values` on
+the look and app-domain topics, the native shells (compd) the schema 3
+snapshot, and portald `values` plus `settings.palette`.
 
 `settings.get` 0.7.0 includes `ui` in summary reads: text scale, density and
 reduced motion on the same revision as appearance. Store format unchanged.

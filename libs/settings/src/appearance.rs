@@ -138,7 +138,8 @@ fn is_projection_caption_side(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Desktop, resolve};
+    use crate::Desktop;
+    use crate::v1::resolve;
 
     fn snapshot() -> Snapshot {
         let desktop = Desktop::default();

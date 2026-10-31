@@ -6,6 +6,7 @@
 //! after four accepted changes, the shape a long-running desktop profile
 //! has).
 use serde_json::json;
+use settings::v1::resolve_with_embedded;
 use settings::*;
 use settingsd::{
     authority::Authority,

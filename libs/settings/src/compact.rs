@@ -32,14 +32,6 @@ pub const COMPACT_SCHEMA: u32 = 2;
 /// snapshot never may.
 pub const MAX_OVERHEAD_BYTES: usize = 8 * 1024;
 
-/// The retained topic carrying the profile's snapshot in schema 2; owned by
-/// settingsd like [`crate::topic`], which carries schema 1.
-pub const COMPACT_TOPIC_PREFIX: &str = "settingsd.desktop.compact.";
-
-pub fn compact_topic(profile: &str) -> String {
-    format!("{COMPACT_TOPIC_PREFIX}{profile}")
-}
-
 /// A [`Snapshot`] in schema 2.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

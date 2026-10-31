@@ -280,11 +280,12 @@ changes.</li>
 <code>accent-color</code>.</p>
 <h2 id="source-and-identity">Source and identity</h2>
 <ul>
-<li>Source command: <code>settings.appearance.get</code>, read-only, from <code>settingsd</code>.</li>
-<li>The reply carries the atomic snapshot evidence alongside the projection.
-The shared settings Consumer checks the evidence and manages subscription,
-initial reads, lifecycle generations, delivery loss and bounded recovery.</li>
-<li>Trigger: authenticated retained topic <code>settingsd.desktop.changed.&lt;profile&gt;</code>.
+<li>Source commands: <code>settings.get {view: values, keys: [window.caption_side]}</code>
+(the resolved mode and caption side) and <code>settings.palette {mode}</code> (contrast
+and accent), read-only, from <code>settingsd</code>; both answers must carry the same
+incarnation and revision.</li>
+<li>Trigger: authenticated retained topics <code>settingsd.desktop.keys.&lt;profile&gt;.appearance</code>
+and <code>.window</code>.
 A publication also triggers a read when settingsd restarts at the same revision.</li>
 <li>A projection is identified by binding, incarnation and revision. A projection
 older than the held one within the same incarnation is refused and counted as

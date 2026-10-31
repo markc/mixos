@@ -8837,11 +8837,12 @@ Defaults before any projection: `color-scheme` 1 (dark), `contrast` 0, no
 
 ## Source and identity
 
-- Source command: `settings.appearance.get`, read-only, from `settingsd`.
-- The reply carries the atomic snapshot evidence alongside the projection.
-  The shared settings Consumer checks the evidence and manages subscription,
-  initial reads, lifecycle generations, delivery loss and bounded recovery.
-- Trigger: authenticated retained topic `settingsd.desktop.changed.<profile>`.
+- Source commands: `settings.get {view: values, keys: [window.caption_side]}`
+  (the resolved mode and caption side) and `settings.palette {mode}` (contrast
+  and accent), read-only, from `settingsd`; both answers must carry the same
+  incarnation and revision.
+- Trigger: authenticated retained topics `settingsd.desktop.keys.<profile>.appearance`
+  and `.window`.
   A publication also triggers a read when settingsd restarts at the same revision.
 - A projection is identified by binding, incarnation and revision. A projection
   older than the held one within the same incarnation is refused and counted as
@@ -9303,8 +9304,8 @@ refusal, invalid input or unknown commands. Domain status is structured in the b
 | Command | Input and result |
 | --- | --- |
 | `settings.describe` | No mutation; version, fields, ranges, defaults, limits and implemented/deferred capabilities |
-| `settings.get` | `{binding:{instance,profile}, view?, schema?}`; `view` `full` (default): complete accepted snapshot under `snapshot`, in `schema` 1 (default) or 2 (each distinct design projection once under `designs`, contexts naming it by digest; other schemas refused with `unsupported_schema`); `summary`: the profile's `Summary` (schema, binding, incarnation, revision, design revision, source digest, appearance names, `custom_source`, session `ui` (text scale, density and reduced motion), `keymaps` when any are set, `terminal` when any value is set, and `email` when any value is set; never projections or a source) under `summary`; both with publication/recovery status |
-| `settings.appearance.get` | `{binding:{instance,profile}, schema?}`; read-only schema 1 appearance projection (`mode`, `contrast`, sRGB `accent`) tagged with incarnation and revisions; the reply also includes the atomic `snapshot` (in `schema` 1 or 2, as for `settings.get`) for shared Consumer validation and effective desktop caption placement; portald derives its schema 2 projection and cache from this same read; `wrong_target` on a foreign binding |
+| `settings.get` | `{binding:{instance,profile}, view?, prefix?, keys?}` (contract 1.0.0); `view` `values` (default): identity, every stored key with its default filled (or those under `prefix`, or the named `keys`) and the resolved mode and accent; `look`: the follower view as its topic carries it; `snapshot`: the schema 3 snapshot (values plus each distinct design projection once); all with publication/recovery status |
+| `settings.palette` | `{binding:{instance,profile}, mode?}`; read-only; the desktop look's palette from `design::palette` for `dark` and `light` (or the one `mode`): 31 roles, `flat`, the resolved accent, the nine swatches and the COSMIC-model values, tagged with incarnation and revision; `wrong_target` on a foreign binding |
 | `settings.validate` | Fenced apply-shaped body; resolve/compile candidate without a write or receipt; valid with current base identity or diagnostics/conflict |
 | `settings.apply` | Fenced batch described below; durable changed/unchanged receipt |
 | `settings.reset` | Apply-shaped body with empty changes and explicit reset paths; same transaction semantics |
@@ -9667,11 +9668,12 @@ is set; `settings::email::from_snapshot` and `from_summary` read it.
 
 ## Topics and storage
 
-Publish retained `settingsd.desktop.changed.<profile>` (the snapshot in schema
-1), then retained `settingsd.desktop.compact.<profile>` (schema 2), then
-retained `settingsd.desktop.summary.<profile>` (its `Summary`), all owned by
-the registered `settingsd` service. The unscoped base names are reserved too.
-A revision is published once all three topics are; a failure retries all three. All clients may
+Publish the contract 1.0.0 retained topics: `settingsd.desktop.keys.<profile>.<prefix>`
+(one per prefix), `settingsd.desktop.look.<profile>` and
+`settingsd.desktop.snapshot.<profile>` (schema 3), all owned by the registered
+`settingsd` service; only the topics whose content moved are published. The
+retired 0.8.0 names (`changed`, `compact`, `summary`) stay reserved.
+A revision is published once every pending topic is; a failure retries the rest. All clients may
 subscribe; ordinary publishers/clearers cannot replace its canonical state.
 Noded strips inner routing headers and stamps broker_service independently of
 caller input. The publisher repopulates retained state at startup and reconnect,
@@ -9683,9 +9685,9 @@ Reconnection or a new revision restarts the backoff. There is no idle heartbeat;
 publication_pending remains visible throughout a failed pending job.
 
 **Following from an app.** An app on a plain Bus connection (no owner
-stamps) subscribes to the profile's summary topic, treats a delivery only as
-a hint, and reads the look with `settings.get`'s `summary` view, never the
-complete snapshot: `settings::follow::Follower` keeps one read in
+stamps) subscribes to the profile's look topic and the `keymaps`,
+`terminal`, `email` and `ced` keys topics, treats a delivery only as a hint,
+and reads `settings.get`'s `values` view, never the snapshot: `settings::follow::Follower` keeps one read in
 flight (hints during it fold into one more), ignores an answer older than one
 already seen (same incarnation, lower or equal revision), adopts the instance
 from `wrong_target` once (never the profile), and reports settingsd missing so
@@ -36695,14 +36697,14 @@ or cache data is available, the portal serves the documented defaults.
 ## Where the values come from
 
 ```text
-settingsd  --(retained topic: settingsd.desktop.changed.<profile>)-->  portald
-portald    --settings.appearance.get (one bounded read)------------->  settingsd
+settingsd  --(retained topics: settingsd.desktop.keys.<profile>.appearance|window)-->  portald
+portald    --settings.get {values} + settings.palette (bounded reads)----------->  settingsd
 ```
 
-The shared settings Consumer processes the initial connection and later
-generations, subscribes, and reads the projection with `settings.appearance.get`.
-The reply includes its atomic snapshot evidence. The Consumer checks that
-evidence, and the projection must match its binding and identity. Authenticated
+portald follows the initial connection and later generations, subscribes, and
+reads the resolved mode and caption side with `settings.get` (`values`) and the
+contrast and accent with `settings.palette`; the two answers must carry the
+same binding, incarnation and revision. Authenticated
 retained deliveries trigger fresh reads, including after settingsd restarts.
 
 A projection carries the schema version, the binding (instance and profile), an
@@ -41751,6 +41753,17 @@ Use strict MixOS configuration and owned shutdown signalling.
 
 ## Unreleased
 
+Contract 1.0.0 only (key space v2 §5): `follow::Follower` hints on the look
+and the `keymaps`, `terminal`, `email` and `ced` keys topics
+(`follow::hint_topics`) and reads `settings.get {view: values}`;
+`Followed::Look` carries the `view::Look` with the app domains. The native
+consumer reads the schema 3 snapshot topic and `view: snapshot`
+(`Snapshot::values`). `resolve::values::palette` answers `settings.palette`.
+Removed: `topic`, `TOPIC_PREFIX`, `summary_topic`, `SUMMARY_TOPIC_PREFIX`,
+`compact_topic`, `COMPACT_TOPIC_PREFIX`, `Summary`, `email::from_summary`,
+`View::{Full, Summary}`, `ReadRequest::schema` and the crate-root
+`resolve`/`resolve_with_embedded` re-export (use `v1::`).
+
 `settings.apply` now stores `appearance.font_size`; null and reset restore the
 design size. Regression checks cover summary readback, bounds and every concrete
 schema path, plus the paths produced by Preferences' controls.
@@ -42030,10 +42043,19 @@ confirms its incarnation, revision and `mirror_digest`; attaches only from
 the node named, at most 16 mirrors, never an older incarnation. Known gap: a
 crashed authority is noticed only at the next forwarded write (noded has no
 peer-down event). `settings.source` serves the pinned source by digest (R14a).
-`settings.palette` waits for the combined S2/S4b stack.
+`settings.palette {binding, mode?}` answers the desktop look's palette per
+mode from `design::palette` (the 31 roles, `flat`, the resolved accent, the
+nine swatches and the COSMIC-model values), tagged with incarnation and
+revision; a mirror computes it from its cache.
 
-Transition until S8: the format-4 topics, `view: full|summary` (still the
-default when `view` is omitted) and `settings.appearance.get` stay.
+The 0.8.0 transition is gone: the format-4 topics
+(`settingsd.desktop.changed|compact|summary.<profile>`), the `full` and
+`summary` views, the snapshot `schema` request field and
+`settings.appearance.get`. `settings.get` defaults to `view: values`, and
+every view answers `publication_pending`, `recovering` and
+`restored_from_backup`. Followers (the toolkit apps, Prefs) read `values` on
+the look and app-domain topics, the native shells (compd) the schema 3
+snapshot, and portald `values` plus `settings.palette`.
 
 `settings.get` 0.7.0 includes `ui` in summary reads: text scale, density and
 reduced motion on the same revision as appearance. Store format unchanged.

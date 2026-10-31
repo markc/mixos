@@ -42,7 +42,7 @@ fn a_copied_sealed_profile_keeps_its_format_and_digests() {
     let mut record: format4::Record = strict::from_str(source).unwrap();
     if std::env::var_os("UPDATE_PROFILE_FIXTURE").is_some() {
         record.effective_digest = settings::digest(
-            &settings::resolve_with_embedded(&record.desktop, &record.embedded_source).unwrap(),
+            &settings::v1::resolve_with_embedded(&record.desktop, &record.embedded_source).unwrap(),
         )
         .unwrap();
         record.seal().unwrap();

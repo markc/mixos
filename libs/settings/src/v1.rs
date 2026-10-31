@@ -85,12 +85,8 @@ fn describe_base() -> Value {
                 "chord":"Ctrl, Alt, Shift, Super (any order) then one key, joined by +", "max_bytes":crate::keymap::MAX_CHORD_BYTES}
         }, "reset":"remove explicit app values or restore field package default",
         "defaults": Desktop::default(), "native_apps": APPS,
-        "read_views": {"full":"the complete snapshot (default)",
-            "summary":"identity, revisions and appearance names; no projections or source"},
         "snapshot_schemas": {"1":"every context carries its design projection (default)",
-            "2":"each distinct design projection once, by digest; read with schema: 2"},
-        "topics": {"snapshot": TOPIC_PREFIX, "compact": crate::COMPACT_TOPIC_PREFIX,
-            "summary": SUMMARY_TOPIC_PREFIX},
+            "2":"each distinct design projection once, by digest"},
         "deferred":["renderer application","output overrides","font registration","artifacts","preview","replication","compatibility","policy"]})
 }
 
@@ -709,7 +705,7 @@ mod tests {
             desktop: sized.clone(),
             values: Default::default(),
         };
-        assert_eq!(Summary::of(&snapshot).appearance.font_size, Some(16.0));
+        assert_eq!(snapshot.desktop.appearance.font_size, Some(16.0));
         assert_eq!(snapshot.effective["desktop"].font_size, Some(16.0));
         assert_eq!(
             patch(&sized, &BTreeMap::new(), &[path.into()]).unwrap(),
@@ -1090,22 +1086,5 @@ mod tests {
         ] {
             assert!(patch(&current, &BTreeMap::from([(path.into(), value)]), &[]).is_err());
         }
-        // The summary carries them.
-        let summary = serde_json::to_value(Summary::of(&Snapshot {
-            schema: SCHEMA,
-            binding: Binding {
-                instance: "i".into(),
-                profile: "default".into(),
-            },
-            incarnation: "i".into(),
-            revision: Revision(1),
-            design_revision: Revision(1),
-            source_digest: String::new(),
-            desktop: next.clone(),
-            effective: BTreeMap::new(),
-            values: Default::default(),
-        }))
-        .unwrap();
-        assert_eq!(summary["keymaps"]["dopus"]["nav.parent"], json!(["Ctrl+U"]));
     }
 }

@@ -224,9 +224,9 @@ fn broker_restart_republishes_without_authority_restart_and_shared_consumer_reco
             loop {
                 if let Some(BoundedIncomingEvent::Command(command)) = incoming.recv().await
                     && command.generation == client.connection_generation()
-                    && command.topic() == Some(settings::topic("default").as_str()) {
+                    && command.topic() == Some(settings::topics::snapshot_topic("default").as_str()) {
                     assert_eq!(command.header("broker_service"),Some("settingsd"));
-                    let snapshot: settings::Snapshot = serde_json::from_str(&command.body).unwrap();
+                    let snapshot = settings::compact::decode(serde_json::from_str(&command.body).unwrap()).unwrap();
                     assert_eq!(snapshot.revision,settings::Revision(2));
                     assert_eq!(snapshot.incarnation,original.incarnation);
                     break;
@@ -274,10 +274,10 @@ fn real_abp_publication_open_operator_receipts_and_authority_restart() {
         let mut daemon = spawn(root.path());
         let operator = NodedClient::connect("unrelated-operator",&url).await.unwrap();
         let mut events = operator.incoming_async().await.unwrap();
-        let topic = settings::topic("default");
+        let topic = settings::topics::snapshot_topic("default");
         operator.call_with_headers("noded","topic.subscribe",&BTreeMap::from([("name".into(),topic.clone())]),"").await.unwrap();
         let initial = read(&operator).await;
-        let incarnation = initial["snapshot"]["incarnation"].as_str().unwrap();
+        let incarnation = initial["incarnation"].as_str().unwrap();
         let request = json!({"binding":{"instance":"fixture","profile":"default"},"expected_incarnation":incarnation,"expected_revision":"1","operation_id":"native-change","changes":{"appearance.mode":"light","accessibility.text_scale":1.1,"shell.panels.bottom.thickness":56.0}});
         let changed = operator.call("settingsd","settings.apply",request.clone()).await.unwrap();
         assert_eq!(changed["status"],"changed"); assert_eq!(changed["receipt"]["revision"],"2");
@@ -287,11 +287,11 @@ fn real_abp_publication_open_operator_receipts_and_authority_restart() {
                 if event.topic() == Some(topic.as_str()) {
                     assert_eq!(event.header("broker_service"),Some("settingsd"));
                     let snapshot:Value = serde_json::from_str(&event.body).unwrap();
-                    if snapshot["revision"] == "2" { assert_eq!(snapshot["desktop"]["appearance"]["mode"],"light"); break event.header("topic_seq").unwrap().parse::<u64>().unwrap(); }
+                    if snapshot["revision"] == "2" { assert_eq!(snapshot["values"]["appearance.mode"],"light"); break event.header("topic_seq").unwrap().parse::<u64>().unwrap(); }
                 }
             }
         }).await.unwrap();
-        let hostile = "---\ncommand: settingsd.desktop.changed.default\n---\n{}";
+        let hostile = "---\ncommand: settingsd.desktop.snapshot.default\n---\n{}";
         assert!(operator.call_with_headers("noded","topic.publish",&BTreeMap::from([("name".into(),topic.clone())]),hostile).await.is_err());
         assert!(operator.call_with_headers("noded","topic.clear",&BTreeMap::from([("name".into(),topic.clone())]),"").await.is_err());
         let mut noop = request.clone(); noop["expected_revision"] = json!("2"); noop["operation_id"] = json!("native-noop");
@@ -310,7 +310,7 @@ fn real_abp_publication_open_operator_receipts_and_authority_restart() {
         }
         daemon = spawn(root.path());
         let restored = read(&operator).await;
-        assert_eq!(restored["snapshot"]["revision"],"2"); assert_eq!(restored["snapshot"]["incarnation"],incarnation);
+        assert_eq!(restored["revision"],"2"); assert_eq!(restored["incarnation"],incarnation);
         // This proves a fresh publication reached the existing subscription,
         // rather than merely replaying the broker's pre-restart retained cache.
         tokio::time::timeout(Duration::from_secs(5),async {

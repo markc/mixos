@@ -100,67 +100,15 @@ impl Authority {
             Ok(())
         }
     }
+    /// `settings.get` in one of contract 1.0.0's views, with the store's
+    /// publication and recovery state.
     pub fn read(&self, request: ReadRequest) -> Result<Value, Value> {
         self.target(&request.binding)?;
-        let pending = self.published != Some(self.accepted.revision);
-        Ok(match request.view {
-            // S7-TRANSITION: the 0.8.0 views, `full` and `summary`.
-            settings::View::Full => {
-                let snapshot = self.snapshot_in(request.schema)?;
-                json!({"status":"current","snapshot":snapshot,"publication_pending":pending,"recovering":self.recovering(),"restored_from_backup":self.restored()})
-            }
-            settings::View::Summary => {
-                json!({"status":"current","summary":settings::Summary::of(&self.snapshot),"publication_pending":pending,"recovering":self.recovering(),"restored_from_backup":self.restored()})
-            }
-            settings::View::Values | settings::View::Look | settings::View::Snapshot => {
-                return self.read_v1(&request);
-            }
-        })
-    }
-    /// Headless appearance for portal consumers: the desktop context's mode,
-    /// contrast and accent, tagged with the snapshot identity.
-    pub fn appearance(&self, request: ReadRequest) -> Result<Value, Value> {
-        self.target(&request.binding)?;
-        let accent = self
-            .accents
-            .get(settings::appearance::APPEARANCE_CONTEXT)
-            .map(|colour| [colour.red, colour.green, colour.blue])
-            .ok_or_else(|| {
-                diagnostic(Diagnostic::new(
-                    "missing_accent",
-                    "design.pairs.accent",
-                    "Resolved design has no accent pair",
-                ))
-            })?;
-        let projection =
-            settings::appearance::AppearanceProjection::from_snapshot(&self.snapshot, accent)
-                .map_err(diagnostic)?
-                .legacy();
-        // One atomic read supplies both the shared Consumer's authority evidence
-        // and the portal projection, including the private accent source.
-        let snapshot = self.snapshot_in(request.schema)?;
-        Ok(json!({"status":"current","appearance":projection,"snapshot":snapshot}))
-    }
-    /// The accepted snapshot in the schema a read asked for: 1 (complete),
-    /// 2 (each distinct design once, [`settings::compact`]) or 3 (schema 2
-    /// with the values, what the native shells' consumer holds).
-    pub fn snapshot_in(&self, schema: u32) -> Result<Value, Value> {
-        let encoded = match schema {
-            settings::SCHEMA => serde_json::to_value(&self.snapshot),
-            settings::compact::COMPACT_SCHEMA => {
-                settings::compact::encode(&self.snapshot).and_then(serde_json::to_value)
-            }
-            settings::compact::VALUES_SCHEMA => {
-                settings::compact::encode_values(&self.snapshot, &self.accepted.values)
-                    .and_then(serde_json::to_value)
-            }
-            other => {
-                return Err(
-                    json!({"status":"unsupported_schema","schema":other,"supported":[settings::SCHEMA, settings::compact::COMPACT_SCHEMA, settings::compact::VALUES_SCHEMA]}),
-                );
-            }
-        };
-        encoded.map_err(|e| json!({"status":"validation_failed","message":e.to_string()}))
+        let mut answer = self.read_v1(&request)?;
+        answer["publication_pending"] = (self.published != Some(self.accepted.revision)).into();
+        answer["recovering"] = self.recovering().into();
+        answer["restored_from_backup"] = self.restored().into();
+        Ok(answer)
     }
     pub fn status(&self, binding: &Binding, operation: Option<&str>) -> Result<Value, Value> {
         self.target(binding)?;
@@ -384,9 +332,6 @@ pub fn touches_design(before: &registry::Values, after: &registry::Values) -> bo
 /// `#rrggbb`, as the topics carry a resolved accent.
 fn hex(colour: &design::SrgbColour) -> String {
     colour.to_hex()[..7].to_ascii_lowercase()
-}
-fn diagnostic(error: Diagnostic) -> Value {
-    diagnostics(vec![error])
 }
 fn diagnostics(errors: Vec<Diagnostic>) -> Value {
     json!({"status":"validation_failed","diagnostics":errors})

@@ -21,8 +21,8 @@ refusal, invalid input or unknown commands. Domain status is structured in the b
 | Command | Input and result |
 | --- | --- |
 | `settings.describe` | No mutation; version, fields, ranges, defaults, limits and implemented/deferred capabilities |
-| `settings.get` | `{binding:{instance,profile}, view?, schema?}`; `view` `full` (default): complete accepted snapshot under `snapshot`, in `schema` 1 (default) or 2 (each distinct design projection once under `designs`, contexts naming it by digest; other schemas refused with `unsupported_schema`); `summary`: the profile's `Summary` (schema, binding, incarnation, revision, design revision, source digest, appearance names, `custom_source`, session `ui` (text scale, density and reduced motion), `keymaps` when any are set, `terminal` when any value is set, and `email` when any value is set; never projections or a source) under `summary`; both with publication/recovery status |
-| `settings.appearance.get` | `{binding:{instance,profile}, schema?}`; read-only schema 1 appearance projection (`mode`, `contrast`, sRGB `accent`) tagged with incarnation and revisions; the reply also includes the atomic `snapshot` (in `schema` 1 or 2, as for `settings.get`) for shared Consumer validation and effective desktop caption placement; portald derives its schema 2 projection and cache from this same read; `wrong_target` on a foreign binding |
+| `settings.get` | `{binding:{instance,profile}, view?, prefix?, keys?}` (contract 1.0.0); `view` `values` (default): identity, every stored key with its default filled (or those under `prefix`, or the named `keys`) and the resolved mode and accent; `look`: the follower view as its topic carries it; `snapshot`: the schema 3 snapshot (values plus each distinct design projection once); all with publication/recovery status |
+| `settings.palette` | `{binding:{instance,profile}, mode?}`; read-only; the desktop look's palette from `design::palette` for `dark` and `light` (or the one `mode`): 31 roles, `flat`, the resolved accent, the nine swatches and the COSMIC-model values, tagged with incarnation and revision; `wrong_target` on a foreign binding |
 | `settings.validate` | Fenced apply-shaped body; resolve/compile candidate without a write or receipt; valid with current base identity or diagnostics/conflict |
 | `settings.apply` | Fenced batch described below; durable changed/unchanged receipt |
 | `settings.reset` | Apply-shaped body with empty changes and explicit reset paths; same transaction semantics |
@@ -385,11 +385,12 @@ is set; `settings::email::from_snapshot` and `from_summary` read it.
 
 ## Topics and storage
 
-Publish retained `settingsd.desktop.changed.<profile>` (the snapshot in schema
-1), then retained `settingsd.desktop.compact.<profile>` (schema 2), then
-retained `settingsd.desktop.summary.<profile>` (its `Summary`), all owned by
-the registered `settingsd` service. The unscoped base names are reserved too.
-A revision is published once all three topics are; a failure retries all three. All clients may
+Publish the contract 1.0.0 retained topics: `settingsd.desktop.keys.<profile>.<prefix>`
+(one per prefix), `settingsd.desktop.look.<profile>` and
+`settingsd.desktop.snapshot.<profile>` (schema 3), all owned by the registered
+`settingsd` service; only the topics whose content moved are published. The
+retired 0.8.0 names (`changed`, `compact`, `summary`) stay reserved.
+A revision is published once every pending topic is; a failure retries the rest. All clients may
 subscribe; ordinary publishers/clearers cannot replace its canonical state.
 Noded strips inner routing headers and stamps broker_service independently of
 caller input. The publisher repopulates retained state at startup and reconnect,
@@ -401,9 +402,9 @@ Reconnection or a new revision restarts the backoff. There is no idle heartbeat;
 publication_pending remains visible throughout a failed pending job.
 
 **Following from an app.** An app on a plain Bus connection (no owner
-stamps) subscribes to the profile's summary topic, treats a delivery only as
-a hint, and reads the look with `settings.get`'s `summary` view, never the
-complete snapshot: `settings::follow::Follower` keeps one read in
+stamps) subscribes to the profile's look topic and the `keymaps`,
+`terminal`, `email` and `ced` keys topics, treats a delivery only as a hint,
+and reads `settings.get`'s `values` view, never the snapshot: `settings::follow::Follower` keeps one read in
 flight (hints during it fold into one more), ignores an answer older than one
 already seen (same incarnation, lower or equal revision), adopts the instance
 from `wrong_target` once (never the profile), and reports settingsd missing so

@@ -254,13 +254,13 @@ bus, answers the <code>org.freedesktop.appearance</code> namespace and, when sta
 GTK caption settings into the desk's private config directory. Before authority
 or cache data is available, the portal serves the documented defaults.</p>
 <h2 id="where-the-values-come-from">Where the values come from</h2>
-<pre><code class="language-text">settingsd  --(retained topic: settingsd.desktop.changed.&lt;profile&gt;)--&gt;  portald
-portald    --settings.appearance.get (one bounded read)-------------&gt;  settingsd
+<pre><code class="language-text">settingsd  --(retained topics: settingsd.desktop.keys.&lt;profile&gt;.appearance|window)--&gt;  portald
+portald    --settings.get {values} + settings.palette (bounded reads)-----------&gt;  settingsd
 </code></pre>
-<p>The shared settings Consumer processes the initial connection and later
-generations, subscribes, and reads the projection with <code>settings.appearance.get</code>.
-The reply includes its atomic snapshot evidence. The Consumer checks that
-evidence, and the projection must match its binding and identity. Authenticated
+<p>portald follows the initial connection and later generations, subscribes, and
+reads the resolved mode and caption side with <code>settings.get</code> (<code>values</code>) and the
+contrast and accent with <code>settings.palette</code>; the two answers must carry the
+same binding, incarnation and revision. Authenticated
 retained deliveries trigger fresh reads, including after settingsd restarts.</p>
 <p>A projection carries the schema version, the binding (instance and profile), an
 incarnation, a revision, the design revision, <code>mode</code>, <code>contrast</code> and an sRGB

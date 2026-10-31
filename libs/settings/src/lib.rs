@@ -5,7 +5,6 @@ pub mod appearance;
 #[cfg(feature = "cache")]
 pub mod cache;
 pub mod compact;
-pub use compact::{COMPACT_TOPIC_PREFIX, compact_topic};
 pub mod consumer;
 pub mod content;
 pub mod domains;
@@ -28,33 +27,12 @@ pub mod view;
 pub use design::EMBEDDED_DEFAULT_SOURCE;
 pub use model::*;
 pub use resolve::Accents;
-/// S8c shim: the format-4 resolver, for the tests outside settingsd (compd,
-/// portald, toolkit) that still build a format-4 snapshot. settingsd itself
-/// calls [`v1`] only to migrate and to downgrade. S8c deletes these two.
-pub use v1::{resolve, resolve_with_embedded};
 
 pub const CONTRACT_VERSION: &str = "1.0.0";
 pub const SCHEMA: u32 = 1;
 pub const MAX_SOURCE_BYTES: usize = 256 * 1024;
 pub const MAX_SNAPSHOT_BYTES: usize = 1024 * 1024 - 64 * 1024;
 pub const MAX_RECEIPTS: usize = 128;
-
-/// Registered service ownership is settingsd, independent of profile name.
-/// The settings topic is `TOPIC_PREFIX` followed by the profile name.
-pub const TOPIC_PREFIX: &str = "settingsd.desktop.changed.";
-
-pub fn topic(profile: &str) -> String {
-    format!("{TOPIC_PREFIX}{profile}")
-}
-
-/// The profile's [`Summary`] topic: retained, owned by settingsd like
-/// [`topic`], and a few hundred bytes where that one carries the complete
-/// snapshot. Plain followers subscribe here.
-pub const SUMMARY_TOPIC_PREFIX: &str = "settingsd.desktop.summary.";
-
-pub fn summary_topic(profile: &str) -> String {
-    format!("{SUMMARY_TOPIC_PREFIX}{profile}")
-}
 
 pub fn digest<T: serde::Serialize>(value: &T) -> Result<String, serde_json::Error> {
     Ok(blake3::hash(&serde_json::to_vec(value)?)

@@ -14,7 +14,7 @@
 //! its defaults (no accounts, no default, the default mail options), so a
 //! profile written before it re-serialises byte for byte and its seals still
 //! verify. It does not touch the resolved design.
-use crate::model::{Diagnostic, Snapshot, Summary, deserialize_integer_u32, integer_u32};
+use crate::model::{Diagnostic, Snapshot, deserialize_integer_u32, integer_u32};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -96,12 +96,6 @@ impl Email {
 /// The email settings of a snapshot.
 pub fn from_snapshot(snapshot: &Snapshot) -> Email {
     snapshot.desktop.email.clone()
-}
-
-/// The email settings of a summary (defaults when an older settingsd omits
-/// them).
-pub fn from_summary(summary: &Summary) -> Email {
-    summary.email.clone()
 }
 
 /// One JMAP account. Every field is written out; `ca_path`, `enabled` and
@@ -1002,7 +996,7 @@ mod tests {
     }
 
     #[test]
-    fn the_helpers_read_snapshots_and_summaries() {
+    fn the_helper_reads_snapshots() {
         let desktop = apply("email.accounts", json!([account("acct-1")])).unwrap();
         let effective = resolve(&desktop).unwrap();
         let snapshot = Snapshot {
@@ -1020,13 +1014,6 @@ mod tests {
             values: Default::default(),
         };
         assert_eq!(from_snapshot(&snapshot).accounts[0].id, "acct-1");
-        let summary = Summary::of(&snapshot);
-        assert_eq!(from_summary(&summary), from_snapshot(&snapshot));
-        // An older settingsd's summary has no email: the defaults.
-        let mut value = serde_json::to_value(&summary).unwrap();
-        value.as_object_mut().unwrap().remove("email");
-        let older: Summary = serde_json::from_value(value).unwrap();
-        assert!(from_summary(&older).is_default());
     }
 
     #[test]

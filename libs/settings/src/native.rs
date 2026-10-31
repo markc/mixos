@@ -70,7 +70,6 @@ pub async fn execute_until(
                 let body = serde_json::to_value(ReadRequest {
                     binding: work.binding().clone(),
                     view: View::Snapshot,
-                    schema: SCHEMA,
                     prefix: None,
                     keys: None,
                 })

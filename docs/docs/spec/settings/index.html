@@ -257,8 +257,8 @@ responses preserve ordinary ABP rc conventions: 0 for handled results and 10 for
 refusal, invalid input or unknown commands. Domain status is structured in the body.</p>
 <table><thead><tr><th>Command</th><th>Input and result</th></tr></thead><tbody>
 <tr><td><code>settings.describe</code></td><td>No mutation; version, fields, ranges, defaults, limits and implemented/deferred capabilities</td></tr>
-<tr><td><code>settings.get</code></td><td><code>{binding:{instance,profile}, view?, schema?}</code>; <code>view</code> <code>full</code> (default): complete accepted snapshot under <code>snapshot</code>, in <code>schema</code> 1 (default) or 2 (each distinct design projection once under <code>designs</code>, contexts naming it by digest; other schemas refused with <code>unsupported_schema</code>); <code>summary</code>: the profile's <code>Summary</code> (schema, binding, incarnation, revision, design revision, source digest, appearance names, <code>custom_source</code>, session <code>ui</code> (text scale, density and reduced motion), <code>keymaps</code> when any are set, <code>terminal</code> when any value is set, and <code>email</code> when any value is set; never projections or a source) under <code>summary</code>; both with publication/recovery status</td></tr>
-<tr><td><code>settings.appearance.get</code></td><td><code>{binding:{instance,profile}, schema?}</code>; read-only schema 1 appearance projection (<code>mode</code>, <code>contrast</code>, sRGB <code>accent</code>) tagged with incarnation and revisions; the reply also includes the atomic <code>snapshot</code> (in <code>schema</code> 1 or 2, as for <code>settings.get</code>) for shared Consumer validation and effective desktop caption placement; portald derives its schema 2 projection and cache from this same read; <code>wrong_target</code> on a foreign binding</td></tr>
+<tr><td><code>settings.get</code></td><td><code>{binding:{instance,profile}, view?, prefix?, keys?}</code> (contract 1.0.0); <code>view</code> <code>values</code> (default): identity, every stored key with its default filled (or those under <code>prefix</code>, or the named <code>keys</code>) and the resolved mode and accent; <code>look</code>: the follower view as its topic carries it; <code>snapshot</code>: the schema 3 snapshot (values plus each distinct design projection once); all with publication/recovery status</td></tr>
+<tr><td><code>settings.palette</code></td><td><code>{binding:{instance,profile}, mode?}</code>; read-only; the desktop look's palette from <code>design::palette</code> for <code>dark</code> and <code>light</code> (or the one <code>mode</code>): 31 roles, <code>flat</code>, the resolved accent, the nine swatches and the COSMIC-model values, tagged with incarnation and revision; <code>wrong_target</code> on a foreign binding</td></tr>
 <tr><td><code>settings.validate</code></td><td>Fenced apply-shaped body; resolve/compile candidate without a write or receipt; valid with current base identity or diagnostics/conflict</td></tr>
 <tr><td><code>settings.apply</code></td><td>Fenced batch described below; durable changed/unchanged receipt</td></tr>
 <tr><td><code>settings.reset</code></td><td>Apply-shaped body with empty changes and explicit reset paths; same transaction semantics</td></tr>
@@ -584,11 +584,12 @@ take each path, or <code>email</code> for the whole group (null resets it too);
 <code>email.mail</code> alone is not a path. The summary carries <code>email</code> when any value
 is set; <code>settings::email::from_snapshot</code> and <code>from_summary</code> read it.</p>
 <h2 id="topics-and-storage">Topics and storage</h2>
-<p>Publish retained <code>settingsd.desktop.changed.&lt;profile&gt;</code> (the snapshot in schema
-1), then retained <code>settingsd.desktop.compact.&lt;profile&gt;</code> (schema 2), then
-retained <code>settingsd.desktop.summary.&lt;profile&gt;</code> (its <code>Summary</code>), all owned by
-the registered <code>settingsd</code> service. The unscoped base names are reserved too.
-A revision is published once all three topics are; a failure retries all three. All clients may
+<p>Publish the contract 1.0.0 retained topics: <code>settingsd.desktop.keys.&lt;profile&gt;.&lt;prefix&gt;</code>
+(one per prefix), <code>settingsd.desktop.look.&lt;profile&gt;</code> and
+<code>settingsd.desktop.snapshot.&lt;profile&gt;</code> (schema 3), all owned by the registered
+<code>settingsd</code> service; only the topics whose content moved are published. The
+retired 0.8.0 names (<code>changed</code>, <code>compact</code>, <code>summary</code>) stay reserved.
+A revision is published once every pending topic is; a failure retries the rest. All clients may
 subscribe; ordinary publishers/clearers cannot replace its canonical state.
 Noded strips inner routing headers and stamps broker_service independently of
 caller input. The publisher repopulates retained state at startup and reconnect,
@@ -599,9 +600,9 @@ from 250 ms capped at 30 seconds. Success removes the job and every timer.
 Reconnection or a new revision restarts the backoff. There is no idle heartbeat;
 publication_pending remains visible throughout a failed pending job.</p>
 <p><strong>Following from an app.</strong> An app on a plain Bus connection (no owner
-stamps) subscribes to the profile's summary topic, treats a delivery only as
-a hint, and reads the look with <code>settings.get</code>'s <code>summary</code> view, never the
-complete snapshot: <code>settings::follow::Follower</code> keeps one read in
+stamps) subscribes to the profile's look topic and the <code>keymaps</code>,
+<code>terminal</code>, <code>email</code> and <code>ced</code> keys topics, treats a delivery only as a hint,
+and reads <code>settings.get</code>'s <code>values</code> view, never the snapshot: <code>settings::follow::Follower</code> keeps one read in
 flight (hints during it fold into one more), ignores an answer older than one
 already seen (same incarnation, lower or equal revision), adopts the instance
 from <code>wrong_target</code> once (never the profile), and reports settingsd missing so

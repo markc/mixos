@@ -420,7 +420,7 @@ mod tests {
         desktop.appearance.mode = "light".into();
         desktop.appearance.contrast = "high".into();
         desktop.appearance.source = Some(settings::EMBEDDED_DEFAULT_SOURCE.into());
-        let effective = settings::resolve(&desktop).unwrap();
+        let effective = settings::v1::resolve(&desktop).unwrap();
         let selected = effective.get(CONTEXT).unwrap().clone();
         let snapshot = Snapshot {
             schema: settings::SCHEMA,

@@ -263,14 +263,9 @@ impl Diagnostic {
 #[serde(deny_unknown_fields)]
 pub struct ReadRequest {
     pub binding: Binding,
-    /// What `settings.get` answers with. Omitted (and never sent) at its
-    /// default, so a request reads as it did before the field existed.
-    #[serde(default, skip_serializing_if = "View::is_full")]
+    /// What `settings.get` answers with; `values` when omitted.
+    #[serde(default)]
     pub view: View,
-    /// The snapshot schema of a `full` answer: 1 (the default, never sent)
-    /// or 2 ([`crate::compact`]). Other schemas are refused.
-    #[serde(default = "schema_one", skip_serializing_if = "is_schema_one")]
-    pub schema: u32,
     /// The `values` view's keys under one prefix (`appearance`,
     /// `shell.panels.top`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -280,96 +275,19 @@ pub struct ReadRequest {
     pub keys: Option<Vec<String>>,
 }
 
-fn schema_one() -> u32 {
-    crate::SCHEMA
-}
-
-fn is_schema_one(schema: &u32) -> bool {
-    *schema == crate::SCHEMA
-}
-
-/// `settings.get`'s answer. Contract 1.0.0's are `values` (identity and
-/// every key with defaults filled, or those under `prefix` or in `keys`),
-/// `look` (the follower view, as its topic carries it) and `snapshot`
-/// (schema 3, [`crate::compact::ValuesSnapshot`]).
-///
-/// S7-TRANSITION (deleted with S8a-c, before S9): `full` (the format-4 [`Snapshot`], schema 1 or
-/// 2) and `summary` stay, and an omitted view is still `full`, while the
-/// followers that send them move to the 1.0.0 views and topics.
+/// `settings.get`'s answer (contract 1.0.0): `values` (identity and every
+/// key with defaults filled, or those under `prefix` or in `keys`), `look`
+/// (the follower view, as its topic carries it) and `snapshot` (schema 3,
+/// [`crate::compact::ValuesSnapshot`]).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum View {
     #[default]
-    Full,
-    Summary,
     Values,
     Look,
     Snapshot,
 }
 
-impl View {
-    pub fn is_full(&self) -> bool {
-        *self == View::Full
-    }
-}
-
-/// A profile's identity, revisions and appearance names: what a plain
-/// follower (an app taking the session look) needs, without the effective
-/// design projections or a custom design source. It is the payload of
-/// [`crate::summary_topic`] and `settings.get`'s `summary` view.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Summary {
-    pub schema: u32,
-    pub binding: Binding,
-    pub incarnation: String,
-    pub revision: Revision,
-    pub design_revision: Revision,
-    pub source_digest: String,
-    /// The profile's appearance, with `source` always `None`: whether the
-    /// profile names a design source of its own is `custom_source`.
-    pub appearance: Appearance,
-    pub custom_source: bool,
-    /// Session scale, density and motion, from the same fenced read.
-    #[serde(default)]
-    pub ui: CommonUi,
-    /// The person's key bindings, per application; omitted while empty.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub keymaps: crate::keymap::Keymaps,
-    /// The terminal's preferences; omitted at their defaults.
-    #[serde(default, skip_serializing_if = "crate::terminal::Terminal::is_default")]
-    pub terminal: crate::terminal::Terminal,
-    /// The email app's accounts and options; omitted at their defaults.
-    #[serde(default, skip_serializing_if = "crate::email::Email::is_default")]
-    pub email: crate::email::Email,
-    /// The Ced app's editor style; omitted at its default.
-    #[serde(default, skip_serializing_if = "crate::content::Ced::is_default")]
-    pub ced: crate::content::Ced,
-}
-
-/// The summary schema; independent of the snapshot's [`crate::SCHEMA`].
-pub const SUMMARY_SCHEMA: u32 = 1;
-
-impl Summary {
-    pub fn of(snapshot: &Snapshot) -> Self {
-        let mut appearance = snapshot.desktop.appearance.clone();
-        let custom_source = appearance.source.take().is_some();
-        Self {
-            schema: SUMMARY_SCHEMA,
-            binding: snapshot.binding.clone(),
-            incarnation: snapshot.incarnation.clone(),
-            revision: snapshot.revision,
-            design_revision: snapshot.design_revision,
-            source_digest: snapshot.source_digest.clone(),
-            appearance,
-            custom_source,
-            ui: snapshot.desktop.ui.clone(),
-            keymaps: snapshot.desktop.keymaps.clone(),
-            terminal: snapshot.desktop.terminal.clone(),
-            email: snapshot.desktop.email.clone(),
-            ced: snapshot.desktop.ced.clone(),
-        }
-    }
-}
 /// `settings.source` (theming ADR R14a, App. §K): the pinned design source,
 /// answered iff `digest` is the profile's current `source_digest`.
 #[derive(Clone, Debug, Serialize, Deserialize)]

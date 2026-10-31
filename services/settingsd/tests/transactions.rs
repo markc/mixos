@@ -41,7 +41,7 @@ fn request(authority: &Authority, id: &str, mode: &str) -> ApplyRequest {
 }
 
 #[test]
-fn summary_reads_session_scale_density_and_motion_on_the_same_revision() {
+fn values_read_session_scale_density_and_motion_on_the_same_revision() {
     let dir = tempfile::tempdir().unwrap();
     let mut state = authority(dir.path());
     let mut edit = request(&state, "ui-settings", "dark");
@@ -54,15 +54,14 @@ fn summary_reads_session_scale_density_and_motion_on_the_same_revision() {
     let body = settingsd::service::dispatch(
         &mut state,
         "settings.get",
-        &json!({"binding":binding(),"view":"summary"}).to_string(),
+        &json!({"binding":binding(),"view":"values"}).to_string(),
     )
     .unwrap();
-    let summary: Summary = serde_json::from_value(body["summary"].clone()).unwrap();
-    assert_eq!(summary.revision, state.accepted.revision);
-    assert_eq!(summary.ui, state.snapshot.desktop.ui);
-    assert_eq!(summary.ui.text_scale, 1.25);
-    assert_eq!(summary.ui.density, 0.85);
-    assert!(summary.ui.reduced_motion);
+    assert_eq!(body["revision"], json!(state.accepted.revision));
+    let values = &body["values"];
+    assert_eq!(values["accessibility.text_scale"], 1.25);
+    assert_eq!(values["appearance.density"], "compact");
+    assert_eq!(values["accessibility.reduced_motion"], true);
 }
 
 #[test]
@@ -329,7 +328,7 @@ fn public_machine_fixtures_exercise_dispatch_and_restartable_float_settings() {
     assert_eq!(serde_json::to_value(restored.snapshot).unwrap(), snapshot);
 }
 #[test]
-fn describe_lists_every_terminal_field_and_the_summary_carries_them() {
+fn describe_lists_every_terminal_field_and_the_values_carry_them() {
     let dir = tempfile::tempdir().unwrap();
     let mut state = authority(dir.path());
     let catalogue = settingsd::service::dispatch(&mut state, "settings.describe", "").unwrap();
@@ -368,16 +367,14 @@ fn describe_lists_every_terminal_field_and_the_summary_carries_them() {
         request_digest: None,
     };
     state.apply(apply.clone()).unwrap();
-    let summary = settingsd::service::dispatch(
+    let read = settingsd::service::dispatch(
         &mut state,
         "settings.get",
-        &json!({"binding":binding(),"view":"summary"}).to_string(),
+        &json!({"binding":binding(),"prefix":"terminal"}).to_string(),
     )
     .unwrap();
-    assert_eq!(
-        summary["summary"]["terminal"],
-        json!({"padding":4,"cursor":{"blink":true}})
-    );
+    assert_eq!(read["values"]["terminal.padding"], 4);
+    assert_eq!(read["values"]["terminal.cursor.blink"], true);
     // A reset of the group returns the profile to the default bytes.
     apply.operation_id = "terminal-reset".into();
     apply.expected_revision = state.accepted.revision;
@@ -394,7 +391,7 @@ fn describe_lists_every_terminal_field_and_the_summary_carries_them() {
     );
 }
 #[test]
-fn email_accounts_apply_reach_the_summary_and_never_take_a_password() {
+fn email_accounts_apply_reach_the_values_and_never_take_a_password() {
     let dir = tempfile::tempdir().unwrap();
     let mut state = authority(dir.path());
     let catalogue = settingsd::service::dispatch(&mut state, "settings.describe", "").unwrap();
@@ -450,18 +447,19 @@ fn email_accounts_apply_reach_the_summary_and_never_take_a_password() {
             "email.mail.page_size":50.0}),
     );
     settingsd::service::dispatch(&mut state, "settings.apply", &body).unwrap();
-    let summary = settingsd::service::dispatch(
+    let read = settingsd::service::dispatch(
         &mut state,
         "settings.get",
-        &json!({"binding":binding(),"view":"summary"}).to_string(),
+        &json!({"binding":binding(),"prefix":"email"}).to_string(),
     )
     .unwrap();
     assert_eq!(
-        summary["summary"]["email"],
-        json!({"accounts":[{"id":"acct-1","name":"Home","url":"https://mail.example.org",
-            "email":"me@example.org","ca_path":null,"enabled":true,"signature":""}],
-            "default_account":"acct-1","mail":{"page_size":50}})
+        read["values"]["email.accounts"],
+        json!([{"id":"acct-1","name":"Home","url":"https://mail.example.org",
+            "email":"me@example.org","ca_path":null,"enabled":true,"signature":""}])
     );
+    assert_eq!(read["values"]["email.default_account"], "acct-1");
+    assert_eq!(read["values"]["email.mail.page_size"], 50);
     let text = std::fs::read_to_string(dir.path().join("desktop.conf.mix")).unwrap();
     assert!(!text.contains("hunter2") && !text.contains("password"));
     // It survives a restart, and a reset of the group returns the defaults.
@@ -480,83 +478,50 @@ fn email_accounts_apply_reach_the_summary_and_never_take_a_password() {
     assert!(state.snapshot.desktop.email.is_default());
 }
 #[test]
-fn the_summary_view_carries_identity_and_appearance_names_only() {
+fn the_values_view_is_the_default_and_the_0_8_views_are_gone() {
     let dir = tempfile::tempdir().unwrap();
     let mut state = authority(dir.path());
-    let read = |state: &mut Authority, body: serde_json::Value| {
-        settingsd::service::dispatch(state, "settings.get", &body.to_string()).unwrap()
+    let mut read = |body: serde_json::Value| {
+        settingsd::service::dispatch(&mut state, "settings.get", &body.to_string())
     };
-    let full = read(&mut state, json!({"binding":binding()}));
-    let explicit = read(&mut state, json!({"binding":binding(),"view":"full"}));
-    assert_eq!(full, explicit, "full is the default view");
-    let summary = read(&mut state, json!({"binding":binding(),"view":"summary"}));
-    assert!(summary.get("snapshot").is_none());
-    let s = &summary["summary"];
-    let snapshot = &full["snapshot"];
-    for key in [
-        "incarnation",
-        "revision",
-        "design_revision",
-        "source_digest",
-        "binding",
-    ] {
-        assert_eq!(s[key], snapshot[key], "{key}");
+    let omitted = read(json!({"binding":binding()})).unwrap();
+    let explicit = read(json!({"binding":binding(),"view":"values"})).unwrap();
+    assert_eq!(omitted, explicit, "values is the default view");
+    for key in ["incarnation", "revision", "binding", "values", "resolved"] {
+        assert!(omitted.get(key).is_some(), "{key}");
     }
-    assert_eq!(s["appearance"], snapshot["desktop"]["appearance"]);
-    assert_eq!(s["custom_source"], false);
-    assert!(
-        summary.to_string().len() * 50 < full.to_string().len(),
-        "the summary is small: {} vs {} bytes",
-        summary.to_string().len(),
-        full.to_string().len()
-    );
-    // An unknown view is refused, as any unknown field is.
-    assert!(
-        settingsd::service::dispatch(
-            &mut state,
-            "settings.get",
-            &json!({"binding":binding(),"view":"deltas"}).to_string()
-        )
-        .is_err()
-    );
+    assert_eq!(omitted["values"]["appearance.scheme"], "studio");
+    // Contract 1.0.0 has no `full` or `summary` view and no snapshot schema
+    // field; an unknown view is refused, as any unknown field is.
+    for body in [
+        json!({"binding":binding(),"view":"full"}),
+        json!({"binding":binding(),"view":"summary"}),
+        json!({"binding":binding(),"view":"deltas"}),
+        json!({"binding":binding(),"schema":2}),
+    ] {
+        assert!(read(body.clone()).is_err(), "{body}");
+    }
 }
 #[test]
-fn schema_2_reads_expand_to_the_schema_1_snapshot() {
+fn the_snapshot_view_is_schema_3_and_expands_to_the_accepted_snapshot() {
     let dir = tempfile::tempdir().unwrap();
     let mut state = authority(dir.path());
-    let mut read = |command: &str, body: serde_json::Value| {
-        settingsd::service::dispatch(&mut state, command, &body.to_string())
-    };
-    for command in ["settings.get", "settings.appearance.get"] {
-        let one = read(command, json!({"binding":binding()})).unwrap();
-        let two = read(command, json!({"binding":binding(),"schema":2})).unwrap();
-        assert_eq!(two["snapshot"]["schema"], 2, "{command}");
-        assert_eq!(
-            two["snapshot"]["designs"].as_object().unwrap().len(),
-            1,
-            "{command}: the default contexts share one design"
-        );
-        let expanded = settings::compact::decode(two["snapshot"].clone()).unwrap();
-        let original: Snapshot = serde_json::from_value(one["snapshot"].clone()).unwrap();
-        assert_eq!(expanded, original, "{command}");
-        assert!(
-            two.to_string().len() * 4 < one.to_string().len(),
-            "{command}: {} vs {} bytes",
-            two.to_string().len(),
-            one.to_string().len()
-        );
-        // Schema 3 is schema 2 with the values: the native shells' form.
-        let three = read(command, json!({"binding":binding(),"schema":3})).unwrap();
-        assert_eq!(three["snapshot"]["schema"], 3, "{command}");
-        let mut with_values = settings::compact::decode(three["snapshot"].clone()).unwrap();
-        assert_eq!(with_values.values, studio(), "{command}");
-        with_values.values.clear();
-        assert_eq!(with_values, original, "{command}");
-        assert_eq!(
-            read(command, json!({"binding":binding(),"schema":4})).unwrap_err()["status"],
-            "unsupported_schema"
-        );
-    }
+    let read = settingsd::service::dispatch(
+        &mut state,
+        "settings.get",
+        &json!({"binding":binding(),"view":"snapshot"}).to_string(),
+    )
+    .unwrap();
+    assert_eq!(read["snapshot"]["schema"], 3);
+    assert_eq!(
+        read["snapshot"]["designs"].as_object().unwrap().len(),
+        1,
+        "the default contexts share one design"
+    );
+    let expanded = settings::compact::decode(read["snapshot"].clone()).unwrap();
+    assert_eq!(expanded.values, studio());
+    assert_eq!(expanded.effective, state.snapshot.effective);
+    assert_eq!(expanded.revision, state.snapshot.revision);
 }
 #[test]
 fn lost_reply_and_later_edit_return_original_receipt_before_revision_conflict() {

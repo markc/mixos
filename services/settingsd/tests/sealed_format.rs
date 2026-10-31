@@ -38,6 +38,7 @@
 //! and its terminal tables. Only the source identity moved: the snapshot
 //! length is unchanged, and `the_s2_source_changes_only_the_identity`
 //! reaches the previous pins once the identity fields are replaced.
+use settings::v1::{resolve, resolve_with_embedded};
 use settings::*;
 
 /// `settings::digest` of the default desktop's effective map.

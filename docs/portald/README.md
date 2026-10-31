@@ -19,14 +19,14 @@ or cache data is available, the portal serves the documented defaults.
 ## Where the values come from
 
 ```text
-settingsd  --(retained topic: settingsd.desktop.changed.<profile>)-->  portald
-portald    --settings.appearance.get (one bounded read)------------->  settingsd
+settingsd  --(retained topics: settingsd.desktop.keys.<profile>.appearance|window)-->  portald
+portald    --settings.get {values} + settings.palette (bounded reads)----------->  settingsd
 ```
 
-The shared settings Consumer processes the initial connection and later
-generations, subscribes, and reads the projection with `settings.appearance.get`.
-The reply includes its atomic snapshot evidence. The Consumer checks that
-evidence, and the projection must match its binding and identity. Authenticated
+portald follows the initial connection and later generations, subscribes, and
+reads the resolved mode and caption side with `settings.get` (`values`) and the
+contrast and accent with `settings.palette`; the two answers must carry the
+same binding, incarnation and revision. Authenticated
 retained deliveries trigger fresh reads, including after settingsd restarts.
 
 A projection carries the schema version, the binding (instance and profile), an

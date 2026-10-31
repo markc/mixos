@@ -30,8 +30,6 @@ pub const COMMANDS: &[&str] = &[
     "settings.palette",
     MIRROR_ATTACH,
     MIRROR_REVISION,
-    // S7-TRANSITION: portald's read until it moves to settings.palette.
-    "settings.appearance.get",
 ];
 pub const MIRROR_ATTACH: &str = "settings.mirror.attach";
 pub const MIRROR_REVISION: &str = "settings.mirror.revision";
@@ -111,7 +109,6 @@ pub fn dispatch(authority: &mut Authority, command_name: &str, body: &str) -> Re
         "HELP" => Ok(json!(manifest())),
         "settings.describe" => describe(body),
         "settings.get" => authority.read(decode(body)?),
-        "settings.appearance.get" => authority.appearance(decode(body)?),
         "settings.source" => authority.source(&decode(body)?),
         "settings.palette" => authority.palette(&decode(body)?),
         "settings.status" => {
@@ -137,45 +134,11 @@ pub fn dispatch(authority: &mut Authority, command_name: &str, body: &str) -> Re
     }
 }
 
-/// S7-TRANSITION: what contract 1.0.0 keeps of 0.8.0 so every follower not
-/// yet on the 1.0.0 topics and views keeps working while the stack lands
-/// daily. Deleted in the landing that brings S8a-c, before S9; `grep -rn
-/// S7-TRANSITION` finds every piece. [`tests::the_transition_keeps_exactly`]
-/// lists it.
-pub const TRANSITION_TOPIC_PREFIXES: [&str; 3] = [
-    settings::TOPIC_PREFIX,
-    settings::COMPACT_TOPIC_PREFIX,
-    settings::SUMMARY_TOPIC_PREFIX,
-];
-/// S7-TRANSITION: the 0.8.0 commands kept beside 1.0.0's.
-pub const TRANSITION_COMMANDS: [&str; 1] = ["settings.appearance.get"];
-/// S7-TRANSITION: the 0.8.0 `settings.get` views kept; `full` is still the
-/// default when `view` is omitted.
-pub const TRANSITION_VIEWS: [View; 2] = [View::Full, View::Summary];
-
-/// S7-TRANSITION: the format-4 snapshot in schema 1 and 2 and the summary,
-/// on [`TRANSITION_TOPIC_PREFIXES`].
-async fn publish_legacy(
-    authority: &mut Authority,
-    client: &SupervisedClient,
-) -> anyhow::Result<()> {
-    let profile = &authority.accepted.binding.profile;
-    let [full, compact, summary] = TRANSITION_TOPIC_PREFIXES.map(|p| format!("{p}{profile}"));
-    let snapshot = &authority.snapshot;
-    publish_retained(client, full, serde_json::to_string(snapshot)?).await?;
-    let encoded = serde_json::to_string(&settings::compact::encode(snapshot)?)?;
-    publish_retained(client, compact, encoded).await?;
-    let summarised = serde_json::to_string(&settings::Summary::of(snapshot))?;
-    publish_retained(client, summary, summarised).await?;
-    authority.published = Some(authority.accepted.revision);
-    Ok(())
-}
-
-/// Publish every pending 1.0.0 topic, then the transitional ones. Each topic
-/// is marked published as it goes; a failure, including a body that cannot
-/// be built, leaves it and the rest pending for the bounded retry. The
-/// transitional ones set `authority.published` ([`publish_legacy`]), which
-/// with an empty board is what `publication_pending: false` reports.
+/// Publish every pending topic. Each topic is marked published as it goes;
+/// a failure, including a body that cannot be built, leaves it and the rest
+/// pending for the bounded retry. Once the board is empty the revision is
+/// published (`authority.published`), which is what
+/// `publication_pending: false` reports.
 async fn publish(authority: &mut Authority, client: &SupervisedClient) -> anyhow::Result<()> {
     for key in authority.board.pending() {
         let (topic, body) = authority
@@ -184,9 +147,7 @@ async fn publish(authority: &mut Authority, client: &SupervisedClient) -> anyhow
         publish_retained(client, topic, body).await?;
         authority.board.published(&key);
     }
-    if authority.published != Some(authority.accepted.revision) {
-        publish_legacy(authority, client).await?;
-    }
+    authority.published = Some(authority.accepted.revision);
     Ok(())
 }
 
@@ -1079,51 +1040,28 @@ async fn handle(
 mod tests {
     use super::*;
 
-    /// S7-TRANSITION: exactly what 1.0.0 keeps of 0.8.0, so the landing
-    /// that brings S8a-c deletes a known list and this test with it.
+    /// Contract 1.0.0 serves exactly its own commands: the 0.8.0
+    /// `settings.appearance.get` and the `full`/`summary` views are gone.
     #[test]
-    fn the_transition_keeps_exactly() {
+    fn only_the_contract_1_0_0_commands_are_served() {
         assert_eq!(
-            TRANSITION_TOPIC_PREFIXES,
+            COMMANDS,
             [
-                "settingsd.desktop.changed.",
-                "settingsd.desktop.compact.",
-                "settingsd.desktop.summary.",
+                "settings.describe",
+                "settings.get",
+                "settings.validate",
+                "settings.apply",
+                "settings.reset",
+                "settings.status",
+                "settings.source",
+                "settings.palette",
+                MIRROR_ATTACH,
+                MIRROR_REVISION,
             ]
         );
-        assert_eq!(TRANSITION_COMMANDS, ["settings.appearance.get"]);
-        assert_eq!(TRANSITION_VIEWS, [View::Full, View::Summary]);
-        assert_eq!(View::default(), View::Full, "an omitted view is still full");
-        // Every served command is 1.0.0 or listed above.
-        let current = [
-            "settings.describe",
-            "settings.get",
-            "settings.validate",
-            "settings.apply",
-            "settings.reset",
-            "settings.status",
-            "settings.source",
-            "settings.palette",
-            MIRROR_ATTACH,
-            MIRROR_REVISION,
-        ];
-        let kept: Vec<&str> = COMMANDS
-            .iter()
-            .copied()
-            .filter(|c| !current.contains(c))
-            .collect();
-        assert_eq!(kept, TRANSITION_COMMANDS);
-        // No 1.0.0 topic shares a prefix with a kept one.
-        for topic in [
-            settings::topics::keys_topic("default", "appearance"),
-            settings::topics::look_topic("default"),
-            settings::topics::snapshot_topic("default"),
-        ] {
-            assert!(
-                TRANSITION_TOPIC_PREFIXES
-                    .iter()
-                    .all(|p| !topic.starts_with(p))
-            );
+        assert_eq!(View::default(), View::Values, "an omitted view is values");
+        for view in ["full", "summary"] {
+            assert!(serde_json::from_value::<View>(json!(view)).is_err(), "{view}");
         }
     }
 

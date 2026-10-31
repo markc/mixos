@@ -10,6 +10,17 @@ generated: by docs/_build/gen-site.mix from libs/settings/CHANGELOG.md; do not e
 
 ## Unreleased
 
+Contract 1.0.0 only (key space v2 §5): `follow::Follower` hints on the look
+and the `keymaps`, `terminal`, `email` and `ced` keys topics
+(`follow::hint_topics`) and reads `settings.get {view: values}`;
+`Followed::Look` carries the `view::Look` with the app domains. The native
+consumer reads the schema 3 snapshot topic and `view: snapshot`
+(`Snapshot::values`). `resolve::values::palette` answers `settings.palette`.
+Removed: `topic`, `TOPIC_PREFIX`, `summary_topic`, `SUMMARY_TOPIC_PREFIX`,
+`compact_topic`, `COMPACT_TOPIC_PREFIX`, `Summary`, `email::from_summary`,
+`View::{Full, Summary}`, `ReadRequest::schema` and the crate-root
+`resolve`/`resolve_with_embedded` re-export (use `v1::`).
+
 `settings.apply` now stores `appearance.font_size`; null and reset restore the
 design size. Regression checks cover summary readback, bounds and every concrete
 schema path, plus the paths produced by Preferences' controls.

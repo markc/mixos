@@ -55,7 +55,7 @@ fn copy_fixture(kind: &str) -> tempfile::TempDir {
 fn shipped_default_upgrades_both_seals_retains_history_and_is_idempotent() {
     let dir = copy_fixture("embedded-v0.1.2");
     let before = read(dir.path(), FILES[0]);
-    assert!(settings::resolve_with_embedded(&before.desktop, &before.embedded_source).is_err());
+    assert!(settings::v1::resolve_with_embedded(&before.desktop, &before.embedded_source).is_err());
     let previous = read(dir.path(), FILES[1]);
     let (store, after) = Store::open(dir.path(), &binding()).unwrap();
     assert_eq!(after.embedded_source, settings::EMBEDDED_DEFAULT_SOURCE);
@@ -87,7 +87,7 @@ fn installed_authored_source_keeps_its_source_settings_and_revisions() {
     let dir = copy_fixture("authored-legacy");
     let before = read(dir.path(), FILES[0]);
     let effective =
-        settings::resolve_with_embedded(&before.desktop, &before.embedded_source).unwrap();
+        settings::v1::resolve_with_embedded(&before.desktop, &before.embedded_source).unwrap();
     let (store, after) = Store::open(dir.path(), &binding()).unwrap();
     assert_eq!(after.embedded_source, before.embedded_source);
     assert_eq!(after.values, migrated(&before));
@@ -164,7 +164,7 @@ fn valid_retired_embedded_source_stays_pinned() {
     let mut data = Record::initial(binding(), settings::Desktop::default()).unwrap();
     data.embedded_source = read(&fixture("authored-legacy"), FILES[0]).embedded_source;
     data.effective_digest = settings::digest(
-        &settings::resolve_with_embedded(&data.desktop, &data.embedded_source).unwrap(),
+        &settings::v1::resolve_with_embedded(&data.desktop, &data.embedded_source).unwrap(),
     )
     .unwrap();
     data.format = 3;
@@ -181,24 +181,25 @@ fn valid_retired_embedded_source_stays_pinned() {
     opened.effective().unwrap();
 }
 
-/// A live store sealed by the binary before S2 (settings key space v2): it
-/// pins that release's embedded source and the effective digest that binary
-/// sealed. `Store::open` checks the seal and `interpretation()` re-derives
-/// from the pinned source, never the current embedded one, so the store
-/// opens unchanged, with no re-pin, no revision bump and no rewrite, and
-/// serves the same bytes.
+/// A live store sealed by the binary before S2 (settings key space v2): a
+/// format-4 record pinning that release's embedded source and the effective
+/// digest that binary sealed. Today's format-4 resolver reproduces that
+/// digest from the pinned source, so the seal verifies, and `Store::open`
+/// migrates it to format 5 with the source still pinned (never re-pinned to
+/// the current embedded one) and a look that resolves.
 #[test]
-fn a_store_sealed_before_s2_opens_and_serves_unchanged() {
+fn a_store_sealed_before_s2_migrates_with_its_source_pinned() {
     /// The default desktop's effective digest as the pre-S2 binary sealed it
     /// (`sealed_format.rs`, `BEFORE_S2_EFFECTIVE_DIGEST`).
     const SEALED_BEFORE_S2: &str =
         "2021004311c4062a87733cd1c36119413f707591b4349bb6c671b2644a67efae";
     let dir = tempfile::tempdir().unwrap();
-    let (store, mut data) =
-        Store::create(dir.path(), binding(), settings::Desktop::default()).unwrap();
-    drop(store);
+    let mut data = Record::initial(binding(), settings::Desktop::default()).unwrap();
     data.embedded_source = include_str!("fixtures/2026-10-31-before-s2.theme.conf.mix").into();
     assert_ne!(data.embedded_source, settings::EMBEDDED_DEFAULT_SOURCE);
+    let effective =
+        settings::v1::resolve_with_embedded(&data.desktop, &data.embedded_source).unwrap();
+    assert_eq!(settings::digest(&effective).unwrap(), SEALED_BEFORE_S2);
     data.effective_digest = SEALED_BEFORE_S2.into();
     data.seal().unwrap();
     for name in FILES {
@@ -208,18 +209,12 @@ fn a_store_sealed_before_s2_opens_and_serves_unchanged() {
         )
         .unwrap();
     }
-    let bytes = FILES.map(|name| std::fs::read(dir.path().join(name)).unwrap());
     let (_store, opened) = Store::open(dir.path(), &binding()).unwrap();
-    assert_eq!(opened.content_digest, data.content_digest);
     assert_eq!(opened.embedded_source, data.embedded_source);
-    assert_eq!(opened.revision, data.revision);
-    assert_eq!(opened.design_revision, data.design_revision);
-    let (effective, _) = opened.interpretation().unwrap();
-    assert_eq!(settings::digest(&effective).unwrap(), SEALED_BEFORE_S2);
-    assert_eq!(
-        bytes,
-        FILES.map(|name| std::fs::read(dir.path().join(name)).unwrap())
-    );
+    assert_eq!(opened.values, migrated(&data));
+    assert_eq!(opened.revision, Revision(data.revision.0 + 1));
+    assert_eq!(opened.incarnation, data.incarnation);
+    opened.effective().unwrap();
 }
 
 #[test]

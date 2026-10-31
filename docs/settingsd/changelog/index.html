@@ -280,9 +280,18 @@ confirms its incarnation, revision and <code>mirror_digest</code>; attaches only
 the node named, at most 16 mirrors, never an older incarnation. Known gap: a
 crashed authority is noticed only at the next forwarded write (noded has no
 peer-down event). <code>settings.source</code> serves the pinned source by digest (R14a).
-<code>settings.palette</code> waits for the combined S2/S4b stack.</p>
-<p>Transition until S8: the format-4 topics, <code>view: full|summary</code> (still the
-default when <code>view</code> is omitted) and <code>settings.appearance.get</code> stay.</p>
+<code>settings.palette {binding, mode?}</code> answers the desktop look's palette per
+mode from <code>design::palette</code> (the 31 roles, <code>flat</code>, the resolved accent, the
+nine swatches and the COSMIC-model values), tagged with incarnation and
+revision; a mirror computes it from its cache.</p>
+<p>The 0.8.0 transition is gone: the format-4 topics
+(<code>settingsd.desktop.changed|compact|summary.&lt;profile&gt;</code>), the <code>full</code> and
+<code>summary</code> views, the snapshot <code>schema</code> request field and
+<code>settings.appearance.get</code>. <code>settings.get</code> defaults to <code>view: values</code>, and
+every view answers <code>publication_pending</code>, <code>recovering</code> and
+<code>restored_from_backup</code>. Followers (the toolkit apps, Prefs) read <code>values</code> on
+the look and app-domain topics, the native shells (compd) the schema 3
+snapshot, and portald <code>values</code> plus <code>settings.palette</code>.</p>
 <p><code>settings.get</code> 0.7.0 includes <code>ui</code> in summary reads: text scale, density and
 reduced motion on the same revision as appearance. Store format unchanged.</p>
 <h2 id="010">0.1.0</h2>

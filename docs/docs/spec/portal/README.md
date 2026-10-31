@@ -45,11 +45,12 @@ Defaults before any projection: `color-scheme` 1 (dark), `contrast` 0, no
 
 ## Source and identity
 
-- Source command: `settings.appearance.get`, read-only, from `settingsd`.
-- The reply carries the atomic snapshot evidence alongside the projection.
-  The shared settings Consumer checks the evidence and manages subscription,
-  initial reads, lifecycle generations, delivery loss and bounded recovery.
-- Trigger: authenticated retained topic `settingsd.desktop.changed.<profile>`.
+- Source commands: `settings.get {view: values, keys: [window.caption_side]}`
+  (the resolved mode and caption side) and `settings.palette {mode}` (contrast
+  and accent), read-only, from `settingsd`; both answers must carry the same
+  incarnation and revision.
+- Trigger: authenticated retained topics `settingsd.desktop.keys.<profile>.appearance`
+  and `.window`.
   A publication also triggers a read when settingsd restarts at the same revision.
 - A projection is identified by binding, incarnation and revision. A projection
   older than the held one within the same incarnation is refused and counted as

@@ -158,9 +158,6 @@ impl Authority {
                 "snapshot": self.snapshot_v3()?,
                 "changed_at": self.board.changed_at(),
             }),
-            View::Full | View::Summary => {
-                return Err(json!({"status":"validation_failed","path":"view"}));
-            }
         };
         answer["status"] = "current".into();
         if let (Some(answer), Some(identity)) = (answer.as_object_mut(), identity.as_object()) {
