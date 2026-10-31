@@ -14,6 +14,8 @@
 //! replaces the four accent roles only ([`apply_accent`]): `accent` is the
 //! colour, `accent_text` follows the derivation's step 14 against the card,
 //! `accent_border` is the accent, and `accent_soft` is the accent at 0.2.
+//! The scheme's semantic pairs and focus ring keep their own accent, so
+//! no choice can break their contrast contracts.
 //!
 //! [`seeds_of`] is the inverse used to export an authored scheme to COSMIC
 //! and for the first tint under an authored scheme (F4): window background
@@ -142,13 +144,16 @@ pub const ROLE_MAP: [(&str, RoleSource); 31] = [
 ];
 
 /// The semantic palette of the derived scheme, so pairs, rings and the
-/// button table are drawn from the same theme as the chrome.
+/// button table are drawn from the same theme as the chrome. `elevated` is
+/// the secondary container, which clears the pairs' 1.25:1 floor over
+/// the background in both modes; `palette.accent.default` is then made
+/// safe as the focus ring ([`ring_safe_accent`]).
 pub const SEMANTIC_MAP: [(&str, RoleSource); 13] = [
     ("palette.background.1", Cont(Bg, C::Base)),
     ("palette.background.2", Cont(Pr, C::Base)),
-    ("palette.background.3", Cont(Se, C::Base)),
+    ("palette.background.3", Comp(F::Of(Pr), P::Base)),
     ("palette.background.muted", Comp(F::Of(Bg), P::Base)),
-    ("palette.background.elevated", Comp(F::Of(Pr), P::Base)),
+    ("palette.background.elevated", Cont(Se, C::Base)),
     ("palette.foreground.default", Cont(Bg, C::On)),
     ("palette.foreground.muted", Comp(F::Of(Bg), P::On)),
     ("palette.foreground.quiet", Comp(F::Of(Bg), P::On)),
@@ -306,9 +311,9 @@ fn oklch(colour: SrgbColour) -> OklchSource {
 }
 
 /// Before the colour compile: under `mixos`, the derived theme's roles and
-/// semantic palette, entered as authored primitives; under an authored
-/// scheme with a chosen accent, the semantic accent. Returns each entered
-/// primitive with the rule that produced it, for provenance.
+/// semantic palette, entered as authored primitives; nothing under an
+/// authored scheme. Returns each entered primitive with the rule that
+/// produced it, for provenance.
 pub(crate) fn complete_source(
     source: &mut DesignV1Source,
     authored: &mut BTreeSet<String>,
@@ -337,21 +342,60 @@ pub(crate) fn complete_source(
                 format!("derive.mixos.{mode}.{}", from.describe()),
             );
         }
-    } else if let Some(accent) = context.accent.resolve(context.mode) {
-        let hover = semantic_accent_hover(accent, context);
-        let rule = format!("accent.{}.{mode}", context.accent.name());
-        enter("palette.accent.default".into(), accent, rule.clone());
-        enter("palette.accent.hover".into(), hover, rule);
+        enter(
+            "palette.accent.default".into(),
+            ring_safe_accent(&theme),
+            format!("derive.mixos.{mode}.accent.base, ring-safe"),
+        );
     }
     origins
 }
 
-/// The reference's accent hover, Over(controls[5] at 0.2, accent), for the
-/// semantic accent of an authored scheme.
-fn semantic_accent_hover(accent: SrgbColour, context: &DesignContext) -> SrgbColour {
-    let controls =
-        crate::cosmic_tables::BasePalette::builtin(context.mode, context.contrast).neutral;
-    over(with_alpha(controls[5], 0.2), accent)
+/// The non-text contrast the compiler requires of the focus ring.
+const RING_CONTRAST: f64 = 3.0;
+
+/// The accent as the semantic `palette.accent.default`, which is also the
+/// focus ring: the accent itself when it clears 3:1 against the surfaces
+/// the ring is drawn on (`muted`, `secondary` and the `accent` pair), else
+/// the accent walked in OKLab lightness, away from the surfaces, until it
+/// does. Any accent then compiles; the chrome roles keep the exact colour.
+pub fn ring_safe_accent(theme: &DerivedTheme) -> SrgbColour {
+    use crate::colour_model::derivation::{gamut_map_oklch, linear_srgb_to_oklch};
+    let accent = theme.accent.base;
+    let surface = |colour: SrgbColour| colour.to_linear().rendered();
+    let muted = surface(theme.background.component.base);
+    let secondary = surface(theme.primary.base);
+    let (bg3, _, _) = linear_srgb_to_oklch(theme.primary.component.base.to_linear());
+    let (l, c, h) = linear_srgb_to_oklch(accent.to_linear());
+    // The `accent` pair is `control_pair(bg3, ring, ...)`: bg3's lightness
+    // lifted 0.03 with a third of the ring's chroma at its hue.
+    let pair = surface(SrgbColour::from_linear(crate::LinearRgba {
+        alpha: 1.0,
+        ..rgb(gamut_map_oklch((bg3 + 0.03).min(1.0), (c * 0.35).min(0.08), h, 64))
+    }));
+    let clears = |candidate: crate::LinearRgba| {
+        [muted, secondary, pair]
+            .into_iter()
+            .all(|s| crate::contrast_ratio(candidate.rendered(), s) >= RING_CONTRAST + 0.05)
+    };
+    let step = if theme.is_dark { 0.01 } else { -0.01 };
+    (0..=100)
+        .map(|k| (l + step * f64::from(k)).clamp(0.0, 1.0))
+        .map(|lightness| crate::LinearRgba {
+            alpha: 1.0,
+            ..rgb(gamut_map_oklch(lightness, c, h, 64))
+        })
+        .find(|candidate| clears(*candidate))
+        .map_or(accent, SrgbColour::from_linear)
+}
+
+fn rgb([red, green, blue]: [f64; 3]) -> crate::LinearRgba {
+    crate::LinearRgba {
+        red: red.clamp(0.0, 1.0),
+        green: green.clamp(0.0, 1.0),
+        blue: blue.clamp(0.0, 1.0),
+        alpha: 1.0,
+    }
 }
 
 /// After the chrome compile, under an authored scheme with a chosen accent:
