@@ -25,7 +25,6 @@ pub struct Status {
     pub name_owned: bool,
     pub incarnation: Option<String>,
     pub revision: Option<Revision>,
-    pub design_revision: Option<Revision>,
     /// The last source fault, cleared by the next good projection.
     pub settings_fault: Option<String>,
     pub accepted: u64,
@@ -57,7 +56,6 @@ impl Status {
             name_owned: false,
             incarnation: None,
             revision: None,
-            design_revision: None,
             settings_fault: None,
             accepted: 0,
             stale: 0,

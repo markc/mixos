@@ -1,20 +1,14 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! Portal values for the `org.freedesktop.appearance` namespace, derived from
-//! one accepted appearance projection. The colour scheme and accent come from
-//! `design::palette` (ruling 1): settingsd serves that palette as
-//! `settings.palette` (S7), and until it does, [`palette_of`] computes the
-//! same function here. Pure data; the D-Bus surface lives in `portal`.
-use design::derive::FrostedGlass;
-use design::geometry::Geometry;
-use design::palette::ModePalette;
-use design::{
-    AccentChoice, Colour8, Contrast, DesignContext, DesignSourceDocument, EMBEDDED_DEFAULT_SOURCE,
-    Mode, Scheme, SourceIdentity, parse_design_source,
-};
-use settings::appearance::AppearanceProjection;
+//! Portal values for the `org.freedesktop.appearance` namespace, from one
+//! accepted [`Projection`]. settingsd computes everything (ruling 1): the
+//! resolved mode and the caption side come from its `values` view, the
+//! contrast and the accent from its `settings.palette` for that mode, both
+//! at one record identity. Pure data; the D-Bus surface lives in `portal`.
+use serde::{Deserialize, Serialize};
+use serde_json::Value as Json;
+use settings::{Binding, Diagnostic, Revision};
 use std::collections::BTreeMap;
-use std::sync::OnceLock;
 use zbus::zvariant::Value;
 
 pub const NAMESPACE: &str = "org.freedesktop.appearance";
@@ -26,8 +20,139 @@ pub const KEYS: [&str; 3] = [COLOR_SCHEME, ACCENT_COLOR, CONTRAST];
 pub const MAX_FILTERS: usize = 64;
 pub const MAX_FILTER_BYTES: usize = 256;
 
+/// The schema of [`Projection`], as the cache stores it.
+pub const PROJECTION_SCHEMA: u32 = 3;
+/// The `values` keys a projection reads beside the resolved mode.
+pub const VALUE_KEYS: [&str; 1] = ["window.caption_side"];
+
 pub fn valid_filters(filters: &[String]) -> bool {
     filters.len() <= MAX_FILTERS && filters.iter().all(|s| s.len() <= MAX_FILTER_BYTES)
+}
+
+/// What the portal publishes of one settingsd record: its identity, the
+/// resolved mode, the contrast, the caption side (for the GTK export) and
+/// the palette's accent.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Projection {
+    pub schema: u32,
+    pub binding: Binding,
+    pub incarnation: String,
+    pub revision: Revision,
+    /// `dark` or `light`: settingsd's resolved mode, never `auto`.
+    pub mode: String,
+    /// `normal` or `high`.
+    pub contrast: String,
+    /// `right`, `left` or `center` (`auto` reads as `right`).
+    pub caption_side: String,
+    /// sRGB, 0.0..=1.0 per channel, alpha excluded.
+    pub accent: [f64; 3],
+}
+
+fn invalid(path: &str, message: impl Into<String>) -> Diagnostic {
+    Diagnostic::new("invalid_appearance", path, message)
+}
+
+impl Projection {
+    /// The projection of one `settings.get {view: values}` answer and one
+    /// `settings.palette {mode}` answer for the mode the first resolved.
+    /// Both must be current, for `binding`, at the same incarnation and
+    /// revision: anything else is refused, never mixed.
+    pub fn from_answers(binding: &Binding, values: &Json, palette: &Json) -> Result<Self, Diagnostic> {
+        for (name, answer) in [("values", values), ("palette", palette)] {
+            if answer.get("status").and_then(Json::as_str) != Some("current") {
+                return Err(invalid(name, "Authority did not return a current answer"));
+            }
+            let theirs: Binding = serde_json::from_value(answer["binding"].clone())
+                .map_err(|e| invalid(name, e.to_string()))?;
+            if &theirs != binding {
+                return Err(Diagnostic::new(
+                    "wrong_target",
+                    "binding",
+                    "Appearance binding differs",
+                ));
+            }
+        }
+        let incarnation = values["incarnation"]
+            .as_str()
+            .ok_or_else(|| invalid("incarnation", "Missing incarnation"))?;
+        let revision: Revision = serde_json::from_value(values["revision"].clone())
+            .map_err(|e| invalid("revision", e.to_string()))?;
+        if palette["incarnation"].as_str() != Some(incarnation)
+            || serde_json::from_value::<Revision>(palette["revision"].clone()).ok() != Some(revision)
+        {
+            return Err(Diagnostic::new(
+                "moved",
+                "revision",
+                "The record moved between the values and palette reads",
+            ));
+        }
+        let mode = values["resolved"]["mode"]
+            .as_str()
+            .ok_or_else(|| invalid("resolved.mode", "Missing resolved mode"))?;
+        let ours = &palette["palette"][mode];
+        let contrast = ours["contrast"]
+            .as_str()
+            .ok_or_else(|| invalid("palette.contrast", "Missing palette for the mode"))?;
+        let accent: design::SrgbColour = serde_json::from_value(ours["accent"].clone())
+            .map_err(|e| invalid("palette.accent", e.to_string()))?;
+        let caption_side = values["values"]["window.caption_side"]
+            .as_str()
+            .unwrap_or("auto");
+        let caption_side = match design::CaptionSide::from_name(caption_side) {
+            Some(design::CaptionSide::Auto) | None => "right".to_owned(),
+            Some(side) => side.name().to_owned(),
+        };
+        let projection = Self {
+            schema: PROJECTION_SCHEMA,
+            binding: binding.clone(),
+            incarnation: incarnation.to_owned(),
+            revision,
+            mode: mode.to_owned(),
+            contrast: contrast.to_owned(),
+            caption_side,
+            accent: [accent.red, accent.green, accent.blue],
+        };
+        projection.validate()?;
+        Ok(projection)
+    }
+
+    /// Refuse anything the portal must not publish. Every projection is
+    /// validated where it is received, cached ones included.
+    pub fn validate(&self) -> Result<(), Diagnostic> {
+        if self.schema != PROJECTION_SCHEMA {
+            return Err(Diagnostic::new(
+                "unsupported_schema",
+                "schema",
+                format!("Expected appearance schema {PROJECTION_SCHEMA}"),
+            ));
+        }
+        self.binding.validate()?;
+        if !matches!(self.mode.as_str(), "dark" | "light") {
+            return Err(invalid("mode", "Use dark or light"));
+        }
+        if !matches!(self.contrast.as_str(), "normal" | "high") {
+            return Err(invalid("contrast", "Use normal or high"));
+        }
+        if design::CaptionSide::from_name(&self.caption_side).is_none() {
+            return Err(invalid("caption_side", "Use auto, left, center or right"));
+        }
+        for (index, channel) in self.accent.iter().enumerate() {
+            if !channel.is_finite() || !(0.0..=1.0).contains(channel) {
+                return Err(invalid(
+                    &format!("accent[{index}]"),
+                    "Channel must be finite and within 0.0..=1.0",
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// The record this projection was read from. Two projections with
+    /// equal identity describe the same accepted state.
+    pub fn identity(&self) -> (&str, Revision) {
+        (&self.incarnation, self.revision)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -51,12 +176,10 @@ impl Values {
         }
     }
 
-    /// The projection's mode and contrast; its accent as the palette resolves
-    /// it. A palette that cannot be computed keeps the projected accent.
-    pub fn from_projection(projection: &AppearanceProjection) -> Self {
+    /// The projection's mode, contrast and accent, as settingsd gave them.
+    pub fn from_projection(projection: &Projection) -> Self {
         Self {
             color_scheme: match projection.mode.as_str() {
-                "dark" => 1,
                 "light" => 2,
                 _ => 1,
             },
@@ -64,9 +187,7 @@ impl Values {
                 "high" => 1,
                 _ => 0,
             },
-            accent: Some(
-                palette_of(projection).map_or(projection.accent, |palette| accent_of(&palette)),
-            ),
+            accent: Some(projection.accent),
         }
     }
 
@@ -125,48 +246,6 @@ impl Values {
     }
 }
 
-/// The palette of the projection's mode, from `design::palette`. The
-/// projected accent is passed as a custom accent, so the palette's accent is
-/// the one settingsd resolved. This is the single adapter until S7 serves
-/// `settings.palette`; `None` only if the embedded source does not compile.
-pub fn palette_of(projection: &AppearanceProjection) -> Option<ModePalette> {
-    let context = DesignContext {
-        scheme: Scheme::Mixos,
-        mode: Mode::from_name(&projection.mode).unwrap_or(Mode::Dark),
-        contrast: Contrast::from_name(&projection.contrast).unwrap_or(Contrast::Normal),
-        accent: AccentChoice::Custom(opaque(projection.accent)),
-        ..DesignContext::default()
-    };
-    design::palette::mode_palette(
-        embedded_source()?,
-        &context,
-        &Geometry::default(),
-        &FrostedGlass::default(),
-    )
-    .ok()
-}
-
-/// The accent a palette resolves, as the portal publishes it.
-pub fn accent_of(palette: &ModePalette) -> [f64; 3] {
-    [palette.accent.red, palette.accent.green, palette.accent.blue]
-}
-
-/// The embedded default design source, parsed once.
-fn embedded_source() -> Option<&'static DesignSourceDocument> {
-    static SOURCE: OnceLock<Option<DesignSourceDocument>> = OnceLock::new();
-    SOURCE
-        .get_or_init(|| {
-            parse_design_source(SourceIdentity::new("embedded"), EMBEDDED_DEFAULT_SOURCE).ok()
-        })
-        .as_ref()
-}
-
-/// An opaque colour from sRGB 0.0..=1.0 channels.
-fn opaque([red, green, blue]: [f64; 3]) -> Colour8 {
-    let channel = |value: f64| (value.clamp(0.0, 1.0) * 255.0).round() as u8;
-    Colour8([channel(red), channel(green), channel(blue), 255])
-}
-
 /// Iterative dynamic programming: O(pattern bytes * text bytes) time and
 /// O(text bytes) space, with no recursive or combinatorial backtracking.
 /// `*` matches any run, `?` one byte. Portal callers bound filter size/count.
@@ -195,18 +274,21 @@ pub fn glob_match(pattern: &str, text: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use settings::Binding;
+    use serde_json::json;
 
-    fn projection(mode: &str, contrast: &str, accent: [f64; 3]) -> AppearanceProjection {
-        AppearanceProjection {
-            schema: settings::appearance::APPEARANCE_SCHEMA,
-            binding: Binding {
-                instance: "host".into(),
-                profile: "default".into(),
-            },
+    fn binding() -> Binding {
+        Binding {
+            instance: "host".into(),
+            profile: "default".into(),
+        }
+    }
+
+    fn projection(mode: &str, contrast: &str, accent: [f64; 3]) -> Projection {
+        Projection {
+            schema: PROJECTION_SCHEMA,
+            binding: binding(),
             incarnation: "inc".into(),
-            revision: settings::Revision(1),
-            design_revision: settings::Revision(1),
+            revision: Revision(1),
             mode: mode.into(),
             contrast: contrast.into(),
             caption_side: "right".into(),
@@ -214,11 +296,68 @@ mod tests {
         }
     }
 
+    fn values(revision: &str, mode: &str, caption: &str) -> Json {
+        json!({"status":"current","binding":binding(),"incarnation":"inc","revision":revision,
+            "values":{"window.caption_side":caption},"resolved":{"mode":mode}})
+    }
+
+    fn palette(revision: &str, mode: &str, contrast: &str) -> Json {
+        json!({"status":"current","binding":binding(),"incarnation":"inc","revision":revision,
+            "palette":{mode:{"mode":mode,"contrast":contrast,"accent":"#336699FF"}}})
+    }
+
+    #[test]
+    fn a_projection_takes_the_resolved_mode_and_the_palettes_contrast_and_accent() {
+        let p = Projection::from_answers(
+            &binding(),
+            &values("4", "light", "left"),
+            &palette("4", "light", "high"),
+        )
+        .unwrap();
+        assert_eq!((p.mode.as_str(), p.contrast.as_str()), ("light", "high"));
+        assert_eq!(p.caption_side, "left");
+        assert_eq!(p.revision, Revision(4));
+        assert_eq!(p.accent, [0.2, 0.4, 0.6]);
+        let auto = Projection::from_answers(
+            &binding(),
+            &values("4", "dark", "auto"),
+            &palette("4", "dark", "normal"),
+        )
+        .unwrap();
+        assert_eq!(auto.caption_side, "right");
+    }
+
+    #[test]
+    fn answers_at_two_revisions_or_for_another_binding_are_refused() {
+        let moved = Projection::from_answers(
+            &binding(),
+            &values("4", "dark", "right"),
+            &palette("5", "dark", "normal"),
+        )
+        .unwrap_err();
+        assert_eq!(moved.code, "moved");
+        let mut other = palette("4", "dark", "normal");
+        other["binding"]["profile"] = json!("other");
+        let wrong = Projection::from_answers(&binding(), &values("4", "dark", "right"), &other)
+            .unwrap_err();
+        assert_eq!(wrong.code, "wrong_target");
+        // The palette must carry the resolved mode.
+        assert!(
+            Projection::from_answers(
+                &binding(),
+                &values("4", "light", "right"),
+                &palette("4", "dark", "normal"),
+            )
+            .is_err()
+        );
+    }
+
     #[test]
     fn maps_mode_contrast_and_accent_to_portal_values() {
         let dark = Values::from_projection(&projection("dark", "normal", [0.1, 0.2, 0.3]));
         assert_eq!(dark.color_scheme, 1);
         assert_eq!(dark.contrast, 0);
+        assert_eq!(dark.accent, Some([0.1, 0.2, 0.3]));
         let light = Values::from_projection(&projection("light", "high", [0.1, 0.2, 0.3]));
         assert_eq!(light.color_scheme, 2);
         assert_eq!(light.contrast, 1);
@@ -226,28 +365,6 @@ mod tests {
             light.get(NAMESPACE, ACCENT_COLOR),
             Some(Value::Structure(_))
         ));
-    }
-
-    #[test]
-    fn the_served_accent_is_the_palettes_accent_for_the_projected_mode() {
-        let projected = projection("light", "normal", [0.2, 0.4, 0.6]);
-        let palette = palette_of(&projected).expect("the embedded source compiles");
-        assert_eq!(palette.mode, "light");
-        assert_eq!(palette.contrast, "normal");
-        let served = Values::from_projection(&projected);
-        let [red, green, blue] = served.accent.expect("an accent is served");
-        // Eight bits per channel, so each channel is within one step.
-        for (got, asked) in [red, green, blue].into_iter().zip([0.2, 0.4, 0.6]) {
-            assert!((got - asked).abs() <= 1.0 / 255.0, "{got} vs {asked}");
-        }
-        assert_eq!(served.accent, Some(accent_of(&palette)));
-    }
-
-    #[test]
-    fn the_palette_contrast_follows_the_projection() {
-        let high = palette_of(&projection("dark", "high", [0.1, 0.2, 0.3])).unwrap();
-        assert_eq!(high.contrast, "high");
-        assert_eq!(high.mode, "dark");
     }
 
     #[test]

@@ -4,14 +4,13 @@
 //! values immediately, independently of the asynchronous authority feed.
 //! Accepted projections replace the served values atomically and emit
 //! `SettingChanged` for the changed keys only.
-use crate::appearance::{NAMESPACE, Values};
+use crate::appearance::{NAMESPACE, Projection, Values};
 use crate::cache;
 use crate::gtk_settings::Exporter;
 use crate::portal::{self, Portal, PortalSignals};
 use crate::screencast::consent::{self, Consent, Policy};
 use crate::screencast::{self, ScreenCast, session::Sessions};
 use crate::status::{self, Origin, Shared};
-use settings::appearance::AppearanceProjection;
 use settings::{Binding, Revision};
 use std::path::PathBuf;
 use std::sync::{Arc, PoisonError, RwLock};
@@ -35,21 +34,19 @@ pub struct Config {
 }
 
 /// The evidence identity of the values held. Ordering within one incarnation
-/// is by revision, then by design revision.
+/// is by revision.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Identity {
     incarnation: String,
     revision: Revision,
-    design_revision: Revision,
 }
 
 impl Identity {
-    fn of(projection: &AppearanceProjection) -> Self {
-        let (incarnation, revision, design_revision) = projection.identity();
+    fn of(projection: &Projection) -> Self {
+        let (incarnation, revision) = projection.identity();
         Self {
             incarnation: incarnation.to_owned(),
             revision,
-            design_revision,
         }
     }
 }
@@ -64,7 +61,7 @@ pub struct State {
 }
 
 impl State {
-    pub fn initial(cached: Option<&AppearanceProjection>) -> Self {
+    pub fn initial(cached: Option<&Projection>) -> Self {
         match cached {
             Some(projection) => Self {
                 identity: Some(Identity::of(projection)),
@@ -90,11 +87,11 @@ impl State {
     /// Adopts a projection unless it is older than the held one within the
     /// same incarnation. Returns the changed keys, which may be empty when a
     /// cache or default origin is merely confirmed. `None` means stale.
-    pub fn accept(&mut self, projection: &AppearanceProjection) -> Option<Vec<Change>> {
+    pub fn accept(&mut self, projection: &Projection) -> Option<Vec<Change>> {
         let next = Identity::of(projection);
         if let Some(current) = &self.identity
             && current.incarnation == next.incarnation
-            && (next.revision, next.design_revision) < (current.revision, current.design_revision)
+            && next.revision < current.revision
         {
             return None;
         }
@@ -113,7 +110,7 @@ fn adopt(
     values: &RwLock<Values>,
     config: &Config,
     status: &Shared,
-    projection: &AppearanceProjection,
+    projection: &Projection,
 ) -> Option<Vec<Change>> {
     if projection.binding != config.binding || projection.validate().is_err() {
         status::update(status, |s| s.rejected += 1);
@@ -124,7 +121,7 @@ fn adopt(
         return None;
     };
     *values.write().unwrap_or_else(PoisonError::into_inner) = state.values().clone();
-    let (incarnation, revision, design_revision) = projection.identity();
+    let (incarnation, revision) = projection.identity();
     let exported = config
         .gtk_settings
         .export(design::CaptionSide::from_name(&projection.caption_side));
@@ -132,7 +129,6 @@ fn adopt(
         s.origin = state.origin();
         s.incarnation = Some(incarnation.to_owned());
         s.revision = Some(revision);
-        s.design_revision = Some(design_revision);
         s.settings_fault = None;
         s.accepted += 1;
         s.gtk_settings = Some(exported);
@@ -148,7 +144,7 @@ fn adopt(
 
 pub async fn serve(
     mut config: Config,
-    mut projections: mpsc::Receiver<AppearanceProjection>,
+    mut projections: mpsc::Receiver<Projection>,
     status: Shared,
 ) -> anyhow::Result<()> {
     config
@@ -269,9 +265,9 @@ mod tests {
     use super::*;
     use settings::Binding;
 
-    fn projection(incarnation: &str, revision: u64, mode: &str) -> AppearanceProjection {
-        AppearanceProjection {
-            schema: settings::appearance::APPEARANCE_SCHEMA,
+    fn projection(incarnation: &str, revision: u64, mode: &str) -> Projection {
+        Projection {
+            schema: crate::appearance::PROJECTION_SCHEMA,
             caption_side: "right".into(),
             binding: Binding {
                 instance: "host".into(),
@@ -279,7 +275,6 @@ mod tests {
             },
             incarnation: incarnation.into(),
             revision: Revision(revision),
-            design_revision: Revision(1),
             mode: mode.into(),
             contrast: "normal".into(),
             accent: [0.1, 0.2, 0.3],
