@@ -144,7 +144,7 @@ fn resolve_and_the_accent_variant_agree_on_the_effective_map() {
     let desktop = Desktop::default();
     let plain = resolve(&desktop).unwrap();
     let (with_accents, accents) =
-        resolve_with_embedded_and_accents(&desktop, EMBEDDED_DEFAULT_SOURCE).unwrap();
+        v1::resolve_with_embedded_and_accents(&desktop, EMBEDDED_DEFAULT_SOURCE).unwrap();
     assert_eq!(plain, with_accents);
     assert!(accents.contains_key("desktop"));
 }
@@ -157,7 +157,7 @@ fn window_style_defaults_preserve_existing_fixture_seals() {
         include_str!("fixtures/authored-legacy/desktop.conf.mix"),
         include_str!("../../../libs/design/tests/fixtures/sealed-profile.conf.mix"),
     ] {
-        let mut accepted: settingsd::store::Accepted = strict::from_str(text).unwrap();
+        let mut accepted: settingsd::format4::Record = strict::from_str(text).unwrap();
         assert_eq!(accepted.desktop.appearance.window_style, "mac");
         assert_eq!(accepted.desktop.appearance.menu_style, "bar");
         assert_eq!(accepted.desktop.appearance.menu_side, "left");

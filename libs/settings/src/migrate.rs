@@ -9,6 +9,7 @@
 //! values and a [`MigrationReport`] of what it dropped or changed, or a
 //! [`Failed`] that carries every refusal and the same report. Neither does
 //! I/O or reads a clock or store: the store format bump and the receipt are S6.
+//! [`reverse`] is the way back, for `settingsd downgrade`.
 //!
 //! [`migrate`] takes a record the frozen v1 validator accepts
 //! ([`crate::v1::resolve`]). S6 calls it after the seal verifies, so a record
@@ -22,6 +23,9 @@ use crate::{AppOverride, Appearance, CommonUi, Desktop, Diagnostic, Shell};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
+
+mod reverse;
+pub use reverse::{Reversed, reverse};
 
 /// The stable codes a report entry carries, so a receipt can group them.
 pub const RETIRED: &str = "retired";

@@ -49,10 +49,27 @@ fn decode<T: serde::de::DeserializeOwned>(body: &str) -> Result<T, Value> {
     serde_json::from_str(body)
         .map_err(|e| json!({"status":"validation_failed","message":e.to_string()}))
 }
+/// The registry's catalogue, or the keys under `{prefix}`.
+fn describe(body: &str) -> Result<Value, Value> {
+    #[derive(Deserialize, Default)]
+    #[serde(deny_unknown_fields)]
+    struct DescribeRequest {
+        #[serde(default)]
+        prefix: Option<String>,
+    }
+    let request: DescribeRequest = if body.trim().is_empty() {
+        DescribeRequest::default()
+    } else {
+        decode(body)?
+    };
+    let mut described = settings::registry::describe(request.prefix.as_deref());
+    described["version"] = settings::CONTRACT_VERSION.into();
+    Ok(described)
+}
 pub fn dispatch(authority: &mut Authority, command_name: &str, body: &str) -> Result<Value, Value> {
     match command_name {
         "HELP" => Ok(json!(manifest())),
-        "settings.describe" => Ok(settings::describe()),
+        "settings.describe" => describe(body),
         "settings.get" => authority.read(decode(body)?),
         "settings.appearance.get" => authority.appearance(decode(body)?),
         "settings.status" => {
@@ -158,18 +175,58 @@ async fn publish_pending(
     }
 }
 
-pub async fn serve(root: PathBuf, binding: Binding) -> anyhow::Result<()> {
-    serve_at(root, binding, bus::client_helpers::resolve_noded_url()).await
+/// Serve as the machine's authority, or with `mirror_of` as a mirror of
+/// that node's authority (F1).
+pub async fn serve(
+    root: PathBuf,
+    binding: Binding,
+    mirror_of: Option<String>,
+) -> anyhow::Result<()> {
+    let url = bus::client_helpers::resolve_noded_url();
+    match mirror_of {
+        None => serve_at(root, binding, url).await,
+        Some(node) => serve_mirror_at(root, binding, node, url).await,
+    }
 }
 
 /// The production authority loop with an explicit broker endpoint. This also
 /// lets native integration tests isolate the broker without process-global env.
 pub async fn serve_at(root: PathBuf, binding: Binding, noded_url: String) -> anyhow::Result<()> {
-    let mut authority = tokio::task::spawn_blocking(move || {
+    let authority = tokio::task::spawn_blocking(move || {
         let (store, accepted) = Store::open(&root, &binding)?;
         Authority::new(store, accepted)
     })
     .await??;
+    run(authority, noded_url).await
+}
+
+/// A mirror of `node`'s authority, serving its sealed cache. The fetch
+/// that builds or rebuilds the cache is S7's wire (`settings.get` from
+/// `settingsd.<node>.bus`, then `settings.mirror.attach`); until it lands a
+/// mirror serves only a cache that verifies, and refuses to start without
+/// one.
+pub async fn serve_mirror_at(
+    root: PathBuf,
+    binding: Binding,
+    node: String,
+    noded_url: String,
+) -> anyhow::Result<()> {
+    let authority = tokio::task::spawn_blocking(move || {
+        let (cache, origin) = crate::mirror::open(&root, &binding, &node, || {
+            anyhow::bail!("fetching from the authority on {node} needs settings.mirror.attach (S7)")
+        })?;
+        tracing::info!(
+            ?origin,
+            revision = cache.revision.0,
+            "serving the mirror cache"
+        );
+        Authority::mirror(&cache)
+    })
+    .await??;
+    run(authority, noded_url).await
+}
+
+async fn run(mut authority: Authority, noded_url: String) -> anyhow::Result<()> {
     let build = buildinfo::build_info!();
     let provenance = bus::RegisterProvenance::from_parts(
         build.pkg,
@@ -212,7 +269,7 @@ pub async fn serve_at(root: PathBuf, binding: Binding, noded_url: String) -> any
             }
             _ = retry.wait() => {
                 retry.deadline = None;
-                if client.is_connected() && !authority.store.recovering {
+                if client.is_connected() && !authority.recovering() {
                     publish_pending(&mut authority,&client,&mut retry).await;
                 }
             }
@@ -234,7 +291,7 @@ pub async fn serve_at(root: PathBuf, binding: Binding, noded_url: String) -> any
                         authority = result.0;
                         let mut reply = result.1;
                         if authority.accepted.revision != previous_revision { retry = PublicationRetry::default(); }
-                        if client.is_connected() && authority.published != Some(authority.accepted.revision) && !authority.store.recovering {
+                        if client.is_connected() && authority.published != Some(authority.accepted.revision) && !authority.recovering() {
                             publish_pending(&mut authority,&client,&mut retry).await;
                         }
                         if let Ok(ref mut value) = reply

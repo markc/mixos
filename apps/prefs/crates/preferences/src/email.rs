@@ -567,7 +567,7 @@ fn every_email_path_prefs_sends_has_a_settings_setter() {
     };
     let changes = edit_between(&old, &next);
     assert_eq!(changes.len(), 7);
-    let patched = settings::resolve::patch(&settings::Desktop::default(), &changes, &[]).unwrap();
+    let patched = settings::v1::patch(&settings::Desktop::default(), &changes, &[]).unwrap();
     settings::resolve(&patched).unwrap();
     assert_eq!(patched.email, next);
 }

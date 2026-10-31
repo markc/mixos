@@ -4,15 +4,15 @@
 //! write vocabulary ([`patch`] and its setter), its hand-written validation
 //! (in [`resolve_with_embedded_and_accents`]) and [`describe`].
 //!
-//! **Its only production caller is settingsd's store**, which still holds
-//! format 4. Its key names (`appearance.window_style`, `ui.density`, whole
-//! `apps.<id>` and `shell.panels.<id>` records) and ranges (any density,
-//! any panel thickness) are not key space v2's, so the registry
-//! ([`crate::registry::apply`]) cannot serve that store without the
-//! migration. **S6 deletes this module** when the store moves to
-//! [`crate::registry::Values`]; until then it is frozen: no new callers,
-//! no new keys. The v2 path is [`crate::registry`], [`crate::view`] and
-//! [`crate::resolve::values`].
+//! **A migration codec, not a serving path** (design §4.2). settingsd's
+//! store is format 5 ([`crate::registry::Values`]); its only calls here
+//! read and re-derive a format-4 record, to migrate it on open and to write
+//! one for `settingsd downgrade`. Its key names (`appearance.window_style`,
+//! `ui.density`, whole `apps.<id>` and `shell.panels.<id>` records) and
+//! ranges are not key space v2's. Frozen: no new callers, no new keys. It
+//! goes when format 4 leaves the downgrade window, one release after the
+//! migration has run on every profile. The v2 path is [`crate::registry`],
+//! [`crate::view`] and [`crate::resolve::values`].
 use crate::resolve::{APPS, Accents, claims_app_axis, compile_context, error, parsed};
 use crate::*;
 use serde_json::{Value, json};

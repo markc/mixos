@@ -220,7 +220,7 @@ mod tests {
                 json!("xterm"),
             ),
         ];
-        let expected: std::collections::BTreeSet<_> = settings::describe()["fields"]
+        let expected: std::collections::BTreeSet<_> = settings::v1::describe()["fields"]
             .as_object()
             .unwrap()
             .keys()
@@ -237,7 +237,7 @@ mod tests {
         );
         for (setting, path, value) in cases {
             assert_eq!(setting.edit(), Edit::Set(path, value.clone()), "{path}");
-            let next = settings::resolve::patch(
+            let next = settings::v1::patch(
                 &settings::Desktop::default(),
                 &std::collections::BTreeMap::from([(path.into(), value)]),
                 &[],
