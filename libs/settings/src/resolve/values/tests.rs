@@ -467,7 +467,11 @@ fn the_sealed_accent_is_the_chosen_one() {
         ("appearance.accent", json!("#3a7f2c")),
     ]));
     for (context, e) in &custom {
-        assert_eq!(e.accent.map(|a| a.to_hex()).as_deref(), Some("#3A7F2CFF"), "{context}");
+        assert_eq!(
+            e.accent.map(|a| a.to_hex()).as_deref(),
+            Some("#3A7F2CFF"),
+            "{context}"
+        );
     }
 }
 
