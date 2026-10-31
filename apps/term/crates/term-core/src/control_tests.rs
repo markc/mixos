@@ -1051,7 +1051,16 @@ fn p0i_09_real_payload_tap_observe_and_logs() {
         let owner = verified(&fixture.broker).await;
         let (parent, child) = fixture.records(&owner, 1).await;
         let target = target(&parent, &child);
-        let listener = fixture.tabs.lock().unwrap().pane_by_id(1).unwrap().lock().unwrap().listener.clone();
+        let pane = fixture.tabs.lock().unwrap().pane_by_id(1).unwrap();
+        let listener = pane.lock().unwrap().listener.clone();
+        // Native attachment can precede editor readiness: input typed before
+        // the prompt can be lost to startup, so the sentinel never shows on
+        // a slow or loaded worker. Wait for the prompt, as t15 does.
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while !pane.lock().unwrap().snapshot().lines().any(|line| line.trim() == "S4>") {
+                tokio::time::sleep(Duration::from_millis(25)).await;
+            }
+        }).await.unwrap_or_else(|_| panic!("Mix initial prompt:\n{}", pane.lock().unwrap().snapshot()));
         let input = json!({"target":target,"request_id":"1","foreground_generation":listener.foreground_generation().to_string(),"text":"print(\"PRIVATE_S4_SENTINEL\")\n"});
         assert_eq!(call(owner.client(), &parent.name, "term.type", input).await.0, 0);
         // A revocation while both subscriptions are live. term.input.revoked is

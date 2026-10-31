@@ -41,6 +41,9 @@ pub const MIN_HL_CONTRAST: f64 = 3.0;
 const SELECTION_ALPHA: f32 = 0.45;
 pub(crate) const MATCH_ALPHA: f32 = 0.22;
 pub(crate) const REMOTE_ALPHA: f32 = 0.18;
+/// How far the current-line band moves from the background toward the
+/// `hover` row: a hint of where the caret is, not a second selection.
+const CURRENT_LINE_MIX: f32 = 0.35;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Palette {
@@ -106,7 +109,7 @@ impl Palette {
             background,
             text: get("text"),
             gutter_text: legible(get("text_faint"), get("text"), background),
-            current_line: get("hover"),
+            current_line: background.lerp_to_gamma(get("hover"), CURRENT_LINE_MIX),
             selection: selection(get("selection"), get("accent")),
             caret: get("text"),
             separator: get("separator"),
