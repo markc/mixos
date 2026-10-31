@@ -5,9 +5,9 @@
 //! window and this loop share [`commands::serve_command`]; only the transport
 //! differs.
 //!
-//! A drainer thread owns `on_event` and `tick` (laws 1 and 2) and answers
-//! every dialog at once with No (law 3), so nothing waits and no file
-//! operation starts. `OpenFile` is refused and logged (law 4). Theme and
+//! A drainer thread owns `on_event` and `tick` (laws 1 and 2) and retains
+//! dialogs for typed Bus answers (law 3). `OpenFile` is refused and logged
+//! (law 4). Theme and
 //! window actions are refused: there is nothing to paint. Accepted
 //! `dopus.execute` runs are published on `dopus.action.executed`, origin
 //! `bus`, as the window publishes them.
@@ -90,7 +90,7 @@ mod tests {
         let first = dir.path().join("Fresh");
         pump(&mut app, &receiver, |a| {
             first.is_dir()
-                && a.core.is_idle()
+                && !a.core.availability().operation_running
                 && a.core
                     .pane(dopus_core::PaneId::Left)
                     .root
@@ -109,7 +109,7 @@ mod tests {
         pump(&mut app, &receiver, |a| {
             renamed.is_dir()
                 && !first.exists()
-                && a.core.is_idle()
+                && !a.core.availability().operation_running
                 && a.core
                     .pane(dopus_core::PaneId::Left)
                     .root
@@ -133,7 +133,7 @@ mod tests {
             0
         );
         pump(&mut app, &receiver, |a| {
-            !renamed.exists() && a.core.is_idle()
+            !renamed.exists() && !a.core.availability().operation_running
         });
     }
 }

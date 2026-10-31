@@ -1004,7 +1004,14 @@ pub fn command(
         }
     };
     if command_name == "email.dialog" {
-        let (rc, body) = crate::dialog::command(state, &args);
+        let mut dialog_args = args.clone();
+        if let Some(window) = dialog_args.as_object_mut().unwrap().remove("window")
+            && !window.is_string()
+        {
+            state.refuse(id, "ARGUMENT", "window must be a string");
+            return None;
+        }
+        let (rc, body) = crate::dialog::command(state, &dialog_args);
         state.reply(id, rc, body);
         return None;
     }

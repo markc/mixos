@@ -1950,6 +1950,7 @@ impl Shell {
         let opening = command_name == "email.execute" && action == Some("compose.new");
         let routed = !opening
             && (command_name.starts_with("email.compose.")
+                || command_name == "email.dialog"
                 || command_name == "email.info"
                 || (command_name == "email.execute"
                     && args
@@ -2030,6 +2031,9 @@ impl Shell {
         if let Some(window) = &mut target {
             window.swap(&mut self.state);
         }
+        let quit_question = command_name == "email.dialog"
+            && target.is_some()
+            && self.state.confirm == Some(crate::state::Confirm::Quit);
         let origin = SendOrigin {
             caller_key: self.bus.caller_key(id),
             drive_request_id: None,
@@ -2046,6 +2050,13 @@ impl Shell {
         let forward = self.state.with_send_origin(Some(origin), |state| {
             crate::commands::command(state, &self.commands, &self.strings, id, command_name, body)
         });
+        let cancelled_quit = quit_question && self.state.confirm.is_none() && self.state.compose.is_some();
+        if quit_question {
+            self.state.exiting = false;
+            if self.state.compose.is_none() && let Some(window) = &mut target {
+                window.closed = true;
+            }
+        }
         if std::mem::take(&mut self.state.compose_new_requested) {
             self.state.compose();
         }
@@ -2055,6 +2066,17 @@ impl Shell {
             self.ctx.request_repaint_of(window.viewport);
         }
         drop(target);
+        if cancelled_quit {
+            self.composers.quitting = false;
+            self.composers.owner_closing = false;
+            self.state.cancel_quit();
+            for window in self.composers.windows.values() {
+                let mut window = window.lock().unwrap();
+                if window.view.confirm == Some(crate::state::Confirm::Quit) {
+                    window.view.confirm = None;
+                }
+            }
+        }
         match forward {
             Some(Forward::Drive {
                 id,
@@ -3218,6 +3240,24 @@ mod tests {
         assert!(shell.composers.windows.is_empty());
         assert!(shell.state.exiting);
         shell.bus.quit();
+    }
+
+    #[test]
+    fn bus_dialog_targets_composers_and_cancels_the_whole_quit() {
+        let (mut shell, _broker) = compose_fixture(false);
+        add_composer(&mut shell, "one");
+        add_composer(&mut shell, "two");
+        shell.state.exiting = true;
+        shell.advance_close();
+        shell.command(90, "email.dialog", r#"{"window":"compose-1","answer":"cancel"}"#);
+        assert!(!shell.composers.quitting);
+        assert!(!shell.state.exiting);
+        assert!(shell.composers.windows.values().all(|w| w.lock().unwrap().view.confirm.is_none()));
+        shell.state.exiting = true;
+        shell.advance_close();
+        shell.command(91, "email.dialog", r#"{"window":"compose-1","answer":"keep"}"#);
+        assert!(!shell.state.exiting, "a sibling still owns a draft");
+        assert!(shell.composers.windows["compose-2"].lock().unwrap().view.compose.is_some());
     }
 
     #[test]
