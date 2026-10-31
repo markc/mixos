@@ -131,10 +131,7 @@ impl Overlay {
                 && (s / settings::model::ICON_STROKE_STEP).fract() == 0.0
         });
         let weight = font_weight.filter(|w| (100..=900).contains(w) && w % 100 == 0);
-        let family = |name: Option<&str>| {
-            name.filter(|n| !n.trim().is_empty())
-                .map(str::to_owned)
-        };
+        let family = |name: Option<&str>| name.filter(|n| !n.trim().is_empty()).map(str::to_owned);
         let size = font_size
             .filter(|s| {
                 s.is_finite()

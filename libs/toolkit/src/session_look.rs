@@ -477,7 +477,12 @@ mod tests {
         let style = theme.style();
         let [_, xs, s, m, _, xl] = design::geometry::Roundness::Round.radii();
         assert_eq!(
-            (style.radius_sm, style.radius, style.radius_lg, style.radius_pill),
+            (
+                style.radius_sm,
+                style.radius,
+                style.radius_lg,
+                style.radius_pill
+            ),
             (xs, s, m, xl)
         );
         assert_eq!(theme.ui().density, 1.0);
@@ -491,8 +496,11 @@ mod tests {
     fn an_authored_scheme_at_the_defaults_is_today_s_theme_but_for_radii() {
         for scheme in Scheme::AUTHORED {
             let today = theme(&appearance(scheme.name())).unwrap();
-            let next = look(&look_of(&[("appearance.scheme", scheme.name().into())]), None)
-                .expect("drawable");
+            let next = look(
+                &look_of(&[("appearance.scheme", scheme.name().into())]),
+                None,
+            )
+            .expect("drawable");
             assert_eq!(next.dictionary(), today.dictionary(), "{scheme:?}");
             assert_eq!(next.accent(), today.accent(), "{scheme:?}");
             assert_eq!(
@@ -543,9 +551,8 @@ mod tests {
             )
             .unwrap()
         };
-        let plain = |scheme: &str| {
-            look(&look_of(&[("appearance.scheme", scheme.into())]), None).unwrap()
-        };
+        let plain =
+            |scheme: &str| look(&look_of(&[("appearance.scheme", scheme.into())]), None).unwrap();
         assert_ne!(tinted("mixos").dictionary(), plain("mixos").dictionary());
         assert_eq!(tinted("studio").dictionary(), plain("studio").dictionary());
     }
