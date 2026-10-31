@@ -1061,7 +1061,10 @@ mod tests {
         );
         assert_eq!(View::default(), View::Values, "an omitted view is values");
         for view in ["full", "summary"] {
-            assert!(serde_json::from_value::<View>(json!(view)).is_err(), "{view}");
+            assert!(
+                serde_json::from_value::<View>(json!(view)).is_err(),
+                "{view}"
+            );
         }
     }
 

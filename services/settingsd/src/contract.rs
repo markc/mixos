@@ -176,11 +176,9 @@ impl Authority {
         }
         let mode = match request.mode.as_deref() {
             None => None,
-            Some(name) => Some(
-                settings::resolve::values::Mode::from_name(name).ok_or_else(
-                    || json!({"status":"validation_failed","path":"mode","message":"Unknown mode"}),
-                )?,
-            ),
+            Some(name) => Some(settings::resolve::values::Mode::from_name(name).ok_or_else(
+                || json!({"status":"validation_failed","path":"mode","message":"Unknown mode"}),
+            )?),
         };
         let palette = settings::resolve::values::palette(
             &self.accepted.values,

@@ -505,7 +505,7 @@ fn the_default_scheme_is_the_derived_mixos() {
     };
     assert_eq!(desktop.design, mixos.read_projection());
     assert_eq!(desktop.accent, design::resolved_accent(&mixos));
-    let today = crate::resolve(&Desktop::default()).unwrap();
+    let today = crate::v1::resolve(&Desktop::default()).unwrap();
     assert_ne!(desktop.design, today["desktop"].design);
 }
 

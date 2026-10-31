@@ -395,7 +395,7 @@ mod tests {
 
     #[test]
     fn window_style_invalidates_chrome_paint_and_layout() {
-        let resolved = crate::resolve(&crate::Desktop::default()).unwrap();
+        let resolved = crate::v1::resolve(&crate::Desktop::default()).unwrap();
         let before = &resolved["desktop"];
         let mut after = before.clone();
         after.window_style = "win11".into();
@@ -625,7 +625,7 @@ mod tests {
 
     #[test]
     fn menu_changes_invalidate_paint_and_layout_only() {
-        let resolved = crate::resolve(&crate::Desktop::default()).unwrap();
+        let resolved = crate::v1::resolve(&crate::Desktop::default()).unwrap();
         let before = &resolved["desktop"];
         for (style, side) in [("button", "left"), ("titlebar", "right"), ("bar", "right")] {
             let mut after = before.clone();

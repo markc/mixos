@@ -325,7 +325,7 @@ mod tests {
     use serde_json::json;
 
     fn snapshot(desktop: Desktop) -> Snapshot {
-        let effective = crate::resolve(&desktop).unwrap();
+        let effective = crate::v1::resolve(&desktop).unwrap();
         Snapshot {
             schema: crate::SCHEMA,
             binding: Binding {

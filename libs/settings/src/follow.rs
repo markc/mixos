@@ -415,10 +415,7 @@ mod tests {
                 assert_eq!(look.appearance.scheme, "studio");
                 assert_eq!(look.framing.decorations, "ssd");
                 assert_eq!(look.text_scale, 1.5);
-                assert_eq!(
-                    look.appearance.density,
-                    design::geometry::Density::Compact
-                );
+                assert_eq!(look.appearance.density, design::geometry::Density::Compact);
                 assert!(!custom_source);
             }
             other => panic!("{other:?}"),
