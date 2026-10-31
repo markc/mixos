@@ -369,7 +369,14 @@ impl Watch {
         while !done(&self.latest) {
             let event = tokio::time::timeout_at(deadline, self.events.recv())
                 .await
-                .unwrap_or_else(|_| panic!("never {what}: {:?}", self.latest.keys()))
+                .unwrap_or_else(|_| {
+                    let seen: BTreeMap<&String, (&Value, &Value)> = self
+                        .latest
+                        .iter()
+                        .map(|(t, b)| (t, (&b["revision"], &b["changed_at"])))
+                        .collect();
+                    panic!("never {what}: {seen:?}")
+                })
                 .unwrap();
             self.take(event);
         }
