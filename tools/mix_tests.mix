@@ -69,6 +69,7 @@ $scripts = [
   "services/bridged/tests/bridged_test.mix",
   "services/clipd/tests/clipboard_test.mix",
   "services/clipd/tests/clipd_test.mix",
+  "services/exportd/tests/cosmic_test.mix",
   "services/compd/tests/apps_bus_test.mix",
   "services/compd/tests/apps_test.mix",
   "services/compd/tests/desktop_icons_test.mix",

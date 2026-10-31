@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+[Unit]
+Description=MixOS settings export to COSMIC for session %i
+# Orders after both brokers and never wants one (see settingsd@.service).
+# It needs no settingsd at start: the retained topics wake it.
+After=noded@%i.service noded.service settingsd@%i.service
+StartLimitIntervalSec=0
+PartOf=session@%i.target
+
+[Service]
+Type=simple
+# The session's user: the cosmic-config tree is theirs.
+User=mixos
+EnvironmentFile=@{etc}/session/%i.env
+Environment=MIX_STATS=off
+ExecStart=@{prefix}/bin/mix --serve @{prefix}/lib/exportd/cosmic.mix --name exportd-cosmic
+KillMode=control-group
+TimeoutStopSec=10
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=yes
+# cosmic-config files are the user's own, readable as COSMIC writes them.
+UMask=0022

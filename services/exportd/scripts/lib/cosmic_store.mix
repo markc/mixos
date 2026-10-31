@@ -1,0 +1,102 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- The COSMIC exporter's writes into one cosmic-config tree, with undo.
+--
+--   $s = require("cosmic_store.mix")
+--   $s.apply($root, $state_dir, $plan, $dry)  write the files that differ
+--   $s.undo($root, $state_dir, $to)           restore "previous" or "original"
+--   $s.owned($state_dir)                      every path ever written
+--
+-- Each key is one file replaced atomically: a `.atomicwrite<id>` temporary
+-- in the same directory, then a rename (cosmic-config's own scheme, whose
+-- watchers skip those names). A file whose text is already the planned one
+-- is not touched, so COSMIC hears only real changes.
+--
+-- Undo lives in `<state_dir>/undo.json`: for each path the exporter has
+-- written, the `original` contents (before its first write) and the
+-- `previous` ones (before its latest write), each {present, text}. A path
+-- that did not exist is restored by removing the file.
+
+fn _undo_path($state_dir)
+  return $state_dir .. "/undo.json"
+end
+
+fn _load($state_dir)
+  $p = _undo_path($state_dir)
+  if not is_file($p) then return {} end
+  return json_parse(read_file($p))
+end
+
+fn _atomic($path, $text)
+  $dir = dirname($path)
+  mkdir($dir)
+  $tmp = $dir .. "/.atomicwrite" .. replace(uuid(), "-", "")
+  write_file($tmp, $text)
+  rename($tmp, $path)
+end
+
+fn _save($state_dir, $undo)
+  mkdir($state_dir)
+  _atomic(_undo_path($state_dir), json_encode($undo))
+end
+
+fn _current($path)
+  if is_file($path) then return {present: true, text: read_file($path)} end
+  return {present: false, text: nil}
+end
+
+-- Writes every planned file whose contents differ. Returns {changed:
+-- [path], unchanged: n}. With $dry, writes nothing and reports the same.
+fn apply($root, $state_dir, $plan, $dry)
+  $undo = _load($state_dir)
+  $changed = []
+  $writes = []
+  $same = 0
+  for $f in $plan
+    $now = _current($root .. "/" .. $f.path)
+    if $now.present and $now.text == $f.text then
+      $same = $same + 1
+    else
+      push($changed, $f.path)
+      push($writes, $f)
+      $entry = $undo[$f.path] ?? {original: $now}
+      $entry.previous = $now
+      $undo[$f.path] = $entry
+    end
+  end
+  if not $dry and len($writes) > 0 then
+    -- The undo record lands before the files it covers.
+    _save($state_dir, $undo)
+    for $f in $writes _atomic($root .. "/" .. $f.path, $f.text) end
+  end
+  return {changed: $changed, unchanged: $same}
+end
+
+-- Restores each written path to its `previous` or `original` contents.
+-- Returns the restored paths.
+fn undo($root, $state_dir, $to)
+  if not contains(["previous", "original"], $to) then raise("UNDO", "undo to previous or original") end
+  $undo = _load($state_dir)
+  $done = []
+  for $p in sort(keys($undo))
+    $want = $undo[$p][$to]
+    $path = $root .. "/" .. $p
+    $now = _current($path)
+    if $want.present then
+      if not ($now.present and $now.text == $want.text) then _atomic($path, $want.text) end
+    elif $now.present then
+      remove($path)
+    end
+    -- So a second undo to `previous` puts the export back.
+    $entry = $undo[$p]
+    $entry.previous = $now
+    $undo[$p] = $entry
+    push($done, $p)
+  end
+  _save($state_dir, $undo)
+  return $done
+end
+
+fn owned($state_dir)
+  return sort(keys(_load($state_dir)))
+end

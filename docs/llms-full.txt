@@ -776,6 +776,7 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 | [editor](../editor/README.md) | lib | none (library) | [`libs/editor`](https://github.com/markc/mixos/tree/main/libs/editor) | The shared plain-text editor widget for MixOS egui applications, a virtualised monospace view over the headless editing model that works on a local file or a shared buffer. |
 | [editor-model](../editor-model/README.md) · [changelog](../editor-model/changelog.md) | lib | none (library) | [`libs/editor-model`](https://github.com/markc/mixos/tree/main/libs/editor-model) | The headless text-editing model shared by MixOS editors, turning commands and motions into edits and keeping a local mirror of an edit-service buffer in step with the server, plus highlighting and… |
 | [email](../email/README.md) · [changelog](../email/changelog.md) | app | unclassified | [`apps/email`](https://github.com/markc/mixos/tree/main/apps/email) |  |
+| [exportd](../exportd/README.md) · [changelog](../exportd/changelog.md) | service | desktop | [`services/exportd`](https://github.com/markc/mixos/tree/main/services/exportd) | One-way exports of the MixOS settings to foreign desktops and toolkits, starting with the COSMIC desktop's cosmic-config tree. |
 | [expr](../expr/README.md) | lib | none (library) | [`libs/expr`](https://github.com/markc/mixos/tree/main/libs/expr) | The pure expression language of Mix Scenes bindings, which compiles an expression, reports the globals it reads and evaluates it over JSON values under size and time limits. |
 | [files](../files/README.md) | lib | none (library) | [`libs/files`](https://github.com/markc/mixos/tree/main/libs/files) | Rooted reads and the files-as-truth markdown corpus model. |
 | [hostd](../hostd/README.md) · [changelog](../hostd/changelog.md) | service | unclassified | [`services/hostd`](https://github.com/markc/mixos/tree/main/services/hostd) | How hostd answers questions about the host and carries out privileged host changes through closed, typed commands with receipts, rate limits and rollback, so agents never need sudo. |
@@ -920,6 +921,7 @@ checked separately by the layering gate.
 | [dnsd](https://github.com/markc/mixos/blob/main/services/dnsd/Cargo.toml) | dnsd | service | core | public | 0.3.4 |
 | [dns-core](https://github.com/markc/mixos/blob/main/services/dnsd/crates/dns-core/Cargo.toml) | dnsd | service | core | none | 0.1.2 |
 | [editd](https://github.com/markc/mixos/blob/main/services/editd/Cargo.toml) | editd | service | core | public | 0.3.0 |
+| [exportd](https://github.com/markc/mixos/blob/main/services/exportd/component.mx) | exportd | service | desktop | public | 0.1.0 |
 | [hostd](https://github.com/markc/mixos/blob/main/services/hostd/Cargo.toml) | hostd | service | core | public | 0.1.0 |
 | [indexd](https://github.com/markc/mixos/blob/main/services/indexd/Cargo.toml) | indexd | service | core | public | 0.1.2 |
 | [inputd](https://github.com/markc/mixos/blob/main/services/inputd/Cargo.toml) | inputd | service | core | public | 0.5.0 |
@@ -10890,6 +10892,90 @@ answer keep or discard, then retry.
 An optional `window` selects a compose window (as listed by `email.info`);
 omission selects the most recently focused composer. Quit cancellation
 keeps sibling drafts open.
+
+---
+
+<!-- page: https://mixos.dev/exportd/ (source: https://mixos.dev/exportd/README.md) -->
+
+# exportd
+
+MixOS keeps every desktop setting in [settingsd](../settingsd/README.md).
+A desk that runs a foreign desktop (COSMIC, Plasma) or foreign toolkits
+(GTK, Qt) gets the same look through an exporter: a Mix Bus citizen that
+follows the settings topics and writes the foreign desktop's own config.
+The export is **one way**. settingsd is the source; a change made in the
+foreign desktop's own settings app is overwritten at the next revision,
+and nothing is read back.
+
+Every exporter:
+
+- reconciles once when it connects, then writes each revision's changed
+  keys in one burst, with no polling;
+- writes only the keys it owns, and only where the contents differ;
+- keeps the contents it replaced, so one command undoes it;
+- stops writing while `appearance.export_desktop` is `false`.
+
+Colours come from `settings.palette`, the derived palette settingsd
+computes; an exporter names colours and computes none.
+
+## COSMIC
+
+`scripts/cosmic.mix` writes a COSMIC desktop's cosmic-config tree
+(`$XDG_CONFIG_HOME/cosmic`, one RON file per key). cosmic-comp, the panel
+and every libcosmic app watch those files, so the desktop follows at once.
+
+```text
+mix --serve <prefix>/lib/exportd/cosmic.mix --name exportd-cosmic
+```
+
+The unit `exportd-cosmic@.service` runs it in a session, as that
+session's user.
+
+### What it writes
+
+| Settings | cosmic-config |
+|---|---|
+| `appearance.mode` (resolved; `auto` is settingsd's) | `com.system76.CosmicTheme.Mode` v1 `is_dark`; `auto_switch` always `false` |
+| the palette, `appearance.contrast`, accent, tints, backgrounds | both builders (`com.system76.CosmicTheme.Dark.Builder`, `.Light.Builder` v2) and both derived themes (`.Dark`, `.Light` v2): every container, component, the 32-colour palette, accent text, shade |
+| `appearance.roundness`, `appearance.density` | both builders' and themes' `corner_radii`, `spacing`; `com.system76.CosmicTk` v1 `interface_density`, `header_size`; the panel and dock radius, padding and spacing |
+| `appearance.frosted.*` | `frosted`, `alpha_map`, `frosted_windows`, `frosted_system_interface`, `frosted_panel`, `frosted_applets` |
+| `window.active_hint`, `window.hint_colour`, `window.gaps` | `active_hint`, `window_hint`, `gaps` (the inner gap at least the hint width) |
+| `window.hint_shown`, `window.clip_*`, `window.shadow_tiled`, `window.edge_gravity`, focus | `com.system76.CosmicComp` v1 `active_hint`, `appearance_settings`, `edge_snap_threshold`, `focus_follows_cursor`, `focus_follows_cursor_delay`, `cursor_follows_focus` |
+| `appearance.font_family`, `mono_family`, `icon_theme`, `window.controls.*` | `CosmicTk` v1 `interface_font`, `monospace_font`, `icon_theme`, `show_minimize`, `show_maximize`; `apply_theme_global` always `false` (MixOS's own GTK and Qt export does that work) |
+| `shell.panels.top`, `.bottom` | `com.system76.CosmicPanel.Panel` and `.Dock` v1, and which of them `com.system76.CosmicPanel` v1 `entries` lists |
+| `wallpaper.*` | `com.system76.CosmicBackground` v1 `all`, `same-on-all` and one key per output |
+
+A null font is the design default (Inter, JetBrains Mono). Panel applet
+lists and the wallpaper are written only once MixOS has its own; until
+then COSMIC keeps its own.
+
+Each key is replaced atomically (a `.atomicwrite` temporary, then a
+rename), builders before themes and the mode last, so a mode flip lands on
+two complete themes.
+
+### Commands
+
+| Command | Request and reply |
+|---|---|
+| `exportd.cosmic.status` | → `{binding, root, revision, paused, dry_run, last}` |
+| `exportd.cosmic.plan` | → `{changed: [path], unchanged}`: what an export would write; writes nothing |
+| `exportd.cosmic.reconcile` | export now; clears a pause |
+| `exportd.cosmic.undo` | `{to: "previous" \| "original"}` → `{restored, to, paused}`: every key back to its contents before the latest write, or before the first; exporting then pauses until `reconcile` |
+| `exportd.cosmic.owned` | → `{paths}`: every key file it has written |
+
+### Environment
+
+| Variable | Default |
+|---|---|
+| `MIXOS_SETTINGS_INSTANCE`, `MIXOS_SETTINGS_PROFILE` | the hostname, `default` (the profile must be `default`) |
+| `MIXOS_SETTINGS_SERVICE` | `settingsd` |
+| `MIXOS_EXPORTD_COSMIC_ROOT` | `$XDG_CONFIG_HOME/cosmic` |
+| `MIXOS_EXPORTD_STATE` | `$XDG_STATE_HOME/mixos/exportd/cosmic` (undo and pause) |
+| `MIXOS_EXPORTD_DRY_RUN=1` | plan only: log what would change, write nothing |
+
+## Changelog
+
+See the [changelog](changelog.md).
 
 ---
 
@@ -40715,6 +40801,20 @@ the predecessor repository at revision
 
 ---
 
+<!-- page: https://mixos.dev/exportd/changelog/ (source: https://mixos.dev/exportd/changelog.md) -->
+
+# Changelog
+
+> Mirrored from [`services/exportd/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/services/exportd/CHANGELOG.md), where releases update it. The component's page is [exportd](README.md). This page describes the current `main` branch of MixOS.
+
+## 0.1.0 — unreleased
+
+- The COSMIC exporter (`scripts/cosmic.mix`): settingsd's look, window,
+  panel and wallpaper settings written into a cosmic-config tree, with
+  undo.
+
+---
+
 <!-- page: https://mixos.dev/hostd/changelog/ (source: https://mixos.dev/hostd/changelog.md) -->
 
 # hostd contract changes
@@ -42304,6 +42404,7 @@ On every MixOS system.
 ## Desktop components
 
 - [clipd](../clipd/README.md) (service)
+- [exportd](../exportd/README.md) (service): One-way exports of the MixOS settings to foreign desktops and toolkits, starting with the COSMIC desktop's cosmic-config tree.
 - [indexd](../indexd/README.md) (service): Local semantic search over the MixOS Bus, with an ssh bridge and an in-process CLI.
 - [monitor](../monitor/README.md) (app): Monitor is the MixOS task manager, showing the processes and performance that monitord reports for this node or any node on the mesh, with End task and Kill for this node's processes.
 

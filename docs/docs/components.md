@@ -37,6 +37,7 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 | [editor](../editor/README.md) | lib | none (library) | [`libs/editor`](https://github.com/markc/mixos/tree/main/libs/editor) | The shared plain-text editor widget for MixOS egui applications, a virtualised monospace view over the headless editing model that works on a local file or a shared buffer. |
 | [editor-model](../editor-model/README.md) · [changelog](../editor-model/changelog.md) | lib | none (library) | [`libs/editor-model`](https://github.com/markc/mixos/tree/main/libs/editor-model) | The headless text-editing model shared by MixOS editors, turning commands and motions into edits and keeping a local mirror of an edit-service buffer in step with the server, plus highlighting and… |
 | [email](../email/README.md) · [changelog](../email/changelog.md) | app | unclassified | [`apps/email`](https://github.com/markc/mixos/tree/main/apps/email) |  |
+| [exportd](../exportd/README.md) · [changelog](../exportd/changelog.md) | service | desktop | [`services/exportd`](https://github.com/markc/mixos/tree/main/services/exportd) | One-way exports of the MixOS settings to foreign desktops and toolkits, starting with the COSMIC desktop's cosmic-config tree. |
 | [expr](../expr/README.md) | lib | none (library) | [`libs/expr`](https://github.com/markc/mixos/tree/main/libs/expr) | The pure expression language of Mix Scenes bindings, which compiles an expression, reports the globals it reads and evaluates it over JSON values under size and time limits. |
 | [files](../files/README.md) | lib | none (library) | [`libs/files`](https://github.com/markc/mixos/tree/main/libs/files) | Rooted reads and the files-as-truth markdown corpus model. |
 | [hostd](../hostd/README.md) · [changelog](../hostd/changelog.md) | service | unclassified | [`services/hostd`](https://github.com/markc/mixos/tree/main/services/hostd) | How hostd answers questions about the host and carries out privileged host changes through closed, typed commands with receipts, rate limits and rollback, so agents never need sudo. |
@@ -181,6 +182,7 @@ checked separately by the layering gate.
 | [dnsd](https://github.com/markc/mixos/blob/main/services/dnsd/Cargo.toml) | dnsd | service | core | public | 0.3.4 |
 | [dns-core](https://github.com/markc/mixos/blob/main/services/dnsd/crates/dns-core/Cargo.toml) | dnsd | service | core | none | 0.1.2 |
 | [editd](https://github.com/markc/mixos/blob/main/services/editd/Cargo.toml) | editd | service | core | public | 0.3.0 |
+| [exportd](https://github.com/markc/mixos/blob/main/services/exportd/component.mx) | exportd | service | desktop | public | 0.1.0 |
 | [hostd](https://github.com/markc/mixos/blob/main/services/hostd/Cargo.toml) | hostd | service | core | public | 0.1.0 |
 | [indexd](https://github.com/markc/mixos/blob/main/services/indexd/Cargo.toml) | indexd | service | core | public | 0.1.2 |
 | [inputd](https://github.com/markc/mixos/blob/main/services/inputd/Cargo.toml) | inputd | service | core | public | 0.5.0 |

@@ -21,6 +21,7 @@ On every MixOS system.
 ## Desktop components
 
 - [clipd](../clipd/README.md) (service)
+- [exportd](../exportd/README.md) (service): One-way exports of the MixOS settings to foreign desktops and toolkits, starting with the COSMIC desktop's cosmic-config tree.
 - [indexd](../indexd/README.md) (service): Local semantic search over the MixOS Bus, with an ssh bridge and an in-process CLI.
 - [monitor](../monitor/README.md) (app): Monitor is the MixOS task manager, showing the processes and performance that monitord reports for this node or any node on the mesh, with End task and Kill for this node's processes.
 

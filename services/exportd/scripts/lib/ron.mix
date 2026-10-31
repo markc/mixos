@@ -1,0 +1,127 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- A small RON writer for COSMIC's per-key config files (one value per file,
+-- pretty-printed: 4-space indent, one field per line, trailing commas).
+-- Mix values map onto RON like this:
+--
+--   true/false, integers, strings     as themselves (strings JSON-quoted)
+--   nil                               None
+--   a list                            [ ... ]
+--   a plain map                       a struct, fields in key order
+--   float(n)                          a float that always shows its point
+--   ident("Zoom")                     a bare identifier or enum variant
+--   some(v)                           Some(v)
+--   tuple([a, b])                     (a, b)
+--   struct([[k, v], ...])             a struct, fields in the given order
+--   call("Path", [v])                 Path(v): a variant with a payload
+--   raw("#true")                      text as is (a carried shipped value)
+--
+-- Pure: no I/O. `encode(v)` returns the file's text without a newline, as
+-- COSMIC writes it.
+
+fn float($n)
+  return {ron: "f", v: $n}
+end
+
+fn ident($name)
+  return {ron: "id", v: $name}
+end
+
+fn some($v)
+  return {ron: "some", v: $v}
+end
+
+fn tuple($items)
+  return {ron: "tuple", v: $items}
+end
+
+fn struct($fields)
+  return {ron: "struct", v: $fields}
+end
+
+fn call($name, $items)
+  return {ron: "call", name: $name, v: $items}
+end
+
+-- RON text written as is: only for a carried value copied from COSMIC's
+-- own shipped file.
+fn raw($text)
+  return {ron: "raw", v: $text}
+end
+
+fn _pad($depth)
+  return repeat("    ", $depth)
+end
+
+fn _number($n)
+  if $n == floor($n) and abs($n) < 1e15 then return sprintf("%d", $n) end
+  return to_string($n)
+end
+
+fn _float($n)
+  if $n == floor($n) and abs($n) < 1e15 then return sprintf("%.1f", $n) end
+  return to_string($n)
+end
+
+-- Whether a value prints on one line inside a tuple or call.
+fn _inline($v)
+  $t = type($v)
+  if $t == "map" and has_key($v, "ron") then
+    return contains(["f", "id", "raw"], $v.ron) or ($v.ron == "tuple" and all($v.v, fn($x) = _inline($x)))
+  end
+  if $t == "list" then return len($v) == 0 end
+  return $t != "map"
+end
+
+fn _fields($fields, $depth)
+  if len($fields) == 0 then return "()" end
+  $out = "(\n"
+  for $f in $fields
+    $out = $out .. _pad($depth + 1) .. $f[0] .. ": " .. _enc($f[1], $depth + 1) .. ",\n"
+  end
+  return $out .. _pad($depth) .. ")"
+end
+
+fn _items($open, $close, $items, $depth)
+  if len($items) == 0 then return $open .. $close end
+  if all($items, fn($x) = _inline($x)) and $open == "(" then
+    return "(" .. join(map($items, fn($x) = _enc($x, $depth)), ", ") .. ")"
+  end
+  $out = $open .. "\n"
+  for $x in $items
+    $out = $out .. _pad($depth + 1) .. _enc($x, $depth + 1) .. ",\n"
+  end
+  return $out .. _pad($depth) .. $close
+end
+
+fn _enc($v, $depth)
+  $t = type($v)
+  if $v == nil then return "None" end
+  if $t == "bool" then return if $v then "true" else "false" end end
+  if $t == "number" then return _number($v) end
+  if $t == "string" then return json_encode($v) end
+  if $t == "list" then return _items("[", "]", $v, $depth) end
+  if $t != "map" then raise("RON", "cannot encode a " .. $t) end
+  if not has_key($v, "ron") then
+    return _fields(map(sort(keys($v)), fn($k) = [$k, $v[$k]]), $depth)
+  end
+  $kind = $v.ron
+  if $kind == "f" then return _float($v.v) end
+  if $kind == "id" then
+    if not re_match($v.v, "^[A-Za-z_][A-Za-z0-9_]*$") then raise("RON", "not an identifier: " .. $v.v) end
+    return $v.v
+  end
+  if $kind == "raw" then return $v.v end
+  if $kind == "some" then return "Some(" .. _enc($v.v, $depth) .. ")" end
+  if $kind == "tuple" then return _items("(", ")", $v.v, $depth) end
+  if $kind == "struct" then return _fields($v.v, $depth) end
+  if $kind == "call" then
+    if len($v.v) == 1 then return $v.name .. "(" .. _enc($v.v[0], $depth) .. ")" end
+    return $v.name .. _items("(", ")", $v.v, $depth)
+  end
+  raise("RON", "unknown RON form " .. to_string($kind))
+end
+
+fn encode($v)
+  return _enc($v, 0)
+end
