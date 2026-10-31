@@ -253,7 +253,7 @@ started there.</p>
 <h2 id="what-it-writes">What it writes</h2>
 <p>Everything goes under the session's <code>$XDG_CONFIG_HOME</code>:</p>
 <table><thead><tr><th>File</th><th>What</th></tr></thead><tbody>
-<tr><td><code>gtk-4.0/mixos/dark.css</code>, <code>light.css</code></td><td>libadwaita's named colours (<code>window_bg_color</code>, <code>accent_bg_color</code>, <code>blue_1</code> … <code>dark_4</code>) as <code>@define-color</code> lines</td></tr>
+<tr><td><code>gtk-4.0/mixos/dark.css</code>, <code>light.css</code></td><td>libadwaita's named colours (<code>window_bg_color</code>, <code>accent_bg_color</code>, <code>blue_1</code> … <code>purple_5</code>, <code>light_1</code> … <code>light_5</code>, <code>dark_1</code> … <code>dark_5</code>) as <code>@define-color</code> lines; the light and dark greys are one ramp of the palette's <code>neutral_5</code> from white to black, with libadwaita's names and meaning (COSMIC writes 0-based names no stylesheet reads)</td></tr>
 <tr><td><code>gtk-4.0/gtk.css</code>, <code>gtk-3.0/gtk.css</code></td><td>symlinks to the current mode's file, so a mode switch is one rename</td></tr>
 <tr><td><code>gtk-3.0/settings.ini</code>, <code>gtk-4.0/settings.ini</code></td><td><code>[Settings]</code>: <code>gtk-application-prefer-dark-theme</code>, <code>gtk-font-name</code>, <code>gtk-decoration-layout</code>, <code>gtk-icon-theme-name</code>, and in GTK 3 <code>gtk-theme-name</code> (<code>adw-gtk3</code>/<code>adw-gtk3-dark</code>, only when installed)</td></tr>
 <tr><td><code>qt5ct/colors/MixOSDark.conf</code>, <code>MixOSLight.conf</code> (and <code>qt6ct/</code>)</td><td>the 21 Qt palette roles for the active, inactive and disabled groups, opaque, <code>#AARRGGBB</code></td></tr>
