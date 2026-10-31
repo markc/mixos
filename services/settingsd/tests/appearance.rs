@@ -13,8 +13,16 @@ fn binding() -> Binding {
     }
 }
 fn authority(dir: &std::path::Path) -> Authority {
-    let (store, data) = Store::create(dir, binding(), Desktop::default()).unwrap();
+    let (store, data) = Store::create(dir, binding(), studio()).unwrap();
     Authority::new(store, data).unwrap()
+}
+/// A profile on today's default scheme, as every migrated profile names it.
+fn studio() -> registry::Values {
+    registry::Values::from([("appearance.scheme".into(), json!("studio"))])
+}
+/// A key's stored value, or its default.
+fn effective(values: &registry::Values, path: &str) -> Value {
+    registry::effective(values, path).unwrap_or(Value::Null)
 }
 fn body(instance: &str) -> String {
     json!({"binding": {"instance": instance, "profile": "default"}}).to_string()
@@ -36,7 +44,8 @@ const FOREST_DARK_ACCENT: [f64; 3] = [
 /// The accent the desktop context draws, from the same compiled design the
 /// authority resolves.
 fn resolved_accent(desktop: &Desktop) -> [f64; 3] {
-    let (_, accents) = resolve_with_embedded_and_accents(desktop, EMBEDDED_DEFAULT_SOURCE).unwrap();
+    let (_, accents) =
+        v1::resolve_with_embedded_and_accents(desktop, EMBEDDED_DEFAULT_SOURCE).unwrap();
     let colour = accents["desktop"];
     [colour.red, colour.green, colour.blue]
 }
@@ -140,7 +149,7 @@ fn appearance_keeps_caption_side_in_the_atomic_snapshot_for_legacy_readers() {
         expected_incarnation: authority.accepted.incarnation.clone(),
         expected_revision: authority.accepted.revision,
         operation_id: "captions-left".into(),
-        changes: BTreeMap::from([("appearance.caption_side".into(), json!("left"))]),
+        changes: BTreeMap::from([("window.caption_side".into(), json!("left"))]),
         reset: vec![],
         request_digest: None,
     };
@@ -212,10 +221,16 @@ fn breeze_and_adwaita_choices_apply_and_survive_a_sealed_reopen() {
     let dir = tempfile::tempdir().unwrap();
     drop(authority(dir.path()));
 
-    let described = settings::describe();
+    let described = settings::registry::describe(Some("appearance"));
     for choice in ["breeze", "adwaita"] {
         for field in ["appearance.scheme", "appearance.style"] {
-            let choices = described["fields"][field]["enum"].as_array().unwrap();
+            let entry = described["keys"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|entry| entry["path"] == field)
+                .unwrap();
+            let choices = entry["variants"].as_array().unwrap();
             assert!(
                 choices.iter().any(|value| value == choice),
                 "{field}: {choice}"
@@ -245,8 +260,8 @@ fn breeze_and_adwaita_choices_apply_and_survive_a_sealed_reopen() {
         drop(authority);
 
         let (_, reopened) = Store::open(dir.path(), &binding()).unwrap();
-        assert_eq!(reopened.desktop.appearance.scheme, scheme);
-        assert_eq!(reopened.desktop.appearance.style.as_deref(), Some(style));
+        assert_eq!(reopened.values["appearance.scheme"], scheme);
+        assert_eq!(reopened.values["appearance.style"], style);
         let effective = reopened.effective().unwrap();
         assert_eq!(effective["desktop"].scheme, scheme);
         assert_eq!(effective["desktop"].style.as_deref(), Some(style));
@@ -306,7 +321,7 @@ fn window_style_applies_and_survives_a_sealed_reopen() {
             expected_incarnation: authority.accepted.incarnation.clone(),
             expected_revision: authority.accepted.revision,
             operation_id: format!("window-style-{index}"),
-            changes: BTreeMap::from([("appearance.window_style".into(), json!(name))]),
+            changes: BTreeMap::from([("window.style".into(), json!(name))]),
             reset: vec![],
             request_digest: None,
         };
@@ -317,7 +332,7 @@ fn window_style_applies_and_survives_a_sealed_reopen() {
         assert_eq!(snapshot.effective["desktop"].window_style, name);
         drop(authority);
         let (_, reopened) = Store::open(dir.path(), &binding()).unwrap();
-        assert_eq!(reopened.desktop.appearance.window_style, name);
+        assert_eq!(effective(&reopened.values, "window.style"), name);
         assert_eq!(reopened.effective().unwrap()["desktop"].window_style, name);
     }
 }
@@ -361,8 +376,8 @@ fn menu_axes_survive_a_sealed_reopen() {
                     expected_revision: authority.accepted.revision,
                     operation_id: format!("menu-{index}-{side}"),
                     changes: BTreeMap::from([
-                        ("appearance.menu_style".into(), json!(style)),
-                        ("appearance.menu_side".into(), json!(side)),
+                        ("window.menu_style".into(), json!(style)),
+                        ("window.menu_side".into(), json!(side)),
                     ]),
                     reset: vec![],
                     request_digest: None,
@@ -376,8 +391,8 @@ fn menu_axes_survive_a_sealed_reopen() {
             assert_eq!(snapshot.effective["desktop"].menu_side, side);
             drop(authority);
             let (_, reopened) = Store::open(dir.path(), &binding()).unwrap();
-            assert_eq!(reopened.desktop.appearance.menu_style, style);
-            assert_eq!(reopened.desktop.appearance.menu_side, side);
+            assert_eq!(effective(&reopened.values, "window.menu_style"), style);
+            assert_eq!(effective(&reopened.values, "window.menu_side"), side);
         }
     }
 }
@@ -399,26 +414,14 @@ fn title_band_axes_survive_a_sealed_reopen() {
                     expected_incarnation: authority.accepted.incarnation.clone(),
                     expected_revision: authority.accepted.revision,
                     operation_id: format!("{key}-{name}"),
-                    changes: BTreeMap::from([(format!("appearance.{key}"), json!(name))]),
+                    changes: BTreeMap::from([(format!("window.{key}"), json!(name))]),
                     reset: vec![],
                     request_digest: None,
                 })
                 .unwrap();
             drop(authority);
             let (_, reopened) = Store::open(dir.path(), &binding()).unwrap();
-            let saved = serde_json::to_value(&reopened.desktop.appearance).unwrap();
-            let default = match key {
-                "actions_align" => "right",
-                "actions_place" => "row",
-                _ => "auto",
-            };
-            assert_eq!(
-                saved
-                    .get(key)
-                    .and_then(serde_json::Value::as_str)
-                    .unwrap_or(default),
-                name
-            );
+            assert_eq!(effective(&reopened.values, &format!("window.{key}")), name);
             reopened.check(&binding()).unwrap();
         }
     }

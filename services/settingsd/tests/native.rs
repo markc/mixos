@@ -158,7 +158,7 @@ fn broker_restart_republishes_without_authority_restart_and_shared_consumer_reco
         let original = consumer.current().unwrap().clone();
         assert!(consumer.applied().is_none(),"readback is not renderer application");
         assert!(consumer.acknowledge(&consumer.pending().unwrap().clone()));
-        let changed = client.call("settingsd","settings.apply",json!({"binding":original.binding,"expected_incarnation":original.incarnation,"expected_revision":"1","operation_id":"before-broker-loss","changes":{"ui.text_scale":1.2}})).await.unwrap();
+        let changed = client.call("settingsd","settings.apply",json!({"binding":original.binding,"expected_incarnation":original.incarnation,"expected_revision":"1","operation_id":"before-broker-loss","changes":{"accessibility.text_scale":1.2}})).await.unwrap();
         assert_eq!(changed["status"],"changed");
         tokio::time::timeout(Duration::from_secs(5),async {
             loop {
@@ -278,7 +278,7 @@ fn real_abp_publication_open_operator_receipts_and_authority_restart() {
         operator.call_with_headers("noded","topic.subscribe",&BTreeMap::from([("name".into(),topic.clone())]),"").await.unwrap();
         let initial = read(&operator).await;
         let incarnation = initial["snapshot"]["incarnation"].as_str().unwrap();
-        let request = json!({"binding":{"instance":"fixture","profile":"default"},"expected_incarnation":incarnation,"expected_revision":"1","operation_id":"native-change","changes":{"appearance.mode":"light","ui.text_scale":1.1,"shell.panels.bottom.thickness":48.0}});
+        let request = json!({"binding":{"instance":"fixture","profile":"default"},"expected_incarnation":incarnation,"expected_revision":"1","operation_id":"native-change","changes":{"appearance.mode":"light","accessibility.text_scale":1.1,"shell.panels.bottom.thickness":56.0}});
         let changed = operator.call("settingsd","settings.apply",request.clone()).await.unwrap();
         assert_eq!(changed["status"],"changed"); assert_eq!(changed["receipt"]["revision"],"2");
         let mut sequence = tokio::time::timeout(Duration::from_secs(5),async {

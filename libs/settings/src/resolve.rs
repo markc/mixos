@@ -2,18 +2,12 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Resolution. [`values`] is key space v2's resolver over the registry's
 //! sparse values; the design compile it shares with the format-4 path
-//! ([`crate::v1`]) lives here. The v1 functions are re-exported below for
-//! their present callers only (settingsd's store, and tests in Prefs and
-//! portald); S6 removes the re-exports with [`crate::v1`].
+//! ([`crate::v1`]) lives here.
 use crate::*;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 pub mod values;
-
-pub use crate::v1::{
-    describe, patch, resolve, resolve_with_embedded, resolve_with_embedded_and_accents,
-};
 
 pub const APPS: &[&str] = &["ced", "dopus", "term", "cap", "workshop", "scene-editor"];
 

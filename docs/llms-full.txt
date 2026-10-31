@@ -41892,6 +41892,21 @@ validate authored app enum values before accessibility precedence.
 
 ## Unreleased
 
+Store format 5 (key space v2, S6): the record holds the registry's sparse
+`values`; writes go through `registry::apply` and resolve through
+`resolve::values`, so `settings.apply`, `validate` and `reset` take v2 key
+names (`window.style`, `appearance.density`, `accessibility.text_scale`,
+`shell.panels.<panel>.autohide`, `reset: ["terminal.*"]`). A format-4
+profile migrates on open after its seal verifies: the old record is kept as
+`desktop.format4.conf.mix`, `migration.mx` records the digests and the
+table's report, a `migrate-v2` receipt advances the revision. New commands:
+`migrate [--dry-run] [--import-backdrop PATH]`, `downgrade --to 4 --target
+BIN [--from-kept]`, `retire`, and `serve --authority | --mirror-of NODE`
+(the mirror's sealed cache; its wire is S7). `settings.describe` is the
+registry's catalogue, and `settings.status` reports `role`, `authority` and
+`stale`. The published snapshot is unchanged in shape: its `desktop` is the
+format-4 projection of the values until S7's schema 3.
+
 `settings.get` 0.7.0 includes `ui` in summary reads: text scale, density and
 reduced motion on the same revision as appearance. Store format unchanged.
 

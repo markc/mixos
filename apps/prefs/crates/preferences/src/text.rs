@@ -273,7 +273,7 @@ mod tests {
             edits.push(edit.edit());
         }
         for edit in edits {
-            let next = settings::resolve::patch(
+            let next = settings::v1::patch(
                 &settings::Desktop::default(),
                 &std::collections::BTreeMap::from([(edit.path.clone(), edit.value)]),
                 &[],
