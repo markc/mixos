@@ -282,8 +282,11 @@ crashed authority is noticed only at the next forwarded write (noded has no
 peer-down event). <code>settings.source</code> serves the pinned source by digest (R14a).
 <code>settings.palette {binding, mode?}</code> answers the desktop look's palette per
 mode from <code>design::palette</code> (the 31 roles, <code>flat</code>, the resolved accent, the
-nine swatches and the COSMIC-model values), tagged with incarnation and
-revision; a mirror computes it from its cache.</p>
+nine swatches, the COSMIC-model values with the theme palette's 32 colours by
+name, <code>neutral_0</code> to <code>neutral_10</code> included, and the <code>fonts</code> MixOS draws:
+<code>ui</code> and <code>mono</code> <code>{family, size_px, weight}</code>, the session's font keys over the
+design's), tagged with incarnation and revision; a mirror computes it from
+its cache.</p>
 <p>The 0.8.0 transition is gone: the format-4 topics
 (<code>settingsd.desktop.changed|compact|summary.&lt;profile&gt;</code>), the <code>full</code> and
 <code>summary</code> views, the snapshot <code>schema</code> request field and
