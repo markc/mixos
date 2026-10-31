@@ -19,7 +19,8 @@ Every exporter:
   keys in one burst, with no polling;
 - writes only the keys it owns, and only where the contents differ;
 - keeps the contents it replaced, so one command undoes it;
-- stops writing while `appearance.export_desktop` is `false`.
+- stops writing while its gate is `false`: `appearance.export_desktop`
+  for the desktops, `appearance.export_toolkits` for GTK and Qt.
 
 Colours and fonts come from `settings.palette`, the derived palette
 settingsd computes; an exporter names them and computes none.
@@ -174,6 +175,13 @@ While paused (undo or restore, kept across restarts) no revision writes;
 | `MIXOS_KDE_EXPORT_KWRITECONFIG`, `MIXOS_KDE_EXPORT_BUSCTL` | `kwriteconfig6`, `busctl`; a JSON argv list replaces them (the tests' stand-ins) |
 
 External programs: `kwriteconfig6` (KDE Frameworks 6) and `busctl`.
+## GTK and Qt
+
+`scripts/gtkqt.mix` (`--name exportd-gtkqt`, unit `exportd-gtkqt@.service`)
+writes GTK CSS and `settings.ini` keys and the qt5ct/qt6ct colour schemes
+and config on every desk but a KDE Plasma one, where the KDE export covers
+GTK and Qt. Its commands are `exportd.gtkqt.status`, `.reconcile` and
+`.undo`. The [GTK and Qt page](gtkqt.md) has the details.
 
 ## Changelog
 

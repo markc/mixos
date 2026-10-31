@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
--- toolkit-export: one-way export of the settings authority's look to GTK
+-- exportd-gtkqt: one-way export of the settings authority's look to GTK
 -- and Qt on a desk (key space v2 §5.3; clean-room daemon spec §6.3-§6.4).
 -- A per-session Mix citizen. It subscribes to the appearance, window and
 -- accessibility keys topics, and on each delivery (the retained replay at
@@ -12,12 +12,12 @@
 --   when the desk has it. `appearance.export_toolkits = false` stops the
 --   writes and undoes nothing. A key the user changed by hand is left alone.
 -- Environment: XDG_CONFIG_HOME (required; never the user's ~/.config unless
--- MIXOS_TOOLKIT_EXPORT_HOME=1), MIXOS_SETTINGS_INSTANCE (the binding's
+-- MIXOS_EXPORTD_GTKQT_HOME=1), MIXOS_SETTINGS_INSTANCE (the binding's
 -- instance, else the node name), MIXOS_SETTINGS_PROFILE ("default", the only one served),
--- TOOLKIT_EXPORT_STATE (default $MIXOS_VAR/toolkit-export or
--- $XDG_STATE_HOME/mixos/toolkit-export), MIXOS_TOOLKIT_EXPORT_SETTINGS
+-- MIXOS_EXPORTD_STATE (default $MIXOS_VAR/exportd/gtkqt or
+-- $XDG_STATE_HOME/mixos/exportd/gtkqt), MIXOS_SETTINGS_SERVICE
 -- (the settings service, default settingsd).
-$T = require("lib/toolkit.mix")
+$T = require("lib/gtkqt_map.mix")
 
 fn absolute_dir($name)
   $d = env($name, "")
@@ -30,20 +30,20 @@ $home = absolute_dir("HOME")
 $skip = nil
 if $config == nil then
   $skip = "XDG_CONFIG_HOME is unset or not absolute"
-elif $home != nil and $config == $home .. "/.config" and env("MIXOS_TOOLKIT_EXPORT_HOME", "") != "1" then
+elif $home != nil and $config == $home .. "/.config" and env("MIXOS_EXPORTD_GTKQT_HOME", "") != "1" then
   -- A nested or shared desk must never write through to its host desktop.
   $skip = "XDG_CONFIG_HOME is the home directory's own .config"
 end
-$state_dir = env("TOOLKIT_EXPORT_STATE", "")
+$state_dir = env("MIXOS_EXPORTD_STATE", "")
 if $state_dir == "" then
   $var = absolute_dir("MIXOS_VAR")
   $xstate = absolute_dir("XDG_STATE_HOME")
-  $state_dir = if $var != nil then $var .. "/toolkit-export"
-    elif $xstate != nil then $xstate .. "/mixos/toolkit-export"
-    elif $home != nil then $home .. "/.local/state/mixos/toolkit-export"
+  $state_dir = if $var != nil then $var .. "/exportd/gtkqt"
+    elif $xstate != nil then $xstate .. "/mixos/exportd/gtkqt"
+    elif $home != nil then $home .. "/.local/state/mixos/exportd/gtkqt"
     else nil end
 end
-if $state_dir == nil then raise("STATE", "toolkit-export needs MIXOS_VAR, XDG_STATE_HOME or HOME") end
+if $state_dir == nil then raise("STATE", "exportd-gtkqt needs MIXOS_VAR, XDG_STATE_HOME or HOME") end
 mkdir($state_dir)
 chmod($state_dir, 0o700)
 $record_path = $state_dir .. "/records.json"
@@ -51,10 +51,10 @@ $record_path = $state_dir .. "/records.json"
 $node_config = env("MIXOS_NODE_CONFIG", mixos_path("etc") .. "/node.conf.mix")
 $node = if is_file($node_config) then load_data($node_config).node else nil end
 $binding = {instance: env("MIXOS_SETTINGS_INSTANCE", ""), profile: env("MIXOS_SETTINGS_PROFILE", "default")}
-if $binding.profile != "default" then raise("BINDING", "toolkit-export follows the default profile only") end
+if $binding.profile != "default" then raise("BINDING", "exportd-gtkqt follows the default profile only") end
 if $binding.instance == "" then $binding.instance = $node end
 if type($binding.instance) != "string" or $binding.instance == "" then raise("BINDING", "set MIXOS_SETTINGS_INSTANCE or a node name") end
-$source = env("MIXOS_TOOLKIT_EXPORT_SETTINGS", "settingsd")
+$source = env("MIXOS_SETTINGS_SERVICE", "settingsd")
 
 -- What we wrote, so undo restores originals and a hand edit is noticed:
 -- files {path: {original, written}} where each is {kind: absent|file|link,
@@ -227,12 +227,12 @@ fn reconcile($why)
     $status.outcome = if len($status.written) > 0 then "written" else "unchanged" end
     $status.last_error = nil
     if len($status.written) > 0 then
-      eprint("toolkit-export: revision " .. to_string($status.revision) .. " (" .. $why .. "): wrote " .. to_string(len($status.written)))
+      eprint("exportd-gtkqt: revision " .. to_string($status.revision) .. " (" .. $why .. "): wrote " .. to_string(len($status.written)))
     end
   catch $m, $err
     $status.outcome = "error"
     $status.last_error = {code: $err.code ?? "EXPORT", message: $m}
-    eprint("toolkit-export: " .. ($err.code ?? "EXPORT") .. ": " .. $m)
+    eprint("exportd-gtkqt: " .. ($err.code ?? "EXPORT") .. ": " .. $m)
   end
 end
 
@@ -279,18 +279,18 @@ fn undo()
   return {restored: $restored, left: $left}
 end
 
-on toolkit-export.status desc "what toolkit-export last wrote, kept and skipped"
+on exportd.gtkqt.status desc "what exportd-gtkqt last wrote, kept and skipped"
   reply(0, json_encode(merge($status, {paused: $R.paused, state: $state_dir})))
 end
 
-on toolkit-export.reconcile desc "resume after an undo and write the current record now"
+on exportd.gtkqt.reconcile desc "resume after an undo and write the current record now"
   $R.paused = false
   save_records()
   reconcile("request")
   reply(0, json_encode($status))
 end
 
-on toolkit-export.undo desc "restore every file and key still as toolkit-export wrote it, then pause until toolkit-export.reconcile"
+on exportd.gtkqt.undo desc "restore every file and key still as exportd-gtkqt wrote it, then pause until exportd.gtkqt.reconcile"
   try
     reply(0, json_encode(undo()))
   catch $m, $err

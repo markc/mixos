@@ -626,7 +626,7 @@ async fn production_process_answers_read_within_250_ms_with_a_silent_authority()
         assert!(started.elapsed() < Duration::from_millis(250));
         assert_eq!(innermost(&value), &Value::U32(expected));
         assert_eq!(depth(&value), 1, "Read remains double-boxed on the wire");
-        // GTK files belong to toolkit-export, never to the portal.
+        // GTK files belong to exportd's GTK/Qt exporter, never to the portal.
         assert!(!gtk_home.join("gtk-3.0/settings.ini").exists());
         // Prove this is a hung registered authority, not a missing route.
         let request = tokio::time::timeout(Duration::from_secs(5), requests.recv())

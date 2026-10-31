@@ -1,9 +1,9 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
--- Run from checkout root: mix services/toolkit-export/tests/toolkit_test.mix
+-- Run from checkout root: mix services/exportd/tests/gtkqt_test.mix
 -- The pure renderer: colour formats, the ini merge, button layout, fonts
 -- and the icon-theme choice.
-$T = require("../scripts/lib/toolkit.mix")
+$T = require("../scripts/lib/gtkqt_map.mix")
 $checks = 0
 fn check($label, $ok)
   if not $ok then raise("TEST", $label) end
@@ -33,7 +33,10 @@ catch $m
 end
 check("a group of the wrong length is refused", $short)
 
-check("points from px", $T.points(13.333) == "10" and $T.points(12) == "9" and $T.points(14) == "10.5")
+check("points from px", $T.points(13.333, 1) == "10" and $T.points(12, nil) == "9" and $T.points(14, 1) == "10.5")
+check("points carry the text scale", $T.points(12, 1.5) == "13.5")
+check("qt weight scale", $T.qt_weight(400) == 50 and $T.qt_weight(700) == 75 and $T.qt_weight(300) == 25 and $T.qt_weight(nil) == 50)
+check("pango names a weight other than regular", $T.pango("Inter", 300, "9") == "Inter Light 9" and $T.pango("Inter", 400, "9") == "Inter 9")
 check("layout right", $T.decoration_layout({"window.caption_side": "right"}) == "menu:minimize,maximize,close")
 check("layout left", $T.decoration_layout({"window.caption_side": "left"}) == "close,minimize,maximize:menu")
 check("layout without minimize", $T.decoration_layout({"window.controls.minimize": false}) == "menu:maximize,close")
@@ -55,10 +58,11 @@ check("ini unchanged text stays byte-equal", $T.ini_set($next, "Settings", [["ot
 
 $pal = {}
 for $m in ["dark", "light"]
-  $pal[$m] = {toolkit: {gtk: {window_bg_color: "#101010FF"}, qt: {active: $group, inactive: $group, disabled: $group}}}
+  $pal[$m] = {toolkit: {gtk: {window_bg_color: "#101010FF"}, qt: {active: $group, inactive: $group, disabled: $group}},
+    fonts: {ui: {family: "Inter", size_px: 16, weight: 400}, mono: {family: "JetBrains Mono", size_px: 16, weight: 400}}}
 end
 $env = {config: "/c", have_icon: $have, have_theme: fn($n) = $n == "adw-gtk3-dark"}
-$p = $T.plan({"appearance.icon_theme": "breeze", "appearance.font_size": 16}, "dark", $pal, $env)
+$p = $T.plan({"appearance.icon_theme": "breeze"}, "dark", $pal, $env)
 check("plan writes both css and four qt schemes", len($p.files) == 6)
 check("plan links both gtk.css to the mode", $p.links[0].target == "mixos/dark.css" and $p.links[1].target == "../gtk-4.0/mixos/dark.css")
 $gtk3 = $p.ini[0]
@@ -75,4 +79,13 @@ catch $m, $err
   $old = $err.code == "PALETTE"
 end
 check("a settingsd without the toolkit block is refused", $old)
+$old = false
+try
+  $nofonts = $pal
+  $nofonts.dark.fonts = nil
+  $T.plan({}, "dark", $nofonts, $env)
+catch $m, $err
+  $old = $err.code == "PALETTE"
+end
+check("a palette without fonts is refused", $old)
 print("PASS toolkit renderer")

@@ -16,5 +16,5 @@ including early outcomes, timeout, Close, token reuse and provider loss.
 Documentation: <https://mixos.dev/portald/> — source [`docs/portald/README.md`](../../docs/portald/README.md).
 
 portald writes no toolkit files. GTK and Qt follow settingsd through
-[`services/toolkit-export`](../toolkit-export/README.md); with
+[`services/exportd`](../exportd/gtkqt.md); with
 `appearance.export_toolkits` false the portal states no preference.

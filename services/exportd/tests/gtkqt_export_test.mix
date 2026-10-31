@@ -1,13 +1,13 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
--- Run from checkout root: mix services/toolkit-export/tests/export_test.mix
+-- Run from checkout root: mix services/exportd/tests/gtkqt_export_test.mix
 -- The real citizen on a private broker against a stand-in settingsd: the
 -- first reconcile, a mode flip, a hand edit that survives, the gate, undo.
 $pb = require("../../../tests/lib/private_bus.mix")
 $here = dirname(realpath($0))
 $mix = env("MIXOS_TEST_MIX", mixos_path("prefix") .. "/bin/mix")
-$script = realpath($here .. "/../scripts/toolkit-export.mix")
-$tmp = "/var/tmp/toolkit-export-test-" .. uuid()
+$script = realpath($here .. "/../scripts/gtkqt.mix")
+$tmp = "/var/tmp/exportd-gtkqt-test-" .. uuid()
 $cfg = $tmp .. "/config"
 $bus = nil
 $pids = []
@@ -46,7 +46,7 @@ fn lstat_absent($path)
   end
 end
 fn status()
-  return call("toolkit-export", "toolkit-export.status", {}).v
+  return call("exportd-gtkqt", "exportd.gtkqt.status", {}).v
 end
 mkdir($tmp .. "/data/icons/testicons-dark")
 mkdir($cfg .. "/gtk-3.0")
@@ -55,19 +55,19 @@ write_file($cfg .. "/gtk-3.0/settings.ini", "[Settings]\ngtk-cursor-theme-name=m
 try
   $bus = $pb.start({dir: $tmp .. "/bus", name: "toolkit-test"})
   $base = merge($pb.client_env($bus), {MIX_STATS: "off", HOME: $tmp .. "/home", XDG_CONFIG_HOME: $cfg,
-    XDG_DATA_HOME: $tmp .. "/data", XDG_DATA_DIRS: $tmp .. "/none", TOOLKIT_EXPORT_STATE: $tmp .. "/state",
+    XDG_DATA_HOME: $tmp .. "/data", XDG_DATA_DIRS: $tmp .. "/none", MIXOS_EXPORTD_STATE: $tmp .. "/state",
     MIXOS_SETTINGS_INSTANCE: "toolkit-test", PATH: "/nonexistent"})
-  push($pids, spawn([$mix, "--serve", $here .. "/fixtures/settingsd.mix", "--name", "settingsd"],
+  push($pids, spawn([$mix, "--serve", $here .. "/fixtures/gtkqt_settingsd.mix", "--name", "settingsd"],
     {detach: true, env: $base, stdout: {file: $tmp .. "/settingsd.log"}, stderr: "stdout"}))
   check("stand-in settingsd ready", eventually(fn() = call("settingsd", "settings.get", {binding: {}}).rc == 0))
-  push($pids, spawn([$mix, "--serve", $script, "--name", "toolkit-export"],
+  push($pids, spawn([$mix, "--serve", $script, "--name", "exportd-gtkqt"],
     {detach: true, env: $base, stdout: {file: $tmp .. "/export.log"}, stderr: "stdout"}))
   check("first reconcile writes", eventually(fn() = status().outcome == "written"))
   $registry = load_data(realpath($here .. "/../../../docs/docs/spec/bus/commands.conf.mix"))
-  $expected = sort(map(filter($registry.commands, fn($r) = $r.owner == "toolkit-export"), fn($r) = $r.name))
-  $help = call("toolkit-export", "HELP", {}).v
+  $expected = sort(map(filter($registry.commands, fn($r) = $r.owner == "exportd" and starts_with($r.name, "exportd.gtkqt.")), fn($r) = $r.name))
+  $help = call("exportd-gtkqt", "HELP", {}).v
   if type($help) == "string" then $help = json_parse($help) end
-  check("Bus registry matches runtime commands", deep_eq($expected, sort(map(filter($help, fn($r) = starts_with($r.name, "toolkit-export.") and not starts_with($r.name, "toolkit-export.props.")), fn($r) = $r.name))))
+  check("Bus registry matches runtime commands", deep_eq($expected, sort(map(filter($help, fn($r) = starts_with($r.name, "exportd.gtkqt.") and not starts_with($r.name, "exportd-gtkqt.props.")), fn($r) = $r.name))))
   check("dark css written", contains(read_file($cfg .. "/gtk-4.0/mixos/dark.css"), "@define-color window_bg_color rgba(16, 16, 16, 1.00);"))
   check("light css written", is_file($cfg .. "/gtk-4.0/mixos/light.css"))
   check("gtk4 link names the mode", read_link($cfg .. "/gtk-4.0/gtk.css") == "mixos/dark.css")
@@ -99,7 +99,7 @@ try
   check("gate on", call("settingsd", "fake.set", {values: {"appearance.export_toolkits": true}}).rc == 0)
   check("writes resume", eventually(fn() = read_link($cfg .. "/gtk-4.0/gtk.css") == "mixos/light.css"))
 
-  $u = call("toolkit-export", "toolkit-export.undo", {})
+  $u = call("exportd-gtkqt", "exportd.gtkqt.undo", {})
   check("undo answers", $u.rc == 0 and len($u.v.restored) > 0)
   check("undo restores the user's gtk.css", read_file($cfg .. "/gtk-3.0/gtk.css") == "/* the user's own */\n")
   check("undo removes a link that was not there", lstat_absent($cfg .. "/gtk-4.0/gtk.css"))
@@ -109,12 +109,12 @@ try
     contains($after, "gtk-font-name=Mine 11") and not contains($after, "gtk-icon-theme-name"))
   check("undo leaves the hand edit and lists it", any($u.v.left, fn($k) = contains($k, "gtk-font-name")))
   check("paused after undo", status().outcome == "paused")
-  check("reconcile resumes", call("toolkit-export", "toolkit-export.reconcile", {}).v.outcome == "written")
-  send toolkit-export QUIT timeout=5
+  check("reconcile resumes", call("exportd-gtkqt", "exportd.gtkqt.reconcile", {}).v.outcome == "written")
+  send exportd-gtkqt QUIT timeout=5
 finally
   for $pid in $pids
     if process_alive($pid) then kill($pid, 15) end
   end
   if $bus != nil then $pb.stop($bus) end
 end
-print("PASS toolkit-export integration; logs: " .. $tmp)
+print("PASS exportd-gtkqt integration; logs: " .. $tmp)

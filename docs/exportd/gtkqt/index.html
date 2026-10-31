@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="How toolkit-export makes GTK and Qt applications on a desk follow the MixOS mode, accent, colours, fonts and icon theme, and how to undo it.">
+    <meta name="description" content="How exportd&#x27;s GTK and Qt exporter makes GTK and Qt applications on a desk follow the MixOS mode, accent, colours, fonts and icon theme, and how to undo it.">
     <!-- Favicons from share/brand: the SVG follows the visitor's light/dark preference. -->
     <link rel="icon" href="/favicon.ico?v=400d5816f3" sizes="any">
     <link rel="icon" type="image/svg+xml" href="/_web/favicon.svg?v=4eb2d64677">
@@ -12,8 +12,8 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/_web/brand/favicon-32-dark.png?v=adbeaa7141" media="(prefers-color-scheme: dark)">
     <link rel="apple-touch-icon" sizes="180x180" href="/_web/brand/apple-touch-icon.png?v=edebfa3825">
     <title>GTK and Qt export — MixOS</title>
-    <link rel="canonical" href="https://mixos.dev/toolkit-export/">
-    <link rel="alternate" type="text/markdown" href="/toolkit-export/README.md" title="Markdown source">
+    <link rel="canonical" href="https://mixos.dev/exportd/gtkqt/">
+    <link rel="alternate" type="text/markdown" href="/exportd/gtkqt.md" title="Markdown source">
     <meta name="mixos-build" content="7af43e1ca197">
     <link rel="preload" href="/_web/fonts/sans.woff2?v=22f05185ef" as="font" type="font/woff2" crossorigin>
     <link rel="stylesheet" href="/_web/fonts.css?v=d8bbe7c76c"><!-- generated: Inter / Quicksand / JetBrains Mono / emoji cut from the asset set -->
@@ -241,14 +241,14 @@
 <h1 id="gtk-and-qt-export">GTK and Qt export</h1>
 <p>MixOS apps follow <a href="/settingsd/">settingsd</a> natively. GTK and Qt
 apps (Firefox, Thunderbird, GNOME and KDE apps) read their own files.
-<code>toolkit-export</code> is the desk's one writer of those files: a per-session Mix
+<code>exportd-gtkqt</code> is the desk's one writer of those files: a per-session Mix
 citizen that turns each settings revision into GTK CSS, GTK <code>settings.ini</code>
 keys and a qt5ct/qt6ct colour scheme and config. The portal values
 (<code>color-scheme</code>, <code>accent-color</code>, <code>contrast</code>) come from
 <a href="/portald/">portald</a>, which writes no files.</p>
 <p>It runs on every desk except one that already has its own bridge: on a
 KDE Plasma host, Plasma's GTK bridge and Qt platform theme read
-<code>kdeglobals</code>, so the KDE exporter covers them and toolkit-export is not
+<code>kdeglobals</code>, so the KDE exporter covers them and exportd-gtkqt is not
 started there.</p>
 <h2 id="what-it-writes">What it writes</h2>
 <p>Everything goes under the session's <code>$XDG_CONFIG_HOME</code>:</p>
@@ -261,20 +261,23 @@ started there.</p>
 </tbody></table>
 <p>When the desk has <code>gsettings</code>, it also sets <code>org.gnome.desktop.interface</code>
 <code>color-scheme</code>, <code>font-name</code>, <code>monospace-font-name</code>, <code>icon-theme</code>,
-<code>gtk-theme</code>, <code>text-scaling-factor</code>, <code>org.gnome.desktop.a11y.interface high-contrast</code> and <code>org.gnome.desktop.wm.preferences button-layout</code>.</p>
+<code>gtk-theme</code>, <code>org.gnome.desktop.a11y.interface high-contrast</code> and <code>org.gnome.desktop.wm.preferences button-layout</code>.</p>
 <p>Qt apps read the qt5ct/qt6ct files only through that platform theme, so
 the desk's session environment sets <code>QT_QPA_PLATFORMTHEME=qt6ct</code> (a Qt 5
 app looks for <code>qt5ct</code> under the same variable and falls back to its default
 theme without it).</p>
 <p>The colours are not computed here. <code>settings.palette</code> carries a <code>toolkit</code>
 block per mode (<code>gtk</code>, the named colours, and <code>qt</code>, the three palette
-groups), derived from the same theme the COSMIC export uses. Fonts are
-<code>appearance.font_family</code> and <code>appearance.mono_family</code> (Inter and JetBrains
-Mono when unset) at <code>appearance.font_size</code> in points (px × 0.75; 10 pt
-when unset). The icon theme is <code>appearance.icon_theme</code>, its <code>-dark</code>
+groups), derived from the same theme the COSMIC export uses. The fonts
+are the palette's too (<code>fonts.ui</code>, <code>fonts.mono</code>: the family, size and
+weight MixOS draws, the session's choices over the design's), written
+even when no font key is set. Sizes go to points as every exporter does:
+px × <code>accessibility.text_scale</code> × 0.75, to the nearest half point; the
+text scale is in the point size, so <code>text-scaling-factor</code> is not written.
+A weight other than Regular becomes a Pango style word in GTK (<code>Inter Light 9</code>) and Qt 5's weight scale in the qt conf. The icon theme is <code>appearance.icon_theme</code>, its <code>-dark</code>
 variant under dark when installed. A desk without the theme keeps the
 <code>mixos</code> icon theme, which Craft title bars draw their buttons from, and
-<code>toolkit-export.status</code> reports <code>icon_theme_missing: true</code>. The button
+<code>exportd.gtkqt.status</code> reports <code>icon_theme_missing: true</code>. The button
 layout comes from <code>window.caption_side</code> and <code>window.controls.minimize</code> /
 <code>.maximize</code>.</p>
 <h2 id="how-it-follows-settings">How it follows settings</h2>
@@ -285,10 +288,10 @@ what differs, so a desk that was off catches up at start. Files land with
 an atomic rename; the colour files land before the links flip to them.</p>
 <p><code>appearance.export_toolkits = false</code> stops all writes. It undoes nothing.</p>
 <h2 id="your-own-edits">Your own edits</h2>
-<p>The CSS and colour-scheme files are toolkit-export's own. In
+<p>The CSS and colour-scheme files are exportd-gtkqt's own. In
 <code>settings.ini</code> and the qt conf files it owns only the keys above: every
 other key, comment and section is left as it was. A key whose value is no
-longer what toolkit-export last wrote was changed by hand; it is kept from
+longer what exportd-gtkqt last wrote was changed by hand; it is kept from
 then on and listed under <code>kept</code> in the status. A foreign <code>gtk.css</code> that
 was a regular file is copied once to <code>gtk.css.bak</code> before the link
 replaces it.</p>
@@ -296,34 +299,34 @@ replaces it.</p>
 <code>XDG_CONFIG_HOME</code> is unset, relative, or the home directory's own
 <code>.config</code>, so a nested desk never writes into its host desktop. A
 standalone install that wants exactly that sets
-<code>MIXOS_TOOLKIT_EXPORT_HOME=1</code>.</p>
+<code>MIXOS_EXPORTD_GTKQT_HOME=1</code>.</p>
 <h2 id="undo">Undo</h2>
 <p>The first time it touches a file it records the file's original state,
 and the first time it sets a key it records the key's original value
-(under <code>$MIXOS_VAR/toolkit-export/records.json</code>, else
-<code>$XDG_STATE_HOME/mixos/toolkit-export</code>). <code>toolkit-export.undo</code> restores
-every file and key that still holds what toolkit-export wrote, lists the
+(under <code>$MIXOS_VAR/exportd/gtkqt/records.json</code>, else
+<code>$XDG_STATE_HOME/mixos/exportd/gtkqt</code>). <code>exportd.gtkqt.undo</code> restores
+every file and key that still holds what exportd-gtkqt wrote, lists the
 ones changed since under <code>left</code>, and pauses the export.
-<code>toolkit-export.reconcile</code> resumes it. GSettings values are not undone.</p>
+<code>exportd.gtkqt.reconcile</code> resumes it. GSettings values are not undone.</p>
 <h2 id="commands">Commands</h2>
 <table><thead><tr><th>Command</th><th>Answer</th></tr></thead><tbody>
-<tr><td><code>toolkit-export.status</code></td><td><code>outcome</code> (<code>waiting</code>, <code>written</code>, <code>unchanged</code>, <code>gated</code>, <code>paused</code>, <code>skipped</code>, <code>error</code>), the revision, <code>written</code>, <code>kept</code>, <code>icon_theme_missing</code>, <code>gsettings</code>, <code>last_error</code></td></tr>
-<tr><td><code>toolkit-export.reconcile</code></td><td>resumes after an undo and writes the current record now</td></tr>
-<tr><td><code>toolkit-export.undo</code></td><td><code>{restored, left}</code></td></tr>
+<tr><td><code>exportd.gtkqt.status</code></td><td><code>outcome</code> (<code>waiting</code>, <code>written</code>, <code>unchanged</code>, <code>gated</code>, <code>paused</code>, <code>skipped</code>, <code>error</code>), the revision, <code>written</code>, <code>kept</code>, <code>icon_theme_missing</code>, <code>gsettings</code>, <code>last_error</code></td></tr>
+<tr><td><code>exportd.gtkqt.reconcile</code></td><td>resumes after an undo and writes the current record now</td></tr>
+<tr><td><code>exportd.gtkqt.undo</code></td><td><code>{restored, left}</code></td></tr>
 </tbody></table>
-<pre><code class="language-mix">send toolkit-export toolkit-export.status
+<pre><code class="language-mix">send exportd-gtkqt exportd.gtkqt.status
 print($result)
 </code></pre>
 <h2 id="running-it">Running it</h2>
-<p>The unit is <code>toolkit-export@.service</code>, one per session, with the session's
+<p>The unit is <code>exportd-gtkqt@.service</code>, one per session, with the session's
 environment file. Tests:</p>
-<pre><code class="language-text">mix services/toolkit-export/tests/toolkit_test.mix
-mix services/toolkit-export/tests/export_test.mix
+<pre><code class="language-text">mix services/exportd/tests/gtkqt_test.mix
+mix services/exportd/tests/gtkqt_export_test.mix
 </code></pre>
 <p>The source is
-<a href="https://github.com/markc/mixos/tree/main/services/toolkit-export"><code>services/toolkit-export</code></a>.</p>
+<a href="https://github.com/markc/mixos/tree/main/services/exportd"><code>services/exportd</code></a>.</p>
         </article>
-        <p class="doc-source"><a href="/toolkit-export/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
+        <p class="doc-source"><a href="/exportd/gtkqt.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>
 </main>
 <script src="/_web/base.js?v=2652b9bc10"></script>
