@@ -104,6 +104,7 @@ impl Authority {
         self.target(&request.binding)?;
         let pending = self.published != Some(self.accepted.revision);
         Ok(match request.view {
+            // S7-TRANSITION: the 0.8.0 views, `full` and `summary`.
             settings::View::Full => {
                 let snapshot = self.snapshot_in(request.schema)?;
                 json!({"status":"current","snapshot":snapshot,"publication_pending":pending,"recovering":self.recovering(),"restored_from_backup":self.restored()})
