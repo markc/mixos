@@ -193,7 +193,7 @@ impl Look {
         let mut out = BTreeMap::new();
         let mut put = |key: &str, differs: bool, value: Value| {
             if differs {
-                out.insert(format!("appearance.{key}"), value);
+                out.insert(change_path(key), value);
             }
         };
         put(
@@ -265,17 +265,17 @@ impl Look {
         );
         for (key, differs, value) in [
             (
-                "ui.text_scale",
+                "accessibility.text_scale",
                 self.text_scale != base.text_scale,
                 json!(self.text_scale),
             ),
             (
-                "ui.density",
+                "appearance.density",
                 self.density != base.density,
-                json!(self.density),
+                json!(density_step(self.density)),
             ),
             (
-                "ui.reduced_motion",
+                "accessibility.reduced_motion",
                 self.reduced_motion != base.reduced_motion,
                 json!(self.reduced_motion),
             ),
@@ -1725,6 +1725,30 @@ impl Engine {
     }
 }
 
+/// The settings.v2 path of a look field (design §4.1). Window chrome moved
+/// under `window.` (window_style became `window.style`); the rest of the
+/// look stays under `appearance.`.
+fn change_path(field: &str) -> String {
+    match field {
+        "window_style" => "window.style".into(),
+        "decorations" | "caption_side" | "menu_style" | "menu_side" | "title_align"
+        | "actions_align" | "actions_place" => format!("window.{field}"),
+        _ => format!("appearance.{field}"),
+    }
+}
+
+/// The v2 density step for a Prefs density: under 0.925 is compact, up to and
+/// including 1.1 comfortable, above that spacious (design §4.1).
+fn density_step(density: f64) -> &'static str {
+    if density < 0.925 {
+        "compact"
+    } else if density <= 1.1 {
+        "comfortable"
+    } else {
+        "spacious"
+    }
+}
+
 /// An axis's full `settings.apply` key.
 fn axis_key(axis: Axis) -> &'static str {
     match axis {
@@ -1732,19 +1756,19 @@ fn axis_key(axis: Axis) -> &'static str {
         Axis::Style => "appearance.style",
         Axis::Mode => "appearance.mode",
         Axis::Contrast => "appearance.contrast",
-        Axis::Decorations => "appearance.decorations",
-        Axis::CaptionSide => "appearance.caption_side",
-        Axis::WindowStyle => "appearance.window_style",
-        Axis::MenuStyle => "appearance.menu_style",
-        Axis::MenuSide => "appearance.menu_side",
-        Axis::ActionsPlace => "appearance.actions_place",
-        Axis::ActionsAlign => "appearance.actions_align",
-        Axis::TitleAlign => "appearance.title_align",
+        Axis::Decorations => "window.decorations",
+        Axis::CaptionSide => "window.caption_side",
+        Axis::WindowStyle => "window.style",
+        Axis::MenuStyle => "window.menu_style",
+        Axis::MenuSide => "window.menu_side",
+        Axis::ActionsPlace => "window.actions_place",
+        Axis::ActionsAlign => "window.actions_align",
+        Axis::TitleAlign => "window.title_align",
         Axis::FontFamily => "appearance.font_family",
         Axis::MonoFamily => "appearance.mono_family",
-        Axis::TextScale => "ui.text_scale",
-        Axis::Density => "ui.density",
-        Axis::ReducedMotion => "ui.reduced_motion",
+        Axis::TextScale => "accessibility.text_scale",
+        Axis::Density => "appearance.density",
+        Axis::ReducedMotion => "accessibility.reduced_motion",
     }
 }
 
@@ -2082,28 +2106,39 @@ mod tests {
             ),
             (
                 AppearanceEdit::TextScale(1.25),
-                "ui.text_scale",
+                "accessibility.text_scale",
                 json!(1.25),
                 json!(1.0),
             ),
             (
                 AppearanceEdit::Density(0.8),
-                "ui.density",
-                json!(0.8),
+                "appearance.density",
+                json!("compact"),
                 json!(1.0),
             ),
             (
                 AppearanceEdit::ReducedMotion(true),
-                "ui.reduced_motion",
+                "accessibility.reduced_motion",
                 json!(true),
                 json!(false),
             ),
         ]
     }
 
+    /// Where today's summary keeps a v2 key: the read side still decodes the
+    /// v1 snapshot until settingsd serves the v2 values (S7).
+    fn v1_location(path: &str) -> (&str, &str) {
+        match path {
+            "accessibility.text_scale" => ("ui", "text_scale"),
+            "appearance.density" => ("ui", "density"),
+            "accessibility.reduced_motion" => ("ui", "reduced_motion"),
+            _ => path.split_once('.').unwrap(),
+        }
+    }
+
     fn stored_control(revision: &str, path: &str, value: Value) -> Value {
         let mut body = snapshot_body(revision, "studio", "dark");
-        let (group, key) = path.split_once('.').unwrap();
+        let (group, key) = v1_location(path);
         if group == "ui" {
             body["summary"]["ui"] = json!({"text_scale":1.0,"density":1.0,"reduced_motion":false});
         }
@@ -2128,7 +2163,13 @@ mod tests {
             let (_, command_name, body) = next(&mut e);
             assert_eq!(command_name, "settings.apply");
             assert_eq!(body["expected_revision"], "8");
-            assert_eq!(body["changes"], json!({path:default}));
+            // The density edit is numeric; its reset is the v2 step.
+            let reset = if path == "appearance.density" {
+                json!("comfortable")
+            } else {
+                default
+            };
+            assert_eq!(body["changes"], json!({path:reset}));
         }
     }
 
@@ -2140,12 +2181,12 @@ mod tests {
             answer_next(&mut e, 10, json!({"status":"conflict"}));
             let other = match path {
                 "appearance.font_family" | "appearance.mono_family" => json!("Other Family"),
-                "ui.text_scale" | "ui.density" => json!(1.5),
+                "accessibility.text_scale" | "appearance.density" => json!(1.5),
                 // A boolean has no third value: an agreeing writer retires it.
                 _ => json!(true),
             };
             answer_next(&mut e, 0, stored_control("8", path, other));
-            if path == "ui.reduced_motion" {
+            if path == "accessibility.reduced_motion" {
                 assert!(e.look.draft.is_none());
                 assert!(e.look.conflicts.is_empty());
             } else {
@@ -2169,7 +2210,7 @@ mod tests {
         answer_next(&mut e, 0, snapshot_body("8", "forest", "dark"));
         let (_, _, body) = next(&mut e);
         assert_eq!(body["expected_revision"], "8");
-        assert_eq!(body["changes"], json!({"ui.reduced_motion":true}));
+        assert_eq!(body["changes"], json!({"accessibility.reduced_motion":true}));
     }
 
     #[test]
@@ -2234,6 +2275,19 @@ mod tests {
     }
 
     #[test]
+    fn density_and_window_paths_are_the_v2_names() {
+        assert_eq!(density_step(0.8), "compact");
+        assert_eq!(density_step(0.925), "comfortable");
+        assert_eq!(density_step(1.0), "comfortable");
+        assert_eq!(density_step(1.1), "comfortable");
+        assert_eq!(density_step(1.2), "spacious");
+        assert_eq!(change_path("caption_side"), "window.caption_side");
+        assert_eq!(change_path("window_style"), "window.style");
+        assert_eq!(change_path("style"), "appearance.style");
+        assert_eq!(change_path("font_family"), "appearance.font_family");
+    }
+
+    #[test]
     fn window_style_uses_the_immediate_apply_path_and_keeps_future_names() {
         for name in design::WindowStyle::NAMES
             .iter()
@@ -2248,7 +2302,7 @@ mod tests {
             e.set_look(&json!({"window_style":name})).unwrap();
             let (_, command, request) = next(&mut e);
             assert_eq!(command, "settings.apply");
-            assert_eq!(request["changes"], json!({"appearance.window_style":name}));
+            assert_eq!(request["changes"], json!({"window.style":name}));
             assert_eq!(request["expected_revision"], "7");
             assert_eq!(e.look.shown().unwrap().window_style, name);
         }
@@ -2290,7 +2344,7 @@ mod tests {
                 e.set_look(&args).unwrap();
                 let (_, command, request) = next(&mut e);
                 assert_eq!(command, "settings.apply");
-                assert_eq!(request["changes"][format!("appearance.{key}")], name);
+                assert_eq!(request["changes"][change_path(key)], name);
                 assert_eq!(
                     serde_json::to_value(e.look.shown().unwrap()).unwrap()[key],
                     name
@@ -2367,7 +2421,7 @@ mod tests {
         assert_eq!(body["expected_revision"], "7");
         assert_eq!(
             body["changes"],
-            json!({"appearance.scheme":"forest","appearance.style":"pro","appearance.decorations":"ssd"})
+            json!({"appearance.scheme":"forest","appearance.style":"pro","window.decorations":"ssd"})
         );
         assert!(
             body["operation_id"]
