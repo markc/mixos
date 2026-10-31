@@ -308,10 +308,11 @@ require <code>images:true</code> for servers.</p>
   }
 }
 </code></pre>
-<p>Configure reciprocal peers. Content APIs admit broker-stamped local callers
-and configured mesh peers. Membership comes from the broker's <code>broker_peer</code>
-stamp, never a body field or a client-supplied node claim. A bare service target
-also admits that broker-stamped local service, for co-located citizens and tests.
+<p>Configure reciprocal peers for follow, push and image exchange. Content APIs
+admit every broker-stamped caller, local or mesh (the open Bus). Identity comes
+from the broker's stamp (<code>broker_peer</code>, or the local <code>from</code>), never a body field
+or a client-supplied node claim, so an offer's <code>source.node</code> must match it. A bare
+service target maps a broker-stamped local service onto its configured node.
 Use native noded admission and the WireGuard mesh. Missing broker peer stamps
 fail closed. No scope keys or parallel encryption protocol are introduced.</p>
 <p>Follow forwards local changes once; imported changes are not re-exported.
