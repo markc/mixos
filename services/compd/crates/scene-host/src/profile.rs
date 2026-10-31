@@ -178,8 +178,7 @@ mod tests {
         );
         for id in ["top", "left"] {
             assert_eq!(
-                panel_changes(&defaults, id, RecordChange::Autohide(true)).unwrap_err()
-                    ["error_code"],
+                panel_changes(&defaults, id, RecordChange::Autohide(true)).unwrap_err()["error_code"],
                 "SETTINGS_UNAVAILABLE"
             );
         }

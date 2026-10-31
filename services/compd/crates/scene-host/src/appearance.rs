@@ -5,6 +5,7 @@
 //! theme the desktop profile describes (`toolkit::theme::Theme`, the one the
 //! apps draw with), its text scale, the panel preferences, and the
 //! server-side decoration themes `decor` draws window frames with.
+use crate::profile::Profile;
 use decor::{
     ChromeTheme, Palette,
     layout::{ChromeStyle, DecoFontFamily, DecoFontWeight},
@@ -13,7 +14,6 @@ use design::{
     CaptionSide, Contrast, DesignContext, Mode, RequestedDecorations, Scheme, Style,
     TypographyGeneric, TypographyRole,
 };
-use crate::profile::Profile;
 use settings::{Diagnostic, Snapshot};
 use std::sync::Arc;
 use toolkit::theme::{Overlay, Theme};
