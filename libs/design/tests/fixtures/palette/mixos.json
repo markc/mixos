@@ -515,6 +515,18 @@
           160.0
         ]
       }
+    },
+    "fonts": {
+      "ui": {
+        "family": "Inter",
+        "size_px": 14.667,
+        "weight": 400
+      },
+      "mono": {
+        "family": "JetBrains Mono",
+        "size_px": 16.0,
+        "weight": 400
+      }
     }
   },
   "light": {
@@ -1032,6 +1044,18 @@
           160.0,
           160.0
         ]
+      }
+    },
+    "fonts": {
+      "ui": {
+        "family": "Inter",
+        "size_px": 14.667,
+        "weight": 400
+      },
+      "mono": {
+        "family": "JetBrains Mono",
+        "size_px": 16.0,
+        "weight": 400
       }
     }
   }
