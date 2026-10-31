@@ -160,6 +160,41 @@ fn panel_thickness_snaps_to_the_nearest_step_and_a_tie_goes_up() {
 }
 
 #[test]
+fn a_top_panel_present_in_the_record_is_enabled() {
+    let m = with(|d| {
+        d.shell.panels.clear();
+        d.shell.panels.insert(
+            "top".into(),
+            Panel {
+                edge: "top".into(),
+                ..Panel::default()
+            },
+        );
+    });
+    // The registry default for top is off, so the value is stored.
+    assert_eq!(
+        stored(&m, "shell.panels.top.enabled"),
+        Some(&json!(true))
+    );
+    assert_eq!(stored(&m, "shell.panels.bottom.enabled"), None);
+}
+
+#[test]
+fn a_bottom_panel_present_in_the_record_keeps_the_default_enabled() {
+    // Bottom is on by default, so the present panel stores nothing.
+    let m = with(|_| {});
+    assert_eq!(stored(&m, "shell.panels.bottom.enabled"), None);
+    assert_eq!(stored(&m, "shell.panels.top.enabled"), None);
+}
+
+#[test]
+fn both_panels_absent_keep_the_registry_defaults() {
+    let m = with(|d| d.shell.panels.clear());
+    assert_eq!(stored(&m, "shell.panels.top.enabled"), None);
+    assert_eq!(stored(&m, "shell.panels.bottom.enabled"), None);
+}
+
+#[test]
 fn an_unknown_panel_id_is_dropped_and_reported() {
     let m = with(|d| {
         d.shell.panels.insert("left".into(), Panel::default());
@@ -305,6 +340,39 @@ fn backdrop_default_plus_outputs_sets_same_on_all_false_and_reports_what_it_drop
             "backdrop.outputs.DP-2.fallback",
         ]
     );
+}
+
+#[test]
+fn backdrop_slideshow_interval_snaps_to_the_nearest_step_and_a_tie_goes_up() {
+    // (asked, stored): 1350 is level between 900 and 1800, so it goes up. 450
+    // snaps to 600, the registry default, which is not stored.
+    let cases = [
+        (100, Some(300)),
+        (450, None),
+        (1350, Some(1800)),
+        (5000, Some(3600)),
+        (10000, Some(7200)),
+        (300, Some(300)),
+    ];
+    for (asked, stored_as) in cases {
+        let m = backdrop(json!({
+            "schema": 1,
+            "default": {"slideshow": {"folder": "/home/user/walls", "interval_s": asked}}
+        }));
+        assert_eq!(
+            stored(&m, "wallpaper.slideshow.interval_s"),
+            stored_as.map(|s| json!(s)).as_ref(),
+            "interval {asked}"
+        );
+        assert_eq!(m.report.changed.len(), usize::from(asked != 300), "interval {asked}");
+        if asked != 300 {
+            assert_eq!(
+                m.report.changed[0].from,
+                "backdrop.default.slideshow.interval_s"
+            );
+            assert_eq!(m.report.changed[0].old, json!(asked));
+        }
+    }
 }
 
 #[test]
