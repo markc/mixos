@@ -40,6 +40,7 @@ pub const fn scheme_id(scheme: Scheme) -> &'static str {
         Scheme::Classic => "view.theme.classic",
         Scheme::Breeze => "view.theme.breeze",
         Scheme::Adwaita => "view.theme.adwaita",
+        // Not in the menu until S6 (see `theme_menu`).
         Scheme::Mixos => "view.theme.mixos",
     }
 }
@@ -186,7 +187,10 @@ impl<S: 'static> Registry<S> {
             },
             |_| false,
         );
-        for scheme in Scheme::ALL {
+        // `mixos` is not offered until settingsd's store can hold it: the
+        // format-4 store refuses it (a rollback binary could not load it).
+        // S6 (store format 5) lifts this and adds its label.
+        for scheme in Scheme::AUTHORED {
             let group = if scheme.is_chrome_scheme() { 1 } else { 0 };
             self.add_choice(
                 place(scheme_id(scheme), scheme_label(scheme), group),
