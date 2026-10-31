@@ -319,11 +319,21 @@ mod tests {
         let mut again = Attached::load(dir.path());
         let now = Instant::now();
         assert_eq!(again.due(Revision(2), now).len(), 2);
-        assert!(again.finished("gamma", Revision(2), false, now), "gone after one failure");
+        assert!(
+            again.finished("gamma", Revision(2), false, now),
+            "gone after one failure"
+        );
         assert!(!again.finished("delta", Revision(2), true, now));
         assert_eq!(again.nodes(), ["delta"]);
-        assert!(again.next_retry().is_none(), "no retry is left for the stale entry");
-        assert_eq!(Attached::load(dir.path()).nodes(), ["delta"], "and the file forgets it");
+        assert!(
+            again.next_retry().is_none(),
+            "no retry is left for the stale entry"
+        );
+        assert_eq!(
+            Attached::load(dir.path()).nodes(),
+            ["delta"],
+            "and the file forgets it"
+        );
         // Acknowledged once, the mirror has the normal bounded retry.
         assert_eq!(again.due(Revision(3), now).len(), 1);
         assert!(!again.finished("delta", Revision(3), false, now));
