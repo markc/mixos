@@ -10975,6 +10975,71 @@ two complete themes.
 | `MIXOS_EXPORTD_STATE` | `$XDG_STATE_HOME/mixos/exportd/cosmic` (undo and pause) |
 | `MIXOS_EXPORTD_DRY_RUN=1` | plan only: log what would change, write nothing |
 
+## KDE Plasma
+
+`scripts/kde.mix` runs in the Plasma user's session as `exportd-kde`:
+
+```text
+mix --serve <prefix>/lib/exportd/kde.mix --name exportd-kde
+```
+
+The user unit `exportd-kde.service` starts it with the graphical session,
+only when the session is Plasma (`XDG_SESSION_DESKTOP=KDE`). It follows the
+`appearance`, `window` and `accessibility` topics.
+
+### What it writes
+
+| settings | KDE |
+|---|---|
+| the resolved mode | `kdeglobals [General] ColorScheme=MixOS-Dark` or `MixOS-Light`, and the scheme's `[Colors:*]`, `[ColorEffects:*]` and `[WM]` groups; both modes also as `<data>/color-schemes/MixOS-{Dark,Light}.colors` |
+| the accent and colour axes, through the palette | `[General] AccentColor` (`accentColorFromWallpaper=false`), `[Colors:Selection]`, every scheme colour |
+| the palette's fonts, `accessibility.text_scale` | `[General] font`, `menuFont`, `toolBarFont`, `fixed`, `[WM] activeFont` |
+| `appearance.icon_theme` | `[Icons] Theme`, the `-dark` variant in dark mode when installed |
+| `window.hint_colour` | `[WM] activeBackground`, `activeForeground` |
+| `appearance.density` | `kwinrc [org.kde.kdecoration2] BorderSize` (`Tiny`, `Normal`, `Large`) |
+| `window.caption_side`, `window.controls.*` | `kwinrc [org.kde.kdecoration2] ButtonsOnLeft`, `ButtonsOnRight` |
+| `appearance.roundness` | Plasma's panels float when `round` (the Plasma scripting interface) |
+
+Scheme colours are the palette's opaque values; a translucent one is
+refused. A font size in pixels becomes points at 96 dpi (× 0.75, to the
+nearest half point), after the text scale. `kdeglobals [MixOS]` carries a
+stamp with the revision written; the stamp alone never causes a write.
+
+Each file is edited as text and replaced atomically, keeping every other
+line. The last key of each group, and every font, scheme, accent and icon
+key, goes through `kwriteconfig6 --notify`, so KConfig's own change
+notification reaches each group. Then `busctl --user` sends the
+`KGlobalSettings` `notifyChange` signal (palette, fonts), `KIconLoader`
+`iconChanged`, and `org.kde.KWin.reconfigure`.
+
+**Known limit:** running apps follow a colour, icon and decoration change
+at once but keep their old font until they restart; apps started
+afterwards get the new font.
+
+### Commands
+
+| Command | Does |
+|---|---|
+| `exportd.kde.status` | the binding, last revision, gate, the last run's report or error |
+| `exportd.kde.plan` | what a reconcile would write now; writes nothing |
+| `exportd.kde.reconcile` | reconcile now |
+| `exportd.kde.undo` | put back the keys the last burst changed |
+| `exportd.kde.restore` | put back every key as it was before the first write, remove the scheme files it created, restore the panels, and forget the record |
+
+Run `restore` with `appearance.export_desktop` off, or the next revision
+writes the look again.
+
+### Environment
+
+| Variable | Default |
+|---|---|
+| `MIXOS_SETTINGS_INSTANCE` | this node's name |
+| `MIXOS_KDE_EXPORT_DRY=1` | plan and report, write nothing |
+| `MIXOS_KDE_EXPORT_STATE` | `$XDG_STATE_HOME/mixos/kde-export` (the undo record) |
+| `MIXOS_KDE_EXPORT_RECONFIGURE=0` | no D-Bus calls (tests) |
+
+External programs: `kwriteconfig6` (KDE Frameworks 6) and `busctl`.
+
 ## Changelog
 
 See the [changelog](changelog.md).
@@ -40814,6 +40879,11 @@ the predecessor repository at revision
 - The COSMIC exporter (`scripts/cosmic.mix`): settingsd's look, window,
   panel and wallpaper settings written into a cosmic-config tree, with
   undo.
+- The KDE Plasma exporter (`scripts/kde.mix`): the colour scheme from
+  `settings.palette` in `kdeglobals` and the `MixOS-Dark`/`MixOS-Light`
+  scheme files, the accent, the resolved fonts and the icon theme, the
+  Breeze border size and buttons in `kwinrc`, and panel floating, then
+  Plasma and KWin reconfigured over D-Bus; undo and restore.
 
 ---
 

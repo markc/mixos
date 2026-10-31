@@ -1,0 +1,176 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- KConfig files (kdeglobals, kwinrc, colour schemes), from the public KConfig
+-- file format: `[Group]` or nested `[Group][Sub]` headers, `key=value`
+-- lines, `#` comments, `key[$e]`-style option suffixes and the `\s \t \n
+-- \r \\` escapes. A group path is the header without its outer brackets,
+-- so `[Colors:Header][Inactive]` is "Colors:Header][Inactive". Reading is
+-- ours; every write goes through kwriteconfig6, which owns locking and
+-- change notification.
+
+fn unescape($v)
+  if not contains($v, "\\") then return $v end
+  $out = ""
+  $i = 0
+  $n = len($v)
+  while $i < $n
+    $c = substr($v, $i, 1)
+    if $c == "\\" and $i + 1 < $n then
+      $d = substr($v, $i + 1, 1)
+      $out = $out .. (if $d == "s" then " " elif $d == "t" then "\t" elif $d == "n" then "\n" elif $d == "r" then "\r" elif $d == "\\" then "\\" else "\\" .. $d end)
+      $i = $i + 2
+    else
+      $out = $out .. $c
+      $i = $i + 1
+    end
+  end
+  return $out
+end
+
+-- {group path: {key: value}}; keys before any header go in "<default>".
+fn parse_text($text)
+  $groups = {}
+  $group = "<default>"
+  for $raw in lines($text)
+    $line = trim($raw)
+    if $line == "" or starts_with($line, "#") then continue end
+    if starts_with($line, "[") and ends_with($line, "]") then
+      $group = substr($line, 1, len($line) - 2)
+      if $groups[$group] == nil then $groups[$group] = {} end
+      continue
+    end
+    $kv = split_once($line, "=")
+    if $kv == nil then continue end
+    $key = trim($kv[0])
+    $key = before($key, "[") ?? $key
+    if $groups[$group] == nil then $groups[$group] = {} end
+    $groups[$group][$key] = unescape(trim($kv[1]))
+  end
+  return $groups
+end
+
+fn read_groups($path)
+  if not is_file($path) then return {} end
+  return parse_text(read_file($path))
+end
+
+-- The value of one key, or nil when the group or key is absent.
+fn lookup($groups, $group, $key)
+  $g = $groups[$group]
+  if $g == nil then return nil end
+  return $g[$key]
+end
+
+-- Split a file into sections: [{group, lines}], the first one the lines
+-- before any header (group "<default>", no header line).
+fn sections($text)
+  $out = [{group: "<default>", header: nil, lines: []}]
+  for $raw in lines($text)
+    $line = trim($raw)
+    if starts_with($line, "[") and ends_with($line, "]") then
+      push($out, {group: substr($line, 1, len($line) - 2), header: $raw, lines: []})
+    else
+      $last = len($out) - 1
+      $out[$last]["lines"] = push($out[$last]["lines"], $raw)
+    end
+  end
+  return $out
+end
+
+fn line_key($raw)
+  $line = trim($raw)
+  if $line == "" or starts_with($line, "#") or starts_with($line, "[") then return nil end
+  $kv = split_once($line, "=")
+  if $kv == nil then return nil end
+  return trim($kv[0])
+end
+
+-- Apply [{group, key, value}] (value nil deletes) to a file's text, keeping
+-- every other line, comment and group as it was. A key that carries an
+-- option suffix (`key[$i]`) is never matched, so it is left alone.
+fn edit($text, $changes)
+  $secs = sections($text)
+  for $c in $changes
+    $line = $c.key .. "=" .. (if $c.value == nil then "" else escape($c.value) end)
+    $at = -1
+    for $i = 0 to len($secs) - 1
+      if $secs[$i].group == $c.group then
+        $at = $i
+        break
+      end
+    end
+    if $at < 0 then
+      if $c.value == nil then continue end
+      push($secs, {group: $c.group, header: "[" .. $c.group .. "]", lines: [$line], new: true})
+      continue
+    end
+    $kept = []
+    $found = false
+    for $raw in $secs[$at].lines
+      if line_key($raw) == $c.key then
+        $found = true
+        if $c.value != nil then push($kept, $line) end
+      else
+        push($kept, $raw)
+      end
+    end
+    if not $found and $c.value != nil then
+      -- After the last non-blank line, so the blank line between groups stays.
+      $n = len($kept)
+      while $n > 0 and trim($kept[$n - 1]) == ""
+        $n = $n - 1
+      end
+      $kept = concat(concat(slice($kept, 0, $n), [$line]), slice($kept, $n))
+    end
+    $secs[$at]["lines"] = $kept
+  end
+  $out = []
+  for $s in $secs
+    if $s.header != nil then
+      if $s.new == true and len($out) > 0 and trim($out[len($out) - 1]) != "" then push($out, "") end
+      push($out, $s.header)
+    end
+    $out = concat($out, $s.lines)
+  end
+  while len($out) > 0 and trim($out[len($out) - 1]) == ""
+    $out = slice($out, 0, len($out) - 1)
+  end
+  return join($out, "\n") .. "\n"
+end
+
+-- The kwriteconfig6 argv for one key: a string value, or nil to delete it.
+fn write_argv($file, $group, $key, $value)
+  $a = ["kwriteconfig6", "--file", $file]
+  for $part in split($group, "][")
+    $a = concat($a, ["--group", $part])
+  end
+  $a = concat($a, ["--key", $key, "--notify"])
+  if $value == nil then
+    $a = concat($a, ["--delete", ""])
+  else
+    push($a, $value)
+  end
+  return $a
+end
+
+fn escape($v)
+  $v = replace($v, "\\", "\\\\")
+  $v = replace($v, "\n", "\\n")
+  $v = replace($v, "\t", "\\t")
+  if starts_with($v, " ") then $v = "\\s" .. substr($v, 1) end
+  return $v
+end
+
+-- A whole file from an ordered {group: {key: value}} map (colour schemes,
+-- which kde-export owns outright).
+fn render($groups)
+  $out = []
+  for $group in keys($groups)
+    push($out, "[" .. $group .. "]")
+    for $key in keys($groups[$group])
+      push($out, $key .. "=" .. escape($groups[$group][$key]))
+    end
+    push($out, "")
+  end
+  return join($out, "\n")
+end

@@ -7,9 +7,12 @@ own unit; settingsd stays the one source and nothing is read back. The
 
 - `scripts/cosmic.mix`: the COSMIC desktop (cosmic-config), unit
   `exportd-cosmic@.service`.
+- `scripts/kde.mix`: KDE Plasma (kdeglobals, kwinrc, colour schemes), user
+  unit `exportd-kde.service`.
 
 From the checkout root:
 
 ```
 mix services/exportd/tests/cosmic_test.mix
+mix services/exportd/tests/kde_test.mix
 ```

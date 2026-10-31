@@ -1,0 +1,204 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- What kde-export writes, as pure data: settings values plus the
+-- `settings.palette` answer in, the KConfig keys out. Naming only: every
+-- colour is a palette value as settingsd derived it (opaque `flat` roles,
+-- or an opaque COSMIC-model field); nothing here mixes or derives a colour.
+-- Unit conversions (px to pt, #rrggbb to r,g,b) are naming, not derivation.
+$kc = require("kconfig.mix")
+
+-- Breeze's names for the window border size, per density.
+$BORDERS = {compact: "Tiny", comfortable: "Normal", spacious: "Large"}
+
+fn hexval($s)
+  $d = index_of("0123456789abcdef", lower($s))
+  if $d < 0 then raise("PALETTE", "not a hex digit: " .. $s) end
+  return $d
+end
+
+-- "#RRGGBB[AA]" -> "r,g,b". Refuses a translucent colour: KDE schemes are
+-- opaque, so the palette must hand us a composited one.
+fn rgb($hex)
+  if type($hex) != "string" or not starts_with($hex, "#") or not contains([7, 9], len($hex)) then
+    raise("PALETTE", "not a #rrggbb[aa] colour: " .. to_string($hex))
+  end
+  if len($hex) == 9 and lower(substr($hex, 7, 2)) != "ff" then
+    raise("PALETTE", "translucent colour where KDE needs an opaque one: " .. $hex)
+  end
+  $out = []
+  for $i in [1, 3, 5]
+    push($out, to_string(hexval(substr($hex, $i, 1)) * 16 + hexval(substr($hex, $i + 1, 1))))
+  end
+  return join($out, ",")
+end
+
+fn opaque($hex)
+  return type($hex) == "string" and starts_with($hex, "#") and (len($hex) == 7 or (len($hex) == 9 and lower(substr($hex, 7, 2)) == "ff"))
+end
+
+-- The first opaque colour among the candidates.
+fn pick($candidates)
+  for $c in $candidates
+    if opaque($c) then return $c end
+  end
+  raise("PALETTE", "no opaque colour among " .. json_encode($candidates))
+end
+
+fn get($m, $path)
+  $v = $m
+  for $p in split($path, ".")
+    if type($v) != "map" then return nil end
+    $v = $v[$p]
+  end
+  return $v
+end
+
+fn colour_set($fg, $bg, $alt, $over)
+  $g = {BackgroundNormal: rgb($bg), BackgroundAlternate: rgb($alt)}
+  for $k in keys($fg)
+    $g[$k] = $over[$k] ?? $fg[$k]
+  end
+  return $g
+end
+
+-- One mode's colour scheme groups, in the order a .colors file lists them.
+fn scheme($p, $hint)
+  $f = $p.flat
+  $t = get($p, "cosmic.theme") ?? {}
+  $fg = {
+    ForegroundNormal: rgb($f.text),
+    ForegroundInactive: rgb($f.text_dim),
+    ForegroundActive: rgb($f.accent_border),
+    ForegroundLink: rgb(pick([get($t, "link_button.on"), $f.accent_border])),
+    ForegroundVisited: rgb(pick([get($p, "swatches.purple"), $f.accent_border])),
+    ForegroundNegative: rgb($f.danger),
+    ForegroundNeutral: rgb($f.warning),
+    ForegroundPositive: rgb(pick([get($t, "success.base"), get($p, "swatches.green")])),
+    DecorationFocus: rgb($f.accent_border),
+    DecorationHover: rgb($f.accent_border)
+  }
+  $sel = rgb($f.accent_text)
+  $dim = {ForegroundNormal: rgb($f.text_dim)}
+  $groups = {}
+  $groups["ColorEffects:Disabled"] = {Color: rgb($f.chrome), ColorAmount: "0", ColorEffect: "0", ContrastAmount: "0.65", ContrastEffect: "1", IntensityAmount: "0.1", IntensityEffect: "2"}
+  $groups["ColorEffects:Inactive"] = {ChangeSelectionColor: "true", Color: rgb($f.chrome), ColorAmount: "0.025", ColorEffect: "2", ContrastAmount: "0.1", ContrastEffect: "2", Enable: "false", IntensityAmount: "0", IntensityEffect: "0"}
+  $groups["Colors:Button"] = colour_set($fg, pick([get($t, "background.component.base"), $f.field]), $f.hover, {})
+  $groups["Colors:Complementary"] = colour_set($fg, $f.dock, $f.tab_strip, {})
+  $groups["Colors:Header"] = colour_set($fg, $f.chrome, $f.card, {})
+  $groups["Colors:Header][Inactive"] = colour_set($fg, $f.chrome, $f.card, $dim)
+  $groups["Colors:Selection"] = colour_set($fg, $f.accent, $f.accent_soft, {ForegroundNormal: $sel, ForegroundInactive: $sel, ForegroundActive: $sel, ForegroundLink: $sel, ForegroundVisited: $sel})
+  $groups["Colors:Tooltip"] = colour_set($fg, $f.card, $f.chrome, {})
+  $groups["Colors:View"] = colour_set($fg, $f.card, $f.field, {})
+  $groups["Colors:Window"] = colour_set($fg, $f.chrome, $f.card, {})
+  $active_bg = if $hint == "accent" then $f.accent else $hint end
+  $active_fg = if $hint == "accent" then $f.accent_text else $f.text end
+  $groups["WM"] = {
+    activeBackground: rgb($active_bg),
+    activeBlend: rgb($active_fg),
+    activeForeground: rgb($active_fg),
+    inactiveBackground: rgb($f.chrome),
+    inactiveBlend: rgb($f.text_dim),
+    inactiveForeground: rgb($f.text_dim)
+  }
+  return $groups
+end
+
+fn scheme_name($mode)
+  return if $mode == "light" then "MixOS-Light" else "MixOS-Dark" end
+end
+
+-- A whole .colors file for one mode.
+fn scheme_file($p, $hint)
+  $g = {}
+  $g["General"] = {ColorScheme: scheme_name($p.mode), Name: if $p.mode == "light" then "MixOS Light" else "MixOS Dark" end}
+  $s = scheme($p, $hint)
+  for $k in keys($s)
+    $g[$k] = $s[$k]
+  end
+  return $kc.render($g)
+end
+
+fn point_size($px)
+  $pt = round($px * 0.75 * 2) / 2
+  return to_string($pt)
+end
+
+-- A Qt 6 font string in the shape kdeglobals holds.
+fn qfont($family, $pt, $weight)
+  return $family .. "," .. $pt .. ",-1,5," .. to_string($weight) .. ",0,0,0,0,0,0,0,0,0,0,1,,0,0"
+end
+
+fn buttons($side, $minimize, $maximize)
+  $ctl = (if $minimize then "I" else "" end) .. (if $maximize then "A" else "" end)
+  if $side == "left" then return {left: "X" .. $ctl, right: ""} end
+  return {left: "M", right: $ctl .. "X"}
+end
+
+-- Everything kde-export writes for one revision.
+-- $v: the settings values (flat key map); $pal: settings.palette's
+-- `palette` ({dark, light}); $fonts: its resolved fonts ({ui: {family,
+-- size_px, weight}, mono: {family, size_px, weight}}); $icons: the icon theme directory names this
+-- machine has. Returns {mode, files: {file: {group: {key: value}}},
+-- schemes: {name: text}, panel: {floating}, notes: [...]}.
+fn plan($v, $pal, $fonts, $icons)
+  $notes = []
+  $mode = $v["appearance.mode_resolved"] ?? $v["appearance.mode"]
+  if not contains(["dark", "light"], $mode) then raise("MODE", "no resolved mode") end
+  $p = $pal[$mode]
+  if $p == nil then raise("PALETTE", "palette has no " .. $mode .. " mode") end
+  $hint = $v["window.hint_colour"] ?? "accent"
+  if $hint != "accent" then $hint = $hint .. "ff" end
+  $scale = $v["accessibility.text_scale"] ?? 1.0
+  -- The resolved fonts (settings.palette), never the raw keys: a null key or
+  -- a pinned design source decides them in settingsd, not here.
+  $ok = type($fonts) == "map" and type(get($fonts, "ui.family")) == "string" and type(get($fonts, "ui.size_px")) == "number"
+  $ok = $ok and type(get($fonts, "mono.family")) == "string"
+  if not $ok then
+    raise("PALETTE", "settings.palette carries no resolved fonts")
+  end
+  $pt = point_size($fonts.ui.size_px * $scale)
+  $weight = $fonts.ui.weight ?? 400
+  $family = $fonts.ui.family
+  $mono = $fonts.mono.family
+  $font = qfont($family, $pt, $weight)
+
+  $globals = scheme($p, $hint)
+  $general = {
+    ColorScheme: scheme_name($mode),
+    AccentColor: rgb($p.flat.accent),
+    accentColorFromWallpaper: "false",
+    font: $font,
+    menuFont: $font,
+    toolBarFont: $font,
+    fixed: qfont($mono, point_size(($fonts.mono.size_px ?? $fonts.ui.size_px) * $scale), $fonts.mono.weight ?? 400)
+  }
+  $globals["General"] = $general
+  $globals["WM"]["activeFont"] = $font
+  $icon = $v["appearance.icon_theme"] ?? "breeze"
+  if $mode == "dark" and contains($icons, $icon .. "-dark") then $icon = $icon .. "-dark" end
+  if contains($icons, $icon) then
+    $globals["Icons"] = {Theme: $icon}
+  else
+    push($notes, "icon_theme_missing: " .. $icon)
+  end
+  $globals["MixOS"] = {ExportedBy: "kde-export", Revision: to_string($v["_revision"] ?? "")}
+
+  $b = buttons($v["window.caption_side"] ?? "auto", $v["window.controls.minimize"] ?? true, $v["window.controls.maximize"] ?? true)
+  $density = $v["appearance.density"] ?? "comfortable"
+  $kwin = {}
+  $kwin["org.kde.kdecoration2"] = {
+    library: "org.kde.breeze",
+    theme: "Breeze",
+    BorderSize: $BORDERS[$density] ?? "Normal",
+    BorderSizeAuto: "false",
+    ButtonsOnLeft: $b.left,
+    ButtonsOnRight: $b.right
+  }
+  return {
+    mode: $mode,
+    files: {kdeglobals: $globals, kwinrc: $kwin},
+    schemes: {"MixOS-Dark": scheme_file($pal.dark, $hint), "MixOS-Light": scheme_file($pal.light, $hint)},
+    panel: {floating: ($v["appearance.roundness"] ?? "round") == "round"},
+    notes: $notes
+  }
+end

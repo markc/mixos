@@ -40,6 +40,11 @@
 {
   schema: 5,
   commands: [
+    {name:"exportd.kde.status", owner:"exportd", version:"0.1.0", status:"accepted", class:"query", schema:"none"},
+    {name:"exportd.kde.plan", owner:"exportd", version:"0.1.0", status:"accepted", class:"query", schema:"none"},
+    {name:"exportd.kde.reconcile", owner:"exportd", version:"0.1.0", status:"accepted", class:"intent", schema:"none"},
+    {name:"exportd.kde.undo", owner:"exportd", version:"0.1.0", status:"accepted", class:"intent", schema:"none"},
+    {name:"exportd.kde.restore", owner:"exportd", version:"0.1.0", status:"accepted", class:"intent", schema:"none"},
     {name:"clipboard.get", owner:"clipd", version:"0.1.0", status:"accepted", class:"query", schema:"none"},
     {name:"clipboard.set", owner:"clipd", version:"0.1.0", status:"accepted", class:"intent", schema:"none"},
     {name:"clipboard.clear", owner:"clipd", version:"0.1.0", status:"accepted", class:"intent", schema:"none"},
