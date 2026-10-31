@@ -37239,7 +37239,12 @@ under Apps → Email above.
 `prefs.execute {id}` runs any command a button
 or menu would (`apps.check`, `apps.install`, `appearance.apply`,
 `appearance.revert`, …), and `prefs.actions` lists them with their
-enablement. The window is drivable like every MixOS app
+enablement. A command that asks first (`apps.remove`, `email.reset`, Remove…,
+Forget password…) opens the window's confirmation; `prefs.dialog
+{answer: "confirm"}` presses its confirm button and `{answer: "cancel"}`
+closes any dialog (`{open: "about" | "shortcuts" | null}` opens or closes the
+help dialogs). It answers `{dialog}`, or `NO_DIALOG` when none is open.
+The window is drivable like every MixOS app
 (`prefs.ui.*`, `prefs.window`). The commands are registered in
 `docs/docs/spec/bus/commands.conf.mix`.
 

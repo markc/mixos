@@ -2750,7 +2750,9 @@ mod tests {
         let mut e = read();
         e.reset_email();
         assert_eq!(e.ui.dialog, Some(Dialog::ResetEmail));
-        e.confirm_email();
+        // An agent answers it as the confirm button does.
+        e.command(1, "prefs.dialog", r#"{"answer":"confirm"}"#);
+        assert_eq!(e.ui.dialog, None);
         let calls = settings_calls(&mut e);
         assert_eq!(calls[0].1, "settings.reset");
         assert_eq!(calls[0].2["changes"], json!({}));

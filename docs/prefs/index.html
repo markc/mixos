@@ -470,7 +470,11 @@ under Apps → Email above.
 <code>prefs.execute {id}</code> runs any command a button
 or menu would (<code>apps.check</code>, <code>apps.install</code>, <code>appearance.apply</code>,
 <code>appearance.revert</code>, …), and <code>prefs.actions</code> lists them with their
-enablement. The window is drivable like every MixOS app
+enablement. A command that asks first (<code>apps.remove</code>, <code>email.reset</code>, Remove…,
+Forget password…) opens the window's confirmation; <code>prefs.dialog {answer: "confirm"}</code> presses its confirm button and <code>{answer: "cancel"}</code>
+closes any dialog (<code>{open: "about" | "shortcuts" | null}</code> opens or closes the
+help dialogs). It answers <code>{dialog}</code>, or <code>NO_DIALOG</code> when none is open.
+The window is drivable like every MixOS app
 (<code>prefs.ui.*</code>, <code>prefs.window</code>). The commands are registered in
 <code>docs/docs/spec/bus/commands.conf.mix</code>.</p>
 <p>For scripted work, call the services directly (<code>releases.*</code>,
