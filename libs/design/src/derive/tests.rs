@@ -3,9 +3,9 @@
 //! Every row of the theme-model spec's §4.5 worked numbers, plus the
 //! fresh 1.10.0 dark background write.
 
-use super::primitives::{contrast, idx, ramp};
+use super::primitives::{contrast, idx, lightness, ramp};
 use super::*;
-use crate::cosmic_tables::{DARK_PALETTE, LIGHT_PALETTE};
+use crate::cosmic_tables::{DARK_PALETTE, LIGHT_PALETTE, PaletteKind, glass_alpha_map};
 
 /// `#RRGGBB` for an opaque colour, `#RRGGBBAA` otherwise: the spec's form.
 fn hex(colour: SrgbColour) -> String {
@@ -75,7 +75,7 @@ fn fresh_1_10_dark_background_component() {
 #[test]
 fn dark_default_indices_and_controls() {
     assert_eq!(idx(DARK_PALETTE.gray_1), 22);
-    let controls = ramp(DARK_PALETTE.neutral[2], 11);
+    let controls = ramp::<11>(DARK_PALETTE.neutral[2]);
     for (k, step) in controls.iter().enumerate() {
         assert_eq!(hex(*step), hex(DARK_PALETTE.neutral[k]), "controls[{k}]");
     }
@@ -216,7 +216,7 @@ fn high_contrast_changes_only_alphas_and_the_accent_step() {
         over(with_alpha(on, 0.5), hc.background.base)
     );
     // The accent-text search steps 60: 27 + 60 = 87.
-    let expected = ramp(colour("#7F7F7F"), 100)[87];
+    let expected = ramp::<100>(colour("#7F7F7F"))[87];
     assert_eq!(hc.accent_text, Some(expected));
 }
 
@@ -286,6 +286,178 @@ fn copied_through_inputs() {
     assert_eq!(t.control_tint, Some(tint));
     assert_eq!(t.text_tint, None);
     assert!(!t.is_dark);
-    assert_eq!(t.palette.kind, crate::cosmic_tables::PaletteKind::Light);
+    assert_eq!(t.palette.kind, PaletteKind::Light);
     assert_eq!(t.frosted, FrostedGlass::default());
+}
+
+fn dark_with(seeds: &Seeds, frosted: &FrostedGlass) -> DerivedTheme {
+    derive(seeds, Mode::Dark, Contrast::Normal, frosted)
+}
+
+#[test]
+fn transparent_primary_and_secondary_under_the_default_map() {
+    let t = dark_default();
+    // 0.76154 + 0.3 and + 0.6 both clamp to 1: opaque, as the primary.
+    assert_eq!(hex(t.transparent_primary.base), "#272727");
+    assert_eq!(
+        t.transparent_primary.component.base,
+        t.primary.component.base
+    );
+    assert_eq!(hex(t.transparent_secondary.base), "#343434");
+    assert_eq!(hex(t.transparent_secondary.component.base), "#3B3B3B");
+    // No hover or pressed overlay on the transparent primary.
+    assert_eq!(
+        t.transparent_primary.component.hover,
+        t.transparent_primary.component.base
+    );
+}
+
+#[test]
+fn transparent_primary_and_secondary_at_the_lowest_glass() {
+    let frosted = FrostedGlass {
+        alpha_map: glass_alpha_map(0.0),
+        ..FrostedGlass::default()
+    };
+    // Container alpha 0.76154 − 0.60 = 0.16154; no frosted flag, so texts
+    // stay opaque-indexed except the primary's.
+    let t = dark_with(&Seeds::default(), &frosted);
+    assert_eq!(hex(t.transparent_background.base), "#1B1B1B29");
+    assert_eq!(hex(t.transparent_primary.base), "#27272776");
+    assert_eq!(hex(t.transparent_secondary.base), "#343434C2");
+    assert_eq!(hex(t.transparent_secondary.component.base), "#3B3B3BC2");
+    // Transparent primary texts use bgRamp: opaque, 27 + 70 = 97.
+    let bg_ramp = ramp::<100>(DARK_PALETTE.gray_1);
+    assert_eq!(t.transparent_primary.on, bg_ramp[97]);
+    // Transparent secondary texts use its own ramp, so carry its alpha:
+    // 32 + 70 ≥ 100 → 82.
+    assert_eq!(hex(t.transparent_secondary.on), "#C7C7C7C2");
+}
+
+#[test]
+fn text_tint_replaces_every_text_ramp() {
+    let tint = colour("#3366CC");
+    let seeds = Seeds {
+        text_tint: Some(tint),
+        ..Seeds::default()
+    };
+    let t = dark_with(&seeds, &FrostedGlass::default());
+    let tinted = ramp::<100>(tint);
+    assert_eq!(t.background.on, tinted[92]);
+    assert_eq!(t.background.component.on, tinted[80]);
+    assert_eq!(t.secondary.on, tinted[82]);
+    assert_eq!(t.accent_button.on, tinted[10]);
+    assert_eq!(t.text_tint, Some(tint));
+}
+
+#[test]
+fn custom_container_backgrounds_get_their_own_ramps_and_keep_alpha() {
+    let primary = colour("#404040");
+    let secondary = colour("#50505080");
+    let seeds = Seeds {
+        primary_container_bg: Some(primary),
+        secondary_container_bg: Some(secondary),
+        ..Seeds::default()
+    };
+    let t = dark_with(&seeds, &FrostedGlass::default());
+    assert_eq!(t.primary.base, primary);
+    let p_idx = idx(primary);
+    assert_eq!(t.primary.component.base, ramp::<100>(primary)[p_idx + 6]);
+    assert_eq!(t.secondary.base, secondary);
+    let s_idx = idx(secondary);
+    assert_eq!(t.secondary.component.base, ramp::<100>(secondary)[s_idx + 3]);
+    assert_eq!(t.secondary.component.base.alpha, secondary.alpha);
+    // The transparent primary starts from the custom base too.
+    assert_eq!(t.transparent_primary.base, with_alpha(primary, 1.0));
+}
+
+#[test]
+fn opaque_seeds_are_forced_opaque_and_backgrounds_keep_alpha() {
+    let half = |text: &str| with_alpha(colour(text), 0.5);
+    let seeds = Seeds {
+        accent: Some(half("#7F7F7F")),
+        neutral_tint: Some(half("#336699")),
+        text_tint: Some(half("#3366CC")),
+        success: Some(half("#00FF00")),
+        warning: Some(half("#FFFF00")),
+        destructive: Some(half("#FF0000")),
+        window_hint: Some(half("#FF00FF")),
+        bg_color: Some(half("#1B1B1B")),
+        ..Seeds::default()
+    };
+    let t = dark_with(&seeds, &FrostedGlass::default());
+    for component in [t.accent, t.success, t.warning, t.destructive] {
+        assert_eq!(component.base.alpha, 1.0);
+    }
+    assert_eq!(t.accent_button.on.alpha, 1.0);
+    assert_eq!(t.secondary.on.alpha, 1.0);
+    assert_eq!(t.control_tint.map(|c| c.alpha), Some(1.0));
+    assert_eq!(t.window_hint, Some(colour("#FF00FF")));
+    assert_eq!(t.background.base.alpha, 0.5);
+}
+
+#[test]
+fn high_contrast_light_dividers() {
+    let t = derive(
+        &Seeds::default(),
+        Mode::Light,
+        Contrast::High,
+        &FrostedGlass::default(),
+    );
+    assert_eq!(t.palette.kind, PaletteKind::HighContrastLight);
+    assert!(t.is_high_contrast && !t.is_dark);
+    for component in [t.background.component, t.primary.component, t.button] {
+        assert_eq!(component.divider.alpha, 0.65);
+    }
+    for container in [t.background, t.primary, t.secondary] {
+        assert_eq!(
+            container.divider,
+            over(with_alpha(container.on, 0.5), container.base)
+        );
+    }
+}
+
+#[test]
+fn transparent_base_components_take_the_overlay_itself() {
+    let t = dark_default();
+    // controls[5] at 0.2 and controls[2] at 0.5, not composited.
+    assert_eq!(hex(t.icon_button.hover), "#63636333");
+    assert_eq!(hex(t.icon_button.pressed), "#16161680");
+    assert_eq!(t.list_button.hover, TRANSPARENT);
+    assert_eq!(hex(t.list_button.pressed), "#16161680");
+}
+
+#[test]
+fn window_hint_is_copied_through() {
+    let hint = colour("#FF8800");
+    let seeds = Seeds {
+        window_hint: Some(hint),
+        ..Seeds::default()
+    };
+    assert_eq!(dark_with(&seeds, &FrostedGlass::default()).window_hint, Some(hint));
+    assert_eq!(dark_default().window_hint, None);
+}
+
+#[test]
+fn consumer_accessors() {
+    let t = dark_default();
+    for k in 0..11 {
+        assert_eq!(t.control(k), Some(DARK_PALETTE.neutral[k]));
+    }
+    assert_eq!(t.control(11), None);
+    assert_eq!(t.accent_text_colour(), t.accent.base);
+    assert_eq!(hex(grey_accent().accent_text_colour()), "#B6B6B6");
+    assert_eq!(hex(t.small_widget_divider()), "#DEDEDE33");
+    assert_eq!(t.window_header_background(), t.background.base);
+
+    let tint = colour("#336699");
+    let seeds = Seeds {
+        neutral_tint: Some(tint),
+        ..Seeds::default()
+    };
+    let tinted = dark_with(&seeds, &FrostedGlass::default());
+    let control = tinted.control(5).unwrap();
+    assert_ne!(control, DARK_PALETTE.neutral[5]);
+    assert!((lightness(control) - lightness(DARK_PALETTE.neutral[5])).abs() < 1e-3);
+    // Blue-tinted: blue is the strongest channel.
+    assert!(control.blue > control.red);
 }

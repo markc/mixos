@@ -200,10 +200,18 @@ impl BasePalette {
 
     /// The swatch named `name` (one of [`SWATCH_NAMES`]).
     pub fn swatch(&self, name: &str) -> Option<SrgbColour> {
-        SWATCH_NAMES
-            .iter()
-            .position(|candidate| *candidate == name)
-            .map(|index| self.swatches()[index])
+        Some(match name {
+            "blue" => self.accent_blue,
+            "indigo" => self.accent_indigo,
+            "purple" => self.accent_purple,
+            "pink" => self.accent_pink,
+            "red" => self.accent_red,
+            "orange" => self.accent_orange,
+            "yellow" => self.accent_yellow,
+            "green" => self.accent_green,
+            "warm_grey" => self.accent_warm_grey,
+            _ => return None,
+        })
     }
 }
 
@@ -335,12 +343,15 @@ impl Roundness {
 
     /// Reading a preset back from stored radii: `radius_m` 16 is round, 8
     /// slightly round, anything else square (so all-zero radii read back
-    /// as square too). The top-left corner decides.
+    /// as square too). The top-left corner decides, within
+    /// [`RADIUS_READ_TOLERANCE`] so a value that went through a float text
+    /// form still matches.
     pub fn from_radii(radii: &RadiusTokens) -> Self {
         let m = radii.radius_m[0];
-        if m == 16.0 {
+        let near = |target: f64| (m - target).abs() < RADIUS_READ_TOLERANCE;
+        if near(16.0) {
             Self::Round
-        } else if m == 8.0 {
+        } else if near(8.0) {
             Self::SlightlyRound
         } else {
             Self::Square
@@ -356,9 +367,15 @@ impl Roundness {
     }
 }
 
-/// The panel's and dock's corner radius after a roundness change: the
-/// `radius_xl` corners when the panel has a gap from the screen edge; else
+/// How far a stored `radius_m` may sit from a preset's value and still
+/// read back as that preset, in logical px.
+pub const RADIUS_READ_TOLERANCE: f64 = 0.01;
+
+/// The panel's and dock's corner radius after a roundness change:
+/// `radius_xl` when the panel has a gap from the screen edge; else
 /// `radius_xl` capped at 12 when it does not extend to the edges; else 0.
+/// As in [`Roundness::from_radii`], the top-left corner decides (the
+/// presets set all four equal).
 pub fn panel_radius(radii: &RadiusTokens, gap: bool, extend: bool) -> f64 {
     let xl = radii.radius_xl[0];
     if gap {
@@ -441,8 +458,10 @@ const ALPHA_BOTTOM: f64 = 0.60;
 
 /// The "Glass opacity" slider: `g` in 0..=1, 0.5 the default, offsets every
 /// default entry by one amount. Below 0.5 the offset reaches −0.60 at 0;
-/// above it, +0.10 at 1. Entries are not clamped here (only at blend time).
+/// above it, +0.10 at 1. `g` outside 0..=1 is clamped into it first. The
+/// entries themselves are not clamped here (only at blend time).
 pub fn glass_alpha_map(g: f64) -> AlphaMap {
+    let g = g.clamp(0.0, 1.0);
     let offset = if g < 0.5 {
         (g - 0.5) / 0.5 * ALPHA_BOTTOM
     } else {
@@ -455,17 +474,20 @@ pub fn glass_alpha_map(g: f64) -> AlphaMap {
 /// [`glass_alpha_map`]: the first entry (lowest blur strength, default
 /// 0.90) above 0.90 gives `0.5 + 0.5 × (e0 − 0.90) / 0.10`; else the last
 /// entry (highest strength, default 0.60) below 0.60 gives
-/// `0.5 − 0.5 × (0.60 − e13) / 0.60`; else 0.5.
+/// `0.5 − 0.5 × (0.60 − e13) / 0.60`; else 0.5. A hand-edited map past
+/// the slider's ends (e0 above 1.0, e13 below 0) reads back clamped to
+/// 0..=1.
 pub fn glass_from_alpha_map(map: &AlphaMap) -> f64 {
     let first = map[0];
     let last = map[13];
-    if first > ALPHA_TOP {
+    let g = if first > ALPHA_TOP {
         0.5 + 0.5 * (first - ALPHA_TOP) / (1.0 - ALPHA_TOP)
     } else if last < ALPHA_BOTTOM {
         0.5 - 0.5 * (ALPHA_BOTTOM - last) / ALPHA_BOTTOM
     } else {
         0.5
-    }
+    };
+    g.clamp(0.0, 1.0)
 }
 
 /// The builder's default gaps `(outer, inner)` in logical px.
@@ -603,5 +625,106 @@ mod tests {
         map[5] = 0.99;
         map[8] = 0.10;
         assert_eq!(glass_from_alpha_map(&map), 0.5);
+    }
+
+    #[test]
+    fn glass_clamps_the_slider_and_the_read_back() {
+        assert_eq!(glass_alpha_map(-1.0), glass_alpha_map(0.0));
+        assert_eq!(glass_alpha_map(2.0), glass_alpha_map(1.0));
+        let mut map = DEFAULT_ALPHA_MAP;
+        map[0] = 1.2;
+        assert_eq!(glass_from_alpha_map(&map), 1.0);
+        let mut map = DEFAULT_ALPHA_MAP;
+        map[13] = -0.3;
+        assert_eq!(glass_from_alpha_map(&map), 0.0);
+    }
+
+    #[test]
+    fn roundness_read_back_tolerates_float_text_drift() {
+        let mut radii = Roundness::Round.corner_radii();
+        radii.radius_m = [16.0 - 1e-12; 4];
+        assert_eq!(Roundness::from_radii(&radii), Roundness::Round);
+        radii.radius_m = [8.000_000_1; 4];
+        assert_eq!(Roundness::from_radii(&radii), Roundness::SlightlyRound);
+        radii.radius_m = [8.5; 4];
+        assert_eq!(Roundness::from_radii(&radii), Roundness::Square);
+    }
+
+    /// Every named colour of a palette except the neutrals, in §3.1's order.
+    fn named(p: &BasePalette) -> [(&'static str, SrgbColour); 21] {
+        [
+            ("bright_red", p.bright_red),
+            ("bright_green", p.bright_green),
+            ("bright_orange", p.bright_orange),
+            ("gray_1", p.gray_1),
+            ("gray_2", p.gray_2),
+            ("accent_blue", p.accent_blue),
+            ("accent_indigo", p.accent_indigo),
+            ("accent_purple", p.accent_purple),
+            ("accent_pink", p.accent_pink),
+            ("accent_red", p.accent_red),
+            ("accent_orange", p.accent_orange),
+            ("accent_yellow", p.accent_yellow),
+            ("accent_green", p.accent_green),
+            ("accent_warm_grey", p.accent_warm_grey),
+            ("ext_warm_grey", p.ext_warm_grey),
+            ("ext_orange", p.ext_orange),
+            ("ext_yellow", p.ext_yellow),
+            ("ext_blue", p.ext_blue),
+            ("ext_purple", p.ext_purple),
+            ("ext_pink", p.ext_pink),
+            ("ext_indigo", p.ext_indigo),
+        ]
+    }
+
+    fn assert_palette(palette: &BasePalette, expected: [&str; 21], neutrals: [&str; 11]) {
+        for ((name, colour), want) in named(palette).into_iter().zip(expected) {
+            assert_eq!(hex(colour), want, "{name}");
+            assert_eq!(colour.alpha, 1.0, "{name}");
+        }
+        for (k, want) in neutrals.into_iter().enumerate() {
+            assert_eq!(hex(palette.neutral[k]), want, "neutral_{k}");
+        }
+    }
+
+    #[test]
+    fn dark_palette_literals() {
+        assert_palette(
+            &DARK_PALETTE,
+            [
+                "#FFA09A", "#5EDB8C", "#FFA37D", "#1B1B1B", "#262626", "#63D0DF", "#A1C0EB",
+                "#E79CFE", "#FF9CB1", "#FDA1A0", "#FFAD00", "#F7E062", "#92CF9C", "#CABAB4",
+                "#9B8E8A", "#FFAD00", "#FEDB40", "#48B9C7", "#CF7DFF", "#F93A83", "#3E88FF",
+            ],
+            [
+                "#000000", "#030303", "#161616", "#2E2E2E", "#484848", "#636363", "#808080",
+                "#9E9E9E", "#BEBEBE", "#DEDEDE", "#FFFFFF",
+            ],
+        );
+    }
+
+    #[test]
+    fn light_palette_literals() {
+        assert_palette(
+            &LIGHT_PALETTE,
+            [
+                "#890418", "#00572C", "#792C00", "#D7D7D7", "#E4E4E4", "#00525A", "#2E496D",
+                "#68217C", "#86043A", "#78292E", "#624000", "#534800", "#185529", "#554742",
+                "#9B8E8A", "#FBB86C", "#F7E062", "#6ACAD8", "#D58CFF", "#FF9CDD", "#95C4FC",
+            ],
+            [
+                "#FFFFFF", "#DEDEDE", "#BEBEBE", "#9E9E9E", "#808080", "#636363", "#484848",
+                "#2E2E2E", "#161616", "#030303", "#000000",
+            ],
+        );
+    }
+
+    #[test]
+    fn swatch_names_match_the_swatch_row() {
+        for palette in [DARK_PALETTE, LIGHT_PALETTE] {
+            for (name, colour) in SWATCH_NAMES.into_iter().zip(palette.swatches()) {
+                assert_eq!(palette.swatch(name), Some(colour), "{name}");
+            }
+        }
     }
 }

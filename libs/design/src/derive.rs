@@ -19,49 +19,28 @@ mod primitives;
 mod tests;
 
 use primitives::{
-    BLACK, TRANSPARENT, WHITE, contrast, idx, luminance, over, ramp, small, surface, text,
-    with_alpha,
+    BLACK, Ramp, TRANSPARENT, WHITE, contrast, idx, luminance, over, ramp, rehue, small, surface,
+    text, with_alpha,
 };
 
 use crate::cosmic_tables::{AlphaMap, BasePalette, BlurStrength, DEFAULT_ALPHA_MAP};
 use crate::{Contrast, Mode, SrgbColour};
 
-impl SrgbColour {
-    /// The colour as the reference's files write it: `#RRGGBBAA`, upper case.
-    pub fn to_hex(self) -> String {
-        let [r, g, b, a] = self.to_srgba8();
-        format!("#{r:02X}{g:02X}{b:02X}{a:02X}")
-    }
-
-    /// `#rrggbb` or `#rrggbbaa`, either case.
-    pub fn from_hex(text: &str) -> Option<Self> {
-        let digits = text.strip_prefix('#')?;
-        if !matches!(digits.len(), 6 | 8) || !digits.bytes().all(|b| b.is_ascii_hexdigit()) {
-            return None;
-        }
-        let channel = |i: usize| {
-            digits
-                .get(i..i + 2)
-                .and_then(|pair| u8::from_str_radix(pair, 16).ok())
-                .map(|byte| f64::from(byte) / 255.0)
-        };
-        Some(Self {
-            red: channel(0)?,
-            green: channel(2)?,
-            blue: channel(4)?,
-            alpha: if digits.len() == 8 { channel(6)? } else { 1.0 },
-        })
-    }
-}
-
 /// The builder's colour inputs. `None` means "derive it".
+///
+/// The seeds marked opaque have their alpha forced to 1 by the derivation
+/// (a ramp inherits its seed's alpha, so a translucent accent or tint would
+/// otherwise reach every control and text). The three backgrounds keep
+/// theirs.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Seeds {
     /// Opaque; `None` is the palette's `accent_blue`.
     pub accent: Option<SrgbColour>,
-    /// The window background; `None` is the palette's `gray_1`.
+    /// The window background, with alpha; `None` is the palette's `gray_1`.
     pub bg_color: Option<SrgbColour>,
+    /// With alpha; `None` derives it from the background.
     pub primary_container_bg: Option<SrgbColour>,
+    /// With alpha; `None` derives it from the background.
     pub secondary_container_bg: Option<SrgbColour>,
     /// Opaque; tints the control and neutral ramps.
     pub neutral_tint: Option<SrgbColour>,
@@ -73,6 +52,26 @@ pub struct Seeds {
     pub warning: Option<SrgbColour>,
     /// Opaque; `None` is the palette's `bright_red`.
     pub destructive: Option<SrgbColour>,
+    /// Opaque; not derived from, only copied through (`None`: the
+    /// compositor uses the accent).
+    pub window_hint: Option<SrgbColour>,
+}
+
+impl Seeds {
+    /// These seeds with every opaque-only colour forced to alpha 1.
+    fn normalised(&self) -> Self {
+        let opaque = |seed: Option<SrgbColour>| seed.map(|colour| with_alpha(colour, 1.0));
+        Self {
+            accent: opaque(self.accent),
+            neutral_tint: opaque(self.neutral_tint),
+            text_tint: opaque(self.text_tint),
+            success: opaque(self.success),
+            warning: opaque(self.warning),
+            destructive: opaque(self.destructive),
+            window_hint: opaque(self.window_hint),
+            ..*self
+        }
+    }
 }
 
 /// The frosted-glass inputs.
@@ -146,8 +145,17 @@ pub struct Container {
     pub small_widget: SrgbColour,
 }
 
-/// The derived theme of one mode: every colour key the reference's theme
-/// holds, plus the derivation's copied-through inputs.
+/// The derived theme of one mode: every colour the derivation produces,
+/// plus its copied-through colour and frosted inputs. Geometry (spacing,
+/// radii, gaps, hint width) and the palette's name are not derived and
+/// belong to the caller (stage S2 assembles the full theme record).
+///
+/// The spec's §4.7 consumer accessors that are plain field reads are the
+/// fields themselves: a colour's `base` (accent, success, warning,
+/// destructive, and the background, primary and secondary containers), its
+/// `on`, `component.base`, and `button.base` / `button.on`. The ones with a
+/// rule are methods: [`Self::control`], [`Self::accent_text_colour`],
+/// [`Self::small_widget_divider`], [`Self::window_header_background`].
 #[derive(Clone, Debug, PartialEq)]
 pub struct DerivedTheme {
     /// The palette derived from, with its kind (mode and contrast).
@@ -180,7 +188,32 @@ pub struct DerivedTheme {
     /// The builder's `neutral_tint`, copied through.
     pub control_tint: Option<SrgbColour>,
     pub text_tint: Option<SrgbColour>,
+    pub window_hint: Option<SrgbColour>,
     pub frosted: FrostedGlass,
+}
+
+impl DerivedTheme {
+    /// Control colour `k` (0..=10): the palette's `neutral_k`, re-hued with
+    /// the control tint's OKLCh hue and chroma when one is set.
+    pub fn control(&self, k: usize) -> Option<SrgbColour> {
+        let neutral = *self.palette.neutral.get(k)?;
+        Some(self.control_tint.map_or(neutral, |tint| rehue(neutral, tint)))
+    }
+
+    /// The accent text colour: `accent_text` when set, else the accent.
+    pub fn accent_text_colour(&self) -> SrgbColour {
+        self.accent_text.unwrap_or(self.accent.base)
+    }
+
+    /// The small widget divider: the palette's `neutral_9` at alpha 0.2.
+    pub fn small_widget_divider(&self) -> SrgbColour {
+        with_alpha(self.palette.neutral[9], 0.2)
+    }
+
+    /// The window header background: the background container's base.
+    pub fn window_header_background(&self) -> SrgbColour {
+        self.background.base
+    }
 }
 
 /// Derives the theme for `mode` and `contrast` from the built-in palette.
@@ -308,7 +341,7 @@ fn accent_text(
         return None;
     }
     let steps = if hc { 60 } else { 50 };
-    let candidate = surface(idx(against), steps, &ramp(accent, 100), dark, fallback);
+    let candidate = surface(idx(against), steps, &ramp::<100>(accent), dark, fallback);
     Some(if contrast(against, candidate) < 4.0 {
         fallback
     } else {
@@ -324,6 +357,7 @@ pub fn derive_with_palette(
     frosted: &FrostedGlass,
 ) -> DerivedTheme {
     let p = palette;
+    let seeds = &seeds.normalised();
     // 1. Alphas.
     let container_alpha = frosted.container_alpha();
     let actual_alpha = frosted.actual_alpha();
@@ -336,23 +370,23 @@ pub fn derive_with_palette(
     let warning = seeds.warning.unwrap_or(p.bright_orange);
     let destructive = seeds.destructive.unwrap_or(p.bright_red);
     // 4. Text ramp.
-    let text_ramp = seeds.text_tint.map(|tint| ramp(tint, 100));
-    let tint = text_ramp.as_deref();
+    let text_ramp = seeds.text_tint.map(ramp::<100>);
+    let tint: Option<&Ramp> = text_ramp.as_ref();
     // 5. Control ramp, black-ish first in dark and white-ish first in light.
-    let mut controls = ramp(seeds.neutral_tint.unwrap_or(p.neutral[2]), 11);
+    let mut controls = ramp::<11>(seeds.neutral_tint.unwrap_or(p.neutral[2]));
     if !dark {
         controls.reverse();
     }
     let body = controls[8];
     // 6. Neutral ramp.
-    let neutral_ramp = ramp(seeds.neutral_tint.unwrap_or(BLACK), 100);
+    let neutral_ramp = ramp::<100>(seeds.neutral_tint.unwrap_or(BLACK));
     // 7. Background.
     let bg = seeds.bg_color.unwrap_or(p.gray_1);
-    let bg_ramp = ramp(bg, 100);
+    let bg_ramp = ramp::<100>(bg);
     let bg_idx = idx(bg);
     // 8. Transparent background.
     let tbg = with_alpha(bg, container_alpha);
-    let t_ramp = ramp(tbg, 100);
+    let t_ramp = ramp::<100>(tbg);
     // 9. Overlays. "Chosen from X": controls[10] when X < 91, else
     // controls[0]. Step 9's hover overlay is replaced at step 12 before
     // anything reads it, so only its pressed overlay is kept.
@@ -369,14 +403,14 @@ pub fn derive_with_palette(
     let button_pressed = with_alpha(controls[2], 0.5);
     // 10. Background component.
     let bg_comp = surface(bg_idx, 8, &bg_ramp, dark, p.neutral[2]);
-    let on_bg_comp = text(idx(bg_comp), &bg_ramp, body, tint, actual_alpha);
+    let on_bg_comp = text(idx(bg_comp), &bg_ramp, tint, actual_alpha);
     // 11. Transparent background component; its text is opaque (bgRamp).
     let tbg_comp = surface(bg_idx, 8, &t_ramp, dark, p.neutral[2]);
-    let on_tbg_comp = text(idx(tbg_comp), &bg_ramp, body, tint, actual_alpha);
+    let on_tbg_comp = text(idx(tbg_comp), &bg_ramp, tint, actual_alpha);
     // 12. Primary container; its texts use the container alpha.
     let primary_default = surface(bg_idx, 5, &bg_ramp, dark, controls[1]);
     let p_base = seeds.primary_container_bg.unwrap_or(primary_default);
-    let p_ramp = ramp(p_base, 100);
+    let p_ramp = ramp::<100>(p_base);
     let p_idx = idx(p_base);
     let p_comp = surface(p_idx, 6, &p_ramp, dark, controls[3]);
     let hover_overlay = with_alpha(chosen(p_idx), 0.1);
@@ -385,35 +419,35 @@ pub fn derive_with_palette(
         neutral(
             p_comp,
             accent,
-            text(idx(p_comp), &p_ramp, body, tint, container_alpha),
+            text(idx(p_comp), &p_ramp, tint, container_alpha),
             hover_overlay,
             p_pressed,
             hc,
             body,
         ),
         p_base,
-        text(p_idx, &p_ramp, body, tint, container_alpha),
+        text(p_idx, &p_ramp, tint, container_alpha),
         small(p_idx, &neutral_ramp, controls[6]),
         hc,
     );
     // 13. Transparent primary.
     let tp_alpha = (container_alpha + if dark { 0.3 } else { 0.25 }).min(1.0);
     let tp_base = with_alpha(p_base, tp_alpha);
-    let tp_ramp = ramp(tp_base, 100);
+    let tp_ramp = ramp::<100>(tp_base);
     let tp_idx = idx(tp_base);
     let tp_comp = surface(tp_idx, 6, &tp_ramp, dark, controls[3]);
     let transparent_primary = container(
         neutral(
             tp_comp,
             accent,
-            text(idx(tp_comp), &bg_ramp, body, tint, actual_alpha),
+            text(idx(tp_comp), &bg_ramp, tint, actual_alpha),
             TRANSPARENT,
             TRANSPARENT,
             hc,
             body,
         ),
         tp_base,
-        text(tp_idx, &bg_ramp, body, tint, actual_alpha),
+        text(tp_idx, &bg_ramp, tint, actual_alpha),
         small(tp_idx, &neutral_ramp, controls[6]),
         hc,
     );
@@ -434,14 +468,14 @@ pub fn derive_with_palette(
             body,
         ),
         bg,
-        text(bg_idx, &bg_ramp, body, tint, actual_alpha),
+        text(bg_idx, &bg_ramp, tint, actual_alpha),
         small(bg_idx, &neutral_ramp, controls[6]),
         hc,
     );
     // 17. Secondary container; its texts use bgRamp.
     let secondary_default = surface(bg_idx, 10, &bg_ramp, dark, controls[2]);
     let s_base = seeds.secondary_container_bg.unwrap_or(secondary_default);
-    let s_ramp = ramp(s_base, 100);
+    let s_ramp = ramp::<100>(s_base);
     let s_idx = idx(s_base);
     let s_comp = surface(s_idx, 3, &s_ramp, dark, controls[4]);
     let s_hover = with_alpha(chosen(s_idx), 0.1);
@@ -450,25 +484,25 @@ pub fn derive_with_palette(
         neutral(
             s_comp,
             accent,
-            text(idx(s_comp), &bg_ramp, body, tint, actual_alpha),
+            text(idx(s_comp), &bg_ramp, tint, actual_alpha),
             s_hover,
             s_pressed,
             hc,
             body,
         ),
         s_base,
-        text(s_idx, &bg_ramp, body, tint, actual_alpha),
+        text(s_idx, &bg_ramp, tint, actual_alpha),
         small(s_idx, &neutral_ramp, controls[6]),
         hc,
     );
     // 18. Accent.
     let accent_component = coloured(accent, controls[0], accent, button_hover, button_pressed);
     // 19. Accent button: its text from the 100-ramp of controls[5].
-    let on_accent_ramp = ramp(controls[5], 100);
+    let on_accent_ramp = ramp::<100>(controls[5]);
     let accent_button = coloured_button(
         accent,
         controls[1],
-        text(idx(accent), &on_accent_ramp, on_accent_ramp[0], tint, 1.0),
+        text(idx(accent), &on_accent_ramp, tint, 1.0),
         accent,
         button_hover,
         button_pressed,
@@ -541,28 +575,28 @@ pub fn derive_with_palette(
     let transparent_background = container(
         neutral(tbg_comp, accent, on_tbg_comp, s_hover, s_pressed, hc, body),
         tbg,
-        text(bg_idx, &bg_ramp, body, tint, actual_alpha),
+        text(bg_idx, &bg_ramp, tint, actual_alpha),
         small(bg_idx, &neutral_ramp, controls[6]),
         hc,
     );
     // 29. Transparent secondary; its texts use its own ramp.
     let ts_alpha = (container_alpha + if dark { 0.6 } else { 0.5 }).min(1.0);
     let ts_base = with_alpha(s_base, ts_alpha);
-    let ts_ramp = ramp(ts_base, 100);
+    let ts_ramp = ramp::<100>(ts_base);
     let ts_idx = idx(ts_base);
     let ts_comp = surface(ts_idx, 3, &ts_ramp, dark, controls[4]);
     let transparent_secondary = container(
         neutral(
             ts_comp,
             accent,
-            text(idx(ts_comp), &ts_ramp, body, tint, actual_alpha),
+            text(idx(ts_comp), &ts_ramp, tint, actual_alpha),
             s_hover,
             s_pressed,
             hc,
             body,
         ),
         ts_base,
-        text(ts_idx, &ts_ramp, body, tint, actual_alpha),
+        text(ts_idx, &ts_ramp, tint, actual_alpha),
         small(ts_idx, &neutral_ramp, controls[6]),
         hc,
     );
@@ -594,6 +628,7 @@ pub fn derive_with_palette(
         shade,
         control_tint: seeds.neutral_tint,
         text_tint: seeds.text_tint,
+        window_hint: seeds.window_hint,
         frosted: *frosted,
     }
 }

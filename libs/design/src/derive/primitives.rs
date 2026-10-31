@@ -38,10 +38,11 @@ pub(super) fn with_alpha(colour: SrgbColour, alpha: f64) -> SrgbColour {
 }
 
 fn to_linear(colour: SrgbColour) -> LinearRgba {
+    let decode = |channel: f64| srgb_to_linear(channel.clamp(0.0, 1.0));
     LinearRgba {
-        red: srgb_to_linear(colour.red),
-        green: srgb_to_linear(colour.green),
-        blue: srgb_to_linear(colour.blue),
+        red: decode(colour.red),
+        green: decode(colour.green),
+        blue: decode(colour.blue),
         alpha: colour.alpha,
     }
 }
@@ -61,18 +62,34 @@ pub(super) fn lightness(colour: SrgbColour) -> f64 {
     linear_srgb_to_oklch(to_linear(colour)).0
 }
 
+/// A 100-step ramp, the one `Surface`, `Small` and `Text` walk. Its length
+/// is the type, so every index those helpers produce (0..=99) is in range.
+pub(super) type Ramp = [SrgbColour; 100];
+
+/// `colour` at OKLab lightness `lightness` with `chroma` and `hue`,
+/// gamut-mapped by chroma bisection and clamped, keeping `alpha`.
+fn at_lightness(lightness: f64, chroma: f64, hue: f64, alpha: f64) -> SrgbColour {
+    from_linear(
+        gamut_map_oklch(lightness, chroma, hue, GAMUT_ITERATIONS),
+        alpha,
+    )
+}
+
 /// Ramp(c, N): N steps of c's OKLCh hue and chroma at lightness i/(N−1),
 /// each gamut-mapped by chroma bisection and clamped. Every step keeps the
-/// seed's alpha.
-pub(super) fn ramp(seed: SrgbColour, steps: usize) -> Vec<SrgbColour> {
+/// seed's alpha. `ramp::<100>` is a [`Ramp`]; `ramp::<11>` the control ramp.
+pub(super) fn ramp<const N: usize>(seed: SrgbColour) -> [SrgbColour; N] {
+    const { assert!(N >= 2, "a ramp has at least two steps") };
     let (_, chroma, hue) = linear_srgb_to_oklch(to_linear(seed));
-    let last = (steps - 1) as f64;
-    (0..steps)
-        .map(|i| {
-            let rgb = gamut_map_oklch(i as f64 / last, chroma, hue, GAMUT_ITERATIONS);
-            from_linear(rgb, seed.alpha)
-        })
-        .collect()
+    let last = (N - 1) as f64;
+    std::array::from_fn(|i| at_lightness(i as f64 / last, chroma, hue, seed.alpha))
+}
+
+/// `neutral` re-hued by `tint`: the tint's OKLCh hue and chroma at the
+/// neutral's lightness (spec §4.7's tinted control colours).
+pub(super) fn rehue(neutral: SrgbColour, tint: SrgbColour) -> SrgbColour {
+    let (_, chroma, hue) = linear_srgb_to_oklch(to_linear(tint));
+    at_lightness(lightness(neutral), chroma, hue, neutral.alpha)
 }
 
 /// Idx(c) = clamp(round(L × 100), 0, 99). The factor is 100 although a
@@ -96,34 +113,32 @@ fn step(base: usize, n: usize, up: bool) -> Option<usize> {
 pub(super) fn surface(
     base: usize,
     n: usize,
-    ramp: &[SrgbColour],
+    steps: &Ramp,
     dark: bool,
     fallback: SrgbColour,
 ) -> SrgbColour {
-    step(base, n, dark || base < 91).map_or(fallback, |index| ramp[index])
+    step(base, n, dark || base < 91).map_or(fallback, |index| steps[index])
 }
 
 /// Small(b, 5): five neutral-ramp steps from b (up when b ≤ 40 or
 /// 51 < b < 65, else down), with its CIE LCh chroma capped at 3.84.
-pub(super) fn small(base: usize, neutral_ramp: &[SrgbColour], fallback: SrgbColour) -> SrgbColour {
+pub(super) fn small(base: usize, neutral_steps: &Ramp, fallback: SrgbColour) -> SrgbColour {
     let up = base <= 40 || (51 < base && base < 65);
-    let colour = step(base, 5, up).map_or(fallback, |index| neutral_ramp[index]);
+    let colour = step(base, 5, up).map_or(fallback, |index| neutral_steps[index]);
     cap_cie_chroma(colour, SMALL_CHROMA_CAP)
 }
 
 /// Text(b): the ramp step 70 (else 50) steps from b towards the far end,
 /// lighter on a dark base (b < 60) and darker on a light one, pushed
 /// further by round((1 − alpha) × 100) steps for a translucent surface;
-/// the ramp's end when both leave it. A text tint ramp replaces `ramp`.
+/// the ramp's end when both leave it. A text tint ramp replaces `steps`.
 /// The colour keeps the ramp's alpha; `alpha` only moves the index.
-pub(super) fn text(
-    base: usize,
-    ramp: &[SrgbColour],
-    fallback: SrgbColour,
-    tint: Option<&[SrgbColour]>,
-    alpha: f64,
-) -> SrgbColour {
-    let ramp = tint.unwrap_or(ramp);
+///
+/// The spec's Text also takes a fallback colour; with a fixed 100-step
+/// ramp and the end-of-ramp rule every index is in range, so it is never
+/// reached and is omitted here.
+pub(super) fn text(base: usize, steps: &Ramp, tint: Option<&Ramp>, alpha: f64) -> SrgbColour {
+    let steps = tint.unwrap_or(steps);
     let extra = if alpha < 1.0 {
         ((1.0 - alpha) * 100.0).round() as usize
     } else {
@@ -133,7 +148,7 @@ pub(super) fn text(
     let index = step(base, 70 + extra, dark)
         .or_else(|| step(base, 50 + extra, dark))
         .unwrap_or(if dark { 99 } else { 0 });
-    ramp.get(index).copied().unwrap_or(fallback)
+    steps[index]
 }
 
 /// Over(a, b), "a over b" on gamma-encoded channels, exactly as the
@@ -242,7 +257,7 @@ mod tests {
 
     #[test]
     fn idx_reindexes_ramp_steps_up_by_one_from_fifty() {
-        let ramp = ramp(grey(0x1B), 100);
+        let ramp = ramp::<100>(grey(0x1B));
         for (i, colour) in ramp.iter().enumerate() {
             let expected = if i < 50 { i } else { (i + 1).min(99) };
             assert_eq!(idx(*colour), expected, "step {i}");
@@ -252,9 +267,8 @@ mod tests {
     #[test]
     fn ramp_keeps_the_seed_alpha_and_spans_black_to_white() {
         let seed = with_alpha(grey(0x80), 0.4);
-        let ramp = ramp(seed, 11);
-        assert_eq!(ramp.len(), 11);
-        assert!(ramp.iter().all(|step| step.alpha == 0.4));
+        let ramp = ramp::<11>(seed);
+                assert!(ramp.iter().all(|step| step.alpha == 0.4));
         assert_eq!(ramp[0].to_srgba8()[..3], [0, 0, 0]);
         assert_eq!(ramp[10].to_srgba8()[..3], [255, 255, 255]);
     }
@@ -267,7 +281,7 @@ mod tests {
             blue: 1.0,
             alpha: 1.0,
         };
-        for step in ramp(seed, 100) {
+        for step in ramp::<100>(seed) {
             for channel in [step.red, step.green, step.blue] {
                 assert!((0.0..=1.0).contains(&channel));
             }
@@ -276,7 +290,7 @@ mod tests {
 
     #[test]
     fn surface_steps_lighter_below_91_even_in_light_mode() {
-        let ramp = ramp(grey(0x80), 100);
+        let ramp = ramp::<100>(grey(0x80));
         assert_eq!(surface(88, 8, &ramp, false, BLACK), ramp[96]);
         assert_eq!(surface(94, 6, &ramp, false, BLACK), ramp[88]);
         assert_eq!(surface(95, 8, &ramp, true, BLACK), BLACK);
@@ -285,7 +299,7 @@ mod tests {
 
     #[test]
     fn small_direction_bands() {
-        let ramp = ramp(BLACK, 100);
+        let ramp = ramp::<100>(BLACK);
         assert_eq!(small(40, &ramp, WHITE), ramp[45]);
         assert_eq!(small(45, &ramp, WHITE), ramp[40]);
         assert_eq!(small(52, &ramp, WHITE), ramp[57]);
@@ -301,7 +315,7 @@ mod tests {
             blue: 0.2,
             alpha: 1.0,
         };
-        let ramp = ramp(tint, 100);
+        let ramp = ramp::<100>(tint);
         let chroma = |colour| {
             let (_, a, b) = cie_lab(colour);
             f64::hypot(a, b)
@@ -322,31 +336,28 @@ mod tests {
 
     #[test]
     fn text_alpha_pushes_further_and_falls_back_to_the_end() {
-        let ramp = ramp(grey(0x1B), 100);
-        assert_eq!(text(22, &ramp, WHITE, None, 1.0), ramp[92]);
-        assert_eq!(text(30, &ramp, WHITE, None, 1.0), ramp[80]);
-        assert_eq!(text(27, &ramp, WHITE, None, 0.76154), ramp[99]);
-        assert_eq!(text(88, &ramp, BLACK, None, 1.0), ramp[18]);
-        assert_eq!(text(94, &ramp, BLACK, None, 0.76154), ramp[0]);
-        assert_eq!(text(60, &ramp, BLACK, None, 1.0), ramp[10]);
+        let ramp = ramp::<100>(grey(0x1B));
+        assert_eq!(text(22, &ramp, None, 1.0), ramp[92]);
+        assert_eq!(text(30, &ramp, None, 1.0), ramp[80]);
+        assert_eq!(text(27, &ramp, None, 0.76154), ramp[99]);
+        assert_eq!(text(88, &ramp, None, 1.0), ramp[18]);
+        assert_eq!(text(94, &ramp, None, 0.76154), ramp[0]);
+        assert_eq!(text(60, &ramp, None, 1.0), ramp[10]);
         let tint = ramp_of_tint();
-        assert_eq!(text(22, &ramp, WHITE, Some(&tint), 1.0), tint[92]);
+        assert_eq!(text(22, &ramp, Some(&tint), 1.0), tint[92]);
     }
 
-    fn ramp_of_grey() -> Vec<SrgbColour> {
-        ramp(BLACK, 100)
+    fn ramp_of_grey() -> Ramp {
+        ramp(BLACK)
     }
 
-    fn ramp_of_tint() -> Vec<SrgbColour> {
-        ramp(
-            SrgbColour {
-                red: 0.3,
-                green: 0.5,
-                blue: 0.9,
-                alpha: 1.0,
-            },
-            100,
-        )
+    fn ramp_of_tint() -> Ramp {
+        ramp(SrgbColour {
+            red: 0.3,
+            green: 0.5,
+            blue: 0.9,
+            alpha: 1.0,
+        })
     }
 
     #[test]

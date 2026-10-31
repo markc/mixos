@@ -42,6 +42,35 @@ impl SrgbColour {
     pub fn to_srgba8(self) -> [u8; 4] {
         [self.red, self.green, self.blue, self.alpha].map(|c| (c * 255.0).round() as u8)
     }
+
+    /// `#RRGGBBAA`, upper case: the form theme files are written in.
+    pub fn to_hex(self) -> String {
+        let [r, g, b, a] = self.to_srgba8();
+        format!("#{r:02X}{g:02X}{b:02X}{a:02X}")
+    }
+
+    /// `#rrggbb` or `#rrggbbaa`, either case, `#` required: the settings
+    /// wire grammar. Deliberately stricter than the legacy v0 theme reader
+    /// ([`crate::parse_legacy_v0_hex_colour`]), which also takes short forms
+    /// and an optional `#`.
+    pub fn from_hex(text: &str) -> Option<Self> {
+        let digits = text.strip_prefix('#')?;
+        if !matches!(digits.len(), 6 | 8) || !digits.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return None;
+        }
+        let channel = |i: usize| {
+            digits
+                .get(i..i + 2)
+                .and_then(|pair| u8::from_str_radix(pair, 16).ok())
+                .map(|byte| f64::from(byte) / 255.0)
+        };
+        Some(Self {
+            red: channel(0)?,
+            green: channel(2)?,
+            blue: channel(4)?,
+            alpha: if digits.len() == 8 { channel(6)? } else { 1.0 },
+        })
+    }
 }
 
 /// The accent `design` draws in its own style (its style family's selected
