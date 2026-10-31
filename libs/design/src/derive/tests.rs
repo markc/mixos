@@ -43,7 +43,12 @@ fn grey_accent() -> DerivedTheme {
         accent: Some(colour("#7F7F7F")),
         ..Seeds::default()
     };
-    derive(&seeds, Mode::Dark, Contrast::Normal, &FrostedGlass::default())
+    derive(
+        &seeds,
+        Mode::Dark,
+        Contrast::Normal,
+        &FrostedGlass::default(),
+    )
 }
 
 #[test]
@@ -241,7 +246,12 @@ fn light_accent_text_falls_back_to_black() {
         accent: Some(colour("#C8C8C8")),
         ..Seeds::default()
     };
-    let t = derive(&seeds, Mode::Light, Contrast::Normal, &FrostedGlass::default());
+    let t = derive(
+        &seeds,
+        Mode::Light,
+        Contrast::Normal,
+        &FrostedGlass::default(),
+    );
     assert_eq!(t.accent_text.map(hex), Some("#000000".to_owned()));
 }
 
@@ -267,7 +277,12 @@ fn copied_through_inputs() {
         neutral_tint: Some(tint),
         ..Seeds::default()
     };
-    let t = derive(&seeds, Mode::Light, Contrast::Normal, &FrostedGlass::default());
+    let t = derive(
+        &seeds,
+        Mode::Light,
+        Contrast::Normal,
+        &FrostedGlass::default(),
+    );
     assert_eq!(t.control_tint, Some(tint));
     assert_eq!(t.text_tint, None);
     assert!(!t.is_dark);
