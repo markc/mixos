@@ -302,7 +302,12 @@ mod tests {
         assert_eq!(values.read().unwrap().color_scheme, 0);
         assert!(values.read().unwrap().accent.is_none());
         let next = projection("inc", 4, "light");
-        assert_eq!(adopt(&mut state, &values, &config, &status, &next).unwrap().len(), 2);
+        assert_eq!(
+            adopt(&mut state, &values, &config, &status, &next)
+                .unwrap()
+                .len(),
+            2
+        );
         assert_eq!(values.read().unwrap().color_scheme, 2);
         let report = status::report(&status);
         assert_eq!(report["portal"]["origin"], "settingsd");
