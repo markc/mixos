@@ -97,10 +97,12 @@ fn installed_authored_source_keeps_its_source_settings_and_revisions() {
         Revision(before.design_revision.0 + 1)
     );
     // Resolve v2 gives the authored source's look exactly as format 4 did;
-    // only the provenance names the keys by their v2 names.
+    // only the provenance names the keys by their v2 names, and v2 seals
+    // the accent each context draws (format 4 kept it beside the map).
     let without_provenance = |mut map: std::collections::BTreeMap<String, settings::Effective>| {
         for effective in map.values_mut() {
             effective.provenance.clear();
+            effective.accent = None;
         }
         map
     };
