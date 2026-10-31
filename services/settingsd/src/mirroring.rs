@@ -87,6 +87,10 @@ struct Mirror {
     busy: bool,
     failures: u8,
     retry_at: Option<Instant>,
+    /// Known only from `mirrors.json`: neither attached nor acknowledged in
+    /// this run. The file is a hint, not authority, so one failed push
+    /// drops it.
+    hinted: bool,
 }
 
 impl Mirror {
@@ -96,6 +100,7 @@ impl Mirror {
             busy: false,
             failures: 0,
             retry_at: None,
+            hinted: false,
         }
     }
 }
@@ -120,7 +125,11 @@ impl Attached {
             mirrors: nodes
                 .into_iter()
                 .filter(|n| valid_node(n))
-                .map(|n| (n, Mirror::new(None)))
+                .map(|n| {
+                    let mut mirror = Mirror::new(None);
+                    mirror.hinted = true;
+                    (n, mirror)
+                })
                 .collect(),
             file: Some(file),
         }
@@ -149,6 +158,7 @@ impl Attached {
         entry.acked = Some(revision);
         entry.failures = 0;
         entry.retry_at = None;
+        entry.hinted = false;
         if fresh {
             self.save();
         }
@@ -186,7 +196,8 @@ impl Attached {
     }
 
     /// The outcome of one push. A mirror failing [`MAX_PUSH_FAILURES`]
-    /// times in a row is dropped; returns true when it was.
+    /// times in a row is dropped, and one known only from `mirrors.json` on
+    /// its first failure; returns true when it was.
     pub fn finished(&mut self, node: &str, revision: Revision, ok: bool, now: Instant) -> bool {
         let Some(mirror) = self.mirrors.get_mut(node) else {
             return false;
@@ -196,10 +207,11 @@ impl Attached {
             mirror.acked = Some(revision);
             mirror.failures = 0;
             mirror.retry_at = None;
+            mirror.hinted = false;
             return false;
         }
         mirror.failures = mirror.failures.saturating_add(1);
-        if mirror.failures >= MAX_PUSH_FAILURES {
+        if mirror.hinted || mirror.failures >= MAX_PUSH_FAILURES {
             self.mirrors.remove(node);
             self.save();
             return true;
@@ -295,6 +307,27 @@ mod tests {
         assert!(table.due(Revision(2), now).is_empty());
         table.forget_acks();
         assert_eq!(table.due(Revision(2), now).len(), 2);
+    }
+
+    #[test]
+    fn a_stale_entry_in_the_file_costs_one_failed_push_then_is_dropped() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut table = Attached::load(dir.path());
+        table.attach("gamma", Revision(2));
+        table.attach("delta", Revision(2));
+        // A restart: both are hints until they acknowledge.
+        let mut again = Attached::load(dir.path());
+        let now = Instant::now();
+        assert_eq!(again.due(Revision(2), now).len(), 2);
+        assert!(again.finished("gamma", Revision(2), false, now), "gone after one failure");
+        assert!(!again.finished("delta", Revision(2), true, now));
+        assert_eq!(again.nodes(), ["delta"]);
+        assert!(again.next_retry().is_none(), "no retry is left for the stale entry");
+        assert_eq!(Attached::load(dir.path()).nodes(), ["delta"], "and the file forgets it");
+        // Acknowledged once, the mirror has the normal bounded retry.
+        assert_eq!(again.due(Revision(3), now).len(), 1);
+        assert!(!again.finished("delta", Revision(3), false, now));
+        assert_eq!(again.nodes(), ["delta"]);
     }
 
     #[test]

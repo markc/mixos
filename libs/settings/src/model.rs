@@ -293,7 +293,7 @@ fn is_schema_one(schema: &u32) -> bool {
 /// `look` (the follower view, as its topic carries it) and `snapshot`
 /// (schema 3, [`crate::compact::ValuesSnapshot`]).
 ///
-/// TRANSITION (S8 deletes): `full` (the format-4 [`Snapshot`], schema 1 or
+/// S7-TRANSITION (deleted with S8a-c, before S9): `full` (the format-4 [`Snapshot`], schema 1 or
 /// 2) and `summary` stay, and an omitted view is still `full`, while the
 /// followers that send them move to the 1.0.0 views and topics.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
