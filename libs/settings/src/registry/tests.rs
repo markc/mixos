@@ -65,20 +65,14 @@ fn sample_string(grammar: Grammar) -> Value {
 
 /// A valid value of `kind` that differs from `default`.
 fn sample(kind: &Kind, default: Option<&Value>) -> Value {
-    let differs = |candidates: Vec<Value>| {
-        candidates
-            .into_iter()
-            .find(|c| Some(c) != default)
-            .unwrap()
-    };
+    let differs =
+        |candidates: Vec<Value>| candidates.into_iter().find(|c| Some(c) != default).unwrap();
     match *kind {
         Kind::Bool => (default != Some(&json!(true))).into(),
         Kind::Int { min, step, .. } => differs(vec![min.into(), (min + step).into()]),
         Kind::OneOf(set) => differs(set.iter().map(|n| json!(n)).collect()),
         Kind::Number { min, max, .. } => differs(vec![min.into(), max.into()]),
-        Kind::Enum(names) | Kind::Known(names) => {
-            differs(names.iter().map(|n| json!(n)).collect())
-        }
+        Kind::Enum(names) | Kind::Known(names) => differs(names.iter().map(|n| json!(n)).collect()),
         Kind::Colour(_) | Kind::ColourOr(..) => "#123456".into(),
         Kind::ConnectorOr(_) => "DP-2".into(),
         Kind::Str(grammar, _) => sample_string(grammar),
@@ -192,8 +186,12 @@ fn every_stored_registry_path_is_settable_and_resettable() {
         let reset = apply(&written, &BTreeMap::new(), std::slice::from_ref(&path))
             .unwrap_or_else(|e| panic!("{path}: reset {e:?}"));
         assert_eq!(reset, companions, "{path}: reset");
-        let nulled = apply(&written, &BTreeMap::from([(path.clone(), Value::Null)]), &[])
-            .unwrap_or_else(|e| panic!("{path}: null {e:?}"));
+        let nulled = apply(
+            &written,
+            &BTreeMap::from([(path.clone(), Value::Null)]),
+            &[],
+        )
+        .unwrap_or_else(|e| panic!("{path}: null {e:?}"));
         assert_eq!(nulled, companions, "{path}: null resets");
     }
 }
@@ -212,9 +210,18 @@ fn a_value_equal_to_its_default_is_not_stored() {
         }
     }
     let defaults = Values::new();
-    assert_eq!(effective(&defaults, "shell.panels.top.thickness"), Some(json!(32)));
-    assert_eq!(effective(&defaults, "shell.panels.bottom.thickness"), Some(json!(40)));
-    assert_eq!(effective(&defaults, "appearance.scheme"), Some(json!("mixos")));
+    assert_eq!(
+        effective(&defaults, "shell.panels.top.thickness"),
+        Some(json!(32))
+    );
+    assert_eq!(
+        effective(&defaults, "shell.panels.bottom.thickness"),
+        Some(json!(40))
+    );
+    assert_eq!(
+        effective(&defaults, "appearance.scheme"),
+        Some(json!("mixos"))
+    );
     assert_eq!(effective(&defaults, "time.zone"), None, "owner-supplied");
 }
 
@@ -348,7 +355,11 @@ fn names_and_defaults_agree_with_today_s_model_and_design() {
         ("appearance.mode", &today.mode),
         ("appearance.contrast", &today.contrast),
     ] {
-        assert_eq!(effective(&Values::new(), path), Some(json!(value)), "{path}");
+        assert_eq!(
+            effective(&Values::new(), path),
+            Some(json!(value)),
+            "{path}"
+        );
     }
     assert_eq!(
         effective(&Values::new(), "shell.panels.bottom.thickness"),
@@ -403,7 +414,10 @@ fn values_are_normalised() {
     .unwrap();
     assert_eq!(values["appearance.accent"], json!("#a1b2c3"));
     assert_eq!(values["window.gaps"], json!(8));
-    assert_eq!(values["wallpaper.color"], json!("gradient:#aabbcc,#ddeeff@45"));
+    assert_eq!(
+        values["wallpaper.color"],
+        json!("gradient:#aabbcc,#ddeeff@45")
+    );
     assert_eq!(
         values["keymaps.comp.spawn.term"],
         json!({"command": ["term"], "bindings": []})
@@ -447,7 +461,10 @@ fn kinds_refuse_what_they_do_not_accept() {
         ("keymaps.dopus.nav.back", json!(["Hyper+X"])),
         ("keymaps.dopus.nav.back", json!(["F1", "F1"])),
         ("keymaps.comp.spawn.term", json!({"command": []})),
-        ("keymaps.comp.spawn.term", json!({"command": ["x"], "env": {}})),
+        (
+            "keymaps.comp.spawn.term",
+            json!({"command": ["x"], "env": {}}),
+        ),
         ("apps.term.mode", json!("auto")),
         ("state.appearance.mode_override", json!("auto")),
     ] {
@@ -524,7 +541,10 @@ fn c1_c2_c4_record_when_a_key_takes_effect_and_refuse_nothing() {
     for (path, value) in [
         ("appearance.frosted.panel", json!(true)),
         ("window.focus_delay_ms", json!(500)),
-        ("wallpaper.outputs.HDMI-A-1.image", json!("/home/user/a.png")),
+        (
+            "wallpaper.outputs.HDMI-A-1.image",
+            json!("/home/user/a.png"),
+        ),
     ] {
         set(&[(path, value)]).unwrap();
         let def = lookup(path).unwrap().def;
@@ -553,7 +573,11 @@ fn c3_a_slideshow_needs_a_folder() {
     ])
     .unwrap();
     // Removing the folder alone is refused: the constraint moves with it.
-    let refused = apply(&on, &BTreeMap::new(), &["wallpaper.slideshow.folder".into()]);
+    let refused = apply(
+        &on,
+        &BTreeMap::new(),
+        &["wallpaper.slideshow.folder".into()],
+    );
     assert_eq!(codes(refused)[0].0, "constraint_failed");
 }
 
@@ -682,7 +706,9 @@ fn tunables_are_the_design_catalogue_with_r4_codes() {
     assert_eq!(codes(set(&[(flag.as_str(), json!(3))]))[0].0, "wrong_kind");
     let number = first("number");
     let Some(design::TunableRange::Number { max, .. }) =
-        tunable(number.strip_prefix("tune.").unwrap()).unwrap().range
+        tunable(number.strip_prefix("tune.").unwrap())
+            .unwrap()
+            .range
     else {
         unreachable!()
     };
@@ -715,10 +741,7 @@ fn tunables_are_the_design_catalogue_with_r4_codes() {
             .collect();
         values = apply(&values, &changes, &[]).unwrap();
     }
-    let one_more = BTreeMap::from([(
-        names[MAX_TUNE].clone(),
-        tunable_sample(&names[MAX_TUNE]),
-    )]);
+    let one_more = BTreeMap::from([(names[MAX_TUNE].clone(), tunable_sample(&names[MAX_TUNE]))]);
     assert!(apply(&values, &one_more, &[]).is_err());
 }
 

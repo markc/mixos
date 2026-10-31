@@ -170,11 +170,19 @@ impl Grammar {
 pub enum Kind {
     Bool,
     /// A whole number in `min..=max` on the `step` grid from `min`.
-    Int { min: i64, max: i64, step: i64 },
+    Int {
+        min: i64,
+        max: i64,
+        step: i64,
+    },
     /// A whole number from the set.
     OneOf(&'static [i64]),
     /// A number in `min..=max`; a `step` above 0 puts it on that grid.
-    Number { min: f64, max: f64, step: f64 },
+    Number {
+        min: f64,
+        max: f64,
+        step: f64,
+    },
     /// One of the names.
     Enum(&'static [&'static str]),
     /// One of the known names, or an unknown plain name, which is retained.
@@ -187,7 +195,10 @@ pub enum Kind {
     /// A string of at most so many bytes, in the grammar.
     Str(Grammar, usize),
     /// An absolute path; `images` limits it to PNG, JPEG or WebP.
-    Path { directory: bool, images: bool },
+    Path {
+        directory: bool,
+        images: bool,
+    },
     /// A list of `min..=max` items of the kind.
     List(&'static Kind, usize, usize),
     /// An xkb `[layout, variant]` pair.
@@ -357,7 +368,9 @@ fn default_json(default: DefaultValue, captures: &[(&'static str, String)]) -> O
         DefaultValue::Int(n) => Some(n.into()),
         DefaultValue::Number(n) => Some(n.into()),
         DefaultValue::Text(s) => Some(s.into()),
-        DefaultValue::Json(text) => Some(serde_json::from_str(text).expect("registry JSON default")),
+        DefaultValue::Json(text) => {
+            Some(serde_json::from_str(text).expect("registry JSON default"))
+        }
         DefaultValue::ByCapture(table) => {
             let first = captures.first().map(|(_, v)| v.as_str())?;
             let (_, default) = table.iter().find(|(name, _)| *name == first)?;
@@ -411,12 +424,18 @@ pub const CATEGORIES: &[&str] = &[
 
 /// The placeholders a path may use, each with what it accepts.
 pub const PLACEHOLDERS: &[(&str, &str)] = &[
-    ("<connector>", "a DRM connector: 1-32 ASCII letters, digits or -"),
+    (
+        "<connector>",
+        "a DRM connector: 1-32 ASCII letters, digits or -",
+    ),
     ("<panel>", "top or bottom"),
     ("<tablet>", "a scoped identifier"),
     ("<app>", "a scoped identifier"),
     ("<name>", "a scoped identifier"),
-    ("<action>", "a dotted action id: 1-64 ASCII letters, digits, ., - or _"),
+    (
+        "<action>",
+        "a dotted action id: 1-64 ASCII letters, digits, ., - or _",
+    ),
     ("<category>", "a default-application category"),
     ("<token>", "a style token of design::tunables()"),
     ("<role>", "a chrome role of design::tunables()"),
@@ -436,7 +455,9 @@ pub fn scoped_id(value: &str) -> bool {
 pub fn connector(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 32
-        && value.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-')
 }
 
 /// Whether `value` fills `placeholder`.
@@ -714,13 +735,9 @@ pub fn validate(values: &Values) -> Result<(), Vec<Diagnostic>> {
                 path,
                 "Stored value is not in canonical form",
             )),
-            Ok(_) if value.is_null() || is_default(&m, path, value) => {
-                errors.push(Diagnostic::new(
-                    "validation_failed",
-                    path,
-                    "Stored value equals its default",
-                ))
-            }
+            Ok(_) if value.is_null() || is_default(&m, path, value) => errors.push(
+                Diagnostic::new("validation_failed", path, "Stored value equals its default"),
+            ),
             Ok(_) => {}
             Err(e) => errors.push(e),
         }

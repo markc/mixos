@@ -21,8 +21,16 @@ pub(super) const KEYS: &[K] = &[
     k("wallpaper.outputs.<connector>.image", IMAGE, D::Null)
         .used_when("wallpaper.same_on_all is false")
         .constraints(&["C4"]),
-    k("wallpaper.color", Str(Grammar::WallpaperColour, 64), D::Null),
-    k("wallpaper.fit", Enum(&["fill", "fit", "stretch"]), D::Text("fill")),
+    k(
+        "wallpaper.color",
+        Str(Grammar::WallpaperColour, 64),
+        D::Null,
+    ),
+    k(
+        "wallpaper.fit",
+        Enum(&["fill", "fit", "stretch"]),
+        D::Text("fill"),
+    ),
     k("wallpaper.slideshow.enabled", Bool, D::Bool(false)).constraints(&["C3"]),
     k("wallpaper.slideshow.folder", FOLDER, D::Null).constraints(&["C3"]),
     k(
@@ -32,8 +40,18 @@ pub(super) const KEYS: &[K] = &[
     ),
     k("wallpaper.slideshow.shuffle", Bool, D::Bool(false)).mixos(),
     k("wallpaper.folders.current", FOLDER, D::Null).domains(&[]),
-    k("wallpaper.folders.recent", List(&FOLDER, 0, 5), D::Json("[]")).domains(&[]),
-    k("wallpaper.custom_images", List(&IMAGE, 0, 64), D::Json("[]")).domains(&[]),
+    k(
+        "wallpaper.folders.recent",
+        List(&FOLDER, 0, 5),
+        D::Json("[]"),
+    )
+    .domains(&[]),
+    k(
+        "wallpaper.custom_images",
+        List(&IMAGE, 0, 64),
+        D::Json("[]"),
+    )
+    .domains(&[]),
     k(
         "wallpaper.custom_colors",
         List(&Colour(Alpha::Opaque), 0, 32),

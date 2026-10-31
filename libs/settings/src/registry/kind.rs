@@ -241,7 +241,10 @@ fn string(grammar: Grammar, given: &str) -> Option<Value> {
                     .all(|b| b.is_ascii_alphanumeric() || b"/_+-".contains(&b))
         }
         Grammar::Locale => {
-            given.bytes().next().is_some_and(|b| b.is_ascii_alphabetic())
+            given
+                .bytes()
+                .next()
+                .is_some_and(|b| b.is_ascii_alphabetic())
                 && given
                     .bytes()
                     .all(|b| b.is_ascii_alphanumeric() || b"_.@-".contains(&b))
@@ -347,7 +350,10 @@ fn tunable(path: &str, value: &Value) -> Result<Value, Diagnostic> {
         _ => Ok(()),
     };
     match entry.kind {
-        "flag" => value.as_bool().map(Value::Bool).ok_or_else(|| wrong("true or false")),
+        "flag" => value
+            .as_bool()
+            .map(Value::Bool)
+            .ok_or_else(|| wrong("true or false")),
         "radius" => {
             let n = whole(value).ok_or_else(|| wrong("a whole number"))?;
             range(n as f64)?;

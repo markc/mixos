@@ -38,7 +38,12 @@ const ACCENT_WORDS: &[&str] = &[
 ];
 
 pub(super) const KEYS: &[K] = &[
-    k("appearance.mode", Enum(&["dark", "light", "auto"]), D::Text("dark"), LOOK),
+    k(
+        "appearance.mode",
+        Enum(&["dark", "light", "auto"]),
+        D::Text("dark"),
+        LOOK,
+    ),
     k("appearance.scheme", Enum(SCHEMES), D::Text("mixos"), LOOK).mixos(),
     k("appearance.style", Enum(STYLES), D::Null, LOOK).mixos(),
     k(
@@ -175,12 +180,7 @@ pub(super) const KEYS: &[K] = &[
         &[],
     )
     .mixos(),
-    k(
-        "appearance.export_toolkits",
-        Bool,
-        D::Bool(true),
-        &[Export],
-    ),
+    k("appearance.export_toolkits", Bool, D::Bool(true), &[Export]),
     k("appearance.export_desktop", Bool, D::Bool(true), &[Export]),
     k(
         "appearance.source",

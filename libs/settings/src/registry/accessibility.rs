@@ -17,7 +17,13 @@ const fn osk(path: &'static str) -> K {
 }
 
 pub(super) const KEYS: &[K] = &[
-    k("accessibility.screen_reader", Bool, D::Bool(false), &[System]).applied("screen-reader"),
+    k(
+        "accessibility.screen_reader",
+        Bool,
+        D::Bool(false),
+        &[System],
+    )
+    .applied("screen-reader"),
     k("accessibility.invert", Bool, D::Bool(false), &[Paint]),
     k(
         "accessibility.color_filter",

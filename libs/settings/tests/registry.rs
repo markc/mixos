@@ -29,6 +29,10 @@ fn describe_matches_the_golden() {
                 );
             }
         }
-        panic!("the golden has {} lines, describe {}", expected.len(), lines.len());
+        panic!(
+            "the golden has {} lines, describe {}",
+            expected.len(),
+            lines.len()
+        );
     }
 }
