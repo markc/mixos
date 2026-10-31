@@ -196,27 +196,32 @@ pub fn look(look: &Look, app: Option<&str>) -> Option<Theme> {
 /// [`look`], or the session's design with the look's framing, menus, band
 /// and font choices when the look cannot be drawn.
 pub fn look_or(look: &Look, app: Option<&str>, session: &Theme) -> Theme {
-    self::look(look, app).unwrap_or_else(|| {
-        let selected = fonts(look);
-        let mut overlay = session.overlay().clone();
-        overlay.weight = selected.weight;
-        overlay.size = selected.size;
-        let framing = &look.framing;
-        session
-            .clone()
-            .framed(
-                Decorations::from_name(&framing.decorations)
-                    .unwrap_or(session.requested_decorations()),
-                CaptionSide::resolve(&framing.caption_side),
-            )
-            .with_menus(
-                design::MenuStyle::resolve(&framing.menu_style),
-                design::MenuSide::resolve(&framing.menu_side),
-            )
-            .with_band(band_of(framing))
-            .with_overlay(overlay)
-            .expect("the session's style overlay is already valid")
-    })
+    self::look(look, app).unwrap_or_else(|| framed_session(look, session))
+}
+
+/// The session's design with the look's framing, menus, band and font
+/// choices: what [`look_or`] draws when the look cannot be drawn, and what a
+/// profile that names a design source of its own keeps.
+pub fn framed_session(look: &Look, session: &Theme) -> Theme {
+    let selected = fonts(look);
+    let mut overlay = session.overlay().clone();
+    overlay.weight = selected.weight;
+    overlay.size = selected.size;
+    let framing = &look.framing;
+    session
+        .clone()
+        .framed(
+            Decorations::from_name(&framing.decorations)
+                .unwrap_or(session.requested_decorations()),
+            CaptionSide::resolve(&framing.caption_side),
+        )
+        .with_menus(
+            design::MenuStyle::resolve(&framing.menu_style),
+            design::MenuSide::resolve(&framing.menu_side),
+        )
+        .with_band(band_of(framing))
+        .with_overlay(overlay)
+        .expect("the session's style overlay is already valid")
 }
 
 fn fonts(look: &Look) -> Overlay {
