@@ -101,7 +101,7 @@ try
   $m = cli($NORTH, $a, ["msg", "bob", "hello from the north"])
   check("msg NAME finds the node that has it", $m.exit_code == 0 and contains($m.stdout, "delivered to bob@south"))
   $t = hook({hook_event_name: "UserPromptSubmit", session_id: $b}, $SOUTH)
-  check("the receiver sees the sender's name as claimed", contains($t, "hello from the north") and contains($t, "from=\"ann@peers-fed\""))
+  check("the receiver sees the sender's name as claimed", contains($t, "hello from the north") and contains($t, "from=\"ann@north\""))
   check("beside the broker's stamp", contains($t, "sender=\""))
   check("msg NAME@NODE goes straight there", contains(cli($SOUTH, $b, ["msg", "ann@north", "back at you"]).stdout, "delivered to ann@north"))
   check("and arrives", contains(hook({hook_event_name: "PostToolUse", session_id: $a}, $NORTH), "back at you"))
@@ -120,6 +120,7 @@ try
   check("until NAME@NODE", contains(cli($NORTH, $a, ["msg", "cat@west", "west cat"]).stdout, "delivered to cat@west"))
 
   $all = cli($NORTH, $a, ["msg", "all", "everyone"])
+  check("msg all exits 0 when every running peersd was reached", $all.exit_code == 0)
   check("msg all reaches every node but the sender", contains($all.stdout, "bob@south") and contains($all.stdout, "cat@west") and not contains(split($all.stdout, " as ")[0], "ann"))
 
   -- Notices.

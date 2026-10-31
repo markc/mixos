@@ -249,7 +249,7 @@ end
 on peers.whoami desc "this session's name and node {claude_session}"
   $r = row_for(to_string(req().claude_session ?? ""))
   if $r == nil then return fail("UNKNOWN_SESSION", "claim first") end
-  answer(0, {name: $r.name, node: $r.node})
+  answer(0, {name: $r.name, node: node_name()})
 end
 
 on peers.list desc "live sessions on every node: name, node, cwd, state, age_s since last seen"
@@ -340,7 +340,9 @@ end
 -- to every node's peersd). Each carries a version (the time it was set or
 -- cleared at its origin) and the origin node; the newest version of a key
 -- wins, ties broken by origin name, and a clear leaves a tombstone so an
--- older copy arriving later cannot bring it back. `ts` stays this node's
+-- older copy arriving later cannot bring it back. Tombstones are kept (one
+-- small row per key): dropping one would let a node that was away longer
+-- than any retention bring the cleared notice back. `ts` stays this node's
 -- own arrival order: it is what sessions' read marks compare against.
 
 fn newer($v1, $o1, $v2, $o2)
@@ -468,7 +470,6 @@ end
 on peers.notice.all desc "every notice and tombstone with its version, for reconciling nodes"
   $now = time()
   sqlexec($DB, "DELETE FROM notices WHERE expires IS NOT NULL AND expires < ?", [$now])
-  sqlexec($DB, "DELETE FROM notice_tombs WHERE version < ?", [$now - $ENDED_KEEP_S])
   answer(0, {node: node_name(),
     notices: sqlexec($DB, "SELECT key, text, from_name, sender, expires, version, origin FROM notices"),
     tombs: sqlexec($DB, "SELECT key, version, origin, from_name FROM notice_tombs")})

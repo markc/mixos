@@ -52,9 +52,11 @@ fn nodes($node)
   $h = hub()
   if $h != "" then return [{node: $h, service: service($node)}] end
   $out = [{node: $node, service: "peers"}]
+  $asked = false
   try
     send noded noded.peers timeout=2
     if $rc == 0 then
+      $asked = true
       $v = if type($result) == "string" then json_parse($result) else $result end
       for each $p in $v.peers ?? []
         if type($p.name) == "string" and $p.name != $node then push($out, {node: $p.name, service: "peers." .. $p.name .. ".bus"}) end
@@ -62,6 +64,7 @@ fn nodes($node)
     end
   catch $m
   end
+  if not $asked then eprint("peers: noded did not list the mesh nodes; this node only") end
   return $out
 end
 

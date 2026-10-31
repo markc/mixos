@@ -32,6 +32,7 @@ if len($o.errors) > 0 or len($rest) == 0 then
 end
 
 $node = $t.node(2)
+if $node == "" then eprint("mix peers: noded does not answer; showing this node only") end
 $T = $t.service($node)
 $me = env("CLAUDE_CODE_SESSION_ID")
 
@@ -131,8 +132,10 @@ elif $cmd == "msg" then
     $v = call("peers.send", {to: "*", text: $text})
     $delivered = $v.delivered
     $stored = $v.stored ?? []
+    $missed = []
     for each $n in others()
       $r = send_one($n.service, "*", $text, false)
+      if $r.rc != 0 and not absent($r) then push($missed, $n.node) end
       if $r.rc == 0 then
         for each $d in $r.v.delivered ?? []
           push($delivered, $d .. "@" .. $n.node)
@@ -144,6 +147,10 @@ elif $cmd == "msg" then
     end
     print("delivered to " .. (if len($delivered) == 0 then "nobody" else join($delivered, ", ") end) .. " as " .. to_string($v.from))
     if len($stored) > 0 then print("stored for stale sessions (may have crashed): " .. join($stored, ", ")) end
+    if len($missed) > 0 then
+      eprint("mix peers: not reached: " .. join($missed, ", "))
+      exit(1)
+    end
   else
     $parts = split($target, "@")
     $name = $parts[0]
@@ -152,7 +159,7 @@ elif $cmd == "msg" then
     -- other node that has it.
     $dest = nil
     if $at == "" or $at == $node then
-      $local = try_call($T, "peers.list", {})
+      $local = {rc: 0, v: call("peers.list", {})}
       if $local.rc == 0 and len(filter($local.v.sessions ?? [], fn($s) = $s.name == $name)) > 0 then $dest = {node: $node, service: $T} end
       if $dest == nil and $at == "" then
         $found = []
@@ -223,7 +230,7 @@ elif $cmd == "notice" and len($rest) >= 2 then
     -- of each key, and bring any node that is behind up to date.
     $views = []
     for each $n in $t.nodes($node)
-      $r = try_call($n.service, "peers.notice.all", {})
+      $r = if $n.service == $T then {rc: 0, v: call("peers.notice.all", {})} else try_call($n.service, "peers.notice.all", {}) end
       if $r.rc == 0 then push($views, {n: $n, v: $r.v}) end
     end
     $best = {}
