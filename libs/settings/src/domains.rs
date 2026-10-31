@@ -446,7 +446,11 @@ mod tests {
     #[test]
     fn every_tunable_s_domains_parse() {
         for tunable in design::tunables() {
-            assert!(registry::tunable(&tunable.name).is_some(), "{}", tunable.name);
+            assert!(
+                registry::tunable(&tunable.name).is_some(),
+                "{}",
+                tunable.name
+            );
             for domain in &tunable.domains {
                 assert!(
                     Domain::from_name(domain).is_some(),

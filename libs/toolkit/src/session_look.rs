@@ -304,7 +304,9 @@ fn tunes(look: &Look) -> Overlay {
 /// first, so a bad tune never costs the look its geometry or fonts.
 fn lay(theme: Theme, base: Overlay, look: &Look) -> Theme {
     let mut geometry = base.clone();
-    geometry.style.extend(geometry_tokens(look, theme.raw_style()));
+    geometry
+        .style
+        .extend(geometry_tokens(look, theme.raw_style()));
     let mut tuned = geometry.clone();
     let tunes = tunes(look);
     tuned.style.extend(tunes.style);
@@ -571,7 +573,10 @@ mod tests {
     /// The tokens of `a` and `b` that differ, by name.
     fn changed(a: design::ResolvedStyle, b: design::ResolvedStyle) -> Vec<String> {
         let (a, b) = (a.values(), b.values());
-        a.keys().filter(|k| a.get(*k) != b.get(*k)).cloned().collect()
+        a.keys()
+            .filter(|k| a.get(*k) != b.get(*k))
+            .cloned()
+            .collect()
     }
 
     /// Under an authored scheme at the defaults (accent `auto`, `round`,
@@ -670,8 +675,12 @@ mod tests {
             ("appearance.roundness", "square".into()),
             ("appearance.font_weight", 700.into()),
         ]);
-        l.tune.0.insert("style.radius".into(), "not a radius".into());
-        l.tune.0.insert("style.widgets".into(), serde_json::json!([1]));
+        l.tune
+            .0
+            .insert("style.radius".into(), "not a radius".into());
+        l.tune
+            .0
+            .insert("style.widgets".into(), serde_json::json!([1]));
         let theme = look(&l, None).expect("still drawn");
         assert_eq!(theme.style().radius, 0, "square stands");
         assert_eq!(theme.overlay().weight, Some(700));
