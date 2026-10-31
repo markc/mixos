@@ -548,9 +548,9 @@ impl Placements {
         };
         // The foreign list exports xdg toplevels and X11 windows alike, keyed
         // on the drawable surface (an X window's is the one Xwayland gave it).
-        let foreign_id = window
-            .wl_surface()
-            .and_then(|surface| lp.state.foreign.identifier_of(&surface));
+        let foreign_id = root
+            .as_ref()
+            .and_then(|surface| lp.state.foreign.identifier_of(surface));
         self.by_handle.insert(
             handle,
             Placement {
