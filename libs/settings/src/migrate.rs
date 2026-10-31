@@ -305,7 +305,8 @@ fn shell(b: &mut Builder, shell: &Shell) {
     // it. Format 4 never checked edges, so the two panels can share one: the
     // bottom keeps it and the top is switched off.
     let edge = |id: &str| shell.panels.get(id).map(|panel| panel.edge.as_str());
-    let shared = matches!((edge("top"), edge("bottom")), (Some(top), Some(bottom)) if top == bottom);
+    let shared =
+        matches!((edge("top"), edge("bottom")), (Some(top), Some(bottom)) if top == bottom);
     for id in registry::PANELS {
         let root = format!("shell.panels.{id}");
         let enabled_path = format!("{root}.enabled");
@@ -521,7 +522,12 @@ fn backdrop_into(b: &mut Builder, document: &Value) {
             b.set(&format!("wallpaper.outputs.{output}.image"), json!(image));
             any_image = true;
         }
-        drop_if(b, &format!("{root}.colour"), &fill.colour, PER_OUTPUT_COLOUR);
+        drop_if(
+            b,
+            &format!("{root}.colour"),
+            &fill.colour,
+            PER_OUTPUT_COLOUR,
+        );
         drop_if(b, &format!("{root}.fit"), &fill.fit, PER_OUTPUT_FIT);
         drop_if(b, &format!("{root}.fallback"), &fill.fallback, NO_FALLBACK);
         drop_if(

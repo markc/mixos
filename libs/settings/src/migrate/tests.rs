@@ -368,14 +368,8 @@ fn a_top_panel_on_the_bottom_edge_is_switched_off_and_reported() {
         registry::effective(&m.values, "shell.panels.top.enabled"),
         Some(json!(false))
     );
-    assert_eq!(
-        stored(&m, "shell.panels.top.edge"),
-        Some(&json!("bottom"))
-    );
-    assert_eq!(
-        stored(&m, "shell.panels.top.mode"),
-        Some(&json!("overlay"))
-    );
+    assert_eq!(stored(&m, "shell.panels.top.edge"), Some(&json!("bottom")));
+    assert_eq!(stored(&m, "shell.panels.top.mode"), Some(&json!("overlay")));
     assert_eq!(stored(&m, "shell.panels.bottom.enabled"), None);
     assert_eq!(m.report.changed.len(), 1);
     assert_eq!(m.report.changed[0].code, SHARED_EDGE);
@@ -471,10 +465,8 @@ fn keymaps_and_the_app_domains_are_copied_leaf_by_leaf() {
 #[test]
 fn an_empty_keymap_list_is_stored_as_unbound() {
     let m = with(|d| {
-        d.keymaps.insert(
-            "dopus".into(),
-            [("nav.parent".into(), Vec::new())].into(),
-        );
+        d.keymaps
+            .insert("dopus".into(), [("nav.parent".into(), Vec::new())].into());
     });
     assert_eq!(stored(&m, "keymaps.dopus.nav.parent"), Some(&json!([])));
 }
@@ -504,7 +496,9 @@ fn email_accounts_are_one_array_leaf() {
     .unwrap();
     let m = with(|d| d.email.accounts = vec![account]);
     assert_eq!(
-        stored(&m, "email.accounts").and_then(Value::as_array).map(Vec::len),
+        stored(&m, "email.accounts")
+            .and_then(Value::as_array)
+            .map(Vec::len),
         Some(1)
     );
     assert!(m.values.keys().all(|k| !k.starts_with("email.accounts.")));
@@ -670,7 +664,11 @@ fn backdrop_slideshow_interval_snaps_to_the_nearest_step_and_a_tie_goes_up() {
             stored_as.map(|s| json!(s)).as_ref(),
             "interval {asked}"
         );
-        assert_eq!(m.report.changed.len(), usize::from(asked != 300), "interval {asked}");
+        assert_eq!(
+            m.report.changed.len(),
+            usize::from(asked != 300),
+            "interval {asked}"
+        );
         if asked != 300 {
             assert_eq!(m.report.changed[0].code, SNAPPED);
             assert_eq!(
@@ -778,7 +776,10 @@ fn an_import_onto_an_empty_store_is_the_backdrop_migration() {
 fn an_import_replaces_wallpaper_keys_and_keeps_the_rest() {
     let current: Values = [
         ("appearance.mode".to_owned(), json!("light")),
-        ("wallpaper.image".to_owned(), json!("/home/user/walls/old.png")),
+        (
+            "wallpaper.image".to_owned(),
+            json!("/home/user/walls/old.png"),
+        ),
         ("wallpaper.same_on_all".to_owned(), json!(false)),
     ]
     .into_iter()
@@ -822,7 +823,13 @@ fn an_import_reports_a_replaced_value_and_not_an_unchanged_one() {
     let same: Values = [("wallpaper.color".to_owned(), json!("#1e1e2e"))]
         .into_iter()
         .collect();
-    assert!(import_backdrop(&same, &doc).unwrap().report.changed.is_empty());
+    assert!(
+        import_backdrop(&same, &doc)
+            .unwrap()
+            .report
+            .changed
+            .is_empty()
+    );
 }
 
 #[test]
