@@ -243,7 +243,11 @@ fn seeds_of_takes_the_scheme_hue_and_breaks_ties_by_contrast() {
             mode,
             ..DesignContext::default()
         });
-        seeds_of(design.dictionary()).unwrap().accent.unwrap().to_srgba8()
+        seeds_of(design.dictionary())
+            .unwrap()
+            .accent
+            .unwrap()
+            .to_srgba8()
     };
     assert_eq!(seed(Scheme::Mono, Mode::Light), [0x22, 0x22, 0x22, 255]);
     assert_eq!(seed(Scheme::Mono, Mode::Dark), [0xce, 0xce, 0xce, 255]);

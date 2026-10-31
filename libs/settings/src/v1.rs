@@ -659,8 +659,10 @@ mod tests {
         for (path, desktop) in [("appearance.scheme", profile), ("apps.term.scheme", app)] {
             let errors = resolve(&desktop).expect_err(path);
             assert!(
-                errors.iter().any(|e| e.path == path
-                    && e.message.contains("not writable until store format 5")),
+                errors
+                    .iter()
+                    .any(|e| e.path == path
+                        && e.message.contains("not writable until store format 5")),
                 "{path}: {errors:?}"
             );
         }
