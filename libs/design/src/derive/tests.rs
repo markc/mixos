@@ -158,10 +158,17 @@ fn light_default_texts() {
     let t = light_default();
     assert_eq!(hex(t.background.on), "#121212");
     assert_eq!(hex(t.background.component.on), "#272727");
-    // Step 12 as written: the primary text takes the container alpha
-    // (24 extra steps, 94 − 94 = 0), as a live 1.10 write has it. The
-    // pre-1.10 shipped file's #202020 is the opaque-alpha reading.
+}
+
+#[test]
+fn light_primary_texts_take_the_container_alpha() {
+    let t = light_default();
+    // Step 12: 24 extra steps, 94 − 94 = 0. The pre-1.10 shipped #202020
+    // came from a generation with container alpha 1.
     assert_eq!(hex(t.primary.on), "#000000");
+    // Idx(#DADADA) = 89; 89 − 94 < 0, so 89 − 74 = 15.
+    assert_eq!(idx(t.primary.component.base), 89);
+    assert_eq!(hex(t.primary.component.on), "#0B0B0B");
 }
 
 #[test]
@@ -239,7 +246,7 @@ fn light_accent_text_falls_back_to_black() {
 }
 
 #[test]
-fn link_button_disabled_text_uses_the_reference_over() {
+fn link_button_on_disabled_is_its_on_at_half_over_its_base() {
     let t = dark_default();
     let on = t.link_button.on;
     assert_eq!(t.link_button.base, TRANSPARENT);

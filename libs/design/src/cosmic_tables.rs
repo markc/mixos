@@ -451,16 +451,18 @@ pub fn glass_alpha_map(g: f64) -> AlphaMap {
     DEFAULT_ALPHA_MAP.map(|alpha| alpha + offset)
 }
 
-/// Reading the slider back from a stored map: if the lowest entry is above
-/// 0.90, `0.5 + 0.5 × (lowest − 0.90) / 0.10`; else if the highest entry is
-/// below 0.60, `0.5 − 0.5 × (0.60 − highest) / 0.60`; else 0.5.
+/// Reading the slider back from a stored map, the exact inverse of
+/// [`glass_alpha_map`]: the first entry (lowest blur strength, default
+/// 0.90) above 0.90 gives `0.5 + 0.5 × (e0 − 0.90) / 0.10`; else the last
+/// entry (highest strength, default 0.60) below 0.60 gives
+/// `0.5 − 0.5 × (0.60 − e13) / 0.60`; else 0.5.
 pub fn glass_from_alpha_map(map: &AlphaMap) -> f64 {
-    let lowest = map.iter().copied().fold(f64::INFINITY, f64::min);
-    let highest = map.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-    if lowest > ALPHA_TOP {
-        0.5 + 0.5 * (lowest - ALPHA_TOP) / (1.0 - ALPHA_TOP)
-    } else if highest < ALPHA_BOTTOM {
-        0.5 - 0.5 * (ALPHA_BOTTOM - highest) / ALPHA_BOTTOM
+    let first = map[0];
+    let last = map[13];
+    if first > ALPHA_TOP {
+        0.5 + 0.5 * (first - ALPHA_TOP) / (1.0 - ALPHA_TOP)
+    } else if last < ALPHA_BOTTOM {
+        0.5 - 0.5 * (ALPHA_BOTTOM - last) / ALPHA_BOTTOM
     } else {
         0.5
     }
@@ -579,14 +581,27 @@ mod tests {
     }
 
     #[test]
-    fn glass_read_back_follows_the_written_rules() {
+    fn glass_read_back_inverts_the_slider_for_every_g() {
         assert_eq!(glass_from_alpha_map(&DEFAULT_ALPHA_MAP), 0.5);
-        // The written rule's two branches, on maps that reach them.
-        let high = DEFAULT_ALPHA_MAP.map(|_| 0.95);
-        assert!((glass_from_alpha_map(&high) - 0.75).abs() < 1e-12);
-        let low = DEFAULT_ALPHA_MAP.map(|_| 0.30);
-        assert!((glass_from_alpha_map(&low) - 0.25).abs() < 1e-12);
-        // Write then read: exact at the default.
-        assert_eq!(glass_from_alpha_map(&glass_alpha_map(0.5)), 0.5);
+        for step in 0..=100 {
+            let g = f64::from(step) / 100.0;
+            let back = glass_from_alpha_map(&glass_alpha_map(g));
+            assert!((back - g).abs() < 1e-9, "g {g} read back as {back}");
+        }
+    }
+
+    #[test]
+    fn glass_read_back_tests_the_first_and_last_entries() {
+        // Only e0 and e13 decide, not the map's extremes elsewhere.
+        let mut map = DEFAULT_ALPHA_MAP;
+        map[0] = 0.95;
+        assert!((glass_from_alpha_map(&map) - 0.75).abs() < 1e-12);
+        let mut map = DEFAULT_ALPHA_MAP;
+        map[13] = 0.30;
+        assert!((glass_from_alpha_map(&map) - 0.25).abs() < 1e-12);
+        let mut map = DEFAULT_ALPHA_MAP;
+        map[5] = 0.99;
+        map[8] = 0.10;
+        assert_eq!(glass_from_alpha_map(&map), 0.5);
     }
 }

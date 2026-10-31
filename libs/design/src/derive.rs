@@ -500,7 +500,7 @@ pub fn derive_with_palette(
         hc,
         body,
     );
-    // 23. Link button; its disabled text is Over(text at 0.5, its base).
+    // 23. Link button; its on_disabled is Over(its on at 0.5, its base).
     let link_text = accent_text.unwrap_or(accent);
     let mut link_button = neutral(
         TRANSPARENT,
