@@ -4,9 +4,9 @@
 //! or `prefs.page.open {row}` landed on, the search query and the condensed
 //! sidebar. There is no back stack: back goes to the page's parent
 //! (spec 4, "Back navigation").
+use crate::Section;
 use crate::engine::Engine;
 use crate::pages::{self, Body, Control, Hit};
-use crate::Section;
 use serde::Serialize;
 use serde_json::{Value, json};
 
@@ -163,7 +163,9 @@ impl Engine {
             .keys()
             .filter(|path| {
                 keys.iter().any(|k| match k.strip_suffix(".*") {
-                    Some(prefix) => path.starts_with(prefix) && path[prefix.len()..].starts_with('.'),
+                    Some(prefix) => {
+                        path.starts_with(prefix) && path[prefix.len()..].starts_with('.')
+                    }
                     None => path == k,
                 })
             })
@@ -212,11 +214,13 @@ impl Engine {
             Body::Custom { .. } => "custom",
             Body::Pending => "pending",
         };
-        Ok(json!({"page": page.id, "title": self.label(&page.title(), &[]), "parent": page.parent,
+        Ok(
+            json!({"page": page.id, "title": self.label(&page.title(), &[]), "parent": page.parent,
             "kind": kind, "backend": page.backend.map(|b| self.label(b, &[])),
             "children": pages::children(page.id).map(|p| p.id).collect::<Vec<_>>(),
             "sections": sections(page.sections()), "drawers": drawers,
-            "open": self.nav.page == page.id, "drawer": self.nav.drawer, "store": self.store_view()}))
+            "open": self.nav.page == page.id, "drawer": self.nav.drawer, "store": self.store_view()}),
+        )
     }
 
     /// `prefs.pages`: the tree, in sidebar order.
@@ -290,7 +294,11 @@ mod tests {
         let e = engine();
         let wifi = pages::get("wifi").unwrap();
         let toggle = wifi.row("enabled").unwrap();
-        assert!(e.row_blocked(wifi, toggle).unwrap().contains("backend-missing"));
+        assert!(
+            e.row_blocked(wifi, toggle)
+                .unwrap()
+                .contains("backend-missing")
+        );
     }
 
     #[test]

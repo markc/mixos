@@ -12,13 +12,24 @@ use std::collections::BTreeMap;
 #[derive(Clone, Debug, PartialEq)]
 pub enum Kind {
     Bool,
-    Int { min: i64, max: i64, step: i64 },
+    Int {
+        min: i64,
+        max: i64,
+        step: i64,
+    },
     /// An integer from a fixed set (panel thickness, slideshow interval).
     Set(Vec<i64>),
-    Number { min: f64, max: f64, step: f64 },
+    Number {
+        min: f64,
+        max: f64,
+        step: f64,
+    },
     Enum(Vec<String>),
     /// A colour, or one of `words` (`auto`, `accent`, the swatch names).
-    Colour { words: Vec<String>, alpha: bool },
+    Colour {
+        words: Vec<String>,
+        alpha: bool,
+    },
     /// `all` (or another word) or a connector name.
     Connector(Vec<String>),
     /// Anything the page framework draws only through a custom control:
@@ -189,13 +200,22 @@ mod tests {
     fn the_builtin_catalogue_describes_the_page_keys() {
         let catalog = Catalog::builtin();
         assert!(catalog.len() > 150, "{} keys", catalog.len());
-        assert_eq!(catalog.get("appearance.mode").unwrap().kind, Kind::Enum(vec!["dark".into(), "light".into(), "auto".into()]));
+        assert_eq!(
+            catalog.get("appearance.mode").unwrap().kind,
+            Kind::Enum(vec!["dark".into(), "light".into(), "auto".into()])
+        );
         assert_eq!(
             catalog.get("shell.panels.top.thickness").unwrap().kind,
             Kind::Set(vec![32, 40, 56, 64, 80])
         );
-        assert_eq!(catalog.default_of("shell.panels.top.enabled"), Some(json!(false)));
-        assert_eq!(catalog.default_of("shell.panels.bottom.enabled"), Some(json!(true)));
+        assert_eq!(
+            catalog.default_of("shell.panels.top.enabled"),
+            Some(json!(false))
+        );
+        assert_eq!(
+            catalog.default_of("shell.panels.bottom.enabled"),
+            Some(json!(true))
+        );
         assert!(catalog.get("network.wifi.enabled").unwrap().live());
         assert!(catalog.get("appearance.nonsense").is_none());
     }
@@ -207,7 +227,13 @@ mod tests {
             {"path":"keymaps.comp.spawn.<name>","kind":"spawn","class":"stored"},
         ]});
         let catalog = Catalog::from_describe(&described).unwrap();
-        assert_eq!(catalog.get("keymaps.comp.spawn.term").unwrap().kind, Kind::Other("spawn".into()));
-        assert_eq!(catalog.get("keymaps.ced.save").unwrap().kind, Kind::Other("chords".into()));
+        assert_eq!(
+            catalog.get("keymaps.comp.spawn.term").unwrap().kind,
+            Kind::Other("spawn".into())
+        );
+        assert_eq!(
+            catalog.get("keymaps.ced.save").unwrap().kind,
+            Kind::Other("chords".into())
+        );
     }
 }

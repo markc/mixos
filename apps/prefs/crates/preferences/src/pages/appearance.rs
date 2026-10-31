@@ -296,7 +296,14 @@ pub(super) fn page() -> Page {
         "palette",
         Some("desktop"),
         Body::Sections {
-            sections: vec![mode_and_colours, style, density, windows, experimental, reset],
+            sections: vec![
+                mode_and_colours,
+                style,
+                density,
+                windows,
+                experimental,
+                reset,
+            ],
             drawers: vec![frosted, toolkits, shadows],
         },
     );

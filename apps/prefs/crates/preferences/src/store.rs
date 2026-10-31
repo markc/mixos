@@ -563,14 +563,20 @@ mod tests {
     fn a_write_applies_at_once_fenced_on_the_revision_read() {
         let mut e = engine();
         assert_eq!(e.store.text("appearance.mode").as_deref(), Some("light"));
-        assert_eq!(e.store.text("appearance.density").as_deref(), Some("comfortable"));
+        assert_eq!(
+            e.store.text("appearance.density").as_deref(),
+            Some("comfortable")
+        );
         e.set_key("appearance.density", json!("compact")).unwrap();
         let (t, command, body) = next(&mut e);
         assert_eq!(command, "settings.apply");
         assert_eq!(body["expected_revision"], "7");
         assert_eq!(body["changes"], json!({"appearance.density":"compact"}));
         // Shown at once, before the answer.
-        assert_eq!(e.store.text("appearance.density").as_deref(), Some("compact"));
+        assert_eq!(
+            e.store.text("appearance.density").as_deref(),
+            Some("compact")
+        );
         e.set_key("appearance.roundness", json!("square")).unwrap();
         e.set_key("appearance.density", json!("spacious")).unwrap();
         e.stored(
@@ -591,7 +597,11 @@ mod tests {
         let mut e = engine();
         e.set_key("window.gaps", json!(8.0)).unwrap();
         let (t, _, body) = next(&mut e);
-        assert_eq!(body["changes"], json!({"window.gaps":8}), "coerced to the int key");
+        assert_eq!(
+            body["changes"],
+            json!({"window.gaps":8}),
+            "coerced to the int key"
+        );
         e.stored(t, refused(json!({"status":"conflict","revision":"9"})));
         let (t, command, _) = next(&mut e);
         assert_eq!(command, "settings.get");
@@ -621,9 +631,16 @@ mod tests {
         let mut e = engine();
         e.set_key("appearance.mode", json!("dark")).unwrap();
         let (t, _, _) = next(&mut e);
-        e.stored(t, refused(json!({"status":"authority_unreachable","node":"a"})));
+        e.stored(
+            t,
+            refused(json!({"status":"authority_unreachable","node":"a"})),
+        );
         assert_eq!(e.blocked(), Some(Blocked::AuthorityUnreachable));
-        assert_eq!(e.store.text("appearance.mode").as_deref(), Some("light"), "the write is dropped");
+        assert_eq!(
+            e.store.text("appearance.mode").as_deref(),
+            Some("light"),
+            "the write is dropped"
+        );
         let (t, command, _) = next(&mut e);
         assert_eq!(command, "settings.status");
         e.stored(t, ok(json!({"role":"mirror","stale":false})));

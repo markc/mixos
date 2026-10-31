@@ -138,7 +138,11 @@ impl Look {
             on_accent: rgba(derived.accent.on),
             button: rgba(derived.button.base),
             button_hover: rgba(derived.button.hover),
-            track_off: rgba(if derived.is_dark { p.neutral[6] } else { p.neutral[5] }),
+            track_off: rgba(if derived.is_dark {
+                p.neutral[6]
+            } else {
+                p.neutral[5]
+            }),
             knob: rgba(p.neutral[2]),
             field: rgba(derived.primary.small_widget),
             field_border: rgba(p.neutral[4]),
@@ -201,7 +205,11 @@ pub fn view(
         strings,
         &[Action::new("sidebar.toggle", Icon::PanelLeft)],
     );
-    events.extend(fired.into_iter().map(|(id, origin)| UiEvent::Command(id, origin)));
+    events.extend(
+        fired
+            .into_iter()
+            .map(|(id, origin)| UiEvent::Command(id, origin)),
+    );
     typed_search(ui, engine, &mut events);
     let condensed = condensed(ui.available_width());
     let frame = egui::Frame::NONE.fill(look.window);
@@ -219,11 +227,13 @@ pub fn view(
             .exact_size(DRAWER + 2.0 * look.l)
             .resizable(false)
             .frame(frame)
-            .show(ui, |ui| drawer::show(ui, engine, page, open, look, &mut events));
+            .show(ui, |ui| {
+                drawer::show(ui, engine, page, open, look, &mut events)
+            });
     }
-    egui::CentralPanel::default()
-        .frame(frame)
-        .show(ui, |ui| content(ui, engine, commands, strings, look, condensed, &mut events));
+    egui::CentralPanel::default().frame(frame).show(ui, |ui| {
+        content(ui, engine, commands, strings, look, condensed, &mut events)
+    });
     crate::view::overlays(ui, engine, commands, strings, &mut events);
     events
 }
@@ -231,7 +241,8 @@ pub fn view(
 /// Typing a printable key with nothing focused opens search with it
 /// (spec 4, "Search").
 fn typed_search(ui: &Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
-    if engine.nav.searching || ui.ctx().memory(|m| m.focused().is_some()) || !engine.can_navigate() {
+    if engine.nav.searching || ui.ctx().memory(|m| m.focused().is_some()) || !engine.can_navigate()
+    {
         return;
     }
     let typed: String = ui.input(|i| {
@@ -258,10 +269,15 @@ fn sidebar(ui: &mut Ui, engine: &Engine, look: &Look, events: &mut Vec<UiEvent>)
         pos2(outer.min.x + 8.0, outer.min.y),
         pos2(outer.min.x + 8.0 + SIDEBAR, outer.max.y - 8.0),
     );
-    ui.painter().rect_filled(card, Look::radius(look.r_s), look.sidebar);
+    ui.painter()
+        .rect_filled(card, Look::radius(look.r_s), look.sidebar);
     let pad = look.xxs.max(4.0);
     let inner = card.shrink(pad);
-    let mut ui = ui.new_child(egui::UiBuilder::new().max_rect(inner).layout(Layout::top_down(Align::Min)));
+    let mut ui = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(inner)
+            .layout(Layout::top_down(Align::Min)),
+    );
     ui.spacing_mut().item_spacing.y = pad;
     if engine.nav.searching {
         search_field(&mut ui, engine, look, events);
@@ -341,7 +357,11 @@ fn search_field(ui: &mut Ui, engine: &Engine, look: &Look, events: &mut Vec<UiEv
             if response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                 events.push(UiEvent::CloseSearch);
             }
-            let clear = ui.add(toolkit::button::IconButton::new(Icon::X).size(16.0).tooltip(label("search-clear")));
+            let clear = ui.add(
+                toolkit::button::IconButton::new(Icon::X)
+                    .size(16.0)
+                    .tooltip(label("search-clear")),
+            );
             if clear.clicked() {
                 events.push(UiEvent::CloseSearch);
             }
@@ -368,7 +388,11 @@ fn content(
     let width = (full.width() - 2.0 * side).clamp(0.0, CONTENT_MAX);
     let left = full.center().x - width / 2.0;
     let column = Rect::from_min_max(pos2(left, full.min.y), pos2(left + width, full.max.y));
-    let mut ui = ui.new_child(egui::UiBuilder::new().max_rect(column).layout(Layout::top_down(Align::Min)));
+    let mut ui = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(column)
+            .layout(Layout::top_down(Align::Min)),
+    );
     let ui = &mut ui;
     if engine.nav.searching && !engine.nav.query.trim().is_empty() {
         results(ui, engine, look, events);
@@ -395,8 +419,11 @@ fn content(
                         if !section.show.holds(&engine.store) {
                             continue;
                         }
-                        let rows: Vec<&Row> =
-                            section.rows.iter().filter(|r| r.show.holds(&engine.store)).collect();
+                        let rows: Vec<&Row> = section
+                            .rows
+                            .iter()
+                            .filter(|r| r.show.holds(&engine.store))
+                            .collect();
                         if rows.is_empty() {
                             continue;
                         }
@@ -408,7 +435,12 @@ fn content(
                 }
                 Body::Pending => {
                     card(ui, look, |ui| {
-                        plain_row(ui, look, &label("page-pending"), Some(&label("page-pending-desc")));
+                        plain_row(
+                            ui,
+                            look,
+                            &label("page-pending"),
+                            Some(&label("page-pending-desc")),
+                        );
                     });
                 }
                 Body::Custom { .. } => {}
@@ -424,8 +456,16 @@ fn title_block(ui: &mut Ui, engine: &Engine, page: &Page, look: &Look, events: &
         let response = ui
             .horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 4.0;
-                ui.add(icons::image_of(ui.ctx(), Icon::ChevronLeft, 16.0, look.accent));
-                ui.add(egui::Label::new(RichText::new(&text).color(look.accent).size(14.0)).sense(Sense::click()))
+                ui.add(icons::image_of(
+                    ui.ctx(),
+                    Icon::ChevronLeft,
+                    16.0,
+                    look.accent,
+                ));
+                ui.add(
+                    egui::Label::new(RichText::new(&text).color(look.accent).size(14.0))
+                        .sense(Sense::click()),
+                )
             })
             .inner;
         response.widget_info(|| WidgetInfo::labeled(Role::Link, ui.is_enabled(), &text));
@@ -437,7 +477,12 @@ fn title_block(ui: &mut Ui, engine: &Engine, page: &Page, look: &Look, events: &
         ui.add_space(0.0);
     }
     ui.horizontal(|ui| {
-        ui.label(RichText::new(label(&page.title())).size(24.0).strong().color(look.text));
+        ui.label(
+            RichText::new(label(&page.title()))
+                .size(24.0)
+                .strong()
+                .color(look.text),
+        );
         ui.with_layout(Layout::right_to_left(Align::Max), |ui| {
             for extra in page.extras.iter().rev() {
                 let enabled = extra.command.is_some() && extra.backend.is_none();
@@ -465,7 +510,11 @@ fn title_block(ui: &mut Ui, engine: &Engine, page: &Page, look: &Look, events: &
 /// The page's backend line and the store's write block, before any row.
 fn notices(ui: &mut Ui, engine: &Engine, page: &Page, look: &Look) {
     if let Some(backend) = page.backend {
-        notice(ui, look, &label_with("backend-missing", &[("backend", &label(backend))]));
+        notice(
+            ui,
+            look,
+            &label_with("backend-missing", &[("backend", &label(backend))]),
+        );
     }
     let writes = page.rows().any(|(_, r)| r.control.key().is_some());
     if writes
@@ -481,7 +530,12 @@ fn notices(ui: &mut Ui, engine: &Engine, page: &Page, look: &Look) {
 
 pub fn notice(ui: &mut Ui, look: &Look, text: &str) {
     ui.horizontal_wrapped(|ui| {
-        ui.add(icons::image_of(ui.ctx(), Icon::CircleAlert, 16.0, look.warning));
+        ui.add(icons::image_of(
+            ui.ctx(),
+            Icon::CircleAlert,
+            16.0,
+            look.warning,
+        ));
         ui.label(RichText::new(text).size(12.0).color(look.text));
     });
     ui.add_space(look.xs);
@@ -533,10 +587,20 @@ fn sub_pages(ui: &mut Ui, page: &Page, look: &Look, events: &mut Vec<UiEvent>) {
         let height = 40.0 + 2.0 * look.s;
         let (rect, response) =
             ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::click());
-        let fill = if response.hovered() { look.card_hover } else { look.card };
+        let fill = if response.hovered() {
+            look.card_hover
+        } else {
+            look.card
+        };
         ui.painter().rect_filled(rect, Look::radius(look.r_s), fill);
         let x = rect.min.x + look.m;
-        toolkit::button::paint_icon(ui, icon(child.icon), pos2(x + 8.0 + 10.0, rect.center().y), 20.0, look.icon);
+        toolkit::button::paint_icon(
+            ui,
+            icon(child.icon),
+            pos2(x + 8.0 + 10.0, rect.center().y),
+            20.0,
+            look.icon,
+        );
         let text_x = x + 36.0 + 4.0;
         ui.painter().text(
             pos2(text_x, rect.center().y - 1.0),
@@ -562,7 +626,12 @@ fn sub_pages(ui: &mut Ui, page: &Page, look: &Look, events: &mut Vec<UiEvent>) {
             look.icon,
         );
         if response.has_focus() {
-            ui.painter().rect_stroke(rect, Look::radius(look.r_s), Stroke::new(1.0, look.accent), StrokeKind::Outside);
+            ui.painter().rect_stroke(
+                rect,
+                Look::radius(look.r_s),
+                Stroke::new(1.0, look.accent),
+                StrokeKind::Outside,
+            );
         }
         response.widget_info(|| WidgetInfo::labeled(Role::Link, ui.is_enabled(), &title));
         if response.clicked() {
@@ -622,7 +691,17 @@ pub fn section_card(
                         divider(ui, look);
                     }
                     first = false;
-                    controls::radio_row(ui, engine, page, row, key, option, blocked.as_deref(), look, events);
+                    controls::radio_row(
+                        ui,
+                        engine,
+                        page,
+                        row,
+                        key,
+                        option,
+                        blocked.as_deref(),
+                        look,
+                        events,
+                    );
                 }
                 continue;
             }
@@ -644,7 +723,11 @@ fn results(ui: &mut Ui, engine: &Engine, look: &Look, events: &mut Vec<UiEvent>)
         .auto_shrink([false, false])
         .show(ui, |ui| {
             if hits.is_empty() {
-                ui.label(RichText::new(label("search-none")).size(14.0).color(look.text));
+                ui.label(
+                    RichText::new(label("search-none"))
+                        .size(14.0)
+                        .color(look.text),
+                );
             }
             let mut index = 0;
             while index < hits.len() {
@@ -660,7 +743,11 @@ fn results(ui: &mut Ui, engine: &Engine, look: &Look, events: &mut Vec<UiEvent>)
                 ui.horizontal(|ui| {
                     if let Some(parent) = page.parent.and_then(pages::get) {
                         ui.add_space(6.0);
-                        ui.label(RichText::new(label(&parent.title())).size(14.0).color(look.text));
+                        ui.label(
+                            RichText::new(label(&parent.title()))
+                                .size(14.0)
+                                .color(look.text),
+                        );
                         ui.label(RichText::new("/").size(14.0).color(look.text));
                     }
                     let title = label(&page.title());
@@ -722,7 +809,9 @@ fn custom(
                 Section::Terminal => crate::view::terminal(ui, engine, commands, strings, events),
                 Section::Email => crate::view::email_section(ui, engine, commands, strings, events),
                 Section::Ced => crate::view::ced_section(ui, engine, events),
-                Section::Wallpapers => crate::view::wallpaper_section(ui, engine, commands, strings, events),
+                Section::Wallpapers => {
+                    crate::view::wallpaper_section(ui, engine, commands, strings, events)
+                }
                 _ => {}
             }
         });
@@ -821,7 +910,12 @@ pub fn parse_hex(text: &str) -> Option<Color32> {
     let byte = |i: usize| u8::from_str_radix(hex.get(i..i + 2)?, 16).ok();
     match hex.len() {
         6 => Some(Color32::from_rgb(byte(0)?, byte(2)?, byte(4)?)),
-        8 => Some(Color32::from_rgba_unmultiplied(byte(0)?, byte(2)?, byte(4)?, byte(6)?)),
+        8 => Some(Color32::from_rgba_unmultiplied(
+            byte(0)?,
+            byte(2)?,
+            byte(4)?,
+            byte(6)?,
+        )),
         _ => None,
     }
 }
@@ -848,12 +942,16 @@ mod tests {
     #[test]
     fn the_compact_look_draws_cosmic_s_measurements() {
         let mut e = Engine::new(crate::label_with);
-        e.store.values.insert("appearance.density".into(), json!("compact"));
+        e.store
+            .values
+            .insert("appearance.density".into(), json!("compact"));
         let look = Look::of(&toolkit::Theme::embedded(), &e);
         assert_eq!((look.xs, look.s, look.m, look.l), (8.0, 8.0, 16.0, 24.0));
         assert_eq!(look.row_height(), 40.0);
         assert_eq!((look.r_s, look.r_xl), (8.0, 160.0));
-        e.store.values.insert("appearance.roundness".into(), json!("square"));
+        e.store
+            .values
+            .insert("appearance.roundness".into(), json!("square"));
         assert_eq!(Look::of(&toolkit::Theme::embedded(), &e).r_xl, 0.0);
     }
 }

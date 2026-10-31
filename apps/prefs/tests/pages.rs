@@ -206,7 +206,11 @@ fn prefs_set_writes_a_key_and_refuses_live_and_unknown_ones() {
     );
     for (id, key) in [(2, "network.wifi.enabled"), (3, "no.such.key")] {
         let (rc, body) = ask(&mut rig, id, "prefs.set", json!({"key":key,"value":true}));
-        assert_eq!((rc, body["error_code"].as_str()), (10, Some("REFUSED")), "{key}");
+        assert_eq!(
+            (rc, body["error_code"].as_str()),
+            (10, Some("REFUSED")),
+            "{key}"
+        );
     }
 }
 
