@@ -341,9 +341,19 @@ pub fn migrate_backdrop(document: &Value) -> Result<Migrated, Vec<Diagnostic>> {
             b.set(&format!("wallpaper.outputs.{output}.image"), json!(image));
             any_image = true;
         }
-        drop_if(&mut b, &format!("{root}.colour"), &fill.colour, PER_OUTPUT_COLOUR);
+        drop_if(
+            &mut b,
+            &format!("{root}.colour"),
+            &fill.colour,
+            PER_OUTPUT_COLOUR,
+        );
         drop_if(&mut b, &format!("{root}.fit"), &fill.fit, PER_OUTPUT_FIT);
-        drop_if(&mut b, &format!("{root}.fallback"), &fill.fallback, NO_FALLBACK);
+        drop_if(
+            &mut b,
+            &format!("{root}.fallback"),
+            &fill.fallback,
+            NO_FALLBACK,
+        );
         drop_if(
             &mut b,
             &format!("{root}.slideshow"),
