@@ -850,12 +850,10 @@ impl Panels {
         mode: PanelMode,
     ) -> Option<Option<SettingsWrite>> {
         let record = self.preferences.record(shell_edge(edge))?;
-        Some(
-            (record.preference.mode() != mode).then(|| SettingsWrite {
-                id: record.id.clone(),
-                change: RecordChange::Mode(record_mode(mode)),
-            }),
-        )
+        Some((record.preference.mode() != mode).then(|| SettingsWrite {
+            id: record.id.clone(),
+            change: RecordChange::Mode(record_mode(mode)),
+        }))
     }
 
     /// `shell.panel.resize` on a settings-owned edge, as the record write:
@@ -882,12 +880,12 @@ impl Panels {
                 "edge":edge.as_str(), "requested":thickness_px,
             })));
         }
-        Some(Ok((record.preference.thickness() != thickness_px).then(|| {
-            SettingsWrite {
+        Some(Ok((record.preference.thickness() != thickness_px).then(
+            || SettingsWrite {
                 id: record.id.clone(),
                 change: RecordChange::Thickness(thickness_px as u32),
-            }
-        })))
+            },
+        )))
     }
 
     pub fn menu(&self) -> Option<&crate::menu::Menu> {
@@ -2322,7 +2320,10 @@ mod tests {
         );
         for (edge, px) in [(Edge::Bottom, 40.5), (Edge::Left, 300.0)] {
             assert_eq!(
-                panels.settings_thickness_write(edge, px).unwrap().unwrap_err()["error_code"],
+                panels
+                    .settings_thickness_write(edge, px)
+                    .unwrap()
+                    .unwrap_err()["error_code"],
                 "BAD_ARGUMENT",
                 "{edge:?} {px}"
             );
@@ -2348,7 +2349,10 @@ mod tests {
             .iter()
             .position(|item| item.choice == crate::menu::Choice::Mode(PanelMode::Hidden))
             .unwrap();
-        assert!(menu.items[hide].enabled(), "settings-owned choices stay live");
+        assert!(
+            menu.items[hide].enabled(),
+            "settings-owned choices stay live"
+        );
         assert!(
             panels
                 .menu_input(menu.serial, crate::menu::Input::Choose(hide))
