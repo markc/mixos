@@ -5,7 +5,7 @@ description: Every MixOS egui application takes its whole look from one install 
 
 # Decision — desktop theming and style
 
-Status: accepted 2026-10-21. Amends [egui applications](2026-10-09-egui-applications.md),
+Status: accepted 2026-10-21; amended 2026-10-31 by [Preferences on the COSMIC settings model](2026-10-31-prefs-cosmic-model.md). Amends [egui applications](2026-10-09-egui-applications.md),
 [style tokens as data](2026-10-10-style-tokens-as-data.md),
 [scheme and style axes](2026-10-10-scheme-and-style-axes.md),
 [the chrome family](2026-10-09-chrome-family-and-schemes.md),
