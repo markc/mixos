@@ -19,14 +19,19 @@ fn macros_status_dispatch_and_surface() {
 }
 
 #[test]
-fn navigation_commands_used_by_macros_share_the_section_registry() {
+fn navigation_commands_used_by_macros_reach_every_page() {
     let commands = prefs::actions::registry();
     let mut engine = preferences::Engine::new(prefs::label_with);
-    for section in preferences::SECTIONS {
+    for page in preferences::pages::all() {
         commands
-            .execute(section.command, &mut engine, toolkit::action::Origin::Bus)
+            .execute_with(
+                "page.open",
+                &mut engine,
+                serde_json::json!({"page": page.id}),
+                toolkit::action::Origin::Bus,
+            )
             .unwrap();
-        assert_eq!(engine.section(), section.section);
+        assert_eq!(engine.nav.page, page.id);
     }
     commands
         .execute("view.search", &mut engine, toolkit::action::Origin::Bus)
