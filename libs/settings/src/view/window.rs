@@ -36,7 +36,7 @@ pub struct Controls {
 /// The eight framing keys moved from `appearance.*`. The design names are
 /// as authored: unknown names are retained and render as the default, so a
 /// consumer resolves them with `design::WindowStyle::resolve` and friends.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Framing {
     /// `auto`, `csd` or `ssd`.
     pub decorations: String,

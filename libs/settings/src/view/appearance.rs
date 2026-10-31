@@ -5,10 +5,12 @@
 //! are the values as authored (the mode may be `auto`); [`super::Look`]
 //! composes them for followers and resolution.
 use super::{Reader, View, family};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
-#[derive(Clone, Debug, PartialEq)]
+/// Serialised in the registry's names, for S7's look topic.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Appearance {
     /// `dark`, `light` or `auto`, as authored; resolution turns `auto` into
     /// one of the other two ([`crate::resolve::values::effective_mode`]).
@@ -25,7 +27,9 @@ pub struct Appearance {
     /// `normal` or `high`.
     pub contrast: String,
     /// The geometry axes, as `design::geometry` names them (A4, A5).
+    #[serde(with = "roundness_name")]
     pub roundness: Roundness,
+    #[serde(with = "density_name")]
     pub density: Density,
     pub frosted: Frosted,
     pub font_family: Option<String>,
@@ -41,8 +45,10 @@ pub struct Appearance {
     pub source: Option<String>,
 }
 
-/// `appearance.accent`.
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// `appearance.accent`, on the wire as authored (`auto`, a swatch name or
+/// `#rrggbb`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(into = "String", from = "String")]
 pub enum Accent {
     /// The scheme's own accent.
     Auto,
@@ -62,12 +68,47 @@ impl Accent {
     }
 }
 
+impl From<String> for Accent {
+    fn from(text: String) -> Self {
+        Self::of(&text)
+    }
+}
+
+impl From<Accent> for String {
+    fn from(accent: Accent) -> Self {
+        match accent {
+            Accent::Auto => "auto".into(),
+            Accent::Swatch(text) | Accent::Colour(text) => text,
+        }
+    }
+}
+
 /// `appearance.density` (three steps, never a number, F3) and
 /// `appearance.roundness` (three presets) are `design::geometry`'s own axes:
 /// `comfortable` is its `Standard`.
 pub use design::geometry::{Density, Roundness};
 
-#[derive(Clone, Debug, PartialEq)]
+/// A geometry axis on the wire by its settings name.
+macro_rules! by_name {
+    ($module:ident, $ty:ty, $what:literal) => {
+        mod $module {
+            use super::*;
+            pub fn serialize<S: serde::Serializer>(v: &$ty, s: S) -> Result<S::Ok, S::Error> {
+                s.serialize_str(v.name())
+            }
+            pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<$ty, D::Error> {
+                let name = String::deserialize(d)?;
+                <$ty>::from_name(&name).ok_or_else(|| {
+                    serde::de::Error::custom(format!(concat!("unknown ", $what, " {:?}"), name))
+                })
+            }
+        }
+    };
+}
+by_name!(roundness_name, Roundness, "roundness");
+by_name!(density_name, Density, "density");
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Frosted {
     /// 0 to 13; 0 is no blur.
     pub thickness: u32,
@@ -124,7 +165,7 @@ impl View for Appearance {
 }
 
 /// The internal `state.*` keys (§2.17).
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct State {
     /// The sun's state, from the daylight citizen; None while it has never
     /// written (Auto is then disabled in Prefs, and resolves dark).
@@ -144,7 +185,7 @@ impl View for State {
 }
 
 /// `apps.<app>.*`: one app's look overrides. None takes the desktop's.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct AppLook {
     pub scheme: Option<String>,
     /// `dark` or `light`: an app override never says `auto`.
@@ -154,7 +195,8 @@ pub struct AppLook {
 }
 
 /// The apps with an override, by id.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct AppLooks(pub BTreeMap<String, AppLook>);
 
 impl View for AppLooks {
@@ -170,7 +212,8 @@ impl View for AppLooks {
 
 /// `tune.*` (ADR R4): authored tunables by name (`style.radius`,
 /// `chrome.accent`), each checked against `design::tunables()`.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct Tune(pub BTreeMap<String, Value>);
 
 impl View for Tune {
