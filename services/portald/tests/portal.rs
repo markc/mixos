@@ -9,7 +9,7 @@ use portald::portal::{BUS_NAME, INTERFACE, OBJECT_PATH};
 use portald::status::{self, Shared};
 use settings::Binding;
 use settings::Revision;
-use settings::appearance::{APPEARANCE_SCHEMA, AppearanceProjection};
+use portald::appearance::{PROJECTION_SCHEMA, Projection};
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
@@ -208,9 +208,9 @@ impl Drop for PrivateBus {
     }
 }
 
-fn projection(incarnation: &str, revision: u64, mode: &str) -> AppearanceProjection {
-    AppearanceProjection {
-        schema: APPEARANCE_SCHEMA,
+fn projection(incarnation: &str, revision: u64, mode: &str) -> Projection {
+    Projection {
+        schema: PROJECTION_SCHEMA,
         caption_side: "right".into(),
         binding: Binding {
             instance: "host".into(),
@@ -218,7 +218,6 @@ fn projection(incarnation: &str, revision: u64, mode: &str) -> AppearanceProject
         },
         incarnation: incarnation.into(),
         revision: Revision(revision),
-        design_revision: Revision(1),
         mode: mode.into(),
         contrast: "normal".into(),
         accent: ACCENT,
@@ -230,7 +229,7 @@ fn spawn_portal(
     state_dir: Option<PathBuf>,
 ) -> (
     JoinHandle<anyhow::Result<()>>,
-    mpsc::Sender<AppearanceProjection>,
+    mpsc::Sender<Projection>,
     Shared,
 ) {
     let (projections, received) = mpsc::channel(8);
@@ -645,7 +644,7 @@ async fn production_process_answers_read_within_250_ms_with_a_silent_authority()
         let request = tokio::time::timeout(Duration::from_secs(5), requests.recv())
             .await?
             .ok_or_else(|| anyhow::anyhow!("authority receiver ended"))?;
-        assert_eq!(request.command, "settings.appearance.get");
+        assert_eq!(request.command, portald::service::FETCH_COMMAND);
         // The authority deliberately never responds.
         let report = tokio::time::timeout(
             Duration::from_millis(250),
@@ -875,6 +874,30 @@ async fn wait_absent(
     .await?
 }
 
+/// The projection the real authority answers now, read as portald reads it:
+/// the values view, then the palette of the resolved mode.
+async fn authority_projection(
+    operator: &bus::native_client::NodedClient,
+) -> anyhow::Result<Projection> {
+    use serde_json::json;
+    let binding = projection("a", 1, "dark").binding;
+    let values = operator
+        .call(
+            "settingsd",
+            portald::service::FETCH_COMMAND,
+            json!({"binding": binding, "view": "values", "keys": portald::appearance::VALUE_KEYS}),
+        )
+        .await?;
+    let palette = operator
+        .call(
+            "settingsd",
+            portald::service::PALETTE_COMMAND,
+            json!({"binding": binding, "mode": values["resolved"]["mode"]}),
+        )
+        .await?;
+    Projection::from_answers(&binding, &values, &palette).map_err(|d| anyhow::anyhow!("{d:?}"))
+}
+
 #[tokio::test]
 async fn native_startup_live_change_and_settingsd_restart_without_broker_reconnect()
 -> anyhow::Result<()> {
@@ -909,27 +932,14 @@ async fn native_startup_live_change_and_settingsd_restart_without_broker_reconne
         .await
         .is_ok()
     {}
-    let initial_appearance = operator
-        .call(
-            "settingsd",
-            "settings.appearance.get",
-            json!({"binding": projection("a", 1, "dark").binding}),
-        )
-        .await?;
-    let initial = operator
-        .call(
-            "settingsd",
-            "settings.get",
-            json!({"binding": projection("a", 1, "dark").binding}),
-        )
-        .await?;
+    let before_projection = authority_projection(&operator).await?;
     let changed = operator
         .call(
             "settingsd",
             "settings.apply",
             json!({
                 "binding": projection("a", 1, "dark").binding,
-                "expected_incarnation": initial["snapshot"]["incarnation"],
+                "expected_incarnation": before_projection.incarnation,
                 "expected_revision": "1", "operation_id": "portal-live-dark",
                 "changes": {"appearance.mode": "dark", "window.caption_side": "left"}
             }),
@@ -946,17 +956,7 @@ async fn native_startup_live_change_and_settingsd_restart_without_broker_reconne
     );
     // Check the broker transport never changed generation while startup/live
     // update/restart were handled, and the signal is from the D-Bus name owner.
-    let current_appearance = operator
-        .call(
-            "settingsd",
-            "settings.appearance.get",
-            json!({"binding": projection("a", 1, "dark").binding}),
-        )
-        .await?;
-    let before_projection: AppearanceProjection =
-        serde_json::from_value(initial_appearance["appearance"].clone())?;
-    let after_projection: AppearanceProjection =
-        serde_json::from_value(current_appearance["appearance"].clone())?;
+    let after_projection = authority_projection(&operator).await?;
     let changes = portald::appearance::Values::from_projection(&before_projection).changed(
         &portald::appearance::Values::from_projection(&after_projection),
     );

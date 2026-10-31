@@ -4,9 +4,9 @@
 //!
 //! A scripted settingsd registers under the settingsd name, so the broker stamps
 //! its publications exactly as it stamps the real authority's. It answers
-//! `settings.appearance.get` from a revision the test controls. Hints are unstamped
-//! frames, which a current noded never lets a non-owner publish on the settings
-//! topic, so they enter the feed through a bounded lane. That lane's producer is the
+//! `settings.get {view: values}` and then `settings.palette` from a revision the
+//! test controls; only the first counts as a read. Hints are unstamped frames,
+//! which a current noded never lets a non-owner publish on the settings topics, so they enter the feed through a bounded lane. That lane's producer is the
 //! production sender (`bounded_incoming_injector`), so an injected frame overflows
 //! exactly as a broker frame does, with the same 64-slot capacity as the feed's own.
 //!
@@ -20,15 +20,11 @@ use bus::native_client::{
     BoundedIncomingEvent, BoundedIncomingInjector, BoundedIncomingReceiver, IncomingCommand,
     SupervisedClient, bounded_incoming_injector,
 };
+use portald::appearance::Projection;
 use portald::service::{self, CommandSource};
 use portald::status::{self, Shared};
 use serde_json::json;
-use settings::appearance::AppearanceProjection;
-
-/// The Studio dark accent the design resolves to (pinned in settingsd's `appearance`
-/// tests); the feed under test carries it through unchanged.
-const STUDIO_DARK_ACCENT: [f64; 3] = [0.5450980392156862, 0.48627450980392156, 0.9647058823529412];
-use settings::{Binding, Desktop, Revision, Snapshot};
+use settings::Binding;
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -63,20 +59,6 @@ fn binding() -> Binding {
     }
 }
 
-fn snapshot(revision: u64) -> Snapshot {
-    let desktop = Desktop::default();
-    let effective = settings::resolve(&desktop).unwrap();
-    Snapshot {
-        schema: settings::SCHEMA,
-        binding: binding(),
-        incarnation: "a".into(),
-        revision: Revision(revision),
-        design_revision: Revision(1),
-        source_digest: "source".into(),
-        desktop,
-        effective,
-    }
-}
 
 /// The most hint-driven read starts that can fit in `elapsed`. Consecutive starts
 /// are at least one interval apart, and two more starts of slack cover the first
@@ -92,9 +74,12 @@ fn free_port() -> anyhow::Result<u16> {
 }
 
 /// The scripted authority's state. A read captures the revision when it arrives,
-/// then waits for a permit, then answers with the captured snapshot.
+/// then waits for a permit, then answers with the captured revision; the palette
+/// read that follows it answers at the same revision.
 struct Authority {
-    state: Mutex<Snapshot>,
+    state: Mutex<u64>,
+    /// The revision the last answered read captured.
+    answered: Mutex<u64>,
     /// Reads that have arrived, whether or not they have been answered.
     reads: AtomicU64,
     /// One permit answers one read. The test adds permits to release reads.
@@ -115,14 +100,28 @@ async fn serve(
         let BoundedIncomingEvent::Command(command) = event else {
             continue;
         };
-        if command.is_topic_delivery() || command.command != service::FETCH_COMMAND {
+        if command.is_topic_delivery() {
             continue;
         }
-        let snapshot = authority.state.lock().unwrap().clone();
+        if command.command == service::PALETTE_COMMAND {
+            let revision = *authority.answered.lock().unwrap();
+            let body = json!({
+                "status": "current", "binding": binding(), "incarnation": "a",
+                "revision": revision.to_string(),
+                "palette": {"dark": {"mode": "dark", "contrast": "normal", "accent": "#8B7CF6FF"}},
+            })
+            .to_string();
+            let _ = client.respond(&command, 0, &body).await;
+            continue;
+        }
+        if command.command != service::FETCH_COMMAND {
+            continue;
+        }
+        let revision = *authority.state.lock().unwrap();
         authority.arrivals.lock().unwrap().push(Instant::now());
         authority.captured.lock().unwrap().push(format!(
             "read rev{} @{}ms",
-            snapshot.revision.0,
+            revision,
             authority.started.elapsed().as_millis()
         ));
         authority.reads.fetch_add(1, Ordering::SeqCst);
@@ -130,15 +129,15 @@ async fn serve(
             break;
         };
         permit.forget();
-        let appearance =
-            AppearanceProjection::from_snapshot(&snapshot, STUDIO_DARK_ACCENT).unwrap();
-        // As settingsd: the snapshot in the schema the read asked for.
+        // As settingsd: the values view of the keys asked for, and the resolved mode.
         let asked: serde_json::Value = serde_json::from_str(&command.body).unwrap_or_default();
-        assert_eq!(asked["schema"], 2, "portald reads schema 2");
+        assert_eq!(asked["view"], "values", "portald reads the values view");
+        *authority.answered.lock().unwrap() = revision;
         let body = json!({
-            "status": "current",
-            "appearance": appearance,
-            "snapshot": settings::compact::encode(&snapshot).unwrap(),
+            "status": "current", "binding": binding(), "incarnation": "a",
+            "revision": revision.to_string(),
+            "values": {"window.caption_side": "auto"},
+            "resolved": {"mode": "dark", "accent": "#8b7cf6"},
         })
         .to_string();
         let _ = client.respond(&command, 0, &body).await;
@@ -147,7 +146,7 @@ async fn serve(
 
 /// An unstamped topic frame, as an old noded delivers one.
 fn hint() -> IncomingCommand {
-    let topic = settings::compact_topic("default");
+    let topic = settings::topics::keys_topic("default", "appearance");
     IncomingCommand {
         generation: 0,
         from: "noded".into(),
@@ -183,7 +182,7 @@ struct Harness {
     authority: Arc<Authority>,
     publisher: Arc<SupervisedClient>,
     injector: BoundedIncomingInjector,
-    projections: mpsc::Receiver<AppearanceProjection>,
+    projections: mpsc::Receiver<Projection>,
     /// Every projection the feed forwarded, as `projected revN @Tms`.
     log: Vec<String>,
     shared: Shared,
@@ -235,7 +234,8 @@ impl Harness {
             .incoming_bounded()
             .ok_or_else(|| anyhow::anyhow!("authority incoming taken"))?;
         let authority = Arc::new(Authority {
-            state: Mutex::new(snapshot(1)),
+            state: Mutex::new(1),
+            answered: Mutex::new(0),
             reads: AtomicU64::new(0),
             gate: Semaphore::new(0),
             captured: Mutex::new(Vec::new()),
@@ -277,7 +277,7 @@ impl Harness {
         )
     }
 
-    fn record(&mut self, projection: &AppearanceProjection) -> u64 {
+    fn record(&mut self, projection: &Projection) -> u64 {
         self.log.push(format!(
             "projected rev{} @{}ms",
             projection.revision.0,
@@ -328,10 +328,10 @@ impl Harness {
     }
 
     fn set_revision(&self, revision: u64) {
-        *self.authority.state.lock().unwrap() = snapshot(revision);
+        *self.authority.state.lock().unwrap() = revision;
     }
 
-    /// Releases `reads` held reads, each answered with the snapshot it captured.
+    /// Releases `reads` held reads, each answered with the revision it captured.
     fn allow(&self, reads: usize) {
         self.authority.gate.add_permits(reads);
     }
@@ -400,10 +400,9 @@ impl Harness {
 
     /// Publishes the authority's current state as a stamped settingsd frame.
     async fn publish_stamped(&self) -> anyhow::Result<()> {
-        let topic = settings::compact_topic("default");
-        let body = serde_json::to_string(&settings::compact::encode(
-            &self.authority.state.lock().unwrap(),
-        )?)?;
+        let topic = settings::topics::keys_topic("default", "appearance");
+        let revision = *self.authority.state.lock().unwrap();
+        let body = json!({"schema": 3, "revision": revision.to_string()}).to_string();
         let mut inner = bus::wire::BusMessage::new();
         inner.set("command", &topic);
         inner.body = body;

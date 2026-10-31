@@ -2,8 +2,8 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The session-local appearance cache. It is a convenience for cold start
 //! only: it is read once, validated, and never written back to settingsd.
+use crate::appearance::Projection;
 use settings::Binding;
-use settings::appearance::AppearanceProjection;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
@@ -23,7 +23,7 @@ pub fn path(dir: &Path, binding: &Binding) -> anyhow::Result<PathBuf> {
 
 /// A validated cached projection, or `None` when absent or unusable. An
 /// unusable file is logged and ignored, never fatal.
-pub fn load(dir: &Path, binding: &Binding) -> Option<AppearanceProjection> {
+pub fn load(dir: &Path, binding: &Binding) -> Option<Projection> {
     let path = path(dir, binding).ok()?;
     let file = std::fs::File::open(&path).ok()?;
     let metadata = file.metadata().ok()?;
@@ -40,9 +40,9 @@ pub fn load(dir: &Path, binding: &Binding) -> Option<AppearanceProjection> {
             return None;
         }
     }
-    let parsed: Result<AppearanceProjection, String> = serde_json::from_str(&text)
+    let parsed: Result<Projection, String> = serde_json::from_str(&text)
         .map_err(|error| error.to_string())
-        .and_then(|projection: AppearanceProjection| {
+        .and_then(|projection: Projection| {
             projection
                 .validate()
                 .map(|()| projection)
@@ -62,7 +62,7 @@ pub fn load(dir: &Path, binding: &Binding) -> Option<AppearanceProjection> {
 }
 
 /// Replaces the cache atomically: write a sibling temporary file, then rename.
-pub fn save(dir: &Path, projection: &AppearanceProjection) -> anyhow::Result<()> {
+pub fn save(dir: &Path, projection: &Projection) -> anyhow::Result<()> {
     projection
         .validate()
         .map_err(|fault| anyhow::anyhow!(fault.message))?;
