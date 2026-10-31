@@ -65,7 +65,8 @@ fn accents() -> Vec<AccentChoice> {
 fn the_role_map_covers_every_chrome_role_in_order() {
     assert_eq!(ROLE_MAP.map(|(role, _)| role), ROLES);
     let semantic: Vec<_> = SEMANTIC_MAP.iter().map(|(name, _)| *name).collect();
-    assert_eq!(semantic.len(), 13);
+    assert_eq!(semantic.len(), 12);
+    assert!(!semantic.contains(&"palette.accent.default"));
 }
 
 #[test]
