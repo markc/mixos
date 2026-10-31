@@ -84,7 +84,7 @@ pub struct Notes {
 
 /// Every command the engine answers itself. The window-level commands
 /// (`prefs.ui.*`, `prefs.window*`) belong to the toolkit drive layer.
-pub const COMMANDS: [&str; 19] = [
+pub const COMMANDS: [&str; 23] = [
     "HELP",
     "app.describe",
     "prefs.ping",
@@ -93,6 +93,10 @@ pub const COMMANDS: [&str; 19] = [
     "prefs.actions",
     "prefs.execute",
     "prefs.quit",
+    "prefs.pages",
+    "prefs.page",
+    "prefs.page.open",
+    "prefs.set",
     "prefs.search",
     "prefs.section",
     "prefs.select",
@@ -117,7 +121,11 @@ pub fn describe() -> Value {
         {"name":"prefs.actions","description":"List the app's commands with labels, shortcuts and enablement","read_only":true},
         {"name":"prefs.execute","args":{"id":"string"},"description":"Run a command from prefs.actions, with the same enablement as its menu item, button or shortcut","read_only":false},
         {"name":"prefs.quit","description":"Close once the operation in progress finishes","read_only":false},
-        {"name":"prefs.search","args":{"query":"string"},"description":"Find sections by title, category, alias or settings key without changing the window; returns matches with id and category in sidebar order, except system ranks Software first","read_only":true},
+        {"name":"prefs.pages","description":"The page tree in sidebar order: each page's id, title, parent, icon, kind (list, sections, custom or pending) and missing backend, and the open page","read_only":true},
+        {"name":"prefs.page","args":{"page":"optional page id from prefs.pages; the open page when absent"},"description":"One page as data: its sections and drawers, each row's control, settings key, value, whether it is shown, and why it takes no input (a missing backend, a pinned design source, a stale mirror); the store's role and revision","read_only":true},
+        {"name":"prefs.page.open","args":{"page":"a page id from prefs.pages (COSMIC's kebab-case spelling also works)","row":"optional row id from prefs.page: open its drawer and bring it into view"},"description":"Open a page, as the sidebar, a sub-page row or a search hit does; closes search","read_only":false},
+        {"name":"prefs.set","args":{"key":"a settings key a page row writes (settings.describe names its kind)","value":"the new value; null resets the key"},"description":"Set one setting at once, as its control does: checked against the registry, then one fenced settings.apply; refused while the store is unread, the mirror stale or the authority unreachable","read_only":false},
+        {"name":"prefs.search","args":{"query":"string"},"description":"Search every visible label (page titles and descriptions, section headings, row titles, descriptions and options) without changing the window; each hit names the page and the row it lands on","read_only":true},
         {"name":"prefs.section","args":{"name":crate::SECTIONS.iter().map(|s| s.id).collect::<Vec<_>>(),"group":crate::SoftwareGroup::ALL.map(crate::SoftwareGroup::name)},"description":"Select a section; optional group selects a group within Software","read_only":false},
         {"name":"prefs.select","args":{"app":"an app name from prefs.apps"},"description":"Open an app's Software group, select it and load its release notes","read_only":false},
         {"name":"prefs.apps","version":"0.3.0","description":"Software's rows, group, selection, notes, release_status and release_failed","read_only":true},

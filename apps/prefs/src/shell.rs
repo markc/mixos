@@ -12,7 +12,7 @@
 //! command acts on the row the person sees selected. Bus commands also wait
 //! behind window input accepted before them (the toolkit drive layer); and
 //! every accepted command is answered before the Bus stops.
-use crate::view::{UiEvent, view};
+use crate::view::UiEvent;
 use crate::{label, strings};
 use citizen::{CallError, Delivery, Handle, Reply};
 use futures::StreamExt;
@@ -32,6 +32,8 @@ pub enum Event {
     Delivery(Delivery),
     Released(u64, Result<Reply, CallError>),
     Settled(u64, Result<Reply, CallError>),
+    /// A settingsd call of the pages finished.
+    Stored(u64, Result<Reply, CallError>),
     Backdrop(u64, Result<Reply, CallError>),
     Browsed(u64, Result<preferences::picker::Listing, String>),
     Shown(u64, Option<u64>, Result<Value, String>),
@@ -46,6 +48,7 @@ pub fn apply_event(engine: &mut Engine, event: Event) {
         Event::Delivery(delivery) => engine.delivery(delivery),
         Event::Released(ticket, result) => engine.released(ticket, result),
         Event::Settled(ticket, result) => engine.settled(ticket, result),
+        Event::Stored(ticket, result) => engine.stored(ticket, result),
         Event::Backdrop(ticket, result) => engine.wallpaper_finished(ticket, result),
         Event::Browsed(ticket, result) => engine.browsed(ticket, result),
         Event::Shown(ticket, reply, result) => engine.shown(ticket, reply, result),
@@ -78,11 +81,30 @@ pub fn apply_ui(engine: &mut Engine, commands: &Registry<Engine>, events: Vec<Ui
             UiEvent::CloseDialog => engine.close_dialog(),
             UiEvent::ConfirmRemove => engine.confirm_remove(),
             UiEvent::SetMode(mode) => engine.set_mode(mode),
-            UiEvent::Look(look) => engine.edit_look(look),
-            UiEvent::Appearance(edit) => engine.edit_appearance(edit),
+            UiEvent::Page(page, row) => {
+                if let Err(error) = engine.open_page(page, row) {
+                    engine.store.error = Some(error);
+                }
+            }
+            UiEvent::Back => engine.back(),
+            UiEvent::Set(key, value) => {
+                if let Err(error) = engine.set_key(key, value) {
+                    engine.store.error = Some(error);
+                }
+            }
+            UiEvent::Reset(keys) => {
+                if let Err(error) = engine.reset_keys(keys) {
+                    engine.store.error = Some(error);
+                }
+            }
+            UiEvent::Drawer(Some(drawer)) => engine.open_drawer(drawer),
+            UiEvent::Drawer(None) => engine.close_drawer(),
+            UiEvent::Query(query) => engine.set_query(query),
+            UiEvent::CloseSearch => engine.close_search(),
+            UiEvent::FocusDone => engine.nav.focus = None,
+            UiEvent::Problem(message) => engine.store.error = Some(message),
             UiEvent::Terminal(setting) => engine.edit_terminal(setting),
             UiEvent::Text(setting) => engine.edit_text(setting),
-            UiEvent::Interface(edit) => engine.edit_interface_font(edit),
             UiEvent::WallpaperTarget(target) => engine.wallpaper_target(target),
             UiEvent::WallpaperKind(kind) => engine.wallpaper_kind(kind),
             UiEvent::WallpaperColour(colour) => engine.wallpaper_colour(colour),
@@ -180,6 +202,31 @@ pub fn settle(engine: &mut Engine, commands: &Registry<Engine>, strings: &String
                     };
                     out.push(Effect::Reply { id, rc, body });
                 }
+                Effect::ExecuteWith {
+                    id,
+                    command,
+                    params,
+                } => {
+                    let (rc, body) =
+                        match commands.execute_with(&command, engine, params, Origin::Bus) {
+                            Ok(result) => (0, json!({ "executed": command, "result": result })),
+                            Err(toolkit::action::Error::Unknown(_)) => (
+                                10,
+                                json!({"error_code":"UNKNOWN_ACTION","message":label("unknown-action")}),
+                            ),
+                            Err(toolkit::action::Error::Disabled { reason, .. }) => (
+                                10,
+                                json!({"error_code":"DISABLED","message":reason}),
+                            ),
+                            Err(toolkit::action::Error::BadParams { msg, .. }) => {
+                                (10, json!({"error_code":"ARGUMENT","message":msg}))
+                            }
+                            Err(toolkit::action::Error::Failed(msg)) => {
+                                (10, json!({"error_code":"REFUSED","message":msg}))
+                            }
+                        };
+                    out.push(Effect::Reply { id, rc, body });
+                }
                 Effect::Describe { id, help } => {
                     let surface = describe();
                     let body = if help {
@@ -227,6 +274,11 @@ pub struct Shell {
     inbox: Arc<Mutex<Deliveries>>,
     /// The window choice and base look installed last.
     installed: Installed,
+    /// The theme the window is drawn in, and the COSMIC look of it at the
+    /// density and roundness last drawn.
+    drawn: Theme,
+    look: crate::cosmic::Look,
+    look_key: (u64, Option<String>, Option<String>),
 }
 
 type Deliveries = futures::channel::mpsc::Receiver<Delivery>;
@@ -304,8 +356,10 @@ impl Shell {
             let _ = forward.send(Event::Delivery(Delivery::Disconnected));
             wake.request_repaint();
         });
+        let engine = Engine::new(crate::label_with);
+        let (drawn, look) = (theme.clone(), crate::cosmic::Look::of(&theme, &engine));
         let mut shell = Self {
-            engine: Engine::new(crate::label_with),
+            engine,
             commands: crate::actions::registry(),
             keymap: toolkit::keymap::Overrides::new(),
             strings: strings(),
@@ -320,6 +374,9 @@ impl Shell {
             held: VecDeque::new(),
             inbox,
             installed: (toolkit::theme_menu::Choice::default(), None, false, None),
+            drawn,
+            look,
+            look_key: (0, None, None),
         };
         shell.engine.session = (shell.theme.scheme(), shell.theme.mode());
         shell.engine.session_decorations = shell.theme.requested_decorations();
@@ -494,6 +551,19 @@ impl Shell {
                     Event::Settled(ticket, result)
                 });
             }
+            Effect::Store {
+                ticket,
+                command: command_name,
+                body,
+            } => {
+                let bus = self.bus.clone();
+                self.spawn(async move {
+                    let result = bus
+                        .raw_within(SETTINGS, command_name, body.to_string(), SETTINGS_BUDGET)
+                        .await;
+                    Event::Stored(ticket, result)
+                });
+            }
             Effect::Mail {
                 ticket,
                 service,
@@ -576,7 +646,10 @@ impl Shell {
                 self.ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
             // `settle` resolves these; nothing reaches here.
-            Effect::Commands { .. } | Effect::Execute { .. } | Effect::Describe { .. } => {}
+            Effect::Commands { .. }
+            | Effect::Execute { .. }
+            | Effect::ExecuteWith { .. }
+            | Effect::Describe { .. } => {}
         }
     }
 
@@ -622,6 +695,8 @@ impl Shell {
             }
         };
         toolkit::install(&self.ctx, &theme);
+        self.drawn = theme;
+        self.look_key.0 += 1;
         toolkit::debug!(app = APP, "settings preview applied");
         self.engine.session = (base.scheme(), base.mode());
         self.engine.session_decorations = base.requested_decorations();
@@ -655,6 +730,19 @@ impl Shell {
         }
     }
 
+    /// Recompute the COSMIC look when the theme, density or roundness moved.
+    fn follow_look(&mut self) {
+        let key = (
+            self.look_key.0,
+            self.engine.store.text("appearance.density"),
+            self.engine.store.text("appearance.roundness"),
+        );
+        if key != self.look_key {
+            self.look = crate::cosmic::Look::of(&self.drawn, &self.engine);
+            self.look_key = key;
+        }
+    }
+
     /// Apply the profile's bindings for Preferences when they change.
     fn follow_keymap(&mut self) {
         let mine = self.engine.look.keymaps.get(APP);
@@ -671,7 +759,9 @@ impl Shell {
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         self.follow_keymap();
         let fired = self.commands.shortcuts(ui.ctx(), &self.engine);
-        let mut events = view(ui, &self.engine, &self.commands, &self.strings);
+        self.follow_look();
+        let mut events =
+            crate::cosmic::view(ui, &self.engine, &self.commands, &self.strings, &self.look);
         events.extend(
             fired
                 .into_iter()

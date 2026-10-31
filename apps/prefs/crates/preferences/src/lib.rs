@@ -9,11 +9,15 @@
 //! (AGENTS.md §4.1, engine first).
 pub mod appearance;
 mod background;
+pub mod catalog;
 pub mod email;
 pub mod engine;
 pub mod model;
+pub mod nav;
 pub mod navigation;
+pub mod pages;
 pub mod picker;
+pub mod store;
 pub mod terminal;
 pub mod text;
 pub mod wallpaper;
