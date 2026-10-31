@@ -874,7 +874,7 @@ fn every_drag_zone_commits_its_placement_frame_and_protocol_states() {
         apply(&mut h, &window);
         assert_eq!(preview(&h).len(), 5);
         let area = smithay::utils::Rectangle::new((0, 0).into(), (1920, 1080).into());
-        let expected = tile.map_or(area, |tile| tile.rectangle(area, TileSplit::default()));
+        let expected = tile.map_or(area, |tile| tile.rectangle(area, TileSplit::default(), 0));
         assert_eq!(
             h.comp()
                 .drag

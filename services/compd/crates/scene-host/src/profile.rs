@@ -100,16 +100,22 @@ pub(crate) fn snap_thickness(px: u32) -> u32 {
 /// The `settings.apply` changes for `change` to panel `id`, in v2 keys
 /// (§5.2): autohide alone keeps the mode; a mode also clears autohide (an
 /// explicit dock or overlay shows the panel); a thickness is snapped to a
-/// step. `None` when the applied profile has no enabled panel `id`.
+/// step. `Err` is a refusal body: `SETTINGS_INVALID` (with the key) when the
+/// applied profile does not read, `SETTINGS_UNAVAILABLE` when it has no
+/// enabled panel `id`.
 pub(crate) fn panel_changes(
     snapshot: &Snapshot,
     id: &str,
     change: crate::panels::RecordChange,
-) -> Option<Value> {
+) -> Result<Value, Value> {
     use crate::panels::RecordChange;
-    let profile = Profile::read(snapshot).ok()?;
-    if !profile.panels.get(id)?.enabled {
-        return None;
+    let profile = Profile::read(snapshot).map_err(|fault| {
+        json!({"error_code":"SETTINGS_INVALID", "path":fault.path,
+            "message":format!("the applied settings do not read: {}", fault.message)})
+    })?;
+    if !profile.panels.get(id).is_some_and(|panel| panel.enabled) {
+        return Err(json!({"error_code":"SETTINGS_UNAVAILABLE",
+            "message":format!("the applied settings have no enabled shell.panels.{id} panel")}));
     }
     let key = |leaf: &str| format!("shell.panels.{id}.{leaf}");
     let mut changes = serde_json::Map::new();
@@ -118,14 +124,14 @@ pub(crate) fn panel_changes(
             changes.insert(key("autohide"), json!(autohide));
         }
         RecordChange::Mode(mode) => {
-            changes.insert(key("mode"), json!(mode));
+            changes.insert(key("mode"), json!(mode.name()));
             changes.insert(key("autohide"), json!(false));
         }
         RecordChange::Thickness(px) => {
             changes.insert(key("thickness"), json!(snap_thickness(px)));
         }
     }
-    Some(Value::Object(changes))
+    Ok(Value::Object(changes))
 }
 
 #[cfg(test)]
@@ -190,22 +196,35 @@ mod tests {
 
     #[test]
     fn panel_writes_are_v2_keys() {
-        use crate::panels::RecordChange;
-        let snapshot = snapshot(settings::Desktop::default());
-        let change = |change| panel_changes(&snapshot, "bottom", change).unwrap();
+        use crate::panels::{RecordChange, StoredMode};
+        let defaults = snapshot(settings::Desktop::default());
+        let change = |change| panel_changes(&defaults, "bottom", change).unwrap();
         assert_eq!(
             change(RecordChange::Autohide(true)),
             json!({"shell.panels.bottom.autohide": true})
         );
         assert_eq!(
-            change(RecordChange::Mode("overlay")),
+            change(RecordChange::Mode(StoredMode::Overlay)),
             json!({"shell.panels.bottom.mode": "overlay", "shell.panels.bottom.autohide": false})
         );
         assert_eq!(
             change(RecordChange::Thickness(48)),
             json!({"shell.panels.bottom.thickness": 56})
         );
-        assert!(panel_changes(&snapshot, "top", RecordChange::Autohide(true)).is_none());
-        assert!(panel_changes(&snapshot, "left", RecordChange::Autohide(true)).is_none());
+        for id in ["top", "left"] {
+            assert_eq!(
+                panel_changes(&defaults, id, RecordChange::Autohide(true)).unwrap_err()
+                    ["error_code"],
+                "SETTINGS_UNAVAILABLE"
+            );
+        }
+        // A profile that no longer reads says so, with its key.
+        let mut desktop = settings::Desktop::default();
+        desktop.shell.panels.get_mut("bottom").unwrap().edge = "leftish".into();
+        let mut broken = snapshot(settings::Desktop::default());
+        broken.desktop = desktop;
+        let fault = panel_changes(&broken, "bottom", RecordChange::Autohide(true)).unwrap_err();
+        assert_eq!(fault["error_code"], "SETTINGS_INVALID");
+        assert_eq!(fault["path"], "shell.panels.bottom.edge");
     }
 }

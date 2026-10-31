@@ -883,9 +883,11 @@ impl CompState {
         i32::try_from(self.tile_gap).unwrap_or(i32::MAX)
     }
 
-    /// Follow `window.gaps`; tiled windows re-fit on the next placement pass.
-    pub fn set_tile_gap(&mut self, gap: u32) {
-        self.tile_gap = gap;
+    /// Follow `window.gaps`, whether it changed. A change takes effect on the
+    /// next usable-area refresh, which re-places every tiled window; the
+    /// caller runs one at once.
+    pub fn set_tile_gap(&mut self, gap: u32) -> bool {
+        std::mem::replace(&mut self.tile_gap, gap) != gap
     }
 
     /// Whether a layer surface named its output.

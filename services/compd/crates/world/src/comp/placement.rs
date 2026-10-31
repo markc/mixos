@@ -105,18 +105,11 @@ impl TileSlot {
         Self::ALL.into_iter().find(|slot| slot.name() == name)
     }
 
+    /// The slot in `area`, with `gap` pixels between it and its neighbours
+    /// across each split (`window.gaps`, [`super::CompState::tile_gap`]): the
+    /// leading tile gives up half (rounded down), the trailing tile the rest.
+    /// The area's own edges keep no gap.
     pub fn rectangle(
-        self,
-        area: Rectangle<i32, Logical>,
-        split: TileSplit,
-    ) -> Rectangle<i32, Logical> {
-        self.rectangle_with_gap(area, split, 0)
-    }
-
-    /// The slot with `gap` pixels between it and its neighbours across each
-    /// split (`window.gaps`): the leading tile gives up half (rounded down),
-    /// the trailing tile the rest. The area's own edges keep no gap.
-    pub fn rectangle_with_gap(
         self,
         area: Rectangle<i32, Logical>,
         split: TileSplit,
@@ -126,7 +119,8 @@ impl TileSlot {
         let h = area.size.h.max(0);
         let x = (f64::from(w) * split.x.clamp(0.0, 1.0)).round() as i32;
         let y = (f64::from(h) * split.y.clamp(0.0, 1.0)).round() as i32;
-        let gap = gap.max(0);
+        // No wider than the area, so the split arithmetic cannot overflow.
+        let gap = gap.clamp(0, w.max(h));
         let (lead, trail) = (gap / 2, gap - gap / 2);
         let (left, right) = match self {
             Self::Left | Self::TopLeft | Self::BottomLeft => (0, (x - lead).max(0)),
@@ -486,7 +480,7 @@ mod tests {
             (TileSlot::BottomRight, (44, 53), (50, 39)),
         ] {
             assert_eq!(
-                slot.rectangle(area, TileSplit::default()),
+                slot.rectangle(area, TileSplit::default(), 0),
                 Rectangle::new(loc.into(), size.into())
             );
         }
@@ -498,10 +492,10 @@ mod tests {
             for h in 0..8 {
                 let area = Rectangle::new((3, -9).into(), (w, h).into());
                 for split in [TileSplit::default(), TileSplit { x: 0.3, y: 0.7 }] {
-                    let left = TileSlot::Left.rectangle(area, split);
-                    let right = TileSlot::Right.rectangle(area, split);
-                    let top = TileSlot::Top.rectangle(area, split);
-                    let bottom = TileSlot::Bottom.rectangle(area, split);
+                    let left = TileSlot::Left.rectangle(area, split, 0);
+                    let right = TileSlot::Right.rectangle(area, split, 0);
+                    let top = TileSlot::Top.rectangle(area, split, 0);
+                    let bottom = TileSlot::Bottom.rectangle(area, split, 0);
                     assert_eq!(left.loc.x + left.size.w, right.loc.x);
                     assert_eq!(left.size.w + right.size.w, w);
                     assert_eq!(top.loc.y + top.size.h, bottom.loc.y);
@@ -516,10 +510,10 @@ mod tests {
         let area = Rectangle::new((10, 20).into(), (1000, 800).into());
         let split = TileSplit::default();
         for gap in [0, 1, 7, 8] {
-            let left = TileSlot::Left.rectangle_with_gap(area, split, gap);
-            let right = TileSlot::Right.rectangle_with_gap(area, split, gap);
-            let top_left = TileSlot::TopLeft.rectangle_with_gap(area, split, gap);
-            let bottom_left = TileSlot::BottomLeft.rectangle_with_gap(area, split, gap);
+            let left = TileSlot::Left.rectangle(area, split, gap);
+            let right = TileSlot::Right.rectangle(area, split, gap);
+            let top_left = TileSlot::TopLeft.rectangle(area, split, gap);
+            let bottom_left = TileSlot::BottomLeft.rectangle(area, split, gap);
             assert_eq!(left.loc, area.loc);
             assert_eq!(right.loc.x - (left.loc.x + left.size.w), gap);
             assert_eq!(right.loc.x + right.size.w, area.loc.x + area.size.w);
@@ -529,17 +523,15 @@ mod tests {
                 bottom_left.loc.y + bottom_left.size.h,
                 area.loc.y + area.size.h
             );
-            let top = TileSlot::Top.rectangle_with_gap(area, split, gap);
+            let top = TileSlot::Top.rectangle(area, split, gap);
             assert_eq!(top.size.w, area.size.w);
         }
-        assert_eq!(
-            TileSlot::Left.rectangle_with_gap(area, split, 0),
-            TileSlot::Left.rectangle(area, split)
-        );
+        // A gap wider than the area leaves the trailing tile empty, and an
+        // extreme one cannot overflow.
         let tiny = Rectangle::new((0, 0).into(), (4, 4).into());
-        assert_eq!(
-            TileSlot::Right.rectangle_with_gap(tiny, split, 500).size.w,
-            0
-        );
+        for gap in [500, i32::MAX] {
+            assert_eq!(TileSlot::Right.rectangle(tiny, split, gap).size.w, 0);
+            assert_eq!(TileSlot::Left.rectangle(tiny, split, gap).size.w, 0);
+        }
     }
 }

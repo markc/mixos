@@ -69,8 +69,10 @@ impl Scenes {
     /// scheduled, `RedrawReason::Publish`, when a scene changed). A no-op
     /// unless the ping fired.
     pub fn service(&mut self, lp: &mut Loop) {
-        if self.pending.replace(false) {
-            scene_host::service(lp);
+        if self.pending.replace(false) && scene_host::service(lp).tile_gap_changed {
+            // A new `window.gaps` re-places the tiled windows now, as a
+            // moved usable area does.
+            policy_host::control::refresh_usable(lp);
         }
     }
 

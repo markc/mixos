@@ -703,6 +703,32 @@ fn removing_an_output_restores_tiles_and_maximised_windows_on_a_survivor() {
 }
 
 #[test]
+fn a_changed_tile_gap_re_places_tiled_windows_on_the_next_refresh() {
+    use world::comp::TileSlot;
+    let mut h = Harness::new();
+    let (surface, _, _) = h.mapped_toplevel(640, 480);
+    let (id, window) = window(&h, &surface);
+    tile(&mut h, id, &window, TileSlot::Left);
+    refresh(&mut h, id, &window);
+    let flush = h.wire.inner.space.state.element_location(&window).unwrap();
+    let size = slot::decided_size(&window).unwrap();
+    h.wire.inner.comp.set_tile_gap(8);
+    assert!(refresh(&mut h, id, &window).windows);
+    // The left tile gives up half the gap on its right; the screen edge none.
+    assert_eq!(
+        h.wire.inner.space.state.element_location(&window),
+        Some(flush)
+    );
+    assert_eq!(
+        slot::decided_size(&window),
+        Some((size.w - 4, size.h).into())
+    );
+    h.wire.inner.comp.set_tile_gap(0);
+    assert!(refresh(&mut h, id, &window).windows);
+    assert_eq!(slot::decided_size(&window), Some(size));
+}
+
+#[test]
 fn sending_a_tile_keeps_its_slot_and_uses_the_destination_workspace_split() {
     use policy::workspaces::{DefaultOutput, WorkspaceTarget};
     use world::comp::TileSlot;
@@ -1041,6 +1067,7 @@ fn all_tiles_anchor_oversized_clients_before_and_after_their_min_size_commit() {
                 let area = tiled.rectangle(
                     smithay::utils::Rectangle::new((0, 28).into(), (1536, 784).into()),
                     world::comp::TileSplit::default(),
+                    0,
                 );
                 configured(&h, &top, (area.size.w, area.size.h), false);
                 // The real late-client path: ACK the tile configure, then
