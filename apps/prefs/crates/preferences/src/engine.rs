@@ -1178,6 +1178,34 @@ impl Engine {
                 self.select(app);
                 self.ok(id, self.apps_view());
             }
+            "prefs.dialog" if args.get("answer").is_some() => {
+                // The confirmation's buttons, typed: confirm does what its
+                // Remove or Reset button does; cancel closes any dialog.
+                if args.get("open").is_some() {
+                    return self.error(id, "ARGUMENT", "give open or answer, not both");
+                }
+                let Some(dialog) = self.ui.dialog.clone() else {
+                    return self.error(id, "NO_DIALOG", "no dialog is open");
+                };
+                match args.get("answer").and_then(Value::as_str) {
+                    Some("cancel") => self.close_dialog(),
+                    Some("confirm") => match dialog {
+                        Dialog::Remove(_) => self.confirm_remove(),
+                        Dialog::RemoveAccount(_) | Dialog::ResetEmail | Dialog::ForgetPassword(_) => {
+                            self.confirm_email()
+                        }
+                        Dialog::About | Dialog::Shortcuts => {
+                            return self.error(
+                                id,
+                                "ARGUMENT",
+                                "this dialog has nothing to confirm; answer cancel",
+                            );
+                        }
+                    },
+                    _ => return self.error(id, "ARGUMENT", "answer must be \"confirm\" or \"cancel\""),
+                }
+                self.ok(id, json!({"dialog":self.ui.dialog}));
+            }
             "prefs.dialog" => {
                 let dialog = match args.get("open") {
                     Some(Value::Null) => None,
@@ -1604,6 +1632,40 @@ mod tests {
             (call[0].1, call[0].2.clone()),
             ("releases.install", json!({"app":"new"}))
         );
+    }
+
+    #[test]
+    fn prefs_dialog_answers_the_remove_confirmation() {
+        let mut e = listed();
+        e.select("demo");
+        let reply = |e: &mut Engine, id: u64, body: Value| {
+            e.command(id, "prefs.dialog", &body.to_string());
+            e.take_effects().into_iter().find_map(|x| match x {
+                Effect::Reply { id: i, rc, body } if i == id => Some((rc, body)),
+                _ => None,
+            })
+        };
+        assert_eq!(reply(&mut e, 1, json!({"answer":"confirm"})).unwrap().1["error_code"], "NO_DIALOG");
+        e.remove_selected();
+        e.take_effects();
+        assert_eq!(reply(&mut e, 2, json!({"answer":"maybe"})).unwrap().1["error_code"], "ARGUMENT");
+        assert_eq!(
+            reply(&mut e, 3, json!({"answer":"confirm","open":null})).unwrap().1["error_code"],
+            "ARGUMENT"
+        );
+        assert_eq!(e.ui.dialog, Some(Dialog::Remove("demo".into())));
+        e.command(4, "prefs.dialog", r#"{"answer":"confirm"}"#);
+        let effects = e.take_effects();
+        let call = releases(&effects);
+        assert_eq!(
+            (call[0].1, call[0].2.clone()),
+            ("releases.remove", json!({"app":"demo"}))
+        );
+        assert!(effects.iter().any(|x| matches!(x,
+            Effect::Reply { id: 4, rc: 0, body } if body == &json!({"dialog":null}))));
+        e.open(Dialog::About);
+        assert_eq!(reply(&mut e, 5, json!({"answer":"confirm"})).unwrap().1["error_code"], "ARGUMENT");
+        assert_eq!(reply(&mut e, 6, json!({"answer":"cancel"})).unwrap(), (0, json!({"dialog":null})));
     }
 
     #[test]
