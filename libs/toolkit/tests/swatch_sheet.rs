@@ -37,12 +37,16 @@ fn gallery(ui: &mut egui::Ui) {
         let _ = toolkit::selectable(ui, false, "Plain");
     });
     let mut text = String::from("Text field");
-    ui.text_edit_singleline(&mut text);
+    ui.text_edit_singleline(&mut text)
+        .accessible_name("Text field");
     ui.horizontal(|ui| {
         let mut on = true;
         ui.checkbox(&mut on, "Check");
         let mut value = 0.6_f32;
-        ui.add(egui::Slider::new(&mut value, 0.0..=1.0));
+        ui.add(egui::Slider::new(&mut value, 0.0..=1.0).show_value(false))
+            .accessible_name("Slider");
+        ui.add(egui::DragValue::new(&mut value).speed(0.01))
+            .accessible_name("Value");
     });
     ui.separator();
     ui.label("Body text, 0123456789");
@@ -53,8 +57,6 @@ fn render(theme: &Theme, size: egui::Vec2, title: String, roles: bool) -> RgbaIm
     let dictionary = theme.dictionary().clone();
     let mut harness = Harness::builder()
         .with_size(size)
-        // A sheet to look at, not a gate: the gallery's fields are unnamed.
-        .with_accessibility_check(false)
         .wgpu()
         .build_ui(move |ui| {
             egui::CentralPanel::default().show(ui, |ui| {
