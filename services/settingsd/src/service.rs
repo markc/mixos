@@ -490,10 +490,12 @@ async fn adopt(
     }
     let root = ctx.root.clone();
     let changed_at = push.changed_at;
+    // Checked against the mirror's own binding and authority, as at open.
+    let (binding, node) = (authority.accepted.binding.clone(), push.authority);
     let mut authority = authority;
     let result = tokio::task::spawn_blocking(move || {
-        let taken =
-            crate::mirror::write(&root, &cache).and_then(|()| authority.adopt(&cache, &changed_at));
+        let taken = crate::mirror::write(&root, &binding, &node, &cache)
+            .and_then(|()| authority.adopt(&cache, &changed_at));
         (authority, taken)
     })
     .await;
