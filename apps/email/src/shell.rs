@@ -2050,10 +2050,13 @@ impl Shell {
         let forward = self.state.with_send_origin(Some(origin), |state| {
             crate::commands::command(state, &self.commands, &self.strings, id, command_name, body)
         });
-        let cancelled_quit = quit_question && self.state.confirm.is_none() && self.state.compose.is_some();
+        let cancelled_quit =
+            quit_question && self.state.confirm.is_none() && self.state.compose.is_some();
         if quit_question {
             self.state.exiting = false;
-            if self.state.compose.is_none() && let Some(window) = &mut target {
+            if self.state.compose.is_none()
+                && let Some(window) = &mut target
+            {
                 window.closed = true;
             }
         }
@@ -3249,15 +3252,36 @@ mod tests {
         add_composer(&mut shell, "two");
         shell.state.exiting = true;
         shell.advance_close();
-        shell.command(90, "email.dialog", r#"{"window":"compose-1","answer":"cancel"}"#);
+        shell.command(
+            90,
+            "email.dialog",
+            r#"{"window":"compose-1","answer":"cancel"}"#,
+        );
         assert!(!shell.composers.quitting);
         assert!(!shell.state.exiting);
-        assert!(shell.composers.windows.values().all(|w| w.lock().unwrap().view.confirm.is_none()));
+        assert!(
+            shell
+                .composers
+                .windows
+                .values()
+                .all(|w| w.lock().unwrap().view.confirm.is_none())
+        );
         shell.state.exiting = true;
         shell.advance_close();
-        shell.command(91, "email.dialog", r#"{"window":"compose-1","answer":"keep"}"#);
+        shell.command(
+            91,
+            "email.dialog",
+            r#"{"window":"compose-1","answer":"keep"}"#,
+        );
         assert!(!shell.state.exiting, "a sibling still owns a draft");
-        assert!(shell.composers.windows["compose-2"].lock().unwrap().view.compose.is_some());
+        assert!(
+            shell.composers.windows["compose-2"]
+                .lock()
+                .unwrap()
+                .view
+                .compose
+                .is_some()
+        );
     }
 
     #[test]

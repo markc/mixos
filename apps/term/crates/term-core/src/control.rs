@@ -1098,7 +1098,10 @@ impl Control {
     /// request reaches the child this pane is actually bound to at exactly this
     /// generation. It holds no terminal or tab lock across the forward, because
     /// the child's answer may take a full admission round trip.
-    #[expect(clippy::too_many_arguments, reason = "forwarding retains the verified request identity and replay digest")]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "forwarding retains the verified request identity and replay digest"
+    )]
     async fn forward_execute(
         &self,
         connection: &VerifiedConnection,

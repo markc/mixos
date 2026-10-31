@@ -355,7 +355,9 @@ impl Shell {
             "term.dialog" => {
                 let (rc, mut body) = crate::dialog::command(&mut self.app, args);
                 if body["dialog"]["kind"] == "about" {
-                    body["dialog"]["body"] = json!(view::about_text(self.bus.connected() && self.follower.following()));
+                    body["dialog"]["body"] = json!(view::about_text(
+                        self.bus.connected() && self.follower.following()
+                    ));
                 }
                 (rc, body)
             }

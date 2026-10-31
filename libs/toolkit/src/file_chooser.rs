@@ -52,6 +52,7 @@ struct Listing {
     capped: bool,
 }
 
+#[expect(clippy::large_enum_variant, reason = "short-lived requests move once to the chooser worker")]
 enum Request {
     Open(PathBuf),
     Pick(Vec<PathBuf>),

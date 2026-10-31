@@ -1040,9 +1040,19 @@ mod tests {
     #[test]
     fn dirty_mail_bus_close_refuses_without_opening_a_modal() {
         let (mut c, _, tab) = opened(LETTER);
-        c.on_editor(tab, EditorMsg::Command(EditCommand::Insert("Unsaved ".into())));
-        let fx = c.on_bus_command(BusCommand { id: 99, command: "ced.execute".into(), body: serde_json::json!({"id":"file.close","params":{"tab":tab}}).to_string(), caller_key: "local:test".into() });
-        assert!(fx.iter().any(|e| matches!(e, Effect::Respond { id:99, rc:10, body } if body.contains("CONFLICT"))));
+        c.on_editor(
+            tab,
+            EditorMsg::Command(EditCommand::Insert("Unsaved ".into())),
+        );
+        let fx = c.on_bus_command(BusCommand {
+            id: 99,
+            command: "ced.execute".into(),
+            body: serde_json::json!({"id":"file.close","params":{"tab":tab}}).to_string(),
+            caller_key: "local:test".into(),
+        });
+        assert!(fx.iter().any(
+            |e| matches!(e, Effect::Respond { id:99, rc:10, body } if body.contains("CONFLICT"))
+        ));
         assert!(!fx.iter().any(|e| matches!(e, Effect::Prompt(_))));
         assert!(c.tab(tab).is_some());
     }

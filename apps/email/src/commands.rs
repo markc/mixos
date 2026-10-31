@@ -2029,9 +2029,18 @@ mod tests {
     fn typed_dialog_restores_discards_and_defers_saved_drafts() {
         for answer in ["restore", "discard", "later"] {
             let mut state = connected_many(&["a"]);
-            state.offer_drafts(vec![crate::drafts::SavedDraft { id:"abcdef".into(), account:"a".into(), subject:"Kept".into(), body:"Body".into(), ..Default::default() }]);
+            state.offer_drafts(vec![crate::drafts::SavedDraft {
+                id: "abcdef".into(),
+                account: "a".into(),
+                subject: "Kept".into(),
+                body: "Body".into(),
+                ..Default::default()
+            }]);
             run(&mut state, "email.dialog", json!({}));
-            assert_eq!(state.take_replies()[0].body["dialog"]["kind"], "draft_restore");
+            assert_eq!(
+                state.take_replies()[0].body["dialog"]["kind"],
+                "draft_restore"
+            );
             run(&mut state, "email.dialog", json!({"answer":answer}));
             assert_eq!(state.take_replies()[0].rc, 0);
             assert!(state.restore.is_empty());
