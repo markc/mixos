@@ -334,3 +334,41 @@ fn the_role_map_reads_as_a_table() {
         "button.divider over button.base over primary.base"
     );
 }
+
+/// accent_soft fills selections under body text: `text` over `accent_soft`
+/// over the scheme's `card` must keep AA for every swatch, in both modes.
+/// The cases below 4.5:1 are printed (`--nocapture`) and pinned in
+/// [`SOFT_BELOW_AA`], so a new one fails.
+#[test]
+fn body_text_reads_over_accent_soft_for_every_swatch() {
+    let mut below = Vec::new();
+    println!("ACCENT_SOFT CONTRAST (text over accent_soft over card), below 4.5:1");
+    for scheme in Scheme::ALL {
+        for mode in Mode::ALL {
+            for swatch in Swatch::ALL {
+                let design = compile(DesignContext {
+                    scheme,
+                    mode,
+                    accent: AccentChoice::Swatch(swatch),
+                    ..DesignContext::default()
+                });
+                let roles = crate::palette::roles_of(design.dictionary());
+                let fill = over(roles["accent_soft"], roles["card"]);
+                let ratio = crate::derive::primitives::contrast(roles["text"], fill);
+                if ratio < 4.5 {
+                    println!(
+                        "{} {} {} {ratio:.2}",
+                        scheme.name(),
+                        mode.name(),
+                        swatch.name()
+                    );
+                    below.push((scheme.name(), mode.name(), swatch.name()));
+                }
+            }
+        }
+    }
+    assert_eq!(below, SOFT_BELOW_AA, "accent_soft cases below 4.5:1 changed");
+}
+
+/// The swatch cases whose selection fill leaves body text under AA.
+const SOFT_BELOW_AA: &[(&str, &str, &str)] = &[];
