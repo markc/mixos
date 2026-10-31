@@ -92,6 +92,6 @@
   },
   "services/daylight/units/daylight.service": {
     "reason": "add the daylight user unit: sunrise and sunset for appearance.mode auto, beside the machine's settings authority",
-    "sha256": "9b709170229394780718f10190eacff443cdea82fb92ec2f1e42fe88187566cf"
+    "sha256": "ba249c739860966514dc237a408b109523d4ed6884b07323d2cfbf4295d4bd62"
   }
 }

@@ -1,24 +1,31 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
--- daylight_test: the sun maths, the zone table, and the real citizen against
--- a real settingsd on a private Bus:
--- - sunrise and sunset against published times (Brisbane, London, New York)
---   and a polar night and day (Tromsø);
--- - the zone table: canonical zones, aliases, and no place for UTC;
--- - the citizen writes state.appearance.daylight for the /etc/localtime zone,
---   keeps a manual override while the sun's state holds, and clears it in the
---   revision that flips daylight;
--- - time.zone wins over /etc/localtime, a zone with no place writes null,
---   and a replaced /etc/localtime is followed;
--- - the armed timer fires at the next sunrise or sunset (the clock-offset
---   hook stands the citizen three seconds before it);
--- - appearance.mode = auto resolves from what daylight wrote.
+-- daylight_test: the sun maths, the zone table, and the real citizen.
+-- - Sunrise and sunset against published times (Brisbane, London, New
+--   York); Tromsø's first and last polar days and a year of three-hourly
+--   samples, each next event flipping the state it was armed for; the poles.
+-- - The zone table: canonical zones, aliases, no place for UTC.
+-- - Against a real settingsd on a private Bus: daylight writes the
+--   /etc/localtime zone's state; a manual override holds while the sun's
+--   state holds and is cleared in the revision that flips it (also when the
+--   zone loses its place and daylight becomes null); time.zone wins over
+--   /etc/localtime; a replaced /etc/localtime is followed; a forged or stale
+--   time topic is ignored; re-arms reuse the one wake task and a zone change
+--   supersedes a long pending timer; the armed timer fires at the event;
+--   appearance.mode = auto resolves from what daylight wrote.
+-- - Against tests/fixtures/fake_settingsd.mix: beside a mirror daylight exits
+--   without writing; a write retries through conflicts; a resume line from a
+--   (fake) watch reconciles and a dead watch restarts no faster than its guard;
+--   the clock-offset hook needs MIXOS_TEST=1, is clamped and must be numeric.
+-- Every instant is written in explicit UTC ("...Z"), so the result does not
+-- depend on the runner's TZ.
 -- Run from the checkout root: mix services/daylight/tests/daylight_test.mix
 -- MIXOS_TEST_MIX / MIXOS_TEST_NODED / MIXOS_TEST_SETTINGSD choose the binaries.
 
 $pb = require("../../../tests/lib/private_bus.mix")
 $here = dirname(realpath($0))
 $scripts = realpath($here .. "/../scripts")
+$fake = realpath($here .. "/fixtures/fake_settingsd.mix")
 $zones_path = realpath($here .. "/../../../share/daylight/zones.mx")
 $sun = require("../scripts/lib/sun.mix")
 fn absolute($path)
@@ -56,31 +63,84 @@ fn stop_all($pids)
   end
 end
 
+fn utc($iso)
+  return date_parse($iso .. "Z")
+end
+
 -- Minutes between a computed instant and a published local clock time.
 fn off_by($t, $iso_local, $offset_h)
-  return abs($t - (date_parse($iso_local) - $offset_h * 3600)) / 60
+  return abs($t - (utc($iso_local) - $offset_h * 3600)) / 60
 end
 
 -- 1. The maths.
-$bne = $sun.day_events(-27.4667, 153.0333, $sun.day_of(153.0333, date_parse("2026-11-01 02:00:00")))
-check("Brisbane 2026-11-01 sunrise 04:58 AEST", off_by($bne.rise, "2026-11-01 04:58:00", 10) <= 3)
-check("Brisbane 2026-11-01 sunset 18:06 AEST", off_by($bne.set, "2026-11-01 18:06:00", 10) <= 3)
-$lon = $sun.day_events(51.5083, -0.1253, $sun.day_of(-0.1253, date_parse("2026-06-21 12:00:00")))
+check("explicit-UTC parsing", utc("2026-11-01T02:00:00") == 1793498400)
+$bne = $sun.day_events(-27.4667, 153.0333, $sun.day_of(153.0333, utc("2026-11-01T02:00:00")))
+check("Brisbane 2026-11-01 sunrise 04:58 AEST", off_by($bne.rise, "2026-11-01T04:58:00", 10) <= 3)
+check("Brisbane 2026-11-01 sunset 18:06 AEST", off_by($bne.set, "2026-11-01T18:06:00", 10) <= 3)
+$lon = $sun.day_events(51.5083, -0.1253, $sun.day_of(-0.1253, utc("2026-06-21T12:00:00")))
 check("London 2026-06-21 sunrise 04:43 BST, sunset 21:21 BST",
-  off_by($lon.rise, "2026-06-21 04:43:00", 1) <= 3 and off_by($lon.set, "2026-06-21 21:21:00", 1) <= 3)
-$ny = $sun.at(40.7142, -74.0064, date_parse("2026-03-21 03:30:00"))
+  off_by($lon.rise, "2026-06-21T04:43:00", 1) <= 3 and off_by($lon.set, "2026-06-21T21:21:00", 1) <= 3)
+$ny = $sun.at(40.7142, -74.0064, utc("2026-03-21T03:30:00"))
 check("New York at 23:30 EDT is dark and the next event is sunrise near 06:59",
-  not $ny.daylight and $ny.next_kind == "sunrise" and off_by($ny.next, "2026-03-21 06:59:00", -4) <= 3)
-$mid = $sun.at(-27.4667, 153.0333, date_parse("2026-11-01 02:00:00"))
+  not $ny.daylight and $ny.next_kind == "sunrise" and off_by($ny.next, "2026-03-21T06:59:00", -4) <= 3)
+$mid = $sun.at(-27.4667, 153.0333, utc("2026-11-01T02:00:00"))
 check("Brisbane at noon is light and the next event is that day's sunset",
   $mid.daylight and $mid.next_kind == "sunset" and abs($mid.next - $bne.set) < 1)
-$pn = $sun.at(69.65, 18.9667, date_parse("2026-12-21 11:00:00"))
-$pd = $sun.at(69.65, 18.9667, date_parse("2026-06-21 22:00:00"))
-check("Tromsø: polar night is dark, polar day is light, neither has an event",
+
+$tro = [69.65, 18.9667]
+$pn = $sun.at($tro[0], $tro[1], utc("2026-12-21T11:00:00"))
+$pd = $sun.at($tro[0], $tro[1], utc("2026-06-21T22:00:00"))
+check("Tromsø midwinter is a dark polar night, midsummer a light polar day, neither with an event",
   $pn.polar == "night" and not $pn.daylight and $pn.next == nil and $pd.polar == "day" and $pd.daylight and $pd.next == nil)
+
+-- The first and last polar days of Tromsø's 2026 midnight sun.
+$first = nil
+$last = nil
+$n = $sun.day_of($tro[1], utc("2026-04-01T12:00:00"))
+for $i = 0 to 150
+  $d = $sun.day_events($tro[0], $tro[1], $n + $i)
+  if $d.polar == "day" then
+    if $first == nil then $first = $d end
+    $last = $d
+  end
+end
+$before = $sun.day_events($tro[0], $tro[1], $sun.day_of($tro[1], $first.transit) - 1)
+$s1 = $sun.at($tro[0], $tro[1], $before.set + 60)
+check("the evening before the first polar day is dark, its next event the polar day's start",
+  not $s1.daylight and $s1.next_kind == "sunrise" and abs($s1.next - ($first.transit - 43200)) < 1)
+$s2 = $sun.at($tro[0], $tro[1], $first.transit - 43200 + 600)
+check("the first polar day is light from its start, and waits for a sunset", $s2.daylight and $s2.next_kind != "sunrise")
+$s3 = $sun.at($tro[0], $tro[1], $last.transit + 43200 - 600)
+check("the last polar day is light to its end, its next event a sunset", $s3.daylight and $s3.next_kind == "sunset")
+$after = $sun.day_events($tro[0], $tro[1], $sun.day_of($tro[1], $last.transit) + 1)
+$s4 = $sun.at($tro[0], $tro[1], $after.rise + 60)
+check("the first ordinary day after it is light after its sunrise, waiting for its sunset",
+  $s4.daylight and $s4.next_kind == "sunset" and abs($s4.next - $after.set) < 1)
+
+-- A year at Tromsø every three hours: the next event is the transition the
+-- state needs, and the state flips exactly there.
+$bad = 0
+$t0 = utc("2026-01-01T00:00:00")
+for $h = 0 to 2919
+  $t = $t0 + $h * 10800
+  $s = $sun.at($tro[0], $tro[1], $t)
+  $kind_ok = $s.next == nil or $s.next_kind == (if $s.daylight then "sunset" else "sunrise" end)
+  $flip_ok = $s.next == nil or ($sun.at($tro[0], $tro[1], $s.next - 1).daylight == $s.daylight and
+    $sun.at($tro[0], $tro[1], $s.next + 1).daylight != $s.daylight)
+  if not ($kind_ok and $flip_ok) then $bad = $bad + 1 end
+end
+check("a year at Tromsø: every next event flips the state it was armed for", $bad == 0)
+$sp = $sun.at(-90, 0, utc("2026-01-01T00:00:00"))
+$np = $sun.at(90, 0, utc("2026-01-01T00:00:00"))
+check("the poles (clamped latitude): January is polar day at the south, polar night at the north",
+  $sp.daylight and $sp.polar == "day" and not $np.daylight and $np.polar == "night")
 check("zone_of_link reads a relative and a posix/ link",
   $sun.zone_of_link("../usr/share/zoneinfo/Australia/Brisbane") == "Australia/Brisbane" and
   $sun.zone_of_link("/usr/share/zoneinfo/posix/Europe/Oslo") == "Europe/Oslo" and $sun.zone_of_link("/etc/foo") == nil)
+check("is_resume_line: PrepareForSleep(false) only",
+  $sun.is_resume_line("/org/freedesktop/login1: org.freedesktop.login1.Manager.PrepareForSleep (false,)") and
+  not $sun.is_resume_line("/org/freedesktop/login1: org.freedesktop.login1.Manager.PrepareForSleep (true,)") and
+  not $sun.is_resume_line("PrepareForSleep (false,)") and not $sun.is_resume_line(nil))
 
 -- 2. The zone table.
 $Z = $sun.load_zones($zones_path)
@@ -89,7 +149,7 @@ check("canonical zones and aliases have places, UTC has none",
   deep_eq($Z.zones["Australia/Brisbane"], [-27.4667, 153.0333]) and deep_eq($Z.zones["Australia/Queensland"], $Z.zones["Australia/Brisbane"]) and
   $Z.zones["Europe/Oslo"] != nil and $Z.zones["America/New_York"] != nil and $Z.zones["Etc/UTC"] == nil and $Z.zones["UTC"] == nil)
 
--- 3. The citizen, against a real settingsd.
+-- 3. The citizen.
 for each $bin in [$mix, $noded, $settingsd]
   if not is_file($bin) then
     print("SKIP: missing " .. $bin)
@@ -98,8 +158,9 @@ for each $bin in [$mix, $noded, $settingsd]
   end
 end
 
--- Two zones with opposite skies right now, so every flip below is real.
-$candidates = ["Australia/Brisbane", "Europe/London", "America/New_York", "Asia/Tokyo", "America/Los_Angeles", "Asia/Kolkata", "Pacific/Auckland", "Africa/Lagos"]
+-- Zones with opposite skies right now, so every flip below is real.
+$candidates = ["Australia/Brisbane", "Europe/London", "America/New_York", "Asia/Tokyo", "America/Los_Angeles", "Asia/Kolkata", "Pacific/Auckland", "Africa/Lagos",
+  "Asia/Dubai", "Europe/Berlin", "America/Chicago", "Asia/Shanghai", "America/Sao_Paulo", "Pacific/Honolulu", "Africa/Cairo", "Asia/Karachi"]
 fn sky($zone, $t)
   $p = $Z.zones[$zone]
   return $sun.at($p[0], $p[1], $t)
@@ -113,6 +174,7 @@ end
 $bus = nil
 $sd = nil
 $dl = nil
+$fk = nil
 $env = {}
 $binding = {instance: "dltest", profile: "default"}
 
@@ -152,11 +214,10 @@ fn wait_state($pred, $secs)
   return {ok: false, s: $s}
 end
 
-fn start_daylight($offset)
+fn start_daylight($extra)
   return spawn([$mix, "--serve", $scripts .. "/daylight.mix", "--name", "daylight"],
-    {detach: true, env: merge($env, {MIXOS_DAYLIGHT_INSTANCE: "dltest", MIXOS_DAYLIGHT_ZONES: $zones_path,
-      MIXOS_DAYLIGHT_LOCALTIME: $tmp .. "/etc/localtime", MIXOS_DAYLIGHT_RESUME: "off",
-      MIXOS_DAYLIGHT_CLOCK_OFFSET: to_string($offset), MIX_STATS: "off"}),
+    {detach: true, env: merge(merge($env, {MIXOS_DAYLIGHT_INSTANCE: "dltest", MIXOS_DAYLIGHT_ZONES: $zones_path,
+      MIXOS_DAYLIGHT_LOCALTIME: $tmp .. "/etc/localtime", MIXOS_DAYLIGHT_RESUME: "off", MIX_STATS: "off"}), $extra),
     stdout: {file: $tmp .. "/daylight.log", append: true}, stderr: "stdout"})
 end
 
@@ -169,6 +230,34 @@ end
 fn status()
   $r = call("daylight", "daylight.status", {})
   return if $r.rc == 0 then $r.result else nil end
+end
+
+fn wait_status($pred, $secs)
+  $s = nil
+  for $i = 1 to $secs * 5
+    $s = status()
+    if $s != nil and $pred($s) then return {ok: true, s: $s} end
+    sleep(0.2)
+  end
+  return {ok: false, s: $s}
+end
+
+fn exited($pid, $secs)
+  for $i = 1 to $secs * 10
+    if not process_alive($pid) then return true end
+    sleep(0.1)
+  end
+  return false
+end
+
+fn fake_log()
+  return if is_file($tmp .. "/fake.log") then lines(read_file($tmp .. "/fake.log")) else [] end
+end
+
+-- A forged time topic: the wrong binding, or our binding at an old revision.
+fn forge($b, $revision, $zone)
+  publish("settingsd.desktop.keys.default.time", json_encode({schema: 3, binding: $b, incarnation: state().incarnation,
+    revision: $revision, changed_at: $revision, values: {"time.zone": $zone}}))
 end
 
 mkdir($tmp .. "/etc", {parents: true})
@@ -185,19 +274,38 @@ try
   check("daylight starts unknown", state().values["state.appearance.daylight"] == nil)
 
   link_zone($A)
-  $dl = start_daylight(0)
+  $dl = start_daylight({})
   $want = sky($A, time()).daylight
   $w = wait_state(fn($s) = $s.values["state.appearance.daylight"] == $want, 20)
   check("daylight writes the sun's state for the /etc/localtime zone", $w.ok)
   $st = status()
-  check("daylight.status names the zone, its source and the next event",
-    $st != nil and $st.zone == $A and $st.zone_from == "localtime" and $st.next > time() and $st.next < time() + 2 * 86400 and $st.writes == 1)
+  check("daylight.status names the role, zone, its source and the next event",
+    $st != nil and $st.role == "authority" and $st.zone == $A and $st.zone_from == "localtime" and
+    $st.next > time() and $st.next < time() + 3 * 86400 and $st.writes == 1 and $st.clock_offset == 0)
 
   $flip = if $want then "dark" else "light" end
   check("a manual override and mode auto are accepted", apply({"state.appearance.mode_override": $flip, "appearance.mode": "auto"}, []).rc == 0)
   sleep(1.5)
   $s = state()
   check("the override holds while the sun's state holds", $s.values["state.appearance.mode_override"] == $flip and $s.resolved.mode == $flip)
+
+  -- Re-arming for the same or a later deadline reuses the one wake task.
+  $tasks = status().tasks_started
+  $later = nil
+  for $z in $candidates
+    $k = sky($z, time())
+    if $later == nil and $k.next != nil and $k.next > $st.next + 60 then $later = $z end
+  end
+  if $later != nil then
+    apply({"time.zone": $later}, [])
+    $ws = wait_status(fn($x) = $x.zone == $later, 10)
+    check("a later deadline is taken up by the pending wake task, not a new one",
+      $ws.ok and $ws.s.due == sky($later, time()).next and $ws.s.tasks_started == $tasks)
+    apply({}, ["time.zone"])
+    wait_status(fn($x) = $x.zone == $A, 10)
+  else
+    print("NOTE no candidate zone with a later event; reuse check skipped")
+  end
 
   check("time.zone is accepted", apply({"time.zone": $B}, []).rc == 0)
   $wantB = sky($B, time()).daylight
@@ -206,8 +314,16 @@ try
   check("the flip clears the override in the same revision", $w.s.values["state.appearance.mode_override"] == nil)
   check("mode auto resolves from daylight", $w.s.resolved.mode == (if $wantB then "light" else "dark" end))
 
+  forge({instance: "elsewhere", profile: "default"}, "100000", "Etc/UTC")
+  forge($binding, "1", "Etc/UTC")
+  sleep(1.5)
+  check("a time topic for another binding, or an older revision, is ignored", status().zone == $B)
+
+  apply({"state.appearance.mode_override": if $wantB then "dark" else "light" end}, [])
   apply({"time.zone": "Etc/UTC"}, [])
-  check("a zone with no place writes the sun as unknown", wait_state(fn($s) = $s.values["state.appearance.daylight"] == nil, 20).ok)
+  $w = wait_state(fn($s) = $s.values["state.appearance.daylight"] == nil, 20)
+  check("a zone with no place writes the sun as unknown", $w.ok)
+  check("and that write clears the override too", $w.s.values["state.appearance.mode_override"] == nil)
   check("and unknown resolves to dark", state().resolved.mode == "dark")
 
   apply({}, ["time.zone"])
@@ -215,21 +331,86 @@ try
   link_zone($B)
   check("a replaced /etc/localtime is followed", wait_state(fn($s) = $s.values["state.appearance.daylight"] == $wantB, 20).ok)
 
-  -- The timer: stand the citizen three seconds before its next event.
-  $next = status().next
+  -- The timer, and supersession: stand the citizen 6 s before B's next
+  -- event with time.zone = A (a long timer), then switch to B.
+  $nextB = status().next
   stop_all([$dl])
-  apply({"state.appearance.mode_override": if $wantB then "dark" else "light" end}, [])
-  $dl = start_daylight($next - time() - 3)
-  sleep(1.5)
+  apply({"time.zone": $A}, [])
+  $offset = $nextB - time() - 6
+  $dl = start_daylight({MIXOS_TEST: "1", MIXOS_DAYLIGHT_CLOCK_OFFSET: to_string($offset)})
+  $ws = wait_status(fn($x) = $x.zone == $A, 10)
+  check("the clock offset is honoured under MIXOS_TEST=1 and reported", $ws.ok and abs($ws.s.clock_offset - $offset) < 1)
+  $armedA = $ws.s.due
+  apply({"state.appearance.mode_override": if $wantB then "dark" else "light" end, "time.zone": $B}, [])
+  $ws = wait_status(fn($x) = $x.zone == $B, 10)
+  check("a zone change supersedes the long pending timer", $ws.ok and abs($ws.s.due - $nextB) < 1 and $ws.s.due != $armedA)
   check("before the event nothing is written", state().values["state.appearance.daylight"] == $wantB)
   $w = wait_state(fn($s) = $s.values["state.appearance.daylight"] == not $wantB, 15)
-  check("the armed timer flips daylight at the next sunrise or sunset", $w.ok)
+  check("the armed timer flips daylight at the new zone's event", $w.ok)
   check("and clears the override", $w.s.values["state.appearance.mode_override"] == nil)
   $st = status()
-  check("and arms the event after it", $st != nil and $st.next > $next + 60)
-  check("daylight.wake is refused over the Bus", call("daylight", "daylight.wake", {gen: 1, at: 0}).rc != 0 and status().writes == $st.writes)
+  check("and arms the event after it", $st != nil and $st.next > $nextB + 60)
+  check("daylight.wake is refused over the Bus", call("daylight", "daylight.wake", {token: "x"}).rc != 0 and status().writes == $st.writes)
+  stop_all([$dl])
+  $dl = nil
+
+  -- The clock offset outside tests, clamped, and malformed.
+  $dl = start_daylight({MIXOS_DAYLIGHT_CLOCK_OFFSET: "3600"})
+  check("without MIXOS_TEST the clock offset is ignored", wait_status(fn($x) = $x.zone != nil, 10).s.clock_offset == 0)
+  stop_all([$dl])
+  $dl = start_daylight({MIXOS_TEST: "1", MIXOS_DAYLIGHT_CLOCK_OFFSET: "100000000"})
+  check("an offset is clamped to 7 days", wait_status(fn($x) = $x.zone != nil, 10).s.clock_offset == 604800)
+  stop_all([$dl])
+  $dl = start_daylight({MIXOS_TEST: "1", MIXOS_DAYLIGHT_CLOCK_OFFSET: "soon"})
+  check("a non-numeric offset stops the citizen", exited($dl, 10))
+  $dl = nil
+  stop_all([$sd])
+  $sd = nil
+
+  -- Beside a mirror: no writing daylight.
+  $fk = spawn([$mix, "--serve", $fake, "--name", "fakesd"], {detach: true,
+    env: merge($env, {FAKE_ROLE: "mirror", FAKE_LOG: $tmp .. "/fake.log", MIX_STATS: "off"}),
+    stdout: {file: $tmp .. "/fake.out", append: true}, stderr: "stdout"})
+  $up = false
+  for $i = 1 to 50
+    if call("fakesd", "settings.status", {binding: $binding}).rc == 0 then
+      $up = true
+      break
+    end
+    sleep(0.2)
+  end
+  check("the fake settingsd answers", $up)
+  remove($tmp .. "/fake.log")
+  $dl = start_daylight({MIXOS_DAYLIGHT_SETTINGSD: "fakesd"})
+  check("beside a mirror daylight exits", exited($dl, 15))
+  check("having asked settings.status and written nothing", contains(fake_log(), "status") and not any(fake_log(), fn($l) = starts_with($l, "apply")))
+  check("and says why", contains(read_file($tmp .. "/daylight.log"), "runs only beside the authority"))
+  $dl = nil
+  stop_all([$fk])
+
+  -- Conflicts: two other commits land between daylight's read and write.
+  remove($tmp .. "/fake.log")
+  $fk = spawn([$mix, "--serve", $fake, "--name", "fakesd"], {detach: true,
+    env: merge($env, {FAKE_CONFLICTS: "2", FAKE_LOG: $tmp .. "/fake.log", MIX_STATS: "off"}),
+    stdout: {file: $tmp .. "/fake.out", append: true}, stderr: "stdout"})
+  sleep(1)
+  -- The resume watch is a fake child: it prints logind's resume line and
+  -- exits at once, so it is restarted each time its guard (2 s) allows.
+  $resume_child = [$mix, "-c", "print(\"/org/freedesktop/login1: org.freedesktop.login1.Manager.PrepareForSleep (false,)\")"]
+  $dl = start_daylight({MIXOS_DAYLIGHT_SETTINGSD: "fakesd", MIXOS_TEST: "1", MIXOS_DAYLIGHT_RESUME: "on",
+    MIXOS_DAYLIGHT_RESUME_ARGV: json_encode($resume_child), MIXOS_DAYLIGHT_RESUME_GUARD: "2"})
+  $ws = wait_status(fn($x) = $x.writes >= 1, 15)
+  $applies = filter(fake_log(), fn($l) = starts_with($l, "apply"))
+  -- (Later applies come from the real settingsd's retained time topic, still
+  -- on the broker, naming another zone.)
+  check("a write retries through two conflicts and lands on the third try", $ws.ok and deep_eq(take($applies, 3), ["apply 10", "apply 10", "apply 0"]))
+  $r0 = status().resume_restarts
+  sleep(7)
+  $r1 = status()
+  check("a resume line reconciles", $r1.resumes >= 1)
+  check("a dead watch is restarted, but no faster than its 2 s guard", $r1.resume_restarts - $r0 >= 2 and $r1.resume_restarts - $r0 <= 4)
 finally
-  stop_all(filter([$dl, $sd], fn($p) = $p != nil))
+  stop_all(filter([$dl, $sd, $fk], fn($p) = $p != nil))
   if $bus != nil then $pb.stop($bus) end
 end
 

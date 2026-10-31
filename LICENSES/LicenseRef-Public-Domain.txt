@@ -1,0 +1,17 @@
+LicenseRef-Public-Domain
+
+Files under this identifier are in the public domain: no copyright licence
+applies to them. Each one's source and the reason it is in the public domain
+are recorded in tools/assets.conf.mix (the `agency` and `why` fields) and
+beside the file.
+
+share/daylight/zones.mx is generated from the IANA Time Zone Database
+(https://www.iana.org/time-zones), whose LICENSE reads:
+
+  Unless specified below, all files in the tz code and data (including
+  this LICENSE file) are in the public domain.
+
+  If the files date.c, newstrftime.3, and strftime.c are present, they
+  contain material derived from BSD and use the BSD 3-clause license.
+
+The table uses none of those three files.

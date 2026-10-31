@@ -1,0 +1,52 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- fake_settingsd: a stand-in settingsd for daylight_test.mix, for the cases
+-- a real one cannot be made to show on one private Bus: a mirror's role, and
+-- a commit landing between daylight's read and its write. It answers
+-- settings.status, settings.get and settings.apply for one profile and
+-- appends one line per call to FAKE_LOG ("status", "get", "apply <rc>").
+-- FAKE_ROLE (default authority) is the role settings.status reports;
+-- FAKE_CONFLICTS is how many applies to refuse as conflicts, each one
+-- bumping the revision as another writer's commit would.
+$log = env("FAKE_LOG", "")
+$role = env("FAKE_ROLE", "authority")
+$conflicts = to_number(env("FAKE_CONFLICTS", "0"))
+$S = {revision: 1, values: {"state.appearance.daylight": nil, "state.appearance.mode_override": nil, "time.zone": env("FAKE_ZONE", "Australia/Brisbane")}}
+
+fn note($line)
+  if $log != "" then append_file($log, $line .. "\n") end
+end
+
+fn view()
+  return {incarnation: "fake", revision: to_string($S.revision), values: $S.values, status: "current"}
+end
+
+on settings.status
+  note("status")
+  reply(0, json_encode({role: $role, binding: $event.args.binding, revision: to_string($S.revision), status: "current"}))
+end
+
+on settings.get
+  note("get")
+  reply(0, json_encode(view()))
+end
+
+on settings.apply
+  $b = $event.args
+  if $conflicts > 0 or $b.expected_revision != to_string($S.revision) then
+    $conflicts = max(0, $conflicts - 1)
+    $S.revision = $S.revision + 1
+    note("apply 10")
+    reply(10, json_encode({status: "conflict"}))
+  else
+    for $k, $v in $b.changes ?? {}
+      $S.values[$k] = $v
+    end
+    for $k in $b.reset ?? []
+      $S.values[$k] = nil
+    end
+    $S.revision = $S.revision + 1
+    note("apply 0")
+    reply(0, json_encode({status: "applied", receipt: {revision: to_string($S.revision)}}))
+  end
+end

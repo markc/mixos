@@ -58,10 +58,23 @@ $zones = tab($dir .. "/zone.tab")
 for $z, $c in tab($dir .. "/zone1970.tab")
   if $zones[$z] == nil then $zones[$z] = $c end
 end
+-- Links to a fixpoint: a link whose target is itself a link resolves once
+-- its target has a place, whatever the file order.
+$links = []
 for $line in $zi
   if starts_with($line, "L ") then
     $f = fields($line)
-    if len($f) == 3 and $zones[$f[1]] != nil and $zones[$f[2]] == nil then $zones[$f[2]] = $zones[$f[1]] end
+    if len($f) == 3 then push($links, [$f[1], $f[2]]) end
+  end
+end
+$grew = true
+while $grew
+  $grew = false
+  for $l in $links
+    if $zones[$l[0]] != nil and $zones[$l[1]] == nil then
+      $zones[$l[1]] = $zones[$l[0]]
+      $grew = true
+    end
   end
 end
 

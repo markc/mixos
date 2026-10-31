@@ -212,6 +212,7 @@
                         <a href="#nothing-polls">Nothing polls</a>
                         <a href="#commands">Commands</a>
                         <a href="#limits">Limits</a>
+                        <a href="#testing">Testing</a>
                         <a href="#the-zone-table">The zone table</a>
                     </nav>
                 </div>
@@ -254,18 +255,26 @@ location. A zone with no place (<code>UTC</code>, <code>Etc/GMT+10</code>) gives
 <li><strong>When.</strong> The standard sunrise equation, with the sun's centre at 0.833
 degrees below the horizon, which allows for refraction and the solar disc.
 It is within a minute or two of published times away from the poles. Inside
-the polar circles, a polar day is light and a polar night is dark.</li>
+the polar circles, a polar day is light and a polar night is dark; the day a
+polar day or night begins, the change is taken at that day's solar midnight,
+so the state still alternates sunrise, sunset across the boundary. The next
+event daylight waits for is always the one that changes the state: a sunset
+while it is light, a sunrise while it is dark.</li>
 <li><strong>A manual flip holds until the next event.</strong> Choosing Light or Dark while
 the mode is <code>auto</code> sets <code>state.appearance.mode_override</code>. daylight clears it
 in the same revision that next changes <code>state.appearance.daylight</code>, so the
-override lasts until the next sunrise or sunset.</li>
+override lasts until the next sunrise or sunset. A zone change that changes
+the sun's state clears it the same way, including a change to a zone with no
+place (daylight becomes <code>null</code>).</li>
 </ul>
 <p>Until daylight has written its key, Preferences shows the Auto choice
 disabled, naming <code>daylight.mix</code>.</p>
 <h2 id="running-it">Running it</h2>
 <p>daylight runs once per machine, beside the settings authority, never beside a
 mirror: a desk's mirror relays the authority's revisions, so every desk on
-the machine flips together. It is a Mix Bus citizen; the user unit runs it in
+the machine flips together. Before its first write it asks
+<code>settings.status</code>; beside a mirror (any role but <code>authority</code>) it logs why and
+exits 0, writing nothing. It is a Mix Bus citizen; the user unit runs it in
 the authority's session:</p>
 <pre><code class="language-text">$ systemctl --user enable --now mixos-daylight.service
 </code></pre>
@@ -286,21 +295,28 @@ rest:</p>
 sun out again only when something changes:</p>
 <ul>
 <li>at start, and on each broker connection;</li>
-<li>on every revision of the <code>time</code> or <code>state</code> keys (the retained
-<code>settingsd.desktop.keys.default.time</code> and <code>.state</code> topics);</li>
+<li>on every revision of the <code>time</code> keys (the retained
+<code>settingsd.desktop.keys.default.time</code> topic), taken only for its own binding
+and only when the revision is newer than the last one seen;</li>
 <li>when the timer fires;</li>
 <li>when <code>/etc/localtime</code> is replaced (an inotify watch on its directory);</li>
 <li>on resume from suspend: logind's <code>PrepareForSleep(false)</code> signal, heard
 through <code>gdbus monitor</code> on the system bus. The timer runs on the monotonic
-clock, which stops during suspend, so resume is when it must be re-armed.</li>
+clock, which stops during suspend, so resume is when it must be re-armed.
+If the watch exits, it is restarted, at most once a minute.</li>
 </ul>
-<p>When there is no event in the next two days (a polar day or night), it looks
-again in a day.</p>
-<p>It writes only when the sun's state differs from the stored one, so its own
-write, coming back on the <code>state</code> topic, finds nothing to do.</p>
+<p>When no sunrise or sunset falls in the four solar days it looks at (a long
+polar day or night), or the zone has no place, it looks again in a day.</p>
+<p>It writes only when the sun's state differs from the stored one, fenced on
+the revision it read; when another commit lands in between it reads again,
+up to three times.</p>
+<p>Mix has no way to cancel a sleeping task, so one wake task does the
+waiting: a later deadline is taken up by the task already sleeping when it
+wakes, and only an earlier one starts a new task (the old one finds itself
+superseded and ends).</p>
 <h2 id="commands">Commands</h2>
 <table><thead><tr><th>Command</th><th>Answers</th></tr></thead><tbody>
-<tr><td><code>daylight.status</code></td><td><code>{binding, zone, zone_from, place, daylight, next, next_kind, writes, last_reason, last_error, resume, localtime_watch}</code>: <code>zone_from</code> is <code>time.zone</code> or <code>localtime</code>, <code>next</code> the Unix time of the armed event, <code>resume</code> is <code>login1</code>, <code>unavailable</code>, <code>lost</code> or <code>off</code></td></tr>
+<tr><td><code>daylight.status</code></td><td><code>{binding, role, zone, zone_from, place, daylight, next, next_kind, due, tasks_started, writes, last_reason, last_error, resume, resumes, resume_restarts, localtime_watch, clock_offset}</code>: <code>zone_from</code> is <code>time.zone</code> or <code>localtime</code>; <code>next</code> the Unix time of the next event and <code>due</code> the armed wake; <code>resume</code> is <code>login1</code>, <code>restarting</code>, <code>unavailable</code>, <code>lost</code> or <code>off</code>; <code>clock_offset</code> is 0 outside tests</td></tr>
 </tbody></table>
 <pre><code class="language-text">$ mix -c 'send daylight daylight.status; print($result)'
 </code></pre>
@@ -314,15 +330,25 @@ change and re-arms.</li>
 first event after a resume is late by the time spent suspended.
 <code>daylight.status</code> reports it as <code>resume: "unavailable"</code>.</li>
 </ul>
+<h2 id="testing">Testing</h2>
+<p><code>services/daylight/tests/daylight_test.mix</code> runs the maths, the zone table,
+the citizen against a real settingsd on a private Bus, and against a fake one
+(<code>tests/fixtures/fake_settingsd.mix</code>) for a mirror's role and for conflicts.
+With <code>MIXOS_TEST=1</code> only, the citizen honours three test hooks:
+<code>MIXOS_DAYLIGHT_CLOCK_OFFSET</code> (seconds added to the wall clock; it must be a
+number and is clamped to seven days either way), <code>MIXOS_DAYLIGHT_RESUME_ARGV</code>
+(a JSON argv run instead of <code>gdbus monitor</code>) and <code>MIXOS_DAYLIGHT_RESUME_GUARD</code>
+(seconds between watch restarts).</p>
 <h2 id="the-zone-table">The zone table</h2>
 <p><code>share/daylight/zones.mx</code> is generated, not written by hand:</p>
 <pre><code class="language-text">$ mix services/daylight/tools/zones_from_tzdb.mix [--tzdata /usr/share/zoneinfo] [--check]
 </code></pre>
 <p>It takes each zone's coordinates from tzdb's <code>zone.tab</code> (one row per country
 and zone), then <code>zone1970.tab</code> for any zone that lacks them, then gives every
-<code>tzdata.zi</code> link (such as <code>Australia/Queensland</code>) its target's place. The time
-zone database is in the public domain; its licence is in
-<code>share/daylight/LICENSE-tzdb.txt</code>, and the table is listed in
+<code>tzdata.zi</code> link (such as <code>Australia/Queensland</code>) its target's place,
+repeating until no link gains one. The time zone database is in the public
+domain; its licence is in <code>share/daylight/LICENSE-tzdb.txt</code> and
+<code>LICENSES/LicenseRef-Public-Domain.txt</code>, and the table is listed in
 <code>tools/assets.conf.mix</code>.</p>
         </article>
         <p class="doc-source"><a href="/daylight/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>

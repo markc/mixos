@@ -47,7 +47,9 @@ fn day_events($lat, $lon, $n)
   $transit = 2451545.0 + $mean + 0.0053 * sin($mr) - 0.0069 * sin(2 * $l)
   $sin_d = sin($l) * sin(rad(23.4397))
   $cos_d = cos(asin($sin_d))
-  $phi = rad($lat)
+  -- At the poles cos(latitude) is 0 and the hour angle divides by it:
+  -- clamp a hair inside them (Antarctica/South_Pole-style places stay polar).
+  $phi = rad(min(89.9999, max(-89.9999, $lat)))
   $cos_w = (sin(rad(-0.833)) - sin($phi) * $sin_d) / (cos($phi) * $cos_d)
   if $cos_w < -1 then
     return {transit: unix($transit), rise: nil, set: nil, polar: "day"}
@@ -59,39 +61,66 @@ fn day_events($lat, $lon, $n)
   return {transit: unix($transit), rise: unix($transit - $w), set: unix($transit + $w), polar: nil}
 end
 
--- The sun at Unix time $t: {daylight: bool, next: Unix time of the next
--- sunrise or sunset, or nil when none falls in the next two days (a polar
--- day or night; the caller re-checks within a day), next_kind: "sunrise" |
--- "sunset" | nil}. Daylight is true from sunrise to sunset: dark before
--- sunrise and at or after sunset.
+-- Whether the sun is up at the start (solar midnight) and the end of a
+-- solar day: an ordinary day starts and ends dark, a polar day is light
+-- throughout and a polar night dark.
+fn starts_light($d)
+  return $d.polar == "day"
+end
+
+-- The events of solar days $from..$to, sorted. Besides each ordinary day's
+-- sunrise and sunset, a day whose start state differs from the previous
+-- day's end state gets a transition at its start (solar midnight): entering
+-- a polar day is a sunrise there, entering a polar night or the first
+-- ordinary day after a polar day is a sunset there. So the list alternates
+-- sunrise and sunset across polar boundaries too.
+fn events($lat, $lon, $from, $to)
+  $out = []
+  $prev = day_events($lat, $lon, $from - 1)
+  for $n = $from to $to
+    $d = day_events($lat, $lon, $n)
+    if starts_light($d) != starts_light($prev) then
+      push($out, {t: $d.transit - 43200, kind: if starts_light($d) then "sunrise" else "sunset" end})
+    end
+    if $d.rise != nil then
+      push($out, {t: $d.rise, kind: "sunrise"})
+      push($out, {t: $d.set, kind: "sunset"})
+    end
+    $prev = $d
+  end
+  return sort_by($out, fn($e) = $e.t)
+end
+
+-- The sun at Unix time $t: {daylight, next, next_kind, polar}.
+-- daylight comes from the last event at or before $t in a four-solar-day
+-- window (the day before $t's day to two days after); with none, from the
+-- state the window's first day began in. Light from sunrise until sunset:
+-- dark at or after sunset. next is the first later event that changes the
+-- state (a sunset while light, a sunrise while dark), or nil when none falls
+-- in the window (a long polar day or night: the caller looks again within a
+-- day). polar is $t's own solar day's polar state, or nil.
 fn at($lat, $lon, $t)
   $n0 = day_of($lon, $t)
-  $events = []
-  for $n = $n0 - 1 to $n0 + 2
-    $d = day_events($lat, $lon, $n)
-    if $d.rise != nil then
-      push($events, {t: $d.rise, kind: "sunrise"})
-      push($events, {t: $d.set, kind: "sunset"})
-    end
+  $list = events($lat, $lon, $n0 - 1, $n0 + 2)
+  $last = nil
+  for $e in $list
+    if $e.t <= $t then $last = $e end
   end
-  $events = sort_by($events, fn($e) = $e.t)
-  $today = day_events($lat, $lon, $n0)
-  $daylight = $today.polar == "day"
-  if $today.polar == nil then
-    $last = nil
-    for $e in $events
-      if $e.t <= $t then $last = $e end
-    end
-    -- An ordinary day always has a sunrise before its own sunset, so $last
-    -- is nil only before the window's first event: night after a polar night.
-    $daylight = $last != nil and $last.kind == "sunrise"
-  end
+  $daylight = if $last != nil then $last.kind == "sunrise" else starts_light(day_events($lat, $lon, $n0 - 1)) end
+  $want = if $daylight then "sunset" else "sunrise" end
   $next = nil
-  for $e in $events
-    if $next == nil and $e.t > $t then $next = $e end
+  for $e in $list
+    if $next == nil and $e.t > $t and $e.kind == $want then $next = $e end
   end
   return {daylight: $daylight, next: if $next == nil then nil else $next.t end,
-    next_kind: if $next == nil then nil else $next.kind end, polar: $today.polar}
+    next_kind: if $next == nil then nil else $next.kind end, polar: day_events($lat, $lon, $n0).polar}
+end
+
+-- True for the gdbus monitor line logind's PrepareForSleep(false) prints
+-- on resume, e.g.
+-- "/org/freedesktop/login1: org.freedesktop.login1.Manager.PrepareForSleep (false,)".
+fn is_resume_line($line)
+  return type($line) == "string" and contains($line, "org.freedesktop.login1.Manager.PrepareForSleep (false")
 end
 
 -- The zone table (share/daylight/zones.mx): {schema: 1, source, version,

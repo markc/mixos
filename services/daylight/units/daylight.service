@@ -1,7 +1,11 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
 # daylight beside the machine's settings authority (a user unit in the
 # authority's own session, `systemctl --user`): it writes the sun's state
-# for appearance.mode = auto. One per machine; never beside a mirror.
+# for appearance.mode = auto. One per machine, beside the authority only:
+# enable it in the session that runs the authority's settingsd, never in a
+# desk whose settingsd is a mirror. If it is started beside a mirror anyway,
+# it asks settings.status, finds role "mirror" and exits 0 without writing
+# (Restart=on-failure leaves it stopped).
 [Unit]
 Description=MixOS daylight (sunrise and sunset for mode auto)
 Documentation=https://mixos.dev/daylight/
