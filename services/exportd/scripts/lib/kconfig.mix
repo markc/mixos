@@ -4,9 +4,15 @@
 -- file format: `[Group]` or nested `[Group][Sub]` headers, `key=value`
 -- lines, `#` comments, `key[$e]`-style option suffixes and the `\s \t \n
 -- \r \\` escapes. A group path is the header without its outer brackets,
--- so `[Colors:Header][Inactive]` is "Colors:Header][Inactive". Reading is
--- ours; every write goes through kwriteconfig6, which owns locking and
--- change notification.
+-- so `[Colors:Header][Inactive]` is "Colors:Header][Inactive". A key is
+-- its raw text, suffix included: `Icon[de]` and `font[$i]` are not `Icon`
+-- and `font`, here, in edit() and in the undo record alike.
+--
+-- Locking: KConfig serialises writers with `<file>.lock`, a file naming a
+-- live process (pid, program, host, one per line); kwriteconfig6 waits
+-- while one is held (probed 2026-11-01: it waited out an 8 s hold). lock()
+-- takes the same lock, so a text edit done inside it (re-read, edit,
+-- replace) loses no concurrent KConfig write.
 
 fn unescape($v)
   if not contains($v, "\\") then return $v end
@@ -42,7 +48,6 @@ fn parse_text($text)
     $kv = split_once($line, "=")
     if $kv == nil then continue end
     $key = trim($kv[0])
-    $key = before($key, "[") ?? $key
     if $groups[$group] == nil then $groups[$group] = {} end
     $groups[$group][$key] = unescape(trim($kv[1]))
   end
@@ -86,8 +91,9 @@ fn line_key($raw)
 end
 
 -- Apply [{group, key, value}] (value nil deletes) to a file's text, keeping
--- every other line, comment and group as it was. A key that carries an
--- option suffix (`key[$i]`) is never matched, so it is left alone.
+-- every other line, comment and group as it was. Keys match by raw text, so
+-- `key[$i]` is never touched by a write to `key`. A group a delete leaves
+-- with no keys loses its header too.
 fn edit($text, $changes)
   $secs = sections($text)
   for $c in $changes
@@ -123,9 +129,15 @@ fn edit($text, $changes)
       $kept = concat(concat(slice($kept, 0, $n), [$line]), slice($kept, $n))
     end
     $secs[$at]["lines"] = $kept
+    if $c.value == nil and len(filter($kept, fn($l) = line_key($l) != nil)) == 0 and len(filter($kept, fn($l) = starts_with(trim($l), "#"))) == 0 then
+      $secs[$at]["emptied"] = true
+    elif $c.value != nil then
+      $secs[$at]["emptied"] = false
+    end
   end
   $out = []
   for $s in $secs
+    if $s.emptied == true then continue end
     if $s.header != nil then
       if $s.new == true and len($out) > 0 and trim($out[len($out) - 1]) != "" then push($out, "") end
       push($out, $s.header)
@@ -139,8 +151,10 @@ fn edit($text, $changes)
 end
 
 -- The kwriteconfig6 argv for one key: a string value, or nil to delete it.
-fn write_argv($file, $group, $key, $value)
-  $a = ["kwriteconfig6", "--file", $file]
+-- $tool is the program argv (["kwriteconfig6"], or a test double). Its
+-- positional value is mandatory even with --delete, so a delete passes "".
+fn write_argv($tool, $file, $group, $key, $value)
+  $a = concat($tool, ["--file", $file])
   for $part in split($group, "][")
     $a = concat($a, ["--group", $part])
   end
@@ -153,12 +167,60 @@ fn write_argv($file, $group, $key, $value)
   return $a
 end
 
+-- Leading and trailing spaces become \s, which a KConfig reader would
+-- otherwise trim.
 fn escape($v)
   $v = replace($v, "\\", "\\\\")
   $v = replace($v, "\n", "\\n")
   $v = replace($v, "\t", "\\t")
-  if starts_with($v, " ") then $v = "\\s" .. substr($v, 1) end
-  return $v
+  $v = replace($v, "\r", "\\r")
+  $lead = ""
+  while starts_with($v, " ")
+    $lead = $lead .. "\\s"
+    $v = substr($v, 1)
+  end
+  $trail = ""
+  while ends_with($v, " ")
+    $trail = $trail .. "\\s"
+    $v = substr($v, 0, len($v) - 1)
+  end
+  return $lead .. $v .. $trail
+end
+
+fn host()
+  return trim(read_file("/proc/sys/kernel/hostname"))
+end
+
+-- Take `<path>.lock` as KConfig does; wait while a live process holds it,
+-- break it when its process is gone. Raises KCONFIG_LOCK after $wait_s.
+fn lock($path, $wait_s)
+  $lockfile = $path .. ".lock"
+  $deadline = time() + $wait_s
+  while true
+    try
+      write_new($lockfile, to_string(pid()) .. "\nexportd\n" .. host() .. "\n", 0o644)
+      return $lockfile
+    catch $m
+      -- The holder may release it between the failed create and this read.
+      $text = nil
+      try
+        $text = read_file($lockfile)
+      catch $gone
+      end
+      if $text == nil then continue end
+      $holder = to_number(trim(split($text, "\n")[0] ?? ""))
+      if $holder == nil or not process_alive($holder) then
+        remove($lockfile)
+        continue
+      end
+    end
+    if time() > $deadline then raise("KCONFIG_LOCK", "held: " .. $lockfile) end
+    sleep(0.05)
+  end
+end
+
+fn unlock($lockfile)
+  remove($lockfile)
 end
 
 -- A whole file from an ordered {group: {key: value}} map (colour schemes,

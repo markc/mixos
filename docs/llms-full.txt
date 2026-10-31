@@ -11251,50 +11251,78 @@ mix --serve <prefix>/lib/exportd/kde.mix --name exportd-kde
 ```
 
 The user unit `exportd-kde.service` starts it with the graphical session,
-only when the session is Plasma (`XDG_SESSION_DESKTOP=KDE`). It follows the
-`appearance`, `window` and `accessibility` topics.
+only when the session is Plasma (`XDG_SESSION_DESKTOP=KDE`).
+
+It reconciles once at start, then once per settings revision that moves
+`appearance`, `window`, `accessibility` or `shell.panels`: a revision that
+moves several of them delivers one topic each, and the deliveries of a
+revision already reconciled are skipped. A reconcile reads `settings.get`
+and, only when an `appearance.*` value changed, `settings.palette`.
 
 ### What it writes
 
 | settings | KDE |
 |---|---|
-| the resolved mode | `kdeglobals [General] ColorScheme=MixOS-Dark` or `MixOS-Light`, and the scheme's `[Colors:*]`, `[ColorEffects:*]` and `[WM]` groups; both modes also as `<data>/color-schemes/MixOS-{Dark,Light}.colors` |
+| the resolved mode (`resolved.mode` of `settings.get`; never `auto`) | `kdeglobals [General] ColorScheme=MixOS-Dark` or `MixOS-Light`, and the scheme's `[Colors:*]`, `[ColorEffects:*]` and `[WM]` groups; both modes also as `<data>/color-schemes/MixOS-{Dark,Light}.colors` |
 | the accent and colour axes, through the palette | `[General] AccentColor` (`accentColorFromWallpaper=false`), `[Colors:Selection]`, every scheme colour |
 | the palette's fonts, `accessibility.text_scale` | `[General] font`, `menuFont`, `toolBarFont`, `fixed`, `[WM] activeFont` |
 | `appearance.icon_theme` | `[Icons] Theme`, the `-dark` variant in dark mode when installed |
 | `window.hint_colour` | `[WM] activeBackground`, `activeForeground` |
-| `appearance.density` | `kwinrc [org.kde.kdecoration2] BorderSize` (`Tiny`, `Normal`, `Large`) |
+| `accessibility.reduced_motion` | `[KDE] AnimationDurationFactor` (`0` when reduced, else `1`) |
+| `appearance.density` | `kwinrc [org.kde.kdecoration2] BorderSize` (`Tiny`, `Normal`, `Large`), `BorderSizeAuto=false` |
 | `window.caption_side`, `window.controls.*` | `kwinrc [org.kde.kdecoration2] ButtonsOnLeft`, `ButtonsOnRight` |
-| `appearance.roundness` | Plasma's panels float when `round` (the Plasma scripting interface) |
+| `shell.panels.<panel>.gap` (enabled panels) | `floating` of the Plasma panel on that panel's `edge` (the Plasma scripting interface); panels on other edges are left alone |
+
+The decoration plugin and theme (`library`, `theme`) are the user's and are
+never written; the keys above apply to whichever decoration is active.
 
 Scheme colours are the palette's opaque values; a translucent one is
 refused. A font size in pixels becomes points at 96 dpi (× 0.75, to the
 nearest half point), after the text scale. `kdeglobals [MixOS]` carries a
-stamp with the revision written; the stamp alone never causes a write.
+stamp with the revision written; the stamp alone never causes a write. A
+key the user made immutable (`key[$i]`) is not written, and the report
+names it (`immutable: <file>|<group>|<key>`).
 
-Each file is edited as text and replaced atomically, keeping every other
-line. The last key of each group, and every font, scheme, accent and icon
-key, goes through `kwriteconfig6 --notify`, so KConfig's own change
-notification reaches each group. Then `busctl --user` sends the
-`KGlobalSettings` `notifyChange` signal (palette, fonts), `KIconLoader`
-`iconChanged`, and `org.kde.KWin.reconfigure`.
+### How it writes
+
+Keys are matched by their raw text, so `Icon[de]` or `font[$i]` is never
+mistaken for `Icon` or `font`. Each file is re-read, edited as text and
+replaced atomically while holding KConfig's own lock (`<file>.lock`), so a
+concurrent KConfig writer loses nothing. The last key of each group, and
+every font, scheme, accent, icon and animation key, then goes through
+`kwriteconfig6 --notify`, so KConfig's change notification reaches each
+group. Then `busctl --user` sends the `KGlobalSettings` `notifyChange`
+signal (palette, fonts), `KIconLoader` `iconChanged`, and
+`org.kde.KWin.reconfigure`; a call that fails is reported as
+`<name>_unreachable`. What a burst touched is recorded as dirty before the
+first write and cleared once every call succeeded, so after a crash or an
+unreachable session bus the next run notifies again.
 
 **Known limit:** running apps follow a colour, icon and decoration change
 at once but keep their old font until they restart; apps started
 afterwards get the new font.
 
+**Not exported yet** (key space §5.3 lists them for kde-export; the next
+slice): `wallpaper` (desktop containments), `workspaces` (`kwinrc
+[Desktops]`, `RollOverDesktops`), `input` (`kxkbrc`, `kcminputrc`), `time`
+(clock `use24hFormat`, `showDate`), `region`, `keymaps`
+(`ModifierOnlyShortcuts`), the window behaviour rows (focus policy, snap
+zones, Super key) and `appearance.frosted.*` (KWin blur). The behaviour
+rows wait for a decision, since they change how the desktop behaves, not
+how it looks.
+
 ### Commands
 
 | Command | Does |
 |---|---|
-| `exportd.kde.status` | the binding, last revision, gate, the last run's report or error |
+| `exportd.kde.status` | the binding, last revision, gate, pause, the last run's report or error |
 | `exportd.kde.plan` | what a reconcile would write now; writes nothing |
-| `exportd.kde.reconcile` | reconcile now |
-| `exportd.kde.undo` | put back the keys the last burst changed |
-| `exportd.kde.restore` | put back every key as it was before the first write, remove the scheme files it created, restore the panels, and forget the record |
+| `exportd.kde.reconcile` | reconcile now; clears a pause |
+| `exportd.kde.undo` | put back the keys and panels the last burst changed, then pause |
+| `exportd.kde.restore` | put back every key as it was before the first write, the scheme files (a user's own `MixOS-*.colors` gets its saved bytes back; files it created are removed) and the panels, forget the record, then pause |
 
-Run `restore` with `appearance.export_desktop` off, or the next revision
-writes the look again.
+While paused (undo or restore, kept across restarts) no revision writes;
+`exportd.kde.reconcile` resumes.
 
 ### Environment
 
@@ -11302,8 +11330,9 @@ writes the look again.
 |---|---|
 | `MIXOS_SETTINGS_INSTANCE` | this node's name |
 | `MIXOS_KDE_EXPORT_DRY=1` | plan and report, write nothing |
-| `MIXOS_KDE_EXPORT_STATE` | `$XDG_STATE_HOME/mixos/kde-export` (the undo record) |
-| `MIXOS_KDE_EXPORT_RECONFIGURE=0` | no D-Bus calls (tests) |
+| `MIXOS_KDE_EXPORT_STATE` | `$XDG_STATE_HOME/mixos/kde-export` (the undo record, saved scheme files, the pause marker) |
+| `MIXOS_KDE_EXPORT_RECONFIGURE=0` | no D-Bus calls |
+| `MIXOS_KDE_EXPORT_KWRITECONFIG`, `MIXOS_KDE_EXPORT_BUSCTL` | `kwriteconfig6`, `busctl`; a JSON argv list replaces them (the tests' stand-ins) |
 
 External programs: `kwriteconfig6` (KDE Frameworks 6) and `busctl`.
 
@@ -41261,7 +41290,8 @@ the predecessor repository at revision
   `settings.palette` in `kdeglobals` and the `MixOS-Dark`/`MixOS-Light`
   scheme files, the accent, the resolved fonts and the icon theme, the
   Breeze border size and buttons in `kwinrc`, and panel floating, then
-  Plasma and KWin reconfigured over D-Bus; undo and restore.
+  Plasma and KWin reconfigured over D-Bus; writes under KConfig's lock,
+  re-notifies after a crash or an unreachable bus; undo and restore pause it.
 
 ---
 

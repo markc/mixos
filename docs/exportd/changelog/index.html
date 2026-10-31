@@ -246,7 +246,8 @@ undo.</li>
 <code>settings.palette</code> in <code>kdeglobals</code> and the <code>MixOS-Dark</code>/<code>MixOS-Light</code>
 scheme files, the accent, the resolved fonts and the icon theme, the
 Breeze border size and buttons in <code>kwinrc</code>, and panel floating, then
-Plasma and KWin reconfigured over D-Bus; undo and restore.</li>
+Plasma and KWin reconfigured over D-Bus; writes under KConfig's lock,
+re-notifies after a crash or an unreachable bus; undo and restore pause it.</li>
 </ul>
         </article>
         <p class="doc-source"><a href="/exportd/changelog.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
