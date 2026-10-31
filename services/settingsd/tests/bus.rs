@@ -331,6 +331,8 @@ struct Watch {
     events: UnboundedReceiver<IncomingCommand>,
     latest: BTreeMap<String, Value>,
     log: Vec<String>,
+    /// Every delivery's topic and revision, retained replays included.
+    history: Vec<(String, Value)>,
 }
 impl Watch {
     async fn new(url: &str, name: &str) -> Self {
@@ -352,6 +354,7 @@ impl Watch {
             events,
             latest: BTreeMap::new(),
             log: Vec::new(),
+            history: Vec::new(),
         }
     }
     fn take(&mut self, event: IncomingCommand) {
@@ -361,6 +364,7 @@ impl Watch {
         let body: Value = serde_json::from_str(&event.body).unwrap();
         assert_eq!(body["schema"], 3, "{topic}");
         self.log.push(topic.clone());
+        self.history.push((topic.clone(), body["revision"].clone()));
         self.latest.insert(topic, body);
     }
     /// Take deliveries until `done` holds.
@@ -488,6 +492,13 @@ fn a_batch_publishes_exactly_its_prefixes_and_a_reconnect_republishes_every_topi
             window["changed_at"], first,
             "an untouched prefix keeps its stamp"
         );
+        // Publication completes: the transitional topics mark the revision
+        // published, so nothing stays pending and nothing republishes.
+        let settled = status_until(&watch.client, "settingsd", "alpha", "published", |s| {
+            s["publication_pending"] == false
+        })
+        .await;
+        assert_eq!(settled["published_revision"], second);
 
         // A restarted broker has none of the retained state: a fresh
         // subscriber sees every topic only because settingsd republished.
@@ -505,6 +516,19 @@ fn a_batch_publishes_exactly_its_prefixes_and_a_reconnect_republishes_every_topi
             assert_eq!(old["changed_at"], new["changed_at"], "{topic}");
             assert_eq!(old["values"], new["values"], "{topic}");
         }
+
+        // The validate preview moves by content: under `auto`, a `state`
+        // change also moves `appearance` (its resolved mode) and the look.
+        let status = ready(&fresh.client, "settingsd", "settings.status", json!({"binding": binding("alpha")})).await;
+        let auto = apply("alpha", &status, "mode-auto", json!({"appearance.mode": "auto"}));
+        let changed = fresh.client.call("settingsd", "settings.apply", auto).await.unwrap();
+        assert_eq!(changed["status"], "changed", "{changed}");
+        let status = ready(&fresh.client, "settingsd", "settings.status", json!({"binding": binding("alpha")})).await;
+        let daylight = apply("alpha", &status, "preview", json!({"state.appearance.daylight": true}));
+        let preview = fresh.client.call("settingsd", "settings.validate", daylight).await.unwrap();
+        let moved: BTreeSet<&str> = preview["moved"].as_array().unwrap().iter().map(|m| m.as_str().unwrap()).collect();
+        assert_eq!(moved, BTreeSet::from(["appearance", "look", "state"]), "{preview}");
+        assert_eq!(preview["values"]["appearance"]["resolved"]["appearance.mode"], "light");
         fresh.client.close().await;
     });
 }
@@ -584,7 +608,46 @@ fn a_mirror_on_a_second_broker_republishes_forwards_serves_stale_and_catches_up(
         a.since();
         b.since();
 
-        // An authority commit: the mirror republishes the same topics.
+        // Forged control traffic changes nothing. A validly sealed record at
+        // a far higher revision, which would wedge the mirror if it were
+        // taken, is refused from a local caller naming itself the authority
+        // (the broker overwrites those headers) and from the authority's
+        // node by a service that is not settingsd. An attach for the mirror's
+        // node from elsewhere is refused too.
+        let stored = fs::read_to_string(mirror_root.join("mirror.conf.mix")).unwrap();
+        let mut forged: settingsd::mirror::Cache = strict::from_str(&stored).unwrap();
+        forged.revision = settings::Revision(999);
+        forged.design_revision = settings::Revision(999);
+        forged.seal().unwrap();
+        let push = json!({"binding": binding("alpha"), "authority": "alpha", "cache": forged,
+            "changed": [], "changed_at": {}});
+        let spoofed = BTreeMap::from([
+            ("broker_peer".to_owned(), "alpha".to_owned()),
+            ("broker_service".to_owned(), "settingsd".to_owned()),
+            ("mesh_from".to_owned(), "settingsd".to_owned()),
+        ]);
+        let (rc, text, _) = b
+            .client
+            .call_with_headers_raw("settingsd", "settings.mirror.revision", &spoofed, &push.to_string())
+            .await
+            .unwrap();
+        assert!(rc >= 10 && text.contains("wrong_sender"), "{rc} {text}");
+        let (rc, body) = raw(&a.client, "settingsd.beta.bus", "settings.mirror.revision", &push).await;
+        assert!(rc >= 10, "{rc} {body}");
+        assert_eq!(body["status"], "wrong_sender", "{body}");
+        let mut stop = push.clone();
+        stop["stopping"] = json!(true);
+        let (rc, body) = raw(&b.client, "settingsd", "settings.mirror.revision", &stop).await;
+        assert_eq!((rc >= 10, &body["status"]), (true, &json!("wrong_sender")), "{body}");
+        let attach = json!({"binding": binding("alpha"), "node": "beta", "revision": "1"});
+        let (rc, body) = raw(&a.client, "settingsd", "settings.mirror.attach", &attach).await;
+        assert_eq!((rc >= 10, &body["status"]), (true, &json!("wrong_sender")), "{body}");
+        let unmoved = status_until(&b.client, "settingsd", "alpha", "unmoved", |_| true).await;
+        assert_eq!(unmoved["revision"], first, "the forged record was not taken");
+        assert_eq!(unmoved["stale"], false, "nor did it touch stale");
+
+        // An authority commit: the mirror republishes the same topics (and so
+        // was not wedged by the forged revision).
         let request = apply(
             "alpha",
             &authority_status,
@@ -688,8 +751,29 @@ fn a_mirror_on_a_second_broker_republishes_forwards_serves_stale_and_catches_up(
         assert_eq!(body["node"], "alpha");
 
         // The authority comes back: it pushes to the mirror it had attached.
-        let _authority = fixture.brokers[0].settingsd(&authority_args, &authority_log);
+        let mut authority = fixture.brokers[0].settingsd(&authority_args, &authority_log);
         status_until(&b.client, "settingsd", "alpha", "attached again", |s| {
+            s["stale"] == false
+        })
+        .await;
+
+        // A crash (kill -9) sends no notice and the mesh has no peer-down
+        // event to tell the mirror: it still reports current, until its next
+        // forwarded write finds the authority gone, refuses it, and goes
+        // stale.
+        authority.stop();
+        let before = status_until(&b.client, "settingsd", "alpha", "read", |_| true).await;
+        assert_eq!(before["stale"], false, "no event reaches the mirror");
+        refused["operation_id"] = json!("after-the-crash");
+        let (rc, body) = raw(&b.client, "settingsd", "settings.apply", &refused).await;
+        assert!(rc >= 10, "{rc} {body}");
+        assert_eq!(body["status"], "authority_unreachable", "{body}");
+        status_until(&b.client, "settingsd", "alpha", "stale after the refusal", |s| {
+            s["stale"] == true
+        })
+        .await;
+        let _authority = fixture.brokers[0].settingsd(&authority_args, &authority_log);
+        status_until(&b.client, "settingsd", "alpha", "attached after the crash", |s| {
             s["stale"] == false
         })
         .await;
@@ -729,6 +813,10 @@ fn a_mirror_on_a_second_broker_republishes_forwards_serves_stale_and_catches_up(
         // brought, not the cache's.
         b.until("beta's topics after its reconnect", |l| all_at(l, &fourth))
             .await;
+        // And the cache's revision never went out first: publication is held
+        // while the attach is in flight.
+        let early: Vec<_> = b.history.iter().filter(|(_, r)| *r == third).collect();
+        assert!(early.is_empty(), "the stale cache was published: {early:?}");
         assert_eq!(a.latest[&keys("time")], b.latest[&keys("time")]);
         let mirror_log = fs::read_to_string(&mirror_log).unwrap();
         assert!(

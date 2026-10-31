@@ -29,6 +29,9 @@ pub const MAX_PUSH_FAILURES: u8 = 8;
 pub const PUSH_TIMEOUT: Duration = Duration::from_secs(5);
 /// A forwarded write waits this long for the authority's receipt.
 pub const FORWARD_TIMEOUT: Duration = Duration::from_secs(15);
+/// At most this many mirrors attach to one authority: a machine has a few
+/// desks, and an attach is refused beyond it.
+pub const MAX_MIRRORS: usize = 16;
 
 /// The bounded backoff shared with topic publication: 250 ms doubling,
 /// at most 30 s.
@@ -68,7 +71,9 @@ pub struct RevisionPush {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cache: Option<crate::mirror::Cache>,
     /// The prefixes whose values changed since the mirror's revision; all
-    /// of them on a first or catch-up push.
+    /// of them on a first or catch-up push. Kept to §5.4's letter and logged
+    /// by the mirror; the mirror itself publishes by content
+    /// ([`crate::publication::Board`]), so it never relies on this list.
     pub changed: Vec<String>,
     /// The revision that last changed each topic, so the mirror's bodies
     /// equal the authority's.
@@ -125,6 +130,7 @@ impl Attached {
             mirrors: nodes
                 .into_iter()
                 .filter(|n| valid_node(n))
+                .take(MAX_MIRRORS)
                 .map(|n| {
                     let mut mirror = Mirror::new(None);
                     mirror.hinted = true;
@@ -148,9 +154,14 @@ impl Attached {
         }
     }
 
-    /// Attach (or re-attach) `node` holding `revision`.
-    pub fn attach(&mut self, node: &str, revision: Revision) {
+    /// Attach (or re-attach) `node` holding `revision`, what it says it
+    /// has: a lost answer is then made good by the next push. False when the
+    /// table is full and `node` is new, or `node` is not a node name.
+    pub fn attach(&mut self, node: &str, revision: Revision) -> bool {
         let fresh = !self.mirrors.contains_key(node);
+        if !valid_node(node) || (fresh && self.mirrors.len() >= MAX_MIRRORS) {
+            return false;
+        }
         let entry = self
             .mirrors
             .entry(node.to_owned())
@@ -162,6 +173,7 @@ impl Attached {
         if fresh {
             self.save();
         }
+        true
     }
 
     pub fn nodes(&self) -> Vec<String> {
@@ -248,15 +260,97 @@ pub fn valid_node(node: &str) -> bool {
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
 }
 
-/// Whether a forwarded reply came from the authority itself. Every settingsd
-/// answer to a write is a JSON object with a `status`; a broker that cannot
-/// reach the authority (no route, no such service, a dropped mesh link)
-/// answers without one.
-pub fn from_authority(body: &str) -> bool {
-    serde_json::from_str::<Value>(body)
+/// The statuses settingsd answers a write with, as success (rc 0) or as
+/// refusal (rc 10).
+const ANSWERED: [&str; 3] = ["valid", "changed", "unchanged"];
+const REFUSED: [&str; 10] = [
+    "conflict",
+    "validation_failed",
+    "wrong_target",
+    "outcome_unknown",
+    "storage_failed",
+    "operation_id_reused",
+    "revision_exhausted",
+    "snapshot_too_large",
+    "unsupported_schema",
+    "not_ready",
+];
+
+/// Whether a forwarded reply came from the authority itself: a JSON object
+/// whose `status` is one settingsd answers a write with, under the rc it
+/// answers it with. A broker that cannot reach the authority (no route, no
+/// such service, a dropped mesh link) answers with neither.
+pub fn from_authority(rc: u8, body: &str) -> bool {
+    let Some(status) = serde_json::from_str::<Value>(body)
         .ok()
-        .and_then(|v| v.get("status").cloned())
-        .is_some_and(|s| s.is_string())
+        .and_then(|v| v.get("status")?.as_str().map(str::to_owned))
+    else {
+        return false;
+    };
+    match rc {
+        0 => ANSWERED.contains(&status.as_str()),
+        10.. => REFUSED.contains(&status.as_str()),
+        _ => false,
+    }
+}
+
+/// Who the broker says sent a command across the mesh: the peer node and
+/// its service. Both headers are the broker's own (reserved: a caller's
+/// are overwritten) and set only on a delivery from a verified peer, so a
+/// local caller, or one that names itself, has neither.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Sender<'a> {
+    pub node: Option<&'a str>,
+    pub service: Option<&'a str>,
+}
+
+impl<'a> Sender<'a> {
+    pub fn of(command: &'a bus::native_client::IncomingCommand) -> Self {
+        Self {
+            node: command.header("broker_peer"),
+            service: command.header("broker_service"),
+        }
+    }
+
+    /// A push or stop notice: only the configured authority's settingsd.
+    pub fn is_authority(&self, node: &str) -> bool {
+        self.node == Some(node) && self.service == Some("settingsd")
+    }
+
+    /// An attach: only from the node it names (the first fetch is anonymous,
+    /// so the service is not required).
+    pub fn is_node(&self, node: &str) -> bool {
+        self.node == Some(node)
+    }
+}
+
+/// The refusal of a mirror command from the wrong sender.
+pub fn wrong_sender(sender: &Sender, expected: &str) -> Value {
+    json!({"status": "wrong_sender", "expected": expected,
+        "node": sender.node, "service": sender.service})
+}
+
+/// The creation time of an incarnation (a UUIDv7), for ordering two of them.
+fn created(incarnation: &str) -> Option<(u64, u32)> {
+    uuid::Uuid::parse_str(incarnation)
+        .ok()?
+        .get_timestamp()
+        .map(|t| t.to_unix())
+}
+
+/// Whether a mirror holding `(incarnation, revision)` takes a record at
+/// `(next_incarnation, next_revision)`: a later revision of the same
+/// incarnation, or any revision of a later incarnation (a re-initialised
+/// authority). Never an older incarnation, and never one whose time cannot
+/// be read.
+pub fn supersedes(held: (&str, Revision), next: (&str, Revision)) -> bool {
+    if held.0 == next.0 {
+        return next.1 >= held.1;
+    }
+    match (created(held.0), created(next.0)) {
+        (Some(held), Some(next)) => next > held,
+        _ => false,
+    }
 }
 
 /// The refusal for a write a mirror cannot forward.
@@ -341,6 +435,32 @@ mod tests {
     }
 
     #[test]
+    fn the_attached_set_is_capped_and_names_only_nodes() {
+        let mut table = Attached::default();
+        for i in 0..MAX_MIRRORS {
+            assert!(table.attach(&format!("node-{i}"), Revision(1)));
+        }
+        assert!(!table.attach("one-too-many", Revision(1)), "full");
+        assert!(table.attach("node-0", Revision(2)), "a re-attach still fits");
+        assert!(!Attached::default().attach("Not A Node", Revision(1)));
+        assert!(!Attached::default().attach("", Revision(1)));
+    }
+
+    #[test]
+    fn only_a_later_record_supersedes() {
+        let old = uuid::Uuid::now_v7().to_string();
+        std::thread::sleep(Duration::from_millis(2));
+        let new = uuid::Uuid::now_v7().to_string();
+        assert!(supersedes((&old, Revision(5)), (&old, Revision(6))));
+        assert!(supersedes((&old, Revision(5)), (&old, Revision(5))));
+        assert!(!supersedes((&old, Revision(5)), (&old, Revision(4))));
+        // A re-initialised authority starts low: it still wins.
+        assert!(supersedes((&old, Revision(900)), (&new, Revision(1))));
+        assert!(!supersedes((&new, Revision(1)), (&old, Revision(900))), "never older");
+        assert!(!supersedes((&old, Revision(1)), ("not-a-uuid", Revision(9))));
+    }
+
+    #[test]
     fn the_table_survives_a_restart() {
         let dir = tempfile::tempdir().unwrap();
         let mut table = Attached::load(dir.path());
@@ -357,9 +477,13 @@ mod tests {
 
     #[test]
     fn only_a_settingsd_answer_is_relayed() {
-        assert!(from_authority(r#"{"status":"conflict","revision":3}"#));
-        assert!(!from_authority(""));
-        assert!(!from_authority(r#"{"error_code":"UNKNOWN_COMMAND"}"#));
-        assert!(!from_authority("Mesh bridge error: closed"));
+        assert!(from_authority(10, r#"{"status":"conflict","revision":3}"#));
+        assert!(from_authority(0, r#"{"status":"changed"}"#));
+        assert!(!from_authority(0, r#"{"status":"conflict"}"#), "a refusal under rc 0");
+        assert!(!from_authority(10, r#"{"status":"changed"}"#), "a receipt under rc 10");
+        assert!(!from_authority(10, r#"{"status":"anything"}"#), "not a settingsd status");
+        assert!(!from_authority(10, ""));
+        assert!(!from_authority(10, r#"{"error_code":"UNKNOWN_COMMAND"}"#));
+        assert!(!from_authority(10, "Mesh bridge error: closed"));
     }
 }

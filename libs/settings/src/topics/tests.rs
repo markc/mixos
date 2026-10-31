@@ -108,6 +108,9 @@ fn the_values_view_reads_a_prefix_or_keys_and_refuses_live_paths() {
     assert_eq!(refused[0].code, "live_key");
     let refused = view_values(&empty, Some("system"), None).unwrap_err();
     assert_eq!(refused[0].code, "live_key");
+    // An exact live leaf as the prefix is refused the same way.
+    let refused = view_values(&empty, Some("system.hostname"), None).unwrap_err();
+    assert_eq!(refused[0].code, "live_key");
     assert!(view_values(&empty, Some("nope"), None).is_err());
     assert!(
         view_values(&empty, Some("displays"), None)
@@ -141,6 +144,27 @@ fn a_follower_reads_the_look_back_with_the_same_views() {
     assert_eq!(Appearance::of(&rebuilt), Appearance::of(&values));
     assert_eq!(Framing::of(&rebuilt), Framing::of(&values));
     assert_eq!(State::of(&rebuilt), State::of(&values));
+}
+
+#[test]
+fn a_state_change_moves_appearance_and_the_look_through_the_resolved_mode() {
+    let dark = authored(json!({"appearance.mode": "auto", "state.appearance.daylight": false}));
+    let light = authored(json!({"appearance.mode": "auto", "state.appearance.daylight": true}));
+    let resolve = |v: &Values| Resolved {
+        mode: resolved_mode(v),
+        accent: None,
+    };
+    // Authored values differ only in `state`...
+    assert_eq!(changed_prefixes(&dark, &light), BTreeSet::from(["state"]));
+    // ...but the content of `appearance` moves too, by its resolved mode.
+    let (a, b) = (contents(&dark, &resolve(&dark)), contents(&light, &resolve(&light)));
+    let moved: BTreeSet<&str> = PREFIXES.iter().copied().filter(|p| a[p] != b[p]).collect();
+    assert_eq!(moved, BTreeSet::from(["appearance", "state"]));
+    assert_ne!(
+        look_content(&dark, &resolve(&dark), "d"),
+        look_content(&light, &resolve(&light), "d"),
+        "and so does the look"
+    );
 }
 
 #[test]

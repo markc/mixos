@@ -26,6 +26,7 @@ pub const COMMANDS: &[&str] = &[
     "settings.apply",
     "settings.reset",
     "settings.status",
+    "settings.source",
     MIRROR_ATTACH,
     MIRROR_REVISION,
     // S7-TRANSITION: portald's read until it moves to settings.palette.
@@ -85,13 +86,23 @@ fn describe(body: &str) -> Result<Value, Value> {
     } else {
         decode(body)?
     };
+    let mirror = json!({
+        MIRROR_ATTACH: {"from": "mirror", "sender": "the broker-stamped peer node equals body.node",
+            "body": {"binding": "the authority's", "node": "the mirror's node", "revision": "the revision it holds"},
+            "answer": "the push, so the mirror catches up in the same round trip"},
+        MIRROR_REVISION: {"from": "authority", "sender": "the broker-stamped settingsd on the mirror's --mirror-of node",
+            "body": {"binding": "", "authority": "its node", "cache": "the sealed record", "changed": "prefixes (informational)", "changed_at": "per topic", "stopping": "bool"}},
+    });
+    // The mirror commands are no registry prefix: they come with the whole
+    // catalogue, or alone for `{prefix: "mirror"}`.
+    if request.prefix.as_deref() == Some("mirror") {
+        return Ok(json!({"version": settings::CONTRACT_VERSION, "mirror": mirror}));
+    }
     let mut described = settings::registry::describe(request.prefix.as_deref());
     described["version"] = settings::CONTRACT_VERSION.into();
-    described["mirror"] = json!({
-        MIRROR_ATTACH: {"from": "mirror", "body": {"binding": "the authority's", "node": "the mirror's node", "revision": "the revision it holds"},
-            "answer": "the push, so the mirror catches up in the same round trip"},
-        MIRROR_REVISION: {"from": "authority", "body": {"binding": "", "authority": "its node", "cache": "the sealed record", "changed": "prefixes", "changed_at": "per topic", "stopping": "bool"}},
-    });
+    if request.prefix.is_none() {
+        described["mirror"] = mirror;
+    }
     Ok(described)
 }
 pub fn dispatch(authority: &mut Authority, command_name: &str, body: &str) -> Result<Value, Value> {
@@ -100,6 +111,7 @@ pub fn dispatch(authority: &mut Authority, command_name: &str, body: &str) -> Re
         "settings.describe" => describe(body),
         "settings.get" => authority.read(decode(body)?),
         "settings.appearance.get" => authority.appearance(decode(body)?),
+        "settings.source" => authority.source(&decode(body)?),
         "settings.status" => {
             let req: StatusRequest = decode(body)?;
             authority.status(&req.binding, req.operation_id.as_deref())
@@ -158,13 +170,16 @@ async fn publish_legacy(
 }
 
 /// Publish every pending 1.0.0 topic, then the transitional ones. Each topic
-/// is marked published as it goes; a failure leaves the rest pending for
-/// the bounded retry.
+/// is marked published as it goes; a failure, including a body that cannot
+/// be built, leaves it and the rest pending for the bounded retry. The
+/// transitional ones set `authority.published` ([`publish_legacy`]), which
+/// with an empty board is what `publication_pending: false` reports.
 async fn publish(authority: &mut Authority, client: &SupervisedClient) -> anyhow::Result<()> {
     for key in authority.board.pending() {
-        if let Some((topic, body)) = authority.topic(&key) {
-            publish_retained(client, topic, body).await?;
-        }
+        let (topic, body) = authority
+            .topic(&key)
+            .ok_or_else(|| anyhow::anyhow!("topic {key} has no body"))?;
+        publish_retained(client, topic, body).await?;
         authority.board.published(&key);
     }
     if authority.published != Some(authority.accepted.revision) {
@@ -268,14 +283,23 @@ impl Ctx {
         }
     }
 
+    /// This settingsd's node, asked again of the broker while unknown (the
+    /// answer on connect can fail while the connection itself is fine).
+    async fn own_node(&mut self) -> Option<String> {
+        if self.node.is_none() && self.client.is_connected() {
+            self.node = node_name(&self.client).await;
+        }
+        self.node.clone()
+    }
+
     /// Push the current revision to every mirror that is behind it.
-    fn push_due(&mut self, authority: &Authority) {
-        let Some(own) = self.node.clone() else {
-            return;
-        };
+    async fn push_due(&mut self, authority: &Authority) {
         if !self.client.is_connected() || !matches!(authority.role, Role::Authority(_)) {
             return;
         }
+        let Some(own) = self.own_node().await else {
+            return;
+        };
         let revision = authority.accepted.revision;
         for (node, since) in self.mirrors.due(revision, Instant::now()) {
             let body = push_of(authority, &own, since).and_then(|p| Ok(serde_json::to_string(&p)?));
@@ -311,7 +335,7 @@ impl Ctx {
 
     /// A mirror attaches to its authority (on each connect, and when a
     /// forwarded write finds a detached authority back).
-    fn attach(&mut self, authority: &Authority) {
+    async fn attach(&mut self, authority: &Authority) {
         let Role::Mirror {
             node: authority_node,
         } = &authority.role
@@ -321,8 +345,8 @@ impl Ctx {
         if self.attaching || !self.client.is_connected() {
             return;
         }
-        let Some(own) = self.node.clone() else {
-            tracing::warn!("mirror node unknown; attach waits for the next connect");
+        let Some(own) = self.own_node().await else {
+            tracing::warn!("mirror node unknown; attach waits for the next connect or forward");
             return;
         };
         self.attaching = true;
@@ -387,7 +411,7 @@ impl Ctx {
                 )
                 .await;
             let (rc, answer, reached) = match reply {
-                Ok((rc, answer, _)) if mirroring::from_authority(&answer) => (rc, answer, true),
+                Ok((rc, answer, _)) if mirroring::from_authority(rc, &answer) => (rc, answer, true),
                 other => {
                     tracing::warn!(node, reply=?other, "write not forwarded; authority unreachable");
                     (10, mirroring::unreachable(&node).to_string(), false)
@@ -428,8 +452,17 @@ fn push_of(
 }
 
 /// `settings.mirror.attach` at the authority: attach the mirror and answer
-/// with the push, so it catches up in the same round trip.
-fn attach(authority: &Authority, ctx: &mut Ctx, body: &str) -> Result<Value, Value> {
+/// with the push, so it catches up in the same round trip. Only the node the
+/// request names may attach it (the broker's stamp, [`mirroring::Sender`]),
+/// into a capped table. The mirror is recorded at the revision it says it
+/// holds, and the caller pushes after answering, so a lost answer heals on
+/// that push.
+async fn attach(
+    authority: &Authority,
+    ctx: &mut Ctx,
+    sender: mirroring::Sender<'_>,
+    body: &str,
+) -> Result<Value, Value> {
     if !matches!(authority.role, Role::Authority(_)) {
         return Err(json!({"status":"wrong_role","role":"mirror"}));
     }
@@ -440,20 +473,37 @@ fn attach(authority: &Authority, ctx: &mut Ctx, body: &str) -> Result<Value, Val
     if !mirroring::valid_node(&request.node) {
         return Err(json!({"status":"validation_failed","path":"node"}));
     }
-    let own = ctx
-        .node
-        .clone()
-        .ok_or_else(|| json!({"status":"not_ready","message":"Broker node not known yet"}))?;
+    if !sender.is_node(&request.node) {
+        return Err(mirroring::wrong_sender(&sender, &request.node));
+    }
+    let own =
+        ctx.own_node().await.ok_or_else(
+            || json!({"status":"not_ready","message":"Broker node not known yet"}),
+        )?;
     let push = push_of(authority, &own, Some(request.revision))
         .map_err(|e| json!({"status":"storage_failed","message":e.to_string()}))?;
-    ctx.mirrors
-        .attach(&request.node, authority.accepted.revision);
+    if !ctx.mirrors.attach(&request.node, request.revision) {
+        return Err(json!({"status":"mirror_limit","maximum":mirroring::MAX_MIRRORS}));
+    }
     Ok(json!({"status":"attached","revision":authority.accepted.revision,"push":push}))
 }
 
-/// A push at a mirror: verify and cache the record, then take it. A push
-/// older than what the mirror holds is acknowledged and ignored.
+/// A push at a mirror, from its authority (the caller checked the sender):
+/// verify and cache the record, then take it. A refused push leaves the
+/// cache and marks the mirror stale: it knows it is behind.
 async fn adopt(
+    authority: Authority,
+    ctx: &Ctx,
+    push: RevisionPush,
+) -> (Authority, Result<Value, Value>) {
+    let (mut authority, result) = take(authority, ctx, push).await;
+    if result.is_err() && matches!(authority.role, Role::Mirror { .. }) {
+        authority.stale = true;
+    }
+    (authority, result)
+}
+
+async fn take(
     authority: Authority,
     ctx: &Ctx,
     push: RevisionPush,
@@ -477,35 +527,58 @@ async fn adopt(
             Err(json!({"status":"validation_failed","path":"cache"})),
         );
     };
-    if cache.incarnation == authority.accepted.incarnation
-        && cache.revision < authority.accepted.revision
-    {
-        let mut authority = authority;
-        authority.stale = false;
-        let revision = authority.accepted.revision;
+    let held = (
+        authority.accepted.incarnation.as_str(),
+        authority.accepted.revision,
+    );
+    let next = (cache.incarnation.as_str(), cache.revision);
+    if !mirroring::supersedes(held, next) {
+        let (incarnation, revision) = (held.0.to_owned(), held.1);
+        // An earlier revision of what the mirror holds is a reordered
+        // push: acknowledged, ignored. An older incarnation is refused.
+        if next.0 == held.0 {
+            return (
+                authority,
+                Ok(json!({"status":"current","revision":revision})),
+            );
+        }
         return (
             authority,
-            Ok(json!({"status":"current","revision":revision})),
+            Err(json!({"status":"older_incarnation","incarnation":incarnation,"revision":revision})),
         );
     }
     let root = ctx.root.clone();
-    let changed_at = push.changed_at;
+    let (changed, changed_at) = (push.changed, push.changed_at);
     // Checked against the mirror's own binding and authority, as at open.
     let (binding, node) = (authority.accepted.binding.clone(), push.authority);
-    let mut authority = authority;
     let result = tokio::task::spawn_blocking(move || {
-        let taken = crate::mirror::write(&root, &binding, &node, &cache)
-            .and_then(|()| authority.adopt(&cache, &changed_at));
+        let mut authority = authority;
+        // A panic on a pushed record refuses the push; it never takes the
+        // mirror down. `adopt` assigns only once the record has resolved.
+        let taken = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            crate::mirror::write(&root, &binding, &node, &cache)
+                .and_then(|()| authority.adopt(&cache, &changed_at))
+        }))
+        .unwrap_or_else(|panic| {
+            let what = panic
+                .downcast_ref::<&str>()
+                .map(|s| (*s).to_owned())
+                .or_else(|| panic.downcast_ref::<String>().cloned())
+                .unwrap_or_default();
+            Err(anyhow::anyhow!("adopting the pushed record panicked: {what}"))
+        });
         (authority, taken)
     })
-    .await;
+    .await
+    .expect("the adoption job catches its own panics");
     match result {
-        Ok((mut authority, Ok(moved))) => {
+        (mut authority, Ok(moved)) => {
             authority.stale = false;
             let revision = authority.accepted.revision;
             tracing::info!(
                 revision = revision.0,
                 ?moved,
+                ?changed,
                 "mirror took the authority's revision"
             );
             (
@@ -513,14 +586,13 @@ async fn adopt(
                 Ok(json!({"status":"current","revision":revision})),
             )
         }
-        Ok((authority, Err(error))) => {
+        (authority, Err(error)) => {
             tracing::warn!(%error, "pushed record refused; the cache is kept");
             (
                 authority,
                 Err(json!({"status":"validation_failed","message":error.to_string()})),
             )
         }
-        Err(join) => panic!("mirror adoption panicked: {join}"),
     }
 }
 
@@ -592,7 +664,14 @@ async fn first_cache(
     node: &str,
     noded_url: &str,
 ) -> anyhow::Result<crate::mirror::Cache> {
-    let client = bus::native_client::NodedClient::connect_anonymous(noded_url).await?;
+    // The connect is inside the bound too: a black-holing broker must not
+    // hold the mirror's start past it.
+    let client = tokio::time::timeout(
+        mirroring::PUSH_TIMEOUT,
+        bus::native_client::NodedClient::connect_anonymous(noded_url),
+    )
+    .await
+    .map_err(|_| anyhow::anyhow!("broker connect timed out"))??;
     let fetched = async {
         let info = client.call("noded", "noded.info", json!({})).await?;
         let own = info["node"]
@@ -684,14 +763,14 @@ async fn run(mut authority: Authority, root: PathBuf, noded_url: String) -> anyh
                 ctx.publish(&mut authority).await;
             }
             _ = sleep_until(mirror_retry), if mirror_retry.is_some() => {
-                ctx.push_due(&authority);
+                ctx.push_due(&authority).await;
             }
             Some(report) = reports.recv() => match report {
                 Event::Pushed { node, revision, ok } => {
                     if ctx.mirrors.finished(&node, revision, ok, Instant::now()) {
                         tracing::warn!(node, "mirror dropped after repeated push failures; it re-attaches on its reconnect");
                     }
-                    ctx.push_due(&authority);
+                    ctx.push_due(&authority).await;
                 }
                 // An answer from before the latest reconnect: that
                 // connection's attach is void, a new one is in flight.
@@ -713,7 +792,7 @@ async fn run(mut authority: Authority, root: PathBuf, noded_url: String) -> anyh
                 }
                 Event::Forwarded { reached } => {
                     if !reached { authority.stale = true; }
-                    else if authority.stale { ctx.attach(&authority); }
+                    else if authority.stale { ctx.attach(&authority).await; }
                 }
             },
             event = incoming.recv() => {
@@ -753,7 +832,7 @@ async fn connected(authority: &mut Authority, ctx: &mut Ctx) {
         Role::Authority(_) => {
             ctx.publish(authority).await;
             ctx.mirrors.forget_acks();
-            ctx.push_due(authority);
+            ctx.push_due(authority).await;
         }
         // A mirror publishes once the attach answers, so a reachable
         // authority's revision goes out, not the cache's; with the
@@ -761,7 +840,7 @@ async fn connected(authority: &mut Authority, ctx: &mut Ctx) {
         Role::Mirror { .. } => {
             authority.stale = true;
             ctx.attaching = false;
-            ctx.attach(authority);
+            ctx.attach(authority).await;
             tracing::debug!(attaching = ctx.attaching, node = ?ctx.node, generation = ctx.client.connection_generation(), "mirror connected");
             if !ctx.attaching {
                 ctx.publish(authority).await;
@@ -844,21 +923,41 @@ async fn handle(
         ctx.forward(&authority, &command);
         return Ok(authority);
     }
+    let sender = mirroring::Sender::of(&command);
+    let mirror_of = match &authority.role {
+        Role::Mirror { node } => Some(node.clone()),
+        Role::Authority(_) => None,
+    };
     let reply = match name {
-        MIRROR_ATTACH => attach(&authority, ctx, &command.body),
-        MIRROR_REVISION => match decode::<RevisionPush>(&command.body) {
-            Ok(push) if push.stopping && mirror => {
+        MIRROR_ATTACH => attach(&authority, ctx, sender, &command.body).await,
+        MIRROR_REVISION => match (mirror_of.as_deref(), decode::<RevisionPush>(&command.body)) {
+            (None, _) => Err(json!({"status":"wrong_role","role":"authority"})),
+            // Only the configured authority's settingsd, as the broker
+            // stamps it, may push or stop: anything else changes nothing,
+            // not even `stale`.
+            (Some(node), _) if !sender.is_authority(node) => {
+                let refused = mirroring::wrong_sender(&sender, &mirroring::address(node));
+                tracing::warn!(%refused, "mirror command from the wrong sender refused");
+                Err(refused)
+            }
+            (_, Ok(push)) if push.binding != authority.accepted.binding => {
+                Err(json!({"status":"wrong_target","binding":authority.accepted.binding}))
+            }
+            (_, Ok(push)) if push.stopping => {
                 authority.stale = true;
                 tracing::info!("authority stopping; serving the cache stale");
                 Ok(json!({"status":"detached"}))
             }
-            Ok(push) => {
+            (_, Ok(push)) => {
                 let (taken, reply) = adopt(authority, ctx, push).await;
                 authority = taken;
                 ctx.publish(&mut authority).await;
                 reply
             }
-            Err(error) => Err(error),
+            (_, Err(error)) => {
+                authority.stale = true;
+                Err(error)
+            }
         },
         _ => {
             let command_name = command.command.clone();
@@ -877,7 +976,7 @@ async fn handle(
             }
             ctx.publish(&mut authority).await;
             if authority.accepted.revision != previous_revision {
-                ctx.push_due(&authority);
+                ctx.push_due(&authority).await;
             }
             reply
         }
@@ -902,6 +1001,11 @@ async fn handle(
     let body = serde_json::to_string(&value)?;
     if let Err(error) = ctx.client.respond(&command, rc, &body).await {
         tracing::warn!(%error, "settings reply unavailable; operation receipt retained");
+    }
+    // A mirror attached at the revision it holds is pushed now: harmless
+    // when the answer arrives, the catch-up when it was lost.
+    if name == MIRROR_ATTACH && rc == 0 {
+        ctx.push_due(&authority).await;
     }
     Ok(authority)
 }
@@ -933,6 +1037,7 @@ mod tests {
             "settings.apply",
             "settings.reset",
             "settings.status",
+            "settings.source",
             MIRROR_ATTACH,
             MIRROR_REVISION,
         ];
