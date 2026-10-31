@@ -86,6 +86,7 @@ markdown-image-hover = { $url } (not loaded)
 
 toolkit-theme-breeze = Breeze
 toolkit-theme-adwaita = Adwaita
+toolkit-theme-mixos = MixOS
 toolkit-style-breeze = Breeze style
 toolkit-style-adwaita = Adwaita style
 macros-new = New macro…
