@@ -144,6 +144,24 @@ fn compile_flat_source(
                         level.describe()
                     ),
                 ));
+                // Why the seeds failed, kept as warnings: the look compiles,
+                // and a reader can still see which contract broke.
+                let why = match &first {
+                    Some(DesignCompileResult::Success(failed)) => failed.diagnostics.as_slice(),
+                    Some(DesignCompileResult::Fatal(failed)) => failed.diagnostics.as_slice(),
+                    None => &[],
+                };
+                success.diagnostics.extend(
+                    why.iter()
+                        .filter(|d| d.severity == DiagnosticSeverity::Error)
+                        .map(|d| {
+                            DesignDiagnostic::warning(
+                                d.code,
+                                d.path.clone(),
+                                format!("under the chosen seeds: {}", d.message),
+                            )
+                        }),
+                );
             }
             return result;
         }

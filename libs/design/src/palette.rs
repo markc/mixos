@@ -70,9 +70,13 @@ pub struct Cosmic {
 }
 
 /// The surface each translucent role is drawn on; every other role sits on
-/// `chrome`. A surface that is itself translucent is first composited over
-/// `chrome`.
-pub const FLAT_BASE: [(&str, &str); 6] = [
+/// `chrome`. The selection fills sit on the card, where lists and selected
+/// controls are drawn (the AA test for body text over `accent_soft`
+/// measures there too). A surface that is itself translucent is flattened
+/// first.
+pub const FLAT_BASE: [(&str, &str); 8] = [
+    ("accent_soft", "card"),
+    ("row_selected", "card"),
     ("canvas_dot", "canvas"),
     ("card_border", "card"),
     ("field", "card"),

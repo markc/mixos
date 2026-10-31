@@ -5,7 +5,7 @@
 //! shared by the toolkit and compd's decor, so both draw the same lengths.
 //!
 //! **Roundness** (A4) sets the six COSMIC radius tokens from [`RADIUS_MAP`]
-//! and overrides the legacy radii from them ([`LEGACY_RADII`]); `square`
+//! and overrides the legacy radii from them ([`round`]); `square`
 //! is 0 on all six, on every desk (F2), where the reference's own Square is
 //! 2. The style keeps every other trait.
 //!
@@ -93,16 +93,6 @@ pub const RADIUS_MAP: [(&str, [u8; 3]); 6] = [
     ("radius_xl", [160, 8, 0]),
 ];
 
-/// The legacy radius tokens and the COSMIC token each takes.
-pub const LEGACY_RADII: [(&str, &str); 6] = [
-    ("radius_sm", "radius_xs"),
-    ("radius", "radius_s"),
-    ("radius_lg", "radius_m"),
-    ("field_radius", "radius_s"),
-    ("menu_highlight_radius", "radius_s"),
-    ("radius_pill", "radius_xl"),
-];
-
 /// `style` with both axes applied. Apply it once, to the compiled style:
 /// the density multiplies.
 pub fn apply(style: ResolvedStyle, geometry: &Geometry) -> ResolvedStyle {
@@ -112,7 +102,11 @@ pub fn apply(style: ResolvedStyle, geometry: &Geometry) -> ResolvedStyle {
     )
 }
 
-/// The roundness overlay alone.
+/// The roundness overlay alone. The legacy radii take the COSMIC token of
+/// the widgets they draw (spec 2 §5.2): `radius_sm` ← `radius_xs`,
+/// `radius` ← `radius_s`, `radius_lg` ← `radius_m` (cards), `field_radius`
+/// and `menu_highlight_radius` ← `radius_s` (text input, menu items), and
+/// `radius_pill` ← `radius_xl` (pill buttons).
 pub fn round(mut style: ResolvedStyle, roundness: Roundness) -> ResolvedStyle {
     let [r0, xs, s, m, l, xl] = roundness.radii();
     style.radius_0 = r0;
@@ -280,7 +274,7 @@ mod tests {
     use super::*;
     use crate::cosmic_tables::Roundness as R;
     use crate::{
-        DesignContext, EMBEDDED_DEFAULT_SOURCE, Scheme, Style, compile_design, parse_design_source,
+        DesignContext, EMBEDDED_DEFAULT_SOURCE, Style, compile_design, parse_design_source,
     };
 
     fn styles() -> Vec<(Style, ResolvedStyle)> {
@@ -475,7 +469,6 @@ mod tests {
         expected.field_radius = 8;
         expected.menu_highlight_radius = 8;
         assert_eq!(applied, expected);
-        assert!(Scheme::ALL.contains(&Scheme::Mixos));
     }
 
     #[test]

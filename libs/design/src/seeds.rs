@@ -19,8 +19,8 @@
 //!
 //! [`seeds_of`] is the inverse used to export an authored scheme to COSMIC
 //! and for the first tint under an authored scheme (F4): window background
-//! from `chrome`, container background from `card`, accent from the
-//! resolved accent, text tint from `text`, control tint from `field`.
+//! from `chrome`, container background from `card`, the scheme's hue
+//! ([`accent_seed`]), text tint from `text`, control tint from `field`.
 
 #[cfg(test)]
 mod tests;
@@ -86,6 +86,13 @@ pub enum RoleSource {
     Shade,
     /// The accent at this alpha.
     AccentAt(f64),
+    /// Black at this alpha.
+    BlackAt(f64),
+    /// The text-rank guard (Fable's R5): of `background.on` and
+    /// `background.component.on`, the one with the higher contrast against
+    /// `background.base` (`lower: false`) or the lower (`lower: true`), at
+    /// `alpha`, so `text` is never dimmer than `text_dim` whatever the tints.
+    TextRank { lower: bool, alpha: f64 },
     /// The first composited over the second, with the reference's `Over`.
     Over(&'static RoleSource, &'static RoleSource),
 }
@@ -94,20 +101,24 @@ use ContainerPart as C;
 use Family as F;
 use Layer::{Background as Bg, Primary as Pr, Secondary as Se};
 use Part as P;
-use RoleSource::{AccentAt, AccentText, Component as Comp, Container as Cont, Over, Shade};
+use RoleSource::{
+    AccentAt, AccentText, BlackAt, Component as Comp, Container as Cont, Over, Shade, TextRank,
+};
 
 const FIELD: RoleSource = Over(&Comp(F::Button, P::Base), &Cont(Pr, C::Base));
 
 /// The 31 chrome roles of the derived scheme, in [`crate::family::chrome::ROLES`]
-/// order. The design fixes chrome, card, canvas, field, hover, pressed,
-/// row_selected, the three texts, separator, the accent roles, danger,
-/// warning, scrim and the primary pair (the ADR's A3); the rest are this
-/// table's, for Fable's visual sign-off.
+/// order, as Fable signed them off (2026-10-31): the design's A3 rows, plus
+/// a recessed `canvas` (the theme's shade over the background, as every
+/// authored scheme sits its desktop below its windows), `canvas_dot` on the
+/// separator colour, `row_selected` as the accent tint (the reference's
+/// neutral `selected` equals `hover`), a modal `scrim` at the authored
+/// schemes' strength, and the text-rank guard.
 pub const ROLE_MAP: [(&str, RoleSource); 31] = [
     // Surfaces.
     ("chrome", Cont(Bg, C::Base)),
-    ("canvas", Cont(Se, C::Base)),
-    ("canvas_dot", Cont(Se, C::Divider)),
+    ("canvas", Over(&Shade, &Cont(Bg, C::Base))),
+    ("canvas_dot", Cont(Bg, C::Divider)),
     ("dock", Cont(Bg, C::Base)),
     ("card", Cont(Pr, C::Base)),
     ("card_border", Cont(Pr, C::Divider)),
@@ -117,11 +128,29 @@ pub const ROLE_MAP: [(&str, RoleSource); 31] = [
     ("field_border", Over(&Comp(F::Button, P::Divider), &FIELD)),
     ("hover", Comp(F::Of(Bg), P::Hover)),
     ("pressed", Comp(F::Of(Bg), P::Pressed)),
-    ("row_selected", Comp(F::Of(Bg), P::Selected)),
+    ("row_selected", AccentAt(ACCENT_SOFT_ALPHA)),
     // Text and icons.
-    ("text", Cont(Bg, C::On)),
-    ("text_dim", Comp(F::Of(Bg), P::On)),
-    ("text_faint", Comp(F::Of(Bg), P::OnDisabled)),
+    (
+        "text",
+        TextRank {
+            lower: false,
+            alpha: 1.0,
+        },
+    ),
+    (
+        "text_dim",
+        TextRank {
+            lower: true,
+            alpha: 1.0,
+        },
+    ),
+    (
+        "text_faint",
+        TextRank {
+            lower: true,
+            alpha: TEXT_FAINT_ALPHA,
+        },
+    ),
     ("icon", Comp(F::IconButton, P::On)),
     // Accent and selection.
     ("accent", Comp(F::Accent, P::Base)),
@@ -133,7 +162,7 @@ pub const ROLE_MAP: [(&str, RoleSource); 31] = [
     // Lines, depth and overlays.
     ("separator", Cont(Bg, C::Divider)),
     ("shadow", Shade),
-    ("scrim", Shade),
+    ("scrim", BlackAt(SCRIM_ALPHA)),
     // Actions and status.
     ("primary_bg", Comp(F::AccentButton, P::Base)),
     ("primary_text", Comp(F::AccentButton, P::On)),
@@ -146,9 +175,9 @@ pub const ROLE_MAP: [(&str, RoleSource); 31] = [
 /// The semantic palette of the derived scheme, so pairs, rings and the
 /// button table are drawn from the same theme as the chrome. `elevated` is
 /// the secondary container, which clears the pairs' 1.25:1 floor over
-/// the background in both modes; `palette.accent.default` is then made
-/// safe as the focus ring ([`ring_safe_accent`]).
-pub const SEMANTIC_MAP: [(&str, RoleSource); 13] = [
+/// the background in both modes. `palette.accent.default`, which is also
+/// the focus ring, is entered beside these as [`ring_safe_accent`].
+pub const SEMANTIC_MAP: [(&str, RoleSource); 12] = [
     ("palette.background.1", Cont(Bg, C::Base)),
     ("palette.background.2", Cont(Pr, C::Base)),
     ("palette.background.3", Comp(F::Of(Pr), P::Base)),
@@ -157,7 +186,6 @@ pub const SEMANTIC_MAP: [(&str, RoleSource); 13] = [
     ("palette.foreground.default", Cont(Bg, C::On)),
     ("palette.foreground.muted", Comp(F::Of(Bg), P::On)),
     ("palette.foreground.quiet", Comp(F::Of(Bg), P::On)),
-    ("palette.accent.default", Comp(F::Accent, P::Base)),
     ("palette.accent.hover", Comp(F::Accent, P::Hover)),
     ("status.success", Comp(F::Success, P::Base)),
     ("status.warning", Comp(F::Warning, P::Base)),
@@ -167,6 +195,15 @@ pub const SEMANTIC_MAP: [(&str, RoleSource); 13] = [
 /// `accent_soft`'s alpha: the derivation's hover-overlay alpha. It fills
 /// selections under body text, so it stays a tint, as studio authors it.
 pub const ACCENT_SOFT_ALPHA: f64 = 0.2;
+
+/// The modal veil's alpha, in both modes: the authored schemes veil at
+/// 0.40 to 0.55, and the reference's shade (0.08 in light) is a shadow, not
+/// a veil. No exporter reads `scrim`.
+pub const SCRIM_ALPHA: f64 = 0.43;
+
+/// `text_faint`'s alpha: the reference's `on_disabled` (`on` at 0.65), laid
+/// over the ranked dim text.
+pub const TEXT_FAINT_ALPHA: f64 = 0.65;
 
 impl RoleSource {
     /// The colour this source names in `theme`.
@@ -212,6 +249,24 @@ impl RoleSource {
             AccentText => theme.accent_text_colour(),
             Shade => theme.shade,
             AccentAt(alpha) => with_alpha(theme.accent.base, alpha),
+            BlackAt(alpha) => SrgbColour {
+                red: 0.0,
+                green: 0.0,
+                blue: 0.0,
+                alpha,
+            },
+            TextRank { lower, alpha } => {
+                let base = theme.background.base;
+                let on = theme.background.on;
+                let component = theme.background.component.on;
+                let reads = |text: SrgbColour| crate::derive::primitives::contrast(text, base);
+                let (higher, dimmer) = if reads(on) >= reads(component) {
+                    (on, component)
+                } else {
+                    (component, on)
+                };
+                with_alpha(if lower { dimmer } else { higher }, alpha)
+            }
             Over(top, under) => over(top.pick(theme), under.pick(theme)),
         }
     }
@@ -259,17 +314,21 @@ impl RoleSource {
             AccentText => "accent_text (else accent.base)".into(),
             Shade => "shade".into(),
             AccentAt(alpha) => format!("accent.base @ {alpha}"),
+            BlackAt(alpha) => format!("black @ {alpha}"),
+            TextRank { lower, alpha } => {
+                let rank = if lower { "lower" } else { "higher" };
+                let at = if alpha < 1.0 {
+                    format!(" @ {alpha}")
+                } else {
+                    String::new()
+                };
+                format!(
+                    "{rank}-contrast of background.on, background.component.on on background.base{at}"
+                )
+            }
             Over(top, under) => format!("{} over {}", top.describe(), under.describe()),
         }
     }
-}
-
-/// The 31 roles of `theme`, by [`ROLE_MAP`].
-pub fn roles(theme: &DerivedTheme) -> BTreeMap<&'static str, SrgbColour> {
-    ROLE_MAP
-        .iter()
-        .map(|(role, source)| (*role, source.pick(theme)))
-        .collect()
 }
 
 /// The derivation's seeds for `context`: its accent and tints.
@@ -408,47 +467,39 @@ pub(crate) fn complete_source(
     origins
 }
 
-/// The non-text contrast the compiler requires of the focus ring.
-const RING_CONTRAST: f64 = 3.0;
-
 /// The accent as the semantic `palette.accent.default`, which is also the
-/// focus ring: the accent itself when it clears 3:1 against the surfaces
-/// the ring is drawn on (`muted`, `secondary` and the `accent` pair), else
-/// the accent walked in OKLab lightness, away from the surfaces, until it
-/// does. Any accent then compiles; the chrome roles keep the exact colour.
+/// focus ring: the accent itself when it clears the compiler's non-text
+/// floor against the three pairs the ring sits next to (`muted`, `secondary`
+/// on the card, and `accent`, which `control_pair` derives from the ring
+/// itself), else the accent walked in OKLab lightness, nearest first, until
+/// it does. Any accent then compiles; the chrome roles keep the exact colour.
 pub fn ring_safe_accent(theme: &DerivedTheme) -> SrgbColour {
-    use crate::colour_model::derivation::{gamut_map_oklch, linear_srgb_to_oklch};
-    let accent = theme.accent.base;
+    use crate::colour_model::NON_TEXT_CONTRAST;
+    use crate::colour_model::derivation::{
+        control_pair_surface, gamut_map_oklch, linear_srgb_to_oklch, non_text_contrast_ratio,
+    };
     let surface = |colour: SrgbColour| colour.to_linear().rendered();
     let muted = surface(theme.background.component.base);
-    let secondary = surface(theme.primary.base);
-    let (bg3, _, _) = linear_srgb_to_oklch(theme.primary.component.base.to_linear());
-    let (l, c, h) = linear_srgb_to_oklch(accent.to_linear());
-    // The `accent` pair is `control_pair(bg3, ring, ...)`: bg3's lightness
-    // lifted 0.03 with a third of the ring's chroma at its hue.
-    let pair = surface(SrgbColour::from_linear(crate::LinearRgba {
-        alpha: 1.0,
-        ..rgb(gamut_map_oklch(
-            (bg3 + 0.03).min(1.0),
-            (c * 0.35).min(0.08),
-            h,
-            64,
-        ))
-    }));
-    let clears = |candidate: crate::LinearRgba| {
-        [muted, secondary, pair]
+    let card = surface(theme.primary.base);
+    let bg3 = surface(theme.primary.component.base);
+    let bg1 = surface(theme.background.base);
+    let accent = theme.accent.base;
+    let clears = |ring: crate::LinearRgba| {
+        let ring = ring.rendered();
+        let Ok(pair) = control_pair_surface(bg3, ring, bg1) else {
+            return false;
+        };
+        [muted, card, pair.rendered()]
             .into_iter()
-            .all(|s| crate::contrast_ratio(candidate.rendered(), s) >= RING_CONTRAST + 0.05)
+            .all(|s| non_text_contrast_ratio(ring, s) >= NON_TEXT_CONTRAST)
     };
+    let (l, c, h) = linear_srgb_to_oklch(accent.to_linear());
     // Nearest first, either way: tints can put dark surfaces in a light
     // mode and light ones in a dark mode.
     (0..=100)
         .flat_map(|k| [l + 0.01 * f64::from(k), l - 0.01 * f64::from(k)])
         .filter(|lightness| (0.0..=1.0).contains(lightness))
-        .map(|lightness| crate::LinearRgba {
-            alpha: 1.0,
-            ..rgb(gamut_map_oklch(lightness, c, h, 64))
-        })
+        .map(|lightness| rgb(gamut_map_oklch(lightness, c, h, 64)))
         .find(|candidate| clears(*candidate))
         .map_or(accent, SrgbColour::from_linear)
 }
@@ -489,15 +540,15 @@ pub(crate) fn apply_accent(chrome: &mut ResolvedChrome, context: &DesignContext)
 
 /// The seeds that would draw `dictionary`'s roles in the derived model:
 /// window background from `chrome`, container background from `card`, the
-/// resolved accent, text tint from `text`, control tint from `field` (a
-/// ramp keeps only its hue and chroma), and the scheme's danger, warning
-/// and success. `None` where the design authors no chrome family.
+/// scheme's hue ([`accent_seed`]), text tint from `text`, control tint from
+/// `field` (a ramp keeps only its hue and chroma), and the scheme's danger,
+/// warning and success. `None` where the design authors no chrome family.
 pub fn seeds_of(dictionary: &ResolvedDictionary) -> Option<Seeds> {
     let chrome = dictionary.chrome.as_ref()?;
     let role = |name: &str| chrome.get(name).map(SrgbColour::from_linear);
     let opaque = |colour: Option<SrgbColour>| colour.map(|c| with_alpha(c, 1.0));
     Some(Seeds {
-        accent: opaque(crate::resolved_accent_of(dictionary)),
+        accent: accent_seed(chrome),
         bg_color: role("chrome"),
         primary_container_bg: role("card"),
         secondary_container_bg: None,
@@ -515,6 +566,30 @@ pub fn seeds_of(dictionary: &ResolvedDictionary) -> Option<Seeds> {
         destructive: opaque(role("danger")),
         window_hint: None,
     })
+}
+
+/// The hue a person recognises as the scheme (Fable's ruling on F4): the most
+/// chromatic, in OKLCh, of its `accent`, `accent_border` and `primary_bg`,
+/// each composited over `chrome` first (studio's border carries alpha). The
+/// hue schemes' `accent` is their soft selection tint and their
+/// `primary_bg` the hue itself; the chrome schemes keep their `accent`.
+/// [`crate::resolved_accent_of`], the ring's accent, is a different question.
+pub fn accent_seed(chrome: &ResolvedChrome) -> Option<SrgbColour> {
+    let under = chrome.get("chrome").map(SrgbColour::from_linear);
+    let chroma = |colour: SrgbColour| {
+        crate::colour_model::derivation::linear_srgb_to_oklch(colour.to_linear()).1
+    };
+    ["accent", "accent_border", "primary_bg"]
+        .into_iter()
+        .filter_map(|role| chrome.get(role).map(SrgbColour::from_linear))
+        .map(|colour| match under {
+            Some(under) if colour.alpha < 1.0 => with_alpha(over(colour, under), 1.0),
+            _ => with_alpha(colour, 1.0),
+        })
+        .fold(None, |best: Option<SrgbColour>, colour| match best {
+            Some(best) if chroma(best) >= chroma(colour) => Some(best),
+            _ => Some(colour),
+        })
 }
 
 /// The settings the first tint under an authored scheme writes beside
