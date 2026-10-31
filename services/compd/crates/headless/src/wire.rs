@@ -16,6 +16,21 @@ use smithay::reexports::wayland_server::{DisplayHandle, protocol::wl_surface::Wl
 use smithay::utils::{DeviceFd, Physical, Size, Transform};
 use world::state::Loop;
 
+/// The human seat (`seat0`) of a headless compd: no physical input sources,
+/// so no pointer and no touch, but the keyboard stays. The primary seat's
+/// keyboard is where window focus lives (`comp.window.focus`, focus on map,
+/// xdg Activated, `comp.props focus`); without it every focus request reads
+/// back unfocused and answers `refused`. Nothing feeds the keyboard: human
+/// key injection is still refused `seat_unavailable`, so clients only ever
+/// see focus enter and leave on it.
+pub fn human_seat_without_sources<D>(seat: &mut smithay::input::Seat<D>)
+where
+    D: smithay::input::SeatHandler + 'static,
+{
+    seat.remove_pointer();
+    seat.remove_touch();
+}
+
 pub struct Options<'a> {
     pub size: Size<i32, Physical>,
     pub scale: f64,
@@ -140,11 +155,8 @@ pub fn wire(
     let handle = state.state.output.display_handle.clone();
     let damage_tracker =
         scenegraph::state::lifecycle::initialize(state, &output, &handle, &mut contract);
-    // No physical input sources. Keep the human seat global, but advertise no
-    // capabilities. This runs before the event loop serves any client.
-    state.state.seat.seat.remove_pointer();
-    state.state.seat.seat.remove_keyboard();
-    state.state.seat.seat.remove_touch();
+    // This runs before the event loop serves any client.
+    human_seat_without_sources(&mut state.state.seat.seat);
     state.inner.comp.injection.backend = world::comp::injection::BackendInput::Headless;
     // The loop pins the camera to identity before input or drawing. Put the
     // agent at the logical output centre, as centre_pointer_once does for

@@ -256,7 +256,8 @@ instances. Headless never requests realtime priority or negative nice,
 starts no XWayland, and leaves the desktop session environment alone.</p>
 <p>Headless owns agent input authority without a VT; session locks still clear
 agent input, while KMS and nested retain their session-pause rules. <code>seat0</code>
-is advertised with no capabilities, and human input refuses <code>seat_unavailable</code>.
+advertises a keyboard only, so windows take focus over the Bus (2026-10-31);
+nothing feeds it, and human input refuses <code>seat_unavailable</code>.
 The agent pointer starts at output centre; absolute <code>headless-0</code> moves clamp
 to the mode's logical bounds. Each Bus service has its own observation topics,
 window registry and presentation statistics.</p>

@@ -85,14 +85,18 @@ impl Probe {
             thread::sleep(Duration::from_millis(10));
         }
     }
+    /// seat0 keeps a keyboard for window focus, so focus may enter and
+    /// leave on it; no key, pointer or button event ever reaches it.
     fn no_human_input(&self) {
         for line in self
             .text()
             .lines()
-            .filter(|line| line.starts_with("PROBE seat \"seat0\" "))
+            .filter_map(|line| line.strip_prefix("PROBE seat \"seat0\" "))
         {
             assert!(
-                line.contains(" bound keyboard=0 pointer=0 "),
+                line.starts_with("bound keyboard=1 pointer=0 ")
+                    || line == "keyboard_enter"
+                    || line == "keyboard_leave",
                 "human input: {line}"
             );
         }
@@ -425,9 +429,8 @@ fn two_instances_register_distinct_services() {
     assert_eq!(info_b["service"], "comp-rec");
     assert!(info_a["instance"].is_string(), "{info_a}");
     assert_ne!(info_a["instance"], info_b["instance"]);
-    // Focus names come from the same resolver used by the transport. An
-    // empty human seat has no keyboard focus edge to publish; mapped and
-    // session topics prove the live publisher namespaces on the broker.
+    // Focus names come from the same resolver used by the transport. Mapped
+    // and session topics prove the live publisher namespaces on the broker.
     assert_eq!(
         topic_name(SERVICE, FOCUS_TOPIC_SUFFIX),
         "comp-headless.focus.changed"
@@ -487,8 +490,9 @@ fn human_seat_has_no_sources() {
     bus.ready(SERVICE);
     let caps = seats::capabilities(&process.root);
     assert_eq!(caps.len(), 2);
-    assert!(
-        caps["seat0"].is_empty(),
+    assert_eq!(
+        caps["seat0"],
+        wayland_client::protocol::wl_seat::Capability::Keyboard,
         "seat0 advertised capabilities: {caps:?}"
     );
     assert_eq!(
@@ -498,7 +502,7 @@ fn human_seat_has_no_sources() {
     );
     let text = probe.text();
     assert!(
-        text.contains("PROBE seat \"seat0\" bound keyboard=0 pointer=0 "),
+        text.contains("PROBE seat \"seat0\" bound keyboard=1 pointer=0 "),
         "{text}"
     );
     assert!(
@@ -528,6 +532,6 @@ fn human_seat_has_no_sources() {
     assert!(process.child.try_wait().unwrap().is_none());
     bus.call(SERVICE, "comp.windows.list", json!({}));
     println!(
-        "seat0: no pointer/keyboard; agent: both; five human commands refused seat_unavailable and compd stayed up"
+        "seat0: keyboard (focus) only; agent: both; five human commands refused seat_unavailable and compd stayed up"
     );
 }
