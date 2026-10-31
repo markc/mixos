@@ -830,7 +830,7 @@ impl Engine {
             }
             // settingsd announced a change: a hint, re-read over the call.
             Delivery::Topic(topic) => {
-                if topic == crate::appearance::topic() {
+                if crate::appearance::is_topic(&topic) {
                     self.read_look();
                 }
                 if topic == "backdrop.action.executed" {

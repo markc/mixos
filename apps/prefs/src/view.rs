@@ -1807,10 +1807,11 @@ mod numeric_tests {
                 _ => None,
             })
             .unwrap();
-        let body = serde_json::json!({"summary":{"schema":1,"binding":{"instance":"example","profile":"default"},
-            "incarnation":"example","revision":"1","design_revision":"1","source_digest":"example",
-            "appearance":{"scheme":"studio","mode":"dark","contrast":"normal","source":null},
-            "custom_source":false,"terminal":{}},"recovering":false});
+        let body = serde_json::json!({"status":"current",
+            "binding":{"instance":"example","profile":"default"},
+            "incarnation":"example","revision":"1",
+            "values":{"appearance.scheme":"studio","appearance.mode":"dark",
+                "appearance.contrast":"normal"},"resolved":{}});
         engine.settled(
             ticket,
             Ok(citizen::Reply {

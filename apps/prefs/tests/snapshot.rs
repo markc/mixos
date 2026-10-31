@@ -17,12 +17,33 @@ use prefs::{actions, label_with, strings, view::view};
 use serde_json::json;
 use toolkit::Theme;
 
-/// A `settings.get` reply in the summary view Preferences reads.
+/// A `settings.get` reply in the `values` view Preferences reads (contract
+/// 1.0.0), for an appearance given by its `appearance.*` field names.
 fn summary_reply(revision: &str, appearance: serde_json::Value) -> serde_json::Value {
-    json!({"status":"current","summary":{"schema":1,
+    let values: serde_json::Map<String, serde_json::Value> = appearance
+        .as_object()
+        .unwrap()
+        .iter()
+        .map(|(field, value)| (format!("appearance.{field}"), value.clone()))
+        .collect();
+    json!({"status":"current",
         "binding":{"instance":"example","profile":"default"},
-        "incarnation":"inc-1","revision":revision,"design_revision":revision,
-        "source_digest":"d","appearance":appearance,"custom_source":false}})
+        "incarnation":"inc-1","revision":revision,"values":values,"resolved":{}})
+}
+
+/// `reply` with the email record `email` as its `email.*` keys.
+fn with_email(reply: &mut serde_json::Value, email: &serde_json::Value) {
+    fn walk(path: &str, value: &serde_json::Value, reply: &mut serde_json::Value) {
+        match value.as_object() {
+            Some(members) => {
+                for (key, value) in members {
+                    walk(&format!("{path}.{key}"), value, reply);
+                }
+            }
+            None => reply["values"][path] = value.clone(),
+        }
+    }
+    walk("email", email, reply);
 }
 
 fn answer(e: &mut Engine, body: serde_json::Value) {
@@ -511,7 +532,7 @@ fn email_engine(email: serde_json::Value, passwords: Option<serde_json::Value>) 
         "12",
         json!({"scheme":"studio","mode":"dark","contrast":"normal","source":null}),
     );
-    snapshot["summary"]["email"] = email;
+    with_email(&mut snapshot, &email);
     e.settled(
         ticket,
         Ok(Reply {
