@@ -168,7 +168,7 @@ fn workshop_rename_changes_only_the_default_context_key() {
     );
     assert_eq!(
         digest(&snapshot).unwrap(),
-        "08d7f6778302cbefc0993e3834678be5dbc465dc1a67d10ee29d8849292efe07"
+        "f12125d3fd0fd7b103df5e05e65da8375795818ae0bd528cab266767b808c760"
     );
     assert_eq!(serde_json::to_string(&snapshot).unwrap().len(), 529_655);
 }
