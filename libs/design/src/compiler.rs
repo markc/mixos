@@ -65,6 +65,19 @@ pub fn compile_design(
     let mut requested_candidate = None;
     let mut contextual_diagnostics = Vec::new();
     for reachable in reachable {
+        // The colour axes are the requested look's inputs, not the source's:
+        // every other reachable context validates the source at their
+        // defaults, so a chosen accent or tint cannot fail a context nobody
+        // asked for.
+        let reachable = if same_claimed_context(&reachable, &context, &axes) {
+            reachable
+        } else {
+            DesignContext {
+                accent: crate::AccentChoice::Auto,
+                tints: crate::Tints::default(),
+                ..reachable
+            }
+        };
         let flattened = flatten_source(&document.v1, reachable.clone());
         let result = compile_flat_source(&document.identity, &flattened, reachable.clone());
         let is_requested = same_claimed_context(&reachable, &context, &axes);
@@ -1873,10 +1886,11 @@ mod tests {
             .iter()
             .filter(|diagnostic| diagnostic.code == "elevated-text-fallback")
             .collect::<Vec<_>>();
+        // The derived scheme's elevated text needs no fallback.
         assert_eq!(
             fallbacks.len(),
-            Scheme::ALL.len() * Mode::ALL.len(),
-            "one elevated-text-fallback per reachable context: {:?}",
+            Scheme::AUTHORED.len() * Mode::ALL.len(),
+            "one elevated-text-fallback per authored context: {:?}",
             success.diagnostics
         );
         assert!(

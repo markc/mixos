@@ -999,7 +999,7 @@ mod tests {
         let v2 = crate::compat::table();
         let mut v3 = v2.clone();
         v3.versions.insert(
-            "v4".into(),
+            "v5".into(),
             crate::compat::Version {
                 tokens: BTreeMap::from([(
                     "future_token".into(),
@@ -1289,6 +1289,12 @@ mod tests {
             radius_sm: 5,
             radius: 5,
             radius_lg: 6,
+            radius_xs: 2,
+            radius_s: 8,
+            radius_m: 8,
+            radius_l: 8,
+            radius_xl: 8,
+            radius_pill: 8,
             ..studio()
         }
     }
@@ -1333,6 +1339,12 @@ mod tests {
             radius_sm: 3,
             radius: 4,
             radius_lg: 6,
+            radius_xs: 2,
+            radius_s: 8,
+            radius_m: 8,
+            radius_l: 8,
+            radius_xl: 8,
+            radius_pill: 8,
             ..studio()
         }
     }
@@ -1358,6 +1370,12 @@ mod tests {
             radius_sm: 0,
             radius: 0,
             radius_lg: 0,
+            radius_xs: 0,
+            radius_s: 0,
+            radius_m: 0,
+            radius_l: 0,
+            radius_xl: 0,
+            radius_pill: 0,
             ..studio()
         }
     }
@@ -1379,6 +1397,12 @@ mod tests {
             menu_row_padding_x: 16.0,
             menu_min_width: 192.0,
             radius: 4,
+            radius_xs: 0,
+            radius_s: 0,
+            radius_m: 0,
+            radius_l: 0,
+            radius_xl: 0,
+            radius_pill: 0,
             ..studio()
         }
     }
@@ -1394,7 +1418,7 @@ mod tests {
                 Scheme::Studio => studio(),
                 Scheme::Classic => classic(),
                 Scheme::Breeze => breeze(),
-                Scheme::Adwaita => adwaita(),
+                Scheme::Adwaita | Scheme::Mixos => adwaita(),
                 _ => plain(),
             };
             for mode in Mode::ALL {
@@ -1612,7 +1636,7 @@ mod tests {
 
     #[test]
     fn modern_schemes_compile_in_every_style_and_old_sources_take_the_palette() {
-        assert_eq!((Scheme::ALL.len(), Style::ALL.len()), (11, 6));
+        assert_eq!((Scheme::ALL.len(), Style::ALL.len()), (12, 6));
         let document = embedded();
         let before = crate::parse_design_source(
             SourceIdentity::new("before-modern-schemes"),
