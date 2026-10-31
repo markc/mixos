@@ -36516,7 +36516,9 @@ Exit codes: 0 done, 1 refused or unreachable, 64 usage.
 ## Claude Code
 
 Register the hook for five events in `~/.claude/settings.json` (merge it into
-any `hooks` you already have):
+any `hooks` you already have). The paths below are for the default prefix,
+`/opt/mixos`; use your own `<prefix>/lib/peersd/claude_code_hook.mix` if
+MixOS is installed elsewhere:
 
 ```json
 {
@@ -36539,7 +36541,7 @@ any `hooks` you already have):
 | SessionEnd | leaves the registry |
 
 The hook never gets in a session's way: any Bus fault is silent, and after a
-timeout it stays quiet for a minute. Subagents are skipped (they would read
+timeout that session's hook stays quiet for a minute. Subagents are skipped (they would read
 their parent's inbox), and `PEERS_HOOK=off` in the environment turns it off
 for headless sessions. Only what the hook shows is marked read; the rest
 waits for the next event.
@@ -36570,7 +36572,10 @@ every set and clear.
 Each message records two senders: `from`, the name the sender claims, and
 `sender`, the broker's stamp of the caller (its local name, or
 `service@node` over the mesh). Text is at most 4096 bytes; an inbox keeps the
-newest 200 messages; ended sessions and their mail go after a week.
+newest 200 messages; ended sessions and their mail go after a week, or as
+soon as a new session takes the ended one's name (it starts with a clean
+inbox). A session is honoured only from where it was claimed: this node, or
+the mesh node it came from (`PEER_ORIGIN` otherwise).
 
 ---
 

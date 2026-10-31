@@ -286,7 +286,9 @@ that session; otherwise as the Bus caller it is.</p>
 <p>Exit codes: 0 done, 1 refused or unreachable, 64 usage.</p>
 <h2 id="claude-code">Claude Code</h2>
 <p>Register the hook for five events in <code>~/.claude/settings.json</code> (merge it into
-any <code>hooks</code> you already have):</p>
+any <code>hooks</code> you already have). The paths below are for the default prefix,
+<code>/opt/mixos</code>; use your own <code>&lt;prefix&gt;/lib/peersd/claude_code_hook.mix</code> if
+MixOS is installed elsewhere:</p>
 <pre><code class="language-json">{
   "hooks": {
     "SessionStart": [{"hooks": [{"type": "command", "command": "mix /opt/mixos/lib/peersd/claude_code_hook.mix"}]}],
@@ -305,7 +307,7 @@ any <code>hooks</code> you already have):</p>
 <tr><td>SessionEnd</td><td>leaves the registry</td></tr>
 </tbody></table>
 <p>The hook never gets in a session's way: any Bus fault is silent, and after a
-timeout it stays quiet for a minute. Subagents are skipped (they would read
+timeout that session's hook stays quiet for a minute. Subagents are skipped (they would read
 their parent's inbox), and <code>PEERS_HOOK=off</code> in the environment turns it off
 for headless sessions. Only what the hook shows is marked read; the rest
 waits for the next event.</p>
@@ -330,7 +332,10 @@ every set and clear.</p>
 <p>Each message records two senders: <code>from</code>, the name the sender claims, and
 <code>sender</code>, the broker's stamp of the caller (its local name, or
 <code>service@node</code> over the mesh). Text is at most 4096 bytes; an inbox keeps the
-newest 200 messages; ended sessions and their mail go after a week.</p>
+newest 200 messages; ended sessions and their mail go after a week, or as
+soon as a new session takes the ended one's name (it starts with a clean
+inbox). A session is honoured only from where it was claimed: this node, or
+the mesh node it came from (<code>PEER_ORIGIN</code> otherwise).</p>
         </article>
         <p class="doc-source"><a href="/peersd/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>

@@ -104,6 +104,19 @@ try
   check("it is shown once", ctx(hook({hook_event_name: "PostToolUse", session_id: $b}, nil)) == "")
   check("the sender's own inbox is untouched", ctx(hook({hook_event_name: "UserPromptSubmit", session_id: $a}, nil)) == "")
   check("msg to an unknown session is refused", cli($a, ["msg", "nobody", "x"]).exit_code == 1)
+  check("a claimed from that is not a name is refused", cli("", ["msg", "beta", "x", "--from", "x\" sender=\"local"]).exit_code == 1)
+  cli("", ["msg", "beta", "quoted \"text\"", "--from", "ops@host1"])
+  $q = ctx(hook({hook_event_name: "PostToolUse", session_id: $b}, nil))
+  check("a well-formed claimed from is labelled as claimed", contains($q, "from=\"ops@host1\"") and contains($q, "quoted &quot;text&quot;"))
+
+  -- Only what fits is shown, and nothing behind a held message is skipped.
+  cli($a, ["msg", "beta", "A" .. repeat("a", 4000)])
+  cli($a, ["msg", "beta", "B" .. repeat("b", 4000)])
+  cli($a, ["msg", "beta", "small-c"])
+  $first = ctx(hook({hook_event_name: "PostToolUse", session_id: $b}, nil))
+  check("a full block holds the rest back", contains($first, "Aaaa") and not contains($first, "Bbbb") and not contains($first, "small-c") and contains($first, "2 more waiting"))
+  $second = ctx(hook({hook_event_name: "PostToolUse", session_id: $b}, nil))
+  check("and shows them next, in order", contains($second, "Bbbb") and contains($second, "small-c"))
 
   cli($a, ["msg", "beta", "one more"])
   $s = hook({hook_event_name: "Stop", session_id: $b, stop_hook_active: false}, nil)
@@ -126,7 +139,16 @@ try
   check("PEERS_HOOK=off is silent", $off.rc == 0 and $off.out == nil)
   check("and claims nothing", not contains(cli("", ["list"]).stdout, "headless"))
 
-  check("name renames a session", contains(cli($c, ["name", "gamma"]).stdout, "this session is gamma@peers-test"))
+  -- A session id is honoured only from where it was claimed.
+  $db = sqlopen($tmp .. "/peersd/peers.db", "rw")
+  sqlexec($db, "UPDATE sessions SET origin = 'mesh:elsewhere' WHERE name = 'beta'")
+  sqlclose($db)
+  cli($a, ["msg", "beta", "for beta only"])
+  check("another origin cannot read a session's inbox", cli($b, ["inbox", "--peek"]).exit_code == 1)
+  check("nor speak as it", contains(cli($b, ["msg", "alpha", "x"]).stdout, "as beta@peers-test") == false)
+  check("nor reclaim it", contains(cli($b, ["name", "beta2"]).stdout, "PEER_ORIGIN"))
+
+  check("name renames a session",contains(cli($c, ["name", "gamma"]).stdout, "this session is gamma@peers-test"))
   hook({hook_event_name: "SessionEnd", session_id: $c}, nil)
   check("SessionEnd leaves the list", not contains(cli("", ["list"]).stdout, "gamma"))
   check("usage exits 64", cli("", ["bogus"]).exit_code == 64)

@@ -50,6 +50,11 @@ for each $sql in [
   "CREATE TABLE IF NOT EXISTS notices (key TEXT PRIMARY KEY, text TEXT NOT NULL, from_name TEXT, sender TEXT, ts INTEGER NOT NULL, expires INTEGER)"]
   sqlexec($DB, $sql)
 end
+-- Where each session was claimed from (added after the first release).
+try
+  sqlexec($DB, "ALTER TABLE sessions ADD COLUMN origin TEXT")
+catch $m
+end
 chmod($STATE .. "/peers.db", 0o600)
 
 $INBOX_MAX = 200
@@ -80,10 +85,27 @@ fn sender()
   return to_string($h.from ?? "local")
 end
 
-fn row_for($claude_session)
+-- Where a call comes from, as the broker vouches: this node, or a mesh peer.
+-- A local caller's own name changes with every process, so it is not used.
+fn origin()
+  $h = $event.headers ?? {}
+  if ($h.broker_origin ?? "") == "mesh" then return "mesh:" .. to_string($h.broker_peer ?? "unknown") end
+  return "local"
+end
+
+fn any_row($claude_session)
   $r = sqlexec($DB, "SELECT * FROM sessions WHERE claude_session = ?", [$claude_session])
   if len($r) == 0 then return nil end
   return $r[0]
+end
+
+-- A session as its own caller sees it: a session id is honoured only from
+-- where it was claimed, so another node that learns the id cannot read,
+-- ack, end or speak as that session.
+fn row_for($claude_session)
+  $r = any_row($claude_session)
+  if $r == nil or ($r.origin != nil and $r.origin != origin()) then return nil end
+  return $r
 end
 
 fn named($name)
@@ -101,6 +123,12 @@ fn from_name($b)
   end
   if $b.from != nil then return to_string($b.from) end
   return sender()
+end
+
+-- A claimed sender name: a session name, optionally @node. Anything else
+-- (quotes, spaces, markup) could pass for part of a reader's frame.
+fn bad_from($b)
+  return $b.from != nil and len(re_find(to_string($b.from), "^[a-z0-9][a-z0-9._-]{0,47}(@[a-z0-9][a-z0-9.-]{0,62})?$")) == 0
 end
 
 fn view($r)
@@ -127,6 +155,10 @@ on peers.claim desc "register this Claude session {claude_session, node, cwd, na
   prune()
   $node = to_string($b.node ?? "unknown")
   $now = time()
+  $raw = any_row($cs)
+  if $raw != nil and $raw.origin != nil and $raw.origin != origin() then
+    return fail("PEER_ORIGIN", "this session was claimed from another node")
+  end
   $known = row_for($cs)
   $want_new = to_string($b.name ?? "")
   -- A known session asking for a different free name is renamed; its
@@ -141,8 +173,8 @@ on peers.claim desc "register this Claude session {claude_session, node, cwd, na
     $known = row_for($cs)
   end
   if $known != nil then
-    sqlexec($DB, "UPDATE sessions SET node = ?, cwd = ?, state = 'idle', last_seen = ?, ended = 0 WHERE claude_session = ?",
-      [$node, to_string($b.cwd ?? ""), $now, $cs])
+    sqlexec($DB, "UPDATE sessions SET node = ?, cwd = ?, state = 'idle', last_seen = ?, ended = 0, origin = ? WHERE claude_session = ?",
+      [$node, to_string($b.cwd ?? ""), $now, origin(), $cs])
     return answer(0, {name: $known.name, node: $node})
   end
   $want = to_string($b.name ?? "")
@@ -163,8 +195,8 @@ on peers.claim desc "register this Claude session {claude_session, node, cwd, na
   -- A name reused after its holder ended starts from a clean inbox.
   sqlexec($DB, "DELETE FROM sessions WHERE name = ?", [$name])
   sqlexec($DB, "DELETE FROM messages WHERE to_name = ?", [$name])
-  sqlexec($DB, "INSERT INTO sessions (name, claude_session, node, cwd, state, since, last_seen, ended, notices_seen) VALUES (?, ?, ?, ?, 'idle', ?, ?, 0, 0)",
-    [$name, $cs, $node, to_string($b.cwd ?? ""), $now, $now])
+  sqlexec($DB, "INSERT INTO sessions (name, claude_session, node, cwd, state, since, last_seen, ended, notices_seen, origin) VALUES (?, ?, ?, ?, 'idle', ?, ?, 0, 0, ?)",
+    [$name, $cs, $node, to_string($b.cwd ?? ""), $now, $now, origin()])
   answer(0, {name: $name, node: $node})
 end
 
@@ -207,6 +239,7 @@ on peers.send desc "send {to: NAME or \"*\", text} to live sessions' inboxes; an
   $text = to_string($b.text ?? "")
   if $text == "" or byte_length($text) > $TEXT_MAX then return fail("ARGUMENT", "text must be 1 to " .. to_string($TEXT_MAX) .. " bytes") end
   $to = to_string($b.to ?? "")
+  if bad_from($b) then return fail("ARGUMENT", "from must be a session name, optionally @node") end
   $from = from_name($b)
   $me = if $b.from_session != nil then row_for(to_string($b.from_session)) else nil end
   $targets = []
@@ -238,6 +271,9 @@ on peers.inbox desc "this session's new messages and notices {claude_session, pe
   $msgs = sqlexec($DB, "SELECT id, from_name, sender, kind, text, ts FROM messages WHERE to_name = ? AND delivered = 0 ORDER BY id LIMIT ?", [$r.name, $limit])
   $waiting = sqlexec($DB, "SELECT COUNT(*) AS n FROM messages WHERE to_name = ? AND delivered = 0", [$r.name])[0].n
   $notices = sqlexec($DB, "SELECT key, text, from_name, sender, ts, expires FROM notices WHERE ts > ? ORDER BY ts", [$r.notices_seen])
+  -- Reading, even a peek, is a sign of life: a session in a long turn of
+  -- commands never goes stale.
+  sqlexec($DB, "UPDATE sessions SET last_seen = ? WHERE name = ?", [$now, $r.name])
   if not ($b.peek ?? false) then
     if len($msgs) > 0 then
       sqlexec($DB, "UPDATE messages SET delivered = 1 WHERE to_name = ? AND id <= ?", [$r.name, $msgs[len($msgs) - 1].id])
@@ -271,6 +307,7 @@ on peers.notice.set desc "pin a notice every session reads {key, text, ttl_s?}"
   $text = to_string($b.text ?? "")
   if len(re_find($key, "^[a-z0-9][a-z0-9._-]{0,63}$")) == 0 then return fail("ARGUMENT", "key must be a short lower-case name") end
   if $text == "" or byte_length($text) > $TEXT_MAX then return fail("ARGUMENT", "text is required") end
+  if bad_from($b) then return fail("ARGUMENT", "from must be a session name, optionally @node") end
   $now = time()
   $expires = nil
   if $b.ttl_s != nil then
@@ -289,6 +326,7 @@ end
 on peers.notice.clear desc "remove a notice {key}; every live session is told"
   $b = req()
   $key = to_string($b.key ?? "")
+  if bad_from($b) then return fail("ARGUMENT", "from must be a session name, optionally @node") end
   $had = len(sqlexec($DB, "SELECT 1 AS x FROM notices WHERE key = ?", [$key])) > 0
   sqlexec($DB, "DELETE FROM notices WHERE key = ?", [$key])
   if $had then

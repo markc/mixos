@@ -61,13 +61,9 @@ $event = to_string($in.hook_event_name ?? "")
 $cs = to_string($in.session_id ?? "")
 if $cs == "" then quiet() end
 
-$node = $t.node(1)
-if $node == "" then quiet() end
-$T = $t.service($node)
-
--- After a peersd timeout, stay quiet for a minute (per host: desks may
--- share a home).
-$BACKOFF = $STATE .. "/hook-backoff"
+-- After a Bus fault (noded or peersd silent), this session stays quiet for
+-- a minute; other sessions keep their own count.
+$BACKOFF = $STATE .. "/hook-backoff-" .. re_replace($cs, "[^A-Za-z0-9-]", "")
 try
   if is_file($BACKOFF) and time() - to_number(trim(read_file($BACKOFF))) < 60 then quiet() end
 catch $m
@@ -80,6 +76,13 @@ fn backoff()
   catch $e
   end
 end
+
+$node = $t.node(1)
+if $node == "" then
+  backoff()
+  quiet()
+end
+$T = $t.service($node)
 
 -- One call to peersd: {rc, v}; rc 255 for a transport fault.
 fn peers($command, $b)
@@ -95,7 +98,7 @@ fn peers($command, $b)
     end
     -- Anything but peersd's own refusal (a timeout, a missing service or
     -- node) backs off for a minute.
-    if $rc != 0 and not (type($v) == "map" and contains(["ARGUMENT", "UNKNOWN_SESSION", "PEER_GONE", "PEER_NAME_TAKEN"], to_string($v.error_code ?? ""))) then
+    if $rc != 0 and not (type($v) == "map" and contains(["ARGUMENT", "UNKNOWN_SESSION", "PEER_GONE", "PEER_NAME_TAKEN", "PEER_ORIGIN"], to_string($v.error_code ?? ""))) then
       backoff()
     end
     return {rc: $rc, v: $v}
@@ -120,35 +123,36 @@ fn inbox()
   return ok(peers("peers.inbox", {claude_session: $cs, limit: $LIMIT, peek: true}))
 end
 
--- Peer text cannot close or forge the frame around it.
+-- Peer text cannot close the frame or forge an attribute in it.
 fn esc($s)
-  return replace(replace(to_string($s), "&", "&amp;"), "<", "&lt;")
+  return replace(replace(replace(to_string($s), "&", "&amp;"), "<", "&lt;"), "\"", "&quot;")
 end
 
--- New notices and messages as one block, framed as peers' words.
+-- New notices and messages as one block, framed as peers' words. Notices
+-- come first, then messages, in order; the first that does not fit stops
+-- the block, so only what is shown is marked read and nothing behind a
+-- held item is skipped.
 fn render($box)
   if $box == nil then return "" end
+  $items = []
+  for each $n in $box.notices ?? []
+    push($items, {notice: $n.ts, line: "<bus-peer-notice key=\"" .. esc($n.key) .. "\" from=\"" .. esc($n.from_name) .. "\" sender=\"" .. esc($n.sender) .. "\">" .. esc($n.text) .. "</bus-peer-notice>"})
+  end
+  for each $m in $box.messages ?? []
+    push($items, {message: $m.id, line: "<bus-peer-message id=\"" .. esc($m.id) .. "\" from=\"" .. esc($m.from_name) .. "\" sender=\"" .. esc($m.sender) .. "\" kind=\"" .. esc($m.kind) .. "\">" .. esc($m.text) .. "</bus-peer-message>"})
+  end
   $lines = []
   $size = 0
   $notices_upto = nil
   $upto = nil
   $held = 0
-  for each $n in $box.notices ?? []
-    $notices_upto = $n.ts
-    push($lines, "<bus-peer-notice key=\"" .. esc($n.key) .. "\" from=\"" .. esc($n.from_name) .. "\" sender=\"" .. esc($n.sender) .. "\">" .. esc($n.text) .. "</bus-peer-notice>")
-  end
-  for each $l in $lines
-    $size = $size + byte_length($l)
-  end
-  for each $m in $box.messages ?? []
-    $line = "<bus-peer-message id=\"" .. esc($m.id) .. "\" from=\"" .. esc($m.from_name) .. "\" sender=\"" .. esc($m.sender) .. "\" kind=\"" .. esc($m.kind) .. "\">" .. esc($m.text) .. "</bus-peer-message>"
-    -- Only what fits is shown, and only what is shown is marked read.
-    if $upto != nil and $size + byte_length($line) > $MAX - 1200 then
+  for each $it in $items
+    if $held > 0 or (len($lines) > 0 and $size + byte_length($it.line) > $MAX - 1200) then
       $held = $held + 1
     else
-      push($lines, $line)
-      $size = $size + byte_length($line)
-      $upto = $m.id
+      push($lines, $it.line)
+      $size = $size + byte_length($it.line)
+      if $it.notice != nil then $notices_upto = $it.notice else $upto = $it.message end
     end
   end
   if $upto != nil or $notices_upto != nil then

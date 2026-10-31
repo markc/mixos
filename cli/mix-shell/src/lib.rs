@@ -2250,7 +2250,8 @@ pub fn main() -> process::ExitCode {
         // `mix SCRIPT --version` (and `--serve SCRIPT`, `mix -`): the same
         // cold answer for a script. The script is read, never parsed or run.
         let reserved = |s: &str| {
-            matches!(s, "stats" | "lint" | "edit" | "agent" | "peers") || META_CLI_COMMANDS.contains(&s)
+            matches!(s, "stats" | "lint" | "edit" | "agent" | "peers")
+                || META_CLI_COMMANDS.contains(&s)
         };
         match script_meta::script_version_request(&args, &reserved) {
             script_meta::Answer::Print(line) => {
