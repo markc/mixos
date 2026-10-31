@@ -196,9 +196,10 @@ impl Control {
             Control::Scheme => Some("appearance.scheme"),
             Control::Mode | Control::AutoMode => Some("appearance.mode"),
             Control::HintAccent => Some("window.hint_colour"),
-            Control::Page { .. } | Control::Drawer { .. } | Control::Info | Control::Reset { .. } => {
-                None
-            }
+            Control::Page { .. }
+            | Control::Drawer { .. }
+            | Control::Info
+            | Control::Reset { .. } => None,
         }
     }
 }
@@ -342,7 +343,12 @@ pub struct Page {
     pub body: Body,
 }
 
-pub fn page(id: &'static str, icon: &'static str, parent: Option<&'static str>, body: Body) -> Page {
+pub fn page(
+    id: &'static str,
+    icon: &'static str,
+    parent: Option<&'static str>,
+    body: Body,
+) -> Page {
     Page {
         id,
         icon,

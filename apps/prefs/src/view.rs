@@ -193,9 +193,6 @@ fn group_heading(ui: &mut Ui, key: &str, first: bool) {
     ui.add_space(ui.spacing().item_spacing.y);
 }
 
-
-
-
 /// A button for registry command `id`, enabled as the registry says.
 fn command_button(
     ui: &mut Ui,
@@ -238,14 +235,6 @@ fn status_text(ui: &Ui, row: &AppRow) -> RichText {
         RowState::Error => RichText::new(label("status-error")).color(visuals.error_fg_color),
     }
 }
-
-
-
-
-
-
-
-
 
 pub fn applications(
     ui: &mut Ui,
@@ -382,7 +371,6 @@ fn swatch(scheme: Scheme, mode: Mode) -> Option<Swatch> {
     })
 }
 
-
 /// One row of mutually exclusive choices; the one picked, if any.
 fn choices<T: Copy + PartialEq>(ui: &mut Ui, current: T, options: &[(T, String)]) -> Option<T> {
     let mut picked = None;
@@ -395,9 +383,6 @@ fn choices<T: Copy + PartialEq>(ui: &mut Ui, current: T, options: &[(T, String)]
     });
     picked
 }
-
-
-
 
 /// The Terminal group: one control per `terminal.*` field, each applied as
 /// it is made. The values are settingsd's, as its last read gave them.
@@ -725,9 +710,6 @@ fn checked_text(
     committed.filter(|setting| setting.refusal().is_none())
 }
 
-
-
-
 fn table(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
     egui::Grid::new("apps-table")
         .num_columns(5)
@@ -876,4 +858,3 @@ fn dialogs(
         }
     }
 }
-

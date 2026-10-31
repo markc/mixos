@@ -39,12 +39,22 @@ macro_rules! bar {
         let sections = vec![
             untitled(
                 "bar",
-                vec![row("enabled", Control::Toggle { key: key("enabled") })],
+                vec![row(
+                    "enabled",
+                    Control::Toggle {
+                        key: key("enabled"),
+                    },
+                )],
             ),
             section(
                 "behavior",
                 vec![
-                    row("autohide", Control::Toggle { key: key("autohide") }),
+                    row(
+                        "autohide",
+                        Control::Toggle {
+                            key: key("autohide"),
+                        },
+                    ),
                     row(
                         "edge",
                         Control::Choice {
