@@ -11013,7 +11013,7 @@ Everything goes under the session's `$XDG_CONFIG_HOME`:
 
 | File | What |
 |---|---|
-| `gtk-4.0/mixos/dark.css`, `light.css` | libadwaita's named colours (`window_bg_color`, `accent_bg_color`, `blue_1` … `dark_4`) as `@define-color` lines |
+| `gtk-4.0/mixos/dark.css`, `light.css` | libadwaita's named colours (`window_bg_color`, `accent_bg_color`, `blue_1` … `purple_5`, `light_1` … `light_5`, `dark_1` … `dark_5`) as `@define-color` lines; the light and dark greys are one ramp of the palette's `neutral_5` from white to black, with libadwaita's names and meaning (COSMIC writes 0-based names no stylesheet reads) |
 | `gtk-4.0/gtk.css`, `gtk-3.0/gtk.css` | symlinks to the current mode's file, so a mode switch is one rename |
 | `gtk-3.0/settings.ini`, `gtk-4.0/settings.ini` | `[Settings]`: `gtk-application-prefer-dark-theme`, `gtk-font-name`, `gtk-decoration-layout`, `gtk-icon-theme-name`, and in GTK 3 `gtk-theme-name` (`adw-gtk3`/`adw-gtk3-dark`, only when installed) |
 | `qt5ct/colors/MixOSDark.conf`, `MixOSLight.conf` (and `qt6ct/`) | the 21 Qt palette roles for the active, inactive and disabled groups, opaque, `#AARRGGBB` |

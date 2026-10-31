@@ -210,10 +210,13 @@ fn gtk(t: &DerivedTheme) -> BTreeMap<&'static str, SrgbColour> {
             put(name, colour);
         }
     }
+    // libadwaita's names with libadwaita's meaning, white to black: the
+    // reference writes 0-based names in ramp order, which no stylesheet
+    // reads (Fable, daemon spec §2.2 note).
     let steps = ramp::<10>(p.neutral[5]);
     let names = [
-        "light_0", "light_1", "light_2", "light_3", "light_4", "dark_0", "dark_1", "dark_2",
-        "dark_3", "dark_4",
+        "dark_5", "dark_4", "dark_3", "dark_2", "dark_1", "light_5", "light_4", "light_3",
+        "light_2", "light_1",
     ];
     for (name, colour) in names.into_iter().zip(steps) {
         put(name, colour);
@@ -324,9 +327,11 @@ mod tests {
         let l = |name: &str| super::super::primitives::lightness(gtk[name]);
         assert!(l("blue_1") > l("blue_2") && l("blue_2") > l("blue_3"));
         assert!(l("blue_3") > l("blue_4") && l("blue_4") > l("blue_5"));
-        // The ten-step ramp of neutral_5 runs dark to light, light_0 first.
-        assert!(l("light_0") < l("light_4") && l("light_4") < l("dark_0"));
-        assert!(l("dark_4") > 0.99);
+        // light_1 is white and dark_5 black, as libadwaita names them.
+        assert!(l("light_1") > 0.99 && l("light_1") > l("light_5"));
+        assert!(l("light_5") > l("dark_1") && l("dark_1") > l("dark_5"));
+        assert!(l("dark_5") < 0.01);
+        assert!(!gtk.contains_key("light_0") && !gtk.contains_key("dark_0"));
     }
 
     #[test]
