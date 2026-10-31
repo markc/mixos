@@ -71,7 +71,6 @@ fn snapshot() -> String {
 /// A private broker: one node, its own roots, admission off.
 struct Broker {
     root: PathBuf,
-    name: String,
     ip: String,
     port: u16,
     process: Process,
@@ -229,7 +228,6 @@ impl Fixture {
             .unwrap();
             let mut broker = Broker {
                 root: broker_root,
-                name: (*name).into(),
                 ip: ips[i].clone(),
                 port: ports[i],
                 process: Process(None),
@@ -572,8 +570,9 @@ fn a_mirror_on_a_second_broker_republishes_forwards_serves_stale_and_catches_up(
         let mut b = Watch::new(&beta_url, "observer-beta-again").await;
         status_until(&b.client, "settingsd", "alpha", "caught up",
             |s| s["revision"] == fourth && s["stale"] == false).await;
-        b.until("beta's topics after its reconnect", |l| all_at(l, &fourth) || at(l, &keys("time"), &fourth)).await;
-        b.until("beta's time", |l| at(l, &keys("time"), &fourth)).await;
+        // A reconnect republishes every topic, at the revision the attach
+        // brought, not the cache's.
+        b.until("beta's topics after its reconnect", |l| all_at(l, &fourth)).await;
         assert_eq!(a.latest[&keys("time")], b.latest[&keys("time")]);
         let mirror_log = fs::read_to_string(&mirror_log).unwrap();
         assert!(mirror_log.contains("mirror took the authority's revision"), "{mirror_log}");

@@ -446,6 +446,8 @@ async fn adopt(
     if cache.incarnation == authority.accepted.incarnation
         && cache.revision < authority.accepted.revision
     {
+        let mut authority = authority;
+        authority.stale = false;
         let revision = authority.accepted.revision;
         return (
             authority,
@@ -652,12 +654,16 @@ async fn run(mut authority: Authority, root: PathBuf, noded_url: String) -> anyh
                     ctx.attaching = false;
                     let (taken, result) = adopt(authority, &ctx, push).await;
                     authority = taken;
-                    if let Err(error) = result { tracing::warn!(%error, "attach answer refused"); }
+                    match result {
+                        Ok(_) => authority.stale = false,
+                        Err(error) => tracing::warn!(%error, "attach answer refused"),
+                    }
                     ctx.publish(&mut authority).await;
                 }
                 Event::Attached(Err(error)) => {
                     ctx.attaching = false;
                     tracing::warn!(%error, "authority unreachable; serving the cache stale until its push or our reconnect");
+                    ctx.publish(&mut authority).await;
                 }
                 Event::Forwarded { reached } => {
                     if !reached { authority.stale = true; }
@@ -697,16 +703,22 @@ async fn connected(authority: &mut Authority, ctx: &mut Ctx) {
     authority.board.republish_all();
     ctx.retry = PublicationRetry::default();
     ctx.node = node_name(&ctx.client).await;
-    ctx.publish(authority).await;
     match authority.role {
         Role::Authority(_) => {
+            ctx.publish(authority).await;
             ctx.mirrors.forget_acks();
             ctx.push_due(authority);
         }
+        // A mirror publishes once the attach answers, so a reachable
+        // authority's revision goes out, not the cache's; with the
+        // authority unreachable it publishes the cache, stale.
         Role::Mirror { .. } => {
             authority.stale = true;
             ctx.attaching = false;
             ctx.attach(authority);
+            if !ctx.attaching {
+                ctx.publish(authority).await;
+            }
         }
     }
 }
