@@ -157,7 +157,10 @@ fn a_state_change_moves_appearance_and_the_look_through_the_resolved_mode() {
     // Authored values differ only in `state`...
     assert_eq!(changed_prefixes(&dark, &light), BTreeSet::from(["state"]));
     // ...but the content of `appearance` moves too, by its resolved mode.
-    let (a, b) = (contents(&dark, &resolve(&dark)), contents(&light, &resolve(&light)));
+    let (a, b) = (
+        contents(&dark, &resolve(&dark)),
+        contents(&light, &resolve(&light)),
+    );
     let moved: BTreeSet<&str> = PREFIXES.iter().copied().filter(|p| a[p] != b[p]).collect();
     assert_eq!(moved, BTreeSet::from(["appearance", "state"]));
     assert_ne!(
