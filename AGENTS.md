@@ -336,12 +336,25 @@ applies to every GUI app and to the desktop furniture.
   upstream base, `PATCHES.md` (every local change and why) and a guard test.
   It is refreshed only deliberately. A security fix may bypass the refresh
   cadence, but never the guard tests.
-- **Assets:** each file is cleared individually, with its licence and a
-  `NOTICE` line. Fonts may be OFL-1.1; everything else must fit the
-  dependency allowlist. The pinned egui fallback-font bundle has the
-  version-specific font exceptions recorded in
-  `docs/docs/decisions/2026-10-13-bundled-font-licences.md`; they do not widen the
-  general code-dependency policy.
+- **Assets are original or permissively licensed.** Every image, icon,
+  font, sound, cursor and swatch, and anything embedded with
+  `include_bytes!`, base64 or a data URI, is either original MixOS work
+  (`MIT OR Apache-2.0` like the code, author "MixOS, original artwork") or
+  third-party under MIT, Apache-2.0, ISC, CC0-1.0, OFL-1.1 (fonts only) or
+  `LicenseRef-Public-Domain` (US federal works, with the source URL, the
+  agency and why it is public domain). Never CC-BY, CC-BY-SA, NC, ND or
+  "free for personal use". A third-party file carries its licence text
+  beside it, a `NOTICE` line and a manifest entry, all in the commit that
+  adds it; if its provenance is unclear it stays out. No vendor iconography
+  or trademarks, traced or redrawn included, and no point lists traced from
+  someone else's art; prefer art generated in code. The MixOS marks under
+  `share/brand/` are the one exception (`LicenseRef-MixOS-Brand`):
+  trademarks that forks remove. The manifest is `tools/assets.conf.mix`;
+  `tools/asset_gate.mix` (run by `tools/lint.mix` and the release gate)
+  fails on an unlisted file, a drifted hash, a licence outside the list or a
+  debt list that grew. Debt only shrinks. The egui fallback-font exceptions
+  are recorded in `docs/docs/decisions/2026-10-13-bundled-font-licences.md`;
+  they do not widen the general code-dependency policy.
 
 ## 7. Tests
 

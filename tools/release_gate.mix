@@ -117,6 +117,7 @@ if $mode == "check" then
   $mix = "target/debug/mix"
   stage("closure", [$mix, "tools/closure_gate.mix", "--locked"], 900)
   stage("foreign", [$mix, "tools/foreign_gate.mix", "--locked", "--elf", "target/debug/mix"], 900)
+  stage("assets", [$mix, "tools/asset_gate.mix"], 300)
   stage("layers", [$mix, "tools/layering_gate.mix", "--manifest-path", "Cargo.toml", "--locked"], 900)
   stage("components", [$mix, "tools/layering_gate.mix", "--manifest-path", "Cargo.toml", "--layers", "apps/layers.conf.mix", "--across-components", "--require", "--locked"], 900)
   stage("commands", [$mix, "tools/command_registry.mix"], 900)

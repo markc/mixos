@@ -1,0 +1,396 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- asset_gate.mix — every image, icon, font and sound file is licensed and listed.
+-- version: 0.1.0
+--
+-- Policy: tools/assets.conf.mix. Rule: AGENTS.md "Assets are original or
+-- permissively licensed" (2026-10-31). The gate fails on:
+--   1. a scanned asset file that no entry covers, or one more than one covers;
+--   2. an entry whose file is gone, whose glob matches nothing, or whose hash
+--      drifted (per file, combined for a glob, or the hash an existing pin
+--      manifest records for an entry with `pinned_by`);
+--   3. an `allow` licence outside the allowlist (OFL-1.1 on fonts only), a
+--      `brand` entry outside share/brand that is not a byte copy of one, a
+--      `debt` entry with no reason or exit, or a missing licence file;
+--   4. a public-domain entry with no source URL, agency or reason;
+--   5. a file with a forbidden extension (design-tool swatches, brushes,
+--      camera profiles), wherever it is;
+--   6. a data URI or base64 image or font blob in a text file with no
+--      `embedded` entry (its hash is over the embedded payloads);
+--   7. a debt list that grew against the base (`--base REF`, default
+--      origin/main, or `--base-policy FILE`).
+-- Scanned: every file with an asset extension, and every file under an
+-- `assets/` or `share/` directory except code and text. Untracked files
+-- count too (`git ls-files -co --exclude-standard`); target/ and .git/ never.
+--
+-- Usage: mix tools/asset_gate.mix [--root DIR] [--policy FILE]
+--          [--base REF | --base-policy FILE] [--hashes]
+-- --hashes prints each entry's current hash and every unlisted file's hash,
+-- for writing an entry, then exits 0. Exit 0 clean, 1 a violation, 2 setup.
+
+$root = dirname(dirname(realpath($0)))
+$policy_path = nil
+$base_ref = nil
+$base_policy_path = nil
+$hashes = false
+$av = args()
+$i = 0
+while $i < len($av)
+  $a = $av[$i]
+  $i = $i + 1
+  if $a == "--root" and $i < len($av) then
+    $root = realpath($av[$i])
+    $i = $i + 1
+  elif $a == "--policy" and $i < len($av) then
+    $policy_path = $av[$i]
+    $i = $i + 1
+  elif $a == "--base" and $i < len($av) then
+    $base_ref = $av[$i]
+    $i = $i + 1
+  elif $a == "--base-policy" and $i < len($av) then
+    $base_policy_path = $av[$i]
+    $i = $i + 1
+  elif $a == "--hashes" then
+    $hashes = true
+  else
+    eprint("asset_gate: unknown argument " .. $a)
+    exit(2)
+  end
+end
+$policy_path = $policy_path ?? ($root .. "/tools/assets.conf.mix")
+if not is_file($policy_path) then
+  eprint("asset_gate: no policy at " .. $policy_path)
+  exit(2)
+end
+$policy = load_data($policy_path).assets
+$scan = $policy.scan
+$lic = $policy.licences
+$fail = []
+$notes = []
+
+fn lowext($p)
+  return lower(extname($p))
+end
+
+-- Glob to an anchored regex: `**` crosses directories, `*` and `?` do not.
+fn glob_re($g)
+  $e = re_replace($g, "([.+()\\[\\]{}^$|\\\\])", "\\$1")
+  $e = replace($e, "**", chr(1))
+  $e = replace($e, "*", "[^/]*")
+  $e = replace($e, "?", "[^/]")
+  return "^" .. replace($e, chr(1), ".*") .. "$"
+end
+
+-- Repo-relative form of a path that may climb with `..`.
+fn rel($p)
+  if not exists($root .. "/" .. $p) then return nil end
+  $full = realpath($root .. "/" .. $p)
+  if not starts_with($full, $root .. "/") then return nil end
+  return slice($full, len($root) + 1, len($full))
+end
+
+-- Every file in the checkout, tracked or untracked, minus the skips.
+$listed = run_argv(["git", "-C", $root, "ls-files", "-co", "--exclude-standard"], {timeout: 120, max_output: 268435456})
+if not $listed.ok then
+  eprint("asset_gate: git ls-files failed\n" .. $listed.stderr)
+  exit(2)
+end
+$files = []
+for $f in unique(split(trim($listed.stdout), "\n"))
+  if $f == "" then continue end
+  $skipped = false
+  for $s in $scan.skip
+    if starts_with($f, $s) or contains($f, "/" .. $s) then $skipped = true end
+  end
+  if $skipped or not is_file($root .. "/" .. $f) then continue end
+  push($files, $f)
+end
+$files = sort($files)
+
+fn is_asset($f)
+  $x = lowext($f)
+  if contains($scan.ext, $x) then return true end
+  if not re_match($f, "(^|/)(" .. join($scan.dirs, "|") .. ")/") then return false end
+  return not contains($scan.dir_skip_ext, $x) and not starts_with(basename($f), "LICENSE")
+end
+
+$assets = filter($files, fn($f) = is_asset($f))
+
+for $f in $files
+  if contains($scan.forbid_ext, lowext($f)) then
+    push($fail, "forbidden asset format " .. $f .. " (" .. lowext($f) .. ")")
+  end
+end
+
+-- Hashes already pinned by an existing manifest: any map in it that has a
+-- sha256 next to a `file` or `source` path relative to the manifest's own
+-- directory. Read, not duplicated.
+$pins = {}
+-- Returns [[repo path, sha256], ...] (maps are copied, so nothing is
+-- filled in place).
+fn collect_pins($v, $dir)
+  $out = []
+  if type($v) == "map" then
+    $p = $v.file ?? $v.source
+    if type($v.sha256) == "string" and type($p) == "string" then
+      $r = rel($dir .. "/" .. $p)
+      if $r != nil then push($out, [$r, $v.sha256]) end
+    end
+    for $k in keys($v) $out = concat($out, collect_pins($v[$k], $dir)) end
+  elif type($v) == "list" then
+    for $x in $v $out = concat($out, collect_pins($x, $dir)) end
+  end
+  return $out
+end
+for $pf in $policy.pins ?? []
+  if not is_file($root .. "/" .. $pf) then
+    push($fail, "pin manifest " .. $pf .. " is missing")
+    continue
+  end
+  $m = {}
+  for $pair in collect_pins(load_data($root .. "/" .. $pf), dirname($pf)) $m[$pair[0]] = $pair[1] end
+  $pins[$pf] = $m
+end
+$all_pins = {}
+for $pf in keys($pins)
+  for $k in keys($pins[$pf]) $all_pins[$k] = $pins[$pf][$k] end
+end
+
+-- Embedded payloads: data URIs and base64 image or font blobs (by magic).
+$EMBED_RE = "data:(image|font|audio)/[^\"')\\s]+|(iVBORw0KGgo|PHN2Zy|R0lGOD|/9j/4|d09GMg|d09GRg)[A-Za-z0-9+/=]*"
+fn embedded_payloads($f)
+  $text = read_file($root .. "/" .. $f)
+  return sort(map(re_find($text, $EMBED_RE), fn($m) = $m.match))
+end
+$embed_hits = {}
+$g = run_argv(["git", "-C", $root, "grep", "--untracked", "-lIE", "data:(image|font|audio)/|iVBORw0KGgo|PHN2Zy|R0lGOD|/9j/4|d09GMg|d09GRg"], {timeout: 120, max_output: 67108864})
+if $g.exit_code > 1 then
+  eprint("asset_gate: git grep failed\n" .. $g.stderr)
+  exit(2)
+end
+for $f in split(trim($g.stdout), "\n")
+  if $f == "" or contains($assets, $f) then continue end
+  $skipped = false
+  for $s in concat($scan.skip, $scan.embed_skip ?? [])
+    if starts_with($f, $s) then $skipped = true end
+  end
+  if not $skipped then $embed_hits[$f] = true end
+end
+
+fn entry_key($e)
+  return $e.path ?? $e.glob ?? $e.dependency ?? "?"
+end
+
+fn matches($e)
+  if $e.path != nil then
+    return if is_file($root .. "/" .. $e.path) then [$e.path] else [] end
+  end
+  if $e.glob != nil then
+    $re = glob_re($e.glob)
+    return filter($files, fn($f) = re_match($f, $re))
+  end
+  return []
+end
+
+fn combined($paths)
+  return hash_sha256(join(map($paths, fn($p) = $p .. " " .. hash_file($root .. "/" .. $p, "sha256")), "\n") .. "\n")
+end
+
+fn current_hash($e, $hits)
+  if $e.embedded ?? false then
+    return hash_sha256(join(embedded_payloads($e.path), "\n"))
+  end
+  if $e.path != nil then return hash_file($root .. "/" .. $e.path, "sha256") end
+  return combined($hits)
+end
+
+fn licence_ids($expr)
+  return filter(map(re_find($expr, "[A-Za-z0-9.+-]+"), fn($m) = $m.match), fn($t) = not contains(["AND", "OR", "WITH"], $t))
+end
+
+$covered = {}
+$debt_keys = []
+for $list_name in ["allow", "brand", "debt"]
+  for $e in $policy[$list_name] ?? []
+    $k = entry_key($e)
+    $where = $list_name .. " " .. $k
+    $kinds = len(filter([$e.path, $e.glob, $e.dependency], fn($x) = $x != nil))
+    if $kinds != 1 then
+      push($fail, $where .. ": needs exactly one of path, glob or dependency")
+      continue
+    end
+    if $list_name == "debt" then push($debt_keys, $k) end
+    for $field in ["title", "author", "source", "licence", "licence_file"]
+      if type($e[$field]) != "string" or trim($e[$field]) == "" then
+        push($fail, $where .. ": missing " .. $field)
+      end
+    end
+    if type($e.licence_file) == "string" then
+      if not is_file($root .. "/" .. $e.licence_file) then
+        push($fail, $where .. ": licence file " .. $e.licence_file .. " is missing")
+      else
+        $lr = rel($e.licence_file)
+        if $all_pins[$lr] != nil and hash_file($root .. "/" .. $lr, "sha256") != $all_pins[$lr] then
+          push($fail, $where .. ": licence file " .. $lr .. " drifted from its pin")
+        end
+      end
+    end
+    $licence = $e.licence ?? ""
+    $ids = licence_ids($licence)
+
+    -- What it covers, and whether the bytes still match.
+    $hits = matches($e)
+    if $e.dependency == nil and len($hits) == 0 then
+      push($fail, $where .. ": " .. (if $e.path != nil then "file is gone" else "glob matches nothing" end))
+    end
+    if $e.embedded ?? false then
+      if $e.path == nil then
+        push($fail, $where .. ": an embedded entry names one path")
+      else
+        $embed_hits[$e.path] = nil
+      end
+    else
+      for $h in $hits
+        if contains($assets, $h) then
+          if $covered[$h] != nil then
+            push($fail, $h .. " is covered by both " .. $covered[$h] .. " and " .. $where)
+          end
+          $covered[$h] = $where
+        end
+      end
+    end
+    if $e.generated ?? false then
+      if $list_name != "allow" or $e.glob == nil or not contains($e.glob, "tests/snapshots/") or $licence != $lic.original then
+        push($fail, $where .. ": generated entries are original test-snapshot globs only")
+      end
+    elif $e.pinned_by != nil then
+      if $pins[$e.pinned_by] == nil then
+        push($fail, $where .. ": pinned_by " .. $e.pinned_by .. " is not a listed pin manifest")
+      else
+        for $h in $hits
+          $want = $pins[$e.pinned_by][$h]
+          if $want == nil then
+            push($fail, $where .. ": " .. $h .. " is not pinned in " .. $e.pinned_by)
+          elif hash_file($root .. "/" .. $h, "sha256") != $want then
+            push($fail, $where .. ": " .. $h .. " drifted from its pin in " .. $e.pinned_by)
+          end
+        end
+      end
+    elif $e.dependency == nil and len($hits) > 0 then
+      $now = current_hash($e, $hits)
+      if $hashes then
+        print("hash " .. $where .. " " .. $now)
+      elif $e.sha256 != $now then
+        push($fail, $where .. ": sha256 drifted (now " .. $now .. ")")
+      end
+    end
+
+    -- The licence rules for each list.
+    if $list_name == "allow" then
+      for $id in $ids
+        if re_match($id, "^CC-BY|-NC|-ND|^CC-BY-SA") then
+          push($fail, $where .. ": " .. $id .. " is not allowed (no CC-BY, CC-BY-SA, NC or ND)")
+        elif not contains($lic.allow, $id) then
+          push($fail, $where .. ": licence " .. $id .. " is outside the allowlist")
+        end
+        if contains($lic.font_only ?? [], $id) then
+          for $h in $hits
+            if not contains($scan.font_ext, lowext($h)) then
+              push($fail, $where .. ": " .. $id .. " is for fonts only, not " .. $h)
+            end
+          end
+        end
+      end
+      if contains($ids, $lic.public_domain) then
+        if not re_match($e.source ?? "", "^https?://") then
+          push($fail, $where .. ": a public-domain entry names its source URL")
+        end
+        for $field in ["agency", "why"]
+          if type($e[$field]) != "string" or trim($e[$field]) == "" then
+            push($fail, $where .. ": a public-domain entry needs " .. $field)
+          end
+        end
+      end
+    elif $list_name == "brand" then
+      if $licence != $lic.brand then
+        push($fail, $where .. ": brand entries are " .. $lic.brand)
+      end
+      $under = filter($hits, fn($h) = not starts_with($h, "share/brand/"))
+      if len($under) > 0 then
+        if $e.copy_of == nil or not starts_with($e.copy_of, "share/brand/") or not is_file($root .. "/" .. $e.copy_of) then
+          push($fail, $where .. ": a brand mark outside share/brand names copy_of under share/brand")
+        else
+          $want = hash_file($root .. "/" .. $e.copy_of, "sha256")
+          for $h in $under
+            if hash_file($root .. "/" .. $h, "sha256") != $want then
+              push($fail, $where .. ": " .. $h .. " is not a byte copy of " .. $e.copy_of)
+            end
+          end
+        end
+      end
+    else
+      for $field in ["reason", "exit"]
+        if type($e[$field]) != "string" or trim($e[$field]) == "" then
+          push($fail, $where .. ": a debt entry needs " .. $field)
+        end
+      end
+      if len($ids) > 0 and all($ids, fn($id) = contains($lic.allow, $id)) then
+        push($notes, "debt " .. $k .. " is now allowlisted (" .. $licence .. "); move it to allow")
+      end
+    end
+  end
+end
+
+for $f in $assets
+  if $covered[$f] == nil then
+    if $hashes then
+      print("unlisted " .. $f .. " " .. hash_file($root .. "/" .. $f, "sha256"))
+    else
+      push($fail, "asset " .. $f .. " has no entry in the manifest")
+    end
+  end
+end
+for $f in sort(keys($embed_hits))
+  if $embed_hits[$f] != nil then
+    if $hashes then
+      print("unlisted-embedded " .. $f .. " " .. hash_sha256(join(embedded_payloads($f), "\n")))
+    else
+      push($fail, $f .. " embeds image or font data with no embedded entry")
+    end
+  end
+end
+if $hashes then exit(0) end
+
+-- Debt only shrinks: every debt key must already be in the base's list.
+$base_debt = nil
+if $base_policy_path != nil then
+  $base_debt = load_data($base_policy_path).assets.debt ?? []
+else
+  $ref = $base_ref ?? "origin/main"
+  $rel_policy = "tools/assets.conf.mix"
+  $shown = run_argv(["git", "-C", $root, "show", $ref .. ":" .. $rel_policy], {timeout: 60, max_output: 67108864})
+  if $shown.ok then
+    $base_debt = data_parse($shown.stdout).assets.debt ?? []
+  elif $base_ref != nil then
+    eprint("asset_gate: cannot read " .. $rel_policy .. " at " .. $ref)
+    exit(2)
+  else
+    push($notes, "no policy at " .. $ref .. "; the debt-growth check was skipped")
+  end
+end
+if $base_debt != nil then
+  $was = map($base_debt, fn($e) = entry_key($e))
+  for $k in $debt_keys
+    if not contains($was, $k) then
+      push($fail, "debt grew: " .. $k .. " is not in the base's debt list")
+    end
+  end
+end
+
+for $n in $notes print("note: " .. $n) end
+if len($fail) > 0 then
+  for $f in $fail print("FAIL " .. $f) end
+  exit(1)
+end
+print("asset_gate: " .. to_string(len($assets)) .. " asset file(s), all listed; " ..
+  to_string(len($debt_keys)) .. " debt entr" .. (if len($debt_keys) == 1 then "y" else "ies" end))

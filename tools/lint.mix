@@ -41,6 +41,7 @@ end
 $checks = [
   {name: "closure", argv: ["tools/closure_gate.mix", "--locked"]},
   {name: "foreign", argv: ["tools/foreign_gate.mix", "--locked"]},
+  {name: "assets", argv: ["tools/asset_gate.mix"]},
   {name: "layering", argv: ["tools/layering_gate.mix", "--manifest-path", "Cargo.toml", "--locked"]},
   {name: "layering-apps", argv: ["tools/layering_gate.mix", "--manifest-path", "Cargo.toml",
     "--layers", "apps/layers.conf.mix", "--across-components", "--require", "--locked"]},

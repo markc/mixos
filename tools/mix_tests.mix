@@ -60,6 +60,7 @@ $scripts = [
   "tests/component_install_test.mix",
   "tests/release_orphans_test.mix",
   "tests/layering_gate_test.mix",
+  "tests/asset_gate_test.mix",
   "tests/command_registry_test.mix",
   "tests/command_registry_families_test.mix",
   "tests/webd_lint_test.mix",
