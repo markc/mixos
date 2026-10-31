@@ -93,15 +93,42 @@ pub(crate) fn publisher_owner(name: &str) -> Option<&str> {
 /// settingsd's retained profile topics: the snapshot in schema 1
 /// (`settingsd.desktop.changed[.<profile>]`) and schema 2
 /// (`settingsd.desktop.compact[.<profile>]`), and its summary
-/// (`settingsd.desktop.summary[.<profile>]`).
+/// (`settingsd.desktop.summary[.<profile>]`); and contract 1.0.0's look
+/// and schema 3 snapshot (`settingsd.desktop.look|snapshot[.<profile>]`)
+/// and per-prefix topics ([`settings_keys_topic`]).
 fn settings_topic(name: &str) -> bool {
     [
         "settingsd.desktop.changed",
         "settingsd.desktop.compact",
         "settingsd.desktop.summary",
+        "settingsd.desktop.look",
+        "settingsd.desktop.snapshot",
     ]
     .iter()
     .any(|base| settings_topic_under(name, base))
+        || settings_keys_topic(name)
+}
+
+/// Contract 1.0.0's per-prefix topics, `settingsd.desktop.keys.<profile>.<prefix>`:
+/// a profile as above, then a prefix of dot-separated lower-case words
+/// (`appearance`, `shell.panels`).
+fn settings_keys_topic(name: &str) -> bool {
+    let Some((profile, prefix)) = name
+        .strip_prefix("settingsd.desktop.keys.")
+        .and_then(|rest| rest.split_once('.'))
+    else {
+        return false;
+    };
+    settings_topic_under(
+        &format!("settingsd.desktop.keys.{profile}"),
+        "settingsd.desktop.keys",
+    ) && prefix.len() <= 64
+        && prefix.split('.').all(|word| {
+            !word.is_empty()
+                && word
+                    .bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
+        })
 }
 
 fn settings_topic_under(name: &str, base: &str) -> bool {
@@ -237,6 +264,31 @@ mod tests {
             "settingsd.desktop.summaryx",
             "settingsd.desktop.summary.",
             "settingsd.desktop.summary.a/b",
+        ] {
+            assert_ne!(publisher_owner(topic), Some("settingsd"), "{topic}");
+        }
+    }
+
+    #[test]
+    fn the_contract_1_0_0_topics_are_owned_by_settingsd() {
+        for topic in [
+            "settingsd.desktop.look.default",
+            "settingsd.desktop.snapshot.default",
+            "settingsd.desktop.keys.default.appearance",
+            "settingsd.desktop.keys.default.shell.panels",
+            "settingsd.desktop.keys.default.apps_default",
+        ] {
+            assert_eq!(publisher_owner(topic), Some("settingsd"), "{topic}");
+            assert!(!may_publish(topic, "operator"));
+            assert!(may_subscribe(topic));
+        }
+        for topic in [
+            "settingsd.desktop.keys.default",
+            "settingsd.desktop.keys.default.",
+            "settingsd.desktop.keys.default..x",
+            "settingsd.desktop.keys..appearance",
+            "settingsd.desktop.keys.a/b.appearance",
+            "settingsd.desktop.keys.default.Appearance",
         ] {
             assert_ne!(publisher_owner(topic), Some("settingsd"), "{topic}");
         }
