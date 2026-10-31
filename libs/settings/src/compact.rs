@@ -236,6 +236,47 @@ pub fn decode(value: serde_json::Value) -> Result<Snapshot, String> {
     }
 }
 
+/// The schema of [`ValuesSnapshot`]: contract 1.0.0's snapshot.
+pub const VALUES_SCHEMA: u32 = 3;
+
+/// Snapshot schema 3 (key space v2 §4.3): schema 2 with the authored
+/// [`crate::registry::Values`] in place of the format-4 desktop. It is the
+/// body of [`crate::topics::snapshot_topic`] and of `settings.get {view:
+/// snapshot}`; native shells read it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ValuesSnapshot {
+    pub schema: u32,
+    pub binding: Binding,
+    pub incarnation: String,
+    pub revision: Revision,
+    pub design_revision: Revision,
+    pub source_digest: String,
+    pub values: crate::registry::Values,
+    pub effective: BTreeMap<String, CompactEffective>,
+    pub designs: BTreeMap<String, design::DesignReadProjection>,
+}
+
+/// `snapshot` in schema 3, carrying `values`, the record it was resolved
+/// from.
+pub fn encode_values(
+    snapshot: &Snapshot,
+    values: &crate::registry::Values,
+) -> Result<ValuesSnapshot, serde_json::Error> {
+    let compact = encode(snapshot)?;
+    Ok(ValuesSnapshot {
+        schema: VALUES_SCHEMA,
+        binding: compact.binding,
+        incarnation: compact.incarnation,
+        revision: compact.revision,
+        design_revision: compact.design_revision,
+        source_digest: compact.source_digest,
+        values: values.clone(),
+        effective: compact.effective,
+        designs: compact.designs,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

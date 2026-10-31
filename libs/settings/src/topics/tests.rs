@@ -98,6 +98,51 @@ fn a_change_moves_only_its_prefix() {
 }
 
 #[test]
+fn the_values_view_reads_a_prefix_or_keys_and_refuses_live_paths() {
+    let empty = Values::new();
+    let time = view_values(&empty, Some("time.applet"), None).unwrap();
+    assert_eq!(time.len(), 3, "{time:?}");
+    assert_eq!(time["time.applet.show_seconds"], json!(false));
+    let keys = ["appearance.mode".to_owned(), "window.gaps".to_owned()];
+    let picked = view_values(&empty, None, Some(&keys)).unwrap();
+    assert_eq!(picked.len(), 2);
+    let live = ["sound.output.volume".to_owned()];
+    let refused = view_values(&empty, None, Some(&live)).unwrap_err();
+    assert_eq!(refused[0].code, "live_key");
+    let refused = view_values(&empty, Some("system"), None).unwrap_err();
+    assert_eq!(refused[0].code, "live_key");
+    assert!(view_values(&empty, Some("nope"), None).is_err());
+    assert!(view_values(&empty, Some("displays"), None).unwrap().is_empty());
+    let all = view_values(&empty, None, None).unwrap();
+    assert!(all.keys().all(|k| prefix_of(k).is_some()));
+}
+
+#[test]
+fn a_follower_reads_the_look_back_with_the_same_views() {
+    use crate::view::{Appearance, Framing, State, View};
+    let values = authored(json!({
+        "appearance.mode": "auto",
+        "state.appearance.daylight": true,
+        "accessibility.text_scale": 1.5,
+        "time.applet.show_seconds": true
+    }));
+    let resolved = Resolved {
+        mode: resolved_mode(&values),
+        accent: None,
+    };
+    let look = look_content(&values, &resolved, "digest");
+    assert!(look.values.keys().all(|k| in_look(k)), "{:?}", look.values);
+    assert!(!look.values.contains_key("time.applet.show_seconds"));
+    assert!(!look.values.contains_key("window.gaps"));
+    assert_eq!(look.values["accessibility.text_scale"], json!(1.5));
+    assert_eq!(look.resolved["appearance.mode"], json!("light"));
+    let rebuilt: Values = look.values.into_iter().collect();
+    assert_eq!(Appearance::of(&rebuilt), Appearance::of(&values));
+    assert_eq!(Framing::of(&rebuilt), Framing::of(&values));
+    assert_eq!(State::of(&rebuilt), State::of(&values));
+}
+
+#[test]
 fn the_mode_resolves_beside_the_authored_choice() {
     assert_eq!(resolved_mode(&Values::new()).as_deref(), Some("dark"));
     let values = authored(json!({"appearance.mode": "auto", "state.appearance.daylight": true}));
