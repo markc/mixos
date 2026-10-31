@@ -475,6 +475,13 @@ impl Look {
                     .ok_or_else(|| format!("{key} must be a number from 0.5 to {max}"))?;
             }
         }
+        // settingsd stores the density as its step (§4.1): the panel holds
+        // the step's multiplier, so what it sends is what it reads back.
+        if args.get("density").is_some() {
+            look.density = design::geometry::Density::from_name(density_step(look.density))
+                .unwrap_or_default()
+                .multiplier();
+        }
         if let Some(value) = args.get("reduced_motion") {
             look.reduced_motion = value.as_bool().ok_or("reduced_motion must be a boolean")?;
         }
@@ -1999,13 +2006,9 @@ mod tests {
             .as_object()
             .unwrap()
             .keys()
-            .map(|key| {
-                let group = if ["text_scale", "density", "reduced_motion"].contains(&key.as_str()) {
-                    "ui"
-                } else {
-                    "appearance"
-                };
-                format!("{group}.{key}")
+            .map(|key| match key.as_str() {
+                "text_scale" | "reduced_motion" => format!("accessibility.{key}"),
+                _ => change_path(key),
             })
             .collect();
         assert_eq!(
@@ -2016,8 +2019,9 @@ mod tests {
             expected,
             "every serialised appearance axis must be exercised"
         );
-        let next = settings::v1::patch(&settings::Desktop::default(), &changes, &[]).unwrap();
-        settings::resolve(&next).unwrap();
+        // The v2 registry takes every change, and the result resolves.
+        let values: settings::registry::Values = changes.into_iter().collect();
+        settings::resolve::values::resolve(&values, settings::EMBEDDED_DEFAULT_SOURCE).unwrap();
     }
 
     #[test]
@@ -2342,7 +2346,13 @@ mod tests {
             answer_next(&mut e, 0, stored_control("8", path, value));
             let (_, _, body) = next(&mut e);
             assert_eq!(body["expected_revision"], "8");
-            assert_eq!(body["changes"], json!({path:default}));
+            // The density edit is numeric; its reversal is the v2 step.
+            let reversal = if path == "appearance.density" {
+                json!("comfortable")
+            } else {
+                default
+            };
+            assert_eq!(body["changes"], json!({path:reversal}));
             assert!(e.look.conflicts.is_empty());
         }
     }
