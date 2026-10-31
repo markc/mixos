@@ -49,7 +49,9 @@ end
 fn try_call($service, $command, $b)
   try
     $j = json_encode($b)
-    send $service $command body=$j timeout=3
+    -- Short: a fan-out visits every node in turn, and a node that is down
+    -- costs the whole timeout.
+    send $service $command body=$j timeout=1.5
     return {rc: $rc, v: decode($result)}
   catch $m
     return {rc: 255, v: to_string($m)}

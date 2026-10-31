@@ -83,6 +83,9 @@ fn node_name()
   return $NODE
 end
 
+-- Notices from before replication carry no version: give them their own.
+sqlexec($DB, "UPDATE notices SET version = ts, origin = ? WHERE version IS NULL", [$NODE])
+
 $INBOX_MAX = 200
 $STALE_S = 7200
 $TEXT_MAX = 4096
@@ -355,11 +358,15 @@ fn held($key)
   return $best
 end
 
--- A local arrival mark, strictly after every notice already here.
+-- A local arrival mark, strictly after every notice already here and every
+-- read mark a session holds: a cleared notice is gone from the table, but a
+-- session that read it keeps its mark, and a new notice must still pass it.
 fn next_ts()
-  $now = time()
+  $now = floor(time())
   $last = sqlexec($DB, "SELECT MAX(ts) AS ts FROM notices")[0].ts ?? 0
-  return if $now <= $last then $last + 1 else floor($now) end
+  $seen = sqlexec($DB, "SELECT MAX(notices_seen) AS s FROM sessions")[0].s ?? 0
+  $floor = max($last, $seen)
+  return if $now <= $floor then $floor + 1 else $now end
 end
 
 -- Store a notice unless this node already holds a newer version of its key.
@@ -431,7 +438,11 @@ on peers.notice.put desc "take a notice or a clear forwarded from another node {
   $b = req()
   $key = to_string($b.key ?? "")
   if not key_ok($key) then return fail("ARGUMENT", "key must be a short lower-case name") end
-  if type($b.version) != "number" then return fail("ARGUMENT", "version is required") end
+  -- A version from the future would lock the key: no later set or clear
+  -- could beat it, and its tombstone would never expire.
+  if type($b.version) != "number" or $b.version < 0 or $b.version > time() + 3600 then
+    return fail("ARGUMENT", "version must be a time no later than an hour from now")
+  end
   $origin = to_string($b.origin ?? "")
   if len(re_find($origin, "^[a-z0-9][a-z0-9.-]{0,62}$")) == 0 then return fail("ARGUMENT", "origin must be a node name") end
   -- A notice set without a session carries its caller's broker stamp, which

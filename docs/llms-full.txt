@@ -36490,7 +36490,9 @@ sender's `name@node` as its claimed name, beside the receiving broker's
 stamp. Notices are copied to every node: each carries the time it was set
 or cleared at its origin, the newest wins, and a clear leaves a tombstone so
 a late copy cannot bring it back. `mix peers notice list` also brings any
-node that missed a set or clear up to date.
+node that missed a set or clear up to date. The copying is done by
+`mix peers`: a notice set by calling `peers.notice.set` directly reaches
+other nodes only at the next `mix peers notice list`.
 
 **One registry for several nodes.** A group of nodes can share one registry
 instead (a host and the desks that share its home, say): run peersd on one

@@ -135,6 +135,9 @@ try
   -- An older copy arriving late cannot bring a cleared notice back.
   $late = run_argv([$mix, "-c", "send peers-north peers.notice.put body='" .. json_encode({key: "hold-main", text: "stale", version: 1, origin: "south"}) .. "' timeout=5\nprint($result)"],
     {env: $env, timeout: 15, stderr: "stdout"})
+  $future = run_argv([$mix, "-c", "send peers-north peers.notice.put body='" .. json_encode({key: "hold-main", cleared: true, version: 9e15, origin: "zz"}) .. "' timeout=5\nprint($rc)"],
+    {env: $env, timeout: 15, stderr: "stdout"})
+  check("a version from the future is refused", trim($future.stdout) == "10")
   check("an older forwarded copy is not applied", contains($late.stdout, "applied: false") or contains($late.stdout, "\"applied\":false"))
 
   -- A node that missed a set catches up at the next notice list.

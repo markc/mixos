@@ -269,7 +269,9 @@ sender's <code>name@node</code> as its claimed name, beside the receiving broker
 stamp. Notices are copied to every node: each carries the time it was set
 or cleared at its origin, the newest wins, and a clear leaves a tombstone so
 a late copy cannot bring it back. <code>mix peers notice list</code> also brings any
-node that missed a set or clear up to date.</p>
+node that missed a set or clear up to date. The copying is done by
+<code>mix peers</code>: a notice set by calling <code>peers.notice.set</code> directly reaches
+other nodes only at the next <code>mix peers notice list</code>.</p>
 <p><strong>One registry for several nodes.</strong> A group of nodes can share one registry
 instead (a host and the desks that share its home, say): run peersd on one
 of them and name it as the hub in <code>~/.config/mixos/peers.conf.mix</code>:</p>
