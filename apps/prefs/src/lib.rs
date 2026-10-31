@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! prefs: MixOS's preferences, a nod to the Prefs drawer of AmigaOS. One
-//! window, one sidebar of editors; the first is Applications, which shows
-//! the apps the `releases` service follows and installs, updates, rolls
-//! back and removes them.
+//! prefs: MixOS's Preferences, in COSMIC Settings' shape: a sidebar of
+//! the eleven top-level pages, sub-pages with a back link, and titled list
+//! cards of setting rows that apply at once through settingsd.
 //!
-//! The behaviour is the `preferences` engine; this crate is the egui shell
-//! around it (AGENTS.md §4.1): [`view`] draws the engine's state, [`shell`]
-//! runs its effects, and [`commands`] is the registry every action goes
-//! through, from the menu, a button, a shortcut or the Bus.
+//! The behaviour is the `preferences` engine (its page data, store and
+//! navigation); this crate is the egui shell around it (AGENTS.md §4.1):
+//! [`cosmic`] draws the window, [`view`] the editors that keep their own
+//! layout, [`shell`] runs the effects, and [`actions`] is the registry every
+//! action goes through, from a click, a shortcut or the Bus.
 pub mod actions;
 mod browser;
+pub mod cosmic;
 mod font_families;
 pub mod shell;
 pub mod view;

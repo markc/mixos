@@ -505,6 +505,20 @@ impl<S> Registry<S> {
             })
     }
 
+    /// Run the command `id` with `params` (a typed engine command, or a
+    /// nullary one with none), answering its result: the dispatch path for
+    /// `<app>.execute {id, params}` and the app's own parameterised Bus
+    /// commands.
+    pub fn execute_with(
+        &self,
+        id: &str,
+        state: &mut S,
+        params: serde_json::Value,
+        origin: Origin,
+    ) -> Result<serde_json::Value, Error> {
+        self.core.execute(id, state, params, origin)
+    }
+
     /// Record a run of `id` that the application performed itself instead
     /// of through [`Registry::execute`] (a toggle that needs the frame's
     /// state, an action the editor or the Bus ran), so it is published like

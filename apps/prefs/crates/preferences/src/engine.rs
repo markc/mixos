@@ -92,6 +92,20 @@ pub enum Effect {
         command: String,
         args: Value,
     },
+    /// Call `command` on settingsd for the pages and report
+    /// [`Engine::stored`] with `ticket`.
+    Store {
+        ticket: u64,
+        command: &'static str,
+        body: Value,
+    },
+    /// Run registry command `command` with `params` and answer `id` with
+    /// its result (`prefs.page.open`, `prefs.set`, `prefs.execute`).
+    ExecuteWith {
+        id: u64,
+        command: String,
+        params: Value,
+    },
     /// Close: stop the Bus connection and the window.
     Exit,
 }
@@ -367,6 +381,10 @@ pub struct Engine {
     pub picker: crate::picker::Picker,
     /// Apps → Email: the form, the password typed, Email on the Bus.
     pub email: crate::email::EmailEditor,
+    /// The pages' values, catalogue and writes.
+    pub store: crate::store::Store,
+    /// The open page, drawer, search and sidebar.
+    pub nav: crate::nav::Nav,
     next_ticket: u64,
     job: Option<Job>,
     notes_job: Option<(u64, String)>,
@@ -400,6 +418,8 @@ impl Engine {
             wallpaper: crate::wallpaper::WallpaperEditor::default(),
             picker: crate::picker::Picker::default(),
             email: crate::email::EmailEditor::default(),
+            store: crate::store::Store::new(),
+            nav: crate::nav::Nav::default(),
             next_ticket: 0,
             job: None,
             notes_job: None,
@@ -818,6 +838,7 @@ impl Engine {
             Delivery::Changed => {
                 self.start(Op::List);
                 self.read_look();
+                self.store_hint();
                 self.read_wallpaper();
                 self.email_services_changed();
             }
@@ -825,6 +846,7 @@ impl Engine {
                 self.connected = true;
                 self.start(Op::List);
                 self.read_look();
+                self.store_hint();
                 self.read_wallpaper();
                 self.email_services_changed();
             }
@@ -832,6 +854,7 @@ impl Engine {
             Delivery::Topic(topic) => {
                 if crate::appearance::is_topic(&topic) {
                     self.read_look();
+                    self.store_hint();
                 }
                 if topic == "backdrop.action.executed" {
                     self.read_wallpaper();
@@ -973,7 +996,8 @@ impl Engine {
         json!({"schema":"prefs.v1","app_id":APP_ID,"version":env!("CARGO_PKG_VERSION"),"pid":std::process::id(),
             "connected":self.connected,"releases":self.releases,"busy":self.busy(),"working":self.working(),"uncertain":self.uncertain,
             "status":self.status,"failed":self.failed,"release_status":self.release_status,"release_failed":self.release_failed,"apps":self.apps,"notes":self.notes,"notes_error":self.notes_error,
-            "appearance":self.appearance_view(),"wallpaper":self.wallpaper,"picker":self.picker,"email":self.email_view(),"section":self.section(),"category":self.section().category(),"ui":self.ui})
+            "appearance":self.appearance_view(),"wallpaper":self.wallpaper,"picker":self.picker,"email":self.email_view(),"section":self.section(),"category":self.section().category(),"ui":self.ui,
+            "nav":self.nav,"store":self.store_view()})
     }
 
     fn apps_view(&self) -> Value {
@@ -1072,6 +1096,22 @@ impl Engine {
                 json!({"schema":"prefs.v1","version":env!("CARGO_PKG_VERSION")}),
             ),
             "prefs.info" => self.ok(id, self.info()),
+            "prefs.pages" => self.ok(id, self.pages_view()),
+            "prefs.page" => match self.page_view(args["page"].as_str()) {
+                Ok(body) => self.ok(id, body),
+                Err(message) => self.error(id, "ARGUMENT", &message),
+            },
+            // The window's own commands, through the one dispatch path.
+            "prefs.page.open" => self.effects.push(Effect::ExecuteWith {
+                id,
+                command: "page.open".into(),
+                params: args,
+            }),
+            "prefs.set" => self.effects.push(Effect::ExecuteWith {
+                id,
+                command: "set".into(),
+                params: args,
+            }),
             "prefs.apps" => self.ok(id, self.apps_view()),
             "prefs.appearance" => self.ok(id, self.appearance_view()),
             "prefs.appearance.set" => match self.set_look(&args) {
@@ -1098,6 +1138,13 @@ impl Engine {
             "app.describe" => self.effects.push(Effect::Describe { id, help: false }),
             "prefs.actions" => self.effects.push(Effect::Commands { id }),
             "prefs.execute" => match args.get("id").and_then(Value::as_str) {
+                Some(command) if args.get("params").is_some_and(|p| !p.is_null()) => {
+                    self.effects.push(Effect::ExecuteWith {
+                        id,
+                        command: command.to_owned(),
+                        params: args["params"].clone(),
+                    })
+                }
                 Some(command) => self.effects.push(Effect::Execute {
                     id,
                     command: command.to_owned(),
@@ -1114,14 +1161,7 @@ impl Engine {
                 self.quit();
             }
             "prefs.search" => match args.get("query").and_then(Value::as_str) {
-                Some(query) => {
-                    let matches: Vec<_> = self
-                        .search(query)
-                        .iter()
-                        .map(|s| json!({"id":s.id,"category":s.category}))
-                        .collect();
-                    self.ok(id, json!({"matches":matches}));
-                }
+                Some(query) => self.ok(id, self.search_view(query)),
                 None => self.error(id, "ARGUMENT", "query must be a string"),
             },
             "prefs.section" => {
