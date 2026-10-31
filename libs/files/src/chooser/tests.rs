@@ -1370,7 +1370,7 @@ fn accept_completes_open_like_the_accept_button() {
         outcome.uris.as_deref().unwrap(),
         ["file:///home/user/a.txt", "file:///home/user/b.txt"]
     );
-    assert_eq!(p.closed, [id.clone()]);
+    assert_eq!(p.closed, vec![id.clone()]);
     // The requester reads exactly the same outcome.
     assert_eq!(
         e.result(&body(&id), 6).unwrap(),

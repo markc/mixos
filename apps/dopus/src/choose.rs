@@ -820,7 +820,7 @@ mod tests {
         assert_eq!(chosen.body["uris"], json!([format!("file://{file}")]));
         // The host publishes this outcome on files.chosen, as for the window.
         assert_eq!(json!(chosen.outcome.unwrap()), chosen.body);
-        assert_eq!(window.closed, [id.clone()]);
+        assert_eq!(window.closed, vec![id.clone()]);
         let result = dispatch(
             &mut engine,
             &mut window,
