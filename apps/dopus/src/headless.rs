@@ -15,7 +15,8 @@
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
-use dopus_core::{ConfigFile, ConfirmAnswer, CoreEvent, DOpusConfig, DopusCore};
+use dopus_core::{ConfigFile, CoreEvent, DOpusConfig, DopusCore};
+use crate::app::App;
 use futures::StreamExt;
 use toolkit::action::Origin;
 
@@ -26,23 +27,70 @@ use crate::dirs::AppDirs;
 /// The drain cadence: how long a worker reply can wait, and the tick period.
 const DRAIN_TICK: Duration = Duration::from_millis(200);
 
-/// Answer the core's derived events as a process with no window must:
-/// every dialog No, `OpenFile` refused with a log line.
-pub fn answer_derived(core: &mut DopusCore, events: Vec<CoreEvent>, log: impl Fn(String)) {
+/// Retain prompts for typed answers; refuse external file launches.
+pub fn answer_derived(app: &mut App, events: Vec<CoreEvent>, log: impl Fn(String)) {
     for event in events {
         match event {
-            CoreEvent::ConfirmRequested { token, .. } => core.confirm(token, ConfirmAnswer::No),
-            CoreEvent::PromptRequested { token, .. } => core.prompt_text(token, None),
             CoreEvent::OpenFile(path) => log(format!(
                 "refusing OpenFile({}), headless never spawns",
                 dopus_core::sanitise_display_path(&path)
             )),
-            _ => {}
+            event => app.absorb(vec![event]),
         }
     }
 }
 
-fn lock(core: &Mutex<DopusCore>) -> MutexGuard<'_, DopusCore> {
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn pump(app: &mut App, receiver: &std::sync::mpsc::Receiver<CoreEvent>, ready: impl Fn(&App) -> bool) {
+        let until = Instant::now() + Duration::from_secs(10);
+        loop {
+            let events = match receiver.recv_timeout(Duration::from_millis(10)) {
+                Ok(event) => app.core.on_event(event),
+                Err(_) => app.core.tick(Instant::now()),
+            };
+            answer_derived(app, events, |_| {});
+            if ready(app) { return; }
+            assert!(Instant::now() < until, "headless operation timed out");
+        }
+    }
+
+    #[test]
+    fn typed_answers_create_rename_and_delete_headless() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut config = DOpusConfig::default();
+        config.left.path = dir.path().to_owned();
+        config.right.path = dir.path().to_owned();
+        let (core, receiver) = DopusCore::new(config, None);
+        let mut app = App::new(core);
+        assert_eq!(crate::dialog::command(&mut app, &json!({"answer":"ok"})).1["error_code"], "NO_DIALOG");
+        app.core.begin_new_folder();
+        pump(&mut app, &receiver, |a| a.dialog.is_some());
+        assert_eq!(crate::dialog::command(&mut app, &json!({"answer":"ok","name":"bad/name"})).0, 10);
+        assert!(app.dialog.is_some());
+        assert_eq!(crate::dialog::command(&mut app, &json!({"answer":"ok","name":"Fresh"})).0, 0);
+        let first = dir.path().join("Fresh");
+        pump(&mut app, &receiver, |a| first.is_dir() && a.core.is_idle() && a.core.pane(dopus_core::PaneId::Left).root.iter().any(|e| e.path == first));
+        app.core.select_path(dopus_core::PaneId::Left, Some(first.clone()));
+        app.core.begin_rename();
+        pump(&mut app, &receiver, |a| a.dialog.is_some());
+        assert_eq!(crate::dialog::command(&mut app, &json!({"answer":"ok","name":"Renamed"})).0, 0);
+        let renamed = dir.path().join("Renamed");
+        pump(&mut app, &receiver, |a| renamed.is_dir() && !first.exists() && a.core.is_idle() && a.core.pane(dopus_core::PaneId::Left).root.iter().any(|e| e.path == renamed));
+        app.core.select_path(dopus_core::PaneId::Left, Some(renamed.clone()));
+        app.core.delete_selection();
+        pump(&mut app, &receiver, |a| a.dialog.is_some());
+        assert_eq!(crate::dialog::command(&mut app, &json!({})).1["dialog"]["kind"], "delete");
+        assert_eq!(crate::dialog::command(&mut app, &json!({"answer":"bad"})).1["error_code"], "ARGUMENT");
+        assert_eq!(crate::dialog::command(&mut app, &json!({"answer":"yes"})).0, 0);
+        pump(&mut app, &receiver, |a| !renamed.exists() && a.core.is_idle());
+    }
+}
+
+fn lock(core: &Mutex<App>) -> MutexGuard<'_, App> {
     core.lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
@@ -73,7 +121,7 @@ pub fn run(
     };
     let (mut core, receiver) = DopusCore::new(config, config_file);
     commands::apply_open_paths(&mut core, paths);
-    let core = Arc::new(Mutex::new(core));
+    let core = Arc::new(Mutex::new(App::new(core)));
     let (bus, mut deliveries) =
         bus::spawn(service, noded_url, Arc::new(|| {})).map_err(|e| e.to_string())?;
     {
@@ -88,14 +136,14 @@ pub fn run(
                         Err(std::sync::mpsc::RecvTimeoutError::Timeout) => None,
                         Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return,
                     };
-                    let derived = {
+                    {
                         let mut core = lock(&core);
-                        match event {
-                            Some(event) => core.on_event(event),
-                            None => core.tick(Instant::now()),
-                        }
-                    };
-                    answer_derived(&mut lock(&core), derived, |line| tracing::info!("{line}"));
+                        let derived = match event {
+                            Some(event) => core.core.on_event(event),
+                            None => core.core.tick(Instant::now()),
+                        };
+                        answer_derived(&mut core, derived, |line| tracing::info!("{line}"));
+                    }
                 }
             })
             .map_err(|e| format!("core drainer: {e}"))?;
@@ -126,12 +174,16 @@ pub fn run(
                 continue;
             };
             let mut quit = false;
-            let served = commands::serve_command(
+            let served = if command.command == "dopus.dialog" {
+                let args = serde_json::from_str(&command.body).unwrap_or(serde_json::Value::Null);
+                let (rc, body) = crate::dialog::command(&mut lock(&core), &args);
+                vec![Served::Reply { id: command.id, rc, body: body.to_string() }]
+            } else { commands::serve_command(
                 &command,
-                &mut lock(&core),
+                &mut lock(&core).core,
                 &meta,
                 &buildinfo::build_info!(),
-            );
+            ) };
             let ran = commands::accepted_action(&command, &served);
             for served in served {
                 match served {
@@ -159,7 +211,8 @@ pub fn run(
             }
         }
     });
-    let _ = lock(&core).flush_config();
+    lock(&core).cancel_dialogs();
+    let _ = lock(&core).core.flush_config();
     bus.quit();
     // Let the quit's own reply reach the wire before the process goes.
     runtime.block_on(async {

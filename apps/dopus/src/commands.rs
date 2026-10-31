@@ -42,6 +42,7 @@ pub const COMMANDS: &[(&str, bool)] = &[
     ("dopus.describe", true),
     ("dopus.info", true),
     ("dopus.state", true),
+    ("dopus.dialog", false),
     ("dopus.execute", false),
     ("dopus.actions", true),
     ("dopus.theme.set", false),
@@ -918,6 +919,7 @@ pub fn serve_command(
     let id = command.id;
     let window = !meta.headless && meta.window_available;
     match command.command.as_str() {
+        "dopus.dialog" => vec![Served::error(id, "NO_DIALOG", "dialog state is owned by the app".into())],
         "dopus.ping" => vec![Served::reply_json(
             id,
             &PingReply {

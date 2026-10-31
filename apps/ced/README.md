@@ -70,3 +70,11 @@ Send is unavailable on ordinary text and Bus-message documents (`to` plus
 also opens as unchanged text, with maildoc's exact refusal beside it for repair.
 Mail tabs keep header edits in this process. Exit refuses while a mail tab
 is dirty or a save/Send is in flight; save or explicitly close the tab first.
+`ced.dialog {}` reads the open modal as `{dialog: {kind, title,
+buttons: [{id, label, role}], body?, path?, status?} | null}`.
+`{open: null}` closes it as Escape does; `{answer: <button id>}` presses
+a listed button. No modal returns `NO_DIALOG`; a bad button returns `ARGUMENT`.
+Help opens with `{open: "keys"}` or `{open: "about"}`. Recovered rows
+include buffer ids: answer open or discard with `{buffer: "..."}`.
+Help and recovery close with done. Path dialogs accept path; goto accepts text.
+A refused dirty-mail Bus close leaves no modal behind.

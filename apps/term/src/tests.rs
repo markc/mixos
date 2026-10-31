@@ -20,6 +20,7 @@ use term_core::raster::Raster;
 use term_core::tabs::{self, TabSet};
 use term_core::terminal::{ScrollRequest, Terminal};
 use toolkit::action::Origin;
+use serde_json::json;
 
 /// The pane area: below a 30-point strip in a 900 x 560 window.
 const AREA: Geometry = Geometry {
@@ -47,6 +48,18 @@ fn test_app() -> (App, std::thread::JoinHandle<()>) {
     assert_eq!(app.sync(), Synced::Running);
     app.layout(AREA);
     (app, reaper)
+}
+
+#[test]
+fn typed_dialog_answers_help_and_refuses_bad_buttons() {
+    let (mut app, reaper) = test_app();
+    assert_eq!(crate::dialog::command(&mut app, &json!({"answer":"done"})).1["error_code"], "NO_DIALOG");
+    for kind in ["keys", "about"] {
+        assert_eq!(crate::dialog::command(&mut app, &json!({"open":kind})).1["dialog"]["kind"], kind);
+        assert_eq!(crate::dialog::command(&mut app, &json!({"answer":"bad"})).1["error_code"], "ARGUMENT");
+        assert_eq!(crate::dialog::command(&mut app, &json!({"answer":"done"})).1["dialog"], serde_json::Value::Null);
+    }
+    finish(app, reaper);
 }
 
 fn finish(app: App, reaper: std::thread::JoinHandle<()>) {

@@ -1003,6 +1003,11 @@ pub fn command(
             return None;
         }
     };
+    if command_name == "email.dialog" {
+        let (rc, body) = crate::dialog::command(state, &args);
+        state.reply(id, rc, body);
+        return None;
+    }
     if let Some(window) = command_name
         .strip_prefix("email.")
         .filter(|v| drive::COMMANDS.contains(v))
@@ -1068,7 +1073,8 @@ fn dispatch(
             account(state, args)?
         };
         if !send && state.compose.is_some() {
-            return Err(Bad(code::BUSY, crate::label("compose-open")));
+            state.apply_ui(crate::view::UiEvent::CloseCompose);
+            return Err(Bad(code::BUSY, "A compose or document load is already open; email.dialog reads and answers its close confirmation (keep, discard, cancel). Retry after it closes.".into()));
         }
         let path = std::path::PathBuf::from(required(args, "document")?);
         state
@@ -1379,7 +1385,8 @@ fn dispatch(
         "email.compose" => {
             let account = account(state, args)?;
             if state.compose.is_some() || state.documents.opening() {
-                return Err(Bad(code::BUSY, crate::label("compose-open")));
+                state.apply_ui(crate::view::UiEvent::CloseCompose);
+            return Err(Bad(code::BUSY, "A compose or document load is already open; email.dialog reads and answers its close confirmation (keep, discard, cancel). Retry after it closes.".into()));
             }
             let draft = Composed {
                 to: addresses(args, "to")?,
@@ -1437,7 +1444,8 @@ fn dispatch(
         "email.reply" | "email.forward" => {
             let account = connected(state, args)?;
             if state.compose.is_some() {
-                return Err(Bad(code::BUSY, crate::label("compose-open")));
+                state.apply_ui(crate::view::UiEvent::CloseCompose);
+            return Err(Bad(code::BUSY, "A compose or document load is already open; email.dialog reads and answers its close confirmation (keep, discard, cancel). Retry after it closes.".into()));
             }
             let email = required(args, "id")?;
             let then = if command_name == "email.reply" {
@@ -1972,6 +1980,31 @@ mod tests {
         );
         state.finish_compose_inspections();
         forward
+    }
+
+    #[test]
+    fn typed_dialog_clears_compose_busy_and_answers_quit() {
+        let mut state = connected_many(&["a"]);
+        run(&mut state, "email.dialog", json!({"answer":"keep"}));
+        assert_eq!(state.take_replies()[0].body["error_code"], "NO_DIALOG");
+        run(&mut state, "email.compose", json!({"subject":"First", "body":"Draft"}));
+        state.take_replies();
+        run(&mut state, "email.compose", json!({"subject":"Second"}));
+        assert_eq!(state.take_replies()[0].body["error_code"], "BUSY");
+        run(&mut state, "email.dialog", json!({}));
+        assert_eq!(state.take_replies()[0].body["dialog"]["kind"], "close_compose");
+        run(&mut state, "email.dialog", json!({"answer":"bad"}));
+        assert_eq!(state.take_replies()[0].body["error_code"], "ARGUMENT");
+        run(&mut state, "email.dialog", json!({"answer":"keep"}));
+        state.take_replies();
+        assert!(state.compose.is_none());
+        run(&mut state, "email.compose", json!({"subject":"Second", "body":"Draft"}));
+        assert_eq!(state.take_replies()[0].rc, 0);
+        state.confirm = Some(crate::state::Confirm::Quit);
+        run(&mut state, "email.dialog", json!({"open":null}));
+        state.take_replies();
+        assert!(state.confirm.is_none());
+        assert!(!state.exiting);
     }
 
     #[test]

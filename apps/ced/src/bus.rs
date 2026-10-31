@@ -39,6 +39,7 @@ pub fn help(window: bool) -> Vec<::bus::CommandDescriptor> {
     let mut entries = documents::commands::manifest();
     let mut hosted = citizen::macros::describe("ced");
     if window {
+        hosted.push(serde_json::json!({"name":"ced.dialog","args":{"open":"keys, about or null","answer":"button id","buffer":"recovered buffer id"},"description":"Read or answer the open dialog","read_only":false}));
         hosted.extend(toolkit::drive::describe("ced"));
     }
     entries.extend(hosted.into_iter().map(|value| {

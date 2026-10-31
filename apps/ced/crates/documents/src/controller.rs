@@ -2635,7 +2635,9 @@ impl Controller {
         }
         let is_mail = self.tab(tab).is_some_and(|t| t.mail.is_some());
         if is_mail && !force && self.tab(tab).is_some_and(Tab::dirty) {
-            fx.push(Effect::Prompt(Prompt::CloseDirty { tab, intent }));
+            if cmd.is_none() {
+                fx.push(Effect::Prompt(Prompt::CloseDirty { tab, intent }));
+            }
             if let Some((id, _)) = cmd {
                 fx.push(Effect::Respond {
                     id,

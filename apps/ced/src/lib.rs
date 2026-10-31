@@ -16,6 +16,7 @@
 //! - [`view`]: the window's drawing; [`shell`]: the running window.
 
 pub mod actions;
+mod dialog;
 pub mod app;
 pub mod bus;
 pub mod headless;

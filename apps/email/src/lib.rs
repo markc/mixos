@@ -22,6 +22,7 @@
 //! account the person points it at, not a service this node hosts.
 
 pub mod actions;
+mod dialog;
 pub mod attachments;
 pub mod commands;
 pub mod composer;

@@ -352,6 +352,7 @@ impl Shell {
         match command_name {
             "HELP" => (0, json!(crate::bus::help(self.bus.name()))),
             "app.describe" => (0, crate::bus::describe(self.bus.name())),
+            "term.dialog" => crate::dialog::command(&mut self.app, args),
             "term.actions" => (
                 0,
                 json!({

@@ -278,6 +278,12 @@ impl App {
     /// Serve one Bus command, leaving its replies and effects in
     /// [`App::effects`].
     pub fn serve(&mut self, command: &commands::Command, meta: &ServerMeta) {
+        if command.command == "dopus.dialog" {
+            let args = serde_json::from_str(&command.body).unwrap_or(serde_json::Value::Null);
+            let (rc, body) = crate::dialog::command(self, &args);
+            self.effects.push(Effect::Reply { id: command.id, rc, body: body.to_string() });
+            return;
+        }
         let info = buildinfo::build_info!();
         let served = commands::serve_command(command, &mut self.core, meta, &info);
         self.ran.extend(commands::accepted_action(command, &served));
