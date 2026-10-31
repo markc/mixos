@@ -227,8 +227,8 @@ impl Look {
             a.mode = self.mode.name().into();
         }
         a.contrast = self.contrast.name().into();
-        a.density = design::geometry::Density::from_name(density_step(self.density))
-            .unwrap_or_default();
+        a.density =
+            design::geometry::Density::from_name(density_step(self.density)).unwrap_or_default();
         a.font_family = self.font_family.clone();
         a.mono_family = self.mono_family.clone();
         let f = &mut view.framing;
@@ -2323,7 +2323,10 @@ mod tests {
         answer_next(&mut e, 0, snapshot_body("8", "forest", "dark"));
         let (_, _, body) = next(&mut e);
         assert_eq!(body["expected_revision"], "8");
-        assert_eq!(body["changes"], json!({"accessibility.reduced_motion":true}));
+        assert_eq!(
+            body["changes"],
+            json!({"accessibility.reduced_motion":true})
+        );
     }
 
     #[test]

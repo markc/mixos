@@ -2735,7 +2735,7 @@ mod tests {
     fn an_unedited_form_follows_another_writer() {
         let mut e = read();
         e.select_email_account("b");
-        e.delivery(citizen::Delivery::Topic(crate::appearance::topic()));
+        e.delivery(citizen::Delivery::Topic(crate::appearance::topics()[0].clone()));
         let mut after = two();
         after.accounts[1].name = "Family".into();
         settle_read(&mut e, "8", json!(after));
