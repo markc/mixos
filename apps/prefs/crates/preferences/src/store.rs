@@ -99,6 +99,10 @@ pub struct Store {
     queue: VecDeque<Job>,
     applies: u64,
     retargeted: bool,
+    /// A write met another revision or lost its answer: nothing more goes
+    /// out until a read succeeds, so a dead settingsd is not sent the same
+    /// write again and again.
+    reread: bool,
 }
 
 impl Store {
@@ -301,6 +305,7 @@ impl Engine {
             Some(job) => job,
             None if !self.store.pending.is_empty()
                 && self.store.fence.is_some()
+                && !self.store.reread
                 && self.blocked().is_none() =>
             {
                 Job::Apply
@@ -409,6 +414,7 @@ impl Engine {
             (Some(incarnation), Some(revision), Ok(values)) => {
                 self.store.values = values;
                 self.store.fence = Some((incarnation, revision));
+                self.store.reread = false;
                 // Writes in hand stay (they win over what was read), unless
                 // settingsd already holds them.
                 let held = &self.store.values;
@@ -468,6 +474,7 @@ impl Engine {
     /// Return the write in flight to the pending writes, under any newer
     /// value for the same key.
     fn requeue_inflight(&mut self) {
+        self.store.reread = true;
         if let Some((_, changes)) = self.store.inflight.take() {
             for (key, value) in changes {
                 self.store.pending.entry(key).or_insert(value);
@@ -610,6 +617,29 @@ mod tests {
         assert_eq!(command, "settings.apply");
         assert_eq!(body["expected_revision"], "9");
         assert_eq!(body["changes"], json!({"window.gaps":8}));
+    }
+
+    #[test]
+    fn a_lost_write_waits_for_a_read_before_it_goes_again() {
+        let mut e = engine();
+        let lost = || Err(CallError::from("timed out".to_owned()));
+        e.set_key("appearance.mode", json!("dark")).unwrap();
+        let (t, _, _) = next(&mut e);
+        e.stored(t, lost());
+        let (t, command, _) = next(&mut e);
+        assert_eq!(command, "settings.get");
+        e.stored(t, lost());
+        assert!(e.take_effects().is_empty(), "no resend without a read");
+        assert_eq!(e.store.text("appearance.mode").as_deref(), Some("dark"));
+        e.store_hint();
+        let (t, _, _) = next(&mut e);
+        e.stored(t, ok(read("8", json!({}))));
+        let (t, command, _) = next(&mut e);
+        assert_eq!(command, "settings.status");
+        e.stored(t, ok(json!({"role":"authority","stale":false})));
+        let (_, command, body) = next(&mut e);
+        assert_eq!(command, "settings.apply");
+        assert_eq!(body["expected_revision"], "8");
     }
 
     #[test]

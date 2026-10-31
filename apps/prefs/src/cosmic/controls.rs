@@ -175,25 +175,32 @@ pub fn row(
             ui.set_width(ui.available_width());
             if stacked(&row.control) {
                 ui.vertical(|ui| {
-                    labels(ui, look, &name, desc.as_deref(), blocked.as_deref());
-                    ui.add_space(look.xs);
+                    // The mode picker carries its own captions (spec 4).
+                    if !matches!(row.control, Control::Mode) || blocked.is_some() {
+                        labels(ui, look, &name, desc.as_deref(), blocked.as_deref());
+                        ui.add_space(look.xs);
+                    }
                     ui.add_enabled_ui(enabled, |ui| {
                         control(ui, engine, page, row, &name, look, events)
                     });
                 });
             } else {
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.add_enabled_ui(enabled, |ui| {
-                        control(ui, engine, page, row, &name, look, events)
-                    });
-                    ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                        labels(
-                            ui,
-                            look,
-                            &name,
-                            desc.as_deref().filter(|d| !d.is_empty()),
-                            blocked.as_deref(),
-                        )
+                // Inside a horizontal the row is as tall as its content; the
+                // control sits right, the labels take what is left.
+                ui.horizontal(|ui| {
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        ui.add_enabled_ui(enabled, |ui| {
+                            control(ui, engine, page, row, &name, look, events)
+                        });
+                        ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                            labels(
+                                ui,
+                                look,
+                                &name,
+                                desc.as_deref().filter(|d| !d.is_empty()),
+                                blocked.as_deref(),
+                            )
+                        });
                     });
                 });
             }
@@ -680,18 +687,26 @@ fn images(
 /// palette, the active one bordered in the accent.
 fn mode(ui: &mut Ui, engine: &Engine, look: &Look, events: &mut Vec<UiEvent>) {
     let dark_now = resolved_dark(engine);
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = look.m;
-        for (dark, value, key) in [(true, "dark", "opt-dark"), (false, "light", "opt-light")] {
+    // Two 191 px cards in a 478 px row, centred (spec 1 §4.2.1).
+    let gap = look.xl * 3.0;
+    let width = 191.0_f32.min((ui.available_width() - gap) / 2.0).max(96.0);
+    let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), 100.0 + 30.0), Sense::hover());
+    let left = row.center().x - width - gap / 2.0;
+    {
+        for (index, (dark, value, key)) in [(true, "dark", "opt-dark"), (false, "light", "opt-light")]
+            .into_iter()
+            .enumerate()
+        {
             let palette = if dark { &DARK_PALETTE } else { &LIGHT_PALETTE };
             let bg = super::rgba(palette.gray_1);
             let card = super::rgba(palette.neutral[if dark { 2 } else { 1 }]);
             let text = label(key);
-            ui.vertical(|ui| {
-                let width = 191.0_f32
-                    .min((ui.available_width() - look.m) / 2.0)
-                    .max(96.0);
-                let (rect, response) = ui.allocate_exact_size(vec2(width, 100.0), Sense::click());
+            {
+                let rect = Rect::from_min_size(
+                    pos2(left + index as f32 * (width + gap), row.min.y),
+                    vec2(width, 100.0),
+                );
+                let response = ui.interact(rect, ui.scope_id().with(("mode", value)), Sense::click());
                 ui.painter().rect_filled(rect, Look::radius(look.r_s), bg);
                 let window = Rect::from_min_size(
                     rect.min + vec2(20.0, 18.0),
@@ -722,13 +737,16 @@ fn mode(ui: &mut Ui, engine: &Engine, look: &Look, events: &mut Vec<UiEvent>) {
                 {
                     set(events, "appearance.mode", json!(value));
                 }
-                ui.vertical_centered(|ui| {
-                    ui.set_width(width);
-                    ui.label(RichText::new(&text).size(14.0).color(look.text));
-                });
-            });
+                ui.painter().text(
+                    pos2(rect.center().x, rect.max.y + 8.0),
+                    egui::Align2::CENTER_TOP,
+                    &text,
+                    egui::FontId::proportional(14.0),
+                    look.text,
+                );
+            }
         }
-    });
+    }
 }
 
 /// The nine accent swatches of the resolved mode and a custom one.
