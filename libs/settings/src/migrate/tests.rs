@@ -143,7 +143,8 @@ fn roundness_from_a_null_style_takes_the_schemes_own_style() {
 }
 
 /// The table is the embedded design's own binding, read from the design, so
-/// it cannot drift from it.
+/// it cannot drift from it. Only the authored schemes: format 4 cannot hold
+/// the derived `mixos`, so a migrated record never names it.
 #[test]
 fn scheme_style_follows_the_embedded_binding() {
     let doc = design::parse_design_source(
@@ -152,7 +153,7 @@ fn scheme_style_follows_the_embedded_binding() {
     )
     .unwrap();
     let binding = &doc.v1.families.style.as_ref().unwrap().schemes;
-    for scheme in design::Scheme::ALL {
+    for scheme in design::Scheme::AUTHORED {
         let name = scheme.name();
         assert_eq!(
             scheme_style(name),
