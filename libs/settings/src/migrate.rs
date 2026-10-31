@@ -35,8 +35,8 @@ pub struct Entry {
 pub struct MigrationReport {
     /// Values v2 has no key for.
     pub dropped: Vec<Entry>,
-    /// Values stored at a different value: off-step densities and snapped
-    /// panel thicknesses.
+    /// Values stored at a different value: off-step densities, and panel
+    /// thicknesses and slideshow intervals snapped to a step.
     pub changed: Vec<Entry>,
     /// Write-only constraints the migrated map breaks (C8). Reported, not
     /// refused.
@@ -52,6 +52,8 @@ pub struct Migrated {
 
 /// The v2 panel thickness steps (`shell.panels.<panel>.thickness`).
 const PANEL_STEPS: [u32; 5] = [32, 40, 56, 64, 80];
+/// The v2 slideshow intervals, in seconds (`wallpaper.slideshow.interval_s`).
+const INTERVAL_STEPS: [u64; 6] = [300, 600, 900, 1800, 3600, 7200];
 
 const PER_OUTPUT_COLOUR: &str = "a per-output colour has no v2 key (F10)";
 const PER_OUTPUT_FIT: &str = "a per-output fit has no v2 key (F10)";
@@ -169,12 +171,13 @@ fn appearance(b: &mut Builder, appearance: &Appearance) {
 }
 
 /// The style a scheme draws in when the profile names none: the design's
-/// `style.schemes` binding. `mixos` compiles as studio (`look_context`).
+/// `style.schemes` binding. Format 4 cannot name `mixos` (the derived scheme
+/// is not a `design::Scheme`), so it has no arm here.
 fn scheme_style(scheme: &str) -> Option<&'static str> {
     Some(match scheme {
         "ocean" | "crimson" | "stone" | "forest" | "sunset" | "mono" => "plain",
         "pro" => "pro",
-        "studio" | "mixos" => "studio",
+        "studio" => "studio",
         "classic" => "classic",
         "breeze" => "breeze",
         "adwaita" => "adwaita",
@@ -234,6 +237,9 @@ fn shell(b: &mut Builder, shell: &Shell) {
             b.dropped(&root, json!(panel), "only the top and bottom panels exist");
             continue;
         }
+        // A panel in the record is shown. The registry default (top off,
+        // bottom on) elides the value where it already holds.
+        b.set(&format!("{root}.enabled"), json!(true));
         b.set(&format!("{root}.edge"), json!(panel.edge));
         // `hidden` is `dock` with autohide on; a default is not stored.
         let (mode, autohide) = match panel.mode.as_str() {
@@ -273,6 +279,17 @@ fn snap_thickness(thickness: u32) -> u32 {
     let mut best = PANEL_STEPS[0];
     for step in PANEL_STEPS {
         if thickness.abs_diff(step) <= thickness.abs_diff(best) {
+            best = step;
+        }
+    }
+    best
+}
+
+/// The nearest slideshow interval v2 allows, ties up, as [`snap_thickness`].
+fn snap_interval(seconds: u64) -> u64 {
+    let mut best = INTERVAL_STEPS[0];
+    for step in INTERVAL_STEPS {
+        if seconds.abs_diff(step) <= seconds.abs_diff(best) {
             best = step;
         }
     }
@@ -398,7 +415,19 @@ fn slideshow(b: &mut Builder, show: &BackdropSlideshow) {
         (Some(folder), images) => {
             b.set("wallpaper.slideshow.folder", json!(folder));
             b.set("wallpaper.slideshow.enabled", json!(true));
-            b.set("wallpaper.slideshow.interval_s", json!(show.interval_s));
+            let interval = snap_interval(show.interval_s);
+            if interval != show.interval_s {
+                b.changed(
+                    "backdrop.default.slideshow.interval_s",
+                    json!(show.interval_s),
+                    "wallpaper.slideshow.interval_s",
+                    format!(
+                        "interval {}s snapped to {interval}s (nearest allowed, ties up)",
+                        show.interval_s
+                    ),
+                );
+            }
+            b.set("wallpaper.slideshow.interval_s", json!(interval));
             b.set("wallpaper.slideshow.shuffle", json!(show.shuffle));
             if images.is_some() {
                 b.dropped(
