@@ -351,7 +351,13 @@ pub fn derive_with_palette(
     // 9. Overlays. "Chosen from X": controls[10] when X < 91, else
     // controls[0]. Step 9's hover overlay is replaced at step 12 before
     // anything reads it, so only its pressed overlay is kept.
-    let chosen = |index: usize| if index < 91 { controls[10] } else { controls[0] };
+    let chosen = |index: usize| {
+        if index < 91 {
+            controls[10]
+        } else {
+            controls[0]
+        }
+    };
     let bg_pressed_overlay = with_alpha(chosen(bg_idx), 0.2);
     let button_bg = with_alpha(controls[7], 0.25);
     let button_hover = with_alpha(controls[5], 0.2);
@@ -528,15 +534,7 @@ pub fn derive_with_palette(
     );
     // 28. Transparent background: hover and pressed chosen from sIdx.
     let transparent_background = container(
-        neutral(
-            tbg_comp,
-            accent,
-            on_tbg_comp,
-            s_hover,
-            s_pressed,
-            hc,
-            body,
-        ),
+        neutral(tbg_comp, accent, on_tbg_comp, s_hover, s_pressed, hc, body),
         tbg,
         text(bg_idx, &bg_ramp, body, tint, actual_alpha),
         small(bg_idx, &neutral_ramp, controls[6]),

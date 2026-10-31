@@ -431,8 +431,8 @@ pub type AlphaMap = [f64; 14];
 /// 0.90 − k × 0.3/13, but entry 10 is 0.66023 (the formula gives 0.66923)
 /// and entries 3 and 5 are truncated rather than rounded. Reproduced as is.
 pub const DEFAULT_ALPHA_MAP: AlphaMap = [
-    0.90, 0.87692, 0.85385, 0.83076, 0.80769, 0.78461, 0.76154, 0.73846, 0.71538, 0.69231,
-    0.66023, 0.64615, 0.62308, 0.60,
+    0.90, 0.87692, 0.85385, 0.83076, 0.80769, 0.78461, 0.76154, 0.73846, 0.71538, 0.69231, 0.66023,
+    0.64615, 0.62308, 0.60,
 ];
 
 /// The default map's top and bottom entries, which bound the slider maths.
@@ -537,10 +537,7 @@ mod tests {
             assert_eq!(roundness.corner_radii().radius_0, [0.0; 4]);
         }
         // MixOS writes 0 on every token for square; it still reads back.
-        assert_eq!(
-            Roundness::from_radii(&radii([0.0; 6])),
-            Roundness::Square
-        );
+        assert_eq!(Roundness::from_radii(&radii([0.0; 6])), Roundness::Square);
         assert_eq!(panel_radius(&round, true, false), 160.0);
         assert_eq!(panel_radius(&round, false, false), 12.0);
         assert_eq!(panel_radius(&round, false, true), 0.0);

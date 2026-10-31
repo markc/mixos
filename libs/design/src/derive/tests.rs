@@ -193,7 +193,10 @@ fn high_contrast_changes_only_alphas_and_the_accent_step() {
     };
     let hc = derive(&seeds, Mode::Dark, Contrast::High, &Frosted::default());
     assert!(hc.is_high_contrast && !normal.is_high_contrast);
-    assert_eq!(hc.background.component.base, normal.background.component.base);
+    assert_eq!(
+        hc.background.component.base,
+        normal.background.component.base
+    );
     assert_eq!(hc.background.component.divider.alpha, 0.65);
     let on = hc.background.on;
     assert_eq!(
