@@ -245,9 +245,8 @@ fn live_keys_are_refused_by_set_and_reset() {
     assert!(message.contains("hostd"), "{message}");
 }
 
-/// §2.18. The doc's `apps_default, apps_startup, xwayland` row says 11, but
-/// one `apps_default.<category>` pattern, `apps_startup.entries` and the
-/// four `xwayland.*` keys are 6, so the Desktop total is 165, not 170.
+/// §2.18 as corrected: `apps_default.<category>` is one pattern, so its row
+/// is 6 and the Desktop total 165 (150 stored, applied or state; 15 live).
 #[test]
 fn the_counts_match_the_design() {
     let group = |path: &'static str| -> &'static str {
@@ -650,6 +649,37 @@ fn c8_a_chord_binds_one_action_per_app() {
     );
     // Within one list, as today.
     assert!(set(&[("keymaps.dopus.nav.back", json!(["F2", "F2"]))]).is_err());
+}
+
+#[test]
+fn c8_is_enforced_on_write_and_a_stored_conflict_still_loads() {
+    let stored = Values::from([
+        ("keymaps.dopus.nav.back".into(), json!(["Alt+ArrowLeft"])),
+        ("keymaps.dopus.nav.parent".into(), json!(["Alt+ArrowLeft"])),
+    ]);
+    validate(&stored).expect("a stored conflict never bricks the profile");
+    let found = constraint::conflicts(&stored);
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].code, "constraint_failed");
+    assert_eq!(found[0].path, "keymaps.dopus.nav.parent");
+    // An unrelated write goes through, conflict and all.
+    let next = apply(
+        &stored,
+        &BTreeMap::from([("window.gaps".into(), json!(8))]),
+        &[],
+    )
+    .unwrap();
+    assert_eq!(constraint::conflicts(&next), found);
+    // A write that adds a conflict is refused.
+    let worse = apply(
+        &stored,
+        &BTreeMap::from([("keymaps.dopus.nav.home".into(), json!(["Alt+ArrowLeft"]))]),
+        &[],
+    );
+    assert_eq!(codes(worse)[0].0, "constraint_failed");
+    // Resolving it is a write like any other.
+    let fixed = apply(&stored, &BTreeMap::new(), &["keymaps.dopus.nav.parent".into()]).unwrap();
+    assert!(constraint::conflicts(&fixed).is_empty());
 }
 
 #[test]

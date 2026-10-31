@@ -690,6 +690,16 @@ pub fn apply(
         return Err(errors);
     }
     validate(&next)?;
+    // Write-only constraints refuse only what this batch introduces, so a
+    // stored conflict never blocks an unrelated write.
+    let before = constraint::conflicts(current);
+    let introduced: Vec<Diagnostic> = constraint::conflicts(&next)
+        .into_iter()
+        .filter(|d| !before.contains(d))
+        .collect();
+    if !introduced.is_empty() {
+        return Err(introduced);
+    }
     Ok(next)
 }
 
@@ -713,8 +723,10 @@ pub fn is_prefix(prefix: &str) -> bool {
     })
 }
 
-/// The one validator: every stored key known, not live, canonical and not
-/// its default; the family limits; the app domains; the constraints.
+/// The one validator, for load as for write: every stored key known, not
+/// live, canonical and not its default; the family limits; the app domains;
+/// the constraints except the write-only ones, which [`apply`] checks and
+/// [`constraint::conflicts`] reports.
 pub fn validate(values: &Values) -> Result<(), Vec<Diagnostic>> {
     let mut errors = Vec::new();
     for (path, value) in values {

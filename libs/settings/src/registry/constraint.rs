@@ -16,6 +16,9 @@ pub struct Constraint {
     pub text: &'static str,
     /// None: recorded only, or enforced by the key's kind.
     pub check: Option<fn(&Values) -> Vec<Diagnostic>>,
+    /// Refused only when a write introduces it. A stored map that already
+    /// breaks it still loads; [`conflicts`] reports it (migration does).
+    pub write_only: bool,
 }
 
 pub const CONSTRAINTS: &[Constraint] = &[
@@ -23,51 +26,61 @@ pub const CONSTRAINTS: &[Constraint] = &[
         id: "C1",
         text: "appearance.frosted.* flags are meaningful only with appearance.frosted.thickness",
         check: None,
+        write_only: false,
     },
     Constraint {
         id: "C2",
         text: "window.focus_delay_ms is ignored unless window.focus_follows_cursor",
         check: None,
+        write_only: false,
     },
     Constraint {
         id: "C3",
         text: "wallpaper.slideshow.enabled requires wallpaper.slideshow.folder",
         check: Some(slideshow),
+        write_only: false,
     },
     Constraint {
         id: "C4",
         text: "wallpaper.outputs.<connector>.image is ignored while wallpaper.same_on_all",
         check: None,
+        write_only: false,
     },
     Constraint {
         id: "C5",
         text: "displays.<a>.mirror_of = <b> requires b != a and displays.<b>.mirror_of null",
         check: Some(mirrors),
+        write_only: false,
     },
     Constraint {
         id: "C6",
         text: "at least one known output stays enabled",
         check: Some(enabled_output),
+        write_only: false,
     },
     Constraint {
         id: "C7",
         text: "shell.panels.<panel>.output names all or a connector (the key's kind)",
         check: None,
+        write_only: false,
     },
     Constraint {
         id: "C8",
-        text: "a chord binds at most one action of an app, and is listed once",
+        text: "a chord binds at most one action of an app (on write; a stored conflict is reported, not refused)",
         check: Some(unique_chords),
+        write_only: true,
     },
     Constraint {
         id: "panel_edges",
         text: "two enabled panels may not share an edge",
         check: Some(panel_edges),
+        write_only: false,
     },
     Constraint {
         id: "user_keys",
         text: "keymaps.comp.* never binds a bare F1-F12: those keys are the user's",
         check: Some(user_keys),
+        write_only: false,
     },
 ];
 
@@ -79,12 +92,24 @@ fn refuse(id: &str, path: &str, message: impl Into<String>) -> Diagnostic {
     )
 }
 
-pub fn check(values: &Values) -> Vec<Diagnostic> {
+fn run(values: &Values, write_only: bool) -> Vec<Diagnostic> {
     CONSTRAINTS
         .iter()
+        .filter(|c| c.write_only == write_only)
         .filter_map(|c| c.check)
         .flat_map(|check| check(values))
         .collect()
+}
+
+/// The constraints every stored map must meet, on load as on write.
+pub fn check(values: &Values) -> Vec<Diagnostic> {
+    run(values, false)
+}
+
+/// The write-only constraints a map breaks (C8 across an app's actions).
+/// Never a reason to refuse a load.
+pub fn conflicts(values: &Values) -> Vec<Diagnostic> {
+    run(values, true)
 }
 
 fn flag(values: &Values, path: &str) -> bool {

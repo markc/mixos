@@ -190,7 +190,7 @@ pub fn describe(prefix: Option<&str>) -> Value {
         .collect();
     let constraints: Vec<Value> = constraint::CONSTRAINTS
         .iter()
-        .map(|c| json!({"id": c.id, "text": c.text}))
+        .map(|c| json!({"id": c.id, "text": c.text, "write_only": c.write_only}))
         .collect();
     let placeholders: Map<String, Value> = PLACEHOLDERS
         .iter()
