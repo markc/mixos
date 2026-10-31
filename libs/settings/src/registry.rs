@@ -639,7 +639,7 @@ pub fn lookup(path: &str) -> Result<Matched, Diagnostic> {
 /// The refusal for a live key: code `live_key`, and as its message the
 /// structured owner and commands, `{"owner","read","write"}`, where a null
 /// command is a backend the owner does not have yet.
-fn live_refusal(def: &KeyDef, path: &str) -> Diagnostic {
+pub fn live_refusal(def: &KeyDef, path: &str) -> Diagnostic {
     let detail = serde_json::json!({"owner": def.owner, "read": def.read, "write": def.write});
     Diagnostic::new("live_key", path, detail.to_string())
 }

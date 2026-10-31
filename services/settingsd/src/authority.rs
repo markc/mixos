@@ -18,6 +18,12 @@ pub struct Authority {
     pub accepted: Accepted,
     pub snapshot: Snapshot,
     pub published: Option<Revision>,
+    /// The 1.0.0 topics: each one's content and the revision that last
+    /// changed it ([`crate::publication`]).
+    pub board: crate::publication::Board,
+    /// A mirror that is not attached to its authority: it serves its cache
+    /// and reports `stale`. Never set on the authority.
+    pub stale: bool,
     /// In-memory sidecar: the accent per context, derived from the same design
     /// as `snapshot.effective`. Never serialised; it is not part of the sealed
     /// `Snapshot` or `Effective`. Rebuilt wherever `snapshot` is rebuilt.
@@ -40,13 +46,44 @@ impl Authority {
     fn serving(role: Role, accepted: Accepted) -> anyhow::Result<Self> {
         let (effective, accents) = accepted.interpretation()?;
         let snapshot = snapshot(&accepted, effective)?;
-        Ok(Self {
+        let stale = matches!(role, Role::Mirror { .. });
+        let mut serving = Self {
             role,
             accepted,
             snapshot,
             published: None,
+            board: Default::default(),
+            stale,
             accents,
-        })
+        };
+        serving.stage();
+        Ok(serving)
+    }
+    /// A mirror takes its authority's pushed record, keeping what it has
+    /// published, and stamps each topic as the authority did. Returns the
+    /// topics that moved.
+    pub fn adopt(
+        &mut self,
+        cache: &crate::mirror::Cache,
+        changed_at: &std::collections::BTreeMap<String, Revision>,
+    ) -> anyhow::Result<Vec<String>> {
+        anyhow::ensure!(
+            matches!(&self.role, Role::Mirror { node } if *node == cache.authority),
+            "only a mirror of {} adopts its record",
+            cache.authority
+        );
+        let accepted = cache.accepted();
+        let (effective, accents) = accepted.interpretation()?;
+        self.snapshot = snapshot(&accepted, effective)?;
+        self.accepted = accepted;
+        self.accents = accents;
+        Ok(self.stage_with(Some(changed_at)))
+    }
+    /// The desktop's resolved accent, `#rrggbb`.
+    pub(crate) fn accent_hex(&self) -> Option<String> {
+        self.accents
+            .get(settings::appearance::APPEARANCE_CONTEXT)
+            .map(|c| c.to_hex()[..7].to_ascii_lowercase())
     }
     /// The store's outcome of its last write is unknown: no publication or
     /// mutation until a restart reads it back.
@@ -73,6 +110,9 @@ impl Authority {
             }
             settings::View::Summary => {
                 json!({"status":"current","summary":settings::Summary::of(&self.snapshot),"publication_pending":pending,"recovering":self.recovering(),"restored_from_backup":self.restored()})
+            }
+            settings::View::Values | settings::View::Look | settings::View::Snapshot => {
+                return self.read_v1(&request);
             }
         })
     }
@@ -122,8 +162,8 @@ impl Authority {
             operation.and_then(|id| self.accepted.receipts.iter().find(|r| r.operation_id == id));
         let (role, authority, stale) = match &self.role {
             Role::Authority(_) => ("authority", self.accepted.binding.instance.as_str(), false),
-            // Until S7's attach, a mirror cannot know its cache is current.
-            Role::Mirror { node } => ("mirror", node.as_str(), true),
+            // Stale until attached: then each push keeps it current.
+            Role::Mirror { node } => ("mirror", node.as_str(), self.stale),
         };
         Ok(
             json!({"status": if operation.is_some() && receipt.is_none() {"unknown_operation"} else {"current"},
@@ -273,6 +313,7 @@ impl Authority {
         self.accepted = next;
         self.snapshot = next_snapshot;
         self.accents = accents;
+        self.stage();
         Ok(
             json!({"status":receipt.outcome,"receipt":receipt,"publication_pending":self.published != Some(self.accepted.revision),"replayed":false}),
         )

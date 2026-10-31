@@ -71,6 +71,8 @@ pub async fn execute_until(
                     binding: work.binding().clone(),
                     view: View::Full,
                     schema: compact::COMPACT_SCHEMA,
+                    prefix: None,
+                    keys: None,
                 })
                 .map_err(|e| fault("invalid_request", e.to_string()))?;
                 let value = match client

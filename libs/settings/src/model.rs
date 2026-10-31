@@ -271,6 +271,13 @@ pub struct ReadRequest {
     /// or 2 ([`crate::compact`]). Other schemas are refused.
     #[serde(default = "schema_one", skip_serializing_if = "is_schema_one")]
     pub schema: u32,
+    /// The `values` view's keys under one prefix (`appearance`,
+    /// `shell.panels.top`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prefix: Option<String>,
+    /// The `values` view's keys, by path.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keys: Option<Vec<String>>,
 }
 
 fn schema_one() -> u32 {
@@ -281,14 +288,23 @@ fn is_schema_one(schema: &u32) -> bool {
     *schema == crate::SCHEMA
 }
 
-/// `settings.get`'s answer: the complete [`Snapshot`], or the [`Summary`]
-/// a plain follower needs.
+/// `settings.get`'s answer. Contract 1.0.0's are `values` (identity and
+/// every key with defaults filled, or those under `prefix` or in `keys`),
+/// `look` (the follower view, as its topic carries it) and `snapshot`
+/// (schema 3, [`crate::compact::ValuesSnapshot`]).
+///
+/// TRANSITION (S8 deletes): `full` (the format-4 [`Snapshot`], schema 1 or
+/// 2) and `summary` stay, and an omitted view is still `full`, while the
+/// followers that send them move to the 1.0.0 views and topics.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum View {
     #[default]
     Full,
     Summary,
+    Values,
+    Look,
+    Snapshot,
 }
 
 impl View {
