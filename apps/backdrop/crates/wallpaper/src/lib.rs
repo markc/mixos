@@ -6,6 +6,7 @@
 //!   `backdrop.set`, the command line's default). Every entry point validates
 //!   through [`Config::from_document`], so a value means the same whichever
 //!   way it arrived.
+//! - [`profile`][]: the same document, read from settingsd's `wallpaper.*`.
 //! - [`colour`][]: `#RRGGBB`.
 //! - [`fit`][]: crop, contain, native centre, repeat and stretch placement.
 //! - [`decode`][]: PNG and JPEG under explicit limits, applied before decode.
@@ -16,6 +17,7 @@ pub mod colour;
 pub mod decode;
 pub mod engine;
 pub mod fit;
+pub mod profile;
 pub mod schema;
 
 pub use colour::Rgb;

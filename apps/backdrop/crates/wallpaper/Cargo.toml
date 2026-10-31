@@ -23,6 +23,9 @@ mod_module_files = "deny"
 [dependencies]
 # The strict-data reader and writer for the document (`backdrop.mx`).
 config.workspace = true
+# The `wallpaper.*` view, backdrop's authority once settingsd serves it
+# (profile.rs).
+settings.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 # O_NONBLOCK on the decoder's one open, so a FIFO cannot block the worker.
