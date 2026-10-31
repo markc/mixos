@@ -100,6 +100,8 @@ $scripts = [
   "services/peersd/tests/peersd_test.mix",
   "services/peersd/tests/peers_federation_test.mix",
   "services/daylight/tests/daylight_test.mix",
+  "services/toolkit-export/tests/toolkit_test.mix",
+  "services/toolkit-export/tests/export_test.mix",
   "apps/dopus/tests/dopus_bus_test.mix",
   "apps/workshop/tests/agents_bus_test.mix",
   "apps/screenshot/tests/edit_path_test.mix"

@@ -1,0 +1,78 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Run from checkout root: mix services/toolkit-export/tests/toolkit_test.mix
+-- The pure renderer: colour formats, the ini merge, button layout, fonts
+-- and the icon-theme choice.
+$T = require("../scripts/lib/toolkit.mix")
+$checks = 0
+fn check($label, $ok)
+  if not $ok then raise("TEST", $label) end
+  print("PASS " .. $label)
+end
+
+check("css colour", $T.css_colour("#3584E480") == "rgba(53, 132, 228, 0.50)")
+check("qt colour puts alpha first", $T.qt_colour("#3584e4ff") == "#FF3584E4")
+$bad = false
+try
+  $T.css_colour("#3584E4")
+catch $m
+  $bad = true
+end
+check("short colour refused", $bad)
+$css = $T.gtk_css({window_bg_color: "#101010FF", accent_bg_color: "#3584E4FF"})
+check("gtk css is sorted define-color lines", contains($css, "@define-color accent_bg_color rgba(53, 132, 228, 1.00);\n@define-color window_bg_color"))
+$group = []
+for $i = 1 to 21 push($group, "#010203FF") end
+$scheme = $T.qt_scheme({active: $group, inactive: $group, disabled: $group})
+check("qt scheme has three groups", contains($scheme, "[ColorScheme]\nactive_colors=#FF010203, ") and contains($scheme, "inactive_colors=") and contains($scheme, "disabled_colors="))
+$short = false
+try
+  $T.qt_scheme({active: ["#010203FF"], inactive: $group, disabled: $group})
+catch $m
+  $short = true
+end
+check("a group of the wrong length is refused", $short)
+
+check("points from px", $T.points(13.333) == "10" and $T.points(12) == "9" and $T.points(14) == "10.5")
+check("layout right", $T.decoration_layout({"window.caption_side": "right"}) == "menu:minimize,maximize,close")
+check("layout left", $T.decoration_layout({"window.caption_side": "left"}) == "close,minimize,maximize:menu")
+check("layout without minimize", $T.decoration_layout({"window.controls.minimize": false}) == "menu:maximize,close")
+
+$have = fn($n) = contains(["breeze", "breeze-dark", "mixos"], $n)
+check("dark variant when installed", $T.icon_theme({"appearance.icon_theme": "breeze"}, "dark", $have).name == "breeze-dark")
+check("plain name under light", $T.icon_theme({"appearance.icon_theme": "breeze"}, "light", $have).name == "breeze")
+$missing = $T.icon_theme({"appearance.icon_theme": "papirus"}, "dark", $have)
+check("a missing theme keeps mixos and reports it", $missing.name == "mixos" and $missing.missing)
+check("nothing installed names nothing", $T.icon_theme({}, "dark", fn($n) = false).name == nil)
+
+$ini = "# keep me\n[Settings]\ngtk-font-name=Old 9\nother=1\n\n[Other]\ngtk-font-name=untouched\n"
+$next = $T.ini_set($ini, "Settings", [["gtk-font-name", "Inter 10"], ["gtk-icon-theme-name", "breeze"]])
+check("ini set replaces in place and appends", $next == "# keep me\n[Settings]\ngtk-font-name=Inter 10\nother=1\n\ngtk-icon-theme-name=breeze\n[Other]\ngtk-font-name=untouched\n")
+check("ini get reads its section only", $T.ini_get($next, "Other", "gtk-font-name") == "untouched")
+check("ini remove", $T.ini_get($T.ini_set($next, "Settings", [["other", nil]]), "Settings", "other") == nil)
+check("ini new section", $T.ini_set("", "Fonts", [["general", "\"Inter,10\""]]) == "[Fonts]\ngeneral=\"Inter,10\"\n")
+check("ini unchanged text stays byte-equal", $T.ini_set($next, "Settings", [["other", "1"]]) == $next)
+
+$pal = {}
+for $m in ["dark", "light"]
+  $pal[$m] = {toolkit: {gtk: {window_bg_color: "#101010FF"}, qt: {active: $group, inactive: $group, disabled: $group}}}
+end
+$env = {config: "/c", have_icon: $have, have_theme: fn($n) = $n == "adw-gtk3-dark"}
+$p = $T.plan({"appearance.icon_theme": "breeze", "appearance.font_size": 16}, "dark", $pal, $env)
+check("plan writes both css and four qt schemes", len($p.files) == 6)
+check("plan links both gtk.css to the mode", $p.links[0].target == "mixos/dark.css" and $p.links[1].target == "../gtk-4.0/mixos/dark.css")
+$gtk3 = $p.ini[0]
+check("gtk3 ini names the font, icons and adw theme", deep_eq($gtk3.pairs, [["gtk-application-prefer-dark-theme", "true"],
+  ["gtk-font-name", "Inter 12"], ["gtk-decoration-layout", "menu:minimize,maximize,close"],
+  ["gtk-icon-theme-name", "breeze-dark"], ["gtk-theme-name", "adw-gtk3-dark"]]))
+check("gtk4 ini has no gtk3 theme", not any($p.ini[1].pairs, fn($x) = $x[0] == "gtk-theme-name"))
+check("qt conf points at the mode scheme", $p.ini[2].pairs[0][1] == "/c/qt5ct/colors/MixOSDark.conf")
+check("qt fonts carry family and size", $p.ini[3].pairs[0][1] == "\"Inter,12,-1,5,50,0,0,0,0,0\"" and $p.ini[3].pairs[1][1] == "\"JetBrains Mono,12,-1,5,50,0,0,0,0,0\"")
+$old = false
+try
+  $T.plan({}, "dark", {dark: {}, light: {}}, $env)
+catch $m, $err
+  $old = $err.code == "PALETTE"
+end
+check("a settingsd without the toolkit block is refused", $old)
+print("PASS toolkit renderer")
