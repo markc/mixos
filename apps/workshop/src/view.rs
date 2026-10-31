@@ -48,6 +48,17 @@ pub enum UiEvent {
     FilterFocused,
     /// The title bar's light/dark toggle: invert the session mode or not.
     SetMode(design::Mode),
+    /// The agent composer's text changed.
+    AgentDraft(String),
+    /// Send the composer's text.
+    AgentSend,
+    /// Cancel, close or resume the selected session.
+    AgentAction(&'static str),
+    /// Set one of the selected session's config options.
+    AgentSet(String, String),
+    AgentNewAgent(String),
+    AgentNewCwd(String),
+    AgentStart,
 }
 
 const ICON: f32 = 14.0;
@@ -338,6 +349,7 @@ fn row_name(engine: &Engine, row: &Row) -> String {
         RowKind::AgentSession(session) => engine.session_label(session),
         RowKind::AgentsEnded(n) => format!("{} ({n})", label("agents-ended")),
         RowKind::AgentsDown => label("agents-down"),
+        RowKind::AgentsNew => label("agents-new"),
     }
 }
 
@@ -390,6 +402,7 @@ fn tree_row(ui: &mut Ui, engine: &Engine, row: &Row, events: &mut Vec<UiEvent>) 
                 RichText::new(format!("{} ({n})", label("agents-ended"))).weak()
             }
             RowKind::AgentsDown => RichText::new(label("agents-down")).weak(),
+            RowKind::AgentsNew => RichText::new(label("agents-new")),
         };
         if let RowKind::Service(_) = row.kind {
             ui.add(icons::image_of(
@@ -532,7 +545,7 @@ fn details_content(
     if engine.ui.row_key.as_deref().is_some_and(|key| {
         key == "agents" || key.starts_with("agent:") || key.starts_with("agents:")
     }) {
-        crate::agents::view(ui, engine);
+        crate::agents::view(ui, engine, events);
         return;
     }
     if engine.workshop.selected.is_none()

@@ -103,6 +103,8 @@ pub enum RowKind {
     AgentsEnded(usize),
     /// agentd is not running on this node.
     AgentsDown,
+    /// "New session…": its form is in Details.
+    AgentsNew,
 }
 
 /// One row of the services tree, with its children.
@@ -320,6 +322,10 @@ pub const SERVICES_SPLIT: std::ops::RangeInclusive<f32> = 0.1..=0.8;
 pub struct Engine {
     pub workshop: crate::workshop::Workshop,
     pub agents: crate::agents::Agents,
+    /// The broker-attested caller (`citizen::Handle::caller_key`) of the Bus
+    /// command being applied; the shell sets it around each one. `None`
+    /// for the window's own actions.
+    pub caller: Option<String>,
     label: Label,
     pub ui: UiState,
     pub snapshot: Snapshot,
@@ -354,6 +360,7 @@ impl Engine {
                 ..Default::default()
             },
             agents: crate::agents::Agents::default(),
+            caller: None,
             label,
             ui: UiState::default(),
             snapshot: Snapshot::default(),
@@ -1384,6 +1391,7 @@ impl Engine {
                         format!("{} ({n})", engine.label("agents-ended")),
                     ),
                     RowKind::AgentsDown => ("agents_down", engine.label("agents-down")),
+                    RowKind::AgentsNew => ("agents_new", engine.label("agents-new")),
                 };
                 let mut entry = json!({"key":row.key,"kind":kind,"label":label,"depth":depth,"expanded":row.expanded,
                     "children":row.children.len(),"selected":engine.ui.row_key.as_deref() == Some(row.key.as_str())});

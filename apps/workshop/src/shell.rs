@@ -107,6 +107,13 @@ pub fn apply_ui(engine: &mut Engine, commands: &Registry<Engine>, events: Vec<Ui
             UiEvent::CloseDialog => engine.close_dialog(),
             UiEvent::FilterFocused => engine.filter_focused(),
             UiEvent::SetMode(mode) => engine.set_mode(mode),
+            UiEvent::AgentDraft(text) => engine.agents.draft = text,
+            UiEvent::AgentSend => engine.agents_send(),
+            UiEvent::AgentAction(op) => engine.agents_action(op),
+            UiEvent::AgentSet(option, value) => engine.agents_set(&option, &value),
+            UiEvent::AgentNewAgent(agent) => engine.agents.new_agent = agent,
+            UiEvent::AgentNewCwd(cwd) => engine.agents.new_cwd = cwd,
+            UiEvent::AgentStart => engine.agents_start(),
         }
     }
 }
@@ -790,7 +797,11 @@ impl Shell {
                 return;
             }
             let event = self.held.pop_front().expect("a held command");
+            if let Event::Delivery(Delivery::Command { id, .. }) = &event {
+                self.engine.caller = Some(self.bus.caller_key(*id));
+            }
             apply_event(&mut self.engine, event);
+            self.engine.caller = None;
             self.settle();
         }
     }

@@ -292,6 +292,74 @@ pub fn fold(out: &mut Vec<Item>, event: &Value) {
     }
 }
 
+/// The agentd session a caller key belongs to, when the caller is a
+/// session's own mixos-mcp (`mcp-s-<session>-…`, agentd's `sender_session`
+/// rule), locally (`local:NAME`) or over the mesh (`mesh:NAME@peer`).
+pub fn agent_caller_session(caller: &str) -> Option<String> {
+    let name = caller.strip_prefix("local:").or_else(|| {
+        caller
+            .strip_prefix("mesh:")
+            .map(|rest| rest.split('@').next().unwrap_or(rest))
+    })?;
+    let rest = name.strip_prefix("mcp-s-")?;
+    let (session, tail) = rest.split_once('-')?;
+    let valid = (4..=12).contains(&session.len())
+        && session
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit());
+    (valid && !tail.is_empty()).then(|| session.to_owned())
+}
+
+/// A `workshop.agents.*` acting command as the agentd command and body it
+/// becomes. `session` defaults to the selected one.
+pub fn agent_request(
+    command: &str,
+    args: &Value,
+    selected: Option<&str>,
+) -> Result<(String, Value), String> {
+    let session = || {
+        args["session"]
+            .as_str()
+            .or(selected)
+            .map(str::to_owned)
+            .ok_or_else(|| "no session given and none selected".to_owned())
+    };
+    let op = command.strip_prefix("workshop.agents.").unwrap_or_default();
+    let body = match op {
+        "new" => {
+            let agent = args["agent"].as_str().ok_or("agent must be a string")?;
+            let cwd = args["cwd"].as_str().ok_or("cwd must be a string")?;
+            let mut body = json!({"agent":agent,"cwd":cwd});
+            for key in ["mode", "additional_dirs"] {
+                if !args[key].is_null() {
+                    body[key] = args[key].clone();
+                }
+            }
+            body
+        }
+        "prompt" => {
+            let text = args["text"].as_str().ok_or("text must be a string")?;
+            json!({"session":session()?,"content":text})
+        }
+        "cancel" | "close" | "resume" => json!({"session":session()?}),
+        "set" => {
+            let mut body = json!({"session":session()?});
+            if let Some(mode) = args["mode"].as_str() {
+                body["mode"] = json!(mode);
+            } else if let (Some(option), false) = (args["option"].as_str(), args["value"].is_null())
+            {
+                body["option"] = json!(option);
+                body["value"] = args["value"].clone();
+            } else {
+                return Err("set needs mode, or option and value".into());
+            }
+            body
+        }
+        _ => return Err(format!("unknown command {command}")),
+    };
+    Ok((format!("agent.session.{op}"), body))
+}
+
 fn note_text(event: &Value) -> String {
     for key in ["path", "option", "via", "command"] {
         if let Some(text) = event[key].as_str() {
@@ -314,6 +382,14 @@ pub struct Agents {
     pub transcript: Transcript,
     /// The selected session's `config_options`, from its ready event.
     pub config_options: Value,
+    /// The composer's text for the selected session.
+    pub draft: String,
+    /// The New session form.
+    pub new_agent: String,
+    pub new_cwd: String,
+    /// Acting calls in flight: ticket to the Bus command to answer.
+    #[serde(skip)]
+    replies: std::collections::BTreeMap<u64, Option<u64>>,
     #[serde(skip)]
     list_ticket: Option<u64>,
     #[serde(skip)]
@@ -359,9 +435,8 @@ impl Engine {
             self.agents.list_again = true;
             return;
         }
-        if self.agents.available.is_none() || self.agents.instances.is_null() {
-            self.agent_call("agent.agents", json!({}));
-        }
+        // The live count changes with every session: read it each time.
+        self.agent_call("agent.agents", json!({}));
         let ticket = self.agent_call("agent.session.list", json!({}));
         self.agents.list_ticket = Some(ticket);
     }
@@ -374,6 +449,7 @@ impl Engine {
         self.agents.selected = Some(session.to_owned());
         self.agents.transcript = Transcript::new(session);
         self.agents.config_options = Value::Null;
+        self.agents.draft.clear();
         self.read_transcript();
     }
 
@@ -397,6 +473,10 @@ impl Engine {
         command: &str,
         result: Result<(u8, Value), String>,
     ) {
+        if let Some(reply) = self.agents.replies.remove(&ticket) {
+            self.acted(ticket, command, reply, &result);
+            return;
+        }
         let (rc, body) = match result {
             Ok(reply) => reply,
             Err(message) => {
@@ -598,6 +678,14 @@ impl Engine {
     /// The Agents branch of the tree.
     pub fn agents_tree(&self) -> Row {
         let mut children = Vec::new();
+        if self.agents.available == Some(true) {
+            children.push(Row {
+                key: "agents:new".into(),
+                kind: RowKind::AgentsNew,
+                expanded: false,
+                children: Vec::new(),
+            });
+        }
         if self.agents.available == Some(false) {
             children.push(Row {
                 key: "agents:down".into(),
@@ -668,6 +756,30 @@ impl Engine {
                 });
                 true
             }
+            "workshop.agents.new"
+            | "workshop.agents.prompt"
+            | "workshop.agents.cancel"
+            | "workshop.agents.close"
+            | "workshop.agents.resume"
+            | "workshop.agents.set" => {
+                if let Some(session) = self.caller.as_deref().and_then(agent_caller_session) {
+                    self.push_workshop(Effect::Reply {
+                        id,
+                        rc: 17,
+                        body: json!({"error_code":"USE_AGENT","message":format!("agent session {session}: call agent.* directly, not through Workshop")}),
+                    });
+                    return true;
+                }
+                match agent_request(command, args, self.agents.selected.as_deref()) {
+                    Ok((agent_command, body)) => self.act(&agent_command, body, Some(id)),
+                    Err(message) => self.push_workshop(Effect::Reply {
+                        id,
+                        rc: 10,
+                        body: json!({"error_code":"ARGUMENT","message":message}),
+                    }),
+                }
+                true
+            }
             "workshop.agents" => {
                 self.push_workshop(Effect::Reply {
                     id,
@@ -678,6 +790,114 @@ impl Engine {
             }
             _ => false,
         }
+    }
+
+    /// Send one acting command to agentd; `reply` is the Bus command to
+    /// answer with agentd's reply (`None` for the window's own actions).
+    fn act(&mut self, command: &str, body: Value, reply: Option<u64>) {
+        let ticket = self.agent_call(command, body);
+        self.agents.replies.insert(ticket, reply);
+    }
+
+    /// An acting call came back: answer its Bus command, follow the result.
+    fn acted(
+        &mut self,
+        _ticket: u64,
+        command: &str,
+        reply: Option<u64>,
+        result: &Result<(u8, Value), String>,
+    ) {
+        let (rc, body) = match result {
+            Ok((rc, body)) => (*rc, body.clone()),
+            Err(message) => (10, json!({"error_code":"UNAVAILABLE","message":message})),
+        };
+        if rc != 0 {
+            self.agents.error = body["message"].as_str().map(str::to_owned);
+        } else {
+            self.agents.error = None;
+        }
+        if rc == 0
+            && command == "agent.session.new"
+            && let Some(session) = body["session"].as_str()
+        {
+            let session = session.to_owned();
+            self.ui.expanded.insert("agents".into());
+            self.ui.row_key = Some(format!("agent:{session}"));
+            self.select_session(&session);
+        }
+        if let Some(id) = reply {
+            self.push_workshop(Effect::Reply { id, rc, body });
+        }
+        self.refresh_agents();
+    }
+
+    /// Start a session from the New session form.
+    pub fn agents_start(&mut self) {
+        let agent = self.agents.new_agent.trim().to_owned();
+        let cwd = self.agents.new_cwd.trim().to_owned();
+        if agent.is_empty() || cwd.is_empty() {
+            return;
+        }
+        self.act("agent.session.new", json!({"agent":agent,"cwd":cwd}), None);
+    }
+
+    /// Send the composer's text to the selected session.
+    pub fn agents_send(&mut self) {
+        let text = self.agents.draft.trim().to_owned();
+        let Some(session) = self.agents.selected.clone() else {
+            return;
+        };
+        if text.is_empty() || !self.agents_can_send() {
+            return;
+        }
+        self.agents.draft.clear();
+        self.act(
+            "agent.session.prompt",
+            json!({"session":session,"content":text}),
+            None,
+        );
+    }
+
+    /// Cancel, close or resume the selected session.
+    pub fn agents_action(&mut self, op: &str) {
+        let Some(session) = self.agents.selected.clone() else {
+            return;
+        };
+        if matches!(op, "cancel" | "close" | "resume") {
+            self.act(
+                &format!("agent.session.{op}"),
+                json!({"session":session}),
+                None,
+            );
+        }
+    }
+
+    /// Set one config option of the selected session.
+    pub fn agents_set(&mut self, option: &str, value: &str) {
+        let Some(session) = self.agents.selected.clone() else {
+            return;
+        };
+        self.act(
+            "agent.session.set",
+            json!({"session":session,"option":option,"value":value}),
+            None,
+        );
+    }
+
+    /// The composer can send: a selected session that is ready.
+    pub fn agents_can_send(&self) -> bool {
+        self.agents
+            .selected_row()
+            .is_some_and(|row| matches!(row.status.as_str(), "ready" | "starting"))
+    }
+
+    /// The live count and cap from `agent.agents`.
+    pub fn agents_at_cap(&self) -> bool {
+        let live = self.agents.instances["live"].as_u64().unwrap_or_default();
+        let cap = self.agents.instances["max_live"]
+            .as_u64()
+            .unwrap_or(u64::MAX);
+        live >= cap
     }
 
     /// A session row's name: the agent and the last part of its cwd.
@@ -774,8 +994,8 @@ mod tests {
         );
         let tree = e.agents_tree();
         let keys: Vec<_> = tree.children.iter().map(|row| row.key.as_str()).collect();
-        assert_eq!(keys, ["agent:s1", "agent:s2", "agents:ended"]);
-        assert_eq!(tree.children[2].children[0].key, "agent:old");
+        assert_eq!(keys, ["agents:new", "agent:s1", "agent:s2", "agents:ended"]);
+        assert_eq!(tree.children[3].children[0].key, "agent:old");
         assert_eq!(e.agents.sessions[0].badge(), "question");
         assert_eq!(e.agents.sessions[1].badge(), "ready");
     }
@@ -1084,5 +1304,171 @@ mod tests {
         });
         assert_eq!(body.unwrap()["selected"], "s1");
         assert_eq!(e.ui.row_key.as_deref(), Some("agent:s1"));
+    }
+
+    #[test]
+    fn a_session_caller_is_recognised_locally_and_over_the_mesh() {
+        assert_eq!(
+            agent_caller_session("local:mcp-s-ab12cd-1f2e").as_deref(),
+            Some("ab12cd")
+        );
+        assert_eq!(
+            agent_caller_session("mesh:mcp-s-ab12cd-x@peer").as_deref(),
+            Some("ab12cd")
+        );
+        assert_eq!(agent_caller_session("local:workshop"), None);
+        assert_eq!(
+            agent_caller_session("local:mcp-s-AB12-x"),
+            None,
+            "upper case is not agentd's form"
+        );
+        assert_eq!(agent_caller_session("local:mcp-s-abc-x"), None, "too short");
+        assert_eq!(agent_caller_session("local:mcp-s-ab12cd-"), None);
+        assert_eq!(agent_caller_session("anon"), None);
+    }
+
+    fn reply_to(effects: &[Effect], wanted: u64) -> Option<(u8, Value)> {
+        effects.iter().find_map(|effect| match effect {
+            Effect::Reply { id, rc, body } if *id == wanted => Some((*rc, body.clone())),
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn an_agent_session_cannot_act_through_workshop() {
+        let mut e = engine();
+        for (caller, command) in [
+            ("local:mcp-s-ab12cd-1f2e", "workshop.agents.prompt"),
+            ("mesh:mcp-s-ab12cd-1f2e@peer", "workshop.agents.new"),
+            ("local:mcp-s-ab12cd-1f2e", "workshop.agents.set"),
+        ] {
+            e.caller = Some(caller.into());
+            assert!(e.agents_command(
+                5,
+                command,
+                &json!({"session":"s1","text":"x","agent":"a","cwd":"/w"})
+            ));
+            let effects = e.take_effects();
+            assert_eq!(
+                reply_to(&effects, 5).unwrap().0,
+                17,
+                "{command} from {caller}"
+            );
+            assert!(
+                !effects
+                    .iter()
+                    .any(|effect| matches!(effect, Effect::Agent { .. }))
+            );
+        }
+        // select and agents stay open to agents.
+        e.caller = Some("local:mcp-s-ab12cd-1f2e".into());
+        assert!(e.agents_command(6, "workshop.agents", &json!({})));
+        assert_eq!(reply_to(&e.take_effects(), 6).unwrap().0, 0);
+    }
+
+    #[test]
+    fn a_prompt_goes_to_the_selected_session_and_agentd_answers_the_caller() {
+        let mut e = engine();
+        select_and_fill(&mut e, vec![chunk(1, "a")], 1);
+        e.caller = Some("local:human-cli".into());
+        assert!(e.agents_command(9, "workshop.agents.prompt", &json!({"text":"hello"})));
+        let (ticket, command, body) = calls(&mut e).pop().unwrap();
+        assert_eq!(command, "agent.session.prompt");
+        assert_eq!(body, json!({"session":"s1","content":"hello"}));
+        e.agent_completed(
+            ticket,
+            &command,
+            Ok((15, json!({"error_code":"AGENT_RUNNING","message":"busy"}))),
+        );
+        let effects = e.take_effects();
+        assert_eq!(
+            reply_to(&effects, 9).unwrap().0,
+            15,
+            "agentd's own rc reaches the caller"
+        );
+        assert_eq!(e.agents.error.as_deref(), Some("busy"));
+    }
+
+    #[test]
+    fn a_new_session_is_selected_once_agentd_answers() {
+        let mut e = engine();
+        e.agents.new_agent = "claude".into();
+        e.agents.new_cwd = "/w".into();
+        e.agents_start();
+        let (ticket, command, body) = calls(&mut e).pop().unwrap();
+        assert_eq!(
+            (command.as_str(), body),
+            ("agent.session.new", json!({"agent":"claude","cwd":"/w"}))
+        );
+        e.agent_completed(
+            ticket,
+            &command,
+            Ok((0, json!({"session":"n1","status":"starting"}))),
+        );
+        assert_eq!(e.agents.selected.as_deref(), Some("n1"));
+        assert_eq!(e.ui.row_key.as_deref(), Some("agent:n1"));
+        let commands: Vec<_> = calls(&mut e).into_iter().map(|(_, c, _)| c).collect();
+        assert!(commands.contains(&"agent.session.read".to_owned()));
+        assert!(commands.contains(&"agent.session.list".to_owned()));
+    }
+
+    #[test]
+    fn the_composer_sends_only_to_a_ready_session_and_clears() {
+        let mut e = engine();
+        e.refresh_agents();
+        listed(
+            &mut e,
+            json!([{"session":"s1","agent":"claude","status":"running","seq":1}]),
+        );
+        select_and_fill(&mut e, vec![chunk(1, "a")], 1);
+        e.refresh_agents();
+        listed(
+            &mut e,
+            json!([{"session":"s1","agent":"claude","status":"running","seq":1}]),
+        );
+        e.agents.draft = "next".into();
+        e.agents_send();
+        assert!(calls(&mut e).is_empty(), "a running turn takes no prompt");
+        assert_eq!(e.agents.draft, "next");
+        e.refresh_agents();
+        listed(
+            &mut e,
+            json!([{"session":"s1","agent":"claude","status":"ready","seq":2}]),
+        );
+        e.agents_send();
+        let sent: Vec<_> = calls(&mut e)
+            .into_iter()
+            .filter(|(_, c, _)| c == "agent.session.prompt")
+            .collect();
+        assert_eq!(sent.len(), 1);
+        assert!(e.agents.draft.is_empty());
+    }
+
+    #[test]
+    fn requests_map_to_agentd_commands() {
+        assert_eq!(
+            agent_request(
+                "workshop.agents.set",
+                &json!({"option":"model","value":"opus"}),
+                Some("s1")
+            )
+            .unwrap(),
+            (
+                "agent.session.set".to_owned(),
+                json!({"session":"s1","option":"model","value":"opus"})
+            )
+        );
+        assert_eq!(
+            agent_request(
+                "workshop.agents.close",
+                &json!({"session":"s2"}),
+                Some("s1")
+            )
+            .unwrap()
+            .1,
+            json!({"session":"s2"})
+        );
+        assert!(agent_request("workshop.agents.prompt", &json!({"text":"x"}), None).is_err());
+        assert!(agent_request("workshop.agents.set", &json!({}), Some("s1")).is_err());
     }
 }
