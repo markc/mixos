@@ -210,6 +210,15 @@ try
   agent("agent.session.cancel", {session: $s})
   check("a permission asked after cancel is answered cancelled", saw("updated " .. $s .. " ", "agent_message_chunk late:cancelled"))
   check("and nobody was asked", not contains(events(), "permission " .. $s .. " 902"))
+
+  -- A prompt waits for the settings sent before it.
+  sleep(0.3)
+  $set = agent("agent.session.set", {session: $s, option: "model", value: "slow-1"})
+  $held = agent("agent.session.prompt", {session: $s, content: "CONFIG"})
+  check("a prompt behind an unanswered setting is queued", $set.rc == 0 and $held.rc == 0 and $held.v.queued == true)
+  check("and its turn sees the setting", saw("updated " .. $s .. " ", "agent_message_chunk config:model=slow-1"))
+  check("and the turn ends", saw("updated " .. $s .. " ", "echo:CONFIG"))
+  sleep(0.3)
   sleep(0.3)
 
   -- Permission answered by the human through notifyd.
@@ -243,7 +252,14 @@ try
   -- An allow_once auto-policy answers by itself.
   $n2 = agent("agent.session.new", {agent: "auto", cwd: $tmp .. "/ws"})
   $s2 = $n2.v.session
+  -- Settings and a prompt sent while it starts go out in order once it is ready.
+  $early = agent("agent.session.set", {session: $s2, option: "effort", value: "high"})
+  $early_p = agent("agent.session.prompt", {session: $s2, content: "CONFIG"})
+  check("a setting while starting is queued", $early.rc == 0 and $early.v.queued == true and $early_p.v.queued == true)
   check("second session starts", $n2.rc == 0 and wait_ready($s2))
+  check("and the queued prompt sees the queued setting", saw("updated " .. $s2 .. " ", "agent_message_chunk config:effort=high"))
+  check("and that turn ends", saw("updated " .. $s2 .. " ", "echo:CONFIG"))
+  sleep(0.3)
   agent("agent.session.prompt", {session: $s2, content: "PERMISSION"})
   check("allow_once policy picked allow_once", saw("updated " .. $s2 .. " ", "agent_message_chunk perm:allow"))
 

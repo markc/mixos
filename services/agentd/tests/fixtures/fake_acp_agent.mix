@@ -11,6 +11,9 @@
 --   FSREAD P    fs/read_text_file P (whole file); echo read:<text> or err:<code>
 --   FSLINES P   fs/read_text_file P, line 2, limit 1
 --   FSWRITE P|T fs/write_text_file P with text T; echo wrote or err:<code>
+--   CONFIG      echo the config options set so far (config:id=value,...)
+-- session/set_config_option records the value; a value starting slow- is
+-- answered after one second, so a prompt sent behind it has to wait.
 -- readline() is nil at EOF (an older mix gives ""; ACP never sends an
 -- empty line), so either ends the agent.
 
@@ -24,6 +27,7 @@
 $modes = if len(args()) > 0 then split(args()[0], ",") else [] end
 $sessions = {}
 $next_id = 900
+$config = {}
 
 fn session_mcp($params)
   $mcp = "-"
@@ -180,8 +184,15 @@ loop
       $late = json_parse(readline()).result.outcome
       text($sid, "late:" .. (if $late.outcome == "selected" then $late.optionId else $late.outcome end))
     end
+    if $t == "CONFIG" then
+      text($sid, "config:" .. join(map(sort(keys($config)), fn($k) = $k .. "=" .. to_string($config[$k])), ","))
+    end
     text($sid, "echo:" .. $t)
     out({id: $m.id, result: {stopReason: $stop}})
+  elif $m.method == "session/set_config_option" then
+    if starts_with(to_string($m.params.value), "slow-") then sleep(1) end
+    $config[$m.params.configId] = $m.params.value
+    out({id: $m.id, result: {configOptions: []}})
   elif $m.method == "session/set_mode" then
     update($m.params.sessionId, {sessionUpdate: "current_mode_update", currentModeId: $m.params.modeId})
     out({id: $m.id, result: {}})

@@ -336,6 +336,12 @@ after it ends.</p>
 <tr><td><code>agent.permission.respond</code></td><td><code>{session, request, option}</code></td><td>answers a permission request</td></tr>
 </tbody></table>
 <p><code>content</code> is a string, or a list of ACP content blocks.</p>
+<p>A prompt or a setting sent while the session is still <code>starting</code> is queued
+(<code>queued: true</code>) and sent once it is ready: settings first, in order, then
+the prompt. A prompt also waits until every setting sent before it has
+been answered, so <code>set</code> then <code>prompt</code> runs the turn with the new model or
+mode. A setting the agent refuses is an <code>error</code> event; the prompt still
+runs.</p>
 <p>A read returns at most <code>limit</code> events (default and maximum 2000) and about
 32 MiB. When <code>more</code> is true, read again with <code>since</code> set to <code>next</code>.</p>
 <p>The acting commands (<code>new</code>, <code>prompt</code>, <code>cancel</code>, <code>close</code>, <code>set</code>, <code>respond</code>)

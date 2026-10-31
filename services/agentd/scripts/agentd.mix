@@ -400,15 +400,46 @@ on agent.session.resume desc "bring back an ended session {session}: same id and
   end
 end
 
--- A reopened session is ready: stop dropping replay, run a queued prompt.
+-- Settings sent to the agent and not yet answered.
+fn sets_out($id)
+  $p = $S.sessions[$id].pending
+  return len(filter(keys($p), fn($k) = $p[$k].kind == "set"))
+end
+
+-- Write one setting: {mode} or {option, value}.
+fn write_set($id, $set)
+  $rpc = next_rpc()
+  $S.sessions[$id].pending[to_string($rpc)] = {kind: "set"}
+  $acp = $S.sessions[$id].acp
+  $frame = if $set.mode != nil then $a.set_mode_frame($rpc, $acp, $set.mode)
+    else $a.set_option_frame($rpc, $acp, $set.option, $set.value) end
+  if write_frame($id, $frame) then return true end
+  -- Never written, so never answered: it must not hold a prompt back.
+  $S.sessions[$id].pending = delete($S.sessions[$id].pending, to_string($rpc))
+  return false
+end
+
+-- A queued prompt runs once every setting before it has been answered, so
+-- a model or mode chosen first applies to the turn.
+fn run_queued($id)
+  $s = $S.sessions[$id]
+  if $s.status == "ready" and $s.queued != nil and sets_out($id) == 0 then
+    $S.sessions[$id].queued = nil
+    start_turn($id, $s.queued)
+  end
+end
+
+-- The session is ready: stop dropping replay, send the settings queued
+-- while it started, then a queued prompt.
 fn session_ready($id)
   $S.sessions[$id].status = "ready"
   $S.sessions[$id].replaying = false
-  if $S.sessions[$id].queued != nil then
-    $blocks = $S.sessions[$id].queued
-    $S.sessions[$id].queued = nil
-    start_turn($id, $blocks)
+  $sets = $S.sessions[$id].queued_sets ?? []
+  $S.sessions[$id].queued_sets = []
+  for each $set in $sets
+    write_set($id, $set)
   end
+  run_queued($id)
 end
 
 -- The load settle: re-armed while replay keeps arriving, at most
@@ -466,8 +497,8 @@ on agent.session.prompt desc "send a prompt {session, content}; replies {session
         fail("AGENT_RUNNING", "session " .. $id .. " already has a turn running")
       elif $s.status == "ended" then
         fail("AGENT_NOT_READY", "session " .. $id .. " has ended")
-      elif $s.status == "starting" then
-        -- Sent as soon as session/new answers.
+      elif $s.status == "starting" or sets_out($id) > 0 then
+        -- Sent once the session is ready and its settings are answered.
         $S.sessions[$id].queued = $blocks
         answer(0, json_encode({session: $id, turn: nil, queued: true}))
       else
@@ -533,23 +564,26 @@ on agent.session.set desc "set {session, mode} or {session, option, value} (mode
   if $id != nil then
     $s = $S.sessions[$id]
     $args = body()
-    $sets = len(filter(keys($s.pending), fn($k) = $s.pending[$k].kind == "set"))
-    if $s.status == "starting" or $s.status == "ended" then
+    $sets = sets_out($id) + len($s.queued_sets ?? [])
+    $set = nil
+    if type($args.mode) == "string" then $set = {mode: $args.mode}
+    elif type($args.option) == "string" and $args.value != nil then $set = {option: $args.option, value: $args.value} end
+    if $s.status == "ended" then
       fail("AGENT_NOT_READY", "session " .. $id .. " is " .. $s.status)
+    elif $set == nil then
+      fail("USAGE", "set needs mode, or option and value")
     elif $sets >= $SETS_MAX then
       fail("AGENT_RUNNING", "session " .. $id .. " already has " .. to_string($sets) .. " settings waiting for the agent")
-    elif type($args.mode) == "string" then
-      $rpc = next_rpc()
-      $S.sessions[$id].pending[to_string($rpc)] = {kind: "set"}
-      write_frame($id, $a.set_mode_frame($rpc, $s.acp, $args.mode))
-      answer(0, json_encode({session: $id, mode: $args.mode}))
-    elif type($args.option) == "string" and $args.value != nil then
-      $rpc = next_rpc()
-      $S.sessions[$id].pending[to_string($rpc)] = {kind: "set"}
-      write_frame($id, $a.set_option_frame($rpc, $s.acp, $args.option, $args.value))
-      answer(0, json_encode({session: $id, option: $args.option}))
     else
-      fail("USAGE", "set needs mode, or option and value")
+      $out = if $set.mode != nil then {session: $id, mode: $set.mode} else {session: $id, option: $set.option} end
+      if $s.status == "starting" then
+        -- Sent once the session is ready, before a queued prompt.
+        $S.sessions[$id].queued_sets = push($s.queued_sets ?? [], $set)
+        $out.queued = true
+      else
+        write_set($id, $set)
+      end
+      answer(0, json_encode($out))
     end
   end
 end
@@ -631,6 +665,10 @@ fn on_reply($id, $msg)
     elif $p.kind == "prompt" then
       $S.sessions[$id].status = "ready"
       $S.sessions[$id].turn = nil
+    elif $p.kind == "set" then
+      -- A refused setting still releases the prompt waiting behind it; the
+      -- error event says what was refused.
+      run_queued($id)
     end
     return nil
   end
@@ -671,24 +709,21 @@ fn on_reply($id, $msg)
     end_agent($id)
   elif $p.kind == "new" then
     $S.sessions[$id].acp = $res.sessionId
-    $S.sessions[$id].status = "ready"
     $log.session_agent($DB, $id, $res.sessionId, $S.sessions[$id].dirs, $S.sessions[$id].caps, $S.sessions[$id].agent_info)
     emit_event($id, {kind: "ready", modes: $res.modes, config_options: $res.configOptions,
       models: $res.models})
+    -- The mode from agent.session.new goes first, then the settings queued
+    -- while the session started, then a queued prompt.
     if $S.sessions[$id].mode != nil then
-      $rpc = next_rpc()
-      $S.sessions[$id].pending[to_string($rpc)] = {kind: "set"}
-      write_frame($id, $a.set_mode_frame($rpc, $res.sessionId, $S.sessions[$id].mode))
+      $S.sessions[$id].queued_sets = concat([{mode: $S.sessions[$id].mode}], $S.sessions[$id].queued_sets ?? [])
     end
-    if $S.sessions[$id].queued != nil then
-      $blocks = $S.sessions[$id].queued
-      $S.sessions[$id].queued = nil
-      start_turn($id, $blocks)
-    end
+    session_ready($id)
   elif $p.kind == "prompt" then
     $S.sessions[$id].status = "ready"
     $S.sessions[$id].turn = nil
     emit_event($id, {kind: "stop", stop: $a.stop_reason($msg.result)})
+  elif $p.kind == "set" then
+    run_queued($id)
   end
 end
 

@@ -99,6 +99,13 @@ Bodies are JSON objects.
 
 `content` is a string, or a list of ACP content blocks.
 
+A prompt or a setting sent while the session is still `starting` is queued
+(`queued: true`) and sent once it is ready: settings first, in order, then
+the prompt. A prompt also waits until every setting sent before it has
+been answered, so `set` then `prompt` runs the turn with the new model or
+mode. A setting the agent refuses is an `error` event; the prompt still
+runs.
+
 A read returns at most `limit` events (default and maximum 2000) and about
 32 MiB. When `more` is true, read again with `since` set to `next`.
 
