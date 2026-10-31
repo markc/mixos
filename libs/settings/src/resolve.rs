@@ -11,14 +11,15 @@ use std::sync::{Arc, Mutex};
 
 pub mod values;
 
-pub use crate::v1::{describe, patch, resolve, resolve_with_embedded, resolve_with_embedded_and_accents};
+pub use crate::v1::{
+    describe, patch, resolve, resolve_with_embedded, resolve_with_embedded_and_accents,
+};
 
 pub const APPS: &[&str] = &["ced", "dopus", "term", "cap", "workshop", "scene-editor"];
 
 pub(crate) fn error(path: &str, message: impl Into<String>) -> Diagnostic {
     Diagnostic::new("validation_failed", path, message)
 }
-
 
 /// The accent each context draws, as [`design::resolved_accent`] gives it for
 /// that context's design. A context whose design has no accent is absent.

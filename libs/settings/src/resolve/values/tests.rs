@@ -136,9 +136,10 @@ fn rich() -> Profile {
     today.ui.text_scale = 1.25;
     today.ui.reduced_motion = true;
     today.shell.panels.get_mut("bottom").unwrap().thickness = 56;
-    today
-        .keymaps
-        .insert("dopus".into(), [("nav.parent".into(), vec!["Ctrl+U".into()])].into());
+    today.keymaps.insert(
+        "dopus".into(),
+        [("nav.parent".into(), vec!["Ctrl+U".into()])].into(),
+    );
     today.terminal.font.size = 15.0;
     today.ced.editor.padding = 8;
     today.apps.insert(
@@ -260,8 +261,18 @@ fn resolve_v2_reproduces_today_s_look_for_the_same_choices() {
             "light",
             &[("appearance.mode", json!("light"))],
         ));
-        profiles.push(with_mode(base, "auto, day", "light", &auto(Some(true), None)));
-        profiles.push(with_mode(base, "auto, night", "dark", &auto(Some(false), None)));
+        profiles.push(with_mode(
+            base,
+            "auto, day",
+            "light",
+            &auto(Some(true), None),
+        ));
+        profiles.push(with_mode(
+            base,
+            "auto, night",
+            "dark",
+            &auto(Some(false), None),
+        ));
         profiles.push(with_mode(base, "auto, unknown", "dark", &auto(None, None)));
         profiles.push(with_mode(
             base,
@@ -274,9 +285,11 @@ fn resolve_v2_reproduces_today_s_look_for_the_same_choices() {
         let base = if i < 6 { "default" } else { "rich" };
         let case = format!("{base} / {}", profile.name);
         let v2 = values(&profile.v2);
-        let (today, today_accents) =
-            crate::v1::resolve_with_embedded_and_accents(&profile.today, design::EMBEDDED_DEFAULT_SOURCE)
-                .unwrap();
+        let (today, today_accents) = crate::v1::resolve_with_embedded_and_accents(
+            &profile.today,
+            design::EMBEDDED_DEFAULT_SOURCE,
+        )
+        .unwrap();
         let (next, next_accents) = resolve(&v2, design::EMBEDDED_DEFAULT_SOURCE).unwrap();
         assert_eq!(today_accents, next_accents, "{case}: accents");
         assert_eq!(
