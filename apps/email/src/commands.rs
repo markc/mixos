@@ -1086,6 +1086,10 @@ fn dispatch(
             account(state, args)?
         };
         if !send && state.compose.is_some() {
+            // A refused request must preserve even a pristine, prefilled composer.
+            if let Some(compose) = state.compose.as_mut() {
+                compose.revision = compose.revision.max(1);
+            }
             state.apply_ui(crate::view::UiEvent::CloseCompose);
             return Err(Bad(code::BUSY, "A compose or document load is already open; email.dialog reads and answers its close confirmation (keep, discard, cancel). Retry after it closes.".into()));
         }
@@ -1398,7 +1402,11 @@ fn dispatch(
         "email.compose" => {
             let account = account(state, args)?;
             if state.compose.is_some() || state.documents.opening() {
-                state.apply_ui(crate::view::UiEvent::CloseCompose);
+                // A refused request must preserve even a pristine, prefilled composer.
+            if let Some(compose) = state.compose.as_mut() {
+                compose.revision = compose.revision.max(1);
+            }
+            state.apply_ui(crate::view::UiEvent::CloseCompose);
             return Err(Bad(code::BUSY, "A compose or document load is already open; email.dialog reads and answers its close confirmation (keep, discard, cancel). Retry after it closes.".into()));
             }
             let draft = Composed {
@@ -1457,7 +1465,11 @@ fn dispatch(
         "email.reply" | "email.forward" => {
             let account = connected(state, args)?;
             if state.compose.is_some() {
-                state.apply_ui(crate::view::UiEvent::CloseCompose);
+                // A refused request must preserve even a pristine, prefilled composer.
+            if let Some(compose) = state.compose.as_mut() {
+                compose.revision = compose.revision.max(1);
+            }
+            state.apply_ui(crate::view::UiEvent::CloseCompose);
             return Err(Bad(code::BUSY, "A compose or document load is already open; email.dialog reads and answers its close confirmation (keep, discard, cancel). Retry after it closes.".into()));
             }
             let email = required(args, "id")?;
