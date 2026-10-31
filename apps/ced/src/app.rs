@@ -1200,7 +1200,15 @@ mod tests {
     }
 
     fn tab_text(a: &App, tab: TabId) -> String {
-        let mirror = a.ctl.tabs().iter().find(|t| t.id == tab).unwrap().mirror.as_ref().unwrap();
+        let mirror = a
+            .ctl
+            .tabs()
+            .iter()
+            .find(|t| t.id == tab)
+            .unwrap()
+            .mirror
+            .as_ref()
+            .unwrap();
         let mut text = String::new();
         mirror.text().read(0..mirror.text().len(), &mut text);
         text
@@ -1218,25 +1226,61 @@ mod tests {
             }
             let first = tab_text(&a, one);
             let sibling = tab_text(&a, two);
-            let buffer = a.ctl.tabs().iter().find(|t| t.id == one).unwrap().mirror.as_ref().unwrap().buffer().to_owned();
+            let buffer = a
+                .ctl
+                .tabs()
+                .iter()
+                .find(|t| t.id == one)
+                .unwrap()
+                .mirror
+                .as_ref()
+                .unwrap()
+                .buffer()
+                .to_owned();
             let fx = a.ctl.select_tab(two);
             a.absorb(fx);
-            a.dialog = Some(Dialog::CloseDirty { tab: one, intent: Intent::ui(one) });
-            assert_eq!(crate::dialog::command(&mut a, &json!({"answer":answer})), (0, json!({"dialog":null})));
-            let writes: Vec<_> = a.effects.iter().filter_map(|e| match e {
-                Effect::Send { out, .. } if ["edit.save", "edit.close"].contains(&out.command.as_str()) => Some((out.command.as_str(), serde_json::from_str::<Value>(&out.body).unwrap())),
-                _ => None,
-            }).collect();
+            a.dialog = Some(Dialog::CloseDirty {
+                tab: one,
+                intent: Intent::ui(one),
+            });
+            assert_eq!(
+                crate::dialog::command(&mut a, &json!({"answer":answer})),
+                (0, json!({"dialog":null}))
+            );
+            let writes: Vec<_> = a
+                .effects
+                .iter()
+                .filter_map(|e| match e {
+                    Effect::Send { out, .. }
+                        if ["edit.save", "edit.close"].contains(&out.command.as_str()) =>
+                    {
+                        Some((
+                            out.command.as_str(),
+                            serde_json::from_str::<Value>(&out.body).unwrap(),
+                        ))
+                    }
+                    _ => None,
+                })
+                .collect();
             match answer {
-                "save" => assert!(writes.iter().any(|(cmd, args)| *cmd == "edit.save" && args["buffer"] == buffer)),
-                "discard" => assert!(writes.iter().any(|(cmd, args)| *cmd == "edit.close" && args["buffer"] == buffer && args["force"] == true)),
+                "save" => assert!(
+                    writes
+                        .iter()
+                        .any(|(cmd, args)| *cmd == "edit.save" && args["buffer"] == buffer)
+                ),
+                "discard" => assert!(writes.iter().any(|(cmd, args)| *cmd == "edit.close"
+                    && args["buffer"] == buffer
+                    && args["force"] == true)),
                 _ => assert!(writes.is_empty()),
             }
             settle(&mut a, &mut service);
             assert_eq!(tab_text(&a, two), sibling);
             assert_eq!(a.active(), Some(two));
-            if answer == "cancel" { assert_eq!(tab_text(&a, one), first); }
-            else { assert!(a.ctl.tabs().iter().all(|t| t.id != one)); }
+            if answer == "cancel" {
+                assert_eq!(tab_text(&a, one), first);
+            } else {
+                assert!(a.ctl.tabs().iter().all(|t| t.id != one));
+            }
         }
     }
 
@@ -1247,21 +1291,61 @@ mod tests {
         request_input_dialog(&mut a, "file.open", None);
         assert!(settle(&mut a, &mut service).is_empty());
         for path in ["", "/work/"] {
-            assert_eq!(crate::dialog::command(&mut a, &json!({"answer":"open","path":path})).0, 0);
+            assert_eq!(
+                crate::dialog::command(&mut a, &json!({"answer":"open","path":path})).0,
+                0
+            );
             assert!(matches!(a.dialog, Some(Dialog::Open { .. })));
             assert!(settle(&mut a, &mut service).is_empty());
         }
-        assert_eq!(crate::dialog::command(&mut a, &json!({"answer":"open","path":"/work/three.md"})).0, 0);
+        assert_eq!(
+            crate::dialog::command(&mut a, &json!({"answer":"open","path":"/work/three.md"})).0,
+            0
+        );
         let replies = settle(&mut a, &mut service);
-        assert!(replies.iter().any(|e| matches!(e, Effect::Respond { id:91, rc:0, .. })));
-        assert!(a.ctl.tabs().iter().any(|t| t.path.as_deref() == Some("/work/three.md")));
+        assert!(
+            replies
+                .iter()
+                .any(|e| matches!(e, Effect::Respond { id: 91, rc: 0, .. }))
+        );
+        assert!(
+            a.ctl
+                .tabs()
+                .iter()
+                .any(|t| t.path.as_deref() == Some("/work/three.md"))
+        );
         request_input_dialog(&mut a, "file.save_as", Some(one));
         assert!(settle(&mut a, &mut service).is_empty());
-        assert_eq!(crate::dialog::command(&mut a, &json!({"answer":"save","path":"/work/saved.md"})).0, 0);
+        assert_eq!(
+            crate::dialog::command(&mut a, &json!({"answer":"save","path":"/work/saved.md"})).0,
+            0
+        );
         let replies = settle(&mut a, &mut service);
-        assert!(replies.iter().any(|e| matches!(e, Effect::Respond { id:91, rc:0, .. })));
-        assert_eq!(a.ctl.tabs().iter().find(|t| t.id == one).unwrap().path.as_deref(), Some("/work/saved.md"));
-        assert_eq!(a.ctl.tabs().iter().find(|t| t.id == two).unwrap().path.as_deref(), Some("/work/two.md"));
+        assert!(
+            replies
+                .iter()
+                .any(|e| matches!(e, Effect::Respond { id: 91, rc: 0, .. }))
+        );
+        assert_eq!(
+            a.ctl
+                .tabs()
+                .iter()
+                .find(|t| t.id == one)
+                .unwrap()
+                .path
+                .as_deref(),
+            Some("/work/saved.md")
+        );
+        assert_eq!(
+            a.ctl
+                .tabs()
+                .iter()
+                .find(|t| t.id == two)
+                .unwrap()
+                .path
+                .as_deref(),
+            Some("/work/two.md")
+        );
     }
 
     #[test]
@@ -1272,14 +1356,44 @@ mod tests {
                 let (mut a, mut service, one, _) = documents();
                 request_input_dialog(&mut a, "search.goto_line", Some(one));
                 assert!(settle(&mut a, &mut service).is_empty());
-                if typed { assert_eq!(crate::dialog::command(&mut a, &json!({"answer":"go","text":text})).0, 0); }
-                else { *a.dialog_text().unwrap() = text.into(); a.answer(Answer::Accept); }
+                if typed {
+                    assert_eq!(
+                        crate::dialog::command(&mut a, &json!({"answer":"go","text":text})).0,
+                        0
+                    );
+                } else {
+                    *a.dialog_text().unwrap() = text.into();
+                    a.answer(Answer::Accept);
+                }
                 let replies = settle(&mut a, &mut service);
-                let codes: Vec<_> = replies.into_iter().filter_map(|e| match e { Effect::Respond { id:91, rc, .. } => Some(rc), _ => None }).collect();
-                let caret = a.ctl.tabs().iter().find(|t| t.id == one).unwrap().editor.sel.head;
-                if text.is_empty() { assert!(a.dialog.is_some()); assert!(codes.is_empty()); }
-                else if parse_line_col(text).is_none() { assert!(a.dialog.is_none()); assert_eq!(codes, [10]); assert_eq!(caret, 0); }
-                else { assert!(a.dialog.is_none()); assert_eq!(codes, [0]); assert_eq!(caret, if text == "1:3" { 2 } else { 0 }); }
+                let codes: Vec<_> = replies
+                    .into_iter()
+                    .filter_map(|e| match e {
+                        Effect::Respond { id: 91, rc, .. } => Some(rc),
+                        _ => None,
+                    })
+                    .collect();
+                let caret = a
+                    .ctl
+                    .tabs()
+                    .iter()
+                    .find(|t| t.id == one)
+                    .unwrap()
+                    .editor
+                    .sel
+                    .head;
+                if text.is_empty() {
+                    assert!(a.dialog.is_some());
+                    assert!(codes.is_empty());
+                } else if parse_line_col(text).is_none() {
+                    assert!(a.dialog.is_none());
+                    assert_eq!(codes, [10]);
+                    assert_eq!(caret, 0);
+                } else {
+                    assert!(a.dialog.is_none());
+                    assert_eq!(codes, [0]);
+                    assert_eq!(caret, if text == "1:3" { 2 } else { 0 });
+                }
                 outcomes.push((codes, caret, a.dialog.is_some()));
             }
             assert_eq!(outcomes[0], outcomes[1], "{text:?}");

@@ -1003,7 +1003,11 @@ pub fn command(
         _ => {
             state.refuse(
                 id,
-                if command_name == "email.dialog" { "ARGUMENT" } else { code::INVALID_ARGUMENT },
+                if command_name == "email.dialog" {
+                    "ARGUMENT"
+                } else {
+                    code::INVALID_ARGUMENT
+                },
                 "arguments must be a JSON object",
             );
             return None;

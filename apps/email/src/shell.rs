@@ -3288,21 +3288,32 @@ mod tests {
     #[test]
     fn dialog_reads_and_refusals_leave_quit_state_untouched() {
         for empty in [false, true] {
-            for request in [json!({}), json!({"answer":"missing"}), json!({"open":"about"}), json!({"unknown":true})] {
+            for request in [
+                json!({}),
+                json!({"answer":"missing"}),
+                json!({"open":"about"}),
+                json!({"unknown":true}),
+            ] {
                 let (mut shell, _broker) = compose_fixture(false);
                 add_composer(&mut shell, "kept");
                 let window = shell.composers.windows["compose-1"].clone();
                 {
                     let mut window = window.lock().unwrap();
                     window.view.confirm = Some(crate::state::Confirm::Quit);
-                    if empty { window.view.compose = None; window.had_compose = false; }
+                    if empty {
+                        window.view.compose = None;
+                        window.had_compose = false;
+                    }
                 }
                 shell.state.exiting = true;
                 shell.composers.quitting = true;
                 let mut request = request;
                 request["window"] = json!("compose-1");
                 shell.command(92, "email.dialog", &request.to_string());
-                assert!(shell.state.exiting, "a read or refusal must not clear exiting");
+                assert!(
+                    shell.state.exiting,
+                    "a read or refusal must not clear exiting"
+                );
                 assert!(shell.composers.quitting);
                 let window = window.lock().unwrap();
                 assert_eq!(window.view.confirm, Some(crate::state::Confirm::Quit));
@@ -3324,13 +3335,20 @@ mod tests {
             sibling.view.confirm = Some(crate::state::Confirm::Quit);
             sibling.view.exiting = true;
         }
-        shell.command(93, "email.dialog", r#"{"window":"compose-1","answer":"cancel"}"#);
+        shell.command(
+            93,
+            "email.dialog",
+            r#"{"window":"compose-1","answer":"cancel"}"#,
+        );
         let mut sibling = sibling.lock().unwrap();
         assert_eq!(sibling.view.confirm, None);
         assert!(!sibling.view.exiting);
         assert!(!sibling.closed);
         assert!(sibling.view.compose.is_some());
-        assert!(!sibling.view.request_quit(), "a later quit must ask about the kept draft");
+        assert!(
+            !sibling.view.request_quit(),
+            "a later quit must ask about the kept draft"
+        );
     }
 
     #[test]

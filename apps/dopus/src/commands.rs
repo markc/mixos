@@ -1241,7 +1241,10 @@ mod tests {
         let (_dir, mut core) = core();
         for headless in [false, true] {
             for body in ["{}", r#"{"answer":"yes"}"#] {
-                assert_eq!(refusal(&serve(&mut core, headless, "dopus.dialog", body)).as_deref(), Some(code::UNAVAILABLE));
+                assert_eq!(
+                    refusal(&serve(&mut core, headless, "dopus.dialog", body)).as_deref(),
+                    Some(code::UNAVAILABLE)
+                );
             }
         }
     }
