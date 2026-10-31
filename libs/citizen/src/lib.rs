@@ -851,21 +851,74 @@ pub fn forward(url: &str, service: &str, app: &str) -> Result<(), String> {
 /// Restore and focus this process's window through compd (`comp`): wait for
 /// it to map, find it by `app_id` and pid, restore it, then raise and focus it.
 pub async fn show(handle: Handle, comp: String, app_id: &str) -> Result<Value, String> {
-    let mapped = handle
-        .call(
-            &comp,
-            "comp.window.wait",
-            json!({"match":{"app_id":app_id},"until":"mapped","timeout_ms":10000}),
-        )
-        .await?;
-    if mapped.rc != 0 {
-        return Err(mapped.body);
+    show_with(app_id, |command_name, args| {
+        let (handle, comp) = (handle.clone(), comp.clone());
+        async move {
+            handle
+                .call(&comp, command_name, args)
+                .await
+                .map(|reply| (reply.rc, reply.body))
+        }
+    })
+    .await
+}
+
+/// [`show`] for an app on its own [`SupervisedClient`] rather than a
+/// [`Handle`]. Each call is bounded so a lost compositor still answers.
+pub async fn show_via(
+    client: Arc<SupervisedClient>,
+    comp: String,
+    app_id: &str,
+) -> Result<Value, String> {
+    show_with(app_id, |command_name, args| {
+        let (client, comp) = (client.clone(), comp.clone());
+        async move {
+            client
+                .call_with_headers_raw_within(
+                    &comp,
+                    command_name,
+                    &BTreeMap::new(),
+                    &args.to_string(),
+                    SHOW_STEP,
+                )
+                .await
+                .map(|(rc, body, _)| (rc, body))
+                .map_err(|e| e.to_string())
+        }
+    })
+    .await
+}
+
+/// The longest one compd step of [`show_via`] may take (the map wait is
+/// 10 s inside compd).
+const SHOW_STEP: Duration = Duration::from_secs(15);
+
+/// The compositor this session's apps raise windows through
+/// (`MIXOS_COMP_SERVICE`, else `comp`).
+pub fn comp_service() -> String {
+    std::env::var("MIXOS_COMP_SERVICE").unwrap_or_else(|_| "comp".into())
+}
+
+/// [`show`] over any caller: `call(command, args)` answers compd's
+/// `(rc, body)`.
+pub async fn show_with<F, Fut>(app_id: &str, call: F) -> Result<Value, String>
+where
+    F: Fn(&'static str, Value) -> Fut,
+    Fut: std::future::Future<Output = Result<(u8, String), String>>,
+{
+    let (rc, body) = call(
+        "comp.window.wait",
+        json!({"match":{"app_id":app_id},"until":"mapped","timeout_ms":10000}),
+    )
+    .await?;
+    if rc != 0 {
+        return Err(body);
     }
-    let list = handle.call(&comp, "comp.windows.list", json!({})).await?;
-    if list.rc != 0 {
-        return Err(list.body);
+    let (rc, body) = call("comp.windows.list", json!({})).await?;
+    if rc != 0 {
+        return Err(body);
     }
-    let value: Value = serde_json::from_str(&list.body).map_err(|e| e.to_string())?;
+    let value: Value = serde_json::from_str(&body).map_err(|e| e.to_string())?;
     let window = value["windows"]
         .as_array()
         .and_then(|rows| {
@@ -875,18 +928,16 @@ pub async fn show(handle: Handle, comp: String, app_id: &str) -> Result<Value, S
         })
         .ok_or("window not known to compd")?;
     let mut target = json!({"id":window["id"],"generation":window["generation"]});
-    let restored = handle
-        .call(&comp, "comp.window.restore", target.clone())
-        .await?;
-    let state: Value = serde_json::from_str(&restored.body).map_err(|e| e.to_string())?;
-    if restored.rc != 0 || state["minimized"] != false {
-        return Err(restored.body);
+    let (rc, body) = call("comp.window.restore", target.clone()).await?;
+    let state: Value = serde_json::from_str(&body).map_err(|e| e.to_string())?;
+    if rc != 0 || state["minimized"] != false {
+        return Err(body);
     }
     target["raise"] = json!(true);
-    let focused = handle.call(&comp, "comp.window.focus", target).await?;
-    let state: Value = serde_json::from_str(&focused.body).map_err(|e| e.to_string())?;
-    if focused.rc != 0 || state["focused"] != true {
-        return Err(focused.body);
+    let (rc, body) = call("comp.window.focus", target).await?;
+    let state: Value = serde_json::from_str(&body).map_err(|e| e.to_string())?;
+    if rc != 0 || state["focused"] != true {
+        return Err(body);
     }
     Ok(json!({"shown":true,"target":state}))
 }
@@ -920,6 +971,64 @@ mod tests {
         assert_eq!(caller_key(&command), "mesh:sender@peer");
         command.headers.remove("broker_peer");
         assert_eq!(caller_key(&command), "mesh:sender@unknown");
+    }
+
+    #[test]
+    fn show_restores_then_raises_this_processs_window_or_refuses() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let pid = std::process::id();
+        let run = |answers: Vec<(u8, Value)>| {
+            let answers = Mutex::new(std::collections::VecDeque::from(answers));
+            let calls = Mutex::new(Vec::new());
+            let result = runtime.block_on(show_with("example.app", |command_name, args| {
+                calls.lock().unwrap().push((command_name, args));
+                let answer = answers.lock().unwrap().pop_front();
+                async move {
+                    answer
+                        .map(|(rc, body)| (rc, body.to_string()))
+                        .ok_or_else(|| "unscripted".to_owned())
+                }
+            }));
+            (result, calls.into_inner().unwrap())
+        };
+        let listed = json!({"windows":[
+            {"id":3,"generation":1,"app_id":"example.app","pid":pid.wrapping_add(1)},
+            {"id":4,"generation":2,"app_id":"example.app","pid":pid}]});
+        let (result, calls) = run(vec![
+            (0, json!({"matched":true})),
+            (0, listed.clone()),
+            (0, json!({"minimized":false})),
+            (0, json!({"id":4,"generation":2,"focused":true})),
+        ]);
+        assert_eq!(result.unwrap()["shown"], true);
+        let names: Vec<_> = calls.iter().map(|c| c.0).collect();
+        assert_eq!(
+            names,
+            [
+                "comp.window.wait",
+                "comp.windows.list",
+                "comp.window.restore",
+                "comp.window.focus"
+            ]
+        );
+        assert_eq!(calls[3].1, json!({"id":4,"generation":2,"raise":true}));
+        // A focus compd did not grant is a refusal, not a silent success.
+        let (result, _) = run(vec![
+            (0, json!({"matched":true})),
+            (0, listed),
+            (0, json!({"minimized":false})),
+            (0, json!({"focused":false})),
+        ]);
+        assert!(result.is_err());
+        // No window of this process: refused.
+        let (result, _) = run(vec![
+            (0, json!({"matched":true})),
+            (0, json!({"windows":[]})),
+        ]);
+        assert_eq!(result.unwrap_err(), "window not known to compd");
     }
 
     #[test]

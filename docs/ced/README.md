@@ -46,7 +46,8 @@ second `ced` hands its paths to the first and exits.
 ## Bus
 
 `ced.*` (schema `ced.v1`): `ping`, `info`, `open`, `new`, `tabs`, `focus`,
-`state`, `type`, `select`, `execute`, `actions`, `wait`, `layout`, `stats`,
+`show` (restore, raise and focus the window through compd), `state`,
+`type`, `select`, `execute`, `actions`, `wait`, `layout`, `stats`,
 `diagnostics`, `problems`, plus `app.describe` and `app.quit`; and the
 toolkit drive commands (`ced.ui.*`, `ced.window`, `ced.window.state`; see
 [driving an app](../docs/drive.md)). A Bus caller's edits carry its own

@@ -46,6 +46,7 @@ pub const COMMANDS: &[(&str, bool)] = &[
     ("dopus.actions", true),
     ("dopus.theme.set", false),
     ("dopus.open", false),
+    ("dopus.show", false),
     ("dopus.quit", false),
 ];
 
@@ -57,6 +58,8 @@ pub mod code {
     pub const UNAVAILABLE: &str = "UNAVAILABLE";
     pub const INTERNAL: &str = "INTERNAL";
     pub const UNKNOWN_COMMAND: &str = "UNKNOWN_COMMAND";
+    /// `dopus.show` could not bring the window forward.
+    pub const ACTIVATION: &str = "ACTIVATION";
 }
 
 /// Every refusal body.
@@ -349,6 +352,11 @@ pub enum Served {
         id: u64,
         pane: PaneId,
         action: String,
+    },
+    /// Restore, raise and focus the window through compd, then reply
+    /// `{shown, target}` (or an `ACTIVATION` refusal).
+    Show {
+        id: u64,
     },
     /// Quit (the reply went out before this).
     Quit {
@@ -1120,6 +1128,12 @@ pub fn serve_command(
                 format!("body: {error}"),
             )],
         },
+        "dopus.show" if meta.headless => vec![window_refusal(
+            id,
+            meta,
+            "a headless instance has no window",
+        )],
+        "dopus.show" => vec![Served::Show { id }],
         "dopus.quit" => vec![
             Served::reply_json(id, &QuitReply { quitting: true }),
             Served::Quit { id },
@@ -1453,6 +1467,23 @@ mod tests {
             &quit[..],
             [Served::Reply { rc: 0, .. }, Served::Quit { .. }]
         ));
+    }
+
+    #[test]
+    fn show_raises_the_window_and_headless_refuses() {
+        let (_dir, mut core) = core();
+        let served = serve(&mut core, false, "dopus.show", "{}");
+        assert_eq!(served, [Served::Show { id: 1 }]);
+        let headless = serve(&mut core, true, "dopus.show", "{}");
+        assert_eq!(refusal(&headless).as_deref(), Some(code::UNAVAILABLE));
+        // compd's answer passes through; a failure is an ACTIVATION refusal.
+        let shown = serde_json::json!({"shown": true, "target": {"focused": true}});
+        let (rc, body) = crate::bus::show_reply(Ok(shown.clone()));
+        assert_eq!((rc, serde_json::from_str::<serde_json::Value>(&body).unwrap()), (0, shown));
+        let (rc, body) = crate::bus::show_reply(Err("window not known to compd".into()));
+        let refused: Refusal = serde_json::from_str(&body).unwrap();
+        assert_eq!((rc, refused.error_code.as_str()), (10, code::ACTIVATION));
+        assert_eq!(refused.message, "window not known to compd");
     }
 
     #[test]

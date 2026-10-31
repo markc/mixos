@@ -187,8 +187,8 @@ pub fn describe(app: &str) -> Vec<Value> {
         ),
         (
             "window",
-            json!({"action":"minimize|maximize|restore|close|focus"}),
-            "Send a window command, as the caption buttons do",
+            json!({"action":"minimize|maximize|restore|close"}),
+            "Send a window command, as the caption buttons do (focus is refused: call <app>.show, which raises and focuses through the compositor)",
             false,
         ),
         (
@@ -1163,12 +1163,23 @@ impl Drive {
                 ViewportCommand::Maximized(false),
             ],
             "close" => vec![ViewportCommand::Close],
-            "focus" => vec![ViewportCommand::Focus],
+            // compd raises and focuses a window only on its own authority:
+            // a client's focus request is ignored, so it is refused here
+            // rather than answered focused:false. The app's `show` command
+            // goes through compd and does it.
+            "focus" => {
+                let message = format!(
+                    "the compositor ignores a window's own focus request: call {}.show, \
+                     or comp.window.focus {{id, generation, raise: true}}",
+                    self.app
+                );
+                return Some(refusal(id, "UNSUPPORTED", &message));
+            }
             _ => {
                 return Some(refusal(
                     id,
                     "ARGUMENT",
-                    "action must be minimize, maximize, restore, close or focus",
+                    "action must be minimize, maximize, restore or close",
                 ));
             }
         };

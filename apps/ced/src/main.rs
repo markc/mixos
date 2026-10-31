@@ -11,7 +11,7 @@ use documents::controller::Controller;
 use documents::dirs::{AppDirs, COMPONENT};
 use editor_model::types::Intent;
 
-const APP_ID: &str = "dev.mixos.ced";
+use ced::APP_ID;
 
 const HELP: &str = "ced — the MixOS Editor, a client of the `edit` Bus service\n\
 Usage: ced [PATH[:LINE[:COL]]…]\n\

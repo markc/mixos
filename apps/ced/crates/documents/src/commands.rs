@@ -31,6 +31,7 @@ pub const COMMANDS: &[(&str, bool)] = &[
     ("ced.new", false),
     ("ced.tabs", true),
     ("ced.focus", false),
+    ("ced.show", false),
     ("ced.state", true),
     ("ced.type", false),
     ("ced.select", false),
@@ -87,6 +88,8 @@ pub mod code {
     pub const UNKNOWN_ACTION: &str = "UNKNOWN_ACTION";
     /// A command in the manifest that is not implemented yet.
     pub const UNIMPLEMENTED: &str = "UNIMPLEMENTED";
+    /// `ced.show` could not bring the window forward.
+    pub const ACTIVATION: &str = "ACTIVATION";
 }
 
 /// Every refusal body has this shape.
@@ -209,6 +212,14 @@ pub struct TabsReply {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FocusReply {
     pub tab: u64,
+}
+
+/// `ced.show`: the window restored, raised and focused through compd;
+/// `target` is compd's focus reply.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ShowReply {
+    pub shown: bool,
+    pub target: serde_json::Value,
 }
 
 // ── state / type / select ───────────────────────────────────────────────────

@@ -112,6 +112,10 @@ pub enum Effect {
     Send { req: u64, out: Outgoing },
     /// Answer a `ced.*` Bus command.
     Respond { id: u64, rc: u8, body: String },
+    /// `ced.show`: restore, raise and focus the window through compd, then
+    /// answer command `id` (a [`commands::ShowReply`], or an `ACTIVATION`
+    /// refusal). Never emitted headless.
+    Show { id: u64 },
     /// `ced.execute` ran action `id` directly (the window runs the rest):
     /// the host records it for `<app>.action.executed`.
     Executed { id: String },
@@ -2798,6 +2802,18 @@ impl Controller {
                     Err(e) => refuse(fx, code::NOT_FOUND, e, None),
                 }
             }
+            "ced.show" => {
+                let _ = parse!(commands::EmptyReq);
+                if self.headless {
+                    return refuse(
+                        fx,
+                        code::UNAVAILABLE,
+                        "a headless instance has no window".into(),
+                        Some("headless"),
+                    );
+                }
+                fx.push(Effect::Show { id });
+            }
             "ced.state" => {
                 let r = parse!(commands::StateReq);
                 match self
@@ -3797,6 +3813,21 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn show_asks_the_host_to_raise_the_window_and_headless_refuses() {
+        let mut gui = Controller::new(Config::default(), 1, false);
+        let fx = gui.on_bus_command(cmd("ced.show", json!({})));
+        assert!(
+            fx.iter().any(|e| matches!(e, Effect::Show { .. })),
+            "{fx:?}"
+        );
+        assert!(!fx.iter().any(|e| matches!(e, Effect::Respond { .. })));
+        let mut headless = ctl();
+        let (rc, v) = response(&headless.on_bus_command(cmd("ced.show", json!({}))));
+        assert_eq!((rc, v["reason"].as_str()), (10, Some("headless")));
+        assert_eq!(v["error_code"], "UNAVAILABLE");
     }
 
     #[test]

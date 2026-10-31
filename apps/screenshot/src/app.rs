@@ -525,16 +525,24 @@ impl App {
             window: (mode == Mode::Window).then_some(self.ui.window).flatten(),
             cursor: self.ui.cursor,
             delay: self.ui.delay,
+            region: None,
         }
     }
 
     /// Take a screenshot in `mode` (else the chosen one), asking about
     /// unsaved work first.
     pub fn take(&mut self, mode: Option<Mode>) {
+        self.take_region(mode, None);
+    }
+
+    /// [`App::take`], with a region given up front (region mode only): the
+    /// capture then needs no drag.
+    fn take_region(&mut self, mode: Option<Mode>, region: Option<crate::capture::Region>) {
         if let Some(mode) = mode {
             self.ui.mode = mode;
         }
-        let request = self.capture_request(mode);
+        let mut request = self.capture_request(mode);
+        request.set_region(region);
         if let Err(error) = request.validate() {
             self.fail(error);
             return;
@@ -1548,7 +1556,7 @@ impl App {
     fn take_command(&mut self, id: u64, args: &Value) {
         if let Some(key) = args.as_object().and_then(|a| {
             a.keys()
-                .find(|k| !matches!(k.as_str(), "mode" | "window" | "comp"))
+                .find(|k| !matches!(k.as_str(), "mode" | "window" | "comp" | "region"))
         }) {
             return self.error(id, code::ARGUMENT, &format!("unknown argument {key}"));
         }
@@ -1584,9 +1592,20 @@ impl App {
             Some(Ok(target)) => Some(target),
             Some(Err(error)) => return self.error(id, code::ARGUMENT, &error.to_string()),
         };
+        let region = match args
+            .get("region")
+            .map(|r| serde_json::from_value::<crate::capture::Region>(r.clone()))
+        {
+            None => None,
+            Some(Ok(region)) => Some(region),
+            Some(Err(error)) => return self.error(id, code::ARGUMENT, &error.to_string()),
+        };
         let mode = mode.unwrap_or(self.ui.mode);
         if window.is_some() && mode != Mode::Window {
             return self.error(id, code::ARGUMENT, "window only applies to window mode");
+        }
+        if region.is_some() && mode != Mode::Region {
+            return self.error(id, code::ARGUMENT, "region only applies to region mode");
         }
         // Under a dialog the person is being asked something: bring it
         // forward rather than fail the key press.
@@ -1625,13 +1644,14 @@ impl App {
         if window.is_some() {
             request.window = window;
         }
+        request.set_region(region.clone());
         if let Err(error) = request.validate() {
             return self.error(id, code::ARGUMENT, &error);
         }
         if window.is_some() {
             self.ui.window = window;
         }
-        self.take(Some(mode));
+        self.take_region(Some(mode), region);
         let state = if self.capturing() {
             "capturing"
         } else if self.ui.dialog == Some(Dialog::Discard) {
@@ -1976,6 +1996,58 @@ mod tests {
             replies(&b.take_effects())[0].2["error_code"],
             code::ARGUMENT
         );
+    }
+
+    #[test]
+    fn a_region_given_over_the_bus_reaches_the_capture() {
+        let region = r#"{"x":10,"y":20,"width":300,"height":200,"output":"DP-2"}"#;
+        // screenshot.take: the region rides the request, and its output
+        // replaces the window's chosen one.
+        let mut a = app();
+        a.ui.output = Some("DP-1".into());
+        a.command(
+            1,
+            "screenshot.take",
+            &format!(r#"{{"mode":"region","region":{region}}}"#),
+        );
+        let effects = a.take_effects();
+        assert_eq!(replies(&effects)[0].2["state"], "capturing");
+        assert!(effects.iter().any(|e| matches!(e, Effect::Capture { request, .. }
+            if request.region.as_ref().is_some_and(|r| r.width == 300 && r.output.as_deref() == Some("DP-2"))
+                && request.output.is_none())));
+        // screenshot.capture takes it too.
+        let mut b = app();
+        b.command(
+            1,
+            "screenshot.capture",
+            &format!(r#"{{"mode":"region","region":{region}}}"#),
+        );
+        assert!(b.take_effects().iter().any(
+            |e| matches!(e, Effect::Capture { request, .. } if request.region.is_some())
+        ));
+        // Refused: outside region mode, or a bad rectangle; nothing starts.
+        for (command_name, body) in [
+            ("screenshot.take", format!(r#"{{"mode":"screen","region":{region}}}"#)),
+            ("screenshot.capture", format!(r#"{{"region":{region}}}"#)),
+            (
+                "screenshot.take",
+                r#"{"mode":"region","region":{"x":0,"y":0,"width":0,"height":5}}"#.into(),
+            ),
+            (
+                "screenshot.capture",
+                r#"{"mode":"region","region":{"x":0,"y":0,"width":5}}"#.into(),
+            ),
+        ] {
+            let mut c = app();
+            c.command(1, command_name, &body);
+            let effects = c.take_effects();
+            assert_eq!(
+                replies(&effects)[0].2["error_code"],
+                code::ARGUMENT,
+                "{command_name} {body}"
+            );
+            assert!(!effects.iter().any(|e| matches!(e, Effect::Capture { .. })));
+        }
     }
 
     #[test]

@@ -26,6 +26,9 @@ pub mod view;
 
 use toolkit::Strings;
 
+/// The window's app id (Wayland `app_id`), as compd lists it.
+pub const APP_ID: &str = "dev.mixos.ced";
+
 /// The English catalogue.
 pub const CATALOGUE: &str = include_str!("../i18n/en/ced.ftl");
 
