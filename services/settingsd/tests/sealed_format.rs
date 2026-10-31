@@ -122,7 +122,10 @@ fn the_s2_source_changes_only_the_identity() {
         effective.design.source = BEFORE_S2_SOURCE_DIGEST.into();
     }
     snapshot.source_digest = BEFORE_S2_SOURCE_DIGEST.into();
-    assert_eq!(digest(&snapshot.effective).unwrap(), BEFORE_S2_EFFECTIVE_DIGEST);
+    assert_eq!(
+        digest(&snapshot.effective).unwrap(),
+        BEFORE_S2_EFFECTIVE_DIGEST
+    );
     assert_eq!(digest(&snapshot).unwrap(), BEFORE_S2_SNAPSHOT_DIGEST);
     assert_eq!(
         serde_json::to_string(&snapshot).unwrap().len(),
