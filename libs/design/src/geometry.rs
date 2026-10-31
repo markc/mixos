@@ -23,7 +23,7 @@ pub use crate::cosmic_tables::{Density, Roundness};
 use crate::family::style::ResolvedStyle;
 
 /// The two geometry axes. The default is `round`, `comfortable`.
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Geometry {
     pub roundness: Roundness,
     pub density: Density,
@@ -284,7 +284,9 @@ mod tests {
     };
 
     fn styles() -> Vec<(Style, ResolvedStyle)> {
-        let document = parse_design_source(EMBEDDED_DEFAULT_SOURCE).unwrap();
+        let document =
+            parse_design_source(crate::SourceIdentity::new("embedded"), EMBEDDED_DEFAULT_SOURCE)
+                .unwrap();
         Style::ALL
             .into_iter()
             .map(|style| {
