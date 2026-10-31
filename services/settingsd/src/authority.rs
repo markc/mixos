@@ -391,8 +391,8 @@ pub(crate) fn snapshot(
     // encoding to the budget plus its bounded overhead and the snapshot it
     // expands to (with its values) to the budget: refuse what they would
     // refuse, measured on the real encodings.
-    let wire = serde_json::to_vec(&settings::compact::encode_values(&result, &accepted.values)?)?
-        .len();
+    let encoded = settings::compact::encode_values(&result, &accepted.values)?;
+    let wire = serde_json::to_vec(&encoded)?.len();
     if wire > MAX_SNAPSHOT_BYTES + settings::compact::MAX_OVERHEAD_BYTES {
         return Err(SnapshotTooLarge { bytes: wire }.into());
     }
