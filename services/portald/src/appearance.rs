@@ -148,7 +148,11 @@ pub fn palette_of(projection: &AppearanceProjection) -> Option<ModePalette> {
 
 /// The accent a palette resolves, as the portal publishes it.
 pub fn accent_of(palette: &ModePalette) -> [f64; 3] {
-    [palette.accent.red, palette.accent.green, palette.accent.blue]
+    [
+        palette.accent.red,
+        palette.accent.green,
+        palette.accent.blue,
+    ]
 }
 
 /// The embedded default design source, parsed once.

@@ -1877,13 +1877,12 @@ mod tests {
             .as_object()
             .unwrap()
             .keys()
-            .map(|key| {
-                let group = if ["text_scale", "density", "reduced_motion"].contains(&key.as_str()) {
-                    "ui"
-                } else {
-                    "appearance"
-                };
-                format!("{group}.{key}")
+            .map(|key| match key.as_str() {
+                "text_scale" | "reduced_motion" => format!("accessibility.{key}"),
+                "window_style" => "window.style".to_owned(),
+                "decorations" | "caption_side" | "menu_style" | "menu_side" | "title_align"
+                | "actions_align" | "actions_place" => format!("window.{key}"),
+                _ => format!("appearance.{key}"),
             })
             .collect();
         assert_eq!(
@@ -1894,8 +1893,9 @@ mod tests {
             expected,
             "every serialised appearance axis must be exercised"
         );
-        let next = settings::resolve::patch(&settings::Desktop::default(), &changes, &[]).unwrap();
-        settings::resolve(&next).unwrap();
+        // The v2 registry is the authority for these names (the store on main
+        // is still v1 until S6, and refuses them).
+        settings::registry::apply(&settings::registry::Values::new(), &changes, &[]).unwrap();
     }
 
     #[test]
@@ -2136,6 +2136,23 @@ mod tests {
         }
     }
 
+    /// The v1 summary's value once `path` is applied: density is a number
+    /// there, and its v2 change is the step.
+    fn stored_value(path: &str, value: &Value) -> Value {
+        match path {
+            "appearance.density" => json!(0.8),
+            _ => value.clone(),
+        }
+    }
+
+    /// The change a reset sends: density's reset is the comfortable step.
+    fn reset_change(path: &str, default: &Value) -> Value {
+        match path {
+            "appearance.density" => json!("comfortable"),
+            _ => default.clone(),
+        }
+    }
+
     fn stored_control(revision: &str, path: &str, value: Value) -> Value {
         let mut body = snapshot_body(revision, "studio", "dark");
         let (group, key) = v1_location(path);
@@ -2157,19 +2174,13 @@ mod tests {
             assert_eq!(body["expected_revision"], "7");
             assert_eq!(body["changes"], json!({path:value.clone()}));
             e.settled(ticket, reply(0, changed()));
-            answer_next(&mut e, 0, stored_control("8", path, value));
+            answer_next(&mut e, 0, stored_control("8", path, stored_value(path, &value)));
             let key = path.split_once('.').unwrap().1;
             edit(&mut e, json!({key:default.clone()}));
             let (_, command_name, body) = next(&mut e);
             assert_eq!(command_name, "settings.apply");
             assert_eq!(body["expected_revision"], "8");
-            // The density edit is numeric; its reset is the v2 step.
-            let reset = if path == "appearance.density" {
-                json!("comfortable")
-            } else {
-                default
-            };
-            assert_eq!(body["changes"], json!({path:reset}));
+            assert_eq!(body["changes"], json!({path:reset_change(path, &default)}));
         }
     }
 
@@ -2210,7 +2221,10 @@ mod tests {
         answer_next(&mut e, 0, snapshot_body("8", "forest", "dark"));
         let (_, _, body) = next(&mut e);
         assert_eq!(body["expected_revision"], "8");
-        assert_eq!(body["changes"], json!({"accessibility.reduced_motion":true}));
+        assert_eq!(
+            body["changes"],
+            json!({"accessibility.reduced_motion":true})
+        );
     }
 
     #[test]
@@ -2223,10 +2237,10 @@ mod tests {
             edit(&mut e, json!({key:default.clone()}));
             assert!(settings_calls(&mut e).is_empty());
             e.settled(ticket, reply(0, changed()));
-            answer_next(&mut e, 0, stored_control("8", path, value));
+            answer_next(&mut e, 0, stored_control("8", path, stored_value(path, &value)));
             let (_, _, body) = next(&mut e);
             assert_eq!(body["expected_revision"], "8");
-            assert_eq!(body["changes"], json!({path:default}));
+            assert_eq!(body["changes"], json!({path:reset_change(path, &default)}));
             assert!(e.look.conflicts.is_empty());
         }
     }

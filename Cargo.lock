@@ -10826,6 +10826,7 @@ dependencies = [
  "libc",
  "serde",
  "serde_json",
+ "settings",
  "tempfile",
 ]
 

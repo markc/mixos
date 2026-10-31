@@ -923,7 +923,7 @@ async fn native_startup_live_change_and_settingsd_restart_without_broker_reconne
                 "binding": projection("a", 1, "dark").binding,
                 "expected_incarnation": initial["snapshot"]["incarnation"],
                 "expected_revision": "1", "operation_id": "portal-live-dark",
-                "changes": {"appearance.mode": "dark", "window.caption_side": "left"}
+                "changes": {"appearance.mode": "dark", "appearance.caption_side": "left"}
             }),
         )
         .await?;

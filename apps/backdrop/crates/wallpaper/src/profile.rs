@@ -121,8 +121,8 @@ mod tests {
             .iter()
             .map(|(path, value)| ((*path).to_owned(), value.clone()))
             .collect();
-        let values: Values = registry::apply(&Values::new(), &changes, &[])
-            .unwrap_or_else(|e| panic!("{e:?}"));
+        let values: Values =
+            registry::apply(&Values::new(), &changes, &[]).unwrap_or_else(|e| panic!("{e:?}"));
         <View as settings::view::View>::of(&values)
     }
 
@@ -200,7 +200,10 @@ mod tests {
             ("wallpaper.color", json!("#000000")),
         ]))
         .unwrap();
-        assert_eq!(config.default, Wallpaper::Colour(crate::colour::Rgb([0; 3])));
+        assert_eq!(
+            config.default,
+            Wallpaper::Colour(crate::colour::Rgb([0; 3]))
+        );
     }
 
     #[test]
