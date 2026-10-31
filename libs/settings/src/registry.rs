@@ -646,7 +646,7 @@ fn live_refusal(def: &KeyDef, path: &str) -> Diagnostic {
 }
 
 /// Whether a normalised value equals the key's default, so it is not stored.
-fn is_default(m: &Matched, path: &str, value: &Value) -> bool {
+pub(crate) fn is_default(m: &Matched, path: &str, value: &Value) -> bool {
     match m.def.default {
         DefaultValue::Domain => app_domains::is_default(path, value),
         _ => m.default_value().as_ref() == Some(value),
