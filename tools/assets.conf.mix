@@ -90,7 +90,7 @@ assets: {
       author: "Lucide Icons and Contributors; Cole Bemis (Feather-derived icons)",
       source: "https://github.com/lucide-icons/lucide/releases/tag/1.54.0",
       licence: "ISC AND MIT", licence_file: "libs/icons/assets/LICENSE-lucide.txt",
-      sha256: "c78be43b02fd8ce58fbe9f6e9cd1d42c287ddce0ccc924650efc0705ab3027e0"},
+      sha256: "960fd0ea920eac4d9357bf6d486143addb79f32feb23049c6a7b5a37882a9a19"},
     {path: "apps/screenshot/assets/dev.mixos.screenshot-symbolic.svg", title: "Screenshot app icon (Lucide camera.svg, unmodified)",
       author: "Lucide Icons and Contributors; Cole Bemis (Feather-derived icons)",
       source: "https://github.com/lucide-icons/lucide/releases/tag/1.54.0 (icons/camera.svg)",

@@ -2229,15 +2229,14 @@ mod tests {
         e.open(Dialog::About);
         e.ui.search = "existing filter".into();
         let ui = e.ui.clone();
-        for (id, query, section, category) in [
-            (1, "terminal.", "apps_term", "apps"),
-            (2, "BACKGROUND", "wallpaper", "appearance"),
-        ] {
+        let nav = e.nav.clone();
+        for (id, query) in [(1, "density"), (2, "BACKGROUND")] {
             e.command(id, "prefs.search", &json!({"query":query}).to_string());
             assert_eq!(e.ui, ui);
+            assert_eq!(e.nav, nav);
             assert!(e.take_effects().iter().any(|effect| matches!(effect,
                 Effect::Reply { id: got, rc: 0, body }
-                    if *got == id && body["matches"] == json!([{"id":section,"category":category}])
+                    if *got == id && body["query"] == query && body["hits"].is_array()
             )));
         }
         e.command(3, "prefs.search", r#"{"query":null}"#);
