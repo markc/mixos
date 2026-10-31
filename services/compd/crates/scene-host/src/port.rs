@@ -99,11 +99,23 @@ pub enum Inbound {
         form: Value,
     },
     Repaint,
+    /// settingsd's answer to a [`Port::apply_settings`]: its reply body, or
+    /// a refusal body (`error_code` `SETTINGS_CONFLICT`, `SETTINGS_REFUSED`
+    /// or `SETTINGS_UNAVAILABLE`).
+    Settings {
+        operation: String,
+        outcome: Result<Value, Value>,
+    },
 }
 
 enum Outbound {
     Titlebars(Vec<String>),
     WakeAfter(Duration),
+    /// `settings.apply` to settingsd, answered as [`Inbound::Settings`].
+    Settings {
+        operation: String,
+        body: Value,
+    },
     Reply {
         to: String,
         command: String,
@@ -426,6 +438,18 @@ impl Port {
     /// Publish one `<service>.panel.changed` wire, retained.
     pub fn publish_panel(&self, wire: String) {
         let _ = self.outbound.send(Outbound::Publish { panel: true, wire });
+    }
+
+    /// `settings.apply` with `body` to settingsd, for a Bus caller waiting on
+    /// `operation`: the outcome returns as [`Inbound::Settings`]. False when
+    /// the worker is gone.
+    pub(crate) fn apply_settings(&self, operation: &str, body: Value) -> bool {
+        self.outbound
+            .send(Outbound::Settings {
+                operation: operation.to_owned(),
+                body,
+            })
+            .is_ok()
     }
 
     /// A scene event: a directed request to `citizen`, command = the handler
@@ -1065,6 +1089,15 @@ async fn serve(
                         let delivery = delivery.clone();
                         flights.spawn(async move { tokio::time::sleep(delay).await; delivery.send(Inbound::Repaint); });
                     }
+                    Outbound::Settings { operation, body } => {
+                        let (client, delivery) = (Arc::clone(client), delivery.clone());
+                        flights.spawn(async move {
+                            let outcome = settings_apply(&client, &body).await;
+                            if !delivery.send(Inbound::Settings { operation, outcome }) {
+                                tracing::warn!("scene host: settings.apply outcome dropped: the engine queue is full");
+                            }
+                        });
+                    }
                     message => {
                         let (client, topics) = (Arc::clone(client), topics.clone());
                         sends.spawn(async move { send(&client, &topics, message).await; });
@@ -1328,6 +1361,58 @@ fn admit(
     None
 }
 
+/// One `settings.apply` to settingsd, bounded by [`EVENT_TIMEOUT`].
+async fn settings_apply(client: &SupervisedClient, body: &Value) -> Result<Value, Value> {
+    let call = client.call_with_headers_raw(
+        "settingsd",
+        "settings.apply",
+        &BTreeMap::new(),
+        &body.to_string(),
+    );
+    match tokio::time::timeout(EVENT_TIMEOUT, call).await {
+        Err(_) => Err(json!({"error_code":"SETTINGS_UNAVAILABLE",
+            "message":"settingsd did not answer settings.apply in time"})),
+        Ok(Err(error)) => Err(json!({"error_code":"SETTINGS_UNAVAILABLE",
+            "message":format!("settings.apply could not reach settingsd: {error}")})),
+        Ok(Ok((rc, reply, error))) => settings_outcome(rc, &reply, error.as_deref()),
+    }
+}
+
+/// settingsd's `settings.apply` reply as an outcome: its body when accepted;
+/// a refusal settingsd made (a `status`) as `SETTINGS_CONFLICT` (the fence
+/// failed) or `SETTINGS_REFUSED`; anything else, such as the broker finding
+/// no settingsd, as `SETTINGS_UNAVAILABLE`.
+pub(crate) fn settings_outcome(rc: u8, reply: &str, error: Option<&str>) -> Result<Value, Value> {
+    let parsed: Value = serde_json::from_str(reply).unwrap_or(Value::Null);
+    if rc == 0 && parsed.is_object() {
+        return Ok(parsed);
+    }
+    let status = parsed["status"].as_str();
+    let (code, message) = match status {
+        Some("conflict") => (
+            "SETTINGS_CONFLICT",
+            "the settings changed since the shell applied them; read the panel state and retry"
+                .to_owned(),
+        ),
+        Some(status) if rc != 0 => (
+            "SETTINGS_REFUSED",
+            format!("settingsd refused the change: {status}"),
+        ),
+        _ => (
+            "SETTINGS_UNAVAILABLE",
+            format!(
+                "settings.apply failed (rc {rc}): {}",
+                error.filter(|e| !e.is_empty()).unwrap_or(reply)
+            ),
+        ),
+    };
+    let mut body = json!({"error_code":code, "message":message});
+    if !parsed.is_null() {
+        body["settings"] = parsed;
+    }
+    Err(body)
+}
+
 async fn send(
     client: &SupervisedClient,
     (scene_topic, panel_topic): &(String, String),
@@ -1338,7 +1423,7 @@ async fn send(
         _ => scene_topic.as_str(),
     };
     let result = match &message {
-        Outbound::Titlebars(_) | Outbound::WakeAfter(_) => Ok(()),
+        Outbound::Titlebars(_) | Outbound::WakeAfter(_) | Outbound::Settings { .. } => Ok(()),
         Outbound::Reply {
             generation,
             command,
@@ -1385,7 +1470,7 @@ async fn send(
     };
     if let Err(error) = result {
         match message {
-            Outbound::Titlebars(_) | Outbound::WakeAfter(_) => {}
+            Outbound::Titlebars(_) | Outbound::WakeAfter(_) | Outbound::Settings { .. } => {}
             Outbound::Reply { to, command, .. } => {
                 tracing::warn!(%error, to = %to, command = %command, "scene host reply not delivered")
             }
@@ -1397,6 +1482,40 @@ async fn send(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn settings_outcomes_name_conflicts_refusals_and_an_absent_settingsd() {
+        let accepted = r#"{"status":"changed","receipt":{"revision":"2"}}"#;
+        assert_eq!(
+            settings_outcome(0, accepted, None).unwrap()["receipt"]["revision"],
+            "2"
+        );
+        for (rc, reply, error, code) in [
+            (
+                10,
+                r#"{"status":"conflict","revision":"3"}"#,
+                None,
+                "SETTINGS_CONFLICT",
+            ),
+            (
+                10,
+                r#"{"status":"validation_failed","path":"shell.panels.bottom"}"#,
+                None,
+                "SETTINGS_REFUSED",
+            ),
+            (10, "", Some("no such service: settingsd"), "SETTINGS_UNAVAILABLE"),
+            (0, "not json", None, "SETTINGS_UNAVAILABLE"),
+        ] {
+            let refusal = settings_outcome(rc, reply, error).unwrap_err();
+            assert_eq!(refusal["error_code"], code, "{reply}");
+            assert!(refusal["message"].as_str().is_some_and(|m| !m.is_empty()));
+        }
+        let refusal =
+            settings_outcome(10, r#"{"status":"conflict","revision":"3"}"#, None).unwrap_err();
+        assert_eq!(refusal["settings"]["revision"], "3");
+        let absent = settings_outcome(10, "", Some("no such service: settingsd")).unwrap_err();
+        assert!(absent["message"].as_str().unwrap().contains("no such service"));
+    }
 
     #[test]
     fn titlebar_changes_require_the_registered_local_publisher() {

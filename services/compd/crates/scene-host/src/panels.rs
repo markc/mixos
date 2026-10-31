@@ -128,9 +128,9 @@ pub struct Panels {
     /// Loader-owned popup pages use the same command as the panel button.
     popup_routes: BTreeMap<(String, String), (String, String)>,
     popup_commands: Vec<(String, String)>,
-    /// Corner clicks on settings-owned edges: `(record id, mode)` for
-    /// `shell.panels.<id>.mode`, sent by the host as `settings.apply`.
-    settings_writes: Vec<(String, &'static str)>,
+    /// Corner clicks and menu choices on settings-owned edges, sent by the
+    /// host as `settings.apply`.
+    settings_writes: Vec<SettingsWrite>,
     /// The current config is read each time a corner opens.
     pub menu_conf: Option<std::path::PathBuf>,
 }
@@ -204,7 +204,48 @@ impl PanelCommand {
             Self::Dock => PanelInput::Dock,
         }
     }
+
+    /// The persistent mode a settings-owned edge stores for it: pin
+    /// overlays, dock reserves, unpin hides. `None` for the transient ones.
+    pub(crate) fn settings_mode(self) -> Option<PanelMode> {
+        match self {
+            Self::Pin => Some(PanelMode::Pinned),
+            Self::Dock => Some(PanelMode::Docked),
+            Self::Unpin => Some(PanelMode::Hidden),
+            Self::Show | Self::Hide | Self::Toggle => None,
+        }
+    }
 }
+
+/// One change to a settings-owned edge's `shell.panels.<id>` record.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum RecordChange {
+    /// `dock`, `overlay` or `hidden`.
+    Mode(&'static str),
+    /// Whole pixels, 16..=256.
+    Thickness(u32),
+}
+
+/// A change the shell writes through settingsd instead of applying itself:
+/// the edge moves when the accepted change returns as a new look.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SettingsWrite {
+    /// The record id: `shell.panels.<id>`.
+    pub id: String,
+    pub change: RecordChange,
+}
+
+/// The settings record's word for a panel mode.
+pub(crate) fn record_mode(mode: PanelMode) -> &'static str {
+    match mode {
+        PanelMode::Hidden => "hidden",
+        PanelMode::Pinned => "overlay",
+        PanelMode::Docked => "dock",
+    }
+}
+
+/// The thickness a `shell.panels.<id>` record can hold (settings v1).
+const RECORD_THICKNESS: std::ops::RangeInclusive<f32> = 16.0..=256.0;
 
 impl Panels {
     /// Total activation of an already validated whole profile, before ACK.
@@ -277,7 +318,7 @@ impl Panels {
             let mode = model.panel(menu.corner.summoned_edge()).mode;
             for item in &mut menu.items {
                 if let crate::menu::Choice::Mode(item_mode) = item.choice {
-                    item.disabled = model.preference(menu.corner.summoned_edge()).is_some();
+                    // A settings-owned edge's choices write its record.
                     item.checked = mode == item_mode
                         && !(item_mode == PanelMode::Hidden
                             && model.panel(menu.corner.summoned_edge()).transient_revealed);
@@ -759,7 +800,10 @@ impl Panels {
                         } else {
                             "hidden"
                         };
-                        self.settings_writes.push((record.id.clone(), next));
+                        self.settings_writes.push(SettingsWrite {
+                            id: record.id.clone(),
+                            change: RecordChange::Mode(next),
+                        });
                     } else if let Some(model) = self.models.get(&press.output) {
                         let mode = model.panel(edge).mode;
                         // One click hides a held edge (pinned or docked) and
@@ -793,8 +837,57 @@ impl Panels {
         std::mem::take(&mut self.popup_commands)
     }
 
-    pub(crate) fn settings_writes(&mut self) -> Vec<(String, &'static str)> {
+    pub(crate) fn settings_writes(&mut self) -> Vec<SettingsWrite> {
         std::mem::take(&mut self.settings_writes)
+    }
+
+    /// `mode` on a settings-owned edge, as the record write that makes it:
+    /// `None` when the edge has no settings record (the direct path applies),
+    /// `Some(None)` when the record already holds that mode.
+    pub(crate) fn settings_mode_write(
+        &self,
+        edge: Edge,
+        mode: PanelMode,
+    ) -> Option<Option<SettingsWrite>> {
+        let record = self.preferences.record(shell_edge(edge))?;
+        Some(
+            (record.preference.mode() != mode).then(|| SettingsWrite {
+                id: record.id.clone(),
+                change: RecordChange::Mode(record_mode(mode)),
+            }),
+        )
+    }
+
+    /// `shell.panel.resize` on a settings-owned edge, as the record write:
+    /// `None` when the edge has no settings record, `Some(Ok(None))` when the
+    /// record already requests that thickness. The edge's resize range and
+    /// the record's whole-pixel 16..=256 both bind; the output budget and
+    /// page minimums are the look's to fit (the row's `settings.constraints`).
+    pub(crate) fn settings_thickness_write(
+        &self,
+        edge: Edge,
+        thickness_px: f32,
+    ) -> Option<Result<Option<SettingsWrite>, Value>> {
+        let record = self.preferences.record(shell_edge(edge))?;
+        if !resize_thickness_range(shell_edge(edge)).contains(&thickness_px) {
+            return Some(Err(resize_range_refusal(edge)));
+        }
+        if !RECORD_THICKNESS.contains(&thickness_px) || thickness_px.fract() != 0.0 {
+            return Some(Err(json!({
+                "error_code":"BAD_ARGUMENT",
+                "message":format!(
+                    "the {} edge is settings-owned (shell.panels.{}); its thickness is whole pixels in {}..={}",
+                    edge.as_str(), record.id, RECORD_THICKNESS.start(), RECORD_THICKNESS.end()
+                ),
+                "edge":edge.as_str(), "requested":thickness_px,
+            })));
+        }
+        Some(Ok((record.preference.thickness() != thickness_px).then(|| {
+            SettingsWrite {
+                id: record.id.clone(),
+                change: RecordChange::Thickness(thickness_px as u32),
+            }
+        })))
     }
 
     pub fn menu(&self) -> Option<&crate::menu::Menu> {
@@ -929,8 +1022,12 @@ impl Panels {
         let (output, edge) = (menu.output.clone(), menu.corner.summoned_edge());
         let extra = match item.choice {
             Choice::Mode(mode) => {
-                if self.models[&output].preference(edge).is_some() {
-                    return Err(settings_managed());
+                if let Some(write) = self.settings_mode_write(seat_edge(edge), mode) {
+                    // A settings-owned edge: the choice is a settings write,
+                    // as a corner click is; the new look moves the edge.
+                    self.settings_writes.extend(write);
+                    self.close_menu_at(now);
+                    return Ok(None);
                 }
                 if mode == PanelMode::Hidden {
                     // Dismiss the popup first: Hide is intentionally ignored
@@ -1703,12 +1800,6 @@ mod tests {
         panels.menu.as_mut().unwrap().items.truncate(3);
         let menu = panels.menu.clone();
         let row = panels.state("DP-1", Edge::Bottom);
-        assert!(
-            panels
-                .menu_input(menu.as_ref().unwrap().serial, crate::menu::Input::Activate)
-                .unwrap()
-                .is_none()
-        );
         assert_eq!(
             panels
                 .set_mode("DP-1", Edge::Bottom, "pinned")
@@ -1728,16 +1819,7 @@ mod tests {
         assert_eq!(panels.menu, menu);
         assert_eq!(panels.focused("DP-1"), Some(Edge::Bottom));
         assert_eq!(panels.state("DP-1", Edge::Bottom), row);
-        assert!(
-            panels
-                .menu
-                .as_ref()
-                .unwrap()
-                .items
-                .iter()
-                .filter(|item| matches!(item.choice, crate::menu::Choice::Mode(_)))
-                .all(|item| !item.enabled())
-        );
+        assert!(panels.settings_writes().is_empty());
         shell.panels.get_mut("bottom").unwrap().thickness = 80;
         panels.set_preferences(crate::preferences::Preferences::prepare(&shell).unwrap());
         assert_eq!(panels.focused("DP-1"), Some(Edge::Bottom));
@@ -2167,7 +2249,10 @@ mod tests {
             assert!(panels.pointer_button_at(0x110, false, shift, start));
             assert_eq!(
                 panels.settings_writes(),
-                vec![("bottom".into(), written)],
+                vec![SettingsWrite {
+                    id: "bottom".into(),
+                    change: RecordChange::Mode(written),
+                }],
                 "{stored}, shift={shift}"
             );
             assert_eq!(
@@ -2176,6 +2261,113 @@ mod tests {
                 "the edge moves only when the new look arrives"
             );
         }
+    }
+
+    #[test]
+    fn bus_modes_and_thickness_on_a_settings_owned_edge_are_record_writes() {
+        let mut panels = panels_with("DP-1");
+        let mut shell = settings::Shell::default();
+        shell.panels.insert(
+            "side".into(),
+            settings::Panel {
+                edge: "left".into(),
+                mode: "hidden".into(),
+                thickness: 200,
+            },
+        );
+        panels.set_preferences(crate::preferences::Preferences::prepare(&shell).unwrap());
+        let write = |id: &str, change| {
+            Some(Some(SettingsWrite {
+                id: id.into(),
+                change,
+            }))
+        };
+        // The default bottom record docks.
+        for (mode, change) in [
+            (PanelMode::Hidden, "hidden"),
+            (PanelMode::Pinned, "overlay"),
+        ] {
+            assert_eq!(
+                panels.settings_mode_write(Edge::Bottom, mode),
+                write("bottom", RecordChange::Mode(change))
+            );
+        }
+        assert_eq!(
+            panels.settings_mode_write(Edge::Bottom, PanelMode::Docked),
+            Some(None)
+        );
+        assert_eq!(
+            panels.settings_mode_write(Edge::Left, PanelMode::Docked),
+            write("side", RecordChange::Mode("dock"))
+        );
+        assert_eq!(
+            panels.settings_mode_write(Edge::Right, PanelMode::Docked),
+            None,
+            "an edge with no record keeps the direct path"
+        );
+        assert_eq!(
+            panels.settings_thickness_write(Edge::Bottom, 56.0),
+            Some(Ok(Some(SettingsWrite {
+                id: "bottom".into(),
+                change: RecordChange::Thickness(56),
+            })))
+        );
+        assert_eq!(
+            panels.settings_thickness_write(Edge::Bottom, 40.0),
+            Some(Ok(None))
+        );
+        assert_eq!(
+            panels.settings_thickness_write(Edge::Bottom, 10.0),
+            Some(Err(resize_range_refusal(Edge::Bottom)))
+        );
+        for (edge, px) in [(Edge::Bottom, 40.5), (Edge::Left, 300.0)] {
+            assert_eq!(
+                panels.settings_thickness_write(edge, px).unwrap().unwrap_err()["error_code"],
+                "BAD_ARGUMENT",
+                "{edge:?} {px}"
+            );
+        }
+        assert_eq!(panels.settings_thickness_write(Edge::Right, 300.0), None);
+        assert!(panels.settings_writes().is_empty(), "nothing queued");
+    }
+
+    #[test]
+    fn a_menu_mode_choice_on_a_settings_owned_edge_writes_the_record_and_closes() {
+        let mut panels = panels_with("DP-1");
+        register(&mut panels, "DP-1", Edge::Bottom, "page", 52.0);
+        panels.set_preferences(
+            crate::preferences::Preferences::prepare(&settings::Shell::default()).unwrap(),
+        );
+        let now = panels.now();
+        panels
+            .open_menu_at("DP-1", Corner::BottomLeft, now)
+            .unwrap();
+        let menu = panels.menu.clone().unwrap();
+        let hide = menu
+            .items
+            .iter()
+            .position(|item| item.choice == crate::menu::Choice::Mode(PanelMode::Hidden))
+            .unwrap();
+        assert!(menu.items[hide].enabled(), "settings-owned choices stay live");
+        assert!(
+            panels
+                .menu_input(menu.serial, crate::menu::Input::Choose(hide))
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            panels.settings_writes(),
+            vec![SettingsWrite {
+                id: "bottom".into(),
+                change: RecordChange::Mode("hidden"),
+            }]
+        );
+        assert!(panels.menu.is_none());
+        assert_eq!(
+            panels.mode("DP-1", Edge::Bottom),
+            "docked",
+            "the edge moves only when the new look arrives"
+        );
     }
 
     #[test]
