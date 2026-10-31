@@ -108,6 +108,8 @@ fn look_context(axes: &Axes) -> Result<design::DesignContext, Diagnostic> {
             })
             .transpose()?,
         app: axes.app.map(str::to_owned),
+        accent: design::AccentChoice::Auto,
+        tints: design::Tints::default(),
     })
 }
 
