@@ -58,7 +58,11 @@ impl Projection {
     /// `settings.palette {mode}` answer for the mode the first resolved.
     /// Both must be current, for `binding`, at the same incarnation and
     /// revision: anything else is refused, never mixed.
-    pub fn from_answers(binding: &Binding, values: &Json, palette: &Json) -> Result<Self, Diagnostic> {
+    pub fn from_answers(
+        binding: &Binding,
+        values: &Json,
+        palette: &Json,
+    ) -> Result<Self, Diagnostic> {
         for (name, answer) in [("values", values), ("palette", palette)] {
             if answer.get("status").and_then(Json::as_str) != Some("current") {
                 return Err(invalid(name, "Authority did not return a current answer"));
@@ -79,7 +83,8 @@ impl Projection {
         let revision: Revision = serde_json::from_value(values["revision"].clone())
             .map_err(|e| invalid("revision", e.to_string()))?;
         if palette["incarnation"].as_str() != Some(incarnation)
-            || serde_json::from_value::<Revision>(palette["revision"].clone()).ok() != Some(revision)
+            || serde_json::from_value::<Revision>(palette["revision"].clone()).ok()
+                != Some(revision)
         {
             return Err(Diagnostic::new(
                 "moved",

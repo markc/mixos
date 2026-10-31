@@ -4,12 +4,12 @@
 //! wire, changed-only signals, the startup budget and single ownership.
 use futures_util::{Stream, StreamExt};
 use portald::appearance::{ACCENT_COLOR, COLOR_SCHEME, CONTRAST, NAMESPACE};
+use portald::appearance::{PROJECTION_SCHEMA, Projection};
 use portald::live::{self, Config};
 use portald::portal::{BUS_NAME, INTERFACE, OBJECT_PATH};
 use portald::status::{self, Shared};
 use settings::Binding;
 use settings::Revision;
-use portald::appearance::{PROJECTION_SCHEMA, Projection};
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
