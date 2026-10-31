@@ -59,7 +59,6 @@ fn binding() -> Binding {
     }
 }
 
-
 /// The most hint-driven read starts that can fit in `elapsed`. Consecutive starts
 /// are at least one interval apart, and two more starts of slack cover the first
 /// start in the span and a consumer-driven read that began just before it.

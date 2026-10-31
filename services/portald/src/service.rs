@@ -77,11 +77,7 @@ fn fault(command: &str, message: impl Into<String>) -> Diagnostic {
 }
 
 /// One bounded call to settingsd, answered `current`.
-async fn call(
-    client: &SupervisedClient,
-    command: &str,
-    body: Value,
-) -> Result<Value, Diagnostic> {
+async fn call(client: &SupervisedClient, command: &str, body: Value) -> Result<Value, Diagnostic> {
     let reply = client
         .call_typed(SOURCE, command, body)
         .await
