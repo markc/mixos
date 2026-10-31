@@ -398,7 +398,11 @@ mod tests {
         assert!(values.get(NAMESPACE, ACCENT_COLOR).is_none());
         let on = Values::from_projection(&projection("light", "high", [0.1, 0.2, 0.3]));
         let changes = on.changed(&values);
-        assert_eq!(changes.len(), 2, "color-scheme and contrast; the accent stops");
+        assert_eq!(
+            changes.len(),
+            2,
+            "color-scheme and contrast; the accent stops"
+        );
     }
 
     #[test]

@@ -153,7 +153,10 @@ fn gtk(t: &DerivedTheme) -> BTreeMap<&'static str, SrgbColour> {
     put("shade_color", with_alpha(BLACK, shade));
     put("scrollbar_outline_color", with_alpha(bg.base, 0.5));
     for (names, family) in [
-        (["accent_color", "accent_bg_color", "accent_fg_color"], &t.accent),
+        (
+            ["accent_color", "accent_bg_color", "accent_fg_color"],
+            &t.accent,
+        ),
         (
             [
                 "destructive_color",
@@ -181,7 +184,10 @@ fn gtk(t: &DerivedTheme) -> BTreeMap<&'static str, SrgbColour> {
     }
     let p = &t.palette;
     for (names, seed) in [
-        (["blue_1", "blue_2", "blue_3", "blue_4", "blue_5"], p.accent_blue),
+        (
+            ["blue_1", "blue_2", "blue_3", "blue_4", "blue_5"],
+            p.accent_blue,
+        ),
         (
             ["green_1", "green_2", "green_3", "green_4", "green_5"],
             p.accent_green,
@@ -331,7 +337,10 @@ mod tests {
             for group in [qt.active, qt.inactive, qt.disabled] {
                 assert!(group.iter().all(|c| c.alpha == 1.0));
             }
-            assert_eq!(qt.active[WINDOW].to_hex(), over(t.background.base, BLACK).to_hex());
+            assert_eq!(
+                qt.active[WINDOW].to_hex(),
+                over(t.background.base, BLACK).to_hex()
+            );
             assert_eq!(QT_ROLES[HIGHLIGHTED_TEXT], "HighlightedText");
             assert_eq!(QT_ROLES[PLACEHOLDER_TEXT], "PlaceholderText");
         }
