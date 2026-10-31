@@ -28,7 +28,7 @@ use settings::appearance::AppearanceProjection;
 /// The Studio dark accent the design resolves to (pinned in settingsd's `appearance`
 /// tests); the feed under test carries it through unchanged.
 const STUDIO_DARK_ACCENT: [f64; 3] = [0.5450980392156862, 0.48627450980392156, 0.9647058823529412];
-use settings::{Binding, Desktop, Revision, Snapshot};
+use settings::{Binding, Revision, Snapshot};
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -64,8 +64,9 @@ fn binding() -> Binding {
 }
 
 fn snapshot(revision: u64) -> Snapshot {
-    let desktop = Desktop::default();
-    let effective = settings::resolve(&desktop).unwrap();
+    let values = settings::registry::Values::new();
+    let effective =
+        settings::resolve::values::resolve(&values, settings::EMBEDDED_DEFAULT_SOURCE).unwrap();
     Snapshot {
         schema: settings::SCHEMA,
         binding: binding(),
@@ -73,9 +74,9 @@ fn snapshot(revision: u64) -> Snapshot {
         revision: Revision(revision),
         design_revision: Revision(1),
         source_digest: "source".into(),
-        desktop,
+        desktop: settings::migrate::reverse(&values).desktop,
         effective,
-        values: Default::default(),
+        values,
     }
 }
 
@@ -135,11 +136,11 @@ async fn serve(
             AppearanceProjection::from_snapshot(&snapshot, STUDIO_DARK_ACCENT).unwrap();
         // As settingsd: the snapshot in the schema the read asked for.
         let asked: serde_json::Value = serde_json::from_str(&command.body).unwrap_or_default();
-        assert_eq!(asked["schema"], 2, "portald reads schema 2");
+        assert_eq!(asked["schema"], 3, "portald reads schema 3");
         let body = json!({
             "status": "current",
             "appearance": appearance,
-            "snapshot": settings::compact::encode(&snapshot).unwrap(),
+            "snapshot": settings::compact::encode_values(&snapshot, &snapshot.values).unwrap(),
         })
         .to_string();
         let _ = client.respond(&command, 0, &body).await;
@@ -148,7 +149,7 @@ async fn serve(
 
 /// An unstamped topic frame, as an old noded delivers one.
 fn hint() -> IncomingCommand {
-    let topic = settings::compact_topic("default");
+    let topic = settings::topics::snapshot_topic("default");
     IncomingCommand {
         generation: 0,
         from: "noded".into(),
@@ -401,10 +402,9 @@ impl Harness {
 
     /// Publishes the authority's current state as a stamped settingsd frame.
     async fn publish_stamped(&self) -> anyhow::Result<()> {
-        let topic = settings::compact_topic("default");
-        let body = serde_json::to_string(&settings::compact::encode(
-            &self.authority.state.lock().unwrap(),
-        )?)?;
+        let topic = settings::topics::snapshot_topic("default");
+        let state = self.authority.state.lock().unwrap().clone();
+        let body = serde_json::to_string(&settings::compact::encode_values(&state, &state.values)?)?;
         let mut inner = bus::wire::BusMessage::new();
         inner.set("command", &topic);
         inner.body = body;

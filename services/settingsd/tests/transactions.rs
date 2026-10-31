@@ -545,8 +545,15 @@ fn schema_2_reads_expand_to_the_schema_1_snapshot() {
             two.to_string().len(),
             one.to_string().len()
         );
+        // Schema 3 is schema 2 with the values: the native shells' form.
+        let three = read(command, json!({"binding":binding(),"schema":3})).unwrap();
+        assert_eq!(three["snapshot"]["schema"], 3, "{command}");
+        let mut with_values = settings::compact::decode(three["snapshot"].clone()).unwrap();
+        assert_eq!(with_values.values, studio(), "{command}");
+        with_values.values.clear();
+        assert_eq!(with_values, original, "{command}");
         assert_eq!(
-            read(command, json!({"binding":binding(),"schema":3})).unwrap_err()["status"],
+            read(command, json!({"binding":binding(),"schema":4})).unwrap_err()["status"],
             "unsupported_schema"
         );
     }
