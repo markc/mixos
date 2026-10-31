@@ -15,7 +15,7 @@ use crate::{label, label_with};
 use design::cosmic_tables::{Density, Roundness};
 use egui::{
     Align, Color32, CornerRadius, Layout, Rect, Response, RichText, Role, Sense, Stroke,
-    StrokeKind, Ui, Vec2, WidgetInfo, pos2, vec2,
+    StrokeKind, Ui, WidgetInfo, pos2, vec2,
 };
 use preferences::pages::{self, Body, ChoiceStyle, Control, Lit, Page, PickList, Row};
 use preferences::{Engine, Section};

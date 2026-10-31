@@ -8,7 +8,7 @@
 //! frame, so drawing never mutates state and a snapshot needs no Bus.
 use crate::{label, label_with};
 use design::{Mode, Scheme};
-use egui::{Color32, RichText, ScrollArea, Ui};
+use egui::{Align, Color32, Layout, RichText, ScrollArea, Ui};
 use preferences::appearance::Availability as Settings;
 use preferences::terminal::{
     BORDER_WIDTH_MAX, BORDER_WIDTH_MIN, CursorShape, FONT_SIZE_MAX, FONT_SIZE_MIN, FocusRing,
