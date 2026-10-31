@@ -110,6 +110,8 @@ struct Profile {
     name: &'static str,
     today: Desktop,
     v2: Vec<(&'static str, Value)>,
+    /// The key that decides the desktop mode, from the inputs.
+    decided: &'static str,
 }
 
 /// A look that touches every v1 look field, an app override per axis, and
@@ -142,6 +144,7 @@ fn rich() -> Profile {
     );
     today.terminal.font.size = 15.0;
     today.ced.editor.padding = 8;
+    today.email.mail.page_size = 50;
     today.apps.insert(
         "term".into(),
         AppOverride {
@@ -204,12 +207,14 @@ fn rich() -> Profile {
         ("xwayland.scaling", json!("gaming")),
         ("terminal.font.size", json!(15.0)),
         ("ced.editor.padding", json!(8)),
+        ("email.mail.page_size", json!(50)),
         ("appearance.icon_theme", json!("Adwaita")),
     ];
     Profile {
         name: "rich",
         today,
         v2,
+        decided: "profile",
     }
 }
 
@@ -219,12 +224,18 @@ fn with_mode(
     name: &'static str,
     mode: &str,
     v2_mode: &[(&'static str, Value)],
+    decided: &'static str,
 ) -> Profile {
     let mut today = profile.today.clone();
     today.appearance.mode = mode.into();
     let mut v2 = profile.v2.clone();
     v2.extend(v2_mode.iter().cloned());
-    Profile { name, today, v2 }
+    Profile {
+        name,
+        today,
+        v2,
+        decided,
+    }
 }
 
 /// Today's resolver and v2 agree on the same choices, field for field, for
@@ -240,8 +251,20 @@ fn resolve_v2_reproduces_today_s_look_for_the_same_choices() {
         today: Desktop::default(),
         // Today's default scheme; v2's is `mixos` (the look seam).
         v2: vec![("appearance.scheme", json!("studio"))],
+        decided: "profile",
     };
     let rich = rich();
+    // A custom source that orders the app axis: every app compiles alone.
+    let source = design::EMBEDDED_DEFAULT_SOURCE.replacen(
+        "resolution_order: [\"scheme\", \"mode\"]",
+        "resolution_order: [\"scheme\", \"mode\", \"app\"]",
+        1,
+    );
+    assert_ne!(source, design::EMBEDDED_DEFAULT_SOURCE, "the fixture orders app");
+    let mut custom = rich();
+    custom.name = "custom source";
+    custom.today.appearance.source = Some(source.clone());
+    custom.v2.push(("appearance.source", json!(source)));
     let auto = |daylight: Option<bool>, over: Option<&str>| {
         let mut keys = vec![("appearance.mode", json!("auto"))];
         if let Some(d) = daylight {
@@ -253,36 +276,46 @@ fn resolve_v2_reproduces_today_s_look_for_the_same_choices() {
         keys
     };
     let mut profiles = Vec::new();
-    for base in [&plain, &rich] {
-        profiles.push(with_mode(base, "dark", "dark", &[]));
-        profiles.push(with_mode(
-            base,
-            "light",
-            "light",
-            &[("appearance.mode", json!("light"))],
-        ));
-        profiles.push(with_mode(
-            base,
-            "auto, day",
-            "light",
-            &auto(Some(true), None),
-        ));
-        profiles.push(with_mode(
-            base,
-            "auto, night",
-            "dark",
-            &auto(Some(false), None),
-        ));
-        profiles.push(with_mode(base, "auto, unknown", "dark", &auto(None, None)));
-        profiles.push(with_mode(
-            base,
-            "auto, override",
-            "dark",
-            &auto(Some(true), Some("dark")),
-        ));
+    for base in [&plain, &rich, &custom] {
+        // (name, today's mode, v2's mode keys, the key that decides it)
+        let modes = [
+            ("dark", "dark", vec![], "profile"),
+            (
+                "light",
+                "light",
+                vec![("appearance.mode", json!("light"))],
+                "profile",
+            ),
+            (
+                "auto, day",
+                "light",
+                auto(Some(true), None),
+                "state.appearance.daylight",
+            ),
+            (
+                "auto, night",
+                "dark",
+                auto(Some(false), None),
+                "state.appearance.daylight",
+            ),
+            (
+                "auto, unknown",
+                "dark",
+                auto(None, None),
+                "auto_without_daylight",
+            ),
+            (
+                "auto, override",
+                "dark",
+                auto(Some(true), Some("dark")),
+                "state.appearance.mode_override",
+            ),
+        ];
+        for (name, mode, keys, decided) in modes {
+            profiles.push((base.name, with_mode(base, name, mode, &keys, decided)));
+        }
     }
-    for (i, profile) in profiles.iter().enumerate() {
-        let base = if i < 6 { "default" } else { "rich" };
+    for (base, profile) in &profiles {
         let case = format!("{base} / {}", profile.name);
         let v2 = values(&profile.v2);
         let (today, today_accents) = crate::v1::resolve_with_embedded_and_accents(
@@ -297,7 +330,7 @@ fn resolve_v2_reproduces_today_s_look_for_the_same_choices() {
             next.keys().collect::<Vec<_>>(),
             "{case}: contexts"
         );
-        let decided = next["desktop"].provenance["appearance.mode"].clone();
+        let decided = profile.decided;
         for (context, mut old) in today {
             if let Some(from) = old.provenance.remove("ui.text_scale") {
                 old.provenance
@@ -305,7 +338,7 @@ fn resolve_v2_reproduces_today_s_look_for_the_same_choices() {
             }
             if old.provenance["appearance.mode"] == "profile" {
                 old.provenance
-                    .insert("appearance.mode".into(), decided.clone());
+                    .insert("appearance.mode".into(), decided.into());
             }
             let old = serde_json::to_value(&old).unwrap();
             let new = serde_json::to_value(&next[&context]).unwrap();
@@ -348,4 +381,24 @@ fn non_look_keys_leave_the_effective_map_alone() {
         ("shell.panels.bottom.autohide", json!(true)),
     ]);
     assert_eq!(crate::digest(&resolved(&other)).unwrap(), base);
+}
+
+/// LOOK SEAM: the accent, the tints and `tune.*` are stored and validated
+/// now, but nothing applies them until S4's look half: they move neither
+/// the effective map nor the accents. The look half turns this around.
+#[test]
+fn seam_keys_are_stored_but_not_yet_applied() {
+    let (base, base_accents) = resolve(&Values::new(), design::EMBEDDED_DEFAULT_SOURCE).unwrap();
+    let seam = values(&[
+        ("appearance.accent", json!("purple")),
+        ("appearance.window_bg", json!("#20242aff")),
+        (
+            "tune.style.radius",
+            crate::registry::tests::tunable_sample("tune.style.radius"),
+        ),
+    ]);
+    assert_eq!(seam.len(), 3, "all three are stored");
+    let (next, next_accents) = resolve(&seam, design::EMBEDDED_DEFAULT_SOURCE).unwrap();
+    assert_eq!(crate::digest(&next).unwrap(), crate::digest(&base).unwrap());
+    assert_eq!(next_accents, base_accents);
 }

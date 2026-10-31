@@ -29,17 +29,48 @@ use std::collections::{BTreeMap, BTreeSet};
 /// | `auto` | none | none (no daylight citizen) | `dark` |
 ///
 /// With the key that decided it, for provenance.
-pub fn effective_mode(authored: &str, state: &State) -> (&'static str, &'static str) {
-    match authored {
-        "light" => ("light", "profile"),
+///
+/// A name outside the registry's enums is refused, never read as dark:
+/// validation already refuses it, so this is a second line, not a default.
+pub fn effective_mode(authored: &str, state: &State) -> Result<(Mode, &'static str), Diagnostic> {
+    let named = |name: &str, path: &str| {
+        Mode::from_name(name).ok_or_else(|| error(path, "Unknown mode"))
+    };
+    Ok(match authored {
         "auto" => match (state.mode_override.as_deref(), state.daylight) {
-            (Some("light"), _) => ("light", "state.appearance.mode_override"),
-            (Some(_), _) => ("dark", "state.appearance.mode_override"),
-            (None, Some(true)) => ("light", "state.appearance.daylight"),
-            (None, Some(false)) => ("dark", "state.appearance.daylight"),
-            (None, None) => ("dark", "auto_without_daylight"),
+            (Some(name), _) => (
+                named(name, "state.appearance.mode_override")?,
+                "state.appearance.mode_override",
+            ),
+            (None, Some(true)) => (Mode::Light, "state.appearance.daylight"),
+            (None, Some(false)) => (Mode::Dark, "state.appearance.daylight"),
+            (None, None) => (Mode::Dark, "auto_without_daylight"),
         },
-        _ => ("dark", "profile"),
+        name => (named(name, "appearance.mode")?, "profile"),
+    })
+}
+
+/// A resolved mode: never `auto`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Mode {
+    Dark,
+    Light,
+}
+
+impl Mode {
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "dark" => Some(Self::Dark),
+            "light" => Some(Self::Light),
+            _ => None,
+        }
+    }
+
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Dark => "dark",
+            Self::Light => "light",
+        }
     }
 }
 
@@ -47,7 +78,7 @@ pub fn effective_mode(authored: &str, state: &State) -> (&'static str, &'static 
 struct Axes<'a> {
     appearance: &'a Appearance,
     scheme: String,
-    mode: &'static str,
+    mode: Mode,
     contrast: String,
     app: Option<&'a str>,
 }
@@ -64,7 +95,7 @@ fn look_context(axes: &Axes) -> Result<design::DesignContext, Diagnostic> {
     };
     Ok(design::DesignContext {
         scheme,
-        mode: design::Mode::from_name(axes.mode)
+        mode: design::Mode::from_name(axes.mode.name())
             .ok_or_else(|| error("appearance.mode", "Unknown mode"))?,
         contrast: design::Contrast::from_name(&axes.contrast)
             .ok_or_else(|| error("appearance.contrast", "Unknown contrast"))?,
@@ -94,7 +125,7 @@ pub fn resolve(
     let framing = Framing::of(values);
     let accessibility = Accessibility::of(values);
     let app_looks = AppLooks::of(values);
-    let (mode, mode_from) = effective_mode(&appearance.mode, &state);
+    let (mode, mode_from) = effective_mode(&appearance.mode, &state).map_err(|e| vec![e])?;
 
     let source = appearance.source.as_deref().unwrap_or(embedded_source);
     let doc = parsed(source)?;
@@ -130,7 +161,8 @@ pub fn resolve(
                 provenance.insert("appearance.scheme".into(), from.clone());
             }
             if let Some(app_mode) = &overlay.mode {
-                axes.mode = if app_mode == "light" { "light" } else { "dark" };
+                axes.mode = Mode::from_name(app_mode)
+                    .ok_or_else(|| vec![error(&format!("{from}.mode"), "Unknown mode")])?;
                 provenance.insert("appearance.mode".into(), from.clone());
             }
             if let Some(contrast) = &overlay.contrast {
@@ -174,7 +206,7 @@ pub fn resolve(
         let effective = Effective {
             scheme: axes.scheme,
             style: appearance.style.clone(),
-            mode: axes.mode.into(),
+            mode: axes.mode.name().into(),
             contrast: axes.contrast,
             decorations,
             caption_side,

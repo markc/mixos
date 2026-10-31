@@ -100,6 +100,23 @@ pub enum Domain {
 }
 
 impl Domain {
+    pub const ALL: [Self; 9] = [
+        Self::Paint,
+        Self::Text,
+        Self::Layout,
+        Self::Resources,
+        Self::Motion,
+        Self::Shell,
+        Self::Input,
+        Self::Export,
+        Self::System,
+    ];
+
+    /// The domain named `name` (`paint`), as `design::tunables()` names them.
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|d| d.name() == name)
+    }
+
     pub const fn name(self) -> &'static str {
         match self {
             Self::Paint => "paint",

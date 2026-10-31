@@ -61,8 +61,19 @@ pub struct Tablet {
     pub output: Option<String>,
 }
 
+/// The pairs as authored; the registry default where none decode (the
+/// kind needs at least one, so validated values always have one).
 fn layouts(r: &Reader) -> Vec<(String, String)> {
-    r.value("input.keyboard.layouts")
+    let decoded = pairs(&r.value("input.keyboard.layouts"));
+    if decoded.is_empty() {
+        pairs(&Reader::fallback("input.keyboard.layouts"))
+    } else {
+        decoded
+    }
+}
+
+fn pairs(value: &serde_json::Value) -> Vec<(String, String)> {
+    value
         .as_array()
         .into_iter()
         .flatten()

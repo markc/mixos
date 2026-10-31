@@ -7,18 +7,6 @@ use crate::{CommonUi, Effective, Snapshot};
 use design::{DesignReadProjection, ReadButton, ReadPair, ReadType};
 use std::collections::BTreeSet;
 
-const DOMAINS: [Domain; 9] = [
-    Domain::Paint,
-    Domain::Text,
-    Domain::Layout,
-    Domain::Resources,
-    Domain::Motion,
-    Domain::Shell,
-    Domain::Input,
-    Domain::Export,
-    Domain::System,
-];
-
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ChangePlan {
     pub paint: bool,
@@ -57,7 +45,9 @@ impl ChangePlan {
     /// The plan for a change of authored values (key space v2), from each
     /// changed key's registry domains (`KeyDef.domains`; a `tune.style`
     /// token's own, from `design::tunables()`). A key changes when its
-    /// authored-or-default value differs. It may over-report (a mode flip
+    /// authored value differs; defaults are append-only constants (§4.3) and
+    /// a default is never stored, so this equals the authored-or-default
+    /// comparison. It may over-report (a mode flip
     /// from `dark` to `auto` that still resolves dark is a paint change),
     /// never under-report. As [`Self::between`] has it, fresh resources
     /// imply re-shaped text, text and the shell imply layout.
@@ -76,8 +66,8 @@ impl ChangePlan {
                 && let Some(tunable) = registry::tunable(token)
             {
                 for name in &tunable.domains {
-                    if let Some(domain) = DOMAINS.iter().find(|d| d.name() == *name) {
-                        plan.mark(*domain);
+                    if let Some(domain) = Domain::from_name(name) {
+                        plan.mark(domain);
                     }
                 }
             }
@@ -364,6 +354,13 @@ mod tests {
                 let mut want = ChangePlan::default();
                 for domain in def.domains {
                     want.mark(*domain);
+                }
+                // A tunable also marks its own catalogue domains.
+                let path = registry::tests::concrete(def.path);
+                if let Some(tunable) = path.strip_prefix("tune.").and_then(registry::tunable) {
+                    for name in &tunable.domains {
+                        want.mark(Domain::from_name(name).expect("a known domain"));
+                    }
                 }
                 let marked = [
                     (want.paint, plan.paint),
