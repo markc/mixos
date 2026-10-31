@@ -27,14 +27,32 @@ pub struct SrgbColour {
     pub alpha: f64,
 }
 
+impl serde::Serialize for SrgbColour {
+    /// As `#RRGGBBAA`, the form theme files are written in.
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.to_hex())
+    }
+}
+
 impl SrgbColour {
-    fn from_linear(colour: LinearRgba) -> Self {
+    pub(crate) fn from_linear(colour: LinearRgba) -> Self {
         let [red, green, blue, alpha] = colour.to_srgba8().map(|c| f64::from(c) / 255.0);
         Self {
             red,
             green,
             blue,
             alpha,
+        }
+    }
+
+    /// This colour in linear light, alpha unchanged.
+    pub(crate) fn to_linear(self) -> LinearRgba {
+        let decode = |c: f64| crate::colour_model::srgb_to_linear(c.clamp(0.0, 1.0));
+        LinearRgba {
+            red: decode(self.red),
+            green: decode(self.green),
+            blue: decode(self.blue),
+            alpha: self.alpha,
         }
     }
 
@@ -77,7 +95,11 @@ impl SrgbColour {
 /// style; pair widgets when the design authors no style family). `None`
 /// when the design has neither the chrome role nor the `accent` pair.
 pub fn resolved_accent(design: &UnstampedResolvedDesign) -> Option<SrgbColour> {
-    let dictionary = design.dictionary();
+    resolved_accent_of(design.dictionary())
+}
+
+/// [`resolved_accent`] of a compiled dictionary.
+pub fn resolved_accent_of(dictionary: &ResolvedDictionary) -> Option<SrgbColour> {
     let widgets = dictionary
         .style
         .map_or(Widgets::Pairs, |style| style.widgets);

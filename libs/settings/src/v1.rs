@@ -136,6 +136,26 @@ pub fn resolve_with_embedded_and_accents(
     embedded_source: &str,
 ) -> Result<(BTreeMap<String, Effective>, Accents), Vec<Diagnostic>> {
     let validate = || -> Result<(), Diagnostic> {
+        // The derived scheme cannot be stored in format 4: the previous gold
+        // binary kept for rollback would refuse the record. S6 (format 5)
+        // lifts this.
+        let stored_scheme = |path: &str, name: &str| {
+            design::Scheme::from_name(name)
+                .is_some_and(design::Scheme::is_derived)
+                .then(|| error(path, "Scheme not writable until store format 5"))
+        };
+        if let Some(refused) = stored_scheme("appearance.scheme", &desktop.appearance.scheme) {
+            return Err(refused);
+        }
+        for (app, value) in &desktop.apps {
+            if let Some(refused) = value
+                .scheme
+                .as_deref()
+                .and_then(|name| stored_scheme(&format!("apps.{app}.scheme"), name))
+            {
+                return Err(refused);
+            }
+        }
         bounded(desktop.ui.density, 0.5, 2.0, "ui.density")?;
         bounded(desktop.ui.text_scale, 0.5, 3.0, "ui.text_scale")?;
         if desktop.shell.panels.len() > 16
@@ -369,6 +389,8 @@ pub fn resolve_with_embedded_and_accents(
                     })
                     .transpose()?,
                 app: app.map(str::to_owned),
+                accent: design::AccentChoice::Auto,
+                tints: design::Tints::default(),
             })
         };
         let selected = selection().map_err(|e| vec![e])?;
@@ -619,6 +641,33 @@ fn set(desktop: &mut Desktop, path: &str, value: Option<Value>) -> Result<(), Di
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Format 4 refuses the derived scheme until S6, for the profile and
+    /// for an app override alike.
+    #[test]
+    fn the_derived_scheme_is_not_writable_in_format_4() {
+        for (path, value) in [
+            ("appearance.scheme", json!("mixos")),
+            ("apps.term.scheme", json!("mixos")),
+        ] {
+            let next = patch(
+                &Desktop::default(),
+                &BTreeMap::from([(path.into(), value)]),
+                &[],
+            )
+            .unwrap();
+            let errors = resolve(&next).expect_err(path);
+            assert!(
+                errors
+                    .iter()
+                    .any(|e| e.path == path && e.message.contains("not writable until store format 5")),
+                "{path}: {errors:?}"
+            );
+        }
+        let mut studio = Desktop::default();
+        studio.appearance.scheme = "studio".into();
+        assert!(resolve(&studio).is_ok());
+    }
 
     #[test]
     fn every_concrete_schema_path_has_a_setter() {

@@ -105,6 +105,8 @@ pub(crate) fn validate_crosswalk_shape(
             contrast: Contrast::Normal,
             style: None,
             app: None,
+            accent: crate::AccentChoice::Auto,
+            tints: crate::Tints::default(),
         }),
         _ if document.legacy.scheme.is_some() && document.legacy.mode.is_some() => {
             diagnostics.push(DesignDiagnostic::error(

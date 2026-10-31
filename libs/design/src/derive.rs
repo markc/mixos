@@ -14,7 +14,7 @@
 //!
 //! Colours are gamma-encoded sRGB with straight alpha ([`SrgbColour`]).
 
-mod primitives;
+pub(crate) mod primitives;
 #[cfg(test)]
 mod tests;
 
@@ -32,7 +32,7 @@ use crate::{Contrast, Mode, SrgbColour};
 /// (a ramp inherits its seed's alpha, so a translucent accent or tint would
 /// otherwise reach every control and text). The three backgrounds keep
 /// theirs.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize)]
 pub struct Seeds {
     /// Opaque; `None` is the palette's `accent_blue`.
     pub accent: Option<SrgbColour>,
@@ -75,7 +75,7 @@ impl Seeds {
 }
 
 /// The frosted-glass inputs.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize)]
 pub struct FrostedGlass {
     pub strength: BlurStrength,
     pub alpha_map: AlphaMap,
@@ -118,8 +118,9 @@ impl FrostedGlass {
     }
 }
 
-/// One component's twelve colours.
-#[derive(Clone, Copy, Debug, PartialEq)]
+/// One component's twelve colours. Serialised with the reference's field
+/// names, each colour as `#RRGGBBAA`.
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize)]
 pub struct Component {
     pub base: SrgbColour,
     pub hover: SrgbColour,
@@ -136,7 +137,7 @@ pub struct Component {
 }
 
 /// One container: its surface, the component drawn on it, and its texts.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize)]
 pub struct Container {
     pub base: SrgbColour,
     pub component: Component,
@@ -156,7 +157,7 @@ pub struct Container {
 /// `on`, `component.base`, and `button.base` / `button.on`. The ones with a
 /// rule are methods: [`Self::control`], [`Self::accent_text_colour`],
 /// [`Self::small_widget_divider`], [`Self::window_header_background`].
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
 pub struct DerivedTheme {
     /// The palette derived from, with its kind (mode and contrast).
     pub palette: BasePalette,
@@ -321,6 +322,25 @@ fn container(
         on,
         small_widget: with_alpha(small, 0.25),
     }
+}
+
+/// §4.2 step 14 for `mode` and `contrast`: the accent lifted for legibility
+/// against `bg` and `primary_base`, or `None` when the accent already reads.
+/// The accent axis applies the same rule under an authored scheme.
+pub(crate) fn accent_text_for(
+    accent: SrgbColour,
+    bg: SrgbColour,
+    primary_base: SrgbColour,
+    mode: Mode,
+    contrast: Contrast,
+) -> Option<SrgbColour> {
+    accent_text(
+        with_alpha(accent, 1.0),
+        bg,
+        primary_base,
+        mode == Mode::Dark,
+        contrast == Contrast::High,
+    )
 }
 
 /// §4.2 step 14: the accent text colour, the only contrast check in the

@@ -1,0 +1,3080 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+# Copyright 2026 Mark Constable <mc@mixos.dev>
+{
+  "compat": {
+    "fallback": [
+      "name",
+      "base",
+      "scheme-default",
+      "plain"
+    ],
+    "constraints": [
+      {
+        "kind": "le",
+        "a": "resize_edge",
+        "b": "resize_corner"
+      }
+    ],
+    "v3": {
+  "schemes": {
+    "adwaita": {
+      "chrome": {
+        "dark": {
+          "chrome.accent": {
+            "alpha": 1,
+            "c": 0.164340699,
+            "color_space": "oklch",
+            "h": 255.343172787,
+            "l": 0.613674788
+          },
+          "chrome.accent_border": {
+            "alpha": 0.549019608,
+            "c": 0.108217015,
+            "color_space": "oklch",
+            "h": 252.992402599,
+            "l": 0.7382655
+          },
+          "chrome.accent_soft": {
+            "alpha": 0.235294118,
+            "c": 0.164340699,
+            "color_space": "oklch",
+            "h": 255.343172787,
+            "l": 0.613674788
+          },
+          "chrome.accent_text": {
+            "alpha": 1,
+            "c": 0.108217015,
+            "color_space": "oklch",
+            "h": 252.992402599,
+            "l": 0.7382655
+          },
+          "chrome.canvas": {
+            "alpha": 1,
+            "c": 0.005714887,
+            "color_space": "oklch",
+            "h": 285.945914531,
+            "l": 0.232006767
+          },
+          "chrome.canvas_dot": {
+            "alpha": 1,
+            "c": 0.005714887,
+            "color_space": "oklch",
+            "h": 285.945914531,
+            "l": 0.232006767
+          },
+          "chrome.caption_close": {
+            "alpha": 1,
+            "c": 0.006625599,
+            "color_space": "oklch",
+            "h": 286.098765354,
+            "l": 0.403104396
+          },
+          "chrome.caption_close_text": {
+            "alpha": 1,
+            "c": 3.7e-8,
+            "color_space": "oklch",
+            "h": 89.875563096,
+            "l": 0.999999993
+          },
+          "chrome.card": {
+            "alpha": 1,
+            "c": 0.006948876,
+            "color_space": "oklch",
+            "h": 286.018001543,
+            "l": 0.33440833
+          },
+          "chrome.card_border": {
+            "alpha": 1,
+            "c": 0.006758061,
+            "color_space": "oklch",
+            "h": 286.067524487,
+            "l": 0.372965447
+          },
+          "chrome.chrome": {
+            "alpha": 1,
+            "c": 0.007127837,
+            "color_space": "oklch",
+            "h": 285.966325347,
+            "l": 0.302748037
+          },
+          "chrome.danger": {
+            "alpha": 1,
+            "c": 0.165860842,
+            "color_space": "oklch",
+            "h": 31.894480825,
+            "l": 0.731924698
+          },
+          "chrome.dock": {
+            "alpha": 1,
+            "c": 0.007458806,
+            "color_space": "oklch",
+            "h": 285.855946301,
+            "l": 0.253616782
+          },
+          "chrome.field": {
+            "alpha": 1,
+            "c": 0.006758061,
+            "color_space": "oklch",
+            "h": 286.067524487,
+            "l": 0.372965447
+          },
+          "chrome.field_border": {
+            "alpha": 1,
+            "c": 0.006564848,
+            "color_space": "oklch",
+            "h": 286.11228232,
+            "l": 0.417962756
+          },
+          "chrome.hover": {
+            "alpha": 1,
+            "c": 0.006625599,
+            "color_space": "oklch",
+            "h": 286.098765354,
+            "l": 0.403104396
+          },
+          "chrome.icon": {
+            "alpha": 1,
+            "c": 0.002671494,
+            "color_space": "oklch",
+            "h": 286.348361293,
+            "l": 0.940637673
+          },
+          "chrome.menu_highlight": {
+            "alpha": 1,
+            "c": 0.006625599,
+            "color_space": "oklch",
+            "h": 286.098765354,
+            "l": 0.403104396
+          },
+          "chrome.menu_highlight_text": {
+            "alpha": 1,
+            "c": 3.7e-8,
+            "color_space": "oklch",
+            "h": 89.875563096,
+            "l": 0.999999993
+          },
+          "chrome.pressed": {
+            "alpha": 1,
+            "c": 0.006426278,
+            "color_space": "oklch",
+            "h": 286.141301009,
+            "l": 0.454550822
+          },
+          "chrome.primary_bg": {
+            "alpha": 1,
+            "c": 0.164340699,
+            "color_space": "oklch",
+            "h": 255.343172787,
+            "l": 0.613674788
+          },
+          "chrome.primary_text": {
+            "alpha": 1,
+            "c": 3.7e-8,
+            "color_space": "oklch",
+            "h": 89.875563096,
+            "l": 0.999999993
+          },
+          "chrome.row_selected": {
+            "alpha": 0,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0
+          },
+          "chrome.scrim": {
+            "alpha": 0.431372549,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0
+          },
+          "chrome.separator": {
+            "alpha": 1,
+            "c": 0.005860375,
+            "color_space": "oklch",
+            "h": 285.88515294,
+            "l": 0.21033093
+          },
+          "chrome.shadow": {
+            "alpha": 0.549019608,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0
+          },
+          "chrome.tab_strip": {
+            "alpha": 0,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0
+          },
+          "chrome.text": {
+            "alpha": 1,
+            "c": 3.7e-8,
+            "color_space": "oklch",
+            "h": 89.875563096,
+            "l": 0.999999993
+          },
+          "chrome.text_dim": {
+            "alpha": 1,
+            "c": 0.002775072,
+            "color_space": "oklch",
+            "h": 286.337556337,
+            "l": 0.808386346
+          },
+          "chrome.text_faint": {
+            "alpha": 1,
+            "c": 0.004386783,
+            "color_space": "oklch",
+            "h": 286.278478192,
+            "l": 0.657594011
+          },
+          "chrome.warning": {
+            "alpha": 1,
+            "c": 0.154517763,
+            "color_space": "oklch",
+            "h": 100.93357858,
+            "l": 0.910489041
+          }
+        },
+        "light": {
+          "chrome.accent": {
+            "alpha": 1,
+            "c": 0.164340699,
+            "color_space": "oklch",
+            "h": 255.343172787,
+            "l": 0.613674788
+          },
+          "chrome.accent_border": {
+            "alpha": 0.509803922,
+            "c": 0.164340699,
+            "color_space": "oklch",
+            "h": 255.343172787,
+            "l": 0.613674788
+          },
+          "chrome.accent_soft": {
+            "alpha": 0.156862745,
+            "c": 0.164340699,
+            "color_space": "oklch",
+            "h": 255.343172787,
+            "l": 0.613674788
+          },
+          "chrome.accent_text": {
+            "alpha": 1,
+            "c": 0.176161098,
+            "color_space": "oklch",
+            "h": 256.434086969,
+            "l": 0.558191703
+          },
+          "chrome.canvas": {
+            "alpha": 1,
+            "c": 0.001349743,
+            "color_space": "oklch",
+            "h": 286.3728932,
+            "l": 0.900886879
+          },
+          "chrome.canvas_dot": {
+            "alpha": 1,
+            "c": 0.001349743,
+            "color_space": "oklch",
+            "h": 286.3728932,
+            "l": 0.900886879
+          },
+          "chrome.caption_close": {
+            "alpha": 1,
+            "c": 0.005451434,
+            "color_space": "oklch",
+            "h": 286.28602268,
+            "l": 0.871107902
+          },
+          "chrome.caption_close_text": {
+            "alpha": 1,
+            "c": 0.007034969,
+            "color_space": "oklch",
+            "h": 285.993799995,
+            "l": 0.318676299
+          },
+          "chrome.card": {
+            "alpha": 1,
+            "c": 3.7e-8,
+            "color_space": "oklch",
+            "h": 89.875563096,
+            "l": 0.999999993
+          },
+          "chrome.card_border": {
+            "alpha": 1,
+            "c": 0.004065806,
+            "color_space": "oklch",
+            "h": 286.316787323,
+            "l": 0.889235769
+          },
+          "chrome.chrome": {
+            "alpha": 1,
+            "c": 3.7e-8,
+            "color_space": "oklch",
+            "h": 89.875563096,
+            "l": 0.999999993
+          },
+          "chrome.danger": {
+            "alpha": 1,
+            "c": 0.195621804,
+            "color_space": "oklch",
+            "h": 24.704765865,
+            "l": 0.519786745
+          },
+          "chrome.dock": {
+            "alpha": 1,
+            "c": 0.002671494,
+            "color_space": "oklch",
+            "h": 286.348361293,
+            "l": 0.940637673
+          },
+          "chrome.field": {
+            "alpha": 1,
+            "c": 0.002671494,
+            "color_space": "oklch",
+            "h": 286.348361293,
+            "l": 0.940637673
+          },
+          "chrome.field_border": {
+            "alpha": 1,
+            "c": 0.004065806,
+            "color_space": "oklch",
+            "h": 286.316787323,
+            "l": 0.889235769
+          },
+          "chrome.hover": {
+            "alpha": 1,
+            "c": 0.004038207,
+            "color_space": "oklch",
+            "h": 286.319565808,
+            "l": 0.913650449
+          },
+          "chrome.icon": {
+            "alpha": 1,
+            "c": 0.006908099,
+            "color_space": "oklch",
+            "h": 286.029052266,
+            "l": 0.342205089
+          },
+          "chrome.menu_highlight": {
+            "alpha": 1,
+            "c": 0.004038207,
+            "color_space": "oklch",
+            "h": 286.319565808,
+            "l": 0.913650449
+          },
+          "chrome.menu_highlight_text": {
+            "alpha": 1,
+            "c": 0.007034969,
+            "color_space": "oklch",
+            "h": 285.993799995,
+            "l": 0.318676299
+          },
+          "chrome.pressed": {
+            "alpha": 1,
+            "c": 0.005451434,
+            "color_space": "oklch",
+            "h": 286.28602268,
+            "l": 0.871107902
+          },
+          "chrome.primary_bg": {
+            "alpha": 1,
+            "c": 0.164340699,
+            "color_space": "oklch",
+            "h": 255.343172787,
+            "l": 0.613674788
+          },
+          "chrome.primary_text": {
+            "alpha": 1,
+            "c": 3.7e-8,
+            "color_space": "oklch",
+            "h": 89.875563096,
+            "l": 0.999999993
+          },
+          "chrome.row_selected": {
+            "alpha": 0,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0
+          },
+          "chrome.scrim": {
+            "alpha": 0.431372549,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0
+          },
+          "chrome.separator": {
+            "alpha": 1,
+            "c": 0.004051866,
+            "color_space": "oklch",
+            "h": 286.318200148,
+            "l": 0.901463771
+          },
+          "chrome.shadow": {
+            "alpha": 0.176470588,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0
+          },
+          "chrome.tab_strip": {
+            "alpha": 0,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0
+          },
+          "chrome.text": {
+            "alpha": 1,
+            "c": 0.007034969,
+            "color_space": "oklch",
+            "h": 285.993799995,
+            "l": 0.318676299
+          },
+          "chrome.text_dim": {
+            "alpha": 1,
+            "c": 0.006258188,
+            "color_space": "oklch",
+            "h": 286.173305932,
+            "l": 0.504578921
+          },
+          "chrome.text_faint": {
+            "alpha": 1,
+            "c": 0.007227941,
+            "color_space": "oklch",
+            "h": 286.209059815,
+            "l": 0.691041866
+          },
+          "chrome.warning": {
+            "alpha": 1,
+            "c": 0.117616342,
+            "color_space": "oklch",
+            "h": 79.383980238,
+            "l": 0.570802497
+          }
+        }
+      },
+      "pairs": {
+        "dark": {},
+        "light": {
+          "muted": {
+            "foreground": "palette.foreground.quiet",
+            "surface": "palette.background.muted"
+          }
+        }
+      },
+      "primitives": {
+        "dark": {
+          "palette.accent.default": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.85
+          },
+          "palette.accent.hover": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.92
+          },
+          "palette.background.1": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.1
+          },
+          "palette.background.2": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.15
+          },
+          "palette.background.3": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.22
+          },
+          "palette.background.elevated": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.34
+          },
+          "palette.background.muted": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.26
+          },
+          "palette.foreground.default": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.95
+          },
+          "palette.foreground.muted": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.61
+          },
+          "palette.foreground.quiet": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.65
+          },
+          "status.danger": {
+            "alpha": 1,
+            "c": 0.18,
+            "color_space": "oklch",
+            "h": 25,
+            "l": 0.7
+          },
+          "status.success": {
+            "alpha": 1,
+            "c": 0.15,
+            "color_space": "oklch",
+            "h": 145,
+            "l": 0.7
+          },
+          "status.warning": {
+            "alpha": 1,
+            "c": 0.15,
+            "color_space": "oklch",
+            "h": 85,
+            "l": 0.8
+          }
+        },
+        "light": {
+          "palette.accent.default": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.25
+          },
+          "palette.accent.hover": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.35
+          },
+          "palette.background.1": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.98
+          },
+          "palette.background.2": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.96
+          },
+          "palette.background.3": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.92
+          },
+          "palette.background.elevated": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.85
+          },
+          "palette.background.muted": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.89
+          },
+          "palette.foreground.default": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.2
+          },
+          "palette.foreground.muted": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.5
+          },
+          "palette.foreground.quiet": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.45
+          }
+        }
+      },
+      "style": "adwaita"
+    },
+    "breeze": {
+      "chrome": {
+        "dark": {
+          "chrome.accent": {
+            "alpha": 1,
+            "c": 0.132565999,
+            "color_space": "oklch",
+            "h": 236.447185817,
+            "l": 0.707262659
+          },
+          "chrome.accent_border": {
+            "alpha": 0.62745098,
+            "c": 0.132565999,
+            "color_space": "oklch",
+            "h": 236.447185817,
+            "l": 0.707262659
+          },
+          "chrome.accent_soft": {
+            "alpha": 0.156862745,
+            "c": 0.132565999,
+            "color_space": "oklch",
+            "h": 236.447185817,
+            "l": 0.707262659
+          },
+          "chrome.accent_text": {
+            "alpha": 1,
+            "c": 0.1229635361806189,
+            "color_space": "oklch",
+            "h": 233.9312866624345,
+            "l": 0.7954359094111688
+          },
+          "chrome.canvas": {
+            "alpha": 1,
+            "c": 0.009414211,
+            "color_space": "oklch",
+            "h": 255.633274862,
+            "l": 0.18982941
+          },
+          "chrome.canvas_dot": {
+            "alpha": 1,
+            "c": 0.009414211,
+            "color_space": "oklch",
+            "h": 255.633274862,
+            "l": 0.18982941
+          },
+          "chrome.caption_close": {
+            "alpha": 1,
+            "c": 0.1976798,
+            "color_space": "oklch",
+            "h": 23.397124905,
+            "l": 0.57637019
+          },
+          "chrome.caption_close_text": {
+            "alpha": 1,
+            "c": 3.7e-8,
+            "color_space": "oklch",
+            "h": 89.875563096,
+            "l": 0.999999993
+          },
+          "chrome.card": {
+            "alpha": 1,
+            "c": 0.011218632,
+            "color_space": "oklch",
+            "h": 254.046497009,
+            "l": 0.245812752
+          },
+          "chrome.card_border": {
+            "alpha": 1,
+            "c": 0.010346936,
+            "color_space": "oklch",
+            "h": 253.975332635,
+            "l": 0.338785026
+          },
+          "chrome.chrome": {
+            "alpha": 1,
+            "c": 0.01242515,
+            "color_space": "oklch",
+            "h": 258.372062291,
+            "l": 0.283518176
+          },
+          "chrome.danger": {
+            "alpha": 1,
+            "c": 0.1432675642230839,
+            "color_space": "oklch",
+            "h": 14.98480195932833,
+            "l": 0.7052068313908753
+          },
+          "chrome.dock": {
+            "alpha": 1,
+            "c": 0.010691998,
+            "color_space": "oklch",
+            "h": 260.683814513,
+            "l": 0.229792556
+          },
+          "chrome.field": {
+            "alpha": 1,
+            "c": 0.01242515,
+            "color_space": "oklch",
+            "h": 258.372062291,
+            "l": 0.283518176
+          },
+          "chrome.field_border": {
+            "alpha": 1,
+            "c": 0.01203031,
+            "color_space": "oklch",
+            "h": 252.936814565,
+            "l": 0.403013954
+          },
+          "chrome.hover": {
+            "alpha": 1,
+            "c": 0.010408054,
+            "color_space": "oklch",
+            "h": 253.97981691,
+            "l": 0.330973767
+          },
+          "chrome.icon": {
+            "alpha": 1,
+            "c": 0.003444614,
+            "color_space": "oklch",
+            "h": 247.859300841,
+            "l": 0.948159047
+          },
+          "chrome.menu_highlight": {
+            "alpha": 1,
+            "c": 0.010408054,
+            "color_space": "oklch",
+            "h": 253.97981691,
+            "l": 0.330973767
+          },
+          "chrome.menu_highlight_text": {
+            "alpha": 1,
+            "c": 0.002858594,
+            "color_space": "oklch",
+            "h": 264.542176219,
+            "l": 0.987890664
+          },
+          "chrome.pressed": {
+            "alpha": 1,
+            "c": 0.012331746,
+            "color_space": "oklch",
+            "h": 252.959754393,
+            "l": 0.365274798
+          },
+          "chrome.primary_bg": {
+            "alpha": 1,
+            "c": 0.120240955,
+            "color_space": "oklch",
+            "h": 243.417224276,
+            "l": 0.544333113
+          },
+          "chrome.primary_text": {
+            "alpha": 1,
+            "c": 3.7e-8,
+            "color_space": "oklch",
+            "h": 89.875563096,
+            "l": 0.999999993
+          },
+          "chrome.row_selected": {
+            "alpha": 0,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0
+          },
+          "chrome.scrim": {
+            "alpha": 0.431372549,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0
+          },
+          "chrome.separator": {
+            "alpha": 1,
+            "c": 0.009072359,
+            "color_space": "oklch",
+            "h": 248.116281081,
+            "l": 0.314799162
+          },
+          "chrome.shadow": {
+            "alpha": 0.588235294,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0
+          },
+          "chrome.tab_strip": {
+            "alpha": 0,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0
+          },
+          "chrome.text": {
+            "alpha": 1,
+            "c": 0.002858594,
+            "color_space": "oklch",
+            "h": 264.542176219,
+            "l": 0.987890664
+          },
+          "chrome.text_dim": {
+            "alpha": 1,
+            "c": 0.011740419,
+            "color_space": "oklch",
+            "h": 252.102590968,
+            "l": 0.848840727
+          },
+          "chrome.text_faint": {
+            "alpha": 1,
+            "c": 0.011920710085752627,
+            "color_space": "oklch",
+            "h": 252.1104260974295,
+            "l": 0.7989088002156174
+          },
+          "chrome.warning": {
+            "alpha": 1,
+            "c": 0.180507263,
+            "color_space": "oklch",
+            "h": 51.72175908,
+            "l": 0.704661441
+          }
+        },
+        "light": {
+          "chrome.accent": {
+            "alpha": 1,
+            "c": 0.132565999,
+            "color_space": "oklch",
+            "h": 236.447185817,
+            "l": 0.707262659
+          },
+          "chrome.accent_border": {
+            "alpha": 0.666666667,
+            "c": 0.132565999,
+            "color_space": "oklch",
+            "h": 236.447185817,
+            "l": 0.707262659
+          },
+          "chrome.accent_soft": {
+            "alpha": 0.188235294,
+            "c": 0.132565999,
+            "color_space": "oklch",
+            "h": 236.447185817,
+            "l": 0.707262659
+          },
+          "chrome.accent_text": {
+            "alpha": 1,
+            "c": 0.09317150655515317,
+            "color_space": "oklch",
+            "h": 242.3714916438924,
+            "l": 0.44895118427064346
+          },
+          "chrome.canvas": {
+            "alpha": 1,
+            "c": 0.006353943,
+            "color_space": "oklch",
+            "h": 255.477937853,
+            "l": 0.899442999
+          },
+          "chrome.canvas_dot": {
+            "alpha": 1,
+            "c": 0.006353943,
+            "color_space": "oklch",
+            "h": 255.477937853,
+            "l": 0.899442999
+          },
+          "chrome.caption_close": {
+            "alpha": 1,
+            "c": 0.1976798,
+            "color_space": "oklch",
+            "h": 23.397124905,
+            "l": 0.57637019
+          },
+          "chrome.caption_close_text": {
+            "alpha": 1,
+            "c": 3.7e-8,
+            "color_space": "oklch",
+            "h": 89.875563096,
+            "l": 0.999999993
+          },
+          "chrome.card": {
+            "alpha": 1,
+            "c": 0.004566383,
+            "color_space": "oklch",
+            "h": 258.324945793,
+            "l": 0.948445108
+          },
+          "chrome.card_border": {
+            "alpha": 1,
+            "c": 0.008837278,
+            "color_space": "oklch",
+            "h": 247.929391043,
+            "l": 0.855191931
+          },
+          "chrome.chrome": {
+            "alpha": 1,
+            "c": 0.006353943,
+            "color_space": "oklch",
+            "h": 255.477937853,
+            "l": 0.899442999
+          },
+          "chrome.danger": {
+            "alpha": 1,
+            "c": 0.155329118,
+            "color_space": "oklch",
+            "h": 18.321859199,
+            "l": 0.501282598
+          },
+          "chrome.dock": {
+            "alpha": 1,
+            "c": 0.006327169,
+            "color_space": "oklch",
+            "h": 255.477230953,
+            "l": 0.914677921
+          },
+          "chrome.field": {
+            "alpha": 1,
+            "c": 0.002860766,
+            "color_space": "oklch",
+            "h": 264.542142471,
+            "l": 0.984906783
+          },
+          "chrome.field_border": {
+            "alpha": 1,
+            "c": 0.012574818,
+            "color_space": "oklch",
+            "h": 247.984354261,
+            "l": 0.801280951
+          },
+          "chrome.hover": {
+            "alpha": 1,
+            "c": 0.008036217,
+            "color_space": "oklch",
+            "h": 253.855866512,
+            "l": 0.923320818
+          },
+          "chrome.icon": {
+            "alpha": 1,
+            "c": 0.013291017,
+            "color_space": "oklch",
+            "h": 248.212376855,
+            "l": 0.345143136
+          },
+          "chrome.menu_highlight": {
+            "alpha": 1,
+            "c": 0.008036217,
+            "color_space": "oklch",
+            "h": 253.855866512,
+            "l": 0.923320818
+          },
+          "chrome.menu_highlight_text": {
+            "alpha": 1,
+            "c": 0.011034317,
+            "color_space": "oklch",
+            "h": 254.030116573,
+            "l": 0.262535885
+          },
+          "chrome.pressed": {
+            "alpha": 1,
+            "c": 0.011656114,
+            "color_space": "oklch",
+            "h": 252.099068809,
+            "l": 0.873531733
+          },
+          "chrome.primary_bg": {
+            "alpha": 1,
+            "c": 0.11915448955207121,
+            "color_space": "oklch",
+            "h": 245.33825472619233,
+            "l": 0.49338754502367566
+          },
+          "chrome.primary_text": {
+            "alpha": 1,
+            "c": 3.7e-8,
+            "color_space": "oklch",
+            "h": 89.875563096,
+            "l": 0.999999993
+          },
+          "chrome.row_selected": {
+            "alpha": 0,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0
+          },
+          "chrome.scrim": {
+            "alpha": 0.431372549,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0
+          },
+          "chrome.separator": {
+            "alpha": 1,
+            "c": 0.007006589,
+            "color_space": "oklch",
+            "h": 247.904184518,
+            "l": 0.886441924
+          },
+          "chrome.shadow": {
+            "alpha": 0.176470588,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0
+          },
+          "chrome.tab_strip": {
+            "alpha": 0,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0
+          },
+          "chrome.text": {
+            "alpha": 1,
+            "c": 0.011034317,
+            "color_space": "oklch",
+            "h": 254.030116573,
+            "l": 0.262535885
+          },
+          "chrome.text_dim": {
+            "alpha": 1,
+            "c": 0.019657101,
+            "color_space": "oklch",
+            "h": 248.367801005,
+            "l": 0.363030197
+          },
+          "chrome.text_faint": {
+            "alpha": 1,
+            "c": 0.019991965995393452,
+            "color_space": "oklch",
+            "h": 251.05120780841136,
+            "l": 0.4489429678967693
+          },
+          "chrome.warning": {
+            "alpha": 1,
+            "c": 0.128396136,
+            "color_space": "oklch",
+            "h": 51.556969974,
+            "l": 0.496320419
+          }
+        }
+      },
+      "pairs": {
+        "dark": {},
+        "light": {
+          "muted": {
+            "foreground": "palette.foreground.quiet",
+            "surface": "palette.background.muted"
+          }
+        }
+      },
+      "primitives": {
+        "dark": {
+          "palette.accent.default": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.85
+          },
+          "palette.accent.hover": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.92
+          },
+          "palette.background.1": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.1
+          },
+          "palette.background.2": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.15
+          },
+          "palette.background.3": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.22
+          },
+          "palette.background.elevated": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.34
+          },
+          "palette.background.muted": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.26
+          },
+          "palette.foreground.default": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.95
+          },
+          "palette.foreground.muted": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.61
+          },
+          "palette.foreground.quiet": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.65
+          },
+          "status.danger": {
+            "alpha": 1,
+            "c": 0.18,
+            "color_space": "oklch",
+            "h": 25,
+            "l": 0.7
+          },
+          "status.success": {
+            "alpha": 1,
+            "c": 0.15,
+            "color_space": "oklch",
+            "h": 145,
+            "l": 0.7
+          },
+          "status.warning": {
+            "alpha": 1,
+            "c": 0.15,
+            "color_space": "oklch",
+            "h": 85,
+            "l": 0.8
+          }
+        },
+        "light": {
+          "palette.accent.default": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.25
+          },
+          "palette.accent.hover": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.35
+          },
+          "palette.background.1": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.98
+          },
+          "palette.background.2": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.96
+          },
+          "palette.background.3": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.92
+          },
+          "palette.background.elevated": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.85
+          },
+          "palette.background.muted": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.89
+          },
+          "palette.foreground.default": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.2
+          },
+          "palette.foreground.muted": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.5
+          },
+          "palette.foreground.quiet": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.45
+          }
+        }
+      },
+      "style": "breeze"
+    }
+  },
+  "styles": {
+    "adwaita": {
+      "animation_time": 0.2,
+      "bar_padding_y": 0,
+      "bar_row_gap": 4,
+      "bars_bar_inset": 8,
+      "bars_rail_rule": 6,
+      "bevels": false,
+      "body_size": 12.5,
+      "button_icon_share": 0.52,
+      "button_link_icon": 14,
+      "button_link_size": 12,
+      "button_padding_x": 10,
+      "button_padding_y": 4,
+      "button_pro_outline": 1.5,
+      "button_push_padding": 28,
+      "canvas_bar": 12,
+      "canvas_dot_pitch": 16,
+      "canvas_dot_size": 1,
+      "canvas_dots": true,
+      "canvas_thumb_inset": 3,
+      "canvas_thumb_min": 24,
+      "caption_gap": 4,
+      "caption_glyph": 10,
+      "caption_width": 46,
+      "checkbox_box": 14,
+      "close_pressed_alpha": 0.8,
+      "combo_chevron_alpha": 0.8,
+      "combo_chevron_half": 3.2,
+      "combo_chevron_height": 3.2,
+      "combo_chevron_stroke": 1.3,
+      "combo_list_height": 420,
+      "combo_width": 120,
+      "dark_luminance": 0.18,
+      "dialog_above_buttons": 8,
+      "dialog_above_rule": 4,
+      "dialog_below_rule": 8,
+      "dialog_button_gap": 10,
+      "dialog_button_min": 84,
+      "dialog_centre_drop": 1.75,
+      "dialog_max_width": 440,
+      "dialog_min_width": 380,
+      "dialog_resize_max_share": 0.9,
+      "dialog_title_size": 15,
+      "disabled_alpha": 0.5,
+      "divider_height": 22,
+      "divider_slot": 9,
+      "dock_margin": 8,
+      "dock_width": 300,
+      "document_tabs": "cards",
+      "double_click_time": 0.3,
+      "edge_gap": 6,
+      "faces": "fixed",
+      "field_focus_role": "accent_text",
+      "field_focus_width": 1,
+      "field_height": 24,
+      "field_padding_x": 6,
+      "field_padding_y": 3,
+      "field_radius": 6,
+      "fine_scrub_rate": 0.01,
+      "fine_span": 10,
+      "focus_offset": 2,
+      "focus_ring": 2,
+      "hairline_width": 1,
+      "heading_size": 15,
+      "hot_distance": 3,
+      "icon_button": 28,
+      "icon_mask": "#ffffff",
+      "icon_width": 14,
+      "interact": 24,
+      "item_spacing_x": 8,
+      "item_spacing_y": 6,
+      "knob": "plain",
+      "link_gap": 4,
+      "mark": 20,
+      "mark_gap": 14,
+      "md_bullet": 0.17,
+      "md_code_padding_x": 0.8,
+      "md_code_padding_y": 0.6,
+      "md_gap": 0.75,
+      "md_gap_after_heading": 0.35,
+      "md_gap_before_heading": 1.2,
+      "md_gutter": 1.6,
+      "md_heading_line": 1.25,
+      "md_heading_scale_1": 1.6,
+      "md_heading_scale_2": 1.3,
+      "md_heading_scale_3": 1.1,
+      "md_heading_scale_4": 1,
+      "md_heading_scale_5": 0.9,
+      "md_heading_scale_6": 0.85,
+      "md_inline_code_scale": 0.92,
+      "md_item_gap": 0.25,
+      "md_line": 1.45,
+      "md_measure": 46,
+      "md_quote_indent": 1,
+      "md_quote_rule": 3,
+      "menu_highlight_radius": 6,
+      "menu_margin": 6,
+      "menu_min_width": 220,
+      "menu_row_height": 24,
+      "menu_row_padding_x": 2,
+      "menu_row_padding_y": 0,
+      "menu_scroll_speed": 1000,
+      "menu_search_width": 220,
+      "menu_separator_height": 9,
+      "menu_title_height": 24,
+      "menu_title_padding_x": 6,
+      "menu_title_padding_y": 3,
+      "mono_size": 12,
+      "options_bar": 42,
+      "pair_active_mix": 0.16,
+      "pair_hover_mix": 0.08,
+      "panel_card_after": 6,
+      "panel_card_margin_bottom": 10,
+      "panel_card_margin_collapsed": 6,
+      "panel_card_margin_left": 8,
+      "panel_card_margin_right": 8,
+      "panel_card_margin_top": 6,
+      "panel_drag_band": 22,
+      "panel_drop_inset_horizontal": 4,
+      "panel_drop_inset_vertical": 2,
+      "panel_drop_line": 2,
+      "panel_ellipsis": 22,
+      "panel_ellipsis_gap": 4,
+      "panel_groups": "cards",
+      "panel_header": 24,
+      "panel_header_after": 6,
+      "panel_pill_gap": 2,
+      "panel_pill_min": 44,
+      "panel_pill_pad": 20,
+      "panel_pill_size": 12.5,
+      "panel_section_size": 11.5,
+      "panel_strip": 26,
+      "popup_shadow_alpha": 1,
+      "popup_shadow_blur": 20,
+      "popup_shadow_offset_x": 0,
+      "popup_shadow_offset_y": 6,
+      "popup_shadow_spread": 0,
+      "primary_hover_alpha": 0.93,
+      "primary_press_alpha": 0.85,
+      "push_height": 30,
+      "push_label_size": 13,
+      "push_shape": "rounded",
+      "radius": 9,
+      "radius_lg": 12,
+      "radius_sm": 6,
+      "rail": 44,
+      "rail_button": 32,
+      "resize_corner": 12,
+      "resize_edge": 5,
+      "scroll_allocated": 6,
+      "scroll_bars": "thin",
+      "scroll_handle_alpha_active": 0.6,
+      "scroll_handle_alpha_hot": 1,
+      "scroll_handle_alpha_rest": 0.6,
+      "scroll_handle_min": 12,
+      "scroll_margin": 4,
+      "scroll_outer_margin": 0,
+      "scroll_track_alpha_active": 0,
+      "scroll_track_alpha_hot": 0.4,
+      "scroll_track_alpha_rest": 0,
+      "scroll_width": 4,
+      "scroll_width_hot": 10,
+      "scrub_rate": 0.5,
+      "search_icon": 14,
+      "search_lead": 22,
+      "secondary_button": "filled",
+      "selection": "accent_soft",
+      "shortcut_gap": 16,
+      "slider_big_step": 10,
+      "slider_double_click": 0.5,
+      "slider_double_click_distance": 6,
+      "slider_fill": "text_dim",
+      "slider_gradient_track": 5,
+      "slider_halo_radius": 9.5,
+      "slider_halo_width": 2,
+      "slider_height": 18,
+      "slider_inset": 7,
+      "slider_key_step_share": 0.01,
+      "slider_knob_classic_h": 16,
+      "slider_knob_classic_w": 10,
+      "slider_knob_pro": 6,
+      "slider_knob_pro_fill": "#ececec",
+      "slider_knob_pro_ring": "#282828",
+      "slider_knob_studio": 7,
+      "slider_knob_studio_fill": "#ffffff",
+      "slider_long_press": 0.8,
+      "slider_min_width": 60,
+      "slider_plain_track": 3,
+      "slider_row_gap": 4,
+      "slider_shadow": "#0000005a",
+      "slider_track_radius": 2,
+      "slider_width": 150,
+      "small_size": 10.5,
+      "space_lg": 16,
+      "space_md": 8,
+      "space_sm": 4,
+      "space_xl": 24,
+      "space_xs": 2,
+      "square_radius": 0,
+      "status_bar": 30,
+      "submenu_gap": 2.5,
+      "switch": "round",
+      "switch_track_h": 17,
+      "switch_track_w": 30,
+      "tabs_chevron": 18,
+      "tabs_chevron_hover_alpha": 0.6,
+      "tabs_chevron_icon": 12,
+      "tabs_chevron_inset_x": 1,
+      "tabs_chevron_inset_y": 3,
+      "tabs_chevron_menu_width": 140,
+      "tabs_drop_outline": 1.5,
+      "tabs_marker": 11,
+      "tabs_marker_gap": 5,
+      "tabs_pro_close": 14,
+      "tabs_pro_close_from_right": 13,
+      "tabs_pro_close_icon": 10,
+      "tabs_pro_hover_alpha": 0.35,
+      "tabs_pro_min": 72,
+      "tabs_pro_pad": 42,
+      "tabs_pro_size": 11.5,
+      "tabs_pro_title_left": 16,
+      "tabs_progress": 2,
+      "tabs_strip": 26,
+      "tabs_studio_close": 16,
+      "tabs_studio_close_from_right": 12,
+      "tabs_studio_close_icon": 11,
+      "tabs_studio_close_radius": 4,
+      "tabs_studio_gap": 4,
+      "tabs_studio_hover_alpha": 0.5,
+      "tabs_studio_margin_bottom": 4,
+      "tabs_studio_margin_left": 8,
+      "tabs_studio_margin_right": 8,
+      "tabs_studio_margin_top": 6,
+      "tabs_studio_meta_gap": 6,
+      "tabs_studio_meta_size": 10.5,
+      "tabs_studio_name_left": 10,
+      "tabs_studio_name_size": 12.5,
+      "tabs_studio_pad": 48,
+      "title_bar_height": 38,
+      "title_bar_margin": 10,
+      "title_combo_max_width": 130,
+      "title_combo_min_width": 90,
+      "title_control_spacing": 6,
+      "title_gap": 16,
+      "title_link_room": 120,
+      "title_min_room": 80,
+      "title_size": 13,
+      "toggle": "switch",
+      "toggle_box_radius": 2,
+      "toggle_knob": 6.5,
+      "toggle_knob_inset": 8.5,
+      "toggle_label_gap": 6,
+      "toggle_mark": "#ffffff",
+      "toggle_outline": 1.5,
+      "toggle_tick": 1.8,
+      "tool_bar": 50,
+      "tool_bar_rule": false,
+      "tool_button": 36,
+      "tool_margin": 7,
+      "tooltip_delay": 0.35,
+      "tooltip_grace": 0.2,
+      "tooltip_width": 280,
+      "value_number_size": 12,
+      "value_unit_gap": 2,
+      "value_unit_inset": 6,
+      "value_unit_reserve": 16,
+      "value_unit_size": 11,
+      "value_width": 74,
+      "weak_alpha": 0.6,
+      "widget_stroke": "role",
+      "widgets": "chrome",
+      "window_margin": 16,
+      "window_shadow_blur": 32,
+      "window_shadow_offset_x": 0,
+      "window_shadow_offset_y": 10,
+      "window_shadow_spread": 0
+    },
+    "breeze": {
+      "animation_time": 0.2,
+      "bar_padding_y": 0,
+      "bar_row_gap": 4,
+      "bars_bar_inset": 8,
+      "bars_rail_rule": 6,
+      "bevels": false,
+      "body_size": 12.5,
+      "button_icon_share": 0.52,
+      "button_link_icon": 14,
+      "button_link_size": 12,
+      "button_padding_x": 10,
+      "button_padding_y": 4,
+      "button_pro_outline": 1.5,
+      "button_push_padding": 28,
+      "canvas_bar": 12,
+      "canvas_dot_pitch": 16,
+      "canvas_dot_size": 1,
+      "canvas_dots": true,
+      "canvas_thumb_inset": 3,
+      "canvas_thumb_min": 24,
+      "caption_gap": 4,
+      "caption_glyph": 10,
+      "caption_width": 46,
+      "checkbox_box": 14,
+      "close_pressed_alpha": 0.8,
+      "combo_chevron_alpha": 0.8,
+      "combo_chevron_half": 3.2,
+      "combo_chevron_height": 3.2,
+      "combo_chevron_stroke": 1.3,
+      "combo_list_height": 420,
+      "combo_width": 120,
+      "dark_luminance": 0.18,
+      "dialog_above_buttons": 8,
+      "dialog_above_rule": 4,
+      "dialog_below_rule": 8,
+      "dialog_button_gap": 10,
+      "dialog_button_min": 84,
+      "dialog_centre_drop": 1.75,
+      "dialog_max_width": 440,
+      "dialog_min_width": 380,
+      "dialog_resize_max_share": 0.9,
+      "dialog_title_size": 15,
+      "disabled_alpha": 0.5,
+      "divider_height": 22,
+      "divider_slot": 9,
+      "dock_margin": 8,
+      "dock_width": 300,
+      "document_tabs": "cards",
+      "double_click_time": 0.3,
+      "edge_gap": 6,
+      "faces": "fixed",
+      "field_focus_role": "accent_text",
+      "field_focus_width": 1,
+      "field_height": 24,
+      "field_padding_x": 6,
+      "field_padding_y": 3,
+      "field_radius": 5,
+      "fine_scrub_rate": 0.01,
+      "fine_span": 10,
+      "focus_offset": 2,
+      "focus_ring": 2,
+      "hairline_width": 1,
+      "heading_size": 15,
+      "hot_distance": 3,
+      "icon_button": 28,
+      "icon_mask": "#ffffff",
+      "icon_width": 14,
+      "interact": 24,
+      "item_spacing_x": 8,
+      "item_spacing_y": 6,
+      "knob": "plain",
+      "link_gap": 4,
+      "mark": 20,
+      "mark_gap": 14,
+      "md_bullet": 0.17,
+      "md_code_padding_x": 0.8,
+      "md_code_padding_y": 0.6,
+      "md_gap": 0.75,
+      "md_gap_after_heading": 0.35,
+      "md_gap_before_heading": 1.2,
+      "md_gutter": 1.6,
+      "md_heading_line": 1.25,
+      "md_heading_scale_1": 1.6,
+      "md_heading_scale_2": 1.3,
+      "md_heading_scale_3": 1.1,
+      "md_heading_scale_4": 1,
+      "md_heading_scale_5": 0.9,
+      "md_heading_scale_6": 0.85,
+      "md_inline_code_scale": 0.92,
+      "md_item_gap": 0.25,
+      "md_line": 1.45,
+      "md_measure": 46,
+      "md_quote_indent": 1,
+      "md_quote_rule": 3,
+      "menu_highlight_radius": 5,
+      "menu_margin": 6,
+      "menu_min_width": 220,
+      "menu_row_height": 24,
+      "menu_row_padding_x": 2,
+      "menu_row_padding_y": 0,
+      "menu_scroll_speed": 1000,
+      "menu_search_width": 220,
+      "menu_separator_height": 9,
+      "menu_title_height": 24,
+      "menu_title_padding_x": 6,
+      "menu_title_padding_y": 3,
+      "mono_size": 12,
+      "options_bar": 42,
+      "pair_active_mix": 0.16,
+      "pair_hover_mix": 0.08,
+      "panel_card_after": 6,
+      "panel_card_margin_bottom": 10,
+      "panel_card_margin_collapsed": 6,
+      "panel_card_margin_left": 8,
+      "panel_card_margin_right": 8,
+      "panel_card_margin_top": 6,
+      "panel_drag_band": 22,
+      "panel_drop_inset_horizontal": 4,
+      "panel_drop_inset_vertical": 2,
+      "panel_drop_line": 2,
+      "panel_ellipsis": 22,
+      "panel_ellipsis_gap": 4,
+      "panel_groups": "cards",
+      "panel_header": 24,
+      "panel_header_after": 6,
+      "panel_pill_gap": 2,
+      "panel_pill_min": 44,
+      "panel_pill_pad": 20,
+      "panel_pill_size": 12.5,
+      "panel_section_size": 11.5,
+      "panel_strip": 26,
+      "popup_shadow_alpha": 1,
+      "popup_shadow_blur": 20,
+      "popup_shadow_offset_x": 0,
+      "popup_shadow_offset_y": 6,
+      "popup_shadow_spread": 0,
+      "primary_hover_alpha": 0.93,
+      "primary_press_alpha": 0.85,
+      "push_height": 30,
+      "push_label_size": 13,
+      "push_shape": "rounded",
+      "radius": 5,
+      "radius_lg": 6,
+      "radius_sm": 5,
+      "rail": 44,
+      "rail_button": 32,
+      "resize_corner": 12,
+      "resize_edge": 5,
+      "scroll_allocated": 6,
+      "scroll_bars": "thin",
+      "scroll_handle_alpha_active": 0.6,
+      "scroll_handle_alpha_hot": 1,
+      "scroll_handle_alpha_rest": 0.6,
+      "scroll_handle_min": 12,
+      "scroll_margin": 4,
+      "scroll_outer_margin": 0,
+      "scroll_track_alpha_active": 0,
+      "scroll_track_alpha_hot": 0.4,
+      "scroll_track_alpha_rest": 0,
+      "scroll_width": 4,
+      "scroll_width_hot": 10,
+      "scrub_rate": 0.5,
+      "search_icon": 14,
+      "search_lead": 22,
+      "secondary_button": "filled",
+      "selection": "accent_soft",
+      "shortcut_gap": 16,
+      "slider_big_step": 10,
+      "slider_double_click": 0.5,
+      "slider_double_click_distance": 6,
+      "slider_fill": "text_dim",
+      "slider_gradient_track": 5,
+      "slider_halo_radius": 9.5,
+      "slider_halo_width": 2,
+      "slider_height": 18,
+      "slider_inset": 7,
+      "slider_key_step_share": 0.01,
+      "slider_knob_classic_h": 16,
+      "slider_knob_classic_w": 10,
+      "slider_knob_pro": 6,
+      "slider_knob_pro_fill": "#ececec",
+      "slider_knob_pro_ring": "#282828",
+      "slider_knob_studio": 7,
+      "slider_knob_studio_fill": "#ffffff",
+      "slider_long_press": 0.8,
+      "slider_min_width": 60,
+      "slider_plain_track": 3,
+      "slider_row_gap": 4,
+      "slider_shadow": "#0000005a",
+      "slider_track_radius": 2,
+      "slider_width": 150,
+      "small_size": 10.5,
+      "space_lg": 16,
+      "space_md": 8,
+      "space_sm": 4,
+      "space_xl": 24,
+      "space_xs": 2,
+      "square_radius": 0,
+      "status_bar": 30,
+      "submenu_gap": 2.5,
+      "switch": "round",
+      "switch_track_h": 17,
+      "switch_track_w": 30,
+      "tabs_chevron": 18,
+      "tabs_chevron_hover_alpha": 0.6,
+      "tabs_chevron_icon": 12,
+      "tabs_chevron_inset_x": 1,
+      "tabs_chevron_inset_y": 3,
+      "tabs_chevron_menu_width": 140,
+      "tabs_drop_outline": 1.5,
+      "tabs_marker": 11,
+      "tabs_marker_gap": 5,
+      "tabs_pro_close": 14,
+      "tabs_pro_close_from_right": 13,
+      "tabs_pro_close_icon": 10,
+      "tabs_pro_hover_alpha": 0.35,
+      "tabs_pro_min": 72,
+      "tabs_pro_pad": 42,
+      "tabs_pro_size": 11.5,
+      "tabs_pro_title_left": 16,
+      "tabs_progress": 2,
+      "tabs_strip": 26,
+      "tabs_studio_close": 16,
+      "tabs_studio_close_from_right": 12,
+      "tabs_studio_close_icon": 11,
+      "tabs_studio_close_radius": 4,
+      "tabs_studio_gap": 4,
+      "tabs_studio_hover_alpha": 0.5,
+      "tabs_studio_margin_bottom": 4,
+      "tabs_studio_margin_left": 8,
+      "tabs_studio_margin_right": 8,
+      "tabs_studio_margin_top": 6,
+      "tabs_studio_meta_gap": 6,
+      "tabs_studio_meta_size": 10.5,
+      "tabs_studio_name_left": 10,
+      "tabs_studio_name_size": 12.5,
+      "tabs_studio_pad": 48,
+      "title_bar_height": 38,
+      "title_bar_margin": 10,
+      "title_combo_max_width": 130,
+      "title_combo_min_width": 90,
+      "title_control_spacing": 6,
+      "title_gap": 16,
+      "title_link_room": 120,
+      "title_min_room": 80,
+      "title_size": 13,
+      "toggle": "switch",
+      "toggle_box_radius": 2,
+      "toggle_knob": 6.5,
+      "toggle_knob_inset": 8.5,
+      "toggle_label_gap": 6,
+      "toggle_mark": "#ffffff",
+      "toggle_outline": 1.5,
+      "toggle_tick": 1.8,
+      "tool_bar": 50,
+      "tool_bar_rule": false,
+      "tool_button": 36,
+      "tool_margin": 7,
+      "tooltip_delay": 0.35,
+      "tooltip_grace": 0.2,
+      "tooltip_width": 280,
+      "value_number_size": 12,
+      "value_unit_gap": 2,
+      "value_unit_inset": 6,
+      "value_unit_reserve": 16,
+      "value_unit_size": 11,
+      "value_width": 74,
+      "weak_alpha": 0.6,
+      "widget_stroke": "role",
+      "widgets": "chrome",
+      "window_margin": 16,
+      "window_shadow_blur": 32,
+      "window_shadow_offset_x": 0,
+      "window_shadow_offset_y": 10,
+      "window_shadow_spread": 0
+    }
+  },
+  "terminal": {
+    "adwaita.dark": {
+      "ansi": [
+        "#393a3d",
+        "#ff1261",
+        "#2ad947",
+        "#fcba28",
+        "#2d9aff",
+        "#dd30ff",
+        "#17d5df",
+        "#e7e7e7",
+        "#6b6b6b",
+        "#c55555",
+        "#aac474",
+        "#feca88",
+        "#82b8c8",
+        "#c28cb8",
+        "#93d3c3",
+        "#f8f8f8"
+      ],
+      "background": "#1d1d20",
+      "cursor": "invert",
+      "foreground": "#ffffff"
+    },
+    "adwaita.light": {
+      "ansi": [
+        "#393a3d",
+        "#ff1261",
+        "#2ad947",
+        "#fcba28",
+        "#2d9aff",
+        "#dd30ff",
+        "#17d5df",
+        "#e7e7e7",
+        "#6b6b6b",
+        "#c55555",
+        "#aac474",
+        "#feca88",
+        "#82b8c8",
+        "#c28cb8",
+        "#93d3c3",
+        "#f8f8f8"
+      ],
+      "background": "#dedee0",
+      "cursor": "invert",
+      "foreground": "#303036"
+    },
+    "breeze.dark": {
+      "ansi": [
+        "#393a3d",
+        "#ff1261",
+        "#2ad947",
+        "#fcba28",
+        "#2d9aff",
+        "#dd30ff",
+        "#17d5df",
+        "#e7e7e7",
+        "#6b6b6b",
+        "#c55555",
+        "#aac474",
+        "#feca88",
+        "#82b8c8",
+        "#c28cb8",
+        "#93d3c3",
+        "#f8f8f8"
+      ],
+      "background": "#111418",
+      "cursor": "invert",
+      "foreground": "#fafbfd"
+    },
+    "breeze.light": {
+      "ansi": [
+        "#393a3d",
+        "#ff1261",
+        "#2ad947",
+        "#fcba28",
+        "#2d9aff",
+        "#dd30ff",
+        "#17d5df",
+        "#e7e7e7",
+        "#6b6b6b",
+        "#c55555",
+        "#aac474",
+        "#feca88",
+        "#82b8c8",
+        "#c28cb8",
+        "#93d3c3",
+        "#f8f8f8"
+      ],
+      "background": "#dbdee2",
+      "cursor": "invert",
+      "foreground": "#21252a"
+    }
+  },
+  "tokens": {}
+},
+    "v2": {
+      "tokens": {
+        "field_height": {
+          "all": 24
+        },
+        "value_width": {
+          "all": 74
+        },
+        "value_number_size": {
+          "all": 12
+        },
+        "value_unit_size": {
+          "all": 11
+        },
+        "value_unit_reserve": {
+          "all": 16
+        },
+        "value_unit_inset": {
+          "all": 6
+        },
+        "value_unit_gap": {
+          "all": 2
+        },
+        "scrub_rate": {
+          "all": 0.5
+        },
+        "fine_scrub_rate": {
+          "all": 0.01
+        },
+        "fine_span": {
+          "all": 10
+        },
+        "search_icon": {
+          "all": 14
+        },
+        "canvas_bar": {
+          "all": 12
+        },
+        "canvas_thumb_inset": {
+          "all": 3
+        },
+        "canvas_thumb_min": {
+          "all": 24
+        },
+        "hot_distance": {
+          "all": 3
+        },
+        "canvas_dot_pitch": {
+          "all": 16
+        },
+        "canvas_dot_size": {
+          "all": 1
+        },
+        "icon_button": {
+          "all": 28
+        },
+        "button_icon_share": {
+          "all": 0.52
+        },
+        "push_label_size": {
+          "all": 13
+        },
+        "button_push_padding": {
+          "all": 28
+        },
+        "button_pro_outline": {
+          "all": 1.5
+        },
+        "focus_ring": {
+          "all": 2
+        },
+        "focus_offset": {
+          "all": 2
+        },
+        "button_link_icon": {
+          "all": 14
+        },
+        "button_link_size": {
+          "all": 12
+        },
+        "link_gap": {
+          "all": 4
+        },
+        "checkbox_box": {
+          "all": 14
+        },
+        "toggle_box_radius": {
+          "all": 2
+        },
+        "toggle_label_gap": {
+          "all": 6
+        },
+        "toggle_outline": {
+          "all": 1.5
+        },
+        "toggle_tick": {
+          "all": 1.8
+        },
+        "toggle_knob": {
+          "all": 6.5
+        },
+        "toggle_knob_inset": {
+          "all": 8.5
+        },
+        "slider_height": {
+          "all": 18
+        },
+        "slider_min_width": {
+          "all": 60
+        },
+        "slider_inset": {
+          "all": 7
+        },
+        "slider_plain_track": {
+          "all": 3
+        },
+        "slider_gradient_track": {
+          "all": 5
+        },
+        "slider_track_radius": {
+          "all": 2
+        },
+        "slider_knob_pro": {
+          "all": 6
+        },
+        "slider_knob_studio": {
+          "all": 7
+        },
+        "slider_halo_radius": {
+          "all": 9.5
+        },
+        "slider_halo_width": {
+          "all": 2
+        },
+        "slider_double_click": {
+          "all": 0.5
+        },
+        "slider_double_click_distance": {
+          "all": 6
+        },
+        "slider_long_press": {
+          "all": 0.8
+        },
+        "slider_key_step_share": {
+          "all": 0.01
+        },
+        "slider_big_step": {
+          "all": 10
+        },
+        "slider_row_gap": {
+          "all": 4
+        },
+        "tabs_chevron": {
+          "all": 18
+        },
+        "tabs_chevron_icon": {
+          "all": 12
+        },
+        "tabs_chevron_hover_alpha": {
+          "all": 0.6
+        },
+        "tabs_chevron_menu_width": {
+          "all": 140
+        },
+        "tabs_strip": {
+          "all": 26
+        },
+        "tabs_pro_size": {
+          "all": 11.5
+        },
+        "tabs_pro_pad": {
+          "all": 42
+        },
+        "tabs_pro_min": {
+          "all": 72
+        },
+        "tabs_pro_title_left": {
+          "all": 16
+        },
+        "tabs_pro_close": {
+          "all": 14
+        },
+        "tabs_pro_close_from_right": {
+          "all": 13
+        },
+        "tabs_pro_close_icon": {
+          "all": 10
+        },
+        "tabs_pro_hover_alpha": {
+          "all": 0.35
+        },
+        "tabs_studio_gap": {
+          "all": 4
+        },
+        "tabs_studio_name_size": {
+          "all": 12.5
+        },
+        "tabs_studio_meta_size": {
+          "all": 10.5
+        },
+        "tabs_studio_pad": {
+          "all": 48
+        },
+        "tabs_studio_name_left": {
+          "all": 10
+        },
+        "tabs_studio_meta_gap": {
+          "all": 6
+        },
+        "tabs_studio_close": {
+          "all": 16
+        },
+        "tabs_studio_close_from_right": {
+          "all": 12
+        },
+        "tabs_studio_close_icon": {
+          "all": 11
+        },
+        "tabs_studio_close_radius": {
+          "all": 4
+        },
+        "tabs_studio_hover_alpha": {
+          "all": 0.5
+        },
+        "tabs_drop_outline": {
+          "all": 1.5
+        },
+        "tabs_progress": {
+          "all": 2
+        },
+        "tabs_marker": {
+          "all": 11
+        },
+        "tabs_marker_gap": {
+          "all": 5
+        },
+        "panel_strip": {
+          "all": 26
+        },
+        "panel_card_margin_collapsed": {
+          "all": 6
+        },
+        "panel_card_after": {
+          "all": 6
+        },
+        "panel_header": {
+          "all": 24
+        },
+        "panel_header_after": {
+          "all": 6
+        },
+        "panel_drag_band": {
+          "all": 22
+        },
+        "panel_pill_size": {
+          "all": 12.5
+        },
+        "panel_pill_pad": {
+          "all": 20
+        },
+        "panel_pill_min": {
+          "all": 44
+        },
+        "panel_pill_gap": {
+          "all": 2
+        },
+        "panel_ellipsis": {
+          "all": 22
+        },
+        "panel_ellipsis_gap": {
+          "all": 4
+        },
+        "panel_section_size": {
+          "all": 11.5
+        },
+        "panel_drop_line": {
+          "all": 2
+        },
+        "panel_drop_inset_vertical": {
+          "all": 2
+        },
+        "panel_drop_inset_horizontal": {
+          "all": 4
+        },
+        "bars_bar_inset": {
+          "all": 8
+        },
+        "bar_row_gap": {
+          "all": 4
+        },
+        "bars_rail_rule": {
+          "all": 6
+        },
+        "divider_slot": {
+          "all": 9
+        },
+        "divider_height": {
+          "all": 22
+        },
+        "dialog_title_size": {
+          "all": 15
+        },
+        "dialog_above_rule": {
+          "all": 4
+        },
+        "dialog_below_rule": {
+          "all": 8
+        },
+        "dialog_centre_drop": {
+          "all": 1.75
+        },
+        "dialog_resize_max_share": {
+          "all": 0.9
+        },
+        "dialog_above_buttons": {
+          "all": 8
+        },
+        "dialog_button_gap": {
+          "all": 10
+        },
+        "dialog_button_min": {
+          "all": 84
+        },
+        "combo_list_height": {
+          "all": 420
+        },
+        "combo_chevron_half": {
+          "all": 3.2
+        },
+        "combo_chevron_height": {
+          "all": 3.2
+        },
+        "combo_chevron_stroke": {
+          "all": 1.3
+        },
+        "combo_chevron_alpha": {
+          "all": 0.8
+        },
+        "title_min_room": {
+          "all": 80
+        },
+        "title_control_spacing": {
+          "all": 6
+        },
+        "title_link_room": {
+          "all": 120
+        },
+        "menu_search_width": {
+          "all": 220
+        },
+        "weak_alpha": {
+          "all": 0.6
+        },
+        "disabled_alpha": {
+          "all": 0.5
+        },
+        "close_pressed_alpha": {
+          "all": 0.8
+        },
+        "interact": {
+          "all": 24
+        },
+        "menu_margin": {
+          "all": 6
+        },
+        "window_margin": {
+          "plain": 8,
+          "pro": 16,
+          "studio": 16,
+          "classic": 16
+        },
+        "small_size": {
+          "all": 10.5
+        },
+        "heading_size": {
+          "all": 15
+        },
+        "mono_size": {
+          "all": 12
+        },
+        "pair_hover_mix": {
+          "all": 0.08
+        },
+        "pair_active_mix": {
+          "all": 0.16
+        },
+        "popup_shadow_alpha": {
+          "plain": 0.45,
+          "pro": 1,
+          "studio": 1,
+          "classic": 1
+        },
+        "md_line": {
+          "all": 1.45
+        },
+        "md_heading_line": {
+          "all": 1.25
+        },
+        "md_measure": {
+          "all": 46
+        },
+        "md_gap": {
+          "all": 0.75
+        },
+        "md_gap_before_heading": {
+          "all": 1.2
+        },
+        "md_gap_after_heading": {
+          "all": 0.35
+        },
+        "md_item_gap": {
+          "all": 0.25
+        },
+        "md_gutter": {
+          "all": 1.6
+        },
+        "md_quote_indent": {
+          "all": 1
+        },
+        "md_quote_rule": {
+          "all": 3
+        },
+        "md_inline_code_scale": {
+          "all": 0.92
+        },
+        "md_bullet": {
+          "all": 0.17
+        },
+        "item_spacing_x": {
+          "plain": 4,
+          "pro": 8,
+          "studio": 8,
+          "classic": 8
+        },
+        "item_spacing_y": {
+          "plain": 3,
+          "pro": 6,
+          "studio": 6,
+          "classic": 6
+        },
+        "button_padding_x": {
+          "all": 10
+        },
+        "button_padding_y": {
+          "all": 4
+        },
+        "title_bar_margin": {
+          "all": 10
+        },
+        "mark_gap": {
+          "all": 14
+        },
+        "title_gap": {
+          "all": 16
+        },
+        "title_size": {
+          "all": 13
+        },
+        "caption_width": {
+          "all": 46
+        },
+        "caption_glyph": {
+          "all": 10
+        },
+        "caption_gap": {
+          "all": 4
+        },
+        "resize_edge": {
+          "all": 5
+        },
+        "resize_corner": {
+          "all": 12
+        },
+        "menu_title_padding_x": {
+          "all": 6
+        },
+        "menu_title_padding_y": {
+          "all": 3
+        },
+        "menu_separator_height": {
+          "all": 9
+        },
+        "submenu_gap": {
+          "all": 2.5
+        },
+        "shortcut_gap": {
+          "all": 16
+        },
+        "edge_gap": {
+          "all": 6
+        },
+        "slider_width": {
+          "all": 150
+        },
+        "combo_width": {
+          "all": 120
+        },
+        "icon_width": {
+          "all": 14
+        },
+        "tooltip_width": {
+          "all": 280
+        },
+        "tooltip_delay": {
+          "all": 0.35
+        },
+        "tooltip_grace": {
+          "all": 0.2
+        },
+        "animation_time": {
+          "all": 0.2
+        },
+        "hairline_width": {
+          "all": 1
+        },
+        "window_shadow_offset_y": {
+          "all": 10
+        },
+        "window_shadow_blur": {
+          "all": 32
+        },
+        "window_shadow_offset_x": {
+          "all": 0
+        },
+        "window_shadow_spread": {
+          "all": 0
+        },
+        "popup_shadow_offset_x": {
+          "all": 0
+        },
+        "popup_shadow_offset_y": {
+          "plain": 2,
+          "pro": 6,
+          "studio": 6,
+          "classic": 6
+        },
+        "popup_shadow_blur": {
+          "plain": 10,
+          "pro": 20,
+          "studio": 20,
+          "classic": 20
+        },
+        "popup_shadow_spread": {
+          "all": 0
+        },
+        "field_padding_x": {
+          "all": 6
+        },
+        "field_padding_y": {
+          "all": 3
+        },
+        "field_focus_width": {
+          "all": 1
+        },
+        "search_lead": {
+          "all": 22
+        },
+        "switch_track_w": {
+          "all": 30
+        },
+        "switch_track_h": {
+          "all": 17
+        },
+        "slider_knob_classic_w": {
+          "all": 10
+        },
+        "slider_knob_classic_h": {
+          "all": 16
+        },
+        "tabs_chevron_inset_x": {
+          "all": 1
+        },
+        "tabs_chevron_inset_y": {
+          "all": 3
+        },
+        "tabs_studio_margin_left": {
+          "all": 8
+        },
+        "tabs_studio_margin_right": {
+          "all": 8
+        },
+        "tabs_studio_margin_top": {
+          "all": 6
+        },
+        "tabs_studio_margin_bottom": {
+          "all": 4
+        },
+        "panel_card_margin_left": {
+          "all": 8
+        },
+        "panel_card_margin_right": {
+          "all": 8
+        },
+        "panel_card_margin_top": {
+          "all": 6
+        },
+        "panel_card_margin_bottom": {
+          "all": 10
+        },
+        "dialog_min_width": {
+          "all": 380
+        },
+        "dialog_max_width": {
+          "all": 440
+        },
+        "title_combo_min_width": {
+          "all": 90
+        },
+        "title_combo_max_width": {
+          "all": 130
+        },
+        "md_code_padding_x": {
+          "all": 0.8
+        },
+        "md_code_padding_y": {
+          "all": 0.6
+        },
+        "md_heading_scale_1": {
+          "all": 1.6
+        },
+        "md_heading_scale_2": {
+          "all": 1.3
+        },
+        "md_heading_scale_3": {
+          "all": 1.1
+        },
+        "md_heading_scale_4": {
+          "all": 1
+        },
+        "md_heading_scale_5": {
+          "all": 0.9
+        },
+        "md_heading_scale_6": {
+          "all": 0.85
+        },
+        "space_xs": {
+          "all": 2
+        },
+        "space_sm": {
+          "all": 4
+        },
+        "space_md": {
+          "all": 8
+        },
+        "space_lg": {
+          "all": 16
+        },
+        "space_xl": {
+          "all": 24
+        },
+        "menu_scroll_speed": {
+          "all": 1000
+        },
+        "double_click_time": {
+          "all": 0.3
+        },
+        "scroll_width": {
+          "plain": 4,
+          "pro": 4,
+          "studio": 4,
+          "classic": 6
+        },
+        "scroll_width_hot": {
+          "plain": 10,
+          "pro": 10,
+          "studio": 10,
+          "classic": 6
+        },
+        "scroll_allocated": {
+          "plain": 6,
+          "pro": 6,
+          "studio": 6,
+          "classic": 0
+        },
+        "scroll_margin": {
+          "all": 4
+        },
+        "scroll_outer_margin": {
+          "all": 0
+        },
+        "scroll_handle_min": {
+          "all": 12
+        },
+        "scroll_handle_alpha_rest": {
+          "plain": 0.6,
+          "pro": 0.6,
+          "studio": 0.6,
+          "classic": 0
+        },
+        "scroll_track_alpha_rest": {
+          "all": 0
+        },
+        "scroll_track_alpha_active": {
+          "plain": 0,
+          "pro": 0,
+          "studio": 0,
+          "classic": 0.4
+        },
+        "scroll_track_alpha_hot": {
+          "plain": 0.4,
+          "pro": 0.4,
+          "studio": 0.4,
+          "classic": 0.7
+        },
+        "scroll_handle_alpha_active": {
+          "all": 0.6
+        },
+        "scroll_handle_alpha_hot": {
+          "all": 1
+        },
+        "field_radius": {
+          "plain": 4,
+          "pro": 3,
+          "studio": 4,
+          "classic": 0,
+          "breeze": 5,
+          "adwaita": 6
+        },
+        "icon_mask": {
+          "all": "#ffffff"
+        },
+        "slider_knob_pro_fill": {
+          "all": "#ececec"
+        },
+        "slider_knob_pro_ring": {
+          "all": "#282828"
+        },
+        "slider_knob_studio_fill": {
+          "all": "#ffffff"
+        },
+        "slider_shadow": {
+          "all": "#0000005a"
+        },
+        "toggle_mark": {
+          "all": "#ffffff"
+        },
+        "field_focus_role": {
+          "all": "accent_text"
+        },
+        "dark_luminance": {
+          "all": 0.18
+        },
+        "square_radius": {
+          "all": 0
+        },
+        "bar_padding_y": {
+          "all": 0
+        }
+      },
+      "styles": {},
+      "schemes": {},
+      "terminal": {
+        "ocean.light": {
+          "ansi": [
+            "#393a3d",
+            "#ff1261",
+            "#2ad947",
+            "#fcba28",
+            "#2d9aff",
+            "#dd30ff",
+            "#17d5df",
+            "#e7e7e7",
+            "#6b6b6b",
+            "#c55555",
+            "#aac474",
+            "#feca88",
+            "#82b8c8",
+            "#c28cb8",
+            "#93d3c3",
+            "#f8f8f8"
+          ],
+          "foreground": "#ffffff",
+          "background": "#0f0d0e",
+          "cursor": "invert"
+        },
+        "ocean.dark": {
+          "ansi": [
+            "#393a3d",
+            "#ff1261",
+            "#2ad947",
+            "#fcba28",
+            "#2d9aff",
+            "#dd30ff",
+            "#17d5df",
+            "#e7e7e7",
+            "#6b6b6b",
+            "#c55555",
+            "#aac474",
+            "#feca88",
+            "#82b8c8",
+            "#c28cb8",
+            "#93d3c3",
+            "#f8f8f8"
+          ],
+          "foreground": "#ffffff",
+          "background": "#0f0d0e",
+          "cursor": "invert"
+        },
+        "crimson.light": {
+          "ansi": [
+            "#393a3d",
+            "#ff1261",
+            "#2ad947",
+            "#fcba28",
+            "#2d9aff",
+            "#dd30ff",
+            "#17d5df",
+            "#e7e7e7",
+            "#6b6b6b",
+            "#c55555",
+            "#aac474",
+            "#feca88",
+            "#82b8c8",
+            "#c28cb8",
+            "#93d3c3",
+            "#f8f8f8"
+          ],
+          "foreground": "#ffffff",
+          "background": "#0f0d0e",
+          "cursor": "invert"
+        },
+        "crimson.dark": {
+          "ansi": [
+            "#393a3d",
+            "#ff1261",
+            "#2ad947",
+            "#fcba28",
+            "#2d9aff",
+            "#dd30ff",
+            "#17d5df",
+            "#e7e7e7",
+            "#6b6b6b",
+            "#c55555",
+            "#aac474",
+            "#feca88",
+            "#82b8c8",
+            "#c28cb8",
+            "#93d3c3",
+            "#f8f8f8"
+          ],
+          "foreground": "#ffffff",
+          "background": "#0f0d0e",
+          "cursor": "invert"
+        },
+        "stone.light": {
+          "ansi": [
+            "#393a3d",
+            "#ff1261",
+            "#2ad947",
+            "#fcba28",
+            "#2d9aff",
+            "#dd30ff",
+            "#17d5df",
+            "#e7e7e7",
+            "#6b6b6b",
+            "#c55555",
+            "#aac474",
+            "#feca88",
+            "#82b8c8",
+            "#c28cb8",
+            "#93d3c3",
+            "#f8f8f8"
+          ],
+          "foreground": "#ffffff",
+          "background": "#0f0d0e",
+          "cursor": "invert"
+        },
+        "stone.dark": {
+          "ansi": [
+            "#393a3d",
+            "#ff1261",
+            "#2ad947",
+            "#fcba28",
+            "#2d9aff",
+            "#dd30ff",
+            "#17d5df",
+            "#e7e7e7",
+            "#6b6b6b",
+            "#c55555",
+            "#aac474",
+            "#feca88",
+            "#82b8c8",
+            "#c28cb8",
+            "#93d3c3",
+            "#f8f8f8"
+          ],
+          "foreground": "#ffffff",
+          "background": "#0f0d0e",
+          "cursor": "invert"
+        },
+        "forest.light": {
+          "ansi": [
+            "#393a3d",
+            "#ff1261",
+            "#2ad947",
+            "#fcba28",
+            "#2d9aff",
+            "#dd30ff",
+            "#17d5df",
+            "#e7e7e7",
+            "#6b6b6b",
+            "#c55555",
+            "#aac474",
+            "#feca88",
+            "#82b8c8",
+            "#c28cb8",
+            "#93d3c3",
+            "#f8f8f8"
+          ],
+          "foreground": "#ffffff",
+          "background": "#0f0d0e",
+          "cursor": "invert"
+        },
+        "forest.dark": {
+          "ansi": [
+            "#393a3d",
+            "#ff1261",
+            "#2ad947",
+            "#fcba28",
+            "#2d9aff",
+            "#dd30ff",
+            "#17d5df",
+            "#e7e7e7",
+            "#6b6b6b",
+            "#c55555",
+            "#aac474",
+            "#feca88",
+            "#82b8c8",
+            "#c28cb8",
+            "#93d3c3",
+            "#f8f8f8"
+          ],
+          "foreground": "#ffffff",
+          "background": "#0f0d0e",
+          "cursor": "invert"
+        },
+        "sunset.light": {
+          "ansi": [
+            "#393a3d",
+            "#ff1261",
+            "#2ad947",
+            "#fcba28",
+            "#2d9aff",
+            "#dd30ff",
+            "#17d5df",
+            "#e7e7e7",
+            "#6b6b6b",
+            "#c55555",
+            "#aac474",
+            "#feca88",
+            "#82b8c8",
+            "#c28cb8",
+            "#93d3c3",
+            "#f8f8f8"
+          ],
+          "foreground": "#ffffff",
+          "background": "#0f0d0e",
+          "cursor": "invert"
+        },
+        "sunset.dark": {
+          "ansi": [
+            "#393a3d",
+            "#ff1261",
+            "#2ad947",
+            "#fcba28",
+            "#2d9aff",
+            "#dd30ff",
+            "#17d5df",
+            "#e7e7e7",
+            "#6b6b6b",
+            "#c55555",
+            "#aac474",
+            "#feca88",
+            "#82b8c8",
+            "#c28cb8",
+            "#93d3c3",
+            "#f8f8f8"
+          ],
+          "foreground": "#ffffff",
+          "background": "#0f0d0e",
+          "cursor": "invert"
+        },
+        "mono.light": {
+          "ansi": [
+            "#393a3d",
+            "#ff1261",
+            "#2ad947",
+            "#fcba28",
+            "#2d9aff",
+            "#dd30ff",
+            "#17d5df",
+            "#e7e7e7",
+            "#6b6b6b",
+            "#c55555",
+            "#aac474",
+            "#feca88",
+            "#82b8c8",
+            "#c28cb8",
+            "#93d3c3",
+            "#f8f8f8"
+          ],
+          "foreground": "#ffffff",
+          "background": "#0f0d0e",
+          "cursor": "invert"
+        },
+        "mono.dark": {
+          "ansi": [
+            "#393a3d",
+            "#ff1261",
+            "#2ad947",
+            "#fcba28",
+            "#2d9aff",
+            "#dd30ff",
+            "#17d5df",
+            "#e7e7e7",
+            "#6b6b6b",
+            "#c55555",
+            "#aac474",
+            "#feca88",
+            "#82b8c8",
+            "#c28cb8",
+            "#93d3c3",
+            "#f8f8f8"
+          ],
+          "foreground": "#ffffff",
+          "background": "#0f0d0e",
+          "cursor": "invert"
+        },
+        "pro.light": {
+          "ansi": [
+            "#393a3d",
+            "#ff1261",
+            "#2ad947",
+            "#fcba28",
+            "#2d9aff",
+            "#dd30ff",
+            "#17d5df",
+            "#e7e7e7",
+            "#6b6b6b",
+            "#c55555",
+            "#aac474",
+            "#feca88",
+            "#82b8c8",
+            "#c28cb8",
+            "#93d3c3",
+            "#f8f8f8"
+          ],
+          "foreground": "#ffffff",
+          "background": "#0f0d0e",
+          "cursor": "invert"
+        },
+        "pro.dark": {
+          "ansi": [
+            "#393a3d",
+            "#ff1261",
+            "#2ad947",
+            "#fcba28",
+            "#2d9aff",
+            "#dd30ff",
+            "#17d5df",
+            "#e7e7e7",
+            "#6b6b6b",
+            "#c55555",
+            "#aac474",
+            "#feca88",
+            "#82b8c8",
+            "#c28cb8",
+            "#93d3c3",
+            "#f8f8f8"
+          ],
+          "foreground": "#ffffff",
+          "background": "#0f0d0e",
+          "cursor": "invert"
+        },
+        "studio.light": {
+          "ansi": [
+            "#393a3d",
+            "#ff1261",
+            "#2ad947",
+            "#fcba28",
+            "#2d9aff",
+            "#dd30ff",
+            "#17d5df",
+            "#e7e7e7",
+            "#6b6b6b",
+            "#c55555",
+            "#aac474",
+            "#feca88",
+            "#82b8c8",
+            "#c28cb8",
+            "#93d3c3",
+            "#f8f8f8"
+          ],
+          "foreground": "#ffffff",
+          "background": "#0f0d0e",
+          "cursor": "invert"
+        },
+        "studio.dark": {
+          "ansi": [
+            "#393a3d",
+            "#ff1261",
+            "#2ad947",
+            "#fcba28",
+            "#2d9aff",
+            "#dd30ff",
+            "#17d5df",
+            "#e7e7e7",
+            "#6b6b6b",
+            "#c55555",
+            "#aac474",
+            "#feca88",
+            "#82b8c8",
+            "#c28cb8",
+            "#93d3c3",
+            "#f8f8f8"
+          ],
+          "foreground": "#ffffff",
+          "background": "#0f0d0e",
+          "cursor": "invert"
+        },
+        "classic.light": {
+          "ansi": [
+            "#393a3d",
+            "#ff1261",
+            "#2ad947",
+            "#fcba28",
+            "#2d9aff",
+            "#dd30ff",
+            "#17d5df",
+            "#e7e7e7",
+            "#6b6b6b",
+            "#c55555",
+            "#aac474",
+            "#feca88",
+            "#82b8c8",
+            "#c28cb8",
+            "#93d3c3",
+            "#f8f8f8"
+          ],
+          "foreground": "#ffffff",
+          "background": "#0f0d0e",
+          "cursor": "invert"
+        },
+        "classic.dark": {
+          "ansi": [
+            "#393a3d",
+            "#ff1261",
+            "#2ad947",
+            "#fcba28",
+            "#2d9aff",
+            "#dd30ff",
+            "#17d5df",
+            "#e7e7e7",
+            "#6b6b6b",
+            "#c55555",
+            "#aac474",
+            "#feca88",
+            "#82b8c8",
+            "#c28cb8",
+            "#93d3c3",
+            "#f8f8f8"
+          ],
+          "foreground": "#ffffff",
+          "background": "#0f0d0e",
+          "cursor": "invert"
+        }
+      }
+    }
+  }
+}

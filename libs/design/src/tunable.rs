@@ -327,6 +327,12 @@ pub(crate) fn style_entry(
         "dark_luminance" => vec!["paint"],
         "square_radius" => vec!["layout", "paint"],
         "bar_padding_y" => vec!["layout"],
+        "radius_0" | "radius_xs" | "radius_s" | "radius_m" | "radius_l" | "radius_xl"
+        | "radius_pill" => vec!["layout", "paint"],
+        "spacing_none" | "spacing_xxxs" | "spacing_xxs" | "spacing_xs" | "spacing_s"
+        | "spacing_m" | "spacing_l" | "spacing_xl" | "spacing_xxl" | "spacing_xxxl"
+        | "header_padding_top" | "header_padding_right" | "header_padding_bottom"
+        | "header_padding_left" => vec!["layout"],
         _ => panic!("style token has no audited domains: {name}"),
     };
     let group = if name.starts_with("field_") || name.starts_with("value_") {

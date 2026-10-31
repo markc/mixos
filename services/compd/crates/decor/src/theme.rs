@@ -242,6 +242,8 @@ fn compile(source: &str) -> Option<UnstampedResolvedDesign> {
         // The style the design binds to the scheme.
         style: None,
         app: None,
+        accent: design::AccentChoice::Auto,
+        tints: design::Tints::default(),
     };
     match design::compile_design(&document, context) {
         DesignCompileResult::Success(success) => Some(success.candidate),
@@ -466,6 +468,8 @@ mod tests {
                         contrast: Contrast::default(),
                         style: None,
                         app: None,
+                        accent: design::AccentChoice::Auto,
+                        tints: design::Tints::default(),
                     },
                 ) else {
                     panic!("embedded design compiles")

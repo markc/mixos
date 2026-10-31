@@ -24,7 +24,7 @@ const fn rgb(hex: u32) -> SrgbColour {
 /// is the high-contrast variant. The high-contrast variants carry the same
 /// 32 colours as their normal twins; only the derivation's alphas and the
 /// accent-text step differ.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
 pub enum PaletteKind {
     Dark,
     Light,
@@ -52,7 +52,7 @@ impl PaletteKind {
 }
 
 /// One built-in palette: 32 named opaque sRGB colours and its kind.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize)]
 pub struct BasePalette {
     pub kind: PaletteKind,
     pub bright_red: SrgbColour,
@@ -225,7 +225,7 @@ pub enum Density {
 }
 
 /// The ten spacing tokens, in logical px.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
 pub struct SpacingTokens {
     pub space_none: u16,
     pub space_xxxs: u16,
@@ -307,7 +307,7 @@ pub enum Roundness {
 
 /// The six radius tokens, each four corners (top-left, top-right,
 /// bottom-right, bottom-left), in logical px.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize)]
 pub struct RadiusTokens {
     pub radius_0: [f64; 4],
     pub radius_xs: [f64; 4],
@@ -388,7 +388,7 @@ pub fn panel_radius(radii: &RadiusTokens, gap: bool, extend: bool) -> f64 {
 }
 
 /// Frosted-glass blur strength, the "Frost thickness" slider's 14 steps.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Serialize)]
 pub enum BlurStrength {
     ExtremelyLow,
     ExtremelyLow2,

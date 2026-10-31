@@ -119,6 +119,11 @@ impl ResolvedChrome {
         self.colours.get(role).copied()
     }
 
+    /// Replace one role's colour: the accent axis's overlay.
+    pub(crate) fn set(&mut self, role: &str, colour: LinearRgba) {
+        self.colours.insert(role.to_owned(), colour);
+    }
+
     /// The authored roles and their colours, in role order.
     pub fn iter(&self) -> impl Iterator<Item = (&str, LinearRgba)> {
         self.colours
@@ -657,6 +662,8 @@ mod tests {
                             contrast,
                             style,
                             app: None,
+                            accent: crate::AccentChoice::Auto,
+                            tints: crate::Tints::default(),
                         };
                         let design = compiled(&document, context);
                         let dictionary = design.dictionary();
