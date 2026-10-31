@@ -13,6 +13,7 @@ pub mod email;
 pub mod fallback;
 pub mod follow;
 pub mod keymap;
+pub mod migrate;
 pub mod model;
 #[cfg(feature = "native")]
 pub mod native;
