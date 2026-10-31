@@ -280,4 +280,34 @@ mod tests {
             !renamed.exists() && !a.core.availability().operation_running
         });
     }
+
+    #[test]
+    fn typed_drop_answers_move_copy_or_cancel_the_core_operation() {
+        for answer in ["move", "copy", "cancel"] {
+            let dir = tempfile::tempdir().unwrap();
+            let destination = dir.path().join("destination");
+            std::fs::create_dir(&destination).unwrap();
+            let source = dir.path().join("source.txt");
+            std::fs::write(&source, b"preserved contents").unwrap();
+            let mut config = DOpusConfig::default();
+            config.left.path = dir.path().to_owned();
+            config.right.path = destination.clone();
+            let (core, receiver) = DopusCore::new(config, None);
+            let mut app = App::new(core);
+            app.dropped(dopus_core::PaneId::Left, vec![source.clone()], destination.clone());
+            assert_eq!(crate::dialog::command(&mut app, &json!({})).1["dialog"]["kind"], "drop");
+            assert_eq!(crate::dialog::command(&mut app, &json!({"answer":answer})), (0, json!({"dialog":null})));
+            let target = destination.join("source.txt");
+            if answer == "cancel" {
+                assert!(!app.core.availability().operation_running);
+                assert!(!target.exists());
+            } else {
+                assert!(app.core.availability().operation_running);
+                pump(&mut app, &receiver, |a| target.is_file() && !a.core.availability().operation_running);
+                assert_eq!(std::fs::read(&target).unwrap(), b"preserved contents");
+            }
+            assert_eq!(source.exists(), answer != "move");
+            if source.exists() { assert_eq!(std::fs::read(&source).unwrap(), b"preserved contents"); }
+        }
+    }
 }

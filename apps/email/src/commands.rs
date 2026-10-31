@@ -1003,7 +1003,7 @@ pub fn command(
         _ => {
             state.refuse(
                 id,
-                code::INVALID_ARGUMENT,
+                if command_name == "email.dialog" { "ARGUMENT" } else { code::INVALID_ARGUMENT },
                 "arguments must be a JSON object",
             );
             return None;
@@ -1011,7 +1011,11 @@ pub fn command(
     };
     if command_name == "email.dialog" {
         let mut dialog_args = args.clone();
-        if let Some(window) = dialog_args.as_object_mut().unwrap().remove("window")
+        let Some(fields) = dialog_args.as_object_mut() else {
+            state.refuse(id, "ARGUMENT", "arguments must be a JSON object");
+            return None;
+        };
+        if let Some(window) = fields.remove("window")
             && !window.is_string()
         {
             state.refuse(id, "ARGUMENT", "window must be a string");
@@ -1091,7 +1095,7 @@ fn dispatch(
                 compose.revision = compose.revision.max(1);
             }
             state.apply_ui(crate::view::UiEvent::CloseCompose);
-            return Err(Bad(code::BUSY, "A compose or document load is already open; email.dialog reads and answers its close confirmation (keep, discard, cancel). Retry after it closes.".into()));
+            return Err(Bad(code::BUSY, crate::label("compose-busy-dialog")));
         }
         let path = std::path::PathBuf::from(required(args, "document")?);
         state
@@ -1407,7 +1411,7 @@ fn dispatch(
                 compose.revision = compose.revision.max(1);
             }
             state.apply_ui(crate::view::UiEvent::CloseCompose);
-            return Err(Bad(code::BUSY, "A compose or document load is already open; email.dialog reads and answers its close confirmation (keep, discard, cancel). Retry after it closes.".into()));
+            return Err(Bad(code::BUSY, crate::label("compose-busy-dialog")));
             }
             let draft = Composed {
                 to: addresses(args, "to")?,
@@ -1470,7 +1474,7 @@ fn dispatch(
                 compose.revision = compose.revision.max(1);
             }
             state.apply_ui(crate::view::UiEvent::CloseCompose);
-            return Err(Bad(code::BUSY, "A compose or document load is already open; email.dialog reads and answers its close confirmation (keep, discard, cancel). Retry after it closes.".into()));
+            return Err(Bad(code::BUSY, crate::label("compose-busy-dialog")));
             }
             let email = required(args, "id")?;
             let then = if command_name == "email.reply" {
@@ -2019,7 +2023,10 @@ mod tests {
         );
         state.take_replies();
         run(&mut state, "email.compose", json!({"subject":"Second"}));
-        assert_eq!(state.take_replies()[0].body["error_code"], "BUSY");
+        let reply = state.take_replies().remove(0);
+        assert_eq!(reply.body["error_code"], "BUSY");
+        assert_eq!(reply.body["message"], crate::label("compose-busy-dialog"));
+        assert_ne!(reply.body["message"], "compose-busy-dialog");
         run(&mut state, "email.dialog", json!({}));
         assert_eq!(
             state.take_replies()[0].body["dialog"]["kind"],
@@ -2041,6 +2048,19 @@ mod tests {
         state.take_replies();
         assert!(state.confirm.is_none());
         assert!(!state.exiting);
+    }
+
+    #[test]
+    fn dialog_refuses_non_object_bodies_without_mutating_state() {
+        let mut state = connected_many(&["a"]);
+        state.confirm = Some(crate::state::Confirm::Quit);
+        for args in [json!(null), json!([]), json!(5), json!(false)] {
+            run(&mut state, "email.dialog", args);
+            let reply = state.take_replies().remove(0);
+            assert_eq!(reply.rc, 10);
+            assert_eq!(reply.body["error_code"], "ARGUMENT");
+            assert_eq!(state.confirm, Some(crate::state::Confirm::Quit));
+        }
     }
 
     #[test]

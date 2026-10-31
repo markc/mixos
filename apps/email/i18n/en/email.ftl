@@ -310,3 +310,5 @@ compose-attach-confirm = Attach
 compose-attachments-clear = Remove all attachments
 compose-attachment-add-failed = { $path }: { $state }
 compose-drop-no-path = The dropped item has no file path
+
+compose-busy-dialog = A compose or document load is already open; email.dialog reads and answers its close confirmation (keep, discard, cancel). Retry after it closes.

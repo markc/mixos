@@ -2050,9 +2050,9 @@ impl Shell {
         let forward = self.state.with_send_origin(Some(origin), |state| {
             crate::commands::command(state, &self.commands, &self.strings, id, command_name, body)
         });
-        let cancelled_quit =
-            quit_question && self.state.confirm.is_none() && self.state.compose.is_some();
-        if quit_question {
+        let answered_quit = quit_question && self.state.confirm.is_none();
+        let cancelled_quit = answered_quit && self.state.compose.is_some();
+        if answered_quit {
             self.state.exiting = false;
             if self.state.compose.is_none()
                 && let Some(window) = &mut target
@@ -2077,6 +2077,7 @@ impl Shell {
                 let mut window = window.lock().unwrap();
                 if window.view.confirm == Some(crate::state::Confirm::Quit) {
                     window.view.confirm = None;
+                    window.view.cancel_quit();
                 }
             }
         }
@@ -3282,6 +3283,54 @@ mod tests {
                 .compose
                 .is_some()
         );
+    }
+
+    #[test]
+    fn dialog_reads_and_refusals_leave_quit_state_untouched() {
+        for empty in [false, true] {
+            for request in [json!({}), json!({"answer":"missing"}), json!({"open":"about"}), json!({"unknown":true})] {
+                let (mut shell, _broker) = compose_fixture(false);
+                add_composer(&mut shell, "kept");
+                let window = shell.composers.windows["compose-1"].clone();
+                {
+                    let mut window = window.lock().unwrap();
+                    window.view.confirm = Some(crate::state::Confirm::Quit);
+                    if empty { window.view.compose = None; window.had_compose = false; }
+                }
+                shell.state.exiting = true;
+                shell.composers.quitting = true;
+                let mut request = request;
+                request["window"] = json!("compose-1");
+                shell.command(92, "email.dialog", &request.to_string());
+                assert!(shell.state.exiting, "a read or refusal must not clear exiting");
+                assert!(shell.composers.quitting);
+                let window = window.lock().unwrap();
+                assert_eq!(window.view.confirm, Some(crate::state::Confirm::Quit));
+                assert!(!window.closed);
+            }
+        }
+    }
+
+    #[test]
+    fn dialog_quit_cancel_resets_sibling_exit_permission() {
+        let (mut shell, _broker) = compose_fixture(false);
+        add_composer(&mut shell, "one");
+        add_composer(&mut shell, "two");
+        shell.state.exiting = true;
+        shell.advance_close();
+        let sibling = shell.composers.windows["compose-2"].clone();
+        {
+            let mut sibling = sibling.lock().unwrap();
+            sibling.view.confirm = Some(crate::state::Confirm::Quit);
+            sibling.view.exiting = true;
+        }
+        shell.command(93, "email.dialog", r#"{"window":"compose-1","answer":"cancel"}"#);
+        let mut sibling = sibling.lock().unwrap();
+        assert_eq!(sibling.view.confirm, None);
+        assert!(!sibling.view.exiting);
+        assert!(!sibling.closed);
+        assert!(sibling.view.compose.is_some());
+        assert!(!sibling.view.request_quit(), "a later quit must ask about the kept draft");
     }
 
     #[test]

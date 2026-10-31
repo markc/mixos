@@ -103,36 +103,7 @@ fn apply(app: &mut App, args: &Value) -> Result<(), (&'static str, &'static str)
         if dialog.is_null() {
             return Err(("NO_DIALOG", "no dialog is open"));
         }
-        let answer = answer.as_str().ok_or_else(bad)?;
-        if !dialog["buttons"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|b| b["id"] == answer)
-        {
-            return Err(bad());
-        }
-        let choice = if dialog["kind"] == "recovered" && matches!(answer, "open" | "discard") {
-            let buffer = args["buffer"].as_str().ok_or_else(bad)?;
-            if !dialog["rows"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|r| r["buffer"] == buffer)
-            {
-                return Err(bad());
-            }
-            Answer::Recovered {
-                buffer: buffer.to_owned(),
-                open: answer == "open",
-            }
-        } else {
-            match answer {
-                "open" | "save" | "go" | "done" => Answer::Accept,
-                "discard" => Answer::Other,
-                _ => Answer::Cancel,
-            }
-        };
+        let choice = button_answer(&dialog, answer, args)?;
         for field in ["path", "text"] {
             if let Some(value) = map.get(field) {
                 let value = value.as_str().ok_or_else(bad)?;
@@ -142,4 +113,37 @@ fn apply(app: &mut App, args: &Value) -> Result<(), (&'static str, &'static str)
         app.answer(choice);
     }
     Ok(())
+}
+
+fn button_answer(dialog: &Value, answer: &Value, args: &Value) -> Result<Answer, (&'static str, &'static str)> {
+    let bad = || ("ARGUMENT", "expected a valid button id and its fields");
+    let answer = answer.as_str().ok_or_else(bad)?;
+    let button = dialog["buttons"].as_array().ok_or_else(bad)?.iter().find(|b| b["id"] == answer).ok_or_else(bad)?;
+    let role = button["role"].as_str().ok_or_else(bad)?;
+    if dialog["kind"] == "recovered" && matches!(role, "default" | "other") {
+        let buffer = args["buffer"].as_str().ok_or_else(bad)?;
+        if !dialog["rows"].as_array().ok_or_else(bad)?.iter().any(|r| r["buffer"] == buffer) { return Err(bad()); }
+        return Ok(Answer::Recovered { buffer: buffer.to_owned(), open: role == "default" });
+    }
+    match role {
+        "default" => Ok(Answer::Accept),
+        "other" => Ok(Answer::Other),
+        "cancel" => Ok(Answer::Cancel),
+        _ => Err(bad()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recovered_done_uses_its_cancel_role() {
+        let mut app = App::new(documents::controller::Controller::new(documents::config::Config::default(), 1, false), documents::config::Config::default());
+        app.dialog = Some(Dialog::Recovered { rows: vec![documents::controller::RecoveredRow { buffer: "kept".into(), path: None, name: "Draft".into(), bytes: Some(1) }] });
+        let dialog = view(&app);
+        assert_eq!(button_answer(&dialog, &json!("done"), &json!({})), Ok(Answer::Cancel));
+        assert_eq!(command(&mut app, &json!({"answer":"done"})), (0, json!({"dialog":null})));
+        assert!(app.effects.is_empty(), "closing recovery must not open or discard a buffer");
+    }
 }

@@ -921,7 +921,7 @@ pub fn serve_command(
     match command.command.as_str() {
         "dopus.dialog" => vec![Served::error(
             id,
-            "NO_DIALOG",
+            code::UNAVAILABLE,
             "dialog state is owned by the app".into(),
         )],
         "dopus.ping" => vec![Served::reply_json(
@@ -1234,6 +1234,16 @@ mod tests {
             body: body.into(),
         };
         serve_command(&command, core, &meta(headless), &buildinfo::build_info!())
+    }
+
+    #[test]
+    fn core_dispatcher_reports_dialog_handling_as_unavailable() {
+        let (_dir, mut core) = core();
+        for headless in [false, true] {
+            for body in ["{}", r#"{"answer":"yes"}"#] {
+                assert_eq!(refusal(&serve(&mut core, headless, "dopus.dialog", body)).as_deref(), Some(code::UNAVAILABLE));
+            }
+        }
     }
 
     fn refusal(served: &[Served]) -> Option<String> {
