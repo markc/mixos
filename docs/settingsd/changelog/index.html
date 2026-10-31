@@ -251,7 +251,11 @@ table's report, a <code>migrate-v2</code> receipt advances the revision. New com
 (the mirror's sealed cache; its wire is S7). <code>settings.describe</code> is the
 registry's catalogue, and <code>settings.status</code> reports <code>role</code>, <code>authority</code> and
 <code>stale</code>. The published snapshot is unchanged in shape: its <code>desktop</code> is the
-format-4 projection of the values until S7's schema 3.</p>
+format-4 projection of the values until S7's schema 3. <code>design_revision</code>
+advances for any key whose registry domains include paint, text or layout,
+so changes to <code>terminal.*</code>, <code>email.*</code>, <code>ced.*</code>, density and
+<code>accessibility.text_scale</code> now advance it too (format 4 counted only
+<code>appearance</code> and <code>apps</code>); it may over-report, never under-report.</p>
 <p><code>settings.get</code> 0.7.0 includes <code>ui</code> in summary reads: text scale, density and
 reduced motion on the same revision as appearance. Store format unchanged.</p>
 <h2 id="010">0.1.0</h2>

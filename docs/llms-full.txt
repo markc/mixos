@@ -41905,7 +41905,11 @@ BIN [--from-kept]`, `retire`, and `serve --authority | --mirror-of NODE`
 (the mirror's sealed cache; its wire is S7). `settings.describe` is the
 registry's catalogue, and `settings.status` reports `role`, `authority` and
 `stale`. The published snapshot is unchanged in shape: its `desktop` is the
-format-4 projection of the values until S7's schema 3.
+format-4 projection of the values until S7's schema 3. `design_revision`
+advances for any key whose registry domains include paint, text or layout,
+so changes to `terminal.*`, `email.*`, `ced.*`, density and
+`accessibility.text_scale` now advance it too (format 4 counted only
+`appearance` and `apps`); it may over-report, never under-report.
 
 `settings.get` 0.7.0 includes `ui` in summary reads: text scale, density and
 reduced motion on the same revision as appearance. Store format unchanged.
