@@ -205,7 +205,9 @@ impl Authority {
         // content, so a `state.*` change also moves `appearance` and `look`.
         let resolved = settings::topics::Resolved {
             mode: settings::topics::resolved_mode(&candidate.values),
-            accent: accents.get(settings::appearance::APPEARANCE_CONTEXT).map(hex),
+            accent: accents
+                .get(settings::appearance::APPEARANCE_CONTEXT)
+                .map(hex),
         };
         let mut touched = serde_json::Map::new();
         let mut moved = Vec::new();
