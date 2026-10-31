@@ -1296,6 +1296,52 @@ design: {
     "background": "#0f0d0e",
     "cursor": "invert"
   },
+  "mixos.light": {
+    "ansi": [
+      "#393a3d",
+      "#ff1261",
+      "#2ad947",
+      "#fcba28",
+      "#2d9aff",
+      "#dd30ff",
+      "#17d5df",
+      "#e7e7e7",
+      "#6b6b6b",
+      "#c55555",
+      "#aac474",
+      "#feca88",
+      "#82b8c8",
+      "#c28cb8",
+      "#93d3c3",
+      "#f8f8f8"
+    ],
+    "foreground": "#ffffff",
+    "background": "#0f0d0e",
+    "cursor": "invert"
+  },
+  "mixos.dark": {
+    "ansi": [
+      "#393a3d",
+      "#ff1261",
+      "#2ad947",
+      "#fcba28",
+      "#2d9aff",
+      "#dd30ff",
+      "#17d5df",
+      "#e7e7e7",
+      "#6b6b6b",
+      "#c55555",
+      "#aac474",
+      "#feca88",
+      "#82b8c8",
+      "#c28cb8",
+      "#93d3c3",
+      "#f8f8f8"
+    ],
+    "foreground": "#ffffff",
+    "background": "#0f0d0e",
+    "cursor": "invert"
+  },
   "studio.light": {
     "ansi": [
       "#393a3d",
@@ -1470,12 +1516,16 @@ design: {
       style: {
         schemes: {
           ocean: "plain", crimson: "plain", stone: "plain", forest: "plain", sunset: "plain", mono: "plain",
-          pro: "pro", studio: "studio", classic: "classic", breeze: "breeze", adwaita: "adwaita"
+          pro: "pro", studio: "studio", classic: "classic", breeze: "breeze", adwaita: "adwaita",
+          mixos: "studio"
         },
         styles: {
           plain: {
             bar_padding_y: 0,
             dark_luminance: 0.18, square_radius: 0,
+            radius_0: 0, radius_xs: 0, radius_s: 0, radius_m: 0, radius_l: 0, radius_xl: 0, radius_pill: 0,
+            spacing_none: 0, spacing_xxxs: 4, spacing_xxs: 8, spacing_xs: 12, spacing_s: 16, spacing_m: 24, spacing_l: 32, spacing_xl: 48, spacing_xxl: 64, spacing_xxxl: 128,
+            header_padding_top: 7, header_padding_right: 7, header_padding_bottom: 8, header_padding_left: 7,
             "animation_time": 0.2,
             "bar_row_gap": 4,
             "bars_bar_inset": 8,
@@ -1722,6 +1772,9 @@ design: {
           pro: {
             bar_padding_y: 0,
             dark_luminance: 0.18, square_radius: 0,
+            radius_0: 0, radius_xs: 2, radius_s: 8, radius_m: 8, radius_l: 8, radius_xl: 8, radius_pill: 8,
+            spacing_none: 0, spacing_xxxs: 4, spacing_xxs: 8, spacing_xs: 12, spacing_s: 16, spacing_m: 24, spacing_l: 32, spacing_xl: 48, spacing_xxl: 64, spacing_xxxl: 128,
+            header_padding_top: 7, header_padding_right: 7, header_padding_bottom: 8, header_padding_left: 7,
             "animation_time": 0.2,
             "bar_row_gap": 4,
             "bars_bar_inset": 8,
@@ -1968,6 +2021,9 @@ design: {
           studio: {
             bar_padding_y: 0,
             dark_luminance: 0.18, square_radius: 0,
+            radius_0: 0, radius_xs: 4, radius_s: 8, radius_m: 16, radius_l: 32, radius_xl: 160, radius_pill: 160,
+            spacing_none: 0, spacing_xxxs: 4, spacing_xxs: 8, spacing_xs: 12, spacing_s: 16, spacing_m: 24, spacing_l: 32, spacing_xl: 48, spacing_xxl: 64, spacing_xxxl: 128,
+            header_padding_top: 7, header_padding_right: 7, header_padding_bottom: 8, header_padding_left: 7,
             "animation_time": 0.2,
             "bar_row_gap": 4,
             "bars_bar_inset": 8,
@@ -2214,6 +2270,9 @@ design: {
           breeze: {
             bar_padding_y: 0,
             dark_luminance: 0.18, square_radius: 0,
+            radius_0: 0, radius_xs: 2, radius_s: 8, radius_m: 8, radius_l: 8, radius_xl: 8, radius_pill: 8,
+            spacing_none: 0, spacing_xxxs: 4, spacing_xxs: 8, spacing_xs: 12, spacing_s: 16, spacing_m: 24, spacing_l: 32, spacing_xl: 48, spacing_xxl: 64, spacing_xxxl: 128,
+            header_padding_top: 7, header_padding_right: 7, header_padding_bottom: 8, header_padding_left: 7,
             "animation_time": 0.2,
             "bar_row_gap": 4,
             "bars_bar_inset": 8,
@@ -2460,6 +2519,9 @@ design: {
           adwaita: {
             bar_padding_y: 0,
             dark_luminance: 0.18, square_radius: 0,
+            radius_0: 0, radius_xs: 4, radius_s: 8, radius_m: 16, radius_l: 32, radius_xl: 160, radius_pill: 160,
+            spacing_none: 0, spacing_xxxs: 4, spacing_xxs: 8, spacing_xs: 12, spacing_s: 16, spacing_m: 24, spacing_l: 32, spacing_xl: 48, spacing_xxl: 64, spacing_xxxl: 128,
+            header_padding_top: 7, header_padding_right: 7, header_padding_bottom: 8, header_padding_left: 7,
             "animation_time": 0.2,
             "bar_row_gap": 4,
             "bars_bar_inset": 8,
@@ -2706,6 +2768,9 @@ design: {
           classic: {
             bar_padding_y: 0,
             dark_luminance: 0.18, square_radius: 0,
+            radius_0: 0, radius_xs: 0, radius_s: 0, radius_m: 0, radius_l: 0, radius_xl: 0, radius_pill: 0,
+            spacing_none: 0, spacing_xxxs: 4, spacing_xxs: 8, spacing_xs: 12, spacing_s: 16, spacing_m: 24, spacing_l: 32, spacing_xl: 48, spacing_xxl: 64, spacing_xxxl: 128,
+            header_padding_top: 7, header_padding_right: 7, header_padding_bottom: 8, header_padding_left: 7,
             "animation_time": 0.2,
             "bar_row_gap": 4,
             "bars_bar_inset": 8,

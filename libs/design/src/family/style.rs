@@ -706,6 +706,34 @@ style! {
     dark_luminance: f64 = ALPHA,
     square_radius: u8 = RADIUS,
     bar_padding_y: f64 = Range(0.0, 127.0),
+    /// The COSMIC radius scale, set by the roundness axis
+    /// ([`crate::geometry`]); `radius_pill` is `radius_xl`, for pill-shaped
+    /// controls.
+    radius_0: u8 = RADIUS,
+    radius_xs: u8 = RADIUS,
+    radius_s: u8 = RADIUS,
+    radius_m: u8 = RADIUS,
+    radius_l: u8 = RADIUS,
+    radius_xl: u8 = RADIUS,
+    radius_pill: u8 = RADIUS,
+    /// The COSMIC spacing table, set by the density axis
+    /// ([`crate::geometry`]). Named `spacing_*` because the legacy
+    /// `space_xs` and `space_xl` already mean other lengths.
+    spacing_none: f64 = LENGTH,
+    spacing_xxxs: f64 = LENGTH,
+    spacing_xxs: f64 = LENGTH,
+    spacing_xs: f64 = LENGTH,
+    spacing_s: f64 = LENGTH,
+    spacing_m: f64 = LENGTH,
+    spacing_l: f64 = LENGTH,
+    spacing_xl: f64 = LENGTH,
+    spacing_xxl: f64 = LENGTH,
+    spacing_xxxl: f64 = LENGTH,
+    /// A client-decorated header bar's padding, set by the density axis.
+    header_padding_top: f64 = LENGTH,
+    header_padding_right: f64 = LENGTH,
+    header_padding_bottom: f64 = LENGTH,
+    header_padding_left: f64 = LENGTH,
 }
 
 /// Tokens earlier designs authored that no longer select anything. They are

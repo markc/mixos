@@ -33,7 +33,7 @@ const GAMUT_ITERATIONS: usize = 64;
 /// `Small`'s CIE LCh chroma cap: 3% of the 0..128 chroma scale.
 const SMALL_CHROMA_CAP: f64 = 0.03 * 128.0;
 
-pub(super) fn with_alpha(colour: SrgbColour, alpha: f64) -> SrgbColour {
+pub(crate) fn with_alpha(colour: SrgbColour, alpha: f64) -> SrgbColour {
     SrgbColour { alpha, ..colour }
 }
 
@@ -156,7 +156,7 @@ pub(super) fn text(base: usize, steps: &Ramp, tint: Option<&Ramp>, alpha: f64) -
 /// out_c = a_c·a_α + b_c·b_α(1 − a_α)/out_α. The first term is not divided
 /// by out_α, so this is not the textbook operator; do not fix it, or the
 /// derived values stop matching.
-pub(super) fn over(a: SrgbColour, b: SrgbColour) -> SrgbColour {
+pub(crate) fn over(a: SrgbColour, b: SrgbColour) -> SrgbColour {
     let alpha = a.alpha + b.alpha * (1.0 - a.alpha);
     let channel = |top: f64, bottom: f64| {
         let under = if alpha > 0.0 {
@@ -175,7 +175,7 @@ pub(super) fn over(a: SrgbColour, b: SrgbColour) -> SrgbColour {
 }
 
 /// WCAG 2.1 contrast of two colours' opaque channels.
-pub(super) fn contrast(a: SrgbColour, b: SrgbColour) -> f64 {
+pub(crate) fn contrast(a: SrgbColour, b: SrgbColour) -> f64 {
     contrast_ratio(to_linear(a), to_linear(b))
 }
 

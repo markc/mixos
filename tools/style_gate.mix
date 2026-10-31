@@ -114,8 +114,21 @@ for $file in ["chrome", "style", "field", "canvas", "button", "toggle", "slider"
     push($errors, $file .. ": " .. $message)
   end
 end
+-- Tokens of the roundness and density axes (settings key space v2, S2):
+-- the toolkit reads them once it lays design::geometry over the style
+-- (S8a). This list only shrinks; a listed token that gains a consumer is
+-- an error until it is removed.
+$pending = ["radius_0", "radius_xs", "radius_s", "radius_m", "radius_l", "radius_xl", "radius_pill",
+  "spacing_none", "spacing_xxxs", "spacing_xxs", "spacing_xs", "spacing_s", "spacing_m", "spacing_l",
+  "spacing_xl", "spacing_xxl", "spacing_xxxl",
+  "header_padding_top", "header_padding_right", "header_padding_bottom", "header_padding_left"]
 for $name in keys($defaults)
-  if not re_match($consumers, '\.\s*' .. $name .. '\b') then push($errors, "no toolkit consumer for " .. $name) end
+  $consumed = re_match($consumers, '\.\s*' .. $name .. '\b')
+  if contains($pending, $name) then
+    if $consumed then push($errors, "pending token now has a toolkit consumer; remove it from the pending list: " .. $name) end
+  elif not $consumed then
+    push($errors, "no toolkit consumer for " .. $name)
+  end
 end
 if length($required) != 40 then push($errors, "required set is not forty names") end
 if length($errors) > 0 then

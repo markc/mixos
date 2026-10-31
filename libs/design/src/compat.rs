@@ -284,18 +284,23 @@ mod tests {
 
     #[test]
     fn previous_entries_are_immutable() {
-        let previous = Table::parse(include_str!("../tests/fixtures/compat-v2.conf.mix")).unwrap();
-        let shipped = table();
-        assert_eq!(shipped.fallback, previous.fallback);
-        assert_eq!(shipped.constraints, previous.constraints);
-        for (version, entries) in previous.versions {
-            assert_eq!(shipped.versions.get(&version), Some(&entries));
+        for fixture in [
+            include_str!("../tests/fixtures/compat-v2.conf.mix"),
+            include_str!("../tests/fixtures/compat-v3.conf.mix"),
+        ] {
+            let previous = Table::parse(fixture).unwrap();
+            let shipped = table();
+            assert_eq!(shipped.fallback, previous.fallback);
+            assert_eq!(shipped.constraints, previous.constraints);
+            for (version, entries) in previous.versions {
+                assert_eq!(shipped.versions.get(&version), Some(&entries));
+            }
         }
     }
 
     #[test]
     fn duplicate_names_are_refused_across_versions() {
-        let source = SOURCE.replacen("\"v2\":", "v4: { tokens: { field_height: { all: 24 } }, styles: {}, schemes: {}, terminal: {} }, v2:", 1);
+        let source = SOURCE.replacen("\"v2\":", "v5: { tokens: { field_height: { all: 24 } }, styles: {}, schemes: {}, terminal: {} }, v2:", 1);
         assert_ne!(source, SOURCE, "the fixture mutation must occur");
         assert!(
             Table::parse(&source)
@@ -322,12 +327,12 @@ mod tests {
 
     #[test]
     fn a_custom_style_named_all_does_not_capture_the_shared_default() {
-        let source = SOURCE.replacen("\"v2\":", "v4: { tokens: { future_token: { all: 2, pro: 7, plain: 3 } }, styles: {}, schemes: {}, terminal: {} }, v2:", 1);
+        let source = SOURCE.replacen("\"v2\":", "v5: { tokens: { future_token: { all: 2, pro: 7, plain: 3 } }, styles: {}, schemes: {}, terminal: {} }, v2:", 1);
         let table = Table::parse(&source).unwrap();
         for (base, scheme, expected) in [(Some("pro"), "classic", 7.0), (None, "absent", 3.0)] {
             let (value, version) = table.token("future_token", "all", base, scheme).unwrap();
             assert_eq!(value, &StyleValueSource::Number(expected));
-            assert_eq!(version, "v4");
+            assert_eq!(version, "v5");
         }
         assert_eq!(
             table

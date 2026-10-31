@@ -15,6 +15,167 @@
         "b": "resize_corner"
       }
     ],
+    "v4": {
+      "tokens": {
+        "radius_0": {
+          "all": 0,
+          "plain": 0,
+          "pro": 0,
+          "studio": 0,
+          "breeze": 0,
+          "adwaita": 0,
+          "classic": 0
+        },
+        "radius_xs": {
+          "all": 4,
+          "plain": 0,
+          "pro": 2,
+          "studio": 4,
+          "breeze": 2,
+          "adwaita": 4,
+          "classic": 0
+        },
+        "radius_s": {
+          "all": 8,
+          "plain": 0,
+          "pro": 8,
+          "studio": 8,
+          "breeze": 8,
+          "adwaita": 8,
+          "classic": 0
+        },
+        "radius_m": {
+          "all": 16,
+          "plain": 0,
+          "pro": 8,
+          "studio": 16,
+          "breeze": 8,
+          "adwaita": 16,
+          "classic": 0
+        },
+        "radius_l": {
+          "all": 32,
+          "plain": 0,
+          "pro": 8,
+          "studio": 32,
+          "breeze": 8,
+          "adwaita": 32,
+          "classic": 0
+        },
+        "radius_xl": {
+          "all": 160,
+          "plain": 0,
+          "pro": 8,
+          "studio": 160,
+          "breeze": 8,
+          "adwaita": 160,
+          "classic": 0
+        },
+        "radius_pill": {
+          "all": 160,
+          "plain": 0,
+          "pro": 8,
+          "studio": 160,
+          "breeze": 8,
+          "adwaita": 160,
+          "classic": 0
+        },
+        "spacing_none": {
+          "all": 0
+        },
+        "spacing_xxxs": {
+          "all": 4
+        },
+        "spacing_xxs": {
+          "all": 8
+        },
+        "spacing_xs": {
+          "all": 12
+        },
+        "spacing_s": {
+          "all": 16
+        },
+        "spacing_m": {
+          "all": 24
+        },
+        "spacing_l": {
+          "all": 32
+        },
+        "spacing_xl": {
+          "all": 48
+        },
+        "spacing_xxl": {
+          "all": 64
+        },
+        "spacing_xxxl": {
+          "all": 128
+        },
+        "header_padding_top": {
+          "all": 7
+        },
+        "header_padding_right": {
+          "all": 7
+        },
+        "header_padding_bottom": {
+          "all": 8
+        },
+        "header_padding_left": {
+          "all": 7
+        }
+      },
+      "styles": {},
+      "schemes": {
+        "mixos": "studio"
+      },
+      "terminal": {
+        "mixos.light": {
+          "ansi": [
+            "#393a3d",
+            "#ff1261",
+            "#2ad947",
+            "#fcba28",
+            "#2d9aff",
+            "#dd30ff",
+            "#17d5df",
+            "#e7e7e7",
+            "#6b6b6b",
+            "#c55555",
+            "#aac474",
+            "#feca88",
+            "#82b8c8",
+            "#c28cb8",
+            "#93d3c3",
+            "#f8f8f8"
+          ],
+          "foreground": "#ffffff",
+          "background": "#0f0d0e",
+          "cursor": "invert"
+        },
+        "mixos.dark": {
+          "ansi": [
+            "#393a3d",
+            "#ff1261",
+            "#2ad947",
+            "#fcba28",
+            "#2d9aff",
+            "#dd30ff",
+            "#17d5df",
+            "#e7e7e7",
+            "#6b6b6b",
+            "#c55555",
+            "#aac474",
+            "#feca88",
+            "#82b8c8",
+            "#c28cb8",
+            "#93d3c3",
+            "#f8f8f8"
+          ],
+          "foreground": "#ffffff",
+          "background": "#0f0d0e",
+          "cursor": "invert"
+        }
+      }
+    },
     "v3": {
   "schemes": {
     "adwaita": {

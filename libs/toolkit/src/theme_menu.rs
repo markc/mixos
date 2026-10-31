@@ -40,6 +40,7 @@ pub const fn scheme_id(scheme: Scheme) -> &'static str {
         Scheme::Classic => "view.theme.classic",
         Scheme::Breeze => "view.theme.breeze",
         Scheme::Adwaita => "view.theme.adwaita",
+        Scheme::Mixos => "view.theme.mixos",
     }
 }
 
@@ -56,6 +57,7 @@ const fn scheme_label(scheme: Scheme) -> &'static str {
         Scheme::Classic => "toolkit-theme-classic",
         Scheme::Breeze => "toolkit-theme-breeze",
         Scheme::Adwaita => "toolkit-theme-adwaita",
+        Scheme::Mixos => "toolkit-theme-mixos",
     }
 }
 
