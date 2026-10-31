@@ -217,12 +217,15 @@ impl PanelCommand {
     }
 }
 
-/// One change to a settings-owned edge's `shell.panels.<id>` record.
+/// One change to a settings-owned panel's `shell.panels.<id>.*` keys
+/// (encoded by [`crate::profile::panel_changes`]).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum RecordChange {
-    /// `dock`, `overlay` or `hidden`.
+    /// `autohide` alone; the mode stays.
+    Autohide(bool),
+    /// `dock` or `overlay`, shown (autohide off).
     Mode(&'static str),
-    /// Whole pixels, 16..=256.
+    /// One of the five steps (32, 40, 56, 64, 80).
     Thickness(u32),
 }
 
@@ -235,17 +238,15 @@ pub struct SettingsWrite {
     pub change: RecordChange,
 }
 
-/// The settings record's word for a panel mode.
-pub(crate) fn record_mode(mode: PanelMode) -> &'static str {
+/// The settings change that puts a panel in `mode`: hidden is autohide (the
+/// stored mode stays), pinned is `overlay`, docked is `dock`.
+pub(crate) fn record_change(mode: PanelMode) -> RecordChange {
     match mode {
-        PanelMode::Hidden => "hidden",
-        PanelMode::Pinned => "overlay",
-        PanelMode::Docked => "dock",
+        PanelMode::Hidden => RecordChange::Autohide(true),
+        PanelMode::Pinned => RecordChange::Mode("overlay"),
+        PanelMode::Docked => RecordChange::Mode("dock"),
     }
 }
-
-/// The thickness a `shell.panels.<id>` record can hold (settings v1).
-const RECORD_THICKNESS: std::ops::RangeInclusive<f32> = 16.0..=256.0;
 
 impl Panels {
     /// Total activation of an already validated whole profile, before ACK.
@@ -792,17 +793,13 @@ impl Panels {
                     }
                     let edge = press.corner.summoned_edge();
                     if let Some(record) = self.preferences.record(edge) {
-                        // A settings-owned edge: the click is a settings
-                        // change (dock or overlay to hidden, hidden to dock),
-                        // written through settingsd; the new look applies it.
-                        let next = if record.preference.mode() == PanelMode::Hidden {
-                            "dock"
-                        } else {
-                            "hidden"
-                        };
+                        // A settings-owned edge: the click toggles the
+                        // panel's autohide, written through settingsd; the
+                        // new look applies it.
+                        let autohide = record.preference.mode() != PanelMode::Hidden;
                         self.settings_writes.push(SettingsWrite {
                             id: record.id.clone(),
-                            change: RecordChange::Mode(next),
+                            change: RecordChange::Autohide(autohide),
                         });
                     } else if let Some(model) = self.models.get(&press.output) {
                         let mode = model.panel(edge).mode;
@@ -852,15 +849,16 @@ impl Panels {
         let record = self.preferences.record(shell_edge(edge))?;
         Some((record.preference.mode() != mode).then(|| SettingsWrite {
             id: record.id.clone(),
-            change: RecordChange::Mode(record_mode(mode)),
+            change: record_change(mode),
         }))
     }
 
-    /// `shell.panel.resize` on a settings-owned edge, as the record write:
+    /// `shell.panel.resize` on a settings-owned edge, as the settings write:
     /// `None` when the edge has no settings record, `Some(Ok(None))` when the
-    /// record already requests that thickness. The edge's resize range and
-    /// the record's whole-pixel 16..=256 both bind; the output budget and
-    /// page minimums are the look's to fit (the row's `settings.constraints`).
+    /// panel already requests that step. The edge's resize range binds; the
+    /// thickness snaps to the nearest step, ties up (a drag always lands on
+    /// one); the output budget and page minimums are the look's to fit (the
+    /// row's `settings.constraints`).
     pub(crate) fn settings_thickness_write(
         &self,
         edge: Edge,
@@ -870,20 +868,11 @@ impl Panels {
         if !resize_thickness_range(shell_edge(edge)).contains(&thickness_px) {
             return Some(Err(resize_range_refusal(edge)));
         }
-        if !RECORD_THICKNESS.contains(&thickness_px) || thickness_px.fract() != 0.0 {
-            return Some(Err(json!({
-                "error_code":"BAD_ARGUMENT",
-                "message":format!(
-                    "the {} edge is settings-owned (shell.panels.{}); its thickness is whole pixels in {}..={}",
-                    edge.as_str(), record.id, RECORD_THICKNESS.start(), RECORD_THICKNESS.end()
-                ),
-                "edge":edge.as_str(), "requested":thickness_px,
-            })));
-        }
-        Some(Ok((record.preference.thickness() != thickness_px).then(
+        let step = crate::profile::snap_thickness(thickness_px.round() as u32);
+        Some(Ok((record.preference.thickness() != step as f32).then(
             || SettingsWrite {
                 id: record.id.clone(),
-                change: RecordChange::Thickness(thickness_px as u32),
+                change: RecordChange::Thickness(step),
             },
         )))
     }
@@ -1729,7 +1718,7 @@ mod tests {
     fn settings_policy_fans_out_and_reports_requested_and_presented_sizes() {
         let mut panels = panels_with("DP-1");
         panels.set_preferences(
-            crate::preferences::Preferences::prepare(&settings::Shell::default()).unwrap(),
+            crate::preferences::Preferences::prepare(&crate::preferences::panels_of(&[])).unwrap(),
         );
         panels.ensure("DP-2", (1920.0, 1080.0));
         for output in ["DP-1", "DP-2"] {
@@ -1755,32 +1744,29 @@ mod tests {
     #[test]
     fn settings_rows_distinguish_range_and_opposing_budget_constraints() {
         let mut panels = panels_with("DP-1");
-        panels.ensure("DP-1", (300.0, 800.0));
-        let mut shell = settings::Shell::default();
-        for (id, edge, thickness) in [
-            ("left", "left", 256),
-            ("right", "right", 256),
-            ("top", "top", 16),
-        ] {
-            shell.panels.insert(
-                id.into(),
-                settings::Panel {
-                    edge: edge.into(),
-                    mode: "dock".into(),
-                    thickness,
-                },
-            );
-        }
-        panels.set_preferences(crate::preferences::Preferences::prepare(&shell).unwrap());
+        panels.ensure("DP-1", (200.0, 800.0));
+        // The largest step (80) is under a side edge's resize range (120 up),
+        // so both side panels fit to 120, and two of those overrun 200.
+        let policy = crate::preferences::panels_of(&[
+            ("shell.panels.top.enabled", json!(true)),
+            ("shell.panels.top.edge", json!("left")),
+            ("shell.panels.top.thickness", json!(80)),
+            ("shell.panels.bottom.edge", json!("right")),
+            ("shell.panels.bottom.thickness", json!(80)),
+        ]);
+        panels.set_preferences(crate::preferences::Preferences::prepare(&policy).unwrap());
         register(&mut panels, "DP-1", Edge::Left, "left-page", 120.0);
         register(&mut panels, "DP-1", Edge::Right, "right-page", 120.0);
-        register(&mut panels, "DP-1", Edge::Top, "top-page", 24.0);
         let left = panels.state("DP-1", Edge::Left);
-        assert_eq!(left["settings"]["constraints"], json!(["output_budget"]));
-        assert!(left["settings"]["fitted_px"].as_f64().unwrap() < 256.0);
+        assert_eq!(left["settings"]["record"], "top");
         assert_eq!(
-            panels.state("DP-1", Edge::Top)["settings"]["constraints"],
-            json!(["edge_range"])
+            left["settings"]["constraints"],
+            json!(["edge_range", "output_budget"])
+        );
+        assert!(left["settings"]["fitted_px"].as_f64().unwrap() < 120.0);
+        assert_eq!(
+            panels.state("DP-1", Edge::Right)["settings"]["record"],
+            "bottom"
         );
     }
 
@@ -1788,8 +1774,10 @@ mod tests {
     fn managed_refusals_and_idempotent_writes_preserve_menu_and_keyboard() {
         let mut panels = panels_with("DP-1");
         register(&mut panels, "DP-1", Edge::Bottom, "page", 52.0);
-        let mut shell = settings::Shell::default();
-        panels.set_preferences(crate::preferences::Preferences::prepare(&shell).unwrap());
+        let prepare = |pairs: &[(&str, serde_json::Value)]| {
+            crate::preferences::Preferences::prepare(&crate::preferences::panels_of(pairs)).unwrap()
+        };
+        panels.set_preferences(prepare(&[]));
         let now = panels.now();
         panels.focus_at("DP-1", Some(Edge::Bottom), now);
         panels
@@ -1818,15 +1806,16 @@ mod tests {
         assert_eq!(panels.focused("DP-1"), Some(Edge::Bottom));
         assert_eq!(panels.state("DP-1", Edge::Bottom), row);
         assert!(panels.settings_writes().is_empty());
-        shell.panels.get_mut("bottom").unwrap().thickness = 80;
-        panels.set_preferences(crate::preferences::Preferences::prepare(&shell).unwrap());
+        panels.set_preferences(prepare(&[("shell.panels.bottom.thickness", json!(80))]));
         assert_eq!(panels.focused("DP-1"), Some(Edge::Bottom));
         assert_eq!(
             panels.menu.as_ref().unwrap().serial,
             menu.as_ref().unwrap().serial
         );
-        shell.panels.get_mut("bottom").unwrap().mode = "hidden".into();
-        panels.set_preferences(crate::preferences::Preferences::prepare(&shell).unwrap());
+        panels.set_preferences(prepare(&[
+            ("shell.panels.bottom.thickness", json!(80)),
+            ("shell.panels.bottom.autohide", json!(true)),
+        ]));
         assert_eq!(panels.focused("DP-1"), None);
         assert!(panels.menu.is_none());
     }
@@ -2228,18 +2217,21 @@ mod tests {
     }
 
     #[test]
-    fn hotspot_clicks_on_a_settings_owned_edge_write_the_settings_mode() {
-        for (stored, shift, written) in [
-            ("dock", false, "hidden"),
-            ("dock", true, "hidden"),
-            ("overlay", false, "hidden"),
-            ("hidden", false, "dock"),
+    fn hotspot_clicks_on_a_settings_owned_edge_toggle_autohide() {
+        for (stored, autohide, shift, written) in [
+            ("dock", false, false, true),
+            ("dock", false, true, true),
+            ("overlay", false, false, true),
+            ("dock", true, false, false),
+            ("overlay", true, false, false),
         ] {
             let mut panels = panels_with("DP-1");
             register(&mut panels, "DP-1", Edge::Bottom, "page", 52.0);
-            let mut shell = settings::Shell::default();
-            shell.panels.get_mut("bottom").unwrap().mode = stored.into();
-            panels.set_preferences(crate::preferences::Preferences::prepare(&shell).unwrap());
+            let policy = crate::preferences::panels_of(&[
+                ("shell.panels.bottom.mode", json!(stored)),
+                ("shell.panels.bottom.autohide", json!(autohide)),
+            ]);
+            panels.set_preferences(crate::preferences::Preferences::prepare(&policy).unwrap());
             let start = Duration::from_secs(1);
             let before = panels.mode("DP-1", Edge::Bottom);
             panels.pointer_at("DP-1", Some((1.0, 799.0)), tuning(), start);
@@ -2249,9 +2241,9 @@ mod tests {
                 panels.settings_writes(),
                 vec![SettingsWrite {
                     id: "bottom".into(),
-                    change: RecordChange::Mode(written),
+                    change: RecordChange::Autohide(written),
                 }],
-                "{stored}, shift={shift}"
+                "{stored}, autohide={autohide}, shift={shift}"
             );
             assert_eq!(
                 panels.mode("DP-1", Edge::Bottom),
@@ -2264,30 +2256,27 @@ mod tests {
     #[test]
     fn bus_modes_and_thickness_on_a_settings_owned_edge_are_record_writes() {
         let mut panels = panels_with("DP-1");
-        let mut shell = settings::Shell::default();
-        shell.panels.insert(
-            "side".into(),
-            settings::Panel {
-                edge: "left".into(),
-                mode: "hidden".into(),
-                thickness: 200,
-            },
-        );
-        panels.set_preferences(crate::preferences::Preferences::prepare(&shell).unwrap());
+        let policy = crate::preferences::panels_of(&[
+            ("shell.panels.top.enabled", json!(true)),
+            ("shell.panels.top.edge", json!("left")),
+            ("shell.panels.top.autohide", json!(true)),
+            ("shell.panels.top.thickness", json!(80)),
+        ]);
+        panels.set_preferences(crate::preferences::Preferences::prepare(&policy).unwrap());
         let write = |id: &str, change| {
             Some(Some(SettingsWrite {
                 id: id.into(),
                 change,
             }))
         };
-        // The default bottom record docks.
+        // The default bottom panel docks.
         for (mode, change) in [
-            (PanelMode::Hidden, "hidden"),
-            (PanelMode::Pinned, "overlay"),
+            (PanelMode::Hidden, RecordChange::Autohide(true)),
+            (PanelMode::Pinned, RecordChange::Mode("overlay")),
         ] {
             assert_eq!(
                 panels.settings_mode_write(Edge::Bottom, mode),
-                write("bottom", RecordChange::Mode(change))
+                write("bottom", change)
             );
         }
         assert_eq!(
@@ -2296,7 +2285,7 @@ mod tests {
         );
         assert_eq!(
             panels.settings_mode_write(Edge::Left, PanelMode::Docked),
-            write("side", RecordChange::Mode("dock"))
+            write("top", RecordChange::Mode("dock"))
         );
         assert_eq!(
             panels.settings_mode_write(Edge::Right, PanelMode::Docked),
@@ -2318,13 +2307,20 @@ mod tests {
             panels.settings_thickness_write(Edge::Bottom, 10.0),
             Some(Err(resize_range_refusal(Edge::Bottom)))
         );
-        for (edge, px) in [(Edge::Bottom, 40.5), (Edge::Left, 300.0)] {
+        // A free size snaps to its step (ties up); one already requested is
+        // no write.
+        for (edge, px, step) in [
+            (Edge::Bottom, 48.0, Some(("bottom", 56))),
+            (Edge::Bottom, 200.0, Some(("bottom", 80))),
+            (Edge::Bottom, 40.5, None),
+            (Edge::Left, 300.0, None),
+        ] {
             assert_eq!(
-                panels
-                    .settings_thickness_write(edge, px)
-                    .unwrap()
-                    .unwrap_err()["error_code"],
-                "BAD_ARGUMENT",
+                panels.settings_thickness_write(edge, px),
+                Some(Ok(step.map(|(id, step)| SettingsWrite {
+                    id: id.into(),
+                    change: RecordChange::Thickness(step),
+                }))),
                 "{edge:?} {px}"
             );
         }
@@ -2337,7 +2333,7 @@ mod tests {
         let mut panels = panels_with("DP-1");
         register(&mut panels, "DP-1", Edge::Bottom, "page", 52.0);
         panels.set_preferences(
-            crate::preferences::Preferences::prepare(&settings::Shell::default()).unwrap(),
+            crate::preferences::Preferences::prepare(&crate::preferences::panels_of(&[])).unwrap(),
         );
         let now = panels.now();
         panels
@@ -2363,7 +2359,7 @@ mod tests {
             panels.settings_writes(),
             vec![SettingsWrite {
                 id: "bottom".into(),
-                change: RecordChange::Mode("hidden"),
+                change: RecordChange::Autohide(true),
             }]
         );
         assert!(panels.menu.is_none());

@@ -2139,7 +2139,7 @@ mod tests {
                     "expected_revision":"1", "operation_id":"quoin-live-fixture",
                     "changes":{"appearance.mode":"light","ui.text_scale":1.5,
                         "shell.panels.bottom":{"edge":"bottom","mode":"dock","thickness":80},
-                        "shell.panels.right":{"edge":"right","mode":"overlay","thickness":160}}
+                        "shell.panels.top":{"edge":"right","mode":"overlay","thickness":160}}
                 }),
             )
             .await
@@ -2162,9 +2162,10 @@ mod tests {
             "pinned"
         );
         panels.ensure("future", (1920.0, 1080.0));
+        // A format-4 thickness reads at its nearest v2 step (160 → 80).
         assert_eq!(
-            panels.state("future", crate::seat::Edge::Right)["width_px"],
-            160.0
+            panels.state("future", crate::seat::Edge::Right)["settings"]["requested_px"],
+            80.0
         );
         assert!(panels.zones("future").is_empty());
         let after = session
@@ -2204,7 +2205,7 @@ mod tests {
         let invalid = controller.call("settingsd", "settings.apply", json!({
             "binding":current.binding, "expected_incarnation":current.incarnation,
             "expected_revision":"3", "operation_id":"quoin-duplicate-edge",
-            "changes":{"shell.panels.duplicate":{"edge":"bottom","mode":"dock","thickness":100}}
+            "changes":{"shell.panels.top":{"edge":"bottom","mode":"dock","thickness":100}}
         })).await.unwrap();
         assert_eq!(invalid["status"], "changed");
         let deadline = std::time::Instant::now() + Duration::from_secs(20);

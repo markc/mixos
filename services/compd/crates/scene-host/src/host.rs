@@ -798,8 +798,9 @@ fn settings_reply_applied(
     }
 }
 
-/// `settings.apply` for `write`: its `shell.panels.<id>` record with the
-/// change made, fenced on `snapshot`, the applied one (the preferences the
+/// `settings.apply` for `write`: its `shell.panels.<id>.*` v2 keys
+/// ([`crate::profile::panel_changes`]), fenced on `snapshot`, the applied
+/// one (the preferences the
 /// change was read against), so a change made meanwhile elsewhere, or a
 /// second write before the first lands, is refused rather than overwritten.
 /// `Err` is a `SETTINGS_UNAVAILABLE` refusal body.
@@ -812,21 +813,16 @@ pub(crate) fn settings_apply(
         return Err(json!({"error_code":"SETTINGS_UNAVAILABLE",
             "message":"the shell has not applied its settings yet; retry when settingsd is up"}));
     };
-    let Some(record) = snapshot.desktop.shell.panels.get(&write.id) else {
+    let Some(changes) = crate::profile::panel_changes(snapshot, &write.id, write.change) else {
         return Err(json!({"error_code":"SETTINGS_UNAVAILABLE",
-            "message":format!("the applied settings have no shell.panels.{} record", write.id)}));
+            "message":format!("the applied settings have no enabled shell.panels.{} panel", write.id)}));
     };
-    let mut record = record.clone();
-    match write.change {
-        crate::panels::RecordChange::Mode(mode) => record.mode = mode.into(),
-        crate::panels::RecordChange::Thickness(px) => record.thickness = px,
-    }
     Ok(json!({
         "binding": snapshot.binding,
         "expected_incarnation": snapshot.incarnation,
         "expected_revision": snapshot.revision,
         "operation_id": operation,
-        "changes": {format!("shell.panels.{}", write.id): record},
+        "changes": changes,
     }))
 }
 
@@ -950,11 +946,13 @@ impl SceneHost {
         }
         let panels = &mut self.host.panels;
         let port = &self.port;
+        let mut gaps = None;
         for _changed in self.settings.drain_with(
             || port.settings_generation(),
             |presentation| {
                 let look = presentation.content();
                 panels.set_preferences(look.preferences.clone());
+                gaps = Some(look.gaps);
                 decor::window::install(look.chrome(look.window_style));
                 // The region-select overlay and the capture panels draw in
                 // the session look too.
@@ -966,6 +964,10 @@ impl SceneHost {
             serviced.changed = true;
             // Open capture panels take the new look without waiting for input.
             world::surface::draw::capture::style::restyle(lp);
+        }
+        if let Some(gaps) = gaps {
+            // Tiled windows re-fit to the new gap on the next placement pass.
+            lp.inner.comp.set_tile_gap(gaps);
         }
         // A new look may answer settings-owned panel changes.
         self.settle_settings_replies();
@@ -2005,7 +2007,7 @@ mod tests {
         );
         host.panels.sync(&host.store);
         host.panels.set_preferences(
-            crate::preferences::Preferences::prepare(&settings::Shell::default()).unwrap(),
+            crate::preferences::Preferences::prepare(&crate::preferences::panels_of(&[])).unwrap(),
         );
         let panel = |kind| SceneCommand::Panel {
             kind,
@@ -2021,7 +2023,7 @@ mod tests {
             (
                 SceneCommand::PanelMode,
                 json!({"edge":"bottom", "mode":"hidden"}),
-                write(RecordChange::Mode("hidden")),
+                write(RecordChange::Autohide(true)),
             ),
             (
                 SceneCommand::PanelMode,
@@ -2036,11 +2038,16 @@ mod tests {
             (
                 panel(PanelCommand::Unpin),
                 json!({"edge":"bottom"}),
-                write(RecordChange::Mode("hidden")),
+                write(RecordChange::Autohide(true)),
             ),
             (
                 SceneCommand::PanelResize,
                 json!({"edge":"bottom", "thickness_px":56}),
+                write(RecordChange::Thickness(56)),
+            ),
+            (
+                SceneCommand::PanelResize,
+                json!({"edge":"bottom", "thickness_px":50}),
                 write(RecordChange::Thickness(56)),
             ),
         ] {
@@ -2068,6 +2075,11 @@ mod tests {
                 SceneCommand::PanelResize,
                 json!({"edge":"bottom", "thickness_px":40}),
             ),
+            // A free drag snaps to its step: 40.5 is 40.
+            (
+                SceneCommand::PanelResize,
+                json!({"edge":"bottom", "thickness_px":40.5}),
+            ),
         ] {
             let answer = host.answer(
                 &request(kind, "agent", LOCAL, body.clone()),
@@ -2086,7 +2098,7 @@ mod tests {
                 SceneCommand::PanelResize,
                 "agent",
                 LOCAL,
-                json!({"edge":"bottom", "thickness_px":40.5}),
+                json!({"edge":"bottom", "thickness_px":500}),
             ),
             "DP-1",
             Some(1),
@@ -2135,7 +2147,7 @@ mod tests {
     }
 
     #[test]
-    fn settings_writes_carry_the_whole_record_fenced_on_the_applied_snapshot() {
+    fn settings_writes_carry_v2_keys_fenced_on_the_applied_snapshot() {
         use crate::panels::{RecordChange, SettingsWrite};
         let snapshot = crate::appearance::snapshot_of(settings::Desktop::default());
         let write = SettingsWrite {
@@ -2147,15 +2159,19 @@ mod tests {
         assert_eq!(body["expected_revision"], "1");
         assert_eq!(body["operation_id"], "shell-panel-1");
         assert_eq!(
-            body["changes"]["shell.panels.bottom"],
-            json!({"edge":"bottom", "mode":"dock", "thickness":56})
+            body["changes"],
+            json!({"shell.panels.bottom.thickness": 56})
         );
         let request: settings::ApplyRequest = serde_json::from_value(body).unwrap();
         assert_eq!(request.binding, snapshot.binding);
-        for (snapshot, id) in [(None, "bottom"), (Some(&snapshot), "nowhere")] {
+        for (snapshot, id) in [
+            (None, "bottom"),
+            (Some(&snapshot), "nowhere"),
+            (Some(&snapshot), "top"),
+        ] {
             let write = SettingsWrite {
                 id: id.into(),
-                change: RecordChange::Mode("hidden"),
+                change: RecordChange::Autohide(true),
             };
             assert_eq!(
                 settings_apply(snapshot, &write, "op").unwrap_err()["error_code"],
