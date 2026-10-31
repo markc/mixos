@@ -389,7 +389,7 @@ fn native_deliveries_require_owner_topic_and_generation_and_bound_bad_data() {
         args: serde_json::Value::Null,
         body: serde_json::to_string(&snapshot(2, "a")).unwrap(),
         headers: BTreeMap::from([
-            ("topic".into(), compact_topic("default")),
+            ("topic".into(), topics::snapshot_topic("default")),
             ("broker_service".into(), "other".into()),
         ]),
     };
@@ -403,12 +403,12 @@ fn native_deliveries_require_owner_topic_and_generation_and_bound_bad_data() {
     command.generation = 1;
     command
         .headers
-        .insert("topic".into(), compact_topic("other"));
+        .insert("topic".into(), topics::snapshot_topic("other"));
     assert!(state.native_delivery(&command).is_none());
     assert_eq!(state.current().unwrap().revision, Revision(1));
     command
         .headers
-        .insert("topic".into(), compact_topic("default"));
+        .insert("topic".into(), topics::snapshot_topic("default"));
     state.native_delivery(&command);
     assert_eq!(state.current().unwrap().revision, Revision(2));
     command.body = "malformed".into();

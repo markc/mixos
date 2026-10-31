@@ -12,11 +12,11 @@ fn binding() -> Binding {
     }
 }
 fn snapshot(revision: u64, dark: bool) -> Snapshot {
-    // Explicit both ways: the embedded default is itself dark.
-    let values = settings::registry::Values::from([(
-        "appearance.mode".into(),
-        serde_json::json!(if dark { "dark" } else { "light" }),
-    )]);
+    // Dark is the default, which is never stored.
+    let mut values = settings::registry::Values::new();
+    if !dark {
+        values.insert("appearance.mode".into(), serde_json::json!("light"));
+    }
     Snapshot {
         schema: 1,
         binding: binding(),
