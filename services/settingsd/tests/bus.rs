@@ -116,7 +116,7 @@ impl Broker {
                 .args(args)
                 .env("MIXOS_NODED_URL", self.url())
                 .env("MIXOS_NODE_CONFIG", self.root.join("etc/node.conf.mix"))
-                .env("RUST_LOG", "settingsd=debug")
+                .env("RUST_LOG", "settingsd=info")
                 .stdout(Stdio::from(log.try_clone().unwrap()))
                 .stderr(Stdio::from(log))
                 .spawn()

@@ -247,6 +247,11 @@ impl Ctx {
         if !self.client.is_connected() || authority.recovering() {
             return;
         }
+        // A mirror attaching holds its topics until the answer, so a
+        // reconnect publishes the authority's revision, not the cache's.
+        if self.attaching {
+            return;
+        }
         if authority.board.is_current() && authority.published == Some(authority.accepted.revision)
         {
             return;
