@@ -390,7 +390,7 @@ fn role_loss_and_destroy_drop_the_uuid_and_retake_rebinds_without_a_second_bump(
 }
 
 #[test]
-fn windows_projection_is_mapped_xdg_toplevels_in_id_order() {
+fn windows_projection_is_mapped_managed_toplevels_in_id_order() {
     let mut registry = registry();
     let (b, _) = mapped_toplevel(&mut registry, 1);
     let (unmapped, _) = registry.take_role(2, SurfaceRole::Toplevel, None).unwrap();
@@ -413,7 +413,11 @@ fn windows_projection_is_mapped_xdg_toplevels_in_id_order() {
         .windows()
         .map(|record| record.id())
         .collect::<Vec<_>>();
-    assert_eq!(windows, [b, c], "no X11, no layer, no unmapped, no dormant");
+    assert_eq!(
+        windows,
+        [b, x11, c],
+        "managed X11 included; no layer, no unmapped, no dormant"
+    );
     let rows = registry
         .surface_rows()
         .map(|record| record.id())
