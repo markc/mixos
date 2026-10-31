@@ -75,11 +75,11 @@ pub use colour_model::{
     ResolvedPair, TEXT_PAIR_NAMES, contrast_ratio,
 };
 pub use compiler::compile_design;
-pub use context::{ActionsAlign, ActionsPlace, TitleAlign};
 pub use context::{
     AccentChoice, CaptionSide, Colour8, Contrast, Decorations, DesignContext, MenuSide, MenuStyle,
     Mode, RequestedDecorations, Scheme, Style, Swatch, Tints, WindowStyle,
 };
+pub use context::{ActionsAlign, ActionsPlace, TitleAlign};
 pub use design_model::{
     AuthoredMetric, DesignApplyDecision, DesignApplyTransition, DesignCompileFailure,
     DesignCompileOutcome, DesignCompileResult, DesignCompileStatus, DesignCompileSuccess,

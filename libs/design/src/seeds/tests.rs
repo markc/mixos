@@ -10,8 +10,11 @@ use crate::{
 fn document() -> &'static crate::DesignSourceDocument {
     static DOCUMENT: std::sync::OnceLock<crate::DesignSourceDocument> = std::sync::OnceLock::new();
     DOCUMENT.get_or_init(|| {
-        parse_design_source(crate::SourceIdentity::new("embedded"), EMBEDDED_DEFAULT_SOURCE)
-            .unwrap()
+        parse_design_source(
+            crate::SourceIdentity::new("embedded"),
+            EMBEDDED_DEFAULT_SOURCE,
+        )
+        .unwrap()
     })
 }
 
@@ -233,8 +236,10 @@ fn seeds_of_round_trips_mixos_within_one_step() {
         text_tint: None,
         control_tint: None,
     };
-    let mut cases: Vec<(AccentChoice, Tints)> =
-        accents().into_iter().map(|a| (a, Tints::default())).collect();
+    let mut cases: Vec<(AccentChoice, Tints)> = accents()
+        .into_iter()
+        .map(|a| (a, Tints::default()))
+        .collect();
     cases.push((AccentChoice::Auto, tinted));
     for mode in Mode::ALL {
         for contrast in Contrast::ALL {
@@ -367,7 +372,10 @@ fn body_text_reads_over_accent_soft_for_every_swatch() {
             }
         }
     }
-    assert_eq!(below, SOFT_BELOW_AA, "accent_soft cases below 4.5:1 changed");
+    assert_eq!(
+        below, SOFT_BELOW_AA,
+        "accent_soft cases below 4.5:1 changed"
+    );
 }
 
 /// The swatch cases whose selection fill leaves body text under AA.
