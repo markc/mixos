@@ -372,18 +372,7 @@ impl Engine {
             }
             (Job::Read, Answer::Refused(body)) => self.store.error = Some(message(&body)),
             (Job::Read, Answer::Lost(text)) => self.store.error = Some(text),
-            (Job::Status, Answer::Ok(body)) => {
-                self.store.role = match body["role"].as_str() {
-                    Some("authority") => Role::Authority,
-                    Some("mirror") => Role::Mirror,
-                    _ => Role::Unknown,
-                };
-                self.store.stale = body["stale"].as_bool().unwrap_or(false);
-                // A status that answers current says the authority is back.
-                if self.store.role == Role::Authority || !self.store.stale {
-                    self.store.unreachable = false;
-                }
-            }
+            (Job::Status, Answer::Ok(body)) => self.store_status(&body),
             (Job::Status, _) => {}
             (Job::Apply, Answer::Ok(body)) => self.store_applied(&body),
             (Job::Apply, Answer::Refused(body)) => self.store_refused(&body),
@@ -396,7 +385,23 @@ impl Engine {
         self.pump_store();
     }
 
-    fn store_read(&mut self, body: &Value) {
+    /// Take a `settings.status` answer: the role, and whether a mirror is
+    /// stale. A status that answers current says the authority is back.
+    pub fn store_status(&mut self, body: &Value) {
+        self.store.role = match body["role"].as_str() {
+            Some("authority") => Role::Authority,
+            Some("mirror") => Role::Mirror,
+            _ => Role::Unknown,
+        };
+        self.store.stale = body["stale"].as_bool().unwrap_or(false);
+        if self.store.role == Role::Authority || !self.store.stale {
+            self.store.unreachable = false;
+        }
+    }
+
+    /// Take a `settings.get {view: values}` answer: the values and the
+    /// fence the next write goes out on.
+    pub fn store_read(&mut self, body: &Value) {
         let incarnation = body["incarnation"].as_str().map(str::to_owned);
         let revision = serde_json::from_value::<Revision>(body["revision"].clone()).ok();
         let values = serde_json::from_value::<Values>(body["values"].clone());

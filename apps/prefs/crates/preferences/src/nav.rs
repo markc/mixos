@@ -6,7 +6,7 @@
 //! (spec 4, "Back navigation").
 use crate::engine::Engine;
 use crate::pages::{self, Body, Control, Hit};
-use crate::{Section, store::Blocked};
+use crate::Section;
 use serde::Serialize;
 use serde_json::{Value, json};
 
@@ -252,11 +252,6 @@ impl Engine {
             })
             .collect();
         json!({"query": query, "hits": hits})
-    }
-
-    /// The pages' blocked reason as data, for the views.
-    pub fn store_blocked(&self) -> Option<Blocked> {
-        self.blocked()
     }
 }
 
