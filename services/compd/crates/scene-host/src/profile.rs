@@ -1,23 +1,26 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The one seam between an accepted settings snapshot and the key space v2
-//! views compd reads: `window.*` ([`Window`]) and `shell.panels.*`
-//! ([`Panels`]), decoded from the authored values snapshot schema 3
-//! carries. Writes ([`panel_changes`]) are v2 keys: the v2 store refuses v1
+//! views compd reads: `window.*` ([`Window`]), `shell.panels.*`
+//! ([`Panels`]), and the `appearance.*` and `accessibility.*` choices the
+//! shell look takes from them ([`Appearance`], [`Accessibility`]), decoded
+//! from the authored values snapshot schema 3 carries. The look still reads
+//! the resolved scheme, mode, contrast, icon stroke and design projection
+//! from the snapshot's `effective`, and the font overlay from its format-4
+//! appearance (`appearance::theme_of`). Writes ([`panel_changes`]) are v2 keys: the v2 store refuses v1
 //! names.
 use serde_json::{Value, json};
 use settings::registry;
-use settings::view::{Panels, View, Window};
+use settings::view::{Accessibility, Appearance, Panels, View, Window};
 use settings::{Diagnostic, Snapshot};
-
-/// The panel thickness steps, in pixels (§2.4, F9).
-pub(crate) const THICKNESS_STEPS: [u32; 5] = [32, 40, 56, 64, 80];
 
 /// The v2 keys compd reads, decoded once per accepted snapshot.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Profile {
     pub window: Window,
     pub panels: Panels,
+    pub appearance: Appearance,
+    pub accessibility: Accessibility,
 }
 
 impl Profile {
@@ -35,19 +38,10 @@ impl Profile {
         Ok(Self {
             window: Window::of(values),
             panels: Panels::of(values),
+            appearance: Appearance::of(values),
+            accessibility: Accessibility::of(values),
         })
     }
-}
-
-/// The nearest thickness step, ties up (F9).
-pub(crate) fn snap_thickness(px: u32) -> u32 {
-    let mut best = THICKNESS_STEPS[0];
-    for step in THICKNESS_STEPS {
-        if step.abs_diff(px) <= best.abs_diff(px) {
-            best = step;
-        }
-    }
-    best
 }
 
 /// The `settings.apply` changes for `change` to panel `id`, in v2 keys
@@ -81,7 +75,7 @@ pub(crate) fn panel_changes(
             changes.insert(key("autohide"), json!(false));
         }
         RecordChange::Thickness(px) => {
-            changes.insert(key("thickness"), json!(snap_thickness(px)));
+            changes.insert(key("thickness"), json!(registry::snap_panel_thickness(px)));
         }
     }
     Ok(Value::Object(changes))
@@ -109,7 +103,7 @@ mod tests {
             (100, 80),
             (256, 80),
         ] {
-            assert_eq!(snap_thickness(px), step, "{px}");
+            assert_eq!(registry::snap_panel_thickness(px), step, "{px}");
         }
     }
 
@@ -190,10 +184,10 @@ mod tests {
             );
         }
         // A profile that no longer reads says so, with its key.
-        let mut desktop = settings::Desktop::default();
-        desktop.shell.panels.get_mut("bottom").unwrap().edge = "leftish".into();
         let mut broken = snapshot(settings::Desktop::default());
-        broken.desktop = desktop;
+        broken
+            .values
+            .insert("shell.panels.bottom.edge".into(), json!("leftish"));
         let fault = panel_changes(&broken, "bottom", RecordChange::Autohide(true)).unwrap_err();
         assert_eq!(fault["error_code"], "SETTINGS_INVALID");
         assert_eq!(fault["path"], "shell.panels.bottom.edge");

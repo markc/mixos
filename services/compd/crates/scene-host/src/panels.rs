@@ -884,7 +884,7 @@ impl Panels {
         if !resize_thickness_range(shell_edge(edge)).contains(&thickness_px) {
             return Some(Err(resize_range_refusal(edge)));
         }
-        let step = crate::profile::snap_thickness(thickness_px.round() as u32);
+        let step = settings::registry::snap_panel_thickness(thickness_px.round() as u32);
         Some(Ok((record.preference.thickness() != step as f32).then(
             || SettingsWrite {
                 id: record.id.clone(),

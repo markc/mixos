@@ -13,7 +13,7 @@ use design::{
     CaptionSide, Contrast, DesignContext, Mode, RequestedDecorations, Scheme, Style,
     TypographyGeneric, TypographyRole,
 };
-use settings::view::Framing;
+use crate::profile::Profile;
 use settings::{Diagnostic, Snapshot};
 use std::sync::Arc;
 use toolkit::theme::{Overlay, Theme};
@@ -51,8 +51,11 @@ fn unsupported(path: &str, message: &str) -> Diagnostic {
 /// The theme an accepted snapshot describes: its own design source when the
 /// profile carries one, otherwise the embedded design, either way at the
 /// effective scheme, style, mode and contrast settingsd accepted, framed as
-/// the profile asks (`window.*`).
-fn theme_of(snapshot: &Snapshot, framing: &Framing) -> Result<Theme, Diagnostic> {
+/// the profile asks (`window.*`). The style and the source are the authored
+/// `appearance.*` values; the font overlay still reads the format-4
+/// appearance, the one toolkit constructor scene-host can reach.
+fn theme_of(snapshot: &Snapshot, profile: &Profile) -> Result<Theme, Diagnostic> {
+    let framing = &profile.window.framing;
     let effective = snapshot.effective.get(CONTEXT).ok_or_else(|| {
         Diagnostic::new(
             "missing_context",
@@ -63,7 +66,7 @@ fn theme_of(snapshot: &Snapshot, framing: &Framing) -> Result<Theme, Diagnostic>
     let decorations = RequestedDecorations::from_name(&framing.decorations)
         .ok_or_else(|| unsupported("window.decorations", "Unknown decorations"))?;
     let captions = CaptionSide::resolve(&framing.caption_side);
-    let style = match &effective.style {
+    let style = match &profile.appearance.style {
         None => None,
         Some(name) => Some(
             Style::from_name(name)
@@ -80,7 +83,7 @@ fn theme_of(snapshot: &Snapshot, framing: &Framing) -> Result<Theme, Diagnostic>
         style,
         ..DesignContext::default()
     };
-    let theme = match &snapshot.desktop.appearance.source {
+    let theme = match &profile.appearance.source {
         Some(source) => {
             Theme::from_source_in("settings:desktop", source, context).map_err(|error| {
                 unsupported(
@@ -125,15 +128,11 @@ fn overlay_or_design(theme: Theme, overlay: Overlay) -> Theme {
 
 /// Build the whole look from an accepted snapshot (on the worker).
 pub(crate) fn build(snapshot: &Snapshot) -> Result<Look, Diagnostic> {
-    let profile = crate::profile::Profile::read(snapshot)?;
+    let profile = Profile::read(snapshot)?;
     let preferences = crate::preferences::Preferences::prepare(&profile.panels)?;
-    let theme = theme_of(snapshot, &profile.window.framing)?;
+    let theme = theme_of(snapshot, &profile)?;
     let window_style = ChromeStyle::resolve(&profile.window.framing.style);
-    let text_scale = snapshot
-        .effective
-        .get(CONTEXT)
-        .map_or(1.0, |effective| effective.ui.text_scale as f32)
-        .clamp(0.5, 3.0);
+    let text_scale = (profile.accessibility.text_scale as f32).clamp(0.5, 3.0);
     let title = design::active_typography(Some(theme.typography()), TypographyRole::UiDisplay);
     let title_weight = if theme.overlay().weight.is_some() {
         toolkit::fonts::weights(&theme).1

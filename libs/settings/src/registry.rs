@@ -46,6 +46,7 @@ mod window;
 mod workspaces;
 
 pub use describe::{describe, describe_key, label_id};
+pub use shell::{PANEL_THICKNESS_STEPS, snap_panel_thickness};
 
 /// The authored values: full dotted path to value, only where it differs
 /// from the registry default. Canonical order is the map's.

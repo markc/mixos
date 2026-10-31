@@ -58,7 +58,7 @@ impl Preferences {
             ("overlay", false) => PanelMode::Pinned,
             _ => return Err(unsupported(&path("mode"), "Unknown panel mode")),
         };
-        if !crate::profile::THICKNESS_STEPS.contains(&panel.thickness) {
+        if !settings::registry::PANEL_THICKNESS_STEPS.contains(&i64::from(panel.thickness)) {
             return Err(unsupported(
                 &path("thickness"),
                 "Invalid requested thickness",

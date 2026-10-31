@@ -85,8 +85,6 @@ pub struct Failed {
     pub report: MigrationReport,
 }
 
-/// The v2 panel thickness steps (`shell.panels.<panel>.thickness`).
-const PANEL_STEPS: [u32; 5] = [32, 40, 56, 64, 80];
 /// The v2 slideshow intervals, in seconds (`wallpaper.slideshow.interval_s`).
 const INTERVAL_STEPS: [u64; 6] = [300, 600, 900, 1800, 3600, 7200];
 
@@ -356,7 +354,7 @@ fn shell(b: &mut Builder, shell: &Shell) {
         b.set(&format!("{root}.mode"), json!(mode));
         b.set(&format!("{root}.autohide"), json!(autohide));
         let thickness_path = format!("{root}.thickness");
-        let snapped = snap_thickness(panel.thickness);
+        let snapped = registry::snap_panel_thickness(panel.thickness);
         if snapped != panel.thickness {
             b.changed(
                 &thickness_path,
@@ -373,19 +371,8 @@ fn shell(b: &mut Builder, shell: &Shell) {
     }
 }
 
-/// The nearest v2 thickness step. A tie goes up: the steps are read from the
-/// lowest, and a step at the same distance replaces the one before it.
-fn snap_thickness(thickness: u32) -> u32 {
-    let mut best = PANEL_STEPS[0];
-    for step in PANEL_STEPS {
-        if thickness.abs_diff(step) <= thickness.abs_diff(best) {
-            best = step;
-        }
-    }
-    best
-}
-
-/// The nearest slideshow interval v2 allows, ties up, as [`snap_thickness`].
+/// The nearest slideshow interval v2 allows, ties up, as
+/// [`registry::snap_panel_thickness`].
 fn snap_interval(seconds: u64) -> u64 {
     let mut best = INTERVAL_STEPS[0];
     for step in INTERVAL_STEPS {

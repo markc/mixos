@@ -4,6 +4,22 @@
 //! Panel, `bottom` its Dock and Quoin's panel.
 use super::{DefaultValue as D, Domain::*, Grammar, KeyDef as K, Kind, Kind::*};
 
+/// `shell.panels.<panel>.thickness`: the five sizes (COSMIC's XS to XL), in
+/// pixels (F9).
+pub const PANEL_THICKNESS_STEPS: &[i64] = &[32, 40, 56, 64, 80];
+
+/// The step nearest `px`, ties up (F9): what a free size becomes.
+pub fn snap_panel_thickness(px: u32) -> u32 {
+    let px = i64::from(px);
+    let mut best = PANEL_THICKNESS_STEPS[0];
+    for &step in PANEL_THICKNESS_STEPS {
+        if px.abs_diff(step) <= px.abs_diff(best) {
+            best = step;
+        }
+    }
+    best as u32
+}
+
 const fn k(path: &'static str, kind: Kind, default: D) -> K {
     K::new(path, kind, default).on("desktop/panels", &[Shell])
 }
@@ -49,7 +65,7 @@ pub(super) const KEYS: &[K] = &[
     ),
     k(
         "shell.panels.<panel>.thickness",
-        OneOf(&[32, 40, 56, 64, 80]),
+        OneOf(PANEL_THICKNESS_STEPS),
         D::ByCapture(&[("top", D::Int(32)), ("bottom", D::Int(40))]),
     ),
     k(
