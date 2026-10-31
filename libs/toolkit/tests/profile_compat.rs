@@ -28,6 +28,14 @@ mod migration;
 #[path = "../../../services/settingsd/src/mirror.rs"]
 mod mirror;
 
+#[allow(dead_code, reason = "the authority stages its topics on every load")]
+#[path = "../../../services/settingsd/src/publication.rs"]
+mod publication;
+
+#[allow(dead_code, reason = "the authority's 1.0.0 reads and topics")]
+#[path = "../../../services/settingsd/src/contract.rs"]
+mod contract;
+
 #[test]
 fn a_copied_sealed_profile_keeps_its_format_and_digests() {
     let source = include_str!("../../design/tests/fixtures/sealed-profile.conf.mix");
