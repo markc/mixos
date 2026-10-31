@@ -414,6 +414,13 @@ instance). Commands keep the app’s canonical prefix, such as <code>dopus.macro
 </tbody></table>
 <p>Logging: <code>--debug[=LEVEL]</code> and live Bus controls are described in
 <a href="/docs/dev/debugging/">live application logging</a>.</p>
+<p><code>dopus.dialog {}</code> reads the open modal as <code>{dialog: {kind, title, buttons: [{id, label, role}], body?, path?, status?} | null}</code>.
+<code>{open: null}</code> closes it as Escape does; <code>{answer: &lt;button id&gt;}</code> presses
+a listed button. No modal returns <code>NO_DIALOG</code>; a bad button returns <code>ARGUMENT</code>.
+Help opens with <code>{open: "shortcuts"}</code> or <code>{open: "about"}</code>. Delete uses
+yes/no; name uses <code>{answer: "ok", name: "..."}</code> or cancel; drop uses
+move/copy/cancel. Headless instances retain delete and name prompts until
+answered over the Bus, so file operations work without a window.</p>
         </article>
         <p class="doc-source"><a href="/dopus/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>

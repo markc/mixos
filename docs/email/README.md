@@ -579,3 +579,11 @@ messages remain plain text in ced and belong to Workshop.
 Email and ced share toolkit's `header_form` label column, rows, address/text
 fields and attachment chips. Email retains its own identity selector,
 Identities… row, address completion and attachment inspection.
+`email.dialog {}` reads the open modal as `{dialog: {kind, title,
+buttons: [{id, label, role}], body?, path?, status?} | null}`.
+`{open: null}` closes it as Escape does; `{answer: <button id>}` presses
+a listed button. No modal returns `NO_DIALOG`; a bad button returns `ARGUMENT`.
+Confirmations use keep/discard/cancel (close_compose and quit), or
+restore/discard/later (draft_restore). Help opens with `{open: "about"}` or
+`{open: "shortcuts"}`. A BUSY compose request opens its close confirmation;
+answer keep or discard, then retry.

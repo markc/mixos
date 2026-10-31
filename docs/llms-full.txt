@@ -2414,6 +2414,15 @@ Empty front matter is ordinary text. Only actual `mail-*` keys make a mail
 candidate; continuation lines do not. Mail with a UTF-8 BOM stays text and
 shows a notice explaining how to remove the BOM.
 
+`ced.dialog {}` reads the open modal as `{dialog: {kind, title,
+buttons: [{id, label, role}], body?, path?, status?} | null}`.
+`{open: null}` closes it as Escape does; `{answer: <button id>}` presses
+a listed button. No modal returns `NO_DIALOG`; a bad button returns `ARGUMENT`.
+Help opens with `{open: "keys"}` or `{open: "about"}`. Recovered rows
+include buffer ids: answer open or discard with `{buffer: "..."}`.
+Help and recovery close with done. Path dialogs accept path; goto accepts text.
+A refused dirty-mail Bus close leaves no modal behind.
+
 ---
 
 <!-- page: https://mixos.dev/citizen/ (source: https://mixos.dev/citizen/README.md) -->
@@ -9958,6 +9967,15 @@ instance). Commands keep the app’s canonical prefix, such as `dopus.macros.run
 Logging: `--debug[=LEVEL]` and live Bus controls are described in
 [live application logging](../docs/dev/debugging.md).
 
+`dopus.dialog {}` reads the open modal as `{dialog: {kind, title,
+buttons: [{id, label, role}], body?, path?, status?} | null}`.
+`{open: null}` closes it as Escape does; `{answer: <button id>}` presses
+a listed button. No modal returns `NO_DIALOG`; a bad button returns `ARGUMENT`.
+Help opens with `{open: "shortcuts"}` or `{open: "about"}`. Delete uses
+yes/no; name uses `{answer: "ok", name: "..."}` or cancel; drop uses
+move/copy/cancel. Headless instances retain delete and name prompts until
+answered over the Bus, so file operations work without a window.
+
 ---
 
 <!-- page: https://mixos.dev/edit/ (source: https://mixos.dev/edit/README.md) -->
@@ -10858,6 +10876,14 @@ messages remain plain text in ced and belong to Workshop.
 Email and ced share toolkit's `header_form` label column, rows, address/text
 fields and attachment chips. Email retains its own identity selector,
 Identities… row, address completion and attachment inspection.
+`email.dialog {}` reads the open modal as `{dialog: {kind, title,
+buttons: [{id, label, role}], body?, path?, status?} | null}`.
+`{open: null}` closes it as Escape does; `{answer: <button id>}` presses
+a listed button. No modal returns `NO_DIALOG`; a bad button returns `ARGUMENT`.
+Confirmations use keep/discard/cancel (close_compose and quit), or
+restore/discard/later (draft_restore). Help opens with `{open: "about"}` or
+`{open: "shortcuts"}`. A BUSY compose request opens its close confirmation;
+answer keep or discard, then retry.
 
 ---
 
@@ -38446,6 +38472,13 @@ instance). Commands keep the app’s canonical prefix, such as `term.macros.run`
 
 Logging: `--debug[=LEVEL]` and live Bus controls are described in
 [live application logging](../docs/dev/debugging.md).
+
+`term.dialog {}` reads the open modal as `{dialog: {kind, title,
+buttons: [{id, label, role}], body?, path?, status?} | null}`.
+`{open: null}` closes it as Escape does; `{answer: <button id>}` presses
+a listed button. No modal returns `NO_DIALOG`; a bad button returns `ARGUMENT`.
+Help opens with `{open: "keys"}` or `{open: "about"}` and closes with
+`{answer: "done"}`.
 
 ---
 

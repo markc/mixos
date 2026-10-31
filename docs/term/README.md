@@ -119,3 +119,10 @@ instance). Commands keep the app’s canonical prefix, such as `term.macros.run`
 
 Logging: `--debug[=LEVEL]` and live Bus controls are described in
 [live application logging](../docs/dev/debugging.md).
+
+`term.dialog {}` reads the open modal as `{dialog: {kind, title,
+buttons: [{id, label, role}], body?, path?, status?} | null}`.
+`{open: null}` closes it as Escape does; `{answer: <button id>}` presses
+a listed button. No modal returns `NO_DIALOG`; a bad button returns `ARGUMENT`.
+Help opens with `{open: "keys"}` or `{open: "about"}` and closes with
+`{answer: "done"}`.

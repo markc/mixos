@@ -783,7 +783,14 @@ Email's refusal verbatim and never retries an uncertain send. Ordinary Bus
 messages remain plain text in ced and belong to Workshop.</p>
 <p>Email and ced share toolkit's <code>header_form</code> label column, rows, address/text
 fields and attachment chips. Email retains its own identity selector,
-Identities… row, address completion and attachment inspection.</p>
+Identities… row, address completion and attachment inspection.
+<code>email.dialog {}</code> reads the open modal as <code>{dialog: {kind, title, buttons: [{id, label, role}], body?, path?, status?} | null}</code>.
+<code>{open: null}</code> closes it as Escape does; <code>{answer: &lt;button id&gt;}</code> presses
+a listed button. No modal returns <code>NO_DIALOG</code>; a bad button returns <code>ARGUMENT</code>.
+Confirmations use keep/discard/cancel (close_compose and quit), or
+restore/discard/later (draft_restore). Help opens with <code>{open: "about"}</code> or
+<code>{open: "shortcuts"}</code>. A BUSY compose request opens its close confirmation;
+answer keep or discard, then retry.</p>
         </article>
         <p class="doc-source"><a href="/email/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>

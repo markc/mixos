@@ -181,3 +181,12 @@ disk conflicts use `CONFLICT`. File I/O failures use `INTERNAL`.
 Empty front matter is ordinary text. Only actual `mail-*` keys make a mail
 candidate; continuation lines do not. Mail with a UTF-8 BOM stays text and
 shows a notice explaining how to remove the BOM.
+
+`ced.dialog {}` reads the open modal as `{dialog: {kind, title,
+buttons: [{id, label, role}], body?, path?, status?} | null}`.
+`{open: null}` closes it as Escape does; `{answer: <button id>}` presses
+a listed button. No modal returns `NO_DIALOG`; a bad button returns `ARGUMENT`.
+Help opens with `{open: "keys"}` or `{open: "about"}`. Recovered rows
+include buffer ids: answer open or discard with `{buffer: "..."}`.
+Help and recovery close with done. Path dialogs accept path; goto accepts text.
+A refused dirty-mail Bus close leaves no modal behind.
