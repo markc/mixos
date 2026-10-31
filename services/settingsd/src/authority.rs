@@ -83,7 +83,7 @@ impl Authority {
     pub(crate) fn accent_hex(&self) -> Option<String> {
         self.accents
             .get(settings::appearance::APPEARANCE_CONTEXT)
-            .map(|c| c.to_hex()[..7].to_ascii_lowercase())
+            .map(hex)
     }
     /// The store's outcome of its last write is unknown: no publication or
     /// mutation until a restart reads it back.
@@ -195,22 +195,38 @@ impl Authority {
         self.fence(request)?;
         let mut candidate = self.accepted.clone();
         candidate.values = self.patched(request)?;
-        let effective = resolve::values::resolve(&candidate.values, &candidate.embedded_source)
-            .map_err(diagnostics)?
-            .0;
+        let (effective, accents) =
+            resolve::values::resolve(&candidate.values, &candidate.embedded_source)
+                .map_err(diagnostics)?;
         let candidate_snapshot = snapshot(&candidate, effective).map_err(snapshot_error)?;
-        // The would-be values of each prefix the batch touches, defaults
-        // filled, as its topic would carry them (§5.2).
-        let touched: serde_json::Map<String, Value> =
-            settings::topics::changed_prefixes(&self.accepted.values, &candidate.values)
-                .into_iter()
-                .map(|p| {
-                    let values = settings::topics::prefix_values(&candidate.values, p);
-                    (p.to_owned(), Value::Object(values))
-                })
-                .collect();
+        // The would-be content of every topic the batch moves, as its topic
+        // would carry it (§5.2): each prefix's values with defaults filled
+        // and, for `appearance`, the resolved mode and accent. Compared by
+        // content, so a `state.*` change also moves `appearance` and `look`.
+        let resolved = settings::topics::Resolved {
+            mode: settings::topics::resolved_mode(&candidate.values),
+            accent: accents.get(settings::appearance::APPEARANCE_CONTEXT).map(hex),
+        };
+        let mut touched = serde_json::Map::new();
+        let mut moved = Vec::new();
+        for (prefix, content) in settings::topics::contents(&candidate.values, &resolved) {
+            let content = serde_json::to_value(content).unwrap_or(Value::Null);
+            if self.board.content(prefix) != Some(&content) {
+                moved.push(prefix);
+                touched.insert(prefix.to_owned(), content);
+            }
+        }
+        let look = settings::topics::look_content(
+            &candidate.values,
+            &resolved,
+            &candidate_snapshot.source_digest,
+        );
+        let look = serde_json::to_value(look).unwrap_or(Value::Null);
+        if self.board.content(crate::publication::LOOK) != Some(&look) {
+            moved.push(crate::publication::LOOK);
+        }
         Ok(
-            json!({"status":"valid","incarnation":self.accepted.incarnation,"revision":self.accepted.revision,"source_digest":candidate_snapshot.source_digest,"effective":candidate_snapshot.effective,"values":touched}),
+            json!({"status":"valid","incarnation":self.accepted.incarnation,"revision":self.accepted.revision,"source_digest":candidate_snapshot.source_digest,"effective":candidate_snapshot.effective,"values":touched,"moved":moved}),
         )
     }
     fn fence(&self, request: &ApplyRequest) -> Result<(), Value> {
@@ -354,6 +370,10 @@ pub fn touches_design(before: &registry::Values, after: &registry::Values) -> bo
                 });
             tunable || registry::lookup(path).is_ok_and(|m| m.def.domains.iter().any(design))
         })
+}
+/// `#rrggbb`, as the topics carry a resolved accent.
+fn hex(colour: &design::SrgbColour) -> String {
+    colour.to_hex()[..7].to_ascii_lowercase()
 }
 fn diagnostic(error: Diagnostic) -> Value {
     diagnostics(vec![error])

@@ -62,7 +62,24 @@ forwards writes and relays the authority's receipts, and refuses writes as
 then reports `stale: true`. Nothing polls: the authority pushes each
 revision (with a bounded retry, dropping a mirror that keeps failing), a
 mirror re-attaches when its own broker reconnects, and a restarted authority
-pushes to the mirrors it had attached.
+pushes to the mirrors it had attached (`mirrors.json` beside the store is a
+hint: an entry that fails its first push is dropped).
+
+The mirror commands keep their integrity checks on the open Bus. A push or
+stop notice is taken only from the configured authority's settingsd as the
+broker stamps the sender (`broker_peer`, `broker_service`), an attach only
+from the node it names, at most 16 mirrors attach, and a mirror never takes
+an older incarnation of the record.
+
+One gap is known: a crashed authority sends no notice, and noded has no
+peer-down event a service can hear (topics are node-local and the mesh link
+state is internal). A mirror then reports current until its next forwarded
+write is refused, which marks it stale; the same holds when the authority's
+broker goes away. Only a clean stop is seen at once.
+
+`settings.source {binding, digest}` answers the pinned design source when
+`digest` is the profile's current `source_digest`, and `stale_digest` with
+the current one otherwise (theming ADR R14a).
 
 ## Profiles and upgrades
 

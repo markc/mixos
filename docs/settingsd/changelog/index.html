@@ -268,7 +268,13 @@ relayed; with the authority unreachable they are refused as
 <code>authority_unreachable</code> and <code>settings.status</code> reports <code>stale: true</code>. The
 authority pushes each revision with bounded retry, drops a mirror after eight
 failures (it re-attaches on its reconnect), keeps the attached nodes in
-<code>mirrors.json</code> beside the store, and tells them when it stops.</p>
+<code>mirrors.json</code> beside the store (a hint: an entry failing its first push is
+dropped), and tells them when it stops. Pushes and stop notices are taken
+only from the authority's broker-stamped settingsd, attaches only from the
+node named, at most 16 mirrors, never an older incarnation. Known gap: a
+crashed authority is noticed only at the next forwarded write (noded has no
+peer-down event). <code>settings.source</code> serves the pinned source by digest (R14a).
+<code>settings.palette</code> waits for the combined S2/S4b stack.</p>
 <p>Transition until S8: the format-4 topics, <code>view: full|summary</code> (still the
 default when <code>view</code> is omitted) and <code>settings.appearance.get</code> stay.</p>
 <p><code>settings.get</code> 0.7.0 includes <code>ui</code> in summary reads: text scale, density and
