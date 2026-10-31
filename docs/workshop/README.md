@@ -288,6 +288,26 @@ All retained state is bounded: 64 named traffic links plus an unknown link,
 The node list and ping results are capped at 64 peers. Retained event labels
 are limited to 256 characters; oversized correlation IDs are not matched.
 
+## Agents
+
+The Agents branch, beside Nodes, shows this node's
+[agentd](../agentd/README.md) sessions: New session…, the live ones with one
+badge each (starting, ready, running, or question while a permission is
+open), then Ended (n). Selecting a session reads its transcript back from
+agentd's log and follows it live: the prompts, the agent's text, one row
+per tool call (expand it for the raw update), plans and stops. Details has
+Cancel turn, Close or Resume, a picker for each setting the agent reports
+(model, effort, mode), the open permission questions with the time left
+before agentd answers no, and a composer (Ctrl+Enter sends).
+
+Every action is also a Bus command: `workshop.agents`,
+`workshop.agents.select`, `.new`, `.prompt`, `.cancel`, `.close`,
+`.resume`, `.set` and `.answer`. An agent session's own mixos-mcp is
+refused the acting ones (`USE_AGENT`, rc 17), and so is a window it
+drives; it calls `agent.*` directly, where agentd's own checks run. The
+permission buttons answer only for a person at the window: a click driven
+over the Bus is refused (`HUMAN_ONLY`).
+
 ## Traffic dock
 
 Traffic uses the right pane when Auto sees a window at least 1280 logical

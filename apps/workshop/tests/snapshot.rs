@@ -180,7 +180,7 @@ fn agents_fixture(engine: &mut Engine) {
         list,
         "agent.session.list",
         Ok((0, json!({"sessions":[
-            {"session":"a1","agent":"claude","cwd":"/home/user/src/mixos","status":"running","seq":9,"open_permissions":0},
+            {"session":"a1","agent":"claude","cwd":"/home/user/src/mixos","status":"running","seq":9,"open_permissions":1,"permission_requests":["902"],"permissions":[{"request":"902","title":"Run cargo test -p workshop","options":[{"optionId":"allow","name":"Allow","kind":"allow_once"},{"optionId":"deny","name":"Reject","kind":"reject_once"}],"asked_at":0,"expires_at":4102444800_u64}]},
             {"session":"a2","agent":"opencode","cwd":"/home/user/src/site","status":"ready","seq":4,"open_permissions":1},
             {"session":"a0","agent":"codex","cwd":"/home/user/src/mixos","status":"ended","seq":20}
         ]}))),
@@ -195,7 +195,7 @@ fn agents_fixture(engine: &mut Engine) {
     engine.agent_completed(
         read,
         "agent.session.read",
-        Ok((0, json!({"session":{"session":"a1","agent":"claude","cwd":"/home/user/src/mixos","status":"running","seq":9,"open_permissions":0},
+        Ok((0, json!({"session":{"session":"a1","agent":"claude","cwd":"/home/user/src/mixos","status":"running","seq":9,"open_permissions":1,"permission_requests":["902"],"permissions":[{"request":"902","title":"Run cargo test -p workshop","options":[{"optionId":"allow","name":"Allow","kind":"allow_once"},{"optionId":"deny","name":"Reject","kind":"reject_once"}],"asked_at":0,"expires_at":4102444800_u64}]},
             "events":[
                 {"session":"a1","seq":1,"kind":"ready"},
                 {"session":"a1","seq":2,"kind":"prompt","turn":3,"content":[{"type":"text","text":"Why does the dock flicker when it moves to the right?"}]},

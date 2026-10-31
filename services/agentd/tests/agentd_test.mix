@@ -219,6 +219,7 @@ try
   $held = agent("agent.session.prompt", {session: $s, content: "CONFIG"})
   check("a prompt behind an unanswered setting is queued", $set.rc == 0 and $held.rc == 0 and $held.v.queued == true)
   check("and its turn sees the setting", saw("updated " .. $s .. " ", "agent_message_chunk config:model=slow-1"))
+  check("a set echoes the agent options as config_option_update", saw("updated " .. $s .. " ", "config_option_update"))
   check("and the turn ends", saw("updated " .. $s .. " ", "echo:CONFIG"))
   sleep(0.3)
   sleep(0.3)
@@ -238,6 +239,9 @@ try
     sleep(0.1)
   end
   check("notifyd holds the question", $nid != nil)
+  $card = filter(agent("agent.session.list", {}).v.sessions, fn($x) = $x.session == $s)[0].permissions[0]
+  check("the open question is a card in the session view", $card.title == "Write file" and $card.expires_at > $card.asked_at)
+  check("the card never offers allow_always", len(filter($card.options, fn($o) = $o.kind == "allow_always")) == 0 and len($card.options) == 2)
   $labels = if $nid != nil then map(call("notify", "notify.get", {id: $nid}).v.actions, fn($x) = $x.id) else [] end
   check("allow_always is never offered as a button", not contains($labels, "always") and contains($labels, "deny"))
   call("notify", "notify.action", {id: $nid, action: "deny"})

@@ -93,7 +93,7 @@ Bodies are JSON objects.
 | `agent.session.close` | `{session}` | ends the agent (stdin closes; an agent still running 10 s later is stopped); the session stays in the log and can be resumed |
 | `agent.session.resume` | `{session}` | `{session, status, via}` at once: brings back an ended session (see Resuming) |
 | `agent.session.set` | `{session, mode}` or `{session, option, value}` | sets a mode, or a config option such as the model |
-| `agent.session.list` | | live and recently ended sessions |
+| `agent.session.list` | | live and recently ended sessions; each live one lists its open questions in `permissions` (`request`, `title`, `options` without `allow_always`, `asked_at`, `expires_at`) |
 | `agent.session.read` | `{session, since?, limit?}` | the session and its logged events after `seq`: `{session, events, more, next}` |
 | `agent.permission.respond` | `{session, request, option}` | answers a permission request |
 
@@ -104,7 +104,9 @@ A prompt or a setting sent while the session is still `starting` is queued
 the prompt. A prompt also waits until every setting sent before it has
 been answered, so `set` then `prompt` runs the turn with the new model or
 mode. A setting the agent refuses is an `error` event; the prompt still
-runs.
+runs. When the agent answers a setting with its options, agentd logs them
+as a `config_option_update` event, so a watcher's picker shows the new
+value even when the agent sends no update of its own.
 
 A read returns at most `limit` events (default and maximum 2000) and about
 32 MiB. When `more` is true, read again with `since` set to `next`.

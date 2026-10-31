@@ -464,7 +464,7 @@ fn permission_topic($session, $key, $params)
   $title = if type($params.toolCall) == "map" and type($params.toolCall.title) == "string" then slice($params.toolCall.title, 0, $TITLE_MAX) else nil end
   $options = []
   for each $o in $params.options ?? []
-    if len($options) < $OPTIONS_MAX and type($o) == "map" and type($o.optionId) == "string" then
+    if len($options) < $OPTIONS_MAX and type($o) == "map" and type($o.optionId) == "string" and $o.kind != "allow_always" then
       push($options, {optionId: slice($o.optionId, 0, 64), name: slice(to_string($o.name ?? ""), 0, 64), kind: $o.kind})
     end
   end

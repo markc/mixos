@@ -1,0 +1,210 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- agents_bus_test: Workshop's Agents branch over a real Bus. A private noded,
+-- the real notifyd and agentd (with the fake ACP agent), and the real
+-- `workshop --headless`, driven only through workshop.agents.*:
+-- - a session started through Workshop, selected, and its transcript read
+--   back and followed live (the prompt, the agent's text, the stop);
+-- - a busy turn cancelled (the fake agent's SLOW);
+-- - a permission question shown as a card, refused (USE_AGENT, rc 17) to the
+--   session's own mixos-mcp (an impostor under its mcp-s- name), answered
+--   through Workshop, the answer reaching the agent and notifyd's question
+--   closed;
+-- - close.
+-- The window's HUMAN_ONLY buttons are unit-tested in the engine (headless
+-- Workshop has no window to click).
+-- Run from the checkout root: mix apps/workshop/tests/agents_bus_test.mix
+-- MIXOS_TEST_MIX / MIXOS_TEST_NODED / MIXOS_TEST_WORKSHOP choose the
+-- binaries (tools/mix_tests.mix sets them).
+
+$pb = require("../../../tests/lib/private_bus.mix")
+$here = dirname(realpath($0))
+$root = realpath($here .. "/../../..")
+$agentd = $root .. "/services/agentd/scripts/agentd.mix"
+$notifyd = $root .. "/services/notifyd/scripts/notifyd.mix"
+$impostor = $root .. "/services/agentd/tests/fixtures/impostor.mix"
+$fake = $root .. "/services/agentd/tests/fixtures/fake_acp_agent.mix"
+-- Absolute: agentd starts the fake agent from the session's cwd.
+fn absolute($path)
+  return if starts_with($path, "/") then $path else cwd() .. "/" .. $path end
+end
+$mix = absolute(env("MIXOS_TEST_MIX", mixos_path("prefix") .. "/bin/mix"))
+$noded = absolute(env("MIXOS_TEST_NODED", mixos_path("prefix") .. "/bin/noded"))
+$workshop = absolute(env("MIXOS_TEST_WORKSHOP", mixos_path("prefix") .. "/bin/workshop"))
+$tmp = env("TMPDIR", "/tmp") .. "/workshop-agents-test." .. uuid()
+$results = []
+$pids = []
+$W = "workshop-test"
+
+fn check($name, $ok)
+  push($results, {name: $name, ok: $ok})
+  print((if $ok then "PASS " else "FAIL " end) .. $name)
+end
+
+fn call($target, $command, $body)
+  $b = json_encode($body)
+  send ($target) $command body=$b timeout=15
+  $v = $result
+  if type($v) == "string" then
+    try
+      $v = json_parse($v)
+    catch $m
+    end
+  end
+  return {rc: $rc, v: $v}
+end
+
+fn ws($command, $body)
+  return call($W, $command, $body)
+end
+
+fn citizen($argv, $env, $log)
+  return spawn($argv, {detach: true, env: $env, stdout: {file: $tmp .. "/" .. $log, append: true}, stderr: "stdout"})
+end
+
+-- Wait (bounded) until workshop.agents satisfies $test.
+fn until($test)
+  for $i = 1 to 100
+    $r = ws("workshop.agents", {})
+    if $r.rc == 0 and $test($r.v) then return $r.v end
+    sleep(0.1)
+  end
+  return nil
+end
+
+fn row($v, $session)
+  $rows = filter($v.sessions ?? [], fn($r) = $r.session == $session)
+  return if len($rows) > 0 then $rows[0] else nil end
+end
+
+fn items_text($v)
+  return json_encode($v.transcript.items ?? [])
+end
+
+for each $bin in [$mix, $noded, $workshop]
+  if not is_file($bin) then
+    print("SKIP: missing " .. $bin)
+    exit(0)
+  end
+end
+
+$bus = nil
+mkdir($tmp .. "/ws", {parents: true})
+try
+  $bus = $pb.start({dir: $tmp .. "/bus", name: "workshop-agents-test", noded: $noded})
+  $env = merge($pb.client_env($bus), {HOME: $tmp .. "/home", XDG_STATE_HOME: $tmp .. "/state",
+    XDG_CONFIG_HOME: $tmp .. "/config", MIXOS_NOTIFYD_STATE: $tmp .. "/notify.json"})
+  mkdir($tmp .. "/home", {parents: true})
+  write_file($tmp .. "/agent.conf.mix", data_encode({max_live: 2, agents: {
+    fake: {argv: [$mix, $fake], roots: [$tmp .. "/ws"], permission_timeout_s: 30}}}))
+  push($pids, citizen([$mix, "--serve", $notifyd, "--name", "notify"], $env, "notifyd.log"))
+  push($pids, citizen([$mix, "--serve", $agentd, "--name", "agent"],
+    merge($env, {MIXOS_AGENTD_CONF: $tmp .. "/agent.conf.mix", MIXOS_AGENTD_MCP: "/bin/true",
+      MIXOS_AGENTD_DB: $tmp .. "/state/sessions.db"}), "agentd.log"))
+  push($pids, citizen([$workshop, "--headless", "--service", $W, "--noded-url", $bus.url], $env, "workshop.log"))
+  $up = false
+  for $i = 1 to 100
+    if ws("workshop.ping", {}).rc == 0 and call("agent", "agent.agents", {}).rc == 0 then
+      $up = true
+      break
+    end
+    sleep(0.2)
+  end
+  check("workshop and agentd answer", $up)
+  -- Topic subscriptions confirm asynchronously.
+  sleep(3)
+  check("Workshop sees agentd", until(fn($v) = $v.available == true) != nil)
+
+  -- Start through Workshop.
+  $n = ws("workshop.agents.new", {agent: "fake", cwd: $tmp .. "/ws"})
+  $s = if type($n.v) == "map" then $n.v.session else nil end
+  check("workshop.agents.new starts a session and answers agentd's reply", $n.rc == 0 and type($s) == "string")
+  if type($s) != "string" then print("  new answered rc " .. to_string($n.rc) .. ": " .. to_string($n.v)) end
+  check("and selects it", type($s) == "string" and until(fn($v) = $v.selected == $s) != nil)
+  check("it becomes ready", until(fn($v) = row($v, $s) != nil and row($v, $s).status == "ready") != nil)
+
+  -- A turn, read back and followed live.
+  $p = ws("workshop.agents.prompt", {text: "hello"})
+  check("workshop.agents.prompt is accepted", $p.rc == 0)
+  $v = until(fn($v) = contains(items_text($v), "echo:hello") and contains(items_text($v), "end_turn"))
+  check("the transcript holds the prompt, the agent's text and the stop",
+    $v != nil and contains(items_text($v), "\"item\":\"prompt\"") and contains(items_text($v), "hello"))
+
+  -- A busy turn, cancelled through Workshop.
+  ws("workshop.agents.prompt", {text: "SLOW"})
+  check("the turn is running", until(fn($v) = row($v, $s) != nil and row($v, $s).status == "running") != nil)
+  check("workshop.agents.cancel is accepted", ws("workshop.agents.cancel", {}).rc == 0)
+  check("the turn stops cancelled", until(fn($v) = contains(items_text($v), "cancelled")) != nil)
+  sleep(0.3)
+
+  -- A permission question.
+  ws("workshop.agents.prompt", {text: "PERMISSION"})
+  $v = until(fn($v) = row($v, $s) != nil and len(row($v, $s).permissions ?? []) == 1)
+  check("the question is a card on the session row", $v != nil and row($v, $s).permissions[0].title == "Write file")
+  $card = if $v != nil then row($v, $s).permissions[0] else {} end
+  check("the card offers no allow_always", len(filter($card.options ?? [], fn($o) = $o.kind == "allow_always")) == 0)
+  $nid = nil
+  for $i = 1 to 50
+    $open = call("notify", "notify.list", {}).v
+    if type($open) == "list" then
+      for each $r in $open
+        if $r.source == "agent." .. $s then $nid = $r.id end
+      end
+    end
+    if $nid != nil then break end
+    sleep(0.1)
+  end
+  check("notifyd holds the question", $nid != nil)
+
+  -- The session's own mixos-mcp cannot answer it through Workshop.
+  push($pids, citizen([$mix, "--serve", $impostor, "--name", "mcp-s-" .. $s .. "-1f2e"], $env, "impostor.log"))
+  $self = nil
+  for $i = 1 to 50
+    $self = call("mcp-s-" .. $s .. "-1f2e", "impostor.call",
+      {service: $W, command: "workshop.agents.answer", body: {request: $card.request, option: "allow"}})
+    if $self.rc == 0 then break end
+    sleep(0.1)
+  end
+  check("the session's own agent is refused USE_AGENT (rc 17)", $self.rc == 0 and $self.v.rc == 17)
+
+  -- A person's client answers through Workshop.
+  $ans = ws("workshop.agents.answer", {request: $card.request, option: "deny"})
+  check("workshop.agents.answer passes agentd's reply back", $ans.rc == 0)
+  check("the answer reached the agent", until(fn($v) = contains(items_text($v), "perm:deny")) != nil)
+  check("the card is gone", until(fn($v) = row($v, $s) != nil and len(row($v, $s).permissions ?? []) == 0) != nil)
+  $still = false
+  $open = call("notify", "notify.list", {}).v
+  if type($open) == "list" then
+    $still = len(filter($open, fn($r) = $r.id == $nid)) > 0
+  end
+  check("notifyd's question was closed", not $still)
+
+  -- Close.
+  check("workshop.agents.close is accepted", ws("workshop.agents.close", {}).rc == 0)
+  check("the session ends", until(fn($v) = row($v, $s) != nil and row($v, $s).status == "ended") != nil)
+finally
+  for each $p in $pids
+    try
+      kill($p, 15)
+    catch $m
+    end
+  end
+  if $bus != nil then $pb.stop($bus) end
+end
+
+$failed = filter($results, fn($r) = not $r.ok)
+print(to_string(len($results) - len($failed)) .. "/" .. to_string(len($results)) .. " passed")
+if len($failed) > 0 then
+  print("logs in " .. $tmp)
+  for each $f in ["workshop.log", "agentd.log"]
+    if is_file($tmp .. "/" .. $f) then
+      print("--- " .. $f)
+      $l = lines(read_file($tmp .. "/" .. $f))
+      for each $x in slice($l, max(0, len($l) - 30))
+        print("  | " .. slice($x, 0, 300))
+      end
+    end
+  end
+  exit(1)
+end
+remove_dir($tmp)

@@ -78,6 +78,30 @@ pub fn view(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
                 }
                 ui.end_row();
             }
+            if let Some((modes, current)) = legacy_modes(&agents.config_options, &agents.modes) {
+                ui.label(RichText::new(label("agents-mode")).weak());
+                let name_of = |id: &str| {
+                    modes
+                        .iter()
+                        .find(|(m, _)| m == id)
+                        .map(|(_, n)| n.clone())
+                        .unwrap_or_else(|| id.to_owned())
+                };
+                let mut chosen = current.clone();
+                egui::ComboBox::from_id_salt("agent-mode")
+                    .selected_text(name_of(&current))
+                    .show_ui(ui, |ui| {
+                        for (id, name) in &modes {
+                            if toolkit::button::selectable(ui, chosen == *id, name).clicked() {
+                                chosen = id.clone();
+                            }
+                        }
+                    });
+                if chosen != current && row.live() {
+                    events.push(UiEvent::AgentSetMode(chosen));
+                }
+                ui.end_row();
+            }
         });
     ui.horizontal(|ui| {
         let running = row.status == "running";
@@ -114,11 +138,10 @@ pub fn view(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
         ui.label(RichText::new(label("agents-gap")).weak());
     }
     // The composer is pinned below the transcript, never inside it.
-    let composer = if row.live() {
-        ui.text_style_height(&egui::TextStyle::Body) * 5.0 + 36.0
-    } else {
-        0.0
-    };
+    let line = ui.text_style_height(&egui::TextStyle::Body);
+    let composer = if row.live() { line * 3.0 + 52.0 } else { 0.0 }
+        + row.permissions.len() as f32 * (line * 4.0 + 56.0);
+    ui.add_space(2.0);
     let items = agents.items();
     let height = (ui.available_height() - composer).max(60.0);
     if items.is_empty() {
@@ -146,9 +169,118 @@ pub fn view(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
                 }
             });
     }
+    for card in &row.permissions {
+        permission_card(ui, engine, row, card, events);
+    }
     if row.live() {
         composer_view(ui, engine, events);
     }
+}
+
+/// An open permission question: what is asked, by whom, the time left before
+/// agentd answers no, and one button per offered option. Only a person at
+/// the window answers (a click driven over the Bus is refused, HUMAN_ONLY).
+fn permission_card(
+    ui: &mut Ui,
+    engine: &Engine,
+    row: &inspector::agents::SessionRow,
+    card: &Value,
+    events: &mut Vec<UiEvent>,
+) {
+    let request = match &card["request"] {
+        Value::String(request) => request.clone(),
+        other => other.to_string(),
+    };
+    let left = card["expires_at"]
+        .as_f64()
+        .map(|at| (at - now_s()).max(0.0) as u64);
+    ui.separator();
+    ui.label(RichText::new(label("agents-question")).strong());
+    ui.label(card["title"].as_str().unwrap_or(""));
+    ui.label(
+        RichText::new(format!(
+            "{} · {}{}",
+            row.agent,
+            row.cwd,
+            left.map(|s| format!("  · {}", time_left(s)))
+                .unwrap_or_default()
+        ))
+        .weak(),
+    );
+    ui.horizontal(|ui| {
+        for option in card["options"].as_array().into_iter().flatten() {
+            let Some(id) = option["optionId"].as_str() else {
+                continue;
+            };
+            let name = option["name"]
+                .as_str()
+                .filter(|n| !n.is_empty())
+                .unwrap_or(id);
+            let button = if option["kind"] == "allow_once" {
+                PushButton::primary(name)
+            } else {
+                PushButton::secondary(name)
+            };
+            if ui.add(button).clicked() {
+                events.push(UiEvent::AgentAnswer(request.clone(), id.to_owned()));
+            }
+        }
+    });
+    // The countdown moves even when nothing else does.
+    if left.is_some() && !engine.agents.transcript.filling {
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_secs(1));
+    }
+}
+
+/// The time before agentd answers no, as a person reads it.
+fn time_left(seconds: u64) -> String {
+    if seconds >= 3600 {
+        label("agents-left-long")
+    } else if seconds >= 120 {
+        label_with(
+            "agents-left-min",
+            &[("minutes", &(seconds / 60).to_string())],
+        )
+    } else {
+        label_with("agents-left", &[("seconds", &seconds.to_string())])
+    }
+}
+
+fn now_s() -> f64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs_f64())
+        .unwrap_or_default()
+}
+
+/// The session's modes from its `modes` field, when it reports no mode
+/// config option (that one is already a picker).
+fn legacy_modes(config: &Value, modes: &Value) -> Option<(Vec<(String, String)>, String)> {
+    let has_mode_option = config
+        .as_array()
+        .is_some_and(|options| options.iter().any(|o| o["category"] == "mode"));
+    if has_mode_option {
+        return None;
+    }
+    let list: Vec<(String, String)> = modes["availableModes"]
+        .as_array()?
+        .iter()
+        .filter_map(|m| {
+            let id = m["id"].as_str()?;
+            Some((id.to_owned(), m["name"].as_str().unwrap_or(id).to_owned()))
+        })
+        .collect();
+    if list.is_empty() {
+        return None;
+    }
+    Some((
+        list,
+        modes["currentModeId"]
+            .as_str()
+            .unwrap_or_default()
+            .to_owned(),
+    ))
 }
 
 fn error_line(ui: &mut Ui, engine: &Engine) {
@@ -248,15 +380,19 @@ fn new_session(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
         }
         ui.end_row();
     });
-    let live = agents.instances["live"].as_u64().unwrap_or_default();
-    let cap = agents.instances["max_live"].as_u64().unwrap_or_default();
-    ui.label(
-        RichText::new(label_with(
-            "agents-live",
-            &[("live", &live.to_string()), ("cap", &cap.to_string())],
-        ))
-        .weak(),
-    );
+    // Shown once agent.agents has answered; Start waits for it too.
+    if let (Some(live), Some(cap)) = (
+        agents.instances["live"].as_u64(),
+        agents.instances["max_live"].as_u64(),
+    ) {
+        ui.label(
+            RichText::new(label_with(
+                "agents-live",
+                &[("live", &live.to_string()), ("cap", &cap.to_string())],
+            ))
+            .weak(),
+        );
+    }
     let ready = !engine.agents_at_cap()
         && !agents.new_agent.trim().is_empty()
         && !agents.new_cwd.trim().is_empty();

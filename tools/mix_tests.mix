@@ -93,6 +93,7 @@ $scripts = [
   "services/agentd/tests/agent_cli_test.mix",
   "services/agentd/tests/agentd_resume_test.mix",
   "apps/dopus/tests/dopus_bus_test.mix",
+  "apps/workshop/tests/agents_bus_test.mix",
   "apps/screenshot/tests/edit_path_test.mix"
 ]
 if len($only) > 0 then
@@ -108,6 +109,7 @@ $env = {
   MIXOS_TEST_BLOBD: $bin .. "/blobd",
   MIXOS_TEST_EDITD: $bin .. "/editd",
   MIXOS_TEST_DOPUS: $bin .. "/dopus",
+  MIXOS_TEST_WORKSHOP: $bin .. "/workshop",
   MIXOS_TEST_COMPD: $bin .. "/compd",
   MIXOS_TEST_SCREENSHOT: $bin .. "/screenshot",
   -- Pinned so a host's SCENES_FIRST_RUN=0 cannot leak into scenes_test.mix.

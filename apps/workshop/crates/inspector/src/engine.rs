@@ -326,6 +326,8 @@ pub struct Engine {
     /// command being applied; the shell sets it around each one. `None`
     /// for the window's own actions.
     pub caller: Option<String>,
+    /// This UI pass carried input a Bus request injected (`ui.click`, …).
+    pub driven: bool,
     label: Label,
     pub ui: UiState,
     pub snapshot: Snapshot,
@@ -361,6 +363,7 @@ impl Engine {
             },
             agents: crate::agents::Agents::default(),
             caller: None,
+            driven: false,
             label,
             ui: UiState::default(),
             snapshot: Snapshot::default(),

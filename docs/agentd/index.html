@@ -331,7 +331,7 @@ after it ends.</p>
 <tr><td><code>agent.session.close</code></td><td><code>{session}</code></td><td>ends the agent (stdin closes; an agent still running 10 s later is stopped); the session stays in the log and can be resumed</td></tr>
 <tr><td><code>agent.session.resume</code></td><td><code>{session}</code></td><td><code>{session, status, via}</code> at once: brings back an ended session (see Resuming)</td></tr>
 <tr><td><code>agent.session.set</code></td><td><code>{session, mode}</code> or <code>{session, option, value}</code></td><td>sets a mode, or a config option such as the model</td></tr>
-<tr><td><code>agent.session.list</code></td><td></td><td>live and recently ended sessions</td></tr>
+<tr><td><code>agent.session.list</code></td><td></td><td>live and recently ended sessions; each live one lists its open questions in <code>permissions</code> (<code>request</code>, <code>title</code>, <code>options</code> without <code>allow_always</code>, <code>asked_at</code>, <code>expires_at</code>)</td></tr>
 <tr><td><code>agent.session.read</code></td><td><code>{session, since?, limit?}</code></td><td>the session and its logged events after <code>seq</code>: <code>{session, events, more, next}</code></td></tr>
 <tr><td><code>agent.permission.respond</code></td><td><code>{session, request, option}</code></td><td>answers a permission request</td></tr>
 </tbody></table>
@@ -341,7 +341,9 @@ after it ends.</p>
 the prompt. A prompt also waits until every setting sent before it has
 been answered, so <code>set</code> then <code>prompt</code> runs the turn with the new model or
 mode. A setting the agent refuses is an <code>error</code> event; the prompt still
-runs.</p>
+runs. When the agent answers a setting with its options, agentd logs them
+as a <code>config_option_update</code> event, so a watcher's picker shows the new
+value even when the agent sends no update of its own.</p>
 <p>A read returns at most <code>limit</code> events (default and maximum 2000) and about
 32 MiB. When <code>more</code> is true, read again with <code>since</code> set to <code>next</code>.</p>
 <p>The acting commands (<code>new</code>, <code>prompt</code>, <code>cancel</code>, <code>close</code>, <code>set</code>, <code>respond</code>)

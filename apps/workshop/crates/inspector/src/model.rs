@@ -183,7 +183,7 @@ pub fn bounded(body: &str, marker: &str) -> String {
 
 /// Every command the engine answers itself. The window-level commands
 /// (`workshop.ui.*`, `workshop.window*`) belong to the toolkit drive layer.
-pub const COMMANDS: [&str; 31] = [
+pub const COMMANDS: [&str; 32] = [
     "HELP",
     "app.describe",
     "workshop.ping",
@@ -215,6 +215,7 @@ pub const COMMANDS: [&str; 31] = [
     "workshop.agents.close",
     "workshop.agents.resume",
     "workshop.agents.set",
+    "workshop.agents.answer",
 ];
 
 /// The engine's Bus surface (`HELP` / `app.describe` add the drive commands).
@@ -250,7 +251,8 @@ pub fn describe() -> Value {
         {"name":"workshop.agents.cancel","args":{"session":"optional session id (default the selected one)"},"description":"Cancel the session's running turn; refused (USE_AGENT, rc 17) to an agent session's own mixos-mcp, which calls agent.* directly","read_only":false},
         {"name":"workshop.agents.close","args":{"session":"optional session id (default the selected one)"},"description":"End the session's agent; it stays in agentd's log and can be resumed; refused (USE_AGENT, rc 17) to an agent session's own mixos-mcp, which calls agent.* directly","read_only":false},
         {"name":"workshop.agents.resume","args":{"session":"optional session id (default the selected one)"},"description":"Bring back an ended session; refused (USE_AGENT, rc 17) to an agent session's own mixos-mcp, which calls agent.* directly","read_only":false},
-        {"name":"workshop.agents.set","args":{"session":"optional session id (default the selected one)","mode":"a mode","option":"a config option id, with value","value":"its value"},"description":"Set a session's mode or config option (model, effort, ...); refused (USE_AGENT, rc 17) to an agent session's own mixos-mcp, which calls agent.* directly","read_only":false}
+        {"name":"workshop.agents.set","args":{"session":"optional session id (default the selected one)","mode":"a mode","option":"a config option id, with value","value":"its value"},"description":"Set a session's mode or config option (model, effort, ...); refused (USE_AGENT, rc 17) to an agent session's own mixos-mcp, which calls agent.* directly","read_only":false},
+        {"name":"workshop.agents.answer","args":{"session":"optional session id (default the selected one)","request":"the open request's key","option":"one of the optionIds it offers (never allow_always)"},"description":"Answer an open permission question through agentd (agent.permission.respond); refused (USE_AGENT, rc 17) to an agent session's own mixos-mcp. The window's buttons answer only for a person: a ui.click on them is refused (HUMAN_ONLY)","read_only":false}
     ]})
 }
 

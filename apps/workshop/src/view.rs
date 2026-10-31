@@ -59,6 +59,10 @@ pub enum UiEvent {
     AgentNewAgent(String),
     AgentNewCwd(String),
     AgentStart,
+    /// Answer an open permission question: request key, optionId.
+    AgentAnswer(String, String),
+    /// Set the selected session's mode (agents reporting `modes`).
+    AgentSetMode(String),
 }
 
 const ICON: f32 = 14.0;

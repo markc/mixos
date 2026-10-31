@@ -243,7 +243,8 @@ end
 fn view($s)
   return {session: $s.id, agent: $s.agent, cwd: $s.cwd, parent: $s.parent, status: $s.status,
     seq: $s.seq, turn: $s.turn, created_at: $s.created_at, open_permissions: len(keys($s.perms)),
-    permission_requests: sort(keys($s.perms))}
+    permission_requests: sort(keys($s.perms)),
+    permissions: map(sort(keys($s.perms)), fn($k) = $s.perms[$k].card)}
 end
 
 -- Look up the session a command names; replies the refusal itself.
@@ -725,6 +726,11 @@ fn on_reply($id, $msg)
     $S.sessions[$id].turn = nil
     emit_event($id, {kind: "stop", stop: $a.stop_reason($msg.result)})
   elif $p.kind == "set" then
+    -- The reply carries the options as the agent now has them; a watcher's
+    -- picker follows it even when the agent sends no update of its own.
+    if type($res.configOptions) == "list" then
+      emit_event($id, {kind: "config_option_update", update: {sessionUpdate: "config_option_update", configOptions: $res.configOptions}})
+    end
     run_queued($id)
   end
 end
@@ -758,8 +764,11 @@ fn on_request($id, $msg)
       write_frame($id, $a.response_frame($msg.id, $a.permission_result(nil)))
       return nil
     end
-    $S.sessions[$id].perms[$key] = {rpc: $msg.id, options: $msg.params.options ?? [], notify: nil}
-    publish("agent.permission.requested", json_encode($a.permission_topic($id, $key, $msg.params)),
+    $card = $a.permission_topic($id, $key, $msg.params)
+    $card.asked_at = time()
+    $card.expires_at = time() + $CONF.agents[$S.sessions[$id].agent].permission_timeout_s
+    $S.sessions[$id].perms[$key] = {rpc: $msg.id, options: $msg.params.options ?? [], notify: nil, card: $card}
+    publish("agent.permission.requested", json_encode($card),
       {command: "agent.permission.requested"})
     $auto = $a.auto_answer($CONF.agents[$S.sessions[$id].agent].policy, $msg.params)
     if $auto != nil then

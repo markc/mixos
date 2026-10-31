@@ -1258,7 +1258,7 @@ Bodies are JSON objects.
 | `agent.session.close` | `{session}` | ends the agent (stdin closes; an agent still running 10 s later is stopped); the session stays in the log and can be resumed |
 | `agent.session.resume` | `{session}` | `{session, status, via}` at once: brings back an ended session (see Resuming) |
 | `agent.session.set` | `{session, mode}` or `{session, option, value}` | sets a mode, or a config option such as the model |
-| `agent.session.list` | | live and recently ended sessions |
+| `agent.session.list` | | live and recently ended sessions; each live one lists its open questions in `permissions` (`request`, `title`, `options` without `allow_always`, `asked_at`, `expires_at`) |
 | `agent.session.read` | `{session, since?, limit?}` | the session and its logged events after `seq`: `{session, events, more, next}` |
 | `agent.permission.respond` | `{session, request, option}` | answers a permission request |
 
@@ -1269,7 +1269,9 @@ A prompt or a setting sent while the session is still `starting` is queued
 the prompt. A prompt also waits until every setting sent before it has
 been answered, so `set` then `prompt` runs the turn with the new model or
 mode. A setting the agent refuses is an `error` event; the prompt still
-runs.
+runs. When the agent answers a setting with its options, agentd logs them
+as a `config_option_update` event, so a watcher's picker shows the new
+value even when the agent sends no update of its own.
 
 A read returns at most `limit` events (default and maximum 2000) and about
 32 MiB. When `more` is true, read again with `since` set to `next`.
@@ -39626,6 +39628,26 @@ All retained state is bounded: 64 named traffic links plus an unknown link,
 (301 slots including the lower boundary, matching the reference tally).
 The node list and ping results are capped at 64 peers. Retained event labels
 are limited to 256 characters; oversized correlation IDs are not matched.
+
+## Agents
+
+The Agents branch, beside Nodes, shows this node's
+[agentd](../agentd/README.md) sessions: New session…, the live ones with one
+badge each (starting, ready, running, or question while a permission is
+open), then Ended (n). Selecting a session reads its transcript back from
+agentd's log and follows it live: the prompts, the agent's text, one row
+per tool call (expand it for the raw update), plans and stops. Details has
+Cancel turn, Close or Resume, a picker for each setting the agent reports
+(model, effort, mode), the open permission questions with the time left
+before agentd answers no, and a composer (Ctrl+Enter sends).
+
+Every action is also a Bus command: `workshop.agents`,
+`workshop.agents.select`, `.new`, `.prompt`, `.cancel`, `.close`,
+`.resume`, `.set` and `.answer`. An agent session's own mixos-mcp is
+refused the acting ones (`USE_AGENT`, rc 17), and so is a window it
+drives; it calls `agent.*` directly, where agentd's own checks run. The
+permission buttons answer only for a person at the window: a click driven
+over the Bus is refused (`HUMAN_ONLY`).
 
 ## Traffic dock
 

@@ -114,6 +114,8 @@ pub fn apply_ui(engine: &mut Engine, commands: &Registry<Engine>, events: Vec<Ui
             UiEvent::AgentNewAgent(agent) => engine.agents.new_agent = agent,
             UiEvent::AgentNewCwd(cwd) => engine.agents.new_cwd = cwd,
             UiEvent::AgentStart => engine.agents_start(),
+            UiEvent::AgentAnswer(request, option) => engine.agents_answer(&request, &option),
+            UiEvent::AgentSetMode(mode) => engine.agents_set_mode(&mode),
         }
     }
 }
@@ -1267,7 +1269,15 @@ impl Shell {
                 .into_iter()
                 .map(|id| UiEvent::Command(id, Origin::Shortcut)),
         );
+        // A pass carrying input a Bus request injected acts as that caller:
+        // an agent session cannot use the window to get round USE_AGENT, and
+        // the permission buttons answer only for a person (HUMAN_ONLY).
+        let driven = toolkit::drive::input_request(ui.ctx());
+        self.engine.driven = driven.is_some();
+        self.engine.caller = driven.map(|id| self.bus.caller_key(id));
         apply_ui(&mut self.engine, &self.commands, events);
+        self.engine.caller = None;
+        self.engine.driven = false;
         self.settle();
         // A command this frame may have been the last thing holding others.
         self.release();

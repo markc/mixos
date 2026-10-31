@@ -3,10 +3,12 @@
 -- impostor: a test citizen started under a session's mixos-mcp name
 -- (mcp-s-<session>-...), standing in for that session's own agent. It
 -- forwards impostor.call {command, body} to agentd and replies with the rc,
--- so the test sees what agentd answers a session's own sender.
+-- so the test sees what agentd answers a session's own sender. An optional
+-- `service` sends to another citizen instead (Workshop's agents tests).
 on impostor.call
   $c = $event.args.command
   $b = json_encode($event.args.body)
-  send agent $c body=$b timeout=10
+  $svc = $event.args.service ?? "agent"
+  send ($svc) $c body=$b timeout=10
   reply(0, json_encode({rc: $rc, result: $result}))
 end
