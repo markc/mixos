@@ -338,7 +338,8 @@ impl Shell {
                     }
                     Effect::Show { id } => {
                         if !self.bus.as_ref().is_some_and(|bus| bus.handle.show(id)) {
-                            let body = r#"{"error_code":"ACTIVATION","message":"the Bus is not running"}"#;
+                            let body =
+                                r#"{"error_code":"ACTIVATION","message":"the Bus is not running"}"#;
                             self.respond(id, 10, body.to_owned());
                         }
                     }

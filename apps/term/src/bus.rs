@@ -435,10 +435,16 @@ mod tests {
     fn show_answers_compds_reply_or_an_activation_refusal() {
         let shown = json!({"shown": true, "target": {"focused": true}});
         let (rc, body) = show_reply(Ok(shown.clone()));
-        assert_eq!((rc, serde_json::from_str::<Value>(&body).unwrap()), (0, shown));
+        assert_eq!(
+            (rc, serde_json::from_str::<Value>(&body).unwrap()),
+            (0, shown)
+        );
         let (rc, body) = show_reply(Err("window not known to compd".into()));
         let refused: Value = serde_json::from_str(&body).unwrap();
-        assert_eq!((rc, refused["error_code"].as_str()), (10, Some("ACTIVATION")));
+        assert_eq!(
+            (rc, refused["error_code"].as_str()),
+            (10, Some("ACTIVATION"))
+        );
         // With no Bus the window still answers, at once.
         let (tx, mut rx) = tokio::sync::oneshot::channel();
         WindowBus::offline().show(tx);

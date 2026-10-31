@@ -482,7 +482,11 @@ pub async fn take_job(
         } else if let Some(output) = &request.output {
             args["output"] = json!(output);
         }
-        if let Some(region) = request.region.as_ref().filter(|_| request.mode == Mode::Region) {
+        if let Some(region) = request
+            .region
+            .as_ref()
+            .filter(|_| request.mode == Mode::Region)
+        {
             // Given up front (an agent's capture): no drag, the seat stays
             // with whoever has it.
             if let Some(output) = region.output.as_ref().or(request.output.as_ref()) {
@@ -742,10 +746,7 @@ pub(crate) mod tests {
         let calls = script.calls.lock().unwrap();
         let frame = &calls[0].1;
         assert_eq!(frame["output"], "DP-2");
-        assert_eq!(
-            frame["region"],
-            json!({"x":5,"y":6,"width":30,"height":20})
-        );
+        assert_eq!(frame["region"], json!({"x":5,"y":6,"width":30,"height":20}));
         assert!(frame.get("output_generation").is_none());
     }
 

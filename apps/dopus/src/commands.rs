@@ -1479,7 +1479,13 @@ mod tests {
         // compd's answer passes through; a failure is an ACTIVATION refusal.
         let shown = serde_json::json!({"shown": true, "target": {"focused": true}});
         let (rc, body) = crate::bus::show_reply(Ok(shown.clone()));
-        assert_eq!((rc, serde_json::from_str::<serde_json::Value>(&body).unwrap()), (0, shown));
+        assert_eq!(
+            (
+                rc,
+                serde_json::from_str::<serde_json::Value>(&body).unwrap()
+            ),
+            (0, shown)
+        );
         let (rc, body) = crate::bus::show_reply(Err("window not known to compd".into()));
         let refused: Refusal = serde_json::from_str(&body).unwrap();
         assert_eq!((rc, refused.error_code.as_str()), (10, code::ACTIVATION));
