@@ -5,6 +5,8 @@ use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
 
+pub mod values;
+
 pub const APPS: &[&str] = &["ced", "dopus", "term", "cap", "workshop", "scene-editor"];
 
 pub fn describe() -> Value {

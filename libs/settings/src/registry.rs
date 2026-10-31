@@ -36,7 +36,7 @@ mod sound;
 mod state;
 mod system;
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 mod time;
 mod wallpaper;
 mod window;

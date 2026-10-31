@@ -122,7 +122,7 @@ pub(super) const KEYS: &[K] = &[
         "appearance.font_family",
         Str(Grammar::Plain, 128),
         D::Null,
-        &[Text, Layout],
+        &[Text, Layout, Resources],
     ),
     k(
         "appearance.font_weight",
@@ -132,7 +132,7 @@ pub(super) const KEYS: &[K] = &[
             step: 100,
         },
         D::Null,
-        &[Text],
+        &[Text, Resources],
     )
     .page(EXPERIMENTAL)
     .mixos(),
@@ -144,7 +144,7 @@ pub(super) const KEYS: &[K] = &[
             step: 0.0,
         },
         D::Null,
-        &[Text, Layout],
+        &[Text, Layout, Resources],
     )
     .page(EXPERIMENTAL)
     .mixos(),
@@ -152,7 +152,7 @@ pub(super) const KEYS: &[K] = &[
         "appearance.mono_family",
         Str(Grammar::Plain, 128),
         D::Null,
-        &[Text],
+        &[Text, Resources],
     ),
     k(
         "appearance.icon_stroke",

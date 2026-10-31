@@ -21,6 +21,7 @@ pub mod registry;
 pub mod resolve;
 pub mod session;
 pub mod terminal;
+pub mod view;
 pub use design::EMBEDDED_DEFAULT_SOURCE;
 pub use model::*;
 pub use resolve::{

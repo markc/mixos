@@ -2,8 +2,22 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! One render-domain comparison for all native consumers. Authority identity,
 //! source names, revisions and provenance are evidence, not render inputs.
+use crate::registry::{self, Domain, Values};
 use crate::{CommonUi, Effective, Snapshot};
 use design::{DesignReadProjection, ReadButton, ReadPair, ReadType};
+use std::collections::BTreeSet;
+
+const DOMAINS: [Domain; 9] = [
+    Domain::Paint,
+    Domain::Text,
+    Domain::Layout,
+    Domain::Resources,
+    Domain::Motion,
+    Domain::Shell,
+    Domain::Input,
+    Domain::Export,
+    Domain::System,
+];
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ChangePlan {
@@ -13,10 +27,67 @@ pub struct ChangePlan {
     pub resources: bool,
     pub motion: bool,
     pub shell: bool,
+    /// Bindings, pointer and keyboard behaviour (key space v2).
+    pub input: bool,
+    /// Read only by the Mix exporters.
+    pub export: bool,
+    /// Applied to the machine by an owner (monitord, hostd, xdg-export…).
+    pub system: bool,
 }
 impl ChangePlan {
     pub fn is_empty(self) -> bool {
         self == Self::default()
+    }
+
+    fn mark(&mut self, domain: Domain) {
+        let flag = match domain {
+            Domain::Paint => &mut self.paint,
+            Domain::Text => &mut self.text,
+            Domain::Layout => &mut self.layout,
+            Domain::Resources => &mut self.resources,
+            Domain::Motion => &mut self.motion,
+            Domain::Shell => &mut self.shell,
+            Domain::Input => &mut self.input,
+            Domain::Export => &mut self.export,
+            Domain::System => &mut self.system,
+        };
+        *flag = true;
+    }
+
+    /// The plan for a change of authored values (key space v2), from each
+    /// changed key's registry domains (`KeyDef.domains`; a `tune.style`
+    /// token's own, from `design::tunables()`). A key changes when its
+    /// authored-or-default value differs. It may over-report (a mode flip
+    /// from `dark` to `auto` that still resolves dark is a paint change),
+    /// never under-report. As [`Self::between`] has it, fresh resources
+    /// imply re-shaped text, text and the shell imply layout.
+    pub fn of_values(old: &Values, new: &Values) -> Self {
+        let mut plan = Self::default();
+        let keys: BTreeSet<&String> = old.keys().chain(new.keys()).collect();
+        for path in keys {
+            if old.get(path) == new.get(path) {
+                continue;
+            }
+            let Ok(m) = registry::lookup(path) else {
+                // Not a key: validation refuses it before any plan is made.
+                continue;
+            };
+            if let Some(token) = path.strip_prefix("tune.")
+                && let Some(tunable) = registry::tunable(token)
+            {
+                for name in &tunable.domains {
+                    if let Some(domain) = DOMAINS.iter().find(|d| d.name() == *name) {
+                        plan.mark(*domain);
+                    }
+                }
+            }
+            for domain in m.def.domains {
+                plan.mark(*domain);
+            }
+        }
+        plan.text |= plan.resources;
+        plan.layout |= plan.text || plan.shell;
+        plan
     }
     /// Resource preparation completes before activating any of these domains.
     pub fn between(
@@ -36,6 +107,7 @@ impl ChangePlan {
                 resources: true,
                 motion: true,
                 shell: false,
+                ..Self::default()
             },
         };
         plan.shell = shell && previous.is_none_or(|s| s.desktop.shell != next.desktop.shell);
@@ -247,6 +319,7 @@ fn compare(old: &Effective, new: &Effective) -> ChangePlan {
         resources,
         motion: old.ui.reduced_motion != new.ui.reduced_motion,
         shell: false,
+        ..ChangePlan::default()
     }
 }
 
@@ -265,6 +338,141 @@ mod tests {
         assert!(!plan.resources && !plan.text);
         after.window_style = "future-style".into();
         assert!(compare(before, &after).is_empty());
+    }
+
+    fn plan_of(changes: &[(&str, serde_json::Value)]) -> ChangePlan {
+        let changes = changes
+            .iter()
+            .map(|(k, v)| ((*k).to_owned(), v.clone()))
+            .collect();
+        let next = registry::apply(&Values::new(), &changes, &[]).unwrap();
+        ChangePlan::of_values(&Values::new(), &next)
+    }
+
+    /// Every stored key's change marks its registry domains, plus the
+    /// implications (resources → text → layout, shell → layout), in both
+    /// directions (set and reset).
+    #[test]
+    fn every_key_s_change_marks_its_registry_domains() {
+        for def in registry::keys().iter().filter(|d| !d.is_live()) {
+            let changes = registry::tests::sample_batch(def).into_iter().collect();
+            let next = registry::apply(&Values::new(), &changes, &[]).unwrap();
+            for plan in [
+                ChangePlan::of_values(&Values::new(), &next),
+                ChangePlan::of_values(&next, &Values::new()),
+            ] {
+                let mut want = ChangePlan::default();
+                for domain in def.domains {
+                    want.mark(*domain);
+                }
+                let marked = [
+                    (want.paint, plan.paint),
+                    (want.text, plan.text),
+                    (want.layout, plan.layout),
+                    (want.resources, plan.resources),
+                    (want.motion, plan.motion),
+                    (want.shell, plan.shell),
+                    (want.input, plan.input),
+                    (want.export, plan.export),
+                    (want.system, plan.system),
+                ];
+                assert!(
+                    marked.iter().all(|(want, got)| !want || *got),
+                    "{}: {plan:?}",
+                    def.path
+                );
+                assert!(!plan.resources || plan.text, "{}", def.path);
+                assert!(!(plan.text || plan.shell) || plan.layout, "{}", def.path);
+            }
+        }
+        assert!(ChangePlan::of_values(&Values::new(), &Values::new()).is_empty());
+    }
+
+    /// The change plan per domain, one representative key each.
+    #[test]
+    fn the_change_plan_per_domain() {
+        use serde_json::json;
+        let only = |plan: ChangePlan, want: ChangePlan| assert_eq!(plan, want);
+        only(
+            plan_of(&[("window.clip_tiled", json!(true))]),
+            ChangePlan {
+                paint: true,
+                ..ChangePlan::default()
+            },
+        );
+        only(
+            plan_of(&[("window.gaps", json!(8))]),
+            ChangePlan {
+                layout: true,
+                ..ChangePlan::default()
+            },
+        );
+        only(
+            plan_of(&[("appearance.font_family", json!("Noto Sans"))]),
+            ChangePlan {
+                text: true,
+                layout: true,
+                resources: true,
+                ..ChangePlan::default()
+            },
+        );
+        only(
+            plan_of(&[("accessibility.reduced_motion", json!(true))]),
+            ChangePlan {
+                motion: true,
+                ..ChangePlan::default()
+            },
+        );
+        only(
+            plan_of(&[("time.applet.show_seconds", json!(true))]),
+            ChangePlan {
+                shell: true,
+                layout: true,
+                ..ChangePlan::default()
+            },
+        );
+        only(
+            plan_of(&[("input.mouse.speed", json!(70))]),
+            ChangePlan {
+                input: true,
+                ..ChangePlan::default()
+            },
+        );
+        only(
+            plan_of(&[("appearance.icon_theme", json!("Adwaita"))]),
+            ChangePlan {
+                export: true,
+                ..ChangePlan::default()
+            },
+        );
+        only(
+            plan_of(&[("displays.DP-2.scale", json!(150))]),
+            ChangePlan {
+                system: true,
+                ..ChangePlan::default()
+            },
+        );
+        // A style token takes its own domains from the design catalogue.
+        let radius = design::tunables()
+            .iter()
+            .find(|t| t.name == "style.radius")
+            .expect("style.radius is a tunable");
+        let plan = plan_of(&[(
+            "tune.style.radius",
+            registry::tests::tunable_sample("tune.style.radius"),
+        )]);
+        for name in &radius.domains {
+            let want = match *name {
+                "paint" => plan.paint,
+                "layout" => plan.layout,
+                "text" => plan.text,
+                "resources" => plan.resources,
+                "motion" => plan.motion,
+                other => panic!("unexpected domain {other}"),
+            };
+            assert!(want, "style.radius {name}: {plan:?}");
+        }
+        assert!(!plan.is_empty());
     }
 
     #[test]

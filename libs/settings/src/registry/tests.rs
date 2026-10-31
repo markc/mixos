@@ -20,7 +20,7 @@ fn codes(result: Result<Values, Vec<Diagnostic>>) -> Vec<(String, String)> {
 }
 
 /// A pattern made concrete with one sample value per placeholder.
-fn concrete(pattern: &str) -> String {
+pub(crate) fn concrete(pattern: &str) -> String {
     let token = design::tunables()
         .iter()
         .find_map(|t| t.name.strip_prefix("style."))
@@ -95,7 +95,7 @@ fn sample(kind: &Kind, default: Option<&Value>) -> Value {
     }
 }
 
-fn tunable_sample(path: &str) -> Value {
+pub(crate) fn tunable_sample(path: &str) -> Value {
     let t = tunable(path.strip_prefix("tune.").unwrap()).unwrap();
     match (t.kind, &t.range) {
         ("flag", _) => true.into(),
@@ -148,7 +148,7 @@ fn domain_sample(path: &str) -> Vec<(String, Value)> {
 
 /// The changes that set `def` to a non-default value, with any companion
 /// the constraints need.
-fn sample_batch(def: &KeyDef) -> Vec<(String, Value)> {
+pub(crate) fn sample_batch(def: &KeyDef) -> Vec<(String, Value)> {
     let path = concrete(def.path);
     let mut batch = match def.kind {
         Kind::AppDomain => return domain_sample(&path),
