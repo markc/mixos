@@ -1845,7 +1845,7 @@ mod tests {
             run: |_| {},
         });
         let ctx = egui::Context::default();
-        let field = egui::Id::new("field");
+        let field = egui::Id::unique("field");
         let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
             ui.memory_mut(|m| m.request_focus(field));
         });

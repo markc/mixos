@@ -73,7 +73,10 @@ impl Failure {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-#[expect(clippy::large_enum_variant, reason = "classification returns an owned document without another allocation")]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "classification returns an owned document without another allocation"
+)]
 pub enum Kind {
     Text,
     BusMessage,

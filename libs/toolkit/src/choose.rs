@@ -101,9 +101,12 @@ pub fn choose(mut request: Request) -> Handle {
     }
 }
 
+#[cfg(test)]
+type Driver = Box<dyn FnOnce(Request, watch::Receiver<bool>, Emitter) + Send>;
+
 pub struct Handle {
     #[cfg(test)]
-    driver: Option<Box<dyn FnOnce(Request, watch::Receiver<bool>, Emitter) + Send>>,
+    driver: Option<Driver>,
     request: Request,
     receiver: Option<Receiver<Message>>,
     cancel: watch::Sender<bool>,

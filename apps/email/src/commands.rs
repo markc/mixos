@@ -89,6 +89,12 @@ pub const COMMANDS: &[Command] = &[
         "{}",
         "Describe the app and every command with its arguments",
     ),
+    command_spec(
+        "email.dialog",
+        false,
+        r#"{"open":"optional about, shortcuts or null","answer":"button id","window":"optional compose window name; default most recently focused"}"#,
+        "Read or answer the open dialog",
+    ),
     command_spec("email.ping", true, "{}", "Probe Email"),
     command_spec(
         "email.info",

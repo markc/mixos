@@ -120,6 +120,10 @@ fn sync_parent(path: &std::path::Path) -> std::io::Result<()> {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "work moves an owned mail document to the writer without another allocation"
+)]
 pub enum DocumentWork {
     Folder {
         ticket: u64,
@@ -177,10 +181,12 @@ struct Request {
     path: PathBuf,
 }
 
+type FolderRequest = (u64, bool, Option<(String, u64)>);
+
 #[derive(Default)]
 pub struct DocumentState {
     pending: BTreeMap<u64, Request>,
-    folder: Option<(u64, bool, Option<(String, u64)>)>,
+    folder: Option<FolderRequest>,
     saving: BTreeMap<u64, Option<(String, u64)>>,
     pub chooser: Option<toolkit::file_chooser::FileChooser>,
     pub last_directory: Option<PathBuf>,
