@@ -123,7 +123,9 @@ impl Fonts {
         weight: Option<u16>,
         mono_family: Option<&str>,
     ) -> Self {
-        let named = |name: Option<&str>| name.map(str::trim).filter(|n| !n.is_empty());
+        fn named(name: Option<&str>) -> Option<&str> {
+            name.map(str::trim).filter(|n| !n.is_empty())
+        }
         if let Some(family) = named(family) {
             self.ui.family = family.into();
         }
