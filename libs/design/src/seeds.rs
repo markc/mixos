@@ -347,6 +347,17 @@ pub(crate) fn complete_source(
             ring_safe_accent(&theme),
             format!("derive.mixos.{mode}.accent.base, ring-safe"),
         );
+        // As every light scheme: hierarchy text on the quiet foreground.
+        if context.mode == crate::Mode::Light {
+            source.semantics.pairs.insert(
+                "muted".into(),
+                crate::source::PairSource::authored(
+                    "palette.background.muted",
+                    "palette.foreground.quiet",
+                    None,
+                ),
+            );
+        }
     }
     origins
 }
@@ -378,9 +389,11 @@ pub fn ring_safe_accent(theme: &DerivedTheme) -> SrgbColour {
             .into_iter()
             .all(|s| crate::contrast_ratio(candidate.rendered(), s) >= RING_CONTRAST + 0.05)
     };
-    let step = if theme.is_dark { 0.01 } else { -0.01 };
+    // Nearest first, either way: tints can put dark surfaces in a light
+    // mode and light ones in a dark mode.
     (0..=100)
-        .map(|k| (l + step * f64::from(k)).clamp(0.0, 1.0))
+        .flat_map(|k| [l + 0.01 * f64::from(k), l - 0.01 * f64::from(k)])
+        .filter(|lightness| (0.0..=1.0).contains(lightness))
         .map(|lightness| crate::LinearRgba {
             alpha: 1.0,
             ..rgb(gamut_map_oklch(lightness, c, h, 64))

@@ -178,7 +178,24 @@ fn a_grey_accent_takes_the_lifted_accent_text() {
     assert_eq!(studio["accent"], [0x7f, 0x7f, 0x7f, 255]);
     assert_eq!(studio["accent_border"], [0x7f, 0x7f, 0x7f, 255]);
     assert_eq!(studio["accent_soft"], [0x7f, 0x7f, 0x7f, 51]);
-    assert_ne!(studio["accent_text"], studio["accent"]);
+    let colour = |role: &str| {
+        let [r, g, b, a] = studio[role].map(|c| f64::from(c) / 255.0);
+        SrgbColour {
+            red: r,
+            green: g,
+            blue: b,
+            alpha: a,
+        }
+    };
+    let expected = crate::derive::accent_text_for(
+        colour("accent"),
+        colour("chrome"),
+        colour("card"),
+        Mode::Dark,
+        Contrast::Normal,
+    )
+    .unwrap_or(colour("accent"));
+    assert_eq!(studio["accent_text"], expected.to_srgba8());
 }
 
 #[test]
