@@ -188,6 +188,60 @@ pub fn prefix_values(values: &Values, prefix: &str) -> Map<String, Value> {
     out
 }
 
+/// The `values` view of `settings.get`: every stored key with defaults
+/// filled, or those under `prefix` (whole segments), or the named `keys`.
+/// A live key is refused with `live_key` and its owner's commands; an
+/// unknown one as the registry refuses it.
+pub fn view_values(
+    values: &Values,
+    prefix: Option<&str>,
+    keys: Option<&[String]>,
+) -> Result<Map<String, Value>, Vec<crate::Diagnostic>> {
+    if let Some(keys) = keys {
+        let mut out = Map::new();
+        let mut errors = Vec::new();
+        for path in keys {
+            match registry::lookup(path) {
+                Ok(m) if m.def.is_live() => errors.push(registry::live_refusal(m.def, path)),
+                Ok(m) => {
+                    out.insert(path.clone(), filled(values, &m, path));
+                }
+                Err(e) => errors.push(e),
+            }
+        }
+        return if errors.is_empty() { Ok(out) } else { Err(errors) };
+    }
+    let mut all = Map::new();
+    for topic in PREFIXES {
+        all.extend(prefix_values(values, topic));
+    }
+    let Some(prefix) = prefix else {
+        return Ok(all);
+    };
+    let under = format!("{prefix}.");
+    let out: Map<String, Value> = all
+        .into_iter()
+        .filter(|(k, _)| k == prefix || k.starts_with(&under))
+        .collect();
+    if out.is_empty() {
+        // A prefix of live keys only (`system`), or no prefix at all.
+        if let Some(def) = registry::keys()
+            .iter()
+            .find(|d| d.path.starts_with(&under) && d.is_live())
+        {
+            return Err(vec![registry::live_refusal(def, prefix)]);
+        }
+        if !registry::is_prefix(prefix) {
+            return Err(vec![crate::Diagnostic::new(
+                "validation_failed",
+                prefix,
+                "Unknown settings prefix",
+            )]);
+        }
+    }
+    Ok(out)
+}
+
 /// What the registry says is resolved, set beside the authored choice:
 /// `appearance.mode` (never `auto`) and the accent as `#rrggbb`.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -243,6 +297,69 @@ pub fn contents(values: &Values, resolved: &Resolved) -> BTreeMap<&'static str, 
             )
         })
         .collect()
+}
+
+/// The window framing keys the look carries (the [`crate::view::Framing`]
+/// view's).
+pub const FRAMING: [&str; 8] = [
+    "window.decorations",
+    "window.caption_side",
+    "window.style",
+    "window.menu_style",
+    "window.menu_side",
+    "window.actions_place",
+    "window.actions_align",
+    "window.title_align",
+];
+
+/// Whether a key is part of the follower view: the appearance and what
+/// resolves its mode, the framing, the accessibility text scale and motion,
+/// the per-app looks and the tunables.
+pub fn in_look(path: &str) -> bool {
+    ["appearance", "state", "apps", "tune"].contains(&prefix_of(path).unwrap_or(""))
+        || FRAMING.contains(&path)
+        || path == "accessibility.text_scale"
+        || path == "accessibility.reduced_motion"
+}
+
+/// The content of the `look` topic: the follower view's keys with defaults
+/// filled (a follower reads them back with `View::of`), the resolved mode
+/// and accent, and the digest of the source the look compiles.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct LookContent {
+    pub values: Map<String, Value>,
+    pub resolved: Map<String, Value>,
+    pub source_digest: String,
+}
+
+pub fn look_content(values: &Values, resolved: &Resolved, source_digest: &str) -> LookContent {
+    let mut out = Map::new();
+    for prefix in ["appearance", "state", "window", "accessibility", "apps", "tune"] {
+        out.extend(
+            prefix_values(values, prefix)
+                .into_iter()
+                .filter(|(k, _)| in_look(k)),
+        );
+    }
+    LookContent {
+        values: out,
+        resolved: resolved.of("appearance").unwrap_or_default(),
+        source_digest: source_digest.to_owned(),
+    }
+}
+
+/// The `look` topic body.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LookBody {
+    pub schema: u32,
+    pub binding: Binding,
+    pub incarnation: String,
+    pub revision: Revision,
+    pub changed_at: Revision,
+    pub values: Map<String, Value>,
+    pub resolved: Map<String, Value>,
+    pub source_digest: String,
 }
 
 /// A `keys` topic body.

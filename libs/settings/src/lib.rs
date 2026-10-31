@@ -33,7 +33,7 @@ pub use resolve::Accents;
 /// calls [`v1`] only to migrate and to downgrade. S8c deletes these two.
 pub use v1::{resolve, resolve_with_embedded};
 
-pub const CONTRACT_VERSION: &str = "0.8.0";
+pub const CONTRACT_VERSION: &str = "1.0.0";
 pub const SCHEMA: u32 = 1;
 pub const MAX_SOURCE_BYTES: usize = 256 * 1024;
 pub const MAX_SNAPSHOT_BYTES: usize = 1024 * 1024 - 64 * 1024;
