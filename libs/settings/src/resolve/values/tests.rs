@@ -265,7 +265,7 @@ fn resolve_v2_reproduces_today_s_look_for_the_same_choices() {
         design::EMBEDDED_DEFAULT_SOURCE,
         "the fixture orders app"
     );
-    let mut custom = rich();
+    let mut custom = self::rich();
     custom.name = "custom source";
     custom.today.appearance.source = Some(source.clone());
     custom.v2.push(("appearance.source", json!(source)));
