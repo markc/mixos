@@ -1737,9 +1737,7 @@ impl App {
         let Some(dialog) = self.ui.dialog else {
             return Value::Null;
         };
-        let button = |id: &str, label: &str, role: &str| {
-            json!({"id": id, "label": self.label(label), "role": role})
-        };
+        let button = |id: &str, label: &str, role: &str| json!({"id": id, "label": self.label(label), "role": role});
         let (title, buttons) = match dialog {
             Dialog::Discard => (
                 "discard-title",
@@ -1842,7 +1840,9 @@ impl App {
                 };
                 let path = match args.get("path") {
                     None => None,
-                    Some(Value::String(path)) if matches!(dialog, Dialog::Open | Dialog::SaveAs) => {
+                    Some(Value::String(path))
+                        if matches!(dialog, Dialog::Open | Dialog::SaveAs) =>
+                    {
                         Some(path.clone())
                     }
                     Some(Value::String(_)) => {
@@ -3270,19 +3270,29 @@ mod tests {
             dialog(&mut a, 2, json!({"answer":"done"})).1["error_code"],
             code::NO_DIALOG
         );
-        assert_eq!(dialog(&mut a, 3, json!({"open":"about"})).1["dialog"]["kind"], "about");
+        assert_eq!(
+            dialog(&mut a, 3, json!({"open":"about"})).1["dialog"]["kind"],
+            "about"
+        );
         assert_eq!(
             dialog(&mut a, 4, json!({"open":"shortcuts"})).1["error_code"],
             code::DIALOG
         );
-        assert_eq!(dialog(&mut a, 5, json!({"answer":"done"})), (0, json!({"dialog":null})));
+        assert_eq!(
+            dialog(&mut a, 5, json!({"answer":"done"})),
+            (0, json!({"dialog":null}))
+        );
         for bad in [
             json!({"open":"settings"}),
             json!({"open":null,"answer":"done"}),
             json!({"path":"/tmp"}),
             json!({"bogus":1}),
         ] {
-            assert_eq!(dialog(&mut a, 6, bad.clone()).1["error_code"], code::ARGUMENT, "{bad}");
+            assert_eq!(
+                dialog(&mut a, 6, bad.clone()).1["error_code"],
+                code::ARGUMENT,
+                "{bad}"
+            );
         }
         assert_eq!(dialog(&mut a, 7, json!({"open":null})).0, 0);
 
@@ -3295,7 +3305,11 @@ mod tests {
         let (rc, body) = dialog(&mut a, 9, json!({"answer":"open","path":""}));
         assert_eq!((rc, &body["error_code"]), (10, &json!(code::ARGUMENT)));
         assert_eq!(a.ui.dialog, Some(Dialog::Open));
-        a.command(10, "screenshot.dialog", r#"{"answer":"open","path":"/tmp/shot.png"}"#);
+        a.command(
+            10,
+            "screenshot.dialog",
+            r#"{"answer":"open","path":"/tmp/shot.png"}"#,
+        );
         let effects = a.take_effects();
         assert_eq!(replies(&effects)[0].2, json!({"dialog":null}));
         assert!(effects.iter().any(|e| matches!(e, Effect::Open { .. })));
@@ -3305,16 +3319,25 @@ mod tests {
         assert_eq!(s.ui.dialog, Some(Dialog::SaveAs));
         let existing = std::env::current_exe().unwrap().display().to_string();
         let (rc, body) = dialog(&mut s, 11, json!({"answer":"save","path":existing}));
-        assert_eq!((rc, body["message"].as_str()), (10, Some(crate::label("exists").as_str())));
+        assert_eq!(
+            (rc, body["message"].as_str()),
+            (10, Some(crate::label("exists").as_str()))
+        );
         assert_eq!(s.ui.dialog, Some(Dialog::SaveAs));
-        assert_eq!(dialog(&mut s, 12, json!({"answer":"cancel"})), (0, json!({"dialog":null})));
+        assert_eq!(
+            dialog(&mut s, 12, json!({"answer":"cancel"})),
+            (0, json!({"dialog":null}))
+        );
     }
 
     #[test]
     fn dialog_command_in_a_headless_instance_reads_and_refuses_to_open() {
         let mut h = App::new(crate::label, crate::ink::inks(), true);
         assert_eq!(dialog(&mut h, 1, json!({})), (0, json!({"dialog":null})));
-        assert_eq!(dialog(&mut h, 2, json!({"open":"about"})).1["error_code"], code::HEADLESS);
+        assert_eq!(
+            dialog(&mut h, 2, json!({"open":"about"})).1["error_code"],
+            code::HEADLESS
+        );
         assert_eq!(dialog(&mut h, 3, json!({"open":null})).0, 0);
     }
 }
