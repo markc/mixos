@@ -693,9 +693,10 @@ fn mode(ui: &mut Ui, engine: &Engine, look: &Look, events: &mut Vec<UiEvent>) {
     let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), 100.0 + 30.0), Sense::hover());
     let left = row.center().x - width - gap / 2.0;
     {
-        for (index, (dark, value, key)) in [(true, "dark", "opt-dark"), (false, "light", "opt-light")]
-            .into_iter()
-            .enumerate()
+        for (index, (dark, value, key)) in
+            [(true, "dark", "opt-dark"), (false, "light", "opt-light")]
+                .into_iter()
+                .enumerate()
         {
             let palette = if dark { &DARK_PALETTE } else { &LIGHT_PALETTE };
             let bg = super::rgba(palette.gray_1);
@@ -706,7 +707,8 @@ fn mode(ui: &mut Ui, engine: &Engine, look: &Look, events: &mut Vec<UiEvent>) {
                     pos2(left + index as f32 * (width + gap), row.min.y),
                     vec2(width, 100.0),
                 );
-                let response = ui.interact(rect, ui.scope_id().with(("mode", value)), Sense::click());
+                let response =
+                    ui.interact(rect, ui.scope_id().with(("mode", value)), Sense::click());
                 ui.painter().rect_filled(rect, Look::radius(look.r_s), bg);
                 let window = Rect::from_min_size(
                     rect.min + vec2(20.0, 18.0),

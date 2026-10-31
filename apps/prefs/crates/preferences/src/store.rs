@@ -633,7 +633,7 @@ mod tests {
         assert_eq!(e.store.text("appearance.mode").as_deref(), Some("dark"));
         e.store_hint();
         let (t, _, _) = next(&mut e);
-        e.stored(t, ok(read("8", json!({}))));
+        e.stored(t, ok(read("8", json!({"appearance.mode":"light"}))));
         let (t, command, _) = next(&mut e);
         assert_eq!(command, "settings.status");
         e.stored(t, ok(json!({"role":"authority","stale":false})));
