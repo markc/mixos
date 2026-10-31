@@ -75,7 +75,12 @@ impl Authority {
     /// One pending topic's retained name and body.
     pub fn topic(&self, key: &str) -> Option<(String, String)> {
         let profile = &self.accepted.binding.profile;
+        // A content that could not be built (null) is no body: publication
+        // fails and the topic stays pending.
         let content = self.board.content(key)?.clone();
+        if content.is_null() {
+            return None;
+        }
         let changed_at = self.board.changed_at_of(key)?;
         let identity = (
             self.accepted.binding.clone(),
@@ -162,6 +167,27 @@ impl Authority {
             answer.extend(identity.clone());
         }
         Ok(answer)
+    }
+
+    /// `settings.source` (ADR R14a, App. §K): the pinned source the look
+    /// compiles, iff `digest` names it; `stale_digest` with the current one
+    /// otherwise, so the follower rereads once. A mirror answers from its
+    /// cache, which pins the same source.
+    pub fn source(&self, request: &settings::SourceRequest) -> Result<Value, Value> {
+        if request.binding != self.accepted.binding {
+            return Err(json!({"status":"wrong_target","binding":self.accepted.binding}));
+        }
+        let current = &self.snapshot.source_digest;
+        if &request.digest != current {
+            return Err(json!({"status":"stale_digest","digest":current}));
+        }
+        let source = self
+            .accepted
+            .values
+            .get("appearance.source")
+            .and_then(Value::as_str)
+            .unwrap_or(&self.accepted.embedded_source);
+        Ok(json!({"status":"current","digest":current,"source":source}))
     }
 
     /// The record a mirror caches, sealed under this authority's `node`.

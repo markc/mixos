@@ -72,10 +72,10 @@ pub fn prefix_of(path: &str) -> Option<&'static str> {
         .copied()
 }
 
-/// The prefixes whose authored values differ between two records. The
-/// resolved content may move without its values ([`Resolved`] reads
-/// `state`), so publication compares whole bodies; this is the cheap
-/// answer for a push's `changed` list.
+/// The prefixes whose authored values differ between two records. This is
+/// not what moves a topic: the resolved mode reads `state`, so a `state.*`
+/// change also moves `appearance` and the look. Publication and the
+/// validate preview compare whole contents ([`contents`], [`look_content`]).
 pub fn changed_prefixes(before: &Values, after: &Values) -> BTreeSet<&'static str> {
     let keys: BTreeSet<&String> = before.keys().chain(after.keys()).collect();
     keys.into_iter()
@@ -232,7 +232,7 @@ pub fn view_values(
         // A prefix of live keys only (`system`), or no prefix at all.
         if let Some(def) = registry::keys()
             .iter()
-            .find(|d| d.path.starts_with(&under) && d.is_live())
+            .find(|d| (d.path == prefix || d.path.starts_with(&under)) && d.is_live())
         {
             return Err(vec![registry::live_refusal(def, prefix)]);
         }

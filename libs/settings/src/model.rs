@@ -370,6 +370,15 @@ impl Summary {
         }
     }
 }
+/// `settings.source` (theming ADR R14a, App. §K): the pinned design source,
+/// answered iff `digest` is the profile's current `source_digest`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SourceRequest {
+    pub binding: Binding,
+    pub digest: String,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ApplyRequest {
