@@ -427,11 +427,22 @@ try
   check(length(ok('files.choose.list', {}).requests) == 0, "refused chooser kept a request")
   $target = "dopus-test"
 
-  -- 10b. Every file action is reachable. Headless answers modal requests
-  -- No; windowed callers answer the same dialogs through drive input.
+  -- 10b. Every file action is reachable. Headless keeps its modal prompts
+  -- for a typed answer (dopus.dialog); each one is closed unanswered here
+  -- before the next action, or the next name edit is refused as pending.
   for $id in ["file.open", "file.new-folder", "file.rename", "file.delete"]
     act($id)
-    sleep(0.3)
+    if $id != "file.open" then
+      $open = nil
+      for $attempt = 1 to 50
+        $open = ok('dopus.dialog body=$a.body', {body: "{}"}).dialog
+        if $open != nil then break end
+        sleep(0.1)
+      end
+      check($open != nil, $id .. " opened no headless prompt")
+      ok('dopus.dialog body=$a.body', {body: json_encode({open: nil})})
+      check(ok('dopus.dialog body=$a.body', {body: "{}"}).dialog == nil, $id .. " prompt still open after close")
+    end
   end
   check(is_file($alpha .. "/a.txt"), "headless delete must await confirmation")
   act("file.copy-other-pane")
