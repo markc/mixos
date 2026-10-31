@@ -34,6 +34,16 @@ impl serde::Serialize for SrgbColour {
     }
 }
 
+impl<'de> serde::Deserialize<'de> for SrgbColour {
+    /// The settings wire grammar ([`Self::from_hex`]), so a sealed record
+    /// that serialised one reads it back.
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        Self::from_hex(&text)
+            .ok_or_else(|| serde::de::Error::custom(format!("not a #rrggbb[aa] colour: {text}")))
+    }
+}
+
 impl SrgbColour {
     pub(crate) fn from_linear(colour: LinearRgba) -> Self {
         let [red, green, blue, alpha] = colour.to_srgba8().map(|c| f64::from(c) / 255.0);

@@ -72,8 +72,10 @@ impl Density {
         Self::ALL.into_iter().find(|d| d.name() == name)
     }
 
-    /// The legacy tokens' multiplier: today's named steps.
-    const fn multiplier(self) -> f64 {
+    /// The legacy tokens' multiplier: today's named steps. Transitional:
+    /// settings' `CommonUi.density` carries it to the toolkit's
+    /// `ui_scale::tokens` until that moves onto [`apply`] (key space v2, S8a).
+    pub const fn multiplier(self) -> f64 {
         match self {
             Self::Compact => 0.85,
             Self::Standard => 1.0,

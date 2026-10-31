@@ -107,21 +107,35 @@ impl Overlay {
     /// degrades to `None` (the design's own), so a bad stored value cannot
     /// break a theme.
     pub fn from_appearance(appearance: &settings::model::Appearance) -> Self {
-        let stroke = appearance.icon_stroke.filter(|s| {
+        Self::from_choices(
+            appearance.icon_stroke,
+            appearance.font_family.as_deref(),
+            appearance.font_weight,
+            appearance.font_size,
+            appearance.mono_family.as_deref(),
+        )
+    }
+
+    /// [`Self::from_appearance`] from the choices themselves, as both the
+    /// format-4 appearance and key space v2's `Look` carry them.
+    pub(crate) fn from_choices(
+        icon_stroke: Option<f64>,
+        font_family: Option<&str>,
+        font_weight: Option<u16>,
+        font_size: Option<f64>,
+        mono_family: Option<&str>,
+    ) -> Self {
+        let stroke = icon_stroke.filter(|s| {
             s.is_finite()
                 && (settings::model::ICON_STROKE_MIN..=settings::model::ICON_STROKE_MAX).contains(s)
                 && (s / settings::model::ICON_STROKE_STEP).fract() == 0.0
         });
-        let weight = appearance
-            .font_weight
-            .filter(|w| (100..=900).contains(w) && w % 100 == 0);
-        let family = |name: &Option<String>| {
-            name.as_deref()
-                .filter(|n| !n.trim().is_empty())
+        let weight = font_weight.filter(|w| (100..=900).contains(w) && w % 100 == 0);
+        let family = |name: Option<&str>| {
+            name.filter(|n| !n.trim().is_empty())
                 .map(str::to_owned)
         };
-        let size = appearance
-            .font_size
+        let size = font_size
             .filter(|s| {
                 s.is_finite()
                     && (settings::model::FONT_SIZE_MIN..=settings::model::FONT_SIZE_MAX).contains(s)
@@ -129,10 +143,10 @@ impl Overlay {
             .map(|s| s as f32);
         Self {
             stroke: stroke.map(|s| s as f32),
-            family: family(&appearance.font_family),
+            family: family(font_family),
             weight,
             size,
-            mono: family(&appearance.mono_family),
+            mono: family(mono_family),
             ..Self::default()
         }
     }

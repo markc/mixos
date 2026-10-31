@@ -2,8 +2,8 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The look's authored inputs: `appearance.*`, the `state.*` keys the mode
 //! resolves from, the per-app overrides `apps.<app>.*` and `tune.*`. These
-//! are the values as authored (the mode may be `auto`); the resolved look is
-//! the look half's `Look`, built from them by resolution.
+//! are the values as authored (the mode may be `auto`); [`super::Look`]
+//! composes them for followers and resolution.
 use super::{Reader, View, family};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -24,8 +24,8 @@ pub struct Appearance {
     pub control_tint: Option<String>,
     /// `normal` or `high`.
     pub contrast: String,
-    /// `round`, `slightly_round` or `square`.
-    pub roundness: String,
+    /// The geometry axes, as `design::geometry` names them (A4, A5).
+    pub roundness: Roundness,
     pub density: Density,
     pub frosted: Frosted,
     pub font_family: Option<String>,
@@ -62,44 +62,10 @@ impl Accent {
     }
 }
 
-/// `appearance.density`: three steps, never a number (F3).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Density {
-    Compact,
-    #[default]
-    Comfortable,
-    Spacious,
-}
-
-impl Density {
-    pub fn of(name: &str) -> Self {
-        match name {
-            "compact" => Self::Compact,
-            "spacious" => Self::Spacious,
-            _ => Self::Comfortable,
-        }
-    }
-
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::Compact => "compact",
-            Self::Comfortable => "comfortable",
-            Self::Spacious => "spacious",
-        }
-    }
-
-    /// The legacy layout tokens' multiplier for this step (§3.4 A5: exactly
-    /// today's named steps). Transitional: only today's `Effective.ui.density`
-    /// and `ui_scale::tokens` read it, until `design::geometry` (S2) applies
-    /// the step itself.
-    pub const fn legacy_multiplier(self) -> f64 {
-        match self {
-            Self::Compact => 0.85,
-            Self::Comfortable => 1.0,
-            Self::Spacious => 1.2,
-        }
-    }
-}
+/// `appearance.density` (three steps, never a number, F3) and
+/// `appearance.roundness` (three presets) are `design::geometry`'s own axes:
+/// `comfortable` is its `Standard`.
+pub use design::geometry::{Density, Roundness};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Frosted {
@@ -129,8 +95,8 @@ impl View for Appearance {
             text_tint: colour_or_auto(r, "appearance.text_tint"),
             control_tint: colour_or_auto(r, "appearance.control_tint"),
             contrast: r.text("appearance.contrast"),
-            roundness: r.text("appearance.roundness"),
-            density: Density::of(&r.text("appearance.density")),
+            roundness: Roundness::from_name(&r.text("appearance.roundness")).unwrap_or_default(),
+            density: Density::from_name(&r.text("appearance.density")).unwrap_or_default(),
             frosted: Frosted {
                 thickness: r.uint("appearance.frosted.thickness"),
                 opacity: r.number("appearance.frosted.opacity"),
