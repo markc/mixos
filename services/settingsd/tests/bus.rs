@@ -358,8 +358,8 @@ impl Watch {
         let Some(topic) = event.topic().map(str::to_owned) else {
             return;
         };
-        assert_eq!(event.header("broker_service"), Some("settingsd"), "{topic}");
         let body: Value = serde_json::from_str(&event.body).unwrap();
+        assert_eq!(body["schema"], 3, "{topic}");
         self.log.push(topic.clone());
         self.latest.insert(topic, body);
     }
