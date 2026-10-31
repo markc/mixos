@@ -652,6 +652,12 @@ pub(crate) fn is_default(m: &Matched, path: &str, value: &Value) -> bool {
     }
 }
 
+/// An app domain leaf's own default, as its module describes it; None where
+/// the module gives none (a family that falls back to the desktop's).
+pub fn domain_default(path: &str) -> Option<Value> {
+    app_domains::schema(path)?.get("default").cloned()
+}
+
 /// Validate and normalise one authored value for its key.
 pub fn check_value(path: &str, value: &Value) -> Result<Value, Diagnostic> {
     let m = lookup(path)?;

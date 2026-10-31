@@ -22,6 +22,7 @@ pub mod registry;
 pub mod resolve;
 pub mod session;
 pub mod terminal;
+pub mod topics;
 pub mod v1;
 pub mod view;
 pub use design::EMBEDDED_DEFAULT_SOURCE;
