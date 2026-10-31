@@ -260,7 +260,11 @@ fn resolve_v2_reproduces_today_s_look_for_the_same_choices() {
         "resolution_order: [\"scheme\", \"mode\", \"app\"]",
         1,
     );
-    assert_ne!(source, design::EMBEDDED_DEFAULT_SOURCE, "the fixture orders app");
+    assert_ne!(
+        source,
+        design::EMBEDDED_DEFAULT_SOURCE,
+        "the fixture orders app"
+    );
     let mut custom = rich();
     custom.name = "custom source";
     custom.today.appearance.source = Some(source.clone());

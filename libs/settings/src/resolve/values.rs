@@ -33,9 +33,8 @@ use std::collections::{BTreeMap, BTreeSet};
 /// A name outside the registry's enums is refused, never read as dark:
 /// validation already refuses it, so this is a second line, not a default.
 pub fn effective_mode(authored: &str, state: &State) -> Result<(Mode, &'static str), Diagnostic> {
-    let named = |name: &str, path: &str| {
-        Mode::from_name(name).ok_or_else(|| error(path, "Unknown mode"))
-    };
+    let named =
+        |name: &str, path: &str| Mode::from_name(name).ok_or_else(|| error(path, "Unknown mode"));
     Ok(match authored {
         "auto" => match (state.mode_override.as_deref(), state.daylight) {
             (Some(name), _) => (
