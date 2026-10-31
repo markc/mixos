@@ -21,9 +21,13 @@ fn binding() -> Binding {
 fn consumer() -> Consumer {
     Consumer::for_app(binding(), "ced").unwrap()
 }
-fn snapshot(revision: u64, density: f64) -> Snapshot {
-    let mut desktop = Desktop::default();
-    desktop.ui.density = density;
+/// A schema 3 snapshot whose look differs by `scale` (its text scale; the
+/// default 1.0 is never stored).
+fn snapshot(revision: u64, scale: f64) -> Snapshot {
+    let mut values = registry::Values::new();
+    if scale != 1.0 {
+        values.insert("accessibility.text_scale".into(), scale.into());
+    }
     Snapshot {
         schema: SCHEMA,
         binding: binding(),
@@ -31,8 +35,9 @@ fn snapshot(revision: u64, density: f64) -> Snapshot {
         revision: Revision(revision),
         design_revision: Revision(1),
         source_digest: source_digest(EMBEDDED_DEFAULT_SOURCE),
-        effective: resolve(&desktop).unwrap(),
-        desktop,
+        effective: resolve::values::resolve(&values, EMBEDDED_DEFAULT_SOURCE).unwrap(),
+        desktop: migrate::reverse(&values).desktop,
+        values,
     }
 }
 fn activate(state: &mut Consumer, revision: u64, density: f64) {

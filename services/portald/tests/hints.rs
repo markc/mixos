@@ -75,6 +75,7 @@ fn snapshot(revision: u64) -> Snapshot {
         source_digest: "source".into(),
         desktop,
         effective,
+        values: Default::default(),
     }
 }
 

@@ -707,6 +707,7 @@ mod tests {
             source_digest: source_digest(EMBEDDED_DEFAULT_SOURCE),
             effective: resolve(&sized).unwrap(),
             desktop: sized.clone(),
+            values: Default::default(),
         };
         assert_eq!(Summary::of(&snapshot).appearance.font_size, Some(16.0));
         assert_eq!(snapshot.effective["desktop"].font_size, Some(16.0));
@@ -1102,6 +1103,7 @@ mod tests {
             source_digest: String::new(),
             desktop: next.clone(),
             effective: BTreeMap::new(),
+            values: Default::default(),
         }))
         .unwrap();
         assert_eq!(summary["keymaps"]["dopus"]["nav.parent"], json!(["Ctrl+U"]));

@@ -431,6 +431,7 @@ pub(crate) fn snapshot(
         source_digest,
         desktop,
         effective,
+        values: Default::default(),
     };
     let bytes = result.encoded_len()?;
     if bytes > MAX_SNAPSHOT_BYTES {
@@ -441,6 +442,12 @@ pub(crate) fn snapshot(
     let compact = serde_json::to_vec(&settings::compact::encode(&result)?)?.len();
     if compact > MAX_SNAPSHOT_BYTES + settings::compact::MAX_OVERHEAD_BYTES {
         return Err(SnapshotTooLarge { bytes: compact }.into());
+    }
+    // Native shells read schema 3 and hold the snapshot it expands to, with
+    // its values, to the same budget.
+    let with_values = bytes + serde_json::to_vec(&accepted.values)?.len() + ",\"values\":".len();
+    if with_values > MAX_SNAPSHOT_BYTES {
+        return Err(SnapshotTooLarge { bytes: with_values }.into());
     }
     Ok(result)
 }

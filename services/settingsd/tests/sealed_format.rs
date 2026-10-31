@@ -85,6 +85,7 @@ fn snapshot_with_source(source: &str) -> Snapshot {
         source_digest: source_digest(source),
         desktop,
         effective,
+        values: Default::default(),
     }
 }
 

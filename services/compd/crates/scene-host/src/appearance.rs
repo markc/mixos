@@ -230,9 +230,14 @@ pub(crate) fn fixture(mode: &str, scale: f64) -> Arc<Look> {
     Arc::new(build(&snapshot_of(desktop)).unwrap())
 }
 
+/// The snapshot settingsd serves for `desktop` once migrated: its v2
+/// values (key space v2 §4.1), resolved and projected as schema 3 carries
+/// them.
 #[cfg(test)]
 pub(crate) fn snapshot_of(desktop: settings::Desktop) -> Snapshot {
-    let effective = settings::resolve(&desktop).unwrap();
+    let values = settings::migrate::migrate(&desktop).unwrap().values;
+    let effective =
+        settings::resolve::values::resolve(&values, settings::EMBEDDED_DEFAULT_SOURCE).unwrap();
     Snapshot {
         schema: settings::SCHEMA,
         binding: settings::Binding {
@@ -243,8 +248,9 @@ pub(crate) fn snapshot_of(desktop: settings::Desktop) -> Snapshot {
         revision: settings::Revision(1),
         design_revision: settings::Revision(1),
         source_digest: settings::source_digest(settings::EMBEDDED_DEFAULT_SOURCE),
-        desktop,
+        desktop: settings::migrate::reverse(&values).desktop,
         effective,
+        values,
     }
 }
 
@@ -428,6 +434,7 @@ mod tests {
             source_digest: settings::source_digest(settings::EMBEDDED_DEFAULT_SOURCE),
             desktop,
             effective,
+            values: Default::default(),
         };
         let look = build(&snapshot).unwrap();
         assert_eq!(look.theme.mode(), Mode::from_name(&selected.mode).unwrap());
