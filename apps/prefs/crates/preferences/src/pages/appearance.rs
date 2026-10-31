@@ -10,6 +10,16 @@ use super::{
 };
 
 const PINNED: Cond = Cond::Unset("appearance.source");
+const ROUNDNESS: &[super::Opt] = &[
+    opt("round", "opt-round"),
+    opt("slightly_round", "opt-slightly-round"),
+    opt("square", "opt-square"),
+];
+const DENSITY: &[super::Opt] = &[
+    opt("compact", "opt-compact"),
+    opt("comfortable", "opt-comfortable"),
+    opt("spacious", "opt-spacious"),
+];
 
 pub(super) fn page() -> Page {
     let mode_and_colours = section(
@@ -69,11 +79,7 @@ pub(super) fn page() -> Page {
                 Control::Choice {
                     key: "appearance.roundness",
                     style: ChoiceStyle::Images,
-                    options: &[
-                        opt("round", "opt-round"),
-                        opt("slightly_round", "opt-slightly-round"),
-                        opt("square", "opt-square"),
-                    ],
+                    options: ROUNDNESS,
                 },
             ),
             row("frosted", Control::Drawer { drawer: "frosted" }),
@@ -86,11 +92,7 @@ pub(super) fn page() -> Page {
             Control::Choice {
                 key: "appearance.density",
                 style: ChoiceStyle::Radio,
-                options: &[
-                    opt("compact", "opt-compact"),
-                    opt("comfortable", "opt-comfortable"),
-                    opt("spacious", "opt-spacious"),
-                ],
+                options: DENSITY,
             },
         )],
     );
