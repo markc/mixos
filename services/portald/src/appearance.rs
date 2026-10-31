@@ -1,10 +1,20 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Portal values for the `org.freedesktop.appearance` namespace, derived from
-//! one accepted appearance projection. Pure data; the D-Bus surface lives in
-//! `portal`.
+//! one accepted appearance projection. The colour scheme and accent come from
+//! `design::palette` (ruling 1): settingsd serves that palette as
+//! `settings.palette` (S7), and until it does, [`palette_of`] computes the
+//! same function here. Pure data; the D-Bus surface lives in `portal`.
+use design::derive::FrostedGlass;
+use design::geometry::Geometry;
+use design::palette::ModePalette;
+use design::{
+    AccentChoice, Colour8, Contrast, DesignContext, DesignSourceDocument, EMBEDDED_DEFAULT_SOURCE,
+    Mode, Scheme, SourceIdentity, parse_design_source,
+};
 use settings::appearance::AppearanceProjection;
 use std::collections::BTreeMap;
+use std::sync::OnceLock;
 use zbus::zvariant::Value;
 
 pub const NAMESPACE: &str = "org.freedesktop.appearance";
@@ -41,6 +51,8 @@ impl Values {
         }
     }
 
+    /// The projection's mode and contrast; its accent as the palette resolves
+    /// it. A palette that cannot be computed keeps the projected accent.
     pub fn from_projection(projection: &AppearanceProjection) -> Self {
         Self {
             color_scheme: match projection.mode.as_str() {
@@ -52,7 +64,9 @@ impl Values {
                 "high" => 1,
                 _ => 0,
             },
-            accent: Some(projection.accent),
+            accent: Some(
+                palette_of(projection).map_or(projection.accent, |palette| accent_of(&palette)),
+            ),
         }
     }
 
@@ -109,6 +123,48 @@ impl Values {
         }
         out
     }
+}
+
+/// The palette of the projection's mode, from `design::palette`. The
+/// projected accent is passed as a custom accent, so the palette's accent is
+/// the one settingsd resolved. This is the single adapter until S7 serves
+/// `settings.palette`; `None` only if the embedded source does not compile.
+pub fn palette_of(projection: &AppearanceProjection) -> Option<ModePalette> {
+    let context = DesignContext {
+        scheme: Scheme::Mixos,
+        mode: Mode::from_name(&projection.mode).unwrap_or(Mode::Dark),
+        contrast: Contrast::from_name(&projection.contrast).unwrap_or(Contrast::Normal),
+        accent: AccentChoice::Custom(opaque(projection.accent)),
+        ..DesignContext::default()
+    };
+    design::palette::mode_palette(
+        embedded_source()?,
+        &context,
+        &Geometry::default(),
+        &FrostedGlass::default(),
+    )
+    .ok()
+}
+
+/// The accent a palette resolves, as the portal publishes it.
+pub fn accent_of(palette: &ModePalette) -> [f64; 3] {
+    [palette.accent.red, palette.accent.green, palette.accent.blue]
+}
+
+/// The embedded default design source, parsed once.
+fn embedded_source() -> Option<&'static DesignSourceDocument> {
+    static SOURCE: OnceLock<Option<DesignSourceDocument>> = OnceLock::new();
+    SOURCE
+        .get_or_init(|| {
+            parse_design_source(SourceIdentity::new("embedded"), EMBEDDED_DEFAULT_SOURCE).ok()
+        })
+        .as_ref()
+}
+
+/// An opaque colour from sRGB 0.0..=1.0 channels.
+fn opaque([red, green, blue]: [f64; 3]) -> Colour8 {
+    let channel = |value: f64| (value.clamp(0.0, 1.0) * 255.0).round() as u8;
+    Colour8([channel(red), channel(green), channel(blue), 255])
 }
 
 /// Iterative dynamic programming: O(pattern bytes * text bytes) time and
@@ -170,6 +226,28 @@ mod tests {
             light.get(NAMESPACE, ACCENT_COLOR),
             Some(Value::Structure(_))
         ));
+    }
+
+    #[test]
+    fn the_served_accent_is_the_palettes_accent_for_the_projected_mode() {
+        let projected = projection("light", "normal", [0.2, 0.4, 0.6]);
+        let palette = palette_of(&projected).expect("the embedded source compiles");
+        assert_eq!(palette.mode, "light");
+        assert_eq!(palette.contrast, "normal");
+        let served = Values::from_projection(&projected);
+        let [red, green, blue] = served.accent.expect("an accent is served");
+        // Eight bits per channel, so each channel is within one step.
+        for (got, asked) in [red, green, blue].into_iter().zip([0.2, 0.4, 0.6]) {
+            assert!((got - asked).abs() <= 1.0 / 255.0, "{got} vs {asked}");
+        }
+        assert_eq!(served.accent, Some(accent_of(&palette)));
+    }
+
+    #[test]
+    fn the_palette_contrast_follows_the_projection() {
+        let high = palette_of(&projection("dark", "high", [0.1, 0.2, 0.3])).unwrap();
+        assert_eq!(high.contrast, "high");
+        assert_eq!(high.mode, "dark");
     }
 
     #[test]
