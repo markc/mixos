@@ -255,6 +255,22 @@ pub fn follow_look(look: &Look, app: Option<&str>, custom_source: bool, session:
     }
 }
 
+/// The one call a shell makes for its session theme: [`follow_look`] while
+/// it holds settingsd's `look`, else its theme `file` with the ui it last
+/// followed (`last_ui`). The ui is applied exactly once either way.
+pub fn session_theme(
+    look: Option<&Look>,
+    app: Option<&str>,
+    custom_source: bool,
+    file: &Theme,
+    last_ui: &settings::model::CommonUi,
+) -> Theme {
+    match look {
+        Some(look) => follow_look(look, app, custom_source, file),
+        None => file.clone().with_ui(last_ui.clone()),
+    }
+}
+
 /// R5 step 7 for `app`, and the density step's multiplier, which
 /// `ui_scale` lays over the legacy lengths (step 2a's density half, until
 /// the toolkit applies the step itself). It is the only place the density
@@ -805,6 +821,33 @@ mod tests {
         let desktop = look(&l, None).unwrap();
         assert_eq!(desktop.mode(), Mode::Dark);
         assert_eq!(desktop.ui().text_scale, 1.0);
+    }
+
+    /// The shells' one entry point: the look while settingsd's is held (ui
+    /// set once, from the look), else the file theme with the last ui.
+    #[test]
+    fn the_session_theme_is_the_look_or_the_file_with_the_last_ui() {
+        let file = Theme::for_context(DesignContext {
+            scheme: Scheme::Ocean,
+            ..DesignContext::default()
+        });
+        let l = look_of(&[
+            ("appearance.density", serde_json::json!("compact")),
+            ("accessibility.text_scale", serde_json::json!(1.5)),
+        ]);
+        let last = settings::model::CommonUi {
+            text_scale: 1.25,
+            ..Default::default()
+        };
+        let held = session_theme(Some(&l), Some("dopus"), false, &file, &last);
+        assert_eq!(held.dictionary(), look_or(&l, Some("dopus"), &file).dictionary());
+        assert_eq!((held.ui().density, held.ui().text_scale), (0.85, 1.5));
+        let custom = session_theme(Some(&l), Some("dopus"), true, &file, &last);
+        assert_eq!(custom.dictionary(), file.dictionary());
+        assert_eq!(custom.ui(), held.ui());
+        let missing = session_theme(None, Some("dopus"), false, &file, &last);
+        assert_eq!(missing.dictionary(), file.dictionary());
+        assert_eq!(missing.ui().text_scale, 1.25);
     }
 
     /// A look the build cannot draw keeps the session's design and takes

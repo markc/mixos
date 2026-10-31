@@ -1045,18 +1045,13 @@ impl Shell {
     /// The session theme: settingsd's look when this build can draw it,
     /// else the theme file's.
     fn session_theme(&self) -> Theme {
-        self.look
-            .as_ref()
-            .map(|look| {
-                toolkit::session_look::follow_look(
-                    look,
-                    Some(APP),
-                    self.custom_source,
-                    &self.file_theme,
-                )
-            })
-            .unwrap_or_else(|| self.file_theme.clone())
-            .with_ui(self.common_ui.clone())
+        toolkit::session_look::session_theme(
+            self.look.as_ref(),
+            Some(APP),
+            self.custom_source,
+            &self.file_theme,
+            &self.common_ui,
+        )
     }
 
     /// Apply the profile's bindings for Workshop over the built chords.
@@ -1339,13 +1334,21 @@ mod tests {
                 ("window.menu_style".to_owned(), json!("titlebar")),
                 ("window.menu_side".to_owned(), json!("right")),
                 ("window.style".to_owned(), json!("win11")),
+                ("appearance.roundness".to_owned(), json!("square")),
+                ("appearance.density".to_owned(), json!("compact")),
             ]);
             let look = <settings::view::Look as settings::view::View>::of(&values);
-            let expected = if custom_source {
-                shell.file_theme.clone()
-            } else {
-                toolkit::session_look::follow_look(&look, Some(APP), false, &shell.file_theme)
-            };
+            // What the shell must draw: the one toolkit entry point, the
+            // session design kept for a source of its own.
+            let expected = toolkit::session_look::follow_look(
+                &look,
+                Some(APP),
+                custom_source,
+                &shell.file_theme,
+            );
+            if custom_source {
+                assert_eq!(expected.dictionary(), shell.file_theme.dictionary());
+            }
             if custom_source {
                 // A design source of its own: the follower reports it.
                 values.insert("appearance.source".to_owned(), json!("design: {}"));
@@ -1366,6 +1369,21 @@ mod tests {
                 }),
             );
             assert_eq!(shell.theme.dictionary(), expected.dictionary());
+            // Style tokens, not only the colours: the radii and the spacing
+            // the look's roundness and density give, and its ui once.
+            let (drawn, wanted) = (
+                toolkit::style::style(&shell.theme),
+                toolkit::style::style(&expected),
+            );
+            assert_eq!(drawn.spacing.item_spacing, wanted.spacing.item_spacing);
+            assert_eq!(drawn.spacing.button_padding, wanted.spacing.button_padding);
+            assert_eq!(
+                drawn.visuals.widgets.inactive.corner_radius,
+                wanted.visuals.widgets.inactive.corner_radius
+            );
+            assert_eq!(drawn.visuals.window_corner_radius, wanted.visuals.window_corner_radius);
+            assert_eq!(shell.theme.ui(), expected.ui());
+            assert_eq!(shell.theme.ui().density, 0.85, "compact, applied once");
             assert_eq!(shell.theme.scheme(), expected.scheme());
             assert_eq!(shell.theme.mode(), expected.mode());
             assert_eq!(shell.theme.overlay().weight, Some(700));

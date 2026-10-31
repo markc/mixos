@@ -505,18 +505,13 @@ impl Shell {
     }
 
     fn session_theme(&self) -> Theme {
-        self.look
-            .as_ref()
-            .map(|look| {
-                toolkit::session_look::follow_look(
-                    look,
-                    Some(APP),
-                    self.custom_source,
-                    &self.file_theme,
-                )
-            })
-            .unwrap_or_else(|| self.file_theme.clone())
-            .with_ui(self.common_ui.clone())
+        toolkit::session_look::session_theme(
+            self.look.as_ref(),
+            Some(APP),
+            self.custom_source,
+            &self.file_theme,
+            &self.common_ui,
+        )
     }
 
     pub fn set_keymap(&mut self, keymap: toolkit::keymap::Overrides) {

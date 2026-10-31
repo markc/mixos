@@ -533,19 +533,13 @@ impl Shell {
     /// it, else the theme file's. The next frame installs it under the
     /// window's choice.
     fn set_base(&mut self) {
-        self.base = self
-            .look
-            .as_ref()
-            .map(|look| {
-                toolkit::session_look::follow_look(
-                    look,
-                    Some(APP),
-                    self.custom_source,
-                    &self.file_theme,
-                )
-            })
-            .unwrap_or_else(|| self.file_theme.clone())
-            .with_ui(self.common_ui.clone());
+        self.base = toolkit::session_look::session_theme(
+            self.look.as_ref(),
+            Some(APP),
+            self.custom_source,
+            &self.file_theme,
+            &self.common_ui,
+        );
         self.installed = None;
         self.ctx.request_repaint();
     }
