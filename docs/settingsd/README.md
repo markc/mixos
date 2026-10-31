@@ -66,10 +66,16 @@ pushes to the mirrors it had attached (`mirrors.json` beside the store is a
 hint: an entry that fails its first push is dropped).
 
 The mirror commands keep their integrity checks on the open Bus. A push or
-stop notice is taken only from the configured authority's settingsd as the
-broker stamps the sender (`broker_peer`, `broker_service`), an attach only
-from the node it names, at most 16 mirrors attach, and a mirror never takes
-an older incarnation of the record.
+stop notice is taken only from the configured authority's node as the
+broker identifies the sender (its `broker_peer` stamp, or the peer bridge
+the message came in on), and from its settingsd wherever the broker stamps
+the service. Because noded has no remote-service identity on every mesh
+path yet, the mirror also confirms each push with the authority itself: it
+takes the record only when the authority's own `settings.status` reports
+that incarnation, revision and `mirror_digest`, and ignores a stop notice
+while the authority still answers. An attach is taken only from the node it
+names, at most 16 mirrors attach, and a mirror never takes an older
+incarnation.
 
 One gap is known: a crashed authority sends no notice, and noded has no
 peer-down event a service can hear (topics are node-local and the mesh link
