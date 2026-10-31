@@ -89,7 +89,12 @@ pub(super) fn ramp<const N: usize>(seed: SrgbColour) -> [SrgbColour; N] {
 /// keeping its hue, chroma and alpha, gamut-mapped as a ramp step is.
 pub(super) fn shift_lightness(colour: SrgbColour, delta: f64) -> SrgbColour {
     let (lightness, chroma, hue) = linear_srgb_to_oklch(to_linear(colour));
-    at_lightness((lightness + delta).clamp(0.0, 1.0), chroma, hue, colour.alpha)
+    at_lightness(
+        (lightness + delta).clamp(0.0, 1.0),
+        chroma,
+        hue,
+        colour.alpha,
+    )
 }
 
 /// `neutral` re-hued by `tint`: the tint's OKLCh hue and chroma at the
