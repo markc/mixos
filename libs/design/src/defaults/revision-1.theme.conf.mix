@@ -1517,7 +1517,7 @@ design: {
         schemes: {
           ocean: "plain", crimson: "plain", stone: "plain", forest: "plain", sunset: "plain", mono: "plain",
           pro: "pro", studio: "studio", classic: "classic", breeze: "breeze", adwaita: "adwaita",
-          mixos: "studio"
+          mixos: "adwaita"
         },
         styles: {
           plain: {

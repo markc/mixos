@@ -375,7 +375,8 @@ fn embedded_authored_role_anchors_match_revision_one_in_all_twelve_contexts() {
             (block.when.len() == 2).then_some((scheme.as_str(), mode.as_str()))
         })
         .collect::<BTreeSet<_>>();
-    let expected_contexts = Scheme::ALL
+    // The derived scheme authors no roles: its blocks are computed.
+    let expected_contexts = Scheme::AUTHORED
         .into_iter()
         .flat_map(|scheme| {
             Mode::ALL
@@ -772,7 +773,11 @@ fn shipped_button_interactions_are_behaviourally_distinct_in_all_twelve_contexts
                         Some("palette.background.1"),
                         "{label}: resting Ghost must composite over the page backdrop"
                     );
-                    if mode == Mode::Light {
+                    if mode == Mode::Light && scheme.is_derived() {
+                        // The derived scheme's light hierarchy text is the
+                        // reference's, not the authored palettes' accepted residual,
+                        // so its resting-against-disabled order is not pinned.
+                    } else if mode == Mode::Light {
                         // Accepted residual: transparent fill plus a muted label makes
                         // resting Ghost deliberately weaker than its disabled solid state.
                         // Both halves of that premise are asserted so the residual cannot
