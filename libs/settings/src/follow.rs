@@ -126,6 +126,9 @@ pub struct Follower {
     failures: u32,
     /// The answer just read retargeted the binding.
     retarget_now: bool,
+    /// [`hint_topics`] of the profile, built once: a retarget changes the
+    /// instance, never the profile.
+    topics: Vec<String>,
 }
 
 impl Follower {
@@ -141,6 +144,7 @@ impl Follower {
             binding.instance = "host".into();
         }
         Self {
+            topics: hint_topics(&binding.profile),
             binding,
             retargeted: false,
             next_ticket: 0,
@@ -158,12 +162,12 @@ impl Follower {
     /// Each is change-only, so a follower wakes only when what it reads
     /// moved.
     pub fn topics(&self) -> Vec<String> {
-        hint_topics(&self.binding.profile)
+        self.topics.clone()
     }
 
     /// Whether a delivery on `topic` is a hint for this follower.
     pub fn is_hint(&self, topic: &str) -> bool {
-        is_hint(&self.binding.profile, topic)
+        self.topics.iter().any(|t| t == topic)
     }
 
     pub fn binding(&self) -> &Binding {
@@ -372,7 +376,7 @@ mod tests {
             "incarnation":incarnation,"revision":revision,
             "values":{"appearance.scheme":scheme,"appearance.mode":"dark",
                 "appearance.contrast":"normal"},
-            "resolved":{"appearance.mode":"dark"}})
+            "resolved":{"mode":"dark","accent":null}})
         .to_string()
     }
 
@@ -413,6 +417,8 @@ mod tests {
                 ..
             }) => {
                 assert_eq!(look.appearance.scheme, "studio");
+                // The resolved mode is the view's, as settingsd resolves it.
+                assert_eq!(look.mode().0.name(), "dark");
                 assert_eq!(look.framing.decorations, "ssd");
                 assert_eq!(look.text_scale, 1.5);
                 assert_eq!(look.appearance.density, design::geometry::Density::Compact);

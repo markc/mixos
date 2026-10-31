@@ -221,14 +221,15 @@ pub fn look_or(look: &Look, app: Option<&str>, session: &Theme) -> Theme {
 
 /// The session's design with the look's framing, menus, band and font
 /// choices, and nothing else: what a profile that names a design source of
-/// its own keeps.
+/// its own keeps. A font choice the overlay refuses (the look is Bus data)
+/// leaves the session's own font: it never panics.
 pub fn framed_session(look: &Look, session: &Theme) -> Theme {
     let selected = fonts(look);
     let mut overlay = session.overlay().clone();
     overlay.weight = selected.weight;
     overlay.size = selected.size;
     let framing = &look.framing;
-    session
+    let framed = session
         .clone()
         .framed(
             Decorations::from_name(&framing.decorations).unwrap_or(session.requested_decorations()),
@@ -238,9 +239,8 @@ pub fn framed_session(look: &Look, session: &Theme) -> Theme {
             design::MenuStyle::resolve(&framing.menu_style),
             design::MenuSide::resolve(&framing.menu_side),
         )
-        .with_band(band_of(framing))
-        .with_overlay(overlay)
-        .expect("the session's style overlay is already valid")
+        .with_band(band_of(framing));
+    framed.clone().with_overlay(overlay).unwrap_or(framed)
 }
 
 /// What an app following the profile draws (`settings::follow`): `look`
@@ -851,6 +851,25 @@ mod tests {
         let missing = session_theme(None, Some("dopus"), false, &file, &last);
         assert_eq!(missing.dictionary(), file.dictionary());
         assert_eq!(missing.ui().text_scale, 1.25);
+    }
+
+    /// The look is Bus data: an off-grid font weight or size never panics a
+    /// shell; the custom-source path keeps the session's font instead.
+    #[test]
+    fn off_grid_font_choices_fall_back_to_the_session_font() {
+        use settings::view::View;
+        let file = Theme::embedded();
+        let values = settings::registry::Values::from([
+            ("appearance.font_weight".to_owned(), serde_json::json!(450)),
+            ("appearance.font_size".to_owned(), serde_json::json!(999.0)),
+        ]);
+        let l = Look::of(&values);
+        let framed = framed_session(&l, &file);
+        assert_eq!(framed.overlay().weight, file.overlay().weight);
+        assert_eq!(framed.overlay().size, file.overlay().size);
+        let drawn = follow_look(&l, Some("dopus"), false, &file);
+        assert_eq!(drawn.overlay().weight, None);
+        assert_eq!(drawn.overlay().size, None);
     }
 
     /// A look the build cannot draw keeps the session's design and takes

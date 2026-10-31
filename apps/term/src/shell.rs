@@ -100,6 +100,8 @@ pub struct Shell {
     custom_source: bool,
     common_ui: settings::model::CommonUi,
     follower: settings::follow::Follower,
+    /// The topics the Bus subscribes once it connects, built once.
+    bus_topics: Vec<String>,
     /// A read already prepared by the follower after retargeting.
     look_prepared: Option<settings::follow::Read>,
     installed: Option<toolkit::theme_menu::Choice>,
@@ -147,6 +149,10 @@ impl Shell {
             custom_source: false,
             common_ui: settings::model::CommonUi::default(),
             follower: settings::follow::Follower::new(&hostname()),
+            bus_topics: settings::follow::hint_topics(settings::follow::PROFILE)
+                .into_iter()
+                .chain(["theme.changed".to_owned(), "noded.props.changed".to_owned()])
+                .collect(),
             look_prepared: None,
             installed: None,
             bus,
@@ -176,9 +182,7 @@ impl Shell {
 
     /// Apply everything the Bus and the clipboard have handed over.
     fn pump(&mut self) {
-        let mut topics = self.follower.topics();
-        topics.extend(["theme.changed".to_owned(), "noded.props.changed".to_owned()]);
-        if self.bus.start(&topics) {
+        if self.bus.start(&self.bus_topics) {
             self.read_look();
         }
         while let Some(event) = self.bus.next_event() {

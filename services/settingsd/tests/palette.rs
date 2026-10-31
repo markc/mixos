@@ -81,6 +81,43 @@ fn it_follows_the_authored_look() {
     assert_eq!(after["palette"]["dark"]["contrast"], "normal");
 }
 
+/// The palette's accent in the resolved mode is the accent the toolkit
+/// draws: the one sealed in the desktop context's `Effective` (ruling 8),
+/// for the derived scheme and an authored one, auto and chosen accents; and
+/// each mode carries `flat`.
+#[test]
+fn the_accent_in_the_resolved_mode_is_the_sealed_accent() {
+    for values in [
+        registry::Values::new(),
+        registry::Values::from([("appearance.accent".into(), json!("purple"))]),
+        registry::Values::from([("appearance.scheme".into(), json!("studio"))]),
+        registry::Values::from([
+            ("appearance.scheme".into(), json!("breeze")),
+            ("appearance.mode".into(), json!("light")),
+            ("appearance.accent".into(), json!("#3a7bd5")),
+        ]),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = authority(dir.path(), values.clone());
+        let desktop = state.snapshot.effective["desktop"].clone();
+        let accent = desktop.accent.expect("sealed accent");
+        assert_eq!(
+            settings::resolve::accents_of(&state.snapshot.effective)["desktop"],
+            accent
+        );
+        let answer = palette(&mut state, json!({"binding": binding()})).unwrap();
+        assert_eq!(
+            answer["palette"][desktop.mode.as_str()]["accent"],
+            serde_json::to_value(accent).unwrap(),
+            "{values:?}"
+        );
+        for each in ["dark", "light"] {
+            let flat = answer["palette"][each]["flat"].as_object().unwrap();
+            assert_eq!(flat.len(), 31, "{each}: every role flattened");
+        }
+    }
+}
+
 #[test]
 fn it_refuses_another_binding_and_an_unknown_mode() {
     let dir = tempfile::tempdir().unwrap();

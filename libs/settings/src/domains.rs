@@ -119,10 +119,10 @@ impl ChangePlan {
             plan.layout |= v.layout;
             plan.resources |= v.resources;
             plan.motion |= v.motion;
+            // Only a context that draws the shell takes its keys.
+            plan.shell |= shell && v.shell;
         }
-        plan.shell |= shell
-            && (previous.is_none_or(|s| s.desktop.shell != next.desktop.shell)
-                || authored.is_some_and(|v| v.shell));
+        plan.shell |= shell && previous.is_none_or(|s| s.desktop.shell != next.desktop.shell);
         plan.layout |= plan.shell;
         plan
     }

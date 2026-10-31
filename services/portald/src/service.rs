@@ -31,8 +31,9 @@ pub const FETCH_COMMAND: &str = "settings.get";
 pub const PALETTE_COMMAND: &str = "settings.palette";
 /// The keys topics whose deliveries are hints: the resolved mode and the
 /// accent move `appearance` (a `state.*` change included), the caption side
-/// moves `window`.
-pub const HINT_PREFIXES: [&str; 2] = ["appearance", "window"];
+/// moves `window`, and `accessibility` is the portal row's third prefix
+/// (key space v2 §5.3).
+pub const HINT_PREFIXES: [&str; 3] = ["appearance", "window", "accessibility"];
 pub const FETCH_TIMEOUT: Duration = Duration::from_secs(1);
 const DEREGISTER_TIMEOUT: Duration = Duration::from_secs(3);
 /// The first retry after a failed subscribe or read, doubling to [`RETRY_MAX`].
@@ -281,11 +282,26 @@ impl Follow {
         self.work = None;
         let wanted = std::mem::take(&mut self.wanted);
         match result {
+            // The two answers straddled a commit (`moved`), or a hint came
+            // during a read whose first failure this is: the authority is
+            // alive and moving, so read again at once, without backoff.
+            Err(error)
+                if work.kind == WorkKind::Read
+                    && (error.code == "moved" || (wanted && self.failures == 0)) =>
+            {
+                if error.code != "moved" {
+                    // Counted, so a second failure backs off.
+                    self.failures = self.failures.saturating_add(1);
+                }
+                self.fault = Some(error);
+                self.issue(WorkKind::Read);
+                None
+            }
             Err(error) => {
                 self.failures = self.failures.saturating_add(1);
                 self.fault = Some(error);
-                // A hint meanwhile folds into the retry: a failing authority
-                // is not asked again faster than the backoff.
+                // Otherwise a hint meanwhile folds into the retry: a failing
+                // authority is not asked again faster than the backoff.
                 self.retry = Some(work.kind);
                 None
             }
@@ -898,6 +914,34 @@ mod tests {
         (follow, read)
     }
 
+    /// A `moved` race, or a hint during a read that fails for the first
+    /// time, reads again at once with no backoff; a second failure in a row
+    /// with no hint backs off.
+    #[test]
+    fn a_moved_race_or_a_hint_during_a_failed_read_rereads_at_once() {
+        let (mut follow, read) = reading();
+        let moved = Diagnostic::new("moved", "settings.palette", "revision moved");
+        assert!(follow.complete(&read, Err(moved)).is_none());
+        let again = follow.current_work().cloned().expect("read again at once");
+        assert_eq!(again.kind(), WorkKind::Read);
+        assert_eq!(follow.retry_delay(), None);
+
+        follow.refresh(); // a hint while the read is in flight
+        let failed = fault(FETCH_COMMAND, "timed out");
+        assert!(follow.complete(&again, Err(failed.clone())).is_none());
+        let third = follow
+            .current_work()
+            .cloned()
+            .expect("the hint's read, at once");
+        assert_eq!(follow.retry_delay(), None);
+
+        // A second failure in a row waits for the backoff, hint or not.
+        follow.refresh();
+        assert!(follow.complete(&third, Err(failed)).is_none());
+        assert!(follow.current_work().is_none());
+        assert_eq!(follow.retry_delay(), Some(RETRY_FIRST * 2));
+    }
+
     #[test]
     fn help_only_lists_commands_enabled_for_this_instance() {
         for enabled in [false, true] {
@@ -944,12 +988,13 @@ mod tests {
     }
 
     #[test]
-    fn it_hints_on_the_appearance_and_window_keys_topics() {
+    fn it_hints_on_the_appearance_window_and_accessibility_keys_topics() {
         assert_eq!(
             hint_topics("default"),
             [
                 "settingsd.desktop.keys.default.appearance",
                 "settingsd.desktop.keys.default.window",
+                "settingsd.desktop.keys.default.accessibility",
             ]
         );
         let delivery = |topic: &str, stamp: Option<&str>| {

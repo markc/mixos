@@ -387,17 +387,22 @@ pub(crate) fn snapshot(
     if bytes > MAX_SNAPSHOT_BYTES {
         return Err(SnapshotTooLarge { bytes }.into());
     }
-    // The compact form is published too, and native consumers hold it to
-    // the budget plus its bounded overhead: refuse what they would refuse.
-    let compact = serde_json::to_vec(&settings::compact::encode(&result)?)?.len();
-    if compact > MAX_SNAPSHOT_BYTES + settings::compact::MAX_OVERHEAD_BYTES {
-        return Err(SnapshotTooLarge { bytes: compact }.into());
+    // The schema 3 snapshot is published, and native consumers hold its
+    // encoding to the budget plus its bounded overhead and the snapshot it
+    // expands to (with its values) to the budget: refuse what they would
+    // refuse, measured on the real encodings.
+    let wire = serde_json::to_vec(&settings::compact::encode_values(&result, &accepted.values)?)?
+        .len();
+    if wire > MAX_SNAPSHOT_BYTES + settings::compact::MAX_OVERHEAD_BYTES {
+        return Err(SnapshotTooLarge { bytes: wire }.into());
     }
-    // Native shells read schema 3 and hold the snapshot it expands to, with
-    // its values, to the same budget.
-    let with_values = bytes + serde_json::to_vec(&accepted.values)?.len() + ",\"values\":".len();
-    if with_values > MAX_SNAPSHOT_BYTES {
-        return Err(SnapshotTooLarge { bytes: with_values }.into());
+    let expanded = Snapshot {
+        values: accepted.values.clone(),
+        ..result.clone()
+    }
+    .encoded_len()?;
+    if expanded > MAX_SNAPSHOT_BYTES {
+        return Err(SnapshotTooLarge { bytes: expanded }.into());
     }
     Ok(result)
 }

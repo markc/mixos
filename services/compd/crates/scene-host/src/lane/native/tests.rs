@@ -135,6 +135,39 @@ fn session_activation_hook_fences_stale_and_failed_preparations() {
     );
 }
 
+/// A schema 3 snapshot whose values do not read (two enabled panels on one
+/// edge; settingsd refuses this, so only a buggy or hostile authority sends
+/// it) reaches Quoin's fault path: nothing activates and the presentation
+/// already applied stays.
+#[test]
+fn a_values_invalid_snapshot_faults_quoin_and_activates_nothing() {
+    let mut session = session();
+    let (_, jobs) = session.handle(Event::Wake, Some(1));
+    let first = jobs
+        .prepare
+        .unwrap()
+        .prepare_registered(|s| crate::appearance::build(s).map(|_| 1));
+    assert!(session.handle(Event::Prepared(first), Some(1)).0.is_some());
+    let mut bad = snapshot(2, true);
+    for (key, value) in [
+        ("shell.panels.top.enabled", serde_json::json!(true)),
+        ("shell.panels.top.edge", serde_json::json!("bottom")),
+    ] {
+        bad.values.insert(key.into(), value);
+    }
+    let (change, jobs) = session.handle(Event::Delivery(decoded_snapshot(bad)), Some(1));
+    assert!(change.is_none());
+    if let Some(request) = jobs.prepare {
+        let done = request.prepare_registered(|s| crate::appearance::build(s).map(|_| 2));
+        assert!(session.handle(Event::Prepared(done), Some(1)).0.is_none());
+    }
+    assert!(session.host().consumer().fault().is_some());
+    assert_eq!(
+        session.host().consumer().applied().unwrap().revision,
+        Revision(1)
+    );
+}
+
 #[test]
 fn current_embedded_fallback_runs_activation_hook_once() {
     let mut session = Session::<u64>::new(Consumer::for_app(binding(), "ced").unwrap());

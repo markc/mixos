@@ -2636,8 +2636,6 @@ mod tests {
             );
             if custom_source {
                 assert_eq!(expected.dictionary(), shell.file_theme.dictionary());
-            }
-            if custom_source {
                 // A design source of its own: the follower reports it.
                 values.insert("appearance.source".to_owned(), json!("design: {}"));
             }

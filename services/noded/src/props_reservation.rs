@@ -96,6 +96,11 @@ pub(crate) fn publisher_owner(name: &str) -> Option<&str> {
 /// (`settingsd.desktop.summary[.<profile>]`); contract 1.0.0's snapshot
 /// (schema 3) and look (`settingsd.desktop.snapshot|look[.<profile>]`) and
 /// its per-prefix keys (`settingsd.desktop.keys.<profile>.<prefix>`).
+///
+/// Contract 1.0.0 publishes none of the first three. They stay reserved for
+/// the downgrade window: an authority rolled back with `settingsd downgrade
+/// --to 4` publishes on them again, and its followers must not take a
+/// spoofed body meanwhile.
 fn settings_topic(name: &str) -> bool {
     [
         "settingsd.desktop.changed",
