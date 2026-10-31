@@ -218,8 +218,12 @@ enum Event {
         revision: Revision,
         ok: bool,
     },
-    /// A mirror's attach answered (the push it carries) or failed.
-    Attached(Result<Box<RevisionPush>, String>),
+    /// A mirror's attach answered (the push it carries) or failed, on
+    /// the broker connection `generation` it was sent on.
+    Attached {
+        generation: u64,
+        outcome: Result<Box<RevisionPush>, String>,
+    },
     /// A forwarded write reached the authority, or could not.
     Forwarded { reached: bool },
 }
@@ -321,6 +325,7 @@ impl Ctx {
         let to = mirroring::address(authority_node);
         let client = self.client.clone();
         let events = self.events.clone();
+        let generation = client.connection_generation();
         tokio::spawn(async move {
             let reply = client
                 .call_with_headers_raw_within(
@@ -339,7 +344,8 @@ impl Ctx {
                 Ok((rc, body, error)) => Err(format!("rc {rc}: {body} {error:?}")),
                 Err(error) => Err(error.to_string()),
             };
-            let _ = events.send(Event::Attached(outcome.map(Box::new)));
+            let outcome = outcome.map(Box::new);
+            let _ = events.send(Event::Attached { generation, outcome });
         });
     }
 
@@ -672,7 +678,10 @@ async fn run(mut authority: Authority, root: PathBuf, noded_url: String) -> anyh
                     }
                     ctx.push_due(&authority);
                 }
-                Event::Attached(Ok(push)) => {
+                // An answer from before the latest reconnect: that
+                // connection's attach is void, a new one is in flight.
+                Event::Attached { generation, .. } if generation != client.connection_generation() => {}
+                Event::Attached { outcome: Ok(push), .. } => {
                     ctx.attaching = false;
                     let (taken, result) = adopt(authority, &ctx, *push).await;
                     authority = taken;
@@ -682,7 +691,7 @@ async fn run(mut authority: Authority, root: PathBuf, noded_url: String) -> anyh
                     }
                     ctx.publish(&mut authority).await;
                 }
-                Event::Attached(Err(error)) => {
+                Event::Attached { outcome: Err(error), .. } => {
                     ctx.attaching = false;
                     tracing::warn!(%error, "authority unreachable; serving the cache stale until its push or our reconnect");
                     ctx.publish(&mut authority).await;
