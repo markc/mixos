@@ -52,7 +52,12 @@ impl PaletteKind {
 }
 
 /// One built-in palette: 32 named opaque sRGB colours and its kind.
-#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize)]
+///
+/// Serialised flat, as a COSMIC theme carries its palette: `kind`, then the
+/// 32 colours by name, the neutral ramp as `neutral_0` to `neutral_10`
+/// (theme-model spec §4.2 step 30). The ramp is the untinted one even when
+/// a builder sets a control tint.
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BasePalette {
     pub kind: PaletteKind,
     pub bright_red: SrgbColour,
@@ -81,6 +86,54 @@ pub struct BasePalette {
     pub ext_purple: SrgbColour,
     pub ext_pink: SrgbColour,
     pub ext_indigo: SrgbColour,
+}
+
+/// The serialised names of [`BasePalette::neutral`]'s eleven steps.
+pub const NEUTRAL_NAMES: [&str; 11] = [
+    "neutral_0",
+    "neutral_1",
+    "neutral_2",
+    "neutral_3",
+    "neutral_4",
+    "neutral_5",
+    "neutral_6",
+    "neutral_7",
+    "neutral_8",
+    "neutral_9",
+    "neutral_10",
+];
+
+impl serde::Serialize for BasePalette {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut out = serializer.serialize_struct("BasePalette", 33)?;
+        out.serialize_field("kind", &self.kind)?;
+        out.serialize_field("bright_red", &self.bright_red)?;
+        out.serialize_field("bright_green", &self.bright_green)?;
+        out.serialize_field("bright_orange", &self.bright_orange)?;
+        out.serialize_field("gray_1", &self.gray_1)?;
+        out.serialize_field("gray_2", &self.gray_2)?;
+        for (name, colour) in NEUTRAL_NAMES.into_iter().zip(&self.neutral) {
+            out.serialize_field(name, colour)?;
+        }
+        out.serialize_field("accent_blue", &self.accent_blue)?;
+        out.serialize_field("accent_indigo", &self.accent_indigo)?;
+        out.serialize_field("accent_purple", &self.accent_purple)?;
+        out.serialize_field("accent_pink", &self.accent_pink)?;
+        out.serialize_field("accent_red", &self.accent_red)?;
+        out.serialize_field("accent_orange", &self.accent_orange)?;
+        out.serialize_field("accent_yellow", &self.accent_yellow)?;
+        out.serialize_field("accent_green", &self.accent_green)?;
+        out.serialize_field("accent_warm_grey", &self.accent_warm_grey)?;
+        out.serialize_field("ext_warm_grey", &self.ext_warm_grey)?;
+        out.serialize_field("ext_orange", &self.ext_orange)?;
+        out.serialize_field("ext_yellow", &self.ext_yellow)?;
+        out.serialize_field("ext_blue", &self.ext_blue)?;
+        out.serialize_field("ext_purple", &self.ext_purple)?;
+        out.serialize_field("ext_pink", &self.ext_pink)?;
+        out.serialize_field("ext_indigo", &self.ext_indigo)?;
+        out.end()
+    }
 }
 
 /// The names of the nine accent swatches, in the Appearance page's order.
