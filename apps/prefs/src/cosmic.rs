@@ -354,7 +354,8 @@ fn search_field(ui: &mut Ui, engine: &Engine, look: &Look, events: &mut Vec<UiEv
             if response.changed() {
                 events.push(UiEvent::Query(query.clone()));
             }
-            if response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            // The field gives up focus on Escape before this sees it.
+            if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                 events.push(UiEvent::CloseSearch);
             }
             let clear = ui.add(
