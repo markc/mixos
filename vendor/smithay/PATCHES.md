@@ -215,6 +215,12 @@ that the source retains its Move payload.
 - `debug_atom_name` skips atom 0 and uses a checked reply for the rest, so a failed lookup never becomes an error event. Only the debug text changes (`Some(name)` / `None`); tracing evaluates it only when debug logging is on.
 - Guard: none needed beyond the build; the behaviour is a debug-only argument.
 
+**`X11Surface::kill_client` and `x_client_base`** (`xwayland/xwm/surface.rs`).
+- Upstream has no per-window force close for X11: `close` sends `WM_DELETE_WINDOW` (or destroys the window), and every X11 window shares one Wayland client (Xwayland), so killing that client would take every X11 app. compd's `comp.window.close {force}` needs to kill one X client.
+- `kill_client` sends `KillClient` on the window, so the X server closes the connection that created it (what `xkill` and every X window manager's force close do). It refuses, sending nothing, for a server-owned resource (resource base 0) or one on the window manager's own connection (base equal to the WM's `resource_id_base`), and `Disconnected` when the WM connection is gone. `X11KillError` names each case.
+- `x_client_base` returns the window id with the server's `resource_id_mask` bits cleared, so compd can list every window of the same X client (the windows the kill takes).
+- Guard: `compd_offline_tests::kill_client_refuses_the_server_and_its_own_connection` (inside the `offline X11 setters` guard).
+
 **Release-point signal failures are counted** (`wayland/drm_syncobj/sync_point.rs`).
 - Every syncobj release-point signal goes through `DrmSyncPoint::signal`; smithay's callers (buffer release, merge, destruction, the cleared-pending path) only log a failure. A failed signal leaves the client waiting on a release that never comes, which compd counts as an explicit-sync fault.
 - `signal` now routes its result through `note_signal`, which counts failures in a process-wide atomic; `drm_syncobj::signal_failures()` exposes the count. compd's `dispatcher` `explicit_sync::healthy` latches `info.explicit_sync_healthy` false on the first one and then refuses new explicit-sync commits. Behaviour of `signal` is otherwise unchanged (same result, same error).

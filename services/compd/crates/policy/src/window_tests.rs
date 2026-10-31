@@ -932,7 +932,7 @@ fn place_moves_output_locally_keeps_the_real_size_and_refuses_off_output() {
 }
 
 /// Force-close kills only a window still alive at the deadline, kills a
-/// window that only unmapped, and refuses X11.
+/// window that only unmapped, and kills an X11 window's own X client.
 #[test]
 fn force_close_kills_only_the_same_window_still_alive_at_the_deadline() {
     let (mut registry, (id, generation), _) = two_windows();
@@ -945,7 +945,8 @@ fn force_close_kills_only_the_same_window_still_alive_at_the_deadline() {
         force_close_at_deadline(&registry, id, generation, false),
         ForceCloseOutcome::Kill {
             id: a,
-            mapped: true
+            mapped: true,
+            via: KillVia::WaylandClient,
         }
     );
     registry.set_mapped(a, false).unwrap();
@@ -953,7 +954,8 @@ fn force_close_kills_only_the_same_window_still_alive_at_the_deadline() {
         force_close_at_deadline(&registry, id, generation, false),
         ForceCloseOutcome::Kill {
             id: a,
-            mapped: false
+            mapped: false,
+            via: KillVia::WaylandClient,
         }
     );
     assert_eq!(
@@ -977,19 +979,20 @@ fn force_close_kills_only_the_same_window_still_alive_at_the_deadline() {
         generation,
         40,
         false,
+        KillVia::WaylandClient,
         Some(4242),
         vec![9, 3],
     ))
     .1;
     assert_eq!(
         reply,
-        json!({"id": id, "generation": generation, "closed": "killed", "waited_ms": 40, "window": "unmapped", "scope": "client", "pid": 4242, "windows": [3, 9]})
+        json!({"id": id, "generation": generation, "closed": "killed", "waited_ms": 40, "window": "unmapped", "scope": "client", "via": "wayland_client", "pid": 4242, "windows": [3, 9]})
     );
     assert_eq!(
         body(close_reply(id, generation, "gone", 5)).1["closed"],
         "gone"
     );
-    // X11: polite close sent, kill refused at once.
+    // X11: polite close now, then its own X client is killed at the deadline.
     let (x11, x11_generation) = registry
         .take_role(
             7,
@@ -1000,14 +1003,45 @@ fn force_close_kills_only_the_same_window_still_alive_at_the_deadline() {
         )
         .unwrap();
     registry.set_mapped(x11, true).unwrap();
-    let (refusal, effects) =
-        start_force_close(&registry, x11.0, x11_generation, false).unwrap_err();
-    assert_eq!(effects, [Effect::ClosePolite(x11)]);
     assert_eq!(
-        body(refusal),
+        start_force_close(&registry, x11.0, x11_generation, false),
+        Ok(vec![Effect::ClosePolite(x11)])
+    );
+    assert_eq!(
+        force_close_at_deadline(&registry, x11.0, x11_generation, false),
+        ForceCloseOutcome::Kill {
+            id: x11,
+            mapped: true,
+            via: KillVia::X11Client,
+        }
+    );
+    assert_eq!(
+        force_close_at_deadline(&registry, x11.0, x11_generation, true),
+        ForceCloseOutcome::Locked
+    );
+    let x11_reply = body(kill_reply(
+        x11.0,
+        x11_generation,
+        5000,
+        true,
+        KillVia::X11Client,
+        Some(77),
+        vec![x11.0],
+    ))
+    .1;
+    assert_eq!(x11_reply["via"], "x11_client");
+    assert_eq!(x11_reply["closed"], "killed");
+    // The host could not attribute a client: still open, with the reason.
+    assert_eq!(
+        body(kill_refused_reply(
+            x11.0,
+            x11_generation,
+            5000,
+            "x11_client_unattributed"
+        )),
         (
             10,
-            json!({"error": "still_open", "id": x11.0, "generation": x11_generation, "reason": "x11_kill_unsupported", "polite_close_sent": true})
+            json!({"error": "still_open", "id": x11.0, "generation": x11_generation, "waited_ms": 5000, "reason": "x11_client_unattributed", "polite_close_sent": true})
         )
     );
 }

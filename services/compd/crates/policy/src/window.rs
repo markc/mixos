@@ -395,9 +395,9 @@ pub fn close<H: Clone + Eq + Hash>(
 }
 
 /// `comp.window.close {force}` at admission: refused under the lock or for
-/// a bad target; the polite close goes out now; an X11 window (whose
-/// client is Xwayland itself) is refused at once, polite close sent.
-/// `Ok(effects)` means: start the deadline.
+/// a bad target; otherwise the polite close (`xdg_toplevel.close`, or
+/// `WM_DELETE_WINDOW` for X11) goes out now. `Ok(effects)` means: start
+/// the deadline.
 pub fn start_force_close<H: Clone + Eq + Hash>(
     registry: &Registry<H>,
     id: u64,
@@ -408,22 +408,27 @@ pub fn start_force_close<H: Clone + Eq + Hash>(
         return Err((ControlReply::Locked, Vec::new()));
     }
     let record = resolve(registry, id, generation).map_err(|reply| (reply, Vec::new()))?;
-    let effects = vec![Effect::ClosePolite(record.id())];
-    if record.role() != SurfaceRole::Toplevel {
-        return Err((
-            ControlReply::refused(
-                "still_open",
-                json!({
-                    "id": id,
-                    "generation": generation,
-                    "reason": "x11_kill_unsupported",
-                    "polite_close_sent": true,
-                }),
-            ),
-            effects,
-        ));
+    Ok(vec![Effect::ClosePolite(record.id())])
+}
+
+/// Which client a force close kills.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum KillVia {
+    /// An xdg window: its own Wayland client.
+    WaylandClient,
+    /// An X11 window: its own X client (`KillClient` through the window
+    /// manager), never Xwayland, which every X11 window shares.
+    X11Client,
+}
+
+impl KillVia {
+    /// The reply's `via` word.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::WaylandClient => "wayland_client",
+            Self::X11Client => "x11_client",
+        }
     }
-    Ok(effects)
 }
 
 /// What a force close does at its deadline.
@@ -433,10 +438,13 @@ pub enum ForceCloseOutcome {
     Gone,
     /// The lock owns the screen; no kill lands while it is up.
     Locked,
-    /// No per-client kill for X11.
-    StillOpen(ControlReply),
-    /// Kill the client; reply [`kill_reply`].
-    Kill { id: SurfaceId, mapped: bool },
+    /// Kill the window's own client; reply [`kill_reply`], or
+    /// [`kill_refused_reply`] when the host cannot attribute one.
+    Kill {
+        id: SurfaceId,
+        mapped: bool,
+        via: KillVia,
+    },
 }
 
 /// The force-close deadline decision. Gone means unknown or a new
@@ -459,16 +467,31 @@ pub fn force_close_at_deadline<H: Clone + Eq + Hash>(
     let Some(record) = registry.get(SurfaceId(id)) else {
         return ForceCloseOutcome::Gone;
     };
-    if record.role() != SurfaceRole::Toplevel {
-        return ForceCloseOutcome::StillOpen(ControlReply::refused(
-            "still_open",
-            json!({"id": id, "generation": generation, "reason": "x11_kill_unsupported"}),
-        ));
-    }
+    let via = match record.role() {
+        SurfaceRole::X11 { .. } => KillVia::X11Client,
+        _ => KillVia::WaylandClient,
+    };
     ForceCloseOutcome::Kill {
         id: record.id(),
         mapped: record.mapped(),
+        via,
     }
+}
+
+/// The deadline passed but the host would not kill: it could not
+/// attribute a client to the window (or the client is compd or
+/// Xwayland). The polite close was sent; the window is still open.
+pub fn kill_refused_reply(id: u64, generation: u64, waited_ms: u64, reason: &str) -> ControlReply {
+    ControlReply::refused(
+        "still_open",
+        json!({
+            "id": id,
+            "generation": generation,
+            "waited_ms": waited_ms,
+            "reason": reason,
+            "polite_close_sent": true,
+        }),
+    )
 }
 
 pub fn close_reply(id: u64, generation: u64, closed: &str, waited_ms: u64) -> ControlReply {
@@ -480,13 +503,14 @@ pub fn close_reply(id: u64, generation: u64, closed: &str, waited_ms: u64) -> Co
     }))
 }
 
-/// The killed reply: the client's pid and every managed window it had
-/// (ids, sorted), since the kill takes them all.
+/// The killed reply: how the client was killed, its pid and every managed
+/// window it had (ids, sorted), since the kill takes them all.
 pub fn kill_reply(
     id: u64,
     generation: u64,
     waited_ms: u64,
     mapped: bool,
+    via: KillVia,
     pid: Option<i32>,
     mut windows: Vec<u64>,
 ) -> ControlReply {
@@ -496,6 +520,7 @@ pub fn kill_reply(
     };
     body["window"] = json!(if mapped { "mapped" } else { "unmapped" });
     body["scope"] = json!("client");
+    body["via"] = json!(via.name());
     body["pid"] = json!(pid);
     body["windows"] = json!(windows);
     ControlReply::Body(body)

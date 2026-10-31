@@ -294,6 +294,38 @@ impl From<X11Error> for X11SurfaceError {
     }
 }
 
+/// Why [`X11Surface::kill_client`] did not kill.
+#[derive(Debug, thiserror::Error)]
+pub enum X11KillError {
+    /// The window manager's X connection is gone.
+    #[error("the window manager's X connection is gone")]
+    Disconnected,
+    /// The window is a server-owned resource (resource base 0), not a client's.
+    #[error("the window is owned by the X server, not a client")]
+    ServerOwned,
+    /// The window belongs to the window manager's own connection.
+    #[error("the window belongs to the window manager's own X connection")]
+    OwnConnection,
+    /// Error on the underlying X11 connection.
+    #[error(transparent)]
+    Connection(ConnectionError),
+}
+
+/// The owning client's resource-id base of an X resource.
+fn x_client_base(resource: u32, resource_id_mask: u32) -> u32 {
+    resource & !resource_id_mask
+}
+
+/// Whether `KillClient` on `window` would hit a separate X client: never the server
+/// (base 0) and never the connection whose base is `own_base`.
+fn kill_target_check(window: u32, own_base: u32, resource_id_mask: u32) -> Result<(), X11KillError> {
+    match x_client_base(window, resource_id_mask) {
+        0 => Err(X11KillError::ServerOwned),
+        base if base == x_client_base(own_base, resource_id_mask) => Err(X11KillError::OwnConnection),
+        _ => Ok(()),
+    }
+}
+
 /// Window types of [`X11Surface`]s
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[allow(missing_docs)]
@@ -1332,6 +1364,32 @@ impl X11Surface {
             .find(|id| id.spec.mask == ClientIdMask::LOCAL_CLIENT_PID)
             .and_then(|id| id.value.first().copied())
             .filter(|pid| *pid != 0)
+    }
+
+    /// The X client that owns this window, as its resource-id base: the window id with
+    /// the per-client resource bits (the server's `resource_id_mask`) cleared. Two
+    /// windows with the same base belong to the same X connection. `None` when the
+    /// window manager's connection is gone.
+    pub fn x_client_base(&self) -> Option<u32> {
+        let conn = self.conn.upgrade()?;
+        Some(x_client_base(self.window, conn.setup().resource_id_mask))
+    }
+
+    /// Force-close this window's X client: `KillClient` on the window, which makes the X
+    /// server close the connection that created it (the standard window-manager force
+    /// close; `xkill` does the same). Every window of that one client goes; no other X
+    /// client, and not Xwayland, is touched.
+    ///
+    /// Refused, with nothing sent, when the owner cannot be a separate X client: a
+    /// resource with base 0 is the server's own, and the window manager's own base would
+    /// make the server cut off the window manager itself.
+    pub fn kill_client(&self) -> Result<(), X11KillError> {
+        let conn = self.conn.upgrade().ok_or(X11KillError::Disconnected)?;
+        let setup = conn.setup();
+        kill_target_check(self.window, setup.resource_id_base, setup.resource_id_mask)?;
+        conn.kill_client(self.window)
+            .map_err(X11KillError::Connection)?;
+        conn.flush().map_err(X11KillError::Connection)
     }
 
     /// Returns the opacity of the underlying X11 window
@@ -3033,5 +3091,29 @@ mod compd_offline_tests {
         assert_eq!(surface.wl_surface(), None);
 
         assert_eq!(surface.keyboard_enters_for_test(), 0);
+    }
+
+    /// `kill_client` hits only a separate X client: never the server's own resources and
+    /// never the window manager's connection; offline it sends nothing.
+    #[test]
+    fn kill_client_refuses_the_server_and_its_own_connection() {
+        use super::{X11KillError, kill_target_check, x_client_base};
+        // Xorg/Xwayland default: 21 resource bits per client.
+        let mask = 0x001F_FFFF;
+        let wm_base = 0x0020_0000;
+        let app_window = 0x0060_0007;
+        assert_eq!(x_client_base(app_window, mask), 0x0060_0000);
+        assert!(kill_target_check(app_window, wm_base, mask).is_ok());
+        assert!(matches!(
+            kill_target_check(0x0000_0123, wm_base, mask),
+            Err(X11KillError::ServerOwned)
+        ));
+        assert!(matches!(
+            kill_target_check(0x0020_0042, wm_base, mask),
+            Err(X11KillError::OwnConnection)
+        ));
+        let surface = offline_surface(app_window);
+        assert_eq!(surface.x_client_base(), None);
+        assert!(matches!(surface.kill_client(), Err(X11KillError::Disconnected)));
     }
 }
