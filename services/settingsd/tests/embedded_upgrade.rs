@@ -174,8 +174,7 @@ fn a_store_sealed_before_s2_opens_and_serves_unchanged() {
     let (store, mut data) =
         Store::create(dir.path(), binding(), settings::Desktop::default()).unwrap();
     drop(store);
-    data.embedded_source =
-        include_str!("fixtures/2026-10-31-before-s2.theme.conf.mix").into();
+    data.embedded_source = include_str!("fixtures/2026-10-31-before-s2.theme.conf.mix").into();
     assert_ne!(data.embedded_source, settings::EMBEDDED_DEFAULT_SOURCE);
     data.effective_digest = SEALED_BEFORE_S2.into();
     data.seal().unwrap();
