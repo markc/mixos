@@ -255,7 +255,9 @@ impl Shell {
                     self.app.absorb(fx);
                 }
                 Delivery::NotificationFailed { text } => self.app.notification_failed(text),
-                Delivery::Incoming(Incoming::Topic { topic, .. }) if self.follower.is_hint(&topic) => {
+                Delivery::Incoming(Incoming::Topic { topic, .. })
+                    if self.follower.is_hint(&topic) =>
+                {
                     // A hint, never trusted: the look comes from the read.
                     // The window's own topic: the controller never sees it.
                     self.read_look();
@@ -524,7 +526,12 @@ impl Shell {
             .look
             .as_ref()
             .map(|look| {
-                toolkit::session_look::follow_look(look, Some(APP), self.custom_source, &self.file_theme)
+                toolkit::session_look::follow_look(
+                    look,
+                    Some(APP),
+                    self.custom_source,
+                    &self.file_theme,
+                )
             })
             .unwrap_or_else(|| self.file_theme.clone())
             .with_ui(self.common_ui.clone());
