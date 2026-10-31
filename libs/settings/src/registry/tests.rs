@@ -241,8 +241,25 @@ fn live_keys_are_refused_by_set_and_reset() {
         let stored = Values::from([(def.path.to_owned(), json!(true))]);
         assert_eq!(validate(&stored).unwrap_err()[0].code, "live_key");
     }
+    // The refusal is structured: the owner and its commands, null where the
+    // owner has no such command yet.
     let message = &set(&[("system.hostname", json!("x"))]).unwrap_err()[0].message;
-    assert!(message.contains("hostd"), "{message}");
+    let detail: Value = serde_json::from_str(message).unwrap();
+    assert_eq!(detail, json!({"owner": "hostd", "read": "host.info", "write": null}));
+    let message = &set(&[("power.battery", json!(1))]).unwrap_err()[0].message;
+    let detail: Value = serde_json::from_str(message).unwrap();
+    assert_eq!(detail, json!({"owner": "hostd", "read": null, "write": null}));
+    let described = describe_key(lookup("power.battery").unwrap().def);
+    assert_eq!((&described["read"], &described["write"]), (&Value::Null, &Value::Null));
+    // A prefix of live keys only is refused as live; a mixed one resets the
+    // stored keys under it.
+    for prefix in ["system.*", "network.*", "bluetooth.*"] {
+        let reset = apply(&Values::new(), &BTreeMap::new(), &[prefix.into()]);
+        assert_eq!(codes(reset)[0].0, "live_key", "{prefix}");
+    }
+    let amplified = set(&[("sound.input.amplify", json!(true))]).unwrap();
+    let reset = apply(&amplified, &BTreeMap::new(), &["sound.*".into()]).unwrap();
+    assert!(reset.is_empty());
 }
 
 /// §2.18 as corrected: `apps_default.<category>` is one pattern, so its row
@@ -466,6 +483,8 @@ fn kinds_refuse_what_they_do_not_accept() {
         ),
         ("apps.term.mode", json!("auto")),
         ("state.appearance.mode_override", json!("auto")),
+        ("appearance.source", json!("run_argv([\"do-not-execute\"])")),
+        ("appearance.source", json!("")),
     ] {
         assert!(set(&[(path, value.clone())]).is_err(), "{path} = {value}");
     }
@@ -478,6 +497,10 @@ fn placeholders_are_typed_and_unknown_paths_refused() {
         "displays.HDMI A.enabled",
         "apps_default.browser",
         "apps.bad app.mode",
+        // A rest capture never excuses the captures before it.
+        "keymaps.invalid app!.foo",
+        "keymaps.bad app.nav.back",
+        "keymaps..nav.back",
         "appearance.nope",
         "ui.density",
         "shell.page_order",
@@ -703,7 +726,7 @@ fn panels_may_not_share_an_edge() {
 
 #[test]
 fn the_compositor_never_binds_a_bare_function_key() {
-    for chord in ["F1", "F12"] {
+    for chord in ["F1", "F12", "f1", "f12"] {
         assert_eq!(
             codes(set(&[("keymaps.comp.window.close", json!([chord]))]))[0].0,
             "constraint_failed"
@@ -800,4 +823,67 @@ fn describe_lists_every_key_and_filters_by_prefix() {
     assert!(hostname.get("default").is_none());
     let thickness = describe_key(lookup("shell.panels.top.thickness").unwrap().def);
     assert_eq!(thickness["default_by"], json!({"top": 32, "bottom": 40}));
+}
+
+#[test]
+fn accent_swatches_are_described_with_both_modes() {
+    use design::cosmic_tables::{DARK_PALETTE, LIGHT_PALETTE, SWATCH_NAMES};
+    assert_eq!(appearance::ACCENT_WORDS[0], "auto");
+    assert_eq!(&appearance::ACCENT_WORDS[1..], SWATCH_NAMES.as_slice());
+    let accent = describe_key(lookup("appearance.accent").unwrap().def);
+    let swatches = accent["swatches"].as_array().unwrap();
+    assert_eq!(swatches.len(), 9);
+    for (swatch, name) in swatches.iter().zip(SWATCH_NAMES) {
+        assert_eq!(swatch["name"], name);
+        for (mode, palette) in [("dark", &DARK_PALETTE), ("light", &LIGHT_PALETTE)] {
+            let hex = palette.swatch(name).unwrap().to_hex()[..7].to_ascii_lowercase();
+            assert_eq!(swatch[mode], json!(hex), "{name} {mode}");
+        }
+    }
+    assert_eq!(swatches[8]["dark"], "#cabab4");
+}
+
+#[test]
+fn every_int_step_is_positive_and_spawn_entries_are_stored() {
+    fn steps(kind: &Kind) -> bool {
+        match kind {
+            Kind::Int { step, .. } => *step > 0,
+            Kind::List(of, ..) => steps(of),
+            _ => true,
+        }
+    }
+    for def in keys() {
+        assert!(steps(&def.kind), "{}", def.path);
+    }
+    let spawn = lookup("keymaps.comp.spawn.term").unwrap().def;
+    assert_eq!((spawn.class, spawn.owner), (Class::Stored, None));
+    // A zero step is never a division: the guard holds even for a bad table.
+    let zero = Kind::Int { min: 0, max: 10, step: 0 };
+    assert_eq!(kind::check(&zero, "x", &json!(7)).unwrap(), json!(7));
+}
+
+#[test]
+fn the_design_source_is_compiled_by_its_kind() {
+    set(&[("appearance.source", json!(design::EMBEDDED_DEFAULT_SOURCE))]).unwrap();
+    let broken = codes(set(&[("appearance.source", json!("{\"v1\":"))]));
+    assert_eq!(broken, [("validation_failed".into(), "appearance.source".into())]);
+}
+
+#[test]
+fn app_domains_report_every_error() {
+    let errors = set(&[
+        ("terminal.padding", json!("wide")),
+        ("terminal.cursor.shape", json!(5)),
+    ])
+    .unwrap_err();
+    let paths: Vec<&str> = errors.iter().map(|d| d.path.as_str()).collect();
+    assert_eq!(paths, ["terminal.cursor.shape", "terminal.padding"]);
+    // Range checks: one per record, from every record.
+    let errors = set(&[
+        ("terminal.padding", json!(3)),
+        ("ced.editor.font.family", json!("Inter")),
+    ])
+    .unwrap_err();
+    let paths: Vec<&str> = errors.iter().map(|d| d.path.as_str()).collect();
+    assert_eq!(paths, ["terminal.padding", "ced.editor.font.family"]);
 }

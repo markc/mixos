@@ -10,6 +10,5 @@ pub(super) const KEYS: &[K] = &[
         .constraints(&["C8", "user_keys"]),
     K::new("keymaps.comp.spawn.<name>", Spawn, D::Null)
         .on("input/keyboard/shortcuts", &[Input])
-        .applied("compd")
         .constraints(&["C8", "user_keys"]),
 ];

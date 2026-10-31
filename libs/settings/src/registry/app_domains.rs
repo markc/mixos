@@ -75,6 +75,8 @@ pub(super) const KEYS: &[K] = &[
             step: 0.0,
         },
     ),
+    // No domains of its own: each style token carries its own in
+    // `design::tunables()` (`Tunable::domains`), which the change plan reads.
     K::new(
         "tune.style.<token>",
         Kind::Tunable,
@@ -120,10 +122,16 @@ impl Records {
         })
     }
 
-    fn validate(&self) -> Result<(), Diagnostic> {
-        terminal::validate(&self.terminal)?;
-        email::validate(&self.email)?;
-        content::validate_ced(&self.ced)
+    /// Each record's first error: the modules stop at their first.
+    fn validate(&self) -> Vec<Diagnostic> {
+        [
+            terminal::validate(&self.terminal),
+            email::validate(&self.email),
+            content::validate_ced(&self.ced),
+        ]
+        .into_iter()
+        .filter_map(Result::err)
+        .collect()
     }
 
     fn is_default(&self) -> bool {
@@ -146,15 +154,20 @@ pub(super) fn is_default(path: &str, value: &Value) -> bool {
 }
 
 /// Every stored domain leaf, laid onto its record, then each record checked
-/// by its module.
+/// by its module. Every leaf that will not set is reported; the records are
+/// checked only when every leaf set.
 pub(super) fn check(values: &Values) -> Vec<Diagnostic> {
     let mut records = Records::new();
-    for (path, value) in values.iter().filter(|(p, _)| is_domain(p)) {
-        if let Some(Err(e)) = records.set(path, value) {
-            return vec![e];
-        }
+    let errors: Vec<Diagnostic> = values
+        .iter()
+        .filter(|(p, _)| is_domain(p))
+        .filter_map(|(path, value)| records.set(path, value)?.err())
+        .collect();
+    if errors.is_empty() {
+        records.validate()
+    } else {
+        errors
     }
-    records.validate().err().into_iter().collect()
 }
 
 /// Every leaf the modules describe, by path.

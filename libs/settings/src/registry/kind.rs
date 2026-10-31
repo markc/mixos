@@ -47,7 +47,7 @@ pub fn check(kind: &Kind, path: &str, value: &Value) -> Result<Value, Diagnostic
             .ok_or_else(|| error(path, "Expected true or false")),
         Kind::Int { min, max, step } => {
             let n = whole(value).ok_or_else(|| error(path, "Expected a whole number"))?;
-            if !(min..=max).contains(&n) || (n - min) % step != 0 {
+            if !(min..=max).contains(&n) || (step > 0 && (n - min) % step != 0) {
                 let grid = if step > 1 {
                     format!(" in steps of {step}")
                 } else {
@@ -93,7 +93,7 @@ pub fn check(kind: &Kind, path: &str, value: &Value) -> Result<Value, Diagnostic
             // Unknown names are retained for profiles shared with newer
             // binaries; the shape is the design's plain-name grammar.
             let name = text(path, value)?;
-            if design::WindowStyle::valid_name(name) {
+            if super::appearance_name(name) {
                 Ok(name.into())
             } else {
                 Err(error(
@@ -129,6 +129,13 @@ pub fn check(kind: &Kind, path: &str, value: &Value) -> Result<Value, Diagnostic
             let given = text(path, value)?;
             if given.len() > max_bytes {
                 return Err(error(path, format!("At most {max_bytes} bytes")));
+            }
+            if grammar == Grammar::Source {
+                // Parsed and compiled for the desktop context; resolution
+                // still compiles every context before acceptance.
+                return crate::resolve::source_compiles(given)
+                    .map(|()| given.into())
+                    .map_err(|why| error(path, why));
             }
             string(grammar, given)
                 .ok_or_else(|| error(path, format!("Expected a {}", grammar.name())))
@@ -209,7 +216,7 @@ fn digits(s: &str, max: usize) -> bool {
 /// The canonical string for `grammar`, or None when `given` is not one.
 fn string(grammar: Grammar, given: &str) -> Option<Value> {
     let ok = match grammar {
-        Grammar::Plain => crate::terminal::valid_family(given),
+        Grammar::Plain => super::plain_name(given),
         Grammar::DirName => {
             !given.is_empty()
                 && !given.starts_with('.')
@@ -256,7 +263,8 @@ fn string(grammar: Grammar, given: &str) -> Option<Value> {
                     .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
         }),
         Grammar::Applet => crate::keymap::valid_action(given),
-        Grammar::Source => true,
+        // Compiled by `check` before it gets here; refuse rather than pass.
+        Grammar::Source => false,
         Grammar::WallpaperColour => return wallpaper_colour(given).map(Value::String),
     };
     ok.then(|| given.into())

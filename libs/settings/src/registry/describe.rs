@@ -105,6 +105,23 @@ fn kind_fields(kind: &Kind, out: &mut Map<String, Value>) {
     }
 }
 
+/// The nine accent swatches with each mode's colour (ruling 8), in the
+/// Appearance page's order: `[{name, dark, light}]`, `#rrggbb`.
+pub fn swatches() -> Value {
+    use design::cosmic_tables::{DARK_PALETTE, LIGHT_PALETTE, SWATCH_NAMES};
+    let hex = |palette: &design::cosmic_tables::BasePalette, name: &str| {
+        palette
+            .swatch(name)
+            .map(|c| c.to_hex()[..7].to_ascii_lowercase())
+    };
+    SWATCH_NAMES
+        .iter()
+        .map(|name| {
+            json!({"name": name, "dark": hex(&DARK_PALETTE, name), "light": hex(&LIGHT_PALETTE, name)})
+        })
+        .collect()
+}
+
 /// One key's entry.
 pub fn describe_key(def: &KeyDef) -> Value {
     let mut out = Map::new();
@@ -149,8 +166,14 @@ pub fn describe_key(def: &KeyDef) -> Value {
             owner.into(),
         );
     }
-    if let Some(command) = def.command {
-        out.insert("command".into(), command.into());
+    // A live key always names both commands; null is a backend its owner
+    // does not have yet.
+    if def.class == Class::Live || def.read.is_some() || def.write.is_some() {
+        out.insert("read".into(), def.read.into());
+        out.insert("write".into(), def.write.into());
+    }
+    if def.path == "appearance.accent" {
+        out.insert("swatches".into(), swatches());
     }
     if !def.domains.is_empty() {
         let names: Vec<&str> = def.domains.iter().map(|d| d.name()).collect();

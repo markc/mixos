@@ -24,7 +24,7 @@ pub const SCHEMES: &[&str] = &[
 pub const STYLES: &[&str] = &["plain", "pro", "studio", "classic", "breeze", "adwaita"];
 /// `auto` and COSMIC's nine accent swatches; each swatch resolves per mode
 /// in `libs/design`.
-const ACCENT_WORDS: &[&str] = &[
+pub(super) const ACCENT_WORDS: &[&str] = &[
     "auto",
     "blue",
     "indigo",

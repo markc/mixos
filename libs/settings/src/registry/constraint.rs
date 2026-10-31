@@ -78,7 +78,7 @@ pub const CONSTRAINTS: &[Constraint] = &[
     },
     Constraint {
         id: "user_keys",
-        text: "keymaps.comp.* never binds a bare F1-F12: those keys are the user's",
+        text: "keymaps.comp.* only: the compositor never binds a bare F1-F12 (any case), the user's keys",
         check: Some(user_keys),
         write_only: false,
     },
@@ -239,10 +239,10 @@ fn panel_edges(values: &Values) -> Vec<Diagnostic> {
     }
 }
 
-/// A bare function key: `F1` to `F12` with no modifier.
+/// A bare function key: `F1` to `F12` (or `f1` to `f12`) with no modifier.
 pub fn bare_function_key(chord: &str) -> bool {
     chord
-        .strip_prefix('F')
+        .strip_prefix(['F', 'f'])
         .and_then(|n| n.parse::<u8>().ok())
         .is_some_and(|n| (1..=12).contains(&n) && !chord[1..].starts_with('0'))
 }

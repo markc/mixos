@@ -142,6 +142,21 @@ fn parsed(source: &str) -> Result<Arc<design::DesignSourceDocument>, Vec<Diagnos
     Ok(doc)
 }
 
+/// Whether `source` parses and compiles for the desktop context: the
+/// registry's kind check for `appearance.source`. Resolution still compiles
+/// every context before a profile is accepted. The error is the first
+/// diagnostic's message.
+pub(crate) fn source_compiles(source: &str) -> Result<(), String> {
+    let first = |messages: Vec<String>| messages.into_iter().next().unwrap_or_default();
+    let doc = parsed(source).map_err(|d| first(d.into_iter().map(|d| d.message).collect()))?;
+    match design::compile_design(&doc, design::DesignContext::default()) {
+        design::DesignCompileResult::Success(_) => Ok(()),
+        design::DesignCompileResult::Fatal(failure) => Err(first(
+            failure.diagnostics.into_iter().map(|d| d.message).collect(),
+        )),
+    }
+}
+
 /// The source uses the app axis: it orders it or a modifier block names an
 /// app. Only then can the requested app change a compile.
 fn claims_app_axis(doc: &design::DesignSourceDocument) -> bool {

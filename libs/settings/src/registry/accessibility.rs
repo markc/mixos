@@ -23,7 +23,7 @@ pub(super) const KEYS: &[K] = &[
         D::Bool(false),
         &[System],
     )
-    .applied("screen-reader"),
+    .applied("orca"),
     k("accessibility.invert", Bool, D::Bool(false), &[Paint]),
     k(
         "accessibility.color_filter",

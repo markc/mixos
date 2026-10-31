@@ -246,8 +246,11 @@ pub struct KeyDef {
     pub class: Class,
     /// The applier (applied), the owner (live) or the writer (state).
     pub owner: Option<&'static str>,
-    /// The owner's Bus command, where one exists.
-    pub command: Option<&'static str>,
+    /// The owner's Bus commands that read and write a live key, where they
+    /// exist today. None is structured "backend needed": the owner has no
+    /// such command yet.
+    pub read: Option<&'static str>,
+    pub write: Option<&'static str>,
     pub domains: &'static [Domain],
     /// The Prefs page; none for state keys.
     pub page: Option<&'static str>,
@@ -270,7 +273,8 @@ impl KeyDef {
             default,
             class: Class::Stored,
             owner: None,
-            command: None,
+            read: None,
+            write: None,
             domains: &[],
             page: None,
             since: SINCE,
@@ -319,9 +323,15 @@ impl KeyDef {
             ..self
         }
     }
-    pub const fn command(self, command: &'static str) -> Self {
+    pub const fn reads(self, command: &'static str) -> Self {
         Self {
-            command: Some(command),
+            read: Some(command),
+            ..self
+        }
+    }
+    pub const fn writes(self, command: &'static str) -> Self {
+        Self {
+            write: Some(command),
             ..self
         }
     }
@@ -441,6 +451,20 @@ pub const PLACEHOLDERS: &[(&str, &str)] = &[
     ("<role>", "a chrome role of design::tunables()"),
 ];
 
+/// A display name, such as a font family: 1–128 bytes, no control
+/// characters, no surrounding space. Whether it is installed is the
+/// consumer's check.
+pub fn plain_name(value: &str) -> bool {
+    crate::terminal::valid_family(value)
+}
+
+/// A design appearance name (window style, menu side, caption side…):
+/// 1–64 lowercase ASCII letters, digits or `-`. Unknown names are retained
+/// for profiles shared with newer binaries.
+pub fn appearance_name(value: &str) -> bool {
+    design::WindowStyle::valid_name(value)
+}
+
 /// A scoped identifier, as today's model has it: 1–64 ASCII letters,
 /// digits, `-` or `_`.
 pub fn scoped_id(value: &str) -> bool {
@@ -492,6 +516,31 @@ impl Matched {
     }
 }
 
+/// One entry's path, split once.
+struct Pattern {
+    def: &'static KeyDef,
+    parts: Vec<&'static str>,
+    literals: usize,
+}
+
+/// Every entry by its first segment, which is always literal.
+fn index() -> &'static BTreeMap<&'static str, Vec<Pattern>> {
+    static INDEX: OnceLock<BTreeMap<&'static str, Vec<Pattern>>> = OnceLock::new();
+    INDEX.get_or_init(|| {
+        let mut index: BTreeMap<&'static str, Vec<Pattern>> = BTreeMap::new();
+        for def in keys() {
+            let parts: Vec<&'static str> = def.path.split('.').collect();
+            let literals = parts.iter().filter(|p| !p.starts_with('<')).count();
+            index.entry(parts[0]).or_default().push(Pattern {
+                def,
+                parts,
+                literals,
+            });
+        }
+        index
+    })
+}
+
 enum Fit {
     No,
     /// The literal segments match but a placeholder value does not.
@@ -499,21 +548,19 @@ enum Fit {
     Yes(Vec<(&'static str, String)>),
 }
 
-fn fit(pattern: &'static str, segments: &[&str]) -> Fit {
-    let parts: Vec<&'static str> = pattern.split('.').collect();
+fn fit(parts: &[&'static str], segments: &[&str]) -> Fit {
     let mut captures = Vec::new();
+    let mut rest = false;
     for (i, part) in parts.iter().enumerate() {
-        // `<action>` takes the rest: action ids are dotted.
+        // `<action>` takes the rest: action ids are dotted. It is always the
+        // last part.
         if *part == "<action>" {
             if segments.len() <= i {
                 return Fit::No;
             }
-            let rest = segments[i..].join(".");
-            if !placeholder_ok(part, &rest) {
-                return Fit::Bad(format!("{rest:?} is not a valid {part}"));
-            }
-            captures.push((*part, rest));
-            return Fit::Yes(captures);
+            captures.push((*part, segments[i..].join(".")));
+            rest = true;
+            break;
         }
         let Some(segment) = segments.get(i) else {
             return Fit::No;
@@ -524,9 +571,10 @@ fn fit(pattern: &'static str, segments: &[&str]) -> Fit {
             return Fit::No;
         }
     }
-    if segments.len() != parts.len() {
+    if !rest && segments.len() != parts.len() {
         return Fit::No;
     }
+    // Every capture, the ones before a rest capture included.
     for (part, value) in &captures {
         if !placeholder_ok(part, value) {
             return Fit::Bad(format!("{value:?} is not a valid {part}"));
@@ -535,32 +583,26 @@ fn fit(pattern: &'static str, segments: &[&str]) -> Fit {
     Fit::Yes(captures)
 }
 
-fn literal_segments(pattern: &str) -> usize {
-    pattern.split('.').filter(|p| !p.starts_with('<')).count()
-}
-
 /// The entry for a concrete path. Where several patterns fit, the one with
 /// the most literal segments wins (`keymaps.comp.spawn.<name>` over
 /// `keymaps.<app>.<action>`).
 pub fn lookup(path: &str) -> Result<Matched, Diagnostic> {
     let segments: Vec<&str> = path.split('.').collect();
-    let mut best: Option<Matched> = None;
+    let mut best: Option<(usize, Matched)> = None;
     let mut reason = None;
-    for def in keys() {
-        match fit(def.path, &segments) {
+    for pattern in index().get(segments[0]).into_iter().flatten() {
+        match fit(&pattern.parts, &segments) {
             Fit::Yes(captures) => {
-                if best
-                    .as_ref()
-                    .is_none_or(|b| literal_segments(def.path) > literal_segments(b.def.path))
-                {
-                    best = Some(Matched { def, captures });
+                if best.as_ref().is_none_or(|(n, _)| pattern.literals > *n) {
+                    let def = pattern.def;
+                    best = Some((pattern.literals, Matched { def, captures }));
                 }
             }
             Fit::Bad(why) => reason = reason.or(Some(why)),
             Fit::No => {}
         }
     }
-    best.ok_or_else(|| {
+    best.map(|(_, m)| m).ok_or_else(|| {
         let code = if path.starts_with("tune.") {
             "unknown_tunable"
         } else {
@@ -574,16 +616,12 @@ pub fn lookup(path: &str) -> Result<Matched, Diagnostic> {
     })
 }
 
-fn live_refusal(m: &Matched, path: &str) -> Diagnostic {
-    Diagnostic::new(
-        "live_key",
-        path,
-        format!(
-            "Live host state, not a setting: read and write it through {} ({})",
-            m.def.owner.unwrap_or("its owner"),
-            m.def.command.unwrap_or("backend needed")
-        ),
-    )
+/// The refusal for a live key: code `live_key`, and as its message the
+/// structured owner and commands, `{"owner","read","write"}`, where a null
+/// command is a backend the owner does not have yet.
+fn live_refusal(def: &KeyDef, path: &str) -> Diagnostic {
+    let detail = serde_json::json!({"owner": def.owner, "read": def.read, "write": def.write});
+    Diagnostic::new("live_key", path, detail.to_string())
 }
 
 /// Whether a normalised value equals the key's default, so it is not stored.
@@ -598,7 +636,7 @@ fn is_default(m: &Matched, path: &str, value: &Value) -> bool {
 pub fn check_value(path: &str, value: &Value) -> Result<Value, Diagnostic> {
     let m = lookup(path)?;
     if m.def.is_live() {
-        return Err(live_refusal(&m, path));
+        return Err(live_refusal(m.def, path));
     }
     kind::check(&m.def.kind, path, value)
 }
@@ -621,6 +659,7 @@ pub fn apply(
     changes: &BTreeMap<String, Value>,
     reset: &[String],
 ) -> Result<Values, Vec<Diagnostic>> {
+    // Counted together, as today's `resolve::patch` counts them.
     if changes.len() + reset.len() > MAX_BATCH {
         return Err(vec![Diagnostic::new(
             "validation_failed",
@@ -640,7 +679,8 @@ pub fn apply(
             continue;
         }
         if let Some(prefix) = path.strip_suffix(".*") {
-            if !is_prefix(prefix) {
+            let under = under_prefix(prefix);
+            if under.is_empty() {
                 errors.push(Diagnostic::new(
                     "validation_failed",
                     path,
@@ -648,12 +688,17 @@ pub fn apply(
                 ));
                 continue;
             }
+            // A prefix of live keys only (`system.*`) names no setting.
+            if under.iter().all(|d| d.is_live()) {
+                errors.push(live_refusal(under[0], path));
+                continue;
+            }
             let under = format!("{prefix}.");
             next.retain(|key, _| !key.starts_with(&under));
             continue;
         }
         match lookup(path) {
-            Ok(m) if m.def.is_live() => errors.push(live_refusal(&m, path)),
+            Ok(m) if m.def.is_live() => errors.push(live_refusal(m.def, path)),
             Ok(_) => {
                 next.remove(path);
             }
@@ -669,7 +714,7 @@ pub fn apply(
             }
         };
         if m.def.is_live() {
-            errors.push(live_refusal(&m, path));
+            errors.push(live_refusal(m.def, path));
             continue;
         }
         if value.is_null() {
@@ -706,21 +751,28 @@ pub fn apply(
 /// Whether `prefix` names whole leading segments of some key
 /// (`appearance`, `shell.panels.top`, `appearance.frosted`).
 pub fn is_prefix(prefix: &str) -> bool {
-    if prefix.is_empty() {
-        return false;
-    }
+    !under_prefix(prefix).is_empty()
+}
+
+/// The entries under `prefix`.
+fn under_prefix(prefix: &str) -> Vec<&'static KeyDef> {
     let segments: Vec<&str> = prefix.split('.').collect();
-    keys().iter().any(|def| {
-        let parts: Vec<&str> = def.path.split('.').collect();
-        segments.len() < parts.len()
-            && segments.iter().zip(&parts).all(|(segment, part)| {
-                if part.starts_with('<') {
-                    placeholder_ok(part, segment)
-                } else {
-                    part == segment
-                }
-            })
-    })
+    index()
+        .get(segments[0])
+        .into_iter()
+        .flatten()
+        .filter(|p| {
+            segments.len() < p.parts.len()
+                && segments.iter().zip(&p.parts).all(|(segment, part)| {
+                    if part.starts_with('<') {
+                        placeholder_ok(part, segment)
+                    } else {
+                        part == segment
+                    }
+                })
+        })
+        .map(|p| p.def)
+        .collect()
 }
 
 /// The one validator, for load as for write: every stored key known, not
@@ -738,7 +790,7 @@ pub fn validate(values: &Values) -> Result<(), Vec<Diagnostic>> {
             }
         };
         if m.def.is_live() {
-            errors.push(live_refusal(&m, path));
+            errors.push(live_refusal(m.def, path));
             continue;
         }
         match kind::check(&m.def.kind, path, value) {

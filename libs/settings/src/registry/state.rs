@@ -14,5 +14,7 @@ pub(super) const KEYS: &[K] = &[
         D::Null,
     )
     .domains(&[Paint])
-    .state("prefs; cleared by daylight"),
+    // Prefs writes it while the mode is auto; the daylight citizen clears
+    // it at the next sunrise or sunset.
+    .state("prefs"),
 ];

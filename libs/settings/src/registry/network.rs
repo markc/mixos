@@ -5,6 +5,8 @@
 use super::KeyDef as K;
 
 pub(super) const KEYS: &[K] = &[
-    K::live("network.wifi.enabled", "bool", "hostd").page("network/wifi"),
+    K::live("network.wifi.enabled", "bool", "hostd")
+        .page("network/wifi")
+        .reads("net.state"),
     K::live("bluetooth.enabled", "bool", "hostd").page("bluetooth"),
 ];
