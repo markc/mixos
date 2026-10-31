@@ -120,7 +120,10 @@ fn the_s2_source_changes_only_the_identity() {
     // re-derives from the pinned source: through this compiler it must give
     // back exactly the sealed bytes.
     let sealed = snapshot_with_source(before);
-    assert_eq!(digest(&sealed.effective).unwrap(), BEFORE_S2_EFFECTIVE_DIGEST);
+    assert_eq!(
+        digest(&sealed.effective).unwrap(),
+        BEFORE_S2_EFFECTIVE_DIGEST
+    );
     assert_eq!(digest(&sealed).unwrap(), BEFORE_S2_SNAPSHOT_DIGEST);
     let mut snapshot = fixed_snapshot();
     for effective in snapshot.effective.values_mut() {
