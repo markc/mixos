@@ -155,6 +155,7 @@ mod tests {
             source_digest: String::new(),
             desktop,
             effective,
+            values: Default::default(),
         }
     }
 

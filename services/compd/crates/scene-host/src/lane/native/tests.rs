@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 use super::*;
-use settings::{Binding, Desktop, Revision};
+use settings::{Binding, Revision};
 mod bridge;
 mod cache;
 
@@ -12,9 +12,11 @@ fn binding() -> Binding {
     }
 }
 fn snapshot(revision: u64, dark: bool) -> Snapshot {
-    let mut desktop = Desktop::default();
     // Explicit both ways: the embedded default is itself dark.
-    desktop.appearance.mode = if dark { "dark" } else { "light" }.into();
+    let values = settings::registry::Values::from([(
+        "appearance.mode".into(),
+        serde_json::json!(if dark { "dark" } else { "light" }),
+    )]);
     Snapshot {
         schema: 1,
         binding: binding(),
@@ -22,8 +24,10 @@ fn snapshot(revision: u64, dark: bool) -> Snapshot {
         revision: Revision(revision),
         design_revision: Revision(revision),
         source_digest: settings::source_digest(settings::EMBEDDED_DEFAULT_SOURCE),
-        effective: settings::resolve(&desktop).unwrap(),
-        desktop,
+        effective: settings::resolve::values::resolve(&values, settings::EMBEDDED_DEFAULT_SOURCE)
+            .unwrap(),
+        desktop: settings::migrate::reverse(&values).desktop,
+        values,
     }
 }
 fn session() -> Session<u64> {
@@ -47,9 +51,12 @@ fn decoded_snapshot(snapshot: Snapshot) -> Decoded {
         command: String::new(),
         id: None,
         args: serde_json::Value::Null,
-        body: serde_json::to_string(&snapshot).unwrap(),
+        body: serde_json::to_string(
+            &settings::compact::encode_values(&snapshot, &snapshot.values).unwrap(),
+        )
+        .unwrap(),
         headers: std::collections::BTreeMap::from([
-            ("topic".into(), settings::compact::compact_topic("default")),
+            ("topic".into(), settings::topics::snapshot_topic("default")),
             ("broker_service".into(), "settingsd".into()),
         ]),
     };

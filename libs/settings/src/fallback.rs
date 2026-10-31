@@ -128,12 +128,11 @@ impl Request {
             }
         }
         let embedded = (|| {
-            let mut desktop = Desktop::default();
-            if let Some(app) = self.context.strip_prefix("app:") {
-                desktop.apps.insert(app.into(), AppOverride::default());
-            }
-            let effective =
-                resolve(&desktop).map_err(|errors| errors.into_iter().next().unwrap())?;
+            // The profile a new store starts with (key space v2 defaults);
+            // its contexts are the desktop and the native apps.
+            let values = registry::Values::new();
+            let effective = resolve::values::resolve(&values, EMBEDDED_DEFAULT_SOURCE)
+                .map_err(|errors| errors.into_iter().next().unwrap())?;
             let snapshot = Snapshot {
                 schema: SCHEMA,
                 binding: self.binding.clone(),
@@ -141,8 +140,9 @@ impl Request {
                 revision: Revision(0),
                 design_revision: Revision(0),
                 source_digest: source_digest(EMBEDDED_DEFAULT_SOURCE),
-                desktop,
+                desktop: migrate::reverse(&values).desktop,
                 effective,
+                values,
             };
             resources(&snapshot, &self.context, self.shell)?;
             Ok::<_, Diagnostic>(Arc::new(snapshot))
@@ -214,11 +214,12 @@ pub(crate) fn validate_inline(
             "Inline byte budget exceeded",
         ));
     }
+    // Recompiled from the authored v2 values (schema 3), as settingsd
+    // resolved them; a snapshot without values is the defaults.
     let source = snapshot
-        .desktop
-        .appearance
-        .source
-        .as_deref()
+        .values
+        .get("appearance.source")
+        .and_then(serde_json::Value::as_str)
         .unwrap_or(EMBEDDED_DEFAULT_SOURCE);
     if snapshot.source_digest != source_digest(source) {
         return Err(Diagnostic::new(
@@ -227,8 +228,8 @@ pub(crate) fn validate_inline(
             "Pinned source is unavailable or differs",
         ));
     }
-    let effective =
-        resolve(&snapshot.desktop).map_err(|errors| errors.into_iter().next().unwrap())?;
+    let effective = resolve::values::resolve(&snapshot.values, EMBEDDED_DEFAULT_SOURCE)
+        .map_err(|errors| errors.into_iter().next().unwrap())?;
     if effective != snapshot.effective || !effective.contains_key(context) {
         return Err(Diagnostic::new(
             "unsupported_interpretation",

@@ -26,6 +26,7 @@ fn snapshot(revision: u64, incarnation: &str) -> Snapshot {
         effective: EFFECTIVE
             .get_or_init(|| resolve(&Desktop::default()).unwrap())
             .clone(),
+        values: Default::default(),
     }
 }
 fn consumer() -> Consumer {

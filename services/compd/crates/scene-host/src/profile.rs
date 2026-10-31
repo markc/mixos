@@ -2,20 +2,11 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The one seam between an accepted settings snapshot and the key space v2
 //! views compd reads: `window.*` ([`Window`]) and `shell.panels.*`
-//! ([`Panels`]).
-//!
-//! Today's snapshot (schema 2) carries the format-4 desktop record, so
-//! [`values`] projects the keys compd reads into v2 [`Values`] by the
-//! migration's rules (key space v2 §4.1): the eight framing keys move from
-//! `appearance.*` to `window.*`; a `top` or `bottom` panel record is that
-//! panel enabled, `hidden` is `dock` with `autohide`, and the thickness
-//! snaps to the nearest step (ties up); any other panel id and
-//! `shell.page_order` are dropped. Snapshot schema 3 (S7) carries the values
-//! themselves: [`values`] then returns them and the projection goes. Writes
-//! ([`panel_changes`]) are v2 keys already: the v2 store (S6) refuses v1
+//! ([`Panels`]), decoded from the authored values snapshot schema 3
+//! carries. Writes ([`panel_changes`]) are v2 keys: the v2 store refuses v1
 //! names.
 use serde_json::{Value, json};
-use settings::registry::{self, Values};
+use settings::registry;
 use settings::view::{Panels, View, Window};
 use settings::{Diagnostic, Snapshot};
 
@@ -34,56 +25,18 @@ impl Profile {
     /// refuses (an unknown edge or mode, two enabled panels on one edge)
     /// refuses the whole presentation at that key's path.
     pub fn read(snapshot: &Snapshot) -> Result<Self, Diagnostic> {
-        let values = values(snapshot);
-        registry::validate(&values).map_err(|diagnostics| {
+        let values = &snapshot.values;
+        registry::validate(values).map_err(|diagnostics| {
             let first = diagnostics.into_iter().next().unwrap_or_else(|| {
                 Diagnostic::new("invalid_value", "", "settings values are invalid")
             });
             Diagnostic::new("unsupported_presentation", &first.path, first.message)
         })?;
         Ok(Self {
-            window: Window::of(&values),
-            panels: Panels::of(&values),
+            window: Window::of(values),
+            panels: Panels::of(values),
         })
     }
-}
-
-/// The snapshot's v2 values for `window.*` and `shell.panels.*`.
-fn values(snapshot: &Snapshot) -> Values {
-    let appearance = &snapshot.desktop.appearance;
-    let mut values = Values::from([
-        ("window.decorations".into(), json!(appearance.decorations)),
-        ("window.caption_side".into(), json!(appearance.caption_side)),
-        ("window.style".into(), json!(appearance.window_style)),
-        ("window.menu_style".into(), json!(appearance.menu_style)),
-        ("window.menu_side".into(), json!(appearance.menu_side)),
-        (
-            "window.actions_place".into(),
-            json!(appearance.actions_place),
-        ),
-        (
-            "window.actions_align".into(),
-            json!(appearance.actions_align),
-        ),
-        ("window.title_align".into(), json!(appearance.title_align)),
-    ]);
-    for id in ["top", "bottom"] {
-        let key = |leaf: &str| format!("shell.panels.{id}.{leaf}");
-        let Some(panel) = snapshot.desktop.shell.panels.get(id) else {
-            values.insert(key("enabled"), json!(false));
-            continue;
-        };
-        let (mode, autohide) = match panel.mode.as_str() {
-            "hidden" => ("dock", true),
-            mode => (mode, false),
-        };
-        values.insert(key("enabled"), json!(true));
-        values.insert(key("edge"), json!(panel.edge));
-        values.insert(key("mode"), json!(mode));
-        values.insert(key("autohide"), json!(autohide));
-        values.insert(key("thickness"), json!(snap_thickness(panel.thickness)));
-    }
-    values
 }
 
 /// The nearest thickness step, ties up (F9).
@@ -186,6 +139,24 @@ mod tests {
         assert_eq!(profile.panels.bottom.thickness, 64);
         assert_eq!(profile.window.framing.style, "win11");
         assert_eq!(profile.window.framing.caption_side, "left");
+    }
+
+    #[test]
+    fn keys_only_v2_has_are_read_from_the_values() {
+        let mut snapshot = snapshot(settings::Desktop::default());
+        snapshot.values.insert("window.gaps".into(), json!(12));
+        snapshot
+            .values
+            .insert("shell.panels.bottom.autohide".into(), json!(true));
+        let profile = Profile::read(&snapshot).unwrap();
+        assert_eq!(profile.window.gaps, 12);
+        assert!(profile.panels.bottom.autohide);
+        snapshot.values.insert("window.gaps".into(), json!(-1));
+        assert_eq!(
+            Profile::read(&snapshot).unwrap_err().path,
+            "window.gaps",
+            "a value the registry refuses refuses the presentation"
+        );
     }
 
     #[test]

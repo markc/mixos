@@ -242,14 +242,18 @@ impl CompactSnapshot {
             source_digest: self.source_digest,
             desktop: self.desktop,
             effective,
+            values: Default::default(),
         })
     }
 }
 
-/// A snapshot in schema 1 or 2, as the in-memory [`Snapshot`].
+/// A snapshot in schema 1, 2 or 3, as the in-memory [`Snapshot`].
 pub fn decode(value: serde_json::Value) -> Result<Snapshot, String> {
     match value.get("schema").and_then(serde_json::Value::as_u64) {
         Some(2) => serde_json::from_value::<CompactSnapshot>(value)
+            .map_err(|e| e.to_string())?
+            .expand(),
+        Some(3) => serde_json::from_value::<ValuesSnapshot>(value)
             .map_err(|e| e.to_string())?
             .expand(),
         _ => serde_json::from_value::<Snapshot>(value).map_err(|e| e.to_string()),
@@ -297,6 +301,32 @@ pub fn encode_values(
     })
 }
 
+impl ValuesSnapshot {
+    /// The in-memory [`Snapshot`] this encodes: the effective map expanded
+    /// as schema 2's is, the values carried, and the `desktop` their
+    /// format-4 projection, exactly as settingsd's own snapshot holds it.
+    pub fn expand(self) -> Result<Snapshot, String> {
+        if self.schema != VALUES_SCHEMA {
+            return Err(format!("schema {} is not {VALUES_SCHEMA}", self.schema));
+        }
+        let desktop = crate::migrate::reverse(&self.values).desktop;
+        let mut snapshot = CompactSnapshot {
+            schema: COMPACT_SCHEMA,
+            binding: self.binding,
+            incarnation: self.incarnation,
+            revision: self.revision,
+            design_revision: self.design_revision,
+            source_digest: self.source_digest,
+            desktop,
+            effective: self.effective,
+            designs: self.designs,
+        }
+        .expand()?;
+        snapshot.values = self.values;
+        Ok(snapshot)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -316,6 +346,7 @@ mod tests {
             source_digest: "d".into(),
             desktop,
             effective,
+            values: Default::default(),
         }
     }
 

@@ -1017,6 +1017,7 @@ mod tests {
             source_digest: "s".into(),
             desktop,
             effective,
+            values: Default::default(),
         };
         assert_eq!(from_snapshot(&snapshot).accounts[0].id, "acct-1");
         let summary = Summary::of(&snapshot);

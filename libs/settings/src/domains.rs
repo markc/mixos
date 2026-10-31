@@ -102,7 +102,27 @@ impl ChangePlan {
         };
         // A tunable may already have marked the shell; the panels' own
         // change adds to it, never clears it.
-        plan.shell |= shell && previous.is_none_or(|s| s.desktop.shell != next.desktop.shell);
+        // A schema 3 snapshot also carries the shell keys only v2 has (the
+        // panel autohide, `window.gaps`), which no effective context holds:
+        // their registry domains add to the plan. It may over-report.
+        let native = |values: &Values| -> Values {
+            values
+                .iter()
+                .filter(|(k, _)| k.starts_with("window.") || k.starts_with("shell."))
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect()
+        };
+        let authored = previous.map(|s| Self::of_values(&native(&s.values), &native(&next.values)));
+        if let Some(v) = authored {
+            plan.paint |= v.paint;
+            plan.text |= v.text;
+            plan.layout |= v.layout;
+            plan.resources |= v.resources;
+            plan.motion |= v.motion;
+        }
+        plan.shell |= shell
+            && (previous.is_none_or(|s| s.desktop.shell != next.desktop.shell)
+                || authored.is_some_and(|v| v.shell));
         plan.layout |= plan.shell;
         plan
     }

@@ -114,6 +114,7 @@ mod tests {
             source_digest: "source".into(),
             desktop: Desktop::default(),
             effective: Default::default(),
+            values: Default::default(),
         }
     }
     #[test]

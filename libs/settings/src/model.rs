@@ -553,6 +553,13 @@ pub struct Snapshot {
     pub source_digest: String,
     pub desktop: Desktop,
     pub effective: BTreeMap<String, Effective>,
+    /// The authored key space v2 values the effective map was resolved
+    /// from: set when the snapshot came in schema 3
+    /// ([`crate::compact::ValuesSnapshot`]), whose `desktop` is then their
+    /// format-4 projection ([`crate::migrate::reverse`]). Empty, and never
+    /// serialised, in a schema 1 or 2 snapshot.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub values: crate::registry::Values,
 }
 impl Snapshot {
     pub fn encoded_len(&self) -> Result<usize, serde_json::Error> {

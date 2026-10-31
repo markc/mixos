@@ -61,7 +61,7 @@ pub async fn execute_until(
         match work.kind() {
             WorkKind::Subscribe => {
                 client
-                    .subscribe_topic(&compact_topic(&work.binding().profile))
+                    .subscribe_topic(&topics::snapshot_topic(&work.binding().profile))
                     .await
                     .map_err(|e| fault("subscribe_failed", e.to_string()))?;
                 Ok(None)
@@ -69,8 +69,8 @@ pub async fn execute_until(
             WorkKind::Read => {
                 let body = serde_json::to_value(ReadRequest {
                     binding: work.binding().clone(),
-                    view: View::Full,
-                    schema: compact::COMPACT_SCHEMA,
+                    view: View::Snapshot,
+                    schema: SCHEMA,
                     prefix: None,
                     keys: None,
                 })
@@ -201,7 +201,7 @@ impl Decoded {
         // path under a peer's flood, and it must not allocate.
         let on_our_topic = command
             .topic()
-            .and_then(|topic| topic.strip_prefix(crate::COMPACT_TOPIC_PREFIX))
+            .and_then(|topic| topic.strip_prefix(topics::SNAPSHOT_TOPIC_PREFIX))
             == Some(binding.profile.as_str());
         if !on_our_topic {
             return Admission::Other;
@@ -223,7 +223,7 @@ impl Decoded {
     }
 
     fn decode(binding: &Binding, command: &IncomingCommand) -> Self {
-        // A compact body may run a little over the inline budget when no
+        // A schema 3 body may run a little over the inline budget when no
         // design is shared; the expanded snapshot is held to the budget by
         // the consumer's validation.
         let limit = MAX_SNAPSHOT_BYTES + compact::MAX_OVERHEAD_BYTES;
@@ -282,7 +282,7 @@ mod tests {
         IncomingCommand {
             generation: 1,
             from: "noded".into(),
-            command: compact_topic("default"),
+            command: topics::snapshot_topic("default"),
             id: None,
             args: serde_json::Value::Null,
             body: "{}".into(),
@@ -297,7 +297,7 @@ mod tests {
     fn an_unstamped_frame_on_our_topic_is_refused_with_a_reason() {
         // A noded older than the settings reservation delivers the topic
         // without broker_service. Admission must say so, not return None.
-        let frame = delivery(&[("topic", &compact_topic("default"))]);
+        let frame = delivery(&[("topic", &topics::snapshot_topic("default"))]);
         assert!(matches!(
             Decoded::admit(&binding(), &frame),
             Admission::Refused(REFUSED_MISSING_OWNER)
@@ -308,7 +308,7 @@ mod tests {
     #[test]
     fn a_frame_stamped_by_another_owner_is_refused_with_a_reason() {
         let frame = delivery(&[
-            ("topic", &compact_topic("default")),
+            ("topic", &topics::snapshot_topic("default")),
             ("broker_service", "operator"),
         ]);
         assert!(matches!(
@@ -320,7 +320,7 @@ mod tests {
     #[test]
     fn a_settingsd_stamped_frame_on_our_topic_is_admitted() {
         let frame = delivery(&[
-            ("topic", &compact_topic("default")),
+            ("topic", &topics::snapshot_topic("default")),
             ("broker_service", "settingsd"),
         ]);
         assert!(matches!(
@@ -330,11 +330,12 @@ mod tests {
         assert!(Decoded::from_command(&binding(), &frame).is_some());
     }
 
-    /// A compact body over the inline budget but within its bounded
-    /// overhead decodes; one past that is refused before parsing.
+    /// A schema 3 body over the inline budget but within its bounded
+    /// overhead decodes, with its values and their format-4 projection; one
+    /// past that is refused before parsing.
     #[test]
-    fn a_compact_delivery_may_use_its_bounded_overhead() {
-        let desktop = Desktop::default();
+    fn a_schema_3_delivery_may_use_its_bounded_overhead() {
+        let values = registry::Values::from([("window.gaps".into(), serde_json::json!(8))]);
         let snapshot = Snapshot {
             schema: SCHEMA,
             binding: binding(),
@@ -342,13 +343,15 @@ mod tests {
             revision: Revision(1),
             design_revision: Revision(1),
             source_digest: "d".into(),
-            effective: crate::resolve(&desktop).unwrap(),
-            desktop,
+            effective: crate::resolve::values::resolve(&values, EMBEDDED_DEFAULT_SOURCE).unwrap(),
+            desktop: crate::migrate::reverse(&values).desktop,
+            values: values.clone(),
         };
-        let body = serde_json::to_string(&compact::encode(&snapshot).unwrap()).unwrap();
+        let body =
+            serde_json::to_string(&compact::encode_values(&snapshot, &values).unwrap()).unwrap();
         let padded = |len: usize| {
             let mut frame = delivery(&[
-                ("topic", &compact_topic("default")),
+                ("topic", &topics::snapshot_topic("default")),
                 ("broker_service", "settingsd"),
             ]);
             frame.body = format!("{body}{}", " ".repeat(len - body.len()));
@@ -364,19 +367,22 @@ mod tests {
 
     #[test]
     fn other_topics_are_not_judged_and_stay_silent() {
-        let frame = delivery(&[("topic", "settingsd.desktop.compact.other")]);
+        let frame = delivery(&[("topic", "settingsd.desktop.snapshot.other")]);
         assert!(matches!(
             Decoded::admit(&binding(), &frame),
             Admission::Other
         ));
-        // The schema 1 topic is for consumers not yet on schema 2.
-        let frame = delivery(&[
-            ("topic", &topic("default")),
-            ("broker_service", "settingsd"),
-        ]);
-        assert!(matches!(
-            Decoded::admit(&binding(), &frame),
-            Admission::Other
-        ));
+        // The format-4 topics and the look topic are other consumers'.
+        for other in [
+            "settingsd.desktop.changed.default".to_owned(),
+            "settingsd.desktop.compact.default".to_owned(),
+            topics::look_topic("default"),
+        ] {
+            let frame = delivery(&[("topic", &other), ("broker_service", "settingsd")]);
+            assert!(matches!(
+                Decoded::admit(&binding(), &frame),
+                Admission::Other
+            ));
+        }
     }
 }

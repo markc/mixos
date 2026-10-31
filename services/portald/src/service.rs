@@ -734,6 +734,7 @@ mod tests {
             source_digest: "source".into(),
             desktop: settings::Desktop::default(),
             effective: settings::resolve(&settings::Desktop::default()).unwrap(),
+            values: Default::default(),
         };
         assert!(consumer.complete(&read, Ok(Some(snapshot))).is_none());
         hints.tick(&mut consumer);
@@ -825,6 +826,7 @@ mod tests {
             source_digest: "source".into(),
             desktop: settings::Desktop::default(),
             effective: settings::resolve(&settings::Desktop::default()).unwrap(),
+            values: Default::default(),
         };
         // The read completes with its own result. It is adopted, not replaced.
         let settled = settle(&mut consumer, &read, Some(1), Ok(Some(snapshot)));
@@ -854,6 +856,7 @@ mod tests {
             source_digest: "source".into(),
             desktop: settings::Desktop::default(),
             effective: settings::resolve(&settings::Desktop::default()).unwrap(),
+            values: Default::default(),
         };
         // The connection moved to generation 2 before the completion. The consumer
         // still holds generation 1, so without the fence it would accept this result.

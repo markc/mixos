@@ -16,7 +16,9 @@ use std::{
 };
 
 pub const MAX_CACHE_BYTES: usize = 1024 * 1024;
-const CACHE_SCHEMA: u32 = 1;
+/// 2: the snapshot carries its v2 values (schema 3); a schema 1 cache,
+/// which has none, is unsupported rather than read as the defaults.
+const CACHE_SCHEMA: u32 = 2;
 
 #[derive(Deserialize)]
 struct Header {
