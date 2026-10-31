@@ -22,18 +22,8 @@ pub const SCHEMES: &[&str] = &[
     "breeze", "adwaita",
 ];
 pub const STYLES: &[&str] = &["plain", "pro", "studio", "classic", "breeze", "adwaita"];
-/// COSMIC's accent swatches; each resolves per mode in `libs/design`.
-pub const SWATCHES: &[&str] = &[
-    "blue",
-    "indigo",
-    "purple",
-    "pink",
-    "red",
-    "orange",
-    "yellow",
-    "green",
-    "warm_grey",
-];
+/// `auto` and COSMIC's nine accent swatches; each swatch resolves per mode
+/// in `libs/design`.
 const ACCENT_WORDS: &[&str] = &[
     "auto",
     "blue",
