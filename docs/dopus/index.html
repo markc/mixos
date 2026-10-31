@@ -379,7 +379,8 @@ Headless instances cancel name prompts and confirmations because there is
 no window to answer them; copy and move still use the real filesystem worker.</p>
 <p><code>dopus --choose-service</code> is a separate process registered as <code>files</code>, without
 the twin-pane window or the <code>dopus.*</code> commands. It serves <code>files.choose</code>,
-<code>files.choose.result</code>, <code>files.choose.cancel</code> and <code>files.choose.list</code>, the
+<code>files.choose.result</code>, <code>files.choose.cancel</code>, <code>files.choose.list</code> and
+<code>files.choose.accept</code> (the typed Accept for agents), the
 toolkit drive commands as <code>files.ui.*</code> and <code>files.window*</code>, and discovery,
 under the <a href="/docs/spec/files/">file chooser contract</a>.
 Every accepted request has a secondary native window with the file manager's

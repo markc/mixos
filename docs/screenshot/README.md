@@ -154,6 +154,7 @@ Screenshot answers on the Bus as `screenshot` (schema `screenshot.v1`).
 | `screenshot.actions` | | every command with parameter schemas, labels, shortcuts and enablement |
 | `screenshot.execute` | `id`, optional `params` | runs a command; answers `{executed, result, status, dialog, job}` |
 | `screenshot.theme` | `scheme`, `mode` | this window's look |
+| `screenshot.dialog` | none, `open` (`about`, `shortcuts` or null), or `answer` (a button id) with `path` | `{dialog}`: the open dialog's `kind`, `title`, `buttons` (`id`, `label`, `role`), and `body`, `path` and `status` where it has them, or null; answers while a dialog is open |
 | `screenshot.show`, `screenshot.quit` | | brings the window forward; closes it (refused with unsaved work) |
 
 Coordinates are pixels of the captured image, whatever the zoom. Like any
@@ -162,7 +163,10 @@ any image you can read, and `screenshot.export` writes a new PNG wherever
 you can write (never over an existing file). An agent
 is refused rather than allowed to discard a person's unsaved annotations
 (`UNSAVED`), and is refused while a dialog is open (`DIALOG`) or another job
-runs (`BUSY`).
+runs (`BUSY`). `screenshot.dialog` reads and answers the open dialog instead,
+as its buttons do: the Discard dialog's `save`, `discard` and `keep`, Open's
+`open` and `cancel`, Save As's `save` and `cancel`, and `done` for the help
+dialogs. `NO_DIALOG` means none is open.
 
 ### Parameterised document edits
 

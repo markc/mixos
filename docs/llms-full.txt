@@ -8260,6 +8260,37 @@ Any caller may cancel any request, as the open Bus requires
 press Cancel in the window anyway. It is also how choosers left by a caller
 that has gone are cleared before noded's connection-closed notice exists.
 
+### `files.choose.accept` (intent)
+
+Body `{request, paths}` or `{request, path}`, with optional `folder`,
+`current_filter`, `choices` and `replace`. Completes an open chooser exactly
+as the person pressing Accept does, so an agent can answer a chooser without
+driving its window. Any caller may accept any request, as for cancel.
+
+- `paths` is a list of 1 to 256 locations, `path` a single one; give one of
+  them. `open` takes one path unless the request is `multiple`; `save` takes
+  one; `save_files` takes `folder/name` for every requested name, in request
+  order (`folder` defaults to the first path's folder).
+- `open` paths must exist as files, or as folders when the request is
+  `directory`. A `save` or `save_files` target's folder must exist and the
+  target must not be a folder. In `save`, the single-pattern `*.ext` rule
+  is applied to the chosen name, as it is to a typed one.
+- A target that already exists is refused with `EXISTS` unless
+  `replace: true`; that is the window's replace prompt.
+- `current_filter` and `choices` (`{id: value}`) default to the request's and
+  are checked as the window's are.
+
+Reply, rc 0: the outcome, exactly as published on `files.chosen` and kept for
+`files.choose.result`. Refusals leave the chooser open:
+
+- `UNKNOWN_REQUEST`, with `reason` `unknown`, `done` or `expired`, when the
+  request is not open in this incarnation;
+- `INVALID_PATH` when a path or folder does not exist or is the wrong kind;
+- `EXISTS` as above;
+- `ARGUMENT` for a malformed body, the wrong number of paths, an unoffered
+  filter or an invalid choice;
+- `BUSY` before the `files.choose` reply has been sent.
+
 ### `files.choose.list` (query)
 
 Body none. Answers
@@ -9874,7 +9905,8 @@ no window to answer them; copy and move still use the real filesystem worker.
 
 `dopus --choose-service` is a separate process registered as `files`, without
 the twin-pane window or the `dopus.*` commands. It serves `files.choose`,
-`files.choose.result`, `files.choose.cancel` and `files.choose.list`, the
+`files.choose.result`, `files.choose.cancel`, `files.choose.list` and
+`files.choose.accept` (the typed Accept for agents), the
 toolkit drive commands as `files.ui.*` and `files.window*`, and discovery,
 under the [file chooser contract](../docs/spec/files/README.md).
 Every accepted request has a secondary native window with the file manager's
@@ -37693,6 +37725,7 @@ Screenshot answers on the Bus as `screenshot` (schema `screenshot.v1`).
 | `screenshot.actions` | | every command with parameter schemas, labels, shortcuts and enablement |
 | `screenshot.execute` | `id`, optional `params` | runs a command; answers `{executed, result, status, dialog, job}` |
 | `screenshot.theme` | `scheme`, `mode` | this window's look |
+| `screenshot.dialog` | none, `open` (`about`, `shortcuts` or null), or `answer` (a button id) with `path` | `{dialog}`: the open dialog's `kind`, `title`, `buttons` (`id`, `label`, `role`), and `body`, `path` and `status` where it has them, or null; answers while a dialog is open |
 | `screenshot.show`, `screenshot.quit` | | brings the window forward; closes it (refused with unsaved work) |
 
 Coordinates are pixels of the captured image, whatever the zoom. Like any
@@ -37701,7 +37734,10 @@ any image you can read, and `screenshot.export` writes a new PNG wherever
 you can write (never over an existing file). An agent
 is refused rather than allowed to discard a person's unsaved annotations
 (`UNSAVED`), and is refused while a dialog is open (`DIALOG`) or another job
-runs (`BUSY`).
+runs (`BUSY`). `screenshot.dialog` reads and answers the open dialog instead,
+as its buttons do: the Discard dialog's `save`, `discard` and `keep`, Open's
+`open` and `cancel`, Save As's `save` and `cancel`, and `done` for the help
+dialogs. `NO_DIALOG` means none is open.
 
 ### Parameterised document edits
 

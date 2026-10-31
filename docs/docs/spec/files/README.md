@@ -180,6 +180,37 @@ Any caller may cancel any request, as the open Bus requires
 press Cancel in the window anyway. It is also how choosers left by a caller
 that has gone are cleared before noded's connection-closed notice exists.
 
+### `files.choose.accept` (intent)
+
+Body `{request, paths}` or `{request, path}`, with optional `folder`,
+`current_filter`, `choices` and `replace`. Completes an open chooser exactly
+as the person pressing Accept does, so an agent can answer a chooser without
+driving its window. Any caller may accept any request, as for cancel.
+
+- `paths` is a list of 1 to 256 locations, `path` a single one; give one of
+  them. `open` takes one path unless the request is `multiple`; `save` takes
+  one; `save_files` takes `folder/name` for every requested name, in request
+  order (`folder` defaults to the first path's folder).
+- `open` paths must exist as files, or as folders when the request is
+  `directory`. A `save` or `save_files` target's folder must exist and the
+  target must not be a folder. In `save`, the single-pattern `*.ext` rule
+  is applied to the chosen name, as it is to a typed one.
+- A target that already exists is refused with `EXISTS` unless
+  `replace: true`; that is the window's replace prompt.
+- `current_filter` and `choices` (`{id: value}`) default to the request's and
+  are checked as the window's are.
+
+Reply, rc 0: the outcome, exactly as published on `files.chosen` and kept for
+`files.choose.result`. Refusals leave the chooser open:
+
+- `UNKNOWN_REQUEST`, with `reason` `unknown`, `done` or `expired`, when the
+  request is not open in this incarnation;
+- `INVALID_PATH` when a path or folder does not exist or is the wrong kind;
+- `EXISTS` as above;
+- `ARGUMENT` for a malformed body, the wrong number of paths, an unoffered
+  filter or an invalid choice;
+- `BUSY` before the `files.choose` reply has been sent.
+
 ### `files.choose.list` (query)
 
 Body none. Answers

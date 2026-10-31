@@ -163,7 +163,8 @@ no window to answer them; copy and move still use the real filesystem worker.
 
 `dopus --choose-service` is a separate process registered as `files`, without
 the twin-pane window or the `dopus.*` commands. It serves `files.choose`,
-`files.choose.result`, `files.choose.cancel` and `files.choose.list`, the
+`files.choose.result`, `files.choose.cancel`, `files.choose.list` and
+`files.choose.accept` (the typed Accept for agents), the
 toolkit drive commands as `files.ui.*` and `files.window*`, and discovery,
 under the [file chooser contract](../docs/spec/files/README.md).
 Every accepted request has a secondary native window with the file manager's
