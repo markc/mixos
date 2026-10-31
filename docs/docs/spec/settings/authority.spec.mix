@@ -1,13 +1,13 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
 {
-  status:"accepted", version:"0.8.0", schema:1,
-  service:"settingsd", topic:"settingsd.desktop.changed.default",
+  status:"accepted", version:"1.0.0", schema:3,
+  service:"settingsd", topic:"settingsd.desktop.snapshot.default",
   revision_encoding:"canonical_decimal_u64_string",
   limits:{receipts:128,source_bytes:262144,request_bytes:393216,snapshot_bytes:983040},
   binding:{instance:"example",profile:"default"},
   batches:[
-    {name:"appearance_layout",changes:{"appearance.mode":"light","ui.text_scale":1.1,"shell.panels.bottom.thickness":48},reset:[]},
+    {name:"appearance_layout",changes:{"appearance.mode":"light","accessibility.text_scale":1.1,"shell.panels.bottom.thickness":56},reset:[]},
     {name:"unknown_field",changes:{"appearance.typo":"dark"},expected:"validation_failed"},
     {name:"invalid_layout",changes:{"appearance.mode":"light","shell.panels.bottom.thickness":999},expected:"validation_failed"},
     {name:"keymap",changes:{"keymaps.dopus.nav.parent":["Ctrl+U"],"keymaps.dopus.file.delete":[]},reset:[]},
@@ -17,7 +17,7 @@
     {name:"email",changes:{"email.accounts":[{id:"acct-1",name:"Home",url:"https://mail.example.org",email:"me@example.org"}],"email.default_account":"acct-1","email.mail.page_size":50.0},reset:[]},
     {name:"email_password",changes:{"email.accounts":[{id:"acct-1",name:"Home",url:"https://mail.example.org",email:"me@example.org",password:"never"}]},expected:"validation_failed"},
     {name:"invalid_default_account",changes:{"email.default_account":"acct-missing"},expected:"validation_failed"},
-    {name:"reset_app",changes:{},reset:["apps.term"]}
+    {name:"reset_app",changes:{},reset:["apps.term.*"]}
   ],
   deferred:["gui_delivery","candidate_import","artifacts","preview","replication"]
 }

@@ -2137,9 +2137,10 @@ mod tests {
                 json!({
                     "binding": current.binding, "expected_incarnation": current.incarnation,
                     "expected_revision":"1", "operation_id":"quoin-live-fixture",
-                    "changes":{"appearance.mode":"light","ui.text_scale":1.5,
-                        "shell.panels.bottom":{"edge":"bottom","mode":"dock","thickness":80},
-                        "shell.panels.top":{"edge":"right","mode":"overlay","thickness":160}}
+                    "changes":{"appearance.mode":"light","accessibility.text_scale":1.5,
+                        "shell.panels.bottom.thickness":80,
+                        "shell.panels.top.enabled":true,"shell.panels.top.edge":"right",
+                        "shell.panels.top.mode":"overlay","shell.panels.top.thickness":80}
                 }),
             )
             .await
@@ -2162,7 +2163,6 @@ mod tests {
             "pinned"
         );
         panels.ensure("future", (1920.0, 1080.0));
-        // A format-4 thickness reads at its nearest v2 step (160 → 80).
         assert_eq!(
             panels.state("future", crate::seat::Edge::Right)["settings"]["requested_px"],
             80.0
@@ -2190,7 +2190,7 @@ mod tests {
                 json!({
                     "binding":current.binding, "expected_incarnation":current.incarnation,
                     "expected_revision":"2", "operation_id":"quoin-unrelated-app",
-                    "changes":{"apps.ced":{"mode":"light"}}
+                    "changes":{"apps.ced.mode":"light"}
                 }),
             )
             .await
@@ -2209,29 +2209,20 @@ mod tests {
                 json!({
                     "binding":current.binding, "expected_incarnation":current.incarnation,
                     "expected_revision":"3", "operation_id":"quoin-duplicate-edge",
-                    "changes":{"shell.panels.top":{"edge":"bottom","mode":"dock","thickness":100}}
+                    "changes":{"shell.panels.top.edge":"bottom"}
                 }),
             )
-            .await
-            .unwrap();
-        assert_eq!(invalid["status"], "changed");
-        let deadline = std::time::Instant::now() + Duration::from_secs(20);
-        while session.session().host().consumer().fault().is_none() {
-            let changes = session.drain_with(
-                || port.settings_generation(),
-                |presentation| {
-                    panels.set_preferences(presentation.content().preferences.clone());
-                },
-            );
-            assert!(
-                changes.is_empty(),
-                "failed whole preparation must not activate either resource"
-            );
-            if session.session().host().consumer().fault().is_none() {
-                wake.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
-                    .expect("Quoin invalid-policy diagnostic did not arrive before deadline");
-            }
-        }
+            .await;
+        // The v2 store refuses two enabled panels on one edge (`panel_edges`),
+        // so an invalid policy never reaches Quoin.
+        assert!(invalid.is_err(), "{invalid:?}");
+        let changes = session.drain_with(
+            || port.settings_generation(),
+            |presentation| {
+                panels.set_preferences(presentation.content().preferences.clone());
+            },
+        );
+        assert!(changes.is_empty(), "a refused policy activates nothing");
         assert_eq!(
             session
                 .session()

@@ -246,7 +246,7 @@ fn canonical_request_digest_ignores_object_key_order_but_binds_fences() {
 #[test]
 fn public_machine_fixtures_exercise_dispatch_and_restartable_float_settings() {
     // The public spec's batches (docs/docs/spec/settings/authority.spec.mix)
-    // under key space v2's names; S7 moves the spec itself to contract 1.0.0.
+    // in contract 1.0.0's key names.
     let fixture = json!({
         "binding": {"instance": "example", "profile": "default"},
         "batches": [
