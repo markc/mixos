@@ -2202,11 +2202,18 @@ mod tests {
             "an unrelated app override acknowledges without staging shell resources"
         );
         let current = session.session().host().consumer().current().unwrap();
-        let invalid = controller.call("settingsd", "settings.apply", json!({
-            "binding":current.binding, "expected_incarnation":current.incarnation,
-            "expected_revision":"3", "operation_id":"quoin-duplicate-edge",
-            "changes":{"shell.panels.top":{"edge":"bottom","mode":"dock","thickness":100}}
-        })).await.unwrap();
+        let invalid = controller
+            .call(
+                "settingsd",
+                "settings.apply",
+                json!({
+                    "binding":current.binding, "expected_incarnation":current.incarnation,
+                    "expected_revision":"3", "operation_id":"quoin-duplicate-edge",
+                    "changes":{"shell.panels.top":{"edge":"bottom","mode":"dock","thickness":100}}
+                }),
+            )
+            .await
+            .unwrap();
         assert_eq!(invalid["status"], "changed");
         let deadline = std::time::Instant::now() + Duration::from_secs(20);
         while session.session().host().consumer().fault().is_none() {
