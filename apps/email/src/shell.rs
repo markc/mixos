@@ -2669,7 +2669,10 @@ mod tests {
                 drawn.visuals.widgets.inactive.corner_radius,
                 wanted.visuals.widgets.inactive.corner_radius
             );
-            assert_eq!(drawn.visuals.window_corner_radius, wanted.visuals.window_corner_radius);
+            assert_eq!(
+                drawn.visuals.window_corner_radius,
+                wanted.visuals.window_corner_radius
+            );
             assert_eq!(shell.theme.ui(), expected.ui());
             assert_eq!(shell.theme.ui().density, 0.85, "compact, applied once");
             assert_eq!(shell.theme.scheme(), expected.scheme());

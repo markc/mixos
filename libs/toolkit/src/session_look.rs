@@ -840,7 +840,10 @@ mod tests {
             ..Default::default()
         };
         let held = session_theme(Some(&l), Some("dopus"), false, &file, &last);
-        assert_eq!(held.dictionary(), look_or(&l, Some("dopus"), &file).dictionary());
+        assert_eq!(
+            held.dictionary(),
+            look_or(&l, Some("dopus"), &file).dictionary()
+        );
         assert_eq!((held.ui().density, held.ui().text_scale), (0.85, 1.5));
         let custom = session_theme(Some(&l), Some("dopus"), true, &file, &last);
         assert_eq!(custom.dictionary(), file.dictionary());
