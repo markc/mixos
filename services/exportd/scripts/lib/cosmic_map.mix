@@ -1,0 +1,371 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- What the COSMIC exporter writes, as pure data: settings values and the
+-- `settings.palette` answer in, cosmic-config key files out. Naming only:
+-- every colour is a palette value as settingsd derived it (the decision's
+-- ruling 1); the conversions here are COSMIC's spellings of our values
+-- (`comfortable` is `Standard`, a thickness is a size letter, #rrggbb is
+-- three floats).
+--
+--   $m = require("cosmic_map.mix")
+--   $m.plan($values, $mode, $palette)  ordered [{path, text}], `path` being
+--                                      `<id>/v<N>/<key>` under cosmic/
+--   $m.owned($values)                  every path plan() may write
+$ron = require("ron.mix")
+
+$_THEME = "com.system76.CosmicTheme."
+$_MODES = ["dark", "light"]
+$_CAP = {dark: "Dark", light: "Light"}
+-- The theme palette's fields in COSMIC's order, after `name`.
+$_PALETTE_FIELDS = ["bright_red", "bright_green", "bright_orange", "gray_1", "gray_2",
+  "neutral_0", "neutral_1", "neutral_2", "neutral_3", "neutral_4", "neutral_5", "neutral_6",
+  "neutral_7", "neutral_8", "neutral_9", "neutral_10",
+  "accent_blue", "accent_indigo", "accent_purple", "accent_pink", "accent_red", "accent_orange",
+  "accent_yellow", "accent_green", "accent_warm_grey",
+  "ext_warm_grey", "ext_orange", "ext_yellow", "ext_blue", "ext_purple", "ext_pink", "ext_indigo"]
+$_CONTAINERS = ["background", "primary", "secondary", "transparent_background",
+  "transparent_primary", "transparent_secondary"]
+$_COMPONENTS = ["accent", "accent_button", "button", "destructive", "destructive_button",
+  "icon_button", "link_button", "list_button", "success", "success_button", "text_button",
+  "warning", "warning_button"]
+$_SPACING = ["space_none", "space_xxxs", "space_xxs", "space_xs", "space_s", "space_m",
+  "space_l", "space_xl", "space_xxl", "space_xxxl"]
+$_RADII = ["radius_0", "radius_xs", "radius_s", "radius_m", "radius_l", "radius_xl"]
+-- The fourteen blur strengths: frosted variants and alpha_map fields.
+$_STRENGTHS = ["ExtremelyLow", "ExtremelyLow2", "VeryLow", "VeryLow2", "Low", "Low2", "Medium",
+  "Medium2", "High", "High2", "VeryHigh", "VeryHigh2", "ExtremelyHigh", "ExtremelyHigh2"]
+$_ALPHA_FIELDS = ["extremely_low", "extremely_low_2", "very_low", "very_low_2", "low", "low_2",
+  "medium", "medium_2", "high", "high_2", "very_high", "very_high_2", "extremely_high",
+  "extremely_high_2"]
+$_BUILDER_SEEDS = ["accent", "bg_color", "primary_container_bg", "secondary_container_bg",
+  "neutral_tint", "text_tint", "success", "warning", "destructive"]
+$_DENSITY = {compact: "Compact", comfortable: "Standard", spacious: "Spacious"}
+$_SIZES = [[32, "XS"], [40, "S"], [56, "M"], [64, "L"], [80, "XL"]]
+$_PANELS = [["top", "Panel"], ["bottom", "Dock"]]
+$_EDGES = {top: "Top", bottom: "Bottom", left: "Left", right: "Right"}
+$_PANEL_BG = {match: "ThemeDefault", light: "Light", dark: "Dark"}
+$_FIT = {fill: "Zoom", stretch: "Stretch"}
+-- MixOS applet ids the COSMIC panel has an equivalent for. A reverse-DNS
+-- id passes through as a COSMIC applet; any other id is not exported.
+$_APPLETS = {
+  launcher: "com.system76.CosmicPanelLauncherButton",
+  workspaces: "com.system76.CosmicPanelWorkspacesButton",
+  applications: "com.system76.CosmicPanelAppButton",
+  tasks: "com.system76.CosmicAppList",
+  minimize: "com.system76.CosmicAppletMinimize",
+  clock: "com.system76.CosmicAppletTime",
+  tray: "com.system76.CosmicAppletStatusArea",
+  audio: "com.system76.CosmicAppletAudio",
+  network: "com.system76.CosmicAppletNetwork",
+  bluetooth: "com.system76.CosmicAppletBluetooth",
+  battery: "com.system76.CosmicAppletBattery",
+  notifications: "com.system76.CosmicAppletNotifications",
+  power: "com.system76.CosmicAppletPower",
+  input: "com.system76.CosmicAppletInputSources",
+  tiling: "com.system76.CosmicAppletTiling"
+}
+-- The null fonts stand for the design defaults (key space v2 §2.2).
+$DEFAULT_FONT = "Inter"
+$DEFAULT_MONO = "JetBrains Mono"
+-- Carried CosmicBackground fields COSMIC's UI never edits, as shipped.
+$_BACKGROUND_CARRIED = [["filter_by_theme", "#true"], ["filter_method", "Lanczos"],
+  ["sampling_method", "Alphanumeric"]]
+
+fn _get($v, $k, $default)
+  if has_key($v, $k) and $v[$k] != nil then return $v[$k] end
+  return $default
+end
+
+fn _colour($c)
+  if $c == nil then return nil end
+  return $ron.some(upper($c))
+end
+
+-- "#rrggbb" as COSMIC's float triple.
+fn _rgb($hex)
+  $h = lower(slice($hex, 1, 7))
+  $digits = "0123456789abcdef"
+  $ch = fn($i) = (index_of($digits, slice($h, $i, $i + 1)) * 16 + index_of($digits, slice($h, $i + 1, $i + 2))) / 255
+  return [$ron.float($ch(0)), $ron.float($ch(2)), $ron.float($ch(4))]
+end
+
+fn _floats($list)
+  return $ron.tuple(map($list, fn($x) = $ron.float($x)))
+end
+
+fn _spacing($s)
+  return $ron.struct(map($_SPACING, fn($k) = [$k, $s[$k]]))
+end
+
+fn _radii($r)
+  return $ron.struct(map($_RADII, fn($k) = [$k, _floats($r[$k])]))
+end
+
+fn _alpha_map($list)
+  $fields = []
+  for $i = 0 to 13
+    push($fields, [$_ALPHA_FIELDS[$i], $ron.float($list[$i])])
+  end
+  return $ron.struct($fields)
+end
+
+fn _palette_struct($p, $name)
+  $fields = [["name", $name]]
+  for $k in $_PALETTE_FIELDS
+    if not has_key($p, $k) then raise("PALETTE", "the palette has no " .. $k .. " (settingsd older than the neutral_0..10 fix?)") end
+    push($fields, [$k, upper($p[$k])])
+  end
+  return $ron.struct($fields)
+end
+
+-- The window hint colour: None follows the accent.
+fn _hint($v)
+  $c = _get($v, "window.hint_colour", "accent")
+  if $c == "accent" then return nil end
+  if len($c) == 7 then $c = $c .. "FF" end
+  return _colour($c)
+end
+
+-- COSMIC wants the inner gap at least the hint width; the outer gap is
+-- never set by its settings app.
+fn _gaps($v)
+  $hint = _get($v, "window.active_hint", 3)
+  return $ron.tuple([0, max(_get($v, "window.gaps", 0), $hint)])
+end
+
+-- The keys builder and theme share: geometry, hint and frosted.
+fn _shared($v, $cosmic)
+  $f = $cosmic.theme.frosted
+  return [
+    ["spacing", _spacing($cosmic.spacing)],
+    ["corner_radii", _radii($cosmic.corner_radii)],
+    ["gaps", _gaps($v)],
+    ["active_hint", _get($v, "window.active_hint", 3)],
+    ["window_hint", _hint($v)],
+    ["frosted", $ron.ident($f.strength)],
+    ["alpha_map", _alpha_map($f.alpha_map)],
+    ["frosted_windows", $f.windows],
+    ["frosted_system_interface", $f.system_interface],
+    ["frosted_panel", $f.panel],
+    ["frosted_applets", $f.applets]
+  ]
+end
+
+fn _palette_name($mode)
+  return "cosmic-" .. $mode
+end
+
+fn _builder($v, $mode, $mp)
+  $cosmic = $mp.cosmic
+  $theme = $cosmic.theme
+  $b = $cosmic.builder
+  $out = []
+  -- The palette tag carries the contrast (theme-model spec §5.6).
+  $tag = if $theme.is_high_contrast then "HighContrast" .. $_CAP[$mode] else $_CAP[$mode] end
+  push($out, ["palette", $ron.call($tag, [_palette_struct($theme.palette, _palette_name($mode))])])
+  for $k in $_BUILDER_SEEDS
+    $seed = $b[$k] ?? nil
+    -- The accent is written resolved, never None: the theme we write was
+    -- derived from it, so cosmic-settings rebuilds the same theme.
+    if $k == "accent" then $seed = $theme.accent.base end
+    push($out, [$k, _colour($seed)])
+  end
+  return concat($out, _shared($v, $cosmic))
+end
+
+fn _theme($v, $mode, $mp)
+  $cosmic = $mp.cosmic
+  $t = $cosmic.theme
+  $out = [
+    ["name", _palette_name($mode)],
+    ["is_dark", $t.is_dark],
+    ["is_high_contrast", $t.is_high_contrast],
+    ["palette", _palette_struct($t.palette, _palette_name($mode))]
+  ]
+  for $k in $_CONTAINERS push($out, [$k, $t[$k]]) end
+  for $k in $_COMPONENTS push($out, [$k, $t[$k]]) end
+  push($out, ["accent_text", _colour($t.accent_text)])
+  push($out, ["shade", upper($t.shade)])
+  push($out, ["control_tint", _colour($t.control_tint)])
+  push($out, ["text_tint", _colour($t.text_tint)])
+  return concat($out, _shared($v, $cosmic))
+end
+
+fn _font($family)
+  return $ron.struct([["family", $family], ["weight", $ron.ident("Normal")],
+    ["stretch", $ron.ident("Normal")], ["style", $ron.ident("Normal")]])
+end
+
+fn _tk($v)
+  $density = $_DENSITY[_get($v, "appearance.density", "comfortable")]
+  return [
+    ["apply_theme_global", false],
+    ["show_minimize", _get($v, "window.controls.minimize", true)],
+    ["show_maximize", _get($v, "window.controls.maximize", true)],
+    ["icon_theme", _get($v, "appearance.icon_theme", "breeze")],
+    ["header_size", $ron.ident($density)],
+    ["interface_density", $ron.ident($density)],
+    ["interface_font", _font(_get($v, "appearance.font_family", $DEFAULT_FONT))],
+    ["monospace_font", _font(_get($v, "appearance.mono_family", $DEFAULT_MONO))]
+  ]
+end
+
+fn _comp($v)
+  return [
+    ["active_hint", _get($v, "window.hint_shown", true)],
+    ["appearance_settings", $ron.struct([
+      ["clip_floating_windows", _get($v, "window.clip_floating", true)],
+      ["clip_tiled_windows", _get($v, "window.clip_tiled", false)],
+      ["shadow_tiled_windows", _get($v, "window.shadow_tiled", false)]
+    ])],
+    ["edge_snap_threshold", if _get($v, "window.edge_gravity", false) then 10 else 0 end],
+    ["focus_follows_cursor", _get($v, "window.focus_follows_cursor", false)],
+    ["focus_follows_cursor_delay", _get($v, "window.focus_delay_ms", 250)],
+    ["cursor_follows_focus", _get($v, "window.cursor_follows_focus", false)]
+  ]
+end
+
+fn _size($px)
+  $best = $_SIZES[0]
+  for $s in $_SIZES
+    if abs($px - $s[0]) <= abs($px - $best[0]) then $best = $s end
+  end
+  return $best[1]
+end
+
+fn _applets($list)
+  $out = []
+  for $id in $list
+    if contains($id, ".") then push($out, $id)
+    elif has_key($_APPLETS, $id) then push($out, $_APPLETS[$id])
+    end
+  end
+  return $out
+end
+
+-- One COSMIC bar from `shell.panels.<id>`. Corner radius, padding and
+-- spacing derive from roundness and density as the settings app derives
+-- them (theme-model spec §5.1, §5.2).
+fn _panel($v, $id, $name, $radius_xl, $space_none)
+  $p = "shell.panels." .. $id .. "."
+  $gap = _get($v, $p .. "gap", false)
+  $extend = _get($v, $p .. "extend", true)
+  $autohide = _get($v, $p .. "autohide", false)
+  $output = _get($v, $p .. "output", "all")
+  $roundness = _get($v, "appearance.roundness", "round")
+  $radius = if $gap then $radius_xl elif not $extend then min($radius_xl, 12) else 0 end
+  $out = [
+    ["anchor", $ron.ident($_EDGES[_get($v, $p .. "edge", "bottom")])],
+    ["autohide", $ron.ident(if $autohide then "OnOverlap" else "Never" end)],
+    ["exclusive_zone", not $autohide],
+    ["output", if $output == "all" then $ron.ident("All") else $ron.call("Name", [$output]) end],
+    ["anchor_gap", $gap],
+    ["margin", if $gap then 4 else 0 end],
+    ["border_radius", round($radius)],
+    ["expand_to_edges", $extend],
+    ["background", $ron.ident($_PANEL_BG[_get($v, $p .. "appearance", "match")])],
+    ["size", $ron.ident(_size(_get($v, $p .. "thickness", 40)))],
+    ["size_center", nil],
+    ["size_wings", nil],
+    ["opacity", $ron.float(_get($v, $p .. "opacity", 1))],
+    ["spacing", $space_none]
+  ]
+  if $name == "Dock" then
+    push($out, ["padding", if $roundness == "square" then 0 else 4 end])
+  end
+  $start = $v[$p .. "applets.start"] ?? nil
+  $center = $v[$p .. "applets.center"] ?? nil
+  $end = $v[$p .. "applets.end"] ?? nil
+  -- Applet lists are written only once MixOS authors them; until then
+  -- the bar keeps COSMIC's own.
+  if $start != nil or $end != nil then
+    push($out, ["plugins_wings", $ron.some($ron.tuple([_applets($start ?? []), _applets($end ?? [])]))])
+  end
+  if $center != nil then push($out, ["plugins_center", $ron.some(_applets($center))]) end
+  return $out
+end
+
+-- A wallpaper colour: `#rrggbb` or `gradient:#a,#b@deg`.
+fn _wall_colour($c)
+  if starts_with($c, "gradient:") then
+    $body = slice($c, 9)
+    $parts = split($body, "@")
+    $stops = map(split($parts[0], ","), fn($h) = _rgb($h))
+    $radius = if len($parts) > 1 then to_number($parts[1]) else 180 end
+    return $ron.call("Color", [$ron.call("Gradient", [$ron.struct([["colors", $stops], ["radius", $ron.float($radius)]])])])
+  end
+  return $ron.call("Color", [$ron.call("Single", [_rgb($c)])])
+end
+
+fn _background_entry($v, $output, $image)
+  $source = nil
+  if _get($v, "wallpaper.slideshow.enabled", false) and _get($v, "wallpaper.slideshow.folder", nil) != nil then
+    $source = $ron.call("Path", [$v["wallpaper.slideshow.folder"]])
+  elif $image != nil then
+    $source = $ron.call("Path", [$image])
+  elif _get($v, "wallpaper.color", nil) != nil then
+    $source = _wall_colour($v["wallpaper.color"])
+  end
+  if $source == nil then return nil end
+  $fit = _get($v, "wallpaper.fit", "fill")
+  $fields = [["output", $output], ["source", $source]]
+  push($fields, ["filter_by_theme", $ron.raw("#true")])
+  push($fields, ["rotation_frequency", _get($v, "wallpaper.slideshow.interval_s", 3600)])
+  push($fields, ["filter_method", $ron.ident("Lanczos")])
+  push($fields, ["scaling_mode", if $fit == "fit" then $ron.call("Fit", [[$ron.float(0), $ron.float(0), $ron.float(0)]]) else $ron.ident($_FIT[$fit]) end])
+  push($fields, ["sampling_method", $ron.ident("Alphanumeric")])
+  return $ron.struct($fields)
+end
+
+-- The wallpaper keys: nothing while MixOS has no wallpaper of its own
+-- (image, colour and slideshow all unset), so COSMIC keeps its own.
+fn _background($v)
+  $out = []
+  $all = _background_entry($v, "all", _get($v, "wallpaper.image", nil))
+  $same = _get($v, "wallpaper.same_on_all", true)
+  if $all != nil then
+    push($out, ["same-on-all", $same])
+    push($out, ["all", $all])
+  end
+  if not $same then
+    for $k in sort(keys($v))
+      $m = re_find($k, "^wallpaper\\.outputs\\.([^.]+)\\.image$")
+      if len($m) > 0 and $v[$k] != nil then
+        $conn = $m[0].groups[0]
+        push($out, [$conn, _background_entry($v, $conn, $v[$k])])
+      end
+    end
+  end
+  return $out
+end
+
+fn _files($id, $version, $fields)
+  return map($fields, fn($f) = {path: $id .. "/v" .. to_string($version) .. "/" .. $f[0], text: $ron.encode($f[1])})
+end
+
+-- Every key file, in write order: builders before themes (theme-model spec
+-- §6.2), the toolkit, compositor, panels and wallpaper, and the mode last
+-- so a flip lands on two complete themes.
+fn plan($v, $mode, $palette)
+  if not contains($_MODES, $mode) then raise("MODE", "resolved mode must be dark or light, not " .. to_string($mode)) end
+  $out = []
+  for $m in $_MODES
+    $out = concat($out, _files($_THEME .. $_CAP[$m] .. ".Builder", 2, _builder($v, $m, $palette[$m])))
+  end
+  for $m in $_MODES
+    $out = concat($out, _files($_THEME .. $_CAP[$m], 2, _theme($v, $m, $palette[$m])))
+  end
+  $out = concat($out, _files("com.system76.CosmicTk", 1, _tk($v)))
+  $out = concat($out, _files("com.system76.CosmicComp", 1, _comp($v)))
+  $cosmic = $palette[$mode].cosmic
+  $radius_xl = $cosmic.corner_radii.radius_xl[0]
+  $entries = []
+  for $p in $_PANELS
+    if _get($v, "shell.panels." .. $p[0] .. ".enabled", $p[0] == "bottom") then push($entries, $p[1]) end
+    $out = concat($out, _files("com.system76.CosmicPanel." .. $p[1], 1, _panel($v, $p[0], $p[1], $radius_xl, $cosmic.spacing.space_none)))
+  end
+  $out = concat($out, _files("com.system76.CosmicPanel", 1, [["entries", $entries]]))
+  $out = concat($out, _files("com.system76.CosmicBackground", 1, _background($v)))
+  $out = concat($out, _files($_THEME .. "Mode", 1, [["is_dark", $mode == "dark"], ["auto_switch", false]]))
+  return $out
+end

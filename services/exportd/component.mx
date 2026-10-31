@@ -1,0 +1,15 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Identity of a Mix component (docs/docs/decisions/2026-10-10-mix-components.md).
+-- exportd: one-way exports of the settings to foreign desktops and toolkits.
+-- Each target is its own program in scripts/ with its own unit.
+{
+  schema: 1,
+  name: "exportd",
+  component: "exportd",
+  kind: "service",
+  layer: "desktop",
+  contract: "public",
+  version: "0.1.0",
+  program: "scripts/cosmic.mix",
+  profiles: ["desktop"]
+}

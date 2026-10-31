@@ -1,0 +1,15 @@
+---
+title: exportd — changelog
+description: Release notes of the exportd component, mirrored from services/exportd/CHANGELOG.md.
+generated: by docs/_build/gen-site.mix from services/exportd/CHANGELOG.md; do not edit
+---
+
+# Changelog
+
+> Mirrored from [`services/exportd/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/services/exportd/CHANGELOG.md), where releases update it. The component's page is [exportd](README.md). This page describes the current `main` branch of MixOS.
+
+## 0.1.0 — unreleased
+
+- The COSMIC exporter (`scripts/cosmic.mix`): settingsd's look, window,
+  panel and wallpaper settings written into a cosmic-config tree, with
+  undo.
