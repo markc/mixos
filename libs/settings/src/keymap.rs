@@ -4,7 +4,7 @@
 //! chose. An application's defaults ship with the application; only what
 //! the person changed is stored here. An empty list unbinds the action.
 //!
-//! A chord is `Ctrl`, `Alt` and `Shift` (any order) then one key, joined by
+//! A chord is `Ctrl`, `Alt`, `Shift` and `Super` (any order) then one key, joined by
 //! `+`. This module checks that grammar and the limits; whether the key is
 //! one the application knows is the application's check, since the key
 //! names belong to its toolkit.
@@ -23,7 +23,7 @@ pub const MAX_CHORD_BYTES: usize = 32;
 pub const MAX_ACTION_BYTES: usize = 64;
 
 /// The modifiers a chord may name.
-pub const MODIFIERS: [&str; 3] = ["Ctrl", "Alt", "Shift"];
+pub const MODIFIERS: [&str; 4] = ["Ctrl", "Alt", "Shift", "Super"];
 
 fn error(path: &str, message: impl Into<String>) -> Diagnostic {
     Diagnostic::new("validation_failed", path, message)
@@ -88,7 +88,7 @@ pub fn validate(
                 if !valid_chord(chord) {
                     return Err(error(
                         &path,
-                        format!("{chord:?} is not a chord (Ctrl, Alt, Shift, then one key)"),
+                        format!("{chord:?} is not a chord (Ctrl, Alt, Shift, Super, then one key)"),
                     ));
                 }
                 if chords[..n].contains(chord) {
@@ -118,6 +118,8 @@ mod tests {
             "Shift+Ctrl+N",
             "Ctrl+=",
             "Ctrl+/",
+            "Super+T",
+            "Super+Shift+ArrowLeft",
             "Num1",
             "a",
         ] {
@@ -129,6 +131,8 @@ mod tests {
             "+B",
             "Hyper+X",
             "Ctrl+Ctrl+B",
+            "Super+Super+T",
+            "RightCtrl+ArrowLeft",
             "Ctrl B",
             "Ctrl+B+C",
             "Ctrl+é",

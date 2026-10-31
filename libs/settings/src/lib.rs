@@ -17,6 +17,7 @@ pub mod model;
 #[cfg(feature = "native")]
 pub mod native;
 pub mod reducer;
+pub mod registry;
 pub mod resolve;
 pub mod session;
 pub mod terminal;

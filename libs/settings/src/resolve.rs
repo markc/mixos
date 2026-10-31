@@ -71,7 +71,7 @@ fn describe_base() -> Value {
             "apps.<id>": {"type":"app_override", "fields":["scheme","mode","contrast","text_scale"]},
             "keymaps.<app>": {"type":"map", "of":"action id to a list of chords", "max_items":crate::keymap::MAX_ACTIONS, "null":"every action back to the app's defaults"},
             "keymaps.<app>.<action>": {"type":"list", "of":"chord", "max_items":crate::keymap::MAX_CHORDS, "empty":"unbound", "null":"the app's default",
-                "chord":"Ctrl, Alt, Shift (any order) then one key, joined by +", "max_bytes":crate::keymap::MAX_CHORD_BYTES}
+                "chord":"Ctrl, Alt, Shift, Super (any order) then one key, joined by +", "max_bytes":crate::keymap::MAX_CHORD_BYTES}
         }, "reset":"remove explicit app values or restore field package default",
         "defaults": Desktop::default(), "native_apps": APPS,
         "read_views": {"full":"the complete snapshot (default)",
