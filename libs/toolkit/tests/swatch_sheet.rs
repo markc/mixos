@@ -22,7 +22,7 @@ use egui_kittest::Harness;
 use image::RgbaImage;
 use toolkit::Theme;
 
-const PANEL: egui::Vec2 = egui::vec2(380.0, 700.0);
+const PANEL: egui::Vec2 = egui::vec2(380.0, 900.0);
 const GALLERY: egui::Vec2 = egui::vec2(300.0, 170.0);
 
 fn colour(linear: design::LinearRgba) -> egui::Color32 {
@@ -53,6 +53,8 @@ fn render(theme: &Theme, size: egui::Vec2, title: String, roles: bool) -> RgbaIm
     let dictionary = theme.dictionary().clone();
     let mut harness = Harness::builder()
         .with_size(size)
+        // A sheet to look at, not a gate: the gallery's fields are unnamed.
+        .with_accessibility_check(false)
         .wgpu()
         .build_ui(move |ui| {
             egui::CentralPanel::default().show(ui, |ui| {
