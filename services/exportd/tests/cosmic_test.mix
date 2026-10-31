@@ -1,0 +1,143 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- exportd's COSMIC exporter without a Bus: the plan from the design
+-- library's palette golden, checked against the theme-model spec's worked
+-- numbers, then a write, an idempotent rerun and both undos in a scratch
+-- tree. Run from the checkout root:
+--   mix services/exportd/tests/cosmic_test.mix
+$here = dirname(realpath($0))
+$map = require($here .. "/../scripts/lib/cosmic_map.mix")
+$store = require($here .. "/../scripts/lib/cosmic_store.mix")
+$ron = require($here .. "/../scripts/lib/ron.mix")
+$golden = $here .. "/../../../libs/design/tests/fixtures/palette/mixos.json"
+$pal = json_parse(read_file($golden))
+$failures = 0
+
+fn check($name, $ok)
+  if $ok then
+    print("ok   " .. $name)
+  else
+    print("FAIL " .. $name)
+    $failures = $failures + 1
+  end
+  return $ok
+end
+
+fn file_of($plan, $path)
+  for $f in $plan
+    if $f.path == $path then return $f.text end
+  end
+  return nil
+end
+
+fn has($plan, $path, $needle)
+  $t = file_of($plan, $path)
+  return $t != nil and contains($t, $needle)
+end
+
+-- RON shapes.
+check("ron tuple inline", $ron.encode($ron.tuple([0, 8])) == "(0, 8)")
+check("ron float keeps its point", $ron.encode($ron.float(4)) == "4.0")
+check("ron none", $ron.encode(nil) == "None")
+check("ron some colour", $ron.encode($ron.some("#63D0DFFF")) == "Some(\"#63D0DFFF\")")
+check("ron struct pretty", $ron.encode($ron.struct([["a", true]])) == "(\n    a: true,\n)")
+check("ron empty wings", $ron.encode($ron.some($ron.tuple([[], []]))) == "Some(([], []))")
+
+-- The defaults: an empty record is every key at its registry default.
+$plan = $map.plan({}, "dark", $pal)
+$D = "com.system76.CosmicTheme.Dark/v2/"
+$L = "com.system76.CosmicTheme.Light/v2/"
+check("dark background component (spec 2 §4.5, fresh 1.10.0 write)",
+  has($plan, $D .. "background", "base: \"#2E2E2EFF\"") and has($plan, $D .. "background", "hover: \"#434343FF\"")
+  and has($plan, $D .. "background", "pressed: \"#585858FF\"") and has($plan, $D .. "background", "divider: \"#C0C0C033\""))
+check("dark transparent secondary keeps its overlays (step 29)",
+  has($plan, $D .. "transparent_secondary", "hover: \"#4F4F4FFF\"") and has($plan, $D .. "transparent_secondary", "pressed: \"#626262FF\""))
+check("light primary component #DADADA", has($plan, $L .. "primary", "base: \"#DADADAFF\""))
+check("light background pressed #C4C4C4 (normative)", has($plan, $L .. "background", "pressed: \"#C4C4C4FF\""))
+check("theme palette carries neutral_0..10", has($plan, $D .. "palette", "neutral_0: \"#000000FF\"") and has($plan, $D .. "palette", "neutral_10: \"#FFFFFFFF\""))
+check("builder palette is tagged", starts_with(file_of($plan, "com.system76.CosmicTheme.Dark.Builder/v2/palette"), "Dark(("))
+check("builder accent is resolved, never None", file_of($plan, "com.system76.CosmicTheme.Dark.Builder/v2/accent") == "Some(\"#63D0DFFF\")"
+  and file_of($plan, "com.system76.CosmicTheme.Light.Builder/v2/accent") == "Some(\"#00525AFF\")")
+check("transparent alpha 0.76", has($plan, $D .. "transparent_background", "base: \"#1B1B1BC2\""))
+check("mode written last, auto_switch pinned false",
+  $plan[len($plan) - 1].path == "com.system76.CosmicTheme.Mode/v1/auto_switch" and $plan[len($plan) - 1].text == "false"
+  and file_of($plan, "com.system76.CosmicTheme.Mode/v1/is_dark") == "true")
+check("apply_theme_global false", file_of($plan, "com.system76.CosmicTk/v1/apply_theme_global") == "false")
+check("comfortable is Standard", file_of($plan, "com.system76.CosmicTk/v1/interface_density") == "Standard"
+  and file_of($plan, "com.system76.CosmicTk/v1/header_size") == "Standard")
+check("null font is Inter", has($plan, "com.system76.CosmicTk/v1/interface_font", "family: \"Inter\""))
+check("gaps inner raised to the hint", file_of($plan, $D .. "gaps") == "(0, 3)")
+check("no wallpaper of our own leaves COSMIC's", file_of($plan, "com.system76.CosmicBackground/v1/all") == nil)
+check("panels: only the dock", file_of($plan, "com.system76.CosmicPanel/v1/entries") == "[\n    \"Dock\",\n]")
+check("dock size S for 40 px", file_of($plan, "com.system76.CosmicPanel.Dock/v1/size") == "S")
+check("applets untouched until authored", file_of($plan, "com.system76.CosmicPanel.Dock/v1/plugins_center") == nil)
+
+-- Chosen values.
+$v = {
+  "appearance.density": "compact", "appearance.roundness": "round", "appearance.font_family": "Noto Sans",
+  "appearance.icon_theme": "Papirus", "window.hint_colour": "#ff0000", "window.gaps": 8, "window.active_hint": 2,
+  "window.controls.minimize": false,
+  "shell.panels.bottom.gap": true, "shell.panels.bottom.extend": false, "shell.panels.bottom.thickness": 64,
+  "shell.panels.bottom.autohide": true, "shell.panels.bottom.applets.center": ["launcher", "tasks", "nope"],
+  "shell.panels.top.enabled": true,
+  "wallpaper.image": "/srv/walls/a b.webp", "wallpaper.fit": "fit", "wallpaper.same_on_all": false,
+  "wallpaper.outputs.DP-1.image": "/srv/walls/dp1.webp"
+}
+$plan = $map.plan($v, "light", $pal)
+-- Spacing is the palette's (settingsd derives it from the density).
+check("compact density", file_of($plan, "com.system76.CosmicTk/v1/interface_density") == "Compact")
+check("hint colour both builders", file_of($plan, "com.system76.CosmicTheme.Dark.Builder/v2/window_hint") == "Some(\"#FF0000FF\")"
+  and file_of($plan, $L .. "window_hint") == "Some(\"#FF0000FF\")")
+check("gaps inner 8", file_of($plan, $L .. "gaps") == "(0, 8)")
+check("font family", has($plan, "com.system76.CosmicTk/v1/interface_font", "family: \"Noto Sans\""))
+check("show_minimize", file_of($plan, "com.system76.CosmicTk/v1/show_minimize") == "false")
+check("light mode", file_of($plan, "com.system76.CosmicTheme.Mode/v1/is_dark") == "false")
+check("gapped dock: radius_xl, margin 4, padding 4", file_of($plan, "com.system76.CosmicPanel.Dock/v1/border_radius") == "160"
+  and file_of($plan, "com.system76.CosmicPanel.Dock/v1/margin") == "4" and file_of($plan, "com.system76.CosmicPanel.Dock/v1/padding") == "4")
+check("dock autohide", file_of($plan, "com.system76.CosmicPanel.Dock/v1/autohide") == "OnOverlap"
+  and file_of($plan, "com.system76.CosmicPanel.Dock/v1/exclusive_zone") == "false")
+check("dock size L", file_of($plan, "com.system76.CosmicPanel.Dock/v1/size") == "L")
+check("applets mapped, unknown dropped", file_of($plan, "com.system76.CosmicPanel.Dock/v1/plugins_center")
+  == "Some([\n    \"com.system76.CosmicPanelLauncherButton\",\n    \"com.system76.CosmicAppList\",\n])")
+check("both bars", file_of($plan, "com.system76.CosmicPanel/v1/entries") == "[\n    \"Panel\",\n    \"Dock\",\n]")
+check("wallpaper all", has($plan, "com.system76.CosmicBackground/v1/all", "source: Path(\"/srv/walls/a b.webp\")")
+  and has($plan, "com.system76.CosmicBackground/v1/all", "scaling_mode: Fit([\n"))
+check("wallpaper per output", has($plan, "com.system76.CosmicBackground/v1/DP-1", "output: \"DP-1\""))
+check("same-on-all false", file_of($plan, "com.system76.CosmicBackground/v1/same-on-all") == "false")
+$c = $map.plan({"wallpaper.color": "gradient:#102030,#405060@90"}, "dark", $pal)
+check("gradient wallpaper", has($c, "com.system76.CosmicBackground/v1/all", "Gradient((") and has($c, "com.system76.CosmicBackground/v1/all", "radius: 90.0"))
+
+-- Writes and undo in a scratch tree.
+$tmp = env("XDG_RUNTIME_DIR", "/tmp") .. "/exportd-cosmic-test-" .. uuid()
+$root = $tmp .. "/cosmic"
+$state = $tmp .. "/state"
+try
+  mkdir($root .. "/com.system76.CosmicTk/v1")
+  write_file($root .. "/com.system76.CosmicTk/v1/interface_density", "Compact")
+  $plan = $map.plan({}, "dark", $pal)
+  $r = $store.apply($root, $state, $plan, true)
+  check("dry run writes nothing", len($r.changed) == len($plan) and not is_file($root .. "/com.system76.CosmicTk/v1/header_size")
+    and not is_file($state .. "/undo.json"))
+  $r = $store.apply($root, $state, $plan, false)
+  check("first apply writes every key", len($r.changed) == len($plan) and read_file($root .. "/com.system76.CosmicTk/v1/interface_density") == "Standard")
+  check("no temporaries left", len(filter(ls($root .. "/com.system76.CosmicTk/v1"), fn($f) = starts_with($f, ".atomicwrite"))) == 0)
+  $r = $store.apply($root, $state, $plan, false)
+  check("rerun writes nothing", len($r.changed) == 0 and $r.unchanged == len($plan))
+  $light = $map.plan({}, "light", $pal)
+  $r = $store.apply($root, $state, $light, false)
+  check("a mode flip writes only is_dark", deep_eq($r.changed, ["com.system76.CosmicTheme.Mode/v1/is_dark"]))
+  $store.undo($root, $state, "previous")
+  check("undo previous", read_file($root .. "/com.system76.CosmicTheme.Mode/v1/is_dark") == "true")
+  check("owned lists every key", len($store.owned($state)) == len($plan))
+  $store.undo($root, $state, "original")
+  check("undo original restores a foreign value", read_file($root .. "/com.system76.CosmicTk/v1/interface_density") == "Compact")
+  check("undo original removes what was absent", not is_file($root .. "/com.system76.CosmicTk/v1/header_size"))
+finally
+  remove_dir($tmp)
+end
+
+if $failures > 0 then
+  print(to_string($failures) .. " failure(s)")
+  exit(1)
+end
+print("cosmic_test: all passed")

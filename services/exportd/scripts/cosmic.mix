@@ -1,0 +1,202 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- exportd's COSMIC exporter: makes a COSMIC desktop follow settingsd. One
+-- way: settingsd is the source, the cosmic-config tree the target, and
+-- nothing is read back. It subscribes to the settings topics it needs,
+-- reconciles once when it connects, then writes each revision's changed
+-- key files in one burst. cosmic-comp, the panel and libcosmic apps watch
+-- those files and follow live.
+--
+--   mix --serve <prefix>/lib/exportd/cosmic.mix --name exportd-cosmic
+--
+-- What it writes is lib/cosmic_map.mix (from the settings values and the
+-- `settings.palette` answer); how, with undo, lib/cosmic_store.mix.
+-- `appearance.export_desktop = false` stops it writing.
+--
+-- Environment:
+--   MIXOS_SETTINGS_INSTANCE, MIXOS_SETTINGS_PROFILE  the binding (hostname,
+--       default), as every settings consumer reads it
+--   MIXOS_SETTINGS_SERVICE  the settingsd to ask (default settingsd)
+--   MIXOS_EXPORTD_COSMIC_ROOT  the tree (default $XDG_CONFIG_HOME/cosmic)
+--   MIXOS_EXPORTD_STATE  undo and pause state (default
+--       $XDG_STATE_HOME/mixos/exportd/cosmic)
+--   MIXOS_EXPORTD_DRY_RUN=1  plan only: report what would change, write nothing
+--
+-- Commands (bodies are JSON):
+--   exportd.cosmic.status              -> {binding, revision, paused, dry_run, last}
+--   exportd.cosmic.plan                -> {changed: [path], unchanged}  (writes nothing)
+--   exportd.cosmic.reconcile           export now; clears a pause
+--   exportd.cosmic.undo {to}           restore `previous` (default) or `original`
+--                                      contents of every key written, then pause
+--   exportd.cosmic.owned               -> {paths}: every key file it has written
+$map = require("lib/cosmic_map.mix")
+$store = require("lib/cosmic_store.mix")
+
+$PREFIXES = ["appearance", "window", "wallpaper", "shell.panels"]
+$BINDING = {instance: env("MIXOS_SETTINGS_INSTANCE", hostname()), profile: env("MIXOS_SETTINGS_PROFILE", "default")}
+-- An `on` handler names its topic literally, so the profile is fixed.
+if $BINDING.profile != "default" then raise("PROFILE", "exportd's COSMIC exporter follows the default profile only") end
+$SETTINGSD = env("MIXOS_SETTINGS_SERVICE", "settingsd")
+$XDG_CONFIG = env("XDG_CONFIG_HOME", env("HOME") .. "/.config")
+$XDG_STATE = env("XDG_STATE_HOME", env("HOME") .. "/.local/state")
+$ROOT = env("MIXOS_EXPORTD_COSMIC_ROOT", $XDG_CONFIG .. "/cosmic")
+$STATE_DIR = env("MIXOS_EXPORTD_STATE", $XDG_STATE .. "/mixos/exportd/cosmic")
+$DRY = env("MIXOS_EXPORTD_DRY_RUN", "") == "1"
+$PAUSED = $STATE_DIR .. "/paused"
+
+-- The latest body of each prefix topic, and what the last export did.
+$S = {topics: {}, last: nil, incarnation: nil}
+
+fn same_binding($b)
+  return type($b) == "map" and $b.instance == $BINDING.instance and $b.profile == $BINDING.profile
+end
+
+fn ask($command, $body)
+  $wire = json_encode($body)
+  send $SETTINGSD $command body=$wire timeout=10
+  if $rc != 0 then raise("SETTINGS", $command .. " refused (rc " .. to_string($rc) .. "): " .. to_string($result)) end
+  $r = if type($result) == "string" then json_parse($result) else $result end
+  if not contains(["current", nil], $r.status ?? nil) then raise("SETTINGS", $command .. ": " .. to_string($r.status)) end
+  return $r
+end
+
+-- Takes one prefix body when it is ours and not older than what we hold.
+fn take_body($prefix, $body)
+  if type($body) != "map" or not same_binding($body.binding) then return false end
+  $held = $S.topics[$prefix] ?? nil
+  if $held != nil and $held.incarnation == $body.incarnation and to_number($body.revision) < to_number($held.revision) then
+    return false
+  end
+  $S.topics[$prefix] = {incarnation: $body.incarnation, revision: $body.revision, values: $body.values, resolved: $body.resolved ?? nil}
+  return true
+end
+
+-- Fills any prefix no topic has delivered yet.
+fn fill()
+  for $p in $PREFIXES
+    if not has_key($S.topics, $p) then
+      $r = ask("settings.get", {binding: $BINDING, view: "values", prefix: $p})
+      take_body($p, {binding: $r.binding, incarnation: $r.incarnation, revision: $r.revision, values: $r.values, resolved: $r.resolved ?? nil})
+    end
+  end
+end
+
+fn merged_values()
+  $v = {}
+  for $p in $PREFIXES
+    $vals = $S.topics[$p].values
+    for $k in keys($vals) $v[$k] = $vals[$k] end
+  end
+  return $v
+end
+
+-- One export: the whole plan, written where it differs.
+fn export_once($dry)
+  fill()
+  $v = merged_values()
+  $revision = $S.topics.appearance.revision
+  if $v["appearance.export_desktop"] == false then
+    $S.last = {revision: $revision, skipped: "appearance.export_desktop is false"}
+    return $S.last
+  end
+  -- A topic names the resolved keys in full; settings.get by their last part.
+  $resolved = $S.topics.appearance.resolved ?? {}
+  $mode = $resolved["appearance.mode"] ?? $resolved.mode ?? nil
+  if $mode == nil then raise("SETTINGS", "the appearance topic carries no resolved mode") end
+  $pal = ask("settings.palette", {binding: $BINDING}).palette
+  $res = $store.apply($ROOT, $STATE_DIR, $map.plan($v, $mode, $pal), $dry)
+  $out = {revision: $revision, mode: $mode, changed: $res.changed, unchanged: $res.unchanged, dry_run: $dry, at: now_iso()}
+  if not $dry then $S.last = $out end
+  return $out
+end
+
+fn reconcile($why)
+  if is_file($PAUSED) then return nil end
+  try
+    $r = export_once($DRY)
+    if $r.skipped == nil then
+      eprint("exportd-cosmic: " .. $why .. ": revision " .. to_string($r.revision) .. ", " .. to_string(len($r.changed)) .. " key(s) " .. if $DRY then "would change" else "written" end)
+    end
+  catch $e
+    -- No retry timer: the next revision or reconnect tries again.
+    $S.last = {error: to_string($e), at: now_iso()}
+    eprint("exportd-cosmic: " .. $why .. " failed: " .. to_string($e))
+  end
+end
+
+fn on_topic($prefix)
+  if take_body($prefix, $event.args) then reconcile("settings " .. $prefix) end
+end
+
+fn answer($v)
+  reply(json_encode($v))
+end
+
+fn refuse($e)
+  reply(10, json_encode({error: to_string($e)}))
+end
+
+for $p in $PREFIXES
+  subscribe("settingsd.desktop.keys." .. $BINDING.profile .. "." .. $p)
+end
+
+on settingsd.desktop.keys.default.appearance
+  on_topic("appearance")
+end
+
+on settingsd.desktop.keys.default.window
+  on_topic("window")
+end
+
+on settingsd.desktop.keys.default.wallpaper
+  on_topic("wallpaper")
+end
+
+on settingsd.desktop.keys.default.shell.panels
+  on_topic("shell.panels")
+end
+
+on bus.connected
+  -- Bodies held from an older connection may be stale: start over.
+  $S.topics = {}
+  reconcile("connected")
+end
+
+on exportd.cosmic.status desc "the binding, the last export and whether exporting is paused"
+  answer({binding: $BINDING, root: $ROOT, revision: ($S.topics.appearance ?? {}).revision ?? nil,
+    paused: is_file($PAUSED), dry_run: $DRY, last: $S.last})
+end
+
+on exportd.cosmic.plan desc "the key files the next export would write {changed, unchanged}; writes nothing"
+  try
+    answer(export_once(true))
+  catch $e
+    refuse($e)
+  end
+end
+
+on exportd.cosmic.reconcile desc "export the current settings now; clears a pause"
+  try
+    if is_file($PAUSED) then remove($PAUSED) end
+    $S.topics = {}
+    answer(export_once($DRY))
+  catch $e
+    refuse($e)
+  end
+end
+
+on exportd.cosmic.undo desc "restore every written key to its previous (default) or original contents {to}, then pause exporting"
+  try
+    $to = ($event.args ?? {}).to ?? "previous"
+    $done = $store.undo($ROOT, $STATE_DIR, $to)
+    mkdir($STATE_DIR)
+    write_file($PAUSED, $to .. " " .. now_iso() .. "\n")
+    answer({restored: len($done), to: $to, paused: true})
+  catch $e
+    refuse($e)
+  end
+end
+
+on exportd.cosmic.owned desc "every cosmic-config key file this exporter has written"
+  answer({paths: $store.owned($STATE_DIR)})
+end

@@ -96,6 +96,8 @@ One line per component with a page: kind, then install profiles. The
   - [editor-model — changelog](https://mixos.dev/editor-model/changelog.md): Release notes of the editor-model component, mirrored from libs/editor-model/CHANGELOG.md.
 - [email](https://mixos.dev/email/README.md): app; profiles: unclassified. email (dev.mixos.email) is the reserved MixOS mail client: a pure JMAP client that speaks HTTPS to any RFC 8620/8621-shaped server, whether that is the mesh's…
   - [email — changelog](https://mixos.dev/email/changelog.md): Release notes of the email component, mirrored from apps/email/CHANGELOG.md.
+- [exportd](https://mixos.dev/exportd/README.md): service; profiles: desktop. One-way exports of the MixOS settings to foreign desktops and toolkits, starting with the COSMIC desktop's cosmic-config tree.
+  - [exportd — changelog](https://mixos.dev/exportd/changelog.md): Release notes of the exportd component, mirrored from services/exportd/CHANGELOG.md.
 - [expr](https://mixos.dev/expr/README.md): lib; profiles: none (library). The pure expression language of Mix Scenes bindings, which compiles an expression, reports the globals it reads and evaluates it over JSON values under size and time limits.
 - [files](https://mixos.dev/files/README.md): lib; profiles: none (library). Rooted reads and the files-as-truth markdown corpus model.
 - [hostd](https://mixos.dev/hostd/README.md): service; profiles: unclassified. How hostd answers questions about the host and carries out privileged host changes through closed, typed commands with receipts, rate limits and rollback, so agents never need sudo.
