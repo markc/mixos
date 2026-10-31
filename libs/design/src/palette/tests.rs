@@ -114,6 +114,32 @@ fn authored_palette_is_closest_and_reports_the_axis_accent() {
 }
 
 #[test]
+fn theme_palette_carries_all_32_colours_by_name() {
+    let palette = palette_of(DesignContext {
+        scheme: Scheme::Mixos,
+        ..DesignContext::default()
+    });
+    let json = serde_json::to_value(&palette).unwrap();
+    for mode in ["dark", "light"] {
+        let colours = json[mode]["cosmic"]["theme"]["palette"]
+            .as_object()
+            .unwrap();
+        assert_eq!(colours.len(), 33, "{mode}: kind plus 32 colours");
+        assert!(!colours.contains_key("neutral"));
+        for k in 0..=10 {
+            assert!(colours[&format!("neutral_{k}")].is_string(), "{mode} {k}");
+        }
+    }
+    let dark = &json["dark"]["cosmic"]["theme"]["palette"];
+    assert_eq!(dark["neutral_0"], "#000000FF");
+    assert_eq!(dark["neutral_5"], "#636363FF");
+    assert_eq!(
+        json["light"]["cosmic"]["theme"]["palette"]["neutral_0"],
+        "#FFFFFFFF"
+    );
+}
+
+#[test]
 fn flat_composites_translucent_roles_over_their_surface() {
     let palette = palette_of(DesignContext {
         scheme: Scheme::Mixos,
