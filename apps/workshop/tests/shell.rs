@@ -840,12 +840,11 @@ fn the_theme_command_installs_its_choice() {
 fn the_settingsd_look_is_the_session_theme() {
     use design::{Mode, Scheme};
     let mut rig = live_rig();
-    let forest = <settings::view::Look as settings::view::View>::of(
-        &settings::registry::Values::from([
+    let forest =
+        <settings::view::Look as settings::view::View>::of(&settings::registry::Values::from([
             ("appearance.scheme".to_owned(), json!("forest")),
             ("appearance.mode".to_owned(), json!("dark")),
-        ]),
-    );
+        ]));
     rig.h.state_mut().as_mut().unwrap().set_look(Some(forest));
     rig.h.run_steps(5);
     assert_eq!(

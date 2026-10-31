@@ -2140,7 +2140,12 @@ impl Shell {
         self.look
             .as_ref()
             .map(|look| {
-                toolkit::session_look::follow_look(look, Some(APP), self.custom_source, &self.file_theme)
+                toolkit::session_look::follow_look(
+                    look,
+                    Some(APP),
+                    self.custom_source,
+                    &self.file_theme,
+                )
             })
             .unwrap_or_else(|| self.file_theme.clone())
             .with_ui(self.common_ui.clone())
@@ -2630,7 +2635,10 @@ mod tests {
             assert_eq!(shell.theme.captions(), design::CaptionSide::Left);
             assert_eq!(shell.theme.menu_style(), design::MenuStyle::Titlebar);
             assert_eq!(shell.theme.menu_side(), design::MenuSide::Right);
-            assert_eq!(shell.theme.band(), toolkit::session_look::band_of(&look.framing));
+            assert_eq!(
+                shell.theme.band(),
+                toolkit::session_look::band_of(&look.framing)
+            );
             assert_eq!(
                 shell.theme.requested_decorations(),
                 design::RequestedDecorations::Server

@@ -508,7 +508,12 @@ impl Shell {
         self.look
             .as_ref()
             .map(|look| {
-                toolkit::session_look::follow_look(look, Some(APP), self.custom_source, &self.file_theme)
+                toolkit::session_look::follow_look(
+                    look,
+                    Some(APP),
+                    self.custom_source,
+                    &self.file_theme,
+                )
             })
             .unwrap_or_else(|| self.file_theme.clone())
             .with_ui(self.common_ui.clone())
