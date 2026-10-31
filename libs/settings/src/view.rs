@@ -9,10 +9,11 @@
 //! `export_only` (read by the Mix exporters over the Bus) or live (never
 //! stored): the coverage test below proves it by recording each read.
 //!
-//! The look half of S4 adds `Look`, the follower view, beside these. It is
-//! composed of views that already exist here ([`Appearance`], [`Window`]'s
-//! framing, [`Accessibility`], [`AppLooks`], [`Tune`]) plus what only the
-//! derivation knows (the resolved accent), so it reads no key of its own.
+//! [`Look`], the follower view, is composed of views that already exist here
+//! ([`Appearance`], [`State`], [`Window`]'s framing, [`Accessibility`]'s text
+//! scale and motion, [`AppLooks`], [`Tune`]), so it reads no key of its own
+//! and is not one of the coverage test's views. What only the derivation
+//! knows (the resolved accent) comes from the compile.
 //!
 //! Views assume validated values (the store validates on load and every
 //! write goes through [`registry::apply`]): a value of the wrong shape reads
@@ -30,6 +31,7 @@ mod displays;
 mod environment;
 mod input;
 mod keymaps;
+mod look;
 mod panels;
 #[cfg(test)]
 mod tests;
@@ -39,12 +41,15 @@ mod workspaces;
 
 pub use accessibility::{Accessibility, Magnifier, Osk};
 pub use app_domains::AppDomains;
-pub use appearance::{Accent, AppLook, AppLooks, Appearance, Density, Frosted, State, Tune};
+pub use appearance::{
+    Accent, AppLook, AppLooks, Appearance, Density, Frosted, Roundness, State, Tune,
+};
 pub use apps::{Applications, Xwayland};
 pub use displays::{Display, Displays};
 pub use environment::{Power, Region, Sound, Time, TimeApplet, TimeFormat};
 pub use input::{Input, Keyboard, Mouse, Tablet, Touchpad};
 pub use keymaps::{Keymaps, Spawn};
+pub use look::Look;
 pub use panels::{Applets, Panel, Panels};
 pub use wallpaper::{Folders, Slideshow, Wallpaper};
 pub use window::{Controls, Framing, Window};

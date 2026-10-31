@@ -117,6 +117,15 @@ pub struct CompactEffective {
     pub font_size: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mono_family: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub accent: Option<design::SrgbColour>,
+    #[serde(
+        default = "crate::model::default_roundness",
+        skip_serializing_if = "crate::model::is_default_roundness"
+    )]
+    pub roundness: String,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub tune: BTreeMap<String, serde_json::Value>,
     pub ui: CommonUi,
     /// The digest of this context's projection.
     pub design: String,
@@ -152,6 +161,9 @@ pub fn encode(snapshot: &Snapshot) -> Result<CompactSnapshot, serde_json::Error>
                 font_weight: e.font_weight,
                 font_size: e.font_size,
                 mono_family: e.mono_family.clone(),
+                accent: e.accent,
+                roundness: e.roundness.clone(),
+                tune: e.tune.clone(),
                 ui: e.ui.clone(),
                 design: digest,
                 provenance: e.provenance.clone(),
@@ -204,6 +216,9 @@ impl CompactSnapshot {
                     font_weight: e.font_weight,
                     font_size: e.font_size,
                     mono_family: e.mono_family,
+                    accent: e.accent,
+                    roundness: e.roundness,
+                    tune: e.tune,
                     ui: e.ui,
                     design: design.clone(),
                     provenance: e.provenance,

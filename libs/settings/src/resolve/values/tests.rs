@@ -13,7 +13,19 @@ fn values(changes: &[(&str, Value)]) -> Values {
 }
 
 fn resolved(values: &Values) -> BTreeMap<String, Effective> {
-    resolve(values, design::EMBEDDED_DEFAULT_SOURCE).unwrap().0
+    resolve(values, design::EMBEDDED_DEFAULT_SOURCE).unwrap()
+}
+
+/// Today's effective map for `desktop`, each context's sidecar accent
+/// sealed in as v2 seals it: the one shape change v2 makes.
+fn today_sealed(desktop: &Desktop) -> BTreeMap<String, Effective> {
+    let (mut today, accents) =
+        crate::v1::resolve_with_embedded_and_accents(desktop, design::EMBEDDED_DEFAULT_SOURCE)
+            .unwrap();
+    for (context, e) in &mut today {
+        e.accent = accents.get(context).copied();
+    }
+    today
 }
 
 /// The mode-auto resolution table (ruling F11), row by row, through the
@@ -239,8 +251,8 @@ fn with_mode(
 }
 
 /// Today's resolver and v2 agree on the same choices, field for field, for
-/// both modes and for `auto` resolved by each state key: the look half
-/// starts from today's look. Provenance names the v2 keys
+/// both modes and for `auto` resolved by each state key, today's sidecar
+/// accent sealed in as v2 seals it. Provenance names the v2 keys
 /// (`accessibility.text_scale` for `ui.text_scale`) and, under `auto`, the
 /// state key that decided the mode; nothing else differs. A failure names
 /// the first differing key.
@@ -333,13 +345,12 @@ fn resolve_v2_reproduces_today_s_look_for_the_same_choices() {
     for (base, profile) in &profiles {
         let case = format!("{base} / {}", profile.name);
         let v2 = values(&profile.v2);
-        let (today, today_accents) = crate::v1::resolve_with_embedded_and_accents(
-            &profile.today,
-            design::EMBEDDED_DEFAULT_SOURCE,
-        )
-        .unwrap();
-        let (next, next_accents) = resolve(&v2, design::EMBEDDED_DEFAULT_SOURCE).unwrap();
-        assert_eq!(today_accents, next_accents, "{case}: accents");
+        let today = today_sealed(&profile.today);
+        let next = resolved(&v2);
+        assert!(
+            next.values().all(|e| e.accent.is_some()),
+            "{case}: every context seals its accent"
+        );
         assert_eq!(
             today.keys().collect::<Vec<_>>(),
             next.keys().collect::<Vec<_>>(),
@@ -364,17 +375,117 @@ fn resolve_v2_reproduces_today_s_look_for_the_same_choices() {
     }
 }
 
-/// LOOK SEAM: until S2, the default `mixos` compiles as today's default
-/// `studio`, so the default look is today's.
+/// The equivalence clause: for every authored scheme, mode and contrast,
+/// with the accent `auto`, no tints, `round` and `comfortable` (all
+/// defaults), v2's effective map is today's byte for byte, today's accent
+/// sealed in.
 #[test]
-fn the_default_scheme_resolves_through_the_look_seam() {
+fn every_authored_scheme_at_the_defaults_is_today_s_look() {
+    for scheme in design::Scheme::AUTHORED {
+        for mode in ["dark", "light"] {
+            for contrast in ["normal", "high"] {
+                let mut today = Desktop::default();
+                today.appearance.scheme = scheme.name().into();
+                today.appearance.mode = mode.into();
+                today.appearance.contrast = contrast.into();
+                let next = resolved(&values(&[
+                    ("appearance.scheme", json!(scheme.name())),
+                    ("appearance.mode", json!(mode)),
+                    ("appearance.contrast", json!(contrast)),
+                ]));
+                let mut today = today_sealed(&today);
+                for e in today.values_mut() {
+                    let from = e.provenance.remove("ui.text_scale").unwrap();
+                    e.provenance.insert("accessibility.text_scale".into(), from);
+                }
+                assert_eq!(
+                    serde_json::to_string(&today).unwrap(),
+                    serde_json::to_string(&next).unwrap(),
+                    "{scheme:?} {mode} {contrast}"
+                );
+            }
+        }
+    }
+}
+
+/// The default scheme is the derived `mixos`, compiled as `design` compiles
+/// it, and it is not today's `studio`.
+#[test]
+fn the_default_scheme_is_the_derived_mixos() {
     let next = resolved(&Values::new());
+    let desktop = &next["desktop"];
+    assert_eq!(desktop.scheme, "mixos");
+    let doc = crate::resolve::parsed(design::EMBEDDED_DEFAULT_SOURCE).unwrap();
+    let mixos = match design::compile_design(
+        &doc,
+        design::DesignContext {
+            scheme: design::Scheme::Mixos,
+            ..Default::default()
+        },
+    ) {
+        design::DesignCompileResult::Success(success) => success.candidate,
+        design::DesignCompileResult::Fatal(f) => panic!("{:?}", f.diagnostics),
+    };
+    assert_eq!(desktop.design, mixos.read_projection());
+    assert_eq!(desktop.accent, design::resolved_accent(&mixos));
     let today = crate::resolve(&Desktop::default()).unwrap();
-    assert_eq!(next["desktop"].scheme, "mixos");
-    assert_eq!(
-        serde_json::to_value(&next["desktop"].design).unwrap(),
-        serde_json::to_value(&today["desktop"].design).unwrap()
-    );
+    assert_ne!(desktop.design, today["desktop"].design);
+}
+
+/// Under an authored scheme the tints have no slot: they move nothing.
+#[test]
+fn tints_under_an_authored_scheme_change_nothing() {
+    let studio = [("appearance.scheme", json!("studio"))];
+    let base = crate::digest(&resolved(&values(&studio))).unwrap();
+    let tinted = values(&[
+        ("appearance.scheme", json!("studio")),
+        ("appearance.window_bg", json!("#20242aff")),
+        ("appearance.text_tint", json!("#c0ffee")),
+    ]);
+    assert_eq!(crate::digest(&resolved(&tinted)).unwrap(), base);
+}
+
+/// Under an authored scheme, a swatch resolves per mode and a custom colour
+/// is the accent in both.
+#[test]
+fn the_sealed_accent_is_the_chosen_one() {
+    for mode in ["dark", "light"] {
+        let swatch = resolved(&values(&[
+            ("appearance.scheme", json!("studio")),
+            ("appearance.accent", json!("green")),
+            ("appearance.mode", json!(mode)),
+        ]));
+        let green = design::Swatch::Green.colour(design::Mode::from_name(mode).unwrap());
+        assert_eq!(
+            swatch["desktop"].accent.map(|a| a.to_hex()),
+            Some(green.to_hex()),
+            "{mode}"
+        );
+    }
+    let custom = resolved(&values(&[
+        ("appearance.scheme", json!("studio")),
+        ("appearance.accent", json!("#3a7f2c")),
+    ]));
+    for (context, e) in &custom {
+        assert_eq!(e.accent.map(|a| a.to_hex()).as_deref(), Some("#3A7F2CFF"), "{context}");
+    }
+}
+
+/// The sealed accent and geometry survive the wire: a record reads back as
+/// it was written.
+#[test]
+fn a_v2_effective_record_round_trips() {
+    let next = resolved(&values(&[
+        ("appearance.accent", json!("purple")),
+        ("appearance.roundness", json!("slightly_round")),
+        (
+            "tune.style.radius",
+            crate::registry::tests::tunable_sample("tune.style.radius"),
+        ),
+    ]));
+    let text = serde_json::to_string(&next).unwrap();
+    let back: BTreeMap<String, Effective> = serde_json::from_str(&text).unwrap();
+    assert_eq!(back, next);
 }
 
 #[test]
@@ -398,22 +509,32 @@ fn non_look_keys_leave_the_effective_map_alone() {
     assert_eq!(crate::digest(&resolved(&other)).unwrap(), base);
 }
 
-/// LOOK SEAM: the accent, the tints and `tune.*` are stored and validated
-/// now, but nothing applies them until S4's look half: they move neither
-/// the effective map nor the accents. The look half turns this around.
+/// Each key v1 cannot express (the accent, a tint, the roundness and a
+/// style tunable) changes the effective look of every context and its
+/// digest, each alone, under the default `mixos`; the accent also changes
+/// the sealed accent.
 #[test]
-fn seam_keys_are_stored_but_not_yet_applied() {
-    let (base, base_accents) = resolve(&Values::new(), design::EMBEDDED_DEFAULT_SOURCE).unwrap();
-    let seam = values(&[
+fn seam_keys_change_the_effective_look_and_its_digest() {
+    let base = resolved(&Values::new());
+    let base_digest = crate::digest(&base).unwrap();
+    for (key, value) in [
         ("appearance.accent", json!("purple")),
         ("appearance.window_bg", json!("#20242aff")),
+        ("appearance.roundness", json!("square")),
         (
             "tune.style.radius",
             crate::registry::tests::tunable_sample("tune.style.radius"),
         ),
-    ]);
-    assert_eq!(seam.len(), 3, "all three are stored");
-    let (next, next_accents) = resolve(&seam, design::EMBEDDED_DEFAULT_SOURCE).unwrap();
-    assert_eq!(crate::digest(&next).unwrap(), crate::digest(&base).unwrap());
-    assert_eq!(next_accents, base_accents);
+    ] {
+        let one = values(&[(key, value)]);
+        assert_eq!(one.len(), 1, "{key} is stored");
+        let next = resolved(&one);
+        assert_ne!(crate::digest(&next).unwrap(), base_digest, "{key}: digest");
+        for (context, e) in &next {
+            assert_ne!(e, &base[context], "{key}: {context}");
+        }
+        if key == "appearance.accent" {
+            assert_ne!(next["desktop"].accent, base["desktop"].accent);
+        }
+    }
 }
