@@ -39,7 +39,10 @@ fn golden(name: &str, palette: &Palette) {
         std::fs::write(&path, &json).unwrap();
         return;
     }
-    let stored = std::fs::read_to_string(&path).unwrap_or_default();
+    let Ok(stored) = std::fs::read_to_string(&path) else {
+        println!("GOLDEN {name}.json\n{json}END GOLDEN");
+        panic!("palette golden {path} is missing; write it with DESIGN_UPDATE_GOLDEN=1");
+    };
     if stored != json {
         println!("GOLDEN {name}.json\n{json}END GOLDEN");
         panic!("palette golden {name}.json differs");
@@ -119,7 +122,7 @@ fn flat_composites_translucent_roles_over_their_surface() {
     let dark = &palette.dark;
     let soft = dark.roles["accent_soft"];
     assert!(soft.alpha < 1.0);
-    assert_eq!(dark.flat["accent_soft"], over(soft, dark.roles["chrome"]));
+    assert_eq!(dark.flat["accent_soft"], over(soft, dark.roles["card"]));
     assert_eq!(dark.flat["chrome"], dark.roles["chrome"]);
     let faint = dark.roles["text_faint"];
     assert_eq!(dark.flat["text_faint"], over(faint, dark.roles["chrome"]));

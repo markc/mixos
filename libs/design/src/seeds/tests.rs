@@ -138,7 +138,8 @@ fn mixos_draws_the_reference_numbers() {
     }));
     assert_eq!(dark["chrome"], [0x1b, 0x1b, 0x1b, 255]);
     assert_eq!(dark["card"], [0x27, 0x27, 0x27, 255]);
-    assert_eq!(dark["canvas"], [0x34, 0x34, 0x34, 255]);
+    // Fable's R1: the desktop sits under the windows, shade over chrome.
+    assert_eq!(dark["canvas"], [0x12, 0x12, 0x12, 255]);
     assert_eq!(dark["hover"], [0x43, 0x43, 0x43, 255]);
     assert_eq!(dark["pressed"], [0x58, 0x58, 0x58, 255]);
     assert_eq!(dark["text"], [0xe7, 0xe7, 0xe7, 255]);
@@ -146,7 +147,9 @@ fn mixos_draws_the_reference_numbers() {
     assert_eq!(dark["separator"], [0x44, 0x44, 0x44, 255]);
     assert_eq!(dark["accent"], [0x63, 0xd0, 0xdf, 255]);
     assert_eq!(dark["primary_text"], [0x03, 0x03, 0x03, 255]);
-    assert_eq!(dark["scrim"], [0, 0, 0, 0x52]);
+    assert_eq!(dark["scrim"], [0, 0, 0, 0x6e]);
+    assert_eq!(dark["shadow"], [0, 0, 0, 0x52]);
+    assert_eq!(dark["row_selected"], [0x63, 0xd0, 0xdf, 51]);
     let light = roles8(&compile(DesignContext {
         scheme: Scheme::Mixos,
         mode: Mode::Light,
@@ -154,6 +157,7 @@ fn mixos_draws_the_reference_numbers() {
     }));
     assert_eq!(light["chrome"], [0xd7, 0xd7, 0xd7, 255]);
     assert_eq!(light["card"], [0xeb, 0xeb, 0xeb, 255]);
+    assert_eq!(light["canvas"], [0xc6, 0xc6, 0xc6, 255]);
     assert_eq!(light["text"], [0x12, 0x12, 0x12, 255]);
     assert_eq!(light["accent"], [0x00, 0x52, 0x5a, 255]);
     assert_eq!(light["primary_text"], [0xe1, 0xe1, 0xe1, 255]);
@@ -270,16 +274,41 @@ fn seeds_of_round_trips_mixos_within_one_step() {
     }
 }
 
+/// The roles of `design` as drawn: each composited over its own `chrome`.
+fn drawn(design: &UnstampedResolvedDesign) -> BTreeMap<String, [u8; 4]> {
+    let roles = crate::palette::roles_of(design.dictionary());
+    let chrome = roles["chrome"];
+    roles
+        .iter()
+        .map(|(role, colour)| {
+            let colour = if colour.alpha < 1.0 {
+                over(*colour, chrome)
+            } else {
+                *colour
+            };
+            (role.clone(), colour.to_srgba8())
+        })
+        .collect()
+}
+
+fn hue(colour: SrgbColour) -> f64 {
+    crate::colour_model::derivation::linear_srgb_to_oklch(colour.to_linear()).2
+}
+
 /// F4's report: for every authored scheme, how far the first tint moves
-/// the look, the authored roles against `mixos` from `seeds_of(roles)`.
-/// Run with `--nocapture` to read it.
+/// the look, the authored roles against `mixos` from `seeds_of(roles)`,
+/// both sides composited over their `chrome` before measuring (Fable's
+/// ruling), so a transparent role measures as the chrome it shows. The
+/// preserved set (`chrome`, `card`, `text`, the accent hue) is reported
+/// apart. A recorded size, not a promised minimum. Run with `--nocapture`.
 #[test]
 fn role_distance_report() {
-    println!("ROLE DISTANCE REPORT (8-bit steps, max channel; authored vs mixos from seeds_of)");
+    println!("ROLE DISTANCE REPORT (8-bit steps, max channel, both sides over chrome)");
     println!(
-        "{:<8} {:<5} {:<6} {:>4} {:<20} {:>6}  three largest",
-        "scheme", "mode", "contr", "max", "worst role", "mean"
+        "{:<8} {:<5} {:<6} {:>6} {:>4} {:<20}  preserved: chrome card text  accent-hue°",
+        "scheme", "mode", "contr", "mean", "max", "worst role"
     );
+    let mut per_role: BTreeMap<&str, (u32, u8, u32)> = BTreeMap::new();
     for scheme in Scheme::AUTHORED {
         for mode in Mode::ALL {
             for contrast in Contrast::ALL {
@@ -298,27 +327,46 @@ fn role_distance_report() {
                     tints,
                     ..context
                 });
-                let (a, b) = (roles8(&authored), roles8(&derived));
+                let (a, b) = (drawn(&authored), drawn(&derived));
                 let (worst, role, mean) = distance(&a, &b);
-                let mut each: Vec<_> = ROLES.iter().map(|r| (delta(a[*r], b[*r]), *r)).collect();
-                each.sort_by(|x, y| y.cmp(x));
-                let top: Vec<_> = each
-                    .iter()
-                    .take(3)
-                    .map(|(d, r)| format!("{r} {d}"))
-                    .collect();
+                for r in ROLES {
+                    let d = delta(a[*r], b[*r]);
+                    let entry = per_role.entry(r).or_default();
+                    entry.0 += u32::from(d);
+                    entry.1 = entry.1.max(d);
+                    entry.2 += 1;
+                }
+                let seed_hue = seeds.accent.map_or(0.0, hue);
+                let drawn_hue =
+                    hue(crate::palette::roles_of(derived.dictionary())["accent"]);
+                let hue_delta = {
+                    let d = (seed_hue - drawn_hue).rem_euclid(360.0);
+                    d.min(360.0 - d)
+                };
                 println!(
-                    "{:<8} {:<5} {:<6} {:>4} {:<20} {:>6.1}  {}",
+                    "{:<8} {:<5} {:<6} {:>6.1} {:>4} {:<20}  {:>16} {:>4} {:>4}  {:>6.1}",
                     scheme.name(),
                     mode.name(),
                     contrast.name(),
+                    mean,
                     worst,
                     role,
-                    mean,
-                    top.join(", ")
+                    delta(a["chrome"], b["chrome"]),
+                    delta(a["card"], b["card"]),
+                    delta(a["text"], b["text"]),
+                    hue_delta
                 );
             }
         }
+    }
+    println!("PER ROLE over every case: mean, max");
+    for role in ROLES {
+        let (sum, max, n) = per_role[role];
+        println!(
+            "{role:<20} {:>6.1} {:>4}",
+            f64::from(sum) / f64::from(n),
+            max
+        );
     }
 }
 
@@ -380,3 +428,55 @@ fn body_text_reads_over_accent_soft_for_every_swatch() {
 
 /// The swatch cases whose selection fill leaves body text under AA.
 const SOFT_BELOW_AA: &[(&str, &str, &str)] = &[];
+
+/// Fable's R5: whatever the text tint, `text` reads at least as well as
+/// `text_dim`, and `text_dim` at least as well as `text_faint` drawn, all
+/// against the background.
+#[test]
+fn the_text_rank_holds_for_every_text_tint() {
+    let pick = |role: &str, theme: &DerivedTheme| {
+        ROLE_MAP
+            .iter()
+            .find(|(name, _)| *name == role)
+            .unwrap()
+            .1
+            .pick(theme)
+    };
+    let mut tints: Vec<SrgbColour> = Mode::ALL
+        .into_iter()
+        .flat_map(|mode| Swatch::ALL.map(|swatch| swatch.colour(mode)))
+        .collect();
+    for hex in ["#ffffff", "#000000", "#808080"] {
+        tints.push(Colour8::from_hex(hex).unwrap().srgb());
+    }
+    for mode in Mode::ALL {
+        for contrast in Contrast::ALL {
+            for tint in &tints {
+                let theme = derived_theme(&DesignContext {
+                    scheme: Scheme::Mixos,
+                    mode,
+                    contrast,
+                    tints: Tints {
+                        text_tint: Some(Colour8(tint.to_srgba8())),
+                        ..Tints::default()
+                    },
+                    ..DesignContext::default()
+                });
+                let base = theme.background.base;
+                let reads = |colour: SrgbColour| {
+                    crate::derive::primitives::contrast(over(colour, base), base)
+                };
+                let (text, dim, faint) = (
+                    reads(pick("text", &theme)),
+                    reads(pick("text_dim", &theme)),
+                    reads(pick("text_faint", &theme)),
+                );
+                assert!(
+                    text >= dim && dim >= faint,
+                    "{mode:?} {contrast:?} tint {}: text {text:.2}, dim {dim:.2}, faint {faint:.2}",
+                    tint.to_hex()
+                );
+            }
+        }
+    }
+}

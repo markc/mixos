@@ -11,7 +11,9 @@
 //!   widget gallery, dark above light, the scheme as authored on the left
 //!   and `mixos` from `seeds_of` of those roles on the right (the first
 //!   tint's look, F4). `roles-mixos.png` shows the derived default with the
-//!   palette's blue on the left and the green swatch on the right.
+//!   palette's blue on the left and the green swatch on the right;
+//!   `roles-studio-green.png` shows studio dark as authored and with the
+//!   green swatch, where only the accent roles move.
 //! - `radii.png`: each style's own radii, then round, slightly round and
 //!   square (A4), on the gallery.
 //! - `density.png`: `mixos` dark at compact, comfortable and spacious (A5).
@@ -177,6 +179,29 @@ fn swatch_sheets() {
         ]);
     }
     grid(&rows).save(out.join("roles-mixos.png")).unwrap();
+
+    // An authored scheme with a chosen accent: only the four accent roles
+    // move.
+    let studio = context(Scheme::Studio, Mode::Dark);
+    grid(&[vec![
+        render(
+            &Theme::for_context(studio.clone()),
+            PANEL,
+            "studio dark (auto)".into(),
+            true,
+        ),
+        render(
+            &Theme::for_context(DesignContext {
+                accent: AccentChoice::Swatch(Swatch::Green),
+                ..studio
+            }),
+            PANEL,
+            "studio dark green".into(),
+            true,
+        ),
+    ]])
+    .save(out.join("roles-studio-green.png"))
+    .unwrap();
 
     let mut rows = Vec::new();
     for (style, scheme) in [

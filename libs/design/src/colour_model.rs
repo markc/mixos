@@ -127,6 +127,11 @@ pub struct ResolvedColours {
     pub non_text: BTreeMap<String, ResolvedNonTextColour>,
 }
 
+/// The least contrast a non-text colour owes each adjacent pair (WCAG 1.4.11);
+/// below it the focus ring is an error and every other non-text colour a
+/// warning.
+pub(crate) const NON_TEXT_CONTRAST: f64 = 3.0;
+
 pub fn contrast_ratio(a: LinearRgba, b: LinearRgba) -> f64 {
     let light = relative_luminance(a).max(relative_luminance(b));
     let dark = relative_luminance(a).min(relative_luminance(b));
@@ -737,10 +742,7 @@ pub(crate) mod derivation {
         // gamut-mapped primitives (never authored OKLCH anchors), as the design spec
         // §10.8 requires. The constants remain registry law, never source
         // args.
-        let (lightness, _, _) = linear_srgb_to_oklch(*lightness_anchor);
-        let (_, chroma, _) = linear_srgb_to_oklch(*chroma_anchor);
-        let (_, _, hue) = linear_srgb_to_oklch(*hue_anchor);
-        let surface = oklch_to_linear_srgb(lightness + 0.03, (chroma * 0.35).min(0.08), hue, 1.0)
+        let surface = control_pair_surface(*lightness_anchor, *chroma_anchor, *hue_anchor)
             .map_err(str::to_owned)?;
         Ok(RecipeEvaluation {
             pair: resolved_pair(
@@ -753,6 +755,19 @@ pub(crate) mod derivation {
             )?,
             warning: None,
         })
+    }
+
+    /// `control_pair`'s surface: the lightness anchor lifted 0.03, a third of
+    /// the chroma anchor's chroma (at most 0.08), the hue anchor's hue.
+    pub(crate) fn control_pair_surface(
+        lightness_anchor: LinearRgba,
+        chroma_anchor: LinearRgba,
+        hue_anchor: LinearRgba,
+    ) -> Result<LinearRgba, &'static str> {
+        let (lightness, _, _) = linear_srgb_to_oklch(lightness_anchor);
+        let (_, chroma, _) = linear_srgb_to_oklch(chroma_anchor);
+        let (_, _, hue) = linear_srgb_to_oklch(hue_anchor);
+        oklch_to_linear_srgb(lightness + 0.03, (chroma * 0.35).min(0.08), hue, 1.0)
     }
 
     fn evaluate_selection_pair(recipe: &DerivationRecipe) -> Result<RecipeEvaluation, String> {

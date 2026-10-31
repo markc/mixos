@@ -262,7 +262,7 @@ pub(crate) fn compile_colour_tokens_with_registry(
                 composite(value, pair.rendered_surface)
             };
             let ratio = contrast_ratio(rendered, pair.rendered_surface);
-            if ratio < 3.0 {
+            if ratio < crate::colour_model::NON_TEXT_CONTRAST {
                 let message = format!(
                     "`{name}` contrast against `{pair_name}` is {ratio:.3}:1; expected 3:1"
                 );
