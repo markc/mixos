@@ -2022,12 +2022,17 @@ mod tests {
             "screenshot.capture",
             &format!(r#"{{"mode":"region","region":{region}}}"#),
         );
-        assert!(b.take_effects().iter().any(
-            |e| matches!(e, Effect::Capture { request, .. } if request.region.is_some())
-        ));
+        assert!(
+            b.take_effects()
+                .iter()
+                .any(|e| matches!(e, Effect::Capture { request, .. } if request.region.is_some()))
+        );
         // Refused: outside region mode, or a bad rectangle; nothing starts.
         for (command_name, body) in [
-            ("screenshot.take", format!(r#"{{"mode":"screen","region":{region}}}"#)),
+            (
+                "screenshot.take",
+                format!(r#"{{"mode":"screen","region":{region}}}"#),
+            ),
             ("screenshot.capture", format!(r#"{{"region":{region}}}"#)),
             (
                 "screenshot.take",
