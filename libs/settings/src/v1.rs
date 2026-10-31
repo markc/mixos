@@ -426,6 +426,10 @@ pub fn resolve_with_embedded_and_accents(
                 font_weight: appearance.font_weight,
                 font_size: appearance.font_size,
                 mono_family: appearance.mono_family,
+                // Format 4 has none of these: the accent stays a sidecar.
+                accent: None,
+                roundness: crate::model::default_roundness(),
+                tune: BTreeMap::new(),
                 ui,
                 design: projection,
                 provenance,

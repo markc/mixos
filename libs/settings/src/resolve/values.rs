@@ -2,19 +2,24 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Resolve v2: the effective map from the authored [`Values`] (key space v2,
 //! R5 as amended). Validation is the registry's ([`registry::validate`]);
-//! the inputs are the typed views; the mode is resolved first, so no
+//! the inputs are the [`Look`] view; the mode is resolved first, so no
 //! context ever carries `auto`.
 //!
-//! **The look seam.** S4's look half (after S2) plugs in at
-//! [`look_context`]: it adds the accent and the four tints to the compile
-//! (`design::DesignContext` gains them in S2), compiles the derived `mixos`
-//! scheme instead of today's stand-in, applies `design::geometry`
-//! (roundness, density) after the compile, and seals the resolved accent
-//! into [`Effective`], retiring [`Accents`]. Until then the look resolves
-//! exactly as today's [`crate::resolve`] does for the same choices.
-use super::{APPS, Accents, claims_app_axis, compile_context, error, parsed};
+//! The look (§3.2, §3.3, §4.3): each context compiles its scheme (`mixos`
+//! as the derived scheme) with the accent and, under `mixos`, the four tints
+//! ([`look_context`]). The accent it draws is sealed into its [`Effective`],
+//! with the roundness and the authored `tune.*`, so the effective digest
+//! covers the resolved accent, the resolved mode and the geometry inputs.
+//! Geometry and tunes change only style tokens, which the read projection
+//! never carries (ADR §2), so each follower lays them over its own compile:
+//! `design::geometry::apply`, then the tunes (R5 steps 2a and 4).
+//!
+//! With the accent `auto`, no tints, `round` and `comfortable`, every
+//! authored scheme resolves exactly as the format-4 path ([`crate::v1`])
+//! does, its accent sealed rather than beside the map.
+use super::{APPS, claims_app_axis, compile_context, error, parsed};
 use crate::registry::{self, Values};
-use crate::view::{Accessibility, AppLooks, Appearance, Framing, State, View};
+use crate::view::{Accent, Look, View};
 use crate::{CommonUi, Diagnostic, Effective};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -32,7 +37,10 @@ use std::collections::{BTreeMap, BTreeSet};
 ///
 /// A name outside the registry's enums is refused, never read as dark:
 /// validation already refuses it, so this is a second line, not a default.
-pub fn effective_mode(authored: &str, state: &State) -> Result<(Mode, &'static str), Diagnostic> {
+pub fn effective_mode(
+    authored: &str,
+    state: &crate::view::State,
+) -> Result<(Mode, &'static str), Diagnostic> {
     let named =
         |name: &str, path: &str| Mode::from_name(name).ok_or_else(|| error(path, "Unknown mode"));
     Ok(match authored {
@@ -75,22 +83,41 @@ impl Mode {
 
 /// The look inputs of one context, after the axes (R5 step 1).
 struct Axes<'a> {
-    appearance: &'a Appearance,
+    look: &'a Look,
     scheme: String,
     mode: Mode,
     contrast: String,
     app: Option<&'a str>,
 }
 
-/// LOOK SEAM: the design context for one context's axes. The look half
-/// adds the accent and tints here and compiles `mixos` as the derived
-/// scheme; until S2 lands, `mixos` compiles as `studio`, today's default
-/// scheme, so a profile that never chose a scheme keeps today's look.
+/// The design context for one context's axes (R5 step 2): the scheme, the
+/// resolved mode, the accent and, under the derived scheme only, the tints.
+/// An authored scheme has no slot for a tint (A3), so its contexts compile
+/// without them and share one compile whatever the tints say.
 fn look_context(axes: &Axes) -> Result<design::DesignContext, Diagnostic> {
-    let scheme = match axes.scheme.as_str() {
-        "mixos" => design::Scheme::Studio,
-        name => design::Scheme::from_name(name)
-            .ok_or_else(|| error("appearance.scheme", "Unknown scheme"))?,
+    let appearance = &axes.look.appearance;
+    let scheme = design::Scheme::from_name(&axes.scheme)
+        .ok_or_else(|| error("appearance.scheme", "Unknown scheme"))?;
+    let accent = match &appearance.accent {
+        Accent::Auto => Some(design::AccentChoice::Auto),
+        Accent::Swatch(text) | Accent::Colour(text) => design::AccentChoice::from_name(text),
+    }
+    .ok_or_else(|| error("appearance.accent", "Unknown accent"))?;
+    let tint = |path: &str, value: &Option<String>| {
+        value
+            .as_deref()
+            .map(|hex| design::Colour8::from_hex(hex).ok_or_else(|| error(path, "Unknown colour")))
+            .transpose()
+    };
+    let tints = if scheme.is_derived() {
+        design::Tints {
+            window_bg: tint("appearance.window_bg", &appearance.window_bg)?,
+            container_bg: tint("appearance.container_bg", &appearance.container_bg)?,
+            text_tint: tint("appearance.text_tint", &appearance.text_tint)?,
+            control_tint: tint("appearance.control_tint", &appearance.control_tint)?,
+        }
+    } else {
+        design::Tints::default()
     };
     Ok(design::DesignContext {
         scheme,
@@ -98,8 +125,7 @@ fn look_context(axes: &Axes) -> Result<design::DesignContext, Diagnostic> {
             .ok_or_else(|| error("appearance.mode", "Unknown mode"))?,
         contrast: design::Contrast::from_name(&axes.contrast)
             .ok_or_else(|| error("appearance.contrast", "Unknown contrast"))?,
-        style: axes
-            .appearance
+        style: appearance
             .style
             .as_deref()
             .map(|name| {
@@ -108,25 +134,22 @@ fn look_context(axes: &Axes) -> Result<design::DesignContext, Diagnostic> {
             })
             .transpose()?,
         app: axes.app.map(str::to_owned),
-        accent: design::AccentChoice::Auto,
-        tints: design::Tints::default(),
+        accent,
+        tints,
     })
 }
 
-/// Every context's effective look and accent, from `values` with the
-/// profile's pinned `embedded_source`. The values are validated first: an
-/// invalid record is refused, never resolved around.
+/// Every context's effective look, from `values` with the profile's pinned
+/// `embedded_source`. The values are validated first: an invalid record is
+/// refused, never resolved around.
 pub fn resolve(
     values: &Values,
     embedded_source: &str,
-) -> Result<(BTreeMap<String, Effective>, Accents), Vec<Diagnostic>> {
+) -> Result<BTreeMap<String, Effective>, Vec<Diagnostic>> {
     registry::validate(values)?;
-    let appearance = Appearance::of(values);
-    let state = State::of(values);
-    let framing = Framing::of(values);
-    let accessibility = Accessibility::of(values);
-    let app_looks = AppLooks::of(values);
-    let (mode, mode_from) = effective_mode(&appearance.mode, &state).map_err(|e| vec![e])?;
+    let look = Look::of(values);
+    let appearance = &look.appearance;
+    let (mode, mode_from) = effective_mode(&appearance.mode, &look.state).map_err(|e| vec![e])?;
 
     let source = appearance.source.as_deref().unwrap_or(embedded_source);
     let doc = parsed(source)?;
@@ -134,21 +157,20 @@ pub fn resolve(
     let mut compiled = BTreeMap::new();
     let mut contexts = BTreeSet::from([String::from("desktop")]);
     contexts.extend(APPS.iter().map(|a| format!("app:{a}")));
-    contexts.extend(app_looks.0.keys().map(|a| format!("app:{a}")));
+    contexts.extend(look.apps.0.keys().map(|a| format!("app:{a}")));
 
     let mut result = BTreeMap::new();
-    let mut accents = Accents::new();
     for context in contexts {
         let app = context.strip_prefix("app:");
-        let overlay = app.and_then(|id| app_looks.0.get(id));
+        let overlay = app.and_then(|id| look.apps.0.get(id));
         let mut axes = Axes {
-            appearance: &appearance,
+            look: &look,
             scheme: appearance.scheme.clone(),
             mode,
             contrast: appearance.contrast.clone(),
             app,
         };
-        let mut text_scale = accessibility.text_scale;
+        let mut text_scale = look.text_scale;
         let mut provenance = BTreeMap::from([
             ("appearance.scheme".to_owned(), "profile".to_owned()),
             ("appearance.mode".to_owned(), mode_from.to_owned()),
@@ -190,11 +212,7 @@ pub fn resolve(
                     })
                     .collect::<Vec<_>>()
             })?;
-        // LOOK SEAM: the look half seals this into `Effective`.
-        if let Some(accent) = accent {
-            accents.insert(context.clone(), accent);
-        }
-        let Framing {
+        let crate::view::Framing {
             decorations,
             caption_side,
             style: window_style,
@@ -203,7 +221,7 @@ pub fn resolve(
             actions_place,
             actions_align,
             title_align,
-        } = framing.clone();
+        } = look.framing.clone();
         let effective = Effective {
             scheme: axes.scheme,
             style: appearance.style.clone(),
@@ -222,17 +240,23 @@ pub fn resolve(
             font_weight: appearance.font_weight,
             font_size: appearance.font_size,
             mono_family: appearance.mono_family.clone(),
+            accent,
+            roundness: appearance.roundness.name().into(),
+            tune: look.tune.0.clone(),
             ui: CommonUi {
-                density: appearance.density.legacy_multiplier(),
+                // The legacy tokens' multiplier of the step, which
+                // `design::geometry` owns; S8a moves the toolkit onto the
+                // step itself.
+                density: appearance.density.multiplier(),
                 text_scale,
-                reduced_motion: accessibility.reduced_motion,
+                reduced_motion: look.reduced_motion,
             },
             design: projection,
             provenance,
         };
         result.insert(context, effective);
     }
-    Ok((result, accents))
+    Ok(result)
 }
 
 #[cfg(test)]

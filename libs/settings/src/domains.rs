@@ -173,6 +173,11 @@ fn view(effective: &Effective) -> &DesignReadProjection {
         font_weight: _,
         font_size: _,
         mono_family: _,
+        // Classified in `compare`: the accent paints, roundness reshapes,
+        // each tunable by its own domains.
+        accent: _,
+        roundness: _,
+        tune: _,
         ui,
         design,
         provenance: _,
@@ -302,12 +307,31 @@ fn compare(old: &Effective, new: &Effective) -> ChangePlan {
                     c.radius,
                 )
             }));
+    // Key space v2's look inputs: the sealed accent paints; roundness
+    // reshapes and repaints; a tunable marks its catalogue domains.
+    let roundness = old.roundness != new.roundness;
+    let mut tuned = ChangePlan::default();
+    let names: BTreeSet<&String> = old.tune.keys().chain(new.tune.keys()).collect();
+    for name in names {
+        if old.tune.get(name) == new.tune.get(name) {
+            continue;
+        }
+        for domain in registry::tunable(name)
+            .into_iter()
+            .flat_map(|t| &t.domains)
+            .filter_map(|d| Domain::from_name(d))
+        {
+            tuned.mark(domain);
+        }
+    }
+    let resources = resources || tuned.resources;
+    let text = text || resources || tuned.text;
     ChangePlan {
-        paint,
+        paint: paint || old.accent != new.accent || roundness || tuned.paint,
         text,
-        layout,
+        layout: layout || text || roundness || tuned.layout,
         resources,
-        motion: old.ui.reduced_motion != new.ui.reduced_motion,
+        motion: old.ui.reduced_motion != new.ui.reduced_motion || tuned.motion,
         shell: false,
         ..ChangePlan::default()
     }
@@ -328,6 +352,38 @@ mod tests {
         assert!(!plan.resources && !plan.text);
         after.window_style = "future-style".into();
         assert!(compare(before, &after).is_empty());
+    }
+
+    /// The sealed accent paints, roundness repaints and reshapes, and a
+    /// tunable marks at least its own catalogue domains.
+    #[test]
+    fn the_v2_look_inputs_mark_their_domains() {
+        let resolved =
+            crate::resolve::values::resolve(&Values::new(), design::EMBEDDED_DEFAULT_SOURCE)
+                .unwrap();
+        let before = &resolved["desktop"];
+        let mut after = before.clone();
+        after.accent = design::SrgbColour::from_hex("#123456");
+        let plan = compare(before, &after);
+        assert!(plan.paint && !plan.layout && !plan.text);
+        let mut after = before.clone();
+        after.roundness = "square".into();
+        let plan = compare(before, &after);
+        assert!(plan.paint && plan.layout && !plan.text);
+        let mut after = before.clone();
+        after.tune.insert("style.radius".into(), 5.into());
+        let plan = compare(before, &after);
+        for name in &registry::tunable("style.radius").unwrap().domains {
+            let marked = match *name {
+                "paint" => plan.paint,
+                "text" => plan.text,
+                "layout" => plan.layout,
+                "resources" => plan.resources,
+                "motion" => plan.motion,
+                other => panic!("{other}"),
+            };
+            assert!(marked, "{name}");
+        }
     }
 
     fn plan_of(changes: &[(&str, serde_json::Value)]) -> ChangePlan {

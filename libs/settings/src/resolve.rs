@@ -24,9 +24,10 @@ pub(crate) fn error(path: &str, message: impl Into<String>) -> Diagnostic {
 /// The accent each context draws, as [`design::resolved_accent`] gives it for
 /// that context's design. A context whose design has no accent is absent.
 ///
-/// Kept beside the effective map, never inside [`Effective`]: effective values
-/// are sealed into saved profiles (`effective_digest`), so the accent must not
-/// change their shape.
+/// The format-4 path ([`crate::v1`]) keeps it beside the effective map: its
+/// sealed records (`effective_digest`) predate the accent, so it must not
+/// change their shape. Key space v2 seals it in [`Effective::accent`]; S6
+/// removes this with [`crate::v1`].
 pub type Accents = BTreeMap<String, design::SrgbColour>;
 
 /// The last design source parsed, by its digest. A profile's source rarely

@@ -103,8 +103,9 @@ fn defaults_decode_as_the_registry_and_today_s_model_have_them() {
         ("dark", "mixos")
     );
     assert_eq!(v.appearance.accent, Accent::Auto);
-    assert_eq!(v.appearance.density, Density::Comfortable);
-    assert_eq!(v.appearance.density.legacy_multiplier(), 1.0);
+    assert_eq!(v.appearance.density, Density::Standard);
+    assert_eq!(v.appearance.density.name(), "comfortable");
+    assert_eq!(v.appearance.roundness, Roundness::Round);
     assert_eq!(v.window.framing.style, "mac");
     assert_eq!(v.window.framing.decorations, "auto");
     assert_eq!((v.window.active_hint, v.window.gaps), (3, 0));
@@ -127,6 +128,73 @@ fn defaults_decode_as_the_registry_and_today_s_model_have_them() {
     assert_eq!(v.displays.get("DP-1"), Display::default());
     assert_eq!(v.app_domains, AppDomains::default());
     assert_eq!(v.state, State::default());
+}
+
+/// `Look` is a composition: each member is exactly the view it names, and
+/// it reads no key beyond theirs.
+#[test]
+fn the_look_is_composed_of_the_look_views() {
+    let changes = [
+        ("appearance.mode", serde_json::json!("auto")),
+        ("state.appearance.daylight", true.into()),
+        ("appearance.accent", "purple".into()),
+        ("appearance.roundness", "square".into()),
+        ("appearance.density", "compact".into()),
+        ("window.style", "win11".into()),
+        ("accessibility.text_scale", serde_json::json!(1.5)),
+        ("accessibility.reduced_motion", true.into()),
+        ("apps.term.mode", "light".into()),
+        (
+            "tune.style.radius",
+            crate::registry::tests::tunable_sample("tune.style.radius"),
+        ),
+    ]
+    .into_iter()
+    .map(|(k, v)| (k.to_owned(), v))
+    .collect();
+    let values = registry::apply(&Values::new(), &changes, &[]).unwrap();
+    let v = Views::of(&values);
+    let r = Reader::recording(&values);
+    let look = Look::read(&r);
+    assert_eq!(look.appearance, v.appearance);
+    assert_eq!(look.state, v.state);
+    assert_eq!(look.framing, v.window.framing);
+    assert_eq!(look.text_scale, v.accessibility.text_scale);
+    assert_eq!(look.reduced_motion, v.accessibility.reduced_motion);
+    assert_eq!(look.apps, v.app_looks);
+    assert_eq!(look.tune, v.tune);
+    assert_eq!(
+        look.mode(),
+        (
+            crate::resolve::values::Mode::Light,
+            "state.appearance.daylight"
+        )
+    );
+    assert_eq!(
+        look.geometry(),
+        design::geometry::Geometry {
+            roundness: Roundness::Square,
+            density: Density::Compact,
+        }
+    );
+    // Every key it read belongs to one of its member views.
+    let members: BTreeSet<&str> = each_view(&values)
+        .into_iter()
+        .filter(|(name, _, _)| {
+            [
+                "Appearance",
+                "State",
+                "Window",
+                "Accessibility",
+                "AppLooks",
+                "Tune",
+            ]
+            .contains(name)
+        })
+        .flat_map(|(_, seen, _)| seen)
+        .collect();
+    let read: BTreeSet<&str> = r.seen().into_iter().collect();
+    assert!(read.is_subset(&members), "{:?}", read.difference(&members));
 }
 
 #[test]

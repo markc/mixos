@@ -454,9 +454,28 @@ pub struct Effective {
     pub font_size: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mono_family: Option<String>,
+    // Key space v2 (§4.3), omitted where the format-4 path has nothing, so
+    // its records and digests are unchanged: the accent the context draws
+    // (sealed here, no longer a sidecar), the roundness preset (omitted at
+    // `round`) and the authored `tune.*` values by tunable name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub accent: Option<design::SrgbColour>,
+    #[serde(
+        default = "default_roundness",
+        skip_serializing_if = "is_default_roundness"
+    )]
+    pub roundness: String,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub tune: BTreeMap<String, serde_json::Value>,
     pub ui: CommonUi,
     pub design: design::DesignReadProjection,
     pub provenance: BTreeMap<String, String>,
+}
+pub(crate) fn default_roundness() -> String {
+    design::geometry::Roundness::default().name().into()
+}
+pub(crate) fn is_default_roundness(value: &str) -> bool {
+    value == design::geometry::Roundness::default().name()
 }
 pub(crate) fn default_decorations() -> String {
     Appearance::default().decorations
