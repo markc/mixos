@@ -1,5 +1,15 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
+//! Resolution. [`values`] is key space v2's resolver over the registry's
+//! sparse values. The rest of this module is the format-4 (v1) path that
+//! settingsd's store still serves: [`describe`], [`patch`] and its setter,
+//! the hand-written validation in [`resolve_with_embedded_and_accents`].
+//! Its key names (`appearance.window_style`, `ui.density`, whole
+//! `apps.<id>` and `shell.panels.<id>` records) and ranges (any density,
+//! any panel thickness) are not v2's, so it cannot be served by
+//! [`crate::registry::apply`] without the migration. It goes when the store
+//! moves to format 5 (S6); `settings::v1` (S5) keeps the format-4 types for
+//! the migration and `settingsd downgrade`.
 use crate::*;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};

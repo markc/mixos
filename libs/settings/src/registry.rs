@@ -11,9 +11,14 @@
 //! constraints ([`constraint`]); [`describe`] is generated from the same
 //! tables.
 //!
-//! The registry sits beside today's typed model for now: the
-//! `resolve::patch` vocabulary and `resolve::describe` still serve the store
-//! until the v2 model (`Values`, typed views, resolve v2) replaces them.
+//! The v2 model is complete over [`Values`]: [`crate::view`] decodes them,
+//! [`crate::resolve::values`] resolves them and
+//! [`crate::domains::ChangePlan::of_values`] plans their changes. The
+//! format-4 store still holds today's typed [`crate::Desktop`] and writes it
+//! with the v1 vocabulary (`resolve::patch`, `resolve::describe`), whose
+//! names and value ranges v2 does not share; settingsd swaps to this
+//! registry when its store moves to format 5 (S6), and the v1 path goes
+//! then.
 use crate::model::Diagnostic;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
