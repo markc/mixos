@@ -24,7 +24,7 @@ fn snapshot(revision: u64, incarnation: &str) -> Snapshot {
         source_digest: "source".into(),
         desktop: Desktop::default(),
         effective: EFFECTIVE
-            .get_or_init(|| resolve(&Desktop::default()).unwrap())
+            .get_or_init(|| v1::resolve(&Desktop::default()).unwrap())
             .clone(),
         values: Default::default(),
     }
