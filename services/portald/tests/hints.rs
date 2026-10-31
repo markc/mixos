@@ -404,7 +404,8 @@ impl Harness {
     async fn publish_stamped(&self) -> anyhow::Result<()> {
         let topic = settings::topics::snapshot_topic("default");
         let state = self.authority.state.lock().unwrap().clone();
-        let body = serde_json::to_string(&settings::compact::encode_values(&state, &state.values)?)?;
+        let body =
+            serde_json::to_string(&settings::compact::encode_values(&state, &state.values)?)?;
         let mut inner = bus::wire::BusMessage::new();
         inner.set("command", &topic);
         inner.body = body;
