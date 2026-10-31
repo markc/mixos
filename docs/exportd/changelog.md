@@ -13,3 +13,8 @@ generated: by docs/_build/gen-site.mix from services/exportd/CHANGELOG.md; do no
 - The COSMIC exporter (`scripts/cosmic.mix`): settingsd's look, window,
   panel and wallpaper settings written into a cosmic-config tree, with
   undo.
+- The KDE Plasma exporter (`scripts/kde.mix`): the colour scheme from
+  `settings.palette` in `kdeglobals` and the `MixOS-Dark`/`MixOS-Light`
+  scheme files, the accent, the resolved fonts and the icon theme, the
+  Breeze border size and buttons in `kwinrc`, and panel floating, then
+  Plasma and KWin reconfigured over D-Bus; undo and restore.

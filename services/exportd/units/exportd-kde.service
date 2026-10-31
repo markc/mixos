@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+# kde-export in a KDE Plasma user session (a user unit, `systemctl --user`):
+# writes the settings authority's look into kdeglobals, kwinrc and the MixOS
+# colour schemes, and asks Plasma and KWin to reconfigure. It runs only in a
+# Plasma session; another desktop sharing the same home does not start it.
+[Unit]
+Description=MixOS settings export to KDE Plasma (exportd kde)
+Documentation=https://mixos.dev/exportd/
+# The broker is the system noded.service, which a user unit cannot order
+# after; `mix --serve` is supervised and keeps retrying until it answers.
+After=noded.service graphical-session.target
+PartOf=graphical-session.target
+ConditionEnvironment=XDG_SESSION_DESKTOP=KDE
+
+[Service]
+Type=simple
+Environment=MIX_STATS=off
+ExecStart=@{prefix}/bin/mix --serve @{prefix}/lib/exportd/kde.mix --name exportd-kde
+TimeoutStopSec=10
+Restart=on-failure
+RestartSec=2
+UMask=0077
+
+[Install]
+WantedBy=graphical-session.target

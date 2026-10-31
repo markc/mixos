@@ -1,0 +1,231 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Run from checkout root: mix services/exportd/tests/kde_test.mix
+-- kde-export: the KConfig reader, the plan (pure), a real kwriteconfig6
+-- write/undo/restore in a throwaway XDG_CONFIG_HOME, and the citizen on a
+-- private broker following a stand-in settings authority's topic. The
+-- kwriteconfig6 parts are skipped (and say so) where KDE's tools are absent.
+$here = dirname(realpath($0))
+$kc = require("../scripts/lib/kconfig.mix")
+$map = require("../scripts/lib/kde_map.mix")
+$app = require("../scripts/lib/kde_apply.mix")
+$pb = require("../../../tests/lib/private_bus.mix")
+$mix = env("MIXOS_TEST_MIX", mixos_path("prefix") .. "/bin/mix")
+$tmp = "/var/tmp/kde-export-test-" .. uuid()
+$checks = 0
+
+fn check($label, $ok)
+  if not $ok then raise("TEST", $label) end
+  print("PASS " .. $label)
+end
+
+fn eventually($f)
+  for $i = 1 to 60
+    try
+      if $f() then return true end
+    catch $m
+    end
+    sleep(0.1)
+  end
+  return false
+end
+
+-- One mode of a settings.palette answer: the opaque roles kde-export reads.
+fn mode_palette($mode, $accent)
+  $dark = $mode == "dark"
+  $roles = {
+    accent: $accent, accent_border: if $dark then "#CECECEFF" else "#222222FF" end,
+    accent_soft: $accent, accent_text: if $dark then "#EEEEEEFF" else "#161616FF" end,
+    card: if $dark then "#0B0B0BFF" else "#F2F2F2FF" end, chrome: if $dark then "#030303FF" else "#F8F8F8FF" end,
+    danger: "#FA6863FF", dock: "#242424FF", field: if $dark then "#030303FF" else "#FFFFFFFF" end,
+    hover: "#4C4C4CFF", tab_strip: "#242424FF", text: if $dark then "#EEEEEEFF" else "#161616FF" end,
+    text_dim: "#838383FF", warning: "#EAB532FF"
+  }
+  return {mode: $mode, accent: $accent, flat: $roles, roles: $roles,
+    swatches: {purple: "#E79CFEFF", green: "#92CF9CFF"},
+    cosmic: {theme: {link_button: {on: "#00000000"}, success: {base: "#5BB661FF"}, background: {component: {base: "#121212FF"}}}}, fonts: sample_fonts()}
+end
+
+-- settings.palette's resolved fonts: what the design decided, keys null or not.
+fn sample_fonts()
+  return {ui: {family: "Inter", size_px: 12, weight: 300}, mono: {family: "JetBrains Mono", size_px: 12, weight: 400}}
+end
+
+fn palette($accent)
+  return {dark: mode_palette("dark", $accent), light: mode_palette("light", $accent)}
+end
+
+fn sample_values($mode)
+  return {
+    "appearance.mode": $mode, "appearance.mode_resolved": $mode, "appearance.export_desktop": true,
+    "appearance.font_family": nil, "appearance.font_size": 12, "appearance.font_weight": 300,
+    "appearance.mono_family": nil, "appearance.icon_theme": "breeze", "appearance.density": "comfortable",
+    "appearance.roundness": "round", "accessibility.text_scale": 1.15,
+    "window.hint_colour": "accent", "window.caption_side": "right",
+    "window.controls.minimize": true, "window.controls.maximize": true, "_revision": "7"
+  }
+end
+
+fn authority($dir, $mode, $gate)
+  $vals = sample_values($mode)
+  $vals["appearance.export_desktop"] = $gate
+  write_file($dir .. "/get.json", json_encode({values: $vals, resolved: {mode: $mode, accent: "#3584E4"}, revision: "1"}))
+  write_file($dir .. "/palette.json", json_encode({palette: palette("#3584E4FF")}))
+end
+
+fn scheme_now($path)
+  return $kc.lookup($kc.read_groups($path), "General", "ColorScheme")
+end
+
+fn authority_up()
+  send settingsd settings.get timeout=2
+  return $rc == 0
+end
+
+-- 1. The KConfig reader.
+$g = $kc.parse_text("top=1\n[Colors:Header]\nBackgroundNormal=1,2,3\n[Colors:Header][Inactive]\n# c\nkey[$e]=\\sa\\tb\nIcon[de]=x\n")
+check("default group", $g["<default>"].top == "1")
+check("plain group", $kc.lookup($g, "Colors:Header", "BackgroundNormal") == "1,2,3")
+check("nested group and escapes", $kc.lookup($g, "Colors:Header][Inactive", "key") == " a\tb")
+check("absent key is nil", $kc.lookup($g, "Nope", "x") == nil)
+check("nested group argv", deep_eq($kc.write_argv("kdeglobals", "Colors:Header][Inactive", "k", "v"),
+  ["kwriteconfig6", "--file", "kdeglobals", "--group", "Colors:Header", "--group", "Inactive", "--key", "k", "--notify", "v"]))
+$ed = $kc.edit("# top\n[A]\nx=1\nlocked[$i]=1\n\n[B]\ny=2\n", [{group: "A", key: "x", value: "9"}, {group: "A", key: "locked", value: "0"}, {group: "B", key: "y", value: nil}, {group: "C][D", key: "z", value: " s"}])
+check("edit keeps comments and immutable keys", starts_with($ed, "# top\n[A]\nx=9\nlocked[$i]=1\nlocked=0\n"))
+check("edit deletes and appends nested groups", not contains($ed, "y=2") and contains($ed, "[C][D]\nz=\\ss"))
+check("delete argv", contains($kc.write_argv("kwinrc", "G", "k", nil), "--delete"))
+
+-- 2. The plan.
+check("rgb", $map.rgb("#0B0C0DFF") == "11,12,13" and $map.rgb("#ffffff") == "255,255,255")
+$refused = false
+try
+  $map.rgb("#11223344")
+catch $m
+  $refused = true
+end
+check("translucent colour refused", $refused)
+$fonts = sample_fonts()
+$p = $map.plan(sample_values("dark"), palette("#3584E4FF"), $fonts, ["breeze", "breeze-dark"])
+$kg = $p.files.kdeglobals
+check("dark scheme name", $kg.General.ColorScheme == "MixOS-Dark")
+check("accent", $kg.General.AccentColor == "53,132,228" and $kg["Colors:Selection"].BackgroundNormal == "53,132,228")
+check("window colours from chrome", $kg["Colors:Window"].BackgroundNormal == "3,3,3")
+check("translucent link falls back to an opaque role", $kg["Colors:View"].ForegroundLink == "206,206,206")
+check("font px x text scale to pt", $kg.General.font == "Inter,10.5,-1,5,300,0,0,0,0,0,0,0,0,0,0,1,,0,0")
+check("mono default", starts_with($kg.General.fixed, "JetBrains Mono,10.5,"))
+check("dark icon variant", $kg.Icons.Theme == "breeze-dark")
+check("hint accent colours the active title", $kg.WM.activeBackground == "53,132,228")
+check("buttons right", $p.files.kwinrc["org.kde.kdecoration2"].ButtonsOnRight == "IAX" and $p.files.kwinrc["org.kde.kdecoration2"].ButtonsOnLeft == "M")
+check("both scheme files", contains($p.schemes["MixOS-Light"], "ColorScheme=MixOS-Light") and contains($p.schemes["MixOS-Dark"], "[Colors:Header][Inactive]"))
+check("round floats the panel", $p.panel.floating)
+$v = sample_values("light")
+$v["window.caption_side"] = "left"
+$v["window.controls.maximize"] = false
+$v["appearance.density"] = "compact"
+$v["appearance.roundness"] = "square"
+$v["window.hint_colour"] = "#102030"
+$v["appearance.icon_theme"] = "missing-theme"
+$p2 = $map.plan($v, palette("#3584E4FF"), $fonts, ["breeze", "breeze-dark"])
+$refused = false
+try
+  $map.plan($v, palette("#3584E4FF"), nil, ["breeze"])
+catch $m
+  $refused = true
+end
+check("no resolved fonts is refused, never defaulted", $refused)
+check("light scheme name", $p2.files.kdeglobals.General.ColorScheme == "MixOS-Light")
+check("buttons left", $p2.files.kwinrc["org.kde.kdecoration2"].ButtonsOnLeft == "XI" and $p2.files.kwinrc["org.kde.kdecoration2"].ButtonsOnRight == "")
+check("compact borders", $p2.files.kwinrc["org.kde.kdecoration2"].BorderSize == "Tiny")
+check("square docks the panel", not $p2.panel.floating)
+check("hint colour", $p2.files.kdeglobals.WM.activeBackground == "16,32,48")
+check("missing icon theme is a note, not a write", $p2.files.kdeglobals.Icons == nil and contains($p2.notes, "icon_theme_missing: missing-theme"))
+
+mkdir($tmp, {parents: true})
+$procs = []
+$bus = nil
+try
+  if which("kwriteconfig6") == nil then
+    print("SKIP kwriteconfig6 absent: write, undo, restore and citizen checks")
+  else
+    -- 3. Real writes into a throwaway config home.
+    $ctx = {config_home: $tmp .. "/config", data_home: $tmp .. "/data", state_dir: $tmp .. "/state", reconfigure: false}
+    mkdir($ctx.config_home, {parents: true})
+    $seed = "[General]\nColorScheme=BreezeDark\nXftAntialias=true\n\n[KDE]\nLookAndFeelPackage=org.kde.breezedark.desktop\n"
+    write_file($ctx.config_home .. "/kdeglobals", $seed)
+    $r = $app.apply($ctx, $p, true)
+    check("dry run reports without writing", $r.changed > 100 and read_file($ctx.config_home .. "/kdeglobals") == $seed)
+    $r = $app.apply($ctx, $p, false)
+    $after = $kc.read_groups($ctx.config_home .. "/kdeglobals")
+    check("scheme written into kdeglobals", $kc.lookup($after, "General", "ColorScheme") == "MixOS-Dark"
+      and $kc.lookup($after, "Colors:Header][Inactive", "BackgroundNormal") == "3,3,3")
+    check("foreign keys untouched", $kc.lookup($after, "General", "XftAntialias") == "true"
+      and $kc.lookup($after, "KDE", "LookAndFeelPackage") == "org.kde.breezedark.desktop")
+    $kr = run_argv(["kreadconfig6", "--file", "kdeglobals", "--group", "Colors:Header", "--group", "Inactive", "--key", "ForegroundNormal"], {env: {XDG_CONFIG_HOME: $ctx.config_home}})
+    check("KConfig reads what the text edit wrote", trim($kr.stdout) == "238,238,238" or trim($kr.stdout) == "131,131,131")
+    check("kwinrc written", $kc.lookup($kc.read_groups($ctx.config_home .. "/kwinrc"), "org.kde.kdecoration2", "ButtonsOnRight") == "IAX")
+    check("scheme files written", is_file($ctx.data_home .. "/color-schemes/MixOS-Dark.colors") and is_file($ctx.data_home .. "/color-schemes/MixOS-Light.colors"))
+    check("second run writes nothing", $app.apply($ctx, $p, false).changed == 0)
+    $stamp = $p
+    $stamp.files.kdeglobals.MixOS.Revision = "8"
+    check("a new revision alone writes nothing", $app.apply($ctx, $stamp, false).changed == 0)
+    $r = $app.apply($ctx, $p2, false)
+    check("mode flip writes the difference only", $r.changed > 0 and $r.changed < 140)
+    check("light now", $kc.lookup($kc.read_groups($ctx.config_home .. "/kdeglobals"), "General", "ColorScheme") == "MixOS-Light")
+    $u = $app.undo($ctx)
+    check("undo puts back the previous burst", $u.restored > 0 and $kc.lookup($kc.read_groups($ctx.config_home .. "/kdeglobals"), "General", "ColorScheme") == "MixOS-Dark")
+    $app.restore($ctx)
+    $back = $kc.read_groups($ctx.config_home .. "/kdeglobals")
+    check("restore puts back the original", $kc.lookup($back, "General", "ColorScheme") == "BreezeDark"
+      and $kc.lookup($back, "General", "AccentColor") == nil and $kc.lookup($back, "Colors:View", "BackgroundNormal") == nil)
+    check("restore removes the scheme files it created", not is_file($ctx.data_home .. "/color-schemes/MixOS-Dark.colors"))
+
+    -- 4. The citizen follows the authority's topic.
+    $bus = $pb.start({dir: $tmp .. "/bus", name: "kde-export-test"})
+    $fake = $tmp .. "/fake"
+    mkdir($fake, {parents: true})
+    authority($fake, "dark", true)
+    $env = merge($pb.client_env($bus), {MIX_STATS: "off", FAKE_SETTINGS_DIR: $fake})
+    push($procs, spawn([$mix, "--serve", $here .. "/fixtures/fake_settingsd.mix", "--name", "settingsd"],
+      {detach: true, env: $env, stdout: {file: $tmp .. "/settingsd.log"}, stderr: "stdout"}))
+    check("authority ready", eventually(fn() = authority_up()))
+    send settingsd fake.publish timeout=5
+    $kenv = merge($env, {XDG_CONFIG_HOME: $tmp .. "/live-config", XDG_DATA_HOME: $tmp .. "/live-data",
+      MIXOS_KDE_EXPORT_STATE: $tmp .. "/live-state", MIXOS_KDE_EXPORT_RECONFIGURE: "0", MIXOS_SETTINGS_INSTANCE: "test"})
+    push($procs, spawn([$mix, "--serve", realpath($here .. "/../scripts/kde.mix"), "--name", "exportd-kde"],
+      {detach: true, env: $kenv, stdout: {file: $tmp .. "/kde.log"}, stderr: "stdout"}))
+    $live = $tmp .. "/live-config/kdeglobals"
+    $ok = eventually(fn() = scheme_now($live) == "MixOS-Dark")
+    if not $ok then
+      send exportd-kde exportd.kde.status timeout=5
+      print("status rc=" .. to_string($rc) .. " " .. to_string($result))
+    end
+    check("reconciles at start from the retained topic", $ok)
+    $registry = load_data(realpath($here .. "/../../../docs/docs/spec/bus/commands.conf.mix"))
+    $expected = sort(map(filter($registry.commands, fn($r) = $r.owner == "exportd" and starts_with($r.name, "exportd.kde.")), fn($r) = $r.name))
+    send exportd-kde HELP timeout=5
+    $help = if type($result) == "string" then json_parse($result) else $result end
+    $actual = sort(map(filter($help, fn($r) = starts_with($r.name, "exportd.kde.")), fn($r) = $r.name))
+    check("Bus registry matches runtime commands", deep_eq($expected, $actual))
+    authority($fake, "light", true)
+    send settingsd fake.publish timeout=5
+    check("follows a mode flip on the topic", eventually(fn() = scheme_now($live) == "MixOS-Light"))
+    authority($fake, "dark", false)
+    send settingsd fake.publish timeout=5
+    sleep(1.5)
+    check("export_desktop false stops writing", scheme_now($live) == "MixOS-Light")
+    send exportd-kde exportd.kde.status timeout=5
+    $st = if type($result) == "string" then json_parse($result) else $result end
+    check("status reports the gate", $st.gated == true)
+  end
+finally
+  for $pid in $procs
+    try
+      if process_alive($pid) then kill($pid, 15) end
+    catch $m
+    end
+  end
+  if $bus != nil then $pb.stop($bus) end
+  if is_file($tmp .. "/kde.log") then print("--- kde.log\n" .. read_file($tmp .. "/kde.log")) end
+  remove_dir($tmp)
+end
+print("kde_test: all checks passed")

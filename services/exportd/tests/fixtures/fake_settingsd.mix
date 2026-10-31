@@ -1,0 +1,21 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- A stand-in settings authority for the exporter tests: answers
+-- settings.get and settings.palette from JSON files the test writes, and
+-- publishes the retained appearance topic on request, as settingsd does on
+-- a revision.
+$dir = env("FAKE_SETTINGS_DIR", "")
+if $dir == "" then raise("FIXTURE", "FAKE_SETTINGS_DIR is required") end
+
+on settings.get
+  reply(read_file($dir .. "/get.json"))
+end
+
+on settings.palette
+  reply(read_file($dir .. "/palette.json"))
+end
+
+on fake.publish
+  publish("settingsd.desktop.keys.default.appearance", read_file($dir .. "/get.json"), {retain: true})
+  reply(json_encode({published: true}))
+end
