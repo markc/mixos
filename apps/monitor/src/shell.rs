@@ -507,7 +507,14 @@ impl Shell {
     fn session_theme(&self) -> Theme {
         self.look
             .as_ref()
-            .map(|look| toolkit::session_look::follow(look, self.custom_source, &self.file_theme))
+            .map(|look| {
+                toolkit::look_delivery::theme(
+                    look,
+                    &self.common_ui,
+                    self.custom_source,
+                    &self.file_theme,
+                )
+            })
             .unwrap_or_else(|| self.file_theme.clone())
             .with_ui(self.common_ui.clone())
     }

@@ -218,6 +218,31 @@ pub fn look_or(look: &Look, app: Option<&str>, session: &Theme) -> Theme {
     })
 }
 
+/// The session's design with the look's framing, menus, band and font
+/// choices, and nothing else: what a profile that names a design source of
+/// its own keeps.
+pub fn framed_session(look: &Look, session: &Theme) -> Theme {
+    let selected = fonts(look);
+    let mut overlay = session.overlay().clone();
+    overlay.weight = selected.weight;
+    overlay.size = selected.size;
+    let framing = &look.framing;
+    session
+        .clone()
+        .framed(
+            Decorations::from_name(&framing.decorations)
+                .unwrap_or(session.requested_decorations()),
+            CaptionSide::resolve(&framing.caption_side),
+        )
+        .with_menus(
+            design::MenuStyle::resolve(&framing.menu_style),
+            design::MenuSide::resolve(&framing.menu_side),
+        )
+        .with_band(band_of(framing))
+        .with_overlay(overlay)
+        .expect("the session's style overlay is already valid")
+}
+
 /// R5 step 7 for `app`, and the density step's multiplier, which
 /// `ui_scale` lays over the legacy lengths (step 2a's density half, until
 /// the toolkit applies the step itself, S8a). It is the only place the
