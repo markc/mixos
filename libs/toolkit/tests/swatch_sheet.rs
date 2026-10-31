@@ -22,8 +22,8 @@ use egui_kittest::Harness;
 use image::RgbaImage;
 use toolkit::Theme;
 
-const PANEL: egui::Vec2 = egui::vec2(380.0, 900.0);
-const GALLERY: egui::Vec2 = egui::vec2(300.0, 170.0);
+const PANEL: egui::Vec2 = egui::vec2(380.0, 1300.0);
+const GALLERY: egui::Vec2 = egui::vec2(300.0, 190.0);
 
 fn colour(linear: design::LinearRgba) -> egui::Color32 {
     let [r, g, b, a] = linear.to_srgba8();
