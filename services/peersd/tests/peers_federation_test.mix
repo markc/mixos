@@ -1,0 +1,161 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- peers_federation_test: two nodes' peersd, one registry each, reached
+-- through the CLI's fan-out. A private noded runs three peersd instances
+-- that stand in for nodes "north", "south" and "west" (PEERS_NODE names
+-- them; PEERS_NODES gives the CLI their services; "east" has no peersd):
+-- - list shows both nodes' sessions, and a node without a peersd is skipped;
+-- - msg NAME finds the one node that has it; NAME@NODE goes straight there;
+--   the receiver sees the sender's name@node as claimed, beside the stamp;
+-- - a name live on both nodes is PEER_AMBIGUOUS until NAME@NODE;
+-- - msg all reaches every node's sessions but the sender;
+-- - a notice set on one node is read on the other; a clear reaches both
+--   and tells their sessions; an older forwarded copy cannot undo a newer
+--   one; notice list brings a node that missed a set up to date.
+-- Run from the checkout root: mix services/peersd/tests/peers_federation_test.mix
+
+$pb = require("../../../tests/lib/private_bus.mix")
+$here = dirname(realpath($0))
+$scripts = realpath($here .. "/../scripts")
+fn absolute($path)
+  return if starts_with($path, "/") then $path else cwd() .. "/" .. $path end
+end
+$mix = absolute(env("MIXOS_TEST_MIX", mixos_path("prefix") .. "/bin/mix"))
+$noded = absolute(env("MIXOS_TEST_NODED", mixos_path("prefix") .. "/bin/noded"))
+$tmp = env("TMPDIR", "/tmp") .. "/peers-fed-test." .. uuid()
+$results = []
+$pids = []
+
+fn check($name, $ok)
+  push($results, {name: $name, ok: $ok})
+  print((if $ok then "PASS " else "FAIL " end) .. $name)
+end
+
+for each $bin in [$mix, $noded]
+  if not is_file($bin) then
+    print("SKIP: missing " .. $bin)
+    exit(0)
+  end
+end
+
+$bus = nil
+$env = {}
+-- Each view lists its own node first; "east" has no peersd.
+$NORTH = {PEERS_TARGET: "peers-north", PEERS_NODES: "north=peers-north,south=peers-south,west=peers-west,east=peers-east"}
+$SOUTH = {PEERS_TARGET: "peers-south", PEERS_NODES: "south=peers-south,north=peers-north,west=peers-west,east=peers-east"}
+$WEST = {PEERS_TARGET: "peers-west", PEERS_NODES: "west=peers-west,north=peers-north,south=peers-south,east=peers-east"}
+
+fn hook($input, $side)
+  $r = run_argv([$mix, $scripts .. "/claude_code_hook.mix"], {stdin: json_encode($input), env: merge($env, $side), timeout: 20})
+  $o = nil
+  if trim($r.stdout) != "" then
+    try
+      $o = json_parse($r.stdout)
+    catch $m
+    end
+  end
+  if $o == nil then return "" end
+  if $o.reason != nil then return $o.reason end
+  return ($o.hookSpecificOutput ?? {}).additionalContext ?? ""
+end
+
+fn cli($side, $session, $argv)
+  return run_argv(concat([$mix, $scripts .. "/peers_cli.mix"], $argv),
+    {env: merge(merge($env, $side), {CLAUDE_CODE_SESSION_ID: $session}), timeout: 30, stderr: "stdout"})
+end
+
+fn peersd($node)
+  return spawn([$mix, "--serve", $scripts .. "/peersd.mix", "--name", "peers-" .. $node],
+    {detach: true, env: merge($env, {PEERS_STATE: $tmp .. "/" .. $node, PEERS_NODE: $node}),
+     stdout: {file: $tmp .. "/" .. $node .. ".log", append: true}, stderr: "stdout"})
+end
+
+mkdir($tmp, {parents: true})
+try
+  $bus = $pb.start({dir: $tmp .. "/bus", name: "peers-fed", noded: $noded})
+  $env = merge($pb.client_env($bus), {HOME: $tmp .. "/home", XDG_STATE_HOME: $tmp .. "/state", XDG_CONFIG_HOME: $tmp .. "/config"})
+  mkdir($tmp .. "/home", {parents: true})
+  push($pids, peersd("north"))
+  push($pids, peersd("south"))
+  push($pids, peersd("west"))
+  $up = false
+  for $i = 1 to 100
+    if cli($NORTH, "", ["list"]).exit_code == 0 and cli($SOUTH, "", ["list"]).exit_code == 0 then
+      $up = true
+      break
+    end
+    sleep(0.2)
+  end
+  check("both peersd answer", $up)
+
+  $a = "aaaa1111-0000-0000-0000-00000000000a"
+  $b = "bbbb2222-0000-0000-0000-00000000000b"
+  $c = "cccc3333-0000-0000-0000-00000000000c"
+  $d = "dddd4444-0000-0000-0000-00000000000d"
+  hook({hook_event_name: "SessionStart", session_id: $a, cwd: "/n/a", session_title: "ann"}, $NORTH)
+  hook({hook_event_name: "SessionStart", session_id: $b, cwd: "/s/b", session_title: "bob"}, $SOUTH)
+  $l = cli($NORTH, "", ["list"])
+  check("list shows both nodes' sessions", contains($l.stdout, "ann ") and contains($l.stdout, "bob ") and contains($l.stdout, "/s/b"))
+  check("a node without a peersd is skipped quietly", not contains($l.stdout, "unreachable"))
+
+  $m = cli($NORTH, $a, ["msg", "bob", "hello from the north"])
+  check("msg NAME finds the node that has it", $m.exit_code == 0 and contains($m.stdout, "delivered to bob@south"))
+  $t = hook({hook_event_name: "UserPromptSubmit", session_id: $b}, $SOUTH)
+  check("the receiver sees the sender's name as claimed", contains($t, "hello from the north") and contains($t, "from=\"ann@peers-fed\""))
+  check("beside the broker's stamp", contains($t, "sender=\""))
+  check("msg NAME@NODE goes straight there", contains(cli($SOUTH, $b, ["msg", "ann@north", "back at you"]).stdout, "delivered to ann@north"))
+  check("and arrives", contains(hook({hook_event_name: "PostToolUse", session_id: $a}, $NORTH), "back at you"))
+  check("NAME@NODE for a node that does not exist is refused", cli($NORTH, $a, ["msg", "bob@east", "x"]).exit_code == 1)
+
+  hook({hook_event_name: "SessionStart", session_id: $c, cwd: "/n/c", session_title: "cat"}, $NORTH)
+  hook({hook_event_name: "SessionStart", session_id: $d, cwd: "/s/d", session_title: "cat"}, $SOUTH)
+  check("a bare name live on this node goes here", contains(cli($NORTH, $a, ["msg", "cat", "local cat"]).stdout, "delivered to cat as"))
+  $gone = cli($NORTH, $a, ["msg", "dog", "x"])
+  check("a name live nowhere is PEER_GONE", $gone.exit_code == 1 and contains($gone.stdout, "PEER_GONE"))
+  $e = "eeee5555-0000-0000-0000-00000000000e"
+  hook({hook_event_name: "SessionStart", session_id: $e, cwd: "/w/e", session_title: "cat"}, $WEST)
+  hook({hook_event_name: "SessionEnd", session_id: $c}, $NORTH)
+  $amb = cli($NORTH, $a, ["msg", "cat", "which cat"])
+  check("a name live on two other nodes is PEER_AMBIGUOUS", $amb.exit_code == 1 and contains($amb.stdout, "PEER_AMBIGUOUS") and contains($amb.stdout, "south") and contains($amb.stdout, "west"))
+  check("until NAME@NODE", contains(cli($NORTH, $a, ["msg", "cat@west", "west cat"]).stdout, "delivered to cat@west"))
+
+  $all = cli($NORTH, $a, ["msg", "all", "everyone"])
+  check("msg all reaches every node but the sender", contains($all.stdout, "bob@south") and contains($all.stdout, "cat@west") and not contains(split($all.stdout, " as ")[0], "ann"))
+
+  -- Notices.
+  hook({hook_event_name: "PostToolUse", session_id: $b}, $SOUTH)
+  check("notice set", cli($NORTH, $a, ["notice", "set", "hold-main", "main is held by ann"]).exit_code == 0)
+  $s = hook({hook_event_name: "PostToolUse", session_id: $b}, $SOUTH)
+  check("a notice set on one node is read on the other", contains($s, "key=\"hold-main\"") and contains($s, "main is held by ann"))
+  check("notice list sees it from either node", contains(cli($SOUTH, $b, ["notice", "list"]).stdout, "hold-main"))
+  check("notice clear from the other node", cli($SOUTH, $b, ["notice", "clear", "hold-main"]).exit_code == 0)
+  check("the clear reaches the first node's sessions", contains(hook({hook_event_name: "PostToolUse", session_id: $a}, $NORTH), "notice hold-main cleared"))
+  check("and it is gone on both", not contains(cli($NORTH, $a, ["notice", "list"]).stdout, "hold-main") and not contains(cli($SOUTH, $b, ["notice", "list"]).stdout, "hold-main"))
+
+  -- An older copy arriving late cannot bring a cleared notice back.
+  $late = run_argv([$mix, "-c", "send peers-north peers.notice.put body='" .. json_encode({key: "hold-main", text: "stale", version: 1, origin: "south"}) .. "' timeout=5\nprint($result)"],
+    {env: $env, timeout: 15, stderr: "stdout"})
+  check("an older forwarded copy is not applied", contains($late.stdout, "applied: false") or contains($late.stdout, "\"applied\":false"))
+
+  -- A node that missed a set catches up at the next notice list.
+  $direct = run_argv([$mix, "-c", "send peers-north peers.notice.set body='" .. json_encode({key: "freeze", text: "freeze north only"}) .. "' timeout=5"], {env: $env, timeout: 15})
+  check("a set made on one node only is not on the other yet", not contains(hook({hook_event_name: "PostToolUse", session_id: $b}, $SOUTH), "freeze"))
+  check("notice list from either node shows it", contains(cli($SOUTH, $b, ["notice", "list"]).stdout, "freeze"))
+  check("and brings the other node up to date", contains(hook({hook_event_name: "PostToolUse", session_id: $b}, $SOUTH), "freeze north only"))
+finally
+  for each $p in $pids
+    try
+      kill($p, 15)
+    catch $m
+    end
+  end
+  if $bus != nil then $pb.stop($bus) end
+end
+
+$failed = filter($results, fn($r) = not $r.ok)
+print(to_string(len($results) - len($failed)) .. "/" .. to_string(len($results)) .. " passed")
+if len($failed) > 0 then
+  print("logs in " .. $tmp)
+  exit(1)
+end
+remove_dir($tmp)

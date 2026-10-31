@@ -36482,17 +36482,25 @@ link it into `~/.config/systemd/user/` as `mixos-peersd.service`. State lives in
 `~/.local/state/mixos/peers/<host>/peers.db`, one per host, because a desk
 container may share its home with the host.
 
-**One registry for several nodes.** Today each node's sessions see only
-their own node's peersd. To put a group of nodes on one registry (a host and
-the desks that share its home, say), run peersd on one of them and name it
-as the hub in `~/.config/mixos/peers.conf.mix`:
+**Across the mesh.** Each node's peersd holds that node's sessions, and
+`mix peers` reaches the others: `list` and `msg all` visit every node noded
+knows (`noded.peers`), skipping a node that runs no peersd and naming one
+that does not answer. A message to a session on another node carries the
+sender's `name@node` as its claimed name, beside the receiving broker's
+stamp. Notices are copied to every node: each carries the time it was set
+or cleared at its origin, the newest wins, and a clear leaves a tombstone so
+a late copy cannot bring it back. `mix peers notice list` also brings any
+node that missed a set or clear up to date.
+
+**One registry for several nodes.** A group of nodes can share one registry
+instead (a host and the desks that share its home, say): run peersd on one
+of them and name it as the hub in `~/.config/mixos/peers.conf.mix`:
 
 ```text
 {hub: "host1"}
 ```
 
-Every other node then reaches `peers.host1.bus`. A registry federated across
-every node, with no hub, is the next step.
+Every node with that conf then reaches `peers.host1.bus` only.
 
 ## Command line
 
@@ -36503,7 +36511,7 @@ that session; otherwise as the Bus caller it is.
 | Command | What it does |
 |---|---|
 | `mix peers list` | the live sessions; a session silent for two hours is marked stale |
-| `mix peers msg NAME TEXT...` | a direct message |
+| `mix peers msg NAME[@NODE] TEXT...` | a direct message; a bare NAME is looked for on this node, then on the others (`PEER_AMBIGUOUS` if two have it) |
 | `mix peers msg all TEXT...` | a message to every other live session |
 | `mix peers notice set KEY TEXT... [--ttl S]` | pin a notice every session reads once |
 | `mix peers notice clear KEY` | remove it; every live session is told |
@@ -36565,6 +36573,9 @@ The `peers` service. Bodies are JSON.
 | `peers.notice.set` | `{key, text, ttl_s?}` | `{key, ts, expires}` |
 | `peers.notice.clear` | `{key}` | every live session gets a `notice-cleared` message |
 | `peers.notice.list` | | `{notices}` |
+| `peers.notice.put` | `{key, version, origin, text? \| cleared?}` | a set or clear forwarded from another node; applied only if newer |
+| `peers.notice.all` | | `{node, notices, tombs}`, for reconciling |
+| `peers.whoami` | `{claude_session}` | `{name, node}` |
 
 Topics: `peers.message {id, to, from}` on every delivery, `peers.notice` on
 every set and clear.

@@ -39,6 +39,32 @@ fn node($timeout)
   return ""
 end
 
+-- Every peersd a fan-out visits, this node first: [{node, service}].
+-- $PEERS_NODES ("n1=svc1,n2=svc2", this node first) overrides it for tests.
+-- With a hub, the hub's registry is the only one. Otherwise this node's
+-- own, then one per mesh peer noded knows (`noded.peers`); a node without a
+-- peersd answers "not found" at once and is skipped.
+fn nodes($node)
+  $o = env("PEERS_NODES", "")
+  if $o != "" then
+    return map(split($o, ","), fn($p) = {node: split($p, "=")[0], service: split($p, "=")[1]})
+  end
+  $h = hub()
+  if $h != "" then return [{node: $h, service: service($node)}] end
+  $out = [{node: $node, service: "peers"}]
+  try
+    send noded noded.peers timeout=2
+    if $rc == 0 then
+      $v = if type($result) == "string" then json_parse($result) else $result end
+      for each $p in $v.peers ?? []
+        if type($p.name) == "string" and $p.name != $node then push($out, {node: $p.name, service: "peers." .. $p.name .. ".bus"}) end
+      end
+    end
+  catch $m
+  end
+  return $out
+end
+
 fn service($node)
   $t = env("PEERS_TARGET", "")
   if $t != "" then return $t end

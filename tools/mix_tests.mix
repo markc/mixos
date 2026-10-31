@@ -93,6 +93,7 @@ $scripts = [
   "services/agentd/tests/agent_cli_test.mix",
   "services/agentd/tests/agentd_resume_test.mix",
   "services/peersd/tests/peersd_test.mix",
+  "services/peersd/tests/peers_federation_test.mix",
   "apps/dopus/tests/dopus_bus_test.mix",
   "apps/workshop/tests/agents_bus_test.mix",
   "apps/screenshot/tests/edit_path_test.mix"

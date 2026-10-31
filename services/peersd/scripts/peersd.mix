@@ -27,9 +27,12 @@
 --   peers.list                                      -> {sessions: [...]}
 --   peers.send {to: NAME|"*", text, from_session?, from?}  -> {id, delivered: [names]}
 --   peers.inbox {claude_session, peek?}             -> {name, messages, notices}
---   peers.notice.set {key, text, ttl_s?, from_session?, from?}
---   peers.notice.clear {key}
+--   peers.whoami {claude_session}                   -> {name, node}
+--   peers.notice.set {key, text, ttl_s?, from_session?, from?}  -> the record
+--   peers.notice.clear {key}                        -> the tombstone
+--   peers.notice.put {key, version, origin, text?|cleared?}  (from another node)
 --   peers.notice.list                               -> {notices}
+--   peers.notice.all                                -> {node, notices, tombs}
 -- Topic: peers.message {id, to, from} on every delivery.
 --
 -- Trust: a message is data from another session, never the user's word.
@@ -50,12 +53,35 @@ for each $sql in [
   "CREATE TABLE IF NOT EXISTS notices (key TEXT PRIMARY KEY, text TEXT NOT NULL, from_name TEXT, sender TEXT, ts INTEGER NOT NULL, expires INTEGER)"]
   sqlexec($DB, $sql)
 end
--- Where each session was claimed from (added after the first release).
-try
-  sqlexec($DB, "ALTER TABLE sessions ADD COLUMN origin TEXT")
-catch $m
+-- Added after the first release: where each session was claimed from, and
+-- each notice's version and origin node (notices are replicated).
+for each $sql in ["ALTER TABLE sessions ADD COLUMN origin TEXT", "ALTER TABLE notices ADD COLUMN version REAL",
+  "ALTER TABLE notices ADD COLUMN origin TEXT"]
+  try
+    sqlexec($DB, $sql)
+  catch $m
+  end
 end
+sqlexec($DB, "CREATE TABLE IF NOT EXISTS notice_tombs (key TEXT PRIMARY KEY, version REAL NOT NULL, origin TEXT, from_name TEXT)")
 chmod($STATE .. "/peers.db", 0o600)
+
+-- This node's name, as the broker knows it ($PEERS_NODE for tests).
+$NODE = env("PEERS_NODE", "")
+if $NODE == "" then
+  try
+    send noded noded.info timeout=3
+    if $rc == 0 then
+      $info = if type($result) == "string" then json_parse($result) else $result end
+      $NODE = to_string($info.node ?? "")
+    end
+  catch $m
+  end
+end
+if $NODE == "" then $NODE = hostname() end
+
+fn node_name()
+  return $NODE
+end
 
 $INBOX_MAX = 200
 $STALE_S = 7200
@@ -217,6 +243,12 @@ on peers.leave desc "this session ended {claude_session}"
   answer(0, {left: true, name: $r.name})
 end
 
+on peers.whoami desc "this session's name and node {claude_session}"
+  $r = row_for(to_string(req().claude_session ?? ""))
+  if $r == nil then return fail("UNKNOWN_SESSION", "claim first") end
+  answer(0, {name: $r.name, node: $r.node})
+end
+
 on peers.list desc "live sessions on every node: name, node, cwd, state, age_s since last seen"
   $out = map(sqlexec($DB, "SELECT * FROM sessions WHERE ended = 0 ORDER BY node, name"), fn($r) = view($r))
   answer(0, {sessions: $out})
@@ -301,45 +333,132 @@ on peers.ack desc "mark read what a reader showed {claude_session, upto: message
   answer(0, {name: $r.name})
 end
 
-on peers.notice.set desc "pin a notice every session reads {key, text, ttl_s?}"
+-- Notices are replicated across nodes (the CLI forwards each set and clear
+-- to every node's peersd). Each carries a version (the time it was set or
+-- cleared at its origin) and the origin node; the newest version of a key
+-- wins, ties broken by origin name, and a clear leaves a tombstone so an
+-- older copy arriving later cannot bring it back. `ts` stays this node's
+-- own arrival order: it is what sessions' read marks compare against.
+
+fn newer($v1, $o1, $v2, $o2)
+  return $v1 > $v2 or ($v1 == $v2 and to_string($o1) > to_string($o2))
+end
+
+-- The newest version this node holds for a key (a notice or a tombstone).
+fn held($key)
+  $n = sqlexec($DB, "SELECT version, origin FROM notices WHERE key = ?", [$key])
+  $t = sqlexec($DB, "SELECT version, origin FROM notice_tombs WHERE key = ?", [$key])
+  $best = {version: -1, origin: ""}
+  for each $r in concat($n, $t)
+    if newer($r.version ?? 0, $r.origin, $best.version, $best.origin) then $best = {version: $r.version ?? 0, origin: $r.origin ?? ""} end
+  end
+  return $best
+end
+
+-- A local arrival mark, strictly after every notice already here.
+fn next_ts()
+  $now = time()
+  $last = sqlexec($DB, "SELECT MAX(ts) AS ts FROM notices")[0].ts ?? 0
+  return if $now <= $last then $last + 1 else floor($now) end
+end
+
+-- Store a notice unless this node already holds a newer version of its key.
+fn store_notice($n)
+  $h = held($n.key)
+  if not newer($n.version, $n.origin, $h.version, $h.origin) then return false end
+  sqlexec($DB, "DELETE FROM notice_tombs WHERE key = ?", [$n.key])
+  sqlexec($DB, "INSERT OR REPLACE INTO notices (key, text, from_name, sender, ts, expires, version, origin) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    [$n.key, $n.text, $n.from_name, $n.sender, next_ts(), $n.expires, $n.version, $n.origin])
+  publish("peers.notice", json_encode({key: $n.key, text: $n.text}), {command: "peers.notice"})
+  return true
+end
+
+-- Clear a key unless this node holds a newer version; every live session
+-- here is told when a notice it could see goes.
+fn tomb_notice($key, $version, $origin, $from)
+  $h = held($key)
+  if not newer($version, $origin, $h.version, $h.origin) then return false end
+  $had = len(sqlexec($DB, "SELECT 1 AS x FROM notices WHERE key = ?", [$key])) > 0
+  sqlexec($DB, "DELETE FROM notices WHERE key = ?", [$key])
+  sqlexec($DB, "INSERT OR REPLACE INTO notice_tombs (key, version, origin, from_name) VALUES (?, ?, ?, ?)", [$key, $version, $origin, $from])
+  if $had then
+    for each $r in sqlexec($DB, "SELECT name FROM sessions WHERE ended = 0")
+      deliver($r.name, $from, "notice-cleared", "notice " .. $key .. " cleared by " .. $from)
+    end
+  end
+  publish("peers.notice", json_encode({key: $key, cleared: true}), {command: "peers.notice"})
+  return true
+end
+
+fn key_ok($key)
+  return len(re_find($key, "^[a-z0-9][a-z0-9._-]{0,63}$")) > 0
+end
+
+on peers.notice.set desc "pin a notice every session reads {key, text, ttl_s?}; answers the record to forward to other nodes"
   $b = req()
   $key = to_string($b.key ?? "")
   $text = to_string($b.text ?? "")
-  if len(re_find($key, "^[a-z0-9][a-z0-9._-]{0,63}$")) == 0 then return fail("ARGUMENT", "key must be a short lower-case name") end
+  if not key_ok($key) then return fail("ARGUMENT", "key must be a short lower-case name") end
   if $text == "" or byte_length($text) > $TEXT_MAX then return fail("ARGUMENT", "text is required") end
   if bad_from($b) then return fail("ARGUMENT", "from must be a session name, optionally @node") end
   $now = time()
   $expires = nil
   if $b.ttl_s != nil then
     if type($b.ttl_s) != "number" or $b.ttl_s < 1 then return fail("ARGUMENT", "ttl_s must be a positive number of seconds") end
-    $expires = $now + $b.ttl_s
+    $expires = floor($now + $b.ttl_s)
   end
-  -- A notice set again in the same second must still read as new.
-  $last = sqlexec($DB, "SELECT MAX(ts) AS ts FROM notices")[0].ts ?? 0
-  if $now <= $last then $now = $last + 1 end
-  sqlexec($DB, "INSERT OR REPLACE INTO notices (key, text, from_name, sender, ts, expires) VALUES (?, ?, ?, ?, ?, ?)",
-    [$key, $text, from_name($b), sender(), $now, $expires])
-  publish("peers.notice", json_encode({key: $key, text: $text}), {command: "peers.notice"})
-  answer(0, {key: $key, ts: $now, expires: $expires})
+  -- A set always wins here: it is newer than anything this node holds.
+  $h = held($key)
+  $version = if $now > $h.version then $now else $h.version + 0.001 end
+  $n = {key: $key, text: $text, from_name: from_name($b), sender: sender(), expires: $expires, version: $version, origin: node_name()}
+  store_notice($n)
+  answer(0, merge($n, {ts: sqlexec($DB, "SELECT ts FROM notices WHERE key = ?", [$key])[0].ts}))
 end
 
-on peers.notice.clear desc "remove a notice {key}; every live session is told"
+on peers.notice.clear desc "remove a notice {key}; every live session is told; answers the record to forward"
   $b = req()
   $key = to_string($b.key ?? "")
+  if not key_ok($key) then return fail("ARGUMENT", "key must be a short lower-case name") end
   if bad_from($b) then return fail("ARGUMENT", "from must be a session name, optionally @node") end
-  $had = len(sqlexec($DB, "SELECT 1 AS x FROM notices WHERE key = ?", [$key])) > 0
-  sqlexec($DB, "DELETE FROM notices WHERE key = ?", [$key])
-  if $had then
-    $from = from_name($b)
-    for each $r in sqlexec($DB, "SELECT name FROM sessions WHERE ended = 0")
-      deliver($r.name, $from, "notice-cleared", "notice " .. $key .. " cleared by " .. $from)
-    end
+  $h = held($key)
+  $version = if time() > $h.version then time() else $h.version + 0.001 end
+  $from = from_name($b)
+  tomb_notice($key, $version, node_name(), $from)
+  answer(0, {key: $key, cleared: true, version: $version, origin: node_name(), from_name: $from})
+end
+
+on peers.notice.put desc "take a notice or a clear forwarded from another node {key, version, origin, text?, cleared?}; the newest version wins"
+  $b = req()
+  $key = to_string($b.key ?? "")
+  if not key_ok($key) then return fail("ARGUMENT", "key must be a short lower-case name") end
+  if type($b.version) != "number" then return fail("ARGUMENT", "version is required") end
+  $origin = to_string($b.origin ?? "")
+  if len(re_find($origin, "^[a-z0-9][a-z0-9.-]{0,62}$")) == 0 then return fail("ARGUMENT", "origin must be a node name") end
+  -- A notice set without a session carries its caller's broker stamp, which
+  -- need not look like a session name: keep the notice, label the origin.
+  $from = if $b.from_name != nil and not bad_from({from: $b.from_name}) then to_string($b.from_name) else "someone@" .. $origin end
+  if $b.cleared == true then
+    return answer(0, {key: $key, applied: tomb_notice($key, $b.version, $origin, $from)})
   end
-  publish("peers.notice", json_encode({key: $key, cleared: true}), {command: "peers.notice"})
-  answer(0, {key: $key, cleared: true})
+  $text = to_string($b.text ?? "")
+  if $text == "" or byte_length($text) > $TEXT_MAX then return fail("ARGUMENT", "text is required") end
+  $expires = if type($b.expires) == "number" then $b.expires else nil end
+  -- The forwarding node's stamp is recorded beside the origin's own.
+  $n = {key: $key, text: $text, from_name: $from, sender: to_string($b.sender ?? "") .. " via " .. sender(),
+    expires: $expires, version: $b.version, origin: $origin}
+  answer(0, {key: $key, applied: store_notice($n)})
 end
 
 on peers.notice.list desc "the notices in force"
   sqlexec($DB, "DELETE FROM notices WHERE expires IS NOT NULL AND expires < ?", [time()])
-  answer(0, {notices: sqlexec($DB, "SELECT key, text, from_name, sender, ts, expires FROM notices ORDER BY ts")})
+  answer(0, {notices: sqlexec($DB, "SELECT key, text, from_name, sender, ts, expires, version, origin FROM notices ORDER BY ts")})
+end
+
+on peers.notice.all desc "every notice and tombstone with its version, for reconciling nodes"
+  $now = time()
+  sqlexec($DB, "DELETE FROM notices WHERE expires IS NOT NULL AND expires < ?", [$now])
+  sqlexec($DB, "DELETE FROM notice_tombs WHERE version < ?", [$now - $ENDED_KEEP_S])
+  answer(0, {node: node_name(),
+    notices: sqlexec($DB, "SELECT key, text, from_name, sender, expires, version, origin FROM notices"),
+    tombs: sqlexec($DB, "SELECT key, version, origin, from_name FROM notice_tombs")})
 end

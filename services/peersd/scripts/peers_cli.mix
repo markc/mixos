@@ -1,10 +1,10 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
--- version: 0.2.0
+-- version: 0.3.0
 -- peers_cli: the command-line front end to peersd (`mix peers ...`).
 --
---   mix peers list                         live sessions
---   mix peers msg NAME|all TEXT...         a direct message, or one to everyone
+--   mix peers list                         live sessions on every node
+--   mix peers msg NAME[@NODE]|all TEXT...  a direct message, or one to everyone
 --   mix peers notice set KEY TEXT... [--ttl SECONDS]
 --   mix peers notice clear KEY
 --   mix peers notice list
@@ -13,11 +13,16 @@
 --
 -- Run inside an agent session it acts as that session
 -- ($CLAUDE_CODE_SESSION_ID); otherwise as the Bus sender it is (--from NAME
--- labels it). Which peersd it reaches: lib/target.mix. Exit codes: 0 done,
--- 1 refused or unreachable, 64 usage.
+-- labels it). Each node's peersd holds that node's sessions; this CLI does
+-- the fan-out (lib/target.mix nodes()), so no peersd handler waits on
+-- another node. A message to another node carries this session's name as a
+-- claimed `from`; the receiving node records the broker's stamp beside it.
+-- Notices are set here and forwarded to every node; `notice list` also
+-- brings any node that missed a set or clear up to date.
+-- Exit codes: 0 done, 1 refused or unreachable, 64 usage.
 
 $t = require("lib/target.mix")
-$USAGE = "usage: mix peers list | msg NAME|all TEXT... | notice set KEY TEXT... [--ttl S] | notice clear KEY
+$USAGE = "usage: mix peers list | msg NAME[@NODE]|all TEXT... | notice set KEY TEXT... [--ttl S] | notice clear KEY
        | notice list | inbox [--peek] | name NEW   [--from NAME]"
 $o = getopt(args(), {ttl: {arg: true}, from: {arg: true}, peek: {}})
 $rest = $o.rest
@@ -30,34 +35,161 @@ $node = $t.node(2)
 $T = $t.service($node)
 $me = env("CLAUDE_CODE_SESSION_ID")
 
-fn call($command, $b)
-  if $me != "" and $b.from_session == nil then $b.from_session = $me end
-  if $o.opts.from != nil then $b.from = $o.opts.from end
-  $j = json_encode($b)
-  send $T $command body=$j timeout=5
-  $v = if type($result) == "string" then json_parse($result) else $result end
-  if $rc != 0 then
-    eprint("mix peers: " .. to_string(if type($v) == "map" then ($v.error_code ?? "") .. " " .. to_string($v.message ?? "") else $v end))
-    exit(1)
+fn decode($v)
+  if type($v) == "string" then
+    try
+      return json_parse($v)
+    catch $m
+    end
   end
   return $v
 end
 
+-- One call to a peersd: {rc, v}. Never exits.
+fn try_call($service, $command, $b)
+  try
+    $j = json_encode($b)
+    send $service $command body=$j timeout=3
+    return {rc: $rc, v: decode($result)}
+  catch $m
+    return {rc: 255, v: to_string($m)}
+  end
+end
+
+fn why($v)
+  return to_string(if type($v) == "map" then ($v.error_code ?? "") .. " " .. to_string($v.message ?? "") else $v end)
+end
+
+-- A peersd that is simply not there (no such service on that node).
+fn absent($r)
+  return $r.rc != 0 and contains(why($r.v), "not found")
+end
+
+-- One call to this node's peersd, as this session; exits on a refusal.
+fn call($command, $b)
+  if $me != "" and $b.from_session == nil then $b.from_session = $me end
+  if $o.opts.from != nil then $b.from = $o.opts.from end
+  $r = try_call($T, $command, $b)
+  if $r.rc != 0 then
+    eprint("mix peers: " .. why($r.v))
+    exit(1)
+  end
+  return $r.v
+end
+
+-- This session's claimed name for other nodes: name@node, --from, or nil
+-- (then the receiving node shows the broker's stamp).
+fn me_name()
+  if $o.opts.from != nil then return $o.opts.from end
+  if $me == "" then return nil end
+  $r = try_call($T, "peers.whoami", {claude_session: $me})
+  if $r.rc == 0 then return $r.v.name .. "@" .. $r.v.node end
+  return nil
+end
+
+-- Every other node's peersd (the first entry is this node's own).
+fn others()
+  $all = $t.nodes($node)
+  return slice($all, 1)
+end
+
+fn send_one($service, $to, $text, $local)
+  $b = {to: $to, text: $text}
+  if $local then
+    return call("peers.send", $b)
+  end
+  $from = me_name()
+  if $from != nil then $b.from = $from end
+  return try_call($service, "peers.send", $b)
+end
+
 $cmd = $rest[0]
 if $cmd == "list" then
-  for each $s in call("peers.list", {}).sessions
-    print($s.name .. "  " .. $s.node .. "  " .. to_string($s.state) .. "  " .. to_string($s.cwd) ..
-      (if $s.stale then "  STALE (no sign for " .. to_string(floor($s.age_s / 3600)) .. " h; may have crashed)" elif $s.age_s > 600 then "  (last seen " .. to_string(floor($s.age_s / 60)) .. " min ago)" else "" end))
+  $down = []
+  for each $n in $t.nodes($node)
+    $r = if $n.service == $T then {rc: 0, v: call("peers.list", {})} else try_call($n.service, "peers.list", {}) end
+    if $r.rc == 0 then
+      for each $s in $r.v.sessions ?? []
+        print($s.name .. "  " .. $s.node .. "  " .. to_string($s.state) .. "  " .. to_string($s.cwd) ..
+          (if $s.stale then "  STALE (no sign for " .. to_string(floor($s.age_s / 3600)) .. " h; may have crashed)" elif $s.age_s > 600 then "  (last seen " .. to_string(floor($s.age_s / 60)) .. " min ago)" else "" end))
+      end
+    elif not absent($r) then
+      push($down, $n.node)
+    end
   end
+  if len($down) > 0 then print("(unreachable: " .. join($down, ", ") .. ")") end
 elif $cmd == "msg" then
   if len($rest) < 3 then
     eprint($USAGE)
     exit(64)
   end
-  $to = if $rest[1] == "all" then "*" else $rest[1] end
-  $v = call("peers.send", {to: $to, text: join(slice($rest, 2), " ")})
-  print("delivered to " .. (if len($v.delivered) == 0 then "nobody" else join($v.delivered, ", ") end) .. " as " .. to_string($v.from))
-  if len($v.stored ?? []) > 0 then print("stored for stale sessions (may have crashed): " .. join($v.stored, ", ")) end
+  $text = join(slice($rest, 2), " ")
+  $target = $rest[1]
+  if $target == "all" then
+    $v = call("peers.send", {to: "*", text: $text})
+    $delivered = $v.delivered
+    $stored = $v.stored ?? []
+    for each $n in others()
+      $r = send_one($n.service, "*", $text, false)
+      if $r.rc == 0 then
+        for each $d in $r.v.delivered ?? []
+          push($delivered, $d .. "@" .. $n.node)
+        end
+        for each $d in $r.v.stored ?? []
+          push($stored, $d .. "@" .. $n.node)
+        end
+      end
+    end
+    print("delivered to " .. (if len($delivered) == 0 then "nobody" else join($delivered, ", ") end) .. " as " .. to_string($v.from))
+    if len($stored) > 0 then print("stored for stale sessions (may have crashed): " .. join($stored, ", ")) end
+  else
+    $parts = split($target, "@")
+    $name = $parts[0]
+    $at = if len($parts) > 1 then $parts[1] else "" end
+    -- Where the session lives: the node named, else this node, else the one
+    -- other node that has it.
+    $dest = nil
+    if $at == "" or $at == $node then
+      $local = try_call($T, "peers.list", {})
+      if $local.rc == 0 and len(filter($local.v.sessions ?? [], fn($s) = $s.name == $name)) > 0 then $dest = {node: $node, service: $T} end
+      if $dest == nil and $at == "" then
+        $found = []
+        for each $n in others()
+          $r = try_call($n.service, "peers.list", {})
+          if $r.rc == 0 and len(filter($r.v.sessions ?? [], fn($s) = $s.name == $name)) > 0 then push($found, $n) end
+        end
+        if len($found) > 1 then
+          eprint("mix peers: PEER_AMBIGUOUS " .. $name .. " is live on " .. join(map($found, fn($n) = $n.node), ", ") .. "; say NAME@NODE")
+          exit(1)
+        end
+        if len($found) == 1 then $dest = $found[0] end
+      end
+    else
+      $match = filter($t.nodes($node), fn($n) = $n.node == $at)
+      if len($match) == 0 then
+        eprint("mix peers: PEER_GONE no node " .. $at)
+        exit(1)
+      end
+      $dest = $match[0]
+    end
+    if $dest == nil then
+      eprint("mix peers: PEER_GONE no live session " .. $target .. " (see mix peers list)")
+      exit(1)
+    end
+    if $dest.service == $T then
+      $v = send_one($T, $name, $text, true)
+    else
+      $r = send_one($dest.service, $name, $text, false)
+      if $r.rc != 0 then
+        eprint("mix peers: " .. why($r.v))
+        exit(1)
+      end
+      $v = $r.v
+    end
+    $at_node = if $dest.service == $T then "" else "@" .. $dest.node end
+    print("delivered to " .. (if len($v.delivered) == 0 then "nobody" else join(map($v.delivered, fn($d) = $d .. $at_node), ", ") end) .. " as " .. to_string($v.from))
+    if len($v.stored ?? []) > 0 then print("stored for stale sessions (may have crashed): " .. join($v.stored, ", ")) end
+  end
 elif $cmd == "notice" and len($rest) >= 2 then
   if $rest[1] == "set" and len($rest) >= 4 then
     $b = {key: $rest[2], text: join(slice($rest, 3), " ")}
@@ -69,13 +201,52 @@ elif $cmd == "notice" and len($rest) >= 2 then
       $b.ttl_s = to_number($o.opts.ttl)
     end
     $v = call("peers.notice.set", $b)
-    print("notice " .. $v.key .. " set")
+    $missed = []
+    for each $n in others()
+      $r = try_call($n.service, "peers.notice.put", {key: $v.key, text: $v.text, from_name: $v.from_name, sender: $v.sender,
+        expires: $v.expires, version: $v.version, origin: $v.origin})
+      if $r.rc != 0 and not absent($r) then push($missed, $n.node) end
+    end
+    print("notice " .. $v.key .. " set" .. (if len($missed) > 0 then " (not reached yet: " .. join($missed, ", ") .. ")" else "" end))
   elif $rest[1] == "clear" and len($rest) == 3 then
-    call("peers.notice.clear", {key: $rest[2]})
-    print("notice " .. $rest[2] .. " cleared")
+    $v = call("peers.notice.clear", {key: $rest[2]})
+    $missed = []
+    for each $n in others()
+      $r = try_call($n.service, "peers.notice.put", {key: $v.key, cleared: true, version: $v.version, origin: $v.origin, from_name: $v.from_name})
+      if $r.rc != 0 and not absent($r) then push($missed, $n.node) end
+    end
+    print("notice " .. $rest[2] .. " cleared" .. (if len($missed) > 0 then " (not reached yet: " .. join($missed, ", ") .. ")" else "" end))
   elif $rest[1] == "list" then
-    for each $n in call("peers.notice.list", {}).notices
-      print($n.key .. "  (" .. to_string($n.from_name) .. ")  " .. $n.text)
+    -- Gather every node's notices and tombstones, keep the newest version
+    -- of each key, and bring any node that is behind up to date.
+    $views = []
+    for each $n in $t.nodes($node)
+      $r = try_call($n.service, "peers.notice.all", {})
+      if $r.rc == 0 then push($views, {n: $n, v: $r.v}) end
+    end
+    $best = {}
+    for each $w in $views
+      for each $x in $w.v.notices ?? []
+        $c = $best[$x.key]
+        if $c == nil or $x.version > $c.version or ($x.version == $c.version and to_string($x.origin) > to_string($c.origin)) then $best[$x.key] = $x end
+      end
+      for each $x in $w.v.tombs ?? []
+        $c = $best[$x.key]
+        if $c == nil or $x.version > $c.version or ($x.version == $c.version and to_string($x.origin) > to_string($c.origin)) then $best[$x.key] = merge($x, {cleared: true}) end
+      end
+    end
+    for each $w in $views
+      for each $k in keys($best)
+        $x = $best[$k]
+        $have = filter(concat($w.v.notices ?? [], $w.v.tombs ?? []), fn($y) = $y.key == $k and $y.version == $x.version and $y.origin == $x.origin)
+        if len($have) == 0 then try_call($w.n.service, "peers.notice.put", $x) end
+      end
+    end
+    for each $k in sort(keys($best))
+      $x = $best[$k]
+      if $x.cleared != true and ($x.expires == nil or $x.expires > time()) then
+        print($x.key .. "  (" .. to_string($x.from_name) .. ")  " .. $x.text)
+      end
     end
   else
     eprint($USAGE)

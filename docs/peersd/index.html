@@ -261,21 +261,28 @@ ask, but never approve anything on the user's behalf.</p>
 link it into <code>~/.config/systemd/user/</code> as <code>mixos-peersd.service</code>. State lives in
 <code>~/.local/state/mixos/peers/&lt;host&gt;/peers.db</code>, one per host, because a desk
 container may share its home with the host.</p>
-<p><strong>One registry for several nodes.</strong> Today each node's sessions see only
-their own node's peersd. To put a group of nodes on one registry (a host and
-the desks that share its home, say), run peersd on one of them and name it
-as the hub in <code>~/.config/mixos/peers.conf.mix</code>:</p>
+<p><strong>Across the mesh.</strong> Each node's peersd holds that node's sessions, and
+<code>mix peers</code> reaches the others: <code>list</code> and <code>msg all</code> visit every node noded
+knows (<code>noded.peers</code>), skipping a node that runs no peersd and naming one
+that does not answer. A message to a session on another node carries the
+sender's <code>name@node</code> as its claimed name, beside the receiving broker's
+stamp. Notices are copied to every node: each carries the time it was set
+or cleared at its origin, the newest wins, and a clear leaves a tombstone so
+a late copy cannot bring it back. <code>mix peers notice list</code> also brings any
+node that missed a set or clear up to date.</p>
+<p><strong>One registry for several nodes.</strong> A group of nodes can share one registry
+instead (a host and the desks that share its home, say): run peersd on one
+of them and name it as the hub in <code>~/.config/mixos/peers.conf.mix</code>:</p>
 <pre><code class="language-text">{hub: "host1"}
 </code></pre>
-<p>Every other node then reaches <code>peers.host1.bus</code>. A registry federated across
-every node, with no hub, is the next step.</p>
+<p>Every node with that conf then reaches <code>peers.host1.bus</code> only.</p>
 <h2 id="command-line">Command line</h2>
 <p><code>mix peers</code> is the command line (installed at
 <code>&lt;prefix&gt;/lib/peersd/peers_cli.mix</code>). Run inside an agent session it acts as
 that session; otherwise as the Bus caller it is.</p>
 <table><thead><tr><th>Command</th><th>What it does</th></tr></thead><tbody>
 <tr><td><code>mix peers list</code></td><td>the live sessions; a session silent for two hours is marked stale</td></tr>
-<tr><td><code>mix peers msg NAME TEXT...</code></td><td>a direct message</td></tr>
+<tr><td><code>mix peers msg NAME[@NODE] TEXT...</code></td><td>a direct message; a bare NAME is looked for on this node, then on the others (<code>PEER_AMBIGUOUS</code> if two have it)</td></tr>
 <tr><td><code>mix peers msg all TEXT...</code></td><td>a message to every other live session</td></tr>
 <tr><td><code>mix peers notice set KEY TEXT... [--ttl S]</code></td><td>pin a notice every session reads once</td></tr>
 <tr><td><code>mix peers notice clear KEY</code></td><td>remove it; every live session is told</td></tr>
@@ -326,6 +333,9 @@ on its next prompt.</p>
 <tr><td><code>peers.notice.set</code></td><td><code>{key, text, ttl_s?}</code></td><td><code>{key, ts, expires}</code></td></tr>
 <tr><td><code>peers.notice.clear</code></td><td><code>{key}</code></td><td>every live session gets a <code>notice-cleared</code> message</td></tr>
 <tr><td><code>peers.notice.list</code></td><td></td><td><code>{notices}</code></td></tr>
+<tr><td><code>peers.notice.put</code></td><td><code>{key, version, origin, text? | cleared?}</code></td><td>a set or clear forwarded from another node; applied only if newer</td></tr>
+<tr><td><code>peers.notice.all</code></td><td></td><td><code>{node, notices, tombs}</code>, for reconciling</td></tr>
+<tr><td><code>peers.whoami</code></td><td><code>{claude_session}</code></td><td><code>{name, node}</code></td></tr>
 </tbody></table>
 <p>Topics: <code>peers.message {id, to, from}</code> on every delivery, <code>peers.notice</code> on
 every set and clear.</p>
