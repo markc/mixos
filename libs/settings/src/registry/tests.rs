@@ -363,7 +363,9 @@ fn every_path_is_unique_and_every_entry_is_well_formed() {
 
 #[test]
 fn names_and_defaults_agree_with_today_s_model_and_design() {
-    let schemes: Vec<&str> = design::Scheme::ALL.iter().map(|s| s.name()).collect();
+    // The registry lists the derived scheme first, then the authored ones.
+    assert_eq!(appearance::SCHEMES[0], design::Scheme::Mixos.name());
+    let schemes: Vec<&str> = design::Scheme::AUTHORED.iter().map(|s| s.name()).collect();
     assert_eq!(&appearance::SCHEMES[1..], schemes.as_slice());
     let styles: Vec<&str> = design::Style::ALL.iter().map(|s| s.name()).collect();
     assert_eq!(appearance::STYLES, styles.as_slice());
