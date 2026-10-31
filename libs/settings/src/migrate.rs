@@ -4,9 +4,15 @@
 //!
 //! [`migrate`] turns the format-4 [`Desktop`] record, with its terminal,
 //! email and ced domains, into v2 [`Values`]. [`migrate_backdrop`] turns the
-//! parsed `backdrop.mx` document into the `wallpaper.*` values. Each returns
-//! what it dropped or changed in a [`MigrationReport`]. Neither does I/O or
-//! reads a clock or store: the store format bump and the receipt are S6.
+//! parsed `backdrop.mx` document into the `wallpaper.*` values, and
+//! [`import_backdrop`] lays those onto an existing v2 store. Each returns the
+//! values and a [`MigrationReport`] of what it dropped or changed, or a
+//! [`Failed`] that carries every refusal and the same report. Neither does
+//! I/O or reads a clock or store: the store format bump and the receipt are S6.
+//!
+//! [`migrate`] takes a record the frozen v1 validator accepts
+//! ([`crate::v1::resolve`]). S6 calls it after the seal verifies, so a record
+//! v1 refused is never migrated.
 //!
 //! Values are stored the way [`registry`] stores them: normalised, and never
 //! at their default. The whole map is validated, but the write-only C8 (a
@@ -17,26 +23,42 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
+/// The stable codes a report entry carries, so a receipt can group them.
+pub const RETIRED: &str = "retired";
+pub const NO_V2_KEY: &str = "no_v2_key";
+pub const UNKNOWN_PANEL: &str = "unknown_panel";
+pub const COMPD_KEYMAPS: &str = "compd_keymaps";
+pub const OFF_STEP: &str = "off_step";
+pub const SNAPPED: &str = "snapped";
+pub const SHARED_EDGE: &str = "shared_edge";
+pub const BOTTOM_ABSENT: &str = "bottom_absent";
+pub const EMBEDDED_BINDING: &str = "embedded_binding";
+pub const REPLACED: &str = "replaced";
+pub const CLEARED: &str = "cleared";
+
 /// A value the migration did not carry over as it was, or at all.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct Entry {
+    /// One of the codes above.
+    pub code: &'static str,
     /// The format-4 or backdrop path the value came from.
     pub from: String,
     /// The value as it was.
     pub old: Value,
     /// The v2 path it was stored at, if any.
     pub to: Option<String>,
-    /// Why it was dropped or changed.
+    /// Why it was dropped or changed, for people.
     pub reason: String,
 }
 
 /// What one migration dropped or changed: the migration receipt's content.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
 pub struct MigrationReport {
     /// Values v2 has no key for.
     pub dropped: Vec<Entry>,
-    /// Values stored at a different value: off-step densities, and panel
-    /// thicknesses and slideshow intervals snapped to a step.
+    /// Values stored at a different value: off-step densities, panel
+    /// thicknesses and slideshow intervals snapped to a step, and panels
+    /// switched off to keep a shared edge or to match the record.
     pub changed: Vec<Entry>,
     /// Write-only constraints the migrated map breaks (C8). Reported, not
     /// refused.
@@ -47,6 +69,15 @@ pub struct MigrationReport {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Migrated {
     pub values: Values,
+    pub report: MigrationReport,
+}
+
+/// A migration the record cannot take. `errors` holds every refusal, and
+/// `report` what the migration would also have dropped or changed, so a dry
+/// run shows all of it at once.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct Failed {
+    pub errors: Vec<Diagnostic>,
     pub report: MigrationReport,
 }
 
@@ -75,24 +106,27 @@ struct Builder {
 
 impl Builder {
     /// Store `value` at `path` if the registry accepts it and it is not the
-    /// key's default. A null is no value.
+    /// key's default: the same elision rule `registry::apply` uses. A null is
+    /// no value.
     fn set(&mut self, path: &str, value: Value) {
         if value.is_null() {
             return;
         }
         match registry::check_value(path, &value) {
-            Ok(value) => {
-                let default = registry::lookup(path).ok().and_then(|m| m.default_value());
-                if default.as_ref() != Some(&value) {
+            Ok(value) => match registry::lookup(path) {
+                Ok(matched) if !registry::is_default(&matched, path, &value) => {
                     self.values.insert(path.to_owned(), value);
                 }
-            }
+                Ok(_) => {}
+                Err(error) => self.errors.push(error),
+            },
             Err(error) => self.errors.push(error),
         }
     }
 
-    fn dropped(&mut self, from: &str, old: Value, reason: &str) {
+    fn dropped(&mut self, from: &str, old: Value, code: &'static str, reason: &str) {
         self.report.dropped.push(Entry {
+            code,
             from: from.to_owned(),
             old,
             to: None,
@@ -100,40 +134,53 @@ impl Builder {
         });
     }
 
-    fn changed(&mut self, from: &str, old: Value, to: &str, reason: String) {
+    fn changed(
+        &mut self,
+        from: &str,
+        old: Value,
+        to: Option<&str>,
+        code: &'static str,
+        reason: impl Into<String>,
+    ) {
         self.report.changed.push(Entry {
+            code,
             from: from.to_owned(),
             old,
-            to: Some(to.to_owned()),
-            reason,
+            to: to.map(str::to_owned),
+            reason: reason.into(),
         });
     }
 
-    fn finish(mut self) -> Result<Migrated, Vec<Diagnostic>> {
-        if !self.errors.is_empty() {
-            return Err(self.errors);
-        }
-        registry::validate(&self.values)?;
+    fn finish(mut self) -> Result<Migrated, Failed> {
         self.report.conflicts = constraint::conflicts(&self.values);
-        Ok(Migrated {
-            values: self.values,
-            report: self.report,
-        })
+        if !self.errors.is_empty() {
+            return Err(Failed {
+                errors: self.errors,
+                report: self.report,
+            });
+        }
+        match registry::validate(&self.values) {
+            Ok(()) => Ok(Migrated {
+                values: self.values,
+                report: self.report,
+            }),
+            Err(errors) => Err(Failed {
+                errors,
+                report: self.report,
+            }),
+        }
     }
 }
 
 /// Migrate the format-4 record, and its three app domains, to v2 values.
-pub fn migrate(desktop: &Desktop) -> Result<Migrated, Vec<Diagnostic>> {
+/// `desktop` must be a record `v1` accepts (see the module docs).
+pub fn migrate(desktop: &Desktop) -> Result<Migrated, Failed> {
     let mut b = Builder::default();
     appearance(&mut b, &desktop.appearance);
     common(&mut b, &desktop.ui);
     shell(&mut b, &desktop.shell);
     apps(&mut b, &desktop.apps);
-    for (app, actions) in &desktop.keymaps {
-        for (action, chords) in actions {
-            b.set(&format!("keymaps.{app}.{action}"), json!(chords));
-        }
-    }
+    keymaps(&mut b, &desktop.keymaps);
     domain(&mut b, "terminal", &desktop.terminal);
     domain(&mut b, "email", &desktop.email);
     domain(&mut b, "ced", &desktop.ced);
@@ -154,6 +201,17 @@ fn appearance(b: &mut Builder, appearance: &Appearance) {
     if let Some(roundness) = style.and_then(roundness) {
         b.set("appearance.roundness", json!(roundness));
     }
+    // A pinned source may rebind the scheme's style; S5 does not compile it,
+    // so the receipt says the embedded binding was used.
+    if appearance.style.is_none() && appearance.source.is_some() {
+        b.changed(
+            "appearance.style",
+            Value::Null,
+            Some("appearance.roundness"),
+            EMBEDDED_BINDING,
+            "roundness taken from the embedded design's scheme binding; the pinned source may bind differently",
+        );
+    }
     b.set("window.decorations", json!(appearance.decorations));
     b.set("window.caption_side", json!(appearance.caption_side));
     b.set("window.style", json!(appearance.window_style));
@@ -171,8 +229,8 @@ fn appearance(b: &mut Builder, appearance: &Appearance) {
 }
 
 /// The style a scheme draws in when the profile names none: the design's
-/// `style.schemes` binding. Format 4 cannot name `mixos` (the derived scheme
-/// is not a `design::Scheme`), so it has no arm here.
+/// `style.schemes` binding (checked against it in the tests). Format 4 cannot
+/// name `mixos`, so it has no arm here.
 fn scheme_style(scheme: &str) -> Option<&'static str> {
     Some(match scheme {
         "ocean" | "crimson" | "stone" | "forest" | "sunset" | "mono" => "plain",
@@ -216,7 +274,8 @@ fn density(b: &mut Builder, density: f64) {
         b.changed(
             "ui.density",
             json!(density),
-            "appearance.density",
+            Some("appearance.density"),
+            OFF_STEP,
             format!("off-step density {density} mapped to {name} by the midpoints"),
         );
     }
@@ -228,18 +287,52 @@ fn shell(b: &mut Builder, shell: &Shell) {
         b.dropped(
             "shell.page_order",
             json!(shell.page_order),
-            "retired: Prefs-internal, COSMIC's order is fixed",
+            RETIRED,
+            "Prefs-internal; COSMIC's order is fixed",
         );
     }
     for (id, panel) in &shell.panels {
-        let root = format!("shell.panels.{id}");
         if !registry::PANELS.contains(&id.as_str()) {
-            b.dropped(&root, json!(panel), "only the top and bottom panels exist");
-            continue;
+            b.dropped(
+                &format!("shell.panels.{id}"),
+                json!(panel),
+                UNKNOWN_PANEL,
+                "only the top and bottom panels exist",
+            );
         }
-        // A panel in the record is shown. The registry default (top off,
-        // bottom on) elides the value where it already holds.
-        b.set(&format!("{root}.enabled"), json!(true));
+    }
+    // Format 4 has no `enabled` key: a panel is shown when the record names
+    // it. Format 4 never checked edges, so the two panels can share one: the
+    // bottom keeps it and the top is switched off.
+    let edge = |id: &str| shell.panels.get(id).map(|panel| panel.edge.as_str());
+    let shared = matches!((edge("top"), edge("bottom")), (Some(top), Some(bottom)) if top == bottom);
+    for id in registry::PANELS {
+        let root = format!("shell.panels.{id}");
+        let enabled_path = format!("{root}.enabled");
+        let Some(panel) = shell.panels.get(*id) else {
+            if *id == "bottom" {
+                b.set(&enabled_path, json!(false));
+                b.changed(
+                    &root,
+                    Value::Null,
+                    Some(enabled_path.as_str()),
+                    BOTTOM_ABSENT,
+                    "the record names no bottom panel, so none is shown",
+                );
+            }
+            continue;
+        };
+        let enabled = !(*id == "top" && shared);
+        b.set(&enabled_path, json!(enabled));
+        if !enabled {
+            b.changed(
+                &format!("{root}.edge"),
+                json!(panel.edge),
+                Some(enabled_path.as_str()),
+                SHARED_EDGE,
+                "the top panel shares the bottom panel's edge: the bottom keeps it, the top is off",
+            );
+        }
         b.set(&format!("{root}.edge"), json!(panel.edge));
         // `hidden` is `dock` with autohide on; a default is not stored.
         let (mode, autohide) = match panel.mode.as_str() {
@@ -257,19 +350,21 @@ fn shell(b: &mut Builder, shell: &Shell) {
         };
         b.set(&format!("{root}.mode"), json!(mode));
         b.set(&format!("{root}.autohide"), json!(autohide));
+        let thickness_path = format!("{root}.thickness");
         let snapped = snap_thickness(panel.thickness);
         if snapped != panel.thickness {
             b.changed(
-                &format!("{root}.thickness"),
+                &thickness_path,
                 json!(panel.thickness),
-                &format!("{root}.thickness"),
+                Some(thickness_path.as_str()),
+                SNAPPED,
                 format!(
                     "thickness {} snapped to {snapped} (nearest step, ties up)",
                     panel.thickness
                 ),
             );
         }
-        b.set(&format!("{root}.thickness"), json!(snapped));
+        b.set(&thickness_path, json!(snapped));
     }
 }
 
@@ -306,8 +401,25 @@ fn apps(b: &mut Builder, apps: &BTreeMap<String, AppOverride>) {
     }
 }
 
+fn keymaps(b: &mut Builder, keymaps: &crate::keymap::Keymaps) {
+    for (app, actions) in keymaps {
+        if app == "comp" {
+            b.dropped(
+                "keymaps.comp",
+                json!(actions),
+                COMPD_KEYMAPS,
+                "compositor bindings move in stage 4 (§4.1); inputd keeps them until then",
+            );
+            continue;
+        }
+        for (action, chords) in actions {
+            b.set(&format!("keymaps.{app}.{action}"), json!(chords));
+        }
+    }
+}
+
 /// An app domain's leaves, named as the module serialises them. The modules
-/// omit their defaults, so every leaf that is present is a stored value.
+/// omit their defaults, and [`Builder::set`] elides any that remain.
 fn domain<T: Serialize>(b: &mut Builder, root: &str, record: &T) {
     match serde_json::to_value(record) {
         Ok(value) => leaves(b, root, &value),
@@ -319,6 +431,8 @@ fn domain<T: Serialize>(b: &mut Builder, root: &str, record: &T) {
     }
 }
 
+/// Each leaf of a record, as a path. Objects recurse; arrays (`email.accounts`)
+/// and scalars are leaves, and a null is no value.
 fn leaves(b: &mut Builder, path: &str, value: &Value) {
     match value {
         Value::Object(map) => {
@@ -332,24 +446,73 @@ fn leaves(b: &mut Builder, path: &str, value: &Value) {
 
 /// The `backdrop.mx` document (`schema: 1`), as parsed, to `wallpaper.*`
 /// values. The file is not in the store; S6 imports it once.
-pub fn migrate_backdrop(document: &Value) -> Result<Migrated, Vec<Diagnostic>> {
-    let file = BackdropFile::deserialize(document).map_err(|error| {
-        vec![Diagnostic::new(
-            "validation_failed",
-            "backdrop",
-            error.to_string(),
-        )]
-    })?;
+pub fn migrate_backdrop(document: &Value) -> Result<Migrated, Failed> {
+    let mut b = Builder::default();
+    backdrop_into(&mut b, document);
+    b.finish()
+}
+
+/// Lays the backdrop document onto an existing v2 store, as the import
+/// `settingsd migrate --import-backdrop` runs against a migrated store. Every
+/// current `wallpaper.*` key is the document's to replace: each one the
+/// document changes is reported as `replaced`, and each one it does not set
+/// as `cleared`. Other keys stay. The union is validated.
+pub fn import_backdrop(current: &Values, document: &Value) -> Result<Migrated, Failed> {
+    let (wallpaper, kept): (Values, Values) = current
+        .clone()
+        .into_iter()
+        .partition(|(path, _)| path.starts_with("wallpaper."));
+    let mut b = Builder {
+        values: kept,
+        ..Builder::default()
+    };
+    backdrop_into(&mut b, document);
+    for (path, old) in wallpaper {
+        match b.values.get(&path).cloned() {
+            Some(new) if new == old => {}
+            Some(_) => b.changed(
+                &path,
+                old,
+                Some(path.as_str()),
+                REPLACED,
+                "the backdrop document sets it",
+            ),
+            None => b.changed(
+                &path,
+                old,
+                None,
+                CLEARED,
+                "the backdrop document does not set it",
+            ),
+        }
+    }
+    b.finish()
+}
+
+/// The document's wallpaper values, into `b`. A document that does not parse,
+/// or has another schema, is one error and nothing else is migrated from it.
+fn backdrop_into(b: &mut Builder, document: &Value) {
+    let file = match BackdropFile::deserialize(document) {
+        Ok(file) => file,
+        Err(error) => {
+            b.errors.push(Diagnostic::new(
+                "validation_failed",
+                "backdrop",
+                error.to_string(),
+            ));
+            return;
+        }
+    };
     if file.schema != BACKDROP_SCHEMA {
-        return Err(vec![Diagnostic::new(
+        b.errors.push(Diagnostic::new(
             "validation_failed",
             "backdrop.schema",
             format!("Expected schema {BACKDROP_SCHEMA}"),
-        )]);
+        ));
+        return;
     }
-    let mut b = Builder::default();
     if let Some(fill) = &file.default {
-        default_fill(&mut b, fill);
+        default_fill(b, fill);
     }
     let mut any_image = false;
     for (output, fill) in &file.outputs {
@@ -358,21 +521,11 @@ pub fn migrate_backdrop(document: &Value) -> Result<Migrated, Vec<Diagnostic>> {
             b.set(&format!("wallpaper.outputs.{output}.image"), json!(image));
             any_image = true;
         }
+        drop_if(b, &format!("{root}.colour"), &fill.colour, PER_OUTPUT_COLOUR);
+        drop_if(b, &format!("{root}.fit"), &fill.fit, PER_OUTPUT_FIT);
+        drop_if(b, &format!("{root}.fallback"), &fill.fallback, NO_FALLBACK);
         drop_if(
-            &mut b,
-            &format!("{root}.colour"),
-            &fill.colour,
-            PER_OUTPUT_COLOUR,
-        );
-        drop_if(&mut b, &format!("{root}.fit"), &fill.fit, PER_OUTPUT_FIT);
-        drop_if(
-            &mut b,
-            &format!("{root}.fallback"),
-            &fill.fallback,
-            NO_FALLBACK,
-        );
-        drop_if(
-            &mut b,
+            b,
             &format!("{root}.slideshow"),
             &fill.slideshow,
             PER_OUTPUT_SLIDESHOW,
@@ -382,7 +535,6 @@ pub fn migrate_backdrop(document: &Value) -> Result<Migrated, Vec<Diagnostic>> {
     if any_image {
         b.set("wallpaper.same_on_all", json!(false));
     }
-    b.finish()
 }
 
 /// The default block: colour, image, fit and slideshow map; the fallback is
@@ -401,6 +553,7 @@ fn default_fill(b: &mut Builder, fill: &BackdropFill) {
             None => b.dropped(
                 "backdrop.default.fit",
                 json!(fit),
+                NO_V2_KEY,
                 "centre and tile have no v2 fit (fill, fit, stretch)",
             ),
         }
@@ -420,7 +573,8 @@ fn slideshow(b: &mut Builder, show: &BackdropSlideshow) {
                 b.changed(
                     "backdrop.default.slideshow.interval_s",
                     json!(show.interval_s),
-                    "wallpaper.slideshow.interval_s",
+                    Some("wallpaper.slideshow.interval_s"),
+                    SNAPPED,
                     format!(
                         "interval {}s snapped to {interval}s (nearest allowed, ties up)",
                         show.interval_s
@@ -433,6 +587,7 @@ fn slideshow(b: &mut Builder, show: &BackdropSlideshow) {
                 b.dropped(
                     "backdrop.default.slideshow.images",
                     json!(images),
+                    NO_V2_KEY,
                     NO_IMAGE_LIST,
                 );
             }
@@ -440,6 +595,7 @@ fn slideshow(b: &mut Builder, show: &BackdropSlideshow) {
         (None, Some(_)) => b.dropped(
             "backdrop.default.slideshow",
             json!(show),
+            NO_V2_KEY,
             "a slideshow of images has no v2 key without a folder",
         ),
         (None, None) => b.errors.push(Diagnostic::new(
@@ -453,7 +609,7 @@ fn slideshow(b: &mut Builder, show: &BackdropSlideshow) {
 /// Reports a field that is present and has no v2 key.
 fn drop_if<T: Serialize>(b: &mut Builder, from: &str, value: &Option<T>, reason: &str) {
     if let Some(value) = value {
-        b.dropped(from, json!(value), reason);
+        b.dropped(from, json!(value), NO_V2_KEY, reason);
     }
 }
 
