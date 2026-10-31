@@ -251,6 +251,7 @@ impl Ctx {
         {
             return;
         }
+        tracing::debug!(revision = authority.accepted.revision.0, pending = ?authority.board.pending(), "publishing");
         let result = publish(authority, &self.client).await;
         self.retry.complete(result.is_ok());
         if let Err(error) = result {
@@ -747,6 +748,7 @@ async fn connected(authority: &mut Authority, ctx: &mut Ctx) {
             authority.stale = true;
             ctx.attaching = false;
             ctx.attach(authority);
+            tracing::debug!(attaching = ctx.attaching, node = ?ctx.node, generation = ctx.client.connection_generation(), "mirror connected");
             if !ctx.attaching {
                 ctx.publish(authority).await;
             }
