@@ -74,28 +74,21 @@ fn read_only_commands_are_queries() {
 }
 
 #[test]
-fn every_registry_section_has_one_command_and_is_described() {
+fn the_page_commands_are_typed_engine_commands() {
     let commands = prefs::actions::registry();
-    let surface = describe();
-    let described = surface["sections"].as_array().unwrap();
-    let mut ids = std::collections::HashSet::new();
-    for section in preferences::SECTIONS {
-        assert!(ids.insert(section.id));
-        let command = commands.get(section.command).expect("section command");
-        assert_eq!(command.id, format!("view.section.{}", section.id));
-        assert!(command.shortcut.is_none());
-        assert_eq!(command.label, section.title);
-        assert_eq!(command.submenu, Some(section.category.label()));
-        assert!(described.iter().any(|s| s["id"] == section.id));
-    }
-    assert_eq!(described.len(), ids.len());
-    assert_eq!(
-        commands
+    let engine = preferences::Engine::new(prefs::label_with);
+    let strings = prefs::strings();
+    let described = commands.describe(&engine, &strings);
+    for id in ["page.open", "set"] {
+        let command = described
             .iter()
-            .filter(|c| c.id.starts_with("view.section."))
-            .count(),
-        ids.len()
-    );
+            .find(|c| c.id == id)
+            .unwrap_or_else(|| panic!("{id}"));
+        assert!(command.schema.is_some(), "{id} declares its parameters");
+    }
+    assert_eq!(class_of("prefs.page.open"), Some("intent"));
+    assert_eq!(class_of("prefs.set"), Some("intent"));
+    assert_eq!(class_of("prefs.page"), Some("query"));
 }
 
 #[test]

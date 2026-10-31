@@ -173,94 +173,68 @@ fn executed_commands_are_published_with_their_origin() {
 }
 
 #[test]
-fn slash_focuses_search_enter_opens_first_match_and_escape_clears_and_unfocuses() {
+fn typing_with_nothing_focused_searches_and_escape_closes_it() {
     use egui::accesskit::Role;
     let mut rig = rig();
-    let search = egui::Id::unique("preferences-search");
     rig.h.key_press(egui::Key::Slash);
     rig.h.run_steps(3);
-    assert!(rig.h.ctx.memory(|m| m.has_focus(search)));
-    rig.h.key_press(egui::Key::Slash);
-    rig.h.run_steps(3);
-    assert_eq!(
-        published(&rig)
-            .iter()
-            .filter(|body| body["id"] == "view.search")
-            .count(),
-        1,
-        "a text field keeps slash while typing"
-    );
-    rig.h.get_by_role(Role::TextInput).type_text("background");
-    rig.h.run_steps(3);
-    rig.h.key_press(egui::Key::Enter);
+    send(&mut rig, 10, "prefs.info", json!({}));
+    wait(&mut rig, &[10]);
+    assert!(rig.bus.log().iter().any(|entry| matches!(entry,
+        Logged::Reply { id: 10, rc: 0, body } if body["nav"]["searching"] == true
+    )));
+    rig.h.get_by_role(Role::TextInput).type_text("density");
     rig.h.run_steps(3);
     send(&mut rig, 11, "prefs.info", json!({}));
     wait(&mut rig, &[11]);
     assert!(
         rig.bus.log().iter().any(|entry| matches!(entry,
-            Logged::Reply { id: 11, rc: 0, body }
-                if body["section"] == "wallpaper" && body["category"] == "appearance"
+            Logged::Reply { id: 11, rc: 0, body } if body["nav"]["query"] == "density"
         )),
         "{:?}",
         rig.bus.log()
     );
     rig.h.key_press(egui::Key::Escape);
     rig.h.run_steps(3);
-    assert!(!rig.h.ctx.memory(|m| m.has_focus(search)));
     send(&mut rig, 12, "prefs.info", json!({}));
     wait(&mut rig, &[12]);
     assert!(rig.bus.log().iter().any(|entry| matches!(entry,
-        Logged::Reply { id: 12, rc: 0, body } if body["ui"]["search"] == ""
+        Logged::Reply { id: 12, rc: 0, body }
+            if body["nav"]["query"] == "" && body["nav"]["searching"] == false
     )));
 }
 
 #[test]
-fn search_command_uses_translated_titles_and_leaves_the_window_alone() {
+fn search_command_uses_translated_labels_and_leaves_the_window_alone() {
     let mut rig = rig();
-    send(&mut rig, 21, "prefs.search", json!({"query":"APPS"}));
+    send(&mut rig, 21, "prefs.search", json!({"query":"COMPACT"}));
     send(&mut rig, 22, "prefs.info", json!({}));
     wait(&mut rig, &[21, 22]);
     assert!(rig.bus.log().iter().any(|entry| matches!(entry,
-        Logged::Reply { id: 21, rc: 0, body } if body["matches"] == json!([
-            {"id":"apps_email","category":"apps"},
-            {"id":"apps_term","category":"apps"},
-            {"id":"apps_ced","category":"apps"}
-        ])
+        Logged::Reply { id: 21, rc: 0, body }
+            if body["hits"][0]["page"] == "appearance" && body["hits"][0]["row"] == "density"
     )));
     assert!(rig.bus.log().iter().any(|entry| matches!(entry,
-        Logged::Reply { id: 22, rc: 0, body }
-            if body["section"] == "appearance" && body["ui"]["search"] == ""
+        Logged::Reply { id: 22, rc: 0, body } if body["nav"]["page"] == "desktop"
     )));
 }
 
 #[test]
-fn every_registry_section_opens_through_the_shell() {
+fn every_page_opens_through_the_shell() {
     let mut rig = rig();
-    for (index, section) in preferences::SECTIONS.iter().enumerate() {
-        let id = 100 + index as u64;
-        send(&mut rig, id, "prefs.section", json!({"name":section.id}));
-        wait(&mut rig, &[id]);
+    for (index, page) in preferences::pages::all().iter().enumerate() {
+        let id = 100 + 2 * index as u64;
+        send(&mut rig, id, "prefs.page.open", json!({"page": page.id}));
+        send(&mut rig, id + 1, "prefs.info", json!({}));
+        wait(&mut rig, &[id, id + 1]);
         assert!(
             rig.bus.log().iter().any(|entry| matches!(entry,
-                Logged::Reply { id: reply_id, rc: 0, body } if *reply_id == id
-                    && body["section"] == section.id
-                    && body["category"] == section.category.name()
+                Logged::Reply { id: reply_id, rc: 0, body } if *reply_id == id + 1
+                    && body["nav"]["page"] == page.id
             )),
             "{}: {:?}",
-            section.id,
+            page.id,
             rig.bus.log()
         );
-    }
-    send(&mut rig, 200, "prefs.search", json!({"query":"compact"}));
-    send(&mut rig, 201, "prefs.search", json!({"query":"animation"}));
-    wait(&mut rig, &[200, 201]);
-    for (id, section, category) in [
-        (200, "appearance", "appearance"),
-        (201, "accessibility", "system"),
-    ] {
-        assert!(rig.bus.log().iter().any(|entry| matches!(entry,
-            Logged::Reply { id: reply_id, rc: 0, body } if *reply_id == id
-                && body["matches"] == json!([{"id":section,"category":category}])
-        )));
     }
 }
