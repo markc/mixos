@@ -171,8 +171,9 @@ fn forward(args: &Args) -> Result<(), String> {
 }
 
 fn window(args: &Args) -> Result<(), String> {
-    // The desktop profile's change hints: the session look (shell.rs).
-    let topics = [::settings::summary_topic(::settings::follow::PROFILE)];
+    // The desktop profile's change hints: the session look and the app
+    // domains (shell.rs).
+    let topics = ::settings::follow::hint_topics(::settings::follow::PROFILE);
     let (handle, deliveries) =
         citizen::start_with_macros(SERVICE, &args.service, &args.url, &topics)?;
     let theme = toolkit::Theme::load();

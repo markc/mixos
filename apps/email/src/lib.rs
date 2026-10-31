@@ -135,8 +135,9 @@ pub fn parse(args: impl Iterator<Item = String>) -> Result<Args, String> {
 /// Run the window. One instance per session: a second launch raises the
 /// first (the caller has already probed and forwarded if it found one).
 pub fn run(args: &Args) -> Result<(), String> {
-    // The desktop profile's change hints: the session look (shell.rs).
-    let topics = [::settings::summary_topic(::settings::follow::PROFILE)];
+    // The desktop profile's change hints: the session look and the app
+    // domains (shell.rs).
+    let topics = ::settings::follow::hint_topics(::settings::follow::PROFILE);
     let (handle, deliveries) = citizen::start_with_macros(APP, &args.service, &args.url, &topics)?;
     let theme = toolkit::Theme::load();
     let mut viewport = if args.compose {
