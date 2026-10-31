@@ -59,6 +59,13 @@ pub enum Effect {
     },
     /// Put `text` on the clipboard.
     Copy(String),
+    /// Send one command to this node's agentd (`agent`) and report
+    /// [`Engine::agent_completed`] with `ticket`.
+    Agent {
+        ticket: u64,
+        command: String,
+        body: Value,
+    },
     /// Close: stop the Bus connection and the window.
     Exit,
 }
@@ -89,6 +96,13 @@ pub enum RowKind {
     Peers,
     Peer(String),
     NoPeers,
+    /// The Agents branch: this node's agentd sessions.
+    Agents,
+    AgentSession(String),
+    /// The collapsed "Ended (n)" row under Agents.
+    AgentsEnded(usize),
+    /// agentd is not running on this node.
+    AgentsDown,
 }
 
 /// One row of the services tree, with its children.
@@ -305,6 +319,7 @@ pub const SERVICES_SPLIT: std::ops::RangeInclusive<f32> = 0.1..=0.8;
 /// Workshop's state and rules.
 pub struct Engine {
     pub workshop: crate::workshop::Workshop,
+    pub agents: crate::agents::Agents,
     label: Label,
     pub ui: UiState,
     pub snapshot: Snapshot,
@@ -338,6 +353,7 @@ impl Engine {
                 dock_open: true,
                 ..Default::default()
             },
+            agents: crate::agents::Agents::default(),
             label,
             ui: UiState::default(),
             snapshot: Snapshot::default(),
@@ -424,7 +440,8 @@ impl Engine {
         json!({"schema":"workshop.v1","app_id":APP_ID,"version":env!("CARGO_PKG_VERSION"),"pid":std::process::id(),
             "connected":self.connected,"busy":self.busy(),"discovering":self.discovery.is_some(),"calling":self.call.is_some(),
             "selection":self.ui.selected,"body":self.ui.body,"reply":self.last_reply,"status":self.status,"snapshot":self.snapshot,
-            "ui":self.ui,"workshop":self.workshop})
+            "ui":self.ui,"workshop":self.workshop,
+            "agents":{"available":self.agents.available,"selected":self.agents.selected,"sessions":self.agents.sessions.len()}})
     }
 
     /// `workshop.theme`: a present `scheme`, `style`, `mode`, `decorations`
@@ -764,6 +781,12 @@ impl Engine {
         } else {
             self.workshop.selected = None;
         }
+        if let RowKind::AgentSession(session) = &row.kind {
+            self.select_session(session);
+        }
+        if row.kind == RowKind::Agents {
+            self.refresh_agents();
+        }
         self.ui.selected = match &row.kind {
             RowKind::Command(target) => Some(target.clone()),
             _ => None,
@@ -803,6 +826,15 @@ impl Engine {
                 children,
             },
         );
+        let agents = self.agents_tree();
+        let filter = self.ui.filter.to_lowercase();
+        if filter.is_empty()
+            || agents.children.iter().chain(agents.children.iter().flat_map(|row| &row.children)).any(|row| {
+                matches!(&row.kind, RowKind::AgentSession(s) if self.session_label(s).to_lowercase().contains(&filter))
+            })
+        {
+            rows.insert(1, agents);
+        }
         rows
     }
 
@@ -988,6 +1020,10 @@ impl Engine {
                 body,
             } => self.command(id, &command_name, &body),
             Delivery::Changed => {
+                // agentd may have come up since it was found missing.
+                if self.agents.available == Some(false) {
+                    self.refresh_agents();
+                }
                 if self.busy() {
                     self.refetch = true;
                 } else {
@@ -997,6 +1033,7 @@ impl Engine {
             Delivery::Connected => {
                 self.connected = true;
                 self.refresh(None);
+                self.refresh_agents();
                 self.refresh_mesh();
                 if self.workshop.mesh.resume_observe {
                     self.ensure_observing();
@@ -1067,6 +1104,9 @@ impl Engine {
             Ok(args) if args.is_object() => args,
             _ => return self.error(id, "ARGUMENT", "arguments must be a JSON object"),
         };
+        if self.agents_command(id, command_name, &args) {
+            return;
+        }
         if self.workshop_command(id, command_name, &args) {
             return;
         }
@@ -1335,6 +1375,15 @@ impl Engine {
                     RowKind::Peers => ("peers", engine.label("peers")),
                     RowKind::Peer(name) => ("peer", name.clone()),
                     RowKind::NoPeers => ("no_peers", engine.label("no-peers")),
+                    RowKind::Agents => ("agents", engine.label("agents-root")),
+                    RowKind::AgentSession(session) => {
+                        ("agent_session", engine.session_label(session))
+                    }
+                    RowKind::AgentsEnded(n) => (
+                        "agents_ended",
+                        format!("{} ({n})", engine.label("agents-ended")),
+                    ),
+                    RowKind::AgentsDown => ("agents_down", engine.label("agents-down")),
                 };
                 let mut entry = json!({"key":row.key,"kind":kind,"label":label,"depth":depth,"expanded":row.expanded,
                     "children":row.children.len(),"selected":engine.ui.row_key.as_deref() == Some(row.key.as_str())});
@@ -1354,6 +1403,17 @@ impl Engine {
                     }
                     RowKind::Command(target) => entry["selection"] = json!(target),
                     RowKind::Error(error) => entry["error"] = json!(error),
+                    RowKind::AgentSession(session) => {
+                        entry["session"] = json!(session);
+                        entry["badge"] = json!(
+                            engine
+                                .agents
+                                .sessions
+                                .iter()
+                                .find(|r| &r.session == session)
+                                .map(|r| r.badge())
+                        );
+                    }
                     _ => {}
                 }
                 out.push(entry);
@@ -2227,7 +2287,8 @@ mod tests {
                 "nodes:mesh",
                 "service:broken",
                 "service:example",
-                "mesh"
+                "mesh",
+                "agents"
             ],
             "Nodes starts open; service branches start closed"
         );

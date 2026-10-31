@@ -64,7 +64,8 @@ fn parse(args: impl Iterator<Item = String>) -> Result<Settings, String> {
 
 fn run(settings: &Settings) -> Result<(), String> {
     // The desktop profile's change hints: the session look (shell.rs).
-    let topics = [::settings::summary_topic(::settings::follow::PROFILE)];
+    let mut topics = vec![::settings::summary_topic(::settings::follow::PROFILE)];
+    topics.extend(inspector::agents::TOPICS.map(str::to_owned));
     let (handle, deliveries) = bus::start(&settings.service, &settings.url, &topics)?;
     let theme = toolkit::Theme::load();
     if settings.headless {

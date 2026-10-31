@@ -334,6 +334,10 @@ fn row_name(engine: &Engine, row: &Row) -> String {
         RowKind::Error(_) => label("descriptions-failed"),
         RowKind::Peers => label("peers"),
         RowKind::NoPeers => label("no-peers"),
+        RowKind::Agents => label("agents-root"),
+        RowKind::AgentSession(session) => engine.session_label(session),
+        RowKind::AgentsEnded(n) => format!("{} ({n})", label("agents-ended")),
+        RowKind::AgentsDown => label("agents-down"),
     }
 }
 
@@ -380,6 +384,12 @@ fn tree_row(ui: &mut Ui, engine: &Engine, row: &Row, events: &mut Vec<UiEvent>) 
             }
             RowKind::Peers => RichText::new(label("peers")),
             RowKind::NoPeers => RichText::new(label("no-peers")).weak(),
+            RowKind::Agents => RichText::new(label("agents-root")),
+            RowKind::AgentSession(session) => crate::agents::row_text(engine, session),
+            RowKind::AgentsEnded(n) => {
+                RichText::new(format!("{} ({n})", label("agents-ended"))).weak()
+            }
+            RowKind::AgentsDown => RichText::new(label("agents-down")).weak(),
         };
         if let RowKind::Service(_) = row.kind {
             ui.add(icons::image_of(
@@ -517,6 +527,12 @@ fn details_content(
 ) {
     if engine.ui.row_key.as_deref() == Some("nodes:mesh") {
         crate::mesh::view(ui, engine, commands, strings, events);
+        return;
+    }
+    if engine.ui.row_key.as_deref().is_some_and(|key| {
+        key == "agents" || key.starts_with("agent:") || key.starts_with("agents:")
+    }) {
+        crate::agents::view(ui, engine);
         return;
     }
     if engine.workshop.selected.is_none()

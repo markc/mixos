@@ -131,6 +131,9 @@ fn window_with(theme: Theme, name: &str, dialog: Option<Dialog>) {
     if name.starts_with("mesh_") {
         mesh_fixture(&mut engine);
     }
+    if name.starts_with("agents_") {
+        agents_fixture(&mut engine);
+    }
     engine.ui.dialog = dialog;
     let registry = actions::registry();
     let strings = strings();
@@ -149,6 +152,63 @@ fn window_with(theme: Theme, name: &str, dialog: Option<Dialog>) {
         harness.run();
     }
     harness.snapshot(name);
+}
+
+/// Two live sessions and one ended; the first selected, mid-conversation.
+fn agents_fixture(engine: &mut Engine) {
+    use serde_json::json;
+    let agent_ticket = |engine: &mut Engine, wanted: &str| {
+        engine
+            .take_effects()
+            .into_iter()
+            .find_map(|effect| match effect {
+                Effect::Agent {
+                    ticket, command, ..
+                } if command == wanted => Some(ticket),
+                _ => None,
+            })
+            .expect(wanted)
+    };
+    engine.ui.selected = None;
+    engine.workshop.selected = None;
+    engine.ui.expanded.remove("nodes");
+    engine.ui.expanded.remove("macros:global");
+    engine.ui.expanded.insert("agents".into());
+    engine.refresh_agents();
+    let list = agent_ticket(engine, "agent.session.list");
+    engine.agent_completed(
+        list,
+        "agent.session.list",
+        Ok((0, json!({"sessions":[
+            {"session":"a1","agent":"claude","cwd":"/home/user/src/mixos","status":"running","seq":9,"open_permissions":0},
+            {"session":"a2","agent":"opencode","cwd":"/home/user/src/site","status":"ready","seq":4,"open_permissions":1},
+            {"session":"a0","agent":"codex","cwd":"/home/user/src/mixos","status":"ended","seq":20}
+        ]}))),
+    );
+    engine.ui.row_key = Some("agent:a1".into());
+    engine.select_session("a1");
+    let read = agent_ticket(engine, "agent.session.read");
+    let chunk = |seq: u64, text: &str| {
+        json!({"session":"a1","seq":seq,"kind":"agent_message_chunk",
+        "update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":text}}})
+    };
+    engine.agent_completed(
+        read,
+        "agent.session.read",
+        Ok((0, json!({"session":{"session":"a1","agent":"claude","cwd":"/home/user/src/mixos","status":"running","seq":9,"open_permissions":0},
+            "events":[
+                {"session":"a1","seq":1,"kind":"ready"},
+                {"session":"a1","seq":2,"kind":"prompt","turn":3,"content":[{"type":"text","text":"Why does the dock flicker when it moves to the right?"}]},
+                chunk(3, "Let me look at the dock "),
+                chunk(4, "placement code first."),
+                {"session":"a1","seq":5,"kind":"tool_call","update":{"toolCallId":"t1","title":"Read apps/workshop/src/view.rs","kind":"read","status":"pending"}},
+                {"session":"a1","seq":6,"kind":"tool_call_update","update":{"toolCallId":"t1","status":"completed"}},
+                chunk(7, "The width is measured after the first layout, so Auto settles one frame late."),
+                {"session":"a1","seq":8,"kind":"tool_call","update":{"toolCallId":"t2","title":"cargo test -p workshop","kind":"execute","status":"in_progress"}},
+                {"session":"a1","seq":9,"kind":"stop","stop":"end_turn"}
+            ],"more":false,"next":9}))),
+    );
+    engine.take_effects();
 }
 
 fn mesh_clock() -> u64 {
@@ -218,6 +278,16 @@ fn mesh_peer_pro_light() {
 #[test]
 fn traffic_right() {
     window(chrome(Scheme::Studio, Mode::Dark), "traffic_right");
+}
+
+#[test]
+fn agents_studio_dark() {
+    window(chrome(Scheme::Studio, Mode::Dark), "agents_studio_dark");
+}
+
+#[test]
+fn agents_pro_light() {
+    window(chrome(Scheme::Pro, Mode::Light), "agents_pro_light");
 }
 
 #[test]

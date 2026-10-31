@@ -370,6 +370,8 @@ command is not run again.</p>
 <li><code>initialized</code> or <code>ready</code>;</li>
 <li>an ACP update kind (<code>agent_message_chunk</code>, <code>tool_call</code>, <code>plan</code>, …), with
 the update unchanged in <code>update</code>;</li>
+<li><code>prompt</code>, with the turn number and the <code>content</code> blocks sent (a
+transcript shows what was asked);</li>
 <li><code>stop</code>, with <code>stop</code> set to <code>end_turn</code>, <code>max_tokens</code>, <code>max_turn_requests</code>,
 <code>refusal</code> or <code>cancelled</code>;</li>
 <li><code>permission_answered</code>;</li>

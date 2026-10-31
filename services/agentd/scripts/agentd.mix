@@ -483,6 +483,8 @@ fn start_turn($id, $blocks)
     $S.sessions[$id].status = "ready"
     return nil
   end
+  -- The prompt is part of the transcript: a reader sees what was asked.
+  emit_event($id, {kind: "prompt", turn: $rpc, content: $blocks})
   return $rpc
 end
 

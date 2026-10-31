@@ -136,6 +136,8 @@ try
   check("the agent saw its mixos-mcp session env", saw("updated " .. $s .. " ", "agent_message_chunk mcp:" .. $s))
   check("text streamed back", saw("updated " .. $s .. " ", "agent_message_chunk echo:hello MCP"))
   check("the turn ended with end_turn", saw("updated " .. $s .. " ", "stop end_turn"))
+  $pr = filter(agent("agent.session.read", {session: $s, since: 0}).v.events, fn($e) = $e.kind == "prompt")
+  check("the prompt is logged as an event with its text", len($pr) >= 1 and $pr[0].content[0].text == "hello MCP" and $pr[0].turn != nil)
 
   -- fs/* through agentd, inside the session's directories only.
   $proj = realpath($tmp .. "/ws/project")

@@ -1305,6 +1305,8 @@ Refusals carry `{error_code, message}`:
 - `initialized` or `ready`;
 - an ACP update kind (`agent_message_chunk`, `tool_call`, `plan`, …), with
   the update unchanged in `update`;
+- `prompt`, with the turn number and the `content` blocks sent (a
+  transcript shows what was asked);
 - `stop`, with `stop` set to `end_turn`, `max_tokens`, `max_turn_requests`,
   `refusal` or `cancelled`;
 - `permission_answered`;

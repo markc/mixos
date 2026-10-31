@@ -39,6 +39,8 @@ pub enum Event {
     Look(u64, Result<Reply, CallError>),
     /// A retry of the session look after a transient fault (its generation).
     LookRetry(u64),
+    /// agentd answered one `Effect::Agent`: its rc and decoded body.
+    Agent(u64, String, Result<(u8, Value), String>),
 }
 
 /// Apply one finished event to the engine.
@@ -49,6 +51,7 @@ pub fn apply_event(engine: &mut Engine, event: Event) {
         Event::Completed(ticket, result) => engine.completed(ticket, result),
         Event::Measured(ticket, result, at, ms) => engine.completed_at(ticket, result, at, ms),
         Event::Shown(ticket, reply, result) => engine.shown(ticket, reply, result),
+        Event::Agent(ticket, command, result) => engine.agent_completed(ticket, &command, result),
         // The session look is the shell's (see `Shell::looked`).
         Event::Look(..)
         | Event::Subscription(..)
@@ -705,6 +708,18 @@ impl Shell {
                     if event["topic"] == "citizen.topic.gap" {
                         self.engine.workshop.dropped +=
                             event["dropped"].as_u64().unwrap_or_default();
+                        self.engine.agents_resync();
+                        continue;
+                    }
+                    if let Some(topic) = event["topic"]
+                        .as_str()
+                        .filter(|topic| inspector::agents::TOPICS.contains(topic))
+                    {
+                        let body = event["body"]
+                            .as_str()
+                            .and_then(|text| serde_json::from_str::<Value>(text).ok())
+                            .unwrap_or(Value::Null);
+                        self.engine.agent_topic(topic, &body);
                         continue;
                     }
                     if !event["topic"].as_str().is_some_and(|topic| {
@@ -933,6 +948,30 @@ impl Shell {
                 }
             }
             Effect::Copy(text) => self.ctx.copy_text(text),
+            Effect::Agent {
+                ticket,
+                command,
+                body,
+            } => {
+                let bus = self.bus.clone();
+                self.spawn(async move {
+                    let result = bus
+                        .raw_within(
+                            "agent",
+                            &command,
+                            body.to_string(),
+                            std::time::Duration::from_secs(10),
+                        )
+                        .await
+                        .map(|reply| {
+                            let body = serde_json::from_str::<Value>(&reply.body)
+                                .unwrap_or(Value::String(reply.body));
+                            (reply.rc, body)
+                        })
+                        .map_err(|error| error.to_string());
+                    Event::Agent(ticket, command, result)
+                });
+            }
             Effect::Exit => {
                 if !self.macro_stopped {
                     if !self.macro_stopping {

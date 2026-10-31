@@ -81,6 +81,8 @@ fn event_line($e)
     $d = $u.title .. (if $u.status != nil then " [" .. to_string($u.status) .. "]" else "" end)
   elif $e.kind == "stop" then
     $d = to_string($e.stop)
+  elif $e.kind == "prompt" and type($e.content) == "list" then
+    $d = join(map(filter($e.content, fn($b) = type($b) == "map" and $b.type == "text"), fn($b) = to_string($b.text)), "")
   elif $e.kind == "permission_answered" then
     $d = "request " .. to_string($e.request) .. ": " .. to_string($e.option)
   elif $e.path != nil then
