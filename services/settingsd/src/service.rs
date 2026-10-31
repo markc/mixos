@@ -28,8 +28,7 @@ pub const COMMANDS: &[&str] = &[
     "settings.status",
     MIRROR_ATTACH,
     MIRROR_REVISION,
-    // TRANSITION (S8c deletes): portald's read until it moves to
-    // settings.palette.
+    // S7-TRANSITION: portald's read until it moves to settings.palette.
     "settings.appearance.get",
 ];
 pub const MIRROR_ATTACH: &str = "settings.mirror.attach";
@@ -124,31 +123,36 @@ pub fn dispatch(authority: &mut Authority, command_name: &str, body: &str) -> Re
     }
 }
 
-/// TRANSITION (S8 deletes): the format-4 snapshot in schema 1 and 2 and the
-/// summary, for the followers not yet on the 1.0.0 topics.
+/// S7-TRANSITION: what contract 1.0.0 keeps of 0.8.0 so every follower not
+/// yet on the 1.0.0 topics and views keeps working while the stack lands
+/// daily. Deleted in the landing that brings S8a-c, before S9; `grep -rn
+/// S7-TRANSITION` finds every piece. [`tests::the_transition_keeps_exactly`]
+/// lists it.
+pub const TRANSITION_TOPIC_PREFIXES: [&str; 3] = [
+    settings::TOPIC_PREFIX,
+    settings::COMPACT_TOPIC_PREFIX,
+    settings::SUMMARY_TOPIC_PREFIX,
+];
+/// S7-TRANSITION: the 0.8.0 commands kept beside 1.0.0's.
+pub const TRANSITION_COMMANDS: [&str; 1] = ["settings.appearance.get"];
+/// S7-TRANSITION: the 0.8.0 `settings.get` views kept; `full` is still the
+/// default when `view` is omitted.
+pub const TRANSITION_VIEWS: [View; 2] = [View::Full, View::Summary];
+
+/// S7-TRANSITION: the format-4 snapshot in schema 1 and 2 and the summary,
+/// on [`TRANSITION_TOPIC_PREFIXES`].
 async fn publish_legacy(
     authority: &mut Authority,
     client: &SupervisedClient,
 ) -> anyhow::Result<()> {
     let profile = &authority.accepted.binding.profile;
-    publish_retained(
-        client,
-        settings::topic(profile),
-        serde_json::to_string(&authority.snapshot)?,
-    )
-    .await?;
-    publish_retained(
-        client,
-        settings::compact_topic(profile),
-        serde_json::to_string(&settings::compact::encode(&authority.snapshot)?)?,
-    )
-    .await?;
-    publish_retained(
-        client,
-        settings::summary_topic(profile),
-        serde_json::to_string(&settings::Summary::of(&authority.snapshot))?,
-    )
-    .await?;
+    let [full, compact, summary] = TRANSITION_TOPIC_PREFIXES.map(|p| format!("{p}{profile}"));
+    let snapshot = &authority.snapshot;
+    publish_retained(client, full, serde_json::to_string(snapshot)?).await?;
+    let encoded = serde_json::to_string(&settings::compact::encode(snapshot)?)?;
+    publish_retained(client, compact, encoded).await?;
+    let summarised = serde_json::to_string(&settings::Summary::of(snapshot))?;
+    publish_retained(client, summary, summarised).await?;
     authority.published = Some(authority.accepted.revision);
     Ok(())
 }
@@ -903,6 +907,53 @@ async fn handle(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// S7-TRANSITION: exactly what 1.0.0 keeps of 0.8.0, so the landing
+    /// that brings S8a-c deletes a known list and this test with it.
+    #[test]
+    fn the_transition_keeps_exactly() {
+        assert_eq!(
+            TRANSITION_TOPIC_PREFIXES,
+            [
+                "settingsd.desktop.changed.",
+                "settingsd.desktop.compact.",
+                "settingsd.desktop.summary.",
+            ]
+        );
+        assert_eq!(TRANSITION_COMMANDS, ["settings.appearance.get"]);
+        assert_eq!(TRANSITION_VIEWS, [View::Full, View::Summary]);
+        assert_eq!(View::default(), View::Full, "an omitted view is still full");
+        // Every served command is 1.0.0 or listed above.
+        let current = [
+            "settings.describe",
+            "settings.get",
+            "settings.validate",
+            "settings.apply",
+            "settings.reset",
+            "settings.status",
+            MIRROR_ATTACH,
+            MIRROR_REVISION,
+        ];
+        let kept: Vec<&str> = COMMANDS
+            .iter()
+            .copied()
+            .filter(|c| !current.contains(c))
+            .collect();
+        assert_eq!(kept, TRANSITION_COMMANDS);
+        // No 1.0.0 topic shares a prefix with a kept one.
+        for topic in [
+            settings::topics::keys_topic("default", "appearance"),
+            settings::topics::look_topic("default"),
+            settings::topics::snapshot_topic("default"),
+        ] {
+            assert!(
+                TRANSITION_TOPIC_PREFIXES
+                    .iter()
+                    .all(|p| !topic.starts_with(p))
+            );
+        }
+    }
+
     #[test]
     fn pending_publication_has_bounded_backoff_and_success_removes_all_idle_work() {
         let mut retry = PublicationRetry::default();
