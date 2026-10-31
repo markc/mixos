@@ -646,21 +646,21 @@ mod tests {
     /// for an app override alike.
     #[test]
     fn the_derived_scheme_is_not_writable_in_format_4() {
-        for (path, value) in [
-            ("appearance.scheme", json!("mixos")),
-            ("apps.term.scheme", json!("mixos")),
-        ] {
-            let next = patch(
-                &Desktop::default(),
-                &BTreeMap::from([(path.into(), value)]),
-                &[],
-            )
-            .unwrap();
-            let errors = resolve(&next).expect_err(path);
+        let mut profile = Desktop::default();
+        profile.appearance.scheme = "mixos".into();
+        let mut app = Desktop::default();
+        app.apps.insert(
+            "term".into(),
+            crate::AppOverride {
+                scheme: Some("mixos".into()),
+                ..Default::default()
+            },
+        );
+        for (path, desktop) in [("appearance.scheme", profile), ("apps.term.scheme", app)] {
+            let errors = resolve(&desktop).expect_err(path);
             assert!(
-                errors
-                    .iter()
-                    .any(|e| e.path == path && e.message.contains("not writable until store format 5")),
+                errors.iter().any(|e| e.path == path
+                    && e.message.contains("not writable until store format 5")),
                 "{path}: {errors:?}"
             );
         }

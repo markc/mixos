@@ -32,20 +32,33 @@
 //! the effective context key changes (one byte shorter); the source and
 //! resolved values are unchanged. Restore that key as well as the prior
 //! source identity/typography below to keep the older byte pins active.
+//!
+//! Re-pinned 2026-10-31 for settings key space v2 step S2: the embedded
+//! source gained the roundness and density tokens, the `mixos` style binding
+//! and its terminal tables. Only the source identity moved: the snapshot
+//! length is unchanged, and `the_s2_source_changes_only_the_identity`
+//! reaches the previous pins once the identity fields are replaced.
 use settings::*;
 
 /// `settings::digest` of the default desktop's effective map.
 const EFFECTIVE_DIGEST_PINNED: &str =
-    "2021004311c4062a87733cd1c36119413f707591b4349bb6c671b2644a67efae";
+    "574f5e6d1fc20d6b3b229b5373a2fcd373ba05d4cda14894a8ecb5434a0b69f4";
 /// `settings::digest` of the fixed default-desktop `Snapshot`.
 const SNAPSHOT_DIGEST_PINNED: &str =
-    "f8f5ad0ef813a69b9d08281d900a44f89683a364877ec3981b4d2bb77b0a862a";
+    "2dbc23f68d1006f770b9227e5ea6a5687b4c66eed4467f985907773a58b5d1d9";
 /// Serialised byte length of that `Snapshot`.
 const SNAPSHOT_JSON_LEN_PINNED: usize = 529_654;
 const PRE_MODERN_SOURCE_DIGEST: &str =
     "b69369a6e36b10fd44a418df78cb1f2a99a40649e78027ce057af9993f648630";
 const MODERN_SOURCE_DIGEST: &str =
+    "492eb727a7d90320fba75babfd39934f0e63760c5ef7efbeb432928647267540";
+/// The embedded source before S2, and the pins it had.
+const BEFORE_S2_SOURCE_DIGEST: &str =
     "74862423fc063d63e38cc20ed3264f9d9808dcf64f28b2073cfa73006ec32a4c";
+const BEFORE_S2_EFFECTIVE_DIGEST: &str =
+    "2021004311c4062a87733cd1c36119413f707591b4349bb6c671b2644a67efae";
+const BEFORE_S2_SNAPSHOT_DIGEST: &str =
+    "f8f5ad0ef813a69b9d08281d900a44f89683a364877ec3981b4d2bb77b0a862a";
 const PRE_FONT_SOURCE_DIGEST: &str =
     "9ab8ab77799f670087a2f37c2ef0652d1795ef1a2ad25164212544d455ef07c7";
 const PRE_MODERN_EFFECTIVE_DIGEST: &str =
@@ -96,6 +109,27 @@ fn effective_and_snapshot_bytes_match_the_pinned_format() {
     );
 }
 
+/// S2 changed the embedded source but no default resolved value: with the
+/// identity fields put back to the previous source, today's default snapshot
+/// is byte for byte the one pinned before S2.
+#[test]
+fn the_s2_source_changes_only_the_identity() {
+    let before = include_str!("fixtures/2026-10-31-before-s2.theme.conf.mix");
+    assert_eq!(source_digest(before), BEFORE_S2_SOURCE_DIGEST);
+    let mut snapshot = fixed_snapshot();
+    for effective in snapshot.effective.values_mut() {
+        assert_eq!(effective.design.source, MODERN_SOURCE_DIGEST);
+        effective.design.source = BEFORE_S2_SOURCE_DIGEST.into();
+    }
+    snapshot.source_digest = BEFORE_S2_SOURCE_DIGEST.into();
+    assert_eq!(digest(&snapshot.effective).unwrap(), BEFORE_S2_EFFECTIVE_DIGEST);
+    assert_eq!(digest(&snapshot).unwrap(), BEFORE_S2_SNAPSHOT_DIGEST);
+    assert_eq!(
+        serde_json::to_string(&snapshot).unwrap().len(),
+        SNAPSHOT_JSON_LEN_PINNED
+    );
+}
+
 #[test]
 fn modern_embedded_source_changes_identity_but_no_default_resolved_value() {
     let mut snapshot =
@@ -130,7 +164,7 @@ fn workshop_rename_changes_only_the_default_context_key() {
     restore_retired_context(&mut snapshot);
     assert_eq!(
         digest(&snapshot.effective).unwrap(),
-        "4abaa2fffc034923ac448fc8a9f8c93e253d2781be5a40b8a1b17f0f5e6422ea"
+        "514f662317c7f82750f4517130228f5f12131df4e33f0ba480509b7c4a44cad1"
     );
     assert_eq!(
         digest(&snapshot).unwrap(),
