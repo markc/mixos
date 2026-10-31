@@ -25,7 +25,7 @@ fn dark_default() -> DerivedTheme {
         &Seeds::default(),
         Mode::Dark,
         Contrast::Normal,
-        &Frosted::default(),
+        &FrostedGlass::default(),
     )
 }
 
@@ -34,7 +34,7 @@ fn light_default() -> DerivedTheme {
         &Seeds::default(),
         Mode::Light,
         Contrast::Normal,
-        &Frosted::default(),
+        &FrostedGlass::default(),
     )
 }
 
@@ -43,7 +43,7 @@ fn grey_accent() -> DerivedTheme {
         accent: Some(colour("#7F7F7F")),
         ..Seeds::default()
     };
-    derive(&seeds, Mode::Dark, Contrast::Normal, &Frosted::default())
+    derive(&seeds, Mode::Dark, Contrast::Normal, &FrostedGlass::default())
 }
 
 #[test]
@@ -198,7 +198,7 @@ fn high_contrast_changes_only_alphas_and_the_accent_step() {
         accent: Some(colour("#7F7F7F")),
         ..Seeds::default()
     };
-    let hc = derive(&seeds, Mode::Dark, Contrast::High, &Frosted::default());
+    let hc = derive(&seeds, Mode::Dark, Contrast::High, &FrostedGlass::default());
     assert!(hc.is_high_contrast && !normal.is_high_contrast);
     assert_eq!(
         hc.background.component.base,
@@ -217,15 +217,15 @@ fn high_contrast_changes_only_alphas_and_the_accent_step() {
 
 #[test]
 fn a_frosted_flag_makes_texts_follow_the_container_alpha() {
-    let frosted = Frosted {
+    let frosted = FrostedGlass {
         panel: true,
-        ..Frosted::default()
+        ..FrostedGlass::default()
     };
     assert_eq!(frosted.actual_alpha(), 0.76154);
-    assert_eq!(Frosted::default().actual_alpha(), 1.0);
-    let maximised = Frosted {
+    assert_eq!(FrostedGlass::default().actual_alpha(), 1.0);
+    let maximised = FrostedGlass {
         maximized_apps: true,
-        ..Frosted::default()
+        ..FrostedGlass::default()
     };
     assert_eq!(maximised.actual_alpha(), 1.0);
     let t = derive(&Seeds::default(), Mode::Dark, Contrast::Normal, &frosted);
@@ -241,7 +241,7 @@ fn light_accent_text_falls_back_to_black() {
         accent: Some(colour("#C8C8C8")),
         ..Seeds::default()
     };
-    let t = derive(&seeds, Mode::Light, Contrast::Normal, &Frosted::default());
+    let t = derive(&seeds, Mode::Light, Contrast::Normal, &FrostedGlass::default());
     assert_eq!(t.accent_text.map(hex), Some("#000000".to_owned()));
 }
 
@@ -267,10 +267,10 @@ fn copied_through_inputs() {
         neutral_tint: Some(tint),
         ..Seeds::default()
     };
-    let t = derive(&seeds, Mode::Light, Contrast::Normal, &Frosted::default());
+    let t = derive(&seeds, Mode::Light, Contrast::Normal, &FrostedGlass::default());
     assert_eq!(t.control_tint, Some(tint));
     assert_eq!(t.text_tint, None);
     assert!(!t.is_dark);
     assert_eq!(t.palette.kind, crate::cosmic_tables::PaletteKind::Light);
-    assert_eq!(t.frosted, Frosted::default());
+    assert_eq!(t.frosted, FrostedGlass::default());
 }

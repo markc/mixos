@@ -53,7 +53,7 @@ impl PaletteKind {
 
 /// One built-in palette: 32 named opaque sRGB colours and its kind.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct CosmicPalette {
+pub struct BasePalette {
     pub kind: PaletteKind,
     pub bright_red: SrgbColour,
     pub bright_green: SrgbColour,
@@ -120,7 +120,7 @@ const fn reversed(steps: [SrgbColour; 11]) -> [SrgbColour; 11] {
     out
 }
 
-pub const DARK_PALETTE: CosmicPalette = CosmicPalette {
+pub const DARK_PALETTE: BasePalette = BasePalette {
     kind: PaletteKind::Dark,
     bright_red: rgb(0xFFA09A),
     bright_green: rgb(0x5EDB8C),
@@ -146,7 +146,7 @@ pub const DARK_PALETTE: CosmicPalette = CosmicPalette {
     ext_indigo: rgb(0x3E88FF),
 };
 
-pub const LIGHT_PALETTE: CosmicPalette = CosmicPalette {
+pub const LIGHT_PALETTE: BasePalette = BasePalette {
     kind: PaletteKind::Light,
     bright_red: rgb(0x890418),
     bright_green: rgb(0x00572C),
@@ -172,7 +172,7 @@ pub const LIGHT_PALETTE: CosmicPalette = CosmicPalette {
     ext_indigo: rgb(0x95C4FC),
 };
 
-impl CosmicPalette {
+impl BasePalette {
     /// The built-in palette for `mode`, tagged high contrast when asked.
     pub const fn builtin(mode: Mode, contrast: Contrast) -> Self {
         let mut palette = match mode {
@@ -218,7 +218,7 @@ pub enum Density {
 
 /// The ten spacing tokens, in logical px.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Spacing {
+pub struct SpacingTokens {
     pub space_none: u16,
     pub space_xxxs: u16,
     pub space_xxs: u16,
@@ -231,8 +231,8 @@ pub struct Spacing {
     pub space_xxxl: u16,
 }
 
-const fn spacing(values: [u16; 10]) -> Spacing {
-    Spacing {
+const fn spacing(values: [u16; 10]) -> SpacingTokens {
+    SpacingTokens {
         space_none: values[0],
         space_xxxs: values[1],
         space_xxs: values[2],
@@ -250,7 +250,7 @@ impl Density {
     pub const ALL: [Self; 3] = [Self::Compact, Self::Standard, Self::Spacious];
 
     /// The spacing table for this step.
-    pub const fn spacing(self) -> Spacing {
+    pub const fn spacing(self) -> SpacingTokens {
         match self {
             Self::Compact => spacing([0, 4, 4, 8, 8, 16, 24, 32, 48, 64]),
             Self::Standard => spacing([0, 4, 8, 12, 16, 24, 32, 48, 64, 128]),
@@ -260,7 +260,7 @@ impl Density {
 
     /// Reading a step back from a stored table: `space_m` 16 is compact, 24
     /// standard, anything else spacious.
-    pub const fn from_spacing(spacing: &Spacing) -> Self {
+    pub const fn from_spacing(spacing: &SpacingTokens) -> Self {
         match spacing.space_m {
             16 => Self::Compact,
             24 => Self::Standard,
@@ -300,7 +300,7 @@ pub enum Roundness {
 /// The six radius tokens, each four corners (top-left, top-right,
 /// bottom-right, bottom-left), in logical px.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct CornerRadii {
+pub struct RadiusTokens {
     pub radius_0: [f64; 4],
     pub radius_xs: [f64; 4],
     pub radius_s: [f64; 4],
@@ -309,8 +309,8 @@ pub struct CornerRadii {
     pub radius_xl: [f64; 4],
 }
 
-const fn radii(values: [f64; 6]) -> CornerRadii {
-    CornerRadii {
+const fn radii(values: [f64; 6]) -> RadiusTokens {
+    RadiusTokens {
         radius_0: [values[0]; 4],
         radius_xs: [values[1]; 4],
         radius_s: [values[2]; 4],
@@ -325,7 +325,7 @@ impl Roundness {
 
     /// The preset's radius tokens as the reference ships them (its Square
     /// is 2 px, not 0).
-    pub const fn corner_radii(self) -> CornerRadii {
+    pub const fn corner_radii(self) -> RadiusTokens {
         match self {
             Self::Round => radii([0.0, 4.0, 8.0, 16.0, 32.0, 160.0]),
             Self::SlightlyRound => radii([0.0, 2.0, 8.0, 8.0, 8.0, 8.0]),
@@ -336,7 +336,7 @@ impl Roundness {
     /// Reading a preset back from stored radii: `radius_m` 16 is round, 8
     /// slightly round, anything else square (so all-zero radii read back
     /// as square too). The top-left corner decides.
-    pub fn from_radii(radii: &CornerRadii) -> Self {
+    pub fn from_radii(radii: &RadiusTokens) -> Self {
         let m = radii.radius_m[0];
         if m == 16.0 {
             Self::Round
@@ -359,7 +359,7 @@ impl Roundness {
 /// The panel's and dock's corner radius after a roundness change: the
 /// `radius_xl` corners when the panel has a gap from the screen edge; else
 /// `radius_xl` capped at 12 when it does not extend to the edges; else 0.
-pub fn panel_radius(radii: &CornerRadii, gap: bool, extend: bool) -> f64 {
+pub fn panel_radius(radii: &RadiusTokens, gap: bool, extend: bool) -> f64 {
     let xl = radii.radius_xl[0];
     if gap {
         xl
@@ -494,7 +494,7 @@ mod tests {
 
     #[test]
     fn builtin_palette_carries_its_tag() {
-        let hc = CosmicPalette::builtin(Mode::Light, Contrast::High);
+        let hc = BasePalette::builtin(Mode::Light, Contrast::High);
         assert_eq!(hc.kind, PaletteKind::HighContrastLight);
         assert!(!hc.kind.is_dark() && hc.kind.is_high_contrast());
         assert_eq!(hc.gray_1, LIGHT_PALETTE.gray_1);

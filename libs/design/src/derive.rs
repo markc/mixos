@@ -23,7 +23,7 @@ use primitives::{
     with_alpha,
 };
 
-use crate::cosmic_tables::{AlphaMap, BlurStrength, CosmicPalette, DEFAULT_ALPHA_MAP};
+use crate::cosmic_tables::{AlphaMap, BasePalette, BlurStrength, DEFAULT_ALPHA_MAP};
 use crate::{Contrast, Mode, SrgbColour};
 
 impl SrgbColour {
@@ -77,7 +77,7 @@ pub struct Seeds {
 
 /// The frosted-glass inputs.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Frosted {
+pub struct FrostedGlass {
     pub strength: BlurStrength,
     pub alpha_map: AlphaMap,
     pub windows: bool,
@@ -88,7 +88,7 @@ pub struct Frosted {
     pub maximized_apps: bool,
 }
 
-impl Default for Frosted {
+impl Default for FrostedGlass {
     fn default() -> Self {
         Self {
             strength: BlurStrength::default(),
@@ -102,7 +102,7 @@ impl Default for Frosted {
     }
 }
 
-impl Frosted {
+impl FrostedGlass {
     /// The alpha-map entry of the chosen strength.
     pub fn container_alpha(&self) -> f64 {
         self.alpha_map[self.strength.index()]
@@ -151,7 +151,7 @@ pub struct Container {
 #[derive(Clone, Debug, PartialEq)]
 pub struct DerivedTheme {
     /// The palette derived from, with its kind (mode and contrast).
-    pub palette: CosmicPalette,
+    pub palette: BasePalette,
     pub is_dark: bool,
     pub is_high_contrast: bool,
     pub background: Container,
@@ -180,12 +180,17 @@ pub struct DerivedTheme {
     /// The builder's `neutral_tint`, copied through.
     pub control_tint: Option<SrgbColour>,
     pub text_tint: Option<SrgbColour>,
-    pub frosted: Frosted,
+    pub frosted: FrostedGlass,
 }
 
 /// Derives the theme for `mode` and `contrast` from the built-in palette.
-pub fn derive(seeds: &Seeds, mode: Mode, contrast: Contrast, frosted: &Frosted) -> DerivedTheme {
-    derive_with_palette(&CosmicPalette::builtin(mode, contrast), seeds, frosted)
+pub fn derive(
+    seeds: &Seeds,
+    mode: Mode,
+    contrast: Contrast,
+    frosted: &FrostedGlass,
+) -> DerivedTheme {
+    derive_with_palette(&BasePalette::builtin(mode, contrast), seeds, frosted)
 }
 
 /// Neutral(base, accent, on, hoverOverlay, pressedOverlay, hc, border).
@@ -314,9 +319,9 @@ fn accent_text(
 /// Derives the theme from an explicit palette (a builder may carry an
 /// imported one). The palette's kind decides dark and high contrast.
 pub fn derive_with_palette(
-    palette: &CosmicPalette,
+    palette: &BasePalette,
     seeds: &Seeds,
-    frosted: &Frosted,
+    frosted: &FrostedGlass,
 ) -> DerivedTheme {
     let p = palette;
     // 1. Alphas.
