@@ -4,7 +4,7 @@
 //! `appearance` and `window` keys topics; a delivery on either, stamped by
 //! the broker as settingsd's or not, only asks for one authenticated read.
 //! A read is `settings.get {view: values}` for the resolved mode and the
-//! caption side, then `settings.palette` for that mode, fenced on one record
+//! export gate, then `settings.palette` for that mode, fenced on one record
 //! identity ([`Projection::from_answers`]). The feed handles reconnect
 //! generations, bounded retries and hint pacing itself.
 use crate::appearance::{self, Projection};
@@ -25,14 +25,14 @@ use tokio::sync::mpsc;
 
 pub const COMMANDS: &[&str] = &["portald.status"];
 pub const SOURCE: &str = "settingsd";
-/// The first read of a projection: the resolved mode and the caption side.
+/// The first read of a projection: the resolved mode and the export gate.
 pub const FETCH_COMMAND: &str = "settings.get";
 /// The second: the contrast and the accent of the resolved mode.
 pub const PALETTE_COMMAND: &str = "settings.palette";
 /// The keys topics whose deliveries are hints: the resolved mode and the
-/// accent move `appearance` (a `state.*` change included), the caption side
-/// moves `window`, and `accessibility` is the portal row's third prefix
-/// (key space v2 §5.3).
+/// accent and the export gate move `appearance` (a `state.*` change
+/// included); `window` and `accessibility` are the portal row's other
+/// prefixes (key space v2 §5.3).
 pub const HINT_PREFIXES: [&str; 3] = ["appearance", "window", "accessibility"];
 pub const FETCH_TIMEOUT: Duration = Duration::from_secs(1);
 const DEREGISTER_TIMEOUT: Duration = Duration::from_secs(3);
@@ -898,7 +898,7 @@ mod tests {
             revision: Revision(revision),
             mode: "dark".into(),
             contrast: "normal".into(),
-            caption_side: "right".into(),
+            export: true,
             accent: [0.1, 0.2, 0.3],
         }
     }

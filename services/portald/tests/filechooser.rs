@@ -332,7 +332,6 @@ async fn portal_native_stack_mapping_lifecycle_and_loss() {
             binding,
             screencast: None,
             screencast_max_framerate: Default::default(),
-            gtk_settings: portald::gtk_settings::Exporter::new(None, None),
             filechooser: Some((bridge, outcome_rx)),
         },
         received,

@@ -12,9 +12,10 @@ implementation of these interfaces and FileChooser version 4. It owns `org.freed
 bus, answers the `org.freedesktop.appearance` namespace and, when started with
 `--screencast`, serves monitor sources from the compositor.
 
-Values come from the settings authority, `settingsd`. Portald exports derived
-GTK caption settings into the desk's private config directory. Before authority
-or cache data is available, the portal serves the documented defaults.
+Values come from the settings authority, `settingsd`. Before authority or
+cache data is available, the portal serves the documented defaults. portald
+writes no files for other toolkits: the GTK and Qt files are
+[toolkit-export](../toolkit-export/README.md)'s.
 
 ## Where the values come from
 
@@ -24,49 +25,21 @@ portald    --settings.get {values} + settings.palette (bounded reads)-----------
 ```
 
 portald follows the initial connection and later generations, subscribes, and
-reads the resolved mode and caption side with `settings.get` (`values`) and the
+reads the resolved mode and `appearance.export_toolkits` with `settings.get`
+(`values`) and the
 contrast and accent with `settings.palette`; the two answers must carry the
 same binding, incarnation and revision. Authenticated
 retained deliveries trigger fresh reads, including after settingsd restarts.
 
-A projection carries the schema version, the binding (instance and profile), an
-incarnation, a revision, the design revision, `mode`, `contrast` and an sRGB
-`accent`. The settingsd wire view remains schema 1 for older strict readers.
-After checking that view against its atomic snapshot, portald derives a schema 2
-projection with `caption_side` from the snapshot's effective desktop context,
-without another settingsd read. Its cache retains that caption placement;
-older schema 1 caches default to `right`. A projection is refused when it is
+A projection (schema 4) carries the binding (instance and profile), an
+incarnation, a revision, `mode`, `contrast`, an sRGB `accent` and `export`,
+the value of `appearance.export_toolkits`. A cache of an older schema is
+refused and the portal waits for settingsd. With `export` false the portal
+states no preference: `color-scheme` 0, `contrast` 0 and no `accent-color`,
+so portal clients fall back to their own defaults. A projection is refused when it is
 older than the held one within the
 same incarnation. A new incarnation is adopted. A repeat of the held identity
 changes nothing and emits no signal.
-
-## GTK caption settings
-
-At startup from a validated cache, and on every accepted projection, portald
-merges these keys into `[Settings]` in `$XDG_CONFIG_HOME/gtk-3.0/settings.ini`:
-
-| Key | Value |
-|---|---|
-| `gtk-decoration-layout` | `menu:minimize,maximize,close` for right captions; `close,minimize,maximize:menu` for left captions |
-| `gtk-icon-theme-name` | `mixos` (constant; there is no icon-theme setting) |
-
-Craft apps use this file on the `MixOS` desktop with `CRAFT_TITLEBAR=app`. They
-resolve `window-minimize-symbolic`, `window-maximize-symbolic`,
-`window-restore-symbolic` and `window-close-symbolic` through the MixOS icon
-theme in `$XDG_DATA_DIRS/icons`. The original 16-unit hairline SVGs install from
-`share/icons` into `<prefix>/share/icons/mixos/scalable/actions`.
-
-The export runs only when `XDG_CONFIG_HOME` is set, absolute and different from
-`$HOME/.config`; otherwise it logs once at info level and skips. Parent segments
-and symlinks in the destination path are also refused. This keeps a nested desk
-from overwriting its host desktop's settings.
-
-Other lines, comments and sections are preserved byte for byte. Unchanged
-content is left alone. Changed content is written to a sibling temporary file,
-synced and renamed, then the directory is synced. The directory is created if
-needed. Reads are capped at 64 KiB; larger, non-regular or unreadable files are
-logged and left alone. An export failure never stops the portal. Without a
-validated cache, exporting waits for settingsd's first accepted projection.
 
 ## What applications see
 
@@ -279,9 +252,7 @@ in a unit drop-in; its own PipeWire and compositor refresh must support it.
 
 `HELP` returns the command manifest. The bus command `portald.status` is read-only. It reports the origin of the held
 values (defaults, cache or settingsd), whether the name is owned, the identity
-of the held projection, the last fault and the counters. `gtk_settings` reports
-the last export's path, outcome (`written`, `unchanged` or `skipped`) and reason.
-Its
+of the held projection, the last fault and the counters. Its
 `settings_generation` reports the Consumer's connection generation, or null
 while disconnected. It is registered in
 `docs/docs/spec/bus/commands.conf.mix`.

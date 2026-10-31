@@ -135,7 +135,7 @@ async fn serve(
         let body = json!({
             "status": "current", "binding": binding(), "incarnation": "a",
             "revision": revision.to_string(),
-            "values": {"window.caption_side": "auto"},
+            "values": {"appearance.export_toolkits": true},
             "resolved": {"mode": "dark", "accent": "#8b7cf6"},
         })
         .to_string();

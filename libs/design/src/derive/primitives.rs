@@ -85,6 +85,13 @@ pub(super) fn ramp<const N: usize>(seed: SrgbColour) -> [SrgbColour; N] {
     std::array::from_fn(|i| at_lightness(i as f64 / last, chroma, hue, seed.alpha))
 }
 
+/// `colour` with its OKLab lightness moved by `delta` (clamped to 0..=1),
+/// keeping its hue, chroma and alpha, gamut-mapped as a ramp step is.
+pub(super) fn shift_lightness(colour: SrgbColour, delta: f64) -> SrgbColour {
+    let (lightness, chroma, hue) = linear_srgb_to_oklch(to_linear(colour));
+    at_lightness((lightness + delta).clamp(0.0, 1.0), chroma, hue, colour.alpha)
+}
+
 /// `neutral` re-hued by `tint`: the tint's OKLCh hue and chroma at the
 /// neutral's lightness (spec §4.7's tinted control colours).
 pub(super) fn rehue(neutral: SrgbColour, tint: SrgbColour) -> SrgbColour {

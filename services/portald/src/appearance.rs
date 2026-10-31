@@ -2,9 +2,11 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Portal values for the `org.freedesktop.appearance` namespace, from one
 //! accepted [`Projection`]. settingsd computes everything (ruling 1): the
-//! resolved mode and the caption side come from its `values` view, the
-//! contrast and the accent from its `settings.palette` for that mode, both
-//! at one record identity. Pure data; the D-Bus surface lives in `portal`.
+//! resolved mode and the `appearance.export_toolkits` gate come from its
+//! `values` view, the contrast and the accent from its `settings.palette`
+//! for that mode, both at one record identity. With the gate off the portal
+//! states no preference (key space v2 §5.3: the gate covers GTK, Qt and the
+//! portal). Pure data; the D-Bus surface lives in `portal`.
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use settings::{Binding, Diagnostic, Revision};
@@ -21,17 +23,18 @@ pub const MAX_FILTERS: usize = 64;
 pub const MAX_FILTER_BYTES: usize = 256;
 
 /// The schema of [`Projection`], as the cache stores it.
-pub const PROJECTION_SCHEMA: u32 = 3;
+pub const PROJECTION_SCHEMA: u32 = 4;
 /// The `values` keys a projection reads beside the resolved mode.
-pub const VALUE_KEYS: [&str; 1] = ["window.caption_side"];
+pub const VALUE_KEYS: [&str; 1] = [EXPORT_KEY];
+/// The gate: GTK, Qt and the portal follow settingsd only while it is true.
+pub const EXPORT_KEY: &str = "appearance.export_toolkits";
 
 pub fn valid_filters(filters: &[String]) -> bool {
     filters.len() <= MAX_FILTERS && filters.iter().all(|s| s.len() <= MAX_FILTER_BYTES)
 }
 
 /// What the portal publishes of one settingsd record: its identity, the
-/// resolved mode, the contrast, the caption side (for the GTK export) and
-/// the palette's accent.
+/// resolved mode, the contrast, the export gate and the palette's accent.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Projection {
@@ -43,8 +46,8 @@ pub struct Projection {
     pub mode: String,
     /// `normal` or `high`.
     pub contrast: String,
-    /// `right`, `left` or `center` (`auto` reads as `right`).
-    pub caption_side: String,
+    /// `appearance.export_toolkits`: false serves no preference.
+    pub export: bool,
     /// sRGB, 0.0..=1.0 per channel, alpha excluded.
     pub accent: [f64; 3],
 }
@@ -101,12 +104,12 @@ impl Projection {
             .ok_or_else(|| invalid("palette.contrast", "Missing palette for the mode"))?;
         let accent: design::SrgbColour = serde_json::from_value(ours["accent"].clone())
             .map_err(|e| invalid("palette.accent", e.to_string()))?;
-        let caption_side = values["values"]["window.caption_side"]
-            .as_str()
-            .unwrap_or("auto");
-        let caption_side = match design::CaptionSide::from_name(caption_side) {
-            Some(design::CaptionSide::Auto) | None => "right".to_owned(),
-            Some(side) => side.name().to_owned(),
+        // The key is always in the answer with its default filled; a value
+        // that is not a boolean is refused rather than read as either.
+        let export = match &values["values"][EXPORT_KEY] {
+            Json::Bool(export) => *export,
+            Json::Null => true,
+            _ => return Err(invalid(EXPORT_KEY, "Expected a boolean")),
         };
         let projection = Self {
             schema: PROJECTION_SCHEMA,
@@ -115,7 +118,7 @@ impl Projection {
             revision,
             mode: mode.to_owned(),
             contrast: contrast.to_owned(),
-            caption_side,
+            export,
             accent: [accent.red, accent.green, accent.blue],
         };
         projection.validate()?;
@@ -139,9 +142,6 @@ impl Projection {
         if !matches!(self.contrast.as_str(), "normal" | "high") {
             return Err(invalid("contrast", "Use normal or high"));
         }
-        if design::CaptionSide::from_name(&self.caption_side).is_none() {
-            return Err(invalid("caption_side", "Use auto, left, center or right"));
-        }
         for (index, channel) in self.accent.iter().enumerate() {
             if !channel.is_finite() || !(0.0..=1.0).contains(channel) {
                 return Err(invalid(
@@ -162,7 +162,7 @@ impl Projection {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Values {
-    /// 1 dark, 2 light (0 is no preference and is never published here).
+    /// 1 dark, 2 light, 0 no preference (the export gate is off).
     pub color_scheme: u32,
     /// 0 normal, 1 high.
     pub contrast: u32,
@@ -181,8 +181,16 @@ impl Values {
         }
     }
 
-    /// The projection's mode, contrast and accent, as settingsd gave them.
+    /// The projection's mode, contrast and accent, as settingsd gave them;
+    /// no preference, normal contrast and no accent with the gate off.
     pub fn from_projection(projection: &Projection) -> Self {
+        if !projection.export {
+            return Self {
+                color_scheme: 0,
+                contrast: 0,
+                accent: None,
+            };
+        }
         Self {
             color_scheme: match projection.mode.as_str() {
                 "light" => 2,
@@ -296,14 +304,14 @@ mod tests {
             revision: Revision(1),
             mode: mode.into(),
             contrast: contrast.into(),
-            caption_side: "right".into(),
+            export: true,
             accent,
         }
     }
 
-    fn values(revision: &str, mode: &str, caption: &str) -> Json {
+    fn values(revision: &str, mode: &str, export: Json) -> Json {
         json!({"status":"current","binding":binding(),"incarnation":"inc","revision":revision,
-            "values":{"window.caption_side":caption},"resolved":{"mode":mode}})
+            "values":{EXPORT_KEY:export},"resolved":{"mode":mode}})
     }
 
     fn palette(revision: &str, mode: &str, contrast: &str) -> Json {
@@ -315,42 +323,50 @@ mod tests {
     fn a_projection_takes_the_resolved_mode_and_the_palettes_contrast_and_accent() {
         let p = Projection::from_answers(
             &binding(),
-            &values("4", "light", "left"),
+            &values("4", "light", json!(true)),
             &palette("4", "light", "high"),
         )
         .unwrap();
         assert_eq!((p.mode.as_str(), p.contrast.as_str()), ("light", "high"));
-        assert_eq!(p.caption_side, "left");
+        assert!(p.export);
         assert_eq!(p.revision, Revision(4));
         assert_eq!(p.accent, [0.2, 0.4, 0.6]);
-        let auto = Projection::from_answers(
+        let off = Projection::from_answers(
             &binding(),
-            &values("4", "dark", "auto"),
+            &values("4", "dark", json!(false)),
             &palette("4", "dark", "normal"),
         )
         .unwrap();
-        assert_eq!(auto.caption_side, "right");
+        assert!(!off.export);
+        assert!(
+            Projection::from_answers(
+                &binding(),
+                &values("4", "dark", json!("yes")),
+                &palette("4", "dark", "normal"),
+            )
+            .is_err()
+        );
     }
 
     #[test]
     fn answers_at_two_revisions_or_for_another_binding_are_refused() {
         let moved = Projection::from_answers(
             &binding(),
-            &values("4", "dark", "right"),
+            &values("4", "dark", json!(true)),
             &palette("5", "dark", "normal"),
         )
         .unwrap_err();
         assert_eq!(moved.code, "moved");
         let mut other = palette("4", "dark", "normal");
         other["binding"]["profile"] = json!("other");
-        let wrong = Projection::from_answers(&binding(), &values("4", "dark", "right"), &other)
+        let wrong = Projection::from_answers(&binding(), &values("4", "dark", json!(true)), &other)
             .unwrap_err();
         assert_eq!(wrong.code, "wrong_target");
         // The palette must carry the resolved mode.
         assert!(
             Projection::from_answers(
                 &binding(),
-                &values("4", "light", "right"),
+                &values("4", "light", json!(true)),
                 &palette("4", "dark", "normal"),
             )
             .is_err()
@@ -370,6 +386,19 @@ mod tests {
             light.get(NAMESPACE, ACCENT_COLOR),
             Some(Value::Structure(_))
         ));
+    }
+
+    #[test]
+    fn with_the_export_gate_off_the_portal_states_no_preference() {
+        let mut off = projection("light", "high", [0.1, 0.2, 0.3]);
+        off.export = false;
+        let values = Values::from_projection(&off);
+        assert_eq!(values.get(NAMESPACE, COLOR_SCHEME), Some(Value::U32(0)));
+        assert_eq!(values.get(NAMESPACE, CONTRAST), Some(Value::U32(0)));
+        assert!(values.get(NAMESPACE, ACCENT_COLOR).is_none());
+        let on = Values::from_projection(&projection("light", "high", [0.1, 0.2, 0.3]));
+        let changes = on.changed(&values);
+        assert_eq!(changes.len(), 2, "color-scheme and contrast; the accent stops");
     }
 
     #[test]
