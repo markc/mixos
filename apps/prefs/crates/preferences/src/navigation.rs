@@ -75,14 +75,14 @@ macro_rules! sections {
 }
 
 sections! {
-    Appearance => ("appearance", Appearance, "section-appearance", &["themes", "colour", "style", "density", "spacing", "compact"], &["appearance.scheme", "appearance.style", "appearance.mode", "appearance.contrast", "ui.density"]),
+    Appearance => ("appearance", Appearance, "section-appearance", &["themes", "colour", "style", "density", "spacing", "compact"], &["appearance.scheme", "appearance.style", "appearance.mode", "appearance.contrast", "appearance.density"]),
     TextAndFonts => ("text_and_fonts", Appearance, "section-text-and-fonts", &["typeface", "typography", "size"], &["appearance.font", "appearance.mono_family"]),
     Wallpapers => ("wallpaper", Appearance, "section-wallpapers", &["wallpapers", "background"], &[]),
-    Windows => ("windows", Desktop, "section-windows", &["title bars", "window buttons", "window style", "menus", "hamburger"], &["appearance.decorations", "appearance.caption_side", "appearance.window_style", "appearance.menu_style", "appearance.menu_side", "appearance.title_align", "appearance.actions_align", "appearance.actions_place"]),
+    Windows => ("windows", Desktop, "section-windows", &["title bars", "window buttons", "window style", "menus", "hamburger"], &["window.decorations", "window.caption_side", "window.style", "window.menu_style", "window.menu_side", "window.title_align", "window.actions_align", "window.actions_place"]),
     Email => ("apps_email", Apps, "section-email", &["mail", "accounts", "reader", "composer"], &["email."]),
     Terminal => ("apps_term", Apps, "nav-terminal", &["shell", "console"], &["terminal."]),
     Ced => ("apps_ced", Apps, "section-ced", &["editor"], &["ced.editor."]),
-    Accessibility => ("accessibility", System, "section-accessibility", &["size", "animation", "reduce motion", "scale", "zoom", "larger text"], &["ui.reduced_motion", "ui.text_scale"]),
+    Accessibility => ("accessibility", System, "section-accessibility", &["size", "animation", "reduce motion", "scale", "zoom", "larger text"], &["accessibility.reduced_motion", "accessibility.text_scale"]),
     Software => ("software", System, "section-software", &["system", "install", "update", "applications", "packages"], &[]),
 }
 
@@ -256,10 +256,10 @@ mod tests {
         );
         assert_eq!(ids("email.reader"), ["apps_email"]);
         assert_eq!(ids("ced.editor"), ["apps_ced"]);
-        assert_eq!(ids("appearance.decorations"), ["windows"]);
-        assert_eq!(ids("appearance.caption_side"), ["windows"]);
-        assert_eq!(ids("appearance.window_style"), ["windows"]);
-        assert_eq!(ids("ui.density"), ["appearance"]);
+        assert_eq!(ids("window.decorations"), ["windows"]);
+        assert_eq!(ids("window.caption_side"), ["windows"]);
+        assert_eq!(ids("window.style"), ["windows"]);
+        assert_eq!(ids("appearance.density"), ["appearance"]);
         assert_eq!(ids("compact"), ["appearance"]);
         assert_eq!(ids("size"), ["text_and_fonts", "accessibility"]);
         assert_eq!(ids("density"), ["appearance"]);
@@ -270,8 +270,8 @@ mod tests {
             &ids("appearance")[..3],
             ["appearance", "text_and_fonts", "wallpaper"]
         );
-        assert_eq!(ids("ui.text_scale"), ["accessibility"]);
-        assert_eq!(ids("ui.reduced_motion"), ["accessibility"]);
+        assert_eq!(ids("accessibility.text_scale"), ["accessibility"]);
+        assert_eq!(ids("accessibility.reduced_motion"), ["accessibility"]);
         assert_eq!(ids("animation"), ["accessibility"]);
         assert_eq!(ids("appearance.mono_family"), ["text_and_fonts"]);
         assert!(ids("no such setting").is_empty());
