@@ -100,10 +100,14 @@ fn own_roundness(scheme: &str) -> Roundness {
         })
         .raw_style()
     };
-    [Roundness::Round, Roundness::SlightlyRound, Roundness::Square]
-        .into_iter()
-        .find(|&r| design::geometry::round(own(), r).values() == own().values())
-        .unwrap_or(Roundness::Round)
+    [
+        Roundness::Round,
+        Roundness::SlightlyRound,
+        Roundness::Square,
+    ]
+    .into_iter()
+    .find(|&r| design::geometry::round(own(), r).values() == own().values())
+    .unwrap_or(Roundness::Round)
 }
 
 /// The density step of a multiplier (§4.1): below 0.925 compact, up to 1.1

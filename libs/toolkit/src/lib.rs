@@ -69,13 +69,13 @@ pub mod icons;
 pub mod keymap;
 #[cfg(feature = "layer")]
 pub mod layer;
+pub mod look_delivery;
 pub mod macros;
 pub mod markdown;
 pub mod menu;
 pub mod panel;
 pub mod saved;
 pub mod search;
-pub mod look_delivery;
 pub mod session_look;
 pub mod slider;
 pub mod space;

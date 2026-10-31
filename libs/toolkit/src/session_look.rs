@@ -211,8 +211,7 @@ pub fn framed_session(look: &Look, session: &Theme) -> Theme {
     session
         .clone()
         .framed(
-            Decorations::from_name(&framing.decorations)
-                .unwrap_or(session.requested_decorations()),
+            Decorations::from_name(&framing.decorations).unwrap_or(session.requested_decorations()),
             CaptionSide::resolve(&framing.caption_side),
         )
         .with_menus(
