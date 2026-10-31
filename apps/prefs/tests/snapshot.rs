@@ -44,6 +44,11 @@ fn draw(name: &str, engine: Engine, size: egui::Vec2) {
             let _ = cosmic::view(ui, &engine, &registry, &strings, &look);
         });
     toolkit::install(&harness.ctx, &theme);
+    // egui marks a fractional cursor in debug builds; the release window
+    // draws nothing there.
+    harness
+        .ctx
+        .global_style_mut(|s| s.debug.show_unaligned = false);
     harness.run_steps(6);
     harness.snapshot(name);
 }
