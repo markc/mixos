@@ -338,8 +338,7 @@ fn role_distance_report() {
                     entry.2 += 1;
                 }
                 let seed_hue = seeds.accent.map_or(0.0, hue);
-                let drawn_hue =
-                    hue(crate::palette::roles_of(derived.dictionary())["accent"]);
+                let drawn_hue = hue(crate::palette::roles_of(derived.dictionary())["accent"]);
                 let hue_delta = {
                     let d = (seed_hue - drawn_hue).rem_euclid(360.0);
                     d.min(360.0 - d)
