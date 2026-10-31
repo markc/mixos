@@ -92,7 +92,10 @@ pub enum RoleSource {
     /// `background.component.on`, the one with the higher contrast against
     /// `background.base` (`lower: false`) or the lower (`lower: true`), at
     /// `alpha`, so `text` is never dimmer than `text_dim` whatever the tints.
-    TextRank { lower: bool, alpha: f64 },
+    TextRank {
+        lower: bool,
+        alpha: f64,
+    },
     /// The first composited over the second, with the reference's `Over`.
     Over(&'static RoleSource, &'static RoleSource),
 }
