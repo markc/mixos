@@ -833,9 +833,7 @@ impl Bus {
                                 id, generation, waited_ms, mapped, via, pid, windows,
                             )),
                             Err(reason) => {
-                                model::warn!(
-                                    "comp.window.close force: s{id} not killed: {reason}"
-                                );
+                                model::warn!("comp.window.close force: s{id} not killed: {reason}");
                                 reply.send(kill_refused_reply(id, generation, waited_ms, reason))
                             }
                         },
