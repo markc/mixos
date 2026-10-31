@@ -213,7 +213,10 @@ fn auto_keeps_every_authored_scheme_unchanged() {
             let design = compile(context.clone());
             let mut flattened = document.v1.clone();
             let mut authored = BTreeSet::new();
-            assert!(complete_source(&mut flattened, &mut authored, &context).is_empty());
+            assert!(
+                complete_source(&mut flattened, &mut authored, &context, Semantics::Seeds)
+                    .is_empty()
+            );
             assert!(authored.is_empty());
             assert_eq!(roles8(&design).len(), 31);
         }

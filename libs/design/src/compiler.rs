@@ -109,10 +109,54 @@ pub fn compile_design(
     finish_compile(document, requested_candidate, diagnostics)
 }
 
+/// One flat compile. Under the derived scheme a chosen accent or tint can
+/// break a semantic pair's contract that the chrome roles do not have
+/// (an AA lift, a surface floor); the compile then keeps the exact roles and
+/// draws the semantics from a safer theme, with a warning, so every choice
+/// compiles ([`crate::seeds::Semantics`]).
 fn compile_flat_source(
     identity: &SourceIdentity,
     flattened: &FlattenedSource,
     context: DesignContext,
+) -> DesignCompileResult {
+    use crate::seeds::Semantics;
+    let levels: &[Semantics] = if context.scheme.is_derived() {
+        &Semantics::ALL
+    } else {
+        &[Semantics::Seeds]
+    };
+    let mut first = None;
+    for level in levels {
+        let mut result = compile_flat_source_at(identity, flattened, context.clone(), *level);
+        let failed = match &result {
+            DesignCompileResult::Success(success) => has_errors(&success.diagnostics),
+            DesignCompileResult::Fatal(_) => true,
+        };
+        if !failed {
+            if let DesignCompileResult::Success(success) = &mut result
+                && *level != Semantics::Seeds
+            {
+                success.diagnostics.push(DesignDiagnostic::warning(
+                    "derived-semantics-fallback",
+                    "design.v1.semantics",
+                    format!(
+                        "the chosen accent and tints break a semantic pair's contract; the roles stay exact and the pairs use {}",
+                        level.describe()
+                    ),
+                ));
+            }
+            return result;
+        }
+        first.get_or_insert(result);
+    }
+    first.expect("at least one semantic level")
+}
+
+fn compile_flat_source_at(
+    identity: &SourceIdentity,
+    flattened: &FlattenedSource,
+    context: DesignContext,
+    semantics: crate::seeds::Semantics,
 ) -> DesignCompileResult {
     let mut completed_source = flattened.source.clone();
     let mut authored_colors = flattened.authored_colours();
@@ -178,7 +222,7 @@ fn compile_flat_source(
     // The colour axes: the derived scheme's roles, or an authored scheme's
     // chosen semantic accent, as authored primitives.
     let derived_origins =
-        crate::seeds::complete_source(&mut completed_source, &mut authored_colors, &context);
+        crate::seeds::complete_source(&mut completed_source, &mut authored_colors, &context, semantics);
     let source = &completed_source;
     let origins = &flattened.origins;
     let colours = match compile_colour_tokens(source, context.clone()) {

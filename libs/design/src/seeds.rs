@@ -285,6 +285,46 @@ pub fn seeds_for(context: &DesignContext) -> Seeds {
     }
 }
 
+/// Which theme the derived scheme's semantic palette is read from. The
+/// roles are always the context's own; when its accent or tints break a
+/// pair's contract, the compiler steps down this list.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Semantics {
+    /// The context's seeds.
+    Seeds,
+    /// The context's tints with the palette's accent.
+    PaletteAccent,
+    /// The palette alone, which always compiles.
+    Palette,
+}
+
+impl Semantics {
+    pub const ALL: [Self; 3] = [Self::Seeds, Self::PaletteAccent, Self::Palette];
+
+    pub const fn describe(self) -> &'static str {
+        match self {
+            Self::Seeds => "the chosen seeds",
+            Self::PaletteAccent => "the tints with the palette's accent",
+            Self::Palette => "the palette's own theme",
+        }
+    }
+
+    fn context(self, context: &DesignContext) -> DesignContext {
+        match self {
+            Self::Seeds => context.clone(),
+            Self::PaletteAccent => DesignContext {
+                accent: AccentChoice::Auto,
+                ..context.clone()
+            },
+            Self::Palette => DesignContext {
+                accent: AccentChoice::Auto,
+                tints: Tints::default(),
+                ..context.clone()
+            },
+        }
+    }
+}
+
 /// The derived theme of `context` (its mode, contrast, accent and tints).
 /// Frosted glass is not a compile axis: the compile derives with the
 /// default glass, whose container alpha still reaches the primary texts.
@@ -318,6 +358,7 @@ pub(crate) fn complete_source(
     source: &mut DesignV1Source,
     authored: &mut BTreeSet<String>,
     context: &DesignContext,
+    semantics: Semantics,
 ) -> BTreeMap<String, String> {
     let mut origins = BTreeMap::new();
     let mut enter = |name: String, colour: SrgbColour, rule: String| {
@@ -335,16 +376,21 @@ pub(crate) fn complete_source(
                 format!("derive.mixos.{mode}.{}", from.describe()),
             );
         }
+        let semantic = if semantics == Semantics::Seeds {
+            theme
+        } else {
+            derived_theme(&semantics.context(context))
+        };
         for (name, from) in SEMANTIC_MAP {
             enter(
                 name.into(),
-                from.pick(&theme),
+                from.pick(&semantic),
                 format!("derive.mixos.{mode}.{}", from.describe()),
             );
         }
         enter(
             "palette.accent.default".into(),
-            ring_safe_accent(&theme),
+            ring_safe_accent(&semantic),
             format!("derive.mixos.{mode}.accent.base, ring-safe"),
         );
         // As every light scheme: hierarchy text on the quiet foreground.
