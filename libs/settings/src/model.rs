@@ -379,6 +379,16 @@ pub struct SourceRequest {
     pub digest: String,
 }
 
+/// `settings.palette` (§5.2): the palette of one mode (`dark`, `light`), or
+/// of both when `mode` is omitted.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PaletteRequest {
+    pub binding: Binding,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ApplyRequest {

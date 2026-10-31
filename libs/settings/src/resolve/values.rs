@@ -259,5 +259,59 @@ pub fn resolve(
     Ok(result)
 }
 
+/// `settings.palette` (§5.2, ruling 1): the desktop context's look in both
+/// modes, or in `mode` alone, from `values` with the profile's pinned
+/// `embedded_source`, through `design::palette`. The geometry is the look's;
+/// the frosted inputs are `appearance.frosted.*` (the thickness is the blur
+/// step).
+pub fn palette(
+    values: &Values,
+    embedded_source: &str,
+    mode: Option<Mode>,
+) -> Result<serde_json::Map<String, serde_json::Value>, Vec<Diagnostic>> {
+    registry::validate(values)?;
+    let look = Look::of(values);
+    let appearance = &look.appearance;
+    let doc = parsed(appearance.source.as_deref().unwrap_or(embedded_source))?;
+    let frosted = design::derive::FrostedGlass {
+        strength: design::cosmic_tables::BlurStrength::from_index(
+            appearance.frosted.thickness as usize,
+        )
+        .unwrap_or_default(),
+        windows: appearance.frosted.windows,
+        system_interface: appearance.frosted.system,
+        panel: appearance.frosted.panel,
+        applets: appearance.frosted.applets,
+        ..Default::default()
+    };
+    let mut out = serde_json::Map::new();
+    for each in [Mode::Dark, Mode::Light] {
+        if mode.is_some_and(|m| m != each) {
+            continue;
+        }
+        let context = look_context(&Axes {
+            look: &look,
+            scheme: appearance.scheme.clone(),
+            mode: each,
+            contrast: appearance.contrast.clone(),
+            app: None,
+        })
+        .map_err(|e| vec![e])?;
+        let palette = design::palette::mode_palette(&doc, &context, &look.geometry(), &frosted)
+            .map_err(|diagnostics| {
+                diagnostics
+                    .into_iter()
+                    .map(|d| {
+                        Diagnostic::new(d.code, &format!("appearance.source.{}", d.path), d.message)
+                    })
+                    .collect::<Vec<_>>()
+            })?;
+        let palette = serde_json::to_value(palette)
+            .map_err(|e| vec![Diagnostic::new("internal", "palette", e.to_string())])?;
+        out.insert(each.name().into(), palette);
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests;

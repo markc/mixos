@@ -27,6 +27,7 @@ pub const COMMANDS: &[&str] = &[
     "settings.reset",
     "settings.status",
     "settings.source",
+    "settings.palette",
     MIRROR_ATTACH,
     MIRROR_REVISION,
     // S7-TRANSITION: portald's read until it moves to settings.palette.
@@ -112,6 +113,7 @@ pub fn dispatch(authority: &mut Authority, command_name: &str, body: &str) -> Re
         "settings.get" => authority.read(decode(body)?),
         "settings.appearance.get" => authority.appearance(decode(body)?),
         "settings.source" => authority.source(&decode(body)?),
+        "settings.palette" => authority.palette(&decode(body)?),
         "settings.status" => {
             let req: StatusRequest = decode(body)?;
             authority.status(&req.binding, req.operation_id.as_deref())
@@ -1101,6 +1103,7 @@ mod tests {
             "settings.reset",
             "settings.status",
             "settings.source",
+            "settings.palette",
             MIRROR_ATTACH,
             MIRROR_REVISION,
         ];
