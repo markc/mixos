@@ -221,8 +221,12 @@ fn compile_flat_source_at(
     }
     // The colour axes: the derived scheme's roles, or an authored scheme's
     // chosen semantic accent, as authored primitives.
-    let derived_origins =
-        crate::seeds::complete_source(&mut completed_source, &mut authored_colors, &context, semantics);
+    let derived_origins = crate::seeds::complete_source(
+        &mut completed_source,
+        &mut authored_colors,
+        &context,
+        semantics,
+    );
     let source = &completed_source;
     let origins = &flattened.origins;
     let colours = match compile_colour_tokens(source, context.clone()) {

@@ -284,9 +284,11 @@ mod tests {
     };
 
     fn styles() -> Vec<(Style, ResolvedStyle)> {
-        let document =
-            parse_design_source(crate::SourceIdentity::new("embedded"), EMBEDDED_DEFAULT_SOURCE)
-                .unwrap();
+        let document = parse_design_source(
+            crate::SourceIdentity::new("embedded"),
+            EMBEDDED_DEFAULT_SOURCE,
+        )
+        .unwrap();
         Style::ALL
             .into_iter()
             .map(|style| {
