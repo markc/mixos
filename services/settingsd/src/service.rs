@@ -351,7 +351,10 @@ impl Ctx {
                 Err(error) => Err(error.to_string()),
             };
             let outcome = outcome.map(Box::new);
-            let _ = events.send(Event::Attached { generation, outcome });
+            let _ = events.send(Event::Attached {
+                generation,
+                outcome,
+            });
         });
     }
 
