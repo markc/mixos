@@ -29,6 +29,7 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 | [config](../config/README.md) | lib | none (library) | [`libs/config`](https://github.com/markc/mixos/tree/main/libs/config) | Where MixOS keeps its files and how a conf.mix file is read, with one directory rule for every component and descriptor-safe atomic file helpers. |
 | [daemon](../daemon/README.md) | lib | none (library) | [`libs/daemon`](https://github.com/markc/mixos/tree/main/libs/daemon) | Shared HTTP host parsing, listener guards, TLS and ACME provisioning. |
 | [davproto](../davproto/README.md) | lib | none (library) | [`libs/davproto`](https://github.com/markc/mixos/tree/main/libs/davproto) | CalDAV and CardDAV codecs that convert between JSCalendar or JSContact and iCalendar or vCard, with strong ETags, and no transport or storage. |
+| [daylight](../daylight/README.md) | service | desktop | [`services/daylight`](https://github.com/markc/mixos/tree/main/services/daylight) | How daylight writes the sun's state from the time zone, so appearance mode auto turns light at sunrise and dark at sunset on every desk. |
 | [design](../design/README.md) | lib | none (library) | [`libs/design`](https://github.com/markc/mixos/tree/main/libs/design) | The MixOS design-token system, which compiles a strict-data theme source into resolved colours, metrics, typography and button tables for one scheme, mode and contrast. |
 | [dnsd](../dnsd/README.md) | service | server | [`services/dnsd`](https://github.com/markc/mixos/tree/main/services/dnsd) | authoritative mesh DNS for the zones in zones.mix |
 | [dopus](../dopus/README.md) · [changelog](../dopus/changelog.md) | app | unclassified | [`apps/dopus`](https://github.com/markc/mixos/tree/main/apps/dopus) | MixOS's twin-pane file manager — two folder trees side by side, Places and Properties sidebars, drag and drop between panes, menus and keys for every action, and the same actions over the Bus. |
@@ -178,6 +179,7 @@ checked separately by the layering gate.
 | [wlcs](https://github.com/markc/mixos/blob/main/services/compd/crates/wlcs/Cargo.toml) | compd | service | desktop | none | 0.1.2 |
 | [world](https://github.com/markc/mixos/blob/main/services/compd/crates/world/Cargo.toml) | compd | service | desktop | none | 0.1.2 |
 | [x11-wm](https://github.com/markc/mixos/blob/main/services/compd/crates/x11-wm/Cargo.toml) | compd | service | desktop | none | 0.1.2 |
+| [daylight](https://github.com/markc/mixos/blob/main/services/daylight/component.mx) | daylight | service | desktop | public | 0.1.0 |
 | [dnsd](https://github.com/markc/mixos/blob/main/services/dnsd/Cargo.toml) | dnsd | service | core | public | 0.3.4 |
 | [dns-core](https://github.com/markc/mixos/blob/main/services/dnsd/crates/dns-core/Cargo.toml) | dnsd | service | core | none | 0.1.2 |
 | [editd](https://github.com/markc/mixos/blob/main/services/editd/Cargo.toml) | editd | service | core | public | 0.3.0 |

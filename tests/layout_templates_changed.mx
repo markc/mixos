@@ -89,5 +89,9 @@
   "services/peersd/units/peersd.service": {
     "reason": "add the peersd user unit: the peers Bus service for a user's agent sessions, state per host in the user's XDG state dir",
     "sha256": "f13b564971d404af57303537669a19bf3908067a711fb731614f23fe4b1826f4"
+  },
+  "services/daylight/units/daylight.service": {
+    "reason": "add the daylight user unit: sunrise and sunset for appearance.mode auto, beside the machine's settings authority",
+    "sha256": "9b709170229394780718f10190eacff443cdea82fb92ec2f1e42fe88187566cf"
   }
 }

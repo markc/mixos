@@ -1,0 +1,115 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- sun.mix: sunrise and sunset for a place, and the zone table. Pure: no
+-- clock, no Bus, no files except load_zones().
+--
+-- The maths is the standard sunrise equation (solar mean anomaly, equation
+-- of the centre, ecliptic longitude, declination, hour angle at a solar
+-- altitude of -0.833 degrees for refraction and the solar disc), good to a
+-- minute or two away from the poles. Times are Unix seconds (UTC), so the
+-- zone's offset never enters it: the zone only picks the place.
+
+fn rad($d)
+  return $d * pi() / 180
+end
+
+fn deg($r)
+  return $r * 180 / pi()
+end
+
+fn wrap360($d)
+  return $d - 360 * floor($d / 360)
+end
+
+fn julian($t)
+  return $t / 86400 + 2440587.5
+end
+
+fn unix($j)
+  return ($j - 2440587.5) * 86400
+end
+
+-- The solar day n (days since J2000 at the place's solar noon) whose noon
+-- lies nearest to Unix time $t at longitude $lon (degrees, east positive).
+fn day_of($lon, $t)
+  return round(julian($t) - 2451545.0 - 0.0008 + $lon / 360)
+end
+
+-- One solar day's events: {transit, rise, set, polar} where polar is nil on
+-- an ordinary day, "day" when the sun never sets and "night" when it never
+-- rises (rise and set are nil then).
+fn day_events($lat, $lon, $n)
+  $mean = $n + 0.0008 - $lon / 360
+  $m = wrap360(357.5291 + 0.98560028 * $mean)
+  $mr = rad($m)
+  $c = 1.9148 * sin($mr) + 0.0200 * sin(2 * $mr) + 0.0003 * sin(3 * $mr)
+  $l = rad(wrap360($m + $c + 180 + 102.9372))
+  $transit = 2451545.0 + $mean + 0.0053 * sin($mr) - 0.0069 * sin(2 * $l)
+  $sin_d = sin($l) * sin(rad(23.4397))
+  $cos_d = cos(asin($sin_d))
+  $phi = rad($lat)
+  $cos_w = (sin(rad(-0.833)) - sin($phi) * $sin_d) / (cos($phi) * $cos_d)
+  if $cos_w < -1 then
+    return {transit: unix($transit), rise: nil, set: nil, polar: "day"}
+  end
+  if $cos_w > 1 then
+    return {transit: unix($transit), rise: nil, set: nil, polar: "night"}
+  end
+  $w = deg(acos($cos_w)) / 360
+  return {transit: unix($transit), rise: unix($transit - $w), set: unix($transit + $w), polar: nil}
+end
+
+-- The sun at Unix time $t: {daylight: bool, next: Unix time of the next
+-- sunrise or sunset, or nil when none falls in the next two days (a polar
+-- day or night; the caller re-checks within a day), next_kind: "sunrise" |
+-- "sunset" | nil}. Daylight is true from sunrise to sunset: dark before
+-- sunrise and at or after sunset.
+fn at($lat, $lon, $t)
+  $n0 = day_of($lon, $t)
+  $events = []
+  for $n = $n0 - 1 to $n0 + 2
+    $d = day_events($lat, $lon, $n)
+    if $d.rise != nil then
+      push($events, {t: $d.rise, kind: "sunrise"})
+      push($events, {t: $d.set, kind: "sunset"})
+    end
+  end
+  $events = sort_by($events, fn($e) = $e.t)
+  $today = day_events($lat, $lon, $n0)
+  $daylight = $today.polar == "day"
+  if $today.polar == nil then
+    $last = nil
+    for $e in $events
+      if $e.t <= $t then $last = $e end
+    end
+    -- An ordinary day always has a sunrise before its own sunset, so $last
+    -- is nil only before the window's first event: night after a polar night.
+    $daylight = $last != nil and $last.kind == "sunrise"
+  end
+  $next = nil
+  for $e in $events
+    if $next == nil and $e.t > $t then $next = $e end
+  end
+  return {daylight: $daylight, next: if $next == nil then nil else $next.t end,
+    next_kind: if $next == nil then nil else $next.kind end, polar: $today.polar}
+end
+
+-- The zone table (share/daylight/zones.mx): {schema: 1, source, version,
+-- zones: {"Area/City": [lat, lon]}}. Raises on a malformed table: a citizen
+-- without its places must not start.
+fn load_zones($path)
+  if not is_file($path) then raise("ZONES", "zone table missing: " .. $path) end
+  $t = load_data($path)
+  if type($t) != "map" or $t.schema != 1 or type($t.zones) != "map" then raise("ZONES", "zone table malformed: " .. $path) end
+  return $t
+end
+
+-- The IANA zone name a /etc/localtime symlink target names, or nil.
+fn zone_of_link($target)
+  $at = index_of($target, "zoneinfo/")
+  if $at < 0 then return nil end
+  $z = slice($target, $at + 9)
+  if starts_with($z, "posix/") then $z = slice($z, 6) end
+  if starts_with($z, "right/") then $z = slice($z, 6) end
+  return if $z == "" then nil else $z end
+end

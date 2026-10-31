@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+# daylight beside the machine's settings authority (a user unit in the
+# authority's own session, `systemctl --user`): it writes the sun's state
+# for appearance.mode = auto. One per machine; never beside a mirror.
+[Unit]
+Description=MixOS daylight (sunrise and sunset for mode auto)
+Documentation=https://mixos.dev/daylight/
+# The broker is the system noded.service, which a user unit cannot order
+# after or want; `mix --serve` is supervised and keeps retrying until the
+# broker answers. The After= covers a user-manager noded where there is one.
+After=noded.service
+
+[Service]
+Type=simple
+Environment=MIX_STATS=off
+ExecStart=@{prefix}/bin/mix --serve @{prefix}/lib/daylight/daylight.mix --name daylight
+TimeoutStopSec=10
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target

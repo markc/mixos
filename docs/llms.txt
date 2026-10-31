@@ -82,6 +82,7 @@ One line per component with a page: kind, then install profiles. The
 - [config](https://mixos.dev/config/README.md): lib; profiles: none (library). Where MixOS keeps its files and how a conf.mix file is read, with one directory rule for every component and descriptor-safe atomic file helpers.
 - [daemon](https://mixos.dev/daemon/README.md): lib; profiles: none (library). Shared HTTP host parsing, listener guards, TLS and ACME provisioning.
 - [davproto](https://mixos.dev/davproto/README.md): lib; profiles: none (library). CalDAV and CardDAV codecs that convert between JSCalendar or JSContact and iCalendar or vCard, with strong ETags, and no transport or storage.
+- [daylight](https://mixos.dev/daylight/README.md): service; profiles: desktop. How daylight writes the sun's state from the time zone, so appearance mode auto turns light at sunrise and dark at sunset on every desk.
 - [design](https://mixos.dev/design/README.md): lib; profiles: none (library). The MixOS design-token system, which compiles a strict-data theme source into resolved colours, metrics, typography and button tables for one scheme, mode and contrast.
 - [dnsd](https://mixos.dev/dnsd/README.md): service; profiles: server. authoritative mesh DNS for the zones in zones.mix
 - [dopus](https://mixos.dev/dopus/README.md): app; profiles: unclassified. MixOS's twin-pane file manager — two folder trees side by side, Places and Properties sidebars, drag and drop between panes, menus and keys for every action, and the same actions over the Bus.

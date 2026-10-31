@@ -117,6 +117,14 @@ precedence = "override"
 SPDX-FileCopyrightText = "2026 Lucide Icons and Contributors; Cole Bemis (Feather-derived icons)"
 SPDX-License-Identifier = "ISC AND MIT"
 
+# The daylight zone table, generated from the public-domain IANA time zone
+# database, and tzdb's own licence statement.
+[[annotations]]
+path = ["share/daylight/zones.mx", "share/daylight/LICENSE-tzdb.txt"]
+precedence = "override"
+SPDX-FileCopyrightText = "IANA Time Zone Database contributors"
+SPDX-License-Identifier = "LicenseRef-Public-Domain"
+
 # Provenance not yet recorded; clear it (or replace it) before a release.
 [[annotations]]
 path = "docs/_web/Server_Room_Dark.webp"

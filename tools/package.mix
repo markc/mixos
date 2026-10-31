@@ -219,6 +219,7 @@ for $pkg in $selected
     add_tree($source .. "/share/scenes", $top .. "/share/scenes")
     add_tree($source .. "/share/brand", $top .. "/share/brand")
     add_tree($source .. "/share/icons", $top .. "/share/icons")
+    add_tree($source .. "/share/daylight", $top .. "/share/daylight")
     add_tree($source .. "/services/compd/scripts", $top .. "/share/compd/scripts")
     for $svc in ["compd", "indexd", "settingsd", "hostd", "noded", "monitord", "editd", "portald"]
       add_tree($source .. "/services/" .. $svc .. "/units", $top .. "/share/" .. $svc .. "/units")

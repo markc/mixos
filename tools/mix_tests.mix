@@ -95,6 +95,7 @@ $scripts = [
   "services/agentd/tests/agentd_resume_test.mix",
   "services/peersd/tests/peersd_test.mix",
   "services/peersd/tests/peers_federation_test.mix",
+  "services/daylight/tests/daylight_test.mix",
   "apps/dopus/tests/dopus_bus_test.mix",
   "apps/workshop/tests/agents_bus_test.mix",
   "apps/screenshot/tests/edit_path_test.mix"
@@ -115,6 +116,7 @@ $env = {
   MIXOS_TEST_WORKSHOP: $bin .. "/workshop",
   MIXOS_TEST_COMPD: $bin .. "/compd",
   MIXOS_TEST_SCREENSHOT: $bin .. "/screenshot",
+  MIXOS_TEST_SETTINGSD: $bin .. "/settingsd",
   -- Pinned so a host's SCENES_FIRST_RUN=0 cannot leak into scenes_test.mix.
   SCENES_FIRST_RUN: "1",
   TZ: "UTC"
