@@ -231,6 +231,26 @@ fn auto_keeps_every_authored_scheme_unchanged() {
     }
 }
 
+/// Fable's C1: an achromatic scheme ties on chroma, and the tie goes to the
+/// candidate that reads against `chrome`. Mono light takes its #222222
+/// (not the #eeeeee beside its chrome); mono dark keeps #cecece; the
+/// chromatic schemes keep their hue.
+#[test]
+fn seeds_of_takes_the_scheme_hue_and_breaks_ties_by_contrast() {
+    let seed = |scheme, mode| {
+        let design = compile(DesignContext {
+            scheme,
+            mode,
+            ..DesignContext::default()
+        });
+        seeds_of(design.dictionary()).unwrap().accent.unwrap().to_srgba8()
+    };
+    assert_eq!(seed(Scheme::Mono, Mode::Light), [0x22, 0x22, 0x22, 255]);
+    assert_eq!(seed(Scheme::Mono, Mode::Dark), [0xce, 0xce, 0xce, 255]);
+    assert_eq!(seed(Scheme::Crimson, Mode::Dark), [0xf5, 0x2f, 0x39, 255]);
+    assert_eq!(seed(Scheme::Ocean, Mode::Light), [0x00, 0x6f, 0x87, 255]);
+}
+
 /// The F4 claim for `mixos`: the seeds read back from its roles re-derive
 /// the same 31 roles within one 8-bit step per channel.
 #[test]
