@@ -21,8 +21,8 @@ Every exporter:
 - keeps the contents it replaced, so one command undoes it;
 - stops writing while `appearance.export_desktop` is `false`.
 
-Colours come from `settings.palette`, the derived palette settingsd
-computes; an exporter names colours and computes none.
+Colours and fonts come from `settings.palette`, the derived palette
+settingsd computes; an exporter names them and computes none.
 
 ## COSMIC
 
@@ -51,7 +51,9 @@ session's user.
 | `shell.panels.top`, `.bottom` | `com.system76.CosmicPanel.Panel` and `.Dock` v1, and which of them `com.system76.CosmicPanel` v1 `entries` lists |
 | `wallpaper.*` | `com.system76.CosmicBackground` v1 `all`, `same-on-all` and one key per output |
 
-A null font is the design default (Inter, JetBrains Mono). Panel applet
+The fonts are the palette's too: the families MixOS draws, the session's
+choice or the bundled Inter and JetBrains Mono (COSMIC takes the family
+alone; it has no size setting). Panel applet
 lists and the wallpaper are written only once MixOS has its own; until
 then COSMIC keeps its own.
 

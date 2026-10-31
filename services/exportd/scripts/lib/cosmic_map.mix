@@ -64,9 +64,6 @@ $_APPLETS = {
   input: "com.system76.CosmicAppletInputSources",
   tiling: "com.system76.CosmicAppletTiling"
 }
--- The null fonts stand for the design defaults (key space v2 §2.2).
-$DEFAULT_FONT = "Inter"
-$DEFAULT_MONO = "JetBrains Mono"
 -- Carried CosmicBackground fields COSMIC's UI never edits, as shipped.
 $_BACKGROUND_CARRIED = [["filter_by_theme", "#true"], ["filter_method", "Lanczos"],
   ["sampling_method", "Alphanumeric"]]
@@ -196,7 +193,9 @@ fn _font($family)
     ["stretch", $ron.ident("Normal")], ["style", $ron.ident("Normal")]])
 end
 
-fn _tk($v)
+-- The fonts are the palette's: what MixOS draws, the session's choices
+-- over the design's. COSMIC takes the family alone (no size setting).
+fn _tk($v, $fonts)
   $density = $_DENSITY[_get($v, "appearance.density", "comfortable")]
   return [
     ["apply_theme_global", false],
@@ -205,8 +204,8 @@ fn _tk($v)
     ["icon_theme", _get($v, "appearance.icon_theme", "breeze")],
     ["header_size", $ron.ident($density)],
     ["interface_density", $ron.ident($density)],
-    ["interface_font", _font(_get($v, "appearance.font_family", $DEFAULT_FONT))],
-    ["monospace_font", _font(_get($v, "appearance.mono_family", $DEFAULT_MONO))]
+    ["interface_font", _font($fonts.ui.family)],
+    ["monospace_font", _font($fonts.mono.family)]
   ]
 end
 
@@ -355,7 +354,7 @@ fn plan($v, $mode, $palette)
   for $m in $_MODES
     $out = concat($out, _files($_THEME .. $_CAP[$m], 2, _theme($v, $m, $palette[$m])))
   end
-  $out = concat($out, _files("com.system76.CosmicTk", 1, _tk($v)))
+  $out = concat($out, _files("com.system76.CosmicTk", 1, _tk($v, $palette[$mode].fonts)))
   $out = concat($out, _files("com.system76.CosmicComp", 1, _comp($v)))
   $cosmic = $palette[$mode].cosmic
   $radius_xl = $cosmic.corner_radii.radius_xl[0]

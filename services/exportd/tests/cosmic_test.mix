@@ -65,7 +65,7 @@ check("mode written last, auto_switch pinned false",
 check("apply_theme_global false", file_of($plan, "com.system76.CosmicTk/v1/apply_theme_global") == "false")
 check("comfortable is Standard", file_of($plan, "com.system76.CosmicTk/v1/interface_density") == "Standard"
   and file_of($plan, "com.system76.CosmicTk/v1/header_size") == "Standard")
-check("null font is Inter", has($plan, "com.system76.CosmicTk/v1/interface_font", "family: \"Inter\""))
+check("the palette font: Inter by default", has($plan, "com.system76.CosmicTk/v1/interface_font", "family: \"Inter\""))
 check("gaps inner raised to the hint", file_of($plan, $D .. "gaps") == "(0, 3)")
 check("no wallpaper of our own leaves COSMIC's", file_of($plan, "com.system76.CosmicBackground/v1/all") == nil)
 check("panels: only the dock", file_of($plan, "com.system76.CosmicPanel/v1/entries") == "[\n    \"Dock\",\n]")
@@ -74,7 +74,7 @@ check("applets untouched until authored", file_of($plan, "com.system76.CosmicPan
 
 -- Chosen values.
 $v = {
-  "appearance.density": "compact", "appearance.roundness": "round", "appearance.font_family": "Noto Sans",
+  "appearance.density": "compact", "appearance.roundness": "round",
   "appearance.icon_theme": "Papirus", "window.hint_colour": "#ff0000", "window.gaps": 8, "window.active_hint": 2,
   "window.controls.minimize": false,
   "shell.panels.bottom.gap": true, "shell.panels.bottom.extend": false, "shell.panels.bottom.thickness": 64,
@@ -83,7 +83,10 @@ $v = {
   "wallpaper.image": "/srv/walls/a b.webp", "wallpaper.fit": "fit", "wallpaper.same_on_all": false,
   "wallpaper.outputs.DP-1.image": "/srv/walls/dp1.webp"
 }
-$plan = $map.plan($v, "light", $pal)
+-- settingsd puts the chosen family into the palette's fonts.
+$chosen = $pal
+$chosen.light.fonts.ui.family = "Noto Sans"
+$plan = $map.plan($v, "light", $chosen)
 -- Spacing is the palette's (settingsd derives it from the density).
 check("compact density", file_of($plan, "com.system76.CosmicTk/v1/interface_density") == "Compact")
 check("hint colour both builders", file_of($plan, "com.system76.CosmicTheme.Dark.Builder/v2/window_hint") == "Some(\"#FF0000FF\")"
