@@ -1387,8 +1387,7 @@ impl X11Surface {
         let conn = self.conn.upgrade().ok_or(X11KillError::Disconnected)?;
         let setup = conn.setup();
         kill_target_check(self.window, setup.resource_id_base, setup.resource_id_mask)?;
-        conn.kill_client(self.window)
-            .map_err(X11KillError::Connection)?;
+        conn.kill_client(self.window).map_err(X11KillError::Connection)?;
         conn.flush().map_err(X11KillError::Connection)
     }
 
