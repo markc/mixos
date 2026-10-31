@@ -111,12 +111,15 @@ pub fn project(lp: &Loop, identity: Identity, scopes: &ReadScopes) -> CompSnapsh
     for row in &lp.inner.comp.scenes.rows {
         surfaces.insert(surface_key(row.id.0), project_scene_surface(lp, row));
     }
-    // The rule: a `windows.*` row is a mapped xdg toplevel.
+    // The rule: a `windows.*` row is a mapped managed toplevel: an xdg
+    // toplevel or a managed X11 window (`SurfaceRole::managed_toplevel`).
     // A session lock empties `windows.*` and the workspaces' counts.
     let locked = world::comp::session_lock::active(lp);
     let windows = surfaces
         .iter()
-        .filter(|(_, surface)| !locked && surface.role == "toplevel" && surface.mapped)
+        .filter(|(_, surface)| {
+            !locked && matches!(surface.role, "toplevel" | "x11-toplevel") && surface.mapped
+        })
         .map(|(key, surface)| {
             let mut row = project_window_row(surface);
             let id = surfaces::SurfaceId(row.id);
@@ -651,7 +654,7 @@ fn project_surface(
         placements.by_handle.get(record.handle()).cloned()
     }
     .unwrap_or_default();
-    let window_row = record.mapped() && record.role() == SurfaceRole::Toplevel;
+    let window_row = record.mapped() && record.role().managed_toplevel();
     // Under a session lock an ordinary
     // surface reads invisible and nameless; the lock's own rows do not.
     let redact = world::comp::session_lock::active(lp) && record.role() != SurfaceRole::Lock;

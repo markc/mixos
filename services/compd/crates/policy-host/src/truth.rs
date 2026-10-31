@@ -157,7 +157,7 @@ pub fn truth(lp: &Loop) -> Value {
         .collect();
     let windows: Vec<Value> = registry
         .surface_rows()
-        .filter(|record| record.role() == SurfaceRole::Toplevel && record.mapped())
+        .filter(|record| record.role().managed_toplevel() && record.mapped())
         .map(|record| {
             commits.insert(record.id().0.to_string(), comp.commits(record.id()));
             let engine = drawn

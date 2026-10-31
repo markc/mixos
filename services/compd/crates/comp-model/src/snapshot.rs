@@ -1008,7 +1008,7 @@ impl SurfaceSnapshot {
     }
 }
 
-/// The `windows.*` row of a mapped xdg toplevel's `surfaces.*` row.
+/// The `windows.*` row of a mapped managed toplevel's `surfaces.*` row.
 pub fn project_window_row(surface: &SurfaceSnapshot) -> WindowSnapshot {
     WindowSnapshot {
         placement: if surface.maximized {

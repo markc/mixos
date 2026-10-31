@@ -111,10 +111,11 @@ impl<H> SurfaceRecord<H> {
             .filter(|workspace| self.mapped && self.role.managed_toplevel() && *workspace >= 1)
     }
 
-    /// Whether this record is a `windows.*` row: a mapped xdg toplevel.
-    /// X11 toplevels are not (their workspace is read from `surfaces.*`).
+    /// Whether this record is a `windows.*` row: a mapped managed toplevel
+    /// (an xdg toplevel or a managed X11 window; override-redirect X11 is
+    /// rendered but, like an xdg popup, is not a window).
     pub fn is_window_row(&self) -> bool {
-        self.role == SurfaceRole::Toplevel && self.mapped
+        self.role.managed_toplevel() && self.mapped
     }
 }
 
@@ -579,7 +580,7 @@ impl<H: Clone + Eq + Hash> Registry<H> {
             .filter(|record| record.role != SurfaceRole::Dormant)
     }
 
-    /// Projection: the `windows.*` rows (mapped xdg toplevels), in id
+    /// Projection: the `windows.*` rows (mapped managed toplevels), in id
     /// order. A session lock empties this map; that is the caller's call.
     pub fn windows(&self) -> impl Iterator<Item = &SurfaceRecord<H>> {
         self.surface_rows().filter(|record| record.is_window_row())

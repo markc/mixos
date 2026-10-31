@@ -28,7 +28,7 @@ pub const BOTTOM: DrawLayer = DrawLayer(-50);
 /// band it gets back when it leaves fullscreen.
 pub fn set(lp: &mut Loop, id: SurfaceId, band: StackBand) -> Option<(&'static str, &'static str)> {
     let record = lp.inner.comp.registry.get(id)?;
-    if record.role() != surfaces::SurfaceRole::Toplevel || !record.mapped() {
+    if !record.role().managed_toplevel() || !record.mapped() {
         return None;
     }
     if lp.inner.comp.fullscreen.lifted(id).is_some() {
