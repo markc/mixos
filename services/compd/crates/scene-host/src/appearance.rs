@@ -13,6 +13,7 @@ use design::{
     CaptionSide, Contrast, DesignContext, Mode, RequestedDecorations, Scheme, Style,
     TypographyGeneric, TypographyRole,
 };
+use settings::view::Framing;
 use settings::{Diagnostic, Snapshot};
 use std::sync::Arc;
 use toolkit::theme::{Overlay, Theme};
@@ -37,6 +38,8 @@ pub struct Look {
     /// The profile's text scale (`ui.text_scale`), applied to every text style.
     pub text_scale: f32,
     pub window_style: ChromeStyle,
+    /// `window.gaps`: the inner gap between tiles, in pixels.
+    pub gaps: u32,
     pub(crate) preferences: crate::preferences::Preferences,
     chrome: Vec<ChromeTheme>,
 }
@@ -48,8 +51,8 @@ fn unsupported(path: &str, message: &str) -> Diagnostic {
 /// The theme an accepted snapshot describes: its own design source when the
 /// profile carries one, otherwise the embedded design, either way at the
 /// effective scheme, style, mode and contrast settingsd accepted, framed as
-/// the profile asks.
-fn theme_of(snapshot: &Snapshot) -> Result<Theme, Diagnostic> {
+/// the profile asks (`window.*`).
+fn theme_of(snapshot: &Snapshot, framing: &Framing) -> Result<Theme, Diagnostic> {
     let effective = snapshot.effective.get(CONTEXT).ok_or_else(|| {
         Diagnostic::new(
             "missing_context",
@@ -57,9 +60,9 @@ fn theme_of(snapshot: &Snapshot) -> Result<Theme, Diagnostic> {
             "Snapshot has no desktop context",
         )
     })?;
-    let decorations = RequestedDecorations::from_name(&effective.decorations)
-        .ok_or_else(|| unsupported("appearance.decorations", "Unknown decorations"))?;
-    let captions = CaptionSide::resolve(&effective.caption_side);
+    let decorations = RequestedDecorations::from_name(&framing.decorations)
+        .ok_or_else(|| unsupported("window.decorations", "Unknown decorations"))?;
+    let captions = CaptionSide::resolve(&framing.caption_side);
     let style = match &effective.style {
         None => None,
         Some(name) => Some(
@@ -95,14 +98,14 @@ fn theme_of(snapshot: &Snapshot) -> Result<Theme, Diagnostic> {
     Ok(theme
         .framed(decorations, captions)
         .with_menus(
-            design::MenuStyle::resolve(&effective.menu_style),
-            design::MenuSide::resolve(&effective.menu_side),
+            design::MenuStyle::resolve(&framing.menu_style),
+            design::MenuSide::resolve(&framing.menu_side),
         )
         .with_band(design::title_band::Settings::from_names(
-            &effective.title_align,
-            &effective.actions_align,
-            &effective.actions_place,
-            &effective.window_style,
+            &framing.title_align,
+            &framing.actions_align,
+            &framing.actions_place,
+            &framing.style,
         )))
 }
 
@@ -122,14 +125,10 @@ fn overlay_or_design(theme: Theme, overlay: Overlay) -> Theme {
 
 /// Build the whole look from an accepted snapshot (on the worker).
 pub(crate) fn build(snapshot: &Snapshot) -> Result<Look, Diagnostic> {
-    let preferences = crate::preferences::Preferences::prepare(&snapshot.desktop.shell)?;
-    let theme = theme_of(snapshot)?;
-    let window_style = snapshot
-        .effective
-        .get(CONTEXT)
-        .map_or_else(ChromeStyle::default, |effective| {
-            ChromeStyle::resolve(&effective.window_style)
-        });
+    let profile = crate::profile::Profile::read(snapshot)?;
+    let preferences = crate::preferences::Preferences::prepare(&profile.panels)?;
+    let theme = theme_of(snapshot, &profile.window.framing)?;
+    let window_style = ChromeStyle::resolve(&profile.window.framing.style);
     let text_scale = snapshot
         .effective
         .get(CONTEXT)
@@ -175,6 +174,7 @@ pub(crate) fn build(snapshot: &Snapshot) -> Result<Look, Diagnostic> {
         theme: Arc::new(theme),
         text_scale,
         window_style,
+        gaps: profile.window.gaps,
         preferences,
         chrome,
     })
@@ -368,23 +368,9 @@ mod tests {
     #[test]
     fn chrome_uses_the_effective_window_style_with_mac_for_unknown_names() {
         for name in ChromeStyle::NAMES.iter().copied().chain(["future-style"]) {
-            let desktop = settings::Desktop::default();
-            let mut effective = settings::resolve(&desktop).unwrap();
-            effective.get_mut(CONTEXT).unwrap().window_style = name.into();
-            let snapshot = Snapshot {
-                schema: settings::SCHEMA,
-                binding: settings::Binding {
-                    instance: "fixture".into(),
-                    profile: "default".into(),
-                },
-                incarnation: "test".into(),
-                revision: settings::Revision(1),
-                design_revision: settings::Revision(1),
-                source_digest: settings::source_digest(settings::EMBEDDED_DEFAULT_SOURCE),
-                desktop,
-                effective,
-            };
-            let look = build(&snapshot).unwrap();
+            let mut desktop = settings::Desktop::default();
+            desktop.appearance.window_style = name.into();
+            let look = build(&snapshot_of(desktop)).unwrap();
             assert_eq!(look.window_style, ChromeStyle::resolve(name));
             assert_eq!(
                 look.chrome(look.window_style).deco.style,
@@ -405,24 +391,10 @@ mod tests {
                 .copied()
                 .chain(["future-side"])
             {
-                let desktop = settings::Desktop::default();
-                let mut effective = settings::resolve(&desktop).unwrap();
-                effective.get_mut(CONTEXT).unwrap().menu_style = style.into();
-                effective.get_mut(CONTEXT).unwrap().menu_side = side.into();
-                let snapshot = Snapshot {
-                    schema: settings::SCHEMA,
-                    binding: settings::Binding {
-                        instance: "fixture".into(),
-                        profile: "default".into(),
-                    },
-                    incarnation: "test".into(),
-                    revision: settings::Revision(1),
-                    design_revision: settings::Revision(1),
-                    source_digest: settings::source_digest(settings::EMBEDDED_DEFAULT_SOURCE),
-                    desktop,
-                    effective,
-                };
-                let look = build(&snapshot).unwrap();
+                let mut desktop = settings::Desktop::default();
+                desktop.appearance.menu_style = style.into();
+                desktop.appearance.menu_side = side.into();
+                let look = build(&snapshot_of(desktop)).unwrap();
                 for window_style in ChromeStyle::ALL {
                     let chrome = look.chrome(window_style);
                     assert_eq!(chrome.menu_style, design::MenuStyle::resolve(style));

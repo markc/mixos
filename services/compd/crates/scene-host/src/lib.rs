@@ -38,6 +38,7 @@ pub mod mount;
 pub mod panels;
 pub mod port;
 mod preferences;
+mod profile;
 pub mod render;
 pub mod seat;
 mod state;
