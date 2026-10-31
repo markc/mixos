@@ -126,7 +126,10 @@ pub fn dispatch(authority: &mut Authority, command_name: &str, body: &str) -> Re
 
 /// TRANSITION (S8 deletes): the format-4 snapshot in schema 1 and 2 and the
 /// summary, for the followers not yet on the 1.0.0 topics.
-async fn publish_legacy(authority: &mut Authority, client: &SupervisedClient) -> anyhow::Result<()> {
+async fn publish_legacy(
+    authority: &mut Authority,
+    client: &SupervisedClient,
+) -> anyhow::Result<()> {
     let profile = &authority.accepted.binding.profile;
     publish_retained(
         client,
@@ -216,7 +219,7 @@ enum Event {
         ok: bool,
     },
     /// A mirror's attach answered (the push it carries) or failed.
-    Attached(Result<RevisionPush, String>),
+    Attached(Result<Box<RevisionPush>, String>),
     /// A forwarded write reached the authority, or could not.
     Forwarded { reached: bool },
 }
@@ -266,7 +269,8 @@ impl Ctx {
                 Ok(body) => body,
                 Err(error) => {
                     tracing::warn!(%error, node, "mirror push not built");
-                    self.mirrors.finished(&node, revision, false, Instant::now());
+                    self.mirrors
+                        .finished(&node, revision, false, Instant::now());
                     continue;
                 }
             };
@@ -294,7 +298,10 @@ impl Ctx {
     /// A mirror attaches to its authority (on each connect, and when a
     /// forwarded write finds a detached authority back).
     fn attach(&mut self, authority: &Authority) {
-        let Role::Mirror { node: authority_node } = &authority.role else {
+        let Role::Mirror {
+            node: authority_node,
+        } = &authority.role
+        else {
             return;
         };
         if self.attaching || !self.client.is_connected() {
@@ -332,7 +339,7 @@ impl Ctx {
                 Ok((rc, body, error)) => Err(format!("rc {rc}: {body} {error:?}")),
                 Err(error) => Err(error.to_string()),
             };
-            let _ = events.send(Event::Attached(outcome));
+            let _ = events.send(Event::Attached(outcome.map(Box::new)));
         });
     }
 
@@ -379,7 +386,11 @@ impl Ctx {
 }
 
 /// The push of `authority`'s current record to a mirror that holds `since`.
-fn push_of(authority: &Authority, own: &str, since: Option<Revision>) -> anyhow::Result<RevisionPush> {
+fn push_of(
+    authority: &Authority,
+    own: &str,
+    since: Option<Revision>,
+) -> anyhow::Result<RevisionPush> {
     let changed_at = authority.board.changed_at();
     let changed = changed_at
         .iter()
@@ -416,7 +427,8 @@ fn attach(authority: &Authority, ctx: &mut Ctx, body: &str) -> Result<Value, Val
         .ok_or_else(|| json!({"status":"not_ready","message":"Broker node not known yet"}))?;
     let push = push_of(authority, &own, Some(request.revision))
         .map_err(|e| json!({"status":"storage_failed","message":e.to_string()}))?;
-    ctx.mirrors.attach(&request.node, authority.accepted.revision);
+    ctx.mirrors
+        .attach(&request.node, authority.accepted.revision);
     Ok(json!({"status":"attached","revision":authority.accepted.revision,"push":push}))
 }
 
@@ -428,7 +440,10 @@ async fn adopt(
     push: RevisionPush,
 ) -> (Authority, Result<Value, Value>) {
     let Role::Mirror { node } = &authority.role else {
-        return (authority, Err(json!({"status":"wrong_role","role":"authority"})));
+        return (
+            authority,
+            Err(json!({"status":"wrong_role","role":"authority"})),
+        );
     };
     if push.binding != authority.accepted.binding || push.authority != *node {
         let binding = authority.accepted.binding.clone();
@@ -458,8 +473,8 @@ async fn adopt(
     let changed_at = push.changed_at;
     let mut authority = authority;
     let result = tokio::task::spawn_blocking(move || {
-        let taken = crate::mirror::write(&root, &cache)
-            .and_then(|()| authority.adopt(&cache, &changed_at));
+        let taken =
+            crate::mirror::write(&root, &cache).and_then(|()| authority.adopt(&cache, &changed_at));
         (authority, taken)
     })
     .await;
@@ -467,7 +482,11 @@ async fn adopt(
         Ok((mut authority, Ok(moved))) => {
             authority.stale = false;
             let revision = authority.accepted.revision;
-            tracing::info!(revision = revision.0, ?moved, "mirror took the authority's revision");
+            tracing::info!(
+                revision = revision.0,
+                ?moved,
+                "mirror took the authority's revision"
+            );
             (
                 authority,
                 Ok(json!({"status":"current","revision":revision})),
@@ -520,7 +539,10 @@ pub async fn serve_mirror_at(
     node: String,
     noded_url: String,
 ) -> anyhow::Result<()> {
-    anyhow::ensure!(mirroring::valid_node(&node), "invalid authority node {node:?}");
+    anyhow::ensure!(
+        mirroring::valid_node(&node),
+        "invalid authority node {node:?}"
+    );
     let (opened, url) = (root.clone(), noded_url.clone());
     let runtime = tokio::runtime::Handle::current();
     let authority = tokio::task::spawn_blocking(move || {
@@ -652,7 +674,7 @@ async fn run(mut authority: Authority, root: PathBuf, noded_url: String) -> anyh
                 }
                 Event::Attached(Ok(push)) => {
                     ctx.attaching = false;
-                    let (taken, result) = adopt(authority, &ctx, push).await;
+                    let (taken, result) = adopt(authority, &ctx, *push).await;
                     authority = taken;
                     match result {
                         Ok(_) => authority.stale = false,
@@ -754,7 +776,9 @@ async fn stopping(authority: &Authority, ctx: &Ctx) {
         changed_at: BTreeMap::new(),
         stopping: true,
     };
-    let Ok(body) = serde_json::to_string(&notice) else { return };
+    let Ok(body) = serde_json::to_string(&notice) else {
+        return;
+    };
     let sends: Vec<_> = ctx
         .mirrors
         .nodes()
