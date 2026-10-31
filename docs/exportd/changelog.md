@@ -17,4 +17,5 @@ generated: by docs/_build/gen-site.mix from services/exportd/CHANGELOG.md; do no
   `settings.palette` in `kdeglobals` and the `MixOS-Dark`/`MixOS-Light`
   scheme files, the accent, the resolved fonts and the icon theme, the
   Breeze border size and buttons in `kwinrc`, and panel floating, then
-  Plasma and KWin reconfigured over D-Bus; undo and restore.
+  Plasma and KWin reconfigured over D-Bus; writes under KConfig's lock,
+  re-notifies after a crash or an unreachable bus; undo and restore pause it.

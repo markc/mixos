@@ -1,0 +1,55 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- A kwriteconfig6 stand-in for the exporter tests, so writes, undo and
+-- restore run where KDE Frameworks is absent. It is as strict as the real
+-- tool's documented command line (--file, repeated --group, --key,
+-- --type, --delete, --notify, and exactly one positional value, which is
+-- mandatory even with --delete), and it honours KConfig's `<file>.lock`.
+-- With FAKE_KDE_LOG set, it appends one JSON line per write.
+$kc = require("../../scripts/lib/kconfig.mix")
+$a = args()
+$file = nil
+$groups = []
+$key = nil
+$delete = false
+$notify = false
+$values = []
+$i = 0
+while $i < len($a)
+  $x = $a[$i]
+  if contains(["--file", "--group", "--key", "--type"], $x) then
+    if $i + 1 >= len($a) then raise("USAGE", "missing value for " .. $x) end
+    $v = $a[$i + 1]
+    if $x == "--file" then $file = $v
+    elif $x == "--group" then push($groups, $v)
+    elif $x == "--key" then $key = $v
+    end
+    $i = $i + 2
+  elif $x == "--delete" then
+    $delete = true
+    $i = $i + 1
+  elif $x == "--notify" then
+    $notify = true
+    $i = $i + 1
+  elif starts_with($x, "-") then
+    raise("USAGE", "unknown option " .. $x)
+  else
+    push($values, $x)
+    $i = $i + 1
+  end
+end
+if $key == nil or len($groups) == 0 then raise("USAGE", "--group and --key are required") end
+if len($values) != 1 then raise("USAGE", "exactly one value argument is required, got " .. to_string(len($values))) end
+$base = env("XDG_CONFIG_HOME", env("HOME", "") .. "/.config")
+$path = if $file == nil then $base .. "/kdeglobals" elif starts_with($file, "/") then $file else $base .. "/" .. $file end
+$group = join($groups, "][")
+$held = $kc.lock($path, 30)
+try
+  $text = if is_file($path) then read_file($path) else "" end
+  write_atomic($path, $kc.edit($text, [{group: $group, key: $key, value: if $delete then nil else $values[0] end}]))
+finally
+  $kc.unlock($held)
+end
+if env("FAKE_KDE_LOG", "") != "" then
+  append_file(env("FAKE_KDE_LOG"), json_encode({file: $file, group: $group, key: $key, delete: $delete, notify: $notify}) .. "\n")
+end

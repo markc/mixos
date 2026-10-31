@@ -1,0 +1,32 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- A busctl stand-in for the exporter tests: logs every call (FAKE_BUSCTL_LOG,
+-- one JSON argv per line), fails every call while FAKE_BUSCTL_DOWN names an
+-- existing file (an unreachable session bus), and plays plasmashell's
+-- scripting interface over a panel list kept in FAKE_PANELS (JSON
+-- [{id, floating, location}]): the read script answers busctl's JSON, a
+-- floating write updates the list.
+$a = args()
+if env("FAKE_BUSCTL_LOG", "") != "" then append_file(env("FAKE_BUSCTL_LOG"), json_encode($a) .. "\n") end
+$down = env("FAKE_BUSCTL_DOWN", "")
+if $down != "" and is_file($down) then
+  print("Failed to connect to bus: No such file or directory")
+  exit(1)
+end
+if contains($a, "evaluateScript") then
+  $js = $a[len($a) - 1]
+  $file = env("FAKE_PANELS", "")
+  if $file == "" or not is_file($file) then exit(1) end
+  $panels = json_parse(read_file($file))
+  if contains($js, "JSON.stringify") then
+    print(json_encode({type: "s", data: [json_encode($panels)]}))
+    exit(0)
+  end
+  $m = re_find($js, "p\\.id==([0-9]+)\\)\\{p\\.floating=(true|false)")
+  if len($m) == 0 then exit(1) end
+  $id = to_number($m[0].groups[0])
+  $want = $m[0].groups[1] == "true"
+  $out = map($panels, fn($p) = if $p.id == $id then merge($p, {floating: $want}) else $p end)
+  write_file($file, json_encode($out))
+  print(json_encode({type: "s", data: [""]}))
+end

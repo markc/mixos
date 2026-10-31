@@ -1,21 +1,33 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
--- version: 0.1.0
+-- version: 0.2.0
 -- A stand-in settings authority for the exporter tests: answers
--- settings.get and settings.palette from JSON files the test writes, and
--- publishes the retained appearance topic on request, as settingsd does on
--- a revision.
+-- settings.get and settings.palette from JSON files the test writes (in the
+-- live answers' shapes), counts the calls, and publishes a retained keys
+-- topic on request, as settingsd does on a revision.
 $dir = env("FAKE_SETTINGS_DIR", "")
 if $dir == "" then raise("FIXTURE", "FAKE_SETTINGS_DIR is required") end
+$calls = {get: 0, palette: 0}
 
 on settings.get
+  $calls.get = $calls.get + 1
   reply(read_file($dir .. "/get.json"))
 end
 
 on settings.palette
+  $calls.palette = $calls.palette + 1
   reply(read_file($dir .. "/palette.json"))
 end
 
+on fake.calls
+  reply(json_encode($calls))
+end
+
+-- {prefix?}: publish that prefix's topic body for the current revision.
 on fake.publish
-  publish("settingsd.desktop.keys.default.appearance", read_file($dir .. "/get.json"), {retain: true})
-  reply(json_encode({published: true}))
+  $prefix = if type($event.args) == "map" then $event.args.prefix ?? "appearance" else "appearance" end
+  $got = json_parse(read_file($dir .. "/get.json"))
+  $body = {schema: 3, binding: $got.binding, incarnation: $got.incarnation, revision: $got.revision,
+    changed_at: $got.revision, values: {}}
+  publish("settingsd.desktop.keys.default." .. $prefix, json_encode($body), {retain: true})
+  reply(json_encode({published: $prefix}))
 end
