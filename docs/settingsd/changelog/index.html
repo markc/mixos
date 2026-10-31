@@ -256,6 +256,25 @@ advances for any key whose registry domains include paint, text or layout,
 so changes to <code>terminal.*</code>, <code>email.*</code>, <code>ced.*</code>, density and
 <code>accessibility.text_scale</code> now advance it too (format 4 counted only
 <code>appearance</code> and <code>apps</code>); it may over-report, never under-report.</p>
+<p>Contract 1.0.0 (key space v2 §5). Retained topics per prefix,
+<code>settingsd.desktop.keys.&lt;profile&gt;.&lt;prefix&gt;</code> (22), plus
+<code>settingsd.desktop.look.&lt;profile&gt;</code> and <code>settingsd.desktop.snapshot.&lt;profile&gt;</code>
+(schema 3: values, compact designs). A commit publishes only the topics whose
+content moved, each body stamped with <code>changed_at</code>; a broker (re)connect
+republishes all. <code>settings.get</code> takes <code>view: values|look|snapshot</code>, with
+<code>prefix</code> or <code>keys</code> for values; a live key is refused as <code>live_key</code>.
+<code>settings.validate</code> adds the would-be values of the touched prefixes.</p>
+<p>Mirror role (F1): <code>serve --mirror-of NODE</code> attaches to the authority with
+<code>settings.mirror.attach</code> (answered with the record), takes each
+<code>settings.mirror.revision</code> push into its sealed cache and republishes the same
+topics on its own node. Writes are forwarded and the authority's receipt
+relayed; with the authority unreachable they are refused as
+<code>authority_unreachable</code> and <code>settings.status</code> reports <code>stale: true</code>. The
+authority pushes each revision with bounded retry, drops a mirror after eight
+failures (it re-attaches on its reconnect), keeps the attached nodes in
+<code>mirrors.json</code> beside the store, and tells them when it stops.</p>
+<p>Transition until S8: the format-4 topics, <code>view: full|summary</code> (still the
+default when <code>view</code> is omitted) and <code>settings.appearance.get</code> stay.</p>
 <p><code>settings.get</code> 0.7.0 includes <code>ui</code> in summary reads: text scale, density and
 reduced motion on the same revision as appearance. Store format unchanged.</p>
 <h2 id="010">0.1.0</h2>

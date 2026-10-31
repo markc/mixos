@@ -29,6 +29,28 @@ so changes to `terminal.*`, `email.*`, `ced.*`, density and
 `accessibility.text_scale` now advance it too (format 4 counted only
 `appearance` and `apps`); it may over-report, never under-report.
 
+Contract 1.0.0 (key space v2 §5). Retained topics per prefix,
+`settingsd.desktop.keys.<profile>.<prefix>` (22), plus
+`settingsd.desktop.look.<profile>` and `settingsd.desktop.snapshot.<profile>`
+(schema 3: values, compact designs). A commit publishes only the topics whose
+content moved, each body stamped with `changed_at`; a broker (re)connect
+republishes all. `settings.get` takes `view: values|look|snapshot`, with
+`prefix` or `keys` for values; a live key is refused as `live_key`.
+`settings.validate` adds the would-be values of the touched prefixes.
+
+Mirror role (F1): `serve --mirror-of NODE` attaches to the authority with
+`settings.mirror.attach` (answered with the record), takes each
+`settings.mirror.revision` push into its sealed cache and republishes the same
+topics on its own node. Writes are forwarded and the authority's receipt
+relayed; with the authority unreachable they are refused as
+`authority_unreachable` and `settings.status` reports `stale: true`. The
+authority pushes each revision with bounded retry, drops a mirror after eight
+failures (it re-attaches on its reconnect), keeps the attached nodes in
+`mirrors.json` beside the store, and tells them when it stops.
+
+Transition until S8: the format-4 topics, `view: full|summary` (still the
+default when `view` is omitted) and `settings.appearance.get` stay.
+
 `settings.get` 0.7.0 includes `ui` in summary reads: text scale, density and
 reduced motion on the same revision as appearance. Store format unchanged.
 

@@ -5,7 +5,7 @@ description: The headless desktop settings authority, the one writer for a sessi
 
 # settingsd
 
-The headless native ABP desktop settings authority, contract 0.1.0. An
+The headless native ABP desktop settings authority, contract 1.0.0. An
 established profile has one writer and durable whole-document settings and
 operation receipts. Native publication is retained and owner-stamped by
 [noded](../noded/README.md). [Ced](../ced/README.md) and
@@ -32,6 +32,37 @@ writer lock prevents seed from recreating an established missing primary,
 including without a backup. Serve fails for a missing or unsupported
 established store. Both accept `--profile` and `--root` for an explicit
 binding or test directory. Use an isolated broker when testing.
+
+## Topics and mirrors
+
+Contract 1.0.0 publishes one retained topic per settings prefix,
+`settingsd.desktop.keys.<profile>.<prefix>` (`appearance`, `window`,
+`shell.panels`, `time` and so on, 22 in all), plus the follower view
+`settingsd.desktop.look.<profile>` and the schema 3 snapshot
+`settingsd.desktop.snapshot.<profile>`. A prefix body carries every key under
+it with its defaults filled, the resolved mode and accent beside the authored
+choice for `appearance`, and `changed_at`, the revision that last changed it.
+A commit republishes only the topics whose content moved; a broker reconnect
+republishes all of them. Live keys (network, Bluetooth, system, audio levels)
+are in no topic: their owners publish them.
+
+Retained topics are node-local, so a machine has one authority and every
+desk on it runs a mirror:
+
+```text
+settingsd serve --instance alpha                     # the authority
+settingsd serve --instance alpha --mirror-of alpha   # a desk's mirror
+```
+
+A mirror attaches with `settings.mirror.attach`, keeps the authority's
+record in a sealed cache, and republishes the same topics on its own node
+from each `settings.mirror.revision` push. It answers reads from the cache,
+forwards writes and relays the authority's receipts, and refuses writes as
+`authority_unreachable` while the authority is down; `settings.status`
+then reports `stale: true`. Nothing polls: the authority pushes each
+revision (with a bounded retry, dropping a mirror that keeps failing), a
+mirror re-attaches when its own broker reconnects, and a restarted authority
+pushes to the mirrors it had attached.
 
 ## Profiles and upgrades
 
@@ -89,5 +120,8 @@ default profiles.
 
 ## Tests
 
-Worker tests: `cargo test -p settingsd`. The native ABP gate and the
-compositor fixtures arrive with the desktop test harness.
+Worker tests: `cargo test -p settingsd`. The broker tests (`tests/bus.rs`:
+change-only topics on one broker, then an authority and a mirror on a
+private broker pair) run with `MIXOS_TEST_NODED` naming a noded built from
+the same commit and `--ignored`. The compositor fixtures arrive with the
+desktop test harness.
