@@ -24,7 +24,11 @@ pub fn show(
     events: &mut Vec<UiEvent>,
 ) {
     let rect = ui.max_rect().shrink2(vec2(look.l, look.s));
-    let mut ui = ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(Layout::top_down(Align::Min)));
+    let mut ui = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(rect)
+            .layout(Layout::top_down(Align::Min)),
+    );
     let ui = &mut ui;
     let row = page.row(open);
     let title = match (page.drawer(open), row) {
@@ -35,7 +39,11 @@ pub fn show(
     ui.horizontal(|ui| {
         ui.label(RichText::new(&title).size(20.0).strong().color(look.text));
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            let close = ui.add(toolkit::button::IconButton::new(Icon::X).size(16.0).tooltip(label("drawer-close")));
+            let close = ui.add(
+                toolkit::button::IconButton::new(Icon::X)
+                    .size(16.0)
+                    .tooltip(label("drawer-close")),
+            );
             if close.clicked() {
                 events.push(UiEvent::Drawer(None));
             }
@@ -47,7 +55,11 @@ pub fn show(
             .id_salt(("drawer", page.id, open))
             .show(ui, |ui| {
                 for (index, section) in drawer.sections.iter().enumerate() {
-                    let rows: Vec<&Row> = section.rows.iter().filter(|r| r.show.holds(&engine.store)).collect();
+                    let rows: Vec<&Row> = section
+                        .rows
+                        .iter()
+                        .filter(|r| r.show.holds(&engine.store))
+                        .collect();
                     if rows.is_empty() {
                         continue;
                     }
@@ -65,11 +77,15 @@ pub fn show(
     if let Some(why) = engine.row_blocked(page, row) {
         super::notice(ui, look, &why);
     }
-    ui.add_enabled_ui(engine.row_blocked(page, row).is_none(), |ui| match row.control {
-        Control::Colour { key } => colour(ui, engine, key, look, events),
-        Control::Accent => colour(ui, engine, "appearance.accent", look, events),
-        Control::Pick { key, list } => pick(ui, engine, key, &super::pick_list(ui, list), look, events),
-        _ => {}
+    ui.add_enabled_ui(engine.row_blocked(page, row).is_none(), |ui| {
+        match row.control {
+            Control::Colour { key } => colour(ui, engine, key, look, events),
+            Control::Accent => colour(ui, engine, "appearance.accent", look, events),
+            Control::Pick { key, list } => {
+                pick(ui, engine, key, &super::pick_list(ui, list), look, events)
+            }
+            _ => {}
+        }
     });
 }
 
@@ -119,8 +135,16 @@ fn colour(ui: &mut Ui, engine: &Engine, key: &'static str, look: &Look, events: 
         .data(|d| d.get_temp(hex_id))
         .unwrap_or_else(|| engine.store.text(key).unwrap_or_default());
     ui.horizontal(|ui| {
-        ui.label(RichText::new(label("colour-hex")).size(12.0).color(look.text));
-        let edit = ui.add(egui::TextEdit::singleline(&mut text).desired_width(120.0).id_salt(hex_id));
+        ui.label(
+            RichText::new(label("colour-hex"))
+                .size(12.0)
+                .color(look.text),
+        );
+        let edit = ui.add(
+            egui::TextEdit::singleline(&mut text)
+                .desired_width(120.0)
+                .id_salt(hex_id),
+        );
         if edit.changed() {
             ui.data_mut(|d| d.insert_temp(hex_id, text.clone()));
         }
@@ -138,7 +162,10 @@ fn colour(ui: &mut Ui, engine: &Engine, key: &'static str, look: &Look, events: 
     } else {
         "colour-reset-auto"
     });
-    if ui.add(super::controls::standard_button(&reset, look)).clicked() {
+    if ui
+        .add(super::controls::standard_button(&reset, look))
+        .clicked()
+    {
         ui.data_mut(|d| {
             d.remove_temp::<Color32>(id);
             d.remove_temp::<String>(hex_id);
@@ -175,39 +202,66 @@ fn pick(
         .get(key)
         .is_some_and(|i| i.default.as_ref().is_none_or(serde_json::Value::is_null));
     let query = filter.to_lowercase();
-    egui::ScrollArea::vertical().id_salt(("pick", key)).show(ui, |ui| {
-        card(ui, look, |ui| {
-            let mut first = true;
-            let mut entry = |ui: &mut Ui, text: &str, value: serde_json::Value, selected: bool| {
-                if !first {
-                    divider(ui, look);
+    egui::ScrollArea::vertical()
+        .id_salt(("pick", key))
+        .show(ui, |ui| {
+            card(ui, look, |ui| {
+                let mut first = true;
+                let mut entry =
+                    |ui: &mut Ui, text: &str, value: serde_json::Value, selected: bool| {
+                        if !first {
+                            divider(ui, look);
+                        }
+                        first = false;
+                        let (rect, response) = ui
+                            .allocate_exact_size(vec2(ui.available_width(), 36.0), Sense::click());
+                        ui.painter().text(
+                            rect.left_center() + vec2(look.m, 0.0),
+                            egui::Align2::LEFT_CENTER,
+                            text,
+                            egui::FontId::proportional(14.0),
+                            look.text,
+                        );
+                        if selected {
+                            toolkit::button::paint_icon(
+                                ui,
+                                Icon::Check,
+                                rect.right_center() - vec2(look.m + 8.0, 0.0),
+                                16.0,
+                                look.accent,
+                            );
+                        }
+                        response.widget_info(|| {
+                            WidgetInfo::selected(Role::RadioButton, ui.is_enabled(), selected, text)
+                        });
+                        if response.clicked() && !selected {
+                            set(events, key, value);
+                        }
+                    };
+                if nullable && query.is_empty() {
+                    entry(
+                        ui,
+                        &label("pick-default"),
+                        serde_json::Value::Null,
+                        current.is_none(),
+                    );
                 }
-                first = false;
-                let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 36.0), Sense::click());
-                ui.painter().text(
-                    rect.left_center() + vec2(look.m, 0.0),
-                    egui::Align2::LEFT_CENTER,
-                    text,
-                    egui::FontId::proportional(14.0),
-                    look.text,
-                );
-                if selected {
-                    toolkit::button::paint_icon(ui, Icon::Check, rect.right_center() - vec2(look.m + 8.0, 0.0), 16.0, look.accent);
+                for name in names.iter().filter(|n| n.to_lowercase().contains(&query)) {
+                    entry(
+                        ui,
+                        name,
+                        json!(name),
+                        current.as_deref() == Some(name.as_str()),
+                    );
                 }
-                response.widget_info(|| WidgetInfo::selected(Role::RadioButton, ui.is_enabled(), selected, text));
-                if response.clicked() && !selected {
-                    set(events, key, value);
-                }
-            };
-            if nullable && query.is_empty() {
-                entry(ui, &label("pick-default"), serde_json::Value::Null, current.is_none());
-            }
-            for name in names.iter().filter(|n| n.to_lowercase().contains(&query)) {
-                entry(ui, name, json!(name), current.as_deref() == Some(name.as_str()));
+            });
+            if names.is_empty() {
+                ui.add(icons::image_of(
+                    ui.ctx(),
+                    Icon::LoaderCircle,
+                    16.0,
+                    look.icon,
+                ));
             }
         });
-        if names.is_empty() {
-            ui.add(icons::image_of(ui.ctx(), Icon::LoaderCircle, 16.0, look.icon));
-        }
-    });
 }

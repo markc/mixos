@@ -47,7 +47,8 @@ pub fn standard_button<'a>(text: &'a str, look: &'a Look) -> impl Widget + 'a {
         } else {
             look.button
         };
-        ui.painter().rect_filled(rect, Look::radius(look.r_xl), fill);
+        ui.painter()
+            .rect_filled(rect, Look::radius(look.r_xl), fill);
         let ink = if ui.is_enabled() {
             look.text
         } else {
@@ -84,8 +85,11 @@ fn switch(ui: &mut Ui, on: bool, look: &Look, name: &str) -> Response {
     } else {
         rect.min.x + 12.0
     };
-    ui.painter()
-        .circle_filled(pos2(x, rect.center().y), 10.0, look.knob.gamma_multiply(alpha));
+    ui.painter().circle_filled(
+        pos2(x, rect.center().y),
+        10.0,
+        look.knob.gamma_multiply(alpha),
+    );
     if response.hovered() && ui.is_enabled() {
         ui.painter().rect_filled(
             rect,
@@ -108,7 +112,12 @@ fn labels(ui: &mut Ui, look: &Look, title: &str, description: Option<&str>, bloc
         }
         if let Some(why) = blocked {
             ui.horizontal_wrapped(|ui| {
-                ui.add(icons::image_of(ui.ctx(), Icon::CircleAlert, 12.0, look.warning));
+                ui.add(icons::image_of(
+                    ui.ctx(),
+                    Icon::CircleAlert,
+                    12.0,
+                    look.warning,
+                ));
                 ui.add(egui::Label::new(RichText::new(why).size(12.0).color(look.text)).wrap());
             });
         }
@@ -191,7 +200,11 @@ pub fn row(
         })
         .response;
     if goes(&row.control) {
-        let click = ui.interact(response.rect, ui.scope_id().with(("go", row.id)), Sense::click());
+        let click = ui.interact(
+            response.rect,
+            ui.scope_id().with(("go", row.id)),
+            Sense::click(),
+        );
         let click = named(click, Role::Link, enabled, &name);
         if click.clicked() && enabled {
             go(row, events);
@@ -255,7 +268,8 @@ pub fn radio_row(
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
                 ui.add_enabled_ui(blocked.is_none(), |ui| {
-                    let (rect, response) = ui.allocate_exact_size(Vec2::splat(16.0), Sense::click());
+                    let (rect, response) =
+                        ui.allocate_exact_size(Vec2::splat(16.0), Sense::click());
                     let c = rect.center();
                     if selected {
                         ui.painter().circle_filled(c, 8.0, look.accent);
@@ -278,7 +292,11 @@ pub fn radio_row(
         })
         .response;
     if blocked.is_none() {
-        let whole = ui.interact(response.rect, ui.scope_id().with(("radio", key, option.label)), Sense::click());
+        let whole = ui.interact(
+            response.rect,
+            ui.scope_id().with(("radio", key, option.label)),
+            Sense::click(),
+        );
         if whole.clicked() && !selected {
             set(events, key, lit(option.value));
         }
@@ -407,7 +425,11 @@ fn control(
                 toolkit::button::IconButton::new(Icon::Plus).size(16.0),
             );
             let plus = named(plus, Role::Button, value < *max, &format!("{name} +"));
-            ui.label(RichText::new(value.to_string()).size(14.0).color(look.value));
+            ui.label(
+                RichText::new(value.to_string())
+                    .size(14.0)
+                    .color(look.value),
+            );
             let minus = ui.add_enabled(
                 value > *min,
                 toolkit::button::IconButton::new(Icon::Minus).size(16.0),
@@ -457,7 +479,11 @@ fn control(
         Control::AutoMode => {
             let auto = store.text("appearance.mode").as_deref() == Some("auto");
             if switch(ui, auto, look, name).clicked() {
-                let resolved = if resolved_dark(engine) { "dark" } else { "light" };
+                let resolved = if resolved_dark(engine) {
+                    "dark"
+                } else {
+                    "light"
+                };
                 set(
                     events,
                     "appearance.mode",
@@ -479,9 +505,7 @@ fn control(
         }
         Control::Pick { key, .. } => {
             chevron(ui, look);
-            let current = store
-                .text(key)
-                .unwrap_or_else(|| label("pick-default"));
+            let current = store.text(key).unwrap_or_else(|| label("pick-default"));
             ui.label(RichText::new(current).size(14.0).color(look.value));
         }
         Control::Page { .. } | Control::Drawer { .. } => chevron(ui, look),
@@ -495,7 +519,12 @@ fn control(
 }
 
 fn chevron(ui: &mut Ui, look: &Look) {
-    ui.add(icons::image_of(ui.ctx(), Icon::ChevronRight, 16.0, look.icon));
+    ui.add(icons::image_of(
+        ui.ctx(),
+        Icon::ChevronRight,
+        16.0,
+        look.icon,
+    ));
 }
 
 /// The dropdown: the value text and a caret, no background (spec 4).
@@ -551,22 +580,34 @@ fn segmented(
         .rect_filled(rect, Look::radius(look.r_xl), look.field);
     let each = width / options.len().max(1) as f32;
     for (i, option) in options.iter().enumerate() {
-        let r = Rect::from_min_size(pos2(rect.min.x + each * i as f32, rect.min.y), vec2(each, 32.0));
+        let r = Rect::from_min_size(
+            pos2(rect.min.x + each * i as f32, rect.min.y),
+            vec2(each, 32.0),
+        );
         let selected = option.value.is(value.as_ref());
         let response = ui.interact(r, ui.scope_id().with(("seg", key, i)), Sense::click());
         if selected {
-            ui.painter()
-                .rect_filled(r.shrink(1.0), Look::radius(look.r_xl), look.sidebar_selected);
+            ui.painter().rect_filled(
+                r.shrink(1.0),
+                Look::radius(look.r_xl),
+                look.sidebar_selected,
+            );
         }
         let text = label(option.label);
         ui.painter().text(
             r.center(),
             egui::Align2::CENTER_CENTER,
-            if selected { format!("✓ {text}") } else { text.clone() },
+            if selected {
+                format!("✓ {text}")
+            } else {
+                text.clone()
+            },
             egui::FontId::proportional(14.0),
             look.text,
         );
-        response.widget_info(|| WidgetInfo::selected(Role::RadioButton, ui.is_enabled(), selected, &text));
+        response.widget_info(|| {
+            WidgetInfo::selected(Role::RadioButton, ui.is_enabled(), selected, &text)
+        });
         if response.clicked() && !selected && ui.is_enabled() {
             set(events, key, lit(option.value));
         }
@@ -594,20 +635,35 @@ fn images(
                 _ => 0.0,
             };
             ui.vertical(|ui| {
-                let (rect, response) = ui.allocate_exact_size(vec2(191.0_f32.min(ui.available_width()), 100.0), Sense::click());
-                ui.painter().rect_filled(rect, Look::radius(look.r_s), look.window);
-                let window = Rect::from_min_size(rect.min + vec2(32.0, 24.0), vec2(rect.width() - 64.0, 60.0));
-                ui.painter().rect_filled(window, Look::radius(radius), look.card);
+                let (rect, response) = ui.allocate_exact_size(
+                    vec2(191.0_f32.min(ui.available_width()), 100.0),
+                    Sense::click(),
+                );
+                ui.painter()
+                    .rect_filled(rect, Look::radius(look.r_s), look.window);
+                let window = Rect::from_min_size(
+                    rect.min + vec2(32.0, 24.0),
+                    vec2(rect.width() - 64.0, 60.0),
+                );
+                ui.painter()
+                    .rect_filled(window, Look::radius(radius), look.card);
                 ui.painter().rect_filled(
                     Rect::from_min_size(window.min + vec2(12.0, 14.0), vec2(48.0, 18.0)),
                     Look::radius(radius.min(9.0)),
                     look.accent,
                 );
                 if selected {
-                    ui.painter().rect_stroke(rect, Look::radius(look.r_s), Stroke::new(2.0, look.accent), StrokeKind::Inside);
+                    ui.painter().rect_stroke(
+                        rect,
+                        Look::radius(look.r_s),
+                        Stroke::new(2.0, look.accent),
+                        StrokeKind::Inside,
+                    );
                 }
                 focus_ring(ui, &response, rect, look.r_s, look);
-                response.widget_info(|| WidgetInfo::selected(Role::RadioButton, ui.is_enabled(), selected, &text));
+                response.widget_info(|| {
+                    WidgetInfo::selected(Role::RadioButton, ui.is_enabled(), selected, &text)
+                });
                 if response.clicked() && !selected {
                     set(events, key, lit(option.value));
                 }
@@ -632,11 +688,17 @@ fn mode(ui: &mut Ui, engine: &Engine, look: &Look, events: &mut Vec<UiEvent>) {
             let card = super::rgba(palette.neutral[if dark { 2 } else { 1 }]);
             let text = label(key);
             ui.vertical(|ui| {
-                let width = 191.0_f32.min((ui.available_width() - look.m) / 2.0).max(96.0);
+                let width = 191.0_f32
+                    .min((ui.available_width() - look.m) / 2.0)
+                    .max(96.0);
                 let (rect, response) = ui.allocate_exact_size(vec2(width, 100.0), Sense::click());
                 ui.painter().rect_filled(rect, Look::radius(look.r_s), bg);
-                let window = Rect::from_min_size(rect.min + vec2(20.0, 18.0), vec2(rect.width() - 40.0, 64.0));
-                ui.painter().rect_filled(window, Look::radius(look.r_s), card);
+                let window = Rect::from_min_size(
+                    rect.min + vec2(20.0, 18.0),
+                    vec2(rect.width() - 40.0, 64.0),
+                );
+                ui.painter()
+                    .rect_filled(window, Look::radius(look.r_s), card);
                 ui.painter().rect_filled(
                     Rect::from_min_size(window.min + vec2(10.0, 10.0), vec2(36.0, 10.0)),
                     Look::radius(look.r_xs),
@@ -644,11 +706,20 @@ fn mode(ui: &mut Ui, engine: &Engine, look: &Look, events: &mut Vec<UiEvent>) {
                 );
                 let selected = dark == dark_now;
                 if selected {
-                    ui.painter().rect_stroke(rect, Look::radius(look.r_s), Stroke::new(2.0, look.accent), StrokeKind::Inside);
+                    ui.painter().rect_stroke(
+                        rect,
+                        Look::radius(look.r_s),
+                        Stroke::new(2.0, look.accent),
+                        StrokeKind::Inside,
+                    );
                 }
                 focus_ring(ui, &response, rect, look.r_s, look);
-                response.widget_info(|| WidgetInfo::selected(Role::RadioButton, ui.is_enabled(), selected, &text));
-                if response.clicked() && engine.store.text("appearance.mode").as_deref() != Some(value) {
+                response.widget_info(|| {
+                    WidgetInfo::selected(Role::RadioButton, ui.is_enabled(), selected, &text)
+                });
+                if response.clicked()
+                    && engine.store.text("appearance.mode").as_deref() != Some(value)
+                {
                     set(events, "appearance.mode", json!(value));
                 }
                 ui.vertical_centered(|ui| {
@@ -690,7 +761,12 @@ fn accent(ui: &mut Ui, engine: &Engine, row: &Row, look: &Look, events: &mut Vec
             Some(colour) => swatch(ui, colour, true, &text, look),
             None => {
                 let (rect, response) = ui.allocate_exact_size(Vec2::splat(48.0), Sense::click());
-                ui.painter().rect_stroke(rect, Look::radius(look.r_s), Stroke::new(1.0, look.swatch_border), StrokeKind::Inside);
+                ui.painter().rect_stroke(
+                    rect,
+                    Look::radius(look.r_s),
+                    Stroke::new(1.0, look.swatch_border),
+                    StrokeKind::Inside,
+                );
                 toolkit::button::paint_icon(ui, Icon::Plus, rect.center(), 16.0, look.icon);
                 response.widget_info(|| WidgetInfo::labeled(Role::Button, ui.is_enabled(), &text));
                 response
@@ -704,7 +780,8 @@ fn accent(ui: &mut Ui, engine: &Engine, row: &Row, look: &Look, events: &mut Vec
 
 fn swatch(ui: &mut Ui, colour: Color32, selected: bool, name: &str, look: &Look) -> Response {
     let (rect, response) = ui.allocate_exact_size(Vec2::splat(48.0), Sense::click());
-    ui.painter().rect_filled(rect, Look::radius(look.r_s), colour);
+    ui.painter()
+        .rect_filled(rect, Look::radius(look.r_s), colour);
     if selected {
         toolkit::button::paint_icon(
             ui,
@@ -715,14 +792,23 @@ fn swatch(ui: &mut Ui, colour: Color32, selected: bool, name: &str, look: &Look)
         );
     }
     focus_ring(ui, &response, rect, look.r_s, look);
-    response.widget_info(|| WidgetInfo::selected(Role::RadioButton, ui.is_enabled(), selected, name));
+    response
+        .widget_info(|| WidgetInfo::selected(Role::RadioButton, ui.is_enabled(), selected, name));
     response
 }
 
 /// The colour schemes as chips, the derived MixOS one first (Fable).
 fn scheme(ui: &mut Ui, engine: &Engine, look: &Look, events: &mut Vec<UiEvent>) {
-    let current = engine.store.text("appearance.scheme").unwrap_or_else(|| "mixos".into());
-    let names = match engine.store.catalog.get("appearance.scheme").map(|i| &i.kind) {
+    let current = engine
+        .store
+        .text("appearance.scheme")
+        .unwrap_or_else(|| "mixos".into());
+    let names = match engine
+        .store
+        .catalog
+        .get("appearance.scheme")
+        .map(|i| &i.kind)
+    {
         Some(preferences::catalog::Kind::Enum(names)) => names.clone(),
         _ => vec!["mixos".into()],
     };
@@ -741,12 +827,22 @@ fn scheme(ui: &mut Ui, engine: &Engine, look: &Look, events: &mut Vec<UiEvent>) 
         for name in names {
             let selected = name == current;
             let text = label(&format!("scheme-{name}"));
-            let galley = ui.painter().layout_no_wrap(text.clone(), egui::FontId::proportional(13.0), look.text);
+            let galley = ui.painter().layout_no_wrap(
+                text.clone(),
+                egui::FontId::proportional(13.0),
+                look.text,
+            );
             let size = vec2(galley.size().x + 40.0, 28.0);
             let (rect, response) = ui.allocate_exact_size(size, Sense::click());
-            let fill = if selected { look.sidebar_selected } else { look.field };
-            ui.painter().rect_filled(rect, Look::radius(look.r_xl), fill);
-            let chip = Rect::from_center_size(pos2(rect.min.x + 16.0, rect.center().y), Vec2::splat(14.0));
+            let fill = if selected {
+                look.sidebar_selected
+            } else {
+                look.field
+            };
+            ui.painter()
+                .rect_filled(rect, Look::radius(look.r_xl), fill);
+            let chip =
+                Rect::from_center_size(pos2(rect.min.x + 16.0, rect.center().y), Vec2::splat(14.0));
             if let Some(scheme) = design::Scheme::from_name(&name)
                 && let Some((fill, ink)) = crate::view::scheme_swatch(scheme, mode)
             {
@@ -759,12 +855,23 @@ fn scheme(ui: &mut Ui, engine: &Engine, look: &Look, events: &mut Vec<UiEvent>) 
                     );
                 }
             }
-            ui.painter().galley(pos2(rect.min.x + 30.0, rect.center().y - galley.size().y / 2.0), galley, look.text);
+            ui.painter().galley(
+                pos2(rect.min.x + 30.0, rect.center().y - galley.size().y / 2.0),
+                galley,
+                look.text,
+            );
             if selected {
-                ui.painter().rect_stroke(rect, Look::radius(look.r_xl), Stroke::new(1.0, look.accent), StrokeKind::Inside);
+                ui.painter().rect_stroke(
+                    rect,
+                    Look::radius(look.r_xl),
+                    Stroke::new(1.0, look.accent),
+                    StrokeKind::Inside,
+                );
             }
             focus_ring(ui, &response, rect, look.r_xl, look);
-            response.widget_info(|| WidgetInfo::selected(Role::RadioButton, ui.is_enabled(), selected, &text));
+            response.widget_info(|| {
+                WidgetInfo::selected(Role::RadioButton, ui.is_enabled(), selected, &text)
+            });
             if response.clicked() && !selected {
                 set(events, "appearance.scheme", json!(name));
             }
@@ -802,15 +909,21 @@ fn slider(
     let t = ((shown - range.0) / span).clamp(0.0, 1.0) as f32;
     let x = rail.min.x + t * rail.width();
     let alpha = if ui.is_enabled() { 1.0 } else { 0.5 };
-    ui.painter()
-        .rect_filled(rail, Look::radius(look.r_xs), look.track_off.gamma_multiply(alpha));
+    ui.painter().rect_filled(
+        rail,
+        Look::radius(look.r_xs),
+        look.track_off.gamma_multiply(alpha),
+    );
     ui.painter().rect_filled(
         Rect::from_min_max(rail.min, pos2(x, rail.max.y)),
         Look::radius(look.r_xs),
         look.accent.gamma_multiply(alpha),
     );
-    ui.painter()
-        .circle_filled(pos2(x, rect.center().y), 10.0, look.accent.gamma_multiply(alpha));
+    ui.painter().circle_filled(
+        pos2(x, rect.center().y),
+        10.0,
+        look.accent.gamma_multiply(alpha),
+    );
     focus_ring(ui, &response, rect, look.r_m, look);
     let at = |pos: egui::Pos2| {
         let t = ((pos.x - rail.min.x) / rail.width()).clamp(0.0, 1.0) as f64;
@@ -838,7 +951,11 @@ fn slider(
         ui.label(RichText::new(label(start)).size(14.0).color(look.text));
     }
     if show_value {
-        ui.label(RichText::new(format!("{shown:.0}")).size(14.0).color(look.text));
+        ui.label(
+            RichText::new(format!("{shown:.0}"))
+                .size(14.0)
+                .color(look.text),
+        );
     }
     out.filter(|v| (v - value).abs() > f64::EPSILON)
 }

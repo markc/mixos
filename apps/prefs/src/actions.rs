@@ -55,7 +55,8 @@ fn open_page(e: &mut Engine, params: &Value) -> Result<Value, Error> {
         id: "page.open",
         msg: err.to_string(),
     })?;
-    e.open_page(&p.page, p.row.as_deref()).map_err(Error::Failed)?;
+    e.open_page(&p.page, p.row.as_deref())
+        .map_err(Error::Failed)?;
     Ok(json!({"page": e.nav.page, "row": p.row, "drawer": e.nav.drawer}))
 }
 

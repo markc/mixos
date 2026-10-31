@@ -207,24 +207,27 @@ pub fn settle(engine: &mut Engine, commands: &Registry<Engine>, strings: &String
                     command,
                     params,
                 } => {
-                    let (rc, body) =
-                        match commands.execute_with(&command, engine, params, Origin::Bus) {
-                            Ok(result) => (0, json!({ "executed": command, "result": result })),
-                            Err(toolkit::action::Error::Unknown(_)) => (
-                                10,
-                                json!({"error_code":"UNKNOWN_ACTION","message":label("unknown-action")}),
-                            ),
-                            Err(toolkit::action::Error::Disabled { reason, .. }) => (
-                                10,
-                                json!({"error_code":"DISABLED","message":reason}),
-                            ),
-                            Err(toolkit::action::Error::BadParams { msg, .. }) => {
-                                (10, json!({"error_code":"ARGUMENT","message":msg}))
-                            }
-                            Err(toolkit::action::Error::Failed(msg)) => {
-                                (10, json!({"error_code":"REFUSED","message":msg}))
-                            }
-                        };
+                    let (rc, body) = match commands.execute_with(
+                        &command,
+                        engine,
+                        params,
+                        Origin::Bus,
+                    ) {
+                        Ok(result) => (0, json!({ "executed": command, "result": result })),
+                        Err(toolkit::action::Error::Unknown(_)) => (
+                            10,
+                            json!({"error_code":"UNKNOWN_ACTION","message":label("unknown-action")}),
+                        ),
+                        Err(toolkit::action::Error::Disabled { reason, .. }) => {
+                            (10, json!({"error_code":"DISABLED","message":reason}))
+                        }
+                        Err(toolkit::action::Error::BadParams { msg, .. }) => {
+                            (10, json!({"error_code":"ARGUMENT","message":msg}))
+                        }
+                        Err(toolkit::action::Error::Failed(msg)) => {
+                            (10, json!({"error_code":"REFUSED","message":msg}))
+                        }
+                    };
                     out.push(Effect::Reply { id, rc, body });
                 }
                 Effect::Describe { id, help } => {
