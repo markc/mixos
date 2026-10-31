@@ -223,10 +223,26 @@ impl PanelCommand {
 pub enum RecordChange {
     /// `autohide` alone; the mode stays.
     Autohide(bool),
-    /// `dock` or `overlay`, shown (autohide off).
-    Mode(&'static str),
+    /// The mode, shown (autohide off).
+    Mode(StoredMode),
     /// One of the five steps (32, 40, 56, 64, 80).
     Thickness(u32),
+}
+
+/// `shell.panels.<id>.mode`: the two modes v2 stores (hidden is autohide).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StoredMode {
+    Dock,
+    Overlay,
+}
+
+impl StoredMode {
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Dock => "dock",
+            Self::Overlay => "overlay",
+        }
+    }
 }
 
 /// A change the shell writes through settingsd instead of applying itself:
@@ -243,8 +259,8 @@ pub struct SettingsWrite {
 pub(crate) fn record_change(mode: PanelMode) -> RecordChange {
     match mode {
         PanelMode::Hidden => RecordChange::Autohide(true),
-        PanelMode::Pinned => RecordChange::Mode("overlay"),
-        PanelMode::Docked => RecordChange::Mode("dock"),
+        PanelMode::Pinned => RecordChange::Mode(StoredMode::Overlay),
+        PanelMode::Docked => RecordChange::Mode(StoredMode::Dock),
     }
 }
 
@@ -2272,7 +2288,7 @@ mod tests {
         // The default bottom panel docks.
         for (mode, change) in [
             (PanelMode::Hidden, RecordChange::Autohide(true)),
-            (PanelMode::Pinned, RecordChange::Mode("overlay")),
+            (PanelMode::Pinned, RecordChange::Mode(StoredMode::Overlay)),
         ] {
             assert_eq!(
                 panels.settings_mode_write(Edge::Bottom, mode),
@@ -2285,7 +2301,7 @@ mod tests {
         );
         assert_eq!(
             panels.settings_mode_write(Edge::Left, PanelMode::Docked),
-            write("top", RecordChange::Mode("dock"))
+            write("top", RecordChange::Mode(StoredMode::Dock))
         );
         assert_eq!(
             panels.settings_mode_write(Edge::Right, PanelMode::Docked),

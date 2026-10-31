@@ -27,6 +27,8 @@ pub struct Serviced {
     pub changed: bool,
     /// Requests answered.
     pub answered: usize,
+    /// `window.gaps` changed: the owner re-places the tiled windows now.
+    pub tile_gap_changed: bool,
 }
 
 /// The host's request semantics, without a Bus: the store, the receipt
@@ -800,10 +802,10 @@ fn settings_reply_applied(
 
 /// `settings.apply` for `write`: its `shell.panels.<id>.*` v2 keys
 /// ([`crate::profile::panel_changes`]), fenced on `snapshot`, the applied
-/// one (the preferences the
-/// change was read against), so a change made meanwhile elsewhere, or a
-/// second write before the first lands, is refused rather than overwritten.
-/// `Err` is a `SETTINGS_UNAVAILABLE` refusal body.
+/// one (the preferences the change was read against), so a change made
+/// meanwhile elsewhere, or a second write before the first lands, is refused
+/// rather than overwritten. `Err` is a `SETTINGS_UNAVAILABLE` (or, from the
+/// profile, `SETTINGS_INVALID`) refusal body.
 pub(crate) fn settings_apply(
     snapshot: Option<&settings::Snapshot>,
     write: &crate::panels::SettingsWrite,
@@ -813,10 +815,7 @@ pub(crate) fn settings_apply(
         return Err(json!({"error_code":"SETTINGS_UNAVAILABLE",
             "message":"the shell has not applied its settings yet; retry when settingsd is up"}));
     };
-    let Some(changes) = crate::profile::panel_changes(snapshot, &write.id, write.change) else {
-        return Err(json!({"error_code":"SETTINGS_UNAVAILABLE",
-            "message":format!("the applied settings have no enabled shell.panels.{} panel", write.id)}));
-    };
+    let changes = crate::profile::panel_changes(snapshot, &write.id, write.change)?;
     Ok(json!({
         "binding": snapshot.binding,
         "expected_incarnation": snapshot.incarnation,
@@ -966,8 +965,7 @@ impl SceneHost {
             world::surface::draw::capture::style::restyle(lp);
         }
         if let Some(gaps) = gaps {
-            // Tiled windows re-fit to the new gap on the next placement pass.
-            lp.inner.comp.set_tile_gap(gaps);
+            serviced.tile_gap_changed = lp.inner.comp.set_tile_gap(gaps);
         }
         // A new look may answer settings-owned panel changes.
         self.settle_settings_replies();
@@ -2028,12 +2026,12 @@ mod tests {
             (
                 SceneCommand::PanelMode,
                 json!({"edge":"bottom", "mode":"pinned"}),
-                write(RecordChange::Mode("overlay")),
+                write(RecordChange::Mode(crate::panels::StoredMode::Overlay)),
             ),
             (
                 panel(PanelCommand::Pin),
                 json!({"edge":"bottom"}),
-                write(RecordChange::Mode("overlay")),
+                write(RecordChange::Mode(crate::panels::StoredMode::Overlay)),
             ),
             (
                 panel(PanelCommand::Unpin),
