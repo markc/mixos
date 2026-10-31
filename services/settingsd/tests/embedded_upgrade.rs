@@ -158,6 +158,48 @@ fn valid_retired_embedded_source_stays_pinned() {
     opened.effective().unwrap();
 }
 
+/// A live store sealed by the binary before S2 (settings key space v2): it
+/// pins that release's embedded source and the effective digest that binary
+/// sealed. `Store::open` checks the seal and `interpretation()` re-derives
+/// from the pinned source, never the current embedded one, so the store
+/// opens unchanged, with no re-pin, no revision bump and no rewrite, and
+/// serves the same bytes.
+#[test]
+fn a_store_sealed_before_s2_opens_and_serves_unchanged() {
+    /// The default desktop's effective digest as the pre-S2 binary sealed it
+    /// (`sealed_format.rs`, `BEFORE_S2_EFFECTIVE_DIGEST`).
+    const SEALED_BEFORE_S2: &str =
+        "2021004311c4062a87733cd1c36119413f707591b4349bb6c671b2644a67efae";
+    let dir = tempfile::tempdir().unwrap();
+    let (store, mut data) =
+        Store::create(dir.path(), binding(), settings::Desktop::default()).unwrap();
+    drop(store);
+    data.embedded_source =
+        include_str!("fixtures/2026-10-31-before-s2.theme.conf.mix").into();
+    assert_ne!(data.embedded_source, settings::EMBEDDED_DEFAULT_SOURCE);
+    data.effective_digest = SEALED_BEFORE_S2.into();
+    data.seal().unwrap();
+    for name in FILES {
+        std::fs::write(
+            dir.path().join(name),
+            strict::to_string_pretty(&data).unwrap(),
+        )
+        .unwrap();
+    }
+    let bytes = FILES.map(|name| std::fs::read(dir.path().join(name)).unwrap());
+    let (_store, opened) = Store::open(dir.path(), &binding()).unwrap();
+    assert_eq!(opened.content_digest, data.content_digest);
+    assert_eq!(opened.embedded_source, data.embedded_source);
+    assert_eq!(opened.revision, data.revision);
+    assert_eq!(opened.design_revision, data.design_revision);
+    let (effective, _) = opened.interpretation().unwrap();
+    assert_eq!(settings::digest(&effective).unwrap(), SEALED_BEFORE_S2);
+    assert_eq!(
+        bytes,
+        FILES.map(|name| std::fs::read(dir.path().join(name)).unwrap())
+    );
+}
+
 #[test]
 fn migration_also_checks_current_format_and_refuses_a_broken_seal() {
     let mut data = read(&fixture("embedded-v0.1.2"), FILES[0]);
