@@ -1,0 +1,127 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- kde-export: the settings authority's look, written into a KDE Plasma
+-- session (kdeglobals, kwinrc, the MixOS colour schemes, panel floating).
+-- A `mix --serve` citizen in the Plasma user's session. It subscribes to
+-- the retained settings topics it reads, so it reconciles once at start
+-- and again on each revision that moves them; there is no polling. It is
+-- gated by `appearance.export_desktop`, writes only keys that differ, and
+-- keeps the previous values for undo (exportd.kde.undo, exportd.kde.restore).
+--
+-- Environment: MIXOS_SETTINGS_INSTANCE (default: this node's name),
+-- MIXOS_KDE_EXPORT_DRY=1 (plan only), MIXOS_KDE_EXPORT_STATE (undo record),
+-- MIXOS_KDE_EXPORT_RECONFIGURE=0 (no D-Bus calls: tests).
+$map = require("lib/kde_map.mix")
+$app = require("lib/kde_apply.mix")
+
+$node_config = env("MIXOS_NODE_CONFIG", mixos_path("etc") .. "/node.conf.mix")
+$node = if is_file($node_config) then load_data($node_config).node else nil end
+$instance = env("MIXOS_SETTINGS_INSTANCE", $node ?? "")
+if $instance == "" then raise("BINDING", "kde-export needs MIXOS_SETTINGS_INSTANCE or the node identity") end
+-- The topic names in the `on` lines below are static, so the profile is too.
+$binding = {instance: $instance, profile: "default"}
+$dry = env("MIXOS_KDE_EXPORT_DRY", "0") == "1"
+$ctx = $app.new_context()
+$status = {binding: $binding, dry: $dry, revision: nil, gated: false, last: nil, error: nil, runs: 0}
+
+fn settings($command, $b)
+  $wire = json_encode($b)
+  send settingsd $command body=$wire timeout=10
+  if $rc != 0 then raise("SETTINGS", "settingsd " .. $command .. " refused: " .. to_string($result)) end
+  return if type($result) == "string" then json_parse($result) else $result end
+end
+
+-- One whole reconcile: read the values and the palette, plan, write the
+-- difference. Returns the report.
+fn reconcile($binding, $ctx, $dry)
+  $got = settings("settings.get", {binding: $binding, view: "values"})
+  $v = $got.values
+  $v["appearance.mode_resolved"] = $got.resolved.mode
+  $v["_revision"] = $got.revision
+  if $v["appearance.export_desktop"] == false then
+    return {revision: $got.revision, gated: true}
+  end
+  $answer = settings("settings.palette", {binding: $binding})
+  $pal = $answer.palette
+  -- One look, one set of fonts: each mode carries the same pair.
+  $fonts = $pal[$got.resolved.mode].fonts
+  $plan = $map.plan($v, $pal, $fonts, $app.icon_themes($ctx))
+  $report = $app.apply($ctx, $plan, $dry)
+  $report.revision = $got.revision
+  $report.mode = $plan.mode
+  $report.gated = false
+  return $report
+end
+
+-- Returns the new status (a fn cannot assign the outer one).
+fn run_once($status)
+  $status.runs = $status.runs + 1
+  try
+    $r = reconcile($binding, $ctx, $dry)
+    $status.revision = $r.revision
+    $status.gated = $r.gated
+    $status.last = $r
+    $status.error = nil
+    if not $r.gated and ($r.changed ?? 0) > 0 then
+      print("kde-export: revision " .. to_string($r.revision) .. " wrote " .. to_string($r.changed) .. " keys" .. (if $dry then " (dry run)" else "" end))
+    end
+  catch $m, $e
+    $status.error = {code: $e.code, message: $m}
+    print("kde-export: reconcile failed: " .. sanitize($m))
+  end
+  return $status
+end
+
+subscribe("settingsd.desktop.keys.default.appearance")
+subscribe("settingsd.desktop.keys.default.window")
+subscribe("settingsd.desktop.keys.default.accessibility")
+
+on settingsd.desktop.keys.default.appearance
+  $status = run_once($status)
+end
+
+on settingsd.desktop.keys.default.window
+  $status = run_once($status)
+end
+
+on settingsd.desktop.keys.default.accessibility
+  $status = run_once($status)
+end
+
+-- A broker restart: the retained topics come back, but reconcile anyway.
+on bus.connected
+  $status = run_once($status)
+end
+
+on exportd.kde.status
+  reply(json_encode($status))
+end
+
+on exportd.kde.plan
+  try
+    reply(json_encode(reconcile($binding, $ctx, true)))
+  catch $m, $e
+    reply(10, json_encode({error_code: $e.code ?? "EXPORT", message: $m}))
+  end
+end
+
+on exportd.kde.reconcile
+  $status = run_once($status)
+  reply(json_encode($status))
+end
+
+on exportd.kde.undo
+  try
+    reply(json_encode($app.undo($ctx)))
+  catch $m, $e
+    reply(10, json_encode({error_code: $e.code ?? "EXPORT", message: $m}))
+  end
+end
+
+on exportd.kde.restore
+  try
+    reply(json_encode($app.restore($ctx)))
+  catch $m, $e
+    reply(10, json_encode({error_code: $e.code ?? "EXPORT", message: $m}))
+  end
+end

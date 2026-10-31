@@ -1,0 +1,293 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- kde-export's side effects: read the KConfig files, write only the keys
+-- that differ through kwriteconfig6, write the two colour scheme files,
+-- keep the undo record, then ask Plasma and KWin to reconfigure over the
+-- session D-Bus (busctl). Every external program goes through run_argv.
+$kc = require("kconfig.mix")
+-- Keys a reader may watch one by one, so each gets its own notification.
+$NOTIFY_KEYS = ["ColorScheme", "AccentColor", "font", "menuFont", "toolBarFont", "fixed", "activeFont", "Theme"]
+
+fn home()
+  return env("HOME", "")
+end
+
+-- ctx: {config_home, data_home, state_dir, reconfigure: bool}
+fn new_context()
+  $h = home()
+  $config = env("XDG_CONFIG_HOME", "")
+  if $config == "" then $config = $h .. "/.config" end
+  $data = env("XDG_DATA_HOME", "")
+  if $data == "" then $data = $h .. "/.local/share" end
+  $state = env("XDG_STATE_HOME", "")
+  if $state == "" then $state = $h .. "/.local/state" end
+  return {
+    config_home: $config,
+    data_home: $data,
+    state_dir: env("MIXOS_KDE_EXPORT_STATE", $state .. "/mixos/kde-export"),
+    reconfigure: env("MIXOS_KDE_EXPORT_RECONFIGURE", "1") == "1"
+  }
+end
+
+-- The icon theme directory names under the XDG data dirs.
+fn icon_themes($ctx)
+  $dirs = [$ctx.data_home]
+  for $d in split(env("XDG_DATA_DIRS", "/usr/local/share:/usr/share"), ":")
+    if $d != "" then push($dirs, $d) end
+  end
+  push($dirs, home() .. "/.icons")
+  $names = []
+  for $d in $dirs
+    for $index in glob($d .. "/icons/*/index.theme")
+      $n = after_last(dirname($index), "/")
+      if not contains($names, $n) then push($names, $n) end
+    end
+  end
+  return $names
+end
+
+fn id($file, $group, $key)
+  return $file .. "|" .. $group .. "|" .. $key
+end
+
+-- The key writes a plan needs: [{file, group, key, old, new}], old nil when absent.
+fn changes($ctx, $plan)
+  $out = []
+  for $file in keys($plan.files)
+    $current = $kc.read_groups($ctx.config_home .. "/" .. $file)
+    $want = $plan.files[$file]
+    for $group in keys($want)
+      for $key in keys($want[$group])
+        $old = $kc.lookup($current, $group, $key)
+        $new = $want[$group][$key]
+        if $old != $new then push($out, {file: $file, group: $group, key: $key, old: $old, new: $new}) end
+      end
+    end
+  end
+  return $out
+end
+
+fn scheme_path($ctx, $name)
+  return $ctx.data_home .. "/color-schemes/" .. $name .. ".colors"
+end
+
+-- The scheme files whose bytes differ: [{name, path, existed}].
+fn scheme_changes($ctx, $plan)
+  $out = []
+  for $name in keys($plan.schemes)
+    $path = scheme_path($ctx, $name)
+    $existed = is_file($path)
+    if not $existed or read_file($path) != $plan.schemes[$name] then
+      push($out, {name: $name, path: $path, existed: $existed})
+    end
+  end
+  return $out
+end
+
+fn undo_path($ctx)
+  return $ctx.state_dir .. "/undo.json"
+end
+
+-- {original: {id: {file, group, key, value}}, previous: [{file, group, key, value}],
+--  schemes: {name: existed_before_first_write}, panels: {original: [...] | nil}}
+fn load_undo($ctx)
+  $p = undo_path($ctx)
+  if not is_file($p) then return {original: {}, previous: [], schemes: {}, panels: {}} end
+  $u = json_parse(read_file($p))
+  $u.original = $u.original ?? {}
+  $u.previous = $u.previous ?? []
+  $u.schemes = $u.schemes ?? {}
+  $u.panels = $u.panels ?? {}
+  return $u
+end
+
+fn save_undo($ctx, $u)
+  mkdir($ctx.state_dir, {parents: true})
+  $p = undo_path($ctx)
+  write_atomic($p, json_encode($u), {durability: "file"})
+end
+
+fn kwrite($ctx, $file, $group, $key, $value)
+  $r = run_argv($kc.write_argv($file, $group, $key, $value), {timeout: 20, env: {XDG_CONFIG_HOME: $ctx.config_home}})
+  if not $r.ok then raise("KWRITECONFIG", "kwriteconfig6 " .. $file .. " [" .. $group .. "] " .. $key .. ": " .. sanitize($r.stderr)) end
+end
+
+-- Write [{file, group, key, value}] (value nil deletes). One kwriteconfig6
+-- call per key costs ~50 ms, so a mode flip (~110 keys) would take seconds.
+-- Instead each file is edited as text and replaced atomically, holding back
+-- one key per group (and every key in $NOTIFY_KEYS); those then go through
+-- `kwriteconfig6 --notify`, so every group carries KConfig's own change
+-- notification.
+fn write_entries($ctx, $entries)
+  $by_file = {}
+  for $e in $entries
+    if $by_file[$e.file] == nil then $by_file[$e.file] = [] end
+    $by_file[$e.file] = push($by_file[$e.file], $e)
+  end
+  for $file in keys($by_file)
+    $list = $by_file[$file]
+    $last = {}
+    for $i = 0 to len($list) - 1
+      $last[$list[$i].group] = $i
+    end
+    $bulk = []
+    $notify = []
+    for $i = 0 to len($list) - 1
+      if $last[$list[$i].group] == $i or contains($NOTIFY_KEYS, $list[$i].key) then push($notify, $list[$i]) else push($bulk, $list[$i]) end
+    end
+    $path = $ctx.config_home .. "/" .. $file
+    if len($bulk) > 0 then
+      mkdir($ctx.config_home, {parents: true})
+      write_atomic($path, $kc.edit(if is_file($path) then read_file($path) else "" end, $bulk))
+    end
+    for $e in $notify
+      kwrite($ctx, $e.file, $e.group, $e.key, $e.value)
+    end
+  end
+end
+
+fn busctl($argv)
+  $r = run_argv(concat(["busctl", "--user"], $argv), {timeout: 10})
+  return $r
+end
+
+-- Plasma's panels through its scripting interface, or nil without plasmashell.
+fn plasma_script($js)
+  $r = run_argv(["busctl", "--user", "--json=short", "call", "org.kde.plasmashell", "/PlasmaShell",
+    "org.kde.PlasmaShell", "evaluateScript", "s", $js], {timeout: 15})
+  if not $r.ok then return nil end
+  $j = json_parse($r.stdout)
+  return $j.data[0] ?? ""
+end
+
+fn panels_read()
+  $out = plasma_script("var r=[];panels().forEach(function(p){r.push({id:p.id,floating:p.floating});});print(JSON.stringify(r));")
+  if $out == nil or trim($out) == "" then return nil end
+  try
+    return json_parse(trim($out))
+  catch $m
+    return nil
+  end
+end
+
+-- What a burst touched, so the right reconfigure calls go out.
+fn touched($list)
+  $t = {colours: false, fonts: false, icons: false, kwin: false}
+  for $c in $list
+    if $c.file == "kwinrc" then $t.kwin = true
+    elif $c.group == "Icons" then $t.icons = true
+    elif contains(["font", "menuFont", "toolBarFont", "fixed", "activeFont"], $c.key) then $t.fonts = true; $t.kwin = true
+    else $t.colours = true
+    end
+    if $c.group == "WM" then $t.kwin = true end
+  end
+  return $t
+end
+
+fn reconfigure($ctx, $t)
+  $done = []
+  if not $ctx.reconfigure then return $done end
+  if $t.colours then
+    busctl(["emit", "/KGlobalSettings", "org.kde.KGlobalSettings", "notifyChange", "ii", "0", "0"])
+    push($done, "palette")
+  end
+  if $t.fonts then
+    busctl(["emit", "/KGlobalSettings", "org.kde.KGlobalSettings", "notifyChange", "ii", "1", "0"])
+    push($done, "fonts")
+  end
+  if $t.icons then
+    busctl(["emit", "/KIconLoader", "org.kde.KIconLoader", "iconChanged", "i", "0"])
+    push($done, "icons")
+  end
+  if $t.kwin then
+    $r = busctl(["call", "org.kde.KWin", "/KWin", "org.kde.KWin", "reconfigure"])
+    push($done, if $r.ok then "kwin" else "kwin_unreachable" end)
+  end
+  return $done
+end
+
+-- Panel floating follows roundness. Returns {note, original}: the note or
+-- nil, and the panels as they were before this write (nil when unread).
+fn apply_panels($ctx, $plan)
+  if not $ctx.reconfigure then return {note: nil, original: nil} end
+  $now = panels_read()
+  if $now == nil then return {note: "plasmashell_unreachable", original: nil} end
+  if len($now) > 0 and $now[0].floating == nil then return {note: "panel_floating_unsupported", original: nil} end
+  $want = $plan.panel.floating
+  $diff = filter($now, fn($p) = $p.floating != $want)
+  if len($diff) == 0 then return {note: nil, original: $now} end
+  plasma_script("panels().forEach(function(p){p.floating=" .. to_string($want) .. ";});")
+  return {note: "panels_floating=" .. to_string($want), original: $now}
+end
+
+-- Write one plan. dry: report only. Returns {changed, schemes, reconfigured, notes}.
+fn apply($ctx, $plan, $dry)
+  $list = changes($ctx, $plan)
+  -- The [MixOS] stamp alone is no reason to write (or to wake Plasma).
+  if len(filter($list, fn($c) = $c.group != "MixOS")) == 0 then $list = [] end
+  $schemes = scheme_changes($ctx, $plan)
+  $report = {changed: len($list), keys: map($list, fn($c) = $c.file .. " [" .. $c.group .. "] " .. $c.key .. "=" .. $c.new),
+    schemes: map($schemes, fn($s) = $s.name), reconfigured: [], notes: $plan.notes}
+  if $dry then return $report end
+  $u = load_undo($ctx)
+  $previous = []
+  for $c in $list
+    $k = id($c.file, $c.group, $c.key)
+    if $u.original[$k] == nil then
+      $u.original[$k] = {file: $c.file, group: $c.group, key: $c.key, value: $c.old ?? false}
+    end
+    push($previous, {file: $c.file, group: $c.group, key: $c.key, value: $c.old ?? false})
+  end
+  for $s in $schemes
+    if $u.schemes[$s.name] == nil then $u.schemes[$s.name] = $s.existed end
+  end
+  -- The undo record lands before the first write, so a crash mid-burst
+  -- still knows every original.
+  if len($list) > 0 then $u.previous = $previous end
+  save_undo($ctx, $u)
+  for $s in $schemes
+    mkdir(dirname($s.path), {parents: true})
+    write_atomic($s.path, $plan.schemes[$s.name])
+  end
+  write_entries($ctx, map($list, fn($c) = {file: $c.file, group: $c.group, key: $c.key, value: $c.new}))
+  $pan = apply_panels($ctx, $plan)
+  if $pan.note != nil then $report.notes = push($report.notes, $pan.note) end
+  if $u.panels.original == nil and $pan.original != nil then $u.panels.original = $pan.original end
+  save_undo($ctx, $u)
+  $report.reconfigured = reconfigure($ctx, touched($list))
+  return $report
+end
+
+fn write_back($ctx, $entries)
+  write_entries($ctx, map($entries, fn($e) = {file: $e.file, group: $e.group, key: $e.key, value: if $e.value == false then nil else $e.value end}))
+  return reconfigure($ctx, touched($entries))
+end
+
+-- Undo the last burst.
+fn undo($ctx)
+  $u = load_undo($ctx)
+  $n = len($u.previous)
+  $done = write_back($ctx, $u.previous)
+  $u.previous = []
+  save_undo($ctx, $u)
+  return {restored: $n, reconfigured: $done}
+end
+
+-- Put back every key as it was before kde-export first wrote it, remove
+-- the scheme files it created and the panels' original floating, then
+-- forget the record.
+fn restore($ctx)
+  $u = load_undo($ctx)
+  $entries = map(keys($u.original), fn($k) = $u.original[$k])
+  $done = write_back($ctx, $entries)
+  for $name in keys($u.schemes)
+    if $u.schemes[$name] == false and is_file(scheme_path($ctx, $name)) then remove(scheme_path($ctx, $name)) end
+  end
+  if $u.panels.original != nil and $ctx.reconfigure then
+    for $p in $u.panels.original
+      plasma_script("panels().forEach(function(p){if(p.id==" .. to_string($p.id) .. "){p.floating=" .. to_string($p.floating) .. ";}});")
+    end
+  end
+  save_undo($ctx, {original: {}, previous: [], schemes: {}, panels: {}})
+  return {restored: len($entries), reconfigured: $done}
+end

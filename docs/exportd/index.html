@@ -212,6 +212,10 @@
                         <a href="#what-it-writes" class="toc-h3">What it writes</a>
                         <a href="#commands" class="toc-h3">Commands</a>
                         <a href="#environment" class="toc-h3">Environment</a>
+                        <a href="#kde-plasma">KDE Plasma</a>
+                        <a href="#what-it-writes-1" class="toc-h3">What it writes</a>
+                        <a href="#commands-1" class="toc-h3">Commands</a>
+                        <a href="#environment-1" class="toc-h3">Environment</a>
                         <a href="#changelog">Changelog</a>
                     </nav>
                 </div>
@@ -299,6 +303,55 @@ two complete themes.</p>
 <tr><td><code>MIXOS_EXPORTD_STATE</code></td><td><code>$XDG_STATE_HOME/mixos/exportd/cosmic</code> (undo and pause)</td></tr>
 <tr><td><code>MIXOS_EXPORTD_DRY_RUN=1</code></td><td>plan only: log what would change, write nothing</td></tr>
 </tbody></table>
+<h2 id="kde-plasma">KDE Plasma</h2>
+<p><code>scripts/kde.mix</code> runs in the Plasma user's session as <code>exportd-kde</code>:</p>
+<pre><code class="language-text">mix --serve &lt;prefix&gt;/lib/exportd/kde.mix --name exportd-kde
+</code></pre>
+<p>The user unit <code>exportd-kde.service</code> starts it with the graphical session,
+only when the session is Plasma (<code>XDG_SESSION_DESKTOP=KDE</code>). It follows the
+<code>appearance</code>, <code>window</code> and <code>accessibility</code> topics.</p>
+<h3 id="what-it-writes-1">What it writes</h3>
+<table><thead><tr><th>settings</th><th>KDE</th></tr></thead><tbody>
+<tr><td>the resolved mode</td><td><code>kdeglobals [General] ColorScheme=MixOS-Dark</code> or <code>MixOS-Light</code>, and the scheme's <code>[Colors:*]</code>, <code>[ColorEffects:*]</code> and <code>[WM]</code> groups; both modes also as <code>&lt;data&gt;/color-schemes/MixOS-{Dark,Light}.colors</code></td></tr>
+<tr><td>the accent and colour axes, through the palette</td><td><code>[General] AccentColor</code> (<code>accentColorFromWallpaper=false</code>), <code>[Colors:Selection]</code>, every scheme colour</td></tr>
+<tr><td>the palette's fonts, <code>accessibility.text_scale</code></td><td><code>[General] font</code>, <code>menuFont</code>, <code>toolBarFont</code>, <code>fixed</code>, <code>[WM] activeFont</code></td></tr>
+<tr><td><code>appearance.icon_theme</code></td><td><code>[Icons] Theme</code>, the <code>-dark</code> variant in dark mode when installed</td></tr>
+<tr><td><code>window.hint_colour</code></td><td><code>[WM] activeBackground</code>, <code>activeForeground</code></td></tr>
+<tr><td><code>appearance.density</code></td><td><code>kwinrc [org.kde.kdecoration2] BorderSize</code> (<code>Tiny</code>, <code>Normal</code>, <code>Large</code>)</td></tr>
+<tr><td><code>window.caption_side</code>, <code>window.controls.*</code></td><td><code>kwinrc [org.kde.kdecoration2] ButtonsOnLeft</code>, <code>ButtonsOnRight</code></td></tr>
+<tr><td><code>appearance.roundness</code></td><td>Plasma's panels float when <code>round</code> (the Plasma scripting interface)</td></tr>
+</tbody></table>
+<p>Scheme colours are the palette's opaque values; a translucent one is
+refused. A font size in pixels becomes points at 96 dpi (× 0.75, to the
+nearest half point), after the text scale. <code>kdeglobals [MixOS]</code> carries a
+stamp with the revision written; the stamp alone never causes a write.</p>
+<p>Each file is edited as text and replaced atomically, keeping every other
+line. The last key of each group, and every font, scheme, accent and icon
+key, goes through <code>kwriteconfig6 --notify</code>, so KConfig's own change
+notification reaches each group. Then <code>busctl --user</code> sends the
+<code>KGlobalSettings</code> <code>notifyChange</code> signal (palette, fonts), <code>KIconLoader</code>
+<code>iconChanged</code>, and <code>org.kde.KWin.reconfigure</code>.</p>
+<p><strong>Known limit:</strong> running apps follow a colour, icon and decoration change
+at once but keep their old font until they restart; apps started
+afterwards get the new font.</p>
+<h3 id="commands-1">Commands</h3>
+<table><thead><tr><th>Command</th><th>Does</th></tr></thead><tbody>
+<tr><td><code>exportd.kde.status</code></td><td>the binding, last revision, gate, the last run's report or error</td></tr>
+<tr><td><code>exportd.kde.plan</code></td><td>what a reconcile would write now; writes nothing</td></tr>
+<tr><td><code>exportd.kde.reconcile</code></td><td>reconcile now</td></tr>
+<tr><td><code>exportd.kde.undo</code></td><td>put back the keys the last burst changed</td></tr>
+<tr><td><code>exportd.kde.restore</code></td><td>put back every key as it was before the first write, remove the scheme files it created, restore the panels, and forget the record</td></tr>
+</tbody></table>
+<p>Run <code>restore</code> with <code>appearance.export_desktop</code> off, or the next revision
+writes the look again.</p>
+<h3 id="environment-1">Environment</h3>
+<table><thead><tr><th>Variable</th><th>Default</th></tr></thead><tbody>
+<tr><td><code>MIXOS_SETTINGS_INSTANCE</code></td><td>this node's name</td></tr>
+<tr><td><code>MIXOS_KDE_EXPORT_DRY=1</code></td><td>plan and report, write nothing</td></tr>
+<tr><td><code>MIXOS_KDE_EXPORT_STATE</code></td><td><code>$XDG_STATE_HOME/mixos/kde-export</code> (the undo record)</td></tr>
+<tr><td><code>MIXOS_KDE_EXPORT_RECONFIGURE=0</code></td><td>no D-Bus calls (tests)</td></tr>
+</tbody></table>
+<p>External programs: <code>kwriteconfig6</code> (KDE Frameworks 6) and <code>busctl</code>.</p>
 <h2 id="changelog">Changelog</h2>
 <p>See the <a href="/exportd/changelog/">changelog</a>.</p>
         </article>
