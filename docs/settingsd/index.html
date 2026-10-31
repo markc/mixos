@@ -209,6 +209,7 @@
                 <div class="panel-content">
                     <nav id="toc-nav">
                         <a href="#running-it">Running it</a>
+                        <a href="#topics-and-mirrors">Topics and mirrors</a>
                         <a href="#profiles-and-upgrades">Profiles and upgrades</a>
                         <a href="#the-unit">The unit</a>
                         <a href="#tests">Tests</a>
@@ -237,7 +238,7 @@
     <div id="doc-view" class="content-section">
         <article id="content-doc" class="prose" data-pagefind-body>
 <h1 id="settingsd">settingsd</h1>
-<p>The headless native ABP desktop settings authority, contract 0.1.0. An
+<p>The headless native ABP desktop settings authority, contract 1.0.0. An
 established profile has one writer and durable whole-document settings and
 operation receipts. Native publication is retained and owner-stamped by
 <a href="/noded/">noded</a>. <a href="/ced/">Ced</a> and
@@ -259,6 +260,31 @@ writer lock prevents seed from recreating an established missing primary,
 including without a backup. Serve fails for a missing or unsupported
 established store. Both accept <code>--profile</code> and <code>--root</code> for an explicit
 binding or test directory. Use an isolated broker when testing.</p>
+<h2 id="topics-and-mirrors">Topics and mirrors</h2>
+<p>Contract 1.0.0 publishes one retained topic per settings prefix,
+<code>settingsd.desktop.keys.&lt;profile&gt;.&lt;prefix&gt;</code> (<code>appearance</code>, <code>window</code>,
+<code>shell.panels</code>, <code>time</code> and so on, 22 in all), plus the follower view
+<code>settingsd.desktop.look.&lt;profile&gt;</code> and the schema 3 snapshot
+<code>settingsd.desktop.snapshot.&lt;profile&gt;</code>. A prefix body carries every key under
+it with its defaults filled, the resolved mode and accent beside the authored
+choice for <code>appearance</code>, and <code>changed_at</code>, the revision that last changed it.
+A commit republishes only the topics whose content moved; a broker reconnect
+republishes all of them. Live keys (network, Bluetooth, system, audio levels)
+are in no topic: their owners publish them.</p>
+<p>Retained topics are node-local, so a machine has one authority and every
+desk on it runs a mirror:</p>
+<pre><code class="language-text">settingsd serve --instance alpha                     # the authority
+settingsd serve --instance alpha --mirror-of alpha   # a desk's mirror
+</code></pre>
+<p>A mirror attaches with <code>settings.mirror.attach</code>, keeps the authority's
+record in a sealed cache, and republishes the same topics on its own node
+from each <code>settings.mirror.revision</code> push. It answers reads from the cache,
+forwards writes and relays the authority's receipts, and refuses writes as
+<code>authority_unreachable</code> while the authority is down; <code>settings.status</code>
+then reports <code>stale: true</code>. Nothing polls: the authority pushes each
+revision (with a bounded retry, dropping a mirror that keeps failing), a
+mirror re-attaches when its own broker reconnects, and a restarted authority
+pushes to the mirrors it had attached.</p>
 <h2 id="profiles-and-upgrades">Profiles and upgrades</h2>
 <p>Profiles pin their initial package design source. Reload checks a content
 digest; a binary upgrade cannot change effective settings within the same
@@ -306,8 +332,11 @@ once during first installation. Automatic startup never receives
 <code>--allow-create</code>, so lost mounts or directories do not silently become new
 default profiles.</p>
 <h2 id="tests">Tests</h2>
-<p>Worker tests: <code>cargo test -p settingsd</code>. The native ABP gate and the
-compositor fixtures arrive with the desktop test harness.</p>
+<p>Worker tests: <code>cargo test -p settingsd</code>. The broker tests (<code>tests/bus.rs</code>:
+change-only topics on one broker, then an authority and a mirror on a
+private broker pair) run with <code>MIXOS_TEST_NODED</code> naming a noded built from
+the same commit and <code>--ignored</code>. The compositor fixtures arrive with the
+desktop test harness.</p>
         </article>
         <p class="doc-source"><a href="/settingsd/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>
