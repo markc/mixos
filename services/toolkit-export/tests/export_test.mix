@@ -1,0 +1,120 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Run from checkout root: mix services/toolkit-export/tests/export_test.mix
+-- The real citizen on a private broker against a stand-in settingsd: the
+-- first reconcile, a mode flip, a hand edit that survives, the gate, undo.
+$pb = require("../../../tests/lib/private_bus.mix")
+$here = dirname(realpath($0))
+$mix = env("MIXOS_TEST_MIX", mixos_path("prefix") .. "/bin/mix")
+$script = realpath($here .. "/../scripts/toolkit-export.mix")
+$tmp = "/var/tmp/toolkit-export-test-" .. uuid()
+$cfg = $tmp .. "/config"
+$bus = nil
+$pids = []
+fn check($label, $ok)
+  if not $ok then raise("TEST", $label) end
+  print("PASS " .. $label)
+end
+fn call($target, $command, $b)
+  $wire = json_encode($b)
+  send $target $command body=$wire timeout=10
+  $v = $result
+  if type($v) == "string" then
+    try
+      $v = json_parse($v)
+    catch $m
+    end
+  end
+  return {rc: $rc, v: $v}
+end
+fn eventually($f)
+  for $i = 1 to 60
+    try
+      if $f() then return true end
+    catch $m
+    end
+    sleep(0.1)
+  end
+  return false
+end
+fn lstat_absent($path)
+  try
+    stat($path, {follow_symlinks: false})
+    return false
+  catch $m
+    return true
+  end
+end
+fn status()
+  return call("toolkit-export", "toolkit-export.status", {}).v
+end
+mkdir($tmp .. "/data/icons/testicons-dark")
+mkdir($cfg .. "/gtk-3.0")
+write_file($cfg .. "/gtk-3.0/gtk.css", "/* the user's own */\n")
+write_file($cfg .. "/gtk-3.0/settings.ini", "[Settings]\ngtk-cursor-theme-name=mine\n")
+try
+  $bus = $pb.start({dir: $tmp .. "/bus", name: "toolkit-test"})
+  $base = merge($pb.client_env($bus), {MIX_STATS: "off", HOME: $tmp .. "/home", XDG_CONFIG_HOME: $cfg,
+    XDG_DATA_HOME: $tmp .. "/data", XDG_DATA_DIRS: $tmp .. "/none", TOOLKIT_EXPORT_STATE: $tmp .. "/state",
+    MIXOS_SETTINGS_INSTANCE: "toolkit-test", PATH: "/nonexistent"})
+  push($pids, spawn([$mix, "--serve", $here .. "/fixtures/settingsd.mix", "--name", "settingsd"],
+    {detach: true, env: $base, stdout: {file: $tmp .. "/settingsd.log"}, stderr: "stdout"}))
+  check("stand-in settingsd ready", eventually(fn() = call("settingsd", "settings.get", {binding: {}}).rc == 0))
+  push($pids, spawn([$mix, "--serve", $script, "--name", "toolkit-export"],
+    {detach: true, env: $base, stdout: {file: $tmp .. "/export.log"}, stderr: "stdout"}))
+  check("first reconcile writes", eventually(fn() = status().outcome == "written"))
+  $registry = load_data(realpath($here .. "/../../../docs/docs/spec/bus/commands.conf.mix"))
+  $expected = sort(map(filter($registry.commands, fn($r) = $r.owner == "toolkit-export"), fn($r) = $r.name))
+  $help = call("toolkit-export", "HELP", {}).v
+  if type($help) == "string" then $help = json_parse($help) end
+  check("Bus registry matches runtime commands", deep_eq($expected, sort(map(filter($help, fn($r) = starts_with($r.name, "toolkit-export.") and not starts_with($r.name, "toolkit-export.props.")), fn($r) = $r.name))))
+  check("dark css written", contains(read_file($cfg .. "/gtk-4.0/mixos/dark.css"), "@define-color window_bg_color rgba(16, 16, 16, 1.00);"))
+  check("light css written", is_file($cfg .. "/gtk-4.0/mixos/light.css"))
+  check("gtk4 link names the mode", read_link($cfg .. "/gtk-4.0/gtk.css") == "mixos/dark.css")
+  check("gtk3 link names the mode", read_link($cfg .. "/gtk-3.0/gtk.css") == "../gtk-4.0/mixos/dark.css")
+  check("a foreign gtk.css is kept once", read_file($cfg .. "/gtk-3.0/gtk.css.bak") == "/* the user's own */\n")
+  $ini = read_file($cfg .. "/gtk-3.0/settings.ini")
+  check("settings.ini keeps the user's keys", contains($ini, "gtk-cursor-theme-name=mine"))
+  check("settings.ini has the font and dark icons", contains($ini, "gtk-font-name=Inter 9") and contains($ini, "gtk-icon-theme-name=testicons-dark"))
+  check("qt6ct palette and conf", is_file($cfg .. "/qt6ct/colors/MixOSDark.conf") and
+    contains(read_file($cfg .. "/qt6ct/qt6ct.conf"), "color_scheme_path=" .. $cfg .. "/qt6ct/colors/MixOSDark.conf"))
+  check("no gsettings on this desk", status().gsettings == "absent")
+
+  $flip = call("settingsd", "fake.set", {mode: "light", values: {"appearance.font_size": 16}})
+  check("mode flip", $flip.rc == 0)
+  check("links flip to light", eventually(fn() = read_link($cfg .. "/gtk-4.0/gtk.css") == "mixos/light.css"))
+  check("font follows", eventually(fn() = contains(read_file($cfg .. "/gtk-3.0/settings.ini"), "gtk-font-name=Inter 12")))
+  check("qt follows the mode", contains(read_file($cfg .. "/qt5ct/qt5ct.conf"), "MixOSLight.conf"))
+
+  write_file($cfg .. "/gtk-3.0/settings.ini", replace(read_file($cfg .. "/gtk-3.0/settings.ini"), "gtk-font-name=Inter 12", "gtk-font-name=Mine 11"))
+  check("another change", call("settingsd", "fake.set", {mode: "dark", values: {"appearance.font_size": 14}}).rc == 0)
+  check("links flip back to dark", eventually(fn() = read_link($cfg .. "/gtk-4.0/gtk.css") == "mixos/dark.css"))
+  check("a hand-edited key is kept", contains(read_file($cfg .. "/gtk-3.0/settings.ini"), "gtk-font-name=Mine 11"))
+  check("and reported", any(status().kept, fn($k) = contains($k, "Settings/gtk-font-name")))
+  check("gtk4 ini still follows", contains(read_file($cfg .. "/gtk-4.0/settings.ini"), "gtk-font-name=Inter 10.5"))
+
+  check("gate off", call("settingsd", "fake.set", {mode: "light", values: {"appearance.export_toolkits": false}}).rc == 0)
+  check("gated", eventually(fn() = status().outcome == "gated"))
+  check("gated writes nothing", read_link($cfg .. "/gtk-4.0/gtk.css") == "mixos/dark.css")
+  check("gate on", call("settingsd", "fake.set", {values: {"appearance.export_toolkits": true}}).rc == 0)
+  check("writes resume", eventually(fn() = read_link($cfg .. "/gtk-4.0/gtk.css") == "mixos/light.css"))
+
+  $u = call("toolkit-export", "toolkit-export.undo", {})
+  check("undo answers", $u.rc == 0 and len($u.v.restored) > 0)
+  check("undo restores the user's gtk.css", read_file($cfg .. "/gtk-3.0/gtk.css") == "/* the user's own */\n")
+  check("undo removes a link that was not there", lstat_absent($cfg .. "/gtk-4.0/gtk.css"))
+  check("undo removes our css", not is_file($cfg .. "/gtk-4.0/mixos/dark.css"))
+  $after = read_file($cfg .. "/gtk-3.0/settings.ini")
+  check("undo strips our keys and keeps the user's", contains($after, "gtk-cursor-theme-name=mine") and
+    contains($after, "gtk-font-name=Mine 11") and not contains($after, "gtk-icon-theme-name"))
+  check("undo leaves the hand edit and lists it", any($u.v.left, fn($k) = contains($k, "gtk-font-name")))
+  check("paused after undo", status().outcome == "paused")
+  check("reconcile resumes", call("toolkit-export", "toolkit-export.reconcile", {}).v.outcome == "written")
+  send toolkit-export QUIT timeout=5
+finally
+  for $pid in $pids
+    if process_alive($pid) then kill($pid, 15) end
+  end
+  if $bus != nil then $pb.stop($bus) end
+end
+print("PASS toolkit-export integration; logs: " .. $tmp)

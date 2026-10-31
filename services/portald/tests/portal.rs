@@ -211,7 +211,7 @@ impl Drop for PrivateBus {
 fn projection(incarnation: &str, revision: u64, mode: &str) -> Projection {
     Projection {
         schema: PROJECTION_SCHEMA,
-        caption_side: "right".into(),
+        export: true,
         binding: Binding {
             instance: "host".into(),
             profile: "default".into(),
@@ -242,7 +242,6 @@ fn spawn_portal(
             binding: projection("a", 1, "dark").binding,
             screencast: None,
             screencast_max_framerate: Default::default(),
-            gtk_settings: portald::gtk_settings::Exporter::new(None, None),
         },
         received,
         shared.clone(),
@@ -573,8 +572,7 @@ async fn production_process_answers_read_within_250_ms_with_a_silent_authority()
         .await
         .ok_or_else(|| anyhow::anyhow!("authority incoming already taken"))?;
     let dir = tempfile::tempdir()?;
-    let mut cached = projection("cached", 3, "light");
-    cached.caption_side = "left".into();
+    let cached = projection("cached", 3, "light");
     portald::cache::save(dir.path(), &cached)?;
     let alternate = Binding {
         instance: "host".into(),
@@ -628,18 +626,8 @@ async fn production_process_answers_read_within_250_ms_with_a_silent_authority()
         assert!(started.elapsed() < Duration::from_millis(250));
         assert_eq!(innermost(&value), &Value::U32(expected));
         assert_eq!(depth(&value), 1, "Read remains double-boxed on the wire");
-        let gtk_path = gtk_home.join("gtk-3.0/settings.ini");
-        if expected == 2 {
-            assert_eq!(
-                std::fs::read_to_string(gtk_path)?,
-                "[Settings]\ngtk-decoration-layout=close,minimize,maximize:menu\ngtk-icon-theme-name=mixos\n"
-            );
-        } else {
-            assert!(
-                !gtk_path.exists(),
-                "unvalidated defaults must not be exported"
-            );
-        }
+        // GTK files belong to toolkit-export, never to the portal.
+        assert!(!gtk_home.join("gtk-3.0/settings.ini").exists());
         // Prove this is a hung registered authority, not a missing route.
         let request = tokio::time::timeout(Duration::from_secs(5), requests.recv())
             .await?
@@ -766,10 +754,6 @@ struct NativePortal {
 }
 impl NativePortal {
     fn start(bus: &PrivateBus, url: &str) -> Self {
-        Self::with_gtk(bus, url, None)
-    }
-
-    fn with_gtk(bus: &PrivateBus, url: &str, config_home: Option<&std::path::Path>) -> Self {
         let (projections, received) = mpsc::channel(8);
         let shared = status::shared();
         let binding = projection("a", 1, "dark").binding;
@@ -787,7 +771,6 @@ impl NativePortal {
                 binding,
                 screencast: None,
                 screencast_max_framerate: Default::default(),
-                gtk_settings: portald::gtk_settings::Exporter::new(config_home, None),
             },
             received,
             shared.clone(),
@@ -908,8 +891,7 @@ async fn native_startup_live_change_and_settingsd_restart_without_broker_reconne
     authority_store(root.path(), "light")?;
     let mut authority = AuthorityTask::start(root.path(), &broker.url);
     let bus = PrivateBus::start()?;
-    let gtk_home = root.path().join("config");
-    let mut portal = NativePortal::with_gtk(&bus, &broker.url, Some(&gtk_home));
+    let mut portal = NativePortal::start(&bus, &broker.url);
     wait_for_name(&mut portal.live, &portal.shared).await?;
     wait_source(&portal, 1, 0).await?;
     let operator = NodedClient::connect("portal-test", &broker.url).await?;
@@ -920,8 +902,6 @@ async fn native_startup_live_change_and_settingsd_restart_without_broker_reconne
         2,
         "initial authority fetched"
     );
-    let gtk_path = gtk_home.join("gtk-3.0/settings.ini");
-    assert!(std::fs::read_to_string(&gtk_path)?.contains("menu:minimize,maximize,close"));
     let owner: zbus::names::OwnedUniqueName = zbus::fdo::DBusProxy::new(&connection)
         .await?
         .get_name_owner(zbus::names::BusName::try_from(BUS_NAME)?)
@@ -947,7 +927,6 @@ async fn native_startup_live_change_and_settingsd_restart_without_broker_reconne
         .await?;
     assert_eq!(changed["status"], "changed");
     wait_source(&portal, 2, 0).await?;
-    assert!(std::fs::read_to_string(&gtk_path)?.contains("close,minimize,maximize:menu"));
     // The live change arrived as a broker delivery stamped by THIS tree's noded.
     // A refusal here means the broker stopped stamping settingsd as the owner.
     assert_eq!(

@@ -19,7 +19,10 @@
 //!   `derive(seeds_of(roles))`, the closest COSMIC can draw (`closest`);
 //! - `fonts`: the interface and monospace fonts MixOS draws ([`Fonts`]),
 //!   with the session's font choices over the design's (the caller applies
-//!   them with [`Fonts::with_choices`]).
+//!   them with [`Fonts::with_choices`]);
+//! - `toolkit`: from the same theme as `cosmic`, libadwaita's named colours
+//!   (`gtk`) and the three qt5ct/qt6ct palette groups (`qt`), for the GTK
+//!   and Qt exporters.
 //!
 //! Colours serialise as `#RRGGBBAA`. Pure data.
 
@@ -59,6 +62,8 @@ pub struct ModePalette {
     /// The interface and monospace fonts MixOS draws, so an exporter
     /// writes the same ones.
     pub fonts: Fonts,
+    /// What the GTK and Qt exporters write, from `cosmic.theme`.
+    pub toolkit: crate::derive::toolkit::Toolkit,
 }
 
 /// The interface and monospace fonts of one look.
@@ -236,6 +241,7 @@ pub fn mode_palette(
         roles,
         accent,
         swatches: SWATCH_NAMES.into_iter().zip(swatches).collect(),
+        toolkit: crate::derive::toolkit::Toolkit::of(&theme),
         cosmic: Cosmic {
             builder,
             theme,

@@ -8,7 +8,6 @@ pub mod appearance;
 pub mod cache;
 pub mod env;
 pub mod filechooser;
-pub mod gtk_settings;
 pub mod live;
 pub mod portal;
 pub mod screencast;
@@ -56,8 +55,6 @@ pub async fn run(
             tracing::warn!(%error, "settings source unavailable; serving last-good values");
         }
     });
-    let config_home = std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from);
-    let home = std::env::var_os("HOME").map(PathBuf::from);
     let result = live::serve(
         live::Config {
             address,
@@ -65,7 +62,6 @@ pub async fn run(
             binding,
             screencast,
             screencast_max_framerate,
-            gtk_settings: gtk_settings::Exporter::new(config_home.as_deref(), home.as_deref()),
             filechooser: Some((chooser, chooser_outcomes)),
         },
         received,

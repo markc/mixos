@@ -1,0 +1,47 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- A stand-in settingsd for toolkit-export tests: answers settings.get and
+-- settings.palette from one in-memory record, and `fake.set` moves the
+-- record and publishes the appearance keys topic, as settingsd does.
+$revision = 1
+$mode = "dark"
+$values = {"appearance.mode": "dark", "appearance.contrast": "normal", "appearance.font_family": nil,
+  "appearance.font_size": 12, "appearance.mono_family": nil, "appearance.icon_theme": "testicons",
+  "appearance.export_toolkits": true, "window.caption_side": "auto", "window.controls.minimize": true,
+  "window.controls.maximize": true, "accessibility.text_scale": 1}
+
+fn hex($n)
+  $b = sprintf("%02X", $n % 256)
+  return "#" .. $b .. $b .. $b .. "FF"
+end
+
+fn toolkit($m)
+  $base = if $m == "dark" then 16 else 230 end
+  $gtk = {window_bg_color: hex($base), window_fg_color: hex(255 - $base), accent_bg_color: "#3584E4FF",
+    shade_color: "#00000052"}
+  $group = []
+  for $i = 0 to 20 push($group, hex($base + $i)) end
+  return {gtk: $gtk, qt: {active: $group, inactive: $group, disabled: $group}}
+end
+
+fn envelope($b)
+  return {status: "current", binding: $b.binding, incarnation: "fake", revision: to_string($revision)}
+end
+
+on settings.get
+  reply(0, json_encode(merge(envelope($event.args), {values: $values, resolved: {mode: $mode}})))
+end
+
+on settings.palette
+  reply(0, json_encode(merge(envelope($event.args), {palette: {dark: {toolkit: toolkit("dark")}, light: {toolkit: toolkit("light")}}})))
+end
+
+on fake.set
+  for $k, $v in $event.args.values ?? {}
+    $values[$k] = $v
+  end
+  if $event.args.mode != nil then $mode = $event.args.mode end
+  $revision = $revision + 1
+  $published = publish("settingsd.desktop.keys.default.appearance", json_encode({revision: to_string($revision)}), {retain: true})
+  reply(0, json_encode({revision: $revision, published: $published, result: $result}))
+end

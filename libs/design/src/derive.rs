@@ -17,6 +17,7 @@
 pub(crate) mod primitives;
 #[cfg(test)]
 mod tests;
+pub mod toolkit;
 
 use primitives::{
     BLACK, Ramp, TRANSPARENT, WHITE, contrast, idx, luminance, over, ramp, rehue, small, surface,

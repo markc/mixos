@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+[Unit]
+Description=MixOS GTK and Qt export for session %i
+# The session target chooses the broker (noded@%i or the system noded.service);
+# this unit only orders after both. Never Wants= or Requires= a broker: on a desk
+# with the system broker noded@%i is masked. settingsd may be the desk's mirror.
+After=noded@%i.service noded.service settingsd@%i.service
+PartOf=session@%i.target
+
+[Service]
+Type=simple
+User=mixos
+# The session's XDG_CONFIG_HOME is where the GTK and Qt files go; state (what
+# was written, for undo) goes to $MIXOS_VAR/toolkit-export.
+EnvironmentFile=@{etc}/session/%i.env
+Environment=MIX_STATS=off
+ExecStart=@{prefix}/bin/mix --serve @{prefix}/lib/toolkit-export/toolkit-export.mix --name toolkit-export
+KillMode=control-group
+TimeoutStopSec=10
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=yes
+UMask=0077
