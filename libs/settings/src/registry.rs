@@ -15,10 +15,9 @@
 //! [`crate::resolve::values`] resolves them and
 //! [`crate::domains::ChangePlan::of_values`] plans their changes. The
 //! format-4 store still holds today's typed [`crate::Desktop`] and writes it
-//! with the v1 vocabulary (`resolve::patch`, `resolve::describe`), whose
-//! names and value ranges v2 does not share; settingsd swaps to this
-//! registry when its store moves to format 5 (S6), and the v1 path goes
-//! then.
+//! with the frozen v1 vocabulary ([`crate::v1`]), whose names and value
+//! ranges v2 does not share; settingsd swaps to this registry when its
+//! store moves to format 5 (S6), which deletes [`crate::v1`].
 use crate::model::Diagnostic;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
