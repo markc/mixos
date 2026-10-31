@@ -220,6 +220,7 @@
                         <a href="#mix-trace--the-statement-tracer" class="toc-h3">mix trace — the statement tracer</a>
                         <a href="#mix-stats--usage-tracking" class="toc-h3">mix stats — usage tracking</a>
                         <a href="#agents--mix-agent-the-front-end-to-agentd">Agents — mix agent, the front end to agentd</a>
+                        <a href="#peers--mix-peers-the-front-end-to-peersd">Peers — mix peers, the front end to peersd</a>
                         <a href="#files--mix-edit-the-one-line-edit-that-refuses-to-guess">Files — mix edit, the one-line edit that refuses to guess</a>
                         <a href="#ecosystem--probe-the-bus-mesh">Ecosystem — probe the Bus mesh</a>
                         <a href="#ai-powered--agent-driven-workflows">AI-powered — agent-driven workflows</a>
@@ -630,6 +631,18 @@ shadowed; run it as <code>mix ./agent</code>.</p>
 4f1c2a9e0b
 $ mix agent send 4f1c2a9e0b "run the tests and fix the first failure" --wait
 …the agent's reply, streamed…
+</code></pre>
+<h2 id="peers--mix-peers-the-front-end-to-peersd">Peers — <code>mix peers</code>, the front end to peersd</h2>
+<p><code>mix peers</code> runs peersd's command line (installed at
+<code>&lt;prefix&gt;/lib/peersd/peers_cli.mix</code>) the same way: agent sessions on any
+desk list each other, message each other and share notices. Exit codes: 0
+done, 1 refused or unreachable, 64 usage. The commands are in
+<a href="/peersd/#command-line">peersd</a>. A CWD script named <code>peers</code> is
+shadowed; run it as <code>mix ./peers</code>.</p>
+<pre><code class="language-text">$ mix peers list
+mix-1  host1  busy  /home/user/src/app
+$ mix peers msg mix-1 "I'm landing next; hold main"
+delivered to mix-1 as mix-2@host1
 </code></pre>
 <h2 id="files--mix-edit-the-one-line-edit-that-refuses-to-guess">Files — <code>mix edit</code>, the one-line edit that refuses to guess</h2>
 <pre><code>mix edit [--all] [-n|--dry-run] FILE OLD NEW

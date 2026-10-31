@@ -45,6 +45,7 @@ yet. They are listed on both this page and the server page until they do.
 - [mixtrayd](../mixtrayd/README.md) (service)
 - [noded](../noded/README.md) (service): The MixOS Bus broker, which handles service registration, discovery, routing, subscriptions, authenticated local session grants and mesh peering between nodes.
 - [notifyd](../notifyd/README.md) (service): How notifyd keeps the desk's notifications, shows them as toasts and in the Notifications page, and tells an agent or app which button the human pressed.
+- [peersd](../peersd/README.md) (service): How peersd lets agent sessions on different desks and nodes find each other, message each other and share notices over the Bus.
 - [portald](../portald/README.md) (service): How portald serves XDG Settings, FileChooser v4 and ScreenCast on the session bus, and how applications and agents use them.
 - [prefs](../prefs/README.md) (app): Appearance, Text & Fonts, Windows, app preferences, Accessibility, and Software & Updates in one window.
 - [releasesd](../releasesd/README.md) (service): How releasesd follows upstream application releases on GitHub and installs their Linux builds per user, verified, with rollback, from the command line or the Bus.

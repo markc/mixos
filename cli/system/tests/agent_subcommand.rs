@@ -3,6 +3,7 @@
 //! `mix agent ...` runs agentd's CLI script (<prefix>/lib/agentd/agent_cli.mix)
 //! with the same binary, passes the arguments through, and returns the
 //! script's own exit code (the CLI uses 2 for "waiting on a human").
+//! `mix peers ...` does the same with peersd's (<prefix>/lib/peersd/peers_cli.mix).
 
 use std::process::Command;
 
@@ -60,5 +61,31 @@ fn says_so_when_agentd_is_not_installed() {
         err.contains("not installed") && err.contains(&prefix.display().to_string()),
         "stderr={err}"
     );
+    let _ = std::fs::remove_dir_all(&prefix);
+}
+
+#[test]
+fn peers_runs_peersd_cli_with_its_args_and_exit_code() {
+    let prefix = temp_prefix("peers");
+    std::fs::create_dir_all(prefix.join("lib/peersd")).unwrap();
+    std::fs::write(
+        prefix.join("lib/peersd/peers_cli.mix"),
+        "print(join(args(), \",\"))\nexit(64)\n",
+    )
+    .unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_mix"))
+        .arg("peers")
+        .args(["msg", "all", "landed"])
+        .env("MIXOS_PREFIX", &prefix)
+        .env("MIX_STATS", "off")
+        .output()
+        .expect("run mix peers");
+    assert_eq!(
+        out.status.code(),
+        Some(64),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "msg,all,landed\n");
     let _ = std::fs::remove_dir_all(&prefix);
 }

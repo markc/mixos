@@ -59,6 +59,7 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 | [noded](../noded/README.md) · [changelog](../noded/changelog.md) | service | unclassified | [`services/noded`](https://github.com/markc/mixos/tree/main/services/noded) | The MixOS Bus broker, which handles service registration, discovery, routing, subscriptions, authenticated local session grants and mesh peering between nodes. |
 | [notifyd](../notifyd/README.md) | service | unclassified | [`services/notifyd`](https://github.com/markc/mixos/tree/main/services/notifyd) | How notifyd keeps the desk's notifications, shows them as toasts and in the Notifications page, and tells an agent or app which button the human pressed. |
 | [paths](../paths/README.md) | lib | none (library) | [`libs/paths`](https://github.com/markc/mixos/tree/main/libs/paths) |  |
+| [peersd](../peersd/README.md) | service | unclassified | [`services/peersd`](https://github.com/markc/mixos/tree/main/services/peersd) | How peersd lets agent sessions on different desks and nodes find each other, message each other and share notices over the Bus. |
 | [portald](../portald/README.md) | service | unclassified | [`services/portald`](https://github.com/markc/mixos/tree/main/services/portald) | How portald serves XDG Settings, FileChooser v4 and ScreenCast on the session bus, and how applications and agents use them. |
 | [prefs](../prefs/README.md) · [changelog](../prefs/changelog.md) | app | unclassified | [`apps/prefs`](https://github.com/markc/mixos/tree/main/apps/prefs) | Appearance, Text & Fonts, Windows, app preferences, Accessibility, and Software & Updates in one window. |
 | [props](../props/README.md) | lib | none (library) | [`libs/props`](https://github.com/markc/mixos/tree/main/libs/props) | Property read types, revisions, namespace storage and native Bus routing for MixOS services. |
@@ -195,6 +196,7 @@ checked separately by the layering gate.
 | [mesh-trust](https://github.com/markc/mixos/blob/main/services/noded/crates/mesh-trust/Cargo.toml) | noded | service | core | none | 0.1.2 |
 | [mesh](https://github.com/markc/mixos/blob/main/services/noded/crates/mesh/Cargo.toml) | noded | service | core | none | 0.1.2 |
 | [notifyd](https://github.com/markc/mixos/blob/main/services/notifyd/component.mx) | notifyd | service | desktop | public | 0.1.0 |
+| [peersd](https://github.com/markc/mixos/blob/main/services/peersd/component.mx) | peersd | service | core | public | 0.1.0 |
 | [portald](https://github.com/markc/mixos/blob/main/services/portald/Cargo.toml) | portald | service | core | public | 0.1.0 |
 | [releasesd](https://github.com/markc/mixos/blob/main/services/releasesd/component.mx) | releasesd | service | desktop | public | 0.2.0 |
 | [settingsd](https://github.com/markc/mixos/blob/main/services/settingsd/Cargo.toml) | settingsd | service | core | public | 0.1.0 |

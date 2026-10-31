@@ -1,0 +1,48 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- version: 0.1.0
+-- target: which peersd a client on this node talks to. The CLI and the
+-- hooks share it.
+--
+-- $PEERS_TARGET wins (tests run a private peersd). Otherwise
+-- $XDG_CONFIG_HOME/mixos/peers.conf.mix may name a hub node, {hub: "NODE"}:
+-- every node but the hub then reaches the hub's peersd as peers.NODE.bus,
+-- so one registry serves a group of nodes. With no conf (or on the hub
+-- itself) the target is this node's own peers service.
+
+fn conf_file()
+  return env("XDG_CONFIG_HOME", env("HOME") .. "/.config") .. "/mixos/peers.conf.mix"
+end
+
+-- The hub named in the conf, or "" (no conf, or one that does not parse).
+fn hub()
+  $f = conf_file()
+  if not is_file($f) then return "" end
+  try
+    $c = load_data($f)
+    if type($c) == "map" and type($c.hub) == "string" then return $c.hub end
+  catch $m
+  end
+  return ""
+end
+
+-- This node's name from the local broker, or "" when it does not answer.
+fn node($timeout)
+  try
+    send noded noded.info timeout=$timeout
+    if $rc == 0 then
+      $info = if type($result) == "string" then json_parse($result) else $result end
+      return to_string($info.node ?? "")
+    end
+  catch $m
+  end
+  return ""
+end
+
+fn service($node)
+  $t = env("PEERS_TARGET", "")
+  if $t != "" then return $t end
+  $h = hub()
+  if $h == "" or $h == $node then return "peers" end
+  return "peers." .. $h .. ".bus"
+end

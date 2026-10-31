@@ -795,6 +795,7 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 | [noded](../noded/README.md) · [changelog](../noded/changelog.md) | service | unclassified | [`services/noded`](https://github.com/markc/mixos/tree/main/services/noded) | The MixOS Bus broker, which handles service registration, discovery, routing, subscriptions, authenticated local session grants and mesh peering between nodes. |
 | [notifyd](../notifyd/README.md) | service | unclassified | [`services/notifyd`](https://github.com/markc/mixos/tree/main/services/notifyd) | How notifyd keeps the desk's notifications, shows them as toasts and in the Notifications page, and tells an agent or app which button the human pressed. |
 | [paths](../paths/README.md) | lib | none (library) | [`libs/paths`](https://github.com/markc/mixos/tree/main/libs/paths) |  |
+| [peersd](../peersd/README.md) | service | unclassified | [`services/peersd`](https://github.com/markc/mixos/tree/main/services/peersd) | How peersd lets agent sessions on different desks and nodes find each other, message each other and share notices over the Bus. |
 | [portald](../portald/README.md) | service | unclassified | [`services/portald`](https://github.com/markc/mixos/tree/main/services/portald) | How portald serves XDG Settings, FileChooser v4 and ScreenCast on the session bus, and how applications and agents use them. |
 | [prefs](../prefs/README.md) · [changelog](../prefs/changelog.md) | app | unclassified | [`apps/prefs`](https://github.com/markc/mixos/tree/main/apps/prefs) | Appearance, Text & Fonts, Windows, app preferences, Accessibility, and Software & Updates in one window. |
 | [props](../props/README.md) | lib | none (library) | [`libs/props`](https://github.com/markc/mixos/tree/main/libs/props) | Property read types, revisions, namespace storage and native Bus routing for MixOS services. |
@@ -931,6 +932,7 @@ checked separately by the layering gate.
 | [mesh-trust](https://github.com/markc/mixos/blob/main/services/noded/crates/mesh-trust/Cargo.toml) | noded | service | core | none | 0.1.2 |
 | [mesh](https://github.com/markc/mixos/blob/main/services/noded/crates/mesh/Cargo.toml) | noded | service | core | none | 0.1.2 |
 | [notifyd](https://github.com/markc/mixos/blob/main/services/notifyd/component.mx) | notifyd | service | desktop | public | 0.1.0 |
+| [peersd](https://github.com/markc/mixos/blob/main/services/peersd/component.mx) | peersd | service | core | public | 0.1.0 |
 | [portald](https://github.com/markc/mixos/blob/main/services/portald/Cargo.toml) | portald | service | core | public | 0.1.0 |
 | [releasesd](https://github.com/markc/mixos/blob/main/services/releasesd/component.mx) | releasesd | service | desktop | public | 0.2.0 |
 | [settingsd](https://github.com/markc/mixos/blob/main/services/settingsd/Cargo.toml) | settingsd | service | core | public | 0.1.0 |
@@ -15160,6 +15162,22 @@ $ mix agent start claude --cwd ~/src/app
 4f1c2a9e0b
 $ mix agent send 4f1c2a9e0b "run the tests and fix the first failure" --wait
 …the agent's reply, streamed…
+```
+
+## Peers — `mix peers`, the front end to peersd
+
+`mix peers` runs peersd's command line (installed at
+`<prefix>/lib/peersd/peers_cli.mix`) the same way: agent sessions on any
+desk list each other, message each other and share notices. Exit codes: 0
+done, 1 refused or unreachable, 64 usage. The commands are in
+[peersd](../peersd/README.md#command-line). A CWD script named `peers` is
+shadowed; run it as `mix ./peers`.
+
+```text
+$ mix peers list
+mix-1  host1  busy  /home/user/src/app
+$ mix peers msg mix-1 "I'm landing next; hold main"
+delivered to mix-1 as mix-2@host1
 ```
 
 ## Files — `mix edit`, the one-line edit that refuses to guess
@@ -36430,6 +36448,132 @@ path bytes. These Rust checks run on CBC, not on developer desktops.
 
 ---
 
+<!-- page: https://mixos.dev/peersd/ (source: https://mixos.dev/peersd/README.md) -->
+
+# Peer sessions
+
+`peersd` lets agent sessions find and message each other over the Bus.
+An agent such as Claude Code finds its peers only through local sockets,
+so a session inside a desk container cannot hear one on the host, and two
+sessions about to push the same branch never learn of each other. peersd
+carries that over the Bus instead:
+
+- a **registry** of the live sessions: name, node, working directory, and
+  whether each is busy or idle;
+- **direct messages**, with an inbox per session, and messages to everyone;
+- a **notice board** every session reads, such as a hold on a branch or a
+  queue of sessions waiting to land.
+
+Sessions join through their agent's hooks; for Claude Code that is
+`claude_code_hook.mix`, below. What a session reads from peers is framed as
+data from another session, never as its user's words: a peer can inform or
+ask, but never approve anything on the user's behalf.
+
+## Running it
+
+peersd is a Mix Bus citizen. The user unit runs it in your own session:
+
+```text
+$ systemctl --user enable --now mixos-peersd.service
+```
+
+The unit is installed as `<prefix>/share/peersd/units/peersd.service`; copy or
+link it into `~/.config/systemd/user/` as `mixos-peersd.service`. State lives in
+`~/.local/state/mixos/peers/<host>/peers.db`, one per host, because a desk
+container may share its home with the host.
+
+**One registry for several nodes.** Today each node's sessions see only
+their own node's peersd. To put a group of nodes on one registry (a host and
+the desks that share its home, say), run peersd on one of them and name it
+as the hub in `~/.config/mixos/peers.conf.mix`:
+
+```text
+{hub: "host1"}
+```
+
+Every other node then reaches `peers.host1.bus`. A registry federated across
+every node, with no hub, is the next step.
+
+## Command line
+
+`mix peers` is the command line (installed at
+`<prefix>/lib/peersd/peers_cli.mix`). Run inside an agent session it acts as
+that session; otherwise as the Bus caller it is.
+
+| Command | What it does |
+|---|---|
+| `mix peers list` | the live sessions; a session silent for two hours is marked stale |
+| `mix peers msg NAME TEXT...` | a direct message |
+| `mix peers msg all TEXT...` | a message to every other live session |
+| `mix peers notice set KEY TEXT... [--ttl S]` | pin a notice every session reads once |
+| `mix peers notice clear KEY` | remove it; every live session is told |
+| `mix peers notice list` | the notices in force |
+| `mix peers inbox [--peek]` | this session's new messages |
+| `mix peers name NEW` | rename this session |
+
+Exit codes: 0 done, 1 refused or unreachable, 64 usage.
+
+## Claude Code
+
+Register the hook for five events in `~/.claude/settings.json` (merge it into
+any `hooks` you already have):
+
+```json
+{
+  "hooks": {
+    "SessionStart": [{"hooks": [{"type": "command", "command": "mix /opt/mixos/lib/peersd/claude_code_hook.mix"}]}],
+    "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "mix /opt/mixos/lib/peersd/claude_code_hook.mix"}]}],
+    "PostToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "mix /opt/mixos/lib/peersd/claude_code_hook.mix"}]}],
+    "Stop": [{"hooks": [{"type": "command", "command": "mix /opt/mixos/lib/peersd/claude_code_hook.mix"}]}],
+    "SessionEnd": [{"hooks": [{"type": "command", "command": "mix /opt/mixos/lib/peersd/claude_code_hook.mix"}]}]
+  }
+}
+```
+
+| Event | What the hook does |
+|---|---|
+| SessionStart | claims a name (the session's title when free), shows notices and messages |
+| UserPromptSubmit | marks the session busy, shows anything new |
+| PostToolUse (Bash) | shows anything new between commands, so a busy session hears a hold before its next push |
+| Stop | with mail waiting, holds the session for one more turn to read it (never twice); otherwise marks it idle |
+| SessionEnd | leaves the registry |
+
+The hook never gets in a session's way: any Bus fault is silent, and after a
+timeout it stays quiet for a minute. Subagents are skipped (they would read
+their parent's inbox), and `PEERS_HOOK=off` in the environment turns it off
+for headless sessions. Only what the hook shows is marked read; the rest
+waits for the next event.
+
+An idle session whose user is away does not wake for a message; it reads it
+on its next prompt.
+
+## Bus interface
+
+The `peers` service. Bodies are JSON.
+
+| Command | Body | Answer |
+|---|---|---|
+| `peers.claim` | `{claude_session, node, cwd, name?}` | `{name, node}`; a known session asking for another free name is renamed |
+| `peers.state` | `{claude_session, state: busy\|idle}` | |
+| `peers.leave` | `{claude_session}` | |
+| `peers.list` | | `{sessions: [{name, node, cwd, state, age_s, stale}]}` |
+| `peers.send` | `{to: NAME or "*", text, from_session?, from?}` | `{delivered, stored, ids, from}` |
+| `peers.inbox` | `{claude_session, peek?, limit?}` | `{name, node, messages, notices, more}` |
+| `peers.ack` | `{claude_session, upto?, notices_upto?}` | marks read what a reader showed |
+| `peers.notice.set` | `{key, text, ttl_s?}` | `{key, ts, expires}` |
+| `peers.notice.clear` | `{key}` | every live session gets a `notice-cleared` message |
+| `peers.notice.list` | | `{notices}` |
+
+Topics: `peers.message {id, to, from}` on every delivery, `peers.notice` on
+every set and clear.
+
+Each message records two senders: `from`, the name the sender claims, and
+`sender`, the broker's stamp of the caller (its local name, or
+`service@node` over the mesh). Text is at most 4096 bytes; an inbox keeps the
+newest 200 messages; ended sessions and their mail go after a week.
+
+---
+
 <!-- page: https://mixos.dev/portald/ (source: https://mixos.dev/portald/README.md) -->
 
 # The desktop portal
@@ -41936,6 +42080,7 @@ yet. They are listed on both this page and the server page until they do.
 - [mixtrayd](../mixtrayd/README.md) (service)
 - [noded](../noded/README.md) (service): The MixOS Bus broker, which handles service registration, discovery, routing, subscriptions, authenticated local session grants and mesh peering between nodes.
 - [notifyd](../notifyd/README.md) (service): How notifyd keeps the desk's notifications, shows them as toasts and in the Notifications page, and tells an agent or app which button the human pressed.
+- [peersd](../peersd/README.md) (service): How peersd lets agent sessions on different desks and nodes find each other, message each other and share notices over the Bus.
 - [portald](../portald/README.md) (service): How portald serves XDG Settings, FileChooser v4 and ScreenCast on the session bus, and how applications and agents use them.
 - [prefs](../prefs/README.md) (app): Appearance, Text & Fonts, Windows, app preferences, Accessibility, and Software & Updates in one window.
 - [releasesd](../releasesd/README.md) (service): How releasesd follows upstream application releases on GitHub and installs their Linux builds per user, verified, with rollback, from the command line or the Bus.
@@ -41992,6 +42137,7 @@ yet. They are listed on both this page and the desktop page until they do.
 - [mixtrayd](../mixtrayd/README.md) (service)
 - [noded](../noded/README.md) (service): The MixOS Bus broker, which handles service registration, discovery, routing, subscriptions, authenticated local session grants and mesh peering between nodes.
 - [notifyd](../notifyd/README.md) (service): How notifyd keeps the desk's notifications, shows them as toasts and in the Notifications page, and tells an agent or app which button the human pressed.
+- [peersd](../peersd/README.md) (service): How peersd lets agent sessions on different desks and nodes find each other, message each other and share notices over the Bus.
 - [portald](../portald/README.md) (service): How portald serves XDG Settings, FileChooser v4 and ScreenCast on the session bus, and how applications and agents use them.
 - [prefs](../prefs/README.md) (app): Appearance, Text & Fonts, Windows, app preferences, Accessibility, and Software & Updates in one window.
 - [releasesd](../releasesd/README.md) (service): How releasesd follows upstream application releases on GitHub and installs their Linux builds per user, verified, with rollback, from the command line or the Bus.

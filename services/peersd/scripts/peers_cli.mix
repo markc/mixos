@@ -1,0 +1,106 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- version: 0.2.0
+-- peers_cli: the command-line front end to peersd (`mix peers ...`).
+--
+--   mix peers list                         live sessions
+--   mix peers msg NAME|all TEXT...         a direct message, or one to everyone
+--   mix peers notice set KEY TEXT... [--ttl SECONDS]
+--   mix peers notice clear KEY
+--   mix peers notice list
+--   mix peers inbox [--peek]               this session's new messages
+--   mix peers name NEW                     rename this session
+--
+-- Run inside an agent session it acts as that session
+-- ($CLAUDE_CODE_SESSION_ID); otherwise as the Bus sender it is (--from NAME
+-- labels it). Which peersd it reaches: lib/target.mix. Exit codes: 0 done,
+-- 1 refused or unreachable, 64 usage.
+
+$t = require("lib/target.mix")
+$USAGE = "usage: mix peers list | msg NAME|all TEXT... | notice set KEY TEXT... [--ttl S] | notice clear KEY
+       | notice list | inbox [--peek] | name NEW   [--from NAME]"
+$o = getopt(args(), {ttl: {arg: true}, from: {arg: true}, peek: {}})
+$rest = $o.rest
+if len($o.errors) > 0 or len($rest) == 0 then
+  eprint($USAGE)
+  exit(64)
+end
+
+$node = $t.node(2)
+$T = $t.service($node)
+$me = env("CLAUDE_CODE_SESSION_ID")
+
+fn call($command, $b)
+  if $me != "" and $b.from_session == nil then $b.from_session = $me end
+  if $o.opts.from != nil then $b.from = $o.opts.from end
+  $j = json_encode($b)
+  send $T $command body=$j timeout=5
+  $v = if type($result) == "string" then json_parse($result) else $result end
+  if $rc != 0 then
+    eprint("mix peers: " .. to_string(if type($v) == "map" then ($v.error_code ?? "") .. " " .. to_string($v.message ?? "") else $v end))
+    exit(1)
+  end
+  return $v
+end
+
+$cmd = $rest[0]
+if $cmd == "list" then
+  for each $s in call("peers.list", {}).sessions
+    print($s.name .. "  " .. $s.node .. "  " .. to_string($s.state) .. "  " .. to_string($s.cwd) ..
+      (if $s.stale then "  STALE (no sign for " .. to_string(floor($s.age_s / 3600)) .. " h; may have crashed)" elif $s.age_s > 600 then "  (last seen " .. to_string(floor($s.age_s / 60)) .. " min ago)" else "" end))
+  end
+elif $cmd == "msg" then
+  if len($rest) < 3 then
+    eprint($USAGE)
+    exit(64)
+  end
+  $to = if $rest[1] == "all" then "*" else $rest[1] end
+  $v = call("peers.send", {to: $to, text: join(slice($rest, 2), " ")})
+  print("delivered to " .. (if len($v.delivered) == 0 then "nobody" else join($v.delivered, ", ") end) .. " as " .. to_string($v.from))
+  if len($v.stored ?? []) > 0 then print("stored for stale sessions (may have crashed): " .. join($v.stored, ", ")) end
+elif $cmd == "notice" and len($rest) >= 2 then
+  if $rest[1] == "set" and len($rest) >= 4 then
+    $b = {key: $rest[2], text: join(slice($rest, 3), " ")}
+    if $o.opts.ttl != nil then
+      if len(re_find($o.opts.ttl, "^[0-9]+$")) == 0 then
+        eprint("mix peers: --ttl takes whole seconds")
+        exit(64)
+      end
+      $b.ttl_s = to_number($o.opts.ttl)
+    end
+    $v = call("peers.notice.set", $b)
+    print("notice " .. $v.key .. " set")
+  elif $rest[1] == "clear" and len($rest) == 3 then
+    call("peers.notice.clear", {key: $rest[2]})
+    print("notice " .. $rest[2] .. " cleared")
+  elif $rest[1] == "list" then
+    for each $n in call("peers.notice.list", {}).notices
+      print($n.key .. "  (" .. to_string($n.from_name) .. ")  " .. $n.text)
+    end
+  else
+    eprint($USAGE)
+    exit(64)
+  end
+elif $cmd == "name" and len($rest) == 2 then
+  if $me == "" then
+    eprint("mix peers: name renames an agent session; run it from the session")
+    exit(64)
+  end
+  $v = call("peers.claim", {claude_session: $me, node: $node, cwd: cwd(), name: $rest[1]})
+  print("this session is " .. $v.name .. "@" .. $v.node)
+elif $cmd == "inbox" then
+  if $me == "" then
+    eprint("mix peers: inbox reads an agent session's own inbox; run it from the session")
+    exit(64)
+  end
+  $v = call("peers.inbox", {claude_session: $me, peek: $o.opts.peek ?? false})
+  for each $n in $v.notices
+    print("notice " .. $n.key .. " (" .. to_string($n.from_name) .. "): " .. $n.text)
+  end
+  for each $m in $v.messages
+    print("[" .. to_string($m.id) .. "] " .. to_string($m.from_name) .. ": " .. $m.text)
+  end
+else
+  eprint($USAGE)
+  exit(64)
+end

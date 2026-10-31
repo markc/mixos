@@ -743,10 +743,25 @@ fn run_stats_subcommand(sub_args: &[String]) -> i32 {
 /// `mix agent ...`: run agentd's CLI script with this same binary and
 /// return its exit code.
 pub(crate) fn run_agent_cli(args: &[String]) -> i32 {
-    let script = ::paths::root(::paths::Root::Prefix).join("lib/agentd/agent_cli.mix");
+    run_component_cli("agent", "agentd", "agent_cli.mix", args)
+}
+
+/// `mix peers ...`: run peersd's CLI script with this same binary and
+/// return its exit code.
+pub(crate) fn run_peers_cli(args: &[String]) -> i32 {
+    run_component_cli("peers", "peersd", "peers_cli.mix", args)
+}
+
+/// Run `<prefix>/lib/<component>/<script>` with this same binary, passing
+/// `args` through, and return the script's own exit code.
+fn run_component_cli(name: &str, component: &str, script: &str, args: &[String]) -> i32 {
+    let script = ::paths::root(::paths::Root::Prefix)
+        .join("lib")
+        .join(component)
+        .join(script);
     if !script.is_file() {
         eprintln!(
-            "mix agent: {} is not installed (it ships with agentd)",
+            "mix {name}: {} is not installed (it ships with {component})",
             script.display()
         );
         return 1;
@@ -754,12 +769,12 @@ pub(crate) fn run_agent_cli(args: &[String]) -> i32 {
     let exe = match std::env::current_exe() {
         Ok(exe) => exe,
         Err(error) => {
-            eprintln!("mix agent: cannot find this mix binary: {error}");
+            eprintln!("mix {name}: cannot find this mix binary: {error}");
             return 1;
         }
     };
-    // The CLI re-runs itself under `--serve` for `send --wait`: with this
-    // same binary, not whatever mix is installed in the prefix.
+    // A CLI may re-run itself (agent's `send --wait` runs under `--serve`):
+    // with this same binary, not whatever mix is installed in the prefix.
     match std::process::Command::new(&exe)
         .arg(&script)
         .args(args)
@@ -768,7 +783,7 @@ pub(crate) fn run_agent_cli(args: &[String]) -> i32 {
     {
         Ok(status) => status.code().unwrap_or(1),
         Err(error) => {
-            eprintln!("mix agent: {error}");
+            eprintln!("mix {name}: {error}");
             1
         }
     }
@@ -2235,7 +2250,7 @@ pub fn main() -> process::ExitCode {
         // `mix SCRIPT --version` (and `--serve SCRIPT`, `mix -`): the same
         // cold answer for a script. The script is read, never parsed or run.
         let reserved = |s: &str| {
-            matches!(s, "stats" | "lint" | "edit" | "agent") || META_CLI_COMMANDS.contains(&s)
+            matches!(s, "stats" | "lint" | "edit" | "agent" | "peers") || META_CLI_COMMANDS.contains(&s)
         };
         match script_meta::script_version_request(&args, &reserved) {
             script_meta::Answer::Print(line) => {
@@ -2634,6 +2649,14 @@ fn real_main() -> i32 {
                 // CWD script named `agent` is shadowed; run it as ./agent.
                 let sub_args: Vec<String> = args[i + 1..].to_vec();
                 return run_agent_cli(&sub_args);
+            }
+            "peers" => {
+                // `mix peers` is peersd's command line, a Mix script
+                // installed at <prefix>/lib/peersd/peers_cli.mix; it owns
+                // its exit code like `mix agent`. A CWD script named
+                // `peers` is shadowed; run it as ./peers.
+                let sub_args: Vec<String> = args[i + 1..].to_vec();
+                return run_peers_cli(&sub_args);
             }
             "edit" => {
                 // `mix edit` owns its exit code (0 edited / 1 absent /

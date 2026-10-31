@@ -501,6 +501,22 @@ $ mix agent send 4f1c2a9e0b "run the tests and fix the first failure" --wait
 …the agent's reply, streamed…
 ```
 
+## Peers — `mix peers`, the front end to peersd
+
+`mix peers` runs peersd's command line (installed at
+`<prefix>/lib/peersd/peers_cli.mix`) the same way: agent sessions on any
+desk list each other, message each other and share notices. Exit codes: 0
+done, 1 refused or unreachable, 64 usage. The commands are in
+[peersd](../peersd/README.md#command-line). A CWD script named `peers` is
+shadowed; run it as `mix ./peers`.
+
+```text
+$ mix peers list
+mix-1  host1  busy  /home/user/src/app
+$ mix peers msg mix-1 "I'm landing next; hold main"
+delivered to mix-1 as mix-2@host1
+```
+
 ## Files — `mix edit`, the one-line edit that refuses to guess
 
 ```

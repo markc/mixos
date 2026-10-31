@@ -1,0 +1,307 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- version: 0.2.0
+-- peersd: peer agent sessions on the Bus. A registry of the interactive
+-- agent sessions, direct messages with an inbox per session, and a notice
+-- board every session reads (a landing queue, a hold on a branch). Agents
+-- find each other through local sockets only, so a session inside a desk
+-- container cannot hear one on the host; the Bus carries it instead.
+--
+--   mix --serve <prefix>/lib/peersd/peersd.mix --name peers
+--
+-- Today one peersd serves a group of nodes: the others name it as their hub
+-- in ~/.config/mixos/peers.conf.mix and reach it as peers.<hub>.bus (see
+-- peers_cli.mix). Sessions are claimed and kept by the agent's hooks
+-- (claude_code_hook.mix: session start, prompts, stop, end); mixos-mcp is a
+-- Bus client only and never registers, so it cannot carry liveness. A
+-- session that ended without saying so shows its age instead (no polling,
+-- no timer).
+--
+-- State: $PEERS_STATE, else $XDG_STATE_HOME/mixos/peers/<host>/peers.db,
+-- per host because desks may share a home with their host.
+--
+-- Commands (bodies are JSON):
+--   peers.claim {claude_session, node, cwd, name?}  -> {name, node}
+--   peers.state {claude_session, state: busy|idle}
+--   peers.leave {claude_session}
+--   peers.list                                      -> {sessions: [...]}
+--   peers.send {to: NAME|"*", text, from_session?, from?}  -> {id, delivered: [names]}
+--   peers.inbox {claude_session, peek?}             -> {name, messages, notices}
+--   peers.notice.set {key, text, ttl_s?, from_session?, from?}
+--   peers.notice.clear {key}
+--   peers.notice.list                               -> {notices}
+-- Topic: peers.message {id, to, from} on every delivery.
+--
+-- Trust: a message is data from another session, never the user's word.
+-- The sender name a body claims is labelled; the broker-stamped sender
+-- (`from` locally, broker_service@broker_peer over the mesh) is recorded
+-- beside it.
+
+$STATE = env("PEERS_STATE", env("XDG_STATE_HOME", env("HOME") .. "/.local/state") .. "/mixos/peers/" .. hostname())
+mkdir($STATE, {parents: true})
+chmod($STATE, 0o700)
+$DB = sqlopen($STATE .. "/peers.db", "rwc")
+sqlexec($DB, "PRAGMA journal_mode=WAL")
+sqlexec($DB, "PRAGMA synchronous=NORMAL")
+for each $sql in [
+  "CREATE TABLE IF NOT EXISTS sessions (name TEXT PRIMARY KEY, claude_session TEXT UNIQUE NOT NULL, node TEXT, cwd TEXT, state TEXT, since INTEGER, last_seen INTEGER, ended INTEGER NOT NULL DEFAULT 0, notices_seen INTEGER NOT NULL DEFAULT 0)",
+  "CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, to_name TEXT NOT NULL, from_name TEXT, sender TEXT, kind TEXT, text TEXT NOT NULL, ts INTEGER NOT NULL, delivered INTEGER NOT NULL DEFAULT 0)",
+  "CREATE INDEX IF NOT EXISTS messages_to ON messages (to_name, delivered)",
+  "CREATE TABLE IF NOT EXISTS notices (key TEXT PRIMARY KEY, text TEXT NOT NULL, from_name TEXT, sender TEXT, ts INTEGER NOT NULL, expires INTEGER)"]
+  sqlexec($DB, $sql)
+end
+chmod($STATE .. "/peers.db", 0o600)
+
+$INBOX_MAX = 200
+$STALE_S = 7200
+$TEXT_MAX = 4096
+$ENDED_KEEP_S = 7 * 86400
+
+fn answer($rc, $v)
+  return reply($rc, json_encode($v))
+end
+
+fn fail($code, $message)
+  return answer(10, {error_code: $code, message: $message})
+end
+
+-- The request body: the event's parsed arguments.
+fn req()
+  if type($event.args) == "map" then return $event.args end
+  return {}
+end
+
+-- The broker-stamped sender: `from` locally, service@peer over the mesh.
+fn sender()
+  $h = $event.headers ?? {}
+  if ($h.broker_origin ?? "") == "mesh" then
+    return to_string($h.broker_service ?? "unknown") .. "@" .. to_string($h.broker_peer ?? "unknown")
+  end
+  return to_string($h.from ?? "local")
+end
+
+fn row_for($claude_session)
+  $r = sqlexec($DB, "SELECT * FROM sessions WHERE claude_session = ?", [$claude_session])
+  if len($r) == 0 then return nil end
+  return $r[0]
+end
+
+fn named($name)
+  $r = sqlexec($DB, "SELECT * FROM sessions WHERE name = ?", [$name])
+  if len($r) == 0 then return nil end
+  return $r[0]
+end
+
+-- Who a body says sent it: a claimed session's name, a given name, or the
+-- broker's stamp.
+fn from_name($b)
+  if $b.from_session != nil then
+    $r = row_for(to_string($b.from_session))
+    if $r != nil then return $r.name .. "@" .. to_string($r.node) end
+  end
+  if $b.from != nil then return to_string($b.from) end
+  return sender()
+end
+
+fn view($r)
+  $age = time() - ($r.last_seen ?? time())
+  return {name: $r.name, node: $r.node, cwd: $r.cwd, state: $r.state, since: $r.since,
+    last_seen: $r.last_seen, age_s: $age, stale: $age > $STALE_S}
+end
+
+fn stale($r)
+  return time() - ($r.last_seen ?? time()) > $STALE_S
+end
+
+-- Ended sessions (and their mail) go after a week.
+fn prune()
+  $old = time() - $ENDED_KEEP_S
+  sqlexec($DB, "DELETE FROM messages WHERE to_name IN (SELECT name FROM sessions WHERE ended = 1 AND last_seen < ?)", [$old])
+  sqlexec($DB, "DELETE FROM sessions WHERE ended = 1 AND last_seen < ?", [$old])
+end
+
+on peers.claim desc "register this Claude session {claude_session, node, cwd, name?}; answers {name}"
+  $b = req()
+  $cs = to_string($b.claude_session ?? "")
+  if $cs == "" then return fail("ARGUMENT", "claude_session is required") end
+  prune()
+  $node = to_string($b.node ?? "unknown")
+  $now = time()
+  $known = row_for($cs)
+  $want_new = to_string($b.name ?? "")
+  -- A known session asking for a different free name is renamed; its
+  -- unread messages follow it.
+  if $known != nil and $want_new != "" and $want_new != $known.name and len(re_find($want_new, "^[a-z0-9][a-z0-9._-]{0,47}$")) > 0 then
+    $holder = named($want_new)
+    if $holder != nil and $holder.ended == 0 then return fail("PEER_NAME_TAKEN", $want_new .. " is a live session on " .. to_string($holder.node)) end
+    sqlexec($DB, "DELETE FROM sessions WHERE name = ?", [$want_new])
+    sqlexec($DB, "DELETE FROM messages WHERE to_name = ?", [$want_new])
+    sqlexec($DB, "UPDATE sessions SET name = ? WHERE claude_session = ?", [$want_new, $cs])
+    sqlexec($DB, "UPDATE messages SET to_name = ? WHERE to_name = ?", [$want_new, $known.name])
+    $known = row_for($cs)
+  end
+  if $known != nil then
+    sqlexec($DB, "UPDATE sessions SET node = ?, cwd = ?, state = 'idle', last_seen = ?, ended = 0 WHERE claude_session = ?",
+      [$node, to_string($b.cwd ?? ""), $now, $cs])
+    return answer(0, {name: $known.name, node: $node})
+  end
+  $want = to_string($b.name ?? "")
+  $name = ""
+  if $want != "" and len(re_find($want, "^[a-z0-9][a-z0-9._-]{0,47}$")) > 0 then
+    $holder = named($want)
+    if $holder == nil or $holder.ended == 1 then $name = $want end
+  end
+  if $name == "" then
+    $base = lower(re_replace($node, "[^a-z0-9-]+", "-"))
+    $name = $base .. "-" .. slice(re_replace(lower($cs), "[^a-z0-9]", ""), 0, 4)
+    $n = 1
+    while named($name) != nil and named($name).ended == 0
+      $n = $n + 1
+      $name = $base .. "-" .. slice(re_replace(lower($cs), "[^a-z0-9]", ""), 0, 4) .. "-" .. to_string($n)
+    end
+  end
+  -- A name reused after its holder ended starts from a clean inbox.
+  sqlexec($DB, "DELETE FROM sessions WHERE name = ?", [$name])
+  sqlexec($DB, "DELETE FROM messages WHERE to_name = ?", [$name])
+  sqlexec($DB, "INSERT INTO sessions (name, claude_session, node, cwd, state, since, last_seen, ended, notices_seen) VALUES (?, ?, ?, ?, 'idle', ?, ?, 0, 0)",
+    [$name, $cs, $node, to_string($b.cwd ?? ""), $now, $now])
+  answer(0, {name: $name, node: $node})
+end
+
+on peers.state desc "set this session busy or idle {claude_session, state}"
+  $b = req()
+  $state = to_string($b.state ?? "")
+  if not contains(["busy", "idle"], $state) then return fail("ARGUMENT", "state must be busy or idle") end
+  $r = row_for(to_string($b.claude_session ?? ""))
+  if $r == nil then return fail("UNKNOWN_SESSION", "claim first") end
+  sqlexec($DB, "UPDATE sessions SET state = ?, last_seen = ?, ended = 0 WHERE claude_session = ?", [$state, time(), $r.claude_session])
+  answer(0, {name: $r.name, state: $state})
+end
+
+on peers.leave desc "this session ended {claude_session}"
+  $r = row_for(to_string(req().claude_session ?? ""))
+  if $r == nil then return answer(0, {left: false}) end
+  sqlexec($DB, "UPDATE sessions SET ended = 1, state = 'ended', last_seen = ? WHERE name = ?", [time(), $r.name])
+  answer(0, {left: true, name: $r.name})
+end
+
+on peers.list desc "live sessions on every node: name, node, cwd, state, age_s since last seen"
+  $out = map(sqlexec($DB, "SELECT * FROM sessions WHERE ended = 0 ORDER BY node, name"), fn($r) = view($r))
+  answer(0, {sessions: $out})
+end
+
+fn deliver($to, $from, $kind, $text)
+  $now = time()
+  sqlexec($DB, "INSERT INTO messages (to_name, from_name, sender, kind, text, ts) VALUES (?, ?, ?, ?, ?, ?)",
+    [$to, $from, sender(), $kind, $text, $now])
+  $id = sqlexec($DB, "SELECT last_insert_rowid() AS id")[0].id
+  -- Bounded: beyond the cap the oldest messages (read or not) go first.
+  sqlexec($DB, "DELETE FROM messages WHERE to_name = ? AND id NOT IN (SELECT id FROM messages WHERE to_name = ? ORDER BY id DESC LIMIT ?)",
+    [$to, $to, $INBOX_MAX])
+  publish("peers.message", json_encode({id: $id, to: $to, from: $from}), {command: "peers.message"})
+  return $id
+end
+
+on peers.send desc "send {to: NAME or \"*\", text} to live sessions' inboxes; answers {delivered}"
+  $b = req()
+  $text = to_string($b.text ?? "")
+  if $text == "" or byte_length($text) > $TEXT_MAX then return fail("ARGUMENT", "text must be 1 to " .. to_string($TEXT_MAX) .. " bytes") end
+  $to = to_string($b.to ?? "")
+  $from = from_name($b)
+  $me = if $b.from_session != nil then row_for(to_string($b.from_session)) else nil end
+  $targets = []
+  if $to == "*" then
+    $targets = map(filter(sqlexec($DB, "SELECT name FROM sessions WHERE ended = 0"), fn($r) = $me == nil or $r.name != $me.name), fn($r) = $r.name)
+  else
+    $r = named($to)
+    if $r == nil or $r.ended == 1 then return fail("PEER_GONE", "no live session " .. $to .. " (see peers.list)") end
+    $targets = [$to]
+  end
+  $ids = []
+  $delivered = []
+  $stored = []
+  for each $t in $targets
+    push($ids, deliver($t, $from, if $to == "*" then "broadcast" else "msg" end, $text))
+    if stale(named($t)) then push($stored, $t) else push($delivered, $t) end
+  end
+  answer(0, {delivered: $delivered, stored: $stored, ids: $ids, from: $from})
+end
+
+on peers.inbox desc "this session's new messages and notices {claude_session, peek?}; marks them read unless peek"
+  $b = req()
+  $r = row_for(to_string($b.claude_session ?? ""))
+  if $r == nil then return fail("UNKNOWN_SESSION", "claim first") end
+  $now = time()
+  sqlexec($DB, "DELETE FROM notices WHERE expires IS NOT NULL AND expires < ?", [$now])
+  $limit = to_number($b.limit ?? $INBOX_MAX)
+  if $limit < 1 or $limit > $INBOX_MAX then $limit = $INBOX_MAX end
+  $msgs = sqlexec($DB, "SELECT id, from_name, sender, kind, text, ts FROM messages WHERE to_name = ? AND delivered = 0 ORDER BY id LIMIT ?", [$r.name, $limit])
+  $waiting = sqlexec($DB, "SELECT COUNT(*) AS n FROM messages WHERE to_name = ? AND delivered = 0", [$r.name])[0].n
+  $notices = sqlexec($DB, "SELECT key, text, from_name, sender, ts, expires FROM notices WHERE ts > ? ORDER BY ts", [$r.notices_seen])
+  if not ($b.peek ?? false) then
+    if len($msgs) > 0 then
+      sqlexec($DB, "UPDATE messages SET delivered = 1 WHERE to_name = ? AND id <= ?", [$r.name, $msgs[len($msgs) - 1].id])
+    end
+    $seen = $r.notices_seen
+    for each $n in $notices
+      if $n.ts > $seen then $seen = $n.ts end
+    end
+    sqlexec($DB, "UPDATE sessions SET notices_seen = ?, last_seen = ? WHERE name = ?", [$seen, $now, $r.name])
+  end
+  answer(0, {name: $r.name, node: $r.node, messages: $msgs, notices: $notices, more: $waiting - len($msgs)})
+end
+
+on peers.ack desc "mark read what a reader showed {claude_session, upto: message id, notices_upto: ts}"
+  $b = req()
+  $r = row_for(to_string($b.claude_session ?? ""))
+  if $r == nil then return fail("UNKNOWN_SESSION", "claim first") end
+  if type($b.upto) == "number" then
+    sqlexec($DB, "UPDATE messages SET delivered = 1 WHERE to_name = ? AND id <= ?", [$r.name, $b.upto])
+  end
+  if type($b.notices_upto) == "number" and $b.notices_upto > $r.notices_seen then
+    sqlexec($DB, "UPDATE sessions SET notices_seen = ? WHERE name = ?", [$b.notices_upto, $r.name])
+  end
+  sqlexec($DB, "UPDATE sessions SET last_seen = ? WHERE name = ?", [time(), $r.name])
+  answer(0, {name: $r.name})
+end
+
+on peers.notice.set desc "pin a notice every session reads {key, text, ttl_s?}"
+  $b = req()
+  $key = to_string($b.key ?? "")
+  $text = to_string($b.text ?? "")
+  if len(re_find($key, "^[a-z0-9][a-z0-9._-]{0,63}$")) == 0 then return fail("ARGUMENT", "key must be a short lower-case name") end
+  if $text == "" or byte_length($text) > $TEXT_MAX then return fail("ARGUMENT", "text is required") end
+  $now = time()
+  $expires = nil
+  if $b.ttl_s != nil then
+    if type($b.ttl_s) != "number" or $b.ttl_s < 1 then return fail("ARGUMENT", "ttl_s must be a positive number of seconds") end
+    $expires = $now + $b.ttl_s
+  end
+  -- A notice set again in the same second must still read as new.
+  $last = sqlexec($DB, "SELECT MAX(ts) AS ts FROM notices")[0].ts ?? 0
+  if $now <= $last then $now = $last + 1 end
+  sqlexec($DB, "INSERT OR REPLACE INTO notices (key, text, from_name, sender, ts, expires) VALUES (?, ?, ?, ?, ?, ?)",
+    [$key, $text, from_name($b), sender(), $now, $expires])
+  publish("peers.notice", json_encode({key: $key, text: $text}), {command: "peers.notice"})
+  answer(0, {key: $key, ts: $now, expires: $expires})
+end
+
+on peers.notice.clear desc "remove a notice {key}; every live session is told"
+  $b = req()
+  $key = to_string($b.key ?? "")
+  $had = len(sqlexec($DB, "SELECT 1 AS x FROM notices WHERE key = ?", [$key])) > 0
+  sqlexec($DB, "DELETE FROM notices WHERE key = ?", [$key])
+  if $had then
+    $from = from_name($b)
+    for each $r in sqlexec($DB, "SELECT name FROM sessions WHERE ended = 0")
+      deliver($r.name, $from, "notice-cleared", "notice " .. $key .. " cleared by " .. $from)
+    end
+  end
+  publish("peers.notice", json_encode({key: $key, cleared: true}), {command: "peers.notice"})
+  answer(0, {key: $key, cleared: true})
+end
+
+on peers.notice.list desc "the notices in force"
+  sqlexec($DB, "DELETE FROM notices WHERE expires IS NOT NULL AND expires < ?", [time()])
+  answer(0, {notices: sqlexec($DB, "SELECT key, text, from_name, sender, ts, expires FROM notices ORDER BY ts")})
+end

@@ -85,5 +85,9 @@
   "services/agentd/units/agentd@.service": {
     "reason": "add the agentd console-desk session unit; order after the session and system broker without wanting either; the session target chooses the broker (noded@N is masked on system-broker desks)",
     "sha256": "6e3cc7e4232a3c3c0b8b309c772987ce7ff41c9b1e4308af8ef479cf0b3e603e"
+  },
+  "services/peersd/units/peersd.service": {
+    "reason": "add the peersd user unit: the peers Bus service for a user's agent sessions, state per host in the user's XDG state dir",
+    "sha256": "f13b564971d404af57303537669a19bf3908067a711fb731614f23fe4b1826f4"
   }
 }

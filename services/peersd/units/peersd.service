@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+# peersd in a user's own session (a user unit, `systemctl --user`): the
+# `peers` Bus service for that user's agent sessions, always running.
+# State lives in the user's XDG state dir, one per host, because a desk
+# container may share its home with the host:
+# ~/.local/state/mixos/peers/<host>/peers.db.
+[Unit]
+Description=MixOS peer agent sessions (peersd)
+Documentation=https://mixos.dev/peersd/
+# The broker is the system noded.service, which a user unit cannot order
+# after or want; `mix --serve` is supervised and keeps retrying until the
+# broker answers. The After= covers a user-manager noded where there is one.
+After=noded.service
+
+[Service]
+Type=simple
+StateDirectory=mixos/peers/%H
+StateDirectoryMode=0700
+Environment=PEERS_STATE=%S/mixos/peers/%H
+ExecStart=@{prefix}/bin/mix --serve @{prefix}/lib/peersd/peersd.mix --name peers
+TimeoutStopSec=10
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target
