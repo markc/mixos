@@ -15,8 +15,8 @@
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
-use dopus_core::{ConfigFile, CoreEvent, DOpusConfig, DopusCore};
 use crate::app::App;
+use dopus_core::{ConfigFile, CoreEvent, DOpusConfig, DopusCore};
 use futures::StreamExt;
 use toolkit::action::Origin;
 
@@ -45,7 +45,11 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn pump(app: &mut App, receiver: &std::sync::mpsc::Receiver<CoreEvent>, ready: impl Fn(&App) -> bool) {
+    fn pump(
+        app: &mut App,
+        receiver: &std::sync::mpsc::Receiver<CoreEvent>,
+        ready: impl Fn(&App) -> bool,
+    ) {
         let until = Instant::now() + Duration::from_secs(10);
         loop {
             let events = match receiver.recv_timeout(Duration::from_millis(10)) {
@@ -53,7 +57,9 @@ mod tests {
                 Err(_) => app.core.tick(Instant::now()),
             };
             answer_derived(app, events, |_| {});
-            if ready(app) { return; }
+            if ready(app) {
+                return;
+            }
             assert!(Instant::now() < until, "headless operation timed out");
         }
     }
@@ -66,27 +72,69 @@ mod tests {
         config.right.path = dir.path().to_owned();
         let (core, receiver) = DopusCore::new(config, None);
         let mut app = App::new(core);
-        assert_eq!(crate::dialog::command(&mut app, &json!({"answer":"ok"})).1["error_code"], "NO_DIALOG");
+        assert_eq!(
+            crate::dialog::command(&mut app, &json!({"answer":"ok"})).1["error_code"],
+            "NO_DIALOG"
+        );
         app.core.begin_new_folder();
         pump(&mut app, &receiver, |a| a.dialog.is_some());
-        assert_eq!(crate::dialog::command(&mut app, &json!({"answer":"ok","name":"bad/name"})).0, 10);
+        assert_eq!(
+            crate::dialog::command(&mut app, &json!({"answer":"ok","name":"bad/name"})).0,
+            10
+        );
         assert!(app.dialog.is_some());
-        assert_eq!(crate::dialog::command(&mut app, &json!({"answer":"ok","name":"Fresh"})).0, 0);
+        assert_eq!(
+            crate::dialog::command(&mut app, &json!({"answer":"ok","name":"Fresh"})).0,
+            0
+        );
         let first = dir.path().join("Fresh");
-        pump(&mut app, &receiver, |a| first.is_dir() && a.core.is_idle() && a.core.pane(dopus_core::PaneId::Left).root.iter().any(|e| e.path == first));
-        app.core.select_path(dopus_core::PaneId::Left, Some(first.clone()));
+        pump(&mut app, &receiver, |a| {
+            first.is_dir()
+                && a.core.is_idle()
+                && a.core
+                    .pane(dopus_core::PaneId::Left)
+                    .root
+                    .iter()
+                    .any(|e| e.path == first)
+        });
+        app.core
+            .select_path(dopus_core::PaneId::Left, Some(first.clone()));
         app.core.begin_rename();
         pump(&mut app, &receiver, |a| a.dialog.is_some());
-        assert_eq!(crate::dialog::command(&mut app, &json!({"answer":"ok","name":"Renamed"})).0, 0);
+        assert_eq!(
+            crate::dialog::command(&mut app, &json!({"answer":"ok","name":"Renamed"})).0,
+            0
+        );
         let renamed = dir.path().join("Renamed");
-        pump(&mut app, &receiver, |a| renamed.is_dir() && !first.exists() && a.core.is_idle() && a.core.pane(dopus_core::PaneId::Left).root.iter().any(|e| e.path == renamed));
-        app.core.select_path(dopus_core::PaneId::Left, Some(renamed.clone()));
+        pump(&mut app, &receiver, |a| {
+            renamed.is_dir()
+                && !first.exists()
+                && a.core.is_idle()
+                && a.core
+                    .pane(dopus_core::PaneId::Left)
+                    .root
+                    .iter()
+                    .any(|e| e.path == renamed)
+        });
+        app.core
+            .select_path(dopus_core::PaneId::Left, Some(renamed.clone()));
         app.core.delete_selection();
         pump(&mut app, &receiver, |a| a.dialog.is_some());
-        assert_eq!(crate::dialog::command(&mut app, &json!({})).1["dialog"]["kind"], "delete");
-        assert_eq!(crate::dialog::command(&mut app, &json!({"answer":"bad"})).1["error_code"], "ARGUMENT");
-        assert_eq!(crate::dialog::command(&mut app, &json!({"answer":"yes"})).0, 0);
-        pump(&mut app, &receiver, |a| !renamed.exists() && a.core.is_idle());
+        assert_eq!(
+            crate::dialog::command(&mut app, &json!({})).1["dialog"]["kind"],
+            "delete"
+        );
+        assert_eq!(
+            crate::dialog::command(&mut app, &json!({"answer":"bad"})).1["error_code"],
+            "ARGUMENT"
+        );
+        assert_eq!(
+            crate::dialog::command(&mut app, &json!({"answer":"yes"})).0,
+            0
+        );
+        pump(&mut app, &receiver, |a| {
+            !renamed.exists() && a.core.is_idle()
+        });
     }
 }
 
@@ -177,13 +225,19 @@ pub fn run(
             let served = if command.command == "dopus.dialog" {
                 let args = serde_json::from_str(&command.body).unwrap_or(serde_json::Value::Null);
                 let (rc, body) = crate::dialog::command(&mut lock(&core), &args);
-                vec![Served::Reply { id: command.id, rc, body: body.to_string() }]
-            } else { commands::serve_command(
-                &command,
-                &mut lock(&core).core,
-                &meta,
-                &buildinfo::build_info!(),
-            ) };
+                vec![Served::Reply {
+                    id: command.id,
+                    rc,
+                    body: body.to_string(),
+                }]
+            } else {
+                commands::serve_command(
+                    &command,
+                    &mut lock(&core).core,
+                    &meta,
+                    &buildinfo::build_info!(),
+                )
+            };
             let ran = commands::accepted_action(&command, &served);
             for served in served {
                 match served {

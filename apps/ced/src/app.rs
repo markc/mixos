@@ -1077,18 +1077,52 @@ mod tests {
     #[test]
     fn typed_dialogs_answer_help_and_each_recovered_row() {
         let mut a = app();
-        assert_eq!(crate::dialog::command(&mut a, &json!({"answer":"done"})).1["error_code"], "NO_DIALOG");
+        assert_eq!(
+            crate::dialog::command(&mut a, &json!({"answer":"done"})).1["error_code"],
+            "NO_DIALOG"
+        );
         for kind in ["keys", "about"] {
-            assert_eq!(crate::dialog::command(&mut a, &json!({"open":kind})).1["dialog"]["kind"], kind);
-            assert_eq!(crate::dialog::command(&mut a, &json!({"answer":"bad"})).1["error_code"], "ARGUMENT");
+            assert_eq!(
+                crate::dialog::command(&mut a, &json!({"open":kind})).1["dialog"]["kind"],
+                kind
+            );
+            assert_eq!(
+                crate::dialog::command(&mut a, &json!({"answer":"bad"})).1["error_code"],
+                "ARGUMENT"
+            );
             assert!(a.dialog.is_some());
-            assert_eq!(crate::dialog::command(&mut a, &json!({"answer":"done"})).1["dialog"], Value::Null);
+            assert_eq!(
+                crate::dialog::command(&mut a, &json!({"answer":"done"})).1["dialog"],
+                Value::Null
+            );
         }
-        a.dialog = Some(Dialog::Recovered { rows: vec![RecoveredRow { buffer:"one".into(),path:None,name:"Untitled".into(),bytes:Some(1) }, RecoveredRow { buffer:"two".into(),path:None,name:"Other".into(),bytes:Some(2) }] });
-        assert_eq!(crate::dialog::command(&mut a, &json!({"answer":"discard","buffer":"missing"})).0, 10);
-        let (_, reply) = crate::dialog::command(&mut a, &json!({"answer":"discard","buffer":"one"}));
+        a.dialog = Some(Dialog::Recovered {
+            rows: vec![
+                RecoveredRow {
+                    buffer: "one".into(),
+                    path: None,
+                    name: "Untitled".into(),
+                    bytes: Some(1),
+                },
+                RecoveredRow {
+                    buffer: "two".into(),
+                    path: None,
+                    name: "Other".into(),
+                    bytes: Some(2),
+                },
+            ],
+        });
+        assert_eq!(
+            crate::dialog::command(&mut a, &json!({"answer":"discard","buffer":"missing"})).0,
+            10
+        );
+        let (_, reply) =
+            crate::dialog::command(&mut a, &json!({"answer":"discard","buffer":"one"}));
         assert_eq!(reply["dialog"]["rows"].as_array().unwrap().len(), 1);
-        assert_eq!(crate::dialog::command(&mut a, &json!({"open":null})).1["dialog"], Value::Null);
+        assert_eq!(
+            crate::dialog::command(&mut a, &json!({"open":null})).1["dialog"],
+            Value::Null
+        );
     }
 
     fn app() -> App {

@@ -34,12 +34,12 @@
 //!   [`shell`]: the running window.
 
 pub mod actions;
-mod dialog;
 pub mod app;
 pub mod bus;
 pub mod choose;
 pub mod commands;
 pub mod config;
+mod dialog;
 pub mod dirs;
 pub mod elide;
 pub mod headless;

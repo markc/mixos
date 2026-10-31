@@ -1987,18 +1987,29 @@ mod tests {
         let mut state = connected_many(&["a"]);
         run(&mut state, "email.dialog", json!({"answer":"keep"}));
         assert_eq!(state.take_replies()[0].body["error_code"], "NO_DIALOG");
-        run(&mut state, "email.compose", json!({"subject":"First", "body":"Draft"}));
+        run(
+            &mut state,
+            "email.compose",
+            json!({"subject":"First", "body":"Draft"}),
+        );
         state.take_replies();
         run(&mut state, "email.compose", json!({"subject":"Second"}));
         assert_eq!(state.take_replies()[0].body["error_code"], "BUSY");
         run(&mut state, "email.dialog", json!({}));
-        assert_eq!(state.take_replies()[0].body["dialog"]["kind"], "close_compose");
+        assert_eq!(
+            state.take_replies()[0].body["dialog"]["kind"],
+            "close_compose"
+        );
         run(&mut state, "email.dialog", json!({"answer":"bad"}));
         assert_eq!(state.take_replies()[0].body["error_code"], "ARGUMENT");
         run(&mut state, "email.dialog", json!({"answer":"keep"}));
         state.take_replies();
         assert!(state.compose.is_none());
-        run(&mut state, "email.compose", json!({"subject":"Second", "body":"Draft"}));
+        run(
+            &mut state,
+            "email.compose",
+            json!({"subject":"Second", "body":"Draft"}),
+        );
         assert_eq!(state.take_replies()[0].rc, 0);
         state.confirm = Some(crate::state::Confirm::Quit);
         run(&mut state, "email.dialog", json!({"open":null}));

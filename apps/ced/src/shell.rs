@@ -333,7 +333,11 @@ impl Shell {
             if cmd.command == "ced.dialog" {
                 let args = serde_json::from_str(&cmd.body).unwrap_or(Value::Null);
                 let (rc, body) = crate::dialog::command(&mut self.app, &args);
-                self.respond(drive::Answer { id: cmd.id, rc, body });
+                self.respond(drive::Answer {
+                    id: cmd.id,
+                    rc,
+                    body,
+                });
                 self.perform();
                 continue;
             }
