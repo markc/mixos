@@ -1588,14 +1588,14 @@ pub(super) mod queue_tests {
                 p.broker_epoch,
                 p.connection_id,
                 public_key,
-                Policy::Restricted,
+                Policy::DefaultOpen,
             ))
             .to_bytes(),
         );
         let command = SessionCommand::Allocate(AllocateArgs {
             public_key,
             signature,
-            policy: Policy::Restricted,
+            policy: Policy::DefaultOpen,
         });
         s.dispatch(&p, &command, &mut reg, now).unwrap();
         let id = s.attached(p.connection_id).unwrap();
@@ -1660,7 +1660,7 @@ pub(super) mod queue_tests {
     }
 
     #[test]
-    fn restricted_revoke_does_not_disclose_terminal_state() {
+    fn non_owner_revoke_does_not_disclose_terminal_state() {
         let (mut s, mut reg, p, id) = allocated();
         let mut stranger = p.clone();
         stranger.connection_id = HexBytes([9; 16]);
@@ -1887,11 +1887,11 @@ pub(super) mod queue_tests {
                         p.broker_epoch,
                         p.connection_id,
                         other_public,
-                        Policy::Restricted,
+                        Policy::DefaultOpen,
                     ))
                     .to_bytes(),
             ),
-            policy: Policy::Restricted,
+            policy: Policy::DefaultOpen,
         });
         assert_eq!(
             s.dispatch(&p, &allocation, &mut reg, 1003)

@@ -15523,11 +15523,9 @@ reporting and event delivery are deferred to stage B and absent from this v1
 request/reply contract. Binding changes advance the same sequence. Historical
 transitions retain their original source, while replies name the current source.
 
-Admission uses BROKER-023 `read_state`: owning Term and explicitly scoped current
-principals, plus independent same-UID verified owners under `default-open`.
-Restricted policy denies ambient callers; cross-UID, TCP, unverified and sibling
-principals receive the same bounded `REFUSED` response without status or target
-details. Id-less notices never enter status admission or receive replies. Bound callers cannot fall back to ambient rights.
+Status reads answer every caller under the open Bus decision. Native sessions
+use the sole `default-open` policy; allocating with `restricted` is an invalid
+argument. Id-less notices never enter status admission or receive replies.
 Correlated lease checks revalidate both caller and target at admission, and
 detached residents do not dispatch requests. Admitting a session-bound caller
 costs one lease check plus one re-read of the resident's own attachment: the

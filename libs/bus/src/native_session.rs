@@ -140,14 +140,12 @@ impl Role {
 pub enum Policy {
     #[default]
     DefaultOpen,
-    Restricted,
 }
 
 impl Policy {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::DefaultOpen => "default-open",
-            Self::Restricted => "restricted",
         }
     }
 }

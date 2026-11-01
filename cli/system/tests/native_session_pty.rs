@@ -115,13 +115,10 @@ struct Parent {
 }
 impl Parent {
     async fn new(broker: &Broker) -> Self {
-        Self::with_policy(broker, Policy::DefaultOpen).await
-    }
-    async fn with_policy(broker: &Broker, policy: Policy) -> Self {
         let key = fresh_key().unwrap();
         let connection = connect(broker).await;
         let record = connection
-            .session_allocate(&key, policy)
+            .session_allocate(&key, Policy::DefaultOpen)
             .await
             .unwrap()
             .record;
@@ -1127,7 +1124,7 @@ fn status_pump_scenarios(editor: &str) {
 }
 
 #[test]
-fn status_is_open_under_restricted_policy_and_keeps_integrity_checks() {
+fn status_is_open_under_default_open_policy_and_keeps_integrity_checks() {
     for editor in ["owned", "legacy"] {
         status_open_scenarios(editor);
     }
@@ -1137,7 +1134,7 @@ fn status_open_scenarios(editor: &str) {
     let _fixture = fixture_guard();
     let broker = Broker::start();
     runtime().block_on(async {
-        let mut parent = Parent::with_policy(&broker, Policy::Restricted).await;
+        let mut parent = Parent::new(&broker).await;
         let key = fresh_key().unwrap();
         let grant = parent
             .grant(HexBytes(key.verifying_key().to_bytes()), 1)
