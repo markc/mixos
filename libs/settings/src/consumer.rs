@@ -597,13 +597,14 @@ impl Consumer {
                 // Keep the redirect budget and any in-flight delivery fault's
                 // existing backoff. Otherwise schedule bounded recovery.
                 self.read_again = false;
-                if self.fault.is_none() {
-                    self.fail(Diagnostic::new(
+                let fault = self.fault.clone().unwrap_or_else(|| {
+                    Diagnostic::new(
                         "empty_read",
                         "native",
                         "Authority read returned no snapshot",
-                    ));
-                }
+                    )
+                });
+                self.fail(fault);
                 None
             }
             (WorkKind::Read, Ok(Some(snapshot))) => {
