@@ -255,6 +255,7 @@ keyword_table!(
     ("eprint", Eprint),
     ("source", Source),
     ("include", Include),
+    ("global", Global),
     ("label", Label),
     ("sh", Sh),
     ("eq", StrEq),
@@ -2026,6 +2027,7 @@ fn classify(token: &Token, first: char) -> TokenClass {
         | Token::Eprint
         | Token::Source
         | Token::Include
+        | Token::Global
         | Token::Do
         | Token::Sh
         | Token::Label

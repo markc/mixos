@@ -3588,6 +3588,7 @@ fn expr_mode_construct_name(kind: &StmtKind) -> &'static str {
         StmtKind::On { .. } => "on handler registration",
         StmtKind::Source { .. } => "source statement",
         StmtKind::Include { .. } => "include statement",
+        StmtKind::Global(_) => "global declaration",
         StmtKind::Sh { .. } => "sh statement",
         StmtKind::PipeToExternal { .. } => "pipe statement",
         StmtKind::Chain { .. } => "chained statements",
@@ -3788,6 +3789,7 @@ fn expr_mode_deny_stmt(stmt: &Stmt, depth: usize) -> MixResult<()> {
         StmtKind::On { .. } => return Err(denied("on handler registration")),
         StmtKind::Source { .. } => return Err(denied("source statement")),
         StmtKind::Include { .. } => return Err(denied("include statement")),
+        StmtKind::Global(_) => return Err(denied("global declaration")),
         StmtKind::PipeToExternal { .. } => return Err(denied("pipe statement")),
         // Loops: an if-expression's branches are statement bodies, so a
         // `for`/`while` nested there would execute at evaluation time and
@@ -3843,7 +3845,7 @@ fn expr_mode_deny_stmt(stmt: &Stmt, depth: usize) -> MixResult<()> {
                 expr_mode_deny_stmts(body, depth + 1)?;
             }
         }
-        StmtKind::Break(_) | StmtKind::Continue(_) => {}
+        StmtKind::Global(_) | StmtKind::Break(_) | StmtKind::Continue(_) => {}
         StmtKind::BreakIf(cond, _) | StmtKind::ContinueIf(cond, _) => {
             expr_mode_deny_walk(cond, depth + 1)?
         }
@@ -7800,6 +7802,12 @@ impl Evaluator {
         }
     }
 
+    fn check_global_binder(&self, name: &str) -> MixResult<()> {
+        if self.scope.is_declared_global(name) {
+            Err(self.coded_err("GLOBAL_BINDER", format!("binder cannot bind declared global ${name}")))
+        } else { Ok(()) }
+    }
+
     /// SPEC 18 Phase 2 WS3-C.4b — environmental gate for raw-pointer
     /// fast paths that cache `scope.frames[0]` slot addresses
     /// (`Scope::global_slot_ptr` / `Scope::try_global_slot_ptr`) across
@@ -9018,6 +9026,16 @@ impl Evaluator {
             self.trace_stmt(stmt);
             self.track_stmt_keywords(stmt);
             match &stmt.kind {
+                StmtKind::Global(names) => {
+                    for name in names {
+                        if matches!(name.as_str(), "event" | "rc" | "result" | "reply") {
+                            return Err(self.coded_err("GLOBAL_RUNTIME_NAME", format!("${name} is set by the runtime")));
+                        }
+                        self.scope.declare_global(name).map_err(|code|
+                            self.coded_err(code, format!("cannot declare ${name} global")))?;
+                    }
+                    Ok(Value::Nil)
+                }
                 StmtKind::Expression(expr) => {
                     // Bare identifier matching a user-defined function → call it (bash-style)
                     // SPEC 18 Phase 2 WS3-C.7b — γ-aware predicate so a
@@ -9230,6 +9248,7 @@ impl Evaluator {
                     body,
                     label,
                 } => {
+                    self.check_global_binder(var)?;
                     let start_value = self.eval_expr(start).await?;
                     let start_val = as_loop_bound(
                         "for-loop start",
@@ -10055,6 +10074,8 @@ impl Evaluator {
                     body,
                     label,
                 } => {
+                    self.check_global_binder(var)?;
+                    if let Some(name) = index_var { self.check_global_binder(name)?; }
                     let iter_val = self.eval_expr(iterable).await?;
                     // CoW (card 4): the List arm holds the snapshot Rc —
                     // O(1) at entry (the old code deep-cloned the whole
@@ -10543,6 +10564,9 @@ impl Evaluator {
                 }
 
                 StmtKind::Parse { source, parts } => {
+                    for part in parts {
+                        if let ParsePart::Variable(name) = part { self.check_global_binder(name)?; }
+                    }
                     let src = self.eval_expr(source).await?.to_mix_string();
                     self.exec_parse(&src, parts);
                     Ok(Value::Nil)
@@ -10589,6 +10613,8 @@ impl Evaluator {
                             // params: inside a function it must bind
                             // locally so it can't clobber a same-named
                             // caller/global via update_or_set's fallback.
+                            self.check_global_binder(&clause.var)?;
+                            if let Some(name) = &clause.err_var { self.check_global_binder(name)?; }
                             self.bind_scoped(&clause.var, Value::String(info.message.clone()));
                             if let Some(err_var) = &clause.err_var {
                                 self.bind_scoped(err_var, info.to_value());
@@ -11954,6 +11980,7 @@ impl Evaluator {
     /// `block_sync_self` flag.
     fn is_stmt_sync_self(stmt: &Stmt, self_name: &str, self_arity: usize) -> bool {
         match &stmt.kind {
+            StmtKind::Global(_) => false,
             StmtKind::Assignment { value, .. } => {
                 Self::is_expr_sync_self(value, self_name, self_arity)
             }
@@ -11991,7 +12018,7 @@ impl Evaluator {
     fn body_has_local_assigns(body: &FunctionBody) -> bool {
         fn stmt_has_assign(stmt: &Stmt) -> bool {
             match &stmt.kind {
-                StmtKind::Assignment { .. } => true,
+                StmtKind::Global(_) | StmtKind::Assignment { .. } => true,
                 StmtKind::FieldAssignment { .. } => true,
                 StmtKind::IndexAssignment { .. } => true,
                 StmtKind::PathAssignment { .. } => true,
@@ -12255,7 +12282,7 @@ impl Evaluator {
                         stmt_vars(st, reads, dynamic);
                     }
                 }
-                StmtKind::Break(_) | StmtKind::Continue(_) => {}
+                StmtKind::Global(_) | StmtKind::Break(_) | StmtKind::Continue(_) => {}
                 StmtKind::BreakIf(e, _) | StmtKind::ContinueIf(e, _) => {
                     expr_vars(e, reads, dynamic)
                 }
@@ -12660,7 +12687,7 @@ impl Evaluator {
                         stmt_walk(st, ps, nested, acc);
                     }
                 }
-                StmtKind::Break(_) | StmtKind::Continue(_) => {}
+                StmtKind::Global(_) | StmtKind::Break(_) | StmtKind::Continue(_) => {}
                 StmtKind::BreakIf(e, _) | StmtKind::ContinueIf(e, _) => expr_reads(e, ps, acc),
                 StmtKind::FunctionDef { params, body, .. } => {
                     // Nested named function: separate param scope, cannot
@@ -13087,6 +13114,7 @@ impl Evaluator {
     /// Static check: is this statement's full execution path sync?
     fn is_stmt_sync(stmt: &Stmt) -> bool {
         match &stmt.kind {
+            StmtKind::Global(_) => false,
             StmtKind::Assignment { value, .. } => Self::is_expr_sync(value),
             StmtKind::Return(None) => true,
             StmtKind::Return(Some(e)) => Self::is_expr_sync(e),
@@ -17172,6 +17200,7 @@ impl Evaluator {
                 self.scope.set_in_current(param.name.clone(), val);
             }
 
+            self.scope.begin_function_body(&func.params);
             let result: MixResult<Value> = if let Some(e) = bind_err {
                 Err(e)
             } else {

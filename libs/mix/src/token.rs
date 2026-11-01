@@ -78,6 +78,7 @@ pub enum Token {
     Eprint,
     Source,
     Include,
+    Global,
     Sh,
     Label,
 
