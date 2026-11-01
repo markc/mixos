@@ -37,6 +37,7 @@ pub(super) fn children() -> Vec<Page> {
     wifi.extras = vec![Extra {
         id: "add_network",
         command: None,
+        link: true,
         backend: Some("backend-hostd-wifi"),
     }];
     vec![

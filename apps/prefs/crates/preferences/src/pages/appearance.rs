@@ -41,24 +41,28 @@ pub(super) fn page() -> Page {
                 "window_bg",
                 Control::Colour {
                     key: "appearance.window_bg",
+                    auto_link: false,
                 },
             ),
             row(
                 "container_bg",
                 Control::Colour {
                     key: "appearance.container_bg",
+                    auto_link: true,
                 },
             ),
             row(
                 "text_tint",
                 Control::Colour {
                     key: "appearance.text_tint",
+                    auto_link: false,
                 },
             ),
             row(
                 "control_tint",
                 Control::Colour {
                     key: "appearance.control_tint",
+                    auto_link: false,
                 },
             ),
             row("hint_accent", Control::HintAccent),
@@ -66,6 +70,7 @@ pub(super) fn page() -> Page {
                 "hint_colour",
                 Control::Colour {
                     key: "window.hint_colour",
+                    auto_link: false,
                 },
             )
             .show(Cond::Not("window.hint_colour", Lit::S("accent"))),
@@ -319,11 +324,13 @@ pub(super) fn page() -> Page {
         Extra {
             id: "import",
             command: None,
+            link: false,
             backend: None,
         },
         Extra {
             id: "export",
             command: None,
+            link: false,
             backend: None,
         },
     ];

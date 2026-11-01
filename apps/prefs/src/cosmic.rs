@@ -74,6 +74,8 @@ pub struct Look {
     pub field: Color32,
     pub field_border: Color32,
     pub swatch_border: Color32,
+    /// The control tint in effect (neutral 5, re-hued by the tint).
+    pub control: Color32,
     pub warning: Color32,
     /// Spacing tokens xxs, xs, s, m, l, xl.
     pub xxs: f32,
@@ -119,7 +121,10 @@ impl Look {
             }
             _ => Roundness::Round.corner_radii(),
         };
-        let sidebar = rgba(derived.background.component.base);
+        // The sidebar is the primary container (five steps over the
+        // window), a list card the background component (eight): spec 4
+        // measures #272727 and #2E2E2E on #1B1B1B (Fable P10).
+        let sidebar = rgba(derived.primary.base);
         let neutral5 = rgba(p.neutral[5]);
         let text = rgba(derived.primary.on);
         Self {
@@ -128,8 +133,9 @@ impl Look {
             sidebar,
             sidebar_selected: over(neutral5, 0.2, sidebar),
             sidebar_hover: over(neutral5, 0.1, sidebar),
-            card: rgba(derived.primary.base),
-            card_hover: rgba(derived.primary.component.hover),
+            card: rgba(derived.background.component.base),
+            card_hover: rgba(derived.background.component.hover),
+            control: derived.control(5).map_or(rgba(p.neutral[5]), rgba),
             divider: rgba(derived.primary.divider),
             text,
             icon: text.gamma_multiply(0.95),
@@ -279,9 +285,8 @@ fn sidebar(ui: &mut Ui, engine: &Engine, look: &Look, events: &mut Vec<UiEvent>)
             .layout(Layout::top_down(Align::Min)),
     );
     ui.spacing_mut().item_spacing.y = pad;
-    if engine.nav.searching {
-        search_field(&mut ui, engine, look, events);
-    }
+    // Always there, so opening search moves nothing (Fable P7a).
+    search_field(&mut ui, engine, look, events);
     let selected = pages::root(engine.nav.page);
     egui::ScrollArea::vertical()
         .id_salt("pages-scroll")
@@ -355,16 +360,18 @@ fn search_field(ui: &mut Ui, engine: &Engine, look: &Look, events: &mut Vec<UiEv
                 events.push(UiEvent::Query(query.clone()));
             }
             // The field gives up focus on Escape before this sees it.
-            if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            if engine.nav.searching && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                 events.push(UiEvent::CloseSearch);
             }
-            let clear = ui.add(
-                toolkit::button::IconButton::new(Icon::X)
-                    .size(16.0)
-                    .tooltip(label("search-clear")),
-            );
-            if clear.clicked() {
-                events.push(UiEvent::CloseSearch);
+            if !query.is_empty() {
+                let clear = ui.add(
+                    toolkit::button::IconButton::new(Icon::X)
+                        .size(16.0)
+                        .tooltip(label("search-clear")),
+                );
+                if clear.clicked() {
+                    events.push(UiEvent::CloseSearch);
+                }
             }
         });
     });
@@ -450,21 +457,68 @@ fn content(
         });
 }
 
-/// The back link (sub-pages), the title, and the page's header buttons.
+/// The heading face at `size` (spec 4: title 24 and headings 14, bold).
+pub fn heading(ui: &Ui, size: f32) -> egui::FontId {
+    toolkit::fonts::bound(ui.ctx(), toolkit::fonts::heading(size))
+}
+
+/// A section heading: 14 bold on line 21.
+pub fn section_heading(ui: &mut Ui, look: &Look, text: &str) {
+    let galley = ui
+        .painter()
+        .layout_no_wrap(text.to_owned(), heading(ui, 14.0), look.text);
+    let (rect, _) = ui.allocate_exact_size(vec2(galley.size().x, 21.0), Sense::hover());
+    ui.painter().galley(
+        pos2(rect.min.x, rect.center().y - galley.size().y / 2.0),
+        galley,
+        look.text,
+    );
+}
+
+/// A header button: standard, or a link button (accent text, a "↗"
+/// icon, no background).
+fn extra_button(ui: &mut Ui, text: &str, link: bool, enabled: bool, look: &Look) -> Response {
+    if !link {
+        return ui.add_enabled(enabled, controls::standard_button(text, look));
+    }
+    let ink = if enabled {
+        look.accent
+    } else {
+        look.accent.gamma_multiply(0.5)
+    };
+    let galley = ui
+        .painter()
+        .layout_no_wrap(text.to_owned(), egui::FontId::proportional(14.0), ink);
+    let sense = if enabled { Sense::click() } else { Sense::hover() };
+    let (rect, response) =
+        ui.allocate_exact_size(vec2(galley.size().x + 4.0 + 16.0, 24.0), sense);
+    ui.painter().galley(
+        pos2(rect.min.x, rect.center().y - galley.size().y / 2.0),
+        galley,
+        ink,
+    );
+    toolkit::button::paint_icon(
+        ui,
+        Icon::MoveUpRight,
+        pos2(rect.max.x - 8.0, rect.center().y),
+        16.0,
+        ink,
+    );
+    response.widget_info(|| WidgetInfo::labeled(Role::Link, enabled, text));
+    response
+}
+
+/// The back link (sub-pages), the title, and the page's header buttons,
+/// which drop under the title when the column is too narrow for both.
 fn title_block(ui: &mut Ui, engine: &Engine, page: &Page, look: &Look, events: &mut Vec<UiEvent>) {
     if let Some(parent) = page.parent.and_then(pages::get) {
         let text = label(&parent.title());
         let response = ui
             .horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 4.0;
-                ui.add(icons::image_of(
-                    ui.ctx(),
-                    Icon::ChevronLeft,
-                    16.0,
-                    look.accent,
-                ));
+                ui.add(icons::image_of(ui.ctx(), Icon::ChevronLeft, 16.0, look.text));
                 ui.add(
-                    egui::Label::new(RichText::new(&text).color(look.accent).size(14.0))
+                    egui::Label::new(RichText::new(&text).color(look.text).size(14.0))
                         .sense(Sense::click()),
                 )
             })
@@ -474,56 +528,79 @@ fn title_block(ui: &mut Ui, engine: &Engine, page: &Page, look: &Look, events: &
             events.push(UiEvent::Back);
         }
         ui.add_space(6.0);
-    } else {
-        ui.add_space(0.0);
     }
-    ui.horizontal(|ui| {
-        ui.label(
-            RichText::new(label(&page.title()))
-                .size(24.0)
-                .strong()
-                .color(look.text),
-        );
-        ui.with_layout(Layout::right_to_left(Align::Max), |ui| {
-            for extra in page.extras.iter().rev() {
-                let enabled = extra.command.is_some() && extra.backend.is_none();
-                let text = label(&format!("extra-{}-{}", page.id, extra.id));
-                let response = ui
-                    .add_enabled(enabled, controls::standard_button(&text, look))
-                    .on_disabled_hover_text(
-                        extra
-                            .backend
-                            .map(|b| label_with("backend-missing", &[("backend", &label(b))]))
-                            .unwrap_or_else(|| label("extra-pending")),
-                    );
-                if response.clicked()
-                    && let Some(command) = extra.command
-                {
-                    events.push(UiEvent::Command(command, Origin::Ui));
+    let title = ui
+        .painter()
+        .layout_no_wrap(label(&page.title()), heading(ui, 24.0), look.text);
+    let extras: Vec<(String, &pages::Extra)> = page
+        .extras
+        .iter()
+        .map(|e| (label(&format!("extra-{}-{}", page.id, e.id)), e))
+        .collect();
+    let extras_width: f32 = extras
+        .iter()
+        .map(|(text, _)| {
+            ui.painter()
+                .layout_no_wrap(text.clone(), egui::FontId::proportional(14.0), look.text)
+                .size()
+                .x
+                + 32.0
+        })
+        .sum();
+    let width = ui.available_width();
+    let beside = title.size().x + look.l + extras_width <= width;
+    let (rect, _) = ui.allocate_exact_size(vec2(width, 36.0), Sense::hover());
+    ui.painter().galley(
+        pos2(rect.min.x, rect.center().y - title.size().y / 2.0),
+        title,
+        look.text,
+    );
+    if !extras.is_empty() {
+        let slot = if beside {
+            rect
+        } else {
+            let (below, _) = ui.allocate_exact_size(vec2(width, 28.0), Sense::hover());
+            below
+        };
+        ui.scope_builder(
+            egui::UiBuilder::new()
+                .max_rect(slot)
+                .layout(Layout::right_to_left(Align::Center)),
+            |ui| {
+                ui.spacing_mut().item_spacing.x = 8.0;
+                for (text, extra) in extras.iter().rev() {
+                    let enabled = extra.command.is_some() && extra.backend.is_none();
+                    let response = extra_button(ui, text, extra.link, enabled, look)
+                        .on_disabled_hover_text(
+                            extra
+                                .backend
+                                .map(|b| label_with("backend-missing", &[("backend", &label(b))]))
+                                .unwrap_or_else(|| label("extra-pending")),
+                        );
+                    if response.clicked()
+                        && let Some(command) = extra.command
+                    {
+                        events.push(UiEvent::Command(command, Origin::Ui));
+                    }
                 }
-            }
-        });
-    });
+            },
+        );
+    }
     ui.add_space(look.m);
     let _ = engine;
 }
 
-/// The page's backend line and the store's write block, before any row.
+/// The page's one reason (a missing backend, or blocked writes), drawn once
+/// under the title; its rows carry no text of their own (Fable P1). Then
+/// the store's last refusal.
 fn notices(ui: &mut Ui, engine: &Engine, page: &Page, look: &Look) {
-    if let Some(backend) = page.backend {
-        notice(
-            ui,
-            look,
-            &label_with("backend-missing", &[("backend", &label(backend))]),
-        );
+    let unread = matches!(engine.blocked(), Some(preferences::store::Blocked::Unread));
+    if let Some(reason) = engine.page_reason(page)
+        && (page.backend.is_some() || !unread)
+    {
+        notice(ui, look, &reason);
     }
     let writes = page.rows().any(|(_, r)| r.control.key().is_some());
-    if writes
-        && let Some(blocked) = engine.blocked()
-        && !matches!(blocked, preferences::store::Blocked::Unread)
-    {
-        notice(ui, look, &label(blocked.label()));
-    }
     if writes && let Some(error) = &engine.store.error {
         notice(ui, look, error);
     }
@@ -652,12 +729,7 @@ pub fn section_card(
     events: &mut Vec<UiEvent>,
 ) {
     if section.titled {
-        ui.label(
-            RichText::new(label(&pages::section_title(page.id, section.id)))
-                .size(14.0)
-                .strong()
-                .color(look.text),
-        );
+        section_heading(ui, look, &label(&pages::section_title(page.id, section.id)));
         ui.add_space(look.xs);
     }
     // A lone button row (Reset) sits on the page, not in a card.
@@ -687,6 +759,13 @@ pub fn section_card(
             } = &row.control
             {
                 let blocked = engine.row_blocked(page, row);
+                // The group's own reason, once, above its options.
+                if let Some(reason) = engine.row_reason(page, row) {
+                    egui::Frame::NONE
+                        .inner_margin(egui::Margin::symmetric(look.row_pad() as i8, 4))
+                        .show(ui, |ui| notice(ui, look, &reason));
+                    first = false;
+                }
                 for option in *options {
                     if !first {
                         divider(ui, look);
@@ -715,8 +794,10 @@ pub fn section_card(
     });
 }
 
-/// Search results: per page a header (parent / page link), then each hit
-/// row drawn live, so its control works in place.
+/// Search results, COSMIC's view (spec 4 "Search", Fable P7b): per page
+/// the parent title, the page title as a link, a divider, then each
+/// matching section with its heading and card, indented, its rows live so
+/// a control works in place.
 fn results(ui: &mut Ui, engine: &Engine, look: &Look, events: &mut Vec<UiEvent>) {
     let hits = engine.find(&engine.nav.query);
     egui::ScrollArea::vertical()
@@ -741,45 +822,59 @@ fn results(ui: &mut Ui, engine: &Engine, look: &Look, events: &mut Vec<UiEvent>)
                     index = end;
                     continue;
                 };
-                ui.horizontal(|ui| {
-                    if let Some(parent) = page.parent.and_then(pages::get) {
+                if let Some(parent) = page.parent.and_then(pages::get) {
+                    ui.horizontal(|ui| {
                         ui.add_space(6.0);
                         ui.label(
                             RichText::new(label(&parent.title()))
                                 .size(14.0)
                                 .color(look.text),
                         );
-                        ui.label(RichText::new("/").size(14.0).color(look.text));
-                    }
-                    let title = label(&page.title());
-                    let link = ui.add(
-                        egui::Label::new(RichText::new(&title).size(14.0).color(look.accent))
-                            .sense(Sense::click()),
-                    );
-                    link.widget_info(|| WidgetInfo::labeled(Role::Link, true, &title));
-                    if link.clicked() {
-                        events.push(UiEvent::Page(page.id, hits[index].row));
-                    }
-                });
-                ui.add_space(look.xs);
-                let rows: Vec<&Row> = hits[index..end]
+                    });
+                }
+                let title = label(&page.title());
+                let link = ui.add(
+                    egui::Label::new(
+                        RichText::new(&title)
+                            .font(heading(ui, 20.0))
+                            .color(look.accent),
+                    )
+                    .sense(Sense::click()),
+                );
+                link.widget_info(|| WidgetInfo::labeled(Role::Link, true, &title));
+                if link.clicked() {
+                    events.push(UiEvent::Page(page.id, hits[index].row));
+                }
+                ui.add_space(8.0);
+                let rect = ui.available_rect_before_wrap();
+                let y = ui.cursor().min.y;
+                ui.painter()
+                    .hline(rect.min.x..=rect.max.x, y, Stroke::new(2.0, look.divider));
+                ui.add_space(2.0 + look.xs);
+                let group = &hits[index..end];
+                for section in page
+                    .sections()
                     .iter()
-                    .filter_map(|h| h.row.and_then(|r| page.row(r)))
-                    .filter(|r| r.show.holds(&engine.store))
-                    .collect();
-                if !rows.is_empty() {
+                    .chain(page.drawers().iter().flat_map(|d| d.sections.iter()))
+                {
+                    let rows: Vec<&Row> = section
+                        .rows
+                        .iter()
+                        .filter(|r| {
+                            group.iter().any(|h| h.row == Some(r.id))
+                                && r.show.holds(&engine.store)
+                        })
+                        .collect();
+                    if rows.is_empty() {
+                        continue;
+                    }
                     ui.horizontal(|ui| {
                         ui.add_space(look.l);
                         ui.vertical(|ui| {
-                            let section = pages::Section {
-                                id: "results",
-                                titled: false,
-                                rows: Vec::new(),
-                                show: pages::Cond::Always,
-                            };
-                            section_card(ui, engine, page, &section, &rows, look, events);
+                            section_card(ui, engine, page, section, &rows, look, events);
                         });
                     });
+                    ui.add_space(look.m);
                 }
                 ui.add_space(look.m);
                 index = end;
