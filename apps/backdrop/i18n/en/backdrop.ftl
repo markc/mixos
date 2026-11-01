@@ -4,6 +4,7 @@ backdrop-next = Next wallpaper
 backdrop-view-set = Select background view
 backdrop-view-cycle = Cycle background view
 train-title = Merge train
+train-fallback = 2D train view (3D disabled or texture budget unavailable)
 train-unknown = unavailable
 train-running = running
 train-paused = paused

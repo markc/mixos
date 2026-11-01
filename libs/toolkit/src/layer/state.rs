@@ -367,6 +367,8 @@ impl<P: LayerProgram + 'static> State<P> {
 
     /// A repaint egui asked for: now, or by a one-shot timer.
     fn request(&mut self, id: u64, delay: Duration) {
+        let Some(delay) = self.surfaces.iter().find(|s| s.id == id)
+            .and_then(|s| self.program.repaint_delay(&s.ctx, delay)) else { return; };
         let handle = self.handle.clone();
         let Some(s) = self.surface_mut(id) else {
             return;
@@ -393,10 +395,12 @@ impl<P: LayerProgram + 'static> State<P> {
         }
         s.deadline = Some(at);
         let armed = handle.insert_source(Timer::from_deadline(at), move |_, _, state| {
+            let allowed = state.surfaces.iter().find(|s| s.id == id)
+                .is_some_and(|s| state.program.repaint_delay(&s.ctx, Duration::ZERO).is_some());
             if let Some(s) = state.surface_mut(id) {
                 s.deadline = None;
                 s.timer = None;
-                s.dirty = true;
+                s.dirty |= allowed;
             }
             TimeoutAction::Drop
         });
@@ -456,6 +460,7 @@ impl<P: LayerProgram + 'static> State<P> {
             if s.frame_pending && s.pending_since.is_some_and(|t| timing::expired(t, now)) {
                 if self.program.strict_frame_callbacks() {
                     s.pending_since = None;
+                    self.program.visibility(&s.ctx, false);
                     continue;
                 }
                 s.frame_pending = false;
@@ -1276,6 +1281,8 @@ impl<P: LayerProgram + 'static> Dispatch<wl_callback::WlCallback, (u64, u64)> fo
             s.frame_pending = false;
             s.pending_since = None;
             s.rescued = false;
+            let ctx = s.ctx.clone();
+            state.program.visibility(&ctx, true);
         }
     }
 }

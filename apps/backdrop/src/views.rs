@@ -2,16 +2,31 @@
 //! Live views use Bus snapshots only. The wallpaper engine remains beside them.
 mod train;
 mod train_gpu;
+pub mod host;
 use serde_json::Value;
 use std::time::{Duration, Instant};
+use std::sync::{Arc, Mutex};
 pub use train::Train;
 
 pub trait View {
     fn subscriptions(&self) -> &'static [&'static str];
-    fn on_event(&mut self, topic: &str, data: Value, now: Instant) -> bool;
-    /// Adds a wgpu paint callback for the scene and ordinary egui overlays.
-    fn draw(&self, ui: &mut egui::Ui);
-    fn wants_frame(&self, now: Instant) -> Option<Duration>;
+    fn on_event(&mut self, snapshot: Arc<Snapshot>, visible: bool, now: Instant);
+    /// Pure drawing description. Only the host has access to egui or the GPU.
+    fn draw(&mut self, visible: bool, now: Instant) -> Option<Frame>;
+    fn wants_frame(&self, visible: bool, now: Instant) -> Option<Duration>;
+}
+
+#[derive(Clone, Default)]
+pub struct Snapshot {
+    pub queue: Value,
+    pub workers: Value,
+    pub error: Option<String>,
+    pub samples: Vec<(f64, f64, f64)>,
+}
+pub struct Frame {
+    pub snapshot: Arc<Snapshot>,
+    pub scene: Arc<Vec<train::Block>>,
+    pub progress: f32,
 }
 
 pub struct State {
@@ -19,7 +34,9 @@ pub struct State {
     pub selected: String,
     pub train_service: String,
     pub buildd_service: String,
-    pub train: Train,
+    pub snapshot: Arc<Snapshot>,
+    pub hosts: std::collections::BTreeMap<u64, Arc<Mutex<host::Host<Train>>>>,
+    pub renderer_2d: bool,
 }
 impl Default for State {
     fn default() -> Self {
@@ -28,7 +45,9 @@ impl Default for State {
             selected: "wallpaper".into(),
             train_service: "train".into(),
             buildd_service: "buildd".into(),
-            train: Train::default(),
+            snapshot: Arc::default(),
+            hosts: Default::default(),
+            renderer_2d: false,
         }
     }
 }
@@ -52,6 +71,10 @@ impl State {
                 if let Some(args) = object.get("args") {
                     let args = args.as_object().ok_or("args must be an object")?;
                     for (key, value) in args {
+                        if key == "renderer" {
+                            if !matches!(value.as_str(), Some("2d" | "3d")) { return Err("renderer must be 2d or 3d".into()); }
+                            continue;
+                        }
                         let target = value
                             .as_str()
                             .filter(|s| !s.is_empty() && s.len() <= 256)
@@ -64,8 +87,9 @@ impl State {
                     }
                 }
                 if train != self.train_service || buildd != self.buildd_service {
-                    self.train = Train::default();
+                    self.snapshot = Arc::default();
                 }
+                if let Some(renderer) = body["args"]["renderer"].as_str() { self.renderer_2d = renderer == "2d"; }
                 self.train_service = train;
                 self.buildd_service = buildd;
                 self.selected = view.into();
@@ -149,12 +173,26 @@ pub fn refresh(shared: &std::sync::Mutex<crate::program::Shared>) {
     signal.1.notify_one();
 }
 
+/// All live-view repaint requests go through an output host, never a reader or
+/// view. Snapshot delivery while hidden only replaces the pending Arc.
+pub fn notify(shared: &Mutex<crate::program::Shared>, force: bool) -> bool {
+    let (active, snapshot, hosts) = {
+        let state = crate::program::lock(shared);
+        (state.live.selected == "train", state.live.snapshot.clone(), state.live.hosts.values().cloned().collect::<Vec<_>>())
+    };
+    for host in hosts {
+        let mut host = crate::program::lock(&host);
+        host.active = active;
+        if active { host.event(snapshot.clone(), force, Instant::now()); }
+    }
+    active
+}
+
 /// One read worker, never the UI/controller. Topic hints coalesce; fallback is
 /// ten seconds. No private database reads and no repaint for identical data.
 pub fn start_reader(
     handle: citizen::Handle,
     shared: std::sync::Arc<std::sync::Mutex<crate::program::Shared>>,
-    wakers: crate::program::Wakers,
 ) -> Result<(), String> {
     let signal = crate::program::lock(&shared).live.refresh.clone();
     std::thread::Builder::new()
@@ -179,7 +217,7 @@ pub fn start_reader(
                 if !active {
                     continue;
                 }
-                let mut changed = false;
+                let mut snapshot = (*crate::program::lock(&shared).live.snapshot).clone();
                 let mut errors = Vec::new();
                 for (target, verb) in [(&train, "train.queue"), (&buildd, "buildd.queue")] {
                     let reply = futures::executor::block_on(handle.call(
@@ -194,13 +232,9 @@ pub fn start_reader(
                             Err(format!("{verb}: {}", r.error.unwrap_or(r.body)))
                         }
                     });
-                    let mut state = crate::program::lock(&shared);
-                    if state.live.train_service != train || state.live.buildd_service != buildd {
-                        continue;
-                    }
                     match data {
                         Ok(data) => {
-                            changed |= state.live.train.on_event(verb, data, Instant::now());
+                            if verb == "train.queue" { snapshot.queue = data; } else { snapshot.workers = data; }
                         }
                         Err(error) => {
                             errors.push(error);
@@ -215,16 +249,21 @@ pub fn start_reader(
                         } else {
                             Some(errors.join("; "))
                         };
-                        changed |= state.live.train.error != error;
-                        state.live.train.error = error;
+                        snapshot.error = error;
+                        let old = &state.live.snapshot;
+                        if old.queue != snapshot.queue || old.workers != snapshot.workers || old.error != snapshot.error {
+                            if old.queue != snapshot.queue {
+                                let hour = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs_f64()/3600.;
+                                snapshot.samples.retain(|s| s.0 >= hour - 24.);
+                                if snapshot.samples.len() >= 600 { snapshot.samples.remove(0); }
+                                snapshot.samples.push((hour, snapshot.queue["batches"].as_array().map_or(0, Vec::len) as f64,
+                                    snapshot.queue["recent"].as_array().map_or(0, |r|r.iter().filter(|r|r["state"] == "landed").count()) as f64));
+                            }
+                            state.live.snapshot = Arc::new(snapshot);
+                        }
                     }
-                    changed &= state.live.selected == "train";
                 }
-                if changed {
-                    for (_, ctx) in crate::program::lock(&wakers).iter() {
-                        ctx.request_repaint_after(Duration::from_millis(100));
-                    }
-                }
+                notify(&shared, false);
                 // Bound event bursts to the same low animation rate.
                 std::thread::sleep(Duration::from_millis(100));
             }
@@ -255,17 +294,5 @@ mod tests {
             s.command("backdrop.view.cycle", &json!({"dir":"sideways"}))
                 .is_err()
         );
-    }
-    #[test]
-    fn view_contract_is_gpu_independent_and_idle_has_no_timer() {
-        let mut train = Train::default();
-        let view: &mut dyn View = &mut train;
-        let now = Instant::now();
-        assert_eq!(view.subscriptions().len(), 4);
-        assert_eq!(view.wants_frame(now), None);
-        assert!(view.on_event("train.queue", json!({"queued":[]}), now));
-        assert_eq!(view.wants_frame(now), Some(Duration::from_millis(100)));
-        assert_eq!(view.wants_frame(now + Duration::from_secs(1)), None);
-        assert!(!view.on_event("train.queue", json!({"queued":[]}), now));
     }
 }

@@ -12,14 +12,14 @@ pub struct Block {
     pub label: String,
 }
 
+
 #[derive(Default)]
 pub struct Train {
-    queue: Value,
-    workers: Value,
+    snapshot: std::sync::Arc<super::Snapshot>,
     changed: Option<Instant>,
-    // Live snapshots are a prototype stub, never presented as owner history.
-    samples: Vec<(f64, f64, f64)>,
-    pub error: Option<String>,
+    pending: bool,
+    settled: bool,
+    scene: std::sync::Arc<Vec<Block>>,
 }
 fn rows<'a>(value: &'a Value, key: &str) -> &'a [Value] {
     value[key].as_array().map_or(&[], Vec::as_slice)
@@ -58,12 +58,12 @@ impl Train {
             ("batched", -2., 0., 1),
             ("recent", 3., 0., 2),
         ] {
-            for (i, row) in rows(&self.queue, key).iter().take(12).enumerate() {
+            for (i, row) in rows(&self.snapshot.queue, key).iter().take(12).enumerate() {
                 let rejected = row["state"] == "rejected";
                 if key == "recent" && !rejected && row["state"] != "landed" {
                     continue;
                 }
-                let progress = self.queue["stage_progress"]
+                let progress = self.snapshot.queue["stage_progress"]
                     .as_f64()
                     .unwrap_or(0.)
                     .clamp(0., 1.) as f32;
@@ -81,7 +81,7 @@ impl Train {
             }
         }
         let mut seen = std::collections::BTreeSet::new();
-        for slot in rows(&self.workers, "slots") {
+        for slot in rows(&self.snapshot.workers, "slots") {
             let name = text(slot, "worker");
             if !seen.insert(name.clone()) {
                 continue;
@@ -90,7 +90,7 @@ impl Train {
             if i >= 3 {
                 break;
             }
-            let busy = rows(&self.workers, "running")
+            let busy = rows(&self.snapshot.workers, "running")
                 .iter()
                 .any(|job| job["worker"] == slot["worker"]);
             let load = decoded(&slot["snapshot"])["load1"].as_f64().unwrap_or(0.) as f32;
@@ -109,123 +109,36 @@ impl Train {
         out
     }
 }
+
 impl View for Train {
     fn subscriptions(&self) -> &'static [&'static str] {
-        &[
-            "train.landed",
-            "train.rejected",
-            "buildd.started",
-            "buildd.done",
-        ]
+        &["train.landed", "train.rejected", "buildd.started", "buildd.done"]
     }
-    fn on_event(&mut self, topic: &str, data: Value, now: Instant) -> bool {
-        let target = match topic {
-            "train.queue" => &mut self.queue,
-            "buildd.queue" => &mut self.workers,
-            _ => return false,
-        };
-        if *target == data {
-            return false;
+    fn on_event(&mut self, snapshot: std::sync::Arc<super::Snapshot>, visible: bool, now: Instant) {
+        self.snapshot = snapshot;
+        self.pending = true;
+        self.settled = false;
+        if visible { self.changed = Some(now); } else { self.changed = None; }
+        // No scene construction, layout, sample processing or GPU work here.
+    }
+    fn wants_frame(&self, visible: bool, now: Instant) -> Option<Duration> {
+        if visible && (self.pending || (self.changed.is_some() && !self.settled)) {
+            Some(Duration::from_millis(100))
+        } else { None }
+    }
+    fn draw(&mut self, visible: bool, now: Instant) -> Option<super::Frame> {
+        if !visible { return None; }
+        if self.pending {
+            self.scene = std::sync::Arc::new(self.scene());
+            self.pending = false;
         }
-        *target = data;
-        self.changed = Some(now);
-        if topic == "train.queue" {
-            let hour = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs_f64()
-                / 3600.;
-            let gates = rows(&self.queue, "batches").len() as f64;
-            let landed = rows(&self.queue, "recent")
-                .iter()
-                .filter(|r| r["state"] == "landed")
-                .count() as f64;
-            self.samples.retain(|s| s.0 >= hour - 24.);
-            if self.samples.len() >= 8640 {
-                self.samples.remove(0);
-            }
-            self.samples.push((hour, gates, landed));
-        }
-        true
-    }
-    fn wants_frame(&self, now: Instant) -> Option<Duration> {
-        self.changed
-            .filter(|t| now.saturating_duration_since(*t) < Duration::from_millis(600))
-            .map(|_| Duration::from_millis(100))
-    }
-    fn draw(&self, ui: &mut egui::Ui) {
-        let strings = toolkit::Strings::new(include_str!("../../i18n/en/backdrop.ftl"));
-        let rect = ui.max_rect();
-        ui.painter().rect_filled(rect, 0., ui.visuals().panel_fill);
-        let scene = self.scene();
-        let progress = self
-            .changed
-            .map_or(1., |t| (t.elapsed().as_secs_f32() / 0.6).min(1.));
-        super::train_gpu::draw(ui, &scene, progress);
-        egui::Area::new(egui::Id::unique("train-header"))
-            .fixed_pos(rect.min + egui::vec2(24., 24.))
-            .show(ui.ctx(), |ui| {
-                egui::Frame::popup(ui.style()).show(ui, |ui| {
-                    ui.heading(strings.get("train-title"));
-                    ui.label(strings.with(
-                        "train-header",
-                        &[
-                            ("sha", &text(&self.queue, "main_sha")),
-                            (
-                                "state",
-                                &strings.get(if self.queue.is_null() {
-                                    "train-unknown"
-                                } else if self.queue["paused"].is_null() {
-                                    "train-running"
-                                } else {
-                                    "train-paused"
-                                }),
-                            ),
-                        ],
-                    ));
-                    ui.label(strings.get("train-track"));
-                    if self.queue["stage_progress"].is_null() {
-                        ui.label(strings.get("train-stage-unavailable"));
-                    }
-                    if let Some(error) = &self.error {
-                        ui.label(error);
-                    }
-                });
-            });
-        egui::Area::new(egui::Id::unique("train-chart"))
-            .fixed_pos(egui::pos2(rect.left() + 24., rect.bottom() - 220.))
-            .show(ui.ctx(), |ui| {
-                egui::Frame::popup(ui.style()).show(ui, |ui| {
-                    ui.label(strings.get("train-history-stub"));
-                    let now = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_secs_f64()
-                        / 3600.;
-                    egui_plot::Plot::new("train-live-samples")
-                        .width(rect.width().min(640.) - 48.)
-                        .height(140.)
-                        .include_x(-24.)
-                        .include_x(0.)
-                        .allow_zoom(false)
-                        .allow_drag(false)
-                        .allow_scroll(false)
-                        .show(ui, |plot| {
-                            for (name, landing) in
-                                [("train-gates", false), ("train-landings", true)]
-                            {
-                                let points: Vec<[f64; 2]> = self
-                                    .samples
-                                    .iter()
-                                    .map(|s| [s.0 - now, if landing { s.2 } else { s.1 }])
-                                    .collect();
-                                plot.line(egui_plot::Line::new(strings.get(name), points));
-                            }
-                        });
-                });
-            });
+        self.settled = self.changed.is_none_or(|t|now.saturating_duration_since(t) >= Duration::from_millis(600));
+        Some(super::Frame { snapshot:self.snapshot.clone(), scene:self.scene.clone(),
+            progress:self.changed.map_or(1., |t|(now.saturating_duration_since(t).as_secs_f32()/0.6).min(1.)) })
     }
 }
+#[cfg(test)]
+impl Train { pub fn cached_scene_is_empty(&self) -> bool { self.scene.is_empty() } }
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -233,8 +146,8 @@ mod tests {
     #[test]
     fn layout_routes_rejections_and_bounds_progress_and_queue() {
         let mut train = Train::default();
-        train.on_event("train.queue", json!({"queued":[{"branch":"work/a"}], "batched":[{"branch":"work/b"}], "stage_progress":9,
-            "recent":[{"branch":"work/c", "state":"rejected"}, {"branch":"work/d","state":"landed"}]}), Instant::now());
+        train.on_event(std::sync::Arc::new(super::super::Snapshot {queue:json!({"queued":[{"branch":"work/a"}], "batched":[{"branch":"work/b"}], "stage_progress":9,
+            "recent":[{"branch":"work/c", "state":"rejected"}, {"branch":"work/d","state":"landed"}]}), ..Default::default()}), true, Instant::now());
         let scene = train.scene();
         assert_eq!(
             scene.iter().find(|b| b.label == "work/c").unwrap().position[2],
@@ -249,7 +162,7 @@ mod tests {
     #[test]
     fn worker_glow_accepts_encoded_snapshots() {
         let mut train = Train::default();
-        train.on_event("buildd.queue", json!({"slots":[{"worker":"heavy", "snapshot":"{\"load1\":8}"}], "running":[{"worker":"heavy"}]}), Instant::now());
+        train.on_event(std::sync::Arc::new(super::super::Snapshot {workers:json!({"slots":[{"worker":"heavy", "snapshot":"{\"load1\":8}"}], "running":[{"worker":"heavy"}]}), ..Default::default()}), true, Instant::now());
         assert_eq!(train.scene().last().unwrap().glow, 1.);
     }
 }

@@ -289,7 +289,7 @@ pub fn start(setup: Setup) -> Result<(), String> {
         .collect::<Vec<_>>();
     let (handle, deliveries) = citizen::start_with_topics(APP, &setup.service, &setup.url, &topics)
         .map_err(|error| format!("Bus registration as {:?}: {error}", setup.service))?;
-    crate::views::start_reader(handle.clone(), setup.shared.clone(), setup.wakers.clone())?;
+    crate::views::start_reader(handle.clone(), setup.shared.clone())?;
     let forward = results.clone();
     std::thread::Builder::new()
         .name("backdrop-bus".into())
@@ -478,6 +478,7 @@ impl Controller {
                 match result {
                     Ok(state) => {
                         crate::views::refresh(&self.shared);
+                        crate::views::notify(&self.shared, true);
                         self.publish();
 
                         let (runs, lost) = self.view_registry.take_executed();
@@ -935,6 +936,7 @@ impl Controller {
             fade_started: self.fade_started,
         });
         lock(&self.shared).view = view;
+        if crate::views::notify(&self.shared, false) { return; }
         let contexts: Vec<_> = lock(&self.wakers)
             .iter()
             .map(|(_, context)| context.clone())
