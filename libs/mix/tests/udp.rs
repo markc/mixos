@@ -8,11 +8,7 @@ use mix::{
     parser::Parser,
     value::Value,
 };
-use std::{
-    collections::BTreeMap,
-    rc::Rc,
-    time::Duration,
-};
+use std::{collections::BTreeMap, rc::Rc, time::Duration};
 
 struct Runtime;
 impl ServeRuntime for Runtime {
@@ -96,10 +92,13 @@ async fn udp_handler_replies_from_listener_and_generation_retires() {
     drop(reserve);
     let (mut e, _tx) = served();
     e.set_global("port", Value::Number(port as f64));
-    exec(&mut e, r#"
+    exec(
+        &mut e,
+        r#"
 $h = udp_listen("127.0.0.1", $port)
 $watch = udp_on($h, "test.packet")
 $received = nil
+$kind = nil
 on test.packet
   $received = $event.args.datagram.text
   $kind = type($event.args.datagram.bytes)
@@ -107,17 +106,25 @@ on test.packet
     $event.args.datagram.from_port, $event.args.datagram.bytes)
   quit()
 end
-"#).await.unwrap();
+"#,
+    )
+    .await
+    .unwrap();
     let client = std::thread::spawn(move || {
         let socket = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
-        socket.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+        socket
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
         socket.send_to(b"hello", ("127.0.0.1", port)).unwrap();
-        let mut data = [0;16];
+        let mut data = [0; 16];
         let (n, from) = socket.recv_from(&mut data).unwrap();
         assert_eq!(&data[..n], b"hello");
         assert_eq!(from.port(), port);
     });
-    tokio::time::timeout(Duration::from_secs(10), e.run_event_pump()).await.unwrap().unwrap();
+    tokio::time::timeout(Duration::from_secs(10), e.run_event_pump())
+        .await
+        .unwrap()
+        .unwrap();
     client.join().unwrap();
     assert_eq!(global_str(&e, "received"), "hello");
     assert_eq!(global_str(&e, "kind"), "bytes");
