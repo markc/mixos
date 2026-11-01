@@ -972,11 +972,7 @@ impl Shell {
                 // A peer's list is short-deadlined so one slow node does not
                 // hold its group; reads and acting calls get the full 10 s.
                 let listing = matches!(command.as_str(), "agent.agents" | "agent.session.list");
-                let deadline = if node.is_some() && listing {
-                    3
-                } else {
-                    10
-                };
+                let deadline = if node.is_some() && listing { 3 } else { 10 };
                 self.spawn(async move {
                     let result = bus
                         .raw_within(
