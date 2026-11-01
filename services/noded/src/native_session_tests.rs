@@ -143,8 +143,7 @@ async fn session_allocation_proof_connection_binding_retention_and_renew() {
         ))
         .to_bytes(),
     );
-    let args =
-        serde_json::json!({"public_key":public_key, "signature":signature, "policy":"default-open"});
+    let args = serde_json::json!({"public_key":public_key, "signature":signature, "policy":"default-open"});
     let mut removed_policy = args.clone();
     removed_policy["policy"] = serde_json::json!("restricted");
     let refused = session_call(&mut socket, "allocate", "1", removed_policy).await;
@@ -894,12 +893,18 @@ async fn configured_grant_limit_is_advertised_isolated_and_released_on_revoke() 
     let first = verified(&broker).await;
     let second = verified(&broker).await;
     let first_record = first
-        .session_allocate(&SigningKey::from_bytes(&rand::random()), Policy::DefaultOpen)
+        .session_allocate(
+            &SigningKey::from_bytes(&rand::random()),
+            Policy::DefaultOpen,
+        )
         .await
         .unwrap()
         .record;
     let second_record = second
-        .session_allocate(&SigningKey::from_bytes(&rand::random()), Policy::DefaultOpen)
+        .session_allocate(
+            &SigningKey::from_bytes(&rand::random()),
+            Policy::DefaultOpen,
+        )
         .await
         .unwrap()
         .record;
