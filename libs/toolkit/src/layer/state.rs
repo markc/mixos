@@ -367,6 +367,7 @@ impl<P: LayerProgram + 'static> State<P> {
 
     /// A repaint egui asked for: now, or by a one-shot timer.
     fn request(&mut self, id: u64, delay: Duration) {
+        let strict = self.program.strict_frame_callbacks();
         let Some(delay) = self
             .surfaces
             .iter()
@@ -380,6 +381,7 @@ impl<P: LayerProgram + 'static> State<P> {
             return;
         };
         if delay.is_zero() {
+            if !strict {s.retry_at = None;}
             // Now: any delayed repaint is moot.
             s.dirty = true;
             s.deadline = None;
@@ -469,16 +471,15 @@ impl<P: LayerProgram + 'static> State<P> {
         for s in &mut self.surfaces {
             if s.frame_pending && s.pending_since.is_some_and(|t| timing::expired(t, now)) {
                 if self.program.strict_frame_callbacks() {
-                    s.pending_since = None;
                     self.program.visibility(&s.ctx, false);
-                    continue;
                 }
                 s.frame_pending = false;
                 s.pending_since = None;
                 // The present may have failed silently: redraw once. A
                 // compositor that withholds callbacks (a hidden output)
                 // then gets no more until one comes back.
-                if !s.rescued {
+                if let Some(delay) = timing::callback_recovery(self.program.strict_frame_callbacks(), s.rescued) {
+                    s.retry_at = Some(now + delay);
                     s.rescued = true;
                     s.dirty = true;
                 }

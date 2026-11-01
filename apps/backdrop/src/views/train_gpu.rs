@@ -36,6 +36,11 @@ struct Gpu {
 fn project([x, y, z]: [f32; 3]) -> [f32; 2] {
     [x * 0.085 + z * 0.035, -0.1 + y * 0.14 - z * 0.065]
 }
+fn animated_position(b:&Block,progress:f32)->[f32;3] {
+    let mut p=b.position;
+    if !b.label.is_empty() && b.size[1]>0.2 && b.size[1]<1. {p[0]-=(1.-progress)*0.4;}
+    p
+}
 impl Cache {
     pub fn draw(
         &mut self,
@@ -71,10 +76,7 @@ impl Cache {
         ];
         let mut bytes = Vec::with_capacity(blocks.len().min(MAX_CUBES) * 36);
         for b in blocks.iter().take(MAX_CUBES) {
-            let mut p = b.position;
-            if !b.label.is_empty() && b.size[1] > 0.2 && b.size[1] < 1. {
-                p[0] -= (1. - progress) * 0.4;
-            }
+            let p = animated_position(b,progress);
             let c = palette[b.tone].to_normalized_gamma_f32();
             for v in [
                 p[0],
@@ -104,7 +106,8 @@ impl Cache {
             .take(MAX_CUBES)
             .filter(|b| !b.label.is_empty())
         {
-            let p = project([b.position[0], b.position[1] + b.size[1], b.position[2]]);
+            let p = animated_position(b,progress);
+            let p = project([p[0],p[1]+b.size[1],p[2]]);
             ui.painter().text(
                 egui::pos2(
                     rect.center().x + p[0] * rect.width() * 0.5,
@@ -326,12 +329,32 @@ impl egui_wgpu::CallbackTrait for Callback {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn frame(cache:&mut Cache,budget:&Arc<Budget>,width:f32,progress:f32)->(egui::FullOutput,bool) {
+        let ctx=egui::Context::default();let mut accepted=false;
+        let block=Block {position:[0.,0.,0.],size:[0.48,0.6,0.75],tone:0,glow:0.,label:"work/a".into()};
+        let mut out=ctx.run_ui(egui::RawInput {screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(width,480.))),..Default::default()},|ui|accepted=cache.draw(ui,&[block],progress,budget));
+        out.textures_delta.clear();(out,accepted)
+    }
     #[test]
     fn scene_targets_and_both_buffers_are_charged_to_wallpaper_budget() {
-        let budget = Budget::new(allocation_bytes([1280, 720]));
-        let reservation = budget.reserve(allocation_bytes([1280, 720])).unwrap();
-        assert!(budget.reserve(1).is_none());
-        drop(reservation);
-        assert_eq!(budget.used(), 0);
+        let budget=Budget::new(32*1024*1024);let mut cache=Cache::default();
+        let (a,accepted)=frame(&mut cache,&budget,640.,0.);assert!(accepted);
+        let first=budget.used();assert!(first>640*480*8);
+        let (b,accepted)=frame(&mut cache,&budget,800.,1.);assert!(accepted);
+        let both=budget.used();assert!(both>first);
+        drop(cache);assert_eq!(budget.used(),both,"queued callbacks retain charges after release_gpu");
+        drop(a);assert_eq!(budget.used(),both-first);
+        drop(b);assert_eq!(budget.used(),0);
+        let tiny=Budget::new(1);
+        let (refused,accepted)=frame(&mut Cache::default(),&tiny,640.,0.);
+        assert!(!accepted,"the host selects 2D when Cache::draw refuses allocation");
+        assert_eq!(tiny.used(),0);drop(refused);
+    }
+    #[test]
+    fn painted_labels_follow_the_animated_cube_position() {
+        let budget=Budget::new(32*1024*1024);let mut cache=Cache::default();
+        let (a,_)=frame(&mut cache,&budget,640.,0.);let (b,_)=frame(&mut cache,&budget,640.,1.);
+        let text_x=|out:&egui::FullOutput|out.shapes.iter().find_map(|s|match &s.shape {egui::epaint::Shape::Text(t) if t.galley.job.text=="work/a"=>Some(t.pos.x),_=>None}).unwrap();
+        assert!((text_x(&b)-text_x(&a)-0.4*0.085*640.*0.5).abs()<0.01);
     }
 }

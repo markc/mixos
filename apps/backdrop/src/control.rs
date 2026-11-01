@@ -475,7 +475,7 @@ impl Controller {
     fn command(&mut self, id: u64, command_name: &str, body: &str) {
         match command_name {
             "backdrop.view.list" => {
-                if parse_next(body).is_err() { self.reply(id,10,refusal("ARGUMENT", "expected {}")); }
+                if parse_empty(body).is_err() { self.reply(id,10,refusal("ARGUMENT", "expected {}")); }
                 else { self.reply(id,0,json!({"views":["wallpaper","train"],"selected":lock(&self.shared).live.selected})); }
             }
             "backdrop.view.set" | "backdrop.view.cycle" => {
@@ -507,7 +507,7 @@ impl Controller {
                 Ok(config) => self.stage(config, Owed::Bus(id)),
                 Err(message) => self.reply(id, 10, refusal("ARGUMENT", message)),
             },
-            NEXT => match parse_next(body) {
+            NEXT => match parse_empty(body) {
                 Err(reason) => self.reply(id, 10, refusal("ARGUMENT", reason)),
                 Ok(()) if self.schedules.is_empty() => self.reply(
                     id,
@@ -1009,6 +1009,7 @@ impl Controller {
                     "scale": output.scale,
                     "shows": output.shows,
                     "presented_revision": output.revision,
+                    "presented_frames": output.frames,
                     "error": output.error,
                     "fit": wallpaper_fit(self.display.for_output(Some(name))),
                 })
@@ -1045,7 +1046,7 @@ fn wallpaper_fit(wallpaper: &Wallpaper) -> Option<wallpaper::fit::Fit> {
     }
 }
 
-fn parse_next(body: &str) -> Result<(), String> {
+fn parse_empty(body: &str) -> Result<(), String> {
     if body.len() as u64 > crate::MAX_DOCUMENT {
         return Err("body: too large".into());
     }
@@ -1236,6 +1237,7 @@ mod tests {
     #[test]
     fn view_commands_preserve_wallpaper_and_record_validated_bus_runs() {
         let mut c = controller();
+        let handle=Handle::sink();c.handle=Some(handle.clone());
         c.stage(Config::default(), Owed::Startup);
         let revision = c.engine.status().active;
         c.command(1, "backdrop.view.set", r#"{"view":"train"}"#);
@@ -1247,6 +1249,31 @@ mod tests {
         assert_eq!(lock(&c.shared).live.selected, "wallpaper");
         c.command(4, "backdrop.view.list", "{}");
         assert_eq!(c.replies.borrow().last().unwrap().1, 0);
+        let published:Vec<_>=handle.log().into_iter().filter_map(|event|match event {citizen::Logged::Publish {topic,body}=>Some((topic,body)),_=>None}).collect();
+        assert_eq!(published.len(),2);
+        assert_eq!(published[0].0,"sink.action.executed");
+        assert_eq!(published[0].1["id"],"backdrop.view.set");
+        assert_eq!(published[0].1["params"],json!({"view":"train"}));
+        assert_eq!(published[0].1["origin"],"bus");
+        assert_eq!(published[1].1["id"],"backdrop.view.cycle");
+    }
+    #[test]
+    fn switching_to_wallpaper_requests_every_surface_and_list_takes_no_args() {
+        use std::sync::atomic::{AtomicUsize,Ordering};
+        let mut c=controller();
+        c.command(1,"backdrop.view.set",r#"{"view":"train"}"#);
+        let wakes=Arc::new(AtomicUsize::new(0));
+        for owner in 0..2 {
+            let ctx=egui::Context::default();let count=wakes.clone();
+            ctx.set_request_repaint_callback(move |_|{count.fetch_add(1,Ordering::SeqCst);});
+            lock(&c.wakers).push((owner,ctx));
+        }
+        c.command(2,"backdrop.view.set",r#"{"view":"wallpaper"}"#);
+        assert_eq!(wakes.load(Ordering::SeqCst),2);
+        for body in ["[]","null",r#"{"dir":"next"}"#] {
+            c.command(3,"backdrop.view.list",body);
+            assert_ne!(c.replies.borrow().last().unwrap().1,0);
+        }
     }
 
     #[test]
@@ -1440,9 +1467,9 @@ mod tests {
 
     #[test]
     fn next_body_is_strict_and_static_images_have_no_timer_or_next_run() {
-        assert!(parse_next("{}").is_ok());
+        assert!(parse_empty("{}").is_ok());
         for body in ["[]", "null", "{\"x\":1}", "broken"] {
-            assert!(parse_next(body).is_err());
+            assert!(parse_empty(body).is_err());
         }
         let mut c = controller();
         c.stage(images(&["/w/a.png"]), Owed::Startup);

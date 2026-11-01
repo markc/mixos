@@ -13,6 +13,11 @@ pub(crate) const RETRY: Duration = Duration::from_millis(50);
 /// How long a frame callback is waited for before the surface may draw
 /// again anyway, and the cap on the retry backoff.
 pub(crate) const WATCHDOG: Duration = Duration::from_secs(1);
+/// One-second watchdog plus this delay bounds hidden live probes to 0.2 fps.
+pub(crate) const LIVE_RECOVERY_DELAY: Duration = Duration::from_secs(4);
+pub(crate) fn callback_recovery(strict: bool, rescued: bool) -> Option<Duration> {
+    if strict {Some(LIVE_RECOVERY_DELAY)} else if !rescued {Some(Duration::ZERO)} else {None}
+}
 
 /// Rate limits and retry backoff both constrain a dirty surface. Idle surfaces
 /// never consult this deadline and therefore arm no timer.
@@ -62,6 +67,15 @@ pub(crate) fn shortest(waits: impl IntoIterator<Item = Option<Duration>>) -> Opt
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn callback_loss_has_bounded_probes_and_wallpaper_recovers_after_one_second() {
+        assert_eq!(WATCHDOG + callback_recovery(true,false).unwrap(),Duration::from_secs(5));
+        assert_eq!(callback_recovery(true,true),Some(LIVE_RECOVERY_DELAY));
+        assert_eq!(WATCHDOG + callback_recovery(false,false).unwrap(),Duration::from_secs(1));
+        // The loop releases frame_pending even when no further idle retry is
+        // needed. A future wallpaper event can draw immediately.
+        assert_eq!(callback_recovery(false,true),None);
+    }
     #[test]
     fn event_bursts_and_retries_obey_the_frame_cap() {
         let t = Instant::now();

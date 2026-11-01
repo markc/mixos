@@ -7,6 +7,9 @@ pub struct Series {
     pub gate_minutes: Vec<[f64; 2]>,
 }
 pub fn series(history: &Value, hours: u16, now: f64) -> Series {
+    if !history["landed"].is_array() || !history["batches"].is_array() {
+        return Series {landings:vec![],gate_minutes:vec![]};
+    }
     let since = now - f64::from(hours) * 3600.;
     let first = (since / 3600.).floor() as i64;
     let last = (now / 3600.).floor() as i64;
@@ -85,10 +88,16 @@ mod tests {
         let batches: Vec<Value> = (0..1000)
             .map(|i| json!({"started":i,"ended":i+1,"gate_reused":0}))
             .collect();
-        let s = series(&json!({"batches":batches}), 168, 1000.);
+        let s = series(&json!({"batches":batches,"landed":[]}), 168, 1000.);
         assert_eq!(s.gate_minutes.len(), 600);
         assert_eq!(s.landings.len(), 169);
         assert_eq!(s.gate_minutes.first().unwrap()[0], -1000. / 3600.);
         assert_eq!(s.gate_minutes.last().unwrap()[0], -1. / 3600.);
+    }
+    #[test]
+    fn unavailable_history_has_no_fabricated_zero_series() {
+        assert!(series(&Value::Null,24,1000.).landings.is_empty());
+        assert!(series(&json!({}),24,1000.).gate_minutes.is_empty());
+        assert!(!series(&json!({"batches":[],"landed":[]}),24,1000.).landings.is_empty());
     }
 }
