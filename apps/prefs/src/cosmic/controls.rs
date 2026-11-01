@@ -418,13 +418,18 @@ pub fn radio_row(
                 });
                 ui.add_space(look.xs);
                 // The option's one-line description under its label.
-                ui.vertical(|ui| {
-                    ui.spacing_mut().item_spacing.y = 2.0;
-                    ui.label(RichText::new(&text).size(14.0).color(look.text));
-                    if let Some(d) = engine.choice_description(row, &option.0) {
-                        ui.label(RichText::new(d).size(12.0).color(look.text));
+                match engine.choice_description(row, &option.0) {
+                    Some(d) => {
+                        ui.vertical(|ui| {
+                            ui.spacing_mut().item_spacing.y = 2.0;
+                            ui.label(RichText::new(&text).size(14.0).color(look.text));
+                            ui.label(RichText::new(d).size(12.0).color(look.text));
+                        });
                     }
-                });
+                    None => {
+                        ui.label(RichText::new(&text).size(14.0).color(look.text));
+                    }
+                }
             });
         })
         .response;
