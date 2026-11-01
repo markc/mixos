@@ -93,7 +93,9 @@ fn malformed_frames_during_rebind_do_not_cancel_the_read() {
 fn empty_successful_redirected_read_ends_the_episode_without_inventing_a_snapshot() {
     let mut state = consumer();
     let read = read_work(&mut state, 1);
-    let read = state.complete(&read, Err(wrong_target(Some(rebound("b").binding)))).unwrap();
+    let read = state
+        .complete(&read, Err(wrong_target(Some(rebound("b").binding))))
+        .unwrap();
     assert_eq!(state.rebind_hops(), 1);
     assert!(state.complete(&read, Ok(None)).is_none());
     assert_eq!(state.rebind_hops(), 0);
@@ -105,7 +107,9 @@ fn empty_successful_redirected_read_ends_the_episode_without_inventing_a_snapsho
     assert_eq!(state.fault().unwrap().code, "invalid_delivery");
     let mut read = state.retry().unwrap();
     for instance in ["c", "d", "e"] {
-        read = state.complete(&read, Err(wrong_target(Some(rebound(instance).binding)))).unwrap();
+        read = state
+            .complete(&read, Err(wrong_target(Some(rebound(instance).binding))))
+            .unwrap();
     }
     state.complete(&read, Ok(Some(rebound("e"))));
     assert!(state.is_confirmed());

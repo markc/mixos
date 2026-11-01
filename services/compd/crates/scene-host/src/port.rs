@@ -1378,9 +1378,10 @@ async fn settings_write(
     // Raw apply replies are wrapped by settings_outcome. Return the same
     // Refresh signal as the menu-event path, while retaining the refusal and
     // operation for the engine/caller to retry after the bound read converges.
-    let refresh = outcome.as_ref().err().is_some_and(|refusal| {
-        refusal["settings"]["status"] == "wrong_target"
-    });
+    let refresh = outcome
+        .as_ref()
+        .err()
+        .is_some_and(|refusal| refusal["settings"]["status"] == "wrong_target");
     if !delivery.send(Inbound::Settings { operation, outcome }) {
         tracing::warn!("scene host: settings.apply outcome dropped: the engine queue is full");
     }
@@ -1520,7 +1521,9 @@ mod tests {
             let (tcp, _) = listener.accept().await.unwrap();
             let mut ws = tokio_tungstenite::accept_async(tcp).await.unwrap();
             while let Some(Ok(frame)) = ws.next().await {
-                let tokio_tungstenite::tungstenite::Message::Text(text) = frame else { continue };
+                let tokio_tungstenite::tungstenite::Message::Text(text) = frame else {
+                    continue;
+                };
                 let req = bus::parse(&text).unwrap();
                 let command = req.get("command").unwrap_or("");
                 let is_settings = matches!(command, "settings.get" | "settings.apply");
@@ -1532,20 +1535,43 @@ mod tests {
                     .with_header("command", command)
                     .with_header("id", req.get("id").unwrap())
                     .with_header("rc", if refused { "10" } else { "0" });
-                reply.body = if refused { refusal.to_string() } else if command == "settings.get" { current.to_string() } else { json!({"status":"changed"}).to_string() };
-                ws.send(tokio_tungstenite::tungstenite::Message::Text(reply.to_wire().into())).await.unwrap();
+                reply.body = if refused {
+                    refusal.to_string()
+                } else if command == "settings.get" {
+                    current.to_string()
+                } else {
+                    json!({"status":"changed"}).to_string()
+                };
+                ws.send(tokio_tungstenite::tungstenite::Message::Text(
+                    reply.to_wire().into(),
+                ))
+                .await
+                .unwrap();
             }
         });
         tokio::time::timeout(Duration::from_secs(5), async {
             let client = SupervisedClient::connect("fixture", &url).await.unwrap();
             let (sender, receiver) = mpsc::sync_channel(4);
-            let delivery = Delivery { sender, waker: Arc::new(|| {}) };
+            let delivery = Delivery {
+                sender,
+                waker: Arc::new(|| {}),
+            };
             let mut old_binding = binding.clone();
             old_binding.instance = "fixture".into();
             // This is the future spawned by Outbound::Settings. Its boolean
             // is consumed by flights.join_next to publish SettingsEvent::Refresh.
-            assert!(settings_write(&client, &delivery, "write-1".into(), json!({"binding":old_binding})).await);
-            let Inbound::Settings { operation, outcome } = receiver.try_recv().unwrap() else { panic!("missing refusal") };
+            assert!(
+                settings_write(
+                    &client,
+                    &delivery,
+                    "write-1".into(),
+                    json!({"binding":old_binding})
+                )
+                .await
+            );
+            let Inbound::Settings { operation, outcome } = receiver.try_recv().unwrap() else {
+                panic!("missing refusal")
+            };
             assert_eq!(operation, "write-1");
             let outcome = outcome.unwrap_err();
             assert_eq!(outcome["error_code"], "SETTINGS_REFUSED");
@@ -1563,12 +1589,24 @@ mod tests {
             assert!(consumer.is_confirmed());
             assert_eq!(consumer.binding(), &binding);
             assert_eq!(consumer.rebind_hops(), 0);
-            assert!(!settings_write(&client, &delivery, "write-2".into(), json!({"binding":consumer.binding()})).await);
-            let Inbound::Settings { operation, outcome } = receiver.try_recv().unwrap() else { panic!("missing retry outcome") };
+            assert!(
+                !settings_write(
+                    &client,
+                    &delivery,
+                    "write-2".into(),
+                    json!({"binding":consumer.binding()})
+                )
+                .await
+            );
+            let Inbound::Settings { operation, outcome } = receiver.try_recv().unwrap() else {
+                panic!("missing retry outcome")
+            };
             assert_eq!(operation, "write-2");
             assert_eq!(outcome.unwrap()["status"], "changed");
             client.shutdown().await;
-        }).await.unwrap();
+        })
+        .await
+        .unwrap();
         broker.abort();
     }
 
