@@ -584,10 +584,26 @@ impl<P: LayerProgram + 'static> State<P> {
     }
 
     fn push_to(&mut self, wl: &ObjectId, event: egui::Event) {
+        // A host-controlled background must not acquire a continuous render
+        // loop merely because the pointer moves over an otherwise idle plot.
+        if !self.input_allowed(wl) {
+            return;
+        }
         if let Some(s) = self.by_wl(wl) {
             s.events.push(event);
             s.dirty = true;
         }
+    }
+
+    fn input_allowed(&self, wl: &ObjectId) -> bool {
+        self.surfaces
+            .iter()
+            .find(|s| s.layer.wl_surface().id() == *wl)
+            .is_some_and(|s| {
+                self.program
+                    .repaint_delay(&s.ctx, Duration::ZERO)
+                    .is_some()
+            })
     }
 
     fn key(&mut self, event: &KeyEvent, pressed: bool, repeat: bool) {
@@ -1113,10 +1129,11 @@ impl<P: LayerProgram + 'static> KeyboardHandler for State<P> {
         _: &[Keysym],
     ) {
         self.keyboard_focus = Some(surface.id());
+        let allowed = self.input_allowed(&surface.id());
         if let Some(s) = self.by_wl(&surface.id()) {
             s.focused = true;
             s.events.push(egui::Event::WindowFocused(true));
-            s.dirty = true;
+            s.dirty |= allowed;
         }
     }
 
@@ -1134,10 +1151,11 @@ impl<P: LayerProgram + 'static> KeyboardHandler for State<P> {
             self.held.clear();
             self.stop_repeat();
         }
+        let allowed = self.input_allowed(&surface.id());
         if let Some(s) = self.by_wl(&surface.id()) {
             s.focused = false;
             s.events.push(egui::Event::WindowFocused(false));
-            s.dirty = true;
+            s.dirty |= allowed;
         }
     }
 
