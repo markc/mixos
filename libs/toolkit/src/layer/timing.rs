@@ -14,6 +14,15 @@ pub(crate) const RETRY: Duration = Duration::from_millis(50);
 /// again anyway, and the cap on the retry backoff.
 pub(crate) const WATCHDOG: Duration = Duration::from_secs(1);
 
+/// Rate limits and retry backoff both constrain a dirty surface. Idle surfaces
+/// never consult this deadline and therefore arm no timer.
+pub(crate) fn draw_at(last: Option<Instant>, interval: Duration, retry: Option<Instant>) -> Option<Instant> {
+    match (last.map(|t| t + interval), retry) {
+        (Some(a), Some(b)) => Some(a.max(b)),
+        (a, b) => a.or(b),
+    }
+}
+
 /// The wait before the next attempt after `skips` frames skipped in a row:
 /// 50 ms doubling, capped at one second.
 pub(crate) fn retry_after(skips: u32) -> Duration {
@@ -49,6 +58,14 @@ pub(crate) fn shortest(waits: impl IntoIterator<Item = Option<Duration>>) -> Opt
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn event_bursts_and_retries_obey_the_frame_cap() {
+        let t = Instant::now();
+        let cap = Duration::from_millis(100);
+        assert_eq!(draw_at(None, cap, None), None);
+        assert_eq!(draw_at(Some(t), cap, None), Some(t + cap));
+        assert_eq!(draw_at(Some(t), cap, Some(t + WATCHDOG)), Some(t + WATCHDOG));
+    }
 
     #[test]
     fn the_retry_backs_off_to_one_second() {

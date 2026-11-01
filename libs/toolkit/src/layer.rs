@@ -86,6 +86,8 @@ pub struct SurfaceInfo {
 pub trait LayerProgram {
     /// Keep waiting when a compositor withholds callbacks (for hidden views).
     fn strict_frame_callbacks(&self) -> bool { false }
+    /// Minimum interval between passes; applies to event bursts as well as timers.
+    fn frame_interval(&self) -> std::time::Duration { std::time::Duration::ZERO }
     /// Once per surface, on its context, before its first pass: fonts and
     /// style ([`crate::install`]).
     fn setup(&mut self, ctx: &egui::Context);

@@ -988,6 +988,7 @@ impl Controller {
             "schema": "backdrop.v1",
             "service": self.service,
             "requested": status.requested,
+            "view": lock(&self.shared).live.selected,
             "active": status.active,
             "pending": status.pending,
             "error": status.error,
