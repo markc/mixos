@@ -136,10 +136,12 @@ pub enum Control {
         max: i64,
         step: i64,
     },
-    /// A colour swatch that opens the colour drawer; `auto` resets to the
-    /// key's `auto` word.
+    /// A colour swatch filled with the effective colour, opening the
+    /// colour drawer. With `auto_link`, an unset (`auto`) value is drawn as
+    /// "Auto ›" instead (COSMIC's Container background).
     Colour {
         key: &'static str,
+        auto_link: bool,
     },
     /// The nine accent swatches and a custom one (`appearance.accent`).
     Accent,
@@ -189,7 +191,7 @@ impl Control {
             | Control::Slider { key, .. }
             | Control::Steps { key, .. }
             | Control::Spin { key, .. }
-            | Control::Colour { key }
+            | Control::Colour { key, .. }
             | Control::Pick { key, .. }
             | Control::Live { key } => Some(key),
             Control::Accent => Some("appearance.accent"),
@@ -317,6 +319,9 @@ pub struct Extra {
     pub id: &'static str,
     /// The prefs command it runs; none while the work list holds it.
     pub command: Option<&'static str>,
+    /// Drawn as a link button (accent text, no background) rather than a
+    /// standard button.
+    pub link: bool,
     pub backend: Option<&'static str>,
 }
 

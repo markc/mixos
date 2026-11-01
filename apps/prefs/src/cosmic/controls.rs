@@ -102,26 +102,116 @@ fn switch(ui: &mut Ui, on: bool, look: &Look, name: &str) -> Response {
     response
 }
 
-/// The label column: the title, the description, and why the row is off.
-fn labels(ui: &mut Ui, look: &Look, title: &str, description: Option<&str>, blocked: Option<&str>) {
-    ui.vertical(|ui| {
-        ui.spacing_mut().item_spacing.y = 2.0;
-        ui.add(egui::Label::new(RichText::new(title).size(14.0).color(look.text)).wrap());
-        if let Some(d) = description {
-            ui.add(egui::Label::new(RichText::new(d).size(12.0).color(look.text)).wrap());
+/// The label column, laid out before it is drawn so the row knows its
+/// height: the title, the description, and the row's own reason when it
+/// alone is off.
+struct Labels {
+    title: std::sync::Arc<egui::Galley>,
+    description: Option<std::sync::Arc<egui::Galley>>,
+    reason: Option<std::sync::Arc<egui::Galley>>,
+}
+
+impl Labels {
+    fn new(
+        ui: &Ui,
+        look: &Look,
+        title: &str,
+        description: Option<&str>,
+        reason: Option<&str>,
+        width: f32,
+    ) -> Self {
+        let lay = |text: &str, size: f32, width: f32| {
+            ui.painter().layout(
+                text.to_owned(),
+                egui::FontId::proportional(size),
+                look.text,
+                width.max(1.0),
+            )
+        };
+        Self {
+            title: lay(title, 14.0, width),
+            description: description.filter(|d| !d.is_empty()).map(|d| lay(d, 12.0, width)),
+            reason: reason.map(|r| lay(r, 12.0, width - 16.0)),
         }
-        if let Some(why) = blocked {
-            ui.horizontal_wrapped(|ui| {
-                ui.add(icons::image_of(
-                    ui.ctx(),
-                    Icon::CircleAlert,
-                    12.0,
-                    look.warning,
-                ));
-                ui.add(egui::Label::new(RichText::new(why).size(12.0).color(look.text)).wrap());
-            });
+    }
+
+    fn height(&self) -> f32 {
+        let gap = 2.0;
+        self.title.size().y
+            + self.description.as_ref().map_or(0.0, |g| gap + g.size().y)
+            + self.reason.as_ref().map_or(0.0, |g| gap + g.size().y)
+    }
+
+    fn paint(self, ui: &Ui, look: &Look, top_left: egui::Pos2) {
+        let mut at = top_left;
+        let height = self.title.size().y;
+        ui.painter().galley(at, self.title, look.text);
+        at.y += height + 2.0;
+        if let Some(g) = self.description {
+            let height = g.size().y;
+            ui.painter().galley(at, g, look.text);
+            at.y += height + 2.0;
         }
-    });
+        if let Some(g) = self.reason {
+            toolkit::button::paint_icon(
+                ui,
+                Icon::CircleAlert,
+                at + vec2(6.0, 8.0),
+                12.0,
+                look.warning,
+            );
+            ui.painter().galley(at + vec2(16.0, 0.0), g, look.text);
+        }
+    }
+}
+
+/// The width a control takes beside its labels.
+fn control_width(ui: &Ui, engine: &Engine, control: &Control) -> f32 {
+    match control {
+        Control::Toggle { .. }
+        | Control::Flag { .. }
+        | Control::Live { .. }
+        | Control::AutoMode
+        | Control::HintAccent => 48.0,
+        Control::Colour { key, auto_link } => {
+            if *auto_link && engine.store.text(key).as_deref() == Some("auto") {
+                text_width(ui, &label("colour-auto"), 14.0) + 28.0
+            } else {
+                48.0
+            }
+        }
+        Control::Spin { .. } => 96.0,
+        Control::Choice { options, .. } => {
+            let labels: Vec<String> = options.iter().map(|o| label(o.label)).collect();
+            dropdown_width(ui, &labels)
+        }
+        Control::Slider { .. } | Control::Steps { .. } => 360.0,
+        Control::Pick { key, .. } => {
+            let text = engine.store.text(key).unwrap_or_else(|| label("pick-default"));
+            text_width(ui, &text, 14.0) + 28.0
+        }
+        Control::Page { .. } | Control::Drawer { .. } => 16.0,
+        Control::Reset { .. } => 160.0,
+        Control::Info | Control::Accent | Control::Scheme | Control::Mode => 0.0,
+    }
+}
+
+fn text_width(ui: &Ui, text: &str, size: f32) -> f32 {
+    ui.painter()
+        .layout_no_wrap(text.to_owned(), egui::FontId::proportional(size), Color32::WHITE)
+        .size()
+        .x
+}
+
+/// A row dropdown's width: its longest value, padding 8 and the caret.
+fn dropdown_width(ui: &Ui, labels: &[String]) -> f32 {
+    labels
+        .iter()
+        .map(|l| text_width(ui, l, 14.0))
+        .fold(0.0_f32, f32::max)
+        + 8.0
+        + 16.0
+        + 9.0
 }
 
 /// Whether a control sits under its title rather than beside it.
@@ -155,52 +245,70 @@ pub fn row(
     look: &Look,
     events: &mut Vec<UiEvent>,
 ) {
-    let blocked = engine.row_blocked(page, row);
-    let enabled = blocked.is_none();
+    let enabled = engine.row_blocked(page, row).is_none();
     let name = title(page.id, row.id);
     let desc = match row.control {
         Control::Info => description(page.id, row.id).or_else(|| Some(String::new())),
         _ => description(page.id, row.id),
     };
-    let pad = look.row_pad() as i8;
+    let reason = engine.row_reason(page, row);
+    let pad = look.row_pad();
     let response = egui::Frame::NONE
         .inner_margin(Margin {
-            left: pad,
-            right: pad,
+            left: pad as i8,
+            right: pad as i8,
             top: 4,
             bottom: 4,
         })
         .show(ui, |ui| {
-            ui.set_min_height(32.0);
-            ui.set_width(ui.available_width());
-            if stacked(&row.control) {
-                ui.vertical(|ui| {
-                    // The mode picker carries its own captions (spec 4).
-                    if !matches!(row.control, Control::Mode) || blocked.is_some() {
-                        labels(ui, look, &name, desc.as_deref(), blocked.as_deref());
-                        ui.add_space(look.xs);
-                    }
-                    ui.add_enabled_ui(enabled, |ui| {
-                        control(ui, engine, page, row, &name, look, events)
-                    });
-                });
-            } else {
-                // Inside a horizontal the row is as tall as its content; the
-                // control sits right, the labels take what is left.
-                ui.horizontal(|ui| {
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            let width = ui.available_width();
+            ui.set_width(width);
+            let cw = control_width(ui, engine, &row.control);
+            // The flex rule: below 200 for the labels the control stacks
+            // under them (spec 4, "Setting row").
+            let beside = !stacked(&row.control) && width - cw - look.xs >= 200.0;
+            // The mode picker carries its own captions (spec 4).
+            let titled = !matches!(row.control, Control::Mode) || reason.is_some();
+            if beside {
+                let labels = Labels::new(
+                    ui,
+                    look,
+                    &name,
+                    desc.as_deref(),
+                    reason.as_deref(),
+                    width - cw - look.xs,
+                );
+                let label_height = labels.height();
+                let height = label_height.max(32.0);
+                let (rect, _) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
+                labels.paint(
+                    ui,
+                    look,
+                    pos2(rect.min.x, rect.center().y - label_height / 2.0),
+                );
+                let slot = Rect::from_min_max(pos2(rect.max.x - cw.max(16.0) - look.xs, rect.min.y), rect.max);
+                ui.scope_builder(
+                    egui::UiBuilder::new()
+                        .max_rect(slot)
+                        .layout(Layout::right_to_left(Align::Center)),
+                    |ui| {
                         ui.add_enabled_ui(enabled, |ui| {
                             control(ui, engine, page, row, &name, look, events)
                         });
-                        ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                            labels(
-                                ui,
-                                look,
-                                &name,
-                                desc.as_deref().filter(|d| !d.is_empty()),
-                                blocked.as_deref(),
-                            )
-                        });
+                    },
+                );
+            } else {
+                if titled {
+                    let labels =
+                        Labels::new(ui, look, &name, desc.as_deref(), reason.as_deref(), width);
+                    let (rect, _) =
+                        ui.allocate_exact_size(vec2(width, labels.height()), Sense::hover());
+                    labels.paint(ui, look, rect.min);
+                    ui.add_space(look.xs);
+                }
+                ui.horizontal(|ui| {
+                    ui.add_enabled_ui(enabled, |ui| {
+                        control(ui, engine, page, row, &name, look, events)
                     });
                 });
             }
@@ -427,21 +535,13 @@ fn control(
         } => {
             let value = store.number(key).unwrap_or(*min as f64) as i64;
             ui.spacing_mut().item_spacing.x = 4.0;
-            let plus = ui.add_enabled(
-                value < *max,
-                toolkit::button::IconButton::new(Icon::Plus).size(16.0),
-            );
-            let plus = named(plus, Role::Button, value < *max, &format!("{name} +"));
+            let plus = icon_button(ui, Icon::Plus, value < *max, &format!("{name} +"), look);
             ui.label(
                 RichText::new(value.to_string())
                     .size(14.0)
                     .color(look.value),
             );
-            let minus = ui.add_enabled(
-                value > *min,
-                toolkit::button::IconButton::new(Icon::Minus).size(16.0),
-            );
-            let minus = named(minus, Role::Button, value > *min, &format!("{name} −"));
+            let minus = icon_button(ui, Icon::Minus, value > *min, &format!("{name} −"), look);
             if plus.clicked() {
                 set(events, key, json!((value + step).min(*max)));
             }
@@ -449,25 +549,49 @@ fn control(
                 set(events, key, json!((value - step).max(*min)));
             }
         }
-        Control::Colour { key } => {
-            let colour = store.text(key).as_deref().and_then(super::parse_hex);
-            let (rect, response) = ui.allocate_exact_size(vec2(48.0, 24.0), Sense::click());
-            match colour {
-                Some(c) => {
-                    ui.painter().rect_filled(rect, Look::radius(look.r_xs), c);
+        Control::Colour { key, auto_link } => {
+            let stored = store.text(key);
+            if *auto_link && stored.as_deref() == Some("auto") {
+                // "Auto ›": the row is a go-next to the colour drawer.
+                let (rect, response) = ui.allocate_exact_size(
+                    vec2(text_width(ui, &label("colour-auto"), 14.0) + 28.0, 24.0),
+                    Sense::click(),
+                );
+                toolkit::button::paint_icon(
+                    ui,
+                    Icon::ChevronRight,
+                    pos2(rect.max.x - 8.0, rect.center().y),
+                    16.0,
+                    look.icon,
+                );
+                ui.painter().text(
+                    pos2(rect.max.x - 20.0, rect.center().y),
+                    egui::Align2::RIGHT_CENTER,
+                    label("colour-auto"),
+                    egui::FontId::proportional(14.0),
+                    look.value,
+                );
+                let response = named(response, Role::Link, ui.is_enabled(), name);
+                if response.clicked() {
+                    events.push(UiEvent::Drawer(Some(row.id)));
                 }
-                None => {
-                    ui.painter()
-                        .rect_filled(rect, Look::radius(look.r_xs), look.field);
-                    ui.painter().text(
-                        rect.center(),
-                        egui::Align2::CENTER_CENTER,
-                        label("colour-auto"),
-                        egui::FontId::proportional(11.0),
-                        look.text,
-                    );
-                }
+                return;
             }
+            // The effective colour: under auto (or the accent word), the
+            // one the derived theme draws.
+            let colour = stored
+                .as_deref()
+                .and_then(super::parse_hex)
+                .unwrap_or(match *key {
+                    "appearance.window_bg" => look.window,
+                    "appearance.container_bg" => look.card,
+                    "appearance.text_tint" => look.text,
+                    "appearance.control_tint" => look.control,
+                    _ => look.accent,
+                });
+            let (rect, response) = ui.allocate_exact_size(vec2(48.0, 24.0), Sense::click());
+            ui.painter()
+                .rect_filled(rect, Look::radius(look.r_xs), colour);
             ui.painter().rect_stroke(
                 rect,
                 Look::radius(look.r_xs),
@@ -534,7 +658,29 @@ fn chevron(ui: &mut Ui, look: &Look) {
     ));
 }
 
-/// The dropdown: the value text and a caret, no background (spec 4).
+/// A 24 px icon button with a 16 px icon, circular, drawn disabled at its
+/// bound (spec 4 [C4], [C13]).
+fn icon_button(ui: &mut Ui, icon: Icon, enabled: bool, name: &str, look: &Look) -> Response {
+    let enabled = enabled && ui.is_enabled();
+    let sense = if enabled { Sense::click() } else { Sense::hover() };
+    let (rect, response) = ui.allocate_exact_size(Vec2::splat(24.0), sense);
+    if response.hovered() && enabled {
+        ui.painter()
+            .circle_filled(rect.center(), 12.0, look.button_hover);
+    }
+    let ink = if enabled {
+        look.value
+    } else {
+        look.value.gamma_multiply(0.5)
+    };
+    toolkit::button::paint_icon(ui, icon, rect.center(), 16.0, ink);
+    focus_ring(ui, &response, rect, look.r_xl, look);
+    response.widget_info(|| WidgetInfo::labeled(Role::Button, enabled, name));
+    response
+}
+
+/// The dropdown: the value text and a 16 px caret, no fill and no border
+/// (spec 4 [C2]); the menu it opens keeps its background and radius m.
 fn dropdown(
     ui: &mut Ui,
     value: Option<Value>,
@@ -544,32 +690,48 @@ fn dropdown(
     look: &Look,
     events: &mut Vec<UiEvent>,
 ) {
-    let mut labels: Vec<String> = options.iter().map(|o| label(o.label)).collect();
-    let mut index = options.iter().position(|o| o.value.is(value.as_ref()));
+    let labels: Vec<String> = options.iter().map(|o| label(o.label)).collect();
+    let index = options.iter().position(|o| o.value.is(value.as_ref()));
     // A stored value outside the options (a connector) still shows.
-    if index.is_none()
-        && let Some(text) = value.as_ref().and_then(Value::as_str)
-    {
-        labels.push(text.to_owned());
-        index = Some(labels.len() - 1);
-    }
-    let mut selected = index.unwrap_or(0);
-    let before = selected;
-    let width = labels
-        .iter()
-        .map(|l| {
-            ui.painter()
-                .layout_no_wrap(l.clone(), egui::FontId::proportional(14.0), look.value)
-                .size()
-                .x
-        })
-        .fold(0.0_f32, f32::max)
-        + 48.0;
-    let response = toolkit::combo::show(ui, ("choice", key), &mut selected, &labels, Some(width));
-    named(response, Role::ComboBox, ui.is_enabled(), name);
-    if selected != before && selected < options.len() {
-        set(events, key, lit(options[selected].value));
-    }
+    let shown = match (index, value.as_ref().and_then(Value::as_str)) {
+        (Some(i), _) => labels[i].clone(),
+        (None, Some(text)) => text.to_owned(),
+        (None, None) => String::new(),
+    };
+    let width = dropdown_width(ui, &labels).max(text_width(ui, &shown, 14.0) + 33.0);
+    let (rect, response) = ui.allocate_exact_size(vec2(width, 32.0), Sense::click());
+    let ink = if ui.is_enabled() {
+        look.value
+    } else {
+        look.value.gamma_multiply(0.65)
+    };
+    toolkit::button::paint_icon(
+        ui,
+        Icon::ChevronDown,
+        pos2(rect.max.x - 9.0 - 8.0, rect.center().y),
+        16.0,
+        ink,
+    );
+    ui.painter().text(
+        pos2(rect.max.x - 9.0 - 16.0 - 8.0, rect.center().y),
+        egui::Align2::RIGHT_CENTER,
+        &shown,
+        egui::FontId::proportional(14.0),
+        ink,
+    );
+    focus_ring(ui, &response, rect, look.r_s, look);
+    response.widget_info(|| {
+        WidgetInfo::selected(Role::ComboBox, ui.is_enabled(), false, name)
+    });
+    egui::Popup::menu(&response).show(|ui| {
+        ui.set_min_width(width);
+        for (i, option) in options.iter().enumerate() {
+            let selected = index == Some(i);
+            if ui.selectable_label(selected, &labels[i]).clicked() && !selected {
+                set(events, key, lit(option.value));
+            }
+        }
+    });
 }
 
 /// Equal segments the full row wide; the selected one tinted with a check.
@@ -621,8 +783,8 @@ fn segmented(
     }
 }
 
-/// Image buttons with captions (roundness): each illustration is a little
-/// window drawn with that option's corner.
+/// Image buttons with captions (roundness): three fixed cells of the image
+/// width, each caption centred under its image on one line (Fable P6).
 fn images(
     ui: &mut Ui,
     value: Option<Value>,
@@ -631,56 +793,63 @@ fn images(
     look: &Look,
     events: &mut Vec<UiEvent>,
 ) {
-    ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing.x = look.xs;
-        for option in options {
-            let selected = option.value.is(value.as_ref());
-            let text = label(option.label);
-            let radius = match option.value {
-                Lit::S("round") => 16.0,
-                Lit::S("slightly_round") => 6.0,
-                _ => 0.0,
-            };
-            ui.vertical(|ui| {
-                let (rect, response) = ui.allocate_exact_size(
-                    vec2(191.0_f32.min(ui.available_width()), 100.0),
-                    Sense::click(),
-                );
-                ui.painter()
-                    .rect_filled(rect, Look::radius(look.r_s), look.window);
-                let window = Rect::from_min_size(
-                    rect.min + vec2(32.0, 24.0),
-                    vec2(rect.width() - 64.0, 60.0),
-                );
-                ui.painter()
-                    .rect_filled(window, Look::radius(radius), look.card);
-                ui.painter().rect_filled(
-                    Rect::from_min_size(window.min + vec2(12.0, 14.0), vec2(48.0, 18.0)),
-                    Look::radius(radius.min(9.0)),
-                    look.accent,
-                );
-                if selected {
-                    ui.painter().rect_stroke(
-                        rect,
-                        Look::radius(look.r_s),
-                        Stroke::new(2.0, look.accent),
-                        StrokeKind::Inside,
-                    );
-                }
-                focus_ring(ui, &response, rect, look.r_s, look);
-                response.widget_info(|| {
-                    WidgetInfo::selected(Role::RadioButton, ui.is_enabled(), selected, &text)
-                });
-                if response.clicked() && !selected {
-                    set(events, key, lit(option.value));
-                }
-                ui.vertical_centered(|ui| {
-                    ui.set_width(rect.width());
-                    ui.label(RichText::new(&text).size(14.0).color(look.text));
-                });
-            });
+    let count = options.len().max(1) as f32;
+    let gap = look.xs;
+    let cell = 191.0_f32
+        .min((ui.available_width() - gap * (count - 1.0)) / count)
+        .max(64.0);
+    let total = cell * count + gap * (count - 1.0);
+    let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), 100.0 + 30.0), Sense::hover());
+    let left = row.center().x - total / 2.0;
+    for (i, option) in options.iter().enumerate() {
+        let selected = option.value.is(value.as_ref());
+        let text = label(option.label);
+        let radius = match option.value {
+            Lit::S("round") => 16.0,
+            Lit::S("slightly_round") => 6.0,
+            _ => 0.0,
+        };
+        let rect = Rect::from_min_size(
+            pos2(left + i as f32 * (cell + gap), row.min.y),
+            vec2(cell, 100.0),
+        );
+        let response = ui.interact(rect, ui.scope_id().with(("image", key, i)), Sense::click());
+        ui.painter()
+            .rect_filled(rect, Look::radius(look.r_s), look.window);
+        let window = Rect::from_min_size(
+            rect.min + vec2(cell * 0.17, 24.0),
+            vec2(cell * 0.66, 60.0),
+        );
+        ui.painter()
+            .rect_filled(window, Look::radius(radius), look.card);
+        ui.painter().rect_filled(
+            Rect::from_min_size(window.min + vec2(12.0, 14.0), vec2(48.0, 18.0)),
+            Look::radius(radius.min(9.0)),
+            look.accent,
+        );
+        if selected {
+            ui.painter().rect_stroke(
+                rect,
+                Look::radius(look.r_s),
+                Stroke::new(2.0, look.accent),
+                StrokeKind::Inside,
+            );
         }
-    });
+        focus_ring(ui, &response, rect, look.r_s, look);
+        response.widget_info(|| {
+            WidgetInfo::selected(Role::RadioButton, ui.is_enabled(), selected, &text)
+        });
+        if response.clicked() && !selected && ui.is_enabled() {
+            set(events, key, lit(option.value));
+        }
+        ui.painter().text(
+            pos2(rect.center().x, rect.max.y + 8.0),
+            egui::Align2::CENTER_TOP,
+            &text,
+            egui::FontId::proportional(14.0),
+            look.text,
+        );
+    }
 }
 
 /// The Dark and Light image buttons: little windows in each mode's
