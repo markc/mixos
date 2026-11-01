@@ -183,7 +183,7 @@ pub fn bounded(body: &str, marker: &str) -> String {
 
 /// Every command the engine answers itself. The window-level commands
 /// (`workshop.ui.*`, `workshop.window*`) belong to the toolkit drive layer.
-pub const COMMANDS: [&str; 32] = [
+pub const COMMANDS: [&str; 34] = [
     "HELP",
     "app.describe",
     "workshop.ping",
@@ -209,6 +209,8 @@ pub const COMMANDS: [&str; 32] = [
     "workshop.mesh.ping",
     "workshop.agents",
     "workshop.agents.select",
+    "workshop.agents.refresh",
+    "workshop.agents.filter",
     "workshop.agents.new",
     "workshop.agents.prompt",
     "workshop.agents.cancel",
@@ -244,15 +246,17 @@ pub fn describe() -> Value {
         {"name":"workshop.theme","args":{"scheme":"optional scheme name (ocean, crimson, stone, forest, sunset, mono, pro, studio, classic, breeze, adwaita) or null to follow the session","style":"optional style (plain, pro, studio, classic, breeze, adwaita), own for the scheme's own, or null to follow the session","mode":"optional light, dark or null to follow the session","decorations":"optional auto, csd, ssd or null to follow the session","caption_side":"optional right, left or null to follow the session"},"description":"Choose the window's theme: a present key sets that axis, an absent one leaves it; answers the choice and every effective axis, including decorations and decorations_reason","read_only":false},
         {"name":"workshop.mesh","args":{},"description":"Read this node, peers, bounded per-link and local traffic totals, one and five minute windows, top services and commands, ping results with age, and observation state; only this broker is observed","read_only":true},
         {"name":"workshop.mesh.ping","args":{},"description":"Ping each known peer once with a two second deadline; returns {pinging:[names]} immediately; results appear in workshop.mesh; refuses overlapping rounds","read_only":false},
-        {"name":"workshop.agents","args":{},"description":"This node's agentd sessions as the Agents branch shows them, and the selected session's transcript (items, seq, whether older events were evicted)","read_only":true},
-        {"name":"workshop.agents.select","args":{"session":"agentd session id"},"description":"Select an agent session in the Agents branch; its transcript is read back from agentd's log and then followed live","read_only":false},
-        {"name":"workshop.agents.new","args":{"agent":"an agentd instance","cwd":"directory under the instance's roots","mode":"optional mode","additional_dirs":"optional list of directories"},"description":"Start an agent session through agentd and select it; refused (USE_AGENT, rc 17) to an agent session's own mixos-mcp, which calls agent.* directly","read_only":false},
-        {"name":"workshop.agents.prompt","args":{"session":"optional session id (default the selected one)","text":"string"},"description":"Send a prompt to an agent session; refused (USE_AGENT, rc 17) to an agent session's own mixos-mcp, which calls agent.* directly","read_only":false},
-        {"name":"workshop.agents.cancel","args":{"session":"optional session id (default the selected one)"},"description":"Cancel the session's running turn; refused (USE_AGENT, rc 17) to an agent session's own mixos-mcp, which calls agent.* directly","read_only":false},
-        {"name":"workshop.agents.close","args":{"session":"optional session id (default the selected one)"},"description":"End the session's agent; it stays in agentd's log and can be resumed; refused (USE_AGENT, rc 17) to an agent session's own mixos-mcp, which calls agent.* directly","read_only":false},
-        {"name":"workshop.agents.resume","args":{"session":"optional session id (default the selected one)"},"description":"Bring back an ended session; refused (USE_AGENT, rc 17) to an agent session's own mixos-mcp, which calls agent.* directly","read_only":false},
-        {"name":"workshop.agents.set","args":{"session":"optional session id (default the selected one)","mode":"a mode","option":"a config option id, with value","value":"its value"},"description":"Set a session's mode or config option (model, effort, ...); refused (USE_AGENT, rc 17) to an agent session's own mixos-mcp, which calls agent.* directly","read_only":false},
-        {"name":"workshop.agents.answer","args":{"session":"optional session id (default the selected one)","request":"the open request's key","option":"one of the optionIds it offers (never allow_always)"},"description":"Answer an open permission question through agentd (agent.permission.respond); refused (USE_AGENT, rc 17) to an agent session's own mixos-mcp. The window's buttons answer only for a person: a ui.click on them is refused (HUMAN_ONLY)","read_only":false}
+        {"name":"workshop.agents","args":{},"description":"Every node's agentd sessions as the Agents branch shows them ({nodes:[{node, local, available, error, live, max_live, sessions}], selected:{node, session}, filter}), and the selected session's transcript (first, last, events, evicted, gap, filling, items)","read_only":true},
+        {"name":"workshop.agents.select","args":{"session":"agentd session id","node":"optional node (default the one node listing the id)"},"description":"Select an agent session in the Agents branch; its transcript is read back from agentd's log, then followed live on this node (a peer's is read again on refresh). An id listed by two nodes without node is refused (AMBIGUOUS_SESSION, rc 10)","read_only":false},
+        {"name":"workshop.agents.refresh","args":{"node":"optional node (default every node with agentd)"},"description":"List one or every node's agentd sessions again, and read the selected session on from its last event; answers {refreshing:[nodes]}","read_only":false},
+        {"name":"workshop.agents.filter","args":{"ended":"optional bool: open or close every node's Ended row","node":"optional node, or null for every node","agent":"optional agent name, or null for every agent"},"description":"Narrow the Agents list; answers the filter and the live and ended counts it shows","read_only":false},
+        {"name":"workshop.agents.new","args":{"agent":"an agentd instance","cwd":"directory under the instance's roots","node":"optional node (default this one)","mode":"optional mode","additional_dirs":"optional list of directories"},"description":"Start an agent session through agentd and select it; refused (USE_AGENT, rc 17) to an agent session's own mixos-mcp, which calls agent.* directly","read_only":false},
+        {"name":"workshop.agents.prompt","args":{"session":"optional session id (default the selected one)","node":"optional node (default the session's)","text":"string"},"description":"Send a prompt to an agent session; refused (USE_AGENT, rc 17) to an agent session's own mixos-mcp, which calls agent.* directly","read_only":false},
+        {"name":"workshop.agents.cancel","args":{"session":"optional session id (default the selected one)","node":"optional node (default the session's)"},"description":"Cancel the session's running turn; refused (USE_AGENT, rc 17) to an agent session's own mixos-mcp, which calls agent.* directly","read_only":false},
+        {"name":"workshop.agents.close","args":{"session":"optional session id (default the selected one)","node":"optional node (default the session's)"},"description":"End the session's agent; it stays in agentd's log and can be resumed; refused (USE_AGENT, rc 17) to an agent session's own mixos-mcp, which calls agent.* directly","read_only":false},
+        {"name":"workshop.agents.resume","args":{"session":"optional session id (default the selected one)","node":"optional node (default the session's)"},"description":"Bring back an ended session; refused (USE_AGENT, rc 17) to an agent session's own mixos-mcp, which calls agent.* directly","read_only":false},
+        {"name":"workshop.agents.set","args":{"session":"optional session id (default the selected one)","node":"optional node (default the session's)","mode":"a mode","option":"a config option id, with value","value":"its value"},"description":"Set a session's mode or config option (model, effort, ...); refused (USE_AGENT, rc 17) to an agent session's own mixos-mcp, which calls agent.* directly","read_only":false},
+        {"name":"workshop.agents.answer","args":{"session":"optional session id (default the selected one)","node":"optional node (default the session's)","request":"the open request's key","option":"one of the optionIds it offers (never allow_always)"},"description":"Answer an open permission question through agentd (agent.permission.respond); refused (USE_AGENT, rc 17) to an agent session's own mixos-mcp. The window's buttons answer only for a person: a ui.click on them is refused (HUMAN_ONLY)","read_only":false}
     ]})
 }
 

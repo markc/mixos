@@ -59,10 +59,13 @@ pub enum Effect {
     },
     /// Put `text` on the clipboard.
     Copy(String),
-    /// Send one command to this node's agentd (`agent`) and report
-    /// [`Engine::agent_completed`] with `ticket`.
+    /// Send one command to a node's agentd and report
+    /// [`Engine::agent_completed`] with `ticket`. `node: None` is this
+    /// node (`agent`); a peer is `agent.<node>.bus`
+    /// ([`crate::agents::agent_service`]).
     Agent {
         ticket: u64,
+        node: Option<String>,
         command: String,
         body: Value,
     },
@@ -96,15 +99,25 @@ pub enum RowKind {
     Peers,
     Peer(String),
     NoPeers,
-    /// The Agents branch: this node's agentd sessions.
+    /// The Agents branch: agentd sessions on every node that runs it.
     Agents,
-    AgentSession(String),
-    /// The collapsed "Ended (n)" row under Agents.
-    AgentsEnded(usize),
-    /// agentd is not running on this node.
+    /// One node's group under Agents.
+    AgentsNode(String),
+    AgentSession {
+        node: String,
+        session: String,
+    },
+    /// The collapsed "Ended (n)" row under a node's group.
+    AgentsEnded {
+        node: String,
+        count: usize,
+    },
+    /// agentd is not running on any reachable node.
     AgentsDown,
-    /// "New session…": its form is in Details.
-    AgentsNew,
+    /// "New session…" on a node: its form is in Details.
+    AgentsNew(String),
+    /// Listing a node's agentd failed: the service and the message.
+    AgentsError(String),
 }
 
 /// One row of the services tree, with its children.
@@ -451,7 +464,9 @@ impl Engine {
             "connected":self.connected,"busy":self.busy(),"discovering":self.discovery.is_some(),"calling":self.call.is_some(),
             "selection":self.ui.selected,"body":self.ui.body,"reply":self.last_reply,"status":self.status,"snapshot":self.snapshot,
             "ui":self.ui,"workshop":self.workshop,
-            "agents":{"available":self.agents.available,"selected":self.agents.selected,"sessions":self.agents.sessions.len()}})
+            "agents":{"nodes":self.agents.nodes.values().filter(|node| node.available == Some(true)).count(),
+                "selected":self.agents.selected,
+                "sessions":self.agents.nodes.values().map(|node| node.sessions.len()).sum::<usize>()}})
     }
 
     /// `workshop.theme`: a present `scheme`, `style`, `mode`, `decorations`
@@ -791,11 +806,11 @@ impl Engine {
         } else {
             self.workshop.selected = None;
         }
-        if let RowKind::AgentSession(session) = &row.kind {
-            self.select_session(session);
-        }
-        if row.kind == RowKind::Agents {
-            self.refresh_agents();
+        match &row.kind {
+            RowKind::AgentSession { node, session } => self.select_session(node, session),
+            RowKind::Agents => self.refresh_agents(),
+            RowKind::AgentsNode(node) => self.refresh_node(node),
+            _ => {}
         }
         self.ui.selected = match &row.kind {
             RowKind::Command(target) => Some(target.clone()),
@@ -838,11 +853,7 @@ impl Engine {
         );
         let agents = self.agents_tree();
         let filter = self.ui.filter.to_lowercase();
-        if filter.is_empty()
-            || agents.children.iter().chain(agents.children.iter().flat_map(|row| &row.children)).any(|row| {
-                matches!(&row.kind, RowKind::AgentSession(s) if self.session_label(s).to_lowercase().contains(&filter))
-            })
-        {
+        if filter.is_empty() || self.agents_match(&filter) {
             rows.insert(1, agents);
         }
         rows
@@ -1030,10 +1041,7 @@ impl Engine {
                 body,
             } => self.command(id, &command_name, &body),
             Delivery::Changed => {
-                // agentd may have come up since it was found missing.
-                if self.agents.available == Some(false) {
-                    self.refresh_agents();
-                }
+                self.agents_changed();
                 if self.busy() {
                     self.refetch = true;
                 } else {
@@ -1386,15 +1394,17 @@ impl Engine {
                     RowKind::Peer(name) => ("peer", name.clone()),
                     RowKind::NoPeers => ("no_peers", engine.label("no-peers")),
                     RowKind::Agents => ("agents", engine.label("agents-root")),
-                    RowKind::AgentSession(session) => {
-                        ("agent_session", engine.session_label(session))
+                    RowKind::AgentsNode(node) => ("agents_node", node.clone()),
+                    RowKind::AgentSession { node, session } => {
+                        ("agent_session", engine.session_label(node, session))
                     }
-                    RowKind::AgentsEnded(n) => (
+                    RowKind::AgentsEnded { count, .. } => (
                         "agents_ended",
-                        format!("{} ({n})", engine.label("agents-ended")),
+                        format!("{} ({count})", engine.label("agents-ended")),
                     ),
                     RowKind::AgentsDown => ("agents_down", engine.label("agents-down")),
-                    RowKind::AgentsNew => ("agents_new", engine.label("agents-new")),
+                    RowKind::AgentsNew(_) => ("agents_new", engine.label("agents-new")),
+                    RowKind::AgentsError(message) => ("agents_error", message.clone()),
                 };
                 let mut entry = json!({"key":row.key,"kind":kind,"label":label,"depth":depth,"expanded":row.expanded,
                     "children":row.children.len(),"selected":engine.ui.row_key.as_deref() == Some(row.key.as_str())});
@@ -1414,17 +1424,14 @@ impl Engine {
                     }
                     RowKind::Command(target) => entry["selection"] = json!(target),
                     RowKind::Error(error) => entry["error"] = json!(error),
-                    RowKind::AgentSession(session) => {
+                    RowKind::AgentSession { node, session } => {
+                        entry["node"] = json!(node);
                         entry["session"] = json!(session);
-                        entry["badge"] = json!(
-                            engine
-                                .agents
-                                .sessions
-                                .iter()
-                                .find(|r| &r.session == session)
-                                .map(|r| r.badge())
-                        );
+                        entry["badge"] = json!(engine.agents.row(node, session).map(|r| r.badge()));
                     }
+                    RowKind::AgentsNode(node)
+                    | RowKind::AgentsEnded { node, .. }
+                    | RowKind::AgentsNew(node) => entry["node"] = json!(node),
                     _ => {}
                 }
                 out.push(entry);
@@ -1533,6 +1540,9 @@ impl Engine {
         }
         if !finished {
             return;
+        }
+        if self.snapshot.error.is_none() {
+            self.agents_discovered();
         }
         if let Some(id) = reply {
             let rc = if self.snapshot.error.is_some() { 10 } else { 0 };

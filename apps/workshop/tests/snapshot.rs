@@ -185,8 +185,8 @@ fn agents_fixture(engine: &mut Engine) {
             {"session":"a0","agent":"codex","cwd":"/home/user/src/mixos","status":"ended","seq":20}
         ]}))),
     );
-    engine.ui.row_key = Some("agent:a1".into());
-    engine.select_session("a1");
+    engine.ui.row_key = Some("agent:local:a1".into());
+    engine.select_session("local", "a1");
     let read = agent_ticket(engine, "agent.session.read");
     let chunk = |seq: u64, text: &str| {
         json!({"session":"a1","seq":seq,"kind":"agent_message_chunk",

@@ -171,6 +171,8 @@
     {name:"workshop.mesh.ping", owner:"workshop", version:"0.1.0", status:"accepted", class:"intent", schema:"none"},
     {name:"workshop.agents", owner:"workshop", version:"0.1.0", status:"accepted", class:"query", schema:"none"},
     {name:"workshop.agents.select", owner:"workshop", version:"0.1.0", status:"accepted", class:"intent", schema:"none"},
+    {name:"workshop.agents.refresh", owner:"workshop", version:"0.1.0", status:"accepted", class:"intent", schema:"none"},
+    {name:"workshop.agents.filter", owner:"workshop", version:"0.1.0", status:"accepted", class:"intent", schema:"none"},
     {name:"workshop.agents.new", owner:"workshop", version:"0.1.0", status:"accepted", class:"intent", schema:"none"},
     {name:"workshop.agents.prompt", owner:"workshop", version:"0.1.0", status:"accepted", class:"intent", schema:"none"},
     {name:"workshop.agents.cancel", owner:"workshop", version:"0.1.0", status:"accepted", class:"intent", schema:"none"},

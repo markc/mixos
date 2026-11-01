@@ -96,9 +96,19 @@ fn until($test)
   return nil
 end
 
+-- The session's row on this node (the private broker's only agentd).
 fn row($v, $session)
-  $rows = filter($v.sessions ?? [], fn($r) = $r.session == $session)
+  $rows = []
+  for each $n in $v.nodes ?? []
+    if $n.local == true then
+      $rows = filter($n.sessions ?? [], fn($r) = $r.session == $session)
+    end
+  end
   return if len($rows) > 0 then $rows[0] else nil end
+end
+
+fn available($v)
+  return len(filter($v.nodes ?? [], fn($n) = $n.local == true and $n.available == true)) > 0
 end
 
 fn items_text($v)
@@ -137,14 +147,14 @@ try
   check("workshop and agentd answer", $up)
   -- Topic subscriptions confirm asynchronously.
   sleep(3)
-  check("Workshop sees agentd", until(fn($v) = $v.available == true) != nil)
+  check("Workshop sees agentd", until(fn($v) = available($v)) != nil)
 
   -- Start through Workshop.
   $n = ws("workshop.agents.new", {agent: "fake", cwd: $tmp .. "/ws"})
   $s = if type($n.v) == "map" then $n.v.session else nil end
   check("workshop.agents.new starts a session and answers agentd's reply", $n.rc == 0 and type($s) == "string")
   if type($s) != "string" then print("  new answered rc " .. to_string($n.rc) .. ": " .. to_string($n.v)) end
-  check("and selects it", type($s) == "string" and until(fn($v) = $v.selected == $s) != nil)
+  check("and selects it", type($s) == "string" and until(fn($v) = $v.selected != nil and $v.selected.session == $s) != nil)
   check("it becomes ready", until(fn($v) = row($v, $s) != nil and row($v, $s).status == "ready") != nil)
 
   -- A turn, read back and followed live.
