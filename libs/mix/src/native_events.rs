@@ -1257,7 +1257,10 @@ impl NativeEvents {
         if self.sockets.len() >= crate::builtins::socket_sources::MAX_SOURCES {
             return Err(refusal(
                 "SOCKET_LIMIT",
-                format!("maximum {} socket sources per evaluator", crate::builtins::socket_sources::MAX_SOURCES),
+                format!(
+                    "maximum {} socket sources per evaluator",
+                    crate::builtins::socket_sources::MAX_SOURCES
+                ),
             ));
         }
         Ok(())

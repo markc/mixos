@@ -131,12 +131,17 @@ end
     drop(bound);
     exec(&mut e, "$closed = udp_close($h)").await.unwrap();
     assert_eq!(global_str(&e, "closed"), "false");
-    exec(&mut e, r#"
+    exec(
+        &mut e,
+        r#"
 try
   udp_local_addr($h)
 catch $msg, $err
   $closed_addr = $err.code
 end
-"#).await.unwrap();
+"#,
+    )
+    .await
+    .unwrap();
     assert_eq!(global_str(&e, "closed_addr"), "UDP_HANDLE");
 }

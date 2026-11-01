@@ -107,7 +107,9 @@ fn global_port(e: &Evaluator, name: &str) -> u16 {
 #[tokio::test(flavor = "current_thread")]
 async fn sixty_four_subscribed_connections_work_alongside_tcp_and_udp_listeners() {
     let (mut e, _tx) = served();
-    exec(&mut e, r#"
+    exec(
+        &mut e,
+        r#"
 $l = tcp_listen("127.0.0.1", 0)
 $port = tcp_local_addr($l).port
 $listener = tcp_on($l, "many.accept")
@@ -125,7 +127,10 @@ on many.line
   $delivered = $delivered + 1
   if $delivered == 64 then quit() end
 end
-"#).await.unwrap();
+"#,
+    )
+    .await
+    .unwrap();
     let port = global_port(&e, "port");
     // Keep all clients open through the assertions: their server sources
     // coexist rather than retiring as the pump admits later connections.
@@ -135,10 +140,15 @@ end
         writeln!(client, "{n}").unwrap();
         clients.push(client);
     }
-    tokio::time::timeout(Duration::from_secs(30), e.run_event_pump()).await.unwrap().unwrap();
+    tokio::time::timeout(Duration::from_secs(30), e.run_event_pump())
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(global_str(&e, "accepted"), "64");
     assert_eq!(global_str(&e, "delivered"), "64");
-    let Some(Value::Map(ref seen)) = e.get_global("seen") else { panic!("missing received frames") };
+    let Some(Value::Map(ref seen)) = e.get_global("seen") else {
+        panic!("missing received frames")
+    };
     assert_eq!(seen.len(), 64);
     e.close_native_events();
     drop(clients);
