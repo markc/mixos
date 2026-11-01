@@ -159,3 +159,9 @@ async fn missing_global_read_is_undefined_and_keyword_keys_work() {
     assert_eq!(run("global $a; $a = {global: 1}; print($a.global); print($a[\"global\"]); fn f() global $missing; return $missing end; try f() catch $m, $e print($e.code) end").await,
         "1\n1\nNAME_UNDEFINED");
 }
+
+#[tokio::test]
+async fn invalid_catch_binder_still_runs_finally() {
+    assert_eq!(run("fn f() global $x; try die(\"e\") catch $x finally print(\"cleanup\") end end; try f() catch $m, $e print($e.code) end").await,
+        "cleanup\nGLOBAL_BINDER");
+}
