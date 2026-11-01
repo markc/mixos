@@ -883,7 +883,6 @@ fn live_items(
     }
 }
 
-
 /// Search results, COSMIC's view (spec 4 "Search", Fable P7b): per page
 /// the parent title, the page title as a link, a divider, then each
 /// matching section with its heading and card, indented, its rows live so

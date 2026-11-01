@@ -113,7 +113,11 @@ impl Engine {
     pub fn item_action(&mut self, source: &str, id: &str, action: &str) -> Result<(), String> {
         let page = pages::all()
             .iter()
-            .find(|p| p.sections().iter().any(|s| s.items.is_some_and(|i| i.source == source)))
+            .find(|p| {
+                p.sections()
+                    .iter()
+                    .any(|s| s.items.is_some_and(|i| i.source == source))
+            })
             .ok_or_else(|| self.label("item-unknown", &[("item", source)]))?;
         if let Some(reason) = self.page_reason(page) {
             return Err(reason);
@@ -160,7 +164,10 @@ impl Engine {
             if !out.iter().any(|(v, _)| v.as_str() == Some(name)) {
                 let key = format!("opt-{}", name.replace('_', "-"));
                 let text = self.label(&key, &[]);
-                out.push((Value::from(name.as_str()), if text == key { name.clone() } else { text }));
+                out.push((
+                    Value::from(name.as_str()),
+                    if text == key { name.clone() } else { text },
+                ));
             }
         }
         if let Some(source) = row.options_from {
@@ -279,14 +286,16 @@ mod tests {
     #[test]
     fn prefs_set_operates_the_control_and_its_rules() {
         let mut e = engine();
-        e.set_control("appearance.density", json!("compact")).unwrap();
+        e.set_control("appearance.density", json!("compact"))
+            .unwrap();
         assert!(e.store.writing());
         // The pinned design source disables Mode for a person and an agent.
         e.store
             .values
             .insert("appearance.source".into(), json!({"design":"x"}));
         assert_eq!(
-            e.set_control("appearance.mode", json!("light")).unwrap_err(),
+            e.set_control("appearance.mode", json!("light"))
+                .unwrap_err(),
             "row-appearance-mode-pinned"
         );
         // A key with no control on any page yet: settingsd's, not Prefs'.
