@@ -1,0 +1,25 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Expected output:
+-- 0
+-- 3
+-- abc
+$connections = {a: 1}
+$counter = 0
+$text = ""
+fn finish($key)
+  global $connections, $counter, $text
+  $connections = delete($connections, $key)
+  $counter = $counter + 1
+  $text = $text .. "abc"
+end
+finish("a")
+for $i = 1 to 2
+  fn bump()
+    global $counter
+    $counter = $counter + 1
+  end
+  bump()
+end
+print(length($connections))
+print($counter)
+print($text)

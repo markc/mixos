@@ -264,7 +264,7 @@ print("" .. $track)
 
 ### Writes inside a function are function-local
 
-Any `$x = ...` *assignment* inside a function binds a **function-local** variable. It does not write through to an outer/global of the same name — and that includes `$rc`/`$result`: when those change after a `send`, it is the Bus runtime writing them natively, not a Mix assignment (see [Bus messaging](bus.md)); a literal `$rc = ...` inside a function is as local as any other write.
+By default, `$x = ...` *assignment* inside a function binds a **function-local** variable. It does not write through to an outer/global of the same name — and that includes `$rc`/`$result`: when those change after a `send`, it is the Bus runtime writing them natively, not a Mix assignment (see [Bus messaging](bus.md)); a literal `$rc = ...` inside a function is as local as any other write.
 
 ```mix
 $g = 1
@@ -278,7 +278,7 @@ print($g)
 1
 ```
 
-This includes the accumulator trap: a helper doing `$count = $count + 1` leaves the caller's `$count` untouched. A function cannot tick a shared global counter.
+This includes the accumulator trap: a helper doing `$count = $count + 1` leaves the caller's `$count` untouched. Declare `global $count` before assignment to update the program-global counter.
 
 ### Reads fall through (globals fallback)
 
@@ -297,7 +297,7 @@ print(r())
 
 ### The pass-in / return / reassign triad
 
-Because writes are local and args are by value, the way to thread state *through* a function is the triad: **(1) pass the value in** (explicit read) → **(2) `return`** the new value (compute) → **(3) reassign at the call site** (write). There is no `global` keyword — this is the idiom by design.
+Because writes are local and args are by value, the way to thread state *through* a function is the triad: **(1) pass the value in** (explicit read) → **(2) `return`** the new value (compute) → **(3) reassign at the call site** (write). This remains a useful explicit data-flow idiom. For intentional program-global updates, use `global $x` before local binding; see [variables](variables.md#explicit-program-global-writes). Lambdas must declare too, and captured or module-injected locals cannot be redeclared global.
 
 ```mix
 function inc($n)
@@ -606,7 +606,7 @@ print($mathlib["mul"](3, 4))
 - **Concat is `..`** (never `+`/`.`): `"hi " .. $name`.
 - **Top-level `fn`s hoist** (0.63.0) — forward calls work at the script's top level; a `fn` nested in a block still binds when its branch runs. Recursion caps at **128** frames (clean runtime error).
 - **A keyword can't be a function name** (`function step(...)` errors; `$step = 1` is fine) and **a builtin can't be shadowed** (calls always resolve to the builtin).
-- **Args by value; writes function-local; closures capture for reads only.** Propagate state with the pass-in/return/reassign triad — there is no `global`.
+- **Args by value; writes function-local; closures capture for reads only.** Propagate state with the pass-in/return/reassign triad, or declare `global $x` for program-global writes.
 - **Modules = map of lambdas, index-called** (`$mod["fn"](args)`), not dot-called.
 - **`include`** = script-relative, load-once (libs); **`source`** = CWD, every-time.
 - Multi-statement lambdas must be **var-bound** before going into a HOF; named functions **can't** be passed by bare name.

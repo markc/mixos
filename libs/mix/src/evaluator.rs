@@ -7728,7 +7728,7 @@ impl Evaluator {
     /// alias-safe. A missing or non-string target falls to the generic
     /// path, preserving undefined-variable + coercion semantics.
     fn assignment_target_is_string(&mut self, name: &str) -> bool {
-        if self.ctx.function_depth > 0 {
+        if self.ctx.function_depth > 0 && !self.scope.is_declared_global(name) {
             self.scope
                 .with_mut_current_value(name, |v| matches!(v, Value::String(_)))
                 .unwrap_or(false)
@@ -7764,7 +7764,7 @@ impl Evaluator {
             }
             true
         };
-        let appended = if self.ctx.function_depth > 0 {
+        let appended = if self.ctx.function_depth > 0 && !self.scope.is_declared_global(name) {
             self.scope.with_mut_current_value(name, append)
         } else {
             self.scope.with_mut_value(name, append)
@@ -9076,7 +9076,9 @@ impl Evaluator {
                         return Ok(Value::Nil);
                     }
                     let val = self.eval_expr(value).await?;
-                    if self.ctx.function_depth > 0 {
+                    if self.scope.is_declared_global(name) {
+                        self.scope.set_global(name, val);
+                    } else if self.ctx.function_depth > 0 {
                         // Inside a function: always create/update in current frame
                         self.scope.set_in_current(name.clone(), val);
                     } else {
@@ -12897,6 +12899,7 @@ impl Evaluator {
     /// only async-flavoured constructs are recursive calls to this
     /// same function.
     fn compute_block_sync_self(name: &str, params: &[Param], body: &FunctionBody) -> bool {
+        if Self::body_declares_global(body) { return false; }
         let arity = params.len();
         // Conservative: any param with a default could need async eval
         // at call time, so disqualify.
@@ -12916,12 +12919,40 @@ impl Evaluator {
     /// `MixFunction` so the per-call path can skip the prefix
     /// without re-walking the AST.
     fn compute_sync_prefix(body: &FunctionBody) -> usize {
+        if Self::body_declares_global(body) { return 0; }
         match body {
             FunctionBody::Block(stmts) => {
                 stmts.iter().take_while(|s| Self::is_stmt_sync(s)).count()
             }
             FunctionBody::Expression(_) => 0,
         }
+    }
+
+    /// Never enter a declaring function under a caller's live global-slot
+    /// pointers: creating a global may rehash frames[0]. Nested functions
+    /// have their own eligibility checks and declaration lifetime.
+    fn body_declares_global(body: &FunctionBody) -> bool {
+        fn list(stmts: &[Stmt]) -> bool { stmts.iter().any(stmt) }
+        fn stmt(s: &Stmt) -> bool {
+            match &s.kind {
+                StmtKind::Global(_) => true,
+                StmtKind::If { then_body, else_ifs, else_body, .. } =>
+                    list(then_body) || else_ifs.iter().any(|(_, b)| list(b))
+                        || else_body.as_ref().is_some_and(|b| list(b)),
+                StmtKind::For { body, .. } | StmtKind::ForEach { body, .. }
+                | StmtKind::While { body, .. } | StmtKind::Loop { body, .. }
+                | StmtKind::Address { body, .. } => list(body),
+                StmtKind::TryCatch { try_body, catch, finally_body } =>
+                    list(try_body) || catch.as_ref().is_some_and(|c| list(&c.body))
+                        || finally_body.as_ref().is_some_and(|b| list(b)),
+                StmtKind::Select { cases, otherwise, .. } =>
+                    cases.iter().any(|(_, b)| list(b)) || otherwise.as_ref().is_some_and(|b| list(b)),
+                StmtKind::Chain { left, right, .. } => stmt(left) || stmt(right),
+                StmtKind::PipeToExternal { stmt: inner, .. } => stmt(inner),
+                _ => false,
+            }
+        }
+        match body { FunctionBody::Block(b) => list(b), FunctionBody::Expression(_) => false }
     }
 
     /// Compile a self-recursive numeric function body to fib-style
@@ -13212,7 +13243,9 @@ impl Evaluator {
                     return Ok(Value::Nil);
                 }
                 let val = self.eval_sync_verified(value)?;
-                if self.ctx.function_depth > 0 {
+                if self.scope.is_declared_global(name) {
+                    self.scope.set_global(name, val);
+                } else if self.ctx.function_depth > 0 {
                     self.scope.set_in_current(name.clone(), val);
                 } else {
                     self.scope.update_or_set(name, val);

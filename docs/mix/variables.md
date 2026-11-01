@@ -7,7 +7,7 @@ word at the shell-first classifier. This page covers the sigil, assignment,
 reading (bound and unbound), `${...}` string interpolation, the `env()` builtin,
 positional `$1`/`$2` script arguments, and the one rule that trips up everyone
 coming from bash or Python — **assignment inside a function does not write
-through to a global**.
+through to a global by default**. Use `global` for an explicit program-global write.
 
 Related: [strings](strings.md) for the full quoting/interpolation rules,
 [functions](functions.md) for the deep function-scope detail, and
@@ -326,11 +326,11 @@ print($last)
 3
 ```
 
-### Assignment in a function does NOT write through to a global
+### Function assignment is local by default; `global` opts in
 
 A function gets its **own frame**. It can *read* an outer/global variable
 (reads fall through to the global frame), but **any `$x = …` assignment inside a
-function binds a function-local** — it never updates the outer variable:
+function binds a function-local by default**:
 
 ```mix
 $g = 1
@@ -364,7 +364,50 @@ leaves the caller's `$count` unchanged — and for `$rc` / `$result` too: on a
 `send` the Bus runtime writes them **into the current frame**, so a `send`
 inside a function updates them for that function's body only. The caller's
 `$rc` is untouched (and still unbound at the top level if no top-level `send`
-has run). There is **no `global` keyword** by design.
+has run). Use `global` for intentional program-global updates (0.119.0).
+
+### Explicit program-global writes
+
+```mix
+$conns = {one: 1, two: 2}
+fn finish($key)
+  global $conns
+  $conns = delete($conns, $key)
+end
+finish("one")
+print(length($conns)) -- 1
+```
+
+`global $a, $b` applies from execution of the declaration until this
+invocation returns. Assignment creates a missing global; reading a missing
+one raises the ordinary undefined-variable error. Plain assignment,
+self-concat, compound assignment, in-place mutation and field/index/path
+writes all use the program-global frame. It does not make a sequence of
+operations atomic across yields.
+
+Each function invocation is independent, including recursion. Called
+functions and lambdas must declare globals themselves. A declaration inside
+an if or loop is allowed and idempotent, and takes effect only if executed.
+Lint checks textual order without evaluating conditions and notes conditional
+declarations.
+
+Parameters are refused (`GLOBAL_PARAM`), as are names already present in the
+current local frame (`GLOBAL_AFTER_LOCAL`), including lambda captures and
+module-injected names. Loop variables, catch variables and parse captures
+cannot bind a declared global (`GLOBAL_BINDER`). Runtime-owned `$event`,
+`$rc`, `$result`, `$reply` cannot be declared (`GLOBAL_RUNTIME_NAME`).
+
+At program or module top level this is a no-op by construction. In an `on`
+handler it explicitly directs writes and new bindings to the shared global
+frame; a never-initialised name otherwise can disappear with a Class C
+invocation. Lint emits a note outside functions.
+
+Inside a `require` module function, `global` refers to the importer’s
+program-global frame, never module state. A module-injected same-named
+variable is refused: module variables are not globals.
+
+`global` is reserved as a function name. It still works as a map key or
+field: `{global: 1}`, `$m.global`, `$m["global"]`.
 
 ### Binders shadow inside a function
 
@@ -435,7 +478,7 @@ detail — closures, captures, recursion, HOF lambdas — lives in
 | `'...'` | fully raw, no interpolation | `'${x}'` → `${x}` |
 | `env("X")` | env only, missing → `""` | `env("HOME")` |
 | Indexed write | loud on out-of-range; the read is `nil` | `$l[5] = 9` → error |
-| Assign in function | binds a **local**, never the global | use return + reassign |
+| Assign in function | binds a **local** by default | use `global $x` or return + reassign |
 | Binders in function | shadow, never clobber the outer var | loop var, `catch $e` |
 
 ## See also

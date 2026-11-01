@@ -83,6 +83,11 @@ async fn test_variables() {
     run_test_script("variables.mix").await;
 }
 
+#[tokio::test]
+async fn test_global_declaration_script() {
+    run_test_script("global.mix").await;
+}
+
 // A runtime error raised on the sync fast path (inside a user function
 // body that `is_stmt_sync` accepts) must report the offending
 // statement's own line, not a stale line left by the last async

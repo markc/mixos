@@ -220,7 +220,8 @@
                         <a href="#env--explicit-environment-read">env() — explicit environment read</a>
                         <a href="#positional-arguments">Positional arguments</a>
                         <a href="#scope-top-level-vs-functions">Scope: top level vs functions</a>
-                        <a href="#assignment-in-a-function-does-not-write-through-to-a-global" class="toc-h3">Assignment in a function does NOT write through to a global</a>
+                        <a href="#function-assignment-is-local-by-default-global-opts-in" class="toc-h3">Function assignment is local by default; global opts in</a>
+                        <a href="#explicit-program-global-writes" class="toc-h3">Explicit program-global writes</a>
                         <a href="#binders-shadow-inside-a-function" class="toc-h3">Binders shadow inside a function</a>
                         <a href="#the-pass-in--return--reassign-triad" class="toc-h3">The pass-in / return / reassign triad</a>
                         <a href="#quick-reference">Quick reference</a>
@@ -257,7 +258,7 @@ word at the shell-first classifier. This page covers the sigil, assignment,
 reading (bound and unbound), <code>${...}</code> string interpolation, the <code>env()</code> builtin,
 positional <code>$1</code>/<code>$2</code> script arguments, and the one rule that trips up everyone
 coming from bash or Python — <strong>assignment inside a function does not write
-through to a global</strong>.</p>
+through to a global by default</strong>. Use <code>global</code> for an explicit program-global write.</p>
 <p>Related: <a href="/mix/strings/">strings</a> for the full quoting/interpolation rules,
 <a href="/mix/functions/">functions</a> for the deep function-scope detail, and
 <a href="/mix/control-flow/">control flow</a> for loop variables.</p>
@@ -467,10 +468,10 @@ print($last)
 </code></pre>
 <pre><code class="language-text">3
 </code></pre>
-<h3 id="assignment-in-a-function-does-not-write-through-to-a-global">Assignment in a function does NOT write through to a global</h3>
+<h3 id="function-assignment-is-local-by-default-global-opts-in">Function assignment is local by default; <code>global</code> opts in</h3>
 <p>A function gets its <strong>own frame</strong>. It can <em>read</em> an outer/global variable
 (reads fall through to the global frame), but <strong>any <code>$x = …</code> assignment inside a
-function binds a function-local</strong> — it never updates the outer variable:</p>
+function binds a function-local by default</strong>:</p>
 <pre><code class="language-mix">$g = 1
 function bump()
   $g = 99           -- binds a LOCAL $g, does NOT touch the global
@@ -494,7 +495,41 @@ leaves the caller's <code>$count</code> unchanged — and for <code>$rc</code> /
 <code>send</code> the Bus runtime writes them <strong>into the current frame</strong>, so a <code>send</code>
 inside a function updates them for that function's body only. The caller's
 <code>$rc</code> is untouched (and still unbound at the top level if no top-level <code>send</code>
-has run). There is <strong>no <code>global</code> keyword</strong> by design.</p>
+has run). Use <code>global</code> for intentional program-global updates (0.119.0).</p>
+<h3 id="explicit-program-global-writes">Explicit program-global writes</h3>
+<pre><code class="language-mix">$conns = {one: 1, two: 2}
+fn finish($key)
+  global $conns
+  $conns = delete($conns, $key)
+end
+finish("one")
+print(length($conns)) -- 1
+</code></pre>
+<p><code>global $a, $b</code> applies from execution of the declaration until this
+invocation returns. Assignment creates a missing global; reading a missing
+one raises the ordinary undefined-variable error. Plain assignment,
+self-concat, compound assignment, in-place mutation and field/index/path
+writes all use the program-global frame. It does not make a sequence of
+operations atomic across yields.</p>
+<p>Each function invocation is independent, including recursion. Called
+functions and lambdas must declare globals themselves. A declaration inside
+an if or loop is allowed and idempotent, and takes effect only if executed.
+Lint checks textual order without evaluating conditions and notes conditional
+declarations.</p>
+<p>Parameters are refused (<code>GLOBAL_PARAM</code>), as are names already present in the
+current local frame (<code>GLOBAL_AFTER_LOCAL</code>), including lambda captures and
+module-injected names. Loop variables, catch variables and parse captures
+cannot bind a declared global (<code>GLOBAL_BINDER</code>). Runtime-owned <code>$event</code>,
+<code>$rc</code>, <code>$result</code>, <code>$reply</code> cannot be declared (<code>GLOBAL_RUNTIME_NAME</code>).</p>
+<p>At program or module top level this is a no-op by construction. In an <code>on</code>
+handler it explicitly directs writes and new bindings to the shared global
+frame; a never-initialised name otherwise can disappear with a Class C
+invocation. Lint emits a note outside functions.</p>
+<p>Inside a <code>require</code> module function, <code>global</code> refers to the importer’s
+program-global frame, never module state. A module-injected same-named
+variable is refused: module variables are not globals.</p>
+<p><code>global</code> is reserved as a function name. It still works as a map key or
+field: <code>{global: 1}</code>, <code>$m.global</code>, <code>$m["global"]</code>.</p>
 <h3 id="binders-shadow-inside-a-function">Binders shadow inside a function</h3>
 <p>Names a function <em>introduces</em> — a <code>for each $x</code> / <code>for $i = …</code> loop variable, a
 <code>catch $e</code>, a <code>parse … with $a $b</code> target — bind in the function's own frame,
@@ -548,7 +583,7 @@ detail — closures, captures, recursion, HOF lambdas — lives in
 <tr><td><code>'...'</code></td><td>fully raw, no interpolation</td><td><code>'${x}'</code> → <code>${x}</code></td></tr>
 <tr><td><code>env("X")</code></td><td>env only, missing → <code>""</code></td><td><code>env("HOME")</code></td></tr>
 <tr><td>Indexed write</td><td>loud on out-of-range; the read is <code>nil</code></td><td><code>$l[5] = 9</code> → error</td></tr>
-<tr><td>Assign in function</td><td>binds a <strong>local</strong>, never the global</td><td>use return + reassign</td></tr>
+<tr><td>Assign in function</td><td>binds a <strong>local</strong> by default</td><td>use <code>global $x</code> or return + reassign</td></tr>
 <tr><td>Binders in function</td><td>shadow, never clobber the outer var</td><td>loop var, <code>catch $e</code></td></tr>
 </tbody></table>
 <h2 id="see-also">See also</h2>

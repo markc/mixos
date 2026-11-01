@@ -27,6 +27,25 @@ fn codes(src: &str) -> Vec<String> {
 }
 
 #[test]
+fn global_placement_diagnostics() {
+    for (src, code) in [
+        ("fn f($x) global $x end", "MIX-E1509"),
+        ("fn f() $x = 1; global $x end", "MIX-E1510"),
+        ("fn f() global $x; for $x in [] end end", "MIX-E1511"),
+        ("fn f() global $x; parse \"a\" with $x end", "MIX-E1511"),
+        ("fn f() global $x; try die(\"x\") catch $x end end", "MIX-E1511"),
+        ("global $event", "MIX-E1512"),
+        ("global $x", "MIX-D3023"),
+        ("on test.msg global $x end", "MIX-D3023"),
+        ("fn f() if true then global $x end end", "MIX-D3024"),
+        ("$x = 0; fn f() = fn($x) global $x end", "MIX-E1509"),
+    ] { assert!(codes(src).contains(&code.to_string()), "{src}: {code}"); }
+    let cfg = AnalyzerConfig { agent: true, ..Default::default() };
+    let ds = lint_cfg("$x = 0; fn f() global $x; $x = $x + 1 end", &cfg);
+    assert!(!ds.iter().any(|(c, _)| c == "MIX-E1506"));
+}
+
+#[test]
 fn functions_list_comes_from_local_ast_with_attribution_and_duplicates() {
     let src = "-- fn comment() end\n\
         $quoted = 'fn quoted() end'\n\

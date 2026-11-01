@@ -24,6 +24,34 @@ fn test_dir(name: &str) -> PathBuf {
     dir
 }
 
+#[tokio::test]
+async fn global_targets_importer_and_refuses_module_injections() {
+    let dir = test_dir("global_declaration");
+    std::fs::write(dir.join("module.mix"), r#"
+global $module_value
+$module_value = 7
+fn update()
+  global $program_value
+  $program_value = 42
+end
+fn bad()
+  global $module_value
+end
+"#).unwrap();
+    let out = run_in_dir(&dir, r#"
+$program_value = 0
+$m = require("module.mix")
+$m.update()
+print($program_value)
+print($m.module_value)
+try $m.bad() catch $msg, $e
+  print($e.code)
+  print(contains($msg, "module variables are not globals"))
+end
+"#).await.unwrap();
+    assert_eq!(out, "42\n7\nGLOBAL_AFTER_LOCAL\ntrue\n");
+}
+
 /// Write `main.mix` into `dir`, run it with the file context set (so
 /// `require` resolves module paths script-relative), and return
 /// captured stdout. Errors return the error string.

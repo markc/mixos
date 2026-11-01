@@ -172,7 +172,7 @@ pub const LINT_DOCS: &[LintDoc] = &[
     LintDoc {
         code: "MIX-E1506",
         summary: "write to an outer variable inside fn (--agent)",
-        detail: "A `fn` body assigns a name that already exists as an outer $variable (and is not one of its params) — the assignment silently creates a NEW local, and the outer variable is unchanged. Pass it in, return it, or rename the local. Compares against variables, not callables, so a `$sum = 0` local never fires on the prelude's `sum` function. Emitted only under `--agent` / `MIX_LINT=agent`.",
+        detail: "A `fn` body assigns a name that already exists as an outer $variable (and is not one of its params) — the assignment silently creates a NEW local, and the outer variable is unchanged. Declare it with `global $x`, pass it in and return it, or rename the local. Compares against variables, not callables, so a `$sum = 0` local never fires on the prelude's `sum` function. Emitted only under `--agent` / `MIX_LINT=agent`.",
     },
     LintDoc {
         code: "MIX-E1507",
@@ -183,6 +183,36 @@ pub const LINT_DOCS: &[LintDoc] = &[
         code: "MIX-E1508",
         summary: "assign-back of an in-place mutator",
         detail: "`$x = push($x, v)` binds nil — push mutates in place and returns nil, so the assign-back empties the list; `$x = pop($x)` / `$x = shift($x)` bind the REMOVED ELEMENT, not the list. Drop the assignment for push; bind the element separately for pop/shift.",
+    },
+    LintDoc {
+        code: "MIX-E1509",
+        summary: "global declaration names a parameter",
+        detail: "A function or lambda parameter cannot be declared global (GLOBAL_PARAM). Choose a different parameter name.",
+    },
+    LintDoc {
+        code: "MIX-E1510",
+        summary: "global declaration follows a local binding",
+        detail: "Declare global before assigning or binding the name locally (GLOBAL_AFTER_LOCAL). Runtime also rejects captured and module-injected locals; module variables are not globals. Static checking is textual-order and flow-insensitive.",
+    },
+    LintDoc {
+        code: "MIX-E1511",
+        summary: "binder names a declared global",
+        detail: "A for/for each counter or item, catch variable, or parse capture cannot bind a declared global (GLOBAL_BINDER). Use a separate local name.",
+    },
+    LintDoc {
+        code: "MIX-E1512",
+        summary: "global declaration names a runtime variable",
+        detail: "The runtime owns $event, $rc, $result and $reply. They cannot be declared global (GLOBAL_RUNTIME_NAME).",
+    },
+    LintDoc {
+        code: "MIX-D3023",
+        summary: "global declaration outside a function",
+        detail: "At program or module top level global is a no-op. In a handler it explicitly routes writes, including creation of new names, to the shared program-global frame.",
+    },
+    LintDoc {
+        code: "MIX-D3024",
+        summary: "conditional global declaration",
+        detail: "A declaration nested in control flow takes effect only if executed, then lasts for the rest of this invocation. Lint checks declarations in textual order without evaluating conditions.",
     },
     LintDoc {
         code: "MIX-E1601",

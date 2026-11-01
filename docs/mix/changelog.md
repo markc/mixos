@@ -8,6 +8,16 @@ generated: by docs/_build/gen-site.mix from libs/mix/CHANGELOG.md; do not edit
 
 > Mirrored from [`libs/mix/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/libs/mix/CHANGELOG.md), where releases update it. The component's page is [mix](README.md). This page describes the current `main` branch of MixOS.
 
+## 0.119.0 — 2026-11-01
+
+- Add `global $a, $b` for explicit program-global assignment per invocation,
+  including shared serve globals. Lambdas declare independently.
+- Refuse parameter, existing-local/capture/module, binder and runtime-name
+  conflicts with catchable errors and permanent lint diagnostics.
+- Keep declaring functions off sync/raw-slot paths; preserve keyword map keys
+  and fields. See the global-declaration decision for the language contract.
+
+
 ## Unreleased
 
 ### Added
