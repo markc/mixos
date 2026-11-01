@@ -27,9 +27,12 @@ fn remaining(last: Option<Instant>, interval: Duration, now: Instant) -> Duratio
     })
 }
 impl Schedule {
-    fn queue_due(&self, now:Instant,hint:bool)->bool {remaining(self.queue,if hint {TOPIC} else {QUEUE},now).is_zero()}
+    fn queue_due(&self, now: Instant, hint: bool) -> bool {
+        remaining(self.queue, if hint { TOPIC } else { QUEUE }, now).is_zero()
+    }
     fn history_due(&self, now: Instant, generation: u64) -> bool {
-        (generation != self.generation && remaining(self.history,TOPIC,now).is_zero()) || remaining(self.history, HISTORY, now).is_zero()
+        (generation != self.generation && remaining(self.history, TOPIC, now).is_zero())
+            || remaining(self.history, HISTORY, now).is_zero()
     }
     fn gate_due(&self, now: Instant, visible: bool, gating: bool) -> bool {
         visible && gating && remaining(self.gate, GATE, now).is_zero()
@@ -57,7 +60,11 @@ fn call(handle: &Handle, target: &str, verb: &str, args: Value) -> Result<Value,
         target,
         verb,
         args.to_string(),
-        if verb == "train.gate" { GATE_TIMEOUT } else { Duration::from_secs(5) },
+        if verb == "train.gate" {
+            GATE_TIMEOUT
+        } else {
+            Duration::from_secs(5)
+        },
     ))
     .map_err(|e| format!("{verb}: {e}"))?;
     if reply.rc != 0 {
@@ -122,7 +129,7 @@ pub fn start_reader(handle: Handle, shared: Arc<Mutex<Shared>>) -> Result<(), St
                     // cause two SSH-backed reads less than 15 seconds apart.
                 }
                 if active {
-                    if schedule.queue_due(Instant::now(),wake) {
+                    if schedule.queue_due(Instant::now(), wake) {
                         wake = false;
                         schedule.queue = Some(Instant::now());
                         queue_ok = read(
@@ -202,8 +209,18 @@ pub fn start_reader(handle: Handle, shared: Arc<Mutex<Shared>>) -> Result<(), St
                 } else {
                     QUEUE
                 };
-                if active && wake { wait=wait.min(remaining(schedule.queue,TOPIC,Instant::now()).max(Duration::from_millis(100))); }
-                if active && generation != schedule.generation {wait=wait.min(remaining(schedule.history,TOPIC,Instant::now()).max(Duration::from_millis(100)));}
+                if active && wake {
+                    wait = wait.min(
+                        remaining(schedule.queue, TOPIC, Instant::now())
+                            .max(Duration::from_millis(100)),
+                    );
+                }
+                if active && generation != schedule.generation {
+                    wait = wait.min(
+                        remaining(schedule.history, TOPIC, Instant::now())
+                            .max(Duration::from_millis(100)),
+                    );
+                }
                 // A pending hint is consumed only after reading: hints delivered
                 // during a read survive and trigger the next iteration.
                 let pending = lock(&signal.0);
@@ -245,7 +262,7 @@ mod tests {
         assert!(!s.history_due(now + Duration::from_secs(299), 7));
         assert!(s.history_due(now + HISTORY, 7));
         assert!(!s.history_due(now, 8));
-        assert!(s.history_due(now+TOPIC,8));
+        assert!(s.history_due(now + TOPIC, 8));
     }
     #[test]
     fn gate_deadline_wakes_between_queue_reads_but_hidden_views_ignore_it() {
@@ -262,9 +279,15 @@ mod tests {
     }
     #[test]
     fn topic_storms_have_a_two_second_floor_and_gate_timeout_leaves_other_reads_time() {
-        let now=Instant::now();let s=Schedule {queue:Some(now),..Default::default()};
-        assert!(!s.queue_due(now,true));assert!(!s.queue_due(now+Duration::from_millis(1999),true));
-        assert!(s.queue_due(now+TOPIC,true));assert!(!s.queue_due(now+TOPIC,false));
-        assert!(GATE_TIMEOUT<GATE);
+        let now = Instant::now();
+        let s = Schedule {
+            queue: Some(now),
+            ..Default::default()
+        };
+        assert!(!s.queue_due(now, true));
+        assert!(!s.queue_due(now + Duration::from_millis(1999), true));
+        assert!(s.queue_due(now + TOPIC, true));
+        assert!(!s.queue_due(now + TOPIC, false));
+        assert!(GATE_TIMEOUT < GATE);
     }
 }

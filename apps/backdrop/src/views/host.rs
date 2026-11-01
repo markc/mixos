@@ -39,7 +39,9 @@ impl<V: View> Host<V> {
         }
     }
     pub fn event(&mut self, snapshot: Arc<Snapshot>, force: bool, now: Instant) {
-        if force && self.active && !self.visible { self.bootstrap = true; }
+        if force && self.active && !self.visible {
+            self.bootstrap = true;
+        }
         if force || !Arc::ptr_eq(&snapshot, &self.snapshot) {
             self.snapshot = snapshot.clone();
             self.last_event = Some(now);
@@ -79,9 +81,12 @@ impl<V: View> Host<V> {
         }
     }
     pub fn repaint_delay(&self, now: Instant) -> Option<Duration> {
-        self.delay(now).or_else(||(self.active && self.bootstrap).then_some(MIN_FRAME))
+        self.delay(now)
+            .or_else(|| (self.active && self.bootstrap).then_some(MIN_FRAME))
     }
-    pub fn probe_drawn(&mut self) { self.bootstrap = false; }
+    pub fn probe_drawn(&mut self) {
+        self.bootstrap = false;
+    }
     pub fn draw(
         &mut self,
         ui: &mut egui::Ui,
@@ -98,9 +103,16 @@ impl<V: View> Host<V> {
         self.gpu = Default::default();
     }
     fn paint(&mut self, ui: &mut egui::Ui, budget: &Arc<Budget>, renderer_2d: bool, frame: &Frame) {
-        STRINGS.with(|strings|self.paint_with_strings(ui,budget,renderer_2d,frame,strings));
+        STRINGS.with(|strings| self.paint_with_strings(ui, budget, renderer_2d, frame, strings));
     }
-    fn paint_with_strings(&mut self, ui: &mut egui::Ui, budget: &Arc<Budget>, renderer_2d: bool, frame:&Frame, strings:&toolkit::Strings) {
+    fn paint_with_strings(
+        &mut self,
+        ui: &mut egui::Ui,
+        budget: &Arc<Budget>,
+        renderer_2d: bool,
+        frame: &Frame,
+        strings: &toolkit::Strings,
+    ) {
         let rect = ui.max_rect();
         ui.painter().rect_filled(rect, 0., ui.visuals().panel_fill);
         let fallback = renderer_2d || !self.gpu.draw(ui, &frame.scene, frame.progress, budget);
@@ -194,7 +206,9 @@ impl<V: View> Host<V> {
                 .unwrap_or_default()
                 .as_secs_f64();
             let series = super::history::series(&frame.snapshot.history, frame.snapshot.hours, now);
-            if !frame.snapshot.history["landed"].is_array() || !frame.snapshot.history["batches"].is_array() {
+            if !frame.snapshot.history["landed"].is_array()
+                || !frame.snapshot.history["batches"].is_array()
+            {
                 ui.label(strings.get("train-history-unavailable"));
             }
             egui_plot::Plot::new(("train-history", frame.snapshot.hours))
@@ -240,7 +254,7 @@ mod tests {
         let now = Instant::now();
         let mut host = Host::new(Greedy, None);
         assert_eq!(host.delay(now), None);
-        host.visibility(true,now);
+        host.visibility(true, now);
         host.event(Arc::default(), true, now);
         assert_eq!(host.delay(now), Some(MIN_FRAME));
         assert_eq!(host.delay(now + IDLE), None);
@@ -266,7 +280,7 @@ mod tests {
             ..Default::default()
         });
         let mut a = Host::new(super::super::Train::default(), None);
-        a.visibility(true,now);
+        a.visibility(true, now);
         let mut b = Host::new(super::super::Train::default(), None);
         b.visibility(false, now);
         a.event(snapshot.clone(), false, now);
@@ -289,7 +303,7 @@ mod tests {
     fn train_finishes_its_animation_and_host_has_no_idle_timer() {
         let now = Instant::now();
         let mut host = Host::new(super::super::Train::default(), None);
-        host.visibility(true,now);
+        host.visibility(true, now);
         host.event(Arc::default(), true, now);
         host.view.draw(true, now).unwrap();
         assert_eq!(host.delay(now), Some(MIN_FRAME));
@@ -300,10 +314,10 @@ mod tests {
     }
     #[test]
     fn visibility_is_unconfirmed_at_creation_and_catalogue_is_cached() {
-        let host=Host::new(Greedy,None);
+        let host = Host::new(Greedy, None);
         assert!(!host.is_visible());
-        let a=STRINGS.with(|s|s as *const toolkit::Strings);
-        let b=STRINGS.with(|s|s as *const toolkit::Strings);
-        assert_eq!(a,b);
+        let a = STRINGS.with(|s| s as *const toolkit::Strings);
+        let b = STRINGS.with(|s| s as *const toolkit::Strings);
+        assert_eq!(a, b);
     }
 }

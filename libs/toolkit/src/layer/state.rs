@@ -381,7 +381,9 @@ impl<P: LayerProgram + 'static> State<P> {
             return;
         };
         if delay.is_zero() {
-            if !strict {s.retry_at = None;}
+            if !strict {
+                s.retry_at = None;
+            }
             // Now: any delayed repaint is moot.
             s.dirty = true;
             s.deadline = None;
@@ -478,7 +480,9 @@ impl<P: LayerProgram + 'static> State<P> {
                 // The present may have failed silently: redraw once. A
                 // compositor that withholds callbacks (a hidden output)
                 // then gets no more until one comes back.
-                if let Some(delay) = timing::callback_recovery(self.program.strict_frame_callbacks(), s.rescued) {
+                if let Some(delay) =
+                    timing::callback_recovery(self.program.strict_frame_callbacks(), s.rescued)
+                {
                     s.retry_at = Some(now + delay);
                     s.rescued = true;
                     s.dirty = true;

@@ -304,10 +304,11 @@ mod tests {
     }
     #[test]
     fn set_without_args_resets_custom_service_targets() {
-        let mut s=State::default();
+        let mut s = State::default();
         s.command("backdrop.view.set",&json!({"view":"train","args":{"train_service":"train.alpha.bus","buildd_service":"buildd.alpha.bus"}})).unwrap();
-        s.command("backdrop.view.set",&json!({"view":"train"})).unwrap();
-        assert_eq!((&*s.train_service,&*s.buildd_service),("train","buildd"));
+        s.command("backdrop.view.set", &json!({"view":"train"}))
+            .unwrap();
+        assert_eq!((&*s.train_service, &*s.buildd_service), ("train", "buildd"));
     }
     #[test]
     fn gate_progress_requires_current_batch_and_a_nonzero_stage_count() {
