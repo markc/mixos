@@ -79,7 +79,7 @@ pub fn show(
     }
     ui.add_enabled_ui(engine.row_blocked(page, row).is_none(), |ui| {
         match row.control {
-            Control::Colour { key } => colour(ui, engine, key, look, events),
+            Control::Colour { key, .. } => colour(ui, engine, key, look, events),
             Control::Accent => colour(ui, engine, "appearance.accent", look, events),
             Control::Pick { key, list } => {
                 pick(ui, engine, key, &super::pick_list(ui, list), look, events)
