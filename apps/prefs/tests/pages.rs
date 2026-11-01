@@ -269,12 +269,34 @@ fn power_rows_name_their_backends_and_refuse_writes() {
         let (_, why) = rows.iter().find(|(row, _)| *row == id).unwrap();
         assert!(why.contains(backend), "{id}: {why}");
     };
-    blocked("charge", "hostd battery reading");
-    blocked("devices", "hostd battery reading");
     blocked("profile", "hostd power profiles");
     blocked("screen_off", "compd screen-off timer");
     blocked("suspend_ac", "hostd idle and suspend");
-    blocked("suspend_battery", "hostd idle and suspend");
+    // No battery is reported yet, so the battery-only row is not shown.
+    assert!(rows.iter().all(|(id, _)| *id != "suspend_battery"), "{rows:?}");
+    rig.h
+        .state_mut()
+        .as_mut()
+        .unwrap()
+        .engine_mut()
+        .set_fact("power.battery", true);
+    rig.h.run_steps(2);
+    let (_, page) = ask(&mut rig, 4, "prefs.page", json!({}));
+    let battery_row = page["sections"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|s| s["rows"].as_array().unwrap().iter())
+        .find(|r| r["id"] == "suspend_battery")
+        .unwrap()
+        .clone();
+    assert!(
+        battery_row["blocked"]
+            .as_str()
+            .unwrap()
+            .contains("hostd idle and suspend"),
+        "{battery_row}"
+    );
     let (rc, body) = ask(
         &mut rig,
         3,
