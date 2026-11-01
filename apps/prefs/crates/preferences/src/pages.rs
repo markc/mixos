@@ -145,6 +145,14 @@ pub enum Control {
         max: i64,
         step: i64,
     },
+    /// An inline number field. The value is written when editing ends
+    /// (Enter or unfocus), never per keystroke; text that is not a number
+    /// stays in the field and is not stored.
+    NumberEntry {
+        key: &'static str,
+        min: i64,
+        max: i64,
+    },
     /// A colour swatch filled with the effective colour, opening the
     /// colour drawer. With `auto_link`, an unset (`auto`) value is drawn as
     /// "Auto ›" instead (COSMIC's Container background).
@@ -217,6 +225,7 @@ impl Control {
             | Control::Slider { key, .. }
             | Control::Steps { key, .. }
             | Control::Spin { key, .. }
+            | Control::NumberEntry { key, .. }
             | Control::Colour { key, .. }
             | Control::Pick { key, .. }
             | Control::Ordered { key, .. }

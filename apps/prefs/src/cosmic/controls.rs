@@ -189,6 +189,7 @@ fn control_width(ui: &Ui, engine: &Engine, row: &Row) -> f32 {
             }
         }
         Control::Spin { .. } => 96.0,
+        Control::NumberEntry { .. } => 80.0,
         Control::Choice { .. } => {
             let labels: Vec<String> = engine.choices(row).into_iter().map(|o| o.1).collect();
             dropdown_width(ui, &labels)
@@ -610,6 +611,16 @@ fn control(
                 set(events, key, json!((value - step).max(*min)));
             }
         }
+        Control::NumberEntry { key, min, max } => {
+            number_entry(
+                ui,
+                engine,
+                (page.id, row.id),
+                (key, *min, *max),
+                name,
+                events,
+            );
+        }
         Control::Colour { key, auto_link } => {
             let stored = store.text(key);
             if *auto_link && stored.as_deref() == Some("auto") {
@@ -714,6 +725,45 @@ fn control(
                 events.push(UiEvent::Reset(keys));
             }
         }
+    }
+}
+
+/// An inline number field (`Control::NumberEntry`): the stored value until it
+/// is edited. The text is written when editing ends (Enter or unfocus); text
+/// that is not a number stays in the field and is not stored.
+fn number_entry(
+    ui: &mut Ui,
+    engine: &Engine,
+    salt: (&str, &str),
+    (key, min, max): (&'static str, i64, i64),
+    name: &str,
+    events: &mut Vec<UiEvent>,
+) {
+    let (min, max) = engine.bounds(key, min as f64, max as f64);
+    let (min, max) = (min as i64, max as i64);
+    let stored = engine
+        .store
+        .number(key)
+        .filter(|v| v.is_finite())
+        .map_or(min, |v| (v.round() as i64).clamp(min, max));
+    let id = ui.scope_id().with(("number", salt));
+    let editing: Option<String> = ui.data(|d| d.get_temp(id));
+    let mut text = editing.unwrap_or_else(|| stored.to_string());
+    let response = ui.add(egui::TextEdit::singleline(&mut text).desired_width(80.0));
+    let response = named(response, Role::TextInput, ui.is_enabled(), name);
+    if response.lost_focus() {
+        let parsed = text.trim().parse::<i64>();
+        match parsed {
+            Ok(value) => {
+                ui.data_mut(|d| d.remove::<String>(id));
+                set(events, key, json!(value.clamp(min, max)));
+            }
+            Err(_) => {
+                ui.data_mut(|d| d.insert_temp(id, text));
+            }
+        }
+    } else if response.has_focus() {
+        ui.data_mut(|d| d.insert_temp(id, text));
     }
 }
 
