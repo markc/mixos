@@ -135,11 +135,15 @@ fn other_profile_invalid_and_missing_refusal_bindings_stay_terminal() {
 fn rebind_never_loads_or_saves_old_instance_cache_under_new_target() {
     let directory = tempfile::tempdir().unwrap();
     let mut state = consumer();
-    activate(&mut state, snapshot(1, "old"));
+    let mut initial = snapshot(1, "old");
+    initial.source_digest = source_digest(EMBEDDED_DEFAULT_SOURCE);
+    initial.effective = resolve::values::resolve(&initial.values, EMBEDDED_DEFAULT_SOURCE).unwrap();
+    activate(&mut state, initial.clone());
     let old_target = state.cache_target();
     let mut writer = cache::Writer::open(directory.path(), &state).unwrap();
     writer.write(&state.cache_save().unwrap()).unwrap();
-    let next = rebound("authority");
+    let mut next = initial;
+    next.binding.instance = "authority".into();
     let read = state.observe(1, next.clone()).unwrap();
     assert_ne!(state.cache_target(), old_target);
     assert!(state.cache_save().is_none());
