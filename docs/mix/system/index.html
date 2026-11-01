@@ -1870,9 +1870,10 @@ for each $ns in ["192.0.2.53", "198.51.100.53"]
 end
 </code></pre>
 <h2 id="udp-event-sources-v01180">UDP event sources (v0.118.0)</h2>
-<pre><code class="language-text">udp_listen(host, port[, {join, iface, reuse, ttl, loop}]) -&gt; numeric handle
+<pre><code class="language-text">udp_listen(host, port[, {join, iface, reuse, reuse_port, ttl, loop}]) -&gt; numeric handle
+udp_local_addr(handle) -&gt; {host, port}
 udp_on(handle, command[, {max}]) -&gt; source id
-udp_send_from(handle, host, port, payload) -&gt; bytes sent
+udp_send_via(handle, host, port, payload) -&gt; bytes sent
 udp_close(handle) -&gt; bool
 udp_unwatch(source) -&gt; nil
 udp_send(host, port, payload[, {from, ttl}]) -&gt; bytes sent
@@ -1880,29 +1881,42 @@ udp_send(host, port, payload[, {from, ttl}]) -&gt; bytes sent
 <p>Listeners require the <code>ws</code> feature, like TCP listeners; subscriptions require
 Linux. No new dependencies; listener creation/binding uses the same optional
 socket2 dependency as TCP listeners, including native BSD/macOS address layouts.
-IPv4 literals only for bind, interface, groups and <code>udp_send_from</code> destinations;
+IPv4 literals only for bind, interface, groups and <code>udp_send_via</code> destinations;
 IPv6 groups or destinations and hostnames there refuse <code>UDP_ARGUMENT</code>.
 The one-shot <code>udp_send</code> continues to resolve hostnames.
 <code>join</code> is a multicast group string or list. <code>iface</code> defaults to <code>0.0.0.0</code>
 (kernel choice) and selects both membership and multicast egress. <code>reuse:true</code>
-sets SO_REUSEADDR and SO_REUSEPORT before bind. <code>ttl</code> is an integer 0..255;
+sets only SO_REUSEADDR before bind, which permits sharing a multicast port.
+<code>reuse_port:true</code> independently enables SO_REUSEPORT before bind; both options
+default to false. On Linux, SO_REUSEPORT distributes unicast traffic between
+the participating sockets; enable it only when that distribution is wanted.
+<code>ttl</code> is an integer 0..255;
 omitting it preserves the kernel default. <code>loop</code> is bool. Unknown or malformed
 options raise <code>UDP_ARGUMENT</code>; socket failures raise <code>UDP_IO</code> or the specific
 <code>UDP_ADDR_IN_USE</code>, <code>UDP_PERMISSION</code>, <code>UDP_ADDR_UNAVAILABLE</code> code.</p>
 <p>Each datagram arrives at <code>on command</code> as
 <code>$event.args = {watch, datagram:{bytes, text, from_host, from_port}}</code>.
 <code>bytes</code> is a Mix bytes value; <code>text</code> is UTF-8 or nil. Empty datagrams are events.
+The frozen JSON body shape uses lowercase, even-length hex without a prefix:</p>
+<pre><code class="language-json">{"watch":"udp:1","datagram":{"bytes":{"hex":"00ff"},"text":null,"from_host":"192.0.2.20","from_port":1900}}
+</code></pre>
+<p>Thus <code>json_parse($event.body).datagram.bytes.hex</code> is a string, while
+<code>$event.args.datagram.bytes</code> is decoded to Mix bytes before the handler runs.
+An empty datagram has <code>bytes:{hex:""}</code> and <code>text:""</code> in the JSON body.
 <code>max</code> defaults to 65535 (range 1..65535); longer packets truncate, like udp_recv.
 The ordered FIFO, source limit, overflow terminal <code>{watch, closed:{reason}}</code>,
 and reload/exit cancellation follow tcp_on. The reader parks without polling
 timers. Handles share TCP's id sequence and 1024 server socket permits.
+<code>udp_listen(host, 0)</code> accepts an ephemeral port, discoverable with
+<code>udp_local_addr(handle)</code> before or after subscription. It reports <code>{host, port}</code>;
+closed/unknown handles raise <code>UDP_HANDLE</code>.
 Queued datagrams store raw payloads plus six bytes of IPv4 peer metadata;
 the 64 MiB FIFO byte limit counts that storage, without JSON expansion.
 On Linux, asynchronous peer errors (<code>ECONNREFUSED</code>, <code>ENETUNREACH</code>,
 <code>EHOSTUNREACH</code>, <code>ECONNRESET</code>) do not close the shared listener.
 <code>udp_close</code> returns false for an unknown handle; a subscribed handle raises
 <code>SOCKET_SUBSCRIBED</code> and must be closed with <code>udp_unwatch(source)</code>.</p>
-<p><code>udp_send_from</code> explicitly selects the listening socket, preserving its source
+<p><code>udp_send_via</code> explicitly selects the listening socket, preserving its source
 port and interface even while subscribed. It sends nonblocking: a full send
 buffer raises <code>UDP_IO</code>. Its destination must be an IPv4 literal, so handlers
 never block on DNS. A distinct builtin keeps handle sends clear and avoids
@@ -1911,12 +1925,17 @@ source IPv4 address and sets multicast egress; <code>ttl</code> sets multicast T
 Omitting <code>from</code> preserves the kernel's multicast interface choice. Socket
 failures in the four-argument form raise the same <code>UDP_*</code> codes as listeners.
 Its original three-argument form and <code>udp_recv(port, opts)</code> are unchanged.</p>
+<p>Each evaluator can own up to 256 socket sources (TCP, UDP and WebSocket
+subscriptions combined, including listeners). Each active source owns one OS
+reader thread: the cap therefore permits up to 256 reader threads. They park
+on readiness while idle. This limit supports server citizens with many accepted
+connections while keeping thread creation bounded below the 1024 socket permits.</p>
 <pre><code class="language-mix">$sock = udp_listen("0.0.0.0", 1900, {
   join: "239.255.255.250", iface: "192.0.2.10", reuse: true, ttl: 4, loop: true
 })
 $watch = udp_on($sock, "ssdp.packet")
 on ssdp.packet
-  udp_send_from($sock, $event.args.datagram.from_host,
+  udp_send_via($sock, $event.args.datagram.from_host,
     $event.args.datagram.from_port, "reply")
 end
 </code></pre>
@@ -2315,7 +2334,8 @@ subscription costs ~zero context switches; a poll timeout exists only
 while a send is pending. The socket is non-blocking, so cancellation
 wins at the next poll wake (mid-frame TLS state survives in the stream
 buffers).</p>
-<p><strong>Limits and acceptance.</strong> 16 sources per evaluator; max WS message 16 MiB
+<p><strong>Limits and acceptance.</strong> 256 socket sources per evaluator, one OS reader
+thread per active source (including listeners); max WS message 16 MiB
 (connect-time cap); subscriptions Linux only (<code>SOCKET_UNSUPPORTED</code>
 elsewhere, matching the pidfd-owned children). The numeric Class C pull
 needs the unix AsyncFd await: off-unix the interception falls through

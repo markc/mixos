@@ -116,7 +116,7 @@ pub(crate) fn record_body(data: &[u8]) -> serde_json::Value {
     let host = Ipv4Addr::new(data[0], data[1], data[2], data[3]);
     let port = u16::from_be_bytes([data[4], data[5]]);
     let payload = &data[6..];
-    serde_json::json!({"bytes":payload, "text":std::str::from_utf8(payload).ok(), "from_host":host.to_string(), "from_port":port})
+    serde_json::json!({"bytes":{"hex":crate::builtins::hex_encode(payload)}, "text":std::str::from_utf8(payload).ok(), "from_host":host.to_string(), "from_port":port})
 }
 
 #[cfg(feature = "ws")]
@@ -186,6 +186,7 @@ pub(crate) mod handles {
         };
         let mut iface = Ipv4Addr::UNSPECIFIED;
         let mut reuse = false;
+        let mut reuse_port = false;
         let mut groups = Vec::new();
         let mut hops = None;
         let mut loopback = None;
@@ -209,12 +210,14 @@ pub(crate) mod handles {
                             groups.push(g);
                         }
                     }
-                    "reuse" | "loop" => {
+                    "reuse" | "reuse_port" | "loop" => {
                         let Value::Bool(b) = v else {
                             return Err(refusal("UDP_ARGUMENT", format!("{k} must be bool")));
                         };
                         if k == "reuse" {
                             reuse = *b;
+                        } else if k == "reuse_port" {
+                            reuse_port = *b;
                         } else {
                             loopback = Some(*b);
                         }
@@ -236,6 +239,8 @@ pub(crate) mod handles {
         .into();
         if reuse {
             option(&sock, libc::SO_REUSEADDR, &1i32, libc::SOL_SOCKET)?;
+        }
+        if reuse_port {
             option(&sock, libc::SO_REUSEPORT, &1i32, libc::SOL_SOCKET)?;
         }
         let addr = std::net::SocketAddrV4::new(host, port);
@@ -297,7 +302,7 @@ mod tests {
         assert!(ne.udp_on(id, "duplicate".into(), None).is_err());
         for payload in [vec![0, 255], vec![], b"hello".to_vec()] {
             call_builtin(
-                "udp_send_from",
+                "udp_send_via",
                 vec![
                     Value::Number(id as f64),
                     Value::String("239.255.255.250".into()),
@@ -310,6 +315,8 @@ mod tests {
                 .await
                 .unwrap()
                 .unwrap();
+            let body: serde_json::Value = serde_json::from_str(&ev.body).unwrap();
+            assert_eq!(body["datagram"]["bytes"], serde_json::json!({"hex":crate::builtins::hex_encode(&payload)}));
             let args = crate::evaluator::incoming_event_to_mix_value(&ev);
             let Value::Map(ref m) = args else { panic!() };
             let Value::Map(a) = &m["args"] else { panic!() };
@@ -354,6 +361,7 @@ mod tests {
             r#"{"join":"::1"}"#,
             r#"{"join":"127.0.0.1"}"#,
             r#"{"reuse":1}"#,
+            r#"{"reuse_port":1}"#,
             r#"{"loop":1}"#,
             r#"{"ttl":256}"#,
             r#"{"ttl":-1}"#,
@@ -442,7 +450,7 @@ mod tests {
         ne.own_udp(id);
         ne.udp_on(id, "test.peer".into(), None).unwrap();
         call_builtin(
-            "udp_send_from",
+            "udp_send_via",
             vec![
                 Value::Number(id as f64),
                 Value::String("127.0.0.1".into()),
@@ -480,7 +488,7 @@ mod tests {
         let id = listen("127.0.0.1", 0, "{}");
         for host in ["localhost", "example.invalid", "::1", "127.0.0.1:1900"] {
             let err = call_builtin(
-                "udp_send_from",
+                "udp_send_via",
                 vec![
                     Value::Number(id as f64),
                     Value::String(host.into()),
@@ -511,7 +519,7 @@ mod tests {
         let body = record_body(&rec.data);
         assert_eq!(body["from_port"], 1900);
         assert_eq!(body["text"], serde_json::Value::Null);
-        assert_eq!(body["bytes"].as_array().unwrap().len(), payload.len());
+        assert_eq!(body["bytes"]["hex"].as_str().unwrap(), "ff".repeat(payload.len()));
         assert!(handles::close(id).unwrap());
         assert!(!handles::close(id).unwrap());
     }
@@ -544,6 +552,29 @@ mod tests {
                     assert!(closed.unwrap());
                 }
             }
+        }
+    }
+
+    #[test]
+    fn reuse_address_and_port_are_independent() {
+        fn enabled(sock: &UdpSocket, name: i32) -> bool {
+            let mut value = 0_i32;
+            let mut size = std::mem::size_of_val(&value) as libc::socklen_t;
+            // SAFETY: sock is live; value and size are valid output storage.
+            assert_eq!(unsafe { libc::getsockopt(sock.as_raw_fd(), libc::SOL_SOCKET, name, (&mut value as *mut i32).cast(), &mut size) }, 0);
+            value != 0
+        }
+        for (addr, port) in [(false,false), (true,false), (false,true), (true,true)] {
+            let opts = serde_json::json!({"reuse":addr, "reuse_port":port}).to_string();
+            let first = listen("0.0.0.0", 0, &opts);
+            let sock = handles::get(first).unwrap();
+            assert_eq!(enabled(&sock.sock, libc::SO_REUSEADDR), addr);
+            assert_eq!(enabled(&sock.sock, libc::SO_REUSEPORT), port);
+            if addr || port {
+                let second = listen("0.0.0.0", sock.sock.local_addr().unwrap().port(), &opts);
+                assert!(handles::close(second).unwrap());
+            }
+            assert!(handles::close(first).unwrap());
         }
     }
 }

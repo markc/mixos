@@ -78,22 +78,24 @@ fn global_str(e: &Evaluator, name: &str) -> String {
 
 #[tokio::test(flavor = "current_thread")]
 async fn udp_handler_replies_from_listener_and_generation_retires() {
-    let reserve = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
-    let port = reserve.local_addr().unwrap().port();
-    drop(reserve);
     let (mut e, _tx) = served();
-    e.set_global("port", Value::Number(port as f64));
     exec(
         &mut e,
         r#"
-$h = udp_listen("127.0.0.1", $port)
+$h = udp_listen("127.0.0.1", 0)
+$addr = udp_local_addr($h)
+$port = $addr.port
+$host = $addr.host
 $watch = udp_on($h, "test.packet")
+$sub_port = udp_local_addr($h).port
 $received = nil
 $kind = nil
+$wire_hex = nil
 on test.packet
   $received = $event.args.datagram.text
   $kind = type($event.args.datagram.bytes)
-  udp_send_from($h, $event.args.datagram.from_host,
+  $wire_hex = json_parse($event.body).datagram.bytes.hex
+  udp_send_via($h, $event.args.datagram.from_host,
     $event.args.datagram.from_port, $event.args.datagram.bytes)
   quit()
 end
@@ -101,6 +103,10 @@ end
     )
     .await
     .unwrap();
+    let port = e.get_global("port").unwrap().to_number().unwrap() as u16;
+    assert_ne!(port, 0);
+    assert_eq!(global_str(&e, "host"), "127.0.0.1");
+    assert_eq!(global_str(&e, "sub_port"), port.to_string());
     let client = std::thread::spawn(move || {
         let socket = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
         socket
@@ -119,9 +125,18 @@ end
     client.join().unwrap();
     assert_eq!(global_str(&e, "received"), "hello");
     assert_eq!(global_str(&e, "kind"), "bytes");
+    assert_eq!(global_str(&e, "wire_hex"), "68656c6c6f");
     e.close_native_events();
     let bound = std::net::UdpSocket::bind(("127.0.0.1", port)).unwrap();
     drop(bound);
     exec(&mut e, "$closed = udp_close($h)").await.unwrap();
     assert_eq!(global_str(&e, "closed"), "false");
+    exec(&mut e, r#"
+try
+  udp_local_addr($h)
+catch $msg, $err
+  $closed_addr = $err.code
+end
+"#).await.unwrap();
+    assert_eq!(global_str(&e, "closed_addr"), "UDP_HANDLE");
 }

@@ -1909,9 +1909,10 @@ end
 ## UDP event sources (v0.118.0)
 
 ```text
-udp_listen(host, port[, {join, iface, reuse, ttl, loop}]) -> numeric handle
+udp_listen(host, port[, {join, iface, reuse, reuse_port, ttl, loop}]) -> numeric handle
+udp_local_addr(handle) -> {host, port}
 udp_on(handle, command[, {max}]) -> source id
-udp_send_from(handle, host, port, payload) -> bytes sent
+udp_send_via(handle, host, port, payload) -> bytes sent
 udp_close(handle) -> bool
 udp_unwatch(source) -> nil
 udp_send(host, port, payload[, {from, ttl}]) -> bytes sent
@@ -1920,12 +1921,16 @@ udp_send(host, port, payload[, {from, ttl}]) -> bytes sent
 Listeners require the `ws` feature, like TCP listeners; subscriptions require
 Linux. No new dependencies; listener creation/binding uses the same optional
 socket2 dependency as TCP listeners, including native BSD/macOS address layouts.
-IPv4 literals only for bind, interface, groups and `udp_send_from` destinations;
+IPv4 literals only for bind, interface, groups and `udp_send_via` destinations;
 IPv6 groups or destinations and hostnames there refuse `UDP_ARGUMENT`.
 The one-shot `udp_send` continues to resolve hostnames.
 `join` is a multicast group string or list. `iface` defaults to `0.0.0.0`
 (kernel choice) and selects both membership and multicast egress. `reuse:true`
-sets SO_REUSEADDR and SO_REUSEPORT before bind. `ttl` is an integer 0..255;
+sets only SO_REUSEADDR before bind, which permits sharing a multicast port.
+`reuse_port:true` independently enables SO_REUSEPORT before bind; both options
+default to false. On Linux, SO_REUSEPORT distributes unicast traffic between
+the participating sockets; enable it only when that distribution is wanted.
+`ttl` is an integer 0..255;
 omitting it preserves the kernel default. `loop` is bool. Unknown or malformed
 options raise `UDP_ARGUMENT`; socket failures raise `UDP_IO` or the specific
 `UDP_ADDR_IN_USE`, `UDP_PERMISSION`, `UDP_ADDR_UNAVAILABLE` code.
@@ -1933,10 +1938,22 @@ options raise `UDP_ARGUMENT`; socket failures raise `UDP_IO` or the specific
 Each datagram arrives at `on command` as
 `$event.args = {watch, datagram:{bytes, text, from_host, from_port}}`.
 `bytes` is a Mix bytes value; `text` is UTF-8 or nil. Empty datagrams are events.
+The frozen JSON body shape uses lowercase, even-length hex without a prefix:
+
+```json
+{"watch":"udp:1","datagram":{"bytes":{"hex":"00ff"},"text":null,"from_host":"192.0.2.20","from_port":1900}}
+```
+
+Thus `json_parse($event.body).datagram.bytes.hex` is a string, while
+`$event.args.datagram.bytes` is decoded to Mix bytes before the handler runs.
+An empty datagram has `bytes:{hex:""}` and `text:""` in the JSON body.
 `max` defaults to 65535 (range 1..65535); longer packets truncate, like udp_recv.
 The ordered FIFO, source limit, overflow terminal `{watch, closed:{reason}}`,
 and reload/exit cancellation follow tcp_on. The reader parks without polling
 timers. Handles share TCP's id sequence and 1024 server socket permits.
+`udp_listen(host, 0)` accepts an ephemeral port, discoverable with
+`udp_local_addr(handle)` before or after subscription. It reports `{host, port}`;
+closed/unknown handles raise `UDP_HANDLE`.
 Queued datagrams store raw payloads plus six bytes of IPv4 peer metadata;
 the 64 MiB FIFO byte limit counts that storage, without JSON expansion.
 On Linux, asynchronous peer errors (`ECONNREFUSED`, `ENETUNREACH`,
@@ -1944,7 +1961,7 @@ On Linux, asynchronous peer errors (`ECONNREFUSED`, `ENETUNREACH`,
 `udp_close` returns false for an unknown handle; a subscribed handle raises
 `SOCKET_SUBSCRIBED` and must be closed with `udp_unwatch(source)`.
 
-`udp_send_from` explicitly selects the listening socket, preserving its source
+`udp_send_via` explicitly selects the listening socket, preserving its source
 port and interface even while subscribed. It sends nonblocking: a full send
 buffer raises `UDP_IO`. Its destination must be an IPv4 literal, so handlers
 never block on DNS. A distinct builtin keeps handle sends clear and avoids
@@ -1954,13 +1971,19 @@ Omitting `from` preserves the kernel's multicast interface choice. Socket
 failures in the four-argument form raise the same `UDP_*` codes as listeners.
 Its original three-argument form and `udp_recv(port, opts)` are unchanged.
 
+Each evaluator can own up to 256 socket sources (TCP, UDP and WebSocket
+subscriptions combined, including listeners). Each active source owns one OS
+reader thread: the cap therefore permits up to 256 reader threads. They park
+on readiness while idle. This limit supports server citizens with many accepted
+connections while keeping thread creation bounded below the 1024 socket permits.
+
 ```mix
 $sock = udp_listen("0.0.0.0", 1900, {
   join: "239.255.255.250", iface: "192.0.2.10", reuse: true, ttl: 4, loop: true
 })
 $watch = udp_on($sock, "ssdp.packet")
 on ssdp.packet
-  udp_send_from($sock, $event.args.datagram.from_host,
+  udp_send_via($sock, $event.args.datagram.from_host,
     $event.args.datagram.from_port, "reply")
 end
 ```
@@ -2419,7 +2442,8 @@ while a send is pending. The socket is non-blocking, so cancellation
 wins at the next poll wake (mid-frame TLS state survives in the stream
 buffers).
 
-**Limits and acceptance.** 16 sources per evaluator; max WS message 16 MiB
+**Limits and acceptance.** 256 socket sources per evaluator, one OS reader
+thread per active source (including listeners); max WS message 16 MiB
 (connect-time cap); subscriptions Linux only (`SOCKET_UNSUPPORTED`
 elsewhere, matching the pidfd-owned children). The numeric Class C pull
 needs the unix AsyncFd await: off-unix the interception falls through

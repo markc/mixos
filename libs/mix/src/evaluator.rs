@@ -314,18 +314,11 @@ pub(crate) fn incoming_event_to_mix_value(event: &IncomingEvent) -> Value {
         && let Some(Value::Map(d)) = std::rc::Rc::make_mut(m).get_mut("datagram")
     {
         let d = std::rc::Rc::make_mut(d);
-        if let Some(Value::List(xs)) = d.get("bytes") {
-            let bytes = xs
-                .iter()
-                .filter_map(|v| {
-                    if let Value::Number(n) = v {
-                        Some(*n as u8)
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-            d.insert("bytes".into(), Value::bytes(bytes));
+        if let Some(Value::Map(raw)) = d.get("bytes")
+            && let Some(Value::String(hex)) = raw.get("hex")
+            && let Ok(Some(bytes)) = crate::builtins::call_builtin("bytes_from_hex", vec![Value::String(hex.clone())])
+        {
+            d.insert("bytes".into(), bytes);
         }
     }
     event_map.insert("args".to_string(), args);

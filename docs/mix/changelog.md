@@ -15,7 +15,7 @@ generated: by docs/_build/gen-site.mix from libs/mix/CHANGELOG.md; do not edit
 - `read_file_bytes(path, {offset, max})` seeks to a byte offset (default 0)
   and reads up to required `max` bytes, stopping early only at EOF. At/past
   EOF returns empty bytes. The whole-file and numeric cap forms are unchanged.
-- IPv4 UDP event sources: `udp_listen`, `udp_on`, `udp_send_from`,
+- IPv4 UDP event sources: `udp_listen`, `udp_local_addr`, `udp_on`, `udp_send_via`,
   `udp_close`, `udp_unwatch` (ws feature), with multicast membership, egress
   interface, pre-bind reuse and generation retirement. `udp_send` accepts
   `{from, ttl}` without changing its three-argument form.
@@ -69,9 +69,16 @@ generated: by docs/_build/gen-site.mix from libs/mix/CHANGELOG.md; do not edit
 
 ### Fixed
 
+- Finalise the unreleased UDP API: `udp_send_via` names handle sends;
+  `reuse` sets SO_REUSEADDR only, with independent `reuse_port` for SO_REUSEPORT.
+  JSON datagram bodies encode `bytes:{hex:...}`; event args retain Mix bytes.
+  `udp_local_addr` discovers port-zero bindings even while subscribed.
+- `read_file_bytes` options skip seeking at offset zero, supporting FIFOs.
+- Raise the per-evaluator socket-source cap from 16 to 256 (one reader thread
+  per source), including listeners and accepted connections.
 - UDP listeners bind portably on non-Linux Unix via socket2, retain their
   subscription after asynchronous peer errors, and close/subscribe atomically.
-  `udp_send_from` requires an IPv4 literal to avoid blocking handler DNS.
+  `udp_send_via` requires an IPv4 literal to avoid blocking handler DNS.
   `udp_send` sets multicast egress only when `from` is supplied and its options
   form uses `UDP_*` socket error codes. Queued datagrams store raw payloads
   with fixed-size peer metadata instead of JSON number arrays.

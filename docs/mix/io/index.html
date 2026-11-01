@@ -433,6 +433,9 @@ an integer from 1 to <code>i64::MAX</code>. <code>offset</code> defaults to 0 an
 from 0 to <code>i64::MAX</code>; both must be real numbers (no string/bool coercion).
 Each call opens its own file, seeks, then reads until <code>max</code> bytes or EOF;
 ordinary short reads are retried. At or past EOF the result is empty bytes.
+Seeking happens only when <code>offset &gt; 0</code>. An omitted or zero offset therefore
+also supports FIFOs and pipes, like the numeric cap form; a positive offset
+still requires a seekable file.
 This supports HTTP Range streaming of large files in bounded chunks:</p>
 <pre><code class="language-mix">$chunk = read_file_bytes("/tmp/video.bin", {offset: 1073741824, max: 65536})
 </code></pre>
