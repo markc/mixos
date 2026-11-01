@@ -297,12 +297,9 @@ impl Engine {
         let value = coerce(&info.kind, value);
         match crate::catalog::check(&info.kind, &value) {
             Some(Ok(())) => Ok(value),
-            Some(Err(why)) => {
-                Err(self.label("set-invalid", &[("key", key), ("why", &why)]))
-            }
-            None => settings::registry::check_value(key, &value).map_err(|d| {
-                self.label("set-invalid", &[("key", key), ("why", &d.message)])
-            }),
+            Some(Err(why)) => Err(self.label("set-invalid", &[("key", key), ("why", &why)])),
+            None => settings::registry::check_value(key, &value)
+                .map_err(|d| self.label("set-invalid", &[("key", key), ("why", &d.message)])),
         }
     }
 
@@ -657,7 +654,10 @@ mod tests {
         assert_eq!(command, "settings.get");
         e.stored(
             t,
-            ok(read("8", json!({"appearance.mode":"light","appearance.density":"compact"}))),
+            ok(read(
+                "8",
+                json!({"appearance.mode":"light","appearance.density":"compact"}),
+            )),
         );
         let (_, command, body) = next(&mut e);
         assert_eq!(command, "settings.apply");

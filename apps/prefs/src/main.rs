@@ -130,7 +130,6 @@ fn main() {
                     &settings.service,
                     "prefs.page.open",
                     serde_json::json!({ "page": page, "row": row }),
-
                 )?;
             }
             match citizen::forward(&settings.url, &settings.service, APP) {
