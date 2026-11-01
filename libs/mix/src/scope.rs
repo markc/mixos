@@ -930,6 +930,14 @@ impl Scope {
         }
     }
 
+    /// Native parameter binding always targets the callee's local frame.
+    #[inline]
+    pub(crate) fn bind_parameter(&mut self, name: String, value: Value) {
+        if let Some(frame) = self.frames.last_mut() {
+            frame.insert(name, value);
+        }
+    }
+
     /// Update a variable that already exists in some visible scope, or
     /// create it in the current frame.
     ///
@@ -1027,6 +1035,12 @@ impl Scope {
         self.function_floors.push(self.frames.len());
         let frame = self.frame_pool.pop().unwrap_or_default();
         self.frames.push(frame);
+    }
+
+    /// Sync eligibility excludes declarations, defaults and frame injection.
+    #[inline]
+    pub(crate) fn enter_sync_function_frame(&mut self) {
+        self.push_function_frame();
     }
 
     /// Leave the current function call: drop all frames at or above

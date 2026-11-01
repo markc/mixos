@@ -16759,10 +16759,10 @@ impl Evaluator {
         // Framed path: body has at least one Assignment, so we need
         // a real function frame. Param-slot caching is not safe here
         // (an Assignment could rehash the bucket array).
-        self.scope.enter_function_frame_for(func);
+        self.scope.enter_sync_function_frame();
         for (i, param) in func.params.iter().enumerate() {
             self.scope
-                .set_in_current(param.name.clone(), args[i].clone());
+                .bind_parameter(param.name.clone(), args[i].clone());
         }
         let cache_start = self.ctx.var_slot_cache.len();
         self.ctx.function_depth += 1;
