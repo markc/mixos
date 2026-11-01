@@ -461,6 +461,72 @@ fn region_waits_on_locale1_and_refuses_writes_until_it_lands() {
     assert!(applies(&rig).is_empty());
 }
 
+#[test]
+fn accessibility_reads_as_data_and_a_text_size_write_applies_once() {
+    let mut rig = rig();
+    read(&mut rig, "authority", false);
+    let (rc, body) = ask(&mut rig, 1, "prefs.page.open", json!({"page":"accessibility"}));
+    assert_eq!(rc, 0, "{body}");
+    let (rc, page) = ask(&mut rig, 2, "prefs.page", json!({"page":"accessibility"}));
+    assert_eq!(rc, 0);
+    let row = |id: &str| {
+        page["sections"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|s| s["rows"].as_array().unwrap().iter())
+            .find(|r| r["id"] == id)
+            .unwrap_or_else(|| panic!("no row {id}: {page}"))
+            .clone()
+    };
+    assert!(
+        row("magnifier")["blocked"]
+            .as_str()
+            .unwrap()
+            .contains("compd magnifier"),
+        "{page}"
+    );
+    assert!(row("reduced_motion")["blocked"].is_null(), "{page}");
+    let (rc, body) = ask(
+        &mut rig,
+        3,
+        "prefs.set",
+        json!({"key":"accessibility.text_scale","value":1.25}),
+    );
+    assert_eq!(rc, 0, "{body}");
+    rig.h.run_steps(3);
+    let sent = applies(&rig);
+    assert_eq!(sent.len(), 1, "{sent:?}");
+    assert_eq!(sent[0]["changes"], json!({"accessibility.text_scale":1.25}));
+}
+
+#[test]
+fn magnifier_and_osk_wait_on_their_backends_and_refuse_writes() {
+    let mut rig = rig();
+    read(&mut rig, "authority", false);
+    for (id, page_name, backend, key) in [
+        (1, "magnifier", "compd magnifier", "accessibility.magnifier.increment"),
+        (2, "osk", "a MixOS on-screen keyboard", "accessibility.osk.always_show"),
+    ] {
+        let (rc, body) = ask(&mut rig, id, "prefs.page.open", json!({"page":page_name}));
+        assert_eq!(rc, 0, "{body}");
+        let (rc, page) = ask(&mut rig, id + 10, "prefs.page", json!({"page":page_name}));
+        assert_eq!(rc, 0);
+        assert!(
+            page["backend"].as_str().unwrap().contains(backend),
+            "{page_name}: {page}"
+        );
+        let (rc, body) = ask(&mut rig, id + 20, "prefs.set", json!({"key":key,"value":50}));
+        assert_eq!(
+            (rc, body["error_code"].as_str()),
+            (10, Some("REFUSED")),
+            "{key}"
+        );
+    }
+    rig.h.run_steps(3);
+    assert!(applies(&rig).is_empty());
+}
+
 /// The write path end to end through the one dispatch a click and the Bus
 /// share: three gestures make one apply and one merged second apply on the
 /// receipt's revision; a conflict on that one reads and sends it again.
