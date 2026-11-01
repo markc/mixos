@@ -17,9 +17,11 @@
 //!
 //! A row whose MixOS backend does not exist yet names it ([`Row::backend`],
 //! [`Page::backend`]) and is drawn disabled with that line, never hidden.
+use crate::engine::Engine;
 use crate::store::Store;
 use serde::Serialize;
 use serde_json::{Value, json};
+use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
 mod appearance;
@@ -62,6 +64,10 @@ pub struct Opt {
     /// A one-line description under a radio option (COSMIC's power
     /// modes), as a message id.
     pub description: Option<&'static str>,
+    /// Offered in the menu. An unlisted option is accepted and shown under
+    /// its label when stored, never offered (a stored Stretch shows as
+    /// Fill).
+    pub listed: bool,
 }
 
 pub const fn opt(value: &'static str, label: &'static str) -> Opt {
@@ -69,6 +75,27 @@ pub const fn opt(value: &'static str, label: &'static str) -> Opt {
         value: Lit::S(value),
         label,
         description: None,
+        listed: true,
+    }
+}
+
+/// A whole-number option (seconds, sizes).
+pub const fn opt_int(value: i64, label: &'static str) -> Opt {
+    Opt {
+        value: Lit::I(value),
+        label,
+        description: None,
+        listed: true,
+    }
+}
+
+/// An option accepted and shown as `label` when stored, never offered.
+pub const fn unlisted(value: &'static str, label: &'static str) -> Opt {
+    Opt {
+        value: Lit::S(value),
+        label,
+        description: None,
+        listed: false,
     }
 }
 
@@ -213,9 +240,28 @@ pub enum Control {
     Reset {
         keys: &'static [&'static str],
     },
+    /// The display selector: one tab per connected output (the live
+    /// `outputs` options), or the "All displays" heading while the bool key
+    /// `all` holds. The selected tab is the window's
+    /// ([`crate::Engine::selected_output`]), not a setting; pages that show
+    /// per-output values read it (Wallpaper, Displays).
+    Outputs {
+        all: &'static str,
+    },
 }
 
+/// The whole write a control sends for `value` on `key`, when it is more
+/// than that one key (choosing an image clears the colour; turning the
+/// slideshow on names its folder). It goes out as one fenced apply.
+pub type Writes = fn(&Engine, &str, &Value) -> BTreeMap<String, Value>;
+
 impl Control {
+    /// Every key the control writes: [`Control::key`] for the controls
+    /// here; a page's own control may write more.
+    pub fn keys(&self) -> Vec<&'static str> {
+        self.key().into_iter().collect()
+    }
+
     /// The settingsd key the control writes, if one.
     pub fn key(&self) -> Option<&'static str> {
         match self {
@@ -235,6 +281,7 @@ impl Control {
             Control::Scheme => Some("appearance.scheme"),
             Control::Mode | Control::AutoMode => Some("appearance.mode"),
             Control::HintAccent => Some("window.hint_colour"),
+            Control::Outputs { .. } => None,
             Control::Page { .. }
             | Control::Drawer { .. }
             | Control::Info
@@ -293,6 +340,9 @@ pub struct Row {
     /// A choice's options from data, after its own (connected outputs):
     /// the engine's live option list for this source.
     pub options_from: Option<&'static str>,
+    /// The write the control sends, when it carries more than its key.
+    #[serde(skip)]
+    pub writes: Option<Writes>,
     /// A read-only value from data, trailing the row (the time on Date &
     /// time, the battery's charge): the engine's live value for this
     /// source.
@@ -308,6 +358,7 @@ pub const fn row(id: &'static str, control: Control) -> Row {
         backend: None,
         options_from: None,
         value_from: None,
+        writes: None,
     }
 }
 
@@ -337,6 +388,11 @@ impl Row {
         self.options_from = Some(source);
         self
     }
+    /// What a write through this control sends (see [`Writes`]).
+    pub const fn writes(mut self, writes: Writes) -> Self {
+        self.writes = Some(writes);
+        self
+    }
     pub const fn backend(mut self, backend: &'static str) -> Self {
         self.backend = Some(backend);
         self
@@ -353,6 +409,9 @@ pub struct Section {
     /// Rows that come from data (networks, devices, users, streams): the
     /// engine's live list for this source, drawn after `rows`.
     pub items: Option<Items>,
+    /// Drawn on the page rather than in a list card (Wallpaper's preview
+    /// and chooser): each row is its bare control.
+    pub plain: bool,
 }
 
 /// A section's rows from data: the live source, the message shown while
@@ -384,6 +443,7 @@ pub fn section(id: &'static str, rows: Vec<Row>) -> Section {
         rows,
         show: Cond::Always,
         items: None,
+        plain: false,
     }
 }
 
@@ -395,6 +455,12 @@ impl Section {
             empty,
             style: ItemStyle::Rows,
         });
+        self
+    }
+
+    /// Drawn on the page, not in a card.
+    pub fn plain(mut self) -> Self {
+        self.plain = true;
         self
     }
 
@@ -740,9 +806,13 @@ mod tests {
         let catalog = crate::catalog::Catalog::builtin();
         for page in all() {
             for (_, row) in page.rows() {
-                if let Some(key) = row.control.key() {
+                for key in row.control.keys() {
                     assert!(catalog.get(key).is_some(), "{}/{}: {key}", page.id, row.id);
                 }
+                if let Control::Outputs { all: key } = &row.control {
+                    assert!(catalog.get(key).is_some(), "{}/{}: {key}", page.id, row.id);
+                }
+
                 if let Control::Choice { key, options, .. } = &row.control
                     && let Some(crate::catalog::Kind::Enum(variants)) =
                         catalog.get(key).map(|i| i.kind.clone())

@@ -189,6 +189,7 @@ impl Engine {
         };
         let mut out: Vec<(Value, String)> = options
             .iter()
+            .filter(|o| o.listed)
             .filter(|o| match (variants, o.value) {
                 (Some(names), pages::Lit::S(s)) => names.iter().any(|n| n == s),
                 _ => true,
@@ -196,7 +197,11 @@ impl Engine {
             .map(|o| (o.value.value(), self.label(o.label, &[])))
             .collect();
         for name in variants.into_iter().flatten() {
-            if !out.iter().any(|(v, _)| v.as_str() == Some(name)) {
+            // A variant the page names (offered or not) is the page's call.
+            let paged = options
+                .iter()
+                .any(|o| matches!(o.value, pages::Lit::S(s) if s == name));
+            if !paged && !out.iter().any(|(v, _)| v.as_str() == Some(name)) {
                 let key = format!("opt-{}", name.replace('_', "-"));
                 let text = self.label(&key, &[]);
                 out.push((
@@ -242,6 +247,45 @@ impl Engine {
             .unwrap_or_else(|| raw_label(value))
     }
 
+    /// The label a choice row shows for a stored `value` it does not offer
+    /// (an unlisted option).
+    pub fn unlisted_label(&self, row: &pages::Row, value: &Value) -> Option<String> {
+        let pages::Control::Choice { options, .. } = &row.control else {
+            return None;
+        };
+        options
+            .iter()
+            .find(|o| !o.listed && o.value.is(Some(value)))
+            .map(|o| self.label(o.label, &[]))
+    }
+
+    /// Select the output tab `output` of a [`pages::Control::Outputs`]
+    /// (none: back to the default).
+    pub fn select_output(&mut self, output: Option<String>) {
+        self.nav.output = output;
+    }
+
+    /// The output tab selected: the one chosen, else the internal display,
+    /// else the first connected one (spec 1 §4.1).
+    pub fn selected_output(&self) -> Option<String> {
+        let outputs: Vec<&str> = self
+            .live_options("outputs")
+            .iter()
+            .filter_map(|(v, _)| v.as_str())
+            .filter(|v| *v != "all")
+            .collect();
+        if let Some(output) = &self.nav.output
+            && outputs.contains(&output.as_str())
+        {
+            return Some(output.clone());
+        }
+        outputs
+            .iter()
+            .find(|o| ["eDP-", "LVDS-", "DSI-"].iter().any(|p| o.starts_with(p)))
+            .or(outputs.first())
+            .map(|o| (*o).to_owned())
+    }
+
     /// A numeric control's range: the catalogue's, else the page's.
     pub fn bounds(&self, key: &str, min: f64, max: f64) -> (f64, f64) {
         match self.store.catalog.get(key).map(|i| &i.kind) {
@@ -271,7 +315,7 @@ impl Engine {
         pages::all().iter().find_map(|page| {
             page.rows()
                 .map(|(_, row)| row)
-                .find(|row| row.control.key() == Some(key))
+                .find(|row| row.control.keys().contains(&key))
                 .map(|row| (page, row))
         })
     }
@@ -288,8 +332,29 @@ impl Engine {
         if let Some(why) = self.row_blocked(page, row) {
             return Err(why);
         }
-        self.set_key(key, value)
+        self.write_key(key, value)
     }
+
+    /// The write a control sends for `value` on `key`: its row's
+    /// [`pages::Row::writes`] when it has one, else the key alone.
+    pub(crate) fn control_writes(&self, key: &str, value: Value) -> BTreeMap<String, Value> {
+        match self.control_of(key).and_then(|(_, row)| row.writes) {
+            Some(writes) => writes(self, key, &value),
+            None => BTreeMap::from([(key.to_owned(), value)]),
+        }
+    }
+
+    /// Write `value` to `key` as its control does: the control's whole
+    /// write in one fenced apply, through the store's one write path
+    /// (checked, merged with pending writes, fenced, re-read on conflict,
+    /// kept while the authority is unreachable). The window's path: its
+    /// rows already refuse what their rules disable; `prefs.set` checks
+    /// them first ([`Self::set_control`]).
+    pub fn write_key(&mut self, key: &str, value: Value) -> Result<(), String> {
+        let changes = self.control_writes(key, value);
+        self.set_keys(changes)
+    }
+
 }
 
 /// A value as plain text: a string as itself, a list's non-empty parts
@@ -423,6 +488,48 @@ mod tests {
         );
         // A key with no control on any page yet: settingsd's, not Prefs'.
         assert!(e.set_control("sound.output.amplify", json!(true)).is_err());
+    }
+
+    #[test]
+    fn a_control_write_is_one_fenced_apply_through_the_store() {
+        let mut e = engine();
+        e.write_key("appearance.density", json!("compact")).unwrap();
+        e.write_key("appearance.roundness", json!("square")).unwrap();
+        let applies: Vec<Value> = e
+            .take_effects()
+            .into_iter()
+            .filter_map(|x| match x {
+                Effect::Store { command: "settings.apply", body, .. } => Some(body),
+                _ => None,
+            })
+            .collect();
+        // The first goes at once; the second waits for its answer, merged.
+        assert_eq!(applies.len(), 1);
+        assert_eq!(applies[0]["changes"], json!({"appearance.density":"compact"}));
+        assert_eq!(e.store.waiting(), ["appearance.roundness", "appearance.density"]);
+        // prefs.set takes the same path after the control's rules.
+        e.store.values.insert("appearance.source".into(), json!({"design":"x"}));
+        assert!(e.set_control("appearance.mode", json!("light")).is_err());
+    }
+
+    #[test]
+    fn the_output_tab_defaults_to_the_internal_display_and_follows_a_choice() {
+        let mut e = engine();
+        assert_eq!(e.selected_output(), None);
+        e.set_options(
+            "outputs",
+            vec![
+                (json!("all"), "All".into()),
+                (json!("HDMI-A-1"), "HDMI".into()),
+                (json!("eDP-1"), "Laptop".into()),
+            ],
+        );
+        assert_eq!(e.selected_output().as_deref(), Some("eDP-1"));
+        e.select_output(Some("HDMI-A-1".into()));
+        assert_eq!(e.selected_output().as_deref(), Some("HDMI-A-1"));
+        // A chosen output that went away falls back to the default.
+        e.select_output(Some("DP-9".into()));
+        assert_eq!(e.selected_output().as_deref(), Some("eDP-1"));
     }
 
     #[test]
