@@ -4,7 +4,7 @@
 //! UPower by hostd; the power mode goes to hostd's power-profiles bridge; the
 //! screen-off timer is compd's idle and DPMS; the automatic suspends are
 //! hostd's idle and suspend. Battery-only rows and the battery section show
-//! once UPower reports a battery (the `power.battery` fact), so a desktop
+//! once UPower reports a battery (the `battery` fact), so a desktop
 //! never shows them. Each other row names its own missing backend, and no
 //! write runs until that backend lands.
 use super::{ChoiceStyle, Cond, Control, Lit, Opt, Page, row, section};
@@ -56,7 +56,7 @@ const SUSPEND: &[Opt] = &[
 ];
 
 pub(super) fn page() -> Page {
-    let battery = Cond::Fact("power.battery");
+    let battery = Cond::Fact("battery");
     super::page(
         "power",
         "battery-medium",
@@ -64,6 +64,7 @@ pub(super) fn page() -> Page {
         super::sections(vec![
             section("battery", Vec::new())
                 .items("power.battery", "row-power-battery-none")
+                .cards()
                 .show(battery),
             section("devices", Vec::new())
                 .items("power.devices", "row-power-devices-none")
