@@ -55,43 +55,43 @@ fn visible(shared: &Mutex<Shared>) -> bool {
     };
     hosts.iter().any(|h| lock(h).is_visible())
 }
-fn call(handle: &Handle, target: &str, verb: &str, args: Value) -> Result<Value, String> {
+fn call(handle: &Handle, target: &str, command: &str, args: Value) -> Result<Value, String> {
     let reply = futures::executor::block_on(handle.raw_within(
         target,
-        verb,
+        command,
         args.to_string(),
-        if verb == "train.gate" {
+        if command == "train.gate" {
             GATE_TIMEOUT
         } else {
             Duration::from_secs(5)
         },
     ))
-    .map_err(|e| format!("{verb}: {e}"))?;
+    .map_err(|e| format!("{command}: {e}"))?;
     if reply.rc != 0 {
-        return Err(format!("{verb}: {}", reply.error.unwrap_or(reply.body)));
+        return Err(format!("{command}: {}", reply.error.unwrap_or(reply.body)));
     }
-    let value: Value = serde_json::from_str(&reply.body).map_err(|e| format!("{verb}: {e}"))?;
+    let value: Value = serde_json::from_str(&reply.body).map_err(|e| format!("{command}: {e}"))?;
     if !value.is_object() {
-        return Err(format!("{verb}: expected an object"));
+        return Err(format!("{command}: expected an object"));
     }
     Ok(value)
 }
 fn read(
     handle: &Handle,
     target: &str,
-    verb: &'static str,
+    command: &'static str,
     args: Value,
     value: &mut Value,
     errors: &mut BTreeMap<&'static str, String>,
 ) -> bool {
-    match call(handle, target, verb, args) {
+    match call(handle, target, command, args) {
         Ok(data) => {
             *value = data;
-            errors.remove(verb);
+            errors.remove(command);
             true
         }
         Err(error) => {
-            errors.insert(verb, error);
+            errors.insert(command, error);
             false
         }
     }
