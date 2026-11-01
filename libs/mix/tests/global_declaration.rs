@@ -171,10 +171,19 @@ async fn embedded_pipeline_binder_refuses_global() {
     // The source parser's | is an external pipeline. The embedded AST
     // expression pipeline is a separate supported evaluator path.
     let source = "fn f() global $_; 0 end; try f() catch $m, $e print($e.code) end";
-    let mut stmts = Parser::new(Lexer::new(source).tokenize().unwrap(), source).parse_program().unwrap();
-    let StmtKind::FunctionDef { body: FunctionBody::Block(body), .. } = &mut stmts[0].kind else { panic!("function") };
+    let mut stmts = Parser::new(Lexer::new(source).tokenize().unwrap(), source)
+        .parse_program()
+        .unwrap();
+    let StmtKind::FunctionDef {
+        body: FunctionBody::Block(body),
+        ..
+    } = &mut stmts[0].kind
+    else {
+        panic!("function")
+    };
     body[1].kind = StmtKind::Expression(Expr::BinaryOp {
-        left: Box::new(Expr::NumberLiteral(1.0)), op: BinOp::Pipe,
+        left: Box::new(Expr::NumberLiteral(1.0)),
+        op: BinOp::Pipe,
         right: Box::new(Expr::Variable("_".to_string())),
     });
     let out = SharedBuf::new();
