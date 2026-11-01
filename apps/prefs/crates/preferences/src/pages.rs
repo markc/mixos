@@ -29,6 +29,7 @@ mod input;
 mod network;
 mod panels;
 mod tree;
+mod window_management;
 
 /// A literal value in page data.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
