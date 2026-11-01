@@ -319,10 +319,17 @@ fn power_rows_name_their_backends_and_refuse_writes() {
     blocked("screen_off", "compd screen-off timer");
     blocked("suspend_ac", "hostd idle and suspend");
     // No battery is reported yet, so the battery-only row is not shown.
-    assert!(
-        rows.iter().all(|(id, _)| *id != "suspend_battery"),
-        "{rows:?}"
-    );
+    let row_of = |page: &Value, id: &str| {
+        page["sections"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|s| s["rows"].as_array().unwrap().iter())
+            .find(|r| r["id"] == id)
+            .unwrap()
+            .clone()
+    };
+    assert_eq!(row_of(&page, "suspend_battery")["shown"], false);
     rig.h
         .state_mut()
         .as_mut()
@@ -331,14 +338,8 @@ fn power_rows_name_their_backends_and_refuse_writes() {
         .set_fact("power.battery", true);
     rig.h.run_steps(2);
     let (_, page) = ask(&mut rig, 4, "prefs.page", json!({}));
-    let battery_row = page["sections"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .flat_map(|s| s["rows"].as_array().unwrap().iter())
-        .find(|r| r["id"] == "suspend_battery")
-        .unwrap()
-        .clone();
+    let battery_row = row_of(&page, "suspend_battery");
+    assert_eq!(battery_row["shown"], true);
     assert!(
         battery_row["blocked"]
             .as_str()
