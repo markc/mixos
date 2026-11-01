@@ -379,6 +379,13 @@ try
   for $owner in ["clipd", "notifyd", "releasesd"]
     need(contains(read_file($package_root .. "/share/" .. $owner .. "/units/" .. $owner .. "@.service"), "ExecStart=" .. $package_root .. "/bin/mix"), "component's shipped unit copy was not rendered")
   end
+  for $unit in ["exportd-cosmic@.service", "exportd-kde.service", "exportd-gtkqt@.service"]
+    $path = $package_root .. "/share/exportd/units/" .. $unit
+    need(is_file($package_root .. "/share/layout/templates/services/exportd/units/" .. $unit) and
+      any($union, fn($entry) = $entry.path == $path), "exportd unit is missing from the shipped layout templates: " .. $unit)
+    need(contains(read_file($path), "ExecStart=" .. $package_root .. "/bin/mix --serve " .. $package_root .. "/lib/exportd/") and
+      not contains(read_file($path), "@{"), "exportd unit copy was not rendered: " .. $unit)
+  end
   need(is_file($package_root .. "/lib/clipd/clipd.mix") and
     is_file($package_root .. "/lib/clipd/lib/clipboard.mix") and
     contains(read_file($package_root .. "/share/clipd/units/clipd.service"), "ExecStart=" .. $package_root .. "/bin/mix"),
