@@ -181,6 +181,23 @@ pub enum Control {
     Live {
         key: &'static str,
     },
+    /// A list value as rows in order, each labelled from the first of the
+    /// live option `sources` that names it, with a menu: Move up, Move
+    /// down, Remove. `add` is the drawer the Add button under the card
+    /// opens (its title is the button's text).
+    Ordered {
+        key: &'static str,
+        sources: &'static [&'static str],
+        add: Option<&'static str>,
+    },
+    /// The values of the live options `source` a list key can take, under
+    /// a search field, each with Add (or Added): adding appends it to
+    /// `key`. With `more`, a switch shows that source's values too.
+    Append {
+        key: &'static str,
+        source: &'static str,
+        more: Option<&'static str>,
+    },
     /// Read-only text: the row's description is the value.
     Info,
     /// "Reset to default", shown only while any of `keys` (a trailing `.*`
@@ -202,6 +219,8 @@ impl Control {
             | Control::Spin { key, .. }
             | Control::Colour { key, .. }
             | Control::Pick { key, .. }
+            | Control::Ordered { key, .. }
+            | Control::Append { key, .. }
             | Control::Live { key } => Some(key),
             Control::Accent => Some("appearance.accent"),
             Control::Scheme => Some("appearance.scheme"),
@@ -265,6 +284,10 @@ pub struct Row {
     /// A choice's options from data, after its own (connected outputs):
     /// the engine's live option list for this source.
     pub options_from: Option<&'static str>,
+    /// A read-only value from data, trailing the row (the time on Date &
+    /// time, the battery's charge): the engine's live value for this
+    /// source.
+    pub value_from: Option<&'static str>,
 }
 
 pub const fn row(id: &'static str, control: Control) -> Row {
@@ -275,6 +298,7 @@ pub const fn row(id: &'static str, control: Control) -> Row {
         enable: &[],
         backend: None,
         options_from: None,
+        value_from: None,
     }
 }
 
@@ -295,7 +319,13 @@ impl Row {
             .find(|(cond, _)| !cond.holds(store))
             .map(|(_, why)| *why)
     }
+    /// A trailing read-only value from the live source (an Info row's).
+    pub const fn value_from(mut self, source: &'static str) -> Self {
+        self.value_from = Some(source);
+        self
+    }
     pub const fn options_from(mut self, source: &'static str) -> Self {
+
         self.options_from = Some(source);
         self
     }

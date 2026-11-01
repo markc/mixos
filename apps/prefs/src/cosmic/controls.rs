@@ -7,15 +7,16 @@
 //! Every control is named for agents with its row's title, so
 //! `prefs.ui.click {label}` reaches it as a hand would.
 use super::{Look, description, lit, named, set, title};
-use crate::label;
 use crate::view::UiEvent;
+use crate::{label, label_with};
 use design::cosmic_tables::{DARK_PALETTE, LIGHT_PALETTE, SWATCH_NAMES};
 use egui::{
     Align, Color32, Layout, Margin, Rect, Response, RichText, Role, Sense, Stroke, StrokeKind, Ui,
     Vec2, Widget, WidgetInfo, pos2, vec2,
 };
 use preferences::Engine;
-use preferences::pages::{ChoiceStyle, Control, Lit, Opt, Page, Row};
+use preferences::live::ListEdit;
+use preferences::pages::{self, ChoiceStyle, Control, Lit, Opt, Page, Row};
 use serde_json::{Value, json};
 use toolkit::{Icon, icons};
 
@@ -27,6 +28,11 @@ pub fn resolved_dark(engine: &Engine) -> bool {
 
 /// COSMIC's standard button: 24 tall (compact), pill, button colour.
 pub fn standard_button<'a>(text: &'a str, look: &'a Look) -> impl Widget + 'a {
+    named_button(text, text, look)
+}
+
+/// A standard button named `name` for agents (one of many `Add`s).
+pub fn named_button<'a>(text: &'a str, name: &'a str, look: &'a Look) -> impl Widget + 'a {
     move |ui: &mut Ui| {
         let height = match look.density {
             design::cosmic_tables::Density::Compact => 24.0,
@@ -57,7 +63,7 @@ pub fn standard_button<'a>(text: &'a str, look: &'a Look) -> impl Widget + 'a {
         ui.painter()
             .galley(rect.center() - galley.size() / 2.0, galley, ink);
         focus_ring(ui, &response, rect, look.r_xl, look);
-        response.widget_info(|| WidgetInfo::labeled(Role::Button, ui.is_enabled(), text));
+        response.widget_info(|| WidgetInfo::labeled(Role::Button, ui.is_enabled(), name));
         response
     }
 }
@@ -197,7 +203,15 @@ fn control_width(ui: &Ui, engine: &Engine, row: &Row) -> f32 {
         }
         Control::Page { .. } | Control::Drawer { .. } => 16.0,
         Control::Reset { .. } => 160.0,
-        Control::Info | Control::Accent | Control::Scheme | Control::Mode => 0.0,
+        Control::Info => row
+            .value_from
+            .and_then(|src| engine.live_value(src))
+            .map_or(0.0, |v| text_width(ui, v, 14.0)),
+        Control::Accent
+        | Control::Scheme
+        | Control::Mode
+        | Control::Ordered { .. }
+        | Control::Append { .. } => 0.0,
     }
 }
 
@@ -687,7 +701,14 @@ fn control(
             ui.label(RichText::new(current).size(14.0).color(look.value));
         }
         Control::Page { .. } | Control::Drawer { .. } => chevron(ui, look),
-        Control::Info => {}
+        // Drawn by the section: one row per entry, or the drawer's list.
+        // A readout: the live value trailing the row, as body text.
+        Control::Info => {
+            if let Some(value) = row.value_from.and_then(|src| engine.live_value(src)) {
+                ui.label(RichText::new(value).size(14.0).color(look.value));
+            }
+        }
+        Control::Ordered { .. } | Control::Append { .. } => {}
         Control::Reset { keys } => {
             if ui.add(standard_button(name, look)).clicked() {
                 events.push(UiEvent::Reset(keys));
@@ -1239,4 +1260,204 @@ fn slider(
         text(ui, label(end));
     }
     out.filter(|v| (v - value).abs() > f64::EPSILON)
+}
+
+/// One entry of an ordered list (spec 1 §4.9.4, Input Sources): its label
+/// and a "view more" button whose menu moves it up or down or removes it.
+/// A move that changes nothing, or a removal below the catalogue's least
+/// count, is drawn disabled.
+#[allow(clippy::too_many_arguments)]
+pub fn ordered_entry(
+    ui: &mut Ui,
+    engine: &Engine,
+    key: &'static str,
+    entries: &[Value],
+    index: usize,
+    text: &str,
+    enabled: bool,
+    look: &Look,
+    events: &mut Vec<UiEvent>,
+) {
+    let (min, _) = engine.list_bounds(key);
+    let pad = look.row_pad() as i8;
+    egui::Frame::NONE
+        .inner_margin(Margin::symmetric(pad, 4))
+        .show(ui, |ui| {
+            ui.set_min_height(32.0);
+            ui.set_width(ui.available_width());
+            ui.horizontal(|ui| {
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    let more = label_with("list-more", &[("entry", text)]);
+                    let response = ui
+                        .add_enabled_ui(enabled, |ui| {
+                            icon_button(ui, Icon::EllipsisVertical, true, &more, look)
+                        })
+                        .inner;
+                    egui::Popup::menu(&response).show(|ui| {
+                        ui.set_min_width(160.0);
+                        let edits = [
+                            (ListEdit::Up(index), "list-move-up", index > 0),
+                            (
+                                ListEdit::Down(index),
+                                "list-move-down",
+                                index + 1 < entries.len(),
+                            ),
+                        ];
+                        for (edit, id, can) in edits {
+                            menu_edit(ui, key, entries, edit, &label(id), can, events);
+                        }
+                        ui.separator();
+                        menu_edit(
+                            ui,
+                            key,
+                            entries,
+                            ListEdit::Remove(index),
+                            &label("list-remove"),
+                            entries.len() > min,
+                            events,
+                        );
+                    });
+                    ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                        ui.label(RichText::new(text).size(14.0).color(look.text));
+                    });
+                });
+            });
+        });
+}
+
+fn menu_edit(
+    ui: &mut Ui,
+    key: &'static str,
+    entries: &[Value],
+    edit: ListEdit,
+    text: &str,
+    enabled: bool,
+    events: &mut Vec<UiEvent>,
+) {
+    let clicked = ui
+        .add_enabled_ui(enabled, |ui| toolkit::selectable(ui, false, text))
+        .inner
+        .clicked();
+    if clicked && let Some(list) = edit.apply(entries) {
+        set(events, key, Value::Array(list));
+        ui.close();
+    }
+}
+
+/// The values a list key can take, from a live source (the Add input
+/// source drawer): a search field, a switch for the `more` source, then one
+/// row per value with Add, or Added once it is in the list. A value that
+/// refines another (a layout's variant) is indented under it. Rows out of
+/// view are laid out but not drawn.
+#[allow(clippy::too_many_arguments)]
+pub fn append(
+    ui: &mut Ui,
+    engine: &Engine,
+    page: &Page,
+    row: &Row,
+    key: &'static str,
+    source: &'static str,
+    more: Option<&'static str>,
+    look: &Look,
+    events: &mut Vec<UiEvent>,
+) {
+    let enabled = engine.row_blocked(page, row).is_none();
+    let entries = engine.entries(key);
+    let (_, max) = engine.list_bounds(key);
+    let full = entries.len() >= max;
+    let filter_id = ui.scope_id().with(("append-filter", key));
+    let more_id = ui.scope_id().with(("append-more", key));
+    let mut filter: String = ui.data(|d| d.get_temp(filter_id)).unwrap_or_default();
+    let search = ui.add(
+        egui::TextEdit::singleline(&mut filter)
+            .hint_text(label("search-hint"))
+            .desired_width(ui.available_width()),
+    );
+    if search.changed() {
+        ui.data_mut(|d| d.insert_temp(filter_id, filter.clone()));
+    }
+    ui.add_space(look.s);
+    let mut extended: bool = ui.data(|d| d.get_temp(more_id)).unwrap_or(false);
+    if more.is_some() {
+        let name = label(&format!("{}-more", pages::row_title(page.id, row.id)));
+        super::card(ui, look, |ui| {
+            egui::Frame::NONE
+                .inner_margin(Margin::symmetric(look.row_pad() as i8, 4))
+                .show(ui, |ui| {
+                    ui.set_min_height(32.0);
+                    ui.set_width(ui.available_width());
+                    ui.horizontal(|ui| {
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            if switch(ui, extended, look, &name).clicked() {
+                                extended = !extended;
+                                ui.data_mut(|d| d.insert_temp(more_id, extended));
+                            }
+                            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                                ui.label(RichText::new(&name).size(14.0).color(look.text));
+                            });
+                        });
+                    });
+                });
+        });
+        ui.add_space(look.s);
+    }
+    let query = filter.trim().to_lowercase();
+    let mut values: Vec<&(Value, String)> = engine.live_options(source).iter().collect();
+    if extended && let Some(more) = more {
+        values.extend(engine.live_options(more));
+    }
+    values.retain(|(_, text)| text.to_lowercase().contains(&query));
+    super::card(ui, look, |ui| {
+        if values.is_empty() {
+            super::plain_row(ui, look, &label("list-empty"), None);
+            return;
+        }
+        let (add, added) = (label("list-add"), label("list-added"));
+        for (index, (value, text)) in values.into_iter().enumerate() {
+            if index > 0 {
+                super::divider(ui, look);
+            }
+            let (rect, _) =
+                ui.allocate_exact_size(vec2(ui.available_width(), 40.0), Sense::hover());
+            if !ui.is_rect_visible(rect) {
+                continue;
+            }
+            let refines = value
+                .as_array()
+                .and_then(|parts| parts.last())
+                .and_then(Value::as_str)
+                .is_some_and(|s| !s.is_empty());
+            let indent = if refines { look.l } else { 0.0 };
+            ui.painter().text(
+                rect.left_center() + vec2(look.m + indent, 0.0),
+                egui::Align2::LEFT_CENTER,
+                text,
+                egui::FontId::proportional(14.0),
+                look.text,
+            );
+            let have = entries.contains(value);
+            let slot = Rect::from_min_max(
+                pos2(rect.max.x - 160.0, rect.min.y),
+                rect.max - vec2(look.m, 0.0),
+            );
+            let word = if have { &added } else { &add };
+            let name = format!("{word} {text}");
+            ui.scope_builder(
+                egui::UiBuilder::new()
+                    .max_rect(slot)
+                    .layout(Layout::right_to_left(Align::Center)),
+                |ui| {
+                    let response = ui.add_enabled(
+                        enabled && !have && !full,
+                        named_button(word, &name, look),
+                    );
+                    if response.clicked()
+                        && let Some(list) = ListEdit::Append(value.clone()).apply(&entries)
+                    {
+                        set(events, key, Value::Array(list));
+                    }
+                },
+            );
+        }
+    });
 }
