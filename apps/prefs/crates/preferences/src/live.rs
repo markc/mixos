@@ -354,7 +354,6 @@ impl Engine {
         let changes = self.control_writes(key, value);
         self.set_keys(changes)
     }
-
 }
 
 /// A value as plain text: a string as itself, a list's non-empty parts
@@ -494,21 +493,34 @@ mod tests {
     fn a_control_write_is_one_fenced_apply_through_the_store() {
         let mut e = engine();
         e.write_key("appearance.density", json!("compact")).unwrap();
-        e.write_key("appearance.roundness", json!("square")).unwrap();
+        e.write_key("appearance.roundness", json!("square"))
+            .unwrap();
         let applies: Vec<Value> = e
             .take_effects()
             .into_iter()
             .filter_map(|x| match x {
-                Effect::Store { command: "settings.apply", body, .. } => Some(body),
+                Effect::Store {
+                    command: "settings.apply",
+                    body,
+                    ..
+                } => Some(body),
                 _ => None,
             })
             .collect();
         // The first goes at once; the second waits for its answer, merged.
         assert_eq!(applies.len(), 1);
-        assert_eq!(applies[0]["changes"], json!({"appearance.density":"compact"}));
-        assert_eq!(e.store.waiting(), ["appearance.roundness", "appearance.density"]);
+        assert_eq!(
+            applies[0]["changes"],
+            json!({"appearance.density":"compact"})
+        );
+        assert_eq!(
+            e.store.waiting(),
+            ["appearance.roundness", "appearance.density"]
+        );
         // prefs.set takes the same path after the control's rules.
-        e.store.values.insert("appearance.source".into(), json!({"design":"x"}));
+        e.store
+            .values
+            .insert("appearance.source".into(), json!({"design":"x"}));
         assert!(e.set_control("appearance.mode", json!("light")).is_err());
     }
 
