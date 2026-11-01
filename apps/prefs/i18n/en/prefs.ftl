@@ -667,6 +667,7 @@ backend-compd-translucent = compd translucent surfaces
 backend-compd-frosted = compd frosted surfaces
 backend-quoin-frosted = Quoin frosted panels
 backend-hostd-power-profiles = hostd power profiles
+backend-hostd-upower = hostd battery reading (UPower)
 backend-compd-idle = compd screen-off timer (idle and DPMS)
 backend-hostd-suspend = hostd idle and suspend
 store-unread = Reading settings…
