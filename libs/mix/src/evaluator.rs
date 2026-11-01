@@ -309,9 +309,10 @@ pub(crate) fn incoming_event_to_mix_value(event: &IncomingEvent) -> Value {
     event_map.insert("headers".to_string(), Value::map(headers_map));
     event_map.insert("body".to_string(), Value::String(event.body.clone()));
     let mut args = parse_event_args(&event.body);
-    if event.headers.get("native-udp").is_some_and(|v| v == "1") {
-        if let Value::Map(m) = &mut args {
-            if let Some(Value::Map(d)) = std::rc::Rc::make_mut(m).get_mut("datagram") {
+    if event.headers.get("native-udp").is_some_and(|v| v == "1")
+        && let Value::Map(m) = &mut args
+        && let Some(Value::Map(d)) = std::rc::Rc::make_mut(m).get_mut("datagram")
+    {
                 let d = std::rc::Rc::make_mut(d);
                 if let Some(Value::List(xs)) = d.get("bytes") {
                     let bytes = xs
@@ -326,8 +327,6 @@ pub(crate) fn incoming_event_to_mix_value(event: &IncomingEvent) -> Value {
                         .collect();
                     d.insert("bytes".into(), Value::bytes(bytes));
                 }
-            }
-        }
     }
     event_map.insert("args".to_string(), args);
     Value::map(event_map)
