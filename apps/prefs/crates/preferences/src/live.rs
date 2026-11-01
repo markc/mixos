@@ -91,7 +91,6 @@ impl Engine {
     }
 
     /// The owner of `source` replaces its options (value, shown label).
-
     pub fn set_options(&mut self, source: &str, options: Vec<(Value, String)>) {
         self.live.options.insert(source.to_owned(), options);
     }
@@ -450,7 +449,10 @@ mod tests {
         );
         assert_eq!(ListEdit::Append(json!(["us", ""])).apply(&list), None);
         assert_eq!(
-            ListEdit::Append(json!(["fr", ""])).apply(&list).unwrap().len(),
+            ListEdit::Append(json!(["fr", ""]))
+                .apply(&list)
+                .unwrap()
+                .len(),
             3
         );
     }

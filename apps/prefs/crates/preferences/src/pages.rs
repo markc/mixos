@@ -325,7 +325,6 @@ impl Row {
         self
     }
     pub const fn options_from(mut self, source: &'static str) -> Self {
-
         self.options_from = Some(source);
         self
     }
