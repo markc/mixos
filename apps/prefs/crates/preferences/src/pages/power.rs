@@ -21,6 +21,7 @@ const fn after(seconds: i64, label: &'static str) -> Opt {
         value: Lit::I(seconds),
         label,
         description: None,
+        listed: true,
     }
 }
 
@@ -29,6 +30,7 @@ const NEVER: Opt = Opt {
     value: Lit::Null,
     label: "opt-never",
     description: None,
+    listed: true,
 };
 
 const SCREEN_OFF: &[Opt] = &[
