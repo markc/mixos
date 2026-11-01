@@ -9031,8 +9031,12 @@ impl Evaluator {
                         if matches!(name.as_str(), "event" | "rc" | "result" | "reply") {
                             return Err(self.coded_err("GLOBAL_RUNTIME_NAME", format!("${name} is set by the runtime")));
                         }
-                        self.scope.declare_global(name).map_err(|code|
-                            self.coded_err(code, format!("cannot declare ${name} global")))?;
+                        self.scope.declare_global(name).map_err(|code| {
+                            let message = if code == "GLOBAL_AFTER_LOCAL" && self.scope.is_module_name(name) {
+                                format!("cannot declare ${name} global: module variables are not globals")
+                            } else { format!("cannot declare ${name} global: {code}") };
+                            self.coded_err(code, message)
+                        })?;
                     }
                     Ok(Value::Nil)
                 }
@@ -17200,7 +17204,7 @@ impl Evaluator {
                 self.scope.set_in_current(param.name.clone(), val);
             }
 
-            self.scope.begin_function_body(&func.params);
+            self.scope.begin_function_body(&func.params, Some(func));
             let result: MixResult<Value> = if let Some(e) = bind_err {
                 Err(e)
             } else {
