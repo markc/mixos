@@ -465,7 +465,10 @@ Run `mix builtins` for the full remit of all {count} built-in functions
 
 /// One-line descriptions for keywords.
 const KEYWORD_DESCRIPTIONS: &[(&str, &str)] = &[
-    ("global", "Declare program-global writes for this invocation: global $a, $b (use an absolute path to invoke GNU GLOBAL)"),
+    (
+        "global",
+        "Declare program-global writes for this invocation: global $a, $b (use an absolute path to invoke GNU GLOBAL)",
+    ),
     ("if", "Conditional branch: if EXPR then ... else ... end"),
     ("else", "Alternative branch in if/select"),
     (

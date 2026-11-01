@@ -827,13 +827,17 @@ fn check_agent_rules(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis) {
                     collect_written(body_stmt_list(body), &mut written);
                     let mut declared = HashSet::new();
                     walk_frames(body_stmt_list(body), TOP_FRAME, &mut |node, frame| {
-                        if frame == TOP_FRAME && let FrameNode::Stmt(s) = node
-                            && let StmtKind::Global(names) = &s.kind {
+                        if frame == TOP_FRAME
+                            && let FrameNode::Stmt(s) = node
+                            && let StmtKind::Global(names) = &s.kind
+                        {
                             declared.extend(names.iter().cloned());
                         }
                     });
                     for w in &written {
-                        if declared.contains(w) { continue; }
+                        if declared.contains(w) {
+                            continue;
+                        }
                         if outer_vars.contains(w) && !param_names.contains(w.as_str()) {
                             a.diagnostics.push(diag(
                                 ctx,
@@ -1224,7 +1228,9 @@ impl FileContext {
         // function/lambda body gets its OWN universe in the scope pass.
         collect_bound_names(stmts, false, &mut top_level_names);
         walk_every_stmt(stmts, &mut |stmt| {
-            if let StmtKind::Global(names) = &stmt.kind { top_level_names.extend(names.iter().cloned()); }
+            if let StmtKind::Global(names) = &stmt.kind {
+                top_level_names.extend(names.iter().cloned());
+            }
         });
         for v in INJECTED_VARS {
             top_level_names.insert((*v).to_string());
@@ -4633,7 +4639,11 @@ fn walk_global_frames(stmts: &[Stmt], frame: usize, visit: &mut dyn FnMut(FrameN
         match e {
             Expr::FunctionLiteral { params, body } => {
                 let frame = node_id(e);
-                for p in params { if let Some(d) = &p.default { expr(d, line, frame, visit); } }
+                for p in params {
+                    if let Some(d) = &p.default {
+                        expr(d, line, frame, visit);
+                    }
+                }
                 match &**body {
                     FunctionBody::Block(b) => walk_global_frames(b, frame, visit),
                     FunctionBody::Expression(e) => expr(e, line, frame, visit),
@@ -4642,8 +4652,13 @@ fn walk_global_frames(stmts: &[Stmt], frame: usize, visit: &mut dyn FnMut(FrameN
             Expr::If(i) => {
                 expr(&i.condition, line, frame, visit);
                 walk_global_frames(&i.then_body, frame, visit);
-                for (c, b) in &i.else_ifs { expr(c, line, frame, visit); walk_global_frames(b, frame, visit); }
-                if let Some(b) = &i.else_body { walk_global_frames(b, frame, visit); }
+                for (c, b) in &i.else_ifs {
+                    expr(c, line, frame, visit);
+                    walk_global_frames(b, frame, visit);
+                }
+                if let Some(b) = &i.else_body {
+                    walk_global_frames(b, frame, visit);
+                }
             }
             _ => walk_expr_children(e, &mut |e| expr(e, line, frame, visit)),
         }
@@ -4652,9 +4667,15 @@ fn walk_global_frames(stmts: &[Stmt], frame: usize, visit: &mut dyn FnMut(FrameN
         visit(FrameNode::Stmt(s), frame);
         let inner = if matches!(s.kind, StmtKind::FunctionDef { .. } | StmtKind::On { .. }) {
             std::ptr::from_ref(s) as usize
-        } else { frame };
+        } else {
+            frame
+        };
         if let StmtKind::FunctionDef { params, body, .. } = &s.kind {
-            for p in params { if let Some(d) = &p.default { expr(d, s.line, inner, visit); } }
+            for p in params {
+                if let Some(d) = &p.default {
+                    expr(d, s.line, inner, visit);
+                }
+            }
             match body {
                 FunctionBody::Block(b) => walk_global_frames(b, inner, visit),
                 FunctionBody::Expression(e) => expr(e, s.line, inner, visit),
@@ -4662,7 +4683,9 @@ fn walk_global_frames(stmts: &[Stmt], frame: usize, visit: &mut dyn FnMut(FrameN
             continue;
         }
         walk_stmt_exprs(s, &mut |e| expr(e, s.line, inner, visit));
-        for b in stmt_bodies(&s.kind) { walk_global_frames(b, inner, visit); }
+        for b in stmt_bodies(&s.kind) {
+            walk_global_frames(b, inner, visit);
+        }
     }
 }
 
@@ -4670,21 +4693,43 @@ fn check_global_declarations(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis
     fn conditional(stmts: &[Stmt], nested: bool, ctx: &FileContext, a: &mut Analysis) {
         for s in stmts {
             if nested && matches!(s.kind, StmtKind::Global(_)) {
-                a.diagnostics.push(diag(ctx, "MIX-D3024", Severity::Note, s.line,
-                    "global takes effect only when this control-flow branch executes".to_string(), None));
+                a.diagnostics.push(diag(
+                    ctx,
+                    "MIX-D3024",
+                    Severity::Note,
+                    s.line,
+                    "global takes effect only when this control-flow branch executes".to_string(),
+                    None,
+                ));
             }
-            let inner = nested || matches!(s.kind, StmtKind::If { .. } | StmtKind::For { .. }
-                | StmtKind::ForEach { .. } | StmtKind::While { .. } | StmtKind::Select { .. });
+            let inner = nested
+                || matches!(
+                    s.kind,
+                    StmtKind::If { .. }
+                        | StmtKind::For { .. }
+                        | StmtKind::ForEach { .. }
+                        | StmtKind::While { .. }
+                        | StmtKind::Select { .. }
+                );
             for body in stmt_bodies(&s.kind) {
-                conditional(body, inner && !matches!(s.kind, StmtKind::FunctionDef { .. } | StmtKind::On { .. }), ctx, a);
+                conditional(
+                    body,
+                    inner && !matches!(s.kind, StmtKind::FunctionDef { .. } | StmtKind::On { .. }),
+                    ctx,
+                    a,
+                );
             }
-            walk_stmt_exprs(s, &mut |e| for_each_embedded_stmt_list(e, true, &mut |b| conditional(b, nested, ctx, a)));
+            walk_stmt_exprs(s, &mut |e| {
+                for_each_embedded_stmt_list(e, true, &mut |b| conditional(b, nested, ctx, a))
+            });
         }
     }
     conditional(stmts, false, ctx, a);
     let mut handlers = HashSet::new();
     walk_global_frames(stmts, TOP_FRAME, &mut |node, _| {
-        if let FrameNode::Stmt(s) = node && matches!(s.kind, StmtKind::On { .. }) {
+        if let FrameNode::Stmt(s) = node
+            && matches!(s.kind, StmtKind::On { .. })
+        {
             handlers.insert(std::ptr::from_ref(s) as usize);
         }
     });
@@ -4692,7 +4737,9 @@ fn check_global_declarations(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis
     walk_global_frames(stmts, TOP_FRAME, &mut |node, _| {
         let pair = match node {
             FrameNode::Stmt(s) => match &s.kind {
-                StmtKind::FunctionDef { params, .. } => Some((std::ptr::from_ref(s) as usize, params)),
+                StmtKind::FunctionDef { params, .. } => {
+                    Some((std::ptr::from_ref(s) as usize, params))
+                }
                 _ => None,
             },
             FrameNode::Expr(e, _) => match e {
@@ -4700,7 +4747,9 @@ fn check_global_declarations(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis
                 _ => None,
             },
         };
-        if let Some((id, ps)) = pair { params.insert(id, ps.iter().map(|p| p.name.clone()).collect()); }
+        if let Some((id, ps)) = pair {
+            params.insert(id, ps.iter().map(|p| p.name.clone()).collect());
+        }
     });
     let mut globals: HashMap<usize, HashSet<String>> = HashMap::new();
     let mut locals: HashMap<usize, HashSet<String>> = HashMap::new();
@@ -4709,73 +4758,144 @@ fn check_global_declarations(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis
         if let FrameNode::Expr(Expr::Variable(n), _) = node {
             reads.entry(frame).or_default().insert(n.clone());
         }
-        if let FrameNode::Expr(Expr::BinaryOp { op: BinOp::Pipe, .. }, line) = node {
+        if let FrameNode::Expr(
+            Expr::BinaryOp {
+                op: BinOp::Pipe, ..
+            },
+            line,
+        ) = node
+        {
             if globals.get(&frame).is_some_and(|g| g.contains("_")) {
-                a.diagnostics.push(diag(ctx, "MIX-E1511", Severity::Error, line,
-                    "pipeline binder $_ cannot bind a declared global (GLOBAL_BINDER)".to_string(), None));
+                a.diagnostics.push(diag(
+                    ctx,
+                    "MIX-E1511",
+                    Severity::Error,
+                    line,
+                    "pipeline binder $_ cannot bind a declared global (GLOBAL_BINDER)".to_string(),
+                    None,
+                ));
             }
             locals.entry(frame).or_default().insert("_".to_string());
         }
-        let FrameNode::Stmt(s) = node else { return; };
+        let FrameNode::Stmt(s) = node else {
+            return;
+        };
         let declared = globals.entry(frame).or_default();
         let assigned = locals.entry(frame).or_default();
         let mut emit = |code, severity, name: &str, reason: &str| {
-            a.diagnostics.push(diag(ctx, code, severity, s.line,
-                format!("global ${name}: {reason}"), None));
+            a.diagnostics.push(diag(
+                ctx,
+                code,
+                severity,
+                s.line,
+                format!("global ${name}: {reason}"),
+                None,
+            ));
         };
         if let StmtKind::Global(names) = &s.kind {
             for name in names {
                 if matches!(name.as_str(), "event" | "rc" | "result" | "reply") {
-                    emit("MIX-E1512", Severity::Error, name, "runtime-owned name (GLOBAL_RUNTIME_NAME)");
+                    emit(
+                        "MIX-E1512",
+                        Severity::Error,
+                        name,
+                        "runtime-owned name (GLOBAL_RUNTIME_NAME)",
+                    );
                     continue;
                 }
                 if frame == TOP_FRAME || handlers.contains(&frame) {
-                    emit("MIX-D3023", Severity::Note, name, "top-level or handler declaration");
+                    emit(
+                        "MIX-D3023",
+                        Severity::Note,
+                        name,
+                        "top-level or handler declaration",
+                    );
                 }
                 if frame == TOP_FRAME {
                     continue;
                 } else if params.get(&frame).is_some_and(|ps| ps.contains(name)) {
-                    emit("MIX-E1509", Severity::Error, name, "function parameter (GLOBAL_PARAM)");
+                    emit(
+                        "MIX-E1509",
+                        Severity::Error,
+                        name,
+                        "function parameter (GLOBAL_PARAM)",
+                    );
                 } else if assigned.contains(name) {
-                    emit("MIX-E1510", Severity::Error, name, "declare before local assignment (GLOBAL_AFTER_LOCAL)");
+                    emit(
+                        "MIX-E1510",
+                        Severity::Error,
+                        name,
+                        "declare before local assignment (GLOBAL_AFTER_LOCAL)",
+                    );
                 }
-                if frame != TOP_FRAME { declared.insert(name.clone()); }
+                if frame != TOP_FRAME {
+                    declared.insert(name.clone());
+                }
             }
         }
         let mut binder = |name: &str| {
             if declared.contains(name) {
-                emit("MIX-E1511", Severity::Error, name, "binder cannot bind a declared global (GLOBAL_BINDER)");
+                emit(
+                    "MIX-E1511",
+                    Severity::Error,
+                    name,
+                    "binder cannot bind a declared global (GLOBAL_BINDER)",
+                );
             }
             assigned.insert(name.to_string());
         };
         match &s.kind {
             StmtKind::Assignment { name, value } | StmtKind::Export { name, value } => {
                 fn reads_name(e: &Expr, name: &str) -> bool {
-                    if matches!(e, Expr::Variable(n) if n == name) { return true; }
+                    if matches!(e, Expr::Variable(n) if n == name) {
+                        return true;
+                    }
                     let mut found = false;
                     walk_expr_children(e, &mut |c| found |= reads_name(c, name));
                     found
                 }
-                if agent && frame != TOP_FRAME && !handlers.contains(&frame)
+                if agent
+                    && frame != TOP_FRAME
+                    && !handlers.contains(&frame)
                     && !INJECTED_VARS.contains(&name.as_str())
-                    && ctx.top_level_names.contains(name) && !declared.contains(name)
-                    && !assigned.contains(name) && !params.get(&frame).is_some_and(|ps| ps.contains(name))
-                    && (reads_name(value, name) || reads.get(&frame).is_some_and(|rs| rs.contains(name))) {
-                    emit("MIX-W2316", Severity::Warning, name,
-                        "reads the outer value before creating a local; declare it with global if the update should persist");
+                    && ctx.top_level_names.contains(name)
+                    && !declared.contains(name)
+                    && !assigned.contains(name)
+                    && !params.get(&frame).is_some_and(|ps| ps.contains(name))
+                    && (reads_name(value, name)
+                        || reads.get(&frame).is_some_and(|rs| rs.contains(name)))
+                {
+                    emit(
+                        "MIX-W2316",
+                        Severity::Warning,
+                        name,
+                        "reads the outer value before creating a local; declare it with global if the update should persist",
+                    );
                 }
-                if !declared.contains(name) { assigned.insert(name.clone()); }
+                if !declared.contains(name) {
+                    assigned.insert(name.clone());
+                }
             }
             StmtKind::For { var, .. } => binder(var),
             StmtKind::ForEach { var, index_var, .. } => {
-                binder(var); if let Some(n) = index_var { binder(n); }
+                binder(var);
+                if let Some(n) = index_var {
+                    binder(n);
+                }
             }
             StmtKind::TryCatch { catch: Some(c), .. } => {
-                binder(&c.var); if let Some(n) = &c.err_var { binder(n); }
+                binder(&c.var);
+                if let Some(n) = &c.err_var {
+                    binder(n);
+                }
             }
-            StmtKind::Parse { parts, .. } => for p in parts {
-                if let crate::ast::ParsePart::Variable(n) = p { binder(n); }
-            },
+            StmtKind::Parse { parts, .. } => {
+                for p in parts {
+                    if let crate::ast::ParsePart::Variable(n) = p {
+                        binder(n);
+                    }
+                }
+            }
             _ => {}
         }
     });

@@ -332,20 +332,29 @@ impl Default for Scope {
 
 impl Scope {
     pub fn is_declared_global(&self, name: &str) -> bool {
-        self.declarations.last().is_some_and(|s| !s.declared.is_empty() && s.declared.contains(name))
+        self.declarations
+            .last()
+            .is_some_and(|s| !s.declared.is_empty() && s.declared.contains(name))
     }
 
     pub fn enter_function_frame_for(&mut self, func: &MixFunction) {
         self.enter_function_frame();
         let s = self.declarations.last_mut().unwrap();
         s.params.extend(func.params.iter().map(|p| p.name.clone()));
-        if let Some(env) = func.module_env.as_ref().and_then(|e| e.get()) { s.module_names.extend(env.keys().cloned()); }
-        if let Some(captures) = &func.captures { s.captures.extend(captures.keys().cloned()); }
+        if let Some(env) = func.module_env.as_ref().and_then(|e| e.get()) {
+            s.module_names.extend(env.keys().cloned());
+        }
+        if let Some(captures) = &func.captures {
+            s.captures.extend(captures.keys().cloned());
+        }
     }
 
     pub fn enter_handler_frame(&mut self) {
         self.push_frame();
-        self.declarations.push(DeclScope { frame: self.frames.len() - 1, ..Default::default() });
+        self.declarations.push(DeclScope {
+            frame: self.frames.len() - 1,
+            ..Default::default()
+        });
     }
 
     pub fn leave_handler_frame(&mut self) {
@@ -354,7 +363,9 @@ impl Scope {
     }
 
     pub fn declare_global(&mut self, name: &str) -> Result<(), &'static str> {
-        let Some(scope) = self.declarations.last_mut() else { return Ok(()); };
+        let Some(scope) = self.declarations.last_mut() else {
+            return Ok(());
+        };
         if scope.params.contains(name) {
             return Err("GLOBAL_PARAM");
         }
@@ -366,11 +377,15 @@ impl Scope {
     }
 
     pub fn is_module_name(&self, name: &str) -> bool {
-        self.declarations.last().is_some_and(|s| s.module_names.contains(name))
+        self.declarations
+            .last()
+            .is_some_and(|s| s.module_names.contains(name))
     }
 
     pub fn is_captured_name(&self, name: &str) -> bool {
-        self.declarations.last().is_some_and(|s| s.captures.contains(name))
+        self.declarations
+            .last()
+            .is_some_and(|s| s.captures.contains(name))
     }
     pub fn new() -> Self {
         Scope {
@@ -664,12 +679,17 @@ impl Scope {
         name: &str,
         f: impl FnOnce(&mut Value) -> R,
     ) -> Option<R> {
-        if self.is_declared_global(name) { return self.with_mut_value(name, f); }
+        if self.is_declared_global(name) {
+            return self.with_mut_value(name, f);
+        }
         self.frames.last_mut()?.get_mut(name).map(f)
     }
 
     pub fn set(&mut self, name: String, value: Value) {
-        if self.is_declared_global(&name) { self.set_global(&name, value); return; }
+        if self.is_declared_global(&name) {
+            self.set_global(&name, value);
+            return;
+        }
         // Set in the current (top) frame
         if let Some(frame) = self.frames.last_mut() {
             frame.insert(name, value);
@@ -815,7 +835,9 @@ impl Scope {
     /// frame for the lifetime of the pointer (enforced by the
     /// `body_no_local_assigns` flag on `MixFunction`).
     pub fn current_frame_slot_ptr(&mut self, name: &str) -> Option<*mut Value> {
-        if self.is_declared_global(name) { return None; }
+        if self.is_declared_global(name) {
+            return None;
+        }
         let frame = self.frames.last_mut()?;
         frame.get_mut(name).map(|v| v as *mut Value)
     }
@@ -863,7 +885,10 @@ impl Scope {
     /// branch needs to allocate.
     #[inline]
     pub fn update_or_set(&mut self, name: &str, value: Value) {
-        if self.is_declared_global(name) { self.set_global(name, value); return; }
+        if self.is_declared_global(name) {
+            self.set_global(name, value);
+            return;
+        }
         // Top-level fast path: bypass the floor walk when there's only
         // one frame and no active function. loop_arith's per-iter
         // `update_or_set("sum", …)` and `update_or_set("i", …)` come
@@ -936,7 +961,10 @@ impl Scope {
     /// it (except globals). O(1). Reuses a pooled frame if available
     /// so the bucket array allocation amortizes across recursive calls.
     pub fn enter_function_frame(&mut self) {
-        self.declarations.push(DeclScope { frame: self.frames.len(), ..Default::default() });
+        self.declarations.push(DeclScope {
+            frame: self.frames.len(),
+            ..Default::default()
+        });
         self.function_floors.push(self.frames.len());
         let frame = self.frame_pool.pop().unwrap_or_default();
         self.frames.push(frame);
@@ -1003,7 +1031,9 @@ impl Scope {
         {
             self.function_floors.pop();
         }
-        while self.declarations.last().is_some_and(|s| s.frame >= target) { self.declarations.pop(); }
+        while self.declarations.last().is_some_and(|s| s.frame >= target) {
+            self.declarations.pop();
+        }
     }
 
     /// Iterate the current (top) frame's entries. Used by
