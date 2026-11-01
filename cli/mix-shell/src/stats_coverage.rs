@@ -280,7 +280,7 @@ fn walk_statements(stmts: &[Stmt], builtins: &HashSet<&str>, coverage: &mut Cove
                 walk_statements(std::slice::from_ref(left), builtins, coverage);
                 walk_statements(std::slice::from_ref(right), builtins, coverage);
             }
-            StmtKind::Break(_) | StmtKind::Continue(_) => {}
+            StmtKind::Global(_) | StmtKind::Break(_) | StmtKind::Continue(_) => {}
         }
     }
 }
