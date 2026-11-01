@@ -101,6 +101,11 @@ fn wifi_missing_backend() {
 }
 
 #[test]
+fn power_missing_backends() {
+    draw("power", page("power", None), COSMIC);
+}
+
+#[test]
 fn desktop_sub_pages() {
     draw("desktop", page("desktop", None), COSMIC);
 }
