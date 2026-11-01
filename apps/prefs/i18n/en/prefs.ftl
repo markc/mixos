@@ -637,13 +637,6 @@ opt-delay-short = Short
 opt-delay-long = Long
 opt-rate-slow = Slow
 opt-rate-fast = Fast
-list-more = More for { $entry }
-list-move-up = Move up
-list-move-down = Move down
-list-remove = Remove
-list-add = Add
-list-added = Added
-list-empty = Nothing matches.
 
 opt-round = Round
 opt-slightly-round = Slightly round
