@@ -295,13 +295,18 @@ fn the_keyboard_page_reads_as_data_and_writes_once_fenced() {
 fn adding_an_input_source_by_hand_appends_it() {
     let mut rig = rig();
     read(&mut rig, "authority", false);
-    rig.h.state_mut().as_mut().unwrap().engine_mut().set_options(
-        preferences::xkb::LAYOUTS,
-        vec![
-            (json!(["us", ""]), "English (US)".into()),
-            (json!(["de", ""]), "German".into()),
-        ],
-    );
+    rig.h
+        .state_mut()
+        .as_mut()
+        .unwrap()
+        .engine_mut()
+        .set_options(
+            preferences::xkb::LAYOUTS,
+            vec![
+                (json!(["us", ""]), "English (US)".into()),
+                (json!(["de", ""]), "German".into()),
+            ],
+        );
     ask(&mut rig, 1, "prefs.page.open", json!({"page":"keyboard"}));
     rig.h.run_steps(3);
     let add = node(&mut rig, 2, "Add input source", "Button");
