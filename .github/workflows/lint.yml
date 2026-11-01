@@ -24,8 +24,15 @@ jobs:
     name: lint
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork }}
     runs-on: ubuntu-24.04
+    container: archlinux:latest
+    defaults:
+      run:
+        shell: bash
     timeout-minutes: 20
     steps:
+      - name: Install lint tools
+        run: pacman -Syu --noconfirm --needed git github-cli coreutils rustup jq tar gzip grep gawk which diffutils
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # The toolchain comes from rust-toolchain.toml; only rustfmt is needed.
@@ -41,9 +48,8 @@ jobs:
       # Mix runs every other check. It is not on the runner, so take the
       # binary from the latest published release and check the archive
       # against its own line in that release's SHA256SUMS.txt before use: a
-      # missing line fails. The glibc 2.39 floor matches ubuntu-24.04. This is
-      # the last released mix, not this commit's; a commit that needs newer
-      # Mix syntax lints after the next weekly release.
+      # missing line fails. Arch follows the gold host's glibc; no floor or
+      # cross-build is imposed. This is the last released Mix.
       - name: Fetch released mix
         id: fetch-mix
         if: ${{ !cancelled() }}
@@ -51,9 +57,23 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          tag=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 10000 \
-            --json tagName,isDraft,isPrerelease,publishedAt \
-            --jq '[.[] | select(.isDraft == false and .isPrerelease == false and (.tagName | startswith("mix-v")))] | sort_by(.publishedAt) | last | .tagName // empty')
+          # Stop at the first newest-first page with a matching line. Within
+          # that page, semantic version and tag date beat publication time.
+          find_tag() {
+            local pattern="$1" page=1 rows found
+            while :; do
+              rows=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100&page=$page") || return 1
+              found=$(printf '%s' "$rows" | jq -r --arg pattern "$pattern" '
+                [.[] | select(.draft == false and .prerelease == false)
+                  | . as $r | (.tag_name | capture($pattern)) as $v
+                  | {tag: $r.tag_name, key: [($v.major|tonumber), ($v.minor|tonumber), ($v.patch|tonumber), (($v.date // "0")|tonumber), $r.published_at]}]
+                | sort_by(.key) | last | .tag // empty') || return 1
+              if [ -n "$found" ]; then printf '%s\n' "$found"; return; fi
+              [ "$(printf '%s' "$rows" | jq length)" -eq 100 ] || return 0
+              page=$((page + 1))
+            done
+          }
+          tag=$(find_tag '^mix-v(?<major>[0-9]+)\.(?<minor>[0-9]+)\.(?<patch>[0-9]+)-(?<date>[0-9]{8})$')
           dir="$RUNNER_TEMP/mixos-release"
           if [ -n "$tag" ]; then
             version=${tag#mix-v}
@@ -66,9 +86,12 @@ jobs:
             (cd "$dir" && printf '%s\n' "$line" | sha256sum --check --strict -)
             install -D -m 0755 "$dir/$asset" "$RUNNER_TEMP/mixos/bin/mix"
           else
-          tag=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName) ||
-            { echo "::error::no published MixOS release to take mix from"; exit 1; }
-          version=${tag#v}
+          tag=$(find_tag '^(v|mixos-server-v)(?<major>[0-9]+)\.(?<minor>[0-9]+)\.(?<patch>[0-9]+)(-(?<date>[0-9]{8}))?$')
+          [ -n "$tag" ] || { echo "::error::no published MixOS release to take mix from"; exit 1; }
+          case "$tag" in
+            mixos-server-v*) version=${tag#mixos-server-v}; version=${version%-????????} ;;
+            v*) version=${tag#v} ;;
+          esac
           archive="mixos-server-${version}-linux-x86_64.tar.gz"
           dir="$RUNNER_TEMP/mixos-release"
           gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir "$dir" \

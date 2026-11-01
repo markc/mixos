@@ -9,7 +9,9 @@ The accepted [nightly release decision](../decisions/2026-11-01-nightly-componen
 replaces the weekly whole-system cut. The 04:00 gold job builds and gates one
 exact source commit on CBC, installs it and accepts the desks. Only then does
 the private hub release job package that snapshot. A publishing failure leaves
-accepted gold installed. Manual nightly runs accept `--no-release`.
+accepted gold installed. Manual nightly runs accept `--no-release`. Automatic
+publishing remains off until the operator creates the hub's
+`_var/nightly-release/armed` file.
 
 Each binary in `tools/release_packages.mx` and each Mix component with scripts
 or units has its own release line. The same contract lists server and desktop
@@ -48,21 +50,36 @@ The hub `nightly_release.mix plan [--gold-job ID] [--commit SHA]` reads release
 history without remote writes. `run --dry-run` packages accepted current gold
 but stops before creating releases. `run` publishes each changed line at the
 exact source SHA, compares every uploaded asset's GitHub digest with local
-SHA256SUMS-bound bytes, and deletes a newly created release if verification fails.
+SHA256SUMS-bound bytes. Creation, upload and verification share one failure
+handler: `gh release delete TAG --cleanup-tag --yes` removes a partial release
+and its tag. A tag without a release is an error requiring operator repair;
+it is never mistaken for an already published release.
 The first real publish is performed by the operator. GitHub never builds Rust.
 
 `tools/release_closure.mix` statically parses Cargo manifests, including target
 and build dependencies and workspace-inherited path dependencies. Changes in
-that closure, Cargo.lock, workspace metadata, toolchain, packaging or layout
-inputs cause a release. Notes contain the commit range and path-limited oneline
-log. The previous source comes from that line's release manifest. A missing or
-invalid previous manifest fails closed.
+that closure, component units, packaging or layout inputs cause a release.
+Rust components additionally track Cargo.lock, Cargo.toml, rust-toolchain.toml,
+`.cargo/`, and conservatively `share/brand` and `share/assets` for embedded data
+and build scripts. Pure-Mix components track transitive static require/include
+targets, including targets outside their own directory, without the Rust-only
+inputs. Notes contain the commit range and path-limited oneline log.
+The previous source comes from that line's release manifest. No previous
+release means changed. A missing, invalid or unparseable manifest, a previous
+commit that is not an ancestor (or cannot be resolved), or a failed comparison
+logs a warning and treats that component as changed; it does not stop other
+release lines. Listing/network failures remain distinct from an absent line.
 
 ## Follow a component with releasesd
 
 releasesd supports `tag_prefix` in schema-1 catalogue entries. It scans published,
-non-prerelease releases with pagination and chooses the newest publication in
-that line. An asset regex alone cannot choose a release line. For example:
+non-prerelease releases in newest-first pages of 100 and stops at the first
+page containing a valid matching tag. Within that page it orders by semantic
+version, then YYYYMMDD, using publication time only to break ties. The hub and
+CI use the same rule; Mix tags must match `^mix-v[0-9]` and the complete stable
+tag shape. releasesd retains ETag revalidation for first-page matches; older-page
+matches are fetched again because a first-page ETag cannot validate them.
+An asset regex alone cannot choose a release line. For example:
 
 ```text
 {
@@ -77,5 +94,8 @@ that line. An asset regex alone cannot choose a release line. For example:
 Explicit tags also work. Per-user installation verifies checksums and archive
 safety; it does not install system gold or restart desks. Default catalogue
 entries follow the two bundle prefixes. CI fetches the newest published `mix-v*`
-bare executable and verifies its checksum, falling back to the old full-system
-release only while no Mix release line exists.
+bare executable and verifies its checksum. Its `archlinux:latest` job container
+tracks the build host's glibc, with no glibc floor. While no Mix release line
+exists, bootstrap falls back to a full-system release and understands both
+`vX.Y.Z` and `mixos-server-vX.Y.Z-YYYYMMDD` tags. `packaging_glibc` records the bare
+glibc version, for example `2.41`.

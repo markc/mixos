@@ -29,6 +29,38 @@ fn catalogue($root)
   return $out
 end
 
+fn mix_inputs($root, $dir, $all)
+  $todo = filter(walk($root .. "/" .. $dir), fn($f) = ends_with($f, ".mix"))
+  $seen = []
+  while len($todo) > 0
+    $file = $todo[0]
+    $todo = slice($todo, 1)
+    if contains($seen, $file) then continue end
+    push($seen, $file)
+    $tokens = mix_tokens(read_file($file))
+    $referencing = false
+    for $t in $tokens
+      if $t.kind == "newline" then $referencing = false end
+      if contains(["require", "include"], $t.text) then $referencing = true; continue end
+      if not $referencing or $t.kind != "string" then continue end
+      $target = data_parse("{value: " .. $t.text .. "}").value
+      if not ends_with($target, ".mix") then continue end
+      $path = dirname($file) .. "/" .. $target
+      -- Installed include targets map back to their component's scripts.
+      $m = re_find($target, "^/lib/([a-z][a-z0-9-]*)/(.+)$")
+      if len($m) > 0 and $all[$m[0].groups[0]] != nil then
+        $path = $root .. "/" .. $all[$m[0].groups[0]].dir .. "/scripts/" .. $m[0].groups[1]
+      elif starts_with($target, "/") then $path = $root .. $target end
+      if is_file($path) then
+        $path = realpath($path)
+        if not starts_with($path, $root .. "/") then raise("RELEASE_PATH", "Mix dependency outside tree: " .. $path) end
+        push($todo, $path)
+      end
+    end
+  end
+  return map($seen, fn($f) = strip_prefix($f, $root .. "/"))
+end
+
 fn closure($root, $name)
   $root = realpath($root)
   $cfg = load_data($root .. "/tools/release_packages.mx")
@@ -41,6 +73,10 @@ fn closure($root, $name)
     return sort(unique(concat($paths, ["share", "session", "tools/package.mix", "tools/release_packages.mx"])))
   end
   if $all[$name] == nil then raise("RELEASE_COMPONENT", "unknown component " .. $name) end
+  $common = ["tools/package.mix", "tools/release_packages.mx", "tools/release_closure.mix", "share/layout"]
+  if $all[$name].mix then
+    return sort(unique(concat([$all[$name].dir], $common, mix_inputs($root, $all[$name].dir, $all))))
+  end
   $ws = toml_parse(read_file($root .. "/Cargo.toml"))
   $todo = [$root .. "/" .. $all[$name].dir]
   $seen = []
@@ -74,5 +110,5 @@ fn closure($root, $name)
     end
   end
   return sort(unique(concat(map($seen, fn($d) = strip_prefix($d, $root .. "/")),
-    ["Cargo.lock", "Cargo.toml", "rust-toolchain.toml", "tools/package.mix", "tools/release_packages.mx", "share/layout"])))
+    $common, ["Cargo.lock", "Cargo.toml", "rust-toolchain.toml", ".cargo", "share/brand", "share/assets"])))
 end

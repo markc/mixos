@@ -127,7 +127,7 @@ if $arch != platform().arch then raise("PACKAGE_ARCH", "--arch must match the bu
 $glibc = "fixture"
 if not $fixture then
   $libc = trim(run_argv_must(["getconf", "GNU_LIBC_VERSION"], {timeout: 10}))
-  $glibc = $libc
+  $glibc = strip_prefix($libc, "glibc ")
 end
 -- Use the native Mix executing this packager, including release bootstrap.
 $mix = realpath("/proc/self/exe")

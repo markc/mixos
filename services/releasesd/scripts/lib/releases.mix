@@ -41,6 +41,7 @@ $TAG_RE = "^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$"
 $MAX_TARBALL = 2147483648
 $MAX_SUMS = 1048576
 $DEADLINE_S = 1800
+$tags = require("tags.mix")
 
 fn _env_or($name, $default)
   $v = env($name)
@@ -204,7 +205,7 @@ fn summarise($rel)
 end
 
 fn line_releases($rows, $prefix)
-  return reverse(sort_by(filter($rows, fn($r) = not $r.draft and not $r.prerelease and starts_with($r.tag_name, $prefix)), fn($r) = $r.published_at))
+  return $tags.line_releases($rows, $prefix)
 end
 
 -- The latest release into the app's state, conditional on the stored ETag.
@@ -213,18 +214,17 @@ fn check_app($ctx, $app)
   $sp = $ctx.state_dir .. "/" .. $app.name .. ".json"
   $st = _json_or($sp, {})
   if $app.tag_prefix != nil then
-    $rels = []
-    $page = 1
-    loop
-      $r = _api_get($ctx, "/repos/" .. $app.repo .. "/releases?per_page=100&page=" .. to_string($page), nil)
-      if $r.status != 200 then raise("NO_RELEASE", "GitHub release listing failed") end
-      $rows = json_parse($r.body)
-      $rels = concat($rels, line_releases($rows, $app.tag_prefix))
-      if len($rows) < 100 then break end
-      $page = $page + 1
+    $etag = if $st.latest != nil and $tags.tag_key($st.latest.tag, $app.tag_prefix, "") != nil then $st.etag else nil end
+    $found = $tags.find_release(fn($page, $cached) = _api_get($ctx, "/repos/" .. $app.repo .. "/releases?per_page=100&page=" .. to_string($page), $cached), $app.tag_prefix, $etag)
+    $st.checked = now_iso()
+    if $found.cached then
+      $st.changed = false
+      write_atomic($sp, json_encode($st))
+      return $st
     end
-    if len($rels) == 0 then raise("NO_RELEASE", "no published release matching " .. $app.tag_prefix) end
-    $latest = summarise(reverse(sort_by($rels, fn($r) = $r.published_at))[0])
+    if $found.release == nil then raise("NO_RELEASE", "no published release matching " .. $app.tag_prefix) end
+    $st.etag = $found.etag
+    $latest = summarise($found.release)
     $st.changed = $st.latest == nil or $st.latest.tag != $latest.tag
     $st.latest = $latest
     $st.checked = now_iso()

@@ -1,0 +1,31 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Stable component tags: semantic version, then build date, publication last.
+fn tag_key($tag, $prefix, $published)
+  if not starts_with($tag, $prefix) then return nil end
+  $m = re_find(strip_prefix($tag, $prefix), "^([0-9]+)\\.([0-9]+)\\.([0-9]+)-([0-9]{8})$")
+  if len($m) == 0 then return nil end
+  $g = $m[0].groups
+  return fmt("%016d.%016d.%016d.%08d.%s", to_number($g[0]), to_number($g[1]), to_number($g[2]), to_number($g[3]), $published ?? "")
+end
+
+-- Fetch pages lazily. Only a first-page match can use its ETag next time.
+fn find_release($fetch, $prefix, $etag)
+  $page = 1
+  loop
+    $r = $fetch($page, if $page == 1 then $etag else nil end)
+    if $r.status == 304 and $page == 1 and $etag != nil then return {cached: true, etag: $etag} end
+    if $r.status != 200 then raise("RELEASE_LIST", "GitHub release listing failed: " .. to_string($r.status)) end
+    $rows = json_parse($r.body)
+    $matches = line_releases($rows, $prefix)
+    if len($matches) > 0 then
+      return {release: $matches[0], etag: if $page == 1 then ($r.headers["etag"] ?? [])[0] else nil end, cached: false}
+    end
+    if len($rows) < 100 then return {release: nil, cached: false, etag: nil} end
+    $page = $page + 1
+  end
+end
+
+fn line_releases($rows, $prefix)
+  $matches = filter($rows, fn($r) = not $r.draft and not $r.prerelease and tag_key($r.tag_name, $prefix, $r.published_at) != nil)
+  return reverse(sort_by($matches, fn($r) = tag_key($r.tag_name, $prefix, $r.published_at)))
+end

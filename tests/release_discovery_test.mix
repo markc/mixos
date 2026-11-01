@@ -1,0 +1,71 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$root = dirname(dirname(realpath($0)))
+$tags = require("../services/releasesd/scripts/lib/tags.mix")
+$closure = require("../tools/release_closure.mix")
+fn need($ok, $message) if not $ok then raise("TEST", $message) end end
+$rows = [
+  {tag_name: "mix-v2.0.0-20261231", published_at: "2026-12-31", draft: false, prerelease: false},
+  {tag_name: "mix-v10.0.0-20261001", published_at: "2026-12-31", draft: false, prerelease: false},
+  {tag_name: "mix-v10.0.0-20261002", published_at: "2026-10-02", draft: false, prerelease: false},
+  {tag_name: "mix-v10.0.0-20261002", published_at: "2026-10-03", draft: false, prerelease: false},
+  {tag_name: "mix-v99.0.0-20261231", published_at: "2026-12-31", draft: true, prerelease: false},
+  {tag_name: "mix-vjunk", published_at: "2026-12-31", draft: false, prerelease: false}
+]
+$requests = []
+fn first_page($page, $etag)
+  push($requests, [$page, $etag])
+  need($page == 1, "must stop at first matching page")
+  return {status: 200, body: json_encode($rows), headers: {etag: ["fixture-etag"]}}
+end
+$found = $tags.find_release(fn($p, $e) = first_page($p, $e), "mix-v", nil)
+need($found.release.tag_name == "mix-v10.0.0-20261002" and $found.release.published_at == "2026-10-03", "semver/date/publication ordering")
+need($found.etag == "fixture-etag" and len($requests) == 1, "cache and early stop")
+$found = $tags.find_release(fn($p, $e) = {status: if $e == "fixture-etag" then 304 else 500 end}, "mix-v", "fixture-etag")
+need($found.cached, "ETag revalidation")
+fn older_page($page, $etag)
+  if $page == 1 then return {status: 200, body: json_encode(map(range(1, 100), fn($i) = {tag_name: "term-v1.0.0-20261101", draft: false, prerelease: false})), headers: {etag: ["page1"]}} end
+  return first_page(1, $etag)
+end
+$found = $tags.find_release(fn($p, $e) = older_page($p, $e), "mix-v", nil)
+need($found.release != nil and $found.etag == nil, "older page cannot use page1 ETag")
+$found = $tags.find_release(fn($p, $e) = {status: 200, body: "[]", headers: {}}, "mix-v", nil)
+need($found.release == nil, "absent line")
+try
+  $tags.find_release(fn($p, $e) = {status: 503}, "mix-v", nil)
+  raise("TEST", "listing failure swallowed")
+catch $m, $err need($err.code == "RELEASE_LIST", "listing failure distinct from absent line") end
+print("PASS release ordering, pagination, ETag, no-match and listing errors")
+
+-- Exercise the actual jq program embedded in the bootstrap workflow.
+$workflow = read_file($root .. "/.github/workflows/lint.yml")
+$jq = re_find($workflow, "(?s)jq -r --arg pattern \"\\$pattern\" '(.*?)'")[0].groups[0]
+$pattern = "^mix-v(?<major>[0-9]+)\\.(?<minor>[0-9]+)\\.(?<patch>[0-9]+)-(?<date>[0-9]{8})$"
+$selected = trim(run_argv_must(["jq", "-r", "--arg", "pattern", $pattern, $jq], {stdin: json_encode($rows)}))
+need($selected == "mix-v10.0.0-20261002", "CI ordering disagrees")
+$fallback = "^(v|mixos-server-v)(?<major>[0-9]+)\\.(?<minor>[0-9]+)\\.(?<patch>[0-9]+)(-(?<date>[0-9]{8}))?$"
+for $tag in ["v1.2.3", "mixos-server-v1.2.3-20261101"]
+  $selected = trim(run_argv_must(["jq", "-r", "--arg", "pattern", $fallback, $jq], {stdin: json_encode([{tag_name: $tag, draft: false, prerelease: false, published_at: "now"}])}))
+  need($selected == $tag, "CI fallback " .. $tag)
+end
+print("PASS CI bootstrap selector and both fallback tag forms")
+
+$rust = $closure.closure($root, "term")
+for $path in [".cargo", "Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "share/brand", "share/assets", "tools/package.mix", "tools/release_packages.mx"]
+  need(contains($rust, $path), "Rust input missing: " .. $path)
+end
+$pure = $closure.closure($root, "releasesd")
+for $path in [".cargo", "Cargo.toml", "Cargo.lock", "rust-toolchain.toml"] need(not contains($pure, $path), "Rust-only input leaked to Mix: " .. $path) end
+$tmp = "/tmp/mix-closure-test-" .. uuid()
+try
+  for $dir in ["tools", "services/sampled/scripts", "services/sampled/units", "shared", "extra"] mkdir($tmp .. "/" .. $dir, {parents: true}) end
+  write_file($tmp .. "/tools/release_packages.mx", "{crates: {}, packages: {}}")
+  write_file($tmp .. "/Cargo.toml", "[workspace]\nmembers = []\n")
+  write_file($tmp .. "/services/sampled/component.mx", '{name: "sampled", version: "1.0.0"}')
+  write_file($tmp .. "/services/sampled/scripts/main.mix", "$m = require(\n\"../../../shared/a.mix\"\n)")
+  write_file($tmp .. "/shared/a.mix", 'include "../extra/b.mix"')
+  write_file($tmp .. "/extra/b.mix", 'include "../shared/a.mix"')
+  $paths = $closure.closure($tmp, "sampled")
+  need(contains($paths, "shared/a.mix") and contains($paths, "extra/b.mix"), "transitive external require/include with cycle")
+  need(contains($paths, "services/sampled"), "component units not covered")
+finally remove_dir($tmp) end
+print("PASS Rust inputs and transitive pure-Mix inputs")
