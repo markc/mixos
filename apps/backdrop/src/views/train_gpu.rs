@@ -48,10 +48,11 @@ pub fn draw(ui: &egui::Ui, blocks: &[Block], progress: f32) {
             ([3, 2, 6, 7], 1.),
         ] {
             for i in [0, 1, 2, 0, 2, 3] {
-                let p = project(corners[face[i]]);
+                let p = corners[face[i]];
                 for v in [
                     p[0],
                     p[1],
+                    p[2],
                     base[0] * (shade + b.glow * 0.25),
                     base[1] * (shade + b.glow * 0.25),
                     base[2] * (shade + b.glow * 0.25),
@@ -61,7 +62,7 @@ pub fn draw(ui: &egui::Ui, blocks: &[Block], progress: f32) {
             }
         }
     }
-    let count = (bytes.len() / 20) as u32;
+    let count = (bytes.len() / 24) as u32;
     ui.painter().add(egui_wgpu::Callback::new_paint_callback(
         rect,
         Callback { bytes, count },
@@ -106,9 +107,9 @@ impl egui_wgpu::CallbackTrait for Callback {
                     entry_point: Some("vs"),
                     compilation_options: Default::default(),
                     buffers: &[Some(wgpu::VertexBufferLayout {
-                        array_stride: 20,
+                        array_stride: 24,
                         step_mode: wgpu::VertexStepMode::Vertex,
-                        attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x3],
+                        attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3],
                     })],
                 },
                 fragment: Some(wgpu::FragmentState {

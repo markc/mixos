@@ -92,19 +92,54 @@ pub fn registry() -> toolkit::action::EngineRegistry<State> {
     use toolkit::action::{Class, EngineAction, EngineRegistry, Error, ParamSpec};
     let mut registry = EngineRegistry::new();
     for (id, label, run) in [
-        ("backdrop.view.set", "backdrop-view-set", set as fn(&mut State, &Value) -> Result<Value, Error>),
-        ("backdrop.view.cycle", "backdrop-view-cycle", cycle as fn(&mut State, &Value) -> Result<Value, Error>),
+        (
+            "backdrop.view.set",
+            "backdrop-view-set",
+            set as fn(&mut State, &Value) -> Result<Value, Error>,
+        ),
+        (
+            "backdrop.view.cycle",
+            "backdrop-view-cycle",
+            cycle as fn(&mut State, &Value) -> Result<Value, Error>,
+        ),
     ] {
-        registry.add(EngineAction { id, label, menu:None, submenu:None, group:0, shortcut:None, icon:None,
-            enabled: |_| Ok(()), run, class:Class::Intent,
-            params:Some(ParamSpec {type_name:"backdrop::ViewRequest",schema: || serde_json::json!({"type":"object"}).try_into().expect("object schema")}) });
+        registry.add(EngineAction {
+            id,
+            label,
+            menu: None,
+            submenu: None,
+            group: 0,
+            shortcut: None,
+            icon: None,
+            enabled: |_| Ok(()),
+            run,
+            class: Class::Intent,
+            params: Some(ParamSpec {
+                type_name: "backdrop::ViewRequest",
+                schema: || {
+                    serde_json::json!({"type":"object"})
+                        .try_into()
+                        .expect("object schema")
+                },
+            }),
+        });
     }
     registry
 }
-fn set(state: &mut State, params: &Value) -> Result<Value, toolkit::action::Error> { execute(state, "backdrop.view.set", params) }
-fn cycle(state: &mut State, params: &Value) -> Result<Value, toolkit::action::Error> { execute(state, "backdrop.view.cycle", params) }
-fn execute(state: &mut State, id: &'static str, params: &Value) -> Result<Value, toolkit::action::Error> {
-    state.command(id, params).map_err(|msg|toolkit::action::Error::BadParams {id,msg})?;
+fn set(state: &mut State, params: &Value) -> Result<Value, toolkit::action::Error> {
+    execute(state, "backdrop.view.set", params)
+}
+fn cycle(state: &mut State, params: &Value) -> Result<Value, toolkit::action::Error> {
+    execute(state, "backdrop.view.cycle", params)
+}
+fn execute(
+    state: &mut State,
+    id: &'static str,
+    params: &Value,
+) -> Result<Value, toolkit::action::Error> {
+    state
+        .command(id, params)
+        .map_err(|msg| toolkit::action::Error::BadParams { id, msg })?;
     Ok(serde_json::json!({"view":state.selected}))
 }
 
@@ -175,7 +210,11 @@ pub fn start_reader(
                 {
                     let mut state = crate::program::lock(&shared);
                     if state.live.train_service == train && state.live.buildd_service == buildd {
-                        let error = if errors.is_empty() { None } else {Some(errors.join("; "))};
+                        let error = if errors.is_empty() {
+                            None
+                        } else {
+                            Some(errors.join("; "))
+                        };
                         changed |= state.live.train.error != error;
                         state.live.train.error = error;
                     }
