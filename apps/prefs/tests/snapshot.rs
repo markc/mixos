@@ -101,6 +101,21 @@ fn wifi_missing_backend() {
 }
 
 #[test]
+fn accessibility() {
+    draw("accessibility", page("accessibility", None), COSMIC);
+}
+
+#[test]
+fn magnifier_missing_backend() {
+    draw("magnifier", page("magnifier", None), COSMIC);
+}
+
+#[test]
+fn osk_missing_backend() {
+    draw("osk", page("osk", None), COSMIC);
+}
+
+#[test]
 fn desktop_sub_pages() {
     draw("desktop", page("desktop", None), COSMIC);
 }

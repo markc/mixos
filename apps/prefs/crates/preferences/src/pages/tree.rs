@@ -22,9 +22,9 @@ pub(super) fn pages() -> Vec<Page> {
     pages.extend(super::network::children());
     pages.extend([
         page("bluetooth", "bluetooth", None, Body::Pending),
-        page("accessibility", "accessibility", None, Body::Pending),
-        pending("magnifier", "zoom-in", "accessibility"),
-        pending("osk", "keyboard", "accessibility"),
+    ]);
+    pages.extend(super::accessibility::pages());
+    pages.extend([
         list("desktop", "layout-dashboard"),
         custom("wallpaper", "image", "desktop"),
         super::appearance::page(),
