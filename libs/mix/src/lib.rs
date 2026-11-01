@@ -19,6 +19,7 @@ pub mod interrupt;
 pub mod lexer;
 pub mod lint_docs;
 mod native_events;
+mod udp;
 mod numeric;
 pub mod parser;
 pub mod scope;

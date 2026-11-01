@@ -131,7 +131,7 @@ checked separately by the layering gate.
 | [maildoc](https://github.com/markc/mixos/blob/main/libs/maildoc/Cargo.toml) | maildoc | lib | core | none | 0.1.2 |
 | [mds](https://github.com/markc/mixos/blob/main/libs/mds/Cargo.toml) | mds | lib | core | none | 0.1.2 |
 | [mimedb](https://github.com/markc/mixos/blob/main/libs/mimedb/Cargo.toml) | mimedb | lib | mix | none | 0.1.2 |
-| [mix](https://github.com/markc/mixos/blob/main/libs/mix/Cargo.toml) | mix | lib | mix | public | 0.117.0 |
+| [mix](https://github.com/markc/mixos/blob/main/libs/mix/Cargo.toml) | mix | lib | mix | public | 0.118.0 |
 | [paths](https://github.com/markc/mixos/blob/main/libs/paths/Cargo.toml) | paths | lib | bus | none | 0.1.2 |
 | [props](https://github.com/markc/mixos/blob/main/libs/props/Cargo.toml) | props | lib | core | none | 0.1.2 |
 | [scene](https://github.com/markc/mixos/blob/main/libs/scene/Cargo.toml) | scene | lib | core | none | 0.1.2 |

@@ -237,6 +237,7 @@
                         <a href="#identity--crypto-primitives">Identity &amp; crypto primitives</a>
                         <a href="#-md5-and-sha-1-are-broken--legacy-interop-only" class="toc-h3">⚠ MD5 and SHA-1 are broken — legacy interop only</a>
                         <a href="#dns-queries--dns_query-v01170">DNS queries — dns_query (v0.117.0)</a>
+                        <a href="#udp-event-sources-v01180">UDP event sources (v0.118.0)</a>
                         <a href="#udp-datagrams--udp_send-udp_recv-v0710">UDP datagrams — udp_send, udp_recv (v0.71.0)</a>
                         <a href="#websocket-client--ws_connect-ws_send-ws_recv-ws_close-v0740">WebSocket client — ws_connect, ws_send, ws_recv, ws_close (v0.74.0)</a>
                         <a href="#raw-tcp-client--tcp_connect-tcp_send-tcp_recv-tcp_recv_line-tcp_close-v0780">Raw TCP client — tcp_connect, tcp_send, tcp_recv, tcp_recv_line, tcp_close (v0.78.0)</a>
@@ -1866,6 +1867,47 @@ for each $ns in ["192.0.2.53", "198.51.100.53"]
   else
     print($ns .. ": " .. $r.rcode .. " aa=" .. $r.aa)
   end
+end
+</code></pre>
+<h2 id="udp-event-sources-v01180">UDP event sources (v0.118.0)</h2>
+<pre><code class="language-text">udp_listen(host, port[, {join, iface, reuse, ttl, loop}]) -&gt; numeric handle
+udp_on(handle, command[, {max}]) -&gt; source id
+udp_send_from(handle, host, port, payload) -&gt; bytes sent
+udp_close(handle) -&gt; bool
+udp_unwatch(source) -&gt; nil
+udp_send(host, port, payload[, {from, ttl}]) -&gt; bytes sent
+</code></pre>
+<p>Listeners require the <code>ws</code> feature, like TCP listeners; subscriptions require
+Linux. No new dependencies. IPv4 literals only for bind, interface and groups;
+IPv6 groups refuse <code>UDP_ARGUMENT</code>. Send destinations can resolve hostnames.
+<code>join</code> is a multicast group string or list. <code>iface</code> defaults to <code>0.0.0.0</code>
+(kernel choice) and selects both membership and multicast egress. <code>reuse:true</code>
+sets SO_REUSEADDR and SO_REUSEPORT before bind. <code>ttl</code> is an integer 0..255;
+omitting it preserves the kernel default. <code>loop</code> is bool. Unknown or malformed
+options raise <code>UDP_ARGUMENT</code>; socket failures raise <code>UDP_IO</code> or the specific
+<code>UDP_ADDR_IN_USE</code>, <code>UDP_PERMISSION</code>, <code>UDP_ADDR_UNAVAILABLE</code> code.</p>
+<p>Each datagram arrives at <code>on command</code> as
+<code>$event.args = {watch, datagram:{bytes, text, from_host, from_port}}</code>.
+<code>bytes</code> is a Mix bytes value; <code>text</code> is UTF-8 or nil. Empty datagrams are events.
+<code>max</code> defaults to 65535 (range 1..65535); longer packets truncate, like udp_recv.
+The ordered FIFO, source limit, overflow terminal <code>{watch, closed:{reason}}</code>,
+and reload/exit cancellation follow tcp_on. The reader parks without polling
+timers. Handles share TCP's id sequence and 1024 server socket permits.
+<code>udp_close</code> returns false for an unknown handle; a subscribed handle raises
+<code>SOCKET_SUBSCRIBED</code> and must be closed with <code>udp_unwatch(source)</code>.</p>
+<p><code>udp_send_from</code> explicitly selects the listening socket, preserving its source
+port and interface even while subscribed. It sends nonblocking: a full send
+buffer raises <code>UDP_IO</code>. A distinct builtin keeps handle sends clear and avoids
+overloading the one-shot send options. <code>udp_send</code>'s optional <code>from</code> binds a
+source IPv4 address and sets multicast egress; <code>ttl</code> sets multicast TTL.
+Its original three-argument form and <code>udp_recv(port, opts)</code> are unchanged.</p>
+<pre><code class="language-mix">$sock = udp_listen("0.0.0.0", 1900, {
+  join: "239.255.255.250", iface: "192.0.2.10", reuse: true, ttl: 4, loop: true
+})
+$watch = udp_on($sock, "ssdp.packet")
+on ssdp.packet
+  udp_send_from($sock, $event.args.datagram.from_host,
+    $event.args.datagram.from_port, "reply")
 end
 </code></pre>
 <h2 id="udp-datagrams--udp_send-udp_recv-v0710">UDP datagrams — <code>udp_send</code>, <code>udp_recv</code> (v0.71.0)</h2>
