@@ -88,7 +88,8 @@ pub fn apply_ui(engine: &mut Engine, commands: &Registry<Engine>, events: Vec<Ui
             }
             UiEvent::Back => engine.back(),
             UiEvent::Set(key, value) => {
-                if let Err(error) = engine.set_key(key, value) {
+                // The control's whole write, in one fenced apply.
+                if let Err(error) = engine.write_key(key, value) {
                     engine.store.error = Some(error);
                 }
             }
@@ -102,6 +103,7 @@ pub fn apply_ui(engine: &mut Engine, commands: &Registry<Engine>, events: Vec<Ui
             UiEvent::Query(query) => engine.set_query(query),
             UiEvent::CloseSearch => engine.close_search(),
             UiEvent::FocusDone => engine.nav.focus = None,
+            UiEvent::Output(output) => engine.select_output(output),
             UiEvent::Problem(message) => engine.store.error = Some(message),
             UiEvent::Item(source, item, action) => {
                 if let Err(error) = engine.item_action(source, &item, &action) {
