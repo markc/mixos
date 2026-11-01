@@ -1087,7 +1087,7 @@ async fn serve(
                     }
                     Outbound::WakeAfter(delay) => {
                         let delivery = delivery.clone();
-                        flights.spawn(async move { tokio::time::sleep(delay).await; delivery.send(Inbound::Repaint); });
+                        flights.spawn(async move { tokio::time::sleep(delay).await; delivery.send(Inbound::Repaint); false });
                     }
                     Outbound::Settings { operation, body } => {
                         let (client, delivery) = (Arc::clone(client), delivery.clone());
@@ -1096,6 +1096,7 @@ async fn serve(
                             if !delivery.send(Inbound::Settings { operation, outcome }) {
                                 tracing::warn!("scene host: settings.apply outcome dropped: the engine queue is full");
                             }
+                            false
                         });
                     }
                     message => {
