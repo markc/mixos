@@ -16,7 +16,11 @@ pub(crate) const WATCHDOG: Duration = Duration::from_secs(1);
 
 /// Rate limits and retry backoff both constrain a dirty surface. Idle surfaces
 /// never consult this deadline and therefore arm no timer.
-pub(crate) fn draw_at(last: Option<Instant>, interval: Duration, retry: Option<Instant>) -> Option<Instant> {
+pub(crate) fn draw_at(
+    last: Option<Instant>,
+    interval: Duration,
+    retry: Option<Instant>,
+) -> Option<Instant> {
     match (last.map(|t| t + interval), retry) {
         (Some(a), Some(b)) => Some(a.max(b)),
         (a, b) => a.or(b),
@@ -64,7 +68,10 @@ mod tests {
         let cap = Duration::from_millis(100);
         assert_eq!(draw_at(None, cap, None), None);
         assert_eq!(draw_at(Some(t), cap, None), Some(t + cap));
-        assert_eq!(draw_at(Some(t), cap, Some(t + WATCHDOG)), Some(t + WATCHDOG));
+        assert_eq!(
+            draw_at(Some(t), cap, Some(t + WATCHDOG)),
+            Some(t + WATCHDOG)
+        );
     }
 
     #[test]

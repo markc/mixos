@@ -83,9 +83,19 @@ fn manifest() -> Vec<bus::CommandDescriptor> {
             false,
         ),
         (NEXT, &[][..], "Advance the slideshow", false),
-        ("backdrop.view.set", &["view", "args?"][..], "Select a background view", false),
+        (
+            "backdrop.view.set",
+            &["view", "args?"][..],
+            "Select a background view",
+            false,
+        ),
         ("backdrop.view.list", &[][..], "List background views", true),
-        ("backdrop.view.cycle", &["dir"][..], "Cycle background views", false),
+        (
+            "backdrop.view.cycle",
+            &["dir"][..],
+            "Cycle background views",
+            false,
+        ),
     ]
     .into_iter()
     .map(|(name, args, description, read_only)| {
@@ -272,7 +282,11 @@ enum Stored {
 pub fn start(setup: Setup) -> Result<(), String> {
     let (results, inbox) = mpsc::sync_channel::<Msg>(INBOX);
     use crate::views::View as _;
-    let topics = crate::views::Train::default().subscriptions().iter().map(|s|s.to_string()).collect::<Vec<_>>();
+    let topics = crate::views::Train::default()
+        .subscriptions()
+        .iter()
+        .map(|s| s.to_string())
+        .collect::<Vec<_>>();
     let (handle, deliveries) = citizen::start_with_topics(APP, &setup.service, &setup.url, &topics)
         .map_err(|error| format!("Bus registration as {:?}: {error}", setup.service))?;
     crate::views::start_reader(handle.clone(), setup.shared.clone(), setup.wakers.clone())?;
@@ -312,6 +326,7 @@ pub fn start(setup: Setup) -> Result<(), String> {
                 store,
                 engine: Engine::new(),
                 registry: registry(),
+                view_registry: crate::views::registry(),
                 active: BTreeMap::new(),
                 candidate: BTreeMap::new(),
                 serial: 0,
@@ -378,6 +393,7 @@ struct Controller {
     store: Option<PathBuf>,
     engine: Engine,
     registry: Registry<Engine>,
+    view_registry: toolkit::action::EngineRegistry<crate::views::State>,
     /// The applied document's decoded images: on screen.
     active: BTreeMap<PathBuf, Arc<Resident>>,
     /// The pending request's decoded images: not yet applied.
@@ -429,7 +445,9 @@ impl Controller {
                 Msg::Delivery(Delivery::Connected) => {
                     eprintln!("backdrop: Bus connected");
                 }
-                Msg::Delivery(Delivery::Topic(_)) => { crate::views::refresh(&self.shared); }
+                Msg::Delivery(Delivery::Topic(_)) => {
+                    crate::views::refresh(&self.shared);
+                }
                 Msg::Delivery(_) => {}
                 Msg::BusStopped => {
                     eprintln!("backdrop: native Bus delivery stream stopped");
@@ -456,13 +474,14 @@ impl Controller {
                 else { self.reply(id,0,json!({"views":["wallpaper","train"],"selected":lock(&self.shared).live.selected})); }
             }
             "backdrop.view.set" | "backdrop.view.cycle" => {
-                let result = serde_json::from_str(body).map_err(|e|e.to_string()).and_then(|v| lock(&self.shared).live.command(command_name,&v));
+                let result = serde_json::from_str(body).map_err(|e|e.to_string()).and_then(|v| self.view_registry.execute(command_name, &mut lock(&self.shared).live, v, Origin::Bus).map_err(|e|e.to_string()));
                 match result {
-                    Ok(()) => {
+                    Ok(state) => {
                         crate::views::refresh(&self.shared);
                         self.publish();
-                        let state = json!({"view":lock(&self.shared).live.selected});
-                        if let Some(handle) = &self.handle { handle.publish("backdrop.command.executed", vec![json!({"id":command_name,"origin":"bus","args":serde_json::from_str::<Value>(body).unwrap_or_default()})],0); }
+
+                        let (runs, lost) = self.view_registry.take_executed();
+                        if let Some(handle) = &self.handle { handle.publish(&toolkit::executed::topic(handle.service()), runs.iter().map(toolkit::executed::Executed::body).collect(), lost); }
                         self.reply(id,0,state);
                     }
                     Err(e) => self.reply(id,10,refusal("ARGUMENT",e)),
@@ -852,7 +871,9 @@ impl Controller {
             }
         };
         if applied.is_ok() {
-            if matches!(owed, Some(Owed::Bus(_))) { lock(&self.shared).live.selected = "wallpaper".into(); }
+            if matches!(owed, Some(Owed::Bus(_))) {
+                lock(&self.shared).live.selected = "wallpaper".into();
+            }
             toolkit::debug!(app = APP, revision, "wallpaper settings applied");
             let now = self.started.elapsed();
             let mut schedules = self.pending_schedules.take().unwrap_or_default();
@@ -1125,6 +1146,7 @@ mod tests {
             store: None,
             engine: Engine::new(),
             registry: registry(),
+                view_registry: crate::views::registry(),
             active: BTreeMap::new(),
             candidate: BTreeMap::new(),
             serial: 0,
@@ -1200,6 +1222,22 @@ mod tests {
         }));
         answered.sort();
         assert_eq!(registered, answered);
+    }
+
+    #[test]
+    fn view_commands_preserve_wallpaper_and_record_validated_bus_runs() {
+        let mut c = controller();
+        c.stage(Config::default(), Owed::Startup);
+        let revision = c.engine.status().active;
+        c.command(1, "backdrop.view.set", r#"{"view":"train"}"#);
+        assert_eq!(lock(&c.shared).live.selected, "train");
+        assert_eq!(c.engine.status().active, revision);
+        c.command(2, "backdrop.view.cycle", r#"{"dir":"bad"}"#);
+        assert_eq!(lock(&c.shared).live.selected, "train");
+        c.command(3, "backdrop.view.cycle", r#"{"dir":"next"}"#);
+        assert_eq!(lock(&c.shared).live.selected, "wallpaper");
+        c.command(4, "backdrop.view.list", "{}");
+        assert_eq!(c.replies.borrow().last().unwrap().1, 0);
     }
 
     #[test]

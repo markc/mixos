@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
 backdrop-set = Set wallpaper
 backdrop-next = Next wallpaper
+backdrop-view-set = Select background view
+backdrop-view-cycle = Cycle background view
 train-title = Merge train
 train-unknown = unavailable
 train-running = running

@@ -403,9 +403,15 @@ fn paint_bars(ui: &egui::Ui, rect: Rect, original: [u32; 2], mode: Fit, fill: Co
 }
 
 impl LayerProgram for Backdrop {
-    fn strict_frame_callbacks(&self) -> bool { true }
+    fn strict_frame_callbacks(&self) -> bool {
+        true
+    }
     fn frame_interval(&self) -> Duration {
-        if lock(&self.shared).live.selected == "train" { Duration::from_millis(100) } else { Duration::ZERO }
+        if lock(&self.shared).live.selected == "train" {
+            Duration::from_millis(100)
+        } else {
+            Duration::ZERO
+        }
     }
     fn setup(&mut self, ctx: &egui::Context) {
         toolkit::install(ctx, &self.theme);
