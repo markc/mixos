@@ -10,9 +10,9 @@
 //! layout, [`shell`] runs the effects, and [`actions`] is the registry every
 //! action goes through, from a click, a shortcut or the Bus.
 pub mod actions;
-mod browser;
 pub mod cosmic;
 mod font_families;
+mod scan;
 pub mod shell;
 pub mod view;
 

@@ -74,7 +74,6 @@ fn run(settings: &Settings) -> Result<(), String> {
             topics.push(topic);
         }
     }
-    topics.push("backdrop.action.executed".into());
     let (handle, deliveries) =
         citizen::start_with_macros(APP, &settings.service, &settings.url, &topics)?;
     let theme = toolkit::Theme::load();

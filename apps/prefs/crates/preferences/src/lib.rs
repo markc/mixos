@@ -10,20 +10,18 @@
 // The Bus description is one json! literal of every command.
 #![recursion_limit = "256"]
 pub mod appearance;
-mod background;
 pub mod catalog;
 pub mod email;
 pub mod engine;
+pub mod gallery;
 pub mod live;
 pub mod model;
 pub mod nav;
 pub mod navigation;
 pub mod pages;
-pub mod picker;
 pub mod store;
 pub mod terminal;
 pub mod text;
-pub mod wallpaper;
 pub mod xkb;
 
 pub use appearance::Look;

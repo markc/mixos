@@ -34,8 +34,8 @@ pub enum Event {
     Settled(u64, Result<Reply, CallError>),
     /// A settingsd call of the pages finished.
     Stored(u64, Result<Reply, CallError>),
-    Backdrop(u64, Result<Reply, CallError>),
-    Browsed(u64, Result<preferences::picker::Listing, String>),
+    /// A Wallpaper folder was read.
+    Scanned(u64, Result<Vec<String>, String>),
     Shown(u64, Option<u64>, Result<Value, String>),
     /// A call to the email app (or to apps, launching it) finished.
     Mailed(u64, Result<Reply, CallError>),
@@ -49,8 +49,7 @@ pub fn apply_event(engine: &mut Engine, event: Event) {
         Event::Released(ticket, result) => engine.released(ticket, result),
         Event::Settled(ticket, result) => engine.settled(ticket, result),
         Event::Stored(ticket, result) => engine.stored(ticket, result),
-        Event::Backdrop(ticket, result) => engine.wallpaper_finished(ticket, result),
-        Event::Browsed(ticket, result) => engine.browsed(ticket, result),
+        Event::Scanned(ticket, result) => engine.gallery_scanned(ticket, result),
         Event::Shown(ticket, reply, result) => engine.shown(ticket, reply, result),
         Event::Mailed(ticket, result) => engine.mailed(ticket, result),
         Event::AppMailed(ticket, result) => engine.app_mailed(ticket, result),
@@ -112,13 +111,26 @@ pub fn apply_ui(engine: &mut Engine, commands: &Registry<Engine>, events: Vec<Ui
             }
             UiEvent::Terminal(setting) => engine.edit_terminal(setting),
             UiEvent::Text(setting) => engine.edit_text(setting),
-            UiEvent::WallpaperTarget(target) => engine.wallpaper_target(target),
-            UiEvent::WallpaperKind(kind) => engine.wallpaper_kind(kind),
-            UiEvent::WallpaperColour(colour) => engine.wallpaper_colour(colour),
-            UiEvent::WallpaperImage(image) => engine.wallpaper_image(image),
-            UiEvent::PickerDirectory(path) => engine.edit_picker_directory(path),
-            UiEvent::PickerSelect(path) => engine.picker_select(&path),
-            UiEvent::PickerEnter(path) => engine.picker_enter(&path),
+            UiEvent::Category(category) => {
+                if let Err(error) = engine.set_category(category) {
+                    engine.store.error = Some(error);
+                }
+            }
+            UiEvent::OpenFolder(folder) => {
+                if let Err(error) = engine.open_folder(folder) {
+                    engine.store.error = Some(error);
+                }
+            }
+            UiEvent::AddImages(images) => {
+                if let Err(error) = engine.add_images(images) {
+                    engine.store.error = Some(error);
+                }
+            }
+            UiEvent::RemoveCustom(key, value) => {
+                if let Err(error) = engine.remove_custom(key, &value) {
+                    engine.store.error = Some(error);
+                }
+            }
             UiEvent::ConfirmEmail => engine.confirm_email(),
             UiEvent::EmailSelect(id) => engine.select_email_account(&id),
             UiEvent::EmailField(field, text) => engine.edit_email_field(field, text),
@@ -392,8 +404,11 @@ impl Shell {
         shell.engine.session_decorations = shell.theme.requested_decorations();
         shell.engine.session_actions = shell.theme.band().place;
         shell.engine.start_appearance(&hostname());
-        shell.engine.read_wallpaper();
         shell.engine.read_layouts(&preferences::xkb::rules_dir());
+        shell.engine.gallery.system = ::paths::root(::paths::Root::Share)
+            .join("wallpapers")
+            .to_str()
+            .map(str::to_owned);
         shell.settle();
         Ok(shell)
     }
@@ -504,31 +519,12 @@ impl Shell {
 
     fn perform(&mut self, effect: Effect) {
         match effect {
-            Effect::Backdrop {
-                ticket,
-                command: command_name,
-                body,
-            } => {
-                let bus = self.bus.clone();
+            Effect::Scan { ticket, folder } => {
                 self.spawn(async move {
-                    Event::Backdrop(
-                        ticket,
-                        bus.raw_within(
-                            "backdrop",
-                            command_name,
-                            body.to_string(),
-                            Duration::from_secs(60),
-                        )
-                        .await,
-                    )
-                });
-            }
-            Effect::Browse { ticket, path } => {
-                self.spawn(async move {
-                    let result = tokio::task::spawn_blocking(move || crate::browser::list(path))
+                    let result = tokio::task::spawn_blocking(move || crate::scan::images(&folder))
                         .await
                         .unwrap_or_else(|e| Err(e.to_string()));
-                    Event::Browsed(ticket, result)
+                    Event::Scanned(ticket, result)
                 });
             }
             Effect::Releases {

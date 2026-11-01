@@ -204,7 +204,7 @@ fn control_width(ui: &Ui, engine: &Engine, row: &Row) -> f32 {
         }
         Control::Page { .. } | Control::Drawer { .. } => 16.0,
         Control::Reset { .. } => 160.0,
-        Control::Outputs { .. } => 0.0,
+        Control::Outputs { .. } | Control::Preview { .. } | Control::Gallery { .. } => 0.0,
         Control::Info => row
             .value_from
             .and_then(|src| engine.live_value(src))
@@ -247,6 +247,8 @@ fn stacked(control: &Control) -> bool {
             | Control::Scheme
             | Control::Mode
             | Control::Outputs { .. }
+            | Control::Preview { .. }
+            | Control::Gallery { .. }
             | Control::Choice {
                 style: ChoiceStyle::Segmented | ChoiceStyle::Images,
                 ..
@@ -822,6 +824,12 @@ fn control(
             }
         }
         Control::Outputs { all } => outputs(ui, engine, all, look, events),
+        Control::Preview { image, colour, fit } => {
+            super::gallery::preview(ui, engine, (image, colour, fit), name, look);
+        }
+        Control::Gallery { image, colour } => {
+            super::gallery::chooser(ui, engine, row.id, (image, colour), look, events)
+        }
         Control::Ordered { .. } | Control::Append { .. } => {}
         Control::Reset { keys } => {
             if ui.add(standard_button(name, look)).clicked() {
