@@ -925,13 +925,6 @@ impl Scope {
             self.set_global(&name, value);
             return;
         }
-        self.bind_in_current(name, value);
-    }
-
-    /// Parameters and injected capture/module bindings are always local.
-    /// They are installed before user code and must not pay assignment routing.
-    #[inline]
-    pub fn bind_in_current(&mut self, name: String, value: Value) {
         if let Some(frame) = self.frames.last_mut() {
             frame.insert(name, value);
         }

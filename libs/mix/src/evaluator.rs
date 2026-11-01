@@ -7802,6 +7802,32 @@ impl Evaluator {
         }
     }
 
+    #[cold]
+    #[inline(never)]
+    fn exec_global_declaration(&mut self, names: &[String]) -> MixResult<Value> {
+                    for name in names {
+                        if matches!(name.as_str(), "event" | "rc" | "result" | "reply") {
+                            return Err(self.coded_err(
+                                "GLOBAL_RUNTIME_NAME",
+                                format!("${name} is set by the runtime"),
+                            ));
+                        }
+                        self.scope.validate_global(name).map_err(|code| {
+                            let message = if code == "GLOBAL_AFTER_LOCAL" && self.scope.is_module_name(name) {
+                                format!("cannot declare ${name} global: module variables are not globals")
+                            } else if code == "GLOBAL_AFTER_LOCAL" && self.scope.is_captured_name(name) {
+                                format!("cannot declare ${name} global: captured from the enclosing function")
+                            } else { format!("cannot declare ${name} global: {code}") };
+                            self.coded_err(code, message)
+                        })?;
+                    }
+                    // Runtime-name and scope conflicts have all been checked.
+                    self.scope
+                        .declare_globals(names)
+                        .map_err(|code| self.coded_err(code, "invalid global declaration"))?;
+                    Ok(Value::Nil)
+    }
+
     fn check_global_binder(&self, name: &str) -> MixResult<()> {
         if self.scope.is_declared_global(name) {
             Err(self.coded_err(
@@ -9031,29 +9057,7 @@ impl Evaluator {
             self.trace_stmt(stmt);
             self.track_stmt_keywords(stmt);
             match &stmt.kind {
-                StmtKind::Global(names) => {
-                    for name in names {
-                        if matches!(name.as_str(), "event" | "rc" | "result" | "reply") {
-                            return Err(self.coded_err(
-                                "GLOBAL_RUNTIME_NAME",
-                                format!("${name} is set by the runtime"),
-                            ));
-                        }
-                        self.scope.validate_global(name).map_err(|code| {
-                            let message = if code == "GLOBAL_AFTER_LOCAL" && self.scope.is_module_name(name) {
-                                format!("cannot declare ${name} global: module variables are not globals")
-                            } else if code == "GLOBAL_AFTER_LOCAL" && self.scope.is_captured_name(name) {
-                                format!("cannot declare ${name} global: captured from the enclosing function")
-                            } else { format!("cannot declare ${name} global: {code}") };
-                            self.coded_err(code, message)
-                        })?;
-                    }
-                    // Runtime-name and scope conflicts have all been checked.
-                    self.scope
-                        .declare_globals(names)
-                        .map_err(|code| self.coded_err(code, "invalid global declaration"))?;
-                    Ok(Value::Nil)
-                }
+                StmtKind::Global(names) => self.exec_global_declaration(names),
                 StmtKind::Expression(expr) => {
                     // Bare identifier matching a user-defined function → call it (bash-style)
                     // SPEC 18 Phase 2 WS3-C.7b — γ-aware predicate so a
@@ -16760,7 +16764,7 @@ impl Evaluator {
         self.scope.enter_function_frame_for(func);
         for (i, param) in func.params.iter().enumerate() {
             self.scope
-                .bind_in_current(param.name.clone(), args[i].clone());
+                .set_in_current(param.name.clone(), args[i].clone());
         }
         let cache_start = self.ctx.var_slot_cache.len();
         self.ctx.function_depth += 1;
@@ -17292,7 +17296,7 @@ impl Evaluator {
                     if let Value::Function(rc) = v {
                         fns.insert(k.clone(), Rc::clone(rc));
                     }
-                    self.scope.bind_in_current(k.clone(), v.clone());
+                    self.scope.set_in_current(k.clone(), v.clone());
                 }
                 self.ctx.module_fn_frames.push(fns);
                 pushed_here = true;
@@ -17306,7 +17310,7 @@ impl Evaluator {
             // shadows the capture.
             if let Some(caps) = &func.captures {
                 for (k, v) in caps {
-                    self.scope.bind_in_current(k.clone(), v.clone());
+                    self.scope.set_in_current(k.clone(), v.clone());
                 }
             }
 
@@ -17332,7 +17336,7 @@ impl Evaluator {
                 } else {
                     Value::Nil
                 };
-                self.scope.bind_in_current(param.name.clone(), val);
+                self.scope.set_in_current(param.name.clone(), val);
             }
 
             let result: MixResult<Value> = if let Some(e) = bind_err {
