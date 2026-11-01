@@ -943,13 +943,13 @@ pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
         "udp_close" => {
             expect_args("udp_close", &args, 1)?;
             let id = socket_sources::client_id_of(args.first(), "udp_close")?;
-            if let Ok(sock) = crate::udp::handles::get(id) {
-                if sock.subscribed.load(std::sync::atomic::Ordering::Acquire) {
+            if let Ok(sock) = crate::udp::handles::get(id)
+                && sock.subscribed.load(std::sync::atomic::Ordering::Acquire)
+            {
                     return Err(crate::native_events::refusal(
                         "SOCKET_SUBSCRIBED",
                         "use udp_unwatch(source) to close a subscribed UDP socket",
                     ));
-                }
             }
             Ok(Some(Value::Bool(
                 crate::udp::handles::MAP
