@@ -7805,27 +7805,29 @@ impl Evaluator {
     #[cold]
     #[inline(never)]
     fn exec_global_declaration(&mut self, names: &[String]) -> MixResult<Value> {
-                    for name in names {
-                        if matches!(name.as_str(), "event" | "rc" | "result" | "reply") {
-                            return Err(self.coded_err(
-                                "GLOBAL_RUNTIME_NAME",
-                                format!("${name} is set by the runtime"),
-                            ));
-                        }
-                        self.scope.validate_global(name).map_err(|code| {
-                            let message = if code == "GLOBAL_AFTER_LOCAL" && self.scope.is_module_name(name) {
-                                format!("cannot declare ${name} global: module variables are not globals")
-                            } else if code == "GLOBAL_AFTER_LOCAL" && self.scope.is_captured_name(name) {
-                                format!("cannot declare ${name} global: captured from the enclosing function")
-                            } else { format!("cannot declare ${name} global: {code}") };
-                            self.coded_err(code, message)
-                        })?;
-                    }
-                    // Runtime-name and scope conflicts have all been checked.
-                    self.scope
-                        .declare_globals(names)
-                        .map_err(|code| self.coded_err(code, "invalid global declaration"))?;
-                    Ok(Value::Nil)
+        for name in names {
+            if matches!(name.as_str(), "event" | "rc" | "result" | "reply") {
+                return Err(self.coded_err(
+                    "GLOBAL_RUNTIME_NAME",
+                    format!("${name} is set by the runtime"),
+                ));
+            }
+            self.scope.validate_global(name).map_err(|code| {
+                let message = if code == "GLOBAL_AFTER_LOCAL" && self.scope.is_module_name(name) {
+                    format!("cannot declare ${name} global: module variables are not globals")
+                } else if code == "GLOBAL_AFTER_LOCAL" && self.scope.is_captured_name(name) {
+                    format!("cannot declare ${name} global: captured from the enclosing function")
+                } else {
+                    format!("cannot declare ${name} global: {code}")
+                };
+                self.coded_err(code, message)
+            })?;
+        }
+        // Runtime-name and scope conflicts have all been checked.
+        self.scope
+            .declare_globals(names)
+            .map_err(|code| self.coded_err(code, "invalid global declaration"))?;
+        Ok(Value::Nil)
     }
 
     fn check_global_binder(&self, name: &str) -> MixResult<()> {
