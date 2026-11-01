@@ -22,7 +22,7 @@ for $entry in $manifest.files
   end
   $installed = $renderer.render($entry.target, $roots)
   if not starts_with($installed, $roots.prefix .. "/") then raise("LAYOUT_TARGET", "template leaves prefix") end
-  if any(["bridged", "notifyd", "releasesd", "toolsd"], fn($owner) = contains($entry.source, "/" .. $owner .. "/")) then
+  if any(["bridged", "notifyd", "releasesd", "toolsd", "exportd"], fn($owner) = contains($entry.source, "/" .. $owner .. "/")) then
     raise("LAYOUT_TARGET", "component-owned unit in global manifest")
   end
   if contains(args(), "--installed") and is_file($installed) then
@@ -33,7 +33,7 @@ end
 if len($different) > 0 then raise("LAYOUT_BYTES", "default templates differ from baseline: " .. join($different, ", ")) end
 print("layout: " .. to_string(len($manifest.files)) .. " default templates byte-identical to baseline")
 $component_count = 0
-for $owner in ["bridged", "notifyd", "releasesd", "toolsd"]
+for $owner in ["bridged", "notifyd", "releasesd", "toolsd", "exportd"]
   for $path in sort(glob($repo .. "/services/" .. $owner .. "/units/*"))
     if not is_file($path) then continue end
     $rel = strip_prefix($path, $repo .. "/")
