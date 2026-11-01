@@ -72,7 +72,7 @@ impl Cache {
         let mut bytes = Vec::with_capacity(blocks.len().min(MAX_CUBES) * 36);
         for b in blocks.iter().take(MAX_CUBES) {
             let mut p = b.position;
-            if !b.label.is_empty() && b.size[1] < 1. {
+            if !b.label.is_empty() && b.size[1] > 0.2 && b.size[1] < 1. {
                 p[0] -= (1. - progress) * 0.4;
             }
             let c = palette[b.tone].to_normalized_gamma_f32();
@@ -113,7 +113,7 @@ impl Cache {
                 egui::Align2::CENTER_BOTTOM,
                 &b.label,
                 egui::TextStyle::Small.resolve(ui.style()),
-                ui.visuals().text_color(),
+                if b.tone == 3 {ui.visuals().error_fg_color} else {ui.visuals().text_color()},
             );
         }
         true

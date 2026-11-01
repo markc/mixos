@@ -6,7 +6,7 @@ Documentation: <https://mixos.dev/backdrop/> — source [`docs/backdrop/README.m
 
 Stage 1 live views (session selection, all outputs):
 
-- `backdrop.view.set {view:"train", args?:{train_service, buildd_service, renderer}}`
+- `backdrop.view.set {view:"train", args?:{train_service, buildd_service, renderer, zoom}}`
   selects the train; `view:"wallpaper"` restores the existing wallpaper.
   Service arguments default to `train` and `buildd`; on a desk pass the hub's
   mesh service names. Selection is not persisted. A successful `backdrop.set`
@@ -39,12 +39,37 @@ submission. `args:{renderer:"2d"}` selects the egui_plot train layout;
 Backdrop never writes an image file. Exported stills belong in image-authoring apps
 and must be requested over the Bus.
 
-The graph is explicitly a **live queue sample stub**, not gates per hour or
-complete history. Follow-up: owner-side read-only `train.history` and
-`buildd.history` commands for 24-hour bins from batches/jobs, plus main SHA
-and gate stage progress in the queue response. Missing values display `?`;
-stage progress is used only when supplied as `stage_progress` in [0,1].
-There is no private database or SSH/log reader in backdrop.
+The header uses `train.queue.main` (origin/main as last fetched by the train).
+`train.gate` supplies stage/stages, the last stage label and a red failure
+state; stale replies from a previous batch cannot move the current gate.
+Gate reads run no faster than every 15 seconds and only while a batch is
+gating and at least one output's train view is visible. Visibility resumption
+wakes the reader without bypassing that rate limit.
+
+The plot uses `train.history`: landings in epoch-aligned hourly buckets and
+elapsed minutes per completed batch, with reused gates shown as zero minutes.
+Incomplete batches are omitted from duration points. Each series has at most
+600 points; long batch series are sampled evenly, preserving both ends.
+`args:{zoom:"1h"}`, `"24h"` (default), or `"7d"` request 1, 24 or 168 hours.
+History refreshes every five minutes, after `train.landed`/`train.rejected`,
+and when the requested service or zoom changes. Missing reads are labelled
+unavailable; there are no synthetic queue samples, private databases or SSH
+log readers inside backdrop.
+
+To try a built binary on a desktop without installing gold, start it in one
+terminal (replace `backdrop` with the path to that binary), then select the
+train from another terminal on the same Bus:
+
+```text
+backdrop --service backdrop-train
+mix -c 'send backdrop-train backdrop.view.set body="{\"view\":\"train\",\"args\":{\"zoom\":\"24h\"}}" timeout=5; print($result)'
+```
+
+The new service registers independently and maps another Background surface;
+it does not replace or stop the running wallpaper process. View selection
+does not write the shared wallpaper document. On a desk, also supply the
+hub's mesh service names in `train_service` and `buildd_service`. No new flags
+are required. Stopping the test process removes its surfaces.
 
 PNG, JPEG and WebP share the bounded decoder for both images and slideshows.
 The app has neither an overlay snapshot harness nor a headless scene capture

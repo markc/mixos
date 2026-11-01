@@ -36,13 +36,15 @@ impl Train {
     /// Pure snapshot → world-space scene. No GPU, file or Bus access.
     pub fn scene(&self) -> Vec<Block> {
         let mut out = vec![];
+        let gate = self.snapshot.current_gate();
+        let failing = gate.is_some_and(|g|g["failing"] == true);
         for (x, tone) in [(-5., 0), (0., 1), (5., 2)] {
             out.push(Block {
                 position: [x, 0., 0.],
                 size: [4.8, 0.12, 0.6],
-                tone,
+                tone: if x == 0. && failing {3} else {tone},
                 glow: 0.,
-                label: String::new(),
+                label: if x == 0. {gate.and_then(|g|g["last"].as_str()).unwrap_or("").into()} else {String::new()},
             });
         }
         out.push(Block {
@@ -62,10 +64,7 @@ impl Train {
                 if key == "recent" && !rejected && row["state"] != "landed" {
                     continue;
                 }
-                let progress = self.snapshot.queue["stage_progress"]
-                    .as_f64()
-                    .unwrap_or(0.)
-                    .clamp(0., 1.) as f32;
+                let progress = self.snapshot.gate_progress().unwrap_or(0.);
                 out.push(Block {
                     position: [
                         x + i as f32 * 0.55 + if key == "batched" { progress * 3. } else { 0. },
@@ -73,7 +72,7 @@ impl Train {
                         if rejected { 2. } else { z },
                     ],
                     size: [0.48, 0.6, 0.75],
-                    tone: if rejected { 3 } else { tone },
+                    tone: if rejected || (key == "batched" && failing) { 3 } else { tone },
                     glow: 0.,
                     label: text(row, "branch"),
                 });
@@ -169,8 +168,8 @@ mod tests {
     #[test]
     fn layout_routes_rejections_and_bounds_progress_and_queue() {
         let mut train = Train::default();
-        train.on_event(std::sync::Arc::new(super::super::Snapshot {queue:json!({"queued":[{"branch":"work/a"}], "batched":[{"branch":"work/b"}], "stage_progress":9,
-            "recent":[{"branch":"work/c", "state":"rejected"}, {"branch":"work/d","state":"landed"}]}), ..Default::default()}), true, Instant::now());
+        train.on_event(std::sync::Arc::new(super::super::Snapshot {queue:json!({"queued":[{"branch":"work/a"}], "batched":[{"branch":"work/b"}], "batches":[{"batch":"test","state":"gating"}],
+            "recent":[{"branch":"work/c", "state":"rejected"}, {"branch":"work/d","state":"landed"}]}), gate:json!({"batch":"test","stage":9,"stages":3,"last":"lint","failing":true}), ..Default::default()}), true, Instant::now());
         let scene = train.scene();
         assert_eq!(
             scene.iter().find(|b| b.label == "work/c").unwrap().position[2],
@@ -181,6 +180,7 @@ mod tests {
             1.
         );
         assert_eq!(scene.iter().find(|b| b.label == "work/d").unwrap().tone, 2);
+        assert_eq!(scene.iter().find(|b|b.label=="lint").unwrap().tone,3);
     }
     #[test]
     fn worker_glow_accepts_encoded_snapshots() {
