@@ -276,11 +276,22 @@ fn date_and_time_reads_as_data_and_a_clock_write_applies_once() {
     let (_, page) = ask(&mut rig, 2, "prefs.page", json!({}));
     let zone = row_of(&page, "zone");
     assert_eq!(zone["key"], "time.zone");
-    assert!(zone["blocked"].as_str().unwrap().contains("hostd timedated"), "{zone}");
+    assert!(
+        zone["blocked"]
+            .as_str()
+            .unwrap()
+            .contains("hostd timedated"),
+        "{zone}"
+    );
     let clock = row_of(&page, "24h");
     assert_eq!(clock["key"], "time.format.24h");
     assert!(clock["blocked"].is_null(), "{clock}");
-    let (rc, body) = ask(&mut rig, 3, "prefs.set", json!({"key":"time.format.24h","value":true}));
+    let (rc, body) = ask(
+        &mut rig,
+        3,
+        "prefs.set",
+        json!({"key":"time.format.24h","value":true}),
+    );
     assert_eq!(rc, 0, "{body}");
     rig.h.run_steps(3);
     let sent = applies(&rig);
@@ -293,7 +304,11 @@ fn date_and_time_reads_as_data_and_a_clock_write_applies_once() {
         "prefs.set",
         json!({"key":"time.zone","value":"Australia/Sydney"}),
     );
-    assert_eq!((rc, body["error_code"].as_str()), (10, Some("REFUSED")), "{body}");
+    assert_eq!(
+        (rc, body["error_code"].as_str()),
+        (10, Some("REFUSED")),
+        "{body}"
+    );
 }
 
 #[test]
@@ -303,14 +318,21 @@ fn region_waits_on_locale1_and_refuses_writes_until_it_lands() {
     let (rc, body) = ask(&mut rig, 1, "prefs.page.open", json!({"page":"region"}));
     assert_eq!(rc, 0, "{body}");
     let (_, page) = ask(&mut rig, 2, "prefs.page", json!({}));
-    assert!(page["backend"].as_str().unwrap().contains("hostd locale1"), "{page}");
+    assert!(
+        page["backend"].as_str().unwrap().contains("hostd locale1"),
+        "{page}"
+    );
     let (rc, body) = ask(
         &mut rig,
         3,
         "prefs.set",
         json!({"key":"region.formats","value":"en_AU.UTF-8"}),
     );
-    assert_eq!((rc, body["error_code"].as_str()), (10, Some("REFUSED")), "{body}");
+    assert_eq!(
+        (rc, body["error_code"].as_str()),
+        (10, Some("REFUSED")),
+        "{body}"
+    );
     rig.h.run_steps(3);
     assert!(applies(&rig).is_empty());
 }
