@@ -94,6 +94,7 @@ pub struct OutputStatus {
 /// State shared with the controller.
 #[derive(Default)]
 pub struct Shared {
+    pub live: crate::views::State,
     pub view: Arc<View>,
     pub outputs: BTreeMap<String, OutputStatus>,
 }
@@ -402,6 +403,7 @@ fn paint_bars(ui: &egui::Ui, rect: Rect, original: [u32; 2], mode: Fit, fill: Co
 }
 
 impl LayerProgram for Backdrop {
+    fn strict_frame_callbacks(&self) -> bool { true }
     fn setup(&mut self, ctx: &egui::Context) {
         toolkit::install(ctx, &self.theme);
         // The owner token lives in the context's own data, so `removed` can find
@@ -413,6 +415,20 @@ impl LayerProgram for Backdrop {
     }
 
     fn show(&mut self, ui: &mut egui::Ui, surface: &SurfaceInfo) {
+        {
+            use crate::views::View as _;
+            let shared = lock(&self.shared);
+            if shared.live.selected == "train" {
+                drop(take_slots(ui.ctx()));
+                shared.live.train.draw(ui);
+                if let Some(delay) = shared.live.train.wants_frame(Instant::now()) {
+                    ui.ctx().request_repaint_after(delay);
+                }
+                self.shows = "train";
+                self.error = None;
+                return;
+            }
+        }
         self.show_pass(ui, surface);
         self.wake_starved();
     }

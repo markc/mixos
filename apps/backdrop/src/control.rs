@@ -55,6 +55,9 @@ pub const COMMANDS: &[(&str, &str)] = &[
     ("backdrop.state", "query"),
     (SET, "intent"),
     (NEXT, "intent"),
+    ("backdrop.view.set", "intent"),
+    ("backdrop.view.list", "query"),
+    ("backdrop.view.cycle", "intent"),
 ];
 
 fn manifest() -> Vec<bus::CommandDescriptor> {
@@ -80,6 +83,9 @@ fn manifest() -> Vec<bus::CommandDescriptor> {
             false,
         ),
         (NEXT, &[][..], "Advance the slideshow", false),
+        ("backdrop.view.set", &["view", "args?"][..], "Select a background view", false),
+        ("backdrop.view.list", &[][..], "List background views", true),
+        ("backdrop.view.cycle", &["dir"][..], "Cycle background views", false),
     ]
     .into_iter()
     .map(|(name, args, description, read_only)| {
@@ -265,8 +271,11 @@ enum Stored {
 /// is an error: the wallpaper does not run as an unregistered second copy.
 pub fn start(setup: Setup) -> Result<(), String> {
     let (results, inbox) = mpsc::sync_channel::<Msg>(INBOX);
-    let (handle, deliveries) = citizen::start(APP, &setup.service, &setup.url)
+    use crate::views::View as _;
+    let topics = crate::views::Train::default().subscriptions().iter().map(|s|s.to_string()).collect::<Vec<_>>();
+    let (handle, deliveries) = citizen::start_with_topics(APP, &setup.service, &setup.url, &topics)
         .map_err(|error| format!("Bus registration as {:?}: {error}", setup.service))?;
+    crate::views::start_reader(handle.clone(), setup.shared.clone(), setup.wakers.clone())?;
     let forward = results.clone();
     std::thread::Builder::new()
         .name("backdrop-bus".into())
@@ -420,6 +429,7 @@ impl Controller {
                 Msg::Delivery(Delivery::Connected) => {
                     eprintln!("backdrop: Bus connected");
                 }
+                Msg::Delivery(Delivery::Topic(_)) => { crate::views::refresh(&self.shared); }
                 Msg::Delivery(_) => {}
                 Msg::BusStopped => {
                     eprintln!("backdrop: native Bus delivery stream stopped");
@@ -441,6 +451,23 @@ impl Controller {
 
     fn command(&mut self, id: u64, command_name: &str, body: &str) {
         match command_name {
+            "backdrop.view.list" => {
+                if parse_next(body).is_err() { self.reply(id,10,refusal("ARGUMENT", "expected {}")); }
+                else { self.reply(id,0,json!({"views":["wallpaper","train"],"selected":lock(&self.shared).live.selected})); }
+            }
+            "backdrop.view.set" | "backdrop.view.cycle" => {
+                let result = serde_json::from_str(body).map_err(|e|e.to_string()).and_then(|v| lock(&self.shared).live.command(command_name,&v));
+                match result {
+                    Ok(()) => {
+                        crate::views::refresh(&self.shared);
+                        self.publish();
+                        let state = json!({"view":lock(&self.shared).live.selected});
+                        if let Some(handle) = &self.handle { handle.publish("backdrop.command.executed", vec![json!({"id":command_name,"origin":"bus","args":serde_json::from_str::<Value>(body).unwrap_or_default()})],0); }
+                        self.reply(id,0,state);
+                    }
+                    Err(e) => self.reply(id,10,refusal("ARGUMENT",e)),
+                }
+            }
             "HELP" | "app.describe" => self.reply(id, 0, json!(manifest())),
             "backdrop.ping" => self.reply(
                 id,
@@ -825,6 +852,7 @@ impl Controller {
             }
         };
         if applied.is_ok() {
+            if matches!(owed, Some(Owed::Bus(_))) { lock(&self.shared).live.selected = "wallpaper".into(); }
             toolkit::debug!(app = APP, revision, "wallpaper settings applied");
             let now = self.started.elapsed();
             let mut schedules = self.pending_schedules.take().unwrap_or_default();

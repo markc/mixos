@@ -10,6 +10,7 @@
 mod control;
 mod probe;
 mod program;
+mod views;
 
 use std::fs::OpenOptions;
 use std::io::Read;

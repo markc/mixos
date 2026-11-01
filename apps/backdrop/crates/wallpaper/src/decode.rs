@@ -109,13 +109,13 @@ pub fn check_dimensions(width: u32, height: u32) -> Result<(), String> {
     Ok(())
 }
 
-/// Decode PNG or JPEG `bytes` under the limits, downscaled to the texture
+/// Decode PNG, JPEG or WebP `bytes` under the limits, downscaled to the texture
 /// target. `shown` names the source in errors.
 pub fn decode_bytes(bytes: &[u8], shown: &str) -> Result<Decoded, String> {
     let format = match image::guess_format(bytes) {
-        Ok(format @ (ImageFormat::Png | ImageFormat::Jpeg)) => format,
-        Ok(other) => return Err(format!("{shown} is {other:?}, not PNG or JPEG")),
-        Err(_) => return Err(format!("{shown} is not a PNG or JPEG image")),
+        Ok(format @ (ImageFormat::Png | ImageFormat::Jpeg | ImageFormat::WebP)) => format,
+        Ok(other) => return Err(format!("{shown} is {other:?}, not PNG, JPEG or WebP")),
+        Err(_) => return Err(format!("{shown} is not a PNG, JPEG or WebP image")),
     };
     // The header first: the dimensions are checked before any pixel buffer.
     let mut header = ImageReader::with_format(Cursor::new(bytes), format);
@@ -176,14 +176,14 @@ pub fn list_folder(path: &Path) -> Result<Vec<PathBuf>, String> {
         let supported = file
             .extension()
             .and_then(|x| x.to_str())
-            .is_some_and(|ext| matches!(ext.to_ascii_lowercase().as_str(), "png" | "jpg" | "jpeg"));
+            .is_some_and(|ext| matches!(ext.to_ascii_lowercase().as_str(), "png" | "jpg" | "jpeg" | "webp"));
         if supported {
             paths.push(file);
         }
     }
     paths.sort();
     if paths.is_empty() {
-        return Err(format!("{}: no PNG or JPEG images", path.display()));
+        return Err(format!("{}: no PNG, JPEG or WebP images", path.display()));
     }
     Ok(paths)
 }
@@ -266,6 +266,13 @@ mod tests {
             .unwrap();
         assert_eq!(load(&png).unwrap().size, [40, 20]);
         assert_eq!(load(&jpeg).unwrap().size, [30, 30]);
+        let webp = dir.path().join("c.webp");
+        let pixels = RgbaImage::from_pixel(7, 5, Rgba([10, 20, 30, 123]));
+        pixels.save_with_format(&webp, ImageFormat::WebP).unwrap();
+        let decoded = load(&webp).unwrap();
+        assert_eq!(decoded.size, [7, 5]);
+        assert_eq!(decoded.rgba, pixels);
+        assert!(list_folder(dir.path()).unwrap().contains(&webp));
     }
 
     #[test]
@@ -313,7 +320,7 @@ mod tests {
         let dir = dir();
         let corrupt = dir.path().join("corrupt.png");
         std::fs::write(&corrupt, b"not an image at all").unwrap();
-        assert!(load(&corrupt).unwrap_err().contains("PNG or JPEG"));
+        assert!(load(&corrupt).unwrap_err().contains("PNG, JPEG or WebP"));
         assert!(load(&dir.path().join("missing.png")).is_err());
         let big = dir.path().join("big.png");
         std::fs::File::create(&big)

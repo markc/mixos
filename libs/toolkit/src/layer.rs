@@ -84,6 +84,8 @@ pub struct SurfaceInfo {
 
 /// An egui program drawn on layer surfaces.
 pub trait LayerProgram {
+    /// Keep waiting when a compositor withholds callbacks (for hidden views).
+    fn strict_frame_callbacks(&self) -> bool { false }
     /// Once per surface, on its context, before its first pass: fonts and
     /// style ([`crate::install`]).
     fn setup(&mut self, ctx: &egui::Context);

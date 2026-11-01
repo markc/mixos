@@ -28,6 +28,9 @@ citizen.workspace = true
 # The app's config directory (AppDirs) and atomic writes of accepted documents.
 config.workspace = true
 egui.workspace = true
+egui-wgpu.workspace = true
+egui_plot.workspace = true
+wgpu.workspace = true
 # Bus deliveries are read off the connection's stream on a plain thread.
 futures.workspace = true
 libc.workspace = true

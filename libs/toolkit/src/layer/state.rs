@@ -448,6 +448,10 @@ impl<P: LayerProgram + 'static> State<P> {
         let now = Instant::now();
         for s in &mut self.surfaces {
             if s.frame_pending && s.pending_since.is_some_and(|t| timing::expired(t, now)) {
+                if self.program.strict_frame_callbacks() {
+                    s.pending_since = None;
+                    continue;
+                }
                 s.frame_pending = false;
                 s.pending_since = None;
                 // The present may have failed silently: redraw once. A
