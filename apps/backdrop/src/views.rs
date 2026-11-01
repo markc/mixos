@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Live views use Bus snapshots only. The wallpaper engine remains beside them.
 pub mod host;
+mod history;
+mod reader;
 mod train;
 mod train_gpu;
 use serde_json::Value;
@@ -16,12 +18,30 @@ pub trait View {
     fn wants_frame(&self, visible: bool, now: Instant) -> Option<Duration>;
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, PartialEq)]
 pub struct Snapshot {
     pub queue: Value,
     pub workers: Value,
     pub error: Option<String>,
-    pub samples: Vec<(f64, f64, f64)>,
+    pub history: Value,
+    pub gate: Value,
+    pub hours: u16,
+}
+impl Default for Snapshot {
+    fn default() -> Self { Self {queue:Value::Null, workers:Value::Null, error:None, history:Value::Null, gate:Value::Null, hours:24} }
+}
+impl Snapshot {
+    pub fn gating_batch(&self) -> Option<&str> {
+        self.queue["batches"].as_array()?.iter().find(|b| b["state"] == "gating")?["batch"].as_str()
+    }
+    pub fn current_gate(&self) -> Option<&Value> {
+        (self.gate["batch"].as_str() == Some(self.gating_batch()?)).then_some(&self.gate)
+    }
+    pub fn gate_progress(&self) -> Option<f32> {
+        let gate = self.current_gate()?;
+        let stages = gate["stages"].as_f64().filter(|v| v.is_finite() && *v > 0.)?;
+        Some((gate["stage"].as_f64()?.max(0.)/stages).clamp(0.,1.) as f32)
+    }
 }
 pub struct Frame {
     pub snapshot: Arc<Snapshot>,
@@ -37,6 +57,8 @@ pub struct State {
     pub snapshot: Arc<Snapshot>,
     pub hosts: std::collections::BTreeMap<u64, Arc<Mutex<host::Host<Train>>>>,
     pub renderer_2d: bool,
+    pub hours: u16,
+    pub history_generation: u64,
 }
 impl Default for State {
     fn default() -> Self {
@@ -48,6 +70,8 @@ impl Default for State {
             snapshot: Arc::default(),
             hosts: Default::default(),
             renderer_2d: false,
+            hours: 24,
+            history_generation: 0,
         }
     }
 }
@@ -68,9 +92,14 @@ impl State {
                 }
                 let mut train = self.train_service.clone();
                 let mut buildd = self.buildd_service.clone();
+                let mut hours = self.hours;
                 if let Some(args) = object.get("args") {
                     let args = args.as_object().ok_or("args must be an object")?;
                     for (key, value) in args {
+                        if key == "zoom" {
+                            hours = match value.as_str() {Some("1h")=>1,Some("24h")=>24,Some("7d")=>168,_=>return Err("zoom must be 1h, 24h or 7d".into())};
+                            continue;
+                        }
                         if key == "renderer" {
                             if !matches!(value.as_str(), Some("2d" | "3d")) {
                                 return Err("renderer must be 2d or 3d".into());
@@ -88,9 +117,10 @@ impl State {
                         }
                     }
                 }
-                if train != self.train_service || buildd != self.buildd_service {
-                    self.snapshot = Arc::default();
+                if train != self.train_service || buildd != self.buildd_service || hours != self.hours {
+                    self.snapshot = Arc::new(Snapshot {hours, ..Default::default()});
                 }
+                self.hours = hours;
                 if let Some(renderer) = body["args"]["renderer"].as_str() {
                     self.renderer_2d = renderer == "2d";
                 }
@@ -198,107 +228,7 @@ pub fn notify(shared: &Mutex<crate::program::Shared>, force: bool) -> bool {
     active
 }
 
-/// One read worker, never the UI/controller. Topic hints coalesce; fallback is
-/// ten seconds. No private database reads and no repaint for identical data.
-pub fn start_reader(
-    handle: citizen::Handle,
-    shared: std::sync::Arc<std::sync::Mutex<crate::program::Shared>>,
-) -> Result<(), String> {
-    let signal = crate::program::lock(&shared).live.refresh.clone();
-    std::thread::Builder::new()
-        .name("backdrop-train".into())
-        .spawn(move || {
-            loop {
-                let pending = crate::program::lock(&signal.0);
-                let (mut pending, _) = signal
-                    .1
-                    .wait_timeout_while(pending, Duration::from_secs(10), |p| !*p)
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                *pending = false;
-                drop(pending);
-                let (active, train, buildd) = {
-                    let state = crate::program::lock(&shared);
-                    (
-                        state.live.selected == "train",
-                        state.live.train_service.clone(),
-                        state.live.buildd_service.clone(),
-                    )
-                };
-                if !active {
-                    continue;
-                }
-                let mut snapshot = (*crate::program::lock(&shared).live.snapshot).clone();
-                let mut errors = Vec::new();
-                for (target, verb) in [(&train, "train.queue"), (&buildd, "buildd.queue")] {
-                    let reply = futures::executor::block_on(handle.call(
-                        target,
-                        verb,
-                        serde_json::json!({}),
-                    ));
-                    let data = reply.and_then(|r| {
-                        if r.rc == 0 {
-                            serde_json::from_str(&r.body).map_err(|e| e.to_string())
-                        } else {
-                            Err(format!("{verb}: {}", r.error.unwrap_or(r.body)))
-                        }
-                    });
-                    match data {
-                        Ok(data) => {
-                            if verb == "train.queue" {
-                                snapshot.queue = data;
-                            } else {
-                                snapshot.workers = data;
-                            }
-                        }
-                        Err(error) => {
-                            errors.push(error);
-                        }
-                    }
-                }
-                {
-                    let mut state = crate::program::lock(&shared);
-                    if state.live.train_service == train && state.live.buildd_service == buildd {
-                        let error = if errors.is_empty() {
-                            None
-                        } else {
-                            Some(errors.join("; "))
-                        };
-                        snapshot.error = error;
-                        let old = &state.live.snapshot;
-                        if old.queue != snapshot.queue
-                            || old.workers != snapshot.workers
-                            || old.error != snapshot.error
-                        {
-                            if old.queue != snapshot.queue {
-                                let hour = std::time::SystemTime::now()
-                                    .duration_since(std::time::UNIX_EPOCH)
-                                    .unwrap_or_default()
-                                    .as_secs_f64()
-                                    / 3600.;
-                                snapshot.samples.retain(|s| s.0 >= hour - 24.);
-                                if snapshot.samples.len() >= 600 {
-                                    snapshot.samples.remove(0);
-                                }
-                                snapshot.samples.push((
-                                    hour,
-                                    snapshot.queue["batches"].as_array().map_or(0, Vec::len) as f64,
-                                    snapshot.queue["recent"].as_array().map_or(0, |r| {
-                                        r.iter().filter(|r| r["state"] == "landed").count()
-                                    }) as f64,
-                                ));
-                            }
-                            state.live.snapshot = Arc::new(snapshot);
-                        }
-                    }
-                }
-                notify(&shared, false);
-                // Bound event bursts to the same low animation rate.
-                std::thread::sleep(Duration::from_millis(100));
-            }
-        })
-        .map(|_| ())
-        .map_err(|e| e.to_string())
-}
+pub use reader::start_reader;
 
 #[cfg(test)]
 mod tests {
@@ -322,5 +252,24 @@ mod tests {
             s.command("backdrop.view.cycle", &json!({"dir":"sideways"}))
                 .is_err()
         );
+    }
+    #[test]
+    fn zoom_arguments_map_to_owner_hours_and_reject_invalid_values_atomically() {
+        let mut state=State::default();
+        for (zoom,hours) in [("1h",1),("24h",24),("7d",168)] {
+            state.command("backdrop.view.set",&json!({"view":"train","args":{"zoom":zoom}})).unwrap();
+            assert_eq!(state.hours,hours);assert_eq!(state.snapshot.hours,hours);
+        }
+        assert!(state.command("backdrop.view.set",&json!({"view":"train","args":{"zoom":"30d"}})).is_err());
+        assert_eq!(state.hours,168);
+    }
+    #[test]
+    fn gate_progress_requires_current_batch_and_a_nonzero_stage_count() {
+        let mut snapshot=Snapshot {queue:json!({"batches":[{"batch":"new","state":"gating"}]}),gate:json!({"batch":"old","stage":1,"stages":2}),..Default::default()};
+        assert_eq!(snapshot.gate_progress(),None);
+        snapshot.gate["batch"]=json!("new");
+        assert_eq!(snapshot.gate_progress(),Some(0.5));
+        snapshot.gate["stages"]=json!(0);
+        assert_eq!(snapshot.gate_progress(),None);
     }
 }

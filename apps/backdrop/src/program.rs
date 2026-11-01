@@ -408,7 +408,11 @@ impl LayerProgram for Backdrop {
             .data(|d| d.get_temp::<u64>(Id::unique(OWNER)))
             .and_then(|owner| lock(&self.shared).live.hosts.get(&owner).cloned());
         if let Some(host) = host {
-            lock(&host).visibility(visible, Instant::now());
+            let mut host = lock(&host);
+            let resumed = visible && host.active && !host.is_visible();
+            host.visibility(visible, Instant::now());
+            drop(host);
+            if resumed { crate::views::refresh(&self.shared); }
         }
     }
     fn repaint_delay(&self, ctx: &egui::Context, delay: Duration) -> Option<Duration> {
@@ -463,8 +467,11 @@ impl LayerProgram for Backdrop {
                 drop(shared);
                 drop(take_slots(ui.ctx()));
                 let mut host = lock(&host);
+                let resumed = !host.is_visible();
                 host.visibility(true, Instant::now());
                 host.draw(ui, &self.budget, renderer_2d, Instant::now());
+                drop(host);
+                if resumed { crate::views::refresh(&self.shared); }
                 self.shows = "train";
                 self.error = None;
                 return;

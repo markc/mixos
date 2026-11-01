@@ -19,6 +19,7 @@ pub struct Host<V> {
     gpu: super::train_gpu::Cache,
 }
 impl<V: View> Host<V> {
+    pub fn is_visible(&self) -> bool { self.active && self.visible }
     pub fn new(view: V, ctx: Option<egui::Context>) -> Self {
         Self {
             view,
@@ -98,7 +99,7 @@ impl<V: View> Host<V> {
                 &[
                     (
                         "sha",
-                        frame.snapshot.queue["main_sha"].as_str().unwrap_or("?"),
+                        frame.snapshot.queue["main"].as_str().unwrap_or("?"),
                     ),
                     (
                         "state",
@@ -113,7 +114,12 @@ impl<V: View> Host<V> {
                 ],
             ));
             ui.label(strings.get("train-track"));
-            if frame.snapshot.queue["stage_progress"].is_null() {
+            if let Some(gate) = frame.snapshot.current_gate() {
+                let label = strings.with("train-gate-stage", &[("stage", &gate["stage"].to_string()), ("stages", &gate["stages"].to_string()), ("last", gate["last"].as_str().unwrap_or("?"))]);
+                let colour = if gate["failing"] == true {ui.visuals().error_fg_color} else {ui.visuals().selection.bg_fill};
+                if let Some(progress) = frame.snapshot.gate_progress() {ui.add(egui::ProgressBar::new(progress).fill(colour));}
+                if gate["failing"] == true {ui.colored_label(colour,label);} else {ui.label(label);}
+            } else if frame.snapshot.gating_batch().is_some() {
                 ui.label(strings.get("train-stage-unavailable"));
             }
             if let Some(error) = &frame.snapshot.error {
@@ -150,31 +156,24 @@ impl<V: View> Host<V> {
         // Allocate an overlay at the bottom, without giving a view a Ui.
         ui.add_space((ui.available_height() - 190.).max(0.));
         egui::Frame::popup(ui.style()).show(ui, |ui| {
-            ui.label(strings.get("train-history-stub"));
+            ui.label(strings.with("train-history", &[("hours", &frame.snapshot.hours.to_string())]));
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs_f64()
-                / 3600.;
-            egui_plot::Plot::new("train-live-samples")
+                ;
+            let series = super::history::series(&frame.snapshot.history,frame.snapshot.hours,now);
+            if frame.snapshot.history.is_null() {ui.label(strings.get("train-history-unavailable"));}
+            egui_plot::Plot::new(("train-history",frame.snapshot.hours))
                 .height(140.)
-                .include_x(-24.)
+                .include_x(-f64::from(frame.snapshot.hours))
                 .include_x(0.)
                 .allow_zoom(false)
                 .allow_drag(false)
                 .allow_scroll(false)
                 .show(ui, |plot| {
-                    for (key, landing) in [("train-gates", false), ("train-landings", true)] {
-                        let points: Vec<[f64; 2]> = frame
-                            .snapshot
-                            .samples
-                            .iter()
-                            .rev()
-                            .take(600)
-                            .map(|s| [s.0 - now, if landing { s.2 } else { s.1 }])
-                            .collect();
-                        plot.line(egui_plot::Line::new(strings.get(key), points));
-                    }
+                    plot.line(egui_plot::Line::new(strings.get("train-landings"),series.landings));
+                    plot.points(egui_plot::Points::new(strings.get("train-gates"),series.gate_minutes).radius(3.));
                 });
         });
     }
