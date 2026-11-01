@@ -773,9 +773,7 @@ pub fn section_card(
             }
         }
     }
-    let cards = section
-        .items
-        .filter(|i| i.style == pages::ItemStyle::Cards);
+    let cards = section.items.filter(|i| i.style == pages::ItemStyle::Cards);
     if rows.is_empty() && cards.is_some() {
         if let Some(items) = cards {
             item_cards(ui, engine, items, look);
@@ -842,7 +840,9 @@ pub fn section_card(
 fn item_cards(ui: &mut Ui, engine: &Engine, items: pages::Items, look: &Look) {
     let list = engine.items(items.source);
     if list.is_empty() {
-        card(ui, look, |ui| plain_row(ui, look, &label(items.empty), None));
+        card(ui, look, |ui| {
+            plain_row(ui, look, &label(items.empty), None)
+        });
         return;
     }
     let width = ui.available_width();
