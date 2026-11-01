@@ -273,7 +273,10 @@ fn power_rows_name_their_backends_and_refuse_writes() {
     blocked("screen_off", "compd screen-off timer");
     blocked("suspend_ac", "hostd idle and suspend");
     // No battery is reported yet, so the battery-only row is not shown.
-    assert!(rows.iter().all(|(id, _)| *id != "suspend_battery"), "{rows:?}");
+    assert!(
+        rows.iter().all(|(id, _)| *id != "suspend_battery"),
+        "{rows:?}"
+    );
     rig.h
         .state_mut()
         .as_mut()
