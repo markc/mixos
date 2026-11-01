@@ -1,0 +1,149 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- http: the small HTTP/1.1 subset dlnad speaks to renderers. Pure functions:
+-- request parsing, Range, and response heads. dlnad.mix owns the sockets.
+-- Every response closes the connection (Connection: close), so there is no
+-- keep-alive or pipelining state to carry between requests.
+
+$REASONS = {
+  "200": "OK", "206": "Partial Content", "400": "Bad Request", "404": "Not Found",
+  "405": "Method Not Allowed", "412": "Precondition Failed", "413": "Payload Too Large",
+  "416": "Range Not Satisfiable", "431": "Request Header Fields Too Large",
+  "500": "Internal Server Error", "501": "Not Implemented"
+}
+
+-- Header block limit and SOAP body limit, in bytes.
+$MAX_HEAD = 16384
+$MAX_BODY = 262144
+
+-- Try to take one complete request from $buf (a lossy-decoded string).
+-- Returns {state: "more"} while incomplete, {state: "error", status} for a
+-- request to refuse, or {state: "ok", req: {method, target, path, query,
+-- version, headers (lower-cased names), body}}.
+fn parse_request($buf)
+  $end = pos("\r\n\r\n", $buf)
+  if $end == 0 then
+    if byte_length($buf) > $MAX_HEAD then return {state: "error", status: 431} end
+    return {state: "more"}
+  end
+  $head = substr($buf, 0, $end - 1)
+  -- A complete head can arrive in one large frame: check it here too.
+  if byte_length($head) > $MAX_HEAD then return {state: "error", status: 431} end
+  $rest = substr($buf, $end + 3)
+  $lines = split($head, "\r\n")
+  $parts = split(trim($lines[0]), " ")
+  if length($parts) != 3 then return {state: "error", status: 400} end
+  $h = {}
+  for $l in slice($lines, 1, length($lines))
+    $p = pos(":", $l)
+    if $p > 0 then
+      $k = lower(trim(substr($l, 0, $p - 1)))
+      $v = trim(substr($l, $p))
+      if $h[$k] != nil then $v = $h[$k] .. ", " .. $v end
+      $h[$k] = $v
+    end
+  end
+  -- Chunked request bodies are not offered (renderers send Content-Length).
+  if $h["transfer-encoding"] != nil and lower($h["transfer-encoding"]) != "identity" then
+    return {state: "error", status: 501}
+  end
+  $len = 0
+  if $h["content-length"] != nil then
+    $len = to_number($h["content-length"])
+    if $len == nil or $len < 0 then return {state: "error", status: 400} end
+    if $len > $MAX_BODY then return {state: "error", status: 413} end
+  end
+  if byte_length($rest) < $len then return {state: "more"} end
+  $target = $parts[1]
+  $path = $target
+  $query = ""
+  $q = pos("?", $target)
+  if $q > 0 then
+    $path = substr($target, 0, $q - 1)
+    $query = substr($target, $q)
+  end
+  return {state: "ok", req: {method: upper($parts[0]), target: $target, path: $path, query: $query,
+    version: $parts[2], headers: $h, body: $rest}}
+end
+
+-- The relative media path a request path names (percent-decoded), or nil
+-- when it is malformed or tries to leave the media root.
+fn media_rel($path)
+  if not starts_with($path, "/") then return nil end
+  $segs = []
+  for $s in split(substr($path, 1), "/")
+    if $s != "" then
+      $d = url_decode($s)
+      if $d == "." or $d == ".." or contains($d, "/") or contains($d, "\u{0}") or starts_with($d, ".") then return nil end
+      push($segs, $d)
+    end
+  end
+  if length($segs) == 0 then return nil end
+  return join($segs, "/")
+end
+
+-- Parse a Range header against a size: nil for no (or an ignorable) range,
+-- {start, end} inclusive for one satisfiable range, {bad: true} for 416.
+-- Multiple ranges are not offered: the first one is served.
+fn byte_range($value, $size)
+  if $value == nil then return nil end
+  $v = trim($value)
+  if not starts_with(lower($v), "bytes=") then return nil end
+  -- An empty file satisfies no range.
+  if $size == 0 then return {bad: true} end
+  $spec = trim(split(substr($v, 6), ",")[0])
+  $dash = pos("-", $spec)
+  if $dash == 0 then return {bad: true} end
+  $a = trim(substr($spec, 0, $dash - 1))
+  $b = trim(substr($spec, $dash))
+  if $a == "" then
+    -- suffix: the last N bytes
+    $n = to_number($b)
+    if $n == nil or $n <= 0 then return {bad: true} end
+    if $n > $size then $n = $size end
+    return {start: $size - $n, end: $size - 1}
+  end
+  $s = to_number($a)
+  if $s == nil or $s < 0 or $s >= $size then return {bad: true} end
+  $e = $size - 1
+  if $b != "" then
+    $e = to_number($b)
+    if $e == nil or $e < $s then return {bad: true} end
+    if $e > $size - 1 then $e = $size - 1 end
+  end
+  return {start: floor($s), end: floor($e)}
+end
+
+-- $n bytes of a file from byte $off (fewer at EOF). Needs mix >= 0.118.0's
+-- read_file_bytes options form.
+fn read_range($path, $off, $n)
+  return read_file_bytes($path, {offset: $off, max: $n})
+end
+
+fn http_date($t)
+  return date_format($t, "%a, %d %b %Y %H:%M:%S GMT", {utc: true})
+end
+
+-- A response head. $headers a list of [name, value] pairs.
+fn response_head($status, $headers)
+  $o = "HTTP/1.1 " .. to_string($status) .. " " .. ($REASONS[to_string($status)] ?? "Status") .. "\r\n"
+  for $p in $headers
+    $o = $o .. $p[0] .. ": " .. to_string($p[1]) .. "\r\n"
+  end
+  return $o .. "Date: " .. http_date(time()) .. "\r\nServer: MixOS/1 UPnP/1.0 dlnad/1\r\nConnection: close\r\n\r\n"
+end
+
+-- A complete small response (head + body string).
+fn small($status, $type, $body, $extra, $method)
+  $hs = [["Content-Type", $type], ["Content-Length", byte_length($body)]]
+  for $p in $extra
+    push($hs, $p)
+  end
+  if $method == "HEAD" then return response_head($status, $hs) end
+  return response_head($status, $hs) .. $body
+end
+
+fn refuse($status, $method)
+  $body = to_string($status) .. " " .. ($REASONS[to_string($status)] ?? "Error") .. "\n"
+  return small($status, "text/plain; charset=utf-8", $body, [], $method)
+end

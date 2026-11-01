@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+[Unit]
+Description=MixOS DLNA media server
+Documentation=https://mixos.dev/dlnad/
+Wants=noded.service network-online.target
+After=noded.service network-online.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+# The media directory must be readable by this user: world-readable, or add
+# its group with a drop-in (SupplementaryGroups=).
+Environment=MIXOS_ETC=@{etc}
+Environment=MIXOS_NODE_CONFIG=@{etc}/node.conf.mix
+Environment=DLNAD_CONF=@{etc}/dlnad/dlnad.conf.mix
+Environment=DLNAD_STATE=%S/mixos/dlnad
+Environment=MIX_STATS=off
+StateDirectory=mixos/dlnad
+ExecStart=@{prefix}/bin/mix --serve @{prefix}/lib/dlnad/dlnad.mix --name dlnad
+KillMode=control-group
+TimeoutStopSec=10
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectControlGroups=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

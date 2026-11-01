@@ -1,0 +1,154 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- dlna_test: dlnad's wire formats, offline. Builds a fixture media tree and
+-- drives lib/dlna.mix and lib/http.mix directly: Browse (children, paging,
+-- metadata, hidden and unknown files, subtitles, bad ids), SOAP parsing and
+-- envelopes, descriptions, request parsing, the media path jail, Range, and
+-- SSDP NOTIFY / M-SEARCH matching.
+-- Run from the checkout root: mix services/dlnad/tests/dlna_test.mix
+-- Prints PASS/FAIL per check; exits 1 on any failure.
+
+$D = require("../scripts/lib/dlna.mix")
+$H = require("../scripts/lib/http.mix")
+$tmp = "/var/tmp/dlnad-test." .. uuid()
+$results = []
+
+fn check($name, $ok)
+  push($results, {name: $name, ok: $ok})
+  print((if $ok then "PASS " else "FAIL " end) .. $name)
+end
+
+-- Fixture: two films, a series folder with a subtitle, junk to hide.
+mkdir($tmp .. "/Show One")
+write_file($tmp .. "/Alpha.Film.2024.mkv", "0123456789")
+write_file($tmp .. "/Beta & Co.mp4", "abcdef")
+write_file($tmp .. "/notes.txt", "not media")
+write_file($tmp .. "/.stfolder", "")
+write_file($tmp .. "/Show One/Show.One.S01E01.mkv", "xxxxxxxxxxxxxxxxxxxx")
+write_file($tmp .. "/Show One/Show.One.S01E01.srt", "1\n00:00:01,000 --> 00:00:02,000\nhi\n")
+$base = "http://192.0.2.30:8200"
+
+-- children / browse
+$kids = $D.children($tmp, "")
+check("root lists folder first, then films, hides dotfiles and non-media",
+  length($kids) == 3 and $kids[0].kind == "container" and $kids[0].name == "Show One" and
+  $kids[1].name == "Alpha.Film.2024.mkv" and $kids[2].name == "Beta & Co.mp4")
+$r = $D.browse($tmp, {object_id: "0", flag: "BrowseDirectChildren", start: 0, count: 0}, $base, "Test")
+check("browse root totals", $r.ok and $r.total == 3 and $r.returned == 3)
+check("container carries childCount and storageFolder", contains($r.result, "childCount=\"1\"") and contains($r.result, "object.container.storageFolder"))
+check("item has DLNA protocolInfo and size", contains($r.result, "http-get:*:video/x-matroska:DLNA.ORG_OP=01") and contains($r.result, "size=\"10\""))
+check("ampersand escaped in title and url", contains($r.result, "Beta &amp; Co") and contains($r.result, "/Beta%20%26%20Co.mp4"))
+check("video title drops the extension", contains($r.result, "<dc:title>Alpha.Film.2024</dc:title>"))
+$p = $D.browse($tmp, {object_id: "0", flag: "BrowseDirectChildren", start: 1, count: 1}, $base, "Test")
+check("paging start/count", $p.returned == 1 and $p.total == 3 and contains($p.result, "Alpha.Film") and not contains($p.result, "Beta"))
+$s = $D.browse($tmp, {object_id: "/Show One", flag: "BrowseDirectChildren", start: 0, count: 0}, $base, "Test")
+check("subfolder lists the episode, not the .srt as an item", $s.ok and $s.total == 1)
+check("episode offers its subtitle", contains($s.result, "sec:CaptionInfoEx") and contains($s.result, "/Show%20One/Show.One.S01E01.srt"))
+check("episode parent id is the folder", contains($s.result, "parentID=\"/Show One\""))
+$m = $D.browse($tmp, {object_id: "0", flag: "BrowseMetadata", start: 0, count: 0}, $base, "Test Server")
+check("root metadata", $m.ok and $m.total == 1 and contains($m.result, "id=\"0\" parentID=\"-1\"") and contains($m.result, "Test Server"))
+$mi = $D.browse($tmp, {object_id: "/Show One/Show.One.S01E01.mkv", flag: "BrowseMetadata", start: 0, count: 0}, $base, "T")
+check("item metadata", $mi.ok and contains($mi.result, "<item id=\"/Show One/Show.One.S01E01.mkv\""))
+check("unknown id is 701", $D.browse($tmp, {object_id: "/nope", flag: "BrowseDirectChildren", start: 0, count: 0}, $base, "T").code == 701)
+check("traversal id is 701", $D.browse($tmp, {object_id: "/../etc", flag: "BrowseMetadata", start: 0, count: 0}, $base, "T").code == 701)
+check("foreign id is 701", $D.browse($tmp, {object_id: "64$0", flag: "BrowseDirectChildren", start: 0, count: 0}, $base, "T").code == 701)
+check("children of a file is 710", $D.browse($tmp, {object_id: "/Beta & Co.mp4", flag: "BrowseDirectChildren", start: 0, count: 0}, $base, "T").code == 710)
+check("bad flag is 720", $D.browse($tmp, {object_id: "0", flag: "Nope", start: 0, count: 0}, $base, "T").code == 720)
+
+-- SOAP
+$env = "<?xml version=\"1.0\"?><s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\"><s:Body><u:Browse xmlns:u=\"urn:schemas-upnp-org:service:ContentDirectory:1\"><ObjectID>/Show One</ObjectID><BrowseFlag>BrowseDirectChildren</BrowseFlag><Filter>*</Filter><StartingIndex>0</StartingIndex><RequestedCount>10</RequestedCount><SortCriteria/></u:Browse></s:Body></s:Envelope>"
+$q = $D.parse_browse($env)
+check("parse_browse fields", $q.object_id == "/Show One" and $q.flag == "BrowseDirectChildren" and $q.start == 0 and $q.count == 10)
+check("soap action from header", $D.soap_action({soapaction: "\"urn:schemas-upnp-org:service:ContentDirectory:1#Browse\""}, "") == "Browse")
+check("soap action from body", $D.soap_action({}, $env) == "Browse")
+$ctl = $D.control("ContentDirectory", {soapaction: "\"urn:schemas-upnp-org:service:ContentDirectory:1#Browse\""}, $env, {root: $tmp, base: $base, title: "T"})
+check("control Browse 200 with escaped DIDL", $ctl.status == 200 and contains($ctl.body, "<Result>&lt;DIDL-Lite") and contains($ctl.body, "<TotalMatches>1</TotalMatches>"))
+check("escaped ObjectID unescapes", $D.parse_browse(replace($env, "/Show One", "/A &amp; B")).object_id == "/A & B")
+$bad = $D.control("ContentDirectory", {soapaction: "\"urn:x#Explode\""}, "", {root: $tmp, base: $base, title: "T"})
+check("unknown action is a 401 fault", $bad.status == 500 and contains($bad.body, "<errorCode>401</errorCode>"))
+$pi = $D.control("ConnectionManager", {soapaction: "\"urn:x#GetProtocolInfo\""}, "", {root: $tmp, base: $base, title: "T"})
+check("GetProtocolInfo lists mkv", $pi.status == 200 and contains($pi.body, "video/x-matroska"))
+check("GetSystemUpdateID", contains($D.control("ContentDirectory", {soapaction: "#GetSystemUpdateID"}, "", {root: $tmp, base: $base, title: "T"}).body, "<Id>"))
+
+-- descriptions parse as XML
+$desc = $D.description({uuid: "11111111-2222-3333-4444-555555555555", name: "Lounge & Co"})
+check("description is XML with the UDN and escaped name", xml_parse($desc) != nil and contains($desc, "uuid:11111111-2222") and contains($desc, "Lounge &amp; Co"))
+check("ContentDirectory SCPD is XML", xml_parse($D.content_directory_scpd()) != nil)
+check("ConnectionManager SCPD is XML", xml_parse($D.connection_manager_scpd()) != nil)
+
+-- HTTP request parsing
+check("incomplete head waits", $H.parse_request("GET / HTTP/1.1\r\nHost: x\r\n").state == "more")
+$g = $H.parse_request("GET /a%20b.mkv?x=1 HTTP/1.1\r\nHost: x\r\nRange: bytes=0-\r\n\r\n")
+check("GET parsed", $g.state == "ok" and $g.req.method == "GET" and $g.req.path == "/a%20b.mkv" and $g.req.query == "x=1" and $g.req.headers["range"] == "bytes=0-")
+check("POST waits for its body", $H.parse_request("POST /ctl/ContentDirectory HTTP/1.1\r\nContent-Length: 10\r\n\r\n12345").state == "more")
+check("POST complete", $H.parse_request("POST /ctl/ContentDirectory HTTP/1.1\r\nContent-Length: 5\r\n\r\n12345").req.body == "12345")
+check("bad request line", $H.parse_request("NONSENSE\r\n\r\n").status == 400)
+check("oversized body refused", $H.parse_request("POST / HTTP/1.1\r\nContent-Length: 99999999\r\n\r\n").status == 413)
+
+-- media path jail
+check("media_rel decodes", $H.media_rel("/Show%20One/Show.One.S01E01.mkv") == "Show One/Show.One.S01E01.mkv")
+check("media_rel refuses ..", $H.media_rel("/Show%20One/../../etc/passwd") == nil)
+check("media_rel refuses encoded ..", $H.media_rel("/%2e%2e/etc/passwd") == nil)
+check("media_rel refuses encoded slash", $H.media_rel("/a%2Fb") == nil)
+check("media_rel refuses dotfiles", $H.media_rel("/.stfolder") == nil)
+
+-- Range
+check("no range", $H.byte_range(nil, 100) == nil)
+check("open range", $H.byte_range("bytes=10-", 100).start == 10 and $H.byte_range("bytes=10-", 100).end == 99)
+check("closed range clamps", $H.byte_range("bytes=10-500", 100).end == 99)
+check("suffix range", $H.byte_range("bytes=-20", 100).start == 80)
+check("start past end is 416", $H.byte_range("bytes=100-", 100).bad == true)
+check("inverted is 416", $H.byte_range("bytes=50-10", 100).bad == true)
+check("non-bytes unit ignored", $H.byte_range("items=1-2", 100) == nil)
+check("response head", starts_with($H.response_head(206, [["Content-Length", 5]]), "HTTP/1.1 206 Partial Content\r\nContent-Length: 5\r\n"))
+check("HEAD has no body", not contains($H.small(200, "text/plain", "hello", [], "HEAD"), "hello"))
+
+-- SSDP
+$u = "11111111-2222-3333-4444-555555555555"
+$n = $D.ssdp_notify($u, "upnp:rootdevice", "alive", "http://192.0.2.30:8200/description.xml", 1800)
+check("alive NOTIFY", contains($n, "NTS: ssdp:alive") and contains($n, "USN: uuid:" .. $u .. "::upnp:rootdevice") and contains($n, "max-age=1800") and ends_with($n, "\r\n\r\n"))
+check("byebye has no LOCATION", not contains($D.ssdp_notify($u, "uuid:" .. $u, "byebye", "x", 1), "LOCATION"))
+check("uuid NT uses the bare USN", contains($D.ssdp_notify($u, "uuid:" .. $u, "alive", "x", 1), "USN: uuid:" .. $u .. "\r\n"))
+$ms = $D.ssdp_parse("M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: \"ssdp:discover\"\r\nMX: 2\r\nST: urn:schemas-upnp-org:device:MediaServer:1\r\n\r\n")
+check("M-SEARCH for MediaServer matches", deep_eq($D.msearch_targets($ms, $u), ["urn:schemas-upnp-org:device:MediaServer:1"]))
+$all = $D.ssdp_parse("M-SEARCH * HTTP/1.1\r\nMAN: \"ssdp:discover\"\r\nST: ssdp:all\r\n\r\n")
+check("ssdp:all answers every type", length($D.msearch_targets($all, $u)) == 5)
+$other = $D.ssdp_parse("M-SEARCH * HTTP/1.1\r\nMAN: \"ssdp:discover\"\r\nST: urn:schemas-upnp-org:device:MediaRenderer:1\r\n\r\n")
+check("renderer search ignored", length($D.msearch_targets($other, $u)) == 0)
+check("NOTIFY is not a search", length($D.msearch_targets($D.ssdp_parse($n), $u)) == 0)
+check("M-SEARCH reply", contains($D.msearch_reply($u, "upnp:rootdevice", "http://x/d.xml", 1800, "now"), "ST: upnp:rootdevice\r\nUSN: uuid:" .. $u .. "::upnp:rootdevice"))
+
+-- review fixes (GLM, Gemini 2026-11-01)
+mkdir($tmp .. "/.hidden")
+write_file($tmp .. "/.hidden/secret.mkv", "s")
+check("hidden id refused", $D.id_rel("/.hidden") == nil and $D.browse($tmp, {object_id: "/.hidden", flag: "BrowseDirectChildren", start: 0, count: 0}, $base, "T").code == 701)
+check("empty-segment id refused", $D.id_rel("//x") == nil)
+check("negative StartingIndex is 402", $D.browse($tmp, {object_id: "0", flag: "BrowseDirectChildren", start: -1, count: 0}, $base, "T").code == 402)
+$outside = $tmp .. ".outside"
+mkdir($outside)
+write_file($outside .. "/leak.mkv", "leak")
+run_argv_must(["ln", "-s", $outside .. "/leak.mkv", $tmp .. "/Link.mkv"])
+run_argv_must(["ln", "-s", $outside, $tmp .. "/LinkDir"])
+run_argv_must(["ln", "-s", $tmp .. "/Beta & Co.mp4", $tmp .. "/Inside.mp4"])
+$names = map($D.children($tmp, ""), fn($e) = $e.name)
+check("symlinks out of the root are hidden", not contains($names, "Link.mkv") and not contains($names, "LinkDir"))
+check("symlink inside the root is listed", contains($names, "Inside.mp4"))
+check("symlinked dir out of the root is 701", $D.browse($tmp, {object_id: "/LinkDir", flag: "BrowseDirectChildren", start: 0, count: 0}, $base, "T").code == 701)
+check("confined refuses an escaping link", not $D.confined($tmp, "Link.mkv") and $D.confined($tmp, "Inside.mp4"))
+check("range on an empty file is 416", $H.byte_range("bytes=-100", 0).bad == true and $H.byte_range("bytes=0-", 0).bad == true)
+check("chunked request is 501", $H.parse_request("POST /ctl/ContentDirectory HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n").status == 501)
+check("oversized complete head is 431", $H.parse_request("GET /" .. repeat("a", 20000) .. " HTTP/1.1\r\n\r\n").status == 431)
+check("upper-case MAN accepted", length($D.msearch_targets($D.ssdp_parse("M-SEARCH * HTTP/1.1\r\nMAN: \"SSDP:DISCOVER\"\r\nST: ssdp:all\r\n\r\n"), $u)) == 5)
+check("subfolder update id is its own mtime", $s.update_id == floor(stat($tmp .. "/Show One").mtime))
+
+-- Fable review: registrar stub, X_DLNADOC after UDN
+check("registrar SCPD is XML", xml_parse($D.registrar_scpd()) != nil)
+check("description lists the registrar", contains($desc, "X_MS_MediaReceiverRegistrar:1"))
+check("X_DLNADOC follows UDN", pos("X_DLNADOC", $desc) > pos("<UDN>", $desc))
+$reg = $D.control("X_MS_MediaReceiverRegistrar", {soapaction: "\"urn:microsoft.com:service:X_MS_MediaReceiverRegistrar:1#IsAuthorized\""}, "", {root: $tmp, base: $base, title: "T"})
+check("IsAuthorized answers 1", $reg.status == 200 and contains($reg.body, "<Result>1</Result>") and contains($reg.body, "urn:microsoft.com:service:X_MS_MediaReceiverRegistrar:1"))
+
+run_argv_must(["rm", "-rf", $tmp, $outside])
+$failed = filter($results, fn($r) = not $r.ok)
+print(to_string(length($results) - length($failed)) .. "/" .. to_string(length($results)) .. " passed")
+if length($failed) > 0 then exit(1) end

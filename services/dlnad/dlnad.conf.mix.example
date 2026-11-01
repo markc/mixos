@@ -1,0 +1,21 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- dlnad configuration: copy to <etc>/dlnad/dlnad.conf.mix (usually
+-- /etc/mixos/dlnad/dlnad.conf.mix). Strict data, loaded with load_data.
+{
+  -- The directory to serve. Keep it flat or shallow: every folder is a
+  -- browse level on the TV.
+  media_root: "/srv/media",
+  -- The LAN IPv4 your renderers reach. HTTP binds it and SSDP joins the
+  -- discovery group on its interface, so on a multi-homed host this picks
+  -- the network the TV is on.
+  listen: "192.0.2.30",
+  port: 8200,
+  -- The friendly name; dlnad.identity.rotate appends four hex digits.
+  name: "MixOS Media",
+  ssdp: true,
+  -- Renderers that never join the SSDP multicast group (some TVs) still see
+  -- the server if their address is listed: every advert is also unicast.
+  renderers: ["192.0.2.212"],
+  announce_s: 60,
+  max_age: 1800
+}
