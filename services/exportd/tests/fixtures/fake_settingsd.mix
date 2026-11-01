@@ -41,6 +41,6 @@ on fake.publish
   $got = json_parse(read_file($dir .. "/get.json"))
   $body = {schema: 3, binding: $got.binding, incarnation: $got.incarnation, revision: $got.revision,
     changed_at: $got.revision, values: $got.values, resolved: $got.resolved}
-  publish("settingsd.desktop.keys.default." .. $prefix, json_encode($body), {retain: true})
+  publish("settingsd.desktop.keys.default." .. $prefix, if $event.args.encoding == "map" then $body else json_encode($body) end, {retain: true})
   reply(json_encode({published: $prefix}))
 end

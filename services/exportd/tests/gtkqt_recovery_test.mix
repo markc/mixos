@@ -34,7 +34,7 @@ fn start_case($cfg, $home, $state)
   return {pid: $pid, name: $name}
 end
 fn stop_case($case)
-  kill($case.pid, 15)
+  $signalled = kill($case.pid, 15)
   check("citizen stops", eventually(fn() = not process_alive($case.pid)))
 end
 fn status($case)
@@ -79,7 +79,7 @@ try
   check("HOME config untouched", len(ls($home .. "/.config")) == 0)
   stop_case($case)
 
-  for $bad in ["{broken", "{\"files\":[],\"keys\":{},\"paused\":false}"]
+  for $bad in ["{broken", "{\"files\":[],\"keys\":{},\"paused\":false}", "{\"files\":{\"outside\":{}},\"keys\":{},\"paused\":false}"]
     $dir = $tmp .. "/corrupt-" .. uuid()
     mkdir($dir .. "/state")
     write_file($dir .. "/state/records.json", $bad)

@@ -55,7 +55,7 @@ try
   check("no stale window prefix in the appearance burst", contains(read_file($root .. "/com.system76.CosmicTheme.Dark.Builder/v2/gaps"), "17"))
   check("mode follows without restart", read_file($root .. "/com.system76.CosmicTheme.Mode/v1/is_dark") == "false")
   $calls = call("authority", "fake.calls", {}).v
-  call("authority", "fake.publish", {prefix: "window"})
+  call("authority", "fake.publish", {prefix: "window", encoding: "map"})
   sleep(0.3)
   check("second prefix of the revision does not reread", deep_eq(call("authority", "fake.calls", {}).v, $calls))
   authority("3", "dark", 23, "one")

@@ -128,11 +128,12 @@ end
 fn on_topic($status, $cache, $body)
   if $status.paused then return {status: $status, cache: $cache} end
   $b = $body
-  if type($b) == "string" then
+  for $decode = 1 to 2
+    if type($b) != "string" then break end
     try $b = json_parse($b) catch $m return {status: $status, cache: $cache} end
   end
   if type($b) != "map" or not deep_eq($b.binding, $binding) then return {status: $status, cache: $cache} end
-  $rev = revision_of($body)
+  $rev = revision_of($b)
   $done = to_number(to_string($status.revision ?? ""))
   if $b.incarnation == $status.incarnation and $rev != nil and $done != nil and $rev <= $done and $status.error == nil then
     return {status: $status, cache: $cache}

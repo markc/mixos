@@ -105,9 +105,11 @@ fn reconcile($why)
   end
 end
 
-fn on_topic($prefix)
-  $body = $event.body
-  if type($body) == "string" then
+fn on_topic($prefix, $body)
+  -- Native JSON bodies and publish(topic, json_encode(body)) both occur:
+  -- the latter delivers a JSON string containing JSON, rather than a map.
+  for $decode = 1 to 2
+    if type($body) != "string" then break end
     try $body = json_parse($body) catch $m return nil end
   end
   if type($body) != "map" or not same_binding($body.binding) then return nil end
@@ -129,19 +131,19 @@ for $p in $PREFIXES
 end
 
 on settingsd.desktop.keys.default.appearance
-  on_topic("appearance")
+  on_topic("appearance", $event.args ?? $event.body)
 end
 
 on settingsd.desktop.keys.default.window
-  on_topic("window")
+  on_topic("window", $event.args ?? $event.body)
 end
 
 on settingsd.desktop.keys.default.wallpaper
-  on_topic("wallpaper")
+  on_topic("wallpaper", $event.args ?? $event.body)
 end
 
 on settingsd.desktop.keys.default.shell.panels
-  on_topic("shell.panels")
+  on_topic("shell.panels", $event.args ?? $event.body)
 end
 
 on bus.connected

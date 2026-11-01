@@ -507,7 +507,10 @@ async fn only_changed_keys_are_signalled_and_stale_projections_are_silent() -> a
     assert_eq!(next_signal(&mut signals).await?.1, COLOR_SCHEME);
     let (_, key, value) = next_signal(&mut signals).await?;
     assert_eq!(key, ACCENT_COLOR);
-    assert_eq!(innermost(&value), &Value::from((ACCENT[0], ACCENT[1], ACCENT[2])));
+    assert_eq!(
+        innermost(&value),
+        &Value::from((ACCENT[0], ACCENT[1], ACCENT[2]))
+    );
 
     task.abort();
     Ok(())
