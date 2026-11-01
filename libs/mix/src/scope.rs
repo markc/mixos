@@ -930,9 +930,9 @@ impl Scope {
         }
     }
 
-    /// Native parameter binding always targets the callee's local frame.
+    /// Native parameter/capture binding always targets the callee's local frame.
     #[inline]
-    pub(crate) fn bind_parameter(&mut self, name: String, value: Value) {
+    pub(crate) fn bind_function_local(&mut self, name: String, value: Value) {
         if let Some(frame) = self.frames.last_mut() {
             frame.insert(name, value);
         }

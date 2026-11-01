@@ -16762,7 +16762,7 @@ impl Evaluator {
         self.scope.enter_sync_function_frame();
         for (i, param) in func.params.iter().enumerate() {
             self.scope
-                .bind_parameter(param.name.clone(), args[i].clone());
+                .bind_function_local(param.name.clone(), args[i].clone());
         }
         let cache_start = self.ctx.var_slot_cache.len();
         self.ctx.function_depth += 1;
@@ -17302,13 +17302,13 @@ impl Evaluator {
 
             // Inject captured frame for inner-frame lambdas.
             // Named functions always have `captures: None` so this loop
-            // is a no-op for them — keeping the named-function code path
-            // byte-identical (the Phase 1.4 tripwire). Params are bound
-            // *after* captures so a param of the same name correctly
+            // is a no-op for them. Captures always bind locally, before
+            // any declaration can run and reject a captured name.
+            // Params are bound *after* captures so a param of the same name correctly
             // shadows the capture.
             if let Some(caps) = &func.captures {
                 for (k, v) in caps {
-                    self.scope.set_in_current(k.clone(), v.clone());
+                    self.scope.bind_function_local(k.clone(), v.clone());
                 }
             }
 
