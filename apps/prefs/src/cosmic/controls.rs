@@ -130,7 +130,9 @@ impl Labels {
         };
         Self {
             title: lay(title, 14.0, width),
-            description: description.filter(|d| !d.is_empty()).map(|d| lay(d, 12.0, width)),
+            description: description
+                .filter(|d| !d.is_empty())
+                .map(|d| lay(d, 12.0, width)),
             reason: reason.map(|r| lay(r, 12.0, width - 16.0)),
         }
     }
@@ -187,7 +189,10 @@ fn control_width(ui: &Ui, engine: &Engine, control: &Control) -> f32 {
         }
         Control::Slider { .. } | Control::Steps { .. } => 360.0,
         Control::Pick { key, .. } => {
-            let text = engine.store.text(key).unwrap_or_else(|| label("pick-default"));
+            let text = engine
+                .store
+                .text(key)
+                .unwrap_or_else(|| label("pick-default"));
             text_width(ui, &text, 14.0) + 28.0
         }
         Control::Page { .. } | Control::Drawer { .. } => 16.0,
@@ -198,7 +203,11 @@ fn control_width(ui: &Ui, engine: &Engine, control: &Control) -> f32 {
 
 fn text_width(ui: &Ui, text: &str, size: f32) -> f32 {
     ui.painter()
-        .layout_no_wrap(text.to_owned(), egui::FontId::proportional(size), Color32::WHITE)
+        .layout_no_wrap(
+            text.to_owned(),
+            egui::FontId::proportional(size),
+            Color32::WHITE,
+        )
         .size()
         .x
 }
@@ -237,11 +246,14 @@ fn goes(control: &Control) -> bool {
 }
 
 /// One row: labels, control, the disabled line, and the landing ring.
+/// `quiet` drops the row's own reason: its section already said it.
+#[allow(clippy::too_many_arguments)]
 pub fn row(
     ui: &mut Ui,
     engine: &Engine,
     page: &Page,
     row: &Row,
+    quiet: bool,
     look: &Look,
     events: &mut Vec<UiEvent>,
 ) {
@@ -251,7 +263,7 @@ pub fn row(
         Control::Info => description(page.id, row.id).or_else(|| Some(String::new())),
         _ => description(page.id, row.id),
     };
-    let reason = engine.row_reason(page, row);
+    let reason = engine.row_reason(page, row).filter(|_| !quiet);
     let pad = look.row_pad();
     let response = egui::Frame::NONE
         .inner_margin(Margin {
@@ -286,7 +298,10 @@ pub fn row(
                     look,
                     pos2(rect.min.x, rect.center().y - label_height / 2.0),
                 );
-                let slot = Rect::from_min_max(pos2(rect.max.x - cw.max(16.0) - look.xs, rect.min.y), rect.max);
+                let slot = Rect::from_min_max(
+                    pos2(rect.max.x - cw.max(16.0) - look.xs, rect.min.y),
+                    rect.max,
+                );
                 ui.scope_builder(
                     egui::UiBuilder::new()
                         .max_rect(slot)
@@ -662,7 +677,11 @@ fn chevron(ui: &mut Ui, look: &Look) {
 /// bound (spec 4 [C4], [C13]).
 fn icon_button(ui: &mut Ui, icon: Icon, enabled: bool, name: &str, look: &Look) -> Response {
     let enabled = enabled && ui.is_enabled();
-    let sense = if enabled { Sense::click() } else { Sense::hover() };
+    let sense = if enabled {
+        Sense::click()
+    } else {
+        Sense::hover()
+    };
     let (rect, response) = ui.allocate_exact_size(Vec2::splat(24.0), sense);
     if response.hovered() && enabled {
         ui.painter()
@@ -720,14 +739,12 @@ fn dropdown(
         ink,
     );
     focus_ring(ui, &response, rect, look.r_s, look);
-    response.widget_info(|| {
-        WidgetInfo::selected(Role::ComboBox, ui.is_enabled(), false, name)
-    });
+    response.widget_info(|| WidgetInfo::selected(Role::ComboBox, ui.is_enabled(), false, name));
     egui::Popup::menu(&response).show(|ui| {
         ui.set_min_width(width);
         for (i, option) in options.iter().enumerate() {
             let selected = index == Some(i);
-            if ui.selectable_label(selected, &labels[i]).clicked() && !selected {
+            if toolkit::selectable(ui, selected, &labels[i]).clicked() && !selected {
                 set(events, key, lit(option.value));
             }
         }
@@ -816,10 +833,8 @@ fn images(
         let response = ui.interact(rect, ui.scope_id().with(("image", key, i)), Sense::click());
         ui.painter()
             .rect_filled(rect, Look::radius(look.r_s), look.window);
-        let window = Rect::from_min_size(
-            rect.min + vec2(cell * 0.17, 24.0),
-            vec2(cell * 0.66, 60.0),
-        );
+        let window =
+            Rect::from_min_size(rect.min + vec2(cell * 0.17, 24.0), vec2(cell * 0.66, 60.0));
         ui.painter()
             .rect_filled(window, Look::radius(radius), look.card);
         ui.painter().rect_filled(
@@ -1088,8 +1103,24 @@ fn slider(
     let shown = held.unwrap_or(value);
     let mut out = None;
     ui.spacing_mut().item_spacing.x = look.xs;
-    if let Some(end) = end {
-        ui.label(RichText::new(label(end)).size(14.0).color(look.text));
+    // Read left to right: the value, the start label, the rail, the end
+    // label, whichever way the row lays it out.
+    let rtl = ui.layout().prefer_right_to_left();
+    let text = |ui: &mut Ui, s: String| {
+        ui.label(RichText::new(s).size(14.0).color(look.text));
+    };
+    let value_text = show_value.then(|| format!("{shown:.0}"));
+    if rtl {
+        if let Some(end) = end {
+            text(ui, label(end));
+        }
+    } else {
+        if let Some(v) = &value_text {
+            text(ui, v.clone());
+        }
+        if let Some(start) = start {
+            text(ui, label(start));
+        }
     }
     let width = 250.0_f32.min(ui.available_width() * 0.5).max(120.0);
     let (rect, response) = ui.allocate_exact_size(vec2(width, 24.0), Sense::click_and_drag());
@@ -1136,15 +1167,15 @@ fn slider(
         out = Some(at(pos));
     }
     response.widget_info(|| WidgetInfo::slider(ui.is_enabled(), shown, name));
-    if let Some(start) = start {
-        ui.label(RichText::new(label(start)).size(14.0).color(look.text));
-    }
-    if show_value {
-        ui.label(
-            RichText::new(format!("{shown:.0}"))
-                .size(14.0)
-                .color(look.text),
-        );
+    if rtl {
+        if let Some(start) = start {
+            text(ui, label(start));
+        }
+        if let Some(v) = value_text {
+            text(ui, v);
+        }
+    } else if let Some(end) = end {
+        text(ui, label(end));
     }
     out.filter(|v| (v - value).abs() > f64::EPSILON)
 }
