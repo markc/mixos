@@ -12,6 +12,14 @@ pub use bus::native_client::SupervisedClient as Client;
 use std::time::Duration;
 
 pub const BOOTSTRAP_BUDGET: Duration = Duration::from_secs(1);
+
+/// Inspect the application refusal carried by the host's supervised Bus call.
+/// Callers use this only for settings.apply, then request an authoritative read.
+pub fn wrong_target_refusal(error: &bus::SupervisedError) -> bool {
+    serde_json::from_str::<serde_json::Value>(&error.to_string())
+        .ok()
+        .is_some_and(|body| body["status"] == "wrong_target")
+}
 /// Owner stamp written by noded on reserved-publisher topics (services/noded
 /// `BROKER_SERVICE_HEADER`). Read only from the verified broker frame.
 const BROKER_SERVICE_HEADER: &str = "broker_service";
@@ -164,9 +172,10 @@ impl Consumer {
     /// Complete decoding on the host's worker, then feed it on the UI loop.
     /// A queued delivery still checks the current binding and connection here.
     pub fn decoded_delivery(&mut self, delivery: Decoded) -> Option<Work> {
-        if delivery.binding.profile != self.binding().profile
+        if delivery.binding != *self.binding()
             || self.generation() != Some(delivery.generation)
         {
+            self.drop_delivery();
             return None;
         }
         match delivery.result {
