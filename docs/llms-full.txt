@@ -34086,8 +34086,11 @@ udp_send(host, port, payload[, {from, ttl}]) -> bytes sent
 ```
 
 Listeners require the `ws` feature, like TCP listeners; subscriptions require
-Linux. No new dependencies. IPv4 literals only for bind, interface and groups;
-IPv6 groups refuse `UDP_ARGUMENT`. Send destinations can resolve hostnames.
+Linux. No new dependencies; listener creation/binding uses the same optional
+socket2 dependency as TCP listeners, including native BSD/macOS address layouts.
+IPv4 literals only for bind, interface, groups and `udp_send_from` destinations;
+IPv6 groups or destinations and hostnames there refuse `UDP_ARGUMENT`.
+The one-shot `udp_send` continues to resolve hostnames.
 `join` is a multicast group string or list. `iface` defaults to `0.0.0.0`
 (kernel choice) and selects both membership and multicast egress. `reuse:true`
 sets SO_REUSEADDR and SO_REUSEPORT before bind. `ttl` is an integer 0..255;
@@ -34102,14 +34105,21 @@ Each datagram arrives at `on command` as
 The ordered FIFO, source limit, overflow terminal `{watch, closed:{reason}}`,
 and reload/exit cancellation follow tcp_on. The reader parks without polling
 timers. Handles share TCP's id sequence and 1024 server socket permits.
+Queued datagrams store raw payloads plus six bytes of IPv4 peer metadata;
+the 64 MiB FIFO byte limit counts that storage, without JSON expansion.
+On Linux, asynchronous peer errors (`ECONNREFUSED`, `ENETUNREACH`,
+`EHOSTUNREACH`, `ECONNRESET`) do not close the shared listener.
 `udp_close` returns false for an unknown handle; a subscribed handle raises
 `SOCKET_SUBSCRIBED` and must be closed with `udp_unwatch(source)`.
 
 `udp_send_from` explicitly selects the listening socket, preserving its source
 port and interface even while subscribed. It sends nonblocking: a full send
-buffer raises `UDP_IO`. A distinct builtin keeps handle sends clear and avoids
+buffer raises `UDP_IO`. Its destination must be an IPv4 literal, so handlers
+never block on DNS. A distinct builtin keeps handle sends clear and avoids
 overloading the one-shot send options. `udp_send`'s optional `from` binds a
 source IPv4 address and sets multicast egress; `ttl` sets multicast TTL.
+Omitting `from` preserves the kernel's multicast interface choice. Socket
+failures in the four-argument form raise the same `UDP_*` codes as listeners.
 Its original three-argument form and `udp_recv(port, opts)` are unchanged.
 
 ```mix
@@ -40817,6 +40827,12 @@ loads unchanged.
 
 ### Fixed
 
+- UDP listeners bind portably on non-Linux Unix via socket2, retain their
+  subscription after asynchronous peer errors, and close/subscribe atomically.
+  `udp_send_from` requires an IPv4 literal to avoid blocking handler DNS.
+  `udp_send` sets multicast egress only when `from` is supplied and its options
+  form uses `UDP_*` socket error codes. Queued datagrams store raw payloads
+  with fixed-size peer metadata instead of JSON number arrays.
 - A TCP source or listener that closes on its own (send timeout, overflow, peer
   close, error) is unsubscribed before its terminal event is published, so a
   script that sees the terminal can watch the same key again at once. The

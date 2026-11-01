@@ -69,6 +69,12 @@ generated: by docs/_build/gen-site.mix from libs/mix/CHANGELOG.md; do not edit
 
 ### Fixed
 
+- UDP listeners bind portably on non-Linux Unix via socket2, retain their
+  subscription after asynchronous peer errors, and close/subscribe atomically.
+  `udp_send_from` requires an IPv4 literal to avoid blocking handler DNS.
+  `udp_send` sets multicast egress only when `from` is supplied and its options
+  form uses `UDP_*` socket error codes. Queued datagrams store raw payloads
+  with fixed-size peer metadata instead of JSON number arrays.
 - A TCP source or listener that closes on its own (send timeout, overflow, peer
   close, error) is unsubscribed before its terminal event is published, so a
   script that sees the terminal can watch the same key again at once. The

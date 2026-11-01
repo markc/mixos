@@ -1878,8 +1878,11 @@ udp_unwatch(source) -&gt; nil
 udp_send(host, port, payload[, {from, ttl}]) -&gt; bytes sent
 </code></pre>
 <p>Listeners require the <code>ws</code> feature, like TCP listeners; subscriptions require
-Linux. No new dependencies. IPv4 literals only for bind, interface and groups;
-IPv6 groups refuse <code>UDP_ARGUMENT</code>. Send destinations can resolve hostnames.
+Linux. No new dependencies; listener creation/binding uses the same optional
+socket2 dependency as TCP listeners, including native BSD/macOS address layouts.
+IPv4 literals only for bind, interface, groups and <code>udp_send_from</code> destinations;
+IPv6 groups or destinations and hostnames there refuse <code>UDP_ARGUMENT</code>.
+The one-shot <code>udp_send</code> continues to resolve hostnames.
 <code>join</code> is a multicast group string or list. <code>iface</code> defaults to <code>0.0.0.0</code>
 (kernel choice) and selects both membership and multicast egress. <code>reuse:true</code>
 sets SO_REUSEADDR and SO_REUSEPORT before bind. <code>ttl</code> is an integer 0..255;
@@ -1893,13 +1896,20 @@ options raise <code>UDP_ARGUMENT</code>; socket failures raise <code>UDP_IO</cod
 The ordered FIFO, source limit, overflow terminal <code>{watch, closed:{reason}}</code>,
 and reload/exit cancellation follow tcp_on. The reader parks without polling
 timers. Handles share TCP's id sequence and 1024 server socket permits.
+Queued datagrams store raw payloads plus six bytes of IPv4 peer metadata;
+the 64 MiB FIFO byte limit counts that storage, without JSON expansion.
+On Linux, asynchronous peer errors (<code>ECONNREFUSED</code>, <code>ENETUNREACH</code>,
+<code>EHOSTUNREACH</code>, <code>ECONNRESET</code>) do not close the shared listener.
 <code>udp_close</code> returns false for an unknown handle; a subscribed handle raises
 <code>SOCKET_SUBSCRIBED</code> and must be closed with <code>udp_unwatch(source)</code>.</p>
 <p><code>udp_send_from</code> explicitly selects the listening socket, preserving its source
 port and interface even while subscribed. It sends nonblocking: a full send
-buffer raises <code>UDP_IO</code>. A distinct builtin keeps handle sends clear and avoids
+buffer raises <code>UDP_IO</code>. Its destination must be an IPv4 literal, so handlers
+never block on DNS. A distinct builtin keeps handle sends clear and avoids
 overloading the one-shot send options. <code>udp_send</code>'s optional <code>from</code> binds a
 source IPv4 address and sets multicast egress; <code>ttl</code> sets multicast TTL.
+Omitting <code>from</code> preserves the kernel's multicast interface choice. Socket
+failures in the four-argument form raise the same <code>UDP_*</code> codes as listeners.
 Its original three-argument form and <code>udp_recv(port, opts)</code> are unchanged.</p>
 <pre><code class="language-mix">$sock = udp_listen("0.0.0.0", 1900, {
   join: "239.255.255.250", iface: "192.0.2.10", reuse: true, ttl: 4, loop: true
