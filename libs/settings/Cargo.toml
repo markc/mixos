@@ -36,5 +36,7 @@ config = { workspace = true, optional = true }
 libc = { version = "=0.2.189", optional = true }
 
 [dev-dependencies]
+futures-util.workspace = true
+tokio-tungstenite.workspace = true
 strict.workspace = true
 tempfile.workspace = true

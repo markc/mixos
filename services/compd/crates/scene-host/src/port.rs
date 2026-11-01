@@ -1140,8 +1140,7 @@ async fn serve(
                         Ok(Err(error)) if event.kind.ends_with(".ui.menu.popup") || event.kind.ends_with(".execute") => tracing::warn!(%error, to = %event.to, "window chrome call failed"),
                         Err(_) if event.kind.ends_with(".ui.menu.popup") || event.kind.ends_with(".execute") => tracing::warn!(to = %event.to, "window chrome call timed out"),
                         Ok(Err(error)) if event.kind == "settings.apply" => {
-                            if serde_json::from_str::<Value>(&error.to_string())
-                                .ok().is_some_and(|body| body["status"] == "wrong_target") {
+                            if settings::native::wrong_target_refusal(&error) {
                                 refresh_settings = true;
                             }
                             tracing::warn!(%error, "corner panel mode not saved");

@@ -41,6 +41,17 @@ fn ready(request: Request) -> Completion<u64> {
     let rev = request.update().snapshot().revision.0;
     request.prepare_registered(|_| Ok(rev))
 }
+#[test]
+fn explicit_refresh_drains_authority_read_into_worker_jobs() {
+    let mut session = session();
+    let (_, jobs) = session.handle(Event::Refresh, Some(1));
+    let read = jobs.work.expect("production handle must export refresh work");
+    assert_eq!(read.kind(), settings::consumer::WorkKind::Read);
+    let advertised = Binding { instance: "authority".into(), profile: "default".into() };
+    let fault = Diagnostic::new("wrong_target", "native", serde_json::json!({"status":"wrong_target", "binding":advertised}).to_string());
+    let (_, jobs) = session.handle(Event::Rpc(read, Err(fault)), Some(1));
+    assert_eq!(jobs.work.unwrap().binding(), &advertised);
+}
 fn decoded(rev: u64) -> Decoded {
     decoded_snapshot(snapshot(rev, false))
 }
@@ -83,10 +94,8 @@ fn foreign_snapshot_profile_cannot_activate_despite_matching_broker_stamp() {
     let (change, jobs) = session.handle(Event::Delivery(decoded_snapshot(foreign)), Some(1));
     assert!(change.is_none());
     assert!(jobs.prepare.is_none());
-    assert_eq!(
-        session.host().consumer().fault().unwrap().code,
-        "wrong_target"
-    );
+    assert!(session.host().consumer().fault().is_none());
+    assert_eq!(session.host().consumer().dropped_deliveries(), 1);
     assert!(session.host().presentation().is_none());
 }
 

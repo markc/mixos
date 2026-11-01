@@ -126,6 +126,8 @@ pub struct Consumer {
     subscribed: bool,
     confirmed: bool,
     rebind_pending: bool,
+    rebind_hops: u8,
+    dropped_deliveries: u64,
     work: Option<Work>,
     read_again: bool,
     buffered: Option<Snapshot>,
@@ -181,6 +183,8 @@ impl Consumer {
             subscribed: false,
             confirmed: false,
             rebind_pending: false,
+            rebind_hops: 0,
+            dropped_deliveries: 0,
             work: None,
             read_again: false,
             buffered: None,
@@ -445,10 +449,10 @@ impl Consumer {
         })
     }
     /// A new instance is only a hint until a bound read succeeds. Keep the
-    /// profile fixed and allow at most one unconfirmed adoption, even across
+    /// profile fixed and allow at most three redirects per episode, even across
     /// connection changes. Old UI data remains last-good, never current.
     fn adopt_instance(&mut self, binding: &Binding) -> bool {
-        if self.rebind_pending
+        if self.rebind_hops >= 3
             || binding.profile != self.binding.profile
             || binding.instance == self.binding.instance
             || binding.validate().is_err()
@@ -458,6 +462,7 @@ impl Consumer {
         self.binding.instance.clone_from(&binding.instance);
         self.reducer = Reducer::new(self.binding.clone());
         self.rebind_pending = true;
+        self.rebind_hops += 1;
         self.confirmed = false;
         self.pending = None;
         self.work = None;
@@ -484,6 +489,10 @@ impl Consumer {
     /// Malformed canonical data is distinct from a dropped delivery. Bound its
     /// recovery and do not reset an existing deadline for every bad frame.
     pub fn rejected_delivery(&mut self, fault: Diagnostic) -> Option<Work> {
+        if self.rebind_pending {
+            self.drop_delivery();
+            return None;
+        }
         self.fallback_serial = 0;
         self.pending = None;
         self.confirmed = false;
@@ -497,6 +506,13 @@ impl Consumer {
             self.read_again = true;
         }
         None
+    }
+    /// Frames discarded without disturbing authority work or staged data.
+    pub fn dropped_deliveries(&self) -> u64 {
+        self.dropped_deliveries
+    }
+    pub(crate) fn drop_delivery(&mut self) {
+        self.dropped_deliveries = self.dropped_deliveries.saturating_add(1);
     }
     fn fail(&mut self, fault: Diagnostic) {
         // Every failed completion/refusal revokes staged activation, including
@@ -550,7 +566,11 @@ impl Consumer {
                 {
                     return self.start(WorkKind::Read);
                 }
-                self.fail(fault.clone());
+                let mut fault = fault.clone();
+                if self.rebind_hops >= 3 {
+                    fault.message = "Authority redirect limit exceeded (3 hops)".into();
+                }
+                self.fail(fault);
                 None
             }
             (_, Err(fault)) => {
@@ -613,6 +633,7 @@ impl Consumer {
                     Decision::Install | Decision::Duplicate | Decision::Stale => {
                         self.confirmed = true;
                         self.rebind_pending = false;
+                        self.rebind_hops = 0;
                         self.fault = None;
                         self.failures = 0;
                         self.retry_deadline = None;
@@ -692,17 +713,8 @@ impl Consumer {
             return None;
         }
         if snapshot.binding != self.binding {
-            if self.adopt_instance(&snapshot.binding) {
-                return self.refresh();
-            }
-            // While confirming an adoption, old/competing instance pushes
-            // cannot cancel its read or cause a reverse adoption.
-            if self.rebind_pending
-                && snapshot.binding.profile == self.binding.profile
-                && snapshot.binding.validate().is_ok()
-            {
-                return None;
-            }
+            self.drop_delivery();
+            return None;
         }
         if let Err(fault) = self.check(&snapshot) {
             return self.rejected_delivery(fault);
