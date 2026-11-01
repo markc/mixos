@@ -2,6 +2,18 @@
 # Intentional default-layout changes since relocation baseline f91c2a1f.
 # Hashes cover the rendered bytes, checked by tests/layout_templates_test.mix.
 {
+  "services/exportd/units/exportd-cosmic@.service": {
+    "reason": "add the component-owned COSMIC settings exporter unit",
+    "sha256": "11c38e9506a546e0232abd30f7c0054d265c54f072bdd13925fffdd026ec5c6e"
+  },
+  "services/exportd/units/exportd-gtkqt@.service": {
+    "reason": "add the component-owned GTK and Qt settings exporter unit",
+    "sha256": "ed2171c60b35e704aac913a05dc3f01bed03a9adfde2382378d7bcf6f4144844"
+  },
+  "services/exportd/units/exportd-kde.service": {
+    "reason": "add the component-owned KDE settings exporter unit",
+    "sha256": "96c6a7c8b6cd53ed6199c59046f7fe825ebc819af2eb0a2915453541a4cb9782"
+  },
   "services/indexd/units/indexd.service": {
     "reason": "read node config from @{etc} like every other service unit; @{prefix}/etc is not where desks and test nodes keep it",
     "sha256": "2378bd4054581f97a84e0c6c5c5dd7560120817063b7a262a94a07372e5e7e86"
