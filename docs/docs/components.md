@@ -110,7 +110,7 @@ checked separately by the layering gate.
 | [workshop](https://github.com/markc/mixos/blob/main/apps/workshop/Cargo.toml) | workshop | app | desktop | public | 0.1.2 |
 | [inspector](https://github.com/markc/mixos/blob/main/apps/workshop/crates/inspector/Cargo.toml) | workshop | app | core | none | 0.1.2 |
 | [mesh-sign](https://github.com/markc/mixos/blob/main/cli/mesh-sign/Cargo.toml) | mesh-sign | cli | core | none | 0.1.2 |
-| [mix-shell](https://github.com/markc/mixos/blob/main/cli/mix-shell/Cargo.toml) | mix-shell | cli | mix | public | 0.118.0 |
+| [mix-shell](https://github.com/markc/mixos/blob/main/cli/mix-shell/Cargo.toml) | mix-shell | cli | mix | public | 0.119.0 |
 | [mixos-mcp](https://github.com/markc/mixos/blob/main/cli/mixos-mcp/Cargo.toml) | mixos-mcp | cli | core | none | 0.1.2 |
 | [system](https://github.com/markc/mixos/blob/main/cli/system/Cargo.toml) | system | cli | core | none | 0.1.2 |
 | [action](https://github.com/markc/mixos/blob/main/libs/action/Cargo.toml) | action | lib | core | public | 0.3.0 |
@@ -133,7 +133,7 @@ checked separately by the layering gate.
 | [maildoc](https://github.com/markc/mixos/blob/main/libs/maildoc/Cargo.toml) | maildoc | lib | core | none | 0.1.2 |
 | [mds](https://github.com/markc/mixos/blob/main/libs/mds/Cargo.toml) | mds | lib | core | none | 0.1.2 |
 | [mimedb](https://github.com/markc/mixos/blob/main/libs/mimedb/Cargo.toml) | mimedb | lib | mix | none | 0.1.2 |
-| [mix](https://github.com/markc/mixos/blob/main/libs/mix/Cargo.toml) | mix | lib | mix | public | 0.118.0 |
+| [mix](https://github.com/markc/mixos/blob/main/libs/mix/Cargo.toml) | mix | lib | mix | public | 0.119.0 |
 | [paths](https://github.com/markc/mixos/blob/main/libs/paths/Cargo.toml) | paths | lib | bus | none | 0.1.2 |
 | [props](https://github.com/markc/mixos/blob/main/libs/props/Cargo.toml) | props | lib | core | none | 0.1.2 |
 | [scene](https://github.com/markc/mixos/blob/main/libs/scene/Cargo.toml) | scene | lib | core | none | 0.1.2 |

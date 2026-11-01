@@ -54,6 +54,9 @@ enum MeshState {
 /// The verified connection must be OWNED here rather than unwrapped: its
 /// client borrows from it, and dropping the connection to keep only the client
 /// would close the socket underneath.
+// Both variants own a substantial connection; the shared lane already lives in
+// an Arc, so boxing a variant would add another allocation and indirection.
+#[allow(clippy::large_enum_variant)]
 pub(crate) enum Lane {
     Verified(::bus::native_client::VerifiedConnection),
     Anonymous(::bus::native_client::NodedClient),
