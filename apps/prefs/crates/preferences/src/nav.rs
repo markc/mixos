@@ -258,9 +258,21 @@ impl Engine {
     /// why not) it takes input.
     pub fn row_view(&self, page: &pages::Page, row: &pages::Row) -> Value {
         let key = row.control.key();
-        json!({"id": row.id, "title": self.label(&pages::row_title(page.id, row.id), &[]),
+        let mut view = json!({"id": row.id, "title": self.label(&pages::row_title(page.id, row.id), &[]),
             "control": row.control, "key": key, "value": key.and_then(|k| self.store.value(k)),
-            "shown": row.show.holds(&self.store), "blocked": self.row_blocked(page, row)})
+            "shown": row.show.holds(&self.store), "blocked": self.row_blocked(page, row)});
+        if let Some(source) = row.value_from {
+            view["readout"] = json!(self.live_value(source));
+        }
+        // An ordered list's entries as shown, in order.
+        if let Control::Ordered { key, sources, .. } = row.control {
+            view["entries"] = self
+                .entries(key)
+                .iter()
+                .map(|v| json!({"value": v, "label": self.entry_label(sources, v)}))
+                .collect();
+        }
+        view
     }
 
     /// `prefs.page`: the open page (or `page`) with every section and row.

@@ -760,6 +760,14 @@ pub fn section_card(
         }
         return;
     }
+    // A lone list of values to add (a drawer's) draws its own search and
+    // cards.
+    if let [row] = rows
+        && let Control::Append { key, source, more } = row.control
+    {
+        controls::append(ui, engine, page, row, key, source, more, look, events);
+        return;
+    }
     // Every row off for its own reasons: say each reason once, above the
     // card, and keep the rows quiet (Fable P1).
     let reasons: Vec<Option<String>> = rows.iter().map(|r| engine.row_reason(page, r)).collect();
@@ -817,6 +825,28 @@ pub fn section_card(
                 }
                 continue;
             }
+            // An ordered list is one row per entry, in the same card.
+            if let Control::Ordered { key, sources, .. } = row.control {
+                if !quiet && let Some(reason) = engine.row_reason(page, row) {
+                    egui::Frame::NONE
+                        .inner_margin(egui::Margin::symmetric(look.row_pad() as i8, 4))
+                        .show(ui, |ui| notice(ui, look, &reason));
+                    first = false;
+                }
+                let enabled = engine.row_blocked(page, row).is_none();
+                let entries = engine.entries(key);
+                for (index, value) in entries.iter().enumerate() {
+                    if !first {
+                        divider(ui, look);
+                    }
+                    first = false;
+                    let text = engine.entry_label(sources, value);
+                    controls::ordered_entry(
+                        ui, engine, key, &entries, index, &text, enabled, look, events,
+                    );
+                }
+                continue;
+            }
             if !first {
                 divider(ui, look);
             }
@@ -829,6 +859,29 @@ pub fn section_card(
             live_items(ui, engine, page, items, &mut first, look, events);
         }
     });
+    // An ordered list's Add button, right-aligned under its card.
+    for row in rows {
+        if let Control::Ordered {
+            key,
+            add: Some(drawer),
+            ..
+        } = row.control
+        {
+            let (_, max) = engine.list_bounds(key);
+            let room = engine.entries(key).len() < max;
+            let enabled = engine.row_blocked(page, row).is_none() && room;
+            let text = label(&pages::drawer_title(page.id, drawer));
+            ui.add_space(look.xs);
+            ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
+                if ui
+                    .add_enabled(enabled, controls::standard_button(&text, look))
+                    .clicked()
+                {
+                    events.push(UiEvent::Drawer(Some(drawer)));
+                }
+            });
+        }
+    }
     if let Some(items) = cards {
         ui.add_space(look.xs);
         item_cards(ui, engine, items, look);
