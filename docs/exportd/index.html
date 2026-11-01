@@ -268,8 +268,9 @@ settingsd computes; an exporter names them and computes none.</p>
 and every libcosmic app watch those files, so the desktop follows at once.</p>
 <pre><code class="language-text">mix --serve &lt;prefix&gt;/lib/exportd/cosmic.mix --name exportd-cosmic
 </code></pre>
-<p>The unit <code>exportd-cosmic@.service</code> runs it in a session, as that
-session's user.</p>
+<p>The unit <code>exportd-cosmic@.service</code> runs it in a session under the
+<code>mixos</code> account. A session using another account needs a <code>User=</code> drop-in;
+the template is not enabled or started automatically.</p>
 <h3 id="what-it-writes">What it writes</h3>
 <table><thead><tr><th>Settings</th><th>cosmic-config</th></tr></thead><tbody>
 <tr><td><code>appearance.mode</code> (resolved; <code>auto</code> is settingsd's)</td><td><code>com.system76.CosmicTheme.Mode</code> v1 <code>is_dark</code>; <code>auto_switch</code> always <code>false</code></td></tr>
@@ -373,6 +374,7 @@ how it looks.</p>
 <h3 id="environment-1">Environment</h3>
 <table><thead><tr><th>Variable</th><th>Default</th></tr></thead><tbody>
 <tr><td><code>MIXOS_SETTINGS_INSTANCE</code></td><td>this node's name</td></tr>
+<tr><td><code>MIXOS_SETTINGS_SERVICE</code></td><td><code>settingsd</code>; the read endpoint (reserved settings topics still come from settingsd)</td></tr>
 <tr><td><code>MIXOS_KDE_EXPORT_DRY=1</code></td><td>plan and report, write nothing</td></tr>
 <tr><td><code>MIXOS_KDE_EXPORT_STATE</code></td><td><code>$XDG_STATE_HOME/mixos/kde-export</code> (the undo record, saved scheme files, the pause marker)</td></tr>
 <tr><td><code>MIXOS_KDE_EXPORT_RECONFIGURE=0</code></td><td>no D-Bus calls</td></tr>
