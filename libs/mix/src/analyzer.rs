@@ -4729,18 +4729,33 @@ fn check_global_declarations(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis
                         | StmtKind::Loop { .. }
                         | StmtKind::Select { .. }
                 );
-            if let StmtKind::TryCatch { try_body, catch, finally_body } = &s.kind {
+            if let StmtKind::TryCatch {
+                try_body,
+                catch,
+                finally_body,
+            } = &s.kind
+            {
                 conditional(try_body, nested, ctx, a);
-                if let Some(c) = catch { conditional(&c.body, true, ctx, a); }
-                if let Some(b) = finally_body { conditional(b, nested, ctx, a); }
-            } else { for body in stmt_bodies(&s.kind) {
-                conditional(
-                    body,
-                    inner && !matches!(s.kind, StmtKind::FunctionDef { .. } | StmtKind::On { .. }),
-                    ctx,
-                    a,
-                );
-            } }
+                if let Some(c) = catch {
+                    conditional(&c.body, true, ctx, a);
+                }
+                if let Some(b) = finally_body {
+                    conditional(b, nested, ctx, a);
+                }
+            } else {
+                for body in stmt_bodies(&s.kind) {
+                    conditional(
+                        body,
+                        inner
+                            && !matches!(
+                                s.kind,
+                                StmtKind::FunctionDef { .. } | StmtKind::On { .. }
+                            ),
+                        ctx,
+                        a,
+                    );
+                }
+            }
             walk_stmt_exprs(s, &mut |e| {
                 for_each_embedded_stmt_list(e, true, &mut |b| conditional(b, nested, ctx, a))
             });
