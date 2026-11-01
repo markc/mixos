@@ -139,7 +139,7 @@ impl Gpu {
             .find(|m| *m == wgpu::CompositeAlphaMode::PreMultiplied)
             .or_else(|| caps.alpha_modes.first().copied())
             .unwrap_or(wgpu::CompositeAlphaMode::Auto);
-        let renderer = egui_wgpu::Renderer::new(
+        let mut renderer = egui_wgpu::Renderer::new(
             &d.device,
             format,
             egui_wgpu::RendererOptions {
@@ -149,6 +149,7 @@ impl Gpu {
                 predictable_texture_filtering: false,
             },
         );
+        renderer.callback_resources.insert(format);
         Ok(Target {
             surface,
             renderer,
