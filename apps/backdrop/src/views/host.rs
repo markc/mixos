@@ -231,7 +231,10 @@ mod tests {
         b.visibility(false, now);
         a.event(snapshot.clone(), false, now);
         b.event(snapshot.clone(), false, now);
-        let latest = Arc::new(Snapshot { queue:serde_json::json!({"queued":[{"branch":"work/b"}]}), ..Default::default() });
+        let latest = Arc::new(Snapshot {
+            queue: serde_json::json!({"queued":[{"branch":"work/b"}]}),
+            ..Default::default()
+        });
         b.event(latest.clone(), false, now);
         assert!(a.view.draw(true, now).is_some());
         assert!(b.view.draw(false, now).is_none());
