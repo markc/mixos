@@ -867,8 +867,8 @@ impl Engine {
                 if self
                     .agents
                     .node(&node)
-                    .is_none_or(|entry| entry.list_ticket != Some(ticket))
-                => {
+                    .is_none_or(|entry| entry.list_ticket != Some(ticket)) =>
+            {
                 return;
             }
             _ => {}
