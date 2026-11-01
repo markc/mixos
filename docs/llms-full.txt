@@ -848,7 +848,7 @@ checked separately by the layering gate.
 | [workshop](https://github.com/markc/mixos/blob/main/apps/workshop/Cargo.toml) | workshop | app | desktop | public | 0.1.2 |
 | [inspector](https://github.com/markc/mixos/blob/main/apps/workshop/crates/inspector/Cargo.toml) | workshop | app | core | none | 0.1.2 |
 | [mesh-sign](https://github.com/markc/mixos/blob/main/cli/mesh-sign/Cargo.toml) | mesh-sign | cli | core | none | 0.1.2 |
-| [mix-shell](https://github.com/markc/mixos/blob/main/cli/mix-shell/Cargo.toml) | mix-shell | cli | mix | public | 0.118.0 |
+| [mix-shell](https://github.com/markc/mixos/blob/main/cli/mix-shell/Cargo.toml) | mix-shell | cli | mix | public | 0.119.0 |
 | [mixos-mcp](https://github.com/markc/mixos/blob/main/cli/mixos-mcp/Cargo.toml) | mixos-mcp | cli | core | none | 0.1.2 |
 | [system](https://github.com/markc/mixos/blob/main/cli/system/Cargo.toml) | system | cli | core | none | 0.1.2 |
 | [action](https://github.com/markc/mixos/blob/main/libs/action/Cargo.toml) | action | lib | core | public | 0.3.0 |
@@ -871,7 +871,7 @@ checked separately by the layering gate.
 | [maildoc](https://github.com/markc/mixos/blob/main/libs/maildoc/Cargo.toml) | maildoc | lib | core | none | 0.1.2 |
 | [mds](https://github.com/markc/mixos/blob/main/libs/mds/Cargo.toml) | mds | lib | core | none | 0.1.2 |
 | [mimedb](https://github.com/markc/mixos/blob/main/libs/mimedb/Cargo.toml) | mimedb | lib | mix | none | 0.1.2 |
-| [mix](https://github.com/markc/mixos/blob/main/libs/mix/Cargo.toml) | mix | lib | mix | public | 0.118.0 |
+| [mix](https://github.com/markc/mixos/blob/main/libs/mix/Cargo.toml) | mix | lib | mix | public | 0.119.0 |
 | [paths](https://github.com/markc/mixos/blob/main/libs/paths/Cargo.toml) | paths | lib | bus | none | 0.1.2 |
 | [props](https://github.com/markc/mixos/blob/main/libs/props/Cargo.toml) | props | lib | core | none | 0.1.2 |
 | [scene](https://github.com/markc/mixos/blob/main/libs/scene/Cargo.toml) | scene | lib | core | none | 0.1.2 |
@@ -7820,6 +7820,73 @@ findings decided the shape:
   follows it.
 - Many controls wait on backends. Preferences ships with those controls
   disabled, and each backend lands on its own schedule.
+
+---
+
+<!-- page: https://mixos.dev/docs/decisions/2026-11-01-global-declaration/ (source: https://mixos.dev/docs/decisions/2026-11-01-global-declaration.md) -->
+
+# Explicit global declarations
+
+Status: accepted. Decision: Mark, 2026-11-01. Language: Mix 0.119.0.
+
+Function assignment defaults to a local binding while reads fall through to
+the program-global frame. A helper doing `$conns = delete($conns, $key)`
+therefore reads the global map but stores a local copy. This has caused
+repeated connection leaks. Handler bodies and helpers previously behaved
+differently for the same assignment.
+
+## Decision
+
+Add the reserved statement `global $a, $b`. Once executed, assignments to
+these names, including self-concat, compound assignments, in-place mutations
+and index/field/path writes, target the program-global frame through the
+same shared-global machinery used by serve handlers. Assignment creates a
+missing global; a missing read remains an undefined-variable error.
+
+Declarations belong to the current function invocation, including recursive
+calls independently. They are not inherited by called functions or lambdas.
+Lambdas must declare too: one rule applies to all function invocations.
+Declaration inside control flow is allowed and idempotent; it takes effect
+only when reached. Lint checks textual order without evaluating conditions,
+and notes conditional declarations.
+
+Reject a parameter (`GLOBAL_PARAM`), a name already in the current local
+frame, including captures and module injections (`GLOBAL_AFTER_LOCAL`), a
+declared global used as a loop/catch/parse binder (`GLOBAL_BINDER`), and the
+runtime-owned names `$event`, `$rc`, `$result`, `$reply`
+(`GLOBAL_RUNTIME_NAME`). Module-variable errors explain that module variables
+are not globals. A same-named local and declaration cannot coexist.
+
+At ordinary program or module top level the declaration is a no-op by
+construction. In a handler it is honoured: in Class C, an otherwise new name
+can be created in the invocation's local root and disappear; declaring it
+routes creation to the shared program-global frame. Lint emits a note outside
+functions. A declaration inside a required module function targets the
+importer's program globals, never the module's captured state.
+
+`global` cannot name a function. Map keys and fields remain valid:
+`{global: 1}`, `$m.global`, `$m["global"]`.
+
+## Implementation constraints
+
+Keep declaration sets in Scope alongside function floors. Exclude declarations
+from synchronous function eligibility and local-slot caching: a helper that
+creates a global must never rehash the global map while a top-level loop
+holds raw slot pointers into it. Shared globals retain their existing
+statement-sized borrow discipline; declaration adds no atomic transaction
+across yields.
+
+## Alternatives rejected
+
+Write-through by default breaks helpers that deliberately reuse names such as
+`$r` and `$m` as locals: the existing fleet agent lint found 463 outer-name
+assignment hits. Keep local assignment as the default.
+
+Lint alone protects against mistakes but leaves no direct way to express an
+intentional program-global update. Path writes into a shared map remain
+useful, but are not a substitute for an explicit declaration.
+
+The earlier no-global-by-design rule is superseded by this decision.
 
 ---
 
@@ -20481,7 +20548,7 @@ print("" .. $track)
 
 ### Writes inside a function are function-local
 
-Any `$x = ...` *assignment* inside a function binds a **function-local** variable. It does not write through to an outer/global of the same name — and that includes `$rc`/`$result`: when those change after a `send`, it is the Bus runtime writing them natively, not a Mix assignment (see [Bus messaging](bus.md)); a literal `$rc = ...` inside a function is as local as any other write.
+By default, `$x = ...` *assignment* inside a function binds a **function-local** variable. It does not write through to an outer/global of the same name — and that includes `$rc`/`$result`: when those change after a `send`, it is the Bus runtime writing them natively, not a Mix assignment (see [Bus messaging](bus.md)); a literal `$rc = ...` inside a function is as local as any other write.
 
 ```mix
 $g = 1
@@ -20495,7 +20562,7 @@ print($g)
 1
 ```
 
-This includes the accumulator trap: a helper doing `$count = $count + 1` leaves the caller's `$count` untouched. A function cannot tick a shared global counter.
+This includes the accumulator trap: a helper doing `$count = $count + 1` leaves the caller's `$count` untouched. Declare `global $count` before assignment to update the program-global counter.
 
 ### Reads fall through (globals fallback)
 
@@ -20514,7 +20581,7 @@ print(r())
 
 ### The pass-in / return / reassign triad
 
-Because writes are local and args are by value, the way to thread state *through* a function is the triad: **(1) pass the value in** (explicit read) → **(2) `return`** the new value (compute) → **(3) reassign at the call site** (write). There is no `global` keyword — this is the idiom by design.
+Because writes are local and args are by value, the way to thread state *through* a function is the triad: **(1) pass the value in** (explicit read) → **(2) `return`** the new value (compute) → **(3) reassign at the call site** (write). This remains a useful explicit data-flow idiom. For intentional program-global updates, use `global $x` before local binding; see [variables](variables.md#explicit-program-global-writes). Lambdas must declare too, and captured or module-injected locals cannot be redeclared global.
 
 ```mix
 function inc($n)
@@ -20823,7 +20890,7 @@ print($mathlib["mul"](3, 4))
 - **Concat is `..`** (never `+`/`.`): `"hi " .. $name`.
 - **Top-level `fn`s hoist** (0.63.0) — forward calls work at the script's top level; a `fn` nested in a block still binds when its branch runs. Recursion caps at **128** frames (clean runtime error).
 - **A keyword can't be a function name** (`function step(...)` errors; `$step = 1` is fine) and **a builtin can't be shadowed** (calls always resolve to the builtin).
-- **Args by value; writes function-local; closures capture for reads only.** Propagate state with the pass-in/return/reassign triad — there is no `global`.
+- **Args by value; writes function-local; closures capture for reads only.** Propagate state with the pass-in/return/reassign triad, or declare `global $x` for program-global writes.
 - **Modules = map of lambdas, index-called** (`$mod["fn"](args)`), not dot-called.
 - **`include`** = script-relative, load-once (libs); **`source`** = CWD, every-time.
 - Multi-statement lambdas must be **var-bound** before going into a HOF; named functions **can't** be passed by bare name.
@@ -24553,14 +24620,14 @@ access, strict-data keys, `send` kwargs, `parse … with` delimiters) — see
 
 ## The full set
 
-The lexer reserves **48 words** across **47 token kinds** (`fn` and
+The lexer reserves **49 words** across **48 token kinds** (`fn` and
 `function` share one token):
 
 | Group | Lexemes |
 |---|---|
 | Conditionals & matching | `if` `then` `else` `elif` `end` `select` `when` `otherwise` |
 | Loops | `for` `each` `in` `to` `step` `while` `loop` `break` `continue` `label` — plus the legacy terminators `next` (for) and `done` (while/loop/on) |
-| Functions | `function` `fn` `return` |
+| Functions | `function` `fn` `return` `global` |
 | Errors | `try` `catch` `finally` `die` |
 | Template parsing | `parse` `with` |
 | Bus messaging | `send` `address` `emit` `on` |
@@ -25024,7 +25091,9 @@ move, since a code's letter fixes its severity permanently. It is now
 ## Global declarations (0.119.0)
 
 `global $x` explicitly directs assignment to the program-global frame for
-this invocation. MIX-E1506 exempts declared names; its hint is: declare it
+this invocation. Every `global` name in the file joins the top-level name universe, so an unrelated function’s same-named local can draw MIX-E1506 under `--agent`.
+
+MIX-E1506 exempts declared names; its hint is: declare it
 with `global $x`, pass it in and return it, or rename the local.
 
 | Code | Meaning |
@@ -32539,6 +32608,13 @@ inside a heredoc body, which does interpolate `$(...)`.
 
 See [invocation](invocation.md) for the full launch matrix.
 
+## Global declarations (0.119.0)
+
+`global $a, $b` directs writes to the program-global frame for the rest of
+this invocation. Declare before local binding. Called functions and lambdas
+need their own declaration. See [variables](variables.md#explicit-program-global-writes)
+for placement errors and module/handler behaviour.
+
 ## See also
 
 - [strings](strings.md) — `'raw'` vs `"interp"`, `${...}`, `~`, `\u{}`, heredocs
@@ -35262,7 +35338,7 @@ word at the shell-first classifier. This page covers the sigil, assignment,
 reading (bound and unbound), `${...}` string interpolation, the `env()` builtin,
 positional `$1`/`$2` script arguments, and the one rule that trips up everyone
 coming from bash or Python — **assignment inside a function does not write
-through to a global**.
+through to a global by default**. Use `global` for an explicit program-global write.
 
 Related: [strings](strings.md) for the full quoting/interpolation rules,
 [functions](functions.md) for the deep function-scope detail, and
@@ -35581,11 +35657,11 @@ print($last)
 3
 ```
 
-### Assignment in a function does NOT write through to a global
+### Function assignment is local by default; `global` opts in
 
 A function gets its **own frame**. It can *read* an outer/global variable
 (reads fall through to the global frame), but **any `$x = …` assignment inside a
-function binds a function-local** — it never updates the outer variable:
+function binds a function-local by default**:
 
 ```mix
 $g = 1
@@ -35619,7 +35695,50 @@ leaves the caller's `$count` unchanged — and for `$rc` / `$result` too: on a
 `send` the Bus runtime writes them **into the current frame**, so a `send`
 inside a function updates them for that function's body only. The caller's
 `$rc` is untouched (and still unbound at the top level if no top-level `send`
-has run). There is **no `global` keyword** by design.
+has run). Use `global` for intentional program-global updates (0.119.0).
+
+### Explicit program-global writes
+
+```mix
+$conns = {one: 1, two: 2}
+fn finish($key)
+  global $conns
+  $conns = delete($conns, $key)
+end
+finish("one")
+print(length($conns)) -- 1
+```
+
+`global $a, $b` applies from execution of the declaration until this
+invocation returns. Assignment creates a missing global; reading a missing
+one raises the ordinary undefined-variable error. Plain assignment,
+self-concat, compound assignment, in-place mutation and field/index/path
+writes all use the program-global frame. It does not make a sequence of
+operations atomic across yields.
+
+Each function invocation is independent, including recursion. Called
+functions and lambdas must declare globals themselves. A declaration inside
+an if or loop is allowed and idempotent, and takes effect only if executed.
+Lint checks textual order without evaluating conditions and notes conditional
+declarations.
+
+Parameters are refused (`GLOBAL_PARAM`), as are names already present in the
+current local frame (`GLOBAL_AFTER_LOCAL`), including lambda captures and
+module-injected names. Loop variables, catch variables and parse captures
+cannot bind a declared global (`GLOBAL_BINDER`). Runtime-owned `$event`,
+`$rc`, `$result`, `$reply` cannot be declared (`GLOBAL_RUNTIME_NAME`).
+
+At program or module top level this is a no-op by construction. In an `on`
+handler it explicitly directs writes and new bindings to the shared global
+frame; a never-initialised name otherwise can disappear with a Class C
+invocation. Lint emits a note outside functions.
+
+Inside a `require` module function, `global` refers to the importer’s
+program-global frame, never module state. A module-injected same-named
+variable is refused: module variables are not globals.
+
+`global` is reserved as a function name. It still works as a map key or
+field: `{global: 1}`, `$m.global`, `$m["global"]`.
 
 ### Binders shadow inside a function
 
@@ -35690,7 +35809,7 @@ detail — closures, captures, recursion, HOF lambdas — lives in
 | `'...'` | fully raw, no interpolation | `'${x}'` → `${x}` |
 | `env("X")` | env only, missing → `""` | `env("HOME")` |
 | Indexed write | loud on out-of-range; the read is `nil` | `$l[5] = 9` → error |
-| Assign in function | binds a **local**, never the global | use return + reassign |
+| Assign in function | binds a **local** by default | use `global $x` or return + reassign |
 | Binders in function | shadow, never clobber the outer var | loop var, `catch $e` |
 
 ## See also
@@ -41430,6 +41549,13 @@ loads unchanged.
 ## Unreleased
 
 ### Added
+
+- 0.119.0: add `global $a, $b` for explicit program-global assignment per invocation,
+  including shared serve globals. Lambdas declare independently.
+- Refuse parameter, existing-local/capture/module, binder and runtime-name
+  conflicts with catchable errors and permanent lint diagnostics.
+- Keep declaring functions off sync/raw-slot paths; preserve keyword map keys
+  and fields. See the global-declaration decision for the language contract.
 
 - `read_file_bytes(path, {offset, max})` seeks to a byte offset (default 0)
   and reads up to required `max` bytes, stopping early only at EOF. At/past
