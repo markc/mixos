@@ -287,7 +287,10 @@ mod tests {
         let mut e = engine(&[(SAME, json!(false))]);
         e.set_options(
             "outputs",
-            vec![(json!("DP-1"), "DP-1".into()), (json!("DP-2"), "DP-2".into())],
+            vec![
+                (json!("DP-1"), "DP-1".into()),
+                (json!("DP-2"), "DP-2".into()),
+            ],
         );
         e.select_output(Some("DP-2".into()));
         assert_eq!(

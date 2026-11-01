@@ -862,8 +862,8 @@ mod tests {
                 for key in row.control.keys() {
                     assert!(catalog.get(key).is_some(), "{}/{}: {key}", page.id, row.id);
                 }
-                if let Control::Outputs { all: key }
-                | Control::Preview { image: key, .. } = &row.control
+                if let Control::Outputs { all: key } | Control::Preview { image: key, .. } =
+                    &row.control
                 {
                     assert!(catalog.get(key).is_some(), "{}/{}: {key}", page.id, row.id);
                 }
