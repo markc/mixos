@@ -842,7 +842,7 @@ checked separately by the layering gate.
 | [workshop](https://github.com/markc/mixos/blob/main/apps/workshop/Cargo.toml) | workshop | app | desktop | public | 0.1.2 |
 | [inspector](https://github.com/markc/mixos/blob/main/apps/workshop/crates/inspector/Cargo.toml) | workshop | app | core | none | 0.1.2 |
 | [mesh-sign](https://github.com/markc/mixos/blob/main/cli/mesh-sign/Cargo.toml) | mesh-sign | cli | core | none | 0.1.2 |
-| [mix-shell](https://github.com/markc/mixos/blob/main/cli/mix-shell/Cargo.toml) | mix-shell | cli | mix | public | 0.117.0 |
+| [mix-shell](https://github.com/markc/mixos/blob/main/cli/mix-shell/Cargo.toml) | mix-shell | cli | mix | public | 0.118.0 |
 | [mixos-mcp](https://github.com/markc/mixos/blob/main/cli/mixos-mcp/Cargo.toml) | mixos-mcp | cli | core | none | 0.1.2 |
 | [system](https://github.com/markc/mixos/blob/main/cli/system/Cargo.toml) | system | cli | core | none | 0.1.2 |
 | [action](https://github.com/markc/mixos/blob/main/libs/action/Cargo.toml) | action | lib | core | public | 0.3.0 |
@@ -13417,7 +13417,12 @@ Since 0.29.0 every builtin carries a structured contract — per-argument names/
   bytes_from_hex  Decode a hex string to bytes — strict: even length, [0-9a-fA-F] only, no separators or whitespace. Exact inverse of bytes_to_hex (v0.64.0)
   dns_query       Ask one DNS server one question and get the whole answer: dns_query(name, type[, {server, port, timeout, tcp, recurse}]) -> {ok, rcode, aa, ra, tc, answers, authority, additional, server, port, transport, duration_ms}; each record is {name, type, ttl, data}. type is A, AAAA, MX, TXT, SRV, NS, SOA, PTR, CNAME, CAA, ... (PTR of an IP address asks its reverse name). server defaults to the first resolv.conf nameserver, port 53, timeout 5 s, recurse true (the RD flag); tcp:true forces TCP and a truncated UDP answer is retried over TCP. The name is always fully qualified (no search list). Timeout, unreachable and malformed replies return {ok:false, error_code: DNS_TIMEOUT|DNS_UNREACHABLE|DNS_PROTOCOL|DNS_IO|DNS_SERVER, error}; bad arguments raise (v0.117.0)
   dns_lookup      Resolve a hostname to a list of IP address strings
-  udp_send        Send ONE UDP datagram: udp_send(host, port, payload) -> bytes sent. Payload (string/bytes/buffer) goes out verbatim; host is resolved. Not a socket API — nothing to hold or close (v0.71.0)
+  udp_send        Send ONE UDP datagram: udp_send(host, port, payload[, {from, ttl}]) -> bytes sent. from binds a source IPv4 address and selects the multicast interface; ttl sets multicast TTL (v0.118.0). Payload (string/bytes/buffer) goes out verbatim; host is resolved. Not a socket API — nothing to hold or close (v0.71.0)
+  udp_listen      Bind an IPv4 datagram socket: udp_listen(host, port[, {join, iface, reuse, ttl, loop}]) -> numeric handle. join is a multicast group or list; iface is a local IPv4 address (default kernel choice), reuse sets SO_REUSEADDR and SO_REUSEPORT before bind. ttl defaults to the kernel value; loop is bool. Generation owned, sharing the TCP listener handle limit. Requires ws; udp_on requires Linux. Raises UDP_ARGUMENT, UDP_ADDR_IN_USE, UDP_PERMISSION, UDP_ADDR_UNAVAILABLE, UDP_IO, TCP_HANDLE_LIMIT (v0.118.0)
+  udp_on          Subscribe a UDP handle: udp_on(handle, command[, {max}]) -> source id. Ordered events carry {watch, datagram:{bytes, text, from_host, from_port}}; text is UTF-8 or nil. max is 1..65535 (default 65535); larger datagrams truncate. Same FIFO bounds, overflow terminal and retirement rules as tcp_on. Requires ws and Linux (v0.118.0)
+  udp_send_from   Send from a listening UDP socket: udp_send_from(handle, host, port, payload) -> bytes sent. Preserves the bound source port and multicast interface, also while subscribed; nonblocking, UDP_IO on send failure. Payload string/bytes/buffer. Requires ws (v0.118.0)
+  udp_close       Close an unsubscribed UDP handle: udp_close(handle) -> bool (false if already closed). A subscribed handle refuses SOCKET_SUBSCRIBED; use udp_unwatch(source). Requires ws (v0.118.0)
+  udp_unwatch     Cancel a UDP source and close its socket: udp_unwatch(source) -> nil. Same cancellation and queued-record discard rules as tcp_unwatch (v0.118.0)
   udp_recv        Receive ONE UDP datagram: udp_recv(port[, {timeout, host, max}]) -> {bytes, text, from_host, from_port}, or nil on timeout (an ordinary answer, not a fault). timeout seconds default 30, 0 = wait forever; host = bind address default 0.0.0.0; max caps the read (default 65535 = never truncates; a longer datagram truncates to max, recvfrom(2)'s own contract). text is the payload as UTF-8 or nil — bytes always carries the truth (v0.71.0)
   ws_connect      Open a websocket (ws:// or wss://): ws_connect(url[, {insecure, headers, timeout}]) -> numeric handle. insecure:true skips TLS cert verification (self-signed device endpoints — the LG SSAP case); headers adds handshake request headers; timeout seconds bounds connect AND handshake (default 30, must be positive). Requires ws feature (v0.74.0)
   ws_send         Send one websocket frame: text for a string payload, binary for bytes/buffer; flushed before returning. A closed connection raises and retires the handle (v0.74.0)
@@ -41196,6 +41201,12 @@ installed Mix path used by existing predecessor nodes during the migration.
 # Changelog
 
 > Mirrored from [`cli/mix-shell/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/cli/mix-shell/CHANGELOG.md), where releases update it. The component's page is [mix-shell](README.md). This page describes the current `main` branch of MixOS.
+
+## Unreleased
+
+### Added
+
+- Mix 0.118.0 IPv4 UDP event sources and interface-selectable datagram sends.
 
 ## 0.117.0
 

@@ -208,24 +208,26 @@
                 <div class="panel-title">On this page</div>
                 <div class="panel-content">
                     <nav id="toc-nav">
+                        <a href="#unreleased">Unreleased</a>
+                        <a href="#added" class="toc-h3">Added</a>
                         <a href="#01170">0.117.0</a>
                         <a href="#changed" class="toc-h3">Changed</a>
                         <a href="#fixed" class="toc-h3">Fixed</a>
                         <a href="#01160">0.116.0</a>
-                        <a href="#added" class="toc-h3">Added</a>
-                        <a href="#01150">0.115.0</a>
                         <a href="#added-1" class="toc-h3">Added</a>
+                        <a href="#01150">0.115.0</a>
+                        <a href="#added-2" class="toc-h3">Added</a>
                         <a href="#01140">0.114.0</a>
                         <a href="#changed-1" class="toc-h3">Changed</a>
                         <a href="#fixed-1" class="toc-h3">Fixed</a>
                         <a href="#01131">0.113.1</a>
                         <a href="#fixed-2" class="toc-h3">Fixed</a>
                         <a href="#01130">0.113.0</a>
-                        <a href="#added-2" class="toc-h3">Added</a>
+                        <a href="#added-3" class="toc-h3">Added</a>
                         <a href="#01121">0.112.1</a>
                         <a href="#fixed-3" class="toc-h3">Fixed</a>
                         <a href="#01120">0.112.0</a>
-                        <a href="#added-3" class="toc-h3">Added</a>
+                        <a href="#added-4" class="toc-h3">Added</a>
                         <a href="#fixed-4" class="toc-h3">Fixed</a>
                         <a href="#01110">0.111.0</a>
                         <a href="#fixed-5" class="toc-h3">Fixed</a>
@@ -258,6 +260,11 @@
 <blockquote>
 <p>Mirrored from <a href="https://github.com/markc/mixos/blob/main/cli/mix-shell/CHANGELOG.md"><code>cli/mix-shell/CHANGELOG.md</code></a>, where releases update it. The component's page is <a href="/mix-shell/">mix-shell</a>. This page describes the current <code>main</code> branch of MixOS.</p>
 </blockquote>
+<h2 id="unreleased">Unreleased</h2>
+<h3 id="added">Added</h3>
+<ul>
+<li>Mix 0.118.0 IPv4 UDP event sources and interface-selectable datagram sends.</li>
+</ul>
 <h2 id="01170">0.117.0</h2>
 <h3 id="changed">Changed</h3>
 <ul>
@@ -294,14 +301,14 @@ was already waiting. This was the intermittent failure of the
 <code>foreground_job_ctrl_z_fg_and_nested_editor_stop_preserve_draft</code>.</li>
 </ul>
 <h2 id="01160">0.116.0</h2>
-<h3 id="added">Added</h3>
+<h3 id="added-1">Added</h3>
 <ul>
 <li>Released with mix 0.116.0: the remote mix binary for <code>ssh_mix</code> and the
 other remote-mix builtins comes from the <code>mix_bin</code> option, else
 <code>MIX_REMOTE_BIN</code>, else the old install path's mix (<code>mix man remote</code>).</li>
 </ul>
 <h2 id="01150">0.115.0</h2>
-<h3 id="added-1">Added</h3>
+<h3 id="added-2">Added</h3>
 <ul>
 <li>Released with mix 0.115.0: <code>unix_connect()</code> opens a local unix-domain
 stream socket, with NUL-terminated frames for Varlink and hostd
@@ -337,7 +344,7 @@ handler name) now fires; before, it parsed and never did. <code>mix man bus</cod
 documents it.</li>
 </ul>
 <h2 id="01130">0.113.0</h2>
-<h3 id="added-2">Added</h3>
+<h3 id="added-3">Added</h3>
 <ul>
 <li>Built on mix 0.113.0 with the <code>mime</code> feature: <code>mime_type()</code> names a
 file's type as the desktop does. <code>mix man io</code> documents it.</li>
@@ -352,7 +359,7 @@ data first while traffic that delivers nothing counts against the
 deadline. <code>mix man system</code> documents them.</li>
 </ul>
 <h2 id="01120">0.112.0</h2>
-<h3 id="added-3">Added</h3>
+<h3 id="added-4">Added</h3>
 <ul>
 <li>Built on mix 0.112.0: server-side TCP (<code>tcp_listen</code>, <code>tcp_accept</code>,
 <code>tcp_local_addr</code>, <code>tcp_on</code> on a listener) and <code>on @.command</code>, which registers

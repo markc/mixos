@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Mix 0.118.0 IPv4 UDP event sources and interface-selectable datagram sends.
+
 ## 0.117.0
 
 ### Changed

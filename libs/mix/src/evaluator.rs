@@ -313,20 +313,20 @@ pub(crate) fn incoming_event_to_mix_value(event: &IncomingEvent) -> Value {
         && let Value::Map(m) = &mut args
         && let Some(Value::Map(d)) = std::rc::Rc::make_mut(m).get_mut("datagram")
     {
-                let d = std::rc::Rc::make_mut(d);
-                if let Some(Value::List(xs)) = d.get("bytes") {
-                    let bytes = xs
-                        .iter()
-                        .filter_map(|v| {
-                            if let Value::Number(n) = v {
-                                Some(*n as u8)
-                            } else {
-                                None
-                            }
-                        })
-                        .collect();
-                    d.insert("bytes".into(), Value::bytes(bytes));
-                }
+        let d = std::rc::Rc::make_mut(d);
+        if let Some(Value::List(xs)) = d.get("bytes") {
+            let bytes = xs
+                .iter()
+                .filter_map(|v| {
+                    if let Value::Number(n) = v {
+                        Some(*n as u8)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            d.insert("bytes".into(), Value::bytes(bytes));
+        }
     }
     event_map.insert("args".to_string(), args);
     Value::map(event_map)

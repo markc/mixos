@@ -946,10 +946,10 @@ pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
             if let Ok(sock) = crate::udp::handles::get(id)
                 && sock.subscribed.load(std::sync::atomic::Ordering::Acquire)
             {
-                    return Err(crate::native_events::refusal(
-                        "SOCKET_SUBSCRIBED",
-                        "use udp_unwatch(source) to close a subscribed UDP socket",
-                    ));
+                return Err(crate::native_events::refusal(
+                    "SOCKET_SUBSCRIBED",
+                    "use udp_unwatch(source) to close a subscribed UDP socket",
+                ));
             }
             Ok(Some(Value::Bool(
                 crate::udp::handles::MAP
