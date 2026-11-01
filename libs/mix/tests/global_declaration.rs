@@ -54,6 +54,7 @@ async fn declaration_errors_are_catchable() {
         ("fn f() global $x; parse \"a\" with $x end; f()", "GLOBAL_BINDER"),
         ("fn f() global $x; try die(\"e\") catch $x end end; f()", "GLOBAL_BINDER"),
         ("fn f() global $x; try die(\"e\") catch $m, $x end end; f()", "GLOBAL_BINDER"),
+        ("fn f() global $_; $v = 1 | $_ end; f()", "GLOBAL_BINDER"),
         ("fn f() global $event end; f()", "GLOBAL_RUNTIME_NAME"),
         ("global $rc", "GLOBAL_RUNTIME_NAME"),
         ("global $result", "GLOBAL_RUNTIME_NAME"),

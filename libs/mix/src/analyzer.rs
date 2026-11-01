@@ -1223,6 +1223,9 @@ impl FileContext {
         // bug and is flagged (codex convergence review, MAJOR). Each
         // function/lambda body gets its OWN universe in the scope pass.
         collect_bound_names(stmts, false, &mut top_level_names);
+        walk_every_stmt(stmts, &mut |stmt| {
+            if let StmtKind::Global(names) = &stmt.kind { top_level_names.extend(names.iter().cloned()); }
+        });
         for v in INJECTED_VARS {
             top_level_names.insert((*v).to_string());
         }
@@ -4746,6 +4749,7 @@ fn check_global_declarations(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis
                     found
                 }
                 if agent && frame != TOP_FRAME && !handlers.contains(&frame)
+                    && !INJECTED_VARS.contains(&name.as_str())
                     && ctx.top_level_names.contains(name) && !declared.contains(name)
                     && !assigned.contains(name) && !params.get(&frame).is_some_and(|ps| ps.contains(name))
                     && (reads_name(value, name) || reads.get(&frame).is_some_and(|rs| rs.contains(name))) {
