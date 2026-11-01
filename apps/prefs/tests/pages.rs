@@ -304,7 +304,12 @@ fn power_rows_name_their_backends_and_refuse_writes() {
         .unwrap()
         .iter()
         .flat_map(|s| s["rows"].as_array().unwrap().iter())
-        .map(|r| (r["id"].as_str().unwrap(), r["blocked"].as_str().unwrap_or("")))
+        .map(|r| {
+            (
+                r["id"].as_str().unwrap(),
+                r["blocked"].as_str().unwrap_or(""),
+            )
+        })
         .collect();
     let blocked = |id: &str, backend: &str| {
         let (_, why) = rows.iter().find(|(row, _)| *row == id).unwrap();
@@ -322,7 +327,11 @@ fn power_rows_name_their_backends_and_refuse_writes() {
         "prefs.set",
         json!({"key":"power.screen_off_s","value":null}),
     );
-    assert_eq!((rc, body["error_code"].as_str()), (10, Some("REFUSED")), "{body}");
+    assert_eq!(
+        (rc, body["error_code"].as_str()),
+        (10, Some("REFUSED")),
+        "{body}"
+    );
     rig.h.run_steps(3);
     assert!(applies(&rig).is_empty());
 }
