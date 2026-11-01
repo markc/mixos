@@ -815,7 +815,11 @@ impl Default for NativeEvents {
 
 #[cfg(feature = "ws")]
 impl NativeEvents {
-    pub(crate) fn own_udp(&mut self, id: u64) { self.udp_owned.insert(id); }
+    pub(crate) fn own_udp(&mut self, id: u64) {
+        let sockets = crate::udp::handles::MAP.lock().unwrap();
+        self.udp_owned.retain(|id| sockets.contains_key(id));
+        self.udp_owned.insert(id);
+    }
     pub(crate) fn udp_on(&mut self, id: u64, command: String, opts: Option<&Value>) -> MixResult<String> {
         self.ensure_open()?;
         self.check_socket_limit()?;

@@ -132,7 +132,7 @@ mod tests {
             call_builtin("udp_send_from", vec![Value::Number(id as f64), Value::String("239.255.255.250".into()), Value::Number(port as f64), Value::bytes(payload.clone())]).unwrap();
             let ev = tokio::time::timeout(std::time::Duration::from_secs(3), ne.queue.next(Some(&h))).await.unwrap().unwrap();
             let args = crate::evaluator::incoming_event_to_mix_value(&ev);
-            let Value::Map(m) = args else { panic!() };
+            let Value::Map(ref m) = args else { panic!() };
             let Value::Map(a) = &m["args"] else { panic!() };
             let Value::Map(d) = &a["datagram"] else { panic!() };
             assert_eq!(d["bytes"], Value::bytes(payload.clone()));
