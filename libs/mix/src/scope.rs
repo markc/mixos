@@ -269,6 +269,9 @@ struct DeclConflicts {
 }
 
 pub struct Scope {
+    // Monotonic feature-use guard: ordinary programs never need to inspect
+    // declaration-stack storage on their assignment hot path.
+    has_global_declarations: bool,
     // Declaring functions and handlers own records indexed by activation
     // frame. Ordinary functions use their existing function floor as an
     // empty declaration scope, masking any caller record without copying it.
@@ -346,7 +349,7 @@ impl Default for Scope {
 impl Scope {
     #[inline]
     pub fn is_declared_global(&self, name: &str) -> bool {
-        self.declarations.last().is_some_and(|s| {
+        self.has_global_declarations && self.declarations.last().is_some_and(|s| {
             s.frame >= self.floor()
                 && s.declared
                     .as_ref()
@@ -419,6 +422,7 @@ impl Scope {
             self.validate_global(name)?;
         }
         if let Some(scope) = self.declarations.last_mut() {
+            self.has_global_declarations = true;
             scope
                 .declared
                 .get_or_insert_with(Box::default)
@@ -442,6 +446,7 @@ impl Scope {
     }
     pub fn new() -> Self {
         Scope {
+            has_global_declarations: false,
             frames: vec![FxHashMap::default()],
             functions: HashMap::new(),
             function_floors: Vec::new(),
@@ -462,6 +467,7 @@ impl Scope {
     #[allow(dead_code)] // wired by C.7d's Class C spawn path
     pub(crate) fn with_shared(globals: SharedGlobals, functions: SharedFunctions) -> Self {
         Scope {
+            has_global_declarations: false,
             frames: vec![FxHashMap::default()],
             functions: HashMap::new(),
             function_floors: Vec::new(),
