@@ -269,8 +269,9 @@ struct DeclConflicts {
 }
 
 pub struct Scope {
-    // One record per function or handler activation. Function entries are
-    // pushed alongside function_floors; handlers have no function floor.
+    // Declaring functions and handlers own records indexed by activation
+    // frame. Ordinary functions use their existing function floor as an
+    // empty declaration scope, masking any caller record without copying it.
     declarations: Vec<DeclScope>,
     frames: Vec<FxHashMap<String, Value>>,
     /// User-defined functions stored behind `Rc` so the named-function
