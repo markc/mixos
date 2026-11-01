@@ -1906,6 +1906,55 @@ for each $ns in ["192.0.2.53", "198.51.100.53"]
 end
 ```
 
+## UDP event sources (v0.118.0)
+
+```text
+udp_listen(host, port[, {join, iface, reuse, ttl, loop}]) -> numeric handle
+udp_on(handle, command[, {max}]) -> source id
+udp_send_from(handle, host, port, payload) -> bytes sent
+udp_close(handle) -> bool
+udp_unwatch(source) -> nil
+udp_send(host, port, payload[, {from, ttl}]) -> bytes sent
+```
+
+Listeners require the `ws` feature, like TCP listeners; subscriptions require
+Linux. No new dependencies. IPv4 literals only for bind, interface and groups;
+IPv6 groups refuse `UDP_ARGUMENT`. Send destinations can resolve hostnames.
+`join` is a multicast group string or list. `iface` defaults to `0.0.0.0`
+(kernel choice) and selects both membership and multicast egress. `reuse:true`
+sets SO_REUSEADDR and SO_REUSEPORT before bind. `ttl` is an integer 0..255;
+omitting it preserves the kernel default. `loop` is bool. Unknown or malformed
+options raise `UDP_ARGUMENT`; socket failures raise `UDP_IO` or the specific
+`UDP_ADDR_IN_USE`, `UDP_PERMISSION`, `UDP_ADDR_UNAVAILABLE` code.
+
+Each datagram arrives at `on command` as
+`$event.args = {watch, datagram:{bytes, text, from_host, from_port}}`.
+`bytes` is a Mix bytes value; `text` is UTF-8 or nil. Empty datagrams are events.
+`max` defaults to 65535 (range 1..65535); longer packets truncate, like udp_recv.
+The ordered FIFO, source limit, overflow terminal `{watch, closed:{reason}}`,
+and reload/exit cancellation follow tcp_on. The reader parks without polling
+timers. Handles share TCP's id sequence and 1024 server socket permits.
+`udp_close` returns false for an unknown handle; a subscribed handle raises
+`SOCKET_SUBSCRIBED` and must be closed with `udp_unwatch(source)`.
+
+`udp_send_from` explicitly selects the listening socket, preserving its source
+port and interface even while subscribed. It sends nonblocking: a full send
+buffer raises `UDP_IO`. A distinct builtin keeps handle sends clear and avoids
+overloading the one-shot send options. `udp_send`'s optional `from` binds a
+source IPv4 address and sets multicast egress; `ttl` sets multicast TTL.
+Its original three-argument form and `udp_recv(port, opts)` are unchanged.
+
+```mix
+$sock = udp_listen("0.0.0.0", 1900, {
+  join: "239.255.255.250", iface: "192.0.2.10", reuse: true, ttl: 4, loop: true
+})
+$watch = udp_on($sock, "ssdp.packet")
+on ssdp.packet
+  udp_send_from($sock, $event.args.datagram.from_host,
+    $event.args.datagram.from_port, "reply")
+end
+```
+
 ## UDP datagrams — `udp_send`, `udp_recv` (v0.71.0)
 
 ```

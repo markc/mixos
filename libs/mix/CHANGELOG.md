@@ -4,6 +4,11 @@
 
 ### Added
 
+- IPv4 UDP event sources: `udp_listen`, `udp_on`, `udp_send_from`,
+  `udp_close`, `udp_unwatch` (ws feature), with multicast membership, egress
+  interface, pre-bind reuse and generation retirement. `udp_send` accepts
+  `{from, ttl}` without changing its three-argument form.
+
 - `on bus.disconnected` in `mix --serve`, with `{generation: N}` in
   `$event.args` for the last delivered `bus.connected` connection that was
   lost. Disconnect is delivered once, before any newer connected event even
@@ -79,6 +84,11 @@
 ## 0.117.0 — 2026-10-21
 
 ### Added
+
+- IPv4 UDP event sources: `udp_listen`, `udp_on`, `udp_send_from`,
+  `udp_close`, `udp_unwatch` (ws feature), with multicast membership, egress
+  interface, pre-bind reuse and generation retirement. `udp_send` accepts
+  `{from, ttl}` without changing its three-argument form.
 
 - `analyzer::Analysis.functions` reports named function declarations with
   `name`, `file` and `line`, including nested and duplicate definitions but
@@ -248,6 +258,11 @@
 
 ### Added
 
+- IPv4 UDP event sources: `udp_listen`, `udp_on`, `udp_send_from`,
+  `udp_close`, `udp_unwatch` (ws feature), with multicast membership, egress
+  interface, pre-bind reuse and generation retirement. `udp_send` accepts
+  `{from, ttl}` without changing its three-argument form.
+
 - The remote mix binary is configurable. Every builtin that drives a
   remote mix (`ssh_mix`, `ssh_mix_many`, `ssh_exec`, `ssh_run`'s
   `env_transport: "mix"`, `send_mail`'s `host` hop) resolves it in one
@@ -267,6 +282,11 @@
 ## 0.115.0
 
 ### Added
+
+- IPv4 UDP event sources: `udp_listen`, `udp_on`, `udp_send_from`,
+  `udp_close`, `udp_unwatch` (ws feature), with multicast membership, egress
+  interface, pre-bind reuse and generation retirement. `udp_send` accepts
+  `{from, ttl}` without changing its three-argument form.
 
 - `unix_connect(path[, {timeout, frame}])`: a client for a local
   unix-domain stream socket, in `tcp_connect`'s handle space, so
@@ -313,6 +333,11 @@
 
 ### Added
 
+- IPv4 UDP event sources: `udp_listen`, `udp_on`, `udp_send_from`,
+  `udp_close`, `udp_unwatch` (ws feature), with multicast membership, egress
+  interface, pre-bind reuse and generation retirement. `udp_send` accepts
+  `{from, ttl}` without changing its three-argument form.
+
 - `mime_type(path[, {content}])`: a file's type from the freedesktop
   shared-mime-info database, decided by GLib's rules, so it agrees with
   `gio info` and the file manager (checked against GIO on 5,047 files).
@@ -322,6 +347,11 @@
 ## 0.112.1
 
 ### Added
+
+- IPv4 UDP event sources: `udp_listen`, `udp_on`, `udp_send_from`,
+  `udp_close`, `udp_unwatch` (ws feature), with multicast membership, egress
+  interface, pre-bind reuse and generation retirement. `udp_send` accepts
+  `{from, ttl}` without changing its three-argument form.
 
 - `tcp_send(handle, payload[, {timeout}])`: one deadline bounds the whole
   send, however many partial writes a slow reader forces (seconds, 0 = wait
@@ -351,6 +381,11 @@
 ## 0.112.0
 
 ### Added
+
+- IPv4 UDP event sources: `udp_listen`, `udp_on`, `udp_send_from`,
+  `udp_close`, `udp_unwatch` (ws feature), with multicast membership, egress
+  interface, pre-bind reuse and generation retirement. `udp_send` accepts
+  `{from, ttl}` without changing its three-argument form.
 
 - Server-side TCP. `tcp_listen(host, port[, {backlog}])` binds and listens
   and returns a listener handle; `host` is required (`"127.0.0.1"` is the
@@ -395,6 +430,11 @@
 ## 0.111.0
 
 ### Added
+
+- IPv4 UDP event sources: `udp_listen`, `udp_on`, `udp_send_from`,
+  `udp_close`, `udp_unwatch` (ws feature), with multicast membership, egress
+  interface, pre-bind reuse and generation retirement. `udp_send` accepts
+  `{from, ttl}` without changing its three-argument form.
 
 - `script_path()` returns the entry script's absolute, symlink-resolved path,
   the same answer as `realpath($0)`, fixed when the script starts (a later

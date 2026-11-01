@@ -501,6 +501,12 @@ impl Queue {
             s.bytes -= rec.data.len();
             p.socket_bytes -= rec.data.len();
             p.socket_frames -= 1;
+            if rec.kind == "datagram" {
+                let datagram: serde_json::Value = serde_json::from_slice(&rec.data).unwrap();
+                let mut ev = event(&s.command, serde_json::json!({"watch": handle, "datagram": datagram}));
+                ev.headers.insert("native-udp".into(), "1".into());
+                return Some(ev);
+            }
             if rec.kind == "accepted" {
                 let command = s.command.clone();
                 let accepted =
@@ -781,6 +787,8 @@ pub(crate) struct NativeEvents {
     /// this generation retires. Shared with listener reader threads.
     #[cfg(feature = "ws")]
     tcp_owned: Arc<crate::builtins::socket_sources::TcpOwner>,
+    #[cfg(feature = "ws")]
+    udp_owned: BTreeSet<u64>,
     owner_id: u64,
 }
 
@@ -798,8 +806,32 @@ impl Default for NativeEvents {
             sockets: BTreeMap::new(),
             #[cfg(feature = "ws")]
             tcp_owned: Arc::default(),
+            #[cfg(feature = "ws")]
+            udp_owned: BTreeSet::new(),
             owner_id: NEXT_OWNER_ID.fetch_add(1, Ordering::Relaxed),
         }
+    }
+}
+
+#[cfg(feature = "ws")]
+impl NativeEvents {
+    pub(crate) fn own_udp(&mut self, id: u64) { self.udp_owned.insert(id); }
+    pub(crate) fn udp_on(&mut self, id: u64, command: String, opts: Option<&Value>) -> MixResult<String> {
+        self.ensure_open()?;
+        self.check_socket_limit()?;
+        let mut max = 65535;
+        if let Some(m) = crate::udp::map(opts)? {
+            for (k,v) in m {
+                match (k.as_str(), v) {
+                    ("max", Value::Number(n)) if n.is_finite() && n.fract() == 0.0 && (1.0..=65535.0).contains(n) => max = *n as usize,
+                    _ => return Err(refusal("UDP_ARGUMENT", "udp_on accepts only max: integer 1..65535")),
+                }
+            }
+        }
+        #[cfg(target_os = "linux")]
+        return self.socket_sub("udp", "udp", command, |q, source, _| crate::builtins::socket_sources::spawn_udp(q, source, id, max));
+        #[cfg(not(target_os = "linux"))]
+        Err(refusal("SOCKET_UNSUPPORTED", "udp_on requires Linux poll(2)"))
     }
 }
 
@@ -1342,6 +1374,9 @@ impl NativeEvents {
         #[cfg(feature = "ws")]
         {
             self.sockets.clear(); // each Drop cancels + joins its reader
+            let mut udp = crate::udp::handles::MAP.lock().unwrap();
+            for id in std::mem::take(&mut self.udp_owned) { udp.remove(&id); }
+            drop(udp);
             crate::builtins::socket_sources::close_owned(&self.tcp_owned);
         }
     }
@@ -1474,6 +1509,8 @@ mod tests {
             sockets: BTreeMap::new(),
             #[cfg(feature = "ws")]
             tcp_owned: Arc::default(),
+            #[cfg(feature = "ws")]
+            udp_owned: BTreeSet::new(),
             owner_id: 0,
         };
         registry.remove_pending("test");

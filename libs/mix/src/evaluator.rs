@@ -299,7 +299,7 @@ pub fn sync_ext(f: impl Fn(Vec<Value>) -> MixResult<Value> + 'static) -> ExtFn {
 /// `$event.headers["topic"]`, `$event.body`, and `$event.args`. The header map
 /// preserves BTreeMap ordering (stable alphabetical), which is what Mix's Map
 /// iteration expects.
-fn incoming_event_to_mix_value(event: &IncomingEvent) -> Value {
+pub(crate) fn incoming_event_to_mix_value(event: &IncomingEvent) -> Value {
     let mut headers_map: IndexMap<String, Value> = IndexMap::new();
     for (k, v) in &event.headers {
         headers_map.insert(k.clone(), Value::String(v.clone()));
@@ -308,7 +308,19 @@ fn incoming_event_to_mix_value(event: &IncomingEvent) -> Value {
     event_map.insert("command".to_string(), Value::String(event.command.clone()));
     event_map.insert("headers".to_string(), Value::map(headers_map));
     event_map.insert("body".to_string(), Value::String(event.body.clone()));
-    event_map.insert("args".to_string(), parse_event_args(&event.body));
+    let mut args = parse_event_args(&event.body);
+    if event.headers.get("native-udp").is_some_and(|v| v == "1") {
+        if let Value::Map(m) = &mut args {
+            if let Some(Value::Map(d)) = std::rc::Rc::make_mut(m).get_mut("datagram") {
+                let d = std::rc::Rc::make_mut(d);
+                if let Some(Value::List(xs)) = d.get("bytes") {
+                    let bytes = xs.iter().filter_map(|v| if let Value::Number(n) = v { Some(*n as u8) } else { None }).collect();
+                    d.insert("bytes".into(), Value::bytes(bytes));
+                }
+            }
+        }
+    }
+    event_map.insert("args".to_string(), args);
     Value::map(event_map)
 }
 
@@ -3199,6 +3211,8 @@ pub(crate) const INLINE_SPECIAL_FORMS: &[&str] = &[
     // Class S and plain evaluation.
     "ws_on",
     "tcp_on",
+    "udp_on",
+    "udp_unwatch",
     "ws_unwatch",
     "tcp_unwatch",
     "ws_recv",
@@ -3379,6 +3393,8 @@ pub const EXPR_MODE_DENIED_BUILTINS: &[&str] = &[
     // a string source can only exist where ws_on/tcp_on created it.
     "ws_on",
     "tcp_on",
+    "udp_on",
+    "udp_unwatch",
     "ws_unwatch",
     "tcp_unwatch",
 ];
@@ -13422,7 +13438,7 @@ impl Evaluator {
         eval_args: &'a [Value],
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = MixResult<Option<Value>>> + 'a>> {
         Box::pin(async move {
-            if matches!(name, "ws_on" | "tcp_on" | "ws_unwatch" | "tcp_unwatch") {
+            if matches!(name, "ws_on" | "tcp_on" | "udp_on" | "udp_unwatch" | "ws_unwatch" | "tcp_unwatch") {
                 self.check_capability(name)?;
                 self.check_builtin_arity(name, eval_args.len())?;
                 #[cfg(not(feature = "ws"))]
@@ -13437,7 +13453,7 @@ impl Evaluator {
                     let mut g = self.globals.borrow_mut();
                     let ne = &mut g.native_events;
                     return match name {
-                        "ws_on" | "tcp_on" => {
+                        "ws_on" | "tcp_on" | "udp_on" => {
                             let id = crate::builtins::socket_sources::client_id_of(
                                 eval_args.first(),
                                 name,
@@ -13446,7 +13462,9 @@ impl Evaluator {
                                 eval_args.get(1),
                                 name,
                             )?;
-                            let h = if name == "ws_on" {
+                            let h = if name == "udp_on" {
+                                ne.udp_on(id, command, eval_args.get(2))?
+                            } else if name == "ws_on" {
                                 ne.ws_on(id, command)?
                             } else if crate::builtins::socket_sources::is_listener(id) {
                                 // A listener has no framing to choose.
@@ -13469,8 +13487,8 @@ impl Evaluator {
                             };
                             Ok(Value::String(h))
                         }
-                        "ws_unwatch" | "tcp_unwatch" => {
-                            let family = if name == "ws_unwatch" { "ws" } else { "tcp" };
+                        "ws_unwatch" | "tcp_unwatch" | "udp_unwatch" => {
+                            let family = if name == "ws_unwatch" { "ws" } else if name == "udp_unwatch" { "udp" } else { "tcp" };
                             let Some(Value::String(h)) = eval_args.first() else {
                                 return Err(crate::native_events::refusal(
                                     "SOCKET_WATCH_ARGUMENT",
@@ -14037,6 +14055,8 @@ impl Evaluator {
                             | "audio_unwatch"
                             | "audio_state"
                             | "ws_on"
+                            | "udp_on"
+                            | "udp_unwatch"
                             | "tcp_on"
                             | "ws_unwatch"
                             | "tcp_unwatch"
@@ -14983,10 +15003,10 @@ impl Evaluator {
                             // Listeners and accepted connections belong
                             // to this generation: closed when it retires.
                             #[cfg(feature = "ws")]
-                            if matches!(name.as_str(), "tcp_listen" | "tcp_accept")
+                            if matches!(name.as_str(), "tcp_listen" | "tcp_accept" | "udp_listen")
                                 && let Value::Number(n) = &result
                             {
-                                self.globals.borrow().native_events.own_tcp(*n as u64);
+                                if name == "udp_listen" { self.globals.borrow_mut().native_events.own_udp(*n as u64); } else { self.globals.borrow().native_events.own_tcp(*n as u64); }
                             }
                             return Ok(result);
                         }
