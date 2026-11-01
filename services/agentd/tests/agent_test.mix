@@ -153,6 +153,10 @@ check("text content becomes one text block", $a.prompt_blocks("hi")[0].type == "
 refuses("empty content", "USAGE", fn() = $a.prompt_blocks(""))
 refuses("content over 1 MiB", "USAGE", fn() = $a.prompt_blocks(repeat("x", 1048577)))
 refuses("block without a type", "USAGE", fn() = $a.prompt_blocks([{text: "x"}]))
+check("a title is the first text block's first line, trimmed",
+  $a.prompt_title([{type: "image", data: "x"}, {type: "text", text: "  \n Fix the corner \nthen test"}]) == "Fix the corner")
+check("a title is at most 120 characters", len($a.prompt_title($a.prompt_blocks(repeat("é", 300)))) == 120)
+check("a prompt with no text has no title", $a.prompt_title([{type: "image", data: "x"}, {type: "text", text: " \n "}]) == nil)
 
 -- Classification.
 check("reply", $a.classify({jsonrpc: "2.0", id: 3, result: {}}).kind == "reply")

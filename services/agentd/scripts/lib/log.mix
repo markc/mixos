@@ -20,9 +20,10 @@ $SCHEMA = [
 ]
 
 -- Columns added after the first schema: what a resume needs (the agent's
--- own session id, the extra directories, what the agent advertised). Added
+-- own session id, the extra directories, what the agent advertised) and the
+-- title (the first prompt's first line). Added
 -- to an older file in place; each is NULL until written.
-$SESSION_COLUMNS = ["acp TEXT", "dirs TEXT", "caps TEXT", "agent_info TEXT"]
+$SESSION_COLUMNS = ["acp TEXT", "dirs TEXT", "caps TEXT", "agent_info TEXT", "title TEXT"]
 
 -- Open (creating) the log. WAL with synchronous=NORMAL: a commit is not
 -- an fsync, so streamed chunks stay cheap; a power cut can lose the last
@@ -63,6 +64,11 @@ end
 fn session_agent($h, $id, $acp, $dirs, $caps, $agent_info)
   sqlexec($h, "UPDATE sessions SET acp = ?, dirs = ?, caps = ?, agent_info = ? WHERE id = ?",
     [$acp, json_encode($dirs ?? []), json_encode($caps), json_encode($agent_info), $id])
+end
+
+-- The first prompt names the session; a later prompt never renames it.
+fn session_title($h, $id, $title)
+  sqlexec($h, "UPDATE sessions SET title = ? WHERE id = ? AND title IS NULL", [$title, $id])
 end
 
 -- The stored row of a session, decoded, or nil.
@@ -125,8 +131,12 @@ fn read($h, $id, $since, $limit, $max_bytes)
   end
   $out = []
   if $count > 0 then
-    for each $r in sqlexec($h, "SELECT body FROM events WHERE session = ? AND seq > ? AND seq <= ? ORDER BY seq", [$id, $since, $next])
-      $out = concat($out, [json_parse($r.body)])
+    -- at (epoch seconds) is the stored column: events logged before the
+    -- wire carried it get it too.
+    for each $r in sqlexec($h, "SELECT body, at FROM events WHERE session = ? AND seq > ? AND seq <= ? ORDER BY seq", [$id, $since, $next])
+      $e = json_parse($r.body)
+      if type($e) == "map" then $e.at = $r.at end
+      $out = concat($out, [$e])
     end
   end
   return {events: $out, more: $more, next: $next}
@@ -139,7 +149,8 @@ fn view($h, $id)
   if len($rows) == 0 then return nil end
   $r = $rows[0]
   return {session: $r.id, agent: $r.agent, cwd: $r.cwd, parent: $r.parent, status: "ended",
-    seq: last_seq($h, $id), turn: nil, created_at: $r.created_at, open_permissions: 0,
+    seq: last_seq($h, $id), turn: nil, created_at: $r.created_at, ended_at: $r.ended_at,
+    title: $r.title, open_permissions: 0, permission_requests: [], permissions: [],
     exit_code: $r.exit_code, signal: $r.signal, end_reason: $r.end_reason}
 end
 

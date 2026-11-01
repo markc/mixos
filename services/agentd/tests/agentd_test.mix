@@ -138,6 +138,11 @@ try
   check("the turn ended with end_turn", saw("updated " .. $s .. " ", "stop end_turn"))
   $pr = filter(agent("agent.session.read", {session: $s, since: 0}).v.events, fn($e) = $e.kind == "prompt")
   check("the prompt is logged as an event with its text", len($pr) >= 1 and $pr[0].content[0].text == "hello MCP" and $pr[0].turn != nil)
+  check("a read event carries its time", type($pr[0].at) == "number" and $pr[0].at > 0)
+  check("the published event carries its time", saw("updated " .. $s .. " ", " prompt at"))
+  $row = filter(agent("agent.session.list", {}).v.sessions, fn($x) = $x.session == $s)[0]
+  check("the first prompt titles the live session", $row.title == "hello MCP")
+  check("a live row has no end yet", $row.ended_at == nil and $row.exit_code == nil and $row.end_reason == nil)
 
   -- fs/* through agentd, inside the session's directories only.
   $proj = realpath($tmp .. "/ws/project")
@@ -279,6 +284,9 @@ try
     $r.rc == 0 and len($r.v.events) > 5 and $r.v.events[0].seq == 1)
   check("close is accepted", agent("agent.session.close", {session: $s}).rc == 0)
   check("the session's end is published", saw("ended " .. $s, ""))
+  $closed = agent("agent.session.read", {session: $s, since: 0, limit: 1}).v.session
+  check("the live view of an ended session has ended_at and keeps its title",
+    type($closed.ended_at) == "number" and $closed.ended_at >= $pr[0].at and $closed.title == "hello MCP")
   $after = agent("agent.session.prompt", {session: $s, content: "x"})
   check("a closed session refuses prompts", $after.rc == 15)
   $n3 = agent("agent.session.new", {agent: "fake", cwd: $tmp .. "/ws", id: "new-once"})
@@ -309,6 +317,8 @@ try
   $old = agent("agent.session.read", {session: $s, since: 0})
   check("a closed session's events survive the restart",
     $old.rc == 0 and $old.v.session.status == "ended" and len($old.v.events) == len($before))
+  check("the log view keeps ended_at and title",
+    $old.v.session.ended_at == $closed.ended_at and $old.v.session.title == "hello MCP")
   $live = agent("agent.session.read", {session: $s2, since: 0})
   $lastev = if $live.rc == 0 and len($live.v.events) > 0 then $live.v.events[len($live.v.events) - 1] else {} end
   check("a session live at the restart is ended by it",

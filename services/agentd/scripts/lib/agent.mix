@@ -370,6 +370,18 @@ fn prompt_blocks($content)
   return $content
 end
 
+-- A session's title: the first line of the prompt's first text block,
+-- trimmed, at most 120 characters; nil when the prompt has no text.
+fn prompt_title($blocks)
+  for each $b in $blocks
+    if $b.type == "text" and type($b.text) == "string" then
+      $line = trim(split(trim($b.text), "\n")[0])
+      if $line != "" then return slice($line, 0, 120) end
+    end
+  end
+  return nil
+end
+
 fn prompt_frame($id, $acp_session, $blocks)
   return _frame($id, "session/prompt", {sessionId: $acp_session, prompt: $blocks})
 end

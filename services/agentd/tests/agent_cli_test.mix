@@ -84,6 +84,7 @@ try
   $js = cli(["read", $s, "--json", "--since", "1"], 30)
   check("read --json prints one JSON event per line, after --since",
     $js.rc == 0 and json_parse(lines($js.out)[0]).seq == 2)
+  check("read --json events carry their time", $js.rc == 0 and type(json_parse(lines($js.out)[0]).at) == "number")
 
   $q = cli(["send", $s, "quick", "--wait", "--timeout", "1"], 60)
   check("a --timeout shorter than the catch-up still sees a turn that ended", $q.rc == 0 and contains($q.out, "echo:quick"))

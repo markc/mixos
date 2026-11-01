@@ -2,7 +2,8 @@
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
 -- agent_listener: a test citizen that records agentd's topics, one line per
 -- delivery in $AGENT_EVENTS:
---   updated <session> <seq> <kind> <detail>   detail: text (or len=N), stop
+--   updated <session> <seq> <kind> <detail>   detail: text (or len=N), stop,
+--     at or no-at for a prompt (does the wire carry its time)
 --   ended <session> <exit_code>
 --   permission <session> <request>
 $file = env("AGENT_EVENTS")
@@ -22,6 +23,8 @@ on agent.session.updated
     $detail = if len($t) > 200 then "len=" .. to_string(len($t)) else $t end
   elif $v.kind == "stop" then
     $detail = $v.stop
+  elif $v.kind == "prompt" then
+    $detail = if type($v.at) == "number" then "at" else "no-at" end
   elif $v.kind == "permission_answered" then
     $detail = to_string($v.option)
   end
