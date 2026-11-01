@@ -22,10 +22,8 @@ $T = require("lib/gtkqt_map.mix")
 fn absolute_dir($name)
   $d = env($name, "")
   if $d == "" or not starts_with($d, "/") or contains("/" .. $d .. "/", "/../") then return nil end
-  $d = re_replace($d, "/+", "/")
-  $d = replace($d, "/./", "/")
-  $d = re_replace($d, "/\\.$", "")
-  return if $d == "/" then $d else re_replace($d, "/+$", "") end
+  -- Drop every dot/empty segment, including repeated overlapping /././.
+  return "/" .. join(filter(split($d, "/"), fn($part) = $part != "" and $part != "."), "/")
 end
 
 $config = absolute_dir("XDG_CONFIG_HOME")

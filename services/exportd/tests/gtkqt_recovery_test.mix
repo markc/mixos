@@ -67,7 +67,7 @@ try
   $home = $tmp .. "/real-home"
   mkdir($home)
   symlink($home, $tmp .. "/home-alias")
-  for $cfg in [$home .. "/.config", $home .. "/./.config/"]
+  for $cfg in [$home .. "/.config", $home .. "/./.config/", $home .. "/././.config/"]
     $case = start_case($cfg, $tmp .. "/home-alias", $tmp .. "/home-state-" .. uuid())
     check("canonical HOME/.config refused", status($case).skip != nil and not is_dir($home .. "/.config"))
     stop_case($case)
