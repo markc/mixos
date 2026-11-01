@@ -412,7 +412,9 @@ impl LayerProgram for Backdrop {
             let resumed = visible && host.active && !host.is_visible();
             host.visibility(visible, Instant::now());
             drop(host);
-            if resumed { crate::views::refresh(&self.shared); }
+            if resumed {
+                crate::views::refresh(&self.shared);
+            }
         }
     }
     fn repaint_delay(&self, ctx: &egui::Context, delay: Duration) -> Option<Duration> {
@@ -471,7 +473,9 @@ impl LayerProgram for Backdrop {
                 host.visibility(true, Instant::now());
                 host.draw(ui, &self.budget, renderer_2d, Instant::now());
                 drop(host);
-                if resumed { crate::views::refresh(&self.shared); }
+                if resumed {
+                    crate::views::refresh(&self.shared);
+                }
                 self.shows = "train";
                 self.error = None;
                 return;

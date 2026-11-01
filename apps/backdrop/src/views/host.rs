@@ -19,7 +19,9 @@ pub struct Host<V> {
     gpu: super::train_gpu::Cache,
 }
 impl<V: View> Host<V> {
-    pub fn is_visible(&self) -> bool { self.active && self.visible }
+    pub fn is_visible(&self) -> bool {
+        self.active && self.visible
+    }
     pub fn new(view: V, ctx: Option<egui::Context>) -> Self {
         Self {
             view,
@@ -97,10 +99,7 @@ impl<V: View> Host<V> {
             ui.label(strings.with(
                 "train-header",
                 &[
-                    (
-                        "sha",
-                        frame.snapshot.queue["main"].as_str().unwrap_or("?"),
-                    ),
+                    ("sha", frame.snapshot.queue["main"].as_str().unwrap_or("?")),
                     (
                         "state",
                         &strings.get(if frame.snapshot.queue.is_null() {
@@ -115,10 +114,27 @@ impl<V: View> Host<V> {
             ));
             ui.label(strings.get("train-track"));
             if let Some(gate) = frame.snapshot.current_gate() {
-                let label = strings.with("train-gate-stage", &[("stage", &gate["stage"].to_string()), ("stages", &gate["stages"].to_string()), ("last", gate["last"].as_str().unwrap_or("?"))]);
-                let colour = if gate["failing"] == true {ui.visuals().error_fg_color} else {ui.visuals().selection.bg_fill};
-                if let Some(progress) = frame.snapshot.gate_progress() {ui.add(egui::ProgressBar::new(progress).fill(colour));}
-                if gate["failing"] == true {ui.colored_label(colour,label);} else {ui.label(label);}
+                let label = strings.with(
+                    "train-gate-stage",
+                    &[
+                        ("stage", &gate["stage"].to_string()),
+                        ("stages", &gate["stages"].to_string()),
+                        ("last", gate["last"].as_str().unwrap_or("?")),
+                    ],
+                );
+                let colour = if gate["failing"] == true {
+                    ui.visuals().error_fg_color
+                } else {
+                    ui.visuals().selection.bg_fill
+                };
+                if let Some(progress) = frame.snapshot.gate_progress() {
+                    ui.add(egui::ProgressBar::new(progress).fill(colour));
+                }
+                if gate["failing"] == true {
+                    ui.colored_label(colour, label);
+                } else {
+                    ui.label(label);
+                }
             } else if frame.snapshot.gating_batch().is_some() {
                 ui.label(strings.get("train-stage-unavailable"));
             }
@@ -156,15 +172,19 @@ impl<V: View> Host<V> {
         // Allocate an overlay at the bottom, without giving a view a Ui.
         ui.add_space((ui.available_height() - 190.).max(0.));
         egui::Frame::popup(ui.style()).show(ui, |ui| {
-            ui.label(strings.with("train-history", &[("hours", &frame.snapshot.hours.to_string())]));
+            ui.label(strings.with(
+                "train-history",
+                &[("hours", &frame.snapshot.hours.to_string())],
+            ));
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
-                .as_secs_f64()
-                ;
-            let series = super::history::series(&frame.snapshot.history,frame.snapshot.hours,now);
-            if frame.snapshot.history.is_null() {ui.label(strings.get("train-history-unavailable"));}
-            egui_plot::Plot::new(("train-history",frame.snapshot.hours))
+                .as_secs_f64();
+            let series = super::history::series(&frame.snapshot.history, frame.snapshot.hours, now);
+            if frame.snapshot.history.is_null() {
+                ui.label(strings.get("train-history-unavailable"));
+            }
+            egui_plot::Plot::new(("train-history", frame.snapshot.hours))
                 .height(140.)
                 .include_x(-f64::from(frame.snapshot.hours))
                 .include_x(0.)
@@ -172,8 +192,14 @@ impl<V: View> Host<V> {
                 .allow_drag(false)
                 .allow_scroll(false)
                 .show(ui, |plot| {
-                    plot.line(egui_plot::Line::new(strings.get("train-landings"),series.landings));
-                    plot.points(egui_plot::Points::new(strings.get("train-gates"),series.gate_minutes).radius(3.));
+                    plot.line(egui_plot::Line::new(
+                        strings.get("train-landings"),
+                        series.landings,
+                    ));
+                    plot.points(
+                        egui_plot::Points::new(strings.get("train-gates"), series.gate_minutes)
+                            .radius(3.),
+                    );
                 });
         });
     }

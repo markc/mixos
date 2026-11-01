@@ -37,14 +37,18 @@ impl Train {
     pub fn scene(&self) -> Vec<Block> {
         let mut out = vec![];
         let gate = self.snapshot.current_gate();
-        let failing = gate.is_some_and(|g|g["failing"] == true);
+        let failing = gate.is_some_and(|g| g["failing"] == true);
         for (x, tone) in [(-5., 0), (0., 1), (5., 2)] {
             out.push(Block {
                 position: [x, 0., 0.],
                 size: [4.8, 0.12, 0.6],
-                tone: if x == 0. && failing {3} else {tone},
+                tone: if x == 0. && failing { 3 } else { tone },
                 glow: 0.,
-                label: if x == 0. {gate.and_then(|g|g["last"].as_str()).unwrap_or("").into()} else {String::new()},
+                label: if x == 0. {
+                    gate.and_then(|g| g["last"].as_str()).unwrap_or("").into()
+                } else {
+                    String::new()
+                },
             });
         }
         out.push(Block {
@@ -72,7 +76,11 @@ impl Train {
                         if rejected { 2. } else { z },
                     ],
                     size: [0.48, 0.6, 0.75],
-                    tone: if rejected || (key == "batched" && failing) { 3 } else { tone },
+                    tone: if rejected || (key == "batched" && failing) {
+                        3
+                    } else {
+                        tone
+                    },
                     glow: 0.,
                     label: text(row, "branch"),
                 });
@@ -180,7 +188,7 @@ mod tests {
             1.
         );
         assert_eq!(scene.iter().find(|b| b.label == "work/d").unwrap().tone, 2);
-        assert_eq!(scene.iter().find(|b|b.label=="lint").unwrap().tone,3);
+        assert_eq!(scene.iter().find(|b| b.label == "lint").unwrap().tone, 3);
     }
     #[test]
     fn worker_glow_accepts_encoded_snapshots() {

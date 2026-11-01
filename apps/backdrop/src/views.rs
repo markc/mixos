@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Live views use Bus snapshots only. The wallpaper engine remains beside them.
-pub mod host;
 mod history;
+pub mod host;
 mod reader;
 mod train;
 mod train_gpu;
@@ -28,19 +28,34 @@ pub struct Snapshot {
     pub hours: u16,
 }
 impl Default for Snapshot {
-    fn default() -> Self { Self {queue:Value::Null, workers:Value::Null, error:None, history:Value::Null, gate:Value::Null, hours:24} }
+    fn default() -> Self {
+        Self {
+            queue: Value::Null,
+            workers: Value::Null,
+            error: None,
+            history: Value::Null,
+            gate: Value::Null,
+            hours: 24,
+        }
+    }
 }
 impl Snapshot {
     pub fn gating_batch(&self) -> Option<&str> {
-        self.queue["batches"].as_array()?.iter().find(|b| b["state"] == "gating")?["batch"].as_str()
+        self.queue["batches"]
+            .as_array()?
+            .iter()
+            .find(|b| b["state"] == "gating")?["batch"]
+            .as_str()
     }
     pub fn current_gate(&self) -> Option<&Value> {
         (self.gate["batch"].as_str() == Some(self.gating_batch()?)).then_some(&self.gate)
     }
     pub fn gate_progress(&self) -> Option<f32> {
         let gate = self.current_gate()?;
-        let stages = gate["stages"].as_f64().filter(|v| v.is_finite() && *v > 0.)?;
-        Some((gate["stage"].as_f64()?.max(0.)/stages).clamp(0.,1.) as f32)
+        let stages = gate["stages"]
+            .as_f64()
+            .filter(|v| v.is_finite() && *v > 0.)?;
+        Some((gate["stage"].as_f64()?.max(0.) / stages).clamp(0., 1.) as f32)
     }
 }
 pub struct Frame {
@@ -97,7 +112,12 @@ impl State {
                     let args = args.as_object().ok_or("args must be an object")?;
                     for (key, value) in args {
                         if key == "zoom" {
-                            hours = match value.as_str() {Some("1h")=>1,Some("24h")=>24,Some("7d")=>168,_=>return Err("zoom must be 1h, 24h or 7d".into())};
+                            hours = match value.as_str() {
+                                Some("1h") => 1,
+                                Some("24h") => 24,
+                                Some("7d") => 168,
+                                _ => return Err("zoom must be 1h, 24h or 7d".into()),
+                            };
                             continue;
                         }
                         if key == "renderer" {
@@ -117,8 +137,14 @@ impl State {
                         }
                     }
                 }
-                if train != self.train_service || buildd != self.buildd_service || hours != self.hours {
-                    self.snapshot = Arc::new(Snapshot {hours, ..Default::default()});
+                if train != self.train_service
+                    || buildd != self.buildd_service
+                    || hours != self.hours
+                {
+                    self.snapshot = Arc::new(Snapshot {
+                        hours,
+                        ..Default::default()
+                    });
                 }
                 self.hours = hours;
                 if let Some(renderer) = body["args"]["renderer"].as_str() {
@@ -255,21 +281,38 @@ mod tests {
     }
     #[test]
     fn zoom_arguments_map_to_owner_hours_and_reject_invalid_values_atomically() {
-        let mut state=State::default();
-        for (zoom,hours) in [("1h",1),("24h",24),("7d",168)] {
-            state.command("backdrop.view.set",&json!({"view":"train","args":{"zoom":zoom}})).unwrap();
-            assert_eq!(state.hours,hours);assert_eq!(state.snapshot.hours,hours);
+        let mut state = State::default();
+        for (zoom, hours) in [("1h", 1), ("24h", 24), ("7d", 168)] {
+            state
+                .command(
+                    "backdrop.view.set",
+                    &json!({"view":"train","args":{"zoom":zoom}}),
+                )
+                .unwrap();
+            assert_eq!(state.hours, hours);
+            assert_eq!(state.snapshot.hours, hours);
         }
-        assert!(state.command("backdrop.view.set",&json!({"view":"train","args":{"zoom":"30d"}})).is_err());
-        assert_eq!(state.hours,168);
+        assert!(
+            state
+                .command(
+                    "backdrop.view.set",
+                    &json!({"view":"train","args":{"zoom":"30d"}})
+                )
+                .is_err()
+        );
+        assert_eq!(state.hours, 168);
     }
     #[test]
     fn gate_progress_requires_current_batch_and_a_nonzero_stage_count() {
-        let mut snapshot=Snapshot {queue:json!({"batches":[{"batch":"new","state":"gating"}]}),gate:json!({"batch":"old","stage":1,"stages":2}),..Default::default()};
-        assert_eq!(snapshot.gate_progress(),None);
-        snapshot.gate["batch"]=json!("new");
-        assert_eq!(snapshot.gate_progress(),Some(0.5));
-        snapshot.gate["stages"]=json!(0);
-        assert_eq!(snapshot.gate_progress(),None);
+        let mut snapshot = Snapshot {
+            queue: json!({"batches":[{"batch":"new","state":"gating"}]}),
+            gate: json!({"batch":"old","stage":1,"stages":2}),
+            ..Default::default()
+        };
+        assert_eq!(snapshot.gate_progress(), None);
+        snapshot.gate["batch"] = json!("new");
+        assert_eq!(snapshot.gate_progress(), Some(0.5));
+        snapshot.gate["stages"] = json!(0);
+        assert_eq!(snapshot.gate_progress(), None);
     }
 }
