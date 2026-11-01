@@ -2145,6 +2145,32 @@ mod tests {
     }
 
     #[test]
+    fn corner_write_after_rebind_uses_the_new_applied_binding() {
+        use crate::panels::{RecordChange, SettingsWrite};
+        let mut snapshot = crate::appearance::snapshot_of(settings::Desktop::default());
+        let mut consumer = settings::consumer::Consumer::for_shell(snapshot.binding.clone()).unwrap();
+        let subscribe = consumer.connected(1).unwrap();
+        let read = consumer.complete(&subscribe, Ok(None)).unwrap();
+        consumer.complete(&read, Ok(Some(snapshot.clone())));
+        assert!(consumer.acknowledge(&consumer.pending().unwrap().clone()));
+        snapshot.binding.instance = "authority".into();
+        snapshot.incarnation = "rebound".into();
+        let read = consumer.observe(1, snapshot.clone()).unwrap();
+        consumer.complete(&read, Ok(Some(snapshot.clone())));
+        if let Some(update) = consumer.pending().cloned() {
+            assert!(consumer.acknowledge(&update));
+        }
+        let write = SettingsWrite {
+            id: "bottom".into(),
+            change: RecordChange::Autohide(false),
+        };
+        let body = settings_apply(consumer.applied(), &write, "corner-2").unwrap();
+        let request: settings::ApplyRequest = serde_json::from_value(body).unwrap();
+        assert_eq!(request.binding, snapshot.binding);
+        assert_eq!(request.expected_incarnation, "rebound");
+    }
+
+    #[test]
     fn settings_writes_carry_v2_keys_fenced_on_the_applied_snapshot() {
         use crate::panels::{RecordChange, SettingsWrite};
         let snapshot = crate::appearance::snapshot_of(settings::Desktop::default());

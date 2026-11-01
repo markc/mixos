@@ -38,8 +38,7 @@ impl<T> std::fmt::Debug for Mailbox<T> {
 fn slot<T>(event: &Event<T>) -> u8 {
     match event {
         Event::Wake | Event::Lost => 0,
-        #[cfg(test)]
-        Event::Refresh => 0,
+        Event::Refresh => 7,
         Event::Delivery(_) => 1,
         Event::Rpc(..) => 2,
         Event::Prepared(_) => 3,
@@ -64,10 +63,6 @@ impl<T> Mailbox<T> {
                 (&pending.events[index], &event)
                 && previous.same_message(next)
             {
-                return false;
-            }
-            #[cfg(test)]
-            if matches!(&event, Event::Wake) && matches!(&pending.events[index], Event::Refresh) {
                 return false;
             }
             pending.events.remove(index);
