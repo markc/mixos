@@ -11196,8 +11196,9 @@ and every libcosmic app watch those files, so the desktop follows at once.
 mix --serve <prefix>/lib/exportd/cosmic.mix --name exportd-cosmic
 ```
 
-The unit `exportd-cosmic@.service` runs it in a session, as that
-session's user.
+The unit `exportd-cosmic@.service` runs it in a session under the
+`mixos` account. A session using another account needs a `User=` drop-in;
+the template is not enabled or started automatically.
 
 ### What it writes
 
@@ -11330,6 +11331,7 @@ While paused (undo or restore, kept across restarts) no revision writes;
 | Variable | Default |
 |---|---|
 | `MIXOS_SETTINGS_INSTANCE` | this node's name |
+| `MIXOS_SETTINGS_SERVICE` | `settingsd`; the read endpoint (reserved settings topics still come from settingsd) |
 | `MIXOS_KDE_EXPORT_DRY=1` | plan and report, write nothing |
 | `MIXOS_KDE_EXPORT_STATE` | `$XDG_STATE_HOME/mixos/kde-export` (the undo record, saved scheme files, the pause marker) |
 | `MIXOS_KDE_EXPORT_RECONFIGURE=0` | no D-Bus calls |
