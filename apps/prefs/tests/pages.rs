@@ -188,6 +188,45 @@ fn a_bus_click_on_a_radio_row_applies_once_fenced() {
 }
 
 #[test]
+fn workspaces_orientation_applies_once_and_the_compd_rows_say_so() {
+    let mut rig = rig();
+    read(&mut rig, "authority", false);
+    ask(
+        &mut rig,
+        1,
+        "prefs.page.open",
+        json!({"page":"workspaces","row":"orientation"}),
+    );
+    let (_, page) = ask(&mut rig, 2, "prefs.page", json!({}));
+    let rows: Vec<&Value> = page["sections"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|s| s["rows"].as_array().unwrap().iter())
+        .collect();
+    let blocked = |id: &str| {
+        rows.iter()
+            .find(|r| r["id"] == id)
+            .unwrap()
+            .get("blocked")
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+    };
+    assert!(blocked("typing").unwrap().contains("compd workspace overview"));
+    assert!(blocked("mode").unwrap().contains("compd per-output"));
+    assert!(blocked("orientation").is_none());
+    assert!(blocked("wraparound").is_none());
+    rig.h.run_steps(3);
+    let vertical = node(&mut rig, 3, "Vertical", "RadioButton");
+    let (rc, body) = ask(&mut rig, 4, "prefs.ui.click", json!({"id": vertical}));
+    assert_eq!(rc, 0, "{body}");
+    rig.h.run_steps(4);
+    let sent = applies(&rig);
+    assert_eq!(sent.len(), 1, "{sent:?}");
+    assert_eq!(sent[0]["changes"], json!({"workspaces.orientation":"vertical"}));
+}
+
+#[test]
 fn prefs_set_writes_a_key_and_refuses_live_and_unknown_ones() {
     let mut rig = rig();
     read(&mut rig, "authority", false);

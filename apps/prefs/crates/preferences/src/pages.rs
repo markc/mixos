@@ -28,6 +28,7 @@ mod appearance;
 mod network;
 mod panels;
 mod tree;
+mod workspaces;
 
 /// A literal value in page data.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
