@@ -22482,12 +22482,17 @@ fn builtin_udp_send(args: Vec<Value>) -> MixResult<Option<Value>> {
             }
         }
     }
-    let sock = std::net::UdpSocket::bind((from.unwrap_or(std::net::Ipv4Addr::UNSPECIFIED), 0)).map_err(|e| {
-        if args.len() == 4 { crate::udp::io(e) } else { MixError::RuntimeError {
-            span: None,
-            msg: format!("udp_send: bind: {e}"),
-        }}
-    })?;
+    let sock = std::net::UdpSocket::bind((from.unwrap_or(std::net::Ipv4Addr::UNSPECIFIED), 0))
+        .map_err(|e| {
+            if args.len() == 4 {
+                crate::udp::io(e)
+            } else {
+                MixError::RuntimeError {
+                    span: None,
+                    msg: format!("udp_send: bind: {e}"),
+                }
+            }
+        })?;
     if let Some(from) = from {
         crate::udp::interface(&sock, from)?;
     }
@@ -22497,10 +22502,14 @@ fn builtin_udp_send(args: Vec<Value>) -> MixResult<Option<Value>> {
     let sent = sock
         .send_to(&payload, format!("{host}:{port}"))
         .map_err(|e| {
-            if args.len() == 4 { crate::udp::io(e) } else { MixError::RuntimeError {
-                span: None,
-                msg: format!("udp_send '{host}:{port}': {e}"),
-            }}
+            if args.len() == 4 {
+                crate::udp::io(e)
+            } else {
+                MixError::RuntimeError {
+                    span: None,
+                    msg: format!("udp_send '{host}:{port}': {e}"),
+                }
+            }
         })?;
     Ok(Some(Value::Number(sent as f64)))
 }
@@ -26871,37 +26880,63 @@ pub(crate) mod socket_sources {
                 let completed = Arc::new(AtomicBool::new(false));
                 let done = completed.clone();
                 let socket = sock.clone();
-                let worker = std::thread::Builder::new().name("mix-udp-read".into()).spawn(move || {
-                    let mut fds = [libc::pollfd { fd: socket.sock.as_raw_fd(), events: libc::POLLIN, revents: 0 }, libc::pollfd { fd: wake.as_raw_fd(), events: libc::POLLIN, revents: 0 }];
-                    let mut buf = vec![0; max];
-                    let closed = 'reader: loop {
-                        // SAFETY: both descriptors and pollfds outlive poll.
-                        if unsafe { libc::poll(fds.as_mut_ptr(), 2, -1) } < 0 {
-                            let e = std::io::Error::last_os_error();
-                            if e.kind() == std::io::ErrorKind::Interrupted { continue; }
-                            break Some(e.to_string());
-                        }
-                        if fds[1].revents != 0 { break None; }
-                        // Bounded batch: cancellation wins even under continuous traffic.
-                        for _ in 0..16 {
-                            match socket.sock.recv_from(&mut buf) {
-                                Ok((n, peer)) => {
-                                    let std::net::SocketAddr::V4(peer) = peer else { unreachable!("IPv4 socket received IPv6 peer") };
-                                    let record = crate::udp::record(&buf[..n], peer);
-                                    if !queue.socket_push(&id, record) { break 'reader Some("overflow".into()); }
+                let worker = std::thread::Builder::new()
+                    .name("mix-udp-read".into())
+                    .spawn(move || {
+                        let mut fds = [
+                            libc::pollfd {
+                                fd: socket.sock.as_raw_fd(),
+                                events: libc::POLLIN,
+                                revents: 0,
+                            },
+                            libc::pollfd {
+                                fd: wake.as_raw_fd(),
+                                events: libc::POLLIN,
+                                revents: 0,
+                            },
+                        ];
+                        let mut buf = vec![0; max];
+                        let closed = 'reader: loop {
+                            // SAFETY: both descriptors and pollfds outlive poll.
+                            if unsafe { libc::poll(fds.as_mut_ptr(), 2, -1) } < 0 {
+                                let e = std::io::Error::last_os_error();
+                                if e.kind() == std::io::ErrorKind::Interrupted {
+                                    continue;
                                 }
-                                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
-                                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
-                                Err(e) if crate::udp::peer_error(&e) => continue,
-                                Err(e) => break 'reader Some(e.to_string()),
+                                break Some(e.to_string());
                             }
+                            if fds[1].revents != 0 {
+                                break None;
+                            }
+                            // Bounded batch: cancellation wins even under continuous traffic.
+                            for _ in 0..16 {
+                                match socket.sock.recv_from(&mut buf) {
+                                    Ok((n, peer)) => {
+                                        let std::net::SocketAddr::V4(peer) = peer else {
+                                            unreachable!("IPv4 socket received IPv6 peer")
+                                        };
+                                        let record = crate::udp::record(&buf[..n], peer);
+                                        if !queue.socket_push(&id, record) {
+                                            break 'reader Some("overflow".into());
+                                        }
+                                    }
+                                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
+                                    Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {
+                                        continue;
+                                    }
+                                    Err(e) if crate::udp::peer_error(&e) => continue,
+                                    Err(e) => break 'reader Some(e.to_string()),
+                                }
+                            }
+                        };
+                        crate::udp::handles::MAP.lock().unwrap().remove(&handle);
+                        drop(socket);
+                        if let Some(reason) = closed {
+                            queue.socket_closed(&id, serde_json::json!({"reason": reason}));
                         }
-                    };
-                    crate::udp::handles::MAP.lock().unwrap().remove(&handle);
-                    drop(socket);
-                    if let Some(reason) = closed { queue.socket_closed(&id, serde_json::json!({"reason": reason})); }
-                    done.store(true, Ordering::Release);
-                }).map_err(|e| refusal("SOCKET_THREAD", e.to_string()))?;
+                        done.store(true, Ordering::Release);
+                    })
+                    .map_err(|e| refusal("SOCKET_THREAD", e.to_string()))?;
                 Ok(SocketSource {
                     key: ClientKey::udp(handle),
                     cancel,
