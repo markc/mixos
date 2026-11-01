@@ -24,6 +24,7 @@ pub mod store;
 pub mod terminal;
 pub mod text;
 pub mod wallpaper;
+pub mod xkb;
 
 pub use appearance::Look;
 pub use engine::{Availability, Dialog, Effect, Engine, Op, UiState};

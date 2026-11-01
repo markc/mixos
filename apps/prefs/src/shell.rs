@@ -393,6 +393,7 @@ impl Shell {
         shell.engine.session_actions = shell.theme.band().place;
         shell.engine.start_appearance(&hostname());
         shell.engine.read_wallpaper();
+        shell.engine.read_layouts(&preferences::xkb::rules_dir());
         shell.settle();
         Ok(shell)
     }

@@ -134,3 +134,33 @@ fn light_comfortable() {
 fn condensed_window() {
     draw("condensed", page("panel", None), egui::vec2(560.0, 640.0));
 }
+
+/// Layouts as the xkb rules describe them, fixed so the snapshots do not
+/// follow the worker's xkeyboard-config.
+fn keyboard(drawer: Option<&str>) -> Engine {
+    let mut e = page("keyboard", None);
+    e.set_options(
+        preferences::xkb::LAYOUTS,
+        vec![
+            (json!(["us", ""]), "English (US)".into()),
+            (json!(["us", "colemak"]), "English (Colemak)".into()),
+            (json!(["us", "dvorak"]), "English (Dvorak)".into()),
+            (json!(["de", ""]), "German".into()),
+            (json!(["de", "nodeadkeys"]), "German (no dead keys)".into()),
+        ],
+    );
+    if let Some(drawer) = drawer {
+        e.open_drawer(drawer);
+    }
+    e
+}
+
+#[test]
+fn keyboard_page() {
+    draw("keyboard", keyboard(None), COSMIC);
+}
+
+#[test]
+fn keyboard_add_source_drawer() {
+    draw("keyboard_add_source", keyboard(Some("add_source")), COSMIC);
+}

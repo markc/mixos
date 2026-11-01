@@ -245,6 +245,84 @@ fn a_stale_mirror_disables_the_rows_before_any_click() {
 }
 
 #[test]
+fn the_keyboard_page_reads_as_data_and_writes_once_fenced() {
+    let mut rig = rig();
+    read(&mut rig, "authority", false);
+    let (rc, body) = ask(&mut rig, 1, "prefs.page.open", json!({"page":"keyboard"}));
+    assert_eq!(rc, 0, "{body}");
+    let (_, page) = ask(&mut rig, 2, "prefs.page", json!({}));
+    assert_eq!(page["page"], "keyboard");
+    let layouts = &page["sections"][0]["rows"][0];
+    assert_eq!(layouts["key"], "input.keyboard.layouts");
+    assert_eq!(layouts["entries"][0]["value"], json!(["us", ""]));
+    let drawers: Vec<&str> = page["drawers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| d["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        drawers,
+        ["add_source", "alt_chars", "compose", "caps", "numlock"]
+    );
+    // A radio in a drawer, set as its control: one fenced apply.
+    let (rc, body) = ask(
+        &mut rig,
+        3,
+        "prefs.set",
+        json!({"key":"input.keyboard.compose_key","value":"ralt"}),
+    );
+    assert_eq!(rc, 0, "{body}");
+    rig.h.run_steps(3);
+    let sent = applies(&rig);
+    assert_eq!(sent.len(), 1, "{sent:?}");
+    assert_eq!(sent[0]["expected_revision"], "7");
+    assert_eq!(
+        sent[0]["changes"],
+        json!({"input.keyboard.compose_key":"ralt"})
+    );
+    // A value outside the key's choices is refused before any write.
+    let (rc, _) = ask(
+        &mut rig,
+        4,
+        "prefs.set",
+        json!({"key":"input.keyboard.caps_lock","value":"hyper"}),
+    );
+    assert_eq!(rc, 10);
+}
+
+#[test]
+fn adding_an_input_source_by_hand_appends_it() {
+    let mut rig = rig();
+    read(&mut rig, "authority", false);
+    rig.h.state_mut().as_mut().unwrap().engine_mut().set_options(
+        preferences::xkb::LAYOUTS,
+        vec![
+            (json!(["us", ""]), "English (US)".into()),
+            (json!(["de", ""]), "German".into()),
+        ],
+    );
+    ask(&mut rig, 1, "prefs.page.open", json!({"page":"keyboard"}));
+    rig.h.run_steps(3);
+    let add = node(&mut rig, 2, "Add input source", "Button");
+    ask(&mut rig, 3, "prefs.ui.click", json!({"id": add}));
+    rig.h.run_steps(3);
+    let (_, info) = ask(&mut rig, 4, "prefs.info", json!({}));
+    assert_eq!(info["nav"]["drawer"], "add_source", "{info}");
+    // English (US) is in the list already: Added, and disabled.
+    node(&mut rig, 5, "Added English (US)", "Button");
+    let german = node(&mut rig, 6, "Add German", "Button");
+    ask(&mut rig, 7, "prefs.ui.click", json!({"id": german}));
+    rig.h.run_steps(4);
+    let sent = applies(&rig);
+    assert_eq!(sent.len(), 1, "{sent:?}");
+    assert_eq!(
+        sent[0]["changes"],
+        json!({"input.keyboard.layouts":[["us",""],["de",""]]})
+    );
+}
+
+#[test]
 fn search_lands_on_the_control() {
     let mut rig = rig();
     let (rc, body) = ask(&mut rig, 1, "prefs.search", json!({"query":"gaps"}));

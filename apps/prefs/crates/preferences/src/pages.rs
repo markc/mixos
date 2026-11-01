@@ -25,6 +25,7 @@ use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
 mod appearance;
+mod input;
 mod network;
 mod panels;
 mod tree;
