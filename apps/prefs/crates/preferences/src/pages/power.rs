@@ -70,7 +70,8 @@ pub(super) fn page() -> Page {
                 .show(battery),
             section("devices", Vec::new())
                 .items("power.devices", "row-power-devices-none")
-                .cards(),
+                .cards()
+                .backend("backend-hostd-upower"),
             section(
                 "mode",
                 vec![
