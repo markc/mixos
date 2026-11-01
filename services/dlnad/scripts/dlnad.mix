@@ -1,0 +1,461 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- version: 0.1.0
+-- dlnad: a DLNA / UPnP AV media server as a Bus citizen. It serves one media
+-- directory to TVs and other renderers on one LAN interface: SSDP discovery,
+-- the device and service descriptions, ContentDirectory Browse over SOAP, and
+-- the files themselves over HTTP with byte ranges. The directory is browsed
+-- live (no index): drop a file in and the next Browse shows it.
+--
+-- Run: mix --serve dlnad.mix          (Bus service "dlnad")
+-- Config: <etc>/dlnad/dlnad.conf.mix (or $DLNAD_CONF), strict data:
+--   media_root  directory to serve (required)
+--   listen      the LAN IPv4 renderers reach; HTTP binds it, SSDP joins on it (required)
+--   port        HTTP port (default 8200)
+--   name        friendly name base (default "MixOS Media")
+--   ssdp        announce and answer M-SEARCH (default true; needs mix >= 0.118.0)
+--   renderers   IPv4s that also get every advert unicast (default []): for
+--               renderers that never join the SSDP multicast group
+--   announce_s  seconds between alive adverts (default 60)
+--   max_age     advert lifetime in seconds (default 1800)
+-- State: <var>/dlnad/identity.conf.mix (or $DLNAD_STATE dir): {uuid, name}.
+--
+-- Commands (bodies are JSON objects; fields optional unless named):
+--   dlnad.status                      identity, config, counters
+--   dlnad.list {id, start, count}     one container's children, as data
+--   dlnad.renderers                   clients seen (HTTP and M-SEARCH)
+--   dlnad.announce                    send the alive adverts now
+--   dlnad.identity.rotate {keep_name} byebye, new uuid (+ name), alive
+-- Replies: rc 0 with JSON; rc 10 bad request; rc 15 failed. Error bodies are
+-- {error_code, message}.
+--
+-- A config change needs a restart (the unit), not RELOAD: a reload's
+-- candidate cannot bind the fixed ports the running generation holds.
+
+$D = require("lib/dlna.mix")
+$H = require("lib/http.mix")
+
+$CHUNK = 1048576
+-- A paused renderer leaves a send waiting; give it an hour before the
+-- connection is dropped (the renderer re-requests its range on resume).
+$SEND_TIMEOUT = 3600
+
+fn conf_path()
+  return env("DLNAD_CONF") ?? mixos_path("etc", "dlnad/dlnad.conf.mix")
+end
+
+fn state_dir()
+  return env("DLNAD_STATE") ?? mixos_path("var", "dlnad")
+end
+
+fn load_conf($path)
+  if not is_file($path) then raise("CONFIG", "no config at " .. $path) end
+  $c = load_data($path)
+  if type($c) != "map" then raise("CONFIG", $path .. ": not a map") end
+  if type($c.media_root) != "string" or not is_dir($c.media_root) then raise("CONFIG", "media_root must be an existing directory") end
+  if type($c.listen) != "string" or not re_match($c.listen, "^[0-9]{1,3}(\\.[0-9]{1,3}){3}$") then raise("CONFIG", "listen must be an IPv4 address") end
+  $c.media_root = re_replace($c.media_root, "/+$", "")
+  $c.port = $c.port ?? 8200
+  if type($c.port) != "number" or $c.port != floor($c.port) or $c.port < 1 or $c.port > 65535 then raise("CONFIG", "port must be 1..65535") end
+  $c.name = $c.name ?? "MixOS Media"
+  $c.ssdp = $c.ssdp ?? true
+  $c.renderers = $c.renderers ?? []
+  $c.announce_s = $c.announce_s ?? 60
+  $c.max_age = $c.max_age ?? 1800
+  $c.max_conns = $c.max_conns ?? 64
+  for $r in $c.renderers
+    if type($r) != "string" or not re_match($r, "^[0-9]{1,3}(\\.[0-9]{1,3}){3}$") then raise("CONFIG", "renderers must be IPv4 addresses") end
+  end
+  return $c
+end
+
+fn load_identity($dir, $base)
+  $p = $dir .. "/identity.conf.mix"
+  if is_file($p) then
+    $i = load_data($p)
+    if type($i) == "map" and type($i.uuid) == "string" and type($i.name) == "string" then return $i end
+  end
+  return save_identity($dir, {uuid: uuid(), name: $base})
+end
+
+fn save_identity($dir, $i)
+  mkdir($dir)
+  -- tmp + rename: a crash mid-write never leaves a half identity (a new uuid
+  -- on the next boot would make every renderer re-learn the server)
+  $p = $dir .. "/identity.conf.mix"
+  write_file($p .. ".tmp", data_encode($i, true) .. "\n")
+  rename($p .. ".tmp", $p)
+  return $i
+end
+
+$C = nil
+try
+  $C = load_conf(conf_path())
+catch $m
+  eprint("dlnad: refusing to start: " .. $m)
+  exit(2)
+end
+$BASE = "http://" .. $C.listen .. ":" .. to_string($C.port)
+$LOCATION = $BASE .. "/description.xml"
+-- All mutable state lives in $ST and is written by path ($ST.x = …): a
+-- whole-variable assignment inside a fn or handler would bind a local.
+$ST = {id: load_identity(state_dir(), $C.name), conns: {}, seen: {}, looping: false,
+  stats: {started: now_iso(), requests: 0, streams: 0, bytes_sent: 0, errors: 0, msearch: 0, adverts_failed: 0}}
+
+-- ---- HTTP -------------------------------------------------------------------
+
+-- The native event commands (dlnad.http.*, dlnad.ssdp) are reachable over
+-- the Bus too, so each handler acts only on a source this process owns.
+$LISTENER = tcp_listen($C.listen, $C.port)
+$LISTENER_SRC = tcp_on($LISTENER, "dlnad.http.conn")
+
+fn seen($peer, $via, $agent)
+  $ST.seen[$peer] = {last: now_iso(), via: $via, agent: $agent ?? ""}
+end
+
+-- Close a connection: tcp_unwatch joins the reader, which owns and closes
+-- the socket, and answers any send still in flight with SOCKET_SEND_CLOSED
+-- (so a stream loop blocked on a paused renderer ends at once).
+fn finish($src)
+  if $ST.conns[$src] == nil then return end
+  $ST.conns = delete($ST.conns, $src)
+  try
+    tcp_unwatch($src)
+  catch $m
+  end
+end
+
+-- Connections that never complete a request are dropped after $IDLE_S;
+-- at most $MAX_CONNS are held at once (a TV opens a handful). Each held
+-- connection is a Mix socket source (one reader thread); mix 0.118.0 allows
+-- 256 per generation, so 64 leaves ample room for the listener and SSDP.
+$IDLE_S = 30
+$MAX_CONNS = $C.max_conns
+
+fn evict_idle()
+  $oldest = nil
+  for $src in keys($ST.conns)
+    $c = $ST.conns[$src]
+    if not $c.busy and ($oldest == nil or $c.opened < $ST.conns[$oldest].opened) then $oldest = $src end
+  end
+  if $oldest != nil then finish($oldest) end
+end
+
+fn sweep()
+  $now = time()
+  for $src in keys($ST.conns)
+    if $ST.conns[$src] != nil and not $ST.conns[$src].busy and $now - $ST.conns[$src].opened > $IDLE_S then finish($src) end
+  end
+end
+
+fn put($h, $payload)
+  return tcp_send($h, $payload, {timeout: $SEND_TIMEOUT})
+end
+
+fn ctx()
+  return {root: $C.media_root, base: $BASE, title: $ST.id.name}
+end
+
+fn xml_reply($status, $body, $method)
+  return $H.small($status, "text/xml; charset=\"utf-8\"", $body, [["EXT", ""]], $method)
+end
+
+-- Serve one media file (GET/HEAD), honouring Range. Streams in $CHUNK
+-- slices; a send that fails (the renderer closed, often to seek) ends the
+-- stream quietly.
+fn serve_media($h, $req)
+  $rel = $H.media_rel($req.path)
+  if $rel == nil then return put($h, $H.refuse(404, $req.method)) end
+  $abs = $C.media_root .. "/" .. $rel
+  if not is_file($abs) or not $D.confined($C.media_root, $rel) then return put($h, $H.refuse(404, $req.method)) end
+  -- Stream the canonical path, not the request path (no link to re-traverse).
+  $abs = realpath($abs)
+  $name = $rel
+  $p = lastpos("/", $rel)
+  if $p > 0 then $name = substr($rel, $p) end
+  $mime = $D.mime($name)
+  if $mime == nil and $D.ext($name) == "srt" then $mime = "text/srt" end
+  if $mime == nil then return put($h, $H.refuse(404, $req.method)) end
+  $size = stat($abs).size
+  $r = $H.byte_range($req.headers["range"], $size)
+  if $r != nil and $r.bad == true then
+    return put($h, $H.response_head(416, [["Content-Range", "bytes */" .. to_string($size)], ["Content-Length", 0]]))
+  end
+  $mode = "Streaming"
+  if starts_with($mime, "image/") then $mode = "Interactive" end
+  $hs = [["Content-Type", $mime], ["Accept-Ranges", "bytes"], ["transferMode.dlna.org", $mode]]
+  if $mime != "text/srt" then push($hs, ["contentFeatures.dlna.org", $D.DLNA_FEATURES]) end
+  if $req.headers["getcaptioninfo.sec"] != nil and starts_with($mime, "video/") then
+    $srt = $D.join_rel($D.parent_rel($rel), $D.stem($name) .. ".srt")
+    if is_file($C.media_root .. "/" .. $srt) then push($hs, ["CaptionInfo.sec", $BASE .. $D.url_path($srt)]) end
+  end
+  $start = 0
+  $last = $size - 1
+  $status = 200
+  if $r != nil then
+    $start = $r.start
+    $last = $r.end
+    $status = 206
+    push($hs, ["Content-Range", "bytes " .. to_string($start) .. "-" .. to_string($last) .. "/" .. to_string($size)])
+  end
+  push($hs, ["Content-Length", $last - $start + 1])
+  -- A renderer often closes during the head (every seek): not an error.
+  try
+    put($h, $H.response_head($status, $hs))
+  catch $m
+    return
+  end
+  if $req.method == "HEAD" or $size == 0 then return end
+  $ST.stats.streams = $ST.stats.streams + 1
+  $off = $start
+  try
+    while $off <= $last
+      $n = $CHUNK
+      if $last - $off + 1 < $n then $n = $last - $off + 1 end
+      $b = $H.read_range($abs, $off, $n)
+      if bytes_len($b) == 0 then break end
+      put($h, $b)
+      $off = $off + bytes_len($b)
+      $ST.stats.bytes_sent = $ST.stats.bytes_sent + bytes_len($b)
+    end
+  catch $m
+  end
+  $ST.stats.streams = $ST.stats.streams - 1
+end
+
+fn route($h, $req, $peer)
+  $ST.stats.requests = $ST.stats.requests + 1
+  seen($peer, "http", $req.headers["user-agent"])
+  $m = $req.method
+  $p = $req.path
+  $get = $m == "GET" or $m == "HEAD"
+  if $get and $p == "/description.xml" then return put($h, xml_reply(200, $D.description($ST.id), $m)) end
+  if $get and $p == "/dlna/ContentDirectory.xml" then return put($h, xml_reply(200, $D.content_directory_scpd(), $m)) end
+  if $get and $p == "/dlna/ConnectionManager.xml" then return put($h, xml_reply(200, $D.connection_manager_scpd(), $m)) end
+  if $get and $p == "/dlna/X_MS_MediaReceiverRegistrar.xml" then return put($h, xml_reply(200, $D.registrar_scpd(), $m)) end
+  if starts_with($p, "/ctl/") then
+    if $m != "POST" then return put($h, $H.refuse(405, $m)) end
+    $svc = substr($p, 5)
+    if not contains(["ContentDirectory", "ConnectionManager", "X_MS_MediaReceiverRegistrar"], $svc) then return put($h, $H.refuse(404, $m)) end
+    $r = $D.control($svc, $req.headers, $req.body, ctx())
+    return put($h, xml_reply($r.status, $r.body, $m))
+  end
+  if starts_with($p, "/evt/") then
+    -- Eventing is accepted and never fired: renderers re-Browse on UpdateID.
+    if $m == "SUBSCRIBE" then
+      return put($h, $H.response_head(200, [["SID", $req.headers["sid"] ?? ("uuid:" .. uuid())], ["TIMEOUT", "Second-1800"], ["Content-Length", 0]]))
+    end
+    if $m == "UNSUBSCRIBE" then return put($h, $H.response_head(200, [["Content-Length", 0]])) end
+    return put($h, $H.refuse(405, $m))
+  end
+  if $get then return serve_media($h, $req) end
+  return put($h, $H.refuse(501, $m))
+end
+
+on dlnad.http.conn
+  $a = $event.args
+  if type($a) != "map" or $a.watch != $LISTENER_SRC then return end
+  if $a.accepted != nil then
+    sweep()
+    -- Full: make room by dropping the oldest idle connection, never the
+    -- newcomer (a TV's newest connection is usually the seek it just made).
+    if length(keys($ST.conns)) >= $MAX_CONNS then evict_idle() end
+    try
+      $src = tcp_on($a.accepted.handle, "dlnad.http.data")
+      $ST.conns[$src] = {handle: $a.accepted.handle, peer: $a.accepted.peer.host, buf: "", busy: false, opened: time()}
+    catch $m
+      -- SOCKET_LIMIT (Mix's per-generation source cap) or similar: close
+      -- the unsubscribed handle rather than leak it.
+      $ST.stats.errors = $ST.stats.errors + 1
+      eprint("dlnad: refusing a connection: " .. $m)
+      try
+        tcp_close($a.accepted.handle)
+      catch $m2
+      end
+    end
+  elif $a.closed != nil then
+    eprint("dlnad: HTTP listener closed: " .. to_string($a.closed.reason))
+    exit(1)
+  end
+end
+
+-- One request per connection: buffer until it is complete, answer it, close.
+on dlnad.http.data async
+  if type($event.args) != "map" or type($event.args.watch) != "string" then return end
+  $src = $event.args.watch
+  if $ST.conns[$src] == nil then return end
+  if $event.args.closed != nil then
+    -- also mid-stream: closing here ends a send blocked on a gone renderer
+    finish($src)
+    return
+  end
+  if $ST.conns[$src].busy then return end
+  $ST.conns[$src].buf = $ST.conns[$src].buf .. bytes_to_string(bytes_from_hex($event.args.frame.data.hex), {lossy: true})
+  $parsed = $H.parse_request($ST.conns[$src].buf)
+  if $parsed.state == "more" then return end
+  $ST.conns[$src].busy = true
+  $h = $ST.conns[$src].handle
+  $peer = $ST.conns[$src].peer
+  try
+    if $parsed.state == "error" then
+      put($h, $H.refuse($parsed.status, "GET"))
+    else
+      route($h, $parsed.req, $peer)
+    end
+  catch $m
+    -- Failures after a media head went out are caught inside serve_media,
+    -- so a response here has not started: answer 500 if the peer is there.
+    $ST.stats.errors = $ST.stats.errors + 1
+    eprint("dlnad: request failed: " .. $m)
+    try
+      put($h, $H.refuse(500, "GET"))
+    catch $m2
+    end
+  end
+  finish($src)
+end
+
+-- ---- SSDP -------------------------------------------------------------------
+
+$SSDP = nil
+$S = nil
+$SSDP_NOTE = "disabled in config"
+if $C.ssdp then
+  if has_builtin("udp_listen") then
+    $S = require("lib/ssdp.mix")
+    -- A bad address degrades to HTTP-only with a note, not a restart loop.
+    try
+      $SSDP = $S.ssdp_open($C.listen, "dlnad.ssdp")
+      $SSDP_NOTE = "on " .. $C.listen
+    catch $m
+      $SSDP_NOTE = "failed to open: " .. $m
+      eprint("dlnad: SSDP " .. $SSDP_NOTE)
+    end
+  else
+    $SSDP_NOTE = "unavailable: this mix has no udp_listen (needs >= 0.118.0)"
+    eprint("dlnad: SSDP " .. $SSDP_NOTE)
+  end
+end
+
+fn announce($nts)
+  if $SSDP == nil then return -1 end
+  $f = $S.advertise($SSDP, $ST.id.uuid, $nts, $LOCATION, $C.max_age, $C.renderers)
+  $ST.stats.adverts_failed = $ST.stats.adverts_failed + $f
+  return $f
+end
+
+on dlnad.ssdp
+  $a = $event.args
+  if $SSDP == nil or type($a) != "map" or $a.watch != $SSDP.source then return end
+  -- Housekeeping also rides SSDP traffic, so idle connections are swept
+  -- even while the Bus (which starts the loop) is down.
+  sweep()
+  if $a.datagram == nil then
+    if $a.closed != nil then eprint("dlnad: SSDP socket closed: " .. to_string($a.closed.reason)) end
+    return
+  end
+  $sts = $S.answer($SSDP, $a.datagram, $ST.id.uuid, $LOCATION, $C.max_age)
+  if length($sts) > 0 then
+    $ST.stats.msearch = $ST.stats.msearch + 1
+    seen($a.datagram.from_host, "m-search", $D.ssdp_parse($a.datagram.text).headers["user-agent"])
+  end
+end
+
+-- The housekeeping loop: one per process, started on the first Bus
+-- connection. Alive adverts every announce_s; idle HTTP connections swept
+-- at least every $IDLE_S.
+on bus.connected async
+  if $ST.looping then return end
+  $ST.looping = true
+  -- Clear any stale adverts a previous run left under this uuid, then go live.
+  announce("byebye")
+  $tick = $C.announce_s
+  if $tick > $IDLE_S then $tick = $IDLE_S end
+  $next = 0
+  while true
+    if time() >= $next then
+      announce("alive")
+      $next = time() + $C.announce_s
+    end
+    sweep()
+    sleep($tick)
+  end
+end
+
+-- ---- Bus surface ------------------------------------------------------------
+
+fn body()
+  if $event.body == nil or trim($event.body) == "" then return {} end
+  try
+    $v = json_parse($event.body)
+    if type($v) == "map" then return $v end
+  catch $m
+  end
+  return nil
+end
+
+fn fail($code, $message)
+  $rc = if $code == "USAGE" then 10 else 15 end
+  reply($rc, json_encode({error_code: $code, message: $message}))
+end
+
+on dlnad.status desc "Identity, config, SSDP state and counters."
+  reply(0, json_encode({name: $ST.id.name, uuid: $ST.id.uuid, location: $LOCATION, media_root: $C.media_root,
+    listen: $C.listen, port: $C.port, ssdp: $SSDP_NOTE, renderers: $C.renderers, announce_s: $C.announce_s,
+    max_age: $C.max_age, connections: length(keys($ST.conns)), stats: $ST.stats}))
+end
+
+on dlnad.list desc "One container's children as data. Body {id (default \"0\"), start, count}."
+  $b = body()
+  if $b == nil then
+    fail("USAGE", "body must be a JSON object")
+  else
+    $rel = $D.id_rel(to_string($b.id ?? "0"))
+    if $rel == nil or not $D.confined($C.media_root, $rel) or not is_dir($C.media_root .. "/" .. $rel) then
+      fail("NOT_FOUND", "no such container")
+    else
+      $all = $D.children($C.media_root, $rel)
+      $end = length($all)
+      $start = floor(to_number($b.start ?? 0) ?? 0)
+      if $start < 0 then $start = 0 end
+      if $start > $end then $start = $end end
+      $count = floor(to_number($b.count ?? 0) ?? 0)
+      if $count > 0 and $start + $count < $end then $end = $start + $count end
+      $out = []
+      for $e in slice($all, $start, $end)
+        push($out, {id: $D.rel_id($e.rel), kind: $e.kind, name: $e.name, size: $e.size, mime: $e.mime,
+          url: if $e.kind == "item" then $BASE .. $D.url_path($e.rel) else nil end,
+          subtitle: if $e.srt != nil then $BASE .. $D.url_path($e.srt) else nil end})
+      end
+      reply(0, json_encode({id: $D.rel_id($rel), total: length($all), items: $out}))
+    end
+  end
+end
+
+on dlnad.renderers desc "Clients seen over HTTP or M-SEARCH, with when and their user agent."
+  reply(0, json_encode($ST.seen))
+end
+
+on dlnad.announce desc "Send the ssdp:alive adverts now (multicast and unicast)."
+  if $SSDP == nil then
+    fail("SSDP_OFF", $SSDP_NOTE)
+  else
+    reply(0, json_encode({sent: true, failed: announce("alive")}))
+  end
+end
+
+on dlnad.identity.rotate desc "byebye, then a new uuid (and name unless keep_name), then alive. Renderers that cache by uuid see a new server. Body {keep_name}."
+  $b = body()
+  if $b == nil then
+    fail("USAGE", "body must be a JSON object")
+  else
+    $bye = announce("byebye")
+    $u = uuid()
+    $name = $ST.id.name
+    if $b.keep_name != true then $name = $C.name .. " " .. upper(left($u, 4)) end
+    $ST.id = save_identity(state_dir(), {uuid: $u, name: $name})
+    $alive = announce("alive")
+    -- failed: datagrams that did not go out (-1 each when SSDP is off)
+    reply(0, json_encode({uuid: $ST.id.uuid, name: $ST.id.name, byebye_failed: $bye, alive_failed: $alive}))
+  end
+end

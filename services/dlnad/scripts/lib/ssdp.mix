@@ -1,0 +1,60 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- ssdp: dlnad's discovery socket (UDP 239.255.255.250:1900 on one
+-- interface). Kept apart from dlnad.mix so the HTTP side runs on a mix that
+-- predates the UDP event sources (mix 0.118.0: udp_listen, udp_on, udp_send_via): dlnad requires this module
+-- only when SSDP is enabled.
+--
+-- Renderers find a server two ways: they M-SEARCH (we answer unicast from
+-- :1900) and they cache NOTIFY ssdp:alive adverts until max-age runs out.
+-- Some never join the multicast group (the LG webOS sets seen so far), so
+-- every advert is also sent unicast to each configured renderer address.
+
+$D = require("dlna.mix")
+$GROUP = "239.255.255.250"
+$PORT = 1900
+
+-- Open the socket and subscribe it. $iface the local IPv4 of the interface
+-- to join and send from. Returns {handle, source}.
+fn ssdp_open($iface, $command)
+  $h = udp_listen("0.0.0.0", $PORT, {join: $GROUP, iface: $iface, reuse: true, ttl: 4, loop: false})
+  return {handle: $h, source: udp_on($h, $command)}
+end
+
+fn ssdp_close($s)
+  if $s != nil then udp_unwatch($s.source) end
+end
+
+-- Send every advert of one kind ("alive" | "byebye") to the group and to
+-- each unicast target. Errors on one target do not stop the rest; the
+-- count of datagrams that failed is returned.
+fn advertise($s, $uuid, $nts, $location, $max_age, $targets)
+  $failed = 0
+  for $nt in $D.notify_types($uuid)
+    $pkt = $D.ssdp_notify($uuid, $nt, $nts, $location, $max_age)
+    for $dst in concat([$GROUP], $targets)
+      try
+        udp_send_via($s.handle, $dst, $PORT, $pkt)
+      catch $m
+        $failed = $failed + 1
+      end
+    end
+  end
+  return $failed
+end
+
+-- Answer one datagram if it is an M-SEARCH for us. Returns the search
+-- target list answered ([] when ignored).
+fn answer($s, $datagram, $uuid, $location, $max_age)
+  if $datagram.text == nil then return [] end
+  $msg = $D.ssdp_parse($datagram.text)
+  $sts = $D.msearch_targets($msg, $uuid)
+  $date = date_format(time(), "%a, %d %b %Y %H:%M:%S GMT", {utc: true})
+  for $st in $sts
+    try
+      udp_send_via($s.handle, $datagram.from_host, $datagram.from_port, $D.msearch_reply($uuid, $st, $location, $max_age, $date))
+    catch $m
+    end
+  end
+  return $sts
+end

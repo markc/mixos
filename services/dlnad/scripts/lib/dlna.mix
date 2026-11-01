@@ -1,0 +1,505 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- dlna: the UPnP AV / DLNA wire formats dlnad serves, as pure functions over
+-- a media directory. Shared by the dlnad citizen (SSDP, Bus) and the webd
+-- handlers (description, SOAP control), so both sides speak one dialect.
+--
+-- Object ids: "0" is the root; every other object is "/" + its path relative
+-- to the media root ("/Show/Show.S01E01.mkv"). They are stateless, so there
+-- is no index to build or go stale: a Browse lists the directory it names.
+-- Dotfiles are hidden; files are shown only when their extension is a known
+-- media type; a video's sibling .srt (same stem) is offered as its subtitle.
+--
+-- The DLNA dialect (protocolInfo flags, the sec: caption element, the
+-- transferMode/contentFeatures headers) follows what the LG webOS renderers
+-- accept from minidlna and VuIO.
+
+$MIME = {
+  mkv: "video/x-matroska", mk3d: "video/x-matroska", mp4: "video/mp4", m4v: "video/mp4",
+  mov: "video/quicktime", avi: "video/x-msvideo", ts: "video/mp2t", m2ts: "video/mp2t",
+  webm: "video/webm", mpg: "video/mpeg", mpeg: "video/mpeg", wmv: "video/x-ms-wmv",
+  mp3: "audio/mpeg", flac: "audio/flac", m4a: "audio/mp4", aac: "audio/aac",
+  wav: "audio/wav", ogg: "audio/ogg", opus: "audio/ogg", mka: "audio/x-matroska",
+  jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", gif: "image/gif", webp: "image/webp"
+}
+
+-- Byte-range seek only (OP=01): webd serves Range, not time seek.
+$DLNA_FEATURES = "DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000"
+
+$NS_DIDL = "xmlns=\"urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:upnp=\"urn:schemas-upnp-org:metadata-1-0/upnp/\" xmlns:dlna=\"urn:schemas-dlna-org:metadata-1-0/\" xmlns:sec=\"http://www.sec.co.kr/\""
+
+fn xml($s)
+  return html_escape(to_string($s))
+end
+
+fn xml_unescape($s)
+  $s = replace($s, "&lt;", "<")
+  $s = replace($s, "&gt;", ">")
+  $s = replace($s, "&quot;", "\"")
+  $s = replace($s, "&apos;", "'")
+  $s = replace($s, "&#x27;", "'")
+  $s = replace($s, "&#39;", "'")
+  return replace($s, "&amp;", "&")
+end
+
+fn ext($name)
+  $p = lastpos(".", $name)
+  if $p == 0 then return "" end
+  return lower(substr($name, $p))
+end
+
+fn stem($name)
+  $p = lastpos(".", $name)
+  if $p == 0 then return $name end
+  return substr($name, 0, $p - 1)
+end
+
+fn mime($name)
+  return $MIME[ext($name)]
+end
+
+fn upnp_class($mime)
+  if starts_with($mime, "video/") then return "object.item.videoItem" end
+  if starts_with($mime, "audio/") then return "object.item.audioItem.musicTrack" end
+  return "object.item.imageItem.photo"
+end
+
+fn protocol_info($mime)
+  return "http-get:*:" .. $mime .. ":" .. $DLNA_FEATURES
+end
+
+-- URL path for a relative path: each segment percent-encoded.
+fn url_path($rel)
+  $segs = []
+  for $s in split($rel, "/")
+    if $s != "" then push($segs, url_encode($s)) end
+  end
+  return "/" .. join($segs, "/")
+end
+
+-- The relative path an object id names, or nil if the id is not ours or
+-- tries to leave the root.
+fn id_rel($id)
+  if $id == "0" then return "" end
+  if not starts_with($id, "/") then return nil end
+  for $s in split(substr($id, 1), "/")
+    -- the same policy as HTTP paths: no empty, dot or hidden segments
+    if $s == "" or starts_with($s, ".") or contains($s, "\u{0}") then return nil end
+  end
+  return substr($id, 1)
+end
+
+-- True when root/rel exists and, symlinks resolved, is still inside the
+-- root: a link that points out of the media directory is not served.
+fn confined($root, $rel)
+  $p = abs_path($root, $rel)
+  if not is_file($p) and not is_dir($p) then return false end
+  $r = realpath($root)
+  $t = realpath($p)
+  return $t == $r or starts_with($t, $r .. "/")
+end
+
+fn rel_id($rel)
+  if $rel == "" then return "0" end
+  return "/" .. $rel
+end
+
+fn parent_rel($rel)
+  $p = lastpos("/", $rel)
+  if $p == 0 then return "" end
+  return substr($rel, 0, $p - 1)
+end
+
+fn join_rel($rel, $name)
+  if $rel == "" then return $name end
+  return $rel .. "/" .. $name
+end
+
+fn abs_path($root, $rel)
+  if $rel == "" then return $root end
+  return $root .. "/" .. $rel
+end
+
+-- The visible children of a directory, sorted: containers first, then items,
+-- each by name. Every entry: {kind, name, rel, size, mime, srt}.
+fn children($root, $rel)
+  $dir = abs_path($root, $rel)
+  $names = sort(ls($dir))
+  $all = {}
+  for $n in $names
+    $all[$n] = true
+  end
+  $dirs = []
+  $items = []
+  for $n in $names
+    $r = join_rel($rel, $n)
+    if not starts_with($n, ".") and confined($root, $r) then
+      $st = stat(abs_path($root, $r))
+      if $st.is_dir then
+        push($dirs, {kind: "container", name: $n, rel: $r})
+      elif $st.is_file and mime($n) != nil then
+        $e = {kind: "item", name: $n, rel: $r, size: $st.size, mime: mime($n), srt: nil}
+        if starts_with($e.mime, "video/") and $all[stem($n) .. ".srt"] == true then
+          $e.srt = join_rel($rel, stem($n) .. ".srt")
+        end
+        push($items, $e)
+      end
+    end
+  end
+  return concat($dirs, $items)
+end
+
+fn child_count($root, $rel)
+  return length(children($root, $rel))
+end
+
+-- One entry for BrowseMetadata: the root, a directory or a file.
+fn entry($root, $rel, $title)
+  if $rel == "" then
+    return {kind: "container", name: $title, rel: ""}
+  end
+  $name = $rel
+  $p = lastpos("/", $rel)
+  if $p > 0 then $name = substr($rel, $p) end
+  $st = stat(abs_path($root, $rel))
+  if $st.is_dir then return {kind: "container", name: $name, rel: $rel} end
+  if mime($name) == nil then return nil end
+  $e = {kind: "item", name: $name, rel: $rel, size: $st.size, mime: mime($name), srt: nil}
+  $srt = join_rel(parent_rel($rel), stem($name) .. ".srt")
+  if starts_with($e.mime, "video/") and is_file(abs_path($root, $srt)) then $e.srt = $srt end
+  return $e
+end
+
+-- DIDL-Lite for one entry. $base is the media URL base ("http://host:port").
+fn didl_object($root, $e, $base)
+  $id = xml(rel_id($e.rel))
+  $parent = "-1"
+  if $e.rel != "" then $parent = xml(rel_id(parent_rel($e.rel))) end
+  if $e.kind == "container" then
+    return "<container id=\"" .. $id .. "\" parentID=\"" .. $parent .. "\" restricted=\"1\" searchable=\"0\" childCount=\"" ..
+      to_string(child_count($root, $e.rel)) .. "\"><dc:title>" .. xml($e.name) ..
+      "</dc:title><upnp:class>object.container.storageFolder</upnp:class></container>"
+  end
+  $url = xml($base .. url_path($e.rel))
+  $title = $e.name
+  if starts_with($e.mime, "video/") or starts_with($e.mime, "audio/") then $title = stem($e.name) end
+  $o = "<item id=\"" .. $id .. "\" parentID=\"" .. $parent .. "\" restricted=\"1\"><dc:title>" .. xml($title) ..
+    "</dc:title><upnp:class>" .. upnp_class($e.mime) .. "</upnp:class><res protocolInfo=\"" ..
+    xml(protocol_info($e.mime)) .. "\" size=\"" .. to_string($e.size) .. "\">" .. $url .. "</res>"
+  if $e.srt != nil then
+    $s = xml($base .. url_path($e.srt))
+    $o = $o .. "<res protocolInfo=\"http-get:*:text/srt:*\">" .. $s .. "</res><sec:CaptionInfoEx sec:type=\"srt\">" .. $s .. "</sec:CaptionInfoEx>"
+  end
+  return $o .. "</item>"
+end
+
+fn didl($root, $entries, $base)
+  $parts = []
+  for $e in $entries
+    push($parts, didl_object($root, $e, $base))
+  end
+  return "<DIDL-Lite " .. $NS_DIDL .. ">" .. join($parts, "") .. "</DIDL-Lite>"
+end
+
+-- A container update id: the directory's mtime, so adding, removing or
+-- renaming a file in it changes the id and renderers refresh.
+fn update_id($dir)
+  return floor(stat($dir).mtime)
+end
+
+-- Browse. $req = {object_id, flag, start, count}. Returns
+-- {ok, result (DIDL string), returned, total, update_id} or {ok: false, code, message}
+-- with UPnP error codes (701 no such object, 720 cannot process).
+fn browse($root, $req, $base, $title)
+  $rel = id_rel($req.object_id)
+  if $rel == nil then return {ok: false, code: 701, message: "No such object"} end
+  if not confined($root, $rel) then return {ok: false, code: 701, message: "No such object"} end
+  if $req.start < 0 or $req.count < 0 then return {ok: false, code: 402, message: "Invalid Args"} end
+  if $req.flag == "BrowseMetadata" then
+    $e = entry($root, $rel, $title)
+    if $e == nil then return {ok: false, code: 701, message: "No such object"} end
+    return {ok: true, result: didl($root, [$e], $base), returned: 1, total: 1, update_id: update_id($root)}
+  end
+  if $req.flag != "BrowseDirectChildren" then return {ok: false, code: 720, message: "Cannot process the request"} end
+  if not is_dir(abs_path($root, $rel)) then return {ok: false, code: 710, message: "No such container"} end
+  $all = children($root, $rel)
+  $total = length($all)
+  $start = $req.start
+  if $start > $total then $start = $total end
+  $end = $total
+  if $req.count > 0 and $start + $req.count < $total then $end = $start + $req.count end
+  $page = slice($all, $start, $end)
+  -- The browsed container's own mtime, so a change inside a subfolder shows.
+  return {ok: true, result: didl($root, $page, $base), returned: length($page), total: $total,
+    update_id: update_id(abs_path($root, $rel))}
+end
+
+-- ---- SOAP -----------------------------------------------------------------
+
+fn soap_field($body, $name)
+  $m = re_find($body, "<(?:[A-Za-z0-9_]+:)?" .. $name .. "(?:\\s[^>]*)?>([\\s\\S]*?)</(?:[A-Za-z0-9_]+:)?" .. $name .. ">")
+  if length($m) == 0 then
+    -- an empty element: <Filter/>
+    return ""
+  end
+  return xml_unescape(trim($m[0].groups[0]))
+end
+
+-- The action a SOAP request names: from the SOAPACTION header
+-- ("urn:…:ContentDirectory:1#Browse") or, failing that, the body's first
+-- element inside s:Body.
+fn soap_action($headers, $body)
+  -- header names arrive lower-cased (http.mix parse_request)
+  $h = $headers["soapaction"] ?? ""
+  $h = replace(trim($h), "\"", "")
+  $p = lastpos("#", $h)
+  if $p > 0 then return substr($h, $p) end
+  $m = re_find($body, "<(?:[A-Za-z0-9_]+:)?Body[^>]*>\\s*<(?:[A-Za-z0-9_]+:)?([A-Za-z]+)")
+  if length($m) > 0 then return $m[0].groups[0] end
+  return ""
+end
+
+fn parse_browse($body)
+  $start = to_number(soap_field($body, "StartingIndex")) ?? 0
+  $count = to_number(soap_field($body, "RequestedCount")) ?? 0
+  $id = soap_field($body, "ObjectID")
+  if $id == "" then $id = "0" end
+  return {object_id: $id, flag: soap_field($body, "BrowseFlag"), start: floor($start), count: floor($count)}
+end
+
+fn soap_envelope($inner)
+  return "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\" s:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\"><s:Body>" ..
+    $inner .. "</s:Body></s:Envelope>\n"
+end
+
+-- An action response: $service "ContentDirectory" | "ConnectionManager";
+-- $args a list of [name, value] pairs, values already XML-ready strings.
+fn soap_response($service, $action, $args)
+  return soap_response_ns("urn:schemas-upnp-org:service:" .. $service .. ":1", $action, $args)
+end
+
+-- The same with the service type URN given whole (the Microsoft registrar).
+fn soap_response_ns($urn, $action, $args)
+  $o = "<u:" .. $action .. "Response xmlns:u=\"" .. $urn .. "\">"
+  for $a in $args
+    $o = $o .. "<" .. $a[0] .. ">" .. $a[1] .. "</" .. $a[0] .. ">"
+  end
+  return soap_envelope($o .. "</u:" .. $action .. "Response>")
+end
+
+fn soap_fault($code, $message)
+  return soap_envelope("<s:Fault><faultcode>s:Client</faultcode><faultstring>UPnPError</faultstring><detail><UPnPError xmlns=\"urn:schemas-upnp-org:control-1-0\"><errorCode>" ..
+    to_string($code) .. "</errorCode><errorDescription>" .. xml($message) .. "</errorDescription></UPnPError></detail></s:Fault>")
+end
+
+-- One control request → {status, body}. $ctx = {root, base, title}.
+fn control($service, $headers, $body, $ctx)
+  $action = soap_action($headers, $body)
+  if $service == "ContentDirectory" then
+    if $action == "Browse" then
+      $r = browse($ctx.root, parse_browse($body), $ctx.base, $ctx.title)
+      if not $r.ok then return {status: 500, body: soap_fault($r.code, $r.message)} end
+      return {status: 200, body: soap_response("ContentDirectory", "Browse", [
+        ["Result", xml($r.result)], ["NumberReturned", to_string($r.returned)],
+        ["TotalMatches", to_string($r.total)], ["UpdateID", to_string($r.update_id)]])}
+    end
+    if $action == "GetSystemUpdateID" then
+      return {status: 200, body: soap_response("ContentDirectory", $action, [["Id", to_string(update_id($ctx.root))]])}
+    end
+    if $action == "GetSearchCapabilities" then
+      return {status: 200, body: soap_response("ContentDirectory", $action, [["SearchCaps", ""]])}
+    end
+    if $action == "GetSortCapabilities" then
+      return {status: 200, body: soap_response("ContentDirectory", $action, [["SortCaps", "dc:title"]])}
+    end
+  end
+  if $service == "ConnectionManager" then
+    if $action == "GetProtocolInfo" then
+      $src = []
+      for $m in unique(values($MIME))
+        push($src, protocol_info($m))
+      end
+      return {status: 200, body: soap_response("ConnectionManager", $action, [["Source", xml(join(sort($src), ","))], ["Sink", ""]])}
+    end
+    if $action == "GetCurrentConnectionIDs" then
+      return {status: 200, body: soap_response("ConnectionManager", $action, [["ConnectionIDs", "0"]])}
+    end
+    if $action == "GetCurrentConnectionInfo" then
+      return {status: 200, body: soap_response("ConnectionManager", $action, [
+        ["RcsID", "-1"], ["AVTransportID", "-1"], ["ProtocolInfo", ""], ["PeerConnectionManager", ""],
+        ["PeerConnectionID", "-1"], ["Direction", "Output"], ["Status", "OK"]])}
+    end
+  end
+  if $service == "X_MS_MediaReceiverRegistrar" then
+    if $action == "IsAuthorized" or $action == "IsValidated" then
+      return {status: 200, body: soap_response_ns("urn:microsoft.com:service:X_MS_MediaReceiverRegistrar:1", $action, [["Result", "1"]])}
+    end
+    if $action == "RegisterDevice" then
+      return {status: 200, body: soap_response_ns("urn:microsoft.com:service:X_MS_MediaReceiverRegistrar:1", $action, [["RegistrationRespMsg", ""]])}
+    end
+  end
+  return {status: 500, body: soap_fault(401, "Invalid Action")}
+end
+
+-- ---- Descriptions ---------------------------------------------------------
+
+-- The device description. $id = {uuid, name}.
+fn description($id)
+  return "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<root xmlns=\"urn:schemas-upnp-org:device-1-0\" xmlns:dlna=\"urn:schemas-dlna-org:device-1-0\"><specVersion><major>1</major><minor>0</minor></specVersion><device>" ..
+    "<deviceType>urn:schemas-upnp-org:device:MediaServer:1</deviceType>" ..
+    "<friendlyName>" .. xml($id.name) .. "</friendlyName><manufacturer>MixOS</manufacturer><manufacturerURL>https://mixos.dev</manufacturerURL>" ..
+    "<modelName>dlnad</modelName><modelDescription>MixOS DLNA media server</modelDescription><modelNumber>1</modelNumber>" ..
+    -- X_DLNADOC after UDN, minidlna's order: some stacks read the device as a sequence
+    "<UDN>uuid:" .. xml($id.uuid) .. "</UDN><dlna:X_DLNADOC>DMS-1.50</dlna:X_DLNADOC><serviceList>" ..
+    "<service><serviceType>urn:schemas-upnp-org:service:ContentDirectory:1</serviceType><serviceId>urn:upnp-org:serviceId:ContentDirectory</serviceId>" ..
+    "<SCPDURL>/dlna/ContentDirectory.xml</SCPDURL><controlURL>/ctl/ContentDirectory</controlURL><eventSubURL>/evt/ContentDirectory</eventSubURL></service>" ..
+    "<service><serviceType>urn:schemas-upnp-org:service:ConnectionManager:1</serviceType><serviceId>urn:upnp-org:serviceId:ConnectionManager</serviceId>" ..
+    "<SCPDURL>/dlna/ConnectionManager.xml</SCPDURL><controlURL>/ctl/ConnectionManager</controlURL><eventSubURL>/evt/ConnectionManager</eventSubURL></service>" ..
+    "<service><serviceType>urn:microsoft.com:service:X_MS_MediaReceiverRegistrar:1</serviceType><serviceId>urn:microsoft.com:serviceId:X_MS_MediaReceiverRegistrar</serviceId>" ..
+    "<SCPDURL>/dlna/X_MS_MediaReceiverRegistrar.xml</SCPDURL><controlURL>/ctl/X_MS_MediaReceiverRegistrar</controlURL><eventSubURL>/evt/X_MS_MediaReceiverRegistrar</eventSubURL></service>" ..
+    "</serviceList></device></root>\n"
+end
+
+-- The Windows Media registrar stub minidlna and VuIO both carry: every
+-- renderer is authorised and validated.
+fn registrar_scpd()
+  return scpd([
+    scpd_action("IsAuthorized", [scpd_arg("DeviceID", "in", "A_ARG_TYPE_DeviceID"), scpd_arg("Result", "out", "A_ARG_TYPE_Result")]),
+    scpd_action("IsValidated", [scpd_arg("DeviceID", "in", "A_ARG_TYPE_DeviceID"), scpd_arg("Result", "out", "A_ARG_TYPE_Result")]),
+    scpd_action("RegisterDevice", [scpd_arg("RegistrationReqMsg", "in", "A_ARG_TYPE_RegistrationReqMsg"),
+      scpd_arg("RegistrationRespMsg", "out", "A_ARG_TYPE_RegistrationRespMsg")])
+  ], [
+    scpd_var("A_ARG_TYPE_DeviceID", "string", "no", []),
+    scpd_var("A_ARG_TYPE_Result", "int", "no", []),
+    scpd_var("A_ARG_TYPE_RegistrationReqMsg", "bin.base64", "no", []),
+    scpd_var("A_ARG_TYPE_RegistrationRespMsg", "bin.base64", "no", []),
+    scpd_var("AuthorizationGrantedUpdateID", "ui4", "yes", []),
+    scpd_var("AuthorizationDeniedUpdateID", "ui4", "yes", []),
+    scpd_var("ValidationSucceededUpdateID", "ui4", "yes", []),
+    scpd_var("ValidationRevokedUpdateID", "ui4", "yes", [])
+  ])
+end
+
+fn scpd_arg($name, $dir, $var)
+  return "<argument><name>" .. $name .. "</name><direction>" .. $dir .. "</direction><relatedStateVariable>" .. $var .. "</relatedStateVariable></argument>"
+end
+
+fn scpd_action($name, $args)
+  return "<action><name>" .. $name .. "</name><argumentList>" .. join($args, "") .. "</argumentList></action>"
+end
+
+fn scpd_var($name, $type, $events, $allowed)
+  $o = "<stateVariable sendEvents=\"" .. $events .. "\"><name>" .. $name .. "</name><dataType>" .. $type .. "</dataType>"
+  if length($allowed) > 0 then
+    $o = $o .. "<allowedValueList>"
+    for $v in $allowed
+      $o = $o .. "<allowedValue>" .. $v .. "</allowedValue>"
+    end
+    $o = $o .. "</allowedValueList>"
+  end
+  return $o .. "</stateVariable>"
+end
+
+fn scpd($actions, $vars)
+  return "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<scpd xmlns=\"urn:schemas-upnp-org:service-1-0\"><specVersion><major>1</major><minor>0</minor></specVersion><actionList>" ..
+    join($actions, "") .. "</actionList><serviceStateTable>" .. join($vars, "") .. "</serviceStateTable></scpd>\n"
+end
+
+fn content_directory_scpd()
+  return scpd([
+    scpd_action("Browse", [
+      scpd_arg("ObjectID", "in", "A_ARG_TYPE_ObjectID"), scpd_arg("BrowseFlag", "in", "A_ARG_TYPE_BrowseFlag"),
+      scpd_arg("Filter", "in", "A_ARG_TYPE_Filter"), scpd_arg("StartingIndex", "in", "A_ARG_TYPE_Index"),
+      scpd_arg("RequestedCount", "in", "A_ARG_TYPE_Count"), scpd_arg("SortCriteria", "in", "A_ARG_TYPE_SortCriteria"),
+      scpd_arg("Result", "out", "A_ARG_TYPE_Result"), scpd_arg("NumberReturned", "out", "A_ARG_TYPE_Count"),
+      scpd_arg("TotalMatches", "out", "A_ARG_TYPE_Count"), scpd_arg("UpdateID", "out", "A_ARG_TYPE_UpdateID")]),
+    scpd_action("GetSearchCapabilities", [scpd_arg("SearchCaps", "out", "SearchCapabilities")]),
+    scpd_action("GetSortCapabilities", [scpd_arg("SortCaps", "out", "SortCapabilities")]),
+    scpd_action("GetSystemUpdateID", [scpd_arg("Id", "out", "SystemUpdateID")])
+  ], [
+    scpd_var("A_ARG_TYPE_ObjectID", "string", "no", []),
+    scpd_var("A_ARG_TYPE_BrowseFlag", "string", "no", ["BrowseMetadata", "BrowseDirectChildren"]),
+    scpd_var("A_ARG_TYPE_Filter", "string", "no", []),
+    scpd_var("A_ARG_TYPE_Index", "ui4", "no", []),
+    scpd_var("A_ARG_TYPE_Count", "ui4", "no", []),
+    scpd_var("A_ARG_TYPE_SortCriteria", "string", "no", []),
+    scpd_var("A_ARG_TYPE_Result", "string", "no", []),
+    scpd_var("A_ARG_TYPE_UpdateID", "ui4", "no", []),
+    scpd_var("SearchCapabilities", "string", "no", []),
+    scpd_var("SortCapabilities", "string", "no", []),
+    scpd_var("SystemUpdateID", "ui4", "yes", [])
+  ])
+end
+
+fn connection_manager_scpd()
+  return scpd([
+    scpd_action("GetProtocolInfo", [scpd_arg("Source", "out", "SourceProtocolInfo"), scpd_arg("Sink", "out", "SinkProtocolInfo")]),
+    scpd_action("GetCurrentConnectionIDs", [scpd_arg("ConnectionIDs", "out", "CurrentConnectionIDs")]),
+    scpd_action("GetCurrentConnectionInfo", [
+      scpd_arg("ConnectionID", "in", "A_ARG_TYPE_ConnectionID"), scpd_arg("RcsID", "out", "A_ARG_TYPE_RcsID"),
+      scpd_arg("AVTransportID", "out", "A_ARG_TYPE_AVTransportID"), scpd_arg("ProtocolInfo", "out", "A_ARG_TYPE_ProtocolInfo"),
+      scpd_arg("PeerConnectionManager", "out", "A_ARG_TYPE_ConnectionManager"), scpd_arg("PeerConnectionID", "out", "A_ARG_TYPE_ConnectionID"),
+      scpd_arg("Direction", "out", "A_ARG_TYPE_Direction"), scpd_arg("Status", "out", "A_ARG_TYPE_ConnectionStatus")])
+  ], [
+    scpd_var("SourceProtocolInfo", "string", "yes", []),
+    scpd_var("SinkProtocolInfo", "string", "yes", []),
+    scpd_var("CurrentConnectionIDs", "string", "yes", []),
+    scpd_var("A_ARG_TYPE_ConnectionStatus", "string", "no", ["OK", "ContentFormatMismatch", "InsufficientBandwidth", "UnreliableChannel", "Unknown"]),
+    scpd_var("A_ARG_TYPE_ConnectionManager", "string", "no", []),
+    scpd_var("A_ARG_TYPE_Direction", "string", "no", ["Input", "Output"]),
+    scpd_var("A_ARG_TYPE_ProtocolInfo", "string", "no", []),
+    scpd_var("A_ARG_TYPE_ConnectionID", "i4", "no", []),
+    scpd_var("A_ARG_TYPE_AVTransportID", "i4", "no", []),
+    scpd_var("A_ARG_TYPE_RcsID", "i4", "no", [])
+  ])
+end
+
+-- ---- SSDP -----------------------------------------------------------------
+
+$SSDP_TYPES = ["upnp:rootdevice", "urn:schemas-upnp-org:device:MediaServer:1",
+  "urn:schemas-upnp-org:service:ContentDirectory:1", "urn:schemas-upnp-org:service:ConnectionManager:1"]
+
+fn usn($uuid, $nt)
+  if $nt == "uuid:" .. $uuid then return $nt end
+  return "uuid:" .. $uuid .. "::" .. $nt
+end
+
+-- Every NT dlnad announces: the device uuid plus the four types.
+fn notify_types($uuid)
+  return concat(["uuid:" .. $uuid], $SSDP_TYPES)
+end
+
+-- $nts "alive" | "byebye". $location the description URL.
+fn ssdp_notify($uuid, $nt, $nts, $location, $max_age)
+  $o = "NOTIFY * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nNT: " .. $nt .. "\r\nNTS: ssdp:" .. $nts .. "\r\nUSN: " .. usn($uuid, $nt) .. "\r\n"
+  if $nts == "alive" then
+    $o = $o .. "CACHE-CONTROL: max-age=" .. to_string($max_age) .. "\r\nLOCATION: " .. $location .. "\r\nSERVER: MixOS/1 UPnP/1.0 dlnad/1\r\n"
+  end
+  return $o .. "\r\n"
+end
+
+-- Parse an SSDP datagram's start line and headers (names lower-cased).
+fn ssdp_parse($text)
+  $lines = split(replace($text, "\r\n", "\n"), "\n")
+  $h = {}
+  for $l in slice($lines, 1, length($lines))
+    $p = pos(":", $l)
+    if $p > 0 then $h[lower(trim(substr($l, 0, $p - 1)))] = trim(substr($l, $p)) end
+  end
+  return {start: trim($lines[0]), headers: $h}
+end
+
+-- The search targets an M-SEARCH matches: [] when it is not one for us.
+fn msearch_targets($msg, $uuid)
+  if not starts_with($msg.start, "M-SEARCH") then return [] end
+  if lower(replace($msg.headers["man"] ?? "", "\"", "")) != "ssdp:discover" then return [] end
+  $st = $msg.headers["st"] ?? ""
+  if $st == "ssdp:all" then return notify_types($uuid) end
+  if contains(notify_types($uuid), $st) then return [$st] end
+  return []
+end
+
+fn msearch_reply($uuid, $st, $location, $max_age, $date)
+  return "HTTP/1.1 200 OK\r\nCACHE-CONTROL: max-age=" .. to_string($max_age) .. "\r\nDATE: " .. $date .. "\r\nEXT:\r\nLOCATION: " .. $location ..
+    "\r\nSERVER: MixOS/1 UPnP/1.0 dlnad/1\r\nST: " .. $st .. "\r\nUSN: " .. usn($uuid, $st) .. "\r\nContent-Length: 0\r\n\r\n"
+end
