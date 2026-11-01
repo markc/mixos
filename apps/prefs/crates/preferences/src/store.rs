@@ -203,7 +203,6 @@ pub fn is_topic(topic: &str) -> bool {
 }
 
 /// Status answers retried while the authority is unreachable.
-
 const STATUS_TRIES: u32 = 3;
 
 /// What a settingsd answer was.

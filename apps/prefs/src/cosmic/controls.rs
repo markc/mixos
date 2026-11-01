@@ -424,18 +424,17 @@ pub fn radio_row(
     if blocked.is_none() {
         let whole = ui.interact(
             response.rect,
-            ui.scope_id().with(("radio", key, option.label)),
+            ui.scope_id().with(("radio", key, text.as_str())),
             Sense::click(),
         );
         if whole.clicked() && !selected {
-            set(events, key, lit(option.value));
+            set(events, key, option.0.clone());
         }
     }
-    if engine.nav.focus == Some(row.id) && selected {
+    if engine.nav.focus == Some((page.id, row.id)) && selected {
         response.scroll_to_me(Some(Align::Center));
         events.push(UiEvent::FocusDone);
     }
-    let _ = page;
 }
 
 fn control(
