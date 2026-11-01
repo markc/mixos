@@ -76,10 +76,10 @@ fn exact_replay_does_not_mark_a_gap_but_same_revision_contradiction_does() {
     assert!(matches!(events[0], Event::Lost));
 }
 #[test]
-fn foreign_snapshot_binding_cannot_activate_despite_matching_broker_stamp() {
+fn foreign_snapshot_profile_cannot_activate_despite_matching_broker_stamp() {
     let mut session = session();
     let mut foreign = snapshot(2, true);
-    foreign.binding.instance = "other".into();
+    foreign.binding.profile = "other".into();
     let (change, jobs) = session.handle(Event::Delivery(decoded_snapshot(foreign)), Some(1));
     assert!(change.is_none());
     assert!(jobs.prepare.is_none());
