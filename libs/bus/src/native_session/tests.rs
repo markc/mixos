@@ -438,6 +438,18 @@ fn allocate_default_open_golden_vector() {
 }
 
 #[test]
+fn default_open_policy_keeps_its_stored_representation() {
+    assert_eq!(
+        serde_json::to_string(&Policy::DefaultOpen).unwrap(),
+        r#""default-open""#
+    );
+    assert_eq!(
+        serde_json::from_str::<Policy>(r#""default-open""#).unwrap(),
+        Policy::DefaultOpen
+    );
+}
+
+#[test]
 fn restricted_policy_is_invalid_allocate_argument() {
     assert!(serde_json::from_str::<Policy>(r#""restricted""#).is_err());
     let body = serde_json::json!({
