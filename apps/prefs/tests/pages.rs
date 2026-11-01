@@ -335,7 +335,7 @@ fn power_rows_name_their_backends_and_refuse_writes() {
         .as_mut()
         .unwrap()
         .engine_mut()
-        .set_fact("power.battery", true);
+        .set_fact("battery", true);
     rig.h.run_steps(2);
     let (_, page) = ask(&mut rig, 4, "prefs.page", json!({}));
     let battery_row = row_of(&page, "suspend_battery");
