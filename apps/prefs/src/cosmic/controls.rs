@@ -1198,7 +1198,6 @@ fn slider(
     }
     if response.drag_stopped() {
         out = ui.data_mut(|d| d.remove_temp::<f64>(id));
-
     } else if response.clicked()
         && let Some(pos) = response.interact_pointer_pos()
     {

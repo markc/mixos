@@ -63,8 +63,18 @@ macro_rules! bar {
             section(
                 "style",
                 vec![
-                    row("gap", Control::Toggle { key: concat!("shell.panels.", $panel, ".gap") }),
-                    row("extend", Control::Toggle { key: concat!("shell.panels.", $panel, ".extend") }),
+                    row(
+                        "gap",
+                        Control::Toggle {
+                            key: concat!("shell.panels.", $panel, ".gap"),
+                        },
+                    ),
+                    row(
+                        "extend",
+                        Control::Toggle {
+                            key: concat!("shell.panels.", $panel, ".extend"),
+                        },
+                    ),
                     row(
                         "appearance",
                         Control::Choice {

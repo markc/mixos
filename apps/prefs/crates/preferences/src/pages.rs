@@ -495,7 +495,6 @@ pub struct Hit {
     pub item: Option<String>,
 }
 
-
 /// Every page and row whose visible labels contain `query` (case-folded,
 /// whitespace literal): page titles and descriptions, section headings, row
 /// titles, descriptions and option labels. A row hit lands on its control.
@@ -591,7 +590,6 @@ impl Index {
         hits
     }
 }
-
 
 #[cfg(test)]
 mod tests {
