@@ -9039,7 +9039,7 @@ impl Evaluator {
                                 format!("${name} is set by the runtime"),
                             ));
                         }
-                        self.scope.declare_global(name).map_err(|code| {
+                        self.scope.validate_global(name).map_err(|code| {
                             let message = if code == "GLOBAL_AFTER_LOCAL" && self.scope.is_module_name(name) {
                                 format!("cannot declare ${name} global: module variables are not globals")
                             } else if code == "GLOBAL_AFTER_LOCAL" && self.scope.is_captured_name(name) {
@@ -9048,6 +9048,8 @@ impl Evaluator {
                             self.coded_err(code, message)
                         })?;
                     }
+                    // Runtime-name and scope conflicts have all been checked.
+                    self.scope.declare_globals(names).map_err(|code| self.coded_err(code, "invalid global declaration"))?;
                     Ok(Value::Nil)
                 }
                 StmtKind::Expression(expr) => {
@@ -12880,6 +12882,8 @@ impl Evaluator {
             None
         };
         MixFunction {
+            can_declare_globals: Self::body_declares_global(body)
+                || params.iter().any(|p| p.default.as_ref().is_some_and(Self::expr_declares_global)),
             name: std::rc::Rc::from(name),
             params: params.to_vec(),
             body: body.clone(),
@@ -12963,8 +12967,11 @@ impl Evaluator {
             stmts.iter().any(stmt)
         }
         fn stmt(s: &Stmt) -> bool {
-            match &s.kind {
+            let mut embedded = false;
+            crate::analyzer::walk_stmt_exprs(s, &mut |e| embedded |= Evaluator::expr_declares_global(e));
+            embedded || match &s.kind {
                 StmtKind::Global(_) => true,
+                StmtKind::Source { .. } | StmtKind::Include { .. } => true,
                 StmtKind::If {
                     then_body,
                     else_ifs,
@@ -13002,7 +13009,24 @@ impl Evaluator {
         }
         match body {
             FunctionBody::Block(b) => list(b),
-            FunctionBody::Expression(_) => false,
+            FunctionBody::Expression(e) => Self::expr_declares_global(e),
+        }
+    }
+
+    fn expr_declares_global(expr: &Expr) -> bool {
+        match expr {
+            Expr::FunctionLiteral { .. } => false, // separate invocation
+            Expr::If(i) => Self::expr_declares_global(&i.condition)
+                || Self::body_declares_global(&FunctionBody::Block(i.then_body.clone()))
+                || i.else_ifs.iter().any(|(c, b)| Self::expr_declares_global(c)
+                    || Self::body_declares_global(&FunctionBody::Block(b.clone())))
+                || i.else_body.as_ref().is_some_and(|b| Self::body_declares_global(&FunctionBody::Block(b.clone()))),
+            Expr::FunctionCall { name, .. } if name == "eval" => true,
+            _ => {
+                let mut found = false;
+                crate::analyzer::walk_expr_children(expr, &mut |e| found |= Self::expr_declares_global(e));
+                found
+            }
         }
     }
 
@@ -15707,6 +15731,8 @@ impl Evaluator {
                     let block_sync_self = Self::compute_block_sync_self("<lambda>", params, body);
                     let body_no_local_assigns = !Self::body_has_local_assigns(body);
                     Ok(Value::Function(Rc::new(MixFunction {
+                        can_declare_globals: Self::body_declares_global(body)
+                            || params.iter().any(|p| p.default.as_ref().is_some_and(Self::expr_declares_global)),
                         name: std::rc::Rc::from("<lambda>"),
                         params: params.clone(),
                         body: (**body).clone(),

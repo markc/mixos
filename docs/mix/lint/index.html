@@ -509,7 +509,8 @@ auto-export or that uses <code>source</code>/<code>include</code>, and a file th
 </ul>
 <h2 id="global-declarations-01190">Global declarations (0.119.0)</h2>
 <p><code>global $x</code> explicitly directs assignment to the program-global frame for
-this invocation. MIX-E1506 exempts declared names; its hint is: declare it
+this invocation. Every <code>global</code> name in the file joins the top-level name universe, so an unrelated function’s same-named local can draw MIX-E1506 under <code>--agent</code>.</p>
+<p>MIX-E1506 exempts declared names; its hint is: declare it
 with <code>global $x</code>, pass it in and return it, or rename the local.</p>
 <table><thead><tr><th>Code</th><th>Meaning</th></tr></thead><tbody>
 <tr><td><code>MIX-E1509</code></td><td>Parameter declared global (<code>GLOBAL_PARAM</code>)</td></tr>

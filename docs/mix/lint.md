@@ -234,7 +234,9 @@ move, since a code's letter fixes its severity permanently. It is now
 ## Global declarations (0.119.0)
 
 `global $x` explicitly directs assignment to the program-global frame for
-this invocation. MIX-E1506 exempts declared names; its hint is: declare it
+this invocation. Every `global` name in the file joins the top-level name universe, so an unrelated function’s same-named local can draw MIX-E1506 under `--agent`.
+
+MIX-E1506 exempts declared names; its hint is: declare it
 with `global $x`, pass it in and return it, or rename the local.
 
 | Code | Meaning |

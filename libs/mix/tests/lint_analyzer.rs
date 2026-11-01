@@ -65,6 +65,12 @@ fn global_placement_diagnostics() {
     let catch_after_decl = codes("fn f() try global $x; die(\"e\") catch $x end end");
     assert!(catch_after_decl.contains(&"MIX-E1511".to_string()));
     assert!(!catch_after_decl.contains(&"MIX-E1510".to_string()));
+    for src in [
+        "fn f() loop global $x; break end end",
+        "fn f() try die(\"e\") catch $m global $x end end",
+    ] {
+        assert!(codes(src).contains(&"MIX-D3024".to_string()), "{src}");
+    }
 }
 
 #[test]

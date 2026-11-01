@@ -2293,7 +2293,7 @@ fn check_expr_tree(
 
 /// Visit the direct child expressions of a node. FunctionLiteral bodies
 /// are deliberately NOT visited (they carry their own scope universe).
-fn walk_expr_children(expr: &Expr, visit: &mut dyn FnMut(&Expr)) {
+pub(crate) fn walk_expr_children(expr: &Expr, visit: &mut dyn FnMut(&Expr)) {
     match expr {
         Expr::BinaryOp { left, right, .. } => {
             visit(left);
@@ -2360,7 +2360,7 @@ fn walk_expr_children(expr: &Expr, visit: &mut dyn FnMut(&Expr)) {
 /// Visit every top-level expression of ONE statement (not nested
 /// statement bodies — the scope pass recurses those itself), applying
 /// the full-tree checker.
-fn walk_stmt_exprs(stmt: &Stmt, visit: &mut dyn FnMut(&Expr)) {
+pub(crate) fn walk_stmt_exprs(stmt: &Stmt, visit: &mut dyn FnMut(&Expr)) {
     let mut go = |e: &Expr| visit(e);
     match &stmt.kind {
         StmtKind::Expression(e)
@@ -4726,16 +4726,21 @@ fn check_global_declarations(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis
                         | StmtKind::For { .. }
                         | StmtKind::ForEach { .. }
                         | StmtKind::While { .. }
+                        | StmtKind::Loop { .. }
                         | StmtKind::Select { .. }
                 );
-            for body in stmt_bodies(&s.kind) {
+            if let StmtKind::TryCatch { try_body, catch, finally_body } = &s.kind {
+                conditional(try_body, nested, ctx, a);
+                if let Some(c) = catch { conditional(&c.body, true, ctx, a); }
+                if let Some(b) = finally_body { conditional(b, nested, ctx, a); }
+            } else { for body in stmt_bodies(&s.kind) {
                 conditional(
                     body,
                     inner && !matches!(s.kind, StmtKind::FunctionDef { .. } | StmtKind::On { .. }),
                     ctx,
                     a,
                 );
-            }
+            } }
             walk_stmt_exprs(s, &mut |e| {
                 for_each_embedded_stmt_list(e, true, &mut |b| conditional(b, nested, ctx, a))
             });
