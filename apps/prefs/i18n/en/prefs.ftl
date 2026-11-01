@@ -644,6 +644,7 @@ list-remove = Remove
 list-add = Add
 list-added = Added
 list-empty = Nothing matches.
+list-search = Search
 
 opt-round = Round
 opt-slightly-round = Slightly round
