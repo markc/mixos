@@ -12,14 +12,14 @@ access, strict-data keys, `send` kwargs, `parse … with` delimiters) — see
 
 ## The full set
 
-The lexer reserves **48 words** across **47 token kinds** (`fn` and
+The lexer reserves **49 words** across **48 token kinds** (`fn` and
 `function` share one token):
 
 | Group | Lexemes |
 |---|---|
 | Conditionals & matching | `if` `then` `else` `elif` `end` `select` `when` `otherwise` |
 | Loops | `for` `each` `in` `to` `step` `while` `loop` `break` `continue` `label` — plus the legacy terminators `next` (for) and `done` (while/loop/on) |
-| Functions | `function` `fn` `return` |
+| Functions | `function` `fn` `return` `global` |
 | Errors | `try` `catch` `finally` `die` |
 | Template parsing | `parse` `with` |
 | Bus messaging | `send` `address` `emit` `on` |

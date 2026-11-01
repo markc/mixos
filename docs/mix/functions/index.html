@@ -449,7 +449,7 @@ print("" .. $track)
 <pre><code class="language-text">[0, 1, 10, 11, 20, 21]
 </code></pre>
 <h3 id="writes-inside-a-function-are-function-local">Writes inside a function are function-local</h3>
-<p>Any <code>$x = ...</code> <em>assignment</em> inside a function binds a <strong>function-local</strong> variable. It does not write through to an outer/global of the same name — and that includes <code>$rc</code>/<code>$result</code>: when those change after a <code>send</code>, it is the Bus runtime writing them natively, not a Mix assignment (see <a href="/mix/bus/">Bus messaging</a>); a literal <code>$rc = ...</code> inside a function is as local as any other write.</p>
+<p>By default, <code>$x = ...</code> <em>assignment</em> inside a function binds a <strong>function-local</strong> variable. It does not write through to an outer/global of the same name — and that includes <code>$rc</code>/<code>$result</code>: when those change after a <code>send</code>, it is the Bus runtime writing them natively, not a Mix assignment (see <a href="/mix/bus/">Bus messaging</a>); a literal <code>$rc = ...</code> inside a function is as local as any other write.</p>
 <pre><code class="language-mix">$g = 1
 function w()
   $g = 99
@@ -459,7 +459,7 @@ print($g)
 </code></pre>
 <pre><code class="language-text">1
 </code></pre>
-<p>This includes the accumulator trap: a helper doing <code>$count = $count + 1</code> leaves the caller's <code>$count</code> untouched. A function cannot tick a shared global counter.</p>
+<p>This includes the accumulator trap: a helper doing <code>$count = $count + 1</code> leaves the caller's <code>$count</code> untouched. Declare <code>global $count</code> before assignment to update the program-global counter.</p>
 <h3 id="reads-fall-through-globals-fallback">Reads fall through (globals fallback)</h3>
 <p>A function may <em>read</em> an outer/global variable fine — lookups fall through to the global frame:</p>
 <pre><code class="language-mix">$g = 42
@@ -471,7 +471,7 @@ print(r())
 <pre><code class="language-text">43
 </code></pre>
 <h3 id="the-pass-in--return--reassign-triad">The pass-in / return / reassign triad</h3>
-<p>Because writes are local and args are by value, the way to thread state <em>through</em> a function is the triad: <strong>(1) pass the value in</strong> (explicit read) → <strong>(2) <code>return</code></strong> the new value (compute) → <strong>(3) reassign at the call site</strong> (write). There is no <code>global</code> keyword — this is the idiom by design.</p>
+<p>Because writes are local and args are by value, the way to thread state <em>through</em> a function is the triad: <strong>(1) pass the value in</strong> (explicit read) → <strong>(2) <code>return</code></strong> the new value (compute) → <strong>(3) reassign at the call site</strong> (write). This remains a useful explicit data-flow idiom. For intentional program-global updates, use <code>global $x</code> before local binding; see <a href="/mix/variables/#explicit-program-global-writes">variables</a>. Lambdas must declare too, and captured or module-injected locals cannot be redeclared global.</p>
 <pre><code class="language-mix">function inc($n)
   return $n + 1
 end
@@ -680,7 +680,7 @@ print($mathlib["mul"](3, 4))
 <li><strong>Concat is <code>..</code></strong> (never <code>+</code>/<code>.</code>): <code>"hi " .. $name</code>.</li>
 <li><strong>Top-level <code>fn</code>s hoist</strong> (0.63.0) — forward calls work at the script's top level; a <code>fn</code> nested in a block still binds when its branch runs. Recursion caps at <strong>128</strong> frames (clean runtime error).</li>
 <li><strong>A keyword can't be a function name</strong> (<code>function step(...)</code> errors; <code>$step = 1</code> is fine) and <strong>a builtin can't be shadowed</strong> (calls always resolve to the builtin).</li>
-<li><strong>Args by value; writes function-local; closures capture for reads only.</strong> Propagate state with the pass-in/return/reassign triad — there is no <code>global</code>.</li>
+<li><strong>Args by value; writes function-local; closures capture for reads only.</strong> Propagate state with the pass-in/return/reassign triad, or declare <code>global $x</code> for program-global writes.</li>
 <li><strong>Modules = map of lambdas, index-called</strong> (<code>$mod["fn"](args)</code>), not dot-called.</li>
 <li><strong><code>include</code></strong> = script-relative, load-once (libs); <strong><code>source</code></strong> = CWD, every-time.</li>
 <li>Multi-statement lambdas must be <strong>var-bound</strong> before going into a HOF; named functions <strong>can't</strong> be passed by bare name.</li>

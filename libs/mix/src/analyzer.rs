@@ -4625,6 +4625,21 @@ fn walk_frame_expr(
 /// functions counts twice, so "bound exactly once" is a conservative,
 /// never an optimistic, claim.
 fn check_global_declarations(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis) {
+    fn conditional(stmts: &[Stmt], nested: bool, ctx: &FileContext, a: &mut Analysis) {
+        for s in stmts {
+            if nested && matches!(s.kind, StmtKind::Global(_)) {
+                a.diagnostics.push(diag(ctx, "MIX-D3024", Severity::Note, s.line,
+                    "global takes effect only when this control-flow branch executes".to_string(), None));
+            }
+            let inner = nested || matches!(s.kind, StmtKind::If { .. } | StmtKind::For { .. }
+                | StmtKind::ForEach { .. } | StmtKind::While { .. } | StmtKind::Select { .. });
+            for body in stmt_bodies(&s.kind) {
+                conditional(body, inner && !matches!(s.kind, StmtKind::FunctionDef { .. } | StmtKind::On { .. }), ctx, a);
+            }
+            walk_stmt_exprs(s, &mut |e| for_each_embedded_stmt_list(e, true, &mut |b| conditional(b, nested, ctx, a)));
+        }
+    }
+    conditional(stmts, false, ctx, a);
     let mut params: HashMap<usize, HashSet<String>> = HashMap::new();
     walk_frames(stmts, TOP_FRAME, &mut |node, _| {
         let pair = match node {
@@ -4651,8 +4666,12 @@ fn check_global_declarations(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis
         };
         if let StmtKind::Global(names) = &s.kind {
             for name in names {
+                if matches!(name.as_str(), "event" | "rc" | "result" | "reply") {
+                    emit("MIX-E1512", Severity::Error, name, "runtime-owned name (GLOBAL_RUNTIME_NAME)");
+                    continue;
+                }
                 if frame == TOP_FRAME {
-                    emit("MIX-D3023", Severity::Note, name, "already in global scope; declaration is a no-op");
+                    emit("MIX-D3023", Severity::Note, name, "top-level declaration; handlers use the program-global frame");
                 } else if params.get(&frame).is_some_and(|ps| ps.contains(name)) {
                     emit("MIX-E1509", Severity::Error, name, "function parameter (GLOBAL_PARAM)");
                 } else if assigned.contains(name) {

@@ -721,6 +721,13 @@ inside a heredoc body, which does interpolate `$(...)`.
 
 See [invocation](invocation.md) for the full launch matrix.
 
+## Global declarations (0.119.0)
+
+`global $a, $b` directs writes to the program-global frame for the rest of
+this invocation. Declare before local binding. Called functions and lambdas
+need their own declaration. See [variables](variables.md#explicit-program-global-writes)
+for placement errors and module/handler behaviour.
+
 ## See also
 
 - [strings](strings.md) — `'raw'` vs `"interp"`, `${...}`, `~`, `\u{}`, heredocs

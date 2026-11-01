@@ -45,6 +45,32 @@ struct Setup {
     stderr: SharedBuf,
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn declared_globals_survive_class_c_helper_and_handler_creation() {
+    tokio::task::LocalSet::new().run_until(async {
+        let mut s = setup(r#"
+$conns = {a: 1, b: 2}
+fn finish()
+  global $conns, $helper_created
+  $conns = delete($conns, "a")
+  $helper_created = 42
+end
+on global.test async
+  global $handler_created
+  $handler_created = 99
+  finish()
+end
+"#).await;
+        s.eval.dispatch_event(mk_event("global.test", "", &[])).await.unwrap();
+        s.eval.drain_class_c_for_shutdown(std::time::Duration::from_secs(5), true).await;
+        let source = "print(length($conns)); print($helper_created); print($handler_created)";
+        let stmts = Parser::new(Lexer::new(source).tokenize().unwrap(), source).parse_program().unwrap();
+        s.eval.execute(&stmts).await.unwrap();
+        assert_eq!(s.stdout.to_string_lossy().trim_end(), "1\n42\n99");
+        assert!(s.stderr.to_string_lossy().is_empty());
+    }).await;
+}
+
 async fn setup(source: &str) -> Setup {
     let stdout = SharedBuf::new();
     let stderr = SharedBuf::new();

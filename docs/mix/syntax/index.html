@@ -231,6 +231,7 @@
                         <a href="#the-tie-break-real-mix-error-vs-command-not-found" class="toc-h3">The tie-break: real Mix error vs &quot;command not found&quot;</a>
                         <a href="#shell-chaining-vs-mix-chaining" class="toc-h3">Shell chaining vs Mix chaining</a>
                         <a href="#running-scripts-vs-one-liners" class="toc-h3">Running scripts vs one-liners</a>
+                        <a href="#global-declarations-01190">Global declarations (0.119.0)</a>
                         <a href="#see-also">See also</a>
                     </nav>
                 </div>
@@ -809,6 +810,11 @@ inside a heredoc body, which does interpolate <code>$(...)</code>.</p>
 <li><code>mix -i -c '&lt;line&gt;'</code> — interactive flavour: loads <code>~/.mixrc</code> (aliases + PATH) before classifying, so an aliased head resolves.</li>
 </ul>
 <p>See <a href="/mix/invocation/">invocation</a> for the full launch matrix.</p>
+<h2 id="global-declarations-01190">Global declarations (0.119.0)</h2>
+<p><code>global $a, $b</code> directs writes to the program-global frame for the rest of
+this invocation. Declare before local binding. Called functions and lambdas
+need their own declaration. See <a href="/mix/variables/#explicit-program-global-writes">variables</a>
+for placement errors and module/handler behaviour.</p>
 <h2 id="see-also">See also</h2>
 <ul>
 <li><a href="/mix/strings/">strings</a> — <code>'raw'</code> vs <code>"interp"</code>, <code>${...}</code>, <code>~</code>, <code>\u{}</code>, heredocs</li>

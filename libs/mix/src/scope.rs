@@ -339,6 +339,7 @@ impl Scope {
 
     pub fn declare_global(&mut self, name: &str) -> Result<(), &'static str> {
         if self.function_floors.is_empty() {
+            if !self.uses_shared_globals() { return Ok(()); }
             if self.uses_shared_globals() && self.frames.last().is_some_and(|f| f.contains_key(name)) {
                 return Err("GLOBAL_AFTER_LOCAL");
             }
