@@ -1552,7 +1552,8 @@ mod tests {
             }
         });
         tokio::time::timeout(Duration::from_secs(5), async {
-            let client = Arc::new(SupervisedClient::connect("fixture", &url).await.unwrap());
+            let client = Arc::new(SupervisedClient::connect_options("fixture", &url)
+                .bounded_incoming(INBOUND_CAPACITY).connect().await.unwrap());
             let generation = client.connection_generation();
             let (sender, receiver) = mpsc::sync_channel(4);
             let delivery = Delivery {
