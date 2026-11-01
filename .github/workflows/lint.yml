@@ -35,6 +35,12 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # The container runs as root while the checkout belongs to the runner
+      # user, so git refuses it ("dubious ownership") and every gate that
+      # lists files fails. Trust exactly this workspace.
+      - name: Trust the checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
       # The toolchain comes from rust-toolchain.toml; only rustfmt is needed.
       # cargo metadata (closure and layering gates) needs cargo itself.
       - name: Install Rust
