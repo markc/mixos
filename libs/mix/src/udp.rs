@@ -258,7 +258,7 @@ mod tests {
             )
             .unwrap();
             let ev =
-                tokio::time::timeout(std::time::Duration::from_secs(3), ne.queue.next(Some(&h)))
+                tokio::time::timeout(std::time::Duration::from_secs(3), ne.queue.next(None))
                     .await
                     .unwrap()
                     .unwrap();
@@ -340,5 +340,31 @@ mod tests {
                 .is_err()
             );
         }
+    }
+
+    #[tokio::test]
+    async fn overflow_has_one_terminal_after_ordered_records() {
+        use crate::builtins::socket_sources::{MAX_SOCKET_FRAMES, SocketRecord};
+        let id = listen("127.0.0.1", 0, "{}");
+        let port = handles::get(id).unwrap().sock.local_addr().unwrap().port();
+        let mut ne = NativeEvents::default();
+        ne.own_udp(id);
+        let h = ne.udp_on(id, "test.overflow".into(), None).unwrap();
+        let data = serde_json::to_vec(&serde_json::json!({"bytes":[], "text":"", "from_host":"127.0.0.1", "from_port":port})).unwrap();
+        for _ in 0..MAX_SOCKET_FRAMES {
+            assert!(ne.queue.socket_push(&h, SocketRecord { kind: "datagram", data: data.clone() }));
+        }
+        UdpSocket::bind("127.0.0.1:0").unwrap().send_to(b"overflow", (Ipv4Addr::LOCALHOST, port)).unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(3), async {
+            while handles::get(id).is_ok() { tokio::task::yield_now().await; }
+        }).await.unwrap();
+        for _ in 0..MAX_SOCKET_FRAMES {
+            let ev = ne.queue.next(None).await.unwrap();
+            assert!(ev.body.contains("datagram"));
+        }
+        let ev = ne.queue.next(None).await.unwrap();
+        assert!(ev.body.contains("overflow"));
+        assert_eq!(ne.queue.socket_snapshot(), (0,0,0));
+        ne.socket_unwatch("udp", &h).unwrap();
     }
 }
