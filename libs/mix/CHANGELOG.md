@@ -1,18 +1,15 @@
 # Changelog
 
-## 0.119.0 — 2026-11-01
+## Unreleased
 
-- Add `global $a, $b` for explicit program-global assignment per invocation,
+### Added
+
+- 0.119.0: add `global $a, $b` for explicit program-global assignment per invocation,
   including shared serve globals. Lambdas declare independently.
 - Refuse parameter, existing-local/capture/module, binder and runtime-name
   conflicts with catchable errors and permanent lint diagnostics.
 - Keep declaring functions off sync/raw-slot paths; preserve keyword map keys
   and fields. See the global-declaration decision for the language contract.
-
-
-## Unreleased
-
-### Added
 
 - `read_file_bytes(path, {offset, max})` seeks to a byte offset (default 0)
   and reads up to required `max` bytes, stopping early only at EOF. At/past

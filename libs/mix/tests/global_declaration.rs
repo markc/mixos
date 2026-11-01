@@ -191,3 +191,35 @@ async fn embedded_pipeline_binder_refuses_global() {
     eval.execute(&stmts).await.unwrap();
     assert_eq!(out.to_string_lossy().trim_end(), "GLOBAL_BINDER");
 }
+
+#[tokio::test]
+async fn multi_name_declaration_is_transactional() {
+    for conflict in ["$event", "$p", "$local"] {
+        let source = format!(r#"
+$a = 0
+fn f($p)
+  $local = 1
+  try
+    global $a, {conflict}
+  catch $m, $e
+    print($e.code)
+  end
+  $a = 7
+end
+f(1)
+print($a)
+"#);
+        let expected = match conflict {
+            "$event" => "GLOBAL_RUNTIME_NAME\n0",
+            "$p" => "GLOBAL_PARAM\n0",
+            _ => "GLOBAL_AFTER_LOCAL\n0",
+        };
+        assert_eq!(run(&source).await, expected);
+    }
+}
+
+#[tokio::test]
+async fn declaration_metadata_covers_expression_bodies_and_defaults() {
+    assert_eq!(run("fn f($p) = if true then global $p end; try f(1) catch $m, $e print($e.code) end; fn g($p = if true then global $p end) return 1 end; try g() catch $m, $e print($e.code) end").await,
+        "GLOBAL_PARAM\nGLOBAL_PARAM");
+}

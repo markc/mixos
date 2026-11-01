@@ -102,6 +102,10 @@ pub enum FibOp {
 
 #[derive(Debug, Clone)]
 pub struct MixFunction {
+    /// Cached at definition time. Ordinary calls need no declaration
+    /// conflict sets; declaring/dynamic-source bodies populate them once
+    /// per activation before parameter/default evaluation.
+    pub can_declare_globals: bool,
     /// `Rc<str>`: cloned into the traceback stack on EVERY call — a
     /// refcount bump, not a heap copy (0.29.0).
     pub name: std::rc::Rc<str>,
@@ -250,7 +254,12 @@ impl ScopeValue<'_> {
 #[derive(Default)]
 struct DeclScope {
     frame: usize,
-    declared: HashSet<String>,
+    declared: Option<Box<HashSet<String>>>,
+    conflicts: Option<Box<DeclConflicts>>,
+}
+
+#[derive(Default)]
+struct DeclConflicts {
     params: HashSet<String>,
     module_names: HashSet<String>,
     captures: HashSet<String>,
@@ -334,12 +343,15 @@ impl Scope {
     pub fn is_declared_global(&self, name: &str) -> bool {
         self.declarations
             .last()
-            .is_some_and(|s| !s.declared.is_empty() && s.declared.contains(name))
+            .is_some_and(|s| s.declared.as_ref().is_some_and(|names| names.contains(name)))
     }
 
     pub fn enter_function_frame_for(&mut self, func: &MixFunction) {
         self.enter_function_frame();
-        let s = self.declarations.last_mut().unwrap();
+        if !func.can_declare_globals {
+            return;
+        }
+        let s = self.declarations.last_mut().unwrap().conflicts.insert(Box::default());
         s.params.extend(func.params.iter().map(|p| p.name.clone()));
         if let Some(env) = func.module_env.as_ref().and_then(|e| e.get()) {
             s.module_names.extend(env.keys().cloned());
@@ -362,29 +374,41 @@ impl Scope {
         self.declarations.pop();
     }
 
-    pub fn declare_global(&mut self, name: &str) -> Result<(), &'static str> {
-        let Some(scope) = self.declarations.last_mut() else {
+    pub fn validate_global(&self, name: &str) -> Result<(), &'static str> {
+        let Some(scope) = self.declarations.last() else {
             return Ok(());
         };
-        if scope.params.contains(name) {
+        if scope.conflicts.as_ref().is_some_and(|s| s.params.contains(name)) {
             return Err("GLOBAL_PARAM");
         }
         if self.frames.last().is_some_and(|f| f.contains_key(name)) {
             return Err("GLOBAL_AFTER_LOCAL");
         }
-        scope.declared.insert(name.to_string());
+        Ok(())
+    }
+
+    /// Validate the complete statement before committing any declaration.
+    pub fn declare_globals(&mut self, names: &[String]) -> Result<(), &'static str> {
+        for name in names {
+            self.validate_global(name)?;
+        }
+        if let Some(scope) = self.declarations.last_mut() {
+            scope.declared.get_or_insert_with(Box::default).extend(names.iter().cloned());
+        }
         Ok(())
     }
 
     pub fn is_module_name(&self, name: &str) -> bool {
         self.declarations
             .last()
+            .and_then(|s| s.conflicts.as_ref())
             .is_some_and(|s| s.module_names.contains(name))
     }
 
     pub fn is_captured_name(&self, name: &str) -> bool {
         self.declarations
             .last()
+            .and_then(|s| s.conflicts.as_ref())
             .is_some_and(|s| s.captures.contains(name))
     }
     pub fn new() -> Self {
@@ -1439,6 +1463,7 @@ mod gamma_tests {
         let mut a = Scope::with_shared(Rc::clone(&globals), Rc::clone(&functions));
         let b = Scope::with_shared(globals, functions);
         a.define_function(MixFunction {
+            can_declare_globals: false,
             name: std::rc::Rc::from("f"),
             params: vec![],
             body: FunctionBody::Expression(crate::ast::Expr::NumberLiteral(7.0)),
