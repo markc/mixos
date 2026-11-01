@@ -32,6 +32,8 @@ pub enum Kind {
     },
     /// `all` (or another word) or a connector name.
     Connector(Vec<String>),
+    /// A list of `min`..=`max` entries; the registry checks each entry.
+    List { min: usize, max: usize },
     /// Anything the page framework draws only through a custom control:
     /// strings, paths, lists, chords, catalogues.
     Other(String),
@@ -107,6 +109,10 @@ fn kind_of(entry: &Value) -> Kind {
             alpha: entry["alpha"].as_bool().unwrap_or(false),
         },
         "connector_or" => Kind::Connector(strings(&entry["words"])),
+        "list" => Kind::List {
+            min: entry["min_items"].as_u64().unwrap_or(0) as usize,
+            max: entry["max_items"].as_u64().unwrap_or(u64::MAX) as usize,
+        },
         other => Kind::Other(other.to_owned()),
     }
 }
@@ -158,6 +164,11 @@ pub fn check(kind: &Kind, value: &Value) -> Option<Result<(), String>> {
                 Some(Ok(()))
             }
             _ => fail("expected a connector name".into()),
+        },
+        Kind::List { min, max } => match value.as_array() {
+            Some(items) if (*min..=*max).contains(&items.len()) => None,
+            Some(items) => fail(format!("{} entries is outside {min}..{max}", items.len())),
+            None => fail("expected a list".into()),
         },
         Kind::Other(_) => None,
     }
@@ -269,6 +280,10 @@ mod tests {
             Some(json!(true))
         );
         assert!(catalog.get("network.wifi.enabled").unwrap().live());
+        let layouts = &catalog.get("input.keyboard.layouts").unwrap().kind;
+        assert_eq!(*layouts, Kind::List { min: 1, max: 8 });
+        assert!(check(layouts, &json!([])).unwrap().is_err());
+        assert!(check(layouts, &json!([["us", ""]])).is_none());
         assert!(catalog.get("appearance.nonsense").is_none());
     }
 

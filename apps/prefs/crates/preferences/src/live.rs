@@ -50,6 +50,7 @@ pub struct ItemAction {
 pub struct Live {
     items: BTreeMap<String, Vec<Item>>,
     options: BTreeMap<String, Vec<(Value, String)>>,
+    values: BTreeMap<String, String>,
 }
 
 impl Engine {
@@ -78,7 +79,19 @@ impl Engine {
             .map(|d| self.label(d, &[]))
     }
 
+    /// The owner of `source` reports its read-only value (the current
+    /// time, a battery's "72% (2 h left)"), shown on rows with
+    /// [`pages::Row::value_from`].
+    pub fn set_value(&mut self, source: &str, text: String) {
+        self.live.values.insert(source.to_owned(), text);
+    }
+
+    pub fn live_value(&self, source: &str) -> Option<&str> {
+        self.live.values.get(source).map(String::as_str)
+    }
+
     /// The owner of `source` replaces its options (value, shown label).
+
     pub fn set_options(&mut self, source: &str, options: Vec<(Value, String)>) {
         self.live.options.insert(source.to_owned(), options);
     }
@@ -203,6 +216,33 @@ impl Engine {
         out
     }
 
+    /// The entries of a list key, in order.
+    pub fn entries(&self, key: &str) -> Vec<Value> {
+        self.store
+            .value(key)
+            .and_then(|v| v.as_array().cloned())
+            .unwrap_or_default()
+    }
+
+    /// How many entries a list key takes: the catalogue's bounds.
+    pub fn list_bounds(&self, key: &str) -> (usize, usize) {
+        match self.store.catalog.get(key).map(|i| &i.kind) {
+            Some(crate::catalog::Kind::List { min, max }) => (*min, *max),
+            _ => (0, usize::MAX),
+        }
+    }
+
+    /// An entry's label: the first of `sources` that offers it, else its
+    /// parts joined (`de (nodeadkeys)`).
+    pub fn entry_label(&self, sources: &[&str], value: &Value) -> String {
+        sources
+            .iter()
+            .flat_map(|s| self.live_options(s))
+            .find(|(v, _)| v == value)
+            .map(|(_, text)| text.clone())
+            .unwrap_or_else(|| raw_label(value))
+    }
+
     /// A numeric control's range: the catalogue's, else the page's.
     pub fn bounds(&self, key: &str, min: f64, max: f64) -> (f64, f64) {
         match self.store.catalog.get(key).map(|i| &i.kind) {
@@ -250,6 +290,55 @@ impl Engine {
             return Err(why);
         }
         self.set_key(key, value)
+    }
+}
+
+/// A value as plain text: a string as itself, a list's non-empty parts
+/// as `first (rest, …)`.
+fn raw_label(value: &Value) -> String {
+    match value {
+        Value::String(s) => s.clone(),
+        Value::Array(parts) => {
+            let parts: Vec<String> = parts
+                .iter()
+                .map(raw_label)
+                .filter(|p| !p.is_empty())
+                .collect();
+            match parts.split_first() {
+                Some((first, [])) => first.clone(),
+                Some((first, rest)) => format!("{first} ({})", rest.join(", ")),
+                None => String::new(),
+            }
+        }
+        other => other.to_string(),
+    }
+}
+
+/// One edit of an ordered list.
+#[derive(Clone, Debug, PartialEq)]
+pub enum ListEdit {
+    /// Move entry `index` one place up (towards the start).
+    Up(usize),
+    Down(usize),
+    Remove(usize),
+    Append(Value),
+}
+
+impl ListEdit {
+    /// `list` after the edit; `None` when it changes nothing (the first
+    /// moved up, an entry already there appended).
+    pub fn apply(&self, list: &[Value]) -> Option<Vec<Value>> {
+        let mut out = list.to_vec();
+        match self {
+            ListEdit::Up(i) if *i > 0 && *i < out.len() => out.swap(i - 1, *i),
+            ListEdit::Down(i) if i + 1 < out.len() => out.swap(*i, i + 1),
+            ListEdit::Remove(i) if *i < out.len() => {
+                out.remove(*i);
+            }
+            ListEdit::Append(value) if !out.contains(value) => out.push(value.clone()),
+            _ => return None,
+        }
+        Some(out)
     }
 }
 
@@ -335,5 +424,53 @@ mod tests {
         );
         // A key with no control on any page yet: settingsd's, not Prefs'.
         assert!(e.set_control("sound.output.amplify", json!(true)).is_err());
+    }
+
+    #[test]
+    fn a_readout_shows_its_owner_s_latest_value() {
+        let mut e = engine();
+        assert_eq!(e.live_value("time.now"), None);
+        e.set_value("time.now", "10:42".into());
+        e.set_value("time.now", "10:43".into());
+        assert_eq!(e.live_value("time.now"), Some("10:43"));
+    }
+
+    #[test]
+    fn list_edits_move_remove_and_append_once() {
+        let list = [json!(["us", ""]), json!(["de", "nodeadkeys"])];
+        assert_eq!(
+            ListEdit::Up(1).apply(&list).unwrap()[0],
+            json!(["de", "nodeadkeys"])
+        );
+        assert_eq!(ListEdit::Up(0).apply(&list), None);
+        assert_eq!(ListEdit::Down(1).apply(&list), None);
+        assert_eq!(
+            ListEdit::Remove(0).apply(&list).unwrap(),
+            [json!(["de", "nodeadkeys"])]
+        );
+        assert_eq!(ListEdit::Append(json!(["us", ""])).apply(&list), None);
+        assert_eq!(
+            ListEdit::Append(json!(["fr", ""])).apply(&list).unwrap().len(),
+            3
+        );
+    }
+
+    #[test]
+    fn an_entry_is_labelled_from_its_source_or_its_parts() {
+        let mut e = engine();
+        e.set_options(
+            "xkb.layouts",
+            vec![(json!(["us", ""]), "English (US)".into())],
+        );
+        assert_eq!(
+            e.entry_label(&["xkb.layouts"], &json!(["us", ""])),
+            "English (US)"
+        );
+        assert_eq!(
+            e.entry_label(&["xkb.layouts"], &json!(["de", "nodeadkeys"])),
+            "de (nodeadkeys)"
+        );
+        assert_eq!(e.entries("input.keyboard.layouts"), [json!(["us", ""])]);
+        assert_eq!(e.list_bounds("input.keyboard.layouts"), (1, 8));
     }
 }
