@@ -911,26 +911,53 @@ pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
         "udp_send" => builtin_udp_send(args),
         "udp_recv" => builtin_udp_recv(args),
         #[cfg(feature = "ws")]
-        "udp_listen" => crate::udp::handles::listen(args),
+        "udp_listen" => {
+            expect_args_between("udp_listen", &args, 2, 3)?;
+            crate::udp::handles::listen(args)
+        }
         #[cfg(feature = "ws")]
         "udp_send_from" => {
+            expect_args("udp_send_from", &args, 4)?;
             let id = socket_sources::client_id_of(args.first(), "udp_send_from")?;
             let sock = crate::udp::handles::get(id)?;
-            let Value::String(host) = &args[1] else { return Err(crate::native_events::refusal("UDP_ARGUMENT", "host must be a string")); };
-            let port = as_exact_integer("udp_send_from port", number_arg("udp_send_from", &args, 2)?, 1, 65535)?;
+            let Value::String(host) = &args[1] else {
+                return Err(crate::native_events::refusal(
+                    "UDP_ARGUMENT",
+                    "host must be a string",
+                ));
+            };
+            let port = as_exact_integer(
+                "udp_send_from port",
+                number_arg("udp_send_from", &args, 2)?,
+                1,
+                65535,
+            )?;
             let data = crate::udp::payload(&args[3])?;
-            let n = sock.sock.send_to(&data, format!("{host}:{port}")).map_err(crate::udp::io)?;
+            let n = sock
+                .sock
+                .send_to(&data, format!("{host}:{port}"))
+                .map_err(crate::udp::io)?;
             Ok(Some(Value::Number(n as f64)))
         }
         #[cfg(feature = "ws")]
         "udp_close" => {
+            expect_args("udp_close", &args, 1)?;
             let id = socket_sources::client_id_of(args.first(), "udp_close")?;
             if let Ok(sock) = crate::udp::handles::get(id) {
                 if sock.subscribed.load(std::sync::atomic::Ordering::Acquire) {
-                    return Err(crate::native_events::refusal("SOCKET_SUBSCRIBED", "use udp_unwatch(source) to close a subscribed UDP socket"));
+                    return Err(crate::native_events::refusal(
+                        "SOCKET_SUBSCRIBED",
+                        "use udp_unwatch(source) to close a subscribed UDP socket",
+                    ));
                 }
             }
-            Ok(Some(Value::Bool(crate::udp::handles::MAP.lock().unwrap().remove(&id).is_some())))
+            Ok(Some(Value::Bool(
+                crate::udp::handles::MAP
+                    .lock()
+                    .unwrap()
+                    .remove(&id)
+                    .is_some(),
+            )))
         }
         "http_serve" => builtin_http_serve(args),
         "http_recv" => builtin_http_recv(args),
@@ -971,8 +998,9 @@ pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
         #[cfg(not(feature = "ws"))]
         name @ ("ws_connect" | "ws_send" | "ws_recv" | "ws_close" | "tcp_connect" | "tcp_send"
         | "tcp_recv" | "tcp_recv_line" | "tcp_close" | "ws_on" | "tcp_on"
-        | "ws_unwatch" | "udp_listen" | "udp_send_from" | "udp_close" | "udp_on" | "udp_unwatch" | "tcp_unwatch" | "tcp_listen" | "tcp_accept" | "tcp_local_addr"
-        | "unix_connect") => Err(MixError::RuntimeError {
+        | "ws_unwatch" | "udp_listen" | "udp_send_from" | "udp_close" | "udp_on"
+        | "udp_unwatch" | "tcp_unwatch" | "tcp_listen" | "tcp_accept"
+        | "tcp_local_addr" | "unix_connect") => Err(MixError::RuntimeError {
             span: None,
             msg: format!("{name}() requires the `ws` feature (tungstenite/rustls)"),
         }),
@@ -22409,11 +22437,16 @@ fn builtin_udp_send(args: Vec<Value>) -> MixResult<Option<Value>> {
     let mut from = std::net::Ipv4Addr::UNSPECIFIED;
     let mut ttl = None;
     if let Some(m) = crate::udp::map(args.get(3))? {
-        for (k,v) in m {
+        for (k, v) in m {
             match k.as_str() {
                 "from" => from = crate::udp::ip(v)?,
                 "ttl" => ttl = Some(crate::udp::ttl(v)?),
-                _ => return Err(crate::native_events::refusal("UDP_ARGUMENT", format!("unknown UDP option '{k}'"))),
+                _ => {
+                    return Err(crate::native_events::refusal(
+                        "UDP_ARGUMENT",
+                        format!("unknown UDP option '{k}'"),
+                    ));
+                }
             }
         }
     }
@@ -22421,8 +22454,12 @@ fn builtin_udp_send(args: Vec<Value>) -> MixResult<Option<Value>> {
         span: None,
         msg: format!("udp_send: bind: {e}"),
     })?;
-    if args.len() == 4 { crate::udp::interface(&sock, from)?; }
-    if let Some(n) = ttl { sock.set_multicast_ttl_v4(n).map_err(crate::udp::io)?; }
+    if args.len() == 4 {
+        crate::udp::interface(&sock, from)?;
+    }
+    if let Some(n) = ttl {
+        sock.set_multicast_ttl_v4(n).map_err(crate::udp::io)?;
+    }
     let sent = sock
         .send_to(&payload, format!("{host}:{port}"))
         .map_err(|e| MixError::RuntimeError {
@@ -24974,7 +25011,12 @@ pub(crate) mod socket_sources {
                 id,
             }
         }
-        pub(crate) const fn udp(id: u64) -> Self { Self { family: ClientFamily::Udp, id } }
+        pub(crate) const fn udp(id: u64) -> Self {
+            Self {
+                family: ClientFamily::Udp,
+                id,
+            }
+        }
         pub(crate) const fn listener(id: u64) -> Self {
             Self {
                 family: ClientFamily::Listener,
@@ -26783,13 +26825,22 @@ pub(crate) mod socket_sources {
         /// connection into one ordered `accepted` record. Cancellation,
         /// overflow and the single terminal record follow the connection
         /// reader's rules; a listener has no sends.
-        pub(crate) fn spawn_udp(queue: Arc<Queue>, id: String, handle: u64, max: usize) -> MixResult<SocketSource> {
+        pub(crate) fn spawn_udp(
+            queue: Arc<Queue>,
+            id: String,
+            handle: u64,
+            max: usize,
+        ) -> MixResult<SocketSource> {
             let sock = crate::udp::handles::get(handle)?;
             if sock.subscribed.swap(true, Ordering::AcqRel) {
-                return Err(refusal("SOCKET_SUBSCRIBED", "UDP handle is already subscribed"));
+                return Err(refusal(
+                    "SOCKET_SUBSCRIBED",
+                    "UDP handle is already subscribed",
+                ));
             }
             let result = (|| {
-                let (cancel, wake) = UnixStream::pair().map_err(|e| refusal("SOCKET_PAIR", e.to_string()))?;
+                let (cancel, wake) =
+                    UnixStream::pair().map_err(|e| refusal("SOCKET_PAIR", e.to_string()))?;
                 let completed = Arc::new(AtomicBool::new(false));
                 let done = completed.clone();
                 let socket = sock.clone();
@@ -26823,9 +26874,16 @@ pub(crate) mod socket_sources {
                     if let Some(reason) = closed { queue.socket_closed(&id, serde_json::json!({"reason": reason})); }
                     done.store(true, Ordering::Release);
                 }).map_err(|e| refusal("SOCKET_THREAD", e.to_string()))?;
-                Ok(SocketSource { key: ClientKey::udp(handle), cancel, worker: Some(worker), completed })
+                Ok(SocketSource {
+                    key: ClientKey::udp(handle),
+                    cancel,
+                    worker: Some(worker),
+                    completed,
+                })
             })();
-            if result.is_err() { sock.subscribed.store(false, Ordering::Release); }
+            if result.is_err() {
+                sock.subscribed.store(false, Ordering::Release);
+            }
             result
         }
 
@@ -27434,9 +27492,9 @@ pub(crate) mod socket_sources {
     #[cfg(target_os = "linux")]
     pub(crate) use linux::SocketSource;
     #[cfg(target_os = "linux")]
-    use linux::{spawn_listener, spawn_tcp, spawn_ws};
-    #[cfg(target_os = "linux")]
     pub(crate) use linux::spawn_udp;
+    #[cfg(target_os = "linux")]
+    use linux::{spawn_listener, spawn_tcp, spawn_ws};
 
     #[cfg(not(target_os = "linux"))]
     pub(crate) struct SocketSource {
