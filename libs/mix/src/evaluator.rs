@@ -9096,9 +9096,7 @@ impl Evaluator {
                         return Ok(Value::Nil);
                     }
                     let val = self.eval_expr(value).await?;
-                    if self.scope.is_declared_global(name) {
-                        self.scope.set_global(name, val);
-                    } else if self.ctx.function_depth > 0 {
+                    if self.ctx.function_depth > 0 {
                         // Inside a function: always create/update in current frame
                         self.scope.set_in_current(name.clone(), val);
                     } else {
@@ -13342,9 +13340,7 @@ impl Evaluator {
                     return Ok(Value::Nil);
                 }
                 let val = self.eval_sync_verified(value)?;
-                if self.scope.is_declared_global(name) {
-                    self.scope.set_global(name, val);
-                } else if self.ctx.function_depth > 0 {
+                if self.ctx.function_depth > 0 {
                     self.scope.set_in_current(name.clone(), val);
                 } else {
                     self.scope.update_or_set(name, val);
