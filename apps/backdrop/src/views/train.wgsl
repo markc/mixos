@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 struct Vertex { @builtin(position) position: vec4<f32>, @location(0) colour: vec3<f32> };
-@vertex fn vs(@location(0) position: vec2<f32>, @location(1) colour: vec3<f32>) -> Vertex {
+@vertex fn vs(@location(0) world: vec3<f32>, @location(1) colour: vec3<f32>) -> Vertex {
     var out: Vertex;
-    out.position = vec4<f32>(position, 0.0, 1.0);
+    // Fixed orthographic camera. Faces are emitted in painter order because
+    // the egui layer pass has no depth attachment.
+    out.position = vec4<f32>(world.x * 0.085 + world.z * 0.035,
+        -0.1 + world.y * 0.14 - world.z * 0.065, 0.0, 1.0);
     out.colour = colour;
     return out;
 }

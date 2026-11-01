@@ -724,12 +724,15 @@ dependencies = [
  "citizen",
  "config",
  "egui",
+ "egui-wgpu",
+ "egui_plot",
  "futures",
  "image",
  "libc",
  "serde_json",
  "toolkit",
  "wallpaper",
+ "wgpu",
 ]
 
 [[package]]

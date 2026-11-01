@@ -1146,7 +1146,7 @@ mod tests {
             store: None,
             engine: Engine::new(),
             registry: registry(),
-                view_registry: crate::views::registry(),
+            view_registry: crate::views::registry(),
             active: BTreeMap::new(),
             candidate: BTreeMap::new(),
             serial: 0,
