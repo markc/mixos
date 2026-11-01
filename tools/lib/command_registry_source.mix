@@ -40,6 +40,7 @@ $_SESSION = "^[tc][a-z0-9]{1,7}-[a-z2-7]{22}$"
 $_LINT_SCHEMA = 3
 $_NO_HANDLERS = "native Mix lacks parsed handler metadata; rebuild current Mix"
 $embed = require("command_registry_embed.mix")
+$n1 = require("n1_builtins.mix")
 
 -- The native mix binary for the lint calls: MIXOS_TEST_MIX if set, else the
 -- installed one.
@@ -173,9 +174,10 @@ fn _lint($path, $flags)
   $err = ""
   try
     -- N-1 parses runtime source for handler metadata without executing it.
-    -- The next release's sole new builtin is an explicit external contract
-    -- to the older linter; every other undefined name still fails the gate.
-    $r = run_argv(concat([mix_bin(), "lint", "--json", "--allow-function", "mixos_path"], $flags, [$path]), {timeout: 60})
+    -- $flags carries --allow-function for every builtin this tree's Mix has
+    -- and the running (released) mix lacks (n1_builtins.mix); every other
+    -- undefined name still fails the gate.
+    $r = run_argv(concat([mix_bin(), "lint", "--json"], $flags, [$path]), {timeout: 60})
   catch $m
     $err = $m
   end
@@ -265,6 +267,7 @@ fn check_source($root, $families)
   $flags = {}
   try
     $flags = $embed.prepare(mix_bin(), $embed.scopes($root, $listing.files))
+    $newer = $n1.allow_flags($root, mix_bin())
   catch $m
     return {problems: ["webd embedding context: " .. $m], declared: 0, files: 0}
   end
@@ -282,7 +285,7 @@ fn check_source($root, $families)
   $files = 0
   for each $f in $listing.files
     $files = $files + 1
-    $lint = _lint($f.path, get_or($flags, $f.path, []))
+    $lint = _lint($f.path, concat($newer, get_or($flags, $f.path, [])))
     if not $lint.ok then
       push($problems, $f.rel .. ": " .. $lint.error)
     else
@@ -322,6 +325,7 @@ fn check_vhosts($root)
   $flags = {}
   try
     $flags = $embed.prepare(mix_bin(), $embed.scopes($root, $listing.files))
+    $newer = $n1.allow_flags($root, mix_bin())
   catch $m
     return {problems: ["webd embedding context: " .. $m], files: 0}
   end
@@ -330,7 +334,7 @@ fn check_vhosts($root)
   for $f in $listing.files
     if starts_with($f.rel, "services/webd/vhosts/") then
       $files = $files + 1
-      $lint = _lint($f.path, get_or($flags, $f.path, []))
+      $lint = _lint($f.path, concat($newer, get_or($flags, $f.path, [])))
       if not $lint.ok then push($problems, $f.rel .. ": " .. $lint.error) end
     end
   end

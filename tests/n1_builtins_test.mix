@@ -1,0 +1,38 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- n1_builtins: the tree's builtin table is read, and only names the given
+-- mix lacks become --allow-function pairs. Run from the root:
+--   mix tests/n1_builtins_test.mix
+$n1 = require("../tools/lib/n1_builtins.mix")
+$root = realpath(".")
+$mix = realpath("/proc/self/exe")
+fn expect($ok, $message)
+  if not $ok then raise("N1_TEST", $message) end
+end
+$all = $n1.tree_builtins($root)
+expect(length($all) > 300, "tree table read: " .. to_string(length($all)) .. " names")
+for $n in ["read_file", "run_argv", "tcp_listen", "mixos_path"]
+  expect(contains($all, $n), "tree table lists " .. $n)
+end
+expect(length(unique($all)) == length($all), "names are unique")
+-- Everything the running mix reports missing really is missing from it, and
+-- really is in the tree's table.
+$have = split(run_argv_must([$mix, "builtins", "--names"]), "\n")
+for $n in $n1.missing($root, $mix)
+  expect(contains($all, $n) and not contains($have, $n), "missing: " .. $n)
+end
+$flags = $n1.allow_flags($root, $mix)
+expect(length($flags) % 2 == 0, "flags come in pairs")
+-- range() is inclusive of its end
+if length($flags) > 0 then
+  for $i in range(0, length($flags) - 2, 2)
+    expect($flags[$i] == "--allow-function", "flag " .. to_string($i) .. " is --allow-function")
+  end
+end
+-- A mix that knows every tree builtin needs no allowance: a fake binary
+-- that prints the whole table.
+$fake = "/var/tmp/n1-test-" .. uuid()
+write_file($fake, "#!/bin/sh\ncat <<'EOF'\n" .. join($all, "\n") .. "\nEOF\n")
+run_argv_must(["chmod", "+x", $fake])
+expect(length($n1.allow_flags($root, $fake)) == 0, "a current mix gets no allowance")
+remove($fake)
+print("n1_builtins_test: ok (" .. to_string(length($n1.missing($root, $mix))) .. " names newer than this mix)")

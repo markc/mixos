@@ -1,0 +1,42 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- n1_builtins: the builtins this tree's Mix defines that the running mix
+-- does not have yet.
+--
+-- CI's lint tier runs the last PUBLISHED release's mix (the N-1 binary), not
+-- this commit's, so a tree script that calls a builtin added since that
+-- release is "undefined" to the older linter. Allowing exactly those names —
+-- read from the tree's own builtin table, so the list can never drift — keeps
+-- every genuinely undefined function a failure while a new builtin lints the
+-- day it lands instead of after the next weekly release. Before this, each
+-- new builtin needed its own pragma or hard-coded --allow-function.
+
+-- Every builtin name in the tree's table (libs/mix/src/builtins.rs), each row
+-- ("name", CapabilityClass::…, …).
+fn tree_builtins($root)
+  $src = read_file($root .. "/libs/mix/src/builtins.rs")
+  $names = []
+  for $m in re_find($src, "(?m)^\\s*\\(\"([a-z_][a-z0-9_]*)\", CapabilityClass::")
+    push($names, $m.groups[0])
+  end
+  return unique($names)
+end
+
+-- The names the given mix binary does not know, from its own --names list.
+fn missing($root, $mix)
+  $have = {}
+  for $n in split(run_argv_must([$mix, "builtins", "--names"]), "\n")
+    $have[trim($n)] = true
+  end
+  return filter(tree_builtins($root), fn($n) = $have[$n] != true)
+end
+
+-- `--allow-function NAME` pairs for every missing name ([] on a current mix).
+fn allow_flags($root, $mix)
+  $flags = []
+  for $n in missing($root, $mix)
+    push($flags, "--allow-function")
+    push($flags, $n)
+  end
+  return $flags
+end
