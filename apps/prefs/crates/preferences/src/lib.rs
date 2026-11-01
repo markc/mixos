@@ -7,6 +7,8 @@
 //! one-operation-at-a-time rules and the `prefs.*` Bus commands,
 //! and knows nothing about the UI; `prefs` renders it with egui
 //! (AGENTS.md §4.1, engine first).
+// The Bus description is one json! literal of every command.
+#![recursion_limit = "256"]
 pub mod appearance;
 mod background;
 pub mod catalog;
