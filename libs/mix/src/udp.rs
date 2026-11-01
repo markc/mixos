@@ -405,13 +405,17 @@ mod tests {
         let id = listen("127.0.0.1", 0, "{}");
         let port = handles::get(id).unwrap().sock.local_addr().unwrap().port();
         drop(closed);
+        // Connect only in this regression fixture to guarantee the kernel
+        // surfaces ICMP ECONNREFUSED on recv_from on every Linux setup.
+        // The production listener stays unconnected; its error path is identical.
+        handles::get(id).unwrap().sock.connect((Ipv4Addr::LOCALHOST, closed_port)).unwrap();
         let mut ne = NativeEvents::default();
         ne.own_udp(id);
         ne.udp_on(id, "test.peer".into(), None).unwrap();
         call_builtin("udp_send_from", vec![Value::Number(id as f64), Value::String("127.0.0.1".into()), Value::Number(closed_port as f64), Value::String("reply".into())]).unwrap();
         // Let the local ICMP response arrive before sending the next request.
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-        UdpSocket::bind("127.0.0.1:0").unwrap().send_to(b"alive", (Ipv4Addr::LOCALHOST, port)).unwrap();
+        UdpSocket::bind((Ipv4Addr::LOCALHOST, closed_port)).unwrap().send_to(b"alive", (Ipv4Addr::LOCALHOST, port)).unwrap();
         let ev = tokio::time::timeout(std::time::Duration::from_secs(3), ne.queue.next(None)).await.unwrap().unwrap();
         let body: serde_json::Value = serde_json::from_str(&ev.body).unwrap();
         assert_eq!(body["datagram"]["text"], "alive", "{body}");
