@@ -412,6 +412,10 @@ pub struct Section {
     /// Drawn on the page rather than in a list card (Wallpaper's preview
     /// and chooser): each row is its bare control.
     pub plain: bool,
+    /// The missing backend of this section alone, as a message id: its
+    /// rows are disabled and its live items show the backend line instead
+    /// of their empty text (Power's devices while UPower is absent).
+    pub backend: Option<&'static str>,
 }
 
 /// A section's rows from data: the live source, the message shown while
@@ -444,6 +448,7 @@ pub fn section(id: &'static str, rows: Vec<Row>) -> Section {
         show: Cond::Always,
         items: None,
         plain: false,
+        backend: None,
     }
 }
 
@@ -455,6 +460,12 @@ impl Section {
             empty,
             style: ItemStyle::Rows,
         });
+        self
+    }
+
+    /// Wait on `backend` (a message id), this section alone.
+    pub fn backend(mut self, backend: &'static str) -> Self {
+        self.backend = Some(backend);
         self
     }
 
@@ -588,7 +599,13 @@ impl Page {
         self.rows().map(|(_, r)| r).find(|r| r.id == id)
     }
     /// The drawer holding row `id`, if it sits in one.
+    /// The section holding row `id`.
+    pub fn section_of(&self, id: &str) -> Option<&Section> {
+        self.rows().find(|(_, r)| r.id == id).map(|(s, _)| s)
+    }
+
     pub fn drawer_of(&self, id: &str) -> Option<&Drawer> {
+
         self.drawers()
             .iter()
             .find(|d| d.sections.iter().any(|s| s.rows.iter().any(|r| r.id == id)))
@@ -825,6 +842,18 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn a_section_backend_is_the_section_s_alone() {
+        let s = section("devices", Vec::new())
+            .items("power.devices", "row-power-devices-none")
+            .cards()
+            .backend("backend-hostd-upower");
+        assert_eq!(s.backend, Some("backend-hostd-upower"));
+        assert_eq!(s.items.map(|i| i.style), Some(ItemStyle::Cards));
+        let appearance = get("appearance").unwrap();
+        assert_eq!(appearance.section_of("density").map(|s| s.id), Some("density"));
     }
 
     #[test]
