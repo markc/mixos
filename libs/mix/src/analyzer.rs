@@ -4624,6 +4624,37 @@ fn walk_frame_expr(
 /// frame). `len()` is the binder count: a name bound in two different
 /// functions counts twice, so "bound exactly once" is a conservative,
 /// never an optimistic, claim.
+fn walk_global_frames(stmts: &[Stmt], frame: usize, visit: &mut dyn FnMut(FrameNode<'_>, usize)) {
+    fn expr(e: &Expr, line: usize, frame: usize, visit: &mut dyn FnMut(FrameNode<'_>, usize)) {
+        visit(FrameNode::Expr(e, line), frame);
+        match e {
+            Expr::FunctionLiteral { params, body } => {
+                let frame = node_id(e);
+                for p in params { if let Some(d) = &p.default { expr(d, line, frame, visit); } }
+                match &**body {
+                    FunctionBody::Block(b) => walk_global_frames(b, frame, visit),
+                    FunctionBody::Expression(e) => expr(e, line, frame, visit),
+                }
+            }
+            Expr::If(i) => {
+                expr(&i.condition, line, frame, visit);
+                walk_global_frames(&i.then_body, frame, visit);
+                for (c, b) in &i.else_ifs { expr(c, line, frame, visit); walk_global_frames(b, frame, visit); }
+                if let Some(b) = &i.else_body { walk_global_frames(b, frame, visit); }
+            }
+            _ => walk_expr_children(e, &mut |e| expr(e, line, frame, visit)),
+        }
+    }
+    for s in stmts {
+        visit(FrameNode::Stmt(s), frame);
+        let inner = if matches!(s.kind, StmtKind::FunctionDef { .. } | StmtKind::On { .. }) {
+            std::ptr::from_ref(s) as usize
+        } else { frame };
+        walk_stmt_exprs(s, &mut |e| expr(e, s.line, inner, visit));
+        for b in stmt_bodies(&s.kind) { walk_global_frames(b, inner, visit); }
+    }
+}
+
 fn check_global_declarations(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis) {
     fn conditional(stmts: &[Stmt], nested: bool, ctx: &FileContext, a: &mut Analysis) {
         for s in stmts {
@@ -4640,8 +4671,14 @@ fn check_global_declarations(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis
         }
     }
     conditional(stmts, false, ctx, a);
+    let mut handlers = HashSet::new();
+    walk_global_frames(stmts, TOP_FRAME, &mut |node, _| {
+        if let FrameNode::Stmt(s) = node && matches!(s.kind, StmtKind::On { .. }) {
+            handlers.insert(std::ptr::from_ref(s) as usize);
+        }
+    });
     let mut params: HashMap<usize, HashSet<String>> = HashMap::new();
-    walk_frames(stmts, TOP_FRAME, &mut |node, _| {
+    walk_global_frames(stmts, TOP_FRAME, &mut |node, _| {
         let pair = match node {
             FrameNode::Stmt(s) => match &s.kind {
                 StmtKind::FunctionDef { params, .. } => Some((std::ptr::from_ref(s) as usize, params)),
@@ -4656,7 +4693,14 @@ fn check_global_declarations(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis
     });
     let mut globals: HashMap<usize, HashSet<String>> = HashMap::new();
     let mut locals: HashMap<usize, HashSet<String>> = HashMap::new();
-    walk_frames(stmts, TOP_FRAME, &mut |node, frame| {
+    walk_global_frames(stmts, TOP_FRAME, &mut |node, frame| {
+        if let FrameNode::Expr(Expr::BinaryOp { op: BinOp::Pipe, .. }, line) = node {
+            if globals.get(&frame).is_some_and(|g| g.contains("_")) {
+                a.diagnostics.push(diag(ctx, "MIX-E1511", Severity::Error, line,
+                    "pipeline binder $_ cannot bind a declared global (GLOBAL_BINDER)".to_string(), None));
+            }
+            locals.entry(frame).or_default().insert("_".to_string());
+        }
         let FrameNode::Stmt(s) = node else { return; };
         let declared = globals.entry(frame).or_default();
         let assigned = locals.entry(frame).or_default();
@@ -4670,8 +4714,11 @@ fn check_global_declarations(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis
                     emit("MIX-E1512", Severity::Error, name, "runtime-owned name (GLOBAL_RUNTIME_NAME)");
                     continue;
                 }
+                if frame == TOP_FRAME || handlers.contains(&frame) {
+                    emit("MIX-D3023", Severity::Note, name, "top-level or handler declaration");
+                }
                 if frame == TOP_FRAME {
-                    emit("MIX-D3023", Severity::Note, name, "top-level declaration; handlers use the program-global frame");
+                    continue;
                 } else if params.get(&frame).is_some_and(|ps| ps.contains(name)) {
                     emit("MIX-E1509", Severity::Error, name, "function parameter (GLOBAL_PARAM)");
                 } else if assigned.contains(name) {

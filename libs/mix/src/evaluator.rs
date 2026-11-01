@@ -7394,7 +7394,7 @@ impl Evaluator {
             // script while still allowing `update_or_set` assignments to
             // walk up to outer-scope globals (intended: `$paused = true`
             // in a handler should affect the outer producer loop).
-            self.scope.push_frame();
+            self.scope.enter_handler_frame();
             self.scope.set("event".to_string(), event_value.clone());
             // 0.63.0 — $event has DYNAMIC EXTENT across the dispatch: a
             // fn called from the handler body must see it too. Function
@@ -7447,10 +7447,10 @@ impl Evaluator {
             let mut requested_exit = false;
             match outcome {
                 Ok(Ok(_)) => {
-                    self.scope.pop_frame();
+                    self.scope.leave_handler_frame();
                 }
                 Ok(Err(MixError::ExitRequest { code })) => {
-                    self.scope.pop_frame();
+                    self.scope.leave_handler_frame();
                     let mut g = self.globals.borrow_mut();
                     // The latest/innermost exit wins, matching nested
                     // `finally` control-flow replacement semantics.
@@ -7459,7 +7459,7 @@ impl Evaluator {
                     requested_exit = true;
                 }
                 Ok(Err(e)) if handle.shutdown_refused.get() && is_reply_shutting_down(&e) => {
-                    self.scope.pop_frame();
+                    self.scope.leave_handler_frame();
                     tracing::debug!(
                         command = %event.command,
                         handler_index = idx,
@@ -7468,7 +7468,7 @@ impl Evaluator {
                     );
                 }
                 Ok(Err(e)) => {
-                    self.scope.pop_frame();
+                    self.scope.leave_handler_frame();
                     faulted = true;
                     tracing::error!(
                         command = %event.command,
@@ -9034,6 +9034,8 @@ impl Evaluator {
                         self.scope.declare_global(name).map_err(|code| {
                             let message = if code == "GLOBAL_AFTER_LOCAL" && self.scope.is_module_name(name) {
                                 format!("cannot declare ${name} global: module variables are not globals")
+                            } else if code == "GLOBAL_AFTER_LOCAL" && self.scope.is_captured_name(name) {
+                                format!("cannot declare ${name} global: captured from the enclosing function")
                             } else { format!("cannot declare ${name} global: {code}") };
                             self.coded_err(code, message)
                         })?;
@@ -13960,6 +13962,7 @@ impl Evaluator {
                             // pipe), so it respects function scope — inside a
                             // function it stays local rather than clobbering a
                             // caller/global `$_` via the globals-fallback.
+                            self.check_global_binder("_")?;
                             self.bind_scoped("_", lval);
                             return self.eval_expr(right).await;
                         }
@@ -16659,7 +16662,7 @@ impl Evaluator {
         // Framed path: body has at least one Assignment, so we need
         // a real function frame. Param-slot caching is not safe here
         // (an Assignment could rehash the bucket array).
-        self.scope.enter_function_frame();
+        self.scope.enter_function_frame_for(&func);
         for (i, param) in func.params.iter().enumerate() {
             self.scope
                 .set_in_current(param.name.clone(), args[i].clone());
@@ -17136,7 +17139,7 @@ impl Evaluator {
             // Enter an isolated function frame. Lookups will only see
             // this frame (plus globals) until we leave — no per-call
             // Vec<HashMap> stash/restore.
-            self.scope.enter_function_frame();
+            self.scope.enter_function_frame_for(&func);
             // Whether THIS call pushed a module-fn frame — a per-call
             // local so a nested non-module call cannot pop the outer
             // call's frame.
@@ -17237,7 +17240,6 @@ impl Evaluator {
                 self.scope.set_in_current(param.name.clone(), val);
             }
 
-            self.scope.begin_function_body(&func.params, Some(func));
             let result: MixResult<Value> = if let Some(e) = bind_err {
                 Err(e)
             } else {

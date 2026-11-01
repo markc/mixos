@@ -247,11 +247,19 @@ impl ScopeValue<'_> {
     }
 }
 
+#[derive(Default)]
+struct DeclScope {
+    frame: usize,
+    declared: HashSet<String>,
+    params: HashSet<String>,
+    module_names: HashSet<String>,
+    captures: HashSet<String>,
+}
+
 pub struct Scope {
-    global_declarations: Vec<HashSet<String>>,
-    root_global_declarations: HashSet<String>,
-    parameter_names: Vec<HashSet<String>>,
-    module_names: Vec<HashSet<String>>,
+    // One record per function or handler activation. Function entries are
+    // pushed alongside function_floors; handlers have no function floor.
+    declarations: Vec<DeclScope>,
     frames: Vec<FxHashMap<String, Value>>,
     /// User-defined functions stored behind `Rc` so the named-function
     /// call path (`scope.get_function(name).cloned()`) bumps a refcount
@@ -324,50 +332,52 @@ impl Default for Scope {
 
 impl Scope {
     pub fn is_declared_global(&self, name: &str) -> bool {
-        self.global_declarations.last().unwrap_or(&self.root_global_declarations).contains(name)
+        self.declarations.last().is_some_and(|s| !s.declared.is_empty() && s.declared.contains(name))
     }
 
-    pub fn begin_function_body(&mut self, params: &[Param], module: Option<&MixFunction>) {
-        if let Some(names) = self.parameter_names.last_mut() {
-            names.extend(params.iter().map(|p| p.name.clone()));
-        }
-        if let Some(names) = self.module_names.last_mut()
-            && let Some(env) = module.and_then(|f| f.module_env.as_ref()).and_then(|e| e.get()) {
-            names.extend(env.keys().cloned());
-        }
+    pub fn enter_function_frame_for(&mut self, func: &MixFunction) {
+        self.enter_function_frame();
+        let s = self.declarations.last_mut().unwrap();
+        s.params.extend(func.params.iter().map(|p| p.name.clone()));
+        if let Some(env) = func.module_env.as_ref().and_then(|e| e.get()) { s.module_names.extend(env.keys().cloned()); }
+        if let Some(captures) = &func.captures { s.captures.extend(captures.keys().cloned()); }
+    }
+
+    pub fn enter_handler_frame(&mut self) {
+        self.push_frame();
+        self.declarations.push(DeclScope { frame: self.frames.len() - 1, ..Default::default() });
+    }
+
+    pub fn leave_handler_frame(&mut self) {
+        self.pop_frame();
+        self.declarations.pop();
     }
 
     pub fn declare_global(&mut self, name: &str) -> Result<(), &'static str> {
-        if self.function_floors.is_empty() {
-            if !self.uses_shared_globals() { return Ok(()); }
-            if self.uses_shared_globals() && self.frames.last().is_some_and(|f| f.contains_key(name)) {
-                return Err("GLOBAL_AFTER_LOCAL");
-            }
-            self.root_global_declarations.insert(name.to_string());
-            return Ok(());
-        }
-        if self.parameter_names.last().is_some_and(|s| s.contains(name)) {
+        let Some(scope) = self.declarations.last_mut() else { return Ok(()); };
+        if scope.params.contains(name) {
             return Err("GLOBAL_PARAM");
         }
         if self.frames.last().is_some_and(|f| f.contains_key(name)) {
             return Err("GLOBAL_AFTER_LOCAL");
         }
-        self.global_declarations.last_mut().unwrap().insert(name.to_string());
+        scope.declared.insert(name.to_string());
         Ok(())
     }
 
     pub fn is_module_name(&self, name: &str) -> bool {
-        self.module_names.last().is_some_and(|names| names.contains(name))
+        self.declarations.last().is_some_and(|s| s.module_names.contains(name))
+    }
+
+    pub fn is_captured_name(&self, name: &str) -> bool {
+        self.declarations.last().is_some_and(|s| s.captures.contains(name))
     }
     pub fn new() -> Self {
         Scope {
             frames: vec![FxHashMap::default()],
             functions: HashMap::new(),
             function_floors: Vec::new(),
-            global_declarations: Vec::new(),
-            root_global_declarations: HashSet::new(),
-            parameter_names: Vec::new(),
-            module_names: Vec::new(),
+            declarations: Vec::new(),
             frame_pool: Vec::new(),
             shared_globals: None,
             shared_functions: None,
@@ -387,10 +397,7 @@ impl Scope {
             frames: vec![FxHashMap::default()],
             functions: HashMap::new(),
             function_floors: Vec::new(),
-            global_declarations: Vec::new(),
-            root_global_declarations: HashSet::new(),
-            parameter_names: Vec::new(),
-            module_names: Vec::new(),
+            declarations: Vec::new(),
             frame_pool: Vec::new(),
             shared_globals: Some(globals),
             shared_functions: Some(functions),
@@ -929,9 +936,7 @@ impl Scope {
     /// it (except globals). O(1). Reuses a pooled frame if available
     /// so the bucket array allocation amortizes across recursive calls.
     pub fn enter_function_frame(&mut self) {
-        self.global_declarations.push(HashSet::new());
-        self.parameter_names.push(HashSet::new());
-        self.module_names.push(HashSet::new());
+        self.declarations.push(DeclScope { frame: self.frames.len(), ..Default::default() });
         self.function_floors.push(self.frames.len());
         let frame = self.frame_pool.pop().unwrap_or_default();
         self.frames.push(frame);
@@ -944,9 +949,7 @@ impl Scope {
     /// retains its bucket capacity, so the next `enter_function_frame`
     /// can bind params without reallocating.
     pub fn leave_function_frame(&mut self) {
-        self.global_declarations.pop();
-        self.parameter_names.pop();
-        self.module_names.pop();
+        self.declarations.pop();
         if let Some(floor) = self.function_floors.pop() {
             while self.frames.len() > floor {
                 let mut frame = self.frames.pop().unwrap();
@@ -999,10 +1002,8 @@ impl Scope {
             .is_some_and(|&f| f >= self.frames.len())
         {
             self.function_floors.pop();
-            self.global_declarations.pop();
-                self.parameter_names.pop();
-                self.module_names.pop();
         }
+        while self.declarations.last().is_some_and(|s| s.frame >= target) { self.declarations.pop(); }
     }
 
     /// Iterate the current (top) frame's entries. Used by

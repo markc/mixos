@@ -71,6 +71,37 @@ end
     }).await;
 }
 
+#[tokio::test]
+async fn handler_declarations_are_isolated_and_refuse_existing_locals() {
+    let mut s = setup(r#"
+global $x
+for $x in [1] end
+on first.msg
+  global $tmp, $uncreated
+  $tmp = 10
+end
+on second.msg
+  $uncreated = 1
+  $tmp = 20
+  $fresh = 1
+  try
+    global $fresh
+  catch $msg, $err
+    print($err.code)
+  end
+end
+"#).await;
+    s.eval.dispatch_event(mk_event("first.msg", "", &[])).await.unwrap();
+    s.eval.dispatch_event(mk_event("second.msg", "", &[])).await.unwrap();
+    let source = "print($tmp); print($x); try print($uncreated) catch $m, $e print($e.code) end";
+    let stmts = Parser::new(Lexer::new(source).tokenize().unwrap(), source).parse_program().unwrap();
+    s.eval.execute(&stmts).await.unwrap();
+    // Existing global tmp is intentionally updated by handler two, but its
+    // declaration must not leak to new bindings in subsequent handlers.
+    assert_eq!(s.stdout.to_string_lossy().trim_end(), "GLOBAL_AFTER_LOCAL\n20\n1\nNAME_UNDEFINED");
+    assert!(s.stderr.to_string_lossy().is_empty());
+}
+
 async fn setup(source: &str) -> Setup {
     let stdout = SharedBuf::new();
     let stderr = SharedBuf::new();
