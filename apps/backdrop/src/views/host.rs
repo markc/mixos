@@ -20,7 +20,15 @@ pub struct Host<V> {
 }
 impl<V: View> Host<V> {
     pub fn new(view: V, ctx: Option<egui::Context>) -> Self {
-        Self { view, active: true, visible:true, snapshot:Arc::default(), last_event:None, ctx, gpu:Default::default() }
+        Self {
+            view,
+            active: true,
+            visible: true,
+            snapshot: Arc::default(),
+            last_event: None,
+            ctx,
+            gpu: Default::default(),
+        }
     }
     pub fn event(&mut self, snapshot: Arc<Snapshot>, force: bool, now: Instant) {
         if force || !Arc::ptr_eq(&snapshot, &self.snapshot) {
@@ -33,7 +41,9 @@ impl<V: View> Host<V> {
     pub fn visibility(&mut self, visible: bool, now: Instant) {
         if self.visible != visible {
             self.visible = visible;
-            if visible { self.last_event = Some(now); }
+            if visible {
+                self.last_event = Some(now);
+            }
             self.view.on_event(self.snapshot.clone(), visible, now);
             self.schedule(now);
         }
@@ -41,51 +51,131 @@ impl<V: View> Host<V> {
     /// Authoritative policy: even a view that asks for frames forever loses
     /// its animation lease two seconds after the latest data/visibility event.
     pub fn delay(&self, now: Instant) -> Option<Duration> {
-        if !self.active || !self.visible || self.last_event.is_none_or(|t| now.saturating_duration_since(t) >= IDLE) { return None; }
-        self.view.wants_frame(self.visible, now).map(|d| d.max(MIN_FRAME))
+        if !self.active
+            || !self.visible
+            || self
+                .last_event
+                .is_none_or(|t| now.saturating_duration_since(t) >= IDLE)
+        {
+            return None;
+        }
+        self.view
+            .wants_frame(self.visible, now)
+            .map(|d| d.max(MIN_FRAME))
     }
     fn schedule(&self, now: Instant) {
-        if let (Some(ctx), Some(delay)) = (&self.ctx, self.delay(now)) { ctx.request_repaint_after(delay); }
+        if let (Some(ctx), Some(delay)) = (&self.ctx, self.delay(now)) {
+            ctx.request_repaint_after(delay);
+        }
     }
-    pub fn draw(&mut self, ui: &mut egui::Ui, budget: &Arc<Budget>, renderer_2d: bool, now: Instant) {
-        if let Some(frame) = self.view.draw(self.visible, now) { self.paint(ui, budget, renderer_2d, &frame); }
+    pub fn draw(
+        &mut self,
+        ui: &mut egui::Ui,
+        budget: &Arc<Budget>,
+        renderer_2d: bool,
+        now: Instant,
+    ) {
+        if let Some(frame) = self.view.draw(self.visible, now) {
+            self.paint(ui, budget, renderer_2d, &frame);
+        }
         self.schedule(now);
     }
-    pub fn release_gpu(&mut self) { self.gpu = Default::default(); }
+    pub fn release_gpu(&mut self) {
+        self.gpu = Default::default();
+    }
     fn paint(&mut self, ui: &mut egui::Ui, budget: &Arc<Budget>, renderer_2d: bool, frame: &Frame) {
         let strings = toolkit::Strings::new(include_str!("../../i18n/en/backdrop.ftl"));
         let rect = ui.max_rect();
         ui.painter().rect_filled(rect, 0., ui.visuals().panel_fill);
         let fallback = renderer_2d || !self.gpu.draw(ui, &frame.scene, frame.progress, budget);
-        if fallback { self.release_gpu(); }
+        if fallback {
+            self.release_gpu();
+        }
         egui::Frame::popup(ui.style()).show(ui, |ui| {
             ui.heading(strings.get("train-title"));
-            ui.label(strings.with("train-header", &[("sha",frame.snapshot.queue["main_sha"].as_str().unwrap_or("?")),
-                ("state", &strings.get(if frame.snapshot.queue.is_null() {"train-unknown"} else if frame.snapshot.queue["paused"].is_null() {"train-running"} else {"train-paused"}))]));
+            ui.label(strings.with(
+                "train-header",
+                &[
+                    (
+                        "sha",
+                        frame.snapshot.queue["main_sha"].as_str().unwrap_or("?"),
+                    ),
+                    (
+                        "state",
+                        &strings.get(if frame.snapshot.queue.is_null() {
+                            "train-unknown"
+                        } else if frame.snapshot.queue["paused"].is_null() {
+                            "train-running"
+                        } else {
+                            "train-paused"
+                        }),
+                    ),
+                ],
+            ));
             ui.label(strings.get("train-track"));
-            if frame.snapshot.queue["stage_progress"].is_null() { ui.label(strings.get("train-stage-unavailable")); }
-            if let Some(error) = &frame.snapshot.error { ui.label(error); }
+            if frame.snapshot.queue["stage_progress"].is_null() {
+                ui.label(strings.get("train-stage-unavailable"));
+            }
+            if let Some(error) = &frame.snapshot.error {
+                ui.label(error);
+            }
         });
         if fallback {
             ui.label(strings.get("train-fallback"));
-            egui_plot::Plot::new("train-2d").height((rect.height()-300.).max(80.)).allow_zoom(false).allow_drag(false).allow_scroll(false).show(ui, |plot| {
-                for block in frame.scene.iter().filter(|b| !b.label.is_empty()) {
-                    plot.points(egui_plot::Points::new(&block.label, vec![[block.position[0] as f64, block.position[2] as f64]]).radius(6.));
-                    plot.text(egui_plot::Text::new(&block.label, egui_plot::PlotPoint::new(block.position[0] as f64, block.position[2] as f64+0.3), &block.label));
-                }
-            });
+            egui_plot::Plot::new("train-2d")
+                .height((rect.height() - 300.).max(80.))
+                .allow_zoom(false)
+                .allow_drag(false)
+                .allow_scroll(false)
+                .show(ui, |plot| {
+                    for block in frame.scene.iter().filter(|b| !b.label.is_empty()) {
+                        plot.points(
+                            egui_plot::Points::new(
+                                &block.label,
+                                vec![[block.position[0] as f64, block.position[2] as f64]],
+                            )
+                            .radius(6.),
+                        );
+                        plot.text(egui_plot::Text::new(
+                            &block.label,
+                            egui_plot::PlotPoint::new(
+                                block.position[0] as f64,
+                                block.position[2] as f64 + 0.3,
+                            ),
+                            &block.label,
+                        ));
+                    }
+                });
         }
         // Allocate an overlay at the bottom, without giving a view a Ui.
-        ui.add_space((ui.available_height()-190.).max(0.));
+        ui.add_space((ui.available_height() - 190.).max(0.));
         egui::Frame::popup(ui.style()).show(ui, |ui| {
             ui.label(strings.get("train-history-stub"));
-            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs_f64()/3600.;
-            egui_plot::Plot::new("train-live-samples").height(140.).include_x(-24.).include_x(0.).allow_zoom(false).allow_drag(false).allow_scroll(false).show(ui, |plot| {
-                for (key, landing) in [("train-gates",false),("train-landings",true)] {
-                    let points:Vec<[f64;2]> = frame.snapshot.samples.iter().rev().take(600).map(|s|[s.0-now,if landing {s.2} else {s.1}]).collect();
-                    plot.line(egui_plot::Line::new(strings.get(key),points));
-                }
-            });
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs_f64()
+                / 3600.;
+            egui_plot::Plot::new("train-live-samples")
+                .height(140.)
+                .include_x(-24.)
+                .include_x(0.)
+                .allow_zoom(false)
+                .allow_drag(false)
+                .allow_scroll(false)
+                .show(ui, |plot| {
+                    for (key, landing) in [("train-gates", false), ("train-landings", true)] {
+                        let points: Vec<[f64; 2]> = frame
+                            .snapshot
+                            .samples
+                            .iter()
+                            .rev()
+                            .take(600)
+                            .map(|s| [s.0 - now, if landing { s.2 } else { s.1 }])
+                            .collect();
+                        plot.line(egui_plot::Line::new(strings.get(key), points));
+                    }
+                });
         });
     }
 }
@@ -96,47 +186,72 @@ mod tests {
     #[derive(Default)]
     struct Greedy;
     impl View for Greedy {
-        fn subscriptions(&self)-> &'static [&'static str] { &[] }
-        fn on_event(&mut self, _:Arc<Snapshot>, _:bool, _:Instant) {}
-        fn draw(&mut self, _:bool, _:Instant)->Option<Frame> { None }
-        fn wants_frame(&self, _:bool, _:Instant)->Option<Duration> { Some(Duration::ZERO) }
+        fn subscriptions(&self) -> &'static [&'static str] {
+            &[]
+        }
+        fn on_event(&mut self, _: Arc<Snapshot>, _: bool, _: Instant) {}
+        fn draw(&mut self, _: bool, _: Instant) -> Option<Frame> {
+            None
+        }
+        fn wants_frame(&self, _: bool, _: Instant) -> Option<Duration> {
+            Some(Duration::ZERO)
+        }
     }
     #[test]
     fn host_clamps_and_revokes_idle_animation_without_a_gpu() {
         let now = Instant::now();
-        let mut host = Host::new(Greedy,None);
-        assert_eq!(host.delay(now),None);
-        host.event(Arc::default(),true,now);
-        assert_eq!(host.delay(now),Some(MIN_FRAME));
-        assert_eq!(host.delay(now+IDLE),None);
+        let mut host = Host::new(Greedy, None);
+        assert_eq!(host.delay(now), None);
+        host.event(Arc::default(), true, now);
+        assert_eq!(host.delay(now), Some(MIN_FRAME));
+        assert_eq!(host.delay(now + IDLE), None);
     }
     #[test]
     fn hidden_host_never_requests_frames_even_on_data_events() {
         let now = Instant::now();
-        let mut host = Host::new(Greedy,None);
-        host.visibility(false,now);
-        host.event(Arc::default(),true,now);
-        assert_eq!(host.delay(now),None);
-        assert_eq!(host.delay(now+Duration::from_secs(1)),None);
-        host.visibility(true,now+IDLE);
-        assert_eq!(host.delay(now+IDLE),Some(MIN_FRAME));
+        let mut host = Host::new(Greedy, None);
+        host.visibility(false, now);
+        host.event(Arc::default(), true, now);
+        assert_eq!(host.delay(now), None);
+        assert_eq!(host.delay(now + Duration::from_secs(1)), None);
+        host.visibility(true, now + IDLE);
+        assert_eq!(host.delay(now + IDLE), Some(MIN_FRAME));
         host.active = false;
-        assert_eq!(host.delay(now+IDLE),None);
+        assert_eq!(host.delay(now + IDLE), None);
     }
     #[test]
     fn outputs_coalesce_independently_over_the_same_snapshot() {
-        let now=Instant::now();
-        let snapshot=Arc::new(Snapshot {queue:serde_json::json!({"queued":[{"branch":"work/a"}]}),..Default::default()});
-        let mut a=Host::new(super::super::Train::default(),None);
-        let mut b=Host::new(super::super::Train::default(),None);
-        b.visibility(false,now);
-        a.event(snapshot.clone(),false,now); b.event(snapshot.clone(),false,now);
-        assert!(a.view.draw(true,now).is_some());
-        assert!(b.view.draw(false,now).is_none());
+        let now = Instant::now();
+        let snapshot = Arc::new(Snapshot {
+            queue: serde_json::json!({"queued":[{"branch":"work/a"}]}),
+            ..Default::default()
+        });
+        let mut a = Host::new(super::super::Train::default(), None);
+        let mut b = Host::new(super::super::Train::default(), None);
+        b.visibility(false, now);
+        a.event(snapshot.clone(), false, now);
+        b.event(snapshot.clone(), false, now);
+        let latest = Arc::new(Snapshot { queue:serde_json::json!({"queued":[{"branch":"work/b"}]}), ..Default::default() });
+        b.event(latest.clone(), false, now);
+        assert!(a.view.draw(true, now).is_some());
+        assert!(b.view.draw(false, now).is_none());
         assert!(b.view.cached_scene_is_empty());
-        b.visibility(true,now);
-        let frame=b.view.draw(true,now).unwrap();
-        assert!(Arc::ptr_eq(&frame.snapshot,&snapshot));
-        assert!(frame.scene.iter().any(|b|b.label=="work/a"));
+        b.visibility(true, now);
+        let frame = b.view.draw(true, now).unwrap();
+        assert!(Arc::ptr_eq(&frame.snapshot, &latest));
+        assert!(frame.scene.iter().any(|b| b.label == "work/b"));
+        assert!(Arc::ptr_eq(&a.snapshot, &snapshot));
+    }
+    #[test]
+    fn train_finishes_its_animation_and_host_has_no_idle_timer() {
+        let now = Instant::now();
+        let mut host = Host::new(super::super::Train::default(), None);
+        host.event(Arc::default(), true, now);
+        host.view.draw(true, now).unwrap();
+        assert_eq!(host.delay(now), Some(MIN_FRAME));
+        let end = now + Duration::from_millis(600);
+        assert_eq!(host.view.draw(true, end).unwrap().progress, 1.);
+        assert_eq!(host.delay(end), None);
+        assert_eq!(host.delay(now + IDLE), None);
     }
 }
