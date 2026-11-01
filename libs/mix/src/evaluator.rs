@@ -16704,7 +16704,7 @@ impl Evaluator {
         // Framed path: body has at least one Assignment, so we need
         // a real function frame. Param-slot caching is not safe here
         // (an Assignment could rehash the bucket array).
-        self.scope.enter_function_frame_for(&func);
+        self.scope.enter_function_frame_for(func);
         for (i, param) in func.params.iter().enumerate() {
             self.scope
                 .set_in_current(param.name.clone(), args[i].clone());
@@ -17181,7 +17181,7 @@ impl Evaluator {
             // Enter an isolated function frame. Lookups will only see
             // this frame (plus globals) until we leave — no per-call
             // Vec<HashMap> stash/restore.
-            self.scope.enter_function_frame_for(&func);
+            self.scope.enter_function_frame_for(func);
             // Whether THIS call pushed a module-fn frame — a per-call
             // local so a nested non-module call cannot pop the outer
             // call's frame.
