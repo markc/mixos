@@ -1091,13 +1091,7 @@ async fn serve(
                     }
                     Outbound::Settings { operation, body } => {
                         let (client, delivery) = (Arc::clone(client), delivery.clone());
-                        flights.spawn(async move {
-                            let outcome = settings_apply(&client, &body).await;
-                            if !delivery.send(Inbound::Settings { operation, outcome }) {
-                                tracing::warn!("scene host: settings.apply outcome dropped: the engine queue is full");
-                            }
-                            false
-                        });
+                        flights.spawn(async move { settings_write(&client, &delivery, operation, body).await });
                     }
                     message => {
                         let (client, topics) = (Arc::clone(client), topics.clone());
@@ -1374,6 +1368,26 @@ fn admit(
 }
 
 /// One `settings.apply` to settingsd, bounded by [`EVENT_TIMEOUT`].
+async fn settings_write(
+    client: &SupervisedClient,
+    delivery: &Delivery,
+    operation: String,
+    body: Value,
+) -> bool {
+    let outcome = settings_apply(client, &body).await;
+    // Raw apply replies are wrapped by settings_outcome. Return the same
+    // Refresh signal as the menu-event path, while retaining the refusal and
+    // operation for the engine/caller to retry after the bound read converges.
+    let refresh = outcome.as_ref().err().is_some_and(|refusal| {
+        refusal["settings"]["status"] == "wrong_target"
+    });
+    if !delivery.send(Inbound::Settings { operation, outcome }) {
+        tracing::warn!("scene host: settings.apply outcome dropped: the engine queue is full");
+    }
+    refresh
+}
+
+/// One `settings.apply` to settingsd, bounded by [`EVENT_TIMEOUT`].
 async fn settings_apply(client: &SupervisedClient, body: &Value) -> Result<Value, Value> {
     let (headers, body) = (BTreeMap::new(), body.to_string());
     let call = client.call_with_headers_raw("settingsd", "settings.apply", &headers, &body);
@@ -1490,6 +1504,73 @@ async fn send(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn outbound_settings_refusal_requests_refresh_reports_operation_and_allows_retry() {
+        use futures_util::{SinkExt, StreamExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("ws://{}/ws", listener.local_addr().unwrap());
+        let mut snapshot = crate::appearance::snapshot_of(settings::Desktop::default());
+        snapshot.binding.instance = "authority".into();
+        let binding = snapshot.binding.clone();
+        let current = json!({"status":"current", "snapshot":settings::compact::encode_values(&snapshot, &snapshot.values).unwrap()});
+        let refusal = json!({"status":"wrong_target", "binding":binding});
+        let expected = refusal.clone();
+        let broker = tokio::spawn(async move {
+            let (tcp, _) = listener.accept().await.unwrap();
+            let mut ws = tokio_tungstenite::accept_async(tcp).await.unwrap();
+            while let Some(Ok(frame)) = ws.next().await {
+                let tokio_tungstenite::tungstenite::Message::Text(text) = frame else { continue };
+                let req = bus::parse(&text).unwrap();
+                let command = req.get("command").unwrap_or("");
+                let is_settings = matches!(command, "settings.get" | "settings.apply");
+                let args: Value = serde_json::from_str(&req.body).unwrap_or(Value::Null);
+                let refused = is_settings && args["binding"]["instance"] != "authority";
+                let mut reply = bus::BusMessage::new()
+                    .with_header("type", "response")
+                    .with_header("from", "settingsd")
+                    .with_header("command", command)
+                    .with_header("id", req.get("id").unwrap())
+                    .with_header("rc", if refused { "10" } else { "0" });
+                reply.body = if refused { refusal.to_string() } else if command == "settings.get" { current.to_string() } else { json!({"status":"changed"}).to_string() };
+                ws.send(tokio_tungstenite::tungstenite::Message::Text(reply.to_wire().into())).await.unwrap();
+            }
+        });
+        tokio::time::timeout(Duration::from_secs(5), async {
+            let client = SupervisedClient::connect("fixture", &url).await.unwrap();
+            let (sender, receiver) = mpsc::sync_channel(4);
+            let delivery = Delivery { sender, waker: Arc::new(|| {}) };
+            let mut old_binding = binding.clone();
+            old_binding.instance = "fixture".into();
+            // This is the future spawned by Outbound::Settings. Its boolean
+            // is consumed by flights.join_next to publish SettingsEvent::Refresh.
+            assert!(settings_write(&client, &delivery, "write-1".into(), json!({"binding":old_binding})).await);
+            let Inbound::Settings { operation, outcome } = receiver.try_recv().unwrap() else { panic!("missing refusal") };
+            assert_eq!(operation, "write-1");
+            let outcome = outcome.unwrap_err();
+            assert_eq!(outcome["error_code"], "SETTINGS_REFUSED");
+            assert_eq!(outcome["settings"], expected);
+            // Refresh reads the old binding, follows its authoritative refusal
+            // and confirms the advertised binding with an actual rc=0 read.
+            let mut consumer = settings::consumer::Consumer::for_shell(old_binding).unwrap();
+            let subscribe = consumer.connected(client.connection_generation()).unwrap();
+            let result = settings::native::execute(&client, &subscribe).await;
+            let read = consumer.complete(&subscribe, result).unwrap();
+            let result = settings::native::execute(&client, &read).await;
+            let read = consumer.complete(&read, result).unwrap();
+            let result = settings::native::execute(&client, &read).await;
+            consumer.complete(&read, result);
+            assert!(consumer.is_confirmed());
+            assert_eq!(consumer.binding(), &binding);
+            assert_eq!(consumer.rebind_hops(), 0);
+            assert!(!settings_write(&client, &delivery, "write-2".into(), json!({"binding":consumer.binding()})).await);
+            let Inbound::Settings { operation, outcome } = receiver.try_recv().unwrap() else { panic!("missing retry outcome") };
+            assert_eq!(operation, "write-2");
+            assert_eq!(outcome.unwrap()["status"], "changed");
+            client.shutdown().await;
+        }).await.unwrap();
+        broker.abort();
+    }
 
     #[test]
     fn settings_outcomes_name_conflicts_refusals_and_an_absent_settingsd() {
