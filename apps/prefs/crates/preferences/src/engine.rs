@@ -107,7 +107,6 @@ pub enum Effect {
         action: String,
     },
     /// Run registry command `command` with `params` and answer `id` with
-
     /// its result (`prefs.page.open`, `prefs.set`, `prefs.execute`).
     ExecuteWith {
         id: u64,

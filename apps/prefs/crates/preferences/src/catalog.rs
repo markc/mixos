@@ -33,7 +33,10 @@ pub enum Kind {
     /// `all` (or another word) or a connector name.
     Connector(Vec<String>),
     /// A list of `min`..=`max` entries; the registry checks each entry.
-    List { min: usize, max: usize },
+    List {
+        min: usize,
+        max: usize,
+    },
     /// Anything the page framework draws only through a custom control:
     /// strings, paths, lists, chords, catalogues.
     Other(String),
