@@ -2,7 +2,7 @@
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
 -- version: 0.1.0
 -- package.mix: the release tarballs, from binaries cargo has already built.
--- Run inside the Ubuntu 24.04 CBC build root with the freshly built mix:
+-- Run against the already-built gold snapshot in an exact-source checkout:
 --
 --   mix tools/package.mix --release 0.1.1 --commit FULL_SHA [--arch x86_64] [--bin-dir target/release] [--out dist/release]
 --
@@ -18,18 +18,38 @@
 
 $g = getopt(args(), {help: {short: "h"}, release: {arg: true}, commit: {arg: true}, arch: {arg: true},
   "bin-dir": {arg: true}, out: {arg: true}, package: {arg: true},
-  "libinput-source": {arg: true}, "fixture-binaries": {}})
+  "libinput-source": {arg: true}, "fixture-binaries": {}, component: {arg: true}, components: {arg: true}, date: {arg: true}, "gold-job": {arg: true}})
 if len($g.errors) != 0 then raise("PACKAGE_ARGS", join($g.errors, "; ")) end
 $fixture = $g.opts["fixture-binaries"] == true
 if $g.opts.help then
-  print("usage: mix tools/package.mix --release V --commit FULL_SHA [--package desktop|server|all] [--arch ARCH] [--bin-dir DIR] [--out DIR] [--fixture-binaries for tests only]")
+  print("usage: mix tools/package.mix --commit FULL_SHA [--component NAME | --components all | --package desktop|server|all --release V] [--bin-dir DIR] [--out DIR] [--date YYYY-MM-DD] [--gold-job ID] [--fixture-binaries]")
   exit(0)
 end
 
 $source = dirname(dirname(realpath($0)))
 $release = load_data($source .. "/tools/release_packages.mx")
-if $release.schema != 1 then raise("PACKAGE_SCHEMA", "unsupported release_packages.mx schema") end
+if not contains([1, 2], $release.schema) then raise("PACKAGE_SCHEMA", "unsupported release_packages.mx schema") end
+$closure = require("release_closure.mix")
+$catalogue = $closure.catalogue($source)
+if $g.opts.components != nil then
+  if $g.opts.components != "all" then raise("PACKAGE_ARGS", "--components accepts all") end
+  for $c in sort(keys($catalogue))
+    $argv = [realpath("/proc/self/exe"), $0, "--component", $c, "--commit", $g.opts.commit,
+      "--bin-dir", $g.opts["bin-dir"] ?? ($source .. "/target/release"), "--out", ($g.opts.out ?? ($source .. "/dist/release")) .. "/" .. $c]
+    if $fixture then push($argv, "--fixture-binaries") end
+    for $flag in ["date", "gold-job"]
+      if $g.opts[$flag] != nil then $argv = concat($argv, ["--" .. $flag, $g.opts[$flag]]) end
+    end
+    print(run_argv_must($argv, {timeout: 600}))
+  end
+  exit(0)
+end
+$component = $g.opts.component
 $PACKAGES = $release.packages
+if $component != nil then
+  if $catalogue[$component] == nil then raise("PACKAGE_ARGS", "unknown component " .. $component) end
+  $PACKAGES[$component] = if $catalogue[$component].mix then [] else [$component] end
+end
 for $pkg in keys($PACKAGES)
   for $b in $PACKAGES[$pkg]
     if $release.crates[$b] == nil then
@@ -83,6 +103,13 @@ end
 $DOCS = ["README.md", "LICENSE-MIT", "LICENSE-APACHE", "NOTICE"]
 
 $version = $g.opts.release ?? ""
+if $component != nil then
+  $version = $catalogue[$component].version
+  if $component == "mix" and not $fixture then
+    $line = trim(run_argv_must([($g.opts["bin-dir"] ?? ($source .. "/target/release")) .. "/mix", "--version"]))
+    $version = re_find($line, "[0-9]+\\.[0-9]+\\.[0-9]+")[0].match
+  end
+end
 if not re_match($version, "^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$") then
   raise("PACKAGE_ARGS", "--release must be a version like 1.2.3 or 1.2.3-rc.1, got '" .. $version .. "'")
 end
@@ -100,10 +127,7 @@ if $arch != platform().arch then raise("PACKAGE_ARCH", "--arch must match the bu
 $glibc = "fixture"
 if not $fixture then
   $libc = trim(run_argv_must(["getconf", "GNU_LIBC_VERSION"], {timeout: 10}))
-  if $libc != "glibc 2.39" then
-    raise("PACKAGE_GLIBC", "the first release must be packaged and exercised in the Ubuntu 24.04 glibc 2.39 build root; got " .. $libc)
-  end
-  $glibc = "2.39"
+  $glibc = $libc
 end
 -- Use the native Mix executing this packager, including release bootstrap.
 $mix = realpath("/proc/self/exe")
@@ -116,8 +140,9 @@ if not contains(["desktop", "server", "all"], $selection) then
 end
 $selected = if $selection == "all" then sort(keys($PACKAGES))
   elif $selection == "desktop" then ["mixos-desktop"] else ["mixos-server"] end
+if $component != nil then $selected = [$component] end
 $libinput_source = $g.opts["libinput-source"] ?? ""
-if not $fixture and contains($selected, "mixos-desktop") then
+if not $fixture and $libinput_source != "" and contains($selected, "mixos-desktop") then
   if (not is_dir($libinput_source) or
       trim(run_argv_must(["git", "-C", $libinput_source, "rev-parse", "HEAD"], {timeout: 15})) !=
       "3402f380019dc4f882e1d8627029607aca3f4be6") then
@@ -148,7 +173,11 @@ for $pkg in $selected
         (not starts_with($v, $b .. " ") or not contains($v, slice($commit, 0, 12)))) then
       raise("PACKAGE_SOURCE", $b .. " does not identify itself and source " .. slice($commit, 0, 12) .. ": " .. $v)
     end
-    push($members, {name: $b, sha256: hash_file($src, "sha256"), version: $v})
+    $symbols = if $fixture then "" else run_argv_must(["readelf", "--version-info", $src], {timeout: 30}) end
+    $required = map(re_find($symbols, "GLIBC_([0-9]+\\.[0-9]+(?:\\.[0-9]+)?)"), fn($m) = $m.groups[0])
+    $highest = trim(run_argv_must(["sort", "-V"], {stdin: join(unique($required), "\n")}))
+    push($members, {name: $b, sha256: hash_file($src, "sha256"), version: $v,
+      glibc_required: if $highest == "" then nil else reverse(split($highest, "\n"))[0] end})
     copy($src, $top .. "/bin/" .. $b)
     chmod($top .. "/bin/" .. $b, 0o755)
   end
@@ -164,19 +193,17 @@ for $pkg in $selected
   $layout_manifest = load_data($source .. "/share/layout/templates.mx")
   $layout_files = []
   $script_services = ($release.scripts ?? {})[$pkg] ?? []
+  if $component != nil and $catalogue[$component].mix then $script_services = [$component] end
   $layout_owners = concat($PACKAGES[$pkg], $script_services)
-  if $pkg == "mixos-desktop" then
-    -- Preserve main's shipped unit copies. These prefix copies are separate
-    -- from the /etc units owned and recorded by component_install.
-    $layout_owners = concat($layout_owners, ["notifyd", "releasesd", "exportd"])
-    for $owner in ["notifyd", "releasesd", "exportd"]
-      for $unit in sort(glob($source .. "/services/" .. $owner .. "/units/*"))
+  -- Prefix copies need rendering as well as the component_install /etc units.
+  for $owner in $layout_owners
+    $owner_dir = $catalogue[$owner].dir
+    for $unit in sort(glob($source .. "/" .. $owner_dir .. "/units/*"))
         if is_file($unit) and contains(read_file($unit), "@{") then
-          $layout_manifest.files = push($layout_manifest.files, {source: "../../services/" .. $owner .. "/units/" .. basename($unit),
+          $layout_manifest.files = push($layout_manifest.files, {source: "../../" .. $owner_dir .. "/units/" .. basename($unit),
             target: "@{prefix}/share/" .. $owner .. "/units/" .. basename($unit), kind: "unit"})
         end
       end
-    end
   end
   for $entry in $layout_manifest.files
     $rel = strip_prefix($entry.source, "../../")
@@ -194,11 +221,27 @@ for $pkg in $selected
     chmod($top .. "/share/doc/" .. $pkg .. "/" .. $d, 0o644)
   end
   for $svc in $script_services
-    add_tree($source .. "/services/" .. $svc .. "/scripts", $top .. "/lib/" .. $svc)
-    add_tree($source .. "/services/" .. $svc .. "/units", $top .. "/share/" .. $svc .. "/units")
+    $dir = $source .. "/" .. $catalogue[$svc].dir
+    for $part in ["scripts", "units"]
+      if is_dir($dir .. "/" .. $part) then
+        add_tree($dir .. "/" .. $part, if $part == "scripts" then $top .. "/lib/" .. $svc else $top .. "/share/" .. $svc .. "/units" end)
+      end
+    end
+  end
+  if $component != nil and not $catalogue[$component].mix then
+    $dir = $source .. "/" .. $catalogue[$component].dir
+    for $part in ["units", "scripts", "assets", "i18n"]
+      if is_dir($dir .. "/" .. $part) then add_tree($dir .. "/" .. $part, $top .. "/share/" .. $component .. "/" .. $part) end
+    end
+    if starts_with($catalogue[$component].dir, "apps/") or $component == "compd" then
+      run_argv_must([$mix, $source .. "/libs/toolkit/scripts/install_licenses.mix", "--root", $top .. "/share"], {timeout: 30})
+    end
+    if $component == "maild" then
+      add_tree($source .. "/vendor/mail-parser/LICENSES", $top .. "/share/licenses/maild/mail-parser")
+    end
   end
   if $pkg == "mixos-desktop" then
-    if not $fixture then
+    if not $fixture and $libinput_source != "" then
       $input = "/usr/lib/x86_64-linux-gnu/libinput.so.10.13.0"
       $input_version = trim(run_argv_must(["pkg-config", "--modversion", "libinput"], {timeout: 10}))
       if $input_version != "1.26.2" then raise("PACKAGE_LIBINPUT", "libinput 1.26.2 is required") end
@@ -252,12 +295,20 @@ for $pkg in $selected
   print($tar .. "  sha256:" .. $sha)
 end
 remove_dir($stage)
+$assets = map($archives, fn($a) = {asset: $a.asset, sha256: $a.sha256})
+if $component == "mix" then
+  $bare = "mix-" .. $version .. "-linux-" .. $arch
+  copy($bin_dir .. "/mix", $out .. "/" .. $bare)
+  chmod($out .. "/" .. $bare, 0o755)
+  push($assets, {asset: $bare, sha256: hash_file($out .. "/" .. $bare, "sha256")})
+end
 $manifest = $out .. "/release.manifest.mx"
-write_file($manifest, data_encode({schema: 1, version: $version, source: $commit,
-  platform: "linux-" .. $arch .. "-glibc", glibc_floor: $glibc,
-  fixture: $fixture, archives: $archives}) .. "\n")
+write_file($manifest, data_encode({schema: 2, component: $component ?? (if len($selected) == 1 then $selected[0] else "bundles" end),
+  version: $version, source: $commit, date: $g.opts.date ?? trim(run_argv_must(["date", "+%Y-%m-%d"])), gold_job: $g.opts["gold-job"] ?? nil,
+  platform: "linux-" .. $arch .. "-glibc", packaging_glibc: $glibc,
+  fixture: $fixture, archives: $archives, assets: $assets}) .. "\n")
 $sums = []
-for $row in $archives push($sums, $row.sha256 .. "  " .. $row.asset) end
+for $row in $assets push($sums, $row.sha256 .. "  " .. $row.asset) end
 push($sums, hash_file($manifest, "sha256") .. "  " .. basename($manifest))
 write_file($out .. "/SHA256SUMS.txt", join($sums, "\n") .. "\n")
 print($manifest .. "  sha256:" .. hash_file($manifest, "sha256"))

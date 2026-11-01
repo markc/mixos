@@ -5,7 +5,7 @@ description: MixOS release builds run on designated CBC workers at an exact sour
 
 # Weekly CBC releases, starting with Linux x86_64
 
-Status: accepted, 2026-10-22. The first public release still requires its
+Status: amended by [nightly component releases](2026-11-01-nightly-component-releases.md), 2026-11-01; weekly cadence and glibc floor superseded. The first public release still requires its
 own green gate and acceptance record.
 
 MixOS starts with Linux x86_64 binaries built against Ubuntu 24.04's glibc

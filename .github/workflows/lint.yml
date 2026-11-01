@@ -51,6 +51,21 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          tag=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 10000 \
+            --json tagName,isDraft,isPrerelease,publishedAt \
+            --jq '[.[] | select(.isDraft == false and .isPrerelease == false and (.tagName | startswith("mix-v")))] | sort_by(.publishedAt) | last | .tagName // empty')
+          dir="$RUNNER_TEMP/mixos-release"
+          if [ -n "$tag" ]; then
+            version=${tag#mix-v}
+            version=${version%-????????}
+            asset="mix-${version}-linux-x86_64"
+            gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir "$dir" \
+              --pattern "$asset" --pattern SHA256SUMS.txt
+            line=$(awk -v asset="$asset" '$2 == asset && length($1) == 64 {print}' "$dir/SHA256SUMS.txt")
+            [ -n "$line" ] && [ "$(printf '%s\n' "$line" | wc -l)" = 1 ]
+            (cd "$dir" && printf '%s\n' "$line" | sha256sum --check --strict -)
+            install -D -m 0755 "$dir/$asset" "$RUNNER_TEMP/mixos/bin/mix"
+          else
           tag=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName) ||
             { echo "::error::no published MixOS release to take mix from"; exit 1; }
           version=${tag#v}
@@ -66,6 +81,7 @@ jobs:
           tar -xzf "$dir/$archive" -C "$dir" "$member"
           [ -f "$dir/$member" ] && [ ! -L "$dir/$member" ]
           install -D -m 0755 "$dir/$member" "$RUNNER_TEMP/mixos/bin/mix"
+          fi
           echo "$RUNNER_TEMP/mixos/bin" >> "$GITHUB_PATH"
           "$RUNNER_TEMP/mixos/bin/mix" --version
 

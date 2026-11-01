@@ -1,0 +1,42 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$root = dirname(dirname(realpath($0)))
+$r = require("../tools/release_closure.mix")
+fn check($ok, $why) if not $ok then raise("TEST", $why) end end
+$paths = $r.closure($root, "term")
+for $path in ["apps/term", "libs/toolkit", "libs/mix", "Cargo.lock", "Cargo.toml"]
+  check(contains($paths, $path), "term closure missing " .. $path)
+end
+check(not contains($paths, "apps/email"), "unrelated app in closure")
+check(contains($r.closure($root, "mix"), "cli/mix-shell"), "workspace dependency")
+check(contains($r.closure($root, "mixos-desktop"), "services/notifyd"), "bundle Mix member")
+$releases = require("../services/releasesd/scripts/lib/releases.mix")
+$rows = [
+  {tag_name: "term-v1.0.0-20261101", published_at: "2026-11-01", draft: false, prerelease: false},
+  {tag_name: "mix-v2.0.0-20261103", published_at: "2026-11-03", draft: false, prerelease: false},
+  {tag_name: "term-v1.0.0-20261104", published_at: "2026-11-04", draft: true, prerelease: false},
+  {tag_name: "term-v1.0.0-20261102", published_at: "2026-11-02", draft: false, prerelease: false}
+]
+check($releases.line_releases($rows, "term-v")[0].tag_name == "term-v1.0.0-20261102", "release line selection")
+check(len($releases.line_releases($rows, "missing-v")) == 0, "no unrelated fallback")
+$tmp = "/tmp/component-release-" .. uuid()
+mkdir($tmp .. "/bin", {parents: true})
+$cfg = load_data($root .. "/tools/release_packages.mx")
+for $name in keys($cfg.crates) write_file($tmp .. "/bin/" .. $name, "fixture " .. $name) end
+$sha = trim(run_argv_must(["git", "-C", $root, "rev-parse", "HEAD"]))
+try
+  for $name in concat(sort(keys($r.catalogue($root))), ["mixos-server", "mixos-desktop"])
+    $argv = [realpath("/proc/self/exe"), $root .. "/tools/package.mix", "--fixture-binaries", "--commit", $sha,
+      "--bin-dir", $tmp .. "/bin", "--out", $tmp .. "/" .. $name, "--date", "2026-11-01", "--gold-job", "fixture"]
+    if starts_with($name, "mixos-") and $cfg.packages[$name] != nil then
+      $argv = concat($argv, ["--package", strip_prefix($name, "mixos-"), "--release", "0.1.2"])
+    else $argv = concat($argv, ["--component", $name]) end
+    run_argv_must($argv, {timeout: 120})
+    $m = load_data($tmp .. "/" .. $name .. "/release.manifest.mx")
+    check($m.component == $name and $m.source == $sha and $m.gold_job == "fixture", "manifest identity")
+    for $a in $m.assets
+      check(hash_file($tmp .. "/" .. $name .. "/" .. $a.asset, "sha256") == $a.sha256, "asset digest")
+    end
+    check(len($m.assets) == (if $name == "mix" then 2 else 1 end), "asset count")
+    print("PASS " .. $name)
+  end
+finally remove_dir($tmp) end

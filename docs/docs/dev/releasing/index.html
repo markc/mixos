@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Exact-source CBC gates, x86_64 glibc packaging, GitHub drafts, and verified gold installation.">
+    <meta name="description" content="Nightly component releases from verified CBC gold bytes.">
     <!-- Favicons from share/brand: the SVG follows the visitor's light/dark preference. -->
     <link rel="icon" href="/favicon.ico?v=400d5816f3" sizes="any">
     <link rel="icon" type="image/svg+xml" href="/_web/favicon.svg?v=4eb2d64677">
@@ -208,9 +208,8 @@
                 <div class="panel-title">On this page</div>
                 <div class="panel-content">
                     <nav id="toc-nav">
-                        <a href="#build-and-gate">Build and gate</a>
-                        <a href="#stage-and-publish">Stage and publish</a>
-                        <a href="#install-the-system-gold-tree">Install the system gold tree</a>
+                        <a href="#package-already-built-bytes">Package already-built bytes</a>
+                        <a href="#follow-a-component-with-releasesd">Follow a component with releasesd</a>
                     </nav>
                 </div>
             </div>
@@ -236,103 +235,66 @@
     <div id="doc-view" class="content-section">
         <article id="content-doc" class="prose" data-pagefind-body>
 <h1 id="releasing-mixos">Releasing MixOS</h1>
-<p>The first release target is Linux x86_64 with a glibc 2.39 floor. The
-release contract is in <code>tools/release_packages.mx</code>. The initial desktop
-candidate contains one archive, <code>release.manifest.mx</code>, and <code>SHA256SUMS.txt</code>.
-The desktop archive includes the ten desktop products, indexd, the desktop
-settings authority settingsd, and the Mix runtime used by its session scripts.
-An admitted server archive can join a later candidate. Every archive in a
-candidate comes from one exact public source commit. Packaging an unadmitted
-service does not admit it for publication.</p>
-<h2 id="build-and-gate">Build and gate</h2>
-<p>Use a designated CBC worker and freeze a full 40-character source commit.
-<code>tools/release_gate.mix check --commit SHA</code> runs format, workspace build,
-Clippy, functional tests, the release-mode editd latency test, Term's
-native-session end-to-end tests against the freshly built Mix, source gates
-and Mix tests. Its <code>LOG</code> lines identify the saved stage logs. The
-<code>mixos/weekly-x86_64-source</code> commit status goes green only after that
-exact-source gate passes. The separate <code>mixos/weekly-x86_64-artifacts</code> status
-goes green only after packaging, disposable gold preflight, draft upload
-and GitHub asset digest comparison also pass at the same commit. There
-is no Rust build on a GitHub push. A push runs only the lint tier: run
-<code>mix tools/lint.mix</code> locally before pushing to see the same result.
-Candidates are cut weekly on Friday.</p>
-<p>For packaging, prepare a signed Ubuntu 24.04 root with glibc 2.39, the
-pinned Rust toolchain from <code>rust-toolchain.toml</code>, Cargo's cache, and the
-development libraries used by the workspace: <code>libxkbcommon-dev</code>,
-<code>libwayland-dev</code>, <code>libx11-dev</code>, <code>libxrandr-dev</code>, <code>libxi-dev</code>,
-<code>libxcursor-dev</code>, <code>libgl1-mesa-dev</code>, <code>libegl-dev</code>, <code>libgles-dev</code>,
-<code>libgbm-dev</code>, <code>libdrm-dev</code>, <code>libinput-dev</code>, <code>libudev-dev</code>,
-<code>libseat-dev</code>, <code>libpixman-1-dev</code>, <code>libpulse-dev</code>,
-<code>libpipewire-0.3-dev</code> and <code>libspa-0.2-dev</code>. It also needs <code>git</code>,
-<code>build-essential</code>, <code>pkg-config</code>, <code>clang</code>, <code>libarchive-tools</code>, <code>meson</code>,
-<code>ninja-build</code> and <code>patchelf</code>.
-Ubuntu 24.04 supplies libinput 1.25, while compd's tablet dial support
-uses the 1.26 ABI. Build libinput 1.26.2 from upstream tag <code>1.26.2</code>
-(peeled commit <code>3402f380019dc4f882e1d8627029607aca3f4be6</code>) inside the
-same root with Meson, install it under <code>/usr</code>, and run <code>ldconfig</code> there.
-Keep that pinned source checkout inside the target directory. The gate
-refuses another libinput source or library version. The desktop archive
-bundles the 1.26.2 shared library and its licence; compd's relative
-runtime library path makes that copy take precedence over the host copy.
-After installing the listed build dependencies in the root, the CBC worker
-can provision the pinned library with:</p>
-<pre><code class="language-text">&lt;prefix&gt;/bin/mix tools/libinput_compat.mix \
-  --rootfs /srv/ubuntu-24.04-root --target-dir /srv/mixos-target
+<p>The accepted <a href="/docs/decisions/2026-11-01-nightly-component-releases/">nightly release decision</a>
+replaces the weekly whole-system cut. The 04:00 gold job builds and gates one
+exact source commit on CBC, installs it and accepts the desks. Only then does
+the private hub release job package that snapshot. A publishing failure leaves
+accepted gold installed. Manual nightly runs accept <code>--no-release</code>.</p>
+<p>Each binary in <code>tools/release_packages.mx</code> and each Mix component with scripts
+or units has its own release line. The same contract lists server and desktop
+membership: <code>packages</code> for binaries, <code>scripts</code> for Mix services. Mix services
+are also discovered from the component index identity files. Bundles release
+when any member's inputs change. First run publishes all lines.</p>
+<p>Tags are <code>&lt;name&gt;-v&lt;version&gt;-&lt;YYYYMMDD&gt;</code>, titles <code>&lt;name&gt; &lt;version&gt; (YYYY-MM-DD)</code>.
+The version comes from the package (resolving workspace inheritance), the Mix
+component identity, or the language version printed by the gold Mix binary.
+Bundles use the workspace version. Existing tags and releases are never replaced.
+Only <code>mixos-server</code> requests GitHub Latest; all other lines use <code>--latest=false</code>.</p>
+<h2 id="package-already-built-bytes">Package already-built bytes</h2>
+<p>Run the packager from a clean throwaway checkout at the gold source commit:</p>
+<pre><code class="language-text">mix tools/package.mix --component term --commit FULL_SHA --bin-dir /path/to/gold/bin --out /tmp/term-assets --gold-job JOB --date YYYY-MM-DD
+mix tools/package.mix --components all --commit FULL_SHA --bin-dir /path/to/gold/bin --out /tmp/component-assets
+mix tools/package.mix --package server --release VERSION --commit FULL_SHA --bin-dir /path/to/gold/bin --out /tmp/server-assets
 </code></pre>
-<p>The script verifies the upstream commit and installed ABI. It is safe to
-run again after an Ubuntu root update.
-On the CBC worker, the native Mix gate takes absolute
-paths for the root, Cargo and Rustup homes, and a dedicated target
-directory. It bind-mounts the exact checkout, toolchain, cache, target,
-<code>/proc</code> and <code>/dev/null</code> into the root, checking each mount's identity.
-It refuses a root that does not report glibc 2.39 or does not see the
-requested commit.</p>
-<pre><code class="language-text">mix tools/release_gate.mix package --commit FULL_SHA --version V \
-  --package desktop \
-  --rootfs /srv/ubuntu-24.04-root --target-dir /srv/mixos-target \
-  --cargo-home /home/user/.cargo --rustup-home /home/user/.rustup \
-  --libinput-source /srv/mixos-target/libinput-1.26.2-src \
-  --out /srv/mixos-target/release-V
+<p><code>--components all</code> makes one subdirectory per component. Bundle modes remain
+<code>server</code>, <code>desktop</code>, and <code>all</code>. Each archive has one top directory with <code>bin/</code>
+or <code>lib/&lt;component&gt;/</code>, plus component runtime data and relocatable unit templates
+under <code>share/</code>. Mix also ships a bare executable for bootstrap. SHA256SUMS.txt
+covers the assets and release.manifest.mx; the manifest records source, job,
+date, version, binary version lines and asset hashes. Highest required GLIBC_
+symbol versions are informational. Packaging uses the current Arch Linux glibc;
+there is no glibc floor refusal. Cross-build compatibility is deferred. The old
+pinned libinput bundle is optional when explicitly requested with its source;
+normal gold packaging uses the host's libraries.</p>
+<p>The hub <code>nightly_release.mix plan [--gold-job ID] [--commit SHA]</code> reads release
+history without remote writes. <code>run --dry-run</code> packages accepted current gold
+but stops before creating releases. <code>run</code> publishes each changed line at the
+exact source SHA, compares every uploaded asset's GitHub digest with local
+SHA256SUMS-bound bytes, and deletes a newly created release if verification fails.
+The first real publish is performed by the operator. GitHub never builds Rust.</p>
+<p><code>tools/release_closure.mix</code> statically parses Cargo manifests, including target
+and build dependencies and workspace-inherited path dependencies. Changes in
+that closure, Cargo.lock, workspace metadata, toolchain, packaging or layout
+inputs cause a release. Notes contain the commit range and path-limited oneline
+log. The previous source comes from that line's release manifest. A missing or
+invalid previous manifest fails closed.</p>
+<h2 id="follow-a-component-with-releasesd">Follow a component with releasesd</h2>
+<p>releasesd supports <code>tag_prefix</code> in schema-1 catalogue entries. It scans published,
+non-prerelease releases with pagination and chooses the newest publication in
+that line. An asset regex alone cannot choose a release line. For example:</p>
+<pre><code class="language-text">{
+  schema: 1,
+  apps: [
+    {name: "term", repo: "markc/mixos", tag_prefix: "term-v", asset: "^term-.*linux-x86_64[.]tar[.]gz$"},
+    {name: "mix", repo: "markc/mixos", tag_prefix: "mix-v", asset: "^mix-.*linux-x86_64[.]tar[.]gz$"}
+  ]
+}
 </code></pre>
-<p>The package stage builds each selected Cargo package once in that root.
-The packager then runs each binary's <code>--version</code> inside the same root,
-checks the source hash and bundled libinput resolution, and writes the
-archives and manifest. The
-<code>--fixture-binaries</code> option is for tests only; the gold installer refuses
-fixture manifests. Check the complete saved log and the archive hashes
-before upload. Never substitute a build made against a newer host glibc.</p>
-<h2 id="stage-and-publish">Stage and publish</h2>
-<p>Transfer the three desktop output files from CBC with a hash comparison on both
-sides. Upload them to a new <strong>draft</strong> GitHub Release at the frozen commit,
-then compare GitHub's asset digests with the CBC files. Do not replace an
-existing published tag or its assets. Publishing requires a full green
-status, archive checks, clean install and rollback proof, and acceptance
-for every included archive. The release notes identify any archive that
-is still pending. Enable immutable releases before public publication.</p>
-<p>After the initial release, cut one candidate each week. Failure holds the
-previous release; it does not trigger repeated rebuilds on every push.</p>
-<h2 id="install-the-system-gold-tree">Install the system gold tree</h2>
-<p>Release note: a first install made by round-4 code has no entrance journal and cannot remove its link on rollback; that shape never reached gold.</p>
-<p>The operator supplies the manifest hash from the verified GitHub asset
-digest. <code>plan</code> makes no gold changes. <code>apply</code> needs one explicit privileged
-invocation, and prints a receipt ID for <code>rollback</code>. The installer refuses
-a missing or changed archive, wrong source or architecture, a glibc floor
-above the host, and unsafe archive paths.</p>
-<pre><code class="language-text">sudo &lt;prefix&gt;/bin/mix tools/gold_release.mix plan \
-  --manifest /path/to/release.manifest.mx --manifest-sha256 TRUSTED_SHA256 \
-  --archive-dir /path/to/assets --package desktop
-
-sudo &lt;prefix&gt;/bin/mix tools/gold_release.mix apply \
-  --manifest /path/to/release.manifest.mx --manifest-sha256 TRUSTED_SHA256 \
-  --archive-dir /path/to/assets --package desktop
-</code></pre>
-<p>Install and activate are separate operations. A shared desk sees the host
-gold tree through its mount. An isolated desk needs a hash-checked copy
-of that tree and its own restart. Test the isolated desk first, then the
-shared desk. The public installer does not assume particular console
-numbers. Preferences currently tracks and installs MixOS releases per user; it
-does not update or restart a system desk.</p>
+<p>Explicit tags also work. Per-user installation verifies checksums and archive
+safety; it does not install system gold or restart desks. Default catalogue
+entries follow the two bundle prefixes. CI fetches the newest published <code>mix-v*</code>
+bare executable and verifies its checksum, falling back to the old full-system
+release only while no Mix release line exists.</p>
         </article>
         <p class="doc-source"><a href="/docs/dev/releasing.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>

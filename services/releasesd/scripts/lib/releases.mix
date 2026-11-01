@@ -94,8 +94,8 @@ end
 -- markc/mixos): the desktop and the headless services, one tarball each.
 -- A catalogue file replaces this list; keep these entries in it to keep them.
 $DEFAULT_APPS = [
-  {name: "mixos-desktop", repo: "markc/mixos", category: "mixos-desktop"},
-  {name: "mixos-server", repo: "markc/mixos", category: "mixos-server"}
+  {name: "mixos-desktop", repo: "markc/mixos", tag_prefix: "mixos-desktop-v", category: "mixos-desktop"},
+  {name: "mixos-server", repo: "markc/mixos", tag_prefix: "mixos-server-v", category: "mixos-server"}
 ]
 
 fn load_catalogue($path)
@@ -119,6 +119,7 @@ fn load_catalogue($path)
       raise("CATALOGUE", $path .. ": each app needs a name matching " .. $NAME_RE .. " and a repo owner/name: " .. json_encode($a))
     end
     if $a.asset != nil and type($a.asset) != "string" then raise("CATALOGUE", $path .. ": " .. $a.name .. ".asset must be a regex string") end
+    if $a.tag_prefix != nil and (not valid_tag($a.tag_prefix)) then raise("CATALOGUE", "invalid tag_prefix") end
     if $a.category != nil and not contains(["mixos-desktop", "mixos-server", "creative", "other"], $a.category) then
       raise("CATALOGUE", $path .. ": " .. $a.name .. ".category must be mixos-desktop, mixos-server, creative or other")
     end
@@ -202,11 +203,35 @@ fn summarise($rel)
     assets: map($rel.assets ?? [], fn($a) = {name: $a.name, size: $a.size, digest: $a.digest, url: $a.browser_download_url})}
 end
 
+fn line_releases($rows, $prefix)
+  return reverse(sort_by(filter($rows, fn($r) = not $r.draft and not $r.prerelease and starts_with($r.tag_name, $prefix)), fn($r) = $r.published_at))
+end
+
 -- The latest release into the app's state, conditional on the stored ETag.
 fn check_app($ctx, $app)
   _not_root("check")
   $sp = $ctx.state_dir .. "/" .. $app.name .. ".json"
   $st = _json_or($sp, {})
+  if $app.tag_prefix != nil then
+    $rels = []
+    $page = 1
+    loop
+      $r = _api_get($ctx, "/repos/" .. $app.repo .. "/releases?per_page=100&page=" .. to_string($page), nil)
+      if $r.status != 200 then raise("NO_RELEASE", "GitHub release listing failed") end
+      $rows = json_parse($r.body)
+      $rels = concat($rels, line_releases($rows, $app.tag_prefix))
+      if len($rows) < 100 then break end
+      $page = $page + 1
+    end
+    if len($rels) == 0 then raise("NO_RELEASE", "no published release matching " .. $app.tag_prefix) end
+    $latest = summarise(reverse(sort_by($rels, fn($r) = $r.published_at))[0])
+    $st.changed = $st.latest == nil or $st.latest.tag != $latest.tag
+    $st.latest = $latest
+    $st.checked = now_iso()
+    $st.error = nil
+    write_atomic($sp, json_encode($st))
+    return $st
+  end
   $r = _api_get($ctx, "/repos/" .. $app.repo .. "/releases/latest", if $st.latest != nil then $st.etag else nil end)
   $st.checked = now_iso()
   $st.error = nil

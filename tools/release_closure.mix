@@ -1,0 +1,78 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Static release inputs. No Cargo invocation, including target/build dependencies.
+fn catalogue($root)
+  $cfg = load_data($root .. "/tools/release_packages.mx")
+  $ws = toml_parse(read_file($root .. "/Cargo.toml"))
+  $pkgs = {}
+  for $member in $ws.workspace.members
+    for $file in glob($root .. "/" .. $member .. "/Cargo.toml")
+      $doc = toml_parse(read_file($file))
+      $pkgs[$doc.package.name] = {dir: dirname($file), doc: $doc}
+    end
+  end
+  $out = {}
+  for $name in keys($cfg.crates)
+    $p = $pkgs[$cfg.crates[$name]]
+    if $p == nil then raise("RELEASE_COMPONENT", "unknown package: " .. $name) end
+    $v = $p.doc.package.version
+    if type($v) == "map" then $v = $ws.workspace.package.version end
+    $out[$name] = {name: $name, dir: strip_prefix($p.dir, $root .. "/"), version: $v, mix: false}
+  end
+  for $kind in ["apps", "services", "cli", "libs"]
+    for $file in glob($root .. "/" .. $kind .. "/*/component.mx")
+      $d = load_data($file)
+      if is_dir(dirname($file) .. "/scripts") or is_dir(dirname($file) .. "/units") then
+        $out[$d.name] = {name: $d.name, dir: strip_prefix(dirname($file), $root .. "/"), version: $d.version, mix: true}
+      end
+    end
+  end
+  return $out
+end
+
+fn closure($root, $name)
+  $root = realpath($root)
+  $cfg = load_data($root .. "/tools/release_packages.mx")
+  $all = catalogue($root)
+  if $cfg.packages[$name] != nil then
+    $paths = []
+    for $member in concat($cfg.packages[$name], $cfg.scripts[$name] ?? [])
+      $paths = concat($paths, closure($root, $member))
+    end
+    return sort(unique(concat($paths, ["share", "session", "tools/package.mix", "tools/release_packages.mx"])))
+  end
+  if $all[$name] == nil then raise("RELEASE_COMPONENT", "unknown component " .. $name) end
+  $ws = toml_parse(read_file($root .. "/Cargo.toml"))
+  $todo = [$root .. "/" .. $all[$name].dir]
+  $seen = []
+  while len($todo) > 0
+    $dir = $todo[0]
+    $todo = slice($todo, 1)
+    if contains($seen, $dir) then continue end
+    push($seen, $dir)
+    if not is_file($dir .. "/Cargo.toml") then continue end
+    $doc = toml_parse(read_file($dir .. "/Cargo.toml"))
+    $tables = [$doc.dependencies ?? {}, $doc["build-dependencies"] ?? {}]
+    for $target in values($doc.target ?? {})
+      push($tables, $target.dependencies ?? {})
+      push($tables, $target["build-dependencies"] ?? {})
+    end
+    for $table in $tables
+      for $key in keys($table)
+        $dep = $table[$key]
+        $base = $dir
+        if type($dep) != "map" then continue end
+        if $dep.workspace == true then
+          $dep = $ws.workspace.dependencies[$key]
+          $base = $root
+        end
+        if type($dep) == "map" and $dep.path != nil then
+          $next = realpath($base .. "/" .. $dep.path)
+          if not starts_with($next, $root .. "/") then raise("RELEASE_PATH", "dependency outside tree") end
+          push($todo, $next)
+        end
+      end
+    end
+  end
+  return sort(unique(concat(map($seen, fn($d) = strip_prefix($d, $root .. "/")),
+    ["Cargo.lock", "Cargo.toml", "rust-toolchain.toml", "tools/package.mix", "tools/release_packages.mx", "share/layout"])))
+end
