@@ -832,9 +832,10 @@ fn images(
 ) {
     let count = options.len().max(1) as f32;
     let gap = look.xs;
+    // Below three cells' width the images shrink to fit, never clip.
     let cell = 191.0_f32
         .min((ui.available_width() - gap * (count - 1.0)) / count)
-        .max(64.0);
+        .max(1.0);
     let total = cell * count + gap * (count - 1.0);
     let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), 100.0 + 30.0), Sense::hover());
     let left = row.center().x - total / 2.0;
@@ -892,8 +893,12 @@ fn images(
 fn mode(ui: &mut Ui, engine: &Engine, look: &Look, events: &mut Vec<UiEvent>) {
     let dark_now = resolved_dark(engine);
     // Two 191 px cards in a 478 px row, centred (spec 1 §4.2.1).
-    let gap = look.xl * 3.0;
-    let width = 191.0_f32.min((ui.available_width() - gap) / 2.0).max(96.0);
+    // Narrower than two cards and their gap, both shrink (the drawer open
+    // at 1024): never clipped.
+    let gap = (look.xl * 3.0).min(ui.available_width() * 0.1);
+    let width = 191.0_f32
+        .min((ui.available_width() - gap) / 2.0)
+        .max(1.0);
     let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), 100.0 + 30.0), Sense::hover());
     let left = row.center().x - width - gap / 2.0;
     {
@@ -914,9 +919,10 @@ fn mode(ui: &mut Ui, engine: &Engine, look: &Look, events: &mut Vec<UiEvent>) {
                 let response =
                     ui.interact(rect, ui.scope_id().with(("mode", value)), Sense::click());
                 ui.painter().rect_filled(rect, Look::radius(look.r_s), bg);
+                let inset = (rect.width() * 0.1).min(20.0);
                 let window = Rect::from_min_size(
-                    rect.min + vec2(20.0, 18.0),
-                    vec2(rect.width() - 40.0, 64.0),
+                    rect.min + vec2(inset, 18.0),
+                    vec2(rect.width() - 2.0 * inset, 64.0),
                 );
                 ui.painter()
                     .rect_filled(window, Look::radius(look.r_s), card);
@@ -1143,7 +1149,15 @@ fn slider(
             text(ui, label(start));
         }
     }
-    let width = 250.0_f32.min(ui.available_width() * 0.5).max(120.0);
+    // Beside its labels the rail is COSMIC's 250; stacked under them it
+    // spans the row, its end label at the card padding.
+    let width = if rtl {
+        250.0_f32.min(ui.available_width() * 0.5).max(120.0)
+    } else {
+        let end_width = end.map_or(0.0, |e| text_width(ui, &label(e), 14.0) + look.xs);
+        (ui.available_width() - end_width).max(60.0)
+    };
+
     let (rect, response) = ui.allocate_exact_size(vec2(width, 24.0), Sense::click_and_drag());
     let span = (range.1 - range.0).max(f64::EPSILON);
     let rail = Rect::from_center_size(rect.center(), vec2(rect.width() - 20.0, 4.0));

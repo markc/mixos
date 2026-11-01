@@ -924,9 +924,8 @@ fn results(ui: &mut Ui, engine: &Engine, look: &Look, events: &mut Vec<UiEvent>)
                 let title = label(&page.title());
                 let link = ui.add(
                     egui::Label::new(
-                        RichText::new(&title)
-                            .font(heading(ui, 20.0))
-                            .color(look.accent),
+                        // Body size, body colour (Fable, look review §5).
+                        RichText::new(&title).size(14.0).color(look.text),
                     )
                     .sense(Sense::click()),
                 );
