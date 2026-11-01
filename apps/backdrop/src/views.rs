@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Live views use Bus snapshots only. The wallpaper engine remains beside them.
+pub mod host;
 mod train;
 mod train_gpu;
-pub mod host;
 use serde_json::Value;
-use std::time::{Duration, Instant};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 pub use train::Train;
 
 pub trait View {
@@ -72,7 +72,9 @@ impl State {
                     let args = args.as_object().ok_or("args must be an object")?;
                     for (key, value) in args {
                         if key == "renderer" {
-                            if !matches!(value.as_str(), Some("2d" | "3d")) { return Err("renderer must be 2d or 3d".into()); }
+                            if !matches!(value.as_str(), Some("2d" | "3d")) {
+                                return Err("renderer must be 2d or 3d".into());
+                            }
                             continue;
                         }
                         let target = value
@@ -89,7 +91,9 @@ impl State {
                 if train != self.train_service || buildd != self.buildd_service {
                     self.snapshot = Arc::default();
                 }
-                if let Some(renderer) = body["args"]["renderer"].as_str() { self.renderer_2d = renderer == "2d"; }
+                if let Some(renderer) = body["args"]["renderer"].as_str() {
+                    self.renderer_2d = renderer == "2d";
+                }
                 self.train_service = train;
                 self.buildd_service = buildd;
                 self.selected = view.into();
@@ -178,12 +182,18 @@ pub fn refresh(shared: &std::sync::Mutex<crate::program::Shared>) {
 pub fn notify(shared: &Mutex<crate::program::Shared>, force: bool) -> bool {
     let (active, snapshot, hosts) = {
         let state = crate::program::lock(shared);
-        (state.live.selected == "train", state.live.snapshot.clone(), state.live.hosts.values().cloned().collect::<Vec<_>>())
+        (
+            state.live.selected == "train",
+            state.live.snapshot.clone(),
+            state.live.hosts.values().cloned().collect::<Vec<_>>(),
+        )
     };
     for host in hosts {
         let mut host = crate::program::lock(&host);
         host.active = active;
-        if active { host.event(snapshot.clone(), force, Instant::now()); }
+        if active {
+            host.event(snapshot.clone(), force, Instant::now());
+        }
     }
     active
 }
@@ -234,7 +244,11 @@ pub fn start_reader(
                     });
                     match data {
                         Ok(data) => {
-                            if verb == "train.queue" { snapshot.queue = data; } else { snapshot.workers = data; }
+                            if verb == "train.queue" {
+                                snapshot.queue = data;
+                            } else {
+                                snapshot.workers = data;
+                            }
                         }
                         Err(error) => {
                             errors.push(error);
@@ -251,13 +265,27 @@ pub fn start_reader(
                         };
                         snapshot.error = error;
                         let old = &state.live.snapshot;
-                        if old.queue != snapshot.queue || old.workers != snapshot.workers || old.error != snapshot.error {
+                        if old.queue != snapshot.queue
+                            || old.workers != snapshot.workers
+                            || old.error != snapshot.error
+                        {
                             if old.queue != snapshot.queue {
-                                let hour = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs_f64()/3600.;
+                                let hour = std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap_or_default()
+                                    .as_secs_f64()
+                                    / 3600.;
                                 snapshot.samples.retain(|s| s.0 >= hour - 24.);
-                                if snapshot.samples.len() >= 600 { snapshot.samples.remove(0); }
-                                snapshot.samples.push((hour, snapshot.queue["batches"].as_array().map_or(0, Vec::len) as f64,
-                                    snapshot.queue["recent"].as_array().map_or(0, |r|r.iter().filter(|r|r["state"] == "landed").count()) as f64));
+                                if snapshot.samples.len() >= 600 {
+                                    snapshot.samples.remove(0);
+                                }
+                                snapshot.samples.push((
+                                    hour,
+                                    snapshot.queue["batches"].as_array().map_or(0, Vec::len) as f64,
+                                    snapshot.queue["recent"].as_array().map_or(0, |r| {
+                                        r.iter().filter(|r| r["state"] == "landed").count()
+                                    }) as f64,
+                                ));
                             }
                             state.live.snapshot = Arc::new(snapshot);
                         }

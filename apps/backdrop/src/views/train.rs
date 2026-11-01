@@ -12,7 +12,6 @@ pub struct Block {
     pub label: String,
 }
 
-
 #[derive(Default)]
 pub struct Train {
     snapshot: std::sync::Arc<super::Snapshot>,
@@ -112,33 +111,57 @@ impl Train {
 
 impl View for Train {
     fn subscriptions(&self) -> &'static [&'static str] {
-        &["train.landed", "train.rejected", "buildd.started", "buildd.done"]
+        &[
+            "train.landed",
+            "train.rejected",
+            "buildd.started",
+            "buildd.done",
+        ]
     }
     fn on_event(&mut self, snapshot: std::sync::Arc<super::Snapshot>, visible: bool, now: Instant) {
         self.snapshot = snapshot;
         self.pending = true;
         self.settled = false;
-        if visible { self.changed = Some(now); } else { self.changed = None; }
+        if visible {
+            self.changed = Some(now);
+        } else {
+            self.changed = None;
+        }
         // No scene construction, layout, sample processing or GPU work here.
     }
-    fn wants_frame(&self, visible: bool, now: Instant) -> Option<Duration> {
+    fn wants_frame(&self, visible: bool, _now: Instant) -> Option<Duration> {
         if visible && (self.pending || (self.changed.is_some() && !self.settled)) {
             Some(Duration::from_millis(100))
-        } else { None }
+        } else {
+            None
+        }
     }
     fn draw(&mut self, visible: bool, now: Instant) -> Option<super::Frame> {
-        if !visible { return None; }
+        if !visible {
+            return None;
+        }
         if self.pending {
             self.scene = std::sync::Arc::new(self.scene());
             self.pending = false;
         }
-        self.settled = self.changed.is_none_or(|t|now.saturating_duration_since(t) >= Duration::from_millis(600));
-        Some(super::Frame { snapshot:self.snapshot.clone(), scene:self.scene.clone(),
-            progress:self.changed.map_or(1., |t|(now.saturating_duration_since(t).as_secs_f32()/0.6).min(1.)) })
+        self.settled = self
+            .changed
+            .is_none_or(|t| now.saturating_duration_since(t) >= Duration::from_millis(600));
+        Some(super::Frame {
+            snapshot: self.snapshot.clone(),
+            scene: self.scene.clone(),
+            progress: self.changed.map_or(1., |t| {
+                (now.saturating_duration_since(t).as_secs_f32() / 0.6).min(1.)
+            }),
+        })
     }
 }
 #[cfg(test)]
-impl Train { pub fn cached_scene_is_empty(&self) -> bool { self.scene.is_empty() } }
+impl Train {
+    pub fn cached_scene_is_empty(&self) -> bool {
+        self.scene.is_empty()
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;

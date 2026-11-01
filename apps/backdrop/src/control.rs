@@ -936,7 +936,9 @@ impl Controller {
             fade_started: self.fade_started,
         });
         lock(&self.shared).view = view;
-        if crate::views::notify(&self.shared, false) { return; }
+        if crate::views::notify(&self.shared, false) {
+            return;
+        }
         let contexts: Vec<_> = lock(&self.wakers)
             .iter()
             .map(|(_, context)| context.clone())

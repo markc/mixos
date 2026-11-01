@@ -88,7 +88,13 @@ pub trait LayerProgram {
     fn visibility(&mut self, _ctx: &egui::Context, _visible: bool) {}
     /// Optional host policy for egui requests, including internally generated
     /// requests from widgets. A hidden or idle host can suppress them entirely.
-    fn repaint_delay(&self, _ctx: &egui::Context, delay: std::time::Duration) -> Option<std::time::Duration> { Some(delay) }
+    fn repaint_delay(
+        &self,
+        _ctx: &egui::Context,
+        delay: std::time::Duration,
+    ) -> Option<std::time::Duration> {
+        Some(delay)
+    }
     /// Keep waiting when a compositor withholds callbacks (for hidden views).
     fn strict_frame_callbacks(&self) -> bool {
         false

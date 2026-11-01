@@ -367,8 +367,14 @@ impl<P: LayerProgram + 'static> State<P> {
 
     /// A repaint egui asked for: now, or by a one-shot timer.
     fn request(&mut self, id: u64, delay: Duration) {
-        let Some(delay) = self.surfaces.iter().find(|s| s.id == id)
-            .and_then(|s| self.program.repaint_delay(&s.ctx, delay)) else { return; };
+        let Some(delay) = self
+            .surfaces
+            .iter()
+            .find(|s| s.id == id)
+            .and_then(|s| self.program.repaint_delay(&s.ctx, delay))
+        else {
+            return;
+        };
         let handle = self.handle.clone();
         let Some(s) = self.surface_mut(id) else {
             return;
@@ -395,8 +401,12 @@ impl<P: LayerProgram + 'static> State<P> {
         }
         s.deadline = Some(at);
         let armed = handle.insert_source(Timer::from_deadline(at), move |_, _, state| {
-            let allowed = state.surfaces.iter().find(|s| s.id == id)
-                .is_some_and(|s| state.program.repaint_delay(&s.ctx, Duration::ZERO).is_some());
+            let allowed = state.surfaces.iter().find(|s| s.id == id).is_some_and(|s| {
+                state
+                    .program
+                    .repaint_delay(&s.ctx, Duration::ZERO)
+                    .is_some()
+            });
             if let Some(s) = state.surface_mut(id) {
                 s.deadline = None;
                 s.timer = None;
