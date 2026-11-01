@@ -599,11 +599,7 @@ impl<P: LayerProgram + 'static> State<P> {
         self.surfaces
             .iter()
             .find(|s| s.layer.wl_surface().id() == *wl)
-            .is_some_and(|s| {
-                self.program
-                    .repaint_delay(&s.ctx, Duration::ZERO)
-                    .is_some()
-            })
+            .is_some_and(|s| self.program.repaint_delay(&s.ctx, Duration::ZERO).is_some())
     }
 
     fn key(&mut self, event: &KeyEvent, pressed: bool, repeat: bool) {
