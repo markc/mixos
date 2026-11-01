@@ -116,6 +116,10 @@ impl Engine {
 
     /// The live query; emptying it closes search, back to the page.
     pub fn set_query(&mut self, query: String) {
+        // Typed with nothing focused: the field takes the rest.
+        if !self.nav.searching && !query.is_empty() {
+            self.ui.search_focus = true;
+        }
         self.nav.searching = !query.is_empty() || self.nav.searching;
         self.nav.query = query;
     }
@@ -127,6 +131,29 @@ impl Engine {
 
     pub fn find(&self, query: &str) -> Vec<Hit> {
         pages::search(query, &|key| self.label(key, &[]))
+    }
+
+    /// Why the whole of `page` takes no input now (its backend is missing,
+    /// or its writes are blocked), as a message: drawn once under the
+    /// title, and never again on its rows (Fable P1).
+    pub fn page_reason(&self, page: &pages::Page) -> Option<String> {
+        if let Some(backend) = page.backend {
+            return Some(self.label("backend-missing", &[("backend", &self.label(backend, &[]))]));
+        }
+        let writes = page.rows().any(|(_, r)| r.control.key().is_some());
+        match self.blocked() {
+            Some(blocked) if writes => Some(self.label(blocked.label(), &[])),
+            _ => None,
+        }
+    }
+
+    /// The reason a row draws under its own labels: its own, only when the
+    /// page as a whole is live.
+    pub fn row_reason(&self, page: &pages::Page, row: &pages::Row) -> Option<String> {
+        if self.page_reason(page).is_some() {
+            return None;
+        }
+        self.row_blocked(page, row)
     }
 
     /// Why `row` on `page` takes no input now, as a message; `None` when

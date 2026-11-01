@@ -109,29 +109,7 @@ pub fn registry() -> Registry<Engine> {
             type_name: "prefs::SetKey",
             schema: || schemars::schema_for!(SetKey),
         },
-    ))
-    .add(Action {
-        id: "sidebar.toggle",
-        submenu: None,
-        group: 0,
-        label: "sidebar-toggle",
-        menu: Some("view"),
-        shortcut: None,
-        icon: Some(Icon::PanelLeft),
-        enabled: Engine::can_navigate,
-        run: Engine::toggle_sidebar,
-    })
-    .add(Action {
-        id: "page.back",
-        submenu: None,
-        group: 0,
-        label: "page-back",
-        menu: Some("view"),
-        shortcut: key(Modifiers::ALT, Key::ArrowLeft),
-        icon: Some(Icon::ChevronLeft),
-        enabled: Engine::can_back,
-        run: Engine::back,
-    });
+    ));
     r.add(toolkit::macros::command(
         |s: &Engine| s.ui.macros_open || undialogued(s),
         |e: &mut Engine| {
@@ -172,6 +150,29 @@ pub fn registry() -> Registry<Engine> {
         run: Engine::open_search,
     });
     r.scope("view.search", toolkit::action::Scope::Browsing);
+    // After File, so the menus read File, View, Help.
+    r.add(Action {
+        id: "sidebar.toggle",
+        submenu: None,
+        group: 0,
+        label: "sidebar-toggle",
+        menu: Some("view"),
+        shortcut: None,
+        icon: Some(Icon::PanelLeft),
+        enabled: Engine::can_navigate,
+        run: Engine::toggle_sidebar,
+    })
+    .add(Action {
+        id: "page.back",
+        submenu: None,
+        group: 0,
+        label: "page-back",
+        menu: Some("view"),
+        shortcut: key(Modifiers::ALT, Key::ArrowLeft),
+        icon: Some(Icon::ChevronLeft),
+        enabled: Engine::can_back,
+        run: Engine::back,
+    });
     // View › Theme: any scheme, style, mode and framing, in this window only.
     for (id, label, menu, enabled, run) in [
         (
