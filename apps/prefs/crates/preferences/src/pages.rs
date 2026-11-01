@@ -29,12 +29,12 @@ mod appearance;
 mod input;
 mod network;
 mod panels;
-mod time;
 mod power;
+mod time;
 mod tree;
+pub mod wallpaper;
 mod window_management;
 mod workspaces;
-pub mod wallpaper;
 
 /// A literal value in page data. `Null` is a registry's "unset" (Never on
 /// the power timers), and matches an unset value.
