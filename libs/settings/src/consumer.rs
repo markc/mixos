@@ -542,7 +542,9 @@ impl Consumer {
                 let advertised = serde_json::from_str::<serde_json::Value>(&fault.message)
                     .ok()
                     .filter(|body| body["status"] == "wrong_target")
-                    .and_then(|body| serde_json::from_value::<Binding>(body["binding"].clone()).ok());
+                    .and_then(|body| {
+                        serde_json::from_value::<Binding>(body["binding"].clone()).ok()
+                    });
                 if let Some(binding) = advertised
                     && self.adopt_instance(&binding)
                 {

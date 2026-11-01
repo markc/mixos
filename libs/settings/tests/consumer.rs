@@ -50,11 +50,16 @@ fn read_refusal_adopts_instance_and_requires_a_success_before_another_adoption()
     activate(&mut state, snapshot(8, "old"));
     let old = state.refresh().unwrap();
     let next = rebound("authority");
-    let read = state.complete(&old, Err(wrong_target(Some(next.binding.clone())))).unwrap();
+    let read = state
+        .complete(&old, Err(wrong_target(Some(next.binding.clone()))))
+        .unwrap();
     assert_eq!(read.binding(), &next.binding);
     assert!(state.current().is_none());
     assert!(!state.is_confirmed());
-    assert_eq!(state.presentation_kind(), Some(fallback::PresentationKind::LastGood));
+    assert_eq!(
+        state.presentation_kind(),
+        Some(fallback::PresentationKind::LastGood)
+    );
     let refused = wrong_target(Some(binding()));
     assert!(state.complete(&read, Err(refused)).is_none());
     assert_eq!(state.binding(), &next.binding);
@@ -97,10 +102,19 @@ fn other_profile_invalid_and_missing_refusal_bindings_stay_terminal() {
     other_profile.profile = "other".into();
     let mut invalid = rebound("authority").binding;
     invalid.instance = "invalid/name".into();
-    for advertised in [Some(other_profile.clone()), Some(invalid.clone()), None, Some(binding())] {
+    for advertised in [
+        Some(other_profile.clone()),
+        Some(invalid.clone()),
+        None,
+        Some(binding()),
+    ] {
         let mut state = consumer();
         let read = read_work(&mut state, 1);
-        assert!(state.complete(&read, Err(wrong_target(advertised))).is_none());
+        assert!(
+            state
+                .complete(&read, Err(wrong_target(advertised)))
+                .is_none()
+        );
         assert_eq!(state.binding(), &binding());
         assert!(state.retry_deadline().is_none());
         assert_eq!(state.fault().unwrap().code, "wrong_target");

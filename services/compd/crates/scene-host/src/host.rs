@@ -2148,7 +2148,8 @@ mod tests {
     fn corner_write_after_rebind_uses_the_new_applied_binding() {
         use crate::panels::{RecordChange, SettingsWrite};
         let mut snapshot = crate::appearance::snapshot_of(settings::Desktop::default());
-        let mut consumer = settings::consumer::Consumer::for_shell(snapshot.binding.clone()).unwrap();
+        let mut consumer =
+            settings::consumer::Consumer::for_shell(snapshot.binding.clone()).unwrap();
         let subscribe = consumer.connected(1).unwrap();
         let read = consumer.complete(&subscribe, Ok(None)).unwrap();
         consumer.complete(&read, Ok(Some(snapshot.clone())));
