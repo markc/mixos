@@ -343,19 +343,26 @@ impl Default for Scope {
 }
 
 impl Scope {
+    #[inline]
     pub fn is_declared_global(&self, name: &str) -> bool {
         self.declarations.last().is_some_and(|s| {
-            s.frame >= self.floor() && s.declared
-                .as_ref()
-                .is_some_and(|names| names.contains(name))
+            s.frame >= self.floor()
+                && s.declared
+                    .as_ref()
+                    .is_some_and(|names| names.contains(name))
         })
     }
 
+    #[inline]
     pub fn enter_function_frame_for(&mut self, func: &MixFunction) {
         self.push_function_frame();
-        if !func.can_declare_globals {
-            return;
+        if func.can_declare_globals {
+            self.enter_declaring_function(func);
         }
+    }
+
+    #[cold]
+    fn enter_declaring_function(&mut self, func: &MixFunction) {
         self.declarations.push(DeclScope {
             frame: self.frames.len() - 1,
             ..Default::default()
@@ -911,6 +918,7 @@ impl Scope {
         }
     }
 
+    #[inline]
     pub fn set_in_current(&mut self, name: String, value: Value) {
         if self.is_declared_global(&name) {
             self.set_global(&name, value);
@@ -1013,6 +1021,7 @@ impl Scope {
         self.push_function_frame();
     }
 
+    #[inline]
     fn push_function_frame(&mut self) {
         self.function_floors.push(self.frames.len());
         let frame = self.frame_pool.pop().unwrap_or_default();
@@ -1025,6 +1034,7 @@ impl Scope {
     /// Cleared frames go back into the pool for reuse — the HashMap
     /// retains its bucket capacity, so the next `enter_function_frame`
     /// can bind params without reallocating.
+    #[inline]
     pub fn leave_function_frame(&mut self) {
         if let Some(floor) = self.function_floors.pop() {
             if self.declarations.last().is_some_and(|s| s.frame == floor) {
