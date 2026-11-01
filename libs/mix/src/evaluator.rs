@@ -10633,15 +10633,18 @@ impl Evaluator {
                             // params: inside a function it must bind
                             // locally so it can't clobber a same-named
                             // caller/global via update_or_set's fallback.
-                            self.check_global_binder(&clause.var)?;
-                            if let Some(name) = &clause.err_var {
-                                self.check_global_binder(name)?;
+                            let binder_check = self.check_global_binder(&clause.var).and_then(|()| {
+                                clause.err_var.as_ref().map_or(Ok(()), |name| self.check_global_binder(name))
+                            });
+                            if let Err(e) = binder_check {
+                                Err(e)
+                            } else {
+                                self.bind_scoped(&clause.var, Value::String(info.message.clone()));
+                                if let Some(err_var) = &clause.err_var {
+                                    self.bind_scoped(err_var, info.to_value());
+                                }
+                                self.execute_block(&clause.body).await
                             }
-                            self.bind_scoped(&clause.var, Value::String(info.message.clone()));
-                            if let Some(err_var) = &clause.err_var {
-                                self.bind_scoped(err_var, info.to_value());
-                            }
-                            self.execute_block(&clause.body).await
                         }
                         Err(e) => Err(e),
                     };
