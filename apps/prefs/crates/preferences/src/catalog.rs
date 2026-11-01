@@ -111,6 +111,58 @@ fn kind_of(entry: &Value) -> Kind {
     }
 }
 
+fn hex_colour(text: &str, alpha: bool) -> bool {
+    let Some(hex) = text.strip_prefix('#') else {
+        return false;
+    };
+    (hex.len() == 6 || (alpha && hex.len() == 8)) && hex.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// Check `value` against a described `kind`: `None` for a shape the
+/// catalogue cannot state (strings, paths, lists), which the registry
+/// checks instead; `Some(Err(why))` for a refusal.
+pub fn check(kind: &Kind, value: &Value) -> Option<Result<(), String>> {
+    let fail = |why: String| Some(Err(why));
+    match kind {
+        Kind::Bool if value.is_boolean() => Some(Ok(())),
+        Kind::Bool => fail("expected true or false".into()),
+        Kind::Int { min, max, step } => match value.as_i64() {
+            Some(i) if i < *min || i > *max => fail(format!("{i} is outside {min}..{max}")),
+            Some(i) if (i - min) % step != 0 => fail(format!("{i} is not a step of {step}")),
+            Some(_) => Some(Ok(())),
+            None => fail("expected a whole number".into()),
+        },
+        Kind::Set(values) => match value.as_i64() {
+            Some(i) if values.contains(&i) => Some(Ok(())),
+            _ => fail(format!("expected one of {values:?}")),
+        },
+        Kind::Number { min, max, .. } => match value.as_f64() {
+            Some(f) if f.is_finite() && f >= *min && f <= *max => Some(Ok(())),
+            Some(f) => fail(format!("{f} is outside {min}..{max}")),
+            None => fail("expected a number".into()),
+        },
+        Kind::Enum(names) => match value.as_str() {
+            Some(s) if names.iter().any(|n| n == s) => Some(Ok(())),
+            _ => fail(format!("expected one of {}", names.join(", "))),
+        },
+        Kind::Colour { words, alpha } => match value.as_str() {
+            Some(s) if words.iter().any(|w| w == s) || hex_colour(s, *alpha) => Some(Ok(())),
+            _ => fail("expected a #rrggbb colour".into()),
+        },
+        Kind::Connector(words) => match value.as_str() {
+            Some(s) if words.iter().any(|w| w == s) => Some(Ok(())),
+            Some(s)
+                if (1..=32).contains(&s.len())
+                    && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-') =>
+            {
+                Some(Ok(()))
+            }
+            _ => fail("expected a connector name".into()),
+        },
+        Kind::Other(_) => None,
+    }
+}
+
 /// Whether `pattern` (with `<name>` segments) names `path`, and how many
 /// of its segments are literal; the first placeholder's value.
 fn fit<'a>(pattern: &str, path: &'a str) -> Option<(usize, Option<&'a str>)> {
@@ -119,7 +171,7 @@ fn fit<'a>(pattern: &str, path: &'a str) -> Option<(usize, Option<&'a str>)> {
     loop {
         match (parts.next(), segments.next()) {
             (None, None) => return Some((literals, capture)),
-            (Some(part), Some(segment)) if part.starts_with('<') => {
+            (Some(part), Some(segment)) if part.starts_with('<') && part.ends_with('>') => {
                 capture = capture.or(Some(segment));
             }
             (Some(part), Some(segment)) if part == segment => literals += 1,

@@ -12,6 +12,7 @@ mod background;
 pub mod catalog;
 pub mod email;
 pub mod engine;
+pub mod live;
 pub mod model;
 pub mod nav;
 pub mod navigation;

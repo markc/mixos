@@ -52,6 +52,8 @@ pub enum UiEvent {
     FocusDone,
     /// A value the window refused before sending (a bad hex colour).
     Problem(String),
+    /// A live item's button: (source, item, action).
+    Item(&'static str, String, String),
     SoftwareGroup(SoftwareGroup),
     Search(String),
     SearchFocused,

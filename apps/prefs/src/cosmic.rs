@@ -247,6 +247,10 @@ pub fn view(
 /// Typing a printable key with nothing focused opens search with it
 /// (spec 4, "Search").
 fn typed_search(ui: &Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
+    // Most frames carry no text: look before collecting anything.
+    if !ui.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Text(_)))) {
+        return;
+    }
     if engine.nav.searching || ui.ctx().memory(|m| m.focused().is_some()) || !engine.can_navigate()
     {
         return;
@@ -432,7 +436,7 @@ fn content(
                             .iter()
                             .filter(|r| r.show.holds(&engine.store))
                             .collect();
-                        if rows.is_empty() {
+                        if rows.is_empty() && section.items.is_none() {
                             continue;
                         }
                         if index > 0 {
@@ -776,7 +780,7 @@ pub fn section_card(
             if let Control::Choice {
                 key,
                 style: ChoiceStyle::Radio,
-                options,
+                ..
             } = &row.control
             {
                 let blocked = engine.row_blocked(page, row);
@@ -787,7 +791,7 @@ pub fn section_card(
                         .show(ui, |ui| notice(ui, look, &reason));
                     first = false;
                 }
-                for option in *options {
+                for option in &engine.choices(row) {
                     if !first {
                         divider(ui, look);
                     }
@@ -812,15 +816,80 @@ pub fn section_card(
             first = false;
             controls::row(ui, engine, page, row, quiet, look, events);
         }
+        if let Some(items) = section.items {
+            live_items(ui, engine, page, items, &mut first, look, events);
+        }
     });
 }
+
+/// A section's rows from data: title, description, trailing value and the
+/// item's own buttons; the source's empty message while it has none.
+fn live_items(
+    ui: &mut Ui,
+    engine: &Engine,
+    page: &Page,
+    items: pages::Items,
+    first: &mut bool,
+    look: &Look,
+    events: &mut Vec<UiEvent>,
+) {
+    let list = engine.items(items.source);
+    let enabled = engine.page_reason(page).is_none();
+    if list.is_empty() {
+        if !*first {
+            divider(ui, look);
+        }
+        *first = false;
+        plain_row(ui, look, &label(items.empty), None);
+        return;
+    }
+    for item in list {
+        if !*first {
+            divider(ui, look);
+        }
+        *first = false;
+        egui::Frame::NONE
+            .inner_margin(egui::Margin::symmetric(look.row_pad() as i8, 4))
+            .show(ui, |ui| {
+                ui.set_min_height(32.0);
+                ui.set_width(ui.available_width());
+                ui.horizontal(|ui| {
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        for action in item.actions.iter().rev() {
+                            let response = ui.add_enabled(
+                                enabled && action.enabled,
+                                controls::standard_button(&action.label, look),
+                            );
+                            if response.clicked() {
+                                events.push(UiEvent::Item(
+                                    items.source,
+                                    item.id.clone(),
+                                    action.id.clone(),
+                                ));
+                            }
+                        }
+                        if let Some(value) = &item.value {
+                            ui.label(RichText::new(value).size(14.0).color(look.value));
+                        }
+                        ui.with_layout(Layout::top_down(Align::Min), |ui| {
+                            ui.label(RichText::new(&item.title).size(14.0).color(look.text));
+                            if let Some(d) = &item.description {
+                                ui.label(RichText::new(d).size(12.0).color(look.text));
+                            }
+                        });
+                    });
+                });
+            });
+    }
+}
+
 
 /// Search results, COSMIC's view (spec 4 "Search", Fable P7b): per page
 /// the parent title, the page title as a link, a divider, then each
 /// matching section with its heading and card, indented, its rows live so
 /// a control works in place.
 fn results(ui: &mut Ui, engine: &Engine, look: &Look, events: &mut Vec<UiEvent>) {
-    let hits = engine.find(&engine.nav.query);
+    let hits = &engine.nav.hits;
     egui::ScrollArea::vertical()
         .id_salt("results")
         .auto_shrink([false, false])
@@ -885,7 +954,11 @@ fn results(ui: &mut Ui, engine: &Engine, look: &Look, events: &mut Vec<UiEvent>)
                             group.iter().any(|h| h.row == Some(r.id)) && r.show.holds(&engine.store)
                         })
                         .collect();
-                    if rows.is_empty() {
+                    let item_hit = section.items.is_some()
+                        && group
+                            .iter()
+                            .any(|h| h.item.is_some() && h.section == Some(section.id));
+                    if rows.is_empty() && !item_hit {
                         continue;
                     }
                     ui.horizontal(|ui| {

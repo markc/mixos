@@ -33,7 +33,6 @@ mod tree;
 pub enum Lit {
     S(&'static str),
     I(i64),
-    B(bool),
 }
 
 impl Lit {
@@ -41,7 +40,6 @@ impl Lit {
         match self {
             Lit::S(s) => json!(s),
             Lit::I(i) => json!(i),
-            Lit::B(b) => json!(b),
         }
     }
 
@@ -50,7 +48,6 @@ impl Lit {
         match (self, value) {
             (Lit::S(s), Some(Value::String(v))) => s == v,
             (Lit::I(i), Some(v)) => v.as_f64() == Some(i as f64),
-            (Lit::B(b), Some(Value::Bool(v))) => b == *v,
             _ => false,
         }
     }
@@ -246,6 +243,9 @@ pub struct Row {
     /// The missing MixOS backend, as a message id: the row is drawn
     /// disabled with a line naming it.
     pub backend: Option<&'static str>,
+    /// A choice's options from data, after its own (connected outputs):
+    /// the engine's live option list for this source.
+    pub options_from: Option<&'static str>,
 }
 
 pub const fn row(id: &'static str, control: Control) -> Row {
@@ -255,6 +255,7 @@ pub const fn row(id: &'static str, control: Control) -> Row {
         show: Cond::Always,
         enable: &[],
         backend: None,
+        options_from: None,
     }
 }
 
@@ -275,6 +276,10 @@ impl Row {
             .find(|(cond, _)| !cond.holds(store))
             .map(|(_, why)| *why)
     }
+    pub const fn options_from(mut self, source: &'static str) -> Self {
+        self.options_from = Some(source);
+        self
+    }
     pub const fn backend(mut self, backend: &'static str) -> Self {
         self.backend = Some(backend);
         self
@@ -288,6 +293,17 @@ pub struct Section {
     pub titled: bool,
     pub rows: Vec<Row>,
     pub show: Cond,
+    /// Rows that come from data (networks, devices, users, streams): the
+    /// engine's live list for this source, drawn after `rows`.
+    pub items: Option<Items>,
+}
+
+/// A section's rows from data: the live source, and the message shown
+/// while it holds nothing.
+#[derive(Clone, Copy, Debug, Serialize)]
+pub struct Items {
+    pub source: &'static str,
+    pub empty: &'static str,
 }
 
 pub fn section(id: &'static str, rows: Vec<Row>) -> Section {
@@ -296,6 +312,15 @@ pub fn section(id: &'static str, rows: Vec<Row>) -> Section {
         titled: true,
         rows,
         show: Cond::Always,
+        items: None,
+    }
+}
+
+impl Section {
+    /// Rows from the live list `source`; `empty` while it has none.
+    pub fn items(mut self, source: &'static str, empty: &'static str) -> Self {
+        self.items = Some(Items { source, empty });
+        self
     }
 }
 
@@ -460,57 +485,113 @@ pub fn root(id: &str) -> &'static str {
 /// The start page.
 pub const START: &str = "desktop";
 
-/// One search hit: the page, and the row it lands on.
+/// One search hit: the page, and the row (or live item) it lands on.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Hit {
     pub page: &'static str,
     pub section: Option<&'static str>,
     pub row: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub item: Option<String>,
 }
+
 
 /// Every page and row whose visible labels contain `query` (case-folded,
 /// whitespace literal): page titles and descriptions, section headings, row
 /// titles, descriptions and option labels. A row hit lands on its control.
 pub fn search(query: &str, label: &dyn Fn(&str) -> String) -> Vec<Hit> {
-    let query = query.trim().to_lowercase();
-    if query.is_empty() {
-        return Vec::new();
-    }
-    let found = |key: &str| {
-        let text = label(key);
-        text != key && text.to_lowercase().contains(&query)
-    };
-    let mut hits = Vec::new();
-    for page in all() {
-        let mut any_row = false;
-        for (section, row) in page.rows() {
-            let options: &[Opt] = match &row.control {
-                Control::Choice { options, .. } => options,
-                _ => &[],
-            };
-            if found(&row_title(page.id, row.id))
-                || found(&row_description(page.id, row.id))
-                || (section.titled && found(&section_title(page.id, section.id)))
-                || options.iter().any(|o| found(o.label))
-            {
-                any_row = true;
-                hits.push(Hit {
-                    page: page.id,
-                    section: Some(section.id),
-                    row: Some(row.id),
-                });
-            }
-        }
-        if !any_row && (found(&page.title()) || found(&page.description())) {
-            hits.push(Hit {
+    Index::new(label).search(query)
+}
+
+/// One searchable place: its labels, translated and case-folded once.
+#[derive(Clone, Debug)]
+struct Entry {
+    page: &'static str,
+    section: Option<&'static str>,
+    row: Option<&'static str>,
+    text: String,
+}
+
+/// Every visible label of every page, built once per catalogue so a
+/// keystroke only scans prepared text.
+#[derive(Clone, Debug, Default)]
+pub struct Index {
+    entries: Vec<Entry>,
+}
+
+impl Index {
+    pub fn new(label: &dyn Fn(&str) -> String) -> Self {
+        let text = |keys: &[String]| -> String {
+            keys.iter()
+                .filter_map(|key| {
+                    let text = label(key);
+                    (text != *key).then(|| text.to_lowercase())
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        let mut entries = Vec::new();
+        for page in all() {
+            entries.push(Entry {
                 page: page.id,
                 section: None,
                 row: None,
+                text: text(&[page.title(), page.description()]),
             });
+            for (section, row) in page.rows() {
+                let mut keys = vec![row_title(page.id, row.id), row_description(page.id, row.id)];
+                if section.titled {
+                    keys.push(section_title(page.id, section.id));
+                }
+                if let Control::Choice { options, .. } = &row.control {
+                    keys.extend(options.iter().map(|o| o.label.to_owned()));
+                }
+                entries.push(Entry {
+                    page: page.id,
+                    section: Some(section.id),
+                    row: Some(row.id),
+                    text: text(&keys),
+                });
+            }
         }
+        Self { entries }
     }
-    hits
+
+    /// The rows whose labels contain `query` (case-folded, whitespace
+    /// literal), and the pages that match only by title or description.
+    pub fn search(&self, query: &str) -> Vec<Hit> {
+        let query = query.trim().to_lowercase();
+        if query.is_empty() {
+            return Vec::new();
+        }
+        let mut hits: Vec<Hit> = Vec::new();
+        for entry in &self.entries {
+            if !entry.text.contains(&query) {
+                continue;
+            }
+            match entry.row {
+                Some(_) => {
+                    // A row hit replaces its page's title hit.
+                    hits.retain(|h| !(h.page == entry.page && h.row.is_none()));
+                    hits.push(Hit {
+                        page: entry.page,
+                        section: entry.section,
+                        row: entry.row,
+                        item: None,
+                    });
+                }
+                None => hits.push(Hit {
+                    page: entry.page,
+                    section: None,
+                    row: None,
+                    item: None,
+                }),
+            }
+        }
+        hits
+    }
 }
+
 
 #[cfg(test)]
 mod tests {

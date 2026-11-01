@@ -152,7 +152,9 @@ fn colour(ui: &mut Ui, engine: &Engine, key: &'static str, look: &Look, events: 
         if edit.changed() {
             ui.data_mut(|d| d.insert_temp(hex_id, text.clone()));
         }
-        if edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+        // Enter, or leaving the field with an edit in it, commits.
+        let typed = ui.data(|d| d.get_temp::<String>(hex_id)).is_some();
+        if edit.lost_focus() && typed {
             ui.data_mut(|d| d.remove_temp::<String>(hex_id));
             match super::parse_hex(text.trim()) {
                 Some(c) => set(events, key, super::hex(c, alpha)),
