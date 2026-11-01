@@ -421,10 +421,10 @@ builtin_table! {
     ("freeze", CapabilityClass::Pure,          "buffer",  "Snapshot a buffer to a value-semantic bytes (a copy of the current content) — the bridge into write_file/hash/base64/http (v0.26.0)", contract!((buf: buffer) -> bytes)),
     ("dns_query", CapabilityClass::Network,       "system",  "Ask one DNS server one question and get the whole answer: dns_query(name, type[, {server, port, timeout, tcp, recurse}]) -> {ok, rcode, aa, ra, tc, answers, authority, additional, server, port, transport, duration_ms}; each record is {name, type, ttl, data}. type is A, AAAA, MX, TXT, SRV, NS, SOA, PTR, CNAME, CAA, ... (PTR of an IP address asks its reverse name). server defaults to the first resolv.conf nameserver, port 53, timeout 5 s, recurse true (the RD flag); tcp:true forces TCP and a truncated UDP answer is retried over TCP. The name is always fully qualified (no search list). Timeout, unreachable and malformed replies return {ok:false, error_code: DNS_TIMEOUT|DNS_UNREACHABLE|DNS_PROTOCOL|DNS_IO|DNS_SERVER, error}; bad arguments raise (v0.117.0)", contract!((name: string, type: string, opts?: any_of(map("dns_query_options", {server: string, port: number, timeout: number, tcp: bool, recurse: bool}), nil)) -> map("dns_result"); effects[must_use, blocking]; failure[returns_result])),
     ("dns_lookup", CapabilityClass::Network,      "system",  "Resolve a hostname to a list of IP address strings", contract!((host: string) -> list(string); effects[blocking]; failure[raises])),
-    ("udp_send", CapabilityClass::Network,        "system",  "Send ONE UDP datagram: udp_send(host, port, payload[, {from, ttl}]) -> bytes sent. from binds a source IPv4 address and selects the multicast interface; ttl sets multicast TTL (v0.118.0). Payload (string/bytes/buffer) goes out verbatim; host is resolved. Not a socket API — nothing to hold or close (v0.71.0)", contract!((host: string, port: number, payload: any_of(string, bytes, buffer), opts?: any_of(map, nil)) -> number; effects[blocking]; failure[raises])),
+    ("udp_send", CapabilityClass::Network,        "system",  "Send ONE UDP datagram: udp_send(host, port, payload[, {from, ttl}]) -> bytes sent. from binds a source IPv4 address and selects the multicast interface only when supplied; ttl sets multicast TTL. The options form raises UDP_* socket errors (v0.118.0). Payload (string/bytes/buffer) goes out verbatim; host is resolved. Not a socket API — nothing to hold or close (v0.71.0)", contract!((host: string, port: number, payload: any_of(string, bytes, buffer), opts?: any_of(map, nil)) -> number; effects[blocking]; failure[raises])),
     ("udp_listen", CapabilityClass::Network, "system", "Bind an IPv4 datagram socket: udp_listen(host, port[, {join, iface, reuse, ttl, loop}]) -> numeric handle. join is a multicast group or list; iface is a local IPv4 address (default kernel choice), reuse sets SO_REUSEADDR and SO_REUSEPORT before bind. ttl defaults to the kernel value; loop is bool. Generation owned, sharing the TCP listener handle limit. Requires ws; udp_on requires Linux. Raises UDP_ARGUMENT, UDP_ADDR_IN_USE, UDP_PERMISSION, UDP_ADDR_UNAVAILABLE, UDP_IO, TCP_HANDLE_LIMIT (v0.118.0)", contract!((host: string, port: number, opts?: any_of(map, nil)) -> number; failure[raises])),
     ("udp_on", CapabilityClass::Network, "system", "Subscribe a UDP handle: udp_on(handle, command[, {max}]) -> source id. Ordered events carry {watch, datagram:{bytes, text, from_host, from_port}}; text is UTF-8 or nil. max is 1..65535 (default 65535); larger datagrams truncate. Same FIFO bounds, overflow terminal and retirement rules as tcp_on. Requires ws and Linux (v0.118.0)", contract!((handle: number, command: string, opts?: any_of(map, nil)) -> string; failure[raises])),
-    ("udp_send_from", CapabilityClass::Network, "system", "Send from a listening UDP socket: udp_send_from(handle, host, port, payload) -> bytes sent. Preserves the bound source port and multicast interface, also while subscribed; nonblocking, UDP_IO on send failure. Payload string/bytes/buffer. Requires ws (v0.118.0)", contract!((handle: number, host: string, port: number, payload: any_of(string, bytes, buffer)) -> number; failure[raises])),
+    ("udp_send_from", CapabilityClass::Network, "system", "Send from a listening UDP socket: udp_send_from(handle, host, port, payload) -> bytes sent. host must be an IPv4 literal (UDP_ARGUMENT otherwise); no DNS runs in handlers. Preserves the bound source port and multicast interface, also while subscribed; nonblocking, UDP_IO on send failure. Payload string/bytes/buffer. Requires ws (v0.118.0)", contract!((handle: number, host: string, port: number, payload: any_of(string, bytes, buffer)) -> number; failure[raises])),
     ("udp_close", CapabilityClass::Network, "system", "Close an unsubscribed UDP handle: udp_close(handle) -> bool (false if already closed). A subscribed handle refuses SOCKET_SUBSCRIBED; use udp_unwatch(source). Requires ws (v0.118.0)", contract!((handle: number) -> bool; failure[raises])),
     ("udp_unwatch", CapabilityClass::Network, "system", "Cancel a UDP source and close its socket: udp_unwatch(source) -> nil. Same cancellation and queued-record discard rules as tcp_unwatch (v0.118.0)", contract!((source: string) -> nil; failure[raises])),
     ("udp_recv", CapabilityClass::Network,        "system",  "Receive ONE UDP datagram: udp_recv(port[, {timeout, host, max}]) -> {bytes, text, from_host, from_port}, or nil on timeout (an ordinary answer, not a fault). timeout seconds default 30, 0 = wait forever; host = bind address default 0.0.0.0; max caps the read (default 65535 = never truncates; a longer datagram truncates to max, recvfrom(2)'s own contract). text is the payload as UTF-8 or nil — bytes always carries the truth (v0.71.0)", contract!((port: number, opts?: any_of(map, nil)) -> any; effects[blocking]; failure[raises])),
@@ -920,12 +920,7 @@ pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
             expect_args("udp_send_from", &args, 4)?;
             let id = socket_sources::client_id_of(args.first(), "udp_send_from")?;
             let sock = crate::udp::handles::get(id)?;
-            let Value::String(host) = &args[1] else {
-                return Err(crate::native_events::refusal(
-                    "UDP_ARGUMENT",
-                    "host must be a string",
-                ));
-            };
+            let host = crate::udp::ip(&args[1])?;
             let port = as_exact_integer(
                 "udp_send_from port",
                 number_arg("udp_send_from", &args, 2)?,
@@ -935,7 +930,7 @@ pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
             let data = crate::udp::payload(&args[3])?;
             let n = sock
                 .sock
-                .send_to(&data, format!("{host}:{port}"))
+                .send_to(&data, (host, port as u16))
                 .map_err(crate::udp::io)?;
             Ok(Some(Value::Number(n as f64)))
         }
@@ -943,21 +938,7 @@ pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
         "udp_close" => {
             expect_args("udp_close", &args, 1)?;
             let id = socket_sources::client_id_of(args.first(), "udp_close")?;
-            if let Ok(sock) = crate::udp::handles::get(id)
-                && sock.subscribed.load(std::sync::atomic::Ordering::Acquire)
-            {
-                return Err(crate::native_events::refusal(
-                    "SOCKET_SUBSCRIBED",
-                    "use udp_unwatch(source) to close a subscribed UDP socket",
-                ));
-            }
-            Ok(Some(Value::Bool(
-                crate::udp::handles::MAP
-                    .lock()
-                    .unwrap()
-                    .remove(&id)
-                    .is_some(),
-            )))
+            Ok(Some(Value::Bool(crate::udp::handles::close(id)?)))
         }
         "http_serve" => builtin_http_serve(args),
         "http_recv" => builtin_http_recv(args),
@@ -22485,12 +22466,12 @@ fn builtin_udp_send(args: Vec<Value>) -> MixResult<Option<Value>> {
             });
         }
     };
-    let mut from = std::net::Ipv4Addr::UNSPECIFIED;
+    let mut from = None;
     let mut ttl = None;
     if let Some(m) = crate::udp::map(args.get(3))? {
         for (k, v) in m {
             match k.as_str() {
-                "from" => from = crate::udp::ip(v)?,
+                "from" => from = Some(crate::udp::ip(v)?),
                 "ttl" => ttl = Some(crate::udp::ttl(v)?),
                 _ => {
                     return Err(crate::native_events::refusal(
@@ -22501,11 +22482,13 @@ fn builtin_udp_send(args: Vec<Value>) -> MixResult<Option<Value>> {
             }
         }
     }
-    let sock = std::net::UdpSocket::bind((from, 0)).map_err(|e| MixError::RuntimeError {
-        span: None,
-        msg: format!("udp_send: bind: {e}"),
+    let sock = std::net::UdpSocket::bind((from.unwrap_or(std::net::Ipv4Addr::UNSPECIFIED), 0)).map_err(|e| {
+        if args.len() == 4 { crate::udp::io(e) } else { MixError::RuntimeError {
+            span: None,
+            msg: format!("udp_send: bind: {e}"),
+        }}
     })?;
-    if args.len() == 4 {
+    if let Some(from) = from {
         crate::udp::interface(&sock, from)?;
     }
     if let Some(n) = ttl {
@@ -22513,9 +22496,11 @@ fn builtin_udp_send(args: Vec<Value>) -> MixResult<Option<Value>> {
     }
     let sent = sock
         .send_to(&payload, format!("{host}:{port}"))
-        .map_err(|e| MixError::RuntimeError {
-            span: None,
-            msg: format!("udp_send '{host}:{port}': {e}"),
+        .map_err(|e| {
+            if args.len() == 4 { crate::udp::io(e) } else { MixError::RuntimeError {
+                span: None,
+                msg: format!("udp_send '{host}:{port}': {e}"),
+            }}
         })?;
     Ok(Some(Value::Number(sent as f64)))
 }
@@ -26879,13 +26864,7 @@ pub(crate) mod socket_sources {
             handle: u64,
             max: usize,
         ) -> MixResult<SocketSource> {
-            let sock = crate::udp::handles::get(handle)?;
-            if sock.subscribed.swap(true, Ordering::AcqRel) {
-                return Err(refusal(
-                    "SOCKET_SUBSCRIBED",
-                    "UDP handle is already subscribed",
-                ));
-            }
+            let sock = crate::udp::handles::subscribe(handle)?;
             let result = (|| {
                 let (cancel, wake) =
                     UnixStream::pair().map_err(|e| refusal("SOCKET_PAIR", e.to_string()))?;
@@ -26907,12 +26886,13 @@ pub(crate) mod socket_sources {
                         for _ in 0..16 {
                             match socket.sock.recv_from(&mut buf) {
                                 Ok((n, peer)) => {
-                                    let data = &buf[..n];
-                                    let record = SocketRecord { kind: "datagram", data: serde_json::to_vec(&serde_json::json!({"bytes": data, "text": std::str::from_utf8(data).ok(), "from_host": peer.ip().to_string(), "from_port": peer.port()})).unwrap() };
+                                    let std::net::SocketAddr::V4(peer) = peer else { unreachable!("IPv4 socket received IPv6 peer") };
+                                    let record = crate::udp::record(&buf[..n], peer);
                                     if !queue.socket_push(&id, record) { break 'reader Some("overflow".into()); }
                                 }
                                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
                                 Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                                Err(e) if crate::udp::peer_error(&e) => continue,
                                 Err(e) => break 'reader Some(e.to_string()),
                             }
                         }

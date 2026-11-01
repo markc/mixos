@@ -502,7 +502,7 @@ impl Queue {
             p.socket_bytes -= rec.data.len();
             p.socket_frames -= 1;
             if rec.kind == "datagram" {
-                let datagram: serde_json::Value = serde_json::from_slice(&rec.data).unwrap();
+                let datagram = crate::udp::record_body(&rec.data);
                 let mut ev = event(
                     &s.command,
                     serde_json::json!({"watch": handle, "datagram": datagram}),
