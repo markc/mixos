@@ -12963,6 +12963,13 @@ impl Evaluator {
     /// pointers: creating a global may rehash frames[0]. Nested functions
     /// have their own eligibility checks and declaration lifetime.
     fn body_declares_global(body: &FunctionBody) -> bool {
+        match body {
+            FunctionBody::Block(b) => Self::stmts_declare_global(b),
+            FunctionBody::Expression(e) => Self::expr_declares_global(e),
+        }
+    }
+
+    fn stmts_declare_global(stmts: &[Stmt]) -> bool {
         fn list(stmts: &[Stmt]) -> bool {
             stmts.iter().any(stmt)
         }
@@ -13007,20 +13014,17 @@ impl Evaluator {
                 _ => false,
             }
         }
-        match body {
-            FunctionBody::Block(b) => list(b),
-            FunctionBody::Expression(e) => Self::expr_declares_global(e),
-        }
+        list(stmts)
     }
 
     fn expr_declares_global(expr: &Expr) -> bool {
         match expr {
             Expr::FunctionLiteral { .. } => false, // separate invocation
             Expr::If(i) => Self::expr_declares_global(&i.condition)
-                || Self::body_declares_global(&FunctionBody::Block(i.then_body.clone()))
+                || Self::stmts_declare_global(&i.then_body)
                 || i.else_ifs.iter().any(|(c, b)| Self::expr_declares_global(c)
-                    || Self::body_declares_global(&FunctionBody::Block(b.clone())))
-                || i.else_body.as_ref().is_some_and(|b| Self::body_declares_global(&FunctionBody::Block(b.clone()))),
+                    || Self::stmts_declare_global(b))
+                || i.else_body.as_ref().is_some_and(|b| Self::stmts_declare_global(b)),
             Expr::FunctionCall { name, .. } if name == "eval" => true,
             _ => {
                 let mut found = false;
