@@ -91,6 +91,11 @@ fn panel() {
 }
 
 #[test]
+fn window_management() {
+    draw("window_management", page("window_management", None), COSMIC);
+}
+
+#[test]
 fn dock() {
     draw("dock", page("dock", None), COSMIC);
 }

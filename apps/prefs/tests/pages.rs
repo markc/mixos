@@ -255,6 +255,47 @@ fn search_lands_on_the_control() {
     );
 }
 
+/// Desktop › Window management over the Bus: the page opens, a write to a
+/// live key applies once and fenced, and the focus rows (no compd focus
+/// policy yet) refuse writes.
+#[test]
+fn window_management_writes_a_live_key_once_and_refuses_the_missing_backend() {
+    let mut rig = rig();
+    read(&mut rig, "authority", false);
+    let (rc, body) = ask(
+        &mut rig,
+        1,
+        "prefs.page.open",
+        json!({"page":"window_management"}),
+    );
+    assert_eq!(rc, 0, "{body}");
+    rig.h.run_steps(3);
+    let (rc, body) = ask(
+        &mut rig,
+        2,
+        "prefs.set",
+        json!({"key":"window.edge_gravity","value":true}),
+    );
+    assert_eq!(rc, 0, "{body}");
+    rig.h.run_steps(3);
+    let sent = applies(&rig);
+    assert_eq!(sent.len(), 1, "{sent:?}");
+    assert_eq!(sent[0]["changes"], json!({"window.edge_gravity":true}));
+    for (id, key, value) in [
+        (3, "window.focus_follows_cursor", json!(true)),
+        (4, "window.focus_delay_ms", json!(500)),
+    ] {
+        let (rc, body) = ask(&mut rig, id, "prefs.set", json!({"key":key,"value":value}));
+        assert_eq!(
+            (rc, body["error_code"].as_str()),
+            (10, Some("REFUSED")),
+            "{key}"
+        );
+    }
+    rig.h.run_steps(3);
+    assert_eq!(applies(&rig).len(), 1);
+}
+
 /// The write path end to end through the one dispatch a click and the Bus
 /// share: three gestures make one apply and one merged second apply on the
 /// receipt's revision; a conflict on that one reads and sends it again.
