@@ -98,6 +98,7 @@ try
   check("gated writes nothing", read_link($cfg .. "/gtk-4.0/gtk.css") == "mixos/dark.css")
   check("gate on", call("settingsd", "fake.set", {values: {"appearance.export_toolkits": true}}).rc == 0)
   check("writes resume", eventually(fn() = read_link($cfg .. "/gtk-4.0/gtk.css") == "mixos/light.css"))
+  write_file($cfg .. "/gtk-4.0/mixos/light.css", "/* hand edited CSS */\n")
 
   $u = call("exportd-gtkqt", "exportd.gtkqt.undo", {})
   check("undo answers", $u.rc == 0 and len($u.v.restored) > 0)
@@ -108,8 +109,12 @@ try
   check("undo strips our keys and keeps the user's", contains($after, "gtk-cursor-theme-name=mine") and
     contains($after, "gtk-font-name=Mine 11") and not contains($after, "gtk-icon-theme-name"))
   check("undo leaves the hand edit and lists it", any($u.v.left, fn($k) = contains($k, "gtk-font-name")))
+  check("undo removes generated ini husks", not is_file($cfg .. "/qt5ct/qt5ct.conf") and not is_file($cfg .. "/qt6ct/qt6ct.conf"))
+  check("undo removes only its own backup", not is_file($cfg .. "/gtk-3.0/gtk.css.bak"))
   check("paused after undo", status().outcome == "paused")
   check("reconcile resumes", call("exportd-gtkqt", "exportd.gtkqt.reconcile", {}).v.outcome == "written")
+  check("hand edit remains protected after undo and reconcile", contains(read_file($cfg .. "/gtk-3.0/settings.ini"), "gtk-font-name=Mine 11"))
+  check("hand edited files remain protected too", read_file($cfg .. "/gtk-4.0/mixos/light.css") == "/* hand edited CSS */\n")
   send exportd-gtkqt QUIT timeout=5
 finally
   for $pid in $pids

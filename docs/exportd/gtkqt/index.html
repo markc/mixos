@@ -325,6 +325,7 @@ mix services/exportd/tests/gtkqt_export_test.mix
 </code></pre>
 <p>The source is
 <a href="https://github.com/markc/mixos/tree/main/services/exportd"><code>services/exportd</code></a>.</p>
+<p>Each file mutation has a durable write-ahead intent. Restart recovers an interrupted operation without losing the original. Undo persists its pause first and can be repeated after interruption. Hand-edit records survive undo and reconcile; generated empty INI files and owned backup copies are removed. An unreadable records.json is preserved and reported through status; writes remain refused until it is repaired. Every config ancestor must be a plain directory, and HOME/.config is also checked against the canonical HOME path.</p>
         </article>
         <p class="doc-source"><a href="/exportd/gtkqt.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>

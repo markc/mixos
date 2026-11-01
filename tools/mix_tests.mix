@@ -72,7 +72,9 @@ $scripts = [
   "services/clipd/tests/clipboard_test.mix",
   "services/clipd/tests/clipd_test.mix",
   "services/exportd/tests/cosmic_test.mix",
+  "services/exportd/tests/cosmic_export_test.mix",
   "services/exportd/tests/kde_test.mix",
+  "services/exportd/tests/busctl_test.mix",
   "services/compd/tests/apps_bus_test.mix",
   "services/compd/tests/apps_test.mix",
   "services/compd/tests/desktop_icons_test.mix",
@@ -102,6 +104,7 @@ $scripts = [
   "services/daylight/tests/daylight_test.mix",
   "services/exportd/tests/gtkqt_test.mix",
   "services/exportd/tests/gtkqt_export_test.mix",
+  "services/exportd/tests/gtkqt_recovery_test.mix",
   "apps/dopus/tests/dopus_bus_test.mix",
   "apps/workshop/tests/agents_bus_test.mix",
   "apps/screenshot/tests/edit_path_test.mix"

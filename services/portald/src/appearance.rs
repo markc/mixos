@@ -240,8 +240,8 @@ impl Values {
         out
     }
 
-    /// Keys whose value differs from `self`, with their new values. A key that
-    /// stops being served has no value to announce, so it is not listed.
+    /// Keys whose value differs from `self`, with their new values. An unset
+    /// accent is signalled with the portal's out-of-range RGB sentinel.
     pub fn changed(&self, next: &Self) -> Vec<(&'static str, Value<'static>)> {
         let mut out = Vec::new();
         if self.color_scheme != next.color_scheme {
@@ -250,10 +250,9 @@ impl Values {
         if self.contrast != next.contrast {
             out.push((CONTRAST, Value::U32(next.contrast)));
         }
-        if self.accent != next.accent
-            && let Some(value) = next.get(NAMESPACE, ACCENT_COLOR)
-        {
-            out.push((ACCENT_COLOR, value));
+        if self.accent != next.accent {
+            let [r, g, b] = next.accent.unwrap_or([-1.0; 3]);
+            out.push((ACCENT_COLOR, Value::from((r, g, b))));
         }
         out
     }
@@ -400,9 +399,12 @@ mod tests {
         let changes = on.changed(&values);
         assert_eq!(
             changes.len(),
-            2,
-            "color-scheme and contrast; the accent stops"
+            3,
+            "color-scheme, contrast and the unset accent sentinel"
         );
+        assert_eq!(changes[2], (ACCENT_COLOR, Value::from((-1.0, -1.0, -1.0))));
+        let restored = values.changed(&on);
+        assert_eq!(restored[2], (ACCENT_COLOR, Value::from((0.1, 0.2, 0.3))));
     }
 
     #[test]

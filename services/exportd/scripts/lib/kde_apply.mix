@@ -359,7 +359,12 @@ end
 fn undo($ctx)
   $u = load_undo($ctx)
   $n = len($u.previous)
-  $done = write_back($ctx, $u.previous, touched($u.previous, false))
+  $u.dirty = merge_touched($u.dirty, touched($u.previous, false))
+  save_undo($ctx, $u)
+  write_entries($ctx, map($u.previous, fn($e) = {file: $e.file, group: $e.group, key: $e.key, value: if $e.value == false then nil else $e.value end}))
+  $notified = reconfigure($ctx, $u.dirty)
+  $done = $notified.done
+  if $notified.ok or not $ctx.reconfigure then $u.dirty = nil end
   if $u.panels.previous != nil and $ctx.reconfigure then panels_set($ctx, $u.panels.previous) end
   $u.previous = []
   $u.panels.previous = nil

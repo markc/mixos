@@ -22,3 +22,5 @@ generated: by docs/_build/gen-site.mix from services/exportd/CHANGELOG.md; do no
 - The GTK and Qt exporter (`scripts/gtkqt.mix`): libadwaita colours with
   mode links, settings.ini keys, qt5ct/qt6ct schemes and config, with
   hand edits kept and undo.
+
+- Review fixes: coherent desktop record reads, COSMIC live topic delivery, GTK/Qt durable recovery and path refusals, KDE alpha hints and undo notifications, and strict busctl fixture arguments.

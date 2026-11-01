@@ -64,6 +64,15 @@ fn colour_set($fg, $bg, $alt, $over)
 end
 
 -- One mode's colour scheme groups, in the order a .colors file lists them.
+fn hint_colour($hint, $background)
+  if len($hint) == 7 then return $hint .. "ff" end
+  if not re_match($hint, "^#[0-9A-Fa-f]{8}$") then raise("COLOUR", "invalid window hint colour") end
+  $fg = bytes_from_hex(slice($hint, 1))
+  $bg = bytes_from_hex(slice($background, 1, 7))
+  $a = $fg[3] / 255
+  return sprintf("#%02X%02X%02XFF", round($fg[0] * $a + $bg[0] * (1 - $a)), round($fg[1] * $a + $bg[1] * (1 - $a)), round($fg[2] * $a + $bg[2] * (1 - $a)))
+end
+
 fn scheme($p, $hint)
   $f = $p.flat
   $t = get($p, "cosmic.theme") ?? {}
@@ -92,7 +101,7 @@ fn scheme($p, $hint)
   $groups["Colors:Tooltip"] = colour_set($fg, $f.card, $f.chrome, {})
   $groups["Colors:View"] = colour_set($fg, $f.card, $f.field, {})
   $groups["Colors:Window"] = colour_set($fg, $f.chrome, $f.card, {})
-  $active_bg = if $hint == "accent" then $f.accent else $hint end
+  $active_bg = if $hint == "accent" then $f.accent else hint_colour($hint, $f.chrome) end
   $active_fg = if $hint == "accent" then $f.accent_text else $f.text end
   $groups["WM"] = {
     activeBackground: rgb($active_bg),
@@ -165,7 +174,6 @@ fn plan($v, $pal, $fonts, $icons)
   $p = $pal[$mode]
   if $p == nil then raise("PALETTE", "palette has no " .. $mode .. " mode") end
   $hint = $v["window.hint_colour"] ?? "accent"
-  if $hint != "accent" then $hint = $hint .. "ff" end
   $scale = $v["accessibility.text_scale"] ?? 1.0
   -- The resolved fonts (settings.palette), never the raw keys: a null key or
   -- a pinned design source decides them in settingsd, not here.

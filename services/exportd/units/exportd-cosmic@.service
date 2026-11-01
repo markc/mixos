@@ -9,7 +9,7 @@ PartOf=session@%i.target
 
 [Service]
 Type=simple
-# The session's user: the cosmic-config tree is theirs.
+# The template runs as the mixos account; other session users need a drop-in.
 User=mixos
 EnvironmentFile=@{etc}/session/%i.env
 Environment=MIX_STATS=off

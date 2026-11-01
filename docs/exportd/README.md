@@ -186,3 +186,5 @@ GTK and Qt. Its commands are `exportd.gtkqt.status`, `.reconcile` and
 ## Changelog
 
 See the [changelog](changelog.md).
+
+Both desktop exporters read all values and the palette at one incarnation and revision, retrying a moving record before writing. Prefix topics are hints, never snapshot fragments. KDE broadcasts use busctl emit OBJECT INTERFACE SIGNAL (no positional service). Wallpaper RGB triples refuse non-opaque alpha; KDE hint colours are composited over each mode\u0027s titlebar.

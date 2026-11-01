@@ -494,6 +494,21 @@ async fn only_changed_keys_are_signalled_and_stale_projections_are_silent() -> a
         1
     );
 
+    // The export gate removes the accent; cached clients need an explicit
+    // out-of-range sentinel, followed by the real colour when it returns.
+    let mut off = projection("a", 3, "light");
+    off.export = false;
+    projections.send(off).await?;
+    assert_eq!(next_signal(&mut signals).await?.1, COLOR_SCHEME);
+    let (_, key, value) = next_signal(&mut signals).await?;
+    assert_eq!(key, ACCENT_COLOR);
+    assert_eq!(innermost(&value), &Value::from((-1.0, -1.0, -1.0)));
+    projections.send(projection("a", 4, "light")).await?;
+    assert_eq!(next_signal(&mut signals).await?.1, COLOR_SCHEME);
+    let (_, key, value) = next_signal(&mut signals).await?;
+    assert_eq!(key, ACCENT_COLOR);
+    assert_eq!(innermost(&value), &Value::from((ACCENT[0], ACCENT[1], ACCENT[2])));
+
     task.abort();
     Ok(())
 }

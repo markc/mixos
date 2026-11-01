@@ -1,0 +1,30 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Validate broadcast argv with real busctl against an owned D-Bus, never
+-- the desktop session. A positional SERVICE is invalid for emit.
+$tmp = "/var/tmp/exportd-busctl-" .. uuid()
+mkdir($tmp)
+$address = "unix:path=" .. $tmp .. "/bus"
+$pid = spawn(["dbus-daemon", "--session", "--nofork", "--address=" .. $address],
+  {detach: true, stdout: {file: $tmp .. "/dbus.log"}, stderr: "stdout"})
+try
+  $ready = false
+  for $i = 1 to 100
+    if run_argv(["busctl", "--address=" .. $address, "list"]).ok then $ready = true; break end
+    sleep(0.05)
+  end
+  if not $ready then raise("TEST", "private D-Bus did not start") end
+  for $argv in [
+    ["/KGlobalSettings", "org.kde.KGlobalSettings", "notifyChange", "ii", "0", "0"],
+    ["/KGlobalSettings", "org.kde.KGlobalSettings", "notifyChange", "ii", "1", "0"],
+    ["/KIconLoader", "org.kde.KIconLoader", "iconChanged", "i", "0"]
+  ]
+    $r = run_argv(concat(["busctl", "--address=" .. $address, "emit"], $argv))
+    if not $r.ok then raise("TEST", "valid emit argv rejected: " .. $r.stderr) end
+  end
+  $bad = run_argv(["busctl", "--address=" .. $address, "emit", "org.kde.KGlobalSettings", "/KGlobalSettings", "org.kde.KGlobalSettings", "notifyChange", "ii", "0", "0"])
+  if $bad.ok then raise("TEST", "positional service unexpectedly accepted") end
+  print("PASS real busctl broadcast argv and malformed-service regression")
+finally
+  if process_alive($pid) then kill($pid, 15) end
+end

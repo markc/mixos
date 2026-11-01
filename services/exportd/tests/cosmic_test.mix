@@ -30,6 +30,14 @@ fn file_of($plan, $path)
   return nil
 end
 
+$refused_alpha = false
+try
+  $map.plan({"wallpaper.color": "#12345680"}, "dark", $pal)
+catch $m, $err
+  $refused_alpha = $err.code == "WALLPAPER_ALPHA"
+end
+check("wallpaper alpha is not silently dropped", $refused_alpha)
+
 fn has($plan, $path, $needle)
   $t = file_of($plan, $path)
   return $t != nil and contains($t, $needle)

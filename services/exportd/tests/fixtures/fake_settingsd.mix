@@ -7,6 +7,7 @@
 $dir = env("FAKE_SETTINGS_DIR", "")
 if $dir == "" then raise("FIXTURE", "FAKE_SETTINGS_DIR is required") end
 $calls = {get: 0, palette: 0}
+$skew = {count: 0}
 
 on settings.get
   $calls.get = $calls.get + 1
@@ -15,7 +16,19 @@ end
 
 on settings.palette
   $calls.palette = $calls.palette + 1
-  reply(read_file($dir .. "/palette.json"))
+  $answer = json_parse(read_file($dir .. "/palette.json"))
+  if $skew.count != 0 then
+    $answer.revision = "0"
+    if $skew.incarnation != nil then $answer.incarnation = $skew.incarnation end
+    $skew.count = $skew.count - 1
+  end
+  reply(json_encode($answer))
+end
+
+on fake.skew
+  $skew.count = $event.args.count ?? 0
+  $skew.incarnation = $event.args.incarnation
+  reply(json_encode($skew))
 end
 
 on fake.calls
@@ -27,7 +40,7 @@ on fake.publish
   $prefix = if type($event.args) == "map" then $event.args.prefix ?? "appearance" else "appearance" end
   $got = json_parse(read_file($dir .. "/get.json"))
   $body = {schema: 3, binding: $got.binding, incarnation: $got.incarnation, revision: $got.revision,
-    changed_at: $got.revision, values: {}}
+    changed_at: $got.revision, values: $got.values, resolved: $got.resolved}
   publish("settingsd.desktop.keys.default." .. $prefix, json_encode($body), {retain: true})
   reply(json_encode({published: $prefix}))
 end
