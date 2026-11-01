@@ -49,23 +49,35 @@ fn redirect_hops_are_bounded_across_reconnects_and_reset_after_confirmation() {
     let mut state = consumer();
     let mut read = read_work(&mut state, 1);
     for instance in ["b", "c", "d"] {
-        read = state.complete(&read, Err(wrong_target(Some(rebound(instance).binding)))).unwrap();
+        read = state
+            .complete(&read, Err(wrong_target(Some(rebound(instance).binding))))
+            .unwrap();
     }
     let read = read_work(&mut state, 2);
-    assert!(state.complete(&read, Err(wrong_target(Some(rebound("e").binding)))).is_none());
+    assert!(
+        state
+            .complete(&read, Err(wrong_target(Some(rebound("e").binding))))
+            .is_none()
+    );
     assert_eq!(state.binding().instance, "d");
     assert!(state.fault().unwrap().message.contains("3 hops"));
     assert!(state.retry_deadline().is_none());
     let read = state.refresh().unwrap();
     state.complete(&read, Ok(Some(rebound("d"))));
     let read = state.refresh().unwrap();
-    assert!(state.complete(&read, Err(wrong_target(Some(rebound("e").binding)))).is_some());
+    assert!(
+        state
+            .complete(&read, Err(wrong_target(Some(rebound("e").binding))))
+            .is_some()
+    );
 }
 #[test]
 fn malformed_frames_during_rebind_do_not_cancel_the_read() {
     let mut state = consumer();
     let read = read_work(&mut state, 1);
-    let read = state.complete(&read, Err(wrong_target(Some(rebound("b").binding)))).unwrap();
+    let read = state
+        .complete(&read, Err(wrong_target(Some(rebound("b").binding))))
+        .unwrap();
     let mut invalid = rebound("invalid/name");
     state.observe(1, invalid.clone());
     invalid.binding.profile = "other".into();
@@ -111,7 +123,9 @@ fn read_refusal_follows_a_chain_and_deliveries_never_reverse_it() {
         Some(fallback::PresentationKind::LastGood)
     );
     let third = rebound("third");
-    let read = state.complete(&read, Err(wrong_target(Some(third.binding.clone())))).unwrap();
+    let read = state
+        .complete(&read, Err(wrong_target(Some(third.binding.clone()))))
+        .unwrap();
     assert!(state.observe(1, next.clone()).is_none());
     assert_eq!(state.current_work(), Some(&read));
     state.complete(&read, Ok(Some(third.clone())));
@@ -132,7 +146,9 @@ fn refusal_rebind_fences_old_work_and_stages_and_reads_before_applying() {
     state.observe(1, changed);
     let old_stage = state.pending().unwrap().clone();
     let next = rebound("authority");
-    let read = state.complete(&old_read, Err(wrong_target(Some(next.binding.clone())))).unwrap();
+    let read = state
+        .complete(&old_read, Err(wrong_target(Some(next.binding.clone()))))
+        .unwrap();
     assert!(!state.acknowledge(&old_stage));
     assert!(state.current().is_none());
     state.complete(&old_read, Ok(Some(snapshot(99, "old"))));
@@ -194,7 +210,9 @@ fn rebind_never_loads_or_saves_old_instance_cache_under_new_target() {
     let mut next = initial;
     next.binding.instance = "authority".into();
     let read = state.refresh().unwrap();
-    let read = state.complete(&read, Err(wrong_target(Some(next.binding.clone())))).unwrap();
+    let read = state
+        .complete(&read, Err(wrong_target(Some(next.binding.clone()))))
+        .unwrap();
     assert_ne!(state.cache_target(), old_target);
     assert!(state.cache_save().is_none());
     assert!(cache::load(directory.path(), &state).is_err());
@@ -614,7 +632,9 @@ fn decoder_captured_before_rebind_is_fenced_after_it() {
     let delivery = native::Decoded::from_command(&binding(), &frame(&next)).unwrap();
     assert!(state.decoded_delivery(delivery).is_none());
     let read = state.refresh().unwrap();
-    let read = state.complete(&read, Err(wrong_target(Some(next.binding.clone())))).unwrap();
+    let read = state
+        .complete(&read, Err(wrong_target(Some(next.binding.clone()))))
+        .unwrap();
     state.complete(&read, Ok(Some(next.clone())));
     next.revision = Revision(2);
     let delivery = native::Decoded::from_command(&binding(), &frame(&next)).unwrap();

@@ -21,7 +21,8 @@ async fn real_refusal_reaches_native_consumer_and_apply_refresh_detector() {
             let tokio_tungstenite::tungstenite::Message::Text(text) = frame else { continue };
             let req = bus::parse(&text).unwrap();
             let command = req.get("command").unwrap_or("");
-            let refused = matches!(command, "settings.get" | "settings.apply");
+            let refused = matches!(command, "settings.get" | "settings.apply")
+                || (command == "topic.subscribe" && req.get("name").is_some_and(|name| name.ends_with(".other")));
             let mut reply = bus::BusMessage::new()
                 .with_header("type", "response")
                 .with_header("from", "settingsd")
@@ -45,6 +46,14 @@ async fn real_refusal_reaches_native_consumer_and_apply_refresh_detector() {
         assert_eq!(next.binding(), &advertised);
         let error = client.call("settingsd", "settings.apply", json!({})).await.unwrap_err();
         assert!(native::wrong_target_refusal(&error));
+        // A non-read command carrying the very same body retains its own
+        // failure code; it cannot enter the consumer's adoption arm.
+        let mut other = Consumer::for_app(Binding { instance: "fixture".into(), profile: "other".into() }, "ced").unwrap();
+        let subscribe = other.connected(client.connection_generation()).unwrap();
+        let fault = native::execute_until(&client, &subscribe, tokio::time::Instant::now() + Duration::from_secs(1)).await.unwrap_err();
+        assert_eq!(fault.code, "subscribe_failed");
+        assert!(other.complete(&subscribe, Err(fault)).is_none());
+        assert_eq!(other.binding().instance, "fixture");
         client.shutdown().await;
     }).await.unwrap();
     broker.abort();

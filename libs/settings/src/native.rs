@@ -172,9 +172,7 @@ impl Consumer {
     /// Complete decoding on the host's worker, then feed it on the UI loop.
     /// A queued delivery still checks the current binding and connection here.
     pub fn decoded_delivery(&mut self, delivery: Decoded) -> Option<Work> {
-        if delivery.binding != *self.binding()
-            || self.generation() != Some(delivery.generation)
-        {
+        if delivery.binding != *self.binding() || self.generation() != Some(delivery.generation) {
             self.drop_delivery();
             return None;
         }
