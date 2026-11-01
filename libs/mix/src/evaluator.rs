@@ -9049,7 +9049,9 @@ impl Evaluator {
                         })?;
                     }
                     // Runtime-name and scope conflicts have all been checked.
-                    self.scope.declare_globals(names).map_err(|code| self.coded_err(code, "invalid global declaration"))?;
+                    self.scope
+                        .declare_globals(names)
+                        .map_err(|code| self.coded_err(code, "invalid global declaration"))?;
                     Ok(Value::Nil)
                 }
                 StmtKind::Expression(expr) => {
@@ -12883,7 +12885,9 @@ impl Evaluator {
         };
         MixFunction {
             can_declare_globals: Self::body_declares_global(body)
-                || params.iter().any(|p| p.default.as_ref().is_some_and(Self::expr_declares_global)),
+                || params
+                    .iter()
+                    .any(|p| p.default.as_ref().is_some_and(Self::expr_declares_global)),
             name: std::rc::Rc::from(name),
             params: params.to_vec(),
             body: body.clone(),
@@ -12975,44 +12979,47 @@ impl Evaluator {
         }
         fn stmt(s: &Stmt) -> bool {
             let mut embedded = false;
-            crate::analyzer::walk_stmt_exprs(s, &mut |e| embedded |= Evaluator::expr_declares_global(e));
-            embedded || match &s.kind {
-                StmtKind::Global(_) => true,
-                StmtKind::Source { .. } | StmtKind::Include { .. } => true,
-                StmtKind::If {
-                    then_body,
-                    else_ifs,
-                    else_body,
-                    ..
-                } => {
-                    list(then_body)
-                        || else_ifs.iter().any(|(_, b)| list(b))
-                        || else_body.as_ref().is_some_and(|b| list(b))
+            crate::analyzer::walk_stmt_exprs(s, &mut |e| {
+                embedded |= Evaluator::expr_declares_global(e)
+            });
+            embedded
+                || match &s.kind {
+                    StmtKind::Global(_) => true,
+                    StmtKind::Source { .. } | StmtKind::Include { .. } => true,
+                    StmtKind::If {
+                        then_body,
+                        else_ifs,
+                        else_body,
+                        ..
+                    } => {
+                        list(then_body)
+                            || else_ifs.iter().any(|(_, b)| list(b))
+                            || else_body.as_ref().is_some_and(|b| list(b))
+                    }
+                    StmtKind::For { body, .. }
+                    | StmtKind::ForEach { body, .. }
+                    | StmtKind::While { body, .. }
+                    | StmtKind::Loop { body, .. }
+                    | StmtKind::Address { body, .. } => list(body),
+                    StmtKind::TryCatch {
+                        try_body,
+                        catch,
+                        finally_body,
+                    } => {
+                        list(try_body)
+                            || catch.as_ref().is_some_and(|c| list(&c.body))
+                            || finally_body.as_ref().is_some_and(|b| list(b))
+                    }
+                    StmtKind::Select {
+                        cases, otherwise, ..
+                    } => {
+                        cases.iter().any(|(_, b)| list(b))
+                            || otherwise.as_ref().is_some_and(|b| list(b))
+                    }
+                    StmtKind::Chain { left, right, .. } => stmt(left) || stmt(right),
+                    StmtKind::PipeToExternal { stmt: inner, .. } => stmt(inner),
+                    _ => false,
                 }
-                StmtKind::For { body, .. }
-                | StmtKind::ForEach { body, .. }
-                | StmtKind::While { body, .. }
-                | StmtKind::Loop { body, .. }
-                | StmtKind::Address { body, .. } => list(body),
-                StmtKind::TryCatch {
-                    try_body,
-                    catch,
-                    finally_body,
-                } => {
-                    list(try_body)
-                        || catch.as_ref().is_some_and(|c| list(&c.body))
-                        || finally_body.as_ref().is_some_and(|b| list(b))
-                }
-                StmtKind::Select {
-                    cases, otherwise, ..
-                } => {
-                    cases.iter().any(|(_, b)| list(b))
-                        || otherwise.as_ref().is_some_and(|b| list(b))
-                }
-                StmtKind::Chain { left, right, .. } => stmt(left) || stmt(right),
-                StmtKind::PipeToExternal { stmt: inner, .. } => stmt(inner),
-                _ => false,
-            }
         }
         list(stmts)
     }
@@ -13020,15 +13027,22 @@ impl Evaluator {
     fn expr_declares_global(expr: &Expr) -> bool {
         match expr {
             Expr::FunctionLiteral { .. } => false, // separate invocation
-            Expr::If(i) => Self::expr_declares_global(&i.condition)
-                || Self::stmts_declare_global(&i.then_body)
-                || i.else_ifs.iter().any(|(c, b)| Self::expr_declares_global(c)
-                    || Self::stmts_declare_global(b))
-                || i.else_body.as_ref().is_some_and(|b| Self::stmts_declare_global(b)),
+            Expr::If(i) => {
+                Self::expr_declares_global(&i.condition)
+                    || Self::stmts_declare_global(&i.then_body)
+                    || i.else_ifs.iter().any(|(c, b)| {
+                        Self::expr_declares_global(c) || Self::stmts_declare_global(b)
+                    })
+                    || i.else_body
+                        .as_ref()
+                        .is_some_and(|b| Self::stmts_declare_global(b))
+            }
             Expr::FunctionCall { name, .. } if name == "eval" => true,
             _ => {
                 let mut found = false;
-                crate::analyzer::walk_expr_children(expr, &mut |e| found |= Self::expr_declares_global(e));
+                crate::analyzer::walk_expr_children(expr, &mut |e| {
+                    found |= Self::expr_declares_global(e)
+                });
                 found
             }
         }
@@ -15736,7 +15750,9 @@ impl Evaluator {
                     let body_no_local_assigns = !Self::body_has_local_assigns(body);
                     Ok(Value::Function(Rc::new(MixFunction {
                         can_declare_globals: Self::body_declares_global(body)
-                            || params.iter().any(|p| p.default.as_ref().is_some_and(Self::expr_declares_global)),
+                            || params.iter().any(|p| {
+                                p.default.as_ref().is_some_and(Self::expr_declares_global)
+                            }),
                         name: std::rc::Rc::from("<lambda>"),
                         params: params.clone(),
                         body: (**body).clone(),

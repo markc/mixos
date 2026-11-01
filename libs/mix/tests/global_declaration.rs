@@ -195,7 +195,8 @@ async fn embedded_pipeline_binder_refuses_global() {
 #[tokio::test]
 async fn multi_name_declaration_is_transactional() {
     for conflict in ["$event", "$p", "$local"] {
-        let source = format!(r#"
+        let source = format!(
+            r#"
 $a = 0
 fn f($p)
   $local = 1
@@ -208,7 +209,8 @@ fn f($p)
 end
 f(1)
 print($a)
-"#);
+"#
+        );
         let expected = match conflict {
             "$event" => "GLOBAL_RUNTIME_NAME\n0",
             "$p" => "GLOBAL_PARAM\n0",

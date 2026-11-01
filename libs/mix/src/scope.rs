@@ -341,17 +341,28 @@ impl Default for Scope {
 
 impl Scope {
     pub fn is_declared_global(&self, name: &str) -> bool {
-        self.declarations
-            .last()
-            .is_some_and(|s| s.declared.as_ref().is_some_and(|names| names.contains(name)))
+        self.declarations.last().is_some_and(|s| {
+            s.frame >= self.floor() && s.declared
+                .as_ref()
+                .is_some_and(|names| names.contains(name))
+        })
     }
 
     pub fn enter_function_frame_for(&mut self, func: &MixFunction) {
-        self.enter_function_frame();
+        self.push_function_frame();
         if !func.can_declare_globals {
             return;
         }
-        let s = self.declarations.last_mut().unwrap().conflicts.insert(Box::default());
+        self.declarations.push(DeclScope {
+            frame: self.frames.len() - 1,
+            ..Default::default()
+        });
+        let s = self
+            .declarations
+            .last_mut()
+            .unwrap()
+            .conflicts
+            .insert(Box::default());
         s.params.extend(func.params.iter().map(|p| p.name.clone()));
         if let Some(env) = func.module_env.as_ref().and_then(|e| e.get()) {
             s.module_names.extend(env.keys().cloned());
@@ -378,7 +389,11 @@ impl Scope {
         let Some(scope) = self.declarations.last() else {
             return Ok(());
         };
-        if scope.conflicts.as_ref().is_some_and(|s| s.params.contains(name)) {
+        if scope
+            .conflicts
+            .as_ref()
+            .is_some_and(|s| s.params.contains(name))
+        {
             return Err("GLOBAL_PARAM");
         }
         if self.frames.last().is_some_and(|f| f.contains_key(name)) {
@@ -393,7 +408,10 @@ impl Scope {
             self.validate_global(name)?;
         }
         if let Some(scope) = self.declarations.last_mut() {
-            scope.declared.get_or_insert_with(Box::default).extend(names.iter().cloned());
+            scope
+                .declared
+                .get_or_insert_with(Box::default)
+                .extend(names.iter().cloned());
         }
         Ok(())
     }
@@ -989,6 +1007,10 @@ impl Scope {
             frame: self.frames.len(),
             ..Default::default()
         });
+        self.push_function_frame();
+    }
+
+    fn push_function_frame(&mut self) {
         self.function_floors.push(self.frames.len());
         let frame = self.frame_pool.pop().unwrap_or_default();
         self.frames.push(frame);
@@ -1001,8 +1023,10 @@ impl Scope {
     /// retains its bucket capacity, so the next `enter_function_frame`
     /// can bind params without reallocating.
     pub fn leave_function_frame(&mut self) {
-        self.declarations.pop();
         if let Some(floor) = self.function_floors.pop() {
+            if self.declarations.last().is_some_and(|s| s.frame == floor) {
+                self.declarations.pop();
+            }
             while self.frames.len() > floor {
                 let mut frame = self.frames.pop().unwrap();
                 frame.clear();
