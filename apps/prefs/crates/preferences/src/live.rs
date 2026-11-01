@@ -312,7 +312,6 @@ mod tests {
 
     #[test]
     fn an_item_action_on_a_page_without_its_backend_is_refused() {
-
         let mut e = engine();
         e.set_items("wifi.visible", vec![network("home")]);
         assert!(e.item_action("wifi.visible", "home", "connect").is_err());

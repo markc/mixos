@@ -373,7 +373,6 @@ impl Section {
         self.show = cond;
         self
     }
-
 }
 
 pub fn untitled(id: &'static str, rows: Vec<Row>) -> Section {
@@ -596,7 +595,12 @@ impl Index {
                 }
                 if let Control::Choice { options, .. } = &row.control {
                     keys.extend(options.iter().map(|o| o.label.to_owned()));
-                    keys.extend(options.iter().filter_map(|o| o.description).map(str::to_owned));
+                    keys.extend(
+                        options
+                            .iter()
+                            .filter_map(|o| o.description)
+                            .map(str::to_owned),
+                    );
                 }
                 entries.push(Entry {
                     page: page.id,
