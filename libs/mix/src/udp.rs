@@ -87,18 +87,27 @@ pub(crate) fn map(v: Option<&Value>) -> MixResult<Option<&indexmap::IndexMap<Str
 /// Errors about a previous datagram's peer do not retire a shared listener.
 #[cfg(all(feature = "ws", target_os = "linux"))]
 pub(crate) fn peer_error(e: &std::io::Error) -> bool {
-    matches!(e.raw_os_error(), Some(libc::ECONNREFUSED | libc::ENETUNREACH | libc::EHOSTUNREACH | libc::ECONNRESET))
+    matches!(
+        e.raw_os_error(),
+        Some(libc::ECONNREFUSED | libc::ENETUNREACH | libc::EHOSTUNREACH | libc::ECONNRESET)
+    )
 }
 
 /// Fixed peer header (IPv4 octets, network-order port) followed by raw bytes.
 /// Queue accounting includes the six metadata bytes, with no JSON expansion.
 #[cfg(feature = "ws")]
-pub(crate) fn record(data: &[u8], peer: std::net::SocketAddrV4) -> crate::builtins::socket_sources::SocketRecord {
+pub(crate) fn record(
+    data: &[u8],
+    peer: std::net::SocketAddrV4,
+) -> crate::builtins::socket_sources::SocketRecord {
     let mut bytes = Vec::with_capacity(6 + data.len());
     bytes.extend_from_slice(&peer.ip().octets());
     bytes.extend_from_slice(&peer.port().to_be_bytes());
     bytes.extend_from_slice(data);
-    crate::builtins::socket_sources::SocketRecord { kind: "datagram", data: bytes }
+    crate::builtins::socket_sources::SocketRecord {
+        kind: "datagram",
+        data: bytes,
+    }
 }
 
 #[cfg(feature = "ws")]
@@ -134,9 +143,17 @@ pub(crate) mod handles {
     }
     pub(crate) fn subscribe(id: u64) -> MixResult<Arc<Socket>> {
         let map = MAP.lock().unwrap();
-        let sock = map.get(&id).ok_or_else(|| refusal("UDP_HANDLE", format!("unknown or closed UDP handle {id}")))?;
-        if sock.subscribed.swap(true, std::sync::atomic::Ordering::AcqRel) {
-            return Err(refusal("SOCKET_SUBSCRIBED", "UDP handle is already subscribed"));
+        let sock = map
+            .get(&id)
+            .ok_or_else(|| refusal("UDP_HANDLE", format!("unknown or closed UDP handle {id}")))?;
+        if sock
+            .subscribed
+            .swap(true, std::sync::atomic::Ordering::AcqRel)
+        {
+            return Err(refusal(
+                "SOCKET_SUBSCRIBED",
+                "UDP handle is already subscribed",
+            ));
         }
         Ok(sock.clone())
     }
@@ -145,7 +162,10 @@ pub(crate) mod handles {
         if let Some(sock) = map.get(&id)
             && sock.subscribed.load(std::sync::atomic::Ordering::Acquire)
         {
-            return Err(refusal("SOCKET_SUBSCRIBED", "use udp_unwatch(source) to close a subscribed UDP socket"));
+            return Err(refusal(
+                "SOCKET_SUBSCRIBED",
+                "use udp_unwatch(source) to close a subscribed UDP socket",
+            ));
         }
         Ok(map.remove(&id).is_some())
     }
@@ -207,13 +227,21 @@ pub(crate) mod handles {
         let permit = TcpPermit::acquire("udp_listen")?;
         // socket2 handles native sockaddr layouts (including BSD sin_len)
         // and descriptor inheritance portably. Already provided by ws.
-        let sock: UdpSocket = socket2::Socket::new(socket2::Domain::IPV4, socket2::Type::DGRAM, Some(socket2::Protocol::UDP)).map_err(io)?.into();
+        let sock: UdpSocket = socket2::Socket::new(
+            socket2::Domain::IPV4,
+            socket2::Type::DGRAM,
+            Some(socket2::Protocol::UDP),
+        )
+        .map_err(io)?
+        .into();
         if reuse {
             option(&sock, libc::SO_REUSEADDR, &1i32, libc::SOL_SOCKET)?;
             option(&sock, libc::SO_REUSEPORT, &1i32, libc::SOL_SOCKET)?;
         }
         let addr = std::net::SocketAddrV4::new(host, port);
-        socket2::SockRef::from(&sock).bind(&addr.into()).map_err(io)?;
+        socket2::SockRef::from(&sock)
+            .bind(&addr.into())
+            .map_err(io)?;
         interface(&sock, iface)?;
         if let Some(n) = hops {
             sock.set_multicast_ttl_v4(n).map_err(io)?;
@@ -372,10 +400,7 @@ mod tests {
         let h = ne.udp_on(id, "test.overflow".into(), None).unwrap();
         let record = record(&[], std::net::SocketAddrV4::new(Ipv4Addr::LOCALHOST, port));
         for _ in 0..MAX_SOCKET_FRAMES {
-            assert!(ne.queue.socket_push(
-                &h,
-                record.clone()
-            ));
+            assert!(ne.queue.socket_push(&h, record.clone()));
         }
         UdpSocket::bind("127.0.0.1:0")
             .unwrap()
@@ -408,19 +433,43 @@ mod tests {
         // Connect only in this regression fixture to guarantee the kernel
         // surfaces ICMP ECONNREFUSED on recv_from on every Linux setup.
         // The production listener stays unconnected; its error path is identical.
-        handles::get(id).unwrap().sock.connect((Ipv4Addr::LOCALHOST, closed_port)).unwrap();
+        handles::get(id)
+            .unwrap()
+            .sock
+            .connect((Ipv4Addr::LOCALHOST, closed_port))
+            .unwrap();
         let mut ne = NativeEvents::default();
         ne.own_udp(id);
         ne.udp_on(id, "test.peer".into(), None).unwrap();
-        call_builtin("udp_send_from", vec![Value::Number(id as f64), Value::String("127.0.0.1".into()), Value::Number(closed_port as f64), Value::String("reply".into())]).unwrap();
+        call_builtin(
+            "udp_send_from",
+            vec![
+                Value::Number(id as f64),
+                Value::String("127.0.0.1".into()),
+                Value::Number(closed_port as f64),
+                Value::String("reply".into()),
+            ],
+        )
+        .unwrap();
         // Let the local ICMP response arrive before sending the next request.
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-        UdpSocket::bind((Ipv4Addr::LOCALHOST, closed_port)).unwrap().send_to(b"alive", (Ipv4Addr::LOCALHOST, port)).unwrap();
-        let ev = tokio::time::timeout(std::time::Duration::from_secs(3), ne.queue.next(None)).await.unwrap().unwrap();
+        UdpSocket::bind((Ipv4Addr::LOCALHOST, closed_port))
+            .unwrap()
+            .send_to(b"alive", (Ipv4Addr::LOCALHOST, port))
+            .unwrap();
+        let ev = tokio::time::timeout(std::time::Duration::from_secs(3), ne.queue.next(None))
+            .await
+            .unwrap()
+            .unwrap();
         let body: serde_json::Value = serde_json::from_str(&ev.body).unwrap();
         assert_eq!(body["datagram"]["text"], "alive", "{body}");
         assert!(handles::get(id).is_ok());
-        for errno in [libc::ECONNREFUSED, libc::ENETUNREACH, libc::EHOSTUNREACH, libc::ECONNRESET] {
+        for errno in [
+            libc::ECONNREFUSED,
+            libc::ENETUNREACH,
+            libc::EHOSTUNREACH,
+            libc::ECONNRESET,
+        ] {
             assert!(peer_error(&std::io::Error::from_raw_os_error(errno)));
         }
         assert!(!peer_error(&std::io::Error::from_raw_os_error(libc::EBADF)));
@@ -430,12 +479,30 @@ mod tests {
     fn literal_destinations_option_errors_and_compact_records() {
         let id = listen("127.0.0.1", 0, "{}");
         for host in ["localhost", "example.invalid", "::1", "127.0.0.1:1900"] {
-            let err = call_builtin("udp_send_from", vec![Value::Number(id as f64), Value::String(host.into()), Value::Number(1900.0), Value::String("probe".into())]).unwrap_err();
+            let err = call_builtin(
+                "udp_send_from",
+                vec![
+                    Value::Number(id as f64),
+                    Value::String(host.into()),
+                    Value::Number(1900.0),
+                    Value::String("probe".into()),
+                ],
+            )
+            .unwrap_err();
             assert_eq!(err.info().unwrap().code, "UDP_ARGUMENT");
         }
         // Only the new options form changes its I/O error codes; the
         // original three-argument one-shot send keeps its existing errors.
-        let err = call_builtin("udp_send", vec![Value::String("127.0.0.1".into()), Value::Number(1.0), Value::bytes(vec![0; 65536]), crate::native_events::json_value(serde_json::json!({"ttl":4}))]).unwrap_err();
+        let err = call_builtin(
+            "udp_send",
+            vec![
+                Value::String("127.0.0.1".into()),
+                Value::Number(1.0),
+                Value::bytes(vec![0; 65536]),
+                crate::native_events::json_value(serde_json::json!({"ttl":4})),
+            ],
+        )
+        .unwrap_err();
         assert_eq!(err.info().unwrap().code, "UDP_IO");
         let peer = std::net::SocketAddrV4::new(Ipv4Addr::LOCALHOST, 1900);
         let payload = vec![255; 65507];
@@ -455,19 +522,28 @@ mod tests {
             let id = listen("127.0.0.1", 0, "{}");
             let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
             let start = barrier.clone();
-            let subscriber = std::thread::spawn(move || { start.wait(); handles::subscribe(id) });
-            let closer = std::thread::spawn(move || { barrier.wait(); handles::close(id) });
+            let subscriber = std::thread::spawn(move || {
+                start.wait();
+                handles::subscribe(id).map_err(|e| e.info().unwrap().code.clone())
+            });
+            let closer = std::thread::spawn(move || {
+                barrier.wait();
+                handles::close(id).map_err(|e| e.info().unwrap().code.clone())
+            });
             let subscribed = subscriber.join().unwrap();
             let closed = closer.join().unwrap();
             match subscribed {
                 Ok(sock) => {
-                    assert_eq!(closed.unwrap_err().info().unwrap().code, "SOCKET_SUBSCRIBED");
+                    assert_eq!(
+                        closed.unwrap_err(),
+                        "SOCKET_SUBSCRIBED"
+                    );
                     assert!(handles::get(id).is_ok());
                     handles::MAP.lock().unwrap().remove(&id);
                     drop(sock);
                 }
                 Err(err) => {
-                    assert_eq!(err.info().unwrap().code, "UDP_HANDLE");
+                    assert_eq!(err, "UDP_HANDLE");
                     assert!(closed.unwrap());
                 }
             }
