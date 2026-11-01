@@ -519,12 +519,7 @@ gallery-reading = Reading the folder…
 gallery-unreadable = This folder can't be read.
 opt-fill = Fill
 opt-fit-screen = Fit to screen
-opt-minutes-5 = 5 minutes
-opt-minutes-10 = 10 minutes
-opt-minutes-15 = 15 minutes
-opt-minutes-30 = 30 minutes
 opt-hours-1 = 1 hour
-opt-hours-2 = 2 hours
 
 sec-appearance-colors = Mode and colors
 sec-appearance-style = Style
