@@ -194,6 +194,9 @@ an integer from 1 to `i64::MAX`. `offset` defaults to 0 and accepts integers
 from 0 to `i64::MAX`; both must be real numbers (no string/bool coercion).
 Each call opens its own file, seeks, then reads until `max` bytes or EOF;
 ordinary short reads are retried. At or past EOF the result is empty bytes.
+Seeking happens only when `offset > 0`. An omitted or zero offset therefore
+also supports FIFOs and pipes, like the numeric cap form; a positive offset
+still requires a seekable file.
 This supports HTTP Range streaming of large files in bounded chunks:
 
 ```mix

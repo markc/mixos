@@ -276,7 +276,7 @@ and reads up to required <code>max</code> bytes, stopping early only at EOF. At/
 EOF returns empty bytes. The whole-file and numeric cap forms are unchanged.</p>
 </li>
 <li>
-<p>IPv4 UDP event sources: <code>udp_listen</code>, <code>udp_on</code>, <code>udp_send_from</code>,
+<p>IPv4 UDP event sources: <code>udp_listen</code>, <code>udp_local_addr</code>, <code>udp_on</code>, <code>udp_send_via</code>,
 <code>udp_close</code>, <code>udp_unwatch</code> (ws feature), with multicast membership, egress
 interface, pre-bind reuse and generation retirement. <code>udp_send</code> accepts
 <code>{from, ttl}</code> without changing its three-argument form.</p>
@@ -343,9 +343,22 @@ scenes found no live script affected.</li>
 <h3 id="fixed">Fixed</h3>
 <ul>
 <li>
+<p>Finalise the unreleased UDP API: <code>udp_send_via</code> names handle sends;
+<code>reuse</code> sets SO_REUSEADDR only, with independent <code>reuse_port</code> for SO_REUSEPORT.
+JSON datagram bodies encode <code>bytes:{hex:...}</code>; event args retain Mix bytes.
+<code>udp_local_addr</code> discovers port-zero bindings even while subscribed.</p>
+</li>
+<li>
+<p><code>read_file_bytes</code> options skip seeking at offset zero, supporting FIFOs.</p>
+</li>
+<li>
+<p>Raise the per-evaluator socket-source cap from 16 to 256 (one reader thread
+per source), including listeners and accepted connections.</p>
+</li>
+<li>
 <p>UDP listeners bind portably on non-Linux Unix via socket2, retain their
 subscription after asynchronous peer errors, and close/subscribe atomically.
-<code>udp_send_from</code> requires an IPv4 literal to avoid blocking handler DNS.
+<code>udp_send_via</code> requires an IPv4 literal to avoid blocking handler DNS.
 <code>udp_send</code> sets multicast egress only when <code>from</code> is supplied and its options
 form uses <code>UDP_*</code> socket error codes. Queued datagrams store raw payloads
 with fixed-size peer metadata instead of JSON number arrays.</p>

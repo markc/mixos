@@ -422,9 +422,10 @@ builtin_table! {
     ("dns_query", CapabilityClass::Network,       "system",  "Ask one DNS server one question and get the whole answer: dns_query(name, type[, {server, port, timeout, tcp, recurse}]) -> {ok, rcode, aa, ra, tc, answers, authority, additional, server, port, transport, duration_ms}; each record is {name, type, ttl, data}. type is A, AAAA, MX, TXT, SRV, NS, SOA, PTR, CNAME, CAA, ... (PTR of an IP address asks its reverse name). server defaults to the first resolv.conf nameserver, port 53, timeout 5 s, recurse true (the RD flag); tcp:true forces TCP and a truncated UDP answer is retried over TCP. The name is always fully qualified (no search list). Timeout, unreachable and malformed replies return {ok:false, error_code: DNS_TIMEOUT|DNS_UNREACHABLE|DNS_PROTOCOL|DNS_IO|DNS_SERVER, error}; bad arguments raise (v0.117.0)", contract!((name: string, type: string, opts?: any_of(map("dns_query_options", {server: string, port: number, timeout: number, tcp: bool, recurse: bool}), nil)) -> map("dns_result"); effects[must_use, blocking]; failure[returns_result])),
     ("dns_lookup", CapabilityClass::Network,      "system",  "Resolve a hostname to a list of IP address strings", contract!((host: string) -> list(string); effects[blocking]; failure[raises])),
     ("udp_send", CapabilityClass::Network,        "system",  "Send ONE UDP datagram: udp_send(host, port, payload[, {from, ttl}]) -> bytes sent. from binds a source IPv4 address and selects the multicast interface only when supplied; ttl sets multicast TTL. The options form raises UDP_* socket errors (v0.118.0). Payload (string/bytes/buffer) goes out verbatim; host is resolved. Not a socket API — nothing to hold or close (v0.71.0)", contract!((host: string, port: number, payload: any_of(string, bytes, buffer), opts?: any_of(map, nil)) -> number; effects[blocking]; failure[raises])),
-    ("udp_listen", CapabilityClass::Network, "system", "Bind an IPv4 datagram socket: udp_listen(host, port[, {join, iface, reuse, ttl, loop}]) -> numeric handle. join is a multicast group or list; iface is a local IPv4 address (default kernel choice), reuse sets SO_REUSEADDR and SO_REUSEPORT before bind. ttl defaults to the kernel value; loop is bool. Generation owned, sharing the TCP listener handle limit. Requires ws; udp_on requires Linux. Raises UDP_ARGUMENT, UDP_ADDR_IN_USE, UDP_PERMISSION, UDP_ADDR_UNAVAILABLE, UDP_IO, TCP_HANDLE_LIMIT (v0.118.0)", contract!((host: string, port: number, opts?: any_of(map, nil)) -> number; failure[raises])),
-    ("udp_on", CapabilityClass::Network, "system", "Subscribe a UDP handle: udp_on(handle, command[, {max}]) -> source id. Ordered events carry {watch, datagram:{bytes, text, from_host, from_port}}; text is UTF-8 or nil. max is 1..65535 (default 65535); larger datagrams truncate. Same FIFO bounds, overflow terminal and retirement rules as tcp_on. Requires ws and Linux (v0.118.0)", contract!((handle: number, command: string, opts?: any_of(map, nil)) -> string; failure[raises])),
-    ("udp_send_from", CapabilityClass::Network, "system", "Send from a listening UDP socket: udp_send_from(handle, host, port, payload) -> bytes sent. host must be an IPv4 literal (UDP_ARGUMENT otherwise); no DNS runs in handlers. Preserves the bound source port and multicast interface, also while subscribed; nonblocking, UDP_IO on send failure. Payload string/bytes/buffer. Requires ws (v0.118.0)", contract!((handle: number, host: string, port: number, payload: any_of(string, bytes, buffer)) -> number; failure[raises])),
+    ("udp_listen", CapabilityClass::Network, "system", "Bind an IPv4 datagram socket: udp_listen(host, port[, {join, iface, reuse, reuse_port, ttl, loop}]) -> numeric handle. join is a multicast group or list; iface is a local IPv4 address (default kernel choice), reuse sets SO_REUSEADDR; reuse_port independently sets SO_REUSEPORT (both default false, set before bind). port 0 chooses an ephemeral port; udp_local_addr reports it. ttl defaults to the kernel value; loop is bool. Generation owned, sharing the TCP listener handle limit. Requires ws; udp_on requires Linux. Raises UDP_ARGUMENT, UDP_ADDR_IN_USE, UDP_PERMISSION, UDP_ADDR_UNAVAILABLE, UDP_IO, TCP_HANDLE_LIMIT (v0.118.0)", contract!((host: string, port: number, opts?: any_of(map, nil)) -> number; failure[raises])),
+    ("udp_on", CapabilityClass::Network, "system", "Subscribe a UDP handle: udp_on(handle, command[, {max}]) -> source id. Ordered event args carry {watch, datagram:{bytes, text, from_host, from_port}} with Mix bytes and UTF-8 text or nil. The JSON body encodes datagram.bytes as {hex:lowercase_hex_string} (empty bytes = empty hex string). max is 1..65535 (default 65535); larger datagrams truncate. Same FIFO bounds, overflow terminal and retirement rules as tcp_on. Requires ws and Linux (v0.118.0)", contract!((handle: number, command: string, opts?: any_of(map, nil)) -> string; failure[raises])),
+    ("udp_local_addr", CapabilityClass::Network, "system", "Local address of a UDP listener, subscribed or not: udp_local_addr(handle) -> {host, port}. Reports the kernel-selected port after udp_listen(host, 0). Unknown or closed handles raise UDP_HANDLE. Requires ws (v0.118.0)", contract!((handle: number) -> map; failure[raises])),
+    ("udp_send_via", CapabilityClass::Network, "system", "Send from a listening UDP socket: udp_send_via(handle, host, port, payload) -> bytes sent. host must be an IPv4 literal (UDP_ARGUMENT otherwise); no DNS runs in handlers. Preserves the bound source port and multicast interface, also while subscribed; nonblocking, UDP_IO on send failure. Payload string/bytes/buffer. Requires ws (v0.118.0)", contract!((handle: number, host: string, port: number, payload: any_of(string, bytes, buffer)) -> number; failure[raises])),
     ("udp_close", CapabilityClass::Network, "system", "Close an unsubscribed UDP handle: udp_close(handle) -> bool (false if already closed). A subscribed handle refuses SOCKET_SUBSCRIBED; use udp_unwatch(source). Requires ws (v0.118.0)", contract!((handle: number) -> bool; failure[raises])),
     ("udp_unwatch", CapabilityClass::Network, "system", "Cancel a UDP source and close its socket: udp_unwatch(source) -> nil. Same cancellation and queued-record discard rules as tcp_unwatch (v0.118.0)", contract!((source: string) -> nil; failure[raises])),
     ("udp_recv", CapabilityClass::Network,        "system",  "Receive ONE UDP datagram: udp_recv(port[, {timeout, host, max}]) -> {bytes, text, from_host, from_port}, or nil on timeout (an ordinary answer, not a fault). timeout seconds default 30, 0 = wait forever; host = bind address default 0.0.0.0; max caps the read (default 65535 = never truncates; a longer datagram truncates to max, recvfrom(2)'s own contract). text is the payload as UTF-8 or nil — bytes always carries the truth (v0.71.0)", contract!((port: number, opts?: any_of(map, nil)) -> any; effects[blocking]; failure[raises])),
@@ -916,14 +917,14 @@ pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
             crate::udp::handles::listen(args)
         }
         #[cfg(feature = "ws")]
-        "udp_send_from" => {
-            expect_args("udp_send_from", &args, 4)?;
-            let id = socket_sources::client_id_of(args.first(), "udp_send_from")?;
+        "udp_send_via" => {
+            expect_args("udp_send_via", &args, 4)?;
+            let id = socket_sources::client_id_of(args.first(), "udp_send_via")?;
             let sock = crate::udp::handles::get(id)?;
             let host = crate::udp::ip(&args[1])?;
             let port = as_exact_integer(
-                "udp_send_from port",
-                number_arg("udp_send_from", &args, 2)?,
+                "udp_send_via port",
+                number_arg("udp_send_via", &args, 2)?,
                 1,
                 65535,
             )?;
@@ -939,6 +940,13 @@ pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
             expect_args("udp_close", &args, 1)?;
             let id = socket_sources::client_id_of(args.first(), "udp_close")?;
             Ok(Some(Value::Bool(crate::udp::handles::close(id)?)))
+        }
+        #[cfg(feature = "ws")]
+        "udp_local_addr" => {
+            expect_args("udp_local_addr", &args, 1)?;
+            let id = socket_sources::client_id_of(args.first(), "udp_local_addr")?;
+            let addr = crate::udp::handles::get(id)?.sock.local_addr().map_err(crate::udp::io)?;
+            Ok(Some(crate::native_events::json_value(serde_json::json!({"host":addr.ip().to_string(), "port":addr.port()}))))
         }
         "http_serve" => builtin_http_serve(args),
         "http_recv" => builtin_http_recv(args),
@@ -979,7 +987,7 @@ pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
         #[cfg(not(feature = "ws"))]
         name @ ("ws_connect" | "ws_send" | "ws_recv" | "ws_close" | "tcp_connect" | "tcp_send"
         | "tcp_recv" | "tcp_recv_line" | "tcp_close" | "ws_on" | "tcp_on"
-        | "ws_unwatch" | "udp_listen" | "udp_send_from" | "udp_close" | "udp_on"
+        | "ws_unwatch" | "udp_listen" | "udp_send_via" | "udp_close" | "udp_local_addr" | "udp_on"
         | "udp_unwatch" | "tcp_unwatch" | "tcp_listen" | "tcp_accept"
         | "tcp_local_addr" | "unix_connect") => Err(MixError::RuntimeError {
             span: None,
@@ -13433,7 +13441,9 @@ fn builtin_read_file_bytes(args: Vec<Value>) -> MixResult<Option<Value>> {
             msg: format!("read_file_bytes '{}': {}", path, e),
         };
         let mut file = std::fs::File::open(&path).map_err(file_error)?;
-        file.seek(SeekFrom::Start(offset)).map_err(file_error)?;
+        if offset > 0 {
+            file.seek(SeekFrom::Start(offset)).map_err(file_error)?;
+        }
         let mut bytes = Vec::new();
         file.take(cap).read_to_end(&mut bytes).map_err(file_error)?;
         return Ok(Some(Value::bytes(bytes)));
@@ -25083,7 +25093,7 @@ pub(crate) mod socket_sources {
     /// of this size, so a legal message alone can never overflow the queue.
     pub(crate) const MAX_FRAME: usize = 16 * 1024 * 1024;
     /// Maximum subscribed sources per evaluator generation.
-    pub(crate) const MAX_SOURCES: usize = 16;
+    pub(crate) const MAX_SOURCES: usize = 256;
     /// Per-evaluator FIFO bounds (counted across all its sources).
     pub(crate) const MAX_SOCKET_FRAMES: usize = 4096;
     pub(crate) const MAX_SOCKET_BYTES: usize = 64 * 1024 * 1024;
@@ -36614,6 +36624,28 @@ mod fs_meta_tests {
             Some(Value::bytes(vec![255, 0]))
         );
         let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn read_file_bytes_zero_offset_does_not_seek_a_fifo() {
+        use std::io::Write;
+        let d = tmpdir("rfb-fifo-offset");
+        let fifo = d.join("pipe");
+        let path = std::ffi::CString::new(fifo.to_string_lossy().as_bytes()).unwrap();
+        // SAFETY: path is NUL-terminated and lives across mkfifo.
+        assert_eq!(unsafe { libc::mkfifo(path.as_ptr(), 0o600) }, 0);
+        for cap in [Value::Number(4.0), crate::native_events::json_value(serde_json::json!({"max":4})), crate::native_events::json_value(serde_json::json!({"offset":0, "max":4}))] {
+            let writer_path = fifo.clone();
+            let writer = std::thread::spawn(move || {
+                let mut file = std::fs::OpenOptions::new().write(true).open(writer_path).unwrap();
+                file.write_all(&[0,255,128,42]).unwrap();
+            });
+            let got = builtin_read_file_bytes(vec![s(&fifo), cap]);
+            writer.join().unwrap();
+            assert_eq!(got.unwrap(), Some(Value::bytes(vec![0,255,128,42])));
+        }
+        std::fs::remove_dir_all(d).unwrap();
     }
 }
 
