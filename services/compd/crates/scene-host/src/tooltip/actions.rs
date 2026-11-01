@@ -3,6 +3,8 @@ use crate::view::tip::{self, Candidate, Hover, Outcome, Tip, TipAt};
 use std::time::Instant;
 use world::state::Loop;
 
+type PositionedTip = ((String, TipAt), (f32, f32, f32, f32));
+
 #[derive(Default)]
 pub(crate) struct Actions {
     hover: Hover,
@@ -20,7 +22,7 @@ impl Actions {
         prepared: Option<&crate::appearance::Look>,
         generation: u64,
         suppressed: bool,
-    ) -> Option<((String, TipAt), (f32, f32, f32, f32))> {
+    ) -> Option<PositionedTip> {
         let target = decor::seat::action_tip().filter(|_| !suppressed);
         let output = state.inner.current_output();
         let space = &state.inner.space_state().state;
