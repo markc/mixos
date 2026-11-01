@@ -4653,6 +4653,14 @@ fn walk_global_frames(stmts: &[Stmt], frame: usize, visit: &mut dyn FnMut(FrameN
         let inner = if matches!(s.kind, StmtKind::FunctionDef { .. } | StmtKind::On { .. }) {
             std::ptr::from_ref(s) as usize
         } else { frame };
+        if let StmtKind::FunctionDef { params, body, .. } = &s.kind {
+            for p in params { if let Some(d) = &p.default { expr(d, s.line, inner, visit); } }
+            match body {
+                FunctionBody::Block(b) => walk_global_frames(b, inner, visit),
+                FunctionBody::Expression(e) => expr(e, s.line, inner, visit),
+            }
+            continue;
+        }
         walk_stmt_exprs(s, &mut |e| expr(e, s.line, inner, visit));
         for b in stmt_bodies(&s.kind) { walk_global_frames(b, inner, visit); }
     }
