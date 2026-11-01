@@ -10,6 +10,11 @@
 - Retry missing peers at discovery and coalesced refreshes after timeouts.
   Ignore obsolete replies and replies from departed nodes. Acting commands
   refuse unknown nodes with `UNKNOWN_NODE` (rc 14).
+- Settle pending callers with `UNAVAILABLE` and release transcript reads when
+  a peer leaves or withdraws its agent advertisement; remove its stale rows.
+  Preserve the node filter when discovery names the local node.
+- Refuse unlisted session ids with `UNKNOWN_SESSION` rather than routing them
+  locally. Give `node` explicitly before a new session appears in a list.
 
 ## Unreleased — 2026-10-28
 
