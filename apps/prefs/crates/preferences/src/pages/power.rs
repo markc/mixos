@@ -3,14 +3,16 @@
 //! Power & battery (spec 1 §4.8). The battery and the devices are read from
 //! UPower by hostd; the power mode goes to hostd's power-profiles bridge; the
 //! screen-off timer is compd's idle and DPMS; the automatic suspends are
-//! hostd's idle and suspend. Each row waits on its own backend, so each names
-//! it on its own row, and no write runs until that backend lands.
-use super::{ChoiceStyle, Control, Lit, Opt, Page, row, section};
+//! hostd's idle and suspend. Battery-only rows and the battery section show
+//! once UPower reports a battery (the `power.battery` fact), so a desktop
+//! never shows them. Each other row names its own missing backend, and no
+//! write runs until that backend lands.
+use super::{ChoiceStyle, Cond, Control, Lit, Opt, Page, row, section};
 
 const PROFILES: &[Opt] = &[
-    super::opt("battery", "opt-profile-battery"),
-    super::opt("balanced", "opt-profile-balanced"),
-    super::opt("performance", "opt-profile-performance"),
+    super::opt("battery", "opt-power-battery").described("opt-power-battery-desc"),
+    super::opt("balanced", "opt-power-balanced").described("opt-power-balanced-desc"),
+    super::opt("performance", "opt-power-performance").described("opt-power-performance-desc"),
 ];
 
 /// A timer in seconds, with its label.
@@ -18,6 +20,7 @@ const fn after(seconds: i64, label: &'static str) -> Opt {
     Opt {
         value: Lit::I(seconds),
         label,
+        description: None,
     }
 }
 
@@ -25,6 +28,7 @@ const fn after(seconds: i64, label: &'static str) -> Opt {
 const NEVER: Opt = Opt {
     value: Lit::Null,
     label: "opt-never",
+    description: None,
 };
 
 const SCREEN_OFF: &[Opt] = &[
@@ -52,19 +56,18 @@ const SUSPEND: &[Opt] = &[
 ];
 
 pub(super) fn page() -> Page {
+    let battery = Cond::Fact("power.battery");
     super::page(
         "power",
         "battery-medium",
         None,
         super::sections(vec![
-            section(
-                "battery",
-                vec![row("charge", Control::Info).backend("backend-hostd-upower")],
-            ),
-            section(
-                "devices",
-                vec![row("devices", Control::Info).backend("backend-hostd-upower")],
-            ),
+            section("battery", Vec::new())
+                .items("power.battery", "row-power-battery-none")
+                .show(battery),
+            section("devices", Vec::new())
+                .items("power.devices", "row-power-devices-none")
+                .cards(),
             section(
                 "mode",
                 vec![
@@ -108,7 +111,8 @@ pub(super) fn page() -> Page {
                             options: SUSPEND,
                         },
                     )
-                    .backend("backend-hostd-suspend"),
+                    .backend("backend-hostd-suspend")
+                    .show(battery),
                 ],
             ),
         ]),
