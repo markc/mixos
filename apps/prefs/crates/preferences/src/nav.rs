@@ -226,7 +226,10 @@ impl Engine {
     /// The reason a row draws under its own labels: its own, only when the
     /// page as a whole is live.
     pub fn row_reason(&self, page: &pages::Page, row: &pages::Row) -> Option<String> {
-        if self.page_reason(page).is_some() {
+        // Said once already: under the title, or above the section.
+        if self.page_reason(page).is_some()
+            || page.section_of(row.id).is_some_and(|s| s.backend.is_some())
+        {
             return None;
         }
         self.row_blocked(page, row)
@@ -235,7 +238,8 @@ impl Engine {
     /// Why `row` on `page` takes no input now, as a message; `None` when
     /// it does.
     pub fn row_blocked(&self, page: &pages::Page, row: &pages::Row) -> Option<String> {
-        if let Some(backend) = page.backend.or(row.backend) {
+        let section = page.section_of(row.id).and_then(|s| s.backend);
+        if let Some(backend) = page.backend.or(section).or(row.backend) {
             return Some(self.label("backend-missing", &[("backend", &self.label(backend, &[]))]));
         }
         if let Some(why) = row.why_disabled(&self.store) {
