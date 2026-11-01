@@ -254,6 +254,9 @@ impl ScopeValue<'_> {
 #[derive(Default)]
 struct DeclScope {
     frame: usize,
+    // Keep the activation record compact; allocate the collection header
+    // only when a declaration executes, rather than copying it per frame.
+    #[allow(clippy::box_collection)]
     declared: Option<Box<HashSet<String>>>,
     conflicts: Option<Box<DeclConflicts>>,
 }
