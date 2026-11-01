@@ -71,7 +71,12 @@ pub(super) fn keyboard() -> Page {
         section(
             "special",
             vec![
-                row("alt_chars", Control::Drawer { drawer: "alt_chars" }),
+                row(
+                    "alt_chars",
+                    Control::Drawer {
+                        drawer: "alt_chars",
+                    },
+                ),
                 row("compose", Control::Drawer { drawer: "compose" }),
                 row("caps", Control::Drawer { drawer: "caps" }),
             ],
@@ -153,11 +158,7 @@ pub(super) fn keyboard() -> Page {
                 untitled("compose_about", vec![row("compose_about", Control::Info)]),
                 untitled(
                     "compose",
-                    vec![radios(
-                        "compose_key",
-                        "input.keyboard.compose_key",
-                        COMPOSE,
-                    )],
+                    vec![radios("compose_key", "input.keyboard.compose_key", COMPOSE)],
                 ),
             ],
         },
