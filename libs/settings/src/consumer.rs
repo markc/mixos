@@ -462,7 +462,7 @@ impl Consumer {
         self.binding.instance.clone_from(&binding.instance);
         self.reducer = Reducer::new(self.binding.clone());
         self.rebind_pending = true;
-        self.rebind_hops += 1;
+        self.rebind_hops = self.rebind_hops.saturating_add(1);
         self.confirmed = false;
         self.pending = None;
         self.work = None;
@@ -511,7 +511,7 @@ impl Consumer {
     pub fn dropped_deliveries(&self) -> u64 {
         self.dropped_deliveries
     }
-    /// Redirects since the last successful read of the current binding.
+    /// Redirects since the last read that installed or matched a snapshot.
     pub fn rebind_hops(&self) -> u8 {
         self.rebind_hops
     }
@@ -593,16 +593,16 @@ impl Consumer {
                 }
             }
             (WorkKind::Read, Ok(None)) => {
-                // The adapter succeeded against this binding, ending the
-                // redirect episode. No snapshot means no new data to confirm
-                // or activate; preserve the existing snapshot evidence.
-                self.rebind_pending = false;
-                self.rebind_hops = 0;
-                self.fault = None;
-                self.failures = 0;
-                self.retry_deadline = None;
-                if std::mem::take(&mut self.read_again) {
-                    return self.start(WorkKind::Read);
+                // No snapshot confirms neither the binding nor its history.
+                // Keep the redirect budget and any in-flight delivery fault's
+                // existing backoff. Otherwise schedule bounded recovery.
+                self.read_again = false;
+                if self.fault.is_none() {
+                    self.fail(Diagnostic::new(
+                        "empty_read",
+                        "native",
+                        "Authority read returned no snapshot",
+                    ));
                 }
                 None
             }

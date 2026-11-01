@@ -48,10 +48,11 @@ fn wrong_target(binding: Option<Binding>) -> Diagnostic {
 fn redirect_hops_are_bounded_across_reconnects_and_reset_after_confirmation() {
     let mut state = consumer();
     let mut read = read_work(&mut state, 1);
-    for instance in ["b", "c", "d"] {
+    for (index, instance) in ["b", "c", "d"].into_iter().enumerate() {
         read = state
             .complete(&read, Err(wrong_target(Some(rebound(instance).binding))))
             .unwrap();
+        assert_eq!(state.rebind_hops(), (index + 1) as u8);
     }
     let read = read_work(&mut state, 2);
     assert!(
@@ -90,30 +91,46 @@ fn malformed_frames_during_rebind_do_not_cancel_the_read() {
     assert!(state.is_confirmed());
 }
 #[test]
-fn empty_successful_redirected_read_ends_the_episode_without_inventing_a_snapshot() {
+fn empty_redirected_reads_keep_last_good_retry_and_reach_the_hop_cap() {
     let mut state = consumer();
-    let read = read_work(&mut state, 1);
-    let read = state
-        .complete(&read, Err(wrong_target(Some(rebound("b").binding))))
-        .unwrap();
-    assert_eq!(state.rebind_hops(), 1);
-    assert!(state.complete(&read, Ok(None)).is_none());
-    assert_eq!(state.rebind_hops(), 0);
-    assert!(state.fault().is_none());
-    assert!(state.current().is_none());
-    // Malformed deliveries are judged normally again, proving the pending
-    // adoption fence was removed as well as its hop counter.
-    state.rejected_delivery(Diagnostic::new("invalid_delivery", "snapshot", "Malformed"));
-    assert_eq!(state.fault().unwrap().code, "invalid_delivery");
-    let mut read = state.retry().unwrap();
-    for instance in ["c", "d", "e"] {
+    let initial = snapshot(1, "a");
+    activate(&mut state, initial.clone());
+    let mut read = state.refresh().unwrap();
+    for (index, instance) in ["b", "c", "d"].into_iter().enumerate() {
         read = state
             .complete(&read, Err(wrong_target(Some(rebound(instance).binding))))
             .unwrap();
+        assert!(state.complete(&read, Ok(None)).is_none());
+        assert_eq!(state.binding(), &rebound(instance).binding);
+        assert_eq!(state.rebind_hops(), (index + 1) as u8);
+        assert_eq!(state.applied().unwrap(), &initial);
+        assert_eq!(state.presentation_kind(), Some(fallback::PresentationKind::LastGood));
+        assert!(!state.is_confirmed());
+        assert!(state.current_work().is_none());
+        assert!(state.retry_deadline().is_some());
+        assert_eq!(state.fault().unwrap().code, "empty_read");
+        read = state.retry().unwrap();
     }
-    state.complete(&read, Ok(Some(rebound("e"))));
-    assert!(state.is_confirmed());
-    assert_eq!(state.rebind_hops(), 0);
+    assert!(state.complete(&read, Err(wrong_target(Some(rebound("e").binding)))).is_none());
+    assert_eq!(state.binding().instance, "d");
+    assert_eq!(state.rebind_hops(), 3);
+    assert_eq!(state.fault().unwrap().code, "wrong_target");
+    assert!(state.fault().unwrap().message.contains("3 hops"));
+    assert!(state.retry_deadline().is_none());
+}
+#[test]
+fn empty_read_preserves_an_inflight_delivery_fault_and_its_backoff() {
+    let mut state = consumer();
+    activate(&mut state, snapshot(1, "a"));
+    let read = state.refresh().unwrap();
+    let fault = Diagnostic::new("invalid_delivery", "snapshot", "Malformed");
+    state.rejected_delivery(fault.clone());
+    let deadline = state.retry_deadline().unwrap();
+    assert!(state.complete(&read, Ok(None)).is_none());
+    assert_eq!(state.fault(), Some(&fault));
+    assert_eq!(state.retry_deadline(), Some(deadline));
+    assert!(state.current_work().is_none());
+    assert!(state.retry().is_some());
 }
 #[test]
 fn terminal_refusal_revokes_a_staged_update() {

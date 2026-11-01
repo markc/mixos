@@ -909,7 +909,9 @@ async fn serve(
         format!("{service}.scene.changed"),
         format!("{service}.panel.changed"),
     );
-    let mut flights = tokio::task::JoinSet::new();
+    // A flight's bool means only "request a settings Refresh". Connection
+    // lifecycle and serve termination are handled by their own select arms.
+    let mut flights = tokio::task::JoinSet::<bool>::new();
     let mut replies = tokio::task::JoinSet::new();
     let mut sends = tokio::task::JoinSet::new();
     let mut titlebars = Vec::<String>::new();
@@ -1507,7 +1509,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn outbound_settings_refusal_requests_refresh_reports_operation_and_allows_retry() {
+    async fn serve_settings_flights_refresh_without_reconnect_or_teardown() {
         use futures_util::{SinkExt, StreamExt};
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("ws://{}/ws", listener.local_addr().unwrap());
@@ -1550,7 +1552,8 @@ mod tests {
             }
         });
         tokio::time::timeout(Duration::from_secs(5), async {
-            let client = SupervisedClient::connect("fixture", &url).await.unwrap();
+            let client = Arc::new(SupervisedClient::connect("fixture", &url).await.unwrap());
+            let generation = client.connection_generation();
             let (sender, receiver) = mpsc::sync_channel(4);
             let delivery = Delivery {
                 sender,
@@ -1558,51 +1561,79 @@ mod tests {
             };
             let mut old_binding = binding.clone();
             old_binding.instance = "fixture".into();
-            // This is the future spawned by Outbound::Settings. Its boolean
-            // is consumed by flights.join_next to publish SettingsEvent::Refresh.
-            assert!(
-                settings_write(
-                    &client,
-                    &delivery,
-                    "write-1".into(),
-                    json!({"binding":old_binding})
-                )
-                .await
-            );
-            let Inbound::Settings { operation, outcome } = receiver.try_recv().unwrap() else {
-                panic!("missing refusal")
+            let mut initial = snapshot.clone();
+            initial.binding = old_binding.clone();
+            let mut consumer = settings::consumer::Consumer::for_shell(old_binding.clone()).unwrap();
+            let subscribe = consumer.connected(generation).unwrap();
+            let read = consumer.complete(&subscribe, Ok(None)).unwrap();
+            consumer.complete(&read, Ok(Some(initial)));
+            assert!(consumer.acknowledge(&consumer.pending().unwrap().clone()));
+            let worker = SettingsWorker::offline(|snapshot| crate::appearance::build(snapshot).map(Arc::new));
+            let (mut ui, mut lane) = bridge(Session::new(consumer), worker);
+            ui.reconcile(Some(generation));
+            let (outbound_tx, mut outbound) = tokio_mpsc::unbounded_channel();
+            let (_events_tx, mut events) = tokio_mpsc::unbounded_channel();
+            let (shutdown_tx, mut shutdown) = watch::channel(false);
+            let registry = RegistryMailbox::default();
+            let notify = |_| {};
+            let serving = serve(&client, "fixture", &delivery, &mut outbound, &mut events,
+                Arc::new(AtomicUsize::new(0)), &mut shutdown, &mut lane, &registry, &notify);
+            let drive = async {
+                assert!(ui.session().host().consumer().current_work().is_none());
+                outbound_tx.send(Outbound::Settings { operation: "write-1".into(), body: json!({"binding":old_binding}) }).unwrap();
+                let first = loop {
+                    if let Ok(message) = receiver.try_recv() { break message; }
+                    tokio::task::yield_now().await;
+                };
+                let Inbound::Settings { operation, outcome } = first else { panic!("missing refusal") };
+                assert_eq!(operation, "write-1");
+                let outcome = outcome.unwrap_err();
+                assert_eq!(outcome["error_code"], "SETTINGS_REFUSED");
+                assert_eq!(outcome["settings"], expected);
+                // Only the Refresh from the completed flight creates this read.
+                // Ordinary registry/lifecycle Wake events leave it idle.
+                let read = loop {
+                    ui.drain_with(|| Some(generation), |_| {});
+                    if let Some(work) = ui.session().host().consumer().current_work().cloned() { break work; }
+                    tokio::task::yield_now().await;
+                };
+                assert_eq!(read.kind(), settings::consumer::WorkKind::Read);
+                let result = settings::native::execute(&client, &read).await;
+                ui.handle_with(SettingsEvent::Rpc(read, result), Some(generation), |_| {});
+                let read = ui.session().host().consumer().current_work().cloned().unwrap();
+                let result = settings::native::execute(&client, &read).await;
+                ui.handle_with(SettingsEvent::Rpc(read, result), Some(generation), |_| {});
+                assert!(ui.session().host().consumer().is_confirmed());
+                assert_eq!(ui.session().host().consumer().binding(), &binding);
+                assert_eq!(ui.session().host().consumer().rebind_hops(), 0);
+                // Serve remains live after the true flight and accepts another
+                // write. Its false flight also leaves the connection running.
+                outbound_tx.send(Outbound::Settings { operation: "write-2".into(), body: json!({"binding":binding}) }).unwrap();
+                let second = loop {
+                    if let Ok(message) = receiver.try_recv() { break message; }
+                    tokio::task::yield_now().await;
+                };
+                let Inbound::Settings { operation, outcome } = second else { panic!("missing retry outcome") };
+                assert_eq!(operation, "write-2");
+                assert_eq!(outcome.unwrap()["status"], "changed");
+                outbound_tx.send(Outbound::WakeAfter(Duration::ZERO)).unwrap();
+                loop {
+                    if let Ok(message) = receiver.try_recv() {
+                        assert!(matches!(message, Inbound::Repaint));
+                        break;
+                    }
+                    tokio::task::yield_now().await;
+                }
+                assert!(client.is_connected());
+                assert_eq!(client.connection_generation(), generation);
+                shutdown_tx.send(true).unwrap();
             };
-            assert_eq!(operation, "write-1");
-            let outcome = outcome.unwrap_err();
-            assert_eq!(outcome["error_code"], "SETTINGS_REFUSED");
-            assert_eq!(outcome["settings"], expected);
-            // Refresh reads the old binding, follows its authoritative refusal
-            // and confirms the advertised binding with an actual rc=0 read.
-            let mut consumer = settings::consumer::Consumer::for_shell(old_binding).unwrap();
-            let subscribe = consumer.connected(client.connection_generation()).unwrap();
-            let result = settings::native::execute(&client, &subscribe).await;
-            let read = consumer.complete(&subscribe, result).unwrap();
-            let result = settings::native::execute(&client, &read).await;
-            let read = consumer.complete(&read, result).unwrap();
-            let result = settings::native::execute(&client, &read).await;
-            consumer.complete(&read, result);
-            assert!(consumer.is_confirmed());
-            assert_eq!(consumer.binding(), &binding);
-            assert_eq!(consumer.rebind_hops(), 0);
-            assert!(
-                !settings_write(
-                    &client,
-                    &delivery,
-                    "write-2".into(),
-                    json!({"binding":consumer.binding()})
-                )
-                .await
-            );
-            let Inbound::Settings { operation, outcome } = receiver.try_recv().unwrap() else {
-                panic!("missing retry outcome")
-            };
-            assert_eq!(operation, "write-2");
-            assert_eq!(outcome.unwrap()["status"], "changed");
+            tokio::pin!(serving);
+            tokio::select! {
+                _ = &mut serving => panic!("serve exited before explicit shutdown"),
+                () = drive => {}
+            }
+            serving.await;
             client.shutdown().await;
         })
         .await
