@@ -9,16 +9,24 @@ use inspector::{Engine, agents::Item};
 use serde_json::Value;
 use toolkit::{button::PushButton, panel};
 
+/// A node's group in the tree: its name, and how many sessions are live.
+pub fn node_text(engine: &Engine, node: &str) -> RichText {
+    let live = engine
+        .agents
+        .node(node)
+        .map(|entry| entry.sessions.iter().filter(|row| row.live()).count())
+        .unwrap_or_default();
+    RichText::new(format!("{node}  · {live}"))
+}
+
 /// A session row in the tree: its name, then its one badge.
-pub fn row_text(engine: &Engine, session: &str) -> RichText {
+pub fn row_text(engine: &Engine, node: &str, session: &str) -> RichText {
     let badge = engine
         .agents
-        .sessions
-        .iter()
-        .find(|row| row.session == session)
+        .row(node, session)
         .map(|row| row.badge().to_owned())
         .unwrap_or_default();
-    let name = engine.session_label(session);
+    let name = engine.session_label(node, session);
     if badge.is_empty() {
         return RichText::new(name);
     }
@@ -35,7 +43,12 @@ pub fn row_text(engine: &Engine, session: &str) -> RichText {
 
 pub fn view(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
     let agents = &engine.agents;
-    if engine.ui.row_key.as_deref() == Some("agents:new") {
+    if engine
+        .ui
+        .row_key
+        .as_deref()
+        .is_some_and(|key| key.starts_with("agents:new:"))
+    {
         new_session(ui, engine, events);
         return;
     }
@@ -44,14 +57,14 @@ pub fn view(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
             == agents
                 .selected
                 .as_ref()
-                .map(|s| format!("agent:{s}"))
+                .map(|s| format!("agent:{}:{}", s.node, s.session))
                 .as_deref()
     }) else {
         ui.label(label("agents-intro"));
         error_line(ui, engine);
         return;
     };
-    panel::section_label(ui, &engine.session_label(&row.session));
+    panel::section_label(ui, &engine.session_label(&row.node, &row.session));
     egui::Grid::new("agent-session")
         .num_columns(2)
         .show(ui, |ui| {
@@ -326,8 +339,14 @@ fn composer_view(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
 /// The New session form: an agent, a working directory under its roots.
 fn new_session(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
     let agents = &engine.agents;
+    let node = engine.agents_form_node();
+    let none = Value::Null;
+    let node_instances = agents
+        .node(&node)
+        .map(|entry| &entry.instances)
+        .unwrap_or(&none);
     panel::section_label(ui, &label("agents-new"));
-    let instances: Vec<&Value> = agents.instances["agents"]
+    let instances: Vec<&Value> = node_instances["agents"]
         .as_array()
         .map(|list| list.iter().collect())
         .unwrap_or_default();
@@ -382,8 +401,8 @@ fn new_session(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
     });
     // Shown once agent.agents has answered; Start waits for it too.
     if let (Some(live), Some(cap)) = (
-        agents.instances["live"].as_u64(),
-        agents.instances["max_live"].as_u64(),
+        node_instances["live"].as_u64(),
+        node_instances["max_live"].as_u64(),
     ) {
         ui.label(
             RichText::new(label_with(
@@ -393,7 +412,7 @@ fn new_session(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
             .weak(),
         );
     }
-    let ready = !engine.agents_at_cap()
+    let ready = !engine.agents_at_cap(&node)
         && !agents.new_agent.trim().is_empty()
         && !agents.new_cwd.trim().is_empty();
     if ui

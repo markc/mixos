@@ -350,10 +350,12 @@ fn row_name(engine: &Engine, row: &Row) -> String {
         RowKind::Peers => label("peers"),
         RowKind::NoPeers => label("no-peers"),
         RowKind::Agents => label("agents-root"),
-        RowKind::AgentSession(session) => engine.session_label(session),
-        RowKind::AgentsEnded(n) => format!("{} ({n})", label("agents-ended")),
+        RowKind::AgentsNode(node) => node.clone(),
+        RowKind::AgentSession { node, session } => engine.session_label(node, session),
+        RowKind::AgentsEnded { count, .. } => format!("{} ({count})", label("agents-ended")),
         RowKind::AgentsDown => label("agents-down"),
-        RowKind::AgentsNew => label("agents-new"),
+        RowKind::AgentsNew(_) => label("agents-new"),
+        RowKind::AgentsError(message) => message.clone(),
     }
 }
 
@@ -401,12 +403,18 @@ fn tree_row(ui: &mut Ui, engine: &Engine, row: &Row, events: &mut Vec<UiEvent>) 
             RowKind::Peers => RichText::new(label("peers")),
             RowKind::NoPeers => RichText::new(label("no-peers")).weak(),
             RowKind::Agents => RichText::new(label("agents-root")),
-            RowKind::AgentSession(session) => crate::agents::row_text(engine, session),
-            RowKind::AgentsEnded(n) => {
-                RichText::new(format!("{} ({n})", label("agents-ended"))).weak()
+            RowKind::AgentsNode(node) => crate::agents::node_text(engine, node),
+            RowKind::AgentSession { node, session } => {
+                crate::agents::row_text(engine, node, session)
+            }
+            RowKind::AgentsEnded { count, .. } => {
+                RichText::new(format!("{} ({count})", label("agents-ended"))).weak()
             }
             RowKind::AgentsDown => RichText::new(label("agents-down")).weak(),
-            RowKind::AgentsNew => RichText::new(label("agents-new")),
+            RowKind::AgentsNew(_) => RichText::new(label("agents-new")),
+            RowKind::AgentsError(message) => {
+                RichText::new(message).color(ui.visuals().error_fg_color)
+            }
         };
         if let RowKind::Service(_) = row.kind {
             ui.add(icons::image_of(

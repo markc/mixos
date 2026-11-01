@@ -963,17 +963,27 @@ impl Shell {
             Effect::Copy(text) => self.ctx.copy_text(text),
             Effect::Agent {
                 ticket,
+                node,
                 command,
                 body,
             } => {
                 let bus = self.bus.clone();
+                let service = inspector::agents::agent_service(node.as_deref());
+                // A peer's list is short-deadlined so one slow node does not
+                // hold its group; reads and acting calls get the full 10 s.
+                let listing = matches!(command.as_str(), "agent.agents" | "agent.session.list");
+                let deadline = if node.is_some() && listing {
+                    3
+                } else {
+                    10
+                };
                 self.spawn(async move {
                     let result = bus
                         .raw_within(
-                            "agent",
+                            &service,
                             &command,
                             body.to_string(),
-                            std::time::Duration::from_secs(10),
+                            std::time::Duration::from_secs(deadline),
                         )
                         .await
                         .map(|reply| {
