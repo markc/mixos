@@ -678,7 +678,7 @@ fn analyze_at(
         promote_agent_diagnostics(&mut a);
         check_agent_rules(stmts, &ctx, &mut a);
     }
-    check_global_declarations(stmts, &ctx, &mut a);
+    check_global_declarations(stmts, &ctx, &mut a, cfg.agent);
     collect_capabilities(stmts, &mut a);
     a
 }
@@ -4655,7 +4655,7 @@ fn walk_global_frames(stmts: &[Stmt], frame: usize, visit: &mut dyn FnMut(FrameN
     }
 }
 
-fn check_global_declarations(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis) {
+fn check_global_declarations(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis, agent: bool) {
     fn conditional(stmts: &[Stmt], nested: bool, ctx: &FileContext, a: &mut Analysis) {
         for s in stmts {
             if nested && matches!(s.kind, StmtKind::Global(_)) {
@@ -4693,7 +4693,11 @@ fn check_global_declarations(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis
     });
     let mut globals: HashMap<usize, HashSet<String>> = HashMap::new();
     let mut locals: HashMap<usize, HashSet<String>> = HashMap::new();
+    let mut reads: HashMap<usize, HashSet<String>> = HashMap::new();
     walk_global_frames(stmts, TOP_FRAME, &mut |node, frame| {
+        if let FrameNode::Expr(Expr::Variable(n), _) = node {
+            reads.entry(frame).or_default().insert(n.clone());
+        }
         if let FrameNode::Expr(Expr::BinaryOp { op: BinOp::Pipe, .. }, line) = node {
             if globals.get(&frame).is_some_and(|g| g.contains("_")) {
                 a.diagnostics.push(diag(ctx, "MIX-E1511", Severity::Error, line,
@@ -4734,7 +4738,20 @@ fn check_global_declarations(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis
             assigned.insert(name.to_string());
         };
         match &s.kind {
-            StmtKind::Assignment { name, .. } | StmtKind::Export { name, .. } => {
+            StmtKind::Assignment { name, value } | StmtKind::Export { name, value } => {
+                fn reads_name(e: &Expr, name: &str) -> bool {
+                    if matches!(e, Expr::Variable(n) if n == name) { return true; }
+                    let mut found = false;
+                    walk_expr_children(e, &mut |c| found |= reads_name(c, name));
+                    found
+                }
+                if agent && frame != TOP_FRAME && !handlers.contains(&frame)
+                    && ctx.top_level_names.contains(name) && !declared.contains(name)
+                    && !assigned.contains(name) && !params.get(&frame).is_some_and(|ps| ps.contains(name))
+                    && (reads_name(value, name) || reads.get(&frame).is_some_and(|rs| rs.contains(name))) {
+                    emit("MIX-W2316", Severity::Warning, name,
+                        "reads the outer value before creating a local; declare it with global if the update should persist");
+                }
                 if !declared.contains(name) { assigned.insert(name.clone()); }
             }
             StmtKind::For { var, .. } => binder(var),

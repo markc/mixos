@@ -190,6 +190,11 @@ pub const LINT_DOCS: &[LintDoc] = &[
         detail: "A function or lambda parameter cannot be declared global (GLOBAL_PARAM). Choose a different parameter name.",
     },
     LintDoc {
+        code: "MIX-W2316",
+        summary: "read outer value before local assignment (--agent)",
+        detail: "A function reads a top-level variable before its first local assignment, including $n = $n + 1 and $m = delete($m, key). The update will disappear when the function returns. Declare it with global, pass it in and return it, or rename the local. Agent-only for its first train pending fleet triage.",
+    },
+    LintDoc {
         code: "MIX-E1510",
         summary: "global declaration follows a local binding",
         detail: "Declare global before assigning or binding the name locally (GLOBAL_AFTER_LOCAL). Runtime also rejects captured and module-injected locals; module variables are not globals. Static checking is textual-order and flow-insensitive.",

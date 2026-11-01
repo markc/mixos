@@ -43,6 +43,11 @@ fn global_placement_diagnostics() {
     let cfg = AnalyzerConfig { agent: true, ..Default::default() };
     let ds = lint_cfg("$x = 0; fn f() global $x; $x = $x + 1 end", &cfg);
     assert!(!ds.iter().any(|(c, _)| c == "MIX-E1506"));
+    assert!(!ds.iter().any(|(c, _)| c == "MIX-W2316"));
+    assert!(lint_cfg("$x = 0; fn f() $x = $x + 1 end", &cfg).iter().any(|(c, _)| c == "MIX-W2316"));
+    assert!(!codes("$x = 0; fn f() $x = $x + 1 end").contains(&"MIX-W2316".to_string()));
+    assert!(codes("on test.msg $x = 1; global $x end").contains(&"MIX-E1510".to_string()));
+    assert!(codes("on test.msg global $x; for $x in [] end end").contains(&"MIX-E1511".to_string()));
 }
 
 #[test]
