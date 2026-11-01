@@ -32,7 +32,6 @@ pub type FallbackResult<T> =
 
 pub enum Event<T> {
     Wake,
-    #[cfg(test)]
     Refresh,
     Lost,
     Delivery(Decoded),
@@ -144,7 +143,6 @@ impl<T> Session<T> {
         let mut changed = None;
         match event {
             Event::Wake => {}
-            #[cfg(test)]
             Event::Refresh => {
                 self.host.consumer_mut().refresh();
                 // Failure stays quiescent on ordinary wakes. An explicit

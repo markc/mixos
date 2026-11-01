@@ -125,6 +125,7 @@ pub struct Consumer {
     serial: u64,
     subscribed: bool,
     confirmed: bool,
+    rebind_pending: bool,
     work: Option<Work>,
     read_again: bool,
     buffered: Option<Snapshot>,
@@ -179,6 +180,7 @@ impl Consumer {
             serial: 0,
             subscribed: false,
             confirmed: false,
+            rebind_pending: false,
             work: None,
             read_again: false,
             buffered: None,
@@ -314,6 +316,9 @@ impl Consumer {
     #[cfg(feature = "cache")]
     pub fn cache_save(&self) -> Option<crate::cache::Save> {
         let snapshot = self.applied.as_ref()?;
+        if snapshot.binding != self.binding {
+            return None;
+        }
         if !matches!(
             self.applied_kind,
             PresentationKind::Current | PresentationKind::Retained
@@ -439,6 +444,34 @@ impl Consumer {
             WorkKind::Subscribe
         })
     }
+    /// A new instance is only a hint until a bound read succeeds. Keep the
+    /// profile fixed and allow at most one unconfirmed adoption, even across
+    /// connection changes. Old UI data remains last-good, never current.
+    fn adopt_instance(&mut self, binding: &Binding) -> bool {
+        if self.rebind_pending
+            || binding.profile != self.binding.profile
+            || binding.instance == self.binding.instance
+            || binding.validate().is_err()
+        {
+            return false;
+        }
+        self.binding.instance.clone_from(&binding.instance);
+        self.reducer = Reducer::new(self.binding.clone());
+        self.rebind_pending = true;
+        self.confirmed = false;
+        self.pending = None;
+        self.work = None;
+        self.read_again = false;
+        self.buffered = None;
+        self.confirming = None;
+        self.rejected.clear();
+        self.fallback_serial = 0;
+        self.retry_deadline = None;
+        self.failures = 0;
+        self.fault = None;
+        self.fallback_fault = None;
+        true
+    }
     /// Any delivered-lane loss invalidates stages and coalesces one full read.
     pub fn lost(&mut self) -> Option<Work> {
         self.fallback_serial = 0;
@@ -505,6 +538,19 @@ impl Consumer {
         }
         self.work = None;
         match (work.kind, result) {
+            (WorkKind::Read, Err(ref fault)) if fault.code == "wrong_target" => {
+                let advertised = serde_json::from_str::<serde_json::Value>(&fault.message)
+                    .ok()
+                    .filter(|body| body["status"] == "wrong_target")
+                    .and_then(|body| serde_json::from_value::<Binding>(body["binding"].clone()).ok());
+                if let Some(binding) = advertised
+                    && self.adopt_instance(&binding)
+                {
+                    return self.start(WorkKind::Read);
+                }
+                self.fail(fault.clone());
+                None
+            }
             (_, Err(fault)) => {
                 self.confirmed = false;
                 self.pending = None;
@@ -564,6 +610,7 @@ impl Consumer {
                 match decision {
                     Decision::Install | Decision::Duplicate | Decision::Stale => {
                         self.confirmed = true;
+                        self.rebind_pending = false;
                         self.fault = None;
                         self.failures = 0;
                         self.retry_deadline = None;
@@ -641,6 +688,19 @@ impl Consumer {
     pub fn observe(&mut self, generation: u64, snapshot: Snapshot) -> Option<Work> {
         if self.generation != Some(generation) {
             return None;
+        }
+        if snapshot.binding != self.binding {
+            if self.adopt_instance(&snapshot.binding) {
+                return self.refresh();
+            }
+            // While confirming an adoption, old/competing instance pushes
+            // cannot cancel its read or cause a reverse adoption.
+            if self.rebind_pending
+                && snapshot.binding.profile == self.binding.profile
+                && snapshot.binding.validate().is_ok()
+            {
+                return None;
+            }
         }
         if let Err(fault) = self.check(&snapshot) {
             return self.rejected_delivery(fault);

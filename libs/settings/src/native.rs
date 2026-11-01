@@ -91,7 +91,11 @@ pub async fn execute_until(
                             .and_then(|v| v.get("error_code"))
                             .and_then(|s| s.as_str())
                             == Some("UNKNOWN_COMMAND");
-                        let code = if unknown
+                        let code = if status == Some("wrong_target") {
+                            // Keep the structured body in the diagnostic so a
+                            // consumer can validate the advertised binding.
+                            "wrong_target"
+                        } else if unknown
                             || matches!(
                                 status,
                                 Some(
@@ -160,7 +164,9 @@ impl Consumer {
     /// Complete decoding on the host's worker, then feed it on the UI loop.
     /// A queued delivery still checks the current binding and connection here.
     pub fn decoded_delivery(&mut self, delivery: Decoded) -> Option<Work> {
-        if &delivery.binding != self.binding() || self.generation() != Some(delivery.generation) {
+        if delivery.binding.profile != self.binding().profile
+            || self.generation() != Some(delivery.generation)
+        {
             return None;
         }
         match delivery.result {

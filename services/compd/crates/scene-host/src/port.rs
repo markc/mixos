@@ -1130,6 +1130,7 @@ async fn serve(
                 let client = Arc::clone(client);
                 let pending = Arc::clone(&pending_events);
                 let pending = PendingEvent(pending);
+                let settings_lane = lane.mailbox();
                 flights.spawn(async move {
                     let _pending = pending;
                     let call = client.call(&event.to, &event.kind, event.body);
@@ -1137,7 +1138,13 @@ async fn serve(
                         Ok(Ok(_)) => {}
                         Ok(Err(error)) if event.kind.ends_with(".ui.menu.popup") || event.kind.ends_with(".execute") => tracing::warn!(%error, to = %event.to, "window chrome call failed"),
                         Err(_) if event.kind.ends_with(".ui.menu.popup") || event.kind.ends_with(".execute") => tracing::warn!(to = %event.to, "window chrome call timed out"),
-                        Ok(Err(error)) if event.kind == "settings.apply" => tracing::warn!(%error, "corner panel mode not saved"),
+                        Ok(Err(error)) if event.kind == "settings.apply" => {
+                            if serde_json::from_str::<Value>(&error.to_string())
+                                .ok().is_some_and(|body| body["status"] == "wrong_target") {
+                                notify(settings_lane.publish(SettingsEvent::Refresh));
+                            }
+                            tracing::warn!(%error, "corner panel mode not saved");
+                        },
                         Err(_) if event.kind == "settings.apply" => tracing::warn!("corner panel mode save timed out"),
                         Ok(Err(error)) => tracing::debug!(%error, to = %event.to, kind = %event.kind, "scene event failed"),
                         Err(_) => tracing::debug!(to = %event.to, kind = %event.kind, "scene event timed out"),

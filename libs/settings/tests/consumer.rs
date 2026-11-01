@@ -32,6 +32,110 @@ fn snapshot(revision: u64, incarnation: &str) -> Snapshot {
 fn consumer() -> Consumer {
     Consumer::for_app(binding(), "ced").unwrap()
 }
+fn rebound(instance: &str) -> Snapshot {
+    let mut next = snapshot(1, "new");
+    next.binding.instance = instance.into();
+    next
+}
+fn wrong_target(binding: Option<Binding>) -> Diagnostic {
+    Diagnostic::new(
+        "wrong_target",
+        "native",
+        serde_json::json!({"status":"wrong_target", "binding":binding}).to_string(),
+    )
+}
+#[test]
+fn read_refusal_adopts_instance_and_requires_a_success_before_another_adoption() {
+    let mut state = consumer();
+    activate(&mut state, snapshot(8, "old"));
+    let old = state.refresh().unwrap();
+    let next = rebound("authority");
+    let read = state.complete(&old, Err(wrong_target(Some(next.binding.clone())))).unwrap();
+    assert_eq!(read.binding(), &next.binding);
+    assert!(state.current().is_none());
+    assert!(!state.is_confirmed());
+    assert_eq!(state.presentation_kind(), Some(fallback::PresentationKind::LastGood));
+    let refused = wrong_target(Some(binding()));
+    assert!(state.complete(&read, Err(refused)).is_none());
+    assert_eq!(state.binding(), &next.binding);
+    assert!(state.retry_deadline().is_none());
+    // Reconnect does not lift the adoption fence.
+    let read = read_work(&mut state, 2);
+    assert!(state.observe(2, rebound("third")).is_none());
+    assert_eq!(state.current_work(), Some(&read));
+    state.complete(&read, Ok(Some(next)));
+    assert!(state.is_confirmed());
+    let read = state.observe(2, rebound("third")).unwrap();
+    assert_eq!(read.binding().instance, "third");
+}
+#[test]
+fn delivery_rebind_fences_old_work_and_stages_and_reads_before_applying() {
+    let mut state = consumer();
+    activate(&mut state, snapshot(8, "old"));
+    let old_read = state.refresh().unwrap();
+    let mut changed = snapshot(9, "old");
+    changed.effective.get_mut("app:ced").unwrap().ui.density = 1.5;
+    state.observe(1, changed);
+    let old_stage = state.pending().unwrap().clone();
+    let next = rebound("authority");
+    let read = state.observe(1, next.clone()).unwrap();
+    assert!(!state.acknowledge(&old_stage));
+    assert!(state.current().is_none());
+    state.complete(&old_read, Ok(Some(snapshot(99, "old"))));
+    for _ in 0..10 {
+        assert!(state.observe(1, snapshot(99, "old")).is_none());
+        assert!(state.observe(1, rebound("third")).is_none());
+        assert_eq!(state.current_work(), Some(&read));
+    }
+    state.complete(&read, Ok(Some(next.clone())));
+    assert_eq!(state.applied().unwrap().binding, next.binding);
+    assert!(state.is_confirmed());
+}
+#[test]
+fn other_profile_invalid_and_missing_refusal_bindings_stay_terminal() {
+    let mut other_profile = rebound("authority").binding;
+    other_profile.profile = "other".into();
+    let mut invalid = rebound("authority").binding;
+    invalid.instance = "invalid/name".into();
+    for advertised in [Some(other_profile.clone()), Some(invalid.clone()), None, Some(binding())] {
+        let mut state = consumer();
+        let read = read_work(&mut state, 1);
+        assert!(state.complete(&read, Err(wrong_target(advertised))).is_none());
+        assert_eq!(state.binding(), &binding());
+        assert!(state.retry_deadline().is_none());
+        assert_eq!(state.fault().unwrap().code, "wrong_target");
+    }
+    for binding in [other_profile, invalid] {
+        let mut state = consumer();
+        activate(&mut state, snapshot(1, "old"));
+        let mut next = rebound("authority");
+        next.binding = binding;
+        assert!(state.observe(1, next).is_none());
+        assert_eq!(state.binding(), &crate::binding());
+        assert!(state.retry_deadline().is_none());
+        assert_eq!(state.fault().unwrap().code, "wrong_target");
+    }
+}
+#[cfg(feature = "cache")]
+#[test]
+fn rebind_never_loads_or_saves_old_instance_cache_under_new_target() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut state = consumer();
+    activate(&mut state, snapshot(1, "old"));
+    let old_target = state.cache_target();
+    let mut writer = cache::Writer::open(directory.path(), &state).unwrap();
+    writer.write(&state.cache_save().unwrap()).unwrap();
+    let next = rebound("authority");
+    let read = state.observe(1, next.clone()).unwrap();
+    assert_ne!(state.cache_target(), old_target);
+    assert!(state.cache_save().is_none());
+    assert!(cache::load(directory.path(), &state).is_err());
+    state.complete(&read, Ok(Some(next)));
+    assert!(writer.write(&state.cache_save().unwrap()).is_err());
+    let mut writer = cache::Writer::open(directory.path(), &state).unwrap();
+    writer.write(&state.cache_save().unwrap()).unwrap();
+    assert!(cache::load(directory.path(), &state).is_ok());
+}
 fn read_work(state: &mut Consumer, generation: u64) -> Work {
     let subscribe = state.connected(generation).unwrap();
     assert_eq!(subscribe.kind(), WorkKind::Subscribe);
@@ -419,6 +523,33 @@ fn native_deliveries_require_owner_topic_and_generation_and_bound_bad_data() {
         assert_eq!(state.retry_deadline(), Some(deadline));
     }
     assert_eq!(state.fault().unwrap().code, "invalid_delivery");
+}
+#[cfg(feature = "native")]
+#[test]
+fn decoder_captured_before_rebind_still_delivers_after_it() {
+    use bus::native_client::IncomingCommand;
+    let mut state = consumer();
+    activate(&mut state, snapshot(1, "a"));
+    let mut next = rebound("authority");
+    let frame = |snapshot: &Snapshot| IncomingCommand {
+        generation: 1,
+        from: "noded".into(),
+        command: topics::snapshot_topic("default"),
+        id: None,
+        args: serde_json::Value::Null,
+        body: serde_json::to_string(snapshot).unwrap(),
+        headers: BTreeMap::from([
+            ("topic".into(), topics::snapshot_topic("default")),
+            ("broker_service".into(), "settingsd".into()),
+        ]),
+    };
+    let delivery = native::Decoded::from_command(&binding(), &frame(&next)).unwrap();
+    let read = state.decoded_delivery(delivery).unwrap();
+    state.complete(&read, Ok(Some(next.clone())));
+    next.revision = Revision(2);
+    let delivery = native::Decoded::from_command(&binding(), &frame(&next)).unwrap();
+    state.decoded_delivery(delivery);
+    assert_eq!(state.current().unwrap().revision, Revision(2));
 }
 #[test]
 fn confirmed_read_rollback_is_distinct_from_valid_read_racing_newer_event() {
