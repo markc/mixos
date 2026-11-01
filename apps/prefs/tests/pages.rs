@@ -370,3 +370,69 @@ fn a_click_on_a_swatch_the_custom_accent_or_a_pick_row_opens_its_drawer() {
         assert_eq!(open_drawer(&mut rig, n + 3), json!(expected), "{name}");
     }
 }
+
+/// The store at revision 7 holding `values`, as the authority.
+fn read_values(rig: &mut Rig, values: Value) {
+    let engine = rig.h.state_mut().as_mut().unwrap().engine_mut();
+    engine.store_read(&json!({"incarnation":"inc-1","revision":"7","values":values}));
+    engine.store_status(&json!({"role": "authority", "stale": false}));
+    rig.h.run_steps(2);
+}
+
+#[test]
+fn wallpaper_is_data_and_a_swatch_click_applies_once_fenced() {
+    let mut rig = rig();
+    read_values(&mut rig, json!({"wallpaper.color": "#000000"}));
+    let (rc, body) = ask(&mut rig, 1, "prefs.page.open", json!({"page": "wallpaper"}));
+    assert_eq!(rc, 0, "{body}");
+    let (_, page) = ask(&mut rig, 2, "prefs.page", json!({}));
+    assert_eq!(page["kind"], "sections");
+    let rows: Vec<Value> = page["sections"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|s| s["rows"].as_array().unwrap().clone())
+        .collect();
+    let row = |id: &str| rows.iter().find(|r| r["id"] == id).unwrap().clone();
+    assert_eq!(row("same_on_all")["key"], "wallpaper.same_on_all");
+    assert_eq!(row("fit")["value"], "fill");
+    // A colour is chosen: no slideshow toggle, and the chooser shows Colors.
+    assert_eq!(row("slideshow")["shown"], false);
+    let gallery = row("gallery")["gallery"].clone();
+    assert_eq!(gallery["category"]["kind"], "colours");
+    assert_eq!(gallery["colours"].as_array().unwrap().len(), 19);
+    rig.h.run_steps(3);
+    let swatch = node(&mut rig, 3, "#2f6f9f", "RadioButton");
+    let (rc, body) = ask(&mut rig, 4, "prefs.ui.click", json!({"id": swatch}));
+    assert_eq!(rc, 0, "{body}");
+    rig.h.run_steps(4);
+    let sent = applies(&rig);
+    assert_eq!(sent.len(), 1, "{sent:?}");
+    assert_eq!(sent[0]["expected_revision"], "7");
+    assert_eq!(sent[0]["changes"], json!({"wallpaper.color": "#2f6f9f"}));
+}
+
+#[test]
+fn prefs_set_on_the_image_operates_the_chooser() {
+    let mut rig = rig();
+    read_values(
+        &mut rig,
+        json!({"wallpaper.color": "#000000", "wallpaper.slideshow.enabled": true,
+            "wallpaper.slideshow.folder": "/srv/walls"}),
+    );
+    let (rc, body) = ask(
+        &mut rig,
+        1,
+        "prefs.set",
+        json!({"key": "wallpaper.image", "value": "/srv/walls/a.png"}),
+    );
+    assert_eq!(rc, 0, "{body}");
+    rig.h.run_steps(3);
+    let sent = applies(&rig);
+    assert_eq!(sent.len(), 1, "{sent:?}");
+    assert_eq!(
+        sent[0]["changes"],
+        json!({"wallpaper.image": "/srv/walls/a.png", "wallpaper.color": null,
+            "wallpaper.slideshow.enabled": false})
+    );
+}

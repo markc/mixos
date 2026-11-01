@@ -26,7 +26,7 @@ pub(super) fn pages() -> Vec<Page> {
         pending("magnifier", "zoom-in", "accessibility"),
         pending("osk", "keyboard", "accessibility"),
         list("desktop", "layout-dashboard"),
-        custom("wallpaper", "image", "desktop"),
+        super::wallpaper::page(),
         super::appearance::page(),
         super::panels::panel(),
         pending("panel_applets", "blocks", "panel"),

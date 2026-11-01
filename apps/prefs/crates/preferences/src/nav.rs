@@ -76,7 +76,6 @@ pub fn page_of(section: Section) -> &'static str {
 /// The old editor a custom page draws.
 fn editor_section(editor: &str) -> Option<Section> {
     Some(match editor {
-        "wallpaper" => Section::Wallpapers,
         "term" => Section::Terminal,
         "email" => Section::Email,
         "ced" => Section::Ced,
@@ -114,6 +113,10 @@ impl Engine {
             self.set_section(section);
         }
         self.nav.page = id;
+        if id == "wallpaper" {
+            // The folder may have changed since it was read.
+            self.rescan_gallery();
+        }
         self.nav.drawer = row.and_then(|r| page.drawer_of(r)).map(|d| d.id);
         // A hidden row has nowhere to land: open the page only.
         self.nav.focus = row
@@ -284,6 +287,9 @@ impl Engine {
             "shown": row.show.holds(&self.store), "blocked": self.row_blocked(page, row)});
         if let Some(source) = row.value_from {
             view["readout"] = json!(self.live_value(source));
+        }
+        if let Control::Gallery { .. } = row.control {
+            view["gallery"] = self.gallery_view();
         }
         // An ordered list's entries as shown, in order.
         if let Control::Ordered { key, sources, .. } = row.control {

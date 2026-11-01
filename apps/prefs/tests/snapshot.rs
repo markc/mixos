@@ -101,6 +101,21 @@ fn wifi_missing_backend() {
 }
 
 #[test]
+fn wallpaper() {
+    draw("wallpaper", page("wallpaper", None), COSMIC);
+}
+
+#[test]
+fn wallpaper_colours() {
+    let mut values = measured();
+    values["wallpaper.color"] = json!("gradient:#1e3a5f,#6a3d7c@180");
+    values["wallpaper.custom_colors"] = json!(["#c0ffee"]);
+    let mut e = engine(values, "authority", false);
+    e.open_page("wallpaper", None).unwrap();
+    draw("wallpaper_colours", e, COSMIC);
+}
+
+#[test]
 fn desktop_sub_pages() {
     draw("desktop", page("desktop", None), COSMIC);
 }

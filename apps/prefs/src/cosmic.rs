@@ -26,6 +26,7 @@ use toolkit::{Icon, Registry, Strings, icons};
 
 mod controls;
 mod drawer;
+mod gallery;
 
 /// The sidebar card's width (spec 4).
 pub const SIDEBAR: f32 = 280.0;
@@ -217,6 +218,9 @@ pub fn view(
             .map(|(id, origin)| UiEvent::Command(id, origin)),
     );
     typed_search(ui, engine, &mut events);
+    if engine.nav.page != "wallpaper" && !engine.nav.searching {
+        gallery::release(ui.ctx());
+    }
     let condensed = condensed(ui.available_width());
     let frame = egui::Frame::NONE.fill(look.window);
     if !condensed || engine.nav.sidebar {
@@ -1166,9 +1170,6 @@ fn custom(
                 Section::Terminal => crate::view::terminal(ui, engine, commands, strings, events),
                 Section::Email => crate::view::email_section(ui, engine, commands, strings, events),
                 Section::Ced => crate::view::ced_section(ui, engine, events),
-                Section::Wallpapers => {
-                    crate::view::wallpaper_section(ui, engine, commands, strings, events)
-                }
                 _ => {}
             }
         });
