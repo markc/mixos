@@ -10,7 +10,7 @@
 -- The package step builds each selected Cargo package once, then packages
 -- those same binaries. It never installs into <prefix> or publishes a release.
 
-$g = getopt(args(), {commit: {arg: true}, version: {arg: true}, out: {arg: true},
+$g = getopt(args(), {commit: {arg: true}, affected: {arg: true}, version: {arg: true}, out: {arg: true},
   rootfs: {arg: true}, "target-dir": {arg: true},
   "cargo-home": {arg: true}, "rustup-home": {arg: true},
   "libinput-source": {arg: true}, package: {arg: true}})
@@ -18,6 +18,10 @@ if len($g.errors) != 0 or len($g.rest) != 1 or not contains(["check", "package"]
   raise("RELEASE_ARGS", "usage: mix tools/release_gate.mix check|package --commit FULL_SHA [--version V --out DIR]")
 end
 $mode = $g.rest[0]
+$base = $g.opts.affected ?? ""
+if $g.opts.affected != nil and ($mode != "check" or not re_match($base, "^[0-9a-f]{40}$")) then
+  raise("RELEASE_ARGS", "--affected requires check and a full base SHA")
+end
 $commit = $g.opts.commit ?? ""
 if not re_match($commit, "^[0-9a-f]{40}$") then raise("RELEASE_ARGS", "--commit must be a full source SHA") end
 $head = trim(run_argv_must(["git", "rev-parse", "HEAD"], {timeout: 15}))
@@ -90,6 +94,23 @@ end
 
 print("release gate " .. $mode .. " source=" .. $commit .. " arch=x86_64 logs=" .. $log_dir)
 if $mode == "check" then
+  $affected = nil
+  if $base != "" then
+    if not run_argv(["git", "merge-base", "--is-ancestor", $base, $commit], {timeout: 30}).ok then
+      raise("RELEASE_SOURCE", "--affected base must be an ancestor of --commit")
+    end
+    $files = split(run_argv_must(["git", "diff", "--name-only", "-z", $base, $commit], {timeout: 30, max_output: 64000000}), "\u{0}")
+    $files = filter($files, fn($p) = $p != "")
+    $packages = json_parse(run_argv_must(["cargo", "metadata", "--format-version", "1", "--locked", "--no-deps"], {timeout: 300, max_output: 64000000}))
+    $graph = json_parse(run_argv_must(["cargo", "metadata", "--format-version", "1", "--locked"], {timeout: 900, max_output: 64000000}))
+    $selector = require("lib/release_affected.mix")
+    $affected = $selector.select_affected($files, $packages, $graph)
+    if $affected.full then
+      print("AFFECTED full test: " .. $affected.reason)
+    else
+      print("AFFECTED crates " .. to_string(len($affected.crates)) .. ": " .. join($affected.crates, " "))
+    end
+  end
   stage("format", ["cargo", "fmt", "--check"], 300)
   stage("build", ["cargo", "build", "--workspace", "--all-targets", "--locked"], 5400)
   -- Term's native-session end-to-end tests are #[ignore]d in the normal run
@@ -109,11 +130,27 @@ if $mode == "check" then
   -- The 64 MiB editd latency ceiling is a performance probe for the shipped
   -- code. Debug builds ignore it (they need over 1 s even on CBC hosts), so
   -- it runs alone here in release mode.
-  stage("test", ["cargo", "test", "--workspace", "--locked", "--no-fail-fast"], 5400)
+  if $affected == nil or $affected.full then
+    stage("test", ["cargo", "test", "--workspace", "--locked", "--no-fail-fast"], 5400)
+  elif len($affected.crates) == 0 then
+    print("SKIP test (no crate affected)")
+  else
+    $test_argv = ["cargo", "test", "--locked", "--no-fail-fast"]
+    for $crate in $affected.crates
+      push($test_argv, "-p")
+      push($test_argv, $crate)
+    end
+    stage("test", $test_argv, 5400)
+  end
+  if $affected == nil or $affected.full or contains($affected.crates, "egui-wgpu") or contains($affected.crates, "editd") then
   stage("offscreen", ["cargo", "test", "--manifest-path", "vendor/egui-wgpu/Cargo.toml", "--lib", "--locked",
     "--target-dir", "target", "--features", "winit,wayland", "offscreen_tests::"], 900)
   stage("latency", ["cargo", "test", "--release", "-p", "editd", "--test", "dispatch", "--locked",
     "large_file_open_edit_get_latency", "--", "--exact", "--nocapture"], 3600)
+  else
+    print("SKIP offscreen (neither egui-wgpu nor editd affected)")
+    print("SKIP latency (neither egui-wgpu nor editd affected)")
+  end
   $mix = "target/debug/mix"
   stage("closure", [$mix, "tools/closure_gate.mix", "--locked"], 900)
   stage("foreign", [$mix, "tools/foreign_gate.mix", "--locked", "--elf", "target/debug/mix"], 900)
@@ -127,7 +164,11 @@ if $mode == "check" then
   stage("paths", [$mix, "tools/path_gate.mix"], 300)
   stage("layout-templates", [$mix, "tests/layout_templates_test.mix"], 300)
   stage("relocation", [$mix, "tests/layout_relocation_test.mix", "--bin", "target/debug"], 1800)
-  print("GREEN exact source " .. $commit)
+  if $affected == nil then
+    print("GREEN exact source " .. $commit)
+  else
+    print("GREEN affected source " .. $commit .. " base " .. $base .. " crates " .. to_string(len($affected.crates)))
+  end
   exit(0)
 end
 

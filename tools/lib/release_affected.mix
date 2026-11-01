@@ -1,0 +1,67 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Pure selection over Cargo metadata and repository-relative changed paths.
+fn owner($file, $metadata)
+  $best = nil
+  $width = 0
+  for $pkg in $metadata.packages
+    if contains($metadata.workspace_members, $pkg.id) then
+      $dir = dirname($pkg.manifest_path)
+      $path = $metadata.workspace_root .. "/" .. $file
+      if starts_with($path, $dir .. "/") and len($dir) > $width then
+        $best = $pkg.id
+        $width = len($dir)
+      end
+    end
+  end
+  return $best
+end
+
+fn full_reason($file)
+  if contains(["Cargo.toml", "Cargo.lock"], $file) or starts_with($file, "rust-toolchain") then return $file end
+  for $prefix in [".cargo/", "tools/", "tests/", "vendor/"]
+    if starts_with($file, $prefix) then return $file end
+  end
+  if basename($file) == "layers.conf.mix" then return $file end
+  return ""
+end
+
+fn select_affected($files, $packages, $graph)
+  $selected = []
+  $reason = ""
+  for $file in $files
+    $forced = full_reason($file)
+    if $forced != "" and $reason == "" then $reason = "global input: " .. $forced end
+    $id = owner($file, $packages)
+    if $id == nil then
+      if $reason == "" then $reason = "outside workspace packages: " .. $file end
+    elif not contains($selected, $id) then
+      push($selected, $id)
+    end
+  end
+  -- Traverse all resolve edges, including dev, build and target-specific ones.
+  -- External nodes can connect two workspace members too.
+  $changed = true
+  while $changed
+    $changed = false
+    for $node in $graph.resolve.nodes
+      if not contains($selected, $node.id) then
+        for $dep in $node.dependencies
+          if contains($selected, $dep) then
+            push($selected, $node.id)
+            $changed = true
+            break
+          end
+        end
+      end
+    end
+  end
+  $names = []
+  for $pkg in $packages.packages
+    if contains($packages.workspace_members, $pkg.id) and contains($selected, $pkg.id) then push($names, $pkg.name) end
+  end
+  $names = sort($names)
+  if len($names) * 2 > len($packages.workspace_members) and $reason == "" then
+    $reason = "more than half the workspace affected"
+  end
+  return {crates: $names, full: $reason != "", reason: $reason}
+end

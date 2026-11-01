@@ -1,0 +1,28 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Canned metadata: no cargo invocation or compiler required.
+$a = require("../tools/lib/release_affected.mix")
+$fixture = json_parse('{"workspace_root":"/fixture","workspace_members":["a","b","c","d","e","f"],"packages":[{"id":"a","name":"a","manifest_path":"/fixture/libs/a/Cargo.toml"},{"id":"b","name":"b","manifest_path":"/fixture/libs/a/crates/b/Cargo.toml"},{"id":"c","name":"c","manifest_path":"/fixture/libs/c/Cargo.toml"},{"id":"d","name":"d","manifest_path":"/fixture/libs/d/Cargo.toml"},{"id":"e","name":"editd","manifest_path":"/fixture/services/editd/Cargo.toml"},{"id":"f","name":"f","manifest_path":"/fixture/libs/f/Cargo.toml"},{"id":"external","name":"external","manifest_path":"/cache/external/Cargo.toml"}],"resolve":{"nodes":[{"id":"a","dependencies":[]},{"id":"b","dependencies":[]},{"id":"c","dependencies":["b"],"deps":[{"pkg":"b","dep_kinds":[{"kind":"dev","target":null}]}]},{"id":"d","dependencies":["c"],"deps":[{"pkg":"c","dep_kinds":[{"kind":"build","target":null}]}]},{"id":"e","dependencies":[]},{"id":"f","dependencies":["a"]},{"id":"external","dependencies":[]}]}}')
+
+fn check($ok, $label)
+  if not $ok then raise("TEST", $label) end
+  print("PASS " .. $label)
+end
+
+check($a.owner("libs/a/crates/b/src/lib.rs", $fixture) == "b", "longest package directory wins")
+check($a.owner("libs/ab/src/lib.rs", $fixture) == nil, "directory prefix requires slash boundary")
+check($a.owner("libs/a/deleted.rs", $fixture) == "a", "deleted file maps without filesystem access")
+$narrow = $a.select_affected(["libs/a/crates/b/src/lib.rs"], $fixture, $fixture)
+check(not $narrow.full and deep_eq($narrow.crates, ["b", "c", "d"]), "synthetic narrow diff includes transitive dev and build dependants; exactly half stays narrow")
+$normal = $a.select_affected(["libs/a/src/lib.rs"], $fixture, $fixture)
+check(not $normal.full and deep_eq($normal.crates, ["a", "f"]), "normal reverse edge and unaffected members")
+$empty = $a.select_affected([], $fixture, $fixture)
+check(not $empty.full and len($empty.crates) == 0, "empty diff skips test")
+$large = $a.select_affected(["libs/a/src/lib.rs", "libs/a/crates/b/src/lib.rs"], $fixture, $fixture)
+check($large.full and $large.reason == "more than half the workspace affected", "more than half forces full")
+for $file in ["Cargo.toml", "Cargo.lock", "rust-toolchain", "rust-toolchain.toml", ".cargo/config.toml", "tools/helper.mix", "tests/check.mix", "vendor/egui-wgpu/src/lib.rs", "libs/a/layers.conf.mix"]
+  check($a.full_reason($file) != "" and $a.select_affected([$file], $fixture, $fixture).full, "force full: " .. $file)
+end
+check($a.select_affected(["README.md"], $fixture, $fixture).full, "outside packages forces full")
+check($a.select_affected(["libs/removed/src/lib.rs"], $fixture, $fixture).full, "removed package forces full")
+check($a.full_reason("libs/a/Cargo.toml") == "", "member manifest uses package closure")
+check(deep_eq($a.select_affected(["services/editd/src/lib.rs"], $fixture, $fixture).crates, ["editd"]), "editd selected by package name")
