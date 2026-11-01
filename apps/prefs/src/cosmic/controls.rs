@@ -408,9 +408,9 @@ pub fn bare(
 /// more, the selected one underlined in the accent.
 fn outputs(ui: &mut Ui, engine: &Engine, all: &str, look: &Look, events: &mut Vec<UiEvent>) {
     let heading = |ui: &mut Ui, text: &str| {
-        let galley = ui
-            .painter()
-            .layout_no_wrap(text.to_owned(), super::heading(ui, 14.0), look.text);
+        let galley =
+            ui.painter()
+                .layout_no_wrap(text.to_owned(), super::heading(ui, 14.0), look.text);
         let (rect, response) =
             ui.allocate_exact_size(vec2(ui.available_width(), 21.0), Sense::hover());
         ui.painter()
@@ -442,7 +442,11 @@ fn outputs(ui: &mut Ui, engine: &Engine, all: &str, look: &Look, events: &mut Ve
         let rect = Rect::from_min_size(pos2(x, row.min.y), vec2(width, 32.0));
         x += width + look.xs;
         let on = selected.as_deref() == Some(connector.as_str());
-        let response = ui.interact(rect, ui.scope_id().with(("output", connector)), Sense::click());
+        let response = ui.interact(
+            rect,
+            ui.scope_id().with(("output", connector)),
+            Sense::click(),
+        );
         if response.hovered() && ui.is_enabled() {
             ui.painter()
                 .rect_filled(rect, Look::radius(look.r_s), look.card_hover);
@@ -455,8 +459,11 @@ fn outputs(ui: &mut Ui, engine: &Engine, all: &str, look: &Look, events: &mut Ve
             look.text,
         );
         if on {
-            ui.painter()
-                .hline(rect.x_range(), rect.max.y - 1.0, Stroke::new(2.0, look.accent));
+            ui.painter().hline(
+                rect.x_range(),
+                rect.max.y - 1.0,
+                Stroke::new(2.0, look.accent),
+            );
         }
         response.widget_info(|| WidgetInfo::selected(Role::Tab, ui.is_enabled(), on, text));
         if response.clicked() && !on {
