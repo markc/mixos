@@ -14,12 +14,17 @@ use serde_json::{Value, json};
 pub struct Nav {
     pub page: &'static str,
     pub drawer: Option<&'static str>,
-    /// The row to bring into view and ring once; the view clears it.
-    pub focus: Option<&'static str>,
+    /// The row to bring into view and ring once, as (page, row): row ids
+    /// are unique only within a page. The view clears it.
+    pub focus: Option<(&'static str, &'static str)>,
     pub query: String,
     pub searching: bool,
     /// The sidebar overlay of the condensed window is open.
     pub sidebar: bool,
+    /// The hits for `query`, kept until the query or the values change, so
+    /// a repaint never searches.
+    #[serde(skip)]
+    pub hits: Vec<Hit>,
 }
 
 impl Default for Nav {
@@ -31,7 +36,36 @@ impl Default for Nav {
             query: String::new(),
             searching: false,
             sidebar: false,
+            hits: Vec::new(),
         }
+    }
+}
+
+/// Whether `pattern` names `path`: the same path, or, ending `.*`, any
+/// path under that prefix (or the prefix itself).
+pub fn covers(pattern: &str, path: &str) -> bool {
+    match pattern.strip_suffix(".*") {
+        Some(prefix) => {
+            path == prefix
+                || path
+                    .strip_prefix(prefix)
+                    .is_some_and(|rest| rest.starts_with('.'))
+        }
+        None => path == pattern,
+    }
+}
+
+/// The page that shows an old section, for the legacy `prefs.section`.
+pub fn page_of(section: Section) -> &'static str {
+    match section {
+        Section::Appearance | Section::TextAndFonts => "appearance",
+        Section::Wallpapers => "wallpaper",
+        Section::Windows => "window_management",
+        Section::Email => "email",
+        Section::Terminal => "term",
+        Section::Ced => "ced",
+        Section::Accessibility => "accessibility",
+        Section::Software => "software",
     }
 }
 
@@ -77,9 +111,11 @@ impl Engine {
         }
         self.nav.page = id;
         self.nav.drawer = row.and_then(|r| page.drawer_of(r)).map(|d| d.id);
-        self.nav.focus = row;
-        self.nav.query.clear();
-        self.nav.searching = false;
+        // A hidden row has nowhere to land: open the page only.
+        self.nav.focus = row
+            .filter(|r| page.row(r).is_some_and(|r| r.show.holds(&self.store)))
+            .map(|r| (id, r));
+        self.close_search();
         self.nav.sidebar = false;
         Ok(())
     }
@@ -122,15 +158,38 @@ impl Engine {
         }
         self.nav.searching = !query.is_empty() || self.nav.searching;
         self.nav.query = query;
+        self.refresh_hits();
     }
 
     pub fn close_search(&mut self) {
         self.nav.query.clear();
         self.nav.searching = false;
+        self.nav.hits.clear();
     }
 
+    /// Recompute the cached hits (the query or the values moved).
+    pub fn refresh_hits(&mut self) {
+        if self.nav.searching {
+            self.nav.hits = self.find(&self.nav.query);
+        }
+    }
+
+    /// The rows (and live items) whose visible labels contain `query`,
+    /// skipping rows hidden now (their `show` fails).
     pub fn find(&self, query: &str) -> Vec<Hit> {
-        pages::search(query, &|key| self.label(key, &[]))
+        let index = self
+            .index
+            .get_or_init(|| pages::Index::new(&|key| self.label(key, &[])));
+        let mut hits: Vec<Hit> = index
+            .search(query)
+            .into_iter()
+            .filter(|hit| match (pages::get(hit.page), hit.row) {
+                (Some(page), Some(row)) => page.row(row).is_some_and(|r| r.show.holds(&self.store)),
+                _ => true,
+            })
+            .collect();
+        hits.extend(self.find_items(query));
+        hits
     }
 
     /// Why the whole of `page` takes no input now (its backend is missing,
@@ -174,12 +233,10 @@ impl Engine {
 
     /// Whether any of `keys` (a trailing `.*` names a prefix) is authored.
     pub fn authored(&self, keys: &[&str]) -> bool {
-        self.store.values.keys().any(|path| {
-            keys.iter().any(|k| match k.strip_suffix(".*") {
-                Some(prefix) => path.starts_with(prefix) && path[prefix.len()..].starts_with('.'),
-                None => path == k,
-            })
-        })
+        self.store
+            .values
+            .keys()
+            .any(|path| keys.iter().any(|k| covers(k, path)))
     }
 
     /// Reset every authored key among `keys`: one write of nulls.
@@ -188,14 +245,7 @@ impl Engine {
             .store
             .values
             .keys()
-            .filter(|path| {
-                keys.iter().any(|k| match k.strip_suffix(".*") {
-                    Some(prefix) => {
-                        path.starts_with(prefix) && path[prefix.len()..].starts_with('.')
-                    }
-                    None => path == k,
-                })
-            })
+            .filter(|path| keys.iter().any(|k| covers(k, path)))
             .cloned()
             .collect();
         if paths.is_empty() {
@@ -226,7 +276,8 @@ impl Engine {
                 .map(|s| {
                     json!({"id": s.id, "title": s.titled.then(|| self.label(&pages::section_title(page.id, s.id), &[])),
                         "shown": s.show.holds(&self.store),
-                        "rows": s.rows.iter().map(|r| self.row_view(page, r)).collect::<Vec<_>>()})
+                        "rows": s.rows.iter().map(|r| self.row_view(page, r)).collect::<Vec<_>>(),
+                        "items": s.items.map(|i| json!({"source": i.source, "items": self.items(i.source)}))})
                 })
                 .collect()
         };
@@ -279,7 +330,14 @@ impl Engine {
                     (None, Some(page)) => self.label(&page.title(), &[]),
                     _ => String::new(),
                 };
-                json!({"page": hit.page, "section": hit.section, "row": hit.row, "title": title})
+                let title = match &hit.item {
+                    Some(id) => self
+                        .items_of_page(hit.page)
+                        .find(|item| &item.id == id)
+                        .map_or(title, |item| item.title.clone()),
+                    None => title,
+                };
+                json!({"page": hit.page, "section": hit.section, "row": hit.row, "item": hit.item, "title": title})
             })
             .collect();
         json!({"query": query, "hits": hits})
@@ -309,7 +367,8 @@ mod tests {
         e.open_page("appearance", Some("frosted_opacity")).unwrap();
         assert_eq!(e.nav.page, "appearance");
         assert_eq!(e.nav.drawer, Some("frosted"));
-        assert_eq!(e.nav.focus, Some("frosted_opacity"));
+        assert_eq!(e.nav.focus, Some(("appearance", "frosted_opacity")));
+
         e.back();
         assert_eq!(e.nav.page, "desktop");
         assert_eq!(e.nav.drawer, None);

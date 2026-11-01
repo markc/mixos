@@ -22,27 +22,13 @@ const SIZES: &[Lit] = &[Lit::I(32), Lit::I(40), Lit::I(56), Lit::I(64), Lit::I(8
 
 macro_rules! bar {
     ($page:literal, $panel:literal, $icon:literal, $applets:literal) => {{
-        let key = |leaf: &'static str| -> &'static str {
-            match leaf {
-                "enabled" => concat!("shell.panels.", $panel, ".enabled"),
-                "autohide" => concat!("shell.panels.", $panel, ".autohide"),
-                "edge" => concat!("shell.panels.", $panel, ".edge"),
-                "output" => concat!("shell.panels.", $panel, ".output"),
-                "gap" => concat!("shell.panels.", $panel, ".gap"),
-                "extend" => concat!("shell.panels.", $panel, ".extend"),
-                "appearance" => concat!("shell.panels.", $panel, ".appearance"),
-                "thickness" => concat!("shell.panels.", $panel, ".thickness"),
-                "opacity" => concat!("shell.panels.", $panel, ".opacity"),
-                _ => unreachable!("a panel key"),
-            }
-        };
         let sections = vec![
             untitled(
                 "bar",
                 vec![row(
                     "enabled",
                     Control::Toggle {
-                        key: key("enabled"),
+                        key: concat!("shell.panels.", $panel, ".enabled"),
                     },
                 )],
             ),
@@ -52,13 +38,13 @@ macro_rules! bar {
                     row(
                         "autohide",
                         Control::Toggle {
-                            key: key("autohide"),
+                            key: concat!("shell.panels.", $panel, ".autohide"),
                         },
                     ),
                     row(
                         "edge",
                         Control::Choice {
-                            key: key("edge"),
+                            key: concat!("shell.panels.", $panel, ".edge"),
                             style: ChoiceStyle::Dropdown,
                             options: EDGES,
                         },
@@ -66,22 +52,23 @@ macro_rules! bar {
                     row(
                         "output",
                         Control::Choice {
-                            key: key("output"),
+                            key: concat!("shell.panels.", $panel, ".output"),
                             style: ChoiceStyle::Dropdown,
                             options: OUTPUTS,
                         },
-                    ),
+                    )
+                    .options_from("outputs"),
                 ],
             ),
             section(
                 "style",
                 vec![
-                    row("gap", Control::Toggle { key: key("gap") }),
-                    row("extend", Control::Toggle { key: key("extend") }),
+                    row("gap", Control::Toggle { key: concat!("shell.panels.", $panel, ".gap") }),
+                    row("extend", Control::Toggle { key: concat!("shell.panels.", $panel, ".extend") }),
                     row(
                         "appearance",
                         Control::Choice {
-                            key: key("appearance"),
+                            key: concat!("shell.panels.", $panel, ".appearance"),
                             style: ChoiceStyle::Dropdown,
                             options: LOOKS,
                         },
@@ -89,7 +76,7 @@ macro_rules! bar {
                     row(
                         "size",
                         Control::Steps {
-                            key: key("thickness"),
+                            key: concat!("shell.panels.", $panel, ".thickness"),
                             steps: SIZES,
                             start: "opt-small",
                             end: "opt-large",
@@ -98,7 +85,7 @@ macro_rules! bar {
                     row(
                         "opacity",
                         Control::Slider {
-                            key: key("opacity"),
+                            key: concat!("shell.panels.", $panel, ".opacity"),
                             min: 0.0,
                             max: 1.0,
                             step: 0.01,

@@ -99,6 +99,9 @@ pub struct Store {
     queue: VecDeque<Job>,
     applies: u64,
     retargeted: bool,
+    /// Status answers lost while unreachable, retried a bounded number of
+    /// times before waiting for a topic or the Bus.
+    status_tries: u32,
     /// A write met another revision or lost its answer: nothing more goes
     /// out until a read succeeds, so a dead settingsd is not sent the same
     /// write again and again.
@@ -116,6 +119,15 @@ impl Store {
     /// The revision last read.
     pub fn revision(&self) -> Option<u64> {
         self.fence.as_ref().map(|(_, r)| r.0)
+    }
+
+    /// The keys whose writes have not been accepted yet.
+    pub fn waiting(&self) -> Vec<&str> {
+        self.pending
+            .keys()
+            .chain(self.inflight.iter().flat_map(|(_, c)| c.keys()))
+            .map(String::as_str)
+            .collect()
     }
 
     /// Whether any write is waiting or in flight.
@@ -170,6 +182,29 @@ impl Store {
         )
     }
 }
+
+/// The topics the pages read again on: the look and every key prefix
+/// settingsd publishes (a page writes `shell.panels`, `window`, … not
+/// only `appearance`).
+pub fn topics() -> Vec<String> {
+    let profile = crate::appearance::PROFILE;
+    std::iter::once(settings::topics::look_topic(profile))
+        .chain(
+            settings::topics::PREFIXES
+                .iter()
+                .map(|prefix| settings::topics::keys_topic(profile, prefix)),
+        )
+        .collect()
+}
+
+/// Whether a delivery on `topic` is one of [`topics`].
+pub fn is_topic(topic: &str) -> bool {
+    topics().iter().any(|t| t == topic)
+}
+
+/// Status answers retried while the authority is unreachable.
+
+const STATUS_TRIES: u32 = 3;
 
 /// What a settingsd answer was.
 enum Answer {
@@ -235,33 +270,47 @@ impl Engine {
             Some(Blocked::AuthorityUnreachable)
         } else if self.store.role == Role::Mirror && self.store.stale {
             Some(Blocked::Stale)
-        } else if self.store.fence.is_none() {
+        } else if self.store.fence.is_none() || self.store.role == Role::Unknown {
+            // Not read, or not yet known to be the authority or a current
+            // mirror: no write until it is.
             Some(Blocked::Unread)
         } else {
             None
         }
     }
 
-    /// Set `key` to `value` at once (fenced); refused with a message when
-    /// the key is unknown, live, the value invalid, or writes are blocked.
-    pub fn set_key(&mut self, key: &str, value: Value) -> Result<(), String> {
+    /// `value` for `key`, checked against the catalogue settingsd
+    /// described (this binary's registry only for shapes the catalogue
+    /// cannot state), or the localised refusal.
+    fn checked(&self, key: &str, value: Value) -> Result<Value, String> {
         let info = self
             .store
             .catalog
             .get(key)
-            .ok_or_else(|| format!("{key}: unknown setting"))?;
+            .ok_or_else(|| self.label("set-unknown", &[("key", key)]))?;
         if info.live() {
-            return Err(format!(
-                "{key}: a live value of {}, not a setting",
-                info.owner.as_deref().unwrap_or("its owner")
-            ));
+            let owner = info.owner.as_deref().unwrap_or("?");
+            return Err(self.label("set-live", &[("key", key), ("owner", owner)]));
         }
-        let value = if value.is_null() {
-            value
-        } else {
-            settings::registry::check_value(key, &coerce(&info.kind, value))
-                .map_err(|d| format!("{key}: {}", d.message))?
-        };
+        if value.is_null() {
+            return Ok(value);
+        }
+        let value = coerce(&info.kind, value);
+        match crate::catalog::check(&info.kind, &value) {
+            Some(Ok(())) => Ok(value),
+            Some(Err(why)) => {
+                Err(self.label("set-invalid", &[("key", key), ("why", &why)]))
+            }
+            None => settings::registry::check_value(key, &value).map_err(|d| {
+                self.label("set-invalid", &[("key", key), ("why", &d.message)])
+            }),
+        }
+    }
+
+    /// Set `key` to `value` at once (fenced); refused with a message when
+    /// the key is unknown, live, the value invalid, or writes are blocked.
+    pub fn set_key(&mut self, key: &str, value: Value) -> Result<(), String> {
+        let value = self.checked(key, value)?;
         if let Some(blocked) = self.blocked() {
             return Err(self.label(blocked.label(), &[]));
         }
@@ -275,19 +324,10 @@ impl Engine {
     pub fn set_keys(&mut self, changes: BTreeMap<String, Value>) -> Result<(), String> {
         let mut checked = BTreeMap::new();
         for (key, value) in changes {
-            let info = self
-                .store
-                .catalog
-                .get(&key)
-                .ok_or_else(|| format!("{key}: unknown setting"))?;
-            let value = if value.is_null() {
-                value
-            } else {
-                settings::registry::check_value(&key, &coerce(&info.kind, value))
-                    .map_err(|d| format!("{key}: {}", d.message))?
-            };
+            let value = self.checked(&key, value)?;
             checked.insert(key, value);
         }
+
         if let Some(blocked) = self.blocked() {
             return Err(self.label(blocked.label(), &[]));
         }
@@ -378,7 +418,12 @@ impl Engine {
             (Job::Read, Answer::Refused(body)) => self.store.error = Some(message(&body)),
             (Job::Read, Answer::Lost(text)) => self.store.error = Some(text),
             (Job::Status, Answer::Ok(body)) => self.store_status(&body),
-            (Job::Status, _) => {}
+            (Job::Status, _) => {
+                if self.store.unreachable && self.store.status_tries < STATUS_TRIES {
+                    self.store.status_tries += 1;
+                    self.store.enqueue(Job::Status);
+                }
+            }
             (Job::Apply, Answer::Ok(body)) => self.store_applied(&body),
             (Job::Apply, Answer::Refused(body)) => self.store_refused(&body),
             (Job::Apply, Answer::Lost(_)) => {
@@ -399,8 +444,12 @@ impl Engine {
             _ => Role::Unknown,
         };
         self.store.stale = body["stale"].as_bool().unwrap_or(false);
-        if self.store.role == Role::Authority || !self.store.stale {
+        self.store.status_tries = 0;
+        if self.store.unreachable && (self.store.role == Role::Authority || !self.store.stale) {
+            // Back: read, then the edits kept while it was away go out.
             self.store.unreachable = false;
+            self.store.error = None;
+            self.store.enqueue(Job::Read);
         }
     }
 
@@ -415,6 +464,7 @@ impl Engine {
                 self.store.values = values;
                 self.store.fence = Some((incarnation, revision));
                 self.store.reread = false;
+                self.refresh_hits();
                 // Writes in hand stay (they win over what was read), unless
                 // settingsd already holds them.
                 let held = &self.store.values;
@@ -437,11 +487,12 @@ impl Engine {
         let receipt = &body["receipt"];
         let incarnation = receipt["incarnation"].as_str().map(str::to_owned);
         let revision = serde_json::from_value::<Revision>(receipt["revision"].clone()).ok();
-        // The fence held, so settingsd's values are ours with the changes.
-        match settings::registry::apply(&self.store.values, &changes, &[]) {
-            Ok(values) => self.store.values = values,
-            Err(_) => self.store.enqueue(Job::Read),
+        // The fence held, so settingsd's values are ours with the changes;
+        // a read confirms them (settingsd may have normalised a value).
+        if let Ok(values) = settings::registry::apply(&self.store.values, &changes, &[]) {
+            self.store.values = values;
         }
+        self.store.enqueue(Job::Read);
         match (incarnation, revision) {
             (Some(incarnation), Some(revision)) => {
                 self.store.fence = Some((incarnation, revision));
@@ -457,8 +508,9 @@ impl Engine {
                 self.store.enqueue(Job::Read);
             }
             Some("authority_unreachable") => {
-                self.store.inflight = None;
-                self.store.pending.clear();
+                // The edits stay, shown, and go out once the authority is
+                // back (a status says so, then a read re-fences them).
+                self.requeue_inflight();
                 self.store.unreachable = true;
                 self.store.error = Some(self.label(Blocked::AuthorityUnreachable.label(), &[]));
                 self.store.enqueue(Job::Status);
@@ -482,11 +534,22 @@ impl Engine {
         }
     }
 
+    /// The Bus went away: the call in flight will not be answered. Its
+    /// writes wait, and the next connection reads before they go out.
+    pub fn store_disconnected(&mut self) {
+        if let Some((_, Job::Apply)) = self.store.job {
+            self.requeue_inflight();
+        }
+        self.store.job = None;
+        self.store.reread = true;
+    }
+
     /// The pages' state for `prefs.info` and agents.
     pub fn store_view(&self) -> Value {
         json!({"role": self.store.role, "stale": self.store.stale, "unreachable": self.store.unreachable,
             "blocked": self.blocked(), "revision": self.store.revision().map(|r| r.to_string()),
-            "described": self.store.described, "writing": self.store.writing(), "error": self.store.error})
+            "described": self.store.described, "writing": self.store.writing(), "error": self.store.error,
+            "waiting": self.store.waiting()})
     }
 }
 
@@ -567,7 +630,7 @@ mod tests {
     }
 
     #[test]
-    fn a_write_applies_at_once_fenced_on_the_revision_read() {
+    fn a_write_applies_at_once_fenced_and_later_writes_merge() {
         let mut e = engine();
         assert_eq!(e.store.text("appearance.mode").as_deref(), Some("light"));
         assert_eq!(
@@ -589,6 +652,13 @@ mod tests {
         e.stored(
             t,
             ok(json!({"status":"changed","receipt":{"incarnation":"inc-1","revision":"8"}})),
+        );
+        // The receipt is confirmed by a read before the next write.
+        let (t, command, _) = next(&mut e);
+        assert_eq!(command, "settings.get");
+        e.stored(
+            t,
+            ok(read("8", json!({"appearance.mode":"light","appearance.density":"compact"}))),
         );
         let (_, command, body) = next(&mut e);
         assert_eq!(command, "settings.apply");
@@ -643,6 +713,27 @@ mod tests {
     }
 
     #[test]
+    fn a_lost_write_that_landed_is_not_sent_again() {
+        let mut e = engine();
+        // A reset and a value, both lost; settingsd holds both already.
+        e.set_keys(
+            [
+                ("appearance.mode".to_owned(), Value::Null),
+                ("appearance.density".to_owned(), json!("compact")),
+            ]
+            .into(),
+        )
+        .unwrap();
+        let (t, _, _) = next(&mut e);
+        e.stored(t, Err(CallError::from("timed out".to_owned())));
+        let (t, command, _) = next(&mut e);
+        assert_eq!(command, "settings.get");
+        e.stored(t, ok(read("8", json!({"appearance.density":"compact"}))));
+        assert!(!e.store.writing(), "{:?}", e.store.waiting());
+        assert!(e.take_effects().is_empty());
+    }
+
+    #[test]
     fn a_stale_mirror_blocks_writes_before_any_click() {
         let mut e = engine();
         e.store_hint();
@@ -657,7 +748,17 @@ mod tests {
     }
 
     #[test]
-    fn an_unreachable_authority_blocks_writes_until_status_says_current() {
+    fn an_unknown_role_blocks_writes_until_status_answers() {
+        let mut e = Engine::new(|key, _| key.to_owned());
+        e.take_effects();
+        e.store_read(&read("7", json!({})));
+        assert_eq!(e.blocked(), Some(Blocked::Unread));
+        e.store_status(&json!({"role":"authority"}));
+        assert_eq!(e.blocked(), None);
+    }
+
+    #[test]
+    fn an_unreachable_authority_keeps_the_edits_and_sends_them_when_back() {
         let mut e = engine();
         e.set_key("appearance.mode", json!("dark")).unwrap();
         let (t, _, _) = next(&mut e);
@@ -666,15 +767,70 @@ mod tests {
             refused(json!({"status":"authority_unreachable","node":"a"})),
         );
         assert_eq!(e.blocked(), Some(Blocked::AuthorityUnreachable));
-        assert_eq!(
-            e.store.text("appearance.mode").as_deref(),
-            Some("light"),
-            "the write is dropped"
-        );
+        assert_eq!(e.store.text("appearance.mode").as_deref(), Some("dark"));
+        assert_eq!(e.store.waiting(), ["appearance.mode"]);
+        // One lost status answer is retried, not left hanging.
+        let (t, command, _) = next(&mut e);
+        assert_eq!(command, "settings.status");
+        e.stored(t, Err(CallError::from("timed out".to_owned())));
         let (t, command, _) = next(&mut e);
         assert_eq!(command, "settings.status");
         e.stored(t, ok(json!({"role":"mirror","stale":false})));
         assert_eq!(e.blocked(), None);
+        let (t, command, _) = next(&mut e);
+        assert_eq!(command, "settings.get");
+        e.stored(t, ok(read("9", json!({"appearance.mode":"light"}))));
+        let (_, command, body) = next(&mut e);
+        assert_eq!(command, "settings.apply");
+        assert_eq!(body["expected_revision"], "9");
+        assert_eq!(body["changes"], json!({"appearance.mode":"dark"}));
+    }
+
+    #[test]
+    fn a_disconnect_drops_the_call_and_keeps_its_writes() {
+        let mut e = engine();
+        e.set_key("appearance.mode", json!("dark")).unwrap();
+        let (t, _, _) = next(&mut e);
+        e.delivery(citizen::Delivery::Disconnected);
+        // A late answer for the dropped call lands nowhere.
+        e.stored(
+            t,
+            ok(json!({"status":"changed","receipt":{"incarnation":"inc-1","revision":"8"}})),
+        );
+        assert_eq!(e.store.waiting(), ["appearance.mode"]);
+        e.delivery(citizen::Delivery::Connected);
+        let commands: Vec<&str> = e
+            .take_effects()
+            .into_iter()
+            .filter_map(|x| match x {
+                Effect::Store { command, .. } => Some(command),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(commands, ["settings.get"], "a read before the resend");
+    }
+
+    #[test]
+    fn every_page_prefix_is_a_topic_the_pages_read_on() {
+        for prefix in ["shell.panels", "window", "appearance", "wallpaper"] {
+            let topic = settings::topics::keys_topic(crate::appearance::PROFILE, prefix);
+            assert!(is_topic(&topic), "{topic}");
+        }
+    }
+
+    #[test]
+    fn writes_are_checked_against_the_described_catalogue() {
+        let mut e = engine();
+        // settingsd narrowed the hint width to 0..=8.
+        let mut described = settings::registry::describe(None);
+        for key in described["keys"].as_array_mut().unwrap() {
+            if key["path"] == "window.active_hint" {
+                key["max"] = json!(8);
+            }
+        }
+        e.store.catalog = Catalog::from_describe(&described).unwrap();
+        assert!(e.set_key("window.active_hint", json!(9)).is_err());
+        assert!(e.set_key("window.active_hint", json!(8)).is_ok());
     }
 
     #[test]

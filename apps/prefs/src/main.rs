@@ -11,8 +11,9 @@ struct Settings {
     service: String,
     comp: String,
     url: String,
-    /// The page to open (`prefs appearance`, `prefs window-management`).
-    page: Option<String>,
+    /// The page to open and the row to land on (`prefs appearance`,
+    /// `prefs appearance/density`).
+    page: Option<(String, Option<String>)>,
 }
 
 impl Default for Settings {
@@ -31,10 +32,14 @@ fn parse(args: impl Iterator<Item = String>) -> Result<Settings, String> {
     let mut args = args;
     while let Some(arg) = args.next() {
         if !arg.starts_with("--") && settings.page.is_none() {
-            if preferences::nav::page_id(&arg).is_none() {
-                return Err(format!("no such page: {arg}"));
+            let (page, row) = match arg.split_once('/') {
+                Some((page, row)) => (page.to_owned(), Some(row.to_owned())),
+                None => (arg.clone(), None),
+            };
+            if preferences::nav::page_id(&page).is_none() {
+                return Err(format!("no such page: {page}"));
             }
-            settings.page = Some(arg);
+            settings.page = Some((page, row));
             continue;
         }
         let value = args
@@ -63,6 +68,12 @@ fn parse(args: impl Iterator<Item = String>) -> Result<Settings, String> {
 fn run(settings: &Settings) -> Result<(), String> {
     // The desktop profile's change hints wake the Appearance panel.
     let mut topics = preferences::appearance::topics();
+    // The pages read again on every prefix they write.
+    for topic in preferences::store::topics() {
+        if !topics.contains(&topic) {
+            topics.push(topic);
+        }
+    }
     topics.push("backdrop.action.executed".into());
     let (handle, deliveries) =
         citizen::start_with_macros(APP, &settings.service, &settings.url, &topics)?;
@@ -84,8 +95,8 @@ fn run(settings: &Settings) -> Result<(), String> {
             toolkit::decorations::initialise_window(&cc.egui_ctx, cc.winit_window().cloned());
             toolkit::install(&cc.egui_ctx, &theme);
             let mut shell = Shell::new(cc.egui_ctx.clone(), theme, shell_bus, deliveries, comp)?;
-            if let Some(page) = &page {
-                let _ = shell.engine_mut().open_page(page, None);
+            if let Some((page, row)) = &page {
+                let _ = shell.engine_mut().open_page(page, row.as_deref());
             }
             Ok(Box::new(shell))
         }),
@@ -104,7 +115,7 @@ fn main() {
     buildinfo::exit_on_version!(leading);
     if matches!(cli_args.get(1).map(String::as_str), Some("--help" | "-h")) {
         println!(
-            "prefs — MixOS Preferences\nUsage: prefs [PAGE] [--noded-url URL] [--service NAME] [--comp NAME]\nPAGE is a page id from prefs.pages (appearance, panel, window-management, …)"
+            "prefs — MixOS Preferences\nUsage: prefs [PAGE] [--noded-url URL] [--service NAME] [--comp NAME]\nPAGE is a page id from prefs.pages (appearance, panel, window-management, …), optionally /ROW to land on a row (appearance/density)"
         );
         println!("{}", toolkit::debug::HELP);
         return;
@@ -113,12 +124,13 @@ fn main() {
         // One window per session: a second launch raises the first.
         if citizen::probe(&settings.url, &settings.service, APP) {
             // A deep link switches the running window to its page.
-            if let Some(page) = &settings.page {
+            if let Some((page, row)) = &settings.page {
                 citizen::request(
                     &settings.url,
                     &settings.service,
                     "prefs.page.open",
-                    serde_json::json!({ "page": page }),
+                    serde_json::json!({ "page": page, "row": row }),
+
                 )?;
             }
             match citizen::forward(&settings.url, &settings.service, APP) {

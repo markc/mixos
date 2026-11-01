@@ -251,6 +251,88 @@ fn search_lands_on_the_control() {
     assert_eq!(rc, 0);
     assert_eq!(
         body["hits"][0],
-        json!({"page":"appearance","section":"windows","row":"gaps","title":"Gaps around tiled windows"})
+        json!({"page":"appearance","section":"windows","row":"gaps","item":null,"title":"Gaps around tiled windows"})
     );
+}
+
+/// The write path end to end through the one dispatch a click and the Bus
+/// share: three gestures make one apply and one merged second apply on the
+/// receipt's revision; a conflict on that one reads and sends it again.
+#[test]
+fn gestures_merge_and_a_conflict_resends_through_the_dispatch() {
+    use preferences::Effect;
+    let commands = prefs::actions::registry();
+    let mut e = preferences::Engine::new(prefs::label_with);
+    e.take_effects();
+    e.store_read(&json!({"incarnation":"inc-1","revision":"7","values":{}}));
+    e.store_status(&json!({"role":"authority","stale":false}));
+    let gesture = |e: &mut preferences::Engine, key: &str, value: Value| {
+        commands
+            .execute_with(
+                "set",
+                e,
+                json!({"key":key,"value":value}),
+                toolkit::action::Origin::Ui,
+            )
+            .unwrap();
+    };
+    let next = |e: &mut preferences::Engine| {
+        e.take_effects()
+            .into_iter()
+            .find_map(|x| match x {
+                Effect::Store {
+                    ticket,
+                    command,
+                    body,
+                } => Some((ticket, command, body)),
+                _ => None,
+            })
+            .expect("a store call")
+    };
+    let ok = |body: Value| {
+        Ok(citizen::Reply {
+            rc: 0,
+            body: body.to_string(),
+            error: None,
+        })
+    };
+    gesture(&mut e, "appearance.density", json!("compact"));
+    let (t, command, body) = next(&mut e);
+    assert_eq!(command, "settings.apply");
+    assert_eq!(body["changes"], json!({"appearance.density":"compact"}));
+    gesture(&mut e, "appearance.roundness", json!("square"));
+    gesture(&mut e, "appearance.density", json!("spacious"));
+    e.stored(
+        t,
+        ok(json!({"status":"changed","receipt":{"incarnation":"inc-1","revision":"8"}})),
+    );
+    let (t, command, _) = next(&mut e);
+    assert_eq!(command, "settings.get");
+    e.stored(
+        t,
+        ok(json!({"incarnation":"inc-1","revision":"8","values":{"appearance.density":"compact"}})),
+    );
+    let (t, command, body) = next(&mut e);
+    assert_eq!(command, "settings.apply");
+    assert_eq!(body["expected_revision"], "8");
+    let merged = json!({"appearance.density":"spacious","appearance.roundness":"square"});
+    assert_eq!(body["changes"], merged);
+    e.stored(
+        t,
+        Ok(citizen::Reply {
+            rc: 10,
+            body: json!({"status":"conflict","revision":"9"}).to_string(),
+            error: None,
+        }),
+    );
+    let (t, command, _) = next(&mut e);
+    assert_eq!(command, "settings.get");
+    e.stored(
+        t,
+        ok(json!({"incarnation":"inc-1","revision":"9","values":{"appearance.density":"compact"}})),
+    );
+    let (_, command, body) = next(&mut e);
+    assert_eq!(command, "settings.apply");
+    assert_eq!(body["expected_revision"], "9");
+    assert_eq!(body["changes"], merged);
 }

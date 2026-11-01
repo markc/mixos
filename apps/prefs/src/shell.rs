@@ -103,6 +103,11 @@ pub fn apply_ui(engine: &mut Engine, commands: &Registry<Engine>, events: Vec<Ui
             UiEvent::CloseSearch => engine.close_search(),
             UiEvent::FocusDone => engine.nav.focus = None,
             UiEvent::Problem(message) => engine.store.error = Some(message),
+            UiEvent::Item(source, item, action) => {
+                if let Err(error) = engine.item_action(source, &item, &action) {
+                    engine.store.error = Some(error);
+                }
+            }
             UiEvent::Terminal(setting) => engine.edit_terminal(setting),
             UiEvent::Text(setting) => engine.edit_text(setting),
             UiEvent::WallpaperTarget(target) => engine.wallpaper_target(target),
@@ -606,6 +611,15 @@ impl Shell {
                 });
             }
             Effect::Reply { id, rc, body } => self.bus.reply(id, rc, body),
+            // Each source's owner takes its actions as its backend lands
+            // (the stage 5 work list); until then nothing is sent.
+            Effect::Live {
+                source,
+                item,
+                action,
+            } => {
+                toolkit::debug!(app = APP, %source, %item, %action, "live action has no owner yet");
+            }
             Effect::Drive {
                 id,
                 command: command_name,
