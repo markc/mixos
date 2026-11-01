@@ -9097,7 +9097,7 @@ impl Evaluator {
                     }
                     let val = self.eval_expr(value).await?;
                     if self.ctx.function_depth > 0 {
-                        // Inside a function: always create/update in current frame
+                        // Local by default; the setter honours global declarations.
                         self.scope.set_in_current(name.clone(), val);
                     } else {
                         self.scope.update_or_set(name, val);
