@@ -59,12 +59,24 @@ pub struct Opt {
     pub value: Lit,
     /// The message id of its label.
     pub label: &'static str,
+    /// A one-line description under a radio option (COSMIC's power
+    /// modes), as a message id.
+    pub description: Option<&'static str>,
 }
 
 pub const fn opt(value: &'static str, label: &'static str) -> Opt {
     Opt {
         value: Lit::S(value),
         label,
+        description: None,
+    }
+}
+
+impl Opt {
+    /// The option with a one-line description (drawn under a radio).
+    pub const fn described(mut self, description: &'static str) -> Self {
+        self.description = Some(description);
+        self
     }
 }
 
@@ -215,6 +227,11 @@ pub enum Cond {
     Unset(&'static str),
     True(&'static str),
     False(&'static str),
+    /// A backend's presence fact (`power.battery`), reported true by the
+    /// owner of the data ([`crate::Engine::set_fact`]); false until it is.
+    Fact(&'static str),
+    /// The owner reported the fact false (no battery): false until it does.
+    NoFact(&'static str),
 }
 
 impl Cond {
@@ -227,6 +244,8 @@ impl Cond {
             Cond::Unset(key) => store.value(key).is_none_or(|v| v.is_null()),
             Cond::True(key) => store.flag(key),
             Cond::False(key) => !store.flag(key),
+            Cond::Fact(name) => store.facts.get(name) == Some(&true),
+            Cond::NoFact(name) => store.facts.get(name) == Some(&false),
         }
     }
 }
@@ -298,12 +317,26 @@ pub struct Section {
     pub items: Option<Items>,
 }
 
-/// A section's rows from data: the live source, and the message shown
-/// while it holds nothing.
+/// A section's rows from data: the live source, the message shown while
+/// it holds nothing, and how the items are drawn.
 #[derive(Clone, Copy, Debug, Serialize)]
 pub struct Items {
     pub source: &'static str,
     pub empty: &'static str,
+    pub style: ItemStyle,
+}
+
+/// How a section draws its live items.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ItemStyle {
+    /// List rows: icon, title over description, trailing value, buttons
+    /// (networks, startup apps, users).
+    #[default]
+    Rows,
+    /// A two-column grid of read-only readout cards: a 48 px icon, the
+    /// title, the value (Power's connected devices).
+    Cards,
 }
 
 pub fn section(id: &'static str, rows: Vec<Row>) -> Section {
@@ -319,9 +352,28 @@ pub fn section(id: &'static str, rows: Vec<Row>) -> Section {
 impl Section {
     /// Rows from the live list `source`; `empty` while it has none.
     pub fn items(mut self, source: &'static str, empty: &'static str) -> Self {
-        self.items = Some(Items { source, empty });
+        self.items = Some(Items {
+            source,
+            empty,
+            style: ItemStyle::Rows,
+        });
         self
     }
+
+    /// Draw the live items as readout cards (call after [`Self::items`]).
+    pub fn cards(mut self) -> Self {
+        if let Some(items) = &mut self.items {
+            items.style = ItemStyle::Cards;
+        }
+        self
+    }
+
+    /// Drawn only while `cond` holds (a fact such as `power.battery`).
+    pub fn show(mut self, cond: Cond) -> Self {
+        self.show = cond;
+        self
+    }
+
 }
 
 pub fn untitled(id: &'static str, rows: Vec<Row>) -> Section {
@@ -544,6 +596,7 @@ impl Index {
                 }
                 if let Control::Choice { options, .. } = &row.control {
                     keys.extend(options.iter().map(|o| o.label.to_owned()));
+                    keys.extend(options.iter().filter_map(|o| o.description).map(str::to_owned));
                 }
                 entries.push(Entry {
                     page: page.id,

@@ -20,10 +20,14 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 
 /// One row from data.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 pub struct Item {
     /// Stable within its source (an SSID, a connector, a device address).
     pub id: String,
+    /// A Lucide icon name (a card's 48 px device icon, a row's leading
+    /// icon).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
     pub title: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
@@ -53,6 +57,25 @@ impl Engine {
     pub fn set_items(&mut self, source: &str, items: Vec<Item>) {
         self.live.items.insert(source.to_owned(), items);
         self.refresh_hits();
+    }
+
+    /// The owner of the data reports a presence fact (`power.battery`):
+    /// rows and sections shown on [`pages::Cond::Fact`] follow it.
+    pub fn set_fact(&mut self, name: &str, present: bool) {
+        self.store.facts.insert(name.to_owned(), present);
+        self.refresh_hits();
+    }
+
+    /// A choice option's one-line description, from the page's option.
+    pub fn choice_description(&self, row: &pages::Row, value: &Value) -> Option<String> {
+        let pages::Control::Choice { options, .. } = &row.control else {
+            return None;
+        };
+        options
+            .iter()
+            .find(|o| o.value.value() == *value)
+            .and_then(|o| o.description)
+            .map(|d| self.label(d, &[]))
     }
 
     /// The owner of `source` replaces its options (value, shown label).
@@ -247,13 +270,13 @@ mod tests {
         Item {
             id: id.into(),
             title: format!("Network {id}"),
-            description: None,
             value: Some("Connect".into()),
             actions: vec![ItemAction {
                 id: "connect".into(),
                 label: "Connect".into(),
                 enabled: true,
             }],
+            ..Item::default()
         }
     }
 
@@ -276,7 +299,20 @@ mod tests {
     }
 
     #[test]
+    fn a_fact_shows_what_its_backend_reports_and_hides_it_until_then() {
+        let mut e = engine();
+        let cond = pages::Cond::Fact("power.battery");
+        let none = pages::Cond::NoFact("power.battery");
+        assert!(!cond.holds(&e.store) && !none.holds(&e.store), "unreported");
+        e.set_fact("power.battery", false);
+        assert!(!cond.holds(&e.store) && none.holds(&e.store));
+        e.set_fact("power.battery", true);
+        assert!(cond.holds(&e.store));
+    }
+
+    #[test]
     fn an_item_action_on_a_page_without_its_backend_is_refused() {
+
         let mut e = engine();
         e.set_items("wifi.visible", vec![network("home")]);
         assert!(e.item_action("wifi.visible", "home", "connect").is_err());
