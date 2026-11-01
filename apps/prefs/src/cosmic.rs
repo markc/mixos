@@ -440,7 +440,9 @@ fn content(
                             continue;
                         }
                         if index > 0 {
-                            ui.add_space(look.m);
+                            // A plain section stands off further (Wallpaper).
+                            let plain = section.plain || sections[index - 1].plain;
+                            ui.add_space(if plain { look.l } else { look.m });
                         }
                         section_card(ui, engine, page, section, &rows, look, events);
                     }
@@ -744,7 +746,18 @@ pub fn section_card(
         section_heading(ui, look, &label(&pages::section_title(page.id, section.id)));
         ui.add_space(look.xs);
     }
+    // A plain section sits on the page: each row its bare control.
+    if section.plain {
+        for (index, row) in rows.iter().enumerate() {
+            if index > 0 {
+                ui.add_space(look.l);
+            }
+            controls::bare(ui, engine, page, row, look, events);
+        }
+        return;
+    }
     // A lone button row (Reset) sits on the page, not in a card.
+
     if let [row] = rows
         && let Control::Reset { keys } = row.control
     {

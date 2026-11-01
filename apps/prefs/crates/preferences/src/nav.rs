@@ -21,6 +21,9 @@ pub struct Nav {
     pub searching: bool,
     /// The sidebar overlay of the condensed window is open.
     pub sidebar: bool,
+    /// The output tab chosen on an outputs selector (the window's, not a
+    /// setting); none is the default tab.
+    pub output: Option<String>,
     /// The hits for `query`, kept until the query or the values change, so
     /// a repaint never searches.
     #[serde(skip)]
@@ -36,6 +39,7 @@ impl Default for Nav {
             query: String::new(),
             searching: false,
             sidebar: false,
+            output: None,
             hits: Vec::new(),
         }
     }

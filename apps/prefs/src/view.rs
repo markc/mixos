@@ -54,6 +54,8 @@ pub enum UiEvent {
     Problem(String),
     /// A live item's button: (source, item, action).
     Item(&'static str, String, String),
+    /// An outputs selector's tab (none: the default).
+    Output(Option<String>),
     SoftwareGroup(SoftwareGroup),
     Search(String),
     SearchFocused,

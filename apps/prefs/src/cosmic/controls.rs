@@ -204,6 +204,7 @@ fn control_width(ui: &Ui, engine: &Engine, row: &Row) -> f32 {
         }
         Control::Page { .. } | Control::Drawer { .. } => 16.0,
         Control::Reset { .. } => 160.0,
+        Control::Outputs { .. } => 0.0,
         Control::Info => row
             .value_from
             .and_then(|src| engine.live_value(src))
@@ -245,6 +246,7 @@ fn stacked(control: &Control) -> bool {
         Control::Accent
             | Control::Scheme
             | Control::Mode
+            | Control::Outputs { .. }
             | Control::Choice {
                 style: ChoiceStyle::Segmented | ChoiceStyle::Images,
                 ..
@@ -375,6 +377,94 @@ pub fn row(
     }
 }
 
+/// A row drawn on the page without a card or labels (a plain section):
+/// its control alone, the full column wide.
+pub fn bare(
+    ui: &mut Ui,
+    engine: &Engine,
+    page: &Page,
+    row: &Row,
+    look: &Look,
+    events: &mut Vec<UiEvent>,
+) {
+    let enabled = engine.row_blocked(page, row).is_none();
+    let name = title(page.id, row.id);
+    let response = ui
+        .vertical(|ui| {
+            ui.set_width(ui.available_width());
+            ui.add_enabled_ui(enabled, |ui| {
+                control(ui, engine, page, row, &name, look, events)
+            });
+        })
+        .response;
+    if engine.nav.focus == Some((page.id, row.id)) {
+        response.scroll_to_me(Some(Align::Center));
+        events.push(UiEvent::FocusDone);
+    }
+}
+
+/// The display selector (spec 1 §4.1): the "All displays" heading while
+/// `all` holds, else one tab per connected output when there are two or
+/// more, the selected one underlined in the accent.
+fn outputs(ui: &mut Ui, engine: &Engine, all: &str, look: &Look, events: &mut Vec<UiEvent>) {
+    let heading = |ui: &mut Ui, text: &str| {
+        let galley = ui
+            .painter()
+            .layout_no_wrap(text.to_owned(), super::heading(ui, 14.0), look.text);
+        let (rect, response) =
+            ui.allocate_exact_size(vec2(ui.available_width(), 21.0), Sense::hover());
+        ui.painter()
+            .galley(rect.center() - galley.size() / 2.0, galley, look.text);
+        response.widget_info(|| WidgetInfo::labeled(Role::Label, true, text));
+    };
+    if engine.store.flag(all) {
+        heading(ui, &label("opt-all-displays"));
+        return;
+    }
+    let outputs: Vec<(String, String)> = engine
+        .live_options("outputs")
+        .iter()
+        .filter_map(|(v, text)| v.as_str().map(|v| (v.to_owned(), text.clone())))
+        .filter(|(v, _)| v != "all")
+        .collect();
+    if outputs.len() < 2 {
+        return;
+    }
+    let selected = engine.selected_output();
+    let widths: Vec<f32> = outputs
+        .iter()
+        .map(|(_, text)| text_width(ui, text, 14.0) + 2.0 * look.s)
+        .collect();
+    let total: f32 = widths.iter().sum::<f32>() + look.xs * (outputs.len() - 1) as f32;
+    let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), 32.0), Sense::hover());
+    let mut x = row.center().x - total / 2.0;
+    for ((connector, text), width) in outputs.iter().zip(widths) {
+        let rect = Rect::from_min_size(pos2(x, row.min.y), vec2(width, 32.0));
+        x += width + look.xs;
+        let on = selected.as_deref() == Some(connector.as_str());
+        let response = ui.interact(rect, ui.scope_id().with(("output", connector)), Sense::click());
+        if response.hovered() && ui.is_enabled() {
+            ui.painter()
+                .rect_filled(rect, Look::radius(look.r_s), look.card_hover);
+        }
+        ui.painter().text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            text,
+            egui::FontId::proportional(14.0),
+            look.text,
+        );
+        if on {
+            ui.painter()
+                .hline(rect.x_range(), rect.max.y - 1.0, Stroke::new(2.0, look.accent));
+        }
+        response.widget_info(|| WidgetInfo::selected(Role::Tab, ui.is_enabled(), on, text));
+        if response.clicked() && !on {
+            events.push(UiEvent::Output(Some(connector.clone())));
+        }
+    }
+}
+
 fn go(row: &Row, events: &mut Vec<UiEvent>) {
     match row.control {
         Control::Page { page } => events.push(UiEvent::Page(page, None)),
@@ -494,15 +584,20 @@ fn control(
             key,
             style: ChoiceStyle::Dropdown,
             ..
-        } => dropdown(
-            ui,
-            store.value(key),
-            key,
-            &engine.choices(row),
-            name,
-            look,
-            events,
-        ),
+        } => {
+            let value = store.value(key);
+            let unlisted = value.as_ref().and_then(|v| engine.unlisted_label(row, v));
+            dropdown(
+                ui,
+                value,
+                unlisted,
+                key,
+                &engine.choices(row),
+                name,
+                look,
+                events,
+            )
+        }
         Control::Choice {
             key,
             style: ChoiceStyle::Segmented,
@@ -719,6 +814,7 @@ fn control(
                 ui.label(RichText::new(value).size(14.0).color(look.value));
             }
         }
+        Control::Outputs { all } => outputs(ui, engine, all, look, events),
         Control::Ordered { .. } | Control::Append { .. } => {}
         Control::Reset { keys } => {
             if ui.add(standard_button(name, look)).clicked() {
@@ -803,9 +899,12 @@ fn icon_button(ui: &mut Ui, icon: Icon, enabled: bool, name: &str, look: &Look) 
 
 /// The dropdown: the value text and a 16 px caret, no fill and no border
 /// (spec 4 [C2]); the menu it opens keeps its background and radius m.
+/// A stored value the menu does not offer shows as `unlisted`.
+#[allow(clippy::too_many_arguments)]
 fn dropdown(
     ui: &mut Ui,
     value: Option<Value>,
+    unlisted: Option<String>,
     key: &'static str,
     options: &[(Value, String)],
     name: &str,
@@ -815,11 +914,13 @@ fn dropdown(
     let labels: Vec<String> = options.iter().map(|o| o.1.clone()).collect();
     let index = options.iter().position(|o| value.as_ref() == Some(&o.0));
     // A stored value outside the options (a connector) still shows.
-    let shown = match (index, value.as_ref().and_then(Value::as_str)) {
-        (Some(i), _) => labels[i].clone(),
-        (None, Some(text)) => text.to_owned(),
-        (None, None) => String::new(),
+    let shown = match (index, unlisted, value.as_ref().and_then(Value::as_str)) {
+        (Some(i), _, _) => labels[i].clone(),
+        (None, Some(text), _) => text,
+        (None, None, Some(text)) => text.to_owned(),
+        (None, None, None) => String::new(),
     };
+
     let width = dropdown_width(ui, &labels).max(text_width(ui, &shown, 14.0) + 33.0);
     let (rect, response) = ui.allocate_exact_size(vec2(width, 32.0), Sense::click());
     let ink = if ui.is_enabled() {
