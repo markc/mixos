@@ -24,7 +24,7 @@ fn wait_shows($shows,$frames)
     $r = state()
     if $r.rc == 0 then
       for $out in ($r.result.outputs ?? [])
-        if $out.shows == $shows and $out.presented_frames >= $frames then return $r.result end
+        if $out.shows == $shows and $out.presented_view_frames >= $frames then return $r.result end
       end
     end
     sleep(0.2)
@@ -53,14 +53,18 @@ try
   $wall = wait_shows("colour",1)
   $set = $n.call("backdrop-render","backdrop.view.set",{view:"train",args:{train_service:"train-fixture",buildd_service:"train-fixture",renderer:"3d"}})
   must($set.rc == 0,"train selection refused: " .. json_encode($set))
-  $drawn = wait_shows("train",4)
+  $drawn = wait_shows("train",3)
   sleep(1)
   must(process_alive($app),"backdrop died after rendering")
-  $stats = $n.call("train-fixture","fixture.stats",{})
+  for $i = 1 to 40
+    $stats = $n.call("train-fixture","fixture.stats",{})
+    if $stats.rc == 0 and $stats.result.gate > 0 then break end
+    sleep(0.2)
+  end
   must($stats.rc == 0 and $stats.result.queue > 0 and $stats.result.history > 0 and $stats.result.gate > 0,"live reads missing: " .. json_encode($stats))
   $set = $n.call("backdrop-render","backdrop.view.set",{view:"wallpaper"})
   must($set.rc == 0,"wallpaper selection refused")
-  $back = wait_shows("colour",5)
+  $back = wait_shows("colour",1)
   must(process_alive($app) and state().rc == 0,"backdrop not alive/answering after wallpaper switch")
   $log = read_file($run.path .. "/backdrop.log")
   must(not contains($log,"panicked at") and not contains($log,"Validation Error"),"backdrop/GPU panic: " .. $log)

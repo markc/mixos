@@ -290,4 +290,14 @@ mod tests {
         assert!(!s.queue_due(now + TOPIC, false));
         assert!(GATE_TIMEOUT < GATE);
     }
+    #[test]
+    fn gate_timeout_keeps_last_data_and_does_not_poison_the_next_queue_read() {
+        let handle=Handle::scripted(vec![Err("gate request timed out".into()),Ok(citizen::Reply {body:json!({"main":"new"}).to_string(),..Default::default()})]);
+        let mut errors=BTreeMap::new();let mut gate=json!({"batch":"current","stage":1});let mut queue=Value::Null;
+        assert!(!read(&handle,"train","train.gate",json!({}),&mut gate,&mut errors));
+        assert_eq!(gate["stage"],1);
+        assert!(read(&handle,"train","train.queue",json!({}),&mut queue,&mut errors));
+        assert_eq!(queue["main"],"new");
+        assert!(errors.contains_key("train.gate"));assert!(!errors.contains_key("train.queue"));
+    }
 }

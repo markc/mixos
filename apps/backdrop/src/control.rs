@@ -1010,6 +1010,7 @@ impl Controller {
                     "shows": output.shows,
                     "presented_revision": output.revision,
                     "presented_frames": output.frames,
+                    "presented_view_frames": output.view_frames,
                     "error": output.error,
                     "fit": wallpaper_fit(self.display.for_output(Some(name))),
                 })
