@@ -372,55 +372,34 @@ runtime share one name set, <code>builtins::is_reserved_callable</code>.</p>
 <h2 id="01170--2026-10-21">0.117.0 — 2026-10-21</h2>
 <h3 id="added-1">Added</h3>
 <ul>
-<li>
-<p>IPv4 UDP event sources: <code>udp_listen</code>, <code>udp_on</code>, <code>udp_send_from</code>,
-<code>udp_close</code>, <code>udp_unwatch</code> (ws feature), with multicast membership, egress
-interface, pre-bind reuse and generation retirement. <code>udp_send</code> accepts
-<code>{from, ttl}</code> without changing its three-argument form.</p>
-</li>
-<li>
-<p><code>analyzer::Analysis.functions</code> reports named function declarations with
+<li><code>analyzer::Analysis.functions</code> reports named function declarations with
 <code>name</code>, <code>file</code> and <code>line</code>, including nested and duplicate definitions but
 excluding quoted and remote source. <code>mix lint --json</code> and <code>--data</code> expose
-this list in schema 3; every existing key and diagnostic retains its meaning.</p>
-</li>
-<li>
-<p><code>mix lint</code> reads in-file pragmas: <code>-- lint: globals a, b</code> declares
+this list in schema 3; every existing key and diagnostic retains its meaning.</li>
+<li><code>mix lint</code> reads in-file pragmas: <code>-- lint: globals a, b</code> declares
 injected names, <code>-- lint: ignore CODE</code> suppresses CODE on the next line
 holding code (or on its own line when written after code) and
 <code>-- lint: ignore-file CODE</code> suppresses it file-wide. A bare or unknown
 pragma is MIX-E1601; a suppression that matches nothing is the note
-MIX-D3019. An <code>ssh_mix</code> body reads its own pragmas.</p>
-</li>
-<li>
-<p>MIX-W2312: a bareword <code>null</code>, <code>None</code>, <code>undefined</code>, <code>NULL</code> or <code>nullptr</code>
+MIX-D3019. An <code>ssh_mix</code> body reads its own pragmas.</li>
+<li>MIX-W2312: a bareword <code>null</code>, <code>None</code>, <code>undefined</code>, <code>NULL</code> or <code>nullptr</code>
 used as a value is the string "null"; the warning carries a quick fix to
 <code>nil</code> where the word is surely a value. <code>mix lint --fix</code> applies quick
-fixes; <code>--json</code> reports each as <code>fix</code>. <code>Diagnostic</code> gains a <code>fix</code> field.</p>
-</li>
-<li>
-<p>MIX-W2313: a function named after one of the <code>mix</code> binary's shell
+fixes; <code>--json</code> reports each as <code>fix</code>. <code>Diagnostic</code> gains a <code>fix</code> field.</li>
+<li>MIX-W2313: a function named after one of the <code>mix</code> binary's shell
 extensions (<code>ai</code>, <code>ai_diagnose</code>, <code>context</code>). Lint now knows those
 extensions (<code>MIX_SHELL_EXTENSIONS</code>, <code>AnalyzerConfig::extensions</code>), so
-calling one is no longer MIX-E1102.</p>
-</li>
-<li>
-<p>MIX-W2314 / MIX-W2315: member calls into a module bound once to a literal
+calling one is no longer MIX-E1102.</li>
+<li>MIX-W2314 / MIX-W2315: member calls into a module bound once to a literal
 <code>require()</code> path are checked against its exports, for arity and for a
-missing name. Warnings in this release, while the check is new.</p>
-</li>
-<li>
-<p>The parser names the fix for <code>let i = 0</code>, <code>var</code>/<code>const</code>, and a bareword
-<code>i = …</code> ("Mix has no <code>let</code>: write <code>$i = …</code>").</p>
-</li>
-<li>
-<p>Add the <code>archive</code> feature with the <code>tar_list</code>, <code>tar_unpack</code> and <code>tar_pack</code>
+missing name. Warnings in this release, while the check is new.</li>
+<li>The parser names the fix for <code>let i = 0</code>, <code>var</code>/<code>const</code>, and a bareword
+<code>i = …</code> ("Mix has no <code>let</code>: write <code>$i = …</code>").</li>
+<li>Add the <code>archive</code> feature with the <code>tar_list</code>, <code>tar_unpack</code> and <code>tar_pack</code>
 builtins. Archives use zstd (default), gzip or no codec. <code>tar_unpack</code>
 validates every member, extracts into a staging directory and renames it
-into place only after the stream verifies. See <code>mix man tar</code>.</p>
-</li>
-<li>
-<p>Harden archive builtins: count trailing padding against the shared decoded
+into place only after the stream verifies. See <code>mix man tar</code>.</li>
+<li>Harden archive builtins: count trailing padding against the shared decoded
 stream budget, reject oversized declared files before creation and bound
 copying, cap GNU/PAX metadata payloads before buffering, and refuse unread
 gzip input or additional members. Packing captures capabilities only with
@@ -428,10 +407,8 @@ gzip input or additional members. Packing captures capabilities only with
 following replacement symlinks. Rollback restores directory access and
 reports cleanup failures. Empty/truncated zstd headers now raise
 <code>ARCHIVE_STREAM_CORRUPT</code>. GNU sparse entries are refused; <code>tar_list</code> also
-accepts <code>max_entries</code>. Each fix has targeted archive regression coverage.</p>
-</li>
-<li>
-<p>Archive review fixes. <code>tar_unpack</code> restores only <code>user.*</code> xattrs by
+accepts <code>max_entries</code>. Each fix has targeted archive regression coverage.</li>
+<li>Archive review fixes. <code>tar_unpack</code> restores only <code>user.*</code> xattrs by
 default: <code>security.capability</code> needs <code>keep_special_bits:true</code>, and
 <code>trusted.*</code>, POSIX ACLs (<code>system.*</code>) and the rest of <code>security.*</code> need the
 new <code>privileged_xattrs:true</code>. Retained xattr bytes are bounded across the
@@ -445,68 +422,47 @@ capability are dropped; mode and mtime failures raise. PAX global headers
 (<code>git archive</code>) are accepted as metadata (receipt <code>metadata</code>, list kind
 <code>"metadata"</code>). A bare relative dest or output name means the current
 directory. <code>tar_pack</code> refuses an output inside its source and raises when
-a file changes size while it is packed.</p>
-</li>
-<li>
-<p>Archive review, round 2. <code>tar_unpack</code> refuses a dest parent that another
+a file changes size while it is packed.</li>
+<li>Archive review, round 2. <code>tar_unpack</code> refuses a dest parent that another
 user could write (group/other-writable without the sticky bit, or owned by
 neither the caller nor root) before creating anything, and checks the new
 staging directory is the caller's, <code>0700</code> and empty. Without
 <code>RENAME_NOREPLACE</code> the commit now fails closed and rolls back. Implicitly
 created parent directories count against <code>max_entries</code> (receipt
 <code>implicit_dirs</code>). zstd content checksums are verified on unpack and list,
-and <code>tar_pack</code> now writes one.</p>
-</li>
-<li>
-<p><code>analyzer::Analysis</code> carries <code>handlers</code>: one <code>HandlerDeclaration</code> (<code>command</code>,
+and <code>tar_pack</code> now writes one.</li>
+<li><code>analyzer::Analysis</code> carries <code>handlers</code>: one <code>HandlerDeclaration</code> (<code>command</code>,
 <code>file</code>, <code>line</code>) per <code>on &lt;command&gt;</code> statement in the parsed AST, in source
 order, with duplicates kept. <code>analyze()</code> collects them with the existing
 statement walker. Remote <code>ssh_mix</code> bodies are not included. <code>mix lint --json</code>
 and <code>--data</code> report the same list as an additive <code>handlers</code> field. The data
-is structural: it does not prove that a handler runs or is reachable.</p>
-</li>
-<li>
-<p><code>mix_tokens(source[, {comments: true}])</code> returns the real lexer's token
+is structural: it does not prove that a handler runs or is reachable.</li>
+<li><code>mix_tokens(source[, {comments: true}])</code> returns the real lexer's token
 stream as <code>[{kind, text, line, col}]</code>, with the exact source text of each
 token and, on request, the <code>#</code> and <code>--</code> comments. A tool that reads Mix
 source no longer re-derives the grammar. Source that does not lex raises
 <code>MIX_SOURCE_LEX</code> with <code>details {line, col}</code>. Backed by the new
-<code>Lexer::source_tokens</code>. See <code>mix man syntax</code>.</p>
-</li>
-<li>
-<p><code>fsync(path[, {recursive}])</code> makes a file, a directory (its entries, after a
+<code>Lexer::source_tokens</code>. See <code>mix man syntax</code>.</li>
+<li><code>fsync(path[, {recursive}])</code> makes a file, a directory (its entries, after a
 <code>rename</code> or <code>remove</code>) or a whole tree durable, without <code>sync -f</code>'s flush of
 the whole filesystem. It returns the number of inodes synced; a failure
-raises <code>FSYNC_FAILED</code> naming the path.</p>
-</li>
-<li>
-<p><code>dns_query(name, type[, {server, port, timeout, tcp, recurse}])</code> asks one
+raises <code>FSYNC_FAILED</code> naming the path.</li>
+<li><code>dns_query(name, type[, {server, port, timeout, tcp, recurse}])</code> asks one
 DNS server one question and returns the rcode, the <code>aa</code>/<code>ra</code>/<code>tc</code> flags and
 every section with TTLs. Timeouts and unreachable servers come back as
 <code>{ok: false, error_code}</code>. It is the new <code>dns</code> feature (hickory-proto, the
-version mail-auth already uses); the <code>mix</code> binary turns it on.</p>
-</li>
-<li>
-<p><code>walk(dir, {strict: true})</code> raises <code>WALK_UNREADABLE</code>, naming the first
-directory it cannot read or entry it cannot stat, instead of skipping it.</p>
-</li>
-<li>
-<p><code>chown(path, uid, gid, {follow_symlinks: false})</code> changes a symlink itself
-(<code>lchown</code>).</p>
-</li>
-<li>
-<p><code>flock</code> and <code>fcntl_lock</code> take <code>create: false</code>, which refuses a missing lock
-file with <code>LOCK_FILE_MISSING</code> and creates nothing.</p>
-</li>
-<li>
-<p><code>tar_unpack</code> and <code>tar_list</code> accept GNU tar's <code>./</code> member prefix (<code>tar -C dir .</code>); a <code>./</code> directory entry's metadata is applied to <code>dest</code>. Relative
+version mail-auth already uses); the <code>mix</code> binary turns it on.</li>
+<li><code>walk(dir, {strict: true})</code> raises <code>WALK_UNREADABLE</code>, naming the first
+directory it cannot read or entry it cannot stat, instead of skipping it.</li>
+<li><code>chown(path, uid, gid, {follow_symlinks: false})</code> changes a symlink itself
+(<code>lchown</code>).</li>
+<li><code>flock</code> and <code>fcntl_lock</code> take <code>create: false</code>, which refuses a missing lock
+file with <code>LOCK_FILE_MISSING</code> and creates nothing.</li>
+<li><code>tar_unpack</code> and <code>tar_list</code> accept GNU tar's <code>./</code> member prefix (<code>tar -C dir .</code>); a <code>./</code> directory entry's metadata is applied to <code>dest</code>. Relative
 symlinks may climb with leading <code>..</code> while they stay inside <code>dest</code>, judged
 from the link's own directory (<code>demo/lib/alias -&gt; ../bin/demo</code>). Gzip input
-may have several members, as <code>pigz</code> and <code>cat a.gz b.gz</code> write.</p>
-</li>
-<li>
-<p><code>mix man sqlopen</code> documents the SQLite builtins and their modes.</p>
-</li>
+may have several members, as <code>pigz</code> and <code>cat a.gz b.gz</code> write.</li>
+<li><code>mix man sqlopen</code> documents the SQLite builtins and their modes.</li>
 </ul>
 <h3 id="changed-1">Changed</h3>
 <ul>
@@ -582,14 +538,7 @@ correct but calls a non-pure builtin between a send and its check.</li>
 <h2 id="01160">0.116.0</h2>
 <h3 id="added-2">Added</h3>
 <ul>
-<li>
-<p>IPv4 UDP event sources: <code>udp_listen</code>, <code>udp_on</code>, <code>udp_send_from</code>,
-<code>udp_close</code>, <code>udp_unwatch</code> (ws feature), with multicast membership, egress
-interface, pre-bind reuse and generation retirement. <code>udp_send</code> accepts
-<code>{from, ttl}</code> without changing its three-argument form.</p>
-</li>
-<li>
-<p>The remote mix binary is configurable. Every builtin that drives a
+<li>The remote mix binary is configurable. Every builtin that drives a
 remote mix (<code>ssh_mix</code>, <code>ssh_mix_many</code>, <code>ssh_exec</code>, <code>ssh_run</code>'s
 <code>env_transport: "mix"</code>, <code>send_mail</code>'s <code>host</code> hop) resolves it in one
 place: the <code>mix_bin</code> option, else the local env var <code>MIX_REMOTE_BIN</code>
@@ -597,8 +546,7 @@ place: the <code>mix_bin</code> option, else the local env var <code>MIX_REMOTE_
 default. The value is interpolated into the remote command string, so
 it must be an absolute path or a bare name using only <code>[A-Za-z0-9_./+-]</code>;
 anything else raises <code>OPTION_INVALID</code> locally before ssh runs. A host with
-mix only at <code>/opt/mixos/bin/mix</code> used to fail with exit 127.</p>
-</li>
+mix only at <code>/opt/mixos/bin/mix</code> used to fail with exit 127.</li>
 </ul>
 <h3 id="changed-2">Changed</h3>
 <ul>
@@ -609,22 +557,14 @@ raises.</li>
 <h2 id="01150">0.115.0</h2>
 <h3 id="added-3">Added</h3>
 <ul>
-<li>
-<p>IPv4 UDP event sources: <code>udp_listen</code>, <code>udp_on</code>, <code>udp_send_from</code>,
-<code>udp_close</code>, <code>udp_unwatch</code> (ws feature), with multicast membership, egress
-interface, pre-bind reuse and generation retirement. <code>udp_send</code> accepts
-<code>{from, ttl}</code> without changing its three-argument form.</p>
-</li>
-<li>
-<p><code>unix_connect(path[, {timeout, frame}])</code>: a client for a local
+<li><code>unix_connect(path[, {timeout, frame}])</code>: a client for a local
 unix-domain stream socket, in <code>tcp_connect</code>'s handle space, so
 <code>tcp_send</code>, <code>tcp_recv</code>, <code>tcp_recv_line</code>, <code>tcp_on</code> and <code>tcp_close</code> take it.
 The connect is bounded by <code>timeout</code> and fails at once on a full backlog
 (<code>UNIX_CONNECT_BUSY</code>). <code>frame: "nul"</code> makes a line a NUL-terminated
 frame, the framing of systemd's Varlink services and of hostd, for
 <code>tcp_recv_line</code> and <code>tcp_on {frame: "line"}</code> alike. Refusals carry
-<code>UNIX_CONNECT_*</code> codes. <code>mix man system</code> documents it.</p>
-</li>
+<code>UNIX_CONNECT_*</code> codes. <code>mix man system</code> documents it.</li>
 </ul>
 <h3 id="changed-3">Changed</h3>
 <ul>
@@ -659,38 +599,22 @@ as they do after <code>send</code>.</li>
 <h2 id="01130">0.113.0</h2>
 <h3 id="added-4">Added</h3>
 <ul>
-<li>
-<p>IPv4 UDP event sources: <code>udp_listen</code>, <code>udp_on</code>, <code>udp_send_from</code>,
-<code>udp_close</code>, <code>udp_unwatch</code> (ws feature), with multicast membership, egress
-interface, pre-bind reuse and generation retirement. <code>udp_send</code> accepts
-<code>{from, ttl}</code> without changing its three-argument form.</p>
-</li>
-<li>
-<p><code>mime_type(path[, {content}])</code>: a file's type from the freedesktop
+<li><code>mime_type(path[, {content}])</code>: a file's type from the freedesktop
 shared-mime-info database, decided by GLib's rules, so it agrees with
 <code>gio info</code> and the file manager (checked against GIO on 5,047 files).
 Returns <code>{mime, by, uncertain, exists, parents}</code>. Behind the new <code>mime</code>
-feature, through the new <code>mimedb</code> crate. <code>mix man io</code> documents it.</p>
-</li>
+feature, through the new <code>mimedb</code> crate. <code>mix man io</code> documents it.</li>
 </ul>
 <h2 id="01121">0.112.1</h2>
 <h3 id="added-5">Added</h3>
 <ul>
-<li>
-<p>IPv4 UDP event sources: <code>udp_listen</code>, <code>udp_on</code>, <code>udp_send_from</code>,
-<code>udp_close</code>, <code>udp_unwatch</code> (ws feature), with multicast membership, egress
-interface, pre-bind reuse and generation retirement. <code>udp_send</code> accepts
-<code>{from, ttl}</code> without changing its three-argument form.</p>
-</li>
-<li>
-<p><code>tcp_send(handle, payload[, {timeout}])</code>: one deadline bounds the whole
+<li><code>tcp_send(handle, payload[, {timeout}])</code>: one deadline bounds the whole
 send, however many partial writes a slow reader forces (seconds, 0 = wait
 forever). On expiry it raises <code>TCP_SEND_TIMEOUT</code> with
 <code>details: {written, total}</code> and retires the handle; bytes already written
 stay written. The wait honours SIGTERM and Ctrl-C. On a <code>tcp_on</code> handle
 the timeout is the receipt deadline. Without the option <code>tcp_send</code> is
-unchanged.</p>
-</li>
+unchanged.</li>
 </ul>
 <h3 id="fixed-4">Fixed</h3>
 <ul>
@@ -712,14 +636,7 @@ forever instead of overflowing the deadline.</li>
 <h2 id="01120">0.112.0</h2>
 <h3 id="added-6">Added</h3>
 <ul>
-<li>
-<p>IPv4 UDP event sources: <code>udp_listen</code>, <code>udp_on</code>, <code>udp_send_from</code>,
-<code>udp_close</code>, <code>udp_unwatch</code> (ws feature), with multicast membership, egress
-interface, pre-bind reuse and generation retirement. <code>udp_send</code> accepts
-<code>{from, ttl}</code> without changing its three-argument form.</p>
-</li>
-<li>
-<p>Server-side TCP. <code>tcp_listen(host, port[, {backlog}])</code> binds and listens
+<li>Server-side TCP. <code>tcp_listen(host, port[, {backlog}])</code> binds and listens
 and returns a listener handle; <code>host</code> is required (<code>"127.0.0.1"</code> is the
 normal choice) and port 0 takes an ephemeral port. <code>tcp_local_addr(handle)</code>
 returns <code>{host, port}</code> for a listener or connection.
@@ -731,21 +648,15 @@ connection, and <code>tcp_accept(source)</code> reads that source outside serve 
 belong to the evaluator generation and close when it retires. Errors
 carry stable codes (<code>TCP_LISTEN_ADDR_IN_USE</code>, <code>TCP_LISTEN_PERMISSION</code>,
 <code>TCP_LISTEN_ADDR_UNAVAILABLE</code>, <code>TCP_LISTEN_ADDRESS</code>, <code>TCP_LISTEN_ARGUMENT</code>,
-<code>TCP_ACCEPT_HANDLE</code>, <code>TCP_HANDLE_LIMIT</code>, <code>TCP_LISTENER</code>).</p>
-</li>
-<li>
-<p>The handle limit is server-side: at most 1024 listeners and accepted
+<code>TCP_ACCEPT_HANDLE</code>, <code>TCP_HANDLE_LIMIT</code>, <code>TCP_LISTENER</code>).</li>
+<li>The handle limit is server-side: at most 1024 listeners and accepted
 connections are live at once, each holding a slot until it closes, and
 <code>tcp_listen</code> and <code>tcp_accept</code> refuse with <code>TCP_HANDLE_LIMIT</code> past it.
-<code>tcp_connect</code> is not limited and behaves as before.</p>
-</li>
-<li>
-<p>A blocking <code>tcp_accept</code> wakes promptly on Ctrl-C through a SIGINT wake
+<code>tcp_connect</code> is not limited and behaves as before.</li>
+<li>A blocking <code>tcp_accept</code> wakes promptly on Ctrl-C through a SIGINT wake
 socket that <code>interrupt::init</code> installs, and rechecks the interrupt flag at
-least every 250 ms, so no waiter misses it.</p>
-</li>
-<li>
-<p><code>on @.command</code> registers a handler under the serve name: the unquoted <code>@</code> is
+least every 250 ms, so no waiter misses it.</li>
+<li><code>on @.command</code> registers a handler under the serve name: the unquoted <code>@</code> is
 replaced by the <code>--serve</code> name (the value <code>serve_name()</code> returns) when the
 handler registers, so one generic script run as <code>--name photo</code> answers
 <code>photo.command</code> and a second instance as <code>--name other</code> answers <code>other.command</code>.
@@ -757,8 +668,7 @@ segment that isn't a bare name (<code>on @."a.b"</code>) and <code>@</code> in a
 parse errors (an unquoted <code>@</code> was a lexer error before). Positions that read
 raw source text now accept <code>@</code> as an ordinary character where it used to
 fail lexing: a bareword <code>source</code>/<code>include</code> path (<code>source ./foo@bar.mix</code>) and
-the command after <code>|</code> (<code>print(1) | cat @foo</code>).</p>
-</li>
+the command after <code>|</code> (<code>print(1) | cat @foo</code>).</li>
 </ul>
 <h3 id="fixed-5">Fixed</h3>
 <ul>
@@ -769,20 +679,12 @@ fails with <code>HTTP_BODY</code>, so ETag polling works.</li>
 <h2 id="01110">0.111.0</h2>
 <h3 id="added-7">Added</h3>
 <ul>
-<li>
-<p>IPv4 UDP event sources: <code>udp_listen</code>, <code>udp_on</code>, <code>udp_send_from</code>,
-<code>udp_close</code>, <code>udp_unwatch</code> (ws feature), with multicast membership, egress
-interface, pre-bind reuse and generation retirement. <code>udp_send</code> accepts
-<code>{from, ttl}</code> without changing its three-argument form.</p>
-</li>
-<li>
-<p><code>script_path()</code> returns the entry script's absolute, symlink-resolved path,
+<li><code>script_path()</code> returns the entry script's absolute, symlink-resolved path,
 the same answer as <code>realpath($0)</code>, fixed when the script starts (a later
 <code>chdir()</code>, including one in the prelude, does not move it). It is nil under
 <code>mix -c</code>, in the REPL, for <code>mix -</code> and when the path cannot be resolved at
 start. A <code>require</code>d module, even during its top-level init, gets the entry
-script's path.</p>
-</li>
+script's path.</li>
 </ul>
 <h3 id="fixed-6">Fixed</h3>
 <ul>

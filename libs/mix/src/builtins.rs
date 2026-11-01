@@ -22621,7 +22621,7 @@ mod ws_client {
     use tungstenite::stream::MaybeTlsStream;
 
     pub(super) type WsConn = tungstenite::WebSocket<MaybeTlsStream<std::net::TcpStream>>;
-    pub(crate) static NEXT_ID: AtomicU64 = AtomicU64::new(1);
+    pub(super) static NEXT_ID: AtomicU64 = AtomicU64::new(1);
     pub(super) static MAP: LazyLock<Mutex<HashMap<u64, WsConn>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
 
@@ -26820,11 +26820,8 @@ pub(crate) mod socket_sources {
             )
         }
 
-        /// A subscribed tcp_listen listener. The reader parks in poll(2)
-        /// on (listener, cancel) with no timer, and turns each accepted
-        /// connection into one ordered `accepted` record. Cancellation,
-        /// overflow and the single terminal record follow the connection
-        /// reader's rules; a listener has no sends.
+        /// Read complete datagrams into the generation's ordered FIFO.
+        /// The registry retains the socket for nonblocking reply sends.
         pub(crate) fn spawn_udp(
             queue: Arc<Queue>,
             id: String,
@@ -26887,6 +26884,11 @@ pub(crate) mod socket_sources {
             result
         }
 
+        /// A subscribed tcp_listen listener. The reader parks in poll(2)
+        /// on (listener, cancel) with no timer, and turns each accepted
+        /// connection into one ordered `accepted` record. Cancellation,
+        /// overflow and the single terminal record follow the connection
+        /// reader's rules; a listener has no sends.
         pub(super) fn spawn_listener(
             queue: Arc<Queue>,
             id: String,
