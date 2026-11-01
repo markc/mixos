@@ -1528,7 +1528,7 @@ pub fn append(
     let mut filter: String = ui.data(|d| d.get_temp(filter_id)).unwrap_or_default();
     let search = ui.add(
         egui::TextEdit::singleline(&mut filter)
-            .hint_text(label("list-search"))
+            .hint_text(label("search-hint"))
             .desired_width(ui.available_width()),
     );
     if search.changed() {
