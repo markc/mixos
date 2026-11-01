@@ -36,7 +36,7 @@ pub(super) fn pages() -> Vec<Page> {
         page("sound", "volume-2", None, Body::Pending),
         pending("sound_applications", "audio-lines", "sound"),
         pending("sound_profiles", "speaker", "sound"),
-        page("power", "battery-medium", None, Body::Pending),
+        super::power::page(),
         list("input", "keyboard"),
         super::input::keyboard(),
         pending("keyboard_shortcuts", "command", "keyboard"),
