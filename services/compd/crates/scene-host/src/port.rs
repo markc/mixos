@@ -1775,7 +1775,7 @@ mod tests {
             } else {
                 None
             };
-            let (mut port, mut wake) = menu_registry_port(&url, cache.path());
+            let (port, mut wake) = menu_registry_port(&url, cache.path());
             // No scenes have been loaded: the baseline is the whole broker
             // registry, including an app already running before compd starts.
             let names =
@@ -1793,7 +1793,7 @@ mod tests {
                 wait_menu_registry(&port, &mut wake, true, "host-first/app-arrival").await;
             }
             port.finish();
-            let (mut restarted, mut wake) = menu_registry_port(&url, cache.path());
+            let (restarted, mut wake) = menu_registry_port(&url, cache.path());
             // The app did not reconnect. A subscribe-only host cannot pass:
             // the registry topic is not retained; it needs an initial read.
             wait_menu_registry(&restarted, &mut wake, true, &format!("{case}/host-restart")).await;
