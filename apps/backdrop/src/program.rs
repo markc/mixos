@@ -504,7 +504,11 @@ impl LayerProgram for Backdrop {
         };
         let mut shared = lock(&self.shared);
         let frames = shared.outputs.get(&name).map_or(1, |o| o.frames + 1);
-        let view_frames = shared.outputs.get(&name).filter(|o|o.shows==self.shows).map_or(1,|o|o.view_frames+1);
+        let view_frames = shared
+            .outputs
+            .get(&name)
+            .filter(|o| o.shows == self.shows)
+            .map_or(1, |o| o.view_frames + 1);
         shared.outputs.insert(
             name,
             OutputStatus {
