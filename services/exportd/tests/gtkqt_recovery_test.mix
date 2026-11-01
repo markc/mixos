@@ -1,0 +1,151 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Recovery and destination-policy regressions, on a private broker and temp trees.
+$here = dirname(realpath($0))
+$pb = require("../../../tests/lib/private_bus.mix")
+$mix = env("MIXOS_TEST_MIX", mixos_path("prefix") .. "/bin/mix")
+$tmp = "/var/tmp/gtkqt-recovery-" .. uuid()
+$bus = nil
+$pids = []
+fn check($name, $ok)
+  if not $ok then raise("TEST", $name) end
+  print("PASS " .. $name)
+end
+fn call($name, $command)
+  send $name $command body="{}" timeout=10
+  return {rc: $rc, v: if type($result) == "string" then json_parse($result) else $result end}
+end
+fn eventually($f)
+  for $i = 1 to 100
+    try if $f() then return true end catch $m end
+    sleep(0.1)
+  end
+  return false
+end
+fn start_case($cfg, $home, $state)
+  $name = "gtkqt-" .. slice(uuid(), 0, 8)
+  $env = merge($pb.client_env($bus), {MIX_STATS: "off", HOME: $home, XDG_CONFIG_HOME: $cfg,
+    XDG_DATA_HOME: $tmp .. "/data", XDG_DATA_DIRS: $tmp .. "/none", PATH: "/nonexistent",
+    MIXOS_SETTINGS_INSTANCE: "toolkit-test", MIXOS_EXPORTD_STATE: $state})
+  $pid = spawn([$mix, "--serve", $here .. "/../scripts/gtkqt.mix", "--name", $name],
+    {detach: true, env: $env, stdout: {file: $tmp .. "/" .. $name .. ".log"}, stderr: "stdout"})
+  push($pids, $pid)
+  check("citizen ready " .. $name, eventually(fn() = call($name, "exportd.gtkqt.status").rc == 0))
+  return {pid: $pid, name: $name}
+end
+fn stop_case($case)
+  kill($case.pid, 15)
+  check("citizen stops", eventually(fn() = not process_alive($case.pid)))
+end
+fn status($case)
+  return call($case.name, "exportd.gtkqt.status").v
+end
+fn record($state, $value)
+  mkdir($state)
+  write_file($state .. "/records.json", json_encode($value))
+end
+try
+  $bus = $pb.start({dir: $tmp .. "/bus", name: "gtkqt-recovery"})
+  push($pids, spawn([$mix, "--serve", $here .. "/fixtures/gtkqt_settingsd.mix", "--name", "settingsd"],
+    {detach: true, env: $pb.client_env($bus), stdout: {file: $tmp .. "/settingsd.log"}, stderr: "stdout"}))
+  check("authority ready", eventually(fn() = call("settingsd", "settings.get").rc == 0))
+
+  for $kind in ["root", "parent", "gtk-4.0", "qt6ct"]
+    $dir = $tmp .. "/link-" .. $kind
+    $cfg = $dir .. "/config"
+    $target = $dir .. "/target"
+    mkdir($target)
+    if $kind == "root" then symlink($target, $cfg)
+    elif $kind == "parent" then symlink($target, $dir .. "/alias"); $cfg = $dir .. "/alias/config"
+    else mkdir($cfg); symlink($target, $cfg .. "/" .. $kind) end
+    $case = start_case($cfg, $tmp .. "/home", $dir .. "/state")
+    check("symlinked ancestor refused: " .. $kind, eventually(fn() = status($case).last_error.code == "SYMLINK"))
+    check("link target untouched", len(ls($target)) == 0)
+    stop_case($case)
+  end
+
+  $home = $tmp .. "/real-home"
+  mkdir($home)
+  symlink($home, $tmp .. "/home-alias")
+  for $cfg in [$home .. "/.config", $home .. "/./.config/"]
+    $case = start_case($cfg, $tmp .. "/home-alias", $tmp .. "/home-state-" .. uuid())
+    check("canonical HOME/.config refused", status($case).skip != nil and not is_dir($home .. "/.config"))
+    stop_case($case)
+  end
+  mkdir($home .. "/.config")
+  symlink($home .. "/.config", $tmp .. "/xdg-alias")
+  $case = start_case($tmp .. "/xdg-alias", $home, $tmp .. "/xdg-state")
+  check("XDG_CONFIG_HOME link to HOME/.config refused", eventually(fn() = status($case).last_error.code == "SYMLINK"))
+  check("HOME config untouched", len(ls($home .. "/.config")) == 0)
+  stop_case($case)
+
+  for $bad in ["{broken", "{\"files\":[],\"keys\":{},\"paused\":false}"]
+    $dir = $tmp .. "/corrupt-" .. uuid()
+    mkdir($dir .. "/state")
+    write_file($dir .. "/state/records.json", $bad)
+    $case = start_case($dir .. "/config", $tmp .. "/home", $dir .. "/state")
+    check("corrupt records serve status without a crash loop", process_alive($case.pid) and contains(status($case).skip, "unreadable records.json"))
+    check("corrupt evidence is never overwritten", call($case.name, "exportd.gtkqt.reconcile").rc == 10 and read_file($dir .. "/state/records.json") == $bad and not is_dir($dir .. "/config"))
+    stop_case($case)
+  end
+
+  -- A late reconcile error follows several successful file writes.
+  $dir = $tmp .. "/partial"
+  $cfg = $dir .. "/config"
+  mkdir($cfg .. "/gtk-4.0/mixos")
+  write_file($cfg .. "/gtk-4.0/mixos/dark.css", "original css\n")
+  mkdir($cfg .. "/gtk-3.0/settings.ini")
+  $case = start_case($cfg, $tmp .. "/home", $dir .. "/state")
+  check("late failure reached after writes", eventually(fn() = status($case).outcome == "error") and read_file($cfg .. "/gtk-4.0/mixos/dark.css") != "original css\n")
+  check("original durable before reconcile completed", json_parse(read_file($dir .. "/state/records.json")).files[$cfg .. "/gtk-4.0/mixos/dark.css"].original.data == "original css\n")
+  stop_case($case)
+  remove_dir($cfg .. "/gtk-3.0/settings.ini")
+  $case = start_case($cfg, $tmp .. "/home", $dir .. "/state")
+  check("undo after restart keeps original bytes", call($case.name, "exportd.gtkqt.undo").rc == 0 and read_file($cfg .. "/gtk-4.0/mixos/dark.css") == "original css\n")
+  stop_case($case)
+
+  -- Crash windows immediately before/after a journalled atomic write.
+  for $already_written in [false, true]
+    $dir = $tmp .. "/intent-" .. uuid()
+    $cfg = $dir .. "/config"
+    $path = $cfg .. "/ours.css"
+    mkdir($cfg)
+    $before = {kind: "file", data: "original"}
+    $after = {kind: "file", data: "exported"}
+    write_file($path, if $already_written then "exported" else "original" end)
+    $files = {}
+    $files[$path] = {original: $before, written: $after}
+    record($dir .. "/state", {files: $files, keys: {}, paused: true,
+      pending: {path: $path, before: $before, after: $after}})
+    $case = start_case($cfg, $tmp .. "/home", $dir .. "/state")
+    check("pending intent recovered idempotently", eventually(fn() = status($case).outcome == "paused") and read_file($path) == "exported")
+    check("original survives either crash window", call($case.name, "exportd.gtkqt.undo").rc == 0 and read_file($path) == "original")
+    stop_case($case)
+  end
+
+  -- An undo failure persists pause and keeps unfinished records for retry.
+  $dir = $tmp .. "/undo"
+  $cfg = $dir .. "/config"
+  mkdir($cfg .. "/a")
+  mkdir($cfg .. "/z")
+  write_file($cfg .. "/a/file", "exported")
+  write_file($cfg .. "/z/file", "exported")
+  $files = {}
+  for $part in ["a", "z"] $files[$cfg .. "/" .. $part .. "/file"] = {original: {kind: "file", data: "original"}, written: {kind: "file", data: "exported"}} end
+  record($dir .. "/state", {files: $files, keys: {}, paused: true})
+  $case = start_case($cfg, $tmp .. "/home", $dir .. "/state")
+  rename($cfg .. "/z", $cfg .. "/saved-z")
+  symlink($cfg .. "/saved-z", $cfg .. "/z")
+  check("undo error returned", call($case.name, "exportd.gtkqt.undo").rc == 10)
+  check("undo persisted pause before touching files", json_parse(read_file($dir .. "/state/records.json")).paused)
+  stop_case($case)
+  remove($cfg .. "/z")
+  rename($cfg .. "/saved-z", $cfg .. "/z")
+  $case = start_case($cfg, $tmp .. "/home", $dir .. "/state")
+  check("interrupted undo resumes safely", call($case.name, "exportd.gtkqt.undo").rc == 0 and read_file($cfg .. "/a/file") == "original" and read_file($cfg .. "/z/file") == "original")
+  stop_case($case)
+finally
+  for $pid in $pids if process_alive($pid) then kill($pid, 15) end end
+  if $bus != nil then $pb.stop($bus) end
+end
+print("PASS GTK/Qt recovery; logs: " .. $tmp)

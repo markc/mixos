@@ -11348,6 +11348,8 @@ GTK and Qt. Its commands are `exportd.gtkqt.status`, `.reconcile` and
 
 See the [changelog](changelog.md).
 
+Both desktop exporters read all values and the palette at one incarnation and revision, retrying a moving record before writing. Prefix topics are hints, never snapshot fragments. KDE broadcasts use busctl emit OBJECT INTERFACE SIGNAL (no positional service). Wallpaper RGB triples refuse non-opaque alpha; KDE hint colours are composited over each mode\u0027s titlebar.
+
 ---
 
 <!-- page: https://mixos.dev/exportd/gtkqt/ (source: https://mixos.dev/exportd/gtkqt.md) -->
@@ -11466,6 +11468,8 @@ mix services/exportd/tests/gtkqt_export_test.mix
 
 The source is
 [`services/exportd`](https://github.com/markc/mixos/tree/main/services/exportd).
+
+Each file mutation has a durable write-ahead intent. Restart recovers an interrupted operation without losing the original. Undo persists its pause first and can be repeated after interruption. Hand-edit records survive undo and reconcile; generated empty INI files and owned backup copies are removed. An unreadable records.json is preserved and reported through status; writes remain refused until it is repaired. Every config ancestor must be a plain directory, and HOME/.config is also checked against the canonical HOME path.
 
 ---
 
@@ -37684,6 +37688,8 @@ dependencies.
 
 The contract, with its status, is in [docs/docs/spec/portal](../docs/spec/portal/README.md).
 
+When the export gate removes accent-color, SettingChanged sends (-1, -1, -1), the portal specification\u0027s out-of-range unset sentinel. A returning accent sends its actual RGB tuple.
+
 ---
 
 <!-- page: https://mixos.dev/prefs/ (source: https://mixos.dev/prefs/README.md) -->
@@ -41393,6 +41399,8 @@ the predecessor repository at revision
 - The GTK and Qt exporter (`scripts/gtkqt.mix`): libadwaita colours with
   mode links, settings.ini keys, qt5ct/qt6ct schemes and config, with
   hand edits kept and undo.
+
+- Review fixes: coherent desktop record reads, COSMIC live topic delivery, GTK/Qt durable recovery and path refusals, KDE alpha hints and undo notifications, and strict busctl fixture arguments.
 
 ---
 

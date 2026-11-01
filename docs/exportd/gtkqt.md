@@ -117,3 +117,5 @@ mix services/exportd/tests/gtkqt_export_test.mix
 
 The source is
 [`services/exportd`](https://github.com/markc/mixos/tree/main/services/exportd).
+
+Each file mutation has a durable write-ahead intent. Restart recovers an interrupted operation without losing the original. Undo persists its pause first and can be repeated after interruption. Hand-edit records survive undo and reconcile; generated empty INI files and owned backup copies are removed. An unreadable records.json is preserved and reported through status; writes remain refused until it is repaired. Every config ancestor must be a plain directory, and HOME/.config is also checked against the canonical HOME path.

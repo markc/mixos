@@ -318,3 +318,5 @@ dependencies.
   remote.
 
 The contract, with its status, is in [docs/docs/spec/portal](../docs/spec/portal/README.md).
+
+When the export gate removes accent-color, SettingChanged sends (-1, -1, -1), the portal specification\u0027s out-of-range unset sentinel. A returning accent sends its actual RGB tuple.

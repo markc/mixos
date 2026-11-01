@@ -64,9 +64,6 @@ $_APPLETS = {
   input: "com.system76.CosmicAppletInputSources",
   tiling: "com.system76.CosmicAppletTiling"
 }
--- Carried CosmicBackground fields COSMIC's UI never edits, as shipped.
-$_BACKGROUND_CARRIED = [["filter_by_theme", "#true"], ["filter_method", "Lanczos"],
-  ["sampling_method", "Alphanumeric"]]
 
 fn _get($v, $k, $default)
   if has_key($v, $k) and $v[$k] != nil then return $v[$k] end
@@ -80,6 +77,10 @@ end
 
 -- "#rrggbb" as COSMIC's float triple.
 fn _rgb($hex)
+  if not re_match($hex, "^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$") then raise("COLOUR", "invalid wallpaper colour") end
+  -- This target format has RGB triples, no alpha channel. Refuse a lossy
+  -- export rather than silently turning a translucent wallpaper opaque.
+  if len($hex) == 9 and lower(slice($hex, 7, 9)) != "ff" then raise("WALLPAPER_ALPHA", "COSMIC wallpaper RGB triples cannot represent alpha") end
   $h = lower(slice($hex, 1, 7))
   $digits = "0123456789abcdef"
   $ch = fn($i) = (index_of($digits, slice($h, $i, $i + 1)) * 16 + index_of($digits, slice($h, $i + 1, $i + 2))) / 255

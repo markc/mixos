@@ -1,0 +1,81 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- The real COSMIC citizen on a private broker; never a desktop config.
+$here = dirname(realpath($0))
+$pb = require("../../../tests/lib/private_bus.mix")
+$mix = env("MIXOS_TEST_MIX", mixos_path("prefix") .. "/bin/mix")
+$pal = json_parse(read_file($here .. "/../../../libs/design/tests/fixtures/palette/mixos.json"))
+$tmp = "/var/tmp/cosmic-live-" .. uuid()
+$root = $tmp .. "/cosmic"
+$fake = $tmp .. "/authority"
+$bus = nil
+$pids = []
+fn check($name, $ok)
+  if not $ok then raise("TEST", $name) end
+  print("PASS " .. $name)
+end
+fn call($target, $command, $body)
+  send $target $command body=json_encode($body) timeout=10
+  return {rc: $rc, v: if type($result) == "string" then json_parse($result) else $result end}
+end
+fn eventually($f)
+  for $i = 1 to 100
+    try if $f() then return true end catch $m end
+    sleep(0.1)
+  end
+  return false
+end
+fn authority($revision, $mode, $gap, $incarnation)
+  $b = {instance: "test", profile: "default"}
+  write_file($fake .. "/get.json", json_encode({status: "current", binding: $b, incarnation: $incarnation,
+    revision: $revision, resolved: {mode: $mode}, values: {"appearance.export_desktop": true, "window.gaps": $gap}}))
+  write_file($fake .. "/palette.json", json_encode({status: "current", binding: $b, incarnation: $incarnation,
+    revision: $revision, palette: $pal}))
+end
+fn revision()
+  return call("cosmic-test", "exportd.cosmic.status", {}).v.revision
+end
+try
+  mkdir($fake)
+  authority("1", "dark", 0, "one")
+  $bus = $pb.start({dir: $tmp .. "/bus", name: "cosmic-test"})
+  $env = merge($pb.client_env($bus), {MIX_STATS: "off", FAKE_SETTINGS_DIR: $fake,
+    MIXOS_SETTINGS_SERVICE: "authority", MIXOS_SETTINGS_INSTANCE: "test", MIXOS_EXPORTD_COSMIC_ROOT: $root,
+    MIXOS_EXPORTD_STATE: $tmp .. "/state", HOME: $tmp .. "/home"})
+  push($pids, spawn([$mix, "--serve", $here .. "/fixtures/fake_settingsd.mix", "--name", "authority"],
+    {detach: true, env: $env, stdout: {file: $tmp .. "/authority.log"}, stderr: "stdout"}))
+  check("authority ready", eventually(fn() = call("authority", "fake.calls", {}).rc == 0))
+  push($pids, spawn([$mix, "--serve", $here .. "/../scripts/cosmic.mix", "--name", "cosmic-test"],
+    {detach: true, env: $env, stdout: {file: $tmp .. "/export.log"}, stderr: "stdout"}))
+  check("initial whole-record reconcile", eventually(fn() = revision() == "1"))
+  -- A revision changes TWO prefixes, but only appearance has been published.
+  authority("2", "light", 17, "one")
+  call("authority", "fake.publish", {prefix: "appearance"})
+  check("JSON topic body follows a live revision", eventually(fn() = revision() == "2"))
+  check("no stale window prefix in the appearance burst", contains(read_file($root .. "/com.system76.CosmicTheme.Dark.Builder/v2/gaps"), "17"))
+  check("mode follows without restart", read_file($root .. "/com.system76.CosmicTheme.Mode/v1/is_dark") == "false")
+  $calls = call("authority", "fake.calls", {}).v
+  call("authority", "fake.publish", {prefix: "window"})
+  sleep(0.3)
+  check("second prefix of the revision does not reread", deep_eq(call("authority", "fake.calls", {}).v, $calls))
+  authority("3", "dark", 23, "one")
+  call("authority", "fake.skew", {count: -1})
+  call("authority", "fake.publish", {prefix: "window"})
+  check("values/palette revision mismatch is reported", eventually(fn() = call("cosmic-test", "exportd.cosmic.status", {}).v.last.error != nil))
+  check("a mixed palette writes nothing", read_file($root .. "/com.system76.CosmicTheme.Mode/v1/is_dark") == "false" and
+    contains(read_file($root .. "/com.system76.CosmicTheme.Dark.Builder/v2/gaps"), "17"))
+  call("authority", "fake.skew", {count: 1, incarnation: "foreign"})
+  call("authority", "fake.publish", {prefix: "window"})
+  check("moving palette retries to a fenced record", eventually(fn() = revision() == "3"))
+  authority("1", "light", 7, "two")
+  call("authority", "fake.publish", {prefix: "appearance"})
+  check("new incarnation may restart revision numbering", eventually(fn() = call("cosmic-test", "exportd.cosmic.status", {}).v.last.incarnation == "two"))
+  $registry = load_data($here .. "/../../../docs/docs/spec/bus/commands.conf.mix")
+  $expected = sort(map(filter($registry.commands, fn($r) = starts_with($r.name, "exportd.cosmic.")), fn($r) = $r.name))
+  $help = call("cosmic-test", "HELP", {}).v
+  check("runtime commands match registry", deep_eq($expected, sort(map(filter($help, fn($r) = starts_with($r.name, "exportd.cosmic.")), fn($r) = $r.name))))
+finally
+  for $pid in $pids if process_alive($pid) then kill($pid, 15) end end
+  if $bus != nil then $pb.stop($bus) end
+end
+print("PASS cosmic live export; logs: " .. $tmp)

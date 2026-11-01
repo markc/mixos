@@ -7,6 +7,19 @@
 -- [{id, floating, location}]): the read script answers busctl's JSON, a
 -- floating write updates the list.
 $a = args()
+-- busctl emit broadcasts: there is no positional SERVICE argument.
+-- https://www.freedesktop.org/software/systemd/man/latest/busctl.html
+$valid = [
+  ["--user", "emit", "/KGlobalSettings", "org.kde.KGlobalSettings", "notifyChange", "ii", "0", "0"],
+  ["--user", "emit", "/KGlobalSettings", "org.kde.KGlobalSettings", "notifyChange", "ii", "1", "0"],
+  ["--user", "emit", "/KIconLoader", "org.kde.KIconLoader", "iconChanged", "i", "0"],
+  ["--user", "call", "org.kde.KWin", "/KWin", "org.kde.KWin", "reconfigure"]
+]
+$script = len($a) == 9 and deep_eq(slice($a, 0, 8), ["--user", "--json=short", "call", "org.kde.plasmashell", "/PlasmaShell", "org.kde.PlasmaShell", "evaluateScript", "s"])
+if not $script and not any($valid, fn($v) = deep_eq($a, $v)) then
+  eprint("invalid busctl argv: " .. json_encode($a))
+  exit(2)
+end
 if env("FAKE_BUSCTL_LOG", "") != "" then append_file(env("FAKE_BUSCTL_LOG"), json_encode($a) .. "\n") end
 $down = env("FAKE_BUSCTL_DOWN", "")
 if $down != "" and is_file($down) then

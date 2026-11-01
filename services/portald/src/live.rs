@@ -298,7 +298,7 @@ mod tests {
         let mut off = projection("inc", 3, "light");
         off.export = false;
         let changes = adopt(&mut state, &values, &config, &status, &off).unwrap();
-        assert_eq!(changes.len(), 1, "color-scheme only: contrast stays 0");
+        assert_eq!(changes.len(), 2, "color-scheme and unset accent: contrast stays 0");
         assert_eq!(values.read().unwrap().color_scheme, 0);
         assert!(values.read().unwrap().accent.is_none());
         let next = projection("inc", 4, "light");

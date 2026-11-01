@@ -22,7 +22,10 @@ $T = require("lib/gtkqt_map.mix")
 fn absolute_dir($name)
   $d = env($name, "")
   if $d == "" or not starts_with($d, "/") or contains("/" .. $d .. "/", "/../") then return nil end
-  return re_replace($d, "/+$", "")
+  $d = re_replace($d, "/+", "/")
+  $d = replace($d, "/./", "/")
+  $d = re_replace($d, "/\\.$", "")
+  return if $d == "/" then $d else re_replace($d, "/+$", "") end
 end
 
 $config = absolute_dir("XDG_CONFIG_HOME")
@@ -30,7 +33,7 @@ $home = absolute_dir("HOME")
 $skip = nil
 if $config == nil then
   $skip = "XDG_CONFIG_HOME is unset or not absolute"
-elif $home != nil and $config == $home .. "/.config" and env("MIXOS_EXPORTD_GTKQT_HOME", "") != "1" then
+elif $home != nil and ($config == $home .. "/.config" or $config == (realpath($home) ?? $home) .. "/.config") and env("MIXOS_EXPORTD_GTKQT_HOME", "") != "1" then
   -- A nested or shared desk must never write through to its host desktop.
   $skip = "XDG_CONFIG_HOME is the home directory's own .config"
 end
@@ -59,14 +62,26 @@ $source = env("MIXOS_SETTINGS_SERVICE", "settingsd")
 -- What we wrote, so undo restores originals and a hand edit is noticed:
 -- files {path: {original, written}} where each is {kind: absent|file|link,
 -- data|target}; keys {path: {"Section/key": {original, written}}}.
-$R = {files: {}, keys: {}, paused: false}
-if is_file($record_path) then $R = merge($R, json_parse(read_file($record_path))) end
+$R = {files: {}, keys: {}, created: {}, paused: false, pending: nil}
+$record_error = nil
+if is_file($record_path) then
+  try
+    $loaded = json_parse(read_file($record_path))
+    if type($loaded) != "map" or type($loaded.files) != "map" or type($loaded.keys) != "map" or type($loaded.paused) != "bool" then raise("RECORD", "invalid record shape") end
+    $R = merge($R, $loaded)
+  catch $m
+    -- Keep the evidence, stay available for status, and refuse all writes.
+    $record_error = "unreadable records.json: " .. $m
+    $skip = $record_error
+  end
+end
 $status = {skip: $skip, config: $config, binding: $binding, revision: nil, incarnation: nil,
   outcome: (if $skip != nil then "skipped" else "waiting" end), written: [], kept: [],
   icon_theme_missing: false, gsettings: nil, last_error: nil, reconciles: 0}
 
 fn save_records()
-  write_atomic($record_path, json_encode($R), {mode: 0o600})
+  if $record_error != nil then raise("RECORD", $record_error) end
+  write_atomic($record_path, json_encode($R), {mode: 0o600, durability: "file"})
 end
 
 fn lstat($path)
@@ -77,8 +92,21 @@ fn lstat($path)
   end
 end
 
+-- Check every existing ancestor, including those above XDG_CONFIG_HOME.
+-- The final gtk.css link is owned by us; its parents must still be plain.
+fn plain_parents($path)
+  $dir = dirname($path)
+  loop
+    $s = lstat($dir)
+    if $s != nil and ($s.is_symlink or not is_dir($dir)) then raise("SYMLINK", "config ancestor is not a plain directory: " .. $dir) end
+    if $dir == "/" then break end
+    $dir = dirname($dir)
+  end
+end
+
 -- One path's current state, as a record.
 fn current($path)
+  plain_parents($path)
   $s = lstat($path)
   if $s == nil then return {kind: "absent"} end
   if $s.is_symlink then return {kind: "link", target: read_link($path)} end
@@ -91,6 +119,42 @@ fn same($a, $b)
   return deep_eq($a, $b)
 end
 
+-- One atomic filesystem operation with a durable write-ahead intent.
+-- On restart an intent is replayed only if the path still has its before
+-- bytes; already-applied intents are harmless, and hand edits survive.
+fn install_state($path, $after)
+  plain_parents($path)
+  if $after.kind == "absent" then
+    if lstat($path) != nil then remove($path) end
+  else
+    mkdir(dirname($path))
+    if $after.kind == "file" then
+      write_atomic($path, $after.data, {durability: "file"})
+    else
+      $tmp = $path .. ".mixos-" .. uuid()
+      symlink($after.target, $tmp)
+      rename($tmp, $path)
+    end
+  end
+end
+
+fn recover_pending()
+  $p = $R.pending
+  if $p == nil then return nil end
+  $now = current($p.path)
+  if same($now, $p.before) then install_state($p.path, $p.after) end
+  $R.pending = nil
+  save_records()
+end
+
+fn commit_state($path, $before, $after)
+  $R.pending = {path: $path, before: $before, after: $after}
+  save_records()
+  install_state($path, $after)
+  $R.pending = nil
+  save_records()
+end
+
 fn remember_original($path)
   if $R.files[$path] == nil then $R.files[$path] = {original: current($path), written: nil} end
 end
@@ -98,27 +162,38 @@ end
 fn put_file($path, $content)
   $now = current($path)
   if $now.kind == "link" then raise("SYMLINK", "refusing to write through a link: " .. $path) end
+  $rec = $R.files[$path]
+  if $rec != nil and ($rec.kept == true or ($rec.written != nil and not same($now, $rec.written))) then
+    $R.files[$path].kept = true
+    $status.kept = push($status.kept, $path)
+    save_records()
+    return false
+  end
   if $now.kind == "file" and $now.data == $content then return false end
   remember_original($path)
-  mkdir(dirname($path))
-  write_atomic($path, $content)
   $R.files[$path].written = {kind: "file", data: $content}
+  commit_state($path, $now, $R.files[$path].written)
   return true
 end
 
 fn put_link($path, $target)
   $now = current($path)
+  $rec = $R.files[$path]
+  if $rec != nil and ($rec.kept == true or ($rec.written != nil and not same($now, $rec.written))) then
+    $R.files[$path].kept = true
+    $status.kept = push($status.kept, $path)
+    save_records()
+    return false
+  end
   if $now.kind == "link" and $now.target == $target then return false end
   remember_original($path)
   mkdir(dirname($path))
   if $now.kind == "file" and not is_file($path .. ".bak") and lstat($path .. ".bak") == nil then
     -- A foreign gtk.css is kept once beside it, as the reference does.
-    copy($path, $path .. ".bak")
+    put_file($path .. ".bak", $now.data)
   end
-  $tmp = $path .. ".mixos-" .. uuid()
-  symlink($target, $tmp)
-  rename($tmp, $path)
   $R.files[$path].written = {kind: "link", target: $target}
+  commit_state($path, $now, $R.files[$path].written)
   return true
 end
 
@@ -134,7 +209,8 @@ fn put_keys($path, $section, $pairs)
     $id = $section .. "/" .. $p[0]
     $have = $T.ini_get($text, $section, $p[0])
     $rec = $mine[$id]
-    if $rec != nil and $rec.written != nil and $have != $rec.written then
+    if $rec != nil and ($rec.kept == true or ($rec.written != nil and $have != $rec.written)) then
+      $mine[$id].kept = true
       $status.kept = push($status.kept, $path .. " " .. $id)
       continue
     end
@@ -143,10 +219,10 @@ fn put_keys($path, $section, $pairs)
     push($set, $p)
   end
   $R.keys[$path] = $mine
+  if $now.kind == "absent" then $R.created[$path] = true end
   $next = $T.ini_set($text, $section, $set)
   if $next == $text then return false end
-  mkdir(dirname($path))
-  write_atomic($path, $next)
+  commit_state($path, $now, {kind: "file", data: $next})
   return true
 end
 
@@ -197,6 +273,8 @@ fn reconcile($why)
   $status.reconciles = $status.reconciles + 1
   if $skip != nil then return nil end
   try
+    plain_parents($config .. "/probe")
+    recover_pending()
     $rec = read_record()
     $v = $rec.values.values
     $status.incarnation = $rec.values.incarnation
@@ -239,17 +317,30 @@ end
 -- Restores every file and key whose current content is still what we
 -- wrote; anything changed since is left and listed.
 fn undo()
+  if $skip != nil then raise("REFUSED", $skip) end
+  $R.paused = true
+  save_records()
+  recover_pending()
   $left = []
   $restored = []
   for $path, $f in $R.files
     if $f.written == nil then continue end
-    if not same(current($path), $f.written) then
+    $now = current($path)
+    if same($now, $f.original) and $f.kept != true then
+      $R.files = delete($R.files, $path)
+      save_records()
+      continue
+    end
+    if $f.kept == true or not same($now, $f.written) then
+      $R.files[$path].kept = true
       push($left, $path)
+      save_records()
       continue
     end
     $o = $f.original
-    remove($path)
-    if $o.kind == "file" then write_atomic($path, $o.data) elif $o.kind == "link" then symlink($o.target, $path) end
+    commit_state($path, $now, $o)
+    $R.files = delete($R.files, $path)
+    save_records()
     push($restored, $path)
   end
   for $path, $keys in $R.keys
@@ -260,20 +351,25 @@ fn undo()
       $i = index_of($id, "/")
       $section = slice($id, 0, $i)
       $key = slice($id, $i + 1)
-      if $T.ini_get($text, $section, $key) == $k.written then
+      $have = $T.ini_get($text, $section, $key)
+      if $k.kept != true and ($have == $k.written or $have == $k.original) then
         $text = $T.ini_set($text, $section, [[$key, $k.original]])
       else
+        $R.keys[$path][$id].kept = true
         push($left, $path .. " " .. $id)
       end
     end
-    if $text != $now.data then
-      write_atomic($path, $text)
+    $husk = $R.created[$path] == true and all(split($text, "\n"), fn($l) = trim($l) == "" or (starts_with(trim($l), "[") and ends_with(trim($l), "]")))
+    if $text != $now.data or $husk then
+      commit_state($path, $now, if $husk then {kind: "absent"} else {kind: "file", data: $text} end)
       push($restored, $path)
     end
+    for $id, $k in $R.keys[$path]
+      if $k.kept != true then $R.keys[$path] = delete($R.keys[$path], $id) end
+    end
+    if len(keys($R.keys[$path])) == 0 then $R.keys = delete($R.keys, $path); $R.created = delete($R.created, $path) end
+    save_records()
   end
-  $R.files = {}
-  $R.keys = {}
-  $R.paused = true
   save_records()
   $status.outcome = "paused"
   return {restored: $restored, left: $left}
@@ -284,6 +380,7 @@ on exportd.gtkqt.status desc "what exportd-gtkqt last wrote, kept and skipped"
 end
 
 on exportd.gtkqt.reconcile desc "resume after an undo and write the current record now"
+  if $skip != nil then reply(10, json_encode({error_code: "REFUSED", message: $skip})); return nil end
   $R.paused = false
   save_records()
   reconcile("request")

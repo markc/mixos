@@ -1,5 +1,5 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
--- version: 0.2.0
+-- version: 0.1.0
 -- kde-export: the settings authority's look, written into a KDE Plasma
 -- session (kdeglobals, kwinrc, the MixOS colour schemes, panel floating).
 -- A `mix --serve` citizen in the Plasma user's session. It reconciles once
@@ -25,29 +25,41 @@ if $instance == "" then raise("BINDING", "kde-export needs MIXOS_SETTINGS_INSTAN
 $binding = {instance: $instance, profile: "default"}
 $dry = env("MIXOS_KDE_EXPORT_DRY", "0") == "1"
 $ctx = $app.new_context()
+$source = env("MIXOS_SETTINGS_SERVICE", "settingsd")
 $pause_file = $ctx.state_dir .. "/paused"
-$status = {binding: $binding, dry: $dry, revision: nil, gated: false, paused: is_file($pause_file), last: nil, error: nil, runs: 0}
--- The palette of the last look read, keyed by the appearance values.
+$status = {binding: $binding, dry: $dry, revision: nil, incarnation: nil, gated: false, paused: is_file($pause_file), last: nil, error: nil, runs: 0}
+-- Retained for the command helpers; palettes are read at each record identity.
 $palette_cache = {key: nil, answer: nil}
 
 fn settings($command, $b)
   $wire = json_encode($b)
-  send settingsd $command body=$wire timeout=10
+  send $source $command body=$wire timeout=10
   if $rc != 0 then raise("SETTINGS", "settingsd " .. $command .. " refused: " .. to_string($result)) end
   if type($result) == "string" then
     try
-      return json_parse($result)
+      $result = json_parse($result)
     catch $m
       raise("SETTINGS", "settingsd " .. $command .. " answered no JSON")
     end
   end
+  if type($result) != "map" or $result.status != "current" or not deep_eq($result.binding, $binding) then raise("SETTINGS", $command .. " answered another binding or no current record") end
   return $result
 end
 
 -- One whole reconcile: read the values (and the palette, when the look
 -- moved), plan, write the difference. Returns {report, cache}.
 fn reconcile($binding, $ctx, $dry, $cache)
-  $got = settings("settings.get", {binding: $binding, view: "values"})
+  $record = nil
+  for $attempt = 1 to 3
+    $got = settings("settings.get", {binding: $binding, view: "values"})
+    $answer = settings("settings.palette", {binding: $binding})
+    if $got.incarnation != nil and $got.revision != nil and $got.incarnation == $answer.incarnation and $got.revision == $answer.revision then
+      $record = {values: $got, palette: $answer.palette}
+      break
+    end
+  end
+  if $record == nil then raise("MOVED", "the record kept moving between the values and palette reads") end
+  $got = $record.values
   $v = $got.values
   -- The resolved mode (never `auto`): the answer's `resolved`, beside the
   -- authored values, as the appearance topic carries it.
@@ -55,19 +67,15 @@ fn reconcile($binding, $ctx, $dry, $cache)
   $v["appearance.mode_resolved"] = $mode
   $v["_revision"] = $got.revision
   if $v["appearance.export_desktop"] == false then
-    return {report: {revision: $got.revision, gated: true}, cache: $cache}
+    return {report: {revision: $got.revision, incarnation: $got.incarnation, gated: true}, cache: $cache}
   end
-  $akeys = sort(filter(keys($v), fn($k) = starts_with($k, "appearance.")))
-  $look = json_encode(map($akeys, fn($k) = [$k, $v[$k]]))
-  if $cache.key != $look then
-    $cache = {key: $look, answer: settings("settings.palette", {binding: $binding})}
-  end
-  $pal = $cache.answer.palette
+  $pal = $record.palette
   -- One look, one set of fonts: each mode carries the same pair.
   $fonts = if type($pal[$mode]) == "map" then $pal[$mode].fonts else nil end
   $plan = $map.plan($v, $pal, $fonts, $app.icon_themes($ctx))
   $report = $app.apply($ctx, $plan, $dry)
   $report.revision = $got.revision
+  $report.incarnation = $got.incarnation
   $report.mode = $plan.mode
   $report.gated = false
   return {report: $report, cache: $cache}
@@ -100,6 +108,7 @@ fn run_once($status, $cache)
     $cache = $out.cache
     $r = $out.report
     $status.revision = $r.revision
+    $status.incarnation = $r.incarnation
     $status.gated = $r.gated
     $status.last = $r
     $status.error = nil
@@ -118,9 +127,14 @@ end
 -- topic each; the first reconcile read them all).
 fn on_topic($status, $cache, $body)
   if $status.paused then return {status: $status, cache: $cache} end
+  $b = $body
+  if type($b) == "string" then
+    try $b = json_parse($b) catch $m return {status: $status, cache: $cache} end
+  end
+  if type($b) != "map" or not deep_eq($b.binding, $binding) then return {status: $status, cache: $cache} end
   $rev = revision_of($body)
   $done = to_number(to_string($status.revision ?? ""))
-  if $rev != nil and $done != nil and $rev <= $done and $status.error == nil then
+  if $b.incarnation == $status.incarnation and $rev != nil and $done != nil and $rev <= $done and $status.error == nil then
     return {status: $status, cache: $cache}
   end
   return run_once($status, $cache)

@@ -44,8 +44,9 @@ $STATE_DIR = env("MIXOS_EXPORTD_STATE", $XDG_STATE .. "/mixos/exportd/cosmic")
 $DRY = env("MIXOS_EXPORTD_DRY_RUN", "") == "1"
 $PAUSED = $STATE_DIR .. "/paused"
 
--- The latest body of each prefix topic, and what the last export did.
-$S = {topics: {}, last: nil, incarnation: nil}
+-- Topics are hints, never pieces of a snapshot. Only a whole, fenced read
+-- can drive a write; publication of one prefix may precede the other ones.
+$S = {last: nil}
 
 fn same_binding($b)
   return type($b) == "map" and $b.instance == $BINDING.instance and $b.profile == $BINDING.profile
@@ -56,56 +57,36 @@ fn ask($command, $body)
   send $SETTINGSD $command body=$wire timeout=10
   if $rc != 0 then raise("SETTINGS", $command .. " refused (rc " .. to_string($rc) .. "): " .. to_string($result)) end
   $r = if type($result) == "string" then json_parse($result) else $result end
-  if not contains(["current", nil], $r.status ?? nil) then raise("SETTINGS", $command .. ": " .. to_string($r.status)) end
+  if type($r) != "map" or $r.status != "current" or not same_binding($r.binding) then raise("SETTINGS", $command .. " answered no current record for our binding") end
   return $r
 end
 
--- Takes one prefix body when it is ours and not older than what we hold.
-fn take_body($prefix, $body)
-  if type($body) != "map" or not same_binding($body.binding) then return false end
-  $held = $S.topics[$prefix] ?? nil
-  if $held != nil and $held.incarnation == $body.incarnation and to_number($body.revision) < to_number($held.revision) then
-    return false
-  end
-  $S.topics[$prefix] = {incarnation: $body.incarnation, revision: $body.revision, values: $body.values, resolved: $body.resolved ?? nil}
-  return true
-end
-
--- Fills any prefix no topic has delivered yet.
-fn fill()
-  for $p in $PREFIXES
-    if not has_key($S.topics, $p) then
-      $r = ask("settings.get", {binding: $BINDING, view: "values", prefix: $p})
-      take_body($p, {binding: $r.binding, incarnation: $r.incarnation, revision: $r.revision, values: $r.values, resolved: $r.resolved ?? nil})
+fn read_record()
+  for $attempt = 1 to 3
+    $values = ask("settings.get", {binding: $BINDING, view: "values"})
+    $palette = ask("settings.palette", {binding: $BINDING})
+    if $values.incarnation != nil and $values.revision != nil and $values.incarnation == $palette.incarnation and $values.revision == $palette.revision then
+      return {values: $values, palette: $palette.palette}
     end
   end
-end
-
-fn merged_values()
-  $v = {}
-  for $p in $PREFIXES
-    $vals = $S.topics[$p].values
-    for $k in keys($vals) $v[$k] = $vals[$k] end
-  end
-  return $v
+  raise("MOVED", "the record kept moving between the values and palette reads")
 end
 
 -- One export: the whole plan, written where it differs.
 fn export_once($dry)
-  fill()
-  $v = merged_values()
-  $revision = $S.topics.appearance.revision
+  $rec = read_record()
+  $v = $rec.values.values
+  $revision = $rec.values.revision
   if $v["appearance.export_desktop"] == false then
-    $S.last = {revision: $revision, skipped: "appearance.export_desktop is false"}
-    return $S.last
+    $skipped = {revision: $revision, incarnation: $rec.values.incarnation, skipped: "appearance.export_desktop is false"}
+    if not $dry then $S.last = $skipped end
+    return $skipped
   end
-  -- A topic names the resolved keys in full; settings.get by their last part.
-  $resolved = $S.topics.appearance.resolved ?? {}
+  $resolved = $rec.values.resolved ?? {}
   $mode = $resolved["appearance.mode"] ?? $resolved.mode ?? nil
   if $mode == nil then raise("SETTINGS", "the appearance topic carries no resolved mode") end
-  $pal = ask("settings.palette", {binding: $BINDING}).palette
-  $res = $store.apply($ROOT, $STATE_DIR, $map.plan($v, $mode, $pal), $dry)
-  $out = {revision: $revision, mode: $mode, changed: $res.changed, unchanged: $res.unchanged, dry_run: $dry, at: now_iso()}
+  $res = $store.apply($ROOT, $STATE_DIR, $map.plan($v, $mode, $rec.palette), $dry)
+  $out = {revision: $revision, incarnation: $rec.values.incarnation, mode: $mode, changed: $res.changed, unchanged: $res.unchanged, dry_run: $dry, at: now_iso()}
   if not $dry then $S.last = $out end
   return $out
 end
@@ -125,7 +106,14 @@ fn reconcile($why)
 end
 
 fn on_topic($prefix)
-  if take_body($prefix, $event.args) then reconcile("settings " .. $prefix) end
+  $body = $event.body
+  if type($body) == "string" then
+    try $body = json_parse($body) catch $m return nil end
+  end
+  if type($body) != "map" or not same_binding($body.binding) then return nil end
+  $last = $S.last ?? {}
+  if $body.incarnation == $last.incarnation and $last.revision != nil and $body.revision != nil and to_number($body.revision) <= to_number($last.revision) then return nil end
+  reconcile("settings " .. $prefix)
 end
 
 fn answer($v)
@@ -157,13 +145,11 @@ on settingsd.desktop.keys.default.shell.panels
 end
 
 on bus.connected
-  -- Bodies held from an older connection may be stale: start over.
-  $S.topics = {}
   reconcile("connected")
 end
 
 on exportd.cosmic.status desc "the binding, the last export and whether exporting is paused"
-  answer({binding: $BINDING, root: $ROOT, revision: ($S.topics.appearance ?? {}).revision ?? nil,
+  answer({binding: $BINDING, root: $ROOT, revision: ($S.last ?? {}).revision ?? nil,
     paused: is_file($PAUSED), dry_run: $DRY, last: $S.last})
 end
 
@@ -178,7 +164,6 @@ end
 on exportd.cosmic.reconcile desc "export the current settings now; clears a pause"
   try
     if is_file($PAUSED) then remove($PAUSED) end
-    $S.topics = {}
     answer(export_once($DRY))
   catch $e
     refuse($e)

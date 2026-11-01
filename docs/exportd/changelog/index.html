@@ -239,18 +239,27 @@
 </blockquote>
 <h2 id="010--unreleased">0.1.0 — unreleased</h2>
 <ul>
-<li>The COSMIC exporter (<code>scripts/cosmic.mix</code>): settingsd's look, window,
+<li>
+<p>The COSMIC exporter (<code>scripts/cosmic.mix</code>): settingsd's look, window,
 panel and wallpaper settings written into a cosmic-config tree, with
-undo.</li>
-<li>The KDE Plasma exporter (<code>scripts/kde.mix</code>): the colour scheme from
+undo.</p>
+</li>
+<li>
+<p>The KDE Plasma exporter (<code>scripts/kde.mix</code>): the colour scheme from
 <code>settings.palette</code> in <code>kdeglobals</code> and the <code>MixOS-Dark</code>/<code>MixOS-Light</code>
 scheme files, the accent, the resolved fonts and the icon theme, the
 Breeze border size and buttons in <code>kwinrc</code>, and panel floating, then
 Plasma and KWin reconfigured over D-Bus; writes under KConfig's lock,
-re-notifies after a crash or an unreachable bus; undo and restore pause it.</li>
-<li>The GTK and Qt exporter (<code>scripts/gtkqt.mix</code>): libadwaita colours with
+re-notifies after a crash or an unreachable bus; undo and restore pause it.</p>
+</li>
+<li>
+<p>The GTK and Qt exporter (<code>scripts/gtkqt.mix</code>): libadwaita colours with
 mode links, settings.ini keys, qt5ct/qt6ct schemes and config, with
-hand edits kept and undo.</li>
+hand edits kept and undo.</p>
+</li>
+<li>
+<p>Review fixes: coherent desktop record reads, COSMIC live topic delivery, GTK/Qt durable recovery and path refusals, KDE alpha hints and undo notifications, and strict busctl fixture arguments.</p>
+</li>
 </ul>
         </article>
         <p class="doc-source"><a href="/exportd/changelog.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
