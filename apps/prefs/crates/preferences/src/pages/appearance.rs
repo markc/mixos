@@ -25,8 +25,16 @@ pub(super) fn page() -> Page {
     let mode_and_colours = section(
         "colors",
         vec![
-            row("mode", Control::Mode).enable(PINNED, "row-appearance-mode-pinned"),
-            row("auto", Control::AutoMode).enable(PINNED, "row-appearance-mode-pinned"),
+            row("mode", Control::Mode).enable(&[(PINNED, "row-appearance-mode-pinned")]),
+            // Auto needs a sunrise and sunset: daylight leaves its state
+            // null in a zone without one (UTC, Etc/GMT±N).
+            row("auto", Control::AutoMode).enable(&[
+                (PINNED, "row-appearance-mode-pinned"),
+                (
+                    Cond::Set("state.appearance.daylight"),
+                    "row-appearance-auto-no-daylight",
+                ),
+            ]),
             row("scheme", Control::Scheme),
             row("accent", Control::Accent),
             row(

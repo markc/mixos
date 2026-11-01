@@ -135,8 +135,8 @@ impl Engine {
         if let Some(backend) = page.backend.or(row.backend) {
             return Some(self.label("backend-missing", &[("backend", &self.label(backend, &[]))]));
         }
-        if !row.enable.holds(&self.store) {
-            return Some(self.label(row.why.unwrap_or("command-disabled"), &[]));
+        if let Some(why) = row.why_disabled(&self.store) {
+            return Some(self.label(why, &[]));
         }
         let writes = row.control.key().is_some() || matches!(row.control, Control::Reset { .. });
         if writes && let Some(blocked) = self.blocked() {
@@ -299,6 +299,22 @@ mod tests {
                 .unwrap()
                 .contains("backend-missing")
         );
+    }
+
+    #[test]
+    fn auto_mode_waits_for_a_zone_with_a_sunrise() {
+        let mut e = engine();
+        let page = pages::get("appearance").unwrap();
+        let auto = page.row("auto").unwrap();
+        assert_eq!(
+            e.row_blocked(page, auto).as_deref(),
+            Some("row-appearance-auto-no-daylight")
+        );
+        e.store
+            .values
+            .insert("state.appearance.daylight".into(), json!(false));
+        // Daylight known: only the unread store holds it now.
+        assert_eq!(e.row_blocked(page, auto).as_deref(), Some("store-unread"));
     }
 
     #[test]

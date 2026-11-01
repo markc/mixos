@@ -500,6 +500,7 @@ row-appearance-mode = Mode
 row-appearance-mode-pinned = The pinned design source sets the mode. Remove it to choose here.
 row-appearance-auto = Automatically switch between light and dark modes
 row-appearance-auto-desc = Light from sunrise, dark from sunset.
+row-appearance-auto-no-daylight = Needs a time zone with a sunrise and sunset; this one has none.
 row-appearance-scheme = Color scheme
 row-appearance-scheme-desc = The palette the desktop draws from. MixOS derives everything from the accent and the tints below.
 row-appearance-accent = Accent color

@@ -15,7 +15,8 @@ use toolkit::Theme;
 
 /// The reference desk's live values (spec 4, "Measurement conditions").
 fn measured() -> Value {
-    json!({"appearance.density":"compact","appearance.accent":"#7f7f7f","appearance.mode":"dark"})
+    json!({"appearance.density":"compact","appearance.accent":"#7f7f7f","appearance.mode":"dark",
+        "state.appearance.daylight":true})
 }
 
 fn engine(values: Value, role: &str, stale: bool) -> Engine {
@@ -120,7 +121,11 @@ fn stale_mirror() {
 
 #[test]
 fn light_comfortable() {
-    let mut e = engine(json!({"appearance.mode":"light"}), "authority", false);
+    let mut e = engine(
+        json!({"appearance.mode":"light","state.appearance.daylight":true}),
+        "authority",
+        false,
+    );
     e.open_page("appearance", None).unwrap();
     draw("appearance_light_comfortable", e, COSMIC);
 }

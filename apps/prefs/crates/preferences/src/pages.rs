@@ -238,11 +238,9 @@ pub struct Row {
     pub control: Control,
     /// Drawn only while this holds.
     pub show: Cond,
-    /// Takes input only while this holds; else drawn disabled with
-    /// [`Row::why`].
-    pub enable: Cond,
-    /// The message naming why the row is disabled by `enable`.
-    pub why: Option<&'static str>,
+    /// Takes input only while every condition holds; else drawn disabled
+    /// with the message of the first that fails.
+    pub enable: &'static [(Cond, &'static str)],
     /// The missing MixOS backend, as a message id: the row is drawn
     /// disabled with a line naming it.
     pub backend: Option<&'static str>,
@@ -253,8 +251,7 @@ pub const fn row(id: &'static str, control: Control) -> Row {
         id,
         control,
         show: Cond::Always,
-        enable: Cond::Always,
-        why: None,
+        enable: &[],
         backend: None,
     }
 }
@@ -264,10 +261,17 @@ impl Row {
         self.show = cond;
         self
     }
-    pub const fn enable(mut self, cond: Cond, why: &'static str) -> Self {
-        self.enable = cond;
-        self.why = Some(why);
+    /// Enabled only while each `(condition, why)` holds.
+    pub const fn enable(mut self, rules: &'static [(Cond, &'static str)]) -> Self {
+        self.enable = rules;
         self
+    }
+    /// The message of the first enable rule that fails, if any.
+    pub fn why_disabled(&self, store: &Store) -> Option<&'static str> {
+        self.enable
+            .iter()
+            .find(|(cond, _)| !cond.holds(store))
+            .map(|(_, why)| *why)
     }
     pub const fn backend(mut self, backend: &'static str) -> Self {
         self.backend = Some(backend);
