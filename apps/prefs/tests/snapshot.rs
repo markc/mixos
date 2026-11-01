@@ -106,6 +106,16 @@ fn wifi_missing_backend() {
 }
 
 #[test]
+fn date_time() {
+    draw("date_time", page("date_time", None), COSMIC);
+}
+
+#[test]
+fn region() {
+    draw("region", page("region", None), COSMIC);
+}
+
+#[test]
 fn desktop_sub_pages() {
     draw("desktop", page("desktop", None), COSMIC);
 }

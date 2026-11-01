@@ -1194,7 +1194,61 @@ pub fn pick_list(ui: &Ui, list: PickList) -> Vec<String> {
             .map(|f| f.mono.clone())
             .unwrap_or_default(),
         PickList::IconThemes => icon_themes().to_vec(),
+        PickList::TimeZones => time_zones().to_vec(),
+        PickList::Locales => locales().to_vec(),
     }
+}
+
+/// The IANA zones in the zoneinfo database, read once. The `posix` and
+/// `right` copies and the lower-case data files are not zones, so they stay
+/// out (every zone name starts with a capital).
+fn time_zones() -> &'static [String] {
+    static ZONES: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    ZONES.get_or_init(|| {
+        let mut names = std::collections::BTreeSet::new();
+        collect_zones(std::path::Path::new("/usr/share/zoneinfo"), "", &mut names);
+        names.into_iter().collect()
+    })
+}
+
+fn collect_zones(
+    dir: &std::path::Path,
+    prefix: &str,
+    names: &mut std::collections::BTreeSet<String>,
+) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        if !name.starts_with(|c: char| c.is_ascii_uppercase()) {
+            continue;
+        }
+        let path = format!("{prefix}{name}");
+        if entry.path().is_dir() {
+            collect_zones(&entry.path(), &format!("{path}/"), names);
+        } else if path != "Factory" {
+            names.insert(path);
+        }
+    }
+}
+
+/// The locales the system supports (glibc's `SUPPORTED` list), read once,
+/// each by its name as written (`en_AU.UTF-8`).
+fn locales() -> &'static [String] {
+    static LOCALES: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    LOCALES.get_or_init(|| {
+        let text = std::fs::read_to_string("/usr/share/i18n/SUPPORTED").unwrap_or_default();
+        let names: std::collections::BTreeSet<String> = text
+            .lines()
+            .filter(|l| !l.starts_with('#'))
+            .filter_map(|l| l.split_whitespace().next())
+            .map(str::to_owned)
+            .collect();
+        names.into_iter().collect()
+    })
 }
 
 /// The icon themes installed under the XDG data directories, by directory

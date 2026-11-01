@@ -379,6 +379,66 @@ fn window_management_writes_a_live_key_once_and_refuses_the_missing_backend() {
     assert_eq!(applies(&rig).len(), 1);
 }
 
+/// The row `id` of a page read as data (its sections, not its drawers).
+fn row_of(page: &Value, id: &str) -> Value {
+    page["sections"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|s| s["rows"].as_array().unwrap().iter())
+        .find(|r| r["id"] == id)
+        .unwrap_or_else(|| panic!("no row {id}: {page}"))
+        .clone()
+}
+
+#[test]
+fn date_and_time_reads_as_data_and_a_clock_write_applies_once() {
+    let mut rig = rig();
+    read(&mut rig, "authority", false);
+    let (rc, body) = ask(&mut rig, 1, "prefs.page.open", json!({"page":"date_time"}));
+    assert_eq!(rc, 0, "{body}");
+    let (_, page) = ask(&mut rig, 2, "prefs.page", json!({}));
+    let zone = row_of(&page, "zone");
+    assert_eq!(zone["key"], "time.zone");
+    assert!(zone["blocked"].as_str().unwrap().contains("hostd timedated"), "{zone}");
+    let clock = row_of(&page, "24h");
+    assert_eq!(clock["key"], "time.format.24h");
+    assert!(clock["blocked"].is_null(), "{clock}");
+    let (rc, body) = ask(&mut rig, 3, "prefs.set", json!({"key":"time.format.24h","value":true}));
+    assert_eq!(rc, 0, "{body}");
+    rig.h.run_steps(3);
+    let sent = applies(&rig);
+    assert_eq!(sent.len(), 1, "{sent:?}");
+    assert_eq!(sent[0]["changes"], json!({"time.format.24h":true}));
+    // The zone is hostd's, a live key: the Bus refuses it as it refuses any.
+    let (rc, body) = ask(
+        &mut rig,
+        4,
+        "prefs.set",
+        json!({"key":"time.zone","value":"Australia/Sydney"}),
+    );
+    assert_eq!((rc, body["error_code"].as_str()), (10, Some("REFUSED")), "{body}");
+}
+
+#[test]
+fn region_waits_on_locale1_and_refuses_writes_until_it_lands() {
+    let mut rig = rig();
+    read(&mut rig, "authority", false);
+    let (rc, body) = ask(&mut rig, 1, "prefs.page.open", json!({"page":"region"}));
+    assert_eq!(rc, 0, "{body}");
+    let (_, page) = ask(&mut rig, 2, "prefs.page", json!({}));
+    assert!(page["backend"].as_str().unwrap().contains("hostd locale1"), "{page}");
+    let (rc, body) = ask(
+        &mut rig,
+        3,
+        "prefs.set",
+        json!({"key":"region.formats","value":"en_AU.UTF-8"}),
+    );
+    assert_eq!((rc, body["error_code"].as_str()), (10, Some("REFUSED")), "{body}");
+    rig.h.run_steps(3);
+    assert!(applies(&rig).is_empty());
+}
+
 /// The write path end to end through the one dispatch a click and the Bus
 /// share: three gestures make one apply and one merged second apply on the
 /// receipt's revision; a conflict on that one reads and sends it again.

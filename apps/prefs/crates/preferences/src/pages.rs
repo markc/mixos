@@ -28,6 +28,7 @@ mod appearance;
 mod input;
 mod network;
 mod panels;
+mod time;
 mod tree;
 mod window_management;
 
@@ -116,6 +117,10 @@ pub enum PickList {
     Fonts,
     MonoFonts,
     IconThemes,
+    /// IANA zone names (`time.zone`).
+    TimeZones,
+    /// Locale codes (`region.formats`).
+    Locales,
 }
 
 /// How a choice is drawn.
