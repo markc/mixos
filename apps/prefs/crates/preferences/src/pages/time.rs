@@ -6,7 +6,7 @@
 //! languages and the formats are hostd's locale1, so the whole page waits on
 //! it, and the one reason is said once under its title.
 use super::{
-    Body, ChoiceStyle, Control, Drawer, Extra, Opt, Page, PickList, opt, row, section, untitled,
+    Body, ChoiceStyle, Control, Drawer, Opt, Page, PickList, opt, row, section, untitled,
 };
 
 const FIRST_DAY: &[Opt] = &[
@@ -49,7 +49,10 @@ pub(super) fn date_time() -> Page {
         Some("time"),
         Body::Sections {
             sections: vec![
-                untitled("now", vec![row("now", Control::Info)]),
+                untitled(
+                    "now",
+                    vec![row("now", Control::Info).value_from("time.now")],
+                ),
                 untitled(
                     "zone",
                     vec![
@@ -92,14 +95,40 @@ pub(super) fn date_time() -> Page {
 }
 
 pub(super) fn region() -> Page {
+    let add_language = Drawer {
+        id: "add_language",
+        sections: vec![untitled(
+            "add",
+            vec![row(
+                "add",
+                Control::Append {
+                    key: "region.languages",
+                    source: "locales",
+                    more: None,
+                },
+            )],
+        )],
+    };
     let mut region = super::page(
         "region",
         "languages",
         Some("time"),
         Body::Sections {
             sections: vec![
-                section("languages", vec![row("order", Control::Info)])
-                    .items("region.languages", "row-region-languages_none"),
+                section(
+                    "languages",
+                    vec![
+                        row("order", Control::Info),
+                        row(
+                            "languages",
+                            Control::Ordered {
+                                key: "region.languages",
+                                sources: &["locales"],
+                                add: Some("add_language"),
+                            },
+                        ),
+                    ],
+                ),
                 section(
                     "formatting",
                     vec![row(
@@ -111,15 +140,9 @@ pub(super) fn region() -> Page {
                     )],
                 ),
             ],
-            drawers: Vec::new(),
+            drawers: vec![add_language],
         },
     );
     region.backend = Some("backend-hostd-locale1");
-    region.extras = vec![Extra {
-        id: "add_language",
-        command: None,
-        link: true,
-        backend: Some("backend-hostd-locale1"),
-    }];
     region
 }
