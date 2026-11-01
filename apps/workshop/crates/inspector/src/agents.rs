@@ -462,6 +462,8 @@ pub struct NodeAgents {
     #[serde(skip)]
     list_ticket: Option<u64>,
     #[serde(skip)]
+    instances_ticket: Option<u64>,
+    #[serde(skip)]
     list_again: bool,
 }
 
@@ -620,7 +622,7 @@ impl Engine {
             .iter()
             .find(|node| node.local)
             .map(|node| node.name.clone())
-            .unwrap_or_else(|| LOCAL.to_owned());
+            .unwrap_or_else(|| self.agents.local_name().to_owned());
         let old = self.agents.local_name().to_owned();
         if name == old {
             self.agents.local = name;
@@ -718,10 +720,11 @@ impl Engine {
             return;
         }
         // The live count changes with every session: read it each time.
-        self.agent_call(node, "agent.agents", json!({}));
+        let instances_ticket = self.agent_call(node, "agent.agents", json!({}));
         let ticket = self.agent_call(node, "agent.session.list", json!({}));
         if let Some(entry) = self.agents.nodes.get_mut(node) {
             entry.list_ticket = Some(ticket);
+            entry.instances_ticket = Some(instances_ticket);
         }
     }
 
@@ -736,8 +739,19 @@ impl Engine {
         self.agents.nodes.retain(|node, _| {
             *node == local || known.contains(node) || selected.as_ref() == Some(node)
         });
+        // Invalidate even retained selections when their node leaves. A
+        // late reply must not refresh an offline selection or resurrect it
+        // after the node rejoins with a new generation of calls.
+        self.agents.tickets.retain(|_, node| *node == local || known.contains(node));
+        for (node, entry) in &mut self.agents.nodes {
+            if *node != local && !known.contains(node) {
+                entry.list_ticket = None;
+                entry.instances_ticket = None;
+                entry.list_again = false;
+            }
+        }
         for node in self.agent_nodes() {
-            if node != local && !self.agents.nodes.contains_key(&node) {
+            if node != local && self.agents.node(&node).is_none_or(|entry| entry.available == Some(false)) {
                 self.refresh_node(&node);
             }
         }
@@ -818,6 +832,19 @@ impl Engine {
             self.acted(&node, command, reply, &result);
             return;
         }
+        // Validate before both success and failure handling. In particular,
+        // an older instances timeout cannot poison a newer successful list.
+        match command {
+            "agent.agents" => {
+                let Some(entry) = self.agents.nodes.get_mut(&node) else { return };
+                if entry.instances_ticket != Some(ticket) { return; }
+                entry.instances_ticket = None;
+            }
+            "agent.session.list" => {
+                if self.agents.node(&node).is_none_or(|entry| entry.list_ticket != Some(ticket)) { return; }
+            }
+            _ => {}
+        }
         let (rc, body) = match result {
             Ok(reply) => reply,
             Err(message) => {
@@ -830,12 +857,14 @@ impl Engine {
                     }
                     return;
                 }
-                let entry = self.agents.nodes.entry(node).or_default();
+                let entry = self.agents.nodes.entry(node.clone()).or_default();
+                let mut again = false;
                 if command == "agent.session.list" && entry.list_ticket == Some(ticket) {
                     entry.list_ticket = None;
-                    entry.list_again = false;
+                    again = std::mem::take(&mut entry.list_again);
                 }
                 entry.error = Some(message);
+                if again { self.refresh_node(&node); }
                 return;
             }
         };
@@ -1177,6 +1206,7 @@ impl Engine {
     fn acting_node(&self, op: &str, args: &Value) -> Result<(String, Option<String>), Refusal> {
         let selected = self.agents.selected.as_ref();
         match &args["node"] {
+            Value::String(node) if !self.agent_nodes().contains(node) => Err(refusal(14, "UNKNOWN_NODE", format!("unknown node {node}"))),
             Value::String(node) => Ok((
                 node.clone(),
                 selected
@@ -2410,6 +2440,80 @@ mod tests {
             [None, Some("beta".to_owned())],
             "this node as `agent`, beta as agent.beta.bus, gamma not at all"
         );
+    }
+
+    #[test]
+    fn ended_rows_select_through_the_bus_command_for_the_details_pane() {
+        let mut e = two_nodes();
+        listed_two(&mut e, json!([]), json!([session_on("old", "ended")]));
+        e.ui.expanded.extend(["agents".into(), "agents:node:beta".into(), "agents:ended:beta".into()]);
+        e.command(1, "workshop.select_row", r#"{"key":"agent:beta:old"}"#);
+        let effects = e.take_effects();
+        assert_eq!(reply_to(&effects, 1).unwrap().0, 0);
+        let row = e.agents.selected_row().unwrap();
+        assert_eq!((&*row.node, &*row.session, &*row.status), ("beta", "old", "ended"));
+        assert_eq!(e.ui.row_key.as_deref(), Some("agent:beta:old"));
+        assert!(effects.iter().any(|effect| matches!(effect, Effect::Agent {node: Some(node), command, ..} if node == "beta" && command == "agent.session.read")));
+    }
+
+    #[test]
+    fn discovery_reprobes_missing_peers_and_retains_the_local_name() {
+        let mut e = two_nodes();
+        e.refresh_agents();
+        let list = node_calls(&mut e).into_iter().find(|(_, n, c, _)| n.as_deref() == Some("beta") && c == "agent.session.list").unwrap();
+        e.agent_completed(list.0, &list.2, Ok((10, json!({"message":"Service 'agent.beta.bus' not found"}))));
+        assert_eq!(e.agents.node("beta").unwrap().available, Some(false));
+        e.agents_discovered();
+        assert!(node_calls(&mut e).iter().any(|(_, n, c, _)| n.as_deref() == Some("beta") && c == "agent.session.list"));
+        e.snapshot.nodes.clear();
+        e.sync_local_agents();
+        assert_eq!(e.agents.local_name(), "alpha");
+    }
+
+    #[test]
+    fn stale_instances_and_departed_node_replies_are_ignored() {
+        let mut e = two_nodes();
+        e.refresh_agents();
+        let first = node_calls(&mut e);
+        answer_lists(&mut e, &first, &[]);
+        e.refresh_node("beta");
+        let second = node_calls(&mut e);
+        let latest = second.iter().find(|(_, _, c, _)| c == "agent.agents").unwrap();
+        e.agent_completed(latest.0, &latest.2, Ok((0, json!({"live":2}))));
+        let old = first.iter().find(|(_, n, c, _)| n.as_deref() == Some("beta") && c == "agent.agents").unwrap();
+        e.agent_completed(old.0, &old.2, Err("old timeout".into()));
+        assert_eq!(e.agents.node("beta").unwrap().error, None);
+        assert_eq!(e.agents.node("beta").unwrap().instances["live"], 2);
+        e.snapshot.nodes.retain(|node| node.name != "beta");
+        e.agents_discovered();
+        answer_lists(&mut e, &second, &[(Some("beta"), json!([session_on("ghost", "ready")]))]);
+        assert!(e.agents.node("beta").is_none());
+    }
+
+    #[test]
+    fn a_timed_out_list_honours_a_pending_refresh() {
+        let mut e = two_nodes();
+        e.refresh_agents();
+        let first = node_calls(&mut e);
+        e.agents_command(1, "workshop.agents.refresh", &json!({"node":"beta"}));
+        assert_eq!(reply_to(&e.take_effects(), 1).unwrap().0, 0);
+        let list = first.iter().find(|(_, n, c, _)| n.as_deref() == Some("beta") && c == "agent.session.list").unwrap();
+        e.agent_completed(list.0, &list.2, Err("timed out".into()));
+        assert!(node_calls(&mut e).iter().any(|(_, n, c, _)| n.as_deref() == Some("beta") && c == "agent.session.list"));
+    }
+
+    #[test]
+    fn acting_twins_refuse_unknown_nodes_before_routing() {
+        let mut e = two_nodes();
+        e.refresh_agents();
+        node_calls(&mut e);
+        for op in ["new", "prompt", "close", "cancel", "resume", "set", "answer"] {
+            e.agents_command(1, &format!("workshop.agents.{op}"), &json!({"node":"typo","session":"s1","agent":"claude","cwd":"/w","text":"hi","mode":"code","request":"1","option":"deny"}));
+            let effects = e.take_effects();
+            let (rc, body) = reply_to(&effects, 1).unwrap();
+            assert_eq!((rc, &body["error_code"]), (14, &json!("UNKNOWN_NODE")));
+            assert!(!effects.iter().any(|effect| matches!(effect, Effect::Agent {..})));
+        }
     }
 
     #[test]
