@@ -896,9 +896,7 @@ fn mode(ui: &mut Ui, engine: &Engine, look: &Look, events: &mut Vec<UiEvent>) {
     // Narrower than two cards and their gap, both shrink (the drawer open
     // at 1024): never clipped.
     let gap = (look.xl * 3.0).min(ui.available_width() * 0.1);
-    let width = 191.0_f32
-        .min((ui.available_width() - gap) / 2.0)
-        .max(1.0);
+    let width = 191.0_f32.min((ui.available_width() - gap) / 2.0).max(1.0);
     let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), 100.0 + 30.0), Sense::hover());
     let left = row.center().x - width - gap / 2.0;
     {
