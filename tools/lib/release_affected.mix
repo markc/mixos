@@ -46,6 +46,12 @@ fn select_affected($files, $packages, $graph)
   $selected = []
   $reason = ""
   for $file in $files
+    -- Workspace manifests and lockfiles are global even with a root package.
+    -- Decide this before ownership or the package-local manifest allowance.
+    if contains(["Cargo.toml", "Cargo.lock"], $file) then
+      if $reason == "" then $reason = "global input: " .. $file end
+      continue
+    end
     $forced = full_reason($file)
     if $forced != "" and $reason == "" then $reason = "global input: " .. $forced end
     $id = owner($file, $packages)
