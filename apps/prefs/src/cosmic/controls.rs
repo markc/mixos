@@ -1447,10 +1447,8 @@ pub fn append(
                     .max_rect(slot)
                     .layout(Layout::right_to_left(Align::Center)),
                 |ui| {
-                    let response = ui.add_enabled(
-                        enabled && !have && !full,
-                        named_button(word, &name, look),
-                    );
+                    let response =
+                        ui.add_enabled(enabled && !have && !full, named_button(word, &name, look));
                     if response.clicked()
                         && let Some(list) = ListEdit::Append(value.clone()).apply(&entries)
                     {
