@@ -349,12 +349,13 @@ impl Default for Scope {
 impl Scope {
     #[inline]
     pub fn is_declared_global(&self, name: &str) -> bool {
-        self.has_global_declarations && self.declarations.last().is_some_and(|s| {
-            s.frame >= self.floor()
-                && s.declared
-                    .as_ref()
-                    .is_some_and(|names| names.contains(name))
-        })
+        self.has_global_declarations
+            && self.declarations.last().is_some_and(|s| {
+                s.frame >= self.floor()
+                    && s.declared
+                        .as_ref()
+                        .is_some_and(|names| names.contains(name))
+            })
     }
 
     #[inline]
