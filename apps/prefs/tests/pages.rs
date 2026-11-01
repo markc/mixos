@@ -212,7 +212,11 @@ fn workspaces_orientation_applies_once_and_the_compd_rows_say_so() {
             .and_then(Value::as_str)
             .map(str::to_owned)
     };
-    assert!(blocked("typing").unwrap().contains("compd workspace overview"));
+    assert!(
+        blocked("typing")
+            .unwrap()
+            .contains("compd workspace overview")
+    );
     assert!(blocked("mode").unwrap().contains("compd per-output"));
     assert!(blocked("orientation").is_none());
     assert!(blocked("wraparound").is_none());
@@ -223,7 +227,10 @@ fn workspaces_orientation_applies_once_and_the_compd_rows_say_so() {
     rig.h.run_steps(4);
     let sent = applies(&rig);
     assert_eq!(sent.len(), 1, "{sent:?}");
-    assert_eq!(sent[0]["changes"], json!({"workspaces.orientation":"vertical"}));
+    assert_eq!(
+        sent[0]["changes"],
+        json!({"workspaces.orientation":"vertical"})
+    );
 }
 
 #[test]
