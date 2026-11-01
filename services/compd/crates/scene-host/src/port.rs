@@ -1563,12 +1563,15 @@ mod tests {
             old_binding.instance = "fixture".into();
             let mut initial = snapshot.clone();
             initial.binding = old_binding.clone();
-            let mut consumer = settings::consumer::Consumer::for_shell(old_binding.clone()).unwrap();
+            let mut consumer =
+                settings::consumer::Consumer::for_shell(old_binding.clone()).unwrap();
             let subscribe = consumer.connected(generation).unwrap();
             let read = consumer.complete(&subscribe, Ok(None)).unwrap();
             consumer.complete(&read, Ok(Some(initial)));
             assert!(consumer.acknowledge(&consumer.pending().unwrap().clone()));
-            let worker = SettingsWorker::offline(|snapshot| crate::appearance::build(snapshot).map(Arc::new));
+            let worker = SettingsWorker::offline(|snapshot| {
+                crate::appearance::build(snapshot).map(Arc::new)
+            });
             let (mut ui, mut lane) = bridge(Session::new(consumer), worker);
             ui.reconcile(Some(generation));
             let (outbound_tx, mut outbound) = tokio_mpsc::unbounded_channel();
@@ -1576,16 +1579,35 @@ mod tests {
             let (shutdown_tx, mut shutdown) = watch::channel(false);
             let registry = RegistryMailbox::default();
             let notify = |_| {};
-            let serving = serve(&client, "fixture", &delivery, &mut outbound, &mut events,
-                Arc::new(AtomicUsize::new(0)), &mut shutdown, &mut lane, &registry, &notify);
+            let serving = serve(
+                &client,
+                "fixture",
+                &delivery,
+                &mut outbound,
+                &mut events,
+                Arc::new(AtomicUsize::new(0)),
+                &mut shutdown,
+                &mut lane,
+                &registry,
+                &notify,
+            );
             let drive = async {
                 assert!(ui.session().host().consumer().current_work().is_none());
-                outbound_tx.send(Outbound::Settings { operation: "write-1".into(), body: json!({"binding":old_binding}) }).unwrap();
+                outbound_tx
+                    .send(Outbound::Settings {
+                        operation: "write-1".into(),
+                        body: json!({"binding":old_binding}),
+                    })
+                    .unwrap();
                 let first = loop {
-                    if let Ok(message) = receiver.try_recv() { break message; }
+                    if let Ok(message) = receiver.try_recv() {
+                        break message;
+                    }
                     tokio::task::yield_now().await;
                 };
-                let Inbound::Settings { operation, outcome } = first else { panic!("missing refusal") };
+                let Inbound::Settings { operation, outcome } = first else {
+                    panic!("missing refusal")
+                };
                 assert_eq!(operation, "write-1");
                 let outcome = outcome.unwrap_err();
                 assert_eq!(outcome["error_code"], "SETTINGS_REFUSED");
@@ -1594,13 +1616,21 @@ mod tests {
                 // Ordinary registry/lifecycle Wake events leave it idle.
                 let read = loop {
                     ui.drain_with(|| Some(generation), |_| {});
-                    if let Some(work) = ui.session().host().consumer().current_work().cloned() { break work; }
+                    if let Some(work) = ui.session().host().consumer().current_work().cloned() {
+                        break work;
+                    }
                     tokio::task::yield_now().await;
                 };
                 assert_eq!(read.kind(), settings::consumer::WorkKind::Read);
                 let result = settings::native::execute(&client, &read).await;
                 ui.handle_with(SettingsEvent::Rpc(read, result), Some(generation), |_| {});
-                let read = ui.session().host().consumer().current_work().cloned().unwrap();
+                let read = ui
+                    .session()
+                    .host()
+                    .consumer()
+                    .current_work()
+                    .cloned()
+                    .unwrap();
                 let result = settings::native::execute(&client, &read).await;
                 ui.handle_with(SettingsEvent::Rpc(read, result), Some(generation), |_| {});
                 assert!(ui.session().host().consumer().is_confirmed());
@@ -1608,15 +1638,26 @@ mod tests {
                 assert_eq!(ui.session().host().consumer().rebind_hops(), 0);
                 // Serve remains live after the true flight and accepts another
                 // write. Its false flight also leaves the connection running.
-                outbound_tx.send(Outbound::Settings { operation: "write-2".into(), body: json!({"binding":binding}) }).unwrap();
+                outbound_tx
+                    .send(Outbound::Settings {
+                        operation: "write-2".into(),
+                        body: json!({"binding":binding}),
+                    })
+                    .unwrap();
                 let second = loop {
-                    if let Ok(message) = receiver.try_recv() { break message; }
+                    if let Ok(message) = receiver.try_recv() {
+                        break message;
+                    }
                     tokio::task::yield_now().await;
                 };
-                let Inbound::Settings { operation, outcome } = second else { panic!("missing retry outcome") };
+                let Inbound::Settings { operation, outcome } = second else {
+                    panic!("missing retry outcome")
+                };
                 assert_eq!(operation, "write-2");
                 assert_eq!(outcome.unwrap()["status"], "changed");
-                outbound_tx.send(Outbound::WakeAfter(Duration::ZERO)).unwrap();
+                outbound_tx
+                    .send(Outbound::WakeAfter(Duration::ZERO))
+                    .unwrap();
                 loop {
                     if let Ok(message) = receiver.try_recv() {
                         assert!(matches!(message, Inbound::Repaint));
@@ -1626,13 +1667,13 @@ mod tests {
                 }
                 assert!(client.is_connected());
                 assert_eq!(client.connection_generation(), generation);
-                shutdown_tx.send(true).unwrap();
             };
             tokio::pin!(serving);
             tokio::select! {
                 _ = &mut serving => panic!("serve exited before explicit shutdown"),
                 () = drive => {}
             }
+            shutdown_tx.send(true).unwrap();
             serving.await;
             client.shutdown().await;
         })
