@@ -10633,9 +10633,13 @@ impl Evaluator {
                             // params: inside a function it must bind
                             // locally so it can't clobber a same-named
                             // caller/global via update_or_set's fallback.
-                            let binder_check = self.check_global_binder(&clause.var).and_then(|()| {
-                                clause.err_var.as_ref().map_or(Ok(()), |name| self.check_global_binder(name))
-                            });
+                            let binder_check =
+                                self.check_global_binder(&clause.var).and_then(|()| {
+                                    clause
+                                        .err_var
+                                        .as_ref()
+                                        .map_or(Ok(()), |name| self.check_global_binder(name))
+                                });
                             if let Err(e) = binder_check {
                                 Err(e)
                             } else {

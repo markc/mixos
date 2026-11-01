@@ -82,7 +82,6 @@ async fn declaration_errors_are_catchable() {
             "fn f() global $x; try die(\"e\") catch $m, $x end end; f()",
             "GLOBAL_BINDER",
         ),
-        ("fn f() global $_; $v = 1 | $_ end; f()", "GLOBAL_BINDER"),
         ("fn f() global $event end; f()", "GLOBAL_RUNTIME_NAME"),
         ("global $rc", "GLOBAL_RUNTIME_NAME"),
         ("global $result", "GLOBAL_RUNTIME_NAME"),
@@ -164,4 +163,22 @@ async fn missing_global_read_is_undefined_and_keyword_keys_work() {
 async fn invalid_catch_binder_still_runs_finally() {
     assert_eq!(run("fn f() global $x; try die(\"e\") catch $x finally print(\"cleanup\") end end; try f() catch $m, $e print($e.code) end").await,
         "cleanup\nGLOBAL_BINDER");
+}
+
+#[tokio::test]
+async fn embedded_pipeline_binder_refuses_global() {
+    use mix::ast::{BinOp, Expr, FunctionBody, StmtKind};
+    // The source parser's | is an external pipeline. The embedded AST
+    // expression pipeline is a separate supported evaluator path.
+    let source = "fn f() global $_; 0 end; try f() catch $m, $e print($e.code) end";
+    let mut stmts = Parser::new(Lexer::new(source).tokenize().unwrap(), source).parse_program().unwrap();
+    let StmtKind::FunctionDef { body: FunctionBody::Block(body), .. } = &mut stmts[0].kind else { panic!("function") };
+    body[1].kind = StmtKind::Expression(Expr::BinaryOp {
+        left: Box::new(Expr::NumberLiteral(1.0)), op: BinOp::Pipe,
+        right: Box::new(Expr::Variable("_".to_string())),
+    });
+    let out = SharedBuf::new();
+    let mut eval = Evaluator::with_output(Box::new(out.clone()), Box::new(SharedBuf::new()));
+    eval.execute(&stmts).await.unwrap();
+    assert_eq!(out.to_string_lossy().trim_end(), "GLOBAL_BINDER");
 }
