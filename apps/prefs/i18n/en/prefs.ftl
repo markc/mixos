@@ -606,6 +606,14 @@ opt-dark = Dark
 opt-all-displays = All displays
 opt-small = Small
 opt-large = Large
+## The list controls (Ordered, Append), shared by every page.
+list-more = More for { $entry }
+list-move-up = Move up
+list-move-down = Move down
+list-remove = Remove
+list-add = Add
+list-added = Added
+list-empty = Nothing matches.
 accent-blue = Blue
 accent-indigo = Indigo
 accent-purple = Purple
