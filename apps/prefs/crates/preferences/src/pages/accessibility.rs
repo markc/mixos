@@ -105,10 +105,7 @@ pub(super) fn pages() -> Vec<Page> {
                     .backend("backend-audio"),
                 ],
             ),
-            section(
-                "mobility",
-                vec![row("osk", Control::Page { page: "osk" })],
-            ),
+            section("mobility", vec![row("osk", Control::Page { page: "osk" })]),
             section(
                 "motion",
                 vec![

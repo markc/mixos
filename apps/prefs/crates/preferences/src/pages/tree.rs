@@ -20,9 +20,7 @@ fn custom(id: &'static str, icon: &'static str, parent: &'static str) -> Page {
 pub(super) fn pages() -> Vec<Page> {
     let mut pages = vec![super::network::network()];
     pages.extend(super::network::children());
-    pages.extend([
-        page("bluetooth", "bluetooth", None, Body::Pending),
-    ]);
+    pages.extend([page("bluetooth", "bluetooth", None, Body::Pending)]);
     pages.extend(super::accessibility::pages());
     pages.extend([
         list("desktop", "layout-dashboard"),
