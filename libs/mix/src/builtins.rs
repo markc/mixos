@@ -945,8 +945,13 @@ pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
         "udp_local_addr" => {
             expect_args("udp_local_addr", &args, 1)?;
             let id = socket_sources::client_id_of(args.first(), "udp_local_addr")?;
-            let addr = crate::udp::handles::get(id)?.sock.local_addr().map_err(crate::udp::io)?;
-            Ok(Some(crate::native_events::json_value(serde_json::json!({"host":addr.ip().to_string(), "port":addr.port()}))))
+            let addr = crate::udp::handles::get(id)?
+                .sock
+                .local_addr()
+                .map_err(crate::udp::io)?;
+            Ok(Some(crate::native_events::json_value(
+                serde_json::json!({"host":addr.ip().to_string(), "port":addr.port()}),
+            )))
         }
         "http_serve" => builtin_http_serve(args),
         "http_recv" => builtin_http_recv(args),
@@ -987,8 +992,8 @@ pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
         #[cfg(not(feature = "ws"))]
         name @ ("ws_connect" | "ws_send" | "ws_recv" | "ws_close" | "tcp_connect" | "tcp_send"
         | "tcp_recv" | "tcp_recv_line" | "tcp_close" | "ws_on" | "tcp_on"
-        | "ws_unwatch" | "udp_listen" | "udp_send_via" | "udp_close" | "udp_local_addr" | "udp_on"
-        | "udp_unwatch" | "tcp_unwatch" | "tcp_listen" | "tcp_accept"
+        | "ws_unwatch" | "udp_listen" | "udp_send_via" | "udp_close" | "udp_local_addr"
+        | "udp_on" | "udp_unwatch" | "tcp_unwatch" | "tcp_listen" | "tcp_accept"
         | "tcp_local_addr" | "unix_connect") => Err(MixError::RuntimeError {
             span: None,
             msg: format!("{name}() requires the `ws` feature (tungstenite/rustls)"),
@@ -36635,15 +36640,22 @@ mod fs_meta_tests {
         let path = std::ffi::CString::new(fifo.to_string_lossy().as_bytes()).unwrap();
         // SAFETY: path is NUL-terminated and lives across mkfifo.
         assert_eq!(unsafe { libc::mkfifo(path.as_ptr(), 0o600) }, 0);
-        for cap in [Value::Number(4.0), crate::native_events::json_value(serde_json::json!({"max":4})), crate::native_events::json_value(serde_json::json!({"offset":0, "max":4}))] {
+        for cap in [
+            Value::Number(4.0),
+            crate::native_events::json_value(serde_json::json!({"max":4})),
+            crate::native_events::json_value(serde_json::json!({"offset":0, "max":4})),
+        ] {
             let writer_path = fifo.clone();
             let writer = std::thread::spawn(move || {
-                let mut file = std::fs::OpenOptions::new().write(true).open(writer_path).unwrap();
-                file.write_all(&[0,255,128,42]).unwrap();
+                let mut file = std::fs::OpenOptions::new()
+                    .write(true)
+                    .open(writer_path)
+                    .unwrap();
+                file.write_all(&[0, 255, 128, 42]).unwrap();
             });
             let got = builtin_read_file_bytes(vec![s(&fifo), cap]);
             writer.join().unwrap();
-            assert_eq!(got.unwrap(), Some(Value::bytes(vec![0,255,128,42])));
+            assert_eq!(got.unwrap(), Some(Value::bytes(vec![0, 255, 128, 42])));
         }
         std::fs::remove_dir_all(d).unwrap();
     }

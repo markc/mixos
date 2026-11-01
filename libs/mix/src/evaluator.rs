@@ -316,7 +316,8 @@ pub(crate) fn incoming_event_to_mix_value(event: &IncomingEvent) -> Value {
         let d = std::rc::Rc::make_mut(d);
         if let Some(Value::Map(raw)) = d.get("bytes")
             && let Some(Value::String(hex)) = raw.get("hex")
-            && let Ok(Some(bytes)) = crate::builtins::call_builtin("bytes_from_hex", vec![Value::String(hex.clone())])
+            && let Ok(Some(bytes)) =
+                crate::builtins::call_builtin("bytes_from_hex", vec![Value::String(hex.clone())])
         {
             d.insert("bytes".into(), bytes);
         }

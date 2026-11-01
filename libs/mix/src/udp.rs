@@ -316,7 +316,10 @@ mod tests {
                 .unwrap()
                 .unwrap();
             let body: serde_json::Value = serde_json::from_str(&ev.body).unwrap();
-            assert_eq!(body["datagram"]["bytes"], serde_json::json!({"hex":crate::builtins::hex_encode(&payload)}));
+            assert_eq!(
+                body["datagram"]["bytes"],
+                serde_json::json!({"hex":crate::builtins::hex_encode(&payload)})
+            );
             let args = crate::evaluator::incoming_event_to_mix_value(&ev);
             let Value::Map(ref m) = args else { panic!() };
             let Value::Map(a) = &m["args"] else { panic!() };
@@ -519,7 +522,10 @@ mod tests {
         let body = record_body(&rec.data);
         assert_eq!(body["from_port"], 1900);
         assert_eq!(body["text"], serde_json::Value::Null);
-        assert_eq!(body["bytes"]["hex"].as_str().unwrap(), "ff".repeat(payload.len()));
+        assert_eq!(
+            body["bytes"]["hex"].as_str().unwrap(),
+            "ff".repeat(payload.len())
+        );
         assert!(handles::close(id).unwrap());
         assert!(!handles::close(id).unwrap());
     }
@@ -561,10 +567,21 @@ mod tests {
             let mut value = 0_i32;
             let mut size = std::mem::size_of_val(&value) as libc::socklen_t;
             // SAFETY: sock is live; value and size are valid output storage.
-            assert_eq!(unsafe { libc::getsockopt(sock.as_raw_fd(), libc::SOL_SOCKET, name, (&mut value as *mut i32).cast(), &mut size) }, 0);
+            assert_eq!(
+                unsafe {
+                    libc::getsockopt(
+                        sock.as_raw_fd(),
+                        libc::SOL_SOCKET,
+                        name,
+                        (&mut value as *mut i32).cast(),
+                        &mut size,
+                    )
+                },
+                0
+            );
             value != 0
         }
-        for (addr, port) in [(false,false), (true,false), (false,true), (true,true)] {
+        for (addr, port) in [(false, false), (true, false), (false, true), (true, true)] {
             let opts = serde_json::json!({"reuse":addr, "reuse_port":port}).to_string();
             let first = listen("0.0.0.0", 0, &opts);
             let sock = handles::get(first).unwrap();
