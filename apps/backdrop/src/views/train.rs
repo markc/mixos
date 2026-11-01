@@ -45,8 +45,12 @@ impl Train {
                     size:[0.48, 0.6, 0.75], tone: if rejected {3} else {tone}, glow:0., label:text(row, "branch") });
             }
         }
-        for (i, slot) in rows(&self.workers, "slots").iter().take(3).enumerate() {
+        let mut seen = std::collections::BTreeSet::new();
+        for slot in rows(&self.workers, "slots") {
             let name = text(slot, "worker");
+            if !seen.insert(name.clone()) { continue; }
+            let i = seen.len()-1;
+            if i >= 3 { break; }
             let busy = rows(&self.workers, "running").iter().any(|job| job["worker"] == slot["worker"]);
             let load = decoded(&slot["snapshot"])["load1"].as_f64().unwrap_or(0.) as f32;
             out.push(Block { position:[-4. + i as f32 * 4., 0.6, -3.], size:[2., 1.2, 1.2], tone:if busy {1} else {0},
@@ -82,25 +86,25 @@ impl View for Train {
         let scene = self.scene();
         let progress = self.changed.map_or(1., |t| (t.elapsed().as_secs_f32() / 0.6).min(1.));
         super::train_gpu::draw(ui, &scene, progress);
-        egui::Area::new(egui::Id::new("train-header")).fixed_pos(rect.min + egui::vec2(24.,24.)).show(ui.ctx(), |ui| {
+        egui::Area::new(egui::Id::unique("train-header")).fixed_pos(rect.min + egui::vec2(24.,24.)).show(ui.ctx(), |ui| {
             egui::Frame::popup(ui.style()).show(ui, |ui| {
                 ui.heading(strings.get("train-title"));
-                ui.label(strings.with("train-header", &[("sha", &text(&self.queue,"main_sha")), ("state", if self.queue.is_null() { "?" } else if self.queue["paused"].is_null() { "running" } else { "paused" })]));
+                ui.label(strings.with("train-header", &[("sha", &text(&self.queue,"main_sha")), ("state", &strings.get(if self.queue.is_null() { "train-unknown" } else if self.queue["paused"].is_null() { "train-running" } else { "train-paused" }))]));
                 ui.label(strings.get("train-track"));
+                if self.queue["stage_progress"].is_null() { ui.label(strings.get("train-stage-unavailable")); }
                 if let Some(error) = &self.error { ui.label(error); }
             });
         });
-        egui::Area::new(egui::Id::new("train-chart")).fixed_pos(egui::pos2(rect.left()+24., rect.bottom()-220.)).show(ui.ctx(), |ui| {
+        egui::Area::new(egui::Id::unique("train-chart")).fixed_pos(egui::pos2(rect.left()+24., rect.bottom()-220.)).show(ui.ctx(), |ui| {
             egui::Frame::popup(ui.style()).show(ui, |ui| {
                 ui.label(strings.get("train-history-stub"));
                 let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs_f64()/3600.;
                 egui_plot::Plot::new("train-live-samples").width(rect.width().min(640.)-48.).height(140.)
-                    .allow_zoom(false).allow_drag(false).allow_scroll(false).show(ui, |plot| {
+                    .include_x(-24.).include_x(0.).allow_zoom(false).allow_drag(false).allow_scroll(false).show(ui, |plot| {
                         for (name, landing) in [("train-gates", false), ("train-landings", true)] {
                             let points: Vec<[f64;2]> = self.samples.iter().map(|s| [s.0-now, if landing {s.2} else {s.1}]).collect();
                             plot.line(egui_plot::Line::new(strings.get(name), points));
                         }
-                        plot.include_x(-24.); plot.include_x(0.);
                     });
             });
         });
