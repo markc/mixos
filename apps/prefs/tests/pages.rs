@@ -259,7 +259,12 @@ fn search_lands_on_the_control() {
 fn accessibility_reads_as_data_and_a_text_size_write_applies_once() {
     let mut rig = rig();
     read(&mut rig, "authority", false);
-    let (rc, body) = ask(&mut rig, 1, "prefs.page.open", json!({"page":"accessibility"}));
+    let (rc, body) = ask(
+        &mut rig,
+        1,
+        "prefs.page.open",
+        json!({"page":"accessibility"}),
+    );
     assert_eq!(rc, 0, "{body}");
     let (rc, page) = ask(&mut rig, 2, "prefs.page", json!({"page":"accessibility"}));
     assert_eq!(rc, 0);
@@ -299,8 +304,18 @@ fn magnifier_and_osk_wait_on_their_backends_and_refuse_writes() {
     let mut rig = rig();
     read(&mut rig, "authority", false);
     for (id, page_name, backend, key) in [
-        (1, "magnifier", "compd magnifier", "accessibility.magnifier.increment"),
-        (2, "osk", "a MixOS on-screen keyboard", "accessibility.osk.always_show"),
+        (
+            1,
+            "magnifier",
+            "compd magnifier",
+            "accessibility.magnifier.increment",
+        ),
+        (
+            2,
+            "osk",
+            "a MixOS on-screen keyboard",
+            "accessibility.osk.always_show",
+        ),
     ] {
         let (rc, body) = ask(&mut rig, id, "prefs.page.open", json!({"page":page_name}));
         assert_eq!(rc, 0, "{body}");
@@ -310,7 +325,12 @@ fn magnifier_and_osk_wait_on_their_backends_and_refuse_writes() {
             page["backend"].as_str().unwrap().contains(backend),
             "{page_name}: {page}"
         );
-        let (rc, body) = ask(&mut rig, id + 20, "prefs.set", json!({"key":key,"value":50}));
+        let (rc, body) = ask(
+            &mut rig,
+            id + 20,
+            "prefs.set",
+            json!({"key":key,"value":50}),
+        );
         assert_eq!(
             (rc, body["error_code"].as_str()),
             (10, Some("REFUSED")),
