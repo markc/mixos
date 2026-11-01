@@ -26,6 +26,30 @@ async fn run(src: &str, strict: bool) -> Result<String, String> {
 }
 
 #[tokio::test]
+async fn read_file_bytes_range_options_work_in_both_contract_modes() {
+    let path = std::env::temp_dir().join(format!("mix-range-contract-{}", std::process::id()));
+    std::fs::write(&path, [0, 255, 128, 42]).unwrap();
+    let quoted = serde_json::to_string(&path.to_string_lossy()).unwrap();
+    for strict in [false, true] {
+        let src = format!(r#"
+$path = {quoted}
+print(bytes_to_hex(read_file_bytes($path, {{max: 2}})))
+print(bytes_to_hex(read_file_bytes($path, {{offset: 1, max: 2}})))
+print(bytes_len(read_file_bytes($path, {{offset: 4, max: 2}})))
+print(bytes_len(read_file_bytes($path, 0)))
+print(bytes_len(read_file_bytes($path)))
+try
+  read_file_bytes($path, {{offset: 1}})
+catch $msg, $err
+  print($err.code)
+end
+"#);
+        assert_eq!(run(&src, strict).await.unwrap(), "00ff\nff80\n0\n0\n4\nOPTION_INVALID\n");
+    }
+    std::fs::remove_file(path).unwrap();
+}
+
+#[tokio::test]
 async fn critical_class_types_gate_in_every_mode() {
     // exists(path: string) — FsRead — gates in BOTH modes: a number path
     // is a probe on the wrong target. The TYPE_MISMATCH code rides the
