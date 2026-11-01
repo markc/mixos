@@ -109,6 +109,7 @@ end
 fn call($target, $command, $b)
   $wire = json_encode($b)
   send $target $command body=$wire timeout=10
+  if $command == "fake.publish" and $rc != 0 then raise("TEST", "topic publication refused: " .. to_string($result)) end
   $v = $result
   if type($v) == "string" then
     try
@@ -344,8 +345,11 @@ try
   push($procs, spawn([$mix, "--serve", $here .. "/fixtures/fake_settingsd.mix", "--name", "authority"],
     {detach: true, env: $env, stdout: {file: $tmp .. "/settingsd.log"}, stderr: "stdout"}))
   check("authority ready", eventually(fn() = call("authority", "fake.calls", {}).rc == 0))
+  push($procs, spawn([$mix, "--serve", $here .. "/fixtures/fake_settingsd.mix", "--name", "settingsd"],
+    {detach: true, env: $env, stdout: {file: $tmp .. "/publisher.log"}, stderr: "stdout"}))
+  check("publisher ready", eventually(fn() = call("settingsd", "fake.calls", {}).rc == 0))
   for $prefix in ["appearance", "window", "accessibility", "shell.panels"]
-    call("authority", "fake.publish", {prefix: $prefix})
+    call("settingsd", "fake.publish", {prefix: $prefix})
   end
   $live = $tmp .. "/live"
   $kenv = merge($env, {XDG_CONFIG_HOME: $live .. "/config", XDG_DATA_HOME: $live .. "/data",
@@ -372,27 +376,27 @@ try
   $pal11 = json_parse(read_file($fake .. "/palette.json"))
   $pal11.revision = "11"
   write_file($fake .. "/palette.json", json_encode($pal11))
-  call("authority", "fake.publish", {prefix: "window"})
+  call("settingsd", "fake.publish", {prefix: "window"})
   check("follows a window change", eventually(fn() = $kc.lookup($kc.read_groups($live .. "/config/kwinrc"), "org.kde.kdecoration2", "ButtonsOnLeft") == "XIA"))
   $c = call("authority", "fake.calls", {}).v
   check("a window-only revision fences its palette too", $c.get == 2 and $c.palette == 2)
   -- Revision 12 moves appearance and accessibility: two topics, one reconcile.
   authority($fake, "light", true, "12", "#3584E4FF")
-  call("authority", "fake.publish", {prefix: "appearance"})
-  call("authority", "fake.publish", {prefix: "accessibility"})
+  call("settingsd", "fake.publish", {prefix: "appearance"})
+  call("settingsd", "fake.publish", {prefix: "accessibility"})
   check("follows a mode flip", eventually(fn() = scheme_now($live .. "/config/kdeglobals") == "MixOS-Light"))
   sleep(1)
   $c = call("authority", "fake.calls", {}).v
   check("two topics of one revision reconcile once", $c.get == 3 and $c.palette == 3)
   authority($fake, "dark", true, "13", "#AABBCCFF")
   call("authority", "fake.skew", {count: -1})
-  call("authority", "fake.publish", {prefix: "appearance"})
+  call("settingsd", "fake.publish", {prefix: "appearance"})
   check("mixed revisions are refused before writes", eventually(fn() = call("exportd-kde", "exportd.kde.status", {}).v.error.code == "MOVED") and scheme_now($live .. "/config/kdeglobals") == "MixOS-Light")
   call("authority", "fake.skew", {count: 1})
-  call("authority", "fake.publish", {prefix: "appearance"})
+  call("settingsd", "fake.publish", {prefix: "appearance"})
   check("a moving palette is retried and then adopted", eventually(fn() = scheme_now($live .. "/config/kdeglobals") == "MixOS-Dark"))
   authority($fake, "light", true, "14", "#3584E4FF")
-  call("authority", "fake.publish", {prefix: "appearance"})
+  call("settingsd", "fake.publish", {prefix: "appearance"})
   check("mode restored for restart test", eventually(fn() = scheme_now($live .. "/config/kdeglobals") == "MixOS-Light"))
   -- A restart between the write and the restore.
   $k = kill($citizen, 15)
@@ -404,13 +408,13 @@ try
   check("restore after a restart", $rs.rc == 0 and $rs.v.paused == true and $rs.v.restored > 100
     and not is_file($live .. "/data/color-schemes/MixOS-Light.colors") and scheme_now($live .. "/config/kdeglobals") == nil)
   authority($fake, "dark", true, "15", "#3584E4FF")
-  call("authority", "fake.publish", {prefix: "appearance"})
+  call("settingsd", "fake.publish", {prefix: "appearance"})
   sleep(1.5)
   check("paused: a new revision writes nothing", scheme_now($live .. "/config/kdeglobals") == nil)
   $rc = call("exportd-kde", "exportd.kde.reconcile", {})
   check("reconcile clears the pause and writes", $rc.v.paused == false and scheme_now($live .. "/config/kdeglobals") == "MixOS-Dark")
   authority($fake, "light", false, "16", "#3584E4FF")
-  call("authority", "fake.publish", {prefix: "appearance"})
+  call("settingsd", "fake.publish", {prefix: "appearance"})
   check("status reports the gate", eventually(fn() = call("exportd-kde", "exportd.kde.status", {}).v.gated == true))
   check("export_desktop false stops writing", scheme_now($live .. "/config/kdeglobals") == "MixOS-Dark")
 finally

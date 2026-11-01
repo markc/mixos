@@ -106,8 +106,7 @@ fn reconcile($why)
 end
 
 fn on_topic($prefix, $body)
-  -- Native JSON bodies and publish(topic, json_encode(body)) both occur:
-  -- the latter delivers a JSON string containing JSON, rather than a map.
+  -- Accept the parsed JSON map and a JSON-string payload containing JSON.
   for $decode = 1 to 2
     if type($body) != "string" then break end
     try $body = json_parse($body) catch $m return nil end
