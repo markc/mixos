@@ -62,12 +62,38 @@ $source = env("MIXOS_SETTINGS_SERVICE", "settingsd")
 -- What we wrote, so undo restores originals and a hand edit is noticed:
 -- files {path: {original, written}} where each is {kind: absent|file|link,
 -- data|target}; keys {path: {"Section/key": {original, written}}}.
+fn record_state($s)
+  return type($s) == "map" and ($s.kind == "absent" or ($s.kind == "file" and type($s.data) == "string") or ($s.kind == "link" and type($s.target) == "string"))
+end
+
+fn record_destination($path)
+  return $config != nil and starts_with($path, $config .. "/") and not contains($path .. "/", "/../")
+end
+
+fn valid_records($r)
+  if type($r) != "map" or type($r.files) != "map" or type($r.keys) != "map" or type($r.paused) != "bool" then return false end
+  if type($r.created ?? {}) != "map" then return false end
+  for $path, $f in $r.files
+    if not record_destination($path) or type($f) != "map" or not record_state($f.original) or ($f.written != nil and not record_state($f.written)) then return false end
+  end
+  for $path, $entries in $r.keys
+    if not record_destination($path) or type($entries) != "map" then return false end
+    for $id, $k in $entries
+      if not contains($id, "/") or type($k) != "map" then return false end
+      if ($k.original != nil and type($k.original) != "string") or ($k.written != nil and type($k.written) != "string") then return false end
+    end
+  end
+  $p = $r.pending
+  if $p != nil and (type($p) != "map" or type($p.path) != "string" or not record_destination($p.path) or not record_state($p.before) or not record_state($p.after)) then return false end
+  return true
+end
+
 $R = {files: {}, keys: {}, created: {}, paused: false, pending: nil}
 $record_error = nil
 if is_file($record_path) then
   try
     $loaded = json_parse(read_file($record_path))
-    if type($loaded) != "map" or type($loaded.files) != "map" or type($loaded.keys) != "map" or type($loaded.paused) != "bool" then raise("RECORD", "invalid record shape") end
+    if not valid_records($loaded) then raise("RECORD", "invalid record shape or destination") end
     $R = merge($R, $loaded)
   catch $m
     -- Keep the evidence, stay available for status, and refuse all writes.
@@ -129,7 +155,11 @@ fn install_state($path, $after)
   else
     mkdir(dirname($path))
     if $after.kind == "file" then
-      write_atomic($path, $after.data, {durability: "file"})
+      -- write_atomic resolves an existing final symlink. Restore by renaming
+      -- a sibling file instead, so undo replaces our gtk.css link itself.
+      $tmp = $path .. ".mixos-" .. uuid()
+      write_atomic($tmp, $after.data, {durability: "file"})
+      rename($tmp, $path)
     else
       $tmp = $path .. ".mixos-" .. uuid()
       symlink($after.target, $tmp)

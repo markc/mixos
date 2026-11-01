@@ -103,6 +103,7 @@ try
   $u = call("exportd-gtkqt", "exportd.gtkqt.undo", {})
   check("undo answers", $u.rc == 0 and len($u.v.restored) > 0)
   check("undo restores the user's gtk.css", read_file($cfg .. "/gtk-3.0/gtk.css") == "/* the user's own */\n")
+  check("undo replaced the link, not its CSS target", not stat($cfg .. "/gtk-3.0/gtk.css", {follow_symlinks: false}).is_symlink)
   check("undo removes a link that was not there", lstat_absent($cfg .. "/gtk-4.0/gtk.css"))
   check("undo removes our css", not is_file($cfg .. "/gtk-4.0/mixos/dark.css"))
   $after = read_file($cfg .. "/gtk-3.0/settings.ini")
