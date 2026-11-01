@@ -534,10 +534,7 @@ mod tests {
             let closed = closer.join().unwrap();
             match subscribed {
                 Ok(sock) => {
-                    assert_eq!(
-                        closed.unwrap_err(),
-                        "SOCKET_SUBSCRIBED"
-                    );
+                    assert_eq!(closed.unwrap_err(), "SOCKET_SUBSCRIBED");
                     assert!(handles::get(id).is_ok());
                     handles::MAP.lock().unwrap().remove(&id);
                     drop(sock);
