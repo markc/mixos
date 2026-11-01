@@ -5,7 +5,9 @@
 //! and the panel clock are settingsd keys, live now. Region & language: the
 //! languages and the formats are hostd's locale1, so the whole page waits on
 //! it, and the one reason is said once under its title.
-use super::{Body, ChoiceStyle, Control, Drawer, Extra, Opt, Page, PickList, opt, row, section, untitled};
+use super::{
+    Body, ChoiceStyle, Control, Drawer, Extra, Opt, Page, PickList, opt, row, section, untitled,
+};
 
 const FIRST_DAY: &[Opt] = &[
     opt("friday", "opt-friday"),
@@ -59,13 +61,8 @@ pub(super) fn date_time() -> Page {
                             },
                         )
                         .backend("backend-hostd-timedated"),
-                        row(
-                            "ntp",
-                            Control::Toggle {
-                                key: "time.ntp",
-                            },
-                        )
-                        .backend("backend-hostd-timedated"),
+                        row("ntp", Control::Toggle { key: "time.ntp" })
+                            .backend("backend-hostd-timedated"),
                     ],
                 ),
                 untitled(
@@ -101,11 +98,8 @@ pub(super) fn region() -> Page {
         Some("time"),
         Body::Sections {
             sections: vec![
-                section(
-                    "languages",
-                    vec![row("order", Control::Info)],
-                )
-                .items("region.languages", "row-region-languages_none"),
+                section("languages", vec![row("order", Control::Info)])
+                    .items("region.languages", "row-region-languages_none"),
                 section(
                     "formatting",
                     vec![row(
