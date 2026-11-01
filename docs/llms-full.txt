@@ -22443,6 +22443,7 @@ tail(path[, n])          -> list      (last n lines, default 10 — reads backwa
 line_count(path)         -> number   (count lines by streaming; works on non-UTF-8 files)
 read_file_bytes(path)    -> bytes     (raw; binary-safe)
 read_file_bytes(p, max)  -> bytes     (read at most `max` bytes — header-sniff)
+read_file_bytes(p, {offset, max}) -> bytes (seek, then read a bounded range)
 stdin_copy(path)         -> nil       (stream stdin to a file, flushing every chunk)
 tty_mode("raw"|"cooked") -> nil       (raw/cooked terminal mode; original restored on exit)
 ```
@@ -22504,6 +22505,26 @@ read at *max* bytes via `File::take`, so you can sniff a header out of a
 multi-megabyte file without slurping it all. The cap must be a real `Number`
 (a numeric string or bool is rejected — a silent surprise on a read cap would be
 a footgun). Pair it with the [bytes helpers](#bytes-helpers):
+
+Since v0.118.0, `read_file_bytes(path, {offset, max})` reads a bounded range
+without scanning the preceding bytes. `max` is required in the options form:
+an integer from 1 to `i64::MAX`. `offset` defaults to 0 and accepts integers
+from 0 to `i64::MAX`; both must be real numbers (no string/bool coercion).
+Each call opens its own file, seeks, then reads until `max` bytes or EOF;
+ordinary short reads are retried. At or past EOF the result is empty bytes.
+This supports HTTP Range streaming of large files in bounded chunks:
+
+```mix
+$chunk = read_file_bytes("/tmp/video.bin", {offset: 1073741824, max: 65536})
+```
+
+Unknown keys or a missing `max` raise `OPTION_INVALID`, wrong option value
+types raise `TYPE_MISMATCH`, and negative, fractional, non-finite or out-of-range
+numbers raise `VALUE_OUT_OF_RANGE`, all before opening the file. No new read
+size limit is imposed: the caller chooses its chunk size. The original
+`read_file_bytes(path)` whole-file form and numeric cap form, including a zero
+cap, are unchanged; passing nil still raises. For an in-memory byte range,
+use the existing `slice(bytes, start[, end])` (0-based, end exclusive).
 
 ```mix
 -- a file whose first bytes are the JPEG magic \xFF\xD8\xFF
@@ -40739,6 +40760,9 @@ loads unchanged.
 
 ### Added
 
+- `read_file_bytes(path, {offset, max})` seeks to a byte offset (default 0)
+  and reads up to required `max` bytes, stopping early only at EOF. At/past
+  EOF returns empty bytes. The whole-file and numeric cap forms are unchanged.
 - IPv4 UDP event sources: `udp_listen`, `udp_on`, `udp_send_from`,
   `udp_close`, `udp_unwatch` (ws feature), with multicast membership, egress
   interface, pre-bind reuse and generation retirement. `udp_send` accepts
