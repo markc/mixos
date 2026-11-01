@@ -110,6 +110,11 @@ fn empty_redirected_reads_keep_last_good_retry_and_reach_the_hop_cap() {
         assert!(state.retry_deadline().is_some());
         assert_eq!(state.fault().unwrap().code, "empty_read");
         read = state.retry().unwrap();
+        // Repeated empty answers from this same instance keep retrying too.
+        state.complete(&read, Ok(None));
+        assert!(state.retry_deadline().is_some());
+        assert_eq!(state.rebind_hops(), (index + 1) as u8);
+        read = state.retry().unwrap();
     }
     assert!(state.complete(&read, Err(wrong_target(Some(rebound("e").binding)))).is_none());
     assert_eq!(state.binding().instance, "d");
