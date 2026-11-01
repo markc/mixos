@@ -210,6 +210,7 @@
                     <nav id="toc-nav">
                         <a href="#the-rules-v1">The rules (v1)</a>
                         <a href="#notes-severity-note-0630" class="toc-h3">Notes (severity note, 0.63.0)</a>
+                        <a href="#global-declarations-01190">Global declarations (0.119.0)</a>
                         <a href="#in-file-pragmas-01170">In-file pragmas (0.117.0)</a>
                         <a href="#mix-explain-mix-xxxx--the-offline-diagnostics-explainer">mix explain MIX-XXXX — the offline diagnostics explainer</a>
                         <a href="#machine-output">Machine output</a>
@@ -506,6 +507,23 @@ auto-export or that uses <code>source</code>/<code>include</code>, and a file th
 <p><strong>MIX-D3015</strong> and <strong>MIX-W2405</strong> ask how a literal was <em>spelled</em>, which the token stream deliberately forgets (<code>'$sp/x'</code> and <code>"$sp/x"</code> lex to the same token). They therefore need the source text: <code>mix lint</code> supplies it, and so does the nested analysis of an <code>ssh_mix</code> body, but an embedder calling <code>analyze()</code> without setting <code>AnalyzerConfig::source</code> simply does not get these two rules.</p>
 </li>
 </ul>
+<h2 id="global-declarations-01190">Global declarations (0.119.0)</h2>
+<p><code>global $x</code> explicitly directs assignment to the program-global frame for
+this invocation. MIX-E1506 exempts declared names; its hint is: declare it
+with <code>global $x</code>, pass it in and return it, or rename the local.</p>
+<table><thead><tr><th>Code</th><th>Meaning</th></tr></thead><tbody>
+<tr><td><code>MIX-E1509</code></td><td>Parameter declared global (<code>GLOBAL_PARAM</code>)</td></tr>
+<tr><td><code>MIX-E1510</code></td><td>Declaration after local binding (<code>GLOBAL_AFTER_LOCAL</code>); runtime also rejects captures and module injections</td></tr>
+<tr><td><code>MIX-E1511</code></td><td>Loop/catch/parse/pipeline binder of a declared global (<code>GLOBAL_BINDER</code>)</td></tr>
+<tr><td><code>MIX-E1512</code></td><td>Runtime-owned <code>$event</code>, <code>$rc</code>, <code>$result</code>, <code>$reply</code> (<code>GLOBAL_RUNTIME_NAME</code>)</td></tr>
+<tr><td><code>MIX-D3023</code></td><td>Declaration at top level (no-op) or in a handler (explicit shared-global writes)</td></tr>
+<tr><td><code>MIX-D3024</code></td><td>Declaration nested in control flow; takes effect only if executed</td></tr>
+<tr><td><code>MIX-W2316</code></td><td>Function reads an outer variable before its first local assignment; suggests <code>global</code> (agent-only for its first train)</td></tr>
+</tbody></table>
+<p>Placement checking is textual-order and flow-insensitive, and applies
+independently to functions, lambdas and handlers. <code>mix explain CODE</code> gives
+the full explanation. See <a href="/mix/variables/#explicit-program-global-writes">variables</a>
+for the runtime contract and module behaviour.</p>
 <h2 id="in-file-pragmas-01170">In-file pragmas (0.117.0)</h2>
 <p>A comment starting <code>-- lint:</code> (or <code># lint:</code>) tells lint something the code
 cannot, so the knowledge lives with the file instead of in a per-invocation

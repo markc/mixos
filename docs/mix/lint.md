@@ -231,6 +231,27 @@ move, since a code's letter fixes its severity permanently. It is now
 - **MIX-W2405** warns when a double-quoted literal contains a backslash escape the lexer does not recognise, so the backslash is kept: `"isn\x27t"` printed `isn\x27t` and nothing said so, which is how a `replace()` wrote that into a committed journal entry. 0.90.0 added `\xHH` (exactly two hex digits), `\0` and `\a \b \f \v`, so what remains is genuinely unrecognised — including `\x` with fewer than two hex digits and `\'`. A deliberate backslash is `\\`, so the warning has a clean escape. An unbraced `\u` is **exempt**: that literal is documented design (it protects embedded JSON and `C:\users`). Single-quoted strings and heredocs keep their own rules and are not scanned.
 - **MIX-D3015** and **MIX-W2405** ask how a literal was *spelled*, which the token stream deliberately forgets (`'$sp/x'` and `"$sp/x"` lex to the same token). They therefore need the source text: `mix lint` supplies it, and so does the nested analysis of an `ssh_mix` body, but an embedder calling `analyze()` without setting `AnalyzerConfig::source` simply does not get these two rules.
 
+## Global declarations (0.119.0)
+
+`global $x` explicitly directs assignment to the program-global frame for
+this invocation. MIX-E1506 exempts declared names; its hint is: declare it
+with `global $x`, pass it in and return it, or rename the local.
+
+| Code | Meaning |
+|---|---|
+| `MIX-E1509` | Parameter declared global (`GLOBAL_PARAM`) |
+| `MIX-E1510` | Declaration after local binding (`GLOBAL_AFTER_LOCAL`); runtime also rejects captures and module injections |
+| `MIX-E1511` | Loop/catch/parse/pipeline binder of a declared global (`GLOBAL_BINDER`) |
+| `MIX-E1512` | Runtime-owned `$event`, `$rc`, `$result`, `$reply` (`GLOBAL_RUNTIME_NAME`) |
+| `MIX-D3023` | Declaration at top level (no-op) or in a handler (explicit shared-global writes) |
+| `MIX-D3024` | Declaration nested in control flow; takes effect only if executed |
+| `MIX-W2316` | Function reads an outer variable before its first local assignment; suggests `global` (agent-only for its first train) |
+
+Placement checking is textual-order and flow-insensitive, and applies
+independently to functions, lambdas and handlers. `mix explain CODE` gives
+the full explanation. See [variables](variables.md#explicit-program-global-writes)
+for the runtime contract and module behaviour.
+
 ## In-file pragmas (0.117.0)
 
 A comment starting `-- lint:` (or `# lint:`) tells lint something the code

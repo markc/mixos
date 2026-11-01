@@ -313,6 +313,7 @@ fn collect_interp_sites(stmt: &Stmt, out: &mut Vec<InterpSite>) {
     let line = stmt.line;
     let mut visit_expr = |e: &Expr| collect_interp_in_expr(e, line, out);
     match &stmt.kind {
+        StmtKind::Global(_) => {},
         StmtKind::Expression(e) => visit_expr(e),
         StmtKind::Assignment { value, .. } => visit_expr(value),
         StmtKind::FieldAssignment { value, .. } => visit_expr(value),
@@ -826,6 +827,7 @@ fn visit_stmt_exprs(stmt: &Stmt, f: &mut dyn FnMut(&Expr)) {
         | StmtKind::TryCatch { .. }
         | StmtKind::On { .. }
         | StmtKind::PipeToExternal { .. }
+        | StmtKind::Global(_)
         | StmtKind::Chain { .. } => {}
     }
 }
