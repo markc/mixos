@@ -472,14 +472,12 @@ impl<P: LayerProgram + 'static> State<P> {
         let now = Instant::now();
         for s in &mut self.surfaces {
             if s.frame_pending && s.pending_since.is_some_and(|t| timing::expired(t, now)) {
-                if self.program.strict_frame_callbacks() {
-                    self.program.visibility(&s.ctx, false);
-                }
+                self.program.visibility(&s.ctx, false);
                 s.frame_pending = false;
                 s.pending_since = None;
-                // The present may have failed silently: redraw once. A
-                // compositor that withholds callbacks (a hidden output)
-                // then gets no more until one comes back.
+                // Wallpaper rescues once and leaves future data events
+                // unblocked. A live view probes with wallpaper at a low rate
+                // until a real callback confirms visibility again.
                 if let Some(delay) =
                     timing::callback_recovery(self.program.strict_frame_callbacks(), s.rescued)
                 {
@@ -1311,6 +1309,7 @@ impl<P: LayerProgram + 'static> Dispatch<wl_callback::WlCallback, (u64, u64)> fo
             s.pending_since = None;
             s.rescued = false;
             let ctx = s.ctx.clone();
+            s.retry_at = None;
             state.program.visibility(&ctx, true);
         }
     }
