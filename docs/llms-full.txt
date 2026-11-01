@@ -1285,8 +1285,8 @@ and ended sessions: `{session, agent, cwd, parent, status, seq, turn,
 created_at, ended_at, title, open_permissions, permission_requests,
 permissions, exit_code, signal, end_reason}`. `created_at` is an ISO time;
 `ended_at` is epoch seconds, nil while the session is live, as are the exit
-fields. `title` is the first line of the first prompt (at most 120
-characters), nil until the session has had a prompt; a later prompt never
+fields. `title` is the first line of the first prompt with usable text (at most 120
+characters), nil until such a prompt arrives; a later prompt never
 changes it.
 
 A read returns at most `limit` events (default and maximum 2000) and about

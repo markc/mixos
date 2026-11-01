@@ -477,6 +477,28 @@ on agent.load_settle
   end
 end
 
+$TITLE_PENDING = {}
+
+fn persist_title($id)
+  $title = $TITLE_PENDING[$id]
+  if $title == nil then return end
+  try
+    $log.session_title($DB, $id, $title)
+    $TITLE_PENDING[$id] = nil
+  catch $m
+    eprint("agentd: " .. $id .. ": title not logged: " .. $m)
+    task_start("agent.title_retry", json_encode({session: $id}))
+  end
+end
+
+on agent.title_retry async
+  sleep(1)
+end
+
+on agent.title_retry
+  persist_title(to_string(body().session))
+end
+
 fn start_turn($id, $blocks)
   $rpc = next_rpc()
   $S.sessions[$id].pending[to_string($rpc)] = {kind: "prompt"}
@@ -496,11 +518,8 @@ fn start_turn($id, $blocks)
     $title = $a.prompt_title($blocks)
     if $title != nil then
       $S.sessions[$id].title = $title
-      try
-        $log.session_title($DB, $id, $title)
-      catch $m
-        eprint("agentd: " .. $id .. ": title not logged: " .. $m)
-      end
+      $TITLE_PENDING[$id] = $title
+      persist_title($id)
     end
   end
   return $rpc

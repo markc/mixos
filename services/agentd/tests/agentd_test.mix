@@ -131,7 +131,18 @@ try
   $s = $n.v.session
   check("session.new replies at once with a valid id", $n.rc == 0 and re_match(to_string($s), "^[a-z0-9]{4,12}$"))
   check("the session becomes ready", wait_ready($s))
+  $db = sqlopen($tmp .. "/state/sessions.db", "rw")
+  sqlexec($db, "CREATE TRIGGER fail_title BEFORE UPDATE OF title ON sessions BEGIN SELECT RAISE(FAIL, 'test title failure'); END")
   $p = agent("agent.session.prompt", {session: $s, content: "hello MCP"})
+  check("failed title write leaves the durable title empty", sqlexec($db, "SELECT title FROM sessions WHERE id = ?", [$s])[0].title == nil)
+  sqlexec($db, "DROP TRIGGER fail_title")
+  $saved = false
+  for $i = 1 to 30
+    if sqlexec($db, "SELECT title FROM sessions WHERE id = ?", [$s])[0].title == "hello MCP" then $saved = true; break end
+    sleep(0.1)
+  end
+  check("title write retries without a later prompt", $saved)
+  sqlclose($db)
   check("prompt is accepted with a turn", $p.rc == 0 and $p.v.turn != nil)
   check("the agent saw its mixos-mcp session env", saw("updated " .. $s .. " ", "agent_message_chunk mcp:" .. $s))
   check("text streamed back", saw("updated " .. $s .. " ", "agent_message_chunk echo:hello MCP"))
@@ -319,6 +330,8 @@ try
     $old.rc == 0 and $old.v.session.status == "ended" and len($old.v.events) == len($before))
   check("the log view keeps ended_at and title",
     $old.v.session.ended_at == $closed.ended_at and $old.v.session.title == "hello MCP")
+  $listed = filter(agent("agent.session.list", {}).v.sessions, fn($x) = $x.session == $s)[0]
+  check("an ended list row equals the read session including permission arrays", deep_eq($listed, $old.v.session) and deep_eq($listed.permissions, []) and deep_eq($listed.permission_requests, []))
   $live = agent("agent.session.read", {session: $s2, since: 0})
   $lastev = if $live.rc == 0 and len($live.v.events) > 0 then $live.v.events[len($live.v.events) - 1] else {} end
   check("a session live at the restart is ended by it",

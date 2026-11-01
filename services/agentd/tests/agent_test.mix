@@ -156,6 +156,7 @@ refuses("block without a type", "USAGE", fn() = $a.prompt_blocks([{text: "x"}]))
 check("a title is the first text block's first line, trimmed",
   $a.prompt_title([{type: "image", data: "x"}, {type: "text", text: "  \n Fix the corner \nthen test"}]) == "Fix the corner")
 check("a title is at most 120 characters", len($a.prompt_title($a.prompt_blocks(repeat("é", 300)))) == 120)
+check("a mixed UTF-8 title cuts by character", $a.prompt_title($a.prompt_blocks("abc" .. repeat("é🙂", 60))) == "abc" .. repeat("é🙂", 58) .. "é")
 check("a prompt with no text has no title", $a.prompt_title([{type: "image", data: "x"}, {type: "text", text: " \n "}]) == nil)
 
 -- Classification.
