@@ -43,7 +43,7 @@ const MOVEMENT: &[Opt] = &[
 ];
 
 pub(super) fn pages() -> Vec<Page> {
-    let mut accessibility = super::page(
+    let accessibility = super::page(
         "accessibility",
         "accessibility",
         None,
