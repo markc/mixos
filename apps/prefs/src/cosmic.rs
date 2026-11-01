@@ -752,8 +752,14 @@ pub fn section_card(
         .backend
         .filter(|_| engine.page_reason(page).is_none());
     if let Some(backend) = waits {
-        notice(ui, look, &label_with("backend-missing", &[("backend", &label(backend))]));
-        let items_empty = section.items.is_none_or(|i| engine.items(i.source).is_empty());
+        notice(
+            ui,
+            look,
+            &label_with("backend-missing", &[("backend", &label(backend))]),
+        );
+        let items_empty = section
+            .items
+            .is_none_or(|i| engine.items(i.source).is_empty());
         if rows.is_empty() && items_empty {
             return;
         }
@@ -808,10 +814,10 @@ pub fn section_card(
     }
     let cards = section.items.filter(|i| i.style == pages::ItemStyle::Cards);
     if rows.is_empty() && cards.is_some() {
-        if let Some(items) = cards {
-            if waits.is_none() || !engine.items(items.source).is_empty() {
-                item_cards(ui, engine, items, look);
-            }
+        if let Some(items) = cards
+            && (waits.is_none() || !engine.items(items.source).is_empty())
+        {
+            item_cards(ui, engine, items, look);
         }
         return;
     }
@@ -909,11 +915,11 @@ pub fn section_card(
             });
         }
     }
-    if let Some(items) = cards {
-        if waits.is_none() || !engine.items(items.source).is_empty() {
-            ui.add_space(look.xs);
-            item_cards(ui, engine, items, look);
-        }
+    if let Some(items) = cards
+        && (waits.is_none() || !engine.items(items.source).is_empty())
+    {
+        ui.add_space(look.xs);
+        item_cards(ui, engine, items, look);
     }
 }
 

@@ -605,7 +605,6 @@ impl Page {
     }
 
     pub fn drawer_of(&self, id: &str) -> Option<&Drawer> {
-
         self.drawers()
             .iter()
             .find(|d| d.sections.iter().any(|s| s.rows.iter().any(|r| r.id == id)))
@@ -853,7 +852,10 @@ mod tests {
         assert_eq!(s.backend, Some("backend-hostd-upower"));
         assert_eq!(s.items.map(|i| i.style), Some(ItemStyle::Cards));
         let appearance = get("appearance").unwrap();
-        assert_eq!(appearance.section_of("density").map(|s| s.id), Some("density"));
+        assert_eq!(
+            appearance.section_of("density").map(|s| s.id),
+            Some("density")
+        );
     }
 
     #[test]

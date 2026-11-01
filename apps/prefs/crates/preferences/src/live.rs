@@ -157,7 +157,11 @@ impl Engine {
         if let Some(reason) = self.page_reason(page) {
             return Err(reason);
         }
-        let waits = page.sections().iter().find(|s| s.items.is_some_and(|i| i.source == source)).and_then(|s| s.backend);
+        let waits = page
+            .sections()
+            .iter()
+            .find(|s| s.items.is_some_and(|i| i.source == source))
+            .and_then(|s| s.backend);
         if let Some(backend) = waits {
             return Err(self.label("backend-missing", &[("backend", &self.label(backend, &[]))]));
         }
