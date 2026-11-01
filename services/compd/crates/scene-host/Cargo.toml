@@ -60,6 +60,8 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+futures-util.workspace = true
+tokio-tungstenite.workspace = true
 egui_kittest.workspace = true
 tempfile = "=3.27.0"
 

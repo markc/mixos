@@ -511,6 +511,10 @@ impl Consumer {
     pub fn dropped_deliveries(&self) -> u64 {
         self.dropped_deliveries
     }
+    /// Redirects since the last successful read of the current binding.
+    pub fn rebind_hops(&self) -> u8 {
+        self.rebind_hops
+    }
     pub(crate) fn drop_delivery(&mut self) {
         self.dropped_deliveries = self.dropped_deliveries.saturating_add(1);
     }
@@ -587,6 +591,20 @@ impl Consumer {
                 } else {
                     self.start(WorkKind::Read)
                 }
+            }
+            (WorkKind::Read, Ok(None)) => {
+                // The adapter succeeded against this binding, ending the
+                // redirect episode. No snapshot means no new data to confirm
+                // or activate; preserve the existing snapshot evidence.
+                self.rebind_pending = false;
+                self.rebind_hops = 0;
+                self.fault = None;
+                self.failures = 0;
+                self.retry_deadline = None;
+                if std::mem::take(&mut self.read_again) {
+                    return self.start(WorkKind::Read);
+                }
+                None
             }
             (WorkKind::Read, Ok(Some(snapshot))) => {
                 // A loss/confirmation request after this read began requires
