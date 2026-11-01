@@ -248,6 +248,9 @@ impl ScopeValue<'_> {
 }
 
 pub struct Scope {
+    global_declarations: Vec<HashSet<String>>,
+    root_global_declarations: HashSet<String>,
+    parameter_names: Vec<HashSet<String>>,
     frames: Vec<FxHashMap<String, Value>>,
     /// User-defined functions stored behind `Rc` so the named-function
     /// call path (`scope.get_function(name).cloned()`) bumps a refcount
@@ -319,11 +322,38 @@ impl Default for Scope {
 }
 
 impl Scope {
+    pub fn is_declared_global(&self, name: &str) -> bool {
+        self.global_declarations.last().unwrap_or(&self.root_global_declarations).contains(name)
+    }
+
+    pub fn begin_function_body(&mut self, params: &[Param]) {
+        if let Some(names) = self.parameter_names.last_mut() {
+            names.extend(params.iter().map(|p| p.name.clone()));
+        }
+    }
+
+    pub fn declare_global(&mut self, name: &str) -> Result<(), &'static str> {
+        if self.function_floors.is_empty() {
+            self.root_global_declarations.insert(name.to_string());
+            return Ok(());
+        }
+        if self.parameter_names.last().is_some_and(|s| s.contains(name)) {
+            return Err("GLOBAL_PARAM");
+        }
+        if self.frames.last().is_some_and(|f| f.contains_key(name)) {
+            return Err("GLOBAL_AFTER_LOCAL");
+        }
+        self.global_declarations.last_mut().unwrap().insert(name.to_string());
+        Ok(())
+    }
     pub fn new() -> Self {
         Scope {
             frames: vec![FxHashMap::default()],
             functions: HashMap::new(),
             function_floors: Vec::new(),
+            global_declarations: Vec::new(),
+            root_global_declarations: HashSet::new(),
+            parameter_names: Vec::new(),
             frame_pool: Vec::new(),
             shared_globals: None,
             shared_functions: None,
@@ -343,6 +373,9 @@ impl Scope {
             frames: vec![FxHashMap::default()],
             functions: HashMap::new(),
             function_floors: Vec::new(),
+            global_declarations: Vec::new(),
+            root_global_declarations: HashSet::new(),
+            parameter_names: Vec::new(),
             frame_pool: Vec::new(),
             shared_globals: Some(globals),
             shared_functions: Some(functions),
@@ -609,10 +642,12 @@ impl Scope {
         name: &str,
         f: impl FnOnce(&mut Value) -> R,
     ) -> Option<R> {
+        if self.is_declared_global(name) { return self.with_mut_value(name, f); }
         self.frames.last_mut()?.get_mut(name).map(f)
     }
 
     pub fn set(&mut self, name: String, value: Value) {
+        if self.is_declared_global(&name) { self.set_global(&name, value); return; }
         // Set in the current (top) frame
         if let Some(frame) = self.frames.last_mut() {
             frame.insert(name, value);
@@ -758,6 +793,7 @@ impl Scope {
     /// frame for the lifetime of the pointer (enforced by the
     /// `body_no_local_assigns` flag on `MixFunction`).
     pub fn current_frame_slot_ptr(&mut self, name: &str) -> Option<*mut Value> {
+        if self.is_declared_global(name) { return None; }
         let frame = self.frames.last_mut()?;
         frame.get_mut(name).map(|v| v as *mut Value)
     }
@@ -787,6 +823,10 @@ impl Scope {
     }
 
     pub fn set_in_current(&mut self, name: String, value: Value) {
+        if self.is_declared_global(&name) {
+            self.set_global(&name, value);
+            return;
+        }
         if let Some(frame) = self.frames.last_mut() {
             frame.insert(name, value);
         }
@@ -801,6 +841,7 @@ impl Scope {
     /// branch needs to allocate.
     #[inline]
     pub fn update_or_set(&mut self, name: &str, value: Value) {
+        if self.is_declared_global(name) { self.set_global(name, value); return; }
         // Top-level fast path: bypass the floor walk when there's only
         // one frame and no active function. loop_arith's per-iter
         // `update_or_set("sum", …)` and `update_or_set("i", …)` come
@@ -873,6 +914,8 @@ impl Scope {
     /// it (except globals). O(1). Reuses a pooled frame if available
     /// so the bucket array allocation amortizes across recursive calls.
     pub fn enter_function_frame(&mut self) {
+        self.global_declarations.push(HashSet::new());
+        self.parameter_names.push(HashSet::new());
         self.function_floors.push(self.frames.len());
         let frame = self.frame_pool.pop().unwrap_or_default();
         self.frames.push(frame);
@@ -885,6 +928,8 @@ impl Scope {
     /// retains its bucket capacity, so the next `enter_function_frame`
     /// can bind params without reallocating.
     pub fn leave_function_frame(&mut self) {
+        self.global_declarations.pop();
+        self.parameter_names.pop();
         if let Some(floor) = self.function_floors.pop() {
             while self.frames.len() > floor {
                 let mut frame = self.frames.pop().unwrap();
@@ -937,6 +982,8 @@ impl Scope {
             .is_some_and(|&f| f >= self.frames.len())
         {
             self.function_floors.pop();
+            self.global_declarations.pop();
+                self.parameter_names.pop();
         }
     }
 

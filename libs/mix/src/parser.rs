@@ -80,6 +80,7 @@ fn keyword_lexeme(tok: &Token) -> Option<&'static str> {
         Token::Eprint => "eprint",
         Token::Source => "source",
         Token::Include => "include",
+        Token::Global => "global",
         Token::Do => "do",
         Token::Label => "label",
         Token::Sh => "sh",
@@ -713,6 +714,7 @@ impl Parser {
             Token::On => self.parse_on(),
             Token::Source => self.parse_source(),
             Token::Include => self.parse_include(),
+            Token::Global => self.parse_global(),
             Token::Do => Err(MixError::ParseError {
                 msg: "unexpected `do` — Mix has no `do` keyword; blocks close with `end` \
                       (write `for $i = 1 to 3 … end`, `while … end`, `on command … end` — \
@@ -1420,6 +1422,24 @@ impl Parser {
         let value = self.parse_expression()?;
         self.expect_end_of_statement()?;
         Ok(StmtKind::Export { name, value })
+    }
+
+    fn parse_global(&mut self) -> MixResult<StmtKind> {
+        self.advance();
+        let mut names = Vec::new();
+        loop {
+            match self.advance().clone() {
+                Token::Variable(name) => names.push(name),
+                _ => return Err(MixError::ParseError {
+                    msg: "global expects a $variable".to_string(),
+                    span: self.peek_span(),
+                }),
+            }
+            if !self.check(&Token::Comma) { break; }
+            self.advance();
+        }
+        self.expect_end_of_statement()?;
+        Ok(StmtKind::Global(names))
     }
 
     fn parse_alias(&mut self) -> MixResult<StmtKind> {

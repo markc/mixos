@@ -678,6 +678,7 @@ fn analyze_at(
         promote_agent_diagnostics(&mut a);
         check_agent_rules(stmts, &ctx, &mut a);
     }
+    check_global_declarations(stmts, &ctx, &mut a);
     collect_capabilities(stmts, &mut a);
     a
 }
@@ -824,7 +825,15 @@ fn check_agent_rules(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis) {
                         params.iter().map(|p| p.name.as_str()).collect();
                     let mut written: HashSet<String> = HashSet::new();
                     collect_written(body_stmt_list(body), &mut written);
+                    let mut declared = HashSet::new();
+                    walk_frames(body_stmt_list(body), TOP_FRAME, &mut |node, frame| {
+                        if frame == TOP_FRAME && let FrameNode::Stmt(s) = node
+                            && let StmtKind::Global(names) = &s.kind {
+                            declared.extend(names.iter().cloned());
+                        }
+                    });
                     for w in &written {
+                        if declared.contains(w) { continue; }
                         if outer_vars.contains(w) && !param_names.contains(w.as_str()) {
                             a.diagnostics.push(diag(
                                 ctx,
@@ -836,7 +845,7 @@ fn check_agent_rules(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis) {
                                      the assignment silently creates a NEW local and the outer ${w} \
                                      is unchanged"
                                 ),
-                                Some("pass it in, return it, or rename the local".to_string()),
+                                Some(format!("declare it with `global ${w}`, pass it in and return it, or rename the local")),
                             ));
                         }
                     }
@@ -4614,6 +4623,68 @@ fn walk_frame_expr(
 /// frame). `len()` is the binder count: a name bound in two different
 /// functions counts twice, so "bound exactly once" is a conservative,
 /// never an optimistic, claim.
+fn check_global_declarations(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis) {
+    let mut params: HashMap<usize, HashSet<String>> = HashMap::new();
+    walk_frames(stmts, TOP_FRAME, &mut |node, _| {
+        let pair = match node {
+            FrameNode::Stmt(s) => match &s.kind {
+                StmtKind::FunctionDef { params, .. } => Some((std::ptr::from_ref(s) as usize, params)),
+                _ => None,
+            },
+            FrameNode::Expr(e, _) => match e {
+                Expr::FunctionLiteral { params, .. } => Some((node_id(e), params)),
+                _ => None,
+            },
+        };
+        if let Some((id, ps)) = pair { params.insert(id, ps.iter().map(|p| p.name.clone()).collect()); }
+    });
+    let mut globals: HashMap<usize, HashSet<String>> = HashMap::new();
+    let mut locals: HashMap<usize, HashSet<String>> = HashMap::new();
+    walk_frames(stmts, TOP_FRAME, &mut |node, frame| {
+        let FrameNode::Stmt(s) = node else { return; };
+        let declared = globals.entry(frame).or_default();
+        let assigned = locals.entry(frame).or_default();
+        let mut emit = |code, severity, name: &str, reason: &str| {
+            a.diagnostics.push(diag(ctx, code, severity, s.line,
+                format!("global ${name}: {reason}"), None));
+        };
+        if let StmtKind::Global(names) = &s.kind {
+            for name in names {
+                if frame == TOP_FRAME {
+                    emit("MIX-D3023", Severity::Note, name, "already in global scope; declaration is a no-op");
+                } else if params.get(&frame).is_some_and(|ps| ps.contains(name)) {
+                    emit("MIX-E1509", Severity::Error, name, "function parameter (GLOBAL_PARAM)");
+                } else if assigned.contains(name) {
+                    emit("MIX-E1510", Severity::Error, name, "declare before local assignment (GLOBAL_AFTER_LOCAL)");
+                }
+                if frame != TOP_FRAME { declared.insert(name.clone()); }
+            }
+        }
+        let mut binder = |name: &str| {
+            if declared.contains(name) {
+                emit("MIX-E1511", Severity::Error, name, "binder cannot bind a declared global (GLOBAL_BINDER)");
+            }
+            assigned.insert(name.to_string());
+        };
+        match &s.kind {
+            StmtKind::Assignment { name, .. } | StmtKind::Export { name, .. } => {
+                if !declared.contains(name) { assigned.insert(name.clone()); }
+            }
+            StmtKind::For { var, .. } => binder(var),
+            StmtKind::ForEach { var, index_var, .. } => {
+                binder(var); if let Some(n) = index_var { binder(n); }
+            }
+            StmtKind::TryCatch { catch: Some(c), .. } => {
+                binder(&c.var); if let Some(n) = &c.err_var { binder(n); }
+            }
+            StmtKind::Parse { parts, .. } => for p in parts {
+                if let crate::ast::ParsePart::Variable(n) = p { binder(n); }
+            },
+            _ => {}
+        }
+    });
+}
+
 fn binder_frames(stmts: &[Stmt]) -> HashMap<String, Vec<usize>> {
     let mut out: HashMap<String, Vec<usize>> = HashMap::new();
     walk_frames(stmts, TOP_FRAME, &mut |node, frame| {

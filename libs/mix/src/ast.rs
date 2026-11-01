@@ -215,6 +215,7 @@ pub enum PathSeg {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum StmtKind {
+    Global(Vec<String>),
     Expression(Expr),
     Assignment {
         name: String,
@@ -428,6 +429,7 @@ impl StmtKind {
             StmtKind::On { .. } => Some("on"),
             StmtKind::Source { .. } => Some("source"),
             StmtKind::Include { .. } => Some("include"),
+            StmtKind::Global(_) => Some("global"),
             StmtKind::Sh { .. } => Some("sh"),
             _ => None,
         };
@@ -475,6 +477,7 @@ impl StmtKind {
             StmtKind::On { .. } => "On",
             StmtKind::Source { .. } => "Source",
             StmtKind::Include { .. } => "Include",
+            StmtKind::Global(_) => "Global",
             StmtKind::Sh { .. } => "Sh",
             StmtKind::PipeToExternal { .. } => "PipeToExternal",
             StmtKind::Chain { .. } => "Chain",
