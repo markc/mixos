@@ -37,7 +37,11 @@ pub fn show(
         (None, None) => String::new(),
     };
     ui.horizontal(|ui| {
-        ui.label(RichText::new(&title).font(super::heading(ui, 20.0)).color(look.text));
+        ui.label(
+            RichText::new(&title)
+                .font(super::heading(ui, 20.0))
+                .color(look.text),
+        );
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             let close = ui.add(
                 toolkit::button::IconButton::new(Icon::X)

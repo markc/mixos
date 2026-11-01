@@ -486,12 +486,15 @@ fn extra_button(ui: &mut Ui, text: &str, link: bool, enabled: bool, look: &Look)
     } else {
         look.accent.gamma_multiply(0.5)
     };
-    let galley = ui
-        .painter()
-        .layout_no_wrap(text.to_owned(), egui::FontId::proportional(14.0), ink);
-    let sense = if enabled { Sense::click() } else { Sense::hover() };
-    let (rect, response) =
-        ui.allocate_exact_size(vec2(galley.size().x + 4.0 + 16.0, 24.0), sense);
+    let galley =
+        ui.painter()
+            .layout_no_wrap(text.to_owned(), egui::FontId::proportional(14.0), ink);
+    let sense = if enabled {
+        Sense::click()
+    } else {
+        Sense::hover()
+    };
+    let (rect, response) = ui.allocate_exact_size(vec2(galley.size().x + 4.0 + 16.0, 24.0), sense);
     ui.painter().galley(
         pos2(rect.min.x, rect.center().y - galley.size().y / 2.0),
         galley,
@@ -516,7 +519,12 @@ fn title_block(ui: &mut Ui, engine: &Engine, page: &Page, look: &Look, events: &
         let response = ui
             .horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 4.0;
-                ui.add(icons::image_of(ui.ctx(), Icon::ChevronLeft, 16.0, look.text));
+                ui.add(icons::image_of(
+                    ui.ctx(),
+                    Icon::ChevronLeft,
+                    16.0,
+                    look.text,
+                ));
                 ui.add(
                     egui::Label::new(RichText::new(&text).color(look.text).size(14.0))
                         .sense(Sense::click()),
@@ -748,6 +756,19 @@ pub fn section_card(
         }
         return;
     }
+    // Every row off for its own reasons: say each reason once, above the
+    // card, and keep the rows quiet (Fable P1).
+    let reasons: Vec<Option<String>> = rows.iter().map(|r| engine.row_reason(page, r)).collect();
+    let quiet = rows.len() > 1 && reasons.iter().all(Option::is_some);
+    if quiet {
+        let mut said: Vec<&String> = Vec::new();
+        for reason in reasons.iter().flatten() {
+            if !said.contains(&reason) {
+                notice(ui, look, reason);
+                said.push(reason);
+            }
+        }
+    }
     card(ui, look, |ui| {
         let mut first = true;
         for row in rows {
@@ -760,7 +781,7 @@ pub fn section_card(
             {
                 let blocked = engine.row_blocked(page, row);
                 // The group's own reason, once, above its options.
-                if let Some(reason) = engine.row_reason(page, row) {
+                if !quiet && let Some(reason) = engine.row_reason(page, row) {
                     egui::Frame::NONE
                         .inner_margin(egui::Margin::symmetric(look.row_pad() as i8, 4))
                         .show(ui, |ui| notice(ui, look, &reason));
@@ -789,7 +810,7 @@ pub fn section_card(
                 divider(ui, look);
             }
             first = false;
-            controls::row(ui, engine, page, row, look, events);
+            controls::row(ui, engine, page, row, quiet, look, events);
         }
     });
 }
@@ -861,8 +882,7 @@ fn results(ui: &mut Ui, engine: &Engine, look: &Look, events: &mut Vec<UiEvent>)
                         .rows
                         .iter()
                         .filter(|r| {
-                            group.iter().any(|h| h.row == Some(r.id))
-                                && r.show.holds(&engine.store)
+                            group.iter().any(|h| h.row == Some(r.id)) && r.show.holds(&engine.store)
                         })
                         .collect();
                     if rows.is_empty() {
