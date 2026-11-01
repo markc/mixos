@@ -27,10 +27,12 @@ check($large.full and $large.reason == "more than half the workspace affected", 
 for $file in ["Cargo.toml", "Cargo.lock", "rust-toolchain", "rust-toolchain.toml", ".cargo/config.toml", "tools/helper.mix", "tests/check.mix", "vendor/egui-wgpu/src/lib.rs", "libs/a/layers.conf.mix"]
   check($a.full_reason($file) != "" and $a.select_affected([$file], $packages, $graph).full, "force full: " .. $file)
 end
-check($a.select_affected(["README.md"], $packages, $graph).full, "outside packages forces full")
+check($a.select_affected(["README.md"], $packages, $graph).full, "virtual workspace root README forces full")
 check($a.select_affected(["libs/removed/src/lib.rs"], $packages, $graph).full, "removed package forces full")
-check(deep_eq($a.select_affected(["libs/a/Cargo.toml"], $packages, $graph).crates, ["a", "f"]), "member manifest selects a and f")
-check(deep_eq($a.select_affected(["services/editd/src/lib.rs"], $packages, $graph).crates, ["editd"]), "editd selected by package name")
+$result = $a.select_affected(["libs/a/Cargo.toml"], $packages, $graph)
+check(not $result.full and deep_eq($result.crates, ["a", "f"]), "member manifest selects a and f")
+$result = $a.select_affected(["services/editd/src/lib.rs"], $packages, $graph)
+check(not $result.full and deep_eq($result.crates, ["editd"]), "editd selected by package name")
 
 for $file in ["libs/a/testdata/input.bin", "libs/a/snapshots/result.snap", "libs/a/assets/icon.svg", "libs/a/helper.mix", "libs/a/options.conf.mix", "libs/a/other.rs"]
   $result = $a.select_affected([$file], $packages, $graph)
@@ -60,6 +62,12 @@ check($a.owner("src/lib.rs", $root_packages) == "root", "root package owns root 
 check($a.owner("libs/a/src/lib.rs", $root_packages) == "a", "nested member wins over root package")
 $root_result = $a.select_affected(["src/lib.rs"], $root_packages, $root_graph)
 check(not $root_result.full and deep_eq($root_result.crates, ["f", "root"]), "reverse closure traverses non-member chain from root package")
+for $file in ["Cargo.toml", "Cargo.lock"]
+  $result = $a.select_affected([$file], $root_packages, $root_graph)
+  check($result.full and $result.reason == "global input: " .. $file, "root-owned workspace input forces full: " .. $file)
+end
+$result = $a.select_affected(["README.md"], $root_packages, $root_graph)
+check(not $result.full and deep_eq($result.crates, ["f", "root"]), "root package README stays narrow")
 
 -- Execute the gate's actual selector call and test-stage branch in isolation.
 -- Stage stubs never execute commands: no cargo, full gate or desktop runs.
@@ -77,9 +85,11 @@ try
   $setup = "$selector = require(" .. json_encode(dirname(dirname(realpath($0))) .. "/tools/lib/release_affected.mix") .. ")\n" ..
     '$packages = json_parse(' .. json_encode(json_encode($packages)) .. ")\n" ..
     '$graph = json_parse(' .. json_encode(json_encode($graph)) .. ")\n"
-  write_file($tmp, $setup .. "$files = [\"libs/a/Cargo.toml\"]\n" .. $call[0] .. "\nprint(json_encode($affected.crates))\n")
+  write_file($tmp, $setup .. "$files = [\"libs/a/Cargo.toml\"]\n" .. $call[0] .. "\nprint(json_encode($affected))\n")
   $r = run_argv([which("mix"), $tmp])
-  check($r.ok and trim($r.stdout) == '["a","f"]', "gate call site uses no-deps packages and full resolve in the right order")
+  check($r.ok, "gate call site executes")
+  $result = json_parse($r.stdout)
+  check(not $result.full and deep_eq($result.crates, ["a", "f"]), "gate call site uses no-deps packages and full resolve in the right order")
   write_file($tmp, $setup .. "$files = []\n" .. $call[0] .. "\n" ..
     "fn stage($name, $argv, $timeout) raise(\"TEST\", \"unexpected stage: \" .. $name) end\n" .. $branch)
   $r = run_argv([which("mix"), $tmp])
@@ -92,6 +102,9 @@ try
     check($r.ok and contains($r.stdout, "offscreen:") and contains($r.stdout, "latency:"), "offscreen and latency always run: " .. json_encode($selection))
     if $selection == nil then
       check(starts_with($r.stdout, 'test:["cargo","test","--workspace","--locked","--no-fail-fast"]'), "plain check retains exact workspace test command")
+    elif not $selection.full and deep_eq($selection.crates, ["a"]) then
+      $test_lines = filter(lines($r.stdout), fn($l) = starts_with($l, "test:"))
+      check(deep_eq($test_lines, ['test:["cargo","test","--locked","--no-fail-fast","-p","a"]']) and not contains($test_lines[0], "--workspace"), "narrow arm uses exact package test argv without --workspace")
     end
   end
 finally
