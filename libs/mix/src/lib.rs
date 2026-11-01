@@ -19,7 +19,6 @@ pub mod interrupt;
 pub mod lexer;
 pub mod lint_docs;
 mod native_events;
-mod udp;
 mod numeric;
 pub mod parser;
 pub mod scope;
@@ -27,6 +26,7 @@ pub mod script_version;
 pub mod shell_observation;
 pub mod stats;
 pub mod token;
+mod udp;
 pub mod value;
 
 #[cfg(feature = "archive")]

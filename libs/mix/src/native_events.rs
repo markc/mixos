@@ -503,7 +503,10 @@ impl Queue {
             p.socket_frames -= 1;
             if rec.kind == "datagram" {
                 let datagram: serde_json::Value = serde_json::from_slice(&rec.data).unwrap();
-                let mut ev = event(&s.command, serde_json::json!({"watch": handle, "datagram": datagram}));
+                let mut ev = event(
+                    &s.command,
+                    serde_json::json!({"watch": handle, "datagram": datagram}),
+                );
                 ev.headers.insert("native-udp".into(), "1".into());
                 return Some(ev);
             }
@@ -820,22 +823,41 @@ impl NativeEvents {
         self.udp_owned.retain(|id| sockets.contains_key(id));
         self.udp_owned.insert(id);
     }
-    pub(crate) fn udp_on(&mut self, id: u64, command: String, opts: Option<&Value>) -> MixResult<String> {
+    pub(crate) fn udp_on(
+        &mut self,
+        id: u64,
+        command: String,
+        opts: Option<&Value>,
+    ) -> MixResult<String> {
         self.ensure_open()?;
         self.check_socket_limit()?;
         let mut max = 65535;
         if let Some(m) = crate::udp::map(opts)? {
-            for (k,v) in m {
+            for (k, v) in m {
                 match (k.as_str(), v) {
-                    ("max", Value::Number(n)) if n.is_finite() && n.fract() == 0.0 && (1.0..=65535.0).contains(n) => max = *n as usize,
-                    _ => return Err(refusal("UDP_ARGUMENT", "udp_on accepts only max: integer 1..65535")),
+                    ("max", Value::Number(n))
+                        if n.is_finite() && n.fract() == 0.0 && (1.0..=65535.0).contains(n) =>
+                    {
+                        max = *n as usize
+                    }
+                    _ => {
+                        return Err(refusal(
+                            "UDP_ARGUMENT",
+                            "udp_on accepts only max: integer 1..65535",
+                        ));
+                    }
                 }
             }
         }
         #[cfg(target_os = "linux")]
-        return self.socket_sub("udp", "udp", command, |q, source, _| crate::builtins::socket_sources::spawn_udp(q, source, id, max));
+        return self.socket_sub("udp", "udp", command, |q, source, _| {
+            crate::builtins::socket_sources::spawn_udp(q, source, id, max)
+        });
         #[cfg(not(target_os = "linux"))]
-        Err(refusal("SOCKET_UNSUPPORTED", "udp_on requires Linux poll(2)"))
+        Err(refusal(
+            "SOCKET_UNSUPPORTED",
+            "udp_on requires Linux poll(2)",
+        ))
     }
 }
 
@@ -1379,7 +1401,9 @@ impl NativeEvents {
         {
             self.sockets.clear(); // each Drop cancels + joins its reader
             let mut udp = crate::udp::handles::MAP.lock().unwrap();
-            for id in std::mem::take(&mut self.udp_owned) { udp.remove(&id); }
+            for id in std::mem::take(&mut self.udp_owned) {
+                udp.remove(&id);
+            }
             drop(udp);
             crate::builtins::socket_sources::close_owned(&self.tcp_owned);
         }
