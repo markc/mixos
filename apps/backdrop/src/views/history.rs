@@ -8,7 +8,10 @@ pub struct Series {
 }
 pub fn series(history: &Value, hours: u16, now: f64) -> Series {
     if !history["landed"].is_array() || !history["batches"].is_array() {
-        return Series {landings:vec![],gate_minutes:vec![]};
+        return Series {
+            landings: vec![],
+            gate_minutes: vec![],
+        };
     }
     let since = now - f64::from(hours) * 3600.;
     let first = (since / 3600.).floor() as i64;
@@ -96,8 +99,12 @@ mod tests {
     }
     #[test]
     fn unavailable_history_has_no_fabricated_zero_series() {
-        assert!(series(&Value::Null,24,1000.).landings.is_empty());
-        assert!(series(&json!({}),24,1000.).gate_minutes.is_empty());
-        assert!(!series(&json!({"batches":[],"landed":[]}),24,1000.).landings.is_empty());
+        assert!(series(&Value::Null, 24, 1000.).landings.is_empty());
+        assert!(series(&json!({}), 24, 1000.).gate_minutes.is_empty());
+        assert!(
+            !series(&json!({"batches":[],"landed":[]}), 24, 1000.)
+                .landings
+                .is_empty()
+        );
     }
 }

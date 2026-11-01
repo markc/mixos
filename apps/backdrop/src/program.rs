@@ -46,7 +46,9 @@ pub const TEXTURE_BUDGET: u64 = 512 * 1024 * 1024;
 /// The owner key a context carries in its own data: which wakers entry is it.
 const OWNER: &str = "backdrop-owner";
 #[allow(deprecated)]
-fn stable_id(source: &'static str) -> Id { Id::new(source) }
+fn stable_id(source: &'static str) -> Id {
+    Id::new(source)
+}
 /// How long a changed slideshow image takes to fade in.
 pub const FADE: Duration = Duration::from_millis(500);
 /// The slots a context keeps its textures in.
@@ -462,9 +464,13 @@ impl LayerProgram for Backdrop {
     fn show(&mut self, ui: &mut egui::Ui, surface: &SurfaceInfo) {
         {
             let shared = lock(&self.shared);
-            let host = ui.ctx().data(|d|d.get_temp::<u64>(stable_id(OWNER)))
-                .and_then(|owner|shared.live.hosts.get(&owner).cloned());
-            if shared.live.selected == "train" && let Some(host) = host {
+            let host = ui
+                .ctx()
+                .data(|d| d.get_temp::<u64>(stable_id(OWNER)))
+                .and_then(|owner| shared.live.hosts.get(&owner).cloned());
+            if shared.live.selected == "train"
+                && let Some(host) = host
+            {
                 let renderer_2d = shared.live.renderer_2d;
                 drop(shared);
                 drop(take_slots(ui.ctx()));
@@ -495,8 +501,8 @@ impl LayerProgram for Backdrop {
         let Some(name) = surface.output.clone() else {
             return;
         };
-        let mut shared=lock(&self.shared);
-        let frames=shared.outputs.get(&name).map_or(1,|o|o.frames+1);
+        let mut shared = lock(&self.shared);
+        let frames = shared.outputs.get(&name).map_or(1, |o| o.frames + 1);
         shared.outputs.insert(
             name,
             OutputStatus {
@@ -675,34 +681,46 @@ mod tests {
     use super::*;
     #[test]
     fn real_show_path_bootstraps_then_draws_train_and_removal_releases_owner() {
-        let (ctx,mut program)=fixture();
+        let (ctx, mut program) = fixture();
         program.setup(&ctx);
-        let owner=ctx.data(|d|d.get_temp::<u64>(stable_id(OWNER))).unwrap();
-        let host=lock(&program.shared).live.hosts[&owner].clone();
+        let owner = ctx.data(|d| d.get_temp::<u64>(stable_id(OWNER))).unwrap();
+        let host = lock(&program.shared).live.hosts[&owner].clone();
         assert!(!lock(&host).is_visible());
-        lock(&program.shared).live.command("backdrop.view.set", &serde_json::json!({"view":"train","args":{"renderer":"2d"}})).unwrap();
-        crate::views::notify(&program.shared,true);
-        let raw=||egui::RawInput {screen_rect:Some(Rect::from_min_size(pos2(0.,0.),vec2(640.,480.))),..Default::default()};
-        let _first=Headless(ctx.run_ui(raw(),|ui|program.show(ui,&surface())));
-        assert_ne!(program.shows,"train");
-        program.visibility(&ctx,true);
-        let _visible=Headless(ctx.run_ui(raw(),|ui|program.show(ui,&surface())));
-        assert_eq!(program.shows,"train");
-        assert_eq!(ctx.data(|d|d.get_temp::<u64>(stable_id(OWNER))),Some(owner));
-        program.removed(&ctx,&surface());
+        lock(&program.shared)
+            .live
+            .command(
+                "backdrop.view.set",
+                &serde_json::json!({"view":"train","args":{"renderer":"2d"}}),
+            )
+            .unwrap();
+        crate::views::notify(&program.shared, true);
+        let raw = || egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(pos2(0., 0.), vec2(640., 480.))),
+            ..Default::default()
+        };
+        let _first = Headless(ctx.run_ui(raw(), |ui| program.show(ui, &surface())));
+        assert_ne!(program.shows, "train");
+        program.visibility(&ctx, true);
+        let _visible = Headless(ctx.run_ui(raw(), |ui| program.show(ui, &surface())));
+        assert_eq!(program.shows, "train");
+        assert_eq!(
+            ctx.data(|d| d.get_temp::<u64>(stable_id(OWNER))),
+            Some(owner)
+        );
+        program.removed(&ctx, &surface());
         assert!(lock(&program.shared).live.hosts.is_empty());
         assert!(lock(&program.wakers).is_empty());
-        let _removed=Headless(ctx.run_ui(raw(),|ui|program.show(ui,&surface())));
-        assert_ne!(program.shows,"train");
+        let _removed = Headless(ctx.run_ui(raw(), |ui| program.show(ui, &surface())));
+        assert_ne!(program.shows, "train");
     }
     #[test]
     fn missing_owner_uses_wallpaper_and_strictness_follows_selection() {
-        let (ctx,mut program)=fixture();
+        let (ctx, mut program) = fixture();
         assert!(!program.strict_frame_callbacks());
-        lock(&program.shared).live.selected="train".into();
+        lock(&program.shared).live.selected = "train".into();
         assert!(program.strict_frame_callbacks());
-        let _frame=Headless(ctx.run_ui(Default::default(),|ui|program.show(ui,&surface())));
-        assert_eq!(program.shows,"theme");
+        let _frame = Headless(ctx.run_ui(Default::default(), |ui| program.show(ui, &surface())));
+        assert_eq!(program.shows, "theme");
     }
 
     #[test]

@@ -1237,7 +1237,8 @@ mod tests {
     #[test]
     fn view_commands_preserve_wallpaper_and_record_validated_bus_runs() {
         let mut c = controller();
-        let handle=Handle::sink();c.handle=Some(handle.clone());
+        let handle = Handle::sink();
+        c.handle = Some(handle.clone());
         c.stage(Config::default(), Owed::Startup);
         let revision = c.engine.status().active;
         c.command(1, "backdrop.view.set", r#"{"view":"train"}"#);
@@ -1249,30 +1250,40 @@ mod tests {
         assert_eq!(lock(&c.shared).live.selected, "wallpaper");
         c.command(4, "backdrop.view.list", "{}");
         assert_eq!(c.replies.borrow().last().unwrap().1, 0);
-        let published:Vec<_>=handle.log().into_iter().filter_map(|event|match event {citizen::Logged::Publish {topic,body}=>Some((topic,body)),_=>None}).collect();
-        assert_eq!(published.len(),2);
-        assert_eq!(published[0].0,"sink.action.executed");
-        assert_eq!(published[0].1["id"],"backdrop.view.set");
-        assert_eq!(published[0].1["params"],json!({"view":"train"}));
-        assert_eq!(published[0].1["origin"],"bus");
-        assert_eq!(published[1].1["id"],"backdrop.view.cycle");
+        let published: Vec<_> = handle
+            .log()
+            .into_iter()
+            .filter_map(|event| match event {
+                citizen::Logged::Publish { topic, body } => Some((topic, body)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(published.len(), 2);
+        assert_eq!(published[0].0, "sink.action.executed");
+        assert_eq!(published[0].1["id"], "backdrop.view.set");
+        assert_eq!(published[0].1["params"], json!({"view":"train"}));
+        assert_eq!(published[0].1["origin"], "bus");
+        assert_eq!(published[1].1["id"], "backdrop.view.cycle");
     }
     #[test]
     fn switching_to_wallpaper_requests_every_surface_and_list_takes_no_args() {
-        use std::sync::atomic::{AtomicUsize,Ordering};
-        let mut c=controller();
-        c.command(1,"backdrop.view.set",r#"{"view":"train"}"#);
-        let wakes=Arc::new(AtomicUsize::new(0));
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let mut c = controller();
+        c.command(1, "backdrop.view.set", r#"{"view":"train"}"#);
+        let wakes = Arc::new(AtomicUsize::new(0));
         for owner in 0..2 {
-            let ctx=egui::Context::default();let count=wakes.clone();
-            ctx.set_request_repaint_callback(move |_|{count.fetch_add(1,Ordering::SeqCst);});
-            lock(&c.wakers).push((owner,ctx));
+            let ctx = egui::Context::default();
+            let count = wakes.clone();
+            ctx.set_request_repaint_callback(move |_| {
+                count.fetch_add(1, Ordering::SeqCst);
+            });
+            lock(&c.wakers).push((owner, ctx));
         }
-        c.command(2,"backdrop.view.set",r#"{"view":"wallpaper"}"#);
-        assert_eq!(wakes.load(Ordering::SeqCst),2);
-        for body in ["[]","null",r#"{"dir":"next"}"#] {
-            c.command(3,"backdrop.view.list",body);
-            assert_ne!(c.replies.borrow().last().unwrap().1,0);
+        c.command(2, "backdrop.view.set", r#"{"view":"wallpaper"}"#);
+        assert_eq!(wakes.load(Ordering::SeqCst), 2);
+        for body in ["[]", "null", r#"{"dir":"next"}"#] {
+            c.command(3, "backdrop.view.list", body);
+            assert_ne!(c.replies.borrow().last().unwrap().1, 0);
         }
     }
 
