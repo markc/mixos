@@ -27,6 +27,7 @@ use std::sync::OnceLock;
 mod appearance;
 mod network;
 mod panels;
+mod time;
 mod tree;
 
 /// A literal value in page data.
@@ -114,6 +115,10 @@ pub enum PickList {
     Fonts,
     MonoFonts,
     IconThemes,
+    /// IANA zone names (`time.zone`).
+    TimeZones,
+    /// Locale codes (`region.formats`).
+    Locales,
 }
 
 /// How a choice is drawn.
