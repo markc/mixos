@@ -290,6 +290,43 @@ fn a_stale_mirror_disables_the_rows_before_any_click() {
     assert!(applies(&rig).is_empty());
 }
 
+/// Power & battery: every row waits on its own backend, so each names it,
+/// and a `prefs.set` on one is refused before any apply is sent.
+#[test]
+fn power_rows_name_their_backends_and_refuse_writes() {
+    let mut rig = rig();
+    read(&mut rig, "authority", false);
+    let (rc, body) = ask(&mut rig, 1, "prefs.page.open", json!({"page":"power"}));
+    assert_eq!(rc, 0, "{body}");
+    let (_, page) = ask(&mut rig, 2, "prefs.page", json!({}));
+    let rows: Vec<(&str, &str)> = page["sections"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|s| s["rows"].as_array().unwrap().iter())
+        .map(|r| (r["id"].as_str().unwrap(), r["blocked"].as_str().unwrap_or("")))
+        .collect();
+    let blocked = |id: &str, backend: &str| {
+        let (_, why) = rows.iter().find(|(row, _)| *row == id).unwrap();
+        assert!(why.contains(backend), "{id}: {why}");
+    };
+    blocked("charge", "hostd battery reading");
+    blocked("devices", "hostd battery reading");
+    blocked("profile", "hostd power profiles");
+    blocked("screen_off", "compd screen-off timer");
+    blocked("suspend_ac", "hostd idle and suspend");
+    blocked("suspend_battery", "hostd idle and suspend");
+    let (rc, body) = ask(
+        &mut rig,
+        3,
+        "prefs.set",
+        json!({"key":"power.screen_off_s","value":null}),
+    );
+    assert_eq!((rc, body["error_code"].as_str()), (10, Some("REFUSED")), "{body}");
+    rig.h.run_steps(3);
+    assert!(applies(&rig).is_empty());
+}
+
 #[test]
 fn the_keyboard_page_reads_as_data_and_writes_once_fenced() {
     let mut rig = rig();

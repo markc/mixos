@@ -919,7 +919,9 @@ fn dropdown(
     events: &mut Vec<UiEvent>,
 ) {
     let labels: Vec<String> = options.iter().map(|o| o.1.clone()).collect();
-    let index = options.iter().position(|o| value.as_ref() == Some(&o.0));
+    // An unset value is the option that reads null (Never).
+    let stored = value.clone().unwrap_or(Value::Null);
+    let index = options.iter().position(|o| o.0 == stored);
     // A stored value outside the options (a connector) still shows.
     let shown = match (index, unlisted, value.as_ref().and_then(Value::as_str)) {
         (Some(i), _, _) => labels[i].clone(),

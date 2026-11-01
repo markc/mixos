@@ -30,16 +30,19 @@ mod input;
 mod network;
 mod panels;
 mod time;
+mod power;
 mod tree;
 mod window_management;
 mod workspaces;
 
-/// A literal value in page data.
+/// A literal value in page data. `Null` is a registry's "unset" (Never on
+/// the power timers), and matches an unset value.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum Lit {
     S(&'static str),
     I(i64),
+    Null,
 }
 
 impl Lit {
@@ -47,14 +50,18 @@ impl Lit {
         match self {
             Lit::S(s) => json!(s),
             Lit::I(i) => json!(i),
+            Lit::Null => Value::Null,
         }
     }
 
-    /// Whether `value` is this literal (an integer matches its float).
+    /// Whether `value` is this literal (an integer matches its float; an
+    /// unset value matches `Null`).
     pub fn is(self, value: Option<&Value>) -> bool {
         match (self, value) {
             (Lit::S(s), Some(Value::String(v))) => s == v,
             (Lit::I(i), Some(v)) => v.as_f64() == Some(i as f64),
+            (Lit::Null, None) => true,
+            (Lit::Null, Some(v)) => v.is_null(),
             _ => false,
         }
     }
@@ -865,6 +872,33 @@ mod tests {
             appearance.section_of("density").map(|s| s.id),
             Some("density")
         );
+    }
+
+    #[test]
+    fn every_choice_option_is_a_value_the_catalogue_accepts() {
+        let catalog = crate::catalog::Catalog::builtin();
+        for page in all() {
+            for (_, row) in page.rows() {
+                let Control::Choice { key, options, .. } = &row.control else {
+                    continue;
+                };
+                let Some(info) = catalog.get(key) else {
+                    continue;
+                };
+                for o in *options {
+                    let value = o.value.value();
+                    if value.is_null() {
+                        continue;
+                    }
+                    let verdict = crate::catalog::check(&info.kind, &value);
+                    assert!(
+                        matches!(verdict, None | Some(Ok(()))),
+                        "{}/{key}: {value} is refused: {verdict:?}",
+                        page.id
+                    );
+                }
+            }
+        }
     }
 
     #[test]
