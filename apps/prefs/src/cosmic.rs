@@ -746,6 +746,18 @@ pub fn section_card(
         section_heading(ui, look, &label(&pages::section_title(page.id, section.id)));
         ui.add_space(look.xs);
     }
+    // A section waiting on its own backend says so once, above it; its
+    // live items show nothing rather than a misleading empty text.
+    let waits = section
+        .backend
+        .filter(|_| engine.page_reason(page).is_none());
+    if let Some(backend) = waits {
+        notice(ui, look, &label_with("backend-missing", &[("backend", &label(backend))]));
+        let items_empty = section.items.is_none_or(|i| engine.items(i.source).is_empty());
+        if rows.is_empty() && items_empty {
+            return;
+        }
+    }
     // A plain section sits on the page: each row its bare control.
     if section.plain {
         for (index, row) in rows.iter().enumerate() {
@@ -797,7 +809,9 @@ pub fn section_card(
     let cards = section.items.filter(|i| i.style == pages::ItemStyle::Cards);
     if rows.is_empty() && cards.is_some() {
         if let Some(items) = cards {
-            item_cards(ui, engine, items, look);
+            if waits.is_none() || !engine.items(items.source).is_empty() {
+                item_cards(ui, engine, items, look);
+            }
         }
         return;
     }
@@ -896,8 +910,10 @@ pub fn section_card(
         }
     }
     if let Some(items) = cards {
-        ui.add_space(look.xs);
-        item_cards(ui, engine, items, look);
+        if waits.is_none() || !engine.items(items.source).is_empty() {
+            ui.add_space(look.xs);
+            item_cards(ui, engine, items, look);
+        }
     }
 }
 
@@ -963,8 +979,16 @@ fn live_items(
     events: &mut Vec<UiEvent>,
 ) {
     let list = engine.items(items.source);
-    let enabled = engine.page_reason(page).is_none();
+    let waits = page
+        .sections()
+        .iter()
+        .any(|s| s.backend.is_some() && s.items.is_some_and(|i| i.source == items.source));
+    let enabled = engine.page_reason(page).is_none() && !waits;
     if list.is_empty() {
+        // Its owner is missing: the backend line above says why.
+        if waits {
+            return;
+        }
         if !*first {
             divider(ui, look);
         }
