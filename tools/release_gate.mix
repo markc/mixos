@@ -3,6 +3,9 @@
 -- Run on the designated CBC worker through cbc-build.mix --commit FULL_SHA.
 --
 --   mix tools/release_gate.mix check --commit FULL_SHA
+--       [--affected BASE_SHA] narrows only the test stage; build and clippy
+--       stay --workspace. Subset feature unification differs from --workspace;
+--       the nightly full gate is the backstop.
 --   mix tools/release_gate.mix package --commit FULL_SHA --version V --out DIR
 --       --rootfs UBUNTU_24_04_ROOT --target-dir CBC_TARGET_DIR
 --       --cargo-home CARGO_HOME --rustup-home RUSTUP_HOME
@@ -96,6 +99,7 @@ print("release gate " .. $mode .. " source=" .. $commit .. " arch=x86_64 logs=" 
 if $mode == "check" then
   $affected = nil
   if $base != "" then
+    print("narrow test stage: feature unification differs from --workspace; the nightly full gate is the backstop")
     if not run_argv(["git", "merge-base", "--is-ancestor", $base, $commit], {timeout: 30}).ok then
       raise("RELEASE_SOURCE", "--affected base must be an ancestor of --commit")
     end
@@ -142,15 +146,10 @@ if $mode == "check" then
     end
     stage("test", $test_argv, 5400)
   end
-  if $affected == nil or $affected.full or contains($affected.crates, "egui-wgpu") or contains($affected.crates, "editd") then
   stage("offscreen", ["cargo", "test", "--manifest-path", "vendor/egui-wgpu/Cargo.toml", "--lib", "--locked",
     "--target-dir", "target", "--features", "winit,wayland", "offscreen_tests::"], 900)
   stage("latency", ["cargo", "test", "--release", "-p", "editd", "--test", "dispatch", "--locked",
     "large_file_open_edit_get_latency", "--", "--exact", "--nocapture"], 3600)
-  else
-    print("SKIP offscreen (neither egui-wgpu nor editd affected)")
-    print("SKIP latency (neither egui-wgpu nor editd affected)")
-  end
   $mix = "target/debug/mix"
   stage("closure", [$mix, "tools/closure_gate.mix", "--locked"], 900)
   stage("foreign", [$mix, "tools/foreign_gate.mix", "--locked", "--elf", "target/debug/mix"], 900)

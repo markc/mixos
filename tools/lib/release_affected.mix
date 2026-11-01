@@ -25,6 +25,23 @@ fn full_reason($file)
   return ""
 end
 
+fn narrow_input($file, $id, $packages)
+  for $pkg in $packages.packages
+    if $pkg.id == $id then
+      $path = $packages.workspace_root .. "/" .. $file
+      $relative = slice($path, len(dirname($pkg.manifest_path)) + 1)
+      if $relative == "Cargo.toml" or $relative == "build.rs" or ends_with($relative, ".md") then return true end
+      if ends_with($relative, ".rs") then
+        for $prefix in ["src/", "tests/", "benches/", "examples/"]
+          if starts_with($relative, $prefix) then return true end
+        end
+      end
+      return false
+    end
+  end
+  return false
+end
+
 fn select_affected($files, $packages, $graph)
   $selected = []
   $reason = ""
@@ -34,8 +51,11 @@ fn select_affected($files, $packages, $graph)
     $id = owner($file, $packages)
     if $id == nil then
       if $reason == "" then $reason = "outside workspace packages: " .. $file end
-    elif not contains($selected, $id) then
-      push($selected, $id)
+    else
+      if not narrow_input($file, $id, $packages) and $reason == "" then
+        $reason = "non-source package input: " .. $file
+      end
+      if not contains($selected, $id) then push($selected, $id) end
     end
   end
   -- Traverse all resolve edges, including dev, build and target-specific ones.

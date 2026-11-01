@@ -8,21 +8,92 @@ fn check($ok, $label)
   print("PASS " .. $label)
 end
 
+$graph = $fixture
+$packages = $fixture
+$packages.resolve = nil  -- cargo metadata --no-deps has no resolve graph.
+$packages.packages = filter($fixture.packages, fn($p) = contains($fixture.workspace_members, $p.id))
+
 check($a.owner("libs/a/crates/b/src/lib.rs", $fixture) == "b", "longest package directory wins")
 check($a.owner("libs/ab/src/lib.rs", $fixture) == nil, "directory prefix requires slash boundary")
 check($a.owner("libs/a/deleted.rs", $fixture) == "a", "deleted file maps without filesystem access")
-$narrow = $a.select_affected(["libs/a/crates/b/src/lib.rs"], $fixture, $fixture)
+$narrow = $a.select_affected(["libs/a/crates/b/src/lib.rs"], $packages, $graph)
 check(not $narrow.full and deep_eq($narrow.crates, ["b", "c", "d"]), "synthetic narrow diff includes transitive dev and build dependants; exactly half stays narrow")
-$normal = $a.select_affected(["libs/a/src/lib.rs"], $fixture, $fixture)
+$normal = $a.select_affected(["libs/a/src/lib.rs"], $packages, $graph)
 check(not $normal.full and deep_eq($normal.crates, ["a", "f"]), "normal reverse edge and unaffected members")
-$empty = $a.select_affected([], $fixture, $fixture)
+$empty = $a.select_affected([], $packages, $graph)
 check(not $empty.full and len($empty.crates) == 0, "empty diff skips test")
-$large = $a.select_affected(["libs/a/src/lib.rs", "libs/a/crates/b/src/lib.rs"], $fixture, $fixture)
+$large = $a.select_affected(["libs/a/src/lib.rs", "libs/a/crates/b/src/lib.rs"], $packages, $graph)
 check($large.full and $large.reason == "more than half the workspace affected", "more than half forces full")
 for $file in ["Cargo.toml", "Cargo.lock", "rust-toolchain", "rust-toolchain.toml", ".cargo/config.toml", "tools/helper.mix", "tests/check.mix", "vendor/egui-wgpu/src/lib.rs", "libs/a/layers.conf.mix"]
-  check($a.full_reason($file) != "" and $a.select_affected([$file], $fixture, $fixture).full, "force full: " .. $file)
+  check($a.full_reason($file) != "" and $a.select_affected([$file], $packages, $graph).full, "force full: " .. $file)
 end
-check($a.select_affected(["README.md"], $fixture, $fixture).full, "outside packages forces full")
-check($a.select_affected(["libs/removed/src/lib.rs"], $fixture, $fixture).full, "removed package forces full")
-check($a.full_reason("libs/a/Cargo.toml") == "", "member manifest uses package closure")
-check(deep_eq($a.select_affected(["services/editd/src/lib.rs"], $fixture, $fixture).crates, ["editd"]), "editd selected by package name")
+check($a.select_affected(["README.md"], $packages, $graph).full, "outside packages forces full")
+check($a.select_affected(["libs/removed/src/lib.rs"], $packages, $graph).full, "removed package forces full")
+check(deep_eq($a.select_affected(["libs/a/Cargo.toml"], $packages, $graph).crates, ["a", "f"]), "member manifest selects a and f")
+check(deep_eq($a.select_affected(["services/editd/src/lib.rs"], $packages, $graph).crates, ["editd"]), "editd selected by package name")
+
+for $file in ["libs/a/testdata/input.bin", "libs/a/snapshots/result.snap", "libs/a/assets/icon.svg", "libs/a/helper.mix", "libs/a/options.conf.mix", "libs/a/other.rs"]
+  $result = $a.select_affected([$file], $packages, $graph)
+  check($result.full and $result.reason == "non-source package input: " .. $file, "non-source forces full with reason: " .. $file)
+end
+for $file in ["libs/a/tests/integration.rs", "libs/a/benches/speed.rs", "libs/a/examples/demo.rs", "libs/a/build.rs", "libs/a/README.md", "libs/a/docs/guide.md"]
+  $result = $a.select_affected([$file], $packages, $graph)
+  check(not $result.full and deep_eq($result.crates, ["a", "f"]), "allowed input stays narrow: " .. $file)
+end
+
+-- A root package owns only paths not claimed by a deeper workspace member.
+-- The full resolve graph connects it to f through two non-member packages.
+$root_packages = $packages
+$root_packages.workspace_members = push($root_packages.workspace_members, "root")
+$root_packages.packages = push($root_packages.packages, {id: "root", name: "root", manifest_path: "/fixture/Cargo.toml"})
+$root_graph = $graph
+$root_graph.workspace_members = $root_packages.workspace_members
+$root_graph.packages = $root_packages.packages
+$root_graph.packages = push($root_graph.packages, $graph.packages[6])
+$root_graph.packages = push($root_graph.packages, {id: "bridge", name: "bridge", manifest_path: "/cache/bridge/Cargo.toml"})
+$root_graph.resolve.nodes = push($root_graph.resolve.nodes, {id: "root", dependencies: []})
+$root_graph.resolve.nodes = push($root_graph.resolve.nodes, {id: "bridge", dependencies: ["root"]})
+-- Existing external node reverses bridge, and f reverses external.
+$root_graph.resolve.nodes[6].dependencies = ["bridge"]
+$root_graph.resolve.nodes[5].dependencies = ["external"]
+check($a.owner("src/lib.rs", $root_packages) == "root", "root package owns root sources")
+check($a.owner("libs/a/src/lib.rs", $root_packages) == "a", "nested member wins over root package")
+$root_result = $a.select_affected(["src/lib.rs"], $root_packages, $root_graph)
+check(not $root_result.full and deep_eq($root_result.crates, ["f", "root"]), "reverse closure traverses non-member chain from root package")
+
+-- Execute the gate's actual selector call and test-stage branch in isolation.
+-- Stage stubs never execute commands: no cargo, full gate or desktop runs.
+-- Separate --no-deps and resolved fixtures make swapped call arguments fail.
+$gate = read_file(dirname(dirname(realpath($0))) .. "/tools/release_gate.mix")
+$call = filter(lines($gate), fn($l) = contains($l, "$affected = $selector.select_affected("))
+check(len($call) == 1, "one gate selector call site")
+$branch_start = "  if $affected == nil or $affected.full then\n"
+$branch_end = "  stage(\"offscreen\","
+$parts = split($gate, $branch_start)
+check(len($parts) == 2, "one gate test-stage branch")
+$branch = $branch_start .. split($parts[1], $branch_end)[0]
+$tmp = "/tmp/release-affected-test-" .. uuid() .. ".mix"
+try
+  $setup = "$selector = require(" .. json_encode(dirname(dirname(realpath($0))) .. "/tools/lib/release_affected.mix") .. ")\n" ..
+    '$packages = json_parse(' .. json_encode(json_encode($packages)) .. ")\n" ..
+    '$graph = json_parse(' .. json_encode(json_encode($graph)) .. ")\n"
+  write_file($tmp, $setup .. "$files = [\"libs/a/Cargo.toml\"]\n" .. $call[0] .. "\nprint(json_encode($affected.crates))\n")
+  $r = run_argv([which("mix"), $tmp])
+  check($r.ok and trim($r.stdout) == '["a","f"]', "gate call site uses no-deps packages and full resolve in the right order")
+  write_file($tmp, $setup .. "$files = []\n" .. $call[0] .. "\n" ..
+    "fn stage($name, $argv, $timeout) raise(\"TEST\", \"unexpected stage: \" .. $name) end\n" .. $branch)
+  $r = run_argv([which("mix"), $tmp])
+  check($r.ok and trim($r.stdout) == "SKIP test (no crate affected)", "empty diff executes gate SKIP branch without cargo")
+  $probe_stages = $branch .. $branch_end .. split(split($parts[1], $branch_end)[1], "  $mix =")[0]
+  $stage_stub = "fn stage($name, $argv, $timeout) print($name .. \":\" .. json_encode($argv)) end\n"
+  for $selection in [nil, {full: true, crates: ["a"]}, {full: false, crates: ["a"]}, {full: false, crates: []}]
+    write_file($tmp, "$affected = json_parse(" .. json_encode(json_encode($selection)) .. ")\n" .. $stage_stub .. $probe_stages)
+    $r = run_argv([which("mix"), $tmp])
+    check($r.ok and contains($r.stdout, "offscreen:") and contains($r.stdout, "latency:"), "offscreen and latency always run: " .. json_encode($selection))
+    if $selection == nil then
+      check(starts_with($r.stdout, 'test:["cargo","test","--workspace","--locked","--no-fail-fast"]'), "plain check retains exact workspace test command")
+    end
+  end
+finally
+  run_argv_must(["rm", "--", $tmp])
+end
