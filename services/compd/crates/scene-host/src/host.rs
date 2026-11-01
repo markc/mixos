@@ -2157,10 +2157,16 @@ mod tests {
         snapshot.binding.instance = "authority".into();
         snapshot.incarnation = "rebound".into();
         let read = consumer.refresh().unwrap();
-        let read = consumer.complete(&read, Err(settings::Diagnostic::new(
-            "wrong_target", "native",
-            json!({"status":"wrong_target", "binding":snapshot.binding}).to_string(),
-        ))).unwrap();
+        let read = consumer
+            .complete(
+                &read,
+                Err(settings::Diagnostic::new(
+                    "wrong_target",
+                    "native",
+                    json!({"status":"wrong_target", "binding":snapshot.binding}).to_string(),
+                )),
+            )
+            .unwrap();
         consumer.complete(&read, Ok(Some(snapshot.clone())));
         if let Some(update) = consumer.pending().cloned() {
             assert!(consumer.acknowledge(&update));

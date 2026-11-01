@@ -102,7 +102,8 @@ fn foreign_snapshot_profile_cannot_activate_despite_matching_broker_stamp() {
     foreign.binding.profile = "other".into();
     let (change, jobs) = session.handle(Event::Delivery(decoded_snapshot(foreign)), Some(1));
     assert!(change.is_none());
-    assert!(jobs.prepare.is_none());
+    // Ignoring a foreign frame preserves the already staged valid snapshot.
+    assert_eq!(jobs.prepare.unwrap().update().snapshot().binding, binding());
     assert!(session.host().consumer().fault().is_none());
     assert_eq!(session.host().consumer().dropped_deliveries(), 1);
     assert!(session.host().presentation().is_none());
