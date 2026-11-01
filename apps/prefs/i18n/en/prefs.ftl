@@ -853,6 +853,7 @@ backend-compd-pointer-shake = compd pointer shake
 backend-audio = the MixOS audio service over PipeWire
 backend-osk = a MixOS on-screen keyboard
 backend-hostd-power-profiles = hostd power profiles
+backend-hostd-upower = hostd battery reading (UPower)
 backend-compd-idle = compd screen-off timer (idle and DPMS)
 backend-hostd-suspend = hostd idle and suspend
 store-unread = Reading settings…
