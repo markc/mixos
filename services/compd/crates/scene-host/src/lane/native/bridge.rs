@@ -115,9 +115,6 @@ impl<T: Send + 'static> Lane<T> {
     pub fn publish(&self, event: Event<T>) -> bool {
         self.mailbox.publish(event)
     }
-    pub fn mailbox(&self) -> Mailbox<T> {
-        self.mailbox.clone()
-    }
 
     /// `None` is ordinary host traffic; `Some` is a recognised settings frame.
     pub fn delivery(&self, command: &IncomingCommand) -> Option<bool> {

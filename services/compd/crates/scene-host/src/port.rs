@@ -1130,9 +1130,9 @@ async fn serve(
                 let client = Arc::clone(client);
                 let pending = Arc::clone(&pending_events);
                 let pending = PendingEvent(pending);
-                let settings_lane = lane.mailbox();
                 flights.spawn(async move {
                     let _pending = pending;
+                    let mut refresh_settings = false;
                     let call = client.call(&event.to, &event.kind, event.body);
                     match tokio::time::timeout(EVENT_TIMEOUT, call).await {
                         Ok(Ok(_)) => {}
@@ -1141,7 +1141,7 @@ async fn serve(
                         Ok(Err(error)) if event.kind == "settings.apply" => {
                             if serde_json::from_str::<Value>(&error.to_string())
                                 .ok().is_some_and(|body| body["status"] == "wrong_target") {
-                                notify(settings_lane.publish(SettingsEvent::Refresh));
+                                refresh_settings = true;
                             }
                             tracing::warn!(%error, "corner panel mode not saved");
                         },
@@ -1149,9 +1149,14 @@ async fn serve(
                         Ok(Err(error)) => tracing::debug!(%error, to = %event.to, kind = %event.kind, "scene event failed"),
                         Err(_) => tracing::debug!(to = %event.to, kind = %event.kind, "scene event timed out"),
                     }
+                    refresh_settings
                 });
             }
-            Some(_) = flights.join_next(), if !flights.is_empty() => {}
+            Some(result) = flights.join_next(), if !flights.is_empty() => {
+                if matches!(result, Ok(true)) {
+                    notify(lane.publish(SettingsEvent::Refresh));
+                }
+            }
             Some(_) = replies.join_next(), if !replies.is_empty() => {}
             Some(_) = sends.join_next(), if !sends.is_empty() => {}
         }

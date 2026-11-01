@@ -99,12 +99,12 @@ pub async fn execute_until(
                             || matches!(
                                 status,
                                 Some(
-                                    "wrong_target"
-                                        | "validation_failed"
+                                    "validation_failed"
                                         | "unsupported_schema"
                                         | "snapshot_too_large"
                                 )
-                            ) {
+                            )
+                        {
                             "authority_refused"
                         } else {
                             "read_failed"
