@@ -19,26 +19,31 @@ const ZOOM: &[Opt] = &[
         value: Lit::I(25),
         label: "opt-zoom-25",
         description: None,
+        listed: true,
     },
     Opt {
         value: Lit::I(50),
         label: "opt-zoom-50",
         description: None,
+        listed: true,
     },
     Opt {
         value: Lit::I(100),
         label: "opt-zoom-100",
         description: None,
+        listed: true,
     },
     Opt {
         value: Lit::I(150),
         label: "opt-zoom-150",
         description: None,
+        listed: true,
     },
     Opt {
         value: Lit::I(200),
         label: "opt-zoom-200",
         description: None,
+        listed: true,
     },
 ];
 const MOVEMENT: &[Opt] = &[
