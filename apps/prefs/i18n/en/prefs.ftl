@@ -646,6 +646,8 @@ scheme-adwaita = Adwaita
 
 backend-missing = Needs { $backend }, which MixOS does not have yet.
 backend-hostd-wifi = hostd Wi-Fi (scan, connect, forget, share)
+backend-compd-overview = compd workspace overview
+backend-compd-per-output = compd per-output workspaces
 backend-compd-gaps = compd tiling gaps
 backend-compd-blur = compd blur
 backend-compd-translucent = compd translucent surfaces
