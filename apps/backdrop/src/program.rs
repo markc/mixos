@@ -403,6 +403,17 @@ fn paint_bars(ui: &egui::Ui, rect: Rect, original: [u32; 2], mode: Fit, fill: Co
 }
 
 impl LayerProgram for Backdrop {
+    fn visibility(&mut self, ctx: &egui::Context, visible: bool) {
+        let host = ctx.data(|d|d.get_temp::<u64>(Id::unique(OWNER)))
+            .and_then(|owner|lock(&self.shared).live.hosts.get(&owner).cloned());
+        if let Some(host) = host { lock(&host).visibility(visible, Instant::now()); }
+    }
+    fn repaint_delay(&self, ctx: &egui::Context, delay: Duration) -> Option<Duration> {
+        let shared = lock(&self.shared);
+        if shared.live.selected != "train" { return Some(delay); }
+        let owner = ctx.data(|d|d.get_temp::<u64>(Id::unique(OWNER)))?;
+        lock(shared.live.hosts.get(&owner)?).delay(Instant::now()).map(|minimum|delay.max(minimum))
+    }
     fn strict_frame_callbacks(&self) -> bool {
         true
     }
@@ -421,22 +432,30 @@ impl LayerProgram for Backdrop {
         let owner = self.next_owner;
         ctx.data_mut(|d| d.insert_temp(Id::unique(OWNER), owner));
         lock(&self.wakers).push((owner, ctx.clone()));
+        let snapshot = lock(&self.shared).live.snapshot.clone();
+        let mut host = crate::views::host::Host::new(crate::views::Train::default(), Some(ctx.clone()));
+        host.active = lock(&self.shared).live.selected == "train";
+        host.event(snapshot, true, Instant::now());
+        lock(&self.shared).live.hosts.insert(owner, Arc::new(Mutex::new(host)));
     }
 
     fn show(&mut self, ui: &mut egui::Ui, surface: &SurfaceInfo) {
         {
-            use crate::views::View as _;
             let shared = lock(&self.shared);
             if shared.live.selected == "train" {
+                let owner = ui.ctx().data(|d|d.get_temp::<u64>(Id::unique(OWNER))).unwrap();
+                let host = shared.live.hosts[&owner].clone();
+                let renderer_2d = shared.live.renderer_2d;
+                drop(shared);
                 drop(take_slots(ui.ctx()));
-                shared.live.train.draw(ui);
-                if let Some(delay) = shared.live.train.wants_frame(Instant::now()) {
-                    ui.ctx().request_repaint_after(delay);
-                }
+                let mut host = lock(&host);
+                host.visibility(true, Instant::now());
+                host.draw(ui, &self.budget, renderer_2d, Instant::now());
                 self.shows = "train";
                 self.error = None;
                 return;
             }
+            for host in shared.live.hosts.values() { lock(host).release_gpu(); }
         }
         self.show_pass(ui, surface);
         self.wake_starved();
@@ -465,6 +484,7 @@ impl LayerProgram for Backdrop {
     fn removed(&mut self, ctx: &egui::Context, surface: &SurfaceInfo) {
         if let Some(owner) = ctx.data(|d| d.get_temp::<u64>(Id::unique(OWNER))) {
             lock(&self.wakers).retain(|(token, _)| *token != owner);
+            lock(&self.shared).live.hosts.remove(&owner);
         }
         // The textures go with the surface; dropping them releases their bytes.
         drop(take_slots(ctx));
