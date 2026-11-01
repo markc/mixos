@@ -13425,16 +13425,28 @@ fn builtin_read_file_bytes(args: Vec<Value>) -> MixResult<Option<Value>> {
             let Value::Number(n) = value else {
                 return Err(refusal(
                     "TYPE_MISMATCH",
-                    format!("read_file_bytes(): option '{key}' must be a number, got {}", value.type_name()),
+                    format!(
+                        "read_file_bytes(): option '{key}' must be a number, got {}",
+                        value.type_name()
+                    ),
                 ));
             };
-            Ok(as_exact_integer(&format!("read_file_bytes(): option '{key}'"), *n, min, i64::MAX)? as u64)
+            Ok(as_exact_integer(
+                &format!("read_file_bytes(): option '{key}'"),
+                *n,
+                min,
+                i64::MAX,
+            )? as u64)
         };
-        let max = opts.get("max").ok_or_else(|| {
-            refusal("OPTION_INVALID", "read_file_bytes(): options require 'max'")
-        })?;
+        let max = opts
+            .get("max")
+            .ok_or_else(|| refusal("OPTION_INVALID", "read_file_bytes(): options require 'max'"))?;
         let cap = integer("max", max, 1)?;
-        let offset = opts.get("offset").map(|v| integer("offset", v, 0)).transpose()?.unwrap_or(0);
+        let offset = opts
+            .get("offset")
+            .map(|v| integer("offset", v, 0))
+            .transpose()?
+            .unwrap_or(0);
         let file_error = |e: std::io::Error| MixError::RuntimeError {
             span: None,
             msg: format!("read_file_bytes '{}': {}", path, e),
@@ -36508,11 +36520,16 @@ mod fs_meta_tests {
             (serde_json::json!({"offset": 100, "max": 4}), &payload[6..]),
             (serde_json::json!({"offset": 4, "max": 100}), &payload[4..]),
         ] {
-            let got = builtin_read_file_bytes(vec![s(&p), crate::native_events::json_value(opts)]).unwrap();
+            let got = builtin_read_file_bytes(vec![s(&p), crate::native_events::json_value(opts)])
+                .unwrap();
             assert_eq!(got, Some(Value::bytes(expected.to_vec())));
         }
         std::fs::write(&p, []).unwrap();
-        let got = builtin_read_file_bytes(vec![s(&p), crate::native_events::json_value(serde_json::json!({"max": 1}))]).unwrap();
+        let got = builtin_read_file_bytes(vec![
+            s(&p),
+            crate::native_events::json_value(serde_json::json!({"max": 1})),
+        ])
+        .unwrap();
         assert_eq!(got, Some(Value::bytes(vec![])));
         // Validation precedes I/O, so an invalid option cannot be hidden
         // by a missing file. Assert stable structured error codes too.
@@ -36524,16 +36541,33 @@ mod fs_meta_tests {
             (serde_json::json!({"max": 0}), "VALUE_OUT_OF_RANGE"),
             (serde_json::json!({"max": -1}), "VALUE_OUT_OF_RANGE"),
             (serde_json::json!({"max": 1.5}), "VALUE_OUT_OF_RANGE"),
-            (serde_json::json!({"max": 1, "offset": -1}), "VALUE_OUT_OF_RANGE"),
-            (serde_json::json!({"max": 1, "offset": 0.5}), "VALUE_OUT_OF_RANGE"),
+            (
+                serde_json::json!({"max": 1, "offset": -1}),
+                "VALUE_OUT_OF_RANGE",
+            ),
+            (
+                serde_json::json!({"max": 1, "offset": 0.5}),
+                "VALUE_OUT_OF_RANGE",
+            ),
             (serde_json::json!({"max": "1"}), "TYPE_MISMATCH"),
             (serde_json::json!({"max": true}), "TYPE_MISMATCH"),
             (serde_json::json!({"max": null}), "TYPE_MISMATCH"),
-            (serde_json::json!({"max": 1, "offset": "1"}), "TYPE_MISMATCH"),
-            (serde_json::json!({"max": 1, "offset": false}), "TYPE_MISMATCH"),
-            (serde_json::json!({"max": 1, "offset": null}), "TYPE_MISMATCH"),
+            (
+                serde_json::json!({"max": 1, "offset": "1"}),
+                "TYPE_MISMATCH",
+            ),
+            (
+                serde_json::json!({"max": 1, "offset": false}),
+                "TYPE_MISMATCH",
+            ),
+            (
+                serde_json::json!({"max": 1, "offset": null}),
+                "TYPE_MISMATCH",
+            ),
         ] {
-            let err = builtin_read_file_bytes(vec![s(&missing), crate::native_events::json_value(opts)]).unwrap_err();
+            let err =
+                builtin_read_file_bytes(vec![s(&missing), crate::native_events::json_value(opts)])
+                    .unwrap_err();
             assert_eq!(err.info().unwrap().code, code);
         }
         for key in ["offset", "max"] {
@@ -36558,8 +36592,12 @@ mod fs_meta_tests {
         file.seek(SeekFrom::Start(offset)).unwrap();
         file.write_all(&[255, 0, 128]).unwrap();
         drop(file);
-        let opts = crate::native_events::json_value(serde_json::json!({"offset": offset, "max": 2}));
-        assert_eq!(builtin_read_file_bytes(vec![s(&p), opts]).unwrap(), Some(Value::bytes(vec![255, 0])));
+        let opts =
+            crate::native_events::json_value(serde_json::json!({"offset": offset, "max": 2}));
+        assert_eq!(
+            builtin_read_file_bytes(vec![s(&p), opts]).unwrap(),
+            Some(Value::bytes(vec![255, 0]))
+        );
         let _ = std::fs::remove_dir_all(&d);
     }
 }

@@ -31,7 +31,8 @@ async fn read_file_bytes_range_options_work_in_both_contract_modes() {
     std::fs::write(&path, [0, 255, 128, 42]).unwrap();
     let quoted = serde_json::to_string(&path.to_string_lossy()).unwrap();
     for strict in [false, true] {
-        let src = format!(r#"
+        let src = format!(
+            r#"
 $path = {quoted}
 print(bytes_to_hex(read_file_bytes($path, {{max: 2}})))
 print(bytes_to_hex(read_file_bytes($path, {{offset: 1, max: 2}})))
@@ -43,8 +44,12 @@ try
 catch $msg, $err
   print($err.code)
 end
-"#);
-        assert_eq!(run(&src, strict).await.unwrap(), "00ff\nff80\n0\n0\n4\nOPTION_INVALID\n");
+"#
+        );
+        assert_eq!(
+            run(&src, strict).await.unwrap(),
+            "00ff\nff80\n0\n0\n4\nOPTION_INVALID\n"
+        );
     }
     std::fs::remove_file(path).unwrap();
 }
