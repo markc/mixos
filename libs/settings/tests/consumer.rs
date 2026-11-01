@@ -104,7 +104,10 @@ fn empty_redirected_reads_keep_last_good_retry_and_reach_the_hop_cap() {
         assert_eq!(state.binding(), &rebound(instance).binding);
         assert_eq!(state.rebind_hops(), (index + 1) as u8);
         assert_eq!(state.applied().unwrap(), &initial);
-        assert_eq!(state.presentation_kind(), Some(fallback::PresentationKind::LastGood));
+        assert_eq!(
+            state.presentation_kind(),
+            Some(fallback::PresentationKind::LastGood)
+        );
         assert!(!state.is_confirmed());
         assert!(state.current_work().is_none());
         assert!(state.retry_deadline().is_some());
@@ -116,7 +119,11 @@ fn empty_redirected_reads_keep_last_good_retry_and_reach_the_hop_cap() {
         assert_eq!(state.rebind_hops(), (index + 1) as u8);
         read = state.retry().unwrap();
     }
-    assert!(state.complete(&read, Err(wrong_target(Some(rebound("e").binding)))).is_none());
+    assert!(
+        state
+            .complete(&read, Err(wrong_target(Some(rebound("e").binding))))
+            .is_none()
+    );
     assert_eq!(state.binding().instance, "d");
     assert_eq!(state.rebind_hops(), 3);
     assert_eq!(state.fault().unwrap().code, "wrong_target");
