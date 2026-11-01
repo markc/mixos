@@ -5,9 +5,7 @@
 //! and the panel clock are settingsd keys, live now. Region & language: the
 //! languages and the formats are hostd's locale1, so the whole page waits on
 //! it, and the one reason is said once under its title.
-use super::{
-    Body, ChoiceStyle, Control, Drawer, Opt, Page, PickList, opt, row, section, untitled,
-};
+use super::{Body, ChoiceStyle, Control, Drawer, Opt, Page, PickList, opt, row, section, untitled};
 
 const FIRST_DAY: &[Opt] = &[
     opt("friday", "opt-friday"),
