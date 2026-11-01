@@ -347,8 +347,8 @@ value even when the agent sends no update of its own.</p>
 <p>A session row, in <code>list</code> and as <code>session</code> in <code>read</code>, is the same for live
 and ended sessions: <code>{session, agent, cwd, parent, status, seq, turn, created_at, ended_at, title, open_permissions, permission_requests, permissions, exit_code, signal, end_reason}</code>. <code>created_at</code> is an ISO time;
 <code>ended_at</code> is epoch seconds, nil while the session is live, as are the exit
-fields. <code>title</code> is the first line of the first prompt (at most 120
-characters), nil until the session has had a prompt; a later prompt never
+fields. <code>title</code> is the first line of the first prompt with usable text (at most 120
+characters), nil until such a prompt arrives; a later prompt never
 changes it.</p>
 <p>A read returns at most <code>limit</code> events (default and maximum 2000) and about
 32 MiB. When <code>more</code> is true, read again with <code>since</code> set to <code>next</code>. Every
