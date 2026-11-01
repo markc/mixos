@@ -222,29 +222,34 @@ fn emit_event($id, $fields)
   $e = $fields
   $e.session = $id
   $e.seq = $S.sessions[$id].seq
+  $e.at = time()
   $wire = json_encode($e)
   -- The agent has already said it: an event the log cannot take (disk
   -- full) is still published, and the gap is reported. A command, by
   -- contrast, is refused when its log row cannot be written.
   try
-    $log.append($DB, $id, $e.seq, $e.kind, $wire, time())
+    $log.append($DB, $id, $e.seq, $e.kind, $wire, $e.at)
   catch $m
     eprint("agentd: " .. $id .. ": seq " .. to_string($e.seq) .. " not logged: " .. $m)
   end
   -- Topics are notifications: a large event goes out as a marker, and the
   -- watcher reads the whole event back with agent.session.read.
   if len($wire) > $TOPIC_MAX then
-    $wire = json_encode({session: $id, seq: $e.seq, kind: $e.kind, truncated: true, bytes: len($wire)})
+    $wire = json_encode({session: $id, seq: $e.seq, kind: $e.kind, at: $e.at, truncated: true, bytes: len($wire)})
   end
   $rc = publish("agent.session.updated", $wire, {command: "agent.session.updated"})
   if $rc != 0 then eprint("agentd: " .. $id .. ": publish seq " .. to_string($e.seq) .. " refused rc " .. to_string($rc)) end
 end
 
+-- The same row shape as log.view: ended_at (epoch seconds) and the exit
+-- fields are nil while the session is live.
 fn view($s)
   return {session: $s.id, agent: $s.agent, cwd: $s.cwd, parent: $s.parent, status: $s.status,
-    seq: $s.seq, turn: $s.turn, created_at: $s.created_at, open_permissions: len(keys($s.perms)),
+    seq: $s.seq, turn: $s.turn, created_at: $s.created_at, ended_at: $s.ended_at,
+    title: $s.title, open_permissions: len(keys($s.perms)),
     permission_requests: sort(keys($s.perms)),
-    permissions: map(sort(keys($s.perms)), fn($k) = $s.perms[$k].card)}
+    permissions: map(sort(keys($s.perms)), fn($k) = $s.perms[$k].card),
+    exit_code: $s.exit_code, signal: $s.signal, end_reason: $s.end_reason}
 end
 
 -- Look up the session a command names; replies the refusal itself.
@@ -381,6 +386,7 @@ on agent.session.resume desc "bring back an ended session {session}: same id and
           $log.session_resumed($DB, $id)
           spawn_agent($id, $req, $row.parent, $row.sender, $row.created_at, $log.last_seq($DB, $id),
             {via: $via, acp: $row.acp, prior: $row, done: false})
+          $S.sessions[$id].title = $row.title
           answer(0, json_encode({session: $id, status: "starting", via: $via}))
         catch $m, $err
           if $S.sessions[$id] == nil or $S.sessions[$id].status == "ended" then
@@ -486,6 +492,17 @@ fn start_turn($id, $blocks)
   end
   -- The prompt is part of the transcript: a reader sees what was asked.
   emit_event($id, {kind: "prompt", turn: $rpc, content: $blocks})
+  if $S.sessions[$id].title == nil then
+    $title = $a.prompt_title($blocks)
+    if $title != nil then
+      $S.sessions[$id].title = $title
+      try
+        $log.session_title($DB, $id, $title)
+      catch $m
+        eprint("agentd: " .. $id .. ": title not logged: " .. $m)
+      end
+    end
+  end
   return $rpc
 end
 
@@ -1001,8 +1018,17 @@ fn session_exited($id, $exit_code, $signal, $error_code)
       emit_event($id, {kind: "resume_failed", via: $reopen.via, error: $reopen.error,
         error_code: if $reopen.error != nil then "AGENT_NOT_RESUMABLE" else ($error_code ?? "AGENT_EXITED") end})
       $log.session_restore($DB, $reopen.prior)
+      $S.sessions[$id].ended_at = $reopen.prior.ended_at
+      $S.sessions[$id].exit_code = $reopen.prior.exit_code
+      $S.sessions[$id].signal = $reopen.prior.signal
+      $S.sessions[$id].end_reason = $reopen.prior.end_reason
     else
-      $log.session_ended($DB, $id, $exit_code, $signal, $error_code, time())
+      $at = time()
+      $log.session_ended($DB, $id, $exit_code, $signal, $error_code, $at)
+      $S.sessions[$id].ended_at = $at
+      $S.sessions[$id].exit_code = $exit_code
+      $S.sessions[$id].signal = $signal
+      $S.sessions[$id].end_reason = $error_code
     end
     prune()
     publish("agent.session.ended", json_encode({session: $id, exit_code: $exit_code,

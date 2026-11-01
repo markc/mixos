@@ -93,7 +93,7 @@ Bodies are JSON objects.
 | `agent.session.close` | `{session}` | ends the agent (stdin closes; an agent still running 10 s later is stopped); the session stays in the log and can be resumed |
 | `agent.session.resume` | `{session}` | `{session, status, via}` at once: brings back an ended session (see Resuming) |
 | `agent.session.set` | `{session, mode}` or `{session, option, value}` | sets a mode, or a config option such as the model |
-| `agent.session.list` | | live and recently ended sessions; each live one lists its open questions in `permissions` (`request`, `title`, `options` without `allow_always`, `asked_at`, `expires_at`) |
+| `agent.session.list` | | live and recently ended sessions (one row shape, below); each live one lists its open questions in `permissions` (`request`, `title`, `options` without `allow_always`, `asked_at`, `expires_at`) |
 | `agent.session.read` | `{session, since?, limit?}` | the session and its logged events after `seq`: `{session, events, more, next}` |
 | `agent.permission.respond` | `{session, request, option}` | answers a permission request |
 
@@ -108,8 +108,19 @@ runs. When the agent answers a setting with its options, agentd logs them
 as a `config_option_update` event, so a watcher's picker shows the new
 value even when the agent sends no update of its own.
 
+A session row, in `list` and as `session` in `read`, is the same for live
+and ended sessions: `{session, agent, cwd, parent, status, seq, turn,
+created_at, ended_at, title, open_permissions, permission_requests,
+permissions, exit_code, signal, end_reason}`. `created_at` is an ISO time;
+`ended_at` is epoch seconds, nil while the session is live, as are the exit
+fields. `title` is the first line of the first prompt (at most 120
+characters), nil until the session has had a prompt; a later prompt never
+changes it.
+
 A read returns at most `limit` events (default and maximum 2000) and about
-32 MiB. When `more` is true, read again with `since` set to `next`.
+32 MiB. When `more` is true, read again with `since` set to `next`. Every
+event, read back or published, carries `at`: the time agentd logged it, in
+epoch seconds.
 
 The acting commands (`new`, `prompt`, `cancel`, `close`, `set`, `respond`)
 take an optional `id` of 1-128 characters from `[A-Za-z0-9._:-]`. Ids are
