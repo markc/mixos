@@ -336,3 +336,37 @@ fn gestures_merge_and_a_conflict_resends_through_the_dispatch() {
     assert_eq!(body["expected_revision"], "9");
     assert_eq!(body["changes"], merged);
 }
+
+/// The drawer `prefs.info` reports open.
+fn open_drawer(rig: &mut Rig, id: u64) -> Value {
+    let (_, info) = ask(rig, id, "prefs.info", json!({}));
+    info["nav"]["drawer"].clone()
+}
+
+/// A click on a colour swatch, the accent's custom swatch and a pick row
+/// opens that row's own drawer, as a page drawer's go-next row does.
+#[test]
+fn a_click_on_a_swatch_the_custom_accent_or_a_pick_row_opens_its_drawer() {
+    let mut rig = rig();
+    read(&mut rig, "authority", false);
+    for (n, row, name, role) in [
+        (10, "window_bg", "Window background", "Button"),
+        (20, "accent", "Custom color", "Button"),
+        (30, "font", "System font", "Link"),
+        (40, "frosted", "Frosted glass", "Link"),
+    ] {
+        ask(
+            &mut rig,
+            n,
+            "prefs.page.open",
+            json!({"page":"appearance","row":row}),
+        );
+        rig.h.run_steps(4);
+        let control = node(&mut rig, n + 1, name, role);
+        let (rc, body) = ask(&mut rig, n + 2, "prefs.ui.click", json!({"id": control}));
+        assert_eq!(rc, 0, "{name}: {body}");
+        rig.h.run_steps(4);
+        let expected = if row == "frosted" { "frosted" } else { row };
+        assert_eq!(open_drawer(&mut rig, n + 3), json!(expected), "{name}");
+    }
+}

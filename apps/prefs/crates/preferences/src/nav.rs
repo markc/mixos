@@ -131,9 +131,22 @@ impl Engine {
         self.can_navigate() && pages::get(self.nav.page).is_some_and(|p| p.parent.is_some())
     }
 
+    /// Open one of the page's drawers, or a row's own drawer (a colour
+    /// swatch's picker, the accent's custom colour, a pick row's list),
+    /// named by the row's id.
     pub fn open_drawer(&mut self, drawer: &str) {
-        if let Some(d) = pages::get(self.nav.page).and_then(|p| p.drawer(drawer)) {
+        let Some(page) = pages::get(self.nav.page) else {
+            return;
+        };
+        if let Some(d) = page.drawer(drawer) {
             self.nav.drawer = Some(d.id);
+        } else if let Some(row) = page.row(drawer)
+            && matches!(
+                row.control,
+                Control::Colour { .. } | Control::Accent | Control::Pick { .. }
+            )
+        {
+            self.nav.drawer = Some(row.id);
         }
     }
 
