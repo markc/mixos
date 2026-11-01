@@ -265,6 +265,7 @@ fn check_source($root, $families)
   $listing = source_files($root)
   if not $listing.ok then return {problems: [$listing.error], declared: 0, files: 0} end
   $flags = {}
+  $newer = []
   try
     $flags = $embed.prepare(mix_bin(), $embed.scopes($root, $listing.files))
     $newer = $n1.allow_flags($root, mix_bin())
@@ -323,6 +324,7 @@ fn check_vhosts($root)
   $listing = source_files($root)
   if not $listing.ok then return {problems: [$listing.error], files: 0} end
   $flags = {}
+  $newer = []
   try
     $flags = $embed.prepare(mix_bin(), $embed.scopes($root, $listing.files))
     $newer = $n1.allow_flags($root, mix_bin())

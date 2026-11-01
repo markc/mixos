@@ -32,6 +32,9 @@ fn lint_fragment($source)
 end
 
 try
+  -- The source gate requires the checked tree's builtin table.
+  mkdir($tmp .. "/libs/mix/src", {parents: true})
+  write_file($tmp .. "/libs/mix/src/builtins.rs", '("read_file", CapabilityClass::Read, 1),' .. "\n")
   config_write($config)
   $r = lint_fragment("print(esc($SITE) .. $BODY)\n")
   check(len($r.problems) == 0 and $r.files == 2, "declared functions and globals pass; both files checked")

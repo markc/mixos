@@ -110,6 +110,8 @@ end
 fn case_dir($name)
   $d = $tmp .. "/" .. $name
   mkdir($d, {parents: true})
+  -- Source checks read this tree's builtin table, even in a throwaway tree.
+  put($d .. "/libs/mix/src/builtins.rs", '("read_file", CapabilityClass::Read, 1),' .. "\n")
   return $d
 end
 
@@ -192,12 +194,13 @@ $PAY_TRUNCATED = '{"schema_version":3,"tool":"mix lint","files":["FILE"],"handle
 
 -- A fake native lint: a Mix script under its own shebang. It prints payload
 -- with FILE replaced by the file it is given (its last argument) and exits
--- with status. It answers `mix lint` only.
+-- with status. The builtin query succeeds independently of the lint status.
 fn fake_lint($dir, $payload, $status)
   $pay = put($dir .. "/payload.json", $payload)
   $p = $dir .. "/fake-lint"
   $body = "#!" .. $mix .. "\n"
   $body = $body .. '$a = args()' .. "\n"
+  $body = $body .. 'if $a[0] == "builtins" then print("read_file"); exit(0) end' .. "\n"
   $body = $body .. 'print(replace(read_file("' .. $pay .. '"), "FILE", $a[len($a) - 1]))' .. "\n"
   $body = $body .. 'exit(' .. to_string($status) .. ')' .. "\n"
   put($p, $body)
