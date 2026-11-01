@@ -176,7 +176,12 @@ pub fn list_folder(path: &Path) -> Result<Vec<PathBuf>, String> {
         let supported = file
             .extension()
             .and_then(|x| x.to_str())
-            .is_some_and(|ext| matches!(ext.to_ascii_lowercase().as_str(), "png" | "jpg" | "jpeg" | "webp"));
+            .is_some_and(|ext| {
+                matches!(
+                    ext.to_ascii_lowercase().as_str(),
+                    "png" | "jpg" | "jpeg" | "webp"
+                )
+            });
         if supported {
             paths.push(file);
         }

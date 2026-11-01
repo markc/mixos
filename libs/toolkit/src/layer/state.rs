@@ -438,7 +438,11 @@ impl<P: LayerProgram + 'static> State<P> {
                 timing::surface_wait(s.pending_since, None, now)
             } else if s.configured && s.dirty {
                 // A skipped frame waits for its retry deadline.
-                timing::surface_wait(None, timing::draw_at(s.last_draw, self.program.frame_interval(), s.retry_at), now)
+                timing::surface_wait(
+                    None,
+                    timing::draw_at(s.last_draw, self.program.frame_interval(), s.retry_at),
+                    now,
+                )
             } else {
                 None
             }
@@ -473,7 +477,10 @@ impl<P: LayerProgram + 'static> State<P> {
             .surfaces
             .iter()
             .filter(|s| s.configured && s.dirty && !s.frame_pending)
-            .filter(|s| timing::draw_at(s.last_draw, self.program.frame_interval(), s.retry_at).is_none_or(|t| t <= now))
+            .filter(|s| {
+                timing::draw_at(s.last_draw, self.program.frame_interval(), s.retry_at)
+                    .is_none_or(|t| t <= now)
+            })
             .map(|s| s.id)
             .collect();
         for id in due {
