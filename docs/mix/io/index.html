@@ -378,6 +378,7 @@ tail(path[, n])          -&gt; list      (last n lines, default 10 — reads bac
 line_count(path)         -&gt; number   (count lines by streaming; works on non-UTF-8 files)
 read_file_bytes(path)    -&gt; bytes     (raw; binary-safe)
 read_file_bytes(p, max)  -&gt; bytes     (read at most `max` bytes — header-sniff)
+read_file_bytes(p, {offset, max}) -&gt; bytes (seek, then read a bounded range)
 stdin_copy(path)         -&gt; nil       (stream stdin to a file, flushing every chunk)
 tty_mode("raw"|"cooked") -&gt; nil       (raw/cooked terminal mode; original restored on exit)
 </code></pre>
@@ -426,6 +427,22 @@ read at <em>max</em> bytes via <code>File::take</code>, so you can sniff a heade
 multi-megabyte file without slurping it all. The cap must be a real <code>Number</code>
 (a numeric string or bool is rejected — a silent surprise on a read cap would be
 a footgun). Pair it with the <a href="#bytes-helpers">bytes helpers</a>:</p>
+<p>Since v0.118.0, <code>read_file_bytes(path, {offset, max})</code> reads a bounded range
+without scanning the preceding bytes. <code>max</code> is required in the options form:
+an integer from 1 to <code>i64::MAX</code>. <code>offset</code> defaults to 0 and accepts integers
+from 0 to <code>i64::MAX</code>; both must be real numbers (no string/bool coercion).
+Each call opens its own file, seeks, then reads until <code>max</code> bytes or EOF;
+ordinary short reads are retried. At or past EOF the result is empty bytes.
+This supports HTTP Range streaming of large files in bounded chunks:</p>
+<pre><code class="language-mix">$chunk = read_file_bytes("/tmp/video.bin", {offset: 1073741824, max: 65536})
+</code></pre>
+<p>Unknown keys or a missing <code>max</code> raise <code>OPTION_INVALID</code>, wrong option value
+types raise <code>TYPE_MISMATCH</code>, and negative, fractional, non-finite or out-of-range
+numbers raise <code>VALUE_OUT_OF_RANGE</code>, all before opening the file. No new read
+size limit is imposed: the caller chooses its chunk size. The original
+<code>read_file_bytes(path)</code> whole-file form and numeric cap form, including a zero
+cap, are unchanged; passing nil still raises. For an in-memory byte range,
+use the existing <code>slice(bytes, start[, end])</code> (0-based, end exclusive).</p>
 <pre><code class="language-mix">-- a file whose first bytes are the JPEG magic \xFF\xD8\xFF
 $all = read_file_bytes("/tmp/io/img.bin")
 print("full: " .. bytes_len($all))

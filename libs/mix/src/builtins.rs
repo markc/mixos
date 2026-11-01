@@ -258,7 +258,7 @@ builtin_table! {
     ("dir_open", CapabilityClass::FsRead, "io", "Open a retained native directory root; evaluator-owned numeric handle. Refuses symlink components. Linux openat2 required; no fallback (v0.108.0)", contract!((path: string) -> number; effects[must_use, blocking]; failure[raises])),
     ("dir_rename", CapabilityClass::FsWrite, "io", "Move a regular file or directory between relative paths beneath a retained root, atomically refusing overwrite. Landlock ABI 2 and erratum 3 required. Refuses symlink sources and escaping parents. Root pathname checked before operation; retained inode remains the containment boundary during concurrent root moves (v0.108.0)", contract!((handle: number, source: string, destination: string) -> nil; effects[blocking]; failure[raises])),
     ("dir_close", CapabilityClass::FsRead, "io", "Close an evaluator-owned retained directory root; invalid or closed handles raise (v0.108.0)", contract!((handle: number) -> nil; failure[raises])),
-    ("read_file_bytes", CapabilityClass::FsRead, "io",      "Read file contents as raw bytes. Optional 2nd arg caps the read: read_file_bytes(path, 8192) reads at most 8192 bytes (header-sniffing without slurping a huge file) (v0.3.1; cap v0.17.1)", contract!((path: string, max?: number) -> bytes; failure[raises])),
+    ("read_file_bytes", CapabilityClass::FsRead, "io",      "Read file contents as raw bytes. Optional 2nd arg caps the read: read_file_bytes(path, 8192) reads at most 8192 bytes. Options form read_file_bytes(path, {offset, max}) seeks to offset (default 0) and reads up to required max bytes, stopping early only at EOF; at/past EOF returns empty bytes. offset is an integer 0..i64::MAX, max 1..i64::MAX; both must be numbers. Unknown keys or missing max raise OPTION_INVALID, wrong option types TYPE_MISMATCH, invalid numbers VALUE_OUT_OF_RANGE. Existing numeric caps (including 0) and whole-file reads are unchanged (v0.3.1; cap v0.17.1; offset v0.118.0)", contract!((path: string, max?: any_of(number, map("read_file_bytes_options", {offset: number, max: number}))) -> bytes; failure[raises])),
     ("read_lines", CapabilityClass::FsRead,      "io",      "Read file as a list of lines (trailing newline stripped, empty last line dropped) (v0.2.3)", contract!((path: string) -> list(string); failure[raises])),
     ("load_data", CapabilityClass::FsRead,       "io",      "Read + parse a strict-data .mix file (bare-key `k: v`, the zones.mix/conf.mix form) into a Value — the non-executing twin of source/include, for substrate-internal data that must NOT run as code (v0.9.0)", contract!((path: string) -> any; failure[raises])),
     ("write_file", CapabilityClass::FsWrite,      "io",      "Write a string, bytes or buffer to file (creates/overwrites); bytes/buffer are written verbatim, a string as UTF-8. Nothing else is coerced — nil/map/list/function/number/bool raise TYPE_MISMATCH before the file is opened (encode with json_encode/data_encode/to_string first)", contract!((path: string, data: any_of(string, bytes, buffer)) -> nil; failure[raises]; hints[data: "encode it first (json_encode, data_encode or to_string)"])),
@@ -13396,6 +13396,9 @@ fn builtin_read_file(args: Vec<Value>) -> MixResult<Option<Value>> {
 /// `File::take`, so header-sniffing (`read_file_bytes(p, 8192)`) never
 /// slurps a multi-megabyte attachment to use the first few KiB. `max`
 /// must be a finite non-negative integer; `max == 0` reads nothing.
+/// The options form requires max >= 1 and seeks to offset (default 0).
+/// Seeking uses a new file descriptor, so concurrent range readers never
+/// share a cursor. A bounded read loops through short reads until EOF/cap.
 fn builtin_read_file_bytes(args: Vec<Value>) -> MixResult<Option<Value>> {
     use std::io::Read as _;
     expect_args("read_file_bytes", &args, 1)?;
@@ -13406,6 +13409,42 @@ fn builtin_read_file_bytes(args: Vec<Value>) -> MixResult<Option<Value>> {
         });
     }
     let path = args[0].to_mix_string();
+
+    if let Some(Value::Map(opts)) = args.get(1) {
+        use crate::native_events::refusal;
+        use std::io::{Seek, SeekFrom};
+        for key in opts.keys() {
+            if !matches!(key.as_str(), "offset" | "max") {
+                return Err(refusal(
+                    "OPTION_INVALID",
+                    format!("read_file_bytes(): unknown option '{key}' (supported: offset, max)"),
+                ));
+            }
+        }
+        let integer = |key: &str, value: &Value, min| -> MixResult<u64> {
+            let Value::Number(n) = value else {
+                return Err(refusal(
+                    "TYPE_MISMATCH",
+                    format!("read_file_bytes(): option '{key}' must be a number, got {}", value.type_name()),
+                ));
+            };
+            Ok(as_exact_integer(&format!("read_file_bytes(): option '{key}'"), *n, min, i64::MAX)? as u64)
+        };
+        let max = opts.get("max").ok_or_else(|| {
+            refusal("OPTION_INVALID", "read_file_bytes(): options require 'max'")
+        })?;
+        let cap = integer("max", max, 1)?;
+        let offset = opts.get("offset").map(|v| integer("offset", v, 0)).transpose()?.unwrap_or(0);
+        let file_error = |e: std::io::Error| MixError::RuntimeError {
+            span: None,
+            msg: format!("read_file_bytes '{}': {}", path, e),
+        };
+        let mut file = std::fs::File::open(&path).map_err(file_error)?;
+        file.seek(SeekFrom::Start(offset)).map_err(file_error)?;
+        let mut bytes = Vec::new();
+        file.take(cap).read_to_end(&mut bytes).map_err(file_error)?;
+        return Ok(Some(Value::bytes(bytes)));
+    }
 
     if let Some(max_val) = args.get(1) {
         // Require a real Number (not `to_number()`, which coerces a bool
@@ -36452,6 +36491,75 @@ mod fs_meta_tests {
         // Exactly 2^64 must be rejected (the `as u64` saturation edge),
         // not silently treated as an unbounded read.
         assert!(builtin_read_file_bytes(vec![s(&p), Value::Number(2.0_f64.powi(64))]).is_err());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn read_file_bytes_offset_ranges_and_option_errors() {
+        let d = tmpdir("rfb-offset");
+        let p = d.join("binary");
+        let payload = [0, 255, 128, 42, 7, 0];
+        std::fs::write(&p, payload).unwrap();
+        for (opts, expected) in [
+            (serde_json::json!({"max": 3}), &payload[..3]),
+            (serde_json::json!({"offset": 0, "max": 6}), &payload[..]),
+            (serde_json::json!({"offset": 2, "max": 2}), &payload[2..4]),
+            (serde_json::json!({"offset": 6, "max": 4}), &payload[6..]),
+            (serde_json::json!({"offset": 100, "max": 4}), &payload[6..]),
+            (serde_json::json!({"offset": 4, "max": 100}), &payload[4..]),
+        ] {
+            let got = builtin_read_file_bytes(vec![s(&p), crate::native_events::json_value(opts)]).unwrap();
+            assert_eq!(got, Some(Value::bytes(expected.to_vec())));
+        }
+        std::fs::write(&p, []).unwrap();
+        let got = builtin_read_file_bytes(vec![s(&p), crate::native_events::json_value(serde_json::json!({"max": 1}))]).unwrap();
+        assert_eq!(got, Some(Value::bytes(vec![])));
+        // Validation precedes I/O, so an invalid option cannot be hidden
+        // by a missing file. Assert stable structured error codes too.
+        let missing = d.join("missing");
+        for (opts, code) in [
+            (serde_json::json!({}), "OPTION_INVALID"),
+            (serde_json::json!({"offset": 0}), "OPTION_INVALID"),
+            (serde_json::json!({"max": 1, "typo": 2}), "OPTION_INVALID"),
+            (serde_json::json!({"max": 0}), "VALUE_OUT_OF_RANGE"),
+            (serde_json::json!({"max": -1}), "VALUE_OUT_OF_RANGE"),
+            (serde_json::json!({"max": 1.5}), "VALUE_OUT_OF_RANGE"),
+            (serde_json::json!({"max": 1, "offset": -1}), "VALUE_OUT_OF_RANGE"),
+            (serde_json::json!({"max": 1, "offset": 0.5}), "VALUE_OUT_OF_RANGE"),
+            (serde_json::json!({"max": "1"}), "TYPE_MISMATCH"),
+            (serde_json::json!({"max": true}), "TYPE_MISMATCH"),
+            (serde_json::json!({"max": null}), "TYPE_MISMATCH"),
+            (serde_json::json!({"max": 1, "offset": "1"}), "TYPE_MISMATCH"),
+            (serde_json::json!({"max": 1, "offset": false}), "TYPE_MISMATCH"),
+            (serde_json::json!({"max": 1, "offset": null}), "TYPE_MISMATCH"),
+        ] {
+            let err = builtin_read_file_bytes(vec![s(&missing), crate::native_events::json_value(opts)]).unwrap_err();
+            assert_eq!(err.info().unwrap().code, code);
+        }
+        for key in ["offset", "max"] {
+            for n in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 2.0_f64.powi(63)] {
+                let mut opts = indexmap::IndexMap::new();
+                opts.insert("max".into(), Value::Number(1.0));
+                opts.insert(key.into(), Value::Number(n));
+                let err = builtin_read_file_bytes(vec![s(&missing), Value::map(opts)]).unwrap_err();
+                assert_eq!(err.info().unwrap().code, "VALUE_OUT_OF_RANGE");
+            }
+        }
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn read_file_bytes_seeks_beyond_four_gib() {
+        use std::io::{Seek, SeekFrom, Write};
+        let d = tmpdir("rfb-large-offset");
+        let p = d.join("sparse");
+        let offset = 5_u64 * 1024 * 1024 * 1024;
+        let mut file = std::fs::File::create(&p).unwrap();
+        file.seek(SeekFrom::Start(offset)).unwrap();
+        file.write_all(&[255, 0, 128]).unwrap();
+        drop(file);
+        let opts = crate::native_events::json_value(serde_json::json!({"offset": offset, "max": 2}));
+        assert_eq!(builtin_read_file_bytes(vec![s(&p), opts]).unwrap(), Some(Value::bytes(vec![255, 0])));
         let _ = std::fs::remove_dir_all(&d);
     }
 }

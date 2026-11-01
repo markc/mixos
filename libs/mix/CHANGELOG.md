@@ -4,6 +4,9 @@
 
 ### Added
 
+- `read_file_bytes(path, {offset, max})` seeks to a byte offset (default 0)
+  and reads up to required `max` bytes, stopping early only at EOF. At/past
+  EOF returns empty bytes. The whole-file and numeric cap forms are unchanged.
 - IPv4 UDP event sources: `udp_listen`, `udp_on`, `udp_send_from`,
   `udp_close`, `udp_unwatch` (ws feature), with multicast membership, egress
   interface, pre-bind reuse and generation retirement. `udp_send` accepts

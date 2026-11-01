@@ -271,6 +271,11 @@
 <h3 id="added">Added</h3>
 <ul>
 <li>
+<p><code>read_file_bytes(path, {offset, max})</code> seeks to a byte offset (default 0)
+and reads up to required <code>max</code> bytes, stopping early only at EOF. At/past
+EOF returns empty bytes. The whole-file and numeric cap forms are unchanged.</p>
+</li>
+<li>
 <p>IPv4 UDP event sources: <code>udp_listen</code>, <code>udp_on</code>, <code>udp_send_from</code>,
 <code>udp_close</code>, <code>udp_unwatch</code> (ws feature), with multicast membership, egress
 interface, pre-bind reuse and generation retirement. <code>udp_send</code> accepts
