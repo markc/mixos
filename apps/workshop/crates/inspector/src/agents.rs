@@ -750,7 +750,10 @@ impl Engine {
         self.sync_local_agents();
         let local = self.agents.local_name().to_owned();
         let known = self.agent_nodes();
-        let departed: Vec<_> = self.agents.tickets.iter()
+        let departed: Vec<_> = self
+            .agents
+            .tickets
+            .iter()
             .filter(|(_, node)| !known.contains(node))
             .map(|(ticket, node)| (*ticket, node.clone()))
             .collect();
@@ -759,7 +762,8 @@ impl Engine {
             let message = format!("agentd is no longer advertised on {node}");
             if let Some(Some(id)) = self.agents.replies.remove(&ticket) {
                 self.push_workshop(Effect::Reply {
-                    id, rc: 10,
+                    id,
+                    rc: 10,
                     body: json!({"error_code":"UNAVAILABLE","message":message}),
                 });
             }
@@ -769,7 +773,12 @@ impl Engine {
             }
         }
         self.agents.nodes.retain(|node, _| known.contains(node));
-        if self.agents.selected.as_ref().is_some_and(|s| !known.contains(&s.node)) {
+        if self
+            .agents
+            .selected
+            .as_ref()
+            .is_some_and(|s| !known.contains(&s.node))
+        {
             self.agents.prompting = false;
             self.agents.error = Some("Selected node no longer advertises agentd".into());
         }
@@ -1258,7 +1267,9 @@ impl Engine {
                 Ok((self.agents.local_name().to_owned(), None))
             }
             Value::Null => match args["session"].as_str() {
-                Some(session) => self.session_node(session, &Value::Null).map(|node| (node, None)),
+                Some(session) => self
+                    .session_node(session, &Value::Null)
+                    .map(|node| (node, None)),
                 None => Ok(selected
                     .map(|s| (s.node.clone(), Some(s.session.clone())))
                     .unwrap_or_else(|| (self.agents.local_name().to_owned(), None))),
@@ -2466,7 +2477,11 @@ mod tests {
         listed_two(&mut e, json!([]), json!([session_on("s2", "ready")]));
         e.select_session("beta", "s2");
         let read = node_calls(&mut e).pop().unwrap();
-        e.agents_command(42, "workshop.agents.prompt", &json!({"session":"s2","text":"hi"}));
+        e.agents_command(
+            42,
+            "workshop.agents.prompt",
+            &json!({"session":"s2","text":"hi"}),
+        );
         let acting = node_calls(&mut e).pop().unwrap();
         e.snapshot.nodes.retain(|node| node.name != "beta");
         e.agents_discovered();
@@ -2480,10 +2495,17 @@ mod tests {
         e.agent_completed(read.0, &read.2, Err("late read".into()));
         e.agent_completed(acting.0, &acting.2, Ok((0, json!({"turn":1}))));
         assert_eq!(e.agents.error, error);
-        assert!(e.take_effects().is_empty(), "no second reply or follow-up for a departed node");
+        assert!(
+            e.take_effects().is_empty(),
+            "no second reply or follow-up for a departed node"
+        );
         e.snapshot.nodes = two_nodes().snapshot.nodes;
         e.agents_discovered();
-        assert!(node_calls(&mut e).iter().any(|(_, n, c, _)| n.as_deref() == Some("beta") && c == "agent.session.list"));
+        assert!(
+            node_calls(&mut e)
+                .iter()
+                .any(|(_, n, c, _)| n.as_deref() == Some("beta") && c == "agent.session.list")
+        );
         e.read_transcript();
         assert!(e.agents.transcript.filling);
         assert!(e.agents.read_ticket.is_some());
@@ -2495,24 +2517,45 @@ mod tests {
         listed_two(&mut e, json!([]), json!([session_on("s2", "ready")]));
         e.select_session("beta", "s2");
         let read = node_calls(&mut e).pop().unwrap();
-        e.snapshot.nodes.iter_mut().find(|node| node.name == "beta").unwrap()
-            .services.retain(|service| service != "agent.beta.bus");
+        e.snapshot
+            .nodes
+            .iter_mut()
+            .find(|node| node.name == "beta")
+            .unwrap()
+            .services
+            .retain(|service| service != "agent.beta.bus");
         e.agents_discovered();
         assert!(e.snapshot.nodes.iter().any(|node| node.name == "beta"));
         assert!(e.agents.node("beta").is_none());
         assert!(e.agents.selected_row().is_none());
-        assert!(!e.agents_tree().children.iter().any(|row| row.key == "agents:node:beta"));
+        assert!(
+            !e.agents_tree()
+                .children
+                .iter()
+                .any(|row| row.key == "agents:node:beta")
+        );
         assert_eq!(e.agents.read_ticket, None);
         assert!(!e.agents.transcript.filling);
-        e.agent_completed(read.0, &read.2, Ok((0, json!({"session":session_on("s2", "ready"),"events":[]}))));
+        e.agent_completed(
+            read.0,
+            &read.2,
+            Ok((0, json!({"session":session_on("s2", "ready"),"events":[]}))),
+        );
         assert!(e.agents.node("beta").is_none());
     }
 
     #[test]
     fn obsolete_read_errors_do_not_poison_the_current_selection() {
-        for result in [Ok((14, json!({"message":"old session missing"}))), Err("old read timeout".into())] {
+        for result in [
+            Ok((14, json!({"message":"old session missing"}))),
+            Err("old read timeout".into()),
+        ] {
             let mut e = two_nodes();
-            listed_two(&mut e, json!([]), json!([session_on("a", "ready"), session_on("b", "ready")]));
+            listed_two(
+                &mut e,
+                json!([]),
+                json!([session_on("a", "ready"), session_on("b", "ready")]),
+            );
             e.select_session("beta", "a");
             let old = node_calls(&mut e).pop().unwrap();
             e.select_session("beta", "b");
@@ -2537,25 +2580,50 @@ mod tests {
         e.agents_discovered();
         assert_eq!(e.agents.filter.node.as_deref(), Some("alpha"));
         assert!(e.agents.passes(e.agents.row("alpha", "s1").unwrap()));
-        assert!(e.agents_tree().children.iter().any(|row| row.key == "agents:node:alpha"));
+        assert!(
+            e.agents_tree()
+                .children
+                .iter()
+                .any(|row| row.key == "agents:node:alpha")
+        );
     }
 
     #[test]
     fn an_unlisted_remote_session_never_falls_back_to_the_local_agent() {
         let mut e = two_nodes();
         listed_two(&mut e, json!([]), json!([]));
-        e.agents_command(1, "workshop.agents.new", &json!({"node":"beta","agent":"claude","cwd":"/w"}));
+        e.agents_command(
+            1,
+            "workshop.agents.new",
+            &json!({"node":"beta","agent":"claude","cwd":"/w"}),
+        );
         let new = node_calls(&mut e).pop().unwrap();
         e.agent_completed(new.0, &new.2, Ok((0, json!({"session":"new-id"}))));
         e.take_effects();
-        e.agents_command(2, "workshop.agents.prompt", &json!({"session":"new-id","text":"hi"}));
+        e.agents_command(
+            2,
+            "workshop.agents.prompt",
+            &json!({"session":"new-id","text":"hi"}),
+        );
         let effects = e.take_effects();
         let (rc, body) = reply_to(&effects, 2).unwrap();
         assert_eq!((rc, &body["error_code"]), (14, &json!("UNKNOWN_SESSION")));
-        assert!(!effects.iter().any(|effect| matches!(effect, Effect::Agent {..})));
+        assert!(
+            !effects
+                .iter()
+                .any(|effect| matches!(effect, Effect::Agent { .. }))
+        );
         // An explicit node remains usable before its next list completes.
-        e.agents_command(3, "workshop.agents.prompt", &json!({"node":"beta","session":"new-id","text":"hi"}));
-        assert!(node_calls(&mut e).iter().any(|(_, n, c, _)| n.as_deref() == Some("beta") && c == "agent.session.prompt"));
+        e.agents_command(
+            3,
+            "workshop.agents.prompt",
+            &json!({"node":"beta","session":"new-id","text":"hi"}),
+        );
+        assert!(
+            node_calls(&mut e)
+                .iter()
+                .any(|(_, n, c, _)| n.as_deref() == Some("beta") && c == "agent.session.prompt")
+        );
     }
 
     #[test]

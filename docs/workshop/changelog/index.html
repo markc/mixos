@@ -248,6 +248,11 @@ Pass <code>node</code> when a session id appears on more than one node.</li>
 <li>Retry missing peers at discovery and coalesced refreshes after timeouts.
 Ignore obsolete replies and replies from departed nodes. Acting commands
 refuse unknown nodes with <code>UNKNOWN_NODE</code> (rc 14).</li>
+<li>Settle pending callers with <code>UNAVAILABLE</code> and release transcript reads when
+a peer leaves or withdraws its agent advertisement; remove its stale rows.
+Preserve the node filter when discovery names the local node.</li>
+<li>Refuse unlisted session ids with <code>UNKNOWN_SESSION</code> rather than routing them
+locally. Give <code>node</code> explicitly before a new session appears in a list.</li>
 </ul>
 <h2 id="unreleased--2026-10-28">Unreleased — 2026-10-28</h2>
 <ul>
