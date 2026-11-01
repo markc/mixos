@@ -773,6 +773,15 @@ pub fn section_card(
             }
         }
     }
+    let cards = section
+        .items
+        .filter(|i| i.style == pages::ItemStyle::Cards);
+    if rows.is_empty() && cards.is_some() {
+        if let Some(items) = cards {
+            item_cards(ui, engine, items, look);
+        }
+        return;
+    }
     card(ui, look, |ui| {
         let mut first = true;
         for row in rows {
@@ -816,10 +825,64 @@ pub fn section_card(
             first = false;
             controls::row(ui, engine, page, row, quiet, look, events);
         }
-        if let Some(items) = section.items {
+        if let Some(items) = section.items
+            && items.style == pages::ItemStyle::Rows
+        {
             live_items(ui, engine, page, items, &mut first, look, events);
         }
     });
+    if let Some(items) = cards {
+        ui.add_space(look.xs);
+        item_cards(ui, engine, items, look);
+    }
+}
+
+/// Read-only readout cards, two to a row (Power's connected devices): a
+/// 48 px icon, the title, the value; the empty message as one card.
+fn item_cards(ui: &mut Ui, engine: &Engine, items: pages::Items, look: &Look) {
+    let list = engine.items(items.source);
+    if list.is_empty() {
+        card(ui, look, |ui| plain_row(ui, look, &label(items.empty), None));
+        return;
+    }
+    let width = ui.available_width();
+    let cell = ((width - look.s) / 2.0).max(1.0);
+    for pair in list.chunks(2) {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = look.s;
+            for item in pair {
+                let (rect, response) = ui.allocate_exact_size(vec2(cell, 72.0), Sense::hover());
+                ui.painter()
+                    .rect_filled(rect, Look::radius(look.r_s), look.card);
+                let icon_centre = pos2(rect.min.x + look.m + 24.0, rect.center().y);
+                let glyph = item.icon.as_deref().map_or(Icon::Info, icon);
+                toolkit::button::paint_icon(ui, glyph, icon_centre, 48.0, look.icon);
+                let text_x = rect.min.x + look.m + 48.0 + look.s;
+                ui.painter().text(
+                    pos2(text_x, rect.center().y - 1.0),
+                    egui::Align2::LEFT_BOTTOM,
+                    &item.title,
+                    egui::FontId::proportional(14.0),
+                    look.text,
+                );
+                if let Some(value) = &item.value {
+                    ui.painter().text(
+                        pos2(text_x, rect.center().y + 1.0),
+                        egui::Align2::LEFT_TOP,
+                        value,
+                        egui::FontId::proportional(14.0),
+                        look.value,
+                    );
+                }
+                let name = match &item.value {
+                    Some(value) => format!("{} {value}", item.title),
+                    None => item.title.clone(),
+                };
+                response.widget_info(|| WidgetInfo::labeled(Role::Label, true, &name));
+            }
+        });
+        ui.add_space(look.s);
+    }
 }
 
 /// A section's rows from data: title, description, trailing value and the
@@ -848,8 +911,19 @@ fn live_items(
             divider(ui, look);
         }
         *first = false;
+        if let Some(name) = &item.icon {
+            // The leading icon sits in the row's padding, before the text.
+            let at = ui.cursor().min + vec2(look.row_pad() + 8.0, 20.0);
+            toolkit::button::paint_icon(ui, icon(name), at, 16.0, look.icon);
+        }
+        let indent = if item.icon.is_some() { 24 } else { 0 };
         egui::Frame::NONE
-            .inner_margin(egui::Margin::symmetric(look.row_pad() as i8, 4))
+            .inner_margin(egui::Margin {
+                left: look.row_pad() as i8 + indent,
+                right: look.row_pad() as i8,
+                top: 4,
+                bottom: 4,
+            })
             .show(ui, |ui| {
                 ui.set_min_height(32.0);
                 ui.set_width(ui.available_width());

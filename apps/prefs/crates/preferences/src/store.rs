@@ -82,6 +82,9 @@ pub struct Store {
     pub catalog: Catalog,
     /// settingsd's own catalogue replaced the built-in one.
     pub described: bool,
+    /// Backend presence facts (`power.battery`), reported by the data's
+    /// owners; not settings, never written to settingsd.
+    pub facts: BTreeMap<String, bool>,
     /// The authored values settingsd holds (sparse: defaults come from the
     /// catalogue).
     pub values: Values,
