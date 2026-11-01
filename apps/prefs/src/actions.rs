@@ -32,14 +32,27 @@ pub struct OpenPage {
     pub row: Option<String>,
 }
 
-/// `set`'s parameters.
+/// `set`'s parameters: the control bound to `key`, set to `value`.
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SetKey {
-    /// A settings key a page row writes.
+    /// The settings key of the control to operate (`prefs.page` names
+    /// each row's key).
     pub key: String,
     /// The new value; null resets the key.
     pub value: Value,
+}
+
+/// `item`'s parameters: a live item's button.
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ItemAction {
+    /// The live source (`prefs.page` names each section's).
+    pub source: String,
+    /// The item's id within its source.
+    pub id: String,
+    /// One of the item's actions.
+    pub action: String,
 }
 
 fn navigable(e: &Engine) -> Result<(), &'static str> {
@@ -65,8 +78,19 @@ fn set_key(e: &mut Engine, params: &Value) -> Result<Value, Error> {
         id: "set",
         msg: err.to_string(),
     })?;
-    e.set_key(&p.key, p.value).map_err(Error::Failed)?;
+    // The control's own path: its enable rules, then its fenced write.
+    e.set_control(&p.key, p.value).map_err(Error::Failed)?;
     Ok(json!({"key": p.key, "value": e.store.value(&p.key), "writing": e.store.writing()}))
+}
+
+fn item_action(e: &mut Engine, params: &Value) -> Result<Value, Error> {
+    let p: ItemAction = serde_json::from_value(params.clone()).map_err(|err| Error::BadParams {
+        id: "item",
+        msg: err.to_string(),
+    })?;
+    e.item_action(&p.source, &p.id, &p.action)
+        .map_err(Error::Failed)?;
+    Ok(json!({"source": p.source, "id": p.id, "action": p.action}))
 }
 
 fn typed(
@@ -109,7 +133,17 @@ pub fn registry() -> Registry<Engine> {
             type_name: "prefs::SetKey",
             schema: || schemars::schema_for!(SetKey),
         },
+    ))
+    .add_engine(typed(
+        "item",
+        "item-action",
+        item_action,
+        ParamSpec {
+            type_name: "prefs::ItemAction",
+            schema: || schemars::schema_for!(ItemAction),
+        },
     ));
+
     r.add(toolkit::macros::command(
         |s: &Engine| s.ui.macros_open || undialogued(s),
         |e: &mut Engine| {

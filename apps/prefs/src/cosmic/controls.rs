@@ -168,8 +168,8 @@ impl Labels {
 }
 
 /// The width a control takes beside its labels.
-fn control_width(ui: &Ui, engine: &Engine, control: &Control) -> f32 {
-    match control {
+fn control_width(ui: &Ui, engine: &Engine, row: &Row) -> f32 {
+    match &row.control {
         Control::Toggle { .. }
         | Control::Flag { .. }
         | Control::Live { .. }
@@ -183,8 +183,8 @@ fn control_width(ui: &Ui, engine: &Engine, control: &Control) -> f32 {
             }
         }
         Control::Spin { .. } => 96.0,
-        Control::Choice { options, .. } => {
-            let labels: Vec<String> = options.iter().map(|o| label(o.label)).collect();
+        Control::Choice { .. } => {
+            let labels: Vec<String> = engine.choices(row).into_iter().map(|o| o.1).collect();
             dropdown_width(ui, &labels)
         }
         Control::Slider { .. } | Control::Steps { .. } => 360.0,
@@ -275,7 +275,7 @@ pub fn row(
         .show(ui, |ui| {
             let width = ui.available_width();
             ui.set_width(width);
-            let cw = control_width(ui, engine, &row.control);
+            let cw = control_width(ui, engine, row);
             // The flex rule: below 200 for the labels the control stacks
             // under them (spec 4, "Setting row").
             let beside = !stacked(&row.control) && width - cw - look.xs >= 200.0;
@@ -348,7 +348,7 @@ pub fn row(
         }
         focus_ring(ui, &click, response.rect, look.r_s, look);
     }
-    if engine.nav.focus == Some(row.id) {
+    if engine.nav.focus == Some((page.id, row.id)) {
         response.scroll_to_me(Some(Align::Center));
         ui.painter().rect_stroke(
             response.rect.shrink(1.0),
@@ -377,14 +377,14 @@ pub fn radio_row(
     page: &Page,
     row: &Row,
     key: &'static str,
-    option: &Opt,
+    option: &(Value, String),
     blocked: Option<&str>,
     look: &Look,
     events: &mut Vec<UiEvent>,
 ) {
     let value = engine.store.value(key);
-    let selected = option.value.is(value.as_ref());
-    let text = label(option.label);
+    let selected = value.as_ref() == Some(&option.0);
+    let text = option.1.clone();
     let pad = look.row_pad() as i8;
     let response = egui::Frame::NONE
         .inner_margin(Margin {
@@ -413,7 +413,7 @@ pub fn radio_row(
                         WidgetInfo::selected(Role::RadioButton, ui.is_enabled(), selected, &text)
                     });
                     if response.clicked() && !selected {
-                        set(events, key, lit(option.value));
+                        set(events, key, option.0.clone());
                     }
                 });
                 ui.add_space(look.xs);
@@ -467,8 +467,16 @@ fn control(
         Control::Choice {
             key,
             style: ChoiceStyle::Dropdown,
-            options,
-        } => dropdown(ui, store.value(key), key, options, name, look, events),
+            ..
+        } => dropdown(
+            ui,
+            store.value(key),
+            key,
+            &engine.choices(row),
+            name,
+            look,
+            events,
+        ),
         Control::Choice {
             key,
             style: ChoiceStyle::Segmented,
@@ -490,7 +498,8 @@ fn control(
             start,
             end,
         } => {
-            let shown = store.number(key).unwrap_or(*min) * scale;
+            let (min, max) = engine.bounds(key, *min, *max);
+            let shown = store.number(key).filter(|v| v.is_finite()).unwrap_or(min) * scale;
             let range = (min * scale, max * scale);
             if let Some(v) = slider(
                 ui,
@@ -510,6 +519,8 @@ fn control(
                 } else {
                     stored
                 };
+                // No float drift past the step (0.15000000000000002).
+                let stored = ((stored * 1e6).round() / 1e6).clamp(min, max);
                 set(events, key, json!(stored));
             }
         }
@@ -520,12 +531,16 @@ fn control(
             end,
         } => {
             let value = store.value(key);
+            let steps = engine.steps(key, steps);
+            if steps.is_empty() {
+                return;
+            }
             // A value off the steps shows as the middle one (COSMIC's Custom).
             let index = steps
                 .iter()
-                .position(|s| s.is(value.as_ref()))
+                .position(|s| value.as_ref().and_then(Value::as_f64) == s.as_f64())
                 .unwrap_or(steps.len() / 2) as f64;
-            let last = (steps.len().max(1) - 1) as f64;
+            let last = (steps.len() - 1) as f64;
             if let Some(v) = slider(
                 ui,
                 (page.id, row.id),
@@ -538,8 +553,8 @@ fn control(
                 name,
                 look,
             ) {
-                let i = (v.round() as usize).min(steps.len() - 1);
-                set(events, key, lit(steps[i]));
+                let i = (v.round().max(0.0) as usize).min(steps.len() - 1);
+                set(events, key, steps[i].clone());
             }
         }
         Control::Spin {
@@ -548,7 +563,13 @@ fn control(
             max,
             step,
         } => {
-            let value = store.number(key).unwrap_or(*min as f64) as i64;
+            let (min, max) = engine.bounds(key, *min as f64, *max as f64);
+            let (min, max) = (min as i64, max as i64);
+            let (min, max) = (&min, &max);
+            let value = store
+                .number(key)
+                .filter(|v| v.is_finite())
+                .map_or(*min, |v| (v.round() as i64).clamp(*min, *max));
             ui.spacing_mut().item_spacing.x = 4.0;
             let plus = icon_button(ui, Icon::Plus, value < *max, &format!("{name} +"), look);
             ui.label(
@@ -704,13 +725,13 @@ fn dropdown(
     ui: &mut Ui,
     value: Option<Value>,
     key: &'static str,
-    options: &[Opt],
+    options: &[(Value, String)],
     name: &str,
     look: &Look,
     events: &mut Vec<UiEvent>,
 ) {
-    let labels: Vec<String> = options.iter().map(|o| label(o.label)).collect();
-    let index = options.iter().position(|o| o.value.is(value.as_ref()));
+    let labels: Vec<String> = options.iter().map(|o| o.1.clone()).collect();
+    let index = options.iter().position(|o| value.as_ref() == Some(&o.0));
     // A stored value outside the options (a connector) still shows.
     let shown = match (index, value.as_ref().and_then(Value::as_str)) {
         (Some(i), _) => labels[i].clone(),
@@ -745,7 +766,7 @@ fn dropdown(
         for (i, option) in options.iter().enumerate() {
             let selected = index == Some(i);
             if toolkit::selectable(ui, selected, &labels[i]).clicked() && !selected {
-                set(events, key, lit(option.value));
+                set(events, key, option.0.clone());
             }
         }
     });
@@ -1036,7 +1057,8 @@ fn scheme(ui: &mut Ui, engine: &Engine, look: &Look, events: &mut Vec<UiEvent>) 
                 egui::FontId::proportional(13.0),
                 look.text,
             );
-            let size = vec2(galley.size().x + 40.0, 28.0);
+            // Never wider than the row the chips wrap in.
+            let size = vec2((galley.size().x + 40.0).min(ui.max_rect().width()), 28.0);
             let (rect, response) = ui.allocate_exact_size(size, Sense::click());
             let fill = if selected {
                 look.sidebar_selected
@@ -1159,8 +1181,25 @@ fn slider(
     {
         ui.data_mut(|d| d.insert_temp(id, at(pos)));
     }
+    // Arrow keys step a focused slider (the Role::Slider promise).
+    if response.has_focus() {
+        let unit = if step > 0.0 { step } else { span / 20.0 };
+        let delta = ui.input(|i| {
+            if i.key_pressed(egui::Key::ArrowRight) || i.key_pressed(egui::Key::ArrowUp) {
+                unit
+            } else if i.key_pressed(egui::Key::ArrowLeft) || i.key_pressed(egui::Key::ArrowDown) {
+                -unit
+            } else {
+                0.0
+            }
+        });
+        if delta != 0.0 {
+            out = Some((value + delta).clamp(range.0, range.1));
+        }
+    }
     if response.drag_stopped() {
         out = ui.data_mut(|d| d.remove_temp::<f64>(id));
+
     } else if response.clicked()
         && let Some(pos) = response.interact_pointer_pos()
     {

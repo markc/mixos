@@ -91,6 +91,19 @@ fn the_page_commands_are_typed_engine_commands() {
     assert_eq!(class_of("prefs.page"), Some("query"));
 }
 
+/// A header button runs a command the registry has (Gemini 8).
+#[test]
+fn every_page_extra_runs_a_registered_command() {
+    let commands = prefs::actions::registry();
+    for page in preferences::pages::all() {
+        for extra in &page.extras {
+            if let Some(command) = extra.command {
+                assert!(commands.get(command).is_some(), "{}: {command}", page.id);
+            }
+        }
+    }
+}
+
 #[test]
 fn flat_sidebar_has_no_category_commands() {
     assert!(

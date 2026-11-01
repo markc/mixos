@@ -99,7 +99,15 @@ pub enum Effect {
         command: &'static str,
         body: Value,
     },
+    /// Carry out `action` on live item `item` of `source` (its owner's
+    /// command, once that backend exists).
+    Live {
+        source: String,
+        item: String,
+        action: String,
+    },
     /// Run registry command `command` with `params` and answer `id` with
+
     /// its result (`prefs.page.open`, `prefs.set`, `prefs.execute`).
     ExecuteWith {
         id: u64,
@@ -385,6 +393,10 @@ pub struct Engine {
     pub store: crate::store::Store,
     /// The open page, drawer, search and sidebar.
     pub nav: crate::nav::Nav,
+    /// Rows and options that come from data, by source.
+    pub live: crate::live::Live,
+    /// The search index, built on the first search.
+    pub(crate) index: std::cell::OnceCell<crate::pages::Index>,
     next_ticket: u64,
     job: Option<Job>,
     notes_job: Option<(u64, String)>,
@@ -420,6 +432,8 @@ impl Engine {
             email: crate::email::EmailEditor::default(),
             store: crate::store::Store::new(),
             nav: crate::nav::Nav::default(),
+            live: crate::live::Live::default(),
+            index: std::cell::OnceCell::new(),
             next_ticket: 0,
             job: None,
             notes_job: None,
@@ -666,6 +680,8 @@ impl Engine {
             return;
         }
         self.ui.section = section;
+        // The window shows pages: the legacy section commands move it too.
+        self.nav.page = crate::nav::page_of(section);
         self.look.settings_status = None;
         if self.ui.selected.is_some() && self.selected_row().is_none() {
             self.clear_selection();
@@ -854,6 +870,8 @@ impl Engine {
             Delivery::Topic(topic) => {
                 if crate::appearance::is_topic(&topic) {
                     self.read_look();
+                }
+                if crate::store::is_topic(&topic) {
                     self.store_hint();
                 }
                 if topic == "backdrop.action.executed" {
@@ -862,6 +880,8 @@ impl Engine {
             }
             Delivery::Disconnected => {
                 self.connected = false;
+                self.store_disconnected();
+
                 self.status = self.label("disconnected", &[]);
                 self.failed = true;
             }
@@ -1110,6 +1130,11 @@ impl Engine {
             "prefs.set" => self.effects.push(Effect::ExecuteWith {
                 id,
                 command: "set".into(),
+                params: args,
+            }),
+            "prefs.item" => self.effects.push(Effect::ExecuteWith {
+                id,
+                command: "item".into(),
                 params: args,
             }),
             "prefs.apps" => self.ok(id, self.apps_view()),
