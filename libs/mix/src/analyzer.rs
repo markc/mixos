@@ -4664,6 +4664,23 @@ fn walk_global_frames(stmts: &[Stmt], frame: usize, visit: &mut dyn FnMut(FrameN
         }
     }
     for s in stmts {
+        if let StmtKind::TryCatch {
+            try_body,
+            catch,
+            finally_body,
+        } = &s.kind
+        {
+            // The catch binder occurs after the try body in textual order.
+            walk_global_frames(try_body, frame, visit);
+            visit(FrameNode::Stmt(s), frame);
+            if let Some(c) = catch {
+                walk_global_frames(&c.body, frame, visit);
+            }
+            if let Some(b) = finally_body {
+                walk_global_frames(b, frame, visit);
+            }
+            continue;
+        }
         visit(FrameNode::Stmt(s), frame);
         let inner = if matches!(s.kind, StmtKind::FunctionDef { .. } | StmtKind::On { .. }) {
             std::ptr::from_ref(s) as usize
