@@ -45,10 +45,19 @@ fn ready(request: Request) -> Completion<u64> {
 fn explicit_refresh_drains_authority_read_into_worker_jobs() {
     let mut session = session();
     let (_, jobs) = session.handle(Event::Refresh, Some(1));
-    let read = jobs.work.expect("production handle must export refresh work");
+    let read = jobs
+        .work
+        .expect("production handle must export refresh work");
     assert_eq!(read.kind(), settings::consumer::WorkKind::Read);
-    let advertised = Binding { instance: "authority".into(), profile: "default".into() };
-    let fault = Diagnostic::new("wrong_target", "native", serde_json::json!({"status":"wrong_target", "binding":advertised}).to_string());
+    let advertised = Binding {
+        instance: "authority".into(),
+        profile: "default".into(),
+    };
+    let fault = Diagnostic::new(
+        "wrong_target",
+        "native",
+        serde_json::json!({"status":"wrong_target", "binding":advertised}).to_string(),
+    );
     let (_, jobs) = session.handle(Event::Rpc(read, Err(fault)), Some(1));
     assert_eq!(jobs.work.unwrap().binding(), &advertised);
 }

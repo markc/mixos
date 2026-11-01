@@ -8912,6 +8912,7 @@ dependencies = [
  "bus",
  "config",
  "design",
+ "futures-util",
  "libc",
  "serde",
  "serde_json",
@@ -8919,6 +8920,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.20",
  "tokio",
+ "tokio-tungstenite 0.26.2",
 ]
 
 [[package]]
