@@ -419,27 +419,34 @@ fn proof_resume_null_fields_golden_vector() {
 }
 
 #[test]
-fn allocate_domains_and_policies_golden_vectors() {
+fn allocate_default_open_golden_vector() {
     let prefix = concat!(
         "6d69786f732e6e61746976652d73657373696f6e2e616c6c6f63617465000001",
         "01010101010101010101010101010101",
         "02020202020202020202020202020202",
         "0303030303030303030303030303030303030303030303030303030303030303"
     );
-    for (policy, suffix) in [
-        (Policy::DefaultOpen, "000c64656661756c742d6f70656e"),
-        (Policy::Restricted, "000a72657374726963746564"),
-    ] {
-        assert_eq!(
-            hex(&encode_allocate(
-                HexBytes([1; 16]),
-                HexBytes([2; 16]),
-                HexBytes([3; 32]),
-                policy
-            )),
-            format!("{prefix}{suffix}")
-        );
-    }
+    assert_eq!(
+        hex(&encode_allocate(
+            HexBytes([1; 16]),
+            HexBytes([2; 16]),
+            HexBytes([3; 32]),
+            Policy::DefaultOpen
+        )),
+        format!("{prefix}000c64656661756c742d6f70656e")
+    );
+}
+
+#[test]
+fn restricted_policy_is_invalid_allocate_argument() {
+    assert!(serde_json::from_str::<Policy>(r#""restricted""#).is_err());
+    let body = serde_json::json!({
+        "public_key": HexBytes([1; 32]),
+        "signature": HexBytes([2; 64]),
+        "policy": "restricted",
+    });
+    let error = parse_bootstrap(request("allocate", &body.to_string()).as_bytes()).unwrap_err();
+    assert_eq!(error.0, "invalid command arguments");
 }
 
 #[test]

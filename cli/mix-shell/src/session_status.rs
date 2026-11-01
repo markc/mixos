@@ -339,7 +339,7 @@ mod tests {
             binding_generation: DecimalU64(3),
             state: BindingState::Attached,
             capabilities: vec![Capability::ReadState],
-            policy: Policy::Restricted,
+            policy: Policy::DefaultOpen,
             lease_remaining_ms: Some(DecimalU64(1000)),
         }
     }

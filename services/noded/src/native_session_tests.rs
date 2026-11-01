@@ -139,12 +139,19 @@ async fn session_allocation_proof_connection_binding_retention_and_renew() {
             serde_json::from_value(context["broker_epoch"].clone()).unwrap(),
             serde_json::from_value(context["connection_id"].clone()).unwrap(),
             public_key,
-            Policy::Restricted,
+            Policy::DefaultOpen,
         ))
         .to_bytes(),
     );
     let args =
-        serde_json::json!({"public_key":public_key, "signature":signature, "policy":"restricted"});
+        serde_json::json!({"public_key":public_key, "signature":signature, "policy":"default-open"});
+    let mut removed_policy = args.clone();
+    removed_policy["policy"] = serde_json::json!("restricted");
+    let refused = session_call(&mut socket, "allocate", "1", removed_policy).await;
+    let error: SessionError = serde_json::from_str(&refused.body).unwrap();
+    assert_eq!(error.error_code, ErrorCode::InvalidArgument);
+    assert_eq!(refused.get("rc"), Some(error.rc().to_string().as_str()));
+    assert_eq!(error.message, "invalid session request");
     let mut thief = broker.unix().await;
     assert_eq!(
         session_call(&mut thief, "allocate", "1", args.clone())
@@ -241,7 +248,7 @@ async fn allocate_term(
             serde_json::from_value(h["broker_epoch"].clone()).unwrap(),
             serde_json::from_value(h["connection_id"].clone()).unwrap(),
             public_key,
-            Policy::Restricted,
+            Policy::DefaultOpen,
         ))
         .to_bytes(),
     );
@@ -249,7 +256,7 @@ async fn allocate_term(
         socket,
         "allocate",
         "1",
-        serde_json::json!({"public_key":public_key,"signature":signature,"policy":"restricted"}),
+        serde_json::json!({"public_key":public_key,"signature":signature,"policy":"default-open"}),
     )
     .await;
     assert_eq!(reply.get("rc"), Some("0"), "{}", reply.body);
@@ -413,7 +420,7 @@ async fn parent_revocation_is_ordered_against_inflight_child_prove() {
         let parent = verified(&broker).await;
         let parent_key = SigningKey::from_bytes(&rand::random());
         let record = parent
-            .session_allocate(&parent_key, Policy::Restricted)
+            .session_allocate(&parent_key, Policy::DefaultOpen)
             .await
             .unwrap()
             .record;
@@ -569,7 +576,7 @@ async fn notice_overflow_delivers_gap_before_notices_and_key_resync_succeeds() {
     let parent = verified(&broker).await;
     let key = SigningKey::from_bytes(&rand::random());
     let term = parent
-        .session_allocate(&key, Policy::Restricted)
+        .session_allocate(&key, Policy::DefaultOpen)
         .await
         .unwrap()
         .record;
@@ -767,7 +774,7 @@ async fn p0i_02_competing_process_preclaim_preserves_allocated_route() {
     let parent = verified(&broker).await;
     let key = ed25519_dalek::SigningKey::from_bytes(&rand::random());
     let record = parent
-        .session_allocate(&key, bus::native_session::Policy::Restricted)
+        .session_allocate(&key, bus::native_session::Policy::DefaultOpen)
         .await
         .unwrap()
         .record;
@@ -800,7 +807,7 @@ async fn p0i_03_privileged_other_uid_cannot_lookup_or_consume_grant() {
     let parent = verified(&broker).await;
     let parent_key = ed25519_dalek::SigningKey::from_bytes(&rand::random());
     let record = parent
-        .session_allocate(&parent_key, Policy::Restricted)
+        .session_allocate(&parent_key, Policy::DefaultOpen)
         .await
         .unwrap()
         .record;
@@ -887,12 +894,12 @@ async fn configured_grant_limit_is_advertised_isolated_and_released_on_revoke() 
     let first = verified(&broker).await;
     let second = verified(&broker).await;
     let first_record = first
-        .session_allocate(&SigningKey::from_bytes(&rand::random()), Policy::Restricted)
+        .session_allocate(&SigningKey::from_bytes(&rand::random()), Policy::DefaultOpen)
         .await
         .unwrap()
         .record;
     let second_record = second
-        .session_allocate(&SigningKey::from_bytes(&rand::random()), Policy::Restricted)
+        .session_allocate(&SigningKey::from_bytes(&rand::random()), Policy::DefaultOpen)
         .await
         .unwrap()
         .record;
@@ -977,7 +984,7 @@ async fn session_term_and_grant_quotas_and_retention_high_water() {
         let c = verified(&broker).await;
         let key = SigningKey::from_bytes(&rand::random());
         let record = c
-            .session_allocate(&key, Policy::Restricted)
+            .session_allocate(&key, Policy::DefaultOpen)
             .await
             .unwrap()
             .record;
@@ -986,7 +993,7 @@ async fn session_term_and_grant_quotas_and_retention_high_water() {
     let excess = verified(&broker).await;
     let key = SigningKey::from_bytes(&rand::random());
     assert!(matches!(
-        excess.session_allocate(&key, Policy::Restricted).await,
+        excess.session_allocate(&key, Policy::DefaultOpen).await,
         Err(bus::native_client::session::SessionFailure::Refused {
             error: SessionError {
                 error_code: ErrorCode::ResourceLimit,
@@ -1409,7 +1416,7 @@ async fn p0i_09_binding_bootstrap_omits_keys_and_proofs_from_observe_tap_and_log
     let parent = verified(&broker).await;
     let key = ed25519_dalek::SigningKey::from_bytes(&rand::random());
     let record = parent
-        .session_allocate(&key, Policy::Restricted)
+        .session_allocate(&key, Policy::DefaultOpen)
         .await
         .unwrap()
         .record;
@@ -1745,7 +1752,7 @@ async fn typed_session_parent_resume_wakes_child_and_discovery_is_uid_gated() {
     let parent = verified(&broker).await;
     let parent_key = SigningKey::from_bytes(&rand::random());
     let parent_record = parent
-        .session_allocate(&parent_key, Policy::Restricted)
+        .session_allocate(&parent_key, Policy::DefaultOpen)
         .await
         .unwrap()
         .record;
@@ -1922,7 +1929,7 @@ async fn p0i_04_captured_child_proof_fails_after_revoke_and_restart_fresh_enrol_
         let broker = Broker::start().await;
         let parent = verified(&broker).await;
         let record = parent
-            .session_allocate(&parent_key, Policy::Restricted)
+            .session_allocate(&parent_key, Policy::DefaultOpen)
             .await
             .unwrap()
             .record;
