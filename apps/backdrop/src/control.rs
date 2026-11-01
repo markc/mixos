@@ -448,7 +448,8 @@ impl Controller {
                 Msg::Delivery(Delivery::Topic(topic)) => {
                     if matches!(topic.as_str(), "train.landed" | "train.rejected") {
                         let mut shared = lock(&self.shared);
-                        shared.live.history_generation = shared.live.history_generation.wrapping_add(1);
+                        shared.live.history_generation =
+                            shared.live.history_generation.wrapping_add(1);
                     }
                     crate::views::refresh(&self.shared);
                 }

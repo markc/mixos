@@ -113,7 +113,11 @@ impl Cache {
                 egui::Align2::CENTER_BOTTOM,
                 &b.label,
                 egui::TextStyle::Small.resolve(ui.style()),
-                if b.tone == 3 {ui.visuals().error_fg_color} else {ui.visuals().text_color()},
+                if b.tone == 3 {
+                    ui.visuals().error_fg_color
+                } else {
+                    ui.visuals().text_color()
+                },
             );
         }
         true
