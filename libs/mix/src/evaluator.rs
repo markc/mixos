@@ -7804,8 +7804,13 @@ impl Evaluator {
 
     fn check_global_binder(&self, name: &str) -> MixResult<()> {
         if self.scope.is_declared_global(name) {
-            Err(self.coded_err("GLOBAL_BINDER", format!("binder cannot bind declared global ${name}")))
-        } else { Ok(()) }
+            Err(self.coded_err(
+                "GLOBAL_BINDER",
+                format!("binder cannot bind declared global ${name}"),
+            ))
+        } else {
+            Ok(())
+        }
     }
 
     /// SPEC 18 Phase 2 WS3-C.4b — environmental gate for raw-pointer
@@ -9029,7 +9034,10 @@ impl Evaluator {
                 StmtKind::Global(names) => {
                     for name in names {
                         if matches!(name.as_str(), "event" | "rc" | "result" | "reply") {
-                            return Err(self.coded_err("GLOBAL_RUNTIME_NAME", format!("${name} is set by the runtime")));
+                            return Err(self.coded_err(
+                                "GLOBAL_RUNTIME_NAME",
+                                format!("${name} is set by the runtime"),
+                            ));
                         }
                         self.scope.declare_global(name).map_err(|code| {
                             let message = if code == "GLOBAL_AFTER_LOCAL" && self.scope.is_module_name(name) {
@@ -10083,7 +10091,9 @@ impl Evaluator {
                     label,
                 } => {
                     self.check_global_binder(var)?;
-                    if let Some(name) = index_var { self.check_global_binder(name)?; }
+                    if let Some(name) = index_var {
+                        self.check_global_binder(name)?;
+                    }
                     let iter_val = self.eval_expr(iterable).await?;
                     // CoW (card 4): the List arm holds the snapshot Rc —
                     // O(1) at entry (the old code deep-cloned the whole
@@ -10573,7 +10583,9 @@ impl Evaluator {
 
                 StmtKind::Parse { source, parts } => {
                     for part in parts {
-                        if let ParsePart::Variable(name) = part { self.check_global_binder(name)?; }
+                        if let ParsePart::Variable(name) = part {
+                            self.check_global_binder(name)?;
+                        }
                     }
                     let src = self.eval_expr(source).await?.to_mix_string();
                     self.exec_parse(&src, parts);
@@ -10622,7 +10634,9 @@ impl Evaluator {
                             // locally so it can't clobber a same-named
                             // caller/global via update_or_set's fallback.
                             self.check_global_binder(&clause.var)?;
-                            if let Some(name) = &clause.err_var { self.check_global_binder(name)?; }
+                            if let Some(name) = &clause.err_var {
+                                self.check_global_binder(name)?;
+                            }
                             self.bind_scoped(&clause.var, Value::String(info.message.clone()));
                             if let Some(err_var) = &clause.err_var {
                                 self.bind_scoped(err_var, info.to_value());
@@ -12901,7 +12915,9 @@ impl Evaluator {
     /// only async-flavoured constructs are recursive calls to this
     /// same function.
     fn compute_block_sync_self(name: &str, params: &[Param], body: &FunctionBody) -> bool {
-        if Self::body_declares_global(body) { return false; }
+        if Self::body_declares_global(body) {
+            return false;
+        }
         let arity = params.len();
         // Conservative: any param with a default could need async eval
         // at call time, so disqualify.
@@ -12921,7 +12937,9 @@ impl Evaluator {
     /// `MixFunction` so the per-call path can skip the prefix
     /// without re-walking the AST.
     fn compute_sync_prefix(body: &FunctionBody) -> usize {
-        if Self::body_declares_global(body) { return 0; }
+        if Self::body_declares_global(body) {
+            return 0;
+        }
         match body {
             FunctionBody::Block(stmts) => {
                 stmts.iter().take_while(|s| Self::is_stmt_sync(s)).count()
@@ -12934,27 +12952,51 @@ impl Evaluator {
     /// pointers: creating a global may rehash frames[0]. Nested functions
     /// have their own eligibility checks and declaration lifetime.
     fn body_declares_global(body: &FunctionBody) -> bool {
-        fn list(stmts: &[Stmt]) -> bool { stmts.iter().any(stmt) }
+        fn list(stmts: &[Stmt]) -> bool {
+            stmts.iter().any(stmt)
+        }
         fn stmt(s: &Stmt) -> bool {
             match &s.kind {
                 StmtKind::Global(_) => true,
-                StmtKind::If { then_body, else_ifs, else_body, .. } =>
-                    list(then_body) || else_ifs.iter().any(|(_, b)| list(b))
-                        || else_body.as_ref().is_some_and(|b| list(b)),
-                StmtKind::For { body, .. } | StmtKind::ForEach { body, .. }
-                | StmtKind::While { body, .. } | StmtKind::Loop { body, .. }
+                StmtKind::If {
+                    then_body,
+                    else_ifs,
+                    else_body,
+                    ..
+                } => {
+                    list(then_body)
+                        || else_ifs.iter().any(|(_, b)| list(b))
+                        || else_body.as_ref().is_some_and(|b| list(b))
+                }
+                StmtKind::For { body, .. }
+                | StmtKind::ForEach { body, .. }
+                | StmtKind::While { body, .. }
+                | StmtKind::Loop { body, .. }
                 | StmtKind::Address { body, .. } => list(body),
-                StmtKind::TryCatch { try_body, catch, finally_body } =>
-                    list(try_body) || catch.as_ref().is_some_and(|c| list(&c.body))
-                        || finally_body.as_ref().is_some_and(|b| list(b)),
-                StmtKind::Select { cases, otherwise, .. } =>
-                    cases.iter().any(|(_, b)| list(b)) || otherwise.as_ref().is_some_and(|b| list(b)),
+                StmtKind::TryCatch {
+                    try_body,
+                    catch,
+                    finally_body,
+                } => {
+                    list(try_body)
+                        || catch.as_ref().is_some_and(|c| list(&c.body))
+                        || finally_body.as_ref().is_some_and(|b| list(b))
+                }
+                StmtKind::Select {
+                    cases, otherwise, ..
+                } => {
+                    cases.iter().any(|(_, b)| list(b))
+                        || otherwise.as_ref().is_some_and(|b| list(b))
+                }
                 StmtKind::Chain { left, right, .. } => stmt(left) || stmt(right),
                 StmtKind::PipeToExternal { stmt: inner, .. } => stmt(inner),
                 _ => false,
             }
         }
-        match body { FunctionBody::Block(b) => list(b), FunctionBody::Expression(_) => false }
+        match body {
+            FunctionBody::Block(b) => list(b),
+            FunctionBody::Expression(_) => false,
+        }
     }
 
     /// Compile a self-recursive numeric function body to fib-style

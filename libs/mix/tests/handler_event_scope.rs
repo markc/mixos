@@ -47,8 +47,10 @@ struct Setup {
 
 #[tokio::test(flavor = "current_thread")]
 async fn declared_globals_survive_class_c_helper_and_handler_creation() {
-    tokio::task::LocalSet::new().run_until(async {
-        let mut s = setup(r#"
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            let mut s = setup(
+                r#"
 $conns = {a: 1, b: 2}
 fn finish()
   global $conns, $helper_created
@@ -60,20 +62,31 @@ on global.test async
   $handler_created = 99
   finish()
 end
-"#).await;
-        s.eval.dispatch_event(mk_event("global.test", "", &[])).await.unwrap();
-        s.eval.drain_class_c_for_shutdown(std::time::Duration::from_secs(5), true).await;
-        let source = "print(length($conns)); print($helper_created); print($handler_created)";
-        let stmts = Parser::new(Lexer::new(source).tokenize().unwrap(), source).parse_program().unwrap();
-        s.eval.execute(&stmts).await.unwrap();
-        assert_eq!(s.stdout.to_string_lossy().trim_end(), "1\n42\n99");
-        assert!(s.stderr.to_string_lossy().is_empty());
-    }).await;
+"#,
+            )
+            .await;
+            s.eval
+                .dispatch_event(mk_event("global.test", "", &[]))
+                .await
+                .unwrap();
+            s.eval
+                .drain_class_c_for_shutdown(std::time::Duration::from_secs(5), true)
+                .await;
+            let source = "print(length($conns)); print($helper_created); print($handler_created)";
+            let stmts = Parser::new(Lexer::new(source).tokenize().unwrap(), source)
+                .parse_program()
+                .unwrap();
+            s.eval.execute(&stmts).await.unwrap();
+            assert_eq!(s.stdout.to_string_lossy().trim_end(), "1\n42\n99");
+            assert!(s.stderr.to_string_lossy().is_empty());
+        })
+        .await;
 }
 
 #[tokio::test]
 async fn handler_declarations_are_isolated_and_refuse_existing_locals() {
-    let mut s = setup(r#"
+    let mut s = setup(
+        r#"
 global $x
 for $x in [1] end
 on first.msg
@@ -90,15 +103,28 @@ on second.msg
     print($err.code)
   end
 end
-"#).await;
-    s.eval.dispatch_event(mk_event("first.msg", "", &[])).await.unwrap();
-    s.eval.dispatch_event(mk_event("second.msg", "", &[])).await.unwrap();
+"#,
+    )
+    .await;
+    s.eval
+        .dispatch_event(mk_event("first.msg", "", &[]))
+        .await
+        .unwrap();
+    s.eval
+        .dispatch_event(mk_event("second.msg", "", &[]))
+        .await
+        .unwrap();
     let source = "print($tmp); print($x); try print($uncreated) catch $m, $e print($e.code) end";
-    let stmts = Parser::new(Lexer::new(source).tokenize().unwrap(), source).parse_program().unwrap();
+    let stmts = Parser::new(Lexer::new(source).tokenize().unwrap(), source)
+        .parse_program()
+        .unwrap();
     s.eval.execute(&stmts).await.unwrap();
     // Existing global tmp is intentionally updated by handler two, but its
     // declaration must not leak to new bindings in subsequent handlers.
-    assert_eq!(s.stdout.to_string_lossy().trim_end(), "GLOBAL_AFTER_LOCAL\n20\n1\nNAME_UNDEFINED");
+    assert_eq!(
+        s.stdout.to_string_lossy().trim_end(),
+        "GLOBAL_AFTER_LOCAL\n20\n1\nNAME_UNDEFINED"
+    );
     assert!(s.stderr.to_string_lossy().is_empty());
 }
 

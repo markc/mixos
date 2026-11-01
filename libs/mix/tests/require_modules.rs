@@ -27,7 +27,9 @@ fn test_dir(name: &str) -> PathBuf {
 #[tokio::test]
 async fn global_targets_importer_and_refuses_module_injections() {
     let dir = test_dir("global_declaration");
-    std::fs::write(dir.join("module.mix"), r#"
+    std::fs::write(
+        dir.join("module.mix"),
+        r#"
 global $module_value
 $module_value = 7
 fn update()
@@ -37,8 +39,12 @@ end
 fn bad()
   global $module_value
 end
-"#).unwrap();
-    let out = run_in_dir(&dir, r#"
+"#,
+    )
+    .unwrap();
+    let out = run_in_dir(
+        &dir,
+        r#"
 $program_value = 0
 $m = require("module.mix")
 $m.update()
@@ -48,7 +54,10 @@ try $m.bad() catch $msg, $e
   print($e.code)
   print(contains($msg, "module variables are not globals"))
 end
-"#).await.unwrap();
+"#,
+    )
+    .await
+    .unwrap();
     assert_eq!(out, "42\n7\nGLOBAL_AFTER_LOCAL\ntrue\n");
 }
 

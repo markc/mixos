@@ -1431,12 +1431,16 @@ impl Parser {
             let span = self.peek_span();
             match self.advance().clone() {
                 Token::Variable(name) => names.push(name),
-                _ => return Err(MixError::ParseError {
-                    msg: "global expects a $variable".to_string(),
-                    span,
-                }),
+                _ => {
+                    return Err(MixError::ParseError {
+                        msg: "global expects a $variable".to_string(),
+                        span,
+                    });
+                }
             }
-            if !self.check(&Token::Comma) { break; }
+            if !self.check(&Token::Comma) {
+                break;
+            }
             self.advance();
         }
         self.expect_end_of_statement()?;
