@@ -39,15 +39,9 @@ pub enum Effect {
         command: &'static str,
         body: Value,
     },
-    Backdrop {
-        ticket: u64,
-        command: &'static str,
-        body: Value,
-    },
-    Browse {
-        ticket: u64,
-        path: Option<String>,
-    },
+    /// Read the images under `folder` for the Wallpaper chooser and report
+    /// [`Engine::gallery_scanned`] with `ticket`.
+    Scan { ticket: u64, folder: String },
     /// Call `command` on `service` (launching it first when requested) and
     /// report [`Engine::mailed`] with `ticket`. A `secret` goes into the
     /// body as `password` only as the shell sends it; it is never in `body`.
@@ -60,31 +54,16 @@ pub enum Effect {
         launch: bool,
     },
     /// Restore and focus the window and report [`Engine::shown`].
-    Show {
-        ticket: u64,
-        reply: Option<u64>,
-    },
+    Show { ticket: u64, reply: Option<u64> },
     /// Answer the Bus command `id`.
-    Reply {
-        id: u64,
-        rc: u8,
-        body: Value,
-    },
+    Reply { id: u64, rc: u8, body: Value },
     /// Answer `id` with the command registry's description.
-    Commands {
-        id: u64,
-    },
+    Commands { id: u64 },
     /// Run registry command `command` and answer `id`.
-    Execute {
-        id: u64,
-        command: String,
-    },
+    Execute { id: u64, command: String },
     /// Answer `id` with the whole Bus surface (`app.describe`), or only its
     /// commands (`HELP`): the engine's and the window's drive commands.
-    Describe {
-        id: u64,
-        help: bool,
-    },
+    Describe { id: u64, help: bool },
     /// Hand the window-level command `command` (without the `prefs.` prefix:
     /// `ui.click`, `window`, …) to the toolkit drive layer.
     Drive {
@@ -200,14 +179,6 @@ impl Op {
 pub struct UiState {
     #[serde(default)]
     pub macros_open: bool,
-    #[serde(default)]
-    pub wallpaper_kind: Option<crate::wallpaper::Kind>,
-    #[serde(default)]
-    pub wallpaper_colour: Option<String>,
-    #[serde(default)]
-    pub wallpaper_image: Option<String>,
-    #[serde(default)]
-    pub wallpaper_invalid: bool,
     #[serde(default = "default_section")]
     pub section: Section,
     pub software_group: SoftwareGroup,
@@ -241,10 +212,6 @@ impl Default for UiState {
     fn default() -> Self {
         Self {
             macros_open: false,
-            wallpaper_kind: None,
-            wallpaper_colour: None,
-            wallpaper_image: None,
-            wallpaper_invalid: false,
             section: default_section(),
             software_group: SoftwareGroup::Creative,
             search: String::new(),
@@ -384,8 +351,8 @@ pub struct Engine {
     pub session_actions: design::ActionsPlace,
     /// The Appearance panel over settingsd.
     pub look: Appearance,
-    pub wallpaper: crate::wallpaper::WallpaperEditor,
-    pub picker: crate::picker::Picker,
+    /// Wallpaper's chooser: its category, output tab and folder images.
+    pub gallery: crate::gallery::Gallery,
     /// Apps → Email: the form, the password typed, Email on the Bus.
     pub email: crate::email::EmailEditor,
     /// The pages' values, catalogue and writes.
@@ -426,8 +393,7 @@ impl Engine {
             session_decorations: Decorations::default(),
             session_actions: design::ActionsPlace::default(),
             look: Appearance::default(),
-            wallpaper: crate::wallpaper::WallpaperEditor::default(),
-            picker: crate::picker::Picker::default(),
+            gallery: crate::gallery::Gallery::default(),
             email: crate::email::EmailEditor::default(),
             store: crate::store::Store::new(),
             nav: crate::nav::Nav::default(),
@@ -465,8 +431,6 @@ impl Engine {
         self.job.is_some()
             || self.notes_job.is_some()
             || self.look.job.is_some()
-            || self.wallpaper.working()
-            || self.picker.loading.is_some()
             || self.email.task.is_some()
             || !self.activations.is_empty()
     }
@@ -509,21 +473,13 @@ impl Engine {
     // ---- enablement (the command registry asks these) ---------------------
 
     pub fn can_refresh(&self) -> bool {
-        if self.picker.open {
-            return false;
-        }
         match self.section() {
             Section::Software => self.idle(),
             Section::Email => {
                 !self.look.working() && self.connected && self.ui.dialog.is_none() && !self.quitting
             }
             _ => {
-                !self.look.working()
-                    && !self.wallpaper.working()
-                    && self.connected
-                    && self.ui.dialog.is_none()
-                    && !self.picker.open
-                    && !self.quitting
+                !self.look.working() && self.connected && self.ui.dialog.is_none() && !self.quitting
             }
         }
     }
@@ -531,7 +487,6 @@ impl Engine {
     pub fn can_check(&self) -> bool {
         self.section() == Section::Software
             && self.idle()
-            && !self.picker.open
             && self.releases != Availability::Missing
             && !self.apps.is_empty()
             && self.uncertain.is_none()
@@ -604,7 +559,9 @@ impl Engine {
             }
             _ => {
                 self.read_look();
-                self.read_wallpaper();
+                if self.nav.page == "wallpaper" {
+                    self.rescan_gallery();
+                }
             }
         }
     }
@@ -671,7 +628,7 @@ impl Engine {
     }
 
     pub fn can_navigate(&self) -> bool {
-        self.ui.dialog.is_none() && !self.picker.open && !self.quitting
+        self.ui.dialog.is_none() && !self.quitting
     }
 
     pub fn set_section(&mut self, section: Section) {
@@ -717,7 +674,7 @@ impl Engine {
     /// Select `app` and load its release notes. Selection is refused under
     /// a dialog, and while an operation runs (it acts on the selection).
     pub fn select(&mut self, app: &str) {
-        if self.ui.dialog.is_some() || self.job.is_some() || self.picker.open || self.quitting {
+        if self.ui.dialog.is_some() || self.job.is_some() || self.quitting {
             return;
         }
         if !self.apps.iter().any(|r| r.app == app) {
@@ -776,7 +733,6 @@ impl Engine {
     /// Close now, or as soon as the work in flight finishes.
     pub fn quit(&mut self) {
         self.quitting = true;
-        self.picker_cancel();
         // A second close after one stopped for unapplied edits drops them.
         self.discard_look_on_quit();
         // A lost apply is settled by its receipt first (a bounded number of
@@ -854,7 +810,6 @@ impl Engine {
                 self.start(Op::List);
                 self.read_look();
                 self.store_hint();
-                self.read_wallpaper();
                 self.email_services_changed();
             }
             Delivery::Connected => {
@@ -862,7 +817,6 @@ impl Engine {
                 self.start(Op::List);
                 self.read_look();
                 self.store_hint();
-                self.read_wallpaper();
                 self.email_services_changed();
             }
             // settingsd announced a change: a hint, re-read over the call.
@@ -872,9 +826,6 @@ impl Engine {
                 }
                 if crate::store::is_topic(&topic) {
                     self.store_hint();
-                }
-                if topic == "backdrop.action.executed" {
-                    self.read_wallpaper();
                 }
             }
             Delivery::Disconnected => {
@@ -1015,7 +966,7 @@ impl Engine {
         json!({"schema":"prefs.v1","app_id":APP_ID,"version":env!("CARGO_PKG_VERSION"),"pid":std::process::id(),
             "connected":self.connected,"releases":self.releases,"busy":self.busy(),"working":self.working(),"uncertain":self.uncertain,
             "status":self.status,"failed":self.failed,"release_status":self.release_status,"release_failed":self.release_failed,"apps":self.apps,"notes":self.notes,"notes_error":self.notes_error,
-            "appearance":self.appearance_view(),"wallpaper":self.wallpaper,"picker":self.picker,"email":self.email_view(),"section":self.section(),"category":self.section().category(),"ui":self.ui,
+            "appearance":self.appearance_view(),"gallery":self.gallery_view(),"email":self.email_view(),"section":self.section(),"category":self.section().category(),"ui":self.ui,
             "nav":self.nav,"store":self.store_view()})
     }
 
@@ -1211,7 +1162,7 @@ impl Engine {
                 };
                 match section {
                     None => self.error(id, "ARGUMENT", "name must be a section name"),
-                    Some(_) if self.ui.dialog.is_some() || self.picker.open || self.quitting => {
+                    Some(_) if self.ui.dialog.is_some() || self.quitting => {
                         let message = self.label("busy", &[]);
                         self.error(id, "BUSY", &message);
                     }
@@ -1231,11 +1182,7 @@ impl Engine {
                 if !self.apps.iter().any(|r| r.app == app) {
                     return self.error(id, "ARGUMENT", "no app has that name");
                 }
-                if self.ui.dialog.is_some()
-                    || self.job.is_some()
-                    || self.picker.open
-                    || self.quitting
-                {
+                if self.ui.dialog.is_some() || self.job.is_some() || self.quitting {
                     let message = self.label("busy", &[]);
                     return self.error(id, "BUSY", &message);
                 }
@@ -2210,7 +2157,7 @@ mod tests {
         assert_eq!(e.section(), Section::Wallpapers);
         let saved = serde_json::to_value(&e.ui).unwrap();
         assert_eq!(serde_json::from_value::<UiState>(saved).unwrap(), e.ui);
-        e.picker.open = true;
+        e.open(Dialog::About);
         e.command(2, "prefs.section", r#"{"name":"appearance"}"#);
         assert_eq!(e.section(), Section::Wallpapers);
         assert!(

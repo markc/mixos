@@ -24,7 +24,7 @@ pub(super) fn pages() -> Vec<Page> {
     pages.extend(super::accessibility::pages());
     pages.extend([
         list("desktop", "layout-dashboard"),
-        custom("wallpaper", "image", "desktop"),
+        super::wallpaper::page(),
         super::appearance::page(),
         super::panels::panel(),
         pending("panel_applets", "blocks", "panel"),

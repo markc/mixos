@@ -813,7 +813,6 @@ impl Engine {
             && self.look.terminal_ready()
             && self.connected
             && self.ui.dialog.is_none()
-            && !self.picker.open
             && !self.quitting
     }
 

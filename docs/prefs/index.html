@@ -480,27 +480,31 @@ The window is drivable like every MixOS app
 <p>For scripted work, call the services directly (<code>releases.*</code>,
 <code>settings.*</code>): Preferences is their window, not a second implementation.</p>
 <h2 id="wallpaper">Wallpaper</h2>
-<p>Open <strong>Wallpaper</strong> from <strong>Appearance</strong>, then choose the default or an output, then Theme,
-Colour or Image. Colour accepts a picker or <code>#RRGGBB</code>. Browse opens the native
-image browser at the installed wallpaper folder, or Pictures in your home
-folder. It lists PNG/JPEG files and folders without blocking the window.
-Changes stay in Preferences until <strong>Apply wallpaper</strong>. <strong>Revert wallpaper</strong> drops
-them; <strong>Refresh wallpaper</strong> reads the current state again.</p>
-<p>An output's <strong>Use default</strong> removes just that override. Editing the default
-preserves every output override. Images currently crop to fill; fit controls
-and slideshows will follow when backdrop supports them.</p>
-<p>Without Backdrop on the session Bus, Wallpaper shows an unavailable page state
-and creates no problem links. Local edit refusals stay on Wallpaper. A refusal
-of a submitted apply shows its reason,
-keeps the draft and leaves the last good wallpaper in place. Preferences checks for
-intervening changes before sending the whole document; conflicts require
-Revert and a fresh edit. This check is best effort: backdrop does not yet
-provide an atomic compare-and-set operation. A lost reply is checked by a
-state read, never automatically resent.</p>
-<p>Wallpaper and browser state are included in <code>prefs.info</code>, wallpaper state in
-<code>prefs.appearance</code>. Commands <code>wallpaper.apply</code>, <code>wallpaper.revert</code>,
-<code>wallpaper.refresh</code> and <code>wallpaper.browse</code> are available through
-<code>prefs.execute</code>; the normal <code>prefs.ui.*</code> commands drive the controls and browser.</p>
+<p><strong>Desktop › Wallpaper</strong> edits the <code>wallpaper.*</code> settings, which backdrop
+follows. Every choice applies at once, as one fenced <code>settings.apply</code>.</p>
+<ul>
+<li>The preview shows what the selected display draws: its image (filled or
+fitted), else the colour or gradient.</li>
+<li><strong>Same wallpaper on all displays</strong> shows "All displays". Turned off, with
+more than one display connected, a tab per display chooses whose image a
+pick sets (<code>wallpaper.outputs.&lt;connector&gt;.image</code>); turning it back on
+clears those.</li>
+<li><strong>Wallpaper fit</strong> is Fill or Fit to screen. A stored <code>stretch</code> shows as Fill.</li>
+<li><strong>Slideshow</strong> runs through the folder shown below, every <strong>Change image
+every</strong> interval, in name or <strong>Random order</strong>. It is hidden while a colour
+is chosen.</li>
+<li>The category menu shows the system wallpaper folder, Colors (your own
+colours, then 14 flat colours and 5 gradients), up to five recent folders,
+and <strong>Open new folder</strong>. <strong>Add image</strong> and <strong>Open new folder</strong> use the
+files chooser; <strong>Add color</strong> opens a colour picker drawer. Folders are read
+three levels deep, at most 500 images. Your own images and colours carry a
+remove button.</li>
+</ul>
+<p>Backdrop draws a slideshow before an image before a colour, so choosing an
+image clears the colour and stops the slideshow, and choosing a colour clears
+the image. <code>prefs.set {key: "wallpaper.image" | "wallpaper.color", value}</code>
+does the same as a click; <code>prefs.page {page: "wallpaper"}</code> lists the
+chooser's images and colours as data.</p>
 <h2 id="running-and-testing">Running and testing</h2>
 <p>Run with <code>prefs [--noded-url URL]</code>; a second launch raises the first window
 (<code>prefs.show</code>). The Bus connection is <a href="/citizen/">citizen</a>.</p>

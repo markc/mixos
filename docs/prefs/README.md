@@ -270,30 +270,31 @@ For scripted work, call the services directly (`releases.*`,
 
 ## Wallpaper
 
-Open **Wallpaper** from **Appearance**, then choose the default or an output, then Theme,
-Colour or Image. Colour accepts a picker or `#RRGGBB`. Browse opens the native
-image browser at the installed wallpaper folder, or Pictures in your home
-folder. It lists PNG/JPEG files and folders without blocking the window.
-Changes stay in Preferences until **Apply wallpaper**. **Revert wallpaper** drops
-them; **Refresh wallpaper** reads the current state again.
+**Desktop › Wallpaper** edits the `wallpaper.*` settings, which backdrop
+follows. Every choice applies at once, as one fenced `settings.apply`.
 
-An output's **Use default** removes just that override. Editing the default
-preserves every output override. Images currently crop to fill; fit controls
-and slideshows will follow when backdrop supports them.
+- The preview shows what the selected display draws: its image (filled or
+  fitted), else the colour or gradient.
+- **Same wallpaper on all displays** shows "All displays". Turned off, with
+  more than one display connected, a tab per display chooses whose image a
+  pick sets (`wallpaper.outputs.<connector>.image`); turning it back on
+  clears those.
+- **Wallpaper fit** is Fill or Fit to screen. A stored `stretch` shows as Fill.
+- **Slideshow** runs through the folder shown below, every **Change image
+  every** interval, in name or **Random order**. It is hidden while a colour
+  is chosen.
+- The category menu shows the system wallpaper folder, Colors (your own
+  colours, then 14 flat colours and 5 gradients), up to five recent folders,
+  and **Open new folder**. **Add image** and **Open new folder** use the
+  files chooser; **Add color** opens a colour picker drawer. Folders are read
+  three levels deep, at most 500 images. Your own images and colours carry a
+  remove button.
 
-Without Backdrop on the session Bus, Wallpaper shows an unavailable page state
-and creates no problem links. Local edit refusals stay on Wallpaper. A refusal
-of a submitted apply shows its reason,
-keeps the draft and leaves the last good wallpaper in place. Preferences checks for
-intervening changes before sending the whole document; conflicts require
-Revert and a fresh edit. This check is best effort: backdrop does not yet
-provide an atomic compare-and-set operation. A lost reply is checked by a
-state read, never automatically resent.
-
-Wallpaper and browser state are included in `prefs.info`, wallpaper state in
-`prefs.appearance`. Commands `wallpaper.apply`, `wallpaper.revert`,
-`wallpaper.refresh` and `wallpaper.browse` are available through
-`prefs.execute`; the normal `prefs.ui.*` commands drive the controls and browser.
+Backdrop draws a slideshow before an image before a colour, so choosing an
+image clears the colour and stops the slideshow, and choosing a colour clears
+the image. `prefs.set {key: "wallpaper.image" | "wallpaper.color", value}`
+does the same as a click; `prefs.page {page: "wallpaper"}` lists the
+chooser's images and colours as data.
 
 ## Running and testing
 

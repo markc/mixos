@@ -33,6 +33,10 @@ pub fn show(
     let row = page.row(open);
     let title = match (page.drawer(open), row) {
         (Some(_), _) => label(&pages::drawer_title(page.id, open)),
+        // A gallery's drawer adds a colour: COSMIC's "Color picker".
+        (None, Some(row)) if matches!(row.control, Control::Gallery { .. }) => {
+            label(&pages::drawer_title(page.id, row.id))
+        }
         (None, Some(row)) => super::title(page.id, row.id),
         (None, None) => String::new(),
     };
@@ -85,6 +89,7 @@ pub fn show(
         match row.control {
             Control::Colour { key, .. } => colour(ui, engine, key, look, events),
             Control::Accent => colour(ui, engine, "appearance.accent", look, events),
+            Control::Gallery { colour: key, .. } => add_colour(ui, key, look, events),
             Control::Pick { key, list } => {
                 pick(ui, engine, key, &super::pick_list(ui, list), look, events)
             }
@@ -177,6 +182,70 @@ fn colour(ui: &mut Ui, engine: &Engine, key: &'static str, look: &Look, events: 
             d.remove_temp::<String>(hex_id);
         });
         set(events, key, json!(auto_word(key)));
+    }
+}
+
+/// A new colour for a gallery: picked or typed, then added (and chosen)
+/// with the button, so trying colours out adds none of them.
+fn add_colour(ui: &mut Ui, key: &'static str, look: &Look, events: &mut Vec<UiEvent>) {
+    let id = ui.scope_id().with(("adding", key));
+    let mut picking: Color32 = ui.data(|d| d.get_temp(id)).unwrap_or(look.accent);
+    if egui::widgets::color_picker::color_picker_color32(
+        ui,
+        &mut picking,
+        egui::widgets::color_picker::Alpha::Opaque,
+    ) {
+        ui.data_mut(|d| d.insert_temp(id, picking));
+    }
+    ui.add_space(look.s);
+    let hex_id = ui.scope_id().with(("adding-hex", key));
+    // The picker moved: the field follows it again.
+    if ui.data(|d| d.get_temp::<Color32>(id))
+        != ui.data(|d| d.get_temp::<Color32>(hex_id.with("at")))
+    {
+        ui.data_mut(|d| {
+            d.remove_temp::<String>(hex_id);
+            d.insert_temp(hex_id.with("at"), picking);
+        });
+    }
+    let mut text: String = ui.data(|d| d.get_temp(hex_id)).unwrap_or_else(|| {
+        super::hex(picking, false)
+            .as_str()
+            .unwrap_or_default()
+            .to_owned()
+    });
+    ui.horizontal(|ui| {
+        ui.label(
+            RichText::new(label("colour-hex"))
+                .size(12.0)
+                .color(look.text),
+        );
+        let edit = ui.add(
+            egui::TextEdit::singleline(&mut text)
+                .desired_width(120.0)
+                .id_salt(hex_id),
+        );
+        if edit.changed() {
+            ui.data_mut(|d| d.insert_temp(hex_id, text.clone()));
+            if let Some(c) = super::parse_hex(text.trim()) {
+                ui.data_mut(|d| d.insert_temp(id, c));
+            }
+        }
+    });
+    ui.add_space(look.m);
+    if ui
+        .add(super::controls::standard_button(
+            &label("gallery-add-colour"),
+            look,
+        ))
+        .clicked()
+    {
+        ui.data_mut(|d| {
+            d.remove_temp::<Color32>(id);
+            d.remove_temp::<String>(hex_id);
+        });
+        set(events, key, super::hex(picking, false));
+        events.push(UiEvent::Drawer(None));
     }
 }
 

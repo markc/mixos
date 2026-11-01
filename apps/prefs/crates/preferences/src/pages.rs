@@ -34,6 +34,7 @@ mod power;
 mod tree;
 mod window_management;
 mod workspaces;
+pub mod wallpaper;
 
 /// A literal value in page data. `Null` is a registry's "unset" (Never on
 /// the power timers), and matches an unset value.
@@ -264,6 +265,22 @@ pub enum Control {
     Outputs {
         all: &'static str,
     },
+    /// A small framed screen showing what the desktop draws: the image of
+    /// the selected output (filled or fitted as `fit` says), else the
+    /// colour or gradient, else the theme's background (Wallpaper).
+    Preview {
+        image: &'static str,
+        colour: &'static str,
+        fit: &'static str,
+    },
+    /// Wallpaper's chooser: a category menu (the system folder, Colors,
+    /// recent folders, a new folder), its add link, and a grid of
+    /// thumbnails or swatches. Picking writes `image` or `colour`; the
+    /// row's [`Row::writes`] says what goes with it.
+    Gallery {
+        image: &'static str,
+        colour: &'static str,
+    },
 }
 
 /// The whole write a control sends for `value` on `key`, when it is more
@@ -275,7 +292,10 @@ impl Control {
     /// Every key the control writes: [`Control::key`] for the controls
     /// here; a page's own control may write more.
     pub fn keys(&self) -> Vec<&'static str> {
-        self.key().into_iter().collect()
+        match self {
+            Control::Gallery { image, colour } => vec![image, colour],
+            _ => self.key().into_iter().collect(),
+        }
     }
 
     /// The settingsd key the control writes, if one.
@@ -297,7 +317,8 @@ impl Control {
             Control::Scheme => Some("appearance.scheme"),
             Control::Mode | Control::AutoMode => Some("appearance.mode"),
             Control::HintAccent => Some("window.hint_colour"),
-            Control::Outputs { .. } => None,
+            Control::Gallery { image, .. } => Some(image),
+            Control::Outputs { .. } | Control::Preview { .. } => None,
             Control::Page { .. }
             | Control::Drawer { .. }
             | Control::Info
@@ -841,7 +862,9 @@ mod tests {
                 for key in row.control.keys() {
                     assert!(catalog.get(key).is_some(), "{}/{}: {key}", page.id, row.id);
                 }
-                if let Control::Outputs { all: key } = &row.control {
+                if let Control::Outputs { all: key }
+                | Control::Preview { image: key, .. } = &row.control
+                {
                     assert!(catalog.get(key).is_some(), "{}/{}: {key}", page.id, row.id);
                 }
 

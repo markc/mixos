@@ -2,7 +2,7 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The editors that keep their own layout inside the COSMIC-shaped window
 //! ([`crate::cosmic`]): Software over the releases service, and the app
-//! pages (Term, Email, Ced, the wallpaper browser) until the stage 5 work
+//! pages (Term, Email, Ced) until the stage 5 work
 //! list ports them onto page data. Drawing reads the engine and returns
 //! what the person did as [`UiEvent`]s; the shell applies them after the
 //! frame, so drawing never mutates state and a snapshot needs no Bus.
@@ -29,7 +29,6 @@ use toolkit::toggle::Toggle;
 use toolkit::{Registry, Strings, bars, panel, tooltip};
 mod email;
 mod text;
-mod wallpaper;
 
 /// One interaction from this frame.
 #[derive(Clone, Debug, PartialEq)]
@@ -72,13 +71,14 @@ pub enum UiEvent {
     Terminal(Setting),
     /// An edit in the Text section: one prose surface's style.
     Text(preferences::text::Setting),
-    WallpaperTarget(Option<String>),
-    WallpaperKind(preferences::wallpaper::Kind),
-    WallpaperColour(String),
-    WallpaperImage(String),
-    PickerDirectory(String),
-    PickerSelect(String),
-    PickerEnter(String),
+    /// Wallpaper's chooser shows this category.
+    Category(preferences::gallery::Category),
+    /// A folder chosen with "Open new folder".
+    OpenFolder(String),
+    /// Images chosen with "Add image".
+    AddImages(Vec<String>),
+    /// Forget a custom image or colour: (its list's key, the value).
+    RemoveCustom(&'static str, String),
     /// The email remove or reset dialog's confirm button.
     ConfirmEmail,
     /// Select this email account by id.
@@ -99,8 +99,7 @@ pub enum UiEvent {
     EmailChange(preferences::email::Change),
 }
 
-/// Everything drawn over the page: dialogs, the wallpaper image picker, the
-/// macros drawer and the window's resize edges.
+/// Everything drawn over the page: dialogs, the macros drawer and the window's resize edges.
 pub fn overlays(
     ui: &mut Ui,
     engine: &Engine,
@@ -109,7 +108,6 @@ pub fn overlays(
     events: &mut Vec<UiEvent>,
 ) {
     dialogs(ui, engine, commands, strings, events);
-    wallpaper::picker(ui, engine, events);
     if toolkit::macros::show_app(ui.ctx(), "prefs", engine.ui.macros_open) {
         events.push(UiEvent::CloseMacros);
     }
@@ -128,16 +126,6 @@ pub fn email_section(
 
 pub fn ced_section(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
     text::section(ui, engine, &[preferences::text::Surface::CedEditor], events);
-}
-
-pub fn wallpaper_section(
-    ui: &mut Ui,
-    engine: &Engine,
-    commands: &Registry<Engine>,
-    strings: &Strings,
-    events: &mut Vec<UiEvent>,
-) {
-    wallpaper::controls(ui, engine, commands, strings, events);
 }
 
 /// A scheme's chip colours in `mode`: its accent, and the ink on it.

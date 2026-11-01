@@ -14,7 +14,7 @@ use toolkit::action::{Class, EngineAction, Error, ParamSpec};
 use toolkit::{Action, Icon, Registry};
 
 fn undialogued(e: &Engine) -> bool {
-    e.ui.dialog.is_none() && !e.picker.open && !e.quitting
+    e.ui.dialog.is_none() && !e.quitting
 }
 
 const fn key(modifiers: Modifiers, key: Key) -> Option<KeyboardShortcut> {
@@ -208,76 +208,6 @@ pub fn registry() -> Registry<Engine> {
         run: Engine::back,
     });
     // View › Theme: any scheme, style, mode and framing, in this window only.
-    for (id, label, menu, enabled, run) in [
-        (
-            "wallpaper.apply",
-            "wallpaper-apply",
-            None,
-            Engine::can_apply_wallpaper as fn(&Engine) -> bool,
-            Engine::apply_wallpaper as fn(&mut Engine),
-        ),
-        (
-            "wallpaper.revert",
-            "wallpaper-revert",
-            None,
-            Engine::can_revert_wallpaper,
-            Engine::revert_wallpaper,
-        ),
-        (
-            "wallpaper.refresh",
-            "wallpaper-refresh",
-            None,
-            can_refresh_wallpaper,
-            Engine::read_wallpaper,
-        ),
-        (
-            "wallpaper.browse",
-            "wallpaper-browse",
-            None,
-            Engine::can_browse_wallpaper,
-            Engine::browse_wallpaper,
-        ),
-        (
-            "wallpaper.picker.go",
-            "wallpaper-go",
-            None,
-            Engine::can_picker_go,
-            Engine::picker_go,
-        ),
-        (
-            "wallpaper.picker.parent",
-            "wallpaper-parent",
-            None,
-            Engine::can_picker_go,
-            Engine::picker_parent,
-        ),
-        (
-            "wallpaper.picker.use",
-            "wallpaper-use-image",
-            None,
-            Engine::can_picker_use,
-            Engine::picker_use,
-        ),
-        (
-            "wallpaper.picker.cancel",
-            "cancel",
-            None,
-            picker_open,
-            Engine::picker_cancel,
-        ),
-    ] {
-        r.add(Action {
-            id,
-            label,
-            menu,
-            submenu: None,
-            group: 0,
-            shortcut: None,
-            icon: None,
-            enabled,
-            run,
-        });
-    }
     r.theme_menu("view", choice, set_choice);
     r.add(Action {
         id: "apps.check",
@@ -524,13 +454,6 @@ pub fn choice(e: &Engine) -> toolkit::theme_menu::Choice {
         decorations: e.ui.theme_decorations,
         captions: e.ui.theme_captions,
     }
-}
-
-fn picker_open(e: &Engine) -> bool {
-    e.picker.open
-}
-fn can_refresh_wallpaper(e: &Engine) -> bool {
-    e.connected && !e.quitting && undialogued(e) && !e.wallpaper.working()
 }
 
 /// Store the Theme menu's choice as the window's.
