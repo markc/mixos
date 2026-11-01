@@ -101,6 +101,11 @@ fn dock() {
 }
 
 #[test]
+fn workspaces() {
+    draw("workspaces", page("workspaces", None), COSMIC);
+}
+
+#[test]
 fn wifi_missing_backend() {
     draw("wifi", page("wifi", None), COSMIC);
 }

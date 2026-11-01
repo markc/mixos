@@ -31,7 +31,7 @@ pub(super) fn pages() -> Vec<Page> {
         super::panels::dock(),
         pending("dock_applets", "blocks", "dock"),
         super::window_management::page(),
-        pending("workspaces", "layers", "desktop"),
+        super::workspaces::page(),
         page("displays", "monitor", None, Body::Pending),
         page("sound", "volume-2", None, Body::Pending),
         pending("sound_applications", "audio-lines", "sound"),

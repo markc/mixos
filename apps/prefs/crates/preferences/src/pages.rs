@@ -32,6 +32,7 @@ mod panels;
 mod time;
 mod tree;
 mod window_management;
+mod workspaces;
 
 /// A literal value in page data.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
