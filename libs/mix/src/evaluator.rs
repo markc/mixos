@@ -3845,7 +3845,7 @@ fn expr_mode_deny_stmt(stmt: &Stmt, depth: usize) -> MixResult<()> {
                 expr_mode_deny_stmts(body, depth + 1)?;
             }
         }
-        StmtKind::Global(_) | StmtKind::Break(_) | StmtKind::Continue(_) => {}
+        StmtKind::Break(_) | StmtKind::Continue(_) => {}
         StmtKind::BreakIf(cond, _) | StmtKind::ContinueIf(cond, _) => {
             expr_mode_deny_walk(cond, depth + 1)?
         }

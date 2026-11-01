@@ -3321,6 +3321,7 @@ fn status_flow_parts(cx: StatusCx, parts: &[StringPart]) -> StatusFlow {
 
 fn status_flow_stmt(cx: StatusCx, stmt: &Stmt) -> StatusFlow {
     match &stmt.kind {
+        StmtKind::Global(_) => StatusFlow::PASS,
         // A bare word at statement level calls the function of that name with
         // no arguments, when one exists (the statement evaluator's bareword
         // dispatch). It takes that call's summary, like `name()` would. A bare
