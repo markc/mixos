@@ -16760,7 +16760,7 @@ impl Evaluator {
         self.scope.enter_function_frame_for(func);
         for (i, param) in func.params.iter().enumerate() {
             self.scope
-                .set_in_current(param.name.clone(), args[i].clone());
+                .bind_in_current(param.name.clone(), args[i].clone());
         }
         let cache_start = self.ctx.var_slot_cache.len();
         self.ctx.function_depth += 1;
@@ -17292,7 +17292,7 @@ impl Evaluator {
                     if let Value::Function(rc) = v {
                         fns.insert(k.clone(), Rc::clone(rc));
                     }
-                    self.scope.set_in_current(k.clone(), v.clone());
+                    self.scope.bind_in_current(k.clone(), v.clone());
                 }
                 self.ctx.module_fn_frames.push(fns);
                 pushed_here = true;
@@ -17306,7 +17306,7 @@ impl Evaluator {
             // shadows the capture.
             if let Some(caps) = &func.captures {
                 for (k, v) in caps {
-                    self.scope.set_in_current(k.clone(), v.clone());
+                    self.scope.bind_in_current(k.clone(), v.clone());
                 }
             }
 
@@ -17332,7 +17332,7 @@ impl Evaluator {
                 } else {
                     Value::Nil
                 };
-                self.scope.set_in_current(param.name.clone(), val);
+                self.scope.bind_in_current(param.name.clone(), val);
             }
 
             let result: MixResult<Value> = if let Some(e) = bind_err {
