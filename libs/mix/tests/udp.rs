@@ -8,7 +8,7 @@ use mix::{
     parser::Parser,
     value::Value,
 };
-use std::{collections::BTreeMap, rc::Rc, time::Duration};
+use std::{rc::Rc, time::Duration};
 
 struct Runtime;
 impl ServeRuntime for Runtime {
@@ -49,15 +49,6 @@ impl BusHandler for Bus {
     }
     fn next_incoming<'a>(&'a self) -> BusFuture<'a, Option<IncomingEvent>> {
         Box::pin(async { self.rx.lock().await.recv().await })
-    }
-}
-
-fn event(command: &str) -> IncomingEvent {
-    IncomingEvent {
-        generation: 0,
-        command: command.into(),
-        body: "{}".into(),
-        headers: BTreeMap::new(),
     }
 }
 
