@@ -63,11 +63,9 @@ impl Train {
             ("batched", -2., 0., 1),
             ("recent", 3., 0., 2),
         ] {
-            for (i, row) in rows(&self.snapshot.queue, key).iter().take(12).enumerate() {
+            for (i, row) in rows(&self.snapshot.queue, key).iter()
+                .filter(|row| key != "recent" || row["state"] == "rejected" || row["state"] == "landed").take(12).enumerate() {
                 let rejected = row["state"] == "rejected";
-                if key == "recent" && !rejected && row["state"] != "landed" {
-                    continue;
-                }
                 let progress = self.snapshot.gate_progress().unwrap_or(0.);
                 out.push(Block {
                     position: [
@@ -173,6 +171,14 @@ impl Train {
 mod tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn recent_limit_counts_only_landings_and_rejections() {
+        let mut rows=vec![json!({"state":"cancelled"});20];
+        rows.push(json!({"state":"landed","branch":"work/landed"}));
+        let mut train=Train::default();
+        train.on_event(std::sync::Arc::new(super::super::Snapshot {queue:json!({"recent":rows}),..Default::default()}),true,Instant::now());
+        assert!(train.scene().iter().any(|b|b.label=="work/landed"));
+    }
     #[test]
     fn layout_routes_rejections_and_bounds_progress_and_queue() {
         let mut train = Train::default();

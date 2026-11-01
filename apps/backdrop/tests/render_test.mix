@@ -1,0 +1,77 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Real layer-shell client on private compd inside a headless Weston host.
+-- No live display, VT, settings or broker is used. Keep evidence on success.
+-- Usage: mix apps/backdrop/tests/render_test.mix /absolute/backdrop [compd]
+$n = require("../../../tests/desktop/nested_host_lib.mix")
+$root = dirname(dirname(dirname(dirname(realpath($0)))))
+$av = args()
+if len($av) < 1 then raise("USAGE", "render_test.mix BACKDROP [COMPD]") end
+$binary = realpath($av[0])
+$comp = if len($av)>1 then realpath($av[1]) else mixos_path("prefix") .. "/bin/compd" end
+$run = $n.new_run("/tmp/backdrop-live-render")
+$bus = nil
+$session = nil
+$app = nil
+$fixture = nil
+fn must($ok,$message)
+  if not $ok then raise("BACKDROP_RENDER",$message) end
+end
+fn state()
+  return $n.call_within("backdrop-render","backdrop.state",{},5)
+end
+fn wait_shows($shows,$frames)
+  for $i = 1 to 80
+    $r = state()
+    if $r.rc == 0 then
+      for $out in ($r.result.outputs ?? [])
+        if $out.shows == $shows and $out.presented_frames >= $frames then return $r.result end
+      end
+    end
+    sleep(0.2)
+  end
+  raise("BACKDROP_RENDER", "did not present " .. $shows .. " at frame " .. to_string($frames) .. "; " .. json_encode($r))
+end
+try
+  $bus = $n.private_bus({dir:$run.path .. "/broker",name:"backdrop-render"})
+  write_file($run.path .. "/settings.json",read_file($root .. "/tests/desktop/smoke-settings.json"))
+  $session = $n.start({bin:$comp,tag:"train",run:$run,config:$run.path .. "/settings.json",software:true,host_renderer:"pixman"})
+  must($n.wait_ready($session,30),"private compd not ready: " .. $session.log)
+  $client = $n.client_env($session,{HOME:$run.path .. "/home",XDG_CONFIG_HOME:$run.path .. "/config",XDG_STATE_HOME:$run.path .. "/state",
+    LIBGL_ALWAYS_SOFTWARE:"1",MIXOS_NODED_URL:$bus.url,MIXOS_NODE_CONFIG:$bus.conf})
+  mkdir($run.path .. "/home",{parents:true})
+  $fixture = spawn([mixos_path("prefix") .. "/bin/mix","--serve",$root .. "/apps/backdrop/tests/fixtures/train.mix","--name","train-fixture"],
+    {env:$client,die_with_parent:true,stdout:{file:$run.path .. "/fixture.log"},stderr:"stdout"})
+  for $i = 1 to 50
+    $ready = $n.call_within("train-fixture","fixture.stats",{},3)
+    if $ready.rc == 0 then break end
+    sleep(0.1)
+  end
+  must($ready.rc == 0,"fixture did not register")
+  write_file($run.path .. "/backdrop.mx","schema: 1\ndefault: {colour: \"#102030\"}\n")
+  $app = spawn([$binary,"--service","backdrop-render","--config",$run.path .. "/backdrop.mx"],
+    {env:$client,die_with_parent:true,stdout:{file:$run.path .. "/backdrop.log"},stderr:"stdout"})
+  $wall = wait_shows("colour",1)
+  $set = $n.call("backdrop-render","backdrop.view.set",{view:"train",args:{train_service:"train-fixture",buildd_service:"train-fixture",renderer:"3d"}})
+  must($set.rc == 0,"train selection refused: " .. json_encode($set))
+  $drawn = wait_shows("train",4)
+  sleep(1)
+  must(process_alive($app),"backdrop died after rendering")
+  $stats = $n.call("train-fixture","fixture.stats",{})
+  must($stats.rc == 0 and $stats.result.queue > 0 and $stats.result.history > 0 and $stats.result.gate > 0,"live reads missing: " .. json_encode($stats))
+  $set = $n.call("backdrop-render","backdrop.view.set",{view:"wallpaper"})
+  must($set.rc == 0,"wallpaper selection refused")
+  $back = wait_shows("colour",5)
+  must(process_alive($app) and state().rc == 0,"backdrop not alive/answering after wallpaper switch")
+  $log = read_file($run.path .. "/backdrop.log")
+  must(not contains($log,"panicked at") and not contains($log,"Validation Error"),"backdrop/GPU panic: " .. $log)
+  $receipt = {ok:true,train:$drawn,wallpaper:$back,fixture:$stats.result,binary:$binary,version:trim(run_argv_must([$binary,"--version"])),run:$run.path}
+  write_file($run.path .. "/receipt.json",json_encode($receipt))
+  print(json_encode($receipt))
+  print("PASS backdrop real layer-shell train render, multiple presents, wallpaper switch and Bus liveness")
+finally
+  if $app != nil and process_alive($app) then kill($app,15) end
+  if $fixture != nil and process_alive($fixture) then kill($fixture,15) end
+  if $session != nil then $n.stop($session) end
+  $n.stop_bus($bus)
+  $n.finish_run($run,false)
+end

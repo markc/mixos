@@ -42,3 +42,6 @@ wallpaper = { path = "crates/wallpaper" }
 
 [build-dependencies]
 buildinfo.workspace = true
+
+[dev-dependencies]
+citizen = { workspace = true, features = ["testing"] }

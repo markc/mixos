@@ -1,0 +1,25 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- A canned read-only train/buildd citizen, for the private render gate only.
+$calls = {queue:0, history:0, gate:0, workers:0}
+on train.queue
+  $calls.queue = $calls.queue + 1
+  reply({main:repeat("a",40), paused:nil, queued:[{branch:"work/queued"}],
+    batched:[{branch:"work/render"}], batches:[{batch:"fixture",state:"gating"}],
+    recent:[{branch:"work/landed",state:"landed"},{branch:"work/rejected",state:"rejected"}]})
+end
+on train.history
+  $calls.history = $calls.history + 1
+  reply({hours:$event.args.hours ?? 24, landed:[{updated:time()-600}], rejected:[],
+    batches:[{started:time()-3600,ended:time()-3300,gate_reused:0}]})
+end
+on train.gate
+  $calls.gate = $calls.gate + 1
+  reply({batch:"fixture",stage:2,stages:8,last:"compile",failing:false})
+end
+on buildd.queue
+  $calls.workers = $calls.workers + 1
+  reply({slots:[{worker:"heavy-a",snapshot:{load1:4}},{worker:"heavy-b",snapshot:{load1:1}},{worker:"light",light:1,snapshot:{load1:0}}],running:[{worker:"heavy-a"}]})
+end
+on fixture.stats
+  reply($calls)
+end

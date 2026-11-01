@@ -45,6 +45,8 @@ pub const TEXTURE_BUDGET: u64 = 512 * 1024 * 1024;
 
 /// The owner key a context carries in its own data: which wakers entry is it.
 const OWNER: &str = "backdrop-owner";
+#[allow(deprecated)]
+fn stable_id(source: &'static str) -> Id { Id::new(source) }
 /// How long a changed slideshow image takes to fade in.
 pub const FADE: Duration = Duration::from_millis(500);
 /// The slots a context keeps its textures in.
@@ -80,6 +82,7 @@ pub struct View {
 /// One output as the program last drew it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct OutputStatus {
+    pub frames: u64,
     pub revision: u64,
     pub width: u32,
     pub height: u32,
@@ -270,12 +273,12 @@ fn texture_options(fit: Fit) -> TextureOptions {
 /// Take the context's textures out of its data. The caller drops them, so their
 /// bytes return to the budget outside egui's data lock.
 fn take_slots(ctx: &egui::Context) -> Slots {
-    ctx.data_mut(|d| d.remove_temp::<Slots>(Id::unique(SLOTS)))
+    ctx.data_mut(|d| d.remove_temp::<Slots>(stable_id(SLOTS)))
         .unwrap_or_default()
 }
 
 fn store_slots(ctx: &egui::Context, slots: Slots) {
-    ctx.data_mut(|d| d.insert_temp(Id::unique(SLOTS), slots));
+    ctx.data_mut(|d| d.insert_temp(stable_id(SLOTS), slots));
 }
 
 /// Make `resident` the context's current texture. Nothing is uploaded while the
@@ -405,7 +408,7 @@ fn paint_bars(ui: &egui::Ui, rect: Rect, original: [u32; 2], mode: Fit, fill: Co
 impl LayerProgram for Backdrop {
     fn visibility(&mut self, ctx: &egui::Context, visible: bool) {
         let host = ctx
-            .data(|d| d.get_temp::<u64>(Id::unique(OWNER)))
+            .data(|d| d.get_temp::<u64>(stable_id(OWNER)))
             .and_then(|owner| lock(&self.shared).live.hosts.get(&owner).cloned());
         if let Some(host) = host {
             let mut host = lock(&host);
@@ -422,13 +425,13 @@ impl LayerProgram for Backdrop {
         if shared.live.selected != "train" {
             return Some(delay);
         }
-        let owner = ctx.data(|d| d.get_temp::<u64>(Id::unique(OWNER)))?;
+        let owner = ctx.data(|d| d.get_temp::<u64>(stable_id(OWNER)))?;
         lock(shared.live.hosts.get(&owner)?)
-            .delay(Instant::now())
+            .repaint_delay(Instant::now())
             .map(|minimum| delay.max(minimum))
     }
     fn strict_frame_callbacks(&self) -> bool {
-        true
+        lock(&self.shared).live.selected == "train"
     }
     fn frame_interval(&self) -> Duration {
         if lock(&self.shared).live.selected == "train" {
@@ -443,7 +446,7 @@ impl LayerProgram for Backdrop {
         // this context's entry again without comparing contexts.
         self.next_owner += 1;
         let owner = self.next_owner;
-        ctx.data_mut(|d| d.insert_temp(Id::unique(OWNER), owner));
+        ctx.data_mut(|d| d.insert_temp(stable_id(OWNER), owner));
         lock(&self.wakers).push((owner, ctx.clone()));
         let snapshot = lock(&self.shared).live.snapshot.clone();
         let mut host =
@@ -459,25 +462,24 @@ impl LayerProgram for Backdrop {
     fn show(&mut self, ui: &mut egui::Ui, surface: &SurfaceInfo) {
         {
             let shared = lock(&self.shared);
-            if shared.live.selected == "train" {
-                let owner = ui
-                    .ctx()
-                    .data(|d| d.get_temp::<u64>(Id::unique(OWNER)))
-                    .unwrap();
-                let host = shared.live.hosts[&owner].clone();
+            let host = ui.ctx().data(|d|d.get_temp::<u64>(stable_id(OWNER)))
+                .and_then(|owner|shared.live.hosts.get(&owner).cloned());
+            if shared.live.selected == "train" && let Some(host) = host {
                 let renderer_2d = shared.live.renderer_2d;
                 drop(shared);
                 drop(take_slots(ui.ctx()));
                 let mut host = lock(&host);
-                let resumed = !host.is_visible();
-                host.visibility(true, Instant::now());
-                host.draw(ui, &self.budget, renderer_2d, Instant::now());
-                drop(host);
-                if resumed {
-                    crate::views::refresh(&self.shared);
+                host.probe_drawn();
+                if host.is_visible() {
+                    host.draw(ui, &self.budget, renderer_2d, Instant::now());
+                    self.shows = "train";
+                    self.error = None;
+                    return;
                 }
-                self.shows = "train";
-                self.error = None;
+                drop(host);
+                // The first/probe frame is wallpaper until a callback proves
+                // visibility. Never construct a hidden train scene here.
+                self.show_pass(ui, surface);
                 return;
             }
             for host in shared.live.hosts.values() {
@@ -493,9 +495,12 @@ impl LayerProgram for Backdrop {
         let Some(name) = surface.output.clone() else {
             return;
         };
-        lock(&self.shared).outputs.insert(
+        let mut shared=lock(&self.shared);
+        let frames=shared.outputs.get(&name).map_or(1,|o|o.frames+1);
+        shared.outputs.insert(
             name,
             OutputStatus {
+                frames,
                 revision: self.revision,
                 width: surface.width,
                 height: surface.height,
@@ -509,7 +514,7 @@ impl LayerProgram for Backdrop {
     /// The surface is going away: forget its context, free its texture (its
     /// reservation goes back to the budget) and its output's status.
     fn removed(&mut self, ctx: &egui::Context, surface: &SurfaceInfo) {
-        if let Some(owner) = ctx.data(|d| d.get_temp::<u64>(Id::unique(OWNER))) {
+        if let Some(owner) = ctx.data(|d| d.get_temp::<u64>(stable_id(OWNER))) {
             lock(&self.wakers).retain(|(token, _)| *token != owner);
             lock(&self.shared).live.hosts.remove(&owner);
         }
@@ -668,6 +673,37 @@ impl Backdrop {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn real_show_path_bootstraps_then_draws_train_and_removal_releases_owner() {
+        let (ctx,mut program)=fixture();
+        program.setup(&ctx);
+        let owner=ctx.data(|d|d.get_temp::<u64>(stable_id(OWNER))).unwrap();
+        let host=lock(&program.shared).live.hosts[&owner].clone();
+        assert!(!lock(&host).is_visible());
+        lock(&program.shared).live.command("backdrop.view.set", &serde_json::json!({"view":"train","args":{"renderer":"2d"}})).unwrap();
+        crate::views::notify(&program.shared,true);
+        let raw=||egui::RawInput {screen_rect:Some(Rect::from_min_size(pos2(0.,0.),vec2(640.,480.))),..Default::default()};
+        let _first=Headless(ctx.run_ui(raw(),|ui|program.show(ui,&surface())));
+        assert_ne!(program.shows,"train");
+        program.visibility(&ctx,true);
+        let _visible=Headless(ctx.run_ui(raw(),|ui|program.show(ui,&surface())));
+        assert_eq!(program.shows,"train");
+        assert_eq!(ctx.data(|d|d.get_temp::<u64>(stable_id(OWNER))),Some(owner));
+        program.removed(&ctx,&surface());
+        assert!(lock(&program.shared).live.hosts.is_empty());
+        assert!(lock(&program.wakers).is_empty());
+        let _removed=Headless(ctx.run_ui(raw(),|ui|program.show(ui,&surface())));
+        assert_ne!(program.shows,"train");
+    }
+    #[test]
+    fn missing_owner_uses_wallpaper_and_strictness_follows_selection() {
+        let (ctx,mut program)=fixture();
+        assert!(!program.strict_frame_callbacks());
+        lock(&program.shared).live.selected="train".into();
+        assert!(program.strict_frame_callbacks());
+        let _frame=Headless(ctx.run_ui(Default::default(),|ui|program.show(ui,&surface())));
+        assert_eq!(program.shows,"theme");
+    }
 
     #[test]
     fn a_reservation_is_released_when_dropped_and_overlap_is_counted() {

@@ -105,8 +105,8 @@ impl State {
                 if !["wallpaper", "train"].contains(&view) {
                     return Err("unknown view".into());
                 }
-                let mut train = self.train_service.clone();
-                let mut buildd = self.buildd_service.clone();
+                let mut train = "train".to_owned();
+                let mut buildd = "buildd".to_owned();
                 let mut hours = self.hours;
                 if let Some(args) = object.get("args") {
                     let args = args.as_object().ok_or("args must be an object")?;
@@ -301,6 +301,13 @@ mod tests {
                 .is_err()
         );
         assert_eq!(state.hours, 168);
+    }
+    #[test]
+    fn set_without_args_resets_custom_service_targets() {
+        let mut s=State::default();
+        s.command("backdrop.view.set",&json!({"view":"train","args":{"train_service":"train.alpha.bus","buildd_service":"buildd.alpha.bus"}})).unwrap();
+        s.command("backdrop.view.set",&json!({"view":"train"})).unwrap();
+        assert_eq!((&*s.train_service,&*s.buildd_service),("train","buildd"));
     }
     #[test]
     fn gate_progress_requires_current_batch_and_a_nonzero_stage_count() {

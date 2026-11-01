@@ -8,6 +8,9 @@ use std::time::{Duration, Instant};
 
 pub const MIN_FRAME: Duration = Duration::from_millis(100);
 const IDLE: Duration = Duration::from_secs(2);
+thread_local! {
+    static STRINGS:toolkit::Strings = toolkit::Strings::new(include_str!("../../i18n/en/backdrop.ftl"));
+}
 
 pub struct Host<V> {
     pub view: V,
@@ -15,6 +18,7 @@ pub struct Host<V> {
     visible: bool,
     snapshot: Arc<Snapshot>,
     last_event: Option<Instant>,
+    bootstrap: bool,
     ctx: Option<egui::Context>,
     gpu: super::train_gpu::Cache,
 }
@@ -26,14 +30,16 @@ impl<V: View> Host<V> {
         Self {
             view,
             active: true,
-            visible: true,
+            visible: false,
             snapshot: Arc::default(),
             last_event: None,
+            bootstrap: false,
             ctx,
             gpu: Default::default(),
         }
     }
     pub fn event(&mut self, snapshot: Arc<Snapshot>, force: bool, now: Instant) {
+        if force && self.active && !self.visible { self.bootstrap = true; }
         if force || !Arc::ptr_eq(&snapshot, &self.snapshot) {
             self.snapshot = snapshot.clone();
             self.last_event = Some(now);
@@ -44,6 +50,7 @@ impl<V: View> Host<V> {
     pub fn visibility(&mut self, visible: bool, now: Instant) {
         if self.visible != visible {
             self.visible = visible;
+            self.bootstrap = false;
             if visible {
                 self.last_event = Some(now);
             }
@@ -67,10 +74,14 @@ impl<V: View> Host<V> {
             .map(|d| d.max(MIN_FRAME))
     }
     fn schedule(&self, now: Instant) {
-        if let (Some(ctx), Some(delay)) = (&self.ctx, self.delay(now)) {
+        if let (Some(ctx), Some(delay)) = (&self.ctx, self.repaint_delay(now)) {
             ctx.request_repaint_after(delay);
         }
     }
+    pub fn repaint_delay(&self, now: Instant) -> Option<Duration> {
+        self.delay(now).or_else(||(self.active && self.bootstrap).then_some(MIN_FRAME))
+    }
+    pub fn probe_drawn(&mut self) { self.bootstrap = false; }
     pub fn draw(
         &mut self,
         ui: &mut egui::Ui,
@@ -87,7 +98,9 @@ impl<V: View> Host<V> {
         self.gpu = Default::default();
     }
     fn paint(&mut self, ui: &mut egui::Ui, budget: &Arc<Budget>, renderer_2d: bool, frame: &Frame) {
-        let strings = toolkit::Strings::new(include_str!("../../i18n/en/backdrop.ftl"));
+        STRINGS.with(|strings|self.paint_with_strings(ui,budget,renderer_2d,frame,strings));
+    }
+    fn paint_with_strings(&mut self, ui: &mut egui::Ui, budget: &Arc<Budget>, renderer_2d: bool, frame:&Frame, strings:&toolkit::Strings) {
         let rect = ui.max_rect();
         ui.painter().rect_filled(rect, 0., ui.visuals().panel_fill);
         let fallback = renderer_2d || !self.gpu.draw(ui, &frame.scene, frame.progress, budget);
@@ -181,7 +194,7 @@ impl<V: View> Host<V> {
                 .unwrap_or_default()
                 .as_secs_f64();
             let series = super::history::series(&frame.snapshot.history, frame.snapshot.hours, now);
-            if frame.snapshot.history.is_null() {
+            if !frame.snapshot.history["landed"].is_array() || !frame.snapshot.history["batches"].is_array() {
                 ui.label(strings.get("train-history-unavailable"));
             }
             egui_plot::Plot::new(("train-history", frame.snapshot.hours))
@@ -227,6 +240,7 @@ mod tests {
         let now = Instant::now();
         let mut host = Host::new(Greedy, None);
         assert_eq!(host.delay(now), None);
+        host.visibility(true,now);
         host.event(Arc::default(), true, now);
         assert_eq!(host.delay(now), Some(MIN_FRAME));
         assert_eq!(host.delay(now + IDLE), None);
@@ -252,6 +266,7 @@ mod tests {
             ..Default::default()
         });
         let mut a = Host::new(super::super::Train::default(), None);
+        a.visibility(true,now);
         let mut b = Host::new(super::super::Train::default(), None);
         b.visibility(false, now);
         a.event(snapshot.clone(), false, now);
@@ -274,6 +289,7 @@ mod tests {
     fn train_finishes_its_animation_and_host_has_no_idle_timer() {
         let now = Instant::now();
         let mut host = Host::new(super::super::Train::default(), None);
+        host.visibility(true,now);
         host.event(Arc::default(), true, now);
         host.view.draw(true, now).unwrap();
         assert_eq!(host.delay(now), Some(MIN_FRAME));
@@ -281,5 +297,13 @@ mod tests {
         assert_eq!(host.view.draw(true, end).unwrap().progress, 1.);
         assert_eq!(host.delay(end), None);
         assert_eq!(host.delay(now + IDLE), None);
+    }
+    #[test]
+    fn visibility_is_unconfirmed_at_creation_and_catalogue_is_cached() {
+        let host=Host::new(Greedy,None);
+        assert!(!host.is_visible());
+        let a=STRINGS.with(|s|s as *const toolkit::Strings);
+        let b=STRINGS.with(|s|s as *const toolkit::Strings);
+        assert_eq!(a,b);
     }
 }
