@@ -672,6 +672,16 @@ mod tests {
         assert!(!s.textures.contains_key("128:/image1.png"));
         assert!(s.asked.contains_key("128:/image0.png"));
         assert!(s.asked.contains_key("512:/preview.png"));
+        let (tx, rx) = std::sync::mpsc::channel();
+        s.replies = rx;
+        tx.send(thumbs::Reply {
+            lane: "128:/image1.png".into(),
+            generation: 0,
+            path: std::path::PathBuf::from("/image1.png"),
+            outcome: thumbs::Outcome::Skipped("evicted"),
+        }).unwrap();
+        s.pump(&ctx);
+        assert!(!s.textures.contains_key("128:/image1.png"));
     }
     use super::*;
 
