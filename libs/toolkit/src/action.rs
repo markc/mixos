@@ -1404,7 +1404,7 @@ mod tests {
         let mut core = EngineRegistry::new();
         let mut c = ::action::nullary!("count.bump", "cmd-bump", |s: &mut Counter| s.n += 1);
         c.shortcut = Some("Ctrl+Shift+B");
-        c.icon = Some("plus"); // Unshipped icon names have no image.
+        c.icon = Some("not-a-shipped-icon"); // Unshipped icon names have no image.
         c.menu = Some("menu-edit");
         c.enabled = |s| if s.locked { Err("locked") } else { Ok(()) };
         core.add(c);
