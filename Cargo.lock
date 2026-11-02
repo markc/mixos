@@ -5853,6 +5853,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "mixd"
+version = "0.1.2"
+dependencies = [
+ "buildinfo",
+ "bus",
+ "dnsd",
+ "ed25519-dalek",
+ "libc",
+ "maild",
+ "mimalloc",
+ "mix",
+ "mix-shell",
+ "monitord",
+ "noded",
+ "proptest",
+ "rustyline",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "signal-hook 0.3.18",
+ "tempfile",
+ "test-broker",
+ "tokio",
+ "tungstenite 0.26.2",
+ "unicode-segmentation",
+ "unicode-width",
+ "webd",
+]
+
+[[package]]
 name = "mixos-mcp"
 version = "0.1.2"
 dependencies = [

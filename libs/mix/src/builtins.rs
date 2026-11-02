@@ -41134,6 +41134,7 @@ mod compiled_features_tests {
         const KNOWN: &[&str] = &[
             "json", "regex", "markdown", "toml", "serde", "datetime", "url", "crypto", "http",
             "sqlite", "dkim", "datastar", "xml", "yaml", "ws", "mime", "archive", "dns",
+            "net-client", "net-server", "server",
         ];
         const SKIP: &[&str] = &["default", "tokio-sleep"];
         let manifest = include_str!("../Cargo.toml");
@@ -41172,8 +41173,12 @@ mod compiled_features_tests {
         assert!(f.contains(&"json"), "json built but not reported");
         #[cfg(feature = "regex")]
         assert!(f.contains(&"regex"), "regex built but not reported");
-        #[cfg(feature = "net-client")]
+        #[cfg(feature = "ws")]
         assert!(f.contains(&"ws"), "ws built but not reported");
+        #[cfg(feature = "net-client")]
+        assert!(f.contains(&"net-client"));
+        #[cfg(feature = "net-server")]
+        assert!(f.contains(&"net-server"));
         let _ = f;
     }
 }
