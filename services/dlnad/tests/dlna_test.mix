@@ -10,7 +10,7 @@
 
 $D = require("../scripts/lib/dlna.mix")
 $H = require("../scripts/lib/http.mix")
-$tmp = "/var/tmp/dlnad-test." .. uuid()
+$tmp = "/tmp/dlnad-test." .. uuid()
 $results = []
 
 fn check($name, $ok)
