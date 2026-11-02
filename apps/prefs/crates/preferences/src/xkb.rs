@@ -252,7 +252,9 @@ mod tests {
     fn the_system_rules_read_when_present() {
         let dir = rules_dir();
         if !dir.join("evdev.lst").exists() {
-            eprintln!("SKIP: system evdev.lst absent; checked-in LST/XML parser fixtures still run");
+            eprintln!(
+                "SKIP: system evdev.lst absent; checked-in LST/XML parser fixtures still run"
+            );
             return;
         }
         let mut e = Engine::new(|key, _| key.to_owned());

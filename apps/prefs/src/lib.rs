@@ -46,14 +46,25 @@ mod tests {
     fn every_page_row_and_titled_section_has_a_fluent_message() {
         let mut missing = Vec::new();
         for page in preferences::pages::all() {
-            for section in page.sections().iter().chain(page.drawers().iter().flat_map(|d| d.sections.iter())) {
+            for section in page
+                .sections()
+                .iter()
+                .chain(page.drawers().iter().flat_map(|d| d.sections.iter()))
+            {
                 let mut keys = Vec::new();
                 if section.titled {
                     keys.push(preferences::pages::section_title(page.id, section.id));
                 }
-                keys.extend(section.rows.iter().map(|r| preferences::pages::row_title(page.id, r.id)));
+                keys.extend(
+                    section
+                        .rows
+                        .iter()
+                        .map(|r| preferences::pages::row_title(page.id, r.id)),
+                );
                 for key in keys {
-                    if super::label(&key) == key { missing.push(key); }
+                    if super::label(&key) == key {
+                        missing.push(key);
+                    }
                 }
             }
         }

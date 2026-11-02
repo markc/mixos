@@ -51,8 +51,9 @@ pub fn apply_event(engine: &mut Engine, event: Event) {
         Event::Stored(ticket, result) => engine.stored(ticket, result),
         Event::Scanned(ticket, result) => {
             let truncated = result.as_ref().is_ok_and(|scan| scan.truncated);
-            engine.gallery_scanned(ticket, result.map(|scan| scan.images));
-            engine.gallery.truncated = truncated;
+            if engine.gallery_scanned(ticket, result.map(|scan| scan.images)) {
+                engine.gallery.truncated = truncated;
+            }
         }
         Event::Shown(ticket, reply, result) => engine.shown(ticket, reply, result),
         Event::Mailed(ticket, result) => engine.mailed(ticket, result),
@@ -818,7 +819,13 @@ fn startup_lists(engine: &mut Engine) {
 }
 
 fn populate_locales(engine: &mut Engine, locales: &[String]) {
-    engine.set_options("locales", locales.iter().map(|name| (json!(name), name.clone())).collect());
+    engine.set_options(
+        "locales",
+        locales
+            .iter()
+            .map(|name| (json!(name), name.clone()))
+            .collect(),
+    );
 }
 
 #[cfg(test)]
@@ -826,12 +833,17 @@ mod tests {
     #[test]
     fn startup_populates_engine_locale_options() {
         let mut e = Engine::new(crate::label_with);
-        let locales = crate::cosmic::parse_locales("# supported\nen_AU.UTF-8 UTF-8\nde_DE.UTF-8 UTF-8\nen_AU.UTF-8 UTF-8\n");
+        let locales = crate::cosmic::parse_locales(
+            "# supported\nen_AU.UTF-8 UTF-8\nde_DE.UTF-8 UTF-8\nen_AU.UTF-8 UTF-8\n",
+        );
         populate_locales(&mut e, &locales);
         assert_eq!(e.live_options("locales").len(), 2);
         assert_eq!(e.live_options("locales")[1].0, json!("en_AU.UTF-8"));
         startup_lists(&mut e);
-        assert_eq!(e.live_options("locales").len(), crate::cosmic::locales().len());
+        assert_eq!(
+            e.live_options("locales").len(),
+            crate::cosmic::locales().len()
+        );
     }
     #[test]
     fn preferences_draws_its_accepted_interface_font() {

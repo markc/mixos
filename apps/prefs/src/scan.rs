@@ -62,7 +62,9 @@ pub fn images(folder: &str) -> Result<Scan, String> {
                 }
             } else if (kind.is_file()
                 || (kind.is_symlink()
-                    && path.canonicalize().is_ok_and(|p| p.starts_with(&canonical_root) && p.is_file())))
+                    && path
+                        .canonicalize()
+                        .is_ok_and(|p| p.starts_with(&canonical_root) && p.is_file())))
                 && image(&path)
                 && let Some(text) = path.to_str()
             {
@@ -75,7 +77,10 @@ pub fn images(folder: &str) -> Result<Scan, String> {
         }
     }
     found.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()).then(a.cmp(b)));
-    Ok(Scan { images: found, truncated })
+    Ok(Scan {
+        images: found,
+        truncated,
+    })
 }
 
 #[cfg(test)]

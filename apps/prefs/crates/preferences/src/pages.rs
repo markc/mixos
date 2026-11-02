@@ -927,9 +927,17 @@ mod tests {
     #[test]
     fn gallery_side_keys_are_in_the_settings_catalogue() {
         let catalog = crate::catalog::Catalog::builtin();
-        for key in [wallpaper::CURRENT, wallpaper::RECENT, wallpaper::CUSTOM_IMAGES,
-            wallpaper::CUSTOM_COLOURS, "wallpaper.slideshow.folder"] {
-            assert!(catalog.get(key).is_some(), "missing gallery side key: {key}");
+        for key in [
+            wallpaper::CURRENT,
+            wallpaper::RECENT,
+            wallpaper::CUSTOM_IMAGES,
+            wallpaper::CUSTOM_COLOURS,
+            "wallpaper.slideshow.folder",
+        ] {
+            assert!(
+                catalog.get(key).is_some(),
+                "missing gallery side key: {key}"
+            );
         }
     }
 

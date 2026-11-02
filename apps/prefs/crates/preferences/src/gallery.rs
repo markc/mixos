@@ -139,7 +139,10 @@ impl Engine {
     /// Reuse a recent successful scan on page entry; retry errors on entry.
     pub fn enter_gallery(&mut self) {
         if self.gallery.error.is_some()
-            || self.gallery.scanned_at.is_none_or(|at| at.elapsed().as_secs() >= 60)
+            || self
+                .gallery
+                .scanned_at
+                .is_none_or(|at| at.elapsed().as_secs() >= 60)
         {
             self.rescan_gallery();
         } else {
@@ -153,14 +156,14 @@ impl Engine {
         self.scan_gallery();
     }
 
-    /// The read `ticket` finished.
-    pub fn gallery_scanned(&mut self, ticket: u64, result: Result<Vec<String>, String>) {
+    /// The read `ticket` finished. Returns whether it was accepted.
+    pub fn gallery_scanned(&mut self, ticket: u64, result: Result<Vec<String>, String>) -> bool {
         let Some((expected, folder)) = self.gallery.scanning.take() else {
-            return;
+            return false;
         };
         if expected != ticket {
             self.gallery.scanning = Some((expected, folder));
-            return;
+            return false;
         }
         match result {
             Ok(images) => {
@@ -176,6 +179,7 @@ impl Engine {
         self.gallery.scanned_at = Some(std::time::Instant::now());
         // The category moved on while this one was read.
         self.scan_gallery();
+        true
     }
 
     /// Show `category`. A folder becomes the current one (a slideshow runs
@@ -267,19 +271,31 @@ mod tests {
     fn failures_stop_until_reentry_and_success_is_reused() {
         let mut e = engine();
         e.scan_gallery();
-        let Effect::Scan { ticket, .. } = e.take_effects()[0] else { panic!() };
+        let Effect::Scan { ticket, .. } = e.take_effects()[0] else {
+            panic!()
+        };
         e.gallery_scanned(ticket, Err("missing".into()));
         e.scan_gallery();
         assert!(e.take_effects().is_empty());
         e.enter_gallery();
-        let Effect::Scan { ticket, .. } = e.take_effects()[0] else { panic!() };
+        let Effect::Scan { ticket, .. } = e.take_effects()[0] else {
+            panic!()
+        };
         e.gallery_scanned(ticket, Ok(vec![]));
         e.open_page("appearance", None).unwrap();
         e.open_page("wallpaper", None).unwrap();
-        assert!(!e.take_effects().iter().any(|e| matches!(e, Effect::Scan { .. })));
+        assert!(
+            !e.take_effects()
+                .iter()
+                .any(|e| matches!(e, Effect::Scan { .. }))
+        );
         e.gallery.scanned_at = Some(std::time::Instant::now() - std::time::Duration::from_secs(61));
         e.enter_gallery();
-        assert!(e.take_effects().iter().any(|e| matches!(e, Effect::Scan { .. })));
+        assert!(
+            e.take_effects()
+                .iter()
+                .any(|e| matches!(e, Effect::Scan { .. }))
+        );
     }
 
     fn engine() -> Engine {

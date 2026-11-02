@@ -200,7 +200,12 @@ impl State {
         self.used += 1;
         let first = self.asked.insert(key.clone(), self.used).is_none();
         while self.asked.len() > MAX_TEXTURES {
-            let oldest = self.asked.iter().min_by_key(|(_, used)| *used).map(|(k, _)| k.clone()).expect("nonempty cache");
+            let oldest = self
+                .asked
+                .iter()
+                .min_by_key(|(_, used)| *used)
+                .map(|(k, _)| k.clone())
+                .expect("nonempty cache");
             self.asked.remove(&oldest);
             self.textures.remove(&oldest);
         }
