@@ -8,7 +8,7 @@ fn check_run($argv)
   print("COMMAND_RC=" .. $r.exit_code)
   if not $r.ok then raise("WORKSPACE_PROOF", join($argv, " ")) end
 end
-check_run(["env", "CARGO_BUILD_JOBS=3", "cargo", "build", "--workspace", "--release", "--locked"])
+check_run(["env", "CARGO_BUILD_JOBS=" .. (args()[0] ?? "3"), "cargo", "build", "--workspace", "--release", "--locked"])
 $bin = realpath("target/release")
 $tmp = "/tmp/mixd-workspace-proof-" .. pid()
 mkdir($tmp)

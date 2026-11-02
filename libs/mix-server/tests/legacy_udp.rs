@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 use mix::value::Value;
 use std::net::{UdpSocket, Ipv4Addr};
+use std::os::fd::AsRawFd;
 use mix::server_api::testing::record;
 #[cfg(target_os = "linux")]
 mod tests {
@@ -258,8 +259,8 @@ mix_server::register().unwrap();
             body["bytes"]["hex"].as_str().unwrap(),
             "ff".repeat(payload.len())
         );
-        assert!(handles::close(id).unwrap());
-        assert!(!handles::close(id).unwrap());
+        assert!(close_udp(id).unwrap());
+        assert!(!close_udp(id).unwrap());
     }
 
     #[test]
@@ -270,11 +271,11 @@ mix_server::register().unwrap();
             let start = barrier.clone();
             let subscriber = std::thread::spawn(move || {
                 start.wait();
-                handles::subscribe(id).map_err(|e| e.info().unwrap().code.clone())
+                subscribe_udp(id).map_err(|e| e.info().unwrap().code.clone())
             });
             let closer = std::thread::spawn(move || {
                 barrier.wait();
-                handles::close(id).map_err(|e| e.info().unwrap().code.clone())
+                close_udp(id).map_err(|e| e.info().unwrap().code.clone())
             });
             let subscribed = subscriber.join().unwrap();
             let closed = closer.join().unwrap();
@@ -282,7 +283,7 @@ mix_server::register().unwrap();
                 Ok(sock) => {
                     assert_eq!(closed.unwrap_err(), "SOCKET_SUBSCRIBED");
                     assert!(get_udp(id).is_ok());
-                    handles::MAP.lock().unwrap().remove(&id);
+                    remove_udp(id);
                     drop(sock);
                 }
                 Err(err) => {
@@ -321,9 +322,9 @@ mix_server::register().unwrap();
             assert_eq!(enabled(&sock.sock, libc::SO_REUSEPORT), port);
             if addr || port {
                 let second = listen("0.0.0.0", sock.sock.local_addr().unwrap().port(), &opts);
-                assert!(handles::close(second).unwrap());
+                assert!(close_udp(second).unwrap());
             }
-            assert!(handles::close(first).unwrap());
+            assert!(close_udp(first).unwrap());
         }
     }
 }

@@ -280,8 +280,8 @@ impl Queue {
         pending.processes.remove(handle);
         event("proc.watch_exited", terminal)
     }
-    #[cfg(all(test, feature = "net-client"))]
-    pub(crate) fn socket_snapshot(&self) -> (usize, usize, usize) {
+    #[cfg(all(any(test, feature = "test-support"), feature = "net-client"))]
+    pub fn socket_snapshot(&self) -> (usize, usize, usize) {
         let p = self.pending.lock().unwrap();
         (p.sockets.len(), p.socket_frames, p.socket_bytes)
     }

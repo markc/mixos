@@ -47,6 +47,7 @@ pub mod testing {
     pub use crate::native_events::{NativeEvents, json_value};
     pub use crate::builtins::hex_encode;
     pub use crate::evaluator::incoming_event_to_mix_value;
-    pub use crate::udp::{record, handles::get as get_udp};
+    pub use crate::udp::{record, record_body, peer_error, handles::{get as get_udp, close as close_udp, subscribe as subscribe_udp}};
+    pub fn remove_udp(id: u64) { crate::udp::handles::MAP.lock().unwrap().remove(&id); }
     pub use crate::builtins::socket_sources::MAX_SOCKET_FRAMES;
 }

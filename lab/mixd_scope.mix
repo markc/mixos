@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- CBC only. The target is warm and stays at the checkout's normal target.
 fn cargo_build($package, $label)
-  $av = ["env", "CARGO_BUILD_JOBS=3", "cargo", "build", "-p", $package]
+  $av = ["env", "CARGO_BUILD_JOBS=" .. (args()[0] ?? "3"), "cargo", "build", "-p", $package]
   $r = run_argv($av, {timeout: 7200, max_output: 16777216})
   print($r.stdout)
   print($r.stderr)

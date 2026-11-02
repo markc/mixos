@@ -86,7 +86,7 @@ pub fn map(v: Option<&Value>) -> MixResult<Option<&indexmap::IndexMap<String, Va
 
 /// Errors about a previous datagram's peer do not retire a shared listener.
 #[cfg(all(feature = "net-client", target_os = "linux"))]
-pub(crate) fn peer_error(e: &std::io::Error) -> bool {
+pub fn peer_error(e: &std::io::Error) -> bool {
     matches!(
         e.raw_os_error(),
         Some(libc::ECONNREFUSED | libc::ENETUNREACH | libc::EHOSTUNREACH | libc::ECONNRESET)
@@ -111,7 +111,7 @@ pub fn record(
 }
 
 #[cfg(feature = "net-client")]
-pub(crate) fn record_body(data: &[u8]) -> serde_json::Value {
+pub fn record_body(data: &[u8]) -> serde_json::Value {
     // Only record() constructs these internal records; header length is fixed.
     let host = Ipv4Addr::new(data[0], data[1], data[2], data[3]);
     let port = u16::from_be_bytes([data[4], data[5]]);
@@ -141,7 +141,7 @@ pub(crate) mod handles {
             .cloned()
             .ok_or_else(|| refusal("UDP_HANDLE", format!("unknown or closed UDP handle {id}")))
     }
-    pub(crate) fn subscribe(id: u64) -> MixResult<Arc<Socket>> {
+    pub fn subscribe(id: u64) -> MixResult<Arc<Socket>> {
         let map = MAP.lock().unwrap();
         let sock = map
             .get(&id)
@@ -157,7 +157,7 @@ pub(crate) mod handles {
         }
         Ok(sock.clone())
     }
-    pub(crate) fn close(id: u64) -> MixResult<bool> {
+    pub fn close(id: u64) -> MixResult<bool> {
         let mut map = MAP.lock().unwrap();
         if let Some(sock) = map.get(&id)
             && sock.subscribed.load(std::sync::atomic::Ordering::Acquire)
@@ -171,5 +171,3 @@ pub(crate) mod handles {
     }
 
 }
-
-
