@@ -392,12 +392,26 @@ mod tests {
         options.allow_unverified_tcp_fallback = true;
         let result =
             NodedClient::connect_unix("mcp-failed-test", &broker.url, &options, None).await;
+        // Only CandidatesMissing may take the TCP path; an existing socket
+        // that fails must report its own Unix error. The OS text varies under
+        // load (refused, or a timeout), so assert the path, not the wording
+        // (2 of 91 release gates failed on "refused", 2026-11-02).
+        assert!(
+            !matches!(result, Err(ConnectError::CandidatesMissing(_))),
+            "an existing socket was treated as missing"
+        );
         let error = finish_connect("mcp-failed-test", &broker.url, None, Some("1"), result)
             .await
             .err()
             .unwrap();
-        assert!(error.contains(&endpoint.display().to_string()));
-        assert!(error.contains("refused"));
+        assert!(
+            error.contains(&endpoint.display().to_string()),
+            "error does not name the socket: {error}"
+        );
+        assert!(
+            !error.to_lowercase().contains("tcp"),
+            "a failed socket fell back to TCP: {error}"
+        );
     }
 
     #[test]
