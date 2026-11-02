@@ -13,7 +13,7 @@ impl BuiltinFamily for Probe {
             ..*mix::builtins::core_builtin_info("len").unwrap()
         })]
     }
-    fn call(&self, _: &str, args: Vec<Value>) -> MixResult<Option<Value>> { Ok(Some(args[0].clone())) }
+    fn call(&self, _: &str, _: Vec<Value>) -> MixResult<Option<Value>> { Ok(Some(Value::Number(37.0))) }
 }
 
 #[tokio::test]
@@ -23,6 +23,7 @@ async fn registered_metadata_dispatch_and_capability_are_visible() {
     assert!(mix::builtins::is_builtin("extension_probe"));
     assert_eq!(mix::builtins::capability_category("extension_probe"), mix::CapabilityClass::Network);
     assert_eq!(mix::builtins::builtin_entries().filter(|b| b.name == "extension_probe").count(), 1);
-    let (_, out, _) = mix::run_capturing("print(extension_probe(37))\n").await.unwrap();
+    let (_, out, _) = mix::run_capturing("print(extension_probe(\"payload\"))\n").await.unwrap();
     assert_eq!(out, "37\n");
+    assert!(mix::run("extension_probe(37)\n").await.is_err());
 }

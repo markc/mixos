@@ -1,0 +1,13 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- CBC only; skip child modules and format only this lab's changed Rust files.
+try
+  $files = split(trim(run_argv_must(["git", "diff", "--name-only", "9691ec118", "HEAD", "--", "*.rs"])), "\n")
+  $r = run_argv(concat(["rustfmt", "--edition", "2024", "--config", "skip_children=true"], $files), {timeout: 120})
+  print($r.stderr)
+  if not $r.ok then raise("FMT", "rustfmt failed") end
+  print("FORMAT_DIFF_BEGIN")
+  print(run_argv(["git", "diff", "--", "*.rs"]).stdout)
+  print("FORMAT_DIFF_END")
+finally
+  print(run_argv(["git", "checkout", "-q", "--", "."]))
+end
