@@ -9,6 +9,6 @@
   kind: "service",
   layer: "core",
   contract: "public",
-  version: "0.1.0",
+  version: "0.1.1",
   program: "scripts/dlnad.mix"
 }

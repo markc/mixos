@@ -247,6 +247,7 @@ shows up the next time the TV looks.</p>
 <p>It is a <a href="/mix/serve/">Bus citizen</a> written in Mix (<code>mix --serve</code>), so the
 same service answers the TV over HTTP and SSDP and answers people and agents
 on the Bus.</p>
+<p>Requires Mix 0.118.0 or later for offset file reads and discovery sockets.</p>
 <h2 id="what-it-serves">What it serves</h2>
 <ul>
 <li><strong>One media directory</strong>, browsed live. Folders become browse levels;
@@ -287,12 +288,15 @@ reliably.</p>
 <tr><td><code>listen</code></td><td>(required)</td><td>the LAN IPv4 renderers reach; HTTP binds it, SSDP joins on it</td></tr>
 <tr><td><code>port</code></td><td><code>8200</code></td><td>HTTP port</td></tr>
 <tr><td><code>name</code></td><td><code>MixOS Media</code></td><td>friendly name shown on the TV</td></tr>
-<tr><td><code>ssdp</code></td><td><code>true</code></td><td>announce and answer searches (needs mix 0.118.0 or later)</td></tr>
+<tr><td><code>ssdp</code></td><td><code>true</code></td><td>announce and answer searches</td></tr>
 <tr><td><code>renderers</code></td><td><code>[]</code></td><td>IPv4 addresses that also get every advert unicast</td></tr>
 <tr><td><code>announce_s</code></td><td><code>60</code></td><td>seconds between alive adverts</td></tr>
 <tr><td><code>max_age</code></td><td><code>1800</code></td><td>how long a renderer may cache an advert</td></tr>
-<tr><td><code>max_conns</code></td><td><code>64</code></td><td>HTTP connections held at once; when full, the oldest idle one is dropped</td></tr>
+<tr><td><code>max_conns</code></td><td><code>64</code></td><td>HTTP admission limit; evict the oldest idle connection when full, or close the newcomer if all are busy</td></tr>
 </tbody></table>
+<p>Timers and limits (<code>announce_s</code>, <code>max_age</code>, <code>max_conns</code>) must be positive
+numbers; <code>max_conns</code> must be an integer. Invalid values refuse startup and
+name the key. Renderer history retains the 256 most recently seen peers.</p>
 <p>The server's identity (its UPnP uuid and friendly name) lives in
 <code>&lt;var&gt;/dlnad/identity.conf.mix</code> and survives restarts. A configuration change
 needs a service restart.</p>
@@ -320,8 +324,11 @@ Install the component with <code>mix tools/component_install.mix dlnad</code>.</
 <ul>
 <li>One media directory, IPv4 only, HTTP (no TLS: DLNA renderers do not speak it).</li>
 <li>No transcoding, thumbnails or metadata scraping; titles are file names.</li>
-<li>UPnP eventing is accepted and never fired; renderers re-browse on the
-container update id, which changes when the top folder changes.</li>
+<li>No GENA notifications: subscriptions are acknowledged but never fired.
+BrowseDirectChildren's update id is the browsed container's own mtime;
+BrowseMetadata and GetSystemUpdateID use the root directory's mtime.</li>
+<li>Sorting is fixed ascending (folders first, then files, each by name).
+SortCriteria is ignored and GetSortCapabilities returns empty SortCaps.</li>
 <li>The SSDP and HTTP event commands (<code>dlnad.http.*</code>, <code>dlnad.ssdp</code>) are visible
 on the Bus like any <code>on</code> handler; they act only on sockets the running
 service owns.</li>

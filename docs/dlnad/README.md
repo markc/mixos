@@ -15,6 +15,8 @@ It is a [Bus citizen](../mix/serve.md) written in Mix (`mix --serve`), so the
 same service answers the TV over HTTP and SSDP and answers people and agents
 on the Bus.
 
+Requires Mix 0.118.0 or later for offset file reads and discovery sockets.
+
 ## What it serves
 
 - **One media directory**, browsed live. Folders become browse levels;
@@ -63,11 +65,15 @@ reliably.
 | `listen` | (required) | the LAN IPv4 renderers reach; HTTP binds it, SSDP joins on it |
 | `port` | `8200` | HTTP port |
 | `name` | `MixOS Media` | friendly name shown on the TV |
-| `ssdp` | `true` | announce and answer searches (needs mix 0.118.0 or later) |
+| `ssdp` | `true` | announce and answer searches |
 | `renderers` | `[]` | IPv4 addresses that also get every advert unicast |
 | `announce_s` | `60` | seconds between alive adverts |
 | `max_age` | `1800` | how long a renderer may cache an advert |
-| `max_conns` | `64` | HTTP connections held at once; when full, the oldest idle one is dropped |
+| `max_conns` | `64` | HTTP admission limit; evict the oldest idle connection when full, or close the newcomer if all are busy |
+
+Timers and limits (`announce_s`, `max_age`, `max_conns`) must be positive
+numbers; `max_conns` must be an integer. Invalid values refuse startup and
+name the key. Renderer history retains the 256 most recently seen peers.
 
 The server's identity (its UPnP uuid and friendly name) lives in
 `<var>/dlnad/identity.conf.mix` and survives restarts. A configuration change
@@ -105,8 +111,11 @@ Install the component with `mix tools/component_install.mix dlnad`.
 
 - One media directory, IPv4 only, HTTP (no TLS: DLNA renderers do not speak it).
 - No transcoding, thumbnails or metadata scraping; titles are file names.
-- UPnP eventing is accepted and never fired; renderers re-browse on the
-  container update id, which changes when the top folder changes.
+- No GENA notifications: subscriptions are acknowledged but never fired.
+  BrowseDirectChildren's update id is the browsed container's own mtime;
+  BrowseMetadata and GetSystemUpdateID use the root directory's mtime.
+- Sorting is fixed ascending (folders first, then files, each by name).
+  SortCriteria is ignored and GetSortCapabilities returns empty SortCaps.
 - The SSDP and HTTP event commands (`dlnad.http.*`, `dlnad.ssdp`) are visible
   on the Bus like any `on` handler; they act only on sockets the running
   service owns.
