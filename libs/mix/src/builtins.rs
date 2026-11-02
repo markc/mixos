@@ -1,5 +1,5 @@
 #[cfg(test)]
-use mix_server::{builtin_tcp_listen, builtin_tcp_accept, builtin_http_serve, builtin_http_recv, builtin_udp_recv, http_srv, tcp_server, tcp_accept_waits_entered};
+use mix_server::*;
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::builtin_table;
@@ -24497,7 +24497,7 @@ fn builtin_tcp_local_addr(args: Vec<Value>) -> MixResult<Option<Value>> {
 pub(crate) mod socket_sources {
     use super::{tcp_client, tcp_unknown, ws_client, ws_err};
     #[cfg(test)]
-    use mix_server::{tcp_server, prepare_accept, pull_accept, subscribe_listener, spawn_listener, accepted_record};
+    use mix_server::*;
 
     use crate::{
         error::MixResult,
@@ -24542,7 +24542,7 @@ pub(crate) mod socket_sources {
                 id,
             }
         }
-        pub(crate) const fn tcp(id: u64) -> Self {
+        pub const fn tcp(id: u64) -> Self {
             Self {
                 family: ClientFamily::Tcp,
                 id,
