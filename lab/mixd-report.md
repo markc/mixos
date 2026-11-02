@@ -224,3 +224,64 @@ walks family metadata during lookup; this job measures rebuild scope, not
 runtime throughput. Native Rust service implementations remain unchanged.
 
 Workspace proof, rebuild timings and final test receipts follow below.
+
+### Job 2 verification
+
+Implementation commit: `9321de79e01b25dc9518bcfd3bb03d398e339b19`.
+All checks below run on CBC3's configured secondary checkout. Log filenames
+are relative to `~/.cache/mixos/cbc-build/`; the saved logs were read in full.
+
+| Command | BUILD_RC | Log |
+| --- | ---: | --- |
+| cargo test -p mix --locked --no-fail-fast | 0 | 20261102-184404-cbc3-9321de79e01b-20261102-184404-8e991300-a1-9ec48fa6.log |
+| cargo test -p system --locked --no-fail-fast | 0 | 20261102-184555-cbc3-9321de79e01b-20261102-184409-18006ffb-a1-37a14366.log |
+| cargo test -p mixd -p mix-server --locked --no-fail-fast | 0 | 20261102-185142-cbc3-9321de79e01b-20261102-184419-92c087f2-a2-ebe5e7c5.log |
+| cargo check --workspace --all-targets --locked | 0 | 20261102-185040-cbc3-9321de79e01b-20261102-184422-9d0691fe-a1-1714863d.log |
+
+The system test checks NEEDS_MIXD and MIX-E1513 for all six names. The new
+generic-family probe checks discovery, capability classification, dispatch,
+idempotent registration and enforcement of the supplied argument contract.
+The extension suite preserves 10 HTTP/legacy UDP tests, seven UDP lifecycle/
+concurrency tests and the accept-before-return ownership test. The existing
+mixd process suite preserves its ten listener/dispatch/signal tests.
+
+New private-interface and unused-item warnings remain around the provisional
+queue/generation exposure and transplanted helpers. A derived API should
+offer a dedicated event-queue facade instead of exporting the whole existing
+type; making every unrelated native-event type public would widen the seam
+further. Tests are green, but this lab does not claim a clippy-clean API.
+
+### Rebuild scope
+
+Commit `9321de79e01b`, CBC3 secondary checkout, normal `target/`, debug
+profile, `CARGO_BUILD_JOBS=3`, warm builds and shared sccache. The script
+builds system then mixd for each independent one-line string mutation,
+restores the tree and warms the baseline again between cases. The log's
+final diff is empty and all restore commands succeeded in the same job.
+
+| Mutated code | Package built | Wall seconds | Cargo `Compiling` crates |
+| --- | --- | ---: | --- |
+| server builtin, mix-server/src/tcp.rs | system | 0.655 | none |
+| server builtin, mix-server/src/tcp.rs | mixd | 14.186 | mix-server, mixd |
+| client builtin, mix/src/builtins.rs | system | 33.105 | mix, mix-shell, system |
+| client builtin, mix/src/builtins.rs | mixd | 51.520 | ten crates listed below |
+| evaluator, mix/src/evaluator.rs | system | 16.146 | mix, mix-shell, system |
+| evaluator, mix/src/evaluator.rs | mixd | 36.845 | ten crates listed below |
+
+For both mixd builds following core edits, Cargo listed exactly: `mix`,
+`maild-rules`, `dns-core`, `mix-server`, `webd`, `maild-bayesian`, `dnsd`,
+`maild`, `mix-shell`, `mixd` (ordering varied). The full `Compiling` lines,
+including paths and versions, are in the saved log and its `SCOPE` JSON rows.
+
+The initial warm builds took 48.557s (system) and 73.902s (mixd). They are
+excluded from the table. This is one shared-worker, warm-cache sample, not
+a cold build or a statistical latency benchmark. Alias/consumer feature
+differences still give Cargo distinct core variants for the two binaries.
+
+The crate boundary does change rebuild scope: editing a server implementation
+does not compile the shell or core at all. It recompiles only the extension
+and mixd. Core edits still fan out into the interpreter's Rust consumers;
+moving files within the core crate would not remove that dependency edge.
+
+`BUILD_RC=0`, job `20261102-184516-859652af-a1`, 310.3s overall. Log:
+`~/.cache/mixos/cbc-build/20261102-185300-cbc3-9321de79e01b-20261102-184516-859652af-a1-e9bd862b.log`.
