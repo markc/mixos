@@ -4,7 +4,15 @@
 //! version, never the host's: argv[0] picks the program, and build
 //! provenance is captured inside each component's library. The `noded`
 //! personality is also driven as a real process through a symlink, against
-//! its own broker, and must stop cleanly on SIGTERM.
+//! its own broker, and must stop cleanly on SIGTERM. Built only with every
+//! personality feature on (the default is the shell alone).
+#![cfg(all(
+    feature = "noded",
+    feature = "monitord",
+    feature = "maild",
+    feature = "webd",
+    feature = "dnsd"
+))]
 
 use std::fs;
 use std::net::TcpListener;

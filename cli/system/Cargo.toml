@@ -29,7 +29,10 @@ name = "mix-standalone"
 path = "src/standalone.rs"
 
 [features]
-default = ["maild", "noded", "monitord", "webd", "dnsd"]
+# Traditional split (Mark, 2026-11-02): `mix` is the shell only and every
+# daemon ships as its own binary. The personalities stay buildable on request
+# while the mix + mixd reshuffle is decided.
+default = []
 maild = ["dep:maild"]
 noded = ["dep:noded"]
 monitord = ["dep:monitord"]
