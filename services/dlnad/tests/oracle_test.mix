@@ -105,6 +105,57 @@ for $pair in [["cds_scpd", $D.content_directory_scpd()], ["cms_scpd", $D.connect
   $expected = map($ra, fn($x) = $x.name)
   if $pair[0] == "cds_scpd" then $expected = concat($expected, ["GetSearchCapabilities", "GetSortCapabilities", "GetSystemUpdateID"]) end
   check($pair[0] .. " complete action list", deep_eq(map($aa, fn($x) = $x.name), $expected))
+  $rv = $r.serviceStateTable.stateVariable
+  $av = $a.serviceStateTable.stateVariable
+  $expected_names = []
+  for $var in $rv
+    $expected_var = $var
+    $label = $pair[0] .. " state variable " .. $var.name
+    $matches = filter($av, fn($x) = $x.name == $var.name)
+    if $pair[0] == "cds_scpd" and $var.name == "ContainerUpdateIDs" then
+      -- Exception: optional ContainerUpdateIDs is absent because dlnad has
+      -- no GENA and never emits the container/update-id pair event stream.
+      -- Pin both the captured declaration and the deliberate absence.
+      check($label .. " no container events exception", deep_eq($var, {name: "ContainerUpdateIDs", dataType: "string", "@sendEvents": "yes"}) and length($matches) == 0)
+      continue
+    end
+    push($expected_names, $var.name)
+    if $pair[0] == "cds_scpd" and $var.name == "A_ARG_TYPE_BrowseFlag" then
+      -- Exception: constrain BrowseFlag to the two modes dlnad implements;
+      -- the capture leaves this string unconstrained.
+      $expected_var.allowedValueList = {allowedValue: ["BrowseMetadata", "BrowseDirectChildren"]}
+      $label = $label .. " supported browse modes exception"
+    elif $pair[0] == "cms_scpd" and $var.name == "A_ARG_TYPE_Direction" then
+      -- Exception: publish the valid ConnectionManager direction values;
+      -- the capture leaves this string unconstrained.
+      $expected_var.allowedValueList = {allowedValue: ["Input", "Output"]}
+      $label = $label .. " direction enumeration exception"
+    elif $pair[0] == "cms_scpd" and $var.name == "A_ARG_TYPE_ConnectionStatus" then
+      -- Exception: publish the valid ConnectionManager status values;
+      -- the capture leaves this string unconstrained.
+      $expected_var.allowedValueList = {allowedValue: ["OK", "ContentFormatMismatch", "InsufficientBandwidth", "UnreliableChannel", "Unknown"]}
+      $label = $label .. " status enumeration exception"
+    end
+    check($label, length($matches) == 1 and deep_eq($matches[0], $expected_var))
+  end
+  if $pair[0] == "cds_scpd" then
+    -- Exception: the extra capability-query actions need their own string
+    -- variables. Neither capability is evented; both query results are empty.
+    for $name in ["SearchCapabilities", "SortCapabilities"]
+      push($expected_names, $name)
+      $matches = filter($av, fn($x) = $x.name == $name)
+      check($pair[0] .. " capability variable exception " .. $name, length($matches) == 1 and deep_eq($matches[0], {name: $name, dataType: "string", "@sendEvents": "no"}))
+    end
+  end
+  check($pair[0] .. " complete state variable names", deep_eq(sort(map($av, fn($x) = $x.name)), sort($expected_names)))
+  for $action in $aa
+    $arguments = $action.argumentList.argument
+    if type($arguments) != "list" then $arguments = [$arguments] end
+    for $argument in $arguments
+      $matches = filter($av, fn($x) = $x.name == $argument.relatedStateVariable)
+      check($pair[0] .. " relatedStateVariable " .. $action.name .. "/" .. $argument.name, length($matches) == 1)
+    end
+  end
 end
 for $name in ["media_head", "media_range"]
   $ref = $D.ssdp_parse(fixture($name))
