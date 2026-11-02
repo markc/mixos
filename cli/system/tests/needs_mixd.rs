@@ -4,7 +4,7 @@ use std::process::Command;
 #[test]
 fn server_calls_have_metadata_runtime_refusals_and_lint_errors() {
     for (name, args) in [("tcp_listen", "\"127.0.0.1\", 0"), ("tcp_accept", "1"),
-        ("udp_listen", "\"127.0.0.1\", 0"), ("http_serve", "\".\"")] {
+        ("udp_listen", "\"127.0.0.1\", 0"), ("http_serve", "\".\""), ("http_recv", "0"), ("udp_recv", "0")] {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("server.mix");
         std::fs::write(&path, format!("try\n{name}({args})\ncatch $m, $e\nprint($e.code .. \" \" .. $m)\nend\n")).unwrap();

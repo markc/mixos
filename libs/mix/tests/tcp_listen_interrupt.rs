@@ -13,6 +13,7 @@ use std::{
 };
 
 async fn exec(eval: &mut Evaluator, source: &str) -> MixResult<Value> {
+    mix_server::register().expect("server test family");
     let tokens = Lexer::new(source).tokenize()?;
     let stmts = Parser::new(tokens, source).parse_program()?;
     eval.execute(&stmts).await
@@ -21,6 +22,7 @@ async fn exec(eval: &mut Evaluator, source: &str) -> MixResult<Value> {
 /// One evaluator on its own thread, blocked in tcp_accept with no timeout.
 /// Reports whether the accept returned nil.
 fn spawn_waiter(done: std::sync::mpsc::Sender<(bool, String)>) {
+    mix_server::register().expect("server test family");
     std::thread::spawn(move || {
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -45,6 +47,7 @@ $r = tcp_accept($l, {timeout: 0})
 
 #[test]
 fn ctrl_c_on_another_thread_ends_every_infinite_accept() {
+    mix_server::register().expect("server test family");
     assert!(mix::interrupt::init(Arc::new(AtomicBool::new(false))));
     let (done_tx, done_rx) = std::sync::mpsc::channel();
     spawn_waiter(done_tx.clone());

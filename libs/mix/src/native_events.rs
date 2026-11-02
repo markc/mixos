@@ -797,6 +797,8 @@ pub(crate) struct NativeEvents {
 
 impl Default for NativeEvents {
     fn default() -> Self {
+        #[cfg(test)]
+        mix_server::register().expect("server test family");
         NativeEvents {
             processes: BTreeMap::new(),
             queue: Arc::new(Queue::default()),

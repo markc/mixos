@@ -24,7 +24,7 @@ pub fn io(e: std::io::Error) -> crate::error::MixError {
     };
     refusal(code, e.to_string())
 }
-fn option<T>(sock: &UdpSocket, name: i32, value: &T, level: i32) -> MixResult<()> {
+pub fn option<T>(sock: &UdpSocket, name: i32, value: &T, level: i32) -> MixResult<()> {
     // SAFETY: value is a live socket-option value of the supplied size.
     let rc = unsafe {
         libc::setsockopt(

@@ -3,7 +3,7 @@ use std::{io::Write, os::{fd::AsRawFd, unix::net::UnixStream}};
 use super::*;
     /// The listener a numeric tcp_accept addresses: an Arc clone, so the
     /// wait never holds the registry lock.
- fn listener_for_accept(id: u64) -> MixResult<Arc<tcp_server::Listener>> {
+ pub fn listener_for_accept(id: u64) -> MixResult<Arc<tcp_server::Listener>> {
         if let Some(l) = tcp_server::LISTENERS.lock().unwrap().get(&id).cloned() {
             return Ok(l);
         }
@@ -29,7 +29,11 @@ use super::*;
 
     /// Validate a numeric tcp_accept call: its listener and the absolute
     /// deadline. The handle limit is enforced per accept attempt.
-        pub fn prepare_accep
+        pub fn prepare_accept(args: &[Value]) -> MixResult<(Arc<tcp_server::Listener>, Option<std::time::Instant>)> {
+    let id = client_id_of(args.first(), "tcp_accept")?;
+    let timeout = accept_timeout(args.get(1))?;
+    Ok((listener_for_accept(id)?, deadline_after(timeout)))
+}
 
     /// Class C numeric accept: non-blocking accepts with readiness awaited
     /// on an AsyncFd dup of the listener under the call's deadline, so the
@@ -101,7 +105,7 @@ use super::*;
     /// connection is already a live handle, so a record that is never
     /// delivered must be discarded with `discard_record`.
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
- fn accepted_record(handle: u64, peer: std::net::SocketAddr) -> SocketRecord {
+ pub fn accepted_record(handle: u64, peer: std::net::SocketAddr) -> SocketRecord {
         SocketRecord {
             kind: "accepted",
             data: serde_json::to_vec(&serde_json::json!({
@@ -245,7 +249,7 @@ pub fn spawn_listener(
         /// and becomes a live handle owned by the generation before its
         /// record is queued; a refused record closes it again (never a
         /// handle nobody can name).
- fn accept_batch(
+ pub fn accept_batch(
             queue: &Queue,
             id: &str,
             listener: &std::net::TcpListener,
@@ -276,7 +280,7 @@ pub fn spawn_listener(
         }
 
     #[cfg(not(target_os = "linux"))]
- fn spawn_listener(
+ pub fn spawn_listener(
         _queue: Arc<Queue>,
         _id: String,
         _listener_id: u64,
@@ -288,4 +292,3 @@ pub fn spawn_listener(
             "tcp_on requires Linux poll(2)",
         ))
     }
-

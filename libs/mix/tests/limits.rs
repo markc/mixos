@@ -15,6 +15,7 @@ use std::time::Duration;
 /// Parse + run `source`, applying `configure` to the evaluator first.
 /// Returns Ok(stdout) or Err(error message).
 async fn run(source: &str, configure: impl FnOnce(&mut Evaluator)) -> Result<String, String> {
+    mix_server::register().expect("server test family");
     let mut lexer = Lexer::new(source);
     let tokens = lexer.tokenize().map_err(|e| e.to_string())?;
     let mut parser = Parser::new(tokens, source);
@@ -28,6 +29,7 @@ async fn run(source: &str, configure: impl FnOnce(&mut Evaluator)) -> Result<Str
 }
 
 fn limits(recursion_limit: usize) -> EvalLimits {
+    mix_server::register().expect("server test family");
     EvalLimits {
         recursion_limit,
         ..Default::default()
@@ -37,6 +39,7 @@ fn limits(recursion_limit: usize) -> EvalLimits {
 #[cfg(feature = "http")]
 #[tokio::test]
 async fn upload_requires_read_capability_even_without_options() {
+    mix_server::register().expect("server test family");
     let err = run(
         "$r = http_put_file(\"http://invalid.invalid\", \"absent\")",
         |e| {
@@ -53,6 +56,7 @@ async fn upload_requires_read_capability_even_without_options() {
 #[cfg(feature = "http")]
 #[tokio::test]
 async fn download_requires_write_and_append_requires_read() {
+    mix_server::register().expect("server test family");
     for (src, caps, want) in [
         (
             "$r = http_get_file(\"http://invalid.invalid\", \"absent\")",
@@ -83,6 +87,7 @@ async fn download_requires_write_and_append_requires_read() {
 #[cfg(feature = "http")]
 #[tokio::test]
 async fn file_transfer_documented_grants_pass_capability_gate() {
+    mix_server::register().expect("server test family");
     use CapabilityClass::{FsRead, FsWrite, Network};
 
     // As with include_allowed_with_fsread_passes_gate, reaching the builtin's
@@ -126,6 +131,7 @@ async fn file_transfer_documented_grants_pass_capability_gate() {
 
 #[tokio::test]
 async fn recursion_cap_generic_path() {
+    mix_server::register().expect("server test family");
     let src = "function f($n)\n  return f($n + 1)\nend\nprint(f(0))\n";
     // A low cap so it fires well before even a small (libtest ~1.4 MB)
     // thread's native stack overflows — this tests the mechanism, not a
@@ -138,6 +144,7 @@ async fn recursion_cap_generic_path() {
 
 #[tokio::test]
 async fn recursion_cap_numeric_fib_path() {
+    mix_server::register().expect("server test family");
     // fib drives the numeric / fib-bytecode fast path (eval_fib_program /
     // try_call_function_sync_block_f64) — the path that bypasses the
     // function_depth increments on the AST path. A deep fib must still
@@ -151,6 +158,7 @@ async fn recursion_cap_numeric_fib_path() {
 
 #[tokio::test]
 async fn recursion_cap_default_param_path() {
+    mix_server::register().expect("server test family");
     // A recursive DEFAULT parameter recurses via `eval_expr(default)`
     // *before* the body runs; the depth must already be incremented for
     // this frame or that path bypasses the cap and overflows the stack.
@@ -163,6 +171,7 @@ async fn recursion_cap_default_param_path() {
 
 #[tokio::test]
 async fn recursion_within_limit_still_computes() {
+    mix_server::register().expect("server test family");
     let src = "function fib($n)\n  if $n < 2 then\n    return $n\n  end\n  return fib($n - 1) + fib($n - 2)\nend\nprint(fib(10))\n";
     let out = run(src, |e| e.set_limits(limits(64)))
         .await
@@ -176,6 +185,7 @@ async fn recursion_within_limit_still_computes() {
 
 #[tokio::test]
 async fn capability_denies_unallowed_class() {
+    mix_server::register().expect("server test family");
     // exists() is classified FsRead; an empty allow-list denies it.
     let err = run("print(exists(\"/\"))\n", |e| {
         e.set_capability_policy(Rc::new(CategoryAllowList::new(&[])))
@@ -187,6 +197,7 @@ async fn capability_denies_unallowed_class() {
 
 #[tokio::test]
 async fn capability_allows_listed_class() {
+    mix_server::register().expect("server test family");
     let out = run("print(exists(\"/\"))\n", |e| {
         e.set_capability_policy(Rc::new(CategoryAllowList::new(&[CapabilityClass::FsRead])))
     })
@@ -197,6 +208,7 @@ async fn capability_allows_listed_class() {
 
 #[tokio::test]
 async fn capability_pure_builtins_always_allowed() {
+    mix_server::register().expect("server test family");
     let out = run("print(upper(\"hi\"))\n", |e| {
         e.set_capability_policy(Rc::new(CategoryAllowList::new(&[])))
     })
@@ -212,6 +224,7 @@ async fn capability_pure_builtins_always_allowed() {
 
 #[tokio::test]
 async fn capability_denies_sh_keyword() {
+    mix_server::register().expect("server test family");
     let err = run("sh \"true\"\n", |e| {
         e.set_capability_policy(Rc::new(CategoryAllowList::new(&[CapabilityClass::FsRead])))
     })
@@ -222,6 +235,7 @@ async fn capability_denies_sh_keyword() {
 
 #[tokio::test]
 async fn capability_denies_command_substitution() {
+    mix_server::register().expect("server test family");
     let err = run("$x = $(true)\n", |e| {
         e.set_capability_policy(Rc::new(CategoryAllowList::new(&[CapabilityClass::FsRead])))
     })
@@ -232,6 +246,7 @@ async fn capability_denies_command_substitution() {
 
 #[tokio::test]
 async fn capability_denies_pipe_to_external() {
+    mix_server::register().expect("server test family");
     let err = run("\"x\" | cat\n", |e| {
         e.set_capability_policy(Rc::new(CategoryAllowList::new(&[CapabilityClass::FsRead])))
     })
@@ -242,6 +257,7 @@ async fn capability_denies_pipe_to_external() {
 
 #[tokio::test]
 async fn capability_allows_sh_when_process_listed() {
+    mix_server::register().expect("server test family");
     // Process in the allow-set → `sh` runs (exit 0, no Mix error).
     run("sh \"true\"\n", |e| {
         e.set_capability_policy(Rc::new(CategoryAllowList::new(&[CapabilityClass::Process])))
@@ -252,6 +268,7 @@ async fn capability_allows_sh_when_process_listed() {
 
 #[tokio::test]
 async fn default_check_class_gates_shell_for_builtin_only_policy() {
+    mix_server::register().expect("server test family");
     // `DenyByName` implements only `check_builtin`; the trait's default
     // `check_class` delegates Process -> check_builtin("run"), so even a
     // builtin-only policy gates shell syntax.
@@ -268,6 +285,7 @@ async fn default_check_class_gates_shell_for_builtin_only_policy() {
 
 #[tokio::test]
 async fn include_denied_without_fsread() {
+    mix_server::register().expect("server test family");
     let err = run("include \"/no/such/file.mix\"\n", |e| {
         e.set_capability_policy(Rc::new(CategoryAllowList::new(&[])))
     })
@@ -278,6 +296,7 @@ async fn include_denied_without_fsread() {
 
 #[tokio::test]
 async fn include_allowed_with_fsread_passes_gate() {
+    mix_server::register().expect("server test family");
     // FsRead granted → the gate passes; the only error is the missing
     // file, NOT a capability denial (proves the gate isn't over-blocking).
     let err = run("include \"/no/such/file.mix\"\n", |e| {
@@ -294,6 +313,7 @@ async fn include_allowed_with_fsread_passes_gate() {
 
 #[test]
 fn sensitive_builtins_stay_categorized() {
+    mix_server::register().expect("server test family");
     // The capability class now lives in the builtin_table! entry (so a new
     // builtin can't be unclassified). This pins the SPECIFIC class of every
     // sensitive builtin so a table edit that flips one (e.g. http_get from
@@ -422,6 +442,7 @@ impl mix::CapabilityPolicy for DenyByName {
 
 #[tokio::test]
 async fn capability_gates_mutating_builtin() {
+    mix_server::register().expect("server test family");
     // push/pop/shift route through call_mutating_builtin (not the normal
     // builtin dispatch); an exact-name policy must still be able to deny
     // them.
@@ -436,6 +457,7 @@ async fn capability_gates_mutating_builtin() {
 
 #[tokio::test]
 async fn no_policy_is_permissive() {
+    mix_server::register().expect("server test family");
     let out = run("print(exists(\"/\"))\n", |_| {})
         .await
         .expect("no policy installed -> fully permissive");
@@ -448,6 +470,7 @@ async fn no_policy_is_permissive() {
 
 #[tokio::test]
 async fn deadline_bounds_infinite_loop() {
+    mix_server::register().expect("server test family");
     // A loop re-enters execute() each iteration -> caught at the poll.
     let src = "$keep = 1\n$i = 0\nwhile $keep == 1\n  $i = $i + 1\nend\n";
     let err = run(src, |e| {
@@ -464,6 +487,7 @@ async fn deadline_bounds_infinite_loop() {
 
 #[tokio::test]
 async fn deadline_bounds_wide_numeric_recursion() {
+    mix_server::register().expect("server test family");
     // fib(40) is shallow (depth 40) but ~1e9 calls; it never re-enters the
     // statement poll, so the throttled in-fast-path deadline check must
     // catch it. recursion_limit is set high so the depth cap can't fire.
@@ -486,6 +510,7 @@ async fn deadline_bounds_wide_numeric_recursion() {
 
 #[tokio::test]
 async fn collection_cap_string_concat() {
+    mix_server::register().expect("server test family");
     let src = "$s = \"\"\n$i = 0\nwhile $i < 1000\n  $s = $s .. \"abcdefghij\"\n  $i = $i + 1\nend\nprint(length($s))\n";
     let err = run(src, |e| {
         e.set_limits(EvalLimits {
@@ -504,6 +529,7 @@ async fn collection_cap_string_concat() {
 
 #[tokio::test]
 async fn collection_cap_list_push() {
+    mix_server::register().expect("server test family");
     let src =
         "$l = []\n$i = 0\nwhile $i < 1000\n  push($l, $i)\n  $i = $i + 1\nend\nprint(length($l))\n";
     let err = run(src, |e| {
@@ -523,6 +549,7 @@ async fn collection_cap_list_push() {
 
 #[tokio::test]
 async fn collection_cap_map_insert() {
+    mix_server::register().expect("server test family");
     let src =
         "$m = {}\n$i = 0\nwhile $i < 1000\n  $m[$i] = $i\n  $i = $i + 1\nend\nprint(length($m))\n";
     let err = run(src, |e| {
@@ -542,6 +569,7 @@ async fn collection_cap_map_insert() {
 
 #[tokio::test]
 async fn collection_cap_builtin_result() {
+    mix_server::register().expect("server test family");
     // range() produces a whole list in one builtin call -> caught at the
     // dispatch-site result check.
     let err = run("print(length(range(0, 100000)))\n", |e| {
@@ -560,6 +588,7 @@ async fn collection_cap_builtin_result() {
 
 #[tokio::test]
 async fn collection_cap_string_interpolation() {
+    mix_server::register().expect("server test family");
     // Interpolation (`"${s}..."`) grows a string without going through
     // the `..` operator — its own result check must catch it.
     let src = "$s = \"x\"\n$i = 0\nwhile $i < 1000\n  $s = \"${s}abcdefghij\"\n  $i = $i + 1\nend\nprint(length($s))\n";
@@ -580,6 +609,7 @@ async fn collection_cap_string_interpolation() {
 
 #[tokio::test]
 async fn collection_cap_nested_builtin_result() {
+    mix_server::register().expect("server test family");
     // A builtin can return a nested structure whose top level is small
     // but an inner collection is oversized; the recursive result check
     // must catch it. json_parse builds the whole tree in one call, so no
@@ -602,6 +632,7 @@ async fn collection_cap_nested_builtin_result() {
 
 #[tokio::test]
 async fn no_caps_is_unlimited() {
+    mix_server::register().expect("server test family");
     let out = run("print(length(range(0, 5000)))\n", |_| {})
         .await
         .expect("no caps -> unlimited");
@@ -628,6 +659,7 @@ const _: () = assert!(DEFAULT_RECURSION_LIMIT <= 64);
 
 #[test]
 fn default_limit_is_safe_on_2mb_stack() {
+    mix_server::register().expect("server test family");
     let handle = std::thread::Builder::new()
         .stack_size(2 * 1024 * 1024)
         .spawn(|| {
@@ -671,6 +703,7 @@ fn default_limit_is_safe_on_2mb_stack() {
 /// raises, which would tell every reader the opposite of what the builtins do.
 #[test]
 fn operational_failure_annotations_match_what_the_builtins_do() {
+    mix_server::register().expect("server test family");
     use mix::builtin_info::OperationalFailure::{Raises, ReturnsResult};
 
     for (name, expected) in [
@@ -699,6 +732,7 @@ fn operational_failure_annotations_match_what_the_builtins_do() {
 #[cfg(unix)]
 #[tokio::test(flavor = "current_thread")]
 async fn fifo_read_file_honours_the_string_cap() {
+    mix_server::register().expect("server test family");
     let dir = std::env::temp_dir().join(format!("mix-limits-fifo-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();

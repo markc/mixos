@@ -25012,17 +25012,6 @@ pub(crate) mod socket_sources {
             .and_then(|d| std::time::Instant::now().checked_add(d))
     }
 
-t(
-        args: &[Value],
-    ) -> MixResult<(Arc<tcp_server::Listener>, Option<std::time::Instant>)> {
-        let id = client_id_of(args.first(), "tcp_accept")?;
-        let timeout_seconds = accept_timeout(args.get(1))?;
-        let listener = listener_for_accept(id)?;
-        Ok((listener, deadline_after(timeout_seconds)))
-    }
-
-
-
     /// How a readiness wait ended.
     #[cfg(unix)]
     pub enum Wait {

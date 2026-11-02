@@ -63,6 +63,7 @@ impl BusHandler for Bus {
 }
 
 fn event(command: &str) -> IncomingEvent {
+    mix_server::register().expect("server test family");
     IncomingEvent {
         generation: 0,
         command: command.into(),
@@ -72,6 +73,7 @@ fn event(command: &str) -> IncomingEvent {
 }
 
 async fn exec(eval: &mut Evaluator, source: &str) -> MixResult<Value> {
+    mix_server::register().expect("server test family");
     let tokens = Lexer::new(source).tokenize()?;
     let stmts = Parser::new(tokens, source).parse_program()?;
     eval.execute(&stmts).await
@@ -80,6 +82,7 @@ async fn exec(eval: &mut Evaluator, source: &str) -> MixResult<Value> {
 /// An evaluator wired like a `--serve` citizen: a serve runtime and a Bus
 /// whose incoming events the test drives.
 fn served() -> (Evaluator, tokio::sync::mpsc::UnboundedSender<IncomingEvent>) {
+    mix_server::register().expect("server test family");
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     let mut e = Evaluator::new();
     e.set_serve_runtime(Rc::new(Runtime));
@@ -90,12 +93,14 @@ fn served() -> (Evaluator, tokio::sync::mpsc::UnboundedSender<IncomingEvent>) {
 }
 
 fn global_str(e: &Evaluator, name: &str) -> String {
+    mix_server::register().expect("server test family");
     e.get_global(name)
         .unwrap_or_else(|| panic!("${name} unset"))
         .to_mix_string()
 }
 
 fn global_port(e: &Evaluator, name: &str) -> u16 {
+    mix_server::register().expect("server test family");
     let n = e
         .get_global(name)
         .and_then(|v| v.to_number())
@@ -106,6 +111,7 @@ fn global_port(e: &Evaluator, name: &str) -> u16 {
 
 #[tokio::test(flavor = "current_thread")]
 async fn sixty_four_subscribed_connections_work_alongside_tcp_and_udp_listeners() {
+    mix_server::register().expect("server test family");
     let (mut e, _tx) = served();
     exec(
         &mut e,
@@ -156,6 +162,7 @@ end
 
 #[tokio::test(flavor = "current_thread")]
 async fn listen_on_port_zero_reports_its_address() {
+    mix_server::register().expect("server test family");
     let mut e = Evaluator::new();
     exec(
         &mut e,
@@ -178,6 +185,7 @@ $port = $a.port
 
 #[tokio::test(flavor = "current_thread")]
 async fn accept_and_line_round_trip_in_one_script() {
+    mix_server::register().expect("server test family");
     let mut e = Evaluator::new();
     exec(
         &mut e,
@@ -215,6 +223,7 @@ tcp_close($s)
 /// short it has passed before the first look at the socket.
 #[tokio::test(flavor = "current_thread")]
 async fn buffered_lines_are_served_before_a_tiny_timeout_expires() {
+    mix_server::register().expect("server test family");
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     let server = std::thread::spawn(move || {
@@ -252,6 +261,7 @@ tcp_close($h)
 
 #[tokio::test(flavor = "current_thread")]
 async fn accept_timeout_returns_nil_and_the_listener_stays_usable() {
+    mix_server::register().expect("server test family");
     let mut e = Evaluator::new();
     let started = Instant::now();
     exec(
@@ -279,6 +289,7 @@ $second = tcp_accept($l, {timeout: 5})
 
 #[tokio::test(flavor = "current_thread")]
 async fn errors_carry_stable_codes() {
+    mix_server::register().expect("server test family");
     let held = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let held_port = held.local_addr().unwrap().port();
     let mut e = Evaluator::new();
@@ -329,6 +340,7 @@ $unknown = code_of(fn() tcp_local_addr(999999999) end)
 
 #[tokio::test(flavor = "current_thread")]
 async fn tcp_close_on_a_listener_stops_listening() {
+    mix_server::register().expect("server test family");
     let mut e = Evaluator::new();
     exec(
         &mut e,
@@ -361,6 +373,7 @@ end
 /// accepted; a tcp_connect handle is not the generation's.
 #[tokio::test(flavor = "current_thread")]
 async fn retiring_the_generation_closes_listeners_and_accepted_connections() {
+    mix_server::register().expect("server test family");
     let mut e = Evaluator::new();
     exec(
         &mut e,
@@ -408,6 +421,7 @@ $l_closed = tcp_close($l)
 /// numeric tcp_accept.
 #[tokio::test(flavor = "current_thread")]
 async fn subscribed_listener_delivers_accepted_then_line_events() {
+    mix_server::register().expect("server test family");
     let (mut e, _tx) = served();
     exec(
         &mut e,
@@ -468,6 +482,7 @@ end
 /// while the accept waits, or the accept would time out with nil.
 #[tokio::test(flavor = "current_thread")]
 async fn class_c_accept_yields_to_a_concurrent_handler() {
+    mix_server::register().expect("server test family");
     let (mut e, tx) = served();
     exec(
         &mut e,

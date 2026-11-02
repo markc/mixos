@@ -212,7 +212,7 @@ pub const LINT_DOCS: &[LintDoc] = &[
     LintDoc {
         code: "MIX-E1513",
         summary: "server builtin needs mixd",
-        detail: "This binary lacks net-server. tcp_listen, tcp_accept, udp_listen and http_serve require server capability. Run it under: mixd run <script>.",
+        detail: "No server extension is registered. tcp_listen, tcp_accept, udp_listen, http_serve, http_recv and udp_recv require server capability. Run it under: mixd run <script>.",
     },
     LintDoc {
         code: "MIX-D3023",

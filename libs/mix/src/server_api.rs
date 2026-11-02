@@ -8,7 +8,7 @@ use std::sync::{Arc, atomic::Ordering};
 pub use client::{TcpOwner, TcpPermit, Ownership, TCP_PERMITS, NEXT_ID};
 pub use crate::builtins::socket_sources::{ClientKey, SocketRecord, SocketSource, accept_timeout, deadline_after, client_id_of, number_of};
 pub use crate::native_events::{Queue, refusal};
-pub use crate::numeric::{as_duration, as_exact_integer, as_port};
+pub use crate::numeric::{as_duration, as_exact_integer};
 pub use crate::builtins::{expect_args, expect_args_between, number_arg, bool_option, required_number_value};
 pub use crate::udp::{ip, map, ttl, io, option, interface};
 

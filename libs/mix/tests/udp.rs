@@ -53,6 +53,7 @@ impl BusHandler for Bus {
 }
 
 async fn exec(eval: &mut Evaluator, source: &str) -> MixResult<Value> {
+    mix_server::register().expect("server test family");
     let tokens = Lexer::new(source).tokenize()?;
     let stmts = Parser::new(tokens, source).parse_program()?;
     eval.execute(&stmts).await
@@ -61,6 +62,7 @@ async fn exec(eval: &mut Evaluator, source: &str) -> MixResult<Value> {
 /// An evaluator wired like a `--serve` citizen: a serve runtime and a Bus
 /// whose incoming events the test drives.
 fn served() -> (Evaluator, tokio::sync::mpsc::UnboundedSender<IncomingEvent>) {
+    mix_server::register().expect("server test family");
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     let mut e = Evaluator::new();
     e.set_serve_runtime(Rc::new(Runtime));
@@ -71,6 +73,7 @@ fn served() -> (Evaluator, tokio::sync::mpsc::UnboundedSender<IncomingEvent>) {
 }
 
 fn global_str(e: &Evaluator, name: &str) -> String {
+    mix_server::register().expect("server test family");
     e.get_global(name)
         .unwrap_or_else(|| panic!("${name} unset"))
         .to_mix_string()
@@ -78,6 +81,7 @@ fn global_str(e: &Evaluator, name: &str) -> String {
 
 #[tokio::test(flavor = "current_thread")]
 async fn udp_handler_replies_from_listener_and_generation_retires() {
+    mix_server::register().expect("server test family");
     let (mut e, _tx) = served();
     exec(
         &mut e,

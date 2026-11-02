@@ -102,7 +102,7 @@ use super::*;
 /// never truncates; a datagram longer than `max` is truncated to it, which
 /// is recvfrom(2)'s own contract). `text` is the payload decoded as UTF-8,
 /// or nil when it is not valid UTF-8 (`bytes` always carries the truth).
- fn builtin_udp_recv(args: Vec<Value>) -> MixResult<Option<Value>> {
+ pub fn builtin_udp_recv(args: Vec<Value>) -> MixResult<Option<Value>> {
     expect_args_between("udp_recv", &args, 1, 2)?;
     // Port 0 would bind an ephemeral port the caller can never learn from
     // the result map — a guaranteed silent timeout, so it is refused.
@@ -227,4 +227,3 @@ use super::*;
         }),
     }
 }
-
