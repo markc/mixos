@@ -107,7 +107,7 @@ $LOCATION = $BASE .. "/description.xml"
 -- All mutable state lives in $ST and is written by path ($ST.x = …): a
 -- whole-variable assignment inside a fn or handler would bind a local.
 $ST = {id: load_identity(state_dir(), $C.name), conns: {}, seen: {}, seen_order: 0, looping: false,
-  update_id: $G.next_update_id(0, time()), subs: {}, initial: [], dirty: {}, flushing: false,
+  update_id: $G.next_update_id(0, time()), subs: {}, initial: [], dirty: {}, flushing: false, outbox: [], sending: false,
   stats: {started: now_iso(), requests: 0, streams: 0, bytes_sent: 0, errors: 0, msearch: 0, adverts_failed: 0,
     events_sent: 0, events_failed: 0, changes: 0}}
 
@@ -221,13 +221,19 @@ end
 
 -- ---- Eventing (GENA) ---------------------------------------------------------
 
--- A NOTIFY that cannot be delivered this many times running ends the
--- subscription: the renderer is gone, and resubscribes when it comes back.
+-- A NOTIFY that connects but is not accepted this many times running ends
+-- the subscription. One that cannot connect ends it at once: the renderer is
+-- off, and it resubscribes when it wakes (its renewal gets 412).
 $EVENT_FAILS = 3
--- Connect and send bounds for one NOTIFY, in seconds. The connect blocks
--- the evaluator, so it is short: renderers are on the LAN.
-$EVENT_CONNECT_S = 2
+-- Connect and send bounds for one NOTIFY, in seconds. tcp_connect does not
+-- yield (mix 0.119.0), so a dead callback holds the whole service for the
+-- connect timeout: keep it short (renderers are on the LAN), and pay it at
+-- most once per subscription by dropping the subscription when it fails.
+$EVENT_CONNECT_S = 1
 $EVENT_SEND_S = 5
+-- Events waiting to be sent. One sender drains them in order, so each
+-- subscription's SEQ is allocated by exactly one writer.
+$OUTBOX_MAX = 256
 
 fn expire_subs()
   $now = time()
@@ -249,7 +255,9 @@ fn gena_subscribe($svc, $headers)
     $ST.subs = delete($ST.subs, sort_by(keys($ST.subs), fn($k) = $ST.subs[$k].expires)[0])
   end
   $sid = "uuid:" .. uuid()
-  $ST.subs[$sid] = {svc: $svc, callbacks: $r.callbacks, expires: time() + $r.timeout, seq: 0, fails: 0, since: now_iso()}
+  -- ready: false until the initial event is queued, so no change event can
+  -- take SEQ 0 or overtake the initial event.
+  $ST.subs[$sid] = {svc: $svc, callbacks: $r.callbacks, expires: time() + $r.timeout, seq: 0, fails: 0, since: now_iso(), ready: false}
   -- The initial event (SEQ 0) follows the response, once the connection closes.
   $ST.initial = concat($ST.initial, [$sid])
   return $H.response_head(200, [["SID", $sid], ["TIMEOUT", "Second-" .. to_string($r.timeout)], ["Content-Length", 0]])
@@ -263,47 +271,80 @@ fn gena_unsubscribe($headers)
   return $H.response_head(200, [["Content-Length", 0]])
 end
 
--- POST one NOTIFY to the first callback that takes it. True on a 2xx.
+-- POST one NOTIFY to one callback: "ok" on a 2xx, "down" when it cannot
+-- connect, "fail" otherwise.
 fn notify_one($url, $sid, $seq, $vars)
   $cb = $G.callback_parts($url)
   $h = nil
   try
     $h = tcp_connect($cb.host, $cb.port, {timeout: $EVENT_CONNECT_S})
+  catch $m
+    return "down"
+  end
+  try
     tcp_send($h, $G.notify_request($url, $sid, $seq, $vars), {timeout: $EVENT_SEND_S})
     $line = tcp_recv_line($h, {timeout: $EVENT_SEND_S, max: 1024})
     tcp_close($h)
-    return $line != nil and re_match($line, "^HTTP/1\\.[01] 2[0-9][0-9]")
+    if $line != nil and re_match($line, "^HTTP/1\\.[01] 2[0-9][0-9]") then return "ok" end
   catch $m
-    if $h != nil then
-      try
-        tcp_close($h)
-      catch $m2
-      end
+    try
+      tcp_close($h)
+    catch $m2
     end
   end
-  return false
+  return "fail"
 end
 
--- Send one event to one subscription; SEQ advances whether or not it lands,
--- so a renderer that missed one sees the gap and resubscribes.
-fn deliver($sid, $vars)
+-- Send one event to one subscription, trying its callbacks in order. Only
+-- drain() calls this, so SEQ has one writer. SEQ advances whether or not the
+-- event lands, so a renderer that missed one sees the gap and resubscribes.
+fn deliver_now($sid, $vars)
   if $ST.subs[$sid] == nil then return end
   $seq = $ST.subs[$sid].seq
-  $ok = false
+  $outcome = "down"
   for $url in $ST.subs[$sid].callbacks
-    if not $ok then $ok = notify_one($url, $sid, $seq, $vars) end
+    if $outcome != "ok" then
+      $r = notify_one($url, $sid, $seq, $vars)
+      if $r != "down" or $outcome == "down" then $outcome = $r end
+    end
   end
   -- the subscription may have been cancelled while the send was in flight
   if $ST.subs[$sid] == nil then return end
   $ST.subs[$sid].seq = $G.next_seq($seq)
-  if $ok then
+  if $outcome == "ok" then
     $ST.subs[$sid].fails = 0
     $ST.stats.events_sent = $ST.stats.events_sent + 1
-  else
-    $ST.stats.events_failed = $ST.stats.events_failed + 1
-    $ST.subs[$sid].fails = $ST.subs[$sid].fails + 1
-    if $ST.subs[$sid].fails >= $EVENT_FAILS then $ST.subs = delete($ST.subs, $sid) end
+    return
   end
+  $ST.stats.events_failed = $ST.stats.events_failed + 1
+  $ST.subs[$sid].fails = $ST.subs[$sid].fails + 1
+  if $outcome == "down" or $ST.subs[$sid].fails >= $EVENT_FAILS then $ST.subs = delete($ST.subs, $sid) end
+end
+
+fn enqueue($sid, $vars)
+  if length($ST.outbox) >= $OUTBOX_MAX then
+    -- a stuck sender: drop the oldest rather than grow without bound
+    $ST.outbox = slice($ST.outbox, 1, length($ST.outbox))
+    $ST.stats.events_failed = $ST.stats.events_failed + 1
+  end
+  $ST.outbox = concat($ST.outbox, [{sid: $sid, vars: $vars}])
+end
+
+-- Send everything queued, in order. A caller that finds a sender already
+-- running returns at once: that sender picks up what it queued.
+fn drain()
+  if $ST.sending then return end
+  $ST.sending = true
+  try
+    while length($ST.outbox) > 0
+      $e = $ST.outbox[0]
+      $ST.outbox = slice($ST.outbox, 1, length($ST.outbox))
+      deliver_now($e.sid, $e.vars)
+    end
+  catch $m
+    eprint("dlnad: event delivery failed: " .. to_string($m))
+  end
+  $ST.sending = false
 end
 
 fn event_values($pairs)
@@ -311,17 +352,23 @@ fn event_values($pairs)
     source_protocol_info: $D.source_protocol_info()}
 end
 
--- Initial events for subscriptions accepted since the last call.
+-- Queue the initial event for subscriptions accepted since the last call
+-- (their responses have gone out), then send.
 fn send_initial()
   while length($ST.initial) > 0
     $sid = $ST.initial[0]
     $ST.initial = slice($ST.initial, 1, length($ST.initial))
-    if $ST.subs[$sid] != nil then deliver($sid, $G.initial_vars($ST.subs[$sid].svc, event_values([]))) end
+    if $ST.subs[$sid] != nil then
+      $ST.subs[$sid].ready = true
+      enqueue($sid, $G.initial_vars($ST.subs[$sid].svc, event_values([])))
+    end
   end
+  drain()
 end
 
--- Raise SystemUpdateID and tell every ContentDirectory subscriber, with the
--- changed containers and their own update ids. $rels: container rel paths.
+-- Raise SystemUpdateID and queue an event for every ContentDirectory
+-- subscriber, with the changed containers and their own update ids. $rels:
+-- container rel paths. The caller sends with drain().
 fn content_changed($rels)
   $ST.update_id = $G.next_update_id($ST.update_id, time())
   $pairs = []
@@ -333,7 +380,8 @@ fn content_changed($rels)
   expire_subs()
   $vars = [["SystemUpdateID", to_string($ST.update_id)], ["ContainerUpdateIDs", $G.container_update_ids($pairs)]]
   for $sid in keys($ST.subs)
-    if $ST.subs[$sid] != nil and $ST.subs[$sid].svc == "ContentDirectory" then deliver($sid, $vars) end
+    -- a subscription not yet ready gets the current values in its initial event
+    if $ST.subs[$sid] != nil and $ST.subs[$sid].svc == "ContentDirectory" and $ST.subs[$sid].ready then enqueue($sid, $vars) end
   end
 end
 
@@ -470,6 +518,7 @@ on fs.changed async
       $ST.dirty = {}
       $ST.stats.changes = $ST.stats.changes + 1
       content_changed($batch)
+      drain()
     end
   catch $m
     eprint("dlnad: change event failed: " .. to_string($m))
@@ -566,7 +615,7 @@ on dlnad.status desc "Identity, config, SSDP state and counters."
   reply(0, json_encode({name: $ST.id.name, uuid: $ST.id.uuid, location: $LOCATION, media_root: $C.media_root,
     listen: $C.listen, port: $C.port, ssdp: $SSDP_NOTE, renderers: $C.renderers, announce_s: $C.announce_s,
     max_age: $C.max_age, connections: length(keys($ST.conns)), watch: $WATCH_NOTE, system_update_id: $ST.update_id,
-    subscriptions: length(keys($ST.subs)), stats: $ST.stats}))
+    subscriptions: length(keys($ST.subs)), queued_events: length($ST.outbox), stats: $ST.stats}))
 end
 
 on dlnad.list desc "One container's children as data. Body {id (default \"0\"), start, count}."
@@ -637,5 +686,7 @@ end
 
 on dlnad.notify desc "Raise SystemUpdateID and notify every ContentDirectory subscriber now (renderers refresh their lists)." async
   content_changed([""])
-  reply(0, json_encode({system_update_id: $ST.update_id, subscriptions: length(keys($ST.subs)), stats: $ST.stats}))
+  -- Reply before sending: the caller should not wait on a renderer.
+  reply(0, json_encode({system_update_id: $ST.update_id, subscriptions: length(keys($ST.subs)), queued_events: length($ST.outbox)}))
+  drain()
 end

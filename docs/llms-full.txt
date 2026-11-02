@@ -3558,8 +3558,8 @@ with its own update id). Hidden paths do not count, so a syncthing download
 restart never looks like an older library. Subscriptions live in memory: after
 a restart a renderer's renewal is refused (412) and it subscribes again.
 Subscriptions last at most 30 minutes between renewals; 32 are held at once;
-one whose callback fails three sends in a row is dropped (the TV is off and
-will subscribe again when it wakes). Callbacks must be `http://` to an IPv4
+one whose callback cannot be reached, or refuses three events in a row, is
+dropped (the TV is off and will subscribe again when it wakes). Callbacks must be `http://` to an IPv4
 address. `dlnad.notify` sends an event by hand.
 
 ## Configuration
@@ -3638,8 +3638,10 @@ Install the component with `mix tools/component_install.mix dlnad`.
   `SystemUpdateID` always moves. Only ContentDirectory has changing evented
   values; the ConnectionManager and registrar subscriptions get their initial
   event and nothing after.
-- A `NOTIFY` connects with a two-second limit, and that wait holds up the
-  service: a subscriber that has vanished costs at most three such waits.
+- A `NOTIFY` connects with a one-second limit, and that wait holds up the
+  whole service (Mix's `tcp_connect` does not yield yet). A subscriber that
+  cannot be reached is dropped on the first failed connect, so it costs one
+  such wait. Events go out one at a time, in order.
 - Sorting is fixed ascending (folders first, then files, each by name).
   SortCriteria is ignored and GetSortCapabilities returns empty SortCaps.
 - The SSDP and HTTP event commands (`dlnad.http.*`, `dlnad.ssdp`) are visible
