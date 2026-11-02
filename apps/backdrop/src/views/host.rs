@@ -246,7 +246,12 @@ impl<V: View> Host<V> {
         });
         if fallback {
             ui.label(strings.get("train-fallback"));
-            let palette = [ui.visuals().selection.bg_fill, ui.visuals().warn_fg_color, ui.visuals().hyperlink_color, ui.visuals().error_fg_color];
+            let palette = [
+                ui.visuals().selection.bg_fill,
+                ui.visuals().warn_fg_color,
+                ui.visuals().hyperlink_color,
+                ui.visuals().error_fg_color,
+            ];
             egui_plot::Plot::new("train-2d")
                 .height((ui.available_height() - 210.).max(80.))
                 .include_x(-8.)

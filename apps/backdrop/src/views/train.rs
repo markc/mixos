@@ -162,10 +162,24 @@ impl Train {
             for job in jobs {
                 let spec = decoded(&job["spec"]);
                 label.push('\n');
-                label.push_str(&STRINGS.with(|strings| strings.with("train-worker-job", &[
-                    ("label", &ellipsis(spec["label"].as_str().unwrap_or("?"), 28)),
-                    ("minutes", &format!("{:.0}", (now - job["started"].as_f64().unwrap_or(now)).max(0.) / 60.)),
-                ])));
+                label.push_str(&STRINGS.with(|strings| {
+                    strings.with(
+                        "train-worker-job",
+                        &[
+                            (
+                                "label",
+                                &ellipsis(spec["label"].as_str().unwrap_or("?"), 28),
+                            ),
+                            (
+                                "minutes",
+                                &format!(
+                                    "{:.0}",
+                                    (now - job["started"].as_f64().unwrap_or(now)).max(0.) / 60.
+                                ),
+                            ),
+                        ],
+                    )
+                }));
             }
             let load = decoded(&slot["snapshot"])["load1"].as_f64().unwrap_or(0.) as f32;
             out.push(Block {
