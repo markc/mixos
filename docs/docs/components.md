@@ -182,7 +182,7 @@ checked separately by the layering gate.
 | [world](https://github.com/markc/mixos/blob/main/services/compd/crates/world/Cargo.toml) | compd | service | desktop | none | 0.1.2 |
 | [x11-wm](https://github.com/markc/mixos/blob/main/services/compd/crates/x11-wm/Cargo.toml) | compd | service | desktop | none | 0.1.2 |
 | [daylight](https://github.com/markc/mixos/blob/main/services/daylight/component.mx) | daylight | service | desktop | public | 0.1.0 |
-| [dlnad](https://github.com/markc/mixos/blob/main/services/dlnad/component.mx) | dlnad | service | core | public | 0.1.0 |
+| [dlnad](https://github.com/markc/mixos/blob/main/services/dlnad/component.mx) | dlnad | service | core | public | 0.1.1 |
 | [dnsd](https://github.com/markc/mixos/blob/main/services/dnsd/Cargo.toml) | dnsd | service | core | public | 0.3.4 |
 | [dns-core](https://github.com/markc/mixos/blob/main/services/dnsd/crates/dns-core/Cargo.toml) | dnsd | service | core | none | 0.1.2 |
 | [editd](https://github.com/markc/mixos/blob/main/services/editd/Cargo.toml) | editd | service | core | public | 0.3.0 |
