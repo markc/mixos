@@ -48,7 +48,7 @@ impl Snapshot {
         if topic == "pipeline.alerts" {
             if let Some(alerts) = body["alerts"].as_array() {
                 self.alerts.clear();
-                for alert in alerts {
+                for alert in alerts.iter().filter(|alert| alert.is_object()) {
                     let mut alert = alert.clone();
                     alert["at"] = body["at"].clone();
                     self.alert("pipeline.alert", &alert);
@@ -179,6 +179,7 @@ impl State {
                 {
                     self.snapshot = Arc::new(Snapshot {
                         hours,
+                        alerts: self.snapshot.alerts.clone(),
                         ..Default::default()
                     });
                 }
