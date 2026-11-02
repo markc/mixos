@@ -1,0 +1,36 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Run only through cbc-build on the pushed lab commit.
+$failed = false
+fn checked($argv)
+  print("COMMAND " .. join($argv, " "))
+  $r = run_argv($argv, {timeout: 7200, max_output: 16777216})
+  print($r.stdout)
+  print($r.stderr)
+  print("COMMAND_RC=" .. $r.exit_code)
+  if not $r.ok then raise("MEASURE_FAILED", join($argv, " ")) end
+end
+checked(["cargo", "build", "-p", "system", "--release"])
+-- Snapshot before building mixd: never measure a workspace-unified mix.
+$out = "/tmp/mixd-measure-" .. pid()
+mkdir($out)
+checked(["cp", "target/release/mix", $out .. "/mix"])
+checked(["cargo", "build", "-p", "mixd", "--release"])
+checked(["cp", "target/release/mixd", $out .. "/mixd"])
+checked(["stat", "-c", "%n %s bytes", $out .. "/mix", $out .. "/mixd"])
+checked(["ldd", $out .. "/mix"])
+checked(["ldd", $out .. "/mixd"])
+$a = run_argv([$out .. "/mix", "builtins", "--names"])
+$b = run_argv([$out .. "/mixd", "run", "builtins", "--names"])
+if not $a.ok or not $b.ok then raise("BUILTINS", "listing failed") end
+print("BUILTIN_NAMES_EQUAL=" .. to_string($a.stdout == $b.stdout))
+print("BUILTIN_NAMES_COUNT=" .. len(split(trim($a.stdout), "\n")))
+for $bin in [$out .. "/mix", $out .. "/mixd"]
+  print("FOREIGN_GATE " .. $bin)
+  $r = run_argv(["/opt/mixos/bin/mix", "tools/foreign_gate.mix", "--elf", $bin], {timeout: 900, max_output: 16777216})
+  print($r.stdout)
+  print($r.stderr)
+  print("FOREIGN_GATE_RC=" .. $r.exit_code)
+end
+-- The job owns these changes, so return the worker checkout clean.
+print(run_argv(["git", "diff", "--", "Cargo.lock"]).stdout)
+print(run_argv(["git", "checkout", "-q", "--", "Cargo.lock"]))

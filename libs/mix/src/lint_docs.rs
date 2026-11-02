@@ -210,6 +210,11 @@ pub const LINT_DOCS: &[LintDoc] = &[
         detail: "The runtime owns $event, $rc, $result and $reply. They cannot be declared global (GLOBAL_RUNTIME_NAME).",
     },
     LintDoc {
+        code: "MIX-E1513",
+        summary: "server builtin needs mixd",
+        detail: "This binary lacks net-server. tcp_listen, tcp_accept, udp_listen and http_serve require server capability. Run it under: mixd run <script>.",
+    },
+    LintDoc {
         code: "MIX-D3023",
         summary: "global declaration outside a function",
         detail: "At program or module top level global is a no-op. In a handler it explicitly routes writes, including creation of new names, to the shared program-global frame.",
