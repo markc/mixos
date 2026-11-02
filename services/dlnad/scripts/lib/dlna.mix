@@ -1,8 +1,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
 -- dlna: the UPnP AV / DLNA wire formats dlnad serves, as pure functions over
--- a media directory. Shared by the dlnad citizen (SSDP, Bus) and the webd
--- handlers (description, SOAP control), so both sides speak one dialect.
+-- a media directory, used by the dlnad citizen and its offline tests.
 --
 -- Object ids: "0" is the root; every other object is "/" + its path relative
 -- to the media root ("/Show/Show.S01E01.mkv"). They are stateless, so there
@@ -23,7 +22,7 @@ $MIME = {
   jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", gif: "image/gif", webp: "image/webp"
 }
 
--- Byte-range seek only (OP=01): webd serves Range, not time seek.
+-- Byte-range seek only (OP=01): dlnad serves Range, not time seek.
 $DLNA_FEATURES = "DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000"
 
 $NS_DIDL = "xmlns=\"urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:upnp=\"urn:schemas-upnp-org:metadata-1-0/upnp/\" xmlns:dlna=\"urn:schemas-dlna-org:metadata-1-0/\" xmlns:sec=\"http://www.sec.co.kr/\""
@@ -310,7 +309,7 @@ fn control($service, $headers, $body, $ctx)
       return {status: 200, body: soap_response("ContentDirectory", $action, [["SearchCaps", ""]])}
     end
     if $action == "GetSortCapabilities" then
-      return {status: 200, body: soap_response("ContentDirectory", $action, [["SortCaps", "dc:title"]])}
+      return {status: 200, body: soap_response("ContentDirectory", $action, [["SortCaps", ""]])}
     end
   end
   if $service == "ConnectionManager" then

@@ -1,0 +1,42 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Resource policy shared by the citizen and offline tests.
+$MAX_RENDERERS = 256
+
+fn validate_limits($c)
+  for $key in ["announce_s", "max_age", "max_conns"]
+    $v = $c[$key]
+    if type($v) != "number" or $v <= 0 then
+      raise("CONFIG", $key .. " must be a positive number")
+    end
+    if $key == "max_conns" and $v != floor($v) then
+      raise("CONFIG", "max_conns must be a positive integer")
+    end
+  end
+  return $c
+end
+
+-- nil means refuse when full, or no eviction needed when below the limit.
+fn oldest_idle($conns)
+  $oldest = nil
+  for $src in keys($conns)
+    $c = $conns[$src]
+    if not $c.busy and ($oldest == nil or $c.opened < $conns[$oldest].opened) then $oldest = $src end
+  end
+  return $oldest
+end
+
+fn admission($conns, $max)
+  if length(keys($conns)) < $max then return {accept: true, evict: nil} end
+  $idle = oldest_idle($conns)
+  return {accept: $idle != nil, evict: $idle}
+end
+
+-- order is a monotonic observation sequence, independent of wall-clock jumps.
+fn remember($seen, $peer, $entry)
+  $seen[$peer] = $entry
+  if length(keys($seen)) > $MAX_RENDERERS then
+    $oldest = sort_by(keys($seen), fn($k) = $seen[$k].order)[0]
+    $seen = delete($seen, $oldest)
+  end
+  return $seen
+end

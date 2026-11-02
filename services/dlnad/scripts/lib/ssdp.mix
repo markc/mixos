@@ -1,9 +1,9 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
 -- ssdp: dlnad's discovery socket (UDP 239.255.255.250:1900 on one
--- interface). Kept apart from dlnad.mix so the HTTP side runs on a mix that
--- predates the UDP event sources (mix 0.118.0: udp_listen, udp_on, udp_send_via): dlnad requires this module
--- only when SSDP is enabled.
+-- interface). Kept apart for discovery transport ownership; dlnad requires
+-- this module only when SSDP is enabled. HTTP streaming also requires the
+-- offset form of read_file_bytes, so disabling SSDP does not lower the minimum.
 --
 -- Renderers find a server two ways: they M-SEARCH (we answer unicast from
 -- :1900) and they cache NOTIFY ssdp:alive adverts until max-age runs out.

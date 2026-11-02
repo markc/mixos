@@ -124,6 +124,20 @@ fn http_date($t)
   return date_format($t, "%a, %d %b %Y %H:%M:%S GMT", {utc: true})
 end
 
+-- Media response headers; socket ownership and streaming stay in dlnad.mix.
+fn media_headers($mime, $size, $range, $features)
+  $mode = if starts_with($mime, "image/") then "Interactive" else "Streaming" end
+  $hs = [["Content-Type", $mime], ["Accept-Ranges", "bytes"], ["transferMode.dlna.org", $mode]]
+  if $mime != "text/srt" then push($hs, ["contentFeatures.dlna.org", $features]) end
+  if $range != nil then
+    push($hs, ["Content-Range", "bytes " .. to_string($range.start) .. "-" .. to_string($range.end) .. "/" .. to_string($size)])
+    push($hs, ["Content-Length", $range.end - $range.start + 1])
+  else
+    push($hs, ["Content-Length", $size])
+  end
+  return $hs
+end
+
 -- A response head. $headers a list of [name, value] pairs.
 fn response_head($status, $headers)
   $o = "HTTP/1.1 " .. to_string($status) .. " " .. ($REASONS[to_string($status)] ?? "Status") .. "\r\n"
