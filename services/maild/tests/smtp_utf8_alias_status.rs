@@ -865,7 +865,8 @@ async fn wait_delivered(built: &BuiltMaild, id: uuid::Uuid) -> Result<Value> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn legacy_queue_ids_migrate_and_second_message_transmits_without_retagging_first()
+#[ignore = "slow: nightly"]
+async fn slow_nightly_legacy_queue_ids_migrate_and_second_message_transmits_without_retagging_first()
 -> Result<()> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let peer_addr = listener.local_addr()?;
@@ -1088,7 +1089,9 @@ async fn idn_alias_spelling_cannot_be_shadowed_by_account_creation() -> Result<(
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn local_fanout_defers_only_failed_targets_and_retries_without_duplicates() -> Result<()> {
+#[ignore = "slow: nightly"]
+async fn slow_nightly_local_fanout_defers_only_failed_targets_and_retries_without_duplicates()
+-> Result<()> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let tmp = tempfile::tempdir()?;
     let (built, _) = fixture(&tmp, Some(listener.local_addr()?)).await?;
@@ -1212,7 +1215,8 @@ async fn local_fanout_defers_only_failed_targets_and_retries_without_duplicates(
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn local_alias_retry_runs_sieve_and_transmits_vacation() -> Result<()> {
+#[ignore = "slow: nightly"]
+async fn slow_nightly_local_alias_retry_runs_sieve_and_transmits_vacation() -> Result<()> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let peer_addr = listener.local_addr()?;
     let peer = tokio::spawn(async move {

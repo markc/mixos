@@ -648,7 +648,8 @@ mod tests {
     /// Every scheme, in every style (its own and the four), mode and
     /// contrast, compiles with all its chrome roles and a style.
     #[test]
-    fn every_scheme_style_mode_and_contrast_compiles() {
+    #[ignore = "slow: nightly"]
+    fn slow_nightly_every_scheme_style_mode_and_contrast_compiles() {
         use crate::{Contrast, DesignContext, Mode, Scheme, Style};
         let document = embedded();
         let styles = std::iter::once(None).chain(Style::ALL.into_iter().map(Some));

@@ -341,7 +341,8 @@ fn call_requires_offline_for_writes_and_always_refuses_background() {
 }
 
 #[test]
-fn desktop_package_carries_indexd_and_owned_units() {
+#[ignore = "slow: nightly"]
+fn slow_nightly_desktop_package_carries_indexd_and_owned_units() {
     let mix = std::env::var("MIXOS_TEST_MIX").unwrap_or_else(|_| "/opt/mixos/bin/mix".into());
     let output = std::process::Command::new(mix)
         .args([

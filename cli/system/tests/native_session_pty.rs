@@ -619,7 +619,8 @@ fn mix_child_bootstrap_proves_end_to_end() {
 }
 
 #[test]
-fn same_mix_child_resumes_and_reenrols_after_broker_bounce() {
+#[ignore = "slow: nightly"]
+fn slow_nightly_same_mix_child_resumes_and_reenrols_after_broker_bounce() {
     for editor in ["owned", "legacy"] {
         same_mix_child_scenarios(editor);
     }
@@ -3028,7 +3029,8 @@ fn p4_termination_is_hard_and_the_outcome_names_the_policy() {
 /// Bounds and refusals: nothing is silent, nothing wedges, and the deferrals
 /// are advertised rather than left to look like typos.
 #[test]
-fn p4_bounds_are_reported_and_refusals_leave_no_trace() {
+#[ignore = "slow: nightly"]
+fn slow_nightly_p4_bounds_are_reported_and_refusals_leave_no_trace() {
     let _fixture = fixture_guard();
     runtime().block_on(async {
         let mut f = stage_d_fixture("owned").await;

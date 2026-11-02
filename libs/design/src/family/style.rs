@@ -1538,7 +1538,8 @@ mod tests {
     /// retired `base` token) compiles in every scheme and mode, with the
     /// same styles as today's design, and takes the style axis.
     #[test]
-    fn a_design_from_before_the_axes_still_compiles() {
+    #[ignore = "slow: nightly"]
+    fn slow_nightly_a_design_from_before_the_axes_still_compiles() {
         let before = crate::parse_design_source(
             SourceIdentity::new("before-axes"),
             include_str!("../../tests/fixtures/revision-1-before-axes.theme.conf.mix"),
@@ -1635,7 +1636,8 @@ mod tests {
     }
 
     #[test]
-    fn modern_schemes_compile_in_every_style_and_old_sources_take_the_palette() {
+    #[ignore = "slow: nightly"]
+    fn slow_nightly_modern_schemes_compile_in_every_style_and_old_sources_take_the_palette() {
         assert_eq!((Scheme::ALL.len(), Style::ALL.len()), (12, 6));
         let document = embedded();
         let before = crate::parse_design_source(
