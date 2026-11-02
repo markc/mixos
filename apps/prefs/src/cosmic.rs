@@ -1247,13 +1247,13 @@ pub(crate) fn locales() -> &'static [String] {
 }
 
 pub(crate) fn parse_locales(text: &str) -> Vec<String> {
-        let names: std::collections::BTreeSet<String> = text
-            .lines()
-            .filter(|l| !l.starts_with('#'))
-            .filter_map(|l| l.split_whitespace().next())
-            .map(str::to_owned)
-            .collect();
-        names.into_iter().collect()
+    let names: std::collections::BTreeSet<String> = text
+        .lines()
+        .filter(|l| !l.starts_with('#'))
+        .filter_map(|l| l.split_whitespace().next())
+        .map(str::to_owned)
+        .collect();
+    names.into_iter().collect()
 }
 
 /// The icon themes installed under the XDG data directories, by directory
