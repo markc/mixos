@@ -115,7 +115,7 @@ impl Engine {
         self.nav.page = id;
         if id == "wallpaper" {
             // The folder may have changed since it was read.
-            self.rescan_gallery();
+            self.enter_gallery();
         }
         self.nav.drawer = row.and_then(|r| page.drawer_of(r)).map(|d| d.id);
         // A hidden row has nowhere to land: open the page only.

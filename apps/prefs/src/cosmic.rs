@@ -1203,7 +1203,7 @@ pub fn pick_list(ui: &Ui, list: PickList) -> Vec<String> {
 /// The IANA zones in the zoneinfo database, read once. The `posix` and
 /// `right` copies and the lower-case data files are not zones, so they stay
 /// out (every zone name starts with a capital).
-fn time_zones() -> &'static [String] {
+pub(crate) fn time_zones() -> &'static [String] {
     static ZONES: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
     ZONES.get_or_init(|| {
         let mut names = std::collections::BTreeSet::new();
@@ -1238,10 +1238,15 @@ fn collect_zones(
 
 /// The locales the system supports (glibc's `SUPPORTED` list), read once,
 /// each by its name as written (`en_AU.UTF-8`).
-fn locales() -> &'static [String] {
+pub(crate) fn locales() -> &'static [String] {
     static LOCALES: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
     LOCALES.get_or_init(|| {
         let text = std::fs::read_to_string("/usr/share/i18n/SUPPORTED").unwrap_or_default();
+        parse_locales(&text)
+    })
+}
+
+pub(crate) fn parse_locales(text: &str) -> Vec<String> {
         let names: std::collections::BTreeSet<String> = text
             .lines()
             .filter(|l| !l.starts_with('#'))
@@ -1249,7 +1254,6 @@ fn locales() -> &'static [String] {
             .map(str::to_owned)
             .collect();
         names.into_iter().collect()
-    })
 }
 
 /// The icon themes installed under the XDG data directories, by directory
