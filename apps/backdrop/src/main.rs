@@ -31,8 +31,6 @@ Usage: backdrop [OPTIONS]\n\
   --help             this text\n\
 Bus: backdrop.ping, backdrop.state, backdrop.set, backdrop.next (docs/backdrop/README.md).";
 
-/// The largest document read (strict data: a few kilobytes in practice).
-
 #[derive(Debug, Default)]
 struct Args {
     probe: bool,
