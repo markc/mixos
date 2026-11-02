@@ -196,11 +196,11 @@ pub(crate) fn as_signed_index(context: &str, value: f64) -> MixResult<i64> {
     Ok(NumericDomain::SignedIndex.validate(context, value)? as i64)
 }
 
-pub(crate) fn as_exact_integer(context: &str, value: f64, min: i64, max: i64) -> MixResult<i64> {
+pub fn as_exact_integer(context: &str, value: f64, min: i64, max: i64) -> MixResult<i64> {
     Ok(NumericDomain::ExactInteger { min, max }.validate(context, value)? as i64)
 }
 
-pub(crate) fn as_duration(context: &str, value: f64) -> MixResult<std::time::Duration> {
+pub fn as_duration(context: &str, value: f64) -> MixResult<std::time::Duration> {
     let value = NumericDomain::Duration.validate(context, value)?;
     std::time::Duration::try_from_secs_f64(value)
         .map_err(|_| out_of_range(context, value, "a representable duration", Some(0.0), None))

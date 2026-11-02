@@ -85,9 +85,7 @@ mime = ["dep:mimedb"]
 # `{insecure: true}` arm's no-verify TLS config (self-signed device certs
 # — the case that motivated the builtin).
 # socket2 (already in the workspace lock) gives tcp_listen its `{backlog}`.
-ws = ["net-client", "net-server"]
-server = ["net-server"]
-net-server = ["net-client", "dep:socket2"]
+ws = ["net-client"]
 net-client = ["dep:socket2", "dep:tungstenite", "dep:rustls", "dep:webpki-roots", "tokio/net"]
 # `tar_list` / `tar_unpack` / `tar_pack` builtins — read and write archives
 # without an external tar or zstd binary, so a verified artifact can be
@@ -200,6 +198,7 @@ mimedb = { workspace = true, optional = true }
 hickory-proto = { version = "0.26.0-alpha.1", optional = true, default-features = false, features = ["std"] }
 
 [dev-dependencies]
+mix-server = { path = "../mix-server" }
 # `derive` lives here, not on the `serde` feature: the crate's own
 # `serde_de` unit tests use `#[derive(Deserialize)]` test types, but
 # downstream consumers of the bridge don't need this crate to pull in

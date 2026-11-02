@@ -168,7 +168,7 @@ pub(crate) enum SocketNext {
 }
 
 #[derive(Default)]
-pub(crate) struct Queue {
+pub struct Queue {
     pending: Mutex<Pending>,
     ready: Notify,
     pub directories: AtomicUsize,
@@ -752,7 +752,7 @@ pub(crate) fn event(command: &str, body: serde_json::Value) -> IncomingEvent {
 
 /// Native refusals use the existing exception path (nonzero execution RC), with
 /// error_code/message available in the structured catch value.
-pub(crate) fn refusal(code: &str, message: impl Into<String>) -> MixError {
+pub fn refusal(code: &str, message: impl Into<String>) -> MixError {
     MixError::structured(code, message)
 }
 
@@ -1224,7 +1224,7 @@ impl NativeEvents {
     /// `tcp_on` on a tcp_listen listener: move it into an accept reader.
     /// Each accepted connection becomes a plain handle owned by this
     /// generation and arrives as one `accepted` record.
-    #[cfg(feature = "net-server")]
+    #[cfg(feature = "net-client")]
     pub fn tcp_on_listener(&mut self, listener_id: u64, command: String) -> MixResult<String> {
         self.ensure_open()?;
         self.check_socket_limit()?;
@@ -1234,7 +1234,7 @@ impl NativeEvents {
             crate::builtins::socket_sources::KIND_TCP_ACCEPT,
             command,
             |queue, id, _command| {
-                crate::builtins::socket_sources::subscribe_listener(queue, id, listener_id, owned)
+                crate::extensions::sockets().ok_or_else(|| crate::extensions::needs_host("tcp_on"))?.subscribe(queue, id, listener_id, owned)
             },
         )
     }
@@ -1247,7 +1247,7 @@ impl NativeEvents {
 
     /// This generation's TCP owner, for an accept that must record
     /// ownership before it returns (the Class C form).
-    #[cfg(feature = "net-server")]
+    #[cfg(feature = "net-client")]
     pub(crate) fn tcp_owner(&self) -> Arc<crate::builtins::socket_sources::TcpOwner> {
         self.tcp_owned.clone()
     }

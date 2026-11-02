@@ -11,6 +11,9 @@ pub mod continuation;
 mod desktop_events;
 pub mod error;
 pub mod evaluator;
+pub mod extensions;
+#[cfg(feature = "net-client")]
+pub mod server_api;
 pub mod fd_hygiene;
 #[cfg(unix)]
 mod fifo_io;

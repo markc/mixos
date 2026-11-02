@@ -35,7 +35,8 @@ dnsd = ["dep:dnsd"]
 # One entry per personality. Each component's program is its own library's
 # `main`; this package adds only the dispatcher and the global allocator.
 [dependencies]
-mix-shell = { path = "../mix-shell", features = ["server"] }
+mix-shell = { path = "../mix-shell" }
+mix-server = { path = "../../libs/mix-server" }
 noded = { path = "../../services/noded", optional = true }
 monitord = { path = "../../services/monitord", optional = true }
 maild = { path = "../../services/maild", optional = true }

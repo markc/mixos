@@ -6,6 +6,7 @@ use std::{env, ffi::OsStr, os::unix::process::CommandExt, path::Path, process::{
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 fn main() -> ExitCode {
+    mix_server::register().expect("server family");
     let args: Vec<_> = env::args_os().collect();
     let name = Path::new(&args[0]).file_name().unwrap_or(OsStr::new("")).to_string_lossy();
     match name.as_ref() {

@@ -2099,8 +2099,7 @@ fn check_expr(
             // embedder's suppress_name_checks) — silent, as before.
         }
         Expr::FunctionCall { name, args } => {
-            #[cfg(not(feature = "net-server"))]
-            if matches!(name.as_str(), "tcp_listen" | "tcp_accept" | "udp_listen" | "http_serve") {
+            if crate::extensions::SERVER_NAMES.contains(&name.as_str()) && !crate::extensions::available(name) {
                 a.diagnostics.push(diag(ctx, "MIX-E1513", Severity::Error, line,
                     format!("{name}() needs mixd server capability"),
                     Some("run it under: mixd run <script>".to_string())));

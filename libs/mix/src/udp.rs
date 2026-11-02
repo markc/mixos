@@ -4,7 +4,7 @@ use crate::{error::MixResult, native_events::refusal, value::Value};
 use std::net::{Ipv4Addr, UdpSocket};
 use std::os::fd::AsRawFd;
 
-pub(crate) fn ip(v: &Value) -> MixResult<Ipv4Addr> {
+pub fn ip(v: &Value) -> MixResult<Ipv4Addr> {
     match v {
         Value::String(s) => s.parse().map_err(|_| {
             refusal(
@@ -15,7 +15,7 @@ pub(crate) fn ip(v: &Value) -> MixResult<Ipv4Addr> {
         _ => Err(refusal("UDP_ARGUMENT", "expected an IPv4 address string")),
     }
 }
-pub(crate) fn io(e: std::io::Error) -> crate::error::MixError {
+pub fn io(e: std::io::Error) -> crate::error::MixError {
     let code = match e.kind() {
         std::io::ErrorKind::AddrInUse => "UDP_ADDR_IN_USE",
         std::io::ErrorKind::PermissionDenied => "UDP_PERMISSION",
@@ -41,7 +41,7 @@ fn option<T>(sock: &UdpSocket, name: i32, value: &T, level: i32) -> MixResult<()
         Ok(())
     }
 }
-pub(crate) fn interface(sock: &UdpSocket, ip: Ipv4Addr) -> MixResult<()> {
+pub fn interface(sock: &UdpSocket, ip: Ipv4Addr) -> MixResult<()> {
     option(
         sock,
         libc::IP_MULTICAST_IF,
@@ -51,7 +51,7 @@ pub(crate) fn interface(sock: &UdpSocket, ip: Ipv4Addr) -> MixResult<()> {
         libc::IPPROTO_IP,
     )
 }
-pub(crate) fn ttl(v: &Value) -> MixResult<u32> {
+pub fn ttl(v: &Value) -> MixResult<u32> {
     if let Value::Number(n) = v
         && n.is_finite()
         && n.fract() == 0.0
@@ -76,7 +76,7 @@ pub(crate) fn payload(v: &Value) -> MixResult<Vec<u8>> {
         )),
     }
 }
-pub(crate) fn map(v: Option<&Value>) -> MixResult<Option<&indexmap::IndexMap<String, Value>>> {
+pub fn map(v: Option<&Value>) -> MixResult<Option<&indexmap::IndexMap<String, Value>>> {
     match v {
         None | Some(Value::Nil) => Ok(None),
         Some(Value::Map(m)) => Ok(Some(m)),
@@ -130,7 +130,7 @@ pub(crate) mod handles {
     pub(crate) struct Socket {
         pub sock: UdpSocket,
         pub subscribed: std::sync::atomic::AtomicBool,
-        _permit: TcpPermit,
+        pub(crate) _permit: TcpPermit,
     }
     pub(crate) static MAP: LazyLock<Mutex<HashMap<u64, Arc<Socket>>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
@@ -169,108 +169,7 @@ pub(crate) mod handles {
         }
         Ok(map.remove(&id).is_some())
     }
-    #[cfg(feature = "net-server")]
-    pub(crate) fn listen(args: Vec<Value>) -> MixResult<Option<Value>> {
-        let host = ip(&args[0])?;
-        let port = match args[1] {
-            Value::Number(n)
-                if n.is_finite() && n.fract() == 0.0 && (0.0..=65535.0).contains(&n) =>
-            {
-                n as u16
-            }
-            _ => {
-                return Err(refusal(
-                    "UDP_ARGUMENT",
-                    "port must be an integer from 0 to 65535",
-                ));
-            }
-        };
-        let mut iface = Ipv4Addr::UNSPECIFIED;
-        let mut reuse = false;
-        let mut reuse_port = false;
-        let mut groups = Vec::new();
-        let mut hops = None;
-        let mut loopback = None;
-        if let Some(m) = map(args.get(2))? {
-            for (k, v) in m {
-                match k.as_str() {
-                    "iface" => iface = ip(v)?,
-                    "join" => {
-                        let vs = match v {
-                            Value::List(xs) => xs.as_slice(),
-                            _ => std::slice::from_ref(v),
-                        };
-                        for x in vs {
-                            let g = ip(x)?;
-                            if !g.is_multicast() {
-                                return Err(refusal(
-                                    "UDP_ARGUMENT",
-                                    "join requires multicast IPv4 groups",
-                                ));
-                            }
-                            groups.push(g);
-                        }
-                    }
-                    "reuse" | "reuse_port" | "loop" => {
-                        let Value::Bool(b) = v else {
-                            return Err(refusal("UDP_ARGUMENT", format!("{k} must be bool")));
-                        };
-                        if k == "reuse" {
-                            reuse = *b;
-                        } else if k == "reuse_port" {
-                            reuse_port = *b;
-                        } else {
-                            loopback = Some(*b);
-                        }
-                    }
-                    "ttl" => hops = Some(ttl(v)?),
-                    _ => return Err(refusal("UDP_ARGUMENT", format!("unknown UDP option '{k}'"))),
-                }
-            }
-        }
-        let permit = TcpPermit::acquire("udp_listen")?;
-        // socket2 handles native sockaddr layouts (including BSD sin_len)
-        // and descriptor inheritance portably. Already provided by ws.
-        let sock: UdpSocket = socket2::Socket::new(
-            socket2::Domain::IPV4,
-            socket2::Type::DGRAM,
-            Some(socket2::Protocol::UDP),
-        )
-        .map_err(io)?
-        .into();
-        if reuse {
-            option(&sock, libc::SO_REUSEADDR, &1i32, libc::SOL_SOCKET)?;
-        }
-        if reuse_port {
-            option(&sock, libc::SO_REUSEPORT, &1i32, libc::SOL_SOCKET)?;
-        }
-        let addr = std::net::SocketAddrV4::new(host, port);
-        socket2::SockRef::from(&sock)
-            .bind(&addr.into())
-            .map_err(io)?;
-        interface(&sock, iface)?;
-        if let Some(n) = hops {
-            sock.set_multicast_ttl_v4(n).map_err(io)?;
-        }
-        if let Some(b) = loopback {
-            sock.set_multicast_loop_v4(b).map_err(io)?;
-        }
-        for g in groups {
-            sock.join_multicast_v4(&g, &iface).map_err(io)?;
-        }
-        sock.set_nonblocking(true).map_err(io)?;
-        let id =
-            crate::builtins::tcp_client::NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        MAP.lock().unwrap().insert(
-            id,
-            Arc::new(Socket {
-                sock,
-                subscribed: false.into(),
-                _permit: permit,
-            }),
-        );
-        Ok(Some(Value::Number(id as f64)))
-    }
+
 }
 
 #[cfg(all(test, feature = "net-client", target_os = "linux"))]

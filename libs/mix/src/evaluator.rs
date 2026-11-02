@@ -13399,8 +13399,7 @@ impl Evaluator {
         args: &'a mut [Value],
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = MixResult<Option<Value>>> + 'a>> {
         Box::pin(async move {
-            #[cfg(not(feature = "net-server"))]
-            if name == "tcp_accept" {
+            if name == "tcp_accept" && !crate::extensions::available(name) {
                 return Err(crate::native_events::refusal("NEEDS_MIXD", "tcp_accept() needs server capability; run it under: mixd run <script>"));
             }
             if let Some(result) = self.eval_socket_source(name, &*args).await? {
@@ -13428,23 +13427,13 @@ impl Evaluator {
             // blocking poll: like sleep(), the wait then pends, so the
             // shell's SIGTERM and Ctrl-C select arms can cancel it. Plain
             // and Class S waits also recheck the interrupt flag.
-            #[cfg(feature = "net-server")]
             if name == "tcp_accept" && matches!(eval_args.first(), Some(Value::Number(_))) {
                 self.check_capability(name)?;
                 self.check_builtin_arity(name, eval_args.len())?;
-                let (listener, deadline) =
-                    crate::builtins::socket_sources::prepare_accept(eval_args)?;
-                // Ownership is recorded inside the accept future, so a
-                // task cancelled while reacquiring its permit cannot leak
-                // the connection past retirement.
                 let owner = self.globals.borrow().native_events.tcp_owner();
                 let interruptible = self.ctx.class_c_read_permit.is_none();
-                let fut = Box::pin(crate::builtins::socket_sources::pull_accept(
-                    listener,
-                    deadline,
-                    owner,
-                    interruptible,
-                ));
+                let fut = crate::extensions::sockets().ok_or_else(|| crate::extensions::needs_host(name))?
+                    .accept(eval_args.to_vec(), owner, interruptible);
                 return self.await_with_class_c_yield(fut).await?.map(Some);
             }
             // tcp_send with {timeout} on an unsubscribed handle: one deadline
@@ -13648,10 +13637,7 @@ impl Evaluator {
                                         ));
                                     }
                                 }
-                                #[cfg(feature = "net-server")]
-                                { ne.tcp_on_listener(id, command)? }
-                                #[cfg(not(feature = "net-server"))]
-                                { return Err(crate::native_events::refusal("NEEDS_MIXD", "tcp_on(listener) needs server capability; run it under: mixd run <script>")); }
+                                ne.tcp_on_listener(id, command)?
                             } else {
                                 let mode = crate::builtins::socket_sources::parse_tcp_on_opts(
                                     eval_args.get(2),

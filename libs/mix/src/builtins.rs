@@ -1,3 +1,5 @@
+#[cfg(test)]
+use mix_server::{builtin_tcp_listen, builtin_tcp_accept, builtin_http_serve, builtin_http_recv, builtin_udp_recv, http_srv, tcp_server, tcp_accept_waits_entered};
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::builtin_table;
@@ -481,6 +483,10 @@ builtin_table! {
 }
 
 pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
+    #[cfg(test)]
+    mix_server::register().expect("test server family");
+    if let Some(f) = crate::extensions::family(name) { return f.call(name, args); }
+    if crate::extensions::SERVER_NAMES.contains(&name) { return Err(crate::extensions::needs_host(name)); }
     match name {
         "length" | "len" => builtin_len(args),
         "upper" => builtin_upper(args),
@@ -910,12 +916,7 @@ pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
         "freeze" => builtin_freeze(args),
         "dns_lookup" => builtin_dns_lookup(args),
         "udp_send" => builtin_udp_send(args),
-        "udp_recv" => builtin_udp_recv(args),
-        #[cfg(feature = "net-server")]
-        "udp_listen" => {
-            expect_args_between("udp_listen", &args, 2, 3)?;
-            crate::udp::handles::listen(args)
-        }
+
         #[cfg(feature = "net-client")]
         "udp_send_via" => {
             expect_args("udp_send_via", &args, 4)?;
@@ -953,13 +954,6 @@ pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
                 serde_json::json!({"host":addr.ip().to_string(), "port":addr.port()}),
             )))
         }
-        #[cfg(feature = "net-server")]
-        "http_serve" => builtin_http_serve(args),
-        #[cfg(not(feature = "net-server"))]
-        name @ ("tcp_listen" | "tcp_accept" | "udp_listen" | "http_serve") => Err(crate::native_events::refusal(
-            "NEEDS_MIXD", format!("{name}() needs server capability; run it under: mixd run <script>"),
-        )),
-        "http_recv" => builtin_http_recv(args),
         #[cfg(feature = "net-client")]
         "ws_connect" => builtin_ws_connect(args),
         #[cfg(feature = "net-client")]
@@ -978,10 +972,8 @@ pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
         "tcp_recv_line" => builtin_tcp_recv_line(args),
         #[cfg(feature = "net-client")]
         "tcp_close" => builtin_tcp_close(args),
-        #[cfg(feature = "net-server")]
-        "tcp_listen" => builtin_tcp_listen(args),
-        #[cfg(feature = "net-server")]
-        "tcp_accept" => builtin_tcp_accept(args),
+
+
         #[cfg(feature = "net-client")]
         "tcp_local_addr" => builtin_tcp_local_addr(args),
         #[cfg(all(feature = "net-client", unix))]
@@ -1097,7 +1089,7 @@ pub fn is_builtin(name: &str) -> bool {
             .filter(|n| !EVAL_SPECIAL_BUILTINS.contains(n))
             .collect()
     })
-    .contains(name)
+    .contains(name) || crate::extensions::available(name)
 }
 
 /// Every name a user function can never win against at a call site: the
@@ -1148,8 +1140,7 @@ pub fn compiled_features() -> Vec<&'static str> {
     feat!("yaml");
     feat!("ws");
     feat!("net-client");
-    feat!("net-server");
-    feat!("server");
+
     feat!("mime");
     f
 }
@@ -1392,12 +1383,15 @@ pub fn conditional_cap_engaged(name: &str, args: &[Value], option: &str) -> bool
 /// Iterate every metadata entry (builtins + HOFs) — the registry the
 /// A7-generated arity test and the discovery surfaces draw from.
 pub fn builtin_entries() -> impl Iterator<Item = &'static crate::builtin_info::BuiltinInfo> {
-    BUILTINS.iter().chain(crate::builtins_hof::HOFS.iter())
+    BUILTINS.iter().chain(crate::builtins_hof::HOFS.iter()).chain(crate::extensions::entries().into_iter().filter(|e| core_builtin_info(e.name).is_none()))
 }
 /// O(1) lookup of a builtin's full metadata entry (builtins + HOFs) —
 /// the machine side of the discovery surface, used by the strict-arity
 /// gate, conditional capabilities, and `mix lint`'s arity checker.
 pub fn builtin_info_of(name: &str) -> Option<&'static crate::builtin_info::BuiltinInfo> {
+    core_builtin_info(name).or_else(|| crate::extensions::entries().into_iter().find(|e| e.name == name))
+}
+pub fn core_builtin_info(name: &str) -> Option<&'static crate::builtin_info::BuiltinInfo> {
     use std::collections::HashMap;
     use std::sync::OnceLock;
     static INDEX: OnceLock<HashMap<&'static str, &'static crate::builtin_info::BuiltinInfo>> =
@@ -1467,7 +1461,7 @@ impl crate::evaluator::CapabilityPolicy for CategoryAllowList {
     }
 }
 
-fn expect_args(name: &str, args: &[Value], min: usize) -> MixResult<()> {
+pub fn expect_args(name: &str, args: &[Value], min: usize) -> MixResult<()> {
     if args.len() < min {
         Err(MixError::RuntimeError {
             span: None,
@@ -1487,7 +1481,7 @@ fn expect_args(name: &str, args: &[Value], min: usize) -> MixResult<()> {
 /// Numeric strings and bools remain valid; only values `to_number()` cannot
 /// represent fail. The 1-based argument position and value are included so a
 /// caller can fix the exact input rather than debugging a plausible fallback.
-fn required_number_value(context: &str, value: &Value) -> MixResult<f64> {
+pub fn required_number_value(context: &str, value: &Value) -> MixResult<f64> {
     extract_number(value, InputPolicy::StandardCoercion).ok_or_else(|| {
         let shown = match value {
             Value::String(s) => format!("{s:?}"),
@@ -1503,7 +1497,7 @@ fn required_number_value(context: &str, value: &Value) -> MixResult<f64> {
     })
 }
 
-fn number_arg(name: &str, args: &[Value], index: usize) -> MixResult<f64> {
+pub fn number_arg(name: &str, args: &[Value], index: usize) -> MixResult<f64> {
     required_number_value(&format!("{name}(): argument {}", index + 1), &args[index])
 }
 
@@ -4118,7 +4112,7 @@ fn parse_timeout_opt(name: &str, v: Option<&Value>, default_s: u64) -> MixResult
 /// Exact-arity guard: min..=max args. A surplus argument is a loud error so
 /// a misplaced opts map (`run(cmd, nil, {timeout: 1})`) can't be silently
 /// ignored and leave a call unbounded.
-fn expect_args_between(name: &str, args: &[Value], min: usize, max: usize) -> MixResult<()> {
+pub fn expect_args_between(name: &str, args: &[Value], min: usize, max: usize) -> MixResult<()> {
     expect_args(name, args, min)?;
     if args.len() > max {
         return Err(MixError::RuntimeError {
@@ -6469,7 +6463,7 @@ pub(crate) fn opt_invalid(caller: &str, msg: impl std::fmt::Display) -> MixError
 /// whole options argument, because the nil-ARGUMENT exemption (an omitted
 /// options map) is handled by each caller, while a nil FIELD is a wrong
 /// value and must refuse.
-fn bool_option(caller: &str, option: &str, v: Option<&Value>) -> MixResult<Option<bool>> {
+pub fn bool_option(caller: &str, option: &str, v: Option<&Value>) -> MixResult<Option<bool>> {
     match v {
         None => Ok(None),
         Some(Value::Bool(b)) => Ok(Some(*b)),
@@ -22537,140 +22531,7 @@ fn builtin_udp_send(args: Vec<Value>) -> MixResult<Option<Value>> {
     Ok(Some(Value::Number(sent as f64)))
 }
 
-/// `udp_recv(port[, {timeout, host, max}])` → one datagram as
-/// `{bytes, text, from_host, from_port}`, or `nil` on timeout.
-///
-/// `timeout` seconds (default 30; 0 = wait forever, like http_get's 0);
-/// `host` is the bind address (default "0.0.0.0"); `max` caps the datagram
-/// read (default 65535 — a UDP payload cannot exceed that, so the default
-/// never truncates; a datagram longer than `max` is truncated to it, which
-/// is recvfrom(2)'s own contract). `text` is the payload decoded as UTF-8,
-/// or nil when it is not valid UTF-8 (`bytes` always carries the truth).
-fn builtin_udp_recv(args: Vec<Value>) -> MixResult<Option<Value>> {
-    expect_args_between("udp_recv", &args, 1, 2)?;
-    // Port 0 would bind an ephemeral port the caller can never learn from
-    // the result map — a guaranteed silent timeout, so it is refused.
-    let port = as_exact_integer(
-        "udp_recv(): port",
-        number_arg("udp_recv", &args, 0)?,
-        1,
-        65535,
-    )?;
-    let mut timeout_seconds = 30.0;
-    let mut bind_host = "0.0.0.0".to_string();
-    let mut max: usize = 65535;
-    if let Some(opts) = args.get(1) {
-        match opts {
-            Value::Nil => {}
-            Value::Map(m) => {
-                for k in m.keys() {
-                    if !matches!(k.as_str(), "timeout" | "host" | "max") {
-                        return Err(MixError::RuntimeError {
-                            span: None,
-                            msg: format!(
-                                "udp_recv(): unknown option '{k}' (supported: timeout, host, max)"
-                            ),
-                        });
-                    }
-                }
-                if let Some(v) = m.get("timeout") {
-                    timeout_seconds =
-                        extract_number(v, InputPolicy::NumberOnly).ok_or_else(|| {
-                            MixError::RuntimeError {
-                                span: None,
-                                msg: format!(
-                                    "udp_recv(): option 'timeout' must be a number, got {}",
-                                    v.type_name()
-                                ),
-                            }
-                        })?;
-                    as_duration("udp_recv(): option 'timeout'", timeout_seconds)?;
-                }
-                if let Some(v) = m.get("host") {
-                    match v {
-                        Value::String(s) => bind_host = s.to_string(),
-                        other => {
-                            return Err(MixError::RuntimeError {
-                                span: None,
-                                msg: format!(
-                                    "udp_recv(): option 'host' must be a string, got {}",
-                                    other.type_name()
-                                ),
-                            });
-                        }
-                    }
-                }
-                if let Some(v) = m.get("max") {
-                    let n = extract_number(v, InputPolicy::NumberOnly).ok_or_else(|| {
-                        MixError::RuntimeError {
-                            span: None,
-                            msg: format!(
-                                "udp_recv(): option 'max' must be a number, got {}",
-                                v.type_name()
-                            ),
-                        }
-                    })?;
-                    max = as_exact_integer("udp_recv(): option 'max'", n, 1, 65535)? as usize;
-                }
-            }
-            other => {
-                return Err(MixError::RuntimeError {
-                    span: None,
-                    msg: format!(
-                        "udp_recv(): options must be a map or nil, got {}",
-                        other.type_name()
-                    ),
-                });
-            }
-        }
-    }
 
-    let sock = std::net::UdpSocket::bind(format!("{bind_host}:{port}")).map_err(|e| {
-        MixError::RuntimeError {
-            span: None,
-            msg: format!("udp_recv: bind '{bind_host}:{port}': {e}"),
-        }
-    })?;
-    if timeout_seconds > 0.0 {
-        sock.set_read_timeout(Some(std::time::Duration::from_secs_f64(timeout_seconds)))
-            .map_err(|e| MixError::RuntimeError {
-                span: None,
-                msg: format!("udp_recv: set timeout: {e}"),
-            })?;
-    }
-    let mut buf = vec![0u8; max];
-    match sock.recv_from(&mut buf) {
-        Ok((n, from)) => {
-            buf.truncate(n);
-            let text = match std::str::from_utf8(&buf) {
-                Ok(s) => Value::String(s.to_string()),
-                Err(_) => Value::Nil,
-            };
-            let mut m = indexmap::IndexMap::new();
-            m.insert("bytes".to_string(), Value::bytes(buf));
-            m.insert("text".to_string(), text);
-            m.insert(
-                "from_host".to_string(),
-                Value::String(from.ip().to_string()),
-            );
-            m.insert("from_port".to_string(), Value::Number(from.port() as f64));
-            Ok(Some(Value::map(m)))
-        }
-        Err(e)
-            if matches!(
-                e.kind(),
-                std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
-            ) =>
-        {
-            // Timeout is an ordinary answer for a datagram wait, not a fault.
-            Ok(Some(Value::Nil))
-        }
-        Err(e) => Err(MixError::RuntimeError {
-            span: None,
-            msg: format!("udp_recv: {e}"),
-        }),
-    }
-}
 
 // --- WebSocket client (v0.74.0, `ws` feature) ---
 //
@@ -23196,7 +23057,7 @@ pub(crate) mod tcp_client {
     use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
     use std::sync::{Arc, LazyLock, Mutex};
 
-    pub(super) enum Stream {
+    pub(crate) enum Stream {
         Plain(std::net::TcpStream),
         Tls(Box<rustls::StreamOwned<rustls::ClientConnection, std::net::TcpStream>>),
         /// A unix_connect stream socket: the same handle space and commands.
@@ -23208,28 +23069,28 @@ pub(crate) mod tcp_client {
     /// the fd live: TCP for tcp_connect/tcp_accept (and ws), a unix stream
     /// for unix_connect.
     #[derive(Clone, Copy)]
-    pub(super) enum SockRef<'a> {
+    pub(crate) enum SockRef<'a> {
         Tcp(&'a std::net::TcpStream),
         #[cfg(unix)]
         Unix(&'a std::os::unix::net::UnixStream),
     }
 
     impl SockRef<'_> {
-        pub(super) fn read_timeout(self) -> std::io::Result<Option<std::time::Duration>> {
+        pub(crate) fn read_timeout(self) -> std::io::Result<Option<std::time::Duration>> {
             match self {
                 Self::Tcp(s) => s.read_timeout(),
                 #[cfg(unix)]
                 Self::Unix(s) => s.read_timeout(),
             }
         }
-        pub(super) fn write_timeout(self) -> std::io::Result<Option<std::time::Duration>> {
+        pub(crate) fn write_timeout(self) -> std::io::Result<Option<std::time::Duration>> {
             match self {
                 Self::Tcp(s) => s.write_timeout(),
                 #[cfg(unix)]
                 Self::Unix(s) => s.write_timeout(),
             }
         }
-        pub(super) fn set_read_timeout(
+        pub(crate) fn set_read_timeout(
             self,
             d: Option<std::time::Duration>,
         ) -> std::io::Result<()> {
@@ -23239,7 +23100,7 @@ pub(crate) mod tcp_client {
                 Self::Unix(s) => s.set_read_timeout(d),
             }
         }
-        pub(super) fn set_write_timeout(
+        pub(crate) fn set_write_timeout(
             self,
             d: Option<std::time::Duration>,
         ) -> std::io::Result<()> {
@@ -23249,7 +23110,7 @@ pub(crate) mod tcp_client {
                 Self::Unix(s) => s.set_write_timeout(d),
             }
         }
-        pub(super) fn set_nonblocking(self, on: bool) -> std::io::Result<()> {
+        pub(crate) fn set_nonblocking(self, on: bool) -> std::io::Result<()> {
             match self {
                 Self::Tcp(s) => s.set_nonblocking(on),
                 #[cfg(unix)]
@@ -23258,7 +23119,7 @@ pub(crate) mod tcp_client {
         }
         /// A duplicate fd, for readiness waits only (AsyncFd).
         #[cfg(unix)]
-        pub(super) fn try_clone(self) -> std::io::Result<std::os::fd::OwnedFd> {
+        pub(crate) fn try_clone(self) -> std::io::Result<std::os::fd::OwnedFd> {
             use std::os::fd::AsFd;
             match self {
                 Self::Tcp(s) => s.as_fd().try_clone_to_owned(),
@@ -23267,7 +23128,7 @@ pub(crate) mod tcp_client {
             }
         }
         /// A TCP socket's local address; a unix socket has none.
-        pub(super) fn local_addr(self) -> std::io::Result<std::net::SocketAddr> {
+        pub(crate) fn local_addr(self) -> std::io::Result<std::net::SocketAddr> {
             match self {
                 Self::Tcp(s) => s.local_addr(),
                 #[cfg(unix)]
@@ -23295,7 +23156,7 @@ pub(crate) mod tcp_client {
     /// handle-limit permit and generation ownership travel with it through
     /// pulls and subscriptions, and are released only when it is dropped;
     /// a tcp_connect client has neither (the limit is server-side).
-    pub(super) struct Conn {
+    pub(crate) struct Conn {
         pub stream: Stream,
         pub buf: Vec<u8>,
         /// The byte that ends a "line" (tcp_recv_line, tcp_on frame:"line"):
@@ -23307,26 +23168,26 @@ pub(crate) mod tcp_client {
         pub ownership: Option<Ownership>,
     }
 
-    pub(crate) static NEXT_ID: AtomicU64 = AtomicU64::new(1);
-    pub(super) static MAP: LazyLock<Mutex<HashMap<u64, Conn>>> =
+    pub static NEXT_ID: AtomicU64 = AtomicU64::new(1);
+    pub(crate) static MAP: LazyLock<Mutex<HashMap<u64, Conn>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
 
     /// A counted pool of live TCP sockets. Admission is one atomic
     /// compare-and-swap, so concurrent acquirers can never exceed `max`.
-    pub(super) struct PermitPool {
+    pub struct PermitPool {
         live: AtomicUsize,
         max: usize,
     }
 
     impl PermitPool {
-        pub(super) const fn new(max: usize) -> Self {
+        pub(crate) const fn new(max: usize) -> Self {
             Self {
                 live: AtomicUsize::new(0),
                 max,
             }
         }
 
-        pub(super) fn try_acquire(&'static self) -> Option<TcpPermit> {
+        pub fn try_acquire(&'static self) -> Option<TcpPermit> {
             self.live
                 .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
                     (n < self.max).then_some(n + 1)
@@ -23336,7 +23197,7 @@ pub(crate) mod tcp_client {
         }
 
         #[cfg(test)]
-        pub(super) fn live(&self) -> usize {
+        pub(crate) fn live(&self) -> usize {
             self.live.load(Ordering::Acquire)
         }
     }
@@ -23344,11 +23205,11 @@ pub(crate) mod tcp_client {
     /// Every live server-side TCP socket (a listener or a connection it
     /// accepted) holds one permit from this pool. tcp_connect clients do
     /// not.
-    pub(super) const MAX_TCP_HANDLES: usize = 1024;
-    pub(super) static TCP_PERMITS: PermitPool = PermitPool::new(MAX_TCP_HANDLES);
+    pub(crate) const MAX_TCP_HANDLES: usize = 1024;
+    pub static TCP_PERMITS: PermitPool = PermitPool::new(MAX_TCP_HANDLES);
 
     /// One reserved slot; released on drop.
-    pub(crate) struct TcpPermit {
+    pub struct TcpPermit {
         pool: &'static PermitPool,
     }
 
@@ -23360,7 +23221,7 @@ pub(crate) mod tcp_client {
 
     impl TcpPermit {
         /// Reserve a slot for a new socket, or refuse TCP_HANDLE_LIMIT.
-        pub(crate) fn acquire(name: &str) -> crate::error::MixResult<Self> {
+        pub fn acquire(name: &str) -> crate::error::MixResult<Self> {
             TCP_PERMITS.try_acquire().ok_or_else(|| {
                 crate::native_events::refusal(
                     "TCP_HANDLE_LIMIT",
@@ -23380,24 +23241,24 @@ pub(crate) mod tcp_client {
     /// registry (inside a Class C pull) at retirement close when it comes
     /// back instead of being reinserted.
     #[derive(Default)]
-    pub(crate) struct TcpOwner {
-        pub(super) ids: Mutex<HashSet<u64>>,
-        pub(super) retired: AtomicBool,
+    pub struct TcpOwner {
+        pub(crate) ids: Mutex<HashSet<u64>>,
+        pub(crate) retired: AtomicBool,
     }
 
     /// A socket's membership in its generation's set; removed on drop.
-    pub(super) struct Ownership {
+    pub struct Ownership {
         owner: Arc<TcpOwner>,
         id: u64,
     }
 
     impl Ownership {
-        pub(super) fn new(owner: Arc<TcpOwner>, id: u64) -> Self {
+        pub fn new(owner: Arc<TcpOwner>, id: u64) -> Self {
             owner.ids.lock().unwrap().insert(id);
             Self { owner, id }
         }
 
-        pub(super) fn retired(&self) -> bool {
+        pub(crate) fn retired(&self) -> bool {
             self.owner.retired.load(Ordering::Acquire)
         }
     }
@@ -23409,7 +23270,7 @@ pub(crate) mod tcp_client {
     }
 
     impl Conn {
-        pub(super) fn new(stream: Stream, permit: Option<TcpPermit>) -> Self {
+        pub(crate) fn new(stream: Stream, permit: Option<TcpPermit>) -> Self {
             Self {
                 stream,
                 buf: Vec::new(),
@@ -23421,22 +23282,22 @@ pub(crate) mod tcp_client {
 
         /// Take one delimited frame off the read-ahead buffer (see the
         /// free function `take_frame`).
-        pub(super) fn take_frame(&mut self, max: usize) -> Frame {
+        pub(crate) fn take_frame(&mut self, max: usize) -> Frame {
             take_frame(&mut self.buf, self.delim, max)
         }
 
-        pub(super) fn is_tls(&self) -> bool {
+        pub(crate) fn is_tls(&self) -> bool {
             matches!(self.stream, Stream::Tls(_))
         }
 
         /// Has this connection's generation retired? Then it must close
         /// rather than return to the registry.
-        pub(super) fn orphaned(&self) -> bool {
+        pub(crate) fn orphaned(&self) -> bool {
             self.ownership.as_ref().is_some_and(Ownership::retired)
         }
 
         /// The underlying socket — where read/write timeouts live.
-        pub(super) fn tcp(&self) -> SockRef<'_> {
+        pub(crate) fn tcp(&self) -> SockRef<'_> {
             match &self.stream {
                 Stream::Plain(s) => SockRef::Tcp(s),
                 Stream::Tls(t) => SockRef::Tcp(t.get_ref()),
@@ -23444,7 +23305,7 @@ pub(crate) mod tcp_client {
                 Stream::Unix(s) => SockRef::Unix(s),
             }
         }
-        pub(super) fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        pub(crate) fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
             match &mut self.stream {
                 Stream::Plain(s) => s.read(buf),
                 Stream::Tls(t) => t.read(buf),
@@ -23452,7 +23313,7 @@ pub(crate) mod tcp_client {
                 Stream::Unix(s) => s.read(buf),
             }
         }
-        pub(super) fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        pub(crate) fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
             match &mut self.stream {
                 Stream::Plain(s) => s.write(buf),
                 Stream::Tls(t) => t.write(buf),
@@ -23460,7 +23321,7 @@ pub(crate) mod tcp_client {
                 Stream::Unix(s) => s.write(buf),
             }
         }
-        pub(super) fn flush(&mut self) -> std::io::Result<()> {
+        pub(crate) fn flush(&mut self) -> std::io::Result<()> {
             match &mut self.stream {
                 // Plain and unix stream writes go straight to the kernel.
                 Stream::Plain(_) => Ok(()),
@@ -23469,7 +23330,7 @@ pub(crate) mod tcp_client {
                 Stream::Tls(t) => t.flush(),
             }
         }
-        pub(super) fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
+        pub(crate) fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
             match &mut self.stream {
                 Stream::Plain(s) => s.write_all(buf).and_then(|_| s.flush()),
                 Stream::Tls(t) => t.write_all(buf).and_then(|_| t.flush()),
@@ -23480,7 +23341,7 @@ pub(crate) mod tcp_client {
     }
 
     /// What the read-ahead holds for a line-mode reader.
-    pub(super) enum Frame {
+    pub(crate) enum Frame {
         /// One whole frame, delimiter (and an LF line's CR) removed.
         Ready(Vec<u8>),
         /// No delimiter yet, and within `max`: read more.
@@ -23495,7 +23356,7 @@ pub(crate) mod tcp_client {
     /// framing or about `max`. The cap holds for a complete frame too, so
     /// whether an over-long frame is refused never depends on how its bytes
     /// were split across reads.
-    pub(super) fn take_frame(buf: &mut Vec<u8>, delim: u8, max: usize) -> Frame {
+    pub(crate) fn take_frame(buf: &mut Vec<u8>, delim: u8, max: usize) -> Frame {
         match buf.iter().position(|&b| b == delim) {
             Some(end) if end > max => Frame::TooLong,
             Some(end) => {
@@ -24513,346 +24374,29 @@ pub(crate) fn tcp_recv_opts(
 // (socket_sources::close_owned). tcp_on on a listener moves it into a
 // reader thread (socket_sources::subscribe_listener).
 
-#[cfg(feature = "net-server")]
-mod tcp_server {
-    use super::tcp_client::{Ownership, TcpPermit};
-    use std::collections::HashMap;
-    use std::sync::{Arc, LazyLock, Mutex};
 
-    /// A listening socket with its permit and (once recorded) its
-    /// generation ownership, both released when the last clone drops.
-    pub(crate) struct Listener {
-        pub(super) sock: std::net::TcpListener,
-        _permit: TcpPermit,
-        pub(super) ownership: Mutex<Option<Ownership>>,
-    }
 
-    impl Listener {
-        pub(super) fn new(sock: std::net::TcpListener, permit: TcpPermit) -> Self {
-            Self {
-                sock,
-                _permit: permit,
-                ownership: Mutex::new(None),
-            }
-        }
-    }
 
-    /// Live, unsubscribed listeners. An Arc, so a waiting accept holds the
-    /// socket without holding the registry lock.
-    pub(super) static LISTENERS: LazyLock<Mutex<HashMap<u64, Arc<Listener>>>> =
-        LazyLock::new(|| Mutex::new(HashMap::new()));
 
-    /// Live server-side TCP sockets (listeners plus the connections they
-    /// accepted) beyond which tcp_listen and accepts refuse, so a
-    /// connection flood cannot exhaust the process's descriptors.
-    /// tcp_connect clients are not counted.
-    pub(super) const MAX_TCP_HANDLES: usize = 1024;
-    pub(super) const DEFAULT_BACKLOG: i32 = 128;
-    pub(super) const MAX_BACKLOG: i32 = 4096;
-}
 
-/// Stop listening now. A Class C accept may still hold a clone of the
-/// listener; shutdown(2) wakes it instead of leaving the port open until
-/// the last clone drops.
-#[cfg(feature = "net-server")]
-fn close_listener(listener: std::sync::Arc<tcp_server::Listener>) {
-    let _ = socket2::SockRef::from(&listener.sock).shutdown(std::net::Shutdown::Both);
-}
 
-/// Why an accept attempt produced no connection.
-#[cfg(feature = "net-server")]
-enum AcceptError {
-    /// Every handle permit is taken; the connection was left queued.
-    Limit,
-    Io(std::io::Error),
-}
 
-#[cfg(feature = "net-server")]
-impl AcceptError {
-    fn into_mix(self) -> MixError {
-        match self {
-            AcceptError::Limit => crate::native_events::refusal(
-                "TCP_HANDLE_LIMIT",
-                format!(
-                    "tcp_accept: {} live tcp handles is the limit; close some with tcp_close()",
-                    tcp_server::MAX_TCP_HANDLES
-                ),
-            ),
-            AcceptError::Io(e) => {
-                crate::native_events::refusal("TCP_ACCEPT_FAILED", format!("tcp_accept: {e}"))
-            }
-        }
-    }
-}
 
-/// One non-blocking accept. A permit is reserved before accept(2), so the
-/// limit is never exceeded, and dropped again when nothing is pending.
-/// Ok(None) means nothing was pending. With an owner, the connection is
-/// owned before its handle exists anywhere else.
-#[cfg(feature = "net-server")]
-fn try_accept(
-    listener: &std::net::TcpListener,
-    owner: Option<&std::sync::Arc<tcp_client::TcpOwner>>,
-) -> Result<Option<(u64, std::net::SocketAddr)>, AcceptError> {
-    loop {
-        let Some(permit) = tcp_client::TCP_PERMITS.try_acquire() else {
-            return Err(AcceptError::Limit);
-        };
-        match listener.accept() {
-            Ok((stream, _)) => return Ok(Some(adopt_accepted(stream, permit, owner))),
-            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => return Ok(None),
-            Err(e) if accept_retryable(&e) => continue,
-            Err(e) => return Err(AcceptError::Io(e)),
-        }
-    }
-}
 
-/// Register an accepted stream as an ordinary connected handle with
-/// tcp_connect's plain-socket defaults: blocking, nodelay, 30 s timeouts.
-#[cfg(feature = "net-server")]
-fn adopt_accepted(
-    stream: std::net::TcpStream,
-    permit: tcp_client::TcpPermit,
-    owner: Option<&std::sync::Arc<tcp_client::TcpOwner>>,
-) -> (u64, std::net::SocketAddr) {
-    // A peer that reset before we looked has no address; its first read
-    // reports the close, which is the honest answer.
-    let peer = stream
-        .peer_addr()
-        .unwrap_or_else(|_| std::net::SocketAddr::from(([0, 0, 0, 0], 0)));
-    // Linux accept(2) does not pass the listener's O_NONBLOCK on, but
-    // other platforms may: set the mode explicitly.
-    stream.set_nonblocking(false).ok();
-    stream.set_nodelay(true).ok();
-    stream
-        .set_read_timeout(Some(std::time::Duration::from_secs(30)))
-        .ok();
-    stream
-        .set_write_timeout(Some(std::time::Duration::from_secs(30)))
-        .ok();
-    let id = tcp_client::NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let mut conn = tcp_client::Conn::new(tcp_client::Stream::Plain(stream), Some(permit));
-    conn.ownership = owner.map(|o| tcp_client::Ownership::new(o.clone(), id));
-    tcp_client::MAP.lock().unwrap().insert(id, conn);
-    (id, peer)
-}
 
-/// accept(2) errors that concern one pending connection rather than the
-/// listener: retry, as the Linux man page advises.
-#[cfg(feature = "net-server")]
-fn accept_retryable(e: &std::io::Error) -> bool {
-    use std::io::ErrorKind;
-    matches!(
-        e.kind(),
-        ErrorKind::Interrupted | ErrorKind::ConnectionAborted | ErrorKind::ConnectionReset
-    ) || accept_retryable_os(e.raw_os_error())
-}
 
-#[cfg(all(feature = "net-server", target_os = "linux"))]
-fn accept_retryable_os(code: Option<i32>) -> bool {
-    code.is_some_and(|c| {
-        matches!(
-            c,
-            libc::EPROTO
-                | libc::ENETDOWN
-                | libc::ENOPROTOOPT
-                | libc::EHOSTDOWN
-                | libc::ENONET
-                | libc::EHOSTUNREACH
-                | libc::EOPNOTSUPP
-                | libc::ENETUNREACH
-        )
-    })
-}
 
-#[cfg(all(feature = "net-server", not(target_os = "linux")))]
-fn accept_retryable_os(_code: Option<i32>) -> bool {
-    false
-}
 
-/// Wait until the listener is readable, Ctrl-C arrives, or `timeout`
-/// passes (None waits forever). Ok(false) on timeout; a signal that
-/// interrupts poll surfaces as Interrupted. The interrupt wake socket
-/// (crate::interrupt::wake_fd) is in the poll set as the fast path: a
-/// SIGINT on another thread still ends the wait. Correctness never rests
-/// on the byte (another waiter may drain it): the caller bounds each wait
-/// (ACCEPT_SLICE) and checks the interrupt flag between waits.
-#[cfg(all(feature = "net-server", unix))]
-fn wait_listener(
-    listener: &std::net::TcpListener,
-    timeout: Option<std::time::Duration>,
-) -> std::io::Result<bool> {
-    use std::os::fd::AsRawFd;
-    let wake = crate::interrupt::wake_fd();
-    let mut fds = [
-        libc::pollfd {
-            fd: listener.as_raw_fd(),
-            events: libc::POLLIN,
-            revents: 0,
-        },
-        libc::pollfd {
-            fd: wake.unwrap_or(-1),
-            events: libc::POLLIN,
-            revents: 0,
-        },
-    ];
-    let ms = match timeout {
-        None => -1,
-        Some(d) => d.as_millis().clamp(1, i32::MAX as u128) as i32,
-    };
-    let count = if wake.is_some() { 2 } else { 1 };
-    // SAFETY: `count` valid pollfds that outlive the call.
-    let rc = unsafe { libc::poll(fds.as_mut_ptr(), count, ms) };
-    if rc < 0 {
-        return Err(std::io::Error::last_os_error());
-    }
-    if fds[1].revents != 0 {
-        crate::interrupt::drain_wake();
-    }
-    Ok(rc > 0)
-}
 
-/// Without poll(2): sleep briefly; the caller retries accept and checks
-/// its deadline.
-#[cfg(all(feature = "net-server", not(unix)))]
-fn wait_listener(
-    _listener: &std::net::TcpListener,
-    timeout: Option<std::time::Duration>,
-) -> std::io::Result<bool> {
-    let tick = std::time::Duration::from_millis(20);
-    std::thread::sleep(timeout.map_or(tick, |t| t.min(tick)));
-    Ok(true)
-}
 
-/// `tcp_listen(host, port[, {backlog}])` → numeric listener handle.
-#[cfg(feature = "net-server")]
-fn builtin_tcp_listen(args: Vec<Value>) -> MixResult<Option<Value>> {
-    use crate::native_events::refusal;
-    expect_args_between("tcp_listen", &args, 2, 3)?;
-    let host = match &args[0] {
-        Value::String(s) if !s.trim().is_empty() => s.trim().to_string(),
-        Value::String(_) => {
-            return Err(refusal(
-                "TCP_LISTEN_ARGUMENT",
-                "tcp_listen(): host must name an address, such as \"127.0.0.1\"",
-            ));
-        }
-        other => {
-            return Err(refusal(
-                "TCP_LISTEN_ARGUMENT",
-                format!(
-                    "tcp_listen(): host must be a string, got {}",
-                    other.type_name()
-                ),
-            ));
-        }
-    };
-    let port = match &args[1] {
-        Value::Number(n) if n.fract() == 0.0 && (0.0..=65535.0).contains(n) => *n as u16,
-        other => {
-            return Err(refusal(
-                "TCP_LISTEN_ARGUMENT",
-                format!(
-                    "tcp_listen(): port must be an integer from 0 to 65535, got {}",
-                    other.to_mix_string()
-                ),
-            ));
-        }
-    };
-    let mut backlog = tcp_server::DEFAULT_BACKLOG;
-    match args.get(2) {
-        None | Some(Value::Nil) => {}
-        Some(Value::Map(m)) => {
-            for k in m.keys() {
-                if k != "backlog" {
-                    return Err(refusal(
-                        "TCP_LISTEN_ARGUMENT",
-                        format!("tcp_listen(): unknown option '{k}' (supported: backlog)"),
-                    ));
-                }
-            }
-            if let Some(v) = m.get("backlog") {
-                backlog = match v {
-                    Value::Number(n)
-                        if n.fract() == 0.0
-                            && (1.0..=tcp_server::MAX_BACKLOG as f64).contains(n) =>
-                    {
-                        *n as i32
-                    }
-                    other => {
-                        return Err(refusal(
-                            "TCP_LISTEN_ARGUMENT",
-                            format!(
-                                "tcp_listen(): option 'backlog' must be an integer from 1 to {}, got {}",
-                                tcp_server::MAX_BACKLOG,
-                                other.to_mix_string()
-                            ),
-                        ));
-                    }
-                };
-            }
-        }
-        Some(other) => {
-            return Err(refusal(
-                "TCP_LISTEN_ARGUMENT",
-                format!(
-                    "tcp_listen(): options must be a map or nil, got {}",
-                    other.type_name()
-                ),
-            ));
-        }
-    }
 
-    use std::net::ToSocketAddrs;
-    let resolve_host = host.trim_start_matches('[').trim_end_matches(']');
-    let addr = (resolve_host, port)
-        .to_socket_addrs()
-        .map_err(|e| {
-            refusal(
-                "TCP_LISTEN_ADDRESS",
-                format!("tcp_listen: resolve '{host}': {e}"),
-            )
-        })?
-        .next()
-        .ok_or_else(|| {
-            refusal(
-                "TCP_LISTEN_ADDRESS",
-                format!("tcp_listen: no address for '{host}'"),
-            )
-        })?;
-    let permit = tcp_client::TcpPermit::acquire("tcp_listen")?;
 
-    let fail = |e: std::io::Error| {
-        let code = match e.kind() {
-            std::io::ErrorKind::AddrInUse => "TCP_LISTEN_ADDR_IN_USE",
-            std::io::ErrorKind::PermissionDenied => "TCP_LISTEN_PERMISSION",
-            std::io::ErrorKind::AddrNotAvailable => "TCP_LISTEN_ADDR_UNAVAILABLE",
-            _ => "TCP_LISTEN_FAILED",
-        };
-        refusal(code, format!("tcp_listen: '{addr}': {e}"))
-    };
-    use socket2::{Domain, Protocol, Socket, Type};
-    let sock =
-        Socket::new(Domain::for_address(addr), Type::STREAM, Some(Protocol::TCP)).map_err(fail)?;
-    // std's TcpListener::bind sets SO_REUSEADDR on unix too: it lets a
-    // restarted server rebind while connections from its previous run
-    // sit in TIME_WAIT. On Linux it does NOT allow a second live listener
-    // on the same address and port (that needs SO_REUSEPORT): bind still
-    // fails with EADDRINUSE, which errors_carry_stable_codes asserts.
-    #[cfg(unix)]
-    sock.set_reuse_address(true).map_err(fail)?;
-    sock.bind(&addr.into()).map_err(fail)?;
-    sock.listen(backlog).map_err(fail)?;
-    sock.set_nonblocking(true).map_err(fail)?;
-    let listener: std::net::TcpListener = sock.into();
 
-    let id = tcp_client::NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    tcp_server::LISTENERS.lock().unwrap().insert(
-        id,
-        std::sync::Arc::new(tcp_server::Listener::new(listener, permit)),
-    );
-    Ok(Some(Value::Number(id as f64)))
-}
+
+
+
+
+
 
 /// The longest a blocking tcp_accept sits in one poll(2). The SIGINT
 /// wake socket is only the fast path: with several waiters one may drain
@@ -24861,78 +24405,6 @@ fn builtin_tcp_listen(args: Vec<Value>) -> MixResult<Option<Value>> {
 #[cfg(feature = "net-client")]
 const ACCEPT_SLICE: std::time::Duration = std::time::Duration::from_millis(250);
 
-/// Blocking tcp_accept calls that have reached their wait loop: a
-/// synchronisation point for tests that must signal a waiter that is
-/// really waiting.
-#[cfg(feature = "net-server")]
-static ACCEPT_WAITS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-
-/// How many blocking tcp_accept calls have entered their wait loop.
-/// Test synchronisation only; not part of the Mix contract.
-#[cfg(feature = "net-server")]
-#[doc(hidden)]
-pub fn tcp_accept_waits_entered() -> usize {
-    ACCEPT_WAITS.load(std::sync::atomic::Ordering::Acquire)
-}
-
-/// `tcp_accept(listener[, {timeout}])` → connected handle | nil on
-/// timeout. The blocking form, for non-unix targets and direct
-/// call_builtin callers: on unix the evaluator runs every numeric form on
-/// the runtime (socket_sources::pull_accept), and the source-id form.
-#[cfg(feature = "net-server")]
-fn builtin_tcp_accept(args: Vec<Value>) -> MixResult<Option<Value>> {
-    use crate::native_events::refusal;
-    expect_args_between("tcp_accept", &args, 1, 2)?;
-    let (listener, deadline) = socket_sources::prepare_accept(&args)?;
-    let mut eintr = 0u32;
-    let mut entered = false;
-    loop {
-        // The evaluator records ownership as soon as this returns, with no
-        // await in between, so the plain form needs no owner here.
-        if let Some((id, _)) = try_accept(&listener.sock, None).map_err(AcceptError::into_mix)? {
-            return Ok(Some(Value::Number(id as f64)));
-        }
-        if crate::interrupt::is_interrupted() {
-            return Ok(Some(Value::Nil));
-        }
-        let left = match deadline {
-            None => None,
-            Some(d) => {
-                let left = d.saturating_duration_since(std::time::Instant::now());
-                if left.is_zero() {
-                    return Ok(Some(Value::Nil));
-                }
-                Some(left)
-            }
-        };
-        if !entered {
-            entered = true;
-            ACCEPT_WAITS.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
-        }
-        let slice = left.map_or(ACCEPT_SLICE, |l| l.min(ACCEPT_SLICE));
-        match wait_listener(&listener.sock, Some(slice)) {
-            // Readable, woken by Ctrl-C, or the slice ended: the loop
-            // retries accept, then checks the interrupt flag and the
-            // deadline.
-            Ok(_) => {}
-            // A signal interrupts poll(2): the loop top stops on Ctrl-C;
-            // anything else keeps waiting, boundedly.
-            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {
-                eintr += 1;
-                if eintr > 10_000 {
-                    return Err(refusal(
-                        "TCP_ACCEPT_FAILED",
-                        "tcp_accept: wait interrupted repeatedly (a signal storm?)",
-                    ));
-                }
-            }
-            Err(e) => return Err(refusal("TCP_ACCEPT_FAILED", format!("tcp_accept: {e}"))),
-        }
-    }
-}
-
-/// `tcp_local_addr(handle)` → {host, port} for a listener (subscribed or
-/// not) or an unsubscribed connected handle.
 #[cfg(feature = "net-client")]
 fn builtin_tcp_local_addr(args: Vec<Value>) -> MixResult<Option<Value>> {
     use crate::native_events::refusal;
@@ -25027,8 +24499,9 @@ fn builtin_tcp_local_addr(args: Vec<Value>) -> MixResult<Option<Value>> {
 #[cfg(feature = "net-client")]
 pub(crate) mod socket_sources {
     use super::{tcp_client, tcp_unknown, ws_client, ws_err};
-    #[cfg(feature = "net-server")]
-    use super::tcp_server;
+    #[cfg(test)]
+    use mix_server::{tcp_server, prepare_accept, pull_accept, subscribe_listener, spawn_listener, accepted_record};
+
     use crate::{
         error::MixResult,
         native_events::{Queue, refusal},
@@ -25054,14 +24527,13 @@ pub(crate) mod socket_sources {
         Ws,
         Tcp,
         /// A tcp_listen listener (tcp_connect id space, own registry).
-        #[cfg(feature = "net-server")]
         Listener,
         Udp,
     }
 
     /// A numeric client handle disambiguated by its backend family.
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-    pub(crate) struct ClientKey {
+    pub struct ClientKey {
         family: ClientFamily,
         id: u64,
     }
@@ -25085,8 +24557,7 @@ pub(crate) mod socket_sources {
                 id,
             }
         }
-        #[cfg(feature = "net-server")]
-        pub(crate) const fn listener(id: u64) -> Self {
+        pub const fn listener(id: u64) -> Self {
             Self {
                 family: ClientFamily::Listener,
                 id,
@@ -25143,7 +24614,7 @@ pub(crate) mod socket_sources {
     /// One ordered frame record. Owned Vec<u8> only — Send across std
     /// threads, never Rc<Value>.
     #[derive(Clone, Debug)]
-    pub(crate) struct SocketRecord {
+    pub struct SocketRecord {
         /// "text" | "binary" (ws) | "bytes" | "line" (tcp).
         pub kind: &'static str,
         pub data: Vec<u8>,
@@ -25156,7 +24627,7 @@ pub(crate) mod socket_sources {
         pub max: usize,
     }
 
-    fn number_of(v: &Value, what: &str) -> MixResult<f64> {
+    pub fn number_of(v: &Value, what: &str) -> MixResult<f64> {
         match v {
             Value::Number(n) => Ok(*n),
             other => Err(refusal(
@@ -25178,7 +24649,7 @@ pub(crate) mod socket_sources {
     }
 
     /// The numeric client handle created by ws_connect/tcp_connect.
-    pub(crate) fn client_id_of(v: Option<&Value>, name: &str) -> MixResult<u64> {
+    pub fn client_id_of(v: Option<&Value>, name: &str) -> MixResult<u64> {
         let v = v.ok_or_else(|| refusal("SOCKET_ARGUMENT", format!("{name}(): missing handle")))?;
         let n = number_of(v, &format!("{name}(): handle"))?;
         if n.fract() != 0.0 || n < 1.0 || n > i64::MAX as f64 {
@@ -25478,91 +24949,28 @@ pub(crate) mod socket_sources {
         None
     }
 
-    pub(crate) fn unmark_subscribed(key: ClientKey) {
-        #[cfg(feature = "net-server")]
+    pub fn unmark_subscribed(key: ClientKey) {
         if key.family == ClientFamily::Listener {
-            LISTENING.lock().unwrap().remove(&key.id);
+            if let Some(h) = crate::extensions::sockets() { h.unmark(key.id); }
             return;
         }
         SUBSCRIBED.lock().unwrap().remove(&key);
     }
-    pub(crate) fn is_subscribed(key: ClientKey) -> bool {
-        #[cfg(feature = "net-server")]
+    pub fn is_subscribed(key: ClientKey) -> bool {
         if key.family == ClientFamily::Listener {
-            return LISTENING.lock().unwrap().contains_key(&key.id);
+            return crate::extensions::sockets().is_some_and(|h| h.subscribed(key.id));
         }
         SUBSCRIBED.lock().unwrap().get(&key).is_some()
     }
 
-    // --- Listeners (tcp_listen / tcp_accept / tcp_on on a listener) ---
-
-    /// Listener ids moved into a subscription reader, with the local
-    /// address read at subscribe time (tcp_local_addr still answers).
-    /// Listeners have no send endpoint, so they are kept apart from
-    /// SUBSCRIBED.
-    #[cfg(feature = "net-server")]
-    static LISTENING: LazyLock<
-        Mutex<std::collections::HashMap<u64, Option<std::net::SocketAddr>>>,
-    > = LazyLock::new(|| Mutex::new(std::collections::HashMap::new()));
-
-    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-    #[cfg(feature = "net-server")]
-    fn mark_listening(id: u64, addr: Option<std::net::SocketAddr>) {
-        LISTENING.lock().unwrap().insert(id, addr);
-    }
-
-    /// Is this numeric handle a listener, subscribed or not?
     pub(crate) fn is_listener(id: u64) -> bool {
-        #[cfg(feature = "net-server")]
-        if tcp_server::LISTENERS.lock().unwrap().contains_key(&id) {
-            return true;
-        }
-        #[cfg(feature = "net-server")]
-        { LISTENING.lock().unwrap().contains_key(&id) }
-        #[cfg(not(feature = "net-server"))]
-        { let _ = id; false }
+        crate::extensions::sockets().is_some_and(|h| h.is_listener(id))
     }
-
     pub(crate) fn listening_addr(id: u64) -> Option<std::net::SocketAddr> {
-        #[cfg(feature = "net-server")]
-        if let Some(l) = tcp_server::LISTENERS.lock().unwrap().get(&id).cloned() {
-            return l.sock.local_addr().ok();
-        }
-        #[cfg(feature = "net-server")]
-        { LISTENING.lock().unwrap().get(&id).copied().flatten() }
-        #[cfg(not(feature = "net-server"))]
-        { let _ = id; None }
+        crate::extensions::sockets().and_then(|h| h.local_addr(id))
     }
-
-    /// The listener a numeric tcp_accept addresses: an Arc clone, so the
-    /// wait never holds the registry lock.
-    #[cfg(feature = "net-server")]
-    fn listener_for_accept(id: u64) -> MixResult<Arc<tcp_server::Listener>> {
-        if let Some(l) = tcp_server::LISTENERS.lock().unwrap().get(&id).cloned() {
-            return Ok(l);
-        }
-        if is_subscribed(ClientKey::listener(id)) {
-            return Err(refusal(
-                "SOCKET_SUBSCRIBED",
-                format!(
-                    "tcp_accept: listener {id} is a tcp_on subscription — connections arrive as events; accept from the source id instead"
-                ),
-            ));
-        }
-        let connection =
-            tcp_client::MAP.lock().unwrap().contains_key(&id) || is_subscribed(ClientKey::tcp(id));
-        Err(refusal(
-            "TCP_ACCEPT_HANDLE",
-            if connection {
-                format!("tcp_accept: handle {id} is a connection, not a listener")
-            } else {
-                format!("tcp_accept: unknown tcp listener {id}")
-            },
-        ))
-    }
-
     /// tcp_accept's `{timeout}`: seconds, default 30, 0 = wait forever.
-    pub(crate) fn accept_timeout(opts: Option<&Value>) -> MixResult<f64> {
+    pub fn accept_timeout(opts: Option<&Value>) -> MixResult<f64> {
         let mut timeout_seconds = 30.0;
         match opts {
             None | Some(Value::Nil) => {}
@@ -25595,7 +25003,7 @@ pub(crate) mod socket_sources {
 
     /// The absolute deadline for a wait; None waits forever (timeout 0,
     /// or one too far away to represent).
-    pub(crate) fn deadline_after(timeout_seconds: f64) -> Option<std::time::Instant> {
+    pub fn deadline_after(timeout_seconds: f64) -> Option<std::time::Instant> {
         if timeout_seconds <= 0.0 {
             return None;
         }
@@ -25604,10 +25012,7 @@ pub(crate) mod socket_sources {
             .and_then(|d| std::time::Instant::now().checked_add(d))
     }
 
-    /// Validate a numeric tcp_accept call: its listener and the absolute
-    /// deadline. The handle limit is enforced per accept attempt.
-    #[cfg(feature = "net-server")]
-    pub(crate) fn prepare_accept(
+t(
         args: &[Value],
     ) -> MixResult<(Arc<tcp_server::Listener>, Option<std::time::Instant>)> {
         let id = client_id_of(args.first(), "tcp_accept")?;
@@ -25616,63 +25021,11 @@ pub(crate) mod socket_sources {
         Ok((listener, deadline_after(timeout_seconds)))
     }
 
-    /// Class C numeric accept: non-blocking accepts with readiness awaited
-    /// on an AsyncFd dup of the listener under the call's deadline, so the
-    /// read permit is released while no connection is pending. Several
-    /// waiters on one listener are safe: the loser of a race sees
-    /// WouldBlock and waits again. The connection is owned by `owner`
-    /// before this returns, so a task cancelled after the accept (while
-    /// the evaluator reacquires its permit) cannot leak it past
-    /// retirement.
-    ///
-    /// The evaluator runs every numeric tcp_accept here on unix, not only
-    /// Class C ones: waiting on the runtime lets the shell's SIGTERM and
-    /// Ctrl-C select arms cancel the wait, as they cancel sleep().
-    /// `interruptible` (plain and Class S evaluation) also rechecks the
-    /// interrupt flag every ACCEPT_SLICE for embedders with no such select.
-    #[cfg(unix)]
-    #[cfg(feature = "net-server")]
-    pub(crate) async fn pull_accept(
-        listener: Arc<tcp_server::Listener>,
-        deadline: Option<std::time::Instant>,
-        owner: Arc<TcpOwner>,
-        interruptible: bool,
-    ) -> MixResult<Value> {
-        use tokio::io::Interest;
-        use tokio::io::unix::AsyncFd;
-        let dup = listener
-            .sock
-            .try_clone()
-            .map_err(|e| refusal("SOCKET_PULL", e.to_string()))?;
-        let ready = AsyncFd::with_interest(dup, Interest::READABLE)
-            .map_err(|e| refusal("SOCKET_PULL", e.to_string()))?;
-        let mut entered = false;
-        loop {
-            if let Some((id, _)) = super::try_accept(&listener.sock, Some(&owner))
-                .map_err(super::AcceptError::into_mix)?
-            {
-                return Ok(Value::Number(id as f64));
-            }
-            if !entered {
-                entered = true;
-                super::ACCEPT_WAITS.fetch_add(1, Ordering::AcqRel);
-            }
-            match wait_ready(&ready, deadline, interruptible).await {
-                Wait::Ready => {}
-                Wait::Done => return Ok(Value::Nil),
-                Wait::Failed(e) => {
-                    return Err(refusal(
-                        "TCP_ACCEPT_FAILED",
-                        format!("tcp_accept: readiness failed: {e}"),
-                    ));
-                }
-            }
-        }
-    }
+
 
     /// How a readiness wait ended.
     #[cfg(unix)]
-    enum Wait {
+    pub enum Wait {
         Ready,
         /// The deadline passed, or (interruptible waits) Ctrl-C arrived.
         Done,
@@ -25684,7 +25037,7 @@ pub(crate) mod socket_sources {
     /// and Class S evaluation) also rechecks the interrupt flag every
     /// ACCEPT_SLICE, so an embedder without a Ctrl-C select still stops.
     #[cfg(unix)]
-    async fn wait_ready<T: std::os::fd::AsRawFd>(
+    pub async fn wait_ready<T: std::os::fd::AsRawFd>(
         ready: &tokio::io::unix::AsyncFd<T>,
         deadline: Option<std::time::Instant>,
         interruptible: bool,
@@ -25727,35 +25080,9 @@ pub(crate) mod socket_sources {
         }
     }
 
-    #[cfg(not(unix))]
-    #[cfg(feature = "net-server")]
-    pub(crate) async fn pull_accept(
-        _listener: Arc<tcp_server::Listener>,
-        _deadline: Option<std::time::Instant>,
-        _owner: Arc<TcpOwner>,
-        _interruptible: bool,
-    ) -> MixResult<Value> {
-        Err(refusal(
-            "SOCKET_UNSUPPORTED",
-            "tcp_accept inside a Class C body requires a unix platform; the plain blocking builtin keeps Class S semantics",
-        ))
-    }
 
-    /// One accepted connection as an ordered subscription record. The
-    /// connection is already a live handle, so a record that is never
-    /// delivered must be discarded with `discard_record`.
-    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-    #[cfg(feature = "net-server")]
-    fn accepted_record(handle: u64, peer: std::net::SocketAddr) -> SocketRecord {
-        SocketRecord {
-            kind: "accepted",
-            data: serde_json::to_vec(&serde_json::json!({
-                "handle": handle,
-                "peer": {"host": peer.ip().to_string(), "port": peer.port()},
-            }))
-            .unwrap_or_default(),
-        }
-    }
+
+
 
     /// The `{handle, peer}` body of an `accepted` record.
     pub(crate) fn accepted_body(rec: &SocketRecord) -> Option<serde_json::Value> {
@@ -25790,13 +25117,7 @@ pub(crate) mod socket_sources {
             }
             return;
         }
-        #[cfg(feature = "net-server")]
-        if let Some(listener) = tcp_server::LISTENERS.lock().unwrap().get(&id) {
-            let mut slot = listener.ownership.lock().unwrap();
-            if slot.is_none() {
-                *slot = Some(tcp_client::Ownership::new(owner.clone(), id));
-            }
-        }
+        if let Some(h) = crate::extensions::sockets() { h.own(owner, id); }
     }
 
     /// Generation retirement: close every owned listener and connection
@@ -25805,52 +25126,15 @@ pub(crate) mod socket_sources {
     /// first, so the return sees it).
     pub(crate) fn close_owned(owner: &TcpOwner) {
         owner.retired.store(true, Ordering::Release);
+        if let Some(h) = crate::extensions::sockets() { h.retire(owner); }
         let ids: Vec<u64> = owner.ids.lock().unwrap().iter().copied().collect();
         for id in ids {
-            #[cfg(feature = "net-server")]
-            if let Some(listener) = tcp_server::LISTENERS.lock().unwrap().remove(&id) {
-                super::close_listener(listener);
-            }
             let conn = tcp_client::MAP.lock().unwrap().remove(&id);
             drop(conn);
         }
     }
 
-    /// `tcp_on` on a listener: move it out of the registry into a reader
-    /// owned by the evaluator generation. Refused while a numeric accept
-    /// is waiting on it (the reader must be the single acceptor).
-    #[cfg(feature = "net-server")]
-    pub(crate) fn subscribe_listener(
-        queue: Arc<Queue>,
-        id: String,
-        listener_id: u64,
-        owned: Arc<TcpOwner>,
-    ) -> MixResult<SocketSource> {
-        let listener = {
-            let mut map = tcp_server::LISTENERS.lock().unwrap();
-            let Some(listener) = map.remove(&listener_id) else {
-                return Err(refusal(
-                    "TCP_ON_HANDLE",
-                    format!("unknown tcp listener {listener_id}"),
-                ));
-            };
-            if Arc::strong_count(&listener) > 1 {
-                map.insert(listener_id, listener);
-                return Err(refusal(
-                    "SOCKET_BUSY",
-                    "a tcp_accept is already waiting on this listener",
-                ));
-            }
-            listener
-        };
-        let keep = listener.clone();
-        spawn_listener(queue, id, listener_id, listener, owned).inspect_err(|_| {
-            tcp_server::LISTENERS
-                .lock()
-                .unwrap()
-                .insert(listener_id, keep.clone());
-        })
-    }
+
 
     /// `ws_send` on a subscribed handle: enqueue one bounded message for
     /// the owner thread and return the completion receipt. The caller
@@ -26623,7 +25907,7 @@ pub(crate) mod socket_sources {
         /// pipe and command wake pipe. Owned by the evaluator generation
         /// (NativeEvents). Drop writes the cancel byte and joins — bounded
         /// by the non-blocking read/write discipline, never by a peer.
-        pub(crate) struct SocketSource {
+        pub struct SocketSource {
             key: ClientKey,
             cancel: UnixStream,
             worker: Option<std::thread::JoinHandle<()>>,
@@ -26996,139 +26280,9 @@ pub(crate) mod socket_sources {
             result
         }
 
-        /// A subscribed tcp_listen listener. The reader parks in poll(2)
-        /// on (listener, cancel) with no timer, and turns each accepted
-        /// connection into one ordered `accepted` record. Cancellation,
-        /// overflow and the single terminal record follow the connection
-        /// reader's rules; a listener has no sends.
-        #[cfg(feature = "net-server")]
-        pub(super) fn spawn_listener(
-            queue: Arc<Queue>,
-            id: String,
-            listener_id: u64,
-            listener: Arc<tcp_server::Listener>,
-            owned: Arc<TcpOwner>,
-        ) -> MixResult<SocketSource> {
-            let key = ClientKey::listener(listener_id);
-            let (cancel, cancel_wake) =
-                UnixStream::pair().map_err(|e| refusal("SOCKET_PAIR", e.to_string()))?;
-            mark_listening(listener_id, listener.sock.local_addr().ok());
-            let completed = Arc::new(AtomicBool::new(false));
-            let worker_completed = completed.clone();
-            let worker = std::thread::Builder::new()
-                .name("mix-socket-accept".into())
-                .spawn(move || {
-                    let mut fds = [
-                        libc::pollfd {
-                            fd: listener.sock.as_raw_fd(),
-                            events: libc::POLLIN,
-                            revents: 0,
-                        },
-                        libc::pollfd {
-                            fd: cancel_wake.as_raw_fd(),
-                            events: libc::POLLIN,
-                            revents: 0,
-                        },
-                    ];
-                    let mut pending = false;
-                    let closed = loop {
-                        let timeout = if pending { 0 } else { -1 };
-                        // SAFETY: two valid pollfds that outlive the call.
-                        let rc = unsafe { libc::poll(fds.as_mut_ptr(), 2, timeout) };
-                        if rc < 0 {
-                            let e = std::io::Error::last_os_error();
-                            if e.kind() == std::io::ErrorKind::Interrupted {
-                                continue;
-                            }
-                            break Some(serde_json::json!({ "reason": format!("poll failed: {e}") }));
-                        }
-                        // Explicit close: no terminal marker.
-                        if fds[1].revents != 0 {
-                            break None;
-                        }
-                        if pending || fds[0].revents != 0 {
-                            match accept_batch(&queue, &id, &listener.sock, &owned) {
-                                DrainOutcome::More => pending = false,
-                                DrainOutcome::Yield => pending = true,
-                                DrainOutcome::Overflow => {
-                                    break Some(serde_json::json!({
-                                        "reason": "overflow",
-                                        "message": "the socket frame queue exceeded its byte or frame bound; the listener was closed",
-                                    }));
-                                }
-                                DrainOutcome::Terminal(reason) if reason == "handle_limit" => {
-                                    break Some(serde_json::json!({
-                                        "reason": "handle_limit",
-                                        "message": format!(
-                                            "{} live tcp handles is the limit; the listener was closed",
-                                            tcp_server::MAX_TCP_HANDLES
-                                        ),
-                                    }));
-                                }
-                                DrainOutcome::Terminal(reason) => {
-                                    break Some(serde_json::json!({ "reason": reason }));
-                                }
-                            }
-                        }
-                    };
-                    drop(listener);
-                    if let Some(closed) = closed {
-                        // Unmark before publishing: a script that sees the
-                        // terminal may at once watch the same key again.
-                        unmark_subscribed(key);
-                        queue.socket_closed(&id, closed);
-                    }
-                    worker_completed.store(true, Ordering::Release);
-                });
-            match worker {
-                Ok(worker) => Ok(SocketSource {
-                    key,
-                    cancel,
-                    worker: Some(worker),
-                    completed,
-                }),
-                Err(e) => {
-                    unmark_subscribed(key);
-                    Err(refusal("SOCKET_THREAD", e.to_string()))
-                }
-            }
-        }
 
-        /// Accept what poll exposed, in bounded batches. Each connection
-        /// takes a permit (reserved before accept(2), so the limit holds)
-        /// and becomes a live handle owned by the generation before its
-        /// record is queued; a refused record closes it again (never a
-        /// handle nobody can name).
-        #[cfg(feature = "net-server")]
-        fn accept_batch(
-            queue: &Queue,
-            id: &str,
-            listener: &std::net::TcpListener,
-            owned: &Arc<TcpOwner>,
-        ) -> DrainOutcome {
-            for _ in 0..16 {
-                match super::super::try_accept(listener, Some(owned)) {
-                    Ok(Some((handle, peer))) => {
-                        if !queue.socket_push(id, accepted_record(handle, peer)) {
-                            let conn = tcp_client::MAP.lock().unwrap().remove(&handle);
-                            drop(conn);
-                            return DrainOutcome::Overflow;
-                        }
-                    }
-                    Ok(None) => return DrainOutcome::More,
-                    // No permit: the connection stays queued in the
-                    // backlog and is refused cleanly when the listener
-                    // closes.
-                    Err(super::super::AcceptError::Limit) => {
-                        return DrainOutcome::Terminal("handle_limit".into());
-                    }
-                    Err(super::super::AcceptError::Io(e)) => {
-                        return DrainOutcome::Terminal(e.to_string());
-                    }
-                }
-            }
-            DrainOutcome::Yield
-        }
+
+
 
         #[allow(clippy::too_many_arguments)]
         fn spawn(
@@ -27591,6 +26745,11 @@ pub(crate) mod socket_sources {
             queue.socket_push(id, record)
         }
 
+        impl SocketSource {
+            pub fn from_extension(key: ClientKey, cancel: UnixStream, worker: std::thread::JoinHandle<()>, completed: Arc<AtomicBool>) -> Self {
+                Self { key, cancel, worker: Some(worker), completed }
+            }
+        }
         impl Drop for SocketSource {
             fn drop(&mut self) {
                 // One byte wakes poll(2); the reader exits without
@@ -27606,16 +26765,15 @@ pub(crate) mod socket_sources {
     }
 
     #[cfg(target_os = "linux")]
-    pub(crate) use linux::SocketSource;
+    pub use linux::SocketSource;
     #[cfg(target_os = "linux")]
     pub(crate) use linux::spawn_udp;
     #[cfg(target_os = "linux")]
     use linux::{spawn_tcp, spawn_ws};
-    #[cfg(all(target_os = "linux", feature = "net-server"))]
-    use linux::spawn_listener;
+
 
     #[cfg(not(target_os = "linux"))]
-    pub(crate) struct SocketSource {
+    pub struct SocketSource {
         pub id: String,
         pub command: String,
         pub kind: &'static str,
@@ -27651,20 +26809,7 @@ pub(crate) mod socket_sources {
         ))
     }
 
-    #[cfg(not(target_os = "linux"))]
-    #[cfg(feature = "net-server")]
-    fn spawn_listener(
-        _queue: Arc<Queue>,
-        _id: String,
-        _listener_id: u64,
-        _listener: Arc<tcp_server::Listener>,
-        _owned: Arc<TcpOwner>,
-    ) -> MixResult<SocketSource> {
-        Err(refusal(
-            "SOCKET_UNSUPPORTED",
-            "tcp_on requires Linux poll(2)",
-        ))
-    }
+
 
     #[cfg(all(test, target_os = "linux"))]
     mod tests {
@@ -27806,6 +26951,7 @@ pub(crate) mod socket_sources {
                     // still-unset mark).
                     std::thread::sleep(std::time::Duration::from_millis(200));
                     owner.retired.store(true, Ordering::Release);
+        if let Some(h) = crate::extensions::sockets() { h.retire(owner); }
                     drop(map);
                 }
             });
@@ -29366,19 +28512,8 @@ pub(crate) mod socket_sources {
 fn builtin_tcp_close(args: Vec<Value>) -> MixResult<Option<Value>> {
     expect_args("tcp_close", &args, 1)?;
     let id = tcp_id_arg("tcp_close", &args)?;
-    #[cfg(feature = "net-server")]
-    if socket_sources::is_subscribed(socket_sources::ClientKey::listener(id)) {
-        return Err(tcp_err(
-            "tcp_close",
-            format!(
-                "listener {id} is a tcp_on subscription — connections arrive as events; close it with tcp_unwatch()"
-            ),
-        ));
-    }
-    #[cfg(feature = "net-server")]
-    if let Some(listener) = tcp_server::LISTENERS.lock().unwrap().remove(&id) {
-        close_listener(listener);
-        return Ok(Some(Value::Bool(true)));
+    if let Some(h) = crate::extensions::sockets() {
+        if let Some(closed) = h.close(id)? { return Ok(Some(Value::Bool(closed))); }
     }
     let id = tcp_handle("tcp_close", &args)?;
     Ok(Some(Value::Bool(
@@ -29395,1025 +28530,20 @@ fn builtin_tcp_close(args: Vec<Value>) -> MixResult<Option<Value>> {
 // rendezvous. Hand-rolled HTTP/1.1, no new dependency, always present
 // (like udp_*): the server side needs nothing from ureq.
 
-mod http_srv {
-    use std::io::{BufRead, BufReader, Write};
 
-    pub(super) struct RequestHead {
-        pub method: String,
-        pub target: String,
-        pub headers: indexmap::IndexMap<String, String>,
-        pub content_length: usize,
-    }
 
-    /// Read one CRLF line INCREMENTALLY: the cap and the deadline are
-    /// enforced per chunk, never after the fact — a caller streaming
-    /// gigabytes with no newline is refused at `cap`, and a byte-drip
-    /// slowloris is refused at `deadline`, whatever the per-read socket
-    /// timeout is (http_accept_next sets a 1 s tick so this loop
-    /// actually gets to look at the clock). Returns the line WITHOUT
-    /// its terminator; invalid UTF-8 is the caller's 400, not a
-    /// mislabelled timeout.
-    fn read_line_capped(
-        reader: &mut BufReader<&mut std::net::TcpStream>,
-        cap: usize,
-        deadline: std::time::Instant,
-    ) -> Result<String, (u16, &'static str)> {
-        let mut line: Vec<u8> = Vec::new();
-        loop {
-            if std::time::Instant::now() >= deadline {
-                return Err((408, "request read deadline exceeded"));
-            }
-            let buf = match reader.fill_buf() {
-                Ok(b) => b,
-                Err(e)
-                    if matches!(
-                        e.kind(),
-                        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
-                    ) =>
-                {
-                    continue; // tick: the deadline check above governs
-                }
-                Err(_) => return Err((408, "connection error while reading")),
-            };
-            if buf.is_empty() {
-                return Err((400, "connection closed mid-request"));
-            }
-            let (consumed, done) = match buf.iter().position(|&b| b == b'\n') {
-                Some(i) => (i + 1, true),
-                None => (buf.len(), false),
-            };
-            if line.len() + consumed > cap {
-                return Err((431, "line exceeds the size cap"));
-            }
-            line.extend_from_slice(&buf[..consumed]);
-            reader.consume(consumed);
-            if done {
-                while matches!(line.last(), Some(b'\n' | b'\r')) {
-                    line.pop();
-                }
-                return String::from_utf8(line).map_err(|_| (400, "non-UTF-8 in request"));
-            }
-        }
-    }
 
-    /// Parse the request line + headers (no body). One whole-head
-    /// deadline bounds the read however many lines arrive. Refusals the
-    /// head itself decides: duplicate or malformed Content-Length (400,
-    /// RFC 7230 §5.3), obs-fold continuations (400, §3.2.4), any
-    /// Transfer-Encoding (501 — chunked is deliberately unsupported, and
-    /// silently dropping a chunked body while answering 200 is the one
-    /// thing a webhook catcher must never do).
-    pub(super) fn read_head(
-        reader: &mut BufReader<&mut std::net::TcpStream>,
-        deadline: std::time::Instant,
-    ) -> Result<RequestHead, (u16, &'static str)> {
-        let line = read_line_capped(reader, 8192, deadline)?;
-        let mut parts = line.split_whitespace();
-        let method = parts.next().unwrap_or("").to_string();
-        let target = parts.next().unwrap_or("").to_string();
-        let version = parts.next().unwrap_or("");
-        if method.is_empty() || !target.starts_with('/') || !version.starts_with("HTTP/1") {
-            return Err((400, "malformed request line"));
-        }
-        let mut headers = indexmap::IndexMap::new();
-        let mut header_bytes = 0usize;
-        loop {
-            let h = read_line_capped(reader, 8192, deadline)?;
-            if h.is_empty() {
-                break;
-            }
-            header_bytes += h.len();
-            if header_bytes > 16384 {
-                return Err((431, "headers too large"));
-            }
-            if h.starts_with(' ') || h.starts_with('\t') {
-                return Err((400, "obsolete line folding not supported"));
-            }
-            let Some((k, v)) = h.split_once(':') else {
-                return Err((400, "malformed header line"));
-            };
-            let key = k.trim().to_ascii_lowercase();
-            let prev = headers.insert(key.clone(), v.trim().to_string());
-            if prev.is_some() && key == "content-length" {
-                return Err((400, "duplicate content-length"));
-            }
-        }
-        if headers.contains_key("transfer-encoding") {
-            return Err((501, "transfer-encoding not supported"));
-        }
-        let content_length = match headers.get("content-length") {
-            None => 0,
-            Some(cl) => {
-                if cl.is_empty() || !cl.bytes().all(|b| b.is_ascii_digit()) {
-                    return Err((400, "malformed content-length"));
-                }
-                cl.parse().map_err(|_| (400, "malformed content-length"))?
-            }
-        };
-        Ok(RequestHead {
-            method,
-            target,
-            headers,
-            content_length,
-        })
-    }
 
-    /// Read the declared body (caller has already gated method/size
-    /// policy) under the same deadline discipline.
-    pub(super) fn read_body(
-        reader: &mut BufReader<&mut std::net::TcpStream>,
-        len: usize,
-        deadline: std::time::Instant,
-    ) -> Result<Vec<u8>, (u16, &'static str)> {
-        let mut body: Vec<u8> = Vec::with_capacity(len.min(64 * 1024));
-        while body.len() < len {
-            if std::time::Instant::now() >= deadline {
-                return Err((408, "request read deadline exceeded"));
-            }
-            let buf = match reader.fill_buf() {
-                Ok(b) => b,
-                Err(e)
-                    if matches!(
-                        e.kind(),
-                        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
-                    ) =>
-                {
-                    continue;
-                }
-                Err(_) => return Err((408, "connection error while reading body")),
-            };
-            if buf.is_empty() {
-                return Err((400, "connection closed mid-body"));
-            }
-            let take = buf.len().min(len - body.len());
-            body.extend_from_slice(&buf[..take]);
-            reader.consume(take);
-        }
-        Ok(body)
-    }
 
-    /// Percent-decode a PATH component: `%XX` only — no `+`→space (that
-    /// is the form-urlencoded rule; in a path, `+` is a literal plus,
-    /// and decoding it breaks every `a+b.txt` on disk).
-    pub(super) fn percent_decode_path(s: &str) -> String {
-        let bytes = s.as_bytes();
-        let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
-        let mut i = 0;
-        while i < bytes.len() {
-            if bytes[i] == b'%'
-                && let (Some(h), Some(l)) = (
-                    bytes.get(i + 1).and_then(|b| (*b as char).to_digit(16)),
-                    bytes.get(i + 2).and_then(|b| (*b as char).to_digit(16)),
-                )
-            {
-                out.push((h * 16 + l) as u8);
-                i += 3;
-                continue;
-            }
-            out.push(bytes[i]);
-            i += 1;
-        }
-        String::from_utf8_lossy(&out).into_owned()
-    }
-
-    /// Percent-encoding for a listing href: keep it a working relative
-    /// link whatever the filename holds. Unreserved ASCII passes;
-    /// everything else — including `&` (a browser entity-decodes hrefs)
-    /// and every non-ASCII char — is percent-encoded per UTF-8 BYTE (a
-    /// `u8 as char` passthrough would Latin-1-mangle multibyte names
-    /// into dead links; the re-review's catch).
-    pub(super) fn href_encode(s: &str) -> String {
-        let mut out = String::with_capacity(s.len());
-        for b in s.bytes() {
-            match b {
-                b'A'..=b'Z'
-                | b'a'..=b'z'
-                | b'0'..=b'9'
-                | b'-'
-                | b'_'
-                | b'.'
-                | b'~'
-                | b'+'
-                | b'@'
-                | b','
-                | b'='
-                | b'('
-                | b')' => out.push(b as char),
-                _ => out.push_str(&format!("%{b:02X}")),
-            }
-        }
-        out
-    }
-
-    pub(super) fn reason(status: u16) -> &'static str {
-        match status {
-            200 => "OK",
-            400 => "Bad Request",
-            403 => "Forbidden",
-            404 => "Not Found",
-            405 => "Method Not Allowed",
-            408 => "Request Timeout",
-            413 => "Payload Too Large",
-            414 => "URI Too Long",
-            431 => "Request Header Fields Too Large",
-            500 => "Internal Server Error",
-            _ => "",
-        }
-    }
-
-    /// Write a full response (or headers only for HEAD). Connection:
-    /// close always — no keep-alive, one exchange per connection.
-    pub(super) fn write_response(
-        stream: &mut std::net::TcpStream,
-        status: u16,
-        content_type: &str,
-        extra_headers: &[(String, String)],
-        body: &[u8],
-        head_only: bool,
-    ) -> std::io::Result<()> {
-        // 204/304 MUST NOT carry Content-Length per RFC 9110 §8.6 (the
-        // body was already suppressed by the caller for those).
-        let mut out = if matches!(status, 204 | 304) {
-            format!(
-                "HTTP/1.1 {} {}\r\nConnection: close\r\n",
-                status,
-                reason(status)
-            )
-        } else {
-            format!(
-                "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\n",
-                status,
-                reason(status),
-                content_type,
-                body.len()
-            )
-        };
-        for (k, v) in extra_headers {
-            out.push_str(k);
-            out.push_str(": ");
-            out.push_str(v);
-            out.push_str("\r\n");
-        }
-        out.push_str("\r\n");
-        stream.write_all(out.as_bytes())?;
-        if !head_only {
-            stream.write_all(body)?;
-        }
-        stream.flush()
-    }
-
-    pub(super) fn write_error(stream: &mut std::net::TcpStream, status: u16, msg: &str) {
-        let body = format!("{} {}\n{}\n", status, reason(status), msg);
-        let _ = write_response(
-            stream,
-            status,
-            "text/plain; charset=utf-8",
-            &[],
-            body.as_bytes(),
-            false,
-        );
-    }
-
-    pub(super) fn mime_for(path: &std::path::Path) -> &'static str {
-        match path
-            .extension()
-            .and_then(|e| e.to_str())
-            .map(|e| e.to_ascii_lowercase())
-            .as_deref()
-        {
-            Some("html" | "htm") => "text/html; charset=utf-8",
-            Some("css") => "text/css; charset=utf-8",
-            Some("js" | "mjs") => "text/javascript; charset=utf-8",
-            Some("json") => "application/json",
-            Some("xml") => "application/xml",
-            Some("svg") => "image/svg+xml",
-            Some("png") => "image/png",
-            Some("jpg" | "jpeg") => "image/jpeg",
-            Some("gif") => "image/gif",
-            Some("webp") => "image/webp",
-            Some("ico") => "image/x-icon",
-            Some("txt" | "md" | "mix" | "log" | "conf" | "toml" | "yaml" | "yml") => {
-                "text/plain; charset=utf-8"
-            }
-            Some("pdf") => "application/pdf",
-            Some("wasm") => "application/wasm",
-            Some("mp4") => "video/mp4",
-            Some("woff") => "font/woff",
-            Some("woff2") => "font/woff2",
-            _ => "application/octet-stream",
-        }
-    }
-
-    pub(super) fn html_escape(s: &str) -> String {
-        s.replace('&', "&amp;")
-            .replace('<', "&lt;")
-            .replace('>', "&gt;")
-            .replace('"', "&quot;")
-    }
-}
-
-/// Shared accept-with-deadline loop: non-blocking listener polled at
-/// 15 ms, so `duration`/`timeout` deadlines and request counts are
-/// honoured without a dedicated thread.
-fn http_accept_next(
-    listener: &std::net::TcpListener,
-    deadline: Option<std::time::Instant>,
-) -> MixResult<Option<(std::net::TcpStream, std::net::SocketAddr)>> {
-    loop {
-        // Ctrl-C ends a blocking server cleanly (the flag is set by the
-        // evaluator's SIGINT handler). Without this the non-blocking
-        // accept loop spins forever and ^C does nothing — a server you
-        // cannot stop. `None` here means "loop over", so the caller
-        // returns the count served so far, exactly like a duration
-        // expiry, and the interpreter then raises the interrupt itself.
-        if crate::interrupt::is_interrupted() {
-            return Ok(None);
-        }
-        match listener.accept() {
-            Ok((stream, peer)) => {
-                stream.set_nonblocking(false).ok();
-                stream
-                    .set_read_timeout(Some(std::time::Duration::from_secs(1)))
-                    .ok();
-                stream
-                    .set_write_timeout(Some(std::time::Duration::from_secs(10)))
-                    .ok();
-                return Ok(Some((stream, peer)));
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                if let Some(d) = deadline
-                    && std::time::Instant::now() >= d
-                {
-                    return Ok(None);
-                }
-                std::thread::sleep(std::time::Duration::from_millis(15));
-            }
-            // (accepted streams get a 1s read tick below, NOT their whole
-            // budget: the per-request DEADLINE in read_head/read_body is
-            // what bounds a slowloris, and it can only fire if reads
-            // return control often enough to check the clock.)
-            Err(e) => {
-                return Err(MixError::RuntimeError {
-                    span: None,
-                    msg: format!("accept: {e}"),
-                });
-            }
-        }
-    }
-}
-
-/// `http_serve(root[, opts])` — blocking static file server; returns the
-/// number of requests served once `duration`/`requests` ends it.
-#[cfg(feature = "net-server")]
-fn builtin_http_serve(args: Vec<Value>) -> MixResult<Option<Value>> {
-    expect_args_between("http_serve", &args, 1, 2)?;
-    let root_arg = args[0].to_mix_string();
-    let root = std::fs::canonicalize(&root_arg).map_err(|e| MixError::RuntimeError {
-        span: None,
-        msg: format!("http_serve '{root_arg}': {e}"),
-    })?;
-    if !root.is_dir() {
-        return Err(MixError::RuntimeError {
-            span: None,
-            msg: format!("http_serve: '{root_arg}' is not a directory"),
-        });
-    }
-
-    let mut port: u16 = 0;
-    let mut host = "127.0.0.1".to_string();
-    let mut duration = 0.0f64;
-    let mut index = "index.html".to_string();
-    let mut listing = false;
-    let mut render_md = false;
-    let mut requests_cap: u64 = 0;
-    let mut spa: Option<String> = None;
-    let mut clean_urls = false;
-    if let Some(opts) = args.get(1) {
-        match opts {
-            Value::Nil => {}
-            Value::Map(m) => {
-                for k in m.keys() {
-                    if !matches!(
-                        k.as_str(),
-                        "port"
-                            | "host"
-                            | "duration"
-                            | "index"
-                            | "listing"
-                            | "render_md"
-                            | "requests"
-                            | "spa"
-                            | "clean_urls"
-                    ) {
-                        return Err(MixError::RuntimeError {
-                            span: None,
-                            msg: format!(
-                                "http_serve(): unknown option '{k}' (supported: port, host, duration, index, listing, render_md, requests, spa, clean_urls)"
-                            ),
-                        });
-                    }
-                }
-                if let Some(v) = m.get("port") {
-                    port = as_exact_integer(
-                        "http_serve(): option 'port'",
-                        required_number_value("http_serve(): option 'port'", v)?,
-                        0,
-                        65535,
-                    )? as u16;
-                }
-                if let Some(v) = m.get("host") {
-                    host = v.to_mix_string();
-                }
-                if let Some(v) = m.get("duration") {
-                    duration = required_number_value("http_serve(): option 'duration'", v)?;
-                    as_duration("http_serve(): option 'duration'", duration)?;
-                }
-                if let Some(v) = m.get("index") {
-                    index = v.to_mix_string();
-                }
-                if let Some(b) = bool_option("http_serve()", "listing", m.get("listing"))? {
-                    listing = b;
-                }
-                if let Some(b) = bool_option("http_serve()", "render_md", m.get("render_md"))? {
-                    render_md = b;
-                }
-                if let Some(v) = m.get("requests") {
-                    requests_cap = as_exact_integer(
-                        "http_serve(): option 'requests'",
-                        required_number_value("http_serve(): option 'requests'", v)?,
-                        0,
-                        i64::MAX,
-                    )? as u64;
-                }
-                if let Some(v) = m.get("spa") {
-                    // The single-page-app fallback: a GET for a path with no
-                    // matching file is answered with this shell file (200)
-                    // instead of a 404, so a client-side router boots on every
-                    // deep URL. `spa: true` means index.html; `spa: "404.html"`
-                    // names another shell. Static frontend only — this serves
-                    // the app, never its API. Resolved and prefix-checked once
-                    // here so a bad shell path fails at startup, not per-404.
-                    let shell_name = match v {
-                        Value::Bool(true) => index.clone(),
-                        // Every other option here treats nil/false as
-                        // "off" — spa must too, rather than looking for a
-                        // shell literally named "nil"/"0".
-                        Value::Bool(false) | Value::Nil => String::new(),
-                        Value::Number(_) => {
-                            return Err(MixError::RuntimeError {
-                                span: None,
-                                msg: "http_serve(): option 'spa' must be true or a shell filename"
-                                    .to_string(),
-                            });
-                        }
-                        other => other.to_mix_string(),
-                    };
-                    if !shell_name.is_empty() {
-                        let shell = root.join(&shell_name);
-                        let canon =
-                            std::fs::canonicalize(&shell).map_err(|e| MixError::RuntimeError {
-                                span: None,
-                                msg: format!(
-                                    "http_serve(): spa shell '{shell_name}' not found under root: {e}"
-                                ),
-                            })?;
-                        if !canon.starts_with(&root) || !canon.is_file() {
-                            return Err(MixError::RuntimeError {
-                                span: None,
-                                msg: format!(
-                                    "http_serve(): spa shell '{shell_name}' must be a file under the served root"
-                                ),
-                            });
-                        }
-                        spa = Some(canon.to_string_lossy().into_owned());
-                    }
-                }
-                if let Some(b) = bool_option("http_serve()", "clean_urls", m.get("clean_urls"))? {
-                    clean_urls = b;
-                }
-            }
-            other => {
-                return Err(MixError::RuntimeError {
-                    span: None,
-                    msg: format!(
-                        "http_serve(): options must be a map or nil, got {}",
-                        other.type_name()
-                    ),
-                });
-            }
-        }
-    }
-    #[cfg(not(feature = "markdown"))]
-    if render_md {
-        return Err(MixError::RuntimeError {
-            span: None,
-            msg: "http_serve(): render_md requires the `markdown` feature".to_string(),
-        });
-    }
-
-    let listener =
-        std::net::TcpListener::bind((host.as_str(), port)).map_err(|e| MixError::RuntimeError {
-            span: None,
-            msg: format!("http_serve: bind '{host}:{port}': {e}"),
-        })?;
-    listener.set_nonblocking(true).ok();
-    let bound = listener.local_addr().map_err(|e| MixError::RuntimeError {
-        span: None,
-        msg: format!("http_serve: {e}"),
-    })?;
-    // Self-discovery: the caller (and its operator) always learns where —
-    // essential with port 0, harmless otherwise.
-    // (an IPv6 literal host needs brackets in the printed URL)
-    let url_host = if host.contains(':') && !host.starts_with('[') {
-        format!("[{host}]")
-    } else {
-        host.clone()
-    };
-    println!(
-        "http_serve: http://{}:{}/ root={} (GET/HEAD only, Connection: close{})",
-        url_host,
-        bound.port(),
-        root.display(),
-        if duration > 0.0 {
-            format!(", for {duration}s")
-        } else {
-            String::new()
-        }
-    );
-
-    let deadline = (duration > 0.0)
-        .then(|| std::time::Instant::now() + std::time::Duration::from_secs_f64(duration));
-    let mut served: u64 = 0;
-    while let Some((mut stream, _peer)) = http_accept_next(&listener, deadline)? {
-        // Each request gets at most 10s of read time, clamped to the
-        // serve deadline — one slow client cannot hold the loop past
-        // `duration` by more than that grace (documented in http.md).
-        let mut req_deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-        if let Some(d) = deadline {
-            req_deadline = req_deadline.min(d + std::time::Duration::from_secs(10));
-        }
-        http_serve_one(
-            &mut stream,
-            &root,
-            &index,
-            listing,
-            render_md,
-            spa.as_deref(),
-            clean_urls,
-            req_deadline,
-        );
-        served += 1;
-        if requests_cap > 0 && served >= requests_cap {
-            break;
-        }
-    }
-    Ok(Some(Value::Number(served as f64)))
-}
 
 /// One GET/HEAD exchange against the static root. Never raises — every
 /// failure becomes an HTTP status on the wire.
 // Preserve the explicit request options without changing the serving signature.
-#[allow(clippy::too_many_arguments)]
-fn http_serve_one(
-    stream: &mut std::net::TcpStream,
-    root: &std::path::Path,
-    index: &str,
-    listing: bool,
-    render_md: bool,
-    spa: Option<&str>,
-    clean_urls: bool,
-    req_deadline: std::time::Instant,
-) {
-    // clean_urls (GitHub Pages parity): for an EXTENSIONLESS path with no
-    // file of its own, serve `<path>.html` when it exists — through the
-    // same canonicalize+prefix gate as any request path. Returns true if
-    // it served. Shared by the not-found arm AND the directory branch (a
-    // `bus.html` section page sits beside a `bus/` children dir — Pages
-    // resolves `/bus` to that page when there is no `bus/index.html`).
-    let try_clean_url = |stream: &mut std::net::TcpStream, rel: &str, head_only: bool| -> bool {
-        if !clean_urls || rel.is_empty() {
-            return false;
-        }
-        if rel.rsplit('/').next().unwrap_or("").contains('.') {
-            return false;
-        }
-        if let Ok(html) = std::fs::canonicalize(root.join(format!("{rel}.html")))
-            && html.starts_with(root)
-            && html.is_file()
-        {
-            http_send_file(stream, &html, render_md, head_only);
-            return true;
-        }
-        false
-    };
-    // The SPA fallback: a would-be 404 on a path with NO extension serves
-    // the shell (200) so a client-side router boots. Only extensionless
-    // paths fall back — a missing /app.js or /style.css must stay a real
-    // 404, or a broken asset silently becomes the HTML shell and the app
-    // fails in a far more confusing way. render_md is threaded through so
-    // an .md shell renders consistently with the same file served as index.
-    let spa_fallback = |stream: &mut std::net::TcpStream, path: &str, head_only: bool| -> bool {
-        let Some(shell) = spa else { return false };
-        let last = path.rsplit('/').next().unwrap_or("");
-        if last.contains('.') {
-            return false;
-        }
-        http_send_file(stream, std::path::Path::new(shell), render_md, head_only);
-        true
-    };
-    let owned = stream;
-    let mut reader = std::io::BufReader::new(&mut *owned);
-    let req = match http_srv::read_head(&mut reader, req_deadline) {
-        Ok(r) => r,
-        Err((status, msg)) => {
-            let stream = reader.into_inner();
-            return http_srv::write_error(stream, status, msg);
-        }
-    };
-    let stream: &mut std::net::TcpStream = reader.into_inner();
-    // Method gate FIRST: a POST with a body gets its honest 405, not a
-    // 413 about a body this server was never going to read (any unread
-    // body dies with the Connection: close).
-    let head_only = req.method == "HEAD";
-    if req.method != "GET" && !head_only {
-        let _ = http_srv::write_response(
-            stream,
-            405,
-            "text/plain; charset=utf-8",
-            &[("Allow".to_string(), "GET, HEAD".to_string())],
-            b"405 Method Not Allowed\n",
-            false,
-        );
-        return;
-    }
-    // Strip query, percent-decode (PATH rules — %XX only, `+` stays a
-    // plus), refuse NUL. Decode BEFORE the traversal check so %2e%2e%2f
-    // cannot sneak past it.
-    let raw_path = req.target.split('?').next().unwrap_or("/");
-    let decoded = http_srv::percent_decode_path(raw_path);
-    if decoded.contains('\0') {
-        return http_srv::write_error(stream, 400, "NUL in path");
-    }
-    let rel = decoded.trim_start_matches('/');
-    let joined = if rel.is_empty() {
-        root.to_path_buf()
-    } else {
-        root.join(rel)
-    };
-    // canonicalize resolves symlinks and ../ alike; the PREFIX CHECK on
-    // the canonical result is the whole traversal defence — a symlink
-    // inside the root pointing outside it lands here too.
-    let canon = match std::fs::canonicalize(&joined) {
-        Ok(c) => c,
-        Err(_) => {
-            // No file of this exact name: clean-URL (/foo → /foo.html)
-            // first — a specific page beats the generic shell — then the
-            // SPA fallback, else a real 404.
-            if try_clean_url(stream, rel, head_only) {
-                return;
-            }
-            if spa_fallback(stream, &decoded, head_only) {
-                return;
-            }
-            return http_srv::write_error(stream, 404, "not found");
-        }
-    };
-    if !canon.starts_with(root) {
-        return http_srv::write_error(stream, 403, "outside the served root");
-    }
 
-    if canon.is_dir() {
-        // The index path goes through the SAME canonicalize+prefix gate as
-        // every request-derived path — an operator-supplied
-        // `index: "../x"` must not become the one ungated read.
-        let idx = canon.join(index);
-        if let Ok(idx_canon) = std::fs::canonicalize(&idx)
-            && idx_canon.starts_with(root)
-            && idx_canon.is_file()
-        {
-            return http_send_file(stream, &idx_canon, render_md, head_only);
-        }
-        if !listing {
-            // A directory with no index: a sibling `<dir>.html` (a section
-            // page beside its children dir) resolves first — Pages parity —
-            // then the SPA shell, before we refuse. `/bus/` (trailing slash)
-            // is a dir request, not a `/bus` page request, so clean_urls is
-            // skipped for it; only the extensionless no-slash form matches.
-            if !decoded.ends_with('/') && try_clean_url(stream, rel, head_only) {
-                return;
-            }
-            if spa_fallback(stream, &decoded, head_only) {
-                return;
-            }
-            return http_srv::write_error(stream, 403, "directory listing disabled");
-        }
-        let mut names: Vec<(String, bool)> = match std::fs::read_dir(&canon) {
-            Ok(rd) => rd
-                .filter_map(|e| e.ok())
-                .map(|e| {
-                    let is_dir = e.path().is_dir();
-                    (e.file_name().to_string_lossy().into_owned(), is_dir)
-                })
-                .collect(),
-            Err(_) => return http_srv::write_error(stream, 500, "unreadable directory"),
-        };
-        names.sort();
-        let shown = if decoded.ends_with('/') || rel.is_empty() {
-            decoded.clone()
-        } else {
-            format!("{decoded}/")
-        };
-        let mut html = format!(
-            "<!doctype html><meta charset=\"utf-8\"><title>{0}</title><h1>{0}</h1><ul>",
-            http_srv::html_escape(&shown)
-        );
-        if !rel.is_empty() {
-            html.push_str("<li><a href=\"../\">../</a></li>");
-        }
-        for (name, is_dir) in names {
-            let suffix = if is_dir { "/" } else { "" };
-            // href gets percent-encoding (a `#` or space in a filename must
-            // stay a working link); display text gets HTML escaping.
-            let href = http_srv::href_encode(&name);
-            let esc = http_srv::html_escape(&name);
-            html.push_str(&format!(
-                "<li><a href=\"{href}{suffix}\">{esc}{suffix}</a></li>"
-            ));
-        }
-        html.push_str("</ul>");
-        let _ = http_srv::write_response(
-            stream,
-            200,
-            "text/html; charset=utf-8",
-            &[],
-            html.as_bytes(),
-            head_only,
-        );
-        return;
-    }
-    http_send_file(stream, &canon, render_md, head_only)
-}
 
-fn http_send_file(
-    stream: &mut std::net::TcpStream,
-    path: &std::path::Path,
-    render_md: bool,
-    head_only: bool,
-) {
-    let is_md = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .is_some_and(|e| e.eq_ignore_ascii_case("md"));
-    #[cfg(feature = "markdown")]
-    if render_md && is_md {
-        let src = match std::fs::read_to_string(path) {
-            Ok(s) => s,
-            Err(_) => return http_srv::write_error(stream, 500, "unreadable file"),
-        };
-        let rendered_val = builtin_markdown(vec![Value::String(src)]);
-        let rendered = match &rendered_val {
-            Ok(Some(Value::String(h))) => h.clone(),
-            _ => return http_srv::write_error(stream, 500, "markdown render failed"),
-        };
-        let title = path
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_default();
-        let page = format!(
-            "<!doctype html><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>{}</title><style>body{{max-width:52rem;margin:2rem auto;padding:0 1rem;font-family:system-ui,sans-serif;line-height:1.55}}pre{{background:#8881;padding:.7rem;overflow-x:auto}}code{{background:#8881;padding:.1em .25em}}pre code{{background:none;padding:0}}table{{border-collapse:collapse}}td,th{{border:1px solid #8884;padding:.25em .5em}}</style>{}",
-            http_srv::html_escape(&title),
-            rendered
-        );
-        let _ = http_srv::write_response(
-            stream,
-            200,
-            "text/html; charset=utf-8",
-            &[],
-            page.as_bytes(),
-            head_only,
-        );
-        return;
-    }
-    let _ = (render_md, is_md); // no-markdown builds: plain text below
-    let body = match std::fs::read(path) {
-        Ok(b) => b,
-        Err(_) => return http_srv::write_error(stream, 500, "unreadable file"),
-    };
-    let _ = http_srv::write_response(stream, 200, http_srv::mime_for(path), &[], &body, head_only);
-}
 
-/// `http_recv(port[, opts])` — accept ONE request, answer it, return it
-/// as a map (nil on timeout). The OAuth-redirect / webhook-catch shape.
-fn builtin_http_recv(args: Vec<Value>) -> MixResult<Option<Value>> {
-    expect_args_between("http_recv", &args, 1, 2)?;
-    let port = as_exact_integer(
-        "http_recv(): port",
-        number_arg("http_recv", &args, 0)?,
-        1,
-        65535,
-    )? as u16;
-    let mut timeout_seconds = 30.0;
-    let mut host = "127.0.0.1".to_string();
-    let mut max: usize = 1024 * 1024;
-    let mut resp_status: u16 = 200;
-    let mut resp_body: Vec<u8> = b"ok\n".to_vec();
-    let mut resp_ct = "text/plain; charset=utf-8".to_string();
-    let mut resp_headers: Vec<(String, String)> = Vec::new();
-    if let Some(opts) = args.get(1) {
-        match opts {
-            Value::Nil => {}
-            Value::Map(m) => {
-                for k in m.keys() {
-                    if !matches!(k.as_str(), "timeout" | "host" | "max" | "respond") {
-                        return Err(MixError::RuntimeError {
-                            span: None,
-                            msg: format!(
-                                "http_recv(): unknown option '{k}' (supported: timeout, host, max, respond)"
-                            ),
-                        });
-                    }
-                }
-                if let Some(v) = m.get("timeout") {
-                    timeout_seconds = required_number_value("http_recv(): option 'timeout'", v)?;
-                    as_duration("http_recv(): option 'timeout'", timeout_seconds)?;
-                }
-                if let Some(v) = m.get("host") {
-                    host = v.to_mix_string();
-                }
-                if let Some(v) = m.get("max") {
-                    max = as_exact_integer(
-                        "http_recv(): option 'max'",
-                        required_number_value("http_recv(): option 'max'", v)?,
-                        0,
-                        64 * 1024 * 1024,
-                    )? as usize;
-                }
-                if let Some(v) = m.get("respond") {
-                    match v {
-                        Value::Map(r) => {
-                            for rk in r.keys() {
-                                if !matches!(
-                                    rk.as_str(),
-                                    "status" | "body" | "content_type" | "headers"
-                                ) {
-                                    return Err(MixError::RuntimeError {
-                                        span: None,
-                                        msg: format!(
-                                            "http_recv(): unknown respond option '{rk}' (supported: status, body, content_type, headers)"
-                                        ),
-                                    });
-                                }
-                            }
-                            if let Some(s) = r.get("status") {
-                                // 1xx would leave a compliant client waiting
-                                // forever for the final response; refuse.
-                                resp_status = as_exact_integer(
-                                    "http_recv(): respond.status",
-                                    required_number_value("http_recv(): respond.status", s)?,
-                                    200,
-                                    599,
-                                )? as u16;
-                            }
-                            if let Some(b) = r.get("body") {
-                                resp_body = match b {
-                                    Value::Bytes(x) => x.to_vec(),
-                                    Value::Buffer(x) => x.borrow().clone(),
-                                    other => other.to_mix_string().into_bytes(),
-                                };
-                            }
-                            if let Some(c) = r.get("content_type") {
-                                resp_ct = c.to_mix_string();
-                            }
-                            if let Some(Value::Map(h)) = r.get("headers") {
-                                for (hk, hv) in h.iter() {
-                                    resp_headers.push((hk.clone(), hv.to_mix_string()));
-                                }
-                            }
-                            // CR/LF in any respond value is response
-                            // splitting — a script echoing an
-                            // attacker-derived request field into a header
-                            // must be refused loudly, never spliced. (This
-                            // response is exactly what a browser renders in
-                            // the OAuth-redirect flow.)
-                            let mut hazard = resp_ct.contains(['\r', '\n']);
-                            for (hk, hv) in &resp_headers {
-                                if hk.contains(['\r', '\n', ':']) || hv.contains(['\r', '\n']) {
-                                    hazard = true;
-                                }
-                            }
-                            if hazard {
-                                return Err(MixError::RuntimeError {
-                                    span: None,
-                                    msg: "http_recv(): respond header/content_type values must not contain CR, LF, or ':' in a header name — response splitting".to_string(),
-                                });
-                            }
-                        }
-                        other => {
-                            return Err(MixError::RuntimeError {
-                                span: None,
-                                msg: format!(
-                                    "http_recv(): option 'respond' must be a map, got {}",
-                                    other.type_name()
-                                ),
-                            });
-                        }
-                    }
-                }
-            }
-            other => {
-                return Err(MixError::RuntimeError {
-                    span: None,
-                    msg: format!(
-                        "http_recv(): options must be a map or nil, got {}",
-                        other.type_name()
-                    ),
-                });
-            }
-        }
-    }
 
-    let listener =
-        std::net::TcpListener::bind((host.as_str(), port)).map_err(|e| MixError::RuntimeError {
-            span: None,
-            msg: format!("http_recv: bind '{host}:{port}': {e}"),
-        })?;
-    listener.set_nonblocking(true).ok();
-    let deadline = (timeout_seconds > 0.0)
-        .then(|| std::time::Instant::now() + std::time::Duration::from_secs_f64(timeout_seconds));
-    let Some((mut stream, peer)) = http_accept_next(&listener, deadline)? else {
-        return Ok(Some(Value::Nil)); // timeout: an ordinary answer
-    };
-    let req_deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    let mut reader = std::io::BufReader::new(&mut stream);
-    let bad = |stream: &mut std::net::TcpStream, status: u16, msg: &'static str| {
-        http_srv::write_error(stream, status, msg);
-        Err(MixError::RuntimeError {
-            span: None,
-            msg: format!("http_recv: bad request ({status}): {msg}"),
-        })
-    };
-    let head = match http_srv::read_head(&mut reader, req_deadline) {
-        Ok(h) => h,
-        Err((status, msg)) => {
-            drop(reader);
-            return bad(&mut stream, status, msg);
-        }
-    };
-    if head.content_length > max {
-        drop(reader);
-        return bad(&mut stream, 413, "body exceeds the configured max");
-    }
-    let body_bytes = match http_srv::read_body(&mut reader, head.content_length, req_deadline) {
-        Ok(b) => b,
-        Err((status, msg)) => {
-            drop(reader);
-            return bad(&mut stream, status, msg);
-        }
-    };
-    drop(reader);
-    let req = head;
-    // 204/304 legally carry no body; suppress rather than lie about it.
-    if matches!(resp_status, 204 | 304) {
-        resp_body.clear();
-    }
-    let _ = http_srv::write_response(
-        &mut stream,
-        resp_status,
-        &resp_ct,
-        &resp_headers,
-        &resp_body,
-        req.method == "HEAD",
-    );
 
-    let (raw_path, query) = match req.target.split_once('?') {
-        Some((p, q)) => (p, q.to_string()),
-        None => (req.target.as_str(), String::new()),
-    };
-    let mut headers = indexmap::IndexMap::new();
-    for (k, v) in &req.headers {
-        headers.insert(k.clone(), Value::String(v.clone()));
-    }
-    let text = match std::str::from_utf8(&body_bytes) {
-        Ok(s) => Value::String(s.to_string()),
-        Err(_) => Value::Nil,
-    };
-    let mut out = indexmap::IndexMap::new();
-    out.insert("method".to_string(), Value::String(req.method.clone()));
-    out.insert(
-        "path".to_string(),
-        Value::String(http_srv::percent_decode_path(raw_path)),
-    );
-    out.insert("query".to_string(), Value::String(query));
-    out.insert("headers".to_string(), Value::map(headers));
-    out.insert("body".to_string(), text);
-    out.insert("bytes".to_string(), Value::bytes(body_bytes));
-    out.insert(
-        "from_host".to_string(),
-        Value::String(peer.ip().to_string()),
-    );
-    out.insert("from_port".to_string(), Value::Number(peer.port() as f64));
-    Ok(Some(Value::map(out)))
-}
 
 // --- Help ---
 
@@ -41119,7 +39249,7 @@ mod compiled_features_tests {
         // real optional feature name and each appears at most once.
         const KNOWN: &[&str] = &[
             "json", "regex", "markdown", "toml", "serde", "datetime", "url", "crypto", "http",
-            "sqlite", "dkim", "datastar", "xml", "yaml", "ws", "mime", "archive", "dns", "net-client", "net-server", "server",
+            "sqlite", "dkim", "datastar", "xml", "yaml", "ws", "mime", "archive", "dns", "net-client",
         ];
         let f = compiled_features();
         for name in &f {
@@ -41141,7 +39271,7 @@ mod compiled_features_tests {
         const KNOWN: &[&str] = &[
             "json", "regex", "markdown", "toml", "serde", "datetime", "url", "crypto", "http",
             "sqlite", "dkim", "datastar", "xml", "yaml", "ws", "mime", "archive", "dns",
-            "net-client", "net-server", "server",
+            "net-client",
         ];
         const SKIP: &[&str] = &["default", "tokio-sleep"];
         let manifest = include_str!("../Cargo.toml");
@@ -41184,8 +39314,7 @@ mod compiled_features_tests {
         assert!(f.contains(&"ws"), "ws built but not reported");
         #[cfg(feature = "net-client")]
         assert!(f.contains(&"net-client"));
-        #[cfg(feature = "net-server")]
-        assert!(f.contains(&"net-server"));
+
         let _ = f;
     }
 }

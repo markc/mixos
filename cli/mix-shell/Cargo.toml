@@ -24,7 +24,7 @@ doctest = false
 
 [features]
 default = []
-server = ["mix/server"]
+
 
 [dependencies]
 paths = { path = "../../libs/paths" }
