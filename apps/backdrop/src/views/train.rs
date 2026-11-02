@@ -2,6 +2,9 @@
 use super::View;
 use serde_json::Value;
 use std::time::{Duration, Instant};
+thread_local! {
+    static STRINGS: toolkit::Strings = toolkit::Strings::new(include_str!("../../i18n/en/backdrop.ftl"));
+}
 
 #[derive(Clone, Debug)]
 pub struct Block {
@@ -59,13 +62,13 @@ pub fn rejections(snapshot: &super::Snapshot) -> Vec<&Value> {
 pub fn reason(row: &Value) -> String {
     let raw = row["reason"].as_str().unwrap_or("?");
     if raw.contains("conflict") {
-        "conflict".into()
+        STRINGS.with(|strings| strings.get("train-conflict"))
     } else if raw.contains("75") {
-        "infra rc 75".into()
+        STRINGS.with(|strings| strings.get("train-infra"))
     } else if raw.starts_with("red:") {
         ellipsis(raw, 40)
     } else if raw.contains("red") {
-        "red: release gate".into()
+        STRINGS.with(|strings| strings.get("train-red"))
     } else {
         ellipsis(raw, 40)
     }
@@ -158,11 +161,11 @@ impl Train {
             };
             for job in jobs {
                 let spec = decoded(&job["spec"]);
-                label.push_str(&format!(
-                    "\n{} · {:.0} min",
-                    ellipsis(spec["label"].as_str().unwrap_or("?"), 28),
-                    (now - job["started"].as_f64().unwrap_or(now)).max(0.) / 60.
-                ));
+                label.push('\n');
+                label.push_str(&STRINGS.with(|strings| strings.with("train-worker-job", &[
+                    ("label", &ellipsis(spec["label"].as_str().unwrap_or("?"), 28)),
+                    ("minutes", &format!("{:.0}", (now - job["started"].as_f64().unwrap_or(now)).max(0.) / 60.)),
+                ])));
             }
             let load = decoded(&slot["snapshot"])["load1"].as_f64().unwrap_or(0.) as f32;
             out.push(Block {
