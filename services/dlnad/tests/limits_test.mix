@@ -1,0 +1,60 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$L = require("../scripts/lib/limits.mix")
+$results = []
+fn check($name, $ok)
+  push($results, $ok)
+  print((if $ok then "PASS " else "FAIL " end) .. $name)
+end
+$good = {announce_s: 60, max_age: 1800, max_conns: 64}
+check("valid limits", deep_eq($L.validate_limits($good), $good))
+for $key in keys($good)
+  for $bad in [0, -1, "60", true, nil]
+    $c = $good
+    $c[$key] = $bad
+    $refused = false
+    try
+      $L.validate_limits($c)
+    catch $m, $e
+      $refused = $e.code == "CONFIG" and contains($m, $key)
+    end
+    check($key .. " refuses " .. to_string($bad), $refused)
+  end
+end
+$c = $good
+$c.max_conns = 1.5
+$refused = false
+try
+  $L.validate_limits($c)
+catch $m
+  $refused = contains($m, "max_conns")
+end
+check("fractional connection limit refused", $refused)
+$conns = {a: {busy: true, opened: 1}, b: {busy: false, opened: 3}, c: {busy: false, opened: 2}}
+check("newest wins over oldest idle, never busy", $L.oldest_idle($conns) == "c")
+check("all busy refuses eviction", $L.oldest_idle({a: {busy: true, opened: 1}}) == nil)
+check("empty table has no eviction", $L.oldest_idle({}) == nil)
+check("below cap admits without eviction", deep_eq($L.admission($conns, 4), {accept: true, evict: nil}))
+check("full admits by evicting idle", deep_eq($L.admission($conns, 3), {accept: true, evict: "c"}))
+check("full busy table refuses newcomer", not $L.admission({a: {busy: true, opened: 1}}, 1).accept)
+$seen = {}
+for $i = 1 to 256
+  $seen = $L.remember($seen, "renderer" .. to_string($i), {order: $i})
+end
+$seen = $L.remember($seen, "renderer1", {order: 257})
+check("refresh does not grow history", length(keys($seen)) == 256)
+$seen = $L.remember($seen, "renderer257", {order: 258})
+check("oldest observation dropped at fixed cap", length(keys($seen)) == 256 and $seen.renderer2 == nil and $seen.renderer1.order == 257)
+$conf = "/tmp/dlnad-invalid-" .. uuid() .. ".conf.mix"
+for $key in keys($good)
+  $c = $good
+  $c.media_root = "/tmp"
+  $c.listen = "192.0.2.30"
+  $c[$key] = 0
+  write_file($conf, data_encode($c))
+  $r = run_argv(["/opt/mixos/bin/mix", "services/dlnad/scripts/dlnad.mix"], {env: {DLNAD_CONF: $conf}})
+  check("startup refuses invalid " .. $key, $r.exit_code == 2 and contains($r.stderr, "refusing to start") and contains($r.stderr, $key))
+end
+run_argv_must(["rm", $conf])
+$n = length(filter($results, fn($ok) = $ok))
+print(to_string($n) .. "/" .. to_string(length($results)) .. " passed")
+if $n != length($results) then exit(1) end
