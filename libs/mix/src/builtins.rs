@@ -1147,6 +1147,9 @@ pub fn compiled_features() -> Vec<&'static str> {
     feat!("xml");
     feat!("yaml");
     feat!("ws");
+    feat!("net-client");
+    feat!("net-server");
+    feat!("server");
     feat!("mime");
     f
 }
@@ -25082,6 +25085,7 @@ pub(crate) mod socket_sources {
                 id,
             }
         }
+        #[cfg(feature = "net-server")]
         pub(crate) const fn listener(id: u64) -> Self {
             Self {
                 family: ClientFamily::Listener,
@@ -41107,7 +41111,7 @@ mod compiled_features_tests {
         // real optional feature name and each appears at most once.
         const KNOWN: &[&str] = &[
             "json", "regex", "markdown", "toml", "serde", "datetime", "url", "crypto", "http",
-            "sqlite", "dkim", "datastar", "xml", "yaml", "ws", "mime", "archive", "dns",
+            "sqlite", "dkim", "datastar", "xml", "yaml", "ws", "mime", "archive", "dns", "net-client", "net-server", "server",
         ];
         let f = compiled_features();
         for name in &f {
