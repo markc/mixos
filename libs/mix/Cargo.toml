@@ -12,6 +12,7 @@ name = "mix"
 
 [features]
 default = []
+test-support = []
 json = ["dep:jaq-core", "dep:jaq-std", "dep:jaq-json"]
 regex = ["dep:regex"]
 # `markdown()` builtin — CommonMark + GFM (tables, strikethrough, task lists,

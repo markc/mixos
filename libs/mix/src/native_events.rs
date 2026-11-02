@@ -756,7 +756,7 @@ pub fn refusal(code: &str, message: impl Into<String>) -> MixError {
     MixError::structured(code, message)
 }
 
-pub(crate) fn json_value(v: serde_json::Value) -> Value {
+pub fn json_value(v: serde_json::Value) -> Value {
     match v {
         serde_json::Value::Null => Value::Nil,
         serde_json::Value::Bool(v) => Value::Bool(v),
@@ -775,7 +775,7 @@ pub(crate) fn json_value(v: serde_json::Value) -> Value {
 /// including reload candidates — gets a fresh id.
 static NEXT_OWNER_ID: AtomicU64 = AtomicU64::new(1);
 
-pub(crate) struct NativeEvents {
+pub struct NativeEvents {
     processes: BTreeMap<String, crate::child_events::ProcessWatch>,
     pub queue: Arc<Queue>,
     pumping: Rc<Cell<bool>>,
@@ -797,8 +797,6 @@ pub(crate) struct NativeEvents {
 
 impl Default for NativeEvents {
     fn default() -> Self {
-        #[cfg(test)]
-        mix_server::register().expect("server test family");
         NativeEvents {
             processes: BTreeMap::new(),
             queue: Arc::new(Queue::default()),
@@ -820,12 +818,13 @@ impl Default for NativeEvents {
 
 #[cfg(feature = "net-client")]
 impl NativeEvents {
-    pub(crate) fn own_udp(&mut self, id: u64) {
+    pub fn event_queue(&self) -> Arc<Queue> { self.queue.clone() }
+    pub fn own_udp(&mut self, id: u64) {
         let sockets = crate::udp::handles::MAP.lock().unwrap();
         self.udp_owned.retain(|id| sockets.contains_key(id));
         self.udp_owned.insert(id);
     }
-    pub(crate) fn udp_on(
+    pub fn udp_on(
         &mut self,
         id: u64,
         command: String,

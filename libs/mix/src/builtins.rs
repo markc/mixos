@@ -1,5 +1,3 @@
-#[cfg(test)]
-use mix_server::*;
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::builtin_table;
@@ -483,8 +481,6 @@ builtin_table! {
 }
 
 pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
-    #[cfg(test)]
-    mix_server::register().expect("test server family");
     if let Some(f) = crate::extensions::family(name) { return f.call(name, args); }
     if crate::extensions::SERVER_NAMES.contains(&name) { return Err(crate::extensions::needs_host(name)); }
     match name {
@@ -20728,7 +20724,7 @@ fn builtin_freeze(args: Vec<Value>) -> MixResult<Option<Value>> {
 
 /// Lowercase hex of a byte slice — the one renderer every digest and
 /// `bytes_to_hex` share, so no two of them can drift on case or padding.
-pub(crate) fn hex_encode(bytes: &[u8]) -> String {
+pub fn hex_encode(bytes: &[u8]) -> String {
     let mut s = String::with_capacity(bytes.len() * 2);
     for b in bytes {
         use std::fmt::Write as _;
@@ -24496,8 +24492,6 @@ fn builtin_tcp_local_addr(args: Vec<Value>) -> MixResult<Option<Value>> {
 #[cfg(feature = "net-client")]
 pub(crate) mod socket_sources {
     use super::{tcp_client, tcp_unknown, ws_client, ws_err};
-    #[cfg(test)]
-    use mix_server::*;
 
     use crate::{
         error::MixResult,
@@ -24577,7 +24571,7 @@ pub(crate) mod socket_sources {
     /// Maximum subscribed sources per evaluator generation.
     pub(crate) const MAX_SOURCES: usize = 256;
     /// Per-evaluator FIFO bounds (counted across all its sources).
-    pub(crate) const MAX_SOCKET_FRAMES: usize = 4096;
+    pub const MAX_SOCKET_FRAMES: usize = 4096;
     pub(crate) const MAX_SOCKET_BYTES: usize = 64 * 1024 * 1024;
     /// tcp bytes-mode raw chunk size (the documented default).
     const CHUNK: usize = 64 * 1024;
@@ -25839,7 +25833,7 @@ pub(crate) mod socket_sources {
     }
 
     /// Binary event-frame payloads are hex-encoded (JSON has no bytes).
-    pub(crate) fn hex_encode(data: &[u8]) -> String {
+    pub fn hex_encode(data: &[u8]) -> String {
         const HEX: &[u8; 16] = b"0123456789abcdef";
         let mut out = String::with_capacity(data.len() * 2);
         for &b in data {
@@ -26831,39 +26825,7 @@ pub(crate) mod socket_sources {
             id
         }
 
-        /// Review fix 1: the Class C accept records ownership inside its
-        /// own future. Retirement closes the connection with no later
-        /// `own()` call, so a task cancelled after the accept (while the
-        /// evaluator reacquires its read permit) cannot leak it.
-        #[tokio::test]
-        async fn pull_accept_owns_the_connection_before_returning() {
-            use std::io::Read;
-            let sock = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-            sock.set_nonblocking(true).unwrap();
-            let port = sock.local_addr().unwrap().port();
-            let listener = Arc::new(tcp_server::Listener::new(
-                sock,
-                tcp_client::TcpPermit::acquire("test").unwrap(),
-            ));
-            let mut client = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
-            client
-                .set_read_timeout(Some(std::time::Duration::from_secs(10)))
-                .unwrap();
-            let owner = Arc::new(TcpOwner::default());
-            let accepted = pull_accept(listener, deadline_after(5.0), owner.clone(), false)
-                .await
-                .unwrap();
-            let Value::Number(n) = accepted else {
-                panic!("expected a handle, got {accepted:?}");
-            };
-            let handle = n as u64;
-            assert!(owner.ids.lock().unwrap().contains(&handle));
-            close_owned(&owner);
-            assert!(!tcp_client::MAP.lock().unwrap().contains_key(&handle));
-            let mut buf = [0u8; 4];
-            assert_eq!(client.read(&mut buf).unwrap(), 0, "the connection closed");
-            assert!(owner.ids.lock().unwrap().is_empty());
-        }
+
 
         /// Review fix 2: ownership lives with the socket, not with registry
         /// residence. Churn never prunes a live entry, and a connection out
@@ -26880,14 +26842,14 @@ pub(crate) mod socket_sources {
                 .unwrap();
             let (stream, _) = sock.accept().unwrap();
             let owner = Arc::new(TcpOwner::default());
-            let (handle, _) = super::super::adopt_accepted(
+            let (handle, _) = crate::server_api::adopt_accepted(
                 stream,
                 tcp_client::TcpPermit::acquire("test").unwrap(),
                 Some(&owner),
             );
             // More owned sockets come and go than the old prune threshold;
             // the set holds exactly the live one throughout.
-            for _ in 0..tcp_server::MAX_TCP_HANDLES + 8 {
+            for _ in 0..tcp_client::MAX_TCP_HANDLES + 8 {
                 let id = tcp_client::NEXT_ID.fetch_add(1, Ordering::Relaxed);
                 drop(tcp_client::Ownership::new(owner.clone(), id));
             }
@@ -26920,7 +26882,7 @@ pub(crate) mod socket_sources {
                 .unwrap();
             let (stream, _) = sock.accept().unwrap();
             let owner = Arc::new(TcpOwner::default());
-            let (handle, _) = super::super::adopt_accepted(
+            let (handle, _) = crate::server_api::adopt_accepted(
                 stream,
                 tcp_client::TcpPermit::acquire("test").unwrap(),
                 Some(&owner),
@@ -26937,7 +26899,6 @@ pub(crate) mod socket_sources {
                     // still-unset mark).
                     std::thread::sleep(std::time::Duration::from_millis(200));
                     owner.retired.store(true, Ordering::Release);
-        if let Some(h) = crate::extensions::sockets() { h.retire(owner); }
                     drop(map);
                 }
             });
@@ -35551,74 +35512,7 @@ mod bytes_tests {
 
     // --- udp_send / udp_recv (v0.71.0) ---
 
-    #[test]
-    fn udp_loopback_and_timeout() {
-        // Find a free port, release it, and race to rebind — acceptable in
-        // a test; the datagram goes over loopback only.
-        let port = {
-            let s = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
-            s.local_addr().unwrap().port()
-        };
-        // Value is Rc-based (not Send), so the sender thread builds its own
-        // argument Values from Copy/'static inputs. It RETRIES for the whole
-        // window: under a parallel workspace test run the receiver may bind
-        // arbitrarily late, and a datagram sent before the bind is silently
-        // dropped — one timed send is a flake, a resend loop is not. The
-        // receiver reads exactly one datagram; extras evaporate with the
-        // socket.
-        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let stop_tx = stop.clone();
-        let sender = std::thread::spawn(move || {
-            let mut first: Option<usize> = None;
-            for _ in 0..100 {
-                if stop_tx.load(std::sync::atomic::Ordering::Relaxed) {
-                    break;
-                }
-                let sent = builtin_udp_send(vec![
-                    Value::String("127.0.0.1".into()),
-                    Value::Number(port as f64),
-                    Value::String("ping-π".into()),
-                ]);
-                match sent {
-                    Ok(Some(Value::Number(n))) => first.get_or_insert(n as usize),
-                    other => return Err(format!("{other:?}")),
-                };
-                std::thread::sleep(std::time::Duration::from_millis(50));
-            }
-            first.ok_or_else(|| "sender never ran".to_string())
-        });
-        let mut opts = indexmap::IndexMap::new();
-        opts.insert("timeout".to_string(), Value::Number(5.0));
-        opts.insert("host".to_string(), Value::String("127.0.0.1".into()));
-        let got = builtin_udp_recv(vec![Value::Number(port as f64), Value::map(opts)])
-            .unwrap()
-            .unwrap();
-        stop.store(true, std::sync::atomic::Ordering::Relaxed);
-        let sent = sender.join().unwrap().unwrap();
-        assert_eq!(sent, "ping-π".len());
-        let Value::Map(m) = &got else {
-            panic!("{got:?}")
-        };
-        assert_eq!(m.get("text"), Some(&Value::String("ping-π".into())));
-        assert_eq!(m.get("from_host"), Some(&Value::String("127.0.0.1".into())));
-        match m.get("bytes") {
-            Some(Value::Bytes(b)) => assert_eq!(b.as_slice(), "ping-π".as_bytes()),
-            other => panic!("{other:?}"),
-        }
 
-        // Timeout returns nil, not an error.
-        let port2 = {
-            let s = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
-            s.local_addr().unwrap().port()
-        };
-        let mut opts = indexmap::IndexMap::new();
-        opts.insert("timeout".to_string(), Value::Number(0.1));
-        opts.insert("host".to_string(), Value::String("127.0.0.1".into()));
-        assert_eq!(
-            builtin_udp_recv(vec![Value::Number(port2 as f64), Value::map(opts)]).unwrap(),
-            Some(Value::Nil)
-        );
-    }
 
     // --- websocket client (v0.74.0) ---
 
@@ -35748,240 +35642,15 @@ mod bytes_tests {
             .port()
     }
 
-    #[test]
-    fn http_serve_static_round_trip_and_rules() {
-        let dir = std::env::temp_dir().join(format!("mix-http-serve-{}", std::process::id()));
-        std::fs::create_dir_all(dir.join("sub")).unwrap();
-        std::fs::write(dir.join("hello.txt"), "hi there\n").unwrap();
-        std::fs::write(dir.join("sub/page.html"), "<h1>ok</h1>").unwrap();
-        // The escape targets: a real file OUTSIDE the root, and a symlink
-        // INSIDE the root pointing at it.
-        let outside = std::env::temp_dir().join(format!("mix-http-secret-{}", std::process::id()));
-        std::fs::write(&outside, "SECRET").unwrap();
-        std::os::unix::fs::symlink(&outside, dir.join("leak")).unwrap();
 
-        let port = free_port();
-        let root = dir.to_string_lossy().to_string();
-        let server = std::thread::spawn(move || {
-            let mut opts = indexmap::IndexMap::new();
-            opts.insert("port".to_string(), Value::Number(port as f64));
-            opts.insert("requests".to_string(), Value::Number(7.0));
-            opts.insert("listing".to_string(), Value::Bool(true));
-            match builtin_http_serve(vec![Value::String(root), Value::map(opts)]) {
-                Ok(Some(Value::Number(n))) => Ok(n as u64),
-                other => Err(format!("{other:?}")),
-            }
-        });
-        std::thread::sleep(std::time::Duration::from_millis(150));
 
-        // 1. Plain file with the right type and body.
-        let r = http_raw(port, "GET /hello.txt HTTP/1.1\r\nHost: x\r\n\r\n");
-        assert!(r.starts_with("HTTP/1.1 200"), "{r}");
-        assert!(r.contains("text/plain"), "{r}");
-        assert!(r.ends_with("hi there\n"), "{r}");
-        // 2. Nested file.
-        let r = http_raw(port, "GET /sub/page.html HTTP/1.1\r\nHost: x\r\n\r\n");
-        assert!(
-            r.starts_with("HTTP/1.1 200") && r.contains("text/html"),
-            "{r}"
-        );
-        // 3. TRAVERSAL, plain: verbatim ../ on the wire never reaches the
-        // secret (404: the canonicalised path resolves outside → prefix
-        // check, but the join may also simply not exist — either way the
-        // body must not leak).
-        let r = http_raw(port, "GET /../mix-http-secret HTTP/1.1\r\nHost: x\r\n\r\n");
-        assert!(!r.contains("SECRET"), "{r}");
-        assert!(
-            r.starts_with("HTTP/1.1 403") || r.starts_with("HTTP/1.1 404"),
-            "{r}"
-        );
-        // 4. TRAVERSAL, percent-encoded: %2e%2e%2f decodes to ../ BEFORE
-        // the check — the gate must fail this too, provably.
-        let r = http_raw(
-            port,
-            "GET /%2e%2e%2fmix-http-secret HTTP/1.1\r\nHost: x\r\n\r\n",
-        );
-        assert!(!r.contains("SECRET"), "{r}");
-        // 5. Symlink escape: exists, resolves outside root → 403 exactly.
-        let r = http_raw(port, "GET /leak HTTP/1.1\r\nHost: x\r\n\r\n");
-        assert!(
-            r.starts_with("HTTP/1.1 403"),
-            "symlink escape must 403: {r}"
-        );
-        assert!(!r.contains("SECRET"), "{r}");
-        // 6. Non-GET is 405 with Allow.
-        let r = http_raw(
-            port,
-            "POST /hello.txt HTTP/1.1\r\nHost: x\r\nContent-Length: 0\r\n\r\n",
-        );
-        assert!(
-            r.starts_with("HTTP/1.1 405") && r.contains("Allow: GET, HEAD"),
-            "{r}"
-        );
-        // 7. Directory listing (opted in) links both entries.
-        let r = http_raw(port, "GET / HTTP/1.1\r\nHost: x\r\n\r\n");
-        assert!(r.contains("hello.txt") && r.contains("sub/"), "{r}");
 
-        assert_eq!(server.join().unwrap().unwrap(), 7);
-        std::fs::remove_dir_all(&dir).ok();
-        std::fs::remove_file(&outside).ok();
-    }
 
-    #[test]
-    fn http_serve_spa_fallback() {
-        let dir = std::env::temp_dir().join(format!("mix-http-spa-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("index.html"), "<!doctype html><div id=app></div>").unwrap();
-        std::fs::write(dir.join("app.js"), "console.log('router')").unwrap();
-        let port = free_port();
-        let root = dir.to_string_lossy().to_string();
-        let server = std::thread::spawn(move || {
-            let mut opts = indexmap::IndexMap::new();
-            opts.insert("port".to_string(), Value::Number(port as f64));
-            opts.insert("requests".to_string(), Value::Number(5.0));
-            opts.insert("spa".to_string(), Value::Bool(true));
-            builtin_http_serve(vec![Value::String(root), Value::map(opts)])
-                .map(|_| ())
-                .map_err(|e| e.to_string())
-        });
-        std::thread::sleep(std::time::Duration::from_millis(150));
-        // 1. A real asset still serves as itself.
-        let r = http_raw(port, "GET /app.js HTTP/1.1\r\nHost: x\r\n\r\n");
-        assert!(r.starts_with("HTTP/1.1 200") && r.contains("router"), "{r}");
-        // 2. A deep extensionless route the router owns → the shell, 200.
-        let r = http_raw(port, "GET /bus/props-core HTTP/1.1\r\nHost: x\r\n\r\n");
-        assert!(
-            r.starts_with("HTTP/1.1 200") && r.contains("id=app"),
-            "deep route → shell: {r}"
-        );
-        // 3. A MISSING ASSET must stay a real 404, never the shell (else a
-        //    broken /main.css silently becomes HTML and the app breaks
-        //    confusingly).
-        let r = http_raw(port, "GET /missing.css HTTP/1.1\r\nHost: x\r\n\r\n");
-        assert!(
-            r.starts_with("HTTP/1.1 404"),
-            "missing asset stays 404: {r}"
-        );
-        assert!(!r.contains("id=app"), "{r}");
-        // 4. A traversal attempt decodes to an extensionless path
-        //    (`../etc`), so it DOES receive the shell (200) — but the shell
-        //    is a startup-vetted constant inside the root, so no file
-        //    outside the root is ever read. That is the safety property:
-        //    the fallback serves one known file, never a request-derived
-        //    path. The traversal gate itself (proven in the main test) is
-        //    untouched; this just confirms the shell can't leak.
-        let r = http_raw(port, "GET /%2e%2e%2fetc HTTP/1.1\r\nHost: x\r\n\r\n");
-        assert!(r.starts_with("HTTP/1.1 200") && r.contains("id=app"), "{r}");
-        assert!(!r.contains("root:") && !r.contains("SECRET"), "{r}");
-        // 5. The root still serves index directly.
-        let r = http_raw(port, "GET / HTTP/1.1\r\nHost: x\r\n\r\n");
-        assert!(r.starts_with("HTTP/1.1 200") && r.contains("id=app"), "{r}");
-        server.join().unwrap().unwrap();
-        std::fs::remove_dir_all(&dir).ok();
-    }
 
-    /// clean_urls (GitHub Pages parity): /foo serves /foo.html when the
-    /// pre-rendered page exists — the fix for a stub/page-per-route site
-    /// like mixos.dev, distinct from and tried before the SPA shell.
-    #[test]
-    fn http_serve_clean_urls_resolves_dot_html() {
-        let dir = std::env::temp_dir().join(format!("mix-http-clean-{}", std::process::id()));
-        std::fs::create_dir_all(dir.join("bus")).unwrap();
-        std::fs::write(dir.join("bus/props-core.html"), "<h1>props-core page</h1>").unwrap();
-        std::fs::write(dir.join("plain.txt"), "text").unwrap();
-        let port = free_port();
-        let root = dir.to_string_lossy().to_string();
-        let server = std::thread::spawn(move || {
-            let mut opts = indexmap::IndexMap::new();
-            opts.insert("port".to_string(), Value::Number(port as f64));
-            opts.insert("requests".to_string(), Value::Number(4.0));
-            opts.insert("clean_urls".to_string(), Value::Bool(true));
-            builtin_http_serve(vec![Value::String(root), Value::map(opts)])
-                .map(|_| ())
-                .map_err(|e| e.to_string())
-        });
-        std::thread::sleep(std::time::Duration::from_millis(150));
-        // Clean URL → the .html page, styled/served as HTML.
-        let r = http_raw(port, "GET /bus/props-core HTTP/1.1\r\nHost: x\r\n\r\n");
-        assert!(
-            r.starts_with("HTTP/1.1 200")
-                && r.contains("props-core page")
-                && r.contains("text/html"),
-            "{r}"
-        );
-        // The explicit .html still works.
-        let r = http_raw(port, "GET /bus/props-core.html HTTP/1.1\r\nHost: x\r\n\r\n");
-        assert!(r.starts_with("HTTP/1.1 200"), "{r}");
-        // A path WITH an extension is never .html-appended (no /plain.txt.html).
-        let r = http_raw(port, "GET /plain.txt HTTP/1.1\r\nHost: x\r\n\r\n");
-        assert!(
-            r.starts_with("HTTP/1.1 200") && r.contains("text/plain"),
-            "{r}"
-        );
-        // A genuinely missing clean URL is still a 404 (no shell configured).
-        let r = http_raw(port, "GET /bus/nope HTTP/1.1\r\nHost: x\r\n\r\n");
-        assert!(r.starts_with("HTTP/1.1 404"), "{r}");
-        server.join().unwrap().unwrap();
-        std::fs::remove_dir_all(&dir).ok();
-    }
 
-    /// The MAJOR the review caught: a section PAGE (`bus.html`) sitting
-    /// beside its children DIRECTORY (`bus/`) — `GET /bus` must resolve to
-    /// the page, not 403 because the directory exists with no index. Pages
-    /// parity for the natural page-per-route layout.
-    #[test]
-    fn http_serve_clean_urls_sibling_page_beside_dir() {
-        let dir = std::env::temp_dir().join(format!("mix-http-sibling-{}", std::process::id()));
-        std::fs::create_dir_all(dir.join("bus")).unwrap();
-        std::fs::write(dir.join("bus.html"), "<h1>bus section</h1>").unwrap();
-        std::fs::write(dir.join("bus/props.html"), "<h1>child</h1>").unwrap();
-        let port = free_port();
-        let root = dir.to_string_lossy().to_string();
-        let server = std::thread::spawn(move || {
-            let mut opts = indexmap::IndexMap::new();
-            opts.insert("port".to_string(), Value::Number(port as f64));
-            opts.insert("requests".to_string(), Value::Number(3.0));
-            opts.insert("clean_urls".to_string(), Value::Bool(true));
-            builtin_http_serve(vec![Value::String(root), Value::map(opts)])
-                .map(|_| ())
-                .map_err(|e| e.to_string())
-        });
-        std::thread::sleep(std::time::Duration::from_millis(150));
-        // /bus (the dir exists, no index) resolves to the sibling bus.html.
-        let r = http_raw(port, "GET /bus HTTP/1.1\r\nHost: x\r\n\r\n");
-        assert!(
-            r.starts_with("HTTP/1.1 200") && r.contains("bus section"),
-            "sibling page beside dir: {r}"
-        );
-        // /bus/props still resolves to the child.
-        let r = http_raw(port, "GET /bus/props HTTP/1.1\r\nHost: x\r\n\r\n");
-        assert!(r.starts_with("HTTP/1.1 200") && r.contains("child"), "{r}");
-        // /bus/ (trailing slash) is a directory request → 403 (no index,
-        // no listing), NOT the sibling page.
-        let r = http_raw(port, "GET /bus/ HTTP/1.1\r\nHost: x\r\n\r\n");
-        assert!(
-            r.starts_with("HTTP/1.1 403"),
-            "trailing slash is a dir request: {r}"
-        );
-        server.join().unwrap().unwrap();
-        std::fs::remove_dir_all(&dir).ok();
-    }
 
-    #[test]
-    fn http_serve_spa_bad_shell_fails_at_startup() {
-        let dir = std::env::temp_dir().join(format!("mix-http-spa-bad-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let mut opts = indexmap::IndexMap::new();
-        opts.insert("port".to_string(), Value::Number(free_port() as f64));
-        opts.insert("spa".to_string(), Value::String("nope.html".into()));
-        let err = builtin_http_serve(vec![
-            Value::String(dir.to_string_lossy().into_owned()),
-            Value::map(opts),
-        ])
-        .unwrap_err();
-        assert!(format!("{err}").contains("spa shell"), "{err}");
-        std::fs::remove_dir_all(&dir).ok();
-    }
+
+
 
     // --- raw TCP client (v0.78.0) ---
 
@@ -36088,136 +35757,11 @@ mod bytes_tests {
     // binary would poison every other interrupt-aware test running in
     // parallel. The in-loop check itself is in http_accept_next.
 
-    #[test]
-    fn http_serve_head_has_headers_but_no_body() {
-        let dir = std::env::temp_dir().join(format!("mix-http-head-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("f.txt"), "0123456789").unwrap();
-        let port = free_port();
-        let root = dir.to_string_lossy().to_string();
-        let server = std::thread::spawn(move || {
-            let mut opts = indexmap::IndexMap::new();
-            opts.insert("port".to_string(), Value::Number(port as f64));
-            opts.insert("requests".to_string(), Value::Number(1.0));
-            builtin_http_serve(vec![Value::String(root), Value::map(opts)])
-                .map(|_| ())
-                .map_err(|e| e.to_string())
-        });
-        std::thread::sleep(std::time::Duration::from_millis(150));
-        let r = http_raw(port, "HEAD /f.txt HTTP/1.1\r\nHost: x\r\n\r\n");
-        assert!(r.starts_with("HTTP/1.1 200"), "{r}");
-        assert!(r.contains("Content-Length: 10"), "{r}");
-        assert!(r.ends_with("\r\n\r\n"), "HEAD must carry no body: {r:?}");
-        server.join().unwrap().unwrap();
-        std::fs::remove_dir_all(&dir).ok();
-    }
 
-    /// The parser's refusals, each pinned over a raw socket: chunked is
-    /// 501 (never a silent 200 with a dropped body), duplicate
-    /// Content-Length is 400, a caret-less endless line is 431, and a
-    /// POST with a body gets serve's honest 405 (method gate before any
-    /// body concern). Plus: CRLF in a respond header raises locally
-    /// before anything binds.
-    #[test]
-    fn http_parser_refusals_are_pinned() {
-        let dir = std::env::temp_dir().join(format!("mix-http-refuse-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("f.txt"), "x").unwrap();
-        let port = free_port();
-        let root = dir.to_string_lossy().to_string();
-        let server = std::thread::spawn(move || {
-            let mut opts = indexmap::IndexMap::new();
-            opts.insert("port".to_string(), Value::Number(port as f64));
-            opts.insert("requests".to_string(), Value::Number(4.0));
-            builtin_http_serve(vec![Value::String(root), Value::map(opts)])
-                .map(|_| ())
-                .map_err(|e| e.to_string())
-        });
-        std::thread::sleep(std::time::Duration::from_millis(150));
-        let r = http_raw(
-            port,
-            "POST /f.txt HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n",
-        );
-        assert!(r.starts_with("HTTP/1.1 501"), "chunked must 501: {r}");
-        let r = http_raw(
-            port,
-            "GET /f.txt HTTP/1.1\r\nHost: x\r\nContent-Length: 1\r\nContent-Length: 1\r\n\r\nZ",
-        );
-        assert!(r.starts_with("HTTP/1.1 400"), "dup CL must 400: {r}");
-        let r = http_raw(
-            port,
-            "POST /f.txt HTTP/1.1\r\nHost: x\r\nContent-Length: 5\r\n\r\nhello",
-        );
-        assert!(
-            r.starts_with("HTTP/1.1 405"),
-            "POST with body gets the method gate, not 413: {r}"
-        );
-        let long = format!("GET /{} HTTP/1.1\r\n\r\n", "a".repeat(20_000));
-        let r = http_raw(port, &long);
-        assert!(r.starts_with("HTTP/1.1 431"), "endless line must 431: {r}");
-        server.join().unwrap().unwrap();
-        std::fs::remove_dir_all(&dir).ok();
 
-        // respond-splitting refusal is local and immediate.
-        let mut respond = indexmap::IndexMap::new();
-        let mut h = indexmap::IndexMap::new();
-        h.insert(
-            "X-Trace".to_string(),
-            Value::String("a\r\nSet-Cookie: owned=1".into()),
-        );
-        respond.insert("headers".to_string(), Value::map(h));
-        let mut opts = indexmap::IndexMap::new();
-        opts.insert("respond".to_string(), Value::map(respond));
-        opts.insert("timeout".to_string(), Value::Number(0.1));
-        let err = builtin_http_recv(vec![Value::Number(free_port() as f64), Value::map(opts)])
-            .unwrap_err();
-        assert!(format!("{err}").contains("response splitting"), "{err}");
-    }
 
-    #[test]
-    fn http_recv_catches_one_request_and_times_out_clean() {
-        let port = free_port();
-        let client = std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(150));
-            http_raw(
-                port,
-                "POST /hook?run=42 HTTP/1.1\r\nHost: x\r\nX-Token: abc\r\nContent-Length: 9\r\n\r\npayload=1",
-            )
-        });
-        let mut opts = indexmap::IndexMap::new();
-        opts.insert("timeout".to_string(), Value::Number(5.0));
-        let mut respond = indexmap::IndexMap::new();
-        respond.insert("status".to_string(), Value::Number(202.0));
-        respond.insert("body".to_string(), Value::String("queued\n".into()));
-        opts.insert("respond".to_string(), Value::map(respond));
-        let got = builtin_http_recv(vec![Value::Number(port as f64), Value::map(opts)])
-            .unwrap()
-            .unwrap();
-        let Value::Map(m) = &got else {
-            panic!("{got:?}")
-        };
-        assert_eq!(m.get("method"), Some(&Value::String("POST".into())));
-        assert_eq!(m.get("path"), Some(&Value::String("/hook".into())));
-        assert_eq!(m.get("query"), Some(&Value::String("run=42".into())));
-        assert_eq!(m.get("body"), Some(&Value::String("payload=1".into())));
-        let Some(Value::Map(h)) = m.get("headers") else {
-            panic!()
-        };
-        assert_eq!(h.get("x-token"), Some(&Value::String("abc".into())));
-        // The client saw the configured response.
-        let resp = client.join().unwrap();
-        assert!(resp.starts_with("HTTP/1.1 202"), "{resp}");
-        assert!(resp.ends_with("queued\n"), "{resp}");
 
-        // And a quiet port answers nil, not an error.
-        let port2 = free_port();
-        let mut opts = indexmap::IndexMap::new();
-        opts.insert("timeout".to_string(), Value::Number(0.2));
-        assert_eq!(
-            builtin_http_recv(vec![Value::Number(port2 as f64), Value::map(opts)]).unwrap(),
-            Some(Value::Nil)
-        );
-    }
+
 
     /// One representative pin for io.md's "anything else still refuses bytes
     /// with a clean error" sentence — a future sort-bytes arm must edit the
@@ -39259,7 +38803,7 @@ mod compiled_features_tests {
             "sqlite", "dkim", "datastar", "xml", "yaml", "ws", "mime", "archive", "dns",
             "net-client",
         ];
-        const SKIP: &[&str] = &["default", "tokio-sleep"];
+        const SKIP: &[&str] = &["default", "tokio-sleep", "test-support"];
         let manifest = include_str!("../Cargo.toml");
         let mut in_features = false;
         for line in manifest.lines() {
@@ -40164,20 +39708,5 @@ mod strict_write_and_bool_option_tests {
         }
     }
 
-    #[test]
-    fn http_serve_bool_options_refuse_before_bind() {
-        let d = tmpdir("http");
-        // Validation happens before bind/listen, so a wrong bool returns an
-        // error immediately rather than starting a server.
-        for (key, bad) in [
-            ("listing", Value::String("false".into())),
-            ("render_md", Value::Number(1.0)),
-            ("clean_urls", Value::Nil),
-        ] {
-            let err = builtin_http_serve(vec![s(&d), opts(&[(key, bad)])]).unwrap_err();
-            assert!(is_type_mismatch(&err), "{err:?}");
-            assert!(format!("{err}").contains(key), "{err}");
-        }
-        let _ = std::fs::remove_dir_all(&d);
-    }
+
 }

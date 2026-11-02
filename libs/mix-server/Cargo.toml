@@ -28,3 +28,7 @@ tokio = { version = "1", features = ["rt", "net", "time"] }
 
 [lints.clippy]
 mod_module_files = "deny"
+
+[dev-dependencies]
+mix = { path = "../mix", features = ["test-support"] }
+tempfile = "3"

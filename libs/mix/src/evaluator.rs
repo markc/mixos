@@ -299,7 +299,7 @@ pub fn sync_ext(f: impl Fn(Vec<Value>) -> MixResult<Value> + 'static) -> ExtFn {
 /// `$event.headers["topic"]`, `$event.body`, and `$event.args`. The header map
 /// preserves BTreeMap ordering (stable alphabetical), which is what Mix's Map
 /// iteration expects.
-pub(crate) fn incoming_event_to_mix_value(event: &IncomingEvent) -> Value {
+pub fn incoming_event_to_mix_value(event: &IncomingEvent) -> Value {
     let mut headers_map: IndexMap<String, Value> = IndexMap::new();
     for (k, v) in &event.headers {
         headers_map.insert(k.clone(), Value::String(v.clone()));

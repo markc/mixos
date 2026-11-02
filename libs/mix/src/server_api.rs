@@ -15,6 +15,7 @@ pub use crate::udp::{ip, map, ttl, io, option, interface};
 
 pub fn has_tcp(id: u64) -> bool { client::MAP.lock().unwrap().contains_key(&id) }
 pub fn remove_tcp(id: u64) { drop(client::MAP.lock().unwrap().remove(&id)); }
+pub fn retire_tcp(owner: &TcpOwner) { crate::builtins::socket_sources::close_owned(owner); }
 pub fn owner_ids(owner: &TcpOwner) -> Vec<u64> { owner.ids.lock().unwrap().iter().copied().collect() }
 pub fn adopt_udp(sock: std::net::UdpSocket, permit: TcpPermit) -> u64 {
     let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
@@ -40,3 +41,12 @@ pub fn adopt_accepted(stream: std::net::TcpStream, permit: TcpPermit, owner: Opt
 pub fn markdown(args: Vec<Value>) -> MixResult<Option<Value>> { crate::builtins::call_builtin("markdown", args) }
 
 pub use crate::builtins::socket_sources::{is_subscribed, unmark_subscribed, wait_ready, Wait};
+
+#[cfg(feature = "test-support")]
+pub mod testing {
+    pub use crate::native_events::{NativeEvents, json_value};
+    pub use crate::builtins::hex_encode;
+    pub use crate::evaluator::incoming_event_to_mix_value;
+    pub use crate::udp::{record, handles::get as get_udp};
+    pub use crate::builtins::socket_sources::MAX_SOCKET_FRAMES;
+}
