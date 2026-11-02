@@ -98,6 +98,8 @@ end
 print("release gate " .. $mode .. " source=" .. $commit .. " arch=x86_64 logs=" .. $log_dir)
 if $mode == "check" then
   $affected = nil
+  $files = []
+  $selector = require("lib/release_affected.mix")
   if $base != "" then
     print("narrow test stage: feature unification differs from --workspace; the nightly full gate is the backstop")
     if not run_argv(["git", "merge-base", "--is-ancestor", $base, $commit], {timeout: 30}).ok then
@@ -107,7 +109,6 @@ if $mode == "check" then
     $files = filter($files, fn($p) = $p != "")
     $packages = json_parse(run_argv_must(["cargo", "metadata", "--format-version", "1", "--locked", "--no-deps"], {timeout: 300, max_output: 64000000}))
     $graph = json_parse(run_argv_must(["cargo", "metadata", "--format-version", "1", "--locked"], {timeout: 900, max_output: 64000000}))
-    $selector = require("lib/release_affected.mix")
     $context = $selector.diff_context($base, $commit)
     $affected = $selector.select_affected($files, $packages, $graph, $context)
     if $affected.full then
@@ -147,10 +148,18 @@ if $mode == "check" then
     end
     stage("test", $test_argv, 5400)
   end
-  stage("offscreen", ["cargo", "test", "--manifest-path", "vendor/egui-wgpu/Cargo.toml", "--lib", "--locked",
-    "--target-dir", "target", "--features", "winit,wayland", "offscreen_tests::"], 900)
-  stage("latency", ["cargo", "test", "--release", "-p", "editd", "--test", "dispatch", "--locked",
-    "large_file_open_edit_get_latency", "--", "--exact", "--nocapture"], 3600)
+  if $affected == nil or $affected.full or $selector.covered("offscreen", $files) then
+    stage("offscreen", ["cargo", "test", "--manifest-path", "vendor/egui-wgpu/Cargo.toml", "--lib", "--locked",
+      "--target-dir", "target", "--features", "winit,wayland", "offscreen_tests::"], 900)
+  else
+    print("SKIP offscreen (no covered input affected)")
+  end
+  if $affected == nil or $affected.full or $selector.covered("latency", $files) then
+    stage("latency", ["cargo", "test", "--release", "-p", "editd", "--test", "dispatch", "--locked",
+      "large_file_open_edit_get_latency", "--", "--exact", "--nocapture"], 3600)
+  else
+    print("SKIP latency (no covered input affected)")
+  end
   $mix = "target/debug/mix"
   stage("closure", [$mix, "tools/closure_gate.mix", "--locked"], 900)
   stage("foreign", [$mix, "tools/foreign_gate.mix", "--locked", "--elf", "target/debug/mix"], 900)
@@ -160,10 +169,26 @@ if $mode == "check" then
   stage("commands", [$mix, "tools/command_registry.mix"], 900)
   stage("smithay", [$mix, "tools/smithay_guards.mix"], 900)
   stage("index", [$mix, "tools/component_index.mix", "--check"], 900)
-  stage("mix-tests", [$mix, "tools/mix_tests.mix", "--bin", "target/debug"], 5400)
+  $mix_names = []
+  if $affected != nil and not $affected.full then
+    $mix_names = $selector.mix_names($files, $packages, $affected.crates)
+  end
+  if $affected == nil or $affected.full or len($mix_names) > 0 then
+    stage("mix-tests", concat([$mix, "tools/mix_tests.mix", "--bin", "target/debug"], $mix_names), 5400)
+  else
+    print("SKIP mix-tests (no script affected)")
+  end
   stage("paths", [$mix, "tools/path_gate.mix"], 300)
-  stage("layout-templates", [$mix, "tests/layout_templates_test.mix"], 300)
-  stage("relocation", [$mix, "tests/layout_relocation_test.mix", "--bin", "target/debug"], 1800)
+  if $affected == nil or $affected.full or $selector.covered("layout-templates", $files) then
+    stage("layout-templates", [$mix, "tests/layout_templates_test.mix"], 300)
+  else
+    print("SKIP layout-templates (no covered input affected)")
+  end
+  if $affected == nil or $affected.full or $selector.covered("relocation", $files) then
+    stage("relocation", [$mix, "tests/layout_relocation_test.mix", "--bin", "target/debug"], 1800)
+  else
+    print("SKIP relocation (no covered input affected)")
+  end
   if $affected == nil then
     print("GREEN exact source " .. $commit)
   else
