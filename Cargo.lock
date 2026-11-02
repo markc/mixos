@@ -725,6 +725,7 @@ dependencies = [
  "config",
  "egui",
  "egui-wgpu",
+ "egui_kittest",
  "egui_plot",
  "futures",
  "image",

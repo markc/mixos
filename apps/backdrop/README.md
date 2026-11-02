@@ -17,7 +17,7 @@ Stage 1 live views (session selection, all outputs):
 
 The train uses `train.queue` and `buildd.queue`, subscribes to `train.landed`,
 `train.rejected`, `buildd.started`, `buildd.done`, `pipeline.alert` and
-`pipeline.clear`, and refreshes every ten
+`pipeline.clear`, the retained `pipeline.alerts` snapshot, and refreshes every ten
 seconds as a fallback. Identical snapshots do not redraw. Changes animate for
 600 ms at at most ten frames/second; idle views have no animation timer.
 Compositor frame callbacks gate drawing even when hidden. Each output owns
@@ -107,5 +107,5 @@ installed receipt, counting train landings on main beyond that commit.
 Missing data is explicitly unavailable. Backdrop reads no hub files.
 Watchdog `{check,text,at}` events are retained by check in the local view;
 `pipeline.clear` removes that check. Active alerts appear in a red banner.
-This is an advisory view: it has no approval action. Alerts received before
-backdrop connected require the watchdog to republish them.
+The retained `pipeline.alerts` snapshot restores active alerts after reconnect.
+This is an advisory view: it has no approval action.

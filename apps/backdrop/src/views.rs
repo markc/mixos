@@ -45,6 +45,17 @@ impl Default for Snapshot {
 }
 impl Snapshot {
     pub fn alert(&mut self, topic: &str, body: &Value) {
+        if topic == "pipeline.alerts" {
+            if let Some(alerts) = body["alerts"].as_array() {
+                self.alerts.clear();
+                for alert in alerts {
+                    let mut alert = alert.clone();
+                    alert["at"] = body["at"].clone();
+                    self.alert("pipeline.alert", &alert);
+                }
+            }
+            return;
+        }
         let Some(check) = body["check"].as_str().filter(|s| !s.is_empty()) else {
             return;
         };
@@ -304,6 +315,11 @@ mod tests {
         snapshot.alert("pipeline.clear", &json!({"check":"gate","at":3}));
         assert!(!snapshot.alerts.contains_key("gate"));
         assert_eq!(snapshot.alerts.len(), 1);
+        snapshot.alert("pipeline.alerts", &json!({"alerts":[{"check":"replayed","text":"already active"}],"at":4}));
+        assert_eq!(snapshot.alerts.len(), 1);
+        assert!(snapshot.alerts.contains_key("replayed"));
+        snapshot.alert("pipeline.alerts", &json!({"alerts":[],"at":5}));
+        assert!(snapshot.alerts.is_empty());
     }
     #[test]
     fn selection_is_strict_and_failed_arguments_are_atomic() {
