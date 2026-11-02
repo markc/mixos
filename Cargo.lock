@@ -5824,6 +5824,7 @@ dependencies = [
  "mix",
  "serde_json",
  "socket2",
+ "tempfile",
  "tokio",
 ]
 

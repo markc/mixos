@@ -162,3 +162,65 @@ and measurement recipe reports no errors, warnings or notes.
   opt-ins; they are absent from default system builds.
 * Module splitting, reactor, performance comparisons, fault contract and
   installation changes are later jobs, not claimed by this report.
+
+## Job 2 — server extension crate and rebuild scope
+
+Work starts at `9691ec118`. The question is whether a crate boundary, rather
+than a Cargo feature, can keep inbound capability out of a workspace-built
+shell. This section records job 2; the measurements above remain job 1 data.
+
+### Registry and resource API
+
+The provisional API is `mix::extensions::register(&'static dyn BuiltinFamily)`.
+A family supplies its name, `BuiltinInfo` entries (including contracts and
+capability classes), and dispatch. Registration is explicit, process-local
+and idempotent for the same instance. Duplicate names and replacement of
+existing core builtins are refused; the six reserved server placeholders
+are deliberately implementable by an extension. Core keeps their metadata
+and NEEDS_MIXD refusal. Lint checks actual registration, not Cargo features.
+
+```rust
+mix_server::register()?; // embedding host, before evaluation
+// BuiltinFamily: name(), entries(), call(), optional sockets()
+// SocketExtension: accept(), subscribe(), own(), retire(),
+//                  is_listener(), local_addr(), close(), unmark(), subscribed()
+```
+
+`mixd` installs the family before dispatching either scripts or personalities.
+`system` never installs it. `net-server` and `server` were removed from core;
+`ws` remains an alias of `net-client`. Cargo feature unification can compile
+the extension crate but cannot execute its registration in another binary.
+
+The six implementations now live under `libs/mix-server/src/`: TCP listener
+tables, bind/accept loops and subscription readers; UDP listener creation;
+the static HTTP server, HTTP receive and legacy UDP receive. Shared connected
+socket representation stays in core. `server_api` exposes opaque permits and
+ownership, monotonic socket IDs, connected-stream/UDP adoption, handle-presence
+and removal operations, bounded queue records, the cancellation/join wrapper,
+and shared argument validators/readiness waits. Client tables and stream
+variants remain private. Listener tables are entirely in the extension.
+
+Generation cleanup follows the existing NativeEvents lifecycle: stop/join
+subscription readers, retire listener resources through the provider, then
+close owned connected handles. Accepted streams retain their permit and
+generation ownership while pulled or subscribed. A test-support feature
+exposes generation/UDP observations solely for migrated low-level tests.
+
+### Findings during implementation
+
+The first attempt kept server unit tests in core and imported the extension
+through a dev dependency. Rust builds the unit-test crate and its normal
+library dependency as different type identities, so Value, errors and socket
+leases could not cross that cycle. Server-only unit tests were moved into
+the extension's integration tests. Core client ownership tests remain in
+core; existing core integration tests explicitly register the server family
+when they need it. No production constructor registers implicitly.
+
+The API is broader than a name-to-function map: accept readiness, bounded
+queues, cancellation, ownership and client handle interoperation are all
+part of the seam. Its socket-specific trait and test-support surface are
+prototype debt for the survey. The registry currently takes a read lock and
+walks family metadata during lookup; this job measures rebuild scope, not
+runtime throughput. Native Rust service implementations remain unchanged.
+
+Workspace proof, rebuild timings and final test receipts follow below.
