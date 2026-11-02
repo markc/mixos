@@ -198,7 +198,7 @@ One line per component with a page: kind, then install profiles. The
   - [settingsd — changelog](https://mixos.dev/settingsd/changelog.md): Release notes of the settingsd component, mirrored from services/settingsd/CHANGELOG.md.
 - [strict](https://mixos.dev/strict/README.md): lib; profiles: none (library). The MixOS strict-data format, the grammar of conf.mix and data.mix files, loaded as data and never executed.
 - [syntax](https://mixos.dev/syntax/README.md): lib; profiles: none (library). The syntax highlighting library for MixOS text editors, which runs Microsoft Edit's compiled lsh language definitions line by line over any chunked text store.
-- [system](https://mixos.dev/system/README.md): cli; profiles: unclassified. The system package builds the mix shell executable with optional noded, monitord, maild, webd and dnsd personalities selected by the name it is started under.
+- [system](https://mixos.dev/system/README.md): cli; profiles: unclassified. The system package builds the mix shell executable; optional noded, monitord, maild, webd and dnsd personalities are off by default, and each daemon ships as its own binary.
 - [term](https://mixos.dev/term/README.md): app; profiles: unclassified. The MixOS terminal, with tabs, split panes and a GPU-drawn grid, driven by the session settings and fully scriptable over the Bus.
   - [term — changelog](https://mixos.dev/term/changelog.md): Release notes of the term component, mirrored from apps/term/CHANGELOG.md.
 - [test-broker](https://mixos.dev/test-broker/README.md): lib; profiles: none (library). A development fixture that runs the real noded modules in an isolated broker runtime for the Term-to-Mix native session acceptance tests.

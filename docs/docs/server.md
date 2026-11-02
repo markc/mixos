@@ -54,6 +54,6 @@ yet. They are listed on both this page and the desktop page until they do.
 - [releasesd](../releasesd/README.md) (service): How releasesd follows upstream application releases on GitHub and installs their Linux builds per user, verified, with rollback, from the command line or the Bus.
 - [screenshot](../screenshot/README.md) (app): MixOS's screenshot app — Print Screen for a region, Shift+Print for the screen, Alt+Print for a window; arrows, boxes, pens, highlighter, text, numbered markers, crop and redaction that stay…
 - [settingsd](../settingsd/README.md) (service): The headless desktop settings authority, the one writer for a session profile's settings, with durable receipts and retained change publication on the Bus.
-- [system](../system/README.md) (cli): The system package builds the mix shell executable with optional noded, monitord, maild, webd and dnsd personalities selected by the name it is started under.
+- [system](../system/README.md) (cli): The system package builds the mix shell executable; optional noded, monitord, maild, webd and dnsd personalities are off by default, and each daemon ships as its own binary.
 - [term](../term/README.md) (app): The MixOS terminal, with tabs, split panes and a GPU-drawn grid, driven by the session settings and fully scriptable over the Bus.
 - [workshop](../workshop/README.md) (app): Workshop is the MixOS desktop app that lists the services and commands on this node's Bus, shows each command's description and the mesh peers, and calls one command once with a JSON body.

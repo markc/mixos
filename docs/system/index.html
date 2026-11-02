@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="The system package builds the mix shell executable with optional noded, monitord, maild, webd and dnsd personalities selected by the name it is started under.">
+    <meta name="description" content="The system package builds the mix shell executable; optional noded, monitord, maild, webd and dnsd personalities are off by default, and each daemon ships as its own binary.">
     <!-- Favicons from share/brand: the SVG follows the visitor's light/dark preference. -->
     <link rel="icon" href="/favicon.ico?v=400d5816f3" sizes="any">
     <link rel="icon" type="image/svg+xml" href="/_web/favicon.svg?v=4eb2d64677">
@@ -234,34 +234,40 @@
     <div id="doc-view" class="content-section">
         <article id="content-doc" class="prose" data-pagefind-body>
 <h1 id="system">system</h1>
-<p>The system binary, <code>mix</code>: the Mix shell and its enabled headless daemon
+<p>The system binary, <code>mix</code>: the Mix shell. It can also carry headless daemon
 personalities in one file
-(<a href="/docs/decisions/2026-10-12-one-system-binary/">decision</a>).</p>
-<p>The default Cargo features include <code>noded</code>, <code>monitord</code>, <code>maild</code>, <code>webd</code> and
-<code>dnsd</code>; each is optional. Services such as <code>settingsd</code>, <code>hostd</code>, <code>portald</code>
-and <code>compd</code> still build their own executables. The one-system-binary
+(<a href="/docs/decisions/2026-10-12-one-system-binary/">decision</a>, on hold).</p>
+<p>The default build is the shell alone (Mark, 2026-11-02): the <code>noded</code>,
+<code>monitord</code>, <code>maild</code>, <code>webd</code> and <code>dnsd</code> features are off by default, and
+every daemon, like <code>settingsd</code>, <code>hostd</code>, <code>portald</code> and <code>compd</code>, builds and
+ships as its own executable (<code>cargo build -p noded</code> gives
+<code>target/release/noded</code>). Units run those binaries, never a symlink to
+<code>mix</code>. The one-system-binary
 decision describes the architecture; the features in
 <a href="https://github.com/markc/mixos/blob/main/cli/system/Cargo.toml"><code>cli/system/Cargo.toml</code></a>
 and dispatcher are the current personality inventory.</p>
 <p>The binary picks a personality from the basename of argv[0]. Started as
 <code>mix</code> it is the shell (<a href="/mix-shell/">mix-shell</a>,
 <code>mix_shell::main</code>); started through a symlink named <code>noded</code> it is the node
-daemon (<a href="/noded/">noded</a>, <code>noded::main</code>). Each daemon still runs
+daemon (<a href="/noded/">noded</a>, <code>noded::main</code>), when that feature is
+built in. Each daemon still runs
 as its own process, under its own unit and journal identity. This package
 holds only the dispatcher and the global allocator (mimalloc); each
 component keeps its own crate, tests, version and units.</p>
 <pre><code class="language-text">cargo build --locked --profile release-fast -p system --bin mix
-                                              # target/release-fast/mix
+                                              # target/release-fast/mix, the shell alone
+cargo build --locked --profile release-fast -p system --bin mix --features noded
 mix --personalities                            # each personality and its component version
-ln -s mix noded                                # noded, as its own process
+ln -s mix noded                                # noded, only if built with --features noded
 </code></pre>
 <p>An unknown name exits 2 and prints the personalities. A login shell's
 <code>-mix</code> is the shell.</p>
 <p>The Mix language is documented in the <a href="/mix/">Mix manual</a>.</p>
 <h2 id="tests">Tests</h2>
-<p><code>cargo test -p system</code> runs the identity test (<code>tests/personalities.rs</code>) and
-the shell's process-level tests, which moved here from <code>cli/mix-shell</code> so
-they test the shipped binary. Their scripts moved with them
+<p><code>cargo test -p system</code> runs the shell's process-level tests, which moved
+here from <code>cli/mix-shell</code> so they test the shipped binary. The identity test
+(<code>tests/personalities.rs</code>) builds only with all five personality features
+(<code>--features noded,monitord,maild,webd,dnsd</code>). Their scripts moved with them
 (<code>tests/scripts</code>); the manual they check is the site source
 (<a href="/mix/"><code>docs/mix</code></a>), and the source guards read
 <code>cli/mix-shell/src</code>.</p>
