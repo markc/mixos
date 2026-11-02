@@ -20,17 +20,33 @@ pub struct Train {
     settled: bool,
     scene: std::sync::Arc<Vec<Block>>,
 }
-fn rows<'a>(value: &'a Value, key: &str) -> &'a [Value] {
+pub fn rows<'a>(value: &'a Value, key: &str) -> &'a [Value] {
     value[key].as_array().map_or(&[], Vec::as_slice)
 }
 fn text(value: &Value, key: &str) -> String {
     value[key].as_str().unwrap_or("?").into()
 }
-fn decoded(value: &Value) -> Value {
+pub fn decoded(value: &Value) -> Value {
     value
         .as_str()
         .and_then(|s| serde_json::from_str(s).ok())
         .unwrap_or_else(|| value.clone())
+}
+pub fn ellipsis(value: &str, limit: usize) -> String {
+    if value.chars().count() <= limit { value.into() }
+    else { value.chars().take(limit.saturating_sub(1)).chain(['…']).collect() }
+}
+pub fn rejections(snapshot: &super::Snapshot) -> Vec<&Value> {
+    let mut rejected: Vec<_> = rows(&snapshot.queue, "recent").iter().filter(|r| r["state"] == "rejected").collect();
+    rejected.sort_by(|a,b| b["updated"].as_f64().unwrap_or(0.).total_cmp(&a["updated"].as_f64().unwrap_or(0.)));
+    rejected
+}
+pub fn reason(row: &Value) -> String {
+    let raw = row["reason"].as_str().unwrap_or("?");
+    if raw.contains("conflict") { "conflict".into() }
+    else if raw.contains("75") { "infra rc 75".into() }
+    else if raw.contains("red") { "red: release gate".into() }
+    else { ellipsis(raw, 40) }
 }
 impl Train {
     /// Pure snapshot → world-space scene. No GPU, file or Bus access.
@@ -66,7 +82,7 @@ impl Train {
             for (i, row) in rows(&self.snapshot.queue, key)
                 .iter()
                 .filter(|row| {
-                    key != "recent" || row["state"] == "rejected" || row["state"] == "landed"
+                    key != "recent" || row["state"] == "landed"
                 })
                 .take(12)
                 .enumerate()
@@ -90,6 +106,9 @@ impl Train {
                 });
             }
         }
+        for (i, row) in rejections(&self.snapshot).into_iter().take(3).enumerate() {
+            out.push(Block { position: [4. + i as f32, 0.35, 2.], size: [0.48, 0.6, 0.75], tone: 3, glow: 0., label: text(row, "branch") });
+        }
         let mut seen = std::collections::BTreeSet::new();
         for slot in rows(&self.snapshot.workers, "slots") {
             let name = text(slot, "worker");
@@ -100,20 +119,23 @@ impl Train {
             if i >= 3 {
                 break;
             }
-            let busy = rows(&self.snapshot.workers, "running")
+            let jobs: Vec<_> = rows(&self.snapshot.workers, "running")
                 .iter()
-                .any(|job| job["worker"] == slot["worker"]);
+                .filter(|job| job["worker"] == slot["worker"]).collect();
+            let busy = !jobs.is_empty();
+            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs_f64();
+            let mut label = if slot["light"] == 1 { "light".into() } else { name };
+            for job in jobs {
+                let spec = decoded(&job["spec"]);
+                label.push_str(&format!("\n{} · {:.0} min", ellipsis(spec["label"].as_str().unwrap_or("?"), 28), (now - job["started"].as_f64().unwrap_or(now)).max(0.) / 60.));
+            }
             let load = decoded(&slot["snapshot"])["load1"].as_f64().unwrap_or(0.) as f32;
             out.push(Block {
                 position: [-4. + i as f32 * 4., 0.6, -3.],
                 size: [2., 1.2, 1.2],
                 tone: if busy { 1 } else { 0 },
                 glow: (load / 16. + if busy { 0.5 } else { 0. }).clamp(0., 1.),
-                label: if slot["light"] == 1 {
-                    "light".into()
-                } else {
-                    name
-                },
+                label,
             });
         }
         out
@@ -127,6 +149,8 @@ impl View for Train {
             "train.rejected",
             "buildd.started",
             "buildd.done",
+            "pipeline.alert",
+            "pipeline.clear",
         ]
     }
     fn on_event(&mut self, snapshot: std::sync::Arc<super::Snapshot>, visible: bool, now: Instant) {
@@ -177,6 +201,14 @@ impl Train {
 mod tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn rejection_order_and_unicode_truncation_are_bounded() {
+        let snapshot = super::super::Snapshot { queue: json!({"recent":[{"state":"rejected","branch":"old","updated":1},{"state":"landed","updated":9},{"state":"rejected","branch":"new","updated":4}]}), ..Default::default() };
+        let rows = rejections(&snapshot);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0]["branch"], "new");
+        assert_eq!(ellipsis("éééé", 3), "éé…");
+    }
     #[test]
     fn recent_limit_counts_only_landings_and_rejections() {
         let mut rows = vec![json!({"state":"cancelled"}); 20];

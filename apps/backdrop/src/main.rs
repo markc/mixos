@@ -7,10 +7,8 @@
 //! default; the Bus (`backdrop.set`) replaces the document. `--probe` runs the
 //! regression probe instead (`probe.rs`).
 
-mod control;
+use backdrop::{control, program};
 mod probe;
-mod program;
-mod views;
 
 use std::fs::OpenOptions;
 use std::io::Read;
@@ -246,7 +244,10 @@ fn main() {
         std::process::exit(1);
     }
     let program = program::Backdrop::new(toolkit::Theme::load(), shared, wakers);
-    if let Err(error) = toolkit::layer::run(LayerOptions::background(control::APP), program) {
+    let mut layer = LayerOptions::background(control::APP);
+    // Let the compositor configure this surface inside panel exclusive zones.
+    layer.exclusive_zone = 0;
+    if let Err(error) = toolkit::layer::run(layer, program) {
         toolkit::debug::failure("backdrop", &error);
         std::process::exit(1);
     }

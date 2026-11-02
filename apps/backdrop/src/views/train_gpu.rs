@@ -106,7 +106,7 @@ impl Cache {
         for b in blocks
             .iter()
             .take(MAX_CUBES)
-            .filter(|b| !b.label.is_empty())
+            .filter(|b| !b.label.is_empty() && b.size[1] >= 1.)
         {
             let p = animated_position(b, progress);
             let p = project([p[0], p[1] + b.size[1], p[2]]);
@@ -391,20 +391,11 @@ mod tests {
         drop(refused);
     }
     #[test]
-    fn painted_labels_follow_the_animated_cube_position() {
+    fn car_labels_are_in_the_bounded_overlay_not_on_neighbouring_cubes() {
         let budget = Budget::new(32 * 1024 * 1024);
         let mut cache = Cache::default();
         let (a, _) = frame(&mut cache, &budget, 640., 0.);
         let (b, _) = frame(&mut cache, &budget, 640., 1.);
-        let text_x = |out: &egui::FullOutput| {
-            out.shapes
-                .iter()
-                .find_map(|s| match &s.shape {
-                    egui::epaint::Shape::Text(t) if t.galley.job.text == "work/a" => Some(t.pos.x),
-                    _ => None,
-                })
-                .unwrap()
-        };
-        assert!((text_x(&b) - text_x(&a) - 0.4 * 0.085 * 640. * 0.5).abs() < 0.01);
+        for out in [a,b] { assert!(!out.shapes.iter().any(|s| matches!(&s.shape, egui::epaint::Shape::Text(t) if t.galley.job.text == "work/a"))); }
     }
 }
