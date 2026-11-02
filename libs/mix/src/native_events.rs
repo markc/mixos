@@ -1247,7 +1247,7 @@ impl NativeEvents {
 
     /// This generation's TCP owner, for an accept that must record
     /// ownership before it returns (the Class C form).
-    #[cfg(feature = "net-client")]
+    #[cfg(feature = "net-server")]
     pub(crate) fn tcp_owner(&self) -> Arc<crate::builtins::socket_sources::TcpOwner> {
         self.tcp_owned.clone()
     }

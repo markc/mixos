@@ -25500,6 +25500,7 @@ pub(crate) mod socket_sources {
     /// address read at subscribe time (tcp_local_addr still answers).
     /// Listeners have no send endpoint, so they are kept apart from
     /// SUBSCRIBED.
+    #[cfg(feature = "net-server")]
     static LISTENING: LazyLock<
         Mutex<std::collections::HashMap<u64, Option<std::net::SocketAddr>>>,
     > = LazyLock::new(|| Mutex::new(std::collections::HashMap::new()));
@@ -25516,7 +25517,10 @@ pub(crate) mod socket_sources {
         if tcp_server::LISTENERS.lock().unwrap().contains_key(&id) {
             return true;
         }
-        LISTENING.lock().unwrap().contains_key(&id)
+        #[cfg(feature = "net-server")]
+        { LISTENING.lock().unwrap().contains_key(&id) }
+        #[cfg(not(feature = "net-server"))]
+        { let _ = id; false }
     }
 
     pub(crate) fn listening_addr(id: u64) -> Option<std::net::SocketAddr> {
@@ -25524,7 +25528,10 @@ pub(crate) mod socket_sources {
         if let Some(l) = tcp_server::LISTENERS.lock().unwrap().get(&id).cloned() {
             return l.sock.local_addr().ok();
         }
-        LISTENING.lock().unwrap().get(&id).copied().flatten()
+        #[cfg(feature = "net-server")]
+        { LISTENING.lock().unwrap().get(&id).copied().flatten() }
+        #[cfg(not(feature = "net-server"))]
+        { let _ = id; None }
     }
 
     /// The listener a numeric tcp_accept addresses: an Arc clone, so the
