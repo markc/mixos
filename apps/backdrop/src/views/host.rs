@@ -291,10 +291,7 @@ impl<V: View> Host<V> {
                 "train-history",
                 &[("hours", &frame.snapshot.hours.to_string())],
             ));
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs_f64();
+            let now = frame.snapshot.now as f64;
             let series = super::history::series(&frame.snapshot.history, frame.snapshot.hours, now);
             if !frame.snapshot.history["landed"].is_array()
                 || !frame.snapshot.history["batches"].is_array()
