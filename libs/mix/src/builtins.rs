@@ -911,12 +911,12 @@ pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
         "dns_lookup" => builtin_dns_lookup(args),
         "udp_send" => builtin_udp_send(args),
         "udp_recv" => builtin_udp_recv(args),
-        #[cfg(feature = "ws")]
+        #[cfg(feature = "net-server")]
         "udp_listen" => {
             expect_args_between("udp_listen", &args, 2, 3)?;
             crate::udp::handles::listen(args)
         }
-        #[cfg(feature = "ws")]
+        #[cfg(feature = "net-client")]
         "udp_send_via" => {
             expect_args("udp_send_via", &args, 4)?;
             let id = socket_sources::client_id_of(args.first(), "udp_send_via")?;
@@ -935,13 +935,13 @@ pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
                 .map_err(crate::udp::io)?;
             Ok(Some(Value::Number(n as f64)))
         }
-        #[cfg(feature = "ws")]
+        #[cfg(feature = "net-client")]
         "udp_close" => {
             expect_args("udp_close", &args, 1)?;
             let id = socket_sources::client_id_of(args.first(), "udp_close")?;
             Ok(Some(Value::Bool(crate::udp::handles::close(id)?)))
         }
-        #[cfg(feature = "ws")]
+        #[cfg(feature = "net-client")]
         "udp_local_addr" => {
             expect_args("udp_local_addr", &args, 1)?;
             let id = socket_sources::client_id_of(args.first(), "udp_local_addr")?;
@@ -953,35 +953,40 @@ pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
                 serde_json::json!({"host":addr.ip().to_string(), "port":addr.port()}),
             )))
         }
+        #[cfg(feature = "net-server")]
         "http_serve" => builtin_http_serve(args),
+        #[cfg(not(feature = "net-server"))]
+        name @ ("tcp_listen" | "tcp_accept" | "udp_listen" | "http_serve") => Err(crate::native_events::refusal(
+            "NEEDS_MIXD", format!("{name}() needs server capability; run it under: mixd run <script>"),
+        )),
         "http_recv" => builtin_http_recv(args),
-        #[cfg(feature = "ws")]
+        #[cfg(feature = "net-client")]
         "ws_connect" => builtin_ws_connect(args),
-        #[cfg(feature = "ws")]
+        #[cfg(feature = "net-client")]
         "ws_send" => builtin_ws_send(args),
-        #[cfg(feature = "ws")]
+        #[cfg(feature = "net-client")]
         "ws_recv" => builtin_ws_recv(args),
-        #[cfg(feature = "ws")]
+        #[cfg(feature = "net-client")]
         "ws_close" => builtin_ws_close(args),
-        #[cfg(feature = "ws")]
+        #[cfg(feature = "net-client")]
         "tcp_connect" => builtin_tcp_connect(args),
-        #[cfg(feature = "ws")]
+        #[cfg(feature = "net-client")]
         "tcp_send" => builtin_tcp_send(args),
-        #[cfg(feature = "ws")]
+        #[cfg(feature = "net-client")]
         "tcp_recv" => builtin_tcp_recv(args),
-        #[cfg(feature = "ws")]
+        #[cfg(feature = "net-client")]
         "tcp_recv_line" => builtin_tcp_recv_line(args),
-        #[cfg(feature = "ws")]
+        #[cfg(feature = "net-client")]
         "tcp_close" => builtin_tcp_close(args),
-        #[cfg(feature = "ws")]
+        #[cfg(feature = "net-server")]
         "tcp_listen" => builtin_tcp_listen(args),
-        #[cfg(feature = "ws")]
+        #[cfg(feature = "net-server")]
         "tcp_accept" => builtin_tcp_accept(args),
-        #[cfg(feature = "ws")]
+        #[cfg(feature = "net-client")]
         "tcp_local_addr" => builtin_tcp_local_addr(args),
-        #[cfg(all(feature = "ws", unix))]
+        #[cfg(all(feature = "net-client", unix))]
         "unix_connect" => builtin_unix_connect(args),
-        #[cfg(all(feature = "ws", not(unix)))]
+        #[cfg(all(feature = "net-client", not(unix)))]
         "unix_connect" => Err(MixError::RuntimeError {
             span: None,
             msg: "unix_connect() needs a unix platform".to_string(),
@@ -989,11 +994,11 @@ pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
         // Registry lists these unconditionally; a no-ws build refuses
         // loudly rather than falling through to the silent-nil catch-all.
         // (tcp_* share the ws feature's tungstenite/rustls stack.)
-        #[cfg(not(feature = "ws"))]
+        #[cfg(not(feature = "net-client"))]
         name @ ("ws_connect" | "ws_send" | "ws_recv" | "ws_close" | "tcp_connect" | "tcp_send"
         | "tcp_recv" | "tcp_recv_line" | "tcp_close" | "ws_on" | "tcp_on"
-        | "ws_unwatch" | "udp_listen" | "udp_send_via" | "udp_close" | "udp_local_addr"
-        | "udp_on" | "udp_unwatch" | "tcp_unwatch" | "tcp_listen" | "tcp_accept"
+        | "ws_unwatch" | "udp_send_via" | "udp_close" | "udp_local_addr"
+        | "udp_on" | "udp_unwatch" | "tcp_unwatch"
         | "tcp_local_addr" | "unix_connect") => Err(MixError::RuntimeError {
             span: None,
             msg: format!("{name}() requires the `ws` feature (tungstenite/rustls)"),
@@ -22673,7 +22678,7 @@ fn builtin_udp_recv(args: Vec<Value>) -> MixResult<Option<Value>> {
 // a bash FIFO coprocess. Handles follow the sqlopen precedent (numeric
 // id into a process-global registry; the kernel cleans up on exit).
 
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-client")]
 mod ws_client {
     use std::collections::HashMap;
     use std::sync::atomic::AtomicU64;
@@ -22743,7 +22748,7 @@ mod ws_client {
     }
 }
 
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-client")]
 fn ws_err(name: &str, msg: impl std::fmt::Display) -> MixError {
     MixError::RuntimeError {
         span: None,
@@ -22751,7 +22756,7 @@ fn ws_err(name: &str, msg: impl std::fmt::Display) -> MixError {
     }
 }
 
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-client")]
 fn ws_id_arg(name: &str, args: &[Value]) -> MixResult<u64> {
     let n = number_arg(name, args, 0)?;
     as_exact_integer(&format!("{name}(): handle"), n, 1, i64::MAX)?
@@ -22759,7 +22764,7 @@ fn ws_id_arg(name: &str, args: &[Value]) -> MixResult<u64> {
         .map_err(|_| ws_err(name, "invalid handle"))
 }
 
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-client")]
 fn ws_handle_arg(name: &str, args: &[Value]) -> MixResult<u64> {
     let id = ws_id_arg(name, args)?;
     // A subscribed handle's connection is owned by its reader thread:
@@ -22779,7 +22784,7 @@ fn ws_handle_arg(name: &str, args: &[Value]) -> MixResult<u64> {
 }
 
 /// `ws_connect(url[, {insecure, headers, timeout}])` → numeric handle.
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-client")]
 fn builtin_ws_connect(args: Vec<Value>) -> MixResult<Option<Value>> {
     use tungstenite::client::IntoClientRequest;
     expect_args_between("ws_connect", &args, 1, 2)?;
@@ -22990,7 +22995,7 @@ fn builtin_ws_connect(args: Vec<Value>) -> MixResult<Option<Value>> {
 /// endpoint and blocks (bounded by the owner's send deadline) for the
 /// completion receipt — the connection has exactly one owner, and this
 /// path never touches it.
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-client")]
 fn builtin_ws_send(args: Vec<Value>) -> MixResult<Option<Value>> {
     expect_args("ws_send", &args, 2)?;
     let id = ws_id_arg("ws_send", &args)?;
@@ -23050,7 +23055,7 @@ fn builtin_ws_send(args: Vec<Value>) -> MixResult<Option<Value>> {
 }
 
 /// ws_recv's timeout argument: seconds, default 30, 0 = wait forever.
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-client")]
 pub(crate) fn ws_recv_timeout(v: Option<&Value>) -> MixResult<f64> {
     let Some(v) = v.filter(|v| !matches!(v, Value::Nil)) else {
         return Ok(30.0);
@@ -23070,7 +23075,7 @@ pub(crate) fn ws_recv_timeout(v: Option<&Value>) -> MixResult<f64> {
 /// poll again). Ping/pong are handled internally and never surface. A
 /// peer CLOSE raises a catchable error and retires the handle: "no more
 /// frames, ever" must not be confusable with "no frame yet".
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-client")]
 fn builtin_ws_recv(args: Vec<Value>) -> MixResult<Option<Value>> {
     expect_args_between("ws_recv", &args, 1, 2)?;
     let id = ws_handle_arg("ws_recv", &args)?;
@@ -23153,7 +23158,7 @@ fn builtin_ws_recv(args: Vec<Value>) -> MixResult<Option<Value>> {
 /// `ws_close(handle)` → true when a live handle was closed, false when
 /// the handle was unknown (already closed/retired). Never raises for the
 /// not-held case, mirroring funlock.
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-client")]
 fn builtin_ws_close(args: Vec<Value>) -> MixResult<Option<Value>> {
     expect_args("ws_close", &args, 1)?;
     let id = ws_handle_arg("ws_close", &args)?;
@@ -23181,7 +23186,7 @@ fn builtin_ws_close(args: Vec<Value>) -> MixResult<Option<Value>> {
 // line-protocol caller need not hand-roll a \r\n scanner over accumulated
 // bytes (the false-terminator class the rfc2047 work documented).
 
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-client")]
 pub(crate) mod tcp_client {
     use std::collections::{HashMap, HashSet};
     use std::io::{Read, Write};
@@ -23336,7 +23341,8 @@ pub(crate) mod tcp_client {
     /// Every live server-side TCP socket (a listener or a connection it
     /// accepted) holds one permit from this pool. tcp_connect clients do
     /// not.
-    pub(super) static TCP_PERMITS: PermitPool = PermitPool::new(super::tcp_server::MAX_TCP_HANDLES);
+    pub(super) const MAX_TCP_HANDLES: usize = 1024;
+    pub(super) static TCP_PERMITS: PermitPool = PermitPool::new(MAX_TCP_HANDLES);
 
     /// One reserved slot; released on drop.
     pub(crate) struct TcpPermit {
@@ -23357,7 +23363,7 @@ pub(crate) mod tcp_client {
                     "TCP_HANDLE_LIMIT",
                     format!(
                         "{name}: {} live tcp handles is the limit; close some with tcp_close()",
-                        super::tcp_server::MAX_TCP_HANDLES
+                        MAX_TCP_HANDLES
                     ),
                 )
             })
@@ -23504,12 +23510,12 @@ pub(crate) mod tcp_client {
 }
 
 /// How an error names a frame delimiter.
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-client")]
 pub(crate) fn delim_name(delim: u8) -> &'static str {
     if delim == 0 { "NUL" } else { "newline" }
 }
 
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-client")]
 fn tcp_err(name: &str, msg: impl std::fmt::Display) -> MixError {
     MixError::RuntimeError {
         span: None,
@@ -23517,7 +23523,7 @@ fn tcp_err(name: &str, msg: impl std::fmt::Display) -> MixError {
     }
 }
 
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-client")]
 fn tcp_id_arg(name: &str, args: &[Value]) -> MixResult<u64> {
     let n = number_arg(name, args, 0)?;
     as_exact_integer(&format!("{name}(): handle"), n, 1, i64::MAX)?
@@ -23525,7 +23531,7 @@ fn tcp_id_arg(name: &str, args: &[Value]) -> MixResult<u64> {
         .map_err(|_| tcp_err(name, "invalid handle"))
 }
 
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-client")]
 fn tcp_handle(name: &str, args: &[Value]) -> MixResult<u64> {
     let id = tcp_id_arg(name, args)?;
     // A subscribed handle's connection is owned by its reader thread:
@@ -23546,7 +23552,7 @@ fn tcp_handle(name: &str, args: &[Value]) -> MixResult<u64> {
 
 /// The "unknown handle" error for a connection command, naming the mistake
 /// when the number is a listener rather than a connection.
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-client")]
 fn tcp_unknown(name: &str, id: u64) -> MixError {
     if socket_sources::is_listener(id) {
         return crate::native_events::refusal(
@@ -23558,7 +23564,7 @@ fn tcp_unknown(name: &str, id: u64) -> MixError {
 }
 
 /// `tcp_connect(host, port[, {timeout, tls, insecure}])` → numeric handle.
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-client")]
 fn builtin_tcp_connect(args: Vec<Value>) -> MixResult<Option<Value>> {
     expect_args_between("tcp_connect", &args, 2, 3)?;
     let host = args[0].to_mix_string();
@@ -23746,7 +23752,7 @@ fn builtin_tcp_connect(args: Vec<Value>) -> MixResult<Option<Value>> {
 /// tcp_connect handle space: tcp_send, tcp_recv, tcp_recv_line, tcp_on and
 /// tcp_close all take it. `frame: "nul"` makes a "line" a NUL-terminated
 /// frame (Varlink, hostd); the default "line" keeps LF lines.
-#[cfg(all(feature = "ws", unix))]
+#[cfg(all(feature = "net-client", unix))]
 fn builtin_unix_connect(args: Vec<Value>) -> MixResult<Option<Value>> {
     use crate::native_events::refusal;
     expect_args_between("unix_connect", &args, 1, 2)?;
@@ -23904,13 +23910,13 @@ fn builtin_unix_connect(args: Vec<Value>) -> MixResult<Option<Value>> {
 /// buffer, which the caller can still change, is snapshotted. A copy here
 /// would run before the send's deadline starts, outside its bound: under
 /// memory pressure a 64 MiB copy has taken a minute.
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-client")]
 pub(crate) enum SendPayload {
     Owned(Vec<u8>),
     Shared(std::rc::Rc<Vec<u8>>),
 }
 
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-client")]
 impl SendPayload {
     pub(crate) fn as_slice(&self) -> &[u8] {
         match self {
@@ -23935,7 +23941,7 @@ impl SendPayload {
 }
 
 /// The payload of a tcp_send call: string, bytes or buffer, verbatim.
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-client")]
 pub(crate) fn tcp_send_payload(mut v: Value) -> MixResult<SendPayload> {
     // Value implements Drop, so its fields are taken, not moved out.
     match &mut v {
@@ -23952,7 +23958,7 @@ pub(crate) fn tcp_send_payload(mut v: Value) -> MixResult<SendPayload> {
     }
 }
 
-#[cfg(all(test, feature = "ws"))]
+#[cfg(all(test, feature = "net-client"))]
 mod tcp_send_payload_tests {
     use super::{SendPayload, tcp_send_payload};
     use crate::value::Value;
@@ -23977,7 +23983,7 @@ mod tcp_send_payload_tests {
 
 /// tcp_send's `{timeout}`: None when no option was given (the unchanged
 /// default path), else seconds for the whole send, 0 = wait forever.
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-client")]
 pub(crate) fn tcp_send_timeout(opts: Option<&Value>) -> MixResult<Option<f64>> {
     use crate::native_events::refusal;
     match opts {
@@ -24018,7 +24024,7 @@ pub(crate) fn tcp_send_timeout(opts: Option<&Value>) -> MixResult<Option<f64>> {
 
 /// The deadline expired with `written` of `total` bytes on the wire. The
 /// handle is retired: a partial write leaves the stream unusable.
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-client")]
 pub(crate) fn tcp_send_timeout_error(written: usize, total: usize) -> MixError {
     tcp_send_stopped(
         "TCP_SEND_TIMEOUT",
@@ -24028,7 +24034,7 @@ pub(crate) fn tcp_send_timeout_error(written: usize, total: usize) -> MixError {
     )
 }
 
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-client")]
 fn tcp_send_stopped(code: &str, why: &str, written: usize, total: usize) -> MixError {
     let mut details = indexmap::IndexMap::new();
     details.insert("written".to_string(), Value::Number(written as f64));
@@ -24046,7 +24052,7 @@ fn tcp_send_stopped(code: &str, why: &str, written: usize, total: usize) -> MixE
 
 /// One non-blocking step of a deadline send: write more of the payload,
 /// or flush (TLS records) once it is all accepted.
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-client")]
 enum SendStep {
     Progress,
     WouldBlock,
@@ -24054,7 +24060,7 @@ enum SendStep {
     Failed(std::io::Error),
 }
 
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-client")]
 fn send_step(conn: &mut tcp_client::Conn, payload: &[u8], off: &mut usize) -> SendStep {
     use std::io::ErrorKind;
     if *off < payload.len() {
@@ -24090,7 +24096,7 @@ fn send_step(conn: &mut tcp_client::Conn, payload: &[u8], off: &mut usize) -> Se
 }
 
 /// Wait until the socket is writable, Ctrl-C arrives or `timeout` passes.
-#[cfg(all(feature = "ws", unix))]
+#[cfg(all(feature = "net-client", unix))]
 fn wait_writable(
     tcp: tcp_client::SockRef<'_>,
     timeout: std::time::Duration,
@@ -24122,7 +24128,7 @@ fn wait_writable(
     Ok(rc > 0)
 }
 
-#[cfg(all(feature = "ws", not(unix)))]
+#[cfg(all(feature = "net-client", not(unix)))]
 fn wait_writable(
     _tcp: tcp_client::SockRef<'_>,
     timeout: std::time::Duration,
@@ -24134,7 +24140,7 @@ fn wait_writable(
 /// The blocking deadline send (non-unix, direct call_builtin callers; on
 /// unix the evaluator runs the async form). One deadline bounds the whole
 /// payload, however many partial writes it takes.
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-client")]
 fn tcp_send_deadline(
     mut conn: tcp_client::Conn,
     id: u64,
@@ -24211,7 +24217,7 @@ fn tcp_send_deadline(
 /// path, with `details.total` (the owner thread does not report how much
 /// it wrote, so `written` is absent); without one, the source's
 /// SOCKET_SEND_TIMEOUT stays as it was.
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-client")]
 pub(crate) fn tcp_send_receipt(
     receipt: Result<socket_sources::SendReceipt, tokio::sync::oneshot::error::RecvError>,
     timed: bool,
@@ -24243,7 +24249,7 @@ pub(crate) fn tcp_send_receipt(
 /// the send routes through the owner thread's bounded command endpoint
 /// and blocks for the completion receipt, its deadline the caller's
 /// timeout when given (0 keeps the source's 30 s bound).
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-client")]
 fn builtin_tcp_send(mut args: Vec<Value>) -> MixResult<Option<Value>> {
     expect_args_between("tcp_send", &args, 2, 3)?;
     let id = tcp_id_arg("tcp_send", &args)?;
@@ -24277,7 +24283,7 @@ fn builtin_tcp_send(mut args: Vec<Value>) -> MixResult<Option<Value>> {
 /// Shared read helper: pull one chunk under `timeout` (None = forever).
 /// Returns Ok(true) if bytes were read into conn.buf, Ok(false) on
 /// timeout, Err on a real error or peer close.
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-client")]
 fn tcp_fill(
     name: &str,
     conn: &mut tcp_client::Conn,
@@ -24345,7 +24351,7 @@ fn tcp_fill(
 /// first) | nil on timeout. Bytes, not string: a stream has no frame
 /// boundary. A peer close RAISES + retires the handle (never the nil that
 /// means "quiet, poll again").
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-client")]
 fn builtin_tcp_recv(args: Vec<Value>) -> MixResult<Option<Value>> {
     expect_args_between("tcp_recv", &args, 1, 2)?;
     let id = tcp_handle("tcp_recv", &args)?;
@@ -24377,7 +24383,7 @@ fn builtin_tcp_recv(args: Vec<Value>) -> MixResult<Option<Value>> {
 /// across reads; `max` caps the line length (refused past it). The
 /// line-protocol form — SMTP/redis speak lines, and hand-rolling a
 /// \r\n scanner over tcp_recv bytes rebuilds the false-terminator trap.
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-client")]
 fn builtin_tcp_recv_line(args: Vec<Value>) -> MixResult<Option<Value>> {
     expect_args_between("tcp_recv_line", &args, 1, 2)?;
     let id = tcp_handle("tcp_recv_line", &args)?;
@@ -24431,7 +24437,7 @@ fn builtin_tcp_recv_line(args: Vec<Value>) -> MixResult<Option<Value>> {
     }
 }
 
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-client")]
 pub(crate) fn tcp_recv_opts(
     name: &str,
     opts: Option<&Value>,
@@ -24504,7 +24510,7 @@ pub(crate) fn tcp_recv_opts(
 // (socket_sources::close_owned). tcp_on on a listener moves it into a
 // reader thread (socket_sources::subscribe_listener).
 
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-server")]
 mod tcp_server {
     use super::tcp_client::{Ownership, TcpPermit};
     use std::collections::HashMap;
@@ -24545,20 +24551,20 @@ mod tcp_server {
 /// Stop listening now. A Class C accept may still hold a clone of the
 /// listener; shutdown(2) wakes it instead of leaving the port open until
 /// the last clone drops.
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-server")]
 fn close_listener(listener: std::sync::Arc<tcp_server::Listener>) {
     let _ = socket2::SockRef::from(&listener.sock).shutdown(std::net::Shutdown::Both);
 }
 
 /// Why an accept attempt produced no connection.
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-server")]
 enum AcceptError {
     /// Every handle permit is taken; the connection was left queued.
     Limit,
     Io(std::io::Error),
 }
 
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-server")]
 impl AcceptError {
     fn into_mix(self) -> MixError {
         match self {
@@ -24580,7 +24586,7 @@ impl AcceptError {
 /// limit is never exceeded, and dropped again when nothing is pending.
 /// Ok(None) means nothing was pending. With an owner, the connection is
 /// owned before its handle exists anywhere else.
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-server")]
 fn try_accept(
     listener: &std::net::TcpListener,
     owner: Option<&std::sync::Arc<tcp_client::TcpOwner>>,
@@ -24600,7 +24606,7 @@ fn try_accept(
 
 /// Register an accepted stream as an ordinary connected handle with
 /// tcp_connect's plain-socket defaults: blocking, nodelay, 30 s timeouts.
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-server")]
 fn adopt_accepted(
     stream: std::net::TcpStream,
     permit: tcp_client::TcpPermit,
@@ -24630,7 +24636,7 @@ fn adopt_accepted(
 
 /// accept(2) errors that concern one pending connection rather than the
 /// listener: retry, as the Linux man page advises.
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-server")]
 fn accept_retryable(e: &std::io::Error) -> bool {
     use std::io::ErrorKind;
     matches!(
@@ -24639,7 +24645,7 @@ fn accept_retryable(e: &std::io::Error) -> bool {
     ) || accept_retryable_os(e.raw_os_error())
 }
 
-#[cfg(all(feature = "ws", target_os = "linux"))]
+#[cfg(all(feature = "net-server", target_os = "linux"))]
 fn accept_retryable_os(code: Option<i32>) -> bool {
     code.is_some_and(|c| {
         matches!(
@@ -24656,7 +24662,7 @@ fn accept_retryable_os(code: Option<i32>) -> bool {
     })
 }
 
-#[cfg(all(feature = "ws", not(target_os = "linux")))]
+#[cfg(all(feature = "net-server", not(target_os = "linux")))]
 fn accept_retryable_os(_code: Option<i32>) -> bool {
     false
 }
@@ -24668,7 +24674,7 @@ fn accept_retryable_os(_code: Option<i32>) -> bool {
 /// SIGINT on another thread still ends the wait. Correctness never rests
 /// on the byte (another waiter may drain it): the caller bounds each wait
 /// (ACCEPT_SLICE) and checks the interrupt flag between waits.
-#[cfg(all(feature = "ws", unix))]
+#[cfg(all(feature = "net-server", unix))]
 fn wait_listener(
     listener: &std::net::TcpListener,
     timeout: Option<std::time::Duration>,
@@ -24705,7 +24711,7 @@ fn wait_listener(
 
 /// Without poll(2): sleep briefly; the caller retries accept and checks
 /// its deadline.
-#[cfg(all(feature = "ws", not(unix)))]
+#[cfg(all(feature = "net-server", not(unix)))]
 fn wait_listener(
     _listener: &std::net::TcpListener,
     timeout: Option<std::time::Duration>,
@@ -24716,7 +24722,7 @@ fn wait_listener(
 }
 
 /// `tcp_listen(host, port[, {backlog}])` → numeric listener handle.
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-server")]
 fn builtin_tcp_listen(args: Vec<Value>) -> MixResult<Option<Value>> {
     use crate::native_events::refusal;
     expect_args_between("tcp_listen", &args, 2, 3)?;
@@ -24849,18 +24855,18 @@ fn builtin_tcp_listen(args: Vec<Value>) -> MixResult<Option<Value>> {
 /// wake socket is only the fast path: with several waiters one may drain
 /// the byte another needed, so every waiter rechecks the interrupt flag
 /// at least this often.
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-server")]
 const ACCEPT_SLICE: std::time::Duration = std::time::Duration::from_millis(250);
 
 /// Blocking tcp_accept calls that have reached their wait loop: a
 /// synchronisation point for tests that must signal a waiter that is
 /// really waiting.
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-server")]
 static ACCEPT_WAITS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 /// How many blocking tcp_accept calls have entered their wait loop.
 /// Test synchronisation only; not part of the Mix contract.
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-server")]
 #[doc(hidden)]
 pub fn tcp_accept_waits_entered() -> usize {
     ACCEPT_WAITS.load(std::sync::atomic::Ordering::Acquire)
@@ -24870,7 +24876,7 @@ pub fn tcp_accept_waits_entered() -> usize {
 /// timeout. The blocking form, for non-unix targets and direct
 /// call_builtin callers: on unix the evaluator runs every numeric form on
 /// the runtime (socket_sources::pull_accept), and the source-id form.
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-server")]
 fn builtin_tcp_accept(args: Vec<Value>) -> MixResult<Option<Value>> {
     use crate::native_events::refusal;
     expect_args_between("tcp_accept", &args, 1, 2)?;
@@ -24924,16 +24930,12 @@ fn builtin_tcp_accept(args: Vec<Value>) -> MixResult<Option<Value>> {
 
 /// `tcp_local_addr(handle)` → {host, port} for a listener (subscribed or
 /// not) or an unsubscribed connected handle.
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-client")]
 fn builtin_tcp_local_addr(args: Vec<Value>) -> MixResult<Option<Value>> {
     use crate::native_events::refusal;
     expect_args("tcp_local_addr", &args, 1)?;
     let id = tcp_id_arg("tcp_local_addr", &args)?;
-    let addr = if let Some(l) = tcp_server::LISTENERS.lock().unwrap().get(&id).cloned() {
-        l.sock
-            .local_addr()
-            .map_err(|e| refusal("TCP_LOCAL_ADDR", format!("tcp_local_addr: {e}")))?
-    } else if let Some(addr) = socket_sources::listening_addr(id) {
+    let addr = if let Some(addr) = socket_sources::listening_addr(id) {
         addr
     } else if let Some(addr) = tcp_client::MAP
         .lock()
@@ -25019,9 +25021,11 @@ fn builtin_tcp_local_addr(args: Vec<Value>) -> MixResult<Option<Value>> {
 // conn to the registry (source stays usable); a peer close or error RAISES
 // and retires the handle exactly like the sync path. Class S and plain
 // evaluation keep the synchronous semantics.
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-client")]
 pub(crate) mod socket_sources {
-    use super::{tcp_client, tcp_server, tcp_unknown, ws_client, ws_err};
+    use super::{tcp_client, tcp_unknown, ws_client, ws_err};
+    #[cfg(feature = "net-server")]
+    use super::tcp_server;
     use crate::{
         error::MixResult,
         native_events::{Queue, refusal},
@@ -25047,6 +25051,7 @@ pub(crate) mod socket_sources {
         Ws,
         Tcp,
         /// A tcp_listen listener (tcp_connect id space, own registry).
+        #[cfg(feature = "net-server")]
         Listener,
         Udp,
     }
@@ -25470,6 +25475,7 @@ pub(crate) mod socket_sources {
     }
 
     pub(crate) fn unmark_subscribed(key: ClientKey) {
+        #[cfg(feature = "net-server")]
         if key.family == ClientFamily::Listener {
             LISTENING.lock().unwrap().remove(&key.id);
             return;
@@ -25477,6 +25483,7 @@ pub(crate) mod socket_sources {
         SUBSCRIBED.lock().unwrap().remove(&key);
     }
     pub(crate) fn is_subscribed(key: ClientKey) -> bool {
+        #[cfg(feature = "net-server")]
         if key.family == ClientFamily::Listener {
             return LISTENING.lock().unwrap().contains_key(&key.id);
         }
@@ -25494,12 +25501,14 @@ pub(crate) mod socket_sources {
     > = LazyLock::new(|| Mutex::new(std::collections::HashMap::new()));
 
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    #[cfg(feature = "net-server")]
     fn mark_listening(id: u64, addr: Option<std::net::SocketAddr>) {
         LISTENING.lock().unwrap().insert(id, addr);
     }
 
     /// Is this numeric handle a listener, subscribed or not?
     pub(crate) fn is_listener(id: u64) -> bool {
+        #[cfg(feature = "net-server")]
         if tcp_server::LISTENERS.lock().unwrap().contains_key(&id) {
             return true;
         }
@@ -25507,11 +25516,16 @@ pub(crate) mod socket_sources {
     }
 
     pub(crate) fn listening_addr(id: u64) -> Option<std::net::SocketAddr> {
+        #[cfg(feature = "net-server")]
+        if let Some(l) = tcp_server::LISTENERS.lock().unwrap().get(&id).cloned() {
+            return l.sock.local_addr().ok();
+        }
         LISTENING.lock().unwrap().get(&id).copied().flatten()
     }
 
     /// The listener a numeric tcp_accept addresses: an Arc clone, so the
     /// wait never holds the registry lock.
+    #[cfg(feature = "net-server")]
     fn listener_for_accept(id: u64) -> MixResult<Arc<tcp_server::Listener>> {
         if let Some(l) = tcp_server::LISTENERS.lock().unwrap().get(&id).cloned() {
             return Ok(l);
@@ -25581,6 +25595,7 @@ pub(crate) mod socket_sources {
 
     /// Validate a numeric tcp_accept call: its listener and the absolute
     /// deadline. The handle limit is enforced per accept attempt.
+    #[cfg(feature = "net-server")]
     pub(crate) fn prepare_accept(
         args: &[Value],
     ) -> MixResult<(Arc<tcp_server::Listener>, Option<std::time::Instant>)> {
@@ -25605,6 +25620,7 @@ pub(crate) mod socket_sources {
     /// `interruptible` (plain and Class S evaluation) also rechecks the
     /// interrupt flag every ACCEPT_SLICE for embedders with no such select.
     #[cfg(unix)]
+    #[cfg(feature = "net-server")]
     pub(crate) async fn pull_accept(
         listener: Arc<tcp_server::Listener>,
         deadline: Option<std::time::Instant>,
@@ -25701,6 +25717,7 @@ pub(crate) mod socket_sources {
     }
 
     #[cfg(not(unix))]
+    #[cfg(feature = "net-server")]
     pub(crate) async fn pull_accept(
         _listener: Arc<tcp_server::Listener>,
         _deadline: Option<std::time::Instant>,
@@ -25717,6 +25734,7 @@ pub(crate) mod socket_sources {
     /// connection is already a live handle, so a record that is never
     /// delivered must be discarded with `discard_record`.
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    #[cfg(feature = "net-server")]
     fn accepted_record(handle: u64, peer: std::net::SocketAddr) -> SocketRecord {
         SocketRecord {
             kind: "accepted",
@@ -25761,6 +25779,7 @@ pub(crate) mod socket_sources {
             }
             return;
         }
+        #[cfg(feature = "net-server")]
         if let Some(listener) = tcp_server::LISTENERS.lock().unwrap().get(&id) {
             let mut slot = listener.ownership.lock().unwrap();
             if slot.is_none() {
@@ -25777,8 +25796,8 @@ pub(crate) mod socket_sources {
         owner.retired.store(true, Ordering::Release);
         let ids: Vec<u64> = owner.ids.lock().unwrap().iter().copied().collect();
         for id in ids {
-            let listener = tcp_server::LISTENERS.lock().unwrap().remove(&id);
-            if let Some(listener) = listener {
+            #[cfg(feature = "net-server")]
+            if let Some(listener) = tcp_server::LISTENERS.lock().unwrap().remove(&id) {
                 super::close_listener(listener);
             }
             let conn = tcp_client::MAP.lock().unwrap().remove(&id);
@@ -25789,6 +25808,7 @@ pub(crate) mod socket_sources {
     /// `tcp_on` on a listener: move it out of the registry into a reader
     /// owned by the evaluator generation. Refused while a numeric accept
     /// is waiting on it (the reader must be the single acceptor).
+    #[cfg(feature = "net-server")]
     pub(crate) fn subscribe_listener(
         queue: Arc<Queue>,
         id: String,
@@ -26970,6 +26990,7 @@ pub(crate) mod socket_sources {
         /// connection into one ordered `accepted` record. Cancellation,
         /// overflow and the single terminal record follow the connection
         /// reader's rules; a listener has no sends.
+        #[cfg(feature = "net-server")]
         pub(super) fn spawn_listener(
             queue: Arc<Queue>,
             id: String,
@@ -27067,6 +27088,7 @@ pub(crate) mod socket_sources {
         /// and becomes a live handle owned by the generation before its
         /// record is queued; a refused record closes it again (never a
         /// handle nobody can name).
+        #[cfg(feature = "net-server")]
         fn accept_batch(
             queue: &Queue,
             id: &str,
@@ -27577,7 +27599,9 @@ pub(crate) mod socket_sources {
     #[cfg(target_os = "linux")]
     pub(crate) use linux::spawn_udp;
     #[cfg(target_os = "linux")]
-    use linux::{spawn_listener, spawn_tcp, spawn_ws};
+    use linux::{spawn_tcp, spawn_ws};
+    #[cfg(all(target_os = "linux", feature = "net-server"))]
+    use linux::spawn_listener;
 
     #[cfg(not(target_os = "linux"))]
     pub(crate) struct SocketSource {
@@ -27617,6 +27641,7 @@ pub(crate) mod socket_sources {
     }
 
     #[cfg(not(target_os = "linux"))]
+    #[cfg(feature = "net-server")]
     fn spawn_listener(
         _queue: Arc<Queue>,
         _id: String,
@@ -29326,7 +29351,7 @@ pub(crate) mod socket_sources {
 
 /// `tcp_close(h)` → bool (true when live, false when unknown — funlock
 /// semantics; the kernel reaps the socket on drop).
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-client")]
 fn builtin_tcp_close(args: Vec<Value>) -> MixResult<Option<Value>> {
     expect_args("tcp_close", &args, 1)?;
     let id = tcp_id_arg("tcp_close", &args)?;
@@ -29338,8 +29363,8 @@ fn builtin_tcp_close(args: Vec<Value>) -> MixResult<Option<Value>> {
             ),
         ));
     }
-    let listener = tcp_server::LISTENERS.lock().unwrap().remove(&id);
-    if let Some(listener) = listener {
+    #[cfg(feature = "net-server")]
+    if let Some(listener) = tcp_server::LISTENERS.lock().unwrap().remove(&id) {
         close_listener(listener);
         return Ok(Some(Value::Bool(true)));
     }
@@ -29727,6 +29752,7 @@ fn http_accept_next(
 
 /// `http_serve(root[, opts])` — blocking static file server; returns the
 /// number of requests served once `duration`/`requests` ends it.
+#[cfg(feature = "net-server")]
 fn builtin_http_serve(args: Vec<Value>) -> MixResult<Option<Value>> {
     expect_args_between("http_serve", &args, 1, 2)?;
     let root_arg = args[0].to_mix_string();
@@ -37473,7 +37499,7 @@ mod bytes_tests {
     /// nil (timeout — poll again), and close retires the handle. TLS and
     /// the insecure arm are not exercised here (no cert fixture); the
     /// connect/handshake plumbing they share with ws:// is.
-    #[cfg(feature = "ws")]
+    #[cfg(feature = "net-client")]
     #[test]
     fn ws_round_trip_against_local_echo_server() {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -37543,7 +37569,7 @@ mod bytes_tests {
 
     /// A peer that closes must RAISE out of ws_recv (and retire the
     /// handle) — never return the nil that means "quiet, poll again".
-    #[cfg(feature = "ws")]
+    #[cfg(feature = "net-client")]
     #[test]
     fn ws_peer_close_raises_not_nil() {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -37834,7 +37860,7 @@ mod bytes_tests {
     /// Plain-TCP round trip against a local echo server: send bytes, read
     /// them back (bytes, not string), read a line off a second exchange,
     /// peer close raises + retires the handle.
-    #[cfg(feature = "ws")]
+    #[cfg(feature = "net-client")]
     #[test]
     fn tcp_client_round_trip_and_lines() {
         use std::io::{Read, Write};
@@ -37901,7 +37927,7 @@ mod bytes_tests {
         server.join().unwrap();
     }
 
-    #[cfg(feature = "ws")]
+    #[cfg(feature = "net-client")]
     #[test]
     fn tcp_recv_line_caps_a_runaway_line() {
         use std::io::Write;
@@ -41141,7 +41167,7 @@ mod compiled_features_tests {
         assert!(f.contains(&"json"), "json built but not reported");
         #[cfg(feature = "regex")]
         assert!(f.contains(&"regex"), "regex built but not reported");
-        #[cfg(feature = "ws")]
+        #[cfg(feature = "net-client")]
         assert!(f.contains(&"ws"), "ws built but not reported");
         let _ = f;
     }

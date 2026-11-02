@@ -2099,6 +2099,12 @@ fn check_expr(
             // embedder's suppress_name_checks) — silent, as before.
         }
         Expr::FunctionCall { name, args } => {
+            #[cfg(not(feature = "net-server"))]
+            if matches!(name.as_str(), "tcp_listen" | "tcp_accept" | "udp_listen" | "http_serve") {
+                a.diagnostics.push(diag(ctx, "MIX-E1513", Severity::Error, line,
+                    format!("{name}() needs mixd server capability"),
+                    Some("run it under: mixd run <script>".to_string())));
+            }
             // Lambda passed to a HOF? Its body is checked by
             // check_expr_tree via walk_expr below — here we resolve the
             // NAME. Unknown-callable rules (E1102):

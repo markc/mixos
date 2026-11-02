@@ -29,7 +29,7 @@ name = "mix-standalone"
 path = "src/standalone.rs"
 
 [features]
-default = ["maild", "noded", "monitord", "webd", "dnsd"]
+default = []
 maild = ["dep:maild"]
 noded = ["dep:noded"]
 monitord = ["dep:monitord"]

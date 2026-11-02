@@ -72,7 +72,7 @@ enum ProcessRecord {
 /// One socket subscription's ordered FIFO (ws_on/tcp_on). Ordered and
 /// lossless — the antipode of the coalescing `sources` map above, which is
 /// deliberately unsuitable for frames.
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-client")]
 #[derive(Default)]
 struct PendingSocket {
     command: String,
@@ -95,13 +95,13 @@ struct Pending {
     /// Ordered socket frames (ws_on/tcp_on): one FIFO per source, bounded
     /// by MAX_SOCKET_FRAMES / MAX_SOCKET_BYTES across all sources —
     /// overflow hard-closes the source, never a silent drop.
-    #[cfg(feature = "ws")]
+    #[cfg(feature = "net-client")]
     sockets: BTreeMap<String, PendingSocket>,
-    #[cfg(feature = "ws")]
+    #[cfg(feature = "net-client")]
     last_socket: Option<String>,
-    #[cfg(feature = "ws")]
+    #[cfg(feature = "net-client")]
     socket_frames: usize,
-    #[cfg(feature = "ws")]
+    #[cfg(feature = "net-client")]
     socket_bytes: usize,
     count: usize,
     closed: bool,
@@ -128,7 +128,7 @@ pub(crate) struct Families {
     /// caller-chosen, so the family gate is source presence, not a
     /// handler-name lookup.
     // Neither consumer exists in a build without sockets or the sleep pump.
-    #[cfg_attr(not(any(feature = "ws", feature = "tokio-sleep")), allow(dead_code))]
+    #[cfg_attr(not(any(feature = "net-client", feature = "tokio-sleep")), allow(dead_code))]
     pub sockets: bool,
 }
 
@@ -159,7 +159,7 @@ impl Families {
 }
 
 /// One Class C recv outcome on a socket source.
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-client")]
 #[derive(Debug)]
 pub(crate) enum SocketNext {
     Frame(crate::builtins::socket_sources::SocketRecord),
@@ -280,12 +280,12 @@ impl Queue {
         pending.processes.remove(handle);
         event("proc.watch_exited", terminal)
     }
-    #[cfg(all(test, feature = "ws"))]
+    #[cfg(all(test, feature = "net-client"))]
     pub(crate) fn socket_snapshot(&self) -> (usize, usize, usize) {
         let p = self.pending.lock().unwrap();
         (p.sockets.len(), p.socket_frames, p.socket_bytes)
     }
-    #[cfg(all(test, feature = "ws"))]
+    #[cfg(all(test, feature = "net-client"))]
     pub(crate) fn socket_idle_for_test(&self, handle: &str) -> bool {
         self.pending
             .lock()
@@ -382,7 +382,7 @@ impl Queue {
     /// Admit one socket frame. `false` means the byte/frame bound was hit:
     /// the caller MUST hard-close and publish exactly one terminal event —
     /// frames are never silently dropped.
-    #[cfg(feature = "ws")]
+    #[cfg(feature = "net-client")]
     pub fn socket_push(
         &self,
         handle: &str,
@@ -416,7 +416,7 @@ impl Queue {
     }
 
     /// One terminal record per source; further terminals are ignored.
-    #[cfg(feature = "ws")]
+    #[cfg(feature = "net-client")]
     pub fn socket_closed(&self, handle: &str, reason: serde_json::Value) {
         let mut p = self.pending.lock().unwrap();
         if let Some(s) = p.sockets.get_mut(handle)
@@ -431,7 +431,7 @@ impl Queue {
     /// Class C recv on one source: the next ordered record, or the
     /// terminal. `expect` is the source kind the command may consume; `max`
     /// bounds a bytes-mode take (the remainder stays queued, in order).
-    #[cfg(feature = "ws")]
+    #[cfg(feature = "net-client")]
     pub async fn next_socket(
         &self,
         handle: &str,
@@ -493,7 +493,7 @@ impl Queue {
 
     /// The event-pump consumer: whole records, in order, under the source's
     /// command; the terminal record removes the slot (retired).
-    #[cfg(feature = "ws")]
+    #[cfg(feature = "net-client")]
     fn take_socket(p: &mut Pending, handle: &str) -> Option<IncomingEvent> {
         let s = p.sockets.get_mut(handle)?;
         if !s.frames.is_empty() {
@@ -544,7 +544,7 @@ impl Queue {
         None
     }
 
-    #[cfg(all(test, feature = "ws"))]
+    #[cfg(all(test, feature = "net-client"))]
     pub(crate) fn register_socket_for_test(&self, handle: &str, command: &str, kind: &'static str) {
         self.pending.lock().unwrap().sockets.insert(
             handle.into(),
@@ -670,7 +670,7 @@ impl Queue {
                         .or_else(|| ready.first())
                         .cloned();
                     let child = families.children && !p.children.is_empty();
-                    #[cfg(feature = "ws")]
+                    #[cfg(feature = "net-client")]
                     let ready: Vec<_> = p
                         .sockets
                         .iter()
@@ -679,7 +679,7 @@ impl Queue {
                         })
                         .map(|(h, _)| h.clone())
                         .collect();
-                    #[cfg(feature = "ws")]
+                    #[cfg(feature = "net-client")]
                     let so = ready
                         .iter()
                         .find(|h| p.last_socket.as_ref().is_none_or(|last| *h > last))
@@ -725,7 +725,7 @@ impl Queue {
                             p.turn = 3;
                             return Ok(Self::take_source(&mut p, s).unwrap());
                         }
-                        #[cfg(feature = "ws")]
+                        #[cfg(feature = "net-client")]
                         if family == 3
                             && let Some(so) = &so
                         {
@@ -784,13 +784,13 @@ pub(crate) struct NativeEvents {
     children: Vec<crate::child_events::ChildWatch>,
     desktop: BTreeMap<String, crate::desktop_events::Source>,
     /// Subscribed sockets (ws_on/tcp_on), owned by this generation.
-    #[cfg(feature = "ws")]
+    #[cfg(feature = "net-client")]
     pub(crate) sockets: BTreeMap<String, crate::builtins::socket_sources::SocketSource>,
     /// tcp_listen listeners and the connections they accepted, closed when
     /// this generation retires. Shared with listener reader threads.
-    #[cfg(feature = "ws")]
+    #[cfg(feature = "net-client")]
     tcp_owned: Arc<crate::builtins::socket_sources::TcpOwner>,
-    #[cfg(feature = "ws")]
+    #[cfg(feature = "net-client")]
     udp_owned: BTreeSet<u64>,
     owner_id: u64,
 }
@@ -805,18 +805,18 @@ impl Default for NativeEvents {
             filesystem: None,
             children: Vec::new(),
             desktop: BTreeMap::new(),
-            #[cfg(feature = "ws")]
+            #[cfg(feature = "net-client")]
             sockets: BTreeMap::new(),
-            #[cfg(feature = "ws")]
+            #[cfg(feature = "net-client")]
             tcp_owned: Arc::default(),
-            #[cfg(feature = "ws")]
+            #[cfg(feature = "net-client")]
             udp_owned: BTreeSet::new(),
             owner_id: NEXT_OWNER_ID.fetch_add(1, Ordering::Relaxed),
         }
     }
 }
 
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-client")]
 impl NativeEvents {
     pub(crate) fn own_udp(&mut self, id: u64) {
         let sockets = crate::udp::handles::MAP.lock().unwrap();
@@ -886,7 +886,7 @@ impl NativeEvents {
         // Completed socket readers published their terminal record before
         // setting the flag; dropping them here joins an exited thread.
         // Undelivered records survive in the queue's pending slots.
-        #[cfg(feature = "ws")]
+        #[cfg(feature = "net-client")]
         self.sockets
             .retain(|_, s| !s.completed.load(std::sync::atomic::Ordering::Acquire));
         !self.watches.is_empty()
@@ -896,12 +896,12 @@ impl NativeEvents {
             || !self.desktop.is_empty()
             || !self.queue.pending.lock().unwrap().children.is_empty()
             || {
-                #[cfg(feature = "ws")]
+                #[cfg(feature = "net-client")]
                 {
                     !self.sockets.is_empty()
                         || !self.queue.pending.lock().unwrap().sockets.is_empty()
                 }
-                #[cfg(not(feature = "ws"))]
+                #[cfg(not(feature = "net-client"))]
                 {
                     false
                 }
@@ -1187,7 +1187,7 @@ impl NativeEvents {
     /// numeric ws_recv/ws_close refuse from here on, while ws_send routes
     /// through the owner thread's command endpoint (registered by
     /// spawn_ws, removed when the source retires).
-    #[cfg(feature = "ws")]
+    #[cfg(feature = "net-client")]
     pub fn ws_on(&mut self, client_id: u64, command: String) -> MixResult<String> {
         self.ensure_open()?;
         self.check_socket_limit()?;
@@ -1202,7 +1202,7 @@ impl NativeEvents {
     }
 
     /// `tcp_on`: move a tcp_connect handle into a subscription reader.
-    #[cfg(feature = "ws")]
+    #[cfg(feature = "net-client")]
     pub fn tcp_on(
         &mut self,
         client_id: u64,
@@ -1224,7 +1224,7 @@ impl NativeEvents {
     /// `tcp_on` on a tcp_listen listener: move it into an accept reader.
     /// Each accepted connection becomes a plain handle owned by this
     /// generation and arrives as one `accepted` record.
-    #[cfg(feature = "ws")]
+    #[cfg(feature = "net-server")]
     pub fn tcp_on_listener(&mut self, listener_id: u64, command: String) -> MixResult<String> {
         self.ensure_open()?;
         self.check_socket_limit()?;
@@ -1240,19 +1240,19 @@ impl NativeEvents {
     }
 
     /// Record a tcp_listen/tcp_accept result as owned by this generation.
-    #[cfg(feature = "ws")]
+    #[cfg(feature = "net-client")]
     pub fn own_tcp(&self, id: u64) {
         crate::builtins::socket_sources::own(&self.tcp_owned, id);
     }
 
     /// This generation's TCP owner, for an accept that must record
     /// ownership before it returns (the Class C form).
-    #[cfg(feature = "ws")]
+    #[cfg(feature = "net-client")]
     pub(crate) fn tcp_owner(&self) -> Arc<crate::builtins::socket_sources::TcpOwner> {
         self.tcp_owned.clone()
     }
 
-    #[cfg(feature = "ws")]
+    #[cfg(feature = "net-client")]
     fn check_socket_limit(&self) -> MixResult<()> {
         if self.sockets.len() >= crate::builtins::socket_sources::MAX_SOURCES {
             return Err(refusal(
@@ -1268,7 +1268,7 @@ impl NativeEvents {
 
     /// Register the pending slot first (the worker may publish at once),
     /// then spawn the reader; a failed spawn leaves no slot behind.
-    #[cfg(feature = "ws")]
+    #[cfg(feature = "net-client")]
     fn socket_sub(
         &mut self,
         family: &str,
@@ -1304,7 +1304,7 @@ impl NativeEvents {
     /// Class C recv parking: at most one waiter per source. The guard
     /// clears the slot when the wait completes OR is cancelled (a Class C
     /// task abort drops the future, which drops the guard).
-    #[cfg(feature = "ws")]
+    #[cfg(feature = "net-client")]
     pub fn park_socket(&mut self, h: &str) -> MixResult<ParkGuard> {
         {
             let mut p = self.queue.pending.lock().unwrap();
@@ -1331,7 +1331,7 @@ impl NativeEvents {
     /// `ws_unwatch` / `tcp_unwatch`. Explicit close: cancel + join, drop
     /// queued frames, NO terminal marker (documented). A handle of the
     /// other family is refused, not cancelled.
-    #[cfg(feature = "ws")]
+    #[cfg(feature = "net-client")]
     pub fn socket_unwatch(&mut self, family: &str, h: &str) -> MixResult<()> {
         let known = h.starts_with(&format!("{family}:"))
             && (self.sockets.contains_key(h)
@@ -1352,7 +1352,7 @@ impl NativeEvents {
         Ok(())
     }
 
-    #[cfg(feature = "ws")]
+    #[cfg(feature = "net-client")]
     fn remove_socket_pending(&self, h: &str) {
         let mut p = self.queue.pending.lock().unwrap();
         let dropped = p.sockets.remove(h);
@@ -1369,7 +1369,7 @@ impl NativeEvents {
     }
 
     pub fn close(&mut self) {
-        #[cfg(feature = "ws")]
+        #[cfg(feature = "net-client")]
         let dropped_sockets;
         {
             let mut p = self.queue.pending.lock().unwrap();
@@ -1379,14 +1379,14 @@ impl NativeEvents {
             p.children.clear();
             p.processes.clear();
             p.count = 0;
-            #[cfg(feature = "ws")]
+            #[cfg(feature = "net-client")]
             {
                 dropped_sockets = std::mem::take(&mut p.sockets);
                 p.socket_frames = 0;
                 p.socket_bytes = 0;
             }
         }
-        #[cfg(feature = "ws")]
+        #[cfg(feature = "net-client")]
         for rec in dropped_sockets.values().flat_map(|s| s.frames.iter()) {
             crate::builtins::socket_sources::discard_record(rec);
         }
@@ -1400,7 +1400,7 @@ impl NativeEvents {
         }
         self.processes.clear();
         self.desktop.clear();
-        #[cfg(feature = "ws")]
+        #[cfg(feature = "net-client")]
         {
             self.sockets.clear(); // each Drop cancels + joins its reader
             let mut udp = crate::udp::handles::MAP.lock().unwrap();
@@ -1421,13 +1421,13 @@ impl Drop for NativeEvents {
 
 /// Class C recv parking slot; Drop clears it so a cancelled wait never
 /// wedges the source in the parked state.
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-client")]
 pub(crate) struct ParkGuard {
     queue: Arc<Queue>,
     handle: String,
 }
 
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-client")]
 impl Drop for ParkGuard {
     fn drop(&mut self) {
         if let Some(s) = self
@@ -1536,11 +1536,11 @@ mod tests {
             filesystem: None,
             children: Vec::new(),
             desktop: BTreeMap::new(),
-            #[cfg(feature = "ws")]
+            #[cfg(feature = "net-client")]
             sockets: BTreeMap::new(),
-            #[cfg(feature = "ws")]
+            #[cfg(feature = "net-client")]
             tcp_owned: Arc::default(),
-            #[cfg(feature = "ws")]
+            #[cfg(feature = "net-client")]
             udp_owned: BTreeSet::new(),
             owner_id: 0,
         };
@@ -2027,7 +2027,7 @@ mod process_tests {
         assert_eq!(terminal["error_code"], "PROC_WORKER_PANIC");
     }
 
-    #[cfg(feature = "ws")]
+    #[cfg(feature = "net-client")]
     #[tokio::test]
     async fn continuously_ready_socket_cannot_starve_process_lines() {
         let queue = Queue::default();

@@ -64,7 +64,7 @@ pub(crate) fn ttl(v: &Value) -> MixResult<u32> {
         "ttl must be an integer from 0 to 255",
     ))
 }
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-client")]
 pub(crate) fn payload(v: &Value) -> MixResult<Vec<u8>> {
     match v {
         Value::String(s) => Ok(s.as_bytes().to_vec()),
@@ -85,7 +85,7 @@ pub(crate) fn map(v: Option<&Value>) -> MixResult<Option<&indexmap::IndexMap<Str
 }
 
 /// Errors about a previous datagram's peer do not retire a shared listener.
-#[cfg(all(feature = "ws", target_os = "linux"))]
+#[cfg(all(feature = "net-client", target_os = "linux"))]
 pub(crate) fn peer_error(e: &std::io::Error) -> bool {
     matches!(
         e.raw_os_error(),
@@ -95,7 +95,7 @@ pub(crate) fn peer_error(e: &std::io::Error) -> bool {
 
 /// Fixed peer header (IPv4 octets, network-order port) followed by raw bytes.
 /// Queue accounting includes the six metadata bytes, with no JSON expansion.
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-client")]
 pub(crate) fn record(
     data: &[u8],
     peer: std::net::SocketAddrV4,
@@ -110,7 +110,7 @@ pub(crate) fn record(
     }
 }
 
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-client")]
 pub(crate) fn record_body(data: &[u8]) -> serde_json::Value {
     // Only record() constructs these internal records; header length is fixed.
     let host = Ipv4Addr::new(data[0], data[1], data[2], data[3]);
@@ -119,7 +119,7 @@ pub(crate) fn record_body(data: &[u8]) -> serde_json::Value {
     serde_json::json!({"bytes":{"hex":crate::builtins::hex_encode(payload)}, "text":std::str::from_utf8(payload).ok(), "from_host":host.to_string(), "from_port":port})
 }
 
-#[cfg(feature = "ws")]
+#[cfg(feature = "net-client")]
 pub(crate) mod handles {
     use super::*;
     use crate::builtins::tcp_client::TcpPermit;
@@ -169,6 +169,7 @@ pub(crate) mod handles {
         }
         Ok(map.remove(&id).is_some())
     }
+    #[cfg(feature = "net-server")]
     pub(crate) fn listen(args: Vec<Value>) -> MixResult<Option<Value>> {
         let host = ip(&args[0])?;
         let port = match args[1] {
@@ -272,7 +273,7 @@ pub(crate) mod handles {
     }
 }
 
-#[cfg(all(test, feature = "ws", target_os = "linux"))]
+#[cfg(all(test, feature = "net-client", target_os = "linux"))]
 mod tests {
     use super::*;
     use crate::{builtins::call_builtin, native_events::NativeEvents};

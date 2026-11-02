@@ -13399,17 +13399,21 @@ impl Evaluator {
         args: &'a mut [Value],
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = MixResult<Option<Value>>> + 'a>> {
         Box::pin(async move {
+            #[cfg(not(feature = "net-server"))]
+            if name == "tcp_accept" {
+                return Err(crate::native_events::refusal("NEEDS_MIXD", "tcp_accept() needs server capability; run it under: mixd run <script>"));
+            }
             if let Some(result) = self.eval_socket_source(name, &*args).await? {
                 return Ok(Some(result));
             }
-            #[cfg(all(feature = "ws", unix))]
+            #[cfg(all(feature = "net-client", unix))]
             return self.eval_numeric_socket(name, args).await;
-            #[cfg(not(all(feature = "ws", unix)))]
+            #[cfg(not(all(feature = "net-client", unix)))]
             Ok(None)
         })
     }
 
-    #[cfg(all(feature = "ws", unix))]
+    #[cfg(all(feature = "net-client", unix))]
     fn eval_numeric_socket<'a>(
         &'a mut self,
         name: &'a str,
@@ -13424,6 +13428,7 @@ impl Evaluator {
             // blocking poll: like sleep(), the wait then pends, so the
             // shell's SIGTERM and Ctrl-C select arms can cancel it. Plain
             // and Class S waits also recheck the interrupt flag.
+            #[cfg(feature = "net-server")]
             if name == "tcp_accept" && matches!(eval_args.first(), Some(Value::Number(_))) {
                 self.check_capability(name)?;
                 self.check_builtin_arity(name, eval_args.len())?;
@@ -13606,14 +13611,14 @@ impl Evaluator {
             ) {
                 self.check_capability(name)?;
                 self.check_builtin_arity(name, eval_args.len())?;
-                #[cfg(not(feature = "ws"))]
+                #[cfg(not(feature = "net-client"))]
                 {
                     return Err(crate::native_events::refusal(
                         "WS_FEATURE",
                         format!("{name}() requires the `ws` feature (tungstenite/rustls)"),
                     ));
                 }
-                #[cfg(feature = "ws")]
+                #[cfg(feature = "net-client")]
                 {
                     let mut g = self.globals.borrow_mut();
                     let ne = &mut g.native_events;
@@ -13643,7 +13648,10 @@ impl Evaluator {
                                         ));
                                     }
                                 }
-                                ne.tcp_on_listener(id, command)?
+                                #[cfg(feature = "net-server")]
+                                { ne.tcp_on_listener(id, command)? }
+                                #[cfg(not(feature = "net-server"))]
+                                { return Err(crate::native_events::refusal("NEEDS_MIXD", "tcp_on(listener) needs server capability; run it under: mixd run <script>")); }
                             } else {
                                 let mode = crate::builtins::socket_sources::parse_tcp_on_opts(
                                     eval_args.get(2),
@@ -13677,7 +13685,7 @@ impl Evaluator {
                 self.check_builtin_arity(name, eval_args.len())?;
                 // Without the `ws` feature this arm falls through to
                 // call_builtin, whose loud refusal covers the name.
-                #[cfg(feature = "ws")]
+                #[cfg(feature = "net-client")]
                 {
                     let h = match eval_args.first() {
                         Some(Value::String(s)) => s.clone(),
@@ -14445,11 +14453,11 @@ impl Evaluator {
                                         // (a live reader or undelivered
                                         // records), not a handler-name lookup.
                                         sockets: {
-                                            #[cfg(feature = "ws")]
+                                            #[cfg(feature = "net-client")]
                                             {
                                                 !g.native_events.sockets.is_empty()
                                             }
-                                            #[cfg(not(feature = "ws"))]
+                                            #[cfg(not(feature = "net-client"))]
                                             {
                                                 false
                                             }
@@ -15168,7 +15176,7 @@ impl Evaluator {
                             }
                             // Listeners and accepted connections belong
                             // to this generation: closed when it retires.
-                            #[cfg(feature = "ws")]
+                            #[cfg(feature = "net-client")]
                             if matches!(name.as_str(), "tcp_listen" | "tcp_accept" | "udp_listen")
                                 && let Value::Number(n) = &result
                             {
