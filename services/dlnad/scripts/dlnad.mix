@@ -95,6 +95,31 @@ fn save_identity($dir, $i)
   return $i
 end
 
+-- The last SystemUpdateID, kept across restarts so a clock stepped back
+-- (NTP after a fast boot) can never make the next run's id smaller.
+fn load_update_id($dir)
+  $p = $dir .. "/update_id.conf.mix"
+  try
+    if is_file($p) then
+      $v = load_data($p)
+      if type($v) == "map" and type($v.update_id) == "number" then return $v.update_id end
+    end
+  catch $m
+  end
+  return 0
+end
+
+fn save_update_id($dir, $id)
+  try
+    mkdir($dir)
+    $p = $dir .. "/update_id.conf.mix"
+    write_file($p .. ".tmp", data_encode({update_id: $id}, true) .. "\n")
+    rename($p .. ".tmp", $p)
+  catch $m
+    eprint("dlnad: cannot save update id: " .. to_string($m))
+  end
+end
+
 $C = nil
 try
   $C = load_conf(conf_path())
@@ -107,9 +132,10 @@ $LOCATION = $BASE .. "/description.xml"
 -- All mutable state lives in $ST and is written by path ($ST.x = …): a
 -- whole-variable assignment inside a fn or handler would bind a local.
 $ST = {id: load_identity(state_dir(), $C.name), conns: {}, seen: {}, seen_order: 0, looping: false,
-  update_id: $G.next_update_id(0, time()), subs: {}, initial: [], dirty: {}, flushing: false, outbox: [], sending: false,
+  update_id: $G.next_update_id(load_update_id(state_dir()), time()), subs: {}, initial: [], dirty: {}, flushing: false, outbox: [], sending: false,
   stats: {started: now_iso(), requests: 0, streams: 0, bytes_sent: 0, errors: 0, msearch: 0, adverts_failed: 0,
     events_sent: 0, events_failed: 0, changes: 0}}
+save_update_id(state_dir(), $ST.update_id)
 
 -- ---- HTTP -------------------------------------------------------------------
 
@@ -371,6 +397,7 @@ end
 -- container rel paths. The caller sends with drain().
 fn content_changed($rels)
   $ST.update_id = $G.next_update_id($ST.update_id, time())
+  save_update_id(state_dir(), $ST.update_id)
   $pairs = []
   for $rel in $rels
     $abs = $C.media_root
@@ -487,8 +514,9 @@ end
 
 $WATCH = nil
 $WATCH_NOTE = ""
-$WATCH_ROOT = realpath($C.media_root)
+$WATCH_ROOT = $C.media_root
 try
+  $WATCH_ROOT = realpath($C.media_root)
   $WATCH = fs_watch($C.media_root, {recursive: true})
   $WATCH_NOTE = "watching " .. $C.media_root
 catch $m

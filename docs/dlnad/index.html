@@ -281,8 +281,9 @@ renamed, it waits two seconds for the burst to settle, raises
 <code>SystemUpdateID</code> and <code>ContainerUpdateIDs</code> (the folders that changed, each
 with its own update id). Hidden paths do not count, so a syncthing download
 (<code>.syncthing.*.tmp</code>) is silent until it is renamed into place.</p>
-<p><code>SystemUpdateID</code> starts at the clock in seconds and only goes up, so a
-restart never looks like an older library. Subscriptions live in memory: after
+<p><code>SystemUpdateID</code> starts at the clock in seconds, or one past the last value
+saved in the state directory if that is higher, and only goes up, so a
+restart never looks like an older library (even after the clock steps back). Subscriptions live in memory: after
 a restart a renderer's renewal is refused (412) and it subscribes again.
 Subscriptions last at most 30 minutes between renewals; 32 are held at once;
 one whose callback cannot be reached, or refuses three events in a row, is
