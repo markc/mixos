@@ -6,7 +6,10 @@
 $clip = require("lib/clipboard.mix")
 $config_path = env("MIXOS_CLIPD_CONFIG", mixos_path("etc") .. "/clipboard.conf.mix")
 $C = $clip.settings(if is_file($config_path) then load_data($config_path) else {} end)
+-- The node identity is the machine's: a user session's own etc (the Plasma
+-- clipd on a hybrid host) has none, so fall back to the system tier.
 $node_config = env("MIXOS_NODE_CONFIG", mixos_path("etc") .. "/node.conf.mix")
+if env("MIXOS_NODE_CONFIG", "") == "" and not is_file($node_config) then $node_config = mixos_path("etc", "node.conf.mix", {tier: "system"}) end
 $node = if is_file($node_config) then load_data($node_config).node else nil end
 if type($node) != "string" or $node == "" then raise("NODE", "clipboard needs the native node identity") end
 $S = $clip.new_state($node, env("MIXOS_CLIPD_SESSION", "store"))
