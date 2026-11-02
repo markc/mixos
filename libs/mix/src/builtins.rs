@@ -29359,6 +29359,7 @@ pub(crate) mod socket_sources {
 fn builtin_tcp_close(args: Vec<Value>) -> MixResult<Option<Value>> {
     expect_args("tcp_close", &args, 1)?;
     let id = tcp_id_arg("tcp_close", &args)?;
+    #[cfg(feature = "net-server")]
     if socket_sources::is_subscribed(socket_sources::ClientKey::listener(id)) {
         return Err(tcp_err(
             "tcp_close",
