@@ -252,11 +252,13 @@ mod tests {
     fn the_system_rules_read_when_present() {
         let dir = rules_dir();
         if !dir.join("evdev.lst").exists() {
+            eprintln!("SKIP: system evdev.lst absent; checked-in LST/XML parser fixtures still run");
             return;
         }
         let mut e = Engine::new(|key, _| key.to_owned());
         e.read_layouts(&dir);
         let common = e.live_options(LAYOUTS);
+        assert!(!common.is_empty(), "system evdev.lst produced no layouts");
         assert_eq!(common[0].0, json!(["us", ""]));
         assert!(common.len() > 100, "{} layouts", common.len());
     }

@@ -35,7 +35,7 @@ pub enum Event {
     /// A settingsd call of the pages finished.
     Stored(u64, Result<Reply, CallError>),
     /// A Wallpaper folder was read.
-    Scanned(u64, Result<Vec<String>, String>),
+    Scanned(u64, Result<crate::scan::Scan, String>),
     Shown(u64, Option<u64>, Result<Value, String>),
     /// A call to the email app (or to apps, launching it) finished.
     Mailed(u64, Result<Reply, CallError>),
@@ -49,7 +49,11 @@ pub fn apply_event(engine: &mut Engine, event: Event) {
         Event::Released(ticket, result) => engine.released(ticket, result),
         Event::Settled(ticket, result) => engine.settled(ticket, result),
         Event::Stored(ticket, result) => engine.stored(ticket, result),
-        Event::Scanned(ticket, result) => engine.gallery_scanned(ticket, result),
+        Event::Scanned(ticket, result) => {
+            let truncated = result.as_ref().is_ok_and(|scan| scan.truncated);
+            engine.gallery_scanned(ticket, result.map(|scan| scan.images));
+            engine.gallery.truncated = truncated;
+        }
         Event::Shown(ticket, reply, result) => engine.shown(ticket, reply, result),
         Event::Mailed(ticket, result) => engine.mailed(ticket, result),
         Event::AppMailed(ticket, result) => engine.app_mailed(ticket, result),
@@ -405,6 +409,7 @@ impl Shell {
         shell.engine.session_actions = shell.theme.band().place;
         shell.engine.start_appearance(&hostname());
         shell.engine.read_layouts(&preferences::xkb::rules_dir());
+        startup_lists(&mut shell.engine);
         shell.engine.gallery.system = ::paths::root(::paths::Root::Share)
             .join("wallpapers")
             .to_str()
@@ -806,8 +811,28 @@ impl eframe::App for Shell {
     }
 }
 
+// Read static OS lists before the first view, including zoneinfo's walk.
+fn startup_lists(engine: &mut Engine) {
+    populate_locales(engine, crate::cosmic::locales());
+    crate::cosmic::time_zones();
+}
+
+fn populate_locales(engine: &mut Engine, locales: &[String]) {
+    engine.set_options("locales", locales.iter().map(|name| (json!(name), name.clone())).collect());
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn startup_populates_engine_locale_options() {
+        let mut e = Engine::new(crate::label_with);
+        let locales = crate::cosmic::parse_locales("# supported\nen_AU.UTF-8 UTF-8\nde_DE.UTF-8 UTF-8\nen_AU.UTF-8 UTF-8\n");
+        populate_locales(&mut e, &locales);
+        assert_eq!(e.live_options("locales").len(), 2);
+        assert_eq!(e.live_options("locales")[1].0, json!("en_AU.UTF-8"));
+        startup_lists(&mut e);
+        assert_eq!(e.live_options("locales").len(), crate::cosmic::locales().len());
+    }
     #[test]
     fn preferences_draws_its_accepted_interface_font() {
         let base = toolkit::Theme::embedded();

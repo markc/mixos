@@ -645,6 +645,7 @@ row-accessibility-text_scale-desc = Scale the text in every MixOS app.
 
 sec-magnifier-magnifier = Magnifier
 sec-magnifier-movement = Zoomed view moves
+row-magnifier-movement = Movement
 row-magnifier-enabled = Magnifier
 row-magnifier-enabled-desc = Zoom into the screen.
 row-magnifier-mouse_zoom = Enable mouse or touchpad zoom with Super + scroll

@@ -43,6 +43,23 @@ pub fn label_with(key: &str, args: &[(&str, &str)]) -> String {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn every_page_row_and_titled_section_has_a_fluent_message() {
+        let mut missing = Vec::new();
+        for page in preferences::pages::all() {
+            for section in page.sections().iter().chain(page.drawers().iter().flat_map(|d| d.sections.iter())) {
+                let mut keys = Vec::new();
+                if section.titled {
+                    keys.push(preferences::pages::section_title(page.id, section.id));
+                }
+                keys.extend(section.rows.iter().map(|r| preferences::pages::row_title(page.id, r.id)));
+                for key in keys {
+                    if super::label(&key) == key { missing.push(key); }
+                }
+            }
+        }
+        assert!(missing.is_empty(), "missing Fluent messages: {missing:?}");
+    }
+    #[test]
     fn every_appearance_style_has_a_localised_label() {
         for style in design::Style::ALL {
             let key = format!("look-style-{}", style.name());

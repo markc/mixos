@@ -18,7 +18,7 @@ use preferences::Engine;
 use preferences::gallery::Category;
 use preferences::pages::wallpaper::{CUSTOM_COLOURS, CUSTOM_IMAGES, SAME, SLIDESHOW, output_image};
 use serde_json::json;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex, mpsc};
@@ -32,6 +32,7 @@ const FRAME: f32 = 4.0;
 const THUMB: Vec2 = vec2(158.0, 89.0);
 const SWATCH: f32 = 70.0;
 const GAP: Vec2 = vec2(12.0, 16.0);
+const MAX_TEXTURES: usize = 128;
 
 /// A colour fill: flat, or a two-stop linear gradient at an angle (CSS
 /// degrees: 180 runs top to bottom).
@@ -128,7 +129,8 @@ struct State {
     live: Arc<AtomicU64>,
     /// By size and path; `None` when the file has no thumbnail.
     textures: HashMap<String, Option<TextureHandle>>,
-    asked: HashSet<String>,
+    asked: HashMap<String, u64>,
+    used: u64,
     chooser: Option<(Choosing, toolkit::choose::Handle)>,
 }
 
@@ -159,13 +161,17 @@ impl State {
             decoder: toolkit::thumbnail::Decoder::new("prefs-thumbs"),
             live: Arc::new(AtomicU64::new(0)),
             textures: HashMap::new(),
-            asked: HashSet::new(),
+            asked: HashMap::new(),
+            used: 0,
             chooser: None,
         }
     }
 
     fn pump(&mut self, ctx: &Context) {
         while let Ok(reply) = self.replies.try_recv() {
+            if !self.asked.contains_key(&reply.lane) {
+                continue;
+            }
             match reply.outcome {
                 thumbs::Outcome::Ready(cache) => {
                     if !self.decoder.ask(&reply.lane, &cache, ctx) {
@@ -178,6 +184,9 @@ impl State {
             }
         }
         for (key, image) in self.decoder.drain() {
+            if !self.asked.contains_key(&key) {
+                continue;
+            }
             let texture =
                 image.map(|image| ctx.load_texture(&key, image, egui::TextureOptions::LINEAR));
             self.textures.insert(key, texture);
@@ -188,10 +197,17 @@ impl State {
     /// time it is wanted.
     fn texture(&mut self, path: &str, size: thumbs::Size) -> Option<TextureHandle> {
         let key = format!("{}:{path}", size.px());
+        self.used += 1;
+        let first = self.asked.insert(key.clone(), self.used).is_none();
+        while self.asked.len() > MAX_TEXTURES {
+            let oldest = self.asked.iter().min_by_key(|(_, used)| *used).map(|(k, _)| k.clone()).expect("nonempty cache");
+            self.asked.remove(&oldest);
+            self.textures.remove(&oldest);
+        }
         if let Some(texture) = self.textures.get(&key) {
             return texture.clone();
         }
-        if self.asked.insert(key.clone()) {
+        if first {
             self.pool.submit(thumbs::Request {
                 lane: key,
                 ticket: thumbs::Ticket::new(self.live.clone(), 0),
@@ -634,6 +650,24 @@ fn swatch(ui: &mut Ui, value: &str, on: bool, removable: bool, look: &Look) -> (
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn both_sizes_share_a_bounded_cache_and_late_replies_are_ignored() {
+        let ctx = egui::Context::default();
+        let mut s = super::State::new(&ctx);
+        for i in 0..super::MAX_TEXTURES {
+            let key = format!("128:/image{i}.png");
+            s.asked.insert(key.clone(), i as u64);
+            s.textures.insert(key, None);
+        }
+        s.used = super::MAX_TEXTURES as u64;
+        s.texture("/image0.png", thumbs::Size::Normal);
+        s.texture("/preview.png", thumbs::Size::at_least(300));
+        assert_eq!(s.asked.len(), super::MAX_TEXTURES);
+        assert!(!s.asked.contains_key("128:/image1.png"));
+        assert!(!s.textures.contains_key("128:/image1.png"));
+        assert!(s.asked.contains_key("128:/image0.png"));
+        assert!(s.asked.contains_key("512:/preview.png"));
+    }
     use super::*;
 
     #[test]

@@ -7,6 +7,13 @@ use std::path::{Path, PathBuf};
 
 /// The extensions a wallpaper may have (the registry's image paths).
 const EXTENSIONS: [&str; 4] = ["png", "jpg", "jpeg", "webp"];
+const MAX_DIRECTORIES: usize = 128;
+const MAX_ENTRIES: usize = 2048;
+
+pub struct Scan {
+    pub images: Vec<String>,
+    pub truncated: bool,
+}
 
 fn image(path: &Path) -> bool {
     path.extension()
@@ -16,41 +23,59 @@ fn image(path: &Path) -> bool {
 
 /// The images under `folder`, at most [`MAX_DEPTH`] folders down and
 /// [`MAX_IMAGES`] in all, by path. Hidden entries are skipped.
-pub fn images(folder: &str) -> Result<Vec<String>, String> {
+pub fn images(folder: &str) -> Result<Scan, String> {
     let root = PathBuf::from(folder);
     if !root.is_absolute() {
         return Err(crate::label("wallpaper-folder-invalid"));
     }
     std::fs::read_dir(&root).map_err(|e| e.to_string())?;
+    let canonical_root = root.canonicalize().map_err(|e| e.to_string())?;
     let mut found = Vec::new();
+    let mut truncated = false;
+    let mut queued = 1;
     let mut folders = vec![(root, 0)];
-    while let Some((dir, depth)) = folders.pop() {
+    'walk: while let Some((dir, depth)) = folders.pop() {
         let Ok(entries) = std::fs::read_dir(&dir) else {
             continue;
         };
-        for entry in entries.flatten() {
+        for (index, entry) in entries.enumerate() {
+            if index == MAX_ENTRIES {
+                truncated = true;
+                break;
+            }
+            let Ok(entry) = entry else { continue };
             if entry.file_name().to_string_lossy().starts_with('.') {
                 continue;
             }
             let path = entry.path();
-            let Ok(metadata) = std::fs::metadata(&path) else {
+            let Ok(kind) = entry.file_type() else {
                 continue;
             };
-            if metadata.is_dir() {
+            if kind.is_dir() {
                 if depth + 1 < MAX_DEPTH {
-                    folders.push((path, depth + 1));
+                    if queued < MAX_DIRECTORIES {
+                        queued += 1;
+                        folders.push((path, depth + 1));
+                    } else {
+                        truncated = true;
+                    }
                 }
-            } else if metadata.is_file()
+            } else if (kind.is_file()
+                || (kind.is_symlink()
+                    && path.canonicalize().is_ok_and(|p| p.starts_with(&canonical_root) && p.is_file())))
                 && image(&path)
                 && let Some(text) = path.to_str()
             {
                 found.push(text.to_owned());
+                if found.len() == MAX_IMAGES {
+                    truncated = true;
+                    break 'walk;
+                }
             }
         }
     }
     found.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()).then(a.cmp(b)));
-    found.truncate(MAX_IMAGES);
-    Ok(found)
+    Ok(Scan { images: found, truncated })
 }
 
 #[cfg(test)]
@@ -74,6 +99,7 @@ mod tests {
             let root = self.0.to_str().unwrap();
             images(root)
                 .unwrap()
+                .images
                 .iter()
                 .map(|p| p.strip_prefix(root).unwrap().to_owned())
                 .collect()
@@ -107,7 +133,37 @@ mod tests {
             std::fs::write(dir.0.join(format!("{index}.png")), []).unwrap();
         }
         assert_eq!(dir.names().len(), MAX_IMAGES);
+        assert!(images(dir.0.to_str().unwrap()).unwrap().truncated);
         assert!(images(dir.0.join("missing").to_str().unwrap()).is_err());
         assert!(images("relative").is_err());
+    }
+
+    #[test]
+    fn directory_and_entry_budgets_are_reported() {
+        let dir = Directory::new();
+        for i in 0..MAX_DIRECTORIES + 1 {
+            std::fs::create_dir(dir.0.join(format!("d{i}"))).unwrap();
+        }
+        assert!(images(dir.0.to_str().unwrap()).unwrap().truncated);
+        let dir = Directory::new();
+        for i in 0..MAX_ENTRIES + 1 {
+            std::fs::write(dir.0.join(format!("n{i}.txt")), []).unwrap();
+        }
+        assert!(images(dir.0.to_str().unwrap()).unwrap().truncated);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_directories_and_external_files_are_excluded() {
+        use std::os::unix::fs::symlink;
+        let dir = Directory::new();
+        let outside = Directory::new();
+        std::fs::write(outside.0.join("external.png"), []).unwrap();
+        std::fs::write(dir.0.join("inside.png"), []).unwrap();
+        symlink(&outside.0, dir.0.join("escape")).unwrap();
+        symlink(&dir.0, dir.0.join("loop")).unwrap();
+        symlink(outside.0.join("external.png"), dir.0.join("external.png")).unwrap();
+        symlink(dir.0.join("inside.png"), dir.0.join("alias.png")).unwrap();
+        assert_eq!(dir.names(), ["/alias.png", "/inside.png"]);
     }
 }

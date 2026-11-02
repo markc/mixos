@@ -40,7 +40,10 @@ pub struct Gallery {
     pub system: Option<String>,
     /// The folder `images` were read from.
     pub scanned: Option<String>,
+    #[serde(skip)]
+    scanned_at: Option<std::time::Instant>,
     pub images: Vec<String>,
+    pub truncated: bool,
     /// The read in flight: its ticket and folder.
     #[serde(skip)]
     scanning: Option<(u64, String)>,
@@ -123,7 +126,7 @@ impl Engine {
         let Some(folder) = self.gallery_folder() else {
             return;
         };
-        let fresh = self.gallery.scanned.as_ref() == Some(&folder) && self.gallery.error.is_none();
+        let fresh = self.gallery.scanned.as_ref() == Some(&folder);
         let reading = self.gallery.scanning.as_ref().map(|s| &s.1) == Some(&folder);
         if fresh || reading || self.quitting {
             return;
@@ -133,7 +136,18 @@ impl Engine {
         self.effects.push(Effect::Scan { ticket, folder });
     }
 
-    /// Read the shown folder again (entering the page: it may have changed).
+    /// Reuse a recent successful scan on page entry; retry errors on entry.
+    pub fn enter_gallery(&mut self) {
+        if self.gallery.error.is_some()
+            || self.gallery.scanned_at.is_none_or(|at| at.elapsed().as_secs() >= 60)
+        {
+            self.rescan_gallery();
+        } else {
+            self.scan_gallery();
+        }
+    }
+
+    /// Explicitly read the shown folder again.
     pub fn rescan_gallery(&mut self) {
         self.gallery.scanned = None;
         self.scan_gallery();
@@ -159,6 +173,7 @@ impl Engine {
             }
         }
         self.gallery.scanned = Some(folder);
+        self.gallery.scanned_at = Some(std::time::Instant::now());
         // The category moved on while this one was read.
         self.scan_gallery();
     }
@@ -239,13 +254,33 @@ impl Engine {
             "output": self.selected_output(), "recent": self.recent_folders(),
             "images": self.gallery_images(), "colours": self.gallery_colours(),
             "custom_images": self.custom_images(), "custom_colours": self.custom_colours(),
-            "reading": self.gallery.scanning.is_some(), "error": self.gallery.error})
+            "reading": self.gallery.scanning.is_some(), "error": self.gallery.error,
+            "truncated": self.gallery.truncated})
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn failures_stop_until_reentry_and_success_is_reused() {
+        let mut e = engine();
+        e.scan_gallery();
+        let Effect::Scan { ticket, .. } = e.take_effects()[0] else { panic!() };
+        e.gallery_scanned(ticket, Err("missing".into()));
+        e.scan_gallery();
+        assert!(e.take_effects().is_empty());
+        e.enter_gallery();
+        let Effect::Scan { ticket, .. } = e.take_effects()[0] else { panic!() };
+        e.gallery_scanned(ticket, Ok(vec![]));
+        e.open_page("appearance", None).unwrap();
+        e.open_page("wallpaper", None).unwrap();
+        assert!(!e.take_effects().iter().any(|e| matches!(e, Effect::Scan { .. })));
+        e.gallery.scanned_at = Some(std::time::Instant::now() - std::time::Duration::from_secs(61));
+        e.enter_gallery();
+        assert!(e.take_effects().iter().any(|e| matches!(e, Effect::Scan { .. })));
+    }
 
     fn engine() -> Engine {
         let mut e = Engine::new(|key, _| key.to_owned());
