@@ -48,7 +48,7 @@ fn stage($name, $argv, $timeout)
   $log = $log_dir .. "/" .. $name .. ".log"
   print("START " .. $name .. " " .. join($argv, " "))
   $opts = {timeout: $timeout, stderr: "stdout", stdout: {file: $log}}
-  if $name == "test" then
+  if $name == "test" or $name == "test-nightly" then
     $opts.env = {MIXOS_TEST_MIX: realpath("target/debug/mix"),
       MIXOS_TEST_NODED: realpath("target/debug/noded"),
       MIXOS_TEST_EDITD: realpath("target/debug/editd"),
@@ -177,6 +177,11 @@ if $mode == "check" then
     stage("mix-tests", concat([$mix, "tools/mix_tests.mix", "--bin", "target/debug"], $mix_names), 5400)
   else
     print("SKIP mix-tests (no script affected)")
+  end
+  if $base == "" then
+    -- Only our slow tests: other ignored cases require privileges or are child fixtures.
+    stage("test-nightly", ["cargo", "test", "--workspace", "--locked", "--no-fail-fast", "--",
+      "--include-ignored", "slow_nightly_"], 5400)
   end
   stage("paths", [$mix, "tools/path_gate.mix"], 300)
   if $affected == nil or $affected.full or $selector.covered("layout-templates", $files) then

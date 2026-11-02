@@ -57,7 +57,8 @@ fn write_slot(v: &mut egui::Visuals, name: &str, colour: egui::Color32) {
 }
 
 #[test]
-fn every_slot_keeps_its_old_writer_and_each_role_forwards_only_to_its_slots() {
+#[ignore = "slow: nightly"]
+fn slow_nightly_every_slot_keeps_its_old_writer_and_each_role_forwards_only_to_its_slots() {
     #[derive(serde::Deserialize)]
     struct Oracle {
         selection_by_style: std::collections::BTreeMap<String, String>,

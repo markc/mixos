@@ -70,7 +70,8 @@ fn the_role_map_covers_every_chrome_role_in_order() {
 }
 
 #[test]
-fn every_scheme_mode_contrast_and_accent_compiles() {
+#[ignore = "slow: nightly"]
+fn slow_nightly_every_scheme_mode_contrast_and_accent_compiles() {
     for scheme in Scheme::ALL {
         for mode in Mode::ALL {
             for contrast in Contrast::ALL {
@@ -258,7 +259,8 @@ fn seeds_of_takes_the_scheme_hue_and_breaks_ties_by_contrast() {
 /// The F4 claim for `mixos`: the seeds read back from its roles re-derive
 /// the same 31 roles within one 8-bit step per channel.
 #[test]
-fn seeds_of_round_trips_mixos_within_one_step() {
+#[ignore = "slow: nightly"]
+fn slow_nightly_seeds_of_round_trips_mixos_within_one_step() {
     let tinted = Tints {
         window_bg: Colour8::from_hex("#202020"),
         container_bg: Colour8::from_hex("#2a2a2a"),
@@ -327,7 +329,8 @@ fn hue(colour: SrgbColour) -> f64 {
 /// preserved set (`chrome`, `card`, `text`, the accent hue) is reported
 /// apart. A recorded size, not a promised minimum. Run with `--nocapture`.
 #[test]
-fn role_distance_report() {
+#[ignore = "slow: nightly"]
+fn slow_nightly_role_distance_report() {
     println!("ROLE DISTANCE REPORT (8-bit steps, max channel, both sides over chrome)");
     println!(
         "{:<8} {:<5} {:<6} {:>6} {:>4} {:<20}  preserved: chrome card text  accent-hue°",
@@ -417,7 +420,8 @@ fn the_role_map_reads_as_a_table() {
 /// The cases below 4.5:1 are printed (`--nocapture`) and pinned in
 /// [`SOFT_BELOW_AA`], so a new one fails.
 #[test]
-fn body_text_reads_over_accent_soft_for_every_swatch() {
+#[ignore = "slow: nightly"]
+fn slow_nightly_body_text_reads_over_accent_soft_for_every_swatch() {
     let mut below = Vec::new();
     println!("ACCENT_SOFT CONTRAST (text over accent_soft over card), below 4.5:1");
     for scheme in Scheme::ALL {

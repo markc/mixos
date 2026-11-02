@@ -257,7 +257,8 @@ fn with_mode(
 /// state key that decided the mode; nothing else differs. A failure names
 /// the first differing key.
 #[test]
-fn resolve_v2_reproduces_today_s_look_for_the_same_choices() {
+#[ignore = "slow: nightly"]
+fn slow_nightly_resolve_v2_reproduces_today_s_look_for_the_same_choices() {
     let plain = Profile {
         name: "default",
         today: Desktop::default(),
@@ -384,7 +385,8 @@ fn resolve_v2_reproduces_today_s_look_for_the_same_choices() {
 /// the source explicitly (`appearance.source`), so both run across every
 /// scheme and style without multiplying the matrix.
 #[test]
-fn every_authored_scheme_at_the_defaults_is_today_s_look() {
+#[ignore = "slow: nightly"]
+fn slow_nightly_every_authored_scheme_at_the_defaults_is_today_s_look() {
     let styles = std::iter::once(None).chain(design::Style::ALL.map(Some));
     for style in styles {
         for scheme in design::Scheme::AUTHORED {

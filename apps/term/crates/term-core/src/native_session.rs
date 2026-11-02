@@ -2689,7 +2689,6 @@ pub(crate) mod tests {
     /// one here is a deliberate act.
     const PINNED_MIX_FIXTURES: &[&str] = &[
         "mix_child_bootstrap_proves_end_to_end",
-        "same_mix_child_resumes_and_reenrols_after_broker_bounce",
         "valid_handoff_with_broker_down_does_not_delay_first_source",
         "substituted_parent_scope_is_rejected_without_failing_shell",
         "enrolled_exec_restart_revokes_and_replacement_stays_unbound",

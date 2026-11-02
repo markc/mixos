@@ -955,7 +955,8 @@ mod tests {
     /// fill, and the selection where the style selects with the accent, in
     /// every scheme, style and mode.
     #[test]
-    fn the_design_accent_is_the_drawn_accent() {
+    #[ignore = "slow: nightly"]
+    fn slow_nightly_the_design_accent_is_the_drawn_accent() {
         for scheme in Scheme::ALL {
             for style in design::Style::ALL {
                 for mode in Mode::ALL {

@@ -637,7 +637,8 @@ mod tests {
     /// today's style but for geometry tokens only (F2: "the same look
     /// except corner radii"), with the radii exactly the `round` preset.
     #[test]
-    fn an_authored_scheme_at_the_defaults_is_today_s_theme_but_for_radii() {
+    #[ignore = "slow: nightly"]
+    fn slow_nightly_an_authored_scheme_at_the_defaults_is_today_s_theme_but_for_radii() {
         let [r0, xs, s, m, l, xl] = design::geometry::Roundness::Round.radii();
         let styles = std::iter::once(None).chain(Style::ALL.map(Some));
         for style in styles {
