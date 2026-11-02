@@ -252,11 +252,7 @@ impl<V: View> Host<V> {
                 .allow_drag(false)
                 .allow_scroll(false)
                 .show(ui, |plot| {
-                    for block in frame
-                        .scene
-                        .iter()
-                        .filter(|b| !b.label.is_empty())
-                    {
+                    for block in frame.scene.iter().filter(|b| !b.label.is_empty()) {
                         plot.points(
                             egui_plot::Points::new(
                                 &block.label,
@@ -264,14 +260,16 @@ impl<V: View> Host<V> {
                             )
                             .radius(6.),
                         );
-                        if block.size[1] >= 1. { plot.text(egui_plot::Text::new(
-                            &block.label,
-                            egui_plot::PlotPoint::new(
-                                block.position[0] as f64,
-                                block.position[2] as f64 + 0.3,
-                            ),
-                            &block.label,
-                        )); }
+                        if block.size[1] >= 1. {
+                            plot.text(egui_plot::Text::new(
+                                &block.label,
+                                egui_plot::PlotPoint::new(
+                                    block.position[0] as f64,
+                                    block.position[2] as f64 + 0.3,
+                                ),
+                                &block.label,
+                            ));
+                        }
                     }
                 });
         }

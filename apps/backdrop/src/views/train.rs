@@ -186,6 +186,7 @@ impl View for Train {
             "buildd.done",
             "pipeline.alert",
             "pipeline.clear",
+            "pipeline.alerts",
         ]
     }
     fn on_event(&mut self, snapshot: std::sync::Arc<super::Snapshot>, visible: bool, now: Instant) {
