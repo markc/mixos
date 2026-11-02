@@ -83,13 +83,20 @@ impl Drop for Daemon {
 /// fails loudly (with the child's exit status) if the bind lost the
 /// race, so a flake is self-diagnosing rather than silent.
 fn free_loopback_port() -> u16 {
-    let udp = UdpSocket::bind("127.0.0.1:0").expect("bind udp:0");
-    let port = udp.local_addr().unwrap().port();
-    // Confirm the same port is free for TCP too (daemon binds both).
-    let tcp = std::net::TcpListener::bind(("127.0.0.1", port)).expect("bind tcp:same");
-    drop(tcp);
-    drop(udp);
-    port
+    // The UDP port the OS hands out can already be taken for TCP by another
+    // process on a busy worker (1 of 104 release gates, 2026-11-02): pick
+    // again rather than panic.
+    for _ in 0..50 {
+        let udp = UdpSocket::bind("127.0.0.1:0").expect("bind udp:0");
+        let port = udp.local_addr().unwrap().port();
+        // Confirm the same port is free for TCP too (daemon binds both).
+        if let Ok(tcp) = std::net::TcpListener::bind(("127.0.0.1", port)) {
+            drop(tcp);
+            drop(udp);
+            return port;
+        }
+    }
+    panic!("no loopback port free for both UDP and TCP after 50 tries");
 }
 
 /// Spawns the daemon and waits for it to answer. Returns `(daemon, ready)`;
