@@ -276,6 +276,9 @@ Mix programs.</p>
 <p>The <code>.mix</code> program / <code>.mx</code> document split is an accepted migration target.
 Existing readers still use legacy names such as <code>*.conf.mix</code> and <code>scene.mix</code>;
 check the owning reader before renaming data or assuming a loader's behaviour.</p>
+<p>Generated site files use <code>merge=ours</code>; configure the landing checkout with <code>git config merge.ours.driver true</code> before replay.
+Run <code>mix tools/regen_site.mix</code> after landing and commit its output in the site refresh.
+The site pre-commit hook warns about stale output; <code>mix tools/lint.mix site</code> still fails on drift.</p>
         </article>
         <p class="doc-source"><a href="/docs/dev/2026-10-21-source-and-build-map.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>

@@ -56,6 +56,10 @@ The `.mix` program / `.mx` document split is an accepted migration target.
 Existing readers still use legacy names such as `*.conf.mix` and `scene.mix`;
 check the owning reader before renaming data or assuming a loader's behaviour.
 
+Generated site files use `merge=ours`; configure the landing checkout with `git config merge.ours.driver true` before replay.
+Run `mix tools/regen_site.mix` after landing and commit its output in the site refresh.
+The site pre-commit hook warns about stale output; `mix tools/lint.mix site` still fails on drift.
+
 ## Components
 
 One line per component with a page: kind, then install profiles. The
