@@ -68,10 +68,79 @@ need a test host with the new mixd available.
 
 ## Measurements and validation
 
-Pending CBC receipts. Release measurements are reproducible with
-`lab/mixd_measure.mix`, run through cbc-build. It copies the client-only mix
-before building mixd, preventing feature-unified artefacts from contaminating
-the measurement.
+Release measurements at `19c36ad9e1baf141c6a82cef2f775092365b1c57`, CBC3:
+
+| Separate release build | Bytes | MiB | Cargo elapsed |
+| --- | ---: | ---: | --- |
+| cargo build -p system --release → mix | 23,485,784 | 22.40 | 3m43s |
+| cargo build -p mixd --release → mixd | 48,618,136 | 46.37 | 7m44s |
+
+`mix` is 51.69% smaller than `mixd`; these are the files as produced by the
+repository release profile, without a separate strip step. Both `ldd` lists
+contain only `linux-vdso.so.1`, `libgcc_s.so.1`, `libm.so.6`, `libc.so.6` and
+`ld-linux-x86-64.so.2`. No display, GPU, input or audio libraries.
+
+`mix builtins --names` and `mixd run builtins --names` are byte-identical:
+386 names, empty difference. This is deliberate: availability is enforced at
+lint/runtime rather than by deleting metadata.
+
+Both `tools/foreign_gate.mix --elf <binary>` runs returned 0 and printed:
+`foreign_gate: 20 foreign crate(s), all listed; strict mix, mix-shell, system clean`.
+The mixd-specific closure limitation is recorded below.
+
+Measurement job: `BUILD_RC=0`, `20261102-174113-cecd7795-a1`, worker `cbc3`.
+Log (operator-local):
+`~/.cache/mixos/cbc-build/20261102-174113-cbc3-19c36ad9e1ba-20261102-174113-cecd7795-a1-b70b524b.log`.
+The generated Cargo.lock diff in this job was retrieved and committed in
+`14339b4a1`; the measurement binaries report dirty provenance from that lock
+change. Subsequent final implementation removes the client-only unused
+listener-address registry and owner accessor; sizes above are the measured
+prototype, not a claim of byte-identical final artefacts.
+
+Measurements are reproducible with `lab/mixd_measure.mix`, run through
+cbc-build. It copies the client-only mix before building mixd, preventing
+feature-unified artefacts from contaminating the measurement.
+
+Release runtime probes independently caught `NEEDS_MIXD` for all four calls
+and checked their messages. `mixd` process suite at `19c36ad9e1ba` passed all
+10 tests: `mixd run` listener + script arguments, five personalities by both
+subcommand and argv[0], HTTP SIGINT, and seven TCP/WS SIGTERM cases.
+`BUILD_RC=0`, worker `cbc3`, log:
+`~/.cache/mixos/cbc-build/20261102-174259-cbc3-19c36ad9e1ba-20261102-174119-daab74cd-a1-c481daf2.log`.
+
+Final implementation: `d479b9075ca819d6e0359f8462417bb47619cbf6`.
+The final report commit changes only this report.
+
+| Command | BUILD_RC | Worker | Log under ~/.cache/mixos/cbc-build/ |
+| --- | ---: | --- | --- |
+| cargo test -p mix --locked --no-fail-fast | 0 | cbc3, secondary checkout | 20261102-175154-cbc3-d479b9075ca8-20261102-175154-9683af32-a1-3d88725d.log |
+| cargo test -p system --locked --no-fail-fast | 0 | CBC-scheduled temporary light worker | 20261102-175151-*-d479b9075ca8-20261102-175151-d3f6841c-a1-26ef5281.log |
+| cargo check --workspace --all-targets --locked | 0 | cbc3, secondary checkout | 20261102-175618-cbc3-d479b9075ca8-20261102-175618-9aa6929b-d0fdf686.log |
+
+The system log path uses a wildcard for the private worker label. A host-neutral copy is also saved locally at `/tmp/mixd-system-final.log`.
+
+The system run includes all four structured NEEDS_MIXD refusals and all four
+static MIX-E1513 diagnostics. Full saved logs were read, not just their
+compiler-error tails. The library run exercises existing ws consumers.
+The build queue automatically assigned the one-crate system test to its
+configured temporary-worker shadow checkout; no cargo command was invoked directly
+in the agent worktree or desktop project checkout.
+
+Workspace check: `BUILD_RC=0`, job `20261102-175618-9aa6929b`, 104.8s.
+Primary CBC3 checkout was dirty with another session's source changes, causing rc 75 (not-run)
+and automatic requeues. Those attempts were cancelled and replaced by
+`--direct --worker cbc3 --kind check --checkout mixos-light`; the queue
+otherwise retained incompatible slot requirements from the cancelled job.
+The secondary checkout is a configured CBC3 slot, not a local build.
+
+Earlier failures were fixed rather than excluded: feature-reporting allowlist
+and lint documentation omissions; missing client socket2 and shared wait
+slice; listener key lookups still present in client-only close; generated
+Cargo.lock tripping clean-source provenance; and the new runtime probe using
+shell-classified one-line try syntax instead of a real Mix source file.
+The final library/system runs above have no failing targets. Workspace check
+is green with pre-existing warnings. `mix lint` on the aggregate test runner
+and measurement recipe reports no errors, warnings or notes.
 
 ## Surprises and limits for the survey
 
