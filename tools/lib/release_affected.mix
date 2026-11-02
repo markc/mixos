@@ -17,8 +17,8 @@ fn owner($file, $metadata)
 end
 
 fn full_reason($file)
-  if contains(["Cargo.toml", "Cargo.lock"], $file) or starts_with($file, "rust-toolchain") then return $file end
-  for $prefix in [".cargo/", "tools/", "tests/", "vendor/"]
+  if starts_with($file, "rust-toolchain") then return $file end
+  for $prefix in [".cargo/", "vendor/"]
     if starts_with($file, $prefix) then return $file end
   end
   if basename($file) == "layers.conf.mix" then return $file end
@@ -30,7 +30,9 @@ fn narrow_input($file, $id, $packages)
     if $pkg.id == $id then
       $path = $packages.workspace_root .. "/" .. $file
       $relative = slice($path, len(dirname($pkg.manifest_path)) + 1)
-      if $relative == "Cargo.toml" or $relative == "build.rs" or ends_with($relative, ".md") then return true end
+      if $relative == "Cargo.toml" or $relative == "build.rs" then return true end
+      if starts_with($relative, "tests/") and ends_with($relative, ".mix") then return true end
+      if starts_with($relative, "i18n/") and ends_with($relative, ".ftl") then return true end
       if ends_with($relative, ".rs") then
         for $prefix in ["src/", "tests/", "benches/", "examples/"]
           if starts_with($relative, $prefix) then return true end
@@ -42,16 +44,50 @@ fn narrow_input($file, $id, $packages)
   return false
 end
 
-fn select_affected($files, $packages, $graph)
+-- Context is supplied from the exact two Git trees, never the working tree.
+fn diff_context($base, $tip)
+  $ctx = {root_full: false, locked: []}
+  $old = toml_parse(run_argv_must(["git", "show", $base .. ":Cargo.toml"]))
+  $new = toml_parse(run_argv_must(["git", "show", $tip .. ":Cargo.toml"]))
+  $ctx.root_full = not deep_eq($old.workspace, $new.workspace) or not deep_eq($old.profile, $new.profile)
+  $before = lock_pairs(toml_parse(run_argv_must(["git", "show", $base .. ":Cargo.lock"])))
+  $after = lock_pairs(toml_parse(run_argv_must(["git", "show", $tip .. ":Cargo.lock"])))
+  for $name in sort(concat(keys($before), keys($after)))
+    if not deep_eq(sort($before[$name] ?? []), sort($after[$name] ?? [])) and not contains($ctx.locked, $name) then
+      $ctx.locked = push($ctx.locked, $name)
+    end
+  end
+  return $ctx
+end
+
+fn lock_pairs($lock)
+  $pairs = {}
+  for $pkg in $lock.package
+    $versions = $pairs[$pkg.name] ?? []
+    push($versions, $pkg.version)
+    $pairs[$pkg.name] = $versions
+  end
+  return $pairs
+end
+
+fn select_affected($files, $packages, $graph, $context = nil)
   $selected = []
   $reason = ""
   for $file in $files
-    -- Workspace manifests and lockfiles are global even with a root package.
-    -- Decide this before ownership or the package-local manifest allowance.
+    if starts_with($file, "docs/") or ends_with($file, ".md") or starts_with($file, ".github/") then continue end
     if contains(["Cargo.toml", "Cargo.lock"], $file) then
-      if $reason == "" then $reason = "global input: " .. $file end
+      if $context == nil then
+        if $reason == "" then $reason = "missing diff context: " .. $file end
+      elif $file == "Cargo.toml" then
+        if $context.root_full and $reason == "" then $reason = "global input: Cargo.toml" end
+      else
+        for $pkg in $graph.packages
+          if contains($context.locked, $pkg.name) and not contains($selected, $pkg.id) then push($selected, $pkg.id) end
+        end
+      end
       continue
     end
+    if ends_with($file, ".mix") and (starts_with($file, "tests/") or starts_with($file, "tools/")) then continue end
     $forced = full_reason($file)
     if $forced != "" and $reason == "" then $reason = "global input: " .. $forced end
     $id = owner($file, $packages)
