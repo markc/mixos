@@ -94,8 +94,11 @@ try
   $binary = realpath("/proc/self/exe")
   copy($binary, $scratch .. "/first prefix/bin/mix")
   chmod($scratch .. "/first prefix/bin/mix", 0o755)
-  symlink("mix", $scratch .. "/first prefix/bin/noded")
   $bin = $g.opts.bin ?? ($repo .. "/target/debug")
+  -- noded is its own binary: `mix` is the shell alone by default.
+  if not is_file($bin .. "/noded") then raise("RELOCATION_NODED", "no noded in " .. $bin) end
+  copy($bin .. "/noded", $scratch .. "/first prefix/bin/noded")
+  chmod($scratch .. "/first prefix/bin/noded", 0o755)
   for $name in ["compd", "testkit-layer-client", "testkit-screenshot"]
     if is_file($bin .. "/" .. $name) then
       copy($bin .. "/" .. $name, $scratch .. "/first prefix/bin/" .. $name)
