@@ -48,9 +48,18 @@ fn rig() -> Rig {
     let (deliveries, rx) = mpsc::channel(64);
     let shell = Shell::new(h.ctx.clone(), theme, bus.clone(), rx, "comp".into()).unwrap();
     if let Ok(supported) = std::fs::read_to_string("/usr/share/i18n/SUPPORTED") {
-        let locale = supported.lines().find(|line| !line.starts_with('#') && !line.trim().is_empty())
-            .and_then(|line| line.split_whitespace().next()).expect("SUPPORTED has locales");
-        assert!(shell.engine().live_options("locales").iter().any(|(value, _)| value == locale));
+        let locale = supported
+            .lines()
+            .find(|line| !line.starts_with('#') && !line.trim().is_empty())
+            .and_then(|line| line.split_whitespace().next())
+            .expect("SUPPORTED has locales");
+        assert!(
+            shell
+                .engine()
+                .live_options("locales")
+                .iter()
+                .any(|(value, _)| value == locale)
+        );
     }
     *h.state_mut() = Some(shell);
     h.run_steps(3);
