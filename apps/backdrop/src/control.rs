@@ -450,8 +450,9 @@ impl Controller {
                         let mut shared = lock(&self.shared);
                         let mut snapshot = (*shared.live.snapshot).clone();
                         for event in handle.take_topic_events() {
-                            if let Some(topic @ ("pipeline.alert" | "pipeline.clear" | "pipeline.alerts")) =
-                                event["topic"].as_str()
+                            if let Some(
+                                topic @ ("pipeline.alert" | "pipeline.clear" | "pipeline.alerts"),
+                            ) = event["topic"].as_str()
                                 && let Some(body) = event["body"]
                                     .as_str()
                                     .and_then(|b| serde_json::from_str::<Value>(b).ok())
