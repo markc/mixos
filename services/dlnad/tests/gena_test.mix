@@ -1,0 +1,99 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- gena_test: dlnad's eventing, offline. SUBSCRIBE parsing, timeouts, the
+-- propertyset and NOTIFY request, SEQ and update-id arithmetic, and which
+-- filesystem changes reach a renderer.
+-- Run from the checkout root: mix services/dlnad/tests/gena_test.mix
+-- Prints PASS/FAIL per check; exits 1 on any failure.
+
+$G = require("../scripts/lib/gena.mix")
+$results = []
+
+fn check($name, $ok)
+  push($results, $ok)
+  print((if $ok then "PASS " else "FAIL " end) .. $name)
+end
+
+-- Timeouts
+check("timeout default", $G.timeout_s(nil) == 1800)
+check("timeout Second-300", $G.timeout_s("Second-300") == 300)
+check("timeout case-insensitive", $G.timeout_s("second-600") == 600)
+check("timeout infinite capped", $G.timeout_s("infinite") == 1800)
+check("timeout over cap", $G.timeout_s("Second-86400") == 1800)
+check("timeout under floor", $G.timeout_s("Second-5") == 60)
+check("timeout junk", $G.timeout_s("Second-x") == 1800)
+
+-- Callbacks
+check("callback one", deep_eq($G.callbacks("<http://192.0.2.5:1234/upnp/event>"), ["http://192.0.2.5:1234/upnp/event"]))
+check("callback two", deep_eq($G.callbacks("<http://192.0.2.5:1/a><http://192.0.2.6/b>"), ["http://192.0.2.5:1/a", "http://192.0.2.6/b"]))
+check("callback hostname refused", length($G.callbacks("<http://tv.example.com/a>")) == 0)
+check("callback https refused", length($G.callbacks("<https://192.0.2.5/a>")) == 0)
+check("callback nil", length($G.callbacks(nil)) == 0)
+check("callback parts", deep_eq($G.callback_parts("http://192.0.2.5:1234/e?x=1"), {host: "192.0.2.5", port: 1234, path: "/e?x=1"}))
+check("callback default port and path", deep_eq($G.callback_parts("http://192.0.2.5"), {host: "192.0.2.5", port: 80, path: "/"}))
+check("callback bad port", $G.callback_parts("http://192.0.2.5:99999/") == nil)
+
+-- SUBSCRIBE classification
+$n = $G.subscribe_request({nt: "upnp:event", callback: "<http://192.0.2.5:9000/ev>", timeout: "Second-300"})
+check("subscribe new", $n.kind == "new" and $n.timeout == 300 and deep_eq($n.callbacks, ["http://192.0.2.5:9000/ev"]))
+check("subscribe renew", deep_eq($G.subscribe_request({sid: "uuid:abc", timeout: "Second-900"}), {kind: "renew", sid: "uuid:abc", timeout: 900}))
+check("subscribe sid with callback is 400", $G.subscribe_request({sid: "uuid:abc", callback: "<http://192.0.2.5/>"}).status == 400)
+check("subscribe sid with nt is 400", $G.subscribe_request({sid: "uuid:abc", nt: "upnp:event"}).status == 400)
+check("subscribe without nt is 412", $G.subscribe_request({callback: "<http://192.0.2.5/>"}).status == 412)
+check("subscribe wrong nt is 412", $G.subscribe_request({nt: "ssdp:all", callback: "<http://192.0.2.5/>"}).status == 412)
+check("subscribe no usable callback is 412", $G.subscribe_request({nt: "upnp:event", callback: "<ftp://x>"}).status == 412)
+
+-- Propertyset and NOTIFY
+$ps = $G.propertyset([["SystemUpdateID", "7"], ["ContainerUpdateIDs", "/A & B,3"]])
+$px = xml_parse($ps)
+check("propertyset parses", $px != nil)
+check("propertyset escapes", contains($ps, "<ContainerUpdateIDs>/A &amp; B,3</ContainerUpdateIDs>"))
+check("propertyset namespace", contains($ps, "xmlns:e=\"urn:schemas-upnp-org:event-1-0\""))
+$req = $G.notify_request("http://192.0.2.5:9000/ev/cds", "uuid:abc", 4, [["SystemUpdateID", "7"]])
+$head = split(substr($req, 0, pos("\r\n\r\n", $req) - 1), "\r\n")
+$body = substr($req, pos("\r\n\r\n", $req) + 3)
+check("notify request line", $head[0] == "NOTIFY /ev/cds HTTP/1.1")
+check("notify host", contains($head, "HOST: 192.0.2.5:9000"))
+check("notify nt/nts", contains($head, "NT: upnp:event") and contains($head, "NTS: upnp:propchange"))
+check("notify sid/seq", contains($head, "SID: uuid:abc") and contains($head, "SEQ: 4"))
+check("notify content-length", contains($head, "CONTENT-LENGTH: " .. to_string(byte_length($body))))
+check("notify body", $body == $G.propertyset([["SystemUpdateID", "7"]]))
+check("notify host port 80 omitted", starts_with($G.notify_request("http://192.0.2.5/e", "uuid:a", 0, []), "NOTIFY /e HTTP/1.1\r\nHOST: 192.0.2.5\r\n"))
+
+-- Initial variables
+$v = {system_update_id: 42, container_update_ids: "", source_protocol_info: "http-get:*:video/mp4:*"}
+check("initial CDS", deep_eq($G.initial_vars("ContentDirectory", $v), [["SystemUpdateID", "42"], ["ContainerUpdateIDs", ""]]))
+check("initial CMS", $G.initial_vars("ConnectionManager", $v)[0][1] == "http-get:*:video/mp4:*")
+check("initial registrar", length($G.initial_vars("X_MS_MediaReceiverRegistrar", $v)) == 4)
+
+-- SEQ and update ids
+check("seq increments", $G.next_seq(0) == 1)
+check("seq wraps to 1", $G.next_seq(4294967295) == 1)
+check("update id follows the clock", $G.next_update_id(100, 2000.7) == 2000)
+check("update id never goes back", $G.next_update_id(2000, 1999) == 2001)
+check("update id strictly increases", $G.next_update_id(2000, 2000) == 2001)
+
+-- Which changes matter
+$root = "/srv/media"
+fn batch($changes)
+  return {watch: "w", changes: $changes, overflow: false}
+end
+check("new film in root", deep_eq($G.changed_containers($root, batch([{path: "/srv/media/Film.mkv", kind: "created"}])), [""]))
+check("episode in a series", deep_eq($G.changed_containers($root, batch([{path: "/srv/media/Show/E01.mkv", kind: "created"}])), ["Show"]))
+check("syncthing temp ignored", $G.changed_containers($root, batch([{path: "/srv/media/.syncthing.Film.mkv.tmp", kind: "modified"}])) == nil)
+check("stfolder ignored", $G.changed_containers($root, batch([{path: "/srv/media/.stfolder", kind: "created"}])) == nil)
+check("temp renamed into place", deep_eq($G.changed_containers($root, batch([{path: "/srv/media/Show/E02.mkv", old_path: "/srv/media/Show/.syncthing.E02.mkv.tmp", kind: "moved"}])), ["Show"]))
+check("move between folders", deep_eq(sort($G.changed_containers($root, batch([{path: "/srv/media/B/x.mkv", old_path: "/srv/media/A/x.mkv", kind: "moved"}]))), ["A", "B"]))
+check("dedup", deep_eq($G.changed_containers($root, batch([{path: "/srv/media/a.mkv", kind: "created"}, {path: "/srv/media/b.mkv", kind: "deleted"}])), [""]))
+check("outside root ignored", $G.changed_containers($root, batch([{path: "/srv/mediax/a.mkv", kind: "created"}])) == nil)
+check("root itself ignored", $G.changed_containers($root, batch([{path: "/srv/media", kind: "modified"}])) == nil)
+check("overflow rescans root", deep_eq($G.changed_containers($root, {watch: "w", changes: [], overflow: true}), [""]))
+
+-- ContainerUpdateIDs
+check("container ids", $G.container_update_ids([["0", 5], ["/Show", 9]]) == "0,5,/Show,9")
+check("container ids escape commas", $G.container_update_ids([["/A, B", 1]]) == "/A\\, B,1")
+check("container ids empty", $G.container_update_ids([]) == "")
+
+$failed = length(filter($results, fn($ok) = not $ok))
+print(to_string(length($results) - $failed) .. "/" .. to_string(length($results)) .. " passed")
+if $failed > 0 then exit(1) end

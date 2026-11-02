@@ -206,10 +206,11 @@ fn update_id($dir)
   return floor(stat($dir).mtime)
 end
 
--- Browse. $req = {object_id, flag, start, count}. Returns
+-- Browse. $req = {object_id, flag, start, count}. $system_id is the
+-- server's SystemUpdateID (default: the root's update id). Returns
 -- {ok, result (DIDL string), returned, total, update_id} or {ok: false, code, message}
 -- with UPnP error codes (701 no such object, 720 cannot process).
-fn browse($root, $req, $base, $title)
+fn browse($root, $req, $base, $title, $system_id = nil)
   $rel = id_rel($req.object_id)
   if $rel == nil then return {ok: false, code: 701, message: "No such object"} end
   if not confined($root, $rel) then return {ok: false, code: 701, message: "No such object"} end
@@ -217,7 +218,7 @@ fn browse($root, $req, $base, $title)
   if $req.flag == "BrowseMetadata" then
     $e = entry($root, $rel, $title)
     if $e == nil then return {ok: false, code: 701, message: "No such object"} end
-    return {ok: true, result: didl($root, [$e], $base), returned: 1, total: 1, update_id: update_id($root)}
+    return {ok: true, result: didl($root, [$e], $base), returned: 1, total: 1, update_id: $system_id ?? update_id($root)}
   end
   if $req.flag != "BrowseDirectChildren" then return {ok: false, code: 720, message: "Cannot process the request"} end
   if not is_dir(abs_path($root, $rel)) then return {ok: false, code: 710, message: "No such container"} end
@@ -291,19 +292,28 @@ fn soap_fault($code, $message)
     to_string($code) .. "</errorCode><errorDescription>" .. xml($message) .. "</errorDescription></UPnPError></detail></s:Fault>")
 end
 
--- One control request → {status, body}. $ctx = {root, base, title}.
+-- Every protocolInfo this server can source, comma-joined.
+fn source_protocol_info()
+  $src = []
+  for $m in unique(values($MIME))
+    push($src, protocol_info($m))
+  end
+  return join(sort($src), ",")
+end
+
+-- One control request → {status, body}. $ctx = {root, base, title, update_id}.
 fn control($service, $headers, $body, $ctx)
   $action = soap_action($headers, $body)
   if $service == "ContentDirectory" then
     if $action == "Browse" then
-      $r = browse($ctx.root, parse_browse($body), $ctx.base, $ctx.title)
+      $r = browse($ctx.root, parse_browse($body), $ctx.base, $ctx.title, $ctx.update_id)
       if not $r.ok then return {status: 500, body: soap_fault($r.code, $r.message)} end
       return {status: 200, body: soap_response("ContentDirectory", "Browse", [
         ["Result", xml($r.result)], ["NumberReturned", to_string($r.returned)],
         ["TotalMatches", to_string($r.total)], ["UpdateID", to_string($r.update_id)]])}
     end
     if $action == "GetSystemUpdateID" then
-      return {status: 200, body: soap_response("ContentDirectory", $action, [["Id", to_string(update_id($ctx.root))]])}
+      return {status: 200, body: soap_response("ContentDirectory", $action, [["Id", to_string($ctx.update_id ?? update_id($ctx.root))]])}
     end
     if $action == "GetSearchCapabilities" then
       return {status: 200, body: soap_response("ContentDirectory", $action, [["SearchCaps", ""]])}
@@ -314,11 +324,7 @@ fn control($service, $headers, $body, $ctx)
   end
   if $service == "ConnectionManager" then
     if $action == "GetProtocolInfo" then
-      $src = []
-      for $m in unique(values($MIME))
-        push($src, protocol_info($m))
-      end
-      return {status: 200, body: soap_response("ConnectionManager", $action, [["Source", xml(join(sort($src), ","))], ["Sink", ""]])}
+      return {status: 200, body: soap_response("ConnectionManager", $action, [["Source", xml(source_protocol_info())], ["Sink", ""]])}
     end
     if $action == "GetCurrentConnectionIDs" then
       return {status: 200, body: soap_response("ConnectionManager", $action, [["ConnectionIDs", "0"]])}
@@ -426,7 +432,8 @@ fn content_directory_scpd()
     scpd_var("A_ARG_TYPE_UpdateID", "ui4", "no", []),
     scpd_var("SearchCapabilities", "string", "no", []),
     scpd_var("SortCapabilities", "string", "no", []),
-    scpd_var("SystemUpdateID", "ui4", "yes", [])
+    scpd_var("SystemUpdateID", "ui4", "yes", []),
+    scpd_var("ContainerUpdateIDs", "string", "yes", [])
   ])
 end
 

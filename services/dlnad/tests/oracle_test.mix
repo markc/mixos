@@ -112,13 +112,6 @@ for $pair in [["cds_scpd", $D.content_directory_scpd()], ["cms_scpd", $D.connect
     $expected_var = $var
     $label = $pair[0] .. " state variable " .. $var.name
     $matches = filter($av, fn($x) = $x.name == $var.name)
-    if $pair[0] == "cds_scpd" and $var.name == "ContainerUpdateIDs" then
-      -- Exception: optional ContainerUpdateIDs is absent because dlnad has
-      -- no GENA and never emits the container/update-id pair event stream.
-      -- Pin both the captured declaration and the deliberate absence.
-      check($label .. " no container events exception", deep_eq($var, {name: "ContainerUpdateIDs", dataType: "string", "@sendEvents": "yes"}) and length($matches) == 0)
-      continue
-    end
     push($expected_names, $var.name)
     if $pair[0] == "cds_scpd" and $var.name == "A_ARG_TYPE_BrowseFlag" then
       -- Exception: constrain BrowseFlag to the two modes dlnad implements;

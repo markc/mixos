@@ -8,8 +8,9 @@ description: How dlnad serves a media directory to TVs and other DLNA renderers 
 `dlnad` puts a folder of films, series and music on your TV. It is a DLNA /
 UPnP AV media server: the TV finds it on the network, browses the folder and
 plays the files, seeking as it likes. There is no library to build or
-rescan. Every browse lists the directory as it is now, so a file you drop in
-shows up the next time the TV looks.
+rescan. Every browse lists the directory as it is now, and dlnad watches the
+folder: when a file lands (a syncthing download finishing, say), it tells
+every subscribed TV, which refreshes its list without being re-opened.
 
 It is a [Bus citizen](../mix/serve.md) written in Mix (`mix --serve`), so the
 same service answers the TV over HTTP and SSDP and answers people and agents
@@ -41,6 +42,25 @@ Some TVs never join the multicast group and miss multicast while they doze,
 so they forget a server between adverts. List their addresses in `renderers`
 and every advert is also sent to them unicast, which their Wi-Fi delivers
 reliably.
+
+## Change events
+
+Renderers subscribe to the ContentDirectory events (UPnP GENA: `SUBSCRIBE` on
+`/evt/ContentDirectory`). dlnad watches the media directory with inotify
+(recursively, no polling). When a visible file or folder is added, removed or
+renamed, it waits two seconds for the burst to settle, raises
+`SystemUpdateID`, and sends each subscriber a `NOTIFY` carrying the new
+`SystemUpdateID` and `ContainerUpdateIDs` (the folders that changed, each
+with its own update id). Hidden paths do not count, so a syncthing download
+(`.syncthing.*.tmp`) is silent until it is renamed into place.
+
+`SystemUpdateID` starts at the clock in seconds and only goes up, so a
+restart never looks like an older library. Subscriptions live in memory: after
+a restart a renderer's renewal is refused (412) and it subscribes again.
+Subscriptions last at most 30 minutes between renewals; 32 are held at once;
+one whose callback fails three sends in a row is dropped (the TV is off and
+will subscribe again when it wakes). Callbacks must be `http://` to an IPv4
+address. `dlnad.notify` sends an event by hand.
 
 ## Configuration
 
@@ -88,6 +108,8 @@ needs a service restart.
 | `dlnad.renderers` | — | clients seen over HTTP or searching by SSDP, with their user agent |
 | `dlnad.announce` | — | sends the alive adverts now |
 | `dlnad.identity.rotate` | `{keep_name}` | byebye, a new uuid (and name), alive |
+| `dlnad.subscriptions` | — | live event subscriptions: service, callbacks, next SEQ, expiry |
+| `dlnad.notify` | — | raises `SystemUpdateID` and notifies every ContentDirectory subscriber now |
 
 ```mix
 send dlnad dlnad.status
@@ -111,9 +133,13 @@ Install the component with `mix tools/component_install.mix dlnad`.
 
 - One media directory, IPv4 only, HTTP (no TLS: DLNA renderers do not speak it).
 - No transcoding, thumbnails or metadata scraping; titles are file names.
-- No GENA notifications: subscriptions are acknowledged but never fired.
-  BrowseDirectChildren's update id is the browsed container's own mtime;
-  BrowseMetadata and GetSystemUpdateID use the root directory's mtime.
+- BrowseDirectChildren's update id (and each `ContainerUpdateIDs` value) is
+  the container's own mtime in seconds, so two changes in one second share it;
+  `SystemUpdateID` always moves. Only ContentDirectory has changing evented
+  values; the ConnectionManager and registrar subscriptions get their initial
+  event and nothing after.
+- A `NOTIFY` connects with a two-second limit, and that wait holds up the
+  service: a subscriber that has vanished costs at most three such waits.
 - Sorting is fixed ascending (folders first, then files, each by name).
   SortCriteria is ignored and GetSortCapabilities returns empty SortCaps.
 - The SSDP and HTTP event commands (`dlnad.http.*`, `dlnad.ssdp`) are visible

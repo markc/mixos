@@ -1,0 +1,172 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- gena: UPnP eventing (GENA) for dlnad. Pure functions: SUBSCRIBE parsing,
+-- the event propertyset, the NOTIFY request, and which filesystem changes a
+-- renderer should hear about. dlnad.mix owns the subscriptions and sockets.
+
+$D = require("dlna.mix")
+
+-- Subscription lifetime bounds, in seconds. A renderer asking for longer (or
+-- "infinite") gets $MAX_TIMEOUT and renews; one asking for less gets $MIN_TIMEOUT.
+$MIN_TIMEOUT = 60
+$MAX_TIMEOUT = 1800
+-- At most this many live subscriptions; the one expiring soonest makes room.
+$MAX_SUBS = 32
+
+$SERVICES = ["ContentDirectory", "ConnectionManager", "X_MS_MediaReceiverRegistrar"]
+
+-- "Second-1800" / "infinite" / nil -> seconds within the bounds.
+fn timeout_s($h)
+  if $h == nil then return $MAX_TIMEOUT end
+  $m = re_match(lower(trim($h)), "^second-([0-9]+)$")
+  if not $m then return $MAX_TIMEOUT end
+  $n = to_number(re_replace(lower(trim($h)), "^second-", ""))
+  if $n == nil or $n > $MAX_TIMEOUT then return $MAX_TIMEOUT end
+  if $n < $MIN_TIMEOUT then return $MIN_TIMEOUT end
+  return floor($n)
+end
+
+-- CALLBACK: "<http://host:port/path><http://...>" -> the http URLs, in order.
+-- Only plain http to an IPv4 literal is taken: a renderer on the LAN.
+fn callbacks($h)
+  $out = []
+  if $h == nil then return $out end
+  for $part in split($h, ">")
+    $p = pos("<", $part)
+    if $p > 0 then
+      $u = trim(substr($part, $p))
+      if callback_parts($u) != nil then push($out, $u) end
+    end
+  end
+  return $out
+end
+
+-- "http://192.0.2.5:1234/x?y" -> {host, port, path}, or nil.
+fn callback_parts($url)
+  if not re_match($url, "^http://[0-9]{1,3}(\\.[0-9]{1,3}){3}(:[0-9]{1,5})?(/[^ ]*)?$") then return nil end
+  $rest = substr($url, 7)
+  $path = "/"
+  $s = pos("/", $rest)
+  if $s > 0 then
+    $path = substr($rest, $s - 1)
+    $rest = substr($rest, 0, $s - 1)
+  end
+  $host = $rest
+  $port = 80
+  $c = pos(":", $rest)
+  if $c > 0 then
+    $host = substr($rest, 0, $c - 1)
+    $port = to_number(substr($rest, $c))
+  end
+  if $port == nil or $port < 1 or $port > 65535 then return nil end
+  return {host: $host, port: $port, path: $path}
+end
+
+-- Classify a SUBSCRIBE: {kind: "new", callbacks, timeout} | {kind: "renew",
+-- sid, timeout} | {kind: "error", status}. UPnP DA 1.0 §4.1: a SID together
+-- with CALLBACK or NT is 400; a new one needs NT: upnp:event and a callback.
+fn subscribe_request($headers)
+  $sid = $headers["sid"]
+  $t = timeout_s($headers["timeout"])
+  if $sid != nil then
+    if $headers["callback"] != nil or $headers["nt"] != nil then return {kind: "error", status: 400} end
+    return {kind: "renew", sid: trim($sid), timeout: $t}
+  end
+  if $headers["nt"] == nil or trim($headers["nt"]) != "upnp:event" then return {kind: "error", status: 412} end
+  $cb = callbacks($headers["callback"])
+  if length($cb) == 0 then return {kind: "error", status: 412} end
+  return {kind: "new", callbacks: $cb, timeout: $t}
+end
+
+-- The evented variables' current values for one service, as [name, value].
+-- $vals = {system_update_id, container_update_ids, source_protocol_info}.
+fn initial_vars($svc, $vals)
+  if $svc == "ContentDirectory" then
+    return [["SystemUpdateID", to_string($vals.system_update_id)], ["ContainerUpdateIDs", $vals.container_update_ids ?? ""]]
+  end
+  if $svc == "ConnectionManager" then
+    return [["SourceProtocolInfo", $vals.source_protocol_info ?? ""], ["SinkProtocolInfo", ""], ["CurrentConnectionIDs", "0"]]
+  end
+  return [["AuthorizationGrantedUpdateID", "0"], ["AuthorizationDeniedUpdateID", "0"],
+    ["ValidationSucceededUpdateID", "0"], ["ValidationRevokedUpdateID", "0"]]
+end
+
+fn propertyset($vars)
+  $o = "<?xml version=\"1.0\" encoding=\"utf-8\"?><e:propertyset xmlns:e=\"urn:schemas-upnp-org:event-1-0\">"
+  for $v in $vars
+    $o = $o .. "<e:property><" .. $v[0] .. ">" .. $D.xml($v[1]) .. "</" .. $v[0] .. "></e:property>"
+  end
+  return $o .. "</e:propertyset>"
+end
+
+-- The NOTIFY request to one callback (a complete HTTP/1.1 message).
+fn notify_request($url, $sid, $seq, $vars)
+  $cb = callback_parts($url)
+  $body = propertyset($vars)
+  $host = $cb.host
+  if $cb.port != 80 then $host = $host .. ":" .. to_string($cb.port) end
+  return "NOTIFY " .. $cb.path .. " HTTP/1.1\r\nHOST: " .. $host ..
+    "\r\nCONTENT-TYPE: text/xml; charset=\"utf-8\"\r\nNT: upnp:event\r\nNTS: upnp:propchange\r\nSID: " .. $sid ..
+    "\r\nSEQ: " .. to_string($seq) .. "\r\nCONNECTION: close\r\nCONTENT-LENGTH: " .. to_string(byte_length($body)) ..
+    "\r\n\r\n" .. $body
+end
+
+-- SEQ wraps from 4294967295 to 1 (0 is only ever the initial event).
+fn next_seq($seq)
+  if $seq >= 4294967295 then return 1 end
+  return $seq + 1
+end
+
+-- The next SystemUpdateID: strictly increasing, and at least the wall clock in
+-- seconds so a restart never goes backwards (ui4 holds the clock until 2106).
+fn next_update_id($cur, $now)
+  $n = floor($now)
+  if $n > $cur then return $n end
+  return $cur + 1
+end
+
+-- From an fs.changed batch: the relative paths of the containers whose
+-- listing changed, deduplicated, or nil when nothing a renderer shows moved
+-- (only hidden files: syncthing's .syncthing.*.tmp downloads, .stfolder).
+-- An overflow batch returns [""] (rescan: the root changed as far as we know).
+fn changed_containers($root, $batch)
+  if $batch.overflow == true then return [""] end
+  $seen = {}
+  $out = []
+  for $c in $batch.changes ?? []
+    for $p in [$c.path, $c.old_path]
+      if type($p) == "string" and starts_with($p, $root .. "/") then
+        $rel = substr($p, byte_length($root) + 1)
+        if visible($rel) then
+          $parent = $D.parent_rel($rel)
+          if $seen[$parent] == nil then
+            $seen[$parent] = true
+            push($out, $parent)
+          end
+        end
+      end
+    end
+  end
+  if length($out) == 0 then return nil end
+  return $out
+end
+
+-- No hidden segment anywhere in the path (the same rule Browse applies).
+fn visible($rel)
+  if $rel == "" then return false end
+  for $s in split($rel, "/")
+    if $s == "" or starts_with($s, ".") then return false end
+  end
+  return true
+end
+
+-- ContainerUpdateIDs: "id,value,id,value". Object ids may contain commas;
+-- UPnP CDS 1.0 says escape them as "\,".
+fn container_update_ids($pairs)
+  $parts = []
+  for $p in $pairs
+    push($parts, replace(replace($p[0], "\\", "\\\\"), ",", "\\,"))
+    push($parts, to_string($p[1]))
+  end
+  return join($parts, ",")
+end

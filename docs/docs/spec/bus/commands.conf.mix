@@ -299,6 +299,8 @@
     {name:"dlnad.renderers", owner:"dlnad", version:"0.1.0", status:"draft", class:"query", schema:"pending"},
     {name:"dlnad.announce", owner:"dlnad", version:"0.1.0", status:"draft", class:"intent", schema:"pending"},
     {name:"dlnad.identity.rotate", owner:"dlnad", version:"0.1.0", status:"draft", class:"intent", schema:"pending"},
+    {name:"dlnad.subscriptions", owner:"dlnad", version:"0.2.0", status:"draft", class:"query", schema:"pending"},
+    {name:"dlnad.notify", owner:"dlnad", version:"0.2.0", status:"draft", class:"intent", schema:"pending"},
     {name:"toolsd.wake", owner:"toolsd", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"notify.send", owner:"notifyd", version:"0.1.0", status:"draft", class:"intent", schema:"pending"},
     {name:"notify.get", owner:"notifyd", version:"0.1.0", status:"draft", class:"query", schema:"pending"},

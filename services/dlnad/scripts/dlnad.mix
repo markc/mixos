@@ -1,11 +1,13 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
--- version: 0.1.1
+-- version: 0.2.0
 -- dlnad: a DLNA / UPnP AV media server as a Bus citizen. It serves one media
 -- directory to TVs and other renderers on one LAN interface: SSDP discovery,
 -- the device and service descriptions, ContentDirectory Browse over SOAP, and
 -- the files themselves over HTTP with byte ranges. The directory is browsed
--- live (no index): drop a file in and the next Browse shows it.
+-- live (no index): drop a file in and the next Browse shows it. An inotify
+-- watch on the directory raises SystemUpdateID and sends a GENA NOTIFY to
+-- every subscribed renderer, so a TV refreshes its list without a re-open.
 --
 -- Run: mix --serve dlnad.mix          (Bus service "dlnad")
 -- Config: <etc>/dlnad/dlnad.conf.mix (or $DLNAD_CONF), strict data:
@@ -26,6 +28,8 @@
 --   dlnad.renderers                   clients seen (HTTP and M-SEARCH)
 --   dlnad.announce                    send the alive adverts now
 --   dlnad.identity.rotate {keep_name} byebye, new uuid (+ name), alive
+--   dlnad.subscriptions               live GENA subscriptions
+--   dlnad.notify                      raise SystemUpdateID and notify now
 -- Replies: rc 0 with JSON; rc 10 bad request; rc 15 failed. Error bodies are
 -- {error_code, message}.
 --
@@ -35,6 +39,7 @@
 $D = require("lib/dlna.mix")
 $H = require("lib/http.mix")
 $L = require("lib/limits.mix")
+$G = require("lib/gena.mix")
 
 $CHUNK = 1048576
 -- A paused renderer leaves a send waiting; give it an hour before the
@@ -102,7 +107,9 @@ $LOCATION = $BASE .. "/description.xml"
 -- All mutable state lives in $ST and is written by path ($ST.x = …): a
 -- whole-variable assignment inside a fn or handler would bind a local.
 $ST = {id: load_identity(state_dir(), $C.name), conns: {}, seen: {}, seen_order: 0, looping: false,
-  stats: {started: now_iso(), requests: 0, streams: 0, bytes_sent: 0, errors: 0, msearch: 0, adverts_failed: 0}}
+  update_id: $G.next_update_id(0, time()), subs: {}, initial: [], dirty: {}, flushing: false,
+  stats: {started: now_iso(), requests: 0, streams: 0, bytes_sent: 0, errors: 0, msearch: 0, adverts_failed: 0,
+    events_sent: 0, events_failed: 0, changes: 0}}
 
 -- ---- HTTP -------------------------------------------------------------------
 
@@ -147,7 +154,7 @@ fn put($h, $payload)
 end
 
 fn ctx()
-  return {root: $C.media_root, base: $BASE, title: $ST.id.name}
+  return {root: $C.media_root, base: $BASE, title: $ST.id.name, update_id: $ST.update_id}
 end
 
 fn xml_reply($status, $body, $method)
@@ -212,6 +219,124 @@ fn serve_media($h, $req)
   $ST.stats.streams = $ST.stats.streams - 1
 end
 
+-- ---- Eventing (GENA) ---------------------------------------------------------
+
+-- A NOTIFY that cannot be delivered this many times running ends the
+-- subscription: the renderer is gone, and resubscribes when it comes back.
+$EVENT_FAILS = 3
+-- Connect and send bounds for one NOTIFY, in seconds. The connect blocks
+-- the evaluator, so it is short: renderers are on the LAN.
+$EVENT_CONNECT_S = 2
+$EVENT_SEND_S = 5
+
+fn expire_subs()
+  $now = time()
+  for $sid in keys($ST.subs)
+    if $ST.subs[$sid] != nil and $ST.subs[$sid].expires < $now then $ST.subs = delete($ST.subs, $sid) end
+  end
+end
+
+fn gena_subscribe($svc, $headers)
+  $r = $G.subscribe_request($headers)
+  if $r.kind == "error" then return $H.refuse($r.status, "SUBSCRIBE") end
+  expire_subs()
+  if $r.kind == "renew" then
+    if $ST.subs[$r.sid] == nil or $ST.subs[$r.sid].svc != $svc then return $H.refuse(412, "SUBSCRIBE") end
+    $ST.subs[$r.sid].expires = time() + $r.timeout
+    return $H.response_head(200, [["SID", $r.sid], ["TIMEOUT", "Second-" .. to_string($r.timeout)], ["Content-Length", 0]])
+  end
+  if length(keys($ST.subs)) >= $G.MAX_SUBS then
+    $ST.subs = delete($ST.subs, sort_by(keys($ST.subs), fn($k) = $ST.subs[$k].expires)[0])
+  end
+  $sid = "uuid:" .. uuid()
+  $ST.subs[$sid] = {svc: $svc, callbacks: $r.callbacks, expires: time() + $r.timeout, seq: 0, fails: 0, since: now_iso()}
+  -- The initial event (SEQ 0) follows the response, once the connection closes.
+  $ST.initial = concat($ST.initial, [$sid])
+  return $H.response_head(200, [["SID", $sid], ["TIMEOUT", "Second-" .. to_string($r.timeout)], ["Content-Length", 0]])
+end
+
+fn gena_unsubscribe($headers)
+  if $headers["callback"] != nil or $headers["nt"] != nil then return $H.refuse(400, "UNSUBSCRIBE") end
+  $sid = trim($headers["sid"] ?? "")
+  if $sid == "" or $ST.subs[$sid] == nil then return $H.refuse(412, "UNSUBSCRIBE") end
+  $ST.subs = delete($ST.subs, $sid)
+  return $H.response_head(200, [["Content-Length", 0]])
+end
+
+-- POST one NOTIFY to the first callback that takes it. True on a 2xx.
+fn notify_one($url, $sid, $seq, $vars)
+  $cb = $G.callback_parts($url)
+  $h = nil
+  try
+    $h = tcp_connect($cb.host, $cb.port, {timeout: $EVENT_CONNECT_S})
+    tcp_send($h, $G.notify_request($url, $sid, $seq, $vars), {timeout: $EVENT_SEND_S})
+    $line = tcp_recv_line($h, {timeout: $EVENT_SEND_S, max: 1024})
+    tcp_close($h)
+    return $line != nil and re_match($line, "^HTTP/1\\.[01] 2[0-9][0-9]")
+  catch $m
+    if $h != nil then
+      try
+        tcp_close($h)
+      catch $m2
+      end
+    end
+  end
+  return false
+end
+
+-- Send one event to one subscription; SEQ advances whether or not it lands,
+-- so a renderer that missed one sees the gap and resubscribes.
+fn deliver($sid, $vars)
+  if $ST.subs[$sid] == nil then return end
+  $seq = $ST.subs[$sid].seq
+  $ok = false
+  for $url in $ST.subs[$sid].callbacks
+    if not $ok then $ok = notify_one($url, $sid, $seq, $vars) end
+  end
+  -- the subscription may have been cancelled while the send was in flight
+  if $ST.subs[$sid] == nil then return end
+  $ST.subs[$sid].seq = $G.next_seq($seq)
+  if $ok then
+    $ST.subs[$sid].fails = 0
+    $ST.stats.events_sent = $ST.stats.events_sent + 1
+  else
+    $ST.stats.events_failed = $ST.stats.events_failed + 1
+    $ST.subs[$sid].fails = $ST.subs[$sid].fails + 1
+    if $ST.subs[$sid].fails >= $EVENT_FAILS then $ST.subs = delete($ST.subs, $sid) end
+  end
+end
+
+fn event_values($pairs)
+  return {system_update_id: $ST.update_id, container_update_ids: $G.container_update_ids($pairs),
+    source_protocol_info: $D.source_protocol_info()}
+end
+
+-- Initial events for subscriptions accepted since the last call.
+fn send_initial()
+  while length($ST.initial) > 0
+    $sid = $ST.initial[0]
+    $ST.initial = slice($ST.initial, 1, length($ST.initial))
+    if $ST.subs[$sid] != nil then deliver($sid, $G.initial_vars($ST.subs[$sid].svc, event_values([]))) end
+  end
+end
+
+-- Raise SystemUpdateID and tell every ContentDirectory subscriber, with the
+-- changed containers and their own update ids. $rels: container rel paths.
+fn content_changed($rels)
+  $ST.update_id = $G.next_update_id($ST.update_id, time())
+  $pairs = []
+  for $rel in $rels
+    $abs = $C.media_root
+    if $rel != "" then $abs = $C.media_root .. "/" .. $rel end
+    if is_dir($abs) then push($pairs, [$D.rel_id($rel), $D.update_id($abs)]) end
+  end
+  expire_subs()
+  $vars = [["SystemUpdateID", to_string($ST.update_id)], ["ContainerUpdateIDs", $G.container_update_ids($pairs)]]
+  for $sid in keys($ST.subs)
+    if $ST.subs[$sid] != nil and $ST.subs[$sid].svc == "ContentDirectory" then deliver($sid, $vars) end
+  end
+end
+
 fn route($h, $req, $peer)
   $ST.stats.requests = $ST.stats.requests + 1
   seen($peer, "http", $req.headers["user-agent"])
@@ -230,11 +355,10 @@ fn route($h, $req, $peer)
     return put($h, xml_reply($r.status, $r.body, $m))
   end
   if starts_with($p, "/evt/") then
-    -- Eventing is accepted and never fired: renderers re-Browse on UpdateID.
-    if $m == "SUBSCRIBE" then
-      return put($h, $H.response_head(200, [["SID", $req.headers["sid"] ?? ("uuid:" .. uuid())], ["TIMEOUT", "Second-1800"], ["Content-Length", 0]]))
-    end
-    if $m == "UNSUBSCRIBE" then return put($h, $H.response_head(200, [["Content-Length", 0]])) end
+    $svc = substr($p, 5)
+    if not contains($G.SERVICES, $svc) then return put($h, $H.refuse(404, $m)) end
+    if $m == "SUBSCRIBE" then return put($h, gena_subscribe($svc, $req.headers)) end
+    if $m == "UNSUBSCRIBE" then return put($h, gena_unsubscribe($req.headers)) end
     return put($h, $H.refuse(405, $m))
   end
   if $get then return serve_media($h, $req) end
@@ -308,6 +432,49 @@ on dlnad.http.data async
     end
   end
   finish($src)
+  send_initial()
+end
+
+-- ---- Media directory watch ----------------------------------------------------
+
+$WATCH = nil
+$WATCH_NOTE = ""
+$WATCH_ROOT = realpath($C.media_root)
+try
+  $WATCH = fs_watch($C.media_root, {recursive: true})
+  $WATCH_NOTE = "watching " .. $C.media_root
+catch $m
+  -- Without a watch, renderers still see changes on their next Browse.
+  $WATCH_NOTE = "failed: " .. to_string($m)
+  eprint("dlnad: media watch " .. $WATCH_NOTE)
+end
+
+-- Changes collect in $ST.dirty; one flusher at a time waits $SETTLE_S so a
+-- burst (a season folder landing) becomes one event, not one per file.
+$SETTLE_S = 2
+
+on fs.changed async
+  $a = $event.args
+  if $WATCH == nil or type($a) != "map" or $a.watch != $WATCH then return end
+  $rels = $G.changed_containers($WATCH_ROOT, $a)
+  if $rels == nil then return end
+  for $r in $rels
+    $ST.dirty[$r] = true
+  end
+  if $ST.flushing then return end
+  $ST.flushing = true
+  try
+    while length(keys($ST.dirty)) > 0
+      sleep($SETTLE_S)
+      $batch = keys($ST.dirty)
+      $ST.dirty = {}
+      $ST.stats.changes = $ST.stats.changes + 1
+      content_changed($batch)
+    end
+  catch $m
+    eprint("dlnad: change event failed: " .. to_string($m))
+  end
+  $ST.flushing = false
 end
 
 -- ---- SSDP -------------------------------------------------------------------
@@ -373,6 +540,7 @@ on bus.connected async
       $next = time() + $C.announce_s
     end
     sweep()
+    expire_subs()
     sleep($tick)
   end
 end
@@ -397,7 +565,8 @@ end
 on dlnad.status desc "Identity, config, SSDP state and counters."
   reply(0, json_encode({name: $ST.id.name, uuid: $ST.id.uuid, location: $LOCATION, media_root: $C.media_root,
     listen: $C.listen, port: $C.port, ssdp: $SSDP_NOTE, renderers: $C.renderers, announce_s: $C.announce_s,
-    max_age: $C.max_age, connections: length(keys($ST.conns)), stats: $ST.stats}))
+    max_age: $C.max_age, connections: length(keys($ST.conns)), watch: $WATCH_NOTE, system_update_id: $ST.update_id,
+    subscriptions: length(keys($ST.subs)), stats: $ST.stats}))
 end
 
 on dlnad.list desc "One container's children as data. Body {id (default \"0\"), start, count}."
@@ -453,4 +622,20 @@ on dlnad.identity.rotate desc "byebye, then a new uuid (and name unless keep_nam
     -- failed: datagrams that did not go out (-1 each when SSDP is off)
     reply(0, json_encode({uuid: $ST.id.uuid, name: $ST.id.name, byebye_failed: $bye, alive_failed: $alive}))
   end
+end
+
+on dlnad.subscriptions desc "Live GENA subscriptions: sid, service, callbacks, next SEQ, expiry, failed sends in a row."
+  expire_subs()
+  $out = []
+  for $sid in sort(keys($ST.subs))
+    $s = $ST.subs[$sid]
+    push($out, {sid: $sid, service: $s.svc, callbacks: $s.callbacks, seq: $s.seq, fails: $s.fails, since: $s.since,
+      expires_in: floor($s.expires - time())})
+  end
+  reply(0, json_encode({system_update_id: $ST.update_id, watch: $WATCH_NOTE, subscriptions: $out}))
+end
+
+on dlnad.notify desc "Raise SystemUpdateID and notify every ContentDirectory subscriber now (renderers refresh their lists)." async
+  content_changed([""])
+  reply(0, json_encode({system_update_id: $ST.update_id, subscriptions: length(keys($ST.subs)), stats: $ST.stats}))
 end
