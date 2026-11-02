@@ -331,6 +331,8 @@ builtin_table! {
     ("exit", CapabilityClass::Process,            "system",  "Exit with optional status code", contract!((code?: number) -> nil; effects[terminates]; failure[terminates])),
     ("sleep", CapabilityClass::Pure,           "system",  "Sleep for N seconds (async)", contract!((n: number) -> nil; effects[blocking]; failure[raises])),
     ("task_start", CapabilityClass::Process, "system", "Start an in-process handler task; command must have an async handler. No Bus traffic. Requires the runner's LocalSet; drained on shutdown", contract!((command: string, body: string) -> nil; failure[raises])),
+    ("cond_wait", CapabilityClass::Pure, "system", "Wait for a generation-local broadcast in an async handler or task_start task. Yields until cond_notify(key) (true), timeout or shutdown (false). timeout_s defaults to 300, range 0..=300. At most 1024 live waiters per generation; COND_WAIT_LIMIT on overflow. Outside an async entry raises COND_WAIT_CONTEXT: use on … async. Register before yielding; check state, wait, re-check in a loop. Notifications are not stored (v0.120.0)", contract!((key: string, timeout_s?: number) -> bool; effects[blocking]; failure[raises])),
+    ("cond_notify", CapabilityClass::Pure, "system", "Broadcast to every cond_wait waiter on key in this evaluator generation; return the number woken. No stored notification when no waiters exist. Callable from any handler or serve init (v0.120.0)", contract!((key: string) -> number; failure[raises])),
     ("run", CapabilityClass::Process,             "system",  "Run shell command via sh, return trimmed stdout as string. run(cmd, [{timeout: seconds}]) — 0 (default) = no deadline; a timed-out child is PG-killed and run dies (catchable)", contract!((cmd: string, opts?: any_of(map, nil)) -> string; effects[blocking, shell]; failure[raises])),
     ("run_rc", CapabilityClass::Process,          "system",  "Run shell command, return {rc, stdout, stderr, timed_out, interrupted} map. run_rc(cmd, [{timeout: seconds}]) — 0 (default) = no deadline; timeout → rc=-1 timed_out=true", contract!((cmd: string, opts?: any_of(map, nil)) -> map("run_rc_result", {rc: number, stdout: string, stderr: string, timed_out: bool, interrupted: bool}); effects[must_use, blocking, shell]; failure[returns_result])),
     ("run_stream", CapabilityClass::Process,      "system",  "Run an argv LIST directly (no sh), inheriting stdio so output streams live and the child can use the terminal (interactive when it has a pty, e.g. ssh -t); returns the exit code. run_stream(argv, [{env, clear_env, cwd}]) — same env/cwd semantics as run_argv, so an interactive child gets variables without an `env` prefix exposing them in its ps argv (v0.51.0). The run_argv-only opts (timeout, stdin, stdout, stderr, max_output, stream) are rejected by name: this runner blocks until the child exits and captures nothing", contract!((argv: list(string), opts?: any_of(map("run_stream_options", {env: map, clear_env: bool, cwd: any_of(string, nil)}), nil)) -> number; effects[must_use, blocking]; failure[returns_result])),
@@ -1035,6 +1037,8 @@ pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
 /// `serve_name`, which reads the evaluator's installed serve runtime, and
 /// `script_version`, which reads the evaluator's installed script record).
 pub const EVAL_SPECIAL_BUILTINS: &[&str] = &[
+    "cond_wait",
+    "cond_notify",
     "fs_watch",
     "fs_unwatch",
     "fs_wait",
@@ -39457,6 +39461,8 @@ mod char_aware_tests {
             "shell_quote",
             "shift",
             "sleep",
+            "cond_wait",
+            "cond_notify",
             "slice",
             "sort",
             "split",

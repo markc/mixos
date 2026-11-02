@@ -13,6 +13,13 @@ view — what the flag does, what the runtime injects, and how a citizen behaves
 
 ## Native events and generation lifetime
 
+`fs_wait` raises `FS_WAIT_SERVE` in a citizen: receive filesystem events
+with `on fs.changed`. To hold a request open until shared state changes,
+use an async handler with `cond_wait`, and call `cond_notify` from the
+handler that changes the state. See [the check/wait/re-check pattern](bus.md#async-handlers-class-c).
+The wait yields without polling; its registration belongs to this generation
+and returns false during shutdown or reload retirement.
+
 `on fs.changed`, `on proc.exited`, `on net.changed`, `on audio.changed`,
 `on bus.connected` and `on bus.disconnected` use the ordinary event
 envelope: payloads are in **`$event.args`**, with `command`, `headers` and `body`

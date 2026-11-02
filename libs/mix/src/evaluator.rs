@@ -3154,6 +3154,8 @@ pub const DEFAULT_RECURSION_LIMIT: usize = 16;
 /// A new inline special form added to the `FunctionCall` arm MUST be
 /// added here too.
 pub(crate) const INLINE_SPECIAL_FORMS: &[&str] = &[
+    "cond_wait",
+    "cond_notify",
     "push",
     "pop",
     "shift",
@@ -3358,6 +3360,8 @@ impl Drop for ExprDepthGuard {
 /// host input whenever the host passes `policy: None` — a legal call
 /// shape — so the static deny is what makes the premise unconditional.
 pub const EXPR_MODE_DENIED_BUILTINS: &[&str] = &[
+    "cond_wait",
+    "cond_notify",
     "task_start",
     "fs_wait",
     "dir_open",
@@ -5492,6 +5496,7 @@ pub(crate) struct EvaluatorGlobals {
     /// [`ClassCTaskRegistry`] type docs for the cross-lifetime
     /// rationale.
     pub(crate) task_registry: Rc<ClassCTaskRegistry>,
+    conditions: Rc<RefCell<crate::conditions::Conditions>>,
 }
 
 impl EvaluatorGlobals {
@@ -5532,6 +5537,7 @@ impl EvaluatorGlobals {
             scheduler: Rc::new(DispatchScheduler::new()),
             reply_registry: Rc::new(InvocationReplyRegistry::new()),
             task_registry: Rc::new(ClassCTaskRegistry::new()),
+            conditions: Rc::new(RefCell::new(crate::conditions::Conditions::default())),
         }
     }
 
@@ -6593,6 +6599,7 @@ impl Evaluator {
         grace: std::time::Duration,
         allow_synth_replies: bool,
     ) -> ClassCDrainOutcome {
+        self.globals.borrow().conditions.borrow_mut().shutdown();
         let (task_registry, reply_registry) = {
             let g = self.globals.borrow();
             (Rc::clone(&g.task_registry), Rc::clone(&g.reply_registry))
@@ -13783,6 +13790,49 @@ impl Evaluator {
         eval_args: &'a mut [Value],
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = MixResult<Option<Value>>> + 'a>> {
         Box::pin(async move {
+            if matches!(name, "cond_wait" | "cond_notify") {
+                self.check_capability(name)?;
+                self.check_builtin_arity(name, eval_args.len())?;
+                if name == "cond_wait" && self.ctx.class_c_read_permit.is_none() {
+                    return Err(crate::native_events::refusal(
+                        "COND_WAIT_CONTEXT",
+                        "cond_wait requires an async handler; use on … async (or task_start with an async handler)",
+                    ));
+                }
+                let Some(Value::String(key)) = eval_args.first() else {
+                    return Err(crate::native_events::refusal(
+                        "COND_ARGUMENT",
+                        "condition key must be a string",
+                    ));
+                };
+                let conditions = Rc::clone(&self.globals.borrow().conditions);
+                if name == "cond_notify" {
+                    let woke = conditions.borrow_mut().notify(key);
+                    return Ok(Some(Value::Number(woke as f64)));
+                }
+                let timeout = match eval_args.get(1) {
+                    None => crate::conditions::MAX_TIMEOUT,
+                    Some(Value::Number(n))
+                        if n.is_finite() && (0.0..=crate::conditions::MAX_TIMEOUT).contains(n) =>
+                    {
+                        *n
+                    }
+                    _ => {
+                        return Err(crate::native_events::refusal(
+                            "COND_ARGUMENT",
+                            "timeout must be a finite number in 0..=300 seconds",
+                        ));
+                    }
+                };
+                // Register before the first await / reader-permit release.
+                let waiter = crate::conditions::Conditions::register(&conditions, key)?;
+                let notified = self
+                    .await_with_class_c_yield(
+                        waiter.wait(std::time::Duration::from_secs_f64(timeout)),
+                    )
+                    .await?;
+                return Ok(Some(Value::Bool(notified)));
+            }
             if matches!(name, "fs_watch" | "fs_unwatch" | "fs_wait") {
                 self.check_capability(name)?;
                 self.check_builtin_arity(name, eval_args.len())?;
@@ -14207,7 +14257,9 @@ impl Evaluator {
                     }
                     if matches!(
                         name.as_str(),
-                        "fs_watch"
+                        "cond_wait"
+                            | "cond_notify"
+                            | "fs_watch"
                             | "fs_unwatch"
                             | "fs_wait"
                             | "net_watch"
@@ -20276,6 +20328,87 @@ mod event_args_tests {
 #[cfg(all(test, feature = "tokio-sleep", feature = "json"))]
 mod local_task_tests {
     use super::*;
+
+    #[test]
+    fn conditions_context_check_wait_broadcast_and_shutdown() {
+        run(async {
+            let mut eval = Evaluator::new();
+            let error = eval
+                .execute_script_source("cond_wait(\"rev\", 0)")
+                .await
+                .unwrap_err();
+            assert!(
+                matches!(error, MixError::Structured(info) if info.code == "COND_WAIT_CONTEXT")
+            );
+            eval.execute_script_source(
+                r#"
+                $state = {rev: 0, woke: 0, timed_out: false, closed: false, plain: false}
+                on waiter async
+                  if $state.rev == 0 then
+                    $ok = cond_wait("rev", 1)
+                    if $ok and $state.rev == 1 then
+                      $state.woke = $state.woke + 1
+                    end
+                  end
+                end
+                on notify async
+                  $state.rev = 1
+                  $state.count = cond_notify("rev")
+                end
+                on timeout async
+                  $state.timed_out = not cond_wait("timeout", 0)
+                end
+                on closed async
+                  $state.closed = not cond_wait("closed", 300)
+                end
+                on plain
+                  try
+                    cond_wait("rev", 0)
+                  catch $m, $e
+                    $state.plain = $e.code == "COND_WAIT_CONTEXT"
+                  end
+                end
+                on plain_task async
+                end
+                on plain_task
+                  try
+                    cond_wait("rev", 0)
+                  catch $m, $e
+                    $state.plain = $state.plain and $e.code == "COND_WAIT_CONTEXT"
+                  end
+                end
+                task_start("waiter", "{}")
+                task_start("waiter", "{}")
+                task_start("notify", "{}")
+                task_start("timeout", "{}")
+                task_start("plain_task", "{}")
+            "#,
+            )
+            .await
+            .unwrap();
+            settle(&eval).await;
+            eval.execute_script_source(
+                r#"
+                if $state.woke != 2 or $state.count != 2 or not $state.timed_out then
+                  raise("TEST", json_encode($state))
+                end
+                task_start("closed", "{}")
+            "#,
+            )
+            .await
+            .unwrap();
+            tokio::task::yield_now().await;
+            let outcome = eval
+                .drain_class_c_for_shutdown(std::time::Duration::from_secs(1), false)
+                .await;
+            assert_eq!(outcome.drained_clean, 1);
+            eval.execute_script_source(
+                "if not $state.closed then raise(\"TEST\", \"shutdown did not wake waiter\") end",
+            )
+            .await
+            .unwrap();
+        });
+    }
 
     fn run(test: impl std::future::Future<Output = ()>) {
         let runtime = tokio::runtime::Builder::new_current_thread()

@@ -849,7 +849,7 @@ checked separately by the layering gate.
 | [workshop](https://github.com/markc/mixos/blob/main/apps/workshop/Cargo.toml) | workshop | app | desktop | public | 0.1.2 |
 | [inspector](https://github.com/markc/mixos/blob/main/apps/workshop/crates/inspector/Cargo.toml) | workshop | app | core | none | 0.1.2 |
 | [mesh-sign](https://github.com/markc/mixos/blob/main/cli/mesh-sign/Cargo.toml) | mesh-sign | cli | core | none | 0.1.2 |
-| [mix-shell](https://github.com/markc/mixos/blob/main/cli/mix-shell/Cargo.toml) | mix-shell | cli | mix | public | 0.119.0 |
+| [mix-shell](https://github.com/markc/mixos/blob/main/cli/mix-shell/Cargo.toml) | mix-shell | cli | mix | public | 0.120.0 |
 | [mixos-mcp](https://github.com/markc/mixos/blob/main/cli/mixos-mcp/Cargo.toml) | mixos-mcp | cli | core | none | 0.1.2 |
 | [system](https://github.com/markc/mixos/blob/main/cli/system/Cargo.toml) | system | cli | core | none | 0.1.2 |
 | [action](https://github.com/markc/mixos/blob/main/libs/action/Cargo.toml) | action | lib | core | public | 0.3.0 |
@@ -872,7 +872,7 @@ checked separately by the layering gate.
 | [maildoc](https://github.com/markc/mixos/blob/main/libs/maildoc/Cargo.toml) | maildoc | lib | core | none | 0.1.2 |
 | [mds](https://github.com/markc/mixos/blob/main/libs/mds/Cargo.toml) | mds | lib | core | none | 0.1.2 |
 | [mimedb](https://github.com/markc/mixos/blob/main/libs/mimedb/Cargo.toml) | mimedb | lib | mix | none | 0.1.2 |
-| [mix](https://github.com/markc/mixos/blob/main/libs/mix/Cargo.toml) | mix | lib | mix | public | 0.119.0 |
+| [mix](https://github.com/markc/mixos/blob/main/libs/mix/Cargo.toml) | mix | lib | mix | public | 0.120.0 |
 | [paths](https://github.com/markc/mixos/blob/main/libs/paths/Cargo.toml) | paths | lib | bus | none | 0.1.2 |
 | [props](https://github.com/markc/mixos/blob/main/libs/props/Cargo.toml) | props | lib | core | none | 0.1.2 |
 | [scene](https://github.com/markc/mixos/blob/main/libs/scene/Cargo.toml) | scene | lib | core | none | 0.1.2 |
@@ -14107,6 +14107,8 @@ Since 0.29.0 every builtin carries a structured contract — per-argument names/
   exit            Exit with optional status code
   sleep           Sleep for N seconds (async)
   task_start      Start an in-process handler task; command must have an async handler. No Bus traffic. Requires the runner's LocalSet; drained on shutdown
+  cond_wait       Wait for a generation-local broadcast in an async handler or task_start task. Yields until cond_notify(key) (true), timeout or shutdown (false). timeout_s defaults to 300, range 0..=300. At most 1024 live waiters per generation; COND_WAIT_LIMIT on overflow. Outside an async entry raises COND_WAIT_CONTEXT: use on … async. Register before yielding; check state, wait, re-check in a loop. Notifications are not stored (v0.120.0)
+  cond_notify     Broadcast to every cond_wait waiter on key in this evaluator generation; return the number woken. No stored notification when no waiters exist. Callable from any handler or serve init (v0.120.0)
   run             Run shell command via sh, return trimmed stdout as string. run(cmd, [{timeout: seconds}]) — 0 (default) = no deadline; a timed-out child is PG-killed and run dies (catchable)
   run_rc          Run shell command, return {rc, stdout, stderr, timed_out, interrupted} map. run_rc(cmd, [{timeout: seconds}]) — 0 (default) = no deadline; timeout → rc=-1 timed_out=true
   run_stream      Run an argv LIST directly (no sh), inheriting stdio so output streams live and the child can use the terminal (interactive when it has a pty, e.g. ssh -t); returns the exit code. run_stream(argv, [{env, clear_env, cwd}]) — same env/cwd semantics as run_argv, so an interactive child gets variables without an `env` prefix exposing them in its ps argv (v0.51.0). The run_argv-only opts (timeout, stdin, stdout, stderr, max_output, stream) are rejected by name: this runner blocks until the child exits and captures nothing
@@ -14962,6 +14964,40 @@ inside an `on` handler; it errors loudly if the current event is *not* a request
 requester forever, so every `reply` failure path is a hard error by design.
 
 ### `async` handlers (Class C)
+
+`cond_wait(key[, timeout_s]) -> bool` parks an async handler or a
+`task_start` task until `cond_notify(key)` broadcasts in the same evaluator
+generation. It yields like `sleep` and `send`: other requests keep running.
+It returns true on notification, false on timeout or generation shutdown
+(including retirement on reload). The timeout is a finite number of seconds
+in 0..=300; default 300. At most 1024 waiters may be live per generation;
+overflow raises `COND_WAIT_LIMIT`. Cancellation removes the registration.
+Outside an async entry it raises `COND_WAIT_CONTEXT`: use `on … async`.
+
+`cond_notify(key) -> number` wakes every registered waiter on that string
+key and returns how many it woke. It works in any handler and in serve init.
+Notifications are not stored. Both builtins are pure, in category `system`;
+they grant no I/O authority and are unavailable in expression mode.
+
+Check shared state, wait, then re-check in a loop. The cooperative scheduler
+cannot interleave another invocation between a non-yielding check and wait
+registration. Do not put a `send`, `sleep` or other yielding call between
+them. Notifications are hints; a timeout or another waiter may have changed
+the state before this invocation resumes.
+
+```mix
+on example.wait async
+  $deadline = monotonic() + 45
+  while $revision == $event.args.since and monotonic() < $deadline
+    if not cond_wait("revision", max(0, $deadline - monotonic())) then break end
+  end
+  reply(0, json_encode({rev: $revision}))
+end
+on example.changed
+  $revision = $revision + 1
+  cond_notify("revision")
+end
+```
 
 `task_start(command, body)` starts a registered handler chain in process,
 without sending a Bus message. `command` and `body` are strings; the body is
@@ -29412,6 +29448,13 @@ view — what the flag does, what the runtime injects, and how a citizen behaves
 
 ## Native events and generation lifetime
 
+`fs_wait` raises `FS_WAIT_SERVE` in a citizen: receive filesystem events
+with `on fs.changed`. To hold a request open until shared state changes,
+use an async handler with `cond_wait`, and call `cond_notify` from the
+handler that changes the state. See [the check/wait/re-check pattern](bus.md#async-handlers-class-c).
+The wait yields without polling; its registration belongs to this generation
+and returns false during shutdown or reload retirement.
+
 `on fs.changed`, `on proc.exited`, `on net.changed`, `on audio.changed`,
 `on bus.connected` and `on bus.disconnected` use the ordinary event
 envelope: payloads are in **`$event.args`**, with `command`, `headers` and `body`
@@ -41887,6 +41930,11 @@ loads unchanged.
 ## Unreleased
 
 ### Added
+
+- 0.120.0: generation-local `cond_wait(key[, timeout_s])` and
+  `cond_notify(key)` broadcasts for async handlers and local tasks. Waits
+  yield, return false on timeout or generation shutdown, and are capped at
+  1024 live registrations. Default and maximum timeout: 300 seconds.
 
 - 0.119.0: add `global $a, $b` for explicit program-global assignment per invocation,
   including shared serve globals. Lambdas declare independently.

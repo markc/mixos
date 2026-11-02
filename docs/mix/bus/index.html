@@ -769,6 +769,35 @@ inside an <code>on</code> handler; it errors loudly if the current event is <em>
 (a topic delivery has no caller to answer). A dropped reply would block the
 requester forever, so every <code>reply</code> failure path is a hard error by design.</p>
 <h3 id="async-handlers-class-c"><code>async</code> handlers (Class C)</h3>
+<p><code>cond_wait(key[, timeout_s]) -&gt; bool</code> parks an async handler or a
+<code>task_start</code> task until <code>cond_notify(key)</code> broadcasts in the same evaluator
+generation. It yields like <code>sleep</code> and <code>send</code>: other requests keep running.
+It returns true on notification, false on timeout or generation shutdown
+(including retirement on reload). The timeout is a finite number of seconds
+in 0..=300; default 300. At most 1024 waiters may be live per generation;
+overflow raises <code>COND_WAIT_LIMIT</code>. Cancellation removes the registration.
+Outside an async entry it raises <code>COND_WAIT_CONTEXT</code>: use <code>on … async</code>.</p>
+<p><code>cond_notify(key) -&gt; number</code> wakes every registered waiter on that string
+key and returns how many it woke. It works in any handler and in serve init.
+Notifications are not stored. Both builtins are pure, in category <code>system</code>;
+they grant no I/O authority and are unavailable in expression mode.</p>
+<p>Check shared state, wait, then re-check in a loop. The cooperative scheduler
+cannot interleave another invocation between a non-yielding check and wait
+registration. Do not put a <code>send</code>, <code>sleep</code> or other yielding call between
+them. Notifications are hints; a timeout or another waiter may have changed
+the state before this invocation resumes.</p>
+<pre><code class="language-mix">on example.wait async
+  $deadline = monotonic() + 45
+  while $revision == $event.args.since and monotonic() &lt; $deadline
+    if not cond_wait("revision", max(0, $deadline - monotonic())) then break end
+  end
+  reply(0, json_encode({rev: $revision}))
+end
+on example.changed
+  $revision = $revision + 1
+  cond_notify("revision")
+end
+</code></pre>
 <p><code>task_start(command, body)</code> starts a registered handler chain in process,
 without sending a Bus message. <code>command</code> and <code>body</code> are strings; the body is
 decoded into <code>$event.args</code> just as for other handler invocations. The event

@@ -650,6 +650,40 @@ requester forever, so every `reply` failure path is a hard error by design.
 
 ### `async` handlers (Class C)
 
+`cond_wait(key[, timeout_s]) -> bool` parks an async handler or a
+`task_start` task until `cond_notify(key)` broadcasts in the same evaluator
+generation. It yields like `sleep` and `send`: other requests keep running.
+It returns true on notification, false on timeout or generation shutdown
+(including retirement on reload). The timeout is a finite number of seconds
+in 0..=300; default 300. At most 1024 waiters may be live per generation;
+overflow raises `COND_WAIT_LIMIT`. Cancellation removes the registration.
+Outside an async entry it raises `COND_WAIT_CONTEXT`: use `on … async`.
+
+`cond_notify(key) -> number` wakes every registered waiter on that string
+key and returns how many it woke. It works in any handler and in serve init.
+Notifications are not stored. Both builtins are pure, in category `system`;
+they grant no I/O authority and are unavailable in expression mode.
+
+Check shared state, wait, then re-check in a loop. The cooperative scheduler
+cannot interleave another invocation between a non-yielding check and wait
+registration. Do not put a `send`, `sleep` or other yielding call between
+them. Notifications are hints; a timeout or another waiter may have changed
+the state before this invocation resumes.
+
+```mix
+on example.wait async
+  $deadline = monotonic() + 45
+  while $revision == $event.args.since and monotonic() < $deadline
+    if not cond_wait("revision", max(0, $deadline - monotonic())) then break end
+  end
+  reply(0, json_encode({rev: $revision}))
+end
+on example.changed
+  $revision = $revision + 1
+  cond_notify("revision")
+end
+```
+
 `task_start(command, body)` starts a registered handler chain in process,
 without sending a Bus message. `command` and `body` are strings; the body is
 decoded into `$event.args` just as for other handler invocations. The event

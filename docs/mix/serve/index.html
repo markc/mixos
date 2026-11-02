@@ -267,6 +267,12 @@ long-lived, addressable Mix process that <em>is</em> a service. The full normati
 contract is <strong>SPEC 18</strong> (the Mix Citizen Runtime); this page is the operational
 view — what the flag does, what the runtime injects, and how a citizen behaves.</p>
 <h2 id="native-events-and-generation-lifetime">Native events and generation lifetime</h2>
+<p><code>fs_wait</code> raises <code>FS_WAIT_SERVE</code> in a citizen: receive filesystem events
+with <code>on fs.changed</code>. To hold a request open until shared state changes,
+use an async handler with <code>cond_wait</code>, and call <code>cond_notify</code> from the
+handler that changes the state. See <a href="/mix/bus/#async-handlers-class-c">the check/wait/re-check pattern</a>.
+The wait yields without polling; its registration belongs to this generation
+and returns false during shutdown or reload retirement.</p>
 <p><code>on fs.changed</code>, <code>on proc.exited</code>, <code>on net.changed</code>, <code>on audio.changed</code>,
 <code>on bus.connected</code> and <code>on bus.disconnected</code> use the ordinary event
 envelope: payloads are in <strong><code>$event.args</code></strong>, with <code>command</code>, <code>headers</code> and <code>body</code>

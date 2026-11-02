@@ -271,6 +271,12 @@
 <h3 id="added">Added</h3>
 <ul>
 <li>
+<p>0.120.0: generation-local <code>cond_wait(key[, timeout_s])</code> and
+<code>cond_notify(key)</code> broadcasts for async handlers and local tasks. Waits
+yield, return false on timeout or generation shutdown, and are capped at
+1024 live registrations. Default and maximum timeout: 300 seconds.</p>
+</li>
+<li>
 <p>0.119.0: add <code>global $a, $b</code> for explicit program-global assignment per invocation,
 including shared serve globals. Lambdas declare independently.</p>
 </li>

@@ -12,6 +12,11 @@ generated: by docs/_build/gen-site.mix from libs/mix/CHANGELOG.md; do not edit
 
 ### Added
 
+- 0.120.0: generation-local `cond_wait(key[, timeout_s])` and
+  `cond_notify(key)` broadcasts for async handlers and local tasks. Waits
+  yield, return false on timeout or generation shutdown, and are capped at
+  1024 live registrations. Default and maximum timeout: 300 seconds.
+
 - 0.119.0: add `global $a, $b` for explicit program-global assignment per invocation,
   including shared serve globals. Lambdas declare independently.
 - Refuse parameter, existing-local/capture/module, binder and runtime-name

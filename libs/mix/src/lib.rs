@@ -7,6 +7,7 @@ pub mod builtins;
 pub mod builtins_hof;
 pub mod cancel;
 mod child_events;
+mod conditions;
 pub mod continuation;
 mod desktop_events;
 pub mod error;
