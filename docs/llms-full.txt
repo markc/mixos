@@ -921,7 +921,7 @@ checked separately by the layering gate.
 | [world](https://github.com/markc/mixos/blob/main/services/compd/crates/world/Cargo.toml) | compd | service | desktop | none | 0.1.2 |
 | [x11-wm](https://github.com/markc/mixos/blob/main/services/compd/crates/x11-wm/Cargo.toml) | compd | service | desktop | none | 0.1.2 |
 | [daylight](https://github.com/markc/mixos/blob/main/services/daylight/component.mx) | daylight | service | desktop | public | 0.1.0 |
-| [dlnad](https://github.com/markc/mixos/blob/main/services/dlnad/component.mx) | dlnad | service | core | public | 0.1.0 |
+| [dlnad](https://github.com/markc/mixos/blob/main/services/dlnad/component.mx) | dlnad | service | core | public | 0.1.1 |
 | [dnsd](https://github.com/markc/mixos/blob/main/services/dnsd/Cargo.toml) | dnsd | service | core | public | 0.3.4 |
 | [dns-core](https://github.com/markc/mixos/blob/main/services/dnsd/crates/dns-core/Cargo.toml) | dnsd | service | core | none | 0.1.2 |
 | [editd](https://github.com/markc/mixos/blob/main/services/editd/Cargo.toml) | editd | service | core | public | 0.3.0 |
@@ -3515,6 +3515,8 @@ It is a [Bus citizen](../mix/serve.md) written in Mix (`mix --serve`), so the
 same service answers the TV over HTTP and SSDP and answers people and agents
 on the Bus.
 
+Requires Mix 0.118.0 or later for offset file reads and discovery sockets.
+
 ## What it serves
 
 - **One media directory**, browsed live. Folders become browse levels;
@@ -3563,11 +3565,15 @@ reliably.
 | `listen` | (required) | the LAN IPv4 renderers reach; HTTP binds it, SSDP joins on it |
 | `port` | `8200` | HTTP port |
 | `name` | `MixOS Media` | friendly name shown on the TV |
-| `ssdp` | `true` | announce and answer searches (needs mix 0.118.0 or later) |
+| `ssdp` | `true` | announce and answer searches |
 | `renderers` | `[]` | IPv4 addresses that also get every advert unicast |
 | `announce_s` | `60` | seconds between alive adverts |
 | `max_age` | `1800` | how long a renderer may cache an advert |
-| `max_conns` | `64` | HTTP connections held at once; when full, the oldest idle one is dropped |
+| `max_conns` | `64` | HTTP admission limit; evict the oldest idle connection when full, or close the newcomer if all are busy |
+
+Timers and limits (`announce_s`, `max_age`, `max_conns`) must be positive
+numbers; `max_conns` must be an integer. Invalid values refuse startup and
+name the key. Renderer history retains the 256 most recently seen peers.
 
 The server's identity (its UPnP uuid and friendly name) lives in
 `<var>/dlnad/identity.conf.mix` and survives restarts. A configuration change
@@ -3605,8 +3611,11 @@ Install the component with `mix tools/component_install.mix dlnad`.
 
 - One media directory, IPv4 only, HTTP (no TLS: DLNA renderers do not speak it).
 - No transcoding, thumbnails or metadata scraping; titles are file names.
-- UPnP eventing is accepted and never fired; renderers re-browse on the
-  container update id, which changes when the top folder changes.
+- No GENA notifications: subscriptions are acknowledged but never fired.
+  BrowseDirectChildren's update id is the browsed container's own mtime;
+  BrowseMetadata and GetSystemUpdateID use the root directory's mtime.
+- Sorting is fixed ascending (folders first, then files, each by name).
+  SortCriteria is ignored and GetSortCapabilities returns empty SortCaps.
 - The SSDP and HTTP event commands (`dlnad.http.*`, `dlnad.ssdp`) are visible
   on the Bus like any `on` handler; they act only on sockets the running
   service owns.
@@ -38128,30 +38137,31 @@ For scripted work, call the services directly (`releases.*`,
 
 ## Wallpaper
 
-Open **Wallpaper** from **Appearance**, then choose the default or an output, then Theme,
-Colour or Image. Colour accepts a picker or `#RRGGBB`. Browse opens the native
-image browser at the installed wallpaper folder, or Pictures in your home
-folder. It lists PNG/JPEG files and folders without blocking the window.
-Changes stay in Preferences until **Apply wallpaper**. **Revert wallpaper** drops
-them; **Refresh wallpaper** reads the current state again.
+**Desktop › Wallpaper** edits the `wallpaper.*` settings, which backdrop
+follows. Every choice applies at once, as one fenced `settings.apply`.
 
-An output's **Use default** removes just that override. Editing the default
-preserves every output override. Images currently crop to fill; fit controls
-and slideshows will follow when backdrop supports them.
+- The preview shows what the selected display draws: its image (filled or
+  fitted), else the colour or gradient.
+- **Same wallpaper on all displays** shows "All displays". Turned off, with
+  more than one display connected, a tab per display chooses whose image a
+  pick sets (`wallpaper.outputs.<connector>.image`); turning it back on
+  clears those.
+- **Wallpaper fit** is Fill or Fit to screen. A stored `stretch` shows as Fill.
+- **Slideshow** runs through the folder shown below, every **Change image
+  every** interval, in name or **Random order**. It is hidden while a colour
+  is chosen.
+- The category menu shows the system wallpaper folder, Colors (your own
+  colours, then 14 flat colours and 5 gradients), up to five recent folders,
+  and **Open new folder**. **Add image** and **Open new folder** use the
+  files chooser; **Add color** opens a colour picker drawer. Folders are read
+  three levels deep, at most 500 images. Your own images and colours carry a
+  remove button.
 
-Without Backdrop on the session Bus, Wallpaper shows an unavailable page state
-and creates no problem links. Local edit refusals stay on Wallpaper. A refusal
-of a submitted apply shows its reason,
-keeps the draft and leaves the last good wallpaper in place. Preferences checks for
-intervening changes before sending the whole document; conflicts require
-Revert and a fresh edit. This check is best effort: backdrop does not yet
-provide an atomic compare-and-set operation. A lost reply is checked by a
-state read, never automatically resent.
-
-Wallpaper and browser state are included in `prefs.info`, wallpaper state in
-`prefs.appearance`. Commands `wallpaper.apply`, `wallpaper.revert`,
-`wallpaper.refresh` and `wallpaper.browse` are available through
-`prefs.execute`; the normal `prefs.ui.*` commands drive the controls and browser.
+Backdrop draws a slideshow before an image before a colour, so choosing an
+image clears the colour and stops the slideshow, and choosing a colour clears
+the image. `prefs.set {key: "wallpaper.image" | "wallpaper.color", value}`
+does the same as a click; `prefs.page {page: "wallpaper"}` lists the
+chooser's images and colours as data.
 
 ## Running and testing
 
