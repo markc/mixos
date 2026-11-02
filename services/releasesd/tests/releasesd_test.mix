@@ -90,7 +90,7 @@ try
     write_file($api .. "/repos/" .. $spec[0] .. "/releases/tags/" .. $spec[1], json_encode($rel))
     write_file($api .. "/repos/" .. $spec[0] .. "/releases/latest", json_encode($rel))
   end
-  push($pids, spawn([(mixos_path("prefix") .. "/bin/mix"), "-c", "http_serve(\"" .. $api .. "\", {port: " .. to_string($port) .. ", host: \"127.0.0.1\", duration: 300})"],
+  push($pids, spawn([(mixos_path("prefix") .. "/bin/mixd"), "run", "-c", "http_serve(\"" .. $api .. "\", {port: " .. to_string($port) .. ", host: \"127.0.0.1\", duration: 300})"],
     {detach: true, stdout: {file: $tmp .. "/http.log"}, stderr: "stdout"}))
 
   -- The broker and the citizen.

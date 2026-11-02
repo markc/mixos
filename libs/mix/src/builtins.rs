@@ -24855,7 +24855,7 @@ fn builtin_tcp_listen(args: Vec<Value>) -> MixResult<Option<Value>> {
 /// wake socket is only the fast path: with several waiters one may drain
 /// the byte another needed, so every waiter rechecks the interrupt flag
 /// at least this often.
-#[cfg(feature = "net-server")]
+#[cfg(feature = "net-client")]
 const ACCEPT_SLICE: std::time::Duration = std::time::Duration::from_millis(250);
 
 /// Blocking tcp_accept calls that have reached their wait loop: a

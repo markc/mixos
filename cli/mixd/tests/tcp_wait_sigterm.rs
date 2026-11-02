@@ -26,7 +26,7 @@ fn sigterm_ends_with(name: &str, script: &str, within: Duration, envs: &[(&str, 
     let path = dir.join("t.mix");
     std::fs::write(&path, script).unwrap();
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_mix"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_mixd")).arg("run")
         .arg(&path)
         .env("MIX_SIGTERM_BACKSTOP_SECS", "60")
         .envs(envs.iter().map(|(k, v)| (*k, v.as_str())))

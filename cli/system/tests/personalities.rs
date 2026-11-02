@@ -6,6 +6,7 @@
 //! personality is also driven as a real process through a symlink, against
 //! its own broker, and must stop cleanly on SIGTERM.
 
+#![cfg(all(feature = "noded", feature = "maild", feature = "monitord", feature = "webd", feature = "dnsd"))]
 use std::fs;
 use std::net::TcpListener;
 use std::os::unix::fs::{PermissionsExt, symlink};

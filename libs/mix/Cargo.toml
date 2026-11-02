@@ -88,7 +88,7 @@ mime = ["dep:mimedb"]
 ws = ["net-client", "net-server"]
 server = ["net-server"]
 net-server = ["net-client", "dep:socket2"]
-net-client = ["dep:tungstenite", "dep:rustls", "dep:webpki-roots", "tokio/net"]
+net-client = ["dep:socket2", "dep:tungstenite", "dep:rustls", "dep:webpki-roots", "tokio/net"]
 # `tar_list` / `tar_unpack` / `tar_pack` builtins — read and write archives
 # without an external tar or zstd binary, so a verified artifact can be
 # unpacked by the same language that checked its digest. tar >= 0.4.46 floor

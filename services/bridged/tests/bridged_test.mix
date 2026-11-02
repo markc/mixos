@@ -13,7 +13,7 @@
 -- with a refusal never starts a child, and passes a stand-in child's exit
 -- code through.
 -- Run from the checkout root with Mix >= 0.112.1:
---   mix services/bridged/tests/bridged_test.mix [--noded PATH]
+--   mixd run services/bridged/tests/bridged_test.mix [--noded PATH]
 -- The mix binary for every process the test starts, including the serve child
 -- of bridged --start: $BRIDGED_MIX, else $MIXOS_TEST_MIX, else
 -- <prefix>/bin/mix. The noded binary: --noded PATH, else $MIXOS_TEST_NODED,
@@ -29,6 +29,7 @@ $MIX = env("BRIDGED_MIX") ?? ""
 if $MIX == "" then $MIX = env("MIXOS_TEST_MIX") ?? "" end
 if $MIX == "" then $MIX = (mixos_path("prefix") .. "/bin/mix") end
 $citizen = realpath($here .. "/../scripts/bridged.mix")
+$MIXD = env("MIXOS_TEST_MIXD", mixos_path("prefix") .. "/bin/mixd")
 $fake = realpath($here .. "/lib/fake_app.mix")
 $registry = realpath($here .. "/../../../docs/docs/spec/bus/commands.conf.mix")
 -- The noded binary: --noded PATH wins, else $MIXOS_TEST_NODED, else the installed one.
@@ -68,7 +69,7 @@ end
 -- Start the fake app; returns {pid, port} once it listens.
 fn start_fake($tag, $port)
   $pf = $tmp .. "/" .. $tag .. ".port"
-  $p = spawn([$MIX, $fake, "--auth", "token", "--token-file", $tmp .. "/app.tok", "--port-file", $pf,
+  $p = spawn([$MIXD, "run", $fake, "--auth", "token", "--token-file", $tmp .. "/app.tok", "--port-file", $pf,
     "--parent", to_string(pid()), "--port", to_string($port)], {die_with_parent: true, stdout: {file: $tmp .. "/" .. $tag .. ".log"}, stderr: "stdout"})
   push($pids, $p)
   for $i = 1 to 200
@@ -284,7 +285,7 @@ try
   -- the old connection goes away.
   $keyfile = $tmp .. "/window-key"
   $keyportfile = $tmp .. "/key-app.port"
-  push($pids, spawn([$MIX, $fake, "--auth", "key", "--token-file", $keyfile,
+  push($pids, spawn([$MIXD, "run", $fake, "--auth", "key", "--token-file", $keyfile,
     "--port-file", $keyportfile, "--parent", to_string(pid())],
     {die_with_parent: true, stdout: {file: $tmp .. "/key-app.log"}, stderr: "stdout"}))
   $until = monotonic() + 10

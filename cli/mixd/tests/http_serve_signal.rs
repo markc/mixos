@@ -22,7 +22,7 @@ fn http_serve_stops_on_sigint() {
         "print(http_serve(\"{}\", {{port: 0}}))\n",
         dir.to_string_lossy()
     );
-    let mut child = Command::new(env!("CARGO_BIN_EXE_mix"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_mixd")).arg("run")
         .args(["-c", &script])
         .env("MIX_STATS", "off")
         .stdout(Stdio::piped())
