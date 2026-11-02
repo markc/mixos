@@ -206,7 +206,8 @@ fn builtin_categories() -> Vec<&'static str> {
 /// The unified row iterator behind every discovery surface: builtins,
 /// then HOFs, then statement extras — registry order preserved.
 fn all_builtin_rows() -> impl Iterator<Item = EntryRow> {
-    let core = BUILTINS.iter().map(|b: &BuiltinInfo| EntryRow {
+    let extension = mix::extensions::entries();
+    let core = BUILTINS.iter().chain(extension.into_iter().filter(|b| mix::builtins::core_builtin_info(b.name).is_none())).map(|b: &BuiltinInfo| EntryRow {
         kind: "builtin",
         name: b.name,
         category: b.category,

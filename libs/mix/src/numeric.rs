@@ -19,12 +19,12 @@ pub(crate) const MAX_SAFE_INTEGER: f64 = 9_007_199_254_740_991.0; // 2^53 - 1
 /// Number value. This says only which values may enter; each callsite retains
 /// its existing error code/message when extraction fails.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum InputPolicy {
+pub enum InputPolicy {
     StandardCoercion,
     NumberOnly,
 }
 
-pub(crate) fn extract_number(value: &Value, policy: InputPolicy) -> Option<f64> {
+pub fn extract_number(value: &Value, policy: InputPolicy) -> Option<f64> {
     match policy {
         InputPolicy::StandardCoercion => value.to_number(),
         InputPolicy::NumberOnly => match value {

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Server family installed explicitly by mixd, never by a Cargo feature.
-use mix::{MixResult, value::Value, server_api as api};
+use mix::{MixResult, MixError, value::Value, server_api as api};
+pub use api::{accept_timeout, deadline_after};
 use api::*;
 use std::{sync::{Arc, Mutex, LazyLock, atomic::{AtomicBool, Ordering}}, net::{UdpSocket, Ipv4Addr}};
 mod tcp;

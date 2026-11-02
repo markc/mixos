@@ -1306,10 +1306,7 @@ impl CapabilityClass {
 /// `panic!`, uncatchable by Mix `try/catch`, a termination primitive a
 /// sandbox must be able to deny — like `exit`.)
 pub fn capability_category(name: &str) -> CapabilityClass {
-    BUILTINS
-        .iter()
-        .chain(crate::builtins_hof::HOFS.iter())
-        .find(|b| b.name == name)
+    builtin_info_of(name)
         .map(|b| b.capability)
         .unwrap_or(CapabilityClass::Pure)
 }
@@ -17759,7 +17756,7 @@ fn builtin_has_builtin(args: Vec<Value>) -> MixResult<Option<Value>> {
     // nonetheless callable in every build. has_builtin must answer "is this
     // a callable name", so it checks the full registry.
     let name = args[0].to_mix_string();
-    Ok(Some(Value::Bool(BUILTIN_NAMES.contains(&name.as_str()))))
+    Ok(Some(Value::Bool(builtin_info_of(&name).is_some())))
 }
 
 /// `mix_version()` → {major, minor, patch, string} — the language runtime

@@ -370,8 +370,3 @@ pub static ACCEPT_WAITS: std::sync::atomic::AtomicUsize = std::sync::atomic::Ato
 pub fn tcp_accept_waits_entered() -> usize {
     ACCEPT_WAITS.load(std::sync::atomic::Ordering::Acquire)
 }
-
-
-
-/// `tcp_local_addr(handle)` → {host, port} for a listener (subscribed or
-/// not) or an unsubscribed connected handle.

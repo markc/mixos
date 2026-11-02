@@ -19,7 +19,11 @@ pub fn register(family: &'static dyn BuiltinFamily) -> MixResult<()> {
     let mut families = FAMILIES.write().unwrap();
     if families.iter().any(|f| std::ptr::eq(*f, family)) { return Ok(()); }
     let entries = family.entries();
+    let mut names = std::collections::HashSet::new();
     for entry in &entries {
+        if !names.insert(entry.name) || (crate::builtins::core_builtin_info(entry.name).is_some() && !SERVER_NAMES.contains(&entry.name)) {
+            return Err(crate::native_events::refusal("BUILTIN_RESERVED", entry.name));
+        }
         if families.iter().any(|f| f.entries().iter().any(|e| e.name == entry.name)) {
             return Err(crate::native_events::refusal("BUILTIN_DUPLICATE", entry.name));
         }
