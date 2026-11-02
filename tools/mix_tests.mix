@@ -116,6 +116,7 @@ end
 $env = {
   MIXOS: $root,
   MIXOS_TEST_MIX: $bin .. "/mix",
+  MIXOS_TEST_MIXD: $bin .. "/mixd",
   -- The bridged tests' child processes run the fresh mix, not the installed one.
   BRIDGED_MIX: $bin .. "/mix",
   MIXOS_TEST_NODED: $bin .. "/noded",
@@ -135,9 +136,11 @@ for each $s in $scripts
   $env.MIXOS_RELEASE_ORPHAN_LIVE = if $s == "tests/release_orphans_test.mix" then "1" else "" end
   -- The releasesd installer deliberately refuses root. The CBC worker may
   -- run this gate as root, so exercise those user-install tests as nobody.
+  $needs_server = starts_with($s, "services/bridged/tests/") or $s == "services/releasesd/tests/releasesd_test.mix"
+  $runner = if $needs_server then [$bin .. "/mixd", "run", $s] else [$bin .. "/mix", $s] end
   $argv = if starts_with($s, "services/releasesd/tests/") and uid() == 0 then
-    ["runuser", "-u", "nobody", "--", $bin .. "/mix", $s]
-  else [$bin .. "/mix", $s] end
+    concat(["runuser", "-u", "nobody", "--"], $runner)
+  else $runner end
   $r = run_argv($argv, {cwd: $root, env: $env, timeout: 900, stderr: "stdout"})
   $secs = to_string(round($r.duration_ms / 1000))
   if $r.ok then

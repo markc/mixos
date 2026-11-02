@@ -58,7 +58,8 @@ tests and in `tools/`, `share/`, and service `*.mix` files.
 | services/bridged/tests/lib/fake_app.mix | launched under mixd run by both bridge harnesses |
 | services/dlnad/scripts/dlnad.mix | listener requires mixd run; lab service, no unit changed |
 | services/dlnad/scripts/lib/ssdp.mix | udp_listen requires mixd server context |
-| tools/, share/ | no direct calls found |
+| tools/mix_tests.mix | selects mixd run for bridged and releasesd listener harnesses; passes MIXOS_TEST_MIXD |
+| tools/, share/ | no direct builtin calls found |
 
 Private hub test scripts named by the plan are outside this lab worktree and
 were not modified. `MIXOS_TEST_MIXD` overrides the default prefix/bin/mixd in
