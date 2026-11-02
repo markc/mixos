@@ -108,7 +108,8 @@ if $mode == "check" then
     $packages = json_parse(run_argv_must(["cargo", "metadata", "--format-version", "1", "--locked", "--no-deps"], {timeout: 300, max_output: 64000000}))
     $graph = json_parse(run_argv_must(["cargo", "metadata", "--format-version", "1", "--locked"], {timeout: 900, max_output: 64000000}))
     $selector = require("lib/release_affected.mix")
-    $affected = $selector.select_affected($files, $packages, $graph)
+    $context = $selector.diff_context($base, $commit)
+    $affected = $selector.select_affected($files, $packages, $graph, $context)
     if $affected.full then
       print("AFFECTED full test: " .. $affected.reason)
     else
