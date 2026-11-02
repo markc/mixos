@@ -1,0 +1,7 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Deterministic generator; leaves changes for the train's normal commit.
+$root = dirname(dirname(realpath($0)))
+$mix = realpath("/proc/self/exe")
+run_argv_must([$mix, $root .. "/docs/_build/gen-site.mix"], {cwd: $root, timeout: 300})
+$changed = trim(run_argv_must(["git", "diff", "--name-only", "--", "docs/"], {cwd: $root}))
+print(if $changed == "" then "unchanged" else "regenerated site; changes left uncommitted" end)

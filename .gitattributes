@@ -1,12 +1,23 @@
 # Written by docs/_build/gen-site.mix — collapsed in GitHub diffs. Edit the
 # sources (docs/**/*.md, docs/_build/*) and rebuild; never edit these by hand.
-docs/index.html linguist-generated
-docs/404.html linguist-generated
-docs/**/index.html linguist-generated
-docs/llms.txt linguist-generated
-docs/llms-full.txt linguist-generated
-docs/sitemap.xml linguist-generated
-docs/robots.txt linguist-generated
-docs/_web/icons.css linguist-generated
+docs/index.html linguist-generated merge=ours
+docs/404.html linguist-generated merge=ours
+docs/**/index.html linguist-generated merge=ours
+docs/llms.txt linguist-generated merge=ours
+docs/llms-full.txt linguist-generated merge=ours
+docs/sitemap.xml linguist-generated merge=ours
+docs/robots.txt linguist-generated merge=ours
+docs/_web/icons.css linguist-generated merge=ours
 docs/_web/fonts/icons.woff2 linguist-generated binary
 docs/_web/fonts/LICENSE-MaterialSymbols.txt linguist-generated
+docs/docs/components.md linguist-generated merge=ours
+docs/docs/components/** linguist-generated merge=ours
+docs/docs/desktop.md linguist-generated merge=ours
+docs/docs/server.md linguist-generated merge=ours
+docs/*/changelog.md linguist-generated merge=ours
+docs/_web/fonts.css linguist-generated merge=ours
+docs/_web/fonts/** linguist-generated merge=ours
+docs/_web/icons/** linguist-generated merge=ours
+docs/_web/brand/** linguist-generated merge=ours
+docs/_web/favicon.svg linguist-generated merge=ours
+docs/_web/favicon.ico linguist-generated merge=ours

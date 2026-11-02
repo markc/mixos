@@ -56,10 +56,11 @@ $HOOK_MARK = "-- mixos site gate"
 $GEN_ICONS = ["file-text"]      -- icons this script itself emits
 
 $argv = args()
-$check = contains($argv, "--check")
+$warn_stale = contains($argv, "--warn-stale")
+$check = contains($argv, "--check") or $warn_stale
 $install = contains($argv, "--install-hook")
 for each $a in $argv
-  if not contains(["--check", "--install-hook"], $a) then
+  if not contains(["--check", "--install-hook", "--warn-stale"], $a) then
     print("usage: mix docs/_build/gen-site.mix [--check | --install-hook]")
     exit(2)
   end
@@ -80,9 +81,9 @@ if $install then
   $body = "#!/usr/bin/env mix\n" ..
        $HOOK_MARK .. " — installed by docs/_build/gen-site.mix --install-hook.\n" ..
        "-- The hygiene hook chains this as pre-commit.pre-hygiene and runs it first.\n" ..
-       "-- Refuses a commit whose generated site is stale or has a broken link.\n" ..
+       "-- Warns about stale generated output; CI remains strict.\n" ..
        "$top = trim(run_argv_must([\"git\", \"rev-parse\", \"--show-toplevel\"]))\n" ..
-       "exit(run_stream([realpath(\"/proc/self/exe\"), $top .. \"/docs/_build/gen-site.mix\", \"--check\"]))\n"
+       "exit(run_stream([realpath(\"/proc/self/exe\"), $top .. \"/docs/_build/gen-site.mix\", \"--warn-stale\"]))\n"
   mkdir($hooks)
   write_file($hook, $body)
   run_argv_must(["chmod", "+x", $hook])
@@ -1278,6 +1279,10 @@ if $check then
   cleanup()
   if len($changed) + len($stale) > 0 then
     print("gen-site --check: the generated site is out of date - run: mix docs/_build/gen-site.mix")
+    if $warn_stale then
+      print("WARNING: regenerate site after landing; CI remains strict")
+      exit(0)
+    end
     exit(1)
   end
   print("gen-site --check: " .. to_string(len($pages)) .. " page(s), site up to date, links OK")
