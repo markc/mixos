@@ -679,7 +679,8 @@ mod tests {
             generation: 0,
             path: std::path::PathBuf::from("/image1.png"),
             outcome: thumbs::Outcome::Skipped("evicted"),
-        }).unwrap();
+        })
+        .unwrap();
         s.pump(&ctx);
         assert!(!s.textures.contains_key("128:/image1.png"));
     }
