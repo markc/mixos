@@ -70,6 +70,37 @@ fn lock_pairs($lock)
   return $pairs
 end
 
+fn mix_names($files, $packages, $crates)
+  $names = []
+  for $pkg in $packages.packages
+    if contains($crates, $pkg.name) then
+      push($names, slice(dirname($pkg.manifest_path), len($packages.workspace_root) + 1) .. "/")
+    end
+  end
+  for $file in $files
+    if ends_with($file, ".mix") and (starts_with($file, "tests/") or starts_with($file, "tools/")) then
+      if ends_with($file, "_test.mix") then push($names, $file)
+      else push($names, replace(basename($file), ".mix", "_test.mix")) end
+    end
+  end
+  return sort($names)
+end
+
+fn covered($name, $files)
+  $prefixes = if $name == "offscreen" then ["vendor/egui-wgpu/", "libs/toolkit/", "libs/design/"]
+    elif $name == "latency" then ["services/editd/", "libs/editor/"]
+    elif $name == "relocation" then ["libs/paths/", "share/layout/", "cli/mix-shell/src/layout"]
+    else ["share/layout/", "libs/paths/", "cli/mix-shell/src/layout"] end
+  for $file in $files
+    if $file == "tests/layout_" .. replace($name, "layout-", "") .. "_test.mix" then return true end
+    if $name == "layout-templates" and contains($file, "/units/") then return true end
+    for $prefix in $prefixes
+      if starts_with($file, $prefix) then return true end
+    end
+  end
+  return false
+end
+
 fn select_affected($files, $packages, $graph, $context = nil)
   $selected = []
   $reason = ""

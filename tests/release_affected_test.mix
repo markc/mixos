@@ -84,3 +84,41 @@ $ctx.root_full = false
 check(not $a.select_affected(["Cargo.toml"], $packages, $graph, $ctx).full, "other root manifest sections stay narrow")
 check($a.select_affected(["Cargo.lock"], $packages, $graph).full, "missing lock context fails closed")
 check(deep_eq($a.lock_pairs({package: [{name: "x", version: "1"}, {name: "x", version: "2"}]}), {x: ["1", "2"]}), "multiple locked versions retained")
+check(deep_eq($a.mix_names(["tools/lib/release_affected.mix", "tests/check_test.mix"], $packages, ["a"]), ["libs/a/", "release_affected_test.mix", "tests/check_test.mix"]), "Mix scripts select crate directories and matching tests")
+for $name in ["offscreen", "latency", "relocation", "layout-templates"]
+  check(not $a.covered($name, ["README.md"]), "unrelated stage skips: " .. $name)
+end
+check($a.covered("offscreen", ["vendor/egui-wgpu/src/lib.rs"]), "offscreen coverage")
+check($a.covered("latency", ["services/editd/src/lib.rs"]), "latency coverage")
+check($a.covered("relocation", ["libs/paths/src/lib.rs"]), "relocation coverage")
+check($a.covered("layout-templates", ["services/editd/units/editd.service"]), "unit template coverage")
+
+-- Exercise the actual gate branches without cargo or the gate entry point.
+$gate = read_file(dirname(dirname(realpath($0))) .. "/tools/release_gate.mix")
+$start = "  if $affected == nil or $affected.full then\n"
+$test_branch = $start .. split(split($gate, $start)[1], "  if $affected == nil or $affected.full or $selector.covered(\"offscreen\"")[0]
+$special = "  if $affected == nil or $affected.full or $selector.covered(\"offscreen\"" ..
+  split(split($gate, "  if $affected == nil or $affected.full or $selector.covered(\"offscreen\"")[1], "  $mix =")[0]
+$tmp = "/tmp/release-affected-branches-" .. uuid() .. ".mix"
+try
+  for $selection in [nil, {full: true, crates: []}, {full: false, crates: ["a"]}, {full: false, crates: []}]
+    $setup = "$selector = require(" .. json_encode(dirname(dirname(realpath($0))) .. "/tools/lib/release_affected.mix") .. ")\n" ..
+      "$files = [\"README.md\"]\n$affected = json_parse(" .. json_encode(json_encode($selection)) .. ")\n" ..
+      "fn stage($name, $argv, $timeout) print($name .. \":\" .. json_encode($argv)) end\n"
+    write_file($tmp, $setup .. $test_branch .. $special)
+    $r = run_argv([which("mix"), $tmp])
+    check($r.ok, "gate branch executes: " .. json_encode($selection))
+    if $selection == nil or $selection.full then
+      check(contains($r.stdout, "--workspace") and contains($r.stdout, "offscreen:") and contains($r.stdout, "latency:"), "full stages preserved")
+    else
+      check(not contains($r.stdout, "offscreen:") and not contains($r.stdout, "latency:"), "uncovered expensive stages skip")
+      if len($selection.crates) == 0 then
+        check(contains($r.stdout, "SKIP test (no crate affected)"), "empty gate test selection skips")
+      else
+        check(contains($r.stdout, 'test:["cargo","test","--locked","--no-fail-fast","-p","a"]'), "gate uses exact narrowed cargo arguments")
+      end
+    end
+  end
+finally
+  run_argv_must(["rm", "--", $tmp])
+end
