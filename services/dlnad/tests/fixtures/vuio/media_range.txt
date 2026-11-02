@@ -1,0 +1,10 @@
+HTTP/1.1 206 Partial Content
+content-type: video/x-matroska
+accept-ranges: bytes
+content-disposition: inline; filename="Example.1.mkv"; filename*=UTF-8''Example%2E1%2Emkv
+transfermode.dlna.org: Streaming
+contentfeatures.dlna.org: DLNA.ORG_OP=11;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000
+content-range: bytes 0-99/660074912
+content-length: 100
+date: Sun, 01 Nov 2026 09:35:12 GMT
+
