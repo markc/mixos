@@ -315,7 +315,10 @@ mod tests {
         snapshot.alert("pipeline.clear", &json!({"check":"gate","at":3}));
         assert!(!snapshot.alerts.contains_key("gate"));
         assert_eq!(snapshot.alerts.len(), 1);
-        snapshot.alert("pipeline.alerts", &json!({"alerts":[{"check":"replayed","text":"already active"}],"at":4}));
+        snapshot.alert(
+            "pipeline.alerts",
+            &json!({"alerts":[{"check":"replayed","text":"already active"}],"at":4}),
+        );
         assert_eq!(snapshot.alerts.len(), 1);
         assert!(snapshot.alerts.contains_key("replayed"));
         snapshot.alert("pipeline.alerts", &json!({"alerts":[],"at":5}));

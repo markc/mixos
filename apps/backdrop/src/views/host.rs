@@ -246,8 +246,13 @@ impl<V: View> Host<V> {
         });
         if fallback {
             ui.label(strings.get("train-fallback"));
+            let palette = [ui.visuals().selection.bg_fill, ui.visuals().warn_fg_color, ui.visuals().hyperlink_color, ui.visuals().error_fg_color];
             egui_plot::Plot::new("train-2d")
                 .height((ui.available_height() - 210.).max(80.))
+                .include_x(-8.)
+                .include_x(8.)
+                .include_y(-4.)
+                .include_y(3.)
                 .allow_zoom(false)
                 .allow_drag(false)
                 .allow_scroll(false)
@@ -258,6 +263,7 @@ impl<V: View> Host<V> {
                                 &block.label,
                                 vec![[block.position[0] as f64, block.position[2] as f64]],
                             )
+                            .color(palette[block.tone])
                             .radius(6.),
                         );
                         if block.size[1] >= 1. {
@@ -294,6 +300,7 @@ impl<V: View> Host<V> {
                 .height(140.)
                 .x_axis_label(strings.get("train-time-axis"))
                 .y_axis_label(strings.get("train-value-axis"))
+                .legend(egui_plot::Legend::default())
                 .include_x(-f64::from(frame.snapshot.hours))
                 .include_x(0.)
                 .allow_zoom(false)
