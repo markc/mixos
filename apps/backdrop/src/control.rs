@@ -446,6 +446,18 @@ impl Controller {
                     eprintln!("backdrop: Bus connected");
                 }
                 Msg::Delivery(Delivery::Topic(topic)) => {
+                    if let Some(handle) = &self.handle {
+                        let mut shared = lock(&self.shared);
+                        let mut snapshot = (*shared.live.snapshot).clone();
+                        for event in handle.take_topic_events() {
+                            if let Some(topic @ ("pipeline.alert" | "pipeline.clear")) = event["topic"].as_str()
+                                && let Some(body) = event["body"].as_str().and_then(|b| serde_json::from_str::<Value>(b).ok()) {
+                                snapshot.alert(topic, &body);
+                            }
+                        }
+                        if *shared.live.snapshot != snapshot { shared.live.snapshot = Arc::new(snapshot); }
+                    }
+                    crate::views::notify(&self.shared, false);
                     if matches!(topic.as_str(), "train.landed" | "train.rejected") {
                         let mut shared = lock(&self.shared);
                         shared.live.history_generation =

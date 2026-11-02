@@ -16,7 +16,8 @@ Stage 1 live views (session selection, all outputs):
   in the user's inputd keymap or Mix macros; backdrop handles none.
 
 The train uses `train.queue` and `buildd.queue`, subscribes to `train.landed`,
-`train.rejected`, `buildd.started` and `buildd.done`, and refreshes every ten
+`train.rejected`, `buildd.started`, `buildd.done`, `pipeline.alert` and
+`pipeline.clear`, and refreshes every ten
 seconds as a fallback. Identical snapshots do not redraw. Changes animate for
 600 ms at at most ten frames/second; idle views have no animation timer.
 Compositor frame callbacks gate drawing even when hidden. Each output owns
@@ -88,4 +89,23 @@ starts a private broker, canned Mix train/buildd citizen, and private compd
 on a headless software host. It selects the 3D train, checks multiple actual
 presents, switches to wallpaper and verifies Bus liveness. It retains logs
 and a JSON receipt in its owned `/tmp/backdrop-live-render.*` directory.
-The test touches no live display or VT. The app has no overlay snapshot harness.
+The test touches no live display or VT. `tests/snapshot.rs` captures the
+overlay and 2D fallback at the logical size of a 4K display at scale 2.5.
+
+The compositor sizes the background inside panel exclusive zones (zone 0).
+This also limits wallpaper to that work area. Branches appear in separate,
+scrollable Queue/Gating/Main lists with width-based ellipsis; cube labels
+are reserved for workers and their job labels and elapsed minutes.
+The rejection list shows the newest three returned rejections, with short
+reasons and a count of older rows in the train's bounded recent window.
+The history axes show hours before now and minutes / landings per hour;
+the vertical Now marker is at zero. Ages update on data refresh, without an
+idle animation timer.
+
+`train.queue.gold` supplies `{commit, age_minutes, unlanded}` from the hub's
+installed receipt, counting train landings on main beyond that commit.
+Missing data is explicitly unavailable. Backdrop reads no hub files.
+Watchdog `{check,text,at}` events are retained by check in the local view;
+`pipeline.clear` removes that check. Active alerts appear in a red banner.
+This is an advisory view: it has no approval action. Alerts received before
+backdrop connected require the watchdog to republish them.

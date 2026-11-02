@@ -20,6 +20,8 @@ pub trait View {
 
 #[derive(Clone, PartialEq)]
 pub struct Snapshot {
+    pub worker_minute: u64,
+    pub alerts: std::collections::BTreeMap<String, Value>,
     pub queue: Value,
     pub workers: Value,
     pub error: Option<String>,
@@ -30,6 +32,8 @@ pub struct Snapshot {
 impl Default for Snapshot {
     fn default() -> Self {
         Self {
+            worker_minute: 0,
+            alerts: Default::default(),
             queue: Value::Null,
             workers: Value::Null,
             error: None,
@@ -40,6 +44,13 @@ impl Default for Snapshot {
     }
 }
 impl Snapshot {
+    pub fn alert(&mut self, topic: &str, body: &Value) {
+        let Some(check) = body["check"].as_str().filter(|s| !s.is_empty()) else { return };
+        if !body["at"].is_number() && !body["at"].is_string() { return; }
+        if self.alerts.get(check).is_some_and(|old| old["at"].as_f64().zip(body["at"].as_f64()).is_some_and(|(a,b)| a > b)) { return; }
+        if topic == "pipeline.clear" { self.alerts.remove(check); }
+        else if body["text"].is_string() { self.alerts.insert(check.into(), body.clone()); }
+    }
     pub fn gating_batch(&self) -> Option<&str> {
         self.queue["batches"]
             .as_array()?
@@ -260,6 +271,17 @@ pub use reader::start_reader;
 mod tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn alerts_update_and_clear_by_check() {
+        let mut snapshot = Snapshot::default();
+        snapshot.alert("pipeline.alert", &json!({"check":"gate","text":"stalled","at":2}));
+        snapshot.alert("pipeline.alert", &json!({"check":"gate","text":"old","at":1}));
+        assert_eq!(snapshot.alerts["gate"]["text"], "stalled");
+        snapshot.alert("pipeline.alert", &json!({"check":"gold","text":"behind","at":2}));
+        snapshot.alert("pipeline.clear", &json!({"check":"gate","at":3}));
+        assert!(!snapshot.alerts.contains_key("gate"));
+        assert_eq!(snapshot.alerts.len(), 1);
+    }
     #[test]
     fn selection_is_strict_and_failed_arguments_are_atomic() {
         let mut s = State::default();

@@ -44,4 +44,5 @@ wallpaper = { path = "crates/wallpaper" }
 buildinfo.workspace = true
 
 [dev-dependencies]
+egui_kittest.workspace = true
 citizen = { workspace = true, features = ["testing"] }

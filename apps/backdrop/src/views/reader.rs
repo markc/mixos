@@ -179,6 +179,9 @@ pub fn start_reader(handle: Handle, shared: Arc<Mutex<Shared>>) -> Result<(), St
                         errors.remove("train.gate");
                     }
                     snapshot.hours = hours;
+                    snapshot.worker_minute = if super::train::rows(&snapshot.workers, "running").is_empty() { 0 } else {
+                        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() / 60
+                    };
                     snapshot.error = if errors.is_empty() {
                         None
                     } else {
@@ -191,9 +194,10 @@ pub fn start_reader(handle: Handle, shared: Arc<Mutex<Shared>>) -> Result<(), St
                             s.live.buildd_service.clone(),
                             s.live.hours,
                         ) == key
-                            && *s.live.snapshot != snapshot
                         {
-                            s.live.snapshot = Arc::new(snapshot);
+                            // The controller may have received alerts during a Bus read.
+                            snapshot.alerts = s.live.snapshot.alerts.clone();
+                            if *s.live.snapshot != snapshot { s.live.snapshot = Arc::new(snapshot); }
                         }
                     }
                     notify(&shared, false);
