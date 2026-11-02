@@ -396,6 +396,8 @@ mod tests {
         let mut cache = Cache::default();
         let (a, _) = frame(&mut cache, &budget, 640., 0.);
         let (b, _) = frame(&mut cache, &budget, 640., 1.);
-        for out in [a,b] { assert!(!out.shapes.iter().any(|s| matches!(&s.shape, egui::epaint::Shape::Text(t) if t.galley.job.text == "work/a"))); }
+        for out in [a, b] {
+            assert!(!out.shapes.iter().any(|s| matches!(&s.shape, egui::epaint::Shape::Text(t) if t.galley.job.text == "work/a")));
+        }
     }
 }

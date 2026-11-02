@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-use backdrop::{program::Budget, views::{Snapshot, Train, host::Host}};
+use backdrop::{
+    program::Budget,
+    views::{Snapshot, Train, host::Host},
+};
 use egui_kittest::Harness;
 use serde_json::json;
 use std::{sync::Arc, time::Instant};
@@ -8,6 +11,7 @@ use std::{sync::Arc, time::Instant};
 fn train_legible() {
     let now = Instant::now();
     let mut snapshot = Snapshot {
+        worker_minute: 100,
         queue: json!({"main":"0123456789ab", "gold":{"commit":"abcdef012345", "age_minutes":93,"unlanded":7},
             "batched":[{"branch":"work/exporters"},{"branch":"work/mix-global"}],
             "recent":[{"branch":"work/ci-n1-builtins","state":"landed"},{"branch":"work/backdrop-views","state":"landed"},
@@ -15,11 +19,14 @@ fn train_legible() {
                 {"branch":"work/test","state":"rejected","reason":"red: mix-tests","updated":3},
                 {"branch":"work/infra","state":"rejected","reason":"infra rc 75","updated":2},
                 {"branch":"work/old","state":"rejected","reason":"old","updated":1}]}),
-        workers: json!({"slots":[{"worker":"heavy-a"},{"worker":"heavy-b"},{"worker":"light","light":1}]}),
+        workers: json!({"slots":[{"worker":"heavy-a"},{"worker":"heavy-b"},{"worker":"light","light":1}], "running":[{"worker":"heavy-a", "started":5580, "spec":"{\"label\":\"train-current-batch\"}"}]}),
         history: json!({"landed":[],"batches":[]}),
         ..Default::default()
     };
-    snapshot.alert("pipeline.alert", &json!({"check":"gate","text":"Gate stalled: inspect worker","at":1}));
+    snapshot.alert(
+        "pipeline.alert",
+        &json!({"check":"gate","text":"Gate stalled: inspect worker","at":1}),
+    );
     let mut host = Host::new(Train::default(), None);
     host.visibility(true, now);
     host.event(Arc::new(snapshot), true, now);
