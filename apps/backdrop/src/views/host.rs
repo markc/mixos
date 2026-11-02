@@ -121,9 +121,15 @@ impl<V: View> Host<V> {
         }
         egui::Frame::popup(ui.style()).show(ui, |ui| {
             for alert in frame.snapshot.alerts.values() {
-                egui::Frame::new().fill(ui.visuals().error_bg_color).show(ui, |ui| {
-                    ui.label(egui::RichText::new(alert["text"].as_str().unwrap_or("?")).color(ui.visuals().text_color()).strong());
-                });
+                egui::Frame::new()
+                    .fill(ui.visuals().error_fg_color.gamma_multiply(0.25))
+                    .show(ui, |ui| {
+                        ui.label(
+                            egui::RichText::new(alert["text"].as_str().unwrap_or("?"))
+                                .color(ui.visuals().text_color())
+                                .strong(),
+                        );
+                    });
             }
             ui.heading(strings.get("train-title"));
             ui.label(strings.with(
@@ -144,9 +150,34 @@ impl<V: View> Host<V> {
             ));
             ui.label(strings.get("train-track"));
             let gold = &frame.snapshot.queue["gold"];
-            ui.colored_label(ui.visuals().warn_fg_color, if gold["commit"].is_string() {
-                strings.with("train-gold", &[("sha", &super::train::ellipsis(gold["commit"].as_str().unwrap_or("?"), 13)), ("age", &gold["age_minutes"].as_u64().map_or("?".into(), |n| n.to_string())), ("behind", &gold["unlanded"].as_u64().map_or("?".into(), |n| n.to_string()))])
-            } else { strings.get("train-gold-unavailable") });
+            ui.colored_label(
+                ui.visuals().warn_fg_color,
+                if gold["commit"].is_string() {
+                    strings.with(
+                        "train-gold",
+                        &[
+                            (
+                                "sha",
+                                &super::train::ellipsis(gold["commit"].as_str().unwrap_or("?"), 13),
+                            ),
+                            (
+                                "age",
+                                &gold["age_minutes"]
+                                    .as_u64()
+                                    .map_or("?".into(), |n| n.to_string()),
+                            ),
+                            (
+                                "behind",
+                                &gold["unlanded"]
+                                    .as_u64()
+                                    .map_or("?".into(), |n| n.to_string()),
+                            ),
+                        ],
+                    )
+                } else {
+                    strings.get("train-gold-unavailable")
+                },
+            );
             if let Some(gate) = frame.snapshot.current_gate() {
                 let label = strings.with(
                     "train-gate-stage",
@@ -179,18 +210,39 @@ impl<V: View> Host<V> {
         ui.columns(4, |columns| {
             for (i, key) in ["queued", "batched", "recent"].iter().enumerate() {
                 columns[i].strong(strings.get(["train-queue", "train-batch", "train-main"][i]));
-                egui::ScrollArea::vertical().id_salt(key).max_height(100.).show(&mut columns[i], |ui| {
-                    for row in super::train::rows(&frame.snapshot.queue, key).iter().filter(|r| *key != "recent" || r["state"] == "landed").take(12) {
-                        ui.add(egui::Label::new(row["branch"].as_str().unwrap_or("?")).truncate());
-                    }
-                });
+                egui::ScrollArea::vertical()
+                    .id_salt(key)
+                    .max_height(100.)
+                    .show(&mut columns[i], |ui| {
+                        for row in super::train::rows(&frame.snapshot.queue, key)
+                            .iter()
+                            .filter(|r| *key != "recent" || r["state"] == "landed")
+                            .take(12)
+                        {
+                            ui.add(
+                                egui::Label::new(row["branch"].as_str().unwrap_or("?")).truncate(),
+                            );
+                        }
+                    });
             }
             let rejected = super::train::rejections(&frame.snapshot);
             columns[3].strong(strings.get("train-rejections"));
             for row in rejected.iter().take(3) {
-                columns[3].add(egui::Label::new(format!("{} · {}", super::train::ellipsis(row["branch"].as_str().unwrap_or("?"), 28), super::train::reason(row))).truncate());
+                columns[3].add(
+                    egui::Label::new(format!(
+                        "{} · {}",
+                        super::train::ellipsis(row["branch"].as_str().unwrap_or("?"), 28),
+                        super::train::reason(row)
+                    ))
+                    .truncate(),
+                );
             }
-            if rejected.len() > 3 { columns[3].label(strings.with("train-more", &[("count", &(rejected.len()-3).to_string())])); }
+            if rejected.len() > 3 {
+                columns[3].label(strings.with(
+                    "train-more",
+                    &[("count", &(rejected.len() - 3).to_string())],
+                ));
+            }
         });
         if fallback {
             ui.label(strings.get("train-fallback"));
@@ -200,7 +252,11 @@ impl<V: View> Host<V> {
                 .allow_drag(false)
                 .allow_scroll(false)
                 .show(ui, |plot| {
-                    for block in frame.scene.iter().filter(|b| !b.label.is_empty() && b.size[1] >= 1.) {
+                    for block in frame
+                        .scene
+                        .iter()
+                        .filter(|b| !b.label.is_empty())
+                    {
                         plot.points(
                             egui_plot::Points::new(
                                 &block.label,
@@ -208,14 +264,14 @@ impl<V: View> Host<V> {
                             )
                             .radius(6.),
                         );
-                        plot.text(egui_plot::Text::new(
+                        if block.size[1] >= 1. { plot.text(egui_plot::Text::new(
                             &block.label,
                             egui_plot::PlotPoint::new(
                                 block.position[0] as f64,
                                 block.position[2] as f64 + 0.3,
                             ),
                             &block.label,
-                        ));
+                        )); }
                     }
                 });
         }

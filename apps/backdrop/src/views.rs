@@ -45,11 +45,25 @@ impl Default for Snapshot {
 }
 impl Snapshot {
     pub fn alert(&mut self, topic: &str, body: &Value) {
-        let Some(check) = body["check"].as_str().filter(|s| !s.is_empty()) else { return };
-        if !body["at"].is_number() && !body["at"].is_string() { return; }
-        if self.alerts.get(check).is_some_and(|old| old["at"].as_f64().zip(body["at"].as_f64()).is_some_and(|(a,b)| a > b)) { return; }
-        if topic == "pipeline.clear" { self.alerts.remove(check); }
-        else if body["text"].is_string() { self.alerts.insert(check.into(), body.clone()); }
+        let Some(check) = body["check"].as_str().filter(|s| !s.is_empty()) else {
+            return;
+        };
+        if !body["at"].is_number() && !body["at"].is_string() {
+            return;
+        }
+        if self.alerts.get(check).is_some_and(|old| {
+            old["at"]
+                .as_f64()
+                .zip(body["at"].as_f64())
+                .is_some_and(|(a, b)| a > b)
+        }) {
+            return;
+        }
+        if topic == "pipeline.clear" {
+            self.alerts.remove(check);
+        } else if body["text"].is_string() {
+            self.alerts.insert(check.into(), body.clone());
+        }
     }
     pub fn gating_batch(&self) -> Option<&str> {
         self.queue["batches"]
@@ -274,10 +288,19 @@ mod tests {
     #[test]
     fn alerts_update_and_clear_by_check() {
         let mut snapshot = Snapshot::default();
-        snapshot.alert("pipeline.alert", &json!({"check":"gate","text":"stalled","at":2}));
-        snapshot.alert("pipeline.alert", &json!({"check":"gate","text":"old","at":1}));
+        snapshot.alert(
+            "pipeline.alert",
+            &json!({"check":"gate","text":"stalled","at":2}),
+        );
+        snapshot.alert(
+            "pipeline.alert",
+            &json!({"check":"gate","text":"old","at":1}),
+        );
         assert_eq!(snapshot.alerts["gate"]["text"], "stalled");
-        snapshot.alert("pipeline.alert", &json!({"check":"gold","text":"behind","at":2}));
+        snapshot.alert(
+            "pipeline.alert",
+            &json!({"check":"gold","text":"behind","at":2}),
+        );
         snapshot.alert("pipeline.clear", &json!({"check":"gate","at":3}));
         assert!(!snapshot.alerts.contains_key("gate"));
         assert_eq!(snapshot.alerts.len(), 1);

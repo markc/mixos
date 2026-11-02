@@ -3,3 +3,5 @@
 pub mod control;
 pub mod program;
 pub mod views;
+/// Maximum accepted wallpaper document size.
+pub const MAX_DOCUMENT: u64 = 64 * 1024;

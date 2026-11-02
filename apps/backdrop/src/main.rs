@@ -7,7 +7,7 @@
 //! default; the Bus (`backdrop.set`) replaces the document. `--probe` runs the
 //! regression probe instead (`probe.rs`).
 
-use backdrop::{control, program};
+use backdrop::{MAX_DOCUMENT, control, program};
 mod probe;
 
 use std::fs::OpenOptions;
@@ -32,7 +32,6 @@ Usage: backdrop [OPTIONS]\n\
 Bus: backdrop.ping, backdrop.state, backdrop.set, backdrop.next (docs/backdrop/README.md).";
 
 /// The largest document read (strict data: a few kilobytes in practice).
-const MAX_DOCUMENT: u64 = 64 * 1024;
 
 #[derive(Debug, Default)]
 struct Args {

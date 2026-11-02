@@ -33,20 +33,42 @@ pub fn decoded(value: &Value) -> Value {
         .unwrap_or_else(|| value.clone())
 }
 pub fn ellipsis(value: &str, limit: usize) -> String {
-    if value.chars().count() <= limit { value.into() }
-    else { value.chars().take(limit.saturating_sub(1)).chain(['…']).collect() }
+    if value.chars().count() <= limit {
+        value.into()
+    } else {
+        value
+            .chars()
+            .take(limit.saturating_sub(1))
+            .chain(['…'])
+            .collect()
+    }
 }
 pub fn rejections(snapshot: &super::Snapshot) -> Vec<&Value> {
-    let mut rejected: Vec<_> = rows(&snapshot.queue, "recent").iter().filter(|r| r["state"] == "rejected").collect();
-    rejected.sort_by(|a,b| b["updated"].as_f64().unwrap_or(0.).total_cmp(&a["updated"].as_f64().unwrap_or(0.)));
+    let mut rejected: Vec<_> = rows(&snapshot.queue, "recent")
+        .iter()
+        .filter(|r| r["state"] == "rejected")
+        .collect();
+    rejected.sort_by(|a, b| {
+        b["updated"]
+            .as_f64()
+            .unwrap_or(0.)
+            .total_cmp(&a["updated"].as_f64().unwrap_or(0.))
+    });
     rejected
 }
 pub fn reason(row: &Value) -> String {
     let raw = row["reason"].as_str().unwrap_or("?");
-    if raw.contains("conflict") { "conflict".into() }
-    else if raw.contains("75") { "infra rc 75".into() }
-    else if raw.contains("red") { "red: release gate".into() }
-    else { ellipsis(raw, 40) }
+    if raw.contains("conflict") {
+        "conflict".into()
+    } else if raw.contains("75") {
+        "infra rc 75".into()
+    } else if raw.starts_with("red:") {
+        ellipsis(raw, 40)
+    } else if raw.contains("red") {
+        "red: release gate".into()
+    } else {
+        ellipsis(raw, 40)
+    }
 }
 impl Train {
     /// Pure snapshot → world-space scene. No GPU, file or Bus access.
@@ -81,9 +103,7 @@ impl Train {
         ] {
             for (i, row) in rows(&self.snapshot.queue, key)
                 .iter()
-                .filter(|row| {
-                    key != "recent" || row["state"] == "landed"
-                })
+                .filter(|row| key != "recent" || row["state"] == "landed")
                 .take(12)
                 .enumerate()
             {
@@ -107,7 +127,13 @@ impl Train {
             }
         }
         for (i, row) in rejections(&self.snapshot).into_iter().take(3).enumerate() {
-            out.push(Block { position: [4. + i as f32, 0.35, 2.], size: [0.48, 0.6, 0.75], tone: 3, glow: 0., label: text(row, "branch") });
+            out.push(Block {
+                position: [4. + i as f32, 0.35, 2.],
+                size: [0.48, 0.6, 0.75],
+                tone: 3,
+                glow: 0.,
+                label: text(row, "branch"),
+            });
         }
         let mut seen = std::collections::BTreeSet::new();
         for slot in rows(&self.snapshot.workers, "slots") {
@@ -121,13 +147,22 @@ impl Train {
             }
             let jobs: Vec<_> = rows(&self.snapshot.workers, "running")
                 .iter()
-                .filter(|job| job["worker"] == slot["worker"]).collect();
+                .filter(|job| job["worker"] == slot["worker"])
+                .collect();
             let busy = !jobs.is_empty();
-            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs_f64();
-            let mut label = if slot["light"] == 1 { "light".into() } else { name };
+            let now = self.snapshot.worker_minute as f64 * 60.;
+            let mut label = if slot["light"] == 1 {
+                "light".into()
+            } else {
+                name
+            };
             for job in jobs {
                 let spec = decoded(&job["spec"]);
-                label.push_str(&format!("\n{} · {:.0} min", ellipsis(spec["label"].as_str().unwrap_or("?"), 28), (now - job["started"].as_f64().unwrap_or(now)).max(0.) / 60.));
+                label.push_str(&format!(
+                    "\n{} · {:.0} min",
+                    ellipsis(spec["label"].as_str().unwrap_or("?"), 28),
+                    (now - job["started"].as_f64().unwrap_or(now)).max(0.) / 60.
+                ));
             }
             let load = decoded(&slot["snapshot"])["load1"].as_f64().unwrap_or(0.) as f32;
             out.push(Block {
@@ -203,7 +238,10 @@ mod tests {
     use serde_json::json;
     #[test]
     fn rejection_order_and_unicode_truncation_are_bounded() {
-        let snapshot = super::super::Snapshot { queue: json!({"recent":[{"state":"rejected","branch":"old","updated":1},{"state":"landed","updated":9},{"state":"rejected","branch":"new","updated":4}]}), ..Default::default() };
+        let snapshot = super::super::Snapshot {
+            queue: json!({"recent":[{"state":"rejected","branch":"old","updated":1},{"state":"landed","updated":9},{"state":"rejected","branch":"new","updated":4}]}),
+            ..Default::default()
+        };
         let rows = rejections(&snapshot);
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0]["branch"], "new");
