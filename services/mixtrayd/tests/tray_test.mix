@@ -1,0 +1,93 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+$t = require("../scripts/lib/tray.mix")
+$checks = {n: 0}
+fn check($name, $ok)
+  global $checks
+  if not $ok then raise("TEST", $name) end
+  $checks.n = $checks.n + 1
+  print("PASS " .. $name)
+end
+fn refuses($name, $f, $contains)
+  $message = nil
+  try $f() catch $m $message = $m end
+  check($name, $message != nil and contains($message, $contains))
+end
+check("ssh probe request empty", deep_eq($t.ssh_request(["probe"]), {action: "probe", ids: []}))
+check("ssh probe request ids", deep_eq($t.ssh_request(["probe", "alpha", "beta"]).ids, ["alpha", "beta"]))
+check("ssh create request", deep_eq($t.ssh_request(["create", "alpha", "192.0.2.10", "2222", "root", "k"]), {action: "create", name: "alpha", hostname: "192.0.2.10", port: 2222, user: "root", key: "k"}))
+for $action in ["trash", "restore", "purge"] check("ssh " .. $action .. " request", deep_eq($t.ssh_request([$action, "alpha"]), {action: $action, id: "alpha"})) end
+for $a in [["create", "alpha", "192.0.2.10", "x", "root", "k"], ["trash"], ["connect", "alpha"]] check("bad ssh request", $t.ssh_request($a) == nil) end
+check("checked request", deep_eq($t.control_check({unit: "noded.service", action: "restart"}), {unit: "noded.service", action: "restart"}))
+for $unit in ["hostd.service", "mixtrayd.service"] refuses("protected " .. $unit, fn() = $t.control_check({unit: $unit, action: "stop"}), "not controlled") end
+refuses("invalid action", fn() = $t.control_check({unit: "webd.service", action: "kill"}), "action must")
+check("start accepted extra ignored", deep_eq($t.control_check({unit: "webd.service", action: "start", x: 1}), {unit: "webd.service", action: "start"}))
+refuses("missing unit", fn() = $t.control_check({action: "start"}), "missing field")
+for $name in $t.WATCHED check("plain service name", ends_with($name, ".service") and not contains($name, "@")) end
+check("systemd dot escaping", $t.object_path("noded.service") == "/org/freedesktop/systemd1/unit/noded_2eservice")
+check("systemd instance escaping", $t.object_path("getty@tty1.service") == "/org/freedesktop/systemd1/unit/getty_40tty1_2eservice")
+check("systemd dash escaping", $t.object_path("user-runtime-dir.service") == "/org/freedesktop/systemd1/unit/user_2druntime_2ddir_2eservice")
+check("mail controllable", $t.controllable("maild.service") and not $t.controllable("hostd.service"))
+check("manager scopes", len(filter($t.WATCHED, fn($n) = $n != "mixtrayd.service")) == 5 and contains($t.WATCHED, "mixtrayd.service"))
+check("wait equality only", $t.must_wait(4, 4) and not $t.must_wait(3, 4) and not $t.must_wait(9, 4) and not $t.must_wait(nil, 4))
+check("routing view", deep_eq($t.peer_list({authority: {epoch: 21, routing_view: [{name: "alpha"}, {name: "beta"}]}}), [{name: "alpha"}, {name: "beta"}]))
+check("peer classes", deep_eq($t.peer_list({authority: {routing_view: [{class: "active-bus", name: "alpha"}, {class: "tombstoned", name: "gamma"}, {class: "transport-only", name: "delta"}]}}), [{class: "active-bus", name: "alpha"}]))
+check("bare peers", deep_eq($t.peer_list([{name: "x"}]), [{name: "x"}]) and deep_eq($t.peer_list({unexpected: true}), []))
+$fields = $t.parse_host("alpha", "# alpha\nHost alpha\n  Hostname 192.0.2.10\n  Port 2222\n  User admin\n  IdentityFile \~/.ssh/keys/k\n  User other\n  ProxyJump beta\n")
+check("host fields first wins", deep_eq($fields, {hostname: "192.0.2.10", port: 2222, user: "admin", identity: '~/.ssh/keys/k'}))
+check("host defaults", deep_eq($t.parse_host("beta", "Host beta\n"), {hostname: "beta", port: 22, user: "", identity: ""}))
+for $text in ["Host beta\n", "Host alpha\nHost alpha\n", "Hostname x\n", "Host alpha\nPort 0\n", "Host alpha\nMatch all\n"] refuses("bad fragment", fn() = $t.parse_host("alpha", $text), "") end
+for $line in ["Include \~/.ssh/hosts/*\n", "include=hosts/*\n", "Include /home/user/.ssh/hosts/* other/*\n"] check("include spelling", $t.includes_hosts($line)) end
+check("include ignores comments", not $t.includes_hosts("Include \~/.ssh/conf.d/*\n# Include \~/.ssh/hosts/*\n"))
+for $id in ["-oProxyCommand", "a..b"] refuses("invalid id", fn() = $t.canonical_id($id), "invalid name") end
+check("valid id", $t.canonical_id("web-1.example") == "web-1.example")
+refuses("hostname injection", fn() = $t.validate_hostname("-oProxyCommand=x"), "hostname:")
+check("IPv6", $t.validate_hostname("2001:db8::1") == "2001:db8::1")
+check("default root", $t.user_name("") == "root")
+refuses("bad user", fn() = $t.user_name("a b"), "user:")
+check("default port", $t.port(0) == 22)
+refuses("large port", fn() = $t.port(70000), "port must")
+check("fingerprint strips comment", $t.concise_fingerprint("256 SHA256:abc user@alpha (ED25519)\n") == "SHA256:abc (ED25519)")
+check("fingerprint bare", $t.concise_fingerprint("256 SHA256:abc") == "SHA256:abc")
+for $rel in ["config", "hosts/alpha", "keys/k.pub"] check("relevant " .. $rel, $t.relevant("/home/user/.ssh", "/home/user/.ssh/" .. $rel)) end
+for $rel in ["known_hosts", "mux/sock"] check("irrelevant " .. $rel, not $t.relevant("/home/user/.ssh", "/home/user/.ssh/" .. $rel)) end
+$root = "/tmp/mixtrayd-test-" .. uuid() .. "/.ssh"
+mkdir($root .. "/hosts"); mkdir($root .. "/keys")
+try
+  write_file($root .. "/config", "Include hosts/*\n")
+  $create = {action: "create", name: "alpha", hostname: "192.0.2.10", port: 2222, user: "root", key: "k"}
+  refuses("missing key", fn() = $t.ssh_action($root, $create), "not in \~/.ssh/keys")
+  write_file($root .. "/keys/k", "private")
+  write_file($root .. "/config", "Host *\n")
+  refuses("missing include", fn() = $t.ssh_action($root, $create), "Include")
+  write_file($root .. "/config", "Include hosts/*\n")
+  check("created reply", deep_eq($t.ssh_action($root, $create), {created: "alpha", path: $root .. "/hosts/alpha"}))
+  check("fragment exact", read_file($root .. "/hosts/alpha") == $t.fragment("alpha", "192.0.2.10", 2222, "root", "k"))
+  check("owner only mode", stat($root .. "/hosts/alpha").perm == 0o600)
+  refuses("duplicate host", fn() = $t.ssh_action($root, $create), "already exists")
+  $tab = $t.ssh_tab($root, {})
+  check("scanned created host", $tab.hosts[0].id == "alpha" and $tab.hosts[0].port == 2222 and $tab.hosts[0].warning == "" and $tab.included)
+  check("trash reply", deep_eq($t.ssh_action($root, {action: "trash", id: "alpha"}), {trashed: "alpha"}))
+  check("trash scan", not exists($root .. "/hosts/alpha") and len($t.ssh_tab($root, {}).hosts) == 0 and $t.ssh_tab($root, {}).trash[0].id == "alpha")
+  refuses("purge absent", fn() = $t.ssh_action($root, {action: "purge", id: "beta"}), "not in the trash")
+  check("restore reply", deep_eq($t.ssh_action($root, {action: "restore", id: "alpha"}), {restored: "alpha"}))
+  check("restored exists", exists($root .. "/hosts/alpha"))
+  refuses("never purge live", fn() = $t.ssh_action($root, {action: "purge", id: "alpha"}), "not in the trash")
+  write_file($root .. "/hosts/.trashed-alpha", "Host alpha\n  Port 2\n")
+  refuses("trash collision", fn() = $t.ssh_action($root, {action: "trash", id: "alpha"}), "already exists")
+  check("collision preserves both", exists($root .. "/hosts/alpha") and read_file($root .. "/hosts/.trashed-alpha") == "Host alpha\n  Port 2\n")
+  remove($root .. "/hosts/.trashed-alpha")
+  $t.ssh_action($root, {action: "trash", id: "alpha"})
+  check("purged reply", deep_eq($t.ssh_action($root, {action: "purge", id: "alpha"}), {purged: "alpha"}))
+  check("purged gone", not exists($root .. "/hosts/.trashed-alpha"))
+  write_file($root .. "/hosts/.shared", "Host *\n")
+  write_file($root .. "/hosts/beta", "Host gamma\n")
+  write_file($root .. "/hosts/alpha", "Host alpha\n IdentityFile /nonexistent/key\n")
+  $tab = $t.ssh_tab($root, {})
+  check("scan sorted and skips dotfiles", len($tab.hosts) == 2 and $tab.hosts[0].id == "alpha")
+  check("missing identity warns", contains($tab.hosts[0].warning, "does not exist"))
+  check("invalid fragment shown", contains($tab.hosts[1].error, "gamma"))
+finally
+  remove_dir(dirname($root))
+end
+print(to_string($checks.n) .. " assertions passed")

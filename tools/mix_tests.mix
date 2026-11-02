@@ -69,6 +69,8 @@ $scripts = [
   "tools/gold_release_test.mix",
   "services/bridged/tests/bridge_core_test.mix",
   "services/bridged/tests/bridged_test.mix",
+  "services/mixtrayd/tests/tray_test.mix",
+  "services/mixtrayd/tests/mixtrayd_test.mix",
   "services/clipd/tests/clipboard_test.mix",
   "services/clipd/tests/clipd_test.mix",
   "services/exportd/tests/cosmic_test.mix",

@@ -1,0 +1,238 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- Shared wire validation and SSH fragment operations. No handlers here.
+$WATCHED = ["noded.service", "hostd.service", "maild.service", "monitord.service", "webd.service", "mixtrayd.service"]
+fn split_ws($text)
+  return map(re_find($text, "\\S+"), fn($m) = $m.match)
+end
+fn fail($message)
+  raise("TRAY", $message)
+end
+fn controllable($name)
+  return contains($WATCHED, $name) and not contains(["hostd.service", "mixtrayd.service"], $name)
+end
+fn object_path($name)
+  $out = "/org/freedesktop/systemd1/unit/"
+  for $b in string_to_bytes($name)
+    $c = chr($b)
+    $out = $out .. (if re_match($c, "^[A-Za-z0-9]$") then $c else "_" .. lower(sprintf("%02x", $b)) end)
+  end
+  return $out
+end
+fn peer_list($value)
+  if type($value) != "list" and type($value) != "map" then return [] end
+  $authority = if type($value) == "map" then $value.authority else nil end
+  $list = if type($value) == "list" then $value elif type($authority) == "map" then $authority.routing_view ?? [] else [] end
+  if type($list) != "list" then return [] end
+  return filter($list, fn($p) = type($p) != "map" or type($p.class) != "string" or $p.class == "active-bus")
+end
+fn must_wait($since, $rev)
+  return type($since) == "number" and $since >= 0 and floor($since) == $since and $since == $rev
+end
+fn field($b, $key)
+  if type($b) != "map" or type($b[$key]) != "string" then fail("missing string field " .. json_encode($key)) end
+  return $b[$key]
+end
+fn canonical_id($id)
+  if not re_match($id, "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$") or contains($id, "..") then
+    fail("invalid name " .. json_encode($id) .. ": use 1-64 of A-Z a-z 0-9 . _ -, starting with a letter or digit")
+  end
+  return $id
+end
+fn identity($label, $value)
+  try return canonical_id(trim($value)) catch $m fail($label .. ": " .. $m) end
+end
+fn validate_hostname($value)
+  $v = trim($value)
+  if not re_match($v, "^[A-Za-z0-9.:][A-Za-z0-9.:-]*$") then fail("hostname: use only A-Z a-z 0-9 . : -, not starting with -") end
+  return $v
+end
+fn user_name($value)
+  $v = trim($value)
+  if $v == "" then $v = "root" end
+  if not re_match($v, "^[A-Za-z_][A-Za-z0-9_.-]*$") then fail("user: start with a letter or _, then only A-Z a-z 0-9 _ . -") end
+  return $v
+end
+fn port($value)
+  if type($value) != "number" or floor($value) != $value or $value < 0 or $value > 65535 then fail("port must be 1-65535") end
+  return if $value == 0 then 22 else $value end
+end
+fn directive($line)
+  $parts = re_find(trim($line), "^([^\\s=]+)[\\s=]*(.*)$")
+  if len($parts) == 0 then return ["", ""] end
+  return [lower($parts[0].groups[0]), trim($parts[0].groups[1])]
+end
+fn includes_hosts($text)
+  for $line in lines($text)
+    $d = directive($line)
+    if $d[0] == "include" then
+      for $word in split_ws($d[1])
+        if contains(['~/.ssh/hosts/*', "hosts/*"], $word) or ends_with($word, "/.ssh/hosts/*") then return true end
+      end
+    end
+  end
+  return false
+end
+fn included($root)
+  return is_file($root .. "/config") and includes_hosts(read_file($root .. "/config"))
+end
+fn parse_host($id, $text)
+  $aliases = []
+  $fields = {}
+  $number = 0
+  for $raw in lines($text)
+    $number = $number + 1
+    $d = directive($raw)
+    $key = $d[0]
+    $value = $d[1]
+    if $key == "host" then push($aliases, $value)
+    elif $key == "match" then fail("line " .. $number .. ": Match blocks are not supported in a host file")
+    elif contains(["hostname", "port", "user", "identityfile"], $key) and $fields[$key] == nil then
+      if $key == "port" then
+        if not re_match($value, "^[+]?[0-9]+$") or to_number($value) < 1 or to_number($value) > 65535 then fail("line " .. $number .. ": Port must be 1-65535") end
+        $fields[$key] = to_number($value)
+      else $fields[$key] = $value end
+    end
+  end
+  if len($aliases) == 0 then fail("no Host line") end
+  if len($aliases) > 1 then fail("more than one Host line") end
+  if $aliases[0] != $id then fail("Host line names " .. json_encode($aliases[0]) .. ", expected " .. json_encode($id)) end
+  return {hostname: $fields.hostname ?? $id, port: $fields.port ?? 22, user: $fields.user ?? "", identity: $fields.identityfile ?? ""}
+end
+fn fragment($name, $host, $port, $user, $key)
+  return "Host " .. $name .. "\n  Hostname " .. $host .. "\n  Port " .. $port .. "\n  User " .. $user .. '\n  IdentityFile ~/.ssh/keys/' .. $key .. "\n"
+end
+fn expand_home($path, $root)
+  if starts_with($path, '~/.ssh/') then return $root .. "/" .. slice($path, 7) end
+  if starts_with($path, '~/') then return dirname($root) .. "/" .. slice($path, 2) end
+  return $path
+end
+fn concise_fingerprint($text)
+  $words = split_ws($text)
+  if len($words) < 2 then return trim($text) end
+  $last = $words[len($words) - 1]
+  return $words[1] .. (if len($words) > 2 and starts_with($last, "(") then " " .. $last else "" end)
+end
+fn probe_failure($code, $stderr)
+  $ls = filter(lines($stderr), fn($line) = trim($line) != "")
+  if len($ls) > 0 then return slice(trim($ls[len($ls) - 1]), 0, 300) end
+  return if $code == nil then "ssh was killed" else "ssh exited " .. $code end
+end
+fn relevant($root, $path)
+  if not starts_with($path, $root .. "/") then return false end
+  return contains(["config", "hosts", "keys"], split(slice($path, len($root) + 1), "/")[0])
+end
+fn regular($path)
+  return exists($path, {follow_symlinks: false}) and stat($path, {follow_symlinks: false}).is_file
+end
+fn read_host($root, $id, $path)
+  $h = {id: $id, path: $path, hostname: "", port: 22, user: "", identity: "", error: "", warning: ""}
+  try
+    if not regular($path) then fail("not a regular file") end
+    $h = merge($h, parse_host($id, read_file($path)))
+    if $h.identity != "" and not exists(expand_home($h.identity, $root)) then $h.warning = "IdentityFile " .. $h.identity .. " does not exist" end
+  catch $m
+    $h.error = $m
+  end
+  return $h
+end
+fn hosts($root)
+  $out = {hosts: [], trash: []}
+  if not is_dir($root .. "/hosts") then return $out end
+  for $entry in sort(ls($root .. "/hosts"))
+    $name = basename($entry)
+    $trashed = starts_with($name, ".trashed-")
+    $id = if $trashed then slice($name, 9) else $name end
+    try canonical_id($id) catch $m continue end
+    $key = if $trashed then "trash" else "hosts" end
+    $out[$key] = push($out[$key], read_host($root, $id, $root .. "/hosts/" .. $name))
+  end
+  $out.hosts = sort_by($out.hosts, fn($h) = $h.id)
+  $out.trash = sort_by($out.trash, fn($h) = $h.id)
+  return $out
+end
+fn ssh_tab($root, $probes)
+  if not is_dir($root) then return {hosts: [], trash: [], keys: [], included: false, error: $root .. " does not exist"} end
+  $tab = {hosts: [], trash: [], keys: [], hosts_dir: $root .. "/hosts", included: included($root), probing: len(filter(values($probes), fn($p) = $p.status == "probing"))}
+  $errors = []
+  try $tab = merge($tab, hosts($root)) catch $m push($errors, $root .. "/hosts: " .. $m) end
+  for $i = 0 to len($tab.hosts) - 1
+    $id = $tab.hosts[$i].id
+    if $probes[$id] != nil then $tab.hosts[$i].probe = $probes[$id] end
+  end
+  try
+    if is_dir($root .. "/keys") then
+      for $entry in sort(ls($root .. "/keys"))
+        $id = basename($entry)
+        try canonical_id($id) catch $m continue end
+        $path = $root .. "/keys/" .. $id
+        if ends_with($id, ".pub") or not regular($path) then continue end
+        $k = {id: $id, fingerprint: "", error: ""}
+        if not exists($path .. ".pub") then $k.error = "no matching .pub file"
+        else
+          $r = run_argv(["ssh-keygen", "-lf", $path .. ".pub"])
+          if $r.ok then $k.fingerprint = concise_fingerprint($r.stdout) else $k.error = trim($r.stderr) end
+        end
+        $tab.keys = push($tab.keys, $k)
+      end
+    end
+  catch $m push($errors, $root .. "/keys: " .. $m) end
+  if not $tab.included then $tab.warning = '~/.ssh/config does not Include ~/.ssh/hosts/*, so ssh ignores these hosts' end
+  if len($errors) > 0 then $tab.error = join($errors, "; ") end
+  return $tab
+end
+fn ssh_action($root, $b)
+  $action = field($b, "action")
+  if $action == "create" then
+    $name = identity("name", field($b, "name"))
+    $host = validate_hostname(field($b, "hostname"))
+    $port = port(if type($b.port) == "number" and $b.port >= 0 and floor($b.port) == $b.port then $b.port else 22 end)
+    $user = user_name(if type($b.user) == "string" then $b.user else "" end)
+    $key = identity("key", field($b, "key"))
+    if not included($root) then fail('~/.ssh/config does not Include ~/.ssh/hosts/*') end
+    if not is_file($root .. "/keys/" .. $key) then fail("key " .. json_encode($key) .. ' is not in ~/.ssh/keys') end
+    if exists($root .. "/hosts/.trashed-" .. $name) then fail($name .. " is in the trash; restore or purge it first") end
+    mkdir($root .. "/hosts")
+    $path = $root .. "/hosts/" .. $name
+    try write_new($path, fragment($name, $host, $port, $user, $key), 0o600)
+    catch $m
+      if exists($path, {follow_symlinks: false}) then fail("SSH host " .. $name .. " already exists") end
+      fail($path .. ": " .. $m)
+    end
+    return {created: $name, path: $path}
+  end
+  if contains(["trash", "restore", "purge"], $action) then
+    $id = canonical_id(field($b, "id"))
+    $from = $root .. "/hosts/" .. (if $action == "trash" then "" else ".trashed-" end) .. $id
+    if not exists($from, {follow_symlinks: false}) then fail($id .. " is not " .. (if $action == "trash" then "a live SSH host" else "in the trash" end)) end
+    if not regular($from) then fail($from .. " is not a regular file") end
+    if $action == "purge" then remove($from); return {purged: $id} end
+    $to = $root .. "/hosts/" .. (if $action == "trash" then ".trashed-" else "" end) .. $id
+    -- ln provides the oracle's link-then-unlink, atomic no-clobber move.
+    $r = run_argv(["ln", "-T", "--", $from, $to])
+    if not $r.ok then
+      if exists($to, {follow_symlinks: false}) then fail($to .. " already exists") end
+      fail("moving " .. $id .. ": " .. trim($r.stderr))
+    end
+    remove($from)
+    return if $action == "trash" then {trashed: $id} else {restored: $id} end
+  end
+  fail("unknown ssh action " .. json_encode($action) .. "; expected create, trash, restore, purge or probe")
+end
+fn control_check($b)
+  if type($b) != "map" then fail("bad request: invalid type: null, expected struct Request") end
+  for $key in ["unit", "action"]
+    if not has_key($b, $key) then fail("bad request: missing field `" .. $key .. "`") end
+    if type($b[$key]) != "string" then fail("bad request: invalid type: " .. json_encode($b[$key]) .. ", expected a string") end
+  end
+  if not contains(["start", "stop", "restart"], $b.action) then fail("action must be start, stop or restart, not " .. $b.action) end
+  if not controllable($b.unit) then fail($b.unit .. " is not controlled from MixTray") end
+  return {unit: $b.unit, action: $b.action}
+end
+fn ssh_request($a)
+  if len($a) == 0 then return nil end
+  if $a[0] == "probe" then return {action: "probe", ids: slice($a, 1)} end
+  if $a[0] == "create" and len($a) == 6 and re_match($a[3], "^[+]?[0-9]+$") then return {action: "create", name: $a[1], hostname: $a[2], port: to_number($a[3]), user: $a[4], key: $a[5]} end
+  if contains(["trash", "restore", "purge"], $a[0]) and len($a) == 2 then return {action: $a[0], id: $a[1]} end
+  return nil
+end

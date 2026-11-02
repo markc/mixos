@@ -1,0 +1,37 @@
+#!/usr/bin/env mix
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- version: 0.1.2
+-- version-flag: script
+$base = mixos_path("prefix", "lib/mixtrayd")
+if is_file(dirname(script_path()) .. "/lib/tray.mix") then $base = dirname(script_path()) end
+$tray = require($base .. "/lib/tray.mix")
+$a = args()
+$action = $a[0] ?? "serve"
+if $action == "--version" then print("mixtrayd " .. script_version().version); exit(0) end
+if $action == "serve" then
+  $r = run_argv([mixos_path("prefix", "bin/mix"), "--serve", $base .. "/mixtrayd.mix", "--name", "mixtrayd"], {timeout: 0, stdout: "inherit", stderr: "inherit"})
+  exit($r.exit_code)
+end
+$body = nil
+if $action == "snapshot" then $body = nil
+elif $action == "wait" then
+  if len($a) < 2 or not re_match($a[1], "^[+]?[0-9]+$") then eprint("Error: usage: mixtrayd wait REVISION"); exit(1) end
+  $body = {since: to_number($a[1])}
+elif $action == "control" then
+  if len($a) < 3 then eprint("Error: usage: mixtrayd control UNIT start|stop|restart"); exit(1) end
+  $body = {unit: $a[1], action: $a[2]}
+elif $action == "ssh" then
+  $body = $tray.ssh_request(slice($a, 1))
+  if $body == nil then eprint("Error: usage: mixtrayd ssh probe [ID...] | create NAME HOSTNAME PORT USER KEY | trash ID | restore ID | purge ID"); exit(1) end
+else
+  eprint("Error: unknown argument " .. json_encode($action) .. "; usage: mixtrayd [serve|snapshot|wait REV|control UNIT ACTION|ssh ACTION ...]")
+  exit(1)
+end
+$command = "mixtrayd." .. $action
+$encoded = json_encode($body)
+send mixtrayd $command body=$encoded timeout=90
+if $rc != 0 then eprint("Error: " .. to_string($result)); exit(1) end
+$value = $result
+if type($value) == "string" then $value = json_parse($value) end
+print(json_encode($value, true))

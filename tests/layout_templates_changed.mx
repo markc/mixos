@@ -2,6 +2,14 @@
 # Intentional default-layout changes since relocation baseline f91c2a1f.
 # Hashes cover the rendered bytes, checked by tests/layout_templates_test.mix.
 {
+  "services/mixtrayd/scripts/cli.mix": {
+    "reason": "preserve the tray CLI as an executable Mix entry point",
+    "sha256": "412b6d87c585348b16a1f370268037ac8fb7a582e6c44c16c0bece6cf93f4df7"
+  },
+  "services/mixtrayd/units/mixtrayd.service": {
+    "reason": "run mixtrayd as a Mix citizen in the user unit",
+    "sha256": "29871201b9490bd67deb0ed5b2ab45e21784e2e2e28095e77bdb7ef626ae9613"
+  },
   "services/exportd/units/exportd-cosmic@.service": {
     "reason": "add the component-owned COSMIC settings exporter unit",
     "sha256": "11c38e9506a546e0232abd30f7c0054d265c54f072bdd13925fffdd026ec5c6e"

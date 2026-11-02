@@ -1,0 +1,127 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- Real Bus/CLI acceptance, no unit control or outbound SSH probes.
+$pb = require("../../../tests/lib/private_bus.mix")
+$here = dirname(script_path())
+$mix = env("MIXOS_TEST_MIX", realpath("/proc/self/exe"))
+$noded = env("MIXOS_TEST_NODED", mixos_path("prefix", "bin/noded"))
+$a = args()
+if len($a) == 2 and $a[0] == "--noded" then $noded = $a[1] end
+$dir = "/tmp/tray-bus-" .. uuid()
+$bus = nil
+$pid = nil
+$waiter = nil
+fn check($name, $ok)
+  if not $ok then raise("TEST", $name) end
+  print("PASS " .. $name)
+end
+fn call($action, $body)
+  $b = json_encode($body)
+  $cmd = "mixtrayd." .. $action
+  send mixtrayd $cmd body=$b timeout=55
+  $out = {rc: $rc, value: $reply ?? $result}
+  if type($out.value) == "string" then
+    try $out.value = json_parse($out.value) catch $m end
+  end
+  return $out
+end
+fn keys_are($object, $names)
+  return deep_eq(sort(keys($object)), sort($names))
+end
+mkdir($dir .. "/home/.ssh/hosts")
+mkdir($dir .. "/home/.ssh/keys")
+mkdir($dir .. "/bin")
+write_new($dir .. "/bin/ssh.mix", "#!" .. $mix .. "\n-- SPDX-License-Identifier: MIT OR Apache-2.0\nsleep(0.1)\neprint(\"mock SSH refusal\")\nexit(1)\n", 0o755)
+symlink("ssh.mix", $dir .. "/bin/ssh")
+write_new($dir .. "/bin/systemctl.mix", "#!" .. $mix .. "\n-- SPDX-License-Identifier: MIT OR Apache-2.0\nprint(\"LoadState=loaded\\nActiveState=active\")\n", 0o755)
+symlink("systemctl.mix", $dir .. "/bin/systemctl")
+mkdir($dir .. "/prefix/bin")
+symlink($mix, $dir .. "/prefix/bin/mix")
+write_file($dir .. "/home/.ssh/config", "Include hosts/*\n")
+write_file($dir .. "/home/.ssh/keys/k", "private")
+try
+  $bus = $pb.start({dir: $dir .. "/bus", name: "tray-test", noded: $noded})
+  $env = merge($pb.client_env($bus), {HOME: $dir .. "/home", MIXOS_PREFIX: $dir .. "/prefix", MIX_STATS: "off", PATH: $dir .. "/bin:" .. env("PATH")})
+  $pid = spawn([$mix, "--serve", $here .. "/../scripts/mixtrayd.mix", "--name", "mixtrayd"], {env: $env, stdout: {file: $dir .. "/citizen.log"}, stderr: "stdout"})
+  $ready = false
+  for $i = 1 to 80
+    if call("ping", nil).rc == 0 then $ready = true; break end
+    sleep(0.1)
+  end
+  check("citizen ready: " .. $dir, $ready)
+  check("ping oracle", deep_eq(call("ping", nil).value, {service: "mixtrayd"}))
+  -- Let startup subscriptions settle before obtaining the current revision.
+  sleep(0.5)
+  $s = call("snapshot", nil).value
+  check("snapshot top-level oracle keys", keys_are($s, ["rev", "cos", "bus", "mix", "ssh"]))
+  check("COS oracle shape", keys_are($s.cos, ["units"]) and len($s.cos.units) == 6)
+  for $u in $s.cos.units
+    check("unit fields", keys_are($u, ["name", "manager", "state", "controllable"]))
+    check("unit scopes", $u.manager == (if $u.name == "mixtrayd.service" then "user" else "system" end))
+  end
+  check("MIX oracle keys", keys_are($s.mix, ["path", "version"]))
+  check("SSH oracle keys", keys_are($s.ssh, ["hosts", "trash", "keys", "included", "hosts_dir", "probing"]))
+  check("key oracle fields", keys_are($s.ssh.keys[0], ["id", "fingerprint", "error"]))
+  for $since in [nil, $s.rev - 1, $s.rev + 100000]
+    $t = monotonic()
+    check("stale/future/absent wait returns", call("wait", {since: $since}).rc == 0 and monotonic() - $t < 5)
+  end
+  check("hostd protected", call("control", {unit: "hostd.service", action: "restart"}).rc == 10)
+  check("self protected", call("control", {unit: "mixtrayd.service", action: "stop"}).rc == 10)
+  check("no real unit action on invalid action", call("control", {unit: "noded.service", action: "kill"}).value.status == "refused")
+  $s = call("snapshot", nil).value
+  $waiter = spawn([$mix, $here .. "/../scripts/cli.mix", "wait", to_string($s.rev)], {env: $env, stdout: {file: $dir .. "/wait.json"}, stderr: {file: $dir .. "/wait.err"}})
+  sleep(0.2)
+  $t = monotonic()
+  check("ping runs during wait", call("ping", nil).rc == 0 and monotonic() - $t < 1)
+  check("wait is held open", process_alive($waiter))
+  write_file($dir .. "/home/.ssh/hosts/alpha", "Host alpha\n")
+  for $i = 1 to 100
+    if not process_alive($waiter) then break end
+    sleep(0.05)
+  end
+  check("filesystem notification releases wait", not process_alive($waiter))
+  $after = json_parse(read_file($dir .. "/wait.json"))
+  check("wait revision advances", $after.rev > $s.rev)
+  check("host oracle fields", keys_are($after.ssh.hosts[0], ["id", "path", "hostname", "port", "user", "identity", "error", "warning"]))
+  $cli = run_argv([$mix, $here .. "/../scripts/cli.mix", "snapshot"], {env: $env})
+  check("CLI JSON snapshot", $cli.ok and keys_are(json_parse($cli.stdout), ["rev", "cos", "bus", "mix", "ssh"]))
+  check("empty probe returns shape", deep_eq(call("ssh", {action: "probe", ids: ["missing"]}).value, {error: "missing is not a usable live SSH host"}))
+  check("trash", call("ssh", {action: "trash", id: "alpha"}).value.trashed == "alpha")
+  check("restore", call("ssh", {action: "restore", id: "alpha"}).value.restored == "alpha")
+  check("trash again", call("ssh", {action: "trash", id: "alpha"}).rc == 0)
+  check("purge", call("ssh", {action: "purge", id: "alpha"}).value.purged == "alpha")
+  check("create", call("ssh", {action: "create", name: "alpha", hostname: "192.0.2.10", key: "k"}).value.created == "alpha")
+  check("probe starts", deep_eq(call("ssh", {action: "probe", ids: ["alpha"]}).value, {probing: ["alpha"]}))
+  $probe = nil
+  for $i = 1 to 50
+    $probe = call("snapshot", nil).value.ssh.hosts[0].probe
+    if $probe != nil and $probe.status != "probing" then break end
+    sleep(0.1)
+  end
+  check("probe completion fields", keys_are($probe, ["status", "ms", "error", "at"]) and $probe.status == "failed" and $probe.error == "mock SSH refusal" and $probe.at > 0)
+  send mixtrayd HELP timeout=3
+  $help = if type($result) == "string" then json_parse($result) else $result end
+  $actual = sort(map(filter($help, fn($h) = starts_with($h.name, "mixtrayd.") and not starts_with($h.name, "mixtrayd.props.")), fn($h) = $h.name))
+  $registry = load_data($here .. "/../../../docs/docs/spec/bus/commands.conf.mix")
+  $expected = sort(map(filter($registry.commands, fn($c) = $c.owner == "mixtrayd"), fn($c) = $c.name))
+  check("registry exactly matches citizen commands: " .. json_encode({actual: $actual, expected: $expected}), deep_eq($actual, $expected))
+  $layout = require("../../../share/layout/files.mix")
+  $entries = $layout.plan(realpath($here .. "/../../../share/layout"), {prefix: $dir .. "/prefix", share: $dir .. "/share", etc: $dir .. "/etc", var: $dir .. "/var", run: $dir .. "/run", cache: $dir .. "/cache"})
+  $entry = filter($entries, fn($e) = $e.path == $dir .. "/prefix/bin/mixtrayd")[0]
+  check("layout CLI executable declaration", $entry.mode == 0o755 and starts_with($entry.text, "#!/usr/bin/env mix\n"))
+  $entry.stage = ""
+  $layout.apply([$entry], false)
+  check("staged CLI executable mode", stat($entry.path).perm == 0o755)
+  mkdir($dir .. "/prefix/lib/mixtrayd/lib")
+  copy($here .. "/../scripts/lib/tray.mix", $dir .. "/prefix/lib/mixtrayd/lib/tray.mix")
+  $r = run_argv([$entry.path, "snapshot"], {env: merge($env, {PATH: $dir .. "/prefix/bin:" .. $env.PATH})})
+  check("installed CLI entry point runs", $r.ok and keys_are(json_parse($r.stdout), ["rev", "cos", "bus", "mix", "ssh"]))
+  $r = run_argv([$entry.path, "--version"], {env: merge($env, {PATH: $dir .. "/prefix/bin:" .. $env.PATH})})
+  check("CLI version preserved", $r.ok and trim($r.stdout) == "mixtrayd 0.1.2")
+finally
+  if $waiter != nil and process_alive($waiter) then kill($waiter, 15) end
+  if $pid != nil and process_alive($pid) then kill($pid, 15) end
+  if $bus != nil then $pb.stop($bus) end
+end
+print("logs: " .. $dir)

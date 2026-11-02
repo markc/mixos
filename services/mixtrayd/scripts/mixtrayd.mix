@@ -1,0 +1,197 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- version: 0.1.2
+$tray = require("lib/tray.mix")
+$root = env("HOME", "") .. "/.ssh"
+$here = dirname(script_path())
+$state = {rev: 0, probes: {}, queue: [], running: 0, monitors: {}, watches: []}
+
+fn bump()
+  global $state
+  $state.rev = $state.rev + 1
+  cond_notify("rev")
+end
+fn body($ev)
+  return if type($ev.args) == "map" then $ev.args else {} end
+end
+fn snapshot($rev)
+  $units = []
+  for $name in $tray.WATCHED
+    $manager = if $name == "mixtrayd.service" then "user" else "system" end
+    $r = run_argv(["systemctl", "--" .. $manager, "show", $name, "--property=LoadState,ActiveState", "--no-pager"], {timeout: 5})
+    $properties = {}
+    for $line in lines($r.stdout)
+      $pair = split($line, "=")
+      if len($pair) == 2 then $properties[$pair[0]] = $pair[1] end
+    end
+    $s = if $properties.LoadState == "not-found" then "not installed" elif $r.ok then $properties.ActiveState ?? "not installed" else "unavailable (" .. trim($r.stderr) .. ")" end
+    push($units, {name: $name, manager: $manager, state: $s, controllable: $tray.controllable($name)})
+  end
+  $bus = {}
+  send noded noded.list timeout=10
+  if $rc == 0 then $bus.services = $result else $bus.error = to_string($result) end
+  send noded noded.peers timeout=10
+  if $rc == 0 then
+    $value = $result
+    if type($value) == "string" then $value = json_parse($value) end
+    $bus.peers = $tray.peer_list($value)
+  else $bus.peers_error = to_string($result) end
+  $path = mixos_path("prefix", "bin/mix")
+  $mix = {path: $path}
+  if not exists($path) then $mix.error = "mix is not installed"
+  else
+    $r = run_argv([$path, "--version"])
+    if $r.ok then $mix.version = trim($r.stdout) else $mix.error = "mix --version exited exit status: " .. $r.exit_code end
+  end
+  return {rev: $rev, cos: {units: $units}, bus: $bus, mix: $mix, ssh: $tray.ssh_tab($root, $state.probes)}
+end
+fn watch_ssh()
+  global $state
+  for $w in $state.watches fs_unwatch($w) end
+  $state.watches = []
+  for $p in [$root, $root .. "/hosts", $root .. "/keys"]
+    if is_dir($p) then
+      try $state.watches = push($state.watches, fs_watch($p)) catch $m eprint("mixtrayd: cannot watch " .. $p .. ": " .. $m) end
+    end
+  end
+end
+fn start_monitor($manager, $kind)
+  global $state
+  $argv = if $kind == "subscribe" then [realpath("/proc/self/exe"), $here .. "/subscribe.mix", $manager] else ["busctl", "--" .. $manager, "--json=short", "monitor", "org.freedesktop.systemd1"] end
+  $tag = $manager .. ":" .. $kind
+  $state.monitors[$tag] = process_watch($argv, {tag: $tag, stderr: "inherit"})
+end
+on mixtrayd.ping
+  reply(0, json_encode({service: "mixtrayd"}))
+end
+on mixtrayd.snapshot async
+  reply(0, json_encode(snapshot($state.rev)))
+end
+on mixtrayd.wait async
+  $since = body($event).since
+  $deadline = monotonic() + 45
+  while $tray.must_wait($since, $state.rev) and monotonic() < $deadline
+    if not cond_wait("rev", max(0, $deadline - monotonic())) then break end
+  end
+  reply(0, json_encode(snapshot($state.rev)))
+end
+on mixtrayd.control async
+  try
+    $request = $tray.control_check($event.args)
+  catch $m
+    reply(10, json_encode({status: "refused", message: $m}))
+    return
+  end
+  $h = nil
+  $deadline = monotonic() + 75
+  try
+    try $h = unix_connect("/run/hostd/hostd.sock", {timeout: 75, frame: "nul"})
+    catch $m raise("HOSTD", "cannot reach hostd: " .. $m) end
+    if monotonic() >= $deadline then raise("HOSTD_TIMEOUT", "hostd did not answer") end
+    tcp_send($h, json_encode({command: "unit.control", body: $request}) .. chr(0), {timeout: max(0.001, $deadline - monotonic())})
+    $line = if monotonic() >= $deadline then nil else tcp_recv_line($h, {timeout: max(0.001, $deadline - monotonic())}) end
+    if $line == nil then
+      reply(10, json_encode(merge($request, {error: {status: "timeout", message: "hostd did not answer"}})))
+    else
+      try $r = json_parse($line) catch $m raise("HOSTD", "hostd reply: " .. $m) end
+      if $r.rc == 0 then reply(0, json_encode(merge($request, {hostd: $r.body})))
+      else reply(10, json_encode(merge($request, {error: $r.body ?? $r}))) end
+    end
+  catch $m, $e
+    $timeout = $e.code == "HOSTD_TIMEOUT" or $e.code == "TCP_SEND_TIMEOUT" or monotonic() >= $deadline
+    reply(10, json_encode(merge($request, {error: {status: if $timeout then "timeout" else "transport" end, message: if $timeout then "hostd did not answer" else $m end}})))
+  finally
+    if $h != nil then try tcp_close($h) catch $m end end
+  end
+end
+fn start_probes()
+  global $state
+  while $state.running < 4 and len($state.queue) > 0
+    $queue = $state.queue
+    $id = shift($queue)
+    $state.queue = $queue
+    $state.running = $state.running + 1
+    task_start("mixtrayd.probe", json_encode({id: $id}))
+  end
+end
+on mixtrayd.ssh
+  try
+    $b = body($event)
+    $action = $tray.field($b, "action")
+    if $action == "probe" then
+      $live = filter($tray.hosts($root).hosts, fn($h) = $h.error == "")
+      $usable = map($live, fn($h) = $h.id)
+      $ids = if type($b.ids) == "list" then filter($b.ids, fn($id) = type($id) == "string") else [] end
+      if len($ids) == 0 then $ids = $usable end
+      for $id in $ids
+        if not contains($usable, $id) then $tray.fail($id .. " is not a usable live SSH host") end
+      end
+      $started = []
+      for $id in $ids
+        if ($state.probes[$id] ?? {}).status == "probing" then continue end
+        $state.probes[$id] = {status: "probing", ms: 0, error: "", at: 0}
+        $state.queue = push($state.queue, $id)
+        push($started, $id)
+      end
+      if len($started) > 0 then bump() end
+      start_probes()
+      reply(0, json_encode({probing: $started}))
+    else
+      $result = $tray.ssh_action($root, $b)
+      if contains(["trash", "restore"], $action) then $state.probes = delete($state.probes, $b.id) end
+      watch_ssh()
+      bump()
+      reply(0, json_encode($result))
+    end
+  catch $m reply(10, json_encode({error: $m})) end
+end
+on mixtrayd.probe async
+  if len($event.headers) != 0 then raise("PRIVATE", "local task only") end
+  $id = body($event).id
+  $started = monotonic()
+  $argv = ["ssh"]
+  for $opt in ["BatchMode=yes", "ConnectTimeout=5", "StrictHostKeyChecking=accept-new", "ControlMaster=no", "ControlPath=none", "AddKeysToAgent=no", "ClearAllForwardings=yes", "UpdateHostKeys=no", "PermitLocalCommand=no", "RequestTTY=no", "RemoteCommand=none", "LogLevel=ERROR"]
+    push($argv, "-o"); push($argv, $opt)
+  end
+  $r = run_argv(concat($argv, [$id, "true"]), {timeout: 10})
+  $probe = {status: if $r.ok then "ok" else "failed" end, ms: floor((monotonic() - $started) * 1000), at: floor(time() * 1000), error: if $r.ok then "" elif $r.timed_out then "no answer within 10 s" else $tray.probe_failure($r.exit_code, $r.stderr) end}
+  -- Commit the result without yielding between any state writes.
+  $state.probes[$id] = $probe
+  $state.running = $state.running - 1
+  bump()
+  start_probes()
+end
+on fs.changed
+  if $event.args.overflow or any($event.args.changes, fn($c) = $tray.relevant($root, $c.path) or ($c.old_path != nil and $tray.relevant($root, $c.old_path))) then bump() end
+end
+on proc.line
+  if $state.monitors[$event.args.tag] != $event.args.watch then return end
+  if ends_with($event.args.tag, ":subscribe") then bump(); return end
+  try
+    $m = json_parse($event.args.line)
+    $manager = split($event.args.tag, ":")[0]
+    $names = filter($tray.WATCHED, fn($n) = ($n == "mixtrayd.service") == ($manager == "user"))
+    if ($m.member == "PropertiesChanged" and contains(map($names, fn($n) = $tray.object_path($n)), $m.path)) or ($m.member == "JobRemoved" and any($names, fn($n) = contains(json_encode($m.payload), json_encode($n)))) then bump() end
+  catch $m eprint("mixtrayd: monitor frame: " .. $m) end
+end
+on proc.overflow
+  if $state.monitors[$event.args.tag] == $event.args.watch then bump() end
+end
+on proc.watch_exited
+  if $state.monitors[$event.args.tag] == $event.args.watch then
+    task_start("mixtrayd.reconnect", json_encode({tag: $event.args.tag}))
+  end
+end
+on mixtrayd.reconnect async
+  if len($event.headers) != 0 then raise("PRIVATE", "local task only") end
+  sleep(5)
+end
+on mixtrayd.reconnect
+  if len($event.headers) != 0 then raise("PRIVATE", "local task only") end
+  $parts = split(body($event).tag, ":")
+  start_monitor($parts[0], $parts[1])
+end
+watch_ssh()
+for $manager in ["system", "user"]
+  for $kind in ["subscribe", "monitor"] start_monitor($manager, $kind) end
+end

@@ -40,6 +40,13 @@
 {
   schema: 5,
   commands: [
+    {name:"mixtrayd.snapshot", owner:"mixtrayd", version:"0.1.2", status:"accepted", class:"query", schema:"none"},
+    {name:"mixtrayd.wait", owner:"mixtrayd", version:"0.1.2", status:"accepted", class:"query", schema:"none"},
+    {name:"mixtrayd.ping", owner:"mixtrayd", version:"0.1.2", status:"accepted", class:"query", schema:"none"},
+    {name:"mixtrayd.control", owner:"mixtrayd", version:"0.1.2", status:"accepted", class:"intent", schema:"none"},
+    {name:"mixtrayd.ssh", owner:"mixtrayd", version:"0.1.2", status:"accepted", class:"intent", schema:"none"},
+    {name:"mixtrayd.probe", owner:"mixtrayd", version:"0.1.2", status:"accepted", class:"system", schema:"none"},
+    {name:"mixtrayd.reconnect", owner:"mixtrayd", version:"0.1.2", status:"accepted", class:"system", schema:"none"},
     {name:"exportd.kde.status", owner:"exportd", version:"0.1.0", status:"accepted", class:"query", schema:"none"},
     {name:"exportd.kde.plan", owner:"exportd", version:"0.1.0", status:"accepted", class:"query", schema:"none"},
     {name:"exportd.kde.reconcile", owner:"exportd", version:"0.1.0", status:"accepted", class:"intent", schema:"none"},

@@ -29,7 +29,7 @@ fn plan($here, $roots)
       continue
     end
     $seen[$path] = $text
-    push($pending, {path: $path, text: $text})
+    push($pending, {path: $path, text: $text, mode: if $entry.kind == "executable" then 0o755 else nil end})
   end
   return $pending
 end
@@ -105,12 +105,12 @@ fn apply($pending, $dry)
         end
       end
     else
-      if $present and read_file($dest) == $entry.text then continue end
+      if $present and read_file($dest) == $entry.text and ($entry.mode == nil or stat($dest).perm == $entry.mode) then continue end
       print($dest)
       if not $dry then
         mkdir(dirname($dest), {parents: true})
         $options = {durability: "full"}
-        if not $present then $options.mode = 0o644 end
+        if $entry.mode != nil then $options.mode = $entry.mode elif not $present then $options.mode = 0o644 end
         write_atomic($dest, $entry.text, $options)
       end
     end

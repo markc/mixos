@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="mixtrayd is the data service behind the MixOS tray popup, mixtray. It registers on the noded Bus as mixtrayd and answers one command, mixtrayd.snapshot, with…">
+    <meta name="description" content="mixtrayd is the data service behind the MixOS tray popup, mixtray. It runs as a Mix-only citizen (mix --serve), registers on the noded Bus as mixtrayd and…">
     <!-- Favicons from share/brand: the SVG follows the visitor's light/dark preference. -->
     <link rel="icon" href="/favicon.ico?v=400d5816f3" sizes="any">
     <link rel="icon" type="image/svg+xml" href="/_web/favicon.svg?v=4eb2d64677">
@@ -239,8 +239,8 @@
         <article id="content-doc" class="prose" data-pagefind-body>
 <h1 id="mixtrayd">mixtrayd</h1>
 <p><code>mixtrayd</code> is the data service behind the MixOS tray popup, <code>mixtray</code>. It
-registers on the noded Bus as <code>mixtrayd</code> and answers one command,
-<code>mixtrayd.snapshot</code>, with four tabs of state:</p>
+runs as a Mix-only citizen (<code>mix --serve</code>), registers on the noded Bus as
+<code>mixtrayd</code> and answers <code>mixtrayd.snapshot</code> with four tabs of state:</p>
 <table><thead><tr><th>Tab</th><th>Source</th></tr></thead><tbody>
 <tr><td>COS</td><td>systemd <code>ActiveState</code> for the MixOS units (system and user managers)</td></tr>
 <tr><td>BUS</td><td>the services noded has registered (<code>noded.list</code>) and mesh peers (<code>noded.peers</code>)</td></tr>

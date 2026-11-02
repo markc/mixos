@@ -1,0 +1,21 @@
+# Rust oracle behaviours restated in tray_test.mix
+
+- SSH CLI request mapping and rejection of malformed action arguments.
+- Control accepts listed units and start/stop/restart; ignores extra fields.
+- Control refuses missing units, hostd, mixtrayd and other actions.
+- Watched units are plain services; systemd object paths escape punctuation.
+- Maild is controllable; manager scopes partition the watched units.
+- Wait blocks only for the current revision, not stale/future/absent revisions.
+- Peer lists unwrap authority routing views and filter retired/transport members.
+- Bare peer lists pass through; other replies give an empty list.
+- Host fragments parse fields, default omitted fields and keep first directives.
+- Host parsing refuses wrong, repeated or missing Host, zero Port and Match.
+- Include detection accepts relative, home and absolute spellings; ignores comments.
+- Identity, hostname, user and port validation refuse injection and invalid values.
+- Fingerprints omit comments and support abbreviated output.
+- Relevant paths are config, hosts and keys; known_hosts and mux are ignored.
+- Create/trash/restore/purge round trip preserves replies, fragments and mode 0600.
+- Duplicate creation and trash collisions never overwrite existing files.
+- Purge refuses live and absent hosts.
+- Scanning sorts hosts, skips dotfiles, flags bad fragments and warns on missing keys.
+- Creation refuses absent Include and absent private keys.

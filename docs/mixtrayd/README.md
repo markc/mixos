@@ -1,8 +1,8 @@
 # mixtrayd
 
 `mixtrayd` is the data service behind the MixOS tray popup, `mixtray`. It
-registers on the noded Bus as `mixtrayd` and answers one command,
-`mixtrayd.snapshot`, with four tabs of state:
+runs as a Mix-only citizen (`mix --serve`), registers on the noded Bus as
+`mixtrayd` and answers `mixtrayd.snapshot` with four tabs of state:
 
 | Tab | Source |
 |---|---|

@@ -196,7 +196,7 @@ checked separately by the layering gate.
 | [maild-auth](https://github.com/markc/mixos/blob/main/services/maild/crates/maild-auth/Cargo.toml) | maild | service | core | none | 0.1.2 |
 | [maild-bayesian](https://github.com/markc/mixos/blob/main/services/maild/crates/maild-bayesian/Cargo.toml) | maild | service | core | none | 0.1.2 |
 | [maild-rules](https://github.com/markc/mixos/blob/main/services/maild/crates/maild-rules/Cargo.toml) | maild | service | core | none | 0.1.2 |
-| [mixtrayd](https://github.com/markc/mixos/blob/main/services/mixtrayd/Cargo.toml) | mixtrayd | service | desktop | public | 0.1.2 |
+| [mixtrayd](https://github.com/markc/mixos/blob/main/services/mixtrayd/component.mx) | mixtrayd | service | core | public | 0.1.2 |
 | [monitord](https://github.com/markc/mixos/blob/main/services/monitord/Cargo.toml) | monitord | service | core | public | 0.1.0 |
 | [noded](https://github.com/markc/mixos/blob/main/services/noded/Cargo.toml) | noded | service | core | public | 0.18.3 |
 | [mesh-trust](https://github.com/markc/mixos/blob/main/services/noded/crates/mesh-trust/Cargo.toml) | noded | service | core | none | 0.1.2 |

@@ -1,0 +1,59 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- version: 0.1.2
+-- Retain systemd's D-Bus Subscribe connection while busctl monitors signals.
+-- D-Bus little-endian method calls with no arguments; no external broker.
+fn u32($n)
+  return bytes_from([$n % 256, floor($n / 256) % 256, floor($n / 65536) % 256, floor($n / 16777216) % 256])
+end
+fn padded($b, $alignment)
+  $out = $b
+  while bytes_len($out) % $alignment != 0
+    $out = bytes_concat($out, bytes_from([0]))
+  end
+  return $out
+end
+fn method($serial, $path, $interface, $member, $destination)
+  $fields = bytes_from([])
+  for $f in [[1, "o", $path], [2, "s", $interface], [3, "s", $member], [6, "s", $destination]]
+    $fields = bytes_concat(padded($fields, 8), bytes_from([$f[0], 1, ord($f[1]), 0]), u32(byte_length($f[2])), string_to_bytes($f[2]), bytes_from([0]))
+  end
+  return bytes_concat(bytes_from([108, 1, 0, 1]), u32(0), u32($serial), u32(bytes_len($fields)), padded($fields, 8))
+end
+$manager = args()[0]
+$path = if $manager == "system" then "/run/dbus/system_bus_socket" else env("XDG_RUNTIME_DIR", "/run/user/" .. uid()) .. "/bus" end
+$h = unix_connect($path, {timeout: 5})
+tcp_send($h, chr(0) .. "AUTH EXTERNAL " .. bytes_to_hex(string_to_bytes(to_string(uid()))) .. "\r\n")
+$auth = tcp_recv_line($h, {timeout: 5})
+if not starts_with($auth ?? "", "OK ") then raise("DBUS_AUTH", "D-Bus EXTERNAL authentication refused") end
+tcp_send($h, "BEGIN\r\n")
+tcp_send($h, method(1, "/org/freedesktop/DBus", "org.freedesktop.DBus", "Hello", "org.freedesktop.DBus"))
+tcp_send($h, method(2, "/org/freedesktop/systemd1", "org.freedesktop.systemd1.Manager", "Subscribe", "org.freedesktop.systemd1"))
+$pending = bytes_from([])
+fn take_bytes($n)
+  global $pending
+  while bytes_len($pending) < $n
+    $b = tcp_recv($h, {timeout: 5})
+    if $b == nil then raise("DBUS_TIMEOUT", "D-Bus did not answer Subscribe") end
+    $pending = bytes_concat($pending, $b)
+  end
+  $out = slice($pending, 0, $n)
+  $pending = slice($pending, $n)
+  return $out
+end
+fn le32($b, $offset)
+  return $b[$offset] + $b[$offset + 1] * 256 + $b[$offset + 2] * 65536 + $b[$offset + 3] * 16777216
+end
+$replies = 0
+while $replies < 2
+  $header = take_bytes(16)
+  if $header[0] != 108 or not contains([2, 4], $header[1]) then raise("DBUS_REPLY", "D-Bus rejected Hello or Subscribe") end
+  $fields = le32($header, 12)
+  take_bytes(ceil($fields / 8) * 8 + le32($header, 4))
+  if $header[1] == 2 then $replies = $replies + 1 end
+end
+print("subscribed")
+-- No periodic work: the idle socket blocks until its peer disconnects.
+while true
+  tcp_recv($h, {timeout: 0})
+end
