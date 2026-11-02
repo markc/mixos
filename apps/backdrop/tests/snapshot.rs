@@ -11,7 +11,7 @@ use std::{sync::Arc, time::Instant};
 fn train_legible() {
     let now = Instant::now();
     let mut snapshot = Snapshot {
-        worker_minute: 100,
+        now: 6000,
         queue: json!({"main":"0123456789ab", "gold":{"commit":"abcdef012345", "age_minutes":93,"unlanded":7},
             "batched":[{"branch":"work/exporters"},{"branch":"work/mix-global"}],
             "recent":[{"branch":"work/ci-n1-builtins","state":"landed"},{"branch":"work/backdrop-views","state":"landed"},
@@ -20,7 +20,8 @@ fn train_legible() {
                 {"branch":"work/infra","state":"rejected","reason":"infra rc 75","updated":2},
                 {"branch":"work/old","state":"rejected","reason":"old","updated":1}]}),
         workers: json!({"slots":[{"worker":"heavy-a"},{"worker":"heavy-b"},{"worker":"light","light":1}], "running":[{"worker":"heavy-a", "started":5580, "spec":"{\"label\":\"train-current-batch\"}"}]}),
-        history: json!({"landed":[],"batches":[]}),
+        history: json!({"landed":[{"updated":2400},{"updated":5400}],
+            "batches":[{"started":4800,"ended":5580,"gate_reused":false}]}),
         ..Default::default()
     };
     snapshot.alert(

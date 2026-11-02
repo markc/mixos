@@ -153,7 +153,7 @@ impl Train {
                 .filter(|job| job["worker"] == slot["worker"])
                 .collect();
             let busy = !jobs.is_empty();
-            let now = self.snapshot.worker_minute as f64 * 60.;
+            let now = self.snapshot.now as f64;
             let mut label = if slot["light"] == 1 {
                 "light".into()
             } else {

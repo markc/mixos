@@ -20,7 +20,9 @@ pub trait View {
 
 #[derive(Clone, PartialEq)]
 pub struct Snapshot {
-    pub worker_minute: u64,
+    /// Observation time in Unix seconds, rounded to a minute by the reader.
+    /// All time-relative rendering uses this input, never the wall clock.
+    pub now: u64,
     pub alerts: std::collections::BTreeMap<String, Value>,
     pub queue: Value,
     pub workers: Value,
@@ -32,7 +34,7 @@ pub struct Snapshot {
 impl Default for Snapshot {
     fn default() -> Self {
         Self {
-            worker_minute: 0,
+            now: 0,
             alerts: Default::default(),
             queue: Value::Null,
             workers: Value::Null,
