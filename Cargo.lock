@@ -5779,6 +5779,7 @@ dependencies = [
  "md-5",
  "mimedb",
  "mix",
+ "mix-server",
  "notify",
  "paths",
  "proptest",
@@ -5812,6 +5813,18 @@ dependencies = [
  "uuid",
  "webpki-roots 0.26.11",
  "yaml-rust2",
+]
+
+[[package]]
+name = "mix-server"
+version = "0.1.2"
+dependencies = [
+ "indexmap",
+ "libc",
+ "mix",
+ "serde_json",
+ "socket2",
+ "tokio",
 ]
 
 [[package]]
@@ -5864,6 +5877,7 @@ dependencies = [
  "maild",
  "mimalloc",
  "mix",
+ "mix-server",
  "mix-shell",
  "monitord",
  "noded",

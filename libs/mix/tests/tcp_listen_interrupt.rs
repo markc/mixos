@@ -56,7 +56,7 @@ fn ctrl_c_on_another_thread_ends_every_infinite_accept() {
     // elapsed time: the flag is unset until then, so each has really
     // started waiting.
     let started = Instant::now();
-    while mix::builtins::tcp_accept_waits_entered() < 2 {
+    while mix_server::tcp_accept_waits_entered() < 2 {
         assert!(
             started.elapsed() < Duration::from_secs(30),
             "both accepts reach their wait"

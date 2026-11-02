@@ -1,0 +1,36 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- CBC3 only, capped even though this uses the normal checkout target.
+fn check_run($argv)
+  print("COMMAND " .. join($argv, " "))
+  $r = run_argv($argv, {timeout: 14400, max_output: 16777216})
+  print($r.stdout)
+  print($r.stderr)
+  print("COMMAND_RC=" .. $r.exit_code)
+  if not $r.ok then raise("WORKSPACE_PROOF", join($argv, " ")) end
+end
+check_run(["env", "CARGO_BUILD_JOBS=3", "cargo", "build", "--workspace", "--release", "--locked"])
+$bin = realpath("target/release")
+$tmp = "/tmp/mixd-workspace-proof-" .. pid()
+mkdir($tmp)
+for $c in [
+  {name: "tcp_listen", args: '"127.0.0.1", 0'}, {name: "tcp_accept", args: "1"},
+  {name: "udp_listen", args: '"127.0.0.1", 0'}, {name: "http_serve", args: '"."'},
+  {name: "http_recv", args: "0"}, {name: "udp_recv", args: "0"}
+]
+  $file = $tmp .. "/" .. $c.name .. ".mix"
+  write_file($file, "try\n  " .. $c.name .. "(" .. $c.args .. ")\ncatch $m, $e\n  print($e.code)\nend\n")
+  $r = run_argv([$bin .. "/mix", "--no-lint", $file])
+  print("BOUNDARY " .. $c.name .. " " .. trim($r.stdout))
+  if not $r.ok or trim($r.stdout) != "NEEDS_MIXD" then raise("BOUNDARY", $c.name) end
+end
+$file = $tmp .. "/listen.mix"
+write_file($file, '$l = tcp_listen("127.0.0.1", 0)
+print(tcp_local_addr($l).port > 0)
+tcp_close($l)
+')
+check_run([$bin .. "/mixd", "run", $file])
+check_run(["stat", "-c", "%n %s bytes", $bin .. "/mix", $bin .. "/mixd"])
+for $name in ["mix", "mixd"]
+  check_run(["ldd", $bin .. "/" .. $name])
+  check_run(["/opt/mixos/bin/mix", "tools/foreign_gate.mix", "--elf", $bin .. "/" .. $name])
+end

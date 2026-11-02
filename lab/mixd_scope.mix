@@ -1,0 +1,31 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- CBC only. The target is warm and stays at the checkout's normal target.
+fn cargo_build($package, $label)
+  $av = ["env", "CARGO_BUILD_JOBS=3", "cargo", "build", "-p", $package]
+  $r = run_argv($av, {timeout: 7200, max_output: 16777216})
+  print($r.stdout)
+  print($r.stderr)
+  $compiled = filter(split($r.stderr, "\n"), fn($l) = starts_with(trim($l), "Compiling "))
+  print("SCOPE " .. json_encode({case: $label, package: $package, wall_ms: $r.duration_ms, rc: $r.exit_code, compiled: $compiled}))
+  if not $r.ok then raise("SCOPE_BUILD", $package) end
+end
+try
+  cargo_build("system", "warm")
+  cargo_build("mixd", "warm")
+  for $c in [
+    {name: "server", path: "libs/mix-server/src/tcp.rs", old: "tcp_listen(): host must name", new: "tcp_listen(): bind host must name"},
+    {name: "client", path: "libs/mix/src/builtins.rs", old: "udp_send: bind: {e}", new: "udp_send: local bind: {e}"},
+    {name: "evaluator", path: "libs/mix/src/evaluator.rs", old: "tcp_accept() needs server capability;", new: "tcp_accept() needs inbound server capability;"}
+  ]
+    write_file($c.path, replace_must(read_file($c.path), $c.old, $c.new))
+    cargo_build("system", $c.name)
+    cargo_build("mixd", $c.name)
+    print(run_argv(["git", "checkout", "-q", "--", "."]))
+    -- Restore the baseline artefacts before the next independent mutation.
+    cargo_build("system", "restore-" .. $c.name)
+    cargo_build("mixd", "restore-" .. $c.name)
+  end
+finally
+  print(run_argv(["git", "diff", "--stat"]))
+  print(run_argv(["git", "checkout", "-q", "--", "."]))
+end
