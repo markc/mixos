@@ -169,5 +169,4 @@ pub(crate) mod handles {
         }
         Ok(map.remove(&id).is_some())
     }
-
 }

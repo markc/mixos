@@ -481,8 +481,12 @@ builtin_table! {
 }
 
 pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
-    if let Some(f) = crate::extensions::family(name) { return f.call(name, args); }
-    if crate::extensions::SERVER_NAMES.contains(&name) { return Err(crate::extensions::needs_host(name)); }
+    if let Some(f) = crate::extensions::family(name) {
+        return f.call(name, args);
+    }
+    if crate::extensions::SERVER_NAMES.contains(&name) {
+        return Err(crate::extensions::needs_host(name));
+    }
     match name {
         "length" | "len" => builtin_len(args),
         "upper" => builtin_upper(args),
@@ -969,7 +973,6 @@ pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
         #[cfg(feature = "net-client")]
         "tcp_close" => builtin_tcp_close(args),
 
-
         #[cfg(feature = "net-client")]
         "tcp_local_addr" => builtin_tcp_local_addr(args),
         #[cfg(all(feature = "net-client", unix))]
@@ -985,12 +988,13 @@ pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
         #[cfg(not(feature = "net-client"))]
         name @ ("ws_connect" | "ws_send" | "ws_recv" | "ws_close" | "tcp_connect" | "tcp_send"
         | "tcp_recv" | "tcp_recv_line" | "tcp_close" | "ws_on" | "tcp_on"
-        | "ws_unwatch" | "udp_send_via" | "udp_close" | "udp_local_addr"
-        | "udp_on" | "udp_unwatch" | "tcp_unwatch"
-        | "tcp_local_addr" | "unix_connect") => Err(MixError::RuntimeError {
-            span: None,
-            msg: format!("{name}() requires the `ws` feature (tungstenite/rustls)"),
-        }),
+        | "ws_unwatch" | "udp_send_via" | "udp_close" | "udp_local_addr" | "udp_on"
+        | "udp_unwatch" | "tcp_unwatch" | "tcp_local_addr" | "unix_connect") => {
+            Err(MixError::RuntimeError {
+                span: None,
+                msg: format!("{name}() requires the `ws` feature (tungstenite/rustls)"),
+            })
+        }
         #[cfg(feature = "dns")]
         "dns_query" => crate::dns::builtin_dns_query(args),
         #[cfg(not(feature = "dns"))]
@@ -1085,7 +1089,8 @@ pub fn is_builtin(name: &str) -> bool {
             .filter(|n| !EVAL_SPECIAL_BUILTINS.contains(n))
             .collect()
     })
-    .contains(name) || crate::extensions::available(name)
+    .contains(name)
+        || crate::extensions::available(name)
 }
 
 /// Every name a user function can never win against at a call site: the
@@ -1376,13 +1381,24 @@ pub fn conditional_cap_engaged(name: &str, args: &[Value], option: &str) -> bool
 /// Iterate every metadata entry (builtins + HOFs) — the registry the
 /// A7-generated arity test and the discovery surfaces draw from.
 pub fn builtin_entries() -> impl Iterator<Item = &'static crate::builtin_info::BuiltinInfo> {
-    BUILTINS.iter().chain(crate::builtins_hof::HOFS.iter()).chain(crate::extensions::entries().into_iter().filter(|e| core_builtin_info(e.name).is_none()))
+    BUILTINS
+        .iter()
+        .chain(crate::builtins_hof::HOFS.iter())
+        .chain(
+            crate::extensions::entries()
+                .into_iter()
+                .filter(|e| core_builtin_info(e.name).is_none()),
+        )
 }
 /// O(1) lookup of a builtin's full metadata entry (builtins + HOFs) —
 /// the machine side of the discovery surface, used by the strict-arity
 /// gate, conditional capabilities, and `mix lint`'s arity checker.
 pub fn builtin_info_of(name: &str) -> Option<&'static crate::builtin_info::BuiltinInfo> {
-    core_builtin_info(name).or_else(|| crate::extensions::entries().into_iter().find(|e| e.name == name))
+    core_builtin_info(name).or_else(|| {
+        crate::extensions::entries()
+            .into_iter()
+            .find(|e| e.name == name)
+    })
 }
 pub fn core_builtin_info(name: &str) -> Option<&'static crate::builtin_info::BuiltinInfo> {
     use std::collections::HashMap;
@@ -22524,8 +22540,6 @@ fn builtin_udp_send(args: Vec<Value>) -> MixResult<Option<Value>> {
     Ok(Some(Value::Number(sent as f64)))
 }
 
-
-
 // --- WebSocket client (v0.74.0, `ws` feature) ---
 //
 // A synchronous client with RECV-DRIVEN control flow — send `register`,
@@ -24367,30 +24381,6 @@ pub(crate) fn tcp_recv_opts(
 // (socket_sources::close_owned). tcp_on on a listener moves it into a
 // reader thread (socket_sources::subscribe_listener).
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 /// The longest a blocking tcp_accept sits in one poll(2). The SIGINT
 /// wake socket is only the fast path: with several waiters one may drain
 /// the byte another needed, so every waiter rechecks the interrupt flag
@@ -24942,7 +24932,9 @@ pub(crate) mod socket_sources {
 
     pub fn unmark_subscribed(key: ClientKey) {
         if key.family == ClientFamily::Listener {
-            if let Some(h) = crate::extensions::sockets() { h.unmark(key.id); }
+            if let Some(h) = crate::extensions::sockets() {
+                h.unmark(key.id);
+            }
             return;
         }
         SUBSCRIBED.lock().unwrap().remove(&key);
@@ -25060,10 +25052,6 @@ pub(crate) mod socket_sources {
         }
     }
 
-
-
-
-
     /// The `{handle, peer}` body of an `accepted` record.
     pub(crate) fn accepted_body(rec: &SocketRecord) -> Option<serde_json::Value> {
         if rec.kind != "accepted" {
@@ -25097,7 +25085,9 @@ pub(crate) mod socket_sources {
             }
             return;
         }
-        if let Some(h) = crate::extensions::sockets() { h.own(owner, id); }
+        if let Some(h) = crate::extensions::sockets() {
+            h.own(owner, id);
+        }
     }
 
     /// Generation retirement: close every owned listener and connection
@@ -25106,15 +25096,15 @@ pub(crate) mod socket_sources {
     /// first, so the return sees it).
     pub(crate) fn close_owned(owner: &TcpOwner) {
         owner.retired.store(true, Ordering::Release);
-        if let Some(h) = crate::extensions::sockets() { h.retire(owner); }
+        if let Some(h) = crate::extensions::sockets() {
+            h.retire(owner);
+        }
         let ids: Vec<u64> = owner.ids.lock().unwrap().iter().copied().collect();
         for id in ids {
             let conn = tcp_client::MAP.lock().unwrap().remove(&id);
             drop(conn);
         }
     }
-
-
 
     /// `ws_send` on a subscribed handle: enqueue one bounded message for
     /// the owner thread and return the completion receipt. The caller
@@ -26260,10 +26250,6 @@ pub(crate) mod socket_sources {
             result
         }
 
-
-
-
-
         #[allow(clippy::too_many_arguments)]
         fn spawn(
             queue: Arc<Queue>,
@@ -26726,8 +26712,18 @@ pub(crate) mod socket_sources {
         }
 
         impl SocketSource {
-            pub fn from_extension(key: ClientKey, cancel: UnixStream, worker: std::thread::JoinHandle<()>, completed: Arc<AtomicBool>) -> Self {
-                Self { key, cancel, worker: Some(worker), completed }
+            pub fn from_extension(
+                key: ClientKey,
+                cancel: UnixStream,
+                worker: std::thread::JoinHandle<()>,
+                completed: Arc<AtomicBool>,
+            ) -> Self {
+                Self {
+                    key,
+                    cancel,
+                    worker: Some(worker),
+                    completed,
+                }
             }
         }
         impl Drop for SocketSource {
@@ -26750,7 +26746,6 @@ pub(crate) mod socket_sources {
     pub(crate) use linux::spawn_udp;
     #[cfg(target_os = "linux")]
     use linux::{spawn_tcp, spawn_ws};
-
 
     #[cfg(not(target_os = "linux"))]
     pub struct SocketSource {
@@ -26789,8 +26784,6 @@ pub(crate) mod socket_sources {
         ))
     }
 
-
-
     #[cfg(all(test, target_os = "linux"))]
     mod tests {
         use super::*;
@@ -26824,8 +26817,6 @@ pub(crate) mod socket_sources {
             );
             id
         }
-
-
 
         /// Review fix 2: ownership lives with the socket, not with registry
         /// residence. Churn never prunes a live entry, and a connection out
@@ -28460,7 +28451,9 @@ fn builtin_tcp_close(args: Vec<Value>) -> MixResult<Option<Value>> {
     expect_args("tcp_close", &args, 1)?;
     let id = tcp_id_arg("tcp_close", &args)?;
     if let Some(h) = crate::extensions::sockets() {
-        if let Some(closed) = h.close(id)? { return Ok(Some(Value::Bool(closed))); }
+        if let Some(closed) = h.close(id)? {
+            return Ok(Some(Value::Bool(closed)));
+        }
     }
     let id = tcp_handle("tcp_close", &args)?;
     Ok(Some(Value::Bool(
@@ -28477,20 +28470,9 @@ fn builtin_tcp_close(args: Vec<Value>) -> MixResult<Option<Value>> {
 // rendezvous. Hand-rolled HTTP/1.1, no new dependency, always present
 // (like udp_*): the server side needs nothing from ureq.
 
-
-
-
-
-
-
 /// One GET/HEAD exchange against the static root. Never raises — every
 /// failure becomes an HTTP status on the wire.
 // Preserve the explicit request options without changing the serving signature.
-
-
-
-
-
 
 // --- Help ---
 
@@ -35512,8 +35494,6 @@ mod bytes_tests {
 
     // --- udp_send / udp_recv (v0.71.0) ---
 
-
-
     // --- websocket client (v0.74.0) ---
 
     /// Full round trip against a local tungstenite echo server: text and
@@ -35642,16 +35622,6 @@ mod bytes_tests {
             .port()
     }
 
-
-
-
-
-
-
-
-
-
-
     // --- raw TCP client (v0.78.0) ---
 
     /// Plain-TCP round trip against a local echo server: send bytes, read
@@ -35756,12 +35726,6 @@ mod bytes_tests {
     // interrupt flag is process-global, so arming it inside this test
     // binary would poison every other interrupt-aware test running in
     // parallel. The in-loop check itself is in http_accept_next.
-
-
-
-
-
-
 
     /// One representative pin for io.md's "anything else still refuses bytes
     /// with a clean error" sentence — a future sort-bytes arm must edit the
@@ -38778,8 +38742,25 @@ mod compiled_features_tests {
         // this list may be empty — the invariant is that whatever appears is a
         // real optional feature name and each appears at most once.
         const KNOWN: &[&str] = &[
-            "json", "regex", "markdown", "toml", "serde", "datetime", "url", "crypto", "http",
-            "sqlite", "dkim", "datastar", "xml", "yaml", "ws", "mime", "archive", "dns", "net-client",
+            "json",
+            "regex",
+            "markdown",
+            "toml",
+            "serde",
+            "datetime",
+            "url",
+            "crypto",
+            "http",
+            "sqlite",
+            "dkim",
+            "datastar",
+            "xml",
+            "yaml",
+            "ws",
+            "mime",
+            "archive",
+            "dns",
+            "net-client",
         ];
         let f = compiled_features();
         for name in &f {
@@ -38799,8 +38780,24 @@ mod compiled_features_tests {
     #[test]
     fn every_cargo_feature_is_reported_or_deliberately_skipped() {
         const KNOWN: &[&str] = &[
-            "json", "regex", "markdown", "toml", "serde", "datetime", "url", "crypto", "http",
-            "sqlite", "dkim", "datastar", "xml", "yaml", "ws", "mime", "archive", "dns",
+            "json",
+            "regex",
+            "markdown",
+            "toml",
+            "serde",
+            "datetime",
+            "url",
+            "crypto",
+            "http",
+            "sqlite",
+            "dkim",
+            "datastar",
+            "xml",
+            "yaml",
+            "ws",
+            "mime",
+            "archive",
+            "dns",
             "net-client",
         ];
         const SKIP: &[&str] = &["default", "tokio-sleep", "test-support"];
@@ -39707,6 +39704,4 @@ mod strict_write_and_bool_option_tests {
             assert!(is_type_mismatch(&err), "{err:?}");
         }
     }
-
-
 }

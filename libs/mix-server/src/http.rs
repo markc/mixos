@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 use super::*;
- pub mod http_srv {
+pub mod http_srv {
     use std::io::{BufRead, BufReader, Write};
 
     pub struct RequestHead {
@@ -18,7 +18,7 @@ use super::*;
     /// actually gets to look at the clock). Returns the line WITHOUT
     /// its terminator; invalid UTF-8 is the caller's 400, not a
     /// mislabelled timeout.
- pub fn read_line_capped(
+    pub fn read_line_capped(
         reader: &mut BufReader<&mut std::net::TcpStream>,
         cap: usize,
         deadline: std::time::Instant,
@@ -320,7 +320,7 @@ use super::*;
 /// Shared accept-with-deadline loop: non-blocking listener polled at
 /// 15 ms, so `duration`/`timeout` deadlines and request counts are
 /// honoured without a dedicated thread.
- pub fn http_accept_next(
+pub fn http_accept_next(
     listener: &std::net::TcpListener,
     deadline: Option<std::time::Instant>,
 ) -> MixResult<Option<(std::net::TcpStream, std::net::SocketAddr)>> {
@@ -369,7 +369,7 @@ use super::*;
 
 /// `http_serve(root[, opts])` — blocking static file server; returns the
 /// number of requests served once `duration`/`requests` ends it.
- pub fn builtin_http_serve(args: Vec<Value>) -> MixResult<Option<Value>> {
+pub fn builtin_http_serve(args: Vec<Value>) -> MixResult<Option<Value>> {
     expect_args_between("http_serve", &args, 1, 2)?;
     let root_arg = args[0].to_mix_string();
     let root = std::fs::canonicalize(&root_arg).map_err(|e| MixError::RuntimeError {
@@ -575,7 +575,7 @@ use super::*;
 }
 
 #[allow(clippy::too_many_arguments)]
- pub fn http_serve_one(
+pub fn http_serve_one(
     stream: &mut std::net::TcpStream,
     root: &std::path::Path,
     index: &str,
@@ -755,7 +755,7 @@ use super::*;
     http_send_file(stream, &canon, render_md, head_only)
 }
 
- pub fn http_send_file(
+pub fn http_send_file(
     stream: &mut std::net::TcpStream,
     path: &std::path::Path,
     render_md: bool,
@@ -805,7 +805,7 @@ use super::*;
 
 /// `http_recv(port[, opts])` — accept ONE request, answer it, return it
 /// as a map (nil on timeout). The OAuth-redirect / webhook-catch shape.
- pub fn builtin_http_recv(args: Vec<Value>) -> MixResult<Option<Value>> {
+pub fn builtin_http_recv(args: Vec<Value>) -> MixResult<Option<Value>> {
     expect_args_between("http_recv", &args, 1, 2)?;
     let port = as_exact_integer(
         "http_recv(): port",

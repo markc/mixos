@@ -2099,10 +2099,17 @@ fn check_expr(
             // embedder's suppress_name_checks) — silent, as before.
         }
         Expr::FunctionCall { name, args } => {
-            if crate::extensions::SERVER_NAMES.contains(&name.as_str()) && !crate::extensions::available(name) {
-                a.diagnostics.push(diag(ctx, "MIX-E1513", Severity::Error, line,
+            if crate::extensions::SERVER_NAMES.contains(&name.as_str())
+                && !crate::extensions::available(name)
+            {
+                a.diagnostics.push(diag(
+                    ctx,
+                    "MIX-E1513",
+                    Severity::Error,
+                    line,
                     format!("{name}() needs mixd server capability"),
-                    Some("run it under: mixd run <script>".to_string())));
+                    Some("run it under: mixd run <script>".to_string()),
+                ));
             }
             // Lambda passed to a HOF? Its body is checked by
             // check_expr_tree via walk_expr below — here we resolve the

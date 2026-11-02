@@ -12,8 +12,6 @@ mod desktop_events;
 pub mod error;
 pub mod evaluator;
 pub mod extensions;
-#[cfg(feature = "net-client")]
-pub mod server_api;
 pub mod fd_hygiene;
 #[cfg(unix)]
 mod fifo_io;
@@ -26,6 +24,8 @@ mod numeric;
 pub mod parser;
 pub mod scope;
 pub mod script_version;
+#[cfg(feature = "net-client")]
+pub mod server_api;
 pub mod shell_observation;
 pub mod stats;
 pub mod token;

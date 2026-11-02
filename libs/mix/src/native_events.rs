@@ -128,7 +128,10 @@ pub(crate) struct Families {
     /// caller-chosen, so the family gate is source presence, not a
     /// handler-name lookup.
     // Neither consumer exists in a build without sockets or the sleep pump.
-    #[cfg_attr(not(any(feature = "net-client", feature = "tokio-sleep")), allow(dead_code))]
+    #[cfg_attr(
+        not(any(feature = "net-client", feature = "tokio-sleep")),
+        allow(dead_code)
+    )]
     pub sockets: bool,
 }
 
@@ -818,18 +821,15 @@ impl Default for NativeEvents {
 
 #[cfg(feature = "net-client")]
 impl NativeEvents {
-    pub fn event_queue(&self) -> Arc<Queue> { self.queue.clone() }
+    pub fn event_queue(&self) -> Arc<Queue> {
+        self.queue.clone()
+    }
     pub fn own_udp(&mut self, id: u64) {
         let sockets = crate::udp::handles::MAP.lock().unwrap();
         self.udp_owned.retain(|id| sockets.contains_key(id));
         self.udp_owned.insert(id);
     }
-    pub fn udp_on(
-        &mut self,
-        id: u64,
-        command: String,
-        opts: Option<&Value>,
-    ) -> MixResult<String> {
+    pub fn udp_on(&mut self, id: u64, command: String, opts: Option<&Value>) -> MixResult<String> {
         self.ensure_open()?;
         self.check_socket_limit()?;
         let mut max = 65535;
@@ -1235,7 +1235,9 @@ impl NativeEvents {
             crate::builtins::socket_sources::KIND_TCP_ACCEPT,
             command,
             |queue, id, _command| {
-                crate::extensions::sockets().ok_or_else(|| crate::extensions::needs_host("tcp_on"))?.subscribe(queue, id, listener_id, owned)
+                crate::extensions::sockets()
+                    .ok_or_else(|| crate::extensions::needs_host("tcp_on"))?
+                    .subscribe(queue, id, listener_id, owned)
             },
         )
     }

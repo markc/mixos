@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 use super::*;
- pub mod tcp_server {
+pub mod tcp_server {
     use super::tcp_client::{Ownership, TcpPermit};
     use std::collections::HashMap;
     use std::sync::{Arc, LazyLock, Mutex};
@@ -40,19 +40,19 @@ use super::*;
 /// Stop listening now. A Class C accept may still hold a clone of the
 /// listener; shutdown(2) wakes it instead of leaving the port open until
 /// the last clone drops.
- pub fn close_listener(listener: std::sync::Arc<tcp_server::Listener>) {
+pub fn close_listener(listener: std::sync::Arc<tcp_server::Listener>) {
     let _ = socket2::SockRef::from(&listener.sock).shutdown(std::net::Shutdown::Both);
 }
 
 /// Why an accept attempt produced no connection.
- pub enum AcceptError {
+pub enum AcceptError {
     /// Every handle permit is taken; the connection was left queued.
     Limit,
     Io(std::io::Error),
 }
 
 impl AcceptError {
- pub fn into_mix(self) -> MixError {
+    pub fn into_mix(self) -> MixError {
         match self {
             AcceptError::Limit => api::refusal(
                 "TCP_HANDLE_LIMIT",
@@ -61,9 +61,7 @@ impl AcceptError {
                     tcp_server::MAX_TCP_HANDLES
                 ),
             ),
-            AcceptError::Io(e) => {
-                api::refusal("TCP_ACCEPT_FAILED", format!("tcp_accept: {e}"))
-            }
+            AcceptError::Io(e) => api::refusal("TCP_ACCEPT_FAILED", format!("tcp_accept: {e}")),
         }
     }
 }
@@ -72,7 +70,7 @@ impl AcceptError {
 /// limit is never exceeded, and dropped again when nothing is pending.
 /// Ok(None) means nothing was pending. With an owner, the connection is
 /// owned before its handle exists anywhere else.
- pub fn try_accept(
+pub fn try_accept(
     listener: &std::net::TcpListener,
     owner: Option<&std::sync::Arc<tcp_client::TcpOwner>>,
 ) -> Result<Option<(u64, std::net::SocketAddr)>, AcceptError> {
@@ -91,7 +89,7 @@ impl AcceptError {
 
 /// accept(2) errors that concern one pending connection rather than the
 /// listener: retry, as the Linux man page advises.
- pub fn accept_retryable(e: &std::io::Error) -> bool {
+pub fn accept_retryable(e: &std::io::Error) -> bool {
     use std::io::ErrorKind;
     matches!(
         e.kind(),
@@ -100,7 +98,7 @@ impl AcceptError {
 }
 
 #[cfg(all(target_os = "linux"))]
- pub fn accept_retryable_os(code: Option<i32>) -> bool {
+pub fn accept_retryable_os(code: Option<i32>) -> bool {
     code.is_some_and(|c| {
         matches!(
             c,
@@ -117,7 +115,7 @@ impl AcceptError {
 }
 
 #[cfg(all(not(target_os = "linux")))]
- pub fn accept_retryable_os(_code: Option<i32>) -> bool {
+pub fn accept_retryable_os(_code: Option<i32>) -> bool {
     false
 }
 
@@ -129,7 +127,7 @@ impl AcceptError {
 /// on the byte (another waiter may drain it): the caller bounds each wait
 /// (ACCEPT_SLICE) and checks the interrupt flag between waits.
 #[cfg(all(unix))]
- pub fn wait_listener(
+pub fn wait_listener(
     listener: &std::net::TcpListener,
     timeout: Option<std::time::Duration>,
 ) -> std::io::Result<bool> {
@@ -166,7 +164,7 @@ impl AcceptError {
 /// Without poll(2): sleep briefly; the caller retries accept and checks
 /// its deadline.
 #[cfg(all(not(unix)))]
- pub fn wait_listener(
+pub fn wait_listener(
     _listener: &std::net::TcpListener,
     timeout: Option<std::time::Duration>,
 ) -> std::io::Result<bool> {
@@ -176,7 +174,7 @@ impl AcceptError {
 }
 
 /// `tcp_listen(host, port[, {backlog}])` → numeric listener handle.
- pub fn builtin_tcp_listen(args: Vec<Value>) -> MixResult<Option<Value>> {
+pub fn builtin_tcp_listen(args: Vec<Value>) -> MixResult<Option<Value>> {
     use api::refusal;
     expect_args_between("tcp_listen", &args, 2, 3)?;
     let host = match &args[0] {
@@ -308,7 +306,7 @@ impl AcceptError {
 /// timeout. The blocking form, for non-unix targets and direct
 /// call_builtin callers: on unix the evaluator runs every numeric form on
 /// the runtime (socket_sources::pull_accept), and the source-id form.
- pub fn builtin_tcp_accept(args: Vec<Value>) -> MixResult<Option<Value>> {
+pub fn builtin_tcp_accept(args: Vec<Value>) -> MixResult<Option<Value>> {
     use api::refusal;
     expect_args_between("tcp_accept", &args, 1, 2)?;
     let (listener, deadline) = socket_sources::prepare_accept(&args)?;

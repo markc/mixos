@@ -3,7 +3,14 @@
 use crate::{builtin_info::BuiltinInfo, error::MixResult, value::Value};
 use std::sync::{Arc, RwLock};
 
-pub const SERVER_NAMES: &[&str] = &["tcp_listen", "tcp_accept", "udp_listen", "http_serve", "http_recv", "udp_recv"];
+pub const SERVER_NAMES: &[&str] = &[
+    "tcp_listen",
+    "tcp_accept",
+    "udp_listen",
+    "http_serve",
+    "http_recv",
+    "udp_recv",
+];
 static FAMILIES: RwLock<Vec<&'static dyn BuiltinFamily>> = RwLock::new(Vec::new());
 
 pub trait BuiltinFamily: Send + Sync {
@@ -11,21 +18,37 @@ pub trait BuiltinFamily: Send + Sync {
     fn entries(&self) -> Vec<&'static BuiltinInfo>;
     fn call(&self, name: &str, args: Vec<Value>) -> MixResult<Option<Value>>;
     #[cfg(feature = "net-client")]
-    fn sockets(&self) -> Option<&dyn SocketExtension> { None }
+    fn sockets(&self) -> Option<&dyn SocketExtension> {
+        None
+    }
 }
 
 /// Idempotent for the same instance; duplicate names from another family refuse.
 pub fn register(family: &'static dyn BuiltinFamily) -> MixResult<()> {
     let mut families = FAMILIES.write().unwrap();
-    if families.iter().any(|f| std::ptr::eq(*f, family)) { return Ok(()); }
+    if families.iter().any(|f| std::ptr::eq(*f, family)) {
+        return Ok(());
+    }
     let entries = family.entries();
     let mut names = std::collections::HashSet::new();
     for entry in &entries {
-        if !names.insert(entry.name) || (crate::builtins::core_builtin_info(entry.name).is_some() && !SERVER_NAMES.contains(&entry.name)) {
-            return Err(crate::native_events::refusal("BUILTIN_RESERVED", entry.name));
+        if !names.insert(entry.name)
+            || (crate::builtins::core_builtin_info(entry.name).is_some()
+                && !SERVER_NAMES.contains(&entry.name))
+        {
+            return Err(crate::native_events::refusal(
+                "BUILTIN_RESERVED",
+                entry.name,
+            ));
         }
-        if families.iter().any(|f| f.entries().iter().any(|e| e.name == entry.name)) {
-            return Err(crate::native_events::refusal("BUILTIN_DUPLICATE", entry.name));
+        if families
+            .iter()
+            .any(|f| f.entries().iter().any(|e| e.name == entry.name))
+        {
+            return Err(crate::native_events::refusal(
+                "BUILTIN_DUPLICATE",
+                entry.name,
+            ));
         }
     }
     families.push(family);
@@ -33,14 +56,29 @@ pub fn register(family: &'static dyn BuiltinFamily) -> MixResult<()> {
 }
 
 pub fn entries() -> Vec<&'static BuiltinInfo> {
-    FAMILIES.read().unwrap().iter().flat_map(|f| f.entries()).collect()
+    FAMILIES
+        .read()
+        .unwrap()
+        .iter()
+        .flat_map(|f| f.entries())
+        .collect()
 }
 pub fn family(name: &str) -> Option<&'static dyn BuiltinFamily> {
-    FAMILIES.read().unwrap().iter().copied().find(|f| f.entries().iter().any(|e| e.name == name))
+    FAMILIES
+        .read()
+        .unwrap()
+        .iter()
+        .copied()
+        .find(|f| f.entries().iter().any(|e| e.name == name))
 }
-pub fn available(name: &str) -> bool { family(name).is_some() }
+pub fn available(name: &str) -> bool {
+    family(name).is_some()
+}
 pub fn needs_host(name: &str) -> crate::MixError {
-    crate::native_events::refusal("NEEDS_MIXD", format!("{name}() needs server capability; run it under: mixd run <script>"))
+    crate::native_events::refusal(
+        "NEEDS_MIXD",
+        format!("{name}() needs server capability; run it under: mixd run <script>"),
+    )
 }
 
 #[cfg(feature = "net-client")]
@@ -62,7 +100,17 @@ pub trait SocketExtension: Send + Sync {
     fn subscribed(&self, id: u64) -> bool;
     fn own(&self, owner: &Arc<crate::server_api::TcpOwner>, id: u64);
     fn retire(&self, owner: &crate::server_api::TcpOwner);
-    fn accept(&self, args: Vec<Value>, owner: Arc<crate::server_api::TcpOwner>, interruptible: bool) -> SocketFuture;
-    fn subscribe(&self, queue: Arc<crate::server_api::Queue>, id: String, handle: u64,
-        owner: Arc<crate::server_api::TcpOwner>) -> MixResult<crate::server_api::SocketSource>;
+    fn accept(
+        &self,
+        args: Vec<Value>,
+        owner: Arc<crate::server_api::TcpOwner>,
+        interruptible: bool,
+    ) -> SocketFuture;
+    fn subscribe(
+        &self,
+        queue: Arc<crate::server_api::Queue>,
+        id: String,
+        handle: u64,
+        owner: Arc<crate::server_api::TcpOwner>,
+    ) -> MixResult<crate::server_api::SocketSource>;
 }

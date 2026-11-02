@@ -13400,7 +13400,10 @@ impl Evaluator {
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = MixResult<Option<Value>>> + 'a>> {
         Box::pin(async move {
             if name == "tcp_accept" && !crate::extensions::available(name) {
-                return Err(crate::native_events::refusal("NEEDS_MIXD", "tcp_accept() needs server capability; run it under: mixd run <script>"));
+                return Err(crate::native_events::refusal(
+                    "NEEDS_MIXD",
+                    "tcp_accept() needs server capability; run it under: mixd run <script>",
+                ));
             }
             if let Some(result) = self.eval_socket_source(name, &*args).await? {
                 return Ok(Some(result));
@@ -13432,7 +13435,8 @@ impl Evaluator {
                 self.check_builtin_arity(name, eval_args.len())?;
                 let owner = self.globals.borrow().native_events.tcp_owner();
                 let interruptible = self.ctx.class_c_read_permit.is_none();
-                let fut = crate::extensions::sockets().ok_or_else(|| crate::extensions::needs_host(name))?
+                let fut = crate::extensions::sockets()
+                    .ok_or_else(|| crate::extensions::needs_host(name))?
                     .accept(eval_args.to_vec(), owner, interruptible);
                 return self.await_with_class_c_yield(fut).await?.map(Some);
             }

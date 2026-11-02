@@ -1,97 +1,95 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 use super::*;
-        pub fn listen(args: Vec<Value>) -> MixResult<Option<Value>> {
-        let host = ip(&args[0])?;
-        let port = match args[1] {
-            Value::Number(n)
-                if n.is_finite() && n.fract() == 0.0 && (0.0..=65535.0).contains(&n) =>
-            {
-                n as u16
-            }
-            _ => {
-                return Err(refusal(
-                    "UDP_ARGUMENT",
-                    "port must be an integer from 0 to 65535",
-                ));
-            }
-        };
-        let mut iface = Ipv4Addr::UNSPECIFIED;
-        let mut reuse = false;
-        let mut reuse_port = false;
-        let mut groups = Vec::new();
-        let mut hops = None;
-        let mut loopback = None;
-        if let Some(m) = map(args.get(2))? {
-            for (k, v) in m {
-                match k.as_str() {
-                    "iface" => iface = ip(v)?,
-                    "join" => {
-                        let vs = match v {
-                            Value::List(xs) => xs.as_slice(),
-                            _ => std::slice::from_ref(v),
-                        };
-                        for x in vs {
-                            let g = ip(x)?;
-                            if !g.is_multicast() {
-                                return Err(refusal(
-                                    "UDP_ARGUMENT",
-                                    "join requires multicast IPv4 groups",
-                                ));
-                            }
-                            groups.push(g);
+pub fn listen(args: Vec<Value>) -> MixResult<Option<Value>> {
+    let host = ip(&args[0])?;
+    let port = match args[1] {
+        Value::Number(n) if n.is_finite() && n.fract() == 0.0 && (0.0..=65535.0).contains(&n) => {
+            n as u16
+        }
+        _ => {
+            return Err(refusal(
+                "UDP_ARGUMENT",
+                "port must be an integer from 0 to 65535",
+            ));
+        }
+    };
+    let mut iface = Ipv4Addr::UNSPECIFIED;
+    let mut reuse = false;
+    let mut reuse_port = false;
+    let mut groups = Vec::new();
+    let mut hops = None;
+    let mut loopback = None;
+    if let Some(m) = map(args.get(2))? {
+        for (k, v) in m {
+            match k.as_str() {
+                "iface" => iface = ip(v)?,
+                "join" => {
+                    let vs = match v {
+                        Value::List(xs) => xs.as_slice(),
+                        _ => std::slice::from_ref(v),
+                    };
+                    for x in vs {
+                        let g = ip(x)?;
+                        if !g.is_multicast() {
+                            return Err(refusal(
+                                "UDP_ARGUMENT",
+                                "join requires multicast IPv4 groups",
+                            ));
                         }
+                        groups.push(g);
                     }
-                    "reuse" | "reuse_port" | "loop" => {
-                        let Value::Bool(b) = v else {
-                            return Err(refusal("UDP_ARGUMENT", format!("{k} must be bool")));
-                        };
-                        if k == "reuse" {
-                            reuse = *b;
-                        } else if k == "reuse_port" {
-                            reuse_port = *b;
-                        } else {
-                            loopback = Some(*b);
-                        }
-                    }
-                    "ttl" => hops = Some(ttl(v)?),
-                    _ => return Err(refusal("UDP_ARGUMENT", format!("unknown UDP option '{k}'"))),
                 }
+                "reuse" | "reuse_port" | "loop" => {
+                    let Value::Bool(b) = v else {
+                        return Err(refusal("UDP_ARGUMENT", format!("{k} must be bool")));
+                    };
+                    if k == "reuse" {
+                        reuse = *b;
+                    } else if k == "reuse_port" {
+                        reuse_port = *b;
+                    } else {
+                        loopback = Some(*b);
+                    }
+                }
+                "ttl" => hops = Some(ttl(v)?),
+                _ => return Err(refusal("UDP_ARGUMENT", format!("unknown UDP option '{k}'"))),
             }
         }
-        let permit = TcpPermit::acquire("udp_listen")?;
-        // socket2 handles native sockaddr layouts (including BSD sin_len)
-        // and descriptor inheritance portably. Already provided by ws.
-        let sock: UdpSocket = socket2::Socket::new(
-            socket2::Domain::IPV4,
-            socket2::Type::DGRAM,
-            Some(socket2::Protocol::UDP),
-        )
-        .map_err(io)?
-        .into();
-        if reuse {
-            option(&sock, libc::SO_REUSEADDR, &1i32, libc::SOL_SOCKET)?;
-        }
-        if reuse_port {
-            option(&sock, libc::SO_REUSEPORT, &1i32, libc::SOL_SOCKET)?;
-        }
-        let addr = std::net::SocketAddrV4::new(host, port);
-        socket2::SockRef::from(&sock)
-            .bind(&addr.into())
-            .map_err(io)?;
-        interface(&sock, iface)?;
-        if let Some(n) = hops {
-            sock.set_multicast_ttl_v4(n).map_err(io)?;
-        }
-        if let Some(b) = loopback {
-            sock.set_multicast_loop_v4(b).map_err(io)?;
-        }
-        for g in groups {
-            sock.join_multicast_v4(&g, &iface).map_err(io)?;
-        }
-        sock.set_nonblocking(true).map_err(io)?;
-        let id = api::adopt_udp(sock, permit);
-        Ok(Some(Value::Number(id as f64)))
     }
+    let permit = TcpPermit::acquire("udp_listen")?;
+    // socket2 handles native sockaddr layouts (including BSD sin_len)
+    // and descriptor inheritance portably. Already provided by ws.
+    let sock: UdpSocket = socket2::Socket::new(
+        socket2::Domain::IPV4,
+        socket2::Type::DGRAM,
+        Some(socket2::Protocol::UDP),
+    )
+    .map_err(io)?
+    .into();
+    if reuse {
+        option(&sock, libc::SO_REUSEADDR, &1i32, libc::SOL_SOCKET)?;
+    }
+    if reuse_port {
+        option(&sock, libc::SO_REUSEPORT, &1i32, libc::SOL_SOCKET)?;
+    }
+    let addr = std::net::SocketAddrV4::new(host, port);
+    socket2::SockRef::from(&sock)
+        .bind(&addr.into())
+        .map_err(io)?;
+    interface(&sock, iface)?;
+    if let Some(n) = hops {
+        sock.set_multicast_ttl_v4(n).map_err(io)?;
+    }
+    if let Some(b) = loopback {
+        sock.set_multicast_loop_v4(b).map_err(io)?;
+    }
+    for g in groups {
+        sock.join_multicast_v4(&g, &iface).map_err(io)?;
+    }
+    sock.set_nonblocking(true).map_err(io)?;
+    let id = api::adopt_udp(sock, permit);
+    Ok(Some(Value::Number(id as f64)))
+}
 
 /// `udp_recv(port[, {timeout, host, max}])` → one datagram as
 /// `{bytes, text, from_host, from_port}`, or `nil` on timeout.
@@ -102,7 +100,7 @@ use super::*;
 /// never truncates; a datagram longer than `max` is truncated to it, which
 /// is recvfrom(2)'s own contract). `text` is the payload decoded as UTF-8,
 /// or nil when it is not valid UTF-8 (`bytes` always carries the truth).
- pub fn builtin_udp_recv(args: Vec<Value>) -> MixResult<Option<Value>> {
+pub fn builtin_udp_recv(args: Vec<Value>) -> MixResult<Option<Value>> {
     expect_args_between("udp_recv", &args, 1, 2)?;
     // Port 0 would bind an ephemeral port the caller can never learn from
     // the result map — a guaranteed silent timeout, so it is refused.

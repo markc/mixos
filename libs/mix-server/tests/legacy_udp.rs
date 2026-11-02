@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-use mix::value::Value;
-use std::net::{UdpSocket, Ipv4Addr};
-use std::os::fd::AsRawFd;
 use mix::server_api::testing::record;
+use mix::value::Value;
+use std::net::{Ipv4Addr, UdpSocket};
+use std::os::fd::AsRawFd;
 #[cfg(target_os = "linux")]
 mod tests {
     use super::*;
     use mix::builtins::call_builtin;
-use mix::server_api::testing::*;
+    use mix::server_api::testing::*;
     fn listen(host: &str, port: u16, opts: &str) -> u64 {
-mix_server::register().unwrap();
+        mix_server::register().unwrap();
         let opts = json_value(serde_json::from_str(opts).unwrap());
         let Some(Value::Number(n)) = mix_server::listen(vec![
             Value::String(host.into()),
@@ -44,10 +44,13 @@ mix_server::register().unwrap();
                 ],
             )
             .unwrap();
-            let ev = tokio::time::timeout(std::time::Duration::from_secs(3), ne.event_queue().next(None))
-                .await
-                .unwrap()
-                .unwrap();
+            let ev = tokio::time::timeout(
+                std::time::Duration::from_secs(3),
+                ne.event_queue().next(None),
+            )
+            .await
+            .unwrap()
+            .unwrap();
             let body: serde_json::Value = serde_json::from_str(&ev.body).unwrap();
             assert_eq!(
                 body["datagram"]["bytes"],
@@ -77,8 +80,7 @@ mix_server::register().unwrap();
         receiver
             .set_read_timeout(Some(std::time::Duration::from_secs(3)))
             .unwrap();
-        let opts =
-            json_value(serde_json::json!({"from":"127.0.0.2", "ttl":4}));
+        let opts = json_value(serde_json::json!({"from":"127.0.0.2", "ttl":4}));
         call_builtin(
             "udp_send",
             vec![
@@ -123,14 +125,7 @@ mix_server::register().unwrap();
             serde_json::json!({"max":65536}),
             serde_json::json!({"bad":1}),
         ] {
-            assert!(
-                ne.udp_on(
-                    id,
-                    "x".into(),
-                    Some(&json_value(opts))
-                )
-                .is_err()
-            );
+            assert!(ne.udp_on(id, "x".into(), Some(&json_value(opts))).is_err());
         }
     }
 
@@ -201,10 +196,13 @@ mix_server::register().unwrap();
             .unwrap()
             .send_to(b"alive", (Ipv4Addr::LOCALHOST, port))
             .unwrap();
-        let ev = tokio::time::timeout(std::time::Duration::from_secs(3), ne.event_queue().next(None))
-            .await
-            .unwrap()
-            .unwrap();
+        let ev = tokio::time::timeout(
+            std::time::Duration::from_secs(3),
+            ne.event_queue().next(None),
+        )
+        .await
+        .unwrap()
+        .unwrap();
         let body: serde_json::Value = serde_json::from_str(&ev.body).unwrap();
         assert_eq!(body["datagram"]["text"], "alive", "{body}");
         assert!(get_udp(id).is_ok());

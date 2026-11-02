@@ -1,0 +1,37 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Runtime-only check of a completed workspace release build, under CBC.
+$bin = realpath(args()[0] ?? "target/release")
+$tmp = "/tmp/mixd-boundary-" .. pid()
+mkdir($tmp)
+for $c in [
+  {name: "tcp_listen", args: '"127.0.0.1", 0'}, {name: "tcp_accept", args: "1"},
+  {name: "udp_listen", args: '"127.0.0.1", 0'}, {name: "http_serve", args: '"."'},
+  {name: "http_recv", args: "0"}, {name: "udp_recv", args: "0"}
+]
+  $file = $tmp .. "/" .. $c.name .. ".mix"
+  write_file($file, "try\n" .. $c.name .. "(" .. $c.args .. ")\ncatch $m, $e\nprint($e.code)\nend\n")
+  $r = run_argv([$bin .. "/mix", "--no-lint", $file])
+  if not $r.ok or trim($r.stdout) != "NEEDS_MIXD" then raise("BOUNDARY", $c.name .. ": " .. $r.stdout .. $r.stderr) end
+  print("NEEDS_MIXD " .. $c.name)
+end
+$file = $tmp .. "/round_trip.mix"
+write_file($file, '$l = tcp_listen("127.0.0.1", 0)
+$p = tcp_local_addr($l).port
+$c = tcp_connect("127.0.0.1", $p)
+$s = tcp_accept($l, {timeout: 2})
+tcp_send($c, "ping\n")
+if tcp_recv_line($s) != "ping" then raise("ROUND_TRIP", "request") end
+tcp_send($s, "pong\n")
+if tcp_recv_line($c) != "pong" then raise("ROUND_TRIP", "reply") end
+tcp_close($c)
+tcp_close($s)
+tcp_close($l)
+print("WORKSPACE_MIXD_ROUND_TRIP_OK")
+')
+$r = run_argv([$bin .. "/mixd", "run", $file], {timeout: 20})
+print($r.stdout)
+if not $r.ok then raise("ROUND_TRIP", $r.stderr) end
+$a = run_argv([$bin .. "/mix", "builtins", "--names"])
+$b = run_argv([$bin .. "/mixd", "run", "builtins", "--names"])
+if not $a.ok or not $b.ok or $a.stdout != $b.stdout then raise("METADATA", "name lists differ") end
+print("BUILTIN_NAMES_EQUAL count=" .. len(split(trim($a.stdout), "\n")))
