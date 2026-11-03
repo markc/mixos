@@ -806,9 +806,17 @@ impl Lexer {
         {
             start -= 1;
         }
+        // The hyphen may come after this segment too (`a.007-b`), so look
+        // at the whole word, not only the part before the number.
+        let mut end = self.pos;
+        while end < self.source.len()
+            && (self.source[end].is_ascii_alphanumeric() || matches!(self.source[end], '_' | '-' | '.'))
+        {
+            end += 1;
+        }
         start < self.token_start
             && (self.source[start].is_ascii_alphabetic() || self.source[start] == '_')
-            && self.source[start..self.token_start].contains(&'-')
+            && self.source[start..end].contains(&'-')
     }
 
     fn lex_number(&mut self, line: usize, col: usize) -> MixResult<SpannedToken> {

@@ -35,6 +35,8 @@ fn all_command_slots_read_names_whole_and_lint_without_errors() {
         "svc-01.ping",
         "node-007.a.b",
         "a-1.2.3",
+        "a.007-b",
+        "svc.01.007-x.ping",
         "svc-x.01.002.ping",
         "_a-b_",
     ] {
