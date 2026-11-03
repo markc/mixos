@@ -201,3 +201,19 @@ identity; the calling test owns its directory. These are distinct from
 path-only helpers. Historical `maild_ops*` and `compose*` names could not be
 matched to the available source/history; a full filename or saved listing
 is needed to attribute them rather than guess.
+
+The 2026-11-03 CBC audit used clean private roots for every command:
+
+| Suite | Pushed source | Passing results across two runs | Leftovers, run 1 / run 2 |
+| --- | --- | --- | --- |
+| mimedb, Mix, model, slots, scene-host, testkit, Preferences, Workshop | `2d26779810e0` | 5,436 | 0 / 0 |
+| mesh-sign, mesh, noded, portald, toolkit | `cde61ae4574e` | 1,834 | 0 / 0 |
+| guard regression, agent validation/log/CLI/service/resume, panel template | `2541f8ea3aca` | Seven scripts each run twice | 0 / 0 |
+
+The first guarded core audit had passed its assertions but left 149 entries;
+the guard rejected it. The later runs closed those leaks. The guard's own
+regression deliberately creates a hidden leak and verifies rejection before
+removing its fixture. Clippy passed for all 14 affected crates at
+`c393fff5d75a`, using the release gate's lint policy. Formatting and lockfile
+diffs came from CBC. The modified native-mail acceptance fixture compiled;
+its live test remains ignored and was not exercised by this audit.

@@ -32,7 +32,9 @@ struct Evidence {
 
 impl Drop for Evidence {
     fn drop(&mut self) {
-        if !self.complete && let Some(root) = self.root.take() {
+        if !self.complete
+            && let Some(root) = self.root.take()
+        {
             eprintln!("NATIVE_MAIL_ARTIFACTS {}", root.keep().display());
         }
     }
