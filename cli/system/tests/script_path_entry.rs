@@ -14,14 +14,11 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-fn work_dir(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "mix_script_path_entry_{}_{name}",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(dir.join("sub")).unwrap();
-    dir
+fn work_dir(name: &str) -> (tempfile::TempDir, PathBuf) {
+    let root = tempfile::Builder::new().prefix(name).tempdir().unwrap();
+    let path = root.path().to_path_buf();
+    std::fs::create_dir(path.join("sub")).unwrap();
+    (root, path)
 }
 
 fn canonical_line(path: &Path) -> String {
@@ -46,7 +43,7 @@ fn run_in(dir: &Path, args: &[&str]) -> String {
 
 #[test]
 fn relative_entry_path_is_resolved_before_a_chdir() {
-    let dir = work_dir("chdir");
+    let (_root, dir) = work_dir("chdir");
     let main = dir.join("main.mix");
     std::fs::write(&main, "chdir(\"sub\")\nprint(script_path())\n").unwrap();
     // The file is named relative to `dir`, which is the process cwd. The
@@ -59,7 +56,7 @@ fn relative_entry_path_is_resolved_before_a_chdir() {
 fn symlinked_entry_answers_with_its_target_like_realpath() {
     // script_path() and realpath($0) agree: the symlink's target, so a
     // script finds its siblings in the real tree.
-    let dir = work_dir("symlink");
+    let (_root, dir) = work_dir("symlink");
     let real = dir.join("real.mix");
     std::fs::write(&real, "print(script_path())\nprint(realpath($0))\n").unwrap();
     let link = dir.join("link.mix");
@@ -73,7 +70,7 @@ fn symlinked_entry_answers_with_its_target_like_realpath() {
 fn relative_entry_path_survives_a_prelude_override_that_chdirs() {
     // A user prelude override runs before the entry script. When it chdir()s
     // away, the entry path must still be the absolute path it had at start.
-    let dir = work_dir("prelude_chdir");
+    let (_root, dir) = work_dir("prelude_chdir");
     let etc = dir.join("etc");
     std::fs::create_dir_all(&etc).unwrap();
     std::fs::write(etc.join("prelude.mix"), "chdir(\"/\")\n").unwrap();
@@ -97,14 +94,14 @@ fn relative_entry_path_survives_a_prelude_override_that_chdirs() {
 
 #[test]
 fn dash_c_has_no_entry_script() {
-    let dir = work_dir("dash_c");
+    let (_root, dir) = work_dir("dash_c");
     let out = run_in(&dir, &["-c", "print(script_path())"]);
     assert_eq!(out, "nil\n");
 }
 
 #[test]
 fn stdin_has_no_entry_script() {
-    let dir = work_dir("stdin");
+    let (_root, dir) = work_dir("stdin");
     let mut child = Command::new(env!("CARGO_BIN_EXE_mix"))
         .current_dir(&dir)
         .arg("-")

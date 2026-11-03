@@ -126,7 +126,7 @@ fn snapshot_at(kind: &str, mode: Mode, minimum: bool) {
             egui::vec2(820.0, 600.0)
         })
         .wgpu()
-        .build_ui(move |ui| window.show(ui));
+        .build_ui(move |ui| dopus_core::testing::with_display_root(&owner.path, std::path::Path::new("/tmp/dopus-chooser-snapshots/home"), || window.show(ui)));
     harness.run();
     if minimum {
         for _ in 0..4 {

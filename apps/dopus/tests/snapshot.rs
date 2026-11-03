@@ -161,10 +161,15 @@ fn window(theme: Theme, name: &str, sidebars: bool, dialog: Option<Dialog>) {
             if let Some(theme) = theme.take() {
                 toolkit::install(ui.ctx(), &theme);
             }
-            let _ = view(ui, &app, &registry, &strings);
+            let _ = fixed_paths(|| view(ui, &app, &registry, &strings));
         });
     harness.run();
     harness.snapshot(name);
+}
+
+fn fixed_paths<R>(render: impl FnOnce() -> R) -> R {
+    let home = home();
+    dopus_core::testing::with_display_root(&home.path, std::path::Path::new("/tmp/dopus-snapshots/home"), render)
 }
 
 fn chrome(scheme: Scheme, mode: Mode) -> Theme {
@@ -184,7 +189,7 @@ fn minimum_window_renders() {
         .with_context_setup(|ctx| toolkit::install(ctx, &Theme::embedded()))
         .with_size(egui::Vec2::from(toolkit::window::MIN_SIZE))
         .build_ui(move |ui| {
-            let _ = view(ui, &app, &registry, &strings);
+            let _ = fixed_paths(|| view(ui, &app, &registry, &strings));
         });
     toolkit::install(&h.ctx, &Theme::embedded());
     h.run_steps(4);
@@ -356,7 +361,7 @@ fn preview(name: &str, w: usize, h: usize) {
                     )),
                 });
             }
-            let _ = view(ui, &app, &registry, &strings);
+            let _ = fixed_paths(|| view(ui, &app, &registry, &strings));
         });
     toolkit::install(&harness.ctx, &theme);
     harness.run();

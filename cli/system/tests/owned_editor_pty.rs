@@ -932,6 +932,15 @@ fn completion_snapshot_variables_paths_and_cycle() {
     assert!(p.prompt().contains("\r\n919\r\n"));
     let directory = p.home.path().join("unique_completion_dir");
     fs::create_dir(&directory).unwrap();
+    // This test asserts completion text, not terminal wrapping. A private
+    // TMPDIR adds ancestors; keep the completed absolute path on one row.
+    let size = libc::winsize {
+        ws_row: 12,
+        ws_col: u16::try_from(p.home.path().as_os_str().len() + 64).unwrap(),
+        ws_xpixel: 0,
+        ws_ypixel: 0,
+    };
+    assert_eq!(unsafe { libc::ioctl(p.slave.as_raw_fd(), libc::TIOCSWINSZ, &size) }, 0);
     p.send(format!("cd {}/unique_comp\t", p.home.path().display()).as_bytes());
     p.until("unique_completion_dir/");
     p.send(b"\n");

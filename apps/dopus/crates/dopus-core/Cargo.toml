@@ -17,6 +17,9 @@ contract = "none"
 [lints.clippy]
 mod_module_files = "deny"
 
+[features]
+testing = []
+
 [dependencies]
 mimedb.workspace = true
 config.workspace = true

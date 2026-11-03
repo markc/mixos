@@ -1943,6 +1943,10 @@ pub fn sanitise_display_text(text: &str) -> String {
 /// rendered path, not only its final component — Unix permits control
 /// characters in every ancestor directory name.
 pub fn sanitise_display_path(path: &Path) -> String {
+    #[cfg(feature = "testing")]
+    let display = crate::testing::display_path(path);
+    #[cfg(feature = "testing")]
+    let path = display.as_path();
     sanitise_display_text(&path.to_string_lossy())
 }
 

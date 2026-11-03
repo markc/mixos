@@ -8,6 +8,12 @@ if contains(args(), "--format") then
   run_argv_must(["git", "checkout", "-q", "--", "."])
   exit(0)
 end
+if contains(args(), "--regressions") then
+  $r = run_argv([$mix, "tools/test_tmp.mix", "cargo", "test", "--workspace", "--locked", "--test", "snapshot", "--test", "chooser_snapshot", "--test", "script_path_entry", "--test", "lint_notes", "--test", "lint_fix_and_pragmas", "--test", "owned_editor_pty"], {timeout: 7200, max_output: 64000000, stderr: "stdout"})
+  print($r.stdout)
+  if not $r.ok then exit(1) end
+  exit(0)
+end
 -- Full sweeps are deliberately separate from the affected-crate recipes.
 if contains(args(), "--whole-rust") or contains(args(), "--whole-mix") then
   $built = run_argv(["cargo", "build", "--workspace", "--all-targets", "--locked"], {timeout: 7200, max_output: 64000000, stderr: "stdout"})

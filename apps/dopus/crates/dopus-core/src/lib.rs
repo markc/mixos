@@ -59,6 +59,8 @@ pub mod model;
 pub mod ops;
 pub mod properties;
 pub mod thumbs;
+#[cfg(feature = "testing")]
+pub mod testing;
 mod worker;
 
 pub use config::{CURRENT_SCHEMA, ConfigFile, DOpusConfig, PaneConfig, SortColumn};
