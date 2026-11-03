@@ -36,7 +36,7 @@ fn class_of(name: &str) -> Option<&'static str> {
 fn every_served_command_is_registered_and_nothing_else() {
     assert_eq!(DEFAULT_SERVICE, "shell");
     let served: BTreeSet<String> = SceneCommand::names(DEFAULT_SERVICE).into_iter().collect();
-    assert_eq!(served.len(), 35);
+    assert_eq!(served.len(), 36);
     assert_eq!(registered(), served);
 }
 
