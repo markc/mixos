@@ -67,6 +67,14 @@ loop
     break
   end
   $m = json_parse($line)
+  if env("FAKE_ACP_CALLS") != "" then
+    append_file(env("FAKE_ACP_CALLS"), $line .. "\n")
+  end
+  if (($m.method == "session/set_mode" and $m.params.modeId == "refused") or
+    ($m.method == "session/set_config_option" and $m.params.value == "refused")) then
+    out({id: $m.id, error: {code: -32602, message: "setting refused"}})
+    continue
+  end
   if $m.method == "initialize" then
     $caps = {loadSession: contains($modes, "load")}
     if contains($modes, "resume") or contains($modes, "refuse") then $caps.sessionCapabilities = {resume: {}} end

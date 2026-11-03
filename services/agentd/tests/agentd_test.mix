@@ -217,11 +217,15 @@ try
 
   -- A busy turn, then cancel.
   agent("agent.session.prompt", {session: $s, content: "SLOW"})
-  $busy = agent("agent.session.prompt", {session: $s, content: "again"})
+  $busy = agent("agent.session.prompt", {session: $s, content: "again", id: "retry-refused"})
   check("a second prompt while running is AGENT_RUNNING", $busy.rc == 15 and code($busy.v) == "AGENT_RUNNING")
   $c = agent("agent.session.cancel", {session: $s})
   check("cancel is accepted", $c.rc == 0 and $c.v.cancelled == true)
   check("the cancelled turn reports cancelled", saw("updated " .. $s .. " ", "stop cancelled"))
+  sleep(0.3)
+  $retry = agent("agent.session.prompt", {session: $s, content: "again", id: "retry-refused"})
+  check("a refused prompt id runs when retried after ready", $retry.rc == 0 and $retry.v.turn != nil)
+  check("the retried prompt reaches the agent", saw("updated " .. $s .. " ", "echo:again"))
   sleep(0.3)
   agent("agent.session.prompt", {session: $s, content: "LATE"})
   sleep(0.3)
@@ -339,6 +343,13 @@ try
   check("list shows sessions from the log", len(filter(agent("agent.session.list", {}).v.sessions, fn($x) = $x.session == $s2)) == 1)
   $replay = agent("agent.session.prompt", {session: $s, content: "once", id: "turn-once"})
   check("a receipt survives the restart", $replay.rc == 0 and $replay.v.turn == $first.v.turn)
+  -- Model a stop after intent was written, before any receipt was saved.
+  $lh = require("../scripts/lib/log.mix")
+  $db = $lh.open($tmp .. "/state/sessions.db")
+  $lh.command_begin($db, $s, "cut-off", "agent.session.prompt", "cli", "{}", time())
+  sqlclose($db)
+  $cut = agent("agent.session.prompt", {session: $s, content: "x", id: "cut-off"})
+  check("a NULL rc still answers COMMAND_INTERRUPTED", $cut.rc == 15 and code($cut.v) == "COMMAND_INTERRUPTED")
 finally
   for each $p in $pids
     try

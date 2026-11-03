@@ -291,10 +291,10 @@ Capability tokens were considered and rejected: they refuse honest
 callers and leave self-approval one hop away.</li>
 <li><strong>Durable intent.</strong> agentd writes every acting command and every mapped
 update to an append-only SQLite log before it runs or publishes it.
-Command ids are scoped per session; a retry with the same id gets the
-first reply and never runs again. Sessions outlive agentd in the log,
-and <code>agent.session.resume</code> brings one back through the agent's own
-<code>session/resume</code> or <code>session/load</code>.</li>
+Command ids are scoped per session; an accepted (rc 0) command keeps its
+first reply and never runs again on a retry with the same id. Sessions
+outlive agentd in the log, and <code>agent.session.resume</code> brings one back
+through the agent's own <code>session/resume</code> or <code>session/load</code>.</li>
 <li><strong>Versions.</strong> ACP v1 is required; v2 is to be negotiated when both sides
 offer it, behind the same Bus vocabulary.</li>
 <li><strong>Foreign code.</strong> ACP agents are external programs at the edge, called

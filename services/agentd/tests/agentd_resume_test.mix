@@ -105,7 +105,8 @@ try
   $bus = $pb.start({dir: $tmp .. "/bus", name: "agentd-resume", noded: $noded})
   $env = merge($pb.client_env($bus), {HOME: $tmp .. "/home", MIXOS_NOTIFYD_STATE: $tmp .. "/notify.json"})
   $conf = {max_live: 4, agents: {
-    resumer: {argv: [$mix, $fake, "resume"], roots: [$tmp .. "/ws"]},
+    resumer: {argv: [$mix, $fake, "resume"], roots: [$tmp .. "/ws"], mode: "default", close_on_done: true,
+      env: {FAKE_ACP_CALLS: $tmp .. "/calls"}},
     loader: {argv: [$mix, $fake, "load"], roots: [$tmp .. "/ws"]},
     refuser: {argv: [$mix, $fake, "refuse"], roots: [$tmp .. "/ws"]},
     plain: {argv: [$mix, $fake], roots: [$tmp .. "/ws"]},
@@ -123,13 +124,31 @@ try
 
   -- Resume: same id, seq continues, mixos-mcp comes back.
   $s = start("resumer")
+  $listing = filter(agent("agent.agents", {}).v.agents, fn($x) = $x.agent == "resumer")[0]
+  check("agent.agents lists instance settings", $listing.mode == "default" and $listing.close_on_done == true)
+  sleep(0.3)
+  check("instance mode is applied at new session start", contains(read_file($tmp .. "/calls"), '"modeId":"default"'))
+  agent("agent.session.set", {session: $s, mode: "plan"})
+  agent("agent.session.set", {session: $s, option: "model", value: "slow-restored"})
+  agent("agent.session.set", {session: $s, mode: "refused"})
+  agent("agent.session.set", {session: $s, option: "model", value: "refused"})
   agent("agent.session.prompt", {session: $s, content: "MCP before"})
   check("a turn before close", saw("updated " .. $s .. " ", "echo:MCP before"))
   sleep(0.3)
+  check("the fake refused both later settings", len(filter(logged($s, "error"), fn($e) = $e.during == "set")) == 2)
   $seq_before = agent("agent.session.read", {session: $s, since: 0}).v.session.seq
   check("close ends it", close_and_wait($s))
+  write_file($tmp .. "/calls", "")
   $r = agent("agent.session.resume", {session: $s, id: "res-1"})
   check("resume is accepted via session/resume", $r.rc == 0 and $r.v.via == "resume" and $r.v.session == $s)
+  $queued = agent("agent.session.prompt", {session: $s, content: "CONFIG"})
+  check("prompt during reopen is queued behind restored settings", $queued.rc == 0 and $queued.v.queued == true)
+  check("the reopened agent sees the accepted option", saw("updated " .. $s .. " ", "config:model=slow-restored"))
+  sleep(0.3)
+  $calls = map(filter(lines(read_file($tmp .. "/calls")), fn($x) = $x != ""), fn($x) = json_parse($x))
+  $methods = map($calls, fn($x) = $x.method)
+  check("reopen sends mode then option then queued prompt", deep_eq(slice($methods, 0, 5), ["initialize", "session/resume", "session/set_mode", "session/set_config_option", "session/prompt"]))
+  check("only accepted settings are replayed", $calls[2].params.modeId == "plan" and $calls[3].params.value == "slow-restored" and not contains(read_file($tmp .. "/calls"), "refused"))
   check("the session comes back", saw("updated " .. $s .. " ", " resumed "))
   $res = logged($s, "resumed")
   $init = logged($s, "initialized")
@@ -143,6 +162,21 @@ try
   $live = agent("agent.session.resume", {session: $s})
   check("resuming a live session is refused", $live.rc == 10 and code($live.v) == "USAGE")
   close_and_wait($s)
+
+  -- A legacy session with no accepted mode uses today's instance seed.
+  $legacy = start("resumer")
+  close_and_wait($legacy)
+  $lh = require("../scripts/lib/log.mix")
+  $db = $lh.open($tmp .. "/state/sessions.db")
+  sqlexec($db, "UPDATE sessions SET mode = NULL WHERE id = ?", [$legacy])
+  sqlclose($db)
+  write_file($tmp .. "/calls", "")
+  agent("agent.session.resume", {session: $legacy})
+  agent("agent.session.prompt", {session: $legacy, content: "legacy seed"})
+  check("a resumed legacy session runs its prompt", saw("updated " .. $legacy .. " ", "echo:legacy seed"))
+  $legacy_calls = map(filter(lines(read_file($tmp .. "/calls")), fn($x) = $x != ""), fn($x) = json_parse($x))
+  check("resume seeds an unrecorded mode from instance conf", $legacy_calls[2].method == "session/set_mode" and $legacy_calls[2].params.modeId == "default" and $legacy_calls[3].method == "session/prompt")
+  close_and_wait($legacy)
 
   -- Load: history replay dropped, current state kept.
   $l = start("loader")
