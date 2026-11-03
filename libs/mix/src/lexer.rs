@@ -162,7 +162,7 @@ fn interp_spec_optional_dots(spec: String) -> String {
 fn source_token_kind(token: &Token, first: Option<&char>) -> &'static str {
     use Token::*;
     match token {
-        Number(_) => "number",
+        Number(_) | BusNameNumber(_) => "number",
         String(_) if matches!(first, Some('"' | '\'')) => "string",
         String(_) => "word",
         InterpString(_) => "interp_string",
@@ -794,6 +794,23 @@ impl Lexer {
         matches!(keyword.as_str(), "send" | "emit" | "address" | "on")
     }
 
+    /// Defer malformed numeric segments in a possible Bus word to the
+    /// parser. Unlike target/header detection this also covers command
+    /// slots after arbitrary target expressions and in address bodies.
+    /// The distinct token cannot become an ordinary string expression.
+    fn in_hyphenated_word(&self) -> bool {
+        let mut start = self.token_start;
+        while start > 0
+            && (self.source[start - 1].is_ascii_alphanumeric()
+                || matches!(self.source[start - 1], '_' | '-' | '.'))
+        {
+            start -= 1;
+        }
+        start < self.token_start
+            && (self.source[start].is_ascii_alphabetic() || self.source[start] == '_')
+            && self.source[start..self.token_start].contains(&'-')
+    }
+
     fn lex_number(&mut self, line: usize, col: usize) -> MixResult<SpannedToken> {
         // Radix integer literals: 0x.. (hex), 0o.. (octal), 0b.. (binary).
         // Mix has a single f64 numeric type, so these are sugar yielding the
@@ -839,6 +856,9 @@ impl Lexer {
             // scan re-reads the whole word from source, so the token's
             // own value never matters — it only must not be an error.
             return Ok(self.spanned(Token::String(s), line, col));
+        }
+        if malformed && self.in_hyphenated_word() {
+            return Ok(self.spanned(Token::BusNameNumber(s), line, col));
         }
         if int_part.len() > 1 && int_part.starts_with('0') {
             return Err(MixError::LexerError {
@@ -1979,7 +1999,7 @@ fn opener_key(lx: &Lexer, ch: char) -> Option<String> {
 /// The class of a token that lexed from a source starting with `first`.
 fn classify(token: &Token, first: char) -> TokenClass {
     match token {
-        Token::Number(_) => TokenClass::Number,
+        Token::Number(_) | Token::BusNameNumber(_) => TokenClass::Number,
         // A bare word lexes to `String` too; only a quote makes it a literal.
         // A digit-led `String` is a segment of a hyphenated send target.
         Token::String(_) if first == '"' || first == '\'' => TokenClass::String,
