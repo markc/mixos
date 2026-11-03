@@ -334,7 +334,7 @@ fn await_event()
   -- query supplies the outcome; agent queries stay internal in await_query.
   if not await_terminal($out.state) or type($out.op) != "string" then return end
   for each $row in sqlexec($DB, "SELECT * FROM awaits WHERE state = 'pending' AND service || '.op.done' = ? AND op = ?", [$topic, $out.op])
-    if $row.service != "agent" and $event.headers.broker_service == $row.service then
+    if $row.service != "agent" and $a.local_operation_publication($event.headers, $row.service) then
       await_fire($row, $out, false)
     else
       await_query($row, false)
@@ -457,6 +457,7 @@ end
 -- A final end cannot be undone by an operation event. Fail outbox entries
 -- before cancelling remaining pending waits (a deadline may still be pending).
 fn await_end($id)
+  if $S.sessions[$id] != nil and $S.sessions[$id].status == "ended" then $S.sessions[$id].replaying = false end
   sqlexec($DB, "BEGIN IMMEDIATE")
   try
     $failed = sqlexec($DB, "SELECT id FROM awaits WHERE session = ? AND state != 'delivered' AND id IN (SELECT await_id FROM await_outbox)", [$id])

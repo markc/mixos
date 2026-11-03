@@ -14,6 +14,15 @@ fn check($name, $ok)
   print((if $ok then "PASS " else "FAIL " end) .. $name)
 end
 
+check("local authenticated operation publication accepted", $a.local_operation_publication({broker_service: "ops", topic: "ops.op.done"}, "ops"))
+check("empty peer local publication accepted", $a.local_operation_publication({broker_peer: "", broker_service: "ops", topic: "ops.op.done"}, "ops"))
+check("same-named remote service rejected", not $a.local_operation_publication({broker_peer: "remote", broker_service: "ops", topic: "ops.op.done"}, "ops"))
+check("remote directed command rejected", not $a.local_operation_publication({broker_peer: "remote", broker_service: "ops", command: "ops.op.done"}, "ops"))
+check("direct command fallback is not publication", not $a.local_operation_publication({broker_service: "ops", command: "ops.op.done"}, "ops"))
+check("different topic rejected", not $a.local_operation_publication({broker_service: "ops", topic: "other.op.done"}, "ops"))
+check("different owner rejected", not $a.local_operation_publication({broker_service: "other", topic: "ops.op.done"}, "ops"))
+check("missing headers rejected", not $a.local_operation_publication(nil, "ops"))
+
 fn refuses($name, $code, $f)
   try
     $f()

@@ -39,6 +39,10 @@ seconds) is an **operation**:
   the broker-owned `broker_service: <svc>` header; caller-supplied identities
   and directed commands cannot manufacture it. Consumers may accept the
   authenticated terminal envelope even if the publisher exits immediately.
+  Local operation consumers require an absent or empty `broker_peer`, the
+  matching `broker_service` and the actual matching `topic` header. An admitted
+  remote service of the same name is not authority for a local operation id;
+  remote or directed traffic is validated by querying the awaited target.
   On older brokers without this header, consumers must validate event hints
   with a bounded `op.get` query. If that query fails, the await stays pending
   until another event, reconnect or deadline; broker upgrade removes this

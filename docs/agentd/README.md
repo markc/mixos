@@ -235,10 +235,11 @@ stays pending. Catch-up runs before the registration reply, and again
 after reconnect.
 
 Incoming terminal publications authenticated by noded's reserved `.op.done`
-owner (`broker_service` matching the awaited service) deliver their outcome
+owner (`broker_service` matching the awaited service, absent or empty
+`broker_peer`, and actual `topic` matching `<service>.op.done`) deliver their outcome
 directly, even if `op.get` is unavailable or the publisher has exited.
 Agent session operations always use the internal canonical outcome, without
-a self Bus call. Direct commands and legacy brokers without the authenticated
+a self Bus call. Remote mesh events, directed commands and legacy brokers without the authenticated
 header use the bounded 10 second durable `op.get` query. A failed legacy query
 leaves the await pending until another event, reconnect or deadline; an await
 without a deadline can remain pending until the broker is upgraded. There is

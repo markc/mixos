@@ -500,3 +500,11 @@ fn permission_buttons($options)
   end
   return $out
 end
+-- Accept only this broker's local, owner-authenticated topic publication.
+-- Admitted remote directed messages can also carry broker_service, but
+-- identify their remote broker in broker_peer and are not local outcomes.
+fn local_operation_publication($headers, $service)
+  if type($headers) != "map" then return false end
+  return ($headers.broker_peer ?? "") == "" and $headers.broker_service == $service and $headers.topic == $service .. ".op.done"
+end
+
