@@ -3362,7 +3362,6 @@ impl Drop for ExprDepthGuard {
 /// shape — so the static deny is what makes the premise unconditional.
 pub const EXPR_MODE_DENIED_BUILTINS: &[&str] = &[
     "task_start",
-    "after",
     "interval",
     "cancel_timer",
     "fs_wait",
@@ -3505,6 +3504,7 @@ fn eval_checked_expr(
     limits: EvalLimits,
 ) -> MixResult<Value> {
     let mut eval = Evaluator::new();
+    eval.globals.borrow_mut().native_events.timers_allowed = false;
     if let Some(policy) = policy {
         eval.set_capability_policy(policy);
     }
@@ -13790,6 +13790,10 @@ impl Evaluator {
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = MixResult<Option<Value>>> + 'a>> {
         Box::pin(async move {
             if matches!(name, "after" | "interval" | "cancel_timer") {
+                if name == "after" && matches!(eval_args.first(), Some(Value::String(_))) {
+                    return Ok(None); // Existing string delimiter builtin.
+                }
+                self.check_capability("interval")?;
                 self.check_capability(name)?;
                 self.check_builtin_arity(name, eval_args.len())?;
                 if name == "cancel_timer" {

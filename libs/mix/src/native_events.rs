@@ -798,6 +798,7 @@ pub(crate) fn json_value(v: serde_json::Value) -> Value {
 static NEXT_OWNER_ID: AtomicU64 = AtomicU64::new(1);
 
 pub(crate) struct NativeEvents {
+    pub timers_allowed: bool,
     timers: BTreeMap<String, crate::timers::Source>,
     next_timer: u64,
     processes: BTreeMap<String, crate::child_events::ProcessWatch>,
@@ -822,6 +823,7 @@ pub(crate) struct NativeEvents {
 impl Default for NativeEvents {
     fn default() -> Self {
         NativeEvents {
+            timers_allowed: true,
             timers: BTreeMap::new(),
             next_timer: 0,
             processes: BTreeMap::new(),
@@ -889,6 +891,9 @@ impl NativeEvents {
 
 impl NativeEvents {
     pub fn timer(&mut self, seconds: f64, tag: String, repeating: bool) -> MixResult<String> {
+        if !self.timers_allowed {
+            return Err(refusal("TIMER_EXPR", "timers are not allowed in expression mode"));
+        }
         self.ensure_open()?;
         crate::timers::period(seconds, repeating)?;
         self.timers.retain(|id, _| self.queue.pending.lock().unwrap().timers.contains_key(id));
@@ -1585,6 +1590,7 @@ mod tests {
         let mut cx = Context::from_waker(&waker);
         assert!(wait.as_mut().poll(&mut cx).is_pending());
         let registry = NativeEvents {
+            timers_allowed: true,
             timers: BTreeMap::new(),
             next_timer: 0,
             processes: BTreeMap::new(),

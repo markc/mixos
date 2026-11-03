@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Monotonic clocks owned by the native-source generation.
 use crate::{error::MixResult, native_events::refusal};
-use std::{os::fd::{AsRawFd, FromRawFd, OwnedFd}, sync::Arc};
+use std::sync::Arc;
+#[cfg(target_os = "linux")]
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 
 pub(crate) fn now() -> f64 {
     let mut ts = libc::timespec { tv_sec: 0, tv_nsec: 0 };
@@ -36,11 +38,13 @@ impl Pending {
 
 /// Same cancel-FD and join discipline as the other native readers. Readers
 /// only wake the shared pump; delivery calculates one coalesced grid tick.
+#[cfg(target_os = "linux")]
 pub(crate) struct Source {
     cancel: OwnedFd,
     worker: Option<std::thread::JoinHandle<()>>,
 }
 
+#[cfg(target_os = "linux")]
 fn owned(fd: i32) -> MixResult<OwnedFd> {
     if fd < 0 {
         Err(refusal("TIMER_IO", std::io::Error::last_os_error().to_string()))
@@ -49,10 +53,12 @@ fn owned(fd: i32) -> MixResult<OwnedFd> {
     }
 }
 
+#[cfg(target_os = "linux")]
 fn timespec(seconds: f64) -> libc::timespec {
     libc::timespec { tv_sec: seconds.floor() as _, tv_nsec: ((seconds.fract() * 1e9) as i64).max(1) as _ }
 }
 
+#[cfg(target_os = "linux")]
 impl Source {
     pub fn start(queue: Arc<crate::native_events::Queue>, due: f64, period: Option<f64>) -> MixResult<Self> {
         let timer = owned(unsafe { libc::timerfd_create(libc::CLOCK_MONOTONIC, libc::TFD_CLOEXEC) })?;
@@ -85,11 +91,21 @@ impl Source {
     }
 }
 
+#[cfg(target_os = "linux")]
 impl Drop for Source {
     fn drop(&mut self) {
         let n = 1u64;
         unsafe { libc::write(self.cancel.as_raw_fd(), (&n as *const u64).cast(), 8) };
         if let Some(w) = self.worker.take() { let _ = w.join(); }
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+pub(crate) struct Source;
+#[cfg(not(target_os = "linux"))]
+impl Source {
+    pub fn start(_: Arc<crate::native_events::Queue>, _: f64, _: Option<f64>) -> MixResult<Self> {
+        Err(refusal("TIMER_UNSUPPORTED", "timers require Linux timerfd; no polling fallback"))
     }
 }
 
