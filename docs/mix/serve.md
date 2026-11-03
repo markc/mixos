@@ -933,6 +933,9 @@ of lines of Mix.
 registers a repeating clock with a **0.1 second minimum**. Use the compositor
 frame clock for animation. Both return an opaque id; `cancel_timer(id)` returns
 true only while that timer is live and discards pending delivery.
+The existing `after(string, delimiter)` text helper is unchanged. Tags are
+strings; each generation admits up to 256 live timers. Seconds must be finite,
+positive and at most 1e9.
 
 ```mix
 $sampler = interval(1, "sample")

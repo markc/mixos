@@ -13798,14 +13798,26 @@ impl Evaluator {
                 self.check_builtin_arity(name, eval_args.len())?;
                 if name == "cancel_timer" {
                     let Value::String(id) = &eval_args[0] else {
-                        return Err(crate::native_events::refusal("TIMER_ARGUMENT", "timer id must be a string"));
+                        return Err(crate::native_events::refusal(
+                            "TIMER_ARGUMENT",
+                            "timer id must be a string",
+                        ));
                     };
-                    return Ok(Some(Value::Bool(self.globals.borrow_mut().native_events.cancel_timer(id))));
+                    return Ok(Some(Value::Bool(
+                        self.globals.borrow_mut().native_events.cancel_timer(id),
+                    )));
                 }
                 let [Value::Number(seconds), Value::String(tag)] = eval_args else {
-                    return Err(crate::native_events::refusal("TIMER_ARGUMENT", "timer expects seconds and a string tag"));
+                    return Err(crate::native_events::refusal(
+                        "TIMER_ARGUMENT",
+                        "timer expects seconds and a string tag",
+                    ));
                 };
-                let id = self.globals.borrow_mut().native_events.timer(*seconds, tag.clone(), name == "interval")?;
+                let id = self.globals.borrow_mut().native_events.timer(
+                    *seconds,
+                    tag.clone(),
+                    name == "interval",
+                )?;
                 return Ok(Some(Value::String(id)));
             }
             if matches!(name, "fs_watch" | "fs_unwatch" | "fs_wait") {
@@ -14232,7 +14244,10 @@ impl Evaluator {
                     }
                     if matches!(
                         name.as_str(),
-                        "after" | "interval" | "cancel_timer" | "fs_watch"
+                        "after"
+                            | "interval"
+                            | "cancel_timer"
+                            | "fs_watch"
                             | "fs_unwatch"
                             | "fs_wait"
                             | "net_watch"
