@@ -45,7 +45,10 @@ mod tests {
     fn display_prefix_is_component_scoped_and_restored_after_nested_panic() {
         let path = Path::new("/real/home/notes.txt");
         with_display_root(Path::new("/real/home"), Path::new("/fixture/home"), || {
-            assert_eq!(display_path(Path::new("/real/home")).to_string_lossy(), "/fixture/home");
+            assert_eq!(
+                display_path(Path::new("/real/home")).to_string_lossy(),
+                "/fixture/home"
+            );
             assert_eq!(display_path(path), Path::new("/fixture/home/notes.txt"));
             assert_eq!(
                 display_path(Path::new("/real/home-other")),
