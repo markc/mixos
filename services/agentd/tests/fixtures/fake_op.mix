@@ -3,5 +3,9 @@
 on ops.op.get
   $rows = json_parse(read_file(env("FAKE_OPS")))
   $id = $event.args.op
+  if $rows[$id].query_fail == true then
+    reply(10, json_encode({message: "fixture query failure"}))
+    return
+  end
   reply(0, json_encode($rows[$id] ?? {op: $id, state: "unknown"}))
 end
