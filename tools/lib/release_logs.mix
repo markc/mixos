@@ -12,18 +12,23 @@ fn prune($base, $receipts, $keep)
       end
     end
   end
-  $refs = ""
+  $pinned = {}
   if is_dir($receipts) then
     for $name in filter(split(run_argv_must(["find", $receipts, "-mindepth", "1", "-maxdepth", "1", "-printf", "%f\\0"]), "\u{0}"), fn($n) = $n != "")
       $path = $receipts .. "/" .. $name
-      if is_file($path) then $refs = $refs .. read_file($path) end
+      if is_file($path) then
+        $text = read_file($path)
+        for $d in $dirs
+          if contains($text, $d.path) then $pinned[$d.path] = true end
+        end
+      end
     end
   end
   $dirs = reverse(sort_by($dirs, fn($d) = $d.mtime))
   $i = 0
   for $d in $dirs
     $i = $i + 1
-    if $i > $keep and not contains($refs, $d.path) then
+    if $i > $keep and not ($pinned[$d.path] ?? false) then
       $active = $d.path .. "/active.pid"
       if not is_file($active) or not process_alive(to_number(trim(read_file($active)))) then
         remove_dir($d.path)

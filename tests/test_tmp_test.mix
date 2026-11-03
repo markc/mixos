@@ -10,6 +10,10 @@ try
   $tmp.finish($run, false, 0)
   if is_dir($run.dir) then raise("TEST", "clean run survived") end
   $run = $tmp.start()
+  mkdir($run.dir .. "/mixos-test-evidence")
+  $tmp.finish($run, false, 0)
+  if is_dir($run.dir) then raise("TEST", "empty evidence retained a successful run") end
+  $run = $tmp.start()
   write_file($run.dir .. "/.hidden-leak", "x")
   $caught = false
   try
@@ -24,13 +28,17 @@ try
   mkdir($base .. "/receipts")
   for $i = 1 to 4
     mkdir($base .. "/mixos-release-gate-" .. to_string($i))
+    run_argv_must(["touch", "-d", "@" .. to_string($i), $base .. "/mixos-release-gate-" .. to_string($i)])
   end
   write_file($base .. "/receipts/job.result", $base .. "/mixos-release-gate-1/format.log")
   write_file($base .. "/mixos-release-gate-2/active.pid", to_string(pid()))
-  $logs.prune($base, $base .. "/receipts", 0)
+  -- Writing active.pid changed this directory's mtime; restore its order.
+  run_argv_must(["touch", "-d", "@2", $base .. "/mixos-release-gate-2"])
+  $logs.prune($base, $base .. "/receipts", 1)
   if not is_dir($base .. "/mixos-release-gate-1") then raise("TEST", "receipt log removed") end
   if not is_dir($base .. "/mixos-release-gate-2") then raise("TEST", "active log removed") end
   if is_dir($base .. "/mixos-release-gate-3") then raise("TEST", "old log retained") end
+  if not is_dir($base .. "/mixos-release-gate-4") then raise("TEST", "newest log removed") end
   print("PASS temporary directory guard and log retention")
 finally
   export TMPDIR=$old
