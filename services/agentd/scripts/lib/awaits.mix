@@ -334,7 +334,11 @@ fn await_event()
   -- query supplies the outcome; agent queries stay internal in await_query.
   if not await_terminal($out.state) or type($out.op) != "string" then return end
   for each $row in sqlexec($DB, "SELECT * FROM awaits WHERE state = 'pending' AND service || '.op.done' = ? AND op = ?", [$topic, $out.op])
-    await_query($row, false)
+    if $row.service != "agent" and $event.headers.broker_service == $row.service then
+      await_fire($row, $out, false)
+    else
+      await_query($row, false)
+    end
   end
   await_drain()
   await_arm()

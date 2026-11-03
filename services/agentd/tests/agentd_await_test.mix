@@ -115,7 +115,7 @@ fn op_done($op, $state)
   $rows = json_parse(read_file($tmp .. "/ops.json"))
   $rows[$op] = merge($fixture, {op: $op, state: $state})
   write_file($tmp .. "/ops.json", json_encode($rows))
-  publish("ops.op.done", json_encode(merge($fixture, {op: $op, state: $state})), {command: "ops.op.done"})
+  send ops ops.emit body=json_encode(merge($fixture, {op: $op, state: $state})) timeout=2
 end
 
 fn close_session($s)
@@ -133,7 +133,7 @@ end
 $bus = nil
 mkdir($tmp .. "/ws", {parents: true})
 try
-  $bus = $pb.start({dir: $tmp .. "/bus", name: "agentd-await"})
+  $bus = $pb.start({dir: $tmp .. "/bus", name: "agentd-await", noded: env("MIXOS_TEST_NODED", mixos_path("prefix", "bin/noded"))})
   $env = merge($pb.client_env($bus), {HOME: $tmp .. "/home"})
   $fake_env = {FAKE_ACP_REFUSE_FILE: $tmp .. "/refuse", FAKE_ACP_CRASH_FILE: $tmp .. "/crash", FAKE_ACP_REOPEN_DELAY: "0.2", FAKE_ACP_HOLD_FILE: $tmp .. "/hold", FAKE_ACP_ERROR_FILE: $tmp .. "/outcome-error"}
   $conf = {max_live: 1, agents: {
@@ -170,6 +170,19 @@ try
   send agent ops.op.done body=json_encode({op: "untrusted", state: "failed", reason: "forged-late"}) timeout=1
   check("verified non-agent delivery exactly once", len(outcomes($s)) == 1 and len(topics("agent.await.fired", "await", $aid)) == 1 and len(topics("agent.await.delivered", "await", $aid)) == 1)
   close_session($s)
+
+  if env("MIXOS_TEST_AUTH_OPS") == "1" then
+    $s = start("resumer")
+    $aid = register($s, "auth-no-query", {})
+    prompt($s, "wait")
+    wait_status($s, "waiting")
+    $rows = json_parse(read_file($tmp .. "/ops.json"))
+    $rows["auth-no-query"] = {query_fail: true}
+    write_file($tmp .. "/ops.json", json_encode($rows))
+    send ops ops.emit body=json_encode({op: "auth-no-query", state: "done", reason: "authenticated"}) timeout=2
+    check("authenticated event delivers without query or deadline", wait_await($aid, "delivered") and row($aid).deadline == nil and json_parse(row($aid).outcome).reason == "authenticated")
+    close_session($s)
+  end
 
   $s = start("resumer")
   $a1 = register($s, "one", {note: "finish my job"})
