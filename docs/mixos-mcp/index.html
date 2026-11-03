@@ -302,6 +302,11 @@ reconnecting.</p>
 <li><code>context_search</code>, <code>index_workspace</code>, <code>knowledge_digest</code></li>
 <li><code>docs_feedback</code>, <code>journal_feedback</code>, <code>memory_feedback</code>, <code>journal_supersede</code></li>
 <li><code>mix_execute</code>, <code>mcp_status</code></li>
+<li><code>await_op {service, op, deadline_s?, note?}</code> registers a suspending await
+for <code>MIXOS_AGENT_SESSION</code>. It returns the await id and tells the agent to
+end its turn now: agentd resumes the session with the outcome; do not poll
+or sleep. Outside an agentd session it refuses. A deadline sends a notice
+but leaves the await pending for the eventual terminal outcome.</li>
 </ul>
 <p><code>clipboard_get {selection?, mime?, primary?, offset?}</code> and
 <code>clipboard_set {text, selection?, mime?, primary?, sensitive?}</code> use the local

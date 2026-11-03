@@ -4,8 +4,8 @@ fn op_view($id)
   $rows = sqlexec($DB, "SELECT * FROM sessions WHERE id = ?", [$id])
   if len($rows) == 0 then return {op: $id, state: "unknown"} end
   $r = $rows[0]
-  if $r.status != "ended" then return {op: $id, state: "running"} end
   if $r.op_outcome != nil then return json_parse($r.op_outcome) end
+  if $r.status != "ended" then return {op: $id, state: "running"} end
   $last = sqlexec($DB, "SELECT kind, body FROM events WHERE session = ? AND kind IN ('prompt', 'stop', 'error') ORDER BY seq DESC LIMIT 1", [$id])
   $stop = if len($last) > 0 and $last[0].kind == "stop" then json_parse($last[0].body).stop else nil end
   $failed = len(sqlexec($DB, "SELECT id FROM awaits WHERE session = ? AND state = 'failed'", [$id])) > 0
@@ -486,6 +486,7 @@ for each $row in sqlexec($DB, "SELECT id FROM sessions WHERE status = 'waiting' 
     $S.sessions[$r.id].status = "ended"
     $log.session_ended($DB, $r.id, nil, nil, "redelivery_limit", time())
     await_end($r.id)
+    op_finished($r.id)
   else
     await_waiting($r.id, "agentd_restart")
   end

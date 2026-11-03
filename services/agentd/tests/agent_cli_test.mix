@@ -45,7 +45,8 @@ try
   $env = merge($pb.client_env($bus), {HOME: $tmp .. "/home", MIXOS_NOTIFYD_STATE: $tmp .. "/notify.json"})
   $CLI_ENV = merge($pb.client_env($bus), {MIXOS_AGENT_CLI_MIX: $mix})
   write_file($tmp .. "/agent.conf.mix", data_encode({max_live: 3, agents: {
-    fake: {argv: [$mix, $fake, "resume"], roots: [$tmp .. "/ws"], permission_timeout_s: 60, mode: "plan", close_on_done: true},
+    job: {argv: [$mix, $fake, "resume"], roots: [$tmp .. "/ws"], mode: "plan", close_on_done: true},
+    fake: {argv: [$mix, $fake, "resume"], roots: [$tmp .. "/ws"], permission_timeout_s: 60, mode: "plan"},
     auto: {argv: [$mix, $fake], roots: [$tmp .. "/ws"], policy: "allow_once"}}}))
   push($pids, citizen($notifyd, "notify", $env, "notifyd.log"))
   push($pids, citizen($agentd, "agent", merge($env, {MIXOS_AGENTD_CONF: $tmp .. "/agent.conf.mix",

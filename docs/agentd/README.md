@@ -99,6 +99,8 @@ Bodies are JSON objects.
 | `agent.session.await` | `{session, service, op, deadline_s?, note?, suspend?, id?}` | `{await, state}`, after catch-up |
 | `agent.await.list` | `{session?}` | `{awaits: [...]}` |
 | `agent.await.cancel` | `{await}` | `{cancelled: bool}` |
+| `agent.op.get` | `{op}` | `{op, state, stop?, rc?, exit_code?, reason?}` |
+| `agent.op.cancel` | `{op}` | `{op, cancelled, state}`; closes the session and cancels its awaits |
 
 `content` is a string, or a list of ACP content blocks.
 
@@ -208,6 +210,22 @@ at `initialize`: Claude, OpenCode and Codex offer `session/resume`; Gemini
 offers `session/load`.
 
 ## Awaiting operations
+
+Each session is also an operation, keyed by its session id. Every final end
+publishes `agent.op.done` once, with the same envelope as `agent.op.get`.
+Starting, ready, running and waiting sessions report `running`; unseen ids
+report `unknown`. Caller closure reports `cancelled`. An `end_turn` followed
+by a clean exit with no failed awaits reports `done`; other ends report
+`failed`. Outcomes last for `log_keep_days` (30 days by default).
+
+An instance with `close_on_done: true` closes after a turn with no pending
+await and an empty outbox. A suspending turn stays waiting. Interactive
+instances default to false. A parent awaits a child with
+`{service: "agent", op: <child session id>}`; local delivery uses the same
+operation adapter without a Bus round trip to agentd itself.
+
+Operation outcomes are final: explicitly resuming an ended conversation
+keeps its recorded operation outcome. Start a new session for a new job.
 
 `agent.session.await` watches `{service, op}` through `<service>.op.done`
 and `<service>.op.get {op}` (10 second query timeout). The session must
