@@ -830,8 +830,9 @@ fn edge_source(name: &str, panel: Option<&str>) -> String {
 #[test]
 fn citizenless_scenes_cannot_arm_frames() {
     let mut store = SceneStore::default();
-    let source = edge_source("clock", None).replace("citizen: squatter\n", "");
+    let source = edge_source("clock", None);
     load(&mut store, "loader", 1, &source, false).unwrap();
+    store.scenes.get_mut("clock").unwrap().document.citizen.clear();
     for caller in ["", "loader", "other"] {
         assert_eq!(store.arm_frame("clock", caller).unwrap_err()["error_code"], "SCENE_FRAME_OWNER");
         assert!(!store.scene("clock").unwrap().frame_armed);
