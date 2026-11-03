@@ -131,10 +131,14 @@ pub fn service(lp: &mut Loop) -> Serviced {
                 .find(|candidate| candidate.name() == output)
                 .map(world::state::output_key);
             if let Some(key) = key {
-                // Already on the event loop: request only the owning output.
+                // Bus service runs after the backend's dispatch pass. Mark only
+                // this pipe, then wake its executor (unless its flip will).
                 lp.state
                     .redraw
                     .request_pipe_silent(&key, RedrawReason::Publish);
+                if lp.state.redraw.pending() {
+                    lp.state.redraw.wake();
+                }
             }
         }
         Some(serviced)
