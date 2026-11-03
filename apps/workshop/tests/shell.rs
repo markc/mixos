@@ -186,7 +186,12 @@ fn rig_sized(
     let (deliveries, rx) = mpsc::channel(64);
     let shell = Shell::new(h.ctx.clone(), theme, bus.clone(), rx, "comp".into()).unwrap();
     *h.state_mut() = Some(shell);
-    let mut rig = Rig { h, bus, deliveries, _runtime: runtime };
+    let mut rig = Rig {
+        h,
+        bus,
+        deliveries,
+        _runtime: runtime,
+    };
     // The first discovery fails unsent on the sink; then load a node.
     step_until(&mut rig, "the first discovery", |rig| !engine(rig).busy());
     rig.h.state_mut().as_mut().unwrap().engine_mut().snapshot = fixture();

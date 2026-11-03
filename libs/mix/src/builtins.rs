@@ -34534,15 +34534,10 @@ mod write_atomic_tests {
     use crate::value::Value;
     use std::os::unix::fs::PermissionsExt;
 
-    fn tmpdir(suffix: &str) -> std::path::PathBuf {
-        let p = std::env::temp_dir().join(format!(
-            "mix-shell-write-atomic-{}-{}",
-            std::process::id(),
-            suffix
-        ));
-        let _ = std::fs::remove_dir_all(&p);
-        std::fs::create_dir_all(&p).unwrap();
-        p
+    fn tmpdir(suffix: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+        let root = tempfile::Builder::new().prefix(suffix).tempdir().unwrap();
+        let path = root.path().to_path_buf();
+        (root, path)
     }
 
     fn leftovers(dir: &std::path::Path) -> Vec<String> {
@@ -34568,7 +34563,7 @@ mod write_atomic_tests {
 
     #[test]
     fn short_write_leaves_the_old_complete_file_and_no_temp() {
-        let d = tmpdir("short");
+        let (_d_root, d) = tmpdir("short");
         let target = d.join("config");
         std::fs::write(&target, "OLD-COMPLETE").unwrap();
         for durability in [
@@ -34592,7 +34587,7 @@ mod write_atomic_tests {
 
     #[test]
     fn failed_rename_leaves_the_old_complete_file_and_no_temp() {
-        let d = tmpdir("rename");
+        let (_d_root, d) = tmpdir("rename");
         let target = d.join("config");
         std::fs::write(&target, "OLD-COMPLETE").unwrap();
         write_atomic_impl(
@@ -34613,7 +34608,7 @@ mod write_atomic_tests {
     /// directory that was opened, and nothing appears in the impostor.
     #[test]
     fn a_directory_swapped_mid_call_cannot_redirect_the_rename() {
-        let d = tmpdir("pin");
+        let (_d_root, d) = tmpdir("pin");
         let sub = d.join("conf");
         std::fs::create_dir(&sub).unwrap();
         let target = sub.join("app.conf");
@@ -34640,7 +34635,7 @@ mod write_atomic_tests {
     /// (it used to raise ENOENT on every existing file).
     #[test]
     fn the_no_proc_fallback_still_overwrites() {
-        let d = tmpdir("noproc");
+        let (_d_root, d) = tmpdir("noproc");
         let target = d.join("config");
         std::fs::write(&target, "OLD").unwrap();
         std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o640)).unwrap();
@@ -34664,7 +34659,7 @@ mod write_atomic_tests {
     /// another's owner and mode. Nothing is written, no temp is left.
     #[test]
     fn a_target_swapped_between_lookups_is_refused() {
-        let d = tmpdir("swap");
+        let (_d_root, d) = tmpdir("swap");
         let target = d.join("config");
         std::fs::write(&target, "OLD").unwrap();
         let e = write_atomic_impl(
@@ -34689,7 +34684,7 @@ mod write_atomic_tests {
 
     #[test]
     fn a_failed_first_write_leaves_no_file_at_all() {
-        let d = tmpdir("fresh");
+        let (_d_root, d) = tmpdir("fresh");
         let target = d.join("new-file");
         write_atomic_impl(
             &s(&target),
@@ -34708,7 +34703,7 @@ mod write_atomic_tests {
 
     #[test]
     fn success_replaces_completely_and_keeps_the_existing_mode() {
-        let d = tmpdir("ok");
+        let (_d_root, d) = tmpdir("ok");
         let target = d.join("config");
         std::fs::write(&target, "OLD").unwrap();
         std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o640)).unwrap();
@@ -34740,7 +34735,7 @@ mod write_atomic_tests {
 
     #[test]
     fn explicit_mode_is_exact_and_bytes_are_verbatim() {
-        let d = tmpdir("mode");
+        let (_d_root, d) = tmpdir("mode");
         let target = d.join("secret");
         let mut o = indexmap::IndexMap::new();
         o.insert("mode".to_string(), Value::Number(0o600 as f64));
@@ -34758,7 +34753,7 @@ mod write_atomic_tests {
 
     #[test]
     fn a_symlink_keeps_being_a_link_and_its_target_is_replaced() {
-        let d = tmpdir("link");
+        let (_d_root, d) = tmpdir("link");
         let real = d.join("real");
         let link = d.join("link");
         std::fs::write(&real, "OLD").unwrap();
@@ -34785,7 +34780,7 @@ mod write_atomic_tests {
     #[test]
     fn the_access_acl_is_carried_not_widened() {
         use std::os::unix::ffi::OsStrExt;
-        let d = tmpdir("acl");
+        let (_d_root, d) = tmpdir("acl");
         let target = d.join("guarded");
         std::fs::write(&target, "OLD").unwrap();
         // posix_acl_xattr v2: {tag u16, perm u16, id u32}, sorted by tag.
@@ -34851,7 +34846,7 @@ mod write_atomic_tests {
     /// 65534 (review R5).
     #[test]
     fn a_requested_setuid_bit_survives_the_write() {
-        let d = tmpdir("suid");
+        let (_d_root, d) = tmpdir("suid");
         let target = d.join("tool");
         let mut o = indexmap::IndexMap::new();
         o.insert("mode".to_string(), Value::Number(0o4755 as f64));
@@ -34912,7 +34907,7 @@ mod write_atomic_tests {
             eprintln!("SKIP the_owner_is_kept_when_replacing_another_users_file: not root");
             return;
         }
-        let d = tmpdir("owner");
+        let (_d_root, d) = tmpdir("owner");
         let target = d.join("users-file");
         std::fs::write(&target, "OLD").unwrap();
         std::os::unix::fs::chown(&target, Some(65534), Some(65534)).unwrap();
@@ -34933,7 +34928,7 @@ mod write_atomic_tests {
     /// nothing, the link included.
     #[test]
     fn dangling_and_directory_symlinks_are_refused() {
-        let d = tmpdir("links");
+        let (_d_root, d) = tmpdir("links");
         let dangling = d.join("dangling");
         std::os::unix::fs::symlink(d.join("absent"), &dangling).unwrap();
         let e = builtin_write_atomic(vec![Value::String(s(&dangling)), Value::String("X".into())])
@@ -34977,7 +34972,7 @@ mod write_atomic_tests {
 
     #[test]
     fn refusals_touch_nothing() {
-        let d = tmpdir("refuse");
+        let (_d_root, d) = tmpdir("refuse");
         let target = d.join("config");
         std::fs::write(&target, "OLD").unwrap();
         let code = |e: MixError| match e {
@@ -35025,20 +35020,15 @@ mod write_new_tests {
     use crate::value::Value;
     use std::os::unix::fs::PermissionsExt;
 
-    fn tmpdir(suffix: &str) -> std::path::PathBuf {
-        let mut p = std::env::temp_dir();
-        p.push(format!(
-            "mix-shell-write-new-{}-{}",
-            std::process::id(),
-            suffix
-        ));
-        std::fs::create_dir_all(&p).unwrap();
-        p
+    fn tmpdir(suffix: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+        let root = tempfile::Builder::new().prefix(suffix).tempdir().unwrap();
+        let path = root.path().to_path_buf();
+        (root, path)
     }
 
     #[test]
     fn write_new_creates_file_with_exact_mode() {
-        let d = tmpdir("create-mode");
+        let (_d_root, d) = tmpdir("create-mode");
         let p = d.join("secret.pem");
         builtin_write_new(vec![
             Value::String(p.to_string_lossy().into()),
@@ -35064,7 +35054,7 @@ mod write_new_tests {
 
     #[test]
     fn write_new_refuses_existing_file() {
-        let d = tmpdir("excl");
+        let (_d_root, d) = tmpdir("excl");
         let p = d.join("k.pem");
         std::fs::write(&p, b"old").unwrap();
         let err = builtin_write_new(vec![
@@ -35087,7 +35077,7 @@ mod write_new_tests {
     #[test]
     fn copy_and_remove_roundtrip() {
         use super::{builtin_copy, builtin_copy_tree, builtin_remove, builtin_remove_dir};
-        let d = tmpdir("copytree");
+        let (_d_root, d) = tmpdir("copytree");
         let src = d.join("src");
         std::fs::create_dir_all(src.join("sub")).unwrap();
         std::fs::write(src.join("a.txt"), b"AAA").unwrap();
@@ -35285,7 +35275,7 @@ mod write_new_tests {
         // restore the prior umask before returning so other test files
         // are unaffected.
         let prev = unsafe { libc::umask(0o077) };
-        let d = tmpdir("umask-disc");
+        let (_d_root, d) = tmpdir("umask-disc");
         let p = d.join("k.txt");
         let result = builtin_write_new(vec![
             Value::String(p.to_string_lossy().into()),
@@ -35310,7 +35300,7 @@ mod write_new_tests {
 
     #[test]
     fn write_new_rejects_bad_mode() {
-        let d = tmpdir("badmode");
+        let (_d_root, d) = tmpdir("badmode");
         let p = d.join("k.pem");
         let err = builtin_write_new(vec![
             Value::String(p.to_string_lossy().into()),
@@ -35337,17 +35327,10 @@ mod flock_tests {
     const CHILD_EXIT_ENV: &str = "MIXOS_MIX_FLOCK_TEST_EXIT";
     const CHILD_SHARED_ENV: &str = "MIXOS_MIX_FLOCK_TEST_SHARED";
 
-    fn tmpdir(suffix: &str) -> std::path::PathBuf {
-        let nonce = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let p = std::env::temp_dir().join(format!(
-            "mix-shell-flock-{}-{nonce}-{suffix}",
-            std::process::id()
-        ));
-        std::fs::create_dir_all(&p).unwrap();
-        p
+    fn tmpdir(suffix: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+        let root = tempfile::Builder::new().prefix(suffix).tempdir().unwrap();
+        let path = root.path().to_path_buf();
+        (root, path)
     }
 
     fn s(path: &std::path::Path) -> Value {
@@ -35464,7 +35447,7 @@ mod flock_tests {
     #[test]
     fn flock_acquire_succeeds() {
         let _guard = TEST_LOCK.lock().unwrap();
-        let d = tmpdir("acquire");
+        let (_d_root, d) = tmpdir("acquire");
         let path = d.join("lock");
         assert!(bool_result(builtin_flock(vec![s(&path)])));
         assert!(bool_result(builtin_funlock(vec![s(&path)])));
@@ -35474,7 +35457,7 @@ mod flock_tests {
     #[test]
     fn second_acquire_in_same_process_is_true_without_a_second_retained_fd() {
         let _guard = TEST_LOCK.lock().unwrap();
-        let d = tmpdir("idempotent");
+        let (_d_root, d) = tmpdir("idempotent");
         let path = d.join("lock");
         assert!(bool_result(builtin_flock(vec![s(&path)])));
 
@@ -35508,7 +35491,7 @@ mod flock_tests {
     #[test]
     fn funlock_returns_true_then_false() {
         let _guard = TEST_LOCK.lock().unwrap();
-        let d = tmpdir("unlock");
+        let (_d_root, d) = tmpdir("unlock");
         let path = d.join("lock");
         assert!(bool_result(builtin_flock(vec![s(&path)])));
         assert!(bool_result(builtin_funlock(vec![s(&path)])));
@@ -35519,7 +35502,7 @@ mod flock_tests {
     #[test]
     fn contention_from_a_second_process_returns_false() {
         let _guard = TEST_LOCK.lock().unwrap();
-        let d = tmpdir("contended");
+        let (_d_root, d) = tmpdir("contended");
         let path = d.join("lock");
         let holder = spawn_lock_holder(&path, &d, false);
         assert!(!bool_result(builtin_flock(vec![s(&path)])));
@@ -35530,7 +35513,7 @@ mod flock_tests {
     #[test]
     fn process_exit_releases_the_lock() {
         let _guard = TEST_LOCK.lock().unwrap();
-        let d = tmpdir("exit-release");
+        let (_d_root, d) = tmpdir("exit-release");
         let path = d.join("lock");
         let holder = spawn_lock_holder(&path, &d, false);
         assert!(
@@ -35549,7 +35532,7 @@ mod flock_tests {
     #[test]
     fn wait_returns_false_after_roughly_the_requested_time() {
         let _guard = TEST_LOCK.lock().unwrap();
-        let d = tmpdir("wait");
+        let (_d_root, d) = tmpdir("wait");
         let path = d.join("lock");
         let holder = spawn_lock_holder(&path, &d, false);
         let started = std::time::Instant::now();
@@ -35570,7 +35553,7 @@ mod flock_tests {
     #[test]
     fn shared_option_allows_a_real_second_process_to_acquire() {
         let _guard = TEST_LOCK.lock().unwrap();
-        let d = tmpdir("shared");
+        let (_d_root, d) = tmpdir("shared");
         let path = d.join("lock");
         assert!(bool_result(builtin_flock(vec![s(&path), shared_opts()])));
         let holder = spawn_lock_holder(&path, &d, true);
@@ -35582,7 +35565,7 @@ mod flock_tests {
     #[test]
     fn directory_path_raises_instead_of_reporting_contention() {
         let _guard = TEST_LOCK.lock().unwrap();
-        let d = tmpdir("directory");
+        let (_d_root, d) = tmpdir("directory");
         let err = builtin_flock(vec![s(&d)]).expect_err("opening a directory must raise");
         assert!(format!("{err}").contains("flock"), "wrong error: {err}");
         let err = builtin_flock(vec![s(&d), shared_opts()])
@@ -35612,7 +35595,7 @@ mod flock_tests {
     fn a_shared_lock_needs_only_read_access() {
         use std::os::unix::fs::PermissionsExt;
         let _guard = TEST_LOCK.lock().unwrap();
-        let d = tmpdir("shared-readonly");
+        let (_d_root, d) = tmpdir("shared-readonly");
         for (name, lock, unlock) in [
             (
                 "flock",
@@ -35638,7 +35621,7 @@ mod flock_tests {
     #[test]
     fn a_shared_lock_on_a_fifo_raises_instead_of_hanging() {
         let _guard = TEST_LOCK.lock().unwrap();
-        let d = tmpdir("shared-fifo");
+        let (_d_root, d) = tmpdir("shared-fifo");
         let fifo = d.join("fifo");
         let c = std::ffi::CString::new(fifo.to_string_lossy().as_bytes()).unwrap();
         assert_eq!(unsafe { libc::mkfifo(c.as_ptr(), 0o644) }, 0);
@@ -35662,7 +35645,7 @@ mod flock_tests {
     #[test]
     fn create_false_refuses_a_missing_lock_file_and_creates_nothing() {
         let _guard = TEST_LOCK.lock().unwrap();
-        let d = tmpdir("create-false");
+        let (_d_root, d) = tmpdir("create-false");
         for (name, lock, unlock) in [
             (
                 "flock",
@@ -35707,15 +35690,10 @@ mod flock_tests {
 mod fs_meta_tests {
     use super::*;
 
-    fn tmpdir(suffix: &str) -> std::path::PathBuf {
-        let mut p = std::env::temp_dir();
-        p.push(format!(
-            "mix-shell-fsmeta-{}-{}",
-            std::process::id(),
-            suffix
-        ));
-        std::fs::create_dir_all(&p).unwrap();
-        p
+    fn tmpdir(suffix: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+        let root = tempfile::Builder::new().prefix(suffix).tempdir().unwrap();
+        let path = root.path().to_path_buf();
+        (root, path)
     }
 
     fn s(p: &std::path::Path) -> Value {
@@ -35740,7 +35718,7 @@ mod fs_meta_tests {
 
     #[test]
     fn access_checks_execute_and_read_permissions() {
-        let d = tmpdir("access-mode");
+        let (_d_root, d) = tmpdir("access-mode");
         let p = d.join("hook");
         std::fs::write(&p, b"#!/bin/sh\nexit 0\n").unwrap();
 
@@ -35796,7 +35774,7 @@ mod fs_meta_tests {
 
     #[test]
     fn access_missing_and_existence_mode_return_false_without_raising() {
-        let d = tmpdir("access-exists");
+        let (_d_root, d) = tmpdir("access-exists");
         let present = d.join("present");
         let missing = d.join("missing");
         std::fs::write(&present, b"").unwrap();
@@ -35917,7 +35895,7 @@ mod fs_meta_tests {
     /// green tick than it earned.
     #[test]
     fn uid_and_gid_match_the_owner_of_a_file_this_process_creates() {
-        let d = tmpdir("uid-agrees");
+        let (_d_root, d) = tmpdir("uid-agrees");
         let p = d.join("owned.txt");
         std::fs::write(&p, b"").unwrap();
         let m = map_of(builtin_stat(vec![s(&p)]).expect("stat ok"));
@@ -35999,7 +35977,7 @@ mod fs_meta_tests {
     /// the string "false" is truthy.
     #[test]
     fn mkdir_rejects_malformed_safety_options() {
-        let d = tmpdir("mkdir-badopts");
+        let (_d_root, d) = tmpdir("mkdir-badopts");
         let leaf = format!("{}/missing-parent/leaf", d.display());
 
         let mut typo = indexmap::IndexMap::new();
@@ -36040,7 +36018,7 @@ mod fs_meta_tests {
     /// is not the property; "did not create the parent either" is.
     #[test]
     fn mkdir_without_parents_refuses_and_creates_nothing() {
-        let d = tmpdir("mkdir-parents");
+        let (_d_root, d) = tmpdir("mkdir-parents");
         let parent = d.join("gone");
         let leaf = parent.join("leaf");
 
@@ -36068,7 +36046,7 @@ mod fs_meta_tests {
 
     #[test]
     fn stat_reports_known_file_metadata() {
-        let d = tmpdir("stat-file");
+        let (_d_root, d) = tmpdir("stat-file");
         let p = d.join("f.txt");
         std::fs::write(&p, b"hello").unwrap();
         // Set an exact mode via builtin_chmod (set_permissions bypasses
@@ -36109,7 +36087,7 @@ mod fs_meta_tests {
 
     #[test]
     fn stat_reports_subsecond_components_in_range() {
-        let d = tmpdir("stat-nsec-range");
+        let (_d_root, d) = tmpdir("stat-nsec-range");
         let p = d.join("f.txt");
         std::fs::write(&p, b"hello").unwrap();
 
@@ -36229,7 +36207,7 @@ mod fs_meta_tests {
         // The two timestamps are set explicitly rather than raced for, so the
         // test measures what stat() reports and never what the clock happened
         // to do.
-        let d = tmpdir("stat-nsec-rewrite");
+        let (_d_root, d) = tmpdir("stat-nsec-rewrite");
         let p = d.join("hook");
         std::fs::write(&p, b"#!/bin/sh\nexit 0\n").unwrap();
 
@@ -36285,7 +36263,7 @@ mod fs_meta_tests {
 
     #[test]
     fn stat_follow_vs_lstat_on_symlink() {
-        let d = tmpdir("stat-link");
+        let (_d_root, d) = tmpdir("stat-link");
         let target = d.join("target.txt");
         let link = d.join("link");
         std::fs::write(&target, b"0123456789").unwrap(); // 10 bytes
@@ -36310,7 +36288,7 @@ mod fs_meta_tests {
 
     #[test]
     fn stat_missing_path_errors() {
-        let d = tmpdir("stat-missing");
+        let (_d_root, d) = tmpdir("stat-missing");
         let err = builtin_stat(vec![s(&d.join("nope"))]).unwrap_err();
         assert!(format!("{err}").contains("stat"), "got: {err}");
         let _ = std::fs::remove_dir_all(&d);
@@ -36320,7 +36298,7 @@ mod fs_meta_tests {
     fn chown_self_is_a_noop_that_succeeds() {
         // Chowning a file to its CURRENT uid/gid needs no privilege, so
         // this exercises the syscall path under a non-root test runner.
-        let d = tmpdir("chown-self");
+        let (_d_root, d) = tmpdir("chown-self");
         let p = d.join("f");
         std::fs::write(&p, b"x").unwrap();
         let meta = std::fs::metadata(&p).unwrap();
@@ -36358,7 +36336,7 @@ mod fs_meta_tests {
             m.insert("recursive".to_string(), Value::Bool(on));
             Value::map(m)
         };
-        let d = tmpdir("fsync");
+        let (_d_root, d) = tmpdir("fsync");
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(d.join("sub/deeper")).unwrap();
         std::fs::write(d.join("f1"), b"1").unwrap();
@@ -36402,7 +36380,7 @@ mod fs_meta_tests {
     #[test]
     fn chown_follow_symlinks_false_changes_the_link_itself() {
         use std::os::unix::fs::MetadataExt;
-        let d = tmpdir("chown-lchown");
+        let (_d_root, d) = tmpdir("chown-lchown");
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         let target = d.join("target");
@@ -36470,7 +36448,7 @@ mod fs_meta_tests {
 
     #[test]
     fn chown_rejects_bad_ids() {
-        let d = tmpdir("chown-bad");
+        let (_d_root, d) = tmpdir("chown-bad");
         let p = d.join("f");
         std::fs::write(&p, b"x").unwrap();
         // Negative id.
@@ -36504,7 +36482,7 @@ mod fs_meta_tests {
 
     #[test]
     fn read_file_bytes_cap_limits_the_read() {
-        let d = tmpdir("rfb-cap");
+        let (_d_root, d) = tmpdir("rfb-cap");
         let p = d.join("big");
         let payload: Vec<u8> = (0..100).collect();
         std::fs::write(&p, &payload).unwrap();
@@ -36538,7 +36516,7 @@ mod fs_meta_tests {
 
     #[test]
     fn read_file_bytes_offset_ranges_and_option_errors() {
-        let d = tmpdir("rfb-offset");
+        let (_d_root, d) = tmpdir("rfb-offset");
         let p = d.join("binary");
         let payload = [0, 255, 128, 42, 7, 0];
         std::fs::write(&p, payload).unwrap();
@@ -36615,7 +36593,7 @@ mod fs_meta_tests {
     #[test]
     fn read_file_bytes_seeks_beyond_four_gib() {
         use std::io::{Seek, SeekFrom, Write};
-        let d = tmpdir("rfb-large-offset");
+        let (_d_root, d) = tmpdir("rfb-large-offset");
         let p = d.join("sparse");
         let offset = 5_u64 * 1024 * 1024 * 1024;
         let mut file = std::fs::File::create(&p).unwrap();
@@ -36635,7 +36613,7 @@ mod fs_meta_tests {
     #[test]
     fn read_file_bytes_zero_offset_does_not_seek_a_fifo() {
         use std::io::Write;
-        let d = tmpdir("rfb-fifo-offset");
+        let (_d_root, d) = tmpdir("rfb-fifo-offset");
         let fifo = d.join("pipe");
         let path = std::ffi::CString::new(fifo.to_string_lossy().as_bytes()).unwrap();
         // SAFETY: path is NUL-terminated and lives across mkfifo.
@@ -41295,15 +41273,10 @@ mod strict_write_and_bool_option_tests {
     use super::*;
     use crate::value::Value;
 
-    fn tmpdir(suffix: &str) -> std::path::PathBuf {
-        let mut p = std::env::temp_dir();
-        p.push(format!(
-            "mix-shell-strictbool-{}-{}",
-            std::process::id(),
-            suffix
-        ));
-        std::fs::create_dir_all(&p).unwrap();
-        p
+    fn tmpdir(suffix: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+        let root = tempfile::Builder::new().prefix(suffix).tempdir().unwrap();
+        let path = root.path().to_path_buf();
+        (root, path)
     }
 
     fn s(p: &std::path::Path) -> Value {
@@ -41689,7 +41662,7 @@ mod strict_write_and_bool_option_tests {
 
     #[test]
     fn write_file_refuses_wrong_types_before_creating() {
-        let d = tmpdir("wf-absent");
+        let (_d_root, d) = tmpdir("wf-absent");
         let p = d.join("absent.txt");
         for bad in wrong_payloads() {
             let err = builtin_write_file(vec![s(&p), bad]).unwrap_err();
@@ -41702,7 +41675,7 @@ mod strict_write_and_bool_option_tests {
 
     #[test]
     fn write_and_append_refuse_wrong_types_leaving_contents_unchanged() {
-        let d = tmpdir("wf-existing");
+        let (_d_root, d) = tmpdir("wf-existing");
         let p = d.join("live.txt");
         std::fs::write(&p, "ORIGINAL").unwrap();
         for bad in wrong_payloads() {
@@ -41720,7 +41693,7 @@ mod strict_write_and_bool_option_tests {
 
     #[test]
     fn write_new_refuses_wrong_types_without_creating() {
-        let d = tmpdir("wn-absent");
+        let (_d_root, d) = tmpdir("wn-absent");
         let p = d.join("new.txt");
         for bad in wrong_payloads() {
             let err =
@@ -41733,7 +41706,7 @@ mod strict_write_and_bool_option_tests {
 
     #[test]
     fn non_utf8_bytes_write_verbatim_for_all_three() {
-        let d = tmpdir("rawbytes");
+        let (_d_root, d) = tmpdir("rawbytes");
         let payload: Vec<u8> = vec![0xFF, 0xFE, 0x00, 0x80, 0x81];
         let p1 = d.join("a.bin");
         builtin_write_file(vec![s(&p1), Value::bytes(payload.clone())]).unwrap();
@@ -41756,7 +41729,7 @@ mod strict_write_and_bool_option_tests {
 
     #[test]
     fn exists_follow_symlinks_is_a_strict_bool() {
-        let d = tmpdir("exists");
+        let (_d_root, d) = tmpdir("exists");
         // Omitted (default true) and explicit true/false all work on a dir.
         assert!(builtin_exists(vec![s(&d)]).unwrap().unwrap().is_truthy());
         assert!(
@@ -41797,7 +41770,7 @@ mod strict_write_and_bool_option_tests {
 
     #[test]
     fn stat_follow_symlinks_is_a_strict_bool() {
-        let d = tmpdir("stat");
+        let (_d_root, d) = tmpdir("stat");
         assert!(builtin_stat(vec![s(&d)]).is_ok());
         assert!(
             builtin_stat(vec![
@@ -41829,7 +41802,7 @@ mod strict_write_and_bool_option_tests {
                 other => panic!("details must be a map, got {other:?}"),
             }
         }
-        let d = tmpdir("walk-strict");
+        let (_d_root, d) = tmpdir("walk-strict");
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         std::fs::write(d.join("a.txt"), "x").unwrap();
@@ -41894,7 +41867,7 @@ mod strict_write_and_bool_option_tests {
 
     #[test]
     fn walk_bool_options_are_strict_and_validate_before_traversal() {
-        let d = tmpdir("walk");
+        let (_d_root, d) = tmpdir("walk");
         std::fs::write(d.join("a.txt"), "x").unwrap();
         assert!(builtin_walk(vec![s(&d)]).is_ok());
         assert!(builtin_walk(vec![s(&d), opts(&[("include_dirs", Value::Bool(true))])]).is_ok());
@@ -41940,7 +41913,7 @@ mod strict_write_and_bool_option_tests {
     #[test]
     #[cfg(feature = "json")]
     fn read_jsonl_skip_errors_is_a_strict_bool() {
-        let d = tmpdir("jsonl");
+        let (_d_root, d) = tmpdir("jsonl");
         let p = d.join("dirty.jsonl");
         std::fs::write(&p, "{\"a\":1}\n").unwrap();
         assert!(builtin_read_jsonl(vec![s(&p)]).is_ok());
@@ -42008,7 +41981,7 @@ mod strict_write_and_bool_option_tests {
 
     #[test]
     fn http_serve_bool_options_refuse_before_bind() {
-        let d = tmpdir("http");
+        let (_d_root, d) = tmpdir("http");
         // Validation happens before bind/listen, so a wrong bool returns an
         // error immediately rather than starting a server.
         for (key, bad) in [

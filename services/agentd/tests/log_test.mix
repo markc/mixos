@@ -15,7 +15,8 @@ fn check($name, $ok)
   print((if $ok then "PASS " else "FAIL " end) .. $name)
 end
 
-$tmp = "/tmp/agent-log-test-" .. to_string(pid())
+$tmp = env("TMPDIR", "/tmp") .. "/agent-log-test-" .. uuid()
+try
 $path = $tmp .. "/state/agentd/sessions.db"
 $h = $log.open($path)
 check("open creates the file and its directory", is_file($path))
@@ -141,7 +142,9 @@ check("reopening an upgraded log adds nothing twice", len(filter(map(sqlexec($h,
 check("and keeps its rows", $log.session_row($h, "dddd4444").acp == nil and $log.known($h, "dddd4444"))
 sqlclose($h)
 
-run_argv_must(["rm", "-rf", $tmp])
+finally
+  remove_dir($tmp)
+end
 $failed = len(filter($results, fn($r) = not $r.ok))
 print(to_string(len($results) - $failed) .. "/" .. to_string(len($results)) .. " passed")
 if $failed > 0 then exit(1) end

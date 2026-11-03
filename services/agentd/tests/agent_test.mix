@@ -25,7 +25,8 @@ fn refuses($name, $code, $f)
 end
 
 -- A private tree: root/ws is inside, outside/ is not, root/escape links out.
-$tmp = "/tmp/agent-test-" .. to_string(pid())
+$tmp = env("TMPDIR", "/tmp") .. "/agent-test-" .. uuid()
+try
 mkdir($tmp .. "/root/ws/sub", {parents: true})
 mkdir($tmp .. "/outside", {parents: true})
 run_argv_must(["ln", "-s", $tmp .. "/outside", $tmp .. "/root/escape"])
@@ -191,7 +192,9 @@ check("permission topic tolerates a missing toolCall", $a.permission_topic("s1",
 $buttons = $a.permission_buttons($req.options)
 check("buttons drop allow_always", len($buttons) == 2 and $buttons[0].option == "a1" and $buttons[1].option == "r1")
 
-run_argv_must(["rm", "-rf", $tmp])
+finally
+  remove_dir($tmp)
+end
 $failed = len(filter($results, fn($r) = not $r.ok))
 print(to_string(len($results) - $failed) .. "/" .. to_string(len($results)) .. " passed")
 if $failed > 0 then exit(1) end

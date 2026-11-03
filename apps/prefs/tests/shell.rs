@@ -46,7 +46,12 @@ fn rig() -> Rig {
     let shell = Shell::new(h.ctx.clone(), theme, bus.clone(), rx, "comp".into()).unwrap();
     *h.state_mut() = Some(shell);
     h.run_steps(3);
-    Rig { h, bus, deliveries, _runtime: runtime }
+    Rig {
+        h,
+        bus,
+        deliveries,
+        _runtime: runtime,
+    }
 }
 
 fn send(rig: &mut Rig, id: u64, command_name: &str, args: Value) {

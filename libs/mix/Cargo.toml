@@ -197,6 +197,7 @@ mimedb = { workspace = true, optional = true }
 hickory-proto = { version = "0.26.0-alpha.1", optional = true, default-features = false, features = ["std"] }
 
 [dev-dependencies]
+tempfile.workspace = true
 # `derive` lives here, not on the `serde` feature: the crate's own
 # `serde_de` unit tests use `#[derive(Deserialize)]` test types, but
 # downstream consumers of the bridge don't need this crate to pull in

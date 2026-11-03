@@ -62,12 +62,8 @@ fn w1_ids(storage: &mut Storage, entries: &[&'static DocumentEntry]) -> Vec<(Str
 
 #[test]
 fn sync_rehydrate_edit_dismiss_move() {
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let tmp = std::env::temp_dir().join(format!("compd-doc-{}-{nanos}", std::process::id()));
-    std::fs::create_dir_all(&tmp).unwrap();
+    let root = tempfile::tempdir().unwrap();
+    let tmp = root.path();
     unsafe { std::env::set_var("XDG_STATE_HOME", &tmp) };
 
     let entries: &[&'static DocumentEntry] = &[&NOTES_ENTRY];

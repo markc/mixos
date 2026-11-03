@@ -63,7 +63,12 @@ fn rig() -> Rig {
     }
     *h.state_mut() = Some(shell);
     h.run_steps(3);
-    Rig { h, bus, deliveries, _runtime: runtime }
+    Rig {
+        h,
+        bus,
+        deliveries,
+        _runtime: runtime,
+    }
 }
 
 /// The store as settingsd at revision 7 answers it.

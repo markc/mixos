@@ -8,22 +8,18 @@ use slots::persist::store::base::Store;
 use slots::persist::store::reconcile::base::reconcile;
 use std::path::PathBuf;
 
-fn temp_table(tag: &str) -> PathBuf {
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let dir =
-        std::env::temp_dir().join(format!("compd-store-{tag}-{}-{nanos}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
-    dir.join("world.placeholder")
+fn temp_table(tag: &str) -> (tempfile::TempDir, PathBuf) {
+    let root = tempfile::Builder::new().prefix(tag).tempdir().unwrap();
+    let path = root.path().join("world.placeholder");
+    (root, path)
 }
 
 const TABLE: &str = "world.placeholder";
 
 #[test]
 fn put_list_partition_get_delete() {
-    let store = Store::new(temp_table("crud"));
+    let (_root, table) = temp_table("crud");
+    let store = Store::new(table);
     store
         .put("rec1", TABLE, 1, b"{\"a\":1}", &[("world_id", "w1")])
         .unwrap();
@@ -54,7 +50,7 @@ fn put_list_partition_get_delete() {
 
 #[test]
 fn reconcile_prunes_dangling_quarantines_corrupt_and_removes_orphans() {
-    let table = temp_table("reconcile");
+    let (_root, table) = temp_table("reconcile");
     let store = Store::new(table.clone());
     store
         .put("good", TABLE, 1, b"{}", &[("world_id", "w1")])

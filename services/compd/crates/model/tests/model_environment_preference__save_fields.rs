@@ -5,11 +5,10 @@
 use model::environment::preference::base::{Preference, save_fields_at};
 use serde_json::{Map, Value, json};
 
-fn scratch(name: &str) -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!("compd-save-fields-{}-{name}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    dir.join("preferences.json")
+fn scratch(name: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+    let root = tempfile::Builder::new().prefix(name).tempdir().unwrap();
+    let path = root.path().join("preferences.json");
+    (root, path)
 }
 
 fn fields(value: Value) -> Map<String, Value> {
@@ -18,7 +17,7 @@ fn fields(value: Value) -> Map<String, Value> {
 
 #[test]
 fn merges_named_keys_and_keeps_the_rest() {
-    let p = scratch("merge");
+    let (_root, p) = scratch("merge");
     std::fs::write(
         &p,
         r#"{"cursor_sensitivity": 2.5, "someone_elses_key": {"a": 1}, "workspaces_count": 4}"#,
@@ -58,7 +57,7 @@ fn leftover_tmp(p: &std::path::Path) -> usize {
 /// other's keys or leave a torn file.
 #[test]
 fn concurrent_writers_keep_every_key() {
-    let p = scratch("concurrent");
+    let (_root, p) = scratch("concurrent");
     std::fs::write(&p, "{}").unwrap();
     let threads: Vec<_> = (0..8)
         .map(|writer| {
@@ -83,7 +82,7 @@ fn concurrent_writers_keep_every_key() {
 
 #[test]
 fn a_missing_file_starts_empty() {
-    let p = scratch("missing");
+    let (_root, p) = scratch("missing");
     save_fields_at(&p, fields(json!({"workspaces_count": 2}))).unwrap();
     let back: Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
     assert_eq!(back, json!({"workspaces_count": 2}));
@@ -92,7 +91,7 @@ fn a_missing_file_starts_empty() {
 #[test]
 fn a_broken_file_is_refused_and_kept() {
     for (name, raw) in [("syntax", "{not json"), ("array", "[1, 2]")] {
-        let p = scratch(name);
+        let (_root, p) = scratch(name);
         std::fs::write(&p, raw).unwrap();
         assert!(save_fields_at(&p, fields(json!({"workspaces_count": 2}))).is_err());
         assert_eq!(std::fs::read_to_string(&p).unwrap(), raw);
@@ -104,7 +103,7 @@ fn a_broken_file_is_refused_and_kept() {
 /// survive the merge and come back on the next load.
 #[test]
 fn a_cleared_field_overwrites_the_old_value() {
-    let p = scratch("cleared");
+    let (_root, p) = scratch("cleared");
     std::fs::write(
         &p,
         r#"{"ime": {"exec": "fcitx5"}, "background_shader": "x.wgsl",

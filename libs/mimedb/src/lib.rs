@@ -530,7 +530,10 @@ mod tests {
 
     /// A fresh `<tmp>/<name>/mime` holding `files`.
     fn mime_dir(name: &str, files: &[(&str, &[u8])]) -> (tempfile::TempDir, PathBuf) {
-        let root = tempfile::Builder::new().prefix(&format!("mimedb-{name}-")).tempdir().unwrap();
+        let root = tempfile::Builder::new()
+            .prefix(&format!("mimedb-{name}-"))
+            .tempdir()
+            .unwrap();
         let dir = root.path().join("mime");
         std::fs::create_dir_all(&dir).unwrap();
         for (file, bytes) in files {

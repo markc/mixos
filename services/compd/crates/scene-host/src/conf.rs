@@ -368,19 +368,17 @@ fn create_temp(target: &Path, next: &AtomicU64) -> std::io::Result<(PathBuf, std
 mod tests {
     use super::*;
 
-    fn temp_dir(tag: &str) -> PathBuf {
-        let dir =
-            std::env::temp_dir().join(format!("scene-host-conf-{tag}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
+    fn temp_dir(tag: &str) -> (tempfile::TempDir, PathBuf) {
+        let root = tempfile::Builder::new().prefix(tag).tempdir().unwrap();
+        let path = root.path().to_path_buf();
+        (root, path)
     }
 
     #[test]
     fn exclusive_temps_skip_existing_files_and_symlinks() {
         use std::io::Write;
         use std::os::unix::fs::{PermissionsExt, symlink};
-        let dir = temp_dir("exclusive");
+        let (_root, dir) = temp_dir("exclusive");
         let target = dir.join("conf.mix");
         let occupied = dir.join(format!(".conf.mix.{}.0.tmp", std::process::id()));
         let link = dir.join(format!(".conf.mix.{}.1.tmp", std::process::id()));
@@ -404,7 +402,7 @@ mod tests {
     #[test]
     fn replacement_preserves_permissions_and_a_symlinked_configs_target() {
         use std::os::unix::fs::{PermissionsExt, symlink};
-        let dir = temp_dir("permissions");
+        let (_root, dir) = temp_dir("permissions");
         let target = dir.join("new/nested/conf.mix");
         replace_atomically(&target, "{}").unwrap();
         assert_eq!(
@@ -428,7 +426,8 @@ mod tests {
         let frozen: serde_json::Value =
             serde_json::from_str(include_str!("../tests/fixtures/shell-commands.json")).unwrap();
         let fixture = &frozen["shell.panel.order"];
-        let path = temp_dir("frozen").join("quoin/conf.mix");
+        let (_frozen_root, path) = temp_dir("frozen");
+        let path = path.join("quoin/conf.mix");
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(
             &path,
@@ -487,7 +486,8 @@ mod tests {
             "INVALID_ARGUMENT"
         );
         // A page another edge already declares in the file cannot be named.
-        let path = temp_dir("conflict").join("conf.mix");
+        let (_conflict_root, path) = temp_dir("conflict");
+        let path = path.join("conf.mix");
         std::fs::write(&path, "{panels: {top: [\"scene-notes\"]}}\n").unwrap();
         let order = parse_order(&json!({"edges": {"left": ["scene-notes"]}})).unwrap();
         assert_eq!(
@@ -495,7 +495,8 @@ mod tests {
             "INVALID_ARGUMENT"
         );
         // A missing file declares nothing and is created by the write.
-        let fresh = temp_dir("fresh").join("quoin/conf.mix");
+        let (_fresh_root, fresh) = temp_dir("fresh");
+        let fresh = fresh.join("quoin/conf.mix");
         assert_eq!(read_declared(&fresh).unwrap(), Declared::default());
         assert_eq!(
             write_order(&fresh, &order).unwrap()[ShellEdge::Left.index()],
