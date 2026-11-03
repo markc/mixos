@@ -36,7 +36,10 @@ impl ServeRuntime for Runtime {
 #[tokio::test(flavor = "current_thread")]
 async fn plain_after_and_cancelled_interval_exit_the_pump() {
     let mut e = Evaluator::new();
-    assert_eq!(exec(&mut e, "after(\"a=b\", \"=\")").await.unwrap(), Value::String("b".into()));
+    assert_eq!(
+        exec(&mut e, "after(\"a=b\", \"=\")").await.unwrap(),
+        Value::String("b".into())
+    );
     exec(
         &mut e,
         r#"
@@ -137,8 +140,11 @@ fn timer_lints() {
 
 #[test]
 fn expression_mode_preserves_text_after_and_refuses_numeric_after() {
-    use mix::evaluator::{eval_expr_string, EvalLimits};
-    assert_eq!(eval_expr_string("after(\"a=b\", \"=\")", &[], None, EvalLimits::default()).unwrap(), Value::String("b".into()));
+    use mix::evaluator::{EvalLimits, eval_expr_string};
+    assert_eq!(
+        eval_expr_string("after(\"a=b\", \"=\")", &[], None, EvalLimits::default()).unwrap(),
+        Value::String("b".into())
+    );
     assert!(eval_expr_string("after(1, \"tick\")", &[], None, EvalLimits::default()).is_err());
 }
 
