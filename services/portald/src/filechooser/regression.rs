@@ -22,6 +22,7 @@ enum Answer {
     Slow,
     Refuse,
     Silent,
+    Held,
 }
 
 struct Fixture {
@@ -36,6 +37,7 @@ struct Fixture {
     lists: Arc<SyncMutex<VecDeque<Answer>>>,
     cancels: Arc<SyncMutex<VecDeque<Answer>>>,
     cancelled: mpsc::UnboundedReceiver<String>,
+    held: mpsc::UnboundedReceiver<bus::native_client::IncomingCommand>,
 }
 
 impl Drop for Fixture {
@@ -94,6 +96,7 @@ impl Fixture {
         let cancels = Arc::new(SyncMutex::new(VecDeque::new()));
         let mut incoming = provider.incoming().unwrap();
         let (cancelled_tx, cancelled) = mpsc::unbounded_channel();
+        let (held_tx, held) = mpsc::unbounded_channel();
         let (p, l, c) = (provider.clone(), lists.clone(), cancels.clone());
         let worker = tokio::spawn(async move {
             while let Some(command) = incoming.recv().await {
@@ -106,6 +109,10 @@ impl Fixture {
                 } else {
                     l.lock().unwrap().pop_front().unwrap_or(Answer::Normal)
                 };
+                if matches!(answer, Answer::Held) {
+                    held_tx.send(command).unwrap();
+                    continue;
+                }
                 let p = p.clone();
                 tokio::spawn(async move {
                     if matches!(answer, Answer::Silent) {
@@ -140,6 +147,7 @@ impl Fixture {
             lists,
             cancels,
             cancelled,
+            held,
         }
     }
 
@@ -221,6 +229,30 @@ impl Fixture {
         .await
         .unwrap();
     }
+}
+
+#[tokio::test]
+async fn late_choose_reply_is_cancelled_after_an_in_flight_sweep_acknowledges() {
+    let mut f = Fixture::new().await;
+    let (path, mut stream) = f.entry(Phase::Sending).await;
+    f.bridge.close(&f.server, 1).await;
+    f.cancels.lock().unwrap().push_back(Answer::Held);
+    let generation = settings::native::live_generation(&f.bridge.client);
+    let sweep = f.bridge.cancel("inc-1".into(), generation).unwrap();
+    let command = f.held.recv().await.unwrap();
+    assert_eq!(f.cancelled.recv().await.unwrap(), "inc-1");
+    {
+        let mut registry = f.bridge.registry.lock().await;
+        f.bridge.apply(&f.server, &mut registry, 1, Event::Sweep).await;
+    }
+    // The provider has processed the sweep but its acknowledgement is still
+    // in flight when the held choose finally creates/returns the window.
+    f.bridge.reply(&f.server, generation, 1, Some(json!({"request":"inc-1"}))).await;
+    f.provider.respond(&command, 0, "{}").await.unwrap();
+    sweep.await.unwrap();
+    f.cancelled().await;
+    f.removed(&path).await;
+    quiet(&mut stream).await;
 }
 
 async fn response(stream: &mut MessageStream) {
