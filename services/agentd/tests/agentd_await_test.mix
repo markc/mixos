@@ -388,12 +388,26 @@ try
   check("restart ends and cancels non-suspending await", status($s) == "ended" and row($aid).state == "cancelled" and row($aid).reason == "session_ended" and len(events($s, "ended")) == 1 and len(outcomes($s)) == 0)
 
   -- Review 3: errors need later boundaries, never a same-pass resend.
+  -- A suspending await: the session has no next turn of its own, so the
+  -- agent is ended back to waiting and the reopen is the retry, capped.
   $s = start("resumer")
   $aid = register($s, "outcome-error", {})
   prompt($s, "wait")
   wait_status($s, "waiting")
   write_file($tmp .. "/outcome-error", "yes")
   op_done("outcome-error", "done")
+  wait_await($aid, "failed")
+  sleep(0.4)
+  check("suspending outcome ACP errors retry by reopen and fail after three", row($aid).state == "failed" and row($aid).redeliveries == 3 and row($aid).reason == "redelivery_limit" and len(outcomes($s)) == 3 and outbox_count($s) == 0 and len(topics("agent.await.failed", "await", $aid)) == 1)
+  sleep(1)
+  check("after the cap nothing is resent", len(outcomes($s)) == 3)
+  close_session($s)
+
+  -- A non-suspending await on an interactive session: retried only at the
+  -- next turn boundary, never in the same pass.
+  $s = start("resumer")
+  $aid = register($s, "outcome-error-ns", {suspend: false})
+  op_done("outcome-error-ns", "done")
   wait_retries($aid, 1)
   sleep(0.3)
   check("outcome ACP error stays idle until next boundary", row($aid).redeliveries == 1 and row($aid).state == "fired" and status($s) == "ready" and len(outcomes($s)) == 1)
@@ -405,7 +419,12 @@ try
   wait_await($aid, "failed")
   sleep(0.4)
   check("outcome ACP errors fail after three attempts and stay idle", row($aid).state == "failed" and row($aid).redeliveries == 3 and row($aid).reason == "redelivery_limit" and status($s) == "ready" and len(outcomes($s)) == 3 and outbox_count($s) == 0 and len(topics("agent.await.failed", "await", $aid)) == 1)
-  run_argv_must(["rm", $tmp .. "/outcome-error"])
+  -- DeepSeek, review 2: a failed outcome must not hold back a later one.
+  if is_file($tmp .. "/outcome-error") then remove($tmp .. "/outcome-error") end
+  $aid2 = register($s, "after-failure", {suspend: false})
+  op_done("after-failure", "done")
+  check("a later outcome is delivered after a failed one", wait_await($aid2, "delivered"))
+  if is_file($tmp .. "/outcome-error") then remove($tmp .. "/outcome-error") end
   close_session($s)
 
   -- Review 4: a pre-fix crash could leave this already-delivered row.
