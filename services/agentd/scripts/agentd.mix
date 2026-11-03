@@ -23,7 +23,11 @@
 --   agent.session.list                             live and recent sessions
 --   agent.session.read {session, since?, limit?}   logged events after seq
 --   agent.permission.respond {session, request, option}
--- The acting commands (new, prompt, cancel, close, set, respond) take an
+--   agent.session.await {session, service, op, deadline_s?, note?, suspend?, id?}
+--   agent.await.list {session?}; agent.await.cancel {await}
+--   Topics: agent.await.fired, agent.await.delivered, agent.await.failed,
+--   agent.session.suspended {session, awaits}. Waiting sessions hold no process.
+-- The acting commands (new, prompt, cancel, close, set, respond, session.await) take an
 -- optional id (1-128 of [A-Za-z0-9._:-]), scoped to the session ("new" for
 -- agent.session.new): an accepted (rc 0) command keeps its first reply and
 -- never runs again. Refusals can be retried. A first run cut off before it
@@ -111,11 +115,12 @@ $log.expire($DB, time() - $CONF.log_keep_days * 86400)
 -- One map holds everything; handlers run one at a time, so it is the only
 -- copy. sessions[id] = {id, agent, cwd, parent, sender, watch, acp, status,
 -- seq, turn, queued, pending: {rpc -> {kind}}, perms: {key -> {..}},
--- created_at}. status: starting | ready | running | ended. Events live in
+-- created_at}. status: starting | ready | running | waiting | ended. Events live in
 -- the log, not here. cmd is the acting command being answered, if any.
 -- terms[tid] = {session, watch, tail: {lines, bytes, truncated}, limit,
 -- exit: nil | {exitCode, signal}, waiters: [rpc ids]}; tid = "t<n>".
-$S = {sessions: {}, rpc: 0, notify: {}, cmd: nil, terms: {}, term_seq: 0}
+$S = {sessions: {}, rpc: 0, notify: {}, cmd: nil, terms: {}, term_seq: 0,
+  await_services: {}, await_deadline: nil, await_clock: nil, await_timer: nil}
 
 subscribe("notify.changed")
 
@@ -202,7 +207,7 @@ end
 fn live_count()
   $n = 0
   for each $id in keys($S.sessions)
-    if $S.sessions[$id].status != "ended" then $n = $n + 1 end
+    if not contains(["ended", "waiting"], $S.sessions[$id].status) then $n = $n + 1 end
   end
   return $n
 end
@@ -249,6 +254,7 @@ end
 -- fields are nil while the session is live.
 fn view($s)
   return {session: $s.id, agent: $s.agent, cwd: $s.cwd, parent: $s.parent, status: $s.status,
+    awaits: len(sqlexec($DB, "SELECT id FROM awaits WHERE session = ? AND state = 'pending'", [$s.id])),
     seq: $s.seq, turn: $s.turn, created_at: $s.created_at, ended_at: $s.ended_at,
     title: $s.title, open_permissions: len(keys($s.perms)),
     permission_requests: sort(keys($s.perms)),
@@ -377,7 +383,7 @@ on agent.session.resume desc "bring back an ended session {session}: same id and
       fail("AGENT_SELF", "a session's own agent cannot act on that session")
     elif $parent != nil and $S.sessions[$parent] != nil and $S.sessions[$parent].parent != nil then
       fail("AGENT_DEPTH", "a child session cannot resume sessions")
-    elif $row.status != "ended" or ($S.sessions[$id] != nil and $S.sessions[$id].status != "ended") then
+    elif not contains(["ended", "waiting"], $row.status) or ($S.sessions[$id] != nil and not contains(["ended", "waiting"], $S.sessions[$id].status)) then
       fail("USAGE", "session " .. $id .. " is live")
     elif live_count() >= $CONF.max_live then
       fail("AGENT_LIMIT", "already " .. to_string(live_count()) .. " live sessions (max " .. to_string($CONF.max_live) .. ")")
@@ -443,6 +449,7 @@ end
 -- a model or mode chosen first applies to the turn.
 fn run_queued($id)
   $s = $S.sessions[$id]
+  if await_flush($id) then return end
   if $s.status == "ready" and $s.queued != nil and sets_out($id) == 0 then
     $S.sessions[$id].queued = nil
     start_turn($id, $s.queued)
@@ -563,10 +570,19 @@ on agent.session.prompt desc "send a prompt {session, content}; replies {session
         fail("AGENT_RUNNING", "session " .. $id .. " already has a turn running")
       elif $s.status == "ended" then
         fail("AGENT_NOT_READY", "session " .. $id .. " has ended")
-      elif $s.status == "starting" or sets_out($id) > 0 then
+      elif $s.status == "waiting" then
+        if live_count() >= $CONF.max_live then
+          fail("AGENT_LIMIT", "no live slot for the waiting session")
+        else
+          await_reopen($id)
+          $S.sessions[$id].queued = $blocks
+          answer(0, json_encode({session: $id, turn: nil, queued: true}))
+        end
+      elif $s.status == "starting" or sets_out($id) > 0 or await_has_outbox($id) then
         -- Sent once the session is ready and its settings are answered.
         $S.sessions[$id].queued = $blocks
         answer(0, json_encode({session: $id, turn: nil, queued: true}))
+        run_queued($id)
       else
         $turn = start_turn($id, $blocks)
         if $turn == nil then
@@ -602,6 +618,7 @@ on agent.session.cancel desc "cancel the running turn {session}; pending permiss
     if $s.status != "running" then
       $S.sessions[$id].queued = nil
       answer(0, json_encode({session: $id, cancelled: false}))
+      await_suspend($id)
     else
       -- ACP: a cancel must answer every pending permission request cancelled.
       settle_all_permissions($id, nil)
@@ -616,6 +633,11 @@ on agent.session.close desc "end the agent {session}: stdin closes, the process 
   $id = nil
   if begin("agent.session.close", body().session) then $id = session_for(body(), true) end
   if $id != nil then
+    await_close($id)
+    if $S.sessions[$id].status == "waiting" then
+      $S.sessions[$id].status = "ready"
+      session_exited($id, nil, nil, nil)
+    end
     if $S.sessions[$id].status != "ended" then
       settle_all_permissions($id, nil)
       end_agent($id)
@@ -634,7 +656,7 @@ on agent.session.set desc "set {session, mode} or {session, option, value} (mode
     $set = nil
     if type($args.mode) == "string" then $set = {mode: $args.mode}
     elif type($args.option) == "string" and $args.value != nil then $set = {option: $args.option, value: $args.value} end
-    if $s.status == "ended" then
+    if contains(["ended", "waiting"], $s.status) then
       fail("AGENT_NOT_READY", "session " .. $id .. " is " .. $s.status)
     elif $set == nil then
       fail("USAGE", "set needs mode, or option and value")
@@ -731,6 +753,7 @@ fn on_reply($id, $msg)
     elif $p.kind == "prompt" then
       $S.sessions[$id].status = "ready"
       $S.sessions[$id].turn = nil
+      await_stopped($id, false)
     elif $p.kind == "set" then
       -- A refused setting still releases the prompt waiting behind it; the
       -- error event says what was refused.
@@ -783,6 +806,7 @@ fn on_reply($id, $msg)
     $S.sessions[$id].status = "ready"
     $S.sessions[$id].turn = nil
     emit_event($id, {kind: "stop", stop: $a.stop_reason($msg.result)})
+    await_stopped($id, true)
   elif $p.kind == "set" then
     -- Only an ACP success makes a setting durable; an error above leaves
     -- the last accepted value intact. Replies can arrive out of order;
@@ -1044,7 +1068,7 @@ end
 
 -- The agent of session $id is gone (it exited, or close stopped it).
 fn session_exited($id, $exit_code, $signal, $error_code)
-  if $S.sessions[$id] != nil and $S.sessions[$id].status != "ended" then
+  if $S.sessions[$id] != nil and not contains(["ended", "waiting"], $S.sessions[$id].status) then
     -- The agent is gone: so are its terminals.
     for each $k in filter(keys($S.terms), fn($k) = $S.terms[$k].session == $id)
       term_release($k)
@@ -1057,6 +1081,17 @@ fn session_exited($id, $exit_code, $signal, $error_code)
       end
     end
     $S.sessions[$id].perms = {}
+    $failed_reopen = $S.sessions[$id].reopen != nil and not $S.sessions[$id].reopen.done
+    if not $S.sessions[$id].explicit_close and not $failed_reopen then
+      await_crashed($id)
+      if $S.sessions[$id].suspending or len(await_pending($id)) > 0 or await_has_outbox($id) then
+        await_waiting($id)
+        await_drain()
+        return
+      end
+    elif $failed_reopen then
+      await_fail($id, "reopen_failed")
+    end
     $S.sessions[$id].status = "ended"
     $S.sessions[$id].turn = nil
     $reopen = $S.sessions[$id].reopen
@@ -1082,6 +1117,7 @@ fn session_exited($id, $exit_code, $signal, $error_code)
     prune()
     publish("agent.session.ended", json_encode({session: $id, exit_code: $exit_code,
       signal: $signal, error_code: $error_code}), {command: "agent.session.ended"})
+    await_drain()
   end
 end
 
@@ -1120,3 +1156,5 @@ end
 on notification.closed
   notify_settled(body(), false)
 end
+
+include "lib/awaits.mix"

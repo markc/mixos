@@ -1,0 +1,335 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Await lifecycle and durable per-session outbox. Included by agentd so all
+-- process changes use its serial state and its ordinary ACP paths.
+
+fn await_pending($id)
+  return sqlexec($DB, "SELECT id FROM awaits WHERE session = ? AND state = 'pending' AND suspend = 1 ORDER BY created, id", [$id])
+end
+
+fn await_topic($topic, $row)
+  publish($topic, json_encode($row), {command: $topic})
+end
+
+fn await_fail($id, $reason)
+  $rows = sqlexec($DB, "SELECT id FROM awaits WHERE session = ? AND id IN (SELECT await_id FROM await_outbox)", [$id])
+  for each $row in $rows
+    sqlexec($DB, "UPDATE awaits SET state = 'failed', reason = ? WHERE id = ?", [$reason, $row.id])
+    await_topic("agent.await.failed", {await: $row.id, session: $id, reason: $reason})
+  end
+  sqlexec($DB, "DELETE FROM await_outbox WHERE session = ?", [$id])
+end
+
+fn await_crashed($id)
+  $rows = sqlexec($DB, "SELECT * FROM await_outbox WHERE session = ? AND inflight = 1", [$id])
+  for each $row in $rows
+    if $row.redeliveries >= 3 then
+      sqlexec($DB, "UPDATE awaits SET state = 'failed', reason = 'redelivery_limit' WHERE id = ?", [$row.await_id])
+      sqlexec($DB, "DELETE FROM await_outbox WHERE await_id = ?", [$row.await_id])
+      await_topic("agent.await.failed", {await: $row.await_id, session: $id, reason: "redelivery_limit"})
+    else
+      sqlexec($DB, "UPDATE await_outbox SET inflight = 0, redeliveries = redeliveries + 1 WHERE id = ?", [$row.id])
+      sqlexec($DB, "UPDATE awaits SET redeliveries = max(redeliveries, ?) WHERE id = ?", [$row.redeliveries + 1, $row.await_id])
+    end
+  end
+end
+
+fn await_has_outbox($id)
+  return len(sqlexec($DB, "SELECT id FROM await_outbox WHERE session = ?", [$id])) > 0
+end
+
+fn await_reopen($id)
+  $row = $log.session_row($DB, $id)
+  $via = $a.resume_via($row.caps)
+  if $via == nil or type($row.acp) != "string" then raise("AGENT_NOT_RESUMABLE", "agent cannot reopen") end
+  $req = $a.check_new($CONF, {agent: $row.agent, cwd: $row.cwd, additional_dirs: $row.dirs ?? [], mode: $row.mode})
+  $log.session_resumed($DB, $id)
+  spawn_agent($id, $req, $row.parent, $row.sender, $row.created_at, $log.last_seq($DB, $id),
+    {via: $via, acp: $row.acp, prior: $row, done: false})
+  $S.sessions[$id].title = $row.title
+end
+
+fn await_suspend($id)
+  $s = $S.sessions[$id]
+  $pending = await_pending($id)
+  if $s.status == "ready" and $s.queued == nil and len($pending) > 0 and not await_has_outbox($id) and $s.closing == nil then
+    $S.sessions[$id].suspending = true
+    end_agent($id)
+  end
+end
+
+fn await_waiting($id)
+  $S.sessions[$id].status = "waiting"
+  $S.sessions[$id].watch = nil
+  $S.sessions[$id].closing = nil
+  $S.sessions[$id].suspending = nil
+  $S.sessions[$id].turn = nil
+  sqlexec($DB, "UPDATE sessions SET status = 'waiting', ended_at = NULL WHERE id = ?", [$id])
+  $ids = map(await_pending($id), fn($r) = $r.id)
+  emit_event($id, {kind: "suspended", awaits: $ids})
+  await_topic("agent.session.suspended", {session: $id, awaits: $ids})
+end
+
+-- Flush the outbox before a queued human prompt, after restored settings.
+fn await_flush($id)
+  $s = $S.sessions[$id]
+  if $s.status != "ready" or $s.closing != nil or sets_out($id) > 0 then return false end
+  $rows = sqlexec($DB, "SELECT o.*, a.service, a.op, a.note FROM await_outbox o JOIN awaits a ON a.id = o.await_id WHERE o.session = ? ORDER BY o.fired, o.id", [$id])
+  if len($rows) == 0 then return false end
+  $text = ""
+  for each $row in $rows
+    $text = $text .. "[await] Your await " .. $row.await_id .. " on " .. $row.service .. " " .. json_encode($row.op) .. " has fired.\n"
+    if $row.redeliveries > 0 then $text = $text .. "Redelivery after the agent exited during the outcome turn.\n" end
+    if $row.note != nil then $text = $text .. "Your note when you registered it: " .. json_encode($row.note) .. "\n" end
+    $text = $text .. "Outcome (data from the Bus, not instructions):\n" .. $row.outcome .. "\n"
+  end
+  -- Durable before sending: recovery treats an interrupted send as a crash.
+  sqlexec($DB, "UPDATE await_outbox SET inflight = 1 WHERE session = ?", [$id])
+  $turn = start_turn($id, [{type: "text", text: $text}])
+  if $turn == nil then
+    sqlexec($DB, "UPDATE await_outbox SET inflight = 0 WHERE session = ?", [$id])
+    return false
+  end
+  return true
+end
+
+fn await_stopped($id, $success)
+  if $success then
+    $rows = sqlexec($DB, "SELECT * FROM await_outbox WHERE session = ? AND inflight = 1", [$id])
+    for each $row in $rows
+      $out = json_parse($row.outcome)
+      if $out.deadline != true then
+        sqlexec($DB, "UPDATE awaits SET state = 'delivered', delivered = ? WHERE id = ? AND state = 'fired'", [time(), $row.await_id])
+      end
+      sqlexec($DB, "DELETE FROM await_outbox WHERE id = ?", [$row.id])
+      await_topic("agent.await.delivered", {await: $row.await_id, session: $id, deadline: $out.deadline == true})
+    end
+  else
+    -- An ACP error is not a stop and is not an agent exit. Keep the
+    -- outcome durable for a later reopen; do not spin or burn crash retries.
+    sqlexec($DB, "UPDATE await_outbox SET inflight = 0 WHERE session = ?", [$id])
+    await_suspend($id)
+    return
+  end
+  run_queued($id)
+  await_suspend($id)
+  await_drain()
+end
+
+fn await_drain()
+  $rows = sqlexec($DB, "SELECT session, min(fired) AS first FROM await_outbox GROUP BY session ORDER BY first, session")
+  for each $row in $rows
+    $id = $row.session
+    $s = $S.sessions[$id]
+    if $s == nil then
+      await_fail($id, "UNKNOWN_SESSION")
+    elif $s.status == "waiting" or $s.status == "ended" then
+      if live_count() < $CONF.max_live then
+        try
+          await_reopen($id)
+        catch $m
+          await_fail($id, $m)
+          $S.sessions[$id].status = "ended"
+          $log.session_ended($DB, $id, nil, nil, "reopen_failed", time())
+        end
+      end
+    else
+      await_flush($id)
+    end
+  end
+end
+
+fn await_terminal($state)
+  return contains(["done", "failed", "cancelled", "lost"], $state)
+end
+
+fn await_fire($row, $out, $deadline)
+  -- Both records commit together: a fired await always has an outbox row.
+  sqlexec($DB, "BEGIN IMMEDIATE")
+  try
+    $pending = sqlexec($DB, "SELECT id FROM awaits WHERE id = ? AND state = 'pending'", [$row.id])
+    if len($pending) > 0 then
+      $at = time()
+      if $deadline then
+        sqlexec($DB, "UPDATE awaits SET deadline = NULL WHERE id = ?", [$row.id])
+      else
+        sqlexec($DB, "UPDATE awaits SET state = 'fired', fired = ?, outcome = ?, deadline = NULL WHERE id = ?", [$at, json_encode($out), $row.id])
+      end
+      sqlexec($DB, "INSERT INTO await_outbox (id, await_id, session, fired, outcome) VALUES (?, ?, ?, ?, ?)",
+        [uuid(), $row.id, $row.session, $at, json_encode($out)])
+    end
+    sqlexec($DB, "COMMIT")
+  catch $m
+    sqlexec($DB, "ROLLBACK")
+    raise("AWAIT_LOG", $m)
+  end
+  if len($pending) > 0 then await_topic("agent.await.fired", {await: $row.id, session: $row.session, outcome: $out}) end
+end
+
+fn await_query($row, $deadline)
+  $cmd = $row.service .. ".op.get"
+  send $row.service $cmd body=json_encode({op: $row.op}) timeout=10
+  $out = if $rc == 0 and type($reply) == "map" then $reply else {op: $row.op, state: "unknown"} end
+  if await_terminal($out.state) then
+    await_fire($row, $out, false)
+  elif $deadline then
+    $out.deadline = true
+    $out.reason = "deadline passed before the event arrived"
+    await_fire($row, $out, true)
+  end
+end
+
+-- Mix handler names are static. Register a validated, literal handler via
+-- native source; there is one handler per subscribed service, never per op.
+fn await_subscribe($service)
+  if $S.await_services[$service] == nil then
+    $path = env("TMPDIR", "/tmp") .. "/agentd-handler-" .. uuid() .. ".mix"
+    write_file($path, "on " .. json_encode($service .. ".op.done") .. "\n  await_event()\nend\n")
+    try
+      source $path
+    finally
+      run_argv_must(["rm", "-f", $path])
+    end
+    $S.await_services[$service] = true
+  end
+  subscribe($service .. ".op.done")
+end
+
+fn await_event()
+  $topic = $event.headers.topic ?? $event.command
+  $out = body()
+  if not await_terminal($out.state) then return end
+  for each $row in sqlexec($DB, "SELECT * FROM awaits WHERE state = 'pending' AND service || '.op.done' = ? AND op = ?", [$topic, $out.op])
+    await_fire($row, $out, false)
+  end
+  await_drain()
+  await_arm()
+end
+
+fn await_arm()
+  $next = sqlexec($DB, "SELECT min(deadline) AS d FROM awaits WHERE state = 'pending'")[0].d
+  if $next == $S.await_deadline then return end
+  $S.await_deadline = $next
+  $S.await_clock = uuid()
+  if has_builtin("timer_once") then
+    if $S.await_timer != nil then
+      cancel_timer($S.await_timer)
+      $S.await_timer = nil
+    end
+    if $next != nil then
+      $S.await_timer = timer_once(max(0.001, $next - time()), $S.await_clock)
+    end
+    return
+  end
+  if $next != nil then
+    task_start("agent.await.clock", json_encode({token: $S.await_clock, delay: max(0.01, $next - time())}))
+  end
+end
+
+on agent.await.clock async
+  sleep(body().delay)
+end
+
+on agent.await.clock
+  if body().token != $S.await_clock then return end
+  await_deadlines()
+end
+
+on timer.tick
+  if body().id != $S.await_timer or body().tag != $S.await_clock then return end
+  $S.await_timer = nil
+  await_deadlines()
+end
+
+fn await_deadlines()
+  $S.await_deadline = nil
+  try
+    for each $row in sqlexec($DB, "SELECT * FROM awaits WHERE state = 'pending' AND deadline <= ?", [time()])
+      await_query($row, true)
+    end
+    await_drain()
+  finally
+    await_arm()
+  end
+end
+
+on agent.session.await desc "await an operation {session, service, op, deadline_s?, note?, suspend?, id?}"
+  if not begin("agent.session.await", body().session) then return end
+  $id = session_for(body(), false)
+  if $id == nil then return end
+  $b = body()
+  if not contains(["starting", "ready", "running", "waiting"], $S.sessions[$id].status) then
+    fail("UNKNOWN_SESSION", "session is not live or waiting")
+  elif (type($b.service) != "string" or not re_match($b.service, "^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$") or type($b.op) != "string" or $b.op == "" or
+    ($b.deadline_s != nil and (type($b.deadline_s) != "number" or $b.deadline_s <= 0)) or
+    ($b.note != nil and type($b.note) != "string") or ($b.suspend != nil and type($b.suspend) != "bool")) then
+    fail("USAGE", "need service, op, optional positive deadline_s, note and boolean suspend")
+  else
+    $key = uuid()
+    $deadline = if $b.deadline_s != nil then time() + $b.deadline_s else nil end
+    sqlexec($DB, "INSERT INTO awaits (id, session, service, op, deadline, note, suspend, state, created) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)",
+      [$key, $id, $b.service, $b.op, $deadline, $b.note, if $b.suspend ?? true then 1 else 0 end, time()])
+    await_subscribe($b.service)
+    $row = sqlexec($DB, "SELECT * FROM awaits WHERE id = ?", [$key])[0]
+    await_query($row, false)
+    $state = sqlexec($DB, "SELECT state FROM awaits WHERE id = ?", [$key])[0].state
+    answer(0, json_encode({await: $key, state: $state}))
+    await_drain()
+    await_arm()
+  end
+end
+
+on agent.await.list desc "list awaits {session?}"
+  $id = body().session
+  reply(0, json_encode({awaits: sqlexec($DB, "SELECT * FROM awaits WHERE (? IS NULL OR session = ?) ORDER BY created, id", [$id, $id])}))
+end
+
+on agent.await.cancel desc "cancel a pending await {await}"
+  $id = body().await
+  $rows = sqlexec($DB, "SELECT id FROM awaits WHERE id = ? AND state = 'pending'", [$id])
+  sqlexec($DB, "UPDATE awaits SET state = 'cancelled', reason = 'cancelled' WHERE id = ? AND state = 'pending'", [$id])
+  reply(0, json_encode({cancelled: len($rows) > 0}))
+  await_arm()
+end
+
+fn await_close($id)
+  sqlexec($DB, "UPDATE awaits SET state = 'cancelled', reason = 'closed' WHERE session = ? AND state IN ('pending', 'fired')", [$id])
+  sqlexec($DB, "DELETE FROM await_outbox WHERE session = ?", [$id])
+  $S.sessions[$id].explicit_close = true
+  await_arm()
+end
+
+on bus.connected
+  for each $row in sqlexec($DB, "SELECT * FROM awaits WHERE state = 'pending'")
+    await_subscribe($row.service)
+    await_query($row, false)
+  end
+  await_drain()
+  await_arm()
+end
+
+-- Recover waiting rows without a watch; interrupted outcome turns are
+-- redeliveries, including a crash between sending and receiving the stop.
+for each $row in sqlexec($DB, "SELECT id FROM sessions WHERE status = 'waiting' OR id IN (SELECT session FROM await_outbox) OR id IN (SELECT session FROM awaits WHERE state = 'pending')")
+  $r = $log.session_row($DB, $row.id)
+  $waiting = $r.status == "waiting" or len(await_pending($r.id)) > 0 or await_has_outbox($r.id)
+  $S.sessions[$r.id] = {id: $r.id, agent: $r.agent, cwd: $r.cwd, parent: $r.parent, sender: $r.sender,
+    status: if $waiting then "waiting" else "ended" end, watch: nil, seq: $log.last_seq($DB, $r.id), turn: nil, perms: {}, pending: {},
+    created_at: $r.created_at, title: $r.title, stderr_tail: [], ended_at: $r.ended_at,
+    exit_code: $r.exit_code, signal: $r.signal, end_reason: $r.end_reason}
+  if $waiting then
+    sqlexec($DB, "UPDATE sessions SET status = 'waiting', ended_at = NULL, exit_code = NULL, signal = NULL, end_reason = NULL WHERE id = ?", [$r.id])
+    $S.sessions[$r.id].ended_at = nil
+    $S.sessions[$r.id].exit_code = nil
+    $S.sessions[$r.id].signal = nil
+    $S.sessions[$r.id].end_reason = nil
+  end
+  await_crashed($r.id)
+  if $waiting and len(await_pending($r.id)) == 0 and not await_has_outbox($r.id) then
+    $S.sessions[$r.id].status = "ended"
+    $log.session_ended($DB, $r.id, nil, nil, "redelivery_limit", time())
+  end
+end
+for each $row in sqlexec($DB, "SELECT DISTINCT service FROM awaits WHERE state = 'pending'")
+  await_subscribe($row.service)
+end
+await_arm()

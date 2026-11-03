@@ -212,6 +212,7 @@
                         <a href="#commands">Commands</a>
                         <a href="#events">Events</a>
                         <a href="#resuming">Resuming</a>
+                        <a href="#awaiting-operations">Awaiting operations</a>
                         <a href="#command-line">Command line</a>
                         <a href="#session-log">Session log</a>
                         <a href="#files">Files</a>
@@ -334,6 +335,9 @@ after it ends.</p>
 <tr><td><code>agent.session.list</code></td><td></td><td>live and recently ended sessions (one row shape, below); each live one lists its open questions in <code>permissions</code> (<code>request</code>, <code>title</code>, <code>options</code> without <code>allow_always</code>, <code>asked_at</code>, <code>expires_at</code>)</td></tr>
 <tr><td><code>agent.session.read</code></td><td><code>{session, since?, limit?}</code></td><td>the session and its logged events after <code>seq</code>: <code>{session, events, more, next}</code></td></tr>
 <tr><td><code>agent.permission.respond</code></td><td><code>{session, request, option}</code></td><td>answers a permission request</td></tr>
+<tr><td><code>agent.session.await</code></td><td><code>{session, service, op, deadline_s?, note?, suspend?, id?}</code></td><td><code>{await, state}</code>, after catch-up</td></tr>
+<tr><td><code>agent.await.list</code></td><td><code>{session?}</code></td><td><code>{awaits: [...]}</code></td></tr>
+<tr><td><code>agent.await.cancel</code></td><td><code>{await}</code></td><td><code>{cancelled: bool}</code></td></tr>
 </tbody></table>
 <p><code>content</code> is a string, or a list of ACP content blocks.</p>
 <p>A prompt or a setting sent while the session is still <code>starting</code> is queued
@@ -345,7 +349,7 @@ runs. When the agent answers a setting with its options, agentd logs them
 as a <code>config_option_update</code> event, so a watcher's picker shows the new
 value even when the agent sends no update of its own.</p>
 <p>A session row, in <code>list</code> and as <code>session</code> in <code>read</code>, is the same for live
-and ended sessions: <code>{session, agent, cwd, parent, status, seq, turn, created_at, ended_at, title, open_permissions, permission_requests, permissions, exit_code, signal, end_reason}</code>. <code>created_at</code> is an ISO time;
+and ended sessions: <code>{session, agent, cwd, parent, status, seq, turn, created_at, ended_at, title, awaits, open_permissions, permission_requests, permissions, exit_code, signal, end_reason}</code>. <code>created_at</code> is an ISO time;
 <code>ended_at</code> is epoch seconds, nil while the session is live, as are the exit
 fields. <code>title</code> is the first line of the first prompt with usable text (at most 120
 characters), nil until such a prompt arrives; a later prompt never
@@ -354,10 +358,11 @@ changes it.</p>
 32 MiB. When <code>more</code> is true, read again with <code>since</code> set to <code>next</code>. Every
 event, read back or published, carries <code>at</code>: the time agentd logged it, in
 epoch seconds.</p>
-<p>The acting commands (<code>new</code>, <code>prompt</code>, <code>cancel</code>, <code>close</code>, <code>set</code>, <code>respond</code>)
+<p>The acting commands (<code>new</code>, <code>prompt</code>, <code>cancel</code>, <code>close</code>, <code>set</code>, <code>respond</code>, <code>session.await</code>)
 take an optional <code>id</code> of 1-128 characters from <code>[A-Za-z0-9._:-]</code>. Ids are
 scoped to the session (to <code>new</code> for <code>agent.session.new</code>). A retry with the
-same id gets the first reply and never runs again, so a caller that lost a
+same id gets the first accepted (rc 0) reply and never runs again. Refusals
+can be retried, so a caller that lost a
 reply can safely send the command again. If agentd stopped after logging a
 command but before replying, the retry gets <code>COMMAND_INTERRUPTED</code>; the
 command is not run again.</p>
@@ -374,6 +379,10 @@ command is not run again.</p>
 <tr><td><code>agent.session.updated</code></td><td><code>{session, seq, kind, …}</code></td></tr>
 <tr><td><code>agent.session.ended</code></td><td><code>{session, exit_code, signal}</code></td></tr>
 <tr><td><code>agent.permission.requested</code></td><td><code>{session, request, title, options}</code></td></tr>
+<tr><td><code>agent.session.suspended</code></td><td><code>{session, awaits}</code></td></tr>
+<tr><td><code>agent.await.fired</code></td><td><code>{await, session, outcome}</code></td></tr>
+<tr><td><code>agent.await.delivered</code></td><td><code>{await, session, deadline}</code></td></tr>
+<tr><td><code>agent.await.failed</code></td><td><code>{await, session, reason}</code></td></tr>
 </tbody></table>
 <p><code>kind</code> on <code>agent.session.updated</code> is one of:</p>
 <ul>
@@ -385,6 +394,7 @@ transcript shows what was asked);</li>
 <li><code>stop</code>, with <code>stop</code> set to <code>end_turn</code>, <code>max_tokens</code>, <code>max_turn_requests</code>,
 <code>refusal</code> or <code>cancelled</code>;</li>
 <li><code>permission_answered</code>;</li>
+<li><code>suspended</code>, with the pending suspending await ids;</li>
 <li><code>error</code>;</li>
 <li><code>fs_read</code>, <code>fs_write</code> or <code>fs_refused</code> (see Files);</li>
 <li><code>terminal_created</code> or <code>terminal_exited</code> (see Terminals);</li>
@@ -396,8 +406,8 @@ transcript shows what was asked);</li>
 reads them back with <code>agent.session.read {since}</code>.</p>
 <h2 id="resuming">Resuming</h2>
 <p><code>agent.session.resume {session}</code> brings back a session that ended, whether
-it was closed, its agent exited, or agentd restarted. Nothing resumes by
-itself. The session keeps its id, its <code>mcp-s-&lt;session&gt;-</code> Bus name and its
+it was closed, its agent exited, or agentd restarted. Waiting sessions can
+also be resumed or prompted by a human. The session keeps its id, its <code>mcp-s-&lt;session&gt;-</code> Bus name and its
 log, and <code>seq</code> carries on. agentd starts the agent again and asks it to
 reopen its own record of the session:</p>
 <ul>
@@ -416,10 +426,35 @@ goes back to ended exactly as it was, with a <code>resume_failed</code> event. G
 CLI answers <code>session/load</code> first and replays after, so after a load the
 session stays <code>starting</code> (a prompt is queued) until the replay has been
 quiet for a second, and replayed history is dropped until then.</p>
-<p>agentd does not restore the mode or model (set them again) or a permission
-question that was open when the session ended (prompt again). Advertised
+<p>agentd restores the last accepted mode and config options before a prompt.
+It does not restore a permission question that was open when the session
+ended (prompt again). Advertised
 at <code>initialize</code>: Claude, OpenCode and Codex offer <code>session/resume</code>; Gemini
 offers <code>session/load</code>.</p>
+<h2 id="awaiting-operations">Awaiting operations</h2>
+<p><code>agent.session.await</code> watches <code>{service, op}</code> through <code>&lt;service&gt;.op.done</code>
+and <code>&lt;service&gt;.op.get {op}</code> (10 second query timeout). The session must
+be live or waiting. Every caller may register, including the session's own
+agent. <code>done</code>, <code>failed</code>, <code>cancelled</code> and <code>lost</code> fire the await; <code>unknown</code>
+stays pending. Catch-up runs before the registration reply, and again
+after reconnect.</p>
+<p>With <code>suspend: true</code> (the default), a turn ending with a pending await and
+an empty outbox releases its agent process. The session becomes <code>waiting</code>,
+survives agentd restarts and does not count towards <code>max_live</code>.
+It publishes <code>agent.session.suspended</code>, never <code>agent.session.ended</code>.
+<code>mix agent list</code> and <code>read</code> show this status. Closing cancels the awaits;
+cancelling a waiting session's turn returns <code>cancelled: false</code>.</p>
+<p>An outcome enters SQLite's outbox before agentd resumes the session.
+Outcomes batch into one prompt, ahead of a human prompt; a busy session
+finishes its current turn first. At the live cap, outboxes wait in order
+of their firing time. Delivery means the outcome turn reached its stop,
+not merely that its prompt was sent. A failed reopen fails the await.
+An agent exiting during an outcome turn gets up to three redeliveries,
+explicitly framed as such, before the await fails.</p>
+<p>A deadline first queries the operation. If it is still non-terminal,
+the outbox delivers a deadline notification with the current state and
+the await stays pending for the real outcome. The agent's note is quoted
+in each outcome as data from the Bus, not instructions.</p>
 <h2 id="command-line">Command line</h2>
 <p><code>mix agent</code> drives agentd from a shell or the Mix prompt. Each command is one
 Bus call, except <code>send --wait</code>, which follows the turn on the topics (it runs
@@ -447,6 +482,8 @@ it publishes the event or runs the command: <code>$MIXOS_AGENTD_DB</code>, else
 <ul>
 <li>ended sessions and their events can still be listed and read;</li>
 <li>command receipts still answer retries;</li>
+<li>waiting sessions survive without a process; undelivered outcomes resume
+through the durable outbox;</li>
 <li>the agents that were running are gone (agentd owned them), so their
 sessions are ended with a last <code>ended</code> event whose <code>reason</code> is
 <code>agentd_restart</code>.</li>

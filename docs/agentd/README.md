@@ -96,6 +96,9 @@ Bodies are JSON objects.
 | `agent.session.list` | | live and recently ended sessions (one row shape, below); each live one lists its open questions in `permissions` (`request`, `title`, `options` without `allow_always`, `asked_at`, `expires_at`) |
 | `agent.session.read` | `{session, since?, limit?}` | the session and its logged events after `seq`: `{session, events, more, next}` |
 | `agent.permission.respond` | `{session, request, option}` | answers a permission request |
+| `agent.session.await` | `{session, service, op, deadline_s?, note?, suspend?, id?}` | `{await, state}`, after catch-up |
+| `agent.await.list` | `{session?}` | `{awaits: [...]}` |
+| `agent.await.cancel` | `{await}` | `{cancelled: bool}` |
 
 `content` is a string, or a list of ACP content blocks.
 
@@ -110,7 +113,7 @@ value even when the agent sends no update of its own.
 
 A session row, in `list` and as `session` in `read`, is the same for live
 and ended sessions: `{session, agent, cwd, parent, status, seq, turn,
-created_at, ended_at, title, open_permissions, permission_requests,
+created_at, ended_at, title, awaits, open_permissions, permission_requests,
 permissions, exit_code, signal, end_reason}`. `created_at` is an ISO time;
 `ended_at` is epoch seconds, nil while the session is live, as are the exit
 fields. `title` is the first line of the first prompt with usable text (at most 120
@@ -122,10 +125,11 @@ A read returns at most `limit` events (default and maximum 2000) and about
 event, read back or published, carries `at`: the time agentd logged it, in
 epoch seconds.
 
-The acting commands (`new`, `prompt`, `cancel`, `close`, `set`, `respond`)
+The acting commands (`new`, `prompt`, `cancel`, `close`, `set`, `respond`, `session.await`)
 take an optional `id` of 1-128 characters from `[A-Za-z0-9._:-]`. Ids are
 scoped to the session (to `new` for `agent.session.new`). A retry with the
-same id gets the first reply and never runs again, so a caller that lost a
+same id gets the first accepted (rc 0) reply and never runs again. Refusals
+can be retried, so a caller that lost a
 reply can safely send the command again. If agentd stopped after logging a
 command but before replying, the retry gets `COMMAND_INTERRUPTED`; the
 command is not run again.
@@ -147,6 +151,10 @@ Refusals carry `{error_code, message}`:
 | `agent.session.updated` | `{session, seq, kind, …}` |
 | `agent.session.ended` | `{session, exit_code, signal}` |
 | `agent.permission.requested` | `{session, request, title, options}` |
+| `agent.session.suspended` | `{session, awaits}` |
+| `agent.await.fired` | `{await, session, outcome}` |
+| `agent.await.delivered` | `{await, session, deadline}` |
+| `agent.await.failed` | `{await, session, reason}` |
 
 `kind` on `agent.session.updated` is one of:
 
@@ -158,6 +166,7 @@ Refusals carry `{error_code, message}`:
 - `stop`, with `stop` set to `end_turn`, `max_tokens`, `max_turn_requests`,
   `refusal` or `cancelled`;
 - `permission_answered`;
+- `suspended`, with the pending suspending await ids;
 - `error`;
 - `fs_read`, `fs_write` or `fs_refused` (see Files);
 - `terminal_created` or `terminal_exited` (see Terminals);
@@ -171,8 +180,8 @@ reads them back with `agent.session.read {since}`.
 ## Resuming
 
 `agent.session.resume {session}` brings back a session that ended, whether
-it was closed, its agent exited, or agentd restarted. Nothing resumes by
-itself. The session keeps its id, its `mcp-s-<session>-` Bus name and its
+it was closed, its agent exited, or agentd restarted. Waiting sessions can
+also be resumed or prompted by a human. The session keeps its id, its `mcp-s-<session>-` Bus name and its
 log, and `seq` carries on. agentd starts the agent again and asks it to
 reopen its own record of the session:
 
@@ -192,10 +201,40 @@ CLI answers `session/load` first and replays after, so after a load the
 session stays `starting` (a prompt is queued) until the replay has been
 quiet for a second, and replayed history is dropped until then.
 
-agentd does not restore the mode or model (set them again) or a permission
-question that was open when the session ended (prompt again). Advertised
+agentd restores the last accepted mode and config options before a prompt.
+It does not restore a permission question that was open when the session
+ended (prompt again). Advertised
 at `initialize`: Claude, OpenCode and Codex offer `session/resume`; Gemini
 offers `session/load`.
+
+## Awaiting operations
+
+`agent.session.await` watches `{service, op}` through `<service>.op.done`
+and `<service>.op.get {op}` (10 second query timeout). The session must
+be live or waiting. Every caller may register, including the session's own
+agent. `done`, `failed`, `cancelled` and `lost` fire the await; `unknown`
+stays pending. Catch-up runs before the registration reply, and again
+after reconnect.
+
+With `suspend: true` (the default), a turn ending with a pending await and
+an empty outbox releases its agent process. The session becomes `waiting`,
+survives agentd restarts and does not count towards `max_live`.
+It publishes `agent.session.suspended`, never `agent.session.ended`.
+`mix agent list` and `read` show this status. Closing cancels the awaits;
+cancelling a waiting session's turn returns `cancelled: false`.
+
+An outcome enters SQLite's outbox before agentd resumes the session.
+Outcomes batch into one prompt, ahead of a human prompt; a busy session
+finishes its current turn first. At the live cap, outboxes wait in order
+of their firing time. Delivery means the outcome turn reached its stop,
+not merely that its prompt was sent. A failed reopen fails the await.
+An agent exiting during an outcome turn gets up to three redeliveries,
+explicitly framed as such, before the await fails.
+
+A deadline first queries the operation. If it is still non-terminal,
+the outbox delivers a deadline notification with the current state and
+the await stays pending for the real outcome. The agent's note is quoted
+in each outcome as data from the Bus, not instructions.
 
 ## Command line
 
@@ -229,6 +268,8 @@ it publishes the event or runs the command: `$MIXOS_AGENTD_DB`, else
 
 - ended sessions and their events can still be listed and read;
 - command receipts still answer retries;
+- waiting sessions survive without a process; undelivered outcomes resume
+  through the durable outbox;
 - the agents that were running are gone (agentd owned them), so their
   sessions are ended with a last `ended` event whose `reason` is
   `agentd_restart`.
