@@ -265,27 +265,43 @@ async fn exhausted_cancel_with_late_reply(refused: bool) {
     f.bridge.close(&f.server, 1).await;
     let generation = settings::native::live_generation(&f.bridge.client);
     f.cancels.lock().unwrap().extend([Answer::Refuse; 2]);
-    f.bridge.cancel("inc-1".into(), generation).unwrap().await.unwrap();
+    f.bridge
+        .cancel("inc-1".into(), generation)
+        .unwrap()
+        .await
+        .unwrap();
     f.cancelled().await;
-    f.bridge.retry_cancel("inc-1".into()).unwrap().await.unwrap();
+    f.bridge
+        .retry_cancel("inc-1".into())
+        .unwrap()
+        .await
+        .unwrap();
     f.cancelled().await;
     f.cancels.lock().unwrap().push_back(Answer::Held);
     let third = f.bridge.retry_cancel("inc-1".into()).unwrap();
     let command = tokio::time::timeout(Duration::from_secs(3), f.held.recv())
-        .await.unwrap().unwrap();
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(f.cancelled.recv().await.unwrap(), "inc-1");
     {
         let mut registry = f.bridge.registry.lock().await;
-        f.bridge.apply(&f.server, &mut registry, 1, Event::Sweep).await;
+        f.bridge
+            .apply(&f.server, &mut registry, 1, Event::Sweep)
+            .await;
     }
-    f.bridge.reply(&f.server, generation, 1, Some(json!({"request":"inc-1"}))).await;
+    f.bridge
+        .reply(&f.server, generation, 1, Some(json!({"request":"inc-1"})))
+        .await;
     if refused {
         f.provider.respond(&command, 10, "{}").await.unwrap();
     }
     // Otherwise the held command never answers: exercise the real IO deadline.
     third.await.unwrap();
-    assert!(f.bridge.cancels.lock().unwrap().contains_key("inc-1"),
-        "exhausting the old budget discarded the late reply's new demand");
+    assert!(
+        f.bridge.cancels.lock().unwrap().contains_key("inc-1"),
+        "exhausting the old budget discarded the late reply's new demand"
+    );
     // A fresh demand gets at most three further attempts, even if every one
     // fails. Polling alone must never renew an exhausted budget.
     f.cancels.lock().unwrap().extend([Answer::Refuse; 4]);
@@ -295,7 +311,10 @@ async fn exhausted_cancel_with_late_reply(refused: bool) {
     }
     assert!(f.bridge.cancels.lock().unwrap().is_empty());
     f.bridge.poll(&f.server).await;
-    assert!(f.cancelled.try_recv().is_err(), "unchanged failure retried forever");
+    assert!(
+        f.cancelled.try_recv().is_err(),
+        "unchanged failure retried forever"
+    );
     f.removed(&path).await;
     quiet(&mut stream).await;
 }
