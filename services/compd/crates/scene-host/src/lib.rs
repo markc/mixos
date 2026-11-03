@@ -82,16 +82,30 @@ fn source_presented(
     HOST.with_borrow_mut(|slot| {
         let Some(host) = slot.as_mut() else { return };
         // Match the registered id rather than reversing its normalisation.
-        let name = host.host.store.scenes().find_map(|(name, _)|
-            (render::source_id(name) == source).then(|| name.to_owned()));
+        let name = host
+            .host
+            .store
+            .scenes()
+            .find_map(|(name, _)| (render::source_id(name) == source).then(|| name.to_owned()));
         let Some(name) = name else { return };
-        if !render::targets(&host.host.store, &host.host.panels).get(&name)
-            .is_some_and(|target| target.output == output.name()) {
+        if !render::targets(&host.host.store, &host.host.panels)
+            .get(&name)
+            .is_some_and(|target| target.output == output.name())
+        {
             return;
         }
-        let interval = refresh.map(|period| period.as_secs_f64()).unwrap_or_else(||
-            output.current_mode().map_or(0.0, |mode| 1000.0 / f64::from(mode.refresh.max(1))));
-        if let Some((citizen, body)) = host.host.store.frame_event(&name, true, time.as_secs_f64(), interval) {
+        let interval = refresh
+            .map(|period| period.as_secs_f64())
+            .unwrap_or_else(|| {
+                output
+                    .current_mode()
+                    .map_or(0.0, |mode| 1000.0 / f64::from(mode.refresh.max(1)))
+            });
+        if let Some((citizen, body)) =
+            host.host
+                .store
+                .frame_event(&name, true, time.as_secs_f64(), interval)
+        {
             host.port.emit(&citizen, "frame", body);
         }
     });
@@ -105,7 +119,33 @@ pub fn running() -> bool {
 /// Answer what the worker and the surfaces delivered; schedule a frame
 /// (`RedrawReason::Publish`) when what is drawn may have changed.
 pub fn service(lp: &mut Loop) -> Serviced {
-    let serviced = HOST.with_borrow_mut(|slot| slot.as_mut().map(|host| host.service_port(lp)));
+    let serviced = HOST.with_borrow_mut(|slot| {
+        let host = slot.as_mut()?;
+        let serviced = host.service_port(lp);
+        for (name, target) in render::targets(&host.host.store, &host.host.panels) {
+            if host
+                .host
+                .store
+                .scene(&name)
+                .is_some_and(|entry| entry.frame_armed)
+            {
+                let key = lp
+                    .inner
+                    .space_state()
+                    .state
+                    .outputs()
+                    .find(|output| output.name() == target.output)
+                    .map(world::state::output_key);
+                if let Some(key) = key {
+                    // Already on the event loop: request only the owning output.
+                    lp.state
+                        .redraw
+                        .request_pipe_silent(&key, RedrawReason::Publish);
+                }
+            }
+        }
+        Some(serviced)
+    });
     let serviced = serviced.unwrap_or_default();
     if serviced.changed {
         lp.state.schedule_redraw(RedrawReason::Publish);

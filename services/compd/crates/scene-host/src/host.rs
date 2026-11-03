@@ -200,12 +200,13 @@ impl Host {
                 let name = argument(request, &args, "scene").unwrap_or_default();
                 let caller = attested_owner(request, self.receipt);
                 let result = self.store.arm_frame(name, &caller);
-                let changed = result.is_ok() && self.mapped_output(name).is_some();
                 Answer {
                     rc: if result.is_ok() { 0 } else { 10 },
-                    body: result.map_or_else(|error| error, |()| json!({"scene":name,"armed":true})).to_string(),
+                    body: result
+                        .map_or_else(|error| error, |()| json!({"scene":name,"armed":true}))
+                        .to_string(),
                     publish: Vec::new(),
-                    changed,
+                    changed: false,
                 }
             }
             SceneCommand::List => Answer {
