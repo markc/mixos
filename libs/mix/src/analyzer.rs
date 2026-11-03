@@ -2499,7 +2499,10 @@ fn check_timers(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis) {
             && name == "interval"
             && let Some(n) = args.first().and_then(|arg| match arg {
                 Expr::NumberLiteral(n) => Some(*n),
-                Expr::UnaryOp { op: UnaryOp::Neg, operand } => match operand.as_ref() {
+                Expr::UnaryOp {
+                    op: UnaryOp::Neg,
+                    operand,
+                } => match operand.as_ref() {
                     Expr::NumberLiteral(n) => Some(-n),
                     _ => None,
                 },

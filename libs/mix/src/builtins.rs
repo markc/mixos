@@ -41865,7 +41865,10 @@ mod strict_write_and_bool_option_tests {
             let lenient = builtin_walk(vec![s(&d)]).unwrap().unwrap();
             assert!(!lenient.to_mix_string().contains("hidden.txt"));
             assert_eq!(
-                builtin_walk(vec![s(&locked)]).unwrap().unwrap().to_mix_string(),
+                builtin_walk(vec![s(&locked)])
+                    .unwrap()
+                    .unwrap()
+                    .to_mix_string(),
                 Value::list(vec![]).to_mix_string()
             );
             // Strict: raised, naming it, in a subtree and at the top.
