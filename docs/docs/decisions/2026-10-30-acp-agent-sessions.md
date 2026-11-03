@@ -59,10 +59,10 @@ all of those agents directly or through a small adapter.
    callers and leave self-approval one hop away.
 8. **Durable intent.** agentd writes every acting command and every mapped
    update to an append-only SQLite log before it runs or publishes it.
-   Command ids are scoped per session; a retry with the same id gets the
-   first reply and never runs again. Sessions outlive agentd in the log,
-   and `agent.session.resume` brings one back through the agent's own
-   `session/resume` or `session/load`.
+   Command ids are scoped per session; an accepted (rc 0) command keeps its
+   first reply and never runs again on a retry with the same id. Sessions
+   outlive agentd in the log, and `agent.session.resume` brings one back
+   through the agent's own `session/resume` or `session/load`.
 9. **Versions.** ACP v1 is required; v2 is to be negotiated when both sides
    offer it, behind the same Bus vocabulary.
 10. **Foreign code.** ACP agents are external programs at the edge, called

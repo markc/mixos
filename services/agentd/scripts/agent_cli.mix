@@ -249,7 +249,8 @@ else
   if $cmd == "agents" then
     $v = must(call("agent.agents", {}, 10))
     for each $x in $v.agents
-      print($x.agent .. "  " .. $x.program .. "  policy=" .. $x.policy .. "  roots=" .. join($x.roots, ","))
+      print($x.agent .. "  " .. $x.program .. "  policy=" .. $x.policy .. "  roots=" .. join($x.roots, ",") ..
+        "  mode=" .. to_string($x.mode ?? "-") .. "  close_on_done=" .. to_string($x.close_on_done ?? false))
     end
     print(to_string($v.live) .. " live of " .. to_string($v.max_live))
   elif $cmd == "list" then

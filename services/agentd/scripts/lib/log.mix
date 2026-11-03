@@ -21,9 +21,9 @@ $SCHEMA = [
 
 -- Columns added after the first schema: what a resume needs (the agent's
 -- own session id, the extra directories, what the agent advertised) and the
--- title (the first prompt's first line). Added
+-- title (the first prompt's first line), and accepted settings. Added
 -- to an older file in place; each is NULL until written.
-$SESSION_COLUMNS = ["acp TEXT", "dirs TEXT", "caps TEXT", "agent_info TEXT", "title TEXT"]
+$SESSION_COLUMNS = ["acp TEXT", "dirs TEXT", "caps TEXT", "agent_info TEXT", "title TEXT", "mode TEXT", "options TEXT"]
 
 -- Open (creating) the log. WAL with synchronous=NORMAL: a commit is not
 -- an fsync, so streamed chunks stay cheap; a power cut can lose the last
@@ -66,6 +66,17 @@ fn session_agent($h, $id, $acp, $dirs, $caps, $agent_info)
     [$acp, json_encode($dirs ?? []), json_encode($caps), json_encode($agent_info), $id])
 end
 
+-- Called only after the agent accepts a setting.
+fn session_set($h, $id, $set)
+  if $set.mode != nil then
+    sqlexec($h, "UPDATE sessions SET mode = ? WHERE id = ?", [$set.mode, $id])
+  else
+    $options = session_row($h, $id).options ?? {}
+    $options[$set.option] = $set.value
+    sqlexec($h, "UPDATE sessions SET options = ? WHERE id = ?", [json_encode($options), $id])
+  end
+end
+
 -- The first prompt names the session; a later prompt never renames it.
 fn session_title($h, $id, $title)
   sqlexec($h, "UPDATE sessions SET title = ? WHERE id = ? AND title IS NULL", [$title, $id])
@@ -76,7 +87,7 @@ fn session_row($h, $id)
   $rows = sqlexec($h, "SELECT * FROM sessions WHERE id = ?", [$id])
   if len($rows) == 0 then return nil end
   $r = $rows[0]
-  for each $k in ["dirs", "caps", "agent_info"]
+  for each $k in ["dirs", "caps", "agent_info", "options"]
     $r[$k] = if type($r[$k]) == "string" then json_parse($r[$k]) else nil end
   end
   return $r
@@ -196,6 +207,10 @@ end
 
 fn command_done($h, $scope, $id, $rc, $receipt)
   sqlexec($h, "UPDATE commands SET rc = ?, receipt = ? WHERE scope = ? AND id = ?", [$rc, $receipt, $scope, $id])
+end
+
+fn command_drop($h, $scope, $id)
+  sqlexec($h, "DELETE FROM commands WHERE scope = ? AND id = ?", [$scope, $id])
 end
 
 -- Retention: drop sessions that ended before $cutoff (epoch seconds), with
