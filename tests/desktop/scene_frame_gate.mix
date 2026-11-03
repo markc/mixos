@@ -17,7 +17,7 @@ write_file($root .. "/preferences.json", json_encode({scene_host:true}))
 fn call($svc, $command, $body)
   send $svc $command body=json_encode($body) timeout=5
   if $rc != 0 then raise("CALL_FAILED", $command .. ": " .. $reply) end
-  return json_parse($reply)
+  return if type($reply) == "string" then json_parse($reply) else $reply end
 end
 $cp = nil
 $bp = nil
@@ -45,7 +45,7 @@ try
     if $rc == 0 then break end
     sleep(0.2)
   end
-  $doc = "---\nscene: 1\nname: frame-clock\ncitizen: " .. $citizen .. "\nmodel: {\"counter\":\"0\"}\nwindow: {\"kind\":\"dialog\",\"w\":400,\"h\":200}\n---\n```mix\nroot: {widget:\"column\", children:[\"counter\"]}\ncounter: {widget:\"text\", text:\"= $model.counter\"}\n```\n"
+  $doc = "---\nscene: 1\nname: frame-clock\ncitizen: " .. $citizen .. "\nmodel: {\"counter\":\"0\"}\nwindow: {\"kind\":\"dialog\",\"w\":400,\"h\":240}\n---\n```mix\nroot: {widget:\"column\", children:[\"counter\"]}\ncounter: {widget:\"text\", text:\"= $model.counter\"}\n```\n"
   call($shell, "shell.scene.load", {source:$doc})
   call($shell, "shell.dialog.show", {scene:"frame-clock"})
   sleep(1)
