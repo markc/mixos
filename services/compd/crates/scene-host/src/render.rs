@@ -262,6 +262,18 @@ pub fn targets(store: &SceneStore, panels: &crate::panels::Panels) -> BTreeMap<S
     targets
 }
 
+/// Only outstanding callbacks on visible scenes owe an output a frame.
+pub(crate) fn frame_outputs(
+    store: &SceneStore,
+    panels: &crate::panels::Panels,
+) -> std::collections::BTreeSet<String> {
+    targets(store, panels)
+        .into_iter()
+        .filter(|(name, _)| store.scene(name).is_some_and(|entry| entry.frame_armed))
+        .map(|(_, target)| target.output)
+        .collect()
+}
+
 fn keep_surface(
     store: &SceneStore,
     targets: &BTreeMap<String, Target>,
@@ -1498,7 +1510,26 @@ mod tests {
             targets(&store, &panels).is_empty(),
             "loaded dialogs wait unmapped"
         );
+        assert!(frame_outputs(&store, &panels).is_empty());
+        store.arm_frame("editor", "scene-editor").unwrap();
+        assert!(
+            frame_outputs(&store, &panels).is_empty(),
+            "hidden requests do not redraw"
+        );
         assert!(store.set_dialog_visible("editor", true));
+        assert_eq!(frame_outputs(&store, &panels), ["DP-1".to_owned()].into());
+        store.set_mounted(
+            "editor",
+            Some(Mounted {
+                handle: 1,
+                revision: 1,
+            }),
+        );
+        assert!(store.frame_event("editor", true, 1.0, 0.016).is_some());
+        assert!(
+            frame_outputs(&store, &panels).is_empty(),
+            "static scenes do not redraw"
+        );
         let target = &targets(&store, &panels)["editor"];
         assert_eq!(target.output, "DP-1");
         assert_eq!(
