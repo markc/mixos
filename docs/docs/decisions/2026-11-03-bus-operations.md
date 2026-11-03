@@ -34,6 +34,15 @@ seconds) is an **operation**:
   service publishes one `<svc>.op.done` topic, not retained, carrying
   `{op, state, rc?, log?, reason?}` and any service-specific fields. Every
   terminal state uses this one topic, `cancelled` included.
+  Publication is authenticated: noded reserves the suffix to the registered
+  owning service `<svc>`, while subscriptions remain public. Deliveries carry
+  the broker-owned `broker_service: <svc>` header; caller-supplied identities
+  and directed commands cannot manufacture it. Consumers may accept the
+  authenticated terminal envelope even if the publisher exits immediately.
+  On older brokers without this header, consumers must validate event hints
+  with a bounded `op.get` query. If that query fails, the await stays pending
+  until another event, reconnect or deadline; broker upgrade removes this
+  legacy limitation without polling.
 - **`<svc>.op.get {op}`.** Answers `{op, state, ...}` with the same envelope,
   at any time. A caller that was not listening when `op.done` went out uses
   it to catch up.

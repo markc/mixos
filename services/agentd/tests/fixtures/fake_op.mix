@@ -1,5 +1,9 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- File-backed operation citizen; tests publish terminal events separately.
+on ops.emit
+  publish("ops.op.done", json_encode($event.args), {command: "ops.op.done"})
+  reply(0, "{}")
+end
 on ops.op.get
   $rows = json_parse(read_file(env("FAKE_OPS")))
   $id = $event.args.op

@@ -234,12 +234,15 @@ agent. `done`, `failed`, `cancelled` and `lost` fire the await; `unknown`
 stays pending. Catch-up runs before the registration reply, and again
 after reconnect.
 
-Incoming terminal events (publications or direct commands) are hints: agentd
-queries matching pending awaits through the owning service's durable `op.get`
-with the same 10 second timeout. Only that query's terminal envelope fires an
-await; a query failure leaves it pending. Agent session operations are queried
-internally, without a self Bus call. Internal agent completion delivery uses
-the canonical stored outcome directly.
+Incoming terminal publications authenticated by noded's reserved `.op.done`
+owner (`broker_service` matching the awaited service) deliver their outcome
+directly, even if `op.get` is unavailable or the publisher has exited.
+Agent session operations always use the internal canonical outcome, without
+a self Bus call. Direct commands and legacy brokers without the authenticated
+header use the bounded 10 second durable `op.get` query. A failed legacy query
+leaves the await pending until another event, reconnect or deadline; an await
+without a deadline can remain pending until the broker is upgraded. There is
+no polling. Internal agent completion delivery remains canonical.
 
 With `suspend: true` (the default), a turn ending with a pending await and
 an empty outbox releases its agent process. The session becomes `waiting`,
