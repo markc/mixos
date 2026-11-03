@@ -20,3 +20,6 @@ mod_module_files = "deny"
 [dependencies]
 # O_NONBLOCK, so a FIFO in a database directory is never waited on.
 libc.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

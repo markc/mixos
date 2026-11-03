@@ -1,0 +1,14 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- CBC-only command wrapper: mix tools/test_tmp.mix COMMAND [ARG...]
+$tmp = require("lib/test_tmp.mix")
+if len(args()) == 0 then raise("USAGE", "test_tmp.mix COMMAND [ARG...]") end
+$run = $tmp.start()
+$failed = true
+try
+  $r = run_argv(args(), {env: {TMPDIR: $run.dir}, timeout: 7200, stderr: "stdout", max_output: 64000000})
+  print($r.stdout)
+  $failed = not $r.ok
+finally
+  $tmp.finish($run, $failed, 0)
+end
+if $failed then exit(1) end

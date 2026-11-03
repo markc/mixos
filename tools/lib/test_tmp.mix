@@ -1,0 +1,27 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Each invocation owns its root; shared /tmp is never swept.
+fn start()
+  $base = env("TMPDIR", "/tmp")
+  $dir = $base .. "/mixos-test-" .. uuid()
+  mkdir($dir, {parents: false})
+  return {dir: realpath($dir), evidence: $base .. "/mixos-test-evidence"}
+end
+
+fn finish($run, $failed, $allowance)
+  $entries = filter(split(run_argv_must(["find", $run.dir, "-mindepth", "1", "-maxdepth", "1", "-printf", "%f\\0"]), "\u{0}"), fn($n) = $n != "")
+  $leaks = filter($entries, fn($e) = $e != "mixos-test-evidence")
+  print("TMP before=0 after=" .. to_string(len($leaks)) .. " allowance=" .. to_string($allowance))
+  for $entry in $leaks
+    print("TMP leftover " .. $entry)
+  end
+  $bad = $failed or len($leaks) > $allowance
+  if $bad or is_dir($run.dir .. "/mixos-test-evidence") then
+    mkdir($run.evidence)
+    $dest = $run.evidence .. "/" .. basename($run.dir)
+    run_argv_must(["mv", "--", $run.dir, $dest])
+    print("TMP evidence=" .. $dest)
+  else
+    remove_dir($run.dir)
+  end
+  if len($leaks) > $allowance then raise("TEST_TMP_LEAK", "test left temporary entries") end
+end

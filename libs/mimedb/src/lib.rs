@@ -529,20 +529,19 @@ mod tests {
     }
 
     /// A fresh `<tmp>/<name>/mime` holding `files`.
-    fn mime_dir(name: &str, files: &[(&str, &[u8])]) -> PathBuf {
-        let root = std::env::temp_dir().join(format!("mimedb-{}-{name}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        let dir = root.join("mime");
+    fn mime_dir(name: &str, files: &[(&str, &[u8])]) -> (tempfile::TempDir, PathBuf) {
+        let root = tempfile::Builder::new().prefix(&format!("mimedb-{name}-")).tempdir().unwrap();
+        let dir = root.path().join("mime");
         std::fs::create_dir_all(&dir).unwrap();
         for (file, bytes) in files {
             std::fs::write(dir.join(file), bytes).unwrap();
         }
-        dir
+        (root, dir)
     }
 
     #[test]
     fn cycles_end_and_text_ancestry_is_inherited() {
-        let dir = mime_dir(
+        let (_dir_root, dir) = mime_dir(
             "cycles",
             &[(
                 "subclasses",
@@ -571,7 +570,7 @@ mod tests {
                 lines.push_str(&format!("application/x-{i} application/x-{}\n", j % 40));
             }
         }
-        let dir = mime_dir("diamond", &[("subclasses", lines.as_bytes())]);
+        let (_dir_root, dir) = mime_dir("diamond", &[("subclasses", lines.as_bytes())]);
         let db = Database::load_from(&[dir]);
         assert!(!db.is_subclass("application/x-0", "image/png"));
         assert!(db.is_subclass("application/x-0", "application/x-39"));
@@ -586,7 +585,7 @@ mod tests {
         for i in 0..5_000 {
             lines.push_str(&format!("application/x-c{i} application/x-c{}\n", i + 1));
         }
-        let dir = mime_dir("fanout", &[("subclasses", lines.as_bytes())]);
+        let (_dir_root, dir) = mime_dir("fanout", &[("subclasses", lines.as_bytes())]);
         let started = std::time::Instant::now();
         let db = Database::load_from(&[dir]);
         assert_eq!(db.parents("application/x-child").len(), 50_001);
@@ -596,7 +595,7 @@ mod tests {
 
     #[test]
     fn priority_zero_magic_never_wins() {
-        let dir = mime_dir(
+        let (_dir_root, dir) = mime_dir(
             "zero",
             &[("magic", b"MIME-Magic\0\n[0:image/x-zero]\n>0=\0\x01A\n")],
         );
@@ -608,7 +607,7 @@ mod tests {
 
     #[test]
     fn a_same_size_rewrite_is_noticed() {
-        let dir = mime_dir("rewrite", &[("globs2", b"50:image/x-a:*.aaa\n")]);
+        let (_dir_root, dir) = mime_dir("rewrite", &[("globs2", b"50:image/x-a:*.aaa\n")]);
         let db = Database::load_from(std::slice::from_ref(&dir));
         std::thread::sleep(std::time::Duration::from_millis(20));
         std::fs::write(dir.join("globs2"), b"50:image/x-b:*.aaa\n").unwrap();
@@ -617,14 +616,14 @@ mod tests {
 
     #[test]
     fn higher_directories_clear_lower_ones_and_rewrites_are_noticed() {
-        let low = mime_dir(
+        let (_low_root, low) = mime_dir(
             "low",
             &[
                 ("globs2", b"50:image/x-low:*.low\n50:image/x-gone:*.gone\n"),
                 ("magic", b"MIME-Magic\0\n[50:image/x-m]\n>0=\0\x01M\n"),
             ],
         );
-        let high = mime_dir(
+        let (_high_root, high) = mime_dir(
             "high",
             &[
                 ("globs2", b"0:image/x-gone:__NOGLOBS__\n"),
@@ -660,7 +659,7 @@ mod tests {
     fn an_oversized_file_is_skipped() {
         let mut big = b"50:image/x-big:*.big\n".to_vec();
         big.resize(MAX_FILE as usize + 1, b'#');
-        let dir = mime_dir("big", &[("globs2", &big)]);
+        let (_dir_root, dir) = mime_dir("big", &[("globs2", &big)]);
         assert!(Database::load_from(&[dir]).globs("a.big").is_empty());
     }
 }

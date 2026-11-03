@@ -11,7 +11,6 @@ use inspector::bus::{Delivery, Handle, Logged};
 use inspector::model::Command;
 use inspector::{Engine, Snapshot};
 use serde_json::{Value, json};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 use toolkit::{Theme, drive};
 use workshop::label;
@@ -114,6 +113,7 @@ struct Rig {
     h: Harness<'static, Option<Shell>>,
     bus: Handle,
     deliveries: mpsc::Sender<Delivery>,
+    _runtime: tempfile::TempDir,
 }
 
 fn fixture() -> Snapshot {
@@ -162,7 +162,6 @@ fn rig_sized(
     builder: egui_kittest::HarnessBuilder<Option<Shell>>,
     size: egui::Vec2,
 ) -> Rig {
-    static RUNS: AtomicU64 = AtomicU64::new(0);
     let mut h = builder.with_size(size).build_ui_state(
         |ui, shell: &mut Option<Shell>| {
             if let Some(shell) = shell {
@@ -173,18 +172,13 @@ fn rig_sized(
         None,
     );
     toolkit::install(&h.ctx, &theme);
-    let runtime = std::env::temp_dir().join(format!(
-        "workshop-shell-{}-{}",
-        std::process::id(),
-        RUNS.fetch_add(1, Ordering::SeqCst)
-    ));
-    std::fs::create_dir_all(&runtime).unwrap();
+    let runtime = tempfile::tempdir().unwrap();
     // Installed first, so the shell's own install keeps these options.
     drive::install_with(
         &h.ctx,
         APP,
         drive::Options {
-            runtime_dir: Some(runtime),
+            runtime_dir: Some(runtime.path().to_path_buf()),
             ..drive::Options::default()
         },
     );
@@ -192,7 +186,7 @@ fn rig_sized(
     let (deliveries, rx) = mpsc::channel(64);
     let shell = Shell::new(h.ctx.clone(), theme, bus.clone(), rx, "comp".into()).unwrap();
     *h.state_mut() = Some(shell);
-    let mut rig = Rig { h, bus, deliveries };
+    let mut rig = Rig { h, bus, deliveries, _runtime: runtime };
     // The first discovery fails unsent on the sink; then load a node.
     step_until(&mut rig, "the first discovery", |rig| !engine(rig).busy());
     rig.h.state_mut().as_mut().unwrap().engine_mut().snapshot = fixture();

@@ -1,0 +1,13 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Run only on CBC, through cbc-build.mix --commit SHA.
+if contains(args(), "--format") then
+  run_argv_must(["cargo", "fmt"], {timeout: 300})
+  run_argv_must(["cargo", "metadata", "--format-version", "1", "--no-deps"], {timeout: 300})
+  print(run_argv_must(["git", "diff"], {max_output: 64000000}))
+  run_argv_must(["git", "checkout", "-q", "--", "."])
+  exit(0)
+end
+for $pass = 1 to 2
+  print("PASS " .. to_string($pass))
+  run_argv_must(["/opt/mixos/bin/mix", "tools/test_tmp.mix", "cargo", "test", "--locked", "-p", "mimedb", "-p", "workshop", "-p", "prefs", "-p", "testkit", "--no-fail-fast"], {timeout: 7200, max_output: 64000000})
+end

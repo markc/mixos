@@ -37,12 +37,13 @@ pub struct Harness {
     pub client: TestClient,
     pub extra_clients: Vec<TestClient>,
     extra_server_clients: Vec<Client>,
+    _config: ConfigLease,
 }
 
 impl Harness {
     /// A fresh engine with one connected client whose globals are bound.
     pub fn new() -> Self {
-        isolate_config();
+        let config = isolate_config();
         let event_loop: EventLoop<'static, Wire<TestHost>> =
             EventLoop::try_new().expect("calloop event loop");
         let display: Display<Dispatch> = Display::new().expect("wayland display");
@@ -67,6 +68,7 @@ impl Harness {
             .expect("insert the test client");
         let client = TestClient::new(client_end);
         let mut harness = Self {
+            _config: config,
             clock,
             event_loop,
             display,
@@ -692,17 +694,38 @@ impl Default for Harness {
 /// default settings in place of the file compd's `main` would read. `Wire::new`
 /// needs them: it asks `config::base::get().hdr` whether to advertise the
 /// color-management global (`dispatcher::wire::color::create_global`).
-fn isolate_config() {
+static CONFIG_USERS: std::sync::Mutex<usize> = std::sync::Mutex::new(0);
+
+struct ConfigLease;
+
+fn config_dir() -> std::path::PathBuf {
+    std::env::temp_dir().join(format!("testkit-{}", std::process::id()))
+}
+
+impl Drop for ConfigLease {
+    fn drop(&mut self) {
+        let mut users = CONFIG_USERS.lock().unwrap_or_else(|e| e.into_inner());
+        *users -= 1;
+        if *users == 0 {
+            let _ = std::fs::remove_dir_all(config_dir());
+        }
+    }
+}
+
+fn isolate_config() -> ConfigLease {
+    let mut users = CONFIG_USERS.lock().unwrap_or_else(|e| e.into_inner());
     static ONCE: Once = Once::new();
     ONCE.call_once(|| {
         model::environment::config::base::init_with(
             model::environment::config::base::default_settings(),
         );
-        let dir = std::env::temp_dir().join(format!("testkit-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).expect("create the test config dir");
+        let dir = config_dir();
         // SAFETY: runs once, before this process's first engine exists; the
         // only concurrent readers are other tests' harnesses, which all wait on
         // this `Once` before reading the environment.
         unsafe { std::env::set_var("XDG_CONFIG_HOME", &dir) };
     });
+    std::fs::create_dir_all(config_dir()).expect("create the test config dir");
+    *users += 1;
+    ConfigLease
 }

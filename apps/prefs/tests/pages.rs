@@ -17,6 +17,7 @@ struct Rig {
     h: Harness<'static, Option<Shell>>,
     bus: Handle,
     deliveries: mpsc::Sender<Delivery>,
+    _runtime: tempfile::TempDir,
 }
 
 /// COSMIC's default window, 1024 by 720.
@@ -34,13 +35,12 @@ fn rig() -> Rig {
             None,
         );
     toolkit::install(&h.ctx, &theme);
-    let runtime = std::env::temp_dir().join(format!("prefs-pages-{}", std::process::id()));
-    std::fs::create_dir_all(&runtime).unwrap();
+    let runtime = tempfile::tempdir().unwrap();
     drive::install_with(
         &h.ctx,
         APP,
         drive::Options {
-            runtime_dir: Some(runtime),
+            runtime_dir: Some(runtime.path().to_path_buf()),
             ..drive::Options::default()
         },
     );
@@ -63,7 +63,7 @@ fn rig() -> Rig {
     }
     *h.state_mut() = Some(shell);
     h.run_steps(3);
-    Rig { h, bus, deliveries }
+    Rig { h, bus, deliveries, _runtime: runtime }
 }
 
 /// The store as settingsd at revision 7 answers it.
