@@ -1,4 +1,65 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Session outcomes survive pruning and restart. Persist before publishing.
+fn op_view($id)
+  $rows = sqlexec($DB, "SELECT * FROM sessions WHERE id = ?", [$id])
+  if len($rows) == 0 then return {op: $id, state: "unknown"} end
+  $r = $rows[0]
+  if $r.status != "ended" then return {op: $id, state: "running"} end
+  if $r.op_outcome != nil then return json_parse($r.op_outcome) end
+  $last = sqlexec($DB, "SELECT kind, body FROM events WHERE session = ? AND kind IN ('prompt', 'stop', 'error') ORDER BY seq DESC LIMIT 1", [$id])
+  $stop = if len($last) > 0 and $last[0].kind == "stop" then json_parse($last[0].body).stop else nil end
+  $failed = len(sqlexec($DB, "SELECT id FROM awaits WHERE session = ? AND state = 'failed'", [$id])) > 0
+  $state = if $r.end_reason == "caller_closed" then "cancelled" elif $stop == "end_turn" and not $failed and ($r.exit_code == nil or $r.exit_code == 0) and $r.end_reason == nil and ($r.signal == nil or $r.signal == 0) then "done" else "failed" end
+  $out = {op: $id, state: $state}
+  if $stop != nil then $out.stop = $stop end
+  if $r.exit_code != nil then $out.exit_code = $r.exit_code; $out.rc = $r.exit_code end
+  if $r.end_reason != nil then $out.reason = $r.end_reason end
+  return $out
+end
+
+fn op_finished($id)
+  $r = sqlexec($DB, "SELECT op_outcome FROM sessions WHERE id = ?", [$id])[0]
+  if $r.op_outcome != nil then return end
+  $out = op_view($id)
+  if $out.state == "running" then return end
+  sqlexec($DB, "UPDATE sessions SET op_outcome = ? WHERE id = ?", [json_encode($out), $id])
+  publish("agent.op.done", json_encode($out), {command: "agent.op.done"})
+  -- The broker need not echo a citizen's own publication.
+  await_operation("agent.op.done", $out)
+end
+
+fn op_close($id)
+  await_close($id)
+  $S.sessions[$id].end_reason = "caller_closed"
+  if $S.sessions[$id].status == "waiting" then
+    $S.sessions[$id].status = "ready"
+    session_exited($id, nil, nil, "caller_closed")
+  elif $S.sessions[$id].status != "ended" then
+    settle_all_permissions($id, nil)
+    end_agent($id)
+  end
+end
+
+on agent.op.get desc "query a session operation {op}"
+  reply(0, json_encode(op_view(body().op)))
+end
+
+on agent.op.cancel desc "close a session operation and cancel its awaits {op}"
+  $id = body().op
+  $out = op_view($id)
+  $changed = $out.state == "running" and not $S.sessions[$id].explicit_close
+  if $changed then op_close($id) end
+  reply(0, json_encode({op: $id, cancelled: $changed, state: op_view($id).state}))
+end
+
+fn op_close_done($id)
+  $s = $S.sessions[$id]
+  if $s.status == "ready" and $s.closing == nil and $s.queued == nil and $CONF.agents[$s.agent].close_on_done and not await_has_outbox($id) and len(sqlexec($DB, "SELECT id FROM awaits WHERE session = ? AND state = 'pending'", [$id])) == 0 then
+    end_agent($id)
+  end
+end
+
+-- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Await lifecycle and durable per-session outbox. Included by agentd so all
 -- process changes use its serial state and its ordinary ACP paths.
 
@@ -149,6 +210,7 @@ fn await_stopped($id, $success)
         -- The cap failed it: nothing is left to hold back.
         $S.sessions[$id].outcome_idle = false
         await_suspend($id)
+        op_close_done($id)
       elif await_suspending_outbox($id) and $S.sessions[$id].queued == nil then
         -- An unattended session has no next turn to retry at: end the agent
         -- back to waiting, and the drain's reopen (a fresh agent) is the
@@ -166,6 +228,7 @@ fn await_stopped($id, $success)
   $S.sessions[$id].outcome_idle = false
   run_queued($id)
   await_suspend($id)
+  op_close_done($id)
   await_drain()
 end
 
@@ -187,6 +250,7 @@ fn await_drain()
           $S.sessions[$id].status = "ended"
           $log.session_ended($DB, $id, nil, nil, "reopen_failed", time())
           await_end($id)
+          op_finished($id)
         end
       end
     else
@@ -224,8 +288,12 @@ end
 
 fn await_query($row, $deadline)
   $cmd = $row.service .. ".op.get"
-  send $row.service $cmd body=json_encode({op: $row.op}) timeout=10
-  $out = if $rc == 0 and type($reply) == "map" then $reply else {op: $row.op, state: "unknown"} end
+  if $row.service == "agent" then
+    $out = op_view($row.op)
+  else
+    send $row.service $cmd body=json_encode({op: $row.op}) timeout=10
+    $out = if $rc == 0 and type($reply) == "map" then $reply else {op: $row.op, state: "unknown"} end
+  end
   if await_terminal($out.state) then
     await_fire($row, $out, false)
   elif $deadline then
@@ -254,6 +322,10 @@ end
 fn await_event()
   $topic = $event.headers.topic ?? $event.command
   $out = body()
+  await_operation($topic, $out)
+end
+
+fn await_operation($topic, $out)
   if not await_terminal($out.state) then return end
   for each $row in sqlexec($DB, "SELECT * FROM awaits WHERE state = 'pending' AND service || '.op.done' = ? AND op = ?", [$topic, $out.op])
     await_fire($row, $out, false)
@@ -409,6 +481,7 @@ for each $row in sqlexec($DB, "SELECT id FROM sessions WHERE status = 'waiting' 
   await_crashed($r.id)
   if not $waiting then
     await_end($r.id)
+    op_finished($r.id)
   elif len(await_pending($r.id)) == 0 and not await_has_outbox($r.id) then
     $S.sessions[$r.id].status = "ended"
     $log.session_ended($DB, $r.id, nil, nil, "redelivery_limit", time())

@@ -41,6 +41,8 @@
   schema: 5,
   commands: [
     {name:"agent.session.await", owner:"agentd", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
+    {name:"agent.op.get", owner:"agentd", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
+    {name:"agent.op.cancel", owner:"agentd", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"agent.await.list", owner:"agentd", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
     {name:"agent.await.cancel", owner:"agentd", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"exportd.kde.status", owner:"exportd", version:"0.1.0", status:"accepted", class:"query", schema:"none"},
