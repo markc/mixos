@@ -118,11 +118,21 @@ async fn bare_commands_reach_the_bus_unchanged() {
     #[derive(Default)]
     struct Recorder(RefCell<Vec<String>>);
     impl BusHandler for Recorder {
-        fn send<'a>(&'a self, _: &'a str, command: &'a str, _: &'a Value) -> BusFuture<'a, MixResult<(i32, Value)>> {
+        fn send<'a>(
+            &'a self,
+            _: &'a str,
+            command: &'a str,
+            _: &'a Value,
+        ) -> BusFuture<'a, MixResult<(i32, Value)>> {
             self.0.borrow_mut().push(command.into());
             Box::pin(async { Ok((0, Value::Nil)) })
         }
-        fn emit<'a>(&'a self, _: &'a str, command: &'a str, _: &'a Value) -> BusFuture<'a, MixResult<()>> {
+        fn emit<'a>(
+            &'a self,
+            _: &'a str,
+            command: &'a str,
+            _: &'a Value,
+        ) -> BusFuture<'a, MixResult<()>> {
             self.0.borrow_mut().push(command.into());
             Box::pin(async { Ok(()) })
         }
@@ -136,7 +146,17 @@ async fn bare_commands_reach_the_bus_unchanged() {
     let recorder = Rc::new(Recorder::default());
     let mut evaluator = Evaluator::new();
     evaluator.set_bus_handler(recorder.clone());
-    let program = parse("send waiter-lab waiter-lab.list\nemit waiter-lab svc-01.changed\naddress waiter-lab\nnext-hop.1.2.3\nend\n$r = send waiter-lab node-007.ping");
+    let program = parse(
+        "send waiter-lab waiter-lab.list\nemit waiter-lab svc-01.changed\naddress waiter-lab\nnext-hop.1.2.3\nend\n$r = send waiter-lab node-007.ping",
+    );
     evaluator.execute(&program).await.expect("must execute");
-    assert_eq!(*recorder.0.borrow(), ["waiter-lab.list", "svc-01.changed", "next-hop.1.2.3", "node-007.ping"]);
+    assert_eq!(
+        *recorder.0.borrow(),
+        [
+            "waiter-lab.list",
+            "svc-01.changed",
+            "next-hop.1.2.3",
+            "node-007.ping"
+        ]
+    );
 }
