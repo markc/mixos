@@ -2539,7 +2539,7 @@ fn check_timers(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis) {
                         Severity::Warning,
                         s.line,
                         "timer.tick reads a fixed path".into(),
-                        Some("use fs_watch and on fs.changed for paths with notifications".into()),
+                        Some("deadline checks are fine; for change detection use fs_watch and on fs.changed".into()),
                     ));
                 }
             });
