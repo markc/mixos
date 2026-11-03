@@ -64,7 +64,37 @@ thread_local! {
 pub fn start(config: HostConfig, waker: Waker) -> Result<(), String> {
     let host = SceneHost::start(config, waker)?;
     HOST.with_borrow_mut(|slot| *slot = Some(host));
+    world::comp::presentation::register_source_presented_hook(source_presented);
     Ok(())
+}
+
+fn source_presented(
+    lp: &mut Loop,
+    output: &smithay::output::Output,
+    source: &str,
+    shown: bool,
+    time: std::time::Duration,
+    refresh: Option<std::time::Duration>,
+) {
+    if !shown || world::comp::session_lock::active(lp) {
+        return;
+    }
+    HOST.with_borrow_mut(|slot| {
+        let Some(host) = slot.as_mut() else { return };
+        // Match the registered id rather than reversing its normalisation.
+        let name = host.host.store.scenes().find_map(|(name, _)|
+            (render::source_id(name) == source).then(|| name.to_owned()));
+        let Some(name) = name else { return };
+        if !render::targets(&host.host.store, &host.host.panels).get(&name)
+            .is_some_and(|target| target.output == output.name()) {
+            return;
+        }
+        let interval = refresh.map(|period| period.as_secs_f64()).unwrap_or_else(||
+            output.current_mode().map_or(0.0, |mode| 1000.0 / f64::from(mode.refresh.max(1))));
+        if let Some((citizen, body)) = host.host.store.frame_event(&name, true, time.as_secs_f64(), interval) {
+            host.port.emit(&citizen, "frame", body);
+        }
+    });
 }
 
 /// Whether a host is running.

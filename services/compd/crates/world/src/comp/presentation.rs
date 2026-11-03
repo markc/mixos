@@ -39,6 +39,16 @@ use crate::state::Loop;
 /// Frames kept per output between queue and presentation.
 const IN_FLIGHT: usize = 4;
 
+/// Compositor-thread observer of a content source in a completed presentation.
+pub type SourcePresentedHook = fn(&mut Loop, &Output, &str, bool, Duration, Option<Duration>);
+thread_local! {
+    static SOURCE_PRESENTED: std::cell::Cell<Option<SourcePresentedHook>> = const { std::cell::Cell::new(None) };
+}
+
+pub fn register_source_presented_hook(hook: SourcePresentedHook) {
+    SOURCE_PRESENTED.set(Some(hook));
+}
+
 /// One window as a queued frame shows it: `{id, generation}` and its
 /// surfaces (`is_root`, content seq).
 struct ShownWindow {
@@ -259,5 +269,10 @@ pub fn presented(
         sources.resolve(source, tv_us, refresh_us, |input_seq, at_us| {
             stats.input_mark(input_seq, at_us)
         });
+    }
+    if let Some(hook) = SOURCE_PRESENTED.get() {
+        for source in &frame.sources {
+            hook(lp, output, &source.id, source.shown, time, refresh);
+        }
     }
 }
