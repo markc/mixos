@@ -312,6 +312,7 @@ fn spawn_agent($id, $req, $parent, $sender, $created_at, $seq, $reopen)
     mode: $req.mode ?? $c.mode, options: if $reopen != nil then $reopen.prior.options ?? {} else {} end,
     parent: $parent, sender: $sender, watch: $watch, acp: nil,
     status: "starting", seq: $seq, turn: nil, queued: nil, pending: {}, perms: {},
+    set_seq: 0, stored_sets: {},
     created_at: $created_at, stderr_tail: [], reopen: $reopen, replaying: false}
   $rpc = next_rpc()
   $S.sessions[$id].pending[to_string($rpc)] = {kind: "initialize"}
@@ -419,10 +420,16 @@ fn sets_out($id)
   return len(filter(keys($p), fn($k) = $p[$k].kind == "set"))
 end
 
+-- Separate mode from option names, including an option named "mode".
+fn setting_key($set)
+  return if $set.mode != nil then "mode" else "option:" .. $set.option end
+end
+
 -- Write one setting: {mode} or {option, value}.
 fn write_set($id, $set)
   $rpc = next_rpc()
-  $S.sessions[$id].pending[to_string($rpc)] = {kind: "set", setting: $set}
+  $S.sessions[$id].set_seq = $S.sessions[$id].set_seq + 1
+  $S.sessions[$id].pending[to_string($rpc)] = {kind: "set", setting: $set, number: $S.sessions[$id].set_seq}
   $acp = $S.sessions[$id].acp
   $frame = if $set.mode != nil then $a.set_mode_frame($rpc, $acp, $set.mode)
     else $a.set_option_frame($rpc, $acp, $set.option, $set.value) end
@@ -449,10 +456,16 @@ fn session_ready($id)
   $S.sessions[$id].replaying = false
   -- Restore accepted settings (or the initial mode) before settings queued
   -- during startup, and before the prompt. Newer queued settings win.
+  $queued_keys = {}
+  for each $set in $S.sessions[$id].queued_sets ?? []
+    $queued_keys[setting_key($set)] = true
+  end
   $restore = []
-  if $S.sessions[$id].mode != nil then push($restore, {mode: $S.sessions[$id].mode}) end
+  if $S.sessions[$id].mode != nil and $queued_keys.mode == nil then push($restore, {mode: $S.sessions[$id].mode}) end
   for each $option in sort(keys($S.sessions[$id].options))
-    push($restore, {option: $option, value: $S.sessions[$id].options[$option]})
+    if $queued_keys["option:" .. $option] == nil then
+      push($restore, {option: $option, value: $S.sessions[$id].options[$option]})
+    end
   end
   $S.sessions[$id].queued_sets = concat($restore, $S.sessions[$id].queued_sets ?? [])
   $sets = $S.sessions[$id].queued_sets ?? []
@@ -772,8 +785,13 @@ fn on_reply($id, $msg)
     emit_event($id, {kind: "stop", stop: $a.stop_reason($msg.result)})
   elif $p.kind == "set" then
     -- Only an ACP success makes a setting durable; an error above leaves
-    -- the last accepted value intact.
-    $log.session_set($DB, $id, $p.setting)
+    -- the last accepted value intact. Replies can arrive out of order;
+    -- retain the newest accepted send for each key independently.
+    $key = setting_key($p.setting)
+    if $p.number > ($S.sessions[$id].stored_sets[$key] ?? 0) then
+      $log.session_set($DB, $id, $p.setting)
+      $S.sessions[$id].stored_sets[$key] = $p.number
+    end
     -- The reply carries the options as the agent now has them; a watcher's
     -- picker follows it even when the agent sends no update of its own.
     if type($res.configOptions) == "list" then

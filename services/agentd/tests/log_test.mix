@@ -147,6 +147,21 @@ check("and keeps its rows", $log.session_row($h, "dddd4444").acp == nil and $log
 check("accepted settings survive reopen with the latest option values", $log.session_row($h, "dddd4444").mode == "plan" and deep_eq($log.session_row($h, "dddd4444").options, {model: "two", effort: "high"}))
 sqlclose($h)
 
+-- Pre-upgrade receipts: drop refusals, retain success and uncertainty.
+$h = sqlopen($old, "rwc")
+$log.command_begin($h, "dddd4444", "old-refusal", "agent.session.prompt", "cli", "{}", 1)
+$log.command_done($h, "dddd4444", "old-refusal", 15, "refused")
+$log.command_begin($h, "dddd4444", "old-success", "agent.session.prompt", "cli", "{}", 1)
+$log.command_done($h, "dddd4444", "old-success", 0, "accepted")
+$log.command_begin($h, "dddd4444", "old-interrupted", "agent.session.prompt", "cli", "{}", 1)
+sqlclose($h)
+$h = $log.open($old)
+check("upgrade drops old refusal receipts but keeps success and interrupted intents",
+  $log.command_get($h, "dddd4444", "old-refusal") == nil and
+  $log.command_get($h, "dddd4444", "old-success").rc == 0 and
+  $log.command_get($h, "dddd4444", "old-interrupted").rc == nil)
+sqlclose($h)
+
 run_argv_must(["rm", "-rf", $tmp])
 $failed = len(filter($results, fn($r) = not $r.ok))
 print(to_string(len($results) - $failed) .. "/" .. to_string(len($results)) .. " passed")

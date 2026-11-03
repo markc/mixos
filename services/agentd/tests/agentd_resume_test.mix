@@ -107,7 +107,8 @@ try
   $conf = {max_live: 4, agents: {
     resumer: {argv: [$mix, $fake, "resume"], roots: [$tmp .. "/ws"], mode: "default", close_on_done: true,
       env: {FAKE_ACP_CALLS: $tmp .. "/calls"}},
-    loader: {argv: [$mix, $fake, "load"], roots: [$tmp .. "/ws"]},
+    loader: {argv: [$mix, $fake, "load"], roots: [$tmp .. "/ws"],
+      env: {FAKE_ACP_CALLS: $tmp .. "/load-calls"}},
     refuser: {argv: [$mix, $fake, "refuse"], roots: [$tmp .. "/ws"]},
     plain: {argv: [$mix, $fake], roots: [$tmp .. "/ws"]},
     stubborn: {argv: [$mix, $fake, "stubborn"], roots: [$tmp .. "/ws"]},
@@ -163,6 +164,30 @@ try
   check("resuming a live session is refused", $live.rc == 10 and code($live.v) == "USAGE")
   close_and_wait($s)
 
+  -- Replies arrive newest first for both keys; the later resume must keep
+  -- their send order, rather than their reply order.
+  $ordered = start("resumer")
+  agent("agent.session.set", {session: $ordered, mode: "slow-reply"})
+  agent("agent.session.set", {session: $ordered, mode: "plan"})
+  agent("agent.session.set", {session: $ordered, option: "model", value: "slow-reply"})
+  agent("agent.session.set", {session: $ordered, option: "model", value: "newest"})
+  agent("agent.session.prompt", {session: $ordered, content: "CONFIG"})
+  saw("updated " .. $ordered .. " ", "echo:CONFIG")
+  $lh = require("../scripts/lib/log.mix")
+  $db = $lh.open($tmp .. "/state/sessions.db")
+  $stored = $lh.session_row($db, $ordered)
+  sqlclose($db)
+  close_and_wait($ordered)
+  write_file($tmp .. "/calls", "")
+  agent("agent.session.resume", {session: $ordered})
+  agent("agent.session.prompt", {session: $ordered, content: "ordered restore"})
+  saw("updated " .. $ordered .. " ", "echo:ordered restore")
+  $restored = map(filter(lines(read_file($tmp .. "/calls")), fn($x) = $x != ""), fn($x) = json_parse($x))
+  check("out-of-order set replies preserve and restore the newer mode and option",
+    $stored.mode == "plan" and $stored.options.model == "newest" and
+    $restored[2].params.modeId == "plan" and $restored[3].params.value == "newest")
+  close_and_wait($ordered)
+
   -- A legacy session with no accepted mode uses today's instance seed.
   $legacy = start("resumer")
   close_and_wait($legacy)
@@ -193,6 +218,26 @@ try
     len(filter(logged($l, "agent_message_chunk"), fn($e) = $e.update.content.text == "old history" or $e.update.content.text == "late history")) == 0)
   check("a current-state update during the load is kept", len(logged($l, "current_mode_update")) == 1)
   close_and_wait($l)
+
+  -- Load's settle window lets callers replace both stored keys before ready.
+  $overridden = start("loader")
+  agent("agent.session.set", {session: $overridden, mode: "default"})
+  agent("agent.session.set", {session: $overridden, option: "model", value: "old"})
+  agent("agent.session.prompt", {session: $overridden, content: "seed settings"})
+  saw("updated " .. $overridden .. " ", "echo:seed settings")
+  close_and_wait($overridden)
+  write_file($tmp .. "/load-calls", "")
+  agent("agent.session.resume", {session: $overridden})
+  $qm = agent("agent.session.set", {session: $overridden, mode: "plan"})
+  $qo = agent("agent.session.set", {session: $overridden, option: "model", value: "new"})
+  agent("agent.session.prompt", {session: $overridden, content: "CONFIG"})
+  saw("updated " .. $overridden .. " ", "config:model=new")
+  $sent = map(filter(lines(read_file($tmp .. "/load-calls")), fn($x) = $x != ""), fn($x) = json_parse($x))
+  $sent_sets = filter($sent, fn($x) = $x.method == "session/set_mode" or $x.method == "session/set_config_option")
+  check("queued settings suppress restoration of the same mode and option keys",
+    $qm.v.queued == true and $qo.v.queued == true and len($sent_sets) == 2 and
+    $sent_sets[0].params.modeId == "plan" and $sent_sets[1].params.value == "new")
+  close_and_wait($overridden)
 
   -- Refused: back to ended, as it was.
   $f = start("refuser")

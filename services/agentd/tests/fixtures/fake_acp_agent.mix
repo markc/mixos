@@ -14,6 +14,8 @@
 --   CONFIG      echo the config options set so far (config:id=value,...)
 -- session/set_config_option records the value; a value starting slow- is
 -- answered after one second, so a prompt sent behind it has to wait.
+-- For either setting, slow-reply holds its reply until the next setting
+-- has been answered, reversing the two replies without reversing the sets.
 -- readline() is nil at EOF (an older mix gives ""; ACP never sends an
 -- empty line), so either ends the agent.
 
@@ -28,6 +30,7 @@ $modes = if len(args()) > 0 then split(args()[0], ",") else [] end
 $sessions = {}
 $next_id = 900
 $config = {}
+$delayed_set = nil
 
 fn session_mcp($params)
   $mcp = "-"
@@ -200,11 +203,22 @@ loop
   elif $m.method == "session/set_config_option" then
     if starts_with(to_string($m.params.value), "slow-") then sleep(1) end
     $config[$m.params.configId] = $m.params.value
-    out({id: $m.id, result: {configOptions: []}})
+    $set_reply = {id: $m.id, result: {configOptions: []}}
   elif $m.method == "session/set_mode" then
     update($m.params.sessionId, {sessionUpdate: "current_mode_update", currentModeId: $m.params.modeId})
-    out({id: $m.id, result: {}})
+    $set_reply = {id: $m.id, result: {}}
   elif $m.id != nil then
     out({id: $m.id, error: {code: -32601, message: "method not found: " .. $m.method}})
+  end
+  if $m.method == "session/set_mode" or $m.method == "session/set_config_option" then
+    if ($m.params.modeId ?? $m.params.value) == "slow-reply" then
+      $delayed_set = $set_reply
+    else
+      out($set_reply)
+      if $delayed_set != nil then
+        out($delayed_set)
+        $delayed_set = nil
+      end
+    end
   end
 end
