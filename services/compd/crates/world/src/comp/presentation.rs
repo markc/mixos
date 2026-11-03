@@ -45,6 +45,8 @@ thread_local! {
     static SOURCE_PRESENTED: std::cell::Cell<Option<SourcePresentedHook>> = const { std::cell::Cell::new(None) };
 }
 
+// Registration and invocation must run on the same compositor event-loop
+// thread: both the hook slot and its scene-host consumer are thread-local.
 pub fn register_source_presented_hook(hook: SourcePresentedHook) {
     SOURCE_PRESENTED.set(Some(hook));
 }

@@ -96,11 +96,15 @@ fn source_presented(
         }
         let interval = refresh
             .map(|period| period.as_secs_f64())
-            .unwrap_or_else(|| {
+            .filter(|period| *period > 0.0)
+            .or_else(|| {
                 output
                     .current_mode()
-                    .map_or(0.0, |mode| 1000.0 / f64::from(mode.refresh.max(1)))
+                    .filter(|mode| mode.refresh > 0)
+                    .map(|mode| 1000.0 / f64::from(mode.refresh))
             });
+        // Without a refresh source, retain the arm until a mode is available.
+        let Some(interval) = interval else { return };
         if let Some((citizen, body)) =
             host.host
                 .store
