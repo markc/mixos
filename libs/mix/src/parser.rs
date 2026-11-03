@@ -1495,6 +1495,10 @@ impl Parser {
     /// in `parse_send_args` only fires after this returns.
     fn parse_command_expr(&mut self) -> MixResult<Expr> {
         let offset = self.current_offset();
+        if let Some(name) = self.take_hyphenated_service_word() {
+            self.record_literal_origin(offset, &name, LiteralOriginKind::Quoted);
+            return Ok(Expr::StringLiteral(name));
+        }
         match self.peek() {
             Token::Variable(_)
             | Token::LParen
@@ -1676,8 +1680,8 @@ impl Parser {
 
     /// A TIGHT-HYPHENATED bare service word (`shell-ctl88`, `comp-nested`,
     /// `desktop-vt1`) read whole from the raw source, or `None` to leave
-    /// the target on the expression path untouched. The `on` header uses
-    /// it too, for topics under a hyphenated service.
+    /// the expression path untouched. Command slots and the `on` header
+    /// use it too, for names under a hyphenated service.
     ///
     /// Hyphens are ordinary in Bus service names, but `-` is also the
     /// subtraction operator, so `send shell-ctl88 shell.debug.status`
@@ -1837,9 +1841,19 @@ impl Parser {
         let mut body = Vec::new();
         loop {
             self.skip_statement_separators();
+            // Keywords may also lead a tight-hyphenated command (`end-x`,
+            // `send-x`). Probe without consuming before interpreting them
+            // as the block terminator or the explicit-send typo.
+            let command_start = self.pos;
+            let hyphenated_command = self.take_hyphenated_service_word().is_some();
+            self.pos = command_start;
             // `end.x …` is a body line sending command `end.x`, not the
             // block's closing `end`.
-            if self.is_at_end() || (self.check(&Token::End) && !self.at_keyword_led_dotted_name()) {
+            if self.is_at_end()
+                || (self.check(&Token::End)
+                    && !self.at_keyword_led_dotted_name()
+                    && !hyphenated_command)
+            {
                 break;
             }
             // Each line in address block is an implicit send. The
@@ -1848,7 +1862,7 @@ impl Parser {
             // (`send $cmd …`) a likelier confusion — catch it with a
             // targeted error rather than the generic "unexpected token".
             let line = self.current_line();
-            if matches!(self.peek(), Token::Send) {
+            if matches!(self.peek(), Token::Send) && !hyphenated_command {
                 let span = self.peek_span();
                 return Err(MixError::ParseError {
                     msg: "address blocks use implicit send: drop the `send` keyword \
@@ -2356,6 +2370,12 @@ impl Parser {
 
     fn parse_primary(&mut self) -> MixResult<Expr> {
         let expr = match self.peek().clone() {
+            Token::BusNameNumber(s) => {
+                return Err(MixError::ParseError {
+                    msg: format!("malformed number '{s}' outside a bare Bus name"),
+                    span: self.peek_span(),
+                });
+            }
             Token::Number(n) => {
                 self.advance();
                 Expr::NumberLiteral(n)
