@@ -9,10 +9,11 @@
 
 use std::process::Command;
 
-fn write_temp(name: &str, source: &str) -> std::path::PathBuf {
-    let path = std::env::temp_dir().join(format!("mix_lint_notes_{name}.mix"));
+fn write_temp(name: &str, source: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join(format!("{name}.mix"));
     std::fs::write(&path, source).unwrap();
-    path
+    (root, path)
 }
 
 fn lint(args: &[&str]) -> (i32, String) {
@@ -39,7 +40,7 @@ const NOTES_ONLY: &str = "$t = \"a b\"\n\
 #[test]
 fn notes_only_file_exits_zero_under_deny_warnings() {
     // THE pin: fleet deploys ride on this exit code.
-    let path = write_temp("deny", NOTES_ONLY);
+    let (_path_root, path) = write_temp("deny", NOTES_ONLY);
     let (code, out) = lint(&["--deny-warnings", path.to_str().unwrap()]);
     assert_eq!(code, 0, "notes must never deny; output:\n{out}");
     assert!(out.contains("note:"), "notes still rendered: {out}");
@@ -48,7 +49,7 @@ fn notes_only_file_exits_zero_under_deny_warnings() {
 
 #[test]
 fn notes_render_and_count_separately() {
-    let path = write_temp("plain", NOTES_ONLY);
+    let (_path_root, path) = write_temp("plain", NOTES_ONLY);
     let (code, out) = lint(&[path.to_str().unwrap()]);
     assert_eq!(code, 0, "{out}");
     // D3009/D3008 (lastpos/pos) carry the note flag now: the D3001-5
@@ -70,7 +71,7 @@ fn notes_render_and_count_separately() {
 
 #[test]
 fn json_schema_v2_carries_notes() {
-    let path = write_temp("json", NOTES_ONLY);
+    let (_path_root, path) = write_temp("json", NOTES_ONLY);
     let (code, out) = lint(&["--json", path.to_str().unwrap()]);
     assert_eq!(code, 0, "{out}");
     let v: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
@@ -92,7 +93,7 @@ fn real_warnings_still_deny() {
     // W2305 (bare index_of in a condition) is a born-warning; the
     // --deny-warnings contract for it is unchanged.
     let src = "if index_of(\"abc\", \"z\") then\n  print \"x\"\nend\n";
-    let path = write_temp("warn", src);
+    let (_path_root, path) = write_temp("warn", src);
     let (code, out) = lint(&["--deny-warnings", path.to_str().unwrap()]);
     assert_eq!(code, 1, "warnings still deny: {out}");
     assert!(out.contains("[denied]"), "{out}");
@@ -104,7 +105,7 @@ fn real_warnings_still_deny() {
 fn output_orders_error_then_warning_then_note() {
     let src =
         "print($undefined)\nif index_of(\"abc\", \"z\") then\n  print(pos(\"a\", \"ab\"))\nend\n";
-    let path = write_temp("order", src);
+    let (_path_root, path) = write_temp("order", src);
     let (_, out) = lint(&[path.to_str().unwrap()]);
     let e = out.find("MIX-E1101").expect("error present");
     let w = out.find("MIX-W2305").expect("warning present");
@@ -122,7 +123,7 @@ fn builtin_shadowing_definition_errors() {
     // silently answering with the wrong interpreter's version, not the
     // compat shims the warning severity was reserved for.
     let src = "function upper($s)\n  return \"no\"\nend\nprint(upper(\"a\"))\n";
-    let path = write_temp("shadow", src);
+    let (_path_root, path) = write_temp("shadow", src);
     let (code, out) = lint(&[path.to_str().unwrap()]);
     assert_ne!(code, 0, "shadow definition fails a plain lint: {out}");
     assert!(out.contains("MIX-E1303"), "{out}");
@@ -130,7 +131,7 @@ fn builtin_shadowing_definition_errors() {
     let (code, out) = lint(&["--deny-warnings", path.to_str().unwrap()]);
     assert_ne!(code, 0, "and still under --deny-warnings: {out}");
     let clean = "function upper_snake($s)\n  return upper($s)\nend\nprint(upper_snake(\"a\"))\n";
-    let path = write_temp("shadow_clean", clean);
+    let (_path_root, path) = write_temp("shadow_clean", clean);
     let (code, out) = lint(&["--deny-warnings", path.to_str().unwrap()]);
     assert_eq!(code, 0, "non-colliding name is quiet: {out}");
 }
@@ -143,7 +144,7 @@ fn builtin_shadowing_covers_evaluator_special_forms() {
     // `fn quit() return 1 end; print(quit())` printed nil, undiagnosed.
     for name in ["serve_name", "quit", "printf"] {
         let src = format!("function {name}()\n  return 1\nend\nprint({name}())\n");
-        let path = write_temp(&format!("shadow_special_{name}"), &src);
+        let (_path_root, path) = write_temp(&format!("shadow_special_{name}"), &src);
         let (code, out) = lint(&[path.to_str().unwrap()]);
         assert_ne!(code, 0, "`function {name}` fails a plain lint: {out}");
         assert!(out.contains("MIX-E1303"), "{name}: {out}");
@@ -159,14 +160,14 @@ fn pad_loop_idiom_gets_a_note_not_a_warning() {
     // MIX-D3013 (0.74.0): the hand-rolled pad loop notes toward
     // lpad/rpad — and stays a NOTE, so it never denies a deploy gate.
     let src = "$o = \"x\"\nwhile len($o) < 8\n  $o = $o .. \" \"\nend\nprint($o)\n";
-    let path = write_temp("padloop", src);
+    let (_path_root, path) = write_temp("padloop", src);
     let (code, out) = lint(&["--deny-warnings", path.to_str().unwrap()]);
     assert_eq!(code, 0, "a note never denies: {out}");
     assert!(out.contains("MIX-D3013 note:"), "{out}");
     assert!(out.contains("lpad()/rpad()"), "{out}");
     // A loop that appends a VARIABLE (unknown width) is not the idiom.
     let other = "$o = \"x\"\n$pad = \" \"\nwhile len($o) < 8\n  $o = $o .. $pad\nend\nprint($o)\n";
-    let path = write_temp("padloop_var", other);
+    let (_path_root, path) = write_temp("padloop_var", other);
     let (_, out) = lint(&[path.to_str().unwrap()]);
     assert!(
         !out.contains("MIX-D3013"),
@@ -183,7 +184,7 @@ fn deleted_legacy_name_gets_both_the_error_and_the_pointer() {
     // is the pin that stops a future cleanup pruning the D3001-5 rows as
     // dead code — lint.md promises the pointer stays.
     let src = "print(regex_match(\"^a\", \"abc\"))\n";
-    let path = write_temp("deleted_cofire", src);
+    let (_path_root, path) = write_temp("deleted_cofire", src);
     let (code, out) = lint(&[path.to_str().unwrap()]);
     assert_ne!(code, 0, "a deleted name is an error: {out}");
     assert!(out.contains("MIX-E1102"), "undefined function: {out}");
@@ -204,7 +205,7 @@ fn ufcs_spelling_is_noted_too() {
     // on regex_match until release B deleted it — a deleted name no
     // longer desugars, so the surviving pos family carries it.)
     let src = "$s = \"abc\"\nprint($s.pos(\"a\"))\n";
-    let path = write_temp("ufcs", src);
+    let (_path_root, path) = write_temp("ufcs", src);
     let (_, out) = lint(&[path.to_str().unwrap()]);
     assert!(out.contains("MIX-D3008"), "UFCS spelling noted: {out}");
 }
@@ -230,7 +231,7 @@ fn advisory_pass_sees_wrapped_and_expression_shapes() {
         $f = fn($a = pos(\"c\", \"c\")) = lastpos(\"x\", $a)\n\
         fn g() = byte_pos(\"z\", \"z\")\n\
         $r = substr(\"abc\", 1 + substr(\"abc\", pos(\"b\", \"abc\"), 1), 1)\n";
-    let path = write_temp("blind_shapes", src);
+    let (_path_root, path) = write_temp("blind_shapes", src);
     let (code, out) = lint(&[path.to_str().unwrap()]);
     assert_eq!(code, 0, "{out}");
     assert!(

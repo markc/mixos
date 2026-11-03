@@ -5,14 +5,24 @@ use dopus::choose::{defaults, window::Window};
 use dopus_core::chooser::Request;
 use egui_kittest::{Harness, kittest::Queryable};
 use serde_json::json;
-use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, SystemTime};
 
-fn home() -> &'static Path {
-    static HOME: OnceLock<PathBuf> = OnceLock::new();
-    HOME.get_or_init(|| {
-        let home = std::env::temp_dir().join("dopus-chooser-snapshots/home");
+struct Home {
+    path: PathBuf,
+    _root: tempfile::TempDir,
+}
+
+fn home() -> Arc<Home> {
+    static HOME: Mutex<Weak<Home>> = Mutex::new(Weak::new());
+    let mut shared = HOME.lock().unwrap();
+    if let Some(home) = shared.upgrade() {
+        return home;
+    }
+    let root = tempfile::tempdir().unwrap();
+    let home = root.path().join("home");
+
         std::fs::create_dir_all(home.join("Documents")).unwrap();
         let app_home = home.parent().unwrap().join("dopus-state");
         std::fs::create_dir_all(app_home.join("config")).unwrap();
@@ -38,14 +48,15 @@ fn home() -> &'static Path {
                 .set_modified(when)
                 .unwrap();
         }
-        // SAFETY: set once before the first core is made; every test uses it.
+        // SAFETY: no previous fixture owner remains; all tests acquire HOME first.
         unsafe {
             std::env::set_var("HOME", &home);
             std::env::set_var("TZ", "UTC");
             std::env::set_var("MIXOS_APP_HOME", &app_home);
         }
-        home
-    })
+    let home = Arc::new(Home { path: home, _root: root });
+    *shared = Arc::downgrade(&home);
+    home
 }
 
 fn snapshot(kind: &str, mode: Mode) {
@@ -53,7 +64,8 @@ fn snapshot(kind: &str, mode: Mode) {
 }
 
 fn snapshot_at(kind: &str, mode: Mode, minimum: bool) {
-    let folder = home();
+    let owner = home();
+    let folder = &owner.path;
     let mut body = match kind {
         "open" => json!({}),
         "multiple" => json!({"multiple":true}),

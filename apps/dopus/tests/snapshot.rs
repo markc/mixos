@@ -10,8 +10,8 @@
 //! time zone and file times, so the first test to run pins them all:
 //! `HOME` is the scratch home, `TZ` is UTC, and every entry is dated
 //! 2026-10-11 09:30.
-use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant, SystemTime};
 
 use design::{DesignContext, Mode, Scheme};
@@ -25,11 +25,21 @@ use toolkit::Theme;
 const WHEN: u64 = 1_791_711_000;
 
 /// The scratch home, built once; `HOME` and `TZ` point at the fixture.
-fn home() -> &'static Path {
-    static HOME: OnceLock<PathBuf> = OnceLock::new();
-    HOME.get_or_init(|| {
-        let home = std::env::temp_dir().join("dopus-snapshots").join("home");
-        let _ = std::fs::remove_dir_all(&home);
+struct Home {
+    path: PathBuf,
+    _root: tempfile::TempDir,
+}
+
+fn home() -> Arc<Home> {
+    static HOME: Mutex<Weak<Home>> = Mutex::new(Weak::new());
+    let mut shared = HOME.lock().unwrap();
+    if let Some(home) = shared.upgrade() {
+        return home;
+    }
+    let root = tempfile::tempdir().unwrap();
+    let home = root.path().join("home");
+
+
         let files: &[(&str, usize)] = &[
             ("notes.md", 2_400),
             ("report.pdf", 182_000),
@@ -69,14 +79,14 @@ fn home() -> &'static Path {
                 .and_then(|f| f.set_modified(when))
                 .unwrap();
         }
-        // SAFETY: set once, before any core reads them, by the first test
-        // to get here; every test sets the same values.
+        // SAFETY: no previous fixture owner remains; all tests acquire HOME first.
         unsafe {
             std::env::set_var("HOME", &home);
             std::env::set_var("TZ", "UTC");
         }
-        home
-    })
+    let home = Arc::new(Home { path: home, _root: root });
+    *shared = Arc::downgrade(&home);
+    home
 }
 
 /// Tick the core (it starts work such as the selection's metadata there)
@@ -108,10 +118,11 @@ fn settle(app: &mut App, events: &std::sync::mpsc::Receiver<CoreEvent>) {
 
 /// The app over the fixture: left in the home with Documents expanded and
 /// notes.md selected, right in Documents, both sidebars as `sidebars`.
-fn app(sidebars: bool) -> App {
-    let home = home();
+fn app(sidebars: bool) -> (Arc<Home>, App) {
+    let owner = home();
+    let home = &owner.path;
     let mut config = DOpusConfig::default();
-    config.left.path = home.to_owned();
+    config.left.path = home.clone();
     config.right.path = home.join("Documents");
     config.places.open = sidebars;
     config.properties.open = sidebars;
@@ -124,16 +135,17 @@ fn app(sidebars: bool) -> App {
     app.core
         .select_modified(PaneId::Left, home.join("notes.md"), false, false);
     settle(&mut app, &events);
-    app
+    (owner, app)
 }
 
 #[test]
 fn title_bar_carries_the_standard_tail() {
-    dopus::actions::registry().assert_tail(&app(false), &dopus::strings(), true);
+    let (_home, app) = app(false);
+    dopus::actions::registry().assert_tail(&app, &dopus::strings(), true);
 }
 
 fn window(theme: Theme, name: &str, sidebars: bool, dialog: Option<Dialog>) {
-    let mut app = app(sidebars);
+    let (_home, mut app) = app(sidebars);
     if let Some(dialog) = dialog {
         app.open(dialog);
     }
@@ -163,7 +175,7 @@ fn chrome(scheme: Scheme, mode: Mode) -> Theme {
 
 #[test]
 fn minimum_window_renders() {
-    let app = app(true);
+    let (_home, app) = app(true);
     let registry = actions::registry();
     let strings = strings();
     let mut h = Harness::builder()
@@ -260,7 +272,8 @@ fn prompt_new_folder_studio_dark() {
 
 #[test]
 fn drop_choice_studio_dark() {
-    let home = home();
+    let owner = home();
+    let home = &owner.path;
     window(
         chrome(Scheme::Studio, Mode::Dark),
         "drop_choice_studio_dark",
@@ -312,8 +325,9 @@ fn picture(w: usize, h: usize) -> egui::ColorImage {
 /// fields. The texture stands in for a cached thumbnail; the core's
 /// thumbnailer run is not part of the picture.
 fn preview(name: &str, w: usize, h: usize) {
-    let mut app = app(true);
-    let photo = home().join("photo.png");
+    let (_home, mut app) = app(true);
+    let owner = home();
+    let photo = owner.path.join("photo.png");
     app.core
         .select_modified(PaneId::Left, photo.clone(), false, false);
     let generation = app.core.pane(PaneId::Left).generation;

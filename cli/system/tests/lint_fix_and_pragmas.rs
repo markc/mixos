@@ -6,12 +6,11 @@
 
 use std::process::Command;
 
-fn write_temp(name: &str, source: &str) -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!("mix_lint_fix_{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
-    let path = dir.join(format!("{name}.mix"));
+fn write_temp(name: &str, source: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join(format!("{name}.mix"));
     std::fs::write(&path, source).unwrap();
-    path
+    (root, path)
 }
 
 fn lint(args: &[&str]) -> (i32, String, String) {
@@ -30,7 +29,7 @@ fn lint(args: &[&str]) -> (i32, String, String) {
 
 #[test]
 fn fix_rewrites_bareword_null_to_nil() {
-    let path = write_temp(
+    let (_path_root, path) = write_temp(
         "null",
         "$x = {open: null, b: None}\nprint(json_encode($x))\n",
     );
@@ -51,7 +50,7 @@ fn fix_rewrites_bareword_null_to_nil() {
 
 #[test]
 fn json_reports_the_fix() {
-    let path = write_temp("json", "$x = null\nprint($x)\n");
+    let (_path_root, path) = write_temp("json", "$x = null\nprint($x)\n");
     let (_, out, _) = lint(&["--json", path.to_str().unwrap()]);
     let report: serde_json::Value = serde_json::from_str(&out).expect("json");
     let d = &report["diagnostics"][0];
@@ -66,11 +65,11 @@ fn json_reports_the_fix() {
 fn pragmas_make_an_injected_body_and_a_generator_lint_clean() {
     // The two operator-script shapes: a remote body whose caller
     // binds $sha, and a generator whose heredoc is literal Mix source.
-    let body = write_temp(
+    let (_body_root, body) = write_temp(
         "body",
         "-- version: 0.1.0\n-- lint: globals sha\nprint(slice($sha, 0, 12))\n",
     );
-    let generator = write_temp(
+    let (_generator_root, generator) = write_temp(
         "generator",
         "-- version: 0.1.0\n$pid = 1\n-- lint: ignore MIX-W2402\nwrite_file(\"/tmp/x.mix\", <<EOF\n$pid = spawn([\"true\"])\nEOF\n)\nprint($pid)\n",
     );
@@ -88,14 +87,14 @@ fn the_w2307_reproducer_lints_clean_through_the_driver() {
     // TODO-mix 2026-10-06, verbatim: the status is read in the condition and
     // in a map value nested in a call argument. A truly unchecked send and a
     // read that only follows the NEXT send still warn.
-    let checked = write_temp(
+    let (_checked_root, checked) = write_temp(
         "w2307",
         "$target=\"svc\"\n$command=\"ping\"\n$payload=\"{}\"\nsend $target $command body=$payload timeout=45\nif $rc != 0 then exit(1) end\nprint(json_encode({rc:$rc,result:$result}))\n",
     );
     let (code, out, _) = lint(&["--deny-warnings", checked.to_str().unwrap()]);
     assert_eq!(code, 0, "{out}");
     assert!(!out.contains("MIX-W2307"), "{out}");
-    let unchecked = write_temp(
+    let (_unchecked_root, unchecked) = write_temp(
         "w2307_unchecked",
         "send svc ping\nsend svc ping\nif $rc != 0 then exit(1) end\n",
     );
@@ -106,7 +105,7 @@ fn the_w2307_reproducer_lints_clean_through_the_driver() {
 
 #[test]
 fn shell_extensions_are_known_and_shadowing_one_warns() {
-    let path = write_temp(
+    let (_path_root, path) = write_temp(
         "ext",
         "fn context($over)\n  return 1\nend\nprint(ai(\"q\"))\n",
     );

@@ -8,6 +8,25 @@ if contains(args(), "--format") then
   run_argv_must(["git", "checkout", "-q", "--", "."])
   exit(0)
 end
+-- Full sweeps are deliberately separate from the affected-crate recipes.
+if contains(args(), "--whole-rust") or contains(args(), "--whole-mix") then
+  $built = run_argv(["cargo", "build", "--workspace", "--all-targets", "--locked"], {timeout: 7200, max_output: 64000000, stderr: "stdout"})
+  print($built.stdout)
+  if not $built.ok then exit(1) end
+  $fresh = realpath("target/debug/mix")
+  $bin = dirname($fresh)
+  $env = {MIXOS_TEST_MIX: $fresh, MIXOS_TEST_NODED: $bin .. "/noded", MIXOS_TEST_EDITD: $bin .. "/editd", MIXOS_TEST_DOPUS: $bin .. "/dopus"}
+  $command = if contains(args(), "--whole-rust") then
+    ["cargo", "test", "--workspace", "--locked", "--no-fail-fast"]
+  else [$fresh, "tools/mix_tests.mix", "--bin", $bin] end
+  for $pass = 1 to 2
+    print("WHOLE PASS " .. to_string($pass) .. " " .. join($command, " "))
+    $r = run_argv(concat([$mix, "tools/test_tmp.mix"], $command), {timeout: 7200, max_output: 64000000, stderr: "stdout", env: $env})
+    print($r.stdout)
+    if not $r.ok then exit(1) end
+  end
+  exit(0)
+end
 if contains(args(), "--lint") then
   $r = run_argv(["cargo", "clippy", "--locked", "--all-targets", "-p", "mimedb", "-p", "mix", "-p", "testkit", "-p", "slots", "-p", "maild", "-p", "mesh-sign", "-p", "mesh", "-p", "noded", "-p", "portald", "-p", "toolkit", "-p", "model", "-p", "scene-host", "-p", "prefs", "-p", "workshop", "--", "-D", "clippy::all", "-A", "clippy::module_inception", "-A", "clippy::too_many_arguments", "-A", "clippy::type_complexity", "-A", "clippy::large_enum_variant", "-A", "clippy::mutable_key_type"], {timeout: 7200, max_output: 64000000, stderr: "stdout"})
   print($r.stdout)
