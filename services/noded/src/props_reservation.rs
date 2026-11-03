@@ -76,7 +76,10 @@ pub(crate) fn publisher_owner(name: &str) -> Option<&str> {
         return Some("settingsd");
     }
     reserved_owner(name)
-        .or_else(|| name.strip_suffix(".op.done").filter(|owner| !owner.is_empty()))
+        .or_else(|| {
+            name.strip_suffix(".op.done")
+                .filter(|owner| !owner.is_empty())
+        })
         .or_else(|| {
             name.strip_suffix(TITLEBAR_CHANGED_SUFFIX)
                 .filter(|owner| !owner.is_empty())
@@ -336,7 +339,10 @@ mod tests {
 
     #[test]
     fn operation_outcomes_are_public_but_owner_published() {
-        for (topic, owner) in [("agent.op.done", "agent"), ("build.test.op.done", "build.test")] {
+        for (topic, owner) in [
+            ("agent.op.done", "agent"),
+            ("build.test.op.done", "build.test"),
+        ] {
             assert_eq!(publisher_owner(topic), Some(owner));
             assert_eq!(reserved_owner(topic), None);
             assert!(may_subscribe(topic));
