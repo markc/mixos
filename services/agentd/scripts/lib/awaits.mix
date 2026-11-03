@@ -46,6 +46,10 @@ end
 
 on agent.op.cancel desc "close a session operation and cancel its awaits {op}"
   $id = body().op
+  if type($id) != "string" or $id == "" then
+    fail("USAGE", "op must be a non-empty string")
+    return
+  end
   if sender_session(sender()) == $id then
     fail("AGENT_SELF", "a session's own agent cannot act on that session")
     return
@@ -326,10 +330,14 @@ end
 fn await_event()
   $topic = $event.headers.topic ?? $event.command
   $out = body()
-  -- agentd owns these outcomes; incoming publications and direct commands
-  -- are hints to check the log, never authority to finish a child.
-  if $topic == "agent.op.done" then $out = op_view($out.op) end
-  await_operation($topic, $out)
+  -- Incoming terminal events are hints. Only the owning service's durable
+  -- query supplies the outcome; agent queries stay internal in await_query.
+  if not await_terminal($out.state) or type($out.op) != "string" then return end
+  for each $row in sqlexec($DB, "SELECT * FROM awaits WHERE state = 'pending' AND service || '.op.done' = ? AND op = ?", [$topic, $out.op])
+    await_query($row, false)
+  end
+  await_drain()
+  await_arm()
 end
 
 fn await_operation($topic, $out)

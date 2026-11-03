@@ -112,6 +112,9 @@ fn prompt($s, $text)
 end
 
 fn op_done($op, $state)
+  $rows = json_parse(read_file($tmp .. "/ops.json"))
+  $rows[$op] = merge($fixture, {op: $op, state: $state})
+  write_file($tmp .. "/ops.json", json_encode($rows))
   publish("ops.op.done", json_encode(merge($fixture, {op: $op, state: $state})), {command: "ops.op.done"})
 end
 
@@ -146,6 +149,27 @@ try
   citizen($here .. "/../scripts/agentd.mix", "agent", $agent_env)
   check("agentd answers", up())
   sleep(0.3)
+  for each $bad in [{}, {op: nil}, {op: 1}, {op: ""}, {op: []}]
+    check("malformed cancel is usage " .. json_encode($bad), call("agent.op.cancel", $bad).rc == 10)
+  end
+
+  $s = start("resumer")
+  $aid = register($s, "untrusted", {})
+  prompt($s, "wait")
+  wait_status($s, "waiting")
+  publish("ops.op.done", json_encode({op: "untrusted", state: "done", reason: "forged"}), {command: "ops.op.done"})
+  sleep(0.3)
+  check("non-agent forged publication stays pending", row($aid).state == "pending" and status($s) == "waiting" and outbox_count($s) == 0)
+  send agent ops.op.done body=json_encode({op: "untrusted", state: "done"}) timeout=1
+  check("non-agent forged command stays pending", row($aid).state == "pending" and status($s) == "waiting")
+  write_file($tmp .. "/ops.json", json_encode({untrusted: {op: "untrusted", state: "done", query_fail: true}}))
+  send agent ops.op.done body=json_encode({op: "untrusted", state: "done"}) timeout=1
+  check("failed authoritative query stays pending", row($aid).state == "pending" and status($s) == "waiting" and outbox_count($s) == 0)
+  op_done("untrusted", "cancelled")
+  check("verified non-agent outcome delivered", wait_await($aid, "delivered") and json_parse(row($aid).outcome).state == "cancelled")
+  send agent ops.op.done body=json_encode({op: "untrusted", state: "failed", reason: "forged-late"}) timeout=1
+  check("verified non-agent delivery exactly once", len(outcomes($s)) == 1 and len(topics("agent.await.fired", "await", $aid)) == 1 and len(topics("agent.await.delivered", "await", $aid)) == 1)
+  close_session($s)
 
   $s = start("resumer")
   $a1 = register($s, "one", {note: "finish my job"})

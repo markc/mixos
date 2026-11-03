@@ -453,6 +453,12 @@ be live or waiting. Every caller may register, including the session's own
 agent. <code>done</code>, <code>failed</code>, <code>cancelled</code> and <code>lost</code> fire the await; <code>unknown</code>
 stays pending. Catch-up runs before the registration reply, and again
 after reconnect.</p>
+<p>Incoming terminal events (publications or direct commands) are hints: agentd
+queries matching pending awaits through the owning service's durable <code>op.get</code>
+with the same 10 second timeout. Only that query's terminal envelope fires an
+await; a query failure leaves it pending. Agent session operations are queried
+internally, without a self Bus call. Internal agent completion delivery uses
+the canonical stored outcome directly.</p>
 <p>With <code>suspend: true</code> (the default), a turn ending with a pending await and
 an empty outbox releases its agent process. The session becomes <code>waiting</code>,
 survives agentd restarts and does not count towards <code>max_live</code>.
