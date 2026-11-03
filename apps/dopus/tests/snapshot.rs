@@ -169,7 +169,11 @@ fn window(theme: Theme, name: &str, sidebars: bool, dialog: Option<Dialog>) {
 
 fn fixed_paths<R>(render: impl FnOnce() -> R) -> R {
     let home = home();
-    dopus_core::testing::with_display_root(&home.path, std::path::Path::new("/tmp/dopus-snapshots/home"), render)
+    dopus_core::testing::with_display_root(
+        &home.path,
+        std::path::Path::new("/tmp/dopus-snapshots/home"),
+        render,
+    )
 }
 
 fn chrome(scheme: Scheme, mode: Mode) -> Theme {

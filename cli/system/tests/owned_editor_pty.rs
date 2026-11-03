@@ -940,7 +940,10 @@ fn completion_snapshot_variables_paths_and_cycle() {
         ws_xpixel: 0,
         ws_ypixel: 0,
     };
-    assert_eq!(unsafe { libc::ioctl(p.slave.as_raw_fd(), libc::TIOCSWINSZ, &size) }, 0);
+    assert_eq!(
+        unsafe { libc::ioctl(p.slave.as_raw_fd(), libc::TIOCSWINSZ, &size) },
+        0
+    );
     p.send(format!("cd {}/unique_comp\t", p.home.path().display()).as_bytes());
     p.until("unique_completion_dir/");
     p.send(b"\n");
