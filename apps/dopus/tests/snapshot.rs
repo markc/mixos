@@ -39,52 +39,54 @@ fn home() -> Arc<Home> {
     let root = tempfile::tempdir().unwrap();
     let home = root.path().join("home");
 
-
-        let files: &[(&str, usize)] = &[
-            ("notes.md", 2_400),
-            ("report.pdf", 182_000),
-            ("photo.png", 1_250_000),
-            ("song.flac", 24_000_000),
-            ("build.rs", 640),
-            ("archive.tar.gz", 3_400_000),
-            ("run.sh", 120),
-            (".profile", 80),
-            ("Documents/plan.odt", 18_000),
-            ("Documents/budget.ods", 9_500),
-            ("Documents/slides.odp", 410_000),
-            ("Documents/readme.txt", 300),
-            ("Documents/Letters/to-the-council.md", 1_900),
-            ("Downloads/installer.iso", 70_000),
-            ("Music/track.mp3", 5_000_000),
-            ("Pictures/holiday.jpg", 2_100_000),
-        ];
-        for (name, size) in files {
-            let path = home.join(name);
-            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-            std::fs::write(&path, vec![b'x'; *size]).unwrap();
-        }
-        let when = SystemTime::UNIX_EPOCH + Duration::from_secs(WHEN);
-        let mut all = vec![home.clone()];
-        let mut at = 0;
-        while at < all.len() {
-            if all[at].is_dir() {
-                for entry in std::fs::read_dir(&all[at]).unwrap() {
-                    all.push(entry.unwrap().path());
-                }
+    let files: &[(&str, usize)] = &[
+        ("notes.md", 2_400),
+        ("report.pdf", 182_000),
+        ("photo.png", 1_250_000),
+        ("song.flac", 24_000_000),
+        ("build.rs", 640),
+        ("archive.tar.gz", 3_400_000),
+        ("run.sh", 120),
+        (".profile", 80),
+        ("Documents/plan.odt", 18_000),
+        ("Documents/budget.ods", 9_500),
+        ("Documents/slides.odp", 410_000),
+        ("Documents/readme.txt", 300),
+        ("Documents/Letters/to-the-council.md", 1_900),
+        ("Downloads/installer.iso", 70_000),
+        ("Music/track.mp3", 5_000_000),
+        ("Pictures/holiday.jpg", 2_100_000),
+    ];
+    for (name, size) in files {
+        let path = home.join(name);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, vec![b'x'; *size]).unwrap();
+    }
+    let when = SystemTime::UNIX_EPOCH + Duration::from_secs(WHEN);
+    let mut all = vec![home.clone()];
+    let mut at = 0;
+    while at < all.len() {
+        if all[at].is_dir() {
+            for entry in std::fs::read_dir(&all[at]).unwrap() {
+                all.push(entry.unwrap().path());
             }
-            at += 1;
         }
-        for path in all.iter().rev() {
-            std::fs::File::open(path)
-                .and_then(|f| f.set_modified(when))
-                .unwrap();
-        }
-        // SAFETY: no previous fixture owner remains; all tests acquire HOME first.
-        unsafe {
-            std::env::set_var("HOME", &home);
-            std::env::set_var("TZ", "UTC");
-        }
-    let home = Arc::new(Home { path: home, _root: root });
+        at += 1;
+    }
+    for path in all.iter().rev() {
+        std::fs::File::open(path)
+            .and_then(|f| f.set_modified(when))
+            .unwrap();
+    }
+    // SAFETY: no previous fixture owner remains; all tests acquire HOME first.
+    unsafe {
+        std::env::set_var("HOME", &home);
+        std::env::set_var("TZ", "UTC");
+    }
+    let home = Arc::new(Home {
+        path: home,
+        _root: root,
+    });
     *shared = Arc::downgrade(&home);
     home
 }

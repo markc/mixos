@@ -23,38 +23,41 @@ fn home() -> Arc<Home> {
     let root = tempfile::tempdir().unwrap();
     let home = root.path().join("home");
 
-        std::fs::create_dir_all(home.join("Documents")).unwrap();
-        let app_home = home.parent().unwrap().join("dopus-state");
-        std::fs::create_dir_all(app_home.join("config")).unwrap();
-        std::fs::write(
-            app_home.join("config/config.conf.mix"),
-            format!(
-                "schema_version: 2\nbookmarks: [{{name: \"My archive\", path: \"{}\"}}]\n",
-                home.join("Documents").display()
-            ),
-        )
-        .unwrap();
-        for (name, contents) in [
-            ("notes.txt", "Notes"),
-            ("report.pdf", "Report"),
-            ("photo.png", "Picture"),
-        ] {
-            std::fs::write(home.join(name), contents).unwrap();
-        }
-        let when = SystemTime::UNIX_EPOCH + Duration::from_secs(1_791_711_000);
-        for entry in std::fs::read_dir(&home).unwrap() {
-            std::fs::File::open(entry.unwrap().path())
-                .unwrap()
-                .set_modified(when)
-                .unwrap();
-        }
-        // SAFETY: no previous fixture owner remains; all tests acquire HOME first.
-        unsafe {
-            std::env::set_var("HOME", &home);
-            std::env::set_var("TZ", "UTC");
-            std::env::set_var("MIXOS_APP_HOME", &app_home);
-        }
-    let home = Arc::new(Home { path: home, _root: root });
+    std::fs::create_dir_all(home.join("Documents")).unwrap();
+    let app_home = home.parent().unwrap().join("dopus-state");
+    std::fs::create_dir_all(app_home.join("config")).unwrap();
+    std::fs::write(
+        app_home.join("config/config.conf.mix"),
+        format!(
+            "schema_version: 2\nbookmarks: [{{name: \"My archive\", path: \"{}\"}}]\n",
+            home.join("Documents").display()
+        ),
+    )
+    .unwrap();
+    for (name, contents) in [
+        ("notes.txt", "Notes"),
+        ("report.pdf", "Report"),
+        ("photo.png", "Picture"),
+    ] {
+        std::fs::write(home.join(name), contents).unwrap();
+    }
+    let when = SystemTime::UNIX_EPOCH + Duration::from_secs(1_791_711_000);
+    for entry in std::fs::read_dir(&home).unwrap() {
+        std::fs::File::open(entry.unwrap().path())
+            .unwrap()
+            .set_modified(when)
+            .unwrap();
+    }
+    // SAFETY: no previous fixture owner remains; all tests acquire HOME first.
+    unsafe {
+        std::env::set_var("HOME", &home);
+        std::env::set_var("TZ", "UTC");
+        std::env::set_var("MIXOS_APP_HOME", &app_home);
+    }
+    let home = Arc::new(Home {
+        path: home,
+        _root: root,
+    });
     *shared = Arc::downgrade(&home);
     home
 }
