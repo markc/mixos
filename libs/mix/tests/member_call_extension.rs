@@ -50,15 +50,9 @@ fn evaluator(serve: bool) -> Evaluator {
 }
 
 /// A module exporting `fn context`, written to a fresh directory.
-fn module() -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "mix-member-ext-{}-{}",
-        std::process::id(),
-        std::thread::current()
-            .name()
-            .unwrap_or("t")
-            .replace("::", "-")
-    ));
+fn module() -> (tempfile::TempDir, std::path::PathBuf) {
+    let root = tempfile::tempdir().unwrap();
+    let dir = root.path();
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("ctxmod.mix");
     std::fs::write(
@@ -66,12 +60,12 @@ fn module() -> std::path::PathBuf {
         "fn context($over)\n  return {state_dir: \"/srv\"}\nend\n",
     )
     .unwrap();
-    path
+    (root, path)
 }
 
 #[tokio::test(flavor = "current_thread")]
 async fn a_module_member_beats_an_extension_in_serve_mode() {
-    let path = module();
+    let (_root, path) = module();
     for serve in [true, false] {
         let mut eval = evaluator(serve);
         let src = format!(

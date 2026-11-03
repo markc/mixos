@@ -168,14 +168,15 @@ impl PrivateBus {
     fn start() -> anyhow::Result<Self> {
         let dir = tempfile::tempdir()?;
         let socket = dir.path().join("bus");
-        let mut child = Command::new("dbus-daemon")
+        let child = Command::new("dbus-daemon")
             .args(["--session", "--nofork", "--nopidfile", "--print-address=1"])
             .arg(format!("--address=unix:path={}", socket.display()))
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()?;
-        let stdout = child
+        let mut bus = Self { child, address: String::new(), _dir: dir };
+        let stdout = bus.child
             .stdout
             .take()
             .ok_or_else(|| anyhow::anyhow!("dbus-daemon has no stdout"))?;
@@ -186,11 +187,8 @@ impl PrivateBus {
             address.starts_with("unix:"),
             "dbus-daemon printed no address"
         );
-        Ok(Self {
-            child,
-            address,
-            _dir: dir,
-        })
+        bus.address = address;
+        Ok(bus)
     }
 }
 

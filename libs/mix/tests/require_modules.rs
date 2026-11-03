@@ -17,16 +17,15 @@ use mix::lexer::Lexer;
 use mix::parser::Parser;
 use std::path::{Path, PathBuf};
 
-fn test_dir(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("mix_require_test_{}", name));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
+fn test_dir(name: &str) -> (tempfile::TempDir, PathBuf) {
+    let root = tempfile::Builder::new().prefix(name).tempdir().unwrap();
+    let path = root.path().to_path_buf();
+    (root, path)
 }
 
 #[tokio::test]
 async fn global_targets_importer_and_refuses_module_injections() {
-    let dir = test_dir("global_declaration");
+    let (_dir_guard, dir) = test_dir("global_declaration");
     std::fs::write(
         dir.join("module.mix"),
         r#"
@@ -101,7 +100,7 @@ fn write_module(dir: &Path, name: &str, src: &str) {
 // with_shared harvest would return nil for $version).
 #[tokio::test]
 async fn exports_carry_top_level_vars_and_fns() {
-    let dir = test_dir("flagship");
+    let (_dir_guard, dir) = test_dir("flagship");
     write_module(
         &dir,
         "strutil.mix",
@@ -126,7 +125,7 @@ async fn exports_carry_top_level_vars_and_fns() {
 // and the module never sees the caller's state.
 #[tokio::test]
 async fn caller_scope_and_registry_are_untouched() {
-    let dir = test_dir("caller_protect");
+    let (_dir_guard, dir) = test_dir("caller_protect");
     write_module(
         &dir,
         "m.mix",
@@ -167,7 +166,7 @@ async fn caller_scope_and_registry_are_untouched() {
 // fns, and module siblings win over the CALLER's same-named functions.
 #[tokio::test]
 async fn privates_hidden_but_callable_and_siblings_beat_caller_registry() {
-    let dir = test_dir("privates");
+    let (_dir_guard, dir) = test_dir("privates");
     write_module(
         &dir,
         "m.mix",
@@ -192,7 +191,7 @@ async fn privates_hidden_but_callable_and_siblings_beat_caller_registry() {
 // shared module_env.
 #[tokio::test]
 async fn sibling_calls_at_depth_and_mutual_recursion() {
-    let dir = test_dir("depth");
+    let (_dir_guard, dir) = test_dir("depth");
     write_module(
         &dir,
         "m.mix",
@@ -215,7 +214,7 @@ async fn sibling_calls_at_depth_and_mutual_recursion() {
 // call do not persist across calls.
 #[tokio::test]
 async fn module_vars_are_per_call_snapshots() {
-    let dir = test_dir("snapshot");
+    let (_dir_guard, dir) = test_dir("snapshot");
     write_module(
         &dir,
         "m.mix",
@@ -235,7 +234,7 @@ async fn module_vars_are_per_call_snapshots() {
 // (callable, and they see module state), including via extract-then-call.
 #[tokio::test]
 async fn lambda_vars_carry_the_module_env() {
-    let dir = test_dir("lambda_env");
+    let (_dir_guard, dir) = test_dir("lambda_env");
     write_module(
         &dir,
         "m.mix",
@@ -252,7 +251,7 @@ async fn lambda_vars_carry_the_module_env() {
 // an incidental non-nil last statement does not.
 #[tokio::test]
 async fn return_override_and_incidental_last_value() {
-    let dir = test_dir("ret_override");
+    let (_dir_guard, dir) = test_dir("ret_override");
     write_module(&dir, "answer.mix", "return 42\n");
     write_module(
         &dir,
@@ -285,7 +284,7 @@ async fn return_override_and_incidental_last_value() {
 // not exported; a module redefining a prelude name exports its own.
 #[tokio::test]
 async fn noise_and_prelude_names_excluded_from_exports() {
-    let dir = test_dir("prelude_excl");
+    let (_dir_guard, dir) = test_dir("prelude_excl");
     write_module(
         &dir,
         "m.mix",
@@ -316,7 +315,7 @@ async fn noise_and_prelude_names_excluded_from_exports() {
 // path (module top-level side effect runs exactly once).
 #[tokio::test]
 async fn cached_once_per_canonical_path() {
-    let dir = test_dir("cache_once");
+    let (_dir_guard, dir) = test_dir("cache_once");
     write_module(&dir, "m.mix", "print(\"LOADED\")\n$v = 7\n");
     let out = run_in_dir(
         &dir,
@@ -335,7 +334,7 @@ async fn cached_once_per_canonical_path() {
 // T9/T9b — cycles (mutual and self) are hard errors naming the chain.
 #[tokio::test]
 async fn cycles_are_hard_errors() {
-    let dir = test_dir("cycles");
+    let (_dir_guard, dir) = test_dir("cycles");
     write_module(&dir, "a.mix", "$b = require(\"b.mix\")\n");
     write_module(&dir, "b.mix", "$a = require(\"a.mix\")\n");
     let err = run_in_dir(&dir, "require(\"a.mix\")\n").await.unwrap_err();
@@ -350,7 +349,7 @@ async fn cycles_are_hard_errors() {
 // T10 — a failed require caches nothing and is retryable.
 #[tokio::test]
 async fn failed_require_is_retryable() {
-    let dir = test_dir("retryable");
+    let (_dir_guard, dir) = test_dir("retryable");
     let late = dir.join("late.mix");
     let late_s = late.to_string_lossy().to_string();
     let src = format!(
@@ -366,7 +365,7 @@ async fn failed_require_is_retryable() {
 // T11 — mutating the returned map does not poison the cache.
 #[tokio::test]
 async fn cache_is_isolated_from_caller_mutation() {
-    let dir = test_dir("cache_isolated");
+    let (_dir_guard, dir) = test_dir("cache_isolated");
     write_module(&dir, "m.mix", "$v = 1\n");
     let out = run_in_dir(
         &dir,
@@ -381,7 +380,7 @@ async fn cache_is_isolated_from_caller_mutation() {
 // must not escape as the caller function's return.
 #[tokio::test]
 async fn module_return_does_not_escape_enclosing_function() {
-    let dir = test_dir("fn_scoped");
+    let (_dir_guard, dir) = test_dir("fn_scoped");
     write_module(&dir, "answer.mix", "return 42\n");
     let out = run_in_dir(
         &dir,
@@ -396,7 +395,7 @@ async fn module_return_does_not_escape_enclosing_function() {
 // T14 — nested require resolves relative to the REQUIRING module.
 #[tokio::test]
 async fn nested_require_is_module_relative() {
-    let dir = test_dir("nested");
+    let (_dir_guard, dir) = test_dir("nested");
     let sub = dir.join("lib");
     std::fs::create_dir_all(&sub).unwrap();
     std::fs::write(sub.join("inner.mix"), "$leaf = \"deep\"\n").unwrap();
@@ -417,7 +416,7 @@ async fn nested_require_is_module_relative() {
 // T15 — an FsRead-denying policy refuses require before any fs access.
 #[tokio::test]
 async fn capability_gate_refuses_require() {
-    let dir = test_dir("cap_gate");
+    let (_dir_guard, dir) = test_dir("cap_gate");
     write_module(&dir, "m.mix", "$v = 1\n");
     let err = run_in_dir_with(&dir, "require(\"m.mix\")\n", false, |e| {
         e.set_capability_policy(std::rc::Rc::new(CategoryAllowList::new(&[
@@ -433,7 +432,7 @@ async fn capability_gate_refuses_require() {
 // file, nothing is cached, and the caller's file context is restored.
 #[tokio::test]
 async fn module_errors_attribute_and_stay_retryable() {
-    let dir = test_dir("attribution");
+    let (_dir_guard, dir) = test_dir("attribution");
     write_module(&dir, "bad_parse.mix", "function oops(\n");
     write_module(&dir, "bad_run.mix", "$x = 1 / 0\n");
     let err = run_in_dir(&dir, "require(\"bad_parse.mix\")\n")
@@ -466,7 +465,7 @@ async fn module_errors_attribute_and_stay_retryable() {
 // A9 — `on` handlers cannot be registered from a module.
 #[tokio::test]
 async fn on_handlers_refused_in_modules() {
-    let dir = test_dir("on_refused");
+    let (_dir_guard, dir) = test_dir("on_refused");
     write_module(&dir, "m.mix", "on ping\n  reply(\"pong\")\nend\n");
     let err = run_in_dir(&dir, "require(\"m.mix\")\n").await.unwrap_err();
     assert!(err.contains("'on' handlers cannot be registered"), "{err}");
@@ -476,7 +475,7 @@ async fn on_handlers_refused_in_modules() {
 // error (the address stack is taken for the module's duration).
 #[tokio::test]
 async fn address_block_does_not_leak_into_module() {
-    let dir = test_dir("address_leak");
+    let (_dir_guard, dir) = test_dir("address_leak");
     write_module(&dir, "m.mix", "totally_unknown_fn()\n");
     // Address-block BODY lines are implicit sends by construction, so
     // the reachable leak vector is a send ARG expression evaluated
@@ -500,7 +499,7 @@ async fn address_block_does_not_leak_into_module() {
 // script's real directory (this bit a live review-arm invocation).
 #[tokio::test]
 async fn require_follows_symlinked_entry_script() {
-    let dir = test_dir("symlink_entry");
+    let (_dir_guard, dir) = test_dir("symlink_entry");
     std::fs::create_dir_all(dir.join("repo/_lib")).unwrap();
     std::fs::create_dir_all(dir.join("repo/_bin")).unwrap();
     std::fs::create_dir_all(dir.join("bin")).unwrap();
@@ -533,7 +532,7 @@ async fn require_follows_symlinked_entry_script() {
 // T17 — MethodCall parity and pinned precedence.
 #[tokio::test]
 async fn method_call_precedence_pinned() {
-    let dir = test_dir("precedence");
+    let (_dir_guard, dir) = test_dir("precedence");
     // (a) A function-valued MEMBER wins over a user function of the same
     // name (v0.72.0 flip — before that UFCS won and the member was
     // silently unreachable via dot-call). UFCS still serves names the
@@ -578,7 +577,7 @@ async fn method_call_precedence_pinned() {
 // A1 — the in-place mutating trio keeps working through method syntax.
 #[tokio::test]
 async fn method_syntax_push_still_mutates_in_place() {
-    let dir = test_dir("push_parity");
+    let (_dir_guard, dir) = test_dir("push_parity");
     let out = run_in_dir(&dir, "$l = [1]\nprint($l.push(2))\nprint($l)\n")
         .await
         .unwrap();
@@ -589,7 +588,7 @@ async fn method_syntax_push_still_mutates_in_place() {
 // previously errored; named functions still win.
 #[tokio::test]
 async fn bareword_function_variable_dispatch() {
-    let dir = test_dir("bareword");
+    let (_dir_guard, dir) = test_dir("bareword");
     let out = run_in_dir(
         &dir,
         "$b = function()\n  return 7\nend\nprint(b())\n\
@@ -607,7 +606,7 @@ async fn bareword_function_variable_dispatch() {
 // fast path skipped the env injection).
 #[tokio::test]
 async fn sync_fast_paths_gated_for_module_functions() {
-    let dir = test_dir("sync_gate");
+    let (_dir_guard, dir) = test_dir("sync_gate");
     write_module(
         &dir,
         "m.mix",
@@ -638,7 +637,7 @@ async fn sync_fast_paths_gated_for_module_functions() {
 #[tokio::test]
 async fn require_inside_handler_and_cache_across_invocations() {
     use mix::evaluator::IncomingEvent;
-    let dir = test_dir("handler");
+    let (_dir_guard, dir) = test_dir("handler");
     write_module(
         &dir,
         "m.mix",
@@ -690,7 +689,7 @@ async fn require_inside_handler_and_cache_across_invocations() {
 #[tokio::test]
 async fn module_lambda_reads_globals_live_when_required_inside_handler() {
     use mix::evaluator::IncomingEvent;
-    let dir = test_dir("module_lambda_live");
+    let (_dir_guard, dir) = test_dir("module_lambda_live");
     write_module(&dir, "live.mix", "$g = 1\n$get = fn($u) = $g\n$g = 2\n");
     let module_path = dir.join("live.mix").to_string_lossy().to_string();
 
@@ -748,7 +747,7 @@ async fn module_lambda_reads_globals_live_when_required_inside_handler() {
 #[tokio::test]
 async fn module_top_level_reply_is_refused_inside_handlers() {
     use mix::evaluator::IncomingEvent;
-    let dir = test_dir("reply_isolated");
+    let (_dir_guard, dir) = test_dir("reply_isolated");
     write_module(&dir, "replier.mix", "reply(\"hijacked\")\n$v = 1\n");
     let module_path = dir.join("replier.mix").to_string_lossy().to_string();
     let source = format!(
@@ -786,7 +785,7 @@ async fn module_top_level_reply_is_refused_inside_handlers() {
 
 #[tokio::test]
 async fn require_error_message_for_missing_file() {
-    let dir = test_dir("missing");
+    let (_dir_guard, dir) = test_dir("missing");
     let err = run_in_dir(&dir, "require(\"absent.mix\")\n")
         .await
         .unwrap_err();
@@ -800,7 +799,7 @@ async fn require_error_message_for_missing_file() {
 async fn module_top_level_forward_call_works() {
     // The same file must forward-call identically whether run directly
     // or require()d: entry-point-first, helpers-last is legal in both.
-    let dir = test_dir("hoist_forward");
+    let (_dir_guard, dir) = test_dir("hoist_forward");
     write_module(
         &dir,
         "mod.mix",
@@ -820,7 +819,7 @@ async fn module_fn_shadowing_prelude_name_still_exports() {
     // module fn at its own call sites). Since the v0.72.0 member-wins
     // flip, `$m.sum(..)` reaches the module's export directly; index
     // access remains equivalent and both are pinned here.
-    let dir = test_dir("hoist_prelude_shadow");
+    let (_dir_guard, dir) = test_dir("hoist_prelude_shadow");
     write_module(&dir, "mod.mix", "fn sum($xs)\n  return -1\nend\n");
     let out = run_in_dir_with(
         &dir,
@@ -838,7 +837,7 @@ async fn module_fn_shadowing_prelude_name_still_exports() {
 // three is part of its exports.
 #[tokio::test]
 async fn send_bound_vars_are_not_exported() {
-    let dir = test_dir("send_vars_excl");
+    let (_dir_guard, dir) = test_dir("send_vars_excl");
     write_module(&dir, "m.mix", "send svc ping\n$kept = 1\n");
     let out = run_in_dir(
         &dir,
@@ -857,7 +856,7 @@ async fn send_bound_vars_are_not_exported() {
 // module runs in the caller's evaluator and reads the record installed there.
 #[tokio::test]
 async fn script_version_in_a_required_module_is_the_entry_script() {
-    let dir = test_dir("script_version_entry");
+    let (_dir_guard, dir) = test_dir("script_version_entry");
     write_module(
         &dir,
         "helper.mix",

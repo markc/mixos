@@ -32,31 +32,31 @@ const WORKSPACE_KEYMAP: &str = r#"{"version":1,"physical":[
 ]}"#;
 
 /// A fresh directory for one test's keymap file.
-fn keymap_file(test: &str, text: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("compd-user-keys-{}-{test}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
+fn keymap_file(test: &str, text: &str) -> (tempfile::TempDir, PathBuf) {
+    let root = tempfile::Builder::new().prefix(test).tempdir().unwrap();
+    let dir = root.path();
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("keymap.json");
     std::fs::write(&path, text).unwrap();
-    path
+    (root, path)
 }
 
 /// A harness whose user keymap is `text`, with one mapped toplevel holding
 /// the keyboard and its key log empty.
-fn harness(test: &str, text: &str) -> (Harness, PathBuf) {
+fn harness(test: &str, text: &str) -> (Harness, PathBuf, tempfile::TempDir) {
     let mut h = Harness::new();
     h.wire.inner.comp.default_output = Some(DefaultOutput {
         key: "o_test".into(),
         name: "test".into(),
     });
-    let path = keymap_file(test, text);
+    let (root, path) = keymap_file(test, text);
     h.wire.inner.comp.bindings.reload_user_keymap(&path);
     h.client.bind_keyboards();
     h.roundtrip();
     let (surface, _, _) = h.mapped_toplevel(64, 48);
     h.focus_keyboard(&surface);
     h.client.state.keys.clear();
-    (h, path)
+    (h, path, root)
 }
 
 /// Run the `comp` commands the layer queued as `policy_host::control::
@@ -103,7 +103,7 @@ fn chord(h: &mut Harness, keys: &[u32]) -> Vec<bool> {
 
 #[test]
 fn right_ctrl_right_switches_the_workspace_and_left_ctrl_right_reaches_the_client() {
-    let (mut h, _) = harness("switch", WORKSPACE_KEYMAP);
+    let (mut h, _, _root) = harness("switch", WORKSPACE_KEYMAP);
     assert_eq!(h.comp().current_workspace(), 1);
 
     assert!(!h.key(xkb(EV_RCTRL), true, false), "the modifier goes on");
@@ -144,7 +144,7 @@ fn right_ctrl_right_switches_the_workspace_and_left_ctrl_right_reaches_the_clien
 /// client sees only the modifiers.
 #[test]
 fn unbound_user_keys_never_reach_the_client() {
-    let (mut h, _) = harness("unbound", r#"{"version":1,"physical":[]}"#);
+    let (mut h, _, _root) = harness("unbound", r#"{"version":1,"physical":[]}"#);
     for key in F_KEYS {
         assert_eq!(chord(&mut h, &[key]), vec![true, true], "F {key}");
     }
@@ -188,7 +188,7 @@ fn unbound_user_keys_never_reach_the_client() {
 
 #[test]
 fn a_passthrough_binding_reaches_the_client() {
-    let (mut h, _) = harness(
+    let (mut h, _, _root) = harness(
         "passthrough",
         r#"{"version":1,"physical":[
             {"stroke":{"code":106,"modifiers":{"right_shift":true}},"action":"input.passthrough","passthrough":true}
@@ -209,7 +209,7 @@ fn a_passthrough_binding_reaches_the_client() {
 
 #[test]
 fn a_session_lock_swallows_user_keys_and_fires_nothing() {
-    let (mut h, _) = harness("lock", WORKSPACE_KEYMAP);
+    let (mut h, _, _root) = harness("lock", WORKSPACE_KEYMAP);
     assert!(!h.key(xkb(EV_RCTRL), true, true));
     assert!(h.key(xkb(EV_RIGHT), true, true));
     assert!(h.key(xkb(EV_RIGHT), false, true));
@@ -223,7 +223,7 @@ fn a_session_lock_swallows_user_keys_and_fires_nothing() {
 
 #[test]
 fn a_reload_while_a_key_is_held_applies_from_its_next_press() {
-    let (mut h, path) = harness(
+    let (mut h, path, _root) = harness(
         "reload",
         r#"{"version":1,"physical":[{"stroke":{"code":63},"action":"user.f05"}]}"#,
     );
@@ -255,7 +255,7 @@ fn a_reload_while_a_key_is_held_applies_from_its_next_press() {
 
 #[test]
 fn a_bad_file_keeps_the_keymap_and_a_missing_one_binds_nothing() {
-    let (mut h, path) = harness("bad", WORKSPACE_KEYMAP);
+    let (mut h, path, _root) = harness("bad", WORKSPACE_KEYMAP);
     for bad in ["not json", r#"{"version":2,"physical":[]}"#, "[]"] {
         std::fs::write(&path, bad).unwrap();
         assert!(

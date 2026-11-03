@@ -97,7 +97,8 @@ mod tests {
 
     #[test]
     fn datagram_reaches_a_path_socket() {
-        let dir = std::env::temp_dir().join(format!("compd-sdnotify-{}", std::process::id()));
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().to_path_buf();
         let _ = std::fs::create_dir_all(&dir);
         let path = dir.join("notify.sock");
         let _ = std::fs::remove_file(&path);

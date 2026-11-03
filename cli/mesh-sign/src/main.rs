@@ -1167,22 +1167,14 @@ mod tests {
 
     // ---- write_atomic (the trust root's write path) -----------------
 
-    fn scratch(name: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!(
-            "mesh-sign-test-{}-{}-{}",
-            name,
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    fn scratch(name: &str) -> (tempfile::TempDir, PathBuf) {
+        let root = tempfile::Builder::new().prefix(name).tempdir().unwrap();
+        let path = root.path().to_path_buf();
+        (root, path)
     }
 
-    fn signing_fixture(name: &str, mesh_ip: &str) -> (PathBuf, PathBuf, PathBuf) {
-        let dir = scratch(name);
+    fn signing_fixture(name: &str, mesh_ip: &str) -> (tempfile::TempDir, PathBuf, PathBuf, PathBuf) {
+        let (root, dir) = scratch(name);
         let db = dir.join("secrets.db");
         let inventory = dir.join("inventory.mix");
         let out = dir.join("inventory.signed");
@@ -1220,12 +1212,12 @@ mod tests {
             ),
         )
         .unwrap();
-        (db, inventory, out)
+        (root, db, inventory, out)
     }
 
     #[test]
     fn sign_refuses_out_of_subnet_active_member_before_writing() {
-        let (db, inventory, out) = signing_fixture("routing-reject", "198.51.100.5");
+        let (_root, db, inventory, out) = signing_fixture("routing-reject", "198.51.100.5");
 
         let error =
             cmd_sign(&db, "example.internal", &inventory, &out, 90, None, None).unwrap_err();
@@ -1242,7 +1234,7 @@ mod tests {
 
     #[test]
     fn sign_refuses_invalid_bus_label_before_writing() {
-        let (db, inventory, out) = signing_fixture("label-reject", "192.0.2.5");
+        let (_root, db, inventory, out) = signing_fixture("label-reject", "192.0.2.5");
         let source = std::fs::read_to_string(&inventory)
             .unwrap()
             .replace("name: \"alpha\"", "name: \"Beta\"");
@@ -1263,7 +1255,7 @@ mod tests {
 
     #[test]
     fn sign_refuses_invalid_active_bus_port_before_writing() {
-        let (db, inventory, out) = signing_fixture("port-reject", "192.0.2.5");
+        let (_root, db, inventory, out) = signing_fixture("port-reject", "192.0.2.5");
         let source = std::fs::read_to_string(&inventory)
             .unwrap()
             .replace("bus: true", "bus: true, noded_port: 0");
@@ -1284,7 +1276,7 @@ mod tests {
 
     #[test]
     fn sign_accepts_valid_shared_routing_view() {
-        let (db, inventory, out) = signing_fixture("routing-accept", "192.0.2.5");
+        let (_root, db, inventory, out) = signing_fixture("routing-accept", "192.0.2.5");
         let source = std::fs::read_to_string(&inventory)
             .unwrap()
             .replace("bus: true", "bus: true, noded_port: 4300");
@@ -1306,7 +1298,7 @@ mod tests {
 
     #[test]
     fn sign_stamps_normal_recovery_generation_without_recovery_marker() {
-        let (db, inventory, out) = signing_fixture("normal-generation", "192.0.2.5");
+        let (_root, db, inventory, out) = signing_fixture("normal-generation", "192.0.2.5");
 
         cmd_sign(&db, "example.internal", &inventory, &out, 90, None, Some(0)).unwrap();
 
@@ -1369,7 +1361,7 @@ mod tests {
     /// rename had already replaced the file.
     #[test]
     fn write_atomic_accepts_a_bare_relative_destination() {
-        let d = scratch("bare");
+        let (_root, d) = scratch("bare");
         let prev = std::env::current_dir().unwrap();
         // set_current_dir is process-global; this test is the only one that
         // touches it and restores it before asserting.
@@ -1389,7 +1381,7 @@ mod tests {
     /// it pointed at, leaving the trust root's path still a symlink.
     #[test]
     fn write_atomic_replaces_a_destination_symlink_instead_of_following_it() {
-        let d = scratch("symlink");
+        let (_root, d) = scratch("symlink");
         let victim = d.join("victim");
         std::fs::write(&victim, b"VICTIM").unwrap();
         let dest = d.join("inventory.signed");
@@ -1427,7 +1419,7 @@ mod tests {
     #[test]
     fn write_atomic_writes_an_explicit_mode() {
         use std::os::unix::fs::PermissionsExt as _;
-        let d = scratch("mode");
+        let (_root, d) = scratch("mode");
 
         for umask in [0o022, 0o077] {
             let dest = d.join(format!("inventory.signed.{umask:o}"));
@@ -1455,7 +1447,7 @@ mod tests {
     /// trust root reads as a half-finished ceremony.
     #[test]
     fn write_atomic_leaves_no_temp_behind() {
-        let d = scratch("debris");
+        let (_root, d) = scratch("debris");
         write_atomic(&d.join("inventory.signed"), b"x\n").unwrap();
         let names: Vec<String> = std::fs::read_dir(&d)
             .unwrap()

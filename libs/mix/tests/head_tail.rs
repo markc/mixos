@@ -38,10 +38,11 @@ async fn run_err(source: &str) -> String {
 }
 
 /// Unique fixture path per test so parallel tests never collide.
-fn fixture(name: &str, bytes: &[u8]) -> std::path::PathBuf {
-    let path = std::env::temp_dir().join(format!("mix-head-tail-{}-{}", std::process::id(), name));
+fn fixture(name: &str, bytes: &[u8]) -> (tempfile::TempDir, std::path::PathBuf) {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join(name);
     std::fs::write(&path, bytes).expect("write fixture");
-    path
+    (root, path)
 }
 
 // ---------------------------------------------------------------------------
@@ -50,7 +51,7 @@ fn fixture(name: &str, bytes: &[u8]) -> std::path::PathBuf {
 
 #[tokio::test]
 async fn head_first_n_lines() {
-    let p = fixture("head-basic", b"one\ntwo\nthree\nfour\n");
+    let (_p_guard, p) = fixture("head-basic", b"one\ntwo\nthree\nfour\n");
     let out = run_ok(&format!(r#"print(join(head("{}", 2), "|"))"#, p.display())).await;
     assert_eq!(out, "one|two");
 }
@@ -58,31 +59,31 @@ async fn head_first_n_lines() {
 #[tokio::test]
 async fn head_default_is_ten() {
     let body: String = (1..=12).map(|i| format!("l{i}\n")).collect();
-    let p = fixture("head-default", body.as_bytes());
+    let (_p_guard, p) = fixture("head-default", body.as_bytes());
     let out = run_ok(&format!(r#"print(length(head("{}")))"#, p.display())).await;
     assert_eq!(out, "10");
 }
 
 #[tokio::test]
 async fn head_n_past_eof_returns_all() {
-    let p = fixture("head-past-eof", b"a\nb\n");
+    let (_p_guard, p) = fixture("head-past-eof", b"a\nb\n");
     let out = run_ok(&format!(r#"print(join(head("{}", 99), "|"))"#, p.display())).await;
     assert_eq!(out, "a|b");
 }
 
 #[tokio::test]
 async fn head_zero_and_empty_file() {
-    let p = fixture("head-zero", b"a\nb\n");
+    let (_p_guard, p) = fixture("head-zero", b"a\nb\n");
     let out = run_ok(&format!(r#"print(length(head("{}", 0)))"#, p.display())).await;
     assert_eq!(out, "0");
-    let empty = fixture("head-empty", b"");
+    let (_empty_guard, empty) = fixture("head-empty", b"");
     let out = run_ok(&format!(r#"print(length(head("{}")))"#, empty.display())).await;
     assert_eq!(out, "0");
 }
 
 #[tokio::test]
 async fn head_strips_crlf_like_read_lines() {
-    let p = fixture("head-crlf", b"a\r\nb\r\n");
+    let (_p_guard, p) = fixture("head-crlf", b"a\r\nb\r\n");
     let out = run_ok(&format!(r#"print(join(head("{}", 2), "|"))"#, p.display())).await;
     assert_eq!(out, "a|b");
 }
@@ -93,45 +94,45 @@ async fn head_strips_crlf_like_read_lines() {
 
 #[tokio::test]
 async fn tail_last_n_lines() {
-    let p = fixture("tail-basic", b"one\ntwo\nthree\nfour\n");
+    let (_p_guard, p) = fixture("tail-basic", b"one\ntwo\nthree\nfour\n");
     let out = run_ok(&format!(r#"print(join(tail("{}", 2), "|"))"#, p.display())).await;
     assert_eq!(out, "three|four");
 }
 
 #[tokio::test]
 async fn tail_no_trailing_newline() {
-    let p = fixture("tail-no-nl", b"a\nb\nc");
+    let (_p_guard, p) = fixture("tail-no-nl", b"a\nb\nc");
     let out = run_ok(&format!(r#"print(join(tail("{}", 2), "|"))"#, p.display())).await;
     assert_eq!(out, "b|c");
 }
 
 #[tokio::test]
 async fn tail_trailing_newline_no_phantom_empty_line() {
-    let p = fixture("tail-nl", b"a\nb\nc\n");
+    let (_p_guard, p) = fixture("tail-nl", b"a\nb\nc\n");
     let out = run_ok(&format!(r#"print(join(tail("{}", 2), "|"))"#, p.display())).await;
     assert_eq!(out, "b|c");
 }
 
 #[tokio::test]
 async fn tail_n_past_eof_returns_all() {
-    let p = fixture("tail-past-eof", b"a\nb\n");
+    let (_p_guard, p) = fixture("tail-past-eof", b"a\nb\n");
     let out = run_ok(&format!(r#"print(join(tail("{}", 99), "|"))"#, p.display())).await;
     assert_eq!(out, "a|b");
 }
 
 #[tokio::test]
 async fn tail_zero_and_empty_file() {
-    let p = fixture("tail-zero", b"a\nb\n");
+    let (_p_guard, p) = fixture("tail-zero", b"a\nb\n");
     let out = run_ok(&format!(r#"print(length(tail("{}", 0)))"#, p.display())).await;
     assert_eq!(out, "0");
-    let empty = fixture("tail-empty", b"");
+    let (_empty_guard, empty) = fixture("tail-empty", b"");
     let out = run_ok(&format!(r#"print(length(tail("{}")))"#, empty.display())).await;
     assert_eq!(out, "0");
 }
 
 #[tokio::test]
 async fn tail_strips_crlf_like_read_lines() {
-    let p = fixture("tail-crlf", b"a\r\nb\r\nc\r\n");
+    let (_p_guard, p) = fixture("tail-crlf", b"a\r\nb\r\nc\r\n");
     let out = run_ok(&format!(r#"print(join(tail("{}", 2), "|"))"#, p.display())).await;
     assert_eq!(out, "b|c");
 }
@@ -142,7 +143,7 @@ async fn tail_strips_crlf_like_read_lines() {
 async fn tail_multi_block_file() {
     let body: String = (1..=20_000).map(|i| format!("line-{i}\n")).collect();
     assert!(body.len() > 128 * 1024, "fixture must span multiple blocks");
-    let p = fixture("tail-multiblock", body.as_bytes());
+    let (_p_guard, p) = fixture("tail-multiblock", body.as_bytes());
     let out = run_ok(&format!(r#"print(join(tail("{}", 3), "|"))"#, p.display())).await;
     assert_eq!(out, "line-19998|line-19999|line-20000");
     // head on the same file streams from the front.
@@ -155,7 +156,7 @@ async fn tail_multi_block_file() {
 #[tokio::test]
 async fn head_tail_multibyte_lines() {
     let body = "早い\n猫🐈\n犬🐕\n".repeat(8000); // ~350 KB, > one block
-    let p = fixture("multibyte", body.as_bytes());
+    let (_p_guard, p) = fixture("multibyte", body.as_bytes());
     let out = run_ok(&format!(r#"print(join(tail("{}", 2), "|"))"#, p.display())).await;
     assert_eq!(out, "猫🐈|犬🐕");
     let out = run_ok(&format!(r#"print(join(head("{}", 2), "|"))"#, p.display())).await;
@@ -176,7 +177,7 @@ async fn head_tail_missing_file_is_catchable_error() {
 
 #[tokio::test]
 async fn head_tail_reject_bad_n() {
-    let p = fixture("bad-n", b"a\n");
+    let (_p_guard, p) = fixture("bad-n", b"a\n");
     for call in [
         format!(r#"head("{}", -1)"#, p.display()),
         format!(r#"head("{}", 1.5)"#, p.display()),
@@ -197,7 +198,7 @@ async fn head_tail_reject_bad_n() {
 
 #[tokio::test]
 async fn tail_invalid_utf8_in_returned_region_errors() {
-    let p = fixture("tail-bad-utf8", b"ok\n\xff\xfe bad\n");
+    let (_p_guard, p) = fixture("tail-bad-utf8", b"ok\n\xff\xfe bad\n");
     let err = run_err(&format!(r#"print(tail("{}", 2))"#, p.display())).await;
     assert!(err.contains("not valid UTF-8"), "got: {err}");
 }
@@ -206,7 +207,7 @@ async fn tail_invalid_utf8_in_returned_region_errors() {
 /// poison clean returned lines (Codex review finding, 0.28.1).
 #[tokio::test]
 async fn tail_binary_outside_returned_region_is_fine() {
-    let p = fixture("tail-bad-utf8-outside", b"\xff\xfe junk\nclean1\nclean2\n");
+    let (_p_guard, p) = fixture("tail-bad-utf8-outside", b"\xff\xfe junk\nclean1\nclean2\n");
     let out = run_ok(&format!(r#"print(join(tail("{}", 2), "|"))"#, p.display())).await;
     assert_eq!(out, "clean1|clean2");
 }
@@ -216,7 +217,7 @@ async fn tail_binary_outside_returned_region_is_fine() {
 /// finding, 0.28.1).
 #[tokio::test]
 async fn tail_lone_cr_on_final_line_preserved() {
-    let p = fixture("tail-lone-cr", b"a\nb\r");
+    let (_p_guard, p) = fixture("tail-lone-cr", b"a\nb\r");
     let out = run_ok(&format!(
         r#"print(join(tail("{}", 2), "|") .. "END")"#,
         p.display()
@@ -237,7 +238,7 @@ async fn line_count_parity_with_str_lines() {
         ("lc-empty", b"".as_slice(), "0"),
         ("lc-one", b"x".as_slice(), "1"),
     ] {
-        let p = fixture(name, bytes);
+        let (_p_guard, p) = fixture(name, bytes);
         let out = run_ok(&format!(r#"print(line_count("{}"))"#, p.display())).await;
         assert_eq!(out, want, "fixture {name}");
     }
@@ -247,7 +248,7 @@ async fn line_count_parity_with_str_lines() {
 /// erroring (previously read_to_string rejected them).
 #[tokio::test]
 async fn line_count_works_on_binary() {
-    let p = fixture("lc-binary", b"\xff\xfe\n\x00\x01\n");
+    let (_p_guard, p) = fixture("lc-binary", b"\xff\xfe\n\x00\x01\n");
     let out = run_ok(&format!(r#"print(line_count("{}"))"#, p.display())).await;
     assert_eq!(out, "2");
 }

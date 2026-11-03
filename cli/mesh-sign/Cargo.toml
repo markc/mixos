@@ -37,3 +37,6 @@ mesh-trust = { path = "../../services/noded/crates/mesh-trust" }
 
 [build-dependencies]
 buildinfo.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

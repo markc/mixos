@@ -12,25 +12,31 @@ const DESKTOP: &str = "org.freedesktop.portal.Desktop";
 const PATH: &str = "/org/freedesktop/portal/desktop";
 const REQUEST: &str = "org.freedesktop.portal.Request";
 
-pub(super) struct Process(Child);
+pub(super) struct Process {
+    child: Child,
+    _dir: tempfile::TempDir,
+}
 impl Drop for Process {
     fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
+        let _ = self.child.kill();
+        let _ = self.child.wait();
     }
 }
 
 pub(super) fn dbus() -> (Process, String) {
-    let mut child = Command::new("dbus-daemon")
+    let dir = tempfile::tempdir().unwrap();
+    let child = Command::new("dbus-daemon")
         .args(["--session", "--nofork", "--print-address=1"])
+        .arg(format!("--address=unix:path={}/bus", dir.path().display()))
         .stdout(Stdio::piped())
         .spawn()
         .unwrap();
+    let mut process = Process { child, _dir: dir };
     let mut address = String::new();
-    BufReader::new(child.stdout.take().unwrap())
+    BufReader::new(process.child.stdout.take().unwrap())
         .read_line(&mut address)
         .unwrap();
-    (Process(child), address.trim().into())
+    (process, address.trim().into())
 }
 
 pub(super) async fn connection(address: &str) -> Connection {

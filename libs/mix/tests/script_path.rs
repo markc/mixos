@@ -10,11 +10,10 @@ use mix::parser::Parser;
 use mix::value::Value;
 use std::path::{Path, PathBuf};
 
-fn test_dir(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("mix_script_path_test_{name}"));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
+fn test_dir(name: &str) -> (tempfile::TempDir, PathBuf) {
+    let root = tempfile::Builder::new().prefix(name).tempdir().unwrap();
+    let path = root.path().to_path_buf();
+    (root, path)
 }
 
 /// Run `main_src` as the entry script, the way the CLI does: the file
@@ -48,7 +47,7 @@ fn canonical_line(path: &Path) -> String {
 
 #[tokio::test]
 async fn script_path_is_the_resolved_dollar_zero() {
-    let dir = test_dir("entry");
+    let (_dir_guard, dir) = test_dir("entry");
     let main = dir.join("main.mix");
     std::fs::write(&main, "").unwrap();
     let zero = main.to_string_lossy().to_string();
@@ -63,7 +62,7 @@ async fn script_path_is_the_resolved_dollar_zero() {
 async fn script_path_resolves_symlinks_like_realpath() {
     // `$0` names the symlink; realpath($0) and script_path() both give the
     // file it points at, so a script finds its siblings from the real tree.
-    let dir = test_dir("symlink");
+    let (_dir_guard, dir) = test_dir("symlink");
     let real = dir.join("real.mix");
     std::fs::write(&real, "").unwrap();
     let link = dir.join("link.mix");
@@ -77,7 +76,7 @@ async fn script_path_resolves_symlinks_like_realpath() {
 
 #[tokio::test]
 async fn required_module_sees_the_entry_script_not_itself() {
-    let dir = test_dir("module");
+    let (_dir_guard, dir) = test_dir("module");
     std::fs::write(
         dir.join("lib.mix"),
         "fn where_am_i()\n  return script_path()\nend\n",
@@ -96,7 +95,7 @@ async fn required_module_sees_the_entry_script_not_itself() {
 async fn script_path_in_a_module_top_level_init_is_the_entry() {
     // The module's top level runs while exec_require has swapped its own
     // scope in. The answer must still be the entry script, not the module.
-    let dir = test_dir("module_init");
+    let (_dir_guard, dir) = test_dir("module_init");
     std::fs::write(dir.join("lib.mix"), "return {path: script_path()}\n").unwrap();
     let main = dir.join("main.mix");
     std::fs::write(&main, "").unwrap();
@@ -111,7 +110,7 @@ async fn script_path_through_a_nested_require_is_the_entry() {
     // Both the inner module's init and the outer module's init must see
     // the entry script; the outer module reports its own call and the inner
     // module's answer.
-    let dir = test_dir("nested_require");
+    let (_dir_guard, dir) = test_dir("nested_require");
     std::fs::write(dir.join("inner.mix"), "return {path: script_path()}\n").unwrap();
     std::fs::write(
         dir.join("outer.mix"),
@@ -130,7 +129,7 @@ async fn script_path_through_a_nested_require_is_the_entry() {
 #[tokio::test]
 async fn script_path_is_nil_without_a_script_file() {
     // `mix -c`, the REPL: $0 is never set.
-    let dir = test_dir("unset");
+    let (_dir_guard, dir) = test_dir("unset");
     let main = dir.join("main.mix");
     let out = run_entry(&main, "print(script_path())\n", None)
         .await
@@ -141,7 +140,7 @@ async fn script_path_is_nil_without_a_script_file() {
 #[tokio::test]
 async fn script_path_is_nil_for_stdin() {
     // `mix -`: $0 is the dash, not a file.
-    let dir = test_dir("stdin");
+    let (_dir_guard, dir) = test_dir("stdin");
     let main = dir.join("main.mix");
     let out = run_entry(&main, "print(script_path())\n", Some("-"))
         .await
@@ -153,7 +152,7 @@ async fn script_path_is_nil_for_stdin() {
 async fn script_path_is_nil_when_the_file_has_gone() {
     // realpath($0) answers nil for a missing component, and so does
     // script_path() when the path cannot be resolved at start.
-    let dir = test_dir("gone");
+    let (_dir_guard, dir) = test_dir("gone");
     let main = dir.join("main.mix");
     let gone = dir.join("no-such-dir").join("gone.mix");
     let zero = gone.to_string_lossy().to_string();

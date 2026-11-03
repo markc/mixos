@@ -10,12 +10,10 @@ use mix::lexer::Lexer;
 use mix::parser::Parser;
 use std::path::{Path, PathBuf};
 
-fn test_dir(name: &str) -> PathBuf {
-    let dir =
-        std::env::temp_dir().join(format!("mix_mime_type_test_{name}_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
+fn test_dir(name: &str) -> (tempfile::TempDir, PathBuf) {
+    let root = tempfile::Builder::new().prefix(name).tempdir().unwrap();
+    let path = root.path().to_path_buf();
+    (root, path)
 }
 
 async fn run(src: &str) -> Result<String, String> {
@@ -78,9 +76,9 @@ fn probe(path: &Path, opts: &str) -> String {
 #[tokio::test]
 async fn types_follow_the_desktop_order_against_a_private_database() {
     // One test owns the process environment: XDG_* are process-global.
-    let root = test_dir("db");
+    let (_root_guard, root) = test_dir("db");
     write_database(&root);
-    let home = test_dir("home");
+    let (_home_guard, home) = test_dir("home");
     // SAFETY: this binary has one test, and it sets the variables before
     // anything reads them.
     unsafe {
@@ -88,7 +86,7 @@ async fn types_follow_the_desktop_order_against_a_private_database() {
         std::env::set_var("XDG_DATA_DIRS", &root);
     }
 
-    let files = test_dir("files");
+    let (_files_guard, files) = test_dir("files");
     let cases: Vec<(PathBuf, &[u8], &str, &str)> = vec![
         // A unique glob names it; the parent chain ends text/plain, octet-stream.
         (
@@ -180,7 +178,7 @@ async fn types_follow_the_desktop_order_against_a_private_database() {
     );
 
     // A changed XDG_DATA_DIRS is a different database.
-    let other = test_dir("other");
+    let (_other_guard, other) = test_dir("other");
     std::fs::create_dir_all(other.join("mime")).unwrap();
     std::fs::write(other.join("mime/globs2"), "50:text/x-other:*.mxt\n").unwrap();
     // SAFETY: as above, this test alone owns the environment.

@@ -40,6 +40,7 @@ wayland-protocols = { version = "=0.32.13", features = ["client", "unstable", "s
 wayland-protocols-wlr = { version = "=0.3.12", features = ["client"] }
 
 [dev-dependencies]
+tempfile.workspace = true
 comp-model.workspace = true
 design.workspace = true
 serde_json.workspace = true

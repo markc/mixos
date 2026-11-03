@@ -10,15 +10,15 @@ use mix::parser::Parser;
 use std::path::{Path, PathBuf};
 
 /// A fresh directory holding `files` (path relative to it → source).
-fn tree(tag: &str, files: &[(&str, &str)]) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("mix-lint-req-{}-{tag}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
+fn tree(tag: &str, files: &[(&str, &str)]) -> (tempfile::TempDir, PathBuf) {
+    let root = tempfile::Builder::new().prefix(tag).tempdir().unwrap();
+    let dir = root.path().to_path_buf();
     for (name, src) in files {
         let path = dir.join(name);
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(path, src).unwrap();
     }
-    dir
+    (root, dir)
 }
 
 fn lint_at(caller: &Path, src: &str, cfg: &AnalyzerConfig) -> Vec<Diagnostic> {
@@ -38,7 +38,7 @@ const LIB1: &str = "fn helper($a, $b)\n  return $a\nend\nfn opt($a, $b = 2)\n  r
 
 #[test]
 fn the_probe_reports_arity_and_a_missing_export() {
-    let dir = tree("probe", &[("lib1.mix", LIB1)]);
+    let (_dir_guard, dir) = tree("probe", &[("lib1.mix", LIB1)]);
     let found = codes_at(
         &dir,
         "$m = require(\"./lib1.mix\")\nprint($m.helper(1))\nprint($m.nosuch(2))\n",
@@ -64,7 +64,7 @@ fn the_probe_reports_arity_and_a_missing_export() {
 
 #[test]
 fn correct_calls_defaults_and_exported_vars_stay_clean() {
-    let dir = tree("clean", &[("lib1.mix", LIB1)]);
+    let (_dir_guard, dir) = tree("clean", &[("lib1.mix", LIB1)]);
     let src = "$m = require(\"./lib1.mix\")\nprint($m.helper(1, 2))\nprint($m.opt(1))\nprint($m.opt(1, 2))\nprint($m.version)\nprint($m.version(1))\n";
     assert_eq!(codes_at(&dir, src), vec![]);
     let found = codes_at(
@@ -76,7 +76,7 @@ fn correct_calls_defaults_and_exported_vars_stay_clean() {
 
 #[test]
 fn a_private_name_is_not_an_export() {
-    let dir = tree("private", &[("lib1.mix", LIB1)]);
+    let (_dir_guard, dir) = tree("private", &[("lib1.mix", LIB1)]);
     let d = lint_at(
         &dir.join("main.mix"),
         "$m = require(\"./lib1.mix\")\nprint($m._private())\n",
@@ -88,7 +88,7 @@ fn a_private_name_is_not_an_export() {
 
 #[test]
 fn unproven_bindings_stand_down() {
-    let dir = tree("standdown", &[("lib1.mix", LIB1)]);
+    let (_dir_guard, dir) = tree("standdown", &[("lib1.mix", LIB1)]);
     for src in [
         // A dynamic path.
         "$p = \"./lib1.mix\"\n$m = require($p)\nprint($m.nosuch())\n",
@@ -113,7 +113,7 @@ fn unproven_bindings_stand_down() {
 
 #[test]
 fn a_module_whose_return_replaces_its_exports_stands_down() {
-    let dir = tree(
+    let (_dir_guard, dir) = tree(
         "return",
         &[(
             "ret.mix",
@@ -129,7 +129,7 @@ fn a_module_whose_return_replaces_its_exports_stands_down() {
 
 #[test]
 fn other_callables_answer_a_missing_member() {
-    let dir = tree("ufcs", &[("lib1.mix", LIB1)]);
+    let (_dir_guard, dir) = tree("ufcs", &[("lib1.mix", LIB1)]);
     // A function this file defines (UFCS), a prelude or shell extension,
     // and an address block (an unknown member call is a send there).
     let src = "$m = require(\"./lib1.mix\")\nfn extra($x)\n  return 1\nend\nprint($m.extra())\naddress svc\n  $m.restart()\nend\n";
@@ -148,7 +148,7 @@ fn other_callables_answer_a_missing_member() {
 
 #[test]
 fn a_nested_require_resolves_next_to_its_module() {
-    let dir = tree(
+    let (_dir_guard, dir) = tree(
         "nested",
         &[
             (
@@ -173,7 +173,7 @@ fn a_nested_require_resolves_next_to_its_module() {
 
 #[test]
 fn a_require_cycle_terminates_and_still_checks() {
-    let dir = tree(
+    let (_dir_guard, dir) = tree(
         "cycle",
         &[
             (
@@ -195,7 +195,7 @@ fn a_require_cycle_terminates_and_still_checks() {
 
 #[test]
 fn exports_follow_the_runtime_rules() {
-    let dir = tree(
+    let (_dir_guard, dir) = tree(
         "rules",
         &[(
             "m.mix",
@@ -214,7 +214,7 @@ fn exports_follow_the_runtime_rules() {
 
 #[test]
 fn calls_in_expression_bodies_and_defaults_are_checked() {
-    let dir = tree("exprbody", &[("lib1.mix", LIB1)]);
+    let (_dir_guard, dir) = tree("exprbody", &[("lib1.mix", LIB1)]);
     let src = "$m = require(\"./lib1.mix\")\nfn f() = $m.nosuch()\nfn g($x = $m.helper(1)) = $x\n$h = fn() = $m.helper()\nprint(f() .. g() .. $h())\n";
     let found = codes_at(&dir, src);
     assert_eq!(
@@ -230,7 +230,7 @@ fn calls_in_expression_bodies_and_defaults_are_checked() {
 
 #[test]
 fn a_call_in_an_if_expression_of_an_expression_body_is_checked() {
-    let dir = tree("ifbody", &[("lib1.mix", LIB1)]);
+    let (_dir_guard, dir) = tree("ifbody", &[("lib1.mix", LIB1)]);
     let src = "$m = require(\"./lib1.mix\")\nfn f() = if true then $m.nosuch() end\nprint(f())\n";
     assert_eq!(
         codes_at(&dir, src),
@@ -242,7 +242,7 @@ fn a_call_in_an_if_expression_of_an_expression_body_is_checked() {
 fn a_statement_member_call_has_no_ufcs_fallback() {
     // `$m.extra()` as a statement calls the field value: a caller `fn extra`
     // does not answer it, so the missing export still fails at run time.
-    let dir = tree("stmtcall", &[("lib1.mix", LIB1)]);
+    let (_dir_guard, dir) = tree("stmtcall", &[("lib1.mix", LIB1)]);
     let src = "$m = require(\"./lib1.mix\")\nfn extra($o)\n  return 1\nend\n$m.extra()\n$m.helper(1)\n$m.helper(1, 2)\n";
     assert_eq!(
         codes_at(&dir, src),
@@ -255,14 +255,14 @@ fn a_statement_member_call_has_no_ufcs_fallback() {
 
 #[test]
 fn a_rebinding_inside_an_expression_body_stands_down() {
-    let dir = tree("exprrebind", &[("lib1.mix", LIB1)]);
+    let (_dir_guard, dir) = tree("exprrebind", &[("lib1.mix", LIB1)]);
     let src = "$m = require(\"./lib1.mix\")\nfn f() = if true then $m = {helper: fn() = 7}; $m.helper() end\nprint(f())\n";
     assert_eq!(codes_at(&dir, src), vec![]);
 }
 
 #[test]
 fn an_include_in_an_expression_body_stands_down() {
-    let dir = tree(
+    let (_dir_guard, dir) = tree(
         "exprinclude",
         &[
             ("lib1.mix", LIB1),
@@ -282,7 +282,7 @@ fn an_include_in_an_expression_body_stands_down() {
 #[test]
 fn a_fallback_function_inside_an_expression_body_answers_the_call() {
     // sol round 6: the program prints 7 — UFCS reaches the caller's `extra`.
-    let dir = tree("exprfallback", &[("lib1.mix", LIB1)]);
+    let (_dir_guard, dir) = tree("exprfallback", &[("lib1.mix", LIB1)]);
     let src = "$m = require(\"./lib1.mix\")\nfn f() = if true then\n  fn extra($obj) = 7\n  print($m.extra())\nend\nf()\n";
     let found = codes_at(&dir, src);
     assert!(!found.iter().any(|(c, _)| c == "MIX-W2315"), "{found:?}");
@@ -292,7 +292,7 @@ fn a_fallback_function_inside_an_expression_body_answers_the_call() {
 fn a_piped_assignment_is_an_export_too() {
     // sol round 7: `$helper = … | cat` exports the lambda, which overrides
     // the two-parameter `fn helper`; 0.116 prints 7.
-    let dir = tree(
+    let (_dir_guard, dir) = tree(
         "piped",
         &[(
             "m.mix",
@@ -309,7 +309,7 @@ fn a_piped_assignment_is_an_export_too() {
 #[test]
 fn a_call_inside_a_chain_or_pipe_is_reported_once_on_its_own_line() {
     // sol round 8: the wrapper and its operand were both checked.
-    let dir = tree("wrappers", &[("lib1.mix", LIB1)]);
+    let (_dir_guard, dir) = tree("wrappers", &[("lib1.mix", LIB1)]);
     let src = "$m = require(\"./lib1.mix\")\nprint($m.helper(1)) | cat\nprint(1) &&\n  print($m.nosuch())\n";
     assert_eq!(
         codes_at(&dir, src),
@@ -322,7 +322,7 @@ fn a_call_inside_a_chain_or_pipe_is_reported_once_on_its_own_line() {
 
 #[test]
 fn the_require_checks_are_warnings_this_release() {
-    let dir = tree("severity", &[("lib1.mix", LIB1)]);
+    let (_dir_guard, dir) = tree("severity", &[("lib1.mix", LIB1)]);
     let found = lint_at(
         &dir.join("main.mix"),
         "$m = require(\"./lib1.mix\")\nprint($m.helper(1))\nprint($m.nosuch())\n",
@@ -341,7 +341,7 @@ fn the_require_checks_are_warnings_this_release() {
 fn a_module_in_a_status_variable_is_not_proven() {
     // `send` and every command rewrite `$result`, so a call through it may
     // reach a caller function by UFCS instead of the module.
-    let dir = tree("status", &[("lib1.mix", LIB1)]);
+    let (_dir_guard, dir) = tree("status", &[("lib1.mix", LIB1)]);
     let src = "$result = require(\"./lib1.mix\")\nsend svc ping\nfn helper($o)\n  return 7\nend\nprint($result.helper())\n";
     let found = codes_at(&dir, src);
     assert!(
@@ -356,7 +356,7 @@ fn a_module_in_a_status_variable_is_not_proven() {
 fn a_nested_require_resolves_next_to_the_canonical_module() {
     // `entry/a.mix` is a symlink to `real/a.mix`; the runtime canonicalises
     // it, so `./b.mix` is `real/b.mix`, not `entry/b.mix`.
-    let dir = tree(
+    let (_dir_guard, dir) = tree(
         "symlink",
         &[
             ("real/a.mix", "$b = require(\"./b.mix\")\n"),
@@ -374,7 +374,7 @@ fn a_nested_require_resolves_next_to_the_canonical_module() {
 
 #[test]
 fn a_function_named_after_a_shell_extension_warns() {
-    let dir = tree("ext", &[]);
+    let (_dir_guard, dir) = tree("ext", &[]);
     let cfg = AnalyzerConfig {
         extensions: MIX_SHELL_EXTENSIONS.iter().map(|s| s.to_string()).collect(),
         ..AnalyzerConfig::default()
@@ -404,7 +404,7 @@ fn a_function_named_after_a_shell_extension_warns() {
 fn a_module_exporting_context_is_called_through_the_member() {
     // The serve-citizen case: the export wins the member call, so the
     // caller is clean (the definition warns in the module's own lint).
-    let dir = tree(
+    let (_dir_guard, dir) = tree(
         "ctx",
         &[(
             "ctxmod.mix",

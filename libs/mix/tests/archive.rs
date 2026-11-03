@@ -108,21 +108,11 @@ fn xattr_archive(d: &std::path::Path, tag: &str, records: &[(&str, &[u8])]) -> P
 }
 
 /// Unique temp dir per test.
-fn tmpdir(tag: &str) -> PathBuf {
-    let d = std::env::temp_dir().join(format!(
-        "mix-archive-test-{}-{}-{}",
-        tag,
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
-    fs::create_dir_all(&d).unwrap();
-    // tar_unpack refuses a group/other-writable dest parent; pin the mode so
-    // a permissive umask cannot fail every test.
-    fs::set_permissions(&d, fs::Permissions::from_mode(0o755)).unwrap();
-    d
+fn tmpdir(tag: &str) -> (tempfile::TempDir, PathBuf) {
+    let root = tempfile::Builder::new().prefix(tag).tempdir().unwrap();
+    let path = root.path().to_path_buf();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+    (root, path)
 }
 
 /// Append ONE raw 512-byte tar header block (hand-packed so hostile names
@@ -175,7 +165,7 @@ fn build_plain(path: &std::path::Path, members: &[(&str, &[u8], u32)]) {
 
 #[tokio::test]
 async fn roundtrip_all_codecs() {
-    let d = tmpdir("rt");
+    let (_d_guard, d) = tmpdir("rt");
     let src = d.join("src");
     fs::create_dir_all(src.join("sub")).unwrap();
     fs::write(src.join("hello.txt"), b"hello archive\n").unwrap();
@@ -249,7 +239,7 @@ async fn roundtrip_all_codecs() {
 
 #[tokio::test]
 async fn pack_is_deterministic() {
-    let d = tmpdir("det");
+    let (_d_guard, d) = tmpdir("det");
     let src = d.join("src");
     fs::create_dir_all(&src).unwrap();
     fs::write(src.join("a"), b"same").unwrap();
@@ -278,7 +268,7 @@ async fn pack_is_deterministic() {
 
 #[tokio::test]
 async fn refuse_parent_traversal() {
-    let d = tmpdir("trav");
+    let (_d_guard, d) = tmpdir("trav");
     let arc = d.join("evil.tar");
     let f = fs::File::create(&arc).unwrap();
     append_raw_member(f, "../escape.txt", b"gotcha");
@@ -294,7 +284,7 @@ async fn refuse_parent_traversal() {
 
 #[tokio::test]
 async fn refuse_absolute_member() {
-    let d = tmpdir("abs");
+    let (_d_guard, d) = tmpdir("abs");
     let arc = d.join("evil.tar");
     let f = fs::File::create(&arc).unwrap();
     append_raw_member(f, "/etc/gotcha", b"no");
@@ -309,7 +299,7 @@ async fn refuse_absolute_member() {
 
 #[tokio::test]
 async fn refuse_write_through_a_contained_symlink() {
-    let d = tmpdir("sym-contained");
+    let (_d_guard, d) = tmpdir("sym-contained");
     let arc = d.join("evil.tar");
     // A real directory, a CONTAINED symlink to it (valid on its own), then a
     // member whose path traverses the symlink. Only the ancestor guard can
@@ -349,7 +339,7 @@ async fn refuse_write_through_a_contained_symlink() {
 
 #[tokio::test]
 async fn refuse_an_escaping_symlink_target_before_any_traversal() {
-    let d = tmpdir("sym");
+    let (_d_guard, d) = tmpdir("sym");
     let arc = d.join("evil.tar");
     // An escaping symlink, then a member whose path traverses it. The target
     // is refused first, so the traversal check never runs (see the
@@ -389,7 +379,7 @@ async fn refuse_an_escaping_symlink_target_before_any_traversal() {
 
 #[tokio::test]
 async fn refuse_hardlink_to_unextracted() {
-    let d = tmpdir("hard");
+    let (_d_guard, d) = tmpdir("hard");
     let arc = d.join("evil.tar");
     let file = fs::File::create(&arc).unwrap();
     let mut b = Builder::new(file);
@@ -413,7 +403,7 @@ async fn refuse_hardlink_to_unextracted() {
 
 #[tokio::test]
 async fn refuse_device_and_fifo_entries() {
-    let d = tmpdir("dev");
+    let (_d_guard, d) = tmpdir("dev");
     for (tag, et) in [
         ("chardev", tar::EntryType::Char),
         ("fifo", tar::EntryType::Fifo),
@@ -445,7 +435,7 @@ async fn refuse_device_and_fifo_entries() {
 
 #[tokio::test]
 async fn refuse_trailing_data_after_tar_end() {
-    let d = tmpdir("tail");
+    let (_d_guard, d) = tmpdir("tail");
     let arc = d.join("plus.tar");
     build_plain(&arc, &[("a.txt", b"a", 0o644)]);
     // Append a second concatenated tar (non-zero bytes after the first
@@ -464,7 +454,7 @@ async fn refuse_trailing_data_after_tar_end() {
 
 #[tokio::test]
 async fn refuse_truncated_gzip() {
-    let d = tmpdir("trunc");
+    let (_d_guard, d) = tmpdir("trunc");
     let src = d.join("src");
     fs::create_dir_all(&src).unwrap();
     let mut payload = Vec::with_capacity(50_000);
@@ -497,7 +487,7 @@ async fn refuse_truncated_gzip() {
 
 #[tokio::test]
 async fn refuse_corrupt_zstd_checksum() {
-    let d = tmpdir("cksum");
+    let (_d_guard, d) = tmpdir("cksum");
     let src = d.join("src");
     fs::create_dir_all(&src).unwrap();
     fs::write(src.join("data"), vec![9u8; 50_000]).unwrap();
@@ -536,7 +526,7 @@ async fn refuse_corrupt_zstd_checksum() {
 
 #[tokio::test]
 async fn enforce_max_entries() {
-    let d = tmpdir("max");
+    let (_d_guard, d) = tmpdir("max");
     let arc = d.join("three.tar");
     build_plain(
         &arc,
@@ -553,7 +543,7 @@ async fn enforce_max_entries() {
 
 #[tokio::test]
 async fn suid_stripped_by_default_kept_opt_in() {
-    let d = tmpdir("suid");
+    let (_d_guard, d) = tmpdir("suid");
     let arc = d.join("s.tar");
     build_plain(&arc, &[("rootish", b"x", 0o4755)]);
     let dest = d.join("dest");
@@ -584,7 +574,7 @@ async fn suid_stripped_by_default_kept_opt_in() {
 
 #[tokio::test]
 async fn refuse_any_existing_dest() {
-    let d = tmpdir("dest");
+    let (_d_guard, d) = tmpdir("dest");
     let arc = d.join("one.tar");
     build_plain(&arc, &[("a", b"1", 0o644)]);
     let dest = d.join("dest");
@@ -616,7 +606,7 @@ async fn refuse_any_existing_dest() {
 
 #[tokio::test]
 async fn unknown_option_refused() {
-    let d = tmpdir("opts");
+    let (_d_guard, d) = tmpdir("opts");
     let arc = d.join("one.tar");
     build_plain(&arc, &[("a", b"1", 0o644)]);
     let err = run_err(&format!(
@@ -693,7 +683,7 @@ async fn capability_roundtrip_as_root() {
     if unsafe { libc::geteuid() } != 0 {
         return; // documented skip
     }
-    let d = tmpdir("cap");
+    let (_d_guard, d) = tmpdir("cap");
     let Some((arc, cap)) = capability_fixture(&d).await else {
         return;
     };
@@ -715,7 +705,7 @@ async fn capability_not_restored_by_default() {
     if unsafe { libc::geteuid() } != 0 {
         return; // documented skip
     }
-    let d = tmpdir("capdef");
+    let (_d_guard, d) = tmpdir("capdef");
     let cap = v2_capability_blob();
     if !xattr_supported(&d, c"security.capability", &cap) {
         return;
@@ -787,7 +777,7 @@ fn encode_tar(bytes: &[u8], codec: &str) -> Vec<u8> {
 
 #[tokio::test]
 async fn trailing_padding_uses_the_same_stream_budget() {
-    let d = tmpdir("padding-budget");
+    let (_d_guard, d) = tmpdir("padding-budget");
     let mut plain = Vec::new();
     append_raw_member(&mut plain, "a", b"x");
     plain.extend_from_slice(&[0; 8192]);
@@ -823,7 +813,7 @@ async fn trailing_padding_uses_the_same_stream_budget() {
 
 #[tokio::test]
 async fn declared_file_size_is_refused_before_reading_data() {
-    let d = tmpdir("file-budget");
+    let (_d_guard, d) = tmpdir("file-budget");
     for prefix in [false, true] {
         let arc = d.join(format!("{prefix}.tar"));
         let mut bytes = Vec::new();
@@ -866,7 +856,7 @@ async fn declared_file_size_is_refused_before_reading_data() {
 
 #[tokio::test]
 async fn extension_sizes_are_bounded_before_buffering() {
-    let d = tmpdir("metadata-budget");
+    let (_d_guard, d) = tmpdir("metadata-budget");
     for kind in *b"LKxg" {
         for size in [65_537, 1 << 30] {
             let arc = d.join(format!("{kind}-{size}.tar"));
@@ -911,7 +901,7 @@ async fn extension_sizes_are_bounded_before_buffering() {
 
 #[tokio::test]
 async fn entry_limit_precedes_the_next_extension_body() {
-    let d = tmpdir("metadata-entry-limit");
+    let (_d_guard, d) = tmpdir("metadata-entry-limit");
     let arc = d.join("entries.tar");
     let mut bytes = Vec::new();
     append_raw_member(&mut bytes, "first", b"1");
@@ -937,7 +927,7 @@ async fn entry_limit_precedes_the_next_extension_body() {
 
 #[tokio::test]
 async fn bounded_extensions_still_resolve_names_links_and_pax() {
-    let d = tmpdir("metadata-boundary");
+    let (_d_guard, d) = tmpdir("metadata-boundary");
     let arc = d.join("bounded.tar");
     let long_name = "a".repeat(200);
     let long_target = "b".repeat(200);
@@ -1007,7 +997,7 @@ async fn bounded_extensions_still_resolve_names_links_and_pax() {
 
 #[tokio::test]
 async fn pax_size_override_keeps_extension_checks_aligned() {
-    let d = tmpdir("pax-size");
+    let (_d_guard, d) = tmpdir("pax-size");
     let arc = d.join("size.tar");
     let mut builder = Builder::new(Vec::new());
     builder
@@ -1047,7 +1037,7 @@ async fn pax_size_override_keeps_extension_checks_aligned() {
 
 #[tokio::test]
 async fn global_pax_ends_the_local_size_override_chain() {
-    let d = tmpdir("pax-global-size");
+    let (_d_guard, d) = tmpdir("pax-global-size");
     let arc = d.join("global.tar");
     let mut builder = Builder::new(Vec::new());
     builder
@@ -1079,7 +1069,7 @@ async fn global_pax_ends_the_local_size_override_chain() {
 
 #[tokio::test]
 async fn gzip_refuses_what_follows_the_last_member() {
-    let d = tmpdir("gzip-tail");
+    let (_d_guard, d) = tmpdir("gzip-tail");
     let mut plain = Vec::new();
     append_raw_member(&mut plain, "a", b"x");
     let first = encode_tar(&plain, "gzip");
@@ -1129,7 +1119,7 @@ async fn gzip_accepts_a_tar_split_across_members() {
     // `pigz` and `cat a.gz b.gz` write several members; RFC 1952 makes the
     // file their concatenation. Split mid-header, mid-data and before the
     // end blocks, plus an empty trailing member.
-    let d = tmpdir("gzip-multi");
+    let (_d_guard, d) = tmpdir("gzip-multi");
     let mut plain = Vec::new();
     append_raw_member(&mut plain, "a", b"hello members\n");
     for (tag, cuts) in [
@@ -1190,7 +1180,7 @@ async fn gzip_accepts_a_tar_split_across_members() {
 
 #[tokio::test]
 async fn packing_capability_records_requires_opt_in() {
-    let d = tmpdir("pack-capability-policy");
+    let (_d_guard, d) = tmpdir("pack-capability-policy");
     let cap = v2_capability_blob();
     if !xattr_supported(&d, c"security.capability", &cap) {
         return;
@@ -1239,7 +1229,7 @@ async fn packing_capability_records_requires_opt_in() {
 
 #[tokio::test]
 async fn rollback_removes_directories_after_restrictive_metadata() {
-    let d = tmpdir("rollback-modes");
+    let (_d_guard, d) = tmpdir("rollback-modes");
     let arc = d.join("modes.tar");
     let mut builder = Builder::new(fs::File::create(&arc).unwrap());
     // An overlong xattr name reliably fails outside the tolerated EPERM case.
@@ -1288,7 +1278,7 @@ async fn rollback_removes_directories_after_restrictive_metadata() {
 
 #[tokio::test]
 async fn zstd_initialisation_failures_have_the_stream_corrupt_code() {
-    let d = tmpdir("zstd-init");
+    let (_d_guard, d) = tmpdir("zstd-init");
     let empty = d.join("empty.zst");
     fs::write(&empty, []).unwrap();
     let truncated = d.join("truncated.zst");
@@ -1315,7 +1305,7 @@ async fn zstd_initialisation_failures_have_the_stream_corrupt_code() {
 
 #[tokio::test]
 async fn pack_refuses_a_symlink_source_directory() {
-    let d = tmpdir("pack-root-link");
+    let (_d_guard, d) = tmpdir("pack-root-link");
     let actual = d.join("actual");
     fs::create_dir(&actual).unwrap();
     fs::write(actual.join("file"), b"outside").unwrap();
@@ -1338,7 +1328,7 @@ async fn pack_refuses_a_symlink_source_directory() {
 #[tokio::test]
 async fn pack_uses_the_queued_directory_fd_after_path_replacement() {
     use std::os::fd::{AsRawFd, FromRawFd};
-    let d = tmpdir("pack-directory-race");
+    let (_d_guard, d) = tmpdir("pack-directory-race");
     let src = d.join("src");
     let outside = d.join("outside");
     fs::create_dir_all(src.join("a-queued")).unwrap();
@@ -1414,7 +1404,7 @@ async fn pack_uses_the_queued_directory_fd_after_path_replacement() {
 async fn packing_file_replacements_never_reads_a_symlink_target() {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-    let d = tmpdir("pack-file-race");
+    let (_d_guard, d) = tmpdir("pack-file-race");
     let src = d.join("src");
     fs::create_dir(&src).unwrap();
     let outside = d.join("outside");
@@ -1510,7 +1500,7 @@ fn no_warnings(r: &indexmap::IndexMap<String, Value>) {
 #[tokio::test]
 async fn a_pax_global_header_is_metadata_not_a_member() {
     // `git archive` opens with a global header carrying the commit id.
-    let d = tmpdir("pax-global");
+    let (_d_guard, d) = tmpdir("pax-global");
     let arc = d.join("git.tar");
     let mut b = Builder::new(fs::File::create(&arc).unwrap());
     let payload = b"18 comment=abcdef\n";
@@ -1561,7 +1551,7 @@ async fn privileged_xattrs_need_their_opt_in() {
     if unsafe { libc::geteuid() } != 0 {
         return; // documented skip: trusted.* needs CAP_SYS_ADMIN
     }
-    let d = tmpdir("privileged-xattrs");
+    let (_d_guard, d) = tmpdir("privileged-xattrs");
     if !xattr_supported(&d, c"trusted.mixtest", b"t") || !xattr_supported(&d, c"user.mixtest", b"u")
     {
         return;
@@ -1613,7 +1603,7 @@ async fn privileged_xattrs_need_their_opt_in() {
 
 #[tokio::test]
 async fn retained_xattr_bytes_are_bounded_across_the_archive() {
-    let d = tmpdir("xattr-budget");
+    let (_d_guard, d) = tmpdir("xattr-budget");
     let arc = d.join("many.tar");
     let mut b = Builder::new(fs::File::create(&arc).unwrap());
     // Each record is under the 64 KiB per-payload ceiling; together they are
@@ -1651,7 +1641,7 @@ async fn retained_xattr_bytes_are_bounded_across_the_archive() {
 
 #[tokio::test]
 async fn pack_refuses_an_output_inside_its_source() {
-    let d = tmpdir("pack-inside");
+    let (_d_guard, d) = tmpdir("pack-inside");
     let src = d.join("src");
     fs::create_dir_all(src.join("sub")).unwrap();
     fs::write(src.join("a"), b"a").unwrap();
@@ -1669,7 +1659,7 @@ async fn pack_refuses_an_output_inside_its_source() {
 
 #[tokio::test]
 async fn a_dangling_symlink_at_dest_counts_as_existing() {
-    let d = tmpdir("dest-dangling");
+    let (_d_guard, d) = tmpdir("dest-dangling");
     let arc = d.join("one.tar");
     build_plain(&arc, &[("a", b"1", 0o644)]);
     let dest = d.join("dest");
@@ -1687,7 +1677,7 @@ async fn a_dangling_symlink_at_dest_counts_as_existing() {
 
 #[tokio::test]
 async fn bare_relative_paths_use_the_current_directory() {
-    let d = tmpdir("bare-relative");
+    let (_d_guard, d) = tmpdir("bare-relative");
     fs::create_dir_all(d.join("src")).unwrap();
     fs::write(d.join("src/a"), b"a").unwrap();
     // The process cwd is shared by every test thread; only this test uses
@@ -1705,7 +1695,7 @@ async fn bare_relative_paths_use_the_current_directory() {
 
 #[tokio::test]
 async fn dest_parent_with_an_untrusted_writer_is_refused() {
-    let d = tmpdir("untrusted-parent");
+    let (_d_guard, d) = tmpdir("untrusted-parent");
     let arc = d.join("one.tar");
     build_plain(&arc, &[("a", b"1", 0o644)]);
     let parent = d.join("shared");
@@ -1775,7 +1765,7 @@ fn implicit_parent_archive(path: &std::path::Path, names: &[String]) {
 
 #[tokio::test]
 async fn implicit_parent_directories_count_against_max_entries() {
-    let d = tmpdir("implicit-dirs");
+    let (_d_guard, d) = tmpdir("implicit-dirs");
     let arc = d.join("deep.tar");
     // Three members, each under five directories no entry declares.
     let names: Vec<String> = (0..3).map(|i| format!("a{i}/b/c/d/e/f")).collect();
@@ -1806,7 +1796,7 @@ async fn implicit_parent_directories_count_against_max_entries() {
 async fn implicit_directories_also_spend_the_member_allowance() {
     // Two implicit parents first, then top-level files: 5 members + 2
     // implicit directories is 7 entries, over max_entries 6.
-    let d = tmpdir("implicit-then-flat");
+    let (_d_guard, d) = tmpdir("implicit-then-flat");
     let arc = d.join("mixed.tar");
     let names: Vec<String> = ["d0/f", "d1/f", "t0", "t1", "t2"]
         .iter()
@@ -1827,7 +1817,7 @@ async fn implicit_directories_also_spend_the_member_allowance() {
 
 #[tokio::test]
 async fn an_explicit_directory_after_its_implicit_creation_is_accepted() {
-    let d = tmpdir("implicit-then-explicit");
+    let (_d_guard, d) = tmpdir("implicit-then-explicit");
     let arc = d.join("order.tar");
     let mut b = Builder::new(fs::File::create(&arc).unwrap());
     let mut file = Header::new_gnu();
@@ -1855,7 +1845,7 @@ async fn an_explicit_directory_after_its_implicit_creation_is_accepted() {
 
 #[tokio::test]
 async fn a_zstd_frame_with_a_corrupt_checksum_footer_is_refused() {
-    let d = tmpdir("zstd-footer");
+    let (_d_guard, d) = tmpdir("zstd-footer");
     let src = d.join("src");
     fs::create_dir(&src).unwrap();
     fs::write(src.join("a"), b"checksummed content\n").unwrap();
@@ -1941,7 +1931,7 @@ fn raw_tar(path: &std::path::Path, entries: &[(&str, u8, &str, u32, &[u8])]) {
 async fn gnu_dot_prefixed_members_unpack_into_the_root() {
     // `tar -C stage .`: a `./` root entry, then `./`-prefixed members, a
     // `./`-prefixed hardlink target, and contained relative symlinks.
-    let d = tmpdir("dot-prefix");
+    let (_d_guard, d) = tmpdir("dot-prefix");
     let arc = d.join("dot.tar");
     raw_tar(
         &arc,
@@ -2013,7 +2003,7 @@ async fn gnu_dot_prefixed_members_unpack_into_the_root() {
 #[tokio::test]
 async fn the_root_entry_is_applied_after_every_child_wherever_it_sits() {
     use std::os::unix::fs::MetadataExt;
-    let d = tmpdir("dot-root-order");
+    let (_d_guard, d) = tmpdir("dot-root-order");
     // A restrictive root mode applied early would lock the caller out of
     // the children's metadata post-pass.
     for (tag, at) in [("first", 0), ("middle", 1), ("last", 2)] {
@@ -2069,7 +2059,7 @@ async fn the_root_entry_is_applied_after_every_child_wherever_it_sits() {
 
 #[tokio::test]
 async fn tar_pack_refuses_a_link_layout_the_unpacker_would_refuse() {
-    let d = tmpdir("pack-link-graph");
+    let (_d_guard, d) = tmpdir("pack-link-graph");
     let src = d.join("src");
     fs::create_dir_all(src.join("real")).unwrap();
     fs::create_dir_all(src.join("a")).unwrap();
@@ -2110,7 +2100,7 @@ async fn tar_pack_refuses_a_link_layout_the_unpacker_would_refuse() {
 
 #[tokio::test]
 async fn only_a_directory_may_name_the_extraction_root() {
-    let d = tmpdir("dot-root-kind");
+    let (_d_guard, d) = tmpdir("dot-root-kind");
     for (tag, typeflag, link) in [("file", b'0', ""), ("symlink", b'2', "elsewhere")] {
         let arc = d.join(format!("{tag}.tar"));
         raw_tar(&arc, &[("./", typeflag, link, 0o644, b"")]);
@@ -2139,7 +2129,7 @@ async fn only_a_directory_may_name_the_extraction_root() {
 
 #[tokio::test]
 async fn contained_relative_symlinks_are_judged_from_their_own_directory() {
-    let d = tmpdir("sym-relative");
+    let (_d_guard, d) = tmpdir("sym-relative");
     // (link name, target, what read_link must return)
     let accepted: &[(&str, &str, &str)] = &[
         ("a/b/up2", "../../top", "../../top"),
@@ -2215,7 +2205,7 @@ async fn contained_relative_symlinks_are_judged_from_their_own_directory() {
 
 #[tokio::test]
 async fn a_symlink_target_never_passes_through_another_symlink() {
-    let d = tmpdir("sym-through");
+    let (_d_guard, d) = tmpdir("sym-through");
     let base: Vec<(&str, u8, &str, u32, &[u8])> = vec![
         ("real/", b'5', "", 0o755, b""),
         ("real/file", b'0', "", 0o644, b"real\n"),
@@ -2295,7 +2285,7 @@ fn owned_archive(path: &std::path::Path, uid: u32, gid: u32, mode: u32) {
 async fn an_ordinary_user_keeps_their_own_owner_by_default() {
     use std::os::unix::fs::MetadataExt;
     let uid = unsafe { libc::geteuid() };
-    let d = tmpdir("owner-default");
+    let (_d_guard, d) = tmpdir("owner-default");
     if uid == 0 {
         // Root restores the archive's owner by default, as GNU tar does.
         let arc = d.join("root.tar");
@@ -2338,7 +2328,7 @@ async fn an_ordinary_user_keeps_their_own_owner_by_default() {
 async fn special_bits_need_the_archive_owner_even_when_owners_are_not_restored() {
     let uid = unsafe { libc::geteuid() };
     let gid = unsafe { libc::getegid() };
-    let d = tmpdir("owner-special");
+    let (_d_guard, d) = tmpdir("owner-special");
     // Someone else's setuid file: never setuid on the caller's copy.
     let arc = d.join("foreign.tar");
     owned_archive(&arc, uid.wrapping_add(1), gid, 0o4755);

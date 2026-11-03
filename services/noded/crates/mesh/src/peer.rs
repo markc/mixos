@@ -1241,16 +1241,15 @@ mod tests {
         );
     }
 
-    fn temp_dir(tag: &str) -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!("mixos-mesh-cfg-{tag}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    fn temp_dir(tag: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+        let root = tempfile::Builder::new().prefix(tag).tempdir().unwrap();
+        let path = root.path().to_path_buf();
+        (root, path)
     }
 
     #[test]
     fn load_explicit_conf_mix_path() {
-        let dir = temp_dir("explicit");
+        let (_root, dir) = temp_dir("explicit");
         let path = dir.join("mesh.conf.mix");
         std::fs::write(
             &path,

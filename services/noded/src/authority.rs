@@ -548,11 +548,10 @@ mod tests {
 
     /// A throwaway temp dir unique to a test (no external rng — uses the
     /// test's own name as the suffix).
-    fn tmpdir(tag: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("noded_authority_{tag}"));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    fn tmpdir(tag: &str) -> (tempfile::TempDir, PathBuf) {
+        let root = tempfile::Builder::new().prefix(tag).tempdir().unwrap();
+        let path = root.path().to_path_buf();
+        (root, path)
     }
 
     fn paths_in(dir: &Path) -> AuthorityPaths {
@@ -606,7 +605,7 @@ mod tests {
 
     #[test]
     fn unverified_when_no_genesis_key() {
-        let dir = tmpdir("nogen");
+        let (_root, dir) = tmpdir("nogen");
         let p = paths_in(&dir);
         match load_and_verify(&p) {
             Posture::Unverified { reason } => assert!(reason.contains("genesis")),
@@ -616,7 +615,7 @@ mod tests {
 
     #[test]
     fn unverified_when_no_signed_cache() {
-        let dir = tmpdir("nocache");
+        let (_root, dir) = tmpdir("nocache");
         let p = paths_in(&dir);
         write(&p.genesis_pub, &B64.encode([0u8; 32]));
         match load_and_verify(&p) {
@@ -627,7 +626,7 @@ mod tests {
 
     #[test]
     fn read_baseline_defaults_to_zero() {
-        let dir = tmpdir("baseline");
+        let (_root, dir) = tmpdir("baseline");
         assert_eq!(
             read_baseline(&dir.join("missing")).unwrap(),
             Baseline::default()
@@ -661,7 +660,7 @@ mod tests {
 
     #[test]
     fn write_then_read_baseline_round_trips_atomically() {
-        let dir = tmpdir("bwrite");
+        let (_root, dir) = tmpdir("bwrite");
         let bp = dir.join("inventory.baseline");
         write_baseline_file(
             &bp,
@@ -694,7 +693,7 @@ mod tests {
     fn baseline_replacement_is_private_without_a_service_umask() {
         use std::os::unix::fs::PermissionsExt;
 
-        let dir = tmpdir("baseline_private_mode");
+        let (_root, dir) = tmpdir("baseline_private_mode");
         let path = dir.join("inventory.baseline");
         write_baseline_file(&path, 7, 0, "first").unwrap();
         assert_eq!(
@@ -713,7 +712,7 @@ mod tests {
     fn verified_authority_protects_existing_baseline_lock() {
         use std::os::unix::fs::PermissionsExt;
 
-        let dir = tmpdir("authority_private_lock");
+        let (_root, dir) = tmpdir("authority_private_lock");
         let paths = paths_in(&dir);
         let key = SigningKey::from_bytes(&[23u8; 32]);
         write_signed_inventory(
@@ -740,7 +739,7 @@ mod tests {
         // create_dir_all and File::create fail — write_baseline_file must
         // return Err (which load_and_verify turns into fail-closed
         // Unverified, the BLOCKER fix).
-        let dir = tmpdir("bwfail");
+        let (_root, dir) = tmpdir("bwfail");
         let file_as_parent = dir.join("not_a_dir");
         write(&file_as_parent, "x");
         assert!(
@@ -750,14 +749,14 @@ mod tests {
 
     #[test]
     fn directory_fsync_open_errors_are_propagated() {
-        let dir = tmpdir("dirsyncfail");
+        let (_root, dir) = tmpdir("dirsyncfail");
         let error = sync_directory(&dir.join("missing-directory")).unwrap_err();
         assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
     }
 
     #[test]
     fn corrupt_existing_floor_cannot_accept_a_signed_inventory_or_be_overwritten() {
-        let dir = tmpdir("corrupt_floor");
+        let (_root, dir) = tmpdir("corrupt_floor");
         let paths = paths_in(&dir);
         let signing_key = SigningKey::from_bytes(&[19u8; 32]);
         write_signed_inventory(
@@ -789,7 +788,7 @@ mod tests {
 
     #[test]
     fn old_two_field_baseline_accepts_once_and_migrates_to_hash() {
-        let dir = tmpdir("baseline_migration");
+        let (_root, dir) = tmpdir("baseline_migration");
         let paths = paths_in(&dir);
         let signing_key = SigningKey::from_bytes(&[11u8; 32]);
         let hash = write_signed_inventory(
@@ -845,7 +844,7 @@ mod tests {
 
     #[test]
     fn malformed_routing_view_rejects_before_baseline_ratchet() {
-        let dir = tmpdir("view_before_ratchet");
+        let (_root, dir) = tmpdir("view_before_ratchet");
         let paths = paths_in(&dir);
         let signing_key = SigningKey::from_bytes(&[12u8; 32]);
         let old_hash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
@@ -878,7 +877,7 @@ mod tests {
 
     #[test]
     fn equal_epoch_different_hash_rejects_without_rewriting_baseline() {
-        let dir = tmpdir("equal_epoch_hash_conflict");
+        let (_root, dir) = tmpdir("equal_epoch_hash_conflict");
         let paths = paths_in(&dir);
         let signing_key = SigningKey::from_bytes(&[13u8; 32]);
         let first_hash = write_signed_inventory(
@@ -913,7 +912,7 @@ mod tests {
     fn concurrent_compare_and_ratchet_never_regresses_the_floor() {
         use std::sync::{Arc, Barrier};
 
-        let dir = tmpdir("concurrent_ratchet");
+        let (_root, dir) = tmpdir("concurrent_ratchet");
         let paths = paths_in(&dir);
         let signing_key = SigningKey::from_bytes(&[14u8; 32]);
         let members = serde_json::json!([{
@@ -952,7 +951,7 @@ mod tests {
 
     #[test]
     fn held_baseline_lock_yields_unverified_within_bound() {
-        let dir = tmpdir("held_baseline_lock");
+        let (_root, dir) = tmpdir("held_baseline_lock");
         let paths = paths_in(&dir);
         let signing_key = SigningKey::from_bytes(&[15u8; 32]);
         write_signed_inventory(
@@ -994,7 +993,7 @@ mod tests {
 
     #[test]
     fn accepted_authority_hash_matches_pre_refactor_golden() {
-        let dir = tmpdir("canonical_hash_golden");
+        let (_root, dir) = tmpdir("canonical_hash_golden");
         let paths = paths_in(&dir);
         let signing_key = SigningKey::from_bytes(&[7u8; 32]);
         let pubkey = B64.encode(signing_key.verifying_key().to_bytes());
