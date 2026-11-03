@@ -810,7 +810,8 @@ impl Lexer {
         // at the whole word, not only the part before the number.
         let mut end = self.pos;
         while end < self.source.len()
-            && (self.source[end].is_ascii_alphanumeric() || matches!(self.source[end], '_' | '-' | '.'))
+            && (self.source[end].is_ascii_alphanumeric()
+                || matches!(self.source[end], '_' | '-' | '.'))
         {
             end += 1;
         }
