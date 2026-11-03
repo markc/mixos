@@ -217,9 +217,7 @@ persistence.
 The settings come from [settingsd](../settingsd/README.md) through the
 [settings](../settings/README.md) library.
 
-## Toast scenes
-
-### Scene frame events
+## Scene frame events
 
 `shell.scene.frame {scene}` arms one callback and replies `{scene, armed:true}`.
 Repeated arms before delivery coalesce. Unknown scenes return `NOT_FOUND`;
@@ -239,6 +237,8 @@ no callback. The arm remains pending until presentation, and unload drops it.
 An outstanding visible request schedules work; without one, the frame clock
 adds no redraws. Use this clock for scene animation rather than a behaviour
 timer.
+
+## Toast scenes
 
 A scene with `window: {"kind":"toast","w":360,"h":120}` uses a
 separate, pointer-interactive toast seat. It never takes keyboard focus,

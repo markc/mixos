@@ -908,8 +908,15 @@ pub(crate) fn reconcile(
             // A frame callback is outstanding work even for unchanged pixels.
             // Repaint only this surface, never run a free-running redraw loop.
             if store.scene(name).is_some_and(|entry| entry.frame_armed)
-                && let Some(instance) = state.inner.surface_mut().registry.as_mut()
-                    .and_then(|registry| registry.instance_mut(UiHandle::<SceneUi>::from_id(handle)))
+                && let Some(instance) =
+                    state
+                        .inner
+                        .surface_mut()
+                        .registry
+                        .as_mut()
+                        .and_then(|registry| {
+                            registry.instance_mut(UiHandle::<SceneUi>::from_id(handle))
+                        })
             {
                 instance.runtime_mut().request_redraw();
             }

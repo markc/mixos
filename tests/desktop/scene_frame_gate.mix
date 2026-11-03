@@ -3,7 +3,7 @@
 -- Owns one private headless compositor, never touches a desktop.
 $bin = args()[0]
 $root = "/tmp/scene-frame-" .. to_string(pid())
-$shell = "frame-shell-" .. to_string(pid())
+$shell = "shell"
 $comp = "frame-comp-" .. to_string(pid())
 $citizen = "frame-client-" .. to_string(pid())
 mkdir($root, {parents:true})
@@ -21,7 +21,10 @@ fn call($svc, $command, $body)
 end
 $cp = nil
 $bp = nil
+$pb = require("../lib/private_bus.mix")
+$bus = nil
 try
+  $bus = $pb.start({dir:$root .. "/bus", name:"frame-gate"})
   $cp = spawn([$bin, "--headless", "--size", "1920x1080", "--render-node", "/dev/dri/renderD128",
       "--bus-service", $comp, "--scene-service", $shell, "--config-file", $root .. "/settings.json"],
     {env:{XDG_RUNTIME_DIR:$root .. "/runtime", MIXOS_ETC:$root .. "/etc", MIXOS_VAR:$root .. "/var", MIXOS_RUN:$root .. "/run",
@@ -59,4 +62,5 @@ try
 finally
   if $bp != nil then kill($bp, 15) end
   if $cp != nil then kill($cp, 15) end
+  if $bus != nil then $pb.stop($bus) end
 end

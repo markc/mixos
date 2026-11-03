@@ -179,8 +179,10 @@ impl SceneStore {
     /// Coalescing, one-shot request. Authored citizen is the event destination;
     /// the loader owner is deliberately not the behaviour's identity.
     pub(crate) fn arm_frame(&mut self, name: &str, caller: &str) -> Result<(), Value> {
-        let entry = self.scenes.get_mut(name).ok_or_else(||
-            json!({"error_code":"NOT_FOUND", "scene":name}))?;
+        let entry = self
+            .scenes
+            .get_mut(name)
+            .ok_or_else(|| json!({"error_code":"NOT_FOUND", "scene":name}))?;
         if !entry.document.citizen.is_empty() && entry.document.citizen != caller {
             return Err(json!({"error_code":"SCENE_FRAME_OWNER", "scene":name}));
         }
@@ -188,15 +190,24 @@ impl SceneStore {
         Ok(())
     }
 
-    pub(crate) fn frame_event(&mut self, name: &str, shown: bool, at: f64, interval: f64) -> Option<(String, Value)> {
+    pub(crate) fn frame_event(
+        &mut self,
+        name: &str,
+        shown: bool,
+        at: f64,
+        interval: f64,
+    ) -> Option<(String, Value)> {
         let entry = self.scenes.get_mut(name)?;
         if !shown || entry.mounted.is_none() || !entry.frame_armed {
             return None;
         }
         entry.frame_armed = false;
         entry.frame_seq += 1;
-        Some((entry.document.citizen.clone(), json!({"scene":name,
-            "seq":entry.frame_seq, "presented_at":at, "interval":interval})))
+        Some((
+            entry.document.citizen.clone(),
+            json!({"scene":name,
+            "seq":entry.frame_seq, "presented_at":at, "interval":interval}),
+        ))
     }
 
     pub fn scene(&self, name: &str) -> Option<&SceneEntry> {
