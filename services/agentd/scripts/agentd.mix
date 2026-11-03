@@ -1084,8 +1084,8 @@ fn session_exited($id, $exit_code, $signal, $error_code)
     $failed_reopen = $S.sessions[$id].reopen != nil and not $S.sessions[$id].reopen.done
     if not $S.sessions[$id].explicit_close and not $failed_reopen then
       await_crashed($id)
-      if $S.sessions[$id].suspending or len(await_pending($id)) > 0 or await_has_outbox($id) then
-        await_waiting($id)
+      if $S.sessions[$id].suspending or len(await_pending($id)) > 0 or await_suspending_outbox($id) then
+        await_waiting($id, nil)
         await_drain()
         return
       end
@@ -1094,6 +1094,7 @@ fn session_exited($id, $exit_code, $signal, $error_code)
     end
     $S.sessions[$id].status = "ended"
     $S.sessions[$id].turn = nil
+    await_end($id)
     $reopen = $S.sessions[$id].reopen
     if $reopen != nil and not $reopen.done then
       -- The resume failed (refused, or the agent died first): the session

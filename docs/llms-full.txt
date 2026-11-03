@@ -1406,6 +1406,16 @@ of their firing time. Delivery means the outcome turn reached its stop,
 not merely that its prompt was sent. A failed reopen fails the await.
 An agent exiting during an outcome turn gets up to three redeliveries,
 explicitly framed as such, before the await fails.
+An ACP error on an outcome turn counts as a failed delivery attempt. The
+outbox stays idle until the next reopen or turn boundary; three failed
+attempts fail the await. Delivery and outbox removal commit atomically.
+
+Only waiting sessions reopen automatically. A session ending for good
+cancels its remaining pending awaits and fails its outbox entries with
+reason `session_ended`. Recovery preserves a running session with a pending
+suspending await or an outbox, recording `suspended` with reason
+`agentd_restart` instead of an ended event. Cancelling a pending await also
+removes any queued deadline notification in the same transaction.
 
 A deadline first queries the operation. If it is still non-terminal,
 the outbox delivers a deadline notification with the current state and
