@@ -466,6 +466,8 @@ try
     else prompt($child, "DIE") end
     check("child terminal " .. $case, wait_status($child, "ended") and call("agent.op.get", {op: $child}).v.state == $case)
     check("parent gets child " .. $case, wait_await($aid, "delivered") and json_parse(row($aid).outcome).state == $case)
+    $again = call("agent.session.await", {session: $parent, service: "agent", op: $child}).v.await
+    check("local terminal catch-up " .. $case, wait_await($again, "delivered") and json_parse(row($again).outcome).state == $case)
     sleep(0.1)
     call("agent.op.cancel", {op: $child})
     check("one op.done " .. $case, len(topics("agent.op.done", "op", $child)) == 1)
@@ -476,6 +478,26 @@ try
   prompt($s, "interactive")
   check("interactive stays ready", wait_status($s, "ready") and call("agent.op.get", {op: $s}).v.state == "running")
   close_session($s)
+
+  $parent = start("resumer")
+  $park = register($parent, "restart-parent", {})
+  prompt($parent, "wait")
+  wait_status($parent, "waiting")
+  $child = start("resumer")
+  $aid = call("agent.session.await", {session: $parent, service: "agent", op: $child}).v.await
+  call("agent.await.cancel", {await: $park})
+  prompt($child, "SLOW")
+  wait_status($child, "running")
+  restart()
+  check("restart-ended child resumes waiting parent", wait_await($aid, "delivered") and json_parse(row($aid).outcome).state == "failed" and call("agent.op.get", {op: $child}).v.reason == "agentd_restart")
+  close_session($parent)
+  $prior = call("agent.op.get", {op: $child}).v
+  call("agent.session.resume", {session: $child})
+  wait_status($child, "ready")
+  check("manual resume preserves terminal operation", deep_eq(call("agent.op.get", {op: $child}).v, $prior))
+  close_session($child)
+  sleep(0.1)
+  check("manual resume does not republish final operation", len(topics("agent.op.done", "op", $child)) == 1)
 
   -- Review 5: cancelling a queued deadline consumes its outbox atomically.
   $s = start("resumer")

@@ -358,6 +358,7 @@ on agent.session.new desc "start an agent session {agent, cwd, mode?, additional
         -- Logged but never started: end it in the log.
         try
           $log.session_ended($DB, $id, nil, nil, "spawn_failed", time())
+          op_finished($id)
         catch $m2
           eprint("agentd: " .. $id .. ": could not end the unstarted session in the log: " .. $m2)
         end

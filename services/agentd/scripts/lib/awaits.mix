@@ -465,6 +465,7 @@ end
 
 -- Recover waiting rows without a watch; interrupted outcome turns are
 -- redeliveries, including a crash between sending and receiving the stop.
+$recovered_ends = []
 for each $row in sqlexec($DB, "SELECT id FROM sessions WHERE status = 'waiting' OR id IN (SELECT session FROM await_outbox) OR id IN (SELECT session FROM awaits WHERE state = 'pending')")
   $r = $log.session_row($DB, $row.id)
   $waiting = $r.status != "ended"
@@ -481,15 +482,20 @@ for each $row in sqlexec($DB, "SELECT id FROM sessions WHERE status = 'waiting' 
   await_crashed($r.id)
   if not $waiting then
     await_end($r.id)
-    op_finished($r.id)
+    push($recovered_ends, $r.id)
   elif len(await_pending($r.id)) == 0 and not await_has_outbox($r.id) then
     $S.sessions[$r.id].status = "ended"
     $log.session_ended($DB, $r.id, nil, nil, "redelivery_limit", time())
     await_end($r.id)
-    op_finished($r.id)
+    push($recovered_ends, $r.id)
   else
     await_waiting($r.id, "agentd_restart")
   end
+end
+-- Local delivery may drain a parent's outbox: load every waiting parent
+-- before publishing a recovered child's terminal outcome.
+for each $id in $recovered_ends
+  op_finished($id)
 end
 for each $row in sqlexec($DB, "SELECT DISTINCT service FROM awaits WHERE state = 'pending'")
   await_subscribe($row.service)
