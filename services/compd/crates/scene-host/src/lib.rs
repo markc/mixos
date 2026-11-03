@@ -122,26 +122,19 @@ pub fn service(lp: &mut Loop) -> Serviced {
     let serviced = HOST.with_borrow_mut(|slot| {
         let host = slot.as_mut()?;
         let serviced = host.service_port(lp);
-        for (name, target) in render::targets(&host.host.store, &host.host.panels) {
-            if host
-                .host
-                .store
-                .scene(&name)
-                .is_some_and(|entry| entry.frame_armed)
-            {
-                let key = lp
-                    .inner
-                    .space_state()
-                    .state
-                    .outputs()
-                    .find(|output| output.name() == target.output)
-                    .map(world::state::output_key);
-                if let Some(key) = key {
-                    // Already on the event loop: request only the owning output.
-                    lp.state
-                        .redraw
-                        .request_pipe_silent(&key, RedrawReason::Publish);
-                }
+        for output in render::frame_outputs(&host.host.store, &host.host.panels) {
+            let key = lp
+                .inner
+                .space_state()
+                .state
+                .outputs()
+                .find(|candidate| candidate.name() == output)
+                .map(world::state::output_key);
+            if let Some(key) = key {
+                // Already on the event loop: request only the owning output.
+                lp.state
+                    .redraw
+                    .request_pipe_silent(&key, RedrawReason::Publish);
             }
         }
         Some(serviced)
