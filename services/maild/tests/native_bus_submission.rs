@@ -2,7 +2,8 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
 //! Isolated actual noded → maild ABP submission. Never contacts an external MX.
-//! Run ignored with MIXOS_NATIVE_MAIL_NODED and MIXOS_NATIVE_MAIL_FIXTURE_DIR.
+//! Run ignored with MIXOS_NATIVE_MAIL_NODED. Failures stay under
+//! $TMPDIR/mixos-test-evidence; successful fixtures are removed.
 
 use std::fs::File;
 use std::path::Path;
@@ -24,8 +25,23 @@ impl Drop for Broker {
     }
 }
 
+struct Evidence {
+    root: Option<tempfile::TempDir>,
+    complete: bool,
+}
+
+impl Drop for Evidence {
+    fn drop(&mut self) {
+        if !self.complete {
+            if let Some(root) = self.root.take() {
+                eprintln!("NATIVE_MAIL_ARTIFACTS {}", root.keep().display());
+            }
+        }
+    }
+}
+
 #[test]
-#[ignore = "requires an exact built native broker and persistent fixture directory"]
+#[ignore = "requires an exact built native broker"]
 fn native_bus_submission_replays_across_actors_without_duplicate_mail() -> Result<()> {
     if std::env::var("MIXOS_NATIVE_MAIL_CHILD").as_deref() == Ok("1") {
         return tokio::runtime::Builder::new_multi_thread()
@@ -35,10 +51,13 @@ fn native_bus_submission_replays_across_actors_without_duplicate_mail() -> Resul
             .block_on(run_child());
     }
     let binary = std::env::var("MIXOS_NATIVE_MAIL_NODED")?;
-    let artifact_dir = std::env::var("MIXOS_NATIVE_MAIL_FIXTURE_DIR")?;
+    let artifact_dir = std::env::temp_dir().join("mixos-test-evidence");
     std::fs::create_dir_all(&artifact_dir)?;
-    // Retain failures as well as successes; worker collection owns cleanup.
-    let root = tempfile::tempdir_in(&artifact_dir)?.keep();
+    let mut evidence = Evidence {
+        root: Some(tempfile::tempdir_in(&artifact_dir)?),
+        complete: false,
+    };
+    let root = evidence.root.as_ref().unwrap().path().to_path_buf();
     let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
     let port = listener.local_addr()?.port();
     drop(listener);
@@ -72,12 +91,12 @@ fn native_bus_submission_replays_across_actors_without_duplicate_mail() -> Resul
         .output()?;
     std::fs::write(root.join("maild-test.stdout"), &output.stdout)?;
     std::fs::write(root.join("maild-test.stderr"), &output.stderr)?;
-    println!("NATIVE_MAIL_ARTIFACTS {}", root.display());
     ensure!(
         output.status.success(),
         "native child failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
+    evidence.complete = true;
     Ok(())
 }
 

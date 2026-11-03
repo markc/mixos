@@ -5701,6 +5701,7 @@ name = "mimedb"
 version = "0.1.2"
 dependencies = [
  "libc",
+ "tempfile",
 ]
 
 [[package]]
@@ -5801,6 +5802,7 @@ dependencies = [
  "socket2",
  "structured-zstd",
  "tar",
+ "tempfile",
  "tokio",
  "toml 0.8.23",
  "tracing",
@@ -5902,6 +5904,7 @@ dependencies = [
  "libc",
  "serde",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]
@@ -7391,6 +7394,7 @@ dependencies = [
  "serde",
  "serde_json",
  "settings",
+ "tempfile",
  "thumbs",
  "tokio",
  "toolkit",
@@ -9169,6 +9173,7 @@ dependencies = [
  "serde",
  "serde_json",
  "smithay",
+ "tempfile",
  "tracing-subscriber",
  "uuid",
  "zbus",

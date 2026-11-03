@@ -1,0 +1,38 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$tmp = require("../tools/lib/test_tmp.mix")
+$logs = require("../tools/lib/release_logs.mix")
+$base = env("TMPDIR", "/tmp") .. "/tmp-guard-test-" .. uuid()
+mkdir($base)
+$old = env("TMPDIR", "/tmp")
+export TMPDIR=$base
+try
+  $run = $tmp.start()
+  $tmp.finish($run, false, 0)
+  if is_dir($run.dir) then raise("TEST", "clean run survived") end
+  $run = $tmp.start()
+  write_file($run.dir .. "/.hidden-leak", "x")
+  $caught = false
+  try
+    $tmp.finish($run, false, 0)
+  catch $m, $e
+    $caught = $e.code == "TEST_TMP_LEAK"
+  end
+  if not $caught then raise("TEST", "hidden leak was not rejected") end
+  $run = $tmp.start()
+  mkdir($run.dir .. "/mixos-test-evidence")
+  $tmp.finish($run, true, 0)
+  mkdir($base .. "/receipts")
+  for $i = 1 to 4
+    mkdir($base .. "/mixos-release-gate-" .. to_string($i))
+  end
+  write_file($base .. "/receipts/job.result", $base .. "/mixos-release-gate-1/format.log")
+  write_file($base .. "/mixos-release-gate-2/active.pid", to_string(pid()))
+  $logs.prune($base, $base .. "/receipts", 0)
+  if not is_dir($base .. "/mixos-release-gate-1") then raise("TEST", "receipt log removed") end
+  if not is_dir($base .. "/mixos-release-gate-2") then raise("TEST", "active log removed") end
+  if is_dir($base .. "/mixos-release-gate-3") then raise("TEST", "old log retained") end
+  print("PASS temporary directory guard and log retention")
+finally
+  export TMPDIR=$old
+  remove_dir($base)
+end

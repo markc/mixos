@@ -44,6 +44,8 @@ $logs.prune($log_base, cwd() .. "/.cbc-logs", 19)
 -- are added; a drop below it means the stage's filters stopped matching.
 $E2E_MIN = 18
 mkdir($log_dir, {parents: true})
+write_file($log_dir .. "/active.pid", to_string(pid()))
+try
 $orphans = require("lib/release_orphans.mix")
 $orphan_target = cwd() .. "/target"
 $test_tmp = require("lib/test_tmp.mix")
@@ -331,3 +333,7 @@ stage("package", concat($chroot, [$target_dir .. "/release/mix", "tools/package.
   "--bin-dir", $target_dir .. "/release", "--out", $out, "--package", $selection,
   "--libinput-source", $libinput_source]), 1200)
 print("PACKAGED exact source " .. $commit .. " at " .. $out)
+
+finally
+  remove($log_dir .. "/active.pid")
+end
