@@ -553,6 +553,13 @@ earlier send's reply is never read as the publish's) and returns the rc, so
 hyphenated name whole. Hyphenated service names are the norm on the mesh, so
 the bare form has to work; quoting and <code>$var</code> remain exactly equivalent
 spellings.</p>
+<p>The <strong>command slot</strong> follows the same rule (mix 0.119.0, currently
+Unreleased): <code>send waiter-lab waiter-lab.list</code> and
+<code>emit waiter-lab waiter-lab.changed</code> read the command whole, as do implicit
+commands inside <code>address</code> blocks and expression-form <code>send</code>. Quoted commands
+and <code>$var</code> commands keep their existing meaning.
+Use a space before a negative positional argument: <code>send t a -1</code> still
+sends command <code>a</code> with argument <code>-1</code>; <code>send t a-1</code> now names command <code>a-1</code>.</p>
 <p>The accepted shape is deliberately narrow, and is the
 <a href="/mix/shell-mode/">shell classifier</a>'s tight-hyphen rule for command heads plus
 <code>.</code> for dotted names: an ASCII letter or <code>_</code> first, at least one <code>-</code>,
@@ -582,8 +589,9 @@ quoting is the answer to both:</p>
 multi-dot segment as a bad NUMBER and refused the line
 (<code>ambiguous leading-zero number '007'</code>, an error that never mentioned <code>send</code>);
 it now lexes such a segment as part of the word when it sits in the bare target
-right after <code>send</code>/<code>emit</code>/<code>address</code>, or in an <code>on</code> header (0.113.1). Everywhere else — <code>$x = 007</code>, a
-<code>$var-007</code> target, a hyphenated command — the refusal is unchanged.</p>
+right after <code>send</code>/<code>emit</code>/<code>address</code>, in an <code>on</code> header (0.113.1), or in a
+command slot (0.119.0). Elsewhere — <code>$x = 007</code> or a <code>$var-007</code> target —
+the refusal is unchanged.</p>
 <p>Nothing that worked before changed meaning: the shape <em>requires</em> a hyphen, so
 every target that already resolved still takes the expression path, and a
 bareword is a string, so <code>a - b</code> on two barewords was always the runtime type
