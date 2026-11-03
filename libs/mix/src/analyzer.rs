@@ -3086,6 +3086,7 @@ const PURE_BUILTINS: &[&str] = &[
     "normalize",
     "mix_tokens",
     "before",
+    "after",
     "before_last",
     "after_last",
     "split_once",
