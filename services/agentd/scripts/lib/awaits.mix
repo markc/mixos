@@ -145,10 +145,21 @@ fn await_stopped($id, $success)
     $inflight = len(sqlexec($DB, "SELECT id FROM await_outbox WHERE session = ? AND inflight = 1", [$id])) > 0
     if $inflight then
       await_retry($id, true)
-      -- Other deliveries and setting replies may drain the outbox before
-      -- another turn ends. They must not retry this rejected outcome.
-      $S.sessions[$id].outcome_idle = true
-      await_suspend($id)
+      if not await_has_outbox($id) then
+        -- The cap failed it: nothing is left to hold back.
+        $S.sessions[$id].outcome_idle = false
+        await_suspend($id)
+      elif await_suspending_outbox($id) and $S.sessions[$id].queued == nil then
+        -- An unattended session has no next turn to retry at: end the agent
+        -- back to waiting, and the drain's reopen (a fresh agent) is the
+        -- retry, bounded by the redelivery cap.
+        $S.sessions[$id].suspending = true
+        end_agent($id)
+      else
+        -- Other deliveries and setting replies may drain the outbox before
+        -- another turn ends. They must not retry this rejected outcome.
+        $S.sessions[$id].outcome_idle = true
+      end
       return
     end
   end
