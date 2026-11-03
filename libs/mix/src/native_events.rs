@@ -150,7 +150,13 @@ impl Families {
     /// (evaluator.rs `sleep()`); without the feature it has no caller.
     #[cfg(feature = "tokio-sleep")]
     pub fn any(self) -> bool {
-        self.timers || self.filesystem || self.children || self.net || self.audio || self.sockets || self.processes
+        self.timers
+            || self.filesystem
+            || self.children
+            || self.net
+            || self.audio
+            || self.sockets
+            || self.processes
     }
 
     fn source(self, command: &str) -> bool {
@@ -704,19 +710,28 @@ impl Queue {
                         .or_else(|| ready.first())
                         .cloned();
                     let now = crate::timers::now();
-                    let ready: Vec<_> = p.timers.iter()
+                    let ready: Vec<_> = p
+                        .timers
+                        .iter()
                         .filter(|(_, t)| families.timers && t.next <= now)
-                        .map(|(id, _)| id.clone()).collect();
-                    let timer = ready.iter()
+                        .map(|(id, _)| id.clone())
+                        .collect();
+                    let timer = ready
+                        .iter()
                         .find(|id| p.last_timer.as_ref().is_none_or(|last| *id > last))
-                        .or_else(|| ready.first()).cloned();
+                        .or_else(|| ready.first())
+                        .cloned();
                     let families_n: usize = 6;
                     for step in 0..families_n {
                         let family = (p.turn + step) % families_n;
-                        if family == 5 && let Some(id) = &timer {
+                        if family == 5
+                            && let Some(id) = &timer
+                        {
                             let t = p.timers.get_mut(id).unwrap();
                             let body = t.take(id, now);
-                            if t.period.is_none() { p.timers.remove(id); }
+                            if t.period.is_none() {
+                                p.timers.remove(id);
+                            }
                             p.last_timer = Some(id.clone());
                             p.turn = 0;
                             return Ok(event("timer.tick", body));
@@ -892,11 +907,15 @@ impl NativeEvents {
 impl NativeEvents {
     pub fn timer(&mut self, seconds: f64, tag: String, repeating: bool) -> MixResult<String> {
         if !self.timers_allowed {
-            return Err(refusal("TIMER_EXPR", "timers are not allowed in expression mode"));
+            return Err(refusal(
+                "TIMER_EXPR",
+                "timers are not allowed in expression mode",
+            ));
         }
         self.ensure_open()?;
         crate::timers::period(seconds, repeating)?;
-        self.timers.retain(|id, _| self.queue.pending.lock().unwrap().timers.contains_key(id));
+        self.timers
+            .retain(|id, _| self.queue.pending.lock().unwrap().timers.contains_key(id));
         if self.timers.len() >= 256 {
             return Err(refusal("TIMER_LIMIT", "at most 256 timers per generation"));
         }
@@ -905,15 +924,35 @@ impl NativeEvents {
         let due = crate::timers::now() + seconds;
         let period = repeating.then_some(seconds);
         // Register before the reader can wake the pump.
-        self.queue.pending.lock().unwrap().timers.insert(id.clone(), crate::timers::Pending { tag, next: due, period });
+        self.queue.pending.lock().unwrap().timers.insert(
+            id.clone(),
+            crate::timers::Pending {
+                tag,
+                next: due,
+                period,
+            },
+        );
         match crate::timers::Source::start(self.queue.clone(), due, period) {
-            Ok(source) => { self.timers.insert(id.clone(), source); Ok(id) }
-            Err(e) => { self.queue.pending.lock().unwrap().timers.remove(&id); Err(e) }
+            Ok(source) => {
+                self.timers.insert(id.clone(), source);
+                Ok(id)
+            }
+            Err(e) => {
+                self.queue.pending.lock().unwrap().timers.remove(&id);
+                Err(e)
+            }
         }
     }
 
     pub fn cancel_timer(&mut self, id: &str) -> bool {
-        let live = self.queue.pending.lock().unwrap().timers.remove(id).is_some();
+        let live = self
+            .queue
+            .pending
+            .lock()
+            .unwrap()
+            .timers
+            .remove(id)
+            .is_some();
         self.timers.remove(id);
         self.queue.ready.notify_waiters();
         live
@@ -938,7 +977,8 @@ impl NativeEvents {
         self.pumping.get()
     }
     pub fn has_sources(&mut self) -> bool {
-        self.timers.retain(|id, _| self.queue.pending.lock().unwrap().timers.contains_key(id));
+        self.timers
+            .retain(|id, _| self.queue.pending.lock().unwrap().timers.contains_key(id));
         self.processes.retain(|_, p| !p.finished());
         self.children.retain(|c| !c.finished());
         // Completed socket readers published their terminal record before

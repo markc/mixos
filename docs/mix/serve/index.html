@@ -231,6 +231,7 @@
                         <a href="#no-broker-present">No broker present</a>
                         <a href="#quick-reference">Quick reference</a>
                         <a href="#citizens-as-adapters--bridging-the-bus-to-anything">Citizens as adapters — bridging the Bus to anything</a>
+                        <a href="#clocks">Clocks</a>
                         <a href="#see-also">See also</a>
                     </nav>
                 </div>
@@ -1017,6 +1018,39 @@ any of them — the ARexx broadcast, mesh-wide.</li>
 mesh — with the translation layer written in the same small language you script
 everything else in. A command in; a real-world effect out; the bridge is a handful
 of lines of Mix.</p>
+<h2 id="clocks">Clocks</h2>
+<p><code>after(seconds, tag)</code> registers a one-shot clock; <code>interval(seconds, tag)</code>
+registers a repeating clock with a <strong>0.1 second minimum</strong>. Use the compositor
+frame clock for animation. Both return an opaque id; <code>cancel_timer(id)</code> returns
+true only while that timer is live and discards pending delivery.
+The existing <code>after(string, delimiter)</code> text helper is unchanged. Tags are
+strings; each generation admits up to 256 live timers. Seconds must be finite,
+positive and at most 1e9.</p>
+<pre><code class="language-mix">$sampler = interval(1, "sample")
+on timer.tick
+    if $event.args.id == $sampler then
+        print(read_file("/proc/loadavg"))
+    end
+end
+</code></pre>
+<p>A clock is an event source when the tick <strong>is</strong> the event: sampling something
+with no notification, scheduling, debounce, timeouts, or a timer tied to
+outstanding work. It is polling when it replaces an existing event. For example,
+<code>on timer.tick; print(read_file("/tmp/settings")); end</code> should use <code>fs_watch</code>
+and <code>on fs.changed</code>. Prefer <code>proc.exited</code>, <code>net.changed</code>, props and subscriptions
+when they already describe the change. <code>/proc</code> and <code>/sys</code> reads have no such
+filesystem notification.</p>
+<p><code>$event.args</code> contains <code>{id, tag, missed, due_at, now}</code>. Times use <code>monotonic()</code>
+seconds (CLOCK_MONOTONIC). <code>due_at</code> is the earliest outstanding deadline;
+<code>missed</code> counts additional elapsed deadlines. A busy pump delivers one tick,
+never a catch-up burst. Repeating deadlines stay on their original absolute
+grid, independent of handler time.</p>
+<p>Timers belong to the evaluator generation. Reload candidates may register
+timers, like filesystem watches; their handlers run only after commit. Failed
+candidates close their timers; successful reloads retire the old timers after
+handlers drain. Shutdown closes them too. In a plain script, a live interval
+keeps the pump running until cancelled; a lone <code>after</code> keeps it alive until
+delivery. Timers are unavailable in expression mode.</p>
 <h2 id="see-also">See also</h2>
 <ul>
 <li><a href="/mix/bus/">Bus messaging</a> — <code>send</code> / <code>emit</code> / <code>address</code> / <code>on</code> / <code>reply</code>, topic pub/sub, <code>$result</code>/<code>$rc</code>, the no-broker state machine, <code>async</code>/Class C</li>

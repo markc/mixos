@@ -15,7 +15,6 @@ pub mod fd_hygiene;
 #[cfg(unix)]
 mod fifo_io;
 mod fs_watch;
-mod timers;
 pub mod interrupt;
 pub mod lexer;
 pub mod lint_docs;
@@ -26,6 +25,7 @@ pub mod scope;
 pub mod script_version;
 pub mod shell_observation;
 pub mod stats;
+mod timers;
 pub mod token;
 mod udp;
 pub mod value;

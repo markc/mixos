@@ -2497,12 +2497,24 @@ fn check_timers(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis) {
     walk_all_exprs(stmts, &mut |stmt, expr| {
         if let Expr::FunctionCall { name, args } = expr
             && name == "interval"
-            && let Some(Expr::NumberLiteral(n)) = args.first()
-            && *n < 0.1
+            && let Some(n) = args.first().and_then(|arg| match arg {
+                Expr::NumberLiteral(n) => Some(*n),
+                Expr::UnaryOp { op: UnaryOp::Neg, operand } => match operand.as_ref() {
+                    Expr::NumberLiteral(n) => Some(-n),
+                    _ => None,
+                },
+                _ => None,
+            })
+            && n < 0.1
         {
-            a.diagnostics.push(diag(ctx, "MIX-E1513", Severity::Error, stmt.line,
+            a.diagnostics.push(diag(
+                ctx,
+                "MIX-E1513",
+                Severity::Error,
+                stmt.line,
                 "interval has a 0.1 s floor (TIMER_PERIOD)".into(),
-                Some("use the frame clock for animation".into())));
+                Some("use the frame clock for animation".into()),
+            ));
         }
     });
     walk_stmts(stmts, &mut |stmt| {
@@ -2512,12 +2524,20 @@ fn check_timers(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis) {
             walk_all_exprs(body, &mut |s, expr| {
                 if let Expr::FunctionCall { name, args } = expr
                     && matches!(name.as_str(), "stat" | "read_file" | "exists")
-                    && let Some(Expr::StringLiteral(path) | Expr::EscapedQuoteStringLiteral(path)) = args.first()
-                    && !["/proc", "/sys"].iter().any(|root| path == root || path.starts_with(&format!("{root}/")))
+                    && let Some(Expr::StringLiteral(path) | Expr::EscapedQuoteStringLiteral(path)) =
+                        args.first()
+                    && !["/proc", "/sys"]
+                        .iter()
+                        .any(|root| path == root || path.starts_with(&format!("{root}/")))
                 {
-                    a.diagnostics.push(diag(ctx, "MIX-W2410", Severity::Warning, s.line,
+                    a.diagnostics.push(diag(
+                        ctx,
+                        "MIX-W2410",
+                        Severity::Warning,
+                        s.line,
                         "timer.tick reads a fixed path".into(),
-                        Some("use fs_watch and on fs.changed for paths with notifications".into())));
+                        Some("use fs_watch and on fs.changed for paths with notifications".into()),
+                    ));
                 }
             });
         }
