@@ -1173,7 +1173,10 @@ mod tests {
         (root, path)
     }
 
-    fn signing_fixture(name: &str, mesh_ip: &str) -> (tempfile::TempDir, PathBuf, PathBuf, PathBuf) {
+    fn signing_fixture(
+        name: &str,
+        mesh_ip: &str,
+    ) -> (tempfile::TempDir, PathBuf, PathBuf, PathBuf) {
         let (root, dir) = scratch(name);
         let db = dir.join("secrets.db");
         let inventory = dir.join("inventory.mix");

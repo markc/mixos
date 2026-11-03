@@ -9,13 +9,18 @@ end
 
 fn finish($run, $failed, $allowance)
   $entries = filter(split(run_argv_must(["find", $run.dir, "-mindepth", "1", "-maxdepth", "1", "-printf", "%f\\0"]), "\u{0}"), fn($n) = $n != "")
-  $leaks = filter($entries, fn($e) = $e != "mixos-test-evidence")
+  $evidence = $run.dir .. "/mixos-test-evidence"
+  $leaks = filter($entries, fn($e) = $e != "mixos-test-evidence" or not is_dir($evidence))
   print("TMP before=0 after=" .. to_string(len($leaks)) .. " allowance=" .. to_string($allowance))
   for $entry in $leaks
     print("TMP leftover " .. $entry)
   end
   $bad = $failed or len($leaks) > $allowance
-  if $bad or is_dir($run.dir .. "/mixos-test-evidence") then
+  $has_evidence = false
+  if is_dir($evidence) then
+    $has_evidence = run_argv_must(["find", $evidence, "-mindepth", "1", "-maxdepth", "1", "-print", "-quit"]) != ""
+  end
+  if $bad or $has_evidence then
     mkdir($run.evidence)
     $dest = $run.evidence .. "/" .. basename($run.dir)
     run_argv_must(["mv", "--", $run.dir, $dest])

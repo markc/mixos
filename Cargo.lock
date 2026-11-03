@@ -5560,6 +5560,7 @@ dependencies = [
  "mesh-trust",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
  "tokio-tungstenite 0.26.2",
  "tracing",
@@ -5583,6 +5584,7 @@ dependencies = [
  "rand 0.8.8",
  "rusqlite",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]
@@ -6209,6 +6211,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "sysinfo",
+ "tempfile",
  "tokio",
  "tokio-tungstenite 0.26.2",
  "tracing",
@@ -9830,6 +9833,7 @@ dependencies = [
  "serde_json",
  "smithay",
  "surfaces",
+ "tempfile",
  "uuid",
  "wayland-client",
  "wayland-protocols",

@@ -73,8 +73,13 @@ impl PrivateBus {
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()?;
-        let mut bus = Self { child, address: String::new(), _dir: dir };
-        let stdout = bus.child
+        let mut bus = Self {
+            child,
+            address: String::new(),
+            _dir: dir,
+        };
+        let stdout = bus
+            .child
             .stdout
             .take()
             .ok_or_else(|| anyhow::anyhow!("dbus-daemon has no stdout"))?;

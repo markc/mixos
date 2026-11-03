@@ -7,6 +7,14 @@ if contains(args(), "--format") then
   run_argv_must(["git", "checkout", "-q", "--", "."])
   exit(0)
 end
+if contains(args(), "--extra") then
+  for $pass = 1 to 2
+    $r = run_argv(["/opt/mixos/bin/mix", "tools/test_tmp.mix", "cargo", "test", "--locked", "-p", "mesh-sign", "-p", "mesh", "-p", "noded", "-p", "portald", "-p", "toolkit", "--no-fail-fast"], {timeout: 7200, max_output: 64000000, stderr: "stdout"})
+    print($r.stdout)
+    if not $r.ok then exit(1) end
+  end
+  exit(0)
+end
 if contains(args(), "--mix") then
   for $pass = 1 to 2
     print("MIX PASS " .. to_string($pass))
