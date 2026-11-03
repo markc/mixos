@@ -84,8 +84,9 @@ loop
     out({id: $m.id, result: {protocolVersion: 1, agentInfo: {name: "fake-acp", version: "0"},
       agentCapabilities: $caps, authMethods: []}})
   elif $m.method == "session/resume" or $m.method == "session/load" then
+    if env("FAKE_ACP_REOPEN_DELAY") != "" then sleep(to_number(env("FAKE_ACP_REOPEN_DELAY"))) end
     $sid = $m.params.sessionId
-    if contains($modes, "refuse") then
+    if contains($modes, "refuse") or (env("FAKE_ACP_REFUSE_FILE") != "" and is_file(env("FAKE_ACP_REFUSE_FILE"))) then
       out({id: $m.id, error: {code: -32002, message: "Resource not found: session " .. to_string($sid)}})
     else
       $sessions[$sid] = {mcp: session_mcp($m.params), cwd: $m.params.cwd}
@@ -109,6 +110,20 @@ loop
   elif $m.method == "session/prompt" then
     $sid = $m.params.sessionId
     $t = prompt_text($m.params)
+    if $t == "DIE" then exit(1) end
+    if starts_with($t, "[await]") and env("FAKE_ACP_CRASH_FILE") != "" and is_file(env("FAKE_ACP_CRASH_FILE")) then
+      if read_file(env("FAKE_ACP_CRASH_FILE")) == "once" then run_argv_must(["rm", env("FAKE_ACP_CRASH_FILE")]) end
+      exit(1)
+    end
+    if starts_with($t, "[await]") and env("FAKE_ACP_HOLD_FILE") != "" then
+      while is_file(env("FAKE_ACP_HOLD_FILE"))
+        sleep(0.05)
+      end
+    end
+    if $t == "ERROR" then
+      out({id: $m.id, error: {code: -32000, message: "turn failed"}})
+      continue
+    end
     $stop = "end_turn"
     if contains($t, "MCP") then text($sid, "mcp:" .. $sessions[$sid].mcp) end
     if contains($t, "BIG") then text($sid, repeat("x", 2097152)) end

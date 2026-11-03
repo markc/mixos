@@ -16,7 +16,11 @@ $SCHEMA = [
   "CREATE INDEX IF NOT EXISTS sessions_ended ON sessions(ended_at)",
   "CREATE TABLE IF NOT EXISTS events (session TEXT NOT NULL, seq INTEGER NOT NULL, kind TEXT NOT NULL, at REAL NOT NULL, body TEXT NOT NULL, PRIMARY KEY (session, seq))",
   "CREATE TABLE IF NOT EXISTS commands (scope TEXT NOT NULL, id TEXT NOT NULL, command TEXT NOT NULL, sender TEXT, at REAL NOT NULL, args TEXT, rc INTEGER, receipt TEXT, session TEXT, PRIMARY KEY (scope, id))",
-  "CREATE INDEX IF NOT EXISTS commands_at ON commands(at)"
+  "CREATE INDEX IF NOT EXISTS commands_at ON commands(at)",
+  "CREATE TABLE IF NOT EXISTS awaits (id TEXT PRIMARY KEY, session TEXT NOT NULL, service TEXT NOT NULL, op TEXT NOT NULL, deadline REAL, note TEXT, suspend INTEGER NOT NULL, state TEXT NOT NULL, created REAL NOT NULL, fired REAL, outcome TEXT, delivered REAL, redeliveries INTEGER NOT NULL DEFAULT 0, reason TEXT)",
+  "CREATE INDEX IF NOT EXISTS awaits_pending ON awaits(state, deadline)",
+  "CREATE TABLE IF NOT EXISTS await_outbox (id TEXT PRIMARY KEY, await_id TEXT NOT NULL, session TEXT NOT NULL, fired REAL NOT NULL, outcome TEXT NOT NULL, inflight INTEGER NOT NULL DEFAULT 0, redeliveries INTEGER NOT NULL DEFAULT 0)",
+  "CREATE INDEX IF NOT EXISTS await_outbox_fifo ON await_outbox(fired)"
 ]
 
 -- Columns added after the first schema: what a resume needs (the agent's
@@ -162,7 +166,8 @@ fn view($h, $id)
   $rows = sqlexec($h, "SELECT * FROM sessions WHERE id = ?", [$id])
   if len($rows) == 0 then return nil end
   $r = $rows[0]
-  return {session: $r.id, agent: $r.agent, cwd: $r.cwd, parent: $r.parent, status: "ended",
+  return {session: $r.id, agent: $r.agent, cwd: $r.cwd, parent: $r.parent, status: $r.status,
+    awaits: len(sqlexec($h, "SELECT id FROM awaits WHERE session = ? AND state = 'pending'", [$id])),
     seq: last_seq($h, $id), turn: nil, created_at: $r.created_at, ended_at: $r.ended_at,
     title: $r.title, open_permissions: 0, permission_requests: [], permissions: [],
     exit_code: $r.exit_code, signal: $r.signal, end_reason: $r.end_reason}
@@ -171,7 +176,7 @@ end
 -- Ended sessions, newest first, leaving out the ids in $skip (a map).
 fn recent($h, $limit, $skip)
   $out = []
-  for each $r in sqlexec($h, "SELECT id FROM sessions WHERE status = 'ended' ORDER BY ended_at DESC LIMIT ?", [$limit])
+  for each $r in sqlexec($h, "SELECT id FROM sessions WHERE status IN ('ended', 'waiting') ORDER BY ended_at DESC LIMIT ?", [$limit])
     if $skip[$r.id] == nil then $out = concat($out, [view($h, $r.id)]) end
   end
   return $out
@@ -181,7 +186,7 @@ end
 -- process groups). End their sessions in the log, each with a last event.
 -- Returns the ids ended.
 fn recover($h, $at)
-  $ids = map(sqlexec($h, "SELECT id FROM sessions WHERE status != 'ended'"), fn($r) = $r.id)
+  $ids = map(sqlexec($h, "SELECT id FROM sessions WHERE status NOT IN ('ended', 'waiting')"), fn($r) = $r.id)
   for each $id in $ids
     $seq = last_seq($h, $id) + 1
     append($h, $id, $seq, "ended", json_encode({kind: "ended", session: $id, seq: $seq, reason: "agentd_restart"}), $at)
@@ -224,6 +229,8 @@ fn expire($h, $cutoff)
   $ids = map(sqlexec($h, "SELECT id FROM sessions WHERE status = 'ended' AND ended_at < ?", [$cutoff]), fn($r) = $r.id)
   for each $id in $ids
     sqlexec($h, "DELETE FROM events WHERE session = ?", [$id])
+    sqlexec($h, "DELETE FROM await_outbox WHERE session = ?", [$id])
+    sqlexec($h, "DELETE FROM awaits WHERE session = ?", [$id])
     sqlexec($h, "DELETE FROM commands WHERE scope = ? OR (scope = 'new' AND session = ?)", [$id, $id])
     sqlexec($h, "DELETE FROM sessions WHERE id = ?", [$id])
   end

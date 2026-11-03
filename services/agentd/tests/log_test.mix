@@ -162,6 +162,15 @@ check("upgrade drops old refusal receipts but keeps success and interrupted inte
   $log.command_get($h, "dddd4444", "old-interrupted").rc == nil)
 sqlclose($h)
 
+$h = $log.open($old)
+sqlexec($h, "UPDATE sessions SET status = 'waiting' WHERE id = 'dddd4444'")
+$seq = $log.last_seq($h, "dddd4444")
+check("recovery leaves waiting session and transcript alone", len($log.recover($h, time())) == 0 and $log.session_row($h, "dddd4444").status == "waiting" and $log.last_seq($h, "dddd4444") == $seq)
+check("log view and recent expose waiting", $log.view($h, "dddd4444").status == "waiting" and $log.recent($h, 10, {})[0].status == "waiting")
+check("expiry preserves waiting sessions", len($log.expire($h, time() + 86400)) == 0 and $log.known($h, "dddd4444"))
+check("older log gains awaits and outbox tables", len(sqlexec($h, "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('awaits', 'await_outbox')")) == 2)
+sqlclose($h)
+
 run_argv_must(["rm", "-rf", $tmp])
 $failed = len(filter($results, fn($r) = not $r.ok))
 print(to_string(len($results) - $failed) .. "/" .. to_string(len($results)) .. " passed")
