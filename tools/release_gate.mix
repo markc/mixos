@@ -38,7 +38,8 @@ if $release.schema != 1 then raise("RELEASE_SCHEMA", "unsupported release_packag
 $log_base = env("TMPDIR", "/tmp")
 $log_dir = $log_base .. "/mixos-release-gate-" .. slice($commit, 0, 12) .. "-" .. uuid()
 $logs = require("lib/release_logs.mix")
-$logs.prune($log_base, cwd() .. "/.cbc-logs", 19)
+-- cbc-build receipts live beside the checkouts, in the worker root.
+$logs.prune($log_base, dirname(cwd()) .. "/.cbc-logs", 19)
 -- Term's native-session E2E tests run here (18 on 2026-10-23: 19 in the two
 -- modules, less the privileged multi-UID fixture). Raise this when tests
 -- are added; a drop below it means the stage's filters stopped matching.
