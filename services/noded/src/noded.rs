@@ -1005,6 +1005,13 @@ async fn serve(
     // correlator on a would-refuse (the claimed `source_node` is unverified
     // there) and the input to the same-node-origin classifier the enforce gate
     // (2-c-2b) uses — never the proof, only the local-vs-network boundary.
+    // Nagle off on every accepted socket: a reply or delivery written in two
+    // parts otherwise waits on the peer's delayed ACK (40 ms on Linux).
+    let listener = axum::serve::ListenerExt::tap_io(listener, |tcp| {
+        if let Err(error) = tcp.set_nodelay(true) {
+            tracing::debug!(%error, "TCP_NODELAY not set on an accepted socket");
+        }
+    });
     let tcp_server = axum::serve(
         listener,
         app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
