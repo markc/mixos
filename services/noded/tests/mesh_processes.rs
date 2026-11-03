@@ -22,6 +22,7 @@ use std::{
 struct Fixture {
     root: PathBuf,
     children: Vec<Child>,
+    _directory: tempfile::TempDir,
 }
 
 impl Drop for Fixture {
@@ -31,9 +32,12 @@ impl Drop for Fixture {
             let _ = child.wait();
         }
         if std::thread::panicking() {
-            eprintln!("mesh process evidence retained at {}", self.root.display());
-        } else {
-            fs::remove_dir_all(&self.root).expect("remove owned fixture root");
+            let evidence = std::env::temp_dir().join("mixos-test-evidence");
+            let dest = evidence.join(self.root.file_name().unwrap());
+            match fs::create_dir_all(&evidence).and_then(|()| fs::rename(&self.root, &dest)) {
+                Ok(()) => eprintln!("mesh process evidence retained at {}", dest.display()),
+                Err(error) => eprintln!("cannot retain mesh process evidence: {error}"),
+            }
         }
     }
 }
@@ -80,14 +84,12 @@ async fn connect(
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn two_production_brokers_route_verified_native_clients() {
     tokio::time::timeout(Duration::from_secs(30), async {
-        let root = std::env::temp_dir().join(format!(
-            "noded-mesh-{}-{:032x}", std::process::id(), rand::random::<u128>()
-        ));
-        fs::create_dir(&root).unwrap();
+        let directory = tempfile::Builder::new().prefix("nm-").tempdir().unwrap();
+        let root = directory.path().to_path_buf();
         // Native ingress serves separate UIDs and refuses non-traversable
         // existing ancestors. No directory listing or write access is granted.
         fs::set_permissions(&root, fs::Permissions::from_mode(0o711)).unwrap();
-        let mut fixture = Fixture { root, children: Vec::new() };
+        let mut fixture = Fixture { root, children: Vec::new(), _directory: directory };
         let names = ["alpha", "beta"];
         let ips = ["127.0.0.2", "127.0.0.3"];
         let reservations: Vec<_> = ips.iter().map(|ip| TcpListener::bind((*ip, 0)).unwrap()).collect();

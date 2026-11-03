@@ -2,7 +2,8 @@
 -- Each invocation owns its root; shared /tmp is never swept.
 fn start()
   $base = env("TMPDIR", "/tmp")
-  $dir = $base .. "/mixos-test-" .. uuid()
+  -- Leave room for Unix-domain fixture sockets (sun_path is only 108 bytes).
+  $dir = $base .. "/mt-" .. slice(replace(uuid(), "-", ""), 0, 16)
   mkdir($dir, {parents: false})
   return {dir: realpath($dir), evidence: $base .. "/mixos-test-evidence"}
 end
