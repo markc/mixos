@@ -208,7 +208,7 @@
                 <div class="panel-title">On this page</div>
                 <div class="panel-content">
                     <nav id="toc-nav">
-                        <div class="toc-empty">No sections on this page</div>
+                        <a href="#test-temporary-files">Test temporary files</a>
                     </nav>
                 </div>
             </div>
@@ -358,6 +358,51 @@ events. Ordinary builds keep live switching. <code>tools/debug_gate.mix</code> r
 the CBC release microbenchmark and verifies the compile-time cap; its
 allocator and resource tests check disabled-event allocations, helper thread
 counts, lazy sockets and max-level hints.</p>
+<h2 id="test-temporary-files">Test temporary files</h2>
+<p>Run commands through <code>mix tools/test_tmp.mix COMMAND ARG...</code> on a build
+worker. It supplies a fresh private <code>TMPDIR</code>, counts immediate entries
+(including hidden names), prints <code>TMP before=0 after=N</code>, and fails if any
+ordinary entry survives. The release gate applies the same check after its
+stage process cleanup. Concurrent runs have different roots.</p>
+<p>Hold a <code>tempfile::TempDir</code> for the whole fixture lifetime, including any
+background worker. A returned path needs a returned owner too. Mix fixtures
+use <code>finally</code>; process fixtures acquire their kill-and-wait guard immediately
+after spawning, before reading readiness. Neither unwinding nor <code>finally</code>
+can recover from SIGKILL or a machine crash.</p>
+<p>Failed runs and explicitly retained failure diagnostics belong under
+<code>$TMPDIR/mixos-test-evidence/</code>. Successful ordinary fixtures are removed;
+agentd integration logs and the native-mail fixture retain failed evidence.
+The wrapper moves failed private roots beneath its parent's evidence root.
+Operators may age out that root after collecting diagnostics; it contains
+no release gate logs or receipts. Empty evidence directories do not cause
+successful runs to be retained. A literal <code>/tmp</code> in a fixture bypasses the
+private-root check, so creators must honour <code>TMPDIR</code>.</p>
+<p>Release logs use <code>$TMPDIR/mixos-release-gate-*</code>. Before creating a run, the
+gate keeps the newest 19 existing directories (20 including the new run),
+active runs, and directories referenced by retained <code>.cbc-logs</code> receipts or
+their stdout logs. A stale <code>active.pid</code> does not protect a dead process.</p>
+<p>The November 2026 leak audit found these creator families:</p>
+<table><thead><tr><th>Prefix</th><th>Creator</th><th>Original survival mechanism</th></tr></thead><tbody>
+<tr><td><code>mix-*</code>, <code>mix_*</code></td><td><code>libs/mix/src/builtins.rs</code>, <code>libs/mix/tests/{archive,require_modules,script_path,mime_type,lint_require_calls,head_tail,member_call_extension}.rs</code></td><td>Path-only helpers with no owner; some tests cleaned only after assertions</td></tr>
+<tr><td><code>workshop*</code></td><td><code>apps/workshop/tests/shell.rs</code> egui harness runtime</td><td>Directory never attached to the rig's lifetime</td></tr>
+<tr><td><code>busviewer*</code></td><td>Former <code>apps/busviewer/tests/shell.rs</code>, renamed to Workshop</td><td>Same runtime fixture; historical name</td></tr>
+<tr><td><code>prefs*</code></td><td><code>apps/prefs/tests/{pages,shell}.rs</code> egui harness runtime</td><td>No cleanup; per-process paths also shared between rigs</td></tr>
+<tr><td><code>mimedb*</code></td><td><code>libs/mimedb/src/lib.rs::tests::mime_dir</code></td><td>No cleanup, including the oversized database fixture</td></tr>
+<tr><td><code>testkit*</code></td><td><code>services/compd/crates/testkit/src/harness.rs::isolate_config</code></td><td>Once-only process config with no final owner</td></tr>
+<tr><td><code>compd*</code>, <code>compd-doc*</code></td><td>compd model preference tests, slots persistence/sdnotify tests, testkit keymap and preview fixtures</td><td>Path-only helpers or unconditional preview PNG retention</td></tr>
+<tr><td><code>scene*</code></td><td><code>services/compd/crates/scene-host/src/conf.rs</code>; panel-template Mix test</td><td>Path-only helper; panel fixture had no final cleanup</td></tr>
+<tr><td><code>mesh*</code></td><td><code>cli/mesh-sign/src/main.rs::tests::{scratch,signing_fixture}</code></td><td>Path-only helpers without cleanup</td></tr>
+<tr><td><code>dbus*</code></td><td>Toolkit chooser's private <code>dbus-daemon</code> fixture</td><td>Daemon chose a global socket; now explicitly inside an owned directory</td></tr>
+<tr><td><code>agentd*</code>, <code>agent-cli*</code></td><td><code>services/agentd/tests/{agentd,agentd_resume,agent_cli}_test.mix</code></td><td>Failure evidence deliberately retained outside a common root</td></tr>
+<tr><td><code>noded*</code></td><td><code>services/noded/src/authority.rs::tests::tmpdir</code></td><td>Removes the previous fixture before a test, never after it</td></tr>
+<tr><td><code>mixos-release-gate-*</code></td><td><code>tools/release_gate.mix</code></td><td>Log retention without pruning</td></tr>
+</tbody></table>
+<p><code>libs/test-broker/src/lib.rs::Broker</code> already joins its worker before removing
+its root. <code>tests/lib/private_bus.mix</code> retires brokers using recorded process
+identity; the calling test owns its directory. These are distinct from
+path-only helpers. Historical <code>maild_ops*</code> and <code>compose*</code> names could not be
+matched to the available source/history; a full filename or saved listing
+is needed to attribute them rather than guess.</p>
         </article>
         <p class="doc-source"><a href="/docs/dev/debugging.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>

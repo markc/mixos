@@ -1,5 +1,6 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Run only on CBC, through cbc-build.mix --commit SHA.
+$mix = mixos_path("prefix") .. "/bin/mix"
 if contains(args(), "--format") then
   run_argv_must(["cargo", "fmt"], {timeout: 300})
   run_argv_must(["cargo", "metadata", "--format-version", "1"], {timeout: 300, max_output: 64000000})
@@ -7,9 +8,15 @@ if contains(args(), "--format") then
   run_argv_must(["git", "checkout", "-q", "--", "."])
   exit(0)
 end
+if contains(args(), "--mail") then
+  $r = run_argv([$mix, "tools/test_tmp.mix", "cargo", "test", "--locked", "-p", "maild", "--test", "native_bus_submission"], {timeout: 7200, max_output: 64000000, stderr: "stdout"})
+  print($r.stdout)
+  if not $r.ok then exit(1) end
+  exit(0)
+end
 if contains(args(), "--extra") then
   for $pass = 1 to 2
-    $r = run_argv(["/opt/mixos/bin/mix", "tools/test_tmp.mix", "cargo", "test", "--locked", "-p", "mesh-sign", "-p", "mesh", "-p", "noded", "-p", "portald", "-p", "toolkit", "--no-fail-fast"], {timeout: 7200, max_output: 64000000, stderr: "stdout"})
+    $r = run_argv([$mix, "tools/test_tmp.mix", "cargo", "test", "--locked", "-p", "mesh-sign", "-p", "mesh", "-p", "noded", "-p", "portald", "-p", "toolkit", "--no-fail-fast"], {timeout: 7200, max_output: 64000000, stderr: "stdout"})
     print($r.stdout)
     if not $r.ok then exit(1) end
   end
@@ -18,8 +25,8 @@ end
 if contains(args(), "--mix") then
   for $pass = 1 to 2
     print("MIX PASS " .. to_string($pass))
-    for $script in ["tests/test_tmp_test.mix", "services/agentd/tests/agent_test.mix", "services/agentd/tests/log_test.mix", "services/compd/tests/scene_template_test.mix"]
-      $r = run_argv(["/opt/mixos/bin/mix", "tools/test_tmp.mix", "/opt/mixos/bin/mix", $script], {timeout: 600, max_output: 64000000, stderr: "stdout"})
+    for $script in ["tests/test_tmp_test.mix", "services/agentd/tests/agent_test.mix", "services/agentd/tests/log_test.mix", "services/agentd/tests/agent_cli_test.mix", "services/agentd/tests/agentd_test.mix", "services/agentd/tests/agentd_resume_test.mix", "services/compd/tests/scene_template_test.mix"]
+      $r = run_argv([$mix, "tools/test_tmp.mix", $mix, $script], {timeout: 600, max_output: 64000000, stderr: "stdout"})
       print($r.stdout)
       if not $r.ok then exit(1) end
     end
@@ -28,7 +35,7 @@ if contains(args(), "--mix") then
 end
 for $pass = 1 to 2
   print("PASS " .. to_string($pass))
-  $r = run_argv(["/opt/mixos/bin/mix", "tools/test_tmp.mix", "cargo", "test", "--locked", "-p", "mimedb", "-p", "workshop", "-p", "prefs", "-p", "testkit", "-p", "mix", "-p", "model", "-p", "slots", "-p", "scene-host", "--no-fail-fast"], {timeout: 7200, max_output: 64000000, stderr: "stdout"})
+  $r = run_argv([$mix, "tools/test_tmp.mix", "cargo", "test", "--locked", "-p", "mimedb", "-p", "workshop", "-p", "prefs", "-p", "testkit", "-p", "mix", "-p", "model", "-p", "slots", "-p", "scene-host", "--no-fail-fast"], {timeout: 7200, max_output: 64000000, stderr: "stdout"})
   print($r.stdout)
   if not $r.ok then exit(1) end
 end

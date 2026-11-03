@@ -148,3 +148,56 @@ events. Ordinary builds keep live switching. `tools/debug_gate.mix` runs
 the CBC release microbenchmark and verifies the compile-time cap; its
 allocator and resource tests check disabled-event allocations, helper thread
 counts, lazy sockets and max-level hints.
+
+## Test temporary files
+
+Run commands through `mix tools/test_tmp.mix COMMAND ARG...` on a build
+worker. It supplies a fresh private `TMPDIR`, counts immediate entries
+(including hidden names), prints `TMP before=0 after=N`, and fails if any
+ordinary entry survives. The release gate applies the same check after its
+stage process cleanup. Concurrent runs have different roots.
+
+Hold a `tempfile::TempDir` for the whole fixture lifetime, including any
+background worker. A returned path needs a returned owner too. Mix fixtures
+use `finally`; process fixtures acquire their kill-and-wait guard immediately
+after spawning, before reading readiness. Neither unwinding nor `finally`
+can recover from SIGKILL or a machine crash.
+
+Failed runs and explicitly retained failure diagnostics belong under
+`$TMPDIR/mixos-test-evidence/`. Successful ordinary fixtures are removed;
+agentd integration logs and the native-mail fixture retain failed evidence.
+The wrapper moves failed private roots beneath its parent's evidence root.
+Operators may age out that root after collecting diagnostics; it contains
+no release gate logs or receipts. Empty evidence directories do not cause
+successful runs to be retained. A literal `/tmp` in a fixture bypasses the
+private-root check, so creators must honour `TMPDIR`.
+
+Release logs use `$TMPDIR/mixos-release-gate-*`. Before creating a run, the
+gate keeps the newest 19 existing directories (20 including the new run),
+active runs, and directories referenced by retained `.cbc-logs` receipts or
+their stdout logs. A stale `active.pid` does not protect a dead process.
+
+The November 2026 leak audit found these creator families:
+
+| Prefix | Creator | Original survival mechanism |
+| --- | --- | --- |
+| `mix-*`, `mix_*` | `libs/mix/src/builtins.rs`, `libs/mix/tests/{archive,require_modules,script_path,mime_type,lint_require_calls,head_tail,member_call_extension}.rs` | Path-only helpers with no owner; some tests cleaned only after assertions |
+| `workshop*` | `apps/workshop/tests/shell.rs` egui harness runtime | Directory never attached to the rig's lifetime |
+| `busviewer*` | Former `apps/busviewer/tests/shell.rs`, renamed to Workshop | Same runtime fixture; historical name |
+| `prefs*` | `apps/prefs/tests/{pages,shell}.rs` egui harness runtime | No cleanup; per-process paths also shared between rigs |
+| `mimedb*` | `libs/mimedb/src/lib.rs::tests::mime_dir` | No cleanup, including the oversized database fixture |
+| `testkit*` | `services/compd/crates/testkit/src/harness.rs::isolate_config` | Once-only process config with no final owner |
+| `compd*`, `compd-doc*` | compd model preference tests, slots persistence/sdnotify tests, testkit keymap and preview fixtures | Path-only helpers or unconditional preview PNG retention |
+| `scene*` | `services/compd/crates/scene-host/src/conf.rs`; panel-template Mix test | Path-only helper; panel fixture had no final cleanup |
+| `mesh*` | `cli/mesh-sign/src/main.rs::tests::{scratch,signing_fixture}` | Path-only helpers without cleanup |
+| `dbus*` | Toolkit chooser's private `dbus-daemon` fixture | Daemon chose a global socket; now explicitly inside an owned directory |
+| `agentd*`, `agent-cli*` | `services/agentd/tests/{agentd,agentd_resume,agent_cli}_test.mix` | Failure evidence deliberately retained outside a common root |
+| `noded*` | `services/noded/src/authority.rs::tests::tmpdir` | Removes the previous fixture before a test, never after it |
+| `mixos-release-gate-*` | `tools/release_gate.mix` | Log retention without pruning |
+
+`libs/test-broker/src/lib.rs::Broker` already joins its worker before removing
+its root. `tests/lib/private_bus.mix` retires brokers using recorded process
+identity; the calling test owns its directory. These are distinct from
+path-only helpers. Historical `maild_ops*` and `compose*` names could not be
+matched to the available source/history; a full filename or saved listing
+is needed to attribute them rather than guess.

@@ -216,7 +216,25 @@ finally
     catch $m
     end
   end
-  if $bus != nil then $pb.stop($bus) end
+  try
+  -- Detached citizens must retire before fixtures are removed.
+  for $child in $pids
+    for $attempt = 1 to 40
+      if not process_alive($child) then break end
+      sleep(0.05)
+    end
+    if process_alive($child) then
+      try kill($child, 9) catch $m end
+    end
+    for $attempt = 1 to 40
+      if not process_alive($child) then break end
+      sleep(0.05)
+    end
+    if process_alive($child) then raise("TEST_CHILD", "detached citizen did not retire") end
+  end
+  finally
+    if $bus != nil then $pb.stop($bus) end
+  end
 end
 
 $failed = filter($results, fn($r) = not $r.ok)
