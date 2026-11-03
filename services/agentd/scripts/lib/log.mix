@@ -48,6 +48,9 @@ fn open($path)
   for each $col in $SESSION_COLUMNS
     if not contains($have, before($col, " ")) then sqlexec($h, "ALTER TABLE sessions ADD COLUMN " .. $col) end
   end
+  -- Before rc-0-only receipts, refusals were durable too. Permit their
+  -- retries after upgrade, retaining successes and interrupted intents.
+  sqlexec($h, "DELETE FROM commands WHERE rc IS NOT NULL AND rc <> 0")
   return $h
 end
 
