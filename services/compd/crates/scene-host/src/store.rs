@@ -65,6 +65,8 @@ pub struct SceneEntry {
     // Set by a loader's JSON load envelope; zero fences a stopped behaviour.
     // Authored citizen metadata never grants model-write authority.
     pub(crate) model_generation: Option<u64>,
+    pub(crate) frame_armed: bool,
+    pub(crate) frame_seq: u64,
 }
 
 impl SceneEntry {
@@ -174,6 +176,29 @@ pub fn changed_wire(body: &Value) -> String {
 }
 
 impl SceneStore {
+    /// Coalescing, one-shot request. Authored citizen is the event destination;
+    /// the loader owner is deliberately not the behaviour's identity.
+    pub(crate) fn arm_frame(&mut self, name: &str, caller: &str) -> Result<(), Value> {
+        let entry = self.scenes.get_mut(name).ok_or_else(||
+            json!({"error_code":"NOT_FOUND", "scene":name}))?;
+        if !entry.document.citizen.is_empty() && entry.document.citizen != caller {
+            return Err(json!({"error_code":"SCENE_FRAME_OWNER", "scene":name}));
+        }
+        entry.frame_armed = true;
+        Ok(())
+    }
+
+    pub(crate) fn frame_event(&mut self, name: &str, shown: bool, at: f64, interval: f64) -> Option<(String, Value)> {
+        let entry = self.scenes.get_mut(name)?;
+        if !shown || entry.mounted.is_none() || !entry.frame_armed {
+            return None;
+        }
+        entry.frame_armed = false;
+        entry.frame_seq += 1;
+        Some((entry.document.citizen.clone(), json!({"scene":name,
+            "seq":entry.frame_seq, "presented_at":at, "interval":interval})))
+    }
+
     pub fn scene(&self, name: &str) -> Option<&SceneEntry> {
         self.scenes.get(name)
     }
@@ -629,7 +654,8 @@ impl SceneStore {
                 }
                 Ok((json!({"scene":name,"unloaded":true}), None))
             }
-            SceneCommand::Layout
+            SceneCommand::Frame
+            | SceneCommand::Layout
             | SceneCommand::List
             | SceneCommand::DialogShow
             | SceneCommand::DialogHide
@@ -860,6 +886,8 @@ impl SceneStore {
         let model_generation = old.as_ref().and_then(|old| old.model_generation);
         let visible = old.as_ref().is_some_and(|old| old.visible);
         let applied = old.as_ref().map_or(0, |old| old.applied);
+        let frame_armed = old.as_ref().is_some_and(|old| old.frame_armed);
+        let frame_seq = old.as_ref().map_or(0, |old| old.frame_seq);
         let mounted = old.and_then(|old| old.mounted);
         self.scenes.insert(
             tree.name.clone(),
@@ -875,6 +903,8 @@ impl SceneStore {
                 owner,
                 visible,
                 model_generation,
+                frame_armed,
+                frame_seq,
             },
         );
         Ok((reply, Some(summary)))

@@ -663,6 +663,7 @@
     {name:"shell.scene.load", owner:"compd", version:"0.2.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"shell.scene.validate", owner:"compd", version:"0.2.0", status:"accepted", class:"query", schema:"pending"},
     {name:"shell.scene.patch", owner:"compd", version:"0.2.0", status:"accepted", class:"intent", schema:"pending"},
+    {name:"shell.scene.frame", owner:"compd", version:"0.2.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"shell.scene.get", owner:"compd", version:"0.2.0", status:"accepted", class:"query", schema:"pending"},
     {name:"shell.scene.describe", owner:"compd", version:"0.2.0", status:"accepted", class:"query", schema:"pending"},
     {name:"shell.scene.unload", owner:"compd", version:"0.2.0", status:"accepted", class:"intent", schema:"pending"},
