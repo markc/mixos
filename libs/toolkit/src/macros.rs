@@ -376,7 +376,9 @@ impl State {
         }
         self.work(move |roots, app| {
             let path = if entry.tier.is_user() {
-                roots.read(&entry)?;
+                roots
+                    .read(&entry)
+                    .map_err(|e| path_error("macros-open-error", &entry.path, e))?;
                 entry.path
             } else {
                 let tier = if entry.tier.is_app() {
