@@ -243,11 +243,15 @@ async fn late_choose_reply_is_cancelled_after_an_in_flight_sweep_acknowledges() 
     assert_eq!(f.cancelled.recv().await.unwrap(), "inc-1");
     {
         let mut registry = f.bridge.registry.lock().await;
-        f.bridge.apply(&f.server, &mut registry, 1, Event::Sweep).await;
+        f.bridge
+            .apply(&f.server, &mut registry, 1, Event::Sweep)
+            .await;
     }
     // The provider has processed the sweep but its acknowledgement is still
     // in flight when the held choose finally creates/returns the window.
-    f.bridge.reply(&f.server, generation, 1, Some(json!({"request":"inc-1"}))).await;
+    f.bridge
+        .reply(&f.server, generation, 1, Some(json!({"request":"inc-1"})))
+        .await;
     f.provider.respond(&command, 0, "{}").await.unwrap();
     sweep.await.unwrap();
     f.cancelled().await;

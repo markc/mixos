@@ -154,36 +154,39 @@ impl Bridge {
                 return None;
             }
             cancel.in_flight = true;
+            cancel.reissue = false;
             cancel.attempts += 1;
         }
         let this = self.clone();
-        Some(tokio::spawn(async move { loop {
-            // Unknown, expired and already ended requests acknowledge with rc 0.
-            // Request ids include the incarnation, so retries across reconnects
-            // cannot cancel a new chooser that happens to reuse a sequence.
-            let acknowledged = this
-                .call("files.choose.cancel", json!({"request":request}))
-                .await
-                .is_some();
-            let mut pending = this.cancels.lock().unwrap();
-            if acknowledged && pending.get(&request).is_some_and(|c| c.reissue) {
-                let cancel = pending.get_mut(&request).unwrap();
-                cancel.reissue = false;
-                cancel.attempts = 1;
-                continue;
-            }
-            if acknowledged {
-                pending.remove(&request);
-            } else if let Some(cancel) = pending.get_mut(&request) {
-                if cancel.attempts >= CANCEL_ATTEMPTS {
-                    tracing::warn!(%request, "files cancel retry budget exhausted");
-                    pending.remove(&request);
-                } else {
-                    cancel.in_flight = false;
+        Some(tokio::spawn(async move {
+            loop {
+                // Unknown, expired and already ended requests acknowledge with rc 0.
+                // Request ids include the incarnation, so retries across reconnects
+                // cannot cancel a new chooser that happens to reuse a sequence.
+                let acknowledged = this
+                    .call("files.choose.cancel", json!({"request":request}))
+                    .await
+                    .is_some();
+                let mut pending = this.cancels.lock().unwrap();
+                if acknowledged && pending.get(&request).is_some_and(|c| c.reissue) {
+                    let cancel = pending.get_mut(&request).unwrap();
+                    cancel.reissue = false;
+                    cancel.attempts = 1;
+                    continue;
                 }
+                if acknowledged {
+                    pending.remove(&request);
+                } else if let Some(cancel) = pending.get_mut(&request) {
+                    if cancel.attempts >= CANCEL_ATTEMPTS {
+                        tracing::warn!(%request, "files cancel retry budget exhausted");
+                        pending.remove(&request);
+                    } else {
+                        cancel.in_flight = false;
+                    }
+                }
+                break;
             }
-            break;
-        }}))
+        }))
     }
 
     // The lock covers transitions, signal enqueueing and object removal. Thus

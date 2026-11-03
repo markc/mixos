@@ -501,7 +501,9 @@ async fn portal_native_stack_mapping_lifecycle_and_loss() {
         let old = provider.chosen().await.0;
         close(&caller, &path(&caller, "reuse")).await.unwrap();
         if !held {
-            provider.cancelled(&old, concat!("close/reuse at line ", line!())).await;
+            provider
+                .cancelled(&old, concat!("close/reuse at line ", line!()))
+                .await;
         }
         begin(&caller, "SaveFile", "reuse", Options::new())
             .await
@@ -509,7 +511,9 @@ async fn portal_native_stack_mapping_lifecycle_and_loss() {
         let new = provider.chosen().await.0;
         if held {
             provider.control.send(Control::Release).unwrap();
-            provider.cancelled(&old, concat!("close/reuse at line ", line!())).await;
+            provider
+                .cancelled(&old, concat!("close/reuse at line ", line!()))
+                .await;
         }
         provider
             .control
@@ -531,9 +535,13 @@ async fn portal_native_stack_mapping_lifecycle_and_loss() {
         .await
         .unwrap();
     let new = provider.chosen().await.0;
-    provider.cancelled(&old, concat!("close/reuse at line ", line!())).await;
+    provider
+        .cancelled(&old, concat!("close/reuse at line ", line!()))
+        .await;
     provider.control.send(Control::Release).unwrap();
-    provider.cancelled(&old, concat!("close/reuse at line ", line!())).await;
+    provider
+        .cancelled(&old, concat!("close/reuse at line ", line!()))
+        .await;
     provider
         .control
         .send(Control::Finish(new, 0, true))
@@ -547,7 +555,9 @@ async fn portal_native_stack_mapping_lifecycle_and_loss() {
         .unwrap();
     let id = provider.chosen().await.0;
     leaving.close().await.unwrap();
-    provider.cancelled(&id, concat!("disconnect/deadline at line ", line!())).await;
+    provider
+        .cancelled(&id, concat!("disconnect/deadline at line ", line!()))
+        .await;
 
     let leaving = connection(address.trim()).await;
     begin(&leaving, "OpenFile", "leave_sending", label("hold"))
@@ -556,7 +566,9 @@ async fn portal_native_stack_mapping_lifecycle_and_loss() {
     let id = provider.chosen().await.0;
     leaving.close().await.unwrap();
     provider.control.send(Control::Release).unwrap();
-    provider.cancelled(&id, concat!("disconnect/deadline at line ", line!())).await;
+    provider
+        .cancelled(&id, concat!("disconnect/deadline at line ", line!()))
+        .await;
 
     // A missed publication is recovered from result; an unknown result fails.
     for known in [true, false] {
@@ -584,7 +596,9 @@ async fn portal_native_stack_mapping_lifecycle_and_loss() {
     let id = provider.chosen().await.0;
     response(&mut stream, 2).await;
     provider.control.send(Control::Release).unwrap();
-    provider.cancelled(&id, concat!("disconnect/deadline at line ", line!())).await;
+    provider
+        .cancelled(&id, concat!("disconnect/deadline at line ", line!()))
+        .await;
     quiet(&mut stream).await;
 
     // Losing the native Bus is final for the old Request. Real DOpus exits on
