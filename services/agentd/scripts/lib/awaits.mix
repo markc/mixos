@@ -46,6 +46,10 @@ end
 
 on agent.op.cancel desc "close a session operation and cancel its awaits {op}"
   $id = body().op
+  if sender_session(sender()) == $id then
+    fail("AGENT_SELF", "a session's own agent cannot act on that session")
+    return
+  end
   $out = op_view($id)
   $changed = $out.state == "running" and not $S.sessions[$id].explicit_close
   if $changed then op_close($id) end

@@ -1091,7 +1091,7 @@ fn session_exited($id, $exit_code, $signal, $error_code)
     $S.sessions[$id].turn = nil
     await_end($id)
     $reopen = $S.sessions[$id].reopen
-    if $reopen != nil and not $reopen.done then
+    if $reopen != nil and not $reopen.done and not $S.sessions[$id].explicit_close then
       -- The resume failed (refused, or the agent died first): the session
       -- goes back to ended exactly as it was.
       $S.sessions[$id].replaying = false
