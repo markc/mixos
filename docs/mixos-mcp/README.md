@@ -79,6 +79,11 @@ Each name below is exposed as `mcp__mixos__<name>` in Claude Code.
 - `context_search`, `index_workspace`, `knowledge_digest`
 - `docs_feedback`, `journal_feedback`, `memory_feedback`, `journal_supersede`
 - `mix_execute`, `mcp_status`
+- `await_op {service, op, deadline_s?, note?}` registers a suspending await
+  for `MIXOS_AGENT_SESSION`. It returns the await id and tells the agent to
+  end its turn now: agentd resumes the session with the outcome; do not poll
+  or sleep. Outside an agentd session it refuses. A deadline sends a notice
+  but leaves the await pending for the eventual terminal outcome.
 
 `clipboard_get {selection?, mime?, primary?, offset?}` and
 `clipboard_set {text, selection?, mime?, primary?, sensitive?}` use the local

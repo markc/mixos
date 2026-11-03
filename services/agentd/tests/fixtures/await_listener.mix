@@ -17,6 +17,9 @@ end
 on agent.session.ended
   record()
 end
-for each $topic in ["agent.await.fired", "agent.await.delivered", "agent.await.failed", "agent.session.suspended", "agent.session.ended"]
+on agent.op.done
+  record()
+end
+for each $topic in ["agent.op.done", "agent.await.fired", "agent.await.delivered", "agent.await.failed", "agent.session.suspended", "agent.session.ended"]
   subscribe($topic)
 end

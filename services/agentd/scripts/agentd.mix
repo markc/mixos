@@ -107,7 +107,8 @@ $SETS_MAX = 8
 $ENDED_KEPT = 32
 
 $DB = $log.open(env("MIXOS_AGENTD_DB", mixos_path("var", "agentd/sessions.db")))
-for each $id in $log.recover($DB, time())
+$restart_ended = $log.recover($DB, time())
+for each $id in $restart_ended
   eprint("agentd: " .. $id .. ": ended in the log (agentd restarted)")
 end
 $log.expire($DB, time() - $CONF.log_keep_days * 86400)
@@ -633,15 +634,7 @@ on agent.session.close desc "end the agent {session}: stdin closes, the process 
   $id = nil
   if begin("agent.session.close", body().session) then $id = session_for(body(), true) end
   if $id != nil then
-    await_close($id)
-    if $S.sessions[$id].status == "waiting" then
-      $S.sessions[$id].status = "ready"
-      session_exited($id, nil, nil, nil)
-    end
-    if $S.sessions[$id].status != "ended" then
-      settle_all_permissions($id, nil)
-      end_agent($id)
-    end
+    if $S.sessions[$id].status != "ended" then op_close($id) end
     answer(0, json_encode({session: $id, status: $S.sessions[$id].status}))
   end
 end
@@ -1069,6 +1062,7 @@ end
 -- The agent of session $id is gone (it exited, or close stopped it).
 fn session_exited($id, $exit_code, $signal, $error_code)
   if $S.sessions[$id] != nil and not contains(["ended", "waiting"], $S.sessions[$id].status) then
+    if $S.sessions[$id].explicit_close then $error_code = "caller_closed" end
     -- The agent is gone: so are its terminals.
     for each $k in filter(keys($S.terms), fn($k) = $S.terms[$k].session == $id)
       term_release($k)
@@ -1118,6 +1112,7 @@ fn session_exited($id, $exit_code, $signal, $error_code)
     prune()
     publish("agent.session.ended", json_encode({session: $id, exit_code: $exit_code,
       signal: $signal, error_code: $error_code}), {command: "agent.session.ended"})
+    op_finished($id)
     await_drain()
   end
 end
@@ -1159,3 +1154,6 @@ on notification.closed
 end
 
 include "lib/awaits.mix"
+for each $id in $restart_ended
+  op_finished($id)
+end

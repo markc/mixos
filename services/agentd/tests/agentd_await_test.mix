@@ -134,6 +134,7 @@ try
   $env = merge($pb.client_env($bus), {HOME: $tmp .. "/home"})
   $fake_env = {FAKE_ACP_REFUSE_FILE: $tmp .. "/refuse", FAKE_ACP_CRASH_FILE: $tmp .. "/crash", FAKE_ACP_REOPEN_DELAY: "0.2", FAKE_ACP_HOLD_FILE: $tmp .. "/hold", FAKE_ACP_ERROR_FILE: $tmp .. "/outcome-error"}
   $conf = {max_live: 1, agents: {
+    job: {close_on_done: true, argv: [$mix, $here .. "/fixtures/fake_acp_agent.mix", "resume"], roots: [$tmp .. "/ws"], env: $fake_env},
     resumer: {argv: [$mix, $here .. "/fixtures/fake_acp_agent.mix", "resume"], roots: [$tmp .. "/ws"], env: $fake_env},
     stubborn: {argv: [$mix, $here .. "/fixtures/fake_acp_agent.mix", "resume,stubborn"], roots: [$tmp .. "/ws"]}}}
   write_file($tmp .. "/conf.mix", data_encode($conf))
@@ -441,6 +442,39 @@ try
   up()
   sleep(0.3)
   check("restart deletes delivered inflight outbox without redelivery", row($aid).state == "delivered" and row($aid).redeliveries == 0 and outbox_count($s) == 0 and len(outcomes($s)) == 1)
+  close_session($s)
+
+  -- D3: local delivery and catch-up use the same operation adapter.
+  for each $case in ["done", "cancelled", "failed"]
+    $parent = start("resumer")
+    $child_op = uuid()
+    -- Register before creating the child (unknown is non-terminal).
+    -- A waiting parent frees the single process slot for the child.
+    $park = register($parent, "park-" .. $case, {})
+    prompt($parent, "wait for child")
+    wait_status($parent, "waiting")
+    $child = start("job")
+    $aid = call("agent.session.await", {session: $parent, service: "agent", op: $child}).v.await
+    check("op.get running " .. $case, call("agent.op.get", {op: $child}).v.state == "running")
+    call("agent.await.cancel", {await: $park})
+    if $case == "done" then prompt($child, "finish")
+    elif $case == "cancelled" then
+      $childwait = register($child, "child-obligation", {})
+      prompt($child, "suspend")
+      check("job suspension stays running op", wait_status($child, "waiting") and call("agent.op.get", {op: $child}).v.state == "running" and len(topics("agent.op.done", "op", $child)) == 0)
+      check("op.cancel changes waiting child", call("agent.op.cancel", {op: $child}).v.cancelled == true and row($childwait).state == "cancelled")
+    else prompt($child, "DIE") end
+    check("child terminal " .. $case, wait_status($child, "ended") and call("agent.op.get", {op: $child}).v.state == $case)
+    check("parent gets child " .. $case, wait_await($aid, "delivered") and json_parse(row($aid).outcome).state == $case)
+    sleep(0.1)
+    call("agent.op.cancel", {op: $child})
+    check("one op.done " .. $case, len(topics("agent.op.done", "op", $child)) == 1)
+    close_session($parent)
+  end
+  check("op.get unknown", call("agent.op.get", {op: "never-seen"}).v.state == "unknown")
+  $s = start("resumer")
+  prompt($s, "interactive")
+  check("interactive stays ready", wait_status($s, "ready") and call("agent.op.get", {op: $s}).v.state == "running")
   close_session($s)
 
   -- Review 5: cancelling a queued deadline consumes its outbox atomically.

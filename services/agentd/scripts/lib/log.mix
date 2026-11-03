@@ -27,7 +27,7 @@ $SCHEMA = [
 -- own session id, the extra directories, what the agent advertised) and the
 -- title (the first prompt's first line), and accepted settings. Added
 -- to an older file in place; each is NULL until written.
-$SESSION_COLUMNS = ["acp TEXT", "dirs TEXT", "caps TEXT", "agent_info TEXT", "title TEXT", "mode TEXT", "options TEXT"]
+$SESSION_COLUMNS = ["acp TEXT", "dirs TEXT", "caps TEXT", "agent_info TEXT", "title TEXT", "mode TEXT", "options TEXT", "op_outcome TEXT"]
 
 -- Open (creating) the log. WAL with synchronous=NORMAL: a commit is not
 -- an fsync, so streamed chunks stay cheap; a power cut can lose the last
