@@ -6719,29 +6719,68 @@ mod tests {
         let (mut watcher, mut watcher_rx) = raw_connect(&url).await;
         raw_register(&mut watcher, &mut watcher_rx, "watcher").await;
         let (mut anon, mut anon_rx) = raw_connect(&url).await;
-        for (sink, stream, id) in [(&mut watcher, &mut watcher_rx, "foreign"), (&mut anon, &mut anon_rx, "anonymous")] {
-            let denied = raw_call(sink, stream, props_changed_publish(id, "agent", "agent.op.done"), id).await;
+        for (sink, stream, id) in [
+            (&mut watcher, &mut watcher_rx, "foreign"),
+            (&mut anon, &mut anon_rx, "anonymous"),
+        ] {
+            let denied = raw_call(
+                sink,
+                stream,
+                props_changed_publish(id, "agent", "agent.op.done"),
+                id,
+            )
+            .await;
             assert_eq!(denied.get("rc"), Some("10"));
         }
-        let subscribe = BusMessage::new().with_header("command", "topic.subscribe")
-            .with_header("to", "noded").with_header("type", "request")
-            .with_header("id", "watch").with_header("name", "agent.op.done");
-        assert_eq!(raw_call(&mut watcher, &mut watcher_rx, subscribe, "watch").await.get("rc"), Some("0"));
-        let accepted = raw_call(&mut owner, &mut owner_rx, props_changed_publish("owner", "forged", "agent.op.done"), "owner").await;
+        let subscribe = BusMessage::new()
+            .with_header("command", "topic.subscribe")
+            .with_header("to", "noded")
+            .with_header("type", "request")
+            .with_header("id", "watch")
+            .with_header("name", "agent.op.done");
+        assert_eq!(
+            raw_call(&mut watcher, &mut watcher_rx, subscribe, "watch")
+                .await
+                .get("rc"),
+            Some("0")
+        );
+        let accepted = raw_call(
+            &mut owner,
+            &mut owner_rx,
+            props_changed_publish("owner", "forged", "agent.op.done"),
+            "owner",
+        )
+        .await;
         assert_eq!(accepted.get("rc"), Some("0"));
-        let frame = tokio::time::timeout(Duration::from_secs(3), watcher_rx.next()).await.unwrap().unwrap().unwrap();
-        let WsMessage::Text(text) = frame else { panic!("expected publication") };
+        let frame = tokio::time::timeout(Duration::from_secs(3), watcher_rx.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        let WsMessage::Text(text) = frame else {
+            panic!("expected publication")
+        };
         let delivery = bus_mod::parse(&text).unwrap();
         assert_eq!(delivery.get("broker_service"), Some("agent"));
         assert_eq!(delivery.get("topic"), Some("agent.op.done"));
         // A directed command cannot invent authenticated publication identity.
-        let mut forged = BusMessage::new().with_header("command", "agent.op.done")
-            .with_header("to", "watcher").with_header("broker_service", "agent")
+        let mut forged = BusMessage::new()
+            .with_header("command", "agent.op.done")
+            .with_header("to", "watcher")
+            .with_header("broker_service", "agent")
             .with_header("from", "agent");
         forged.body = "{}".into();
-        anon.send(WsMessage::Text(forged.to_wire().into())).await.unwrap();
-        let frame = tokio::time::timeout(Duration::from_secs(3), watcher_rx.next()).await.unwrap().unwrap().unwrap();
-        let WsMessage::Text(text) = frame else { panic!("expected directed message") };
+        anon.send(WsMessage::Text(forged.to_wire().into()))
+            .await
+            .unwrap();
+        let frame = tokio::time::timeout(Duration::from_secs(3), watcher_rx.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        let WsMessage::Text(text) = frame else {
+            panic!("expected directed message")
+        };
         assert_eq!(bus_mod::parse(&text).unwrap().get("broker_service"), None);
     }
 
