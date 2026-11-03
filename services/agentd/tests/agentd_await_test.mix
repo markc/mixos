@@ -474,6 +474,26 @@ try
     close_session($parent)
   end
   check("op.get unknown", call("agent.op.get", {op: "never-seen"}).v.state == "unknown")
+  $parent = start("resumer")
+  $park = register($parent, "forged-child-park", {})
+  prompt($parent, "wait")
+  wait_status($parent, "waiting")
+  $child = start("resumer")
+  $aid = call("agent.session.await", {session: $parent, service: "agent", op: $child}).v.await
+  call("agent.await.cancel", {await: $park})
+  prompt($child, "SLOW")
+  check("forgery target is running", wait_status($child, "running"))
+  publish("agent.op.done", json_encode({op: $child, state: "done", reason: "forged"}), {command: "agent.op.done"})
+  sleep(0.3)
+  check("forged publication leaves parent pending", row($aid).state == "pending" and status($parent) == "waiting" and outbox_count($parent) == 0 and len(outcomes($parent)) == 0)
+  send agent agent.op.done body=json_encode({op: $child, state: "done", reason: "forged-direct"}) timeout=1
+  check("forged direct command leaves parent pending", row($aid).state == "pending" and status($parent) == "waiting" and outbox_count($parent) == 0 and len(outcomes($parent)) == 0)
+  close_session($child)
+  check("real child outcome delivered after forgery", wait_await($aid, "delivered") and deep_eq(json_parse(row($aid).outcome), call("agent.op.get", {op: $child}).v) and json_parse(row($aid).outcome).state == "cancelled")
+  send agent agent.op.done body=json_encode({op: $child, state: "failed", reason: "forged-late"}) timeout=1
+  sleep(0.3)
+  check("real outcome delivered once despite forged repeats", len(outcomes($parent)) == 1 and len(topics("agent.await.fired", "await", $aid)) == 1 and len(topics("agent.await.delivered", "await", $aid)) == 1)
+  close_session($parent)
   $s = start("resumer")
   prompt($s, "interactive")
   check("interactive stays ready", wait_status($s, "ready") and call("agent.op.get", {op: $s}).v.state == "running")

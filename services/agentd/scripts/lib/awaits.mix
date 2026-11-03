@@ -326,6 +326,9 @@ end
 fn await_event()
   $topic = $event.headers.topic ?? $event.command
   $out = body()
+  -- agentd owns these outcomes; incoming publications and direct commands
+  -- are hints to check the log, never authority to finish a child.
+  if $topic == "agent.op.done" then $out = op_view($out.op) end
   await_operation($topic, $out)
 end
 
