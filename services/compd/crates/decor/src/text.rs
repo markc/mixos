@@ -19,9 +19,11 @@ use cosmic_text::{
     SwashCache, Weight, Wrap, fontdb,
 };
 
+type WidthEntry = (String, DecoFontFamily, u32, u16, f32);
+
 thread_local! {
     static GLYPHS: RefCell<Option<SwashCache>> = const { RefCell::new(None) };
-    static WIDTHS: RefCell<Vec<(String, DecoFontFamily, u32, u16, f32)>> = const { RefCell::new(Vec::new()) };
+    static WIDTHS: RefCell<Vec<WidthEntry>> = const { RefCell::new(Vec::new()) };
 }
 
 pub fn title_width(title: &str, family: &DecoFontFamily, size: f32, weight: u16) -> f32 {
