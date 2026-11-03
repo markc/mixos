@@ -14694,6 +14694,14 @@ hyphenated name whole. Hyphenated service names are the norm on the mesh, so
 the bare form has to work; quoting and `$var` remain exactly equivalent
 spellings.
 
+The **command slot** follows the same rule (mix 0.119.0, currently
+Unreleased): `send waiter-lab waiter-lab.list` and
+`emit waiter-lab waiter-lab.changed` read the command whole, as do implicit
+commands inside `address` blocks and expression-form `send`. Quoted commands
+and `$var` commands keep their existing meaning.
+Use a space before a negative positional argument: `send t a -1` still
+sends command `a` with argument `-1`; `send t a-1` now names command `a-1`.
+
 The accepted shape is deliberately narrow, and is the
 [shell classifier](shell-mode.md)'s tight-hyphen rule for command heads plus
 `.` for dotted names: an ASCII letter or `_` first, at least one `-`,
@@ -14727,8 +14735,9 @@ All-digit segments are fine bare, including malformed-looking ones: `svc-1`,
 multi-dot segment as a bad NUMBER and refused the line
 (`ambiguous leading-zero number '007'`, an error that never mentioned `send`);
 it now lexes such a segment as part of the word when it sits in the bare target
-right after `send`/`emit`/`address`, or in an `on` header (0.113.1). Everywhere else — `$x = 007`, a
-`$var-007` target, a hyphenated command — the refusal is unchanged.
+right after `send`/`emit`/`address`, in an `on` header (0.113.1), or in a
+command slot (0.119.0). Elsewhere — `$x = 007` or a `$var-007` target —
+the refusal is unchanged.
 
 Nothing that worked before changed meaning: the shape *requires* a hyphen, so
 every target that already resolved still takes the expression path, and a
@@ -41901,6 +41910,14 @@ loads unchanged.
 > Mirrored from [`libs/mix/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/libs/mix/CHANGELOG.md), where releases update it. The component's page is [mix](README.md). This page describes the current `main` branch of MixOS.
 
 ## Unreleased
+
+### Fixed
+
+- Bare hyphenated commands in `send`, `emit` and implicit `address` sends
+  read whole using the target-name rule, including keyword heads and
+  leading-zero/multi-dot numeric segments. Expression-form `send` uses the
+  same parser; check and lint agree with execution. Quoted and variable
+  commands keep their meaning.
 
 ### Added
 
