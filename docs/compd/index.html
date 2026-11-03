@@ -211,6 +211,7 @@
                         <a href="#restoring-maximised-windows">Restoring maximised windows</a>
                         <a href="#drag-tiling-props" class="toc-h3">Drag tiling props</a>
                         <a href="#settings-at-startup">Settings at startup</a>
+                        <a href="#scene-frame-events">Scene frame events</a>
                         <a href="#toast-scenes">Toast scenes</a>
                         <a href="#layout">Layout</a>
                         <a href="#build">Build</a>
@@ -427,6 +428,23 @@ bounded completion margin. Timeouts report failure without claiming
 persistence.</p>
 <p>The settings come from <a href="/settingsd/">settingsd</a> through the
 <a href="/settings/">settings</a> library.</p>
+<h2 id="scene-frame-events">Scene frame events</h2>
+<p><code>shell.scene.frame {scene}</code> arms one callback and replies <code>{scene, armed:true}</code>.
+Repeated arms before delivery coalesce. Unknown scenes return <code>NOT_FOUND</code>;
+when a scene declares a citizen, only that broker-attested citizen may arm it
+(<code>SCENE_FRAME_OWNER</code> otherwise). The loader's identity grants no frame authority.</p>
+<p>After the scene's output presents, the host sends <code>frame</code> through the same
+directed scene-event path as <code>on_click</code>, with body
+<code>{scene, seq, presented_at, interval}</code>. <code>seq</code> increases per scene; times are
+seconds, <code>presented_at</code> uses CLOCK_MONOTONIC (Mix <code>monotonic()</code>), and <code>interval</code>
+is the output refresh period. Handle this with <code>on frame</code>, patch the model
+with <code>shell.scene.patch</code>, then re-arm to animate the next frame. Event delivery
+does not wait for the handler; patches are serviced on a later loop pass.</p>
+<p>Hidden or unmapped scenes and outputs that are off or not presenting produce
+no callback. The arm remains pending until presentation, and unload drops it.
+An outstanding visible request schedules work; without one, the frame clock
+adds no redraws. Use this clock for scene animation rather than a behaviour
+timer.</p>
 <h2 id="toast-scenes">Toast scenes</h2>
 <p>A scene with <code>window: {"kind":"toast","w":360,"h":120}</code> uses a
 separate, pointer-interactive toast seat. It never takes keyboard focus,
