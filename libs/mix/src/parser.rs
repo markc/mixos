@@ -2371,8 +2371,10 @@ impl Parser {
     fn parse_primary(&mut self) -> MixResult<Expr> {
         let expr = match self.peek().clone() {
             Token::BusNameNumber(s) => {
-                return Err(MixError::ParseError {
-                    msg: format!("malformed number '{s}' outside a bare Bus name"),
+                // The lexer deferred this segment as a possible Bus name;
+                // outside one it is refused with the lexer's own words.
+                return Err(MixError::LexerError {
+                    msg: crate::lexer::malformed_number_message(&s),
                     span: self.peek_span(),
                 });
             }

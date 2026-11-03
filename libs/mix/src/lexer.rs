@@ -871,10 +871,7 @@ impl Lexer {
         }
         if int_part.len() > 1 && int_part.starts_with('0') {
             return Err(MixError::LexerError {
-                msg: format!(
-                    "ambiguous leading-zero number '{s}' — use a 0o (octal) / 0x (hex) / \
-                     0b (binary) prefix, or drop the leading zero(s) for decimal"
-                ),
+                msg: malformed_number_message(&s),
                 span: Span {
                     line,
                     column: col,
@@ -2002,6 +1999,21 @@ fn opener_key(lx: &Lexer, ch: char) -> Option<String> {
             Some(key)
         }
         _ => None,
+    }
+}
+
+/// The lexer's refusal text for a malformed number literal. A segment the
+/// lexer defers inside a hyphenated word (`Token::BusNameNumber`) and the
+/// parser then refuses outside a Bus name keeps exactly this wording.
+pub(crate) fn malformed_number_message(s: &str) -> String {
+    let int_part = s.split('.').next().unwrap_or(s);
+    if int_part.len() > 1 && int_part.starts_with('0') {
+        format!(
+            "ambiguous leading-zero number '{s}' — use a 0o (octal) / 0x (hex) / \
+             0b (binary) prefix, or drop the leading zero(s) for decimal"
+        )
+    } else {
+        format!("invalid number '{s}'")
     }
 }
 
