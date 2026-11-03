@@ -377,6 +377,8 @@ Unreleased): `send waiter-lab waiter-lab.list` and
 `emit waiter-lab waiter-lab.changed` read the command whole, as do implicit
 commands inside `address` blocks and expression-form `send`. Quoted commands
 and `$var` commands keep their existing meaning.
+Use a space before a negative positional argument: `send t a -1` still
+sends command `a` with argument `-1`; `send t a-1` now names command `a-1`.
 
 The accepted shape is deliberately narrow, and is the
 [shell classifier](shell-mode.md)'s tight-hyphen rule for command heads plus
