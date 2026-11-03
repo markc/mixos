@@ -4,7 +4,7 @@
 
 ### Added
 
-- Generation-owned monotonic `after`, `interval` and `cancel_timer`, with
+- Generation-owned monotonic `timer_once`, `interval` and `cancel_timer`, with
   coalesced `timer.tick` delivery, absolute deadlines and timer lint checks.
 
 - 0.119.0: add `global $a, $b` for explicit program-global assignment per invocation,

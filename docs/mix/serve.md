@@ -929,7 +929,7 @@ everything else in. A command in; a real-world effect out; the bridge is a handf
 of lines of Mix.
 
 ## Clocks
-`after(seconds, tag)` registers a one-shot clock; `interval(seconds, tag)`
+`timer_once(seconds, tag)` registers a one-shot clock; `interval(seconds, tag)`
 registers a repeating clock with a **0.1 second minimum**. Use the compositor
 frame clock for animation. Both return an opaque id; `cancel_timer(id)` returns
 true only while that timer is live and discards pending delivery.
@@ -964,7 +964,7 @@ Timers belong to the evaluator generation. Reload candidates may register
 timers, like filesystem watches; their handlers run only after commit. Failed
 candidates close their timers; successful reloads retire the old timers after
 handlers drain. Shutdown closes them too. In a plain script, a live interval
-keeps the pump running until cancelled; a lone `after` keeps it alive until
+keeps the pump running until cancelled; a lone `timer_once` keeps it alive until
 delivery. Timers are unavailable in expression mode.
 
 ## See also

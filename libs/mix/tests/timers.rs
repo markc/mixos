@@ -20,6 +20,24 @@ async fn pump(e: &mut Evaluator) {
         .unwrap();
 }
 struct Runtime;
+
+#[test]
+fn builtin_listing_keeps_one_after_with_its_string_contract() {
+    // `mix builtins` renders this registry with BuiltinInfo::signature().
+    let entries: Vec<_> = mix::builtins::builtin_entries()
+        .filter(|entry| entry.name == "after")
+        .collect();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].signature(), "after(s, delim) -> string | nil");
+    assert_eq!(entries[0].category, "string");
+    assert_eq!(
+        mix::builtins::builtin_info_of("timer_once")
+            .unwrap()
+            .signature(),
+        "timer_once(seconds, tag) -> string"
+    );
+}
+
 impl ServeRuntime for Runtime {
     fn handle_reserved(
         &self,
@@ -34,7 +52,7 @@ impl ServeRuntime for Runtime {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn plain_after_and_cancelled_interval_exit_the_pump() {
+async fn plain_timer_once_and_cancelled_interval_exit_the_pump() {
     let mut e = Evaluator::new();
     assert_eq!(
         exec(&mut e, "after(\"a=b\", \"=\")").await.unwrap(),
@@ -44,7 +62,7 @@ async fn plain_after_and_cancelled_interval_exit_the_pump() {
         &mut e,
         r#"
 $ticks = 0
-$a = after(0.01, "once")
+$a = timer_once(0.01, "once")
 $i = interval(0.1, "repeat")
 on timer.tick
     $ticks = $ticks + 1
@@ -94,7 +112,7 @@ async fn candidate_and_old_generation_retire_independently() {
     exec(&mut old, "$id = interval(0.1, \"old\")")
         .await
         .unwrap();
-    exec(&mut candidate, "$id = after(0.01, \"candidate\")")
+    exec(&mut candidate, "$id = timer_once(0.01, \"candidate\")")
         .await
         .unwrap();
     candidate.close_native_events();
@@ -103,11 +121,15 @@ async fn candidate_and_old_generation_retire_independently() {
         Value::Bool(true)
     );
     let mut replacement = Evaluator::new();
-    exec(&mut replacement, "$id = after(0.01, \"replacement\")")
+    exec(&mut replacement, "$id = timer_once(0.01, \"replacement\")")
         .await
         .unwrap();
     old.close_native_events();
-    assert!(exec(&mut old, "after(1, \"closed\")").await.is_err());
+    assert!(
+        exec(&mut old, "timer_once(1, \"closed\")")
+            .await
+            .is_err()
+    );
     pump(&mut replacement).await;
     assert_eq!(
         exec(&mut replacement, "cancel_timer($id)").await.unwrap(),
@@ -139,13 +161,13 @@ fn timer_lints() {
 }
 
 #[test]
-fn expression_mode_preserves_text_after_and_refuses_numeric_after() {
+fn expression_mode_preserves_text_after_and_refuses_timer_once() {
     use mix::evaluator::{EvalLimits, eval_expr_string};
     assert_eq!(
         eval_expr_string("after(\"a=b\", \"=\")", &[], None, EvalLimits::default()).unwrap(),
         Value::String("b".into())
     );
-    assert!(eval_expr_string("after(1, \"tick\")", &[], None, EvalLimits::default()).is_err());
+    assert!(eval_expr_string("timer_once(1, \"tick\")", &[], None, EvalLimits::default()).is_err());
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -170,7 +192,7 @@ end
     pump(&mut e).await;
     assert_eq!(e.get_global("ticks"), Some(Value::Number(1.0)));
     assert!(e.get_global("missed").unwrap().to_number().unwrap() >= 2.0);
-    exec(&mut e, "$cancelled = after(0.001, \"discard\")")
+    exec(&mut e, "$cancelled = timer_once(0.001, \"discard\")")
         .await
         .unwrap();
     std::thread::sleep(Duration::from_millis(10));
