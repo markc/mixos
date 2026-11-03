@@ -79,7 +79,6 @@ fn preview_snapshot(h: &Harness, label: &str) {
     });
     let root = tempfile::tempdir().unwrap();
     let dir = root.path();
-    std::fs::create_dir_all(&dir).unwrap();
     png.save(dir.join(format!("{label}.png"))).unwrap();
 }
 

@@ -64,7 +64,7 @@ fn w1_ids(storage: &mut Storage, entries: &[&'static DocumentEntry]) -> Vec<(Str
 fn sync_rehydrate_edit_dismiss_move() {
     let root = tempfile::tempdir().unwrap();
     let tmp = root.path();
-    unsafe { std::env::set_var("XDG_STATE_HOME", &tmp) };
+    unsafe { std::env::set_var("XDG_STATE_HOME", tmp) };
 
     let entries: &[&'static DocumentEntry] = &[&NOTES_ENTRY];
     let mut s = Storage::new();

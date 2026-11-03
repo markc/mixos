@@ -8,6 +8,12 @@ if contains(args(), "--format") then
   run_argv_must(["git", "checkout", "-q", "--", "."])
   exit(0)
 end
+if contains(args(), "--lint") then
+  $r = run_argv(["cargo", "clippy", "--locked", "--all-targets", "-p", "mimedb", "-p", "mix", "-p", "testkit", "-p", "slots", "-p", "maild", "-p", "mesh-sign", "-p", "mesh", "-p", "noded", "-p", "portald", "-p", "toolkit", "-p", "model", "-p", "scene-host", "-p", "prefs", "-p", "workshop", "--", "-D", "clippy::all", "-A", "clippy::module_inception", "-A", "clippy::too_many_arguments", "-A", "clippy::type_complexity", "-A", "clippy::large_enum_variant", "-A", "clippy::mutable_key_type"], {timeout: 7200, max_output: 64000000, stderr: "stdout"})
+  print($r.stdout)
+  if not $r.ok then exit(1) end
+  exit(0)
+end
 if contains(args(), "--mail") then
   $r = run_argv([$mix, "tools/test_tmp.mix", "cargo", "test", "--locked", "-p", "maild", "--test", "native_bus_submission"], {timeout: 7200, max_output: 64000000, stderr: "stdout"})
   print($r.stdout)

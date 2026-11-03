@@ -53,7 +53,6 @@ fn evaluator(serve: bool) -> Evaluator {
 fn module() -> (tempfile::TempDir, std::path::PathBuf) {
     let root = tempfile::tempdir().unwrap();
     let dir = root.path();
-    std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("ctxmod.mix");
     std::fs::write(
         &path,

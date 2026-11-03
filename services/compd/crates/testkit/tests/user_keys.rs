@@ -35,7 +35,6 @@ const WORKSPACE_KEYMAP: &str = r#"{"version":1,"physical":[
 fn keymap_file(test: &str, text: &str) -> (tempfile::TempDir, PathBuf) {
     let root = tempfile::Builder::new().prefix(test).tempdir().unwrap();
     let dir = root.path();
-    std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("keymap.json");
     std::fs::write(&path, text).unwrap();
     (root, path)
