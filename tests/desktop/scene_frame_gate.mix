@@ -38,8 +38,8 @@ try
     sleep(0.2)
   end
   if not $ready then raise("NOT_READY", $root .. "/compd.log") end
-  $bp = spawn(["/opt/mixos/bin/mix", "--serve", dirname(script_path()) .. "/scene_frame_behaviour.mix", "--name", $citizen, $shell],
-    {stdout:{file:$root .. "/citizen.log"}, stderr:"stdout", detach:true})
+  $bp = spawn(["/opt/mixos/bin/mix", "--serve", dirname(script_path()) .. "/scene_frame_behaviour.mix", "--name", $citizen],
+    {env:{SCENE_FRAME_SERVICE:$shell}, stdout:{file:$root .. "/citizen.log"}, stderr:"stdout", detach:true})
   for $i = 1 to 50
     send $citizen HELP timeout=1
     if $rc == 0 then break end
@@ -56,9 +56,19 @@ try
   send $citizen halt timeout=5
   sleep(1)
   $after = call($comp, "comp.window.stats", {source:"scene_frame_clock"})
+  $idle_frames = len(filter(lines(read_file($root .. "/compd.log")), fn($line) = contains($line, "stage=comp_frame_reasons")))
   sleep(2)
   $idle = call($comp, "comp.window.stats", {source:"scene_frame_clock"})
-  print(json_encode({before:$before, after:$after, idle:$idle, logs:$root}))
+  $idle_end = len(filter(lines(read_file($root .. "/compd.log")), fn($line) = contains($line, "stage=comp_frame_reasons")))
+  write_file($root .. "/stats.json", json_encode({before:$before, after:$after, idle:$idle}))
+  $frames = $after.presented - $before.presented
+  print(json_encode({presented:$frames, seconds:10, fps:$frames / 10,
+    interval_p50_us:$after.interval_p50_us, interval_p99_us:$after.interval_p99_us,
+    idle_presented:$idle.presented - $after.presented, idle_redraws:$idle_end - $idle_frames, logs:$root}))
+  if $frames < 540 or $frames > 650 then raise("FRAME_RATE", "expected about 60 presentations/s") end
+  if $idle.presented != $after.presented or $idle_end != $idle_frames then
+    raise("NOT_IDLE", "static scene scheduled work after halt")
+  end
   call($shell, "shell.scene.unload", {scene:"frame-clock"})
 finally
   if $bp != nil then kill($bp, 15) end
