@@ -338,6 +338,8 @@ after it ends.</p>
 <tr><td><code>agent.session.await</code></td><td><code>{session, service, op, deadline_s?, note?, suspend?, id?}</code></td><td><code>{await, state}</code>, after catch-up</td></tr>
 <tr><td><code>agent.await.list</code></td><td><code>{session?}</code></td><td><code>{awaits: [...]}</code></td></tr>
 <tr><td><code>agent.await.cancel</code></td><td><code>{await}</code></td><td><code>{cancelled: bool}</code></td></tr>
+<tr><td><code>agent.op.get</code></td><td><code>{op}</code></td><td><code>{op, state, stop?, rc?, exit_code?, reason?}</code></td></tr>
+<tr><td><code>agent.op.cancel</code></td><td><code>{op}</code></td><td><code>{op, cancelled, state}</code>; closes the session and cancels its awaits</td></tr>
 </tbody></table>
 <p><code>content</code> is a string, or a list of ACP content blocks.</p>
 <p>A prompt or a setting sent while the session is still <code>starting</code> is queued
@@ -432,6 +434,19 @@ ended (prompt again). Advertised
 at <code>initialize</code>: Claude, OpenCode and Codex offer <code>session/resume</code>; Gemini
 offers <code>session/load</code>.</p>
 <h2 id="awaiting-operations">Awaiting operations</h2>
+<p>Each session is also an operation, keyed by its session id. Every final end
+publishes <code>agent.op.done</code> once, with the same envelope as <code>agent.op.get</code>.
+Starting, ready, running and waiting sessions report <code>running</code>; unseen ids
+report <code>unknown</code>. Caller closure reports <code>cancelled</code>. An <code>end_turn</code> followed
+by a clean exit with no failed awaits reports <code>done</code>; other ends report
+<code>failed</code>. Outcomes last for <code>log_keep_days</code> (30 days by default).</p>
+<p>An instance with <code>close_on_done: true</code> closes after a turn with no pending
+await and an empty outbox. A suspending turn stays waiting. Interactive
+instances default to false. A parent awaits a child with
+<code>{service: "agent", op: &lt;child session id&gt;}</code>; local delivery uses the same
+operation adapter without a Bus round trip to agentd itself.</p>
+<p>Operation outcomes are final: explicitly resuming an ended conversation
+keeps its recorded operation outcome. Start a new session for a new job.</p>
 <p><code>agent.session.await</code> watches <code>{service, op}</code> through <code>&lt;service&gt;.op.done</code>
 and <code>&lt;service&gt;.op.get {op}</code> (10 second query timeout). The session must
 be live or waiting. Every caller may register, including the session's own

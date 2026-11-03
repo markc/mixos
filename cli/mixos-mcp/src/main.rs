@@ -680,13 +680,19 @@ struct AwaitOpParams {
 }
 
 fn await_op_request(session: Option<&str>, p: AwaitOpParams) -> Result<serde_json::Value, String> {
-    let session = session.ok_or("await_op requires MIXOS_AGENT_SESSION; run inside an agentd session")?;
+    let session =
+        session.ok_or("await_op requires MIXOS_AGENT_SESSION; run inside an agentd session")?;
     connection::broker_name(Some(session), 0, 0)?;
-    if p.service.is_empty() || p.op.is_empty() || p.deadline_s.is_some_and(|s| !s.is_finite() || s <= 0.0) {
+    if p.service.is_empty()
+        || p.op.is_empty()
+        || p.deadline_s.is_some_and(|s| !s.is_finite() || s <= 0.0)
+    {
         return Err("await_op requires service, op and an optional positive deadline_s".into());
     }
-    Ok(serde_json::json!({"session": session, "service": p.service, "op": p.op,
-        "deadline_s": p.deadline_s, "note": p.note, "suspend": true}))
+    Ok(
+        serde_json::json!({"session": session, "service": p.service, "op": p.op,
+        "deadline_s": p.deadline_s, "note": p.note, "suspend": true}),
+    )
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -1245,7 +1251,10 @@ impl MixosMcp {
     /// Await an operation through agentd, then end this turn immediately.
     /// agentd resumes this session with the outcome; do not poll or sleep.
     #[tool]
-    async fn await_op(&self, Parameters(p): Parameters<AwaitOpParams>) -> rmcp::model::CallToolResult {
+    async fn await_op(
+        &self,
+        Parameters(p): Parameters<AwaitOpParams>,
+    ) -> rmcp::model::CallToolResult {
         let session = std::env::var(connection::AGENT_SESSION_ENV).ok();
         let args = match await_op_request(session.as_deref(), p) {
             Ok(args) => args,
@@ -1258,14 +1267,20 @@ impl MixosMcp {
         match noded.call_typed("agent", "agent.session.await", args).await {
             Ok(bus::PortReply::Ok { value, .. }) => {
                 let Some(id) = value.get("await").and_then(|id| id.as_str()) else {
-                    return tool_output::failure("agentd returned no await id; registration outcome unknown");
+                    return tool_output::failure(
+                        "agentd returned no await id; registration outcome unknown",
+                    );
                 };
-                rmcp::model::CallToolResult::success(vec![rmcp::model::ContentBlock::text(format!(
-                    "Await {id} registered. End your turn now; agentd resumes this session with the outcome; do not poll or sleep."
-                ))])
+                rmcp::model::CallToolResult::success(vec![rmcp::model::ContentBlock::text(
+                    format!(
+                        "Await {id} registered. End your turn now; agentd resumes this session with the outcome; do not poll or sleep."
+                    ),
+                )])
             }
             Ok(reply) => tool_output::bus_reply(reply),
-            Err(error) => tool_output::failure(format!("await registration outcome unknown: {error}; check agent.await.list before retrying")),
+            Err(error) => tool_output::failure(format!(
+                "await registration outcome unknown: {error}; check agent.await.list before retrying"
+            )),
         }
     }
 
@@ -2516,8 +2531,17 @@ async fn async_main() {
 mod tests {
     #[test]
     fn await_op_uses_the_host_session_and_suspends() {
-        let params = || super::AwaitOpParams { service: "agent".into(), op: "child123".into(), deadline_s: Some(60.0), note: Some("finish".into()) };
-        assert!(super::await_op_request(None, params()).unwrap_err().contains("MIXOS_AGENT_SESSION"));
+        let params = || super::AwaitOpParams {
+            service: "agent".into(),
+            op: "child123".into(),
+            deadline_s: Some(60.0),
+            note: Some("finish".into()),
+        };
+        assert!(
+            super::await_op_request(None, params())
+                .unwrap_err()
+                .contains("MIXOS_AGENT_SESSION")
+        );
         assert!(super::await_op_request(Some("invalid!"), params()).is_err());
         let request = super::await_op_request(Some("abcd1234"), params()).unwrap();
         assert_eq!(request["session"], "abcd1234");
