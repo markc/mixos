@@ -897,9 +897,9 @@ impl SceneStore {
         let model_generation = old.as_ref().and_then(|old| old.model_generation);
         let visible = old.as_ref().is_some_and(|old| old.visible);
         let applied = old.as_ref().map_or(0, |old| old.applied);
-        let frame_armed = old.as_ref().is_some_and(|old| {
-            old.frame_armed && old.document.citizen == document.citizen
-        });
+        let frame_armed = old
+            .as_ref()
+            .is_some_and(|old| old.frame_armed && old.document.citizen == document.citizen);
         let frame_seq = old.as_ref().map_or(0, |old| old.frame_seq);
         let mounted = old.and_then(|old| old.mounted);
         self.scenes.insert(

@@ -832,9 +832,18 @@ fn citizenless_scenes_cannot_arm_frames() {
     let mut store = SceneStore::default();
     let source = edge_source("clock", None);
     load(&mut store, "loader", 1, &source, false).unwrap();
-    store.scenes.get_mut("clock").unwrap().document.citizen.clear();
+    store
+        .scenes
+        .get_mut("clock")
+        .unwrap()
+        .document
+        .citizen
+        .clear();
     for caller in ["", "loader", "other"] {
-        assert_eq!(store.arm_frame("clock", caller).unwrap_err()["error_code"], "SCENE_FRAME_OWNER");
+        assert_eq!(
+            store.arm_frame("clock", caller).unwrap_err()["error_code"],
+            "SCENE_FRAME_OWNER"
+        );
         assert!(!store.scene("clock").unwrap().frame_armed);
     }
 }
@@ -850,10 +859,19 @@ fn reload_while_armed_keeps_only_the_same_citizens_request() {
     let replacement = source.replace("citizen: squatter", "citizen: successor");
     load(&mut store, "loader", 3, &replacement, false).unwrap();
     assert!(!store.scene("clock").unwrap().frame_armed);
-    store.set_mounted("clock", Some(Mounted { handle: 1, revision: 3 }));
+    store.set_mounted(
+        "clock",
+        Some(Mounted {
+            handle: 1,
+            revision: 3,
+        }),
+    );
     assert!(store.frame_event("clock", true, 1.0, 0.016).is_none());
     store.arm_frame("clock", "successor").unwrap();
-    assert_eq!(store.frame_event("clock", true, 2.0, 0.016).unwrap().0, "successor");
+    assert_eq!(
+        store.frame_event("clock", true, 2.0, 0.016).unwrap().0,
+        "successor"
+    );
 }
 
 #[test]
