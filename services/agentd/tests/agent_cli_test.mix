@@ -16,7 +16,7 @@ $notifyd = realpath($here .. "/../../notifyd/scripts/notifyd.mix")
 $fake = realpath($here .. "/fixtures/fake_acp_agent.mix")
 $mix = env("MIXOS_TEST_MIX", mixos_path("prefix") .. "/bin/mix")
 $noded = env("MIXOS_TEST_NODED", mixos_path("prefix") .. "/bin/noded")
-$tmp = env("TMPDIR", "/tmp") .. "/agent-cli-test." .. uuid()
+$tmp = env("TMPDIR", "/tmp") .. "/mixos-test-evidence/agent-cli-test." .. uuid()
 $results = []
 $pids = []
 

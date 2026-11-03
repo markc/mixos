@@ -7,6 +7,17 @@ if contains(args(), "--format") then
   run_argv_must(["git", "checkout", "-q", "--", "."])
   exit(0)
 end
+if contains(args(), "--mix") then
+  for $pass = 1 to 2
+    print("MIX PASS " .. to_string($pass))
+    for $script in ["tests/test_tmp_test.mix", "services/agentd/tests/agent_test.mix", "services/agentd/tests/log_test.mix", "services/compd/tests/scene_template_test.mix"]
+      $r = run_argv(["/opt/mixos/bin/mix", "tools/test_tmp.mix", "/opt/mixos/bin/mix", $script], {timeout: 600, max_output: 64000000, stderr: "stdout"})
+      print($r.stdout)
+      if not $r.ok then exit(1) end
+    end
+  end
+  exit(0)
+end
 for $pass = 1 to 2
   print("PASS " .. to_string($pass))
   $r = run_argv(["/opt/mixos/bin/mix", "tools/test_tmp.mix", "cargo", "test", "--locked", "-p", "mimedb", "-p", "workshop", "-p", "prefs", "-p", "testkit", "-p", "mix", "-p", "model", "-p", "slots", "-p", "scene-host", "--no-fail-fast"], {timeout: 7200, max_output: 64000000, stderr: "stdout"})

@@ -74,6 +74,8 @@ fn stage($name, $argv, $timeout)
   -- Watch every stage: nested Mix suites can run tests or spawn fixtures too.
   -- Canonical executable paths exclude other checkouts on a shared worker.
   $before = $orphans.snapshot($orphan_target)
+  $r = {ok: false}
+  print("LOG " .. $name .. " " .. $log)
   try
     $r = run_argv($argv, $opts)
   finally

@@ -130,7 +130,8 @@ $panel_source = read_file($root .. "/share/scenes/panel/scene.mix")
 $panel_meta = data_parse(read_file($root .. "/share/scenes/panel/template.conf.mix"))
 check($panel_meta.name == "panel" and $panel_meta.behaviour == "behaviour.mix", "strict metadata: panel")
 $MIX = realpath("/proc/self/exe")
-$tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/mixos-panel-template.XXXXXXXX"]))
+$tmp = trim(run_argv_must(["mktemp", "-d", env("TMPDIR", "/tmp") .. "/mixos-panel-template.XXXXXXXX"]))
+try
 
 fn fence($source)
   return data_parse(before(after($source, "```mix\n"), "\n```"))
@@ -1023,3 +1024,7 @@ for each $id, $node in $vol_nodes
   end
 end
 print("scene-template-test: exact captures, models, caps, payloads and capabilities OK")
+
+finally
+  remove_dir($tmp)
+end
