@@ -192,7 +192,7 @@ pub const LINT_DOCS: &[LintDoc] = &[
     LintDoc {
         code: "MIX-W2410",
         summary: "timer handler reads a fixed path",
-        detail: "A timer.tick handler calls stat, read_file or exists on a literal path. Prefer fs_watch and on fs.changed. Paths under /proc and /sys are exempt because they have no filesystem notification.",
+        detail: "A timer.tick handler calls stat, read_file or exists on a literal path. Deadline checks are legitimate; for change detection prefer fs_watch and on fs.changed. Paths under /proc and /sys are exempt because they have no filesystem notification.",
     },
     LintDoc {
         code: "MIX-E1509",

@@ -21,6 +21,15 @@ async fn pump(e: &mut Evaluator) {
 }
 struct Runtime;
 
+#[tokio::test(flavor = "current_thread")]
+async fn unhandled_one_shot_releases_plain_pump() {
+    let mut e = Evaluator::new();
+    exec(&mut e, "timer_once(0.001, \"unhandled\")")
+        .await
+        .unwrap();
+    pump(&mut e).await;
+}
+
 #[test]
 fn builtin_listing_keeps_one_after_with_its_string_contract() {
     // `mix builtins` renders this registry with BuiltinInfo::signature().
