@@ -5,20 +5,22 @@ fn start()
   -- Leave room for Unix-domain fixture sockets (sun_path is only 108 bytes).
   $dir = $base .. "/mt-" .. slice(replace(uuid(), "-", ""), 0, 16)
   mkdir($dir, {parents: false})
+  chmod($dir, 0o711)
   return {dir: realpath($dir), evidence: $base .. "/mixos-test-evidence"}
 end
 
 fn finish($run, $failed, $allowance)
   $entries = filter(split(run_argv_must(["find", $run.dir, "-mindepth", "1", "-maxdepth", "1", "-printf", "%f\\0"]), "\u{0}"), fn($n) = $n != "")
   $evidence = $run.dir .. "/mixos-test-evidence"
-  $leaks = filter($entries, fn($e) = $e != "mixos-test-evidence" or not is_dir($evidence))
+  $evidence_dir = exists($evidence, {follow_symlinks: false}) and stat($evidence, {follow_symlinks: false}).is_dir
+  $leaks = filter($entries, fn($e) = $e != "mixos-test-evidence" or not $evidence_dir)
   print("TMP before=0 after=" .. to_string(len($leaks)) .. " allowance=" .. to_string($allowance))
   for $entry in $leaks
     print("TMP leftover " .. $entry)
   end
   $bad = $failed or len($leaks) > $allowance
   $has_evidence = false
-  if is_dir($evidence) then
+  if $evidence_dir then
     $has_evidence = run_argv_must(["find", $evidence, "-mindepth", "1", "-maxdepth", "1", "-print", "-quit"]) != ""
   end
   if $bad or $has_evidence then

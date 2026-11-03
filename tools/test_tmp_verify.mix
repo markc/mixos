@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Run only on CBC, through cbc-build.mix --commit SHA.
-$mix = mixos_path("prefix") .. "/bin/mix"
+$mix = realpath("/proc/" .. to_string(pid()) .. "/exe")
 if contains(args(), "--format") then
   run_argv_must(["cargo", "fmt"], {timeout: 300})
   run_argv_must(["cargo", "metadata", "--format-version", "1"], {timeout: 300, max_output: 64000000})
