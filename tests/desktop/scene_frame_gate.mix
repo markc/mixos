@@ -12,7 +12,7 @@ for $part in ["runtime", "etc", "var", "run"]
   mkdir($root .. "/" .. $part, {parents:true})
 end
 chmod($root .. "/runtime", 0o700)
-write_file($root .. "/settings.json", "{}")
+write_file($root .. "/settings.json", read_file(dirname(script_path()) .. "/smoke-settings.json"))
 write_file($root .. "/preferences.json", json_encode({scene_host:true}))
 fn call($svc, $command, $body)
   send $svc $command body=json_encode($body) timeout=5
@@ -32,6 +32,7 @@ try
       stdout:{file:$root .. "/compd.log"}, stderr:"stdout", detach:true})
   $ready = false
   for $i = 1 to 100
+    if not process_alive($cp) then raise("COMPOSITOR_EXITED", $root .. "/compd.log") end
     send $shell shell.ping timeout=1
     if $rc == 0 then $ready = true; break end
     sleep(0.2)
