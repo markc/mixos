@@ -928,18 +928,7 @@ mesh — with the translation layer written in the same small language you scrip
 everything else in. A command in; a real-world effect out; the bridge is a handful
 of lines of Mix.
 
-## See also
-
-- [Bus messaging](bus.md) — `send` / `emit` / `address` / `on` / `reply`, topic pub/sub, `$result`/`$rc`, the no-broker state machine, `async`/Class C
-- [invocation & CLI](invocation.md) — every `mix` entry mode, including the `--serve` flag summary and `--check`
-- [capabilities & embedding](capabilities.md) — the trust model; a citizen is a *trusted, full-capability* process, not a sandbox for untrusted code
-- [errors](errors.md) — `try … catch`, `die`, and how runaways become clean errors inside a handler
-- [functions](functions.md) — handler bodies, lambdas, and the pass-in / return / reassign idiom for threading state
-- The [cos repo](https://github.com/markc/mixos) — `noded`, the Bus broker
-- The [mix repo](https://github.com/markc/mixos) — [AGENTS.md](https://github.com/markc/mixos/blob/main/AGENTS.md) is the agent orientation sheet; this manual is the language reference
-- `mix help` · `mix what send` · `mix what emit` · `mix what address` (`mix what` covers the Bus keywords; `on`/`reply` are handler forms it does not index)
-# Clocks
-
+## Clocks
 `after(seconds, tag)` registers a one-shot clock; `interval(seconds, tag)`
 registers a repeating clock with a **0.1 second minimum**. Use the compositor
 frame clock for animation. Both return an opaque id; `cancel_timer(id)` returns
@@ -974,3 +963,14 @@ candidates close their timers; successful reloads retire the old timers after
 handlers drain. Shutdown closes them too. In a plain script, a live interval
 keeps the pump running until cancelled; a lone `after` keeps it alive until
 delivery. Timers are unavailable in expression mode.
+
+## See also
+
+- [Bus messaging](bus.md) — `send` / `emit` / `address` / `on` / `reply`, topic pub/sub, `$result`/`$rc`, the no-broker state machine, `async`/Class C
+- [invocation & CLI](invocation.md) — every `mix` entry mode, including the `--serve` flag summary and `--check`
+- [capabilities & embedding](capabilities.md) — the trust model; a citizen is a *trusted, full-capability* process, not a sandbox for untrusted code
+- [errors](errors.md) — `try … catch`, `die`, and how runaways become clean errors inside a handler
+- [functions](functions.md) — handler bodies, lambdas, and the pass-in / return / reassign idiom for threading state
+- The [cos repo](https://github.com/markc/mixos) — `noded`, the Bus broker
+- The [mix repo](https://github.com/markc/mixos) — [AGENTS.md](https://github.com/markc/mixos/blob/main/AGENTS.md) is the agent orientation sheet; this manual is the language reference
+- `mix help` · `mix what send` · `mix what emit` · `mix what address` (`mix what` covers the Bus keywords; `on`/`reply` are handler forms it does not index)

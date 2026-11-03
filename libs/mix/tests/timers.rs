@@ -76,3 +76,29 @@ fn timer_lints() {
     assert_eq!(a.diagnostics.iter().filter(|d| d.code == "MIX-E1513").count(), 1);
     assert_eq!(a.diagnostics.iter().filter(|d| d.code == "MIX-W2410").count(), 1);
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn busy_pump_coalesces_and_cancel_discards_due_tick() {
+    let mut e = Evaluator::new();
+    exec(&mut e, r#"
+$id = interval(0.1, "busy")
+$ticks = 0
+$missed = 0
+on timer.tick
+    $ticks = $ticks + 1
+    $missed = $event.args.missed
+    cancel_timer($id)
+end
+"#).await.unwrap();
+    std::thread::sleep(Duration::from_millis(360));
+    pump(&mut e).await;
+    assert_eq!(e.get_global("ticks"), Some(Value::Number(1.0)));
+    assert!(e.get_global("missed").unwrap().to_number().unwrap() >= 2.0);
+    exec(&mut e, "$cancelled = after(0.001, \"discard\")").await.unwrap();
+    std::thread::sleep(Duration::from_millis(10));
+    assert_eq!(exec(&mut e, "cancel_timer($cancelled)").await.unwrap(), Value::Bool(true));
+    pump(&mut e).await;
+    assert_eq!(e.get_global("ticks"), Some(Value::Number(1.0)));
+    let err = exec(&mut e, "interval(0.099, \"floor\")").await.unwrap_err();
+    assert_eq!(err.info().unwrap().code, "TIMER_PERIOD");
+}

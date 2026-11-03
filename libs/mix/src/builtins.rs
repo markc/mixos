@@ -127,7 +127,7 @@ builtin_table! {
     // (prefix/suffix/replace forms): "nothing to strip/replace" returns the
     // subject UNCHANGED, never nil. Indices are 0-based codepoints.
     ("before", CapabilityClass::Pure,          "string",  "Text before the FIRST delim: before(s, delim) -> string | nil (nil when delim absent; \"\" is a real result — delim at the start). Empty delim raises", contract!((s: string, delim: string) -> any_of(string, nil); failure[raises])),
-    ("after", CapabilityClass::Pure,           "string",  "Text after the FIRST delim: after(s, delim) -> string | nil (nil when delim absent; \"\" when delim at the end). Empty delim raises. Want a default? `after($s, \"=\") or \"\"`", contract!((s: string, delim: string) -> any_of(string, nil); failure[raises])),
+    ("after", CapabilityClass::Pure,           "string",  "Text after the FIRST delim: after(s, delim) -> string | nil (nil when delim absent; \"\" when delim at the end). Empty delim raises. Want a default? `after($s, \"=\") or \"\"`. With a numeric first argument: after(seconds, tag) registers a generation-owned one-shot CLOCK_MONOTONIC timer delivering timer.tick {id,tag,missed,due_at,now}", contract!((s: any_of(string, number), delim: string) -> any_of(string, nil); failure[raises])),
     ("before_last", CapabilityClass::Pure,     "string",  "Text before the LAST delim -> string | nil (nil when absent). Empty delim raises", contract!((s: string, delim: string) -> any_of(string, nil); failure[raises])),
     ("after_last", CapabilityClass::Pure,      "string",  "Text after the LAST delim -> string | nil (nil when absent) — basename/extension: after_last(path, \"/\"), after_last(name, \".\"). Empty delim raises", contract!((s: string, delim: string) -> any_of(string, nil); failure[raises])),
     ("split_once", CapabilityClass::Pure,      "string",  "Split at the FIRST delim: split_once(s, delim) -> [head, tail] | nil (nil when absent — never a 1-element list). Empty delim raises", contract!((s: string, delim: string) -> any_of(list, nil); failure[raises])),
@@ -252,7 +252,6 @@ builtin_table! {
     ("delete", CapabilityClass::Pure,          "map",     "Return map with key removed", contract!((map: map, k: string) -> map)),
 
     ("read_file", CapabilityClass::FsRead,       "io",      "Read entire file contents as string", contract!((path: string) -> string; failure[raises])),
-    ("after", CapabilityClass::Env, "system", "One-shot CLOCK_MONOTONIC timer owned by this evaluator generation; delivers timer.tick {id,tag,missed,due_at,now}. Candidates may prepare timers; retirement closes them", contract!((seconds: number, tag: string) -> string; failure[raises])),
     ("interval", CapabilityClass::Env, "system", "Repeating absolute monotonic timer, minimum 0.1 seconds (TIMER_PERIOD); use the frame clock for animation. Late delivery coalesces to one timer.tick; missed counts skipped deadlines", contract!((seconds: number, tag: string) -> string; failure[raises])),
     ("cancel_timer", CapabilityClass::Env, "system", "Cancel this generation's timer and discard pending delivery; true only if still live", contract!((id: string) -> bool; failure[raises])),
     ("fs_watch", CapabilityClass::FsRead, "io", "Register Linux inotify watch; returns evaluator-owned opaque handle. Delivers fs.changed via $event.args; bounded, overflow requires rescan; no polling fallback", contract!((path: string, opts?: map("fs_watch_options", {recursive: bool, events: list(string)})) -> string; failure[raises])),
@@ -1038,7 +1037,6 @@ pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
 /// `serve_name`, which reads the evaluator's installed serve runtime, and
 /// `script_version`, which reads the evaluator's installed script record).
 pub const EVAL_SPECIAL_BUILTINS: &[&str] = &[
-    "after",
     "interval",
     "cancel_timer",
     "fs_watch",
