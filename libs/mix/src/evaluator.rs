@@ -3189,6 +3189,9 @@ pub(crate) const INLINE_SPECIAL_FORMS: &[&str] = &[
     "is_reload_candidate",
     "fs_watch",
     "fs_unwatch",
+    "after",
+    "interval",
+    "cancel_timer",
     "fs_wait",
     "dir_open",
     "dir_rename",
@@ -3359,6 +3362,9 @@ impl Drop for ExprDepthGuard {
 /// shape — so the static deny is what makes the premise unconditional.
 pub const EXPR_MODE_DENIED_BUILTINS: &[&str] = &[
     "task_start",
+    "after",
+    "interval",
+    "cancel_timer",
     "fs_wait",
     "dir_open",
     "dir_rename",
@@ -13783,6 +13789,21 @@ impl Evaluator {
         eval_args: &'a mut [Value],
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = MixResult<Option<Value>>> + 'a>> {
         Box::pin(async move {
+            if matches!(name, "after" | "interval" | "cancel_timer") {
+                self.check_capability(name)?;
+                self.check_builtin_arity(name, eval_args.len())?;
+                if name == "cancel_timer" {
+                    let Value::String(id) = &eval_args[0] else {
+                        return Err(crate::native_events::refusal("TIMER_ARGUMENT", "timer id must be a string"));
+                    };
+                    return Ok(Some(Value::Bool(self.globals.borrow_mut().native_events.cancel_timer(id))));
+                }
+                let [Value::Number(seconds), Value::String(tag)] = eval_args else {
+                    return Err(crate::native_events::refusal("TIMER_ARGUMENT", "timer expects seconds and a string tag"));
+                };
+                let id = self.globals.borrow_mut().native_events.timer(*seconds, tag.clone(), name == "interval")?;
+                return Ok(Some(Value::String(id)));
+            }
             if matches!(name, "fs_watch" | "fs_unwatch" | "fs_wait") {
                 self.check_capability(name)?;
                 self.check_builtin_arity(name, eval_args.len())?;
@@ -14207,7 +14228,7 @@ impl Evaluator {
                     }
                     if matches!(
                         name.as_str(),
-                        "fs_watch"
+                        "after" | "interval" | "cancel_timer" | "fs_watch"
                             | "fs_unwatch"
                             | "fs_wait"
                             | "net_watch"
@@ -14429,6 +14450,7 @@ impl Evaluator {
                                 let families = {
                                     let g = self.globals.borrow();
                                     crate::native_events::Families {
+                                        timers: g.handlers.contains_key("timer.tick"),
                                         processes: [
                                             "proc.line",
                                             "proc.overflow",

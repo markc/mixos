@@ -4,6 +4,9 @@
 
 ### Added
 
+- Generation-owned monotonic `after`, `interval` and `cancel_timer`, with
+  coalesced `timer.tick` delivery, absolute deadlines and timer lint checks.
+
 - 0.119.0: add `global $a, $b` for explicit program-global assignment per invocation,
   including shared serve globals. Lambdas declare independently.
 - Refuse parameter, existing-local/capture/module, binder and runtime-name

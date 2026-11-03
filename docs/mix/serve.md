@@ -938,3 +938,39 @@ of lines of Mix.
 - The [cos repo](https://github.com/markc/mixos) — `noded`, the Bus broker
 - The [mix repo](https://github.com/markc/mixos) — [AGENTS.md](https://github.com/markc/mixos/blob/main/AGENTS.md) is the agent orientation sheet; this manual is the language reference
 - `mix help` · `mix what send` · `mix what emit` · `mix what address` (`mix what` covers the Bus keywords; `on`/`reply` are handler forms it does not index)
+# Clocks
+
+`after(seconds, tag)` registers a one-shot clock; `interval(seconds, tag)`
+registers a repeating clock with a **0.1 second minimum**. Use the compositor
+frame clock for animation. Both return an opaque id; `cancel_timer(id)` returns
+true only while that timer is live and discards pending delivery.
+
+```mix
+$sampler = interval(1, "sample")
+on timer.tick
+    if $event.args.id == $sampler then
+        print(read_file("/proc/loadavg"))
+    end
+end
+```
+
+A clock is an event source when the tick **is** the event: sampling something
+with no notification, scheduling, debounce, timeouts, or a timer tied to
+outstanding work. It is polling when it replaces an existing event. For example,
+`on timer.tick; print(read_file("/tmp/settings")); end` should use `fs_watch`
+and `on fs.changed`. Prefer `proc.exited`, `net.changed`, props and subscriptions
+when they already describe the change. `/proc` and `/sys` reads have no such
+filesystem notification.
+
+`$event.args` contains `{id, tag, missed, due_at, now}`. Times use `monotonic()`
+seconds (CLOCK_MONOTONIC). `due_at` is the earliest outstanding deadline;
+`missed` counts additional elapsed deadlines. A busy pump delivers one tick,
+never a catch-up burst. Repeating deadlines stay on their original absolute
+grid, independent of handler time.
+
+Timers belong to the evaluator generation. Reload candidates may register
+timers, like filesystem watches; their handlers run only after commit. Failed
+candidates close their timers; successful reloads retire the old timers after
+handlers drain. Shutdown closes them too. In a plain script, a live interval
+keeps the pump running until cancelled; a lone `after` keeps it alive until
+delivery. Timers are unavailable in expression mode.

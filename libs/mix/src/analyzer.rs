@@ -646,6 +646,7 @@ fn analyze_at(
     check_pad_loop_idiom(stmts, &ctx, &mut a);
     check_unreachable(stmts, &ctx, &mut a);
     check_requires(stmts, &ctx, &mut a);
+    check_timers(stmts, &ctx, &mut a);
     check_require_calls(stmts, &ctx, &mut a);
     check_extension_collisions(stmts, &ctx, cfg, &mut a);
     check_null_barewords(stmts, &ctx, cfg, &mut a);
@@ -2492,6 +2493,37 @@ fn check_recurring_silent_bugs(stmts: &[Stmt], ctx: &FileContext, a: &mut Analys
 /// like any other literal: it satisfies only a shape that admits nil
 /// (`Nil`, `Any`, or an `AnyOf` containing them), and against a
 /// concrete shape it is a contradiction and flagged.
+fn check_timers(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis) {
+    walk_all_exprs(stmts, &mut |stmt, expr| {
+        if let Expr::FunctionCall { name, args } = expr
+            && name == "interval"
+            && let Some(Expr::NumberLiteral(n)) = args.first()
+            && *n < 0.1
+        {
+            a.diagnostics.push(diag(ctx, "MIX-E1513", Severity::Error, stmt.line,
+                "interval has a 0.1 s floor (TIMER_PERIOD)".into(),
+                Some("use the frame clock for animation".into())));
+        }
+    });
+    walk_stmts(stmts, &mut |stmt| {
+        if let StmtKind::On { command, body, .. } = &stmt.kind
+            && command == "timer.tick"
+        {
+            walk_all_exprs(body, &mut |s, expr| {
+                if let Expr::FunctionCall { name, args } = expr
+                    && matches!(name.as_str(), "stat" | "read_file" | "exists")
+                    && let Some(Expr::StringLiteral(path) | Expr::EscapedQuoteStringLiteral(path)) = args.first()
+                    && !["/proc", "/sys"].iter().any(|root| path == root || path.starts_with(&format!("{root}/")))
+                {
+                    a.diagnostics.push(diag(ctx, "MIX-W2410", Severity::Warning, s.line,
+                        "timer.tick reads a fixed path".into(),
+                        Some("use fs_watch and on fs.changed for paths with notifications".into())));
+                }
+            });
+        }
+    });
+}
+
 fn check_literal_type_contradictions(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis) {
     use crate::builtin_info::TypeShape;
     for stmt in stmts {
