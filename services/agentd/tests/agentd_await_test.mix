@@ -500,6 +500,27 @@ try
   check("manual resume does not republish final operation", len(topics("agent.op.done", "op", $child)) == 1)
 
   -- Review 5: cancelling a queued deadline consumes its outbox atomically.
+  for each $command in ["agent.session.close", "agent.op.cancel"]
+    $s = start("resumer")
+    $aid = register($s, "close-reopen-" .. $command, {})
+    prompt($s, "wait")
+    wait_status($s, "waiting")
+    op_done("close-reopen-" .. $command, "done")
+    check("reopen starts before close " .. $command, wait_status($s, "starting"))
+    call($command, {session: $s, op: $s})
+    wait_status($s, "ended")
+    sleep(0.5)
+    $out = call("agent.op.get", {op: $s}).v
+    check("close during reopen stays cancelled " .. $command, $out.state == "cancelled" and $out.reason == "caller_closed" and status($s) == "ended" and len(topics("agent.op.done", "op", $s)) == 1)
+  end
+  $s = start("resumer")
+  $own = "mcp-s-" .. $s .. "-review"
+  citizen($here .. "/fixtures/impostor.mix", $own, $env)
+  sleep(0.3)
+  send $own impostor.call body=json_encode({command: "agent.op.cancel", body: {op: $s}}) timeout=10
+  check("own sender cannot op.cancel", $reply.rc == 17 and status($s) == "ready")
+  close_session($s)
+
   $s = start("resumer")
   prompt($s, "SLOW")
   $aid = register($s, "cancel-deadline-outbox", {deadline_s: 0.15})
