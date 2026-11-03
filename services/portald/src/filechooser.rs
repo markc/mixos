@@ -33,6 +33,7 @@ const CANCEL_ATTEMPTS: u8 = 3;
 struct Cancel {
     attempts: u8,
     in_flight: bool,
+    reissue: bool,
 }
 
 struct Entry {
@@ -133,11 +134,14 @@ impl Bridge {
         if generation.is_none() || settings::native::live_generation(&self.client) != generation {
             return None;
         }
-        self.cancels
-            .lock()
-            .unwrap()
-            .entry(request.clone())
-            .or_default();
+        {
+            let mut pending = self.cancels.lock().unwrap();
+            let cancel = pending.entry(request.clone()).or_default();
+            // A late choose reply may describe a window created after the
+            // provider processed our sweep. Its cancellation needs a fresh
+            // call, even while the sweep acknowledgement is still in flight.
+            cancel.reissue |= cancel.in_flight;
+        }
         self.retry_cancel(request)
     }
 
@@ -153,7 +157,7 @@ impl Bridge {
             cancel.attempts += 1;
         }
         let this = self.clone();
-        Some(tokio::spawn(async move {
+        Some(tokio::spawn(async move { loop {
             // Unknown, expired and already ended requests acknowledge with rc 0.
             // Request ids include the incarnation, so retries across reconnects
             // cannot cancel a new chooser that happens to reuse a sequence.
@@ -162,6 +166,12 @@ impl Bridge {
                 .await
                 .is_some();
             let mut pending = this.cancels.lock().unwrap();
+            if acknowledged && pending.get(&request).is_some_and(|c| c.reissue) {
+                let cancel = pending.get_mut(&request).unwrap();
+                cancel.reissue = false;
+                cancel.attempts = 1;
+                continue;
+            }
             if acknowledged {
                 pending.remove(&request);
             } else if let Some(cancel) = pending.get_mut(&request) {
@@ -172,7 +182,8 @@ impl Bridge {
                     cancel.in_flight = false;
                 }
             }
-        }))
+            break;
+        }}))
     }
 
     // The lock covers transitions, signal enqueueing and object removal. Thus
