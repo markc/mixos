@@ -105,7 +105,7 @@ try
   $bus = $pb.start({dir: $tmp .. "/bus", name: "agentd-resume", noded: $noded})
   $env = merge($pb.client_env($bus), {HOME: $tmp .. "/home", MIXOS_NOTIFYD_STATE: $tmp .. "/notify.json"})
   $conf = {max_live: 4, agents: {
-    resumer: {argv: [$mix, $fake, "resume"], roots: [$tmp .. "/ws"], mode: "default", close_on_done: true,
+    resumer: {argv: [$mix, $fake, "resume"], roots: [$tmp .. "/ws"], mode: "default", close_on_done: false,
       env: {FAKE_ACP_CALLS: $tmp .. "/calls"}},
     loader: {argv: [$mix, $fake, "load"], roots: [$tmp .. "/ws"],
       env: {FAKE_ACP_CALLS: $tmp .. "/load-calls"}},
@@ -126,7 +126,7 @@ try
   -- Resume: same id, seq continues, mixos-mcp comes back.
   $s = start("resumer")
   $listing = filter(agent("agent.agents", {}).v.agents, fn($x) = $x.agent == "resumer")[0]
-  check("agent.agents lists instance settings", $listing.mode == "default" and $listing.close_on_done == true)
+  check("agent.agents lists instance settings", $listing.mode == "default" and $listing.close_on_done == false)
   sleep(0.3)
   check("instance mode is applied at new session start", contains(read_file($tmp .. "/calls"), '"modeId":"default"'))
   agent("agent.session.set", {session: $s, mode: "plan"})
