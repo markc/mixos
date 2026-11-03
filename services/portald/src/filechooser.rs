@@ -179,7 +179,18 @@ impl Bridge {
                 } else if let Some(cancel) = pending.get_mut(&request) {
                     if cancel.attempts >= CANCEL_ATTEMPTS {
                         tracing::warn!(%request, "files cancel retry budget exhausted");
-                        pending.remove(&request);
+                        if cancel.reissue {
+                            // This attempt predated a newer demand. Preserve it
+                            // for the next poll with its own bounded budget.
+                            // Polls/retries cannot set reissue: each fresh budget
+                            // requires a new cancel(), so N demands cost at most
+                            // N * CANCEL_ATTEMPTS native calls.
+                            cancel.attempts = 0;
+                            cancel.reissue = false;
+                            cancel.in_flight = false;
+                        } else {
+                            pending.remove(&request);
+                        }
                     } else {
                         cancel.in_flight = false;
                     }
