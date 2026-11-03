@@ -92,6 +92,21 @@ fn wait_await($id, $want)
   return false
 end
 
+fn outbox_count($s)
+  $db = sqlopen($tmp .. "/sessions.db", "rw")
+  $n = sqlexec($db, "SELECT count(*) AS n FROM await_outbox WHERE session = ?", [$s])[0].n
+  sqlclose($db)
+  return $n
+end
+
+fn wait_retries($id, $n)
+  for $i = 1 to 100
+    if row($id).redeliveries >= $n then return true end
+    sleep(0.1)
+  end
+  return false
+end
+
 fn prompt($s, $text)
   return call("agent.session.prompt", {session: $s, content: $text})
 end
@@ -117,7 +132,7 @@ mkdir($tmp .. "/ws", {parents: true})
 try
   $bus = $pb.start({dir: $tmp .. "/bus", name: "agentd-await"})
   $env = merge($pb.client_env($bus), {HOME: $tmp .. "/home"})
-  $fake_env = {FAKE_ACP_REFUSE_FILE: $tmp .. "/refuse", FAKE_ACP_CRASH_FILE: $tmp .. "/crash", FAKE_ACP_REOPEN_DELAY: "0.2", FAKE_ACP_HOLD_FILE: $tmp .. "/hold"}
+  $fake_env = {FAKE_ACP_REFUSE_FILE: $tmp .. "/refuse", FAKE_ACP_CRASH_FILE: $tmp .. "/crash", FAKE_ACP_REOPEN_DELAY: "0.2", FAKE_ACP_HOLD_FILE: $tmp .. "/hold", FAKE_ACP_ERROR_FILE: $tmp .. "/outcome-error"}
   $conf = {max_live: 1, agents: {
     resumer: {argv: [$mix, $here .. "/fixtures/fake_acp_agent.mix", "resume"], roots: [$tmp .. "/ws"], env: $fake_env},
     stubborn: {argv: [$mix, $here .. "/fixtures/fake_acp_agent.mix", "resume,stubborn"], roots: [$tmp .. "/ws"]}}}
@@ -332,6 +347,98 @@ try
   citizen($here .. "/../scripts/agentd.mix", "agent", $agent_env)
   up()
   check("restart redelivers in-flight outcome", wait_await($aid, "delivered") and row($aid).redeliveries == 1 and len(outcomes($s)) == 2)
+  close_session($s)
+
+  -- Review 1: a final end cancels obligations that cannot suspend it.
+  $s = start("resumer")
+  $aid = register($s, "ended-no-suspend", {suspend: false})
+  prompt($s, "DIE")
+  wait_status($s, "ended")
+  op_done("ended-no-suspend", "done")
+  sleep(0.3)
+  check("non-suspending await cannot reopen ended session", status($s) == "ended" and row($aid).state == "cancelled" and row($aid).reason == "session_ended" and len(events($s, "resumed")) == 0 and len(outcomes($s)) == 0)
+
+  $s = start("resumer")
+  $aid = register($s, "ended-outbox", {suspend: false})
+  write_file($tmp .. "/crash", "once")
+  op_done("ended-outbox", "done")
+  check("final end fails remaining outbox", wait_status($s, "ended") and row($aid).state == "failed" and row($aid).reason == "session_ended" and outbox_count($s) == 0)
+  sleep(0.1)
+  check("final end publishes await failure", len(topics("agent.await.failed", "await", $aid)) == 1 and topics("agent.await.failed", "await", $aid)[0].body.reason == "session_ended")
+
+  -- Review 2: a running suspending wait survives without a transient end.
+  $s = start("resumer")
+  $aid = register($s, "restart-running", {})
+  prompt($s, "SLOW")
+  wait_status($s, "running")
+  restart()
+  $suspended = events($s, "suspended")
+  check("running suspending await restarts as waiting without ended event", status($s) == "waiting" and len(events($s, "ended")) == 0 and len($suspended) == 1 and $suspended[0].reason == "agentd_restart")
+  op_done("restart-running", "done")
+  check("restarted running await resumes on event", wait_await($aid, "delivered") and len(outcomes($s)) == 1)
+  close_session($s)
+
+  $s = start("resumer")
+  $aid = register($s, "restart-non-suspending", {suspend: false})
+  prompt($s, "SLOW")
+  wait_status($s, "running")
+  restart()
+  op_done("restart-non-suspending", "done")
+  sleep(0.2)
+  check("restart ends and cancels non-suspending await", status($s) == "ended" and row($aid).state == "cancelled" and row($aid).reason == "session_ended" and len(events($s, "ended")) == 1 and len(outcomes($s)) == 0)
+
+  -- Review 3: errors need later boundaries, never a same-pass resend.
+  $s = start("resumer")
+  $aid = register($s, "outcome-error", {})
+  prompt($s, "wait")
+  wait_status($s, "waiting")
+  write_file($tmp .. "/outcome-error", "yes")
+  op_done("outcome-error", "done")
+  wait_retries($aid, 1)
+  sleep(0.3)
+  check("outcome ACP error stays idle until next boundary", row($aid).redeliveries == 1 and row($aid).state == "fired" and status($s) == "ready" and len(outcomes($s)) == 1)
+  prompt($s, "next human boundary")
+  wait_retries($aid, 2)
+  sleep(0.3)
+  check("next turn boundary retries outcome once", row($aid).redeliveries == 2 and len(outcomes($s)) == 2)
+  prompt($s, "last human boundary")
+  wait_await($aid, "failed")
+  sleep(0.4)
+  check("outcome ACP errors fail after three attempts and stay idle", row($aid).state == "failed" and row($aid).redeliveries == 3 and row($aid).reason == "redelivery_limit" and status($s) == "ready" and len(outcomes($s)) == 3 and outbox_count($s) == 0 and len(topics("agent.await.failed", "await", $aid)) == 1)
+  run_argv_must(["rm", $tmp .. "/outcome-error"])
+  close_session($s)
+
+  -- Review 4: a pre-fix crash could leave this already-delivered row.
+  $s = start("resumer")
+  $aid = register($s, "delivered-stale-outbox", {})
+  op_done("delivered-stale-outbox", "done")
+  wait_await($aid, "delivered")
+  call("QUIT", {})
+  sleep(0.5)
+  $db = sqlopen($tmp .. "/sessions.db", "rw")
+  sqlexec($db, "INSERT INTO await_outbox (id, await_id, session, fired, outcome, inflight) VALUES (?, ?, ?, ?, ?, 1)", [uuid(), $aid, $s, time(), json_encode({op: "delivered-stale-outbox", state: "done"})])
+  sqlclose($db)
+  citizen($here .. "/../scripts/agentd.mix", "agent", $agent_env)
+  up()
+  sleep(0.3)
+  check("restart deletes delivered inflight outbox without redelivery", row($aid).state == "delivered" and row($aid).redeliveries == 0 and outbox_count($s) == 0 and len(outcomes($s)) == 1)
+  close_session($s)
+
+  -- Review 5: cancelling a queued deadline consumes its outbox atomically.
+  $s = start("resumer")
+  prompt($s, "SLOW")
+  $aid = register($s, "cancel-deadline-outbox", {deadline_s: 0.15})
+  for $i = 1 to 100
+    if outbox_count($s) > 0 then break end
+    sleep(0.05)
+  end
+  check("deadline queued while busy", row($aid).state == "pending" and outbox_count($s) == 1)
+  $cancel = call("agent.await.cancel", {await: $aid})
+  check("cancel deletes queued deadline outbox atomically", $cancel.v.cancelled == true and row($aid).state == "cancelled" and outbox_count($s) == 0)
+  call("agent.session.cancel", {session: $s})
+  wait_status($s, "ready")
+  sleep(0.2)
+  check("cancelled deadline notice is never delivered", len(outcomes($s)) == 0 and outbox_count($s) == 0)
   close_session($s)
 catch $m
   check("harness: " .. $m, false)

@@ -184,9 +184,11 @@ end
 
 -- After a restart no agent from before is running (agentd owned their
 -- process groups). End their sessions in the log, each with a last event.
+-- A suspending await or an outbox is an obligation to resume: leave that
+-- row untouched for agentd to reload and log as suspended, never ended.
 -- Returns the ids ended.
 fn recover($h, $at)
-  $ids = map(sqlexec($h, "SELECT id FROM sessions WHERE status NOT IN ('ended', 'waiting')"), fn($r) = $r.id)
+  $ids = map(sqlexec($h, "SELECT id FROM sessions s WHERE status NOT IN ('ended', 'waiting') AND NOT EXISTS (SELECT 1 FROM awaits a WHERE a.session = s.id AND a.state = 'pending' AND a.suspend = 1) AND NOT EXISTS (SELECT 1 FROM await_outbox o WHERE o.session = s.id)"), fn($r) = $r.id)
   for each $id in $ids
     $seq = last_seq($h, $id) + 1
     append($h, $id, $seq, "ended", json_encode({kind: "ended", session: $id, seq: $seq, reason: "agentd_restart"}), $at)

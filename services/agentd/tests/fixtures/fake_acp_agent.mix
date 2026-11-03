@@ -110,6 +110,10 @@ loop
   elif $m.method == "session/prompt" then
     $sid = $m.params.sessionId
     $t = prompt_text($m.params)
+    if starts_with($t, "[await]") and env("FAKE_ACP_ERROR_FILE") != "" and is_file(env("FAKE_ACP_ERROR_FILE")) then
+      out({id: $m.id, error: {code: -32000, message: "outcome turn failed"}})
+      continue
+    end
     if $t == "DIE" then exit(1) end
     if starts_with($t, "[await]") and env("FAKE_ACP_CRASH_FILE") != "" and is_file(env("FAKE_ACP_CRASH_FILE")) then
       if read_file(env("FAKE_ACP_CRASH_FILE")) == "once" then run_argv_must(["rm", env("FAKE_ACP_CRASH_FILE")]) end
