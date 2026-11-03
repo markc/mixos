@@ -21,7 +21,9 @@ $listener = realpath($here .. "/fixtures/agent_listener.mix")
 $fake = realpath($here .. "/fixtures/fake_acp_agent.mix")
 $mix = env("MIXOS_TEST_MIX", mixos_path("prefix") .. "/bin/mix")
 $noded = env("MIXOS_TEST_NODED", mixos_path("prefix") .. "/bin/noded")
-$tmp = env("TMPDIR", "/tmp") .. "/mixos-test-evidence/agentd-resume-test." .. uuid()
+$tmp = env("TMPDIR", "/tmp") .. "/a-" .. slice(replace(uuid(), "-", ""), 0, 16)
+$fixture_ok = false
+try
 $results = []
 $pids = []
 
@@ -252,4 +254,16 @@ if len($failed) > 0 then
   end
   exit(1)
 end
-remove_dir($tmp)
+$fixture_ok = true
+
+finally
+  if $fixture_ok then
+    remove_dir($tmp)
+  elif is_dir($tmp) then
+    $evidence = env("TMPDIR", "/tmp") .. "/mixos-test-evidence"
+    mkdir($evidence)
+    $dest = $evidence .. "/" .. basename($tmp)
+    run_argv_must(["mv", "--", $tmp, $dest])
+    print("logs in " .. $dest)
+  end
+end

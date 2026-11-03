@@ -23,10 +23,15 @@ if contains(args(), "--extra") then
   exit(0)
 end
 if contains(args(), "--mix") then
+  $built = run_argv(["cargo", "build", "--locked", "-p", "system", "-p", "noded"], {timeout: 7200, max_output: 64000000, stderr: "stdout"})
+  print($built.stdout)
+  if not $built.ok then exit(1) end
+  $fresh = realpath("target/debug/mix")
+  $noded = realpath("target/debug/noded")
   for $pass = 1 to 2
     print("MIX PASS " .. to_string($pass))
     for $script in ["tests/test_tmp_test.mix", "services/agentd/tests/agent_test.mix", "services/agentd/tests/log_test.mix", "services/agentd/tests/agent_cli_test.mix", "services/agentd/tests/agentd_test.mix", "services/agentd/tests/agentd_resume_test.mix", "services/compd/tests/scene_template_test.mix"]
-      $r = run_argv([$mix, "tools/test_tmp.mix", $mix, $script], {timeout: 600, max_output: 64000000, stderr: "stdout"})
+      $r = run_argv([$mix, "tools/test_tmp.mix", $fresh, $script], {timeout: 600, max_output: 64000000, stderr: "stdout", env: {MIXOS_TEST_MIX: $fresh, MIXOS_TEST_NODED: $noded}})
       print($r.stdout)
       if not $r.ok then exit(1) end
     end
