@@ -190,7 +190,45 @@ try
     send ops ops.emit body=json_encode({op: "auth-no-query", state: "done", reason: "authenticated"}) timeout=2
     check("authenticated event delivers without query or deadline", wait_await($aid, "delivered") and row($aid).deadline == nil and json_parse(row($aid).outcome).reason == "authenticated")
     close_session($s)
+
+    $s = start("resumer")
+    $aid = register($s, "auth-deadline-field", {})
+    prompt($s, "wait")
+    wait_status($s, "waiting")
+    $rows = json_parse(read_file($tmp .. "/ops.json"))
+    $rows["auth-deadline-field"] = {query_fail: true}
+    write_file($tmp .. "/ops.json", json_encode($rows))
+    send ops ops.emit body=json_encode({op: "auth-deadline-field", state: "done", deadline: true}) timeout=2
+    check("authenticated terminal cannot inject deadline flag", wait_await($aid, "delivered") and json_parse(row($aid).outcome).deadline == nil and outbox_count($s) == 0)
+    close_session($s)
   end
+
+  for each $path in ["catchup", "direct"]
+    $s = start("resumer")
+    $op = "query-deadline-field-" .. $path
+    if $path == "direct" then $aid = register($s, $op, {}) end
+    $rows = json_parse(read_file($tmp .. "/ops.json"))
+    $rows[$op] = {op: $op, state: "done", deadline: true}
+    write_file($tmp .. "/ops.json", json_encode($rows))
+    if $path == "catchup" then $aid = register($s, $op, {})
+    else send agent ops.op.done body=json_encode({op: $op, state: "done", deadline: true}) timeout=1 end
+    check("queried terminal cannot inject deadline flag " .. $path, wait_await($aid, "delivered") and json_parse(row($aid).outcome).deadline == nil and outbox_count($s) == 0)
+    close_session($s)
+  end
+
+  $s = start("resumer")
+  $rows = json_parse(read_file($tmp .. "/ops.json"))
+  $rows["query-wrong-op"] = {op: "another-op", state: "done"}
+  write_file($tmp .. "/ops.json", json_encode($rows))
+  $aid = register($s, "query-wrong-op", {})
+  check("wrong-op catch-up stays pending", row($aid).state == "pending" and outbox_count($s) == 0)
+  prompt($s, "wait")
+  wait_status($s, "waiting")
+  send agent ops.op.done body=json_encode({op: "query-wrong-op", state: "done"}) timeout=1
+  check("wrong-op event query stays pending", row($aid).state == "pending" and status($s) == "waiting" and len(outcomes($s)) == 0)
+  op_done("query-wrong-op", "done")
+  check("correct outcome after wrong-op reply delivered once", wait_await($aid, "delivered") and json_parse(row($aid).outcome).op == "query-wrong-op" and len(outcomes($s)) == 1 and outbox_count($s) == 0)
+  close_session($s)
 
   $s = start("resumer")
   $a1 = register($s, "one", {note: "finish my job"})

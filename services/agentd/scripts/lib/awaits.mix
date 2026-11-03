@@ -281,6 +281,9 @@ fn await_terminal($state)
 end
 
 fn await_fire($row, $out, $deadline)
+  -- This is internal delivery metadata, never authority from a service.
+  $out = delete($out, "deadline")
+  if $deadline then $out.deadline = true end
   -- Both records commit together: a fired await always has an outbox row.
   sqlexec($DB, "BEGIN IMMEDIATE")
   try
@@ -311,10 +314,10 @@ fn await_query($row, $deadline)
     send $row.service $cmd body=json_encode({op: $row.op}) timeout=10
     $out = if $rc == 0 and type($reply) == "map" then $reply else {op: $row.op, state: "unknown"} end
   end
+  if type($out.op) != "string" or $out.op != $row.op then $out = {op: $row.op, state: "unknown"} end
   if await_terminal($out.state) then
     await_fire($row, $out, false)
   elif $deadline then
-    $out.deadline = true
     $out.reason = "deadline passed before the event arrived"
     await_fire($row, $out, true)
   end
