@@ -69,12 +69,12 @@ fn quoted_and_dynamic_commands_keep_their_meaning() {
     assert!(matches!(command(&program[0]), Expr::StringLiteral(s) if s == "waiter-lab.list"));
     let program = parse("$cmd = \"waiter-lab.list\"; send t $cmd");
     assert!(matches!(command(&program[1]), Expr::Variable(s) if s == "cmd"));
-    let program = parse("send t (10 - 4)");
+    let program = parse("send waiter-lab (10 - 4)");
     assert!(matches!(
         command(&program[0]),
         Expr::BinaryOp { op: BinOp::Sub, .. }
     ));
-    let program = parse("send t (to_string(42))");
+    let program = parse("send waiter-lab (to_string(42))");
     assert!(matches!(command(&program[0]), Expr::FunctionCall { .. }));
 }
 
