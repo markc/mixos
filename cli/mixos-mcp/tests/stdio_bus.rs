@@ -363,7 +363,13 @@ async fn stdio_tools_use_the_real_fixture_bus_and_reconnect_without_replay() {
         .await
         .unwrap();
     assert_eq!(refused.is_error, Some(true));
-    assert!(refused.content[0].as_text().unwrap().text.contains("MIXOS_AGENT_SESSION"));
+    assert!(
+        refused.content[0]
+            .as_text()
+            .unwrap()
+            .text
+            .contains("MIXOS_AGENT_SESSION")
+    );
     let owner = NodedClient::connect("email", &broker.url).await.unwrap();
     let mut incoming = owner.incoming_async().await.unwrap();
     let deliveries = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
