@@ -252,6 +252,9 @@ builtin_table! {
     ("delete", CapabilityClass::Pure,          "map",     "Return map with key removed", contract!((map: map, k: string) -> map)),
 
     ("read_file", CapabilityClass::FsRead,       "io",      "Read entire file contents as string", contract!((path: string) -> string; failure[raises])),
+    ("after", CapabilityClass::Env, "system", "One-shot CLOCK_MONOTONIC timer owned by this evaluator generation; delivers timer.tick {id,tag,missed,due_at,now}. Candidates may prepare timers; retirement closes them", contract!((seconds: number, tag: string) -> string; failure[raises])),
+    ("interval", CapabilityClass::Env, "system", "Repeating absolute monotonic timer, minimum 0.1 seconds (TIMER_PERIOD); use the frame clock for animation. Late delivery coalesces to one timer.tick; missed counts skipped deadlines", contract!((seconds: number, tag: string) -> string; failure[raises])),
+    ("cancel_timer", CapabilityClass::Env, "system", "Cancel this generation's timer and discard pending delivery; true only if still live", contract!((id: string) -> bool; failure[raises])),
     ("fs_watch", CapabilityClass::FsRead, "io", "Register Linux inotify watch; returns evaluator-owned opaque handle. Delivers fs.changed via $event.args; bounded, overflow requires rescan; no polling fallback", contract!((path: string, opts?: map("fs_watch_options", {recursive: bool, events: list(string)})) -> string; failure[raises])),
     ("fs_unwatch", CapabilityClass::FsRead, "io", "Cancel watch and pending changes; wake fs_wait with FS_WATCH_CANCELLED", contract!((handle: string) -> nil; failure[raises])),
     ("fs_wait", CapabilityClass::FsRead, "io", "Suspend until a filesystem batch; cancellation-safe; refused in serve and expression modes", contract!((handle: string) -> map("fs_watch_batch", {watch: string, changes: list(map), overflow: bool}); effects[blocking]; failure[raises])),
@@ -1035,6 +1038,9 @@ pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
 /// `serve_name`, which reads the evaluator's installed serve runtime, and
 /// `script_version`, which reads the evaluator's installed script record).
 pub const EVAL_SPECIAL_BUILTINS: &[&str] = &[
+    "after",
+    "interval",
+    "cancel_timer",
     "fs_watch",
     "fs_unwatch",
     "fs_wait",

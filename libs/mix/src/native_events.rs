@@ -87,6 +87,8 @@ struct PendingSocket {
 
 #[derive(Default)]
 struct Pending {
+    timers: BTreeMap<String, crate::timers::Pending>,
+    last_timer: Option<String>,
     processes: BTreeMap<String, PendingProcess>,
     last_process: Option<String>,
     watches: BTreeMap<String, PendingWatch>,
@@ -116,6 +118,7 @@ struct Pending {
 /// without handlers so completed watches cannot keep the pump alive forever.
 #[derive(Clone, Copy, Default)]
 pub(crate) struct Families {
+    pub timers: bool,
     /// Read only by the `tokio-sleep` pump's `any()`; process records drain
     /// whatever this says.
     #[cfg_attr(not(feature = "tokio-sleep"), allow(dead_code))]
@@ -134,6 +137,7 @@ pub(crate) struct Families {
 
 impl Families {
     pub const ALL: Self = Self {
+        timers: true,
         processes: true,
         filesystem: true,
         children: true,
@@ -146,7 +150,7 @@ impl Families {
     /// (evaluator.rs `sleep()`); without the feature it has no caller.
     #[cfg(feature = "tokio-sleep")]
     pub fn any(self) -> bool {
-        self.filesystem || self.children || self.net || self.audio || self.sockets || self.processes
+        self.timers || self.filesystem || self.children || self.net || self.audio || self.sockets || self.processes
     }
 
     fn source(self, command: &str) -> bool {
@@ -175,6 +179,9 @@ pub(crate) struct Queue {
 }
 
 impl Queue {
+    pub(crate) fn wake_timer(&self) {
+        self.ready.notify_one();
+    }
     pub(crate) fn process_line(&self, handle: &str, stream: &str, line: String, truncated: bool) {
         let mut pending = self.pending.lock().unwrap();
         let Some(p) = pending.processes.get_mut(handle) else {
@@ -696,14 +703,29 @@ impl Queue {
                         .find(|h| p.last_process.as_ref().is_none_or(|last| *h > last))
                         .or_else(|| ready.first())
                         .cloned();
-                    let families_n: usize = 5;
+                    let now = crate::timers::now();
+                    let ready: Vec<_> = p.timers.iter()
+                        .filter(|(_, t)| families.timers && t.next <= now)
+                        .map(|(id, _)| id.clone()).collect();
+                    let timer = ready.iter()
+                        .find(|id| p.last_timer.as_ref().is_none_or(|last| *id > last))
+                        .or_else(|| ready.first()).cloned();
+                    let families_n: usize = 6;
                     for step in 0..families_n {
                         let family = (p.turn + step) % families_n;
+                        if family == 5 && let Some(id) = &timer {
+                            let t = p.timers.get_mut(id).unwrap();
+                            let body = t.take(id, now);
+                            if t.period.is_none() { p.timers.remove(id); }
+                            p.last_timer = Some(id.clone());
+                            p.turn = 0;
+                            return Ok(event("timer.tick", body));
+                        }
                         if family == 4
                             && let Some(h) = &process
                         {
                             p.last_process = Some(h.clone());
-                            p.turn = 0;
+                            p.turn = 5;
                             return Ok(Self::take_process(&mut p, h));
                         }
                         if family == 0
@@ -776,6 +798,8 @@ pub(crate) fn json_value(v: serde_json::Value) -> Value {
 static NEXT_OWNER_ID: AtomicU64 = AtomicU64::new(1);
 
 pub(crate) struct NativeEvents {
+    timers: BTreeMap<String, crate::timers::Source>,
+    next_timer: u64,
     processes: BTreeMap<String, crate::child_events::ProcessWatch>,
     pub queue: Arc<Queue>,
     pumping: Rc<Cell<bool>>,
@@ -798,6 +822,8 @@ pub(crate) struct NativeEvents {
 impl Default for NativeEvents {
     fn default() -> Self {
         NativeEvents {
+            timers: BTreeMap::new(),
+            next_timer: 0,
             processes: BTreeMap::new(),
             queue: Arc::new(Queue::default()),
             pumping: Rc::new(Cell::new(false)),
@@ -862,6 +888,32 @@ impl NativeEvents {
 }
 
 impl NativeEvents {
+    pub fn timer(&mut self, seconds: f64, tag: String, repeating: bool) -> MixResult<String> {
+        self.ensure_open()?;
+        crate::timers::period(seconds, repeating)?;
+        self.timers.retain(|id, _| self.queue.pending.lock().unwrap().timers.contains_key(id));
+        if self.timers.len() >= 256 {
+            return Err(refusal("TIMER_LIMIT", "at most 256 timers per generation"));
+        }
+        self.next_timer += 1;
+        let id = format!("timer:{}:{}", self.owner_id, self.next_timer);
+        let due = crate::timers::now() + seconds;
+        let period = repeating.then_some(seconds);
+        // Register before the reader can wake the pump.
+        self.queue.pending.lock().unwrap().timers.insert(id.clone(), crate::timers::Pending { tag, next: due, period });
+        match crate::timers::Source::start(self.queue.clone(), due, period) {
+            Ok(source) => { self.timers.insert(id.clone(), source); Ok(id) }
+            Err(e) => { self.queue.pending.lock().unwrap().timers.remove(&id); Err(e) }
+        }
+    }
+
+    pub fn cancel_timer(&mut self, id: &str) -> bool {
+        let live = self.queue.pending.lock().unwrap().timers.remove(id).is_some();
+        self.timers.remove(id);
+        self.queue.ready.notify_waiters();
+        live
+    }
+
     /// This evaluator generation's owner id (see [`NEXT_OWNER_ID`]).
     pub(crate) fn owner_id(&self) -> u64 {
         self.owner_id
@@ -881,6 +933,7 @@ impl NativeEvents {
         self.pumping.get()
     }
     pub fn has_sources(&mut self) -> bool {
+        self.timers.retain(|id, _| self.queue.pending.lock().unwrap().timers.contains_key(id));
         self.processes.retain(|_, p| !p.finished());
         self.children.retain(|c| !c.finished());
         // Completed socket readers published their terminal record before
@@ -889,7 +942,8 @@ impl NativeEvents {
         #[cfg(feature = "ws")]
         self.sockets
             .retain(|_, s| !s.completed.load(std::sync::atomic::Ordering::Acquire));
-        !self.watches.is_empty()
+        !self.timers.is_empty()
+            || !self.watches.is_empty()
             || !self.processes.is_empty()
             || !self.queue.pending.lock().unwrap().processes.is_empty()
             || !self.children.is_empty()
@@ -1374,6 +1428,7 @@ impl NativeEvents {
         {
             let mut p = self.queue.pending.lock().unwrap();
             p.closed = true;
+            p.timers.clear();
             p.watches.clear();
             p.sources.clear();
             p.children.clear();
@@ -1391,6 +1446,7 @@ impl NativeEvents {
             crate::builtins::socket_sources::discard_record(rec);
         }
         self.queue.ready.notify_waiters();
+        self.timers.clear();
         self.watches.clear();
         self.filesystem = None;
         self.children.clear();
@@ -1529,6 +1585,8 @@ mod tests {
         let mut cx = Context::from_waker(&waker);
         assert!(wait.as_mut().poll(&mut cx).is_pending());
         let registry = NativeEvents {
+            timers: BTreeMap::new(),
+            next_timer: 0,
             processes: BTreeMap::new(),
             queue: q.clone(),
             pumping: Rc::new(Cell::new(false)),

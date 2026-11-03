@@ -185,6 +185,16 @@ pub const LINT_DOCS: &[LintDoc] = &[
         detail: "`$x = push($x, v)` binds nil — push mutates in place and returns nil, so the assign-back empties the list; `$x = pop($x)` / `$x = shift($x)` bind the REMOVED ELEMENT, not the list. Drop the assignment for push; bind the element separately for pop/shift.",
     },
     LintDoc {
+        code: "MIX-E1513",
+        summary: "interval period below 0.1 seconds",
+        detail: "A literal interval period below 0.1 seconds raises TIMER_PERIOD. Use the compositor frame clock for animation.",
+    },
+    LintDoc {
+        code: "MIX-W2410",
+        summary: "timer handler reads a fixed path",
+        detail: "A timer.tick handler calls stat, read_file or exists on a literal path. Prefer fs_watch and on fs.changed. Paths under /proc and /sys are exempt because they have no filesystem notification.",
+    },
+    LintDoc {
         code: "MIX-E1509",
         summary: "global declaration names a parameter",
         detail: "A function or lambda parameter cannot be declared global (GLOBAL_PARAM). Choose a different parameter name.",
