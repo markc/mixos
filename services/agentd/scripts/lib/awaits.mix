@@ -102,6 +102,7 @@ end
 fn await_retry($id, $acp_error)
   $rows = sqlexec($DB, "SELECT * FROM await_outbox WHERE session = ? AND inflight = 1", [$id])
   for each $row in $rows
+    $deadline_notice = json_parse($row.outcome).deadline == true
     $state = sqlexec($DB, "SELECT state FROM awaits WHERE id = ?", [$row.await_id])[0].state
     if $state == "delivered" then
       sqlexec($DB, "DELETE FROM await_outbox WHERE id = ?", [$row.id])
@@ -111,12 +112,16 @@ fn await_retry($id, $acp_error)
     sqlexec($DB, "BEGIN IMMEDIATE")
     try
       $failed = $row.redeliveries >= 3 or ($acp_error and $n >= 3)
-      if $failed then
+      if $failed and $deadline_notice then
+        -- Notification exhaustion cannot consume the operation or its real
+        -- outcome, which may have arrived during this notification turn.
+        sqlexec($DB, "DELETE FROM await_outbox WHERE id = ?", [$row.id])
+      elif $failed then
         sqlexec($DB, "UPDATE awaits SET state = 'failed', reason = 'redelivery_limit', redeliveries = ? WHERE id = ?", [$n, $row.await_id])
         sqlexec($DB, "DELETE FROM await_outbox WHERE await_id = ?", [$row.await_id])
       else
         sqlexec($DB, "UPDATE await_outbox SET inflight = 0, redeliveries = ? WHERE id = ?", [$n, $row.id])
-        sqlexec($DB, "UPDATE awaits SET redeliveries = max(redeliveries, ?) WHERE id = ?", [$n, $row.await_id])
+        if not $deadline_notice then sqlexec($DB, "UPDATE awaits SET redeliveries = max(redeliveries, ?) WHERE id = ?", [$n, $row.await_id]) end
       end
       sqlexec($DB, "COMMIT")
     catch $m
@@ -124,7 +129,11 @@ fn await_retry($id, $acp_error)
       raise("AWAIT_LOG", $m)
     end
     if $failed then
-      await_topic("agent.await.failed", {await: $row.await_id, session: $id, reason: "redelivery_limit"})
+      if $deadline_notice then
+        emit_event($id, {kind: "deadline_notice_failed", await: $row.await_id, outbox: $row.id, reason: "redelivery_limit"})
+      else
+        await_topic("agent.await.failed", {await: $row.await_id, session: $id, reason: "redelivery_limit"})
+      end
     end
   end
 end

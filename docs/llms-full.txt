@@ -1450,6 +1450,12 @@ A deadline first queries the operation. If it is still non-terminal,
 the outbox delivers a deadline notification with the current state and
 the await stays pending for the real outcome. The agent's note is quoted
 in each outcome as data from the Bus, not instructions.
+If deadline-notification delivery exhausts its retry cap, agentd logs
+`deadline_notice_failed` with the await and outbox ids and drops only that
+notice. The await and any queued real outcome remain eligible for delivery.
+A failed human reopen of a waiting session ends its operation as `failed`
+with reason `reopen_failed`; reopening an already-ended conversation retains
+its original final operation outcome.
 
 ## Command line
 

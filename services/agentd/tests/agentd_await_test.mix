@@ -107,6 +107,14 @@ fn wait_retries($id, $n)
   return false
 end
 
+fn wait_notice_failed($s)
+  for $i = 1 to 100
+    if len(events($s, "deadline_notice_failed")) > 0 then return true end
+    sleep(0.1)
+  end
+  return false
+end
+
 fn prompt($s, $text)
   return call("agent.session.prompt", {session: $s, content: $text})
 end
@@ -534,6 +542,7 @@ try
   $s = start("resumer")
   prompt($s, "interactive")
   check("interactive stays ready", wait_status($s, "ready") and call("agent.op.get", {op: $s}).v.state == "running")
+  check("interactive accepts second prompt", prompt($s, "interactive again").rc == 0 and wait_status($s, "ready") and len(events($s, "stop")) == 2)
   close_session($s)
 
   $parent = start("resumer")
@@ -577,6 +586,48 @@ try
   send $own impostor.call body=json_encode({command: "agent.op.cancel", body: {op: $s}}) timeout=10
   check("own sender cannot op.cancel", $reply.rc == 17 and status($s) == "ready")
   close_session($s)
+
+  -- First-round DeepSeek: a deadline notification is not the operation.
+  $s = start("resumer")
+  write_file($tmp .. "/outcome-error", "yes")
+  $aid = register($s, "deadline-cap-late", {deadline_s: 0.15})
+  prompt($s, "wait")
+  check("deadline notice exhausts retries without consuming await", wait_notice_failed($s) and wait_status($s, "waiting") and row($aid).state == "pending" and row($aid).reason == nil and outbox_count($s) == 0 and len(topics("agent.await.failed", "await", $aid)) == 0)
+  remove($tmp .. "/outcome-error")
+  op_done("deadline-cap-late", "done")
+  check("real outcome after deadline notice cap delivered", wait_await($aid, "delivered") and json_parse(row($aid).outcome).state == "done")
+  close_session($s)
+
+  $s = start("resumer")
+  write_file($tmp .. "/outcome-error", "yes")
+  write_file($tmp .. "/hold", "yes")
+  $aid = register($s, "deadline-cap-concurrent", {deadline_s: 0.15})
+  prompt($s, "wait")
+  check("failing deadline turn held", wait_outcomes($s, 1) and wait_status($s, "running"))
+  -- Fault injection at the cap boundary while the real ACP turn is held.
+  $db = sqlopen($tmp .. "/sessions.db", "rw")
+  sqlexec($db, "UPDATE await_outbox SET redeliveries = 2 WHERE await_id = ? AND inflight = 1", [$aid])
+  sqlclose($db)
+  op_done("deadline-cap-concurrent", "done")
+  sleep(0.2)
+  check("terminal outcome queued beside deadline notice", row($aid).state == "fired" and outbox_count($s) == 2)
+  remove($tmp .. "/outcome-error")
+  remove($tmp .. "/hold")
+  check("notice cap preserves queued real outcome", wait_notice_failed($s) and wait_await($aid, "delivered") and json_parse(row($aid).outcome).state == "done" and len(topics("agent.await.failed", "await", $aid)) == 0)
+  close_session($s)
+
+  for each $kind in ["refuse", "crash"]
+    $s = start("resumer")
+    $aid = register($s, "human-reopen-" .. $kind, {})
+    prompt($s, "wait")
+    wait_status($s, "waiting")
+    write_file($tmp .. "/refuse", $kind)
+    if $kind == "refuse" then call("agent.session.resume", {session: $s}) else prompt($s, "human prompt") end
+    check("human waiting reopen failure is terminal " .. $kind, wait_status($s, "ended") and call("agent.op.get", {op: $s}).v.state == "failed" and call("agent.op.get", {op: $s}).v.reason == "reopen_failed")
+    sleep(0.2)
+    check("human waiting reopen publishes once " .. $kind, len(topics("agent.op.done", "op", $s)) == 1 and len(topics("agent.session.ended", "session", $s)) == 1 and outbox_count($s) == 0)
+    remove($tmp .. "/refuse")
+  end
 
   $s = start("resumer")
   prompt($s, "SLOW")

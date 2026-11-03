@@ -1092,16 +1092,26 @@ fn session_exited($id, $exit_code, $signal, $error_code)
     await_end($id)
     $reopen = $S.sessions[$id].reopen
     if $reopen != nil and not $reopen.done and not $S.sessions[$id].explicit_close then
-      -- The resume failed (refused, or the agent died first): the session
-      -- goes back to ended exactly as it was.
+      -- A failed reopen restores an ended conversation's prior row; a
+      -- waiting session instead records its first final failure below.
       $S.sessions[$id].replaying = false
       emit_event($id, {kind: "resume_failed", via: $reopen.via, error: $reopen.error,
         error_code: if $reopen.error != nil then "AGENT_NOT_RESUMABLE" else ($error_code ?? "AGENT_EXITED") end})
-      $log.session_restore($DB, $reopen.prior)
-      $S.sessions[$id].ended_at = $reopen.prior.ended_at
-      $S.sessions[$id].exit_code = $reopen.prior.exit_code
-      $S.sessions[$id].signal = $reopen.prior.signal
-      $S.sessions[$id].end_reason = $reopen.prior.end_reason
+      $prior = $reopen.prior
+      if $prior.status == "waiting" then
+        -- This is the first final end, unlike a failed manual reopen of an
+        -- already-ended conversation whose operation outcome stays final.
+        $error_code = "reopen_failed"
+        $prior.end_reason = $error_code
+        $prior.ended_at = time()
+        $prior.exit_code = $exit_code
+        $prior.signal = $signal
+      end
+      $log.session_restore($DB, $prior)
+      $S.sessions[$id].ended_at = $prior.ended_at
+      $S.sessions[$id].exit_code = $prior.exit_code
+      $S.sessions[$id].signal = $prior.signal
+      $S.sessions[$id].end_reason = $prior.end_reason
     else
       $at = time()
       $log.session_ended($DB, $id, $exit_code, $signal, $error_code, $at)

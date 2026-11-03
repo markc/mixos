@@ -86,6 +86,7 @@ loop
   elif $m.method == "session/resume" or $m.method == "session/load" then
     if env("FAKE_ACP_REOPEN_DELAY") != "" then sleep(to_number(env("FAKE_ACP_REOPEN_DELAY"))) end
     $sid = $m.params.sessionId
+    if env("FAKE_ACP_REFUSE_FILE") != "" and is_file(env("FAKE_ACP_REFUSE_FILE")) and read_file(env("FAKE_ACP_REFUSE_FILE")) == "crash" then exit(1) end
     if contains($modes, "refuse") or (env("FAKE_ACP_REFUSE_FILE") != "" and is_file(env("FAKE_ACP_REFUSE_FILE"))) then
       out({id: $m.id, error: {code: -32002, message: "Resource not found: session " .. to_string($sid)}})
     else
@@ -111,6 +112,13 @@ loop
     $sid = $m.params.sessionId
     $t = prompt_text($m.params)
     if starts_with($t, "[await]") and env("FAKE_ACP_ERROR_FILE") != "" and is_file(env("FAKE_ACP_ERROR_FILE")) then
+      -- Hold an outcome error so the real terminal event can arrive during
+      -- the deadline turn. The ordinary hold path below still succeeds.
+      if env("FAKE_ACP_HOLD_FILE") != "" then
+        while is_file(env("FAKE_ACP_HOLD_FILE"))
+          sleep(0.05)
+        end
+      end
       out({id: $m.id, error: {code: -32000, message: "outcome turn failed"}})
       continue
     end
