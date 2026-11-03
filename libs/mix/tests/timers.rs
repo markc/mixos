@@ -125,11 +125,7 @@ async fn candidate_and_old_generation_retire_independently() {
         .await
         .unwrap();
     old.close_native_events();
-    assert!(
-        exec(&mut old, "timer_once(1, \"closed\")")
-            .await
-            .is_err()
-    );
+    assert!(exec(&mut old, "timer_once(1, \"closed\")").await.is_err());
     pump(&mut replacement).await;
     assert_eq!(
         exec(&mut replacement, "cancel_timer($id)").await.unwrap(),
