@@ -1275,6 +1275,8 @@ Bodies are JSON objects.
 | `agent.session.await` | `{session, service, op, deadline_s?, note?, suspend?, id?}` | `{await, state}`, after catch-up |
 | `agent.await.list` | `{session?}` | `{awaits: [...]}` |
 | `agent.await.cancel` | `{await}` | `{cancelled: bool}` |
+| `agent.op.get` | `{op}` | `{op, state, stop?, rc?, exit_code?, reason?}` |
+| `agent.op.cancel` | `{op}` | `{op, cancelled, state}`; closes the session and cancels its awaits |
 
 `content` is a string, or a list of ACP content blocks.
 
@@ -1385,12 +1387,39 @@ offers `session/load`.
 
 ## Awaiting operations
 
+Each session is also an operation, keyed by its session id. Every final end
+publishes `agent.op.done` once, with the same envelope as `agent.op.get`.
+Starting, ready, running and waiting sessions report `running`; unseen ids
+report `unknown`. Caller closure reports `cancelled`. An `end_turn` followed
+by a clean exit with no failed awaits reports `done`; other ends report
+`failed`. Outcomes last for `log_keep_days` (30 days by default).
+
+An instance with `close_on_done: true` closes after a turn with no pending
+await and an empty outbox. A suspending turn stays waiting. Interactive
+instances default to false. A parent awaits a child with
+`{service: "agent", op: <child session id>}`; local delivery uses the same
+operation adapter without a Bus round trip to agentd itself.
+
+Operation outcomes are final: explicitly resuming an ended conversation
+keeps its recorded operation outcome. Start a new session for a new job.
+
 `agent.session.await` watches `{service, op}` through `<service>.op.done`
 and `<service>.op.get {op}` (10 second query timeout). The session must
 be live or waiting. Every caller may register, including the session's own
 agent. `done`, `failed`, `cancelled` and `lost` fire the await; `unknown`
 stays pending. Catch-up runs before the registration reply, and again
 after reconnect.
+
+Incoming terminal publications authenticated by noded's reserved `.op.done`
+owner (`broker_service` matching the awaited service, absent or empty
+`broker_peer`, and actual `topic` matching `<service>.op.done`) deliver their outcome
+directly, even if `op.get` is unavailable or the publisher has exited.
+Agent session operations always use the internal canonical outcome, without
+a self Bus call. Remote mesh events, directed commands and legacy brokers without the authenticated
+header use the bounded 10 second durable `op.get` query. A failed legacy query
+leaves the await pending until another event, reconnect or deadline; an await
+without a deadline can remain pending until the broker is upgraded. There is
+no polling. Internal agent completion delivery remains canonical.
 
 With `suspend: true` (the default), a turn ending with a pending await and
 an empty outbox releases its agent process. The session becomes `waiting`,
@@ -8061,6 +8090,19 @@ seconds) is an **operation**:
   service publishes one `<svc>.op.done` topic, not retained, carrying
   `{op, state, rc?, log?, reason?}` and any service-specific fields. Every
   terminal state uses this one topic, `cancelled` included.
+  Publication is authenticated: noded reserves the suffix to the registered
+  owning service `<svc>`, while subscriptions remain public. Deliveries carry
+  the broker-owned `broker_service: <svc>` header; caller-supplied identities
+  and directed commands cannot manufacture it. Consumers may accept the
+  authenticated terminal envelope even if the publisher exits immediately.
+  Local operation consumers require an absent or empty `broker_peer`, the
+  matching `broker_service` and the actual matching `topic` header. An admitted
+  remote service of the same name is not authority for a local operation id;
+  remote or directed traffic is validated by querying the awaited target.
+  On older brokers without this header, consumers must validate event hints
+  with a bounded `op.get` query. If that query fails, the await stays pending
+  until another event, reconnect or deadline; broker upgrade removes this
+  legacy limitation without polling.
 - **`<svc>.op.get {op}`.** Answers `{op, state, ...}` with the same envelope,
   at any time. A caller that was not listening when `op.done` went out uses
   it to catch up.
@@ -36419,6 +36461,11 @@ Each name below is exposed as `mcp__mixos__<name>` in Claude Code.
 - `context_search`, `index_workspace`, `knowledge_digest`
 - `docs_feedback`, `journal_feedback`, `memory_feedback`, `journal_supersede`
 - `mix_execute`, `mcp_status`
+- `await_op {service, op, deadline_s?, note?}` registers a suspending await
+  for `MIXOS_AGENT_SESSION`. It returns the await id and tells the agent to
+  end its turn now: agentd resumes the session with the outcome; do not poll
+  or sleep. Outside an agentd session it refuses. A deadline sends a notice
+  but leaves the await pending for the eventual terminal outcome.
 
 `clipboard_get {selection?, mime?, primary?, offset?}` and
 `clipboard_set {text, selection?, mime?, primary?, sensitive?}` use the local

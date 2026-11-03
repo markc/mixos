@@ -261,7 +261,20 @@ in an id before it submits the work.</li>
 <li><strong><code>&lt;svc&gt;.op.done</code>.</strong> When an operation reaches a terminal state, the
 service publishes one <code>&lt;svc&gt;.op.done</code> topic, not retained, carrying
 <code>{op, state, rc?, log?, reason?}</code> and any service-specific fields. Every
-terminal state uses this one topic, <code>cancelled</code> included.</li>
+terminal state uses this one topic, <code>cancelled</code> included.
+Publication is authenticated: noded reserves the suffix to the registered
+owning service <code>&lt;svc&gt;</code>, while subscriptions remain public. Deliveries carry
+the broker-owned <code>broker_service: &lt;svc&gt;</code> header; caller-supplied identities
+and directed commands cannot manufacture it. Consumers may accept the
+authenticated terminal envelope even if the publisher exits immediately.
+Local operation consumers require an absent or empty <code>broker_peer</code>, the
+matching <code>broker_service</code> and the actual matching <code>topic</code> header. An admitted
+remote service of the same name is not authority for a local operation id;
+remote or directed traffic is validated by querying the awaited target.
+On older brokers without this header, consumers must validate event hints
+with a bounded <code>op.get</code> query. If that query fails, the await stays pending
+until another event, reconnect or deadline; broker upgrade removes this
+legacy limitation without polling.</li>
 <li><strong><code>&lt;svc&gt;.op.get {op}</code>.</strong> Answers <code>{op, state, ...}</code> with the same envelope,
 at any time. A caller that was not listening when <code>op.done</code> went out uses
 it to catch up.</li>
