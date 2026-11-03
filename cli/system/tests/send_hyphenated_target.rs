@@ -204,14 +204,15 @@ fn quoted_malformed_number_names_still_work() {
 
 /// The malformed-number leniency is confined to the bare send target:
 /// everywhere else a leading-zero or multi-dot number keeps its refusal
-/// verbatim — including a `$var-007` target and a hyphenated COMMAND.
+/// verbatim — including a `$var-007` target. A hyphenated COMMAND
+/// (`send svc cmd-007`) reads whole since mix 0.119.0 (libs/mix
+/// tests/send_command_parse.rs), so it is no longer in this list.
 #[test]
 fn malformed_numbers_outside_the_bare_target_are_still_refused() {
     for src in [
         "$x = 007",
         "$a = 1\n$x = $a-007",
         "$t = \"s\"\nsend $t-007 ping timeout=1",
-        "send svc cmd-007 timeout=1",
         "$x = send-007",
     ] {
         let out = mix(&["-c", src]);
