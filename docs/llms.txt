@@ -277,6 +277,7 @@ One line per component with a page: kind, then install profiles. The
 - [Decision — Preferences on the COSMIC settings model](https://mixos.dev/docs/decisions/2026-10-31-prefs-cosmic-model.md): settingsd is the one settings authority for every desktop on a machine, Preferences is rebuilt to the shape of COSMIC Settings (clean-room), one theme derivation in libs/design feeds every egui app, the compositor and one-way exporters to COSMIC, KDE Plasma, GTK, Qt and the settings portal, so one change restyles every desktop.
 - [Explicit global declarations](https://mixos.dev/docs/decisions/2026-11-01-global-declaration.md): Status: accepted. Decision: Mark, 2026-11-01. Language: Mix 0.119.0.
 - [Nightly component releases](https://mixos.dev/docs/decisions/2026-11-01-nightly-component-releases.md): Publish verified CBC gold bytes in independent component release lines.
+- [Decision — long-running work on the Bus is an operation](https://mixos.dev/docs/decisions/2026-11-03-bus-operations.md): A command whose work can outlast a request answers at once with an operation id, publishes one op.done when it ends, and answers op.get and op.cancel, so a caller can stop waiting and come back for the outcome.
 
 ### Specs
 
