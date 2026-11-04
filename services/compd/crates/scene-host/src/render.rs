@@ -465,6 +465,7 @@ fn content(
         }
     }
     Arc::new(Content {
+        native_tables: Arc::clone(&entry.native_tables),
         tree,
         lists: entry.prepared().clone(),
         revision: entry.revision(),

@@ -141,6 +141,9 @@ pub(super) fn paint(
     let mut scroll = egui::ScrollArea::vertical()
         .id_salt(id.with("scroll"))
         .auto_shrink([false, false]);
+    if let Some(offset) = state.restore_scroll.take() {
+        scroll = scroll.vertical_scroll_offset(offset);
+    }
     if let Some(focus) = state.scroll_to.take() {
         if focus < state.first || focus >= state.end {
             scroll = scroll

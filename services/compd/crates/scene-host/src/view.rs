@@ -46,9 +46,12 @@ pub const TITLEBAR: f32 = 32.0;
 /// The layout key of the frame's close button.
 pub const CLOSE_ID: &str = "chrome:close";
 
+pub(crate) type TableStates = Arc<std::sync::Mutex<BTreeMap<String, table::State>>>;
+
 /// What one surface draws: an accepted revision and its prepared rows.
 #[derive(Debug)]
 pub struct Content {
+    pub(crate) native_tables: TableStates,
     pub tree: ResolvedScene,
     pub lists: crate::templates::PreparedLists,
     pub revision: u64,
@@ -308,7 +311,7 @@ fn geometry_key(content: &Content) -> u64 {
 
 /// One scene surface's program.
 pub struct SceneUi {
-    tables: BTreeMap<String, table::State>,
+    tables: TableStates,
     appearance_epoch: u64,
     geometry: u64,
     layout_cache: Option<(u64, u32, u32, u32)>,
@@ -337,9 +340,14 @@ pub struct SceneUi {
 
 impl SceneUi {
     pub fn new(content: Arc<Content>) -> SceneUi {
+        {
+            let mut tables = content.native_tables.lock().unwrap();
+            tables.retain(|id, _| content.tree.nodes.get(id).is_some_and(|n| n.family == "table"));
+            for state in tables.values_mut() { state.remount(); }
+        }
         SceneUi {
             geometry: geometry_key(&content),
-            tables: BTreeMap::new(),
+            tables: Arc::clone(&content.native_tables),
             appearance_epoch: 0,
             layout_cache: None,
             layout_builds: 0,
@@ -394,7 +402,7 @@ impl SceneUi {
 
     pub(crate) fn table_states(&self) -> Value {
         let mut out = serde_json::Map::new();
-        for (id, state) in &self.tables {
+        for (id, state) in self.tables.lock().unwrap().iter() {
             out.insert(id.clone(), state.snapshot());
         }
         json!({"tables":out,"layout_builds":self.layout_builds})
@@ -504,7 +512,7 @@ impl ui::UiProgram for SceneUi {
             self.installed = Some((identity, self.content.dialog));
         }
         // Escape: a dialog hides (Quoin's chrome::dialog), an edge reports it.
-        if !self.tables.values().any(|state| state.edit.is_some())
+        if !self.tables.lock().unwrap().values().any(|state| state.edit.is_some())
             && ctx.input(|input| input.key_pressed(egui::Key::Escape))
         {
             emit.push(if self.content.dialog {
@@ -565,7 +573,8 @@ impl ui::UiProgram for SceneUi {
                     self.appearance_epoch += 1;
                 }
                 self.geometry = geometry_key(&content);
-                self.tables.retain(|id, _| {
+                self.tables = Arc::clone(&content.native_tables);
+                self.tables.lock().unwrap().retain(|id, _| {
                     content
                         .tree
                         .nodes

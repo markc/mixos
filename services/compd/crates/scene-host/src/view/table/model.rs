@@ -83,6 +83,7 @@ pub struct Row {
     pub raw: Value,
 }
 
+#[derive(Debug)]
 pub struct Edit {
     pub index: usize,
     pub id: String,
@@ -91,6 +92,7 @@ pub struct Edit {
     pub focus: bool,
 }
 
+#[derive(Debug)]
 struct Text {
     text: String,
     font: FontId,
@@ -99,7 +101,7 @@ struct Text {
     galley: Arc<Galley>,
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct State {
     pub session: String,
     pub generation: u64,
@@ -116,6 +118,7 @@ pub struct State {
     pub end: usize,
     pub scroll_y: f32,
     pub scroll_to: Option<usize>,
+    pub restore_scroll: Option<f32>,
     pub old_active: bool,
     pub request: Option<usize>,
     pub stale: u64,
@@ -129,6 +132,15 @@ pub struct State {
 }
 
 impl State {
+    /// Logical state belongs to the loaded scene, not its disposable GPU/UI instance.
+    pub fn remount(&mut self) {
+        self.texts.clear(); // Galleys reference the previous egui context font atlas.
+        self.old_active = false;
+        self.restore_scroll = Some(self.scroll_y);
+        self.request = None;
+        if let Some(edit) = &mut self.edit { edit.focus = true; }
+    }
+
     /// Validate the whole page before changing state. A generation is a row-order
     /// identity; changing a row's identity in place requires a new generation.
     pub fn ingest(&mut self, view: &Value) -> bool {
@@ -227,6 +239,7 @@ impl State {
             self.first = 0;
             self.end = 0;
             self.scroll_y = 0.0;
+            self.restore_scroll = None;
             self.scroll_to = Some(0);
         }
         if reset || epoch > self.selection_epoch {

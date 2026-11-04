@@ -49,6 +49,7 @@ pub struct SceneEntry {
     pub(crate) tree: ResolvedScene,
     pub(crate) revision: u64,
     pub(crate) prepared: PreparedLists,
+    pub(crate) native_tables: crate::view::TableStates,
     pub(crate) render_error: Option<Value>,
     pub(crate) mounted: Option<Mounted>,
     /// `applied_revision`: the revision the renderer has taken. A drawn
@@ -972,6 +973,7 @@ impl SceneStore {
             .as_ref()
             .is_some_and(|old| old.frame_armed && old.document.citizen == document.citizen);
         let frame_seq = old.as_ref().map_or(0, |old| old.frame_seq);
+        let native_tables = old.as_ref().map(|old| std::sync::Arc::clone(&old.native_tables)).unwrap_or_default();
         let mounted = old.and_then(|old| old.mounted);
         self.scenes.insert(
             tree.name.clone(),
@@ -981,6 +983,7 @@ impl SceneStore {
                 tree,
                 revision,
                 prepared,
+                native_tables,
                 render_error: None,
                 mounted,
                 applied,

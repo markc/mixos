@@ -146,7 +146,8 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
             let node = &content.tree.nodes[&item.id];
             let route = route_of(scene, item, node);
             let epoch = scene.appearance_epoch;
-            let state = scene.tables.entry(item.id.clone()).or_default();
+            let mut tables = scene.tables.lock().unwrap();
+            let state = tables.entry(item.id.clone()).or_default();
             super::table::paint(ui, item.rect, full, node, route, emit, state, epoch);
             continue;
         }
@@ -186,7 +187,8 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
         match node.family.as_str() {
             "table" => {
                 let route = route_of(scene, item, &node);
-                let state = scene.tables.entry(item.key.clone()).or_default();
+                let mut tables = scene.tables.lock().unwrap();
+                let state = tables.entry(item.key.clone()).or_default();
                 super::table::paint(
                     ui,
                     rect,
