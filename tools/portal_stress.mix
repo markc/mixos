@@ -1,0 +1,50 @@
+-- Lab-only, fixed-count reproduction. Run only on the native CBC worker.
+$root = dirname(dirname(realpath($0)))
+$tmp = "/tmp/portal-stress-" .. uuid()
+mkdir($tmp)
+$build = run_argv(["cargo", "test", "--locked", "-p", "toolkit", "--lib", "--no-run", "--message-format=json"], {cwd:$root, timeout:300, max_output:32000000})
+write_file($tmp .. "/build.log", $build.stdout .. $build.stderr)
+if not $build.ok then print($build); exit($build.exit_code ?? 1) end
+$bins=[]
+for $line in split($build.stdout,"\n")
+  if trim($line)=="" then continue end
+  $v=json_parse($line)
+  if $v.reason=="compiler-artifact" and ($v.profile??{}).test==true and ($v.target??{}).name=="toolkit" and $v.executable!=nil then push($bins,$v.executable) end
+end
+if len($bins)!=1 then raise("LAB_BINARY","expected one toolkit test executable") end
+$results=[]
+$running=[]
+try
+  -- Two fixed concurrency levels, 128 total trials; retain every outcome.
+  for $width in [4,12]
+    for $batch=1 to 8
+      $running=[]
+      for $i=1 to $width
+        $id=to_string($width) .. "-" .. to_string($batch) .. "-" .. to_string($i)
+        $path=$tmp .. "/" .. $id
+        $src='$r=run_argv(' .. data_encode([$bins[0],"--exact","choose::tests::portal_tests::portal_recovery_close_of_an_ended_request_falls_through","--nocapture"]) .. ',{timeout:15,max_output:1000000}); write_file(' .. data_encode($path .. ".log") .. ',$r.stdout .. $r.stderr); write_file(' .. data_encode($path .. ".json") .. ',json_encode({rc:$r.exit_code,ok:$r.ok,timed_out:$r.timed_out}));'
+        $child=spawn(["/opt/mixos/bin/mix","-c",$src],{stdout:{file:$path .. ".runner"},stderr:"stdout",die_with_parent:true})
+        push($running,{pid:$child,path:$path,id:$id})
+      end
+      $deadline=monotonic()+25
+      while len(filter($running,fn($v)=not is_file($v.path .. ".json")))>0 and monotonic()<$deadline
+        sleep(0.05)
+      end
+      for $item in $running
+        if not is_file($item.path .. ".json") then raise("LAB_CHILD","missing trial result: " .. $item.id) end
+        $v=json_parse(read_file($item.path .. ".json"))
+        push($results,merge({id:$item.id,log:$item.path .. ".log"},$v))
+        if not $v.ok then print("FAILED_TRIAL " .. $item.id .. "\n" .. read_file($item.path .. ".log")) end
+      end
+      print("BATCH " .. to_string($width) .. "/" .. to_string($batch) .. " complete")
+    end
+  end
+finally
+  for $item in $running
+    if process_alive($item.pid) then $k=kill($item.pid,15) end
+  end
+end
+$bad=filter($results,fn($v)=not $v.ok)
+write_file($tmp .. "/results.json",json_encode($results))
+print("LAB_RESULT " .. json_encode({trials:len($results),failed:len($bad),evidence:$tmp,failures:$bad}))
+if len($bad)>0 then exit(1) end
