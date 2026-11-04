@@ -18,6 +18,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 use crate::command::SceneCommand;
+use crate::view::TableInteger;
 use crate::mount::{
     dialog_geometry, is_dialog, is_overlay, is_toast, page_id, scene_edge, toast_geometry,
 };
@@ -187,12 +188,12 @@ fn check_table_versions(previous: &ResolvedScene, next: &ResolvedScene) -> Resul
         if view["session"].as_str()!=Some(session) {
             return Err(json!({"error_code":"TABLE_SESSION","node":id,"message":"page belongs to another view session"}));
         }
-        let (Some(g),Some(r))=(view["generation"].as_u64(),view["revision"].as_u64()) else {
+        let (Some(g),Some(r))=(view["generation"].whole(),view["revision"].whole()) else {
             return Err(json!({"error_code":"TABLE_VERSION","node":id,"message":"page requires generation and revision"}));
         };
         if g==0 || old.is_some_and(|old| old["session"].as_str()==Some(session)
-            && (g<old["generation"].as_u64().unwrap_or(0)
-                || (g==old["generation"].as_u64().unwrap_or(0) && r<=old["revision"].as_u64().unwrap_or(0)))) {
+            && (g<old["generation"].whole().unwrap_or(0)
+                || (g==old["generation"].whole().unwrap_or(0) && r<=old["revision"].whole().unwrap_or(0)))) {
             return Err(json!({"error_code":"TABLE_VERSION","node":id,"message":"stale or contradictory page revision"}));
         }
     }

@@ -10,6 +10,17 @@ pub const ROW_BUDGET: usize = 768;
 pub const TEXT_BUDGET: usize = 1024;
 pub const PAGE: usize = 128;
 
+/// Scene bindings normalise JSON numbers to f64, including nested objects.
+/// Only exact, nonnegative integers within Mix's safe integer range count.
+pub(crate) trait TableInteger {
+    fn whole(&self)->Option<u64>;
+}
+impl TableInteger for Value {
+    fn whole(&self)->Option<u64> {
+        self.as_f64().filter(|n| n.is_finite() && *n>=0.0 && *n<=9_007_199_254_740_991.0 && n.fract()==0.0).map(|n|n as u64)
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Selection(pub Vec<(usize, usize)>);
 
@@ -118,10 +129,10 @@ impl State {
     /// identity; changing a row's identity in place requires a new generation.
     pub fn ingest(&mut self, view: &Value) -> bool {
         let (Some(generation), Some(revision), Some(total), Some(offset), Some(rows)) = (
-            view["generation"].as_u64(),
-            view["revision"].as_u64(),
-            view["total"].as_u64(),
-            view["offset"].as_u64(),
+            view["generation"].whole(),
+            view["revision"].whole(),
+            view["total"].whole(),
+            view["offset"].whole(),
             view["rows"].as_array(),
         ) else {
             self.refused += 1;
@@ -178,14 +189,14 @@ impl State {
                 }),
             ));
         }
-        let epoch = view["selection_epoch"].as_u64().unwrap_or(0);
+        let epoch = view["selection_epoch"].whole().unwrap_or(0);
         let reset = generation != self.generation;
         let mut incoming_selection=Selection::default();
         if let Some(selection)=view.get("selection") {
             let Some(ranges)=selection["ranges"].as_array() else {self.refused+=1; return false;};
             let mut end=0;
             for range in ranges {
-                let (Some(a),Some(b))=(range[0].as_u64(),range[1].as_u64()) else {self.refused+=1; return false;};
+                let (Some(a),Some(b))=(range[0].whole(),range[1].whole()) else {self.refused+=1; return false;};
                 if a>=b || b>total || a<end {self.refused+=1; return false;}
                 incoming_selection.0.push((a as usize,b as usize)); end=b;
             }
@@ -207,7 +218,7 @@ impl State {
         if reset || epoch > self.selection_epoch {
             self.selection_epoch = epoch;
             self.focus = view["focus"]
-                .as_u64()
+                .whole()
                 .map(|v| v as usize)
                 .filter(|&v| v < total as usize);
             self.selection = incoming_selection;
@@ -236,7 +247,7 @@ impl State {
             .edit
             .as_ref()
             .and_then(|e| e.pending)
-            .is_some_and(|seq| view["ack"].as_u64().unwrap_or(0) >= seq)
+            .is_some_and(|seq| view["ack"].whole().unwrap_or(0) >= seq)
         {
             self.edit = None;
         }

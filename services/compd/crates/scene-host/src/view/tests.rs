@@ -45,6 +45,16 @@ fn viewport_table_is_a_visible_growing_leaf_in_the_real_scene_layout() {
 }
 
 #[test]
+fn compound_view_accepts_numbers_from_the_real_binding_evaluator() {
+    let source="---\nscene: 1\nname: table\ncitizen: c\nmodel: {\"page\":{\"session\":\"s\",\"generation\":1,\"revision\":1,\"total\":1,\"offset\":0,\"rows\":[{\"id\":\"a\",\"cells\":[\"A\"]}]}}\n---\n```mix\nroot: {widget: \"column\", fill: true, children: [\"table\"]}\ntable: {widget: \"table\", grow: 1, rows: [], columns: [\"Name\"], session: \"s\", view: \"= $model.page\"}\n```\n";
+    let rt=runtime(source,(400,300));
+    let table=&rt.program.tables["table"];
+    assert_eq!(table.generation,1);
+    assert_eq!(table.rows.len(),1);
+    assert_eq!(table.refused,0);
+}
+
+#[test]
 fn table_page_changes_reuse_geometry_but_size_and_appearance_invalidate_it() {
     let source = "---\nscene: 1\nname: table\ncitizen: test\n---\n```mix\nroot: {widget: \"column\", fill: true, children: [\"table\"]}\ntable: {widget: \"table\", grow: 1, rows: [], columns: [\"Name\"], total: 10000}\n```\n";
     let mut rt = runtime(source, (400, 300));
