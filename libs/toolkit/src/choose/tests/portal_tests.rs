@@ -64,6 +64,57 @@ impl RequestWithoutClose {
     }
 }
 
+// Lab only: GetAll represents enumeration waiting on an unrelated property.
+// This is a controlled independent defect, not evidence of the historical race.
+struct DelayedProperties {
+    release: watch::Sender<bool>,
+    entered: Arc<AtomicUsize>,
+    entry: Arc<tokio::sync::Notify>,
+    gets: Arc<AtomicUsize>,
+}
+
+// A persistent watch value also releases handlers that subscribe after teardown.
+struct ReleaseProperties(watch::Sender<bool>);
+impl Drop for ReleaseProperties {
+    fn drop(&mut self) {
+        portal_progress("cache gate released at teardown");
+        self.0.send_replace(true);
+    }
+}
+
+#[zbus::interface(name = "org.freedesktop.DBus.Properties")]
+impl DelayedProperties {
+    fn get(&self, interface: &str, property: &str) -> zbus::fdo::Result<OwnedValue> {
+        if interface != "org.freedesktop.portal.FileChooser" {
+            return Err(zbus::fdo::Error::UnknownInterface(interface.into()));
+        }
+        if property != "version" {
+            return Err(zbus::fdo::Error::UnknownProperty(property.into()));
+        }
+        self.gets.fetch_add(1, Ordering::SeqCst);
+        portal_progress("custom Properties.Get(version) responds immediately with 4");
+        Ok(OwnedValue::from(4u32))
+    }
+
+    async fn get_all(&self, interface: &str) -> zbus::fdo::Result<Options> {
+        if interface != "org.freedesktop.portal.FileChooser" {
+            return Err(zbus::fdo::Error::UnknownInterface(interface.into()));
+        }
+        let mut release = self.release.subscribe();
+        let entered = self.entered.fetch_add(1, Ordering::SeqCst) + 1;
+        portal_progress(format_args!(
+            "custom Properties.GetAll entered #{entered}; waiting for unrelated property gate"
+        ));
+        self.entry.notify_one();
+        release.wait_for(|released| *released).await.unwrap();
+        portal_progress(format_args!("custom Properties.GetAll released #{entered}"));
+        Ok(HashMap::from([
+            ("version".into(), OwnedValue::from(4u32)),
+            ("unrelated".into(), OwnedValue::from(0u32)),
+        ]))
+    }
+}
+
 struct Call {
     method: &'static str,
     options: Options,
@@ -602,4 +653,128 @@ async fn portal_close_unknown_method_is_an_acknowledged_end() {
     let client = connection(&address).await;
     let result = portal::close(&client, server.unique_name().unwrap().as_str(), path).await;
     assert!(result.is_ok(), "{result:?}");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn portal_version_get_does_not_wait_for_unrelated_get_all() {
+    let (_process, address) = dbus();
+    let (server, mut calls, closed) = serve(&address, Some(99)).await;
+    let (release, _) = watch::channel(false);
+    let release_guard = ReleaseProperties(release.clone());
+    let entered = Arc::new(AtomicUsize::new(0));
+    let entry = Arc::new(tokio::sync::Notify::new());
+    let gets = Arc::new(AtomicUsize::new(0));
+    // Portal remains registered: removing the builtin must not destroy PATH.
+    assert!(
+        !server
+            .object_server()
+            .remove::<zbus::fdo::Properties, _>(PATH)
+            .await
+            .unwrap()
+    );
+    assert!(
+        server
+            .object_server()
+            .at(
+                PATH,
+                DelayedProperties {
+                    release: release.clone(),
+                    entered: entered.clone(),
+                    entry: entry.clone(),
+                    gets: gets.clone(),
+                },
+            )
+            .await
+            .unwrap()
+    );
+    let probe = connection(&address).await;
+    let owner = server.unique_name().unwrap().as_str().to_owned();
+    let enumeration_probe = probe.clone();
+    let enumeration_owner = owner.clone();
+    let enumeration = tokio::spawn(async move {
+        enumeration_probe
+            .call_method(
+                Some(enumeration_owner.as_str()),
+                PATH,
+                Some("org.freedesktop.DBus.Properties"),
+                "GetAll",
+                &("org.freedesktop.portal.FileChooser",),
+            )
+            .await
+    });
+    tokio::time::timeout(IO_BOUND, entry.notified())
+        .await
+        .expect("custom GetAll did not enter its gate");
+    assert_eq!(entered.load(Ordering::SeqCst), 1);
+    assert!(!enumeration.is_finished());
+    // An actual wire Get, independent of proxy caching, validates the fixture.
+    let reply = tokio::time::timeout(
+        IO_BOUND,
+        probe.call_method(
+            Some(owner.as_str()),
+            PATH,
+            Some("org.freedesktop.DBus.Properties"),
+            "Get",
+            &("org.freedesktop.portal.FileChooser", "version"),
+        ),
+    )
+    .await
+    .expect("direct Get(version) was blocked by GetAll")
+    .unwrap();
+    assert_eq!(
+        u32::try_from(reply.body().deserialize::<OwnedValue>().unwrap()).unwrap(),
+        4
+    );
+    assert_eq!(gets.load(Ordering::SeqCst), 1);
+    assert!(!*release.borrow());
+    assert!(!enumeration.is_finished());
+    portal_progress("fixture validated: wire Get(version)=4 while wire GetAll remains gated");
+
+    let client = connection(&address).await;
+    let (_tx, mut cancel) = watch::channel(false);
+    let task = tokio::spawn(async move {
+        portal_progress("controlled chooser started; production IO_BOUND remains 2s");
+        let result =
+            portal::session_broken_stream(&client, &request("{}").unwrap(), &mut cancel, 2).await;
+        portal_progress(format_args!("controlled chooser completed: {result:?}"));
+        result
+    });
+    let call = tokio::time::timeout(Duration::from_secs(5), calls.recv()).await;
+    let result = tokio::time::timeout(Duration::from_secs(8), task).await;
+    portal_progress(format_args!(
+        "controlled observation: delivered={} client={result:?} GetAll_entries={} Get_calls={} gate_closed={}",
+        matches!(&call, Ok(Some(_))),
+        entered.load(Ordering::SeqCst),
+        gets.load(Ordering::SeqCst),
+        !*release.borrow()
+    ));
+    assert!(!*release.borrow());
+    assert!(!enumeration.is_finished());
+    // Release and reap the independent wire probe before outcome assertions,
+    // including the expected old-client failure at the original 5s boundary.
+    drop(release_guard);
+    let values = tokio::time::timeout(IO_BOUND, enumeration)
+        .await
+        .expect("released GetAll did not finish")
+        .unwrap()
+        .unwrap()
+        .body()
+        .deserialize::<Options>()
+        .unwrap();
+    assert_eq!(
+        u32::try_from(values["version"].try_clone().unwrap()).unwrap(),
+        4
+    );
+    assert!(values.contains_key("unrelated"));
+    let _call = call
+        .expect("chooser method not delivered within original 5s: inspect cache causality markers")
+        .unwrap();
+    assert_eq!(gets.load(Ordering::SeqCst), 2, "chooser must read version");
+    let result = result.unwrap().unwrap();
+    assert!(result.is_err());
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "portal request cancelled after transport failure"
+    );
+    assert_eq!(closed.load(Ordering::SeqCst), 0);
 }
