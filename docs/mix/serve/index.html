@@ -1044,12 +1044,15 @@ filesystem notification.</p>
 seconds (CLOCK_MONOTONIC). <code>due_at</code> is the earliest outstanding deadline;
 <code>missed</code> counts additional elapsed deadlines. A busy pump delivers one tick,
 never a catch-up burst. Repeating deadlines stay on their original absolute
-grid, independent of handler time.</p>
+grid, independent of handler time. Durations are rounded once to the nearest
+nanosecond (positive one-shots have a minimum of 1 ns); the kernel and pending
+deadlines use that same integer grid. Seconds are used only in the event payload.</p>
 <p>Timers belong to the evaluator generation. Reload candidates may register
 timers, like filesystem watches; their handlers run only after commit. Failed
 candidates close their timers; successful reloads retire the old timers after
 handlers drain. Shutdown closes them too. In a plain script, a live interval
-keeps the pump running until cancelled; a lone <code>timer_once</code> keeps it alive until
+keeps the pump running until cancelled, even without an <code>on timer.tick</code> handler;
+the plain pump consumes and discards unhandled ticks. A lone <code>timer_once</code> keeps it alive until
 delivery. Timers are unavailable in expression mode.</p>
 <h2 id="see-also">See also</h2>
 <ul>

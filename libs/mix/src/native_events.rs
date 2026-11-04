@@ -714,7 +714,7 @@ impl Queue {
                         .timers
                         .iter()
                         .filter(|(_, t)| {
-                            (families.timers || t.period.is_none()) && t.next <= now + 1e-9
+                            (families.timers || t.period.is_none()) && t.next <= now
                         })
                         .map(|(id, _)| id.clone())
                         .collect();
@@ -907,7 +907,7 @@ impl NativeEvents {
 impl NativeEvents {
     pub fn timer(&mut self, seconds: f64, tag: String, repeating: bool) -> MixResult<String> {
         self.ensure_open()?;
-        crate::timers::period(seconds, repeating)?;
+        let nanos = crate::timers::period(seconds, repeating)?;
         self.timers
             .retain(|id, _| self.queue.pending.lock().unwrap().timers.contains_key(id));
         if self.timers.len() >= 256 {
@@ -915,8 +915,8 @@ impl NativeEvents {
         }
         self.next_timer += 1;
         let id = format!("timer:{}:{}", self.owner_id, self.next_timer);
-        let due = crate::timers::now() + seconds;
-        let period = repeating.then_some(seconds);
+        let due = crate::timers::now() + nanos;
+        let period = repeating.then_some(nanos);
         // Register before the reader can wake the pump.
         self.queue.pending.lock().unwrap().timers.insert(
             id.clone(),

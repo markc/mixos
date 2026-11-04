@@ -114,6 +114,37 @@ end
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn fractional_period_delivers_native_ticks_on_its_grid() {
+    let mut e = Evaluator::new();
+    exec(
+        &mut e,
+        r#"
+$ticks = 0
+$grid_steps = 0
+$grid_ok = true
+$first_due = 0
+$id = interval(0.1000000006, "fractional")
+on timer.tick
+    if $ticks == 0 then
+        $first_due = $event.args.due_at
+    else
+        $expected = $first_due + $grid_steps * 0.100000001
+        $grid_ok = $grid_ok and abs($event.args.due_at - $expected) < 0.000001
+    end
+    $grid_steps = $grid_steps + $event.args.missed + 1
+    $ticks = $ticks + 1
+    if $ticks == 8 then cancel_timer($id) end
+end
+"#,
+    )
+    .await
+    .unwrap();
+    pump(&mut e).await;
+    assert_eq!(e.get_global("ticks"), Some(Value::Number(8.0)));
+    assert_eq!(e.get_global("grid_ok"), Some(Value::Bool(true)));
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn candidate_and_old_generation_retire_independently() {
     let mut old = Evaluator::new();
     let mut candidate = Evaluator::new();
