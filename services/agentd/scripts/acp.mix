@@ -3,7 +3,8 @@
 -- ACP stdio reader. The child citizen owns only this connection's projection;
 -- agentd owns agent processes, native effects, permission state and history.
 $a = require("lib/acp.mix")
-$mix = mixos_path("prefix", "bin/mix")
+-- Keep the reader and projection on the same runtime, including staged checks.
+$mix = realpath("/proc/self/exe")
 $connection = slice(replace(uuid(), "-", ""), 0, 16)
 $operations = {initialize: "initialize", "session/new": "new", "session/load": "load",
   "session/list": "list", "session/prompt": "prompt", "session/cancel": "cancel",
