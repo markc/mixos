@@ -342,6 +342,7 @@ impl<P: UiProgram> UiRuntime<P> {
     }
 
     fn run_pass(&mut self) {
+        let _pass = ledger::frame_trace::span("ui_run_pass", 0);
         self.apply_held();
         if !self.set_up {
             self.program.setup(&self.ctx);
@@ -425,9 +426,13 @@ impl<P: UiProgram> UiRuntime<P> {
         let painter = self
             .painter
             .get_or_insert_with(|| Painter::new(&gpu.device, gpu.format));
+        let tessellate = ledger::frame_trace::span("ui_tessellate", 0);
         let primitives = self
             .ctx
             .tessellate(pass.shapes.clone(), pass.pixels_per_point);
+        drop(tessellate);
+        let mut paint = ledger::frame_trace::span("ui_gpu_paint", 0);
+        paint.counters(primitives.len() as u64, pass.shapes.len() as u64);
         painter.paint(
             &gpu.device,
             &gpu.queue,

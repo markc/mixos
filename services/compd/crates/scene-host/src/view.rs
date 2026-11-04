@@ -447,6 +447,7 @@ impl ui::UiProgram for SceneUi {
     }
 
     fn show(&mut self, ui: &mut egui::Ui, emit: &mut Vec<SceneMessage>) {
+        let _show = ui::frame_trace::span("scene_show", self.content.revision);
         let ctx = ui.ctx().clone();
         let identity = self
             .look
@@ -481,6 +482,7 @@ impl ui::UiProgram for SceneUi {
                     .size()
             })
         };
+        let layout_span = ui::frame_trace::span("scene_layout", self.content.revision);
         self.layout = flex::layout(
             &self.content,
             ui.max_rect().size(),
@@ -488,6 +490,8 @@ impl ui::UiProgram for SceneUi {
             &self.images,
             &measure,
         );
+        drop(layout_span);
+        let _paint = ui::frame_trace::span("scene_paint", self.content.revision);
         paint::paint(self, ui, emit);
     }
 
