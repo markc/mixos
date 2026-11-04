@@ -45,6 +45,25 @@ fn viewport_table_is_a_visible_growing_leaf_in_the_real_scene_layout() {
 }
 
 #[test]
+fn table_page_changes_reuse_geometry_but_size_and_appearance_invalidate_it() {
+    let source = "---\nscene: 1\nname: table\ncitizen: test\n---\n```mix\nroot: {widget: \"column\", fill: true, children: [\"table\"]}\ntable: {widget: \"table\", grow: 1, rows: [], columns: [\"Name\"], total: 10000}\n```\n";
+    let mut rt = runtime(source, (400,300));
+    let builds=rt.program.layout_builds;
+    rt.request_redraw(); rt.tick();
+    assert_eq!(rt.program.layout_builds,builds);
+    let mut next=content(source,None,false);
+    Arc::get_mut(&mut next).unwrap().tree.nodes.get_mut("table").unwrap().ports.insert("view".into(),json!({"generation":1,"revision":2,"offset":0,"total":10000,"rows":[]}));
+    rt.queue_message(SceneMessage::Replace(next)); rt.tick();
+    assert_eq!(rt.program.layout_builds,builds,"page content is not geometry");
+    rt.resize((500,300),1.0); rt.tick();
+    assert!(rt.program.layout_builds>builds);
+    let builds=rt.program.layout_builds;
+    rt.program.apply_appearance(crate::appearance::fixture("dark",1.25));
+    rt.request_redraw(); rt.tick();
+    assert!(rt.program.layout_builds>builds);
+}
+
+#[test]
 fn interface_font_reaches_authored_panel_text_layout_and_scene_frame_titles() {
     use ui::UiProgram;
     let source = "---\nscene: 1\nname: fonts\ncitizen: test\n---\n```mix\nroot: {widget: \"column\", children: [\"body\", \"clock\", \"mono\"]}\nbody: {widget: \"text\", text: \"Body\"}\nclock: {widget: \"text\", text: \"Clock\", size: 19, bold: true}\nmono: {widget: \"text\", text: \"Mono\", size: 13, mono: true}\n```";

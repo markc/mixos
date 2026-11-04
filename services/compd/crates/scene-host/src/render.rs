@@ -1255,6 +1255,7 @@ pub(crate) fn layout(
     reply["nodes"] = nodes;
     reply["instances"] = instances;
     reply["chrome"] = chrome;
+    reply["native"] = instance.ui().table_states();
     Ok(reply)
 }
 

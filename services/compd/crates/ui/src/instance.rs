@@ -90,6 +90,7 @@ pub(crate) trait UiInstanceAny: Any {
     fn queue_input(&mut self, input: Input);
     /// Events or messages wait for the next tick (`UiRuntime::has_queued`).
     fn has_queued(&self) -> bool;
+    fn take_host_notice(&self) -> bool;
     /// Input or messages wait (`UiRuntime::has_input`); a repaint request
     /// alone does not count.
     fn has_input(&self) -> bool;
@@ -191,6 +192,9 @@ impl<U: UiProgram> UiInstanceAny for UiInstance<U> {
     }
     fn has_queued(&self) -> bool {
         self.runtime.has_queued()
+    }
+    fn take_host_notice(&self) -> bool {
+        self.runtime.take_host_notice()
     }
     fn has_input(&self) -> bool {
         self.runtime.has_input()
@@ -658,6 +662,9 @@ impl UiItem {
     }
     pub fn has_queued(&self) -> bool {
         self.inner.has_queued()
+    }
+    pub fn take_host_notice(&self) -> bool {
+        self.inner.take_host_notice()
     }
     pub fn has_input(&self) -> bool {
         self.inner.has_input()

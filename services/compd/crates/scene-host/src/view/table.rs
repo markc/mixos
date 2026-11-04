@@ -7,10 +7,15 @@ use serde_json::{Value, json};
 
 use super::{Route, SceneMessage, flag, number};
 
+mod compound;
+mod model;
+pub(super) use model::State;
+
 #[derive(Clone)]
 struct DragRow {
     node: String,
     item: Value,
+    generation: u64,
 }
 
 fn modifiers(m: egui::Modifiers) -> Value {
@@ -32,7 +37,13 @@ pub(super) fn paint(
     node: &scene::Node,
     route: Arc<Route>,
     out: &mut Vec<SceneMessage>,
+    state: &mut State,
+    text_epoch: u64,
 ) {
+    if node.ports.get("view").is_some_and(Value::is_object) {
+        compound::paint(ui, rect, clip, node, route, out, state, text_epoch);
+        return;
+    }
     let id = Id::unique(("scene-table", &route.scene, &route.node));
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
     child.set_clip_rect(clip.intersect(ui.clip_rect()));
@@ -163,7 +174,9 @@ pub(super) fn paint(
                 background.request_focus();
                 deliver(out, &route, json!({"kind":if response.double_clicked(){"double_click"}else{"click"},"index":index,"item":row,"modifiers":modifiers(ui.input(|i|i.modifiers))}));
             }
-            response.dnd_set_drag_payload(DragRow { node: route.node.clone(), item: row.clone() });
+            if response.drag_started() {
+                response.dnd_set_drag_payload(DragRow { node: route.node.clone(), item: row.clone(), generation: 0 });
+            }
             if let Some(payload) = response.dnd_release_payload::<DragRow>() {
                 row_drop = true;
                 deliver(out, &route, json!({"kind":"drop","source_node":payload.node,"item":payload.item,"target":row}));
@@ -218,7 +231,7 @@ mod tests {
         let mut events = Vec::new();
         for _ in 0..2 {
             let mut output = ctx.run_ui(Default::default(), |ui| {
-                paint(ui, rect, rect, &node(), route(), &mut events)
+                paint(ui, rect, rect, &node(), route(), &mut events, &mut State::default(), 0)
             });
             output.textures_delta.clear();
         }
@@ -240,7 +253,7 @@ mod tests {
         let rect = Rect::from_min_size(pos2(0.0, 0.0), vec2(400.0, 300.0));
         let mut events = Vec::new();
         let mut output = ctx.run_ui(Default::default(), |ui| {
-            paint(ui, rect, rect, &node(), route(), &mut events)
+            paint(ui, rect, rect, &node(), route(), &mut events, &mut State::default(), 0)
         });
         output.textures_delta.clear();
         events.clear();
@@ -258,7 +271,7 @@ mod tests {
             ..Default::default()
         };
         let mut output = ctx.run_ui(input, |ui| {
-            paint(ui, rect, rect, &node(), route(), &mut events)
+            paint(ui, rect, rect, &node(), route(), &mut events, &mut State::default(), 0)
         });
         output.textures_delta.clear();
         let value = events

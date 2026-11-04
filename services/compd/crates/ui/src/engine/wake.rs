@@ -57,6 +57,7 @@ pub(crate) fn notify() {
 /// arrived, so the runtime catches up with one pass.
 #[derive(Clone)]
 pub(crate) struct RuntimeWake {
+    notice: Arc<AtomicBool>,
     pending: Arc<AtomicBool>,
     at: Arc<Mutex<Option<Instant>>>,
     suspended: Arc<AtomicBool>,
@@ -71,6 +72,7 @@ impl RuntimeWake {
 
     pub(crate) fn with_waker(wake: impl Fn() + Send + Sync + 'static) -> Self {
         Self {
+            notice: Arc::new(AtomicBool::new(false)),
             pending: Arc::new(AtomicBool::new(false)),
             at: Arc::new(Mutex::new(None)),
             suspended: Arc::new(AtomicBool::new(false)),
@@ -90,6 +92,7 @@ impl RuntimeWake {
             return;
         }
         if delay.is_zero() {
+            self.mark_host();
             self.pending.store(true, Ordering::Release);
         } else if let Some(at) = Instant::now().checked_add(delay) {
             let mut slot = self.at.lock().unwrap_or_else(|error| error.into_inner());
@@ -106,6 +109,15 @@ impl RuntimeWake {
     pub fn pending(&self) -> bool {
         !self.suspended.load(Ordering::Acquire)
             && (self.pending.load(Ordering::Acquire) || self.due(Instant::now()))
+    }
+
+    /// Producer-owned work notice: consuming it never depends on a paint.
+    pub fn mark_host(&self) {
+        self.notice.store(true, Ordering::Release);
+    }
+
+    pub fn take_host_notice(&self) -> bool {
+        self.notice.swap(false, Ordering::AcqRel)
     }
 
     /// Suspend or resume. Resuming returns whether a repaint was asked for
@@ -213,5 +225,19 @@ mod tests {
         wake.request(Duration::MAX);
         assert!(!wake.pending());
         assert_eq!(wake.deadline(), None);
+    }
+
+    #[test]
+    fn new_work_rearms_after_a_cancelled_frame_without_a_paint_ack() {
+        let wake = RuntimeWake::with_waker(|| {});
+        wake.request(Duration::ZERO);
+        assert!(wake.take_host_notice());
+        for _ in 0..1000 {
+            assert!(!wake.take_host_notice());
+        }
+        // No take()/paint occurred: an abandoned frame cannot wedge new work.
+        wake.request(Duration::ZERO);
+        assert!(wake.take_host_notice());
+        assert!(wake.pending());
     }
 }

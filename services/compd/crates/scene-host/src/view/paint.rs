@@ -139,6 +139,17 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
         let Some(node) = node_of(scene, item) else {
             continue;
         };
+        // Borrow the accepted table page through its Arc; cloning all row JSON
+        // on every hover/scroll pass defeats a retained compound view.
+        if node.family == "table" && item.in_list.is_none() {
+            let content = Arc::clone(&scene.content);
+            let node = &content.tree.nodes[&item.id];
+            let route = route_of(scene, item, node);
+            let epoch = scene.appearance_epoch;
+            let state = scene.tables.entry(item.id.clone()).or_default();
+            super::table::paint(ui,item.rect,full,node,route,emit,state,epoch);
+            continue;
+        }
         let node = node.clone();
         // A row of a scrolling list moves with its scroll and stays in its box.
         let (rect, clip) = match item
@@ -174,7 +185,9 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
         }
         match node.family.as_str() {
             "table" => {
-                super::table::paint(ui, rect, clip, &node, route_of(scene, item, &node), emit);
+                let route = route_of(scene, item, &node);
+                let state = scene.tables.entry(item.key.clone()).or_default();
+                super::table::paint(ui, rect, clip, &node, route, emit, state, scene.appearance_epoch);
             }
             "column" | "row" => {
                 let normal = hex(port_text(&node, "background"));

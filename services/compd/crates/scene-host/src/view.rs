@@ -12,6 +12,7 @@
 //! embedded design (an edge page in dark mode, as Quoin's panel token is).
 
 use std::collections::BTreeMap;
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use decor::Srgba;
@@ -280,8 +281,28 @@ fn embedded(dialog: bool) -> Arc<Theme> {
     }
 }
 
+/// Resolved geometry inputs, computed once per accepted revision. Table data
+/// is deliberately excluded: its viewport is a fixed native flex leaf.
+fn geometry_key(content: &Content) -> u64 {
+    let mut hash = std::collections::hash_map::DefaultHasher::new();
+    content.frame.as_ref().map(|f| &f.title).hash(&mut hash);
+    for (id, node) in &content.tree.nodes {
+        id.hash(&mut hash); node.family.hash(&mut hash);
+        for (port, value) in &node.ports {
+            if node.family == "table" && matches!(port.as_str(), "view"|"rows"|"total"|"offset"|"focus"|"active") {continue;}
+            port.hash(&mut hash); value.to_string().hash(&mut hash);
+        }
+    }
+    hash.finish()
+}
+
 /// One scene surface's program.
 pub struct SceneUi {
+    tables: BTreeMap<String, table::State>,
+    appearance_epoch: u64,
+    geometry: u64,
+    layout_cache: Option<(u64, u32, u32, u32)>,
+    layout_builds: u64,
     content: Arc<Content>,
     look: Option<Arc<Look>>,
     /// Local text of the fields being edited, by instance key, until the
@@ -307,6 +328,11 @@ pub struct SceneUi {
 impl SceneUi {
     pub fn new(content: Arc<Content>) -> SceneUi {
         SceneUi {
+            geometry: geometry_key(&content),
+            tables: BTreeMap::new(),
+            appearance_epoch: 0,
+            layout_cache: None,
+            layout_builds: 0,
             hover: tip::Hover::default(),
             images: crate::images::prepare(&content.tree, &content.lists),
             content,
@@ -352,6 +378,14 @@ impl SceneUi {
     pub(crate) fn apply_appearance(&mut self, look: Arc<Look>) {
         self.look = Some(look);
         self.installed = None;
+        self.appearance_epoch += 1;
+        self.layout_cache = None;
+    }
+
+    pub(crate) fn table_states(&self) -> Value {
+        let mut out = serde_json::Map::new();
+        for (id, state) in &self.tables { out.insert(id.clone(), state.snapshot()); }
+        json!({"tables":out,"layout_builds":self.layout_builds})
     }
 
     /// The text metrics layout and paint use: the design's ui and mono roles
@@ -458,7 +492,8 @@ impl ui::UiProgram for SceneUi {
             self.installed = Some((identity, self.content.dialog));
         }
         // Escape: a dialog hides (Quoin's chrome::dialog), an edge reports it.
-        if ctx.input(|input| input.key_pressed(egui::Key::Escape)) {
+        if !self.tables.values().any(|state| state.edit.is_some())
+            && ctx.input(|input| input.key_pressed(egui::Key::Escape)) {
             emit.push(if self.content.dialog {
                 SceneMessage::Close
             } else {
@@ -482,15 +517,21 @@ impl ui::UiProgram for SceneUi {
                     .size()
             })
         };
-        let layout_span = ui::frame_trace::span("scene_layout", self.content.revision);
-        self.layout = flex::layout(
+        let size = ui.max_rect().size();
+        let key = (self.geometry, size.x.to_bits(), size.y.to_bits(), ctx.pixels_per_point().to_bits());
+        if self.layout_cache != Some(key) || !self.content.lists.is_empty() {
+            let layout_span = ui::frame_trace::span("scene_layout", self.content.revision);
+            self.layout = flex::layout(
             &self.content,
             ui.max_rect().size(),
             styles,
             &self.images,
             &measure,
         );
-        drop(layout_span);
+            drop(layout_span);
+            self.layout_cache = Some(key);
+            self.layout_builds += 1;
+        }
         let _paint = ui::frame_trace::span("scene_paint", self.content.revision);
         paint::paint(self, ui, emit);
     }
@@ -503,6 +544,8 @@ impl ui::UiProgram for SceneUi {
                 if self.content.dialog != content.dialog {
                     self.installed = None;
                 }
+                self.geometry = geometry_key(&content);
+                self.tables.retain(|id, _| content.tree.nodes.get(id).is_some_and(|n| n.family == "table"));
                 self.content = content;
             }
             SceneMessage::Appearance(look) => self.apply_appearance(look),

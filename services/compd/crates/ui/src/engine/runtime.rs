@@ -245,6 +245,7 @@ impl<P: UiProgram> UiRuntime<P> {
         }
         if self.events.len() > before {
             self.needs_pass = true;
+            self.wake.mark_host();
         }
     }
 
@@ -255,6 +256,7 @@ impl<P: UiProgram> UiRuntime<P> {
         }
         self.events.push(event);
         self.needs_pass = true;
+        self.wake.mark_host();
     }
 
     /// The pointer left the surface.
@@ -266,12 +268,17 @@ impl<P: UiProgram> UiRuntime<P> {
     pub fn queue_message(&mut self, message: P::Message) {
         self.messages.push(message);
         self.needs_pass = true;
+        self.wake.mark_host();
     }
 
     /// Input, messages or a repaint request wait for the next pass. Only a
     /// frame ticks the runtime, so the host owes one while this is true.
     pub fn has_queued(&self) -> bool {
         self.wake.pending() || self.has_input()
+    }
+
+    pub fn take_host_notice(&self) -> bool {
+        self.wake.take_host_notice()
     }
 
     /// Input or messages (not a repaint request) wait for the next pass.
@@ -465,6 +472,7 @@ impl<P: UiProgram> UiRuntime<P> {
     /// Force a pass and paint on the next frame.
     pub fn request_redraw(&mut self) {
         self.needs_pass = true;
+        self.wake.mark_host();
     }
 
     /// Acknowledge a frame without painting: an off-screen surface stops
@@ -480,6 +488,7 @@ impl<P: UiProgram> UiRuntime<P> {
     pub fn set_suspended(&mut self, suspended: bool) {
         if self.wake.set_suspended(suspended) {
             self.needs_pass = true;
+            self.wake.mark_host();
         }
     }
 
@@ -490,6 +499,7 @@ impl<P: UiProgram> UiRuntime<P> {
             self.scale = scale;
         }
         self.needs_pass = true;
+        self.wake.mark_host();
     }
 
     pub fn physical_size(&self) -> (u32, u32) {
