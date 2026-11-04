@@ -158,7 +158,7 @@ pub(super) fn paint(
             }
         }
     });
-    state.scroll_y=shown.state.offset.y;
+    state.scroll_y=shown.state.offset().y;
     if changed {let value=state.event("selection"); deliver(out,&route,value);}
     if !row_drop && let Some(payload)=background.dnd_release_payload::<DragRow>() {
         let mut value=state.event("drop");
