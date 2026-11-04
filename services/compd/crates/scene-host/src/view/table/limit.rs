@@ -17,7 +17,7 @@ fn initial(n: usize) -> State {
 
 fn scene_store() -> crate::store::SceneStore {
     let mut store=crate::store::SceneStore::default();
-    let source="---\nscene: 1\nname: limit\ncitizen: limit\nmodel: {view: {}}\n---\n```mix\nroot: {widget: column, children: [table]}\ntable: {widget: table, rows: [], columns: [Name, Size, Modified], session: limit, view: '= $model.view'}\n```\n";
+    let source="---\nscene: 1\nname: limit\ncitizen: limit\nmodel: {\"view\": {}}\n---\n```mix\nroot: {widget: column, children: [table]}\ntable: {widget: table, rows: [], columns: [Name, Size, Modified], session: limit, view: '= $model.view'}\n```\n";
     store.request(crate::command::SceneCommand::Load,source,&Value::Null).unwrap(); store
 }
 
@@ -123,7 +123,7 @@ fn atomic_deltas_preserve_selection_identity_and_reject_stale_or_invalid_input()
 fn accepted_deltas_are_not_lost_when_paints_coalesce() {
     use crate::{store::SceneStore,command::SceneCommand};
     let mut store=SceneStore::default();
-    let source="---\nscene: 1\nname: limit\ncitizen: limit\nmodel: {view: {}}\n---\n```mix\nroot: {widget: table, rows: [], columns: [Name], session: limit, view: '= $model.view'}\n```\n";
+    let source="---\nscene: 1\nname: limit\ncitizen: limit\nmodel: {\"view\": {}}\n---\n```mix\nroot: {widget: table, rows: [], columns: [Name], session: limit, view: '= $model.view'}\n```\n";
     store.request(SceneCommand::Load,source,&Value::Null).unwrap();
     for i in 0..3 {
         let v=json!({"session":"limit","generation":1,"revision":i+1,"delta":{"reset":i==0,"base_revision":i,"kind":"splice","index":i,"delete":[],"insert":[row(i as usize)]}});
