@@ -242,46 +242,92 @@ fn hof_sort_by<'a>(
     })
 }
 
-fn hof_sort_keys<'a>(eval:&'a mut Evaluator,args:Vec<Value>)->Pin<Box<dyn Future<Output=MixResult<Value>>+'a>> {
+fn hof_sort_keys<'a>(
+    eval: &'a mut Evaluator,
+    args: Vec<Value>,
+) -> Pin<Box<dyn Future<Output = MixResult<Value>> + 'a>> {
     Box::pin(async move {
-        if args.len()<2 || args.len()>3 {return Err(MixError::structured("SORT_KEYS_OPTIONS","sort_keys expects list, key function and optional directions"));}
-        let mut args=args.into_iter();
-        let items=expect_list("sort_keys",args.next().unwrap())?;
-        let function=expect_function("sort_keys",args.next().unwrap())?;
-        let mut directions=Vec::new();
-        if let Some(value)=args.next() {
-            for value in expect_list("sort_keys",value)? {
+        if args.len() < 2 || args.len() > 3 {
+            return Err(MixError::structured(
+                "SORT_KEYS_OPTIONS",
+                "sort_keys expects list, key function and optional directions",
+            ));
+        }
+        let mut args = args.into_iter();
+        let items = expect_list("sort_keys", args.next().unwrap())?;
+        let function = expect_function("sort_keys", args.next().unwrap())?;
+        let mut directions = Vec::new();
+        if let Some(value) = args.next() {
+            for value in expect_list("sort_keys", value)? {
                 match &value {
-                    Value::String(s) if s=="asc"=>directions.push(false),
-                    Value::String(s) if s=="desc"=>directions.push(true),
-                    _=>return Err(MixError::structured("SORT_KEYS_OPTIONS","directions must be asc/desc strings"))
+                    Value::String(s) if s == "asc" => directions.push(false),
+                    Value::String(s) if s == "desc" => directions.push(true),
+                    _ => {
+                        return Err(MixError::structured(
+                            "SORT_KEYS_OPTIONS",
+                            "directions must be asc/desc strings",
+                        ));
+                    }
                 }
             }
-            if directions.len()>16 {return Err(MixError::structured("SORT_KEYS_OPTIONS","at most 16 directions"));}
-        }
-        let mut keyed=Vec::with_capacity(items.len());let mut width=None;
-        for item in items {
-            let key=expect_list("sort_keys key",call1(eval,&function,item.clone()).await?)?;
-            if key.is_empty() || key.len()>16 || width.is_some_and(|n|n!=key.len()) || (!directions.is_empty() && directions.len()!=key.len())
-                || key.iter().any(|v|!matches!(v,Value::Nil|Value::Bool(_)|Value::String(_)) && !matches!(v,Value::Number(n) if n.is_finite())) {
-                return Err(MixError::structured("SORT_KEYS_KEY","keys require fixed-width finite scalar tuples matching directions"));
+            if directions.len() > 16 {
+                return Err(MixError::structured(
+                    "SORT_KEYS_OPTIONS",
+                    "at most 16 directions",
+                ));
             }
-            width=Some(key.len());keyed.push((key,item));
         }
-        keyed.sort_by(|a,b| {
-            for (i,(a,b)) in a.0.iter().zip(&b.0).enumerate() {
-                let order=scalar_order(a,b);
-                if !order.is_eq() {return if directions.get(i)==Some(&true) {order.reverse()} else {order};}
+        let mut keyed = Vec::with_capacity(items.len());
+        let mut width = None;
+        for item in items {
+            let key = expect_list("sort_keys key", call1(eval, &function, item.clone()).await?)?;
+            if key.is_empty()
+                || key.len() > 16
+                || width.is_some_and(|n| n != key.len())
+                || (!directions.is_empty() && directions.len() != key.len())
+                || key.iter().any(|v| {
+                    !matches!(v, Value::Nil | Value::Bool(_) | Value::String(_))
+                        && !matches!(v,Value::Number(n) if n.is_finite())
+                })
+            {
+                return Err(MixError::structured(
+                    "SORT_KEYS_KEY",
+                    "keys require fixed-width finite scalar tuples matching directions",
+                ));
+            }
+            width = Some(key.len());
+            keyed.push((key, item));
+        }
+        keyed.sort_by(|a, b| {
+            for (i, (a, b)) in a.0.iter().zip(&b.0).enumerate() {
+                let order = scalar_order(a, b);
+                if !order.is_eq() {
+                    return if directions.get(i) == Some(&true) {
+                        order.reverse()
+                    } else {
+                        order
+                    };
+                }
             }
             std::cmp::Ordering::Equal
         });
-        Ok(Value::list(keyed.into_iter().map(|(_,item)|item).collect()))
+        Ok(Value::list(
+            keyed.into_iter().map(|(_, item)| item).collect(),
+        ))
     })
 }
 
-fn scalar_order(a:&Value,b:&Value)->std::cmp::Ordering {
-    fn rank(v:&Value)->u8 {match v {Value::Nil=>0,Value::Bool(_)=>1,Value::Number(_)=>2,Value::String(_)=>3,_=>unreachable!()}}
-    rank(a).cmp(&rank(b)).then_with(||cmp_values(a,b))
+fn scalar_order(a: &Value, b: &Value) -> std::cmp::Ordering {
+    fn rank(v: &Value) -> u8 {
+        match v {
+            Value::Nil => 0,
+            Value::Bool(_) => 1,
+            Value::Number(_) => 2,
+            Value::String(_) => 3,
+            _ => unreachable!(),
+        }
+    }
+    rank(a).cmp(&rank(b)).then_with(|| cmp_values(a, b))
 }
 
 #[cfg(test)]
@@ -289,10 +335,22 @@ mod sort_keys_tests {
     use super::*;
     #[test]
     fn sort_keys_scalar_order_is_typed_and_transitive() {
-        let mut values=vec![Value::String("2".into()),Value::Number(10.0),Value::Number(3.0),Value::Bool(false),Value::Nil];
+        let mut values = vec![
+            Value::String("2".into()),
+            Value::Number(10.0),
+            Value::Number(3.0),
+            Value::Bool(false),
+            Value::Nil,
+        ];
         values.sort_by(scalar_order);
-        assert!(matches!(values[0],Value::Nil));assert_eq!(values[2],Value::Number(3.0));assert_eq!(values[3],Value::Number(10.0));
-        for a in &values {for b in &values {assert_eq!(scalar_order(a,b),scalar_order(b,a).reverse());}}
+        assert!(matches!(values[0], Value::Nil));
+        assert_eq!(values[2], Value::Number(3.0));
+        assert_eq!(values[3], Value::Number(10.0));
+        for a in &values {
+            for b in &values {
+                assert_eq!(scalar_order(a, b), scalar_order(b, a).reverse());
+            }
+        }
     }
 }
 
