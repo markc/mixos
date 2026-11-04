@@ -185,9 +185,15 @@ pub(super) fn paint(
     if state.discard_scroll_tail {
         let (fresh_wheel, scrolling, hovered) = child.input(|input| {
             (
-                input.events.iter().any(|event| matches!(event, egui::Event::MouseWheel { .. })),
+                input
+                    .events
+                    .iter()
+                    .any(|event| matches!(event, egui::Event::MouseWheel { .. })),
                 input.is_scrolling(),
-                input.pointer.hover_pos().is_some_and(|pos| rect.contains(pos)),
+                input
+                    .pointer
+                    .hover_pos()
+                    .is_some_and(|pos| rect.contains(pos)),
             )
         });
         if !reset_scroll && fresh_wheel {
