@@ -35,7 +35,12 @@ fn runtime(source: &str, size: (u32, u32)) -> UiRuntime<SceneUi> {
 fn viewport_table_is_a_visible_growing_leaf_in_the_real_scene_layout() {
     let source = "---\nscene: 1\nname: table\ncitizen: test\n---\n```mix\nroot: {widget: \"column\", fill: true, children: [\"table\"]}\ntable: {widget: \"table\", grow: 1, rows: [], columns: [\"Name\"], total: 10000, on_change: \"event\"}\n```\n";
     let rt = runtime(source, (400, 300));
-    let rect = rt.program.layout().nodes.get("table").expect("visible table");
+    let rect = rt
+        .program
+        .layout()
+        .nodes
+        .get("table")
+        .expect("visible table");
     assert!(rect.width() >= 390.0 && rect.height() >= 290.0, "{rect:?}");
 }
 

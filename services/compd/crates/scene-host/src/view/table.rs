@@ -49,8 +49,8 @@ pub(super) fn paint(
     child
         .ctx()
         .data_mut(|d| d.insert_temp(id.with("active"), active));
-    let tab_from_table = child.memory(|m| m.had_focus_last_frame(id))
-        && child.input(|i| i.key_pressed(Key::Tab));
+    let tab_from_table =
+        child.memory(|m| m.had_focus_last_frame(id)) && child.input(|i| i.key_pressed(Key::Tab));
     if active && (background.has_focus() || tab_from_table) {
         let events = child.input(|i| i.events.clone());
         for event in events {
