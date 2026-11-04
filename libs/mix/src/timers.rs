@@ -36,9 +36,7 @@ pub(crate) struct Pending {
 impl Pending {
     pub fn take(&mut self, id: &str, now: u64) -> serde_json::Value {
         let due = self.next;
-        let missed = self
-            .period
-            .map_or(0, |p| now.saturating_sub(due) / p);
+        let missed = self.period.map_or(0, |p| now.saturating_sub(due) / p);
         if let Some(p) = self.period {
             self.next = due + (missed + 1) * p;
         }
