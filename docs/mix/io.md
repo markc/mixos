@@ -1734,7 +1734,7 @@ mix help              the full categorized builtin reference
 
 ## Bounded bulk metadata listing (lab prototype)
 
-`dir_entries(path[, {hidden, max_entries, columns}])` makes one native
+`dir_entries(path[, {hidden, max_entries, columns, count}])` makes one native
 directory/metadata pass. It reports `lstat` metadata without following entry
 symlinks, sorted by name. Default output is maps containing `name` plus the
 same fields as `stat`. With `columns`, output is positional rows in that
@@ -1747,7 +1747,7 @@ detect overflow; no metadata is requested for it. Exceeding the limit raises
 `DIR_ENTRIES_LIMIT`, never a silent partial listing. Invalid options, directory
 read/metadata failures and non-UTF-8 names are reported rather than skipped.
 The result bounds row count; this is not a filesystem snapshot or a hard
-wall-clock deadline on kernel I/O. Interpreter interruption is checked between
+wall-clock deadline on kernel I/O. `count: true` returns only the visible name\ncount, with constant storage and no metadata reads; it cannot be combined with\n`columns`. Interpreter interruption is checked between
 entries.
 
 ```mix

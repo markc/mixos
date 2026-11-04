@@ -464,7 +464,8 @@ mod tests {
         std::fs::write(&path, data.to_string()).unwrap();
         let mut view = json!({"generation":1,"revision":1,"total":10000,"offset":0,"rows":[],"source":{"path":path,"token":"t"}});
         let mut s = State::default();
-        s.session = "s".into(); s.model_owner="table".into();
+        s.session = "s".into();
+        s.model_owner = "table".into();
         assert!(s.ingest(&view));
         std::fs::remove_file(&path).unwrap();
         for n in 0..50 {
@@ -490,7 +491,8 @@ mod tests {
     #[test]
     fn failed_source_does_not_retry_io_each_frame() {
         let mut s = State::default();
-        s.session = "s".into(); s.model_owner="table".into();
+        s.session = "s".into();
+        s.model_owner = "table".into();
         let view = json!({"generation":1,"revision":1,"total":1,"offset":0,"rows":[],"source":{"path":"/nonexistent/model","token":"t"}});
         assert!(!s.ingest(&view));
         assert!(!s.ingest(&view));
