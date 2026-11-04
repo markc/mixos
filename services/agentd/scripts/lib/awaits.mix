@@ -506,6 +506,7 @@ for each $row in sqlexec($DB, "SELECT id FROM sessions WHERE status = 'waiting' 
   $r = $log.session_row($DB, $row.id)
   $waiting = $r.status != "ended"
   $S.sessions[$r.id] = {id: $r.id, agent: $r.agent, cwd: $r.cwd, parent: $r.parent, sender: $r.sender,
+    mcp_ref: $r.mcp_ref, extra_mcp: [], request: nil, origin: nil, queued_request: nil,
     status: if $waiting then "waiting" else "ended" end, watch: nil, seq: $log.last_seq($DB, $r.id), turn: nil, perms: {}, pending: {},
     created_at: $r.created_at, title: $r.title, stderr_tail: [], ended_at: $r.ended_at,
     exit_code: $r.exit_code, signal: $r.signal, end_reason: $r.end_reason}

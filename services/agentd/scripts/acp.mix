@@ -33,7 +33,8 @@ try
       if $m.method != nil and (type($m.method) != "string" or type($m.params ?? {}) != "map") then raise("ACP_INPUT", "invalid request") end
       if $m.method == nil and $m.result == nil and $m.error == nil then raise("ACP_INPUT", "invalid response") end
       if $m.method == nil and (($m.result != nil and type($m.result) != "map") or ($m.error != nil and type($m.error) != "map")) then raise("ACP_INPUT", "invalid response value") end
-      if contains(["session/new", "session/load", "session/resume"], $m.method) then
+      if contains(["session/new", "session/load"], $m.method) then
+        if type($m.params.mcpServers) != "list" then raise("ACP_INPUT", "mcpServers is required") end
         $ref = "acp-" .. $connection .. "-" .. slice(hash_sha256(json_encode($m.id)), 0, 16) .. ".json"
         $a.save_mcp($ref, $m.params.mcpServers ?? [])
         $m.params.mcp_digest = hash_sha256(json_encode($m.params.mcpServers ?? []))

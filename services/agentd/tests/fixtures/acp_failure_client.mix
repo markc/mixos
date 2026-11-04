@@ -81,11 +81,11 @@ on proc.line
     else
       input({method: "session/cancel", params: {sessionId: $S.sid}})
     end
-  elif $m.id == 90 or $m.id == 91 then
+  elif $m.id == 90 or $m.id == 91 or $m.id == 92 then
     check("malformed params produce an error", $m.error != nil)
     $S.bad_frames = $S.bad_frames + 1
   elif $m.id == 1 then
-    check("adapter survives malformed frames and error responses", $S.bad_frames == 2)
+    check("adapter survives malformed frames and error responses", $S.bad_frames == 3)
     input({id: 2, method: "session/new", params: {cwd: $tmp .. "/workspace", mcpServers: $mcp}})
   elif $m.id == 2 then
     check("setup after bad frames succeeds", $m.error == nil)
@@ -157,5 +157,6 @@ subscribe("agent.session.ended")
 $S.watch = process_watch([$mix, env("ACP_TEST_ADAPTER")], {stdin: "pipe", stderr: "lines", overflow: "block", max_line: 16777216})
 input({id: 90, method: "initialize", params: 5})
 input({id: 91, method: "initialize", params: "bad"})
+input({id: 92, method: "session/load", params: {sessionId: "unused", cwd: $tmp .. "/workspace"}})
 input({id: "already-cancelled", error: {code: -32800, message: "cancelled"}})
 input({id: 1, method: "initialize", params: {protocolVersion: 1}})

@@ -647,12 +647,13 @@ on agent.session.cancel desc "cancel the running turn {session}; pending permiss
   if begin("agent.session.cancel", body().session) then $id = session_for(body(), true) end
   if $id != nil then
     $s = $S.sessions[$id]
+    $was_queued = $s.queued != nil
     if $s.queued != nil then
       $S.sessions[$id].queued = nil
       emit_event($id, {kind: "stop", request: $s.queued_request, origin: "user", stop: "cancelled"})
     end
     if $s.status != "running" then
-      answer(0, json_encode({session: $id, cancelled: $s.queued != nil}))
+      answer(0, json_encode({session: $id, cancelled: $was_queued}))
       await_suspend($id)
     else
       -- ACP: a cancel must answer every pending permission request cancelled.
