@@ -154,6 +154,7 @@ pub(super) fn paint(
     let mut row_drop = false;
     let shown=scroll.show_rows(&mut child,row_h,state.total,|ui,range| {
         state.first=range.start; state.end=range.end;
+        state.prepare_range(range.start,range.end);
         let missing=range.clone().find(|i| !state.rows.contains_key(i));
         let prefetch=(range.end+32).min(state.total.saturating_sub(1));
         let wanted=missing.or_else(|| (state.total>0 && !state.rows.contains_key(&prefetch)).then_some(prefetch));

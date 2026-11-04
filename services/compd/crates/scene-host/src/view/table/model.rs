@@ -103,6 +103,10 @@ struct Text {
 
 #[derive(Debug, Default)]
 pub struct State {
+    pub(super) dataset: Option<Arc<super::dataset::Dataset>>,
+    source: Value,
+    failed_revision: Option<(u64,u64)>,
+    pub model_error: Option<String>,
     pub session: String,
     pub generation: u64,
     pub revision: u64,
@@ -156,6 +160,7 @@ impl State {
             self.refused += 1;
             return false;
         };
+        if self.failed_revision == Some((generation,revision)) { return false; }
         if generation < self.generation
             || (generation == self.generation && revision < self.revision)
         {
@@ -229,6 +234,21 @@ impl State {
                 end = b;
             }
         }
+        if self.dataset.is_some() && !reset && view.get("source") != Some(&self.source) {
+            self.refused += 1; return false;
+        }
+        let dataset = if let Some(source) = view.get("source").filter(|v| v.is_object()) {
+            if !reset && self.dataset.is_some() && source == &self.source { self.dataset.clone() }
+            else {
+                match super::dataset::Dataset::load(source,&self.session,generation,total as usize) {
+                    Ok(model) => Some(model),
+                    Err(error) => {
+                        self.model_error=Some(error); self.failed_revision=Some((generation,revision));
+                        self.refused+=1; return false;
+                    }
+                }
+            }
+        } else { None };
         if reset {
             self.rows.clear();
             self.texts.clear();
@@ -254,6 +274,7 @@ impl State {
             self.anchor = self.focus;
             self.scroll_to = self.focus.or(if reset { Some(0) } else { None });
         }
+        self.dataset=dataset; self.source=view["source"].clone(); self.model_error=None; self.failed_revision=None;
         self.generation = generation;
         self.revision = revision;
         self.total = total as usize;
@@ -283,6 +304,23 @@ impl State {
         true
     }
 
+    pub fn prepare_range(&mut self, first: usize, end: usize) {
+        let Some(data) = self.dataset.clone() else { return; };
+        let start=first.saturating_sub(32)/PAGE*PAGE;
+        let end=(end+PAGE).min(self.total);
+        for i in start..end {
+            if !self.rows.contains_key(&i) && let Some(row)=data.row(i) { self.rows.insert(i,row); }
+        }
+        while self.rows.len()>ROW_BUDGET {
+            let i=*self.rows.keys().max_by_key(|&&i| i.abs_diff(first)).unwrap();
+            self.rows.remove(&i); self.texts.retain(|&(index,_) ,_| index!=i);
+        }
+    }
+
+    fn row_id(&self,index:usize)->Option<String> {
+        self.dataset.as_ref().and_then(|m|m.id(index)).or_else(||self.rows.get(&index).map(|r|r.id.clone()))
+    }
+
     pub fn pick(&mut self, index: usize, ctrl: bool, shift: bool) {
         if index >= self.total {
             return;
@@ -303,7 +341,12 @@ impl State {
 
     pub fn event(&mut self, kind: &str) -> Value {
         self.seq += 1;
-        json!({"kind":kind,"session":self.session,"generation":self.generation,"seq":self.seq,
+        let mut selected=Vec::new();
+        if self.selection.count()<=256 {
+            for &(a,b) in &self.selection.0 { for i in a..b { if let Some(id)=self.row_id(i) { selected.push(id); } } }
+        }
+        let complete=selected.len()==self.selection.count();
+        json!({"selected_ids":selected,"selection_complete":complete,"focus_id":self.focus.and_then(|i|self.row_id(i)),"kind":kind,"session":self.session,"generation":self.generation,"seq":self.seq,
             "focus":self.focus,"selection":{"ranges":self.selection.0}})
     }
 
@@ -346,7 +389,7 @@ impl State {
     }
 
     pub fn snapshot(&self) -> Value {
-        json!({"session":self.session,"generation":self.generation,"revision":self.revision,"seq":self.seq,
+        json!({"native_model":self.dataset.is_some(),"model_error":self.model_error,"session":self.session,"generation":self.generation,"revision":self.revision,"seq":self.seq,
             "focus":self.focus,"focused_id":self.focus.and_then(|i| self.rows.get(&i)).map(|r| &r.id),
             "selection":{"ranges":self.selection.0,"count":self.selection.count()},
             "first":self.first,"end":self.end,"scroll_y":self.scroll_y,
