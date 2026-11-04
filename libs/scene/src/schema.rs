@@ -200,6 +200,18 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         pn("h", false, Some(0.0)),
     ];
     static SPACER: [Port; 1] = [pn("size", false, None)];
+    // Lab specimen: bounded viewport rows, not an unbounded authored table.
+    static TABLE: [Port; 9] = [
+        p("rows", "list", true, None),
+        p("columns", "list", true, None),
+        pnd("total", "0", Some(0.0)),
+        pnd("offset", "0", Some(0.0)),
+        pnd("row_height", "24", Some(16.0)),
+        pn("height", false, Some(0.0)),
+        p("on_change", "string", false, None),
+        pn("focus", false, None),
+        p("active", "bool", false, Some("false")),
+    ];
     let family: &[Port] = match f {
         "window" => &WINDOW,
         "column" => &BOX,
@@ -211,6 +223,7 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         "list" => &LIST,
         "image" => &IMAGE,
         "spacer" => &SPACER,
+        "table" => &TABLE,
         _ => return None,
     };
     let mut ports = family.to_vec();

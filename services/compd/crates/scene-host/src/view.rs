@@ -26,6 +26,7 @@ use crate::templates::{children, rows, text as port_text};
 
 mod flex;
 mod paint;
+mod table;
 pub(crate) mod tip;
 
 pub(crate) use flex::SceneLayout;
@@ -126,6 +127,8 @@ pub enum SceneMessage {
     Toggle(Arc<Route>, String, bool),
     Input(Arc<Route>, String, String),
     Submit(Arc<Route>, String),
+    /// Structured interaction from a viewport-backed table; state stays in Mix.
+    Interaction(Arc<Route>, Value),
     /// The dialog frame's close button (or Escape in a dialog).
     Close,
     EscapeEdge,
@@ -508,6 +511,7 @@ impl ui::UiProgram for SceneUi {
             SceneMessage::Click(_)
             | SceneMessage::Context(_)
             | SceneMessage::Submit(..)
+            | SceneMessage::Interaction(..)
             | SceneMessage::Close
             | SceneMessage::EscapeEdge
             | SceneMessage::EdgeFocus(_)
@@ -526,6 +530,7 @@ pub fn event_of(message: &SceneMessage) -> Option<(&str, &str, Value)> {
         SceneMessage::Toggle(route, _, on) => route.event("change", Some(json!(on))),
         SceneMessage::Input(route, _, value) => route.event("change", Some(json!(value))),
         SceneMessage::Submit(route, value) => route.event("submit", Some(json!(value))),
+        SceneMessage::Interaction(route, value) => route.event("change", Some(value.clone())),
         SceneMessage::Replace(_)
         | SceneMessage::Appearance(_)
         | SceneMessage::Close

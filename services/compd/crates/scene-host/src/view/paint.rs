@@ -173,6 +173,9 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
             continue;
         }
         match node.family.as_str() {
+            "table" => {
+                super::table::paint(ui, rect, clip, &node, route_of(scene, item, &node), emit);
+            }
             "column" | "row" => {
                 let normal = hex(port_text(&node, "background"));
                 let hover = hex(port_text(&node, "hover")).or(normal);
