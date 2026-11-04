@@ -1,0 +1,31 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Attachment retention and expiry, independent of a live model or broker.
+$a = require("../scripts/lib/acp.mix")
+$log = require("../scripts/lib/log.mix")
+if len(args()) == 0 then
+  $dir = "/var/tmp/agent-acp-files-" .. uuid()
+  $r = run_argv([env("MIXOS_TEST_MIX", mixos_path("prefix", "bin/mix")), script_path(), "child"],
+    {env: {MIXOS_AGENTD_MCP_DIR: $dir .. "/mcp", ACP_TEST_DIR: $dir}, timeout: 10})
+  print($r.stdout)
+  print($r.stderr)
+  if not $r.ok then exit(1) end
+else
+  $dir = env("ACP_TEST_DIR")
+  $servers = [{name: "editor", command: "/bin/true", args: [], env: [{name: "FIXTURE", value: "fixture-value"}]}]
+  $a.save_mcp("acp-temporary-one.json", $servers)
+  $ref = $a.retain_mcp("acp-temporary-one.json", "abcd123456", $servers)
+  if len(glob($dir .. "/mcp/*.json")) != 1 or stat($a.mcp_path($ref)).perm != 0o600 then raise("ACP_TEST", "retention or permissions failed") end
+  print("PASS one private attachment retained per native session")
+  $a.save_mcp("acp-temporary-two.json", $servers)
+  $same = $a.retain_mcp("acp-temporary-two.json", "abcd123456", $servers)
+  if $same != $ref or len(glob($dir .. "/mcp/*.json")) != 1 then raise("ACP_TEST", "replacement accumulated files") end
+  print("PASS replacement removes the temporary credential copy")
+  $db = $log.open($dir .. "/sessions.db")
+  $log.session_started($db, {id: "abcd123456", agent: "fixture", cwd: "/var/tmp", created_at: now_iso()})
+  $log.session_mcp($db, "abcd123456", $ref)
+  $log.session_ended($db, "abcd123456", 0, nil, nil, time() - 100)
+  $expired = $log.expire($db, time())
+  if len($expired) != 1 or len(glob($dir .. "/mcp/*.json")) != 0 then raise("ACP_TEST", "expiry retained credentials") end
+  print("PASS native session expiry deletes its credential attachment")
+end

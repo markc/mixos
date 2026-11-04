@@ -30,6 +30,7 @@ $modes = if len(args()) > 0 then split(args()[0], ",") else [] end
 $sessions = {}
 $next_id = 900
 $config = {}
+$recording_turn = 0
 $delayed_set = nil
 
 fn session_mcp($params)
@@ -112,6 +113,18 @@ loop
   elif $m.method == "session/prompt" then
     $sid = $m.params.sessionId
     $t = prompt_text($m.params)
+    if env("FAKE_ACP_RECORDING") != "" then
+      $recording = json_parse(read_file(env("FAKE_ACP_RECORDING")))
+      $turn = $recording.turns[$recording_turn]
+      if not deep_eq($m.params.prompt, $turn.prompt) then
+        out({id: $m.id, error: {code: -32602, message: "prompt differs from the recorded input"}})
+      else
+        for $u in $turn.updates update($sid, $u) end
+        out({id: $m.id, result: {stopReason: $turn.stopReason}})
+      end
+      $recording_turn = $recording_turn + 1
+      continue
+    end
     if starts_with($t, "[await]") and env("FAKE_ACP_ERROR_FILE") != "" and is_file(env("FAKE_ACP_ERROR_FILE")) then
       -- Hold an outcome error so the real terminal event can arrive during
       -- the deadline turn. The ordinary hold path below still succeeds.

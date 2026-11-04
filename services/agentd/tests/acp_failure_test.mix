@@ -1,0 +1,7 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+$r = run_argv([env("MIXOS_TEST_MIX", mixos_path("prefix", "bin/mix")), dirname(script_path()) .. "/acp_test.mix"],
+  {env: {ACP_TEST_CLIENT: "acp_failure_client.mix"}, timeout: 55, max_output: 300000})
+print($r.stdout)
+print($r.stderr)
+if not $r.ok then exit(1) end

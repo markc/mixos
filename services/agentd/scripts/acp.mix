@@ -29,27 +29,41 @@ try
       if len($line) > 1048576 then raise("ACP_INPUT", "input exceeds 1 MiB") end
       $m = json_parse($line)
       if type($m) != "map" or $m.jsonrpc != "2.0" then raise("ACP_INPUT", "invalid JSON-RPC envelope") end
+      if $m.id != nil and not $a.valid_id($m.id) then raise("ACP_INPUT", "invalid request id") end
+      if $m.method != nil and (type($m.method) != "string" or type($m.params ?? {}) != "map") then raise("ACP_INPUT", "invalid request") end
+      if $m.method == nil and $m.result == nil and $m.error == nil then raise("ACP_INPUT", "invalid response") end
+      if $m.method == nil and (($m.result != nil and type($m.result) != "map") or ($m.error != nil and type($m.error) != "map")) then raise("ACP_INPUT", "invalid response value") end
       if contains(["session/new", "session/load", "session/resume"], $m.method) then
         $ref = "acp-" .. $connection .. "-" .. slice(hash_sha256(json_encode($m.id)), 0, 16) .. ".json"
         $a.save_mcp($ref, $m.params.mcpServers ?? [])
+        $m.params.mcp_digest = hash_sha256(json_encode($m.params.mcpServers ?? []))
         $m.params = delete($m.params, "mcpServers")
         $m.params.mcp_ref = $ref
       end
+      $p = $m.params ?? {}
+      $args = {cwd: $p.cwd, mcp_ref: $p.mcp_ref, mcp_digest: $p.mcp_digest, session: $p.sessionId,
+        content: $p.prompt, mode: $p.modeId, option: $p.configId, value: $p.value}
+      $op = $operations[$m.method] ?? "unknown"
+      if $m.method == nil then
+        $op = "permission"
+        $outcome = if type($m.result) == "map" then $m.result.outcome else {outcome: "cancelled"} end
+        if type($outcome) != "map" then raise("ACP_INPUT", "invalid permission response") end
+        $args = {outcome: $outcome}
+      end
     catch $message
-      send $name acp.input body=json_encode({operation: "invalid", request: if type($m) == "map" then $m.id else nil end}) timeout=20
+      $bad_id = if type($m) == "map" and $a.valid_id($m.id) then $m.id else nil end
+      send $name acp.input body=json_encode({operation: "invalid", request: $bad_id}) timeout=20
       if $rc != 0 then raise("ACP_TRANSPORT", "ACP citizen did not acknowledge invalid input") end
       continue
     end
     -- Translate at ingress: no JSON-RPC envelopes travel on the native Bus.
-    $p = $m.params ?? {}
-    $args = {cwd: $p.cwd, mcp_ref: $p.mcp_ref, session: $p.sessionId,
-      content: $p.prompt, mode: $p.modeId, option: $p.configId, value: $p.value}
-    $op = $operations[$m.method] ?? "unknown"
-    if $m.method == nil then $op = "permission"; $args = {outcome: $m.result.outcome} end
     send $name acp.input body=json_encode({operation: $op, request: $m.id, args: $args}) timeout=20
     if $rc != 0 then raise("ACP_TRANSPORT", "ACP citizen did not acknowledge input; outcome may be unknown") end
   end
 finally
   -- Disconnect is not agent cancellation. Native session state survives.
   if process_alive($child) then $stopped = kill($child, 15) end
+  for $path in glob($a.mcp_dir() .. "/acp-" .. $connection .. "-*.json")
+    $a.remove_mcp(basename($path))
+  end
 end

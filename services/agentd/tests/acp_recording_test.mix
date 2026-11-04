@@ -1,0 +1,10 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Replay actual captured model chunks through the real native ACP boundary.
+$here = dirname(script_path())
+$r = run_argv([env("MIXOS_TEST_MIX", mixos_path("prefix", "bin/mix")), $here .. "/acp_test.mix"],
+  {env: {ACP_TEST_CLIENT: "acp_recording_client.mix", FAKE_ACP_RECORDING: $here .. "/fixtures/acp_recording.json"},
+    timeout: 40, max_output: 200000})
+print($r.stdout)
+print($r.stderr)
+if not $r.ok then exit(1) end

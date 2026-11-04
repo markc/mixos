@@ -14,7 +14,7 @@ try
     MIXOS_TEST_MIX: $mix, MIXOS_AGENTD_MCP_DIR: $tmp .. "/mcp", ACP_TEST_DIR: $tmp,
     ACP_TEST_ADAPTER: $here .. "/../scripts/acp.mix"})
   write_file($tmp .. "/agent.conf.mix", data_encode({max_live: 2, agents: {fixture: {
-    argv: [$mix, $here .. "/fixtures/fake_acp_agent.mix", "resume,http"], roots: [$tmp .. "/workspace"], policy: "ask"}}}))
+    argv: [$mix, $here .. "/fixtures/fake_acp_agent.mix", env("ACP_TEST_FIXTURE_MODE", "resume,http")], roots: [$tmp .. "/workspace"], policy: "ask"}}}))
   for $c in [{name: "notify", script: $here .. "/../../notifyd/scripts/notifyd.mix", env: {MIXOS_NOTIFYD_STATE: $tmp .. "/notify.json"}},
     {name: "agent", script: $here .. "/../scripts/agentd.mix", env: {MIXOS_AGENTD_CONF: $tmp .. "/agent.conf.mix", MIXOS_AGENTD_DB: $tmp .. "/sessions.db"}}]
     push($children, spawn([$mix, "--serve", $c.script, "--name", $c.name], {die_with_parent: true,
@@ -27,7 +27,9 @@ try
     sleep(0.05)
   end
   if not $up then raise("ACP_TEST", "agent did not start") end
-  $r = run_argv([$mix, "--serve", $here .. "/fixtures/acp_client.mix", "--name", "acp-test-client"], {env: $env, timeout: 30, max_output: 200000})
+  $env.ACP_TEST_AGENT_PID = to_string($children[1])
+  $env.ACP_TEST_AGENTD = $here .. "/../scripts/agentd.mix"
+  $r = run_argv([$mix, "--serve", $here .. "/fixtures/" .. env("ACP_TEST_CLIENT", "acp_client.mix"), "--name", "acp-test-client"], {env: $env, timeout: 45, max_output: 200000})
   write_file($tmp .. "/client.log", $r.stdout .. $r.stderr)
   print($r.stdout)
   print($r.stderr)

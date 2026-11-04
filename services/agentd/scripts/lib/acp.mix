@@ -2,7 +2,9 @@
 -- version: 0.1.0
 -- Shared ACP boundary validation. Credentials stay in private files, not receipts.
 fn mcp_dir()
-  return env("MIXOS_AGENTD_MCP_DIR", mixos_path("var", "agentd/mcp"))
+  $default = mixos_path("var", "agentd/mcp")
+  if env("MIXOS_AGENTD_DB") != "" then $default = dirname(env("MIXOS_AGENTD_DB")) .. "/mcp" end
+  return env("MIXOS_AGENTD_MCP_DIR", $default)
 end
 
 fn mcp_path($ref)
@@ -68,4 +70,25 @@ end
 
 fn valid_stop($reason)
   return contains(["end_turn", "max_tokens", "max_turn_requests", "refusal", "cancelled"], $reason)
+end
+
+fn valid_id($id)
+  if type($id) == "string" then return len($id) <= 256 end
+  return type($id) == "number" and floor($id) == $id and $id >= -9007199254740991 and $id <= 9007199254740991
+end
+
+fn remove_mcp($ref)
+  if $ref == nil then return nil end
+  $path = mcp_path($ref)
+  if not is_file($path) then return nil end
+  if realpath($path) != $path or stat($path).uid != uid() then raise("USAGE", "refusing indirect MCP cleanup") end
+  $removed = run_argv_must(["rm", "--", $path])
+end
+
+fn retain_mcp($ref, $session, $servers)
+  if $ref == nil then return nil end
+  $stable = "acp-session-" .. $session .. ".json"
+  save_mcp($stable, $servers)
+  if $ref != $stable then remove_mcp($ref) end
+  return $stable
 end

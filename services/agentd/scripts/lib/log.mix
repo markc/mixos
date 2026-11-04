@@ -28,6 +28,7 @@ $SCHEMA = [
 -- title (the first prompt's first line), and accepted settings. Added
 -- to an older file in place; each is NULL until written.
 $SESSION_COLUMNS = ["acp TEXT", "dirs TEXT", "caps TEXT", "agent_info TEXT", "title TEXT", "mode TEXT", "options TEXT", "op_outcome TEXT", "mcp_ref TEXT"]
+$attachments = require("acp.mix")
 
 fn session_mcp($h, $id, $ref)
   sqlexec($h, "UPDATE sessions SET mcp_ref = ? WHERE id = ?", [$ref, $id])
@@ -234,6 +235,10 @@ end
 fn expire($h, $cutoff)
   $ids = map(sqlexec($h, "SELECT id FROM sessions WHERE status = 'ended' AND ended_at < ?", [$cutoff]), fn($r) = $r.id)
   for each $id in $ids
+    $ref = session_row($h, $id).mcp_ref
+    if $ref != nil and len(sqlexec($h, "SELECT id FROM sessions WHERE mcp_ref = ? AND id <> ?", [$ref, $id])) == 0 then
+      $attachments.remove_mcp($ref)
+    end
     sqlexec($h, "DELETE FROM events WHERE session = ?", [$id])
     sqlexec($h, "DELETE FROM await_outbox WHERE session = ?", [$id])
     sqlexec($h, "DELETE FROM awaits WHERE session = ?", [$id])

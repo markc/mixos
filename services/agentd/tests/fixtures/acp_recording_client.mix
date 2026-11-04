@@ -1,0 +1,58 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+$recording = json_parse(read_file(env("FAKE_ACP_RECORDING")))
+$mix = env("MIXOS_TEST_MIX")
+$tmp = env("ACP_TEST_DIR")
+$S = {watch: nil, sid: nil, updates: [], phase: "first"}
+
+fn check($label, $ok)
+  print((if $ok then "PASS " else "FAIL " end) .. $label)
+  if not $ok then exit(1) end
+end
+
+fn input($m)
+  $m.jsonrpc = "2.0"
+  if not process_write($S.watch, json_encode($m) .. "\n") then raise("ACP_TEST", "input refused") end
+end
+
+fn connect($id)
+  $S.watch = process_watch([$mix, env("ACP_TEST_ADAPTER")], {stdin: "pipe", stderr: "lines", overflow: "block"})
+  input({id: $id, method: "initialize", params: {protocolVersion: 1}})
+end
+
+on proc.line
+  if $event.args.stream == "stderr" then append_file($tmp .. "/adapter.stderr", $event.args.line .. "\n"); return nil end
+  $m = json_parse($event.args.line)
+  append_file($tmp .. "/frames.jsonl", $event.args.line .. "\n")
+  if $m.error != nil then check("recorded replay has no errors: " .. json_encode($m.error), false) end
+  if $m.method == "session/update" and $m.params.update.sessionUpdate == "agent_message_chunk" then
+    $S.updates = push($S.updates, $m.params.update)
+  elif $m.id == 1 then
+    input({id: 2, method: "session/new", params: {cwd: $tmp .. "/workspace", mcpServers: []}})
+  elif $m.id == 2 then
+    $S.sid = $m.result.sessionId
+    input({id: 3, method: "session/prompt", params: {sessionId: $S.sid, prompt: $recording.turns[0].prompt}})
+  elif $m.id == 3 then
+    check("first captured input reproduces every recorded chunk", deep_eq($S.updates, $recording.turns[0].updates) and $m.result.stopReason == $recording.turns[0].stopReason)
+    $S.phase = "disconnect"
+    $closed = process_close_stdin($S.watch)
+  elif $m.id == 11 then
+    input({id: 12, method: "session/load", params: {sessionId: $S.sid, cwd: $tmp .. "/workspace", mcpServers: []}})
+  elif $m.id == 12 then
+    check("reconnect reproduces the captured history once", deep_eq($S.updates, $recording.turns[0].updates))
+    $S.updates = []
+    input({id: 13, method: "session/prompt", params: {sessionId: $S.sid, prompt: $recording.turns[1].prompt}})
+  elif $m.id == 13 then
+    check("second captured input reproduces every recorded chunk", deep_eq($S.updates, $recording.turns[1].updates) and $m.result.stopReason == $recording.turns[1].stopReason)
+    exit(0)
+  end
+end
+
+on proc.watch_exited
+  if $S.phase != "disconnect" then raise("ACP_TEST", "unexpected adapter exit") end
+  $S.phase = "second"
+  $S.updates = []
+  connect(11)
+end
+
+connect(1)

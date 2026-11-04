@@ -69,11 +69,13 @@ on reconnect and returns an ACP error for an invalid child stop reason.
 
 Caller MCP attachments supplement the built-in `mixos` MCP server. The
 adapter validates stdio/HTTP definitions and stores them in mode-0600 files
-under `$MIXOS_AGENTD_MCP_DIR` (default `<var>/agentd/mcp`), in a mode-0700
+under `$MIXOS_AGENTD_MCP_DIR` (default beside `$MIXOS_AGENTD_DB`, or
+`<var>/agentd/mcp`), in a mode-0700
 directory. Set the same directory for agentd and its ACP clients. Only the
 opaque `mcp_ref` enters native command receipts; credentials do not enter
-the transcript. Retain these private attachments while sessions are
-resumable. Loading a ready session with changed MCP definitions closes and
+the transcript. The service retains one attachment per native session and
+deletes it when that session expires. Connection-temporary files are removed
+on normal disconnect. Loading a ready session with changed MCP definitions closes and
 resumes its native agent with the new definitions; changes during a running
 turn are refused. No provider credentials are copied by this adapter.
 
@@ -82,6 +84,10 @@ ordinary native operations, not JSON-RPC frames. The citizen is the only
 stdout writer; diagnostics use stderr. A connection keeps at most 4096
 request receipts and accepts input frames up to 1 MiB. Request IDs are scoped
 to the connection; another connection resumes by native session ID.
+The line reader checks that limit after reading the line; it is not a hard
+streaming allocation limit. This interface is for a trusted local editor.
+Protocol integration tests use Linux procps `pidwait` to observe a gateway
+restart without polling a zombie process.
 
 ## Configuration
 

@@ -47,7 +47,7 @@ fn update($sid, $u)
 end
 
 fn attach($sid, $id, $new)
-  if $S.sessions[$sid] != nil and $S.sessions[$sid].prompt != nil then raise("ACP_BUSY", "a prompt is still attached") end
+  if $S.sessions[$sid] != nil and ($S.sessions[$sid].prompt != nil or $S.sessions[$sid].setup != nil) then raise("ACP_BUSY", "a request is still attached") end
   $S.sessions[$sid] = {seq: 0, setup: $id, new: $new, replay: not $new, prompt: nil,
     meta: {}, reopen: nil, request: nil}
 end
@@ -75,6 +75,9 @@ fn event_row($sid, $e)
   elif type($e.update) == "map" then
     update($sid, $e.update)
     if $e.kind == "config_option_update" then $S.sessions[$sid].meta.config_options = $e.update.configOptions end
+    if $e.kind == "current_mode_update" and type($S.sessions[$sid].meta.modes) == "map" then
+      $S.sessions[$sid].meta.modes.currentModeId = $e.update.currentModeId
+    end
   elif $e.kind == "prompt" and $s.replay and ($e.origin ?? "user") == "user" then
     for $block in $e.content ?? [] update($sid, {sessionUpdate: "user_message_chunk", content: $block}) end
   elif $e.kind == "setting_result" then
@@ -109,8 +112,19 @@ fn event_row($sid, $e)
     end
   elif $e.kind == "permission_answered" then
     $key = "permission:" .. $sid .. ":" .. $e.request
-    $S.permissions = delete($S.permissions, $key)
+    retire_permission($key)
   end
+end
+
+fn retire_permission($key)
+  $p = $S.permissions[$key]
+  if $p == nil then return nil end
+  $S.permissions = delete($S.permissions, $key)
+  -- ACP v1 cancellation retracts our outstanding request. The synthetic
+  -- approval tool is terminal too; this never completes the agent's tool.
+  frame({method: "$/cancel_request", params: {requestId: $key}})
+  update($p.session, {sessionUpdate: "tool_call_update", toolCallId: $key, status: "completed",
+    content: [{type: "content", content: {type: "text", text: "Permission settled by the native service"}}]})
 end
 
 fn permission($card)
@@ -129,12 +143,22 @@ fn catch_up($sid)
     for $e in $r.events event_row($sid, $e) end
     if not $r.more then
       for $card in $r.session.permissions ?? [] permission($card) end
+      for $key in keys($S.permissions)
+        if $S.permissions[$key].session == $sid and not contains($r.session.permission_requests ?? [], $S.permissions[$key].request) then
+          retire_permission($key)
+        end
+      end
+      $s = $S.sessions[$sid]
+      if contains(["ended", "waiting"], $r.session.status) and $s.reopen == nil and not ($s.setup != nil and $s.replay) then
+        session_failed($sid, "native session is " .. $r.session.status)
+      end
       return $r.session
     end
   end
 end
 
 fn resume($sid, $ref)
+  if $S.sessions[$sid].setup == nil then raise("ACP_SESSION", "resume requires a pending load") end
   $r = native("agent.session.resume", {session: $sid, mcp_ref: $ref, id: effect_id($S.sessions[$sid].setup)})
   $S.sessions[$sid].replay = false
   $v = catch_up($sid)
@@ -153,9 +177,11 @@ fn load_session($m)
     $S.sessions[$sid].reopen = $ref
     $r = native("agent.session.close", {session: $sid, id: effect_id($m.id) .. ":close"})
   elif contains(["ready", "running"], $v.status) then
+    if $ref != $v.mcp_ref then $a.remove_mcp($ref) end
     setup_done($sid)
   else
     $S.sessions[$sid].replay = false
+    if len(keys($S.sessions[$sid].meta)) > 0 then setup_done($sid) end
   end
 end
 
@@ -180,6 +206,7 @@ fn handle($m)
     $digest = hash_sha256(json_encode($m))
     $old = $S.requests[$key]
     if $old != nil then
+      if $m.params.mcp_ref != nil and starts_with($m.params.mcp_ref, "acp-" .. $CONNECTION .. "-") then $a.remove_mcp($m.params.mcp_ref) end
       if $old.digest != $digest then frame({id: $m.id, error: {code: -32600, message: "request id reused with different content"}})
       elif $old.done then frame($old.response) end
       return nil
@@ -245,6 +272,9 @@ fn session_failed($sid, $message)
   fail($s.prompt, $message)
   $S.sessions[$sid].setup = nil
   $S.sessions[$sid].prompt = nil
+  for $key in keys($S.permissions)
+    if $S.permissions[$key].session == $sid then retire_permission($key) end
+  end
   for $request in keys($S.sets)
     if $S.sets[$request].session == $sid then
       fail($S.sets[$request].id, $message)
@@ -259,7 +289,7 @@ on acp.input
     prompt: "session/prompt", cancel: "session/cancel", mode: "session/set_mode", option: "session/set_config_option"}
   $p = $input.args ?? {}
   $m = {id: $input.request, method: $methods[$input.operation] ?? "unsupported",
-    params: {cwd: $p.cwd, mcp_ref: $p.mcp_ref, sessionId: $p.session,
+    params: {cwd: $p.cwd, mcp_ref: $p.mcp_ref, mcp_digest: $p.mcp_digest, sessionId: $p.session,
       prompt: $p.content, modeId: $p.mode, configId: $p.option, value: $p.value}}
   if $input.operation == "permission" then $m.method = nil; $m.result = {outcome: $p.outcome} end
   try
@@ -269,7 +299,14 @@ on acp.input
       handle($m)
     end
   catch $message
+    if $S.sessions[$m.params.sessionId] != nil and $S.sessions[$m.params.sessionId].prompt == $m.id then
+      session_failed($m.params.sessionId, "native effect may continue: " .. $message)
+    end
     fail($m.id, $message)
+    if $m.params.mcp_ref != nil and starts_with($m.params.mcp_ref, "acp-" .. $CONNECTION .. "-") then $a.remove_mcp($m.params.mcp_ref) end
+    if $S.sessions[$m.params.sessionId] != nil and $S.sessions[$m.params.sessionId].setup == $m.id then
+      $S.sessions[$m.params.sessionId].setup = nil
+    end
   end
   reply(0, "{}")
 end
@@ -286,7 +323,8 @@ on agent.session.updated
 end
 
 on agent.permission.requested
-  permission(body())
+  $sid = body().session
+  if $S.sessions[$sid] != nil then $v = catch_up($sid) end
 end
 
 on agent.session.ended
@@ -298,12 +336,20 @@ on agent.session.ended
         $ref = $S.sessions[$sid].reopen
         $S.sessions[$sid].reopen = nil
         resume($sid, $ref)
-      else
+      elif contains(["ended", "waiting"], $v.status) then
         session_failed($sid, "native agent exited")
       end
     catch $message
       session_failed($sid, $message)
     end
+  end
+end
+
+on agent.session.suspended
+  $sid = body().session
+  if $S.sessions[$sid] != nil then
+    $v = catch_up($sid)
+    if $v.status == "waiting" then session_failed($sid, "native session suspended") end
   end
 end
 
@@ -320,3 +366,4 @@ end
 subscribe("agent.session.updated")
 subscribe("agent.permission.requested")
 subscribe("agent.session.ended")
+subscribe("agent.session.suspended")

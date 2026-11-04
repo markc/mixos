@@ -1,0 +1,57 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+$mix = env("MIXOS_TEST_MIX")
+$tmp = env("ACP_TEST_DIR")
+$S = {watch: nil, sid: nil, phase: "start"}
+
+fn check($label, $ok)
+  print((if $ok then "PASS " else "FAIL " end) .. $label)
+  if not $ok then exit(1) end
+end
+
+fn input($m)
+  $m.jsonrpc = "2.0"
+  if not process_write($S.watch, json_encode($m) .. "\n") then raise("ACP_TEST", "input refused") end
+end
+
+on proc.line
+  if $event.args.stream == "stderr" then append_file($tmp .. "/adapter.stderr", $event.args.line .. "\n"); return nil end
+  $m = json_parse($event.args.line)
+  append_file($tmp .. "/frames.jsonl", $event.args.line .. "\n")
+  if $m.error != nil then check("no error during load window: " .. json_encode($m.error), false) end
+  if $m.id == 1 then
+    input({id: 2, method: "session/new", params: {cwd: $tmp .. "/workspace", mcpServers: []}})
+  elif $m.id == 2 then
+    $S.sid = $m.result.sessionId
+    $S.phase = "close"
+    send agent agent.session.close body=json_encode({session: $S.sid}) timeout=5
+  elif $m.id == 3 then
+    check("load in the native settle window replies", $m.result != nil)
+    input({id: 4, method: "session/prompt", params: {sessionId: $S.sid, prompt: [{type: "text", text: "AFTER WINDOW"}]}})
+  elif $m.id == 4 then
+    check("next prompt survives the native load settle window", $m.result.stopReason == "end_turn")
+    exit(0)
+  end
+end
+
+on agent.session.ended
+  if $event.args.session == $S.sid and $S.phase == "close" then
+    $S.phase = "resume"
+    send agent agent.session.resume body=json_encode({session: $S.sid}) timeout=5
+    check("native via-load reopen accepted", $rc == 0)
+  end
+end
+
+on agent.session.updated
+  if $event.args.session == $S.sid and $event.args.kind == "resumed" and $S.phase == "resume" then
+    $S.phase = "load-window"
+    send agent agent.session.read body=json_encode({session: $S.sid}) timeout=5
+    check("test reaches the starting settle window", $rc == 0 and $result.session.status == "starting")
+    input({id: 3, method: "session/load", params: {sessionId: $S.sid, cwd: $tmp .. "/workspace", mcpServers: []}})
+  end
+end
+
+subscribe("agent.session.ended")
+subscribe("agent.session.updated")
+$S.watch = process_watch([$mix, env("ACP_TEST_ADAPTER")], {stdin: "pipe", stderr: "lines", overflow: "block"})
+input({id: 1, method: "initialize", params: {protocolVersion: 1}})
