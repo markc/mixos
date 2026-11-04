@@ -77,13 +77,23 @@ fn compound_navigation_keeps_keyboard_ownership_for_inline_editing() {
     rt.queue_input(Input::Modifiers(ui::input::Modifiers::CTRL));
     rt.queue_input(key(26, 0x0065, Some("e"), true, false));
     rt.tick();
-    assert_eq!(rt.program.tables.lock().unwrap()["table"].edit.as_ref().unwrap().id, "b");
+    assert_eq!(
+        rt.program.tables.lock().unwrap()["table"]
+            .edit
+            .as_ref()
+            .unwrap()
+            .id,
+        "b"
+    );
     let accepted = Arc::clone(&rt.program.content);
     let seq = rt.program.tables.lock().unwrap()["table"].seq;
     drop(rt);
     let remounted = SceneUi::new(accepted);
     assert_eq!(remounted.tables.lock().unwrap()["table"].seq, seq);
-    assert_eq!(remounted.tables.lock().unwrap()["table"].snapshot()["cache_cells"], 0);
+    assert_eq!(
+        remounted.tables.lock().unwrap()["table"].snapshot()["cache_cells"],
+        0
+    );
     let mut rt = UiRuntime::headless(remounted, (400, 300), 1.0);
     rt.tick();
     assert_eq!(rt.program.tables.lock().unwrap()["table"].focus, Some(1));
@@ -91,7 +101,9 @@ fn compound_navigation_keeps_keyboard_ownership_for_inline_editing() {
     rt.tick();
     assert!(rt.program.tables.lock().unwrap()["table"].edit.is_none());
     rt.queue_input(key(9, 0xff1b, None, false, false));
-    for _ in 0..3 { rt.tick(); }
+    for _ in 0..3 {
+        rt.tick();
+    }
     rt.queue_input(key(110, 0xff50, None, true, false));
     rt.tick();
     assert!(rt.program.tables.lock().unwrap()["table"].seq > seq);

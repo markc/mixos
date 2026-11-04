@@ -342,8 +342,16 @@ impl SceneUi {
     pub fn new(content: Arc<Content>) -> SceneUi {
         {
             let mut tables = content.native_tables.lock().unwrap();
-            tables.retain(|id, _| content.tree.nodes.get(id).is_some_and(|n| n.family == "table"));
-            for state in tables.values_mut() { state.remount(); }
+            tables.retain(|id, _| {
+                content
+                    .tree
+                    .nodes
+                    .get(id)
+                    .is_some_and(|n| n.family == "table")
+            });
+            for state in tables.values_mut() {
+                state.remount();
+            }
         }
         SceneUi {
             geometry: geometry_key(&content),
@@ -512,7 +520,12 @@ impl ui::UiProgram for SceneUi {
             self.installed = Some((identity, self.content.dialog));
         }
         // Escape: a dialog hides (Quoin's chrome::dialog), an edge reports it.
-        if !self.tables.lock().unwrap().values().any(|state| state.edit.is_some())
+        if !self
+            .tables
+            .lock()
+            .unwrap()
+            .values()
+            .any(|state| state.edit.is_some())
             && ctx.input(|input| input.key_pressed(egui::Key::Escape))
         {
             emit.push(if self.content.dialog {

@@ -138,7 +138,9 @@ impl State {
         self.old_active = false;
         self.restore_scroll = Some(self.scroll_y);
         self.request = None;
-        if let Some(edit) = &mut self.edit { edit.focus = true; }
+        if let Some(edit) = &mut self.edit {
+            edit.focus = true;
+        }
     }
 
     /// Validate the whole page before changing state. A generation is a row-order

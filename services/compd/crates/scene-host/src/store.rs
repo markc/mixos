@@ -973,7 +973,10 @@ impl SceneStore {
             .as_ref()
             .is_some_and(|old| old.frame_armed && old.document.citizen == document.citizen);
         let frame_seq = old.as_ref().map_or(0, |old| old.frame_seq);
-        let native_tables = old.as_ref().map(|old| std::sync::Arc::clone(&old.native_tables)).unwrap_or_default();
+        let native_tables = old
+            .as_ref()
+            .map(|old| std::sync::Arc::clone(&old.native_tables))
+            .unwrap_or_default();
         let mounted = old.and_then(|old| old.mounted);
         self.scenes.insert(
             tree.name.clone(),
