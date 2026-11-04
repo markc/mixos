@@ -237,7 +237,7 @@ impl State {
                 .filter(|&v| v < total as usize);
             self.selection = incoming_selection;
             self.anchor = self.focus;
-            self.scroll_to = self.focus;
+            self.scroll_to = self.focus.or(if reset { Some(0) } else { None });
         }
         self.generation = generation;
         self.revision = revision;
@@ -384,5 +384,6 @@ mod tests {
         assert_eq!(s.focus, Some(5));
         s.ingest(&page(2, 1, 0));
         assert_eq!(s.selection.count(), 0);
+        assert_eq!(s.scroll_to, Some(0));
     }
 }
