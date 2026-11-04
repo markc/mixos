@@ -253,8 +253,8 @@ impl State {
                     generation,
                     total as usize,
                 );
-                self.model_load_us=started.elapsed().as_micros() as u64;
-                self.model_loads+=1;
+                self.model_load_us = started.elapsed().as_micros() as u64;
+                self.model_loads += 1;
                 match loaded {
                     Ok(model) => Some(model),
                     Err(error) => {
@@ -268,8 +268,13 @@ impl State {
         } else {
             None
         };
-        if dataset.as_ref().is_some_and(|m|m.rows.len()!=total as usize) || (dataset.is_some() && !rows.is_empty()) {
-            self.refused+=1; return false;
+        if dataset
+            .as_ref()
+            .is_some_and(|m| m.rows.len() != total as usize)
+            || (dataset.is_some() && !rows.is_empty())
+        {
+            self.refused += 1;
+            return false;
         }
         if reset {
             self.rows.clear();
@@ -450,29 +455,46 @@ mod tests {
     use super::*;
     #[test]
     fn native_model_pages_are_local_bounded_and_snapshot_identity_is_stable() {
-        let dir=tempfile::tempdir().unwrap(); let path=dir.path().join("data.json");
-        let data=json!({"version":1,"token":"t","session":"s","generation":1,"base":"/fixture","expanded":{},
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("data.json");
+        let data = json!({"version":1,"token":"t","session":"s","generation":1,"base":"/fixture","expanded":{},
             "rows":(0..10000).map(|i|json!([format!("file-{i}"),format!("file-{i}"),i,0,1.0,false,false,0])).collect::<Vec<_>>()});
-        std::fs::write(&path,data.to_string()).unwrap();
-        let mut view=json!({"generation":1,"revision":1,"total":10000,"offset":0,"rows":[],"source":{"path":path,"token":"t"}});
-        let mut s=State::default(); s.session="s".into(); assert!(s.ingest(&view));
+        std::fs::write(&path, data.to_string()).unwrap();
+        let mut view = json!({"generation":1,"revision":1,"total":10000,"offset":0,"rows":[],"source":{"path":path,"token":"t"}});
+        let mut s = State::default();
+        s.session = "s".into();
+        assert!(s.ingest(&view));
         std::fs::remove_file(&path).unwrap();
-        for n in 0..50 {s.prepare_range(n*128,n*128+24);assert!(s.rows.len()<=ROW_BUDGET);}
-        s.pick(9999,false,false); let event=s.event("selection");
-        assert_eq!(event["focus_id"],"/fixture/file-9999");
-        assert_eq!(event["selected_ids"],json!(["/fixture/file-9999"]));
-        view["revision"]=json!(2); assert!(s.ingest(&view)); assert_eq!(s.model_loads,1);
-        view["total"]=json!(9999); view["revision"]=json!(3); assert!(!s.ingest(&view));
-        assert_eq!(s.total,10000);
-        let loading=json!({"generation":2,"revision":1,"total":0,"offset":0,"rows":[]});
-        assert!(s.ingest(&loading)); assert!(s.dataset.is_none()); assert!(s.rows.is_empty());
+        for n in 0..50 {
+            s.prepare_range(n * 128, n * 128 + 24);
+            assert!(s.rows.len() <= ROW_BUDGET);
+        }
+        s.pick(9999, false, false);
+        let event = s.event("selection");
+        assert_eq!(event["focus_id"], "/fixture/file-9999");
+        assert_eq!(event["selected_ids"], json!(["/fixture/file-9999"]));
+        view["revision"] = json!(2);
+        assert!(s.ingest(&view));
+        assert_eq!(s.model_loads, 1);
+        view["total"] = json!(9999);
+        view["revision"] = json!(3);
+        assert!(!s.ingest(&view));
+        assert_eq!(s.total, 10000);
+        let loading = json!({"generation":2,"revision":1,"total":0,"offset":0,"rows":[]});
+        assert!(s.ingest(&loading));
+        assert!(s.dataset.is_none());
+        assert!(s.rows.is_empty());
     }
     #[test]
     fn failed_source_does_not_retry_io_each_frame() {
-        let mut s=State::default();s.session="s".into();
-        let view=json!({"generation":1,"revision":1,"total":1,"offset":0,"rows":[],"source":{"path":"/nonexistent/model","token":"t"}});
-        assert!(!s.ingest(&view));assert!(!s.ingest(&view));
-        assert_eq!(s.model_loads,1);assert_eq!(s.refused,1);assert!(s.model_error.is_some());
+        let mut s = State::default();
+        s.session = "s".into();
+        let view = json!({"generation":1,"revision":1,"total":1,"offset":0,"rows":[],"source":{"path":"/nonexistent/model","token":"t"}});
+        assert!(!s.ingest(&view));
+        assert!(!s.ingest(&view));
+        assert_eq!(s.model_loads, 1);
+        assert_eq!(s.refused, 1);
+        assert!(s.model_error.is_some());
     }
     fn page(g: u64, r: u64, offset: usize) -> Value {
         json!({"generation":g,"revision":r,"offset":offset,"total":10000,
