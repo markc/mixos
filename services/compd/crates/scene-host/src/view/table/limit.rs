@@ -234,6 +234,29 @@ fn pss(pid: u32) -> u64 {
 }
 
 #[test]
+fn preserved_dopus_oracle_survives_incremental_edits_and_reorders() {
+    let capture: Value = serde_json::from_str(include_str!("../../../tests/fixtures/incremental_oracle.json")).unwrap();
+    assert_eq!(capture["cases"].as_array().unwrap().len(),25);
+    for case in capture["cases"].as_array().unwrap() {
+        let rows=case["rows"].as_array().unwrap();
+        let mut s=State::default(); s.session="limit".into();
+        for (batch, chunk) in rows.chunks(256).enumerate() {
+            let view=json!({"generation":1,"revision":s.revision+1,"delta":{"kind":"splice","reset":batch==0,"base_revision":s.revision,"index":batch*256,"delete":[],"insert":chunk}});
+            assert!(s.ingest(&view));
+        }
+        for (i,row) in rows.iter().enumerate() { assert_eq!(s.incremental.as_ref().unwrap().row(i).unwrap().raw,*row); }
+        s.pick(0,false,false);
+        let mut changed=rows[0].clone(); changed["cells"][1]=json!("changed");
+        let view=json!({"generation":1,"revision":s.revision+1,"delta":{"kind":"edit","base_revision":s.revision,"edits":[{"index":0,"row":changed}]}});
+        assert!(s.ingest(&view));
+        for (i,row) in rows.iter().enumerate().skip(1) { assert_eq!(s.incremental.as_ref().unwrap().row(i).unwrap().raw,*row); }
+        let view=json!({"generation":1,"revision":s.revision+1,"delta":{"kind":"reverse","base_revision":s.revision}});
+        assert!(s.ingest(&view)); assert_eq!(s.focus,Some(rows.len()-1));
+        for (i,row) in rows.iter().rev().enumerate().take(rows.len()-1) { assert_eq!(s.incremental.as_ref().unwrap().row(i).unwrap().raw,*row); }
+    }
+}
+
+#[test]
 #[ignore]
 fn measure_incremental_limit() {
     let output_path = std::env::var("LIMIT_OUTPUT").expect("LIMIT_OUTPUT");
