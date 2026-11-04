@@ -14304,6 +14304,9 @@ Since 0.29.0 every builtin carries a structured contract — per-argument names/
 
 ## system  — see [system](system.md)
 
+  timer_once      One-shot CLOCK_MONOTONIC timer owned by this evaluator generation; delivers timer.tick {id,tag,missed,due_at,now}. Candidates may prepare timers; retirement closes them
+  interval        Repeating absolute monotonic timer, minimum 0.1 seconds (TIMER_PERIOD); use the frame clock for animation. Late delivery coalesces to one timer.tick; missed counts skipped deadlines
+  cancel_timer    Cancel this generation's timer and discard pending delivery; true only if still live
   env             Get environment variable value ("" if unset); env(name, default) returns default when unset or empty
   time            Return current Unix timestamp as float
   monotonic       Return CLOCK_MONOTONIC seconds as a float — the kernel monotonic clock (the one compositor FRAME_TRACE start_us/end_us stamp), never stepped by NTP or wall-clock adjustment, so it never goes backwards and differences are true elapsed intervals. The epoch is unspecified (on Linux it counts from boot); use time() for calendar timestamps, this for measuring and for correlating with compositor traces
@@ -30545,6 +30548,48 @@ mesh — with the translation layer written in the same small language you scrip
 everything else in. A command in; a real-world effect out; the bridge is a handful
 of lines of Mix.
 
+## Clocks
+`timer_once(seconds, tag)` registers a one-shot clock; `interval(seconds, tag)`
+registers a repeating clock with a **0.1 second minimum**. Use the compositor
+frame clock for animation. Both return an opaque id; `cancel_timer(id)` returns
+true only while that timer is live and discards pending delivery.
+The existing `after(string, delimiter)` text helper is unchanged. Tags are
+strings; each generation admits up to 256 live timers. Seconds must be finite,
+positive and at most 1e9.
+
+```mix
+$sampler = interval(1, "sample")
+on timer.tick
+    if $event.args.id == $sampler then
+        print(read_file("/proc/loadavg"))
+    end
+end
+```
+
+A clock is an event source when the tick **is** the event: sampling something
+with no notification, scheduling, debounce, timeouts, or a timer tied to
+outstanding work. It is polling when it replaces an existing event. For example,
+`on timer.tick; print(read_file("/tmp/settings")); end` should use `fs_watch`
+and `on fs.changed`. Prefer `proc.exited`, `net.changed`, props and subscriptions
+when they already describe the change. `/proc` and `/sys` reads have no such
+filesystem notification.
+
+`$event.args` contains `{id, tag, missed, due_at, now}`. Times use `monotonic()`
+seconds (CLOCK_MONOTONIC). `due_at` is the earliest outstanding deadline;
+`missed` counts additional elapsed deadlines. A busy pump delivers one tick,
+never a catch-up burst. Repeating deadlines stay on their original absolute
+grid, independent of handler time. Durations are rounded once to the nearest
+nanosecond (positive one-shots have a minimum of 1 ns); the kernel and pending
+deadlines use that same integer grid. Seconds are used only in the event payload.
+
+Timers belong to the evaluator generation. Reload candidates may register
+timers, like filesystem watches; their handlers run only after commit. Failed
+candidates close their timers; successful reloads retire the old timers after
+handlers drain. Shutdown closes them too. In a plain script, a live interval
+keeps the pump running until cancelled, even without an `on timer.tick` handler;
+the plain pump consumes and discards unhandled ticks. A lone `timer_once` keeps it alive until
+delivery. Timers are unavailable in expression mode.
+
 ## See also
 
 - [Bus messaging](bus.md) — `send` / `emit` / `address` / `on` / `reply`, topic pub/sub, `$result`/`$rc`, the no-broker state machine, `async`/Class C
@@ -42125,6 +42170,9 @@ loads unchanged.
   commands keep their meaning.
 
 ### Added
+
+- Generation-owned monotonic `timer_once`, `interval` and `cancel_timer`, with
+  coalesced `timer.tick` delivery, absolute deadlines and timer lint checks.
 
 - 0.119.0: add `global $a, $b` for explicit program-global assignment per invocation,
   including shared serve globals. Lambdas declare independently.
