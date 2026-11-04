@@ -9,10 +9,10 @@ use super::{Route, SceneMessage, flag, number};
 
 mod compound;
 mod dataset;
-mod model;
 mod incremental;
 #[cfg(test)]
 mod limit;
+mod model;
 pub(super) use model::State;
 pub(crate) use model::TableInteger;
 
