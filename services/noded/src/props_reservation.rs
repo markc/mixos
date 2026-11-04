@@ -12,7 +12,7 @@
 //!   from the owning service
 //!   (`<svc>` of the topic prefix) — anyone else faking publishes
 //!   would let one daemon spoof another's audit stream.
-//! - `<svc>.pointer.changed` and `<svc>.ui.titlebar.changed` have the same
+//! - `<svc>.pointer.changed`, `<svc>.op.done` and `<svc>.ui.titlebar.changed` have the same
 //!   owner-only publication rule and remain publicly subscribable. Reserved public
 //!   event deliveries carry the broker-authenticated owning service in `broker_service`.
 //! - Direct `topic.subscribe` to the private records/audit topics is refused
@@ -76,6 +76,10 @@ pub(crate) fn publisher_owner(name: &str) -> Option<&str> {
         return Some("settingsd");
     }
     reserved_owner(name)
+        .or_else(|| {
+            name.strip_suffix(".op.done")
+                .filter(|owner| !owner.is_empty())
+        })
         .or_else(|| {
             name.strip_suffix(TITLEBAR_CHANGED_SUFFIX)
                 .filter(|owner| !owner.is_empty())
@@ -331,6 +335,23 @@ mod tests {
         assert!(may_publish("comp.pointer.changed", "comp"));
         assert!(!may_publish("comp.pointer.changed", "wallpaper"));
         assert!(!may_publish("comp.pointer.changed", "anon-42"));
+    }
+
+    #[test]
+    fn operation_outcomes_are_public_but_owner_published() {
+        for (topic, owner) in [
+            ("agent.op.done", "agent"),
+            ("build.test.op.done", "build.test"),
+        ] {
+            assert_eq!(publisher_owner(topic), Some(owner));
+            assert_eq!(reserved_owner(topic), None);
+            assert!(may_subscribe(topic));
+            assert!(may_publish(topic, owner));
+            assert!(!may_publish(topic, "other"));
+            assert!(!may_publish(topic, "anon-42"));
+        }
+        assert_eq!(publisher_owner(".op.done"), None);
+        assert_eq!(publisher_owner("agent.op.done.extra"), None);
     }
 
     #[test]

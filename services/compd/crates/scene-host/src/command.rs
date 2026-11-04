@@ -11,6 +11,7 @@ pub enum SceneCommand {
     Load,
     Validate,
     Patch,
+    Frame,
     Get,
     Describe,
     Unload,
@@ -91,6 +92,7 @@ impl SceneCommand {
             "scene.load" => Self::Load,
             "scene.validate" => Self::Validate,
             "scene.patch" => Self::Patch,
+            "scene.frame" => Self::Frame,
             "scene.get" => Self::Get,
             "scene.describe" => Self::Describe,
             "scene.unload" => Self::Unload,
@@ -166,6 +168,7 @@ impl SceneCommand {
         matches!(
             self,
             Self::Load
+                | Self::Frame
                 | Self::Patch
                 | Self::Unload
                 | Self::DialogShow
@@ -189,6 +192,7 @@ impl SceneCommand {
             "scene.load",
             "scene.validate",
             "scene.patch",
+            "scene.frame",
             "scene.get",
             "scene.describe",
             "scene.unload",

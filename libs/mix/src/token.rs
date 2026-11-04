@@ -21,6 +21,9 @@ pub enum StringPart {
 pub enum Token {
     // Literals
     Number(f64),
+    /// A malformed numeric segment inside a tight hyphenated word. Only
+    /// the parser's Bus-name scan may consume it; expressions reject it.
+    BusNameNumber(String),
     String(String),
     InterpString(Vec<StringPart>),
     HeredocString(Vec<StringPart>),

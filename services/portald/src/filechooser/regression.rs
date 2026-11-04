@@ -22,6 +22,7 @@ enum Answer {
     Slow,
     Refuse,
     Silent,
+    Held,
 }
 
 struct Fixture {
@@ -36,6 +37,7 @@ struct Fixture {
     lists: Arc<SyncMutex<VecDeque<Answer>>>,
     cancels: Arc<SyncMutex<VecDeque<Answer>>>,
     cancelled: mpsc::UnboundedReceiver<String>,
+    held: mpsc::UnboundedReceiver<bus::native_client::IncomingCommand>,
 }
 
 impl Drop for Fixture {
@@ -94,6 +96,7 @@ impl Fixture {
         let cancels = Arc::new(SyncMutex::new(VecDeque::new()));
         let mut incoming = provider.incoming().unwrap();
         let (cancelled_tx, cancelled) = mpsc::unbounded_channel();
+        let (held_tx, held) = mpsc::unbounded_channel();
         let (p, l, c) = (provider.clone(), lists.clone(), cancels.clone());
         let worker = tokio::spawn(async move {
             while let Some(command) = incoming.recv().await {
@@ -106,6 +109,10 @@ impl Fixture {
                 } else {
                     l.lock().unwrap().pop_front().unwrap_or(Answer::Normal)
                 };
+                if matches!(answer, Answer::Held) {
+                    held_tx.send(command).unwrap();
+                    continue;
+                }
                 let p = p.clone();
                 tokio::spawn(async move {
                     if matches!(answer, Answer::Silent) {
@@ -140,6 +147,7 @@ impl Fixture {
             lists,
             cancels,
             cancelled,
+            held,
         }
     }
 
@@ -221,6 +229,104 @@ impl Fixture {
         .await
         .unwrap();
     }
+}
+
+#[tokio::test]
+async fn late_choose_reply_is_cancelled_after_an_in_flight_sweep_acknowledges() {
+    let mut f = Fixture::new().await;
+    let (path, mut stream) = f.entry(Phase::Sending).await;
+    f.bridge.close(&f.server, 1).await;
+    f.cancels.lock().unwrap().push_back(Answer::Held);
+    let generation = settings::native::live_generation(&f.bridge.client);
+    let sweep = f.bridge.cancel("inc-1".into(), generation).unwrap();
+    let command = f.held.recv().await.unwrap();
+    assert_eq!(f.cancelled.recv().await.unwrap(), "inc-1");
+    {
+        let mut registry = f.bridge.registry.lock().await;
+        f.bridge
+            .apply(&f.server, &mut registry, 1, Event::Sweep)
+            .await;
+    }
+    // The provider has processed the sweep but its acknowledgement is still
+    // in flight when the held choose finally creates/returns the window.
+    f.bridge
+        .reply(&f.server, generation, 1, Some(json!({"request":"inc-1"})))
+        .await;
+    f.provider.respond(&command, 0, "{}").await.unwrap();
+    sweep.await.unwrap();
+    f.cancelled().await;
+    f.removed(&path).await;
+    quiet(&mut stream).await;
+}
+
+async fn exhausted_cancel_with_late_reply(refused: bool) {
+    let mut f = Fixture::new().await;
+    let (path, mut stream) = f.entry(Phase::Sending).await;
+    f.bridge.close(&f.server, 1).await;
+    let generation = settings::native::live_generation(&f.bridge.client);
+    f.cancels.lock().unwrap().extend([Answer::Refuse; 2]);
+    f.bridge
+        .cancel("inc-1".into(), generation)
+        .unwrap()
+        .await
+        .unwrap();
+    f.cancelled().await;
+    f.bridge
+        .retry_cancel("inc-1".into())
+        .unwrap()
+        .await
+        .unwrap();
+    f.cancelled().await;
+    f.cancels.lock().unwrap().push_back(Answer::Held);
+    let third = f.bridge.retry_cancel("inc-1".into()).unwrap();
+    let command = tokio::time::timeout(Duration::from_secs(3), f.held.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(f.cancelled.recv().await.unwrap(), "inc-1");
+    {
+        let mut registry = f.bridge.registry.lock().await;
+        f.bridge
+            .apply(&f.server, &mut registry, 1, Event::Sweep)
+            .await;
+    }
+    f.bridge
+        .reply(&f.server, generation, 1, Some(json!({"request":"inc-1"})))
+        .await;
+    if refused {
+        f.provider.respond(&command, 10, "{}").await.unwrap();
+    }
+    // Otherwise the held command never answers: exercise the real IO deadline.
+    third.await.unwrap();
+    assert!(
+        f.bridge.cancels.lock().unwrap().contains_key("inc-1"),
+        "exhausting the old budget discarded the late reply's new demand"
+    );
+    // A fresh demand gets at most three further attempts, even if every one
+    // fails. Polling alone must never renew an exhausted budget.
+    f.cancels.lock().unwrap().extend([Answer::Refuse; 4]);
+    for _ in 0..CANCEL_ATTEMPTS {
+        f.bridge.poll(&f.server).await;
+        f.cancelled().await;
+    }
+    assert!(f.bridge.cancels.lock().unwrap().is_empty());
+    f.bridge.poll(&f.server).await;
+    assert!(
+        f.cancelled.try_recv().is_err(),
+        "unchanged failure retried forever"
+    );
+    f.removed(&path).await;
+    quiet(&mut stream).await;
+}
+
+#[tokio::test]
+async fn late_reply_survives_exhausted_refused_cancel_budget() {
+    exhausted_cancel_with_late_reply(true).await;
+}
+
+#[tokio::test]
+async fn late_reply_survives_exhausted_timed_out_cancel_budget() {
+    exhausted_cancel_with_late_reply(false).await;
 }
 
 async fn response(stream: &mut MessageStream) {

@@ -14,6 +14,8 @@
 --   CONFIG      echo the config options set so far (config:id=value,...)
 -- session/set_config_option records the value; a value starting slow- is
 -- answered after one second, so a prompt sent behind it has to wait.
+-- For either setting, slow-reply holds its reply until the next setting
+-- has been answered, reversing the two replies without reversing the sets.
 -- readline() is nil at EOF (an older mix gives ""; ACP never sends an
 -- empty line), so either ends the agent.
 
@@ -28,6 +30,7 @@ $modes = if len(args()) > 0 then split(args()[0], ",") else [] end
 $sessions = {}
 $next_id = 900
 $config = {}
+$delayed_set = nil
 
 fn session_mcp($params)
   $mcp = "-"
@@ -67,14 +70,24 @@ loop
     break
   end
   $m = json_parse($line)
+  if env("FAKE_ACP_CALLS") != "" then
+    append_file(env("FAKE_ACP_CALLS"), $line .. "\n")
+  end
+  if (($m.method == "session/set_mode" and $m.params.modeId == "refused") or
+    ($m.method == "session/set_config_option" and $m.params.value == "refused")) then
+    out({id: $m.id, error: {code: -32602, message: "setting refused"}})
+    continue
+  end
   if $m.method == "initialize" then
     $caps = {loadSession: contains($modes, "load")}
     if contains($modes, "resume") or contains($modes, "refuse") then $caps.sessionCapabilities = {resume: {}} end
     out({id: $m.id, result: {protocolVersion: 1, agentInfo: {name: "fake-acp", version: "0"},
       agentCapabilities: $caps, authMethods: []}})
   elif $m.method == "session/resume" or $m.method == "session/load" then
+    if env("FAKE_ACP_REOPEN_DELAY") != "" then sleep(to_number(env("FAKE_ACP_REOPEN_DELAY"))) end
     $sid = $m.params.sessionId
-    if contains($modes, "refuse") then
+    if env("FAKE_ACP_REFUSE_FILE") != "" and is_file(env("FAKE_ACP_REFUSE_FILE")) and read_file(env("FAKE_ACP_REFUSE_FILE")) == "crash" then exit(1) end
+    if contains($modes, "refuse") or (env("FAKE_ACP_REFUSE_FILE") != "" and is_file(env("FAKE_ACP_REFUSE_FILE"))) then
       out({id: $m.id, error: {code: -32002, message: "Resource not found: session " .. to_string($sid)}})
     else
       $sessions[$sid] = {mcp: session_mcp($m.params), cwd: $m.params.cwd}
@@ -98,6 +111,31 @@ loop
   elif $m.method == "session/prompt" then
     $sid = $m.params.sessionId
     $t = prompt_text($m.params)
+    if starts_with($t, "[await]") and env("FAKE_ACP_ERROR_FILE") != "" and is_file(env("FAKE_ACP_ERROR_FILE")) then
+      -- Hold an outcome error so the real terminal event can arrive during
+      -- the deadline turn. The ordinary hold path below still succeeds.
+      if env("FAKE_ACP_HOLD_FILE") != "" then
+        while is_file(env("FAKE_ACP_HOLD_FILE"))
+          sleep(0.05)
+        end
+      end
+      out({id: $m.id, error: {code: -32000, message: "outcome turn failed"}})
+      continue
+    end
+    if $t == "DIE" then exit(1) end
+    if starts_with($t, "[await]") and env("FAKE_ACP_CRASH_FILE") != "" and is_file(env("FAKE_ACP_CRASH_FILE")) then
+      if read_file(env("FAKE_ACP_CRASH_FILE")) == "once" then run_argv_must(["rm", env("FAKE_ACP_CRASH_FILE")]) end
+      exit(1)
+    end
+    if starts_with($t, "[await]") and env("FAKE_ACP_HOLD_FILE") != "" then
+      while is_file(env("FAKE_ACP_HOLD_FILE"))
+        sleep(0.05)
+      end
+    end
+    if $t == "ERROR" then
+      out({id: $m.id, error: {code: -32000, message: "turn failed"}})
+      continue
+    end
     $stop = "end_turn"
     if contains($t, "MCP") then text($sid, "mcp:" .. $sessions[$sid].mcp) end
     if contains($t, "BIG") then text($sid, repeat("x", 2097152)) end
@@ -192,11 +230,22 @@ loop
   elif $m.method == "session/set_config_option" then
     if starts_with(to_string($m.params.value), "slow-") then sleep(1) end
     $config[$m.params.configId] = $m.params.value
-    out({id: $m.id, result: {configOptions: []}})
+    $set_reply = {id: $m.id, result: {configOptions: []}}
   elif $m.method == "session/set_mode" then
     update($m.params.sessionId, {sessionUpdate: "current_mode_update", currentModeId: $m.params.modeId})
-    out({id: $m.id, result: {}})
+    $set_reply = {id: $m.id, result: {}}
   elif $m.id != nil then
     out({id: $m.id, error: {code: -32601, message: "method not found: " .. $m.method}})
+  end
+  if $m.method == "session/set_mode" or $m.method == "session/set_config_option" then
+    if ($m.params.modeId ?? $m.params.value) == "slow-reply" then
+      $delayed_set = $set_reply
+    else
+      out($set_reply)
+      if $delayed_set != nil then
+        out($delayed_set)
+        $delayed_set = nil
+      end
+    end
   end
 end

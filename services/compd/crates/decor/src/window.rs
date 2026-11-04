@@ -197,7 +197,7 @@ pub fn open_menu(window: &Window) -> bool {
     let Some((service, viewport, side)) = menu_target(window) else {
         return false;
     };
-    let Some(theme) = installed() else {
+    let Some(_theme) = installed() else {
         return false;
     };
     let geometry = window.geometry().size;
@@ -321,7 +321,7 @@ pub fn hit(
     slot_size: Size<i32, Logical>,
 ) -> Option<ChromeHit> {
     let extents = extents(window)?;
-    let theme = installed()?;
+    let _theme = installed()?;
     let layout = layout(
         window,
         crate::layout::vec2(slot_size.w.max(0) as f32, slot_size.h.max(0) as f32),
@@ -353,7 +353,7 @@ pub fn parts(
     slot_size: Size<i32, Logical>,
 ) -> Option<SpaceParts> {
     let extents = extents(window)?;
-    let theme = installed()?;
+    let _theme = installed()?;
     let layout = layout(
         window,
         crate::layout::vec2(slot_size.w.max(0) as f32, slot_size.h.max(0) as f32),

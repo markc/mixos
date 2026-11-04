@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Fixed
+
+- Bare hyphenated commands in `send`, `emit` and implicit `address` sends
+  read whole using the target-name rule, including keyword heads and
+  leading-zero/multi-dot numeric segments. Expression-form `send` uses the
+  same parser; check and lint agree with execution. Quoted and variable
+  commands keep their meaning.
+
 ### Added
 
 - Generation-owned monotonic `timer_once`, `interval` and `cancel_timer`, with

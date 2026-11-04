@@ -1,0 +1,695 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Awaits against real agentd and ACP pipes on an owned private Bus only.
+$pb = require("../../../tests/lib/private_bus.mix")
+$here = dirname(realpath($0))
+$mix = env("MIXOS_TEST_MIX", mixos_path("prefix", "bin/mix"))
+$tmp = env("TMPDIR", "/tmp") .. "/agentd-await-test." .. uuid()
+$results = []
+$pids = []
+$fixture = json_parse(read_file($here .. "/fixtures/buildd-done-47b2f6cef23b.json"))
+
+fn check($name, $ok)
+  push($results, {name: $name, ok: $ok})
+  print((if $ok then "PASS " else "FAIL " end) .. $name)
+end
+
+fn call($command, $b)
+  send agent $command body=json_encode($b) timeout=10
+  return {rc: $rc, v: $reply}
+end
+
+fn citizen($file, $name, $env)
+  $pid = spawn([$mix, "--serve", $file, "--name", $name], {detach: true, env: $env,
+    stdout: {file: $tmp .. "/" .. $name .. ".log", append: true}, stderr: "stdout"})
+  push($pids, $pid)
+  return $pid
+end
+
+fn up()
+  for $i = 1 to 60
+    if call("agent.agents", {}).rc == 0 then return true end
+    sleep(0.1)
+  end
+  return false
+end
+
+fn status($s)
+  return call("agent.session.read", {session: $s}).v.session.status
+end
+
+fn wait_status($s, $want)
+  for $i = 1 to 100
+    if status($s) == $want then return true end
+    sleep(0.1)
+  end
+  return false
+end
+
+fn events($s, $kind)
+  return filter(call("agent.session.read", {session: $s}).v.events ?? [], fn($e) = $e.kind == $kind)
+end
+
+fn topics($name, $field, $value)
+  if not is_file($tmp .. "/topics") then return [] end
+  $rows = map(filter(lines(read_file($tmp .. "/topics")), fn($l) = $l != ""), fn($l) = json_parse($l))
+  return filter($rows, fn($r) = $r.topic == $name and $r.body[$field] == $value)
+end
+
+fn outcomes($s)
+  return filter(events($s, "prompt"), fn($e) = contains(json_encode($e.content), "[await]"))
+end
+
+fn wait_outcomes($s, $n)
+  for $i = 1 to 100
+    if len(outcomes($s)) >= $n then return true end
+    sleep(0.1)
+  end
+  return false
+end
+
+fn start($agent)
+  $r = call("agent.session.new", {agent: $agent, cwd: $tmp .. "/ws"})
+  if $r.rc != 0 then raise("HARNESS", json_encode($r)) end
+  if not wait_status($r.v.session, "ready") then raise("HARNESS", "session never ready") end
+  return $r.v.session
+end
+
+fn register($s, $op, $extra)
+  $r = call("agent.session.await", merge({session: $s, service: "ops", op: $op}, $extra))
+  if $r.rc != 0 then raise("HARNESS", "await refused: " .. json_encode($r)) end
+  return $r.v.await
+end
+
+fn row($id)
+  return filter(call("agent.await.list", {}).v.awaits, fn($r) = $r.id == $id)[0]
+end
+
+fn wait_await($id, $want)
+  for $i = 1 to 100
+    if row($id).state == $want then return true end
+    sleep(0.1)
+  end
+  return false
+end
+
+fn outbox_count($s)
+  $db = sqlopen($tmp .. "/sessions.db", "rw")
+  $n = sqlexec($db, "SELECT count(*) AS n FROM await_outbox WHERE session = ?", [$s])[0].n
+  sqlclose($db)
+  return $n
+end
+
+fn wait_retries($id, $n)
+  for $i = 1 to 100
+    if row($id).redeliveries >= $n then return true end
+    sleep(0.1)
+  end
+  return false
+end
+
+fn wait_notice_failed($s)
+  for $i = 1 to 100
+    if len(events($s, "deadline_notice_failed")) > 0 then return true end
+    sleep(0.1)
+  end
+  return false
+end
+
+fn prompt($s, $text)
+  return call("agent.session.prompt", {session: $s, content: $text})
+end
+
+fn op_done($op, $state)
+  $rows = json_parse(read_file($tmp .. "/ops.json"))
+  $rows[$op] = merge($fixture, {op: $op, state: $state})
+  write_file($tmp .. "/ops.json", json_encode($rows))
+  send ops ops.emit body=json_encode(merge($fixture, {op: $op, state: $state})) timeout=2
+end
+
+fn close_session($s)
+  call("agent.session.close", {session: $s})
+  wait_status($s, "ended")
+end
+
+fn restart()
+  call("QUIT", {})
+  sleep(0.5)
+  citizen($here .. "/../scripts/agentd.mix", "agent", $agent_env)
+  if not up() then raise("HARNESS", "agentd restart failed") end
+end
+
+$bus = nil
+mkdir($tmp .. "/ws", {parents: true})
+try
+  $bus = $pb.start({dir: $tmp .. "/bus", name: "agentd-await", noded: env("MIXOS_TEST_NODED", mixos_path("prefix", "bin/noded"))})
+  $env = merge($pb.client_env($bus), {HOME: $tmp .. "/home"})
+  $fake_env = {FAKE_ACP_REFUSE_FILE: $tmp .. "/refuse", FAKE_ACP_CRASH_FILE: $tmp .. "/crash", FAKE_ACP_REOPEN_DELAY: "0.2", FAKE_ACP_HOLD_FILE: $tmp .. "/hold", FAKE_ACP_ERROR_FILE: $tmp .. "/outcome-error"}
+  $conf = {max_live: 1, agents: {
+    job: {close_on_done: true, argv: [$mix, $here .. "/fixtures/fake_acp_agent.mix", "resume"], roots: [$tmp .. "/ws"], env: $fake_env},
+    resumer: {argv: [$mix, $here .. "/fixtures/fake_acp_agent.mix", "resume"], roots: [$tmp .. "/ws"], env: $fake_env},
+    stubborn: {argv: [$mix, $here .. "/fixtures/fake_acp_agent.mix", "resume,stubborn"], roots: [$tmp .. "/ws"]}}}
+  write_file($tmp .. "/conf.mix", data_encode($conf))
+  write_file($tmp .. "/ops.json", "{}")
+  citizen($here .. "/fixtures/fake_op.mix", "ops", merge($env, {FAKE_OPS: $tmp .. "/ops.json"}))
+  citizen($here .. "/fixtures/await_listener.mix", "awaitlisten", merge($env, {AWAIT_EVENTS: $tmp .. "/topics"}))
+  $agent_env = merge($env, {MIXOS_AGENTD_CONF: $tmp .. "/conf.mix", MIXOS_AGENTD_DB: $tmp .. "/sessions.db",
+    MIXOS_AGENTD_MCP: "/bin/true", MIXOS_AGENTD_CLOSE_GRACE_S: "0.3"})
+  citizen($here .. "/../scripts/agentd.mix", "agent", $agent_env)
+  check("agentd answers", up())
+  sleep(0.3)
+  for each $bad in [{}, {op: nil}, {op: 1}, {op: ""}, {op: []}]
+    check("malformed cancel is usage " .. json_encode($bad), call("agent.op.cancel", $bad).rc == 10)
+  end
+
+  $s = start("resumer")
+  $aid = register($s, "untrusted", {})
+  prompt($s, "wait")
+  wait_status($s, "waiting")
+  publish("ops.op.done", json_encode({op: "untrusted", state: "done", reason: "forged"}), {command: "ops.op.done"})
+  sleep(0.3)
+  check("non-agent forged publication stays pending", row($aid).state == "pending" and status($s) == "waiting" and outbox_count($s) == 0)
+  send agent ops.op.done body=json_encode({op: "untrusted", state: "done"}) timeout=1
+  check("non-agent forged command stays pending", row($aid).state == "pending" and status($s) == "waiting")
+  write_file($tmp .. "/ops.json", json_encode({untrusted: {op: "untrusted", state: "done", query_fail: true}}))
+  send agent ops.op.done body=json_encode({op: "untrusted", state: "done"}) timeout=1
+  check("failed authoritative query stays pending", row($aid).state == "pending" and status($s) == "waiting" and outbox_count($s) == 0)
+  op_done("untrusted", "cancelled")
+  check("verified non-agent outcome delivered", wait_await($aid, "delivered") and json_parse(row($aid).outcome).state == "cancelled")
+  send agent ops.op.done body=json_encode({op: "untrusted", state: "failed", reason: "forged-late"}) timeout=1
+  check("verified non-agent delivery exactly once", len(outcomes($s)) == 1 and len(topics("agent.await.fired", "await", $aid)) == 1 and len(topics("agent.await.delivered", "await", $aid)) == 1)
+  close_session($s)
+
+  if env("MIXOS_TEST_AUTH_OPS") == "1" then
+    $s = start("resumer")
+    $aid = register($s, "auth-no-query", {})
+    prompt($s, "wait")
+    wait_status($s, "waiting")
+    $rows = json_parse(read_file($tmp .. "/ops.json"))
+    $rows["auth-no-query"] = {query_fail: true}
+    write_file($tmp .. "/ops.json", json_encode($rows))
+    send ops ops.emit body=json_encode({op: "auth-no-query", state: "done", reason: "authenticated"}) timeout=2
+    check("authenticated event delivers without query or deadline", wait_await($aid, "delivered") and row($aid).deadline == nil and json_parse(row($aid).outcome).reason == "authenticated")
+    close_session($s)
+
+    $s = start("resumer")
+    $aid = register($s, "auth-deadline-field", {})
+    prompt($s, "wait")
+    wait_status($s, "waiting")
+    $rows = json_parse(read_file($tmp .. "/ops.json"))
+    $rows["auth-deadline-field"] = {query_fail: true}
+    write_file($tmp .. "/ops.json", json_encode($rows))
+    send ops ops.emit body=json_encode({op: "auth-deadline-field", state: "done", deadline: true}) timeout=2
+    check("authenticated terminal cannot inject deadline flag", wait_await($aid, "delivered") and json_parse(row($aid).outcome).deadline == nil and outbox_count($s) == 0)
+    close_session($s)
+  end
+
+  for each $path in ["catchup", "direct"]
+    $s = start("resumer")
+    $op = "query-deadline-field-" .. $path
+    if $path == "direct" then $aid = register($s, $op, {}) end
+    $rows = json_parse(read_file($tmp .. "/ops.json"))
+    $rows[$op] = {op: $op, state: "done", deadline: true}
+    write_file($tmp .. "/ops.json", json_encode($rows))
+    if $path == "catchup" then $aid = register($s, $op, {})
+    else send agent ops.op.done body=json_encode({op: $op, state: "done", deadline: true}) timeout=1 end
+    check("queried terminal cannot inject deadline flag " .. $path, wait_await($aid, "delivered") and json_parse(row($aid).outcome).deadline == nil and outbox_count($s) == 0)
+    close_session($s)
+  end
+
+  $s = start("resumer")
+  $rows = json_parse(read_file($tmp .. "/ops.json"))
+  $rows["query-wrong-op"] = {op: "another-op", state: "done"}
+  write_file($tmp .. "/ops.json", json_encode($rows))
+  $aid = register($s, "query-wrong-op", {})
+  check("wrong-op catch-up stays pending", row($aid).state == "pending" and outbox_count($s) == 0)
+  prompt($s, "wait")
+  wait_status($s, "waiting")
+  send agent ops.op.done body=json_encode({op: "query-wrong-op", state: "done"}) timeout=1
+  check("wrong-op event query stays pending", row($aid).state == "pending" and status($s) == "waiting" and len(outcomes($s)) == 0)
+  op_done("query-wrong-op", "done")
+  check("correct outcome after wrong-op reply delivered once", wait_await($aid, "delivered") and json_parse(row($aid).outcome).op == "query-wrong-op" and len(outcomes($s)) == 1 and outbox_count($s) == 0)
+  close_session($s)
+
+  $s = start("resumer")
+  $a1 = register($s, "one", {note: "finish my job"})
+  prompt($s, "work then wait")
+  check("suspends at turn boundary", wait_status($s, "waiting"))
+  sleep(0.1)
+  check("suspension topic without ended", len(topics("agent.session.suspended", "session", $s)) == 1 and len(topics("agent.session.ended", "session", $s)) == 0)
+  check("unknown stays pending", row($a1).state == "pending")
+  $cl = run_argv([$mix, $here .. "/../scripts/agent_cli.mix", "list"], {env: $env, timeout: 10})
+  $cr = run_argv([$mix, $here .. "/../scripts/agent_cli.mix", "read", $s], {env: $env, timeout: 10})
+  check("CLI list and read show waiting", $cl.ok and $cr.ok and contains($cl.stdout, "waiting") and contains($cr.stdout, "waiting"))
+  check("cancel waiting does not resume", call("agent.session.cancel", {session: $s}).v.cancelled == false and status($s) == "waiting")
+  restart()
+  check("waiting survives restart", status($s) == "waiting")
+  op_done("one", "done")
+  check("event resumes waiting and delivers", wait_outcomes($s, 1) and wait_await($a1, "delivered"))
+  sleep(0.1)
+  check("fired and delivered topics", len(topics("agent.await.fired", "await", $a1)) == 1 and len(topics("agent.await.delivered", "await", $a1)) == 1)
+  check("outcome contains captured data and note", contains(json_encode(outcomes($s)), $fixture.log) and contains(json_encode(outcomes($s)), "finish my job"))
+  op_done("one", "done")
+  sleep(0.3)
+  check("duplicate event adds no turn", len(outcomes($s)) == 1)
+  close_session($s)
+
+  $s = start("stubborn")
+  register($s, "race", {})
+  prompt($s, "work")
+  sleep(0.1)
+  op_done("race", "done")
+  check("event during close survives", wait_outcomes($s, 1))
+  close_session($s)
+
+  $s = start("resumer")
+  $aid = register($s, "restart-fired", {})
+  prompt($s, "work")
+  wait_status($s, "waiting")
+  call("QUIT", {})
+  sleep(0.5)
+  $db = sqlopen($tmp .. "/sessions.db", "rw")
+  $wire = json_encode({op: "restart-fired", state: "done"})
+  sqlexec($db, "UPDATE awaits SET state = 'fired', fired = ?, outcome = ? WHERE id = ?", [time(), $wire, $aid])
+  sqlexec($db, "INSERT INTO await_outbox (id, await_id, session, fired, outcome) VALUES (?, ?, ?, ?, ?)", [uuid(), $aid, $s, time(), $wire])
+  sqlclose($db)
+  citizen($here .. "/../scripts/agentd.mix", "agent", $agent_env)
+  up()
+  check("restart delivers fired undelivered outbox", wait_outcomes($s, 1) and wait_await($aid, "delivered"))
+  close_session($s)
+
+  $s = start("resumer")
+  write_file($tmp .. "/ops.json", json_encode({past: {op: "past", state: "done"}}))
+  $r = call("agent.session.await", {session: $s, service: "ops", op: "past"})
+  check("catch-up fires before reply", $r.rc == 0 and $r.v.state == "fired")
+  check("catch-up delivers without suspension", wait_outcomes($s, 1) and len(events($s, "suspended")) == 0)
+  close_session($s)
+
+  $s = start("resumer")
+  $aid = register($s, "deadline", {deadline_s: 0.5})
+  prompt($s, "wait")
+  check("deadline turn delivered", wait_outcomes($s, 1))
+  check("deadline leaves await pending", wait_status($s, "waiting") and row($aid).state == "pending")
+  op_done("deadline", "done")
+  check("real outcome after deadline delivered", wait_outcomes($s, 2) and wait_await($aid, "delivered"))
+  close_session($s)
+
+  $s = start("resumer")
+  $aid = register($s, "cancelled", {})
+  prompt($s, "wait")
+  wait_status($s, "waiting")
+  op_done("cancelled", "cancelled")
+  check("cancelled op is terminal", wait_outcomes($s, 1) and wait_await($aid, "delivered"))
+  close_session($s)
+
+  $s = start("resumer")
+  prompt($s, "SLOW")
+  $aid = register($s, "busy", {})
+  op_done("busy", "done")
+  sleep(0.2)
+  check("busy outcome held", len(outcomes($s)) == 0 and row($aid).state == "fired")
+  call("agent.session.cancel", {session: $s})
+  check("busy outcome delivered after turn", wait_outcomes($s, 1) and wait_await($aid, "delivered"))
+  close_session($s)
+
+  $s = start("resumer")
+  $aid = register($s, "refuse", {})
+  prompt($s, "wait")
+  wait_status($s, "waiting")
+  write_file($tmp .. "/refuse", "yes")
+  op_done("refuse", "failed")
+  check("reopen failure fails await", wait_await($aid, "failed") and wait_status($s, "ended"))
+  sleep(0.1)
+  check("reopen failure topic", len(topics("agent.await.failed", "await", $aid)) == 1)
+  run_argv_must(["rm", $tmp .. "/refuse"])
+
+  $s = start("resumer")
+  $aid = register($s, "closed", {})
+  prompt($s, "wait")
+  wait_status($s, "waiting")
+  close_session($s)
+  op_done("closed", "done")
+  sleep(0.2)
+  check("close cancels and does not resurrect", row($aid).state == "cancelled" and row($aid).reason == "closed" and status($s) == "ended" and len(outcomes($s)) == 0)
+
+  $s = start("resumer")
+  $aid = register($s, "human", {})
+  prompt($s, "ERROR")
+  check("error reply suspends", wait_status($s, "waiting"))
+  prompt($s, "human turn")
+  check("human prompt resumes then suspends again", wait_status($s, "waiting") and len(events($s, "suspended")) == 2)
+  prompt($s, "DIE")
+  check("self exit becomes waiting", wait_status($s, "waiting") and row($aid).state == "pending")
+  close_session($s)
+
+  $s = start("resumer")
+  $aid = register($s, "crash", {})
+  prompt($s, "wait")
+  wait_status($s, "waiting")
+  write_file($tmp .. "/crash", "yes")
+  op_done("crash", "done")
+  check("crash redelivery capped", wait_await($aid, "failed") and row($aid).redeliveries == 3 and len(outcomes($s)) == 4)
+  check("crash redelivery framed", contains(json_encode(outcomes($s)), "Redelivery"))
+  run_argv_must(["rm", $tmp .. "/crash"])
+  close_session($s)
+
+  $s1 = start("resumer")
+  $a1 = register($s1, "fifo1", {})
+  prompt($s1, "wait")
+  wait_status($s1, "waiting")
+  $s2 = start("resumer")
+  $a2 = register($s2, "fifo2", {})
+  prompt($s2, "wait")
+  wait_status($s2, "waiting")
+  $blocker = start("resumer")
+  check("waiting does not count towards max_live", call("agent.agents", {}).v.live == 1)
+  op_done("fifo1", "done")
+  sleep(0.1)
+  op_done("fifo2", "done")
+  sleep(0.2)
+  check("max_live holds outboxes", len(outcomes($s1)) == 0 and len(outcomes($s2)) == 0)
+  close_session($blocker)
+  check("FIFO oldest gets slot", wait_outcomes($s1, 1) and len(outcomes($s2)) == 0)
+  close_session($s1)
+  check("FIFO next gets freed slot", wait_outcomes($s2, 1))
+  close_session($s2)
+
+  $s = start("resumer")
+  $a1 = register($s, "batch1", {})
+  $a2 = register($s, "batch2", {})
+  prompt($s, "wait")
+  wait_status($s, "waiting")
+  $blocker = start("resumer")
+  op_done("batch1", "done")
+  op_done("batch2", "lost")
+  sleep(0.1)
+  close_session($blocker)
+  prompt($s, "human after outcomes")
+  check("batch delivered", wait_await($a1, "delivered") and wait_await($a2, "delivered"))
+  wait_status($s, "ready")
+  $ps = events($s, "prompt")
+  check("outcomes batched before human prompt", len($ps) == 3 and contains(json_encode($ps[1].content), "batch1") and contains(json_encode($ps[1].content), "batch2") and contains(json_encode($ps[2].content), "human after outcomes"))
+  close_session($s)
+
+  $s = start("resumer")
+  $aid = register($s, "no-suspend", {suspend: false})
+  prompt($s, "ordinary turn")
+  wait_status($s, "ready")
+  check("suspend false keeps agent ready", status($s) == "ready" and row($aid).state == "pending")
+  check("cancel changes only pending await", call("agent.await.cancel", {await: $aid}).v.cancelled == true and call("agent.await.cancel", {await: $aid}).v.cancelled == false)
+  check("list filters by session", len(call("agent.await.list", {session: $s}).v.awaits) == 1)
+  check("unknown session refused", call("agent.session.await", {session: "abcd1234", service: "ops", op: "none"}).rc == 14)
+  close_session($s)
+
+  $s = start("resumer")
+  $aid = register($s, "queued-cancel", {})
+  call("agent.session.set", {session: $s, option: "model", value: "slow-test"})
+  prompt($s, "queued")
+  call("agent.session.cancel", {session: $s})
+  check("cancel queued prompt suspends", wait_status($s, "waiting") and len(events($s, "prompt")) == 0)
+  close_session($s)
+
+  $s = start("resumer")
+  $aid = register($s, "crash-once", {})
+  prompt($s, "wait")
+  wait_status($s, "waiting")
+  write_file($tmp .. "/crash", "once")
+  op_done("crash-once", "done")
+  check("one crash redelivers successfully", wait_await($aid, "delivered") and row($aid).redeliveries == 1 and len(outcomes($s)) == 2)
+  close_session($s)
+
+  $s = start("resumer")
+  $aid = register($s, "restart-inflight", {})
+  prompt($s, "wait")
+  wait_status($s, "waiting")
+  write_file($tmp .. "/hold", "yes")
+  op_done("restart-inflight", "done")
+  wait_outcomes($s, 1)
+  check("not delivered before stop", row($aid).state == "fired")
+  call("QUIT", {})
+  sleep(0.5)
+  run_argv_must(["rm", $tmp .. "/hold"])
+  citizen($here .. "/../scripts/agentd.mix", "agent", $agent_env)
+  up()
+  check("restart redelivers in-flight outcome", wait_await($aid, "delivered") and row($aid).redeliveries == 1 and len(outcomes($s)) == 2)
+  close_session($s)
+
+  -- Review 1: a final end cancels obligations that cannot suspend it.
+  $s = start("resumer")
+  $aid = register($s, "ended-no-suspend", {suspend: false})
+  prompt($s, "DIE")
+  wait_status($s, "ended")
+  op_done("ended-no-suspend", "done")
+  sleep(0.3)
+  check("non-suspending await cannot reopen ended session", status($s) == "ended" and row($aid).state == "cancelled" and row($aid).reason == "session_ended" and len(events($s, "resumed")) == 0 and len(outcomes($s)) == 0)
+
+  $s = start("resumer")
+  $aid = register($s, "ended-outbox", {suspend: false})
+  write_file($tmp .. "/crash", "once")
+  op_done("ended-outbox", "done")
+  check("final end fails remaining outbox", wait_status($s, "ended") and row($aid).state == "failed" and row($aid).reason == "session_ended" and outbox_count($s) == 0)
+  sleep(0.1)
+  check("final end publishes await failure", len(topics("agent.await.failed", "await", $aid)) == 1 and topics("agent.await.failed", "await", $aid)[0].body.reason == "session_ended")
+
+  -- Review 2: a running suspending wait survives without a transient end.
+  $s = start("resumer")
+  $aid = register($s, "restart-running", {})
+  prompt($s, "SLOW")
+  wait_status($s, "running")
+  restart()
+  $suspended = events($s, "suspended")
+  check("running suspending await restarts as waiting without ended event", status($s) == "waiting" and len(events($s, "ended")) == 0 and len($suspended) == 1 and $suspended[0].reason == "agentd_restart")
+  op_done("restart-running", "done")
+  check("restarted running await resumes on event", wait_await($aid, "delivered") and len(outcomes($s)) == 1)
+  close_session($s)
+
+  $s = start("resumer")
+  $aid = register($s, "restart-non-suspending", {suspend: false})
+  prompt($s, "SLOW")
+  wait_status($s, "running")
+  restart()
+  op_done("restart-non-suspending", "done")
+  sleep(0.2)
+  check("restart ends and cancels non-suspending await", status($s) == "ended" and row($aid).state == "cancelled" and row($aid).reason == "session_ended" and len(events($s, "ended")) == 1 and len(outcomes($s)) == 0)
+
+  -- Review 3: errors need later boundaries, never a same-pass resend.
+  -- A suspending await: the session has no next turn of its own, so the
+  -- agent is ended back to waiting and the reopen is the retry, capped.
+  $s = start("resumer")
+  $aid = register($s, "outcome-error", {})
+  prompt($s, "wait")
+  wait_status($s, "waiting")
+  write_file($tmp .. "/outcome-error", "yes")
+  op_done("outcome-error", "done")
+  wait_await($aid, "failed")
+  sleep(0.4)
+  check("suspending outcome ACP errors retry by reopen and fail after three", row($aid).state == "failed" and row($aid).redeliveries == 3 and row($aid).reason == "redelivery_limit" and len(outcomes($s)) == 3 and outbox_count($s) == 0 and len(topics("agent.await.failed", "await", $aid)) == 1)
+  sleep(1)
+  check("after the cap nothing is resent", len(outcomes($s)) == 3)
+  close_session($s)
+
+  -- A non-suspending await on an interactive session: retried only at the
+  -- next turn boundary, never in the same pass.
+  $s = start("resumer")
+  $aid = register($s, "outcome-error-ns", {suspend: false})
+  op_done("outcome-error-ns", "done")
+  wait_retries($aid, 1)
+  sleep(0.3)
+  check("outcome ACP error stays idle until next boundary", row($aid).redeliveries == 1 and row($aid).state == "fired" and status($s) == "ready" and len(outcomes($s)) == 1)
+  prompt($s, "next human boundary")
+  wait_retries($aid, 2)
+  sleep(0.3)
+  check("next turn boundary retries outcome once", row($aid).redeliveries == 2 and len(outcomes($s)) == 2)
+  prompt($s, "last human boundary")
+  wait_await($aid, "failed")
+  sleep(0.4)
+  check("outcome ACP errors fail after three attempts and stay idle", row($aid).state == "failed" and row($aid).redeliveries == 3 and row($aid).reason == "redelivery_limit" and status($s) == "ready" and len(outcomes($s)) == 3 and outbox_count($s) == 0 and len(topics("agent.await.failed", "await", $aid)) == 1)
+  -- DeepSeek, review 2: a failed outcome must not hold back a later one.
+  if is_file($tmp .. "/outcome-error") then remove($tmp .. "/outcome-error") end
+  $aid2 = register($s, "after-failure", {suspend: false})
+  op_done("after-failure", "done")
+  check("a later outcome is delivered after a failed one", wait_await($aid2, "delivered"))
+  if is_file($tmp .. "/outcome-error") then remove($tmp .. "/outcome-error") end
+  close_session($s)
+
+  -- Review 4: a pre-fix crash could leave this already-delivered row.
+  $s = start("resumer")
+  $aid = register($s, "delivered-stale-outbox", {})
+  op_done("delivered-stale-outbox", "done")
+  wait_await($aid, "delivered")
+  call("QUIT", {})
+  sleep(0.5)
+  $db = sqlopen($tmp .. "/sessions.db", "rw")
+  sqlexec($db, "INSERT INTO await_outbox (id, await_id, session, fired, outcome, inflight) VALUES (?, ?, ?, ?, ?, 1)", [uuid(), $aid, $s, time(), json_encode({op: "delivered-stale-outbox", state: "done"})])
+  sqlclose($db)
+  citizen($here .. "/../scripts/agentd.mix", "agent", $agent_env)
+  up()
+  sleep(0.3)
+  check("restart deletes delivered inflight outbox without redelivery", row($aid).state == "delivered" and row($aid).redeliveries == 0 and outbox_count($s) == 0 and len(outcomes($s)) == 1)
+  close_session($s)
+
+  -- D3: local delivery and catch-up use the same operation adapter.
+  for each $case in ["done", "cancelled", "failed"]
+    $parent = start("resumer")
+    $child_op = uuid()
+    -- Register before creating the child (unknown is non-terminal).
+    -- A waiting parent frees the single process slot for the child.
+    $park = register($parent, "park-" .. $case, {})
+    prompt($parent, "wait for child")
+    wait_status($parent, "waiting")
+    $child = start("job")
+    $aid = call("agent.session.await", {session: $parent, service: "agent", op: $child}).v.await
+    check("op.get running " .. $case, call("agent.op.get", {op: $child}).v.state == "running")
+    call("agent.await.cancel", {await: $park})
+    if $case == "done" then prompt($child, "finish")
+    elif $case == "cancelled" then
+      $childwait = register($child, "child-obligation", {})
+      prompt($child, "suspend")
+      check("job suspension stays running op", wait_status($child, "waiting") and call("agent.op.get", {op: $child}).v.state == "running" and len(topics("agent.op.done", "op", $child)) == 0)
+      check("op.cancel changes waiting child", call("agent.op.cancel", {op: $child}).v.cancelled == true and row($childwait).state == "cancelled")
+    else prompt($child, "DIE") end
+    check("child terminal " .. $case, wait_status($child, "ended") and call("agent.op.get", {op: $child}).v.state == $case)
+    check("parent gets child " .. $case, wait_await($aid, "delivered") and json_parse(row($aid).outcome).state == $case)
+    $again = call("agent.session.await", {session: $parent, service: "agent", op: $child}).v.await
+    check("local terminal catch-up " .. $case, wait_await($again, "delivered") and json_parse(row($again).outcome).state == $case)
+    sleep(0.1)
+    call("agent.op.cancel", {op: $child})
+    check("one op.done " .. $case, len(topics("agent.op.done", "op", $child)) == 1)
+    close_session($parent)
+  end
+  check("op.get unknown", call("agent.op.get", {op: "never-seen"}).v.state == "unknown")
+  $parent = start("resumer")
+  $park = register($parent, "forged-child-park", {})
+  prompt($parent, "wait")
+  wait_status($parent, "waiting")
+  $child = start("resumer")
+  $aid = call("agent.session.await", {session: $parent, service: "agent", op: $child}).v.await
+  call("agent.await.cancel", {await: $park})
+  prompt($child, "SLOW")
+  check("forgery target is running", wait_status($child, "running"))
+  publish("agent.op.done", json_encode({op: $child, state: "done", reason: "forged"}), {command: "agent.op.done"})
+  sleep(0.3)
+  check("forged publication leaves parent pending", row($aid).state == "pending" and status($parent) == "waiting" and outbox_count($parent) == 0 and len(outcomes($parent)) == 0)
+  send agent agent.op.done body=json_encode({op: $child, state: "done", reason: "forged-direct"}) timeout=1
+  check("forged direct command leaves parent pending", row($aid).state == "pending" and status($parent) == "waiting" and outbox_count($parent) == 0 and len(outcomes($parent)) == 0)
+  close_session($child)
+  check("real child outcome delivered after forgery", wait_await($aid, "delivered") and deep_eq(json_parse(row($aid).outcome), call("agent.op.get", {op: $child}).v) and json_parse(row($aid).outcome).state == "cancelled")
+  send agent agent.op.done body=json_encode({op: $child, state: "failed", reason: "forged-late"}) timeout=1
+  sleep(0.3)
+  check("real outcome delivered once despite forged repeats", len(outcomes($parent)) == 1 and len(topics("agent.await.fired", "await", $aid)) == 1 and len(topics("agent.await.delivered", "await", $aid)) == 1)
+  close_session($parent)
+  $s = start("resumer")
+  prompt($s, "interactive")
+  check("interactive stays ready", wait_status($s, "ready") and call("agent.op.get", {op: $s}).v.state == "running")
+  check("interactive accepts second prompt", prompt($s, "interactive again").rc == 0 and wait_status($s, "ready") and len(events($s, "stop")) == 2)
+  close_session($s)
+
+  $parent = start("resumer")
+  $park = register($parent, "restart-parent", {})
+  prompt($parent, "wait")
+  wait_status($parent, "waiting")
+  $child = start("resumer")
+  $aid = call("agent.session.await", {session: $parent, service: "agent", op: $child}).v.await
+  call("agent.await.cancel", {await: $park})
+  prompt($child, "SLOW")
+  wait_status($child, "running")
+  restart()
+  check("restart-ended child resumes waiting parent", wait_await($aid, "delivered") and json_parse(row($aid).outcome).state == "failed" and call("agent.op.get", {op: $child}).v.reason == "agentd_restart")
+  close_session($parent)
+  $prior = call("agent.op.get", {op: $child}).v
+  call("agent.session.resume", {session: $child})
+  wait_status($child, "ready")
+  check("manual resume preserves terminal operation", deep_eq(call("agent.op.get", {op: $child}).v, $prior))
+  close_session($child)
+  sleep(0.1)
+  check("manual resume does not republish final operation", len(topics("agent.op.done", "op", $child)) == 1)
+
+  -- Review 5: cancelling a queued deadline consumes its outbox atomically.
+  for each $command in ["agent.session.close", "agent.op.cancel"]
+    $s = start("resumer")
+    $aid = register($s, "close-reopen-" .. $command, {})
+    prompt($s, "wait")
+    wait_status($s, "waiting")
+    op_done("close-reopen-" .. $command, "done")
+    check("reopen starts before close " .. $command, wait_status($s, "starting"))
+    call($command, {session: $s, op: $s})
+    wait_status($s, "ended")
+    sleep(0.5)
+    $out = call("agent.op.get", {op: $s}).v
+    check("close during reopen stays cancelled " .. $command, $out.state == "cancelled" and $out.reason == "caller_closed" and status($s) == "ended" and len(topics("agent.op.done", "op", $s)) == 1)
+  end
+  $s = start("resumer")
+  $own = "mcp-s-" .. $s .. "-review"
+  citizen($here .. "/fixtures/impostor.mix", $own, $env)
+  sleep(0.3)
+  send $own impostor.call body=json_encode({command: "agent.op.cancel", body: {op: $s}}) timeout=10
+  check("own sender cannot op.cancel", $reply.rc == 17 and status($s) == "ready")
+  close_session($s)
+
+  -- First-round DeepSeek: a deadline notification is not the operation.
+  $s = start("resumer")
+  write_file($tmp .. "/outcome-error", "yes")
+  $aid = register($s, "deadline-cap-late", {deadline_s: 0.15})
+  prompt($s, "wait")
+  check("deadline notice exhausts retries without consuming await", wait_notice_failed($s) and wait_status($s, "waiting") and row($aid).state == "pending" and row($aid).reason == nil and outbox_count($s) == 0 and len(topics("agent.await.failed", "await", $aid)) == 0)
+  remove($tmp .. "/outcome-error")
+  op_done("deadline-cap-late", "done")
+  check("real outcome after deadline notice cap delivered", wait_await($aid, "delivered") and json_parse(row($aid).outcome).state == "done")
+  close_session($s)
+
+  $s = start("resumer")
+  write_file($tmp .. "/outcome-error", "yes")
+  write_file($tmp .. "/hold", "yes")
+  $aid = register($s, "deadline-cap-concurrent", {deadline_s: 0.15})
+  prompt($s, "wait")
+  check("failing deadline turn held", wait_outcomes($s, 1) and wait_status($s, "running"))
+  -- Fault injection at the cap boundary while the real ACP turn is held.
+  $db = sqlopen($tmp .. "/sessions.db", "rw")
+  sqlexec($db, "UPDATE await_outbox SET redeliveries = 2 WHERE await_id = ? AND inflight = 1", [$aid])
+  sqlclose($db)
+  op_done("deadline-cap-concurrent", "done")
+  sleep(0.2)
+  check("terminal outcome queued beside deadline notice", row($aid).state == "fired" and outbox_count($s) == 2)
+  remove($tmp .. "/outcome-error")
+  remove($tmp .. "/hold")
+  check("notice cap preserves queued real outcome", wait_notice_failed($s) and wait_await($aid, "delivered") and json_parse(row($aid).outcome).state == "done" and len(topics("agent.await.failed", "await", $aid)) == 0)
+  close_session($s)
+
+  for each $kind in ["refuse", "crash"]
+    $s = start("resumer")
+    $aid = register($s, "human-reopen-" .. $kind, {})
+    prompt($s, "wait")
+    wait_status($s, "waiting")
+    write_file($tmp .. "/refuse", $kind)
+    if $kind == "refuse" then call("agent.session.resume", {session: $s}) else prompt($s, "human prompt") end
+    check("human waiting reopen failure is terminal " .. $kind, wait_status($s, "ended") and call("agent.op.get", {op: $s}).v.state == "failed" and call("agent.op.get", {op: $s}).v.reason == "reopen_failed")
+    sleep(0.2)
+    check("human waiting reopen publishes once " .. $kind, len(topics("agent.op.done", "op", $s)) == 1 and len(topics("agent.session.ended", "session", $s)) == 1 and outbox_count($s) == 0)
+    remove($tmp .. "/refuse")
+  end
+
+  $s = start("resumer")
+  prompt($s, "SLOW")
+  $aid = register($s, "cancel-deadline-outbox", {deadline_s: 0.15})
+  for $i = 1 to 100
+    if outbox_count($s) > 0 then break end
+    sleep(0.05)
+  end
+  check("deadline queued while busy", row($aid).state == "pending" and outbox_count($s) == 1)
+  $cancel = call("agent.await.cancel", {await: $aid})
+  check("cancel deletes queued deadline outbox atomically", $cancel.v.cancelled == true and row($aid).state == "cancelled" and outbox_count($s) == 0)
+  call("agent.session.cancel", {session: $s})
+  wait_status($s, "ready")
+  sleep(0.2)
+  check("cancelled deadline notice is never delivered", len(outcomes($s)) == 0 and outbox_count($s) == 0)
+  close_session($s)
+catch $m
+  check("harness: " .. $m, false)
+finally
+  for each $pid in $pids
+    try kill($pid) catch $m end
+  end
+  if $bus != nil then $pb.stop($bus) end
+end
+$failed = filter($results, fn($r) = not $r.ok)
+print(to_string(len($results) - len($failed)) .. "/" .. to_string(len($results)) .. " passed; logs in " .. $tmp)
+exit(if len($failed) == 0 then 0 else 1 end)

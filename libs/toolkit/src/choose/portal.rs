@@ -152,9 +152,17 @@ async fn session_inner(
         return Ok(None);
     }
     let owner = tokio::time::timeout(IO_BOUND, dbus.get_name_owner(DESKTOP.try_into()?)).await??;
-    let proxy = tokio::time::timeout(
+    // This fresh, one-shot proxy reads only version. A property cache would
+    // subscribe to changes and wait for GetAll (including unrelated properties)
+    // before answering that single Get, needlessly coupling discovery to them.
+    let proxy: zbus::Proxy<'_> = tokio::time::timeout(
         IO_BOUND,
-        zbus::Proxy::new(connection, owner.as_str(), PATH, INTERFACE),
+        zbus::proxy::Builder::new(connection)
+            .destination(owner.as_str())?
+            .path(PATH)?
+            .interface(INTERFACE)?
+            .cache_properties(zbus::proxy::CacheProperties::No)
+            .build(),
     )
     .await??;
     let version: u32 = tokio::time::timeout(IO_BOUND, proxy.get_property("version")).await??;

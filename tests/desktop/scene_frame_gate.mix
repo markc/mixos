@@ -1,0 +1,77 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- mix tests/desktop/scene_frame_gate.mix /absolute/path/to/compd
+-- Owns one private headless compositor, never touches a desktop.
+$bin = args()[0]
+$root = "/tmp/scene-frame-" .. to_string(pid())
+$shell = "shell"
+$comp = "frame-comp-" .. to_string(pid())
+$citizen = "frame-client-" .. to_string(pid())
+mkdir($root, {parents:true})
+chmod($root, 0o700)
+for $part in ["runtime", "etc", "var", "run"]
+  mkdir($root .. "/" .. $part, {parents:true})
+end
+chmod($root .. "/runtime", 0o700)
+write_file($root .. "/settings.json", read_file(dirname(script_path()) .. "/smoke-settings.json"))
+write_file($root .. "/preferences.json", json_encode({scene_host:true}))
+fn call($svc, $command, $body)
+  send $svc $command body=json_encode($body) timeout=5
+  if $rc != 0 then raise("CALL_FAILED", $command .. ": " .. $reply) end
+  return if type($reply) == "string" then json_parse($reply) else $reply end
+end
+$cp = nil
+$bp = nil
+$pb = require("../lib/private_bus.mix")
+$bus = nil
+try
+  $bus = $pb.start({dir:$root .. "/bus", name:"frame-gate"})
+  $cp = spawn([$bin, "--headless", "--size", "1920x1080", "--render-node", "/dev/dri/renderD128",
+      "--bus-service", $comp, "--scene-service", $shell, "--config-file", $root .. "/settings.json"],
+    {env:{XDG_RUNTIME_DIR:$root .. "/runtime", MIXOS_ETC:$root .. "/etc", MIXOS_VAR:$root .. "/var", MIXOS_RUN:$root .. "/run",
+      WAYLAND_DISPLAY:nil, DISPLAY:nil, DBUS_SESSION_BUS_ADDRESS:nil, COMPD_FRAME_TRACE:"1"},
+      stdout:{file:$root .. "/compd.log"}, stderr:"stdout", detach:true})
+  $ready = false
+  for $i = 1 to 100
+    if not process_alive($cp) then raise("COMPOSITOR_EXITED", $root .. "/compd.log") end
+    send $shell shell.ping timeout=1
+    if $rc == 0 then $ready = true; break end
+    sleep(0.2)
+  end
+  if not $ready then raise("NOT_READY", $root .. "/compd.log") end
+  $bp = spawn(["/opt/mixos/bin/mix", "--serve", dirname(script_path()) .. "/scene_frame_behaviour.mix", "--name", $citizen],
+    {env:{SCENE_FRAME_SERVICE:$shell}, stdout:{file:$root .. "/citizen.log"}, stderr:"stdout", detach:true})
+  for $i = 1 to 50
+    send $citizen HELP timeout=1
+    if $rc == 0 then break end
+    sleep(0.2)
+  end
+  $doc = "---\nscene: 1\nname: frame-clock\ncitizen: " .. $citizen .. "\nmodel: {\"counter\":\"0\"}\nwindow: {\"kind\":\"dialog\",\"w\":400,\"h\":240}\n---\n```mix\nroot: {widget:\"column\", children:[\"counter\"]}\ncounter: {widget:\"text\", text:\"= $model.counter\"}\n```\n"
+  call($shell, "shell.scene.load", {source:$doc})
+  call($shell, "shell.dialog.show", {scene:"frame-clock"})
+  sleep(1)
+  $before = call($comp, "comp.window.stats", {source:"scene_frame_clock"})
+  send $citizen begin timeout=5
+  if $rc != 0 then raise("START_FAILED", $reply) end
+  sleep(10)
+  send $citizen halt timeout=5
+  sleep(1)
+  $after = call($comp, "comp.window.stats", {source:"scene_frame_clock"})
+  $idle_frames = len(filter(lines(read_file($root .. "/compd.log")), fn($line) = contains($line, "stage=comp_frame_reasons")))
+  sleep(2)
+  $idle = call($comp, "comp.window.stats", {source:"scene_frame_clock"})
+  $idle_end = len(filter(lines(read_file($root .. "/compd.log")), fn($line) = contains($line, "stage=comp_frame_reasons")))
+  write_file($root .. "/stats.json", json_encode({before:$before, after:$after, idle:$idle}))
+  $frames = $after.presented - $before.presented
+  print(json_encode({presented:$frames, seconds:10, fps:$frames / 10,
+    interval_p50_us:$after.interval_p50_us, interval_p99_us:$after.interval_p99_us,
+    idle_presented:$idle.presented - $after.presented, idle_redraws:$idle_end - $idle_frames, logs:$root}))
+  if $frames < 540 or $frames > 650 then raise("FRAME_RATE", "expected about 60 presentations/s") end
+  if $idle.presented != $after.presented or $idle_end != $idle_frames then
+    raise("NOT_IDLE", "static scene scheduled work after halt")
+  end
+  call($shell, "shell.scene.unload", {scene:"frame-clock"})
+finally
+  if $bp != nil then kill($bp, 15) end
+  if $cp != nil then kill($cp, 15) end
+  if $bus != nil then $pb.stop($bus) end
+end

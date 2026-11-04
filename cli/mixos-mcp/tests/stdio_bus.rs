@@ -21,6 +21,7 @@ async fn clipboard_tools_use_the_local_clipd_and_preserve_parameters() {
         .env("MIXOS_ETC", dir.path())
         .env("HOME", dir.path())
         .env("MIXOS_LOG", dir.path().join("logs"))
+        .env_remove("MIXOS_AGENT_SESSION")
         .current_dir(dir.path());
     let service = ().serve(TokioChildProcess::new(command).unwrap()).await.unwrap();
     let owner = NodedClient::connect("clipd", &broker.url).await.unwrap();
@@ -284,6 +285,7 @@ async fn application_tools_round_trip_the_registry_contract() {
 
 #[tokio::test]
 async fn stdio_tools_use_the_real_fixture_bus_and_reconnect_without_replay() {
+    // The anonymous bridge must refuse session-only tools regardless of the runner.
     let mut broker = test_broker::Broker::start();
     let dir = tempfile::tempdir().unwrap();
     let config = dir.path().join("node.conf.mix");
@@ -305,6 +307,7 @@ async fn stdio_tools_use_the_real_fixture_bus_and_reconnect_without_replay() {
         .env("HOME", dir.path())
         .env("MIXOS_LOG", dir.path().join("logs"))
         .current_dir(dir.path());
+    command.env_remove("MIXOS_AGENT_SESSION");
     let service = ().serve(TokioChildProcess::new(command).unwrap()).await.unwrap();
     let tools = service.list_tools(None).await.unwrap().tools;
     let mut names = tools.iter().map(|t| t.name.as_ref()).collect::<Vec<_>>();
@@ -315,6 +318,7 @@ async fn stdio_tools_use_the_real_fixture_bus_and_reconnect_without_replay() {
             "app_actions",
             "app_describe",
             "app_execute",
+            "await_op",
             "bus_call",
             "bus_list_peers",
             "bus_list_services",
@@ -356,6 +360,21 @@ async fn stdio_tools_use_the_real_fixture_bus_and_reconnect_without_replay() {
             .unwrap(),
     );
     assert_eq!(initial["broker_connected"], false);
+    let refused = service
+        .call_tool(call(
+            "await_op",
+            json!({"service":"agent", "op":"child123"}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(refused.is_error, Some(true));
+    assert!(
+        refused.content[0]
+            .as_text()
+            .unwrap()
+            .text
+            .contains("MIXOS_AGENT_SESSION")
+    );
     let owner = NodedClient::connect("email", &broker.url).await.unwrap();
     let mut incoming = owner.incoming_async().await.unwrap();
     let deliveries = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));

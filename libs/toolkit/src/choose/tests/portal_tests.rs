@@ -12,6 +12,48 @@ const DESKTOP: &str = "org.freedesktop.portal.Desktop";
 const PATH: &str = "/org/freedesktop/portal/desktop";
 const REQUEST: &str = "org.freedesktop.portal.Request";
 
+struct GatedProperties {
+    release: watch::Sender<bool>,
+    entered: Arc<tokio::sync::Notify>,
+    gets: Arc<AtomicUsize>,
+    enumerations: Arc<AtomicUsize>,
+}
+
+struct ReleaseProperties(watch::Sender<bool>);
+impl Drop for ReleaseProperties {
+    fn drop(&mut self) {
+        self.0.send_replace(true);
+    }
+}
+
+#[zbus::interface(name = "org.freedesktop.DBus.Properties")]
+impl GatedProperties {
+    fn get(&self, interface: &str, property: &str) -> zbus::fdo::Result<OwnedValue> {
+        if interface != "org.freedesktop.portal.FileChooser" {
+            return Err(zbus::fdo::Error::UnknownInterface(interface.into()));
+        }
+        if property != "version" {
+            return Err(zbus::fdo::Error::UnknownProperty(property.into()));
+        }
+        self.gets.fetch_add(1, Ordering::SeqCst);
+        Ok(OwnedValue::from(4u32))
+    }
+
+    async fn get_all(&self, interface: &str) -> zbus::fdo::Result<Options> {
+        if interface != "org.freedesktop.portal.FileChooser" {
+            return Err(zbus::fdo::Error::UnknownInterface(interface.into()));
+        }
+        let mut release = self.release.subscribe();
+        self.enumerations.fetch_add(1, Ordering::SeqCst);
+        self.entered.notify_one();
+        release.wait_for(|ready| *ready).await.unwrap();
+        Ok(HashMap::from([
+            ("version".into(), OwnedValue::from(4u32)),
+            ("unrelated".into(), OwnedValue::from(0u32)),
+        ]))
+    }
+}
+
 pub(super) struct Process(Child);
 impl Drop for Process {
     fn drop(&mut self) {
@@ -546,4 +588,117 @@ async fn portal_close_unknown_method_is_an_acknowledged_end() {
     let client = connection(&address).await;
     let result = portal::close(&client, server.unique_name().unwrap().as_str(), path).await;
     assert!(result.is_ok(), "{result:?}");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn portal_version_get_does_not_wait_for_unrelated_get_all() {
+    let (_process, address) = dbus();
+    let (server, mut calls, closed) = serve(&address, Some(99)).await;
+    let (release, _) = watch::channel(false);
+    let release_guard = ReleaseProperties(release.clone());
+    let entered = Arc::new(tokio::sync::Notify::new());
+    let gets = Arc::new(AtomicUsize::new(0));
+    let enumerations = Arc::new(AtomicUsize::new(0));
+    assert!(
+        !server
+            .object_server()
+            .remove::<zbus::fdo::Properties, _>(PATH)
+            .await
+            .unwrap()
+    );
+    assert!(
+        server
+            .object_server()
+            .at(
+                PATH,
+                GatedProperties {
+                    release: release.clone(),
+                    entered: entered.clone(),
+                    gets: gets.clone(),
+                    enumerations: enumerations.clone(),
+                }
+            )
+            .await
+            .unwrap()
+    );
+
+    // Prove over D-Bus that enumeration is pending but version itself responds.
+    let probe = connection(&address).await;
+    let owner = server.unique_name().unwrap().as_str().to_owned();
+    let enumeration_probe = probe.clone();
+    let enumeration_owner = owner.clone();
+    let enumeration = tokio::spawn(async move {
+        enumeration_probe
+            .call_method(
+                Some(enumeration_owner.as_str()),
+                PATH,
+                Some("org.freedesktop.DBus.Properties"),
+                "GetAll",
+                &("org.freedesktop.portal.FileChooser",),
+            )
+            .await
+    });
+    tokio::time::timeout(IO_BOUND, entered.notified())
+        .await
+        .unwrap();
+    let reply = tokio::time::timeout(
+        IO_BOUND,
+        probe.call_method(
+            Some(owner.as_str()),
+            PATH,
+            Some("org.freedesktop.DBus.Properties"),
+            "Get",
+            &("org.freedesktop.portal.FileChooser", "version"),
+        ),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(
+        u32::try_from(reply.body().deserialize::<OwnedValue>().unwrap()).unwrap(),
+        4
+    );
+    assert_eq!(gets.load(Ordering::SeqCst), 1);
+    assert!(!enumeration.is_finished());
+
+    let client = connection(&address).await;
+    let (_tx, mut cancel) = watch::channel(false);
+    let task = tokio::spawn(async move {
+        portal::session_broken_stream(&client, &request("{}").unwrap(), &mut cancel, 2).await
+    });
+    let call = tokio::time::timeout(Duration::from_secs(5), calls.recv()).await;
+    let result = tokio::time::timeout(Duration::from_secs(8), task).await;
+    let gate_still_closed = !*release.borrow() && !enumeration.is_finished();
+    // Release/reap the probe even when an outcome assertion is about to fail.
+    drop(release_guard);
+    let values = tokio::time::timeout(IO_BOUND, enumeration)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap()
+        .body()
+        .deserialize::<Options>()
+        .unwrap();
+    assert!(values.contains_key("unrelated"));
+    assert!(gate_still_closed);
+    assert!(
+        matches!(call, Ok(Some(_))),
+        "no chooser method; client={result:?}"
+    );
+    let result = result.unwrap().unwrap();
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "portal request cancelled after transport failure"
+    );
+    assert_eq!(closed.load(Ordering::SeqCst), 0);
+    assert_eq!(
+        gets.load(Ordering::SeqCst),
+        2,
+        "chooser must read version itself"
+    );
+    assert_eq!(
+        enumerations.load(Ordering::SeqCst),
+        1,
+        "chooser must not enumerate other properties"
+    );
 }

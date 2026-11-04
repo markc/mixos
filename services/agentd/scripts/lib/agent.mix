@@ -28,7 +28,8 @@ end
 -- Configuration ------------------------------------------------------------
 
 -- conf: {agents: {NAME: {argv: [..], roots: [..], policy?, permission_timeout_s?,
---   env?: {K: V}}}, max_live?, log_keep_days?}. Returns the normalised conf
+--   env?: {K: V}, mode?: string, close_on_done?: bool}}, max_live?, log_keep_days?}.
+--   close_on_done is listed only; its behaviour comes later. Returns the normalised conf
 --   or raises USAGE.
 fn check_conf($conf)
   if type($conf) != "map" or type($conf.agents) != "map" then _usage("conf needs an agents map") end
@@ -58,7 +59,10 @@ fn check_conf($conf)
     if type($timeout) != "number" or $timeout < 5 or $timeout > 86400 then _usage("agent " .. $name .. " permission_timeout_s must be 5 to 86400") end
     $env = $a.env ?? {}
     if type($env) != "map" then _usage("agent " .. $name .. " env must be a map") end
-    $out.agents[$name] = {argv: $a.argv, roots: $roots, policy: $policy, permission_timeout_s: $timeout, env: $env}
+    if $a.mode != nil and type($a.mode) != "string" then _usage("agent " .. $name .. " mode must be a string") end
+    if $a.close_on_done != nil and type($a.close_on_done) != "bool" then _usage("agent " .. $name .. " close_on_done must be a bool") end
+    $out.agents[$name] = {argv: $a.argv, roots: $roots, policy: $policy, permission_timeout_s: $timeout, env: $env,
+      mode: $a.mode, close_on_done: $a.close_on_done ?? false}
   end
   return $out
 end
@@ -496,3 +500,11 @@ fn permission_buttons($options)
   end
   return $out
 end
+-- Accept only this broker's local, owner-authenticated topic publication.
+-- Admitted remote directed messages can also carry broker_service, but
+-- identify their remote broker in broker_peer and are not local outcomes.
+fn local_operation_publication($headers, $service)
+  if type($headers) != "map" then return false end
+  return ($headers.broker_peer ?? "") == "" and $headers.broker_service == $service and $headers.topic == $service .. ".op.done"
+end
+

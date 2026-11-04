@@ -33,6 +33,7 @@ const CANCEL_ATTEMPTS: u8 = 3;
 struct Cancel {
     attempts: u8,
     in_flight: bool,
+    reissue: bool,
 }
 
 struct Entry {
@@ -133,11 +134,14 @@ impl Bridge {
         if generation.is_none() || settings::native::live_generation(&self.client) != generation {
             return None;
         }
-        self.cancels
-            .lock()
-            .unwrap()
-            .entry(request.clone())
-            .or_default();
+        {
+            let mut pending = self.cancels.lock().unwrap();
+            let cancel = pending.entry(request.clone()).or_default();
+            // A late choose reply may describe a window created after the
+            // provider processed our sweep. Its cancellation needs a fresh
+            // call, even while the sweep acknowledgement is still in flight.
+            cancel.reissue |= cancel.in_flight;
+        }
         self.retry_cancel(request)
     }
 
@@ -150,27 +154,48 @@ impl Bridge {
                 return None;
             }
             cancel.in_flight = true;
+            cancel.reissue = false;
             cancel.attempts += 1;
         }
         let this = self.clone();
         Some(tokio::spawn(async move {
-            // Unknown, expired and already ended requests acknowledge with rc 0.
-            // Request ids include the incarnation, so retries across reconnects
-            // cannot cancel a new chooser that happens to reuse a sequence.
-            let acknowledged = this
-                .call("files.choose.cancel", json!({"request":request}))
-                .await
-                .is_some();
-            let mut pending = this.cancels.lock().unwrap();
-            if acknowledged {
-                pending.remove(&request);
-            } else if let Some(cancel) = pending.get_mut(&request) {
-                if cancel.attempts >= CANCEL_ATTEMPTS {
-                    tracing::warn!(%request, "files cancel retry budget exhausted");
-                    pending.remove(&request);
-                } else {
-                    cancel.in_flight = false;
+            loop {
+                // Unknown, expired and already ended requests acknowledge with rc 0.
+                // Request ids include the incarnation, so retries across reconnects
+                // cannot cancel a new chooser that happens to reuse a sequence.
+                let acknowledged = this
+                    .call("files.choose.cancel", json!({"request":request}))
+                    .await
+                    .is_some();
+                let mut pending = this.cancels.lock().unwrap();
+                if acknowledged && pending.get(&request).is_some_and(|c| c.reissue) {
+                    let cancel = pending.get_mut(&request).unwrap();
+                    cancel.reissue = false;
+                    cancel.attempts = 1;
+                    continue;
                 }
+                if acknowledged {
+                    pending.remove(&request);
+                } else if let Some(cancel) = pending.get_mut(&request) {
+                    if cancel.attempts >= CANCEL_ATTEMPTS {
+                        tracing::warn!(%request, "files cancel retry budget exhausted");
+                        if cancel.reissue {
+                            // This attempt predated a newer demand. Preserve it
+                            // for the next poll with its own bounded budget.
+                            // Polls/retries cannot set reissue: each fresh budget
+                            // requires a new cancel(), so N demands cost at most
+                            // N * CANCEL_ATTEMPTS native calls.
+                            cancel.attempts = 0;
+                            cancel.reissue = false;
+                            cancel.in_flight = false;
+                        } else {
+                            pending.remove(&request);
+                        }
+                    } else {
+                        cancel.in_flight = false;
+                    }
+                }
+                break;
             }
         }))
     }

@@ -162,7 +162,7 @@ fn interp_spec_optional_dots(spec: String) -> String {
 fn source_token_kind(token: &Token, first: Option<&char>) -> &'static str {
     use Token::*;
     match token {
-        Number(_) => "number",
+        Number(_) | BusNameNumber(_) => "number",
         String(_) if matches!(first, Some('"' | '\'')) => "string",
         String(_) => "word",
         InterpString(_) => "interp_string",
@@ -794,6 +794,32 @@ impl Lexer {
         matches!(keyword.as_str(), "send" | "emit" | "address" | "on")
     }
 
+    /// Defer malformed numeric segments in a possible Bus word to the
+    /// parser. Unlike target/header detection this also covers command
+    /// slots after arbitrary target expressions and in address bodies.
+    /// The distinct token cannot become an ordinary string expression.
+    fn in_hyphenated_word(&self) -> bool {
+        let mut start = self.token_start;
+        while start > 0
+            && (self.source[start - 1].is_ascii_alphanumeric()
+                || matches!(self.source[start - 1], '_' | '-' | '.'))
+        {
+            start -= 1;
+        }
+        // The hyphen may come after this segment too (`a.007-b`), so look
+        // at the whole word, not only the part before the number.
+        let mut end = self.pos;
+        while end < self.source.len()
+            && (self.source[end].is_ascii_alphanumeric()
+                || matches!(self.source[end], '_' | '-' | '.'))
+        {
+            end += 1;
+        }
+        start < self.token_start
+            && (self.source[start].is_ascii_alphabetic() || self.source[start] == '_')
+            && self.source[start..end].contains(&'-')
+    }
+
     fn lex_number(&mut self, line: usize, col: usize) -> MixResult<SpannedToken> {
         // Radix integer literals: 0x.. (hex), 0o.. (octal), 0b.. (binary).
         // Mix has a single f64 numeric type, so these are sugar yielding the
@@ -840,12 +866,12 @@ impl Lexer {
             // own value never matters — it only must not be an error.
             return Ok(self.spanned(Token::String(s), line, col));
         }
+        if malformed && self.in_hyphenated_word() {
+            return Ok(self.spanned(Token::BusNameNumber(s), line, col));
+        }
         if int_part.len() > 1 && int_part.starts_with('0') {
             return Err(MixError::LexerError {
-                msg: format!(
-                    "ambiguous leading-zero number '{s}' — use a 0o (octal) / 0x (hex) / \
-                     0b (binary) prefix, or drop the leading zero(s) for decimal"
-                ),
+                msg: malformed_number_message(&s),
                 span: Span {
                     line,
                     column: col,
@@ -1976,10 +2002,25 @@ fn opener_key(lx: &Lexer, ch: char) -> Option<String> {
     }
 }
 
+/// The lexer's refusal text for a malformed number literal. A segment the
+/// lexer defers inside a hyphenated word (`Token::BusNameNumber`) and the
+/// parser then refuses outside a Bus name keeps exactly this wording.
+pub(crate) fn malformed_number_message(s: &str) -> String {
+    let int_part = s.split('.').next().unwrap_or(s);
+    if int_part.len() > 1 && int_part.starts_with('0') {
+        format!(
+            "ambiguous leading-zero number '{s}' — use a 0o (octal) / 0x (hex) / \
+             0b (binary) prefix, or drop the leading zero(s) for decimal"
+        )
+    } else {
+        format!("invalid number '{s}'")
+    }
+}
+
 /// The class of a token that lexed from a source starting with `first`.
 fn classify(token: &Token, first: char) -> TokenClass {
     match token {
-        Token::Number(_) => TokenClass::Number,
+        Token::Number(_) | Token::BusNameNumber(_) => TokenClass::Number,
         // A bare word lexes to `String` too; only a quote makes it a literal.
         // A digit-led `String` is a segment of a hyphenated send target.
         Token::String(_) if first == '"' || first == '\'' => TokenClass::String,

@@ -14,6 +14,15 @@ fn check($name, $ok)
   print((if $ok then "PASS " else "FAIL " end) .. $name)
 end
 
+check("local authenticated operation publication accepted", $a.local_operation_publication({broker_service: "ops", topic: "ops.op.done"}, "ops"))
+check("empty peer local publication accepted", $a.local_operation_publication({broker_peer: "", broker_service: "ops", topic: "ops.op.done"}, "ops"))
+check("same-named remote service rejected", not $a.local_operation_publication({broker_peer: "remote", broker_service: "ops", topic: "ops.op.done"}, "ops"))
+check("remote directed command rejected", not $a.local_operation_publication({broker_peer: "remote", broker_service: "ops", command: "ops.op.done"}, "ops"))
+check("direct command fallback is not publication", not $a.local_operation_publication({broker_service: "ops", command: "ops.op.done"}, "ops"))
+check("different topic rejected", not $a.local_operation_publication({broker_service: "ops", topic: "other.op.done"}, "ops"))
+check("different owner rejected", not $a.local_operation_publication({broker_service: "other", topic: "ops.op.done"}, "ops"))
+check("missing headers rejected", not $a.local_operation_publication(nil, "ops"))
+
 fn refuses($name, $code, $f)
   try
     $f()
@@ -41,6 +50,12 @@ refuses("agent without roots", "USAGE", fn() = $a.check_conf({agents: {x: {argv:
 refuses("relative root", "USAGE", fn() = $a.check_conf({agents: {x: {argv: ["a"], roots: ["tmp"]}}}))
 refuses("allow_always policy", "USAGE", fn() = $a.check_conf({agents: {x: {argv: ["a"], roots: ["/tmp"], policy: "allow_always"}}}))
 refuses("bad agent name", "USAGE", fn() = $a.check_conf({agents: {"Bad Name": {argv: ["a"], roots: ["/tmp"]}}}))
+
+$configured = $a.check_conf({agents: {x: {argv: ["a"], roots: ["/tmp"], mode: "plan", close_on_done: true}}})
+check("instance mode and close_on_done are preserved", $configured.agents.x.mode == "plan" and $configured.agents.x.close_on_done == true)
+check("instance settings default to no mode and no auto-close", $conf.agents.fake.mode == nil and $conf.agents.fake.close_on_done == false)
+refuses("instance mode must be string", "USAGE", fn() = $a.check_conf({agents: {x: {argv: ["a"], roots: ["/tmp"], mode: 1}}}))
+refuses("instance close_on_done must be bool", "USAGE", fn() = $a.check_conf({agents: {x: {argv: ["a"], roots: ["/tmp"], close_on_done: "true"}}}))
 
 -- Roots.
 check("root itself is inside", $a.under_roots($tmp .. "/root", [$tmp .. "/root"]))

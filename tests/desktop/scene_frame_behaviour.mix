@@ -1,0 +1,24 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Private scene_frame_gate.mix citizen; no timers.
+$shell = env("SCENE_FRAME_SERVICE", "shell")
+$active = false
+on begin
+  global $active
+  $active = true
+  send $shell shell.scene.frame body=json_encode({scene:"frame-clock"})
+  reply($rc)
+end
+on halt
+  global $active
+  $active = false
+  reply("ok")
+end
+on frame
+  if $active then
+    send $shell shell.scene.patch body=json_encode({scene:"frame-clock", path:"model.counter", value:to_string($event.args.seq)})
+    if $rc != 0 then raise("PATCH_FAILED", $reply) end
+    send $shell shell.scene.frame body=json_encode({scene:"frame-clock"})
+    if $rc != 0 then raise("ARM_FAILED", $reply) end
+  end
+  reply("ok")
+end

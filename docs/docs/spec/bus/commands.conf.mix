@@ -40,6 +40,11 @@
 {
   schema: 5,
   commands: [
+    {name:"agent.session.await", owner:"agentd", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
+    {name:"agent.op.get", owner:"agentd", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
+    {name:"agent.op.cancel", owner:"agentd", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
+    {name:"agent.await.list", owner:"agentd", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
+    {name:"agent.await.cancel", owner:"agentd", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"exportd.kde.status", owner:"exportd", version:"0.1.0", status:"accepted", class:"query", schema:"none"},
     {name:"exportd.kde.plan", owner:"exportd", version:"0.1.0", status:"accepted", class:"query", schema:"none"},
     {name:"exportd.kde.reconcile", owner:"exportd", version:"0.1.0", status:"accepted", class:"intent", schema:"none"},
@@ -663,6 +668,7 @@
     {name:"shell.scene.load", owner:"compd", version:"0.2.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"shell.scene.validate", owner:"compd", version:"0.2.0", status:"accepted", class:"query", schema:"pending"},
     {name:"shell.scene.patch", owner:"compd", version:"0.2.0", status:"accepted", class:"intent", schema:"pending"},
+    {name:"shell.scene.frame", owner:"compd", version:"0.2.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"shell.scene.get", owner:"compd", version:"0.2.0", status:"accepted", class:"query", schema:"pending"},
     {name:"shell.scene.describe", owner:"compd", version:"0.2.0", status:"accepted", class:"query", schema:"pending"},
     {name:"shell.scene.unload", owner:"compd", version:"0.2.0", status:"accepted", class:"intent", schema:"pending"},

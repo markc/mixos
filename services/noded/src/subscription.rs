@@ -2470,6 +2470,8 @@ command: maild.props.records.changed
     async fn reserved_public_publish_stamps_owner_for_live_and_retained_delivery() {
         for (topic, owner) in [
             ("comp.pointer.changed", "comp"),
+            ("agent.op.done", "agent"),
+            ("build.test.op.done", "build.test"),
             ("prefs.ui.titlebar.changed", "prefs"),
         ] {
             let broker = SubscriptionBroker::new();

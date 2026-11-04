@@ -196,6 +196,19 @@ impl Host {
             .expect("receipt sequence exhausted");
         let args: Value = serde_json::from_str(&request.body).unwrap_or(Value::Null);
         match request.kind {
+            SceneCommand::Frame => {
+                let name = argument(request, &args, "scene").unwrap_or_default();
+                let caller = attested_owner(request, self.receipt);
+                let result = self.store.arm_frame(name, &caller);
+                Answer {
+                    rc: if result.is_ok() { 0 } else { 10 },
+                    body: result
+                        .map_or_else(|error| error, |()| json!({"scene":name,"armed":true}))
+                        .to_string(),
+                    publish: Vec::new(),
+                    changed: false,
+                }
+            }
             SceneCommand::List => Answer {
                 rc: 0,
                 body: self.store.list(output).to_string(),
@@ -737,7 +750,7 @@ pub fn dialog_notice(store: &SceneStore, fit: Option<&(String, f32, f32)>) -> Va
 /// The engine's scene host: [`Host`] plus its Bus port and its surfaces.
 pub struct SceneHost {
     pub host: Host,
-    port: Port,
+    pub(crate) port: Port,
     service: Option<String>,
     refused: Option<String>,
     surfaces: BTreeMap<String, Surface>,

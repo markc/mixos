@@ -64,7 +64,55 @@ thread_local! {
 pub fn start(config: HostConfig, waker: Waker) -> Result<(), String> {
     let host = SceneHost::start(config, waker)?;
     HOST.with_borrow_mut(|slot| *slot = Some(host));
+    world::comp::presentation::register_source_presented_hook(source_presented);
     Ok(())
+}
+
+fn source_presented(
+    lp: &mut Loop,
+    output: &smithay::output::Output,
+    source: &str,
+    shown: bool,
+    time: std::time::Duration,
+    refresh: Option<std::time::Duration>,
+) {
+    if !shown || world::comp::session_lock::active(lp) {
+        return;
+    }
+    HOST.with_borrow_mut(|slot| {
+        let Some(host) = slot.as_mut() else { return };
+        // Match the registered id rather than reversing its normalisation.
+        let name = host
+            .host
+            .store
+            .scenes()
+            .find_map(|(name, _)| (render::source_id(name) == source).then(|| name.to_owned()));
+        let Some(name) = name else { return };
+        if !render::targets(&host.host.store, &host.host.panels)
+            .get(&name)
+            .is_some_and(|target| target.output == output.name())
+        {
+            return;
+        }
+        let interval = refresh
+            .map(|period| period.as_secs_f64())
+            .filter(|period| *period > 0.0)
+            .or_else(|| {
+                output
+                    .current_mode()
+                    .filter(|mode| mode.refresh > 0)
+                    .map(|mode| 1000.0 / f64::from(mode.refresh))
+            });
+        // Without a refresh source, retain the arm until a mode is available.
+        let Some(interval) = interval else { return };
+        if let Some((citizen, body)) =
+            host.host
+                .store
+                .frame_event(&name, true, time.as_secs_f64(), interval)
+        {
+            host.port.emit(&citizen, "frame", body);
+        }
+    });
 }
 
 /// Whether a host is running.
@@ -75,7 +123,30 @@ pub fn running() -> bool {
 /// Answer what the worker and the surfaces delivered; schedule a frame
 /// (`RedrawReason::Publish`) when what is drawn may have changed.
 pub fn service(lp: &mut Loop) -> Serviced {
-    let serviced = HOST.with_borrow_mut(|slot| slot.as_mut().map(|host| host.service_port(lp)));
+    let serviced = HOST.with_borrow_mut(|slot| {
+        let host = slot.as_mut()?;
+        let serviced = host.service_port(lp);
+        for output in render::frame_outputs(&host.host.store, &host.host.panels) {
+            let key = lp
+                .inner
+                .space_state()
+                .state
+                .outputs()
+                .find(|candidate| candidate.name() == output)
+                .map(world::state::output_key);
+            if let Some(key) = key {
+                // Bus service runs after the backend's dispatch pass. Mark only
+                // this pipe, then wake its executor (unless its flip will).
+                lp.state
+                    .redraw
+                    .request_pipe_silent(&key, RedrawReason::Publish);
+                if lp.state.redraw.pending() {
+                    lp.state.redraw.wake();
+                }
+            }
+        }
+        Some(serviced)
+    });
     let serviced = serviced.unwrap_or_default();
     if serviced.changed {
         lp.state.schedule_redraw(RedrawReason::Publish);

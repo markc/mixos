@@ -3391,14 +3391,15 @@ async fn ws_proxy_handler(
 }
 
 async fn ws_proxy(browser_ws: WebSocket, noded_url: String) {
-    // Connect to the upstream broker
-    let noded_conn = match tokio_tungstenite::connect_async(&noded_url).await {
-        Ok((stream, _)) => stream,
-        Err(e) => {
-            tracing::warn!(error = %e, "Failed to connect to broker for WS proxy");
-            return;
-        }
-    };
+    // Connect to the upstream broker, Nagle off (as every Bus client).
+    let noded_conn =
+        match tokio_tungstenite::connect_async_with_config(&noded_url, None, true).await {
+            Ok((stream, _)) => stream,
+            Err(e) => {
+                tracing::warn!(error = %e, "Failed to connect to broker for WS proxy");
+                return;
+            }
+        };
 
     let (mut browser_sink, mut browser_stream) = browser_ws.split();
     let (mut noded_sink, mut noded_stream) = noded_conn.split();

@@ -668,6 +668,35 @@ fn term_listing(text: &str, tabs: bool) -> Result<serde_json::Value, String> {
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
+struct AwaitOpParams {
+    /// Service owning the operation.
+    service: String,
+    /// Operation id returned by that service.
+    op: String,
+    /// Notify after this many seconds; the await remains pending.
+    deadline_s: Option<f64>,
+    /// Context to include when agentd resumes this session.
+    note: Option<String>,
+}
+
+fn await_op_request(session: Option<&str>, p: AwaitOpParams) -> Result<serde_json::Value, String> {
+    let session =
+        session.ok_or("await_op requires MIXOS_AGENT_SESSION; run inside an agentd session")?;
+    connection::broker_name(Some(session), 0, 0)?;
+    if p.service.is_empty()
+        || p.op.is_empty()
+        || p.deadline_s.is_some_and(|s| !s.is_finite() || s <= 0.0)
+    {
+        return Err("await_op requires service, op and an optional positive deadline_s".into());
+    }
+    Ok(
+        serde_json::json!({"session": session, "service": p.service, "op": p.op,
+        "deadline_s": p.deadline_s, "note": p.note, "suspend": true}),
+    )
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 struct BusCallParams {
     /// Target service name (e.g. "edit", "view", "mon")
     to: String,
@@ -1216,6 +1245,42 @@ impl MixosMcp {
                 }
             }
             Err(e) => Err(format!("ERROR reading {}: {e}", path.display())),
+        }
+    }
+
+    /// Await an operation through agentd, then end this turn immediately.
+    /// agentd resumes this session with the outcome; do not poll or sleep.
+    #[tool]
+    async fn await_op(
+        &self,
+        Parameters(p): Parameters<AwaitOpParams>,
+    ) -> rmcp::model::CallToolResult {
+        let session = std::env::var(connection::AGENT_SESSION_ENV).ok();
+        let args = match await_op_request(session.as_deref(), p) {
+            Ok(args) => args,
+            Err(error) => return tool_output::failure(error),
+        };
+        let noded = match self.noded().await {
+            Ok(noded) => noded,
+            Err(error) => return tool_output::failure(error),
+        };
+        match noded.call_typed("agent", "agent.session.await", args).await {
+            Ok(bus::PortReply::Ok { value, .. }) => {
+                let Some(id) = value.get("await").and_then(|id| id.as_str()) else {
+                    return tool_output::failure(
+                        "agentd returned no await id; registration outcome unknown",
+                    );
+                };
+                rmcp::model::CallToolResult::success(vec![rmcp::model::ContentBlock::text(
+                    format!(
+                        "Await {id} registered. End your turn now; agentd resumes this session with the outcome; do not poll or sleep."
+                    ),
+                )])
+            }
+            Ok(reply) => tool_output::bus_reply(reply),
+            Err(error) => tool_output::failure(format!(
+                "await registration outcome unknown: {error}; check agent.await.list before retrying"
+            )),
         }
     }
 
@@ -2178,6 +2243,7 @@ fn tool_deadline_secs(tool: &str) -> u64 {
         "docs_feedback" | "journal_feedback" | "memory_feedback" => 0,
         // Owned process worker; long because scripts are legitimately slow.
         "mix_execute" => base.max(LONG_SECS),
+        "await_op" => base,
         _ => base,
     }
 }
@@ -2185,7 +2251,7 @@ fn tool_deadline_secs(tool: &str) -> u64 {
 fn tool_requires_completion(tool: &str) -> bool {
     matches!(
         tool,
-        "index_workspace" | "docs_feedback" | "journal_feedback" | "memory_feedback"
+        "index_workspace" | "docs_feedback" | "journal_feedback" | "memory_feedback" | "await_op"
     )
 }
 
@@ -2202,7 +2268,7 @@ impl ServerHandler for MixosMcp {
         )
         .with_instructions(
             "MixOS Bus (MixOS Agent Bus) bridge with semantic context search and workspace indexing.\n\n\
-             Bus tools: bus_call, bus_list_services, bus_node_info, bus_list_peers, noded_ping.\n\
+             Bus tools: bus_call, bus_list_services, bus_node_info, bus_list_peers, noded_ping, await_op.\n\
              Log tools: log_tail, log_search.\n\
              Knowledge tools: context_search, index_workspace, knowledge_digest.\n\
              Feedback tools: docs_feedback, journal_feedback, memory_feedback, journal_supersede.\n\
@@ -2464,6 +2530,26 @@ async fn async_main() {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn await_op_uses_the_host_session_and_suspends() {
+        let params = || super::AwaitOpParams {
+            service: "agent".into(),
+            op: "child123".into(),
+            deadline_s: Some(60.0),
+            note: Some("finish".into()),
+        };
+        assert!(
+            super::await_op_request(None, params())
+                .unwrap_err()
+                .contains("MIXOS_AGENT_SESSION")
+        );
+        assert!(super::await_op_request(Some("invalid!"), params()).is_err());
+        let request = super::await_op_request(Some("abcd1234"), params()).unwrap();
+        assert_eq!(request["session"], "abcd1234");
+        assert_eq!(request["suspend"], true);
+        assert_eq!(request["deadline_s"], 60.0);
+        assert!(super::tool_requires_completion("await_op"));
+    }
+    #[test]
     fn instructions_and_router_retire_the_skills_protocol() {
         use rmcp::ServerHandler;
         let server = super::MixosMcp {
@@ -2491,6 +2577,7 @@ mod tests {
             "context_search",
             "index_workspace",
             "bus_call",
+            "await_op",
             "docs_feedback",
         ] {
             assert!(server.get_tool(name).is_some(), "{name} missing");

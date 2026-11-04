@@ -766,7 +766,12 @@ async fn connect_and_publish(
     let url = peer.noded_url();
     tracing::info!(peer = %peer.name, url = %url, "Connecting to remote broker");
 
-    let connect = tokio::time::timeout(CONNECT_TIMEOUT, tokio_tungstenite::connect_async(&url));
+    // Nagle off on this end too: TCP_NODELAY is per socket, so the remote
+    // broker's accept hook cannot cover the side that dialled.
+    let connect = tokio::time::timeout(
+        CONNECT_TIMEOUT,
+        tokio_tungstenite::connect_async_with_config(&url, None, true),
+    );
     let (ws_stream, _) = tokio::select! {
         biased;
         changed = attempt_cancel.changed() => {

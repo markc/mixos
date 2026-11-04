@@ -217,6 +217,27 @@ persistence.
 The settings come from [settingsd](../settingsd/README.md) through the
 [settings](../settings/README.md) library.
 
+## Scene frame events
+
+`shell.scene.frame {scene}` arms one callback and replies `{scene, armed:true}`.
+Repeated arms before delivery coalesce. Unknown scenes return `NOT_FOUND`;
+when a scene declares a citizen, only that broker-attested citizen may arm it
+(`SCENE_FRAME_OWNER` otherwise). The loader's identity grants no frame authority.
+
+After the scene's output presents, the host sends `frame` through the same
+directed scene-event path as `on_click`, with body
+`{scene, seq, presented_at, interval}`. `seq` increases per scene; times are
+seconds, `presented_at` uses CLOCK_MONOTONIC (Mix `monotonic()`), and `interval`
+is the output refresh period. Handle this with `on frame`, patch the model
+with `shell.scene.patch`, then re-arm to animate the next frame. Event delivery
+does not wait for the handler; patches are serviced on a later loop pass.
+
+Hidden or unmapped scenes and outputs that are off or not presenting produce
+no callback. The arm remains pending until presentation, and unload drops it.
+An outstanding visible request schedules work; without one, the frame clock
+adds no redraws. Use this clock for scene animation rather than a behaviour
+timer.
+
 ## Toast scenes
 
 A scene with `window: {"kind":"toast","w":360,"h":120}` uses a

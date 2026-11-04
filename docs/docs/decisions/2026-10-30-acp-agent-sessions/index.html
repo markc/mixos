@@ -291,10 +291,23 @@ Capability tokens were considered and rejected: they refuse honest
 callers and leave self-approval one hop away.</li>
 <li><strong>Durable intent.</strong> agentd writes every acting command and every mapped
 update to an append-only SQLite log before it runs or publishes it.
-Command ids are scoped per session; a retry with the same id gets the
-first reply and never runs again. Sessions outlive agentd in the log,
-and <code>agent.session.resume</code> brings one back through the agent's own
-<code>session/resume</code> or <code>session/load</code>.</li>
+Command ids are scoped per session; an accepted (rc 0) command keeps its
+first reply and never runs again on a retry with the same id. Sessions
+outlive agentd in the log, and <code>agent.session.resume</code> brings one back
+through the agent's own <code>session/resume</code> or <code>session/load</code>.
+<code>agent.session.await {session, service, op, deadline_s?, note?, suspend?, id?}</code>
+registers a durable wait on a Bus operation. It is open to every caller,
+including the session's own agent. <code>agent.await.list {session?}</code> exposes
+these waits; <code>agent.await.cancel {await}</code> cancels a pending wait.
+At the turn boundary a suspending wait releases the process and leaves
+the session <code>waiting</code>, outside the live cap and surviving restart.
+<code>agent.session.suspended</code> reports this edge; it is not a session end.
+Outcomes enter a durable outbox before delivery, ahead of human prompts,
+and <code>agent.await.fired</code>, <code>agent.await.delivered</code> (the outcome turn stopped)
+and <code>agent.await.failed</code> expose their lifecycle. Deadlines notify without
+consuming the wait. Close cancels the waits; prompt or resume can reopen
+a waiting session. One generic adapter subscribes to <code>&lt;service&gt;.op.done</code>
+and catches up with <code>&lt;service&gt;.op.get</code> at registration and reconnect.</li>
 <li><strong>Versions.</strong> ACP v1 is required; v2 is to be negotiated when both sides
 offer it, behind the same Bus vocabulary.</li>
 <li><strong>Foreign code.</strong> ACP agents are external programs at the edge, called

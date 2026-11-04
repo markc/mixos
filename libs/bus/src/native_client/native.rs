@@ -588,7 +588,9 @@ impl NodedClient {
         manifest: Option<Vec<crate::CommandDescriptor>>,
         refuse_rpc: bool,
     ) -> Result<Self> {
-        let (ws_stream, _) = tokio_tungstenite::connect_async(noded_url)
+        // Nagle off: a frame written in two parts otherwise waits on the
+        // broker's delayed ACK (40 ms per nested request on Linux).
+        let (ws_stream, _) = tokio_tungstenite::connect_async_with_config(noded_url, None, true)
             .await
             .map_err(|error| crate::ClientError::Connect(Box::new(error)))?;
 
@@ -656,7 +658,9 @@ impl NodedClient {
     /// Useful for GUI clients that only make `call()` requests (e.g. WASM apps
     /// or desktop monitors that don't need to receive incoming commands).
     pub async fn connect_anonymous(noded_url: &str) -> Result<Self> {
-        let (ws_stream, _) = tokio_tungstenite::connect_async(noded_url)
+        // Nagle off: a frame written in two parts otherwise waits on the
+        // broker's delayed ACK (40 ms per nested request on Linux).
+        let (ws_stream, _) = tokio_tungstenite::connect_async_with_config(noded_url, None, true)
             .await
             .map_err(|error| crate::ClientError::Connect(Box::new(error)))?;
 

@@ -59,10 +59,23 @@ all of those agents directly or through a small adapter.
    callers and leave self-approval one hop away.
 8. **Durable intent.** agentd writes every acting command and every mapped
    update to an append-only SQLite log before it runs or publishes it.
-   Command ids are scoped per session; a retry with the same id gets the
-   first reply and never runs again. Sessions outlive agentd in the log,
-   and `agent.session.resume` brings one back through the agent's own
-   `session/resume` or `session/load`.
+   Command ids are scoped per session; an accepted (rc 0) command keeps its
+   first reply and never runs again on a retry with the same id. Sessions
+   outlive agentd in the log, and `agent.session.resume` brings one back
+   through the agent's own `session/resume` or `session/load`.
+   `agent.session.await {session, service, op, deadline_s?, note?, suspend?, id?}`
+   registers a durable wait on a Bus operation. It is open to every caller,
+   including the session's own agent. `agent.await.list {session?}` exposes
+   these waits; `agent.await.cancel {await}` cancels a pending wait.
+   At the turn boundary a suspending wait releases the process and leaves
+   the session `waiting`, outside the live cap and surviving restart.
+   `agent.session.suspended` reports this edge; it is not a session end.
+   Outcomes enter a durable outbox before delivery, ahead of human prompts,
+   and `agent.await.fired`, `agent.await.delivered` (the outcome turn stopped)
+   and `agent.await.failed` expose their lifecycle. Deadlines notify without
+   consuming the wait. Close cancels the waits; prompt or resume can reopen
+   a waiting session. One generic adapter subscribes to `<service>.op.done`
+   and catches up with `<service>.op.get` at registration and reconnect.
 9. **Versions.** ACP v1 is required; v2 is to be negotiated when both sides
    offer it, behind the same Bus vocabulary.
 10. **Foreign code.** ACP agents are external programs at the edge, called
