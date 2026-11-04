@@ -225,6 +225,17 @@ fn check_table_versions(previous: &ResolvedScene, next: &ResolvedScene) -> Resul
 #[cfg(test)]
 mod table_contract_tests {
     use super::*;
+    #[test]
+    fn native_state_survives_reload_only_for_the_same_citizen() {
+        let source = "---\nscene: 1\nname: table\ncitizen: c\n---\n```mix\nroot: {widget: \"table\", rows: [], columns: [\"Name\"], session: \"s\"}\n```\n";
+        let mut store = SceneStore::default();
+        store.request(SceneCommand::Load, source, &Value::Null).unwrap();
+        let first = std::sync::Arc::clone(&store.scene("table").unwrap().native_tables);
+        store.request(SceneCommand::Load, source, &Value::Null).unwrap();
+        assert!(std::sync::Arc::ptr_eq(&first, &store.scene("table").unwrap().native_tables));
+        store.request(SceneCommand::Load, &source.replace("citizen: c", "citizen: other"), &Value::Null).unwrap();
+        assert!(!std::sync::Arc::ptr_eq(&first, &store.scene("table").unwrap().native_tables));
+    }
     fn tree(g: u64, r: u64, session: &str) -> ResolvedScene {
         let mut tree=scene::resolve(&scene::parse("---\nscene: 1\nname: table\ncitizen: c\n---\n```mix\nroot: {widget: \"table\", rows: [], columns: [\"Name\"], session: \"s\"}\n```\n").unwrap()).unwrap();
         tree.nodes.get_mut("root").unwrap().ports.insert(
@@ -975,6 +986,7 @@ impl SceneStore {
         let frame_seq = old.as_ref().map_or(0, |old| old.frame_seq);
         let native_tables = old
             .as_ref()
+            .filter(|old| old.document.citizen == document.citizen)
             .map(|old| std::sync::Arc::clone(&old.native_tables))
             .unwrap_or_default();
         let mounted = old.and_then(|old| old.mounted);

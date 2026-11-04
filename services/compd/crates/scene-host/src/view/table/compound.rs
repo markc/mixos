@@ -65,6 +65,7 @@ pub(super) fn paint(
         .clamp(1, 16);
     // Cancellation must work even when the edited row is outside show_rows.
     if state.edit.is_some() && child.input(|i| i.key_pressed(Key::Escape)) {
+        child.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::Escape));
         state.edit = None;
         background.request_focus();
     }
