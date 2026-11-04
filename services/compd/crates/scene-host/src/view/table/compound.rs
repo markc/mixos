@@ -19,12 +19,18 @@ pub(super) fn paint(
     state: &mut State,
     text_epoch: u64,
 ) {
-    let session=node.ports.get("session").and_then(Value::as_str).unwrap_or("");
-    if state.session!=session {
-        *state=State::default(); state.session=session.to_owned();
+    let session = node
+        .ports
+        .get("session")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    if state.session != session {
+        *state = State::default();
+        state.session = session.to_owned();
     }
-    if node.ports["view"]["session"].as_str()!=Some(session) {
-        state.refused+=1; return;
+    if node.ports["view"]["session"].as_str() != Some(session) {
+        state.refused += 1;
+        return;
     }
     state.ingest(&node.ports["view"]);
     state.text_epoch = text_epoch ^ u64::from(ui.ctx().pixels_per_point().to_bits());

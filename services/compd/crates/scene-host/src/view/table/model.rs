@@ -13,11 +13,15 @@ pub const PAGE: usize = 128;
 /// Scene bindings normalise JSON numbers to f64, including nested objects.
 /// Only exact, nonnegative integers within Mix's safe integer range count.
 pub(crate) trait TableInteger {
-    fn whole(&self)->Option<u64>;
+    fn whole(&self) -> Option<u64>;
 }
 impl TableInteger for Value {
-    fn whole(&self)->Option<u64> {
-        self.as_f64().filter(|n| n.is_finite() && *n>=0.0 && *n<=9_007_199_254_740_991.0 && n.fract()==0.0).map(|n|n as u64)
+    fn whole(&self) -> Option<u64> {
+        self.as_f64()
+            .filter(|n| {
+                n.is_finite() && *n >= 0.0 && *n <= 9_007_199_254_740_991.0 && n.fract() == 0.0
+            })
+            .map(|n| n as u64)
     }
 }
 
@@ -191,14 +195,24 @@ impl State {
         }
         let epoch = view["selection_epoch"].whole().unwrap_or(0);
         let reset = generation != self.generation;
-        let mut incoming_selection=Selection::default();
-        if let Some(selection)=view.get("selection") {
-            let Some(ranges)=selection["ranges"].as_array() else {self.refused+=1; return false;};
-            let mut end=0;
+        let mut incoming_selection = Selection::default();
+        if let Some(selection) = view.get("selection") {
+            let Some(ranges) = selection["ranges"].as_array() else {
+                self.refused += 1;
+                return false;
+            };
+            let mut end = 0;
             for range in ranges {
-                let (Some(a),Some(b))=(range[0].whole(),range[1].whole()) else {self.refused+=1; return false;};
-                if a>=b || b>total || a<end {self.refused+=1; return false;}
-                incoming_selection.0.push((a as usize,b as usize)); end=b;
+                let (Some(a), Some(b)) = (range[0].whole(), range[1].whole()) else {
+                    self.refused += 1;
+                    return false;
+                };
+                if a >= b || b > total || a < end {
+                    self.refused += 1;
+                    return false;
+                }
+                incoming_selection.0.push((a as usize, b as usize));
+                end = b;
             }
         }
         if reset {

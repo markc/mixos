@@ -31,8 +31,8 @@ mod table;
 pub(crate) mod tip;
 
 pub(crate) use flex::SceneLayout;
-pub use tip::{Tip, TipAt};
 pub(crate) use table::TableInteger;
+pub use tip::{Tip, TipAt};
 
 /// The font a tip card line draws in: the scene's own text font.
 pub(crate) fn tip_font(size: f32, bold: bool) -> egui::FontId {
