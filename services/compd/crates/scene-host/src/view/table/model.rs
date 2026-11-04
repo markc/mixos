@@ -112,6 +112,7 @@ pub struct State {
     pub model_owner: String,
     pub model_load_us: u64,
     pub model_loads: u64,
+    pub discard_scroll_tail: bool,
     pub session: String,
     pub generation: u64,
     pub revision: u64,

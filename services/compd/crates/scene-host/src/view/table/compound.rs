@@ -180,6 +180,31 @@ pub(super) fn paint(
         // Reuse the stable container id but discard the old scroll physics.
         egui::scroll_area::State::default()
             .store(child.ctx(), child.make_persistent_id(id.with("scroll")));
+        state.discard_scroll_tail = true;
+    }
+    if state.discard_scroll_tail {
+        let (fresh_wheel, scrolling, hovered) = child.input(|input| {
+            (
+                input.events.iter().any(|event| matches!(event, egui::Event::MouseWheel { .. })),
+                input.is_scrolling(),
+                input.pointer.hover_pos().is_some_and(|pos| rect.contains(pos)),
+            )
+        });
+        if !reset_scroll && fresh_wheel {
+            state.discard_scroll_tail = false;
+        } else {
+            // Wheel smoothing belongs to InputState, outside ScrollArea::State.
+            // Drain its old tail without cancelling a fresh wheel gesture or
+            // consuming input over the other pane.
+            if hovered {
+                child.input_mut(|input| input.smooth_scroll_delta = egui::Vec2::ZERO);
+            }
+            if scrolling {
+                child.ctx().request_repaint();
+            } else {
+                state.discard_scroll_tail = false;
+            }
+        }
     }
     let mut row_drop = false;
     let shown=scroll.show_rows(&mut child,row_h,state.total,|ui,range| {
