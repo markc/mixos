@@ -713,9 +713,7 @@ impl Queue {
                     let ready: Vec<_> = p
                         .timers
                         .iter()
-                        .filter(|(_, t)| {
-                            (families.timers || t.period.is_none()) && t.next <= now
-                        })
+                        .filter(|(_, t)| (families.timers || t.period.is_none()) && t.next <= now)
                         .map(|(id, _)| id.clone())
                         .collect();
                     let timer = ready
