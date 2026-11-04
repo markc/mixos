@@ -123,13 +123,15 @@ pub(super) fn paint(
                 deliver(out,&route,value);
             }
             if let Some(edit)=state.edit.as_mut().filter(|e| e.index==index) {
+                let enter=ui.input(|i| i.key_pressed(Key::Enter));
+                let escape=ui.input(|i| i.key_pressed(Key::Escape));
                 let first=(row_rect.width()-100.0*columns.saturating_sub(1) as f32).max(60.0);
                 let edit_rect=Rect::from_min_size(row_rect.min,vec2(first,row_h));
                 let response=ui.put(edit_rect,egui::TextEdit::singleline(&mut edit.text).id(id.with("edit")).interactive(edit.pending.is_none()));
                 if edit.focus {response.request_focus(); edit.focus=false;}
                 if edit.pending.is_none() {
-                    cancel=ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE,Key::Escape));
-                    if ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE,Key::Enter)) {
+                    cancel=escape;
+                    if enter {
                         commit=Some((edit.id.clone(),edit.text.clone()));
                     }
                 }

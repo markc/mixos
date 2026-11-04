@@ -96,6 +96,21 @@ impl Painter {
         pixels_per_point: f32,
         primitives: &[ClippedPrimitive],
     ) {
+        let mut buffers_span = ledger::frame_trace::span("ui_mesh_buffers",0);
+        let mut vertices=0;
+        let mut indices=0;
+        let mut clips=0;
+        let mut previous=None;
+        if ledger::frame_trace::enabled() {
+            for primitive in primitives {
+                if previous!=Some(primitive.clip_rect) {clips+=1; previous=Some(primitive.clip_rect);}
+                if let egui::epaint::Primitive::Mesh(mesh)=&primitive.primitive {
+                    vertices+=mesh.vertices.len(); indices+=mesh.indices.len();
+                }
+            }
+            buffers_span.counters((vertices*std::mem::size_of::<egui::epaint::Vertex>()) as u64,(indices*4) as u64);
+            ledger::frame_trace::event("ui_mesh_plan",||(primitives.len() as u64,clips,vertices as u64));
+        }
         let screen = egui_wgpu::ScreenDescriptor {
             size_in_pixels: size_px,
             pixels_per_point,
@@ -106,6 +121,7 @@ impl Painter {
         let mut buffers =
             self.renderer
                 .update_buffers(device, queue, &mut encoder, primitives, &screen);
+        drop(buffers_span);
         {
             let pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("compd_ui_egui_pass"),

@@ -141,6 +141,7 @@ impl State {
             self.rows.clear(); self.texts.clear(); self.selection = Selection::default();
             self.focus = None; self.anchor = None; self.edit = None; self.request = None;
             self.selection_epoch = 0;
+            self.first=0; self.end=0; self.scroll_y=0.0; self.scroll_to=Some(0);
         }
         if reset || epoch > self.selection_epoch {
             self.selection_epoch = epoch;
