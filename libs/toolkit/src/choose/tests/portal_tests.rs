@@ -12,6 +12,13 @@ const DESKTOP: &str = "org.freedesktop.portal.Desktop";
 const PATH: &str = "/org/freedesktop/portal/desktop";
 const REQUEST: &str = "org.freedesktop.portal.Request";
 
+// Discovery lab only: one monotonic clock for fixture and client events.
+fn portal_progress(event: impl std::fmt::Display) {
+    static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    let start = START.get_or_init(std::time::Instant::now);
+    eprintln!("portal-call-progress +{:?} {event}", start.elapsed());
+}
+
 pub(super) struct Process(Child);
 impl Drop for Process {
     fn drop(&mut self) {
@@ -77,6 +84,9 @@ impl Portal {
         method: &'static str,
         options: Options,
     ) -> zbus::fdo::Result<OwnedObjectPath> {
+        if self.early == Some(99) {
+            portal_progress(format_args!("fixture begin entered method={method}"));
+        }
         let sender = header.sender().unwrap().as_str().to_owned();
         let token = String::try_from(options["handle_token"].try_clone().unwrap()).unwrap();
         let path = format!(
@@ -84,21 +94,36 @@ impl Portal {
             sender.trim_start_matches(':').replace('.', "_"),
             token
         );
-        connection
+        if self.early == Some(99) {
+            portal_progress(format_args!("fixture add start path={path}"));
+        }
+        let added = connection
             .object_server()
             .at(path.as_str(), RequestObject(self.closed.clone()))
-            .await
-            .unwrap();
+            .await;
         if self.early == Some(99) {
-            connection
+            portal_progress(format_args!(
+                "fixture add finished path={path} result={added:?}"
+            ));
+        }
+        added.unwrap();
+        if self.early == Some(99) {
+            portal_progress(format_args!("fixture remove start path={path}"));
+            let removed = connection
                 .object_server()
                 .remove::<RequestObject, _>(path.as_str())
-                .await
-                .unwrap();
+                .await;
+            portal_progress(format_args!(
+                "fixture remove finished path={path} result={removed:?}"
+            ));
+            removed.unwrap();
         } else if let Some(code) = self.early
             && code != 98
         {
             emit(connection, &sender, &path, code).await;
+        }
+        if self.early == Some(99) {
+            portal_progress(format_args!("fixture calls.send start path={path}"));
         }
         self.calls
             .send(Call {
@@ -108,6 +133,11 @@ impl Portal {
                 owner: sender,
             })
             .unwrap();
+        if self.early == Some(99) {
+            portal_progress(format_args!(
+                "fixture calls.send finished; returning path={path}"
+            ));
+        }
         if self.early == Some(98) {
             std::future::pending::<()>().await;
         }
@@ -119,6 +149,9 @@ impl Portal {
 impl Portal {
     #[zbus(property, name = "version")]
     fn version(&self) -> u32 {
+        if self.early == Some(99) {
+            portal_progress("fixture version queried");
+        }
         4
     }
     async fn open_file(
@@ -512,17 +545,39 @@ async fn portal_dead_response_stream_is_rebuilt_once_before_close_recovery() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn portal_recovery_close_of_an_ended_request_falls_through() {
+    portal_progress("test start");
     let (_process, address) = dbus();
+    portal_progress("test private bus ready; serve start");
     let (_server, mut calls, closed) = serve(&address, Some(99)).await;
+    portal_progress("test fixture registered and name acquired; client connection start");
     let client = connection(&address).await;
+    portal_progress("test client connected");
     let (_tx, mut cancel) = watch::channel(false);
+    let completion = Arc::new(std::sync::Mutex::new(String::from("not started")));
+    let task_completion = completion.clone();
     let task = tokio::spawn(async move {
-        portal::session_broken_stream(&client, &request("{}").unwrap(), &mut cancel, 2).await
+        *task_completion.lock().unwrap() = String::from("running");
+        portal_progress("client task started");
+        let result =
+            portal::session_broken_stream(&client, &request("{}").unwrap(), &mut cancel, 2).await;
+        let summary = format!("completed: {result:?}");
+        portal_progress(format_args!("client task {summary}"));
+        *task_completion.lock().unwrap() = summary;
+        result
     });
-    let _call = tokio::time::timeout(Duration::from_secs(5), calls.recv())
-        .await
-        .unwrap()
-        .unwrap();
+    portal_progress("test calls.recv start (original 5s timeout)");
+    let call = tokio::time::timeout(Duration::from_secs(5), calls.recv()).await;
+    // Observe only: never poll/await the JoinHandle before its original assertion.
+    portal_progress(format_args!(
+        "test calls.recv finished timeout={} channel_closed={} client_finished={} client_state={} closed={}",
+        call.is_err(),
+        matches!(&call, Ok(None)),
+        task.is_finished(),
+        completion.lock().unwrap(),
+        closed.load(Ordering::SeqCst)
+    ));
+    let _call = call.unwrap().unwrap();
+    portal_progress("test client join start (original 8s timeout)");
     assert!(
         tokio::time::timeout(Duration::from_secs(8), task)
             .await
@@ -530,6 +585,7 @@ async fn portal_recovery_close_of_an_ended_request_falls_through() {
             .unwrap()
             .is_err()
     );
+    portal_progress("test client join assertion passed");
     assert_eq!(closed.load(Ordering::SeqCst), 0);
 }
 
