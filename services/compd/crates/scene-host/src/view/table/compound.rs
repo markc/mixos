@@ -80,15 +80,18 @@ pub(super) fn paint(
                 };
                 if let Some(index) = target {
                     child.input_mut(|i| i.consume_key(mods, key));
+                    background.request_focus();
                     state.pick(index, mods.ctrl, mods.shift);
                     state.scroll_to = Some(index);
                     changed = true;
                 } else if key == Key::A && mods.ctrl {
                     child.input_mut(|i| i.consume_key(mods, key));
+                    background.request_focus();
                     state.selection.range(0, count);
                     changed = true;
                 } else if key == Key::Space {
                     child.input_mut(|i| i.consume_key(mods, key));
+                    background.request_focus();
                     state.pick(focus, true, false);
                     changed = true;
                 } else if key == Key::E && mods.ctrl && flag(node, "editable") {
