@@ -229,12 +229,28 @@ mod table_contract_tests {
     fn native_state_survives_reload_only_for_the_same_citizen() {
         let source = "---\nscene: 1\nname: table\ncitizen: c\n---\n```mix\nroot: {widget: \"table\", rows: [], columns: [\"Name\"], session: \"s\"}\n```\n";
         let mut store = SceneStore::default();
-        store.request(SceneCommand::Load, source, &Value::Null).unwrap();
+        store
+            .request(SceneCommand::Load, source, &Value::Null)
+            .unwrap();
         let first = std::sync::Arc::clone(&store.scene("table").unwrap().native_tables);
-        store.request(SceneCommand::Load, source, &Value::Null).unwrap();
-        assert!(std::sync::Arc::ptr_eq(&first, &store.scene("table").unwrap().native_tables));
-        store.request(SceneCommand::Load, &source.replace("citizen: c", "citizen: other"), &Value::Null).unwrap();
-        assert!(!std::sync::Arc::ptr_eq(&first, &store.scene("table").unwrap().native_tables));
+        store
+            .request(SceneCommand::Load, source, &Value::Null)
+            .unwrap();
+        assert!(std::sync::Arc::ptr_eq(
+            &first,
+            &store.scene("table").unwrap().native_tables
+        ));
+        store
+            .request(
+                SceneCommand::Load,
+                &source.replace("citizen: c", "citizen: other"),
+                &Value::Null,
+            )
+            .unwrap();
+        assert!(!std::sync::Arc::ptr_eq(
+            &first,
+            &store.scene("table").unwrap().native_tables
+        ));
     }
     fn tree(g: u64, r: u64, session: &str) -> ResolvedScene {
         let mut tree=scene::resolve(&scene::parse("---\nscene: 1\nname: table\ncitizen: c\n---\n```mix\nroot: {widget: \"table\", rows: [], columns: [\"Name\"], session: \"s\"}\n```\n").unwrap()).unwrap();
