@@ -1,0 +1,37 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Lab controller: native owner retains rows; Mix receives semantic intent only.
+while true
+  $line=readline()
+  if $line==nil then break end
+  $r=json_parse($line)
+  $start=monotonic()
+  $delta={base_revision:$r.revision}
+  if $r.kind=="edit" then
+    $edits=[]
+    for $j=0 to $r.changed-1
+      $i=if $r.visible then $j else $r.total-$r.changed+$j end
+      $id="row-"..to_string($i)
+      push($edits,{index:$i,row:{id:$id,cells:[$id,to_string($r.seq),"1700000000"],edit:$id}})
+    end
+    $delta.kind="edit"; $delta.edits=$edits
+  elif $r.kind=="splice" then
+    $delta.kind="splice"; $delta.index=0
+    if $r.seq%2==0 then
+      $id="added-"..to_string($r.seq)
+      $delta.delete=[]; $delta.insert=[{id:$id,cells:[$id,"0","1700000000"],edit:$id}]
+    else
+      $delta.delete=["added-"..to_string($r.seq-1)]; $delta.insert=[]
+    end
+  elif $r.kind=="order" then
+    $delta.kind="order"; $ids=[]
+    for $j=0 to $r.total-1
+      $i=if $r.seq%2==0 then $r.total-1-$j else $j end
+      push($ids,"row-"..to_string($i))
+    end
+    $delta.ids=$ids
+  else
+    raise("BAD_INTENT",$r.kind)
+  end
+  $us=(monotonic()-$start)*1000000
+  print(json_encode({generation:1,revision:$r.revision+1,delta:$delta,policy_us:$us}))
+end

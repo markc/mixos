@@ -104,6 +104,7 @@ struct Text {
 
 #[derive(Debug, Default)]
 pub struct State {
+    pub(super) incremental: Option<super::incremental::Model>,
     pub(super) dataset: Option<Arc<super::dataset::Dataset>>,
     source: Value,
     failed_revision: Option<(u64, u64)>,
@@ -157,6 +158,7 @@ impl State {
     /// Validate the whole page before changing state. A generation is a row-order
     /// identity; changing a row's identity in place requires a new generation.
     pub fn ingest(&mut self, view: &Value) -> bool {
+        if view["delta"].is_object() { return self.ingest_delta(view); }
         let (Some(generation), Some(revision), Some(total), Some(offset), Some(rows)) = (
             view["generation"].whole(),
             view["revision"].whole(),
@@ -308,6 +310,7 @@ impl State {
             self.scroll_to = self.focus.or(if reset { Some(0) } else { None });
         }
         self.dataset = dataset;
+        self.incremental = None;
         self.source = view["source"].clone();
         self.model_error = None;
         self.model_error_sent = false;
@@ -341,6 +344,18 @@ impl State {
     }
 
     pub fn prepare_range(&mut self, first: usize, end: usize) {
+        if let Some(data) = &self.incremental {
+            let start = first.saturating_sub(32) / PAGE * PAGE;
+            let end = (end + PAGE).min(self.total);
+            for i in start..end {
+                if !self.rows.contains_key(&i) && let Some(row) = data.row(i) { self.rows.insert(i, row); }
+            }
+            while self.rows.len() > ROW_BUDGET {
+                let i = *self.rows.keys().max_by_key(|&&i| i.abs_diff(first)).unwrap();
+                self.rows.remove(&i);
+            }
+            return;
+        }
         let Some(data) = self.dataset.clone() else {
             return;
         };
@@ -364,6 +379,7 @@ impl State {
     }
 
     fn row_id(&self, index: usize) -> Option<String> {
+        if let Some(data) = &self.incremental { return data.id(index).map(str::to_owned); }
         self.dataset
             .as_ref()
             .and_then(|m| m.id(index))
