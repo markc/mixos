@@ -34,7 +34,19 @@ pub(super) fn paint(
     }
     state.model_owner = format!("{}.{}", route.scene, route.node);
     state.ingest(&node.ports["view"]);
+    if let Some(error)=state.model_error.clone() {
+        if !state.model_error_sent {
+            state.model_error_sent=true;
+            let mut value=state.event("model_error");
+            value["generation"]=node.ports["view"]["generation"].clone();
+            value["error"]=json!(error); deliver(out,&route,value);
+        }
+        return;
+    }
     state.text_epoch = text_epoch ^ u64::from(ui.ctx().pixels_per_point().to_bits());
+    state.disable_text_cache=!node.ports.get("text_cache").and_then(Value::as_bool).unwrap_or(true);
+    let font_size=number(node,"font_size").unwrap_or(13.0).clamp(6.0,72.0);
+    let secondary_scale=number(node,"secondary_scale").unwrap_or(1.0).clamp(0.25,2.0);
     let id = Id::unique(("scene-table", &route.scene, &route.node));
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
     child.set_clip_rect(clip.intersect(ui.clip_rect()));
@@ -172,7 +184,7 @@ pub(super) fn paint(
         for index in range {
             let (row_rect,_)=ui.allocate_exact_size(vec2(ui.available_width(),row_h),Sense::hover());
             let Some(row)=state.rows.get(&index).cloned() else {
-                ui.painter().text(row_rect.left_center(),egui::Align2::LEFT_CENTER,"Loading…",crate::view::paint::font(13.0,false,false),ui.visuals().weak_text_color());
+                ui.painter().text(row_rect.left_center(),egui::Align2::LEFT_CENTER,"Loading…",crate::view::paint::font(font_size,false,false),ui.visuals().weak_text_color());
                 continue;
             };
             let response=ui.interact(row_rect,id.with(&row.id),Sense::click_and_drag());
@@ -234,7 +246,7 @@ pub(super) fn paint(
                 let first=(row_rect.width()-100.0*columns.saturating_sub(1) as f32).max(60.0);
                 let x=row_rect.left()+4.0+if col==0 {0.0} else {first+(col-1) as f32*100.0};
                 let width=if col==0 {first} else {100.0};
-                let galley=state.galley(ui,*index,col,text,crate::view::paint::font(13.0,false,false));
+                let galley=state.galley(ui,*index,col,text,crate::view::paint::font(font_size*if col==0 {1.0} else {secondary_scale},false,false));
                 let column_clip=Rect::from_min_max(pos2(x,ui.clip_rect().top()),pos2((x+width-4.0).min(row_rect.right()),ui.clip_rect().bottom()));
                 let clip=if flag(node,"clip_columns") && galley.size().y<=row_h {column_clip} else {column_clip.intersect(*row_rect)};
                 ui.painter().with_clip_rect(clip.intersect(ui.clip_rect())).galley(pos2(x,row_rect.center().y-galley.size().y/2.0),galley,ui.visuals().text_color());

@@ -66,7 +66,7 @@ pub(crate) fn entries(args: Vec<Value>) -> MixResult<Option<Value>> {
     let mut hidden = true;
     let mut limit = 100000usize;
     let mut columns = None;
-    let mut count_only=false;
+    let mut count_only = false;
     if let Some(opts) = args.get(1) {
         match opts {
             Value::Nil => {}
@@ -74,7 +74,7 @@ pub(crate) fn entries(args: Vec<Value>) -> MixResult<Option<Value>> {
                 for (key, value) in map.iter() {
                     match (key.as_str(), value) {
                         ("hidden", Value::Bool(b)) => hidden = *b,
-                        ("count",Value::Bool(b))=>count_only=*b,
+                        ("count", Value::Bool(b)) => count_only = *b,
                         ("max_entries", Value::Number(n))
                             if n.is_finite()
                                 && *n >= 0.0
@@ -105,12 +105,14 @@ pub(crate) fn entries(args: Vec<Value>) -> MixResult<Option<Value>> {
             _ => return Err(invalid("dir_entries options must be a map or nil")),
         }
     }
-    if count_only && columns.is_some() {return Err(invalid("count and columns cannot be combined"));}
+    if count_only && columns.is_some() {
+        return Err(invalid("count and columns cannot be combined"));
+    }
     let io_error = |e: std::io::Error| {
         MixError::structured("DIR_ENTRIES_IO", format!("dir_entries {path}: {e}"))
     };
     let mut rows = Vec::new();
-    let mut count=0usize;
+    let mut count = 0usize;
     for (scanned, entry) in std::fs::read_dir(path).map_err(io_error)?.enumerate() {
         if crate::interrupt::is_interrupted() {
             return Err(MixError::structured(
@@ -133,7 +135,10 @@ pub(crate) fn entries(args: Vec<Value>) -> MixResult<Option<Value>> {
         if !hidden && name.starts_with('.') {
             continue;
         }
-        if count_only {count+=1;continue;}
+        if count_only {
+            count += 1;
+            continue;
+        }
         let metadata = std::fs::symlink_metadata(entry.path()).map_err(io_error)?;
         let value = if let Some(columns) = &columns {
             Value::list(
@@ -152,7 +157,9 @@ pub(crate) fn entries(args: Vec<Value>) -> MixResult<Option<Value>> {
         };
         rows.push((name.to_owned(), value));
     }
-    if count_only {return Ok(Some(Value::Number(count as f64)));}
+    if count_only {
+        return Ok(Some(Value::Number(count as f64)));
+    }
     rows.sort_by(|a, b| a.0.cmp(&b.0));
     Ok(Some(Value::list(
         rows.into_iter().map(|(_, v)| v).collect(),
@@ -182,7 +189,17 @@ mod tests {
         std::fs::write(root.join(".hidden"), b"h").unwrap();
         std::os::unix::fs::symlink("missing", root.join("link")).unwrap();
         let path = Value::String(root.to_str().unwrap().into());
-        assert_eq!(entries(vec![path.clone(),opts(vec![("hidden",Value::Bool(false)),("count",Value::Bool(true))])]).unwrap(),Some(Value::Number(2.0)));
+        assert_eq!(
+            entries(vec![
+                path.clone(),
+                opts(vec![
+                    ("hidden", Value::Bool(false)),
+                    ("count", Value::Bool(true))
+                ])
+            ])
+            .unwrap(),
+            Some(Value::Number(2.0))
+        );
         let result = entries(vec![
             path.clone(),
             opts(vec![("hidden", Value::Bool(false))]),

@@ -201,7 +201,7 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
     ];
     static SPACER: [Port; 1] = [pn("size", false, None)];
     // Lab specimen: bounded viewport rows, not an unbounded authored table.
-    static TABLE: [Port; 14] = [
+    static TABLE: [Port; 17] = [
         p("rows", "list", true, None),
         p("columns", "list", true, None),
         pnd("total", "0", Some(0.0)),
@@ -216,6 +216,9 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         p("next_focus", "string", false, None),
         p("editable", "bool", false, Some("false")),
         p("clip_columns", "bool", false, Some("true")),
+        pnd("font_size", "13", Some(1.0)),
+        pnd("secondary_scale", "1", Some(0.25)),
+        p("text_cache", "bool", false, Some("true")),
     ];
     let family: &[Port] = match f {
         "window" => &WINDOW,

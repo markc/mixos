@@ -315,6 +315,7 @@ pub struct SceneUi {
     appearance_epoch: u64,
     geometry: u64,
     layout_cache: Option<(u64, u32, u32, u32)>,
+    cache_layout: bool,
     layout_builds: u64,
     content: Arc<Content>,
     look: Option<Arc<Look>>,
@@ -358,6 +359,7 @@ impl SceneUi {
             tables: Arc::clone(&content.native_tables),
             appearance_epoch: 0,
             layout_cache: None,
+            cache_layout: !matches!(std::env::var("COMPD_SCENE_LAYOUT_CACHE").as_deref(),Ok("0")),
             layout_builds: 0,
             hover: tip::Hover::default(),
             images: crate::images::prepare(&content.tree, &content.lists),
@@ -558,7 +560,7 @@ impl ui::UiProgram for SceneUi {
             size.y.to_bits(),
             ctx.pixels_per_point().to_bits(),
         );
-        if self.layout_cache != Some(key) || !self.content.lists.is_empty() {
+        if !self.cache_layout || self.layout_cache != Some(key) || !self.content.lists.is_empty() {
             let layout_span = ui::frame_trace::span("scene_layout", self.content.revision);
             self.layout = flex::layout(
                 &self.content,
