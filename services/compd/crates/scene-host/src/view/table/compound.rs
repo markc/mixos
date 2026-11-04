@@ -35,7 +35,16 @@ pub(super) fn paint(
     state.model_owner = format!("{}.{}", route.scene, route.node);
     let old_generation = state.generation;
     let was_empty = state.total == 0;
-    state.ingest(&node.ports["view"]);
+    static ASYNC: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    if *ASYNC.get_or_init(|| std::env::var("COMPD_MODEL_ASYNC").as_deref()!=Ok("0")) {
+        state.ingest_async(&node.ports["view"],ui.ctx());
+    } else { state.ingest(&node.ports["view"]); }
+    if state.model_pending {
+        ui.painter().with_clip_rect(clip.intersect(rect)).text(rect.left_top(),
+            egui::Align2::LEFT_TOP,"Loading…",crate::view::paint::font(13.0,false,false),
+            ui.visuals().weak_text_color());
+        return;
+    }
     let mut reset_scroll = state.generation != old_generation || (was_empty && state.total > 0);
     if let Some(error) = state.model_error.clone() {
         if !state.model_error_sent {

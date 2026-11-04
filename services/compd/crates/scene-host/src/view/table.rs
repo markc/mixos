@@ -9,6 +9,7 @@ use super::{Route, SceneMessage, flag, number};
 
 mod compound;
 mod dataset;
+mod importer;
 mod model;
 pub(super) use model::State;
 pub(crate) use model::TableInteger;

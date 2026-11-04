@@ -104,6 +104,9 @@ struct Text {
 
 #[derive(Debug, Default)]
 pub struct State {
+    importer: super::importer::Importer,
+    pub model_pending: bool,
+    pub model_job: u64,
     pub(super) dataset: Option<Arc<super::dataset::Dataset>>,
     source: Value,
     failed_revision: Option<(u64, u64)>,
@@ -157,6 +160,14 @@ impl State {
     /// Validate the whole page before changing state. A generation is a row-order
     /// identity; changing a row's identity in place requires a new generation.
     pub fn ingest(&mut self, view: &Value) -> bool {
+        self.ingest_inner(view, None)
+    }
+
+    pub fn ingest_async(&mut self, view: &Value, ctx: &egui::Context) -> bool {
+        self.ingest_inner(view, Some(ctx))
+    }
+
+    fn ingest_inner(&mut self, view: &Value, context: Option<&egui::Context>) -> bool {
         let (Some(generation), Some(revision), Some(total), Some(offset), Some(rows)) = (
             view["generation"].whole(),
             view["revision"].whole(),
@@ -252,14 +263,24 @@ impl State {
                 self.dataset.clone()
             } else {
                 let started = std::time::Instant::now();
-                let loaded = super::dataset::Dataset::load(
-                    source,
-                    &self.session,
-                    &self.model_owner,
-                    generation,
-                    total as usize,
-                );
-                self.model_load_us = started.elapsed().as_micros() as u64;
+                let loaded = if let Some(ctx) = context {
+                    let Some(ready) = self.importer.request(source, &self.session,
+                        &self.model_owner, generation, total as usize, ctx) else {
+                        self.model_pending = true;
+                        return false;
+                    };
+                    self.model_load_us = ready.micros;
+                    self.model_job = ready.job;
+                    ui::frame_trace::event("table_model_adopt", || (ready.job,generation,total));
+                    ready.data
+                } else {
+                    super::importer::delay_for_lab();
+                    let loaded=super::dataset::Dataset::load(source,&self.session,
+                        &self.model_owner,generation,total as usize);
+                    self.model_load_us=started.elapsed().as_micros() as u64;
+                    loaded
+                };
+                self.model_pending = false;
                 self.model_loads += 1;
                 match loaded {
                     Ok(model) => Some(model),
@@ -273,6 +294,8 @@ impl State {
                 }
             }
         } else {
+            self.importer.cancel();
+            self.model_pending = false;
             None
         };
         if dataset
@@ -456,7 +479,7 @@ impl State {
     }
 
     pub fn snapshot(&self) -> Value {
-        json!({"model_load_us":self.model_load_us,"model_loads":self.model_loads,"native_model":self.dataset.is_some(),"model_error":self.model_error,"session":self.session,"generation":self.generation,"revision":self.revision,"seq":self.seq,
+        json!({"model_pending":self.model_pending,"model_job":self.model_job,"importer":self.importer.snapshot(),"model_load_us":self.model_load_us,"model_loads":self.model_loads,"native_model":self.dataset.is_some(),"model_error":self.model_error,"session":self.session,"generation":self.generation,"revision":self.revision,"seq":self.seq,
             "focus":self.focus,"focused_id":self.focus.and_then(|i| self.rows.get(&i)).map(|r| &r.id),
             "selection":{"ranges":self.selection.0,"count":self.selection.count()},
             "first":self.first,"end":self.end,"scroll_y":self.scroll_y,
