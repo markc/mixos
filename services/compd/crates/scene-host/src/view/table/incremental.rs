@@ -158,6 +158,7 @@ impl State {
             // Structural operations preserve identities. O(N) order/selection repair
             // is explicit and benchmarked separately from O(k) point edits.
             let model = self.incremental.as_ref().unwrap();
+            if !selected.is_empty() || focus.is_some() || anchor.is_some() {
             for (i, id) in model.order.iter().enumerate() {
                 if selected.contains(id.as_ref()) {
                     if let Some(last) = self.selection.0.last_mut().filter(|(_,b)| *b==i) { last.1=i+1; }
@@ -165,6 +166,7 @@ impl State {
                 }
                 if focus.as_deref()==Some(id.as_ref()) { self.focus=Some(i); }
                 if anchor.as_deref()==Some(id.as_ref()) { self.anchor=Some(i); }
+            }
             }
             if let Some(edit) = &mut self.edit {
                 if let Some(i) = model.order.iter().position(|id| id.as_ref()==edit.id) { edit.index=i; }

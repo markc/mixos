@@ -705,6 +705,33 @@ impl SceneStore {
                         return Err(json!({"scene":name,"error_code":"SUBPANEL_COLLISION",
                             "message":"model patch cannot move a scene mount; unload before moving it"}));
                     }
+                    // Deltas must be consumed at command acceptance: paints can
+                    // coalesce several accepted revisions into one frame. The lab
+                    // permits one delta owner per transaction so refusal is atomic.
+                    let deltas: Vec<_> = result.tree.nodes.iter().filter(|(id,node)| {
+                        node.family == "table" && node.ports["view"]["delta"].is_object()
+                            && entry.tree.nodes.get(*id).map(|old| &old.ports["view"]) != Some(&node.ports["view"])
+                    }).collect();
+                    if deltas.len() > 1 {
+                        return Err(json!({"error_code":"TABLE_DELTA","message":"lab permits one delta owner per transaction"}));
+                    }
+                    if let Some((id,node)) = deltas.first() {
+                        let mut tables = entry.native_tables.lock().unwrap();
+                        let state = tables.entry((*id).clone()).or_default();
+                        let session = node.ports["session"].as_str().unwrap_or("");
+                        if state.session != session {
+                            let mut candidate = Default::default();
+                            std::mem::swap(state, &mut candidate);
+                            state.session = session.into();
+                            state.model_owner = format!("{name}.{id}");
+                            if !state.ingest(&node.ports["view"]) {
+                                std::mem::swap(state, &mut candidate);
+                                return Err(json!({"error_code":"TABLE_DELTA","message":"invalid initial delta"}));
+                            }
+                        } else if !state.ingest(&node.ports["view"]) {
+                            return Err(json!({"error_code":"TABLE_DELTA","message":"stale, gapped or invalid delta"}));
+                        }
+                    }
                     // Commit only after all validation. Keep the compiled
                     // bindings, the loader receipt and last-good ports.
                     let revision = self.revisions.entry(name.into()).or_default();

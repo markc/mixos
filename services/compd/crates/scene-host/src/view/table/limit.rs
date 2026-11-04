@@ -15,6 +15,12 @@ fn initial(n: usize) -> State {
     s
 }
 
+fn scene_store() -> crate::store::SceneStore {
+    let mut store=crate::store::SceneStore::default();
+    let source="---\nscene: 1\nname: limit\ncitizen: limit\nmodel: {view: {}}\n---\n```mix\nroot: {widget: column, children: [table]}\ntable: {widget: table, rows: [], columns: [Name, Size, Modified], session: limit, view: '= $model.view'}\n```\n";
+    store.request(crate::command::SceneCommand::Load,source,&Value::Null).unwrap(); store
+}
+
 fn policy(r: &Value) -> Value {
     let started=Instant::now();
     let n=r["total"].as_u64().unwrap() as usize;
@@ -112,6 +118,26 @@ fn atomic_deltas_preserve_selection_identity_and_reject_stale_or_invalid_input()
 }
 
 #[test]
+fn accepted_deltas_are_not_lost_when_paints_coalesce() {
+    use crate::{store::SceneStore,command::SceneCommand};
+    let mut store=SceneStore::default();
+    let source="---\nscene: 1\nname: limit\ncitizen: limit\nmodel: {view: {}}\n---\n```mix\nroot: {widget: table, rows: [], columns: [Name], session: limit, view: '= $model.view'}\n```\n";
+    store.request(SceneCommand::Load,source,&Value::Null).unwrap();
+    for i in 0..3 {
+        let v=json!({"session":"limit","generation":1,"revision":i+1,"delta":{"reset":i==0,"base_revision":i,"kind":"splice","index":i,"delete":[],"insert":[row(i as usize)]}});
+        store.request(SceneCommand::Patch,"",&json!({"scene":"limit","path":"model.view","value":v})).unwrap();
+    }
+    let entry=store.scene("limit").unwrap();
+    let tables=entry.native_tables.lock().unwrap();
+    assert_eq!(tables["root"].total,3); assert_eq!(tables["root"].revision,3);
+}
+
+fn pss(pid:u32)->u64 {
+    std::fs::read_to_string(format!("/proc/{pid}/smaps_rollup")).unwrap().lines()
+        .find(|line|line.starts_with("Pss:")).unwrap().split_whitespace().nth(1).unwrap().parse().unwrap()
+}
+
+#[test]
 #[ignore]
 fn measure_incremental_limit() {
     let output_path=std::env::var("LIMIT_OUTPUT").expect("LIMIT_OUTPUT");
@@ -120,15 +146,34 @@ fn measure_incremental_limit() {
     let samples:usize=std::env::var("LIMIT_SAMPLES").unwrap_or("300".into()).parse().unwrap();
     for repeat in 0..repeats {
         for n in [1000,10000,100000] {
+            {
+                let mut s=initial(n); let ctx=egui::Context::default();
+                let view=json!({"session":"limit","generation":1,"revision":s.revision,"delta":{}});
+                for kind in ["unchanged","local-selection"] {
+                    for seq in 0..samples+20 {
+                        let started=Instant::now();
+                        if kind=="local-selection" { s.pick(seq%24,false,false); let _event=s.event("selection"); }
+                        let apply_us=started.elapsed().as_secs_f64()*1e6;
+                        let (frame_us,tess_us)=paint(&ctx,&mut s,view.clone());
+                        if seq>=20 { writeln!(file,"{}",json!({"repeat":repeat,"n":n,"kind":kind,"changed":0,"visible":true,"controller":"native-local","seq":seq-20,"policy_us":0,"ipc_us":0,"apply_us":apply_us,"frame_us":frame_us,"tess_us":tess_us,"serial_us":apply_us+frame_us+tess_us,"reply_bytes":0,"cache_rows":s.rows.len()})).unwrap(); }
+                    }
+                }
+            }
             for (kind,k,visible) in [("edit",1,true),("edit",16,true),("edit",128,true),("edit",256,true),("edit",1,false),("edit",128,false),("edit",256,false),("splice",1,true),("order",n,false)] {
                 let count=if kind=="order" {12} else {samples};
                 for controller_kind in if repeat%2==0 {["mix","rust"]}else{["rust","mix"]} {
                     let mut controller=Controller::new(controller_kind);
-                    let mut s=initial(n); let ctx=egui::Context::default();
-                    let initial_view=json!({"session":"limit","generation":1,"revision":s.revision,"delta":{}});
-                    for _ in 0..10 {paint(&ctx,&mut s,initial_view.clone());}
+                    let baseline_pss_kib=pss(std::process::id());
+                    let started=Instant::now(); let mut store=scene_store();
+                    {let entry=store.scenes.get_mut("limit").unwrap(); let mut state=initial(n); state.pick(4,false,false); entry.native_tables.lock().unwrap().insert("table".into(),state);}
+                    let setup_us=started.elapsed().as_secs_f64()*1e6;
+                    let ctx=egui::Context::default();
+                    let tables=Arc::clone(&store.scene("limit").unwrap().native_tables);
+                    let mut revision=tables.lock().unwrap()["table"].revision;
+                    let initial_view=json!({"session":"limit","generation":1,"revision":revision,"delta":{}});
+                    for _ in 0..10 {paint(&ctx,tables.lock().unwrap().get_mut("table").unwrap(),initial_view.clone());}
                     for seq in 0..count+20 {
-                        let request=json!({"kind":kind,"changed":k,"visible":visible,"seq":seq,"total":n,"revision":s.revision});
+                        let request=json!({"kind":kind,"changed":k,"visible":visible,"seq":seq,"total":n,"revision":revision});
                         let started=Instant::now();
                         let (mut view,bytes)=controller.call(&request);
                         let ipc=started.elapsed().as_secs_f64()*1e6;
@@ -136,14 +181,18 @@ fn measure_incremental_limit() {
                         let policy_us=view.as_object_mut().unwrap().remove("policy_us").unwrap().as_f64().unwrap();
                         assert_eq!(view,expected,"policy parity");
                         view["session"]=json!("limit");
-                        let started=Instant::now(); assert!(s.ingest(&view));
+                        let started=Instant::now();
+                        store.request(crate::command::SceneCommand::Patch,"",&json!({"scene":"limit","path":"model.view","value":view})).unwrap();
                         let apply_us=started.elapsed().as_secs_f64()*1e6;
-                        let (frame_us,tess_us)=paint(&ctx,&mut s,view);
+                        let mut lock=tables.lock().unwrap(); let s=lock.get_mut("table").unwrap();
+                        revision=s.revision;
+                        let (frame_us,tess_us)=paint(&ctx,s,view);
                         assert!(s.rows.len()<=super::model::ROW_BUDGET);
                         if seq>=20 {
                             writeln!(file,"{}",json!({"repeat":repeat,"n":n,"kind":kind,"changed":k,"visible":visible,"controller":controller_kind,"seq":seq-20,"policy_us":policy_us,"ipc_us":ipc,"apply_us":apply_us,"frame_us":frame_us,"tess_us":tess_us,"serial_us":ipc+apply_us+frame_us+tess_us,"reply_bytes":bytes,"cache_rows":s.rows.len(),"snapshot":if seq==count+19 {s.snapshot()}else{Value::Null}})).unwrap();
                         }
                     }
+                    writeln!(file,"{}",json!({"record":"resources","repeat":repeat,"n":n,"kind":kind,"changed":k,"visible":visible,"controller":controller_kind,"setup_us":setup_us,"baseline_pss_kib":baseline_pss_kib,"parent_pss_kib":pss(std::process::id()),"controller_pss_kib":pss(controller.child.id())})).unwrap();
                     file.flush().unwrap();
                     println!("LIMIT repeat={repeat} n={n} kind={kind} k={k} visible={visible} controller={controller_kind}");
                 }
