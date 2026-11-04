@@ -105,8 +105,10 @@ struct Text {
 pub struct State {
     pub(super) dataset: Option<Arc<super::dataset::Dataset>>,
     source: Value,
-    failed_revision: Option<(u64,u64)>,
+    failed_revision: Option<(u64, u64)>,
     pub model_error: Option<String>,
+    pub model_load_us: u64,
+    pub model_loads: u64,
     pub session: String,
     pub generation: u64,
     pub revision: u64,
@@ -160,7 +162,9 @@ impl State {
             self.refused += 1;
             return false;
         };
-        if self.failed_revision == Some((generation,revision)) { return false; }
+        if self.failed_revision == Some((generation, revision)) {
+            return false;
+        }
         if generation < self.generation
             || (generation == self.generation && revision < self.revision)
         {
@@ -235,20 +239,38 @@ impl State {
             }
         }
         if self.dataset.is_some() && !reset && view.get("source") != Some(&self.source) {
-            self.refused += 1; return false;
+            self.refused += 1;
+            return false;
         }
         let dataset = if let Some(source) = view.get("source").filter(|v| v.is_object()) {
-            if !reset && self.dataset.is_some() && source == &self.source { self.dataset.clone() }
-            else {
-                match super::dataset::Dataset::load(source,&self.session,generation,total as usize) {
+            if !reset && self.dataset.is_some() && source == &self.source {
+                self.dataset.clone()
+            } else {
+                let started = std::time::Instant::now();
+                let loaded = super::dataset::Dataset::load(
+                    source,
+                    &self.session,
+                    generation,
+                    total as usize,
+                );
+                self.model_load_us=started.elapsed().as_micros() as u64;
+                self.model_loads+=1;
+                match loaded {
                     Ok(model) => Some(model),
                     Err(error) => {
-                        self.model_error=Some(error); self.failed_revision=Some((generation,revision));
-                        self.refused+=1; return false;
+                        self.model_error = Some(error);
+                        self.failed_revision = Some((generation, revision));
+                        self.refused += 1;
+                        return false;
                     }
                 }
             }
-        } else { None };
+        } else {
+            None
+        };
+        if dataset.as_ref().is_some_and(|m|m.rows.len()!=total as usize) || (dataset.is_some() && !rows.is_empty()) {
+            self.refused+=1; return false;
+        }
         if reset {
             self.rows.clear();
             self.texts.clear();
@@ -274,7 +296,10 @@ impl State {
             self.anchor = self.focus;
             self.scroll_to = self.focus.or(if reset { Some(0) } else { None });
         }
-        self.dataset=dataset; self.source=view["source"].clone(); self.model_error=None; self.failed_revision=None;
+        self.dataset = dataset;
+        self.source = view["source"].clone();
+        self.model_error = None;
+        self.failed_revision = None;
         self.generation = generation;
         self.revision = revision;
         self.total = total as usize;
@@ -305,20 +330,34 @@ impl State {
     }
 
     pub fn prepare_range(&mut self, first: usize, end: usize) {
-        let Some(data) = self.dataset.clone() else { return; };
-        let start=first.saturating_sub(32)/PAGE*PAGE;
-        let end=(end+PAGE).min(self.total);
+        let Some(data) = self.dataset.clone() else {
+            return;
+        };
+        let start = first.saturating_sub(32) / PAGE * PAGE;
+        let end = (end + PAGE).min(self.total);
         for i in start..end {
-            if !self.rows.contains_key(&i) && let Some(row)=data.row(i) { self.rows.insert(i,row); }
+            if !self.rows.contains_key(&i)
+                && let Some(row) = data.row(i)
+            {
+                self.rows.insert(i, row);
+            }
         }
-        while self.rows.len()>ROW_BUDGET {
-            let i=*self.rows.keys().max_by_key(|&&i| i.abs_diff(first)).unwrap();
-            self.rows.remove(&i); self.texts.retain(|&(index,_) ,_| index!=i);
+        while self.rows.len() > ROW_BUDGET {
+            let i = *self
+                .rows
+                .keys()
+                .max_by_key(|&&i| i.abs_diff(first))
+                .unwrap();
+            self.rows.remove(&i);
+            self.texts.retain(|&(index, _), _| index != i);
         }
     }
 
-    fn row_id(&self,index:usize)->Option<String> {
-        self.dataset.as_ref().and_then(|m|m.id(index)).or_else(||self.rows.get(&index).map(|r|r.id.clone()))
+    fn row_id(&self, index: usize) -> Option<String> {
+        self.dataset
+            .as_ref()
+            .and_then(|m| m.id(index))
+            .or_else(|| self.rows.get(&index).map(|r| r.id.clone()))
     }
 
     pub fn pick(&mut self, index: usize, ctrl: bool, shift: bool) {
@@ -341,11 +380,17 @@ impl State {
 
     pub fn event(&mut self, kind: &str) -> Value {
         self.seq += 1;
-        let mut selected=Vec::new();
-        if self.selection.count()<=256 {
-            for &(a,b) in &self.selection.0 { for i in a..b { if let Some(id)=self.row_id(i) { selected.push(id); } } }
+        let mut selected = Vec::new();
+        if self.selection.count() <= 256 {
+            for &(a, b) in &self.selection.0 {
+                for i in a..b {
+                    if let Some(id) = self.row_id(i) {
+                        selected.push(id);
+                    }
+                }
+            }
         }
-        let complete=selected.len()==self.selection.count();
+        let complete = selected.len() == self.selection.count();
         json!({"selected_ids":selected,"selection_complete":complete,"focus_id":self.focus.and_then(|i|self.row_id(i)),"kind":kind,"session":self.session,"generation":self.generation,"seq":self.seq,
             "focus":self.focus,"selection":{"ranges":self.selection.0}})
     }
@@ -389,7 +434,7 @@ impl State {
     }
 
     pub fn snapshot(&self) -> Value {
-        json!({"native_model":self.dataset.is_some(),"model_error":self.model_error,"session":self.session,"generation":self.generation,"revision":self.revision,"seq":self.seq,
+        json!({"model_load_us":self.model_load_us,"model_loads":self.model_loads,"native_model":self.dataset.is_some(),"model_error":self.model_error,"session":self.session,"generation":self.generation,"revision":self.revision,"seq":self.seq,
             "focus":self.focus,"focused_id":self.focus.and_then(|i| self.rows.get(&i)).map(|r| &r.id),
             "selection":{"ranges":self.selection.0,"count":self.selection.count()},
             "first":self.first,"end":self.end,"scroll_y":self.scroll_y,
@@ -403,6 +448,32 @@ impl State {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn native_model_pages_are_local_bounded_and_snapshot_identity_is_stable() {
+        let dir=tempfile::tempdir().unwrap(); let path=dir.path().join("data.json");
+        let data=json!({"version":1,"token":"t","session":"s","generation":1,"base":"/fixture","expanded":{},
+            "rows":(0..10000).map(|i|json!([format!("file-{i}"),format!("file-{i}"),i,0,1.0,false,false,0])).collect::<Vec<_>>()});
+        std::fs::write(&path,data.to_string()).unwrap();
+        let mut view=json!({"generation":1,"revision":1,"total":10000,"offset":0,"rows":[],"source":{"path":path,"token":"t"}});
+        let mut s=State::default(); s.session="s".into(); assert!(s.ingest(&view));
+        std::fs::remove_file(&path).unwrap();
+        for n in 0..50 {s.prepare_range(n*128,n*128+24);assert!(s.rows.len()<=ROW_BUDGET);}
+        s.pick(9999,false,false); let event=s.event("selection");
+        assert_eq!(event["focus_id"],"/fixture/file-9999");
+        assert_eq!(event["selected_ids"],json!(["/fixture/file-9999"]));
+        view["revision"]=json!(2); assert!(s.ingest(&view)); assert_eq!(s.model_loads,1);
+        view["total"]=json!(9999); view["revision"]=json!(3); assert!(!s.ingest(&view));
+        assert_eq!(s.total,10000);
+        let loading=json!({"generation":2,"revision":1,"total":0,"offset":0,"rows":[]});
+        assert!(s.ingest(&loading)); assert!(s.dataset.is_none()); assert!(s.rows.is_empty());
+    }
+    #[test]
+    fn failed_source_does_not_retry_io_each_frame() {
+        let mut s=State::default();s.session="s".into();
+        let view=json!({"generation":1,"revision":1,"total":1,"offset":0,"rows":[],"source":{"path":"/nonexistent/model","token":"t"}});
+        assert!(!s.ingest(&view));assert!(!s.ingest(&view));
+        assert_eq!(s.model_loads,1);assert_eq!(s.refused,1);assert!(s.model_error.is_some());
+    }
     fn page(g: u64, r: u64, offset: usize) -> Value {
         json!({"generation":g,"revision":r,"offset":offset,"total":10000,
             "rows":(offset..offset+128).map(|i| json!({"id":format!("row-{i}"),"cells":[format!("row-{i}")]})).collect::<Vec<_>>()})
