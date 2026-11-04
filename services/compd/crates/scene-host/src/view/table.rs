@@ -36,6 +36,7 @@ pub(super) fn paint(
     let id = Id::unique(("scene-table", &route.scene, &route.node));
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
     child.set_clip_rect(clip.intersect(ui.clip_rect()));
+    child.spacing_mut().item_spacing.y = 0.0;
     let background = child.interact(rect, id, Sense::click());
     let active = flag(node, "active");
     let old_active = child
@@ -48,7 +49,9 @@ pub(super) fn paint(
     child
         .ctx()
         .data_mut(|d| d.insert_temp(id.with("active"), active));
-    if background.has_focus() {
+    let tab_from_table = child.memory(|m| m.had_focus_last_frame(id))
+        && child.input(|i| i.key_pressed(Key::Tab));
+    if active && (background.has_focus() || tab_from_table) {
         let events = child.input(|i| i.events.clone());
         for event in events {
             if let egui::Event::Key {
