@@ -33,10 +33,10 @@ pub(super) fn paint(
         return;
     }
     state.model_owner = format!("{}.{}", route.scene, route.node);
-    let old_generation=state.generation;
-    let was_empty=state.total==0;
+    let old_generation = state.generation;
+    let was_empty = state.total == 0;
     state.ingest(&node.ports["view"]);
-    let mut reset_scroll=state.generation!=old_generation || (was_empty && state.total>0);
+    let mut reset_scroll = state.generation != old_generation || (was_empty && state.total > 0);
     if let Some(error) = state.model_error.clone() {
         if !state.model_error_sent {
             state.model_error_sent = true;
@@ -170,7 +170,7 @@ pub(super) fn paint(
     }
     if let Some(focus) = state.scroll_to.take() {
         if focus < state.first || focus >= state.end {
-            reset_scroll=true;
+            reset_scroll = true;
             scroll = scroll
                 .vertical_scroll_offset((focus as f32 * row_h - rect.height() / 2.0).max(0.0));
         }
@@ -178,7 +178,8 @@ pub(super) fn paint(
     if reset_scroll {
         // Setting offset alone leaves egui's kinetic velocity/target alive.
         // Reuse the stable container id but discard the old scroll physics.
-        egui::scroll_area::State::default().store(child.ctx(),child.make_persistent_id(id.with("scroll")));
+        egui::scroll_area::State::default()
+            .store(child.ctx(), child.make_persistent_id(id.with("scroll")));
     }
     let mut row_drop = false;
     let shown=scroll.show_rows(&mut child,row_h,state.total,|ui,range| {

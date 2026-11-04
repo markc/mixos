@@ -419,10 +419,12 @@ impl State {
         }
         // Layout is independent of row identity and order. Verify the content
         // as well as the hash so collisions can only evict, never misrender.
-        let mut hash=std::collections::hash_map::DefaultHasher::new();
-        text.hash(&mut hash);font.size.to_bits().hash(&mut hash);
-        font.family.hash(&mut hash);self.text_epoch.hash(&mut hash);
-        let key=hash.finish();
+        let mut hash = std::collections::hash_map::DefaultHasher::new();
+        text.hash(&mut hash);
+        font.size.to_bits().hash(&mut hash);
+        font.family.hash(&mut hash);
+        self.text_epoch.hash(&mut hash);
+        let key = hash.finish();
         if let Some(cached) = self.texts.get_mut(&key)
             && cached.text == text
             && cached.font == font
@@ -476,10 +478,10 @@ mod tests {
             state.galley(ui, 0, 0, "é 日本語 😀", font.clone());
             state.galley(ui, 0, 0, "é 日本語 😀", font.clone());
             assert_eq!((state.shapes, state.hits), (1, 1));
-            state.galley(ui,99,2,"é 日本語 😀",font.clone());
-            assert!(state.ingest(&page(1,1,0)));
-            state.galley(ui,0,0,"é 日本語 😀",font.clone());
-            assert_eq!((state.shapes,state.hits),(1,3));
+            state.galley(ui, 99, 2, "é 日本語 😀", font.clone());
+            assert!(state.ingest(&page(1, 1, 0)));
+            state.galley(ui, 0, 0, "é 日本語 😀", font.clone());
+            assert_eq!((state.shapes, state.hits), (1, 3));
             state.text_epoch += 1;
             state.galley(ui, 0, 0, "é 日本語 😀", font.clone());
             state.galley(ui, 0, 0, "é 日本語 😀", FontId::proportional(15.0));
