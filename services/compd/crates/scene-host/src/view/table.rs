@@ -38,36 +38,85 @@ pub(super) fn paint(
     child.set_clip_rect(clip.intersect(ui.clip_rect()));
     let background = child.interact(rect, id, Sense::click());
     let active = flag(node, "active");
-    let old_active = child.ctx().data_mut(|d| d.get_temp::<bool>(id.with("active"))).unwrap_or(false);
+    let old_active = child
+        .ctx()
+        .data_mut(|d| d.get_temp::<bool>(id.with("active")))
+        .unwrap_or(false);
     if active && !old_active {
         background.request_focus();
     }
-    child.ctx().data_mut(|d| d.insert_temp(id.with("active"), active));
+    child
+        .ctx()
+        .data_mut(|d| d.insert_temp(id.with("active"), active));
     if background.has_focus() {
         let events = child.input(|i| i.events.clone());
         for event in events {
-            if let egui::Event::Key { key, pressed: true, modifiers: mods, .. } = event
-                && matches!(key, Key::ArrowDown | Key::ArrowUp | Key::Home | Key::End | Key::Enter | Key::Space | Key::Tab | Key::ArrowRight | Key::ArrowLeft | Key::A)
+            if let egui::Event::Key {
+                key,
+                pressed: true,
+                modifiers: mods,
+                ..
+            } = event
+                && matches!(
+                    key,
+                    Key::ArrowDown
+                        | Key::ArrowUp
+                        | Key::Home
+                        | Key::End
+                        | Key::Enter
+                        | Key::Space
+                        | Key::Tab
+                        | Key::ArrowRight
+                        | Key::ArrowLeft
+                        | Key::A
+                )
             {
                 child.input_mut(|i| i.consume_key(mods, key));
-                deliver(out, &route, json!({"kind":"key","key":format!("{key:?}"),"modifiers":modifiers(mods)}));
+                deliver(
+                    out,
+                    &route,
+                    json!({"kind":"key","key":format!("{key:?}"),"modifiers":modifiers(mods)}),
+                );
             }
         }
     }
     let total = number(node, "total").unwrap_or(0.0).clamp(0.0, 1_000_000.0) as usize;
     let offset = number(node, "offset").unwrap_or(0.0).max(0.0) as usize;
-    let row_h = number(node, "row_height").unwrap_or(24.0).clamp(16.0, 200.0);
-    let rows = node.ports.get("rows").and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[]);
-    let columns = node.ports.get("columns").and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[]);
+    let row_h = number(node, "row_height")
+        .unwrap_or(24.0)
+        .clamp(16.0, 200.0);
+    let rows = node
+        .ports
+        .get("rows")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or(&[]);
+    let columns = node
+        .ports
+        .get("columns")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or(&[]);
     let focus = number(node, "focus").unwrap_or(-1.0) as i64;
-    let previous_focus = child.ctx().data_mut(|d| d.get_temp::<i64>(id.with("focus"))).unwrap_or(-1);
-    child.ctx().data_mut(|d| d.insert_temp(id.with("focus"), focus));
-    let previous_range = child.ctx().data_mut(|d| d.get_temp::<(usize, usize)>(id.with("range")));
-    let mut scroll = egui::ScrollArea::vertical().id_salt(id.with("scroll")).auto_shrink([false, false]);
-    if focus >= 0 && focus != previous_focus
+    let previous_focus = child
+        .ctx()
+        .data_mut(|d| d.get_temp::<i64>(id.with("focus")))
+        .unwrap_or(-1);
+    child
+        .ctx()
+        .data_mut(|d| d.insert_temp(id.with("focus"), focus));
+    let previous_range = child
+        .ctx()
+        .data_mut(|d| d.get_temp::<(usize, usize)>(id.with("range")));
+    let mut scroll = egui::ScrollArea::vertical()
+        .id_salt(id.with("scroll"))
+        .auto_shrink([false, false]);
+    if focus >= 0
+        && focus != previous_focus
         && previous_range.is_some_and(|(a, b)| (focus as usize) < a || (focus as usize) >= b)
     {
-        scroll = scroll.vertical_scroll_offset((focus as f32 * row_h - rect.height() / 2.0).max(0.0));
+        scroll =
+            scroll.vertical_scroll_offset((focus as f32 * row_h - rect.height() / 2.0).max(0.0));
     }
     let mut row_drop = false;
     let shown = scroll.show_rows(&mut child, row_h, total, |ui, range| {
@@ -119,7 +168,11 @@ pub(super) fn paint(
         }
     });
     if !row_drop && let Some(payload) = background.dnd_release_payload::<DragRow>() {
-        deliver(out, &route, json!({"kind":"drop","source_node":payload.node,"item":payload.item,"target":null}));
+        deliver(
+            out,
+            &route,
+            json!({"kind":"drop","source_node":payload.node,"item":payload.item,"target":null}),
+        );
     }
     // The scroll area changes are native UI state, with no event per pixel.
     let _ = shown;
@@ -143,7 +196,16 @@ mod tests {
     }
 
     fn route() -> Arc<Route> {
-        Arc::new(Route { scene:"test".into(),citizen:"test".into(),node:"table".into(),item:None,click:None,context:None,change:Some("table_event".into()),submit:None })
+        Arc::new(Route {
+            scene: "test".into(),
+            citizen: "test".into(),
+            node: "table".into(),
+            item: None,
+            click: None,
+            context: None,
+            change: Some("table_event".into()),
+            submit: None,
+        })
     }
 
     #[test]
@@ -152,11 +214,20 @@ mod tests {
         let rect = Rect::from_min_size(pos2(0.0, 0.0), vec2(400.0, 300.0));
         let mut events = Vec::new();
         for _ in 0..2 {
-            let _output = ctx.run_ui(Default::default(), |ui| paint(ui, rect, rect, &node(), route(), &mut events));
+            let _output = ctx.run_ui(Default::default(), |ui| {
+                paint(ui, rect, rect, &node(), route(), &mut events)
+            });
         }
-        let values: Vec<_> = events.iter().filter_map(super::super::event_of).map(|(_,_,v)|v).collect();
+        let values: Vec<_> = events
+            .iter()
+            .filter_map(super::super::event_of)
+            .map(|(_, _, v)| v)
+            .collect();
         assert_eq!(values.len(), 1);
-        assert_eq!(values[0]["value"], json!({"kind":"viewport","offset":0,"count":200}));
+        assert_eq!(
+            values[0]["value"],
+            json!({"kind":"viewport","offset":0,"count":200})
+        );
     }
 
     #[test]
@@ -164,11 +235,32 @@ mod tests {
         let ctx = egui::Context::default();
         let rect = Rect::from_min_size(pos2(0.0, 0.0), vec2(400.0, 300.0));
         let mut events = Vec::new();
-        let _output = ctx.run_ui(Default::default(), |ui| paint(ui, rect, rect, &node(), route(), &mut events));
+        let _output = ctx.run_ui(Default::default(), |ui| {
+            paint(ui, rect, rect, &node(), route(), &mut events)
+        });
         events.clear();
-        let input = egui::RawInput { events:vec![egui::Event::Key {key:Key::ArrowDown,physical_key:None,pressed:true,repeat:false,modifiers:egui::Modifiers {shift:true,..Default::default()}}],..Default::default() };
-        let _output = ctx.run_ui(input, |ui| paint(ui, rect, rect, &node(), route(), &mut events));
-        let value = events.iter().filter_map(super::super::event_of).map(|(_,_,v)|v).find(|v|v["value"]["kind"]=="key").expect("key event");
+        let input = egui::RawInput {
+            events: vec![egui::Event::Key {
+                key: Key::ArrowDown,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers {
+                    shift: true,
+                    ..Default::default()
+                },
+            }],
+            ..Default::default()
+        };
+        let _output = ctx.run_ui(input, |ui| {
+            paint(ui, rect, rect, &node(), route(), &mut events)
+        });
+        let value = events
+            .iter()
+            .filter_map(super::super::event_of)
+            .map(|(_, _, v)| v)
+            .find(|v| v["value"]["kind"] == "key")
+            .expect("key event");
         assert_eq!(value["value"]["key"], "ArrowDown");
         assert_eq!(value["value"]["modifiers"]["shift"], true);
     }
