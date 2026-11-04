@@ -13,6 +13,7 @@ pub(super) use model::State;
 
 #[derive(Clone)]
 struct DragRow {
+    session: String,
     node: String,
     item: Value,
     generation: u64,
@@ -175,7 +176,7 @@ pub(super) fn paint(
                 deliver(out, &route, json!({"kind":if response.double_clicked(){"double_click"}else{"click"},"index":index,"item":row,"modifiers":modifiers(ui.input(|i|i.modifiers))}));
             }
             if response.drag_started() {
-                response.dnd_set_drag_payload(DragRow { node: route.node.clone(), item: row.clone(), generation: 0 });
+                response.dnd_set_drag_payload(DragRow { node: route.node.clone(), item: row.clone(), generation: 0, session: String::new() });
             }
             if let Some(payload) = response.dnd_release_payload::<DragRow>() {
                 row_drop = true;

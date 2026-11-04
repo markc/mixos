@@ -560,6 +560,8 @@ impl ui::UiProgram for SceneUi {
                 self.images = crate::images::prepare(&content.tree, &content.lists);
                 if self.content.dialog != content.dialog {
                     self.installed = None;
+                    self.layout_cache = None;
+                    self.appearance_epoch += 1;
                 }
                 self.geometry = geometry_key(&content);
                 self.tables.retain(|id, _| {

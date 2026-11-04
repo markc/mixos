@@ -19,6 +19,13 @@ pub(super) fn paint(
     state: &mut State,
     text_epoch: u64,
 ) {
+    let session=node.ports.get("session").and_then(Value::as_str).unwrap_or("");
+    if state.session!=session {
+        *state=State::default(); state.session=session.to_owned();
+    }
+    if node.ports["view"]["session"].as_str()!=Some(session) {
+        state.refused+=1; return;
+    }
     state.ingest(&node.ports["view"]);
     state.text_epoch = text_epoch ^ u64::from(ui.ctx().pixels_per_point().to_bits());
     let id = Id::unique(("scene-table", &route.scene, &route.node));
@@ -124,7 +131,7 @@ pub(super) fn paint(
             let offset=first/PAGE*PAGE;
             if state.request!=Some(offset) {
                 state.request=Some(offset);
-                deliver(out,&route,json!({"kind":"viewport","generation":state.generation,"offset":offset,"count":PAGE}));
+                deliver(out,&route,json!({"kind":"viewport","session":state.session,"generation":state.generation,"offset":offset,"count":PAGE}));
             }
         }
         let mut drawn=Vec::new();
@@ -155,12 +162,12 @@ pub(super) fn paint(
             // Construct payload only when egui actually starts dragging.
             if response.drag_started() {
                 if !state.selection.contains(index) {state.pick(index,false,false); changed=true;}
-                response.dnd_set_drag_payload(DragRow {node:route.node.clone(),item:row.raw.clone(),generation:state.generation});
+                response.dnd_set_drag_payload(DragRow {node:route.node.clone(),item:row.raw.clone(),generation:state.generation,session:state.session.clone()});
             }
             if let Some(payload)=response.dnd_release_payload::<DragRow>() {
                 row_drop=true;
                 let mut value=state.event("drop");
-                value["source_node"]=json!(payload.node); value["source_generation"]=json!(payload.generation);
+                value["source_node"]=json!(payload.node); value["source_generation"]=json!(payload.generation); value["source_session"]=json!(payload.session);
                 value["item"]=payload.item.clone(); value["target"]=row.raw.clone();
                 deliver(out,&route,value);
             }
@@ -211,6 +218,7 @@ pub(super) fn paint(
         let mut value = state.event("drop");
         value["source_node"] = json!(payload.node);
         value["source_generation"] = json!(payload.generation);
+        value["source_session"] = json!(payload.session);
         value["item"] = payload.item.clone();
         value["target"] = Value::Null;
         deliver(out, &route, value);

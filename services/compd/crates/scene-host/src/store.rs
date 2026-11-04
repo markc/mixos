@@ -175,6 +175,51 @@ pub fn changed_wire(body: &Value) -> String {
     format!("---\ncommand: {CHANGED_COMMAND}\n---\n{body}")
 }
 
+/// Version refusal belongs at transaction acceptance, not a successful reply
+/// followed by a renderer silently retaining its last-good page.
+fn check_table_versions(previous: &ResolvedScene, next: &ResolvedScene) -> Result<(),Value> {
+    for (id,node) in &next.nodes {
+        if node.family!="table" {continue;}
+        let Some(view)=node.ports.get("view") else {continue;};
+        let old=previous.nodes.get(id).and_then(|n| n.ports.get("view"));
+        if old==Some(view) {continue;}
+        let session=node.ports.get("session").and_then(Value::as_str).unwrap_or("");
+        if view["session"].as_str()!=Some(session) {
+            return Err(json!({"error_code":"TABLE_SESSION","node":id,"message":"page belongs to another view session"}));
+        }
+        let (Some(g),Some(r))=(view["generation"].as_u64(),view["revision"].as_u64()) else {
+            return Err(json!({"error_code":"TABLE_VERSION","node":id,"message":"page requires generation and revision"}));
+        };
+        if g==0 || old.is_some_and(|old| old["session"].as_str()==Some(session)
+            && (g<old["generation"].as_u64().unwrap_or(0)
+                || (g==old["generation"].as_u64().unwrap_or(0) && r<=old["revision"].as_u64().unwrap_or(0)))) {
+            return Err(json!({"error_code":"TABLE_VERSION","node":id,"message":"stale or contradictory page revision"}));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod table_contract_tests {
+    use super::*;
+    fn tree(g:u64,r:u64,session:&str)->ResolvedScene {
+        let mut tree=scene::resolve(&scene::parse("---\nscene: 1\nname: table\ncitizen: c\n---\n```mix\nroot: {widget: \"table\", rows: [], columns: [\"Name\"], session: \"s\"}\n```\n").unwrap()).unwrap();
+        tree.nodes.get_mut("root").unwrap().ports.insert("view".into(),json!({"session":session,"generation":g,"revision":r,"total":0,"offset":0,"rows":[]}));
+        tree
+    }
+    #[test]
+    fn stale_and_contradictory_pages_are_refused_before_commit() {
+        let old=tree(2,5,"s");
+        assert!(check_table_versions(&old,&tree(1,99,"s")).is_err());
+        let mut contradiction=tree(2,5,"s");
+        contradiction.nodes.get_mut("root").unwrap().ports["view"]["total"]=json!(1);
+        assert!(check_table_versions(&old,&contradiction).is_err());
+        assert!(check_table_versions(&old,&tree(2,6,"s")).is_ok());
+        assert!(check_table_versions(&old,&tree(3,1,"s")).is_ok());
+        assert!(check_table_versions(&old,&tree(3,1,"another-session")).is_err());
+    }
+}
+
 impl SceneStore {
     /// Coalescing, one-shot request. Authored citizen is the event destination;
     /// the loader owner is deliberately not the behaviour's identity.
@@ -591,6 +636,7 @@ impl SceneStore {
                     let result =
                         scene::bindings::reevaluate(&entry.tree, &entry.bindings, path, value)
                             .map_err(|d| json!({"scene":name,"diagnostics":d}))?;
+                    check_table_versions(&entry.tree,&result.tree)?;
                     document.model = Some(result.tree.model.clone());
                     check_size(&document)?;
                     let prepared = validate_templates(&result.tree)?;

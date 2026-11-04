@@ -86,6 +86,7 @@ struct Text {
 
 #[derive(Default)]
 pub struct State {
+    pub session: String,
     pub generation: u64,
     pub revision: u64,
     pub total: usize,
@@ -179,6 +180,16 @@ impl State {
         }
         let epoch = view["selection_epoch"].as_u64().unwrap_or(0);
         let reset = generation != self.generation;
+        let mut incoming_selection=Selection::default();
+        if let Some(selection)=view.get("selection") {
+            let Some(ranges)=selection["ranges"].as_array() else {self.refused+=1; return false;};
+            let mut end=0;
+            for range in ranges {
+                let (Some(a),Some(b))=(range[0].as_u64(),range[1].as_u64()) else {self.refused+=1; return false;};
+                if a>=b || b>total || a<end {self.refused+=1; return false;}
+                incoming_selection.0.push((a as usize,b as usize)); end=b;
+            }
+        }
         if reset {
             self.rows.clear();
             self.texts.clear();
@@ -199,17 +210,7 @@ impl State {
                 .as_u64()
                 .map(|v| v as usize)
                 .filter(|&v| v < total as usize);
-            self.selection = Selection::default();
-            if let Some(ranges) = view["selection"]["ranges"].as_array() {
-                for r in ranges {
-                    if let (Some(a), Some(b)) = (r[0].as_u64(), r[1].as_u64())
-                        && a < b
-                        && b <= total
-                    {
-                        self.selection.0.push((a as usize, b as usize));
-                    }
-                }
-            }
+            self.selection = incoming_selection;
             self.anchor = self.focus;
             self.scroll_to = self.focus;
         }
@@ -262,7 +263,7 @@ impl State {
 
     pub fn event(&mut self, kind: &str) -> Value {
         self.seq += 1;
-        json!({"kind":kind,"generation":self.generation,"seq":self.seq,
+        json!({"kind":kind,"session":self.session,"generation":self.generation,"seq":self.seq,
             "focus":self.focus,"selection":{"ranges":self.selection.0}})
     }
 
@@ -305,7 +306,7 @@ impl State {
     }
 
     pub fn snapshot(&self) -> Value {
-        json!({"generation":self.generation,"revision":self.revision,"seq":self.seq,
+        json!({"session":self.session,"generation":self.generation,"revision":self.revision,"seq":self.seq,
             "focus":self.focus,"focused_id":self.focus.and_then(|i| self.rows.get(&i)).map(|r| &r.id),
             "selection":{"ranges":self.selection.0,"count":self.selection.count()},
             "first":self.first,"end":self.end,"scroll_y":self.scroll_y,
