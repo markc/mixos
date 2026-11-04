@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Lab compound-view state. Logical indexes are valid only within a generation.
 use std::collections::BTreeMap;
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use egui::{Color32, FontId, Galley, Ui};
@@ -136,7 +137,7 @@ pub struct State {
     pub hits: u64,
     pub text_epoch: u64,
     pub disable_text_cache: bool,
-    texts: BTreeMap<(usize, usize), Text>,
+    texts: BTreeMap<u64, Text>,
     clock: u64,
 }
 
@@ -283,7 +284,6 @@ impl State {
         }
         if reset {
             self.rows.clear();
-            self.texts.clear();
             self.selection = Selection::default();
             self.focus = None;
             self.anchor = None;
@@ -327,7 +327,6 @@ impl State {
                 .max_by_key(|&&i| i.abs_diff(pivot))
                 .unwrap();
             self.rows.remove(&index);
-            self.texts.retain(|&(i, _), _| i != index);
         }
         if self
             .edit
@@ -360,7 +359,6 @@ impl State {
                 .max_by_key(|&&i| i.abs_diff(first))
                 .unwrap();
             self.rows.remove(&i);
-            self.texts.retain(|&(index, _), _| index != i);
         }
     }
 
@@ -409,8 +407,8 @@ impl State {
     pub fn galley(
         &mut self,
         ui: &Ui,
-        index: usize,
-        col: usize,
+        _index: usize,
+        _col: usize,
         text: &str,
         font: FontId,
     ) -> Arc<Galley> {
@@ -419,7 +417,13 @@ impl State {
             self.shapes += 1;
             return ui.fonts_mut(|f| f.layout_no_wrap(text.to_owned(), font, Color32::PLACEHOLDER));
         }
-        if let Some(cached) = self.texts.get_mut(&(index, col))
+        // Layout is independent of row identity and order. Verify the content
+        // as well as the hash so collisions can only evict, never misrender.
+        let mut hash=std::collections::hash_map::DefaultHasher::new();
+        text.hash(&mut hash);font.size.to_bits().hash(&mut hash);
+        font.family.hash(&mut hash);self.text_epoch.hash(&mut hash);
+        let key=hash.finish();
+        if let Some(cached) = self.texts.get_mut(&key)
             && cached.text == text
             && cached.font == font
             && cached.epoch == self.text_epoch
@@ -432,7 +436,7 @@ impl State {
             ui.fonts_mut(|f| f.layout_no_wrap(text.to_owned(), font.clone(), Color32::PLACEHOLDER));
         self.shapes += 1;
         self.texts.insert(
-            (index, col),
+            key,
             Text {
                 text: text.to_owned(),
                 font,
@@ -472,6 +476,10 @@ mod tests {
             state.galley(ui, 0, 0, "é 日本語 😀", font.clone());
             state.galley(ui, 0, 0, "é 日本語 😀", font.clone());
             assert_eq!((state.shapes, state.hits), (1, 1));
+            state.galley(ui,99,2,"é 日本語 😀",font.clone());
+            assert!(state.ingest(&page(1,1,0)));
+            state.galley(ui,0,0,"é 日本語 😀",font.clone());
+            assert_eq!((state.shapes,state.hits),(1,3));
             state.text_epoch += 1;
             state.galley(ui, 0, 0, "é 日本語 😀", font.clone());
             state.galley(ui, 0, 0, "é 日本語 😀", FontId::proportional(15.0));

@@ -223,6 +223,7 @@ Since 0.29.0 every builtin carries a structured contract — per-argument names/
   mixos_path      Resolve prefix/share/etc/var/run/cache or a logical path. Override > MIXOS > layout.mx > uid/XDG defaults. Optional tier: system or user. Relative paths cannot escape
   realpath        Canonicalise a path: resolve every symlink + `.`/`..` to the absolute real path (like `readlink -f` / realpath(3)). The path MUST exist. realpath(path) -> string | nil (nil ONLY when a component is missing; a permission/IO/symlink-loop/non-UTF-8 failure RAISES — v0.103.14). NORMALISATION ONLY, not a race-free authorization primitive: canonicalise-then-use is not atomic, so for an exec/open safety check, exec/open the RETURNED canonical path (which has no symlinks to re-traverse), not the original (v0.31.2)
   glob            List files matching a glob pattern (supports ** globstar in v0.2.1)
+  dir_entries     Bounded lstat directory listing. Options: hidden (true), max_entries (100000, inspected names including hidden), columns (ordered stat fields, tuple output instead of maps), count (false; names only, constant-space count). Sorted by name; rejects non-UTF-8 names and IO errors; never follows entry symlinks. Lab prototype.
   ls              List directory entries
   mkdir           Create directory: mkdir(path[, {parents}]). parents defaults to true (create_dir_all). {parents: false} creates only the final component and fails if the parent is missing — the form to use when the parent was placed deliberately and re-creating it would hide its removal (v0.42.0)
   flock           Take a process-held advisory file lock: flock(path[, {shared, wait, create}]) -> bool. Exclusive and non-blocking by default; contention returns false, genuine filesystem errors raise. wait is seconds (0 = do not wait). A shared lock opens an existing file read-only, so it needs no write access; an exclusive one opens read-write. A missing file is created (0644) unless create:false, which raises LOCK_FILE_MISSING (v0.117.0). Repeated acquisition of the same canonical path by this process is idempotent-true (v0.43.0)
@@ -425,6 +426,7 @@ Since 0.29.0 every builtin carries a structured contract — per-argument names/
 
 ## hof  — see [hof](hof.md)
 
+  sort_keys       Lab stable multi-key sort. Key function runs once per row and returns 1-16 scalar keys. Optional per-key directions are asc/desc; default ascending. Scalar type order is nil, bool, finite number, string. Existing sort_by behaviour is unchanged.
   sort_by         Return list sorted ascending by key function (stable) (v0.2.0)
   filter          Return new list of items where predicate returns truthy (v0.2.0)
   map             Return new list of transform(item) results (v0.2.0)
