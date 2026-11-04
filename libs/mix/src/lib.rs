@@ -3,13 +3,13 @@
 pub mod analyzer;
 pub mod ast;
 pub mod builtin_info;
-mod directory;
 pub mod builtins;
 pub mod builtins_hof;
 pub mod cancel;
 mod child_events;
 pub mod continuation;
 mod desktop_events;
+mod directory;
 pub mod error;
 pub mod evaluator;
 pub mod fd_hygiene;

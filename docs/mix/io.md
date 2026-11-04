@@ -1731,3 +1731,28 @@ mix help              the full categorized builtin reference
 - [modules](functions.md) — `source` / `include` for loading `.mix` code (vs `load_data` for inert data)
 - [capabilities](capabilities.md) — the FsRead/FsWrite gating an embedder can apply to these builtins
 - [builtins index](builtins.md) · [mix repo](https://github.com/markc/mixos)
+
+## Bounded bulk metadata listing (lab prototype)
+
+`dir_entries(path[, {hidden, max_entries, columns}])` makes one native
+directory/metadata pass. It reports `lstat` metadata without following entry
+symlinks, sorted by name. Default output is maps containing `name` plus the
+same fields as `stat`. With `columns`, output is positional rows in that
+explicit field order; unknown or repeated columns raise `OPTION_INVALID`.
+
+`hidden` defaults to true. `max_entries` defaults to 100000 and must be a
+whole number from 0 through 1000000. Hidden names count towards the inspection
+limit even when filtered out. One additional directory entry is read to
+detect overflow; no metadata is requested for it. Exceeding the limit raises
+`DIR_ENTRIES_LIMIT`, never a silent partial listing. Invalid options, directory
+read/metadata failures and non-UTF-8 names are reported rather than skipped.
+The result bounds row count; this is not a filesystem snapshot or a hard
+wall-clock deadline on kernel I/O. Interpreter interruption is checked between
+entries.
+
+```mix
+$rows = dir_entries("/srv/example", {
+  hidden: false, max_entries: 10000,
+  columns: ["name", "size", "mtime", "mtime_nsec", "is_dir", "is_symlink"]
+})
+```

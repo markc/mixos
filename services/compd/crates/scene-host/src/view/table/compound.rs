@@ -32,6 +32,7 @@ pub(super) fn paint(
         state.refused += 1;
         return;
     }
+    state.model_owner=format!("{}.{}",route.scene,route.node);
     state.ingest(&node.ports["view"]);
     state.text_epoch = text_epoch ^ u64::from(ui.ctx().pixels_per_point().to_bits());
     let id = Id::unique(("scene-table", &route.scene, &route.node));
