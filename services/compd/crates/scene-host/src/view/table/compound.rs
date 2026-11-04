@@ -51,6 +51,11 @@ pub(super) fn paint(
         .as_array()
         .map_or(1, Vec::len)
         .clamp(1, 16);
+    // Cancellation must work even when the edited row is outside show_rows.
+    if state.edit.is_some() && child.input(|i| i.key_pressed(Key::Escape)) {
+        state.edit = None;
+        background.request_focus();
+    }
     let editing = state.edit.is_some();
     let mut changed = false;
     let tab =
