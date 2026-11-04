@@ -91,6 +91,15 @@ impl Model {
                 self.bytes = size;
                 Ok(Vec::new())
             }
+            "reverse" => { self.order.reverse(); Ok(Vec::new()) }
+            "sort" => {
+                let column=delta["column"].whole().filter(|n|*n<16).ok_or("sort column")? as usize;
+                let ascending=delta["ascending"].as_bool().ok_or("sort direction")?;
+                let mut keys:Vec<_>=self.order.iter().map(|id|(Arc::clone(id),self.rows[id].cells.get(column).map(String::as_str).unwrap_or(""))).collect();
+                keys.sort_by(|a,b| if ascending {a.1.cmp(b.1)}else{b.1.cmp(a.1)});
+                self.order=keys.into_iter().map(|(id,_)|id).collect();
+                Ok(Vec::new())
+            }
             "order" => {
                 let ids = delta["ids"].as_array().ok_or("missing permutation")?;
                 if ids.len() != self.len() { return Err("permutation count".into()); }

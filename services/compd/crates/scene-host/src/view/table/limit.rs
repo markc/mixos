@@ -39,6 +39,8 @@ fn policy(r: &Value) -> Value {
                 json!({"kind":"splice","base_revision":revision,"index":0,"delete":[],"insert":[{"id":id,"cells":[id,"0","1700000000"],"edit":id}]})
             } else { json!({"kind":"splice","base_revision":revision,"index":0,"delete":[format!("added-{}",seq-1)],"insert":[]}) }
         },
+        "reverse"=>json!({"kind":"reverse","base_revision":revision}),
+        "sort"=>json!({"kind":"sort","base_revision":revision,"column":0,"ascending":seq%2==0}),
         "order"=>json!({"kind":"order","base_revision":revision,"ids":(0..n).map(|j|format!("row-{}",if seq%2==0 {n-1-j}else{j})).collect::<Vec<_>>()}),
         _=>panic!("bad request"),
     };
@@ -159,8 +161,8 @@ fn measure_incremental_limit() {
                     }
                 }
             }
-            for (kind,k,visible) in [("edit",1,true),("edit",16,true),("edit",128,true),("edit",256,true),("edit",1,false),("edit",128,false),("edit",256,false),("splice",1,true),("order",n,false)] {
-                let count=if kind=="order" {12} else {samples};
+            for (kind,k,visible) in [("edit",1,true),("edit",16,true),("edit",128,true),("edit",256,true),("edit",1,false),("edit",128,false),("edit",256,false),("splice",1,true),("reverse",n,false),("sort",n,false),("order",n,false)] {
+                let count=if kind=="order" || kind=="sort" {32} else {samples};
                 for controller_kind in if repeat%2==0 {["mix","rust"]}else{["rust","mix"]} {
                     let mut controller=Controller::new(controller_kind);
                     let baseline_pss_kib=pss(std::process::id());
@@ -182,7 +184,11 @@ fn measure_incremental_limit() {
                         assert_eq!(view,expected,"policy parity");
                         view["session"]=json!("limit");
                         let started=Instant::now();
-                        store.request(crate::command::SceneCommand::Patch,"",&json!({"scene":"limit","path":"model.view","value":view})).unwrap();
+                        if let Err(error)=store.request(crate::command::SceneCommand::Patch,"",&json!({"scene":"limit","path":"model.view","value":view})) {
+                            assert!(kind=="order" && n==100000,"unexpected refusal {error}");
+                            writeln!(file,"{}",json!({"record":"refusal","repeat":repeat,"n":n,"kind":kind,"controller":controller_kind,"reply_bytes":bytes,"error":error,"ipc_us":ipc})).unwrap();
+                            break;
+                        }
                         let apply_us=started.elapsed().as_secs_f64()*1e6;
                         let mut lock=tables.lock().unwrap(); let s=lock.get_mut("table").unwrap();
                         revision=s.revision;

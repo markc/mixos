@@ -22,6 +22,10 @@ while true
     else
       $delta.delete=["added-"..to_string($r.seq-1)]; $delta.insert=[]
     end
+  elif $r.kind=="reverse" then
+    $delta.kind="reverse"
+  elif $r.kind=="sort" then
+    $delta.kind="sort"; $delta.column=0; $delta.ascending=$r.seq%2==0
   elif $r.kind=="order" then
     $delta.kind="order"; $ids=[]
     for $j=0 to $r.total-1
