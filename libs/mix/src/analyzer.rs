@@ -2481,18 +2481,6 @@ fn check_recurring_silent_bugs(stmts: &[Stmt], ctx: &FileContext, a: &mut Analys
     check_literal_type_contradictions(stmts, ctx, a);
 }
 
-/// A2 lint half (TODO-mix 2026-09-24): a LITERAL argument whose type
-/// contradicts the contract's declared shape is provably wrong at
-/// authoring time — `mkdir({a: 1})`, `exists([1, 2])`, `len(3)` used to
-/// lint clean and then stringify a side effect onto the wrong target.
-/// The runtime gate (0.103.1) raises TYPE_MISMATCH on the same calls, so
-/// this rule makes the lint agree with the runtime instead of letting
-/// the script crash mid-run. Variables and expressions are left alone —
-/// only a literal PROVES the type. Nil is the documented omitted-arg
-/// sentinel, and a `nil` literal is tested against the declared shape
-/// like any other literal: it satisfies only a shape that admits nil
-/// (`Nil`, `Any`, or an `AnyOf` containing them), and against a
-/// concrete shape it is a contradiction and flagged.
 fn check_timers(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis) {
     walk_all_exprs(stmts, &mut |stmt, expr| {
         if let Expr::FunctionCall { name, args } = expr
@@ -2547,6 +2535,18 @@ fn check_timers(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis) {
     });
 }
 
+/// A2 lint half (TODO-mix 2026-09-24): a LITERAL argument whose type
+/// contradicts the contract's declared shape is provably wrong at
+/// authoring time — `mkdir({a: 1})`, `exists([1, 2])`, `len(3)` used to
+/// lint clean and then stringify a side effect onto the wrong target.
+/// The runtime gate (0.103.1) raises TYPE_MISMATCH on the same calls, so
+/// this rule makes the lint agree with the runtime instead of letting
+/// the script crash mid-run. Variables and expressions are left alone —
+/// only a literal PROVES the type. Nil is the documented omitted-arg
+/// sentinel, and a `nil` literal is tested against the declared shape
+/// like any other literal: it satisfies only a shape that admits nil
+/// (`Nil`, `Any`, or an `AnyOf` containing them), and against a
+/// concrete shape it is a contradiction and flagged.
 fn check_literal_type_contradictions(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis) {
     use crate::builtin_info::TypeShape;
     for stmt in stmts {
