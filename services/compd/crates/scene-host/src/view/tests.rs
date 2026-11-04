@@ -55,6 +55,31 @@ fn compound_view_accepts_numbers_from_the_real_binding_evaluator() {
 }
 
 #[test]
+fn compound_navigation_keeps_keyboard_ownership_for_inline_editing() {
+    let source = "---\nscene: 1\nname: table\ncitizen: c\n---\n```mix\nroot: {widget: \"column\", fill: true, children: [\"table\"]}\ntable: {widget: \"table\", grow: 1, rows: [], columns: [\"Name\"], active: true, editable: true, session: \"s\", view: {session: \"s\", generation: 1, revision: 1, total: 3, offset: 0, rows: [{id: \"a\", cells: [\"A\"], edit: \"a\"}, {id: \"b\", cells: [\"B\"], edit: \"b\"}, {id: \"c\", cells: [\"C\"], edit: \"c\"}]}}\n```\n";
+    let mut rt = runtime(source, (400, 300));
+    rt.queue_input(Input::Focused(true));
+    for _ in 0..3 {
+        rt.tick();
+    }
+    for (code, keysym) in [(110, 0xff50), (116, 0xff54)] {
+        rt.queue_input(key(code, keysym, None, true, false));
+        rt.tick();
+        rt.queue_input(key(code, keysym, None, false, false));
+        for _ in 0..3 {
+            rt.tick();
+        }
+    }
+    assert_eq!(rt.program.tables["table"].focus, Some(1));
+    let id = egui::Id::unique(("scene-table", "table", "table"));
+    assert!(rt.context().memory(|m| m.has_focus(id)));
+    rt.queue_input(Input::Modifiers(ui::input::Modifiers::CTRL));
+    rt.queue_input(key(26, 0x0065, Some("e"), true, false));
+    rt.tick();
+    assert_eq!(rt.program.tables["table"].edit.as_ref().unwrap().id, "b");
+}
+
+#[test]
 fn table_page_changes_reuse_geometry_but_size_and_appearance_invalidate_it() {
     let source = "---\nscene: 1\nname: table\ncitizen: test\n---\n```mix\nroot: {widget: \"column\", fill: true, children: [\"table\"]}\ntable: {widget: \"table\", grow: 1, rows: [], columns: [\"Name\"], total: 10000}\n```\n";
     let mut rt = runtime(source, (400, 300));

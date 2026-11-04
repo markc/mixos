@@ -44,6 +44,10 @@ pub(super) fn paint(
         background.request_focus();
     }
     state.old_active = active;
+    // This compound control owns navigation; egui must not move focus first.
+    child.memory_mut(|m| m.set_focus_lock_filter(id, egui::EventFilter {
+        tab: true, horizontal_arrows: true, vertical_arrows: true, escape: true,
+    }));
     let row_h = number(node, "row_height")
         .unwrap_or(24.0)
         .clamp(16.0, 200.0);
