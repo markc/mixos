@@ -149,6 +149,8 @@ pub struct UiRegistry {
     wgpu_ctx: Arc<WgpuGlContext>,
 
     items: Vec<UiItem>,
+    /// One outstanding host wake until a frame gets a chance to drain input.
+    queued_frame_requested: bool,
     index: HashMap<HandleId, usize>,
     /// Screen pages whose owner keeps the renderer warm between placements.
     retained_backings: HashSet<HandleId>,
@@ -223,6 +225,7 @@ impl UiRegistry {
             effective_modifiers: Modifiers::NONE,
             wgpu_ctx,
             items: Vec::new(),
+            queued_frame_requested: false,
             index: HashMap::new(),
             retained_backings: HashSet::new(),
             pointer_inside: None,
@@ -903,6 +906,7 @@ impl UiRegistry {
     /// the union of panes. Here they are only ticked (and acknowledged if dirty so
     /// they don't pin the redraw loop); [`manage_backings`] does their render.
     pub fn process_frame(&mut self, render_node: &str, gles: &mut GlesRenderer) {
+        self.queued_frame_requested = false;
         let wgpu = self.wgpu_ctx.clone();
         // Read ONCE for the whole pass; it cannot change mid-frame and the global
         // is behind an `RwLock`, so per-item reads were N acquisitions for one value.
@@ -1425,6 +1429,17 @@ impl UiRegistry {
     /// answer goes false again, so it cannot pin the loop.
     pub fn has_queued(&self) -> bool {
         self.items.iter().any(|i| i.has_queued())
+    }
+
+    /// Request one frame for queued work, then wait for that frame to drain it.
+    /// Rechecking an unchanged queue on every loop iteration must not ping the
+    /// same loop continuously while the backend waits for its frame deadline.
+    pub fn take_queued_wake(&mut self) -> bool {
+        if self.queued_frame_requested || !self.has_queued() {
+            return false;
+        }
+        self.queued_frame_requested = true;
+        true
     }
 
     /// Whether any instance holds input or messages (not merely a repaint

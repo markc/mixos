@@ -775,7 +775,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "active world differs from the spawn target: UI input delivered to the active world is never ticked (clicks need a wiggle again)"
             );
         }
-        if !parked && state.inner.surface().registry.as_ref().is_some_and(|registry| registry.has_queued()) {
+        if !parked && state.inner.surface_mut().registry.as_mut().is_some_and(|registry| registry.take_queued_wake()) {
             state.state.schedule_redraw(dispatcher::state::RedrawReason::Ui);
         }
         // Parked, no frame will tick the UIs: run what their input owes now,
