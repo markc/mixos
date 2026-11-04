@@ -600,12 +600,27 @@ async fn portal_version_get_does_not_wait_for_unrelated_get_all() {
     let gets = Arc::new(AtomicUsize::new(0));
     let enumerations = Arc::new(AtomicUsize::new(0));
     assert!(
-        !server.object_server().remove::<zbus::fdo::Properties, _>(PATH).await.unwrap()
+        !server
+            .object_server()
+            .remove::<zbus::fdo::Properties, _>(PATH)
+            .await
+            .unwrap()
     );
-    assert!(server.object_server().at(PATH, GatedProperties {
-        release: release.clone(), entered: entered.clone(), gets: gets.clone(),
-        enumerations: enumerations.clone(),
-    }).await.unwrap());
+    assert!(
+        server
+            .object_server()
+            .at(
+                PATH,
+                GatedProperties {
+                    release: release.clone(),
+                    entered: entered.clone(),
+                    gets: gets.clone(),
+                    enumerations: enumerations.clone(),
+                }
+            )
+            .await
+            .unwrap()
+    );
 
     // Prove over D-Bus that enumeration is pending but version itself responds.
     let probe = connection(&address).await;
@@ -613,15 +628,36 @@ async fn portal_version_get_does_not_wait_for_unrelated_get_all() {
     let enumeration_probe = probe.clone();
     let enumeration_owner = owner.clone();
     let enumeration = tokio::spawn(async move {
-        enumeration_probe.call_method(Some(enumeration_owner.as_str()), PATH,
-            Some("org.freedesktop.DBus.Properties"), "GetAll",
-            &("org.freedesktop.portal.FileChooser",)).await
+        enumeration_probe
+            .call_method(
+                Some(enumeration_owner.as_str()),
+                PATH,
+                Some("org.freedesktop.DBus.Properties"),
+                "GetAll",
+                &("org.freedesktop.portal.FileChooser",),
+            )
+            .await
     });
-    tokio::time::timeout(IO_BOUND, entered.notified()).await.unwrap();
-    let reply = tokio::time::timeout(IO_BOUND, probe.call_method(Some(owner.as_str()),
-        PATH, Some("org.freedesktop.DBus.Properties"), "Get",
-        &("org.freedesktop.portal.FileChooser", "version"))).await.unwrap().unwrap();
-    assert_eq!(u32::try_from(reply.body().deserialize::<OwnedValue>().unwrap()).unwrap(), 4);
+    tokio::time::timeout(IO_BOUND, entered.notified())
+        .await
+        .unwrap();
+    let reply = tokio::time::timeout(
+        IO_BOUND,
+        probe.call_method(
+            Some(owner.as_str()),
+            PATH,
+            Some("org.freedesktop.DBus.Properties"),
+            "Get",
+            &("org.freedesktop.portal.FileChooser", "version"),
+        ),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(
+        u32::try_from(reply.body().deserialize::<OwnedValue>().unwrap()).unwrap(),
+        4
+    );
     assert_eq!(gets.load(Ordering::SeqCst), 1);
     assert!(!enumeration.is_finished());
 
@@ -635,14 +671,34 @@ async fn portal_version_get_does_not_wait_for_unrelated_get_all() {
     let gate_still_closed = !*release.borrow() && !enumeration.is_finished();
     // Release/reap the probe even when an outcome assertion is about to fail.
     drop(release_guard);
-    let values = tokio::time::timeout(IO_BOUND, enumeration).await.unwrap().unwrap()
-        .unwrap().body().deserialize::<Options>().unwrap();
+    let values = tokio::time::timeout(IO_BOUND, enumeration)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap()
+        .body()
+        .deserialize::<Options>()
+        .unwrap();
     assert!(values.contains_key("unrelated"));
     assert!(gate_still_closed);
-    assert!(matches!(call, Ok(Some(_))), "no chooser method; client={result:?}");
+    assert!(
+        matches!(call, Ok(Some(_))),
+        "no chooser method; client={result:?}"
+    );
     let result = result.unwrap().unwrap();
-    assert_eq!(result.unwrap_err().to_string(), "portal request cancelled after transport failure");
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "portal request cancelled after transport failure"
+    );
     assert_eq!(closed.load(Ordering::SeqCst), 0);
-    assert_eq!(gets.load(Ordering::SeqCst), 2, "chooser must read version itself");
-    assert_eq!(enumerations.load(Ordering::SeqCst), 1, "chooser must not enumerate other properties");
+    assert_eq!(
+        gets.load(Ordering::SeqCst),
+        2,
+        "chooser must read version itself"
+    );
+    assert_eq!(
+        enumerations.load(Ordering::SeqCst),
+        1,
+        "chooser must not enumerate other properties"
+    );
 }
