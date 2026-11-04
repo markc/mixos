@@ -3,6 +3,7 @@
 pub mod analyzer;
 pub mod ast;
 pub mod builtin_info;
+mod directory;
 pub mod builtins;
 pub mod builtins_hof;
 pub mod cancel;

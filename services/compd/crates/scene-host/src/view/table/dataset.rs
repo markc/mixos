@@ -39,8 +39,12 @@ impl Dataset {
         if !meta.is_file() || meta.len() > BYTES {
             return Err("source exceeds file budget".into());
         }
-        let data: Self =
-            serde_json::from_reader(file.take(BYTES + 1)).map_err(|e| e.to_string())?;
+        // IoRead over an unbuffered File can issue a syscall per JSON byte.
+        // Read once under the byte cap, then parse from the bounded slice.
+        let mut bytes=Vec::with_capacity(meta.len() as usize);
+        file.take(BYTES+1).read_to_end(&mut bytes).map_err(|e|e.to_string())?;
+        if bytes.len() as u64>BYTES {return Err("source grew beyond file budget".into());}
+        let data: Self=serde_json::from_slice(&bytes).map_err(|e|e.to_string())?;
         if data.version != 1
             || data.session != session
             || data.generation != generation
