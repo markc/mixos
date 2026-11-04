@@ -6,6 +6,7 @@ use std::collections::BTreeSet;
 
 // Lab diagnostics: reuse the native bounded recorder for scene sub-stages.
 pub use ledger::frame_trace::{Span, span};
+pub use ledger::frame_trace::event;
 
 #[derive(Default)]
 struct Counts {

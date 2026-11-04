@@ -36,7 +36,9 @@ impl Dataset {
         total: usize,
     ) -> Result<Arc<Self>, String> {
         let path = source["path"].as_str().ok_or("source path missing")?;
-        if path.len()>4096 { return Err("source path exceeds budget".into()); }
+        if path.len() > 4096 {
+            return Err("source path exceeds budget".into());
+        }
         let file = File::open(path).map_err(|e| e.to_string())?;
         let meta = file.metadata().map_err(|e| e.to_string())?;
         if !meta.is_file() || meta.len() > BYTES {
@@ -60,9 +62,9 @@ impl Dataset {
             || data.token.is_empty()
             || data.rows.len() != total
             || total > ROWS
-            || data.base.len()>4096
-            || data.expanded.len()>ROWS
-            || data.expanded.keys().any(|s|s.len()>4096)
+            || data.base.len() > 4096
+            || data.expanded.len() > ROWS
+            || data.expanded.keys().any(|s| s.len() > 4096)
             || !Path::new(&data.base).is_absolute()
         {
             return Err("source identity/count mismatch".into());
@@ -73,7 +75,7 @@ impl Dataset {
             if id.is_empty()
                 || id.len() > 4096
                 || name.len() > 4096
-                || data.base.len()+id.len()+1>4096
+                || data.base.len() + id.len() + 1 > 4096
                 || !modified.is_finite()
                 || *depth > 16
                 || id.split('/').any(|p| p.is_empty() || p == "." || p == "..")

@@ -264,20 +264,31 @@ impl State {
             } else {
                 let started = std::time::Instant::now();
                 let loaded = if let Some(ctx) = context {
-                    let Some(ready) = self.importer.request(source, &self.session,
-                        &self.model_owner, generation, total as usize, ctx) else {
+                    let Some(ready) = self.importer.request(
+                        source,
+                        &self.session,
+                        &self.model_owner,
+                        generation,
+                        total as usize,
+                        ctx,
+                    ) else {
                         self.model_pending = true;
                         return false;
                     };
                     self.model_load_us = ready.micros;
                     self.model_job = ready.job;
-                    ui::frame_trace::event("table_model_adopt", || (ready.job,generation,total));
+                    ui::frame_trace::event("table_model_adopt", || (ready.job, generation, total));
                     ready.data
                 } else {
                     super::importer::delay_for_lab();
-                    let loaded=super::dataset::Dataset::load(source,&self.session,
-                        &self.model_owner,generation,total as usize);
-                    self.model_load_us=started.elapsed().as_micros() as u64;
+                    let loaded = super::dataset::Dataset::load(
+                        source,
+                        &self.session,
+                        &self.model_owner,
+                        generation,
+                        total as usize,
+                    );
+                    self.model_load_us = started.elapsed().as_micros() as u64;
                     loaded
                 };
                 self.model_pending = false;
