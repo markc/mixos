@@ -270,6 +270,9 @@ Since 0.29.0 every builtin carries a structured contract — per-argument names/
 
 ## system  — see [system](system.md)
 
+  timer_once      One-shot CLOCK_MONOTONIC timer owned by this evaluator generation; delivers timer.tick {id,tag,missed,due_at,now}. Candidates may prepare timers; retirement closes them
+  interval        Repeating absolute monotonic timer, minimum 0.1 seconds (TIMER_PERIOD); use the frame clock for animation. Late delivery coalesces to one timer.tick; missed counts skipped deadlines
+  cancel_timer    Cancel this generation's timer and discard pending delivery; true only if still live
   env             Get environment variable value ("" if unset); env(name, default) returns default when unset or empty
   time            Return current Unix timestamp as float
   monotonic       Return CLOCK_MONOTONIC seconds as a float — the kernel monotonic clock (the one compositor FRAME_TRACE start_us/end_us stamp), never stepped by NTP or wall-clock adjustment, so it never goes backwards and differences are true elapsed intervals. The epoch is unspecified (on Linux it counts from boot); use time() for calendar timestamps, this for measuring and for correlating with compositor traces

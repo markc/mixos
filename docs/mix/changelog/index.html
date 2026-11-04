@@ -209,35 +209,36 @@
                 <div class="panel-content">
                     <nav id="toc-nav">
                         <a href="#unreleased">Unreleased</a>
+                        <a href="#fixed" class="toc-h3">Fixed</a>
                         <a href="#added" class="toc-h3">Added</a>
                         <a href="#changed" class="toc-h3">Changed</a>
-                        <a href="#fixed" class="toc-h3">Fixed</a>
+                        <a href="#fixed-1" class="toc-h3">Fixed</a>
                         <a href="#01170--2026-10-21">0.117.0 — 2026-10-21</a>
                         <a href="#added-1" class="toc-h3">Added</a>
                         <a href="#changed-1" class="toc-h3">Changed</a>
-                        <a href="#fixed-1" class="toc-h3">Fixed</a>
+                        <a href="#fixed-2" class="toc-h3">Fixed</a>
                         <a href="#01160">0.116.0</a>
                         <a href="#added-2" class="toc-h3">Added</a>
                         <a href="#changed-2" class="toc-h3">Changed</a>
                         <a href="#01150">0.115.0</a>
                         <a href="#added-3" class="toc-h3">Added</a>
                         <a href="#changed-3" class="toc-h3">Changed</a>
-                        <a href="#fixed-2" class="toc-h3">Fixed</a>
+                        <a href="#fixed-3" class="toc-h3">Fixed</a>
                         <a href="#01140">0.114.0</a>
                         <a href="#changed-4" class="toc-h3">Changed</a>
                         <a href="#01131">0.113.1</a>
-                        <a href="#fixed-3" class="toc-h3">Fixed</a>
+                        <a href="#fixed-4" class="toc-h3">Fixed</a>
                         <a href="#01130">0.113.0</a>
                         <a href="#added-4" class="toc-h3">Added</a>
                         <a href="#01121">0.112.1</a>
                         <a href="#added-5" class="toc-h3">Added</a>
-                        <a href="#fixed-4" class="toc-h3">Fixed</a>
+                        <a href="#fixed-5" class="toc-h3">Fixed</a>
                         <a href="#01120">0.112.0</a>
                         <a href="#added-6" class="toc-h3">Added</a>
-                        <a href="#fixed-5" class="toc-h3">Fixed</a>
+                        <a href="#fixed-6" class="toc-h3">Fixed</a>
                         <a href="#01110">0.111.0</a>
                         <a href="#added-7" class="toc-h3">Added</a>
-                        <a href="#fixed-6" class="toc-h3">Fixed</a>
+                        <a href="#fixed-7" class="toc-h3">Fixed</a>
                         <a href="#01091">0.109.1</a>
                     </nav>
                 </div>
@@ -268,6 +269,14 @@
 <p>Mirrored from <a href="https://github.com/markc/mixos/blob/main/libs/mix/CHANGELOG.md"><code>libs/mix/CHANGELOG.md</code></a>, where releases update it. The component's page is <a href="/mix/">mix</a>. This page describes the current <code>main</code> branch of MixOS.</p>
 </blockquote>
 <h2 id="unreleased">Unreleased</h2>
+<h3 id="fixed">Fixed</h3>
+<ul>
+<li>Bare hyphenated commands in <code>send</code>, <code>emit</code> and implicit <code>address</code> sends
+read whole using the target-name rule, including keyword heads and
+leading-zero/multi-dot numeric segments. Expression-form <code>send</code> uses the
+same parser; check and lint agree with execution. Quoted and variable
+commands keep their meaning.</li>
+</ul>
 <h3 id="added">Added</h3>
 <ul>
 <li>
@@ -356,7 +365,7 @@ as <code>context</code> are not refused (lint still warns, MIX-W2313). A sweep o
 about 24,000 definitions across the hub, the MixOS tree and the installed
 scenes found no live script affected.</li>
 </ul>
-<h3 id="fixed">Fixed</h3>
+<h3 id="fixed-1">Fixed</h3>
 <ul>
 <li>
 <p>Finalise the unreleased UDP API: <code>udp_send_via</code> names handle sends;
@@ -535,7 +544,7 @@ install path's mix). It applies to <code>ssh_mix</code>, <code>ssh_mix_many</cod
 neither <code>mix_bin</code> nor <code>MIX_REMOTE_BIN</code> is set. For a host still on
 the old install path, pass <code>mix_bin</code> or set <code>MIX_REMOTE_BIN</code> to its mix.</li>
 </ul>
-<h3 id="fixed-1">Fixed</h3>
+<h3 id="fixed-2">Fixed</h3>
 <ul>
 <li>A <code>send</code> after a failed Bus connection retries within its timeout,
 re-reading <code>MIXOS_NODED_URL</code> and node configuration. Without <code>timeout=</code>,
@@ -614,7 +623,7 @@ frame, the framing of systemd's Varlink services and of hostd, for
 <code>tcp_on</code> line mode, keyed to the connection's delimiter. One trailing CR
 is still stripped from an LF line.</li>
 </ul>
-<h3 id="fixed-2">Fixed</h3>
+<h3 id="fixed-3">Fixed</h3>
 <ul>
 <li><code>max</code> now caps a complete line too. A line longer than <code>max</code> whose
 terminator arrived in the same read used to be delivered, so whether it
@@ -629,7 +638,7 @@ append-only JSONL store (<code>mix man stats</code>). The language and its built
 are unchanged.</li>
 </ul>
 <h2 id="01131">0.113.1</h2>
-<h3 id="fixed-3">Fixed</h3>
+<h3 id="fixed-4">Fixed</h3>
 <ul>
 <li>An <code>on</code> header reads a hyphenated name whole, like a <code>send</code> target:
 <code>on dopus-test.command.executed</code> handles that topic. Before, the header
@@ -658,7 +667,7 @@ stay written. The wait honours SIGTERM and Ctrl-C. On a <code>tcp_on</code> hand
 the timeout is the receipt deadline. Without the option <code>tcp_send</code> is
 unchanged.</li>
 </ul>
-<h3 id="fixed-4">Fixed</h3>
+<h3 id="fixed-5">Fixed</h3>
 <ul>
 <li>SIGTERM now ends a blocking <code>tcp_accept</code>, <code>tcp_recv</code>, <code>tcp_recv_line</code> or
 <code>ws_recv</code> at once, as it ends <code>sleep()</code>. On unix these numeric waits now
@@ -712,7 +721,7 @@ raw source text now accept <code>@</code> as an ordinary character where it used
 fail lexing: a bareword <code>source</code>/<code>include</code> path (<code>source ./foo@bar.mix</code>) and
 the command after <code>|</code> (<code>print(1) | cat @foo</code>).</li>
 </ul>
-<h3 id="fixed-5">Fixed</h3>
+<h3 id="fixed-6">Fixed</h3>
 <ul>
 <li>HTTP 1xx, 204 and 304 responses are bodyless on every method, not only
 HEAD. A conditional GET answered 304 with <code>Content-Encoding: gzip</code> no longer
@@ -728,7 +737,7 @@ the same answer as <code>realpath($0)</code>, fixed when the script starts (a la
 start. A <code>require</code>d module, even during its top-level init, gets the entry
 script's path.</li>
 </ul>
-<h3 id="fixed-6">Fixed</h3>
+<h3 id="fixed-7">Fixed</h3>
 <ul>
 <li>Lambdas created inside a served <code>on</code> handler keep the handler's local
 variables when they run later (they faulted with <code>undefined variable</code>). A

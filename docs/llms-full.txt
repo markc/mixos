@@ -1272,6 +1272,11 @@ Bodies are JSON objects.
 | `agent.session.list` | | live and recently ended sessions (one row shape, below); each live one lists its open questions in `permissions` (`request`, `title`, `options` without `allow_always`, `asked_at`, `expires_at`) |
 | `agent.session.read` | `{session, since?, limit?}` | the session and its logged events after `seq`: `{session, events, more, next}` |
 | `agent.permission.respond` | `{session, request, option}` | answers a permission request |
+| `agent.session.await` | `{session, service, op, deadline_s?, note?, suspend?, id?}` | `{await, state}`, after catch-up |
+| `agent.await.list` | `{session?}` | `{awaits: [...]}` |
+| `agent.await.cancel` | `{await}` | `{cancelled: bool}` |
+| `agent.op.get` | `{op}` | `{op, state, stop?, rc?, exit_code?, reason?}` |
+| `agent.op.cancel` | `{op}` | `{op, cancelled, state}`; closes the session and cancels its awaits |
 
 `content` is a string, or a list of ACP content blocks.
 
@@ -1286,7 +1291,7 @@ value even when the agent sends no update of its own.
 
 A session row, in `list` and as `session` in `read`, is the same for live
 and ended sessions: `{session, agent, cwd, parent, status, seq, turn,
-created_at, ended_at, title, open_permissions, permission_requests,
+created_at, ended_at, title, awaits, open_permissions, permission_requests,
 permissions, exit_code, signal, end_reason}`. `created_at` is an ISO time;
 `ended_at` is epoch seconds, nil while the session is live, as are the exit
 fields. `title` is the first line of the first prompt with usable text (at most 120
@@ -1298,10 +1303,11 @@ A read returns at most `limit` events (default and maximum 2000) and about
 event, read back or published, carries `at`: the time agentd logged it, in
 epoch seconds.
 
-The acting commands (`new`, `prompt`, `cancel`, `close`, `set`, `respond`)
+The acting commands (`new`, `prompt`, `cancel`, `close`, `set`, `respond`, `session.await`)
 take an optional `id` of 1-128 characters from `[A-Za-z0-9._:-]`. Ids are
 scoped to the session (to `new` for `agent.session.new`). A retry with the
-same id gets the first reply and never runs again, so a caller that lost a
+same id gets the first accepted (rc 0) reply and never runs again. Refusals
+can be retried, so a caller that lost a
 reply can safely send the command again. If agentd stopped after logging a
 command but before replying, the retry gets `COMMAND_INTERRUPTED`; the
 command is not run again.
@@ -1323,6 +1329,10 @@ Refusals carry `{error_code, message}`:
 | `agent.session.updated` | `{session, seq, kind, …}` |
 | `agent.session.ended` | `{session, exit_code, signal}` |
 | `agent.permission.requested` | `{session, request, title, options}` |
+| `agent.session.suspended` | `{session, awaits}` |
+| `agent.await.fired` | `{await, session, outcome}` |
+| `agent.await.delivered` | `{await, session, deadline}` |
+| `agent.await.failed` | `{await, session, reason}` |
 
 `kind` on `agent.session.updated` is one of:
 
@@ -1334,6 +1344,7 @@ Refusals carry `{error_code, message}`:
 - `stop`, with `stop` set to `end_turn`, `max_tokens`, `max_turn_requests`,
   `refusal` or `cancelled`;
 - `permission_answered`;
+- `suspended`, with the pending suspending await ids;
 - `error`;
 - `fs_read`, `fs_write` or `fs_refused` (see Files);
 - `terminal_created` or `terminal_exited` (see Terminals);
@@ -1347,8 +1358,8 @@ reads them back with `agent.session.read {since}`.
 ## Resuming
 
 `agent.session.resume {session}` brings back a session that ended, whether
-it was closed, its agent exited, or agentd restarted. Nothing resumes by
-itself. The session keeps its id, its `mcp-s-<session>-` Bus name and its
+it was closed, its agent exited, or agentd restarted. Waiting sessions can
+also be resumed or prompted by a human. The session keeps its id, its `mcp-s-<session>-` Bus name and its
 log, and `seq` carries on. agentd starts the agent again and asks it to
 reopen its own record of the session:
 
@@ -1368,10 +1379,83 @@ CLI answers `session/load` first and replays after, so after a load the
 session stays `starting` (a prompt is queued) until the replay has been
 quiet for a second, and replayed history is dropped until then.
 
-agentd does not restore the mode or model (set them again) or a permission
-question that was open when the session ended (prompt again). Advertised
+agentd restores the last accepted mode and config options before a prompt.
+It does not restore a permission question that was open when the session
+ended (prompt again). Advertised
 at `initialize`: Claude, OpenCode and Codex offer `session/resume`; Gemini
 offers `session/load`.
+
+## Awaiting operations
+
+Each session is also an operation, keyed by its session id. Every final end
+publishes `agent.op.done` once, with the same envelope as `agent.op.get`.
+Starting, ready, running and waiting sessions report `running`; unseen ids
+report `unknown`. Caller closure reports `cancelled`. An `end_turn` followed
+by a clean exit with no failed awaits reports `done`; other ends report
+`failed`. Outcomes last for `log_keep_days` (30 days by default).
+
+An instance with `close_on_done: true` closes after a turn with no pending
+await and an empty outbox. A suspending turn stays waiting. Interactive
+instances default to false. A parent awaits a child with
+`{service: "agent", op: <child session id>}`; local delivery uses the same
+operation adapter without a Bus round trip to agentd itself.
+
+Operation outcomes are final: explicitly resuming an ended conversation
+keeps its recorded operation outcome. Start a new session for a new job.
+
+`agent.session.await` watches `{service, op}` through `<service>.op.done`
+and `<service>.op.get {op}` (10 second query timeout). The session must
+be live or waiting. Every caller may register, including the session's own
+agent. `done`, `failed`, `cancelled` and `lost` fire the await; `unknown`
+stays pending. Catch-up runs before the registration reply, and again
+after reconnect.
+
+Incoming terminal publications authenticated by noded's reserved `.op.done`
+owner (`broker_service` matching the awaited service, absent or empty
+`broker_peer`, and actual `topic` matching `<service>.op.done`) deliver their outcome
+directly, even if `op.get` is unavailable or the publisher has exited.
+Agent session operations always use the internal canonical outcome, without
+a self Bus call. Remote mesh events, directed commands and legacy brokers without the authenticated
+header use the bounded 10 second durable `op.get` query. A failed legacy query
+leaves the await pending until another event, reconnect or deadline; an await
+without a deadline can remain pending until the broker is upgraded. There is
+no polling. Internal agent completion delivery remains canonical.
+
+With `suspend: true` (the default), a turn ending with a pending await and
+an empty outbox releases its agent process. The session becomes `waiting`,
+survives agentd restarts and does not count towards `max_live`.
+It publishes `agent.session.suspended`, never `agent.session.ended`.
+`mix agent list` and `read` show this status. Closing cancels the awaits;
+cancelling a waiting session's turn returns `cancelled: false`.
+
+An outcome enters SQLite's outbox before agentd resumes the session.
+Outcomes batch into one prompt, ahead of a human prompt; a busy session
+finishes its current turn first. At the live cap, outboxes wait in order
+of their firing time. Delivery means the outcome turn reached its stop,
+not merely that its prompt was sent. A failed reopen fails the await.
+An agent exiting during an outcome turn gets up to three redeliveries,
+explicitly framed as such, before the await fails.
+An ACP error on an outcome turn counts as a failed delivery attempt. The
+outbox stays idle until the next reopen or turn boundary; three failed
+attempts fail the await. Delivery and outbox removal commit atomically.
+
+Only waiting sessions reopen automatically. A session ending for good
+cancels its remaining pending awaits and fails its outbox entries with
+reason `session_ended`. Recovery preserves a running session with a pending
+suspending await or an outbox, recording `suspended` with reason
+`agentd_restart` instead of an ended event. Cancelling a pending await also
+removes any queued deadline notification in the same transaction.
+
+A deadline first queries the operation. If it is still non-terminal,
+the outbox delivers a deadline notification with the current state and
+the await stays pending for the real outcome. The agent's note is quoted
+in each outcome as data from the Bus, not instructions.
+If deadline-notification delivery exhausts its retry cap, agentd logs
+`deadline_notice_failed` with the await and outbox ids and drops only that
+notice. The await and any queued real outcome remain eligible for delivery.
+A failed human reopen of a waiting session ends its operation as `failed`
+with reason `reopen_failed`; reopening an already-ended conversation retains
+its original final operation outcome.
 
 ## Command line
 
@@ -1405,6 +1489,8 @@ it publishes the event or runs the command: `$MIXOS_AGENTD_DB`, else
 
 - ended sessions and their events can still be listed and read;
 - command receipts still answer retries;
+- waiting sessions survive without a process; undelivered outcomes resume
+  through the durable outbox;
 - the agents that were running are gone (agentd owned them), so their
   sessions are ended with a last `ended` event whose `reason` is
   `agentd_restart`.
@@ -2875,6 +2961,27 @@ persistence.
 
 The settings come from [settingsd](../settingsd/README.md) through the
 [settings](../settings/README.md) library.
+
+## Scene frame events
+
+`shell.scene.frame {scene}` arms one callback and replies `{scene, armed:true}`.
+Repeated arms before delivery coalesce. Unknown scenes return `NOT_FOUND`;
+when a scene declares a citizen, only that broker-attested citizen may arm it
+(`SCENE_FRAME_OWNER` otherwise). The loader's identity grants no frame authority.
+
+After the scene's output presents, the host sends `frame` through the same
+directed scene-event path as `on_click`, with body
+`{scene, seq, presented_at, interval}`. `seq` increases per scene; times are
+seconds, `presented_at` uses CLOCK_MONOTONIC (Mix `monotonic()`), and `interval`
+is the output refresh period. Handle this with `on frame`, patch the model
+with `shell.scene.patch`, then re-arm to animate the next frame. Event delivery
+does not wait for the handler; patches are serviced on a later loop pass.
+
+Hidden or unmapped scenes and outputs that are off or not presenting produce
+no callback. The arm remains pending until presentation, and unload drops it.
+An outstanding visible request schedules work; without one, the frame clock
+adds no redraws. Use this clock for scene animation rather than a behaviour
+timer.
 
 ## Toast scenes
 
@@ -7651,10 +7758,23 @@ all of those agents directly or through a small adapter.
    callers and leave self-approval one hop away.
 8. **Durable intent.** agentd writes every acting command and every mapped
    update to an append-only SQLite log before it runs or publishes it.
-   Command ids are scoped per session; a retry with the same id gets the
-   first reply and never runs again. Sessions outlive agentd in the log,
-   and `agent.session.resume` brings one back through the agent's own
-   `session/resume` or `session/load`.
+   Command ids are scoped per session; an accepted (rc 0) command keeps its
+   first reply and never runs again on a retry with the same id. Sessions
+   outlive agentd in the log, and `agent.session.resume` brings one back
+   through the agent's own `session/resume` or `session/load`.
+   `agent.session.await {session, service, op, deadline_s?, note?, suspend?, id?}`
+   registers a durable wait on a Bus operation. It is open to every caller,
+   including the session's own agent. `agent.await.list {session?}` exposes
+   these waits; `agent.await.cancel {await}` cancels a pending wait.
+   At the turn boundary a suspending wait releases the process and leaves
+   the session `waiting`, outside the live cap and surviving restart.
+   `agent.session.suspended` reports this edge; it is not a session end.
+   Outcomes enter a durable outbox before delivery, ahead of human prompts,
+   and `agent.await.fired`, `agent.await.delivered` (the outcome turn stopped)
+   and `agent.await.failed` expose their lifecycle. Deadlines notify without
+   consuming the wait. Close cancels the waits; prompt or resume can reopen
+   a waiting session. One generic adapter subscribes to `<service>.op.done`
+   and catches up with `<service>.op.get` at registration and reconnect.
 9. **Versions.** ACP v1 is required; v2 is to be negotiated when both sides
    offer it, behind the same Bus vocabulary.
 10. **Foreign code.** ACP agents are external programs at the edge, called
@@ -7940,6 +8060,86 @@ The release job uses a throwaway checkout at the gold commit and the already
 built snapshot, never a mutable development checkout. A gold predating the
 packager cannot be published through newer packaging code. Dry-run packaging
 and read-only planning precede the operator's first real publication.
+
+---
+
+<!-- page: https://mixos.dev/docs/decisions/2026-11-03-bus-operations/ (source: https://mixos.dev/docs/decisions/2026-11-03-bus-operations.md) -->
+
+# Decision — long-running work on the Bus is an operation
+
+Status: accepted 2026-11-03.
+
+## Why
+
+Agents spend most of their time waiting: on a build, a merge, a reply from
+a person. When a Bus request stays open for the whole wait, the caller has to
+stay alive and connected for it, a broker restart or a lost connection turns
+the outcome into a guess, and the caller cannot do anything else meanwhile.
+The Bus broker is deliberately not durable, so the fix is not to make the
+broker hold the wait. The fix is for the service doing the work to hand back
+an id at once and keep the outcome itself.
+
+## The decision
+
+A service command whose work can outlast a request (minutes rather than
+seconds) is an **operation**:
+
+- **Start.** The command answers at once with `{op}`, a string id unique to
+  that service. A caller may supply the id itself so that a retry after a
+  lost reply joins the same work instead of starting it twice.
+- **States.** An operation is in one of `queued`, `running`, `done`,
+  `failed`, `cancelled`, `lost` or `unknown`. `done`, `failed`, `cancelled`
+  and `lost` are terminal and final. `unknown` means the service has never
+  seen the id; it is not terminal, because a caller may register interest
+  in an id before it submits the work.
+- **`<svc>.op.done`.** When an operation reaches a terminal state, the
+  service publishes one `<svc>.op.done` topic, not retained, carrying
+  `{op, state, rc?, log?, reason?}` and any service-specific fields. Every
+  terminal state uses this one topic, `cancelled` included.
+  Publication is authenticated: noded reserves the suffix to the registered
+  owning service `<svc>`, while subscriptions remain public. Deliveries carry
+  the broker-owned `broker_service: <svc>` header; caller-supplied identities
+  and directed commands cannot manufacture it. Consumers may accept the
+  authenticated terminal envelope even if the publisher exits immediately.
+  Local operation consumers require an absent or empty `broker_peer`, the
+  matching `broker_service` and the actual matching `topic` header. An admitted
+  remote service of the same name is not authority for a local operation id;
+  remote or directed traffic is validated by querying the awaited target.
+  On older brokers without this header, consumers must validate event hints
+  with a bounded `op.get` query. If that query fails, the await stays pending
+  until another event, reconnect or deadline; broker upgrade removes this
+  legacy limitation without polling.
+- **`<svc>.op.get {op}`.** Answers `{op, state, ...}` with the same envelope,
+  at any time. A caller that was not listening when `op.done` went out uses
+  it to catch up.
+- **`<svc>.op.cancel {op}`.** Asks for the operation to stop and answers
+  `{op, cancelled, state}`, where `cancelled` says whether the request
+  changed anything.
+- **Retention.** The service keeps a terminal outcome for at least as long as
+  it documents (days, for a build queue), so `op.get` still answers after the
+  caller has been away.
+
+A caller watches `<svc>.op.done` and calls `<svc>.op.get` when it starts
+waiting and after every reconnect, because `op.done` is not retained and can
+be missed. The broker stores nothing for any of this.
+
+## Consequences
+
+- An agent session can register interest in an operation, end its turn and
+  give up its process; the agent supervisor resumes it with the outcome when
+  `op.done` arrives (see *ACP agent sessions on the Bus*). The supervisor
+  itself publishes `agent.op.done` when a session's job ends, so a parent
+  waits on a child the same way.
+- A caller that restarts, or a broker restart, no longer loses an outcome:
+  it is one `op.get` away.
+- Services adopt this as their long commands are touched. A service whose
+  only long command already has its own status query may answer
+  `op.get`/`op.cancel` as aliases over it.
+
+## Not doing
+
+- No durable queue, timers or delivery guarantees in the broker.
+- No generic topic-pattern waits: interest is always in one operation id.
 
 ---
 
@@ -14104,6 +14304,9 @@ Since 0.29.0 every builtin carries a structured contract — per-argument names/
 
 ## system  — see [system](system.md)
 
+  timer_once      One-shot CLOCK_MONOTONIC timer owned by this evaluator generation; delivers timer.tick {id,tag,missed,due_at,now}. Candidates may prepare timers; retirement closes them
+  interval        Repeating absolute monotonic timer, minimum 0.1 seconds (TIMER_PERIOD); use the frame clock for animation. Late delivery coalesces to one timer.tick; missed counts skipped deadlines
+  cancel_timer    Cancel this generation's timer and discard pending delivery; true only if still live
   env             Get environment variable value ("" if unset); env(name, default) returns default when unset or empty
   time            Return current Unix timestamp as float
   monotonic       Return CLOCK_MONOTONIC seconds as a float — the kernel monotonic clock (the one compositor FRAME_TRACE start_us/end_us stamp), never stepped by NTP or wall-clock adjustment, so it never goes backwards and differences are true elapsed intervals. The epoch is unspecified (on Linux it counts from boot); use time() for calendar timestamps, this for measuring and for correlating with compositor traces
@@ -14694,6 +14897,14 @@ hyphenated name whole. Hyphenated service names are the norm on the mesh, so
 the bare form has to work; quoting and `$var` remain exactly equivalent
 spellings.
 
+The **command slot** follows the same rule (mix 0.119.0, currently
+Unreleased): `send waiter-lab waiter-lab.list` and
+`emit waiter-lab waiter-lab.changed` read the command whole, as do implicit
+commands inside `address` blocks and expression-form `send`. Quoted commands
+and `$var` commands keep their existing meaning.
+Use a space before a negative positional argument: `send t a -1` still
+sends command `a` with argument `-1`; `send t a-1` now names command `a-1`.
+
 The accepted shape is deliberately narrow, and is the
 [shell classifier](shell-mode.md)'s tight-hyphen rule for command heads plus
 `.` for dotted names: an ASCII letter or `_` first, at least one `-`,
@@ -14727,8 +14938,9 @@ All-digit segments are fine bare, including malformed-looking ones: `svc-1`,
 multi-dot segment as a bad NUMBER and refused the line
 (`ambiguous leading-zero number '007'`, an error that never mentioned `send`);
 it now lexes such a segment as part of the word when it sits in the bare target
-right after `send`/`emit`/`address`, or in an `on` header (0.113.1). Everywhere else — `$x = 007`, a
-`$var-007` target, a hyphenated command — the refusal is unchanged.
+right after `send`/`emit`/`address`, in an `on` header (0.113.1), or in a
+command slot (0.119.0). Elsewhere — `$x = 007` or a `$var-007` target —
+the refusal is unchanged.
 
 Nothing that worked before changed meaning: the shape *requires* a hyphen, so
 every target that already resolved still takes the expression path, and a
@@ -36297,6 +36509,11 @@ Each name below is exposed as `mcp__mixos__<name>` in Claude Code.
 - `context_search`, `index_workspace`, `knowledge_digest`
 - `docs_feedback`, `journal_feedback`, `memory_feedback`, `journal_supersede`
 - `mix_execute`, `mcp_status`
+- `await_op {service, op, deadline_s?, note?}` registers a suspending await
+  for `MIXOS_AGENT_SESSION`. It returns the await id and tells the agent to
+  end its turn now: agentd resumes the session with the outcome; do not poll
+  or sleep. Outside an agentd session it refuses. A deadline sends a notice
+  but leaves the await pending for the eventual terminal outcome.
 
 `clipboard_get {selection?, mime?, primary?, offset?}` and
 `clipboard_set {text, selection?, mime?, primary?, sensitive?}` use the local
@@ -41940,6 +42157,14 @@ loads unchanged.
 > Mirrored from [`libs/mix/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/libs/mix/CHANGELOG.md), where releases update it. The component's page is [mix](README.md). This page describes the current `main` branch of MixOS.
 
 ## Unreleased
+
+### Fixed
+
+- Bare hyphenated commands in `send`, `emit` and implicit `address` sends
+  read whole using the target-name rule, including keyword heads and
+  leading-zero/multi-dot numeric segments. Expression-form `send` uses the
+  same parser; check and lint agree with execution. Quoted and variable
+  commands keep their meaning.
 
 ### Added
 
