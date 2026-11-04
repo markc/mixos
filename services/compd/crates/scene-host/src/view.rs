@@ -359,7 +359,10 @@ impl SceneUi {
             tables: Arc::clone(&content.native_tables),
             appearance_epoch: 0,
             layout_cache: None,
-            cache_layout: !matches!(std::env::var("COMPD_SCENE_LAYOUT_CACHE").as_deref(),Ok("0")),
+            cache_layout: !matches!(
+                std::env::var("COMPD_SCENE_LAYOUT_CACHE").as_deref(),
+                Ok("0")
+            ),
             layout_builds: 0,
             hover: tip::Hover::default(),
             images: crate::images::prepare(&content.tree, &content.lists),

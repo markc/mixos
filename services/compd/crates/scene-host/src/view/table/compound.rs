@@ -34,19 +34,26 @@ pub(super) fn paint(
     }
     state.model_owner = format!("{}.{}", route.scene, route.node);
     state.ingest(&node.ports["view"]);
-    if let Some(error)=state.model_error.clone() {
+    if let Some(error) = state.model_error.clone() {
         if !state.model_error_sent {
-            state.model_error_sent=true;
-            let mut value=state.event("model_error");
-            value["generation"]=node.ports["view"]["generation"].clone();
-            value["error"]=json!(error); deliver(out,&route,value);
+            state.model_error_sent = true;
+            let mut value = state.event("model_error");
+            value["generation"] = node.ports["view"]["generation"].clone();
+            value["error"] = json!(error);
+            deliver(out, &route, value);
         }
         return;
     }
     state.text_epoch = text_epoch ^ u64::from(ui.ctx().pixels_per_point().to_bits());
-    state.disable_text_cache=!node.ports.get("text_cache").and_then(Value::as_bool).unwrap_or(true);
-    let font_size=number(node,"font_size").unwrap_or(13.0).clamp(6.0,72.0);
-    let secondary_scale=number(node,"secondary_scale").unwrap_or(1.0).clamp(0.25,2.0);
+    state.disable_text_cache = !node
+        .ports
+        .get("text_cache")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let font_size = number(node, "font_size").unwrap_or(13.0).clamp(6.0, 72.0);
+    let secondary_scale = number(node, "secondary_scale")
+        .unwrap_or(1.0)
+        .clamp(0.25, 2.0);
     let id = Id::unique(("scene-table", &route.scene, &route.node));
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
     child.set_clip_rect(clip.intersect(ui.clip_rect()));

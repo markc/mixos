@@ -263,7 +263,7 @@ impl State {
                     Ok(model) => Some(model),
                     Err(error) => {
                         self.model_error = Some(error);
-                        self.model_error_sent=false;
+                        self.model_error_sent = false;
                         self.failed_revision = Some((generation, revision));
                         self.refused += 1;
                         return false;
@@ -309,7 +309,7 @@ impl State {
         self.dataset = dataset;
         self.source = view["source"].clone();
         self.model_error = None;
-        self.model_error_sent=false;
+        self.model_error_sent = false;
         self.failed_revision = None;
         self.generation = generation;
         self.revision = revision;
@@ -416,8 +416,8 @@ impl State {
     ) -> Arc<Galley> {
         self.clock += 1;
         if self.disable_text_cache {
-            self.shapes+=1;
-            return ui.fonts_mut(|f|f.layout_no_wrap(text.to_owned(),font,Color32::PLACEHOLDER));
+            self.shapes += 1;
+            return ui.fonts_mut(|f| f.layout_no_wrap(text.to_owned(), font, Color32::PLACEHOLDER));
         }
         if let Some(cached) = self.texts.get_mut(&(index, col))
             && cached.text == text
@@ -465,20 +465,28 @@ mod tests {
     use super::*;
     #[test]
     fn text_cache_reuses_layout_and_invalidates_font_text_epoch_and_budget() {
-        let ctx=egui::Context::default();let mut state=State::default();
-        let _=ctx.run_ui(Default::default(),|ui| {
-            let font=FontId::proportional(13.0);
-            state.galley(ui,0,0,"é 日本語 😀",font.clone());
-            state.galley(ui,0,0,"é 日本語 😀",font.clone());
-            assert_eq!((state.shapes,state.hits),(1,1));
-            state.text_epoch+=1;state.galley(ui,0,0,"é 日本語 😀",font.clone());
-            state.galley(ui,0,0,"é 日本語 😀",FontId::proportional(15.0));
-            state.galley(ui,0,0,"different",font.clone());assert_eq!(state.shapes,4);
-            state.disable_text_cache=true;state.galley(ui,0,0,"different",font.clone());
-            assert_eq!(state.shapes,5);state.disable_text_cache=false;
-            for i in 0..TEXT_BUDGET+20 {state.galley(ui,i,0,&format!("entry-{i}"),font.clone());}
-            assert!(state.texts.len()<=TEXT_BUDGET);
+        let ctx = egui::Context::default();
+        let mut state = State::default();
+        let mut output = ctx.run_ui(Default::default(), |ui| {
+            let font = FontId::proportional(13.0);
+            state.galley(ui, 0, 0, "é 日本語 😀", font.clone());
+            state.galley(ui, 0, 0, "é 日本語 😀", font.clone());
+            assert_eq!((state.shapes, state.hits), (1, 1));
+            state.text_epoch += 1;
+            state.galley(ui, 0, 0, "é 日本語 😀", font.clone());
+            state.galley(ui, 0, 0, "é 日本語 😀", FontId::proportional(15.0));
+            state.galley(ui, 0, 0, "different", font.clone());
+            assert_eq!(state.shapes, 4);
+            state.disable_text_cache = true;
+            state.galley(ui, 0, 0, "different", font.clone());
+            assert_eq!(state.shapes, 5);
+            state.disable_text_cache = false;
+            for i in 0..TEXT_BUDGET + 20 {
+                state.galley(ui, i, 0, &format!("entry-{i}"), font.clone());
+            }
+            assert!(state.texts.len() <= TEXT_BUDGET);
         });
+        output.textures_delta.clear();
     }
     #[test]
     fn native_model_pages_are_local_bounded_and_snapshot_identity_is_stable() {

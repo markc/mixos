@@ -932,3 +932,18 @@ mix builtins json     list every JSON / TOML / data builtin
 mix what NAME         one-line description of a single builtin (e.g. mix what jq)
 mix help              the full categorized builtin reference
 ```
+
+## Stable multi-key ordering (lab prototype)
+
+`sort_keys(rows, key_function[, directions])` evaluates the key function once
+per row. It must return a fixed-width list of 1–16 scalar keys. Each optional
+direction is `"asc"` or `"desc"`; an empty direction list means all ascending.
+Key width must match nonempty directions. Scalar type order is nil, boolean,
+finite number, string, with numeric/lexical comparison within each type.
+Ties preserve input order. Invalid directions, varying widths, containers and
+non-finite numeric keys raise. Existing `sort_by` keeps its previous behaviour.
+
+```mix
+$ordered = sort_keys($rows, fn($row) = [not $row.dir, $row.size, $row.name],
+  ["asc", "desc", "asc"])
+```

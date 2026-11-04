@@ -1747,7 +1747,9 @@ detect overflow; no metadata is requested for it. Exceeding the limit raises
 `DIR_ENTRIES_LIMIT`, never a silent partial listing. Invalid options, directory
 read/metadata failures and non-UTF-8 names are reported rather than skipped.
 The result bounds row count; this is not a filesystem snapshot or a hard
-wall-clock deadline on kernel I/O. `count: true` returns only the visible name\ncount, with constant storage and no metadata reads; it cannot be combined with\n`columns`. Interpreter interruption is checked between
+wall-clock deadline on kernel I/O. `count: true` returns only the visible name
+count, with constant storage and no metadata reads; it cannot be combined with
+`columns`. Interpreter interruption is checked between
 entries.
 
 ```mix
