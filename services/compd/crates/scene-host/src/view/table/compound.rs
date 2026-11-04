@@ -10,8 +10,14 @@ use super::{DragRow, deliver, modifiers};
 use crate::view::{Route, SceneMessage, flag, number};
 
 pub(super) fn paint(
-    ui: &mut Ui, rect: Rect, clip: Rect, node: &scene::Node,
-    route: Arc<Route>, out: &mut Vec<SceneMessage>, state: &mut State, text_epoch: u64,
+    ui: &mut Ui,
+    rect: Rect,
+    clip: Rect,
+    node: &scene::Node,
+    route: Arc<Route>,
+    out: &mut Vec<SceneMessage>,
+    state: &mut State,
+    text_epoch: u64,
 ) {
     state.ingest(&node.ports["view"]);
     state.text_epoch = text_epoch ^ u64::from(ui.ctx().pixels_per_point().to_bits());
@@ -20,59 +26,95 @@ pub(super) fn paint(
     child.set_clip_rect(clip.intersect(ui.clip_rect()));
     child.spacing_mut().item_spacing.y = 0.0;
     let background = child.interact(rect, id, Sense::click());
-    let active = flag(node,"active");
-    if active && !state.old_active { background.request_focus(); }
+    let active = flag(node, "active");
+    if active && !state.old_active {
+        background.request_focus();
+    }
     state.old_active = active;
-    let row_h = number(node,"row_height").unwrap_or(24.0).clamp(16.0,200.0);
-    let columns = node.ports["columns"].as_array().map_or(1,Vec::len).clamp(1,16);
+    let row_h = number(node, "row_height")
+        .unwrap_or(24.0)
+        .clamp(16.0, 200.0);
+    let columns = node.ports["columns"]
+        .as_array()
+        .map_or(1, Vec::len)
+        .clamp(1, 16);
     let editing = state.edit.is_some();
     let mut changed = false;
-    let tab = child.memory(|m| m.had_focus_last_frame(id)) && child.input(|i| i.key_pressed(Key::Tab));
+    let tab =
+        child.memory(|m| m.had_focus_last_frame(id)) && child.input(|i| i.key_pressed(Key::Tab));
     if !editing && (background.has_focus() || tab) {
         for event in child.input(|i| i.events.clone()) {
-            if let egui::Event::Key {key, pressed:true, modifiers:mods, ..} = event {
+            if let egui::Event::Key {
+                key,
+                pressed: true,
+                modifiers: mods,
+                ..
+            } = event
+            {
                 let count = state.total;
                 let focus = state.focus.unwrap_or(0);
                 let target = match key {
-                    Key::ArrowDown => Some((focus+1).min(count.saturating_sub(1))),
+                    Key::ArrowDown => Some((focus + 1).min(count.saturating_sub(1))),
                     Key::ArrowUp => Some(focus.saturating_sub(1)),
-                    Key::Home => Some(0), Key::End => Some(count.saturating_sub(1)),
+                    Key::Home => Some(0),
+                    Key::End => Some(count.saturating_sub(1)),
                     _ => None,
                 };
                 if let Some(index) = target {
-                    child.input_mut(|i| i.consume_key(mods,key));
-                    state.pick(index,mods.ctrl,mods.shift); state.scroll_to=Some(index); changed=true;
+                    child.input_mut(|i| i.consume_key(mods, key));
+                    state.pick(index, mods.ctrl, mods.shift);
+                    state.scroll_to = Some(index);
+                    changed = true;
                 } else if key == Key::A && mods.ctrl {
-                    child.input_mut(|i| i.consume_key(mods,key));
-                    state.selection.range(0,count); changed=true;
+                    child.input_mut(|i| i.consume_key(mods, key));
+                    state.selection.range(0, count);
+                    changed = true;
                 } else if key == Key::Space {
-                    child.input_mut(|i| i.consume_key(mods,key));
-                    state.pick(focus,true,false); changed=true;
-                } else if key == Key::E && mods.ctrl && flag(node,"editable") {
-                    child.input_mut(|i| i.consume_key(mods,key));
+                    child.input_mut(|i| i.consume_key(mods, key));
+                    state.pick(focus, true, false);
+                    changed = true;
+                } else if key == Key::E && mods.ctrl && flag(node, "editable") {
+                    child.input_mut(|i| i.consume_key(mods, key));
                     if let Some(row) = state.rows.get(&focus) {
-                        state.edit=Some(Edit {index:focus,id:row.id.clone(),text:row.edit.clone(),pending:None,focus:true});
+                        state.edit = Some(Edit {
+                            index: focus,
+                            id: row.id.clone(),
+                            text: row.edit.clone(),
+                            pending: None,
+                            focus: true,
+                        });
                         child.ctx().request_repaint();
                     }
-                } else if matches!(key,Key::Enter|Key::Tab|Key::ArrowLeft|Key::ArrowRight) {
-                    child.input_mut(|i| i.consume_key(mods,key));
-                    if key == Key::Tab && let Some(next) = node.ports.get("next_focus").and_then(Value::as_str) {
-                        child.memory_mut(|m| m.request_focus(Id::unique(("scene-table", &route.scene, next))));
+                } else if matches!(
+                    key,
+                    Key::Enter | Key::Tab | Key::ArrowLeft | Key::ArrowRight
+                ) {
+                    child.input_mut(|i| i.consume_key(mods, key));
+                    if key == Key::Tab
+                        && let Some(next) = node.ports.get("next_focus").and_then(Value::as_str)
+                    {
+                        child.memory_mut(|m| {
+                            m.request_focus(Id::unique(("scene-table", &route.scene, next)))
+                        });
                     }
                     let mut value = state.event("key");
-                    value["key"]=json!(format!("{key:?}")); value["modifiers"]=modifiers(mods);
-                    deliver(out,&route,value);
+                    value["key"] = json!(format!("{key:?}"));
+                    value["modifiers"] = modifiers(mods);
+                    deliver(out, &route, value);
                 }
             }
         }
     }
-    let mut scroll = egui::ScrollArea::vertical().id_salt(id.with("scroll")).auto_shrink([false,false]);
+    let mut scroll = egui::ScrollArea::vertical()
+        .id_salt(id.with("scroll"))
+        .auto_shrink([false, false]);
     if let Some(focus) = state.scroll_to.take() {
         if focus < state.first || focus >= state.end {
-            scroll=scroll.vertical_scroll_offset((focus as f32*row_h-rect.height()/2.0).max(0.0));
+            scroll = scroll
+                .vertical_scroll_offset((focus as f32 * row_h - rect.height() / 2.0).max(0.0));
         }
     }
-    let mut row_drop=false;
+    let mut row_drop = false;
     let shown=scroll.show_rows(&mut child,row_h,state.total,|ui,range| {
         state.first=range.start; state.end=range.end;
         let missing=range.clone().find(|i| !state.rows.contains_key(i));
@@ -160,12 +202,17 @@ pub(super) fn paint(
             }
         }
     });
-    state.scroll_y=shown.state.offset().y;
-    if changed {let value=state.event("selection"); deliver(out,&route,value);}
-    if !row_drop && let Some(payload)=background.dnd_release_payload::<DragRow>() {
-        let mut value=state.event("drop");
-        value["source_node"]=json!(payload.node); value["source_generation"]=json!(payload.generation);
-        value["item"]=payload.item.clone(); value["target"]=Value::Null;
-        deliver(out,&route,value);
+    state.scroll_y = shown.state.offset().y;
+    if changed {
+        let value = state.event("selection");
+        deliver(out, &route, value);
+    }
+    if !row_drop && let Some(payload) = background.dnd_release_payload::<DragRow>() {
+        let mut value = state.event("drop");
+        value["source_node"] = json!(payload.node);
+        value["source_generation"] = json!(payload.generation);
+        value["item"] = payload.item.clone();
+        value["target"] = Value::Null;
+        deliver(out, &route, value);
     }
 }

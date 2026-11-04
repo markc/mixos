@@ -231,7 +231,16 @@ mod tests {
         let mut events = Vec::new();
         for _ in 0..2 {
             let mut output = ctx.run_ui(Default::default(), |ui| {
-                paint(ui, rect, rect, &node(), route(), &mut events, &mut State::default(), 0)
+                paint(
+                    ui,
+                    rect,
+                    rect,
+                    &node(),
+                    route(),
+                    &mut events,
+                    &mut State::default(),
+                    0,
+                )
             });
             output.textures_delta.clear();
         }
@@ -253,7 +262,16 @@ mod tests {
         let rect = Rect::from_min_size(pos2(0.0, 0.0), vec2(400.0, 300.0));
         let mut events = Vec::new();
         let mut output = ctx.run_ui(Default::default(), |ui| {
-            paint(ui, rect, rect, &node(), route(), &mut events, &mut State::default(), 0)
+            paint(
+                ui,
+                rect,
+                rect,
+                &node(),
+                route(),
+                &mut events,
+                &mut State::default(),
+                0,
+            )
         });
         output.textures_delta.clear();
         events.clear();
@@ -271,7 +289,16 @@ mod tests {
             ..Default::default()
         };
         let mut output = ctx.run_ui(input, |ui| {
-            paint(ui, rect, rect, &node(), route(), &mut events, &mut State::default(), 0)
+            paint(
+                ui,
+                rect,
+                rect,
+                &node(),
+                route(),
+                &mut events,
+                &mut State::default(),
+                0,
+            )
         });
         output.textures_delta.clear();
         let value = events

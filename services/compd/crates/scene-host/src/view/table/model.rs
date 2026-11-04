@@ -29,8 +29,12 @@ impl Selection {
                 if index < a || index >= b {
                     out.push((a, b));
                 } else {
-                    if a < index { out.push((a, index)); }
-                    if index + 1 < b { out.push((index + 1, b)); }
+                    if a < index {
+                        out.push((a, index));
+                    }
+                    if index + 1 < b {
+                        out.push((index + 1, b));
+                    }
                 }
             }
             self.0 = out;
@@ -39,15 +43,21 @@ impl Selection {
             self.0.sort_unstable();
             let mut merged: Vec<(usize, usize)> = Vec::new();
             for &(a, b) in &self.0 {
-                if let Some(last) = merged.last_mut() && a <= last.1 {
+                if let Some(last) = merged.last_mut()
+                    && a <= last.1
+                {
                     last.1 = last.1.max(b);
-                } else { merged.push((a, b)); }
+                } else {
+                    merged.push((a, b));
+                }
             }
             self.0 = merged;
         }
     }
 
-    pub fn count(&self) -> usize { self.0.iter().map(|(a, b)| b - a).sum() }
+    pub fn count(&self) -> usize {
+        self.0.iter().map(|(a, b)| b - a).sum()
+    }
 }
 
 #[derive(Debug)]
@@ -107,50 +117,95 @@ impl State {
     /// identity; changing a row's identity in place requires a new generation.
     pub fn ingest(&mut self, view: &Value) -> bool {
         let (Some(generation), Some(revision), Some(total), Some(offset), Some(rows)) = (
-            view["generation"].as_u64(), view["revision"].as_u64(),
-            view["total"].as_u64(), view["offset"].as_u64(), view["rows"].as_array(),
-        ) else { self.refused += 1; return false; };
-        if generation < self.generation || (generation == self.generation && revision < self.revision) {
-            self.stale += 1; return false;
+            view["generation"].as_u64(),
+            view["revision"].as_u64(),
+            view["total"].as_u64(),
+            view["offset"].as_u64(),
+            view["rows"].as_array(),
+        ) else {
+            self.refused += 1;
+            return false;
+        };
+        if generation < self.generation
+            || (generation == self.generation && revision < self.revision)
+        {
+            self.stale += 1;
+            return false;
         }
-        if generation == self.generation && revision == self.revision { return false; }
-        if generation == 0 || total > 1_000_000 || offset > total || rows.len() > 256
-            || offset + rows.len() as u64 > total {
-            self.refused += 1; return false;
+        if generation == self.generation && revision == self.revision {
+            return false;
+        }
+        if generation == 0
+            || total > 1_000_000
+            || offset > total
+            || rows.len() > 256
+            || offset + rows.len() as u64 > total
+        {
+            self.refused += 1;
+            return false;
         }
         let mut next = Vec::new();
         let mut ids = std::collections::BTreeSet::new();
         for (i, raw) in rows.iter().enumerate() {
             let (Some(id), Some(cells)) = (raw["id"].as_str(), raw["cells"].as_array()) else {
-                self.refused += 1; return false;
+                self.refused += 1;
+                return false;
             };
             let index = offset as usize + i;
-            if id.len() > 4096 || !ids.insert(id) || cells.len() > 16
-                || cells.iter().any(|v| v.as_str().is_none_or(|s| s.len() > 4096))
-                || (generation == self.generation && self.rows.get(&index).is_some_and(|old| old.id != id)) {
-                self.refused += 1; return false;
+            if id.len() > 4096
+                || !ids.insert(id)
+                || cells.len() > 16
+                || cells
+                    .iter()
+                    .any(|v| v.as_str().is_none_or(|s| s.len() > 4096))
+                || (generation == self.generation
+                    && self.rows.get(&index).is_some_and(|old| old.id != id))
+            {
+                self.refused += 1;
+                return false;
             }
-            next.push((index, Arc::new(Row {
-                id: id.to_owned(), cells: cells.iter().map(|v| v.as_str().unwrap().to_owned()).collect(),
-                edit: raw["edit"].as_str().unwrap_or("").to_owned(), raw: raw.clone(),
-            })));
+            next.push((
+                index,
+                Arc::new(Row {
+                    id: id.to_owned(),
+                    cells: cells
+                        .iter()
+                        .map(|v| v.as_str().unwrap().to_owned())
+                        .collect(),
+                    edit: raw["edit"].as_str().unwrap_or("").to_owned(),
+                    raw: raw.clone(),
+                }),
+            ));
         }
         let epoch = view["selection_epoch"].as_u64().unwrap_or(0);
         let reset = generation != self.generation;
         if reset {
-            self.rows.clear(); self.texts.clear(); self.selection = Selection::default();
-            self.focus = None; self.anchor = None; self.edit = None; self.request = None;
+            self.rows.clear();
+            self.texts.clear();
+            self.selection = Selection::default();
+            self.focus = None;
+            self.anchor = None;
+            self.edit = None;
+            self.request = None;
             self.selection_epoch = 0;
-            self.first=0; self.end=0; self.scroll_y=0.0; self.scroll_to=Some(0);
+            self.first = 0;
+            self.end = 0;
+            self.scroll_y = 0.0;
+            self.scroll_to = Some(0);
         }
         if reset || epoch > self.selection_epoch {
             self.selection_epoch = epoch;
-            self.focus = view["focus"].as_u64().map(|v| v as usize).filter(|&v| v < total as usize);
+            self.focus = view["focus"]
+                .as_u64()
+                .map(|v| v as usize)
+                .filter(|&v| v < total as usize);
             self.selection = Selection::default();
             if let Some(ranges) = view["selection"]["ranges"].as_array() {
                 for r in ranges {
                     if let (Some(a), Some(b)) = (r[0].as_u64(), r[1].as_u64())
-                        && a < b && b <= total {
+                        && a < b
+                        && b <= total
+                    {
                         self.selection.0.push((a as usize, b as usize));
                     }
                 }
@@ -158,31 +213,49 @@ impl State {
             self.anchor = self.focus;
             self.scroll_to = self.focus;
         }
-        self.generation = generation; self.revision = revision; self.total = total as usize;
+        self.generation = generation;
+        self.revision = revision;
+        self.total = total as usize;
         self.updates += 1;
-        for (index, row) in next { self.rows.insert(index, row); }
+        for (index, row) in next {
+            self.rows.insert(index, row);
+        }
         let pivot = self.request.unwrap_or(self.first);
         self.request = None;
         while self.rows.len() > ROW_BUDGET {
-            let index = *self.rows.keys().max_by_key(|&&i| i.abs_diff(pivot)).unwrap();
+            let index = *self
+                .rows
+                .keys()
+                .max_by_key(|&&i| i.abs_diff(pivot))
+                .unwrap();
             self.rows.remove(&index);
             self.texts.retain(|&(i, _), _| i != index);
         }
-        if self.edit.as_ref().and_then(|e| e.pending).is_some_and(|seq| view["ack"].as_u64().unwrap_or(0) >= seq) {
+        if self
+            .edit
+            .as_ref()
+            .and_then(|e| e.pending)
+            .is_some_and(|seq| view["ack"].as_u64().unwrap_or(0) >= seq)
+        {
             self.edit = None;
         }
         true
     }
 
     pub fn pick(&mut self, index: usize, ctrl: bool, shift: bool) {
-        if index >= self.total { return; }
+        if index >= self.total {
+            return;
+        }
         if shift {
             let anchor = self.anchor.unwrap_or(index);
-            self.selection.range(anchor.min(index), anchor.max(index) + 1);
+            self.selection
+                .range(anchor.min(index), anchor.max(index) + 1);
         } else if ctrl {
-            self.selection.toggle(index); self.anchor = Some(index);
+            self.selection.toggle(index);
+            self.anchor = Some(index);
         } else {
-            self.selection.range(index, index + 1); self.anchor = Some(index);
+            self.selection.range(index, index + 1);
+            self.anchor = Some(index);
         }
         self.focus = Some(index);
     }
@@ -193,15 +266,37 @@ impl State {
             "focus":self.focus,"selection":{"ranges":self.selection.0}})
     }
 
-    pub fn galley(&mut self, ui: &Ui, index: usize, col: usize, text: &str, font: FontId) -> Arc<Galley> {
+    pub fn galley(
+        &mut self,
+        ui: &Ui,
+        index: usize,
+        col: usize,
+        text: &str,
+        font: FontId,
+    ) -> Arc<Galley> {
         self.clock += 1;
         if let Some(cached) = self.texts.get_mut(&(index, col))
-            && cached.text == text && cached.font == font && cached.epoch == self.text_epoch {
-            cached.used = self.clock; self.hits += 1; return Arc::clone(&cached.galley);
+            && cached.text == text
+            && cached.font == font
+            && cached.epoch == self.text_epoch
+        {
+            cached.used = self.clock;
+            self.hits += 1;
+            return Arc::clone(&cached.galley);
         }
-        let galley = ui.fonts_mut(|f| f.layout_no_wrap(text.to_owned(), font.clone(), Color32::PLACEHOLDER));
+        let galley =
+            ui.fonts_mut(|f| f.layout_no_wrap(text.to_owned(), font.clone(), Color32::PLACEHOLDER));
         self.shapes += 1;
-        self.texts.insert((index, col), Text { text:text.to_owned(), font, epoch:self.text_epoch, used:self.clock, galley:Arc::clone(&galley) });
+        self.texts.insert(
+            (index, col),
+            Text {
+                text: text.to_owned(),
+                font,
+                epoch: self.text_epoch,
+                used: self.clock,
+                galley: Arc::clone(&galley),
+            },
+        );
         if self.texts.len() > TEXT_BUDGET {
             let key = *self.texts.iter().min_by_key(|(_, t)| t.used).unwrap().0;
             self.texts.remove(&key);
@@ -230,23 +325,38 @@ mod tests {
     }
     #[test]
     fn selection_ranges_toggle_split_merge_and_select_all_without_row_materialisation() {
-        let mut s = Selection::default(); s.range(0, 1_000_000); s.toggle(400);
-        assert_eq!(s.0, [(0,400),(401,1_000_000)]);
-        s.toggle(400); assert_eq!(s.0, [(0,1_000_000)]); assert_eq!(s.count(),1_000_000);
+        let mut s = Selection::default();
+        s.range(0, 1_000_000);
+        s.toggle(400);
+        assert_eq!(s.0, [(0, 400), (401, 1_000_000)]);
+        s.toggle(400);
+        assert_eq!(s.0, [(0, 1_000_000)]);
+        assert_eq!(s.count(), 1_000_000);
     }
     #[test]
     fn stale_transactions_cannot_replace_generation_or_row_identity() {
-        let mut s = State::default(); assert!(s.ingest(&page(2,1,0)));
-        assert!(!s.ingest(&page(1,20,0))); assert_eq!(s.generation,2);
-        let mut bad = page(2,2,0); bad["rows"][0]["id"] = json!("different");
-        assert!(!s.ingest(&bad)); assert_eq!(s.revision,1);
+        let mut s = State::default();
+        assert!(s.ingest(&page(2, 1, 0)));
+        assert!(!s.ingest(&page(1, 20, 0)));
+        assert_eq!(s.generation, 2);
+        let mut bad = page(2, 2, 0);
+        bad["rows"][0]["id"] = json!("different");
+        assert!(!s.ingest(&bad));
+        assert_eq!(s.revision, 1);
     }
     #[test]
     fn native_selection_survives_page_updates_and_cache_is_bounded() {
-        let mut s = State::default(); s.ingest(&page(1,1,0)); s.pick(5,false,false);
-        for n in 1..50 { s.request=Some(n*128); s.ingest(&page(1,n as u64+1,n*128)); }
-        assert!(s.rows.len() <= ROW_BUDGET); assert!(s.selection.contains(5));
-        assert_eq!(s.focus,Some(5));
-        s.ingest(&page(2,1,0)); assert_eq!(s.selection.count(),0);
+        let mut s = State::default();
+        s.ingest(&page(1, 1, 0));
+        s.pick(5, false, false);
+        for n in 1..50 {
+            s.request = Some(n * 128);
+            s.ingest(&page(1, n as u64 + 1, n * 128));
+        }
+        assert!(s.rows.len() <= ROW_BUDGET);
+        assert!(s.selection.contains(5));
+        assert_eq!(s.focus, Some(5));
+        s.ingest(&page(2, 1, 0));
+        assert_eq!(s.selection.count(), 0);
     }
 }

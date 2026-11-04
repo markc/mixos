@@ -287,10 +287,19 @@ fn geometry_key(content: &Content) -> u64 {
     let mut hash = std::collections::hash_map::DefaultHasher::new();
     content.frame.as_ref().map(|f| &f.title).hash(&mut hash);
     for (id, node) in &content.tree.nodes {
-        id.hash(&mut hash); node.family.hash(&mut hash);
+        id.hash(&mut hash);
+        node.family.hash(&mut hash);
         for (port, value) in &node.ports {
-            if node.family == "table" && matches!(port.as_str(), "view"|"rows"|"total"|"offset"|"focus"|"active") {continue;}
-            port.hash(&mut hash); value.to_string().hash(&mut hash);
+            if node.family == "table"
+                && matches!(
+                    port.as_str(),
+                    "view" | "rows" | "total" | "offset" | "focus" | "active"
+                )
+            {
+                continue;
+            }
+            port.hash(&mut hash);
+            value.to_string().hash(&mut hash);
         }
     }
     hash.finish()
@@ -384,7 +393,9 @@ impl SceneUi {
 
     pub(crate) fn table_states(&self) -> Value {
         let mut out = serde_json::Map::new();
-        for (id, state) in &self.tables { out.insert(id.clone(), state.snapshot()); }
+        for (id, state) in &self.tables {
+            out.insert(id.clone(), state.snapshot());
+        }
         json!({"tables":out,"layout_builds":self.layout_builds})
     }
 
@@ -493,7 +504,8 @@ impl ui::UiProgram for SceneUi {
         }
         // Escape: a dialog hides (Quoin's chrome::dialog), an edge reports it.
         if !self.tables.values().any(|state| state.edit.is_some())
-            && ctx.input(|input| input.key_pressed(egui::Key::Escape)) {
+            && ctx.input(|input| input.key_pressed(egui::Key::Escape))
+        {
             emit.push(if self.content.dialog {
                 SceneMessage::Close
             } else {
@@ -518,16 +530,21 @@ impl ui::UiProgram for SceneUi {
             })
         };
         let size = ui.max_rect().size();
-        let key = (self.geometry, size.x.to_bits(), size.y.to_bits(), ctx.pixels_per_point().to_bits());
+        let key = (
+            self.geometry,
+            size.x.to_bits(),
+            size.y.to_bits(),
+            ctx.pixels_per_point().to_bits(),
+        );
         if self.layout_cache != Some(key) || !self.content.lists.is_empty() {
             let layout_span = ui::frame_trace::span("scene_layout", self.content.revision);
             self.layout = flex::layout(
-            &self.content,
-            ui.max_rect().size(),
-            styles,
-            &self.images,
-            &measure,
-        );
+                &self.content,
+                ui.max_rect().size(),
+                styles,
+                &self.images,
+                &measure,
+            );
             drop(layout_span);
             self.layout_cache = Some(key);
             self.layout_builds += 1;
@@ -545,7 +562,13 @@ impl ui::UiProgram for SceneUi {
                     self.installed = None;
                 }
                 self.geometry = geometry_key(&content);
-                self.tables.retain(|id, _| content.tree.nodes.get(id).is_some_and(|n| n.family == "table"));
+                self.tables.retain(|id, _| {
+                    content
+                        .tree
+                        .nodes
+                        .get(id)
+                        .is_some_and(|n| n.family == "table")
+                });
                 self.content = content;
             }
             SceneMessage::Appearance(look) => self.apply_appearance(look),

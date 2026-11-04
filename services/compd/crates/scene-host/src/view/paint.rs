@@ -147,7 +147,7 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
             let route = route_of(scene, item, node);
             let epoch = scene.appearance_epoch;
             let state = scene.tables.entry(item.id.clone()).or_default();
-            super::table::paint(ui,item.rect,full,node,route,emit,state,epoch);
+            super::table::paint(ui, item.rect, full, node, route, emit, state, epoch);
             continue;
         }
         let node = node.clone();
@@ -187,7 +187,16 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
             "table" => {
                 let route = route_of(scene, item, &node);
                 let state = scene.tables.entry(item.key.clone()).or_default();
-                super::table::paint(ui, rect, clip, &node, route, emit, state, scene.appearance_epoch);
+                super::table::paint(
+                    ui,
+                    rect,
+                    clip,
+                    &node,
+                    route,
+                    emit,
+                    state,
+                    scene.appearance_epoch,
+                );
             }
             "column" | "row" => {
                 let normal = hex(port_text(&node, "background"));
