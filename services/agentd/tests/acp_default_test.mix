@@ -1,0 +1,9 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Reader has no DB environment; gateway DB is outside its native var root.
+-- Neither process receives an explicit MCP directory.
+$r = run_argv([env("MIXOS_TEST_MIX", mixos_path("prefix", "bin/mix")), dirname(script_path()) .. "/acp_test.mix"],
+  {env: {ACP_TEST_DEFAULT_MCP: "1"}, timeout: 55, max_output: 200000})
+print($r.stdout)
+print($r.stderr)
+if not $r.ok then exit(1) end

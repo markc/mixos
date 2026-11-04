@@ -69,8 +69,8 @@ on reconnect and returns an ACP error for an invalid child stop reason.
 
 Caller MCP attachments supplement the built-in `mixos` MCP server. The
 adapter validates stdio/HTTP definitions and stores them in mode-0600 files
-under `$MIXOS_AGENTD_MCP_DIR` (default beside `$MIXOS_AGENTD_DB`, or
-`<var>/agentd/mcp`), in a mode-0700
+under `$MIXOS_AGENTD_MCP_DIR` (default `<var>/agentd/mcp`, independent of the
+database location), in a mode-0700
 directory. Set the same directory for agentd and its ACP clients. Only the
 opaque `mcp_ref` enters native command receipts; credentials do not enter
 the transcript. The service retains one attachment per native session and

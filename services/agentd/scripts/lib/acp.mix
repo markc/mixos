@@ -2,9 +2,7 @@
 -- version: 0.1.0
 -- Shared ACP boundary validation. Credentials stay in private files, not receipts.
 fn mcp_dir()
-  $default = mixos_path("var", "agentd/mcp")
-  if env("MIXOS_AGENTD_DB") != "" then $default = dirname(env("MIXOS_AGENTD_DB")) .. "/mcp" end
-  return env("MIXOS_AGENTD_MCP_DIR", $default)
+  return env("MIXOS_AGENTD_MCP_DIR", mixos_path("var", "agentd/mcp"))
 end
 
 fn mcp_path($ref)
@@ -82,7 +80,7 @@ fn remove_mcp($ref)
   $path = mcp_path($ref)
   if not is_file($path) then return nil end
   if realpath($path) != $path or stat($path).uid != uid() then raise("USAGE", "refusing indirect MCP cleanup") end
-  $removed = run_argv_must(["rm", "--", $path])
+  remove($path)
 end
 
 fn retain_mcp($ref, $session, $servers)

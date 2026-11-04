@@ -105,6 +105,7 @@ $scripts = [
   "services/agentd/tests/acp_files_test.mix",
   "services/agentd/tests/acp_recording_test.mix",
   "services/agentd/tests/acp_load_test.mix",
+  "services/agentd/tests/acp_default_test.mix",
   "services/peersd/tests/peersd_test.mix",
   "services/peersd/tests/peers_federation_test.mix",
   "services/daylight/tests/daylight_test.mix",

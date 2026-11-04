@@ -13,6 +13,13 @@ try
   $env = merge($pb.client_env($bus), {MIX_STATS: "off", MIXOS_ACP_AGENT: "fixture",
     MIXOS_TEST_MIX: $mix, MIXOS_AGENTD_MCP_DIR: $tmp .. "/mcp", ACP_TEST_DIR: $tmp,
     ACP_TEST_ADAPTER: $here .. "/../scripts/acp.mix"})
+  $env.ACP_TEST_MCP_DIR = $tmp .. "/mcp"
+  if env("ACP_TEST_DEFAULT_MCP") == "1" then
+    if env("MIXOS_AGENTD_MCP_DIR") != "" then raise("ACP_TEST", "default test requires no inherited MCP directory") end
+    $env = delete($env, "MIXOS_AGENTD_MCP_DIR")
+    $client_env = $pb.client_env($bus)
+    $env.ACP_TEST_MCP_DIR = $client_env.MIXOS_VAR .. "/agentd/mcp"
+  end
   write_file($tmp .. "/agent.conf.mix", data_encode({max_live: 2, agents: {fixture: {
     argv: [$mix, $here .. "/fixtures/fake_acp_agent.mix", env("ACP_TEST_FIXTURE_MODE", "resume,http")], roots: [$tmp .. "/workspace"], policy: "ask"}}}))
   for $c in [{name: "notify", script: $here .. "/../../notifyd/scripts/notifyd.mix", env: {MIXOS_NOTIFYD_STATE: $tmp .. "/notify.json"}},

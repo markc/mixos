@@ -120,6 +120,8 @@ on proc.watch_exited
   if $S.phase != "disconnect" then raise("ACP_TEST", "unexpected adapter exit") end
   send agent agent.session.read body=json_encode({session: $S.sid}) timeout=5
   check("disconnect preserves native agent", $rc == 0 and $result.session.status == "ready")
+  $files = glob(env("ACP_TEST_MCP_DIR") .. "/acp-*.json")
+  check("disconnect removes temporary attachments and retains the native session attachment", len($files) == 1 and starts_with(basename($files[0]), "acp-session-"))
   $S.phase = "load"
   $S.text = ""
   connect(11)
