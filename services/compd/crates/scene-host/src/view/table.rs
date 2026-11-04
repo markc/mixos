@@ -214,9 +214,10 @@ mod tests {
         let rect = Rect::from_min_size(pos2(0.0, 0.0), vec2(400.0, 300.0));
         let mut events = Vec::new();
         for _ in 0..2 {
-            let _output = ctx.run_ui(Default::default(), |ui| {
+            let mut output = ctx.run_ui(Default::default(), |ui| {
                 paint(ui, rect, rect, &node(), route(), &mut events)
             });
+            output.textures_delta.clear();
         }
         let values: Vec<_> = events
             .iter()
@@ -235,9 +236,10 @@ mod tests {
         let ctx = egui::Context::default();
         let rect = Rect::from_min_size(pos2(0.0, 0.0), vec2(400.0, 300.0));
         let mut events = Vec::new();
-        let _output = ctx.run_ui(Default::default(), |ui| {
+        let mut output = ctx.run_ui(Default::default(), |ui| {
             paint(ui, rect, rect, &node(), route(), &mut events)
         });
+        output.textures_delta.clear();
         events.clear();
         let input = egui::RawInput {
             events: vec![egui::Event::Key {
@@ -252,9 +254,10 @@ mod tests {
             }],
             ..Default::default()
         };
-        let _output = ctx.run_ui(input, |ui| {
+        let mut output = ctx.run_ui(input, |ui| {
             paint(ui, rect, rect, &node(), route(), &mut events)
         });
+        output.textures_delta.clear();
         let value = events
             .iter()
             .filter_map(super::super::event_of)
