@@ -151,6 +151,8 @@ fn await_reopen($id)
   $via = $a.resume_via($row.caps)
   if $via == nil or type($row.acp) != "string" then raise("AGENT_NOT_RESUMABLE", "agent cannot reopen") end
   $req = $a.check_new($CONF, {agent: $row.agent, cwd: $row.cwd, additional_dirs: $row.dirs ?? [], mode: $row.mode})
+  $req.mcp_ref = $row.mcp_ref
+  $req.mcp = $acp.read_mcp($row.mcp_ref)
   $log.session_resumed($DB, $id)
   spawn_agent($id, $req, $row.parent, $row.sender, $row.created_at, $log.last_seq($DB, $id),
     {via: $via, acp: $row.acp, prior: $row, done: false})
@@ -193,6 +195,8 @@ fn await_flush($id)
   end
   -- Durable before sending: recovery treats an interrupted send as a crash.
   sqlexec($DB, "UPDATE await_outbox SET inflight = 1 WHERE session = ?", [$id])
+  $S.sessions[$id].next_request = nil
+  $S.sessions[$id].next_origin = "await"
   $turn = start_turn($id, [{type: "text", text: $text}])
   if $turn == nil then
     sqlexec($DB, "UPDATE await_outbox SET inflight = 0 WHERE session = ?", [$id])

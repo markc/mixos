@@ -1,0 +1,45 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- ACP client -> stdio facade -> private native Bus -> real agentd -> fixture.
+$pb = require("../../../tests/lib/private_bus.mix")
+$here = dirname(realpath(script_path()))
+$mix = env("MIXOS_TEST_MIX", mixos_path("prefix", "bin/mix"))
+$tmp = "/var/tmp/agent-acp-" .. uuid()
+$bus = nil
+$children = []
+mkdir($tmp .. "/workspace", {parents: true})
+try
+  $bus = $pb.start({dir: $tmp .. "/bus", name: "agent-acp-test", noded: env("MIXOS_TEST_NODED", mixos_path("prefix", "bin/noded"))})
+  $env = merge($pb.client_env($bus), {MIX_STATS: "off", MIXOS_ACP_AGENT: "fixture",
+    MIXOS_TEST_MIX: $mix, MIXOS_AGENTD_MCP_DIR: $tmp .. "/mcp", ACP_TEST_DIR: $tmp,
+    ACP_TEST_ADAPTER: $here .. "/../scripts/acp.mix"})
+  write_file($tmp .. "/agent.conf.mix", data_encode({max_live: 2, agents: {fixture: {
+    argv: [$mix, $here .. "/fixtures/fake_acp_agent.mix", "resume,http"], roots: [$tmp .. "/workspace"], policy: "ask"}}}))
+  for $c in [{name: "notify", script: $here .. "/../../notifyd/scripts/notifyd.mix", env: {MIXOS_NOTIFYD_STATE: $tmp .. "/notify.json"}},
+    {name: "agent", script: $here .. "/../scripts/agentd.mix", env: {MIXOS_AGENTD_CONF: $tmp .. "/agent.conf.mix", MIXOS_AGENTD_DB: $tmp .. "/sessions.db"}}]
+    push($children, spawn([$mix, "--serve", $c.script, "--name", $c.name], {die_with_parent: true,
+      env: merge($env, $c.env), stdout: {file: $tmp .. "/" .. $c.name .. ".log"}, stderr: "stdout"}))
+  end
+  $up = false
+  for $i = 1 to 60
+    send agent agent.agents timeout=0.2
+    if $rc == 0 then $up = true; break end
+    sleep(0.05)
+  end
+  if not $up then raise("ACP_TEST", "agent did not start") end
+  $r = run_argv([$mix, "--serve", $here .. "/fixtures/acp_client.mix", "--name", "acp-test-client"], {env: $env, timeout: 30, max_output: 200000})
+  write_file($tmp .. "/client.log", $r.stdout .. $r.stderr)
+  print($r.stdout)
+  print($r.stderr)
+  print("evidence: " .. $tmp)
+  if not $r.ok then raise("ACP_TEST", "ACP lifecycle failed") end
+  $db = sqlopen($tmp .. "/sessions.db", "ro")
+  $rows = sqlexec($db, "SELECT args FROM commands")
+  if contains(json_encode($rows), "acp-test-secret-value") then raise("ACP_TEST", "MCP credential leaked into command log") end
+  print("PASS MCP credentials excluded from native receipts")
+finally
+  for $pid in reverse($children)
+    if process_alive($pid) then $stopped = kill($pid, 15) end
+  end
+  if $bus != nil then $stopped = $pb.stop($bus) end
+end

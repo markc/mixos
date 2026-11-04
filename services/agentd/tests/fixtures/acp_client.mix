@@ -1,0 +1,130 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+$mix = env("MIXOS_TEST_MIX")
+$tmp = env("ACP_TEST_DIR")
+$S = {watch: nil, sid: nil, text: "", phase: "start", queued: false, refused: false}
+$mcp = [{name: "t3-code", type: "http", url: "http://127.0.0.1:1/mcp",
+  headers: [{name: "Authorization", value: "acp-test-secret-value"}]}]
+
+fn check($name, $condition)
+  print((if $condition then "PASS " else "FAIL " end) .. $name)
+  if not $condition then exit(1) end
+end
+
+fn input($m)
+  $m.jsonrpc = "2.0"
+  if not process_write($S.watch, json_encode($m) .. "\n") then raise("ACP_TEST", "input refused") end
+end
+
+fn connect($id)
+  $S.watch = process_watch([$mix, env("ACP_TEST_ADAPTER")], {stdin: "pipe", stderr: "lines", overflow: "block", max_line: 16777216})
+  input({id: $id, method: "initialize", params: {protocolVersion: 1}})
+end
+
+fn prompt($id, $text)
+  $S.text = ""
+  input({id: $id, method: "session/prompt", params: {sessionId: $S.sid, prompt: [{type: "text", text: $text}]}})
+end
+
+on proc.line
+  if $event.args.stream == "stderr" then append_file($tmp .. "/adapter.stderr", $event.args.line .. "\n"); return nil end
+  $m = json_parse($event.args.line)
+  append_file($tmp .. "/frames.jsonl", $event.args.line .. "\n")
+  check("stdout is JSON-RPC", $m.jsonrpc == "2.0")
+  if $m.method == "session/update" then
+    if $m.params.update.sessionUpdate == "agent_message_chunk" then $S.text = $S.text .. ($m.params.update.content.text ?? "") end
+  elif $m.method == "session/request_permission" then
+    check("permanent permission is not offered", len(filter($m.params.options, fn($o) = $o.kind == "allow_always")) == 0)
+    input({id: $m.id, result: {outcome: {outcome: "selected", optionId: "allow"}}})
+  elif $m.id == 1 then
+    input({id: 2, method: "session/new", params: {cwd: $tmp .. "/workspace", mcpServers: $mcp}})
+  elif $m.id == 2 then
+    check("native session setup", $m.error == nil and type($m.result.sessionId) == "string")
+    $S.sid = $m.result.sessionId
+    prompt(3, "MCPSERVERS")
+  elif $m.id == 3 then
+    check("native MCP and caller HTTP MCP both forwarded", contains($S.text, "mixos,t3-code"))
+    input({id: 4, method: "session/set_config_option", params: {sessionId: $S.sid, configId: "model", value: "refused"}})
+  elif $m.id == 4 then
+    check("refused config returns its actual error", $m.error.message == "setting refused")
+    input({id: 5, method: "session/set_mode", params: {sessionId: $S.sid, modeId: "plan"}})
+  elif $m.id == 5 then
+    check("mode completes after child accepts it", $m.error == nil)
+    prompt(6, "SLOW")
+    input({method: "session/cancel", params: {sessionId: $S.sid}})
+  elif $m.id == 6 then
+    check("running cancellation resolves correct prompt", $m.result.stopReason == "cancelled")
+    send agent agent.session.prompt body=json_encode({session: $S.sid, content: "SLOW"}) timeout=5
+    check("external native turn started", $rc == 0)
+    prompt(7, "REFUSED")
+  elif $m.id == 7 then
+    check("busy prompt has one error and no false success", $m.error != nil and not $S.refused)
+    $S.refused = true
+    $S.phase = "external-cancel"
+    send agent agent.session.cancel body=json_encode({session: $S.sid}) timeout=5
+  elif $m.id == 8 then
+    if $S.phase != "duplicate" then
+      check("refused prompt did not poison next turn", contains($S.text, "echo:RECOVERED"))
+      $S.phase = "duplicate"
+      prompt(8, "RECOVERED")
+    else
+      check("duplicate request replays completion", $m.result.stopReason == "end_turn")
+      send agent agent.session.read body=json_encode({session: $S.sid}) timeout=5
+      check("duplicate request does not run another native turn", len(filter($result.events, fn($e) = $e.kind == "prompt")) == 4)
+      $S.phase = "disconnect"
+      $closed = process_close_stdin($S.watch)
+    end
+  elif $m.id == 11 then
+    input({id: 12, method: "session/load", params: {sessionId: $S.sid, cwd: $tmp .. "/workspace", mcpServers: $mcp}})
+  elif $m.id == 12 then
+    check("load replays native transcript", contains($S.text, "echo:RECOVERED"))
+    send agent agent.session.set body=json_encode({session: $S.sid, option: "test", value: "slow-value"}) timeout=5
+    prompt(13, "QUEUED")
+    input({method: "session/cancel", params: {sessionId: $S.sid}})
+  elif $m.id == 13 then
+    check("queued cancellation settles the queued ACP request", $m.result.stopReason == "cancelled")
+    prompt(14, "PERMISSION")
+  elif $m.id == 14 then
+    check("permission reply reaches native owner", contains($S.text, "perm:allow"))
+    input({id: 15, method: "session/list", params: {cwd: $tmp .. "/workspace"}})
+  elif $m.id == 15 then
+    check("native session listed once", len(filter($m.result.sessions, fn($s) = $s.sessionId == $S.sid)) == 1)
+    $S.phase = "close"
+    send agent agent.session.close body=json_encode({session: $S.sid}) timeout=5
+  elif $m.id == 16 then
+    check("closed native session resumes with caller MCP", $m.error == nil)
+    prompt(17, "MCPSERVERS")
+  elif $m.id == 17 then
+    check("caller MCP retained after resume", contains($S.text, "mixos,t3-code"))
+    exit(0)
+  elif $m.error != nil then
+    check("unexpected error: " .. json_encode($m.error), false)
+  end
+end
+
+on agent.session.updated
+  if $event.args.session == $S.sid and $event.args.kind == "stop" and $S.phase == "external-cancel" then
+    $S.phase = "recover"
+    prompt(8, "RECOVERED")
+  end
+end
+
+on agent.session.ended
+  if $event.args.session == $S.sid and $S.phase == "close" then
+    $S.phase = "resume"
+    input({id: 16, method: "session/load", params: {sessionId: $S.sid, cwd: $tmp .. "/workspace", mcpServers: $mcp}})
+  end
+end
+
+on proc.watch_exited
+  if $S.phase != "disconnect" then raise("ACP_TEST", "unexpected adapter exit") end
+  send agent agent.session.read body=json_encode({session: $S.sid}) timeout=5
+  check("disconnect preserves native agent", $rc == 0 and $result.session.status == "ready")
+  $S.phase = "load"
+  $S.text = ""
+  connect(11)
+end
+
+subscribe("agent.session.updated")
+subscribe("agent.session.ended")
+connect(1)

@@ -1,0 +1,71 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Shared ACP boundary validation. Credentials stay in private files, not receipts.
+fn mcp_dir()
+  return env("MIXOS_AGENTD_MCP_DIR", mixos_path("var", "agentd/mcp"))
+end
+
+fn mcp_path($ref)
+  if type($ref) != "string" or len(re_find($ref, "^acp-[a-z0-9-]{8,80}[.]json$")) != 1 then
+    raise("USAGE", "invalid MCP attachment reference")
+  end
+  return mcp_dir() .. "/" .. $ref
+end
+
+fn check_mcp($servers)
+  if type($servers) != "list" or len($servers) > 16 or len(json_encode($servers)) > 65536 then
+    raise("USAGE", "MCP attachments must be a bounded list")
+  end
+  $names = ["mixos"]
+  for $s in $servers
+    if type($s) != "map" or type($s.name) != "string" or len($s.name) < 1 or len($s.name) > 128 or contains($names, $s.name) then
+      raise("USAGE", "MCP names must be unique; mixos is reserved")
+    end
+    push($names, $s.name)
+    if ($s.type ?? "stdio") == "stdio" then
+      if type($s.command) != "string" or len($s.command) == 0 or type($s.args ?? []) != "list" or type($s.env ?? []) != "list" then
+        raise("USAGE", "invalid stdio MCP attachment")
+      end
+      for $arg in $s.args ?? []
+        if type($arg) != "string" then raise("USAGE", "MCP arguments must be strings") end
+      end
+      for $e in $s.env ?? []
+        if type($e.name) != "string" or type($e.value) != "string" then raise("USAGE", "invalid MCP environment") end
+      end
+    elif $s.type == "http" then
+      if type($s.url) != "string" or not (starts_with($s.url, "http://") or starts_with($s.url, "https://")) or type($s.headers ?? []) != "list" then
+        raise("USAGE", "invalid HTTP MCP attachment")
+      end
+      for $h in $s.headers ?? []
+        if type($h.name) != "string" or type($h.value) != "string" then raise("USAGE", "invalid MCP header") end
+      end
+    else
+      raise("USAGE", "only stdio and HTTP MCP attachments are supported")
+    end
+  end
+  return $servers
+end
+
+fn read_mcp($ref)
+  if $ref == nil then return [] end
+  $path = mcp_path($ref)
+  if not is_file($path) or realpath($path) != $path then raise("USAGE", "MCP attachment is missing or indirect") end
+  $st = stat($path)
+  if $st.uid != uid() then raise("USAGE", "MCP attachment must belong to the service user") end
+  -- File mode from stat is the permissions, without the inode type.
+  if $st.perm != 0o600 then raise("USAGE", "MCP attachment must have mode 0600") end
+  return check_mcp(json_parse(read_file($path)))
+end
+
+fn save_mcp($ref, $servers)
+  $checked = check_mcp($servers)
+  $dir = mcp_dir()
+  mkdir($dir, {parents: true})
+  if realpath($dir) != $dir or stat($dir).uid != uid() then raise("USAGE", "MCP directory must be owned and direct") end
+  chmod($dir, 0o700)
+  write_atomic(mcp_path($ref), json_encode($checked), {mode: 0o600, durability: "file", max_bytes: 65536})
+end
+
+fn valid_stop($reason)
+  return contains(["end_turn", "max_tokens", "max_turn_requests", "refusal", "cancelled"], $reason)
+end

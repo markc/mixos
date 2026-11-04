@@ -80,6 +80,7 @@ loop
   end
   if $m.method == "initialize" then
     $caps = {loadSession: contains($modes, "load")}
+    if contains($modes, "http") then $caps.mcpCapabilities = {http: true} end
     if contains($modes, "resume") or contains($modes, "refuse") then $caps.sessionCapabilities = {resume: {}} end
     out({id: $m.id, result: {protocolVersion: 1, agentInfo: {name: "fake-acp", version: "0"},
       agentCapabilities: $caps, authMethods: []}})
@@ -90,7 +91,7 @@ loop
     if contains($modes, "refuse") or (env("FAKE_ACP_REFUSE_FILE") != "" and is_file(env("FAKE_ACP_REFUSE_FILE"))) then
       out({id: $m.id, error: {code: -32002, message: "Resource not found: session " .. to_string($sid)}})
     else
-      $sessions[$sid] = {mcp: session_mcp($m.params), cwd: $m.params.cwd}
+      $sessions[$sid] = {mcp: session_mcp($m.params), cwd: $m.params.cwd, mcp_names: map($m.params.mcpServers ?? [], fn($s) = $s.name)}
       if $m.method == "session/load" then
         text($sid, "old history")
         update($sid, {sessionUpdate: "current_mode_update", currentModeId: "plan"})
@@ -105,7 +106,7 @@ loop
     end
   elif $m.method == "session/new" then
     $sid = "fake-" .. to_string(len(keys($sessions)) + 1)
-    $sessions[$sid] = {mcp: session_mcp($m.params), cwd: $m.params.cwd}
+    $sessions[$sid] = {mcp: session_mcp($m.params), cwd: $m.params.cwd, mcp_names: map($m.params.mcpServers ?? [], fn($s) = $s.name)}
     out({id: $m.id, result: {sessionId: $sid, modes: {currentModeId: "default",
       availableModes: [{id: "default", name: "Default"}, {id: "plan", name: "Plan"}]}}})
   elif $m.method == "session/prompt" then
@@ -138,6 +139,7 @@ loop
     end
     $stop = "end_turn"
     if contains($t, "MCP") then text($sid, "mcp:" .. $sessions[$sid].mcp) end
+    if $t == "MCPSERVERS" then text($sid, join($sessions[$sid].mcp_names, ",")) end
     if contains($t, "BIG") then text($sid, repeat("x", 2097152)) end
     if contains($t, "DRIP") then
       -- Text spread over 5 s: a watcher that subscribed late must still

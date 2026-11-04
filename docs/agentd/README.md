@@ -40,6 +40,49 @@ needs a `mix` with `process_watch` stdin pipes (`stdin: "pipe"`,
   in `~/.local/state/mixos/agentd/`. With no conf file the unit is skipped.
 - `agentd@.service`, for console desk session `%i`, run as the desk user.
 
+## ACP clients
+
+An ACP editor can use the native sessions through this local command:
+
+```text
+<prefix>/bin/mix <prefix>/lib/agentd/acp.mix
+```
+
+For T3 Code, add a **Local ACP command** with the Mix executable and the
+script path as one literal argument. Set `MIXOS_ACP_AGENT` to the configured
+agent name (default `codex`) and `MIXOS_ACP_SERVICE` to its Bus service
+(default `agent`). The client, agentd and workspace must be on the same
+machine; remote files and checkpoints are not proxied by this interface.
+
+The adapter supports ACP v1, session listing/loading, streamed text, modes,
+configuration, cancellation and native permission cards. Disconnecting the
+client leaves the native agent alive. Running turns can be watched after
+loading; a new prompt is refused until that turn completes. Closing agentd
+still ends its children as usual. Native notification expiry and permission
+policy remain authoritative, including answers from other Bus clients.
+
+Prompt and setting acceptance are separate from completion. Events carry
+the native `request` identity, `turn` and `origin`; `setting_result` carries
+the child's actual result. Cancellation also settles accepted queued prompts.
+The adapter matches outcomes by native request, reconciles sequenced history
+on reconnect and returns an ACP error for an invalid child stop reason.
+
+Caller MCP attachments supplement the built-in `mixos` MCP server. The
+adapter validates stdio/HTTP definitions and stores them in mode-0600 files
+under `$MIXOS_AGENTD_MCP_DIR` (default `<var>/agentd/mcp`), in a mode-0700
+directory. Set the same directory for agentd and its ACP clients. Only the
+opaque `mcp_ref` enters native command receipts; credentials do not enter
+the transcript. Retain these private attachments while sessions are
+resumable. Loading a ready session with changed MCP definitions closes and
+resumes its native agent with the new definitions; changes during a running
+turn are refused. No provider credentials are copied by this adapter.
+
+ACP envelopes terminate at the stdin reader. Reader-to-citizen traffic uses
+ordinary native operations, not JSON-RPC frames. The citizen is the only
+stdout writer; diagnostics use stderr. A connection keeps at most 4096
+request receipts and accepts input frames up to 1 MiB. Request IDs are scoped
+to the connection; another connection resumes by native session ID.
+
 ## Configuration
 
 agentd reads `$MIXOS_AGENTD_CONF`, else `<etc>/agent.conf.mix`. The file is

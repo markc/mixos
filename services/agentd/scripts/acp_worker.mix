@@ -1,0 +1,322 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- ACP v1 face for native agentd; all durable effects use native receipts.
+$a = require("lib/acp.mix")
+$TARGET = env("MIXOS_ACP_SERVICE", "agent")
+$AGENT = env("MIXOS_ACP_AGENT", "codex")
+$CONNECTION = env("MIXOS_ACP_CONNECTION")
+$S = {sessions: {}, requests: {}, permissions: {}, sets: {}}
+
+fn body()
+  return $event.args ?? {}
+end
+
+fn frame($m)
+  $m.jsonrpc = "2.0"
+  write_stdout(json_encode($m) .. "\n")
+end
+
+fn respond($id, $result, $error)
+  $key = json_encode($id)
+  $r = $S.requests[$key]
+  if $r != nil and $r.done then return nil end
+  $m = if $error != nil then {id: $id, error: $error} else {id: $id, result: $result} end
+  if $r != nil then
+    $S.requests[$key].done = true
+    $S.requests[$key].response = $m
+  end
+  frame($m)
+end
+
+fn fail($id, $message)
+  if $id != nil then respond($id, nil, {code: -32603, message: $message}) end
+end
+
+fn native($command, $args)
+  send $TARGET $command body=json_encode($args) timeout=15
+  if $rc != 0 then raise("NATIVE_REFUSED", json_encode($result)) end
+  return if type($result) == "string" then json_parse($result) else $result end
+end
+
+fn effect_id($id)
+  return "acp:" .. $CONNECTION .. ":" .. slice(hash_sha256(json_encode($id)), 0, 32)
+end
+
+fn update($sid, $u)
+  frame({method: "session/update", params: {sessionId: $sid, update: $u}})
+end
+
+fn attach($sid, $id, $new)
+  if $S.sessions[$sid] != nil and $S.sessions[$sid].prompt != nil then raise("ACP_BUSY", "a prompt is still attached") end
+  $S.sessions[$sid] = {seq: 0, setup: $id, new: $new, replay: not $new, prompt: nil,
+    meta: {}, reopen: nil, request: nil}
+end
+
+fn setup_done($sid)
+  $s = $S.sessions[$sid]
+  if $s.setup == nil then return nil end
+  $r = if $s.new then {sessionId: $sid} else {} end
+  for $pair in [{source: "modes", dest: "modes"}, {source: "models", dest: "models"}, {source: "config_options", dest: "configOptions"}]
+    if $s.meta[$pair.source] != nil then $r[$pair.dest] = $s.meta[$pair.source] end
+  end
+  respond($s.setup, $r, nil)
+  $S.sessions[$sid].setup = nil
+  $S.sessions[$sid].replay = false
+end
+
+fn event_row($sid, $e)
+  $s = $S.sessions[$sid]
+  if $e.seq <= $s.seq then return nil end
+  if $e.seq != $s.seq + 1 then raise("ACP_GAP", "native history has a sequence gap") end
+  $S.sessions[$sid].seq = $e.seq
+  if contains(["ready", "resumed"], $e.kind) then
+    $S.sessions[$sid].meta = $e
+    if not $s.replay then setup_done($sid) end
+  elif type($e.update) == "map" then
+    update($sid, $e.update)
+    if $e.kind == "config_option_update" then $S.sessions[$sid].meta.config_options = $e.update.configOptions end
+  elif $e.kind == "prompt" and $s.replay and ($e.origin ?? "user") == "user" then
+    for $block in $e.content ?? [] update($sid, {sessionUpdate: "user_message_chunk", content: $block}) end
+  elif $e.kind == "setting_result" then
+    $set = $S.sets[$e.request]
+    if $set != nil then
+      if $set.config and type($e.result.configOptions) != "list" then
+        fail($set.id, "agent omitted the accepted configuration")
+      else
+        respond($set.id, if $set.config then {configOptions: $e.result.configOptions} else {} end, nil)
+      end
+      $S.sets = delete($S.sets, $e.request)
+    end
+  elif $e.kind == "stop" then
+    if $s.prompt != nil and $e.request == $s.request then
+      if $a.valid_stop($e.stop) then respond($s.prompt, {stopReason: $e.stop}, nil)
+      else fail($s.prompt, "agent returned an invalid ACP stop reason") end
+      $S.sessions[$sid].prompt = nil
+      $S.sessions[$sid].request = nil
+    end
+  elif $e.kind == "error" then
+    $set = $S.sets[$e.request]
+    if $set != nil then
+      respond($set.id, nil, $e.error)
+      $S.sets = delete($S.sets, $e.request)
+    elif $s.prompt != nil and $e.request == $s.request then
+      respond($s.prompt, nil, $e.error)
+      $S.sessions[$sid].prompt = nil
+      $S.sessions[$sid].request = nil
+    elif not $s.replay and $s.setup != nil and contains(["new", "initialize", "reopen"], $e.during) then
+      respond($s.setup, nil, $e.error)
+      $S.sessions[$sid].setup = nil
+    end
+  elif $e.kind == "permission_answered" then
+    $key = "permission:" .. $sid .. ":" .. $e.request
+    $S.permissions = delete($S.permissions, $key)
+  end
+end
+
+fn permission($card)
+  $sid = $card.session
+  if $S.sessions[$sid] == nil then return nil end
+  $key = "permission:" .. $sid .. ":" .. $card.request
+  if $S.permissions[$key] != nil then return nil end
+  $S.permissions[$key] = {session: $sid, request: $card.request}
+  frame({id: $key, method: "session/request_permission", params: {sessionId: $sid,
+    toolCall: {toolCallId: $key, title: $card.title ?? "Native agent permission", kind: "other"}, options: $card.options}})
+end
+
+fn catch_up($sid)
+  loop
+    $r = native("agent.session.read", {session: $sid, since: $S.sessions[$sid].seq, limit: 2000})
+    for $e in $r.events event_row($sid, $e) end
+    if not $r.more then
+      for $card in $r.session.permissions ?? [] permission($card) end
+      return $r.session
+    end
+  end
+end
+
+fn resume($sid, $ref)
+  $r = native("agent.session.resume", {session: $sid, mcp_ref: $ref, id: effect_id($S.sessions[$sid].setup)})
+  $S.sessions[$sid].replay = false
+  $v = catch_up($sid)
+end
+
+fn load_session($m)
+  $sid = $m.params.sessionId
+  attach($sid, $m.id, false)
+  $v = catch_up($sid)
+  $ref = $m.params.mcp_ref
+  $changed = not deep_eq($a.read_mcp($v.mcp_ref), $a.read_mcp($ref))
+  if contains(["ended", "waiting"], $v.status) then
+    resume($sid, $ref)
+  elif $changed then
+    if $v.status != "ready" then raise("ACP_BUSY", "cannot replace MCP attachments during a native turn") end
+    $S.sessions[$sid].reopen = $ref
+    $r = native("agent.session.close", {session: $sid, id: effect_id($m.id) .. ":close"})
+  elif contains(["ready", "running"], $v.status) then
+    setup_done($sid)
+  else
+    $S.sessions[$sid].replay = false
+  end
+end
+
+fn handle($m)
+  if $m.method == nil then
+    $p = $S.permissions[to_string($m.id)]
+    if $p != nil then
+      $S.permissions = delete($S.permissions, to_string($m.id))
+      $o = $m.result.outcome
+      $args = {session: $p.session, request: $p.request, id: effect_id($m.id)}
+      if $o.outcome == "selected" then $args.option = $o.optionId else $args.cancelled = true end
+      try
+        $r = native("agent.permission.respond", $args)
+      catch $message
+        eprint("agent ACP: native permission already settled or refused")
+      end
+    end
+    return nil
+  end
+  if $m.id != nil then
+    $key = json_encode($m.id)
+    $digest = hash_sha256(json_encode($m))
+    $old = $S.requests[$key]
+    if $old != nil then
+      if $old.digest != $digest then frame({id: $m.id, error: {code: -32600, message: "request id reused with different content"}})
+      elif $old.done then frame($old.response) end
+      return nil
+    end
+    if len(keys($S.requests)) >= 4096 then raise("ACP_LIMIT", "connection request limit reached; reconnect") end
+    $S.requests[$key] = {digest: $digest, done: false, response: nil}
+  end
+  if $m.method == "initialize" then
+    respond($m.id, {protocolVersion: 1, agentInfo: {name: "mixos-agentd", version: "0.1.0"},
+      agentCapabilities: {loadSession: true, mcpCapabilities: {http: true}, sessionCapabilities: {list: {}},
+        promptCapabilities: {image: false, embeddedContext: false}}, authMethods: []}, nil)
+  elif $m.method == "session/new" then
+    $r = native("agent.session.new", {agent: $AGENT, cwd: $m.params.cwd,
+      mcp_ref: $m.params.mcp_ref, id: effect_id($m.id)})
+    attach($r.session, $m.id, true)
+    $v = catch_up($r.session)
+  elif $m.method == "session/load" then
+    load_session($m)
+  elif $m.method == "session/list" then
+    $r = native("agent.session.list", {})
+    $rows = []
+    for $s in $r.sessions
+      if $s.agent == $AGENT and ($m.params.cwd == nil or $s.cwd == $m.params.cwd) then
+        push($rows, {sessionId: $s.session, cwd: $s.cwd, title: $s.title ?? $s.session})
+      end
+    end
+    respond($m.id, {sessions: $rows}, nil)
+  elif $m.method == "session/prompt" then
+    $sid = $m.params.sessionId
+    if $S.sessions[$sid] == nil then raise("ACP_SESSION", "load the native session first") end
+    if $S.sessions[$sid].setup != nil or $S.sessions[$sid].prompt != nil then raise("ACP_BUSY", "another request is pending") end
+    $request = effect_id($m.id)
+    -- Set the projection only after native acceptance. A refusal never
+    -- leaves a prompt slot behind or completes on somebody else's stop.
+    $r = native("agent.session.prompt", {session: $sid, content: $m.params.prompt, id: $request})
+    $S.sessions[$sid].prompt = $m.id
+    $S.sessions[$sid].request = $request
+    $v = catch_up($sid)
+  elif $m.method == "session/cancel" then
+    if $S.sessions[$m.params.sessionId] != nil then
+      $r = native("agent.session.cancel", {session: $m.params.sessionId})
+    end
+  elif $m.method == "session/set_mode" or $m.method == "session/set_config_option" then
+    $sid = $m.params.sessionId
+    if $S.sessions[$sid] == nil then raise("ACP_SESSION", "load the native session first") end
+    $request = effect_id($m.id)
+    $args = {session: $sid, id: $request}
+    $config = $m.method == "session/set_config_option"
+    if $config then $args.option = $m.params.configId; $args.value = $m.params.value
+    else $args.mode = $m.params.modeId end
+    $r = native("agent.session.set", $args)
+    $S.sets[$request] = {id: $m.id, session: $sid, config: $config}
+    $v = catch_up($sid)
+  else
+    if $m.id != nil then respond($m.id, nil, {code: -32601, message: "method not supported"}) end
+  end
+end
+
+fn session_failed($sid, $message)
+  $s = $S.sessions[$sid]
+  if $s == nil then return nil end
+  fail($s.setup, $message)
+  fail($s.prompt, $message)
+  $S.sessions[$sid].setup = nil
+  $S.sessions[$sid].prompt = nil
+  for $request in keys($S.sets)
+    if $S.sets[$request].session == $sid then
+      fail($S.sets[$request].id, $message)
+      $S.sets = delete($S.sets, $request)
+    end
+  end
+end
+
+on acp.input
+  $input = body()
+  $methods = {initialize: "initialize", new: "session/new", load: "session/load", list: "session/list",
+    prompt: "session/prompt", cancel: "session/cancel", mode: "session/set_mode", option: "session/set_config_option"}
+  $p = $input.args ?? {}
+  $m = {id: $input.request, method: $methods[$input.operation] ?? "unsupported",
+    params: {cwd: $p.cwd, mcp_ref: $p.mcp_ref, sessionId: $p.session,
+      prompt: $p.content, modeId: $p.mode, configId: $p.option, value: $p.value}}
+  if $input.operation == "permission" then $m.method = nil; $m.result = {outcome: $p.outcome} end
+  try
+    if $input.operation == "invalid" then
+      frame({id: $input.request, error: {code: -32600, message: "Invalid ACP input"}})
+    else
+      handle($m)
+    end
+  catch $message
+    fail($m.id, $message)
+  end
+  reply(0, "{}")
+end
+
+on agent.session.updated
+  $sid = body().session
+  if $S.sessions[$sid] != nil then
+    try
+      $v = catch_up($sid)
+    catch $message
+      session_failed($sid, $message)
+    end
+  end
+end
+
+on agent.permission.requested
+  permission(body())
+end
+
+on agent.session.ended
+  $sid = body().session
+  if $S.sessions[$sid] != nil then
+    try
+      $v = catch_up($sid)
+      if $S.sessions[$sid].reopen != nil then
+        $ref = $S.sessions[$sid].reopen
+        $S.sessions[$sid].reopen = nil
+        resume($sid, $ref)
+      else
+        session_failed($sid, "native agent exited")
+      end
+    catch $message
+      session_failed($sid, $message)
+    end
+  end
+end
+
+on bus.connected
+  for $sid in keys($S.sessions)
+    try
+      $v = catch_up($sid)
+    catch $message
+      session_failed($sid, $message)
+    end
+  end
+end
+
+subscribe("agent.session.updated")
+subscribe("agent.permission.requested")
+subscribe("agent.session.ended")

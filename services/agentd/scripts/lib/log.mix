@@ -27,7 +27,11 @@ $SCHEMA = [
 -- own session id, the extra directories, what the agent advertised) and the
 -- title (the first prompt's first line), and accepted settings. Added
 -- to an older file in place; each is NULL until written.
-$SESSION_COLUMNS = ["acp TEXT", "dirs TEXT", "caps TEXT", "agent_info TEXT", "title TEXT", "mode TEXT", "options TEXT", "op_outcome TEXT"]
+$SESSION_COLUMNS = ["acp TEXT", "dirs TEXT", "caps TEXT", "agent_info TEXT", "title TEXT", "mode TEXT", "options TEXT", "op_outcome TEXT", "mcp_ref TEXT"]
+
+fn session_mcp($h, $id, $ref)
+  sqlexec($h, "UPDATE sessions SET mcp_ref = ? WHERE id = ?", [$ref, $id])
+end
 
 -- Open (creating) the log. WAL with synchronous=NORMAL: a commit is not
 -- an fsync, so streamed chunks stay cheap; a power cut can lose the last
@@ -169,7 +173,7 @@ fn view($h, $id)
   return {session: $r.id, agent: $r.agent, cwd: $r.cwd, parent: $r.parent, status: $r.status,
     awaits: len(sqlexec($h, "SELECT id FROM awaits WHERE session = ? AND state = 'pending'", [$id])),
     seq: last_seq($h, $id), turn: nil, created_at: $r.created_at, ended_at: $r.ended_at,
-    title: $r.title, open_permissions: 0, permission_requests: [], permissions: [],
+    title: $r.title, mcp_ref: $r.mcp_ref, open_permissions: 0, permission_requests: [], permissions: [],
     exit_code: $r.exit_code, signal: $r.signal, end_reason: $r.end_reason}
 end
 
