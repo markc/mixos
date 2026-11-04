@@ -577,7 +577,7 @@ impl<'a> Builder<'a> {
                     .new_leaf_with_context(style, meta(Some(leaf)))
                     .ok()?
             }
-            "image" | "spacer" => self
+            "image" | "spacer" | "table" => self
                 .tree
                 .new_leaf_with_context(style, meta(Some(Leaf::Fixed)))
                 .ok()?,

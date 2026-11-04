@@ -32,6 +32,14 @@ fn runtime(source: &str, size: (u32, u32)) -> UiRuntime<SceneUi> {
 }
 
 #[test]
+fn viewport_table_is_a_visible_growing_leaf_in_the_real_scene_layout() {
+    let source = "---\nscene: 1\nname: table\ncitizen: test\n---\n```mix\nroot: {widget: \"column\", fill: true, children: [\"table\"]}\ntable: {widget: \"table\", grow: 1, rows: [], columns: [\"Name\"], total: 10000, on_change: \"event\"}\n```\n";
+    let rt = runtime(source, (400, 300));
+    let rect = rt.program.layout().nodes.get("table").expect("visible table");
+    assert!(rect.width() >= 390.0 && rect.height() >= 290.0, "{rect:?}");
+}
+
+#[test]
 fn interface_font_reaches_authored_panel_text_layout_and_scene_frame_titles() {
     use ui::UiProgram;
     let source = "---\nscene: 1\nname: fonts\ncitizen: test\n---\n```mix\nroot: {widget: \"column\", children: [\"body\", \"clock\", \"mono\"]}\nbody: {widget: \"text\", text: \"Body\"}\nclock: {widget: \"text\", text: \"Clock\", size: 19, bold: true}\nmono: {widget: \"text\", text: \"Mono\", size: 13, mono: true}\n```";
