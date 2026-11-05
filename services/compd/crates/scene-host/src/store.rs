@@ -520,6 +520,12 @@ impl SceneStore {
         args: &Value,
         mount: &mut SceneMount<'_>,
     ) -> Dispatched {
+        if matches!(kind, SceneCommand::Patch) {
+            ui::frame_trace::event("scene_model_patch_apply", || {
+                let view = &args["value"]["view"];
+                (view["generation"].as_u64().unwrap_or(0), view["revision"].as_u64().unwrap_or(0), u64::from(args["path"].as_str().is_some_and(|p| p.ends_with("right"))))
+            });
+        }
         let result = self.request_mounted(kind, body, args, Some(mount));
         // A pre-empted dialog holder hears before the new holder's own
         // summary, so an owner never sees its successor first.

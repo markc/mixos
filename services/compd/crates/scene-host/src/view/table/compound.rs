@@ -269,7 +269,8 @@ pub(super) fn paint(
             // Construct payload only when egui actually starts dragging.
             if response.drag_started() {
                 if !state.selection.contains(index) {state.pick(index,false,false); changed=true;}
-                response.dnd_set_drag_payload(DragRow {node:route.node.clone(),item:row.raw.clone(),generation:state.generation,session:state.session.clone()});
+                let mut item=row.raw.clone(); item["row_index"]=json!(index);
+                response.dnd_set_drag_payload(DragRow {node:route.node.clone(),item,generation:state.generation,session:state.session.clone()});
             }
             if let Some(payload)=response.dnd_release_payload::<DragRow>() {
                 row_drop=true;

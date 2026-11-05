@@ -1345,6 +1345,13 @@ fn admit(
                 headers: command.headers.clone(),
                 generation: command.generation,
             };
+            if matches!(kind, SceneCommand::Patch) {
+                ui::frame_trace::event("scene_model_patch_receipt", || {
+                    let args: Value = serde_json::from_str(&request.body).unwrap_or(Value::Null);
+                    let view = &args["value"]["view"];
+                    (view["generation"].as_u64().unwrap_or(0), view["revision"].as_u64().unwrap_or(0), u64::from(args["path"].as_str().is_some_and(|p| p.ends_with("right"))))
+                });
+            }
             if !delivery.send(Inbound::Request(request)) {
                 let body = json!({"error_code":"QUEUE_FULL","message":"scene host queue full"});
                 return Some((command, 11, body));
