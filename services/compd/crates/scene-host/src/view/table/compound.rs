@@ -35,7 +35,12 @@ pub(super) fn paint(
     state.model_owner = format!("{}.{}", route.scene, route.node);
     let old_generation = state.generation;
     let was_empty = state.total == 0;
-    state.ingest(&node.ports["view"]);
+    // Delta models are consumed at scene-command acceptance. An older UI
+    // content snapshot can still paint while newer commands are accepted;
+    // replaying its delta here would turn paint coalescing into false refusals.
+    if !node.ports["view"]["delta"].is_object() {
+        state.ingest(&node.ports["view"]);
+    }
     let mut reset_scroll = state.generation != old_generation || (was_empty && state.total > 0);
     if let Some(error) = state.model_error.clone() {
         if !state.model_error_sent {

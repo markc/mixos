@@ -308,6 +308,8 @@ impl State {
             }
         }
         self.total = self.incremental.as_ref().unwrap().len();
+        self.model_error = None;
+        self.model_error_sent = false;
         self.generation = generation;
         self.revision = revision;
         self.updates += 1;
