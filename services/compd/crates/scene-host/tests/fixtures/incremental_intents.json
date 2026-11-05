@@ -1,0 +1,9 @@
+[
+ {"request":{"kind":"edit","total":4,"changed":2,"start":1,"visible":true,"seq":7,"revision":2},"expected":{"generation":1,"revision":3,"delta":{"kind":"edit","base_revision":2,"edits":[{"index":1,"row":{"id":"row-1","cells":["row-1","7","1700000000"],"edit":"row-1"}},{"index":2,"row":{"id":"row-2","cells":["row-2","7","1700000000"],"edit":"row-2"}}]}}},
+ {"request":{"kind":"edit","total":4,"changed":1,"visible":false,"seq":8,"revision":3},"expected":{"generation":1,"revision":4,"delta":{"kind":"edit","base_revision":3,"edits":[{"index":3,"row":{"id":"row-3","cells":["row-3","8","1700000000"],"edit":"row-3"}}]}}},
+ {"request":{"kind":"splice","total":4,"changed":1,"visible":true,"seq":0,"revision":4},"expected":{"generation":1,"revision":5,"delta":{"kind":"splice","base_revision":4,"index":0,"delete":[],"insert":[{"id":"added-0","cells":["added-0","0","1700000000"],"edit":"added-0"}]}}},
+ {"request":{"kind":"splice","total":4,"changed":1,"visible":true,"seq":1,"revision":5},"expected":{"generation":1,"revision":6,"delta":{"kind":"splice","base_revision":5,"index":0,"delete":["added-0"],"insert":[]}}},
+ {"request":{"kind":"reverse","total":4,"changed":4,"visible":false,"seq":0,"revision":6},"expected":{"generation":1,"revision":7,"delta":{"kind":"reverse","base_revision":6}}},
+ {"request":{"kind":"sort","total":4,"changed":4,"visible":false,"seq":1,"revision":7},"expected":{"generation":1,"revision":8,"delta":{"kind":"sort","base_revision":7,"column":0,"ascending":false}}},
+ {"request":{"kind":"order","total":3,"changed":3,"visible":false,"seq":0,"revision":8},"expected":{"generation":1,"revision":9,"delta":{"kind":"order","base_revision":8,"ids":["row-2","row-1","row-0"]}}}
+]

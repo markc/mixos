@@ -24,7 +24,17 @@ pub(super) fn paint(
         .get("session")
         .and_then(Value::as_str)
         .unwrap_or("");
-    if state.session != session {
+    let delta_view = node.ports["view"]["delta"].is_object();
+    if state.incremental.is_some() || delta_view {
+        // Acceptance owns incremental sessions. An old Content can outlive
+        // a new session; it must never replace that owner's state or counters.
+        if state.session != session
+            || node.ports["view"]["session"].as_str() != Some(session)
+            || !delta_view
+        {
+            return;
+        }
+    } else if state.session != session {
         *state = State::default();
         state.session = session.to_owned();
     }

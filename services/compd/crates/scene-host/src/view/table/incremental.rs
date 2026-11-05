@@ -11,6 +11,11 @@ const MAX_ROWS: usize = 1_000_000;
 const MAX_BYTES: usize = 256 * 1024 * 1024;
 const MAX_DELTA: usize = 256;
 
+fn splice_fits(len: usize, index: usize, deleted: usize, inserted: usize) -> bool {
+    deleted + inserted <= MAX_DELTA && index <= len && deleted <= len-index
+        && len-deleted+inserted <= MAX_ROWS
+}
+
 #[derive(Debug, Default)]
 pub(super) struct Model {
     order: Vec<Arc<str>>,
@@ -99,11 +104,7 @@ impl Model {
                     .as_array()
                     .ok_or("missing deletion identities")?;
                 let inserted = delta["insert"].as_array().ok_or("missing inserted rows")?;
-                if deleted.len() + inserted.len() > MAX_DELTA
-                    || index > self.len()
-                    || deleted.len() > self.len() - index
-                    || self.len() - deleted.len() + inserted.len() > MAX_ROWS
-                {
+                if !splice_fits(self.len(),index,deleted.len(),inserted.len()) {
                     return Err("splice bounds/budget".into());
                 }
                 for (j, id) in deleted.iter().enumerate() {
@@ -227,6 +228,9 @@ impl State {
             return Err("generation/source".into());
         }
         let reset = generation > self.generation && view["delta"]["reset"].as_bool() == Some(true);
+        if view["delta"]["reset"].as_bool() == Some(true) && !reset {
+            return Err("reset requires a newer generation".into());
+        }
         if (!reset && generation != self.generation)
             || view["delta"]["base_revision"].whole() != Some(if reset { 0 } else { self.revision })
             || revision != if reset { 1 } else { self.revision + 1 }
@@ -314,5 +318,50 @@ impl State {
         self.revision = revision;
         self.updates += 1;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn item(id:&str)->Value {json!({"id":id,"cells":[id],"edit":id})}
+    fn model()->Model {
+        let mut m=Model::default();
+        m.apply(&json!({"kind":"splice","index":0,"delete":[],"insert":[item("a"),item("b")]})).unwrap(); m
+    }
+    fn contents(m:&Model)->Value {json!({"rows":(0..m.len()).map(|i|m.row(i).unwrap().raw.clone()).collect::<Vec<_>>(),"bytes":m.bytes})}
+
+    #[test]
+    fn malformed_or_over_budget_deltas_are_atomic() {
+        let mut malformed=item("a"); malformed["cells"]=json!(["x".repeat(4097)]);
+        let cases=vec![
+            json!({"kind":"edit","edits":[{"index":2,"row":item("a")}]}),
+            json!({"kind":"edit","edits":[{"index":0,"row":item("a")},{"index":0,"row":item("a") }]}),
+            json!({"kind":"edit","edits":vec![json!({"index":0,"row":item("a")});MAX_DELTA+1]}),
+            json!({"kind":"edit","edits":[{"index":0,"row":malformed}]}),
+            json!({"kind":"edit","edits":[{"index":0,"row":{"id":"a","cells":vec!["x";17]}}]}),
+            json!({"kind":"edit","edits":[{"index":0,"row":{"id":"a","cells":[3]}}]}),
+            json!({"kind":"splice","index":3,"delete":[],"insert":[]}),
+            json!({"kind":"splice","index":1,"delete":["a"],"insert":[]}),
+            json!({"kind":"splice","index":1,"delete":["b","c"],"insert":[]}),
+            json!({"kind":"splice","index":0,"delete":[],"insert":[item("a")]}),
+            json!({"kind":"splice","index":0,"delete":[],"insert":[item("c"),item("c")]}),
+            json!({"kind":"order","ids":["a"]}),
+            json!({"kind":"order","ids":["a","a"]}),
+            json!({"kind":"order","ids":["a","missing"]}),
+            json!({"kind":"sort","column":16,"ascending":true}),
+            json!({"kind":"sort","column":0}),
+            json!({"kind":"unknown"}),
+        ];
+        for delta in cases {let mut m=model(); let before=contents(&m); assert!(m.apply(&delta).is_err(),"{delta}"); assert_eq!(contents(&m),before);}
+        // Exercise logical accounting at its boundary without allocating 256 MiB.
+        let mut m=model(); m.bytes=MAX_BYTES; let before=contents(&m);
+        assert!(m.apply(&json!({"kind":"edit","edits":[{"index":0,"row":{"id":"a","cells":["longer"],"edit":"a"}}]})).is_err());
+        assert_eq!(contents(&m),before);
+        assert!(!splice_fits(MAX_ROWS,MAX_ROWS,0,1));
+        assert!(splice_fits(MAX_ROWS,MAX_ROWS-1,1,1));
+        assert!(!splice_fits(2,0,0,MAX_DELTA+1));
     }
 }
