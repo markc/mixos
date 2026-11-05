@@ -236,6 +236,12 @@ fn check_delta_route(
         let old = previous.and_then(|tree| tree.nodes.get(id));
         let old_view = old.and_then(|node| node.ports.get("view"));
         let view = node.ports.get("view");
+        if let Some(view) = view.filter(|v|v["delta"].is_object()) {
+            if view["session"].as_str() != node.ports.get("session").and_then(Value::as_str) {
+                return Err(json!({"error_code":"TABLE_DELTA_ROUTE","node":id,
+                    "message":"delta view and node session must agree"}));
+            }
+        }
         if old_view == view {
             continue;
         }
