@@ -156,7 +156,7 @@ fn paint(ctx: &egui::Context, s: &mut State, view: Value) -> (f64, f64) {
     let rect = Rect::from_min_size(pos2(0., 0.), vec2(980., 640.));
     let started = Instant::now();
     let mut out = Vec::new();
-    let output = ctx.run_ui(
+    let mut output = ctx.run_ui(
         egui::RawInput {
             screen_rect: Some(rect),
             ..Default::default()
@@ -166,6 +166,7 @@ fn paint(ctx: &egui::Context, s: &mut State, view: Value) -> (f64, f64) {
     let frame = started.elapsed().as_secs_f64() * 1e6;
     let started = Instant::now();
     let _meshes = ctx.tessellate(output.shapes, output.pixels_per_point);
+    output.textures_delta.clear(); // CPU harness has no texture uploader.
     (frame, started.elapsed().as_secs_f64() * 1e6)
 }
 
