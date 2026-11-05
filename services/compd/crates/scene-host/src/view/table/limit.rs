@@ -30,6 +30,19 @@ fn scene_store() -> crate::store::SceneStore {
     store
 }
 
+#[test]
+fn older_paint_snapshot_does_not_replay_an_accepted_delta() {
+    let mut s=initial(1000); let revision=s.revision;
+    let ctx=egui::Context::default();
+    let old=json!({"session":"limit","generation":1,"revision":1,"delta":{"base_revision":0,"kind":"splice","reset":true,"index":0,"delete":[],"insert":[row(0)]}});
+    let refused=s.refused;
+    paint(&ctx,&mut s,old);
+    assert_eq!(s.refused,refused); assert_eq!(s.revision,revision); assert_eq!(s.total,1000);
+    s.model_error=Some("older source failed".into());
+    let edit=json!({"generation":1,"revision":revision+1,"delta":{"base_revision":revision,"kind":"edit","edits":[{"index":0,"row":row(0)}]}});
+    assert!(s.ingest(&edit)); assert!(s.model_error.is_none());
+}
+
 fn policy(r: &Value) -> Value {
     let started = Instant::now();
     let n = r["total"].as_u64().unwrap() as usize;
