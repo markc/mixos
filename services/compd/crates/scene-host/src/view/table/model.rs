@@ -338,7 +338,11 @@ impl State {
                 .map(|v| v as usize)
                 .filter(|&v| v < total as usize);
             self.selection = incoming_selection;
-            self.anchor = self.focus;
+            self.anchor = view["anchor"]
+                .whole()
+                .map(|v| v as usize)
+                .filter(|&v| v < total as usize)
+                .or(self.focus);
             self.scroll_to = self.focus.or(if reset { Some(0) } else { None });
         }
         self.dataset = dataset;
@@ -436,7 +440,7 @@ impl State {
         }
         let complete = selected.len() == self.selection.count();
         json!({"selected_ids":selected,"selection_complete":complete,"focus_id":self.focus.and_then(|i|self.row_id(i)),"kind":kind,"session":self.session,"generation":self.generation,"seq":self.seq,
-            "focus":self.focus,"selection":{"ranges":self.selection.0}})
+            "focus":self.focus,"anchor":self.anchor,"selection":{"ranges":self.selection.0}})
     }
 
     pub fn galley(
