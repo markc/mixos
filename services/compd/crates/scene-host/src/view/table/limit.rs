@@ -114,8 +114,14 @@ fn scene_refusals_preserve_both_scene_and_native_data() {
         )
         .unwrap_err();
     assert_eq!(direct_error["error_code"], "TABLE_DELTA_ROUTE");
-    let session_error=store.request(SceneCommand::Patch,"",&json!({"scene":"limit","path":"table.session","value":"other-session"})).unwrap_err();
-    assert_eq!(session_error["error_code"],"TABLE_DELTA_ROUTE");
+    let session_error = store
+        .request(
+            SceneCommand::Patch,
+            "",
+            &json!({"scene":"limit","path":"table.session","value":"other-session"}),
+        )
+        .unwrap_err();
+    assert_eq!(session_error["error_code"], "TABLE_DELTA_ROUTE");
     assert!(
         store
             .request(
