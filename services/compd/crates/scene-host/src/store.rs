@@ -224,15 +224,23 @@ fn check_table_versions(previous: &ResolvedScene, next: &ResolvedScene) -> Resul
 
 /// Lab delta models are command-owned. Other entry paths may retain the
 /// identical descriptor, but cannot introduce/replace a delta or switch modes.
-fn check_delta_route(previous: Option<&ResolvedScene>, next: &ResolvedScene, model_write: bool) -> Result<(), Value> {
-    for (id,node) in &next.nodes {
-        if node.family != "table" { continue; }
-        let old = previous.and_then(|tree|tree.nodes.get(id));
-        let old_view = old.and_then(|node|node.ports.get("view"));
+fn check_delta_route(
+    previous: Option<&ResolvedScene>,
+    next: &ResolvedScene,
+    model_write: bool,
+) -> Result<(), Value> {
+    for (id, node) in &next.nodes {
+        if node.family != "table" {
+            continue;
+        }
+        let old = previous.and_then(|tree| tree.nodes.get(id));
+        let old_view = old.and_then(|node| node.ports.get("view"));
         let view = node.ports.get("view");
-        if old_view == view { continue; }
-        let was_delta = old_view.is_some_and(|v|v["delta"].is_object());
-        let is_delta = view.is_some_and(|v|v["delta"].is_object());
+        if old_view == view {
+            continue;
+        }
+        let was_delta = old_view.is_some_and(|v| v["delta"].is_object());
+        let is_delta = view.is_some_and(|v| v["delta"].is_object());
         if (!model_write && (was_delta || is_delta)) || (was_delta && !is_delta) {
             return Err(json!({"error_code":"TABLE_DELTA_ROUTE","node":id,
                 "message":"delta models require model patches; unload before switching model mode"}));
@@ -934,9 +942,11 @@ impl SceneStore {
             return Err(json!({"scene":document.name,"diagnostics":diagnostics}));
         }
         let tree = scene::resolve(&document).map_err(|d| json!({"diagnostics":d}))?;
-        let previous_delta_owner = self.scenes.get(&tree.name)
-            .filter(|old|old.document.citizen == document.citizen)
-            .map(|old|&old.tree);
+        let previous_delta_owner = self
+            .scenes
+            .get(&tree.name)
+            .filter(|old| old.document.citizen == document.citizen)
+            .map(|old| &old.tree);
         check_delta_route(previous_delta_owner, &tree, false)?;
         let prepared = validate_templates(&tree)?;
         let bindings = scene::bindings::compile(&document).map_err(|d| json!({"diagnostics":d}))?;

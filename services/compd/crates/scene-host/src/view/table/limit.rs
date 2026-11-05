@@ -49,62 +49,129 @@ fn older_paint_snapshot_does_not_replay_an_accepted_delta() {
 
 #[test]
 fn old_session_paint_cannot_erase_a_new_accepted_owner() {
-    let mut s=initial(1000); s.session="new-owner".into();
-    let before=s.revision; let refused=s.refused;
-    let old=json!({"session":"limit","generation":1,"revision":1,"delta":{"kind":"edit","edits":[]}});
-    paint(&egui::Context::default(),&mut s,old);
-    assert_eq!(s.session,"new-owner"); assert_eq!(s.revision,before);
-    assert_eq!(s.refused,refused); assert_eq!(s.incremental.as_ref().unwrap().row(999).unwrap().id,"row-999");
+    let mut s = initial(1000);
+    s.session = "new-owner".into();
+    let before = s.revision;
+    let refused = s.refused;
+    let old =
+        json!({"session":"limit","generation":1,"revision":1,"delta":{"kind":"edit","edits":[]}});
+    paint(&egui::Context::default(), &mut s, old);
+    assert_eq!(s.session, "new-owner");
+    assert_eq!(s.revision, before);
+    assert_eq!(s.refused, refused);
+    assert_eq!(
+        s.incremental.as_ref().unwrap().row(999).unwrap().id,
+        "row-999"
+    );
 }
 
 #[test]
 fn scene_refusals_preserve_both_scene_and_native_data() {
     use crate::command::SceneCommand;
-    let mut store=scene_store();
-    let view=json!({"session":"limit","generation":1,"revision":1,"delta":{"kind":"splice","reset":true,"base_revision":0,"index":0,"delete":[],"insert":[row(0),row(1)]}});
-    store.request(SceneCommand::Patch,"",&json!({"scene":"limit","path":"model.view","value":view})).unwrap();
-    let before=serde_json::to_value(store.scene("limit").unwrap().tree()).unwrap();
-    let revision=store.scene("limit").unwrap().revision();
-    let mut bad=view.clone(); bad["revision"]=json!(2); bad["delta"]=json!({"kind":"edit","base_revision":1,"edits":[{"index":3,"row":row(3)}]});
-    assert!(store.request(SceneCommand::Patch,"",&json!({"scene":"limit","path":"model.view","value":bad})).is_err());
-    assert_eq!(store.scene("limit").unwrap().revision(),revision);
-    assert_eq!(serde_json::to_value(store.scene("limit").unwrap().tree()).unwrap(),before);
-    {let entry=store.scene("limit").unwrap();let tables=entry.native_tables.lock().unwrap();let s=&tables["table"];assert_eq!(s.revision,1);assert_eq!(s.total,2);assert_eq!(s.incremental.as_ref().unwrap().row(1).unwrap().id,"row-1");}
-    let mut direct=view.clone(); direct["revision"]=json!(2);
-    let direct_error=store.request(SceneCommand::Patch,"",&json!({"scene":"limit","path":"table.view","value":direct})).unwrap_err();
-    assert_eq!(direct_error["error_code"],"TABLE_DELTA_ROUTE");
-    assert!(store.request(SceneCommand::Patch,"",&json!({"scene":"limit","path":"model.view","value":{}})).is_err());
-    assert_eq!(store.scene("limit").unwrap().revision(),revision);
-    let source=format!("---\nscene: 1\nname: literal\ncitizen: literal\n---\n```mix\nroot: {{widget: table, rows: [], columns: [Name], session: limit, view: {view}}}\n```\n");
-    let load_error=store.request(SceneCommand::Load,&source,&Value::Null).unwrap_err();
-    assert_eq!(load_error["error_code"],"TABLE_DELTA_ROUTE");
+    let mut store = scene_store();
+    let view = json!({"session":"limit","generation":1,"revision":1,"delta":{"kind":"splice","reset":true,"base_revision":0,"index":0,"delete":[],"insert":[row(0),row(1)]}});
+    store
+        .request(
+            SceneCommand::Patch,
+            "",
+            &json!({"scene":"limit","path":"model.view","value":view}),
+        )
+        .unwrap();
+    let before = serde_json::to_value(store.scene("limit").unwrap().tree()).unwrap();
+    let revision = store.scene("limit").unwrap().revision();
+    let mut bad = view.clone();
+    bad["revision"] = json!(2);
+    bad["delta"] = json!({"kind":"edit","base_revision":1,"edits":[{"index":3,"row":row(3)}]});
+    assert!(
+        store
+            .request(
+                SceneCommand::Patch,
+                "",
+                &json!({"scene":"limit","path":"model.view","value":bad})
+            )
+            .is_err()
+    );
+    assert_eq!(store.scene("limit").unwrap().revision(), revision);
+    assert_eq!(
+        serde_json::to_value(store.scene("limit").unwrap().tree()).unwrap(),
+        before
+    );
+    {
+        let entry = store.scene("limit").unwrap();
+        let tables = entry.native_tables.lock().unwrap();
+        let s = &tables["table"];
+        assert_eq!(s.revision, 1);
+        assert_eq!(s.total, 2);
+        assert_eq!(s.incremental.as_ref().unwrap().row(1).unwrap().id, "row-1");
+    }
+    let mut direct = view.clone();
+    direct["revision"] = json!(2);
+    let direct_error = store
+        .request(
+            SceneCommand::Patch,
+            "",
+            &json!({"scene":"limit","path":"table.view","value":direct}),
+        )
+        .unwrap_err();
+    assert_eq!(direct_error["error_code"], "TABLE_DELTA_ROUTE");
+    assert!(
+        store
+            .request(
+                SceneCommand::Patch,
+                "",
+                &json!({"scene":"limit","path":"model.view","value":{}})
+            )
+            .is_err()
+    );
+    assert_eq!(store.scene("limit").unwrap().revision(), revision);
+    let source = format!(
+        "---\nscene: 1\nname: literal\ncitizen: literal\n---\n```mix\nroot: {{widget: table, rows: [], columns: [Name], session: limit, view: {view}}}\n```\n"
+    );
+    let load_error = store
+        .request(SceneCommand::Load, &source, &Value::Null)
+        .unwrap_err();
+    assert_eq!(load_error["error_code"], "TABLE_DELTA_ROUTE");
     assert!(store.scene("literal").is_none());
 }
 
 #[test]
 fn selection_and_local_edit_buffers_follow_stable_identity() {
-    let mut s=initial(10); s.pick(1,false,false); s.pick(3,true,false);
-    s.edit=Some(super::model::Edit{index:3,id:"row-3".into(),text:"unsaved".into(),pending:None,focus:true});
-    let update=json!({"generation":1,"revision":s.revision+1,"delta":{"base_revision":s.revision,"kind":"edit","edits":[{"index":3,"row":row(3)}]}});
-    assert!(s.ingest(&update)); assert_eq!(s.edit.as_ref().unwrap().text,"unsaved");
-    let reverse=json!({"generation":1,"revision":s.revision+1,"delta":{"base_revision":s.revision,"kind":"reverse"}});
-    assert!(s.ingest(&reverse)); assert_eq!(s.edit.as_ref().unwrap().index,6);
-    assert!(s.selection.contains(6)); assert!(s.selection.contains(8)); assert_eq!(s.selection.count(),2);
-    let delete=json!({"generation":1,"revision":s.revision+1,"delta":{"base_revision":s.revision,"kind":"splice","index":6,"delete":["row-3"],"insert":[]}});
-    assert!(s.ingest(&delete)); assert!(s.edit.is_none()); assert_eq!(s.selection.count(),1);
-    let reset=json!({"generation":1,"revision":s.revision+1,"delta":{"base_revision":s.revision,"reset":true,"kind":"reverse"}});
+    let mut s = initial(10);
+    s.pick(1, false, false);
+    s.pick(3, true, false);
+    s.edit = Some(super::model::Edit {
+        index: 3,
+        id: "row-3".into(),
+        text: "unsaved".into(),
+        pending: None,
+        focus: true,
+    });
+    let update = json!({"generation":1,"revision":s.revision+1,"delta":{"base_revision":s.revision,"kind":"edit","edits":[{"index":3,"row":row(3)}]}});
+    assert!(s.ingest(&update));
+    assert_eq!(s.edit.as_ref().unwrap().text, "unsaved");
+    let reverse = json!({"generation":1,"revision":s.revision+1,"delta":{"base_revision":s.revision,"kind":"reverse"}});
+    assert!(s.ingest(&reverse));
+    assert_eq!(s.edit.as_ref().unwrap().index, 6);
+    assert!(s.selection.contains(6));
+    assert!(s.selection.contains(8));
+    assert_eq!(s.selection.count(), 2);
+    let delete = json!({"generation":1,"revision":s.revision+1,"delta":{"base_revision":s.revision,"kind":"splice","index":6,"delete":["row-3"],"insert":[]}});
+    assert!(s.ingest(&delete));
+    assert!(s.edit.is_none());
+    assert_eq!(s.selection.count(), 1);
+    let reset = json!({"generation":1,"revision":s.revision+1,"delta":{"base_revision":s.revision,"reset":true,"kind":"reverse"}});
     assert!(!s.ingest(&reset));
-    let source=json!({"generation":1,"revision":s.revision+1,"source":{},"delta":{"base_revision":s.revision,"kind":"reverse"}});
+    let source = json!({"generation":1,"revision":s.revision+1,"source":{},"delta":{"base_revision":s.revision,"kind":"reverse"}});
     assert!(!s.ingest(&source));
 }
 
 #[test]
 fn incremental_projection_is_bounded_across_many_viewports() {
-    let mut s=initial(10000);
+    let mut s = initial(10000);
     for first in (0..9900).step_by(128) {
-        s.prepare_range(first,first+27);
-        assert!(s.rows.len()<=super::model::ROW_BUDGET);
-        assert_eq!(s.rows[&first].id,format!("row-{first}"));
+        s.prepare_range(first, first + 27);
+        assert!(s.rows.len() <= super::model::ROW_BUDGET);
+        assert_eq!(s.rows[&first].id, format!("row-{first}"));
     }
 }
 
@@ -140,10 +207,14 @@ fn policy(r: &Value) -> Value {
 
 #[test]
 fn policy_intents_match_hand_written_expected_transactions() {
-    let cases:Vec<Value>=serde_json::from_str(include_str!("../../../tests/fixtures/incremental_intents.json")).unwrap();
+    let cases: Vec<Value> = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/incremental_intents.json"
+    ))
+    .unwrap();
     for case in cases {
-        let mut actual=policy(&case["request"]); actual.as_object_mut().unwrap().remove("policy_us");
-        assert_eq!(actual,case["expected"]);
+        let mut actual = policy(&case["request"]);
+        actual.as_object_mut().unwrap().remove("policy_us");
+        assert_eq!(actual, case["expected"]);
     }
 }
 
@@ -306,7 +377,18 @@ fn accepted_deltas_are_not_lost_when_paints_coalesce() {
     let tables = entry.native_tables.lock().unwrap();
     assert_eq!(tables["root"].total, 3);
     assert_eq!(tables["root"].revision, 3);
-    for i in 0..3 { assert_eq!(tables["root"].incremental.as_ref().unwrap().row(i).unwrap().raw,row(i)); }
+    for i in 0..3 {
+        assert_eq!(
+            tables["root"]
+                .incremental
+                .as_ref()
+                .unwrap()
+                .row(i)
+                .unwrap()
+                .raw,
+            row(i)
+        );
+    }
 }
 
 fn pss(pid: u32) -> u64 {
@@ -372,7 +454,11 @@ fn measure_incremental_limit() {
         .unwrap();
     for repeat in 0..repeats {
         for n in [1000, 10000, 100000] {
-            if let Ok(only)=std::env::var("LIMIT_ONLY_N") { if n!=only.parse::<usize>().unwrap() {continue;} }
+            if let Ok(only) = std::env::var("LIMIT_ONLY_N") {
+                if n != only.parse::<usize>().unwrap() {
+                    continue;
+                }
+            }
             {
                 let mut s = initial(n);
                 let ctx = egui::Context::default();
@@ -407,7 +493,12 @@ fn measure_incremental_limit() {
                 ("order", n, false),
             ] {
                 if std::env::var("LIMIT_REPRESENTATIVE").is_ok()
-                    && !((kind=="edit" && visible && (k==1 || k==256)) || kind=="splice" || kind=="sort") {continue;}
+                    && !((kind == "edit" && visible && (k == 1 || k == 256))
+                        || kind == "splice"
+                        || kind == "sort")
+                {
+                    continue;
+                }
                 let count = if kind == "order" || kind == "sort" {
                     32
                 } else {
@@ -477,8 +568,10 @@ fn measure_incremental_limit() {
                         revision = s.revision;
                         let (frame_us, tess_us) = paint(&ctx, s, view);
                         assert!(s.rows.len() <= super::model::ROW_BUDGET);
-                        assert!(s.end>s.first && s.shapes>0);
-                        if kind=="edit" && visible {assert_eq!(s.rows[&0].cells[1],seq.to_string());}
+                        assert!(s.end > s.first && s.shapes > 0);
+                        if kind == "edit" && visible {
+                            assert_eq!(s.rows[&0].cells[1], seq.to_string());
+                        }
                         if seq >= 20 {
                             writeln!(file,"{}",json!({"repeat":repeat,"n":n,"kind":kind,"changed":k,"visible":visible,"controller":controller_kind,"seq":seq-20,"policy_us":policy_us,"ipc_us":ipc,"apply_us":apply_us,"frame_us":frame_us,"tess_us":tess_us,"serial_us":ipc+apply_us+frame_us+tess_us,"reply_bytes":bytes,"cache_rows":s.rows.len(),"snapshot":if seq==count+19 {s.snapshot()}else{Value::Null}})).unwrap();
                         }
@@ -551,17 +644,32 @@ fn measure_incremental_burst_limit() {
                             .unwrap();
                         apply_us += began.elapsed().as_secs_f64() * 1e6;
                         revision += 1;
-                        {let lock=tables.lock().unwrap();let state=&lock["table"];
-                         assert_eq!(state.revision,revision); assert_eq!((state.refused,state.stale),(0,0));
-                         for index in [start,start+255] {assert_eq!(state.incremental.as_ref().unwrap().row(index).unwrap().cells[1],seq.to_string());}}
+                        {
+                            let lock = tables.lock().unwrap();
+                            let state = &lock["table"];
+                            assert_eq!(state.revision, revision);
+                            assert_eq!((state.refused, state.stale), (0, 0));
+                            for index in [start, start + 255] {
+                                assert_eq!(
+                                    state
+                                        .incremental
+                                        .as_ref()
+                                        .unwrap()
+                                        .row(index)
+                                        .unwrap()
+                                        .cells[1],
+                                    seq.to_string()
+                                );
+                            }
+                        }
                         last = view;
                     }
                     let mut lock = tables.lock().unwrap();
                     let s = lock.get_mut("table").unwrap();
                     assert_eq!(s.revision, revision);
                     let (frame_us, tess_us) = paint(&ctx, s, last);
-                    assert!(s.end>s.first && !s.rows.is_empty() && s.shapes>0);
-                    assert_eq!(s.rows[&0].cells[1],seq.to_string());
+                    assert!(s.end > s.first && !s.rows.is_empty() && s.shapes > 0);
+                    assert_eq!(s.rows[&0].cells[1], seq.to_string());
                     if seq >= 20 {
                         writeln!(file,"{}",json!({"repeat":repeat,"n":n,"kind":"burst","changed":changed,"visible":true,"controller":kind,"seq":seq-20,"policy_us":policy_us,"ipc_us":ipc_us,"apply_us":apply_us,"frame_us":frame_us,"tess_us":tess_us,"serial_us":ipc_us+apply_us+frame_us+tess_us,"reply_bytes":bytes,"cache_rows":s.rows.len()})).unwrap();
                     }
