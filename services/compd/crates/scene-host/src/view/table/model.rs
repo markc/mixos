@@ -440,7 +440,7 @@ impl State {
         }
         let complete = selected.len() == self.selection.count();
         json!({"selected_ids":selected,"selection_complete":complete,"focus_id":self.focus.and_then(|i|self.row_id(i)),"kind":kind,"session":self.session,"generation":self.generation,"seq":self.seq,
-            "focus":self.focus,"anchor":self.anchor,"selection":{"ranges":self.selection.0}})
+            "focus":self.focus,"anchor":self.anchor,"selection_epoch":self.selection_epoch,"selection":{"ranges":self.selection.0}})
     }
 
     pub fn galley(
