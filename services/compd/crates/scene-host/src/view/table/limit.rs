@@ -71,11 +71,13 @@ fn scene_refusals_preserve_both_scene_and_native_data() {
     assert_eq!(serde_json::to_value(store.scene("limit").unwrap().tree()).unwrap(),before);
     {let entry=store.scene("limit").unwrap();let tables=entry.native_tables.lock().unwrap();let s=&tables["table"];assert_eq!(s.revision,1);assert_eq!(s.total,2);assert_eq!(s.incremental.as_ref().unwrap().row(1).unwrap().id,"row-1");}
     let mut direct=view.clone(); direct["revision"]=json!(2);
-    assert!(store.request(SceneCommand::Patch,"",&json!({"scene":"limit","path":"table.view","value":direct})).is_err());
+    let direct_error=store.request(SceneCommand::Patch,"",&json!({"scene":"limit","path":"table.view","value":direct})).unwrap_err();
+    assert_eq!(direct_error["error_code"],"TABLE_DELTA_ROUTE");
     assert!(store.request(SceneCommand::Patch,"",&json!({"scene":"limit","path":"model.view","value":{}})).is_err());
     assert_eq!(store.scene("limit").unwrap().revision(),revision);
     let source=format!("---\nscene: 1\nname: literal\ncitizen: literal\n---\n```mix\nroot: {{widget: table, rows: [], columns: [Name], session: limit, view: {view}}}\n```\n");
-    assert!(store.request(SceneCommand::Load,&source,&Value::Null).is_err());
+    let load_error=store.request(SceneCommand::Load,&source,&Value::Null).unwrap_err();
+    assert_eq!(load_error["error_code"],"TABLE_DELTA_ROUTE");
     assert!(store.scene("literal").is_none());
 }
 
