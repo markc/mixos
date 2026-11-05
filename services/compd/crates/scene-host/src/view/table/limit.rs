@@ -51,7 +51,7 @@ fn policy(r: &Value) -> Value {
     let revision = r["revision"].as_u64().unwrap();
     let delta = match r["kind"].as_str().unwrap() {
         "edit" => json!({"kind":"edit","base_revision":revision,"edits":(0..k).map(|j| {
-            let i=if r["visible"]==true {j} else {n-k+j};
+            let i=if r["visible"]==true {r["start"].as_u64().unwrap_or(0) as usize+j} else {n-k+j};
             let mut value=row(i); value["cells"][1]=json!(seq.to_string());
             json!({"index":i,"row":value})
         }).collect::<Vec<_>>()}),
@@ -396,6 +396,50 @@ fn measure_incremental_limit() {
                         "LIMIT repeat={repeat} n={n} kind={kind} k={k} visible={visible} controller={controller_kind}"
                     );
                 }
+            }
+        }
+    }
+}
+
+#[test]
+#[ignore]
+fn measure_incremental_burst_limit() {
+    let mut file=std::io::BufWriter::new(std::fs::File::create(std::env::var("LIMIT_OUTPUT").unwrap()).unwrap());
+    let n=100000;
+    let samples:usize=std::env::var("LIMIT_SAMPLES").unwrap_or("120".into()).parse().unwrap();
+    for repeat in 0..3 {
+        for changed in [256usize,512,768,1024,2048] {
+            for kind in if repeat%2==0 {["mix","rust"]}else{["rust","mix"]} {
+                let mut controller=Controller::new(kind);
+                let mut store=scene_store();
+                let tables=Arc::clone(&store.scene("limit").unwrap().native_tables);
+                tables.lock().unwrap().insert("table".into(),initial(n));
+                let mut revision=tables.lock().unwrap()["table"].revision;
+                let ctx=egui::Context::default();
+                for seq in 0..samples+20 {
+                    let mut policy_us=0.; let mut ipc_us=0.; let mut apply_us=0.; let mut bytes=0;
+                    let mut last=Value::Null;
+                    for start in (0..changed).step_by(256) {
+                        let request=json!({"kind":"edit","changed":256,"start":start,"visible":true,"seq":seq,"total":n,"revision":revision});
+                        let began=Instant::now(); let (mut view,length)=controller.call(&request);
+                        ipc_us+=began.elapsed().as_secs_f64()*1e6; bytes+=length;
+                        policy_us+=view.as_object_mut().unwrap().remove("policy_us").unwrap().as_f64().unwrap();
+                        let mut expected=policy(&request); expected.as_object_mut().unwrap().remove("policy_us");
+                        assert_eq!(view,expected); view["session"]=json!("limit");
+                        let began=Instant::now();
+                        store.request(crate::command::SceneCommand::Patch,"",&json!({"scene":"limit","path":"model.view","value":view})).unwrap();
+                        apply_us+=began.elapsed().as_secs_f64()*1e6;
+                        revision+=1; last=view;
+                    }
+                    let mut lock=tables.lock().unwrap(); let s=lock.get_mut("table").unwrap();
+                    assert_eq!(s.revision,revision);
+                    let (frame_us,tess_us)=paint(&ctx,s,last);
+                    if seq>=20 {
+                        writeln!(file,"{}",json!({"repeat":repeat,"n":n,"kind":"burst","changed":changed,"visible":true,"controller":kind,"seq":seq-20,"policy_us":policy_us,"ipc_us":ipc_us,"apply_us":apply_us,"frame_us":frame_us,"tess_us":tess_us,"serial_us":ipc_us+apply_us+frame_us+tess_us,"reply_bytes":bytes,"cache_rows":s.rows.len()})).unwrap();
+                    }
+                }
+                file.flush().unwrap();
+                println!("BURST repeat={repeat} changed={changed} controller={kind}");
             }
         }
     }

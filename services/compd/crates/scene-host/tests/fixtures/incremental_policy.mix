@@ -9,7 +9,7 @@ while true
   if $r.kind=="edit" then
     $edits=[]
     for $j=0 to $r.changed-1
-      $i=if $r.visible then $j else $r.total-$r.changed+$j end
+      $i=if $r.visible then ($r.start ?? 0)+$j else $r.total-$r.changed+$j end
       $id="row-"..to_string($i)
       push($edits,{index:$i,row:{id:$id,cells:[$id,to_string($r.seq),"1700000000"],edit:$id}})
     end
